@@ -17,7 +17,26 @@ const api = (path) => JSON.parse(execFileSync('gh', ['api', path], { encoding: '
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const minutesFromNow = (minutes) => Date.now() + minutes * 60_000;
 
-const pr = api(`repos/${REPO}/pulls/${number}`);
+let pr = api(`repos/${REPO}/pulls/${number}`);
+
+// Lancé depuis la branche de la proposition juste après un push : attendre que GitHub voie le dernier commit.
+let expected = null;
+try {
+  const branch = execFileSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).trim();
+  if (branch === pr.head.ref) expected = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+} catch {
+  // hors d'un dépôt git : on prend le dernier commit connu de GitHub
+}
+const headDeadline = minutesFromNow(2);
+while (expected && pr.head.sha !== expected && Date.now() < headDeadline) {
+  await pause(10_000);
+  pr = api(`repos/${REPO}/pulls/${number}`);
+}
+if (expected && pr.head.sha !== expected) {
+  console.log(`GitHub ne voit pas encore le commit ${expected.slice(0, 7)} : vérifier que le push est passé.`);
+  process.exit(3);
+}
+
 const sha = pr.head.sha;
 console.log(`Proposition n° ${number}, « ${pr.title} », commit ${sha.slice(0, 7)}`);
 
