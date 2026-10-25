@@ -52,7 +52,8 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 
 ### S07 · Journal à empreintes
 - Statut : à faire
-- Qui : Codex · Relecture : normale · Dépend de : S01
+- Qui : Codex, ou Claude tant que H11 est à finir · Relecture : normale · Dépend de : S01
+- Où : la tâche est décrite dans `chantier/taches/S07.md` sur la branche `codex/S07`, proposition n° 4. La reprendre telle quelle.
 - Cahier : Architecture technique, journal ; M06, registre des mandats.
 - Objectif : un journal en ajout seul dans `packages/core/src/journal/`, chaque ligne liée à la précédente par son empreinte SHA-256, pour qu'aucune modification ne passe inaperçue. Stockage derrière une interface, avec une version SQLite (`db/migrations/0002_journal.sql`).
 - Critères : une ligne modifiée, supprimée ou intervertie est détectée ; recherche par personne et par période ; aucune donnée personnelle en clair dans l'empreinte ni dans le texte de la ligne, seulement des identifiants internes [R13].

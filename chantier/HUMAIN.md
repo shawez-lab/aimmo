@@ -15,5 +15,6 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H08 | Modèles juridiques validés par Marion Gravelin et l'avocat | Marion, avocat | M06 | plus tard |
 | H09 | Création de la société AIMMO, carte professionnelle, assurance, médiateur | Shawez, Marion | pilote | plus tard |
 | H10 | Comptes et accords de flux avec les portails | Shawez | diffusion sur les portails | plus tard |
+| H11 | Codex accepte les tâches confiées par un commentaire `@codex` | Shawez | tâches de Codex | à finir : le 2026-10-25, Codex relit bien les propositions mais répond « create an environment » aux demandes de tâche. À vérifier dans ChatGPT : l'environnement `aimmo` et la relecture dans le même espace, et le compte GitHub `shawez-lab` relié à ce compte. En attendant, Claude fait ces tâches : le chantier n'attend pas |
 
 Quand une tâche à moins de trois places de la tête du plan attend une ligne « plus tard », la séance la marque « signalé le <date> » et la dit une fois dans « Besoin de toi ».

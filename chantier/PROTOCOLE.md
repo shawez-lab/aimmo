@@ -12,7 +12,7 @@ Une séance fait avancer le plan d'une tâche, finie proprement, puis s'arrête.
    - vérifications vertes, relue, et Codex sans P0 ni P1 restant : la fusionner, passer sa tâche à « fait » ;
    - branche `codex/<id>` sans nouveau commit de Codex depuis plus de 24 heures : la tâche revient à Claude (voir `SECOURS.md`) ;
    - sinon : la laisser.
-4. **Déléguer à Codex.** Si H03 est « fait » ou « à finir » dans `HUMAIN.md` et qu'une tâche marquée « Qui : Codex » est prête : la confier selon la section 6. Cela ne compte pas comme la tâche de la séance.
+4. **Déléguer à Codex.** Si H11 est « fait » dans `HUMAIN.md` et qu'une tâche marquée « Qui : Codex » est prête : la confier selon la section 6. Cela ne compte pas comme la tâche de la séance. Tant que H11 est « à finir », Claude fait lui-même les tâches marquées « Qui : Codex », sauf à la première séance du lundi : elle essaie d'en confier une, et si Codex refuse encore, la fait elle-même.
 5. **Choisir la tâche de Claude :**
    - une tâche « en cours » de Claude : la reprendre, sur sa branche ;
    - sinon la première tâche « à faire » de Claude dont toutes les dépendances sont « fait » et qui n'attend rien de `HUMAIN.md` ;
@@ -53,7 +53,7 @@ Quand plus aucune tâche n'est prête : lire dans la Feuille de route le module 
 1. Créer la branche `codex/<id>` depuis main.
 2. Y écrire `chantier/taches/<id>.md` : objectif, fichiers concernés, critères d'acceptation, tests attendus, ce qu'il ne faut pas toucher. Commit, push.
 3. Ouvrir la proposition `<id> · <titre> (Codex)`, puis la commenter : `@codex Fais la tâche décrite dans chantier/taches/<id>.md sur cette branche, en suivant AGENTS.md, jusqu'à ce que npm run check, npm test et npm run garde-fous passent.`
-4. `node scripts/attendre-verifications.mjs <numéro> --codex`. Sortie 5 : Codex n'est pas prêt. Laisser la proposition ouverte, H03 reste « à finir », et la tâche revient à Claude à la séance suivante si H03 n'a pas changé. Si Codex répond qu'il travaille ou pousse un commit : H03 passe à « fait ».
+4. `node scripts/attendre-verifications.mjs <numéro> --codex`. Sortie 5 : Codex refuse la tâche. H11 reste « à finir », et la tâche revient tout de suite à Claude, qui la fait sur la branche `codex/<id>` et sa proposition. Si Codex répond qu'il travaille ou pousse un commit : H11 passe à « fait ».
 5. Dans `PLAN.md` : « chez Codex depuis le <date> ».
 
 ## 7. Économie
