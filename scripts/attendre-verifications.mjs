@@ -65,48 +65,90 @@ if (failed.length > 0) {
   process.exit(1);
 }
 
-// 2. Relecture de Codex sur la version actuelle : 10 minutes au plus après les vérifications.
+// 2. Relecture de Codex sur la version actuelle : 15 minutes au plus après les vérifications.
+// Codex tient un commentaire de synthèse qui porte son état : <!-- codex-review-state:v1 {...} -->.
 if (waitForCodex) {
   const isCodex = (item) => /codex/i.test(item.user?.login ?? '');
   const headTime = new Date(api(`repos/${REPO}/commits/${sha}`).commit.committer.date).getTime();
   const isFresh = (date) => Boolean(date) && new Date(date).getTime() >= headTime - 60_000;
-  const codexDeadline = minutesFromNow(10);
+  const readState = (body) => {
+    const match = /codex-review-state:v1 (\{.*?\}) -->/s.exec(body ?? '');
+    if (!match) return null;
+    try {
+      return JSON.parse(match[1]);
+    } catch {
+      return null;
+    }
+  };
+  const isSerious = (text) => /\bP[01]\b/.test(text);
+  const WAITING = new Set(['queued', 'pending', 'running', 'in_progress', null, undefined]);
+  const codexDeadline = minutesFromNow(15);
+  let verdict = 'pas de relecture au bout de 15 minutes, on continue sans elle (SECOURS.md)';
   let texts = [];
-  let verdict = 'pas de relecture au bout de 10 minutes';
+  let findings = false;
   for (;;) {
-    const reviews = api(`repos/${REPO}/pulls/${number}/reviews?per_page=100`).filter(
-      (review) => isCodex(review) && (review.commit_id === sha || isFresh(review.submitted_at)),
+    const comments = api(`repos/${REPO}/issues/${number}/comments?per_page=100`).filter(isCodex);
+    const setupNeeded = comments.some(
+      (comment) =>
+        isFresh(comment.created_at) &&
+        /create an environment|set up an environment|connect (?:a|this) repo/i.test(comment.body ?? ''),
     );
-    const lineComments = api(`repos/${REPO}/pulls/${number}/comments?per_page=100`).filter(
-      (comment) => isCodex(comment) && isFresh(comment.created_at),
-    );
-    const comments = api(`repos/${REPO}/issues/${number}/comments?per_page=100`).filter(
-      (comment) => isCodex(comment) && isFresh(comment.created_at),
-    );
-    const reactions = api(`repos/${REPO}/issues/${number}/reactions?per_page=100`).filter(
-      (reaction) => isCodex(reaction) && isFresh(reaction.created_at),
-    );
-    texts = [...reviews, ...lineComments, ...comments].map((item) => item.body ?? '').filter(Boolean);
-    if (reviews.length + lineComments.length + comments.length > 0) {
-      verdict = 'relu';
+    if (setupNeeded) {
+      console.log("Codex n'est pas prêt pour ce dépôt : il demande un environnement. On continue sans sa relecture (HUMAIN.md, H03).");
+      process.exit(5);
+    }
+    const summaries = comments
+      .map((comment) => ({ comment, state: readState(comment.body) }))
+      .filter((item) => item.state?.code_review)
+      .sort((a, b) => new Date(b.comment.updated_at).getTime() - new Date(a.comment.updated_at).getTime());
+    const review = summaries[0]?.state.code_review;
+    const reviewsOfHead = () =>
+      api(`repos/${REPO}/pulls/${number}/reviews?per_page=100`).filter(
+        (item) => isCodex(item) && item.commit_id === sha,
+      );
+    const lineCommentsOfHead = () =>
+      api(`repos/${REPO}/pulls/${number}/comments?per_page=100`).filter(
+        (item) => isCodex(item) && (item.commit_id === sha || item.original_commit_id === sha),
+      );
+    // Seuls P0 et P1 bloquent. Les remarques P2 ou moins sont affichées, à corriger si c'est simple.
+    const judge = (label, hasAnyFinding) => {
+      findings = texts.some(isSerious);
+      if (findings) return `${label}, problèmes P0 ou P1 signalés`;
+      return hasAnyFinding ? `${label}, remarques mineures seulement (P2 ou moins)` : `${label}, rien à signaler`;
+    };
+    if (review && review.commit_sha === sha && !WAITING.has(review.status)) {
+      texts = [...reviewsOfHead(), ...lineCommentsOfHead()].map((item) => item.body ?? '').filter(Boolean);
+      if (/fail|error|cancel/i.test(String(review.status))) {
+        verdict = `relecture de Codex en échec (${review.status}), on continue sans elle (SECOURS.md)`;
+      } else {
+        verdict = judge(`relu (${review.status})`, review.has_unresolved_findings === true);
+      }
       break;
     }
-    if (reactions.some((reaction) => reaction.content === '+1')) {
-      verdict = 'relu, rien à signaler';
-      break;
+    if (summaries.length === 0) {
+      // Sans commentaire d'état : une relecture du dernier commit, avec ses remarques en ligne, ou un pouce levé.
+      const reviews = reviewsOfHead();
+      if (reviews.length > 0) {
+        const lineComments = lineCommentsOfHead();
+        texts = [...reviews, ...lineComments].map((item) => item.body ?? '').filter(Boolean);
+        verdict = judge('relu', lineComments.length > 0);
+        break;
+      }
+      const reactions = api(`repos/${REPO}/issues/${number}/reactions?per_page=100`).filter(
+        (item) => isCodex(item) && isFresh(item.created_at),
+      );
+      if (reactions.some((item) => item.content === '+1')) {
+        verdict = 'relu, rien à signaler';
+        break;
+      }
     }
     if (Date.now() > codexDeadline) break;
     await pause(30_000);
   }
   console.log(`Codex : ${verdict}`);
   for (const text of texts) console.log(`Codex : ${text.slice(0, 800)}`);
-  if (texts.some((text) => /create an environment|set up an environment|connect (?:a|this) repo/i.test(text))) {
-    console.log("Codex n'est pas prêt pour ce dépôt : il demande un environnement. On continue sans sa relecture (HUMAIN.md, H03).");
-    process.exit(5);
-  }
-  const serious = texts.filter((text) => /\bP[01]\b/.test(text));
-  if (serious.length > 0) {
-    console.log(`Codex signale ${serious.length} problème(s) P0 ou P1 : à corriger, ou à réfuter dans la proposition.`);
+  if (findings) {
+    console.log('Codex signale des problèmes P0 ou P1 : à corriger, ou à réfuter dans la proposition.');
     process.exit(4);
   }
 }
