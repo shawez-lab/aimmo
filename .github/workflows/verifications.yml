@@ -1,0 +1,34 @@
+name: Vérifications
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'chantier/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verifications-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verifier:
+    name: Vérifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Types
+        run: npm run check
+      - name: Tests
+        run: npm test
+      - name: Garde-fous
+        run: npm run garde-fous
