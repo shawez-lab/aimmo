@@ -106,26 +106,32 @@ if (waitForCodex) {
       api(`repos/${REPO}/pulls/${number}/reviews?per_page=100`).filter(
         (item) => isCodex(item) && item.commit_id === sha,
       );
-    if (review && review.commit_sha === sha && !WAITING.has(review.status)) {
-      const lineComments = api(`repos/${REPO}/pulls/${number}/comments?per_page=100`).filter(
+    const lineCommentsOfHead = () =>
+      api(`repos/${REPO}/pulls/${number}/comments?per_page=100`).filter(
         (item) => isCodex(item) && (item.commit_id === sha || item.original_commit_id === sha),
       );
-      texts = [...reviewsOfHead(), ...lineComments].map((item) => item.body ?? '').filter(Boolean);
+    // Seuls P0 et P1 bloquent. Les remarques P2 ou moins sont affichées, à corriger si c'est simple.
+    const judge = (label, hasAnyFinding) => {
+      findings = texts.some(isSerious);
+      if (findings) return `${label}, problèmes P0 ou P1 signalés`;
+      return hasAnyFinding ? `${label}, remarques mineures seulement (P2 ou moins)` : `${label}, rien à signaler`;
+    };
+    if (review && review.commit_sha === sha && !WAITING.has(review.status)) {
+      texts = [...reviewsOfHead(), ...lineCommentsOfHead()].map((item) => item.body ?? '').filter(Boolean);
       if (/fail|error|cancel/i.test(String(review.status))) {
         verdict = `relecture de Codex en échec (${review.status}), on continue sans elle (SECOURS.md)`;
       } else {
-        findings = review.has_unresolved_findings === true || texts.some(isSerious);
-        verdict = findings ? `relu (${review.status}), problèmes signalés` : `relu (${review.status}), rien à signaler`;
+        verdict = judge(`relu (${review.status})`, review.has_unresolved_findings === true);
       }
       break;
     }
     if (summaries.length === 0) {
-      // Sans commentaire d'état : une relecture du dernier commit, ou un pouce levé.
+      // Sans commentaire d'état : une relecture du dernier commit, avec ses remarques en ligne, ou un pouce levé.
       const reviews = reviewsOfHead();
       if (reviews.length > 0) {
-        texts = reviews.map((item) => item.body ?? '').filter(Boolean);
-        findings = texts.some(isSerious);
-        verdict = findings ? 'relu, problèmes signalés' : 'relu, rien à signaler';
+        const lineComments = lineCommentsOfHead();
+        texts = [...reviews, ...lineComments].map((item) => item.body ?? '').filter(Boolean);
+        verdict = judge('relu', lineComments.length > 0);
         break;
       }
       const reactions = api(`repos/${REPO}/issues/${number}/reactions?per_page=100`).filter(
