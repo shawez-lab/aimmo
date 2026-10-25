@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Attend la fin des vérifications GitHub d'une proposition de modification, puis la relecture de Codex si demandé.
 // Usage : node scripts/attendre-verifications.mjs <numéro> [--codex]
-// Sortie : 0 tout est vert, 1 une vérification a échoué, 3 délai dépassé, 4 Codex signale un P0 ou un P1.
+// Sortie : 0 tout est vert, 1 une vérification a échoué, 3 délai dépassé, 4 Codex signale un P0 ou un P1,
+// 5 Codex n'est pas prêt pour ce dépôt (environnement à créer) : continuer sans lui et le noter dans chantier/HUMAIN.md.
 import { execFileSync } from 'node:child_process';
 
 const REPO = process.env.AIMMO_REPO ?? 'shawez-lab/aimmo';
@@ -16,7 +17,26 @@ const api = (path) => JSON.parse(execFileSync('gh', ['api', path], { encoding: '
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const minutesFromNow = (minutes) => Date.now() + minutes * 60_000;
 
-const pr = api(`repos/${REPO}/pulls/${number}`);
+let pr = api(`repos/${REPO}/pulls/${number}`);
+
+// Lancé depuis la branche de la proposition juste après un push : attendre que GitHub voie le dernier commit.
+let expected = null;
+try {
+  const branch = execFileSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).trim();
+  if (branch === pr.head.ref) expected = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+} catch {
+  // hors d'un dépôt git : on prend le dernier commit connu de GitHub
+}
+const headDeadline = minutesFromNow(2);
+while (expected && pr.head.sha !== expected && Date.now() < headDeadline) {
+  await pause(10_000);
+  pr = api(`repos/${REPO}/pulls/${number}`);
+}
+if (expected && pr.head.sha !== expected) {
+  console.log(`GitHub ne voit pas encore le commit ${expected.slice(0, 7)} : vérifier que le push est passé.`);
+  process.exit(3);
+}
+
 const sha = pr.head.sha;
 console.log(`Proposition n° ${number}, « ${pr.title} », commit ${sha.slice(0, 7)}`);
 
@@ -45,28 +65,46 @@ if (failed.length > 0) {
   process.exit(1);
 }
 
-// 2. Relecture de Codex : 10 minutes au plus après les vérifications.
+// 2. Relecture de Codex sur la version actuelle : 10 minutes au plus après les vérifications.
 if (waitForCodex) {
   const isCodex = (item) => /codex/i.test(item.user?.login ?? '');
+  const headTime = new Date(api(`repos/${REPO}/commits/${sha}`).commit.committer.date).getTime();
+  const isFresh = (date) => Boolean(date) && new Date(date).getTime() >= headTime - 60_000;
   const codexDeadline = minutesFromNow(10);
-  let reviews = [];
-  let comments = [];
+  let texts = [];
+  let verdict = 'pas de relecture au bout de 10 minutes';
   for (;;) {
-    reviews = api(`repos/${REPO}/pulls/${number}/reviews?per_page=100`).filter(isCodex);
-    comments = api(`repos/${REPO}/pulls/${number}/comments?per_page=100`).filter(isCodex);
-    const issueComments = api(`repos/${REPO}/issues/${number}/comments?per_page=100`).filter(isCodex);
-    comments = comments.concat(issueComments);
-    const reviewedThisCommit = reviews.some((review) => review.commit_id === sha);
-    if (reviewedThisCommit || comments.length > 0) break;
-    if (Date.now() > codexDeadline) {
-      console.log('Codex : aucune relecture au bout de 10 minutes. On continue sans elle (SECOURS.md).');
+    const reviews = api(`repos/${REPO}/pulls/${number}/reviews?per_page=100`).filter(
+      (review) => isCodex(review) && (review.commit_id === sha || isFresh(review.submitted_at)),
+    );
+    const lineComments = api(`repos/${REPO}/pulls/${number}/comments?per_page=100`).filter(
+      (comment) => isCodex(comment) && isFresh(comment.created_at),
+    );
+    const comments = api(`repos/${REPO}/issues/${number}/comments?per_page=100`).filter(
+      (comment) => isCodex(comment) && isFresh(comment.created_at),
+    );
+    const reactions = api(`repos/${REPO}/issues/${number}/reactions?per_page=100`).filter(
+      (reaction) => isCodex(reaction) && isFresh(reaction.created_at),
+    );
+    texts = [...reviews, ...lineComments, ...comments].map((item) => item.body ?? '').filter(Boolean);
+    if (reviews.length + lineComments.length + comments.length > 0) {
+      verdict = 'relu';
       break;
     }
+    if (reactions.some((reaction) => reaction.content === '+1')) {
+      verdict = 'relu, rien à signaler';
+      break;
+    }
+    if (Date.now() > codexDeadline) break;
     await pause(30_000);
   }
-  const texts = [...reviews.map((review) => review.body ?? ''), ...comments.map((comment) => comment.body ?? '')];
+  console.log(`Codex : ${verdict}`);
+  for (const text of texts) console.log(`Codex : ${text.slice(0, 800)}`);
+  if (texts.some((text) => /create an environment|set up an environment|connect (?:a|this) repo/i.test(text))) {
+    console.log("Codex n'est pas prêt pour ce dépôt : il demande un environnement. On continue sans sa relecture (HUMAIN.md, H03).");
+    process.exit(5);
+  }
   const serious = texts.filter((text) => /\bP[01]\b/.test(text));
-  for (const text of texts.filter(Boolean)) console.log(`Codex : ${text.slice(0, 600)}`);
   if (serious.length > 0) {
     console.log(`Codex signale ${serious.length} problème(s) P0 ou P1 : à corriger, ou à réfuter dans la proposition.`);
     process.exit(4);

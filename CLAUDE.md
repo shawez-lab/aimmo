@@ -56,6 +56,7 @@ L'API GraphQL est fermée : `gh pr ...` ne marche pas. Utilise l'API REST avec `
 - ouvrir une proposition : `gh api repos/shawez-lab/aimmo/pulls -f title="<id> · <titre>" -f head="<branche>" -f base=main -f body="<résumé>"`
 - attendre les vérifications et la relecture de Codex : `node scripts/attendre-verifications.mjs <numéro>` (ajoute `--codex` quand H03 est fait dans `chantier/HUMAIN.md`)
 - commenter : `gh api repos/shawez-lab/aimmo/issues/<numéro>/comments -f body="<texte>"`
+- Codex relit chaque proposition à son ouverture. Après une correction poussée à la suite de ses remarques, demander une nouvelle relecture par le commentaire `@codex review`, puis relancer l'attente avec `--codex`.
 - fusionner : `gh api -X PUT repos/shawez-lab/aimmo/pulls/<numéro>/merge -f merge_method=squash`
 
 ## Toujours
