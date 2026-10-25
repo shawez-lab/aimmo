@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Attend la fin des vérifications GitHub d'une proposition de modification, puis la relecture de Codex si demandé.
 // Usage : node scripts/attendre-verifications.mjs <numéro> [--codex]
-// Sortie : 0 tout est vert, 1 une vérification a échoué, 3 délai dépassé, 4 Codex signale un P0 ou un P1.
+// Sortie : 0 tout est vert, 1 une vérification a échoué, 3 délai dépassé, 4 Codex signale un P0 ou un P1,
+// 5 Codex n'est pas prêt pour ce dépôt (environnement à créer) : continuer sans lui et le noter dans chantier/HUMAIN.md.
 import { execFileSync } from 'node:child_process';
 
 const REPO = process.env.AIMMO_REPO ?? 'shawez-lab/aimmo';
@@ -80,6 +81,10 @@ if (waitForCodex) {
   }
   console.log(`Codex : ${verdict}`);
   for (const text of texts) console.log(`Codex : ${text.slice(0, 800)}`);
+  if (texts.some((text) => /create an environment|set up an environment|connect (?:a|this) repo/i.test(text))) {
+    console.log("Codex n'est pas prêt pour ce dépôt : il demande un environnement. On continue sans sa relecture (HUMAIN.md, H03).");
+    process.exit(5);
+  }
   const serious = texts.filter((text) => /\bP[01]\b/.test(text));
   if (serious.length > 0) {
     console.log(`Codex signale ${serious.length} problème(s) P0 ou P1 : à corriger, ou à réfuter dans la proposition.`);

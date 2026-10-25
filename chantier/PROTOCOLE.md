@@ -32,7 +32,7 @@ Une séance fait avancer le plan d'une tâche, finie proprement, puis s'arrête.
 
 1. `npm run check`, `npm test`, `npm run garde-fous` en local, tous verts.
 2. Pousser la branche, ouvrir la proposition par l'API REST (voir `CLAUDE.md`). Titre : `<id> · <titre>`. Corps : ce qui est fait, les critères et leurs tests, ce qui reste.
-3. `node scripts/attendre-verifications.mjs <numéro>`, avec `--codex` si H03 est fait.
+3. `node scripts/attendre-verifications.mjs <numéro>`, avec `--codex` si H03 est fait. Sortie 5 : Codex n'est pas prêt pour le dépôt. Continuer sans sa relecture et repasser H03 à « à finir » dans `HUMAIN.md`, avec la raison.
 4. Une vérification rouge ou un P0 ou P1 de Codex : corriger et repousser. Après une correction demandée par Codex, commenter `@codex review` pour qu'il relise la nouvelle version. Deux essais au plus, puis `SECOURS.md`.
 5. Tout est vert : fusionner en squash par l'API, puis `git checkout main && git pull`.
 
