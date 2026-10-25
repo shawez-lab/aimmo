@@ -11,6 +11,7 @@ AIMMO est le logiciel d'un réseau d'agents immobiliers en France : fiche client
 - Lire seulement les fichiers utiles à la tâche.
 - Écrire d'abord les tests qui traduisent les critères d'acceptation, puis le code.
 - Avant de pousser : `npm run check`, `npm test` et `npm run garde-fous` doivent passer.
+- Les vérifications GitHub tournent sous Node 22 et font foi. Si ton environnement n'a pas Node 22 et que `node:sqlite` manque, ne change pas d'approche et n'ajoute aucune dépendance : les tests SQLite passent par `packages/core/test/sqlite.ts`, qui les saute chez toi et les impose sur GitHub.
 - TypeScript strict. Aucune dépendance nouvelle sans vraie nécessité, jamais une dépendance abandonnée.
 - Code et noms en anglais. Textes visibles par les utilisateurs en français.
 - Aucun secret dans le code : les clés passent par les secrets de Cloudflare et de GitHub.

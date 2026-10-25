@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { AIMMO_VERSION } from '../src/index.ts';
+import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const read = (path: string): string => readFileSync(root + path, 'utf8');
@@ -41,12 +41,14 @@ describe('fondations du dépôt', () => {
     }
   });
 
-  it('une base SQLite est disponible pour les tests', () => {
-    const require = createRequire(import.meta.url);
-    const { DatabaseSync } = require('node:sqlite');
-    const db = new DatabaseSync(':memory:');
+});
+
+describeWithSqlite('base SQLite des tests', () => {
+  it('une base SQLite en mémoire est disponible', () => {
+    const db = openMemoryDatabase();
     db.exec('create table t (x integer)');
     db.prepare('insert into t values (?)').run(1);
     expect(db.prepare('select count(*) as n from t').get()).toEqual({ n: 1 });
+    db.close();
   });
 });
