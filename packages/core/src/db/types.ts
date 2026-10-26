@@ -154,3 +154,13 @@ export interface Message extends Scoped {
   occurred_at: string;
   created_at: string;
 }
+
+export interface PersonMerge extends Scoped {
+  id: string;
+  survivor_id: string;
+  merged_id: string;
+  reason: string;
+  merged_at: string;
+  undone_at: string | null;
+  created_at: string;
+}
