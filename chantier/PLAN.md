@@ -187,12 +187,14 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : réponse de l'agent depuis sa boîte mail non vue (avec C06) ; les réponses suivantes reprennent la première réponse de C04, une vraie conversation suivie viendra avec l'IA (H13) ; relecture de Codex de la dernière version restée en cours 30 minutes, fusion sans elle (#19).
 
 ### C06 · Mail et formulaire du site, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-26)
 - Qui : Claude · Relecture : forte · Dépend de : C05, S09
 - Cahier : M02, « Branchements » ; `docs/EXISTANT.md`, `lead.js` et `lead-tri.js`.
 - Objectif : brancher sur l'API du socle la réception des mails (routage mail de Cloudflare, mails de portails compris) et du formulaire « Être rappelé », de bout en bout jusqu'à la réponse, en mode essai : la réponse est écrite au journal, jamais envoyée.
 - Critères : 20 messages tests par canal, de jour comme de nuit sur une horloge simulée, donnent chacun une réponse prête en moins d'une minute ; le même mail reçu deux fois ne donne qu'une réponse [R18] ; `shawez-immo` n'est pas modifié.
 - Attend : H04 pour la mise en ligne seulement.
+- Décidé (2026-10-26), lecture prudente : chaîne `createCaptation` de bout en bout, boîte d'essai `trial_outbox` à la place des canaux ; MIME lu sans dépendance ; chaque mail est d'abord remis tel quel à la boîte de l'agent (`MAIL_FORWARD_TO`), jamais rejeté, ce n'est pas un envoi ; clé de dépôt à part (`INTAKE_KEYS`) qui ne lit rien et ne rend que `received` ; l'heure de réception d'un mail ou d'un formulaire est celle d'AIMMO [R01] ; formulaire sans mail : l'agent est prévenu de rappeler [R12] ; un nouvel envoi reprend un rattachement abandonné ou une réponse interrompue, sans doublon.
+- Reste : branchement réel avec H16 (C09), où les messages de la boîte d'essai ne devront pas compter comme partis ; intégration au site de `shawez-immo` dans une tâche à part ; relecture de Codex de la dernière version restée en cours 25 minutes, fusion sans elle (#20).
 
 ### C07 · Instagram, Facebook et WhatsApp, en mode essai
 - Statut : à faire
