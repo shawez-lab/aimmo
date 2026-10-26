@@ -6,6 +6,12 @@ export type IdentifierKind = (typeof IDENTIFIER_KINDS)[number];
 export const CHANNELS = ['email', 'phone', 'sms', 'instagram', 'facebook', 'whatsapp'] as const;
 export type Channel = (typeof CHANNELS)[number];
 export type MessageChannel = Channel | 'site';
+/**
+ * Canaux de sortie : ceux de la fiche, plus la session de l'assistant du site (C08). Sur celle-ci on ne fait que
+ * répondre au visiteur, dans sa session : aucun accord, aucune exclusion ne s'y note par canal.
+ */
+export const OUTBOUND_CHANNELS = [...CHANNELS, 'site'] as const;
+export type OutboundChannelName = (typeof OUTBOUND_CHANNELS)[number];
 
 export const EXCLUSION_REASONS = ['network_list', 'stop', 'refused', 'sold', 'followed_elsewhere'] as const;
 export type ExclusionReason = (typeof EXCLUSION_REASONS)[number];

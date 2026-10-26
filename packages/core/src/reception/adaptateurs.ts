@@ -499,6 +499,9 @@ function adaptSiteForm(raw: unknown, ctx: AdaptContext): InboundMessage | null {
 function adaptSiteChat(raw: unknown, ctx: AdaptContext): InboundMessage | null {
   const chat = obj(raw, 'message de l’assistant');
   const sessionId = str(chat.sessionId, 'session');
+  // Le visiteur, d'une session à l'autre : une référence stable donnée par l'API (empreinte, jamais en clair), pour
+  // qu'ouvrir une nouvelle conversation ne fasse pas oublier un arrêt ou une exclusion [R02, R04]. Sinon, la session.
+  const visitorRef = optStr(chat.visitorRef) ?? sessionId;
   const body = text(chat.text);
   if (body === '') return null;
   return {
@@ -506,7 +509,7 @@ function adaptSiteChat(raw: unknown, ctx: AdaptContext): InboundMessage | null {
     kind: 'site_chat',
     externalId: `${sessionId}/${str(chat.messageId, 'identifiant du message')}`,
     conversationRef: sessionId,
-    sender: { channelId: sessionId, name: null, identifiers: [] },
+    sender: { channelId: visitorRef, name: null, identifiers: [] },
     subject: null,
     text: body,
     receivedAt: date(chat.sentAt, ctx),

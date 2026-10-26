@@ -10,7 +10,7 @@
  *   question : pas plus de questions que permis, quand l'appelant le dit ;
  *   longueur, par canal.
  */
-import type { Channel } from '../db/types.ts';
+import type { OutboundChannelName } from '../db/types.ts';
 
 export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R19' | 'question' | 'length';
 
@@ -24,7 +24,7 @@ export interface TextContext {
   /** `client` : un message à une personne. `public` : une page, une annonce, une publication. */
   audience: 'client' | 'public';
   /** Canal du message ; absent pour un contenu public. */
-  channel?: Channel;
+  channel?: OutboundChannelName;
   /** Premier message de la conversation : le prénom y est attendu, le « Salut » y est permis. */
   firstOfConversation?: boolean;
   /** Prénom de la personne, s'il est connu. */
@@ -41,13 +41,13 @@ export interface TextContext {
 
 export interface TextSettings {
   /** Longueur maximale par canal, en caractères, mention comprise. */
-  maxLength: Readonly<Record<Channel, number>> & { public: number };
+  maxLength: Readonly<Record<OutboundChannelName, number>> & { public: number };
   /** Formules administratives refusées [R08], en minuscules sans accents. */
   administrativePhrases: readonly string[];
 }
 
 export const DEFAULT_TEXT_SETTINGS: TextSettings = Object.freeze({
-  maxLength: Object.freeze({ sms: 480, whatsapp: 1000, instagram: 1000, facebook: 1000, phone: 1000, email: 4000, public: 8000 }),
+  maxLength: Object.freeze({ sms: 480, whatsapp: 1000, instagram: 1000, facebook: 1000, phone: 1000, site: 1000, email: 4000, public: 8000 }),
   administrativePhrases: Object.freeze([
     'veuillez agreer',
     'je vous prie',

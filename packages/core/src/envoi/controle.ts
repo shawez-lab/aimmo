@@ -10,7 +10,7 @@
  *   6. enregistrement du message et du journal, puis envoi [R13].
  * Chaque refus est écrit au journal avec sa règle. Une panne du canal aussi : aucune erreur n'est avalée.
  */
-import type { Channel, IdentifierKind, Message } from '../db/types.ts';
+import type { IdentifierKind, Message, OutboundChannelName } from '../db/types.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import type { OutboundChannel } from './canaux.ts';
@@ -31,7 +31,7 @@ export interface SendOrder {
   personId: string;
   projectId?: string | null;
   conversationId?: string | null;
-  channel: Channel;
+  channel: OutboundChannelName;
   kind: SendKind;
   /** Finalité de l'accord [R03] ; par défaut, le type. */
   purpose?: string;
@@ -92,13 +92,15 @@ export interface ControleEnvoisOptions {
   now?: () => Date;
 }
 
-const IDENTIFIER_FOR: Record<Channel, readonly IdentifierKind[]> = {
+const IDENTIFIER_FOR: Record<OutboundChannelName, readonly IdentifierKind[]> = {
   email: ['email'],
   phone: ['phone'],
   sms: ['phone'],
   whatsapp: ['whatsapp', 'phone'],
   instagram: ['instagram'],
   facebook: ['facebook'],
+  // L'assistant du site ne répond qu'à la session du visiteur, jamais à une coordonnée de la fiche.
+  site: [],
 };
 
 const AUTOMATIC = new Set(['ai', 'system']);
@@ -114,7 +116,7 @@ function timeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export class ControleEnvois {
-  private readonly channels: ReadonlyMap<Channel, OutboundChannel>;
+  private readonly channels: ReadonlyMap<OutboundChannelName, OutboundChannel>;
   private readonly settings: ControleSettings;
   private readonly now: () => Date;
 
@@ -220,8 +222,11 @@ export class ControleEnvois {
     // ou le commentaire (réponse privée) ; un nom de compte ne sert pas d'adresse chez Meta (C07). La conversation
     // doit être celle de la personne : un message reçu d'elle, fiches réunies comprises, y est rangé.
     const thread = await this.metaThread(order.channel, order.conversationId ?? null, view.person.network_id, ids);
+    // Assistant du site : la réponse va à la session d'où la personne a écrit, et nulle part ailleurs (C08).
+    const session = await this.siteSession(order.channel, order.conversationId ?? null, view.person.network_id, ids);
     const to =
       thread?.ref ??
+      session ??
       IDENTIFIER_FOR[order.channel].map((kind) => view.identifiers.find((i) => i.kind === kind)).find((i) => i !== undefined)?.value;
     if (!to) return log('refused', null, 'Aucun identifiant de la personne pour ce canal.');
     const sentBefore = view.messages.filter((m) => m.direction === 'out' && !failed.has(m.id) && Date.parse(m.occurred_at) <= at.getTime());
@@ -440,9 +445,29 @@ export class ControleEnvois {
     return sent;
   }
 
+  /** La session de l'assistant du site où répondre, si un message de la personne y est rangé. */
+  private async siteSession(
+    channel: OutboundChannelName,
+    conversationId: string | null,
+    networkId: string,
+    personIds: readonly string[],
+  ): Promise<string | null> {
+    if (channel !== 'site' || conversationId === null || personIds.length === 0) return null;
+    const prefix = 'site:';
+    if (!conversationId.startsWith(prefix) || conversationId.length === prefix.length) return null;
+    const ref = conversationId.slice(prefix.length);
+    const row = await this.db.first<{ n: number }>(
+      `SELECT count(*) AS n FROM inbound_messages
+       WHERE network_id = ? AND channel = 'site' AND kind = 'site_chat' AND conversation_ref = ?
+         AND person_id IN (${placeholders(personIds.length)})`,
+      [networkId, ref, ...personIds],
+    );
+    return Number(row?.n ?? 0) > 0 ? ref : null;
+  }
+
   /** La conversation Instagram ou Facebook où répondre, si elle est bien celle de la personne. */
   private async metaThread(
-    channel: Channel,
+    channel: OutboundChannelName,
     conversationId: string | null,
     networkId: string,
     personIds: readonly string[],

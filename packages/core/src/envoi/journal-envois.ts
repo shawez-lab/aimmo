@@ -2,7 +2,7 @@
  * Journal des envois et des refus [R13], en ajout seul. Aucune donnée personnelle en clair : identifiants internes,
  * canal, type, règle et raison. Une interface, pour que le journal à empreintes de S07 puisse prendre le relais.
  */
-import type { Channel } from '../db/types.ts';
+import type { OutboundChannelName } from '../db/types.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { SendKind } from './decision.ts';
 
@@ -13,7 +13,7 @@ export interface SendLogEntry {
   agentId: string | null;
   personId: string;
   messageId: string | null;
-  channel: Channel;
+  channel: OutboundChannelName;
   kind: SendKind;
   outcome: SendOutcome;
   /** La règle appliquée, R01 à R13, ou null quand aucune règle n'a eu à trancher. */
@@ -32,7 +32,7 @@ export interface SendLogRow {
   agent_id: string | null;
   person_id: string;
   message_id: string | null;
-  channel: Channel;
+  channel: OutboundChannelName;
   kind: SendKind;
   outcome: SendOutcome;
   rule: string | null;

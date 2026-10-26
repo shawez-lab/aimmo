@@ -214,6 +214,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Critères : 20 messages tests donnent une réponse en moins d'une minute ; mention au premier message [R06] ; une conversation sans accord ne laisse aucune donnée personnelle au-delà de ce que la personne a écrit [R15] ; appels limités par visiteur.
 - Attend : H04 pour la mise en ligne seulement.
 - À savoir au départ (2026-10-27) : `site` n'est pas un canal de sortie (`CHANNELS`, `consents`, `exclusions` ne l'admettent pas) et `replyChannel` de C04 ne rend rien pour l'assistant ; la réponse de l'assistant doit pourtant passer par le contrôle central (R02, R04, R06, R10, R19, R21). Choisir d'abord comment, par la lecture la plus prudente.
+- Décidé (2026-10-27), lecture prudente : `site` devient un canal de sortie (`OUTBOUND_CHANNELS`) sans toucher `CHANNELS`, ni les accords, ni les exclusions, qui restent par personne ; sur ce canal, seulement la réponse dans la session du visiteur et dans l'heure de son message, jamais d'initiative [R03, R01] ; la réponse va à la session d'où la personne a écrit, vérifiée comme les conversations de Meta ; même clé de dépôt `INTAKE_KEYS`, avec une source `site_chat` qui n'ouvre que l'assistant ; visiteur connu par l'empreinte d'un identifiant opaque donné par le site, jamais d'adresse IP ni de navigateur [R15] ; limites par heure prises en une seule instruction ; en essai, `reply` vaut `null`.
 
 ### C09 · Mise en service de la captation
 - Statut : à faire

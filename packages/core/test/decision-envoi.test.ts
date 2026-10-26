@@ -353,3 +353,32 @@ describeWithSqlite('S05 · décision d’envoi sur la base', () => {
     expect((await envoi.decide(person.id, req(TUE_1000, { kind: 'review_request' }))).rule).toBe('R11');
   });
 });
+
+describe('C08 · assistant du site', () => {
+  const siteIn = (at: string) => ({ ...inbound(at, 'whatsapp', 'site:session-1'), channel: 'site' as const });
+
+  it('[R01] la nuit, la réponse au visiteur qui vient d’écrire part ; une heure plus tard, la session est close', () => {
+    const now = req(SUN_2300, { channel: 'site', kind: 'reply', conversationId: 'site:session-1' });
+    expect(decideSend(now, facts({ messages: [siteIn(minutesBefore(SUN_2300, 1))] }))).toMatchObject({ allowed: true, rule: 'R01' });
+    // Même en journée : passé le délai de réponse, plus rien ne part sur la session.
+    const late = req(TUE_1000, { channel: 'site', kind: 'reply', conversationId: 'site:session-1' });
+    expect(decideSend(late, facts({ messages: [siteIn(minutesBefore(TUE_1000, 61))] }))).toMatchObject({ allowed: false, rule: 'R01' });
+  });
+
+  it('[R03] sur l’assistant du site, jamais de message d’initiative ni de réponse hors de sa session', () => {
+    for (const kind of ['alert', 'follow_up', 'prospecting'] as SendKind[]) {
+      expect(decideSend(req(TUE_1000, { channel: 'site', kind, conversationId: 'site:session-1' }), facts())).toMatchObject({ allowed: false, rule: 'R03' });
+    }
+    const elsewhere = req(TUE_1000, { channel: 'site', kind: 'reply', conversationId: 'whatsapp:conv-1' });
+    expect(decideSend(elsewhere, facts({ messages: [inbound(minutesBefore(TUE_1000, 1))] }))).toMatchObject({ allowed: false, rule: 'R03' });
+  });
+
+  it('[R02] [R04] une personne exclue ou qui a dit stop ne reçoit rien de l’assistant du site', () => {
+    const request = req(TUE_1000, { channel: 'site', kind: 'reply', conversationId: 'site:session-1' });
+    const messages = [siteIn(minutesBefore(TUE_1000, 1))];
+    const stop = { reason: 'stop' as const, channel: null, noted_at: LONG_AGO, lifted_at: null };
+    const listed = { reason: 'network_list' as const, channel: null, noted_at: LONG_AGO, lifted_at: null };
+    expect(decideSend(request, facts({ messages, exclusions: [stop] }))).toMatchObject({ allowed: false, rule: 'R04' });
+    expect(decideSend(request, facts({ messages, exclusions: [listed] }))).toMatchObject({ allowed: false, rule: 'R02' });
+  });
+});

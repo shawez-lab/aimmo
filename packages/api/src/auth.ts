@@ -67,15 +67,19 @@ export async function viewerFromRequest(request: Request, keys: readonly ApiKeyE
 }
 
 /**
- * Les clés de dépôt : elles ne servent qu'à déposer un formulaire du site, pour un réseau, et ne lisent rien.
+ * Les clés de dépôt : chacune ne sert qu'à une source du site, pour un réseau, et ne lit aucune fiche.
+ * `site_form` dépose un formulaire « Être rappelé » ; `site_chat` ouvre et fait parler l'assistant du site (C08).
  * Le secret `INTAKE_KEYS` ne contient que leur empreinte :
  *
- *   [{ "sha256": "<64 caractères hexadécimaux>", "networkId": "<id>", "source": "site_form" }]
+ *   [{ "sha256": "<64 caractères hexadécimaux>", "networkId": "<id>", "source": "site_form" | "site_chat" }]
  */
+export const INTAKE_SOURCES = ['site_form', 'site_chat'] as const;
+export type IntakeSource = (typeof INTAKE_SOURCES)[number];
+
 export interface IntakeKeyEntry {
   sha256: string;
   networkId: string;
-  source: 'site_form';
+  source: IntakeSource;
 }
 
 export function parseIntakeKeys(raw: string | undefined): IntakeKeyEntry[] | null {
@@ -92,19 +96,21 @@ export function parseIntakeKeys(raw: string | undefined): IntakeKeyEntry[] | nul
     if (item === null || typeof item !== 'object') return null;
     const { sha256, networkId, source } = item as Record<string, unknown>;
     if (typeof sha256 !== 'string' || !HEX64.test(sha256)) return null;
-    if (typeof networkId !== 'string' || networkId === '' || source !== 'site_form') return null;
-    entries.push({ sha256, networkId, source });
+    if (typeof networkId !== 'string' || networkId === '') return null;
+    if (typeof source !== 'string' || !(INTAKE_SOURCES as readonly string[]).includes(source)) return null;
+    entries.push({ sha256, networkId, source: source as IntakeSource });
   }
   if (new Set(entries.map((entry) => entry.sha256)).size !== entries.length) return null;
   return entries;
 }
 
-export async function intakeFromRequest(request: Request, keys: readonly IntakeKeyEntry[]): Promise<IntakeKeyEntry | null> {
+/** Rend la clé de dépôt de la requête, seulement si elle sert à cette source ; sinon `null`. */
+export async function intakeFromRequest(request: Request, keys: readonly IntakeKeyEntry[], source: IntakeSource): Promise<IntakeKeyEntry | null> {
   const header = request.headers.get('authorization') ?? '';
   const key = /^Bearer ([^\s]+)$/.exec(header)?.[1];
   if (key === undefined || key.length < MIN_KEY_LENGTH) return null;
   const hash = await sha256Hex(key);
   let found: IntakeKeyEntry | null = null;
   for (const entry of keys) if (sameHex(entry.sha256, hash)) found = entry;
-  return found;
+  return found?.source === source ? found : null;
 }

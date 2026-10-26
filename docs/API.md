@@ -16,7 +16,9 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | POST | `/v1/envois/decision` | la décision d'envoi et la règle qui a décidé, sans rien envoyer | selon R16 |
 | GET | `/v1/journal/verification` | la chaîne d'empreintes du journal est-elle intacte | direction, conformité |
 | GET, POST | `/v1/meta/notifications` | vérification de l'abonnement, puis notifications signées d'Instagram, Facebook et WhatsApp ; réponse prête en mode essai, jamais envoyée | Meta, par signature (`META_APP_SECRET`) |
-| POST | `/v1/captation/formulaire` | dépose un formulaire « Être rappelé » ; rend seulement des statuts, la réponse est prête en mode essai, jamais envoyée | clé de dépôt (`INTAKE_KEYS`) |
+| POST | `/v1/captation/formulaire` | dépose un formulaire « Être rappelé » ; rend seulement des statuts, la réponse est prête en mode essai, jamais envoyée | clé de dépôt `site_form` (`INTAKE_KEYS`) |
+| POST | `/v1/assistant/sessions` | ouvre une conversation de l'assistant du site, rend son jeton `sessionId` | clé de dépôt `site_chat` (`INTAKE_KEYS`) |
+| POST | `/v1/assistant/sessions/<sessionId>/messages` | un message du visiteur ; rend un statut, la réponse est prête en mode essai, jamais rendue | clé de dépôt `site_chat` (`INTAKE_KEYS`) |
 
 Corps de `/v1/envois/decision` : `{"personId": "...", "channel": "email", "kind": "reply", "conversationId": "...", "purpose": "...", "at": "2026-10-19T08:00:00Z"}`. Chaque lecture, chaque refus et chaque décision sont écrits au journal [R13, R16].
 
@@ -55,6 +57,17 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - La réponse va à la conversation reçue : le compte propre au canal pour un message privé, le commentaire (réponse privée) pour un commentaire, seulement si un message de la personne y est rangé.
 - Puis de bout en bout comme les mails : rangé une fois [R18], rattaché, réponse composée, contrôle central, boîte d'essai. Rien ne part, aucune adresse extérieure n'est appelée ; ManyChat reste seul à répondre aux clients.
 - Rien n'est branché chez Meta tant que la mise en service (C09) ne le fait pas, après H06.
+
+## Assistant du site, en mode essai (C08)
+
+- Appelé par le serveur du site, jamais par le navigateur : la clé de dépôt `site_chat` (secret `INTAKE_KEYS`, `"source": "site_chat"`) n'ouvre que l'assistant, ne lit aucune fiche, et ne dépose pas de formulaire ; une clé `site_form` n'ouvre pas l'assistant.
+- **Ouvrir** : `POST /v1/assistant/sessions`, corps `{"visitorId": "..."}` ; rend `201 {"ok": true, "sessionId": "<64 caractères>"}`.
+- **Écrire** : `POST /v1/assistant/sessions/<sessionId>/messages`, corps `{"visitorId", "messageId", "text", "page", "propertyRef"}` ; `text` de 1 à 2 000 caractères, `messageId` unique dans la session (le même message reçu deux fois ne donne qu'une réponse [R18]). Rend `{"ok": true, "mode": "essai", "sent": false, "status": "ready" | "with_agent" | "none", "reply": null}`. Une session d'un autre visiteur ou d'un autre réseau : 404.
+- `visitorId` : identifiant opaque tiré au hasard par le site (16 à 128 caractères, lettres, chiffres, `-`, `_`), **jamais** une adresse IP, un mail ou un numéro. AIMMO n'en garde que l'empreinte SHA-256, pour les limites. Aucune adresse IP, aucun navigateur, aucun en-tête du visiteur n'est lu ni rangé [R15] : la fiche du visiteur ne contient que ce qu'il a écrit et les réponses.
+- **Limites**, par heure pleine : 5 conversations ouvertes par visiteur, 30 messages par visiteur, 15 par conversation. Au-delà : 429, rien n'est rangé.
+- De bout en bout comme les autres canaux : rangé une fois, rattaché, réponse composée, **contrôle central** (arrêt, exclusions, relais à l'agent, mention de l'assistant au premier message, chiffres, discrétion du bien [R02, R04, R06, R10, R19, R21]), puis boîte d'essai. Sur la session de l'assistant, seule la réponse au visiteur part, dans sa session et dans l'heure de son message : jamais de message d'initiative [R03, R01].
+- Le statut ne dit jamais si la personne est exclue ou déjà connue [R02, R16] : `ready` (réponse prête), `with_agent` (l'agent a la main ou doit répondre lui-même), `none` (rien de plus).
+- Hors essai, la réponse sera rendue dans `reply` par le canal `SiteSessionChannel`, qui la remet à la seule session du visiteur et ne garde rien. L'intégration au site de `shawez-immo` est une tâche à part, par une proposition, jamais directement sur main.
 
 ## Mise en ligne
 
