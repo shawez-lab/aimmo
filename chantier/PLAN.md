@@ -22,7 +22,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : chaque fichier de `functions/` et chaque workflow est cité ; aucun secret ni aucune donnée personnelle recopiés ; aucune modification de `shawez-immo`.
 
 ### S03 · Modèle de données de la fiche client unique
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : S02
 - Cahier : Architecture technique, le modèle de données ; Conformité, données personnelles.
 - Objectif : le schéma SQL, compatible D1 et SQLite, des personnes et de leurs identifiants (mail, téléphone, Instagram, Facebook, WhatsApp), accords, exclusions, projets, biens réduits au nécessaire, messages, agents et sources, avec un accès typé dans `packages/core`.
@@ -51,7 +51,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : un test vérifie qu'aucun autre code n'appelle un canal directement ; un test par règle ; R05 à R10, R12 et R13 passent en service.
 
 ### S07 · Journal à empreintes
-- Statut : à faire
+- Statut : chez Codex depuis le 2026-10-26 : travail fait par Codex (commit `89fb138`), à pousser sur `codex/S07` (H12). Sans commit de Codex sur la branche le 2026-10-27 à 10 h, la tâche revient à Claude
 - Qui : Codex, ou Claude tant que H11 est à finir · Relecture : normale · Dépend de : S01
 - Où : la tâche est décrite dans `chantier/taches/S07.md` sur la branche `codex/S07`, proposition n° 4. La reprendre telle quelle.
 - Cahier : Architecture technique, journal ; M06, registre des mandats.
