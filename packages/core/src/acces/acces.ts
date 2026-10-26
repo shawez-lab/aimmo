@@ -117,6 +117,7 @@ export class Acces {
       status: property.status,
     });
     if (!decision.allowed) return this.refused(viewer, 'property', subject, decision.code);
+    await this.write(viewer, 'bien.lu', subject, { rule: 'R16', role: viewer.role, view: decision.view });
     return { ok: true, view: decision.view, value: property };
   }
 

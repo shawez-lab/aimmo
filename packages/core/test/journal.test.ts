@@ -199,6 +199,13 @@ describe('données personnelles du journal', () => {
     expect(await store.all()).toHaveLength(1);
   });
 
+  it("[R13] refuse une adresse mail dont la première partie a la forme d'un UUID", async () => {
+    const subject = '550e8400-e29b-41d4-a716-446655440000@relais.example.test';
+    await expect(
+      appendEvent(new MemoryJournalStore(), { type: 'x', actor: 'systeme', subject, data: {} }, () => dates[0]!),
+    ).rejects.toThrow(/donnée personnelle/i);
+  });
+
   it('[R13] refuse encore un numéro collé à un identifiant interne', async () => {
     const id = 'a1b2c3d4-0045-8123-9abc-def012345678';
     for (const subject of [`person:${id} +33 6 12 34 56 78`, `${id}:0612345678`, '0012-3456-7890']) {

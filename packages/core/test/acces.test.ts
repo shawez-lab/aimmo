@@ -219,7 +219,11 @@ describeWithSqlite('lecture des fiches sous droits, écrite au journal', () => {
     expect(await acces.readProperty(agent(ids.a2), draft.id)).toMatchObject({ ok: true, view: 'full' });
     expect(await acces.readProperty(agent(ids.a1), listed.id)).toMatchObject({ ok: true, view: 'shared' });
     expect(await acces.readProperty(agent(ids.a1), draft.id)).toMatchObject({ ok: false, code: 'not_assigned' });
-    expect(await acces.readProperty(viewer('partner', 'part-1', ids.net), listed.id)).toMatchObject({ ok: false });
+    expect(await acces.readProperty(viewer('partner', 'part-1', ids.net), listed.id)).toMatchObject({ ok: false });    const reads = await lines('bien.lu');
+    expect(reads.map((e) => [e.actor, e.subject, e.data.view])).toEqual([
+      [`agent:${ids.a2}`, `property:${draft.id}`, 'full'],
+      [`agent:${ids.a1}`, `property:${listed.id}`, 'shared'],
+    ]);
   });
 
   it("[R16] le journal d'une fiche se lit par la direction et la conformité, jamais par un agent", async () => {
@@ -251,5 +255,7 @@ describeWithSqlite('lecture des fiches sous droits, écrite au journal', () => {
     const blind = new Acces(db, fiches, unique, broken);
     await expect(blind.readFiche(agent(ids.a1), ids.p1)).rejects.toThrow('journal indisponible');
     await expect(blind.listPersons(agent(ids.a1))).rejects.toThrow('journal indisponible');
+    const listed = await fiches.createProperty({ networkId: ids.net, agentId: ids.a1, reference: 'T-9', kind: 'home' });
+    await expect(blind.readProperty(agent(ids.a1), listed.id)).rejects.toThrow('journal indisponible');
   });
 });

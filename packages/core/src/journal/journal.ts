@@ -14,7 +14,7 @@ const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
 function containsPersonalData(value: JsonValue): boolean {
   if (typeof value === 'string') {
     const text = value.replace(UUID, ' ');
-    return EMAIL.test(text) || FRENCH_PHONE.test(text) || INTERNATIONAL_PHONE.test(text);
+    return EMAIL.test(value) || FRENCH_PHONE.test(text) || INTERNATIONAL_PHONE.test(text);
   }
   if (Array.isArray(value)) return value.some(containsPersonalData);
   if (value !== null && typeof value === 'object') {
