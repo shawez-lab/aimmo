@@ -225,14 +225,33 @@ function deadlineOf(p: string): Deadline | null {
   return null;
 }
 
-/** Le financement que la personne déclare elle-même ; null si elle n'en dit rien [R24]. */
-export function declaredFinancing(text: string): Financing | null {
-  const p = plain(text);
-  if (/\b(?:sans (?:pret|credit|emprunt)|comptant|cash|fonds propres|sans financement)\b/.test(p)) return 'cash';
-  if (/\b(?:accord (?:de|du) (?:pret|principe|financement|la banque|ma banque|banque)|pret (?:accorde|valide|obtenu)|financement (?:valide|accorde|obtenu|ok))\b/.test(p)) return 'loan_approved';
-  if (/\b(?:pret en cours|financement en cours|dossier (?:de pret |de financement )?en cours|rendez-vous (?:avec|a) (?:la|ma) banque|mon courtier|simulation de pret)\b/.test(p)) return 'loan_in_progress';
-  if (/\b(?:avec (?:un|mon) (?:pret|credit)|besoin d.un (?:pret|credit)|(?:faire|faut) un (?:pret|credit))\b/.test(p)) return 'loan_needed';
+const NEGATION = /\b(?:pas|ne|n'|jamais|aucun|aucune|plus|ni)\b|\bpour (?:le moment|l'instant)\b|\bencore\b/;
+const WAITING = /\b(?:j'attends|nous attendons|on attend|en attente (?:de|d'|du))\b/;
+const FINANCING_WORDS = /\b(?:accord (?:de|du)|pret|credit|emprunt|financement|banque|comptant|cash|fonds propres)\b/;
+
+/** Le financement déclaré dans une seule proposition, ou null si elle le nie, le met au futur ou n'en dit rien. */
+function financingOfClause(c: string): Financing | null {
+  if (!FINANCING_WORDS.test(c)) return null;
+  // « J'attends l'accord de la banque » : le dossier est en cours, rien n'est accordé.
+  if (WAITING.test(c)) return 'loan_in_progress';
+  // « Sans prêt » déclare un achat comptant ; toute autre négation, ou « pour le moment », ne déclare rien.
+  const cash = /\bsans (?:pret|credit|emprunt)\b/.test(c);
+  if (NEGATION.test(cash ? c.replace(/\bsans (?:pret|credit|emprunt)\b/g, '') : c)) return null;
+  if (cash || /\b(?:comptant|cash|fonds propres)\b/.test(c)) return 'cash';
+  if (/\b(?:accord (?:de|du) (?:pret|principe|financement|la banque|ma banque|banque)|pret (?:accorde|valide|obtenu)|financement (?:valide|accorde|obtenu|ok))\b/.test(c)) return 'loan_approved';
+  if (/\b(?:pret en cours|financement en cours|dossier (?:de pret |de financement )?en cours|rendez-vous (?:avec|a) (?:la|ma) banque|mon courtier|simulation de pret)\b/.test(c)) return 'loan_in_progress';
+  if (/\b(?:avec (?:un|mon) (?:pret|credit)|besoin d'un (?:pret|credit)|(?:faire|faut) un (?:pret|credit))\b/.test(c)) return 'loan_needed';
   return null;
+}
+
+/**
+ * Le financement que la personne déclare elle-même, proposition par proposition ; null si elle n'en dit rien, le nie,
+ * l'attend seulement ou se contredit [R24]. Jamais évalué.
+ */
+export function declaredFinancing(text: string): Financing | null {
+  const clauses = plain(text).split(/[.;!?\n,]|\bmais\b|\bet\b|\bou\b/);
+  const found = new Set(clauses.map(financingOfClause).filter((f): f is Financing => f !== null));
+  return found.size === 1 ? [...found][0]! : null;
 }
 
 const CRITERIA_WORDS: readonly [Criterion, RegExp][] = [

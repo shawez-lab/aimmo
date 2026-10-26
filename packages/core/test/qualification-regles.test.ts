@@ -59,6 +59,21 @@ describe('Q01 · classer et extraire par règles fixes', () => {
       expect(declaredFinancing(text), text).toBeNull();
     }
     expect(declaredFinancing('Rendez-vous avec ma banque la semaine prochaine')).toBe('loan_in_progress');
+    // Une négation, une attente ou « pour le moment » ne déclarent jamais un prêt accordé ni un achat comptant.
+    for (const [text, expected] of [
+      ['Je n’ai pas encore d’accord de ma banque.', null],
+      ['Pas de prêt accordé pour l’instant.', null],
+      ['J’attends l’accord de principe.', 'loan_in_progress'],
+      ['Pas de cash, il faut un prêt.', 'loan_needed'],
+      ['Je ne paierai pas comptant, besoin d’un prêt.', 'loan_needed'],
+      ['Sans financement pour le moment.', null],
+      ['Sans prêt pour le moment.', null],
+      ['Achat sans prêt.', 'cash'],
+      ['Accord de prêt obtenu.', 'loan_approved'],
+      ['Comptant ou avec un prêt, je ne sais pas.', null],
+    ] as const) {
+      expect(declaredFinancing(text), text).toBe(expected);
+    }
   });
 
   it('[R23] rien de sensible n’est déduit : santé, origine, religion, famille ne sont jamais des champs ni des critères', () => {
@@ -101,6 +116,10 @@ describe('Q01 · sortie de l’IA, bornée par les règles', () => {
   it('[R24] un financement que la personne n’a pas déclaré est refusé : l’IA n’évalue jamais la solvabilité', () => {
     expect(checkAiQualification({ ...good, financing: 'loan_approved' }, text)).toMatchObject({ rule: 'R24' });
     expect(checkAiQualification({ ...good, financing: 'cash' }, 'Je cherche une maison, budget 900 000 €.')).toMatchObject({ rule: 'R24' });
+    // Une attente déclarée : l'IA qui dit « en cours » est gardée, « accordé » est refusé.
+    const waiting = 'Nous cherchons une maison à Talant, budget 320 000 €, j’attends l’accord de principe de ma banque.';
+    expect(checkAiQualification(good, waiting)).toEqual(good);
+    expect(checkAiQualification({ ...good, financing: 'loan_approved' }, waiting)).toMatchObject({ rule: 'R24' });
   });
 
   it('[R10] un montant absent du message est refusé', () => {
