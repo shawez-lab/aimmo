@@ -167,12 +167,14 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Attend : rien.
 
 ### C04 · Composer la première réponse
-- Statut : en cours
+- Statut : fait (2026-10-26)
 - Qui : Claude · Relecture : forte · Dépend de : C02, C03
 - Cahier : M02, « Première réponse », « Conversation naturelle », règles ; Intelligence artificielle, garde-fous.
 - Objectif : la première réponse avec les vraies données du bien (prix affiché, surface, quartier, atout principal) et une seule question pour avancer : visite, rappel ou estimation. Tutoiement sur Instagram, vouvoiement avec le prénom ailleurs, langue du client, clôture courte quand la personne remercie ou dit non. L'IA est une interface ; la réponse passe par le contrôle central (mention, texte, secours).
 - Critères : chaque chiffre de la réponse vient de la fiche du bien [R10] ; jamais l'adresse exacte ni le nom du vendeur [R19] ; bien non reconnu : message simple et honnête sans aucune donnée de bien [R20] ; une seule question ; IA muette ou trop chère : texte de secours [R12] ; mention au premier message [R06] ; un test par canal pour le ton [R08].
 - Attend : rien pour la construire ; H13 pour brancher la vraie IA.
+- Décidé (2026-10-26), lecture prudente : sans bien reconnu, ou quand le vendeur porte le prénom de la personne, l'IA ne rédige pas, seuls les textes de secours partent ; l'IA reçoit le message sans mails, téléphones ni adresses ; un bien déjà envoyé à la personne n'est plus cité ; un merci reçoit une clôture sans le bien ; une seule réponse par message reçu (`first_reply_claims`), rendue après un refus ou une panne ; quartier et atout dans `property_details`.
+- Reste : la vraie IA (H13) ; seuls le français et l'anglais sont gérés, une autre langue reçoit du français.
 
 ### C05 · Conversation et relais à l'agent
 - Statut : à faire
