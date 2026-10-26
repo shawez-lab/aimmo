@@ -40,11 +40,17 @@ const STOP_ANYWHERE = [
   /\bstop\b/,
   /\bdesinscri/,
   /\bunsubscribe\b/,
-  /\bne (?:plus|pas) me (?:contacter|recontacter|ecrire|appeler|relancer)\b/,
+  /\bne (?:plus|pas) m(?:e |')(?:contacter|recontacter|ecrire|appeler|relancer)\b/,
   /\bne m(?:e|') ?(?:contactez|ecrivez|appelez|relancez) plus\b/,
   /\barretez de m(?:e|') ?(?:contacter|ecrire|appeler|relancer)\b/,
   /\bretirez[- ]moi\b/,
   /\bplus de (?:messages?|mails?|sms|appels?)\b/,
+  /\bne (?:veux|veut|voulons|souhaite|souhaitons|desire) (?:plus|pas) (?:etre|recevoir|de\b)/,
+  /\bn'?(?:ecrivez|appelez|contactez|relancez|envoyez) plus\b/,
+  /\blaissez[- ]moi tranquille\b/,
+  /\b(?:supprimez|effacez|retirez|enlevez) (?:mon|mes|ma) (?:numero|coordonnees|adresse|mail|contact|donnees)/,
+  // Filet pour le doute : « plus » suivi, à quelques mots près, d'un verbe de contact.
+  /\bplus\b(?: \S+){0,3} (?:contacte|contacter|recontacter|ecrire|appele|appeler|relance|relancer|recevoir|deranger|derange)\w*/,
 ];
 
 /**

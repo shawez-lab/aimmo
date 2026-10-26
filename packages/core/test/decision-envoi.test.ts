@@ -231,10 +231,10 @@ describe('S05 · décision d’envoi', () => {
 
 describe('S05 · demande d’arrêt reconnue', () => {
   it('[R04] les formules d’arrêt', () => {
-    for (const text of ['STOP', 'Stop.', 'arrêt', 'Arrêtez', 'stop svp', 'Merci de ne plus me contacter', 'ne m’écrivez plus', 'Retirez-moi de votre liste', 'je veux me désinscrire', 'Plus de SMS svp']) {
+    for (const text of ['STOP', 'Stop.', 'arrêt', 'Arrêtez', 'stop svp', 'Merci de ne plus me contacter', 'ne m’écrivez plus', 'Retirez-moi de votre liste', 'je veux me désinscrire', 'Plus de SMS svp', 'Je ne veux plus être contacté', 'Je ne souhaite plus recevoir vos messages', 'Je ne veux plus de vos sms', 'Ne plus m’écrire', 'N’écrivez plus', 'Laissez-moi tranquille', 'Supprimez mon numéro', 'Vous pouvez arrêter de m’appeler, je ne veux plus être dérangé']) {
       expect(isStopRequest(text), text).toBe(true);
     }
-    for (const text of ['Bonjour, le bien est-il disponible ?', 'Il y a un arrêt de bus devant ?', 'Je peux venir samedi']) {
+    for (const text of ['Bonjour, le bien est-il disponible ?', 'Il y a un arrêt de bus devant ?', 'Je peux venir samedi', 'Le prix est-il encore négociable ? Je veux en savoir plus', 'Pouvez-vous m’appeler demain ?']) {
       expect(isStopRequest(text), text).toBe(false);
     }
   });
