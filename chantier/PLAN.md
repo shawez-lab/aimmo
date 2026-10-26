@@ -83,10 +83,44 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Reste : la première clé d'API (H14) quand un appelant viendra ; écriture du message et du journal en un seul lot D1 (C01, C02) ; une base `aimmo` déjà existante n'est pas contrôlée sur sa juridiction.
 
 ### S10 · Reprise des contacts existants
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : S02, S09
 - Cahier : Feuille de route, novembre 2026 : import et fusion des contacts existants, exclusions et accords repris.
 - Objectif : à découper en tâches d'après `docs/EXISTANT.md`, au début de la tâche : sources, ordre de reprise, contrôle sur 50 fiches.
+- Statut du découpage : découpée le 2026-10-26 en I01 à I04 ci-dessous ; S10 est faite quand I04 l'est.
+- Décidé (2026-10-26), lecture prudente : sources dans l'ordre : 1. la base D1 `espace-estimation` du site (comptes, demandes d'estimation), lue en lecture seule ; 2. la liste d'exclusion de Shawez et les contacts de GoHighLevel et ManyChat, par exports CSV que seul Shawez peut sortir (H15). Rien n'est jamais écrit dans les sources. Une demande « Perdu » vaut refus [R02] ; « Pas maintenant » ne donne aucun accord de prospection ; l'accord du site (`consentement_le`) ne vaut que pour le suivi de l'estimation demandée, sur mail et téléphone ; les demandes de robots (`suspect`) et les adresses de test (`*.test.invalid`) ne sont pas reprises, seulement comptées. Les fiches reprises sont confiées à l'agent Shawez.
+
+### I01 · Lire la base du site
+- Statut : en cours
+- Qui : Claude · Relecture : normale · Dépend de : S09
+- Cahier : Feuille de route, novembre 2026 ; `docs/EXISTANT.md`, `functions/schema.sql` et `functions/_lib/base.js` de `shawez-immo`.
+- Objectif : un lecteur qui, sur une base au schéma du site, rend la liste des contacts à reprendre dans un format commun : clé d'origine, mail, téléphone, prénom, nom, date du compte et de l'accord, demandes (référence, type, code postal, commune, statut, raison, dates). Il ne fait que des `SELECT`, supporte les tables et colonnes ajoutées plus tard absentes, et compte ce qu'il écarte.
+- Critères : sur une base inventée au schéma du site, chaque compte et chaque demande sans compte donne un contact, sans perte ; une demande de robot et une adresse de test sont écartées et comptées ; le lecteur échoue s'il tente autre chose qu'une lecture ; contact illisible gardé et signalé, jamais jeté.
+- Attend : rien.
+
+### I02 · Reprendre les contacts du site dans la fiche client
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : I01
+- Cahier : Feuille de route, novembre 2026 : « Une seule fiche par personne, contrôlée sur 50 fiches. Toutes les exclusions connues marquées ».
+- Objectif : chaque contact lu devient ou complète une fiche (S04) : identifiants normalisés, source, projet vendeur par demande, accord du site avec sa preuve, exclusion pour « Perdu ». Reprise relançable : la relancer ne crée ni ne double rien. Un rapport sans donnée personnelle : fiches créées, complétées, réunies, écartées.
+- Critères : 50 contacts inventés dont des doublons connus donnent exactement les fiches attendues [R17] ; relancer la reprise ne change rien ; chaque « Perdu » est exclu [R02] ; aucun accord de prospection n'est créé [R03] ; rien n'est effacé [R17] ; journal sans donnée personnelle [R13].
+- Attend : rien.
+
+### I03 · Liste d'exclusion et contacts des outils
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : I02
+- Cahier : Feuille de route, novembre 2026 ; R02.
+- Objectif : reprendre par fichiers CSV la liste d'exclusion de Shawez et les contacts de GoHighLevel et ManyChat, avec leurs désinscriptions (« ne pas déranger », désabonné) qui deviennent des exclusions sur tous les canaux. Format des colonnes documenté pour que Shawez sache quoi exporter.
+- Critères : une personne de la liste d'exclusion, retrouvée par mail ou téléphone, est exclue sur toutes ses fiches [R02] ; un désabonné de GoHighLevel ou ManyChat est exclu [R04] ; une ligne illisible est signalée, jamais jetée ; relancer ne double rien.
+- Attend : rien pour la construire ; H15 pour les vrais fichiers.
+
+### I04 · Reprise réelle et contrôle sur 50 fiches
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : I02, I03
+- Cahier : Feuille de route, novembre 2026.
+- Objectif : un workflow GitHub lancé à la main qui exporte en lecture seule la base `espace-estimation`, y ajoute les fichiers de H15, et reprend le tout dans la base `aimmo` ; puis un contrôle tiré au hasard sur 50 fiches, rapporté sans donnée personnelle.
+- Critères : `shawez-immo` et sa base ne sont pas modifiés ; le rapport ne contient aucune donnée personnelle ; contrôle sur 50 fiches sans doublon ni exclusion manquante.
+- Attend : H04, H15.
 
 ### S11 · Bascule des automatisations existantes sur l'API
 - Statut : à faire
