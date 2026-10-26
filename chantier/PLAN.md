@@ -64,7 +64,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : une ligne modifiée, supprimée ou intervertie est détectée ; recherche par personne et par période ; aucune donnée personnelle en clair dans l'empreinte ni dans le texte de la ligne, seulement des identifiants internes [R13].
 
 ### S08 · Droits d'accès
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : S03, S07
 - Cahier : Architecture technique, sécurité et droits.
 - Objectif : rôles agent, direction, conformité et partenaire ; un agent ne voit que ses clients, ses biens et ses chiffres ; chaque lecture d'une fiche est écrite au journal.
