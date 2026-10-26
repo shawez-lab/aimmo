@@ -52,8 +52,6 @@ export interface NewAgent {
 }
 
 export interface NewPerson extends InScope {
-  /** Identifiant choisi d'avance ; absent : un nouveau. */
-  id?: string;
   firstName?: string | null;
   lastName?: string | null;
   language?: string;
@@ -218,7 +216,7 @@ export class FicheClient {
   createPerson(input: NewPerson): Promise<Person> {
     const at = this.stamp();
     return this.insert<Person>('persons', {
-      id: input.id ?? this.newId(),
+      id: this.newId(),
       ...this.scope(input),
       first_name: input.firstName ?? null,
       last_name: input.lastName ?? null,

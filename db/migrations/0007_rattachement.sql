@@ -33,3 +33,9 @@ CREATE TABLE IF NOT EXISTS attach_log (
 );
 CREATE INDEX IF NOT EXISTS attach_log_inbound ON attach_log (inbound_id, occurred_at);
 CREATE INDEX IF NOT EXISTS attach_log_person ON attach_log (person_id, occurred_at);
+
+-- Heure de prise de chaque message reçu : un message pris depuis trop longtemps (traitement coupé net) est repris.
+CREATE TABLE IF NOT EXISTS attach_claims (
+  inbound_id TEXT PRIMARY KEY REFERENCES inbound_messages (id) ON DELETE RESTRICT,
+  claimed_at TEXT NOT NULL
+);

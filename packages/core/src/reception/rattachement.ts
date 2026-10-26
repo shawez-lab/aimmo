@@ -8,7 +8,7 @@
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Channel, Exclusion, IdentifierKind, Person } from '../db/types.ts';
-import type { DecisionEnvoi, ReceivedExclusion } from '../envoi/service.ts';
+import { classifyReceived, type DecisionEnvoi, type ReceivedExclusion } from '../envoi/service.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { matchKey, normalizeIdentifier } from '../fiche/normalize.ts';
 import type { SenderIdentifier } from './entrant.ts';
@@ -52,6 +52,11 @@ export interface AttachLogRow {
 export interface RattachementOptions {
   now?: () => Date;
   newId?: () => string;
+  /**
+   * Un message pris depuis plus longtemps est tenu pour abandonné (traitement coupé net) et repris.
+   * Bien plus long que tout traitement réel : un Worker est arrêté bien avant.
+   */
+  staleAfterMinutes?: number;
 }
 
 /** Finalité de l'accord né d'un message que la personne a écrit d'elle-même : lui répondre (S05). */
@@ -121,10 +126,29 @@ export class Rattachement {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.staleAfterMinutes = options.staleAfterMinutes ?? 10;
   }
 
-  /** Traite tous les messages rangés et pas encore pris, les plus anciens d'abord. */
+  private readonly staleAfterMinutes: number;
+
+  /**
+   * Rend à la file les messages pris mais jamais finis (traitement coupé net, sans même passer par l'erreur).
+   * Une seule instruction ; la reprise est sans doublon, car chaque étape du rattachement se reprend sans se répéter.
+   */
+  async reclaimStale(networkId: string): Promise<number> {
+    const cutoff = new Date(this.now().getTime() - this.staleAfterMinutes * 60_000).toISOString();
+    const { changes } = await this.db.run(
+      `UPDATE inbound_messages SET status = 'received'
+       WHERE network_id = ? AND status = 'processing'
+         AND COALESCE((SELECT claimed_at FROM attach_claims c WHERE c.inbound_id = inbound_messages.id), created_at) < ?`,
+      [networkId, cutoff],
+    );
+    return changes;
+  }
+
+  /** Reprend les messages abandonnés, puis traite tous les messages rangés et pas encore pris, les plus anciens d'abord. */
   async attachPending(networkId: string): Promise<Attached[]> {
+    await this.reclaimStale(networkId);
     const done: Attached[] = [];
     for (const row of await this.reception.pending(networkId)) done.push(await this.attach(row.id));
     return done;
@@ -139,6 +163,12 @@ export class Rattachement {
       return { inboundId, outcome: null, personId: null, messageId: null, exclusion: null, silenced: false, needsHuman: false };
     }
     try {
+      const claimedAt = this.now().toISOString();
+      await this.db.run(
+        `INSERT INTO attach_claims (inbound_id, claimed_at) VALUES (?, ?)
+         ON CONFLICT (inbound_id) DO UPDATE SET claimed_at = excluded.claimed_at`,
+        [inboundId, claimedAt],
+      );
       return await this.attachClaimed(inboundId);
     } catch (error) {
       await this.reception.release(inboundId);
@@ -159,10 +189,15 @@ export class Rattachement {
     const keys = contactKeys(row);
 
     // 1. Retrouver : toutes les fiches gardées qui portent un des identifiants ou une des clés du message.
+    // Reprise : la fiche déjà notée sur le message reçu en fait partie, et n'est jamais recréée.
     let roots = await this.candidates(networkId, identifiers, keys);
+    const noted = row.person_id ? await this.store.getPerson(row.person_id) : null;
+    if (noted) roots = await this.distinctRoots([...roots, noted]);
     let outcome: AttachOutcome;
     if (roots.length === 0) {
-      roots = [await this.store.createPerson({ networkId, firstName: row.sender_name })];
+      const created = await this.store.createPerson({ networkId, firstName: row.sender_name });
+      await this.db.run('UPDATE inbound_messages SET person_id = ? WHERE id = ? AND person_id IS NULL', [created.id, inboundId]);
+      roots = [created];
       outcome = 'created';
     } else {
       outcome = roots.length === 1 ? 'matched' : 'merged';
@@ -181,19 +216,41 @@ export class Rattachement {
 
     // 4. Compléter la fiche : identifiants, prénom, source.
     await this.complete(target, identifiers, row);
-    if (apart.length > 0) await this.carryExclusions(target, apart, at);
 
-    // 5. Le message, et ce qu'il impose : arrêt sur tous les canaux [R04], refus ou vendu [R02].
-    const { message, exclusion } = await this.decisions.recordReceived({
-      networkId,
-      agentId: target.agent_id,
-      personId: target.id,
-      conversationId: `${row.channel}:${row.conversation_ref ?? `${row.kind}:${row.external_id}`}`,
-      channel: row.channel,
-      body: row.body,
-      occurredAt: new Date(row.received_at),
-    });
-    const exclusionReason = exclusion ? (exclusion.reason as ReceivedExclusion) : null;
+    // 5. Le message, rangé une seule fois même après une reprise [R18] : son numéro est noté aussitôt sur le message reçu.
+    const occurredAt = new Date(row.received_at);
+    let messageId = row.message_id;
+    if (messageId === null) {
+      // Deux instructions sans transaction possible : seule une coupure entre les deux pourrait encore doubler le message.
+      const message = await this.store.recordMessage({
+        direction: 'in',
+        authorKind: 'person',
+        networkId,
+        agentId: target.agent_id,
+        personId: target.id,
+        conversationId: `${row.channel}:${row.conversation_ref ?? `${row.kind}:${row.external_id}`}`,
+        channel: row.channel,
+        body: row.body,
+        occurredAt,
+      });
+      messageId = message.id;
+      await this.db.run('UPDATE inbound_messages SET message_id = ?, person_id = COALESCE(person_id, ?) WHERE id = ? AND message_id IS NULL', [
+        messageId,
+        target.id,
+        inboundId,
+      ]);
+    }
+
+    // Ce que le message impose, sur la fiche gardée et sur chaque fiche restée à part : arrêt sur tous les canaux [R04],
+    // refus ou vendu [R02]. `recordExclusion` ne double jamais une exclusion en cours : la reprise ne répète rien.
+    const exclusionReason = classifyReceived(row.body);
+    if (exclusionReason) {
+      for (const p of [target, ...apart]) {
+        await this.decisions.recordExclusion({ networkId, agentId: p.agent_id, personId: p.id, at: occurredAt, reason: exclusionReason });
+      }
+    }
+    // Fiches restées à part : la même personne, donc les exclusions de l'une valent pour toutes, dans le doute.
+    if (apart.length > 0) await this.shareExclusions([target, ...apart], at);
 
     // 6. L'accord pour lui répondre, quand la personne a écrit d'elle-même et n'a pas demandé l'arrêt (S05, R03).
     if (!exclusionReason) {
@@ -202,7 +259,7 @@ export class Rattachement {
 
     const view = await this.fiche.view(target.id);
     const silenced = view.exclusions.some((e) => activeAt(e, at.getTime()));
-    await this.reception.markProcessed(inboundId, { personId: target.id, messageId: message.id });
+    await this.reception.markProcessed(inboundId, { personId: target.id, messageId });
     const reason =
       outcome === 'created'
         ? 'fiche créée'
@@ -211,12 +268,12 @@ export class Rattachement {
           : outcome === 'merged'
             ? 'fiches de la même personne réunies'
             : 'fiches suivies par deux agents : rattaché à la plus ancienne, la direction doit attribuer la personne';
-    await this.log(networkId, inboundId, target.id, message.id, outcome, exclusionReason, silenced, reason, at);
+    await this.log(networkId, inboundId, target.id, messageId, outcome, exclusionReason, silenced, reason, at);
     return {
       inboundId,
       outcome,
       personId: target.id,
-      messageId: message.id,
+      messageId,
       exclusion: exclusionReason,
       silenced,
       needsHuman: apart.length > 0,
@@ -323,21 +380,15 @@ export class Rattachement {
     }
   }
 
-  /** Fiches restées à part : leurs exclusions en cours valent aussi pour la fiche gardée, dans le doute [R02, R04]. */
-  private async carryExclusions(target: Person, apart: readonly Person[], at: Date): Promise<void> {
-    for (const other of apart) {
-      const view = await this.fiche.view(other.id);
-      for (const exclusion of view.exclusions.filter((e) => activeAt(e, at.getTime()))) {
-        const mine = await this.fiche.view(target.id);
-        if (mine.exclusions.some((e) => e.reason === exclusion.reason && activeAt(e, at.getTime()))) continue;
-        await this.store.addExclusion({
-          networkId: target.network_id,
-          agentId: target.agent_id,
-          personId: target.id,
-          reason: exclusion.reason,
-          channel: null,
-          notedAt: at,
-        });
+  /** Chaque exclusion en cours d'une fiche du groupe est ajoutée aux autres qui ne l'ont pas encore [R02, R04]. */
+  private async shareExclusions(group: readonly Person[], at: Date): Promise<void> {
+    const views = await Promise.all(group.map((p) => this.fiche.view(p.id)));
+    const reasons = new Set(views.flatMap((v) => v.exclusions.filter((e) => activeAt(e, at.getTime())).map((e) => e.reason)));
+    for (const [index, person] of group.entries()) {
+      const mine = views[index]?.exclusions.filter((e) => activeAt(e, at.getTime())) ?? [];
+      for (const reason of reasons) {
+        if (mine.some((e) => e.reason === reason)) continue;
+        await this.store.addExclusion({ networkId: person.network_id, agentId: person.agent_id, personId: person.id, reason, channel: null, notedAt: at });
       }
     }
   }

@@ -250,12 +250,17 @@ describeWithSqlite('C02 · rattacher chaque contact à sa fiche', () => {
   it('une erreur pendant le rattachement rend le message, qui sera repris', async () => {
     const t = await setup();
     const id = await t.receive(msg('email', 'email', { identifiers: [email('panne@exemple.test')] }));
-    const broken = new Rattachement(t.db, t.store, t.fiche, { recordReceived: async () => { throw new Error('panne'); } } as unknown as DecisionEnvoi, t.reception, { now: () => NOW });
+    const flakyStore = Object.create(t.store) as FicheClient;
+    flakyStore.recordMessage = async () => {
+      throw new Error('panne');
+    };
+    const broken = new Rattachement(t.db, flakyStore, t.fiche, t.decisions, t.reception, { now: () => NOW });
     await expect(broken.attach(id)).rejects.toThrow('panne');
     expect((await t.reception.get(id))?.status).toBe('received');
     const [res] = await t.rattachement.attachPending(t.network.id);
     expect(res?.inboundId).toBe(id);
     expect((await t.reception.get(id))?.status).toBe('processed');
+    expect(await t.countPersons()).toBe(1);
   });
 
   it('[R13] le journal du rattachement ne contient aucune donnée personnelle', async () => {
@@ -269,5 +274,51 @@ describeWithSqlite('C02 · rattacher chaque contact à sa fiche', () => {
   it('les clés de contact : identifiants normalisés et identifiant propre au canal, WhatsApp et téléphone confondus', () => {
     const keys = contactKeys({ channel: 'whatsapp', kind: 'direct', sender_channel_id: '33600000800', sender_identifiers: JSON.stringify([wa('+33600000800'), email('X@Exemple.test'), insta('pas valable !')]) });
     expect(keys).toEqual(['email:x@exemple.test', 'phone:+33600000800', 'whatsapp:direct:33600000800']);
+  });
+
+  it('[R04] « stop » sur des fiches suivies par deux agents : toutes les fiches de la personne sont fermées', async () => {
+    const t = await setup();
+    const a1 = await t.store.createAgent({ networkId: t.network.id, firstName: 'Agent', lastName: 'Un' });
+    const a2 = await t.store.createAgent({ networkId: t.network.id, firstName: 'Agent', lastName: 'Deux' });
+    const p1 = await t.store.createPerson({ networkId: t.network.id, agentId: a1.id });
+    const p2 = await t.store.createPerson({ networkId: t.network.id, agentId: a2.id });
+    for (const p of [p1, p2]) await t.fiche.addIdentifier({ networkId: t.network.id, agentId: p.agent_id, personId: p.id, kind: 'email', value: 'deux@exemple.test' });
+    const res = await t.rattachement.attach(await t.receive(msg('email', 'email', { identifiers: [email('deux@exemple.test')] }, 'Stop, ne plus me contacter')));
+    expect(res).toMatchObject({ outcome: 'ambiguous', exclusion: 'stop', silenced: true, needsHuman: true });
+    for (const p of [p1, p2]) {
+      await t.store.addConsent({ networkId: t.network.id, agentId: p.agent_id, personId: p.id, purpose: 'alert', channel: 'email', proof: 'test', givenAt: new Date('2026-01-01T00:00:00Z') });
+      expect(await t.decisions.decide(p.id, { channel: 'email', kind: 'alert', at: NOW }), p.id).toMatchObject({ allowed: false, rule: 'R04' });
+    }
+  });
+
+  it('[R18] une panne après le rangement du message : la reprise ne range pas le message une seconde fois', async () => {
+    const t = await setup();
+    const id = await t.receive(msg('whatsapp', 'direct', { channelId: '33600000900', identifiers: [wa('+33600000900')] }, 'STOP'));
+    const flaky = Object.create(t.decisions) as DecisionEnvoi;
+    flaky.recordExclusion = async () => {
+      throw new Error('panne');
+    };
+    const broken = new Rattachement(t.db, t.store, t.fiche, flaky, t.reception, { now: () => NOW });
+    await expect(broken.attach(id)).rejects.toThrow('panne');
+    expect((await t.reception.get(id))?.status).toBe('received');
+    const res = await t.rattachement.attach(id);
+    const view = await t.fiche.view(res.personId as string);
+    expect(view.messages).toHaveLength(1);
+    expect(res).toMatchObject({ exclusion: 'stop', silenced: true });
+    expect(await t.countPersons()).toBe(1);
+  });
+
+  it('[R18] un message pris puis abandonné sans erreur (traitement coupé net) est repris après 10 minutes, une seule fois', async () => {
+    const t = await setup();
+    const id = await t.receive(msg('email', 'email', { identifiers: [email('coupe@exemple.test')] }));
+    let clock = NOW;
+    const r = new Rattachement(t.db, t.store, t.fiche, t.decisions, t.reception, { now: () => clock });
+    expect(await t.reception.claim(id)).toBe(true); // pris, puis plus rien : le Worker a été arrêté
+    expect(await r.attachPending(t.network.id)).toEqual([]);
+    clock = new Date(NOW.getTime() + 11 * 60_000);
+    const [res] = await r.attachPending(t.network.id);
+    expect(res).toMatchObject({ inboundId: id, outcome: 'created' });
+    expect(await r.attachPending(t.network.id)).toEqual([]);
+    expect((await t.fiche.view(res?.personId as string)).messages).toHaveLength(1);
   });
 });
