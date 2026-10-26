@@ -311,6 +311,28 @@ export class ControleEnvois {
     const last = await decide(this.now());
     if (!last.allowed) return log('refused', last.rule, last.reason);
 
+    // Réservation atomique des sujets et du texte : de deux envois simultanés, un seul passe [R05].
+    const reservationId = crypto.randomUUID();
+    const keys = [...new Set([...subjects.map((k) => `sujet:${k}`), `texte:${sameText(chosen.text)}`])];
+    const root = view.person.id;
+    try {
+      await this.db.run(
+        `INSERT INTO send_reservations (person_id, key, reservation_id, network_id, message_id, created_at) VALUES ${keys
+          .map(() => '(?, ?, ?, ?, NULL, ?)')
+          .join(', ')}`,
+        keys.flatMap((key) => [root, key, reservationId, view.person.network_id, at.toISOString()]),
+      );
+    } catch (error) {
+      const taken = await this.db.first<{ key: string }>(
+        `SELECT key FROM send_reservations WHERE person_id = ? AND key IN (${placeholders(keys.length)}) LIMIT 1`,
+        [root, ...keys],
+      );
+      if (!taken) throw error;
+      return log('refused', 'R05', taken.key.startsWith('texte:') ? 'Ce message part déjà à la personne.' : 'Ce sujet part déjà à la personne.', {
+        needsHuman: order.kind === 'reply',
+      });
+    }
+
     // 6. Enregistrement, journal, puis envoi [R13].
     const message = await this.decisions.recordSent(
       {
@@ -335,12 +357,15 @@ export class ControleEnvois {
         this.now().toISOString(),
       ]);
     }
+    await this.db.run('UPDATE send_reservations SET message_id = ? WHERE reservation_id = ?', [message.id, reservationId]);
     const flags = { messageId: message.id, body, aiText: chosen.ai, fallbackText: !chosen.ai, withMention };
     const sent = await log('sent', aiNote ? 'R12' : decision.rule, aiNote ?? decision.reason, flags);
     try {
       await port.deliver({ channel: order.channel, to, body, messageId: message.id });
     } catch {
       // Le détail de l'erreur peut contenir l'adresse : il ne va pas au journal.
+      // Les réservations sont libérées pour un nouvel essai, sans effacer leur ligne.
+      await this.db.run("UPDATE send_reservations SET key = key || '#panne:' || message_id WHERE reservation_id = ?", [reservationId]);
       return log('failed', null, 'Le canal a refusé le message ou n’a pas répondu.', flags);
     }
     return sent;

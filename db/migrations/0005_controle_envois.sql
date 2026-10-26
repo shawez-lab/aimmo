@@ -39,3 +39,18 @@ CREATE TABLE IF NOT EXISTS send_log (
 );
 CREATE INDEX IF NOT EXISTS send_log_person ON send_log (person_id, occurred_at);
 CREATE INDEX IF NOT EXISTS send_log_message ON send_log (message_id);
+
+-- Réservations de l'anti-doublon [R05] : un sujet, un bien ou un texte, une seule fois par fiche gardée.
+-- Posées par une seule instruction avant l'envoi, pour que deux envois simultanés ne passent pas tous les deux.
+-- Un envoi en panne libère ses réservations en renommant leur clé, sans effacer la ligne [R17].
+CREATE TABLE IF NOT EXISTS send_reservations (
+  person_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  reservation_id TEXT NOT NULL,
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  message_id TEXT REFERENCES messages (id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (person_id, key),
+  FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS send_reservations_reservation ON send_reservations (reservation_id);

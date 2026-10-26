@@ -59,10 +59,11 @@ describe('S06 · contrôle du texte', () => {
   });
 
   it('[R06] un texte destiné à un client ne parle pas de l’IA', () => {
-    for (const text of ['Notre IA a analysé votre bien.', 'Mon assistant vous répond.', 'Grâce à l’intelligence artificielle, c’est rapide.', 'Un robot vous répond.']) {
+    for (const text of ['Notre ia répond à votre message.', 'Une I.A. vous répond.', 'Notre AI vous répond.', 'Notre IA a analysé votre bien.', 'Mon assistant vous répond.', 'Grâce à l’intelligence artificielle, c’est rapide.', 'Un robot vous répond.']) {
       expect(rules(text, client('email')), text).toContain('R06');
     }
     expect(rules('Votre agent vous rappelle demain.', client('email'))).toEqual([]);
+    expect(rules('Je vous ai envoyé le lien, j’ai hâte de vous lire.', client('email'))).toEqual([]);
   });
 
   it('[R09] jamais d’adresse exacte ; jamais le nom d’un client dans un contenu public', () => {
@@ -386,5 +387,19 @@ describeWithSqlite('S06 · contrôle central des envois', () => {
     const second = await go(order({ kind: 'reply', subject: undefined, conversationId: 'm2', at: TUE_1100, fallbackTexts: [text] }));
     expect(second).toMatchObject({ status: 'refused', rule: 'R05', needsHuman: true });
     expect((await journal.list(person.id)).at(-1)?.reason).toMatch(/L’agent doit répondre lui-même/);
+  });
+  it('[R05] deux envois simultanés du même sujet ou du même texte : un seul part', async () => {
+    const { controle, order, byChannel, setClock } = await setup();
+    setClock(TUE_1000);
+    const { at: _a, ...same } = order();
+    const results = await Promise.all([controle.send(same), controle.send({ ...same })]);
+    expect(results.map((r) => r.status).sort()).toEqual(['refused', 'sent']);
+    expect(results.find((r) => r.status === 'refused')).toMatchObject({ rule: 'R05' });
+    const fresh = ['Léa, une nouvelle maison correspond à votre recherche.'];
+    const { at: _b, ...second } = order({ subject: 'alerte:autre', fallbackTexts: fresh });
+    const { at: _c, ...third } = order({ subject: 'alerte:troisieme', channel: 'sms', fallbackTexts: fresh });
+    const texts = await Promise.all([controle.send(second), controle.send(third)]);
+    expect(texts.map((r) => r.status).sort()).toEqual(['refused', 'sent']);
+    expect(byChannel('email').sent.length + byChannel('sms').sent.length).toBe(2);
   });
 });

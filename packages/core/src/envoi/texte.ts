@@ -68,7 +68,8 @@ export function plain(text: string): string {
     .replace(/[’`]/g, "'");
 }
 
-const AI_WORDS = [/\bIA\b/, /\bI\.A\b/, /\bAI\b/, /intelligence artificielle/i, /\bassistant/i, /\bchat ?bot/i, /\brobot/i, /\bGPT/i, /\bautomatiquement\b/i];
+// « ai » en minuscules est le verbe avoir : seul « AI » en capitales vaut l'abréviation anglaise.
+const AI_WORDS = [/\bia\b/i, /\bi\.a\b/i, /\bAI\b/, /\bA\.I\b/, /intelligence artificielle/i, /\bassistant/i, /\bchat ?bot/i, /\brobot/i, /\bGPT/i, /\bautomatiquement\b/i];
 const FORBIDDEN_WORDS: [RegExp, string][] = [
   [/\bmandataires?\b/, '« agent immobilier », jamais « mandataire »'],
   [/\bgratuite?s?\b|\bgratuitement\b/, '« offert », jamais « gratuit »'],
