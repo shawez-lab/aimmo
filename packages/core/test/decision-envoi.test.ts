@@ -190,7 +190,9 @@ describe('S05 · décision d’envoi', () => {
   });
 
   it('[R03] Instagram et Facebook ne demandent pas d’accord préalable enregistré', () => {
-    expect(decideSend(req(TUE_1000, { channel: 'instagram' }), facts({ consents: [] })).allowed).toBe(true);
+    // Le client a écrit il y a une heure : la fenêtre de Meta est ouverte [R22].
+    const recent = { conversation_id: 'ig', channel: 'instagram' as const, direction: 'in' as const, occurred_at: '2026-11-10T08:00:00.000Z' };
+    expect(decideSend(req(TUE_1000, { channel: 'instagram' }), facts({ consents: [], messages: [recent] })).allowed).toBe(true);
   });
 
   it('[R11] demandes d’avis : de 9 h à 19 h, 2 par jour, jamais à un collègue, un associé ou un proche', () => {
@@ -257,7 +259,7 @@ describe('S05 · refus et bien vendu reconnus', () => {
 });
 
 describeWithSqlite('S05 · décision d’envoi sur la base', () => {
-  const migrations = loadMigrations().filter((m) => ['0001_fiche_client', '0003_fusion', '0004_envoi'].includes(m.id));
+  const migrations = loadMigrations().filter((m) => ['0001_fiche_client', '0003_fusion', '0004_envoi', '0011_relais'].includes(m.id));
 
   async function setup() {
     const db = fromSyncSqlite(openMemoryDatabase());
@@ -291,7 +293,9 @@ describeWithSqlite('S05 · décision d’envoi sur la base', () => {
   });
 
   it('[R04] « Ne me contactez pas » reçu par mail : plus rien sur Instagram ni ailleurs', async () => {
-    const { envoi, network, person } = await setup();
+    const { envoi, store, network, person } = await setup();
+    // Le client a écrit sur Instagram il y a une heure : la fenêtre de Meta est ouverte [R22].
+    await store.recordMessage({ networkId: network.id, personId: person.id, conversationId: 'ig', channel: 'instagram', direction: 'in', authorKind: 'person', body: 'Bonjour', occurredAt: new Date('2026-11-10T08:00:00.000Z') });
     expect((await envoi.decide(person.id, req(TUE_1000, { channel: 'instagram', kind: 'follow_up' }))).allowed).toBe(true);
     const { exclusion: stop } = await envoi.recordReceived({ networkId: network.id, personId: person.id, channel: 'email', conversationId: 'm', body: 'Ne me contactez pas.', occurredAt: new Date(LONG_AGO) });
     expect(stop).not.toBeNull();

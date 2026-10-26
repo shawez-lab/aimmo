@@ -124,6 +124,10 @@ export class DecisionEnvoi {
       consents: view.consents,
       messages: view.messages.filter((m) => !ignoreMessageIds.has(m.id)),
       relations,
+      handovers: await this.db.all<{ conversation_id: string; handed_at: string }>(
+        `SELECT conversation_id, handed_at FROM conversation_handovers WHERE person_id IN (${placeholders(ids.length)})`,
+        ids,
+      ),
       sentToday: await this.sentToday(view.person.network_id, at),
     };
   }

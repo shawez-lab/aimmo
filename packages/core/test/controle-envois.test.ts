@@ -109,7 +109,7 @@ describe('S06 · une seule porte de sortie', () => {
 });
 
 describeWithSqlite('S06 · contrôle central des envois', () => {
-  const migrations = loadMigrations().filter((m) => ['0001_fiche_client', '0003_fusion', '0004_envoi', '0005_controle_envois'].includes(m.id));
+  const migrations = loadMigrations().filter((m) => ['0001_fiche_client', '0003_fusion', '0004_envoi', '0005_controle_envois', '0011_relais'].includes(m.id));
 
   async function setup(budgetOk = true) {
     const db = fromSyncSqlite(openMemoryDatabase());
@@ -142,6 +142,13 @@ describeWithSqlite('S06 · contrôle central des envois', () => {
     await store.addIdentifier({ networkId: network.id, personId: person.id, kind: 'email', value: 'lea.exemple@example.test' });
     await store.addIdentifier({ networkId: network.id, personId: person.id, kind: 'phone', value: '06 00 00 00 01' });
     await store.addIdentifier({ networkId: network.id, personId: person.id, kind: 'instagram', value: '@lea_exemple_test' });
+    // Le client a écrit il y a une heure sur les canaux de Meta : leur fenêtre de 24 heures est ouverte [R22].
+    const metaWindow = async (personId: string) => {
+      for (const channel of ['instagram', 'facebook', 'whatsapp'] as Channel[]) {
+        await store.recordMessage({ networkId: network.id, personId, conversationId: `fenetre:${channel}`, channel, direction: 'in', authorKind: 'person', body: 'Bonjour', occurredAt: new Date(TUE_1000.getTime() - 3_600_000) });
+      }
+    };
+    await metaWindow(person.id);
     for (const channel of ['email', 'sms', 'whatsapp'] as Channel[]) {
       for (const purpose of ['alert', 'follow_up']) {
         await store.addConsent({ networkId: network.id, personId: person.id, purpose, channel, proof: 'formulaire test', givenAt: LONG_AGO });
@@ -159,7 +166,7 @@ describeWithSqlite('S06 · contrôle central des envois', () => {
       at: TUE_1000,
       ...over,
     });
-    return { db, store, fiche, decisions, controle, journal, network, agent, person, byChannel, order, go, now, setClock };
+    return { db, store, fiche, decisions, controle, journal, network, agent, person, byChannel, order, go, now, setClock, metaWindow };
   }
 
   it('la migration se rejoue sans erreur', async () => {
@@ -174,7 +181,7 @@ describeWithSqlite('S06 · contrôle central des envois', () => {
     expect(result).toMatchObject({ status: 'sent', fallbackText: true, aiText: false });
     expect(byChannel('email').sent).toHaveLength(1);
     expect(byChannel('email').sent[0]).toMatchObject({ to: 'lea.exemple@example.test', messageId: result.messageId });
-    const stored = await store.listMessages(person.id);
+    const stored = (await store.listMessages(person.id)).filter((m) => m.direction === 'out');
     expect(stored).toHaveLength(1);
     expect(stored[0]).toMatchObject({ direction: 'out', author_kind: 'system', body: result.body });
   });
@@ -403,11 +410,12 @@ describeWithSqlite('S06 · contrôle central des envois', () => {
     expect(byChannel('email').sent.length + byChannel('sms').sent.length).toBe(2);
   });
   it('[R11] demandes d’avis simultanées : le plafond du jour tient, et une place en panne est rendue', async () => {
-    const { controle, store, network, agent, order, setClock, byChannel } = await setup();
+    const { controle, store, network, agent, order, setClock, byChannel, metaWindow } = await setup();
     setClock(TUE_1000);
     const people: { id: string }[] = [];
     for (const name of ['Ana', 'Bea', 'Cle', 'Dan']) {
       const p = await store.createPerson({ networkId: network.id, agentId: agent.id, firstName: name });
+      await metaWindow(p.id);
       await store.addIdentifier({ networkId: network.id, personId: p.id, kind: 'instagram', value: `@${name.toLowerCase()}_essai` });
       people.push(p);
     }

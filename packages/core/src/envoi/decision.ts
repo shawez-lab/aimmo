@@ -5,11 +5,15 @@
  *
  * Ordre d'examen, du plus fort au plus faible :
  *   R04, R02  une exclusion active ferme tous les canaux, réponses comprises ;
+ *   R21       l'assistant se tait dans une conversation où un humain a répondu, que l'agent a reprise, ou qui
+ *             a dépassé 5 échanges ;
  *   R01       réponse à un message reçu il y a moins de 60 minutes : part tout de suite ;
  *             sinon, du lundi au samedi, de 8 h à 20 h ;
  *   R11       demandes d'avis et messages aux partenaires : plafonds et heures ;
  *   R03       tout message d'initiative par téléphone, SMS, WhatsApp ou mail demande un accord en cours
- *             sur ce canal et pour cette finalité, sauf la réponse à un message resté sans réponse.
+ *             sur ce canal et pour cette finalité, sauf la réponse à un message resté sans réponse ;
+ *   R22       sur Instagram, Facebook et WhatsApp, rien ne part plus de 24 heures après le dernier message
+ *             du client.
  */
 import type { Channel, Consent, Exclusion, Message } from '../db/types.ts';
 import { isWorkingDay, localTime } from './horaires.ts';
@@ -26,11 +30,14 @@ export const SEND_KINDS = [
 /** Réponse, relance, alerte, rappel, demande d'avis, message à un partenaire, prospection. */
 export type SendKind = (typeof SEND_KINDS)[number];
 
-export type SendRule = 'R01' | 'R02' | 'R03' | 'R04' | 'R11';
+export type SendRule = 'R01' | 'R02' | 'R03' | 'R04' | 'R11' | 'R21' | 'R22';
 export type PersonRelation = 'colleague' | 'associate' | 'relative';
 
 /** Canaux où un premier contact non demandé exige un accord préalable [R03]. */
 export const CONSENT_CHANNELS: readonly Channel[] = ['phone', 'sms', 'whatsapp', 'email'];
+
+/** Canaux de Meta, où un message automatique ne part que dans la fenêtre ouverte par le client [R22]. */
+export const META_CHANNELS: readonly Channel[] = ['instagram', 'facebook', 'whatsapp'];
 
 /** Les nombres des règles sont des réglages, pas du code. */
 export interface SendSettings {
@@ -48,6 +55,10 @@ export interface SendSettings {
   reviewUntil: number;
   /** R11 : messages aux partenaires par jour ouvré. */
   partnerMessagesPerWorkingDay: number;
+  /** R21 : messages du client auxquels l'assistant répond dans une conversation, avant de passer la main. */
+  assistantMaxExchanges: number;
+  /** R22 : fenêtre de Meta, en heures depuis le dernier message du client. */
+  metaWindowHours: number;
 }
 
 export const DEFAULT_SEND_SETTINGS: SendSettings = Object.freeze({
@@ -60,6 +71,8 @@ export const DEFAULT_SEND_SETTINGS: SendSettings = Object.freeze({
   reviewFrom: 9 * 60,
   reviewUntil: 19 * 60,
   partnerMessagesPerWorkingDay: 5,
+  assistantMaxExchanges: 5,
+  metaWindowHours: 24,
 });
 
 export interface SendRequest {
@@ -76,7 +89,10 @@ export interface SendRequest {
 export interface SendFacts {
   exclusions: readonly Pick<Exclusion, 'reason' | 'channel' | 'noted_at' | 'lifted_at'>[];
   consents: readonly Pick<Consent, 'purpose' | 'channel' | 'given_at' | 'withdrawn_at'>[];
-  messages: readonly Pick<Message, 'conversation_id' | 'channel' | 'direction' | 'occurred_at'>[];
+  /** `author_kind` : `agent` pour un message écrit par un humain du réseau [R21]. */
+  messages: readonly (Pick<Message, 'conversation_id' | 'channel' | 'direction' | 'occurred_at'> & Partial<Pick<Message, 'author_kind'>>)[];
+  /** Conversations passées à l'agent : l'assistant s'y tait pour de bon [R21]. */
+  handovers?: readonly { conversation_id: string; handed_at: string }[];
   relations: readonly { relation: PersonRelation; noted_at: string; ended_at: string | null }[];
   /** Messages déjà partis le même jour local, dans le réseau, par type [R11]. */
   sentToday: { review_request: number; partner: number };
@@ -120,6 +136,23 @@ export function decideSend(
   }
   const exclusion = active[0];
   if (exclusion) return refuse('R02', `Personne exclue (${exclusion.reason}) : aucun message automatique, sur aucun canal.`);
+
+  // R21 : l'assistant se tait pour de bon dans une conversation où un humain a répondu, que l'agent a reprise
+  // (rendez-vous pris, reprise à la main) ou qui a dépassé le nombre d'échanges permis.
+  if (request.conversationId) {
+    checked.push('R21');
+    const conversation = facts.messages.filter((m) => m.conversation_id === request.conversationId && Date.parse(m.occurred_at) <= at);
+    if (conversation.some((m) => m.direction === 'out' && m.author_kind === 'agent')) {
+      return refuse('R21', 'Un humain a répondu dans cette conversation : l’assistant se tait.');
+    }
+    if ((facts.handovers ?? []).some((h) => h.conversation_id === request.conversationId && Date.parse(h.handed_at) <= at)) {
+      return refuse('R21', 'Conversation passée à l’agent : l’assistant se tait.');
+    }
+    const received = conversation.filter((m) => m.direction === 'in').length;
+    if (received > settings.assistantMaxExchanges) {
+      return refuse('R21', `Plus de ${settings.assistantMaxExchanges} échanges dans cette conversation : l’agent prend le relais.`);
+    }
+  }
 
   // R01 : la réponse à un message reçu il y a moins de 60 minutes part tout de suite, à toute heure.
   checked.push('R01');
@@ -196,6 +229,27 @@ export function decideSend(
     );
     if (!consent) {
       return refuse('R03', `Aucun accord préalable en cours pour ce canal (${request.channel}) et cette finalité.`);
+    }
+  }
+
+  // R22 : sur les canaux de Meta, rien ne part hors de la fenêtre ouverte par le dernier message du client,
+  // dans cette conversation quand elle est citée, sinon sur ce canal.
+  if (META_CHANNELS.includes(request.channel)) {
+    checked.push('R22');
+    const lastIn = Math.max(
+      -Infinity,
+      ...facts.messages
+        .filter(
+          (m) =>
+            m.direction === 'in' &&
+            m.channel === request.channel &&
+            (!request.conversationId || m.conversation_id === request.conversationId) &&
+            Date.parse(m.occurred_at) <= at,
+        )
+        .map((m) => Date.parse(m.occurred_at)),
+    );
+    if (!(at - lastIn <= settings.metaWindowHours * 3_600_000)) {
+      return refuse('R22', `Plus de ${settings.metaWindowHours} heures depuis le dernier message du client sur ce canal : la fenêtre de Meta est fermée.`);
     }
   }
 
