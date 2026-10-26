@@ -130,13 +130,33 @@ export class Acces {
     if (!person) return this.refused(viewer, 'journal', subject, 'unknown');
     const decision = decideAccess(viewer, { kind: 'journal', networkId: person.network_id });
     if (!decision.allowed) return this.refused(viewer, 'journal', subject, decision.code);
-    await this.write(viewer, 'journal.lu', subject, { rule: 'R16', role: viewer.role });
-    return { ok: true, view: 'full', value: await this.journal.bySubject(subject) };
+    // Une fiche réunie : son histoire est celle de la fiche gardée et de toutes les fiches qui y sont réunies.
+    const members = await this.unique.membersOf(personId);
+    await this.write(viewer, 'journal.lu', subject, {
+      rule: 'R16',
+      role: viewer.role,
+      members: members.map((id) => personSubject(id)),
+    });
+    const bySeq = new Map<number, JournalEntry>();
+    for (const id of members) {
+      for (const entry of await this.journal.bySubject(personSubject(id))) bySeq.set(entry.seq, entry);
+    }
+    return { ok: true, view: 'full', value: [...bySeq.values()].sort((a, b) => a.seq - b.seq) };
   }
 
   /** Les chiffres d'un agent. Seule la décision existe tant que M13 n'a pas créé les chiffres. */
-  canSeeFigures(viewer: Viewer, agentId: string): AccessDecision {
-    return decideAccess(viewer, { kind: 'figures', networkId: viewer.networkId, agentId });
+  async canSeeFigures(viewer: Viewer, agentId: string): Promise<AccessDecision> {
+    const subject = `agent:${agentId}`;
+    const blocked = await this.checkViewer(viewer, 'figures', subject);
+    if (blocked) return { allowed: false, rule: 'R16', code: blocked.code };
+    const target = await this.db.first<Agent>('SELECT * FROM agents WHERE id = ?', [agentId]);
+    if (!target) {
+      await this.refused(viewer, 'figures', subject, 'unknown');
+      return { allowed: false, rule: 'R16', code: 'unknown' };
+    }
+    const decision = decideAccess(viewer, { kind: 'figures', networkId: target.network_id, agentId: target.id });
+    if (!decision.allowed) await this.refused(viewer, 'figures', subject, decision.code);
+    return decision;
   }
 
   /**
@@ -147,7 +167,7 @@ export class Acces {
     viewer: Viewer,
     kind: ResourceKind,
     subject: string | null,
-  ): Promise<AccessResult<never> | null> {
+  ): Promise<{ ok: false; rule: 'R16'; code: RefusalCode } | null> {
     if (!(ROLES as readonly string[]).includes(viewer.role)) return this.refused(viewer, kind, subject, 'role');
     if (viewer.role !== 'agent') return null;
     const agent = await this.db.first<Agent>('SELECT * FROM agents WHERE id = ?', [viewer.userId]);

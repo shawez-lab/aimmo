@@ -234,11 +234,25 @@ describeWithSqlite('lecture des fiches sous droits, écrite au journal', () => {
     expect((await lines('journal.lu')).map((e) => e.actor)).toEqual(['compliance:conf-1']);
   });
 
-  it('[R16] les chiffres : chacun les siens, la direction tous, la conformité aucun', () => {
-    expect(acces.canSeeFigures(agent(ids.a1), ids.a1).allowed).toBe(true);
-    expect(acces.canSeeFigures(agent(ids.a1), ids.a2).allowed).toBe(false);
-    expect(acces.canSeeFigures(viewer('direction', 'dir-1', ids.net), ids.a2).allowed).toBe(true);
-    expect(acces.canSeeFigures(viewer('compliance', 'conf-1', ids.net), ids.a2).allowed).toBe(false);
+  it('[R16] les chiffres : chacun les siens, la direction ceux de son réseau, la conformité aucun, un agent parti rien', async () => {
+    expect((await acces.canSeeFigures(agent(ids.a1), ids.a1)).allowed).toBe(true);
+    expect((await acces.canSeeFigures(agent(ids.a1), ids.a2)).allowed).toBe(false);
+    expect((await acces.canSeeFigures(viewer('direction', 'dir-1', ids.net), ids.a2)).allowed).toBe(true);
+    expect((await acces.canSeeFigures(viewer('compliance', 'conf-1', ids.net), ids.a2)).allowed).toBe(false);
+    expect(await acces.canSeeFigures(agent(ids.gone), ids.gone)).toMatchObject({ allowed: false, code: 'agent_inactive' });
+    expect(await acces.canSeeFigures(viewer('direction', 'dir-1', ids.net), 'inconnu')).toMatchObject({ allowed: false, code: 'unknown' });
+    const otherNet = (await fiches.createNetwork('Autre réseau')).id;
+    const stranger = (await fiches.createAgent({ networkId: otherNet, firstName: 'Agent', lastName: 'Ailleurs' })).id;
+    expect(await acces.canSeeFigures(viewer('direction', 'dir-1', ids.net), stranger)).toMatchObject({ allowed: false, code: 'other_network' });
+    expect((await lines('acces.refuse')).length).toBe(5);
+  });
+
+  it("[R16] le journal d'une fiche réunie rend aussi les lectures faites par la fiche gardée", async () => {
+    await acces.readFiche(agent(ids.a1), ids.p1b);
+    for (const id of [ids.p1b, ids.p1]) {
+      const seen = await acces.readJournalOf(viewer('direction', 'dir-1', ids.net), id);
+      expect(seen.ok && seen.value.filter((e) => e.type === 'fiche.lue').map((e) => e.actor)).toEqual([`agent:${ids.a1}`]);
+    }
   });
 
   it('[R16] si le journal ne répond pas, aucune fiche n\'est lue', async () => {
