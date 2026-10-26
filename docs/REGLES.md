@@ -22,7 +22,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R16 | Accès. Un agent ne voit que ses clients, ses biens et ses chiffres ; des biens des autres agents, seulement ceux en vente, qui forment le fichier commun du réseau, sans aucune donnée de client. Chaque lecture d'une fiche, et chaque refus, est écrit au journal avant que la donnée soit rendue. | oui | S08 |
 | R17 | Pas d'effacement. Le code n'efface aucune donnée, sauf par la procédure d'effacement prévue par la Conformité, demande de la personne ou durée de conservation dépassée, elle-même écrite au journal. | oui | S04 |
 | R18 | Réception unique. Un message reçu deux fois, même en même temps, sur le même canal avec le même identifiant, n'est rangé et traité qu'une fois et ne produit qu'une réponse. | oui | C01, C06 |
-| R19 | Discrétion du bien. Dans tout message à un client, jamais l'adresse exacte d'un bien ni le nom de son vendeur. | non | C04 |
-| R20 | Bien non reconnu. Sans correspondance sûre avec un seul bien, la réponse est simple et honnête et ne cite aucune donnée de bien. | non | C03, C04 |
+| R19 | Discrétion du bien. Dans tout message à un client, jamais l'adresse exacte d'un bien ni le nom de son vendeur. | oui | C04 |
+| R20 | Bien non reconnu. Sans correspondance sûre avec un seul bien, la réponse est simple et honnête et ne cite aucune donnée de bien. | oui | C03, C04 |
 | R21 | Relais. L'assistant se tait dans une conversation dès qu'un humain y a répondu, et passe la main à l'agent après 5 échanges au plus. | non | C05 |
 | R22 | Fenêtre de Meta. Sur Instagram, Facebook et WhatsApp, aucun message automatique ne part plus de 24 heures après le dernier message du client. | non | C05 |

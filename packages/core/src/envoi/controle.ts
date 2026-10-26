@@ -45,6 +45,10 @@ export interface SendOrder {
   fallbackTexts: readonly string[];
   /** Chiffres permis dans le texte : ceux de la base ou d'une source publique citée [R10]. */
   figures?: readonly (string | number)[];
+  /** Noms des vendeurs du bien cité, interdits dans le texte [R19]. */
+  sellerNames?: readonly string[];
+  /** Nombre de questions permis dans le texte. */
+  maxQuestions?: number;
 }
 
 export type SendStatus = 'sent' | 'refused' | 'failed';
@@ -228,7 +232,10 @@ export class ControleEnvois {
         [...ids, ...subjects],
       );
       if (dup) {
-        return log('refused', 'R05', dup.subject.startsWith('bien:') ? 'Ce bien a déjà été envoyé à la personne.' : 'Ce sujet a déjà été envoyé à la personne.');
+        return log('refused', 'R05', dup.subject.startsWith('bien:') ? 'Ce bien a déjà été envoyé à la personne.' : 'Ce sujet a déjà été envoyé à la personne.', {
+          // Une réponse qui ne peut pas partir n'est jamais un silence : l'agent est prévenu [R12].
+          needsHuman: order.kind === 'reply',
+        });
       }
     }
 
@@ -275,7 +282,15 @@ export class ControleEnvois {
     for (const candidate of candidates) {
       const found = checkText(
         candidate.text,
-        { audience: 'client', channel: order.channel, firstOfConversation, firstName, figures: order.figures ?? [] },
+        {
+          audience: 'client',
+          channel: order.channel,
+          firstOfConversation,
+          firstName,
+          figures: order.figures ?? [],
+          sellerNames: order.sellerNames ?? [],
+          ...(order.maxQuestions === undefined ? {} : { maxQuestions: order.maxQuestions }),
+        },
         this.settings.text,
       );
       const issues: { rule: string; reason: string }[] = found;
