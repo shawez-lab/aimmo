@@ -22,7 +22,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : chaque fichier de `functions/` et chaque workflow est cité ; aucun secret ni aucune donnée personnelle recopiés ; aucune modification de `shawez-immo`.
 
 ### S03 · Modèle de données de la fiche client unique
-- Statut : en cours
+- Statut : fait (2026-10-26)
 - Qui : Claude · Relecture : forte · Dépend de : S02
 - Cahier : Architecture technique, le modèle de données ; Conformité, données personnelles.
 - Objectif : le schéma SQL, compatible D1 et SQLite, des personnes et de leurs identifiants (mail, téléphone, Instagram, Facebook, WhatsApp), accords, exclusions, projets, biens réduits au nécessaire, messages, agents et sources, avec un accès typé dans `packages/core`.
