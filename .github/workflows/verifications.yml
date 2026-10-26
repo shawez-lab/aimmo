@@ -32,3 +32,8 @@ jobs:
         run: npm test
       - name: Garde-fous
         run: npm run garde-fous
+      - name: Paquet du Worker
+        working-directory: packages/api
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: npx -y wrangler@4.149.0 deploy --dry-run --outdir "$RUNNER_TEMP/aimmo-api"
