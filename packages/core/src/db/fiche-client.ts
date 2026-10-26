@@ -1,3 +1,4 @@
+import { normalizeIdentifier } from '../fiche/normalize.ts';
 import type { SqlDatabase, SqlValue } from './sql.ts';
 import type {
   Agent,
@@ -60,7 +61,7 @@ export interface NewPerson extends InScope {
 export interface NewIdentifier extends InScope {
   personId: string;
   kind: IdentifierKind;
-  /** Déjà normalisée : la normalisation arrive avec S04. */
+  /** Telle que saisie : elle est normalisée avant d'être rangée. */
   value: string;
 }
 
@@ -238,13 +239,16 @@ export class FicheClient {
     );
   }
 
-  addIdentifier(input: NewIdentifier): Promise<PersonIdentifier> {
+  /** Range l'identifiant normalisé ; une valeur qui n'est pas un identifiant valable est refusée. */
+  async addIdentifier(input: NewIdentifier): Promise<PersonIdentifier> {
+    const value = normalizeIdentifier(input.kind, input.value);
+    if (value === null) throw new Error(`Identifiant non valable (${input.kind}).`);
     return this.insert<PersonIdentifier>('person_identifiers', {
       id: this.newId(),
       ...this.scope(input),
       person_id: input.personId,
       kind: input.kind,
-      value: input.value,
+      value,
       created_at: this.stamp(),
     });
   }
