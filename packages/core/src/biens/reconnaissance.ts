@@ -55,7 +55,10 @@ export const DEFAULT_RECONNAISSANCE_SETTINGS: ReconnaissanceSettings = Object.fr
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
-/** Adresse sans protocole, sans « www », sans paramètres ni ancre, sans barre finale, en minuscules. */
+/** Paramètres de suivi, qui ne disent rien de l'annonce : retirés. Tous les autres sont gardés, triés. */
+const TRACKING = /^(?:utm(?:_.*)?|fbclid|gclid|dclid|msclkid|igshid|igsh|mc_cid|mc_eid|_hsenc|_hsmi|si|ref_src|xtor)$/i;
+
+/** Adresse sans protocole, sans « www », sans ancre ni paramètres de suivi, sans barre finale, en minuscules. */
 export function normalizeUrl(raw: string): string | null {
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw.trim()) ? raw.trim() : `https://${raw.trim()}`;
   let url: URL;
@@ -68,7 +71,11 @@ export function normalizeUrl(raw: string): string | null {
   }
   if (!url.hostname.includes('.')) return null;
   const host = url.hostname.toLowerCase().replace(/^www\./, '');
-  return `${host}${path}`.toLowerCase();
+  const params = [...url.searchParams.entries()]
+    .filter(([name]) => !TRACKING.test(name))
+    .map(([name, value]) => `${encodeURIComponent(name.toLowerCase())}=${encodeURIComponent(value.toLowerCase())}`)
+    .sort();
+  return `${host}${path}`.toLowerCase() + (params.length > 0 ? `?${params.join('&')}` : '');
 }
 
 const URLS = /\b(?:https?:\/\/|www\.)[^\s<>"'()]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|fr|net|org|immo)\/[^\s<>"'()]*/gi;
@@ -84,8 +91,12 @@ export function urlsIn(text: string): string[] {
  */
 export function referencesIn(text: string): string[] {
   const found = new Set<string>();
-  const pattern = /\b(?:r[ée]f(?:[ée]rence)?s?)\b\.?\s*(?:n[°o]\.?\s*)?[:#-]?\s*([a-z0-9][a-z0-9_-]{0,30})/gi;
-  for (const match of text.matchAll(pattern)) if (match[1]) found.add(match[1].toLowerCase());
+  // La référence entière, jusqu'à l'espace ou la ponctuation qui la suit : jamais un début de référence (« 383/1 »).
+  const pattern = /\b(?:r[ée]f(?:[ée]rence)?s?)\b\.?\s*(?:n[°o]\.?\s*)?[:#-]?\s*([a-z0-9][^\s,;!?()«»"']*)/gi;
+  for (const match of text.matchAll(pattern)) {
+    const reference = match[1]?.replace(/[.:]+$/, '').toLowerCase();
+    if (reference) found.add(reference);
+  }
   return [...found];
 }
 
@@ -203,7 +214,7 @@ export class ReconnaissanceBien {
     const ids = new Set(await this.byLink(networkId, 'url', [url]));
     const slash = url.indexOf('/');
     const host = slash === -1 ? url : url.slice(0, slash);
-    const path = slash === -1 ? '' : url.slice(slash);
+    const path = slash === -1 ? '' : url.slice(slash).split('?')[0] ?? '';
     const listing = this.settings.siteHosts.includes(host) ? this.settings.listingPath.exec(path) : null;
     const name = listing?.[1]?.toLowerCase();
     if (name) {

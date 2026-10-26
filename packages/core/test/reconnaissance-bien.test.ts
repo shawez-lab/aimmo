@@ -130,6 +130,20 @@ describeWithSqlite('reconnaître le bien dont parle un message', () => {
     expect(await reco.recognize(net, { text: 'Et la réf 4 ?' })).toMatchObject({ status: 'recognized', property: { id: four } });
   });
 
+  it('[R20] les paramètres qui identifient une annonce sont gardés ; ceux de suivi, retirés', async () => {
+    expect(normalizeUrl('https://exemple-portail.fr/annonce?utm_source=x&id=383&fbclid=y')).toBe('exemple-portail.fr/annonce?id=383');
+    await reco.link({ networkId: net, propertyId: homes['383']!, kind: 'url', value: 'https://exemple-portail.fr/annonce?id=383', at: NOW });
+    expect(await reco.recognize(net, { text: 'https://exemple-portail.fr/annonce?id=394' })).toMatchObject({ status: 'unrecognized' });
+    expect(await reco.recognize(net, { text: 'https://exemple-portail.fr/annonce?id=383&utm_medium=mail' })).toMatchObject({ status: 'recognized', property: { id: homes['383'] } });
+  });
+
+  it('[R20] une référence est lue entière, jamais par son début', async () => {
+    expect(referencesIn('Et la réf 383/1 ?')).toEqual(['383/1']);
+    expect(referencesIn('réf. 383.')).toEqual(['383']);
+    expect(await reco.recognize(net, { text: 'Et la réf 383/1 ?' })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'unknown' });
+    expect(await reco.recognize(net, { text: `réf ${'3'.repeat(40)}` })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'unknown' });
+  });
+
   it('un nombre seul dans le texte n\'est pas une référence', async () => {
     expect(await reco.recognize(net, { text: 'Je cherche à 383 000 € maximum' })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'no_clue' });
   });
