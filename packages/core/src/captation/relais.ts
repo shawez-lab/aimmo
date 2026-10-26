@@ -213,6 +213,53 @@ export class ConversationRelais {
     return 'noted';
   }
 
+  /**
+   * Note une réponse humaine reçue en écho ; si sa conversation n'est pas encore connue, elle est gardée et sera
+   * appliquée par `applyPendingHumanReplies` dès que la conversation existe, avant toute réponse automatique [R21].
+   */
+  async noteOrKeepHumanReply(networkId: string, reply: HumanReply): Promise<'noted' | 'duplicate' | 'own' | 'pending'> {
+    const outcome = await this.noteHumanReply(networkId, reply);
+    if (outcome !== 'unknown_conversation') return outcome;
+    await this.db.run(
+      `INSERT INTO pending_human_replies (network_id, channel, external_id, conversation_ref, body, sent_at, created_at, applied_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING`,
+      [networkId, reply.channel, reply.externalId, reply.conversationRef, reply.text, reply.sentAt.toISOString(), this.now().toISOString()],
+    );
+    // Le premier message du client a pu être rangé pendant ce temps : l'écho est appliqué tout de suite s'il le peut.
+    await this.applyPendingHumanReplies(networkId);
+    return 'pending';
+  }
+
+  /** Applique les réponses humaines en attente dont la conversation est désormais connue. */
+  async applyPendingHumanReplies(networkId: string): Promise<number> {
+    const rows = await this.db.all<{ channel: HumanReply['channel']; external_id: string; conversation_ref: string; body: string; sent_at: string }>(
+      `SELECT p.channel, p.external_id, p.conversation_ref, p.body, p.sent_at FROM pending_human_replies p
+       WHERE p.network_id = ? AND p.applied_at IS NULL
+         AND (EXISTS (SELECT 1 FROM messages m WHERE m.network_id = p.network_id AND m.conversation_id = p.channel || ':' || p.conversation_ref)
+              OR EXISTS (SELECT 1 FROM contact_keys k WHERE k.network_id = p.network_id AND k.key = p.channel || ':direct:' || p.conversation_ref))`,
+      [networkId],
+    );
+    let applied = 0;
+    for (const row of rows) {
+      const outcome = await this.noteHumanReply(networkId, {
+        channel: row.channel,
+        conversationRef: row.conversation_ref,
+        externalId: row.external_id,
+        text: row.body,
+        sentAt: new Date(row.sent_at),
+      });
+      if (outcome === 'unknown_conversation') continue;
+      if (outcome === 'noted') applied += 1;
+      await this.db.run('UPDATE pending_human_replies SET applied_at = ? WHERE network_id = ? AND channel = ? AND external_id = ?', [
+        this.now().toISOString(),
+        networkId,
+        row.channel,
+        row.external_id,
+      ]);
+    }
+    return applied;
+  }
+
   private async inFlightSameText(networkId: string, conversationId: string, reply: HumanReply): Promise<boolean> {
     const echoed = sameText(reply.text);
     if (echoed === '') return false;

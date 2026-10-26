@@ -21,6 +21,7 @@ import {
   type Viewer,
 } from '@aimmo/core';
 import { intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } from './auth.ts';
+import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -38,6 +39,8 @@ export interface ApiConfig {
   mode: string | undefined;
   /** Secret `INTAKE_KEYS` : clés qui ne peuvent que déposer un formulaire du site (voir auth.ts). */
   intakeKeys?: string | undefined;
+  /** Notifications de Meta (C07) : secrets et variables `META_*`, voir meta.ts. */
+  meta?: Omit<MetaConfig, 'db' | 'now'>;
   now?: () => Date;
 }
 
@@ -271,6 +274,11 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   }
 
   if (path === '/captation/formulaire') return intakeForm(request, config, now);
+
+  if (path === META_PATH) {
+    const meta = config.meta ?? { appSecret: undefined, verifyTokenSha256: undefined, networkId: undefined, ownIds: undefined, appIds: undefined };
+    return handleMeta(request, { ...meta, db: config.db, now });
+  }
 
   const keys = parseApiKeys(config.apiKeys);
   if (keys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');

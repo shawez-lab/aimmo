@@ -216,9 +216,13 @@ export class ControleEnvois {
 
     const port = this.channels.get(order.channel);
     if (!port) return log('refused', null, 'Canal non branché.');
-    const to = IDENTIFIER_FOR[order.channel]
-      .map((kind) => view.identifiers.find((i) => i.kind === kind))
-      .find((i) => i !== undefined)?.value;
+    // Sur Instagram et Facebook, on répond dans la conversation reçue : le compte propre au canal (message privé)
+    // ou le commentaire (réponse privée) ; un nom de compte ne sert pas d'adresse chez Meta (C07). La conversation
+    // doit être celle de la personne : un message reçu d'elle, fiches réunies comprises, y est rangé.
+    const thread = await this.metaThread(order.channel, order.conversationId ?? null, view.person.network_id, ids);
+    const to =
+      thread?.ref ??
+      IDENTIFIER_FOR[order.channel].map((kind) => view.identifiers.find((i) => i.kind === kind)).find((i) => i !== undefined)?.value;
     if (!to) return log('refused', null, 'Aucun identifiant de la personne pour ce canal.');
     const sentBefore = view.messages.filter((m) => m.direction === 'out' && !failed.has(m.id) && Date.parse(m.occurred_at) <= at.getTime());
 
@@ -419,7 +423,7 @@ export class ControleEnvois {
     const sent = await log('sent', aiNote ? 'R12' : decision.rule, aiNote ?? decision.reason, flags);
     let receipt: { externalId: string | null };
     try {
-      receipt = await port.deliver({ channel: order.channel, to, body, messageId: message.id });
+      receipt = await port.deliver({ channel: order.channel, to, body, messageId: message.id, ...(thread ? { thread: thread.kind } : {}) });
     } catch {
       // Le détail de l'erreur peut contenir l'adresse : il ne va pas au journal.
       // Les réservations sont libérées pour un nouvel essai, sans effacer leur ligne.
@@ -434,5 +438,26 @@ export class ControleEnvois {
       );
     }
     return sent;
+  }
+
+  /** La conversation Instagram ou Facebook où répondre, si elle est bien celle de la personne. */
+  private async metaThread(
+    channel: Channel,
+    conversationId: string | null,
+    networkId: string,
+    personIds: readonly string[],
+  ): Promise<{ ref: string; kind: 'direct' | 'comment' } | null> {
+    if ((channel !== 'instagram' && channel !== 'facebook') || conversationId === null || personIds.length === 0) return null;
+    const prefix = `${channel}:`;
+    if (!conversationId.startsWith(prefix) || conversationId.length === prefix.length) return null;
+    const ref = conversationId.slice(prefix.length);
+    const row = await this.db.first<{ kind: 'direct' | 'comment' }>(
+      `SELECT kind FROM inbound_messages
+       WHERE network_id = ? AND channel = ? AND conversation_ref = ? AND kind IN ('direct', 'comment')
+         AND person_id IN (${placeholders(personIds.length)})
+       ORDER BY received_at DESC LIMIT 1`,
+      [networkId, channel, ref, ...personIds],
+    );
+    return row ? { ref, kind: row.kind } : null;
   }
 }

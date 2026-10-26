@@ -14,11 +14,29 @@ export interface Env {
   MAIL_NETWORK_ID?: string;
   MAIL_FORWARD_TO?: string;
   MAIL_OWN_ADDRESSES?: string;
+  /** Notifications de Meta (C07) : `META_APP_SECRET` et `META_VERIFY_TOKEN_SHA256` sont des secrets. */
+  META_APP_SECRET?: string;
+  META_VERIFY_TOKEN_SHA256?: string;
+  META_NETWORK_ID?: string;
+  META_OWN_IDS?: string;
+  META_APP_IDS?: string;
 }
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
-    return handleRequest(request, { db: fromD1(env.DB), apiKeys: env.API_KEYS, intakeKeys: env.INTAKE_KEYS, mode: env.MODE });
+    return handleRequest(request, {
+      db: fromD1(env.DB),
+      apiKeys: env.API_KEYS,
+      intakeKeys: env.INTAKE_KEYS,
+      mode: env.MODE,
+      meta: {
+        appSecret: env.META_APP_SECRET,
+        verifyTokenSha256: env.META_VERIFY_TOKEN_SHA256,
+        networkId: env.META_NETWORK_ID,
+        ownIds: env.META_OWN_IDS,
+        appIds: env.META_APP_IDS,
+      },
+    });
   },
   async email(message: InboundEmail, env: Env): Promise<void> {
     await handleEmail(message, {
