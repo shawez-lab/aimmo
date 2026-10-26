@@ -252,6 +252,9 @@ function metaDirect(channel: 'instagram' | 'facebook', item: Json, own: Set<stri
   } satisfies InboundMessage;
 }
 
+const FACEBOOK_NOT_MESSAGES = ['like', 'reaction', 'share'];
+const FACEBOOK_COMMENT_NOT_NEW = ['edited', 'edit', 'remove', 'hide', 'unhide'];
+
 function metaChange(
   channel: 'instagram' | 'facebook',
   item: Json,
@@ -261,7 +264,8 @@ function metaChange(
 ): InboundMessage | 'ignored' {
   const value = obj(item.value, 'contenu du changement');
   if (channel === 'instagram') {
-    if (item.field !== 'comments') return 'ignored';
+    // Seuls les commentaires sont attendus ; tout autre changement est gardé comme illisible.
+    if (item.field !== 'comments' && item.field !== 'live_comments') throw new Unreadable('changement Instagram inconnu');
     const from = obj(value.from, 'auteur du commentaire');
     const fromId = str(from.id, 'auteur du commentaire');
     if (own.has(fromId)) return 'ignored';
@@ -288,11 +292,17 @@ function metaChange(
       hasAttachment: false,
     };
   }
-  // Facebook : seuls les commentaires ajoutés comptent ; les modifications, suppressions et mentions j'aime non.
-  if (item.field !== 'feed' || value.item !== 'comment' || value.verb !== 'add') return 'ignored';
+  // Facebook : un commentaire ajouté est un message ; les mentions j'aime, partages, modifications et suppressions
+  // connus sont écartés ; tout le reste, y compris un commentaire abîmé ou une publication d'un visiteur, est gardé.
+  if (item.field !== 'feed') throw new Unreadable('changement Facebook inconnu');
+  const fromRaw = optObj(value.from);
+  const fromOwn = fromRaw !== null && own.has(String(fromRaw.id));
+  if (FACEBOOK_NOT_MESSAGES.includes(String(value.item))) return 'ignored';
+  if (value.item === 'comment' && FACEBOOK_COMMENT_NOT_NEW.includes(String(value.verb))) return 'ignored';
+  if (fromOwn) return 'ignored';
+  if (value.item !== 'comment' || value.verb !== 'add') throw new Unreadable('événement Facebook non reconnu');
   const from = obj(value.from, 'auteur du commentaire');
   const fromId = str(from.id, 'auteur du commentaire');
-  if (own.has(fromId)) return 'ignored';
   const commentId = str(value.comment_id, 'identifiant du commentaire');
   const body = text(value.message);
   const hasAttachment = optStr(value.photo) !== null || optStr(value.video) !== null;

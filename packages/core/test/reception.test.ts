@@ -322,6 +322,18 @@ describe('C01 · un exemple par canal et par type se normalise sans perte', () =
     expect(r2.unreadable[0]!.raw).toContain('wamid.Z');
   });
 
+  it('un changement abîmé ou inconnu est gardé ; seuls les événements connus sont écartés', () => {
+    const fb = (value: Record<string, unknown>, field = 'feed') => ({ entry: [{ id: 'PAGE-1', changes: [{ field, value }] }] });
+    const noVerb = { item: 'comment', comment_id: 'c1', post_id: 'p1', message: 'Bonjour', from: { id: 'u1' } };
+    expect(adaptInbound('facebook', fb(noVerb), ctx).unreadable).toHaveLength(1);
+    expect(adaptInbound('facebook', fb({ item: 'post', verb: 'add', message: 'Une question', from: { id: 'u1' } }), ctx).unreadable).toHaveLength(1);
+    expect(adaptInbound('facebook', fb({ item: 'comment' }, 'autre'), ctx).unreadable).toHaveLength(1);
+    expect(adaptInbound('facebook', fb({ item: 'reaction', verb: 'add', from: { id: 'u1' } }), ctx)).toEqual({ messages: [], unreadable: [], ignored: 1 });
+    expect(adaptInbound('facebook', fb({ ...noVerb, verb: 'remove' }), ctx)).toEqual({ messages: [], unreadable: [], ignored: 1 });
+    const ig = { entry: [{ id: 'IG-OWN-1', changes: [{ field: 'mentions', value: { media_id: 'x' } }] }] };
+    expect(adaptInbound('instagram', ig, ctx).unreadable).toHaveLength(1);
+  });
+
   it('les messages reçus pendant qu’une autre application a la main (standby) sont lus', () => {
     const standby = { object: 'page', entry: [{ id: 'PAGE-1', standby: messenger.entry[0]!.messaging }] };
     expect(one(adaptInbound('facebook', standby, ctx)).externalId).toBe('m-mid-3');
