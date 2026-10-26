@@ -6,10 +6,15 @@ const MAX_APPEND_ATTEMPTS = 20;
 const EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 const FRENCH_PHONE = /(?:^|\D)0[1-9](?:[ .-]*\d{2}){4}(?:\D|$)/;
 const INTERNATIONAL_PHONE = /(?:^|\D)(?:\+|00)\d(?:[ ().-]*\d){7,14}(?:\D|$)/;
+// Un identifiant interne au format UUID (32 chiffres hexadécimaux en 8-4-4-4-12) n'est jamais un numéro
+// de téléphone, qui a 15 chiffres au plus : on l'écarte avant de chercher, sinon ses groupes de chiffres
+// séparés par des tirets passeraient pour un numéro.
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
 function containsPersonalData(value: JsonValue): boolean {
   if (typeof value === 'string') {
-    return EMAIL.test(value) || FRENCH_PHONE.test(value) || INTERNATIONAL_PHONE.test(value);
+    const text = value.replace(UUID, ' ');
+    return EMAIL.test(value) || FRENCH_PHONE.test(text) || INTERNATIONAL_PHONE.test(text);
   }
   if (Array.isArray(value)) return value.some(containsPersonalData);
   if (value !== null && typeof value === 'object') {
