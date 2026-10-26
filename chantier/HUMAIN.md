@@ -8,7 +8,7 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H01 | Créer le dépôt privé `shawez-lab/aimmo` sur github.com/new | Shawez | tout | fait (2026-10-25) |
 | H02 | Ouvrir ce dépôt à l'application Claude sur GitHub, si elle n'a pas accès à tous les dépôts | Shawez | tout | fait (2026-10-25) : l'application a déjà accès à tous les dépôts |
 | H03 | Dans Codex : connecter le dépôt, activer Code review et Automatic review | Shawez | relecture et tâches de Codex | fait (2026-10-25) : Codex du compte ChatGPT de Marion Gravelin, accès limité à `shawez-lab/aimmo`, environnement `aimmo` créé (installation `npm ci`, Internet coupé pendant le travail), relecture automatique à l'ouverture de chaque proposition. Node 22 n'est pas sélectionnable chez Codex : les vérifications GitHub, sous Node 22, font foi |
-| H04 | Ajouter au dépôt les secrets `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID`, comme pour `shawez-immo` | Shawez | S09, mise en ligne | plus tard |
+| H04 | Ajouter au dépôt les secrets `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID`, comme pour `shawez-immo` | Shawez | S09, mise en ligne | signalé le 2026-10-26 |
 | H05 | Accorder l'accès à Gmail par API sur l'écran d'accord de Google | Shawez | S11 | plus tard |
 | H06 | Vérification de l'entreprise et validation de l'application AIMMO chez Meta | Shawez | M02 | plus tard |
 | H07 | Accès à l'API Google Business Profile | Shawez | M01 | plus tard |
