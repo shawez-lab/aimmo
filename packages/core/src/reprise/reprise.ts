@@ -21,6 +21,26 @@ export const VALUATION_PURPOSE = 'valuation_follow_up';
 /** Statut « Perdu » du site. */
 export const SITE_LOST = 'close';
 
+/**
+ * Un contact à reprendre : un contact du site (I01), ou une ligne d'un fichier d'outil (I03) qui apporte en plus
+ * des comptes Instagram, sa propre source et, pour une liste d'exclusion ou un désabonnement, une exclusion.
+ */
+export interface ImportedContact extends SiteContact {
+  instagrams?: string[];
+  source?: { channel: string; detail: string };
+  /** `network_list` : liste d'exclusion [R02] ; `stop` : désabonné de l'outil [R04]. */
+  exclusion?: 'network_list' | 'stop' | null;
+}
+
+export interface ImportBatch {
+  contacts: ImportedContact[];
+  skipped: { suspect: number; test: number };
+  flagged: number;
+  /** Lignes d'un fichier signalées par leur numéro (I03). */
+  unreadableLines?: number[];
+  partialLines?: number[];
+}
+
 export type ImportOutcome = 'created' | 'matched' | 'merged' | 'apart';
 
 export interface ImportReport {
@@ -38,6 +58,9 @@ export interface ImportReport {
   consents: number;
   exclusions: number;
   skipped: { suspect: number; test: number };
+  /** Numéros des lignes de fichier sans coordonnée lisible, ou avec une coordonnée laissée de côté. */
+  unreadableLines: number[];
+  partialLines: number[];
 }
 
 export interface RepriseOptions {
@@ -57,7 +80,7 @@ interface Identifier {
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
 /** Identifiants valables du contact, normalisés et sans doublon. Une valeur incomprise n'est jamais rapprochée. */
-export function contactIdentifiers(contact: Pick<SiteContact, 'emails' | 'phones'>): Identifier[] {
+export function contactIdentifiers(contact: Pick<ImportedContact, 'emails' | 'phones' | 'instagrams'>): Identifier[] {
   const out: Identifier[] = [];
   const seen = new Set<string>();
   const add = (kind: IdentifierKind, raw: string): void => {
@@ -68,6 +91,7 @@ export function contactIdentifiers(contact: Pick<SiteContact, 'emails' | 'phones
   };
   for (const email of contact.emails) add('email', email);
   for (const phone of contact.phones) add('phone', phone);
+  for (const account of contact.instagrams ?? []) add('instagram', account);
   return out;
 }
 
@@ -92,7 +116,8 @@ export class RepriseSite {
     this.now = options.now ?? (() => new Date());
   }
 
-  async run(reading: SiteReading): Promise<ImportReport> {
+  /** `label` : d'où vient le lot, pour le journal (`site`, `exclusion_list`, `gohighlevel`, `manychat`). */
+  async run(reading: SiteReading | ImportBatch, label = 'site'): Promise<ImportReport> {
     const agent = await this.store.getAgent(this.options.agentId);
     if (!agent || agent.network_id !== this.options.networkId || agent.status !== 'active') {
       throw new Error('Reprise : agent inconnu, hors réseau ou parti.');
@@ -109,20 +134,24 @@ export class RepriseSite {
       consents: 0,
       exclusions: 0,
       skipped: { ...reading.skipped },
+      unreadableLines: 'unreadableLines' in reading ? [...(reading.unreadableLines ?? [])] : [],
+      partialLines: 'partialLines' in reading ? [...(reading.partialLines ?? [])] : [],
     };
     let changed = false;
     for (const contact of reading.contacts) {
       if (await this.importContact(contact, report)) changed = true;
     }
     // Une reprise relancée qui ne trouve rien de neuf n'écrit rien, pas même au journal.
-    if (changed) {
+    // Des lignes signalées valent une trace même si rien d'autre n'a changé : elles attendent un humain.
+    if (changed || report.unreadableLines.length > 0 || report.partialLines.length > 0) {
       await appendEvent(
         this.journal,
         {
-          type: 'reprise.site',
+          type: 'reprise.lot',
           actor: this.options.actor,
           subject: null,
           data: {
+            source: label,
             read: report.read,
             created: report.created,
             matched: report.matched,
@@ -133,6 +162,8 @@ export class RepriseSite {
             exclusions: report.exclusions,
             skippedSuspect: report.skipped.suspect,
             skippedTest: report.skipped.test,
+            unreadableLines: report.unreadableLines.length,
+            partialLines: report.partialLines.length,
           },
         },
         this.now,
@@ -142,7 +173,7 @@ export class RepriseSite {
   }
 
   /** Rend vrai si la reprise de ce contact a écrit quelque chose. */
-  private async importContact(contact: SiteContact, report: ImportReport): Promise<boolean> {
+  private async importContact(contact: ImportedContact, report: ImportReport): Promise<boolean> {
     const networkId = this.options.networkId;
     const at = this.now();
     const identifiers = contactIdentifiers(contact);
@@ -205,6 +236,12 @@ export class RepriseSite {
         }
       }
     }
+    // Liste d'exclusion [R02] ou désabonnement d'un outil [R04] : sur toutes les fiches de la personne.
+    if (contact.exclusion) {
+      for (const person of [target, ...apart]) {
+        if (await this.addToolExclusion(person, contact.exclusion, at)) report.exclusions += 1;
+      }
+    }
     // Fiches restées à part : la même personne, donc toute exclusion en cours de l'une vaut pour toutes [R02, R04].
     if (apart.length > 0) report.exclusions += await this.shareExclusions([target, ...apart], at);
     if (report.exclusions > exclusionsBefore) changed = true;
@@ -223,12 +260,19 @@ export class RepriseSite {
           type: 'reprise.fiche',
           actor: this.options.actor,
           subject: `person:${target.id}`,
-          data: { source: 'site', outcome, requests: contact.requests.length, apart: apart.map((p) => `person:${p.id}`) },
+          data: { source: contact.source?.channel ?? 'site', outcome, requests: contact.requests.length, apart: apart.map((p) => `person:${p.id}`) },
         },
         this.now,
       );
     }
     return changed;
+  }
+
+  /** Exclusion sur tous les canaux, sauf si la même est déjà en cours. */
+  private async addToolExclusion(person: Person, reason: 'network_list' | 'stop', at: Date): Promise<boolean> {
+    if ((await this.activeExclusions(person.id, reason)) > 0) return false;
+    await this.store.addExclusion({ networkId: person.network_id, agentId: person.agent_id, personId: person.id, reason, channel: null, notedAt: at });
+    return true;
   }
 
   /** Ajoute à chaque fiche du groupe les exclusions en cours des autres qu'elle n'a pas encore. Rend le nombre ajouté. */
@@ -251,15 +295,17 @@ export class RepriseSite {
   }
 
   /** La source de la fiche : le site, une seule fois par contact repris, même sans demande d'estimation. */
-  private async addContactSource(target: Person, contact: SiteContact): Promise<boolean> {
+  private async addContactSource(target: Person, contact: ImportedContact): Promise<boolean> {
     const key = `${contact.origin}:source`;
     if ((await this.importTarget(key)) !== null) return false;
     const source = await this.store.addSource({
       networkId: target.network_id,
       agentId: target.agent_id,
       personId: target.id,
-      channel: 'site',
-      detail: contact.origin.startsWith('site:compte:') ? 'reprise espace estimation · compte' : 'reprise espace estimation · demande',
+      channel: contact.source?.channel ?? 'site',
+      detail:
+        contact.source?.detail ??
+        (contact.origin.startsWith('site:compte:') ? 'reprise espace estimation · compte' : 'reprise espace estimation · demande'),
       occurredAt: new Date(contact.createdAt),
     });
     // Une autre reprise a pris la clé entre-temps : cette source en trop reste, rien n'est effacé [R17].
@@ -342,7 +388,7 @@ export class RepriseSite {
     return changed;
   }
 
-  private async activeExclusions(personId: string, reason: ReceivedExclusion): Promise<number> {
+  private async activeExclusions(personId: string, reason: ReceivedExclusion | 'network_list'): Promise<number> {
     const members = await this.fiche.membersOf(personId);
     const row = await this.db.first<{ n: number }>(
       `SELECT count(*) AS n FROM exclusions WHERE person_id IN (${placeholders(members.length)}) AND reason = ? AND lifted_at IS NULL`,
@@ -420,7 +466,7 @@ export class RepriseSite {
   }
 
   /** Ajoute les identifiants que la fiche n'a pas, le prénom et le nom s'ils manquent. Rien n'est remplacé. */
-  private async complete(target: Person, identifiers: readonly Identifier[], contact: SiteContact): Promise<boolean> {
+  private async complete(target: Person, identifiers: readonly Identifier[], contact: ImportedContact): Promise<boolean> {
     const members = await this.fiche.membersOf(target.id);
     let changed = false;
     for (const id of identifiers) {
