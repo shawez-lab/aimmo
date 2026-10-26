@@ -188,6 +188,26 @@ describe('données personnelles du journal', () => {
     }
   });
 
+  it('[R13] accepte les identifiants internes au format UUID, même faits surtout de chiffres', async () => {
+    const store = new MemoryJournalStore();
+    const id = '12345678-0012-3456-7890-123456789012';
+    await appendEvent(
+      store,
+      { type: 'fiche.lue', actor: `agent:${id}`, subject: `person:${id}`, data: { members: [`person:${id}`] } },
+      () => dates[0]!,
+    );
+    expect(await store.all()).toHaveLength(1);
+  });
+
+  it('[R13] refuse encore un numéro collé à un identifiant interne', async () => {
+    const id = 'a1b2c3d4-0045-8123-9abc-def012345678';
+    for (const subject of [`person:${id} +33 6 12 34 56 78`, `${id}:0612345678`, '0012-3456-7890']) {
+      await expect(
+        appendEvent(new MemoryJournalStore(), { type: 'x', actor: 'systeme', subject, data: {} }, () => dates[0]!),
+      ).rejects.toThrow(/donnée personnelle/i);
+    }
+  });
+
   it('[R13] refuse une donnée personnelle dans un nom de champ', async () => {
     const store = new MemoryJournalStore();
     await expect(

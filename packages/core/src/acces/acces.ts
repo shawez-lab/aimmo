@@ -1,0 +1,177 @@
+import type { FicheClient } from '../db/fiche-client.ts';
+import type { SqlDatabase } from '../db/sql.ts';
+import type { Agent, Person, Property } from '../db/types.ts';
+import type { FicheComplete, FicheUnique } from '../fiche/fusion.ts';
+import { appendEvent } from '../journal/journal.ts';
+import type { JournalEntry, JournalStore } from '../journal/types.ts';
+import {
+  decideAccess,
+  ROLES,
+  type AccessDecision,
+  type RefusalCode,
+  type ResourceKind,
+  type Viewer,
+} from './droits.ts';
+
+export type AccessResult<T> =
+  | { ok: true; view: 'full' | 'shared'; value: T }
+  | { ok: false; rule: 'R16'; code: RefusalCode };
+
+export interface AccesOptions {
+  now?: () => Date;
+}
+
+/** Sujet d'une ligne du journal pour une fiche : un identifiant interne, jamais un nom [R13]. */
+export const personSubject = (personId: string): string => `person:${personId}`;
+
+/**
+ * Lecture des données sous droits d'accès [R16]. Chaque lecture d'une fiche, et chaque refus, est écrit
+ * au journal à empreintes avant que la moindre donnée ne soit rendue : si le journal ne répond pas,
+ * rien n'est lu.
+ */
+export class Acces {
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly db: SqlDatabase,
+    private readonly fiches: FicheClient,
+    private readonly unique: FicheUnique,
+    private readonly journal: JournalStore,
+    options: AccesOptions = {},
+  ) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  /** Toute la fiche d'une personne, avec les fiches qui y sont réunies. */
+  async readFiche(viewer: Viewer, personId: string): Promise<AccessResult<FicheComplete>> {
+    const subject = personSubject(personId);
+    const blocked = await this.checkViewer(viewer, 'person', subject);
+    if (blocked) return blocked;
+
+    const person = await this.fiches.getPerson(personId);
+    if (!person) return this.refused(viewer, 'person', subject, 'unknown');
+    const fiche = await this.unique.view(personId);
+    const decision = decideAccess(viewer, {
+      kind: 'person',
+      networkId: person.network_id,
+      agentIds: fiche.members.map((member) => member.agent_id),
+    });
+    if (!decision.allowed) return this.refused(viewer, 'person', subject, decision.code);
+
+    await this.write(viewer, 'fiche.lue', personSubject(fiche.person.id), {
+      rule: 'R16',
+      role: viewer.role,
+      requested: subject,
+      members: fiche.members.map((member) => personSubject(member.id)),
+    });
+    return { ok: true, view: decision.view, value: fiche };
+  }
+
+  /** La liste des fiches qu'on a le droit de voir : pour un agent, ses clients seulement. */
+  async listPersons(viewer: Viewer): Promise<AccessResult<Person[]>> {
+    const blocked = await this.checkViewer(viewer, 'person', null);
+    if (blocked) return blocked;
+    if (!decideAccess(viewer, { kind: 'person', networkId: viewer.networkId, agentIds: [viewer.userId] }).allowed) {
+      return this.refused(viewer, 'person', null, 'role');
+    }
+
+    const candidates =
+      viewer.role === 'agent'
+        ? await this.fiches.listPersonsOfAgent(viewer.networkId, viewer.userId)
+        : await this.db.all<Person>('SELECT * FROM persons WHERE network_id = ? ORDER BY created_at, id', [
+            viewer.networkId,
+          ]);
+    // Chaque fiche repasse par la règle : une fiche réunie à celle d'un autre agent n'apparaît pas.
+    const visible: Person[] = [];
+    for (const person of candidates) {
+      const members = await this.unique.membersOf(person.id);
+      const rows = await Promise.all(members.map((id) => this.fiches.getPerson(id)));
+      const decision = decideAccess(viewer, {
+        kind: 'person',
+        networkId: person.network_id,
+        agentIds: rows.map((row) => row?.agent_id ?? null),
+      });
+      if (decision.allowed) visible.push(person);
+    }
+
+    await this.write(viewer, 'fiches.listees', null, {
+      rule: 'R16',
+      role: viewer.role,
+      count: visible.length,
+      persons: visible.map((person) => personSubject(person.id)),
+    });
+    return { ok: true, view: 'full', value: visible };
+  }
+
+  /** Un bien : complet pour son agent, la direction et la conformité ; fiche commune pour les autres agents. */
+  async readProperty(viewer: Viewer, propertyId: string): Promise<AccessResult<Property>> {
+    const subject = `property:${propertyId}`;
+    const blocked = await this.checkViewer(viewer, 'property', subject);
+    if (blocked) return blocked;
+    const property = await this.fiches.getProperty(propertyId);
+    if (!property) return this.refused(viewer, 'property', subject, 'unknown');
+    const decision = decideAccess(viewer, {
+      kind: 'property',
+      networkId: property.network_id,
+      agentId: property.agent_id,
+      status: property.status,
+    });
+    if (!decision.allowed) return this.refused(viewer, 'property', subject, decision.code);
+    return { ok: true, view: decision.view, value: property };
+  }
+
+  /** Le journal d'audit d'une fiche : qui l'a vue, quand. Direction et conformité seulement. */
+  async readJournalOf(viewer: Viewer, personId: string): Promise<AccessResult<JournalEntry[]>> {
+    const subject = personSubject(personId);
+    const blocked = await this.checkViewer(viewer, 'journal', subject);
+    if (blocked) return blocked;
+    const person = await this.fiches.getPerson(personId);
+    if (!person) return this.refused(viewer, 'journal', subject, 'unknown');
+    const decision = decideAccess(viewer, { kind: 'journal', networkId: person.network_id });
+    if (!decision.allowed) return this.refused(viewer, 'journal', subject, decision.code);
+    await this.write(viewer, 'journal.lu', subject, { rule: 'R16', role: viewer.role });
+    return { ok: true, view: 'full', value: await this.journal.bySubject(subject) };
+  }
+
+  /** Les chiffres d'un agent. Seule la décision existe tant que M13 n'a pas créé les chiffres. */
+  canSeeFigures(viewer: Viewer, agentId: string): AccessDecision {
+    return decideAccess(viewer, { kind: 'figures', networkId: viewer.networkId, agentId });
+  }
+
+  /**
+   * Un agent doit exister dans le réseau annoncé et être en activité : le jour de son départ, son accès
+   * est coupé. L'identité des autres rôles vient de la connexion (S09).
+   */
+  private async checkViewer(
+    viewer: Viewer,
+    kind: ResourceKind,
+    subject: string | null,
+  ): Promise<AccessResult<never> | null> {
+    if (!(ROLES as readonly string[]).includes(viewer.role)) return this.refused(viewer, kind, subject, 'role');
+    if (viewer.role !== 'agent') return null;
+    const agent = await this.db.first<Agent>('SELECT * FROM agents WHERE id = ?', [viewer.userId]);
+    if (!agent || agent.network_id !== viewer.networkId || agent.status !== 'active') {
+      return this.refused(viewer, kind, subject, 'agent_inactive');
+    }
+    return null;
+  }
+
+  private async refused(
+    viewer: Viewer,
+    kind: ResourceKind,
+    subject: string | null,
+    code: RefusalCode,
+  ): Promise<{ ok: false; rule: 'R16'; code: RefusalCode }> {
+    await this.write(viewer, 'acces.refuse', subject, { rule: 'R16', role: String(viewer.role), kind, code });
+    return { ok: false, rule: 'R16', code };
+  }
+
+  private async write(
+    viewer: Viewer,
+    type: string,
+    subject: string | null,
+    data: Record<string, string | number | string[]>,
+  ): Promise<void> {
+    await appendEvent(this.journal, { type, actor: `${String(viewer.role)}:${viewer.userId}`, subject, data }, this.now);
+  }
+}
