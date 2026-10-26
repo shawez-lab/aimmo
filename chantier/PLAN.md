@@ -38,11 +38,12 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Décidé (2026-10-26), lecture prudente : les noms ne rapprochent jamais deux fiches, seuls les identifiants normalisés le font ; deux fiches suivies par deux agents différents ne se fusionnent pas tant que la direction n'a pas attribué la personne ; une fusion relie les fiches sans déplacer aucune ligne, ce qui la rend exactement réversible.
 
 ### S05 · Exclusions, arrêts, accords et horaires
-- Statut : en cours
+- Statut : fait (2026-10-26)
 - Qui : Claude · Relecture : forte · Dépend de : S04
 - Cahier : Conformité, prospection et accords ; Risques, décision « Réponses le soir et le dimanche ».
 - Objectif : une décision unique « peut-on écrire à cette personne, sur ce canal, pour ce type de message, maintenant ? », avec la règle qui a décidé.
 - Critères : un test par règle et par cas limite : samedi 19 h 59 et 20 h 00, dimanche, réponse à un message reçu il y a 59 et 61 minutes, personne exclue qui écrit, demande d'arrêt sur un canal puis envoi sur un autre ; R01 à R04 et R11 passent en service.
+- Décidé (2026-10-26), lecture prudente : toute exclusion active ferme tous les canaux ; tout message d'initiative par téléphone, SMS, WhatsApp ou mail demande un accord enregistré pour sa finalité, la demande du client s'enregistrant comme accord, sauf réponse à un message resté sans réponse ; le plafond des demandes d'avis vaut pour tout le réseau ; un message reçu qui dit stop, non ou vendu exclut aussitôt, dans le doute on se tait. Reste : horaires et fréquence des appels du décret de 2022, avec le bouton « appeler ».
 
 ### S06 · Contrôle central des envois
 - Statut : à faire
