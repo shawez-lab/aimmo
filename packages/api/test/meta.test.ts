@@ -321,6 +321,21 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
     expect(handed).toEqual([{ conversation_id: `instagram:${quiet}`, reason: 'human_reply' }]);
   });
 
+  it('[R21] un écho humain dans le même lot que le premier message de la conversation fait taire l’assistant ensuite', async () => {
+    const w = await world();
+    const client = '17843000000009';
+    const first = igDirect(client, 'Bonjour', TUESDAY_10H);
+    const echo = igEcho(client, 'Je vous réponds tout de suite.', TUESDAY_10H + 1000);
+    first.entry[0]!.messaging.push(echo.entry[0]!.messaging[0]! as never);
+    expect((await w.post(first)).status).toBe(200);
+    const handed = await w.db.all<{ conversation_id: string; reason: string }>('SELECT conversation_id, reason FROM conversation_handovers');
+    expect(handed).toEqual([{ conversation_id: `instagram:${client}`, reason: 'human_reply' }]);
+    const before = (await w.db.all('SELECT id FROM send_log')).length;
+    w.setClock(TUESDAY_10H + MINUTE);
+    await w.post(igDirect(client, 'Et le prix ?', TUESDAY_10H + MINUTE));
+    expect((await w.db.all('SELECT id FROM send_log')).length).toBe(before);
+  });
+
   it('aucun envoi réel : aucune adresse extérieure n’est appelée, et le code du Worker n’en contient aucune', async () => {
     const w = await world();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('aucun appel extérieur attendu'));
