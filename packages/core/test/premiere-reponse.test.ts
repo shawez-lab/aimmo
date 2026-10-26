@@ -105,7 +105,7 @@ async function setup(writer?: ReplyWriter) {
     return premiere.reply(inboundId);
   };
   const sent = (channel: Channel): string[] => channels.find((c) => c.channel === channel)!.sent.map((s) => s.body);
-  return { db, store, decisions, network, home, run, sent, channels };
+  return { db, store, decisions, network, home, run, sent, channels, premiere };
 }
 
 const ig = (v: string): SenderIdentifier => ({ kind: 'instagram', value: v });
@@ -145,12 +145,12 @@ describeWithSqlite('C04 · première réponse', () => {
     );
   });
 
-  it('[R20] bien non reconnu : message simple et honnête, sans aucune donnée de bien', async () => {
-    const writer = new FakeWriter(async (brief) => (brief.property === null ? 'Hello ! La maison fait 120 m², tu veux la voir ?' : 'x'));
+  it('[R20] bien non reconnu : message simple et honnête, sans aucune donnée de bien, et l\'IA ne rédige pas', async () => {
+    const writer = new FakeWriter(async () => 'Hello ! La maison à Dijon dispose d’un jardin. Tu veux la visiter ?');
     const t = await setup(writer);
     const out = await t.run(msg('instagram', 'direct', [ig('camille.r20')], 'Et la réf 999 ?'));
     expect(out).toMatchObject({ recognition: 'unrecognized', nextStep: 'callback', result: { status: 'sent', aiText: false } });
-    expect(writer.briefs[0]?.property).toBeNull();
+    expect(writer.briefs).toHaveLength(0);
     const body = t.sent('instagram')[0]!;
     expect(numbersIn(body)).toEqual([]);
     expect(body).not.toMatch(/Dijon|Montchapet|m²|€/);
@@ -226,6 +226,29 @@ describeWithSqlite('C04 · première réponse', () => {
     const body = t.sent('instagram')[1]!;
     expect(numbersIn(body)).toEqual([]);
     expect(t.sent('instagram')).toHaveLength(2);
+  });
+
+  it('[R18] une seule réponse par message reçu, même relancé ou en double au même moment', async () => {
+    const t = await setup();
+    const m = msg('instagram', 'comment', [ig('camille.r18')], 'Prix ?', { postRef: 'video-383' });
+    const first = await t.run(m);
+    expect(first.result).toMatchObject({ status: 'sent' });
+    const again = await t.premiere.reply(first.inboundId);
+    expect(again).toMatchObject({ result: null, skipped: 'Ce message a déjà reçu sa réponse.' });
+    const both = await Promise.all([t.premiere.reply(first.inboundId), t.premiere.reply(first.inboundId)]);
+    expect(both.every((o) => o.result === null)).toBe(true);
+    expect(t.sent('instagram')).toHaveLength(1);
+  });
+
+  it('[R18] un envoi en panne laisse répondre à nouveau au même message', async () => {
+    const t = await setup();
+    t.channels.find((c) => c.channel === 'instagram')!.failWith = new Error('panne inventée');
+    const first = await t.run(msg('instagram', 'direct', [ig('camille.panne')], 'Bonjour'));
+    expect(first.result).toMatchObject({ status: 'failed' });
+    t.channels.find((c) => c.channel === 'instagram')!.failWith = null;
+    const retry = await t.premiere.reply(first.inboundId);
+    expect(retry.result).toMatchObject({ status: 'sent' });
+    expect(t.sent('instagram')).toHaveLength(1);
   });
 
   it('[R02] une personne exclue ne reçoit rien, pas même la première réponse', async () => {

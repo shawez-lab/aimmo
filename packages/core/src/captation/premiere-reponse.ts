@@ -236,7 +236,8 @@ export class PremiereReponse {
       property: facts,
       nextStep: nextStepFor(row.body, facts),
     };
-    const writer = this.options.writer;
+    // Sans bien reconnu, l'IA ne rédige pas : seul le texte simple et honnête part [R20].
+    const writer = property ? this.options.writer : undefined;
     const order: SendOrder = {
       networkId: row.network_id,
       agentId: view.person.agent_id,
@@ -251,8 +252,29 @@ export class PremiereReponse {
       sellerNames: property ? await this.sellerNames(property, firstName) : [],
       maxQuestions: brief.nextStep === null ? 0 : 1,
     };
-    const result = await this.controle.send(order);
+    // Une seule réponse par message reçu, même relancé ou traité deux fois en même temps [R18].
+    const claimId = crypto.randomUUID();
+    const { changes } = await this.db.run(
+      `INSERT INTO first_reply_claims (claim_key, inbound_id, claim_id, outcome, created_at) VALUES (?, ?, ?, NULL, ?)
+       ON CONFLICT (claim_key) DO NOTHING`,
+      [inboundId, inboundId, claimId, new Date().toISOString()],
+    );
+    if (changes !== 1) return skip('Ce message a déjà reçu sa réponse.', recognition.status);
+    let result: SendResult;
+    try {
+      result = await this.controle.send(order);
+    } catch (error) {
+      await this.releaseClaim(claimId, 'erreur');
+      throw error;
+    }
+    await this.db.run('UPDATE first_reply_claims SET outcome = ? WHERE claim_id = ?', [result.status, claimId]);
+    if (result.status === 'failed') await this.releaseClaim(claimId, 'panne');
     return { inboundId, recognition: recognition.status, nextStep: brief.nextStep, result, skipped: null };
+  }
+
+  /** Rend la réservation pour un nouvel essai, sans effacer sa ligne. */
+  private async releaseClaim(claimId: string, reason: string): Promise<void> {
+    await this.db.run(`UPDATE first_reply_claims SET claim_key = claim_key || '#${reason}:' || claim_id WHERE claim_id = ?`, [claimId]);
   }
 
   private async alreadySent(personIds: readonly string[], propertyId: string): Promise<boolean> {

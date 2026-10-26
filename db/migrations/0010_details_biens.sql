@@ -14,3 +14,20 @@ BEFORE DELETE ON property_details
 BEGIN
   SELECT RAISE(ABORT, 'property_details : rien ne s''efface');
 END;
+
+-- Une seule première réponse par message reçu [R18] : la réservation est prise avant d'écrire, en une instruction.
+-- Un envoi en panne libère sa réservation en changeant sa clé, sans effacer la ligne, pour un nouvel essai.
+CREATE TABLE IF NOT EXISTS first_reply_claims (
+  claim_key TEXT PRIMARY KEY,
+  inbound_id TEXT NOT NULL REFERENCES inbound_messages (id) ON DELETE RESTRICT,
+  claim_id TEXT NOT NULL,
+  outcome TEXT CHECK (outcome IS NULL OR outcome IN ('sent', 'refused', 'failed')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS first_reply_claims_inbound ON first_reply_claims (inbound_id);
+
+CREATE TRIGGER IF NOT EXISTS first_reply_claims_sans_effacement
+BEFORE DELETE ON first_reply_claims
+BEGIN
+  SELECT RAISE(ABORT, 'first_reply_claims : rien ne s''efface');
+END;
