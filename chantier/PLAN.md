@@ -64,7 +64,9 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : une ligne modifiée, supprimée ou intervertie est détectée ; recherche par personne et par période ; aucune donnée personnelle en clair dans l'empreinte ni dans le texte de la ligne, seulement des identifiants internes [R13].
 
 ### S08 · Droits d'accès
-- Statut : en cours
+- Statut : fait (2026-10-26)
+- Décidé (2026-10-26), lecture prudente : les biens en vente des autres agents forment le fichier commun du réseau, visible de tous ses agents, sans donnée de client (le cahier l'emporte sur l'ancien texte de R16, précisé) ; une fiche sans agent, ou réunie à celle d'un autre agent, n'est pas visible d'un agent ; direction : fiches, biens, chiffres, journal, jamais le coffre anti-blanchiment ; conformité : fiches, biens, journal, coffre, pas les chiffres ; partenaire : rien jusqu'à M18 ; agent parti ou inconnu coupé ; chaque lecture et chaque refus écrits au journal avant de rendre la donnée, rien n'est lu si le journal ne répond pas.
+- Reste : rôles responsable d'équipe, assistant et comptabilité ; identité des rôles hors agent par la connexion (S09) ; colonne réseau dans le journal ; relecture de Codex de la dernière version restée en cours 25 minutes, fusion sans elle (#12).
 - Qui : Claude · Relecture : forte · Dépend de : S03, S07
 - Cahier : Architecture technique, sécurité et droits.
 - Objectif : rôles agent, direction, conformité et partenaire ; un agent ne voit que ses clients, ses biens et ses chiffres ; chaque lecture d'une fiche est écrite au journal.
