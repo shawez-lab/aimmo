@@ -73,7 +73,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : un test d'accès refusé par rôle et par type de donnée ; R16 passe en service.
 
 ### S09 · API du socle sur Cloudflare
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : S04, S05, S06, S07, S08
 - Attend : H04 pour la mise en ligne seulement.
 - Cahier : Architecture technique, les briques et l'hébergement.
