@@ -32,17 +32,25 @@ interface Clue {
   via: 'post' | 'property_ref' | 'url' | 'reference' | 'portal';
   /** Biens trouvés pour cet indice. */
   ids: string[];
+  /**
+   * L'indice désigne à coup sûr un bien (référence, page d'annonce du site, publication) : inconnu, il contredit
+   * un autre indice. Un lien quelconque ou une page du site qui n'est pas une annonce ne désigne rien.
+   */
+  explicit: boolean;
 }
 
 export interface ReconnaissanceSettings {
-  /** Adresses du site où une page d'annonce porte la référence du bien : `/biens/<référence>-…`. */
+  /**
+   * Adresses du site où une page d'annonce porte la référence du bien au début de son nom : `/biens/<référence>-…`.
+   * Le premier groupe de `listingPath` est ce nom entier.
+   */
   siteHosts: readonly string[];
   listingPath: RegExp;
 }
 
 export const DEFAULT_RECONNAISSANCE_SETTINGS: ReconnaissanceSettings = Object.freeze({
   siteHosts: Object.freeze(['shawez-immo.com']),
-  listingPath: /^\/biens\/([a-z0-9]+)(?:-[^/]*)?$/i,
+  listingPath: /^\/biens\/([a-z0-9][a-z0-9-]*)$/i,
 });
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
@@ -51,14 +59,15 @@ const placeholders = (n: number): string => Array.from({ length: n }, () => '?')
 export function normalizeUrl(raw: string): string | null {
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw.trim()) ? raw.trim() : `https://${raw.trim()}`;
   let url: URL;
+  let path: string;
   try {
     url = new URL(withScheme);
+    path = decodeURI(url.pathname).replace(/\/+$/, '');
   } catch {
     return null;
   }
   if (!url.hostname.includes('.')) return null;
   const host = url.hostname.toLowerCase().replace(/^www\./, '');
-  const path = decodeURI(url.pathname).replace(/\/+$/, '');
   return `${host}${path}`.toLowerCase();
 }
 
@@ -119,34 +128,37 @@ export class ReconnaissanceBien {
     const found: Clue[] = [];
     const text = [clues.subject, clues.text].filter((t): t is string => typeof t === 'string').join('\n');
 
-    if (clues.postRef) found.push({ via: 'post', ids: await this.byLink(networkId, 'post', [clues.postRef.trim()]) });
+    if (clues.postRef) found.push({ via: 'post', ids: await this.byLink(networkId, 'post', [clues.postRef.trim()]), explicit: true });
 
     if (clues.propertyRef) {
       const ref = clues.propertyRef.trim();
-      const url = /[/.]/.test(ref) ? normalizeUrl(ref.startsWith('/') ? `${this.settings.siteHosts[0] ?? 'site.invalid'}${ref}` : ref) : null;
-      const ids = url !== null ? await this.byUrl(networkId, url) : await this.byReference(networkId, [ref.toLowerCase()]);
-      found.push({ via: 'property_ref', ids });
-    }
-
-    for (const url of urlsIn(text)) found.push({ via: 'url', ids: await this.byUrl(networkId, url) });
-
-    const references = referencesIn(text);
-    if (references.length > 0) {
-      for (const reference of references) {
-        const ids = [
-          ...(await this.byReference(networkId, [reference])),
-          ...(clues.portal ? await this.byLink(networkId, 'portal', [portalKey(clues.portal, reference)]) : []),
-        ];
-        found.push({ via: clues.portal ? 'portal' : 'reference', ids: [...new Set(ids)] });
+      if (/[/.]/.test(ref)) {
+        const url = normalizeUrl(ref.startsWith('/') ? `${this.settings.siteHosts[0] ?? 'site.invalid'}${ref}` : ref);
+        if (url !== null) found.push({ via: 'property_ref', ...(await this.byUrl(networkId, url)) });
+      } else {
+        found.push({ via: 'property_ref', ids: await this.byReference(networkId, [ref.toLowerCase()]), explicit: true });
       }
     }
 
-    if (found.length === 0) return { status: 'unrecognized', rule: 'R20', reason: 'no_clue' };
+    for (const url of urlsIn(text)) found.push({ via: 'url', ...(await this.byUrl(networkId, url)) });
+
+    for (const reference of referencesIn(text)) {
+      const ids = [
+        ...(await this.byReference(networkId, [reference])),
+        ...(clues.portal ? await this.byLink(networkId, 'portal', [portalKey(clues.portal, reference)]) : []),
+      ];
+      found.push({ via: clues.portal ? 'portal' : 'reference', ids: [...new Set(ids)], explicit: true });
+    }
+
+    // Un lien quelconque qui ne mène à rien ne dit rien du bien.
+    const useful = found.filter((clue) => clue.explicit || clue.ids.length > 0);
+    if (useful.length === 0) return { status: 'unrecognized', rule: 'R20', reason: found.length === 0 ? 'no_clue' : 'unknown' };
     const all = new Set(found.flatMap((clue) => clue.ids));
     // Un indice qui désigne plusieurs biens, ou deux indices qui en désignent deux différents : aucun bien.
     if (found.some((clue) => clue.ids.length > 1) || all.size > 1) return { status: 'unrecognized', rule: 'R20', reason: 'ambiguous' };
-    // Une référence citée qu'on ne connaît pas, à côté d'un bien reconnu : deux biens possibles, dans le doute.
-    if (all.size === 1 && found.some((clue) => (clue.via === 'reference' || clue.via === 'portal') && clue.ids.length === 0)) {
+    // Une référence, une annonce ou une publication citées qu'on ne connaît pas, à côté d'un bien reconnu :
+    // deux biens possibles, dans le doute.
+    if (all.size === 1 && found.some((clue) => clue.explicit && clue.ids.length === 0)) {
       return { status: 'unrecognized', rule: 'R20', reason: 'ambiguous' };
     }
     const [id] = [...all];
@@ -182,14 +194,23 @@ export class ReconnaissanceBien {
     return rows.map((row) => row.id);
   }
 
-  /** Un lien noté, ou une page d'annonce du site qui porte la référence du bien. */
-  private async byUrl(networkId: string, url: string): Promise<string[]> {
+  /**
+   * Un lien noté, ou une page d'annonce du site qui porte la référence du bien au début de son nom. La limite entre
+   * référence et description n'est pas sûre (« 383-1-maison ») : chaque début possible est cherché, et plus d'un
+   * bien trouvé rend l'indice ambigu.
+   */
+  private async byUrl(networkId: string, url: string): Promise<{ ids: string[]; explicit: boolean }> {
     const ids = new Set(await this.byLink(networkId, 'url', [url]));
     const slash = url.indexOf('/');
     const host = slash === -1 ? url : url.slice(0, slash);
     const path = slash === -1 ? '' : url.slice(slash);
     const listing = this.settings.siteHosts.includes(host) ? this.settings.listingPath.exec(path) : null;
-    if (listing?.[1]) for (const id of await this.byReference(networkId, [listing[1].toLowerCase()])) ids.add(id);
-    return [...ids];
+    const name = listing?.[1]?.toLowerCase();
+    if (name) {
+      const parts = name.split('-');
+      const prefixes = parts.map((_, i) => parts.slice(0, i + 1).join('-'));
+      for (const id of await this.byReference(networkId, prefixes)) ids.add(id);
+    }
+    return { ids: [...ids], explicit: name !== undefined };
   }
 }

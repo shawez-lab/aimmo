@@ -99,6 +99,28 @@ describeWithSqlite('reconnaître le bien dont parle un message', () => {
     expect(await reco.recognize(net, { postRef: 'video-ig-2', text: 'Vous avez la réf 999 ?' })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'ambiguous' });
   });
 
+  it('[R20] une annonce du site inconnue ou une référence inconnue donnée par le canal, sous la vidéo d\'un bien : aucun bien', async () => {
+    expect(await reco.recognize(net, { postRef: 'video-ig-1', text: 'https://shawez-immo.com/biens/999-maison' })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'ambiguous' });
+    expect(await reco.recognize(net, { postRef: 'video-ig-1', propertyRef: '999' })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'ambiguous' });
+    // Un lien quelconque, lui, ne contredit rien.
+    expect(await reco.recognize(net, { postRef: 'video-ig-1', text: 'Vu aussi https://exemple.org/conseils' })).toMatchObject({ status: 'recognized', property: { id: homes['383'] } });
+    expect(await reco.recognize(net, { propertyRef: '/estimation-en-ligne/' })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'unknown' });
+  });
+
+  it('[R20] références à tiret : la page d\'annonce mène au bon bien, ou à aucun si deux sont possibles', async () => {
+    const fiches = new FicheClient(db, { now: () => NOW });
+    const agent = (await db.first<{ id: string }>('SELECT id FROM agents'))!.id;
+    const hyphen = (await fiches.createProperty({ networkId: net, agentId: agent, reference: '500-1', kind: 'home', status: 'available' })).id;
+    expect(await reco.recognize(net, { text: 'https://shawez-immo.com/biens/500-1-maison-dijon' })).toMatchObject({ status: 'recognized', property: { id: hyphen } });
+    await fiches.createProperty({ networkId: net, agentId: agent, reference: '500', kind: 'home', status: 'available' });
+    expect(await reco.recognize(net, { text: 'https://shawez-immo.com/biens/500-1-maison-dijon' })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'ambiguous' });
+  });
+
+  it('un lien mal formé ne fait pas échouer la reconnaissance', async () => {
+    expect(normalizeUrl('https://shawez-immo.com/biens/%')).toBeNull();
+    expect(await reco.recognize(net, { postRef: 'video-ig-2', text: 'https://shawez-immo.com/biens/%' })).toMatchObject({ status: 'recognized', property: { id: homes['394'] } });
+  });
+
   it('un nombre seul dans le texte n\'est pas une référence', async () => {
     expect(await reco.recognize(net, { text: 'Je cherche à 383 000 € maximum' })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'no_clue' });
   });
