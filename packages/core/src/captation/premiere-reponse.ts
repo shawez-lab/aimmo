@@ -224,7 +224,10 @@ export class PremiereReponse {
     const recognized = recognition.status === 'recognized' ? recognition.property : null;
     // Un bien déjà envoyé à la personne ne repart pas [R05] : la réponse ne le cite plus et propose le rappel,
     // pour ne jamais laisser la personne sans réponse [R12].
-    const property = recognized && !(await this.alreadySent(view.members.map((p) => p.id), recognized.id)) ? recognized : null;
+    const notSent = recognized && !(await this.alreadySent(view.members.map((p) => p.id), recognized.id)) ? recognized : null;
+    // Un simple merci reçoit une clôture courte : elle ne cite pas le bien, qui reste à envoyer plus tard.
+    const closing = nextStepFor(row.body, null) === null;
+    const property = closing ? null : notSent;
     const facts = property ? await this.facts(property) : null;
     const firstName = view.members.map((p) => p.first_name).find((n) => n) ?? null;
     const brief: ReplyBrief = {
@@ -234,10 +237,15 @@ export class PremiereReponse {
       firstName: channel === 'instagram' ? null : firstName,
       received: withoutContactDetails(row.body),
       property: facts,
-      nextStep: nextStepFor(row.body, facts),
+      nextStep: closing ? null : nextStepFor(row.body, facts),
     };
+    const sellers = property ? await this.sellerNames(property) : [];
+    const recipient = firstName ? plain(firstName) : null;
+    // Un vendeur qui porte le prénom de la personne : le prénom n'est permis que dans la salutation des textes de
+    // secours, et l'IA ne rédige pas, pour que ce prénom ne puisse jamais désigner le vendeur [R19].
+    const sharedName = recipient !== null && sellers.some((n) => plain(n) === recipient);
     // Sans bien reconnu, l'IA ne rédige pas : seul le texte simple et honnête part [R20].
-    const writer = property ? this.options.writer : undefined;
+    const writer = property && !sharedName ? this.options.writer : undefined;
     const order: SendOrder = {
       networkId: row.network_id,
       agentId: view.person.agent_id,
@@ -249,7 +257,7 @@ export class PremiereReponse {
       ...(writer ? { compose: () => writer.write(brief) } : {}),
       fallbackTexts: fallbackTexts(brief),
       figures: figuresOf(facts),
-      sellerNames: property ? await this.sellerNames(property, firstName) : [],
+      sellerNames: sellers.filter((n) => plain(n) !== recipient),
       maxQuestions: brief.nextStep === null ? 0 : 1,
     };
     // Une seule réponse par message reçu, même relancé ou traité deux fois en même temps [R18].
@@ -306,8 +314,8 @@ export class PremiereReponse {
     };
   }
 
-  /** Noms et prénoms des vendeurs du bien [R19], sauf le prénom de la personne à qui l'on répond. */
-  private async sellerNames(property: Property, recipientFirstName: string | null): Promise<string[]> {
+  /** Noms et prénoms des vendeurs du bien [R19]. */
+  private async sellerNames(property: Property): Promise<string[]> {
     const rows = await this.db.all<{ first_name: string | null; last_name: string | null }>(
       `SELECT DISTINCT p.first_name, p.last_name FROM project_properties pp
        JOIN projects pr ON pr.id = pp.project_id
@@ -315,9 +323,6 @@ export class PremiereReponse {
        WHERE pp.property_id = ? AND pp.role = 'owned'`,
       [property.id],
     );
-    const recipient = recipientFirstName ? plain(recipientFirstName) : null;
-    return rows
-      .flatMap((r) => [r.first_name, r.last_name])
-      .filter((n): n is string => !!n && n.trim().length > 1 && plain(n) !== recipient);
+    return rows.flatMap((r) => [r.first_name, r.last_name]).filter((n): n is string => !!n && n.trim().length > 1);
   }
 }

@@ -272,6 +272,25 @@ describeWithSqlite('C04 · première réponse', () => {
     expect(t.sent('instagram')).toHaveLength(1);
   });
 
+  it('[R19] un vendeur au prénom de la personne : l\'IA ne rédige pas, et le prénom n\'est que dans la salutation', async () => {
+    const writer = new FakeWriter(async () => 'Bonjour Bérénice, le vendeur est Bérénice. Souhaitez-vous visiter ?');
+    const t = await setup(writer);
+    await t.run(msg('whatsapp', 'direct', [wa('+33610000055')], 'Bonjour, toujours disponible ?', { postRef: 'video-383', sender: { channelId: null, name: 'Bérénice', identifiers: [wa('+33610000055')] } }));
+    expect(writer.briefs).toHaveLength(0);
+    const body = t.sent('whatsapp')[0]!;
+    expect(body.match(/Bérénice/g)).toHaveLength(1);
+    expect(body).toMatch(/Bonjour Bérénice, le bien/);
+    expect(body).not.toMatch(/Vendeuse/);
+  });
+
+  it('[R05] un merci reçoit une clôture qui ne consomme pas le bien : la vraie question suivante l\'obtient', async () => {
+    const t = await setup();
+    await t.run(msg('instagram', 'comment', [ig('camille.merci2')], 'Merci !', { postRef: 'video-383' }));
+    await t.run(msg('instagram', 'comment', [ig('camille.merci2')], 'Prix ?', { postRef: 'video-383' }));
+    expect(t.sent('instagram')[0]).not.toContain('€');
+    expect(t.sent('instagram')[1]).toContain('245 000 €');
+  });
+
   it('[R02] une personne exclue ne reçoit rien, pas même la première réponse', async () => {
     const t = await setup();
     const out = await t.run(msg('instagram', 'direct', [ig('camille.stop')], 'Stop, ne plus me contacter'));
