@@ -225,6 +225,8 @@ export class ConversationRelais {
        VALUES (?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING`,
       [networkId, reply.channel, reply.externalId, reply.conversationRef, reply.text, reply.sentAt.toISOString(), this.now().toISOString()],
     );
+    // Le premier message du client a pu être rangé pendant ce temps : l'écho est appliqué tout de suite s'il le peut.
+    await this.applyPendingHumanReplies(networkId);
     return 'pending';
   }
 
