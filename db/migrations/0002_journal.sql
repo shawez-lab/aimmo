@@ -11,3 +11,16 @@ CREATE TABLE journal (
 
 CREATE INDEX journal_subject_idx ON journal (subject);
 CREATE INDEX journal_at_idx ON journal (at);
+
+-- Ajout seul : aucune ligne ne peut être modifiée ni effacée.
+CREATE TRIGGER journal_sans_modification
+BEFORE UPDATE ON journal
+BEGIN
+  SELECT RAISE(ABORT, 'journal en ajout seul');
+END;
+
+CREATE TRIGGER journal_sans_effacement
+BEFORE DELETE ON journal
+BEGIN
+  SELECT RAISE(ABORT, 'journal en ajout seul');
+END;

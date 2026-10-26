@@ -1,4 +1,4 @@
-import type { JournalData, JournalEntry, JournalStore } from './types.ts';
+import type { JournalData, JournalEntry, JournalStore } from "./types.ts";
 
 interface SqliteStatement {
   run(...params: unknown[]): unknown;
@@ -58,27 +58,35 @@ export class SqliteJournalStore implements JournalStore {
   }
 
   async last(): Promise<JournalEntry | null> {
-    const row = this.database.prepare('SELECT * FROM journal ORDER BY seq DESC LIMIT 1').get();
+    const row = this.database
+      .prepare("SELECT * FROM journal ORDER BY seq DESC LIMIT 1")
+      .get();
     return row === undefined ? null : toEntry(row);
   }
 
   async all(): Promise<JournalEntry[]> {
-    return this.rows('SELECT * FROM journal ORDER BY seq');
+    return this.rows("SELECT * FROM journal ORDER BY seq");
   }
 
   async bySubject(subject: string): Promise<JournalEntry[]> {
-    return this.rows('SELECT * FROM journal WHERE subject = ? ORDER BY seq', subject);
+    return this.rows(
+      "SELECT * FROM journal WHERE subject = ? ORDER BY seq",
+      subject,
+    );
   }
 
   async byPeriod(fromIso: string, toIso: string): Promise<JournalEntry[]> {
     return this.rows(
-      'SELECT * FROM journal WHERE at >= ? AND at <= ? ORDER BY seq',
+      "SELECT * FROM journal WHERE at >= ? AND at <= ? ORDER BY seq",
       fromIso,
       toIso,
     );
   }
 
   private rows(sql: string, ...params: unknown[]): JournalEntry[] {
-    return this.database.prepare(sql).all(...params).map(toEntry);
+    return this.database
+      .prepare(sql)
+      .all(...params)
+      .map(toEntry);
   }
 }
