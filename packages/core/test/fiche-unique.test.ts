@@ -53,6 +53,15 @@ describe('S04 · normalisation des identifiants', () => {
     expect(normalizeFacebook('https://m.facebook.com/Agence.Test/')).toBe('agence.test');
     expect(normalizeFacebook('1000000042')).toBe('1000000042');
     expect(normalizeFacebook('a/b c')).toBeNull();
+    expect(normalizeFacebook('https://www.facebook.com/people/Alpha-Test/1000000001/')).toBe('1000000001');
+    expect(normalizeFacebook('https://www.facebook.com/people/Beta-Test/1000000002/')).toBe('1000000002');
+    expect(normalizeFacebook('https://www.facebook.com/profile.php?sk=about&id=1000000003')).toBe('1000000003');
+    for (const raw of ['https://www.facebook.com/groups/123/', 'https://facebook.com/share/abc', 'https://www.facebook.com/']) {
+      expect(normalizeFacebook(raw), raw).toBeNull();
+    }
+    for (const raw of ['https://www.instagram.com/p/AbC123/', 'https://instagram.com/reel/xyz', 'https://www.instagram.com/']) {
+      expect(normalizeInstagram(raw), raw).toBeNull();
+    }
   });
 });
 

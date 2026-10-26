@@ -45,26 +45,43 @@ export function normalizePhone(raw: string): string | null {
 
 /** Compte Instagram : sans @, sans adresse du site, en minuscules. */
 export function normalizeInstagram(raw: string): string | null {
-  const value = stripProfileUrl(raw.trim(), /^(https?:\/\/)?(www\.)?instagram\.com\//i)
-    .replace(/^@/, '')
-    .toLowerCase();
-  return /^[a-z0-9._]{1,30}$/.test(value) ? value : null;
-}
-
-/** Retire l'adresse du site et ce qui suit le nom du compte ; une valeur sans adresse reste telle quelle. */
-function stripProfileUrl(value: string, prefix: RegExp): string {
-  return prefix.test(value) ? value.replace(prefix, '').replace(/[/?#].*$/, '') : value;
+  const value = profileFromUrl(raw.trim(), INSTAGRAM_URL, INSTAGRAM_ROUTES);
+  if (value === null) return null;
+  const name = value.replace(/^@/, '').toLowerCase();
+  return /^[a-z0-9._]{1,30}$/.test(name) ? name : null;
 }
 
 /** Compte Facebook : numéro de profil, ou nom de page en minuscules, sans l'adresse du site. */
 export function normalizeFacebook(raw: string): string | null {
   const trimmed = raw.trim();
-  const byId = trimmed.match(/profile\.php\?id=(\d+)/i);
+  const byId = trimmed.match(/profile\.php\?(?:.*&)?id=(\d+)/i);
   if (byId?.[1]) return byId[1];
-  const value = stripProfileUrl(trimmed, /^(https?:\/\/)?((www|m)\.)?(facebook|fb)\.com\//i)
-    .replace(/^@/, '')
-    .toLowerCase();
-  return /^[a-z0-9.]{1,50}$/.test(value) ? value : null;
+  // Adresse « /people/<nom>/<numéro> » : seul le numéro désigne la personne.
+  const people = trimmed.match(/^(?:https?:\/\/)?(?:(?:www|m)\.)?(?:facebook|fb)\.com\/people\/[^/?#]+\/(\d+)/i);
+  if (people?.[1]) return people[1];
+  const value = profileFromUrl(trimmed, FACEBOOK_URL, FACEBOOK_ROUTES);
+  if (value === null) return null;
+  const name = value.replace(/^@/, '').toLowerCase();
+  return /^[a-z0-9.]{1,50}$/.test(name) ? name : null;
+}
+
+const INSTAGRAM_URL = /^(https?:\/\/)?(www\.)?instagram\.com\//i;
+const FACEBOOK_URL = /^(https?:\/\/)?((www|m)\.)?(facebook|fb)\.com\//i;
+/** Premiers segments d'adresse qui ne sont pas un compte : publication, page technique… */
+const INSTAGRAM_ROUTES = new Set(['p', 'reel', 'reels', 'stories', 'explore', 'tv', 'accounts', 'direct']);
+const FACEBOOK_ROUTES = new Set([
+  'people', 'profile.php', 'pages', 'groups', 'events', 'photo', 'photo.php', 'photos', 'watch', 'share',
+  'story.php', 'permalink.php', 'posts', 'marketplace', 'messages', 'login', 'hashtag', 'reel', 'videos',
+]);
+
+/**
+ * Rend le nom du compte d'une adresse de profil, null pour une adresse qui n'est pas un profil.
+ * Une valeur sans adresse du site est rendue telle quelle.
+ */
+function profileFromUrl(value: string, prefix: RegExp, routes: ReadonlySet<string>): string | null {
+  if (!prefix.test(value)) return value;
+  const [first = ''] = value.replace(prefix, '').split(/[?#]/)[0]?.split('/') ?? [];
+  return first === '' || routes.has(first.toLowerCase()) ? null : first;
 }
 
 /** Clé de rapprochement : un numéro WhatsApp et un numéro de téléphone identiques désignent la même personne. */
