@@ -5,7 +5,7 @@
  * Sans bien reconnu, un message simple et honnête, sans aucune donnée de bien [R20].
  */
 import type { SqlDatabase } from '../db/sql.ts';
-import type { Channel, Person, Property, PropertyKind } from '../db/types.ts';
+import type { OutboundChannelName, Person, Property, PropertyKind } from '../db/types.ts';
 import type { ReconnaissanceBien, Recognition } from '../biens/reconnaissance.ts';
 import type { ControleEnvois, SendOrder, SendResult } from '../envoi/controle.ts';
 import { plain } from '../envoi/texte.ts';
@@ -18,7 +18,7 @@ export type ReplyLanguage = 'fr' | 'en';
 
 /** Ce qu'on dit à l'IA : le strict nécessaire, aucune coordonnée [R15]. */
 export interface ReplyBrief {
-  channel: Channel;
+  channel: OutboundChannelName;
   language: ReplyLanguage;
   /** Tutoiement sur Instagram, vouvoiement ailleurs [R08]. */
   informal: boolean;
@@ -176,7 +176,7 @@ export function fallbackTexts(brief: ReplyBrief): string[] {
 }
 
 /** Canal de la réponse : celui du message, ou le mail donné dans le formulaire du site. Rien pour l'assistant du site (C08). */
-function replyChannel(row: InboundRow, hasEmail: boolean): Channel | null {
+function replyChannel(row: InboundRow, hasEmail: boolean): OutboundChannelName | null {
   switch (row.channel) {
     case 'instagram':
     case 'facebook':
@@ -184,6 +184,8 @@ function replyChannel(row: InboundRow, hasEmail: boolean): Channel | null {
     case 'email':
       return row.channel;
     case 'site':
+      // L'assistant du site répond dans la session du visiteur (C08) ; le formulaire, par mail s'il en donne un.
+      if (row.kind === 'site_chat') return 'site';
       return row.kind === 'form' && hasEmail ? 'email' : null;
   }
 }

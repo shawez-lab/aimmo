@@ -3,10 +3,10 @@
  * un test parcourt le code et refuse tout autre appel.
  * Aucun vrai canal n'est branché dans le socle : les tests et le mode essai utilisent `FakeChannel`.
  */
-import type { Channel } from '../db/types.ts';
+import type { OutboundChannelName } from '../db/types.ts';
 
 export interface OutboundMessage {
-  channel: Channel;
+  channel: OutboundChannelName;
   /** Identifiant de la personne sur ce canal : adresse, numéro ou compte. */
   to: string;
   body: string;
@@ -14,7 +14,7 @@ export interface OutboundMessage {
   messageId: string;
   /**
    * Instagram et Facebook : `to` est la conversation reçue, un message privé (compte propre au canal) ou un
-   * commentaire (réponse privée au commentaire).
+   * commentaire (réponse privée au commentaire). Assistant du site : `to` est la session du visiteur.
    */
   thread?: 'direct' | 'comment';
 }
@@ -25,7 +25,7 @@ export interface DeliveryReceipt {
 }
 
 export interface OutboundChannel {
-  readonly channel: Channel;
+  readonly channel: OutboundChannelName;
   deliver(message: OutboundMessage): Promise<DeliveryReceipt>;
 }
 
@@ -34,7 +34,7 @@ export class FakeChannel implements OutboundChannel {
   readonly sent: OutboundMessage[] = [];
   failWith: Error | null = null;
 
-  constructor(readonly channel: Channel) {}
+  constructor(readonly channel: OutboundChannelName) {}
 
   async deliver(message: OutboundMessage): Promise<DeliveryReceipt> {
     if (this.failWith) throw this.failWith;

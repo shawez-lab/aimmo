@@ -14,8 +14,10 @@
  *             sur ce canal et pour cette finalité, sauf la réponse à un message resté sans réponse ;
  *   R22       sur Instagram, Facebook et WhatsApp, rien ne part plus de 24 heures après le dernier message
  *             du client.
+ * Assistant du site (C08) : seulement la réponse au visiteur, dans sa session et pendant qu'elle est ouverte ;
+ * jamais un message d'initiative, faute de tout accord possible [R03], ni une réponse tardive [R01].
  */
-import type { Channel, Consent, Exclusion, Message } from '../db/types.ts';
+import type { Channel, Consent, Exclusion, Message, OutboundChannelName } from '../db/types.ts';
 import { isWorkingDay, localTime } from './horaires.ts';
 
 export const SEND_KINDS = [
@@ -76,7 +78,7 @@ export const DEFAULT_SEND_SETTINGS: SendSettings = Object.freeze({
 });
 
 export interface SendRequest {
-  channel: Channel;
+  channel: OutboundChannelName;
   kind: SendKind;
   /** Finalité de l'accord demandé [R03]. Par défaut, le type du message. */
   purpose?: string;
@@ -152,7 +154,7 @@ export function decideSend(
     if (received > settings.assistantMaxExchanges) {
       return refuse('R21', `Plus de ${settings.assistantMaxExchanges} échanges dans cette conversation : l’agent prend le relais.`);
     }
-  } else if (META_CHANNELS.includes(request.channel)) {
+  } else if ((META_CHANNELS as readonly string[]).includes(request.channel)) {
     // Sur les canaux de Meta, un message sans conversation citée arrive quand même dans le fil de la personne :
     // il est tenu par toutes ses conversations de ce canal.
     checked.push('R21');
@@ -172,6 +174,12 @@ export function decideSend(
     if ([...receivedBy.values()].some((n) => n > settings.assistantMaxExchanges)) {
       return refuse('R21', `Plus de ${settings.assistantMaxExchanges} échanges avec la personne sur ce canal : l’agent prend le relais.`);
     }
+  }
+
+  // Assistant du site : on n'y écrit jamais de soi-même, aucun accord ne pouvant y être donné [R03].
+  if (request.channel === 'site' && (request.kind !== 'reply' || !request.conversationId?.startsWith('site:'))) {
+    checked.push('R03');
+    return refuse('R03', 'Sur l’assistant du site, seulement la réponse au visiteur, dans sa session.');
   }
 
   // R01 : la réponse à un message reçu il y a moins de 60 minutes part tout de suite, à toute heure.
@@ -201,6 +209,10 @@ export function decideSend(
         reason: `Réponse à un message reçu il y a moins de ${settings.replyWindowMinutes} minutes : elle part tout de suite.`,
         checked,
       };
+    }
+    // La session de l'assistant du site ne dure pas : passé ce délai, la réponse n'a plus où arriver.
+    if (request.channel === 'site') {
+      return refuse('R01', `Session de l’assistant du site sans message depuis ${settings.replyWindowMinutes} minutes : plus de réponse automatique.`);
     }
     // Plus tard, une réponse est un envoi d'initiative pour les heures ; elle reste une réponse pour R03
     // tant que le dernier message reçu de la conversation n'a pas eu de réponse.
@@ -241,7 +253,7 @@ export function decideSend(
   }
 
   // R03 : accord préalable, en cours, sur ce canal et pour cette finalité.
-  if (CONSENT_CHANNELS.includes(request.channel) && !answersPending) {
+  if ((CONSENT_CHANNELS as readonly string[]).includes(request.channel) && !answersPending) {
     checked.push('R03');
     const purpose = request.purpose ?? request.kind;
     const consent = facts.consents.find(
@@ -254,7 +266,7 @@ export function decideSend(
 
   // R22 : sur les canaux de Meta, rien ne part hors de la fenêtre ouverte par le dernier message du client,
   // dans cette conversation quand elle est citée, sinon sur ce canal.
-  if (META_CHANNELS.includes(request.channel)) {
+  if ((META_CHANNELS as readonly string[]).includes(request.channel)) {
     checked.push('R22');
     const lastIn = Math.max(
       -Infinity,
