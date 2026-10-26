@@ -177,15 +177,17 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : la vraie IA (H13) ; seuls le français et l'anglais sont gérés, une autre langue reçoit du français.
 
 ### C05 · Conversation et relais à l'agent
-- Statut : en cours
+- Statut : fait (2026-10-26)
 - Qui : Claude · Relecture : forte · Dépend de : C04
 - Cahier : M02, « Relais humain », « L'IA et l'humain », règles.
 - Objectif : l'état de chaque conversation : l'assistant converse jusqu'au rendez-vous ou au plus 5 échanges, puis passe la main ; l'IA se tait pour de bon dès qu'un humain répond ; l'agent voit la conversation et la reprend à tout moment.
 - Critères : après la réponse d'un agent, plus aucun message automatique dans cette conversation [R21] ; au 6e message du client, l'agent est prévenu et l'assistant se tait [R21] ; sur Instagram, Facebook et WhatsApp, rien ne part hors de la fenêtre de 24 heures depuis le dernier message du client [R22] ; une relance à l'initiative du réseau ne part ni le soir ni le dimanche [R01].
 - Attend : rien.
+- Décidé (2026-10-26), lecture prudente : R21 et R22 sont dans la décision d'envoi, donc tenues pour tout message automatique ; sur un canal de Meta, un envoi sans conversation citée est tenu par toutes les conversations de la personne sur ce canal ; « 5 échanges » = 5 messages reçus du client ; un écho sans application connue est humain, sauf identifiant rendu par le canal à notre envoi ou, sur Meta seulement, même texte qu'un envoi encore sans identifiant ; un écho WhatsApp Business est toujours humain ; sans aucun message du client sur un canal de Meta, rien ne part ; la conversation passée à l'agent ne se rouvre jamais.
+- Reste : réponse de l'agent depuis sa boîte mail non vue (avec C06) ; les réponses suivantes reprennent la première réponse de C04, une vraie conversation suivie viendra avec l'IA (H13) ; relecture de Codex de la dernière version restée en cours 30 minutes, fusion sans elle (#19).
 
 ### C06 · Mail et formulaire du site, en mode essai
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : C05, S09
 - Cahier : M02, « Branchements » ; `docs/EXISTANT.md`, `lead.js` et `lead-tri.js`.
 - Objectif : brancher sur l'API du socle la réception des mails (routage mail de Cloudflare, mails de portails compris) et du formulaire « Être rappelé », de bout en bout jusqu'à la réponse, en mode essai : la réponse est écrite au journal, jamais envoyée.
