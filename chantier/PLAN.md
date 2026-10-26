@@ -207,7 +207,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : avant tout envoi réel (C09), sérialiser par conversation l'écho humain et le premier message traités en même temps (fenêtre étroite signalée par Codex, sans effet en essai) ; branchement chez Meta avec H06 et H17 ; relecture forte (1 P1 corrigé), Codex : 4 P0 corrigés en 4 tours, le dernier réduit et reporté à C09 (#21).
 
 ### C08 · API de l'assistant du site, en mode essai
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : C05, S09
 - Cahier : M02, « Canaux » : assistant du site.
 - Objectif : l'API que l'assistant du site appellera : ouvrir une conversation, envoyer un message, recevoir la réponse, avec les mêmes règles que les autres canaux. Son intégration au site sera une proposition sur `shawez-immo`, faite dans une tâche à part, jamais directement sur main.
