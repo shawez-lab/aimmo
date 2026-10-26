@@ -172,23 +172,11 @@ export class ConversationRelais {
       ]));
     if (!last) return 'unknown_conversation';
     const view = await this.fiche.view(last.person_id);
-    // L'écho arrivé avant que le canal ait rendu l'identifiant de notre envoi : reconnu à son texte, mot pour mot,
-    // parmi nos messages automatiques des dernières minutes dans cette conversation.
-    const echoed = sameText(reply.text);
-    const recent = reply.sentAt.getTime() - OWN_ECHO_WINDOW_MS;
-    if (
-      echoed !== '' &&
-      view.messages.some(
-        (m) =>
-          m.conversation_id === conversationId &&
-          m.direction === 'out' &&
-          (m.author_kind === 'ai' || m.author_kind === 'system') &&
-          Date.parse(m.occurred_at) >= recent &&
-          sameText(m.body) === echoed,
-      )
-    ) {
-      return 'own';
-    }
+    // L'écho Meta arrivé avant que le canal ait rendu l'identifiant de notre envoi : reconnu à son texte, mot pour
+    // mot, parmi nos messages automatiques des dernières minutes dont l'identifiant n'est pas encore connu. Un
+    // message dont l'identifiant est déjà rangé ne peut plus revenir sous un autre : ce texte-là est d'un humain.
+    // Jamais sur WhatsApp : ses échos viennent toujours de l'application de l'agent.
+    if (reply.channel !== 'whatsapp' && (await this.inFlightSameText(networkId, conversationId, reply))) return 'own';
     const { changes } = await this.db.run(
       'INSERT INTO human_replies (dedup_key, network_id, message_id, created_at) VALUES (?, ?, NULL, ?) ON CONFLICT DO NOTHING',
       [`${reply.channel}:${reply.externalId}`, networkId, this.now().toISOString()],
@@ -217,6 +205,24 @@ export class ConversationRelais {
       `${reply.channel}:${reply.externalId}`,
     ]);
     return 'noted';
+  }
+
+  private async inFlightSameText(networkId: string, conversationId: string, reply: HumanReply): Promise<boolean> {
+    const echoed = sameText(reply.text);
+    if (echoed === '') return false;
+    const candidates = await this.db.all<{ body: string }>(
+      `SELECT m.body FROM messages m
+       WHERE m.network_id = ? AND m.conversation_id = ? AND m.direction = 'out' AND m.author_kind IN ('ai', 'system')
+         AND m.occurred_at >= ? AND m.occurred_at <= ?
+         AND NOT EXISTS (SELECT 1 FROM outbound_refs r WHERE r.message_id = m.id)`,
+      [
+        networkId,
+        conversationId,
+        new Date(reply.sentAt.getTime() - OWN_ECHO_WINDOW_MS).toISOString(),
+        new Date(reply.sentAt.getTime() + OWN_ECHO_WINDOW_MS).toISOString(),
+      ],
+    );
+    return candidates.some((m) => sameText(m.body) === echoed);
   }
 
   /** La conversation telle que l'agent la voit, sous ses droits, chaque lecture écrite au journal [R16]. */

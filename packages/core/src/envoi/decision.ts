@@ -163,6 +163,15 @@ export function decideSend(
     if ((facts.handovers ?? []).some((h) => h.conversation_id.startsWith(prefix) && Date.parse(h.handed_at) <= at)) {
       return refuse('R21', 'Conversation passée à l’agent sur ce canal : l’assistant se tait.');
     }
+    const receivedBy = new Map<string, number>();
+    for (const m of facts.messages) {
+      if (m.direction !== 'in' || m.channel !== request.channel || Date.parse(m.occurred_at) > at) continue;
+      const key = m.conversation_id ?? '';
+      receivedBy.set(key, (receivedBy.get(key) ?? 0) + 1);
+    }
+    if ([...receivedBy.values()].some((n) => n > settings.assistantMaxExchanges)) {
+      return refuse('R21', `Plus de ${settings.assistantMaxExchanges} échanges avec la personne sur ce canal : l’agent prend le relais.`);
+    }
   }
 
   // R01 : la réponse à un message reçu il y a moins de 60 minutes part tout de suite, à toute heure.

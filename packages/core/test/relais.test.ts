@@ -201,11 +201,25 @@ describeWithSqlite('C05 · conversation et relais à l’agent', () => {
     // Notre réponse revient en écho sans app_id : son identifiant est celui que le canal nous a rendu.
     const [ours] = humanRepliesFromMeta('instagram', t.echo('kim', 'fake-1', t.sent('instagram')[0]!), [OUR_APP]);
     expect(await t.relais.noteHumanReply(t.network.id, ours!)).toBe('own');
-    // Arrivé avant l'identifiant : reconnu à son texte.
-    const [early] = humanRepliesFromMeta('instagram', t.echo('kim', 'mid-inconnu', t.sent('instagram')[0]!), [OUR_APP]);
+    // Le même texte sous un autre identifiant, alors que le nôtre est connu : c'est un humain qui l'a écrit.
+    const [copy] = humanRepliesFromMeta('instagram', t.echo('kim', 'mid-copie', t.sent('instagram')[0]!), [OUR_APP]);
+    expect(await t.relais.noteHumanReply(t.network.id, copy!)).toBe('noted');
+    t.advance(MINUTE);
+    expect(await t.relais.process(await t.receive(t.dm('kim', 'Je voudrais vendre')))).toMatchObject({ status: 'silent' });
+    expect(t.sent('instagram')).toHaveLength(1);
+  });
+
+  it('[R21] notre écho arrivé avant que le canal rende son identifiant est reconnu à son texte', async () => {
+    const t = await setup();
+    const id = await t.receive(t.dm('lia', 'Bonjour, vous êtes dispo ?'));
+    t.advance(1000);
+    await t.relais.process(id);
+    // Le canal n'a pas encore rendu l'identifiant : on l'efface du jeu de test en le rendant inconnu.
+    await t.db.run("UPDATE outbound_refs SET message_id = (SELECT id FROM messages WHERE direction = 'in' LIMIT 1)");
+    const [early] = humanRepliesFromMeta('instagram', t.echo('lia', 'mid-inconnu', t.sent('instagram')[0]!), [OUR_APP]);
     expect(await t.relais.noteHumanReply(t.network.id, early!)).toBe('own');
     t.advance(MINUTE);
-    expect(await t.relais.process(await t.receive(t.dm('kim', 'Je voudrais vendre')))).toMatchObject({ status: 'replied' });
+    expect(await t.relais.process(await t.receive(t.dm('lia', 'Je voudrais vendre')))).toMatchObject({ status: 'replied' });
     expect(t.sent('instagram')).toHaveLength(2);
   });
 
@@ -231,6 +245,22 @@ describeWithSqlite('C05 · conversation et relais à l’agent', () => {
     expect(await t.relais.process(await t.receive(wa('Merci, à demain')))).toMatchObject({ status: 'silent' });
     expect(t.sent('whatsapp')).toHaveLength(1);
     expect(humanRepliesFromWhatsApp({ entry: [{ changes: [{ field: 'messages', value: {} }] }] })).toHaveLength(0);
+  });
+
+  it('[R21] sur WhatsApp, un humain qui écrit le même texte que l’assistant le fait quand même taire', async () => {
+    const t = await setup();
+    const wa = (text: string): InboundMessage => ({
+      ...t.dm('wb', text),
+      channel: 'whatsapp',
+      conversationRef: '33600000098',
+      sender: { channelId: '33600000098', name: null, identifiers: [{ kind: 'whatsapp', value: '+33600000098' }] },
+    });
+    const id = await t.receive(wa('Bonjour'));
+    t.advance(1000);
+    await t.relais.process(id);
+    await t.db.run('UPDATE outbound_refs SET message_id = (SELECT id FROM messages WHERE direction = ? LIMIT 1)', ['in']);
+    const human = { channel: 'whatsapp' as const, conversationRef: '33600000098', externalId: 'wamid.same', text: t.sent('whatsapp')[0]!, sentAt: new Date(SUNDAY_NIGHT.getTime() + 2000) };
+    expect(await t.relais.noteHumanReply(t.network.id, human)).toBe('noted');
   });
 
   it('[R21] l’agent qui écrit le premier : la personne est retrouvée par son identifiant chez le canal', async () => {
@@ -293,6 +323,10 @@ describeWithSqlite('C05 · conversation et relais à l’agent', () => {
     const ask = { channel: 'instagram' as const, kind: 'reply' as const, conversationId: conversation, at: SUNDAY_NIGHT };
     expect(decideSend(ask, facts(5))).toMatchObject({ allowed: true });
     expect(decideSend(ask, facts(6))).toMatchObject({ allowed: false, rule: 'R21' });
+    // Une relance sans conversation citée compte aussi les échanges du canal.
+    const { conversationId: _c, ...noConversation } = ask;
+    expect(decideSend({ ...noConversation, kind: 'follow_up', at: new Date('2026-12-07T09:00:00.000Z') }, facts(5))).toMatchObject({ allowed: true });
+    expect(decideSend({ ...noConversation, kind: 'follow_up', at: new Date('2026-12-07T09:00:00.000Z') }, facts(6))).toMatchObject({ allowed: false, rule: 'R21' });
   });
 
   it('[R21] l’IA qui rédige pendant qu’un humain répond est arrêtée : rien ne part', async () => {
