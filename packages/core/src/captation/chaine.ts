@@ -41,6 +41,11 @@ export interface ChainResult {
   elapsedMs: number;
 }
 
+export interface ChainHooks {
+  /** Appelé après le rattachement de chaque message, avant sa réponse. */
+  beforeReply?: () => Promise<void>;
+}
+
 export class ChaineCaptation {
   constructor(
     private readonly reception: Reception,
@@ -49,7 +54,13 @@ export class ChaineCaptation {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async receive(networkId: string, source: InboundSource, raw: unknown, ctx: Partial<AdaptContext> = {}): Promise<ChainResult[]> {
+  async receive(
+    networkId: string,
+    source: InboundSource,
+    raw: unknown,
+    ctx: Partial<AdaptContext> = {},
+    hooks: ChainHooks = {},
+  ): Promise<ChainResult[]> {
     const started = this.now().getTime();
     const adapted = adaptInbound(source, raw, { now: ctx.now ?? this.now(), ...(ctx.ownIds ? { ownIds: ctx.ownIds } : {}) });
     // Un mail ou un formulaire est « reçu » quand AIMMO le reçoit [R01] : la date qu'il porte vient de l'horloge de
@@ -102,6 +113,9 @@ export class ChaineCaptation {
         results.push(done('silenced'));
         continue;
       }
+      // Le message est rangé dans sa fiche : ce qui attendait sa conversation (un écho humain du même lot) passe
+      // avant la réponse [R21].
+      if (hooks.beforeReply) await hooks.beforeReply();
       const relayed = await this.relais.process(item.inboundId);
       const messageId = relayed.status === 'replied' ? (relayed.reply.result?.messageId ?? null) : null;
       results.push(done(relayed.status, messageId));

@@ -165,10 +165,17 @@ export async function processMetaNotification(config: MetaConfig, networkId: str
     if (outcome === 'noted') humanReplies += 1;
     if (outcome === 'unknown_conversation') unknown.push(echo);
   }
-  const results = await chaine.receive(networkId, source, body, { ownIds: csv(config.ownIds) });
   // Un écho arrivé dans le même lot que le premier message de sa conversation : la conversation n'existait pas
-  // encore. Il est repris une fois le message rangé, pour que l'assistant se taise ensuite [R21].
-  for (const echo of unknown) if ((await relais.noteHumanReply(networkId, echo)) === 'noted') humanReplies += 1;
+  // encore. Il est repris dès que le message est rangé dans sa fiche, avant toute réponse : l'assistant se tait [R21].
+  const retry = async (): Promise<void> => {
+    for (let i = unknown.length - 1; i >= 0; i -= 1) {
+      const outcome = await relais.noteHumanReply(networkId, unknown[i]!);
+      if (outcome === 'unknown_conversation') continue;
+      if (outcome === 'noted') humanReplies += 1;
+      unknown.splice(i, 1);
+    }
+  };
+  const results = await chaine.receive(networkId, source, body, { ownIds: csv(config.ownIds) }, unknown.length > 0 ? { beforeReply: retry } : {});
   return { source, humanReplies, results };
 }
 
