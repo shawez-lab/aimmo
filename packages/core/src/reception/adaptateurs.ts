@@ -80,6 +80,17 @@ function optObj(value: unknown): Json | null {
   return isObject(value) ? value : null;
 }
 
+/**
+ * Liste d'éléments d'une notification. Absente : vide. Présente mais d'une autre forme : gardée entière comme
+ * illisible, pour que rien ne se perde.
+ */
+function items(value: unknown, channel: InboundChannel, result: AdaptResult, what: string): unknown[] {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) return value;
+  result.unreadable.push(unreadable(channel, value, `liste « ${what} » illisible`));
+  return [];
+}
+
 function list(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
@@ -139,8 +150,9 @@ function each(result: AdaptResult, channel: InboundChannel, item: unknown, read:
   }
 }
 
-function push(result: AdaptResult, message: InboundMessage | null, channel: InboundChannel, raw: unknown) {
-  if (message === null) result.unreadable.push(unreadable(channel, raw, 'message vide'));
+function push(result: AdaptResult, message: InboundMessage | null | 'ignored', channel: InboundChannel, raw: unknown) {
+  if (message === 'ignored') result.ignored += 1;
+  else if (message === null) result.unreadable.push(unreadable(channel, raw, 'message vide'));
   else result.messages.push(message);
 }
 
@@ -174,10 +186,17 @@ function adaptMeta(channel: 'instagram' | 'facebook', raw: unknown, ctx: AdaptCo
       continue;
     }
     const entryTime = entry.time;
-    for (const item of list(entry.messaging)) {
-      each(result, channel, item, () => metaDirect(channel, obj(item, 'message'), own, ctx));
+    if (!['messaging', 'standby', 'changes'].some((key) => key in entry)) {
+      result.unreadable.push(unreadable(channel, entryRaw, 'élément « entry » sans contenu connu'));
+      continue;
     }
-    for (const item of list(entry.changes)) {
+    // `standby` : messages reçus pendant qu'une autre application, comme ManyChat, a la main sur la conversation.
+    for (const key of ['messaging', 'standby']) {
+      for (const item of items(entry[key], channel, result, key)) {
+        each(result, channel, item, () => metaDirect(channel, obj(item, 'message'), own, ctx));
+      }
+    }
+    for (const item of items(entry.changes, channel, result, 'changes')) {
       each(result, channel, item, () => metaChange(channel, obj(item, 'changement'), own, entryTime, ctx));
     }
   }
@@ -308,7 +327,11 @@ function adaptWhatsApp(raw: unknown, ctx: AdaptContext, result: AdaptResult) {
       result.unreadable.push(unreadable('whatsapp', entryRaw, 'élément « entry » illisible'));
       continue;
     }
-    for (const changeRaw of list(entry.changes)) {
+    if (!Array.isArray(entry.changes)) {
+      result.unreadable.push(unreadable('whatsapp', entryRaw, 'liste « changes » illisible'));
+      continue;
+    }
+    for (const changeRaw of entry.changes) {
       const change = optObj(changeRaw);
       const value = optObj(change?.value);
       if (!change || !value) {
@@ -320,7 +343,7 @@ function adaptWhatsApp(raw: unknown, ctx: AdaptContext, result: AdaptResult) {
         continue;
       }
       // Statuts de remise et de lecture de nos propres messages : pas des messages reçus.
-      result.ignored += list(value.statuses).length;
+      result.ignored += items(value.statuses, 'whatsapp', result, 'statuses').length;
       const names = new Map<string, string>();
       for (const c of list(value.contacts)) {
         const contact = optObj(c);
@@ -328,7 +351,7 @@ function adaptWhatsApp(raw: unknown, ctx: AdaptContext, result: AdaptResult) {
         const name = optStr(optObj(contact?.profile)?.name);
         if (waId && name) names.set(waId, name);
       }
-      for (const item of list(value.messages)) {
+      for (const item of items(value.messages, 'whatsapp', result, 'messages')) {
         each(result, 'whatsapp', item, () => whatsAppMessage(obj(item, 'message'), names, ctx));
       }
     }
@@ -404,10 +427,13 @@ function firstMessageId(value: unknown): string | null {
   return value.match(/<[^>]+>/)?.[0] ?? optStr(value);
 }
 
-function adaptEmail(raw: unknown, ctx: AdaptContext): InboundMessage | null {
+function adaptEmail(raw: unknown, ctx: AdaptContext): InboundMessage | null | 'ignored' {
   const mail = obj(raw, 'mail');
   const from = parseAddress(mail.from);
   if (!from.address) throw new Unreadable('expéditeur du mail illisible');
+  // Nos propres mails, renvoyés par la boîte de réception, ne sont pas des messages reçus.
+  const own = new Set((ctx.ownIds ?? []).map((id) => normalizeEmail(id) ?? id));
+  if (own.has(from.address)) return 'ignored';
   const replyTo = parseAddress(mail.replyTo);
   const portal = portalOf(from.address);
   // Un mail de portail vient d'une adresse du portail : le client est dans « répondre à », quand il y est.

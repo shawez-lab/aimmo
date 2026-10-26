@@ -304,6 +304,34 @@ describe('C01 · un exemple par canal et par type se normalise sans perte', () =
     expect(adaptInbound('whatsapp', statuses, ctx)).toEqual({ messages: [], unreadable: [], ignored: 1 });
   });
 
+  it('une liste d’une autre forme que prévu est gardée comme illisible, jamais perdue', () => {
+    const badMessaging = { entry: [{ id: 'PAGE-1', messaging: { message: { mid: 'm1', text: 'Bonjour' } } }] };
+    const r1 = adaptInbound('facebook', badMessaging, ctx);
+    expect(r1.messages).toEqual([]);
+    expect(r1.unreadable).toHaveLength(1);
+    expect(r1.unreadable[0]!.raw).toContain('Bonjour');
+    const badChanges = { entry: [{ id: 'IG-OWN-1', changes: { field: 'comments' } }] };
+    expect(adaptInbound('instagram', badChanges, ctx).unreadable).toHaveLength(1);
+    const empty = { entry: [{ id: 'PAGE-1', autre: [] }] };
+    expect(adaptInbound('facebook', empty, ctx).unreadable).toHaveLength(1);
+    const waChanges = { entry: [{ id: 'W', changes: { value: {} } }] };
+    expect(adaptInbound('whatsapp', waChanges, ctx).unreadable).toHaveLength(1);
+    const waMessages = { entry: [{ changes: [{ field: 'messages', value: { messages: { id: 'wamid.Z', from: '33600000101' } } }] }] };
+    const r2 = adaptInbound('whatsapp', waMessages, ctx);
+    expect(r2.unreadable).toHaveLength(1);
+    expect(r2.unreadable[0]!.raw).toContain('wamid.Z');
+  });
+
+  it('les messages reçus pendant qu’une autre application a la main (standby) sont lus', () => {
+    const standby = { object: 'page', entry: [{ id: 'PAGE-1', standby: messenger.entry[0]!.messaging }] };
+    expect(one(adaptInbound('facebook', standby, ctx)).externalId).toBe('m-mid-3');
+  });
+
+  it('nos propres mails ne sont pas des messages reçus', () => {
+    const own = { ...email, from: 'Agence <Agent@Agence.test>' };
+    expect(adaptInbound('email', own, { now: NOW, ownIds: ['agent@agence.test'] })).toEqual({ messages: [], unreadable: [], ignored: 1 });
+  });
+
   it('un bouton ou une question d’accueil touchés sont des messages ; un événement inconnu est gardé', () => {
     const postback = {
       object: 'instagram',
