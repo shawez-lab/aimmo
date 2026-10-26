@@ -353,6 +353,19 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
     expect(pending[0]!.applied_at).not.toBeNull();
   });
 
+  it('[R21] une reprise après une panne avant la réponse repasse par les échos en attente', async () => {
+    const w = await world();
+    const { chaine } = createCaptation(w.db, w.journal, { now: () => new Date(TUESDAY_10H) });
+    const payload = igDirect('17843000000011', 'Bonjour', TUESDAY_10H);
+    await expect(
+      chaine.receive(w.network.id, 'instagram', payload, {}, { beforeReply: async () => Promise.reject(new Error('panne')) }),
+    ).rejects.toThrow('panne');
+    const calls: string[] = [];
+    const again = await chaine.receive(w.network.id, 'instagram', payload, {}, { beforeReply: async () => void calls.push('avant') });
+    expect(calls).toEqual(['avant']);
+    expect(again[0]).toMatchObject({ status: 'replied' });
+  });
+
   it('aucun envoi réel : aucune adresse extérieure n’est appelée, et le code du Worker n’en contient aucune', async () => {
     const w = await world();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('aucun appel extérieur attendu'));

@@ -95,6 +95,8 @@ export class ChaineCaptation {
             results.push(done('duplicate'));
             continue;
           }
+          // La reprise passe par le même point que la première fois : rien ne répond avant lui [R21].
+          if (hooks.beforeReply) await hooks.beforeReply();
           const resumed = await this.relais.process(item.inboundId);
           if (resumed.status === 'skipped' || resumed.status === 'silent') {
             results.push(done('duplicate'));
