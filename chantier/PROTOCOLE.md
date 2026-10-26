@@ -1,6 +1,6 @@
 # Protocole d'une séance du chef de chantier
 
-Une séance fait avancer le plan d'une tâche, finie proprement, puis s'arrête. Personne ne répond pendant la séance : décider, agir, noter.
+Le chantier tourne sans arrêt, sans horaire. Une séance enchaîne les tâches, chacune finie proprement (tests, relecture, fusion, journal), et repart à l'étape 3 après chaque fusion. Elle ne s'arrête que si plus rien n'est faisable ou si elle approche de sa limite. Juste avant de s'arrêter, si du travail reste : libérer le verrou, puis relancer tout de suite la séance suivante avec l'outil fire_trigger sur la tâche planifiée `trig_01WHDD3Cn9ywcnwa3R9omsQK`. Personne ne répond pendant la séance : décider, agir, noter.
 
 ## 1. Démarrer
 
@@ -48,7 +48,7 @@ Une séance fait avancer le plan d'une tâche, finie proprement, puis s'arrête.
 
 ## 5. Découper un module
 
-Quand plus aucune tâche n'est prête : lire dans la Feuille de route le module suivant, puis sa fiche dans le cahier, et ajouter à `PLAN.md` ses tâches, chacune d'une journée de travail au plus, avec : id, titre, qui, relecture normale ou forte, dépendances, partie du cahier, objectif, critères d'acceptation testables, et ce qu'elle attend d'un humain. Ajouter à `docs/REGLES.md` les règles du module, « en service : non ». Rien d'autre dans cette séance.
+Quand plus aucune tâche n'est prête : lire dans la Feuille de route le module suivant, puis sa fiche dans le cahier, et ajouter à `PLAN.md` ses tâches, chacune d'une journée de travail au plus, avec : id, titre, qui, relecture normale ou forte, dépendances, partie du cahier, objectif, critères d'acceptation testables, et ce qu'elle attend d'un humain. Ajouter à `docs/REGLES.md` les règles du module, « en service : non ». Puis enchaîner sur la première tâche du module.
 
 ## 6. Confier une tâche à Codex
 
