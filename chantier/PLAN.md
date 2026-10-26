@@ -30,7 +30,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : les migrations s'appliquent sur une base vide et se rejouent sans erreur ; une personne peut avoir plusieurs identifiants ; aucune colonne pour une pièce d'identité ou des coordonnées bancaires [R15] ; chaque table a sa clé et les index utiles aux recherches du socle.
 
 ### S04 · Une seule fiche par personne
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : S03
 - Cahier : Feuille de route, novembre 2026 ; Architecture technique, fiche client unique.
 - Objectif : normaliser les identifiants (téléphone au format international, mail en minuscules, comptes de réseaux), repérer les doublons, fusionner deux fiches en gardant tout l'historique, et pouvoir défaire une fusion.
