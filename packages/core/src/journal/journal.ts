@@ -57,6 +57,8 @@ export async function appendEvent(
       const head = await store.last();
       const taken = head !== null && head.seq >= entry.seq;
       if (!taken || attempt >= MAX_APPEND_ATTEMPTS) throw error;
+      // Attente brève et au hasard : deux écritures qui se suivent de près ne se reprennent pas la place à chaque fois.
+      await new Promise((resolve) => setTimeout(resolve, Math.random() * attempt * 5));
     }
   }
 }
