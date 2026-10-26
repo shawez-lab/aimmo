@@ -57,6 +57,45 @@ describe('lecture des CSV', () => {
     ]);
   });
 
+  it('[R04] ManyChat : toute valeur d\'abonnement qui ne dit pas clairement « abonné » vaut arrêt ; une date d\'abonnement, non', async () => {
+    const csv = [
+      'User ID;Phone;Statut',
+      'a;+33610000011;Désabonné',
+      'b;+33610000012;Opted-out',
+      'c;+33610000013;Unsubscribed from email',
+      'd;+33610000014;',
+      'e;+33610000015;Subscribed',
+      'f;+33610000016;2026-03-02 10:00',
+      'g;+33610000017;Actif',
+    ].join('\n');
+    const reading = await readToolCsv(csv, 'manychat', NOW);
+    expect(reading.contacts.map((c) => c.exclusion)).toEqual(['stop', 'stop', 'stop', 'stop', null, null, null]);
+  });
+
+  it('[R04] GoHighLevel : en-têtes de désinscription variés et étiquettes ; « Status » n\'est pas un abonnement', async () => {
+    const csv = [
+      'Contact Id,Email,DND Status,Email DND,Tags,Status',
+      'h1,h1@example.org,true,,,lead',
+      'h2,h2@example.org,,true,,lead',
+      'h3,h3@example.org,,,"client, unsubscribed",lead',
+      'h4,h4@example.org,false,false,"client, vendeur",open',
+    ].join('\n');
+    const reading = await readToolCsv(csv, 'gohighlevel', NOW);
+    expect(reading.contacts.map((c) => c.exclusion)).toEqual(['stop', 'stop', 'stop', null]);
+  });
+
+  it('[R04] un export d\'outil sans aucune colonne de désinscription est refusé, pour ne perdre aucun arrêt', async () => {
+    await expect(readToolCsv('Contact Id,Email,Phone\ng1,a@example.org,0610000001\n', 'gohighlevel', NOW)).rejects.toThrow(/désinscription/);
+    await expect(readToolCsv('User ID,Email\nm1,a@example.org\n', 'manychat', NOW)).rejects.toThrow(/désinscription/);
+  });
+
+  it('une coordonnée illisible à côté d\'une lisible : la ligne est reprise et signalée', async () => {
+    const reading = await readToolCsv('Email;Téléphone\nd@example.org;06 12 34 56 78 / 07 11 22 33 44\n', 'exclusion_list', NOW);
+    expect(reading.contacts).toHaveLength(1);
+    expect(reading.partialLines).toEqual([2]);
+    expect(reading.contacts[0]?.problems).toEqual(['contact_illisible']);
+  });
+
   it('une ligne sans coordonnée valable est signalée par son numéro, jamais jetée en silence', async () => {
     const csv = ['Email;Téléphone;Nom', 'pas-un-mail;12;Inconnu', ';;Vide de coordonnées', 'ok@example.org;;Bon', ';;'].join('\n');
     const reading = await readToolCsv(csv, 'exclusion_list', NOW);
@@ -68,6 +107,9 @@ describe('lecture des CSV', () => {
   it('la clé d\'origine d\'une ligne sans identifiant ne contient aucune coordonnée et ne change pas d\'un export à l\'autre', async () => {
     const a = await readToolCsv('Email\nzoe@example.org\n', 'exclusion_list', NOW);
     const b = await readToolCsv('E-mail\nZOE@example.org\n', 'exclusion_list', NOW);
+    const c = await readToolCsv('Téléphone\n0610000042\n', 'exclusion_list', NOW);
+    const d = await readToolCsv('Phone\n+33 6 10 00 00 42\n', 'exclusion_list', NOW);
+    expect(c.contacts[0]?.origin).toBe(d.contacts[0]?.origin);
     expect(a.contacts[0]?.origin).toBe(b.contacts[0]?.origin);
     expect(a.contacts[0]?.origin).not.toContain('zoe');
   });

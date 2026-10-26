@@ -21,8 +21,11 @@ Des fichiers CSV, séparés par des virgules, des points-virgules ou des tabulat
 | Téléphone | `Phone`, `Téléphone`, `Mobile`, `Portable`, `WhatsApp` |
 | Instagram | `Instagram`, `Instagram Username`, `IG Username` |
 | Prénom, nom | `First Name`, `Prénom`, `Last Name`, `Nom` |
-| Ne pas déranger | `DND`, `Do Not Disturb`, `Ne pas déranger`, `Unsubscribed`, `Désabonné`, `Opt Out`, `DND Email`, `DND SMS`… : toute valeur autre que vide, `false`, `non` ou `0` vaut arrêt |
-| Abonné | `Subscribed`, `Opt In`, `Abonné`, `Status` : `no`, `false`, `non`, `0`, `unsubscribed` valent arrêt |
+| Ne pas déranger | tout en-tête qui contient `DND`, `Unsub`, `Opt Out`, `Désabonn`, `Désinscri`, `Stop`, `Blocked`, `Ne pas déranger`, `Do Not Disturb` (`DND Status`, `Email DND`…) : toute valeur autre que vide, `false`, `non`, `0`, `off` vaut arrêt |
+| Abonné | `Subscribed`, `Opt In`, `Abonné`, `Subscription Status`, et `Status` pour ManyChat seulement : seules `yes`, `true`, `oui`, `1`, `active`, `actif`, `subscribed`, `abonné` ou une date d'abonnement disent « abonné » ; toute autre valeur, vide comprise, vaut arrêt |
+| Étiquettes | `Tags`, `Étiquettes`, `Labels` : une étiquette qui contient un des mots de « Ne pas déranger » vaut arrêt |
+
+Un export de GoHighLevel ou de ManyChat sans aucune de ces trois dernières colonnes est refusé : les arrêts seraient perdus.
 
 Trois fichiers :
 
@@ -35,5 +38,6 @@ Ces fichiers contiennent des données personnelles : **jamais dans le dépôt**.
 ## Ce qui est signalé
 
 - Une ligne sans aucune coordonnée valable est rapportée par son numéro de ligne, pour être regardée à la main.
+- Une ligne avec une coordonnée illisible à côté d'une lisible est reprise, et rapportée par son numéro pour être complétée.
 - Une fiche retrouvée mais suivie par un autre agent n'est pas réunie : la direction attribue la personne ; les exclusions valent pour toutes ses fiches.
 - Le rapport et le journal ne contiennent que des nombres et des identifiants internes [R13].

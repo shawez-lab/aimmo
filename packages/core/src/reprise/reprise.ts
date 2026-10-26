@@ -36,6 +36,9 @@ export interface ImportBatch {
   contacts: ImportedContact[];
   skipped: { suspect: number; test: number };
   flagged: number;
+  /** Lignes d'un fichier signalées par leur numéro (I03). */
+  unreadableLines?: number[];
+  partialLines?: number[];
 }
 
 export type ImportOutcome = 'created' | 'matched' | 'merged' | 'apart';
@@ -55,6 +58,9 @@ export interface ImportReport {
   consents: number;
   exclusions: number;
   skipped: { suspect: number; test: number };
+  /** Numéros des lignes de fichier sans coordonnée lisible, ou avec une coordonnée laissée de côté. */
+  unreadableLines: number[];
+  partialLines: number[];
 }
 
 export interface RepriseOptions {
@@ -128,13 +134,16 @@ export class RepriseSite {
       consents: 0,
       exclusions: 0,
       skipped: { ...reading.skipped },
+      unreadableLines: 'unreadableLines' in reading ? [...(reading.unreadableLines ?? [])] : [],
+      partialLines: 'partialLines' in reading ? [...(reading.partialLines ?? [])] : [],
     };
     let changed = false;
     for (const contact of reading.contacts) {
       if (await this.importContact(contact, report)) changed = true;
     }
     // Une reprise relancée qui ne trouve rien de neuf n'écrit rien, pas même au journal.
-    if (changed) {
+    // Des lignes signalées valent une trace même si rien d'autre n'a changé : elles attendent un humain.
+    if (changed || report.unreadableLines.length > 0 || report.partialLines.length > 0) {
       await appendEvent(
         this.journal,
         {
@@ -153,6 +162,8 @@ export class RepriseSite {
             exclusions: report.exclusions,
             skippedSuspect: report.skipped.suspect,
             skippedTest: report.skipped.test,
+            unreadableLines: report.unreadableLines.length,
+            partialLines: report.partialLines.length,
           },
         },
         this.now,
