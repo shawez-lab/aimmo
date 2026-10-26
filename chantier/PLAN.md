@@ -55,8 +55,8 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Reste : un envoi en panne compte encore dans le plafond du jour de S05 (`DecisionEnvoi.sentToday`), côté prudent, à corriger avec S07 ou S11 ; mise en attente jusqu'au prochain créneau quand R01 refuse ; plafond de 5 échanges de l'assistant (M02).
 
 ### S07 · Journal à empreintes
-- Statut : en cours
-- Repris (2026-10-26) : Shawez a poussé le travail de Codex sur `codex/S07` (commit `18fa3cc`), Claude le vérifie et le finit sur cette branche
+- Statut : fait (2026-10-26)
+- Repris (2026-10-26) : Shawez a poussé le travail de Codex sur `codex/S07` (commit `18fa3cc`), Claude l'a fini et fusionné (#4) : ajout seul imposé en base (modification, effacement et remplacement refusés), aucune donnée personnelle dans toute la ligne ni dans les noms de champs, copie figée de la ligne, ajouts simultanés gardés
 - Qui : Claude (Codex ne peut pas pousser, H12) · Relecture : normale · Dépend de : S01
 - Où : la tâche est décrite dans `chantier/taches/S07.md` sur la branche `codex/S07`, proposition n° 4. La reprendre telle quelle.
 - Cahier : Architecture technique, journal ; M06, registre des mandats.
