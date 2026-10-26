@@ -8,3 +8,20 @@ export * from './db/index.ts';
 export * from './fiche/index.ts';
 export * from './envoi/index.ts';
 export * from './reception/index.ts';
+export { hashEntry } from './journal/hash.ts';
+export { appendEvent, verifyChain } from './journal/journal.ts';
+export { MemoryJournalStore } from './journal/memory-store.ts';
+export { SqliteJournalStore } from './journal/sqlite-store.ts';
+export type { JournalSqliteDatabase } from './journal/sqlite-store.ts';
+export type {
+  ChainVerification,
+} from './journal/journal.ts';
+export type {
+  JournalData,
+  JournalEntry,
+  JournalEntryWithoutHash,
+  JournalInput,
+  JournalStore,
+  JsonPrimitive,
+  JsonValue,
+} from './journal/types.ts';
