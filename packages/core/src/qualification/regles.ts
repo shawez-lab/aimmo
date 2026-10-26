@@ -5,6 +5,7 @@
  *
  * Rien n'est déduit de la personne : seulement ce qu'elle demande, dans une liste fermée de champs et de mots.
  */
+import type { ProjectKind } from '../db/types.ts';
 import { numbersIn, plain } from '../envoi/texte.ts';
 
 /** Vendeur, acquéreur, demande d'estimation, mise en location, professionnel, partenaire, curiosité, indésirable. */
@@ -342,4 +343,22 @@ export function checkAiQualification(raw: unknown, text: string, communes: reado
     financing: o.financing as Financing | null,
     criteria: [...new Set(o.criteria as Criterion[])],
   };
+}
+
+/** Le projet que la qualification ouvre ou complète ; aucun pour un partenaire, une curiosité, un indésirable. */
+export function projectKindOf(q: Pick<Qualified, 'category' | 'route'>, text: string): ProjectKind | null {
+  switch (q.category) {
+    case 'seller':
+      return 'sell';
+    case 'valuation':
+      return 'valuation';
+    case 'rent_out':
+      return 'rent_out';
+    case 'buyer':
+      return q.route === 'M15' ? 'rent' : q.route === 'M17' ? 'invest' : 'buy';
+    case 'professional':
+      return /\b(?:ceder|cession|vente|vendre|vends|reprise de (?:mon|ma|notre))\b/.test(plain(text)) ? 'sell_business' : 'buy_business';
+    default:
+      return null;
+  }
 }

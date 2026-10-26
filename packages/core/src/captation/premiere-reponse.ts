@@ -175,7 +175,7 @@ export function fallbackTexts(brief: ReplyBrief): string[] {
   return [...new Set([withHighlight, base, plainBase].filter((t): t is string => t !== null).map((t) => `${hello} ${t} ${ask}`))];
 }
 
-/** Canal de la réponse : celui du message, ou le mail donné dans le formulaire du site. Rien pour l'assistant du site (C08). */
+/** Canal de la réponse : celui du message, le mail donné dans le formulaire du site, ou la session de l'assistant du site (C08). */
 function replyChannel(row: InboundRow, hasEmail: boolean): OutboundChannelName | null {
   switch (row.channel) {
     case 'instagram':
