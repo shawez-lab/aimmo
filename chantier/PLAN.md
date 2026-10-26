@@ -38,7 +38,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Décidé (2026-10-26), lecture prudente : les noms ne rapprochent jamais deux fiches, seuls les identifiants normalisés le font ; deux fiches suivies par deux agents différents ne se fusionnent pas tant que la direction n'a pas attribué la personne ; une fusion relie les fiches sans déplacer aucune ligne, ce qui la rend exactement réversible.
 
 ### S05 · Exclusions, arrêts, accords et horaires
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : S04
 - Cahier : Conformité, prospection et accords ; Risques, décision « Réponses le soir et le dimanche ».
 - Objectif : une décision unique « peut-on écrire à cette personne, sur ce canal, pour ce type de message, maintenant ? », avec la règle qui a décidé.
