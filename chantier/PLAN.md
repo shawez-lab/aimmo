@@ -197,12 +197,14 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : branchement réel avec H16 (C09), où les messages de la boîte d'essai ne devront pas compter comme partis ; intégration au site de `shawez-immo` dans une tâche à part ; relecture de Codex de la dernière version restée en cours 25 minutes, fusion sans elle (#20).
 
 ### C07 · Instagram, Facebook et WhatsApp, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : C06
 - Cahier : M02, « Branchements » : API Meta avec notifications en temps réel, API WhatsApp Business.
 - Objectif : les points d'arrivée des notifications de Meta et de WhatsApp, avec vérification de la signature, en mode essai, testés sur des notifications inventées. ManyChat reste seul à répondre.
 - Critères : une notification à la signature fausse est refusée ; 20 messages tests par canal donnent une réponse prête en moins d'une minute ; un commentaire reçoit une réponse qui cite le bon bien ; aucun envoi réel ; ManyChat intouché.
 - Attend : H06 pour recevoir les vraies notifications de Meta.
+- Décidé (2026-10-27), lecture prudente : une seule adresse `/v1/meta/notifications` pour les trois canaux, signature HMAC du corps brut, jeton d'abonnement gardé en empreinte ; un écho d'une application qui n'est pas la nôtre est humain (pendant l'essai, ManyChat fait donc taire l'assistant dans sa conversation) ; un écho dont la conversation n'existe pas encore est gardé (`pending_human_replies`) et appliqué avant toute réponse, reprise comprise ; sur Instagram et Facebook, la réponse va à la conversation reçue (compte propre au canal ou commentaire), seulement si un message de la personne y est rangé.
+- Reste : avant tout envoi réel (C09), sérialiser par conversation l'écho humain et le premier message traités en même temps (fenêtre étroite signalée par Codex, sans effet en essai) ; branchement chez Meta avec H06 et H17 ; relecture forte (1 P1 corrigé), Codex : 4 P0 corrigés en 4 tours, le dernier réduit et reporté à C09 (#21).
 
 ### C08 · API de l'assistant du site, en mode essai
 - Statut : à faire
