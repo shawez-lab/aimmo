@@ -6,11 +6,13 @@
  *        ni parenthèses ni formules administratives ;
  *   R09  jamais d'adresse exacte ; dans un contenu public, jamais le nom d'un client ;
  *   R10  chaque chiffre vient des données fournies ;
+ *   R19  jamais le nom du vendeur d'un bien dans un message à un client ;
+ *   question : pas plus de questions que permis, quand l'appelant le dit ;
  *   longueur, par canal.
  */
 import type { Channel } from '../db/types.ts';
 
-export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'length';
+export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R19' | 'question' | 'length';
 
 export interface TextProblem {
   rule: TextRule;
@@ -31,6 +33,10 @@ export interface TextContext {
   figures?: readonly (string | number)[];
   /** Noms des clients, interdits dans un contenu public [R09]. */
   clientNames?: readonly string[];
+  /** Noms et prénoms des vendeurs du bien cité, interdits dans un message à un client [R19]. */
+  sellerNames?: readonly string[];
+  /** Nombre de questions permis ; absent : pas de limite. */
+  maxQuestions?: number;
 }
 
 export interface TextSettings {
@@ -118,11 +124,19 @@ export function checkText(text: string, context: TextContext, settings: TextSett
   }
 
   if (ADDRESS.test(p)) problems.push({ rule: 'R09', reason: 'Jamais d’adresse exacte.' });
-  if (context.audience === 'public') {
-    const names = (context.clientNames ?? []).map((n) => plain(n).trim()).filter((n) => n.length > 1);
-    if (names.some((n) => new RegExp(`(^|[^a-z])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z])`).test(p))) {
-      problems.push({ rule: 'R09', reason: 'Jamais le nom d’un client dans un contenu public.' });
-    }
+  const mentions = (names: readonly string[] | undefined): boolean =>
+    (names ?? [])
+      .map((n) => plain(n).trim())
+      .filter((n) => n.length > 1)
+      .some((n) => new RegExp(`(^|[^a-z])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z])`).test(p));
+  if (context.audience === 'public' && mentions(context.clientNames)) {
+    problems.push({ rule: 'R09', reason: 'Jamais le nom d’un client dans un contenu public.' });
+  }
+  if (context.audience === 'client' && mentions(context.sellerNames)) {
+    problems.push({ rule: 'R19', reason: 'Jamais le nom du vendeur dans un message à un client.' });
+  }
+  if (context.maxQuestions !== undefined && (text.match(/\?/g) ?? []).length > context.maxQuestions) {
+    problems.push({ rule: 'question', reason: `Pas plus de ${context.maxQuestions} question dans ce message.` });
   }
 
   const allowed = new Set(
