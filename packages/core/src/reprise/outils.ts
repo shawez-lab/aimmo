@@ -47,7 +47,8 @@ const key = (header: string): string =>
 const NOT_SET = new Set(['0', 'false', 'faux', 'no', 'non', 'n', 'off', 'inactive', 'inactif']);
 /** Seules ces valeurs, ou une date d'abonnement, disent « abonné » ; toute autre, vide comprise, vaut arrêt. */
 const SUBSCRIBED = new Set(['1', 'true', 'vrai', 'yes', 'oui', 'y', 'o', 'active', 'actif', 'subscribed', 'abonne', 'optin', 'optedin']);
-const DATE = /\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4}/;
+/** Une date d'abonnement seule, avec son heure peut-être : rien d'autre dans la case. */
+const DATE = /^(?:\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4})(?:[ T][\d:.]+(?:z|[+-]\d{2}:?\d{2})?)?$/i;
 
 const clean = (value: string | undefined): string | null => {
   const trimmed = (value ?? '').trim();
@@ -104,7 +105,7 @@ export async function readToolCsv(text: string, tool: ToolFile, createdAt: Date)
     // Une colonne d'abonnement vide ou qui ne dit pas clairement « abonné » vaut arrêt.
     const unsubscribed = (columns.get('subscribed') ?? []).some((i) => {
       const value = clean(row[i]);
-      return value === null || (!SUBSCRIBED.has(key(value)) && !DATE.test(value));
+      return value === null || OPT_OUT_WORDS.test(key(value)) || (!SUBSCRIBED.has(key(value)) && !DATE.test(value));
     });
     const tagged = cells(row, 'tags').flatMap(many).some((tag) => OPT_OUT_WORDS.test(key(tag)));
     const exclusion = tool === 'exclusion_list' ? 'network_list' : optOut || unsubscribed || tagged ? 'stop' : null;

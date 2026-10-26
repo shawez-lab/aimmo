@@ -46,6 +46,8 @@ export function parseCsv(input: string): string[][] {
       field += char;
     }
   }
+  // Des guillemets jamais refermés avaleraient la suite du fichier : refusé plutôt que repris à moitié.
+  if (quoted) throw new Error('Fichier CSV mal formé : des guillemets ne sont jamais refermés.');
   if (field !== '' || row.length > 0) {
     row.push(field);
     rows.push(row);

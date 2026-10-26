@@ -26,6 +26,11 @@ describe('lecture des CSV', () => {
     expect(parseCsv('a\tb\n1\t2\n')).toEqual([['a', 'b'], ['1', '2']]);
   });
 
+  it('[R04] un fichier aux guillemets jamais refermés est refusé, pour ne perdre aucune ligne', async () => {
+    expect(() => parseCsv('Email,Subscribed\na@example.org,"no\nb@example.org,no\n')).toThrow(/guillemets/);
+    await expect(readToolCsv('Email,Subscribed\na@example.org,"no\nb@example.org,no\n', 'manychat', NOW)).rejects.toThrow(/guillemets/);
+  });
+
   it('un fichier sans colonne de coordonnées est refusé', async () => {
     await expect(readToolCsv('Nom;Ville\nA;Dijon\n', 'exclusion_list', NOW)).rejects.toThrow(/colonne/);
   });
@@ -67,9 +72,12 @@ describe('lecture des CSV', () => {
       'e;+33610000015;Subscribed',
       'f;+33610000016;2026-03-02 10:00',
       'g;+33610000017;Actif',
+      'h;+33610000018;Unsubscribed 2026-03-02',
+      'i;+33610000019;Opted-out on 02/03/2026',
+      'j;+33610000020;2026-03-02 10:00 désabonné',
     ].join('\n');
     const reading = await readToolCsv(csv, 'manychat', NOW);
-    expect(reading.contacts.map((c) => c.exclusion)).toEqual(['stop', 'stop', 'stop', 'stop', null, null, null]);
+    expect(reading.contacts.map((c) => c.exclusion)).toEqual(['stop', 'stop', 'stop', 'stop', null, null, null, 'stop', 'stop', 'stop']);
   });
 
   it('[R04] GoHighLevel : en-têtes de désinscription variés et étiquettes ; « Status » n\'est pas un abonnement', async () => {
