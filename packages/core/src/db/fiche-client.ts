@@ -160,6 +160,27 @@ export class FicheClient {
     return { ...row } as T;
   }
 
+  /** Remplit une date de fin une seule fois, sans jamais effacer la ligne. */
+  private async closeOnce(
+    table: 'consents' | 'exclusions',
+    column: 'withdrawn_at' | 'lifted_at',
+    id: string,
+    at: Date,
+    unknown: string,
+  ): Promise<string> {
+    const { changes } = await this.db.run(
+      `UPDATE ${table} SET ${column} = ? WHERE id = ? AND ${column} IS NULL`,
+      [at.toISOString(), id],
+    );
+    if (changes === 1) return at.toISOString();
+    const row = await this.db.first<Record<string, string | null>>(
+      `SELECT ${column} AS closed_at FROM ${table} WHERE id = ?`,
+      [id],
+    );
+    if (!row?.['closed_at']) throw new Error(`${unknown} : ${id}`);
+    return row['closed_at'];
+  }
+
   private scope(input: InScope): { network_id: string; agent_id: string | null } {
     return { network_id: input.networkId, agent_id: input.agentId ?? null };
   }
@@ -240,9 +261,9 @@ export class FicheClient {
     return this.db.all<Person>(
       `SELECT DISTINCT p.* FROM persons p
        JOIN person_identifiers i ON i.person_id = p.id
-       WHERE i.network_id = ? AND i.kind = ? AND i.value = ?
+       WHERE i.network_id = ? AND i.kind = ? AND i.value = ? AND p.network_id = ?
        ORDER BY p.created_at, p.id`,
-      [networkId, kind, value],
+      [networkId, kind, value, networkId],
     );
   }
 
@@ -263,11 +284,9 @@ export class FicheClient {
     });
   }
 
-  async withdrawConsent(id: string, at: Date): Promise<void> {
-    await this.db.run('UPDATE consents SET withdrawn_at = ? WHERE id = ? AND withdrawn_at IS NULL', [
-      at.toISOString(),
-      id,
-    ]);
+  /** Retire un accord. Rend la date du retrait, celle d'avant si l'accord était déjà retiré. Accord inconnu : erreur. */
+  async withdrawConsent(id: string, at: Date): Promise<string> {
+    return this.closeOnce('consents', 'withdrawn_at', id, at, 'Accord inconnu');
   }
 
   listConsents(personId: string): Promise<Consent[]> {
@@ -289,11 +308,9 @@ export class FicheClient {
     });
   }
 
-  async liftExclusion(id: string, at: Date): Promise<void> {
-    await this.db.run('UPDATE exclusions SET lifted_at = ? WHERE id = ? AND lifted_at IS NULL', [
-      at.toISOString(),
-      id,
-    ]);
+  /** Lève une exclusion. Rend la date de levée, celle d'avant si elle était déjà levée. Exclusion inconnue : erreur. */
+  async liftExclusion(id: string, at: Date): Promise<string> {
+    return this.closeOnce('exclusions', 'lifted_at', id, at, 'Exclusion inconnue');
   }
 
   listExclusions(personId: string): Promise<Exclusion[]> {

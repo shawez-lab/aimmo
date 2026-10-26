@@ -230,6 +230,46 @@ describeWithSqlite('S03 · accès typé à la fiche client', () => {
     expect(exclusions[0]?.lifted_at).toBe('2026-10-22T10:00:00.000Z');
   });
 
+  it('retirer un accord ou lever une exclusion inconnus est une erreur ; le second retrait garde la première date', async () => {
+    const at = new Date('2026-10-20T10:00:00.000Z');
+    await expect(store.withdrawConsent('absent', at)).rejects.toThrow(/Accord inconnu/);
+    await expect(store.liftExclusion('absent', at)).rejects.toThrow(/Exclusion inconnue/);
+    const p = await store.createPerson({ networkId });
+    const consent = await store.addConsent({
+      networkId,
+      personId: p.id,
+      purpose: 'relances',
+      channel: 'email',
+      proof: 'accord écrit test',
+      givenAt: new Date('2026-10-01T10:00:00.000Z'),
+    });
+    expect(await store.withdrawConsent(consent.id, at)).toBe(at.toISOString());
+    expect(await store.withdrawConsent(consent.id, new Date('2026-10-25T10:00:00.000Z'))).toBe(at.toISOString());
+  });
+
+  it('une ligne ne peut pas pointer vers une fiche, un agent ou un projet d’un autre réseau', async () => {
+    const other = (await store.createNetwork('Autre réseau')).id;
+    const p = await store.createPerson({ networkId, agentId });
+    await expect(
+      store.addIdentifier({ networkId: other, personId: p.id, kind: 'email', value: 'w@example.test' }),
+    ).rejects.toThrow();
+    await expect(store.createPerson({ networkId: other, agentId })).rejects.toThrow();
+    const project = await store.createProject({ networkId, personId: p.id, kind: 'sell' });
+    const otherPerson = await store.createPerson({ networkId: other });
+    await expect(
+      store.createProject({ networkId: other, personId: otherPerson.id, kind: 'buy' }).then(() =>
+        store.addSource({
+          networkId: other,
+          personId: otherPerson.id,
+          projectId: project.id,
+          channel: 'site',
+          occurredAt: new Date('2026-11-01T10:00:00.000Z'),
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(await store.findPersonsByIdentifier(other, 'email', 'w@example.test')).toEqual([]);
+  });
+
   it('[R17] la base refuse d’effacer une personne qui a un historique', async () => {
     const p = await store.createPerson({ networkId });
     await store.addIdentifier({ networkId, personId: p.id, kind: 'email', value: 'y@example.test' });

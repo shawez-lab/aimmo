@@ -3,6 +3,7 @@
 -- Dates : texte ISO 8601 en temps universel, par exemple 2026-10-26T09:00:00.000Z.
 -- Chaque ligne porte le réseau, et l'agent quand il est connu.
 -- Aucune ligne n'est effacée par le code [R17] : les liens sont en ON DELETE RESTRICT.
+-- Chaque lien porte aussi le réseau : une ligne ne peut pas pointer vers une fiche d'un autre réseau.
 -- Aucune pièce d'identité, aucun document anti-blanchiment, aucune coordonnée bancaire ici [R15] :
 -- ils vivent seulement dans le coffre de la conformité.
 
@@ -19,23 +20,27 @@ CREATE TABLE IF NOT EXISTS agents (
   last_name TEXT NOT NULL,
   zone TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'left')),
-  sponsor_agent_id TEXT REFERENCES agents (id) ON DELETE RESTRICT,
+  sponsor_agent_id TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  UNIQUE (id, network_id),
+  FOREIGN KEY (sponsor_agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS agents_network ON agents (network_id);
 
 CREATE TABLE IF NOT EXISTS persons (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  agent_id TEXT REFERENCES agents (id) ON DELETE RESTRICT,
+  agent_id TEXT,
   first_name TEXT,
   last_name TEXT,
   language TEXT NOT NULL DEFAULT 'fr',
   contact_status TEXT NOT NULL DEFAULT 'new' CHECK (contact_status IN ('new', 'active', 'inactive')),
   last_contact_at TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  UNIQUE (id, network_id),
+  FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS persons_agent ON persons (network_id, agent_id);
 CREATE INDEX IF NOT EXISTS persons_last_contact ON persons (network_id, last_contact_at);
@@ -45,12 +50,14 @@ CREATE INDEX IF NOT EXISTS persons_last_contact ON persons (network_id, last_con
 CREATE TABLE IF NOT EXISTS person_identifiers (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  agent_id TEXT REFERENCES agents (id) ON DELETE RESTRICT,
-  person_id TEXT NOT NULL REFERENCES persons (id) ON DELETE RESTRICT,
+  agent_id TEXT,
+  person_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('email', 'phone', 'instagram', 'facebook', 'whatsapp')),
   value TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  UNIQUE (person_id, kind, value)
+  UNIQUE (person_id, kind, value),
+  FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS person_identifiers_lookup ON person_identifiers (network_id, kind, value);
 CREATE INDEX IF NOT EXISTS person_identifiers_person ON person_identifiers (person_id);
@@ -59,14 +66,16 @@ CREATE INDEX IF NOT EXISTS person_identifiers_person ON person_identifiers (pers
 CREATE TABLE IF NOT EXISTS consents (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  agent_id TEXT REFERENCES agents (id) ON DELETE RESTRICT,
-  person_id TEXT NOT NULL REFERENCES persons (id) ON DELETE RESTRICT,
+  agent_id TEXT,
+  person_id TEXT NOT NULL,
   purpose TEXT NOT NULL,
   channel TEXT NOT NULL CHECK (channel IN ('email', 'phone', 'sms', 'instagram', 'facebook', 'whatsapp')),
   proof TEXT NOT NULL CHECK (length(trim(proof)) > 0),
   given_at TEXT NOT NULL,
   withdrawn_at TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS consents_person ON consents (person_id, channel);
 
@@ -75,21 +84,23 @@ CREATE INDEX IF NOT EXISTS consents_person ON consents (person_id, channel);
 CREATE TABLE IF NOT EXISTS exclusions (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  agent_id TEXT REFERENCES agents (id) ON DELETE RESTRICT,
-  person_id TEXT NOT NULL REFERENCES persons (id) ON DELETE RESTRICT,
+  agent_id TEXT,
+  person_id TEXT NOT NULL,
   reason TEXT NOT NULL CHECK (reason IN ('network_list', 'stop', 'refused', 'sold', 'followed_elsewhere')),
   channel TEXT CHECK (channel IN ('email', 'phone', 'sms', 'instagram', 'facebook', 'whatsapp')),
   noted_at TEXT NOT NULL,
   lifted_at TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS exclusions_person ON exclusions (person_id);
 
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  agent_id TEXT REFERENCES agents (id) ON DELETE RESTRICT,
-  person_id TEXT NOT NULL REFERENCES persons (id) ON DELETE RESTRICT,
+  agent_id TEXT,
+  person_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('sell', 'buy', 'rent_out', 'rent', 'invest', 'sell_business', 'buy_business', 'valuation')),
   stage TEXT NOT NULL DEFAULT 'new',
   deadline TEXT,
@@ -98,7 +109,10 @@ CREATE TABLE IF NOT EXISTS projects (
   criteria TEXT,
   note TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  UNIQUE (id, network_id),
+  FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS projects_person ON projects (person_id);
 CREATE INDEX IF NOT EXISTS projects_agent ON projects (network_id, agent_id, kind, stage);
@@ -106,13 +120,16 @@ CREATE INDEX IF NOT EXISTS projects_agent ON projects (network_id, agent_id, kin
 CREATE TABLE IF NOT EXISTS sources (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  agent_id TEXT REFERENCES agents (id) ON DELETE RESTRICT,
-  person_id TEXT NOT NULL REFERENCES persons (id) ON DELETE RESTRICT,
-  project_id TEXT REFERENCES projects (id) ON DELETE RESTRICT,
+  agent_id TEXT,
+  person_id TEXT NOT NULL,
+  project_id TEXT,
   channel TEXT NOT NULL,
   detail TEXT,
   occurred_at TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (project_id, network_id) REFERENCES projects (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS sources_person ON sources (person_id);
 CREATE INDEX IF NOT EXISTS sources_channel ON sources (network_id, channel, occurred_at);
@@ -121,7 +138,7 @@ CREATE INDEX IF NOT EXISTS sources_channel ON sources (network_id, channel, occu
 CREATE TABLE IF NOT EXISTS properties (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  agent_id TEXT REFERENCES agents (id) ON DELETE RESTRICT,
+  agent_id TEXT,
   reference TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('home', 'land', 'building', 'commercial', 'business_walls', 'business')),
   postal_code TEXT,
@@ -132,19 +149,24 @@ CREATE TABLE IF NOT EXISTS properties (
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'available', 'under_offer', 'sold', 'rented', 'withdrawn')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE (network_id, reference)
+  UNIQUE (network_id, reference),
+  UNIQUE (id, network_id),
+  FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS properties_agent ON properties (network_id, agent_id, status);
 CREATE INDEX IF NOT EXISTS properties_search ON properties (network_id, status, kind, postal_code);
 
 CREATE TABLE IF NOT EXISTS project_properties (
-  project_id TEXT NOT NULL REFERENCES projects (id) ON DELETE RESTRICT,
-  property_id TEXT NOT NULL REFERENCES properties (id) ON DELETE RESTRICT,
+  project_id TEXT NOT NULL,
+  property_id TEXT NOT NULL,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  agent_id TEXT REFERENCES agents (id) ON DELETE RESTRICT,
+  agent_id TEXT,
   role TEXT NOT NULL CHECK (role IN ('owned', 'interested', 'proposed')),
   created_at TEXT NOT NULL,
-  PRIMARY KEY (project_id, property_id, role)
+  PRIMARY KEY (project_id, property_id, role),
+  FOREIGN KEY (project_id, network_id) REFERENCES projects (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (property_id, network_id) REFERENCES properties (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS project_properties_property ON project_properties (property_id);
 
@@ -152,9 +174,9 @@ CREATE INDEX IF NOT EXISTS project_properties_property ON project_properties (pr
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  agent_id TEXT REFERENCES agents (id) ON DELETE RESTRICT,
-  person_id TEXT NOT NULL REFERENCES persons (id) ON DELETE RESTRICT,
-  project_id TEXT REFERENCES projects (id) ON DELETE RESTRICT,
+  agent_id TEXT,
+  person_id TEXT NOT NULL,
+  project_id TEXT,
   conversation_id TEXT,
   channel TEXT NOT NULL CHECK (channel IN ('email', 'phone', 'sms', 'instagram', 'facebook', 'whatsapp', 'site')),
   direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
@@ -162,7 +184,10 @@ CREATE TABLE IF NOT EXISTS messages (
   body TEXT NOT NULL,
   cost_cents INTEGER NOT NULL DEFAULT 0 CHECK (cost_cents >= 0),
   occurred_at TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (project_id, network_id) REFERENCES projects (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS messages_person ON messages (person_id, occurred_at);
 CREATE INDEX IF NOT EXISTS messages_conversation ON messages (conversation_id, occurred_at);

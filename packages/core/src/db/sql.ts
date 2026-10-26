@@ -7,7 +7,8 @@ export type SqlValue = string | number | null;
 export interface SqlDatabase {
   /** Exécute un script de plusieurs instructions, sans paramètres (migrations). */
   exec(sql: string): Promise<void>;
-  run(sql: string, params?: readonly SqlValue[]): Promise<void>;
+  /** Rend le nombre de lignes changées (`changes` sous node:sqlite, `meta.changes` sous D1). */
+  run(sql: string, params?: readonly SqlValue[]): Promise<{ changes: number }>;
   all<T>(sql: string, params?: readonly SqlValue[]): Promise<T[]>;
   first<T>(sql: string, params?: readonly SqlValue[]): Promise<T | null>;
 }
@@ -32,7 +33,8 @@ export function fromSyncSqlite(db: SyncSqlite): SqlDatabase {
       db.exec(sql);
     },
     async run(sql, params = []) {
-      db.prepare(sql).run(...params);
+      const result = db.prepare(sql).run(...params) as { changes?: number | bigint } | undefined;
+      return { changes: Number(result?.changes ?? 0) };
     },
     async all<T>(sql: string, params: readonly SqlValue[] = []) {
       return db.prepare(sql).all(...params).map((row) => plain<T>(row));
