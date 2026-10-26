@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS consents (
   person_id TEXT NOT NULL REFERENCES persons (id) ON DELETE RESTRICT,
   purpose TEXT NOT NULL,
   channel TEXT NOT NULL CHECK (channel IN ('email', 'phone', 'sms', 'instagram', 'facebook', 'whatsapp')),
-  proof TEXT NOT NULL CHECK (length(proof) > 0),
+  proof TEXT NOT NULL CHECK (length(trim(proof)) > 0),
   given_at TEXT NOT NULL,
   withdrawn_at TEXT,
   created_at TEXT NOT NULL

@@ -18,6 +18,6 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R12 | Jamais de silence. Si l'IA ne répond pas ou si son plafond de coût est atteint, un texte de secours part à sa place, dans le respect de R01 à R04. | non | S06 |
 | R13 | Journal. Chaque envoi et chaque refus d'envoi sont écrits au journal avec la règle appliquée, sans donnée personnelle en clair. | non | S06, S07 |
 | R14 | Aucune décision sur les personnes. Aucune note ni aucun tri automatique des candidats à un poste ou à une location, de la solvabilité d'un acquéreur ou d'un locataire, ni de la performance d'un agent. Les contacts sont attribués aux agents par des règles fixes. | non | M03, M14, M15 |
-| R15 | Données minimales. Aucune pièce d'identité, aucun document anti-blanchiment, aucune coordonnée bancaire n'est envoyé à une IA ni rangé dans la fiche client : ils vivent seulement dans le coffre de la conformité. | non | S03 |
+| R15 | Données minimales. Aucune pièce d'identité, aucun document anti-blanchiment, aucune coordonnée bancaire n'est envoyé à une IA ni rangé dans la fiche client : ils vivent seulement dans le coffre de la conformité. | oui | S03 |
 | R16 | Accès. Un agent ne voit que ses clients, ses biens et ses chiffres. Chaque lecture d'une fiche est écrite au journal. | non | S08 |
 | R17 | Pas d'effacement. Le code n'efface aucune donnée, sauf par la procédure d'effacement prévue par la Conformité, demande de la personne ou durée de conservation dépassée, elle-même écrite au journal. | non | S04 |

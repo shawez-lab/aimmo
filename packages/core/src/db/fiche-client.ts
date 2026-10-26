@@ -248,7 +248,7 @@ export class FicheClient {
 
   // Accords et exclusions
 
-  addConsent(input: NewConsent): Promise<Consent> {
+  async addConsent(input: NewConsent): Promise<Consent> {
     if (input.proof.trim() === '') throw new Error('Un accord sans preuve ne peut pas être enregistré.');
     return this.insert<Consent>('consents', {
       id: this.newId(),
