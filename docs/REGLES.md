@@ -26,3 +26,6 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R20 | Bien non reconnu. Sans correspondance sûre avec un seul bien, la réponse est simple et honnête et ne cite aucune donnée de bien. | oui | C03, C04 |
 | R21 | Relais. L'assistant se tait dans une conversation dès qu'un humain y a répondu, et passe la main à l'agent après 5 échanges au plus. | oui | C05 |
 | R22 | Fenêtre de Meta. Sur Instagram, Facebook et WhatsApp, aucun message automatique ne part plus de 24 heures après le dernier message du client. | oui | C05 |
+| R23 | Rien de sensible déduit. La qualification d'un contact ne range que ses champs prévus, catégorie, bien, commune, budget ou prix, délai, financement déclaré, critères ; jamais la santé, l'origine, la religion, une situation familiale non déclarée ni un critère discriminant. | non | Q01 |
+| R24 | Financement déclaré, note expliquée. Le financement n'est rangé que tel que la personne l'a déclaré, jamais évalué ; chaque note de contact porte sa raison en une ligne et ne dépend ni du financement, ni de la solvabilité, ni d'aucun critère discriminant. | non | Q01, Q02 |
+| R25 | Attribution. Un contact est attribué à l'agent de sa commune par des règles fixes écrites dans le code, les mêmes pour tous, sans IA ; une personne exclue ou qui a demandé l'arrêt n'est jamais attribuée ni recontactée. | non | Q03, Q04 |

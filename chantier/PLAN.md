@@ -223,3 +223,48 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Cahier : M02, « État » ; Feuille de route, décembre 2026.
 - Objectif : à découper au début de la tâche : canal par canal, mode essai puis 10 % pendant 7 jours puis partout si les chiffres tiennent, avec retour arrière automatique, comme S11 ; retrait de ManyChat seulement après validation de Meta.
 - Attend : H04, H05, H06, H13.
+
+**M03 · Qualifier et attribuer, décembre 2026.**
+
+Découpé le 2026-10-27. Ids `Q..` pour Qualifier. Cahier : M03 Qualifier ; Feuille de route, décembre 2026 : « 90 % de 50 cas réels classés comme Shawez l'aurait fait ».
+Décidé, lecture prudente : l'IA classe et extrait derrière une interface, avec une fausse IA dans les tests et un classement par règles fixes quand elle manque ; la note et l'attribution suivent des règles fixes écrites dans le code, sans IA, pour que chaque note soit explicable et chaque attribution la même pour tous [R14] ; rien n'est envoyé à qui que ce soit par M03 ; le délai de rappel de la charte de service n'est pas chiffré dans le cahier : c'est un réglage, le jour même pour un contact chaud et 24 heures sinon, jusqu'à ce que Shawez en décide autrement.
+
+### Q01 · Classer et extraire un contact
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : C05
+- Cahier : M03, « Ce que fait le module » points 1 et 2, « Règles ».
+- Objectif : pour chaque message rattaché, une qualification : catégorie (vendeur, acquéreur, estimation, mise en location, professionnel, partenaire, curiosité, indésirable) et champs extraits (bien, commune, budget ou prix, délai, financement déclaré, critères), rangés dans le projet de la fiche, créé ou complété. L'IA passe par une interface ; sans elle, des règles fixes sur les mots du message. Une location est marquée pour M15, un commerce pour M16, un investisseur pour M17.
+- Critères : un jeu de 50 cas inventés couvre les 8 catégories, classés juste par les règles fixes à 90 % au moins ; une sortie de l'IA hors des champs prévus ou portant une donnée sensible est refusée et remplacée par les règles fixes [R23] ; le financement n'est rangé que s'il est déclaré dans le message, jamais évalué [R24] ; rien ne part chez l'IA au-delà du texte reçu, sans coordonnée [R15] ; une correction de l'agent est gardée et rejoint les cas de test.
+- Attend : H13 pour la vraie IA seulement.
+
+### Q02 · Note et température
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : Q01
+- Cahier : M03, point 3 et « Règles » : chaque note explicable par sa raison écrite.
+- Objectif : une note de 0 à 100 et une température (froid, tiède, chaud) par barème fixe écrit dans le code, d'après la catégorie, le bien reconnu, le délai et la précision de la demande, avec la raison en une ligne.
+- Critères : chaque note a sa raison en une ligne, sans donnée personnelle [R24] ; la note ne dépend jamais du financement ni de la solvabilité, ni d'aucun critère discriminant : changer seulement ces champs ne la change pas [R14, R24] ; même contact, même note.
+- Attend : rien.
+
+### Q03 · Zones et attribution à l'agent
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : Q01
+- Cahier : M03, points 4 et 6 ; « Branchements » : zones des agents par commune.
+- Objectif : les zones des agents par commune, puis l'attribution de chaque contact qualifié à l'agent de sa commune par règles fixes, sans IA, et la réattribution par la même règle si le contact n'est pas rappelé dans le délai de la charte ; les règles, lisibles, rendues par l'API pour l'application.
+- Critères : aucun contact exclu ou qui a dit stop n'est attribué [R25] ; même contact, même agent, quel que soit l'ordre d'arrivée ; commune sans agent : à la direction, jamais au hasard ; réattribution dans le délai simulé, une seule fois par délai, écrite au journal [R13] ; un agent parti ne reçoit plus rien.
+- Attend : la liste des communes de chaque agent, plus tard, au recrutement ; les tests utilisent des zones inventées.
+
+### Q04 · Tâche « rappeler » et liste des contacts chauds
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : Q02, Q03
+- Cahier : M03, point 5 ; Feuille de route, décembre 2026 : rapport du matin.
+- Objectif : une tâche « rappeler » pour chaque contact chaud, chez son agent, et la liste des contacts chauds du matin et du soir, rendue par l'API sous droits d'accès [R16].
+- Critères : chaque contact chaud a sa tâche en moins d'une minute, sur une horloge simulée ; une seule tâche par contact et par projet [R18] ; la liste ne montre à un agent que ses contacts [R16] ; aucun contact exclu n'y figure [R25] ; aucune notification n'est envoyée (l'application viendra en janvier).
+- Attend : rien.
+
+### Q05 · Qualification dans la chaîne de captation, et mesure sur cas réels
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : Q04, C08
+- Cahier : M03, « Critères d'acceptation » ; Feuille de route, décembre 2026.
+- Objectif : brancher Q01 à Q04 derrière chaque message reçu, en mode essai, et un banc de mesure qui compare le classement à celui de Shawez sur des cas anonymisés, sans aucune donnée personnelle dans le dépôt.
+- Critères : chaque nouveau contact a fiche, qualification, note, agent et, s'il est chaud, sa tâche en moins d'une minute ; le banc rend le taux d'accord et la liste des écarts, sans texte de message au journal [R13] ; 90 % de 50 cas réels quand H18 et H13 sont faits.
+- Attend : H13 et H18 pour la mesure réelle ; le reste se fait avant.
