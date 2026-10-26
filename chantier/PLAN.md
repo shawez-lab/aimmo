@@ -14,7 +14,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Fait : règles pour Claude et Codex, protocole, plan, vérifications automatiques, garde-fous, squelette TypeScript testé.
 
 ### S02 · Reprendre l'existant
-- Statut : à faire
+- Statut : fait (2026-10-26)
 - Qui : Claude · Relecture : normale · Dépend de : S01
 - Cahier : Synthèse, « Ce qui fonctionne déjà » ; Architecture technique, tableau « Outil actuel, Remplacé par, Quand ».
 - Objectif : savoir, en lecture seule, ce qui tourne déjà dans `shawez-lab/shawez-immo` (`functions/`, `functions/_lib/`, `functions/migrations/`, `outils/`, `.github/workflows/`) pour le reprendre au lieu de le refaire. Lire les noms et l'en-tête de chaque fichier, puis le détail seulement de ce que le socle reprend.
