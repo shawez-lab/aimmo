@@ -10,14 +10,16 @@ Une séance fait avancer le plan d'une tâche, finie proprement, puis s'arrête.
    - Sinon : y écrire `occupé depuis <AAAA-MM-JJ HH:MM> (heure de Paris)`, commit `chantier : verrou`, push sur main. Si le push est refusé parce que main a bougé : `git pull --rebase`, relire le verrou, recommencer cette étape une fois.
 3. **Propositions ouvertes d'abord.** Lister les propositions de modification ouvertes (`gh api repos/shawez-lab/aimmo/pulls --jq '.[] | [.number, .head.ref, .title] | @tsv'`). Pour chacune :
    - vérifications vertes, relue, et Codex sans P0 ni P1 restant : la fusionner, passer sa tâche à « fait » ;
-   - branche `codex/<id>` sans nouveau commit de Codex depuis plus de 24 heures : la tâche revient à Claude (voir `SECOURS.md`) ;
+   - branche `codex/<id>` sans nouveau commit de Codex depuis plus de 2 heures : la tâche revient à Claude, qui la fait dans cette séance (voir `SECOURS.md`) ;
    - sinon : la laisser.
 4. **Déléguer à Codex.** Si H11 est « fait » dans `HUMAIN.md` et qu'une tâche marquée « Qui : Codex » est prête : la confier selon la section 6. Cela ne compte pas comme la tâche de la séance. Tant que H11 est « à finir », Claude fait lui-même les tâches marquées « Qui : Codex », sauf à la première séance du lundi : elle essaie d'en confier une, et si Codex refuse encore, la fait elle-même.
 5. **Choisir la tâche de Claude :**
    - une tâche « en cours » de Claude : la reprendre, sur sa branche ;
    - sinon la première tâche « à faire » de Claude dont toutes les dépendances sont « fait » et qui n'attend rien de `HUMAIN.md` ;
    - sinon, si le prochain module de la Feuille de route n'est pas encore découpé : le découper (section 5) ;
-   - sinon, tout attend un humain ou Codex : l'écrire au journal, libérer le verrou, s'arrêter.
+   - sinon, une tâche marquée « Qui : Codex » ou bloquée chez Codex : Claude la fait lui-même ;
+   - sinon, une tâche plus loin dans le plan ou le module suivant, même si une tâche d'avant attend un humain : le chantier ne s'arrête jamais. Ce qui attend un humain va dans « Besoin de toi » avec un prompt prêt pour ChatGPT ;
+   - s'arrêter seulement si vraiment plus rien n'est faisable : l'écrire au journal, libérer le verrou.
 6. Passer la tâche à « en cours » dans `PLAN.md`, dans le commit du verrou ou juste après.
 
 ## 2. Faire
