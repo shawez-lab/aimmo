@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS projects (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (id, network_id),
+  UNIQUE (id, person_id),
   FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT,
   FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT
 );
@@ -129,7 +130,8 @@ CREATE TABLE IF NOT EXISTS sources (
   created_at TEXT NOT NULL,
   FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT,
   FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT,
-  FOREIGN KEY (project_id, network_id) REFERENCES projects (id, network_id) ON DELETE RESTRICT
+  FOREIGN KEY (project_id, network_id) REFERENCES projects (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (project_id, person_id) REFERENCES projects (id, person_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS sources_person ON sources (person_id);
 CREATE INDEX IF NOT EXISTS sources_channel ON sources (network_id, channel, occurred_at);
@@ -187,7 +189,8 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TEXT NOT NULL,
   FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT,
   FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT,
-  FOREIGN KEY (project_id, network_id) REFERENCES projects (id, network_id) ON DELETE RESTRICT
+  FOREIGN KEY (project_id, network_id) REFERENCES projects (id, network_id) ON DELETE RESTRICT,
+  FOREIGN KEY (project_id, person_id) REFERENCES projects (id, person_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS messages_person ON messages (person_id, occurred_at);
 CREATE INDEX IF NOT EXISTS messages_conversation ON messages (conversation_id, occurred_at);

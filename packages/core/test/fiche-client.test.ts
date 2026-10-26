@@ -270,6 +270,30 @@ describeWithSqlite('S03 · accès typé à la fiche client', () => {
     expect(await store.findPersonsByIdentifier(other, 'email', 'w@example.test')).toEqual([]);
   });
 
+  it('un message ou une source ne peut pas citer le projet d’une autre personne', async () => {
+    const a = await store.createPerson({ networkId });
+    const b = await store.createPerson({ networkId });
+    const projectOfB = await store.createProject({ networkId, personId: b.id, kind: 'buy' });
+    const occurredAt = new Date('2026-11-01T10:00:00.000Z');
+    await expect(
+      store.recordMessage({
+        networkId,
+        personId: a.id,
+        projectId: projectOfB.id,
+        channel: 'email',
+        direction: 'in',
+        authorKind: 'person',
+        body: 'test',
+        occurredAt,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      store.addSource({ networkId, personId: a.id, projectId: projectOfB.id, channel: 'site', occurredAt }),
+    ).rejects.toThrow();
+    expect(await store.listMessages(a.id)).toEqual([]);
+    expect((await store.getPerson(a.id))?.last_contact_at).toBeNull();
+  });
+
   it('[R17] la base refuse d’effacer une personne qui a un historique', async () => {
     const p = await store.createPerson({ networkId });
     await store.addIdentifier({ networkId, personId: p.id, kind: 'email', value: 'y@example.test' });
