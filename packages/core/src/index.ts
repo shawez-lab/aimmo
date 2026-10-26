@@ -13,6 +13,7 @@ export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
 export { SqliteJournalStore } from './journal/sqlite-store.ts';
+export { SqlJournalStore } from './journal/sql-store.ts';
 export type { JournalSqliteDatabase } from './journal/sqlite-store.ts';
 export type {
   ChainVerification,

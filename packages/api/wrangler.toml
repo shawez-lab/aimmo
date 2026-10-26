@@ -1,0 +1,22 @@
+# Worker de l'API du socle AIMMO (S09).
+# Il vit à côté des systèmes de shawez-immo sans les toucher : son propre nom, aucune route sur shawez-immo.com,
+# seulement l'adresse workers.dev du compte. Aucune clé ici : API_KEYS est un secret Cloudflare.
+name = "aimmo-api"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+workers_dev = true
+preview_urls = false
+
+[vars]
+# Seul mode admis tant qu'aucune tâche du plan n'a mis d'envoi réel en service.
+MODE = "essai"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "aimmo"
+# Rempli au déploiement par .github/workflows/deployer-api.yml, qui crée la base en Europe si elle manque.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../db/migrations"
+
+[observability]
+enabled = true
