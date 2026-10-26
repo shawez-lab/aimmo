@@ -125,7 +125,13 @@ export class ConversationRelais {
       };
     }
     const reply = await this.premiere.reply(inboundId);
-    if (reply.skipped !== null) return { status: 'skipped', conversationId, reason: reply.skipped };
+    if (reply.skipped !== null) {
+      // Un formulaire sans mail : personne ne peut lui répondre par écrit, l'agent doit rappeler [R12].
+      if (row.kind === 'form' && reply.result === null && reply.skipped !== 'Ce message a déjà reçu sa réponse.') {
+        await this.alert((await this.fiche.view(row.person_id)).person.id, conversationId, 'needs_reply');
+      }
+      return { status: 'skipped', conversationId, reason: reply.skipped };
+    }
     if (reply.result?.status === 'sent') return { status: 'replied', conversationId, reply };
     // Une réponse qui n'a pas pu partir n'est jamais un silence : l'agent est prévenu [R12].
     if (reply.result?.needsHuman || reply.result?.rule === 'R21' || reply.result?.rule === 'R22') {
