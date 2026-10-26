@@ -4,3 +4,4 @@ export * from './d1.ts';
 export * from './mail.ts';
 export * from './courrier.ts';
 export * from './meta.ts';
+export * from './assistant.ts';

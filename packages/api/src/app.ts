@@ -21,6 +21,8 @@ import {
   type Viewer,
 } from '@aimmo/core';
 import { intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } from './auth.ts';
+import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
+import type { ReplyWriter } from '@aimmo/core';
 import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
@@ -41,6 +43,10 @@ export interface ApiConfig {
   intakeKeys?: string | undefined;
   /** Notifications de Meta (C07) : secrets et variables `META_*`, voir meta.ts. */
   meta?: Omit<MetaConfig, 'db' | 'now'>;
+  /** Limites d'appels de l'assistant du site (C08) ; absentes : les réglages par défaut. */
+  assistantLimits?: AssistantLimits;
+  /** L'IA qui rédige les réponses de l'assistant du site, une fois branchée (H13). */
+  writer?: ReplyWriter;
   now?: () => Date;
 }
 
@@ -231,7 +237,7 @@ async function intakeForm(request: Request, config: ApiConfig, now: () => Date):
   if (request.method !== 'POST') return failure(405, 'method_not_allowed', 'Méthode non admise.');
   const keys = parseIntakeKeys(config.intakeKeys);
   if (keys === null) return failure(503, 'keys_not_configured', 'Dépôt fermé : aucune clé configurée.');
-  const intake = await intakeFromRequest(request, keys);
+  const intake = await intakeFromRequest(request, keys, 'site_form');
   if (intake === null) return failure(401, 'unauthorized', 'Clé absente ou refusée.');
   const body = await readJson(request);
   if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
@@ -274,6 +280,21 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   }
 
   if (path === '/captation/formulaire') return intakeForm(request, config, now);
+
+  if (path === ASSISTANT_PATH || path.startsWith(`${ASSISTANT_PATH}/`)) {
+    try {
+      return await handleAssistant(request, path, {
+        db: config.db,
+        intakeKeys: config.intakeKeys,
+        ...(config.assistantLimits ? { limits: config.assistantLimits } : {}),
+        ...(config.writer ? { writer: config.writer } : {}),
+        now,
+      });
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'intake:site_chat', 'assistant', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
 
   if (path === META_PATH) {
     const meta = config.meta ?? { appSecret: undefined, verifyTokenSha256: undefined, networkId: undefined, ownIds: undefined, appIds: undefined };
