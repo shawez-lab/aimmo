@@ -8,6 +8,7 @@ import {
   decideSend,
   frenchHolidays,
   fromSyncSqlite,
+  classifyReceived,
   isStopRequest,
   localTime,
   type Channel,
@@ -231,11 +232,26 @@ describe('S05 · décision d’envoi', () => {
 
 describe('S05 · demande d’arrêt reconnue', () => {
   it('[R04] les formules d’arrêt', () => {
-    for (const text of ['STOP', 'Stop.', 'arrêt', 'Arrêtez', 'stop svp', 'Merci de ne plus me contacter', 'ne m’écrivez plus', 'Retirez-moi de votre liste', 'je veux me désinscrire', 'Plus de SMS svp', 'Je ne veux plus être contacté', 'Je ne souhaite plus recevoir vos messages', 'Je ne veux plus de vos sms', 'Ne plus m’écrire', 'N’écrivez plus', 'Laissez-moi tranquille', 'Supprimez mon numéro', 'Ne me contactez pas', 'Ne m’appelez pas svp', 'Ne nous écrivez plus', 'Ne m’envoyez plus rien', 'Pas intéressé', 'Non merci', 'Vous pouvez arrêter de m’appeler, je ne veux plus être dérangé']) {
+    for (const text of ['STOP', 'Stop.', 'arrêt', 'Arrêtez', 'stop svp', 'Merci de ne plus me contacter', 'ne m’écrivez plus', 'Retirez-moi de votre liste', 'je veux me désinscrire', 'Plus de SMS svp', 'Je ne veux plus être contacté', 'Je ne souhaite plus recevoir vos messages', 'Je ne veux plus de vos sms', 'Ne plus m’écrire', 'N’écrivez plus', 'Laissez-moi tranquille', 'Supprimez mon numéro', 'Ne me contactez pas', 'Ne m’appelez pas svp', 'Ne nous écrivez plus', 'Ne m’envoyez plus rien', 'Vous pouvez arrêter de m’appeler, je ne veux plus être dérangé']) {
       expect(isStopRequest(text), text).toBe(true);
     }
     for (const text of ['Bonjour, le bien est-il disponible ?', 'Il y a un arrêt de bus devant ?', 'Je peux venir samedi', 'Le prix est-il encore négociable ? Je veux en savoir plus', 'Pouvez-vous m’appeler demain ?']) {
       expect(isStopRequest(text), text).toBe(false);
+    }
+  });
+});
+
+describe('S05 · refus et bien vendu reconnus', () => {
+  it('[R02] « non », « pas intéressé » : refus ; « vendu » : bien vendu ; une question ne vaut pas', () => {
+    for (const text of ['Non', 'non merci', 'Pas intéressé', 'Je ne suis pas intéressée', 'Ça ne m’intéresse pas', 'Je ne suis pas vendeur']) {
+      expect(classifyReceived(text), text).toBe('refused');
+    }
+    for (const text of ['Vendu', 'Le bien est déjà vendu', 'Nous avons vendu le mois dernier', 'C’est vendu, merci', 'La maison est sous compromis']) {
+      expect(classifyReceived(text), text).toBe('sold');
+    }
+    expect(classifyReceived('STOP')).toBe('stop');
+    for (const text of ['Le bien est-il vendu ?', 'Bonjour, je cherche un T3', 'Oui, samedi me va', 'Nonobstant le prix, je suis intéressé']) {
+      expect(classifyReceived(text), text).toBeNull();
     }
   });
 });
@@ -265,7 +281,7 @@ describeWithSqlite('S05 · décision d’envoi sur la base', () => {
     await store.addConsent({ networkId: network.id, personId: person.id, purpose: 'alert', channel: 'email', proof: 'formulaire test', givenAt: new Date(LONG_AGO) });
     expect((await envoi.decide(person.id, req(TUE_1000))).allowed).toBe(true);
     const at = new Date('2026-11-10T08:00:00.000Z');
-    const { stop } = await envoi.recordReceived({ networkId: network.id, personId: person.id, channel: 'instagram', conversationId: 'c', body: 'STOP', occurredAt: at });
+    const { exclusion: stop } = await envoi.recordReceived({ networkId: network.id, personId: person.id, channel: 'instagram', conversationId: 'c', body: 'STOP', occurredAt: at });
     expect(stop).toMatchObject({ reason: 'stop', channel: null });
     await envoi.recordStopRequest({ networkId: network.id, personId: person.id, at: new Date(TUE_1000) });
     expect(await store.listExclusions(person.id)).toHaveLength(1);
@@ -277,10 +293,21 @@ describeWithSqlite('S05 · décision d’envoi sur la base', () => {
   it('[R04] « Ne me contactez pas » reçu par mail : plus rien sur Instagram ni ailleurs', async () => {
     const { envoi, network, person } = await setup();
     expect((await envoi.decide(person.id, req(TUE_1000, { channel: 'instagram', kind: 'follow_up' }))).allowed).toBe(true);
-    const { stop } = await envoi.recordReceived({ networkId: network.id, personId: person.id, channel: 'email', conversationId: 'm', body: 'Ne me contactez pas.', occurredAt: new Date(LONG_AGO) });
+    const { exclusion: stop } = await envoi.recordReceived({ networkId: network.id, personId: person.id, channel: 'email', conversationId: 'm', body: 'Ne me contactez pas.', occurredAt: new Date(LONG_AGO) });
     expect(stop).not.toBeNull();
     for (const channel of ['instagram', 'facebook', 'email'] as Channel[]) {
       expect((await envoi.decide(person.id, req(TUE_1000, { channel, kind: 'follow_up' }))).rule, channel).toBe('R04');
+    }
+  });
+
+  it('[R02] « Non » ou « Vendu » reçu : exclusion sur tous les canaux, plus aucune relance', async () => {
+    for (const [body, reason] of [['Non', 'refused'], ['Vendu', 'sold'], ['Le bien est déjà vendu', 'sold']] as const) {
+      const { envoi, network, person } = await setup();
+      const { exclusion } = await envoi.recordReceived({ networkId: network.id, personId: person.id, channel: 'sms', conversationId: 's', body, occurredAt: new Date(LONG_AGO) });
+      expect(exclusion, body).toMatchObject({ reason, channel: null });
+      for (const channel of ['instagram', 'sms', 'email'] as Channel[]) {
+        expect((await envoi.decide(person.id, req(TUE_1000, { channel, kind: 'follow_up' }))).rule, `${body} ${channel}`).toBe('R02');
+      }
     }
   });
 

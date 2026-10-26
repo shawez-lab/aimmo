@@ -42,8 +42,6 @@ const STOP_ANYWHERE = [
   /\bunsubscribe\b/,
   /\bne (?:plus|pas) m(?:e |')(?:contacter|recontacter|ecrire|appeler|relancer)\b/,
   /\bne (?:m(?:e |')|nous )(?:contactez|recontactez|ecrivez|appelez|relancez|derangez|envoyez)(?: \S+){0,2} (?:plus|pas|jamais)\b/,
-  /\bpas interesse/,
-  /^non merci\b/,
   /\barretez de m(?:e|') ?(?:contacter|ecrire|appeler|relancer)\b/,
   /\bretirez[- ]moi\b/,
   /\bplus de (?:messages?|mails?|sms|appels?)\b/,
@@ -59,8 +57,8 @@ const STOP_ANYWHERE = [
  * Demande d'arrêt reconnue dans un message reçu [R04]. Lecture prudente : dans le doute, c'est un arrêt,
  * car écrire à tort coûte plus cher que se taire à tort.
  */
-export function isStopRequest(text: string): boolean {
-  const plain = text
+function plainText(text: string): string {
+  return text
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
@@ -68,7 +66,30 @@ export function isStopRequest(text: string): boolean {
     .replace(/[^a-z0-9' -]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+export function isStopRequest(text: string): boolean {
+  const plain = plainText(text);
   return STOP_ALONE.has(plain) || STOP_ANYWHERE.some((pattern) => pattern.test(plain));
+}
+
+/** Refus : « non », « non merci », « pas intéressé » [R02]. */
+const REFUSAL = [/^non\b/, /\bpas interesse/, /\bca ne m'interesse pas\b/, /\bne suis pas interesse/, /\bpas vendeur/, /\bpas a vendre\b/];
+/** Bien vendu [R02]. Une question (« est-il vendu ? ») ne vaut pas. */
+const SOLD = [/^vendu\b/, /\bdeja vendu\b/, /\b(?:est|c'est|ete|a ete|bien|maison|appartement) vendue?s?\b/, /\b(?:avons|avez|ai|a|ont) (?:deja )?vendu\b/, /\bsous compromis\b/];
+
+export type ReceivedExclusion = 'stop' | 'refused' | 'sold';
+
+/**
+ * Ce qu'un message reçu impose : arrêt [R04], refus ou bien vendu [R02], ou rien.
+ * Lecture prudente : dans le doute, se taire.
+ */
+export function classifyReceived(text: string): ReceivedExclusion | null {
+  if (isStopRequest(text)) return 'stop';
+  const plain = plainText(text);
+  if (REFUSAL.some((pattern) => pattern.test(plain))) return 'refused';
+  if (!text.includes('?') && SOLD.some((pattern) => pattern.test(plain))) return 'sold';
+  return null;
 }
 
 /**
@@ -139,34 +160,45 @@ export class DecisionEnvoi {
   }
 
   /**
-   * Range un message reçu. S'il demande l'arrêt, la personne est aussitôt marquée « ne plus écrire »
-   * sur tous les canaux [R04].
+   * Range un message reçu. S'il demande l'arrêt [R04], refuse ou dit le bien vendu [R02], la personne est
+   * aussitôt exclue sur tous les canaux.
    */
-  async recordReceived(input: Omit<NewMessage, 'direction' | 'authorKind'>): Promise<{ message: Message; stop: Exclusion | null }> {
+  async recordReceived(
+    input: Omit<NewMessage, 'direction' | 'authorKind'>,
+  ): Promise<{ message: Message; exclusion: Exclusion | null }> {
     const message = await this.store.recordMessage({ ...input, direction: 'in', authorKind: 'person' });
-    const stop = isStopRequest(input.body)
-      ? await this.recordStopRequest({ networkId: input.networkId, agentId: input.agentId ?? null, personId: input.personId, at: input.occurredAt })
+    const reason = classifyReceived(input.body);
+    const exclusion = reason
+      ? await this.recordExclusion({ networkId: input.networkId, agentId: input.agentId ?? null, personId: input.personId, at: input.occurredAt, reason })
       : null;
-    return { message, stop };
+    return { message, exclusion };
   }
 
-  /**
-   * Demande d'arrêt reçue, sur n'importe quel canal : exclusion « stop » sur tous les canaux [R04].
-   * Une demande déjà en cours n'est pas doublée ; rien n'est effacé.
-   */
-  async recordStopRequest(input: { networkId: string; agentId?: string | null; personId: string; at: Date }): Promise<Exclusion> {
+  /** Demande d'arrêt reçue, sur n'importe quel canal : exclusion « stop » sur tous les canaux [R04]. */
+  recordStopRequest(input: { networkId: string; agentId?: string | null; personId: string; at: Date }): Promise<Exclusion> {
+    return this.recordExclusion({ ...input, reason: 'stop' });
+  }
+
+  /** Exclusion sur tous les canaux. Une exclusion déjà en cours pour la même raison n'est pas doublée ; rien n'est effacé. */
+  async recordExclusion(input: {
+    networkId: string;
+    agentId?: string | null;
+    personId: string;
+    at: Date;
+    reason: ReceivedExclusion;
+  }): Promise<Exclusion> {
     const ids = await this.fiche.membersOf(input.personId);
     const existing = await this.db.first<Exclusion>(
       `SELECT * FROM exclusions WHERE person_id IN (${placeholders(ids.length)})
-       AND reason = 'stop' AND lifted_at IS NULL AND noted_at <= ? ORDER BY noted_at, id LIMIT 1`,
-      [...ids, input.at.toISOString()],
+       AND reason = ? AND lifted_at IS NULL AND noted_at <= ? ORDER BY noted_at, id LIMIT 1`,
+      [...ids, input.reason, input.at.toISOString()],
     );
     if (existing) return existing;
     return this.store.addExclusion({
       networkId: input.networkId,
       agentId: input.agentId ?? null,
       personId: input.personId,
-      reason: 'stop',
+      reason: input.reason,
       channel: null,
       notedAt: input.at,
     });
