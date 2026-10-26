@@ -8,5 +8,3 @@ coverage/
 *.local
 *.sqlite
 *.db
-.dev.vars
-.wrangler/
