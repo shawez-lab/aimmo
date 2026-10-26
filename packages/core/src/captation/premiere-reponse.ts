@@ -268,7 +268,9 @@ export class PremiereReponse {
       throw error;
     }
     await this.db.run('UPDATE first_reply_claims SET outcome = ? WHERE claim_id = ?', [result.status, claimId]);
-    if (result.status === 'failed') await this.releaseClaim(claimId, 'panne');
+    // Seule une réponse partie garde sa réservation : un refus ou une panne laissent réessayer plus tard,
+    // et le contrôle central réexamine tout à chaque essai.
+    if (result.status !== 'sent') await this.releaseClaim(claimId, result.status === 'failed' ? 'panne' : 'refus');
     return { inboundId, recognition: recognition.status, nextStep: brief.nextStep, result, skipped: null };
   }
 

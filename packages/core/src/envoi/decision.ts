@@ -127,7 +127,11 @@ export function decideSend(
   if (request.kind === 'reply') {
     if (!request.conversationId) throw new Error('Une réponse doit citer sa conversation.');
     const sameConversation = facts.messages.filter(
-      (m) => m.conversation_id === request.conversationId && m.channel === request.channel && Date.parse(m.occurred_at) <= at,
+      // Un formulaire du site reçoit sa réponse par mail ou par téléphone : sa conversation est celle du site.
+      (m) =>
+        m.conversation_id === request.conversationId &&
+        (m.channel === request.channel || m.channel === 'site') &&
+        Date.parse(m.occurred_at) <= at,
     );
     const lastIn = Math.max(
       -Infinity,

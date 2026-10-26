@@ -251,6 +251,27 @@ describeWithSqlite('C04 · première réponse', () => {
     expect(t.sent('instagram')).toHaveLength(1);
   });
 
+  it('[R01] un formulaire du site rempli un dimanche soir reçoit sa réponse par mail tout de suite', async () => {
+    const t = await setup();
+    const out = await t.run(msg('site', 'form', [mail('camille.form@example.org')], 'Je souhaite être rappelée pour vendre.'));
+    expect(out.result).toMatchObject({ status: 'sent', rule: 'R01' });
+    expect(t.sent('email')).toHaveLength(1);
+  });
+
+  it('[R18] une réponse refusée pour un temps peut être retentée, et ne part qu\'une fois', async () => {
+    const t = await setup();
+    const instagram = t.channels.find((c) => c.channel === 'instagram')!;
+    instagram.failWith = new Error('panne inventée');
+    const m = await t.run(msg('instagram', 'direct', [ig('camille.retry')], 'Bonjour'));
+    instagram.failWith = null;
+    // Un refus n'est pas une réponse : la réservation est rendue.
+    const claims = await t.db.all<{ claim_key: string }>('SELECT claim_key FROM first_reply_claims WHERE inbound_id = ?', [m.inboundId]);
+    expect(claims.every((c) => c.claim_key !== m.inboundId)).toBe(true);
+    await t.premiere.reply(m.inboundId);
+    await t.premiere.reply(m.inboundId);
+    expect(t.sent('instagram')).toHaveLength(1);
+  });
+
   it('[R02] une personne exclue ne reçoit rien, pas même la première réponse', async () => {
     const t = await setup();
     const out = await t.run(msg('instagram', 'direct', [ig('camille.stop')], 'Stop, ne plus me contacter'));
