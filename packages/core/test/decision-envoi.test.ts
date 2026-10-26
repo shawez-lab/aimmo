@@ -231,7 +231,7 @@ describe('S05 · décision d’envoi', () => {
 
 describe('S05 · demande d’arrêt reconnue', () => {
   it('[R04] les formules d’arrêt', () => {
-    for (const text of ['STOP', 'Stop.', 'arrêt', 'Arrêtez', 'stop svp', 'Merci de ne plus me contacter', 'ne m’écrivez plus', 'Retirez-moi de votre liste', 'je veux me désinscrire', 'Plus de SMS svp', 'Je ne veux plus être contacté', 'Je ne souhaite plus recevoir vos messages', 'Je ne veux plus de vos sms', 'Ne plus m’écrire', 'N’écrivez plus', 'Laissez-moi tranquille', 'Supprimez mon numéro', 'Vous pouvez arrêter de m’appeler, je ne veux plus être dérangé']) {
+    for (const text of ['STOP', 'Stop.', 'arrêt', 'Arrêtez', 'stop svp', 'Merci de ne plus me contacter', 'ne m’écrivez plus', 'Retirez-moi de votre liste', 'je veux me désinscrire', 'Plus de SMS svp', 'Je ne veux plus être contacté', 'Je ne souhaite plus recevoir vos messages', 'Je ne veux plus de vos sms', 'Ne plus m’écrire', 'N’écrivez plus', 'Laissez-moi tranquille', 'Supprimez mon numéro', 'Ne me contactez pas', 'Ne m’appelez pas svp', 'Ne nous écrivez plus', 'Ne m’envoyez plus rien', 'Pas intéressé', 'Non merci', 'Vous pouvez arrêter de m’appeler, je ne veux plus être dérangé']) {
       expect(isStopRequest(text), text).toBe(true);
     }
     for (const text of ['Bonjour, le bien est-il disponible ?', 'Il y a un arrêt de bus devant ?', 'Je peux venir samedi', 'Le prix est-il encore négociable ? Je veux en savoir plus', 'Pouvez-vous m’appeler demain ?']) {
@@ -271,6 +271,16 @@ describeWithSqlite('S05 · décision d’envoi sur la base', () => {
     expect(await store.listExclusions(person.id)).toHaveLength(1);
     for (const channel of ['email', 'instagram', 'sms'] as Channel[]) {
       expect(await envoi.decide(person.id, req(TUE_1000, { channel })), channel).toMatchObject({ allowed: false, rule: 'R04' });
+    }
+  });
+
+  it('[R04] « Ne me contactez pas » reçu par mail : plus rien sur Instagram ni ailleurs', async () => {
+    const { envoi, network, person } = await setup();
+    expect((await envoi.decide(person.id, req(TUE_1000, { channel: 'instagram', kind: 'follow_up' }))).allowed).toBe(true);
+    const { stop } = await envoi.recordReceived({ networkId: network.id, personId: person.id, channel: 'email', conversationId: 'm', body: 'Ne me contactez pas.', occurredAt: new Date(LONG_AGO) });
+    expect(stop).not.toBeNull();
+    for (const channel of ['instagram', 'facebook', 'email'] as Channel[]) {
+      expect((await envoi.decide(person.id, req(TUE_1000, { channel, kind: 'follow_up' }))).rule, channel).toBe('R04');
     }
   });
 
