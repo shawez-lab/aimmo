@@ -207,14 +207,15 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : avant tout envoi réel (C09), sérialiser par conversation l'écho humain et le premier message traités en même temps (fenêtre étroite signalée par Codex, sans effet en essai) ; branchement chez Meta avec H06 et H17 ; relecture forte (1 P1 corrigé), Codex : 4 P0 corrigés en 4 tours, le dernier réduit et reporté à C09 (#21).
 
 ### C08 · API de l'assistant du site, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : C05, S09
 - Cahier : M02, « Canaux » : assistant du site.
 - Objectif : l'API que l'assistant du site appellera : ouvrir une conversation, envoyer un message, recevoir la réponse, avec les mêmes règles que les autres canaux. Son intégration au site sera une proposition sur `shawez-immo`, faite dans une tâche à part, jamais directement sur main.
 - Critères : 20 messages tests donnent une réponse en moins d'une minute ; mention au premier message [R06] ; une conversation sans accord ne laisse aucune donnée personnelle au-delà de ce que la personne a écrit [R15] ; appels limités par visiteur.
 - Attend : H04 pour la mise en ligne seulement.
 - À savoir au départ (2026-10-27) : `site` n'est pas un canal de sortie (`CHANNELS`, `consents`, `exclusions` ne l'admettent pas) et `replyChannel` de C04 ne rend rien pour l'assistant ; la réponse de l'assistant doit pourtant passer par le contrôle central (R02, R04, R06, R10, R19, R21). Choisir d'abord comment, par la lecture la plus prudente.
-- Décidé (2026-10-27), lecture prudente : `site` devient un canal de sortie (`OUTBOUND_CHANNELS`) sans toucher `CHANNELS`, ni les accords, ni les exclusions, qui restent par personne ; sur ce canal, seulement la réponse dans la session du visiteur et dans l'heure de son message, jamais d'initiative [R03, R01] ; la réponse va à la session d'où la personne a écrit, vérifiée comme les conversations de Meta ; même clé de dépôt `INTAKE_KEYS`, avec une source `site_chat` qui n'ouvre que l'assistant ; visiteur connu par l'empreinte d'un identifiant opaque donné par le site, jamais d'adresse IP ni de navigateur [R15] ; limites par heure prises en une seule instruction ; en essai, `reply` vaut `null`.
+- Décidé (2026-10-27), lecture prudente : `site` devient un canal de sortie (`OUTBOUND_CHANNELS`) sans toucher `CHANNELS`, ni les accords, ni les exclusions, qui restent par personne ; sur ce canal, seulement la réponse dans la session du visiteur et dans l'heure de son message, jamais d'initiative [R03, R01] ; la réponse va à la session d'où la personne a écrit, vérifiée comme les conversations de Meta ; même clé de dépôt `INTAKE_KEYS`, avec une source `site_chat` qui n'ouvre que l'assistant ; visiteur connu par l'empreinte d'un identifiant opaque donné par le site, jamais d'adresse IP ni de navigateur [R15] ; limites par heure prises en une seule instruction ; en essai, `reply` vaut `null`. Un visiteur garde une seule fiche d'une conversation à l'autre (empreinte de son identifiant comme référence du canal), pour qu'un arrêt vaille pour toutes [R02, R04].
+- Reste : intégration au site de `shawez-immo` dans une tâche à part ; texte rendu au visiteur avec le branchement réel (C09) ; relecture forte (aucun P0 ni P1), Codex : 1 P0 corrigé, dernière version validée (#22).
 
 ### C09 · Mise en service de la captation
 - Statut : à faire
