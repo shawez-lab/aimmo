@@ -44,8 +44,6 @@ export interface SendOrder {
   fallbackTexts: readonly string[];
   /** Chiffres permis dans le texte : ceux de la base ou d'une source publique citée [R10]. */
   figures?: readonly (string | number)[];
-  /** Par défaut, maintenant. */
-  at?: Date;
 }
 
 export type SendStatus = 'sent' | 'refused' | 'failed';
@@ -59,6 +57,8 @@ export interface SendResult {
   aiText: boolean;
   fallbackText: boolean;
   withMention: boolean;
+  /** Une réponse que le contrôle n'a pas pu laisser partir : l'agent doit répondre lui-même [R12]. */
+  needsHuman: boolean;
 }
 
 export interface ControleSettings {
@@ -139,7 +139,8 @@ export class ControleEnvois {
   }
 
   async send(order: SendOrder): Promise<SendResult> {
-    const at = order.at ?? this.now();
+    // L'heure est toujours celle du contrôle, jamais celle de l'appelant : l'envoi part maintenant [R01].
+    const at = this.now();
     const subjects = [...(order.subject ? [order.subject] : []), ...(order.propertyIds ?? []).map((id) => `bien:${id}`)];
     if (order.kind !== 'reply' && subjects.length === 0) {
       throw new Error('Un envoi d’initiative cite son sujet ou ses biens [R05].');
@@ -149,7 +150,7 @@ export class ControleEnvois {
       outcome: SendStatus,
       rule: string | null,
       reason: string,
-      extra: Partial<Pick<SendResult, 'messageId' | 'body' | 'aiText' | 'fallbackText' | 'withMention'>> = {},
+      extra: Partial<Pick<SendResult, 'messageId' | 'body' | 'aiText' | 'fallbackText' | 'withMention' | 'needsHuman'>> = {},
     ): Promise<SendResult> => {
       const result: SendResult = {
         status: outcome,
@@ -160,6 +161,7 @@ export class ControleEnvois {
         aiText: extra.aiText ?? false,
         fallbackText: extra.fallbackText ?? false,
         withMention: extra.withMention ?? false,
+        needsHuman: extra.needsHuman ?? false,
       };
       await this.options.journal.record({
         networkId: order.networkId,
@@ -179,26 +181,9 @@ export class ControleEnvois {
       return result;
     };
 
-    // 1. Décision d'envoi [R01 à R04, R11].
-    const decision = await this.decisions.decide(order.personId, {
-      channel: order.channel,
-      kind: order.kind,
-      ...(order.purpose === undefined ? {} : { purpose: order.purpose }),
-      conversationId: order.conversationId ?? null,
-      at,
-    });
-    if (!decision.allowed) return log('refused', decision.rule, decision.reason);
-
-    const port = this.channels.get(order.channel);
-    if (!port) return log('refused', null, 'Canal non branché.');
     const view = await this.fiche.view(order.personId);
     const ids = view.members.map((p) => p.id);
-    const to = IDENTIFIER_FOR[order.channel]
-      .map((kind) => view.identifiers.find((i) => i.kind === kind))
-      .find((i) => i !== undefined)?.value;
-    if (!to) return log('refused', null, 'Aucun identifiant de la personne pour ce canal.');
-
-    // Les messages dont l'envoi a échoué ne comptent ni pour l'anti-doublon ni pour la mention.
+    // Les messages dont l'envoi a échoué ne comptent ni pour la décision, ni pour l'anti-doublon, ni pour la mention.
     const failed = new Set(
       (
         await this.db.all<{ message_id: string }>(
@@ -207,6 +192,29 @@ export class ControleEnvois {
         )
       ).map((r) => r.message_id),
     );
+    const decide = (when: Date) =>
+      this.decisions.decide(
+        order.personId,
+        {
+          channel: order.channel,
+          kind: order.kind,
+          ...(order.purpose === undefined ? {} : { purpose: order.purpose }),
+          conversationId: order.conversationId ?? null,
+          at: when,
+        },
+        failed,
+      );
+
+    // 1. Décision d'envoi [R01 à R04, R11].
+    const decision = await decide(at);
+    if (!decision.allowed) return log('refused', decision.rule, decision.reason);
+
+    const port = this.channels.get(order.channel);
+    if (!port) return log('refused', null, 'Canal non branché.');
+    const to = IDENTIFIER_FOR[order.channel]
+      .map((kind) => view.identifiers.find((i) => i.kind === kind))
+      .find((i) => i !== undefined)?.value;
+    if (!to) return log('refused', null, 'Aucun identifiant de la personne pour ce canal.');
     const sentBefore = view.messages.filter((m) => m.direction === 'out' && !failed.has(m.id) && Date.parse(m.occurred_at) <= at.getTime());
 
     // 2. Anti-doublon par sujet, sur tous les canaux, toutes fiches fusionnées comprises [R05].
@@ -229,6 +237,18 @@ export class ControleEnvois {
     const conversation = sentBefore.filter(inConversation);
     const firstOfConversation = conversation.length === 0;
     const withMention = !conversation.some((m) => AUTOMATIC.has(m.author_kind));
+
+    let mention = '';
+    if (withMention) {
+      mention = this.settings.mentionWithoutAgent;
+      if (order.channel === 'instagram') mention = this.settings.mentionInstagram;
+      else if (agentId) {
+        const agent = await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ? AND network_id = ?', [agentId, order.networkId]);
+        if (agent?.first_name) mention = this.settings.mentionWithAgent.replace('{prenom}', agent.first_name);
+      }
+    }
+    const withMentionText = (text: string): string => (mention ? `${mention}\n\n${text.trim()}` : text.trim());
+    const maxLength = this.settings.text.maxLength[order.channel];
 
     let aiNote: string | null = null;
     const candidates: { text: string; ai: boolean }[] = [];
@@ -258,6 +278,9 @@ export class ControleEnvois {
         this.settings.text,
       );
       const issues: { rule: string; reason: string }[] = found;
+      if (issues.length === 0 && withMentionText(candidate.text).length > maxLength) {
+        issues.push({ rule: 'length', reason: `Texte trop long pour ce canal, mention comprise : ${maxLength} caractères au plus.` });
+      }
       if (issues.length === 0 && already.has(sameText(candidate.text))) {
         issues.push({ rule: 'R05', reason: 'Ce message a déjà été envoyé à la personne.' });
       }
@@ -269,22 +292,24 @@ export class ControleEnvois {
     }
     if (!chosen) {
       const worst = problems.find((p) => !p.ai) ?? problems[0];
-      return log('refused', worst?.rule ?? 'R12', `Aucun texte ne passe le contrôle : ${worst?.reason ?? 'aucun texte.'}`);
+      // Une réponse qui ne peut pas partir n'est pas un silence voulu : elle est signalée à l'agent [R12].
+      const needsHuman = order.kind === 'reply';
+      return log(
+        'refused',
+        worst?.rule ?? 'R12',
+        `Aucun texte ne passe le contrôle : ${worst?.reason ?? 'aucun texte.'}${needsHuman ? ' L’agent doit répondre lui-même.' : ''}`,
+        { needsHuman },
+      );
     }
     const aiRefused = problems.find((p) => p.ai);
     if (!chosen.ai && aiRefused) aiNote = `Texte de l’IA refusé, ${aiRefused.rule} : texte de secours.`;
 
     // 5. Mention de l'assistant [R06].
-    let body = chosen.text.trim();
-    if (withMention) {
-      let mention = this.settings.mentionWithoutAgent;
-      if (order.channel === 'instagram') mention = this.settings.mentionInstagram;
-      else if (agentId) {
-        const agent = await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ? AND network_id = ?', [agentId, order.networkId]);
-        if (agent?.first_name) mention = this.settings.mentionWithAgent.replace('{prenom}', agent.first_name);
-      }
-      body = `${mention}\n\n${body}`;
-    }
+    const body = withMentionText(chosen.text);
+
+    // La rédaction a pu durer : un arrêt ou une exclusion arrivés entre-temps l'emportent [R02, R04].
+    const last = await decide(this.now());
+    if (!last.allowed) return log('refused', last.rule, last.reason);
 
     // 6. Enregistrement, journal, puis envoi [R13].
     const message = await this.decisions.recordSent(
