@@ -97,7 +97,7 @@ export function classifyReceived(text: string): ReceivedExclusion | null {
  * Range aussi ce qui la nourrit : demandes d'arrêt, liens de proximité, type des messages partis.
  */
 export class DecisionEnvoi {
-  private readonly settings: SendSettings;
+  readonly settings: SendSettings;
   private readonly newId: () => string;
   private readonly now: () => Date;
 
@@ -112,7 +112,7 @@ export class DecisionEnvoi {
     this.now = options.now ?? (() => new Date());
   }
 
-  async facts(personId: string, at: Date): Promise<SendFacts> {
+  async facts(personId: string, at: Date, ignoreMessageIds: ReadonlySet<string> = new Set()): Promise<SendFacts> {
     const view = await this.fiche.view(personId);
     const ids = view.members.map((p) => p.id);
     const relations = await this.db.all<PersonRelationRow>(
@@ -122,14 +122,18 @@ export class DecisionEnvoi {
     return {
       exclusions: view.exclusions,
       consents: view.consents,
-      messages: view.messages,
+      messages: view.messages.filter((m) => !ignoreMessageIds.has(m.id)),
       relations,
       sentToday: await this.sentToday(view.person.network_id, at),
     };
   }
 
-  async decide(personId: string, request: SendRequest): Promise<SendDecision> {
-    return decideSend(request, await this.facts(personId, request.at), this.settings);
+  /**
+   * `ignoreMessageIds` : messages rangés dont l'envoi a échoué. Ils ne valent pas réponse : une réponse en panne
+   * laisse le message reçu en attente de réponse [R01, R03].
+   */
+  async decide(personId: string, request: SendRequest, ignoreMessageIds: ReadonlySet<string> = new Set()): Promise<SendDecision> {
+    return decideSend(request, await this.facts(personId, request.at, ignoreMessageIds), this.settings);
   }
 
   /** Messages partis dans le réseau le même jour local, par type plafonné [R11]. */
