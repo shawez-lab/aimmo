@@ -9,6 +9,7 @@ export * from './fiche/index.ts';
 export * from './envoi/index.ts';
 export * from './reception/index.ts';
 export * from './acces/index.ts';
+export * from './reprise/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
