@@ -183,11 +183,35 @@ function adaptMeta(channel: 'instagram' | 'facebook', raw: unknown, ctx: AdaptCo
   }
 }
 
+/** Accusés de lecture, de remise, réactions, modifications et provenance publicitaire : pas des messages reçus. */
+const META_NOT_MESSAGES = ['read', 'delivery', 'reaction', 'message_edit', 'referral', 'optin'];
+
 function metaDirect(channel: 'instagram' | 'facebook', item: Json, own: Set<string>, ctx: AdaptContext) {
-  const message = optObj(item.message);
-  // Accusés de lecture, de remise, réactions : ce ne sont pas des messages reçus.
-  if (!message) return 'ignored';
   const senderId = str(obj(item.sender, 'expéditeur').id, 'expéditeur');
+  const postback = optObj(item.postback);
+  // Bouton ou question d'accueil touchés par le client : c'est un message, dont le texte est le titre du bouton.
+  if (postback && !own.has(senderId)) {
+    return {
+      channel,
+      kind: 'direct',
+      externalId: str(postback.mid, 'identifiant du message'),
+      conversationRef: senderId,
+      sender: { channelId: senderId, name: null, identifiers: [] },
+      subject: null,
+      text: str(postback.title, 'titre du bouton'),
+      receivedAt: date(item.timestamp, ctx),
+      postRef: null,
+      propertyRef: null,
+      portal: null,
+      hasAttachment: false,
+    } satisfies InboundMessage;
+  }
+  const message = optObj(item.message);
+  if (!message) {
+    // Seuls les événements connus pour ne pas être des messages sont écartés ; tout autre est gardé comme illisible.
+    if (META_NOT_MESSAGES.some((key) => key in item) || own.has(senderId)) return 'ignored';
+    throw new Unreadable('événement Meta inconnu');
+  }
   // Nos propres messages reviennent en écho : ils ne sont pas des messages reçus.
   if (message.is_echo === true || own.has(senderId)) return 'ignored';
   const attachments = list(message.attachments);

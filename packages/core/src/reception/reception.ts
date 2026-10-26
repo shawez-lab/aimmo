@@ -59,7 +59,10 @@ export interface ReceptionLogRow {
 export interface Received {
   inboundId: string;
   outcome: ReceptionOutcome;
-  /** Vrai seulement pour la première réception d'un message lisible : c'est lui, et lui seul, qu'on traite. */
+  /**
+   * Vrai tant que le message lisible n'a pas encore été pris pour traitement. Le traitement commence toujours par
+   * `claim`, qui ne réussit qu'une fois : c'est lui qui garantit un seul traitement [R18].
+   */
   toProcess: boolean;
 }
 
@@ -139,8 +142,9 @@ export class Reception {
       return { inboundId: id, outcome: 'stored', toProcess: true };
     }
     const existing = await this.existing(networkId, key);
-    await this.log(networkId, existing, message.channel, message.kind, 'duplicate', 'message déjà reçu, non traité une seconde fois');
-    return { inboundId: existing, outcome: 'duplicate', toProcess: false };
+    await this.log(networkId, existing.id, message.channel, message.kind, 'duplicate', 'message déjà reçu, non traité une seconde fois');
+    // Un message rangé mais jamais pris (coupure avant `claim`) peut encore être traité ; `claim` garantit qu'il ne l'est qu'une fois.
+    return { inboundId: existing.id, outcome: 'duplicate', toProcess: existing.status === 'received' };
   }
 
   /** Range un contenu illisible, tel quel, et le signale à l'agent. Le même contenu reçu deux fois n'est rangé qu'une fois. */
@@ -159,8 +163,8 @@ export class Reception {
       return { inboundId: id, outcome: 'unreadable', toProcess: false };
     }
     const existing = await this.existing(networkId, key);
-    await this.log(networkId, existing, item.channel, 'unreadable', 'duplicate', 'contenu illisible déjà reçu');
-    return { inboundId: existing, outcome: 'duplicate', toProcess: false };
+    await this.log(networkId, existing.id, item.channel, 'unreadable', 'duplicate', 'contenu illisible déjà reçu');
+    return { inboundId: existing.id, outcome: 'duplicate', toProcess: false };
   }
 
   /**
@@ -185,6 +189,14 @@ export class Reception {
     return changes === 1;
   }
 
+  /** Messages rangés mais jamais pris, pour une reprise après coupure : les plus anciens d'abord. */
+  pending(networkId: string): Promise<InboundRow[]> {
+    return this.db.all<InboundRow>(
+      "SELECT * FROM inbound_messages WHERE network_id = ? AND status = 'received' ORDER BY received_at, rowid",
+      [networkId],
+    );
+  }
+
   /** Ce que l'agent doit regarder lui-même : les messages illisibles, les plus anciens d'abord. */
   forAgent(networkId: string): Promise<InboundRow[]> {
     return this.db.all<InboundRow>(
@@ -203,13 +215,13 @@ export class Reception {
     ]);
   }
 
-  private async existing(networkId: string, key: string): Promise<string> {
-    const row = await this.db.first<{ id: string }>(
-      'SELECT id FROM inbound_messages WHERE network_id = ? AND dedup_key = ?',
+  private async existing(networkId: string, key: string): Promise<{ id: string; status: InboundStatus }> {
+    const row = await this.db.first<{ id: string; status: InboundStatus }>(
+      'SELECT id, status FROM inbound_messages WHERE network_id = ? AND dedup_key = ?',
       [networkId, key],
     );
     if (!row) throw new Error('Réception : message en double introuvable.');
-    return row.id;
+    return row;
   }
 
   private async log(

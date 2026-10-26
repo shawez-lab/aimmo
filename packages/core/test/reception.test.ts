@@ -304,6 +304,23 @@ describe('C01 · un exemple par canal et par type se normalise sans perte', () =
     expect(adaptInbound('whatsapp', statuses, ctx)).toEqual({ messages: [], unreadable: [], ignored: 1 });
   });
 
+  it('un bouton ou une question d’accueil touchés sont des messages ; un événement inconnu est gardé', () => {
+    const postback = {
+      object: 'instagram',
+      entry: [{ id: 'IG-OWN-1', messaging: [{ sender: { id: 'IGSID-501' }, timestamp: 1796124300000, postback: { mid: 'pb-1', title: 'Ce bien est-il encore disponible ?', payload: 'Q1' } }] }],
+    };
+    expect(one(adaptInbound('instagram', postback, ctx))).toMatchObject({
+      kind: 'direct',
+      externalId: 'pb-1',
+      text: 'Ce bien est-il encore disponible ?',
+      conversationRef: 'IGSID-501',
+    });
+    const unknown = { object: 'page', entry: [{ id: 'PAGE-1', messaging: [{ sender: { id: 'PSID-12' }, nouveau: { x: 1 } }] }] };
+    const result = adaptInbound('facebook', unknown, ctx);
+    expect(result.messages).toEqual([]);
+    expect(result.unreadable).toHaveLength(1);
+  });
+
   it('une date absente ou illisible prend l’heure de réception', () => {
     expect(one(adaptInbound('email', { ...email, date: 'pas une date' }, ctx)).receivedAt).toEqual(NOW);
   });
@@ -369,7 +386,12 @@ describeWithSqlite('C01 · rangement unique des messages reçus', () => {
       ['stored', true],
       ['stored', true],
     ]);
-    expect(again.received.map((r) => [r.outcome, r.toProcess])).toEqual([
+    // Pas encore pris : la seconde réception peut encore le traiter, mais `claim` ne cède qu'une fois.
+    expect(again.received.map((r) => r.outcome)).toEqual(['duplicate', 'duplicate']);
+    for (const r of first.received) expect(await reception.claim(r.inboundId)).toBe(true);
+    for (const r of again.received) expect(await reception.claim(r.inboundId)).toBe(false);
+    const third = await reception.ingest(networkId, 'whatsapp', structuredClone(whatsapp));
+    expect(third.received.map((r) => [r.outcome, r.toProcess])).toEqual([
       ['duplicate', false],
       ['duplicate', false],
     ]);
@@ -384,17 +406,28 @@ describeWithSqlite('C01 · rangement unique des messages reçus', () => {
       Array.from({ length: 5 }, () => reception.ingest(networkId, 'email', structuredClone(email))),
     );
     const flat = results.flatMap((r) => r.received);
-    expect(flat.filter((r) => r.toProcess)).toHaveLength(1);
+    expect(flat.filter((r) => r.outcome === 'stored')).toHaveLength(1);
     expect(new Set(flat.map((r) => r.inboundId)).size).toBe(1);
     expect((await db.first<{ n: number }>('SELECT COUNT(*) AS n FROM inbound_messages'))?.n).toBe(1);
 
-    // Deux traitements qui prennent le même message en même temps : un seul l'obtient.
+    // Chaque réception tente de traiter, toutes en même temps : une seule l'obtient.
     const id = flat[0]!.inboundId;
-    const claims = await Promise.all([reception.claim(id), reception.claim(id), reception.claim(id)]);
+    const claims = await Promise.all(flat.filter((r) => r.toProcess).map((r) => reception.claim(r.inboundId)));
     expect(claims.filter(Boolean)).toHaveLength(1);
     expect(await reception.markProcessed(id)).toBe(true);
     expect(await reception.claim(id)).toBe(false);
     expect((await reception.get(id))?.status).toBe('processed');
+  });
+
+  it('[R18] un message rangé puis perdu avant son traitement est repris une fois, jamais zéro', async () => {
+    const { reception, networkId } = await setup();
+    const first = await reception.ingest(networkId, 'email', email);
+    // Coupure : le traitement n'a jamais commencé. Le message attend dans la reprise.
+    expect((await reception.pending(networkId)).map((r) => r.id)).toEqual([first.received[0]!.inboundId]);
+    const again = await reception.ingest(networkId, 'email', email);
+    expect(again.received[0]).toMatchObject({ outcome: 'duplicate', toProcess: true });
+    expect(await reception.claim(again.received[0]!.inboundId)).toBe(true);
+    expect(await reception.pending(networkId)).toEqual([]);
   });
 
   it('[R18] le même identifiant sur un autre canal ou un autre type est un autre message', async () => {
