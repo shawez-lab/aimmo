@@ -73,12 +73,14 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : un test d'accès refusé par rôle et par type de donnée ; R16 passe en service.
 
 ### S09 · API du socle sur Cloudflare
-- Statut : en cours
+- Statut : fait (2026-10-26)
 - Qui : Claude · Relecture : forte · Dépend de : S04, S05, S06, S07, S08
 - Attend : H04 pour la mise en ligne seulement.
 - Cahier : Architecture technique, les briques et l'hébergement.
 - Objectif : un Worker Cloudflare avec D1 qui expose la fiche client, la décision d'envoi en mode essai et le journal, protégé par une clé. Configuration `wrangler` prête, déploiement par GitHub dès que H04 est fait.
 - Critères : tests de bout en bout en local ; aucune clé dans le dépôt ; la mise en ligne ne change rien aux systèmes de `shawez-immo`.
+- Décidé (2026-10-26), lecture prudente : API fermée par défaut (sans clés ou hors `MODE = "essai"` : 503) ; le secret `API_KEYS` ne porte que l'empreinte de chaque clé et l'identité qu'elle donne ; base `aimmo` créée en juridiction européenne par le déploiement ; aucune route, seulement workers.dev. Notice : `docs/API.md`.
+- Reste : la première clé d'API (H14) quand un appelant viendra ; écriture du message et du journal en un seul lot D1 (C01, C02) ; une base `aimmo` déjà existante n'est pas contrôlée sur sa juridiction.
 
 ### S10 · Reprise des contacts existants
 - Statut : à faire
