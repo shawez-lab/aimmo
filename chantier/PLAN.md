@@ -93,3 +93,79 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 ## Phase 2 : la preuve à Dijon
 
 À découper au fil de l'eau, dans l'ordre de la Feuille de route : M02 et M03 en décembre 2026, puis M04, M20 et l'application de l'agent en janvier 2027, et la suite mois par mois.
+
+**M02 · Capter, décembre 2026.**
+
+Découpé le 2026-10-26. Ids `C..` pour Capter. Cahier : M02 Capter ; Feuille de route, décembre 2026 : « chaque nouveau contact crée ou complète sa fiche en moins d'une minute ».
+Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun envoi réel ; ManyChat et `functions/api/manychat-dm.js` de `shawez-immo` restent en place, intouchés, jusqu'à C09 ; l'IA est derrière une interface, avec une fausse IA dans les tests, et la vraie ne se branche qu'avec H13 ; chaque réponse sort par le contrôle central de S06, jamais autrement.
+
+### C01 · Réception unifiée des messages
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : S04, S06
+- Cahier : M02, « Canaux » et critère « Un même message reçu deux fois ne produit qu'une réponse ».
+- Objectif : un format commun « message entrant » (canal, identifiant du message chez le canal, conversation, expéditeur, texte, date, publication commentée, pièce jointe signalée) et un adaptateur de normalisation par canal : message et commentaire Instagram, Messenger et commentaire Facebook, WhatsApp, mail dont mails de portails, formulaire du site, assistant du site. Chaque message reçu est rangé une seule fois.
+- Critères : un exemple inventé par canal et par type se normalise sans perte ; un même message reçu deux fois, ou deux fois en même temps, n'est rangé et traité qu'une fois [R18] ; un message illisible est rangé et signalé à l'agent, jamais jeté ; aucune donnée personnelle dans le journal [R13].
+- Attend : rien.
+
+### C02 · Rattacher chaque contact à sa fiche
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : C01
+- Cahier : M02, « Fiche » ; Feuille de route, décembre 2026.
+- Objectif : à chaque message entrant, retrouver la personne par mail, téléphone ou compte normalisés (S04), sinon créer sa fiche ; rattacher le message, la source et, quand la personne écrit d'elle-même, l'accord pour lui répondre (S05) ; repérer la demande d'arrêt et l'exclusion dès la réception.
+- Critères : sur 50 contacts inventés dont des doublons connus, chaque message rejoint la bonne fiche et aucune fiche en double n'est créée ; une personne exclue qui écrit est reconnue et rien ne lui répond [R02] ; « stop » reçu sur un canal ferme tous les canaux [R04] ; fiche créée ou complétée en moins d'une minute, mesuré dans le test.
+- Attend : rien.
+
+### C03 · Reconnaître le bien concerné
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : S03
+- Cahier : M02, « Première réponse » et règles ; critère « 3 commentaires sur 3 vidéos ».
+- Objectif : trouver le bien dont parle le message : publication ou vidéo commentée, lien d'annonce, référence de portail, référence citée dans le texte. Table de correspondance publication → bien dans la base. Sans correspondance sûre : aucun bien, jamais une supposition.
+- Critères : 3 commentaires inventés sur 3 vidéos différentes donnent 3 biens différents et justes ; un lien ou une référence inconnus donnent « bien non reconnu » [R20] ; deux biens possibles donnent « bien non reconnu ».
+- Attend : rien.
+
+### C04 · Composer la première réponse
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : C02, C03
+- Cahier : M02, « Première réponse », « Conversation naturelle », règles ; Intelligence artificielle, garde-fous.
+- Objectif : la première réponse avec les vraies données du bien (prix affiché, surface, quartier, atout principal) et une seule question pour avancer : visite, rappel ou estimation. Tutoiement sur Instagram, vouvoiement avec le prénom ailleurs, langue du client, clôture courte quand la personne remercie ou dit non. L'IA est une interface ; la réponse passe par le contrôle central (mention, texte, secours).
+- Critères : chaque chiffre de la réponse vient de la fiche du bien [R10] ; jamais l'adresse exacte ni le nom du vendeur [R19] ; bien non reconnu : message simple et honnête sans aucune donnée de bien [R20] ; une seule question ; IA muette ou trop chère : texte de secours [R12] ; mention au premier message [R06] ; un test par canal pour le ton [R08].
+- Attend : rien pour la construire ; H13 pour brancher la vraie IA.
+
+### C05 · Conversation et relais à l'agent
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : C04
+- Cahier : M02, « Relais humain », « L'IA et l'humain », règles.
+- Objectif : l'état de chaque conversation : l'assistant converse jusqu'au rendez-vous ou au plus 5 échanges, puis passe la main ; l'IA se tait pour de bon dès qu'un humain répond ; l'agent voit la conversation et la reprend à tout moment.
+- Critères : après la réponse d'un agent, plus aucun message automatique dans cette conversation [R21] ; au 6e message du client, l'agent est prévenu et l'assistant se tait [R21] ; sur Instagram, Facebook et WhatsApp, rien ne part hors de la fenêtre de 24 heures depuis le dernier message du client [R22] ; une relance à l'initiative du réseau ne part ni le soir ni le dimanche [R01].
+- Attend : rien.
+
+### C06 · Mail et formulaire du site, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : C05, S09
+- Cahier : M02, « Branchements » ; `docs/EXISTANT.md`, `lead.js` et `lead-tri.js`.
+- Objectif : brancher sur l'API du socle la réception des mails (routage mail de Cloudflare, mails de portails compris) et du formulaire « Être rappelé », de bout en bout jusqu'à la réponse, en mode essai : la réponse est écrite au journal, jamais envoyée.
+- Critères : 20 messages tests par canal, de jour comme de nuit sur une horloge simulée, donnent chacun une réponse prête en moins d'une minute ; le même mail reçu deux fois ne donne qu'une réponse [R18] ; `shawez-immo` n'est pas modifié.
+- Attend : H04 pour la mise en ligne seulement.
+
+### C07 · Instagram, Facebook et WhatsApp, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : C06
+- Cahier : M02, « Branchements » : API Meta avec notifications en temps réel, API WhatsApp Business.
+- Objectif : les points d'arrivée des notifications de Meta et de WhatsApp, avec vérification de la signature, en mode essai, testés sur des notifications inventées. ManyChat reste seul à répondre.
+- Critères : une notification à la signature fausse est refusée ; 20 messages tests par canal donnent une réponse prête en moins d'une minute ; un commentaire reçoit une réponse qui cite le bon bien ; aucun envoi réel ; ManyChat intouché.
+- Attend : H06 pour recevoir les vraies notifications de Meta.
+
+### C08 · API de l'assistant du site, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : C05, S09
+- Cahier : M02, « Canaux » : assistant du site.
+- Objectif : l'API que l'assistant du site appellera : ouvrir une conversation, envoyer un message, recevoir la réponse, avec les mêmes règles que les autres canaux. Son intégration au site sera une proposition sur `shawez-immo`, faite dans une tâche à part, jamais directement sur main.
+- Critères : 20 messages tests donnent une réponse en moins d'une minute ; mention au premier message [R06] ; une conversation sans accord ne laisse aucune donnée personnelle au-delà de ce que la personne a écrit [R15] ; appels limités par visiteur.
+- Attend : H04 pour la mise en ligne seulement.
+
+### C09 · Mise en service de la captation
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : C06, C07, C08, S11
+- Cahier : M02, « État » ; Feuille de route, décembre 2026.
+- Objectif : à découper au début de la tâche : canal par canal, mode essai puis 10 % pendant 7 jours puis partout si les chiffres tiennent, avec retour arrière automatique, comme S11 ; retrait de ManyChat seulement après validation de Meta.
+- Attend : H04, H05, H06, H13.
