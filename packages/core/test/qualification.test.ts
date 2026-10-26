@@ -62,6 +62,24 @@ describeWithSqlite('Q01 · qualification d’un message rattaché', () => {
     expect(after[0]).toMatchObject({ budget_min_eur: 300000, budget_max_eur: 320000 });
   });
 
+  it('les critères nouveaux complètent ceux du projet, sans rien retirer', async () => {
+    const t = await setup();
+    await t.qualification.qualify(await t.form('Je cherche une maison.'));
+    await t.qualification.qualify(await t.form('Je cherche une maison à Talant avec jardin.'));
+    const projects = await t.db.all<{ criteria: string }>('SELECT criteria FROM projects');
+    expect(projects).toHaveLength(1);
+    expect(JSON.parse(projects[0]!.criteria)).toEqual({ criteria: ['house', 'garden'], city: 'Talant' });
+  });
+
+  it('deux messages de la même personne qualifiés en même temps n’ouvrent qu’un projet', async () => {
+    const t = await setup();
+    const a = await t.form('Je souhaite vendre ma maison à Daix.');
+    const b = await t.form('Je veux vendre rapidement, prix souhaité 250 000 €.');
+    const [qa, qb] = await Promise.all([t.qualification.qualify(a), t.qualification.qualify(b)]);
+    expect(await t.db.all('SELECT kind FROM projects')).toEqual([{ kind: 'sell' }]);
+    expect(qa!.project_id).toBe(qb!.project_id);
+  });
+
   it('[R18] un message n’est qualifié qu’une fois, même deux fois en même temps', async () => {
     const t = await setup();
     const id = await t.form('Je souhaite vendre ma maison à Daix.');

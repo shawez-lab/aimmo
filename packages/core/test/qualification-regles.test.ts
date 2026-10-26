@@ -22,6 +22,11 @@ describe('Q01 · classer et extraire par règles fixes', () => {
     expect(1 - wrong.length / QUALIFICATION_CASES.length).toBeGreaterThanOrEqual(0.9);
   });
 
+  it('un lien seul ne fait pas un indésirable : une personne peut citer l’annonce vue', () => {
+    expect(qualifyByRules('Je veux visiter https://exemple.invalid/annonce/123').category).toBe('buyer');
+    expect(qualifyByRules('Cliquez ici pour gagner : https://exemple.invalid/promo').category).toBe('spam');
+  });
+
   it('extraction : commune, budget, délai, financement déclaré, critères', () => {
     const q = qualifyByRules('Nous recherchons une maison avec jardin à Fontaine-lès-Dijon, entre 300 000 et 350 000 euros, 4 pièces, accord de principe de la banque, d’ici 3 mois.');
     expect(q).toEqual<Qualified>({
@@ -43,6 +48,9 @@ describe('Q01 · classer et extraire par règles fixes', () => {
   it('un nombre qui n’est pas un montant n’en devient pas un : pièces, surfaces, années', () => {
     expect(amountsIn('Un T3 de 65 m² au 2e étage, construit en 1975, 3 chambres')).toEqual([]);
     expect(amountsIn('budget 250 000 € maximum, ou 260k')).toEqual([250_000, 260_000]);
+    // Espaces insécables, fines ou non, comme les écrit un clavier français.
+    expect(amountsIn('budget 300\u00a0000\u00a0€')).toEqual([300_000]);
+    expect(amountsIn('budget 300\u202f000 €')).toEqual([300_000]);
     expect(findCommune('près de fontaine les dijon')).toBe('Fontaine-lès-Dijon');
     expect(findCommune('à Dijon centre')).toBe('Dijon');
     expect(findCommune('à Lyon')).toBeNull();
@@ -71,6 +79,7 @@ describe('Q01 · classer et extraire par règles fixes', () => {
       ['Achat sans prêt.', 'cash'],
       ['Accord de prêt obtenu.', 'loan_approved'],
       ['Comptant ou avec un prêt, je ne sais pas.', null],
+      ['Je cherche une maison sans accord de prêt.', null],
     ] as const) {
       expect(declaredFinancing(text), text).toBe(expected);
     }

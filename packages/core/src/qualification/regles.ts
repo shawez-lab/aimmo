@@ -128,8 +128,7 @@ export function findCommune(text: string, communes: readonly string[] = DEFAULT_
 const has = (p: string, patterns: readonly RegExp[]): boolean => patterns.some((r) => r.test(p));
 
 const SPAM = [
-  /https?:\/\//,
-  /\bwww\./,
+  // Un lien seul ne suffit pas : une personne peut citer l'annonce qu'elle a vue.
   /\b(?:seo|referencement|backlinks?|crypto|bitcoin|casino|forex|viagra)\b/,
   /\b(?:gagnez|cliquez ici|offre exclusive|promotion exclusive|votre site (?:web|internet))\b/,
   /\b(?:augmenter (?:votre|vos) (?:visibilite|ventes|abonnes))\b/,
@@ -203,7 +202,7 @@ const MONEY_CONTEXT = /(?:budget|prix|maximum|max|jusqu.a|entre|autour de|enviro
 
 /** Les montants du message, en euros : seulement ceux qui en sont sûrement, jamais « 3 pièces » ni « 2 ans ». */
 export function amountsIn(text: string): number[] {
-  const p = plain(text).replace(/[  ]/g, ' ');
+  const p = plain(text).replace(/[\u00a0\u202f]/g, ' ');
   const found: number[] = [];
   for (const m of p.matchAll(AMOUNT)) {
     const [, raw = '', thousand, currency] = m;
@@ -225,7 +224,7 @@ function deadlineOf(p: string): Deadline | null {
   return null;
 }
 
-const NEGATION = /\b(?:pas|ne|n'|jamais|aucun|aucune|plus|ni)\b|\bpour (?:le moment|l'instant)\b|\bencore\b/;
+const NEGATION = /\b(?:pas|ne|n'|jamais|aucun|aucune|plus|ni|sans)\b|\bpour (?:le moment|l'instant)\b|\bencore\b/;
 const WAITING = /\b(?:j'attends|nous attendons|on attend|en attente (?:de|d'|du))\b/;
 const FINANCING_WORDS = /\b(?:accord (?:de|du)|pret|credit|emprunt|financement|banque|comptant|cash|fonds propres)\b/;
 

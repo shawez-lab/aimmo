@@ -217,30 +217,36 @@ export class Qualification {
     const criteria = q.criteria.length > 0 || q.city ? { criteria: q.criteria, city: q.city } : null;
     const budgetMin = q.priceEur === null ? q.budgetMinEur : null;
     const budgetMax = q.priceEur ?? q.budgetMaxEur;
-    const found = await this.db.first<{ id: string }>(
-      `SELECT id FROM projects WHERE person_id IN (${placeholders(members.length)}) AND kind = ? ORDER BY created_at LIMIT 1`,
+    // Ouvert en une seule instruction s'il n'existe pas encore : deux messages qualifiés en même temps n'ouvrent
+    // pas deux projets du même type pour la même personne.
+    const at = this.now().toISOString();
+    await this.db.run(
+      `INSERT INTO projects (id, network_id, agent_id, person_id, kind, stage, deadline, budget_min_eur, budget_max_eur, criteria, note, created_at, updated_at)
+       SELECT ?, ?, ?, ?, ?, 'new', NULL, NULL, NULL, NULL, NULL, ?, ?
+       WHERE NOT EXISTS (SELECT 1 FROM projects WHERE person_id IN (${placeholders(members.length)}) AND kind = ?)`,
+      [this.newId(), networkId, agentId, personId, kind, at, at, ...members, kind],
+    );
+    const found = await this.db.first<{ id: string; criteria: string | null }>(
+      `SELECT id, criteria FROM projects WHERE person_id IN (${placeholders(members.length)}) AND kind = ? ORDER BY created_at, rowid LIMIT 1`,
       [...members, kind],
     );
-    let projectId: string;
-    if (found) {
-      projectId = found.id;
-      const at = this.now().toISOString();
-      await this.db.run('UPDATE projects SET budget_min_eur = ?, updated_at = ? WHERE id = ? AND budget_min_eur IS NULL AND ? IS NOT NULL', [budgetMin, at, projectId, budgetMin]);
-      await this.db.run('UPDATE projects SET budget_max_eur = ?, updated_at = ? WHERE id = ? AND budget_max_eur IS NULL AND ? IS NOT NULL', [budgetMax, at, projectId, budgetMax]);
-      if (criteria) {
-        await this.db.run('UPDATE projects SET criteria = ?, updated_at = ? WHERE id = ? AND criteria IS NULL', [JSON.stringify(criteria), at, projectId]);
+    if (!found) throw new Error('Projet introuvable après son ouverture.');
+    const projectId = found.id;
+    // Un champ déjà rempli n'est jamais remplacé ; les critères nouveaux s'ajoutent.
+    await this.db.run('UPDATE projects SET budget_min_eur = ?, updated_at = ? WHERE id = ? AND budget_min_eur IS NULL AND ? IS NOT NULL', [budgetMin, at, projectId, budgetMin]);
+    await this.db.run('UPDATE projects SET budget_max_eur = ?, updated_at = ? WHERE id = ? AND budget_max_eur IS NULL AND ? IS NOT NULL', [budgetMax, at, projectId, budgetMax]);
+    if (criteria) {
+      let known: { criteria?: unknown; city?: unknown } = {};
+      try {
+        const parsed: unknown = found.criteria ? JSON.parse(found.criteria) : {};
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) known = parsed as typeof known;
+      } catch {
+        known = {};
       }
-    } else {
-      const project = await this.store.createProject({
-        networkId,
-        agentId,
-        personId,
-        kind,
-        budgetMinEur: budgetMin,
-        budgetMaxEur: budgetMax,
-        criteria,
-      });
-      projectId = project.id;
+      const before = Array.isArray(known.criteria) ? (known.criteria as unknown[]).filter((c): c is string => typeof c === 'string') : [];
+      const merged = { ...known, criteria: [...new Set([...before, ...criteria.criteria])], city: typeof known.city === 'string' ? known.city : criteria.city };
+      const next = JSON.stringify(merged);
+      if (next !== found.criteria) await this.db.run('UPDATE projects SET criteria = ?, updated_at = ? WHERE id = ?', [next, at, projectId]);
     }
     if (propertyId) {
       const role = kind === 'sell' || kind === 'valuation' ? null : 'interested';
