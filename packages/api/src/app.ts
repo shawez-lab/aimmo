@@ -235,8 +235,9 @@ async function intakeForm(request: Request, config: ApiConfig, now: () => Date):
   const journal = new SqlJournalStore(config.db);
   try {
     const { chaine } = createCaptation(config.db, journal, { now });
-    const results = await chaine.receive(intake.networkId, 'site_form', body);
-    return json(200, { ok: true, mode: TRIAL_MODE, sent: false, data: results.map((r) => ({ inboundId: r.inboundId, status: r.status })) });
+    await chaine.receive(intake.networkId, 'site_form', body);
+    // Rien de plus : le sort du formulaire (personne exclue, déjà connue…) ne regarde pas le déposant [R02, R16].
+    return json(200, { ok: true, mode: TRIAL_MODE, sent: false, received: true });
   } catch (error) {
     await journalError(journal, 'intake:site_form', 'captation.formulaire', error, now);
     return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');

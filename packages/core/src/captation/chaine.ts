@@ -13,7 +13,7 @@ import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import type { JournalStore } from '../journal/types.ts';
-import type { InboundSource } from '../reception/adaptateurs.ts';
+import { adaptInbound, type InboundSource } from '../reception/adaptateurs.ts';
 import type { AdaptContext } from '../reception/entrant.ts';
 import { Rattachement } from '../reception/rattachement.ts';
 import { Reception } from '../reception/reception.ts';
@@ -51,7 +51,14 @@ export class ChaineCaptation {
 
   async receive(networkId: string, source: InboundSource, raw: unknown, ctx: Partial<AdaptContext> = {}): Promise<ChainResult[]> {
     const started = this.now().getTime();
-    const ingested = await this.reception.ingest(networkId, source, raw, ctx);
+    const adapted = adaptInbound(source, raw, { now: ctx.now ?? this.now(), ...(ctx.ownIds ? { ownIds: ctx.ownIds } : {}) });
+    // Un mail ou un formulaire est « reçu » quand AIMMO le reçoit [R01] : la date qu'il porte vient de l'horloge de
+    // l'expéditeur ou d'une file d'attente, en avance ou en retard ; elle ne doit pas priver la personne de sa réponse.
+    if (source === 'email' || source === 'site_form') {
+      const at = new Date(started);
+      adapted.messages = adapted.messages.map((m) => ({ ...m, receivedAt: at }));
+    }
+    const ingested = await this.reception.store(networkId, adapted);
     const results: ChainResult[] = [];
     for (const item of ingested.received) {
       const done = (status: ChainStatus, messageId: string | null = null): ChainResult => ({

@@ -137,6 +137,33 @@ describeWithSqlite('C06 · mail et formulaire du site, en mode essai', () => {
     expect((await verifyChain(entries)).ok).toBe(true);
   });
 
+  it('[R01] la nuit, un mail à la date en avance ou en retard reçoit quand même sa réponse : l’heure est celle de la réception', async () => {
+    const w = await world();
+    w.setClock(SUNDAY_23H);
+    const ahead = await handleEmail(emailMessage(clientMail(7, new Date(SUNDAY_23H + 2 * MINUTE))), w.mailConfig);
+    const late = await handleEmail(emailMessage(clientMail(8, new Date(SUNDAY_23H - 90 * MINUTE))), w.mailConfig);
+    expect(ahead[0]).toMatchObject({ status: 'replied' });
+    expect(late[0]).toMatchObject({ status: 'replied' });
+    expect(await w.outbox()).toBe(2);
+  });
+
+  it('un mail non remis ou non traité laisse une trace au journal, sans adresse', async () => {
+    const w = await world();
+    const failing = emailMessage(clientMail(9, new Date(TUESDAY_10H)));
+    failing.forward = async () => {
+      throw new Error('boite-agent@example.test refusée');
+    };
+    expect(await handleEmail(failing, w.mailConfig)).toEqual([expect.objectContaining({ status: 'replied' })]);
+    await handleEmail(emailMessage(clientMail(10, new Date(TUESDAY_10H))), { ...w.mailConfig, networkId: undefined, forwardTo: undefined });
+    const lines = (await w.journal.all()).filter((e) => e.type.startsWith('mail.'));
+    expect(lines.map((e) => [e.type, e.data['reason']])).toEqual([
+      ['mail.remise_impossible', 'remise'],
+      ['mail.non_traite', 'remise_absente'],
+      ['mail.non_traite', 'reseau'],
+    ]);
+    expect(JSON.stringify(lines)).not.toMatch(/@/);
+  });
+
   it('[R18] le même mail reçu deux fois ne donne qu’une réponse', async () => {
     const w = await world();
     const bytes = clientMail(1, new Date(TUESDAY_10H));
@@ -156,9 +183,12 @@ describeWithSqlite('C06 · mail et formulaire du site, en mode essai', () => {
       w.setClock(at);
       const response = await postForm(config, siteForm(i, new Date(at)));
       expect(response.status, `formulaire ${i}`).toBe(200);
-      const body = (await response.json()) as { sent: boolean; data: { status: string }[] };
-      expect(body.sent).toBe(false);
-      expect(body.data).toEqual([expect.objectContaining({ status: 'replied' })]);
+      const body = (await response.json()) as Record<string, unknown>;
+      // Le déposant n'apprend rien du sort du formulaire [R02, R16].
+      expect(body).toEqual({ ok: true, mode: 'essai', sent: false, received: true });
+      expect(await w.outbox(), `formulaire ${i}`).toBe(i + 1);
+      const [last] = await w.db.all<{ created_at: string }>('SELECT created_at FROM trial_outbox ORDER BY rowid DESC LIMIT 1');
+      expect(Date.parse(last!.created_at) - at).toBeLessThan(MINUTE);
     }
     expect(await w.outbox()).toBe(20);
     const channels = await w.db.all<{ channel: string }>('SELECT DISTINCT channel FROM trial_outbox');
@@ -170,9 +200,23 @@ describeWithSqlite('C06 · mail et formulaire du site, en mode essai', () => {
     const config = { db: w.db, intakeKeys: w.intakeKeys, now: w.now };
     const form = siteForm(1, new Date(TUESDAY_10H));
     await postForm(config, form);
-    const again = (await (await postForm(config, form)).json()) as { data: { status: string }[] };
-    expect(again.data[0]).toMatchObject({ status: 'duplicate' });
+    expect((await postForm(config, form)).status).toBe(200);
     expect(await w.outbox()).toBe(1);
+    expect(await w.db.all('SELECT id FROM inbound_messages')).toHaveLength(1);
+  });
+
+  it('[R12] un formulaire sans mail : personne ne lui répond par écrit, l’agent est prévenu de rappeler', async () => {
+    const w = await world();
+    const config = { db: w.db, intakeKeys: w.intakeKeys, now: w.now };
+    const { email: _e, ...phoneOnly } = siteForm(5, new Date(SUNDAY_23H));
+    w.setClock(SUNDAY_23H);
+    expect((await postForm(config, phoneOnly)).status).toBe(200);
+    expect(await w.outbox()).toBe(0);
+    const alerts = await w.db.all<{ reason: string }>('SELECT reason FROM agent_alerts');
+    expect(alerts).toEqual([{ reason: 'needs_reply' }]);
+    // Le même formulaire envoyé de nouveau ne double pas l'alerte.
+    await postForm(config, phoneOnly);
+    expect(await w.db.all('SELECT reason FROM agent_alerts')).toHaveLength(1);
   });
 
   it('une clé de dépôt ne dépose qu’un formulaire : sans elle rien n’entre, avec elle rien ne se lit', async () => {

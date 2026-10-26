@@ -127,7 +127,7 @@ export class ConversationRelais {
     const reply = await this.premiere.reply(inboundId);
     if (reply.skipped !== null) {
       // Un formulaire sans mail : personne ne peut lui répondre par écrit, l'agent doit rappeler [R12].
-      if (row.kind === 'form' && reply.result === null && reply.skipped !== 'Ce message a déjà reçu sa réponse.') {
+      if (row.kind === 'form' && reply.skipCode === 'no_channel') {
         await this.alert((await this.fiche.view(row.person_id)).person.id, conversationId, 'needs_reply');
       }
       return { status: 'skipped', conversationId, reason: reply.skipped };
