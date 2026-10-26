@@ -29,6 +29,8 @@ env:
 jobs:
   deployer:
     name: Déployer
+    # Jamais depuis une autre branche que main, même lancé à la main.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
