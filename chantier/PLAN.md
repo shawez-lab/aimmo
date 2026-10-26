@@ -159,7 +159,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : relecture de Codex restée « en cours » plus de 45 minutes, fusion sans elle (#11) ; une coupure exactement entre le rangement du message et sa note pourrait le doubler, à fermer avec les lots D1 de S09 ; un commentaire Instagram (compte) et un message privé (numéro du canal) d'une même personne restent deux fiches.
 
 ### C03 · Reconnaître le bien concerné
-- Statut : en cours
+- Statut : fait (2026-10-26)
 - Qui : Claude · Relecture : normale · Dépend de : S03
 - Cahier : M02, « Première réponse » et règles ; critère « 3 commentaires sur 3 vidéos ».
 - Objectif : trouver le bien dont parle le message : publication ou vidéo commentée, lien d'annonce, référence de portail, référence citée dans le texte. Table de correspondance publication → bien dans la base. Sans correspondance sûre : aucun bien, jamais une supposition.
@@ -167,7 +167,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Attend : rien.
 
 ### C04 · Composer la première réponse
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : C02, C03
 - Cahier : M02, « Première réponse », « Conversation naturelle », règles ; Intelligence artificielle, garde-fous.
 - Objectif : la première réponse avec les vraies données du bien (prix affiché, surface, quartier, atout principal) et une seule question pour avancer : visite, rappel ou estimation. Tutoiement sur Instagram, vouvoiement avec le prénom ailleurs, langue du client, clôture courte quand la personne remercie ou dit non. L'IA est une interface ; la réponse passe par le contrôle central (mention, texte, secours).
