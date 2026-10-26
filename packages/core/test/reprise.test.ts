@@ -245,6 +245,25 @@ describeWithSqlite('reprise des contacts du site dans la fiche client', () => {
     expect(count()).toBe(before);
   });
 
+  it('[R04] une exclusion en cours sur une fiche restée à part vaut pour toutes les fiches de la personne', async () => {
+    const theirs = await w.fiches.createPerson({ networkId: w.net, agentId: w.other, firstName: 'Noa' });
+    await w.unique.addIdentifier({ networkId: w.net, agentId: w.other, personId: theirs.id, kind: 'phone', value: '0610008888' });
+    await w.envoi.recordStopRequest({ networkId: w.net, agentId: w.other, personId: theirs.id, at: new Date('2026-10-01T08:00:00.000Z') });
+    const mine = await w.fiches.createPerson({ networkId: w.net, agentId: w.shawez, firstName: 'Noa' });
+    await w.unique.addIdentifier({ networkId: w.net, agentId: w.shawez, personId: mine.id, kind: 'email', value: 'noa@example.org' });
+    await w.reprise.run(reading([contact('site:compte:8', { emails: ['noa@example.org'], phones: ['0610008888'], consentAt: T, requests: [request('E-8')] })]));
+    for (const id of [mine.id, theirs.id]) {
+      expect(await w.envoi.decide(id, { channel: 'email', kind: 'follow_up', at: NOW })).toMatchObject({ allowed: false, rule: 'R04' });
+    }
+  });
+
+  it('deux reprises simultanées du même lot ne laissent qu\'une fiche par personne', async () => {
+    const { contacts, people } = fifty();
+    const twin = new RepriseSite(w.db, w.fiches, w.unique, w.envoi, w.journal, { networkId: w.net, agentId: w.shawez, actor: 'reprise:test', now: () => NOW });
+    await Promise.all([w.reprise.run(reading(contacts)), twin.run(reading(contacts))]);
+    expect(await roots(w)).toHaveLength(people);
+  });
+
   it('un contact sans coordonnées garde sa fiche, et la relance ne la double pas', async () => {
     const lonely = contact('site:demande:E-VIDE', { problems: ['contact_illisible'], requests: [request('E-VIDE')] });
     const first = await w.reprise.run({ ...reading([lonely]), flagged: 1 });

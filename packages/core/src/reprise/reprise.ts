@@ -176,6 +176,10 @@ export class RepriseSite {
     // L'origine est notée aussitôt : une reprise coupée net retrouve cette fiche et ne la recrée pas.
     if (await this.claimImport(originKey, 'person', (roots[0] as Person).id, at)) changed = true;
     if (keys.length > 0) await this.claimKeys(roots[0] as Person, keys, at);
+    // Une reprise simultanée a peut-être pris l'origine ou une clé avant nous : sa fiche rejoint les nôtres.
+    const winner = await this.importTarget(originKey);
+    roots.push(...(await this.existing(winner === null ? [] : [winner])), ...(await this.keyOwners(keys)));
+    roots = await this.distinctRoots(roots);
 
     // 2. Une seule fiche par personne : réunir, sauf si un autre agent suit une des fiches.
     const { target, apart, merged } = await this.mergeAll(roots);
@@ -201,6 +205,8 @@ export class RepriseSite {
         }
       }
     }
+    // Fiches restées à part : la même personne, donc toute exclusion en cours de l'une vaut pour toutes [R02, R04].
+    if (apart.length > 0) report.exclusions += await this.shareExclusions([target, ...apart], at);
     if (report.exclusions > exclusionsBefore) changed = true;
 
     // 5. L'accord donné en ouvrant son compte sur le site, pour le suivi de ses demandes seulement.
@@ -223,6 +229,25 @@ export class RepriseSite {
       );
     }
     return changed;
+  }
+
+  /** Ajoute à chaque fiche du groupe les exclusions en cours des autres qu'elle n'a pas encore. Rend le nombre ajouté. */
+  private async shareExclusions(group: readonly Person[], at: Date): Promise<number> {
+    const now = at.getTime();
+    const active = (e: { noted_at: string; lifted_at: string | null }): boolean =>
+      Date.parse(e.noted_at) <= now && (e.lifted_at === null || Date.parse(e.lifted_at) > now);
+    const views = await Promise.all(group.map((p) => this.fiche.view(p.id)));
+    const reasons = new Set(views.flatMap((v) => v.exclusions.filter(active).map((e) => e.reason)));
+    let added = 0;
+    for (const [index, person] of group.entries()) {
+      const mine = views[index]?.exclusions.filter(active) ?? [];
+      for (const reason of reasons) {
+        if (mine.some((e) => e.reason === reason)) continue;
+        await this.store.addExclusion({ networkId: person.network_id, agentId: person.agent_id, personId: person.id, reason, channel: null, notedAt: at });
+        added += 1;
+      }
+    }
+    return added;
   }
 
   /** La source de la fiche : le site, une seule fois par contact repris, même sans demande d'estimation. */
