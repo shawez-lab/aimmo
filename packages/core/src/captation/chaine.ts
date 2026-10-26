@@ -72,7 +72,19 @@ export class ChaineCaptation {
         continue;
       }
       if (!item.toProcess) {
-        results.push(done('duplicate'));
+        // Déjà reçu. S'il a été rattaché mais que sa réponse n'a pas abouti (coupure, erreur passagère), le nouvel
+        // envoi la reprend ; la réservation de la première réponse empêche toute réponse en double [R18].
+        const row = await this.reception.get(item.inboundId);
+        if (row?.status !== 'processed' || row.person_id === null) {
+          results.push(done('duplicate'));
+          continue;
+        }
+        const resumed = await this.relais.process(item.inboundId);
+        if (resumed.status === 'skipped' || resumed.status === 'silent') {
+          results.push(done('duplicate'));
+          continue;
+        }
+        results.push(done(resumed.status, resumed.status === 'replied' ? (resumed.reply.result?.messageId ?? null) : null));
         continue;
       }
       const attached = await this.rattachement.attach(item.inboundId);

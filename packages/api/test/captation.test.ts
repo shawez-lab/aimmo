@@ -195,6 +195,29 @@ describeWithSqlite('C06 · mail et formulaire du site, en mode essai', () => {
     expect(channels).toEqual([{ channel: 'email' }]);
   });
 
+  it('[R18] une réponse interrompue après le rattachement est reprise au nouvel envoi, sans doublon', async () => {
+    const w = await world();
+    const bytes = clientMail(11, new Date(TUESDAY_10H));
+    // Une panne passagère de la base pendant la réponse, une seule fois.
+    let broken = true;
+    const db: SqlDatabase = {
+      ...w.db,
+      run: (sql, params) => {
+        if (broken && sql.includes('first_reply_claims')) {
+          broken = false;
+          return Promise.reject(new Error('base indisponible'));
+        }
+        return w.db.run(sql, params);
+      },
+    };
+    expect(await handleEmail(emailMessage(bytes), { ...w.mailConfig, db })).toEqual([]);
+    expect(await w.outbox()).toBe(0);
+    w.setClock(TUESDAY_10H + MINUTE);
+    expect(await handleEmail(emailMessage(bytes), w.mailConfig)).toEqual([expect.objectContaining({ status: 'replied' })]);
+    expect(await handleEmail(emailMessage(bytes), w.mailConfig)).toEqual([expect.objectContaining({ status: 'duplicate' })]);
+    expect(await w.outbox()).toBe(1);
+  });
+
   it('[R18] le même formulaire envoyé deux fois ne donne qu’une réponse', async () => {
     const w = await world();
     const config = { db: w.db, intakeKeys: w.intakeKeys, now: w.now };
