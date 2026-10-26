@@ -169,6 +169,8 @@ export async function handleAssistant(request: Request, path: string, config: As
   const { chaine } = createCaptation(config.db, journal, { now: config.now, ...(config.writer ? { writer: config.writer } : {}) });
   const results = await chaine.receive(networkId, 'site_chat', {
     sessionId,
+    // L'empreinte du visiteur relie ses conversations à une seule fiche : un arrêt vaut pour toutes [R02, R04].
+    visitorRef: visitor,
     messageId,
     text,
     sentAt: at.toISOString(),

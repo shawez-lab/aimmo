@@ -169,6 +169,24 @@ describeWithSqlite('C08 · API de l’assistant du site, en mode essai', () => {
     expect(Number(alerts[0]!.n)).toBeGreaterThan(0);
   });
 
+  it('[R04] [R02] un visiteur qui a dit stop ne reçoit plus rien, même dans une nouvelle conversation', async () => {
+    const w = await world();
+    const id = visitor(11);
+    const first = await w.open(id);
+    await w.say(first, id, 'm1', 'Bonjour, je cherche une maison.');
+    await w.say(first, id, 'm2', 'Stop');
+    const second = await w.open(id);
+    const again = await w.say(second, id, 'm1', 'Bonjour, finalement je cherche un appartement.');
+    expect(((await again.json()) as { status: string }).status).toBe('none');
+    // Une seule fiche pour le visiteur, ses deux conversations comprises, et une seule réponse : celle d'avant l'arrêt.
+    expect(await w.db.all('SELECT id FROM persons')).toHaveLength(1);
+    expect(await w.replies()).toHaveLength(1);
+    // Un autre visiteur n'est pas touché.
+    const other = visitor(12);
+    const third = await w.open(other);
+    expect(((await (await w.say(third, other, 'm1', 'Bonjour, je cherche une maison.')).json()) as { status: string }).status).toBe('ready');
+  });
+
   it('[R21] une conversation passée à l’agent : l’assistant se tait, l’agent est prévenu', async () => {
     const w = await world(undefined, fakeWriter());
     const id = visitor(3);
