@@ -1,7 +1,7 @@
 /**
  * Adaptateurs de normalisation : une notification d'un canal devient zéro, un ou plusieurs messages au format commun.
  * Ils ne lisent que ce que le canal donne. Ce qu'ils ne comprennent pas devient « illisible », jamais perdu.
- * La vérification de signature des notifications de Meta arrive avec C07.
+ * La vérification de signature des notifications de Meta est faite à leur arrivée (packages/api/src/meta.ts, C07).
  */
 import { normalizeEmail, normalizeInstagram, normalizePhone } from '../fiche/normalize.ts';
 import type {

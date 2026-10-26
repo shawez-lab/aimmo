@@ -12,6 +12,11 @@ export interface OutboundMessage {
   body: string;
   /** Identifiant interne du message rangé, pour relier l'accusé du canal. */
   messageId: string;
+  /**
+   * Instagram et Facebook : `to` est la conversation reçue, un message privé (compte propre au canal) ou un
+   * commentaire (réponse privée au commentaire).
+   */
+  thread?: 'direct' | 'comment';
 }
 
 export interface DeliveryReceipt {
