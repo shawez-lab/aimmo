@@ -22,9 +22,11 @@ function containsPersonalData(value: JsonValue): boolean {
 
 export async function appendEvent(
   store: JournalStore,
-  input: JournalInput,
+  original: JournalInput,
   now: () => Date,
 ): Promise<JournalEntry> {
+  // Copie figée : un appelant qui modifie son objet pendant l'ajout ne change rien.
+  const input = structuredClone(original);
   const lineText: JsonValue = [input.type, input.actor, input.subject, input.data];
   if (containsPersonalData(lineText)) {
     throw new Error(

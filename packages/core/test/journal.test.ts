@@ -128,6 +128,15 @@ describeWithSqlite('journal SQLite', () => {
     expect(() => database.prepare('DELETE FROM journal WHERE seq = 2').run()).toThrow(
       /ajout seul/,
     );
+    expect(() =>
+      database
+        .prepare(
+          `INSERT OR REPLACE INTO journal (seq, at, type, actor, subject, data, prev_hash, hash)
+           VALUES (2, '2026-01-02T11:00:00.000Z', 'message.envoye', 'agent:12', 'client:18',
+                   '{}', ?, ?)`,
+        )
+        .run('0'.repeat(64), 'e'.repeat(64)),
+    ).toThrow(/ajout seul/);
     expect(await verifyChain(await new SqliteJournalStore(database).all())).toEqual({ ok: true });
   });
 
@@ -194,6 +203,21 @@ describe('données personnelles du journal', () => {
       ),
     ).rejects.toThrow(/donnée personnelle/i);
     expect(await store.all()).toEqual([]);
+  });
+
+  it('[R13] contrôle une copie figée de la ligne', async () => {
+    const store = new MemoryJournalStore();
+    const data = { detail: 'client:18' };
+    const pending = appendEvent(
+      store,
+      { type: 'message.refuse', actor: 'systeme', subject: null, data },
+      () => dates[0]!,
+    );
+    data.detail = 'alice@example.test';
+    await pending;
+    const [entry] = await store.all();
+    expect(entry!.data).toEqual({ detail: 'client:18' });
+    expect(await verifyChain(await store.all())).toEqual({ ok: true });
   });
 
   it('[R13] accepte les identifiants internes', async () => {
