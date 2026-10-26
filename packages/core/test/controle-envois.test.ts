@@ -402,4 +402,36 @@ describeWithSqlite('S06 · contrôle central des envois', () => {
     expect(texts.map((r) => r.status).sort()).toEqual(['refused', 'sent']);
     expect(byChannel('email').sent.length + byChannel('sms').sent.length).toBe(2);
   });
+  it('[R11] demandes d’avis simultanées : le plafond du jour tient, et une place en panne est rendue', async () => {
+    const { controle, store, network, agent, order, setClock, byChannel } = await setup();
+    setClock(TUE_1000);
+    const people: { id: string }[] = [];
+    for (const name of ['Ana', 'Bea', 'Cle', 'Dan']) {
+      const p = await store.createPerson({ networkId: network.id, agentId: agent.id, firstName: name });
+      await store.addIdentifier({ networkId: network.id, personId: p.id, kind: 'instagram', value: `@${name.toLowerCase()}_essai` });
+      people.push(p);
+    }
+    const ask = (i: number) => {
+      const { at: _a, ...o } = order({ personId: people[i]!.id, channel: 'instagram', kind: 'review_request', subject: `avis:${i}`, fallbackTexts: [`Merci pour ta confiance, ton avis compte ${'beaucoup '.repeat(i + 1).trim()}.`] });
+      return controle.send(o);
+    };
+    byChannel('instagram').failWith = new Error('panne');
+    expect((await ask(3)).status).toBe('failed');
+    byChannel('instagram').failWith = null;
+    const results = await Promise.all([ask(0), ask(1), ask(2)]);
+    expect(results.filter((r) => r.status === 'sent')).toHaveLength(2);
+    expect(results.filter((r) => r.status === 'refused').map((r) => r.rule)).toEqual(['R11']);
+    expect(byChannel('instagram').sent).toHaveLength(2);
+  });
+
+  it('[R06] deux premiers messages simultanés dans une conversation : une seule mention part', async () => {
+    const { controle, order, setClock, byChannel } = await setup();
+    setClock(TUE_1000);
+    const { at: _a, ...first } = order({ channel: 'instagram', kind: 'follow_up', subject: 'relance:a', fallbackTexts: ['Léa, ton agent te rappelle demain.'] });
+    const { at: _b, ...second } = order({ channel: 'instagram', kind: 'follow_up', subject: 'relance:b', fallbackTexts: ['Léa, une visite est possible cette semaine.'] });
+    const results = await Promise.all([controle.send(first), controle.send(second)]);
+    expect(results.map((r) => r.status).sort()).toEqual(['refused', 'sent']);
+    expect(results.find((r) => r.status === 'refused')).toMatchObject({ rule: 'R06' });
+    expect(byChannel('instagram').sent.filter((m) => m.body.includes('assistant IA'))).toHaveLength(1);
+  });
 });

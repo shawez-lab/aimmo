@@ -97,7 +97,7 @@ export function classifyReceived(text: string): ReceivedExclusion | null {
  * Range aussi ce qui la nourrit : demandes d'arrêt, liens de proximité, type des messages partis.
  */
 export class DecisionEnvoi {
-  private readonly settings: SendSettings;
+  readonly settings: SendSettings;
   private readonly newId: () => string;
   private readonly now: () => Date;
 

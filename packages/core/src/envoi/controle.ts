@@ -16,6 +16,7 @@ import type { FicheUnique } from '../fiche/fusion.ts';
 import type { OutboundChannel } from './canaux.ts';
 import type { SendKind } from './decision.ts';
 import type { DecisionEnvoi } from './service.ts';
+import { localTime } from './horaires.ts';
 import type { SendJournal } from './journal-envois.ts';
 import { DEFAULT_TEXT_SETTINGS, checkText, plain, type TextSettings } from './texte.ts';
 
@@ -311,10 +312,22 @@ export class ControleEnvois {
     const last = await decide(this.now());
     if (!last.allowed) return log('refused', last.rule, last.reason);
 
-    // Réservation atomique des sujets et du texte : de deux envois simultanés, un seul passe [R05].
+    // Réservation atomique des sujets, du texte et de la mention : de deux envois simultanés, un seul passe [R05, R06].
     const reservationId = crypto.randomUUID();
-    const keys = [...new Set([...subjects.map((k) => `sujet:${k}`), `texte:${sameText(chosen.text)}`])];
+    const conversationKey = order.conversationId ? `conversation:${order.conversationId}` : `canal:${order.channel}`;
+    const keys = [
+      ...new Set([
+        ...subjects.map((k) => `sujet:${k}`),
+        `texte:${sameText(chosen.text)}`,
+        ...(withMention ? [`mention:${conversationKey}`] : []),
+      ]),
+    ];
     const root = view.person.id;
+    const release = (reason: string) =>
+      Promise.all([
+        this.db.run(`UPDATE send_reservations SET key = key || '#${reason}:' || reservation_id WHERE reservation_id = ?`, [reservationId]),
+        this.db.run(`UPDATE send_quota_slots SET slot = slot || '#${reason}:' || reservation_id WHERE reservation_id = ?`, [reservationId]),
+      ]);
     try {
       await this.db.run(
         `INSERT INTO send_reservations (person_id, key, reservation_id, network_id, message_id, created_at) VALUES ${keys
@@ -323,14 +336,43 @@ export class ControleEnvois {
         keys.flatMap((key) => [root, key, reservationId, view.person.network_id, at.toISOString()]),
       );
     } catch (error) {
-      const taken = await this.db.first<{ key: string }>(
-        `SELECT key FROM send_reservations WHERE person_id = ? AND key IN (${placeholders(keys.length)}) LIMIT 1`,
+      const takenKeys = await this.db.all<{ key: string }>(
+        `SELECT key FROM send_reservations WHERE person_id = ? AND key IN (${placeholders(keys.length)})`,
         [root, ...keys],
       );
+      // Le doublon prime sur la mention : c'est lui qui dit pourquoi ce message ne partira jamais.
+      const taken = takenKeys.find((t) => !t.key.startsWith('mention:')) ?? takenKeys[0];
       if (!taken) throw error;
+      if (taken.key.startsWith('mention:')) {
+        return log('refused', 'R06', 'Un premier message automatique part déjà dans cette conversation.');
+      }
       return log('refused', 'R05', taken.key.startsWith('texte:') ? 'Ce message part déjà à la personne.' : 'Ce sujet part déjà à la personne.', {
         needsHuman: order.kind === 'reply',
       });
+    }
+
+    // Place dans le plafond du jour, prise une à une : deux envois simultanés ne la partagent pas [R11].
+    const cap =
+      order.kind === 'review_request'
+        ? this.decisions.settings.reviewRequestsPerDay
+        : order.kind === 'partner'
+          ? this.decisions.settings.partnerMessagesPerWorkingDay
+          : 0;
+    if (cap > 0) {
+      const day = localTime(at, this.decisions.settings.timeZone).date;
+      // Les places font foi : celles d'un envoi en panne ont été rendues.
+      let placed = false;
+      for (let slot = 1; slot <= cap && !placed; slot++) {
+        const { changes } = await this.db.run(
+          `INSERT OR IGNORE INTO send_quota_slots (network_id, kind, day, slot, reservation_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          [order.networkId, order.kind, day, String(slot), reservationId, at.toISOString()],
+        );
+        placed = changes === 1;
+      }
+      if (!placed) {
+        await release('plafond');
+        return log('refused', 'R11', `Plafond du jour atteint : ${cap} au plus.`);
+      }
     }
 
     // 6. Enregistrement, journal, puis envoi [R13].
@@ -365,7 +407,7 @@ export class ControleEnvois {
     } catch {
       // Le détail de l'erreur peut contenir l'adresse : il ne va pas au journal.
       // Les réservations sont libérées pour un nouvel essai, sans effacer leur ligne.
-      await this.db.run("UPDATE send_reservations SET key = key || '#panne:' || message_id WHERE reservation_id = ?", [reservationId]);
+      await release('panne');
       return log('failed', null, 'Le canal a refusé le message ou n’a pas répondu.', flags);
     }
     return sent;

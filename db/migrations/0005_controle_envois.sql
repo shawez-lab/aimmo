@@ -54,3 +54,17 @@ CREATE TABLE IF NOT EXISTS send_reservations (
   FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS send_reservations_reservation ON send_reservations (reservation_id);
+
+-- Places du plafond du jour [R11] : demandes d'avis et messages aux partenaires, pour tout le réseau.
+-- Une place par message, prise par une seule instruction : deux envois simultanés ne dépassent pas le plafond.
+-- Un envoi en panne ou refusé ensuite rend sa place en renommant `slot`, sans effacer la ligne [R17].
+CREATE TABLE IF NOT EXISTS send_quota_slots (
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  kind TEXT NOT NULL,
+  day TEXT NOT NULL,
+  slot TEXT NOT NULL,
+  reservation_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (network_id, kind, day, slot)
+);
+CREATE INDEX IF NOT EXISTS send_quota_slots_reservation ON send_quota_slots (reservation_id);
