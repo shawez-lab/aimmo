@@ -68,7 +68,7 @@ export class FicheUnique {
       'SELECT * FROM person_identifiers WHERE person_id = ? AND kind = ? AND value = ?',
       [input.personId, input.kind, value],
     );
-    return existing ?? this.store.addIdentifier({ ...input, value });
+    return existing ?? this.store.addIdentifier(input);
   }
 
   /** Les fiches du réseau qui portent cet identifiant, ramenées à leur fiche gardée. */
@@ -189,8 +189,11 @@ export class FicheUnique {
     ]);
     if (!survivor || !merged) throw new Error('Fiche inconnue.');
     if (survivor.network_id !== merged.network_id) throw new Error('Deux fiches de réseaux différents ne se fusionnent pas.');
-    if (survivor.agent_id && merged.agent_id && survivor.agent_id !== merged.agent_id) {
-      // Lecture prudente : deux agents suivent chacun cette personne. La direction tranche avant toute fusion.
+    // Lecture prudente : si plusieurs agents suivent les fiches à réunir, la direction attribue d'abord la personne.
+    const memberIds = [...(await this.membersOf(survivorId)), ...(await this.membersOf(mergedId))];
+    const members = await Promise.all(memberIds.map((id) => this.store.getPerson(id)));
+    const agents = new Set(members.map((p) => p?.agent_id).filter((a): a is string => !!a));
+    if (agents.size > 1) {
       throw new Error('Ces fiches sont suivies par deux agents différents : la direction doit d’abord attribuer la personne.');
     }
     const at = this.now().toISOString();
@@ -206,10 +209,14 @@ export class FicheUnique {
       created_at: at,
     };
     const columns = Object.keys(row);
-    await this.db.run(
-      `INSERT INTO person_merges (${columns.join(', ')}) VALUES (${placeholders(columns.length)})`,
-      Object.values(row),
+    // Une seule instruction : si l'une des deux fiches vient d'être fusionnée ailleurs, rien n'est écrit.
+    const { changes } = await this.db.run(
+      `INSERT INTO person_merges (${columns.join(', ')})
+       SELECT ${placeholders(columns.length)}
+       WHERE NOT EXISTS (SELECT 1 FROM person_merges WHERE undone_at IS NULL AND merged_id IN (?, ?))`,
+      [...Object.values(row), survivorId, mergedId],
     );
+    if (changes !== 1) throw new Error('Une autre fusion vient de toucher ces fiches : recommencer.');
     return row as unknown as PersonMerge;
   }
 

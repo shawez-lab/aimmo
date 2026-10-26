@@ -8,6 +8,7 @@ import {
   fromSyncSqlite,
   normalizeEmail,
   normalizeFacebook,
+  normalizeIdentifier,
   normalizeInstagram,
   normalizePhone,
   type IdentifierKind,
@@ -117,10 +118,22 @@ describeWithSqlite('S04 · une seule fiche par personne', () => {
     networkId = (await store.createNetwork('Réseau de test')).id;
   });
 
-  /** Range les identifiants tels quels, comme un import brut, sans normaliser. */
+  /**
+   * Range les identifiants par l'accès normal, qui normalise. Une valeur non valable est rangée brute par SQL,
+   * comme une ancienne donnée reprise telle quelle : elle ne doit rien rapprocher.
+   */
   async function createFiche(idents: Ident[], firstName = 'Test'): Promise<string> {
     const p = await store.createPerson({ networkId, firstName });
-    for (const [kind, value] of idents) await store.addIdentifier({ networkId, personId: p.id, kind, value });
+    for (const [kind, value] of idents) {
+      if (normalizeIdentifier(kind, value) !== null) {
+        await store.addIdentifier({ networkId, personId: p.id, kind, value });
+      } else {
+        await db.run(
+          "INSERT INTO person_identifiers (id, network_id, person_id, kind, value, created_at) VALUES (?, ?, ?, ?, ?, '2026-11-02T09:00:00.000Z')",
+          [crypto.randomUUID(), networkId, p.id, kind, value],
+        );
+      }
+    }
     return p.id;
   }
 
@@ -189,8 +202,7 @@ describeWithSqlite('S04 · une seule fiche par personne', () => {
 
   it('la fiche réunie montre l’historique de chaque fiche, et toute fiche fusionnée mène à la fiche gardée', async () => {
     const a = await createFiche([['email', 'histo@example.test']]);
-    const b = await createFiche([['email', 'Histo@example.test']]);
-    await fiches.addIdentifier({ networkId, personId: b, kind: 'phone', value: '06 33 00 00 05' });
+    const b = await createFiche([['phone', '06 33 00 00 05'], ['email', 'Histo@example.test']]);
     const occurredAt = new Date('2026-11-01T10:00:00.000Z');
     const msg = { networkId, channel: 'email', direction: 'in', authorKind: 'person', body: 'test', occurredAt } as const;
     await store.recordMessage({ ...msg, personId: a });
@@ -232,6 +244,38 @@ describeWithSqlite('S04 · une seule fiche par personne', () => {
     const py = (await store.createPerson({ networkId, agentId: y })).id;
     await expect(fiches.merge({ survivorId: px, mergedId: py, reason: 'x' })).rejects.toThrow(/deux agents/);
     expect(await db.first<{ n: number }>('SELECT count(*) AS n FROM person_merges')).toEqual({ n: 0 });
+  });
+
+  it('deux agents différents ne se réunissent pas non plus en passant par une fiche sans agent', async () => {
+    const x = (await store.createAgent({ networkId, firstName: 'X', lastName: 'Test' })).id;
+    const y = (await store.createAgent({ networkId, firstName: 'Y', lastName: 'Test' })).id;
+    const a = (await store.createPerson({ networkId })).id;
+    const b = (await store.createPerson({ networkId, agentId: x })).id;
+    const c = (await store.createPerson({ networkId, agentId: y })).id;
+    await fiches.merge({ survivorId: a, mergedId: b, reason: 'x' });
+    await expect(fiches.merge({ survivorId: a, mergedId: c, reason: 'x' })).rejects.toThrow(/deux agents/);
+    await expect(fiches.merge({ survivorId: c, mergedId: b, reason: 'x' })).rejects.toThrow(/deux agents/);
+  });
+
+  it('deux fusions croisées lancées en même temps ne créent pas de boucle', async () => {
+    const p = await createFiche([]);
+    const q = await createFiche([]);
+    const results = await Promise.allSettled([
+      fiches.merge({ survivorId: p, mergedId: q, reason: 'x' }),
+      fiches.merge({ survivorId: q, mergedId: p, reason: 'x' }),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect((await db.first<{ n: number }>('SELECT count(*) AS n FROM person_merges'))?.n).toBe(1);
+    expect((await fiches.view(p)).members).toHaveLength(2);
+    expect((await fiches.view(q)).members).toHaveLength(2);
+  });
+
+  it('un identifiant saisi brut par l’accès normal est rangé normalisé et retrouvé', async () => {
+    const p = await createFiche([]);
+    const row = await store.addIdentifier({ networkId, personId: p, kind: 'phone', value: '06 11 22 33 44' });
+    expect(row.value).toBe('+33611223344');
+    expect((await fiches.findByIdentifier(networkId, 'phone', '0611223344')).map((x) => x.id)).toEqual([p]);
+    await expect(store.addIdentifier({ networkId, personId: p, kind: 'phone', value: '0612' })).rejects.toThrow();
   });
 
   it('défaire une fusion inconnue est une erreur ; la défaire deux fois garde la première date', async () => {
