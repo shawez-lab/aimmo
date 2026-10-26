@@ -11,7 +11,18 @@
  *
  * Ce module n'envoie rien : il n'appelle aucune adresse extérieure.
  */
-import { SqlJournalStore, appendEvent, createCaptation, humanRepliesFromMeta, humanRepliesFromWhatsApp, type ChainResult, type HumanReply, type InboundSource, type SqlDatabase } from '@aimmo/core';
+import {
+  SqlJournalStore,
+  appendEvent,
+  createCaptation,
+  humanRepliesFromMeta,
+  humanRepliesFromWhatsApp,
+  type ChainResult,
+  type HumanReply,
+  type InboundSource,
+  type JournalData,
+  type SqlDatabase,
+} from '@aimmo/core';
 import { MIN_KEY_LENGTH, sha256Hex } from './auth.ts';
 
 export const META_PATH = '/meta/notifications';
@@ -84,7 +95,7 @@ export async function verifyMetaSignature(header: string | null, body: Uint8Arra
   return ok;
 }
 
-async function note(journal: SqlJournalStore, type: string, data: Record<string, unknown>, now: () => Date): Promise<void> {
+async function note(journal: SqlJournalStore, type: string, data: JournalData, now: () => Date): Promise<void> {
   try {
     await appendEvent(journal, { type, actor: 'meta:notifications', subject: null, data }, now);
   } catch {
