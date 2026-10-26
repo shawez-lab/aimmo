@@ -338,6 +338,21 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
     expect((await w.db.all('SELECT id FROM send_log')).length).toBe(before);
   });
 
+  it('[R21] un écho humain reçu avant le premier message du client, dans une autre notification, fait taire l’assistant', async () => {
+    const w = await world();
+    const client = '17843000000010';
+    // L'agent écrit le premier depuis l'application Instagram : la conversation n'est pas encore connue.
+    expect((await w.post(igEcho(client, 'Bonjour, je reviens vers vous pour la maison.', TUESDAY_10H))).status).toBe(200);
+    w.setClock(TUESDAY_10H + MINUTE);
+    expect((await w.post(igDirect(client, 'Bonjour, avec plaisir', TUESDAY_10H + MINUTE))).status).toBe(200);
+    expect(await w.outbox()).toHaveLength(0);
+    const handed = await w.db.all<{ conversation_id: string }>('SELECT conversation_id FROM conversation_handovers');
+    expect(handed).toEqual([{ conversation_id: `instagram:${client}` }]);
+    const pending = await w.db.all<{ applied_at: string | null }>('SELECT applied_at FROM pending_human_replies');
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.applied_at).not.toBeNull();
+  });
+
   it('aucun envoi réel : aucune adresse extérieure n’est appelée, et le code du Worker n’en contient aucune', async () => {
     const w = await world();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('aucun appel extérieur attendu'));

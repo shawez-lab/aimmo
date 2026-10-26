@@ -159,23 +159,13 @@ export async function processMetaNotification(config: MetaConfig, networkId: str
   const echoes: HumanReply[] =
     source === 'whatsapp' ? humanRepliesFromWhatsApp(body) : humanRepliesFromMeta(source as 'instagram' | 'facebook', body, csv(config.appIds));
   let humanReplies = 0;
-  const unknown: HumanReply[] = [];
-  for (const echo of echoes) {
-    const outcome = await relais.noteHumanReply(networkId, echo);
-    if (outcome === 'noted') humanReplies += 1;
-    if (outcome === 'unknown_conversation') unknown.push(echo);
-  }
-  // Un écho arrivé dans le même lot que le premier message de sa conversation : la conversation n'existait pas
-  // encore. Il est repris dès que le message est rangé dans sa fiche, avant toute réponse : l'assistant se tait [R21].
-  const retry = async (): Promise<void> => {
-    for (let i = unknown.length - 1; i >= 0; i -= 1) {
-      const outcome = await relais.noteHumanReply(networkId, unknown[i]!);
-      if (outcome === 'unknown_conversation') continue;
-      if (outcome === 'noted') humanReplies += 1;
-      unknown.splice(i, 1);
-    }
+  // Un écho dont la conversation n'est pas encore connue (même lot que le premier message, ou l'agent a écrit le
+  // premier) est gardé, puis appliqué dès que le message de la personne est rangé, avant toute réponse [R21].
+  for (const echo of echoes) if ((await relais.noteOrKeepHumanReply(networkId, echo)) === 'noted') humanReplies += 1;
+  const beforeReply = async (): Promise<void> => {
+    humanReplies += await relais.applyPendingHumanReplies(networkId);
   };
-  const results = await chaine.receive(networkId, source, body, { ownIds: csv(config.ownIds) }, unknown.length > 0 ? { beforeReply: retry } : {});
+  const results = await chaine.receive(networkId, source, body, { ownIds: csv(config.ownIds) }, { beforeReply });
   return { source, humanReplies, results };
 }
 
