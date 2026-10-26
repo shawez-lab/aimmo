@@ -189,6 +189,15 @@ export class Reception {
     return changes === 1;
   }
 
+  /** Rend un message pris mais pas traité, pour qu'il soit repris plus tard (erreur pendant le traitement). */
+  async release(inboundId: string): Promise<boolean> {
+    const { changes } = await this.db.run(
+      "UPDATE inbound_messages SET status = 'received' WHERE id = ? AND status = 'processing'",
+      [inboundId],
+    );
+    return changes === 1;
+  }
+
   /** Messages rangés mais jamais pris, pour une reprise après coupure : les plus anciens d'abord. */
   pending(networkId: string): Promise<InboundRow[]> {
     return this.db.all<InboundRow>(
