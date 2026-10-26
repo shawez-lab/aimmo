@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, verifyChain, type SqlDatabase } from '@aimmo/core';
-import { handleEmail, handleRequest, parseRawMail, sha256Hex, type InboundEmail } from '../src/index.ts';
+import { decodeEntities, handleEmail, handleRequest, parseRawMail, sha256Hex, type InboundEmail } from '../src/index.ts';
 import { fromD1, type D1Database } from '../src/d1.ts';
 import worker, { type Env } from '../src/worker.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
@@ -216,6 +216,36 @@ describeWithSqlite('C06 · mail et formulaire du site, en mode essai', () => {
     expect(await handleEmail(emailMessage(bytes), w.mailConfig)).toEqual([expect.objectContaining({ status: 'replied' })]);
     expect(await handleEmail(emailMessage(bytes), w.mailConfig)).toEqual([expect.objectContaining({ status: 'duplicate' })]);
     expect(await w.outbox()).toBe(1);
+  });
+
+  it('[R18] un rattachement abandonné ou jamais commencé est repris au nouvel envoi', async () => {
+    const w = await world();
+    const bytes = clientMail(12, new Date(TUESDAY_10H));
+    let broken = true;
+    const db: SqlDatabase = {
+      ...w.db,
+      run: (sql, params) => {
+        if (broken && sql.includes('attach_claims')) {
+          broken = false;
+          return Promise.reject(new Error('base indisponible'));
+        }
+        return w.db.run(sql, params);
+      },
+    };
+    expect(await handleEmail(emailMessage(bytes), { ...w.mailConfig, db })).toEqual([]);
+    // Le Worker a été coupé en plein rattachement : le message est resté « en cours ».
+    await w.db.run("UPDATE inbound_messages SET status = 'processing'");
+    w.setClock(TUESDAY_10H + 20 * MINUTE);
+    expect(await handleEmail(emailMessage(bytes), w.mailConfig)).toEqual([expect.objectContaining({ status: 'replied' })]);
+    expect(await w.outbox()).toBe(1);
+  });
+
+  it('[R04] un mail en HTML qui demande l’arrêt, écrit avec des entités, est reconnu : rien ne lui répond', async () => {
+    const w = await world();
+    const mail = rawMail(['From: Alix Essai <alix.html@example.test>', 'Message-ID: <html-stop@example.test>', 'Subject: Re', 'Content-Type: text/html; charset=utf-8', '', '<p>D&eacute;sinscription, merci</p>']);
+    expect(await handleEmail(emailMessage(mail), w.mailConfig)).toEqual([expect.objectContaining({ status: 'silenced' })]);
+    expect(await w.outbox()).toBe(0);
+    expect(decodeEntities('&eacute;t&#233; &#xE0; &laquo;&nbsp;oui&nbsp;&raquo; &inconnu; &#0;')).toBe('été à « oui » &inconnu; &#0;');
   });
 
   it('[R18] le même formulaire envoyé deux fois ne donne qu’une réponse', async () => {

@@ -116,18 +116,35 @@ function bodyText(headers: Headers, body: string): string {
   return decodeCharset(bytes, param(headers.get('content-type'), 'charset'));
 }
 
+/** Entités nommées courantes en français ; les autres restent telles quelles. */
+const ENTITIES: Readonly<Record<string, string>> = Object.freeze({
+  nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+  eacute: 'é', egrave: 'è', ecirc: 'ê', euml: 'ë', agrave: 'à', aacute: 'á', acirc: 'â', auml: 'ä',
+  ccedil: 'ç', icirc: 'î', iuml: 'ï', iacute: 'í', ocirc: 'ô', ouml: 'ö', oacute: 'ó', ugrave: 'ù',
+  ucirc: 'û', uuml: 'ü', uacute: 'ú', yuml: 'ÿ', oelig: 'œ', aelig: 'æ', ntilde: 'ñ',
+  Eacute: 'É', Egrave: 'È', Ecirc: 'Ê', Euml: 'Ë', Agrave: 'À', Acirc: 'Â', Ccedil: 'Ç', Icirc: 'Î',
+  Iuml: 'Ï', Ocirc: 'Ô', Ugrave: 'Ù', Ucirc: 'Û', Uuml: 'Ü', OElig: 'Œ', AElig: 'Æ',
+  laquo: '«', raquo: '»', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', hellip: '…', euro: '€',
+  ndash: '–', mdash: '—', deg: '°', middot: '·', bull: '•', copy: '©', reg: '®', shy: '',
+});
+
+/** Entités nommées et numériques, décimales ou hexadécimales : le texte lu par les règles est le texte vu [R04]. */
+export function decodeEntities(text: string): string {
+  return text.replace(/&(#\d{1,7}|#[xX][0-9A-Fa-f]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/g, (whole, ref: string) => {
+    if (ref.startsWith('#')) {
+      const code = ref[1] === 'x' || ref[1] === 'X' ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+      return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : whole;
+    }
+    return ENTITIES[ref] ?? whole;
+  });
+}
+
 function fromHtml(html: string): string {
-  return html
+  return decodeEntities(html
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<br\s*\/?>|<\/p>|<\/div>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/[ \t]+/g, ' ')
+    .replace(/<[^>]+>/g, ' '))
+    .replace(/[ \t\u00a0]+/g, ' ')
     .replace(/\n\s*\n+/g, '\n')
     .trim();
 }
