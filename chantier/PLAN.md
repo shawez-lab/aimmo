@@ -107,7 +107,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Attend : rien.
 
 ### I03 · Liste d'exclusion et contacts des outils
-- Statut : en cours
+- Statut : fait (2026-10-26)
 - Qui : Claude · Relecture : forte · Dépend de : I02
 - Cahier : Feuille de route, novembre 2026 ; R02.
 - Objectif : reprendre par fichiers CSV la liste d'exclusion de Shawez et les contacts de GoHighLevel et ManyChat, avec leurs désinscriptions (« ne pas déranger », désabonné) qui deviennent des exclusions sur tous les canaux. Format des colonnes documenté pour que Shawez sache quoi exporter.
@@ -159,7 +159,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : relecture de Codex restée « en cours » plus de 45 minutes, fusion sans elle (#11) ; une coupure exactement entre le rangement du message et sa note pourrait le doubler, à fermer avec les lots D1 de S09 ; un commentaire Instagram (compte) et un message privé (numéro du canal) d'une même personne restent deux fiches.
 
 ### C03 · Reconnaître le bien concerné
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : S03
 - Cahier : M02, « Première réponse » et règles ; critère « 3 commentaires sur 3 vidéos ».
 - Objectif : trouver le bien dont parle le message : publication ou vidéo commentée, lien d'annonce, référence de portail, référence citée dans le texte. Table de correspondance publication → bien dans la base. Sans correspondance sûre : aucun bien, jamais une supposition.
