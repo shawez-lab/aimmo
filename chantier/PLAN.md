@@ -177,7 +177,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : la vraie IA (H13) ; seuls le français et l'anglais sont gérés, une autre langue reçoit du français.
 
 ### C05 · Conversation et relais à l'agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : C04
 - Cahier : M02, « Relais humain », « L'IA et l'humain », règles.
 - Objectif : l'état de chaque conversation : l'assistant converse jusqu'au rendez-vous ou au plus 5 échanges, puis passe la main ; l'IA se tait pour de bon dès qu'un humain répond ; l'agent voit la conversation et la reprend à tout moment.
