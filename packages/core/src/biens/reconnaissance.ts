@@ -84,7 +84,7 @@ export function urlsIn(text: string): string[] {
  */
 export function referencesIn(text: string): string[] {
   const found = new Set<string>();
-  const pattern = /\b(?:r[ée]f(?:[ée]rence)?s?)\b\.?\s*(?:n[°o]\.?\s*)?[:#-]?\s*([a-z0-9][a-z0-9_-]{1,30})/gi;
+  const pattern = /\b(?:r[ée]f(?:[ée]rence)?s?)\b\.?\s*(?:n[°o]\.?\s*)?[:#-]?\s*([a-z0-9][a-z0-9_-]{0,30})/gi;
   for (const match of text.matchAll(pattern)) if (match[1]) found.add(match[1].toLowerCase());
   return [...found];
 }

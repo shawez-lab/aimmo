@@ -121,6 +121,15 @@ describeWithSqlite('reconnaître le bien dont parle un message', () => {
     expect(await reco.recognize(net, { postRef: 'video-ig-2', text: 'https://shawez-immo.com/biens/%' })).toMatchObject({ status: 'recognized', property: { id: homes['394'] } });
   });
 
+  it('[R20] une référence d\'un seul caractère est lue, et contredit la vidéo d\'un autre bien', async () => {
+    const fiches = new FicheClient(db, { now: () => NOW });
+    const agent = (await db.first<{ id: string }>('SELECT id FROM agents'))!.id;
+    const four = (await fiches.createProperty({ networkId: net, agentId: agent, reference: '4', kind: 'home', status: 'available' })).id;
+    expect(referencesIn('Et la réf 4 ?')).toEqual(['4']);
+    expect(await reco.recognize(net, { postRef: 'video-ig-1', text: 'Et la réf 4 ?' })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'ambiguous' });
+    expect(await reco.recognize(net, { text: 'Et la réf 4 ?' })).toMatchObject({ status: 'recognized', property: { id: four } });
+  });
+
   it('un nombre seul dans le texte n\'est pas une référence', async () => {
     expect(await reco.recognize(net, { text: 'Je cherche à 383 000 € maximum' })).toEqual({ status: 'unrecognized', rule: 'R20', reason: 'no_clue' });
   });
