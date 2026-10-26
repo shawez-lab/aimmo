@@ -197,7 +197,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : branchement réel avec H16 (C09), où les messages de la boîte d'essai ne devront pas compter comme partis ; intégration au site de `shawez-immo` dans une tâche à part ; relecture de Codex de la dernière version restée en cours 25 minutes, fusion sans elle (#20).
 
 ### C07 · Instagram, Facebook et WhatsApp, en mode essai
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : C06
 - Cahier : M02, « Branchements » : API Meta avec notifications en temps réel, API WhatsApp Business.
 - Objectif : les points d'arrivée des notifications de Meta et de WhatsApp, avec vérification de la signature, en mode essai, testés sur des notifications inventées. ManyChat reste seul à répondre.
