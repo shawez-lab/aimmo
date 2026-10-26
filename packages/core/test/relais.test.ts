@@ -18,6 +18,7 @@ import {
   decideSend,
   fromSyncSqlite,
   humanRepliesFromMeta,
+  humanRepliesFromWhatsApp,
   type Channel,
   type InboundMessage,
   type ReplyWriter,
@@ -161,6 +162,87 @@ describeWithSqlite('C05 · conversation et relais à l’agent', () => {
     expect(t.sent('instagram')).toHaveLength(1);
     const state = await t.relais.state(person, 'instagram:igsid-lou');
     expect(state).toMatchObject({ holder: 'agent', humanReplied: true, handover: { reason: 'human_reply' } });
+  });
+
+  it('[R21] une relance sans conversation citée, sur un canal de Meta, se tait aussi après la réponse d’un humain', async () => {
+    const t = await setup();
+    const id = await t.receive(t.dm('ivy', 'Bonjour'));
+    t.advance(1000);
+    await t.relais.process(id);
+    const [human] = humanRepliesFromMeta('instagram', t.echo('ivy', 'mid-human-ivy', 'Je vous rappelle.'), [OUR_APP]);
+    expect(await t.relais.noteHumanReply(t.network.id, human!)).toBe('noted');
+    t.advance(11 * HOUR); // lundi 10 h, dans la fenêtre de Meta
+    const out = await t.controle.send({
+      networkId: t.network.id,
+      personId: await t.personOf(id),
+      channel: 'instagram',
+      kind: 'follow_up',
+      subject: 'relance:ivy',
+      fallbackTexts: ['Hello ! Toujours partant pour la visite ?'],
+    });
+    expect(out).toMatchObject({ status: 'refused', rule: 'R21' });
+    const facts: SendFacts = {
+      exclusions: [],
+      consents: [],
+      relations: [],
+      sentToday: { review_request: 0, partner: 0 },
+      messages: [{ conversation_id: 'instagram:x', channel: 'instagram', direction: 'in', occurred_at: '2026-12-07T08:00:00.000Z' }],
+      handovers: [{ conversation_id: 'instagram:x', handed_at: '2026-12-07T08:05:00.000Z' }],
+    };
+    expect(decideSend({ channel: 'instagram', kind: 'follow_up', at: new Date('2026-12-07T13:00:00.000Z') }, facts)).toMatchObject({ allowed: false, rule: 'R21' });
+    expect(decideSend({ channel: 'instagram', kind: 'follow_up', at: new Date('2026-12-07T13:00:00.000Z') }, { ...facts, handovers: [] })).toMatchObject({ allowed: true });
+  });
+
+  it('[R21] l’écho de notre propre réponse, même sans application, ne fait pas taire l’assistant', async () => {
+    const t = await setup();
+    const id = await t.receive(t.dm('kim', 'Bonjour, vous êtes dispo ?'));
+    t.advance(1000);
+    await t.relais.process(id);
+    // Notre réponse revient en écho sans app_id : son identifiant est celui que le canal nous a rendu.
+    const [ours] = humanRepliesFromMeta('instagram', t.echo('kim', 'fake-1', t.sent('instagram')[0]!), [OUR_APP]);
+    expect(await t.relais.noteHumanReply(t.network.id, ours!)).toBe('own');
+    // Arrivé avant l'identifiant : reconnu à son texte.
+    const [early] = humanRepliesFromMeta('instagram', t.echo('kim', 'mid-inconnu', t.sent('instagram')[0]!), [OUR_APP]);
+    expect(await t.relais.noteHumanReply(t.network.id, early!)).toBe('own');
+    t.advance(MINUTE);
+    expect(await t.relais.process(await t.receive(t.dm('kim', 'Je voudrais vendre')))).toMatchObject({ status: 'replied' });
+    expect(t.sent('instagram')).toHaveLength(2);
+  });
+
+  it('[R21] l’agent qui répond depuis WhatsApp Business fait taire l’assistant', async () => {
+    const t = await setup();
+    const wa = (text: string): InboundMessage => ({
+      ...t.dm('wa', text),
+      channel: 'whatsapp',
+      conversationRef: '33600000099',
+      sender: { channelId: '33600000099', name: null, identifiers: [{ kind: 'whatsapp', value: '+33600000099' }] },
+    });
+    const id = await t.receive(wa('Bonjour, le bien est dispo ?'));
+    t.advance(1000);
+    expect(await t.relais.process(id)).toMatchObject({ status: 'replied' });
+    const payload = {
+      object: 'whatsapp_business_account',
+      entry: [{ changes: [{ field: 'smb_message_echoes', value: { message_echoes: [{ from: '33100000000', to: '33600000099', id: 'wamid.human', timestamp: String(Math.floor(SUNDAY_NIGHT.getTime() / 1000) + 60), type: 'text', text: { body: 'Je vous appelle.' } }] } }] }],
+    };
+    const [human] = humanRepliesFromWhatsApp(payload);
+    expect(human).toMatchObject({ channel: 'whatsapp', conversationRef: '33600000099' });
+    expect(await t.relais.noteHumanReply(t.network.id, human!)).toBe('noted');
+    t.advance(MINUTE);
+    expect(await t.relais.process(await t.receive(wa('Merci, à demain')))).toMatchObject({ status: 'silent' });
+    expect(t.sent('whatsapp')).toHaveLength(1);
+    expect(humanRepliesFromWhatsApp({ entry: [{ changes: [{ field: 'messages', value: {} }] }] })).toHaveLength(0);
+  });
+
+  it('[R21] l’agent qui écrit le premier : la personne est retrouvée par son identifiant chez le canal', async () => {
+    const t = await setup();
+    const id = await t.receive(t.dm('rio', 'Bonjour'));
+    const person = await t.personOf(id);
+    await t.db.run('INSERT INTO contact_keys (network_id, key, person_id, created_at) VALUES (?, ?, ?, ?)', [t.network.id, 'instagram:direct:igsid-autre', person, SUNDAY_NIGHT.toISOString()]);
+    const [human] = humanRepliesFromMeta('instagram', t.echo('autre', 'mid-first', 'Bonjour, je vous écris pour la maison.'), [OUR_APP]);
+    expect(await t.relais.noteHumanReply(t.network.id, human!)).toBe('noted');
+    expect(await t.relais.state(person, 'instagram:igsid-autre')).toMatchObject({ holder: 'agent' });
+    const [nobody] = humanRepliesFromMeta('instagram', t.echo('personne', 'mid-x', 'Bonjour'), [OUR_APP]);
+    expect(await t.relais.noteHumanReply(t.network.id, nobody!)).toBe('unknown_conversation');
   });
 
   it('[R21] nos propres échos ne font pas taire l’assistant ; un écho sans application connue, si', () => {

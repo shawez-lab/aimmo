@@ -417,13 +417,21 @@ export class ControleEnvois {
     await this.db.run('UPDATE send_reservations SET message_id = ? WHERE reservation_id = ?', [message.id, reservationId]);
     const flags = { messageId: message.id, body, aiText: chosen.ai, fallbackText: !chosen.ai, withMention };
     const sent = await log('sent', aiNote ? 'R12' : decision.rule, aiNote ?? decision.reason, flags);
+    let receipt: { externalId: string | null };
     try {
-      await port.deliver({ channel: order.channel, to, body, messageId: message.id });
+      receipt = await port.deliver({ channel: order.channel, to, body, messageId: message.id });
     } catch {
       // Le détail de l'erreur peut contenir l'adresse : il ne va pas au journal.
       // Les réservations sont libérées pour un nouvel essai, sans effacer leur ligne.
       await release('panne');
       return log('failed', null, 'Le canal a refusé le message ou n’a pas répondu.', flags);
+    }
+    // L'identifiant du canal : l'écho de ce message ne sera jamais pris pour la réponse d'un humain [R21].
+    if (receipt.externalId) {
+      await this.db.run(
+        'INSERT INTO outbound_refs (network_id, channel, external_id, message_id, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+        [order.networkId, order.channel, receipt.externalId, message.id, this.now().toISOString()],
+      );
     }
     return sent;
   }

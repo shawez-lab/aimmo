@@ -11,9 +11,14 @@ import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Message } from '../db/types.ts';
 import { DEFAULT_SEND_SETTINGS, type SendSettings } from '../envoi/decision.ts';
+import { plain } from '../envoi/texte.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import type { InboundRow, Reception } from '../reception/reception.ts';
 import type { FirstReplyOutcome, PremiereReponse } from './premiere-reponse.ts';
+
+/** Un écho au texte identique à notre envoi, arrivé dans ce délai, est le nôtre. */
+const OWN_ECHO_WINDOW_MS = 10 * 60_000;
+const sameText = (text: string): string => plain(text).replace(/[^a-z0-9]+/g, ' ').trim();
 
 export type HandoverReason = 'human_reply' | 'exchanges' | 'appointment' | 'agent_takeover';
 export type AlertReason = 'exchanges' | 'needs_reply';
@@ -62,7 +67,7 @@ export type RelayOutcome =
 
 /** Une réponse écrite par un humain dans l'application du canal, reçue en écho. */
 export interface HumanReply {
-  channel: 'instagram' | 'facebook';
+  channel: 'instagram' | 'facebook' | 'whatsapp';
   /** Identifiant du client chez le canal : la clé de sa conversation privée. */
   conversationRef: string;
   externalId: string;
@@ -146,15 +151,44 @@ export class ConversationRelais {
    * Une réponse écrite par un humain dans l'application du canal : rangée dans la fiche, une seule fois, et la
    * conversation passe à l'agent pour de bon [R21]. Rien n'est envoyé : le message est déjà parti.
    */
-  async noteHumanReply(networkId: string, reply: HumanReply): Promise<'noted' | 'duplicate' | 'unknown_conversation'> {
+  async noteHumanReply(networkId: string, reply: HumanReply): Promise<'noted' | 'duplicate' | 'own' | 'unknown_conversation'> {
     const conversationId = `${reply.channel}:${reply.conversationRef}`;
-    const last = await this.db.first<{ person_id: string }>(
-      `SELECT person_id FROM messages WHERE network_id = ? AND conversation_id = ? AND direction = 'in'
-       ORDER BY occurred_at DESC, rowid DESC LIMIT 1`,
-      [networkId, conversationId],
+    // L'écho d'un message parti d'AIMMO n'est pas la réponse d'un humain.
+    const own = await this.db.first<{ message_id: string }>(
+      'SELECT message_id FROM outbound_refs WHERE network_id = ? AND channel = ? AND external_id = ?',
+      [networkId, reply.channel, reply.externalId],
     );
+    if (own) return 'own';
+    const last =
+      (await this.db.first<{ person_id: string }>(
+        `SELECT person_id FROM messages WHERE network_id = ? AND conversation_id = ? AND direction = 'in'
+         ORDER BY occurred_at DESC, rowid DESC LIMIT 1`,
+        [networkId, conversationId],
+      )) ??
+      // L'agent a écrit le premier : la personne est retrouvée par son identifiant chez le canal (C02).
+      (await this.db.first<{ person_id: string }>('SELECT person_id FROM contact_keys WHERE network_id = ? AND key = ? LIMIT 1', [
+        networkId,
+        `${reply.channel}:direct:${reply.conversationRef}`,
+      ]));
     if (!last) return 'unknown_conversation';
     const view = await this.fiche.view(last.person_id);
+    // L'écho arrivé avant que le canal ait rendu l'identifiant de notre envoi : reconnu à son texte, mot pour mot,
+    // parmi nos messages automatiques des dernières minutes dans cette conversation.
+    const echoed = sameText(reply.text);
+    const recent = reply.sentAt.getTime() - OWN_ECHO_WINDOW_MS;
+    if (
+      echoed !== '' &&
+      view.messages.some(
+        (m) =>
+          m.conversation_id === conversationId &&
+          m.direction === 'out' &&
+          (m.author_kind === 'ai' || m.author_kind === 'system') &&
+          Date.parse(m.occurred_at) >= recent &&
+          sameText(m.body) === echoed,
+      )
+    ) {
+      return 'own';
+    }
     const { changes } = await this.db.run(
       'INSERT INTO human_replies (dedup_key, network_id, message_id, created_at) VALUES (?, ?, NULL, ?) ON CONFLICT DO NOTHING',
       [`${reply.channel}:${reply.externalId}`, networkId, this.now().toISOString()],
@@ -294,6 +328,39 @@ export function humanRepliesFromMeta(
           text: typeof message['text'] === 'string' ? message['text'] : '',
           // Une date illisible : l'écho compte dès maintenant, l'assistant se tait quand même.
           sentAt: Number.isNaN(sentAt.getTime()) ? new Date() : sentAt,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Les réponses écrites par un humain depuis l'application WhatsApp Business, reçues en écho
+ * (`smb_message_echoes`). Tout écho de ce type vient de l'application, jamais de l'API d'AIMMO [R21].
+ */
+export function humanRepliesFromWhatsApp(raw: unknown): HumanReply[] {
+  const out: HumanReply[] = [];
+  const entries = isObj(raw) && Array.isArray(raw['entry']) ? raw['entry'] : [];
+  for (const entry of entries) {
+    if (!isObj(entry) || !Array.isArray(entry['changes'])) continue;
+    for (const change of entry['changes']) {
+      if (!isObj(change) || change['field'] !== 'smb_message_echoes' || !isObj(change['value'])) continue;
+      const echoes = change['value']['message_echoes'];
+      if (!Array.isArray(echoes)) continue;
+      for (const echo of echoes) {
+        if (!isObj(echo)) continue;
+        const to = echo['to'];
+        const id = echo['id'];
+        if (typeof to !== 'string' || to === '' || typeof id !== 'string' || id === '') continue;
+        const seconds = Number(echo['timestamp']);
+        const body = isObj(echo['text']) && typeof echo['text']['body'] === 'string' ? echo['text']['body'] : '';
+        out.push({
+          channel: 'whatsapp',
+          conversationRef: to,
+          externalId: id,
+          text: body,
+          sentAt: Number.isFinite(seconds) && seconds > 0 ? new Date(seconds * 1000) : new Date(),
         });
       }
     }

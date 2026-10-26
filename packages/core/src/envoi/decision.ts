@@ -152,6 +152,17 @@ export function decideSend(
     if (received > settings.assistantMaxExchanges) {
       return refuse('R21', `Plus de ${settings.assistantMaxExchanges} échanges dans cette conversation : l’agent prend le relais.`);
     }
+  } else if (META_CHANNELS.includes(request.channel)) {
+    // Sur les canaux de Meta, un message sans conversation citée arrive quand même dans le fil de la personne :
+    // il est tenu par toutes ses conversations de ce canal.
+    checked.push('R21');
+    const prefix = `${request.channel}:`;
+    if (facts.messages.some((m) => m.direction === 'out' && m.author_kind === 'agent' && m.channel === request.channel && Date.parse(m.occurred_at) <= at)) {
+      return refuse('R21', 'Un humain a répondu à la personne sur ce canal : l’assistant se tait.');
+    }
+    if ((facts.handovers ?? []).some((h) => h.conversation_id.startsWith(prefix) && Date.parse(h.handed_at) <= at)) {
+      return refuse('R21', 'Conversation passée à l’agent sur ce canal : l’assistant se tait.');
+    }
   }
 
   // R01 : la réponse à un message reçu il y a moins de 60 minutes part tout de suite, à toute heure.

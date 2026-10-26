@@ -60,3 +60,20 @@ BEFORE DELETE ON human_replies
 BEGIN
   SELECT RAISE(ABORT, 'human_replies : rien ne s''efface');
 END;
+
+-- Identifiant rendu par le canal pour chaque message parti d'AIMMO : son écho n'est jamais pris pour la réponse
+-- d'un humain [R21].
+CREATE TABLE IF NOT EXISTS outbound_refs (
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  channel TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  message_id TEXT NOT NULL REFERENCES messages (id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (network_id, channel, external_id)
+);
+
+CREATE TRIGGER IF NOT EXISTS outbound_refs_sans_effacement
+BEFORE DELETE ON outbound_refs
+BEGIN
+  SELECT RAISE(ABORT, 'outbound_refs : rien ne s''efface');
+END;
