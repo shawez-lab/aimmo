@@ -1,0 +1,11 @@
+{
+  "name": "@aimmo/api",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@aimmo/core": "*"
+  }
+}

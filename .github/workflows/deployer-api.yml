@@ -1,0 +1,88 @@
+name: Déployer l'API
+
+# Met en ligne le Worker `aimmo-api` (S09) à chaque arrivée sur main, une fois H04 fait.
+# Sans les secrets Cloudflare, le travail s'arrête sans erreur : rien n'est mis en ligne.
+# Il ne touche qu'au Worker `aimmo-api` et à la base D1 `aimmo` : rien de shawez-immo.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'db/migrations/**'
+      - 'package-lock.json'
+      - '.github/workflows/deployer-api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deployer-api
+  cancel-in-progress: false
+
+env:
+  WRANGLER: wrangler@4.149.0
+  WRANGLER_SEND_METRICS: 'false'
+  D1_PLACEHOLDER: 00000000-0000-0000-0000-000000000000
+
+jobs:
+  deployer:
+    name: Déployer
+    # Jamais depuis une autre branche que main, même lancé à la main.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Secrets Cloudflare présents (H04)
+        id: h04
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "pret=oui" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Secrets Cloudflare absents (H04) : rien n'est mis en ligne."
+          fi
+      - if: steps.h04.outputs.pret == 'oui'
+        uses: actions/checkout@v4
+      - if: steps.h04.outputs.pret == 'oui'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - if: steps.h04.outputs.pret == 'oui'
+        run: npm ci
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Vérifications avant mise en ligne
+        run: npm run check && npm test && npm run garde-fous
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Base D1 en Europe
+        working-directory: packages/api
+        run: |
+          find_id() {
+            npx -y "$WRANGLER" d1 list --json | node -e '
+              let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => {
+                const base = JSON.parse(s).find((d) => d.name === "aimmo");
+                process.stdout.write(base ? base.uuid : "");
+              });'
+          }
+          id="$(find_id)"
+          if [ -z "$id" ]; then
+            npx -y "$WRANGLER" d1 create aimmo --jurisdiction eu
+            id="$(find_id)"
+          fi
+          if ! printf '%s' "$id" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "::error::Base D1 aimmo introuvable après création."
+            exit 1
+          fi
+          sed -i "s/$D1_PLACEHOLDER/$id/" wrangler.toml
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Migrations de la base
+        working-directory: packages/api
+        run: npx -y "$WRANGLER" d1 migrations apply aimmo --remote
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Mise en ligne du Worker
+        working-directory: packages/api
+        run: npx -y "$WRANGLER" deploy

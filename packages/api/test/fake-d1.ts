@@ -1,0 +1,32 @@
+// Une base D1 de test, posée sur node:sqlite, qui imite l'API des Workers : prepare, bind, run, all, first, exec.
+import type { D1Database, D1PreparedStatement, D1Result } from '../src/d1.ts';
+import type { SqliteDatabase } from '../../core/test/sqlite.ts';
+
+type Value = string | number | null;
+
+const plain = <T>(row: unknown): T => ({ ...(row as object) }) as T;
+
+export function fakeD1(db: SqliteDatabase): D1Database {
+  db.exec('PRAGMA foreign_keys = ON');
+  const statement = (sql: string, params: Value[]): D1PreparedStatement => ({
+    bind: (...values) => statement(sql, values),
+    async run(): Promise<D1Result<unknown>> {
+      const result = db.prepare(sql).run(...params) as { changes?: number | bigint };
+      return { results: [], meta: { changes: Number(result.changes ?? 0) } };
+    },
+    async all<T>(): Promise<D1Result<T>> {
+      return { results: db.prepare(sql).all(...params).map((row) => plain<T>(row)), meta: { changes: 0 } };
+    },
+    async first<T>(): Promise<T | null> {
+      const row = db.prepare(sql).get(...params);
+      return row === undefined ? null : plain<T>(row);
+    },
+  });
+  return {
+    prepare: (sql) => statement(sql, []),
+    async exec(sql) {
+      db.exec(sql);
+      return { count: 1 };
+    },
+  };
+}
