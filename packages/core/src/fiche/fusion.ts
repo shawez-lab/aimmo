@@ -191,6 +191,12 @@ export class FicheUnique {
     if (survivor.network_id !== merged.network_id) throw new Error('Deux fiches de réseaux différents ne se fusionnent pas.');
     // Lecture prudente : si plusieurs agents suivent les fiches à réunir, la direction attribue d'abord la personne.
     const memberIds = [...(await this.membersOf(survivorId)), ...(await this.membersOf(mergedId))];
+    // Repère pour l'écriture : les lignes ne sont jamais effacées, donc ce nombre ne fait que croître
+    // si une autre fusion rattache une fiche à l'un des deux côtés pendant ce contrôle.
+    const attachedSql = `SELECT count(*) FROM person_merges WHERE survivor_id IN (${placeholders(memberIds.length)})`;
+    const attached = Number(
+      (await this.db.first<{ n: number }>(attachedSql.replace('count(*)', 'count(*) AS n'), memberIds))?.n ?? 0,
+    );
     const members = await Promise.all(memberIds.map((id) => this.store.getPerson(id)));
     const agents = new Set(members.map((p) => p?.agent_id).filter((a): a is string => !!a));
     if (agents.size > 1) {
@@ -209,12 +215,14 @@ export class FicheUnique {
       created_at: at,
     };
     const columns = Object.keys(row);
-    // Une seule instruction : si l'une des deux fiches vient d'être fusionnée ailleurs, rien n'est écrit.
+    // Une seule instruction : si l'une des deux fiches vient d'être fusionnée ailleurs, ou si une autre fiche
+    // vient d'être rattachée à l'un des deux côtés depuis le contrôle des agents, rien n'est écrit.
     const { changes } = await this.db.run(
       `INSERT INTO person_merges (${columns.join(', ')})
        SELECT ${placeholders(columns.length)}
-       WHERE NOT EXISTS (SELECT 1 FROM person_merges WHERE undone_at IS NULL AND merged_id IN (?, ?))`,
-      [...Object.values(row), survivorId, mergedId],
+       WHERE NOT EXISTS (SELECT 1 FROM person_merges WHERE undone_at IS NULL AND merged_id IN (?, ?))
+         AND (${attachedSql}) = ?`,
+      [...Object.values(row), survivorId, mergedId, ...memberIds, attached],
     );
     if (changes !== 1) throw new Error('Une autre fusion vient de toucher ces fiches : recommencer.');
     return row as unknown as PersonMerge;

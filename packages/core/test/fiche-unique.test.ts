@@ -270,6 +270,21 @@ describeWithSqlite('S04 · une seule fiche par personne', () => {
     expect((await fiches.view(q)).members).toHaveLength(2);
   });
 
+  it('deux fusions simultanées vers une même fiche sans agent ne réunissent pas deux agents', async () => {
+    const x = (await store.createAgent({ networkId, firstName: 'X', lastName: 'Test' })).id;
+    const y = (await store.createAgent({ networkId, firstName: 'Y', lastName: 'Test' })).id;
+    const a = (await store.createPerson({ networkId })).id;
+    const b = (await store.createPerson({ networkId, agentId: x })).id;
+    const c = (await store.createPerson({ networkId, agentId: y })).id;
+    const results = await Promise.allSettled([
+      fiches.merge({ survivorId: a, mergedId: b, reason: 'x' }),
+      fiches.merge({ survivorId: a, mergedId: c, reason: 'x' }),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const agents = new Set((await fiches.view(a)).members.map((m) => m.agent_id).filter(Boolean));
+    expect(agents.size).toBe(1);
+  });
+
   it('un identifiant saisi brut par l’accès normal est rangé normalisé et retrouvé', async () => {
     const p = await createFiche([]);
     const row = await store.addIdentifier({ networkId, personId: p, kind: 'phone', value: '06 11 22 33 44' });
