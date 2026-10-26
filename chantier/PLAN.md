@@ -99,7 +99,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Attend : rien.
 
 ### I02 · Reprendre les contacts du site dans la fiche client
-- Statut : en cours
+- Statut : fait (2026-10-26)
 - Qui : Claude · Relecture : forte · Dépend de : I01
 - Cahier : Feuille de route, novembre 2026 : « Une seule fiche par personne, contrôlée sur 50 fiches. Toutes les exclusions connues marquées ».
 - Objectif : chaque contact lu devient ou complète une fiche (S04) : identifiants normalisés, source, projet vendeur par demande, accord du site avec sa preuve, exclusion pour « Perdu ». Reprise relançable : la relancer ne crée ni ne double rien. Un rapport sans donnée personnelle : fiches créées, complétées, réunies, écartées.
@@ -107,7 +107,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Attend : rien.
 
 ### I03 · Liste d'exclusion et contacts des outils
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : I02
 - Cahier : Feuille de route, novembre 2026 ; R02.
 - Objectif : reprendre par fichiers CSV la liste d'exclusion de Shawez et les contacts de GoHighLevel et ManyChat, avec leurs désinscriptions (« ne pas déranger », désabonné) qui deviennent des exclusions sur tous les canaux. Format des colonnes documenté pour que Shawez sache quoi exporter.
