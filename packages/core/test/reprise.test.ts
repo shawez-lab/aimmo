@@ -223,6 +223,26 @@ describeWithSqlite('reprise des contacts du site dans la fiche client', () => {
     for (const id of [mine.id, theirs.id]) {
       expect((await w.unique.view(id)).exclusions.map((e) => e.reason)).toEqual(['refused']);
     }
+    // Relancer ne change rien, même avec des fiches restées à part.
+    const before = snapshot(w.raw);
+    await w.reprise.run(
+      reading([contact('site:compte:7', { emails: ['lou@example.org'], phones: ['0610009999'], requests: [request('E-7', { status: 'close' })] })]),
+    );
+    expect(snapshot(w.raw)).toBe(before);
+  });
+
+  it('chaque fiche reprise a sa source, même un compte sans demande, et la relance n\'en ajoute pas', async () => {
+    const { contacts } = fifty();
+    const all = [...contacts, contact('site:compte:99', { emails: ['sans.demande@example.org'] })];
+    await w.reprise.run(reading(all));
+    for (const id of await roots(w)) {
+      const view = await w.unique.view(id);
+      expect(view.sources.some((s) => s.channel === 'site')).toBe(true);
+    }
+    const count = (): number => Number((w.raw.prepare('SELECT count(*) AS n FROM sources').get() as { n: number }).n);
+    const before = count();
+    await w.reprise.run(reading(all));
+    expect(count()).toBe(before);
   });
 
   it('un contact sans coordonnées garde sa fiche, et la relance ne la double pas', async () => {

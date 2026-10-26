@@ -178,12 +178,14 @@ export class RepriseSite {
     if (keys.length > 0) await this.claimKeys(roots[0] as Person, keys, at);
 
     // 2. Une seule fiche par personne : réunir, sauf si un autre agent suit une des fiches.
-    const { target, apart } = await this.mergeAll(roots);
-    if (roots.length > 1) changed = true;
+    const { target, apart, merged } = await this.mergeAll(roots);
+    // Seule une fusion vraiment écrite compte : des fiches restées à part ne changent rien à la relance.
+    if (merged > 0) changed = true;
     if (apart.length > 0) outcome = 'apart';
 
     // 3. Compléter : identifiants, nom, source.
     if (await this.complete(target, identifiers, contact)) changed = true;
+    if (await this.addContactSource(target, contact)) changed = true;
 
     // 4. Un projet par demande d'estimation, avec son accord et, pour « Perdu », l'exclusion.
     const exclusionsBefore = report.exclusions;
@@ -221,6 +223,22 @@ export class RepriseSite {
       );
     }
     return changed;
+  }
+
+  /** La source de la fiche : le site, une seule fois par contact repris, même sans demande d'estimation. */
+  private async addContactSource(target: Person, contact: SiteContact): Promise<boolean> {
+    const key = `${contact.origin}:source`;
+    if ((await this.importTarget(key)) !== null) return false;
+    const source = await this.store.addSource({
+      networkId: target.network_id,
+      agentId: target.agent_id,
+      personId: target.id,
+      channel: 'site',
+      detail: contact.origin.startsWith('site:compte:') ? 'reprise espace estimation · compte' : 'reprise espace estimation · demande',
+      occurredAt: new Date(contact.createdAt),
+    });
+    // Une autre reprise a pris la clé entre-temps : cette source en trop reste, rien n'est effacé [R17].
+    return this.claimImport(key, 'source', source.id, this.now()).then(() => true);
   }
 
   private async importRequest(
@@ -317,7 +335,7 @@ export class RepriseSite {
   }
 
   /** Une seule instruction : la première reprise qui prend la clé la garde. Rend vrai si elle vient d'être prise. */
-  private async claimImport(key: string, kind: 'person' | 'project', targetId: string, at: Date): Promise<boolean> {
+  private async claimImport(key: string, kind: 'person' | 'project' | 'source', targetId: string, at: Date): Promise<boolean> {
     const { changes } = await this.db.run(
       `INSERT INTO import_keys (network_id, key, target_kind, target_id, created_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT (network_id, key) DO NOTHING`,
@@ -355,13 +373,15 @@ export class RepriseSite {
     return roots.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
   }
 
-  private async mergeAll(roots: readonly Person[]): Promise<{ target: Person; apart: Person[] }> {
+  private async mergeAll(roots: readonly Person[]): Promise<{ target: Person; apart: Person[]; merged: number }> {
     const [first, ...others] = roots;
     if (!first) throw new Error('Reprise : aucune fiche.');
     const apart: Person[] = [];
+    let merged = 0;
     for (const other of others) {
       try {
         await this.fiche.merge({ survivorId: first.id, mergedId: other.id, reason: 'identifiant commun à la reprise du site' });
+        merged += 1;
       } catch (error) {
         if ((await this.fiche.rootOf(other.id)) === (await this.fiche.rootOf(first.id))) continue;
         if (error instanceof Error && error.message.includes('deux agents')) apart.push(other);
@@ -371,7 +391,7 @@ export class RepriseSite {
     const rootId = await this.fiche.rootOf(first.id);
     const target = rootId === first.id ? first : await this.store.getPerson(rootId);
     if (!target) throw new Error(`Fiche inconnue : ${rootId}`);
-    return { target, apart };
+    return { target, apart, merged };
   }
 
   /** Ajoute les identifiants que la fiche n'a pas, le prénom et le nom s'ils manquent. Rien n'est remplacé. */
