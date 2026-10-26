@@ -73,6 +73,19 @@ const KIND_EN: Record<PropertyKind, string> = {
   business: 'the business',
 };
 
+const EMAIL_IN_TEXT = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const PHONE_IN_TEXT = /(?:\+|00)?\d(?:[ ().-]*\d){7,14}/g;
+const STREET_IN_TEXT =
+  /\b\d{1,4}\s?(?:bis|ter)?,?\s+(?:rue|avenue|av\.?|boulevard|bd|place|chemin|all[ée]e|impasse|route|quai|cours|square|passage|faubourg|rond-point|r[ée]sidence|lotissement)\b[^,\n]*/gi;
+
+/**
+ * Le message reçu sans ses coordonnées : un mail de portail ou une signature en portent souvent. L'IA n'en a pas
+ * besoin pour répondre [R15].
+ */
+export function withoutContactDetails(text: string): string {
+  return text.replace(EMAIL_IN_TEXT, '[mail]').replace(STREET_IN_TEXT, '[adresse]').replace(PHONE_IN_TEXT, '[téléphone]');
+}
+
 const THANKS = /^(?:merci|thanks?|thank you|super merci|ok merci|merci beaucoup|parfait merci|top merci)\b[\s!.]*(?:beaucoup|bien|a vous|a toi|bonne journee|bonne soiree)?[\s!.]*$/;
 const VALUATION = /\b(?:estim|vendre|vend|valeur|combien vaut|avis de valeur|sell|valuation)/;
 const ENGLISH = /\b(?:hello|hi|is it|still available|price|please|thanks|could|would|visit|viewing|interested)\b/;
@@ -125,7 +138,7 @@ export function fallbackTexts(brief: ReplyBrief): string[] {
   const hello =
     language === 'en' ? `Hello${firstName ? ` ${firstName}` : ''},` : informal ? 'Hello !' : `Bonjour${firstName ? ` ${firstName}` : ''},`;
   if (nextStep === null) {
-    return [language === 'en' ? 'You are welcome, have a nice day!' : informal ? 'Avec plaisir, belle journée !' : `Avec plaisir${firstName ? ` ${firstName}` : ''}, belle journée !`];
+    return [language === 'en' ? `You are welcome${firstName ? ` ${firstName}` : ''}, have a nice day!` : informal ? 'Avec plaisir, belle journée !' : `Avec plaisir${firstName ? ` ${firstName}` : ''}, belle journée !`];
   }
   const ask = question(nextStep, informal, language);
   if (!property) {
@@ -151,7 +164,8 @@ export function fallbackTexts(brief: ReplyBrief): string[] {
       : property.status === 'under_offer'
         ? language === 'en' ? 'already has an offer, but visits are still possible' : 'a déjà une offre, mais on peut encore le visiter'
         : language === 'en' ? 'is no longer for sale' : 'n’est plus en vente';
-  const Cap = (t: string): string => t.charAt(0).toUpperCase() + t.slice(1);
+  // Après « Bonjour Camille, » la phrase continue en minuscule ; après « Hello ! », elle commence par une majuscule.
+  const Cap = (t: string): string => (hello.endsWith(',') ? t : t.charAt(0).toUpperCase() + t.slice(1));
   const base = `${Cap(what)}${where}${quarter} ${status}${facts.length > 0 ? ` : ${facts.join(', ')}` : ''}.`;
   const withHighlight = property.highlight ? `${base.slice(0, -1)}, ${property.highlight.replace(/[.!]+$/, '')}.` : null;
   const plainBase = `${Cap(what)}${where} ${status}${facts.length > 0 ? ` : ${facts.join(', ')}` : ''}.`;
@@ -207,7 +221,10 @@ export class PremiereReponse {
       subject: row.subject,
       text: row.body,
     });
-    const property = recognition.status === 'recognized' ? recognition.property : null;
+    const recognized = recognition.status === 'recognized' ? recognition.property : null;
+    // Un bien déjà envoyé à la personne ne repart pas [R05] : la réponse ne le cite plus et propose le rappel,
+    // pour ne jamais laisser la personne sans réponse [R12].
+    const property = recognized && !(await this.alreadySent(view.members.map((p) => p.id), recognized.id)) ? recognized : null;
     const facts = property ? await this.facts(property) : null;
     const firstName = view.members.map((p) => p.first_name).find((n) => n) ?? null;
     const brief: ReplyBrief = {
@@ -215,7 +232,7 @@ export class PremiereReponse {
       language: replyLanguage(view.person, row.body),
       informal: channel === 'instagram',
       firstName: channel === 'instagram' ? null : firstName,
-      received: row.body,
+      received: withoutContactDetails(row.body),
       property: facts,
       nextStep: nextStepFor(row.body, facts),
     };
@@ -236,6 +253,16 @@ export class PremiereReponse {
     };
     const result = await this.controle.send(order);
     return { inboundId, recognition: recognition.status, nextStep: brief.nextStep, result, skipped: null };
+  }
+
+  private async alreadySent(personIds: readonly string[], propertyId: string): Promise<boolean> {
+    const row = await this.db.first<{ n: number }>(
+      `SELECT count(*) AS n FROM message_subjects s
+       WHERE s.person_id IN (${personIds.map(() => '?').join(', ')}) AND s.subject = ?
+         AND NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = s.message_id AND l.outcome = 'failed')`,
+      [...personIds, `bien:${propertyId}`],
+    );
+    return Number(row?.n ?? 0) > 0;
   }
 
   private async facts(property: Property): Promise<PropertyFacts> {

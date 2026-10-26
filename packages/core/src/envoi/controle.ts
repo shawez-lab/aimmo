@@ -232,7 +232,10 @@ export class ControleEnvois {
         [...ids, ...subjects],
       );
       if (dup) {
-        return log('refused', 'R05', dup.subject.startsWith('bien:') ? 'Ce bien a déjà été envoyé à la personne.' : 'Ce sujet a déjà été envoyé à la personne.');
+        return log('refused', 'R05', dup.subject.startsWith('bien:') ? 'Ce bien a déjà été envoyé à la personne.' : 'Ce sujet a déjà été envoyé à la personne.', {
+          // Une réponse qui ne peut pas partir n'est jamais un silence : l'agent est prévenu [R12].
+          needsHuman: order.kind === 'reply',
+        });
       }
     }
 

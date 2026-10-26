@@ -204,7 +204,28 @@ describeWithSqlite('C04 · première réponse', () => {
   it('langue du client : une question en anglais reçoit une réponse en anglais', async () => {
     const t = await setup();
     await t.run(msg('email', 'email', [mail('sam.en@example.org')], 'Hello, is it still available? Ref 383', { sender: { channelId: null, name: 'Sam', identifiers: [mail('sam.en@example.org')] } }));
-    expect(t.sent('email')[0]).toMatch(/Hello Sam, The property in Dijon/);
+    expect(t.sent('email')[0]).toMatch(/Hello Sam, the property in Dijon/);
+  });
+
+  it('[R15] l\'IA ne reçoit ni mail, ni téléphone, ni adresse du message', async () => {
+    const writer = new FakeWriter(async () => 'Bonjour Camille, il est disponible. Souhaitez-vous le visiter ?');
+    const t = await setup(writer);
+    await t.run(
+      msg('email', 'email', [mail('camille.pii@example.org')], 'Bonjour, réf 383 dispo ? Camille, 06 12 34 56 78, camille.pii@example.org, 4 rue des Essais'),
+    );
+    const received = writer.briefs[0]!.received;
+    expect(received).not.toMatch(/06 12|example\.org|rue des Essais/);
+    expect(received).toContain('réf 383');
+  });
+
+  it('[R05] [R12] un second message sur un bien déjà envoyé reçoit une réponse, sans le bien', async () => {
+    const t = await setup();
+    await t.run(msg('instagram', 'comment', [ig('camille.deux')], 'Prix ?', { postRef: 'video-383' }));
+    const second = await t.run(msg('instagram', 'comment', [ig('camille.deux')], 'Il y a un garage ?', { postRef: 'video-383' }));
+    expect(second.result).toMatchObject({ status: 'sent' });
+    const body = t.sent('instagram')[1]!;
+    expect(numbersIn(body)).toEqual([]);
+    expect(t.sent('instagram')).toHaveLength(2);
   });
 
   it('[R02] une personne exclue ne reçoit rien, pas même la première réponse', async () => {
@@ -219,7 +240,8 @@ describeWithSqlite('C04 · première réponse', () => {
     for (const channel of ['instagram', 'facebook', 'whatsapp', 'email', 'sms'] as const) {
       for (const p of [property, null]) {
         for (const nextStep of ['visit', 'callback', 'valuation', null] as const) {
-          const brief: ReplyBrief = { channel, language: 'fr', informal: channel === 'instagram', firstName: channel === 'instagram' ? null : 'Camille', received: 'x', property: p, nextStep };
+          for (const language of ['fr', 'en'] as const) {
+          const brief: ReplyBrief = { channel, language, informal: channel === 'instagram', firstName: channel === 'instagram' ? null : 'Camille', received: 'x', property: p, nextStep };
           const [text] = fallbackTexts(brief);
           const problems = checkText(text!, {
             audience: 'client',
@@ -229,7 +251,8 @@ describeWithSqlite('C04 · première réponse', () => {
             figures: p ? [PRICE, SURFACE, 4, 'jardin de 300 m²'] : [],
             maxQuestions: nextStep === null ? 0 : 1,
           });
-          expect({ channel, nextStep, property: !!p, problems }).toEqual({ channel, nextStep, property: !!p, problems: [] });
+          expect({ channel, language, nextStep, property: !!p, problems }).toEqual({ channel, language, nextStep, property: !!p, problems: [] });
+          }
         }
       }
     }
