@@ -35,6 +35,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Cahier : Feuille de route, novembre 2026 ; Architecture technique, fiche client unique.
 - Objectif : normaliser les identifiants (téléphone au format international, mail en minuscules, comptes de réseaux), repérer les doublons, fusionner deux fiches en gardant tout l'historique, et pouvoir défaire une fusion.
 - Critères : sur un jeu inventé de 50 fiches avec doublons connus, 50 sur 50 bien regroupées ; une fusion se défait ; rien n'est effacé [R17].
+- Décidé (2026-10-26), lecture prudente : les noms ne rapprochent jamais deux fiches, seuls les identifiants normalisés le font ; deux fiches suivies par deux agents différents ne se fusionnent pas tant que la direction n'a pas attribué la personne ; une fusion relie les fiches sans déplacer aucune ligne, ce qui la rend exactement réversible.
 
 ### S05 · Exclusions, arrêts, accords et horaires
 - Statut : à faire

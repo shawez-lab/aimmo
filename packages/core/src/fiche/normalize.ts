@@ -45,13 +45,15 @@ export function normalizePhone(raw: string): string | null {
 
 /** Compte Instagram : sans @, sans adresse du site, en minuscules. */
 export function normalizeInstagram(raw: string): string | null {
-  const value = raw
-    .trim()
-    .replace(/^(https?:\/\/)?(www\.)?instagram\.com\//i, '')
-    .replace(/[/?#].*$/, '')
+  const value = stripProfileUrl(raw.trim(), /^(https?:\/\/)?(www\.)?instagram\.com\//i)
     .replace(/^@/, '')
     .toLowerCase();
   return /^[a-z0-9._]{1,30}$/.test(value) ? value : null;
+}
+
+/** Retire l'adresse du site et ce qui suit le nom du compte ; une valeur sans adresse reste telle quelle. */
+function stripProfileUrl(value: string, prefix: RegExp): string {
+  return prefix.test(value) ? value.replace(prefix, '').replace(/[/?#].*$/, '') : value;
 }
 
 /** Compte Facebook : numéro de profil, ou nom de page en minuscules, sans l'adresse du site. */
@@ -59,9 +61,7 @@ export function normalizeFacebook(raw: string): string | null {
   const trimmed = raw.trim();
   const byId = trimmed.match(/profile\.php\?id=(\d+)/i);
   if (byId?.[1]) return byId[1];
-  const value = trimmed
-    .replace(/^(https?:\/\/)?((www|m)\.)?(facebook|fb)\.com\//i, '')
-    .replace(/[/?#].*$/, '')
+  const value = stripProfileUrl(trimmed, /^(https?:\/\/)?((www|m)\.)?(facebook|fb)\.com\//i)
     .replace(/^@/, '')
     .toLowerCase();
   return /^[a-z0-9.]{1,50}$/.test(value) ? value : null;
