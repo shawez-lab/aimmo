@@ -14,7 +14,7 @@ import { DEFAULT_SEND_SETTINGS, type SendSettings } from '../envoi/decision.ts';
 import { plain } from '../envoi/texte.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import type { InboundRow, Reception } from '../reception/reception.ts';
-import type { FirstReplyOutcome, PremiereReponse } from './premiere-reponse.ts';
+import type { FirstReplyOutcome, PremiereReponse, SkipCode } from './premiere-reponse.ts';
 
 /** Un écho au texte identique à notre envoi, arrivé dans ce délai, est le nôtre. */
 const OWN_ECHO_WINDOW_MS = 10 * 60_000;
@@ -62,7 +62,7 @@ export interface ConversationState {
 
 export type RelayOutcome =
   | { status: 'replied' | 'not_sent'; conversationId: string; reply: FirstReplyOutcome }
-  | { status: 'skipped'; conversationId: string | null; reason: string }
+  | { status: 'skipped'; conversationId: string | null; reason: string; code?: SkipCode }
   | { status: 'handed_over' | 'silent'; conversationId: string; reason: string };
 
 /** Une réponse écrite par un humain dans l'application du canal, reçue en écho. */
@@ -125,7 +125,13 @@ export class ConversationRelais {
       };
     }
     const reply = await this.premiere.reply(inboundId);
-    if (reply.skipped !== null) return { status: 'skipped', conversationId, reason: reply.skipped };
+    if (reply.skipped !== null) {
+      // Un formulaire sans mail : personne ne peut lui répondre par écrit, l'agent doit rappeler [R12].
+      if (row.kind === 'form' && reply.skipCode === 'no_channel') {
+        await this.alert((await this.fiche.view(row.person_id)).person.id, conversationId, 'needs_reply');
+      }
+      return { status: 'skipped', conversationId, reason: reply.skipped, ...(reply.skipCode ? { code: reply.skipCode } : {}) };
+    }
     if (reply.result?.status === 'sent') return { status: 'replied', conversationId, reply };
     // Une réponse qui n'a pas pu partir n'est jamais un silence : l'agent est prévenu [R12].
     if (reply.result?.needsHuman || reply.result?.rule === 'R21' || reply.result?.rule === 'R22') {

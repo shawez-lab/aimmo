@@ -12,6 +12,7 @@ import { plain } from '../envoi/texte.ts';
 import type { InboundRow, Reception } from '../reception/reception.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 
+export type SkipCode = 'not_attached' | 'no_channel' | 'already_replied';
 export type NextStep = 'visit' | 'callback' | 'valuation';
 export type ReplyLanguage = 'fr' | 'en';
 
@@ -54,6 +55,8 @@ export interface FirstReplyOutcome {
   result: SendResult | null;
   /** Rien n'a été tenté : canal sans réponse automatique ici, ou message non rattaché. */
   skipped: string | null;
+  /** Le motif, en code : `not_attached`, `no_channel` ou `already_replied`. */
+  skipCode: SkipCode | null;
 }
 
 const KIND_FR: Record<PropertyKind, string> = {
@@ -202,17 +205,18 @@ export class PremiereReponse {
   /** Répond au message reçu, une fois rattaché à sa fiche (C02). Ne répond jamais deux fois au même message [R05]. */
   async reply(inboundId: string): Promise<FirstReplyOutcome> {
     const row = await this.reception.get(inboundId);
-    const skip = (reason: string, recognition: Recognition['status'] = 'unrecognized'): FirstReplyOutcome => ({
+    const skip = (code: SkipCode, reason: string, recognition: Recognition['status'] = 'unrecognized'): FirstReplyOutcome => ({
       inboundId,
       recognition,
       nextStep: null,
       result: null,
       skipped: reason,
+      skipCode: code,
     });
-    if (!row || row.kind === 'unreadable' || row.person_id === null) return skip('Message non rattaché à une fiche.');
+    if (!row || row.kind === 'unreadable' || row.person_id === null) return skip('not_attached', 'Message non rattaché à une fiche.');
     const view = await this.fiche.view(row.person_id);
     const channel = replyChannel(row, view.identifiers.some((i) => i.kind === 'email'));
-    if (!channel) return skip('Pas de réponse automatique sur ce canal ici.');
+    if (!channel) return skip('no_channel', 'Pas de réponse automatique sur ce canal ici.');
 
     const recognition = await this.biens.recognize(row.network_id, {
       postRef: row.post_ref,
@@ -267,7 +271,7 @@ export class PremiereReponse {
        ON CONFLICT (claim_key) DO NOTHING`,
       [inboundId, inboundId, claimId, new Date().toISOString()],
     );
-    if (changes !== 1) return skip('Ce message a déjà reçu sa réponse.', recognition.status);
+    if (changes !== 1) return skip('already_replied', 'Ce message a déjà reçu sa réponse.', recognition.status);
     let result: SendResult;
     try {
       result = await this.controle.send(order);
@@ -279,7 +283,7 @@ export class PremiereReponse {
     // Seule une réponse partie garde sa réservation : un refus ou une panne laissent réessayer plus tard,
     // et le contrôle central réexamine tout à chaque essai.
     if (result.status !== 'sent') await this.releaseClaim(claimId, result.status === 'failed' ? 'panne' : 'refus');
-    return { inboundId, recognition: recognition.status, nextStep: brief.nextStep, result, skipped: null };
+    return { inboundId, recognition: recognition.status, nextStep: brief.nextStep, result, skipped: null, skipCode: null };
   }
 
   /** Rend la réservation pour un nouvel essai, sans effacer sa ligne. */

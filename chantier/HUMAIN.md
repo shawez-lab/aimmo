@@ -20,5 +20,6 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H13 | Ouvrir un compte chez le fournisseur d'IA retenu et ranger sa clé dans les secrets du Worker AIMMO | Shawez | C04 réel, C09 | plus tard |
 | H14 | Créer une clé d'API AIMMO (32 caractères ou plus, gardée dans un coffre), et ranger son empreinte SHA-256 dans le secret `API_KEYS` du Worker `aimmo-api`, comme le décrit `docs/API.md` | Shawez | S11, premier appelant de l'API | signalé le 2026-10-26 |
 | H15 | Exporter en CSV la liste d'exclusion de Shawez, et les contacts de GoHighLevel et de ManyChat avec leurs désinscriptions, au format décrit dans `docs/REPRISE.md`, puis les déposer où I04 l'indiquera (jamais dans le dépôt) | Shawez | I03, I04 | signalé le 2026-10-26 |
+| H16 | À la mise en service de la captation par mail et formulaire (C09) : créer la règle de routage mail de Cloudflare vers le Worker `aimmo-api`, et ranger les variables `MAIL_NETWORK_ID`, `MAIL_FORWARD_TO`, `MAIL_OWN_ADDRESSES` et le secret `INTAKE_KEYS`, comme le décrit `docs/API.md` ; `MAIL_FORWARD_TO` ne doit jamais être une adresse routée vers le Worker | Shawez | C09 | plus tard |
 
 Quand une tâche à moins de trois places de la tête du plan attend une ligne « plus tard », la séance la marque « signalé le <date> » et la dit une fois dans « Besoin de toi ».

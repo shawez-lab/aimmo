@@ -8,6 +8,7 @@ import {
   SEND_KINDS,
   SqlJournalStore,
   appendEvent,
+  createCaptation,
   decideAccess,
   personSubject,
   verifyChain,
@@ -19,7 +20,7 @@ import {
   type SqlDatabase,
   type Viewer,
 } from '@aimmo/core';
-import { parseApiKeys, viewerFromRequest } from './auth.ts';
+import { intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } from './auth.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -35,6 +36,8 @@ export interface ApiConfig {
   apiKeys: string | undefined;
   /** Variable `MODE` : doit valoir « essai ». */
   mode: string | undefined;
+  /** Secret `INTAKE_KEYS` : clés qui ne peuvent que déposer un formulaire du site (voir auth.ts). */
+  intakeKeys?: string | undefined;
   now?: () => Date;
 }
 
@@ -218,6 +221,39 @@ async function verifyJournal(s: Services, viewer: Viewer): Promise<Response> {
 }
 
 /**
+ * Le formulaire « Être rappelé » du site, de bout en bout jusqu'à la réponse, en mode essai : la réponse est
+ * prête et écrite au journal, jamais envoyée. Une clé de dépôt ne lit rien : elle ne rend que des statuts.
+ */
+async function intakeForm(request: Request, config: ApiConfig, now: () => Date): Promise<Response> {
+  if (request.method !== 'POST') return failure(405, 'method_not_allowed', 'Méthode non admise.');
+  const keys = parseIntakeKeys(config.intakeKeys);
+  if (keys === null) return failure(503, 'keys_not_configured', 'Dépôt fermé : aucune clé configurée.');
+  const intake = await intakeFromRequest(request, keys);
+  if (intake === null) return failure(401, 'unauthorized', 'Clé absente ou refusée.');
+  const body = await readJson(request);
+  if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+  const journal = new SqlJournalStore(config.db);
+  try {
+    const { chaine } = createCaptation(config.db, journal, { now });
+    await chaine.receive(intake.networkId, 'site_form', body);
+    // Rien de plus : le sort du formulaire (personne exclue, déjà connue…) ne regarde pas le déposant [R02, R16].
+    return json(200, { ok: true, mode: TRIAL_MODE, sent: false, received: true });
+  } catch (error) {
+    await journalError(journal, 'intake:site_form', 'captation.formulaire', error, now);
+    return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+  }
+}
+
+/** Jamais d'erreur avalée : une ligne au journal, sans le détail qui pourrait porter une donnée [R13]. */
+export async function journalError(journal: JournalStore, actor: string, route: string, error: unknown, now: () => Date): Promise<void> {
+  try {
+    await appendEvent(journal, { type: 'api.erreur', actor, subject: null, data: { route, error: error instanceof Error ? error.name : 'unknown' } }, now);
+  } catch {
+    console.error('aimmo-api : erreur sans journal', route);
+  }
+}
+
+/**
  * Le point d'entrée de l'API du socle. Tout passe ici : clé, droits, journal.
  * Lecture prudente : sans clé valable, sans configuration ou hors mode essai, rien n'est lu.
  */
@@ -233,6 +269,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     if (request.method !== 'GET') return failure(405, 'method_not_allowed', 'Méthode non admise.');
     return json(200, { ok: true, version: AIMMO_VERSION, mode: TRIAL_MODE });
   }
+
+  if (path === '/captation/formulaire') return intakeForm(request, config, now);
 
   const keys = parseApiKeys(config.apiKeys);
   if (keys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
