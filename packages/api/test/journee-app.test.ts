@@ -196,3 +196,43 @@ describeWithSqlite('A02 · route /v1/rendez-vous/jour', () => {
     expect(journal.filter((e) => e.type === 'rdv.jour.lu')).toHaveLength(2);
   });
 });
+
+describe('A02 · réponse arrivée après la sortie', () => {
+  it('[R16] une réponse d’une session finie n’est jamais montrée, ni chez l’agent suivant', async () => {
+    const { els, listeners, document } = fakeDocument(pageIds(HTML));
+    const storage = new Map<string, string>([['aimmo.cle', KEY]]);
+    const held: Record<string, (r: Response) => void> = {};
+    let late = true;
+    runInNewContext(AGENT_APP_FILES['/app/app.js']!, {
+      document,
+      localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
+      fetch: (url: string) => {
+        if (url === '/v1/moi') return ME();
+        // La première session : les réponses sont retenues ; la suivante : réponses vides tout de suite.
+        if (late) return new Promise<Response>((resolve) => (held[url] = resolve));
+        return ok(url === '/v1/plan-du-jour' ? { ...PLAN, items: [], hiddenSinceFrozen: 0 } : url === '/v1/contacts-chauds' ? { slot: 'morning', contacts: [] } : { day: '2026-11-10', appointments: [] })();
+      },
+      navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
+    });
+    listeners.DOMContentLoaded!();
+    const tick = async () => {
+      for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+    };
+    await tick();
+    expect(Object.keys(held)).toHaveLength(3);
+    els.sortir!.listeners.click!({});
+    // L'agent suivant entre sur le même appareil.
+    late = false;
+    els.cle!.value = 'n'.repeat(40);
+    els['form-connexion']!.listeners.submit!({ preventDefault: () => undefined });
+    await tick();
+    expect(els.accueil!.hidden).toBe(false);
+    held['/v1/plan-du-jour']!(Response.json({ ok: true, data: PLAN }));
+    held['/v1/contacts-chauds']!(Response.json({ ok: true, data: HOT }));
+    held['/v1/rendez-vous/jour']!(Response.json({ ok: false }, { status: 403 }));
+    await tick();
+    expect([els.plan!, els.chauds!, els.rdv!].map((l) => l.children.length)).toEqual([0, 0, 0]);
+    expect(storage.get('aimmo.cle')).toBe('n'.repeat(40));
+    expect(els.accueil!.hidden).toBe(false);
+  });
+});

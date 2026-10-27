@@ -177,7 +177,9 @@ export const APP_JS = `'use strict';
     });
     return appointments.length === 0 ? 'Aucun rendez-vous aujourd’hui.' : null;
   }
-  function part(id, request, render) {
+  // Chaque entrée, sortie ou refus ouvre une nouvelle session : une réponse d'une session finie n'est jamais montrée.
+  var session = 0;
+  function part(id, request, render, mine) {
     var list = $(id);
     var state = $(id + '-etat');
     clear(list);
@@ -187,23 +189,26 @@ export const APP_JS = `'use strict';
       if (!r.ok) return { failed: true };
       return r.json().then(function (body) { return { body: body }; });
     }).then(function (res) {
+      if (mine !== session) return true;
       if (res.refused) return false;
       if (res.failed || !res.body || res.body.ok !== true) { state.textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return true; }
       var empty = render(list, res.body.data);
       state.textContent = empty || '';
       return true;
     }, function () {
+      if (mine !== session) return true;
       clear(list);
       state.textContent = 'Indisponible pour le moment. Réessayez plus tard.';
       return true;
     });
   }
-  function day(key) {
+  function day(key, mine) {
     return Promise.all([
-      part('plan', api('/v1/plan-du-jour', key), renderPlan),
-      part('chauds', api('/v1/contacts-chauds', key), renderHot),
-      part('rdv', api('/v1/rendez-vous/jour', key), renderAppointments),
+      part('plan', api('/v1/plan-du-jour', key), renderPlan, mine),
+      part('chauds', api('/v1/contacts-chauds', key), renderHot, mine),
+      part('rdv', api('/v1/rendez-vous/jour', key), renderAppointments, mine),
     ]).then(function (done) {
+      if (mine !== session) return;
       // Une clé refusée en cours de route : rien n'est gardé à l'écran ni sur l'appareil.
       if (done.indexOf(false) !== -1) { wipe(); forgetKey(); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); }
     });
@@ -219,6 +224,8 @@ export const APP_JS = `'use strict';
     return fetch(path, { headers: { authorization: 'Bearer ' + key }, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
   }
   function refuse(message) {
+    session += 1;
+    wipe();
     $('bonjour').textContent = '';
     $('erreur').textContent = message;
     $('erreur').hidden = false;
@@ -226,6 +233,9 @@ export const APP_JS = `'use strict';
     return false;
   }
   function enter(key) {
+    session += 1;
+    var mine = session;
+    wipe();
     show('attente');
     return api('/v1/moi', key).then(function (r) {
       // Clé refusée : elle est effacée de l'appareil. Une panne ou une erreur du serveur ne l'efface pas.
@@ -233,6 +243,8 @@ export const APP_JS = `'use strict';
       if (!r.ok) return { refused: false };
       return r.json().then(function (body) { return { body: body }; });
     }).then(function (res) {
+      // Une réponse d'une session finie (sortie, autre clé) ne touche plus à rien.
+      if (mine !== session) return false;
       var me = res.body && res.body.data;
       if (res.refused || (res.body && (!me || me.role !== 'agent'))) {
         forgetKey();
@@ -242,8 +254,9 @@ export const APP_JS = `'use strict';
       $('bonjour').textContent = me.firstName ? 'Bonjour ' + me.firstName : 'Bonjour';
       $('erreur').hidden = true;
       show('accueil');
-      return day(key).then(function () { return true; });
+      return day(key, mine).then(function () { return true; });
     }, function () {
+      if (mine !== session) return false;
       return refuse('Pas de réseau. Réessayez dans un moment.');
     });
   }
@@ -257,6 +270,7 @@ export const APP_JS = `'use strict';
       if (writeKey(key)) enter(key); else { $('erreur').textContent = 'Cet appareil ne peut pas garder la clé.'; $('erreur').hidden = false; }
     });
     $('sortir').addEventListener('click', function () {
+      session += 1;
       forgetKey();
       $('bonjour').textContent = '';
       wipe();
