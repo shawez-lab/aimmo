@@ -178,21 +178,12 @@ export class PlanDuJour {
       const ids = view.members.map((m) => m.id);
       const candidates = await this.candidatesOf(root, ids, at);
       if (candidates.length === 0) continue;
-      // Une personne exclue ou qui a demandé l'arrêt, sur n'importe quel canal, n'est jamais au plan [R36].
-      if (await this.excluded(ids, stamp)) {
-        removed.excluded += 1;
+      const eligibility = await this.eligibility(ids, at);
+      if (!eligibility.ok) {
+        removed[eligibility.reason] += 1;
         continue;
       }
-      // Un accord de recontact retiré l'emporte sur toute demande : la personne a dit non [R03, R36].
-      if (await this.withdrawn(ids, stamp)) {
-        removed.withdrawn += 1;
-        continue;
-      }
-      const basis = await this.basisOf(ids, at);
-      if (basis === null) {
-        removed.noBasis += 1;
-        continue;
-      }
+      const basis = eligibility.basis;
       // Une ligne par personne, sous sa raison la plus forte.
       candidates.sort((a, b) => KIND_STRENGTH[a.kind] - KIND_STRENGTH[b.kind] || comparePlanCandidates(a, b));
       const best = candidates[0] as Candidate;
@@ -221,6 +212,19 @@ export class PlanDuJour {
         })),
       },
     };
+  }
+
+  /**
+   * Peut-elle figurer au plan maintenant ? Une personne exclue ou qui a demandé l'arrêt, sur n'importe quel canal,
+   * jamais [R36] ; un accord de recontact retiré l'emporte sur toute demande, la personne a dit non [R03, R36] ;
+   * sinon il faut une base légale. Sert au calcul et à chaque lecture d'un plan figé.
+   */
+  async eligibility(ids: readonly string[], at: Date): Promise<{ ok: true; basis: LegalBasis } | { ok: false; reason: 'excluded' | 'withdrawn' | 'noBasis' }> {
+    const stamp = at.toISOString();
+    if (await this.excluded(ids, stamp)) return { ok: false, reason: 'excluded' };
+    if (await this.withdrawn(ids, stamp)) return { ok: false, reason: 'withdrawn' };
+    const basis = await this.basisOf(ids, at);
+    return basis === null ? { ok: false, reason: 'noBasis' } : { ok: true, basis };
   }
 
   /** Les raisons d'une personne de figurer au plan, avant la base légale et les exclusions. */

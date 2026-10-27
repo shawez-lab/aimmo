@@ -25,8 +25,17 @@ export interface PlansOptions {
   settings?: PlanSettings;
 }
 
+/**
+ * Le plan figé tel qu'il est lu : les lignes que l'agent peut encore voir maintenant. Une personne rattachée depuis à
+ * un autre agent [R16], exclue, arrêtée ou dont l'accord a été retiré depuis 7 h 30 [R36] n'y est plus ; elle est
+ * seulement comptée, sans donnée personnelle. Le plan rangé, lui, ne change pas.
+ */
+export interface FrozenPlan extends DailyPlan {
+  hiddenSinceFrozen: number;
+}
+
 export type FrozenPlanRead =
-  | { ok: true; value: DailyPlan | null }
+  | { ok: true; value: FrozenPlan | null }
   | { ok: false; rule: 'R16'; code: 'not_agent' | 'agent_inactive' };
 
 interface DailyPlanRow {
@@ -41,6 +50,7 @@ export class PlansDuJour {
   private readonly now: () => Date;
   private readonly plan: PlanDuJour;
   private readonly acces: Acces;
+  private readonly unique: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -51,6 +61,7 @@ export class PlansDuJour {
     const store = new FicheClient(db, { now: this.now });
     const unique = new FicheUnique(db, store, { now: this.now });
     this.acces = new Acces(db, store, unique, journal, { now: this.now });
+    this.unique = unique;
     this.plan = new PlanDuJour(db, unique, { now: this.now, ...(options.settings ? { settings: options.settings } : {}) });
   }
 
@@ -116,14 +127,30 @@ export class PlansDuJour {
     const row = await this.db.first<DailyPlanRow>('SELECT * FROM daily_plans WHERE agent_id = ? AND day = ? AND network_id = ?', [viewer.userId, day, viewer.networkId]);
     await appendEvent(this.journal, { type: 'plan_du_jour.lu', actor, subject: `agent:${viewer.userId}`, data: { rule: 'R16', day, ready: row !== null } }, this.now);
     if (!row) return { ok: true, value: null };
+    // Les droits et l'éligibilité de maintenant, pas ceux de 7 h 30.
+    const visible = await this.acces.listPersons(viewer);
+    if (!visible.ok) return refuse(visible.code === 'agent_inactive' ? 'agent_inactive' : 'not_agent');
+    const roots = new Set<string>();
+    for (const person of visible.value) roots.add(await this.unique.rootOf(person.id));
+    const at = this.now();
+    const stored = JSON.parse(row.items) as DailyPlan['items'];
+    const items: DailyPlan['items'] = [];
+    for (const item of stored) {
+      const root = await this.unique.rootOf(item.personId);
+      if (!roots.has(root)) continue;
+      const ids = await this.unique.membersOf(root);
+      if (!(await this.plan.eligibility(ids, at)).ok) continue;
+      items.push(item);
+    }
     return {
       ok: true,
       value: {
         agentId: row.agent_id,
         day: row.day,
         computedAt: row.computed_at,
-        items: JSON.parse(row.items) as DailyPlan['items'],
+        items,
         removed: JSON.parse(row.removed) as DailyPlan['removed'],
+        hiddenSinceFrozen: stored.length - items.length,
       },
     };
   }

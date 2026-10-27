@@ -108,6 +108,32 @@ describeWithSqlite('G02 · plan du jour à 7 h 30, par le planificateur', () => 
     expect(await t.plans.read({ role: 'agent', userId: t.alex.id, networkId: 'autre-reseau' })).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
   });
 
+  it('[R16, R36] à la lecture, une fiche rattachée à un autre agent, exclue, arrêtée ou dont l’accord est retiré depuis 7 h 30 n’est plus rendue', async () => {
+    const t = await setup();
+    const lea = await t.person(t.alex.id, 'Léa', WINTER_7H30 - DAY);
+    const noe = await t.person(t.alex.id, 'Noé', WINTER_7H30 - DAY);
+    const ugo = await t.person(t.alex.id, 'Ugo', WINTER_7H30 - DAY);
+    const zoe = await t.person(t.alex.id, 'Zoé', WINTER_7H30 - DAY);
+    const consent = await t.store.addConsent({ networkId: t.network.id, personId: ugo, purpose: 'valuation_follow_up', channel: 'email', proof: 'case cochée (test)', givenAt: new Date(WINTER_7H30 - DAY) });
+    t.setClock(WINTER_7H30);
+    await t.plans.freezeAll();
+    const before = await t.plans.read(t.as('agent', t.alex.id));
+    expect(before.ok && before.value?.items).toHaveLength(4);
+    t.setClock(WINTER_7H30 + 3_600_000);
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, lea]);
+    await t.store.addExclusion({ networkId: t.network.id, personId: noe, reason: 'stop', channel: 'sms', notedAt: new Date(WINTER_7H30 + 1000) });
+    await t.store.withdrawConsent(consent.id, new Date(WINTER_7H30 + 1000));
+    const after = await t.plans.read(t.as('agent', t.alex.id));
+    expect(after.ok && after.value?.items.map((i) => i.personId)).toEqual([zoe]);
+    expect(after.ok && after.value?.hiddenSinceFrozen).toBe(3);
+    // Le plan rangé, lui, n'a pas changé.
+    const row = await t.db.first<{ items: string }>('SELECT items FROM daily_plans WHERE agent_id = ?', [t.alex.id]);
+    expect((JSON.parse(row!.items) as unknown[]).length).toBe(4);
+    // Le nouvel agent ne reçoit pas le plan de l'ancien.
+    const sam = await t.plans.read(t.as('agent', t.sam.id));
+    expect(sam.ok && sam.value?.items).toEqual([]);
+  });
+
   it('[R13] le journal note le passage et les lectures sans donnée personnelle ; aucun envoi', async () => {
     const t = await setup();
     await t.person(t.alex.id, 'Léa', WINTER_7H30 - DAY);
