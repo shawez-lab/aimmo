@@ -87,7 +87,8 @@ export class EstimationEnLigne {
     let unknown = 0;
     for (const sale of around) {
       const detail = await this.sales.detail(sale.id);
-      if (!detail) unknown++;
+      // Sans commune lisible, la vente ne peut être ni gardée ni écartée sûrement : c'est un problème de données.
+      if (!detail || detail.town.trim() === '') unknown++;
       else if (sameTown(detail.town, place.town)) inTown.push(sale);
     }
     // Une partie des ventes illisible : la fourchette serait faussée, mieux vaut ne rien dire que dire faux.

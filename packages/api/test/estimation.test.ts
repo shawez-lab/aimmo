@@ -169,6 +169,13 @@ describeWithSqlite('E05 · estimation en ligne du site', () => {
     malformed.set(`t/${tile}.json`, JSON.stringify(rows));
     const cfg2 = { ...w.config, estimation: { geocoder: w.geocoder, sales: new DvfSiteSales(async (p) => malformed.get(p) ?? null) } };
     expect((await w.call(w.ask({ visitorId: 'visiteur-essai-0000000023' }), KEY_EST, cfg2)).body).toMatchObject({ data: null, reason: 'donnees_absentes' });
+    // Un détail sans commune lisible compte aussi.
+    const noTown = dvfFiles();
+    const lines = noTown.get(`d/${tile}.txt`)!.split('\n');
+    lines[5] = '[]';
+    noTown.set(`d/${tile}.txt`, lines.join('\n'));
+    const cfg3 = { ...w.config, estimation: { geocoder: w.geocoder, sales: new DvfSiteSales(async (p) => noTown.get(p) ?? null) } };
+    expect((await w.call(w.ask({ visitorId: 'visiteur-essai-0000000024' }), KEY_EST, cfg3)).body).toMatchObject({ data: null, reason: 'donnees_absentes' });
   });
 
   it('clé `site_estimate` seulement ; sans données branchées ou hors essai, fermé', async () => {
