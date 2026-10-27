@@ -74,3 +74,21 @@ AIMMO_ESTIMATIONS=/chemin/hors/du/depot/biens.csv AIMMO_DVF=https://<adresse des
 `AIMMO_DVF` est l'adresse https des fichiers DVF publics du site (la même que `DVF_BASE_URL`), ou un dossier local qui contient `index.json`, `t/` et `d/`.
 
 La mesure affiche le nombre de biens mesurés, l'écart médian, le nombre d'estimations tombées dans la fourchette, puis, par **numéro de ligne**, l'écart et son explication (ventes retenues, rayon, ajustements, marge, position de l'estimation de l'agent), sans recopier les coordonnées. Elle échoue sous 20 biens mesurés ou à 10 % d'écart médian et plus. Sans le fichier, ce test est sauté.
+
+# Mandat signé en moins de 10 minutes (M06, D09)
+
+Le critère de M06 : un mandat test signé en moins de 10 minutes à partir de l'estimation, et numéroté au registre.
+
+Le parcours de test tourne à chaque vérification, sur une horloge simulée et des données inventées :
+
+```
+npx vitest run packages/core/test/parcours-mandat.test.ts
+```
+
+Il affiche le temps passé par le système à chaque étape (génération, contrôle, signature) et le total simulé.
+
+Pour la mesure réelle avec Shawez, sur un vrai rendez-vous d'estimation, une fois le registre de l'agence réglé (H23) et les modèles validés (H08) :
+
+1. Avant le rendez-vous : le modèle de mandat est validé, le barème et le registre sont réglés.
+2. Au rendez-vous : l'agent valide l'avis de valeur, voit la pièce d'identité du vendeur et l'enregistre (`POST /v1/fiches/<id>/identite`, sans numéro ni copie), génère le mandat (`POST /v1/documents`), le contrôle (`POST /v1/documents/<id>/controle`), le fait signer sur papier, puis l'enregistre avec la référence du scan (`POST /v1/documents/<id>/signature-papier`).
+3. Après : la direction lit la chronologie (`GET /v1/mandats/<id>/chronologie`). `totalSeconds` est le temps de la validation de l'avis au numéro ; `underTarget` dit s'il est sous 10 minutes. La chronologie ne porte que des instants et des durées, aucune donnée personnelle.

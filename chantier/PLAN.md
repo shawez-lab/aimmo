@@ -610,7 +610,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H24, H05.
 
 ### D09 · Mesure : mandat signé en moins de 10 minutes
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : D04, E04
 - Cahier : M06, critère « un mandat test signé en moins de 10 minutes à partir de l'estimation, et numéroté au registre ».
 - Objectif : un parcours de test, de l'avis de valeur au mandat numéroté, sur une horloge simulée et des données inventées, avec le temps de chaque étape ; la marche à suivre pour le mesurer avec Shawez sur un vrai rendez-vous.
