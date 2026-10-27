@@ -14,6 +14,7 @@ import { decideAccess, type Viewer } from '../acces/droits.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { personSubject } from '../acces/acces.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { localDay } from '../mandats/plan-du-jour.ts';
@@ -92,6 +93,9 @@ export class JourneeRendezVous {
     );
 
     const appointments: DayAppointment[] = [];
+    // Chaque fiche dont une donnée est rendue (prénom, brief) : écrite au journal avant d'être rendue, avec ses fiches
+    // réunies, sans nom ni contenu [R16, R13].
+    const reads: { root: string; members: string[]; appointment: string; brief: boolean }[] = [];
     for (const row of rows) {
       const ids = await this.unique.membersOf(row.person_id);
       const members = await this.db.all<{ agent_id: string | null; network_id: string }>(`SELECT agent_id, network_id FROM persons WHERE id IN (${placeholders(ids.length)})`, ids);
@@ -127,7 +131,20 @@ export class JourneeRendezVous {
           else brief = JSON.parse(stored.content) as Brief;
         }
       }
+      if (allowed) reads.push({ root: await this.unique.rootOf(row.person_id), members: ids, appointment: row.id, brief: brief !== null });
       appointments.push({ id: row.id, kind: row.kind, start: row.start_at, end: row.end_at, status: row.status, firstName, brief, briefMissing });
+    }
+    for (const read of reads) {
+      await appendEvent(
+        this.journal,
+        {
+          type: 'fiche.lue',
+          actor,
+          subject: personSubject(read.root),
+          data: { rule: 'R16', role: 'agent', via: 'rendez_vous.jour', appointment: `appointment:${read.appointment}`, brief: read.brief ? 1 : 0, members: read.members.map((m) => personSubject(m)) },
+        },
+        this.now,
+      );
     }
     await appendEvent(
       this.journal,

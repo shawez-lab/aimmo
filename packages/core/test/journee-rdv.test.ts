@@ -110,6 +110,11 @@ describeWithSqlite('A02 · rendez-vous du jour de l’agent', () => {
     // [R13] le journal ne porte que des nombres, aucune donnée du client.
     for (const e of events) expect(e.data).not.toMatch(/Léa|Exemple/);
     expect(JSON.parse(events[0]!.data)).toEqual({ rule: 'R16', day: '2026-11-10', appointments: 1, briefs: 1 });
+    // [R16] la fiche dont le prénom et le brief sont rendus est écrite au journal, à son nom de fiche, avant d'être rendue.
+    const reads = await w.db.all<{ seq: number; subject: string; data: string }>(`SELECT seq, subject, data FROM journal WHERE type = 'fiche.lue' ORDER BY seq`);
+    expect(reads.map((e) => e.subject)).toEqual([`person:${lea.id}`]);
+    expect(JSON.parse(reads[0]!.data)).toEqual({ rule: 'R16', role: 'agent', via: 'rendez_vous.jour', appointment: `appointment:${a.appointment.id}`, brief: 1, members: [`person:${lea.id}`] });
+    expect(reads[0]!.data).not.toMatch(/Léa|Exemple/);
   });
 
   it('[R16] une fiche passée à un autre agent ne montre ni prénom ni brief ; une fusion après le brief le cache', async () => {
@@ -121,6 +126,8 @@ describeWithSqlite('A02 · rendez-vous du jour de l’agent', () => {
     await w.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [w.lise.id, lea.id]);
     const r = await w.journee.read(w.asPaul);
     expect(r.ok && r.value.appointments).toEqual([expect.objectContaining({ id: a.appointment.id, firstName: null, brief: null, briefMissing: 'no_access' })]);
+    // Rien de la fiche n'est rendu : aucune lecture de fiche au journal pour cette consultation.
+    expect(await w.db.all(`SELECT seq FROM journal WHERE type = 'fiche.lue'`)).toEqual([]);
     await w.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [w.paul.id, lea.id]);
 
     // Une autre fiche de Paul fusionnée dans celle de Léa après le brief : le brief rangé ne la connaît pas.
