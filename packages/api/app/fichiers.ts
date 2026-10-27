@@ -46,6 +46,11 @@ export const INDEX_HTML = `<!doctype html>
 <p id="rdv-etat" class="etat"></p>
 <ul id="rdv" class="liste"></ul>
 </section>
+<section class="bloc" aria-labelledby="titre-biens">
+<h3 id="titre-biens">Mes biens à mettre en vente</h3>
+<p id="biens-etat" class="etat"></p>
+<ul id="biens" class="liste"></ul>
+</section>
 <section class="bloc" aria-labelledby="titre-semaine">
 <h3 id="titre-semaine">Ma semaine</h3>
 <p id="semaine-etat" class="etat"></p>
@@ -71,6 +76,12 @@ export const INDEX_HTML = `<!doctype html>
 <h2 id="bien-titre"></h2>
 <p id="bien-etat" class="etat" role="status"></p>
 <div id="bien-corps"></div>
+</section>
+<section id="vente" hidden>
+<button id="vente-retour" type="button" class="retour">Retour à ma journée</button>
+<h2 id="vente-titre"></h2>
+<p id="vente-etat" class="etat" role="status"></p>
+<div id="vente-corps"></div>
 </section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
@@ -386,6 +397,7 @@ export const APP_JS = `'use strict';
         return part('semaine', api('/v1/usage/matin', key), renderWeek, mine);
       }),
       part('chauds', api('/v1/contacts-chauds', key), renderHot, mine),
+      part('biens', api('/v1/annonces', key), renderBiens, mine),
       part('rdv', api('/v1/rendez-vous/jour', key), renderAppointments, mine),
     ]).then(function (done) {
       if (mine !== session) return;
@@ -394,7 +406,7 @@ export const APP_JS = `'use strict';
     });
   }
   function wipe() {
-    ['plan', 'chauds', 'rdv', 'semaine'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
+    ['plan', 'chauds', 'rdv', 'semaine', 'biens'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
     wipeFiche();
     wipeM08();
   }
@@ -755,12 +767,128 @@ export const APP_JS = `'use strict';
       return true;
     });
   }
+  /* ---------- M07 : l'écran « Mettre en vente » (P10). ---------- */
+  var LISTING_STATES = { en_vente: 'en vente', sous_offre: 'sous offre', vendu: 'vendu', retiree: 'retirée de la vente' };
+  function renderBiens(list, data) {
+    var items = Array.isArray(data) ? data : [];
+    items.forEach(function (b) {
+      if (!ID.test(b.id)) return;
+      var li = el('li');
+      li.appendChild(el('strong', b.reference + (b.city ? ' · ' + b.city : '')));
+      li.appendChild(el('p', b.state ? 'Annonce ' + (LISTING_STATES[b.state] || 'publiée') + '.' : 'Pas encore publiée.', 'doux'));
+      li.appendChild(button(b.state ? 'Voir l’annonce' : 'Mettre en vente', function () { openVente(b.id, b.reference); }));
+      list.appendChild(li);
+    });
+    return items.length === 0 ? 'Aucun bien à mettre en vente.' : null;
+  }
+  var MENTIONS = { prix: 'Prix et honoraires', energie: 'Performance énergétique', copropriete: 'Copropriété', risques: 'Risques du terrain', carte: 'Carte professionnelle' };
+  var MISSING_MENTION = {
+    pas_de_mandat: 'aucun mandat signé', prix_inconnu: 'prix du mandat inconnu', honoraires_inconnus: 'honoraires inconnus', pas_de_diagnostic: 'diagnostic énergétique absent',
+    copropriete_inconnue: 'copropriété non renseignée', risques_inconnus: 'état des risques absent', carte_inconnue: 'numéro de carte du réseau non réglé', type_de_bien_non_pris_en_charge: 'type de bien pas encore pris en charge',
+  };
+  var FIELDS = {
+    kind: 'type de bien', city: 'commune', postalCode: 'code postal', surfaceM2: 'surface', rooms: 'pièces', bedrooms: 'chambres', floor: 'étage', floorsTotal: 'étages de l’immeuble', buildYear: 'année de construction',
+    heating: 'chauffage', outdoor: 'extérieur', landM2: 'terrain', parkingSpaces: 'stationnement', elevator: 'ascenseur', energyClass: 'classe énergie', climateClass: 'classe climat',
+  };
+  var SENTENCE_PROBLEMS = { nombre_sans_source: 'nombre absent de la fiche', fait_sans_source: 'fait absent de la fiche', adresse: 'situe le bien trop précisément', critere_discriminant: 'critère discriminant', mot_interdit: 'mot interdit' };
+  var CHANNEL_NAMES = { site: 'site', reseaux: 'réseaux sociaux', google: 'fiche Google', portails: 'portails' };
+  var PUSH = { publiee: 'publiée', en_attente: 'en attente', echec: 'en échec, reprise au passage suivant' };
+  var LISTING_REFUSALS = {
+    not_latest_draft: 'Une version plus récente existe : validez la dernière.',
+    stale_sheet: 'La fiche du bien a changé depuis ce brouillon : rédigez de nouveau.',
+    already_validated: 'Cette annonce est déjà validée.',
+    mentions_incomplete: 'Il manque des mentions obligatoires : complétez la fiche du bien.',
+    refused_text: 'Une phrase n’est pas reliée à la fiche : corrigez-la.',
+    busy: 'Une rédaction est déjà en cours : patientez un instant.',
+  };
+  var currentVente = null;
+  function price(n) { try { return Number(n).toLocaleString('fr-FR') + ' €'; } catch (e) { return String(n) + ' €'; } }
+  function openVente(propertyId, reference) {
+    if (!ID.test(propertyId)) return Promise.resolve(false);
+    currentVente = { id: propertyId, reference: reference };
+    clear($('vente-corps'));
+    $('vente-titre').textContent = 'Mettre en vente · ' + reference;
+    $('vente-etat').textContent = 'Chargement…';
+    show('vente');
+    var base = '/v1/annonces/' + encodeURIComponent(propertyId);
+    return Promise.all([send(base + '/controle', 'GET'), send(base + '/brouillon', 'GET'), send(base + '/publication', 'GET')]).then(function (all) {
+      if (all[0].gone || all[1].gone || all[2].gone) return false;
+      if (all[0].offline) { $('vente-etat').textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
+      if (all[0].status === 403 || all[0].status === 404) { $('vente-etat').textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
+      if (!all[0].ok) { $('vente-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      $('vente-etat').textContent = '';
+      // Seul « aucune annonce » est un état vide ; une lecture en échec est dite comme telle, sans geste proposé.
+      var draft = all[1].ok ? all[1].body.data : all[1].status === 404 && all[1].body && all[1].body.code === 'no_draft' ? null : undefined;
+      var status = all[2].ok ? all[2].body.data : undefined;
+      renderVente(propertyId, all[0].body.data, draft, status);
+      return true;
+    });
+  }
+  function venteAct(path, fallback) {
+    var v = currentVente;
+    $('vente-etat').textContent = 'Envoi…';
+    return send(path, 'POST').then(function (res) {
+      if (res.gone) return false;
+      if (res.offline) { $('vente-etat').textContent = 'Pas de réseau : rien n’est fait.'; return false; }
+      if (!res.ok) { $('vente-etat').textContent = (res.body && LISTING_REFUSALS[res.body.code]) || fallback; return false; }
+      return openVente(v.id, v.reference).then(function () { return true; });
+    });
+  }
+  function renderVente(propertyId, checklist, draft, status) {
+    var body = $('vente-corps');
+    clear(body);
+    var check = section('Mentions obligatoires');
+    check.appendChild(el('p', checklist.complete ? 'Toutes les mentions sont là.' + (checklist.publishedPriceEur ? ' Prix publié partout : ' + price(checklist.publishedPriceEur) + '.' : '') : 'Il manque des mentions : l’annonce ne peut pas partir.', checklist.complete ? 'fait' : 'alerte'));
+    var ul = el('ul', null, 'liste');
+    (checklist.items || []).forEach(function (m) {
+      var name = MENTIONS[m.id] || 'Autre mention';
+      ul.appendChild(el('li', m.status === 'presente' ? name + ' : présente' : m.status === 'sans_objet' ? name + ' : sans objet' : name + ' : manque, ' + (MISSING_MENTION[m.reason] || 'à compléter'), m.status === 'manquante' ? 'retard' : null));
+    });
+    check.appendChild(ul);
+    body.appendChild(check);
+    var text = section('L’annonce, phrase par phrase');
+    var base = '/v1/annonces/' + encodeURIComponent(propertyId);
+    if (draft === undefined) {
+      text.appendChild(el('p', 'L’annonce n’a pas pu être lue. Réessayez dans un moment.', 'alerte'));
+      body.appendChild(text);
+    } else if (!draft) {
+      text.appendChild(el('p', 'Aucune annonce rédigée pour ce bien.', 'doux'));
+      text.appendChild(button('Rédiger l’annonce', function () { venteAct(base + '/brouillon', 'L’annonce n’a pas pu être rédigée.'); }));
+      body.appendChild(text);
+    } else {
+      text.appendChild(el('h4', draft.title));
+      var ol = el('ol', null, 'liste');
+      // Chaque phrase avec les champs de la fiche d'où viennent ses nombres et ses faits.
+      (draft.sentences || []).forEach(function (sentence) {
+        var li = el('li', sentence.text);
+        (sentence.sources || []).forEach(function (src) { li.appendChild(el('p', src.value + ' : ' + (FIELDS[src.field] || 'champ de la fiche') + ', lu dans la fiche du bien', 'doux')); });
+        (sentence.problems || []).forEach(function (pb) { li.appendChild(el('p', 'À corriger : ' + (SENTENCE_PROBLEMS[pb.code] || 'phrase refusée') + ' (« ' + pb.value + ' »)', 'retard')); });
+        ol.appendChild(li);
+      });
+      text.appendChild(ol);
+      if (draft.validated) text.appendChild(el('p', 'Annonce validée le ' + date(draft.validated.at) + '.', 'fait'));
+      else if (ID.test(draft.id)) text.appendChild(button('Valider l’annonce', function () { venteAct('/v1/annonces/brouillons/' + encodeURIComponent(draft.id) + '/validation', 'L’annonce n’est pas validée.'); }));
+      text.appendChild(button('Rédiger de nouveau', function () { venteAct(base + '/brouillon', 'L’annonce n’a pas pu être rédigée.'); }));
+      body.appendChild(text);
+    }
+    var pub = section('Publication');
+    if (status === undefined) pub.appendChild(el('p', 'L’état de la publication n’a pas pu être lu. Réessayez dans un moment.', 'alerte'));
+    else if (!status) pub.appendChild(el('p', 'Pas encore publiée : elle part d’elle-même au passage suivant, une fois l’annonce validée et le délai de rétractation fini.', 'doux'));
+    else {
+      pub.appendChild(el('p', 'Version ' + status.version + ', ' + (LISTING_STATES[status.state] || 'publiée') + (status.priceEur ? ', au prix de ' + price(status.priceEur) : '') + '.'));
+      var ch = el('ul', null, 'liste');
+      Object.keys(CHANNEL_NAMES).forEach(function (c) { if (status.channels && status.channels[c]) ch.appendChild(el('li', CHANNEL_NAMES[c] + ' : ' + (PUSH[status.channels[c]] || 'inconnu'))); });
+      pub.appendChild(ch);
+    }
+    body.appendChild(pub);
+  }
   function wipeM08() {
-    ['visite-corps', 'bien-corps'].forEach(function (id) { clear($(id)); });
-    ['visite-titre', 'visite-etat', 'bien-titre', 'bien-etat', 'alerte-etat'].forEach(function (id) { $(id).textContent = ''; });
+    ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
+    ['visite-titre', 'visite-etat', 'bien-titre', 'bien-etat', 'alerte-etat', 'vente-titre', 'vente-etat'].forEach(function (id) { $(id).textContent = ''; });
     $('alerte-etat').hidden = true;
     visitId = null;
     currentBien = null;
+    currentVente = null;
     alertId = null;
   }
   function wipeFiche() {
@@ -769,7 +897,7 @@ export const APP_JS = `'use strict';
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -842,6 +970,7 @@ export const APP_JS = `'use strict';
       day(currentKey, session);
     }
     $('visite-retour').addEventListener('click', home);
+    $('vente-retour').addEventListener('click', home);
     $('bien-retour').addEventListener('click', function () { if (visitId) openVisit(visitId); else home(); });
     $('alerte').addEventListener('click', function () { raiseAlert(false); });
     $('sortir').addEventListener('click', function () {

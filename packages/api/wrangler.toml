@@ -19,9 +19,10 @@ database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "../../db/migrations"
 
 [triggers]
-# Le planificateur du socle (B02) : chaque heure à la 7e minute (UTC), il passe les tâches dues à l'heure de Paris ;
-# et à la 30e minute, pour les tâches qui ont leur minute, comme le plan du jour à 7 h 30 (G02).
-crons = ["7 * * * *", "30 * * * *"]
+# Un seul déclencheur, tous les quarts d'heure : le planificateur du socle (B02) passe les tâches dues à l'heure de
+# Paris, une fois par heure, et celles qui ont leur minute (le plan du jour à 7 h 30, G02) ; le passage de publication
+# des annonces (P10) passe une fois par quart d'heure.
+crons = ["*/15 * * * *"]
 
 [observability]
 enabled = true

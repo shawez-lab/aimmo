@@ -56,6 +56,8 @@ import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './esti
 import { BOOKING_PATH, BOOKING_SLOTS_PATH, handleBooking, type BookingLimits } from './rendezvous.ts';
 import type { DetailedSales, Geocoder } from '@aimmo/core';
 import { m08Routes } from './acquereurs.ts';
+import { annonceRoutes } from './annonces.ts';
+import { handleVitrine, type MediaStore } from './vitrine.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -87,6 +89,8 @@ export interface ApiConfig {
   appointmentLinkBase?: string | undefined;
   /** Début du lien de désinscription des alertes (`ALERT_UNSUBSCRIBE_BASE`) : sans lui, aucune alerte WhatsApp de l'agent [R49]. */
   alertUnsubscribeBase?: string | undefined;
+  /** Les médias des biens (R2, `MEDIA`) ; absent, aucune photo n'est servie. */
+  media?: MediaStore;
   now?: () => Date;
 }
 
@@ -823,6 +827,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
+  // La vitrine des biens (P10) : la page publique, la fiche imprimable et les photos de la version publiée.
+  if (url.pathname.startsWith('/biens/') || url.pathname.startsWith('/medias/')) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    try {
+      const page = await handleVitrine(request, config.db, config.media, now);
+      if (page) return page;
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:vitrine', 'vitrine', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
   if (!url.pathname.startsWith(`${API_PREFIX}/`)) return failure(404, 'not_found', 'Adresse inconnue.');
   const path = url.pathname.slice(API_PREFIX.length);
 
@@ -894,7 +909,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
 
   // Une même adresse peut servir à lire (GET) et à écrire (POST) : la route est choisie par l'adresse et la méthode.
   // Les routes de M08 (T08) suivent celles du socle ; elles portent le lien de désinscription du réseau.
-  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null })];
+  // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication.
+  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }), ...annonceRoutes()];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
   const route = matching.find((candidate) => candidate.method === request.method);

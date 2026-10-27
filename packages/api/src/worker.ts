@@ -1,7 +1,8 @@
-import { handleRequest } from './app.ts';
+import { TRIAL_MODE, handleRequest } from './app.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { runScheduler } from './planificateur.ts';
+import { runListingSync, type MediaStore } from './vitrine.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 
 /**
@@ -28,6 +29,8 @@ export interface Env {
   RDV_LINK_BASE?: string;
   /** Début du lien de désinscription des alertes (T03), en https, sans chiffre, terminé par `/alertes/desinscription/`. */
   ALERT_UNSUBSCRIBE_BASE?: string;
+  /** Les médias des biens (R2), lus par la vitrine ; absent, aucune photo n'est servie. */
+  MEDIA?: MediaStore;
 }
 
 /**
@@ -49,6 +52,7 @@ export default {
       mode: env.MODE,
       appointmentLinkBase: env.RDV_LINK_BASE,
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
+      ...(env.MEDIA ? { media: env.MEDIA } : {}),
       ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,
@@ -69,6 +73,8 @@ export default {
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       communeRanges: estimation ? new EstimationEnLigne(estimation.geocoder, estimation.sales) : null,
     });
+    // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
+    if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));
   },
   async email(message: InboundEmail, env: Env): Promise<void> {
     await handleEmail(message, {

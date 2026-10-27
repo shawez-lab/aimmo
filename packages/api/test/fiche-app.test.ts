@@ -116,7 +116,7 @@ describe('A03 · fiche du client dans l’application', () => {
     const b = await app(base('../moi?x=1'));
     buttons(b.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
     await b.tick();
-    expect(b.calls.map((c) => c.url)).toEqual(['/v1/moi', '/v1/plan-du-jour', '/v1/contacts-chauds', '/v1/rendez-vous/jour', '/v1/usage/matin']);
+    expect(b.calls.map((c) => c.url)).toEqual(['/v1/moi', '/v1/plan-du-jour', '/v1/contacts-chauds', '/v1/annonces', '/v1/rendez-vous/jour', '/v1/usage/matin']);
   });
 
   it('[R17] « Rappel fait » envoie un POST sans rien envoyer au client, puis relit la fiche où la ligne reste', async () => {

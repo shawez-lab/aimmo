@@ -159,4 +159,33 @@ describeWithSqlite('B02 · planificateur du socle', () => {
     }
     expect((await w.passages()).map((e) => e.data.job)).toEqual(['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels', 'rdv.briefs', 'mandats.suivi_valeur', 'acquereurs.alertes', 'visites.comptes_rendus', 'visites.point_semaine']);
   });
+
+  it('un seul déclencheur, tous les quarts d’heure : tâches horaires une fois par heure, plan du jour à 7 h 30, publication une fois par quart d’heure (P10)', async () => {
+    const w = await world();
+    // 7 h 00, 7 h 05, 7 h 15, 7 h 30 et 7 h 45 à Paris, en hiver.
+    for (const minute of [0, 5, 15, 30, 45]) {
+      vi.useFakeTimers({ now: Date.parse(`2026-11-10T06:${String(minute).padStart(2, '0')}:00.000Z`), toFake: ['Date'] });
+      try {
+        await worker.scheduled({}, { DB: w.d1, MODE: 'essai' } as Env);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+    const runs = await w.db.all<{ job: string; slot: string; started_at: string }>('SELECT job, slot, started_at FROM scheduled_runs ORDER BY started_at, job');
+    expect(runs.filter((r) => r.job === 'annonces.publication').map((r) => r.slot)).toEqual(['2026-11-10T06:00Z', '2026-11-10T06:15Z', '2026-11-10T06:30Z', '2026-11-10T06:45Z']);
+    const hourly = runs.filter((r) => r.job !== 'annonces.publication');
+    // Chaque tâche horaire passe une seule fois dans l'heure ; le plan du jour attend sa minute.
+    expect(new Set(hourly.map((r) => r.job)).size).toBe(hourly.length);
+    expect(hourly.every((r) => r.slot === '2026-11-10T07')).toBe(true);
+    expect(hourly.find((r) => r.job === 'mandats.plan_du_jour')?.started_at).toBe('2026-11-10T06:30:00.000Z');
+    expect(hourly.filter((r) => r.job !== 'mandats.plan_du_jour').every((r) => r.started_at === '2026-11-10T06:00:00.000Z')).toBe(true);
+    // Hors mode essai, le déclencheur ne publie rien.
+    vi.useFakeTimers({ now: Date.parse('2026-11-10T07:00:00.000Z'), toFake: ['Date'] });
+    try {
+      await worker.scheduled({}, { DB: w.d1, MODE: 'reel' } as Env);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await w.db.first("SELECT slot FROM scheduled_runs WHERE slot = '2026-11-10T07:00Z'")).toBeNull();
+  });
 });

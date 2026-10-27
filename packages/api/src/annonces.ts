@@ -10,19 +10,12 @@
  * R47], au passage suivant ou par la route de passage immédiat.
  */
 import { appendEvent, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
-// Le module M07 n'est pas encore exporté par `@aimmo/core` (fichier du socle) : on le lit à sa place.
-import {
-  Annonces,
-  FicheBien,
-  MediasBien,
-  MentionsAnnonce,
-  MesureBiens,
-  Publication,
-  shootingPlan,
-  type ListingChannel,
-  type ListingWriter,
-  type PropertySheet,
-} from '../../core/src/annonces/index.ts';
+import { annonces as m07 } from '@aimmo/core';
+
+const { Annonces, FicheBien, MediasBien, MentionsAnnonce, MesureBiens, Publication, shootingPlan } = m07;
+type ListingChannel = m07.ListingChannel;
+type ListingWriter = m07.ListingWriter;
+type PropertySheet = m07.PropertySheet;
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 64_000;
@@ -92,6 +85,32 @@ export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
   const medias = (s: AnnonceServices) => new MediasBien(s.db, s.acces, s.journal, { now: s.now });
   const mesure = (s: AnnonceServices) => new MesureBiens(s.db, s.acces, s.journal, { now: s.now });
   return [
+    {
+      method: 'GET',
+      pattern: /^\/annonces$/,
+      name: 'annonces.mes_biens',
+      // Les biens que l'agent met en vente, pour l'écran « Mettre en vente » (P10) : les siens seulement, la direction
+      // tout le réseau ; un agent parti ne voit plus rien [R16].
+      handle: async (s, v) => {
+        const refuse = async (code: string) => {
+          await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject: null, data: { rule: 'R16', role: String(v.role), kind: 'listing_list', code } }, s.now);
+          return reply({ ok: false, rule: 'R16', code });
+        };
+        if (v.role !== 'agent' && v.role !== 'direction') return refuse('role');
+        if (v.role === 'agent') {
+          const agent = await s.db.first<{ status: string; network_id: string }>('SELECT status, network_id FROM agents WHERE id = ?', [v.userId]);
+          if (agent?.status !== 'active' || agent.network_id !== v.networkId) return refuse('agent_inactive');
+        }
+        const rows = await s.db.all<{ id: string; reference: string; city: string | null; state: string | null }>(
+          `SELECT p.id, p.reference, p.city,
+             (SELECT lv.state FROM listing_versions lv WHERE lv.property_id = p.id ORDER BY lv.seq DESC LIMIT 1) AS state
+           FROM properties p WHERE p.network_id = ? ${v.role === 'agent' ? 'AND p.agent_id = ?' : ''} AND p.status NOT IN ('sold', 'rented', 'withdrawn')
+           ORDER BY p.reference, p.id LIMIT 200`,
+          v.role === 'agent' ? [v.networkId, v.userId] : [v.networkId],
+        );
+        return reply({ ok: true, value: rows.map((r) => ({ id: r.id, reference: r.reference, city: r.city, state: r.state })) });
+      },
+    },
     { method: 'GET', pattern: new RegExp(`^/annonces/${ID}/fiche$`), name: 'annonces.fiche', handle: async (s, v, [id]) => reply(await fiches(s).read(v, id!)) },
     {
       method: 'POST',
