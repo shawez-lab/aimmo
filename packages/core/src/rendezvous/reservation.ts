@@ -420,7 +420,9 @@ export class RendezVous {
       await restore();
       return result;
     }
-    await this.log('rdv.decale', 'client:lien', (await this.get(old.id))!, { replaced_by: result.appointment.id });
+    // Le décalage est fait : une panne du journal à ce moment ne doit pas faire perdre le nouveau lien. Le nouveau
+    // rendez-vous porte `replaces_id`, qui garde la trace du décalage dans la base.
+    await this.log('rdv.decale', 'client:lien', (await this.get(old.id))!, { replaced_by: result.appointment.id }).catch(() => undefined);
     return result;
   }
 

@@ -218,6 +218,20 @@ describeWithSqlite('V02 · réservation, confirmation et annulation', () => {
     expect((await w.book(at('2026-11-10', '09:00'))).ok).toBe(true);
   });
 
+  it('le journal en panne après un décalage : le nouveau rendez-vous et son lien sont rendus', async () => {
+    const w = await world();
+    const r = await w.book(at('2026-11-10', '09:00'));
+    if (!r.ok) throw new Error('réservation refusée');
+    const journal = {
+      append: (entry: Parameters<typeof w.journal.append>[0]) => (entry.type === 'rdv.decale' ? Promise.reject(new Error('journal en panne')) : w.journal.append(entry)),
+      last: () => w.journal.last(),
+    } as unknown as typeof w.journal;
+    const moved = await new RendezVous(w.db, journal, { now: () => NOW }).reschedule(r.token, at('2026-11-10', '15:00'));
+    expect(moved).toMatchObject({ ok: true, appointment: { replaces_id: r.appointment.id } });
+    if (!moved.ok) throw new Error('décalage refusé');
+    expect((await w.rdv.cancel(moved.token)).ok).toBe(true);
+  });
+
   it('des plages hors des tranches de 5 minutes sont refusées : chaque créneau proposé se réserve', async () => {
     const w = await world();
     expect(await w.rdv.setAvailability(w.asPaul, { weekly: [{ weekday: 2, from: '09:02', to: '12:02' }] })).toEqual({ ok: false, code: 'invalid' });
