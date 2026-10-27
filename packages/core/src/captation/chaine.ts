@@ -24,6 +24,7 @@ import { appendEvent } from '../journal/journal.ts';
 import { Attribution } from '../qualification/attribution.ts';
 import { Qualification, type Qualifier } from '../qualification/qualification.ts';
 import { Rappels } from '../qualification/rappel.ts';
+import { FicheAcquereur } from '../acquereurs/fiche-acquereur.ts';
 
 export type ChainStatus =
   /** Le même message, déjà reçu : rien de plus [R18]. */
@@ -179,6 +180,7 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
   });
   const attribution = new Attribution(db, fiche, journal, { now });
   const rappels = new Rappels(db, fiche, journal, { now });
+  const acquereurs = new FicheAcquereur(db, journal, { now });
   // Qualifier, noter, attribuer, créer la tâche : une erreur est écrite au journal, sans texte ni coordonnée [R13],
   // et n'empêche jamais la réponse déjà prête ; le prochain envoi du même message reprend là où elle s'est arrêtée.
   const afterReply: AfterReply = async (inboundId) => {
@@ -187,6 +189,8 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
       if (!q) return;
       const a = await attribution.attribute(q.id);
       if (a) await rappels.forQualification(q.id);
+      // La fiche acquéreur suit ce que le message dit (T01) ; rien pour un autre projet.
+      if (q.category === 'buyer') await acquereurs.fromQualification(q.id);
     } catch (error) {
       try {
         await appendEvent(
@@ -211,6 +215,7 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
     qualification,
     attribution,
     rappels,
+    acquereurs,
     acces,
   };
 }
