@@ -20,7 +20,7 @@ let counter = 0;
 /** Les trois biens types des dossiers tests : l'appartement en copropriété du jeu de M07, une maison, un terrain. */
 export type DossierKind = 'appartement' | 'maison' | 'terrain';
 
-export async function setupDossier(kind: DossierKind = 'appartement') {
+export async function setupDossier(kind: DossierKind = 'appartement', offerPatch: Record<string, unknown> = {}) {
   const t = await setupOffre();
   if (kind === 'maison') {
     const sheet = await new FicheBien(t.db, t.acces, t.journal, { now: t.now }).read(t.agent, t.propertyId);
@@ -38,7 +38,7 @@ export async function setupDossier(kind: DossierKind = 'appartement') {
     await t.db.run("UPDATE properties SET kind = 'land' WHERE id = ?", [t.propertyId]);
   }
   const transmission = new TransmissionOffres(t.db, t.acces, t.journal, { now: t.now });
-  const offer = await t.record();
+  const offer = await t.record(offerPatch);
   await transmission.transmit(t.agent, offer.id, { via: 'telephone' });
   t.setClock(new Date('2027-03-01T12:00:00.000Z'));
   const r = await transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T11:00:00.000Z' });

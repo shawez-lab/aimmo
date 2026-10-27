@@ -2,3 +2,4 @@
 export * from './pieces.ts';
 export * from './echeancier.ts';
 export * from './relances.ts';
+export * from './financement.ts';
