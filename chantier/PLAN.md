@@ -578,14 +578,15 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H23 pour l'usage réel.
 
 ### D05 · Rétractation et diffusion bloquée
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : délai compté à partir du lendemain de la signature en jours de Paris, prolongé au jour ouvrable suivant ; fin du mandat au même quantième N mois plus tard, ramenée au dernier jour du mois ; un mandat sans durée connue ne se diffuse pas ; rétractation et début anticipé par l'agent du mandat ou la direction ; le formulaire de rétractation fait partie du modèle validé (H08).
 - Qui : Claude · Relecture : forte · Dépend de : D04
 - Cahier : M06, « Rétractation », règle « aucune annonce ni diffusion sans mandat signé et numéroté » ; critère « la diffusion reste bloquée pendant le délai de rétractation ».
 - Objectif : selon le lieu de signature (hors agence ou à distance), un délai de 14 jours calculé à l'heure de Paris, avec le formulaire de rétractation joint ; une seule fonction dit si un bien peut être diffusé, utilisée par tout ce qui publie : mandat signé, numéroté, en cours, et hors délai de rétractation sauf demande écrite du vendeur rangée avec sa preuve ; une rétractation reçue arrête le mandat.
 - Critères : aucune diffusion sans mandat signé et numéroté [R42] ; diffusion refusée pendant le délai, permise le lendemain de sa fin, permise plus tôt avec la demande écrite ; une rétractation arrête la diffusion [R42].
 
 ### D06 · Échéances des mandats
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : D04
 - Cahier : M06, « Échéances ».
 - Objectif : chaque jour, une tâche pour l'agent avant la fin d'un mandat et avant la fin de la période de 3 mois d'un mandat exclusif, avec le renouvellement proposé à temps (délais en réglage) ; rien n'est envoyé au vendeur.
