@@ -217,7 +217,8 @@ export const APP_JS = `'use strict';
       if (a.brief) li.appendChild(renderBrief(a.brief));
       else li.appendChild(el('p', MISSING[a.briefMissing] || MISSING.not_ready, 'doux'));
       // Une visite dont l'agent voit le visiteur s'ouvre sur son écran : sécurité, bon, compte rendu, acquéreurs.
-      if (a.kind === 'visite' && a.firstName && ID.test(a.id)) li.appendChild(button('Ouvrir la visite', function () { openVisit(a.id); }));
+      // Le prénom n'est pas un droit : la route de la visite contrôle l'accès ; seule une fiche d'un autre agent est écartée ici.
+      if (a.kind === 'visite' && a.briefMissing !== 'no_access' && ID.test(a.id)) li.appendChild(button('Ouvrir la visite', function () { openVisit(a.id); }));
       list.appendChild(li);
     });
     return appointments.length === 0 ? 'Aucun rendez-vous aujourd’hui.' : null;
@@ -656,7 +657,11 @@ export const APP_JS = `'use strict';
         return false;
       }
       alertId = null;
-      box.textContent = res.body.data && res.body.data.notified ? 'Alerte reçue : la direction est prévenue.' : 'Alerte enregistrée : la direction sera prévenue dès que possible. Appelez le 112 si vous êtes en danger.';
+      var data = res.body.data || {};
+      // En mode essai, rien ne part à la direction : l'agent le lit, avec le numéro d'urgence.
+      box.textContent = data.trial !== false
+        ? 'Mode essai : l’alerte est enregistrée, mais la direction n’est pas encore prévenue par message. Appelez le 112 si vous êtes en danger.'
+        : data.notified ? 'Alerte reçue : la direction est prévenue. Appelez le 112 si vous êtes en danger.' : 'Alerte enregistrée : la direction sera prévenue dès que possible. Appelez le 112 si vous êtes en danger.';
       return true;
     });
   }
@@ -664,6 +669,7 @@ export const APP_JS = `'use strict';
   var MATCH = { match: 'remplit tous les critères', tolerated: 'dans les tolérances écrites' };
   var WA = /^https:\\/\\/wa\\.me\\/[0-9]{6,15}\\?text=[A-Za-z0-9%._~!*'()-]*$/;
   var currentBien = null;
+  var LINK_TTL_MS = 120000;
   function openBien(propertyId, reference) {
     if (!ID.test(propertyId)) return Promise.resolve(false);
     currentBien = { id: propertyId, reference: reference };
@@ -723,18 +729,26 @@ export const APP_JS = `'use strict';
       if (!res.ok) { state.textContent = refusalText(res.body, 'L’alerte n’est pas permise pour cet acquéreur.'); return false; }
       var d = res.body.data || {};
       if (typeof d.link !== 'string' || !WA.test(d.link) || !ID.test(d.messageId)) { state.textContent = 'Le lien reçu n’est pas un lien WhatsApp : rien n’est ouvert.'; return false; }
-      state.textContent = 'Message prêt : ouvrez WhatsApp, envoyez-le, puis revenez le confirmer.';
+      state.textContent = 'Message prêt : ouvrez WhatsApp maintenant, envoyez-le, puis revenez le confirmer.';
+      // Le lien ne sert qu'une fois, tout de suite : le contrôle central a été fait pour cet instant [R01, R49].
       var a = el('a', 'Ouvrir WhatsApp', 'appel');
       a.setAttribute('href', d.link);
       a.setAttribute('target', '_blank');
       a.setAttribute('rel', 'noopener noreferrer');
+      var live = true;
+      function drop() { if (live) { live = false; li.removeChild(a); } }
+      a.addEventListener('click', function () { setTimeout(drop, 0); });
+      if (typeof setTimeout === 'function') setTimeout(function () { if (live) { drop(); state.textContent = 'Lien expiré sans être ouvert : préparez de nouveau l’alerte si besoin.'; } }, LINK_TTL_MS);
       li.appendChild(a);
-      li.appendChild(button('Message envoyé', function () {
+      var done = button('Message envoyé', function () {
+        drop();
         send('/v1/acquereurs/whatsapp/' + encodeURIComponent(d.messageId) + '/envoye', 'POST').then(function (r) {
           if (r.gone) return;
+          if (r.ok) li.removeChild(done);
           state.textContent = r.ok ? 'Envoi noté : ce bien ne lui sera plus proposé.' : r.offline ? 'Pas de réseau : l’envoi n’est pas noté.' : 'L’envoi n’a pas pu être noté.';
         });
-      }));
+      });
+      li.appendChild(done);
       return true;
     });
   }

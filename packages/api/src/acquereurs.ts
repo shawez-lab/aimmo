@@ -171,7 +171,11 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
       return reply(await visites(s).schedule(v, { propertyId, projectId, start: new Date(start) }));
     }),
     get('visites.alertes', '/visites/alertes', async (s, v) => reply(await securite(s).list(v))),
-    post('visites.alerte', `/visites/alertes/${ID}`, async (s, v, [a]) => reply(await securite(s).raise(v, a!))),
+    post('visites.alerte', `/visites/alertes/${ID}`, async (s, v, [a]) => {
+      const r = await securite(s).raise(v, a!);
+      // Sans prévenant branché, la direction n'est prévenue que dans le journal d'essai : la réponse le dit.
+      return reply(r.ok ? { ...r, trial: !options.notifier } : r);
+    }),
     post('visites.modele', '/visites/modeles', async (s, v, _p, body) =>
       typeof body.body === 'string' ? reply(await visites(s).createSlipTemplate(v, body.body)) : failure(400, 'invalid_template', 'body : le texte du modèle.'),
     ),

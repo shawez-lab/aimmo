@@ -45,6 +45,7 @@ async function run(answers: Record<string, Answer>) {
   runInNewContext(AGENT_APP_FILES['/app/app.js']!, {
     document,
     crypto: globalThis.crypto,
+    setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : 0),
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
     fetch: (url: string, init: { method?: string; body?: string } = {}) => {
       const method = init.method ?? 'GET';
@@ -154,13 +155,21 @@ describe('T08 · écran de la visite', () => {
     expect(first.method).toBe('POST');
     expect(first.url).toMatch(/^\/v1\/visites\/alertes\/al-[0-9a-f]{32}$/);
     expect(t.els['alerte-etat']!.textContent).toContain('Appuyez de nouveau, ou appelez le 112');
-    t.table[`POST ${first.url}`] = ok({ recorded: true, notified: true });
+    // En mode essai, l'écran dit que la direction n'est pas prévenue par message, et donne le 112.
+    t.table[`POST ${first.url}`] = ok({ recorded: true, notified: true, trial: true });
     await t.click(t.els.alerte!);
     expect(t.calls.at(-1)!.url).toBe(first.url);
-    expect(t.els['alerte-etat']!.textContent).toBe('Alerte reçue : la direction est prévenue.');
-    t.table['POST /v1/visites/alertes/*'] = ok({ recorded: true, notified: false });
+    expect(t.els['alerte-etat']!.textContent).toBe('Mode essai : l’alerte est enregistrée, mais la direction n’est pas encore prévenue par message. Appelez le 112 si vous êtes en danger.');
+    t.table['POST /v1/visites/alertes/*'] = ok({ recorded: true, notified: true, trial: false });
     await t.click(t.els.alerte!);
-    expect(t.calls.at(-1)!.url).not.toBe(first.url);
+    const second = t.calls.at(-1)!.url;
+    expect(second).not.toBe(first.url);
+    expect(t.els['alerte-etat']!.textContent).toBe('Alerte reçue : la direction est prévenue. Appelez le 112 si vous êtes en danger.');
+    t.table[`POST ${second}`] = ok({ recorded: true, notified: true, trial: false });
+    t.table['POST /v1/visites/alertes/*'] = ok({ recorded: true, notified: false, trial: false });
+    await t.click(t.els.alerte!);
+    expect(t.calls.at(-1)!.url).not.toBe(second);
+    expect(t.els['alerte-etat']!.textContent).toContain('sera prévenue dès que possible');
   });
 
   it('l’identifiant d’une alerte non aboutie ne survit pas à la sortie ; un identifiant refusé [R16] est remplacé une fois', async () => {
@@ -169,7 +178,7 @@ describe('T08 · écran de la visite', () => {
     const lost = t.calls.at(-1)!.url;
     await t.click(t.els.sortir!);
     t.table[`POST ${lost}`] = no(403, { ok: false, rule: 'R16', code: 'not_assigned' });
-    t.table['POST /v1/visites/alertes/*'] = ok({ recorded: true, notified: true });
+    t.table['POST /v1/visites/alertes/*'] = ok({ recorded: true, notified: true, trial: false });
     t.els.cle!.value = 'n'.repeat(40);
     t.els['form-connexion']!.listeners.submit!({ preventDefault: () => undefined });
     for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
@@ -177,7 +186,7 @@ describe('T08 · écran de la visite', () => {
     await t.click(t.els.alerte!);
     const after = t.calls.filter((c) => c.url.startsWith('/v1/visites/alertes/')).map((c) => c.url);
     expect(after.at(-1)).not.toBe(lost);
-    expect(t.els['alerte-etat']!.textContent).toBe('Alerte reçue : la direction est prévenue.');
+    expect(t.els['alerte-etat']!.textContent).toMatch(/^Alerte reçue : la direction est prévenue/);
     // Sur le même téléphone : un identifiant refusé, puis un nouveau, une seule fois.
     const u = await openVisit({ 'GET /v1/visites/v1': ok(VISIT), 'POST /v1/visites/alertes/*': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
     await u.click(u.els.alerte!);
@@ -194,6 +203,14 @@ describe('T08 · écran de la visite', () => {
     expect(refused.els.connexion!.hidden).toBe(false);
     expect(refused.storage.has('aimmo.cle')).toBe(false);
     expect(refused.els['visite-corps']!.children).toEqual([]);
+  });
+});
+
+describe('T08 · visite sans prénom', () => {
+  it('le prénom n’est pas un droit : une visite sans prénom s’ouvre, la route contrôle l’accès', async () => {
+    const t = await run({ 'GET /v1/rendez-vous/jour': ok({ ...RDV, appointments: [{ ...RDV.appointments[0], firstName: null }] }), 'GET /v1/visites/v1': ok({ ...VISIT, visitor: { firstName: null } }) });
+    await t.click(t.byText(t.els.rdv!, 'Ouvrir la visite'));
+    expect(t.els['visite-titre']!.textContent).toBe('Visite · REF-T-1, Dijon');
   });
 });
 
@@ -234,9 +251,16 @@ describe('T08 · écran des acquéreurs d’un bien', () => {
     await t.click(t.byText(row, 'Alerte WhatsApp'));
     const link = row.all().find((e) => e.tagName === 'a')!;
     expect(link.attributes).toEqual({ href: 'https://wa.me/33600000001?text=Bonjour%20Zo%C3%A9', target: '_blank', rel: 'noopener noreferrer' });
+    // Le lien ne sert qu'une fois : ouvert, il disparaît ; rien ne permet de renvoyer plus tard sans nouveau contrôle.
+    link.listeners.click!({});
+    await settle();
+    expect(row.all().some((e) => e.tagName === 'a')).toBe(false);
     await t.click(t.byText(row, 'Message envoyé'));
     expect(t.calls.at(-1)).toMatchObject({ method: 'POST', url: '/v1/acquereurs/whatsapp/m1/envoye' });
     expect(row.textContent).toContain('Envoi noté : ce bien ne lui sera plus proposé.');
+    expect(row.all().some((e) => e.tagName === 'button' && e.textContent === 'Message envoyé')).toBe(false);
+    // Un lien jamais ouvert expire : il ne reste pas à l'écran au-delà de deux minutes.
+    expect(AGENT_APP_FILES['/app/app.js']).toContain('var LINK_TTL_MS = 120000;');
   });
 
   it('un lien qui n’est pas WhatsApp n’est jamais ouvert ; un refus du contrôle central est dit avec sa raison', async () => {

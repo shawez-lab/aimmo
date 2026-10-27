@@ -111,6 +111,9 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: ['Organiser de nouvelles visites cette semaine'] })).body).toMatchObject({ ok: true, data: { delivery: 'sent' } });
     expect((await t.toSeller()).at(-1)!.body).toContain('Organiser de nouvelles visites cette semaine');
 
+    // L'alerte en un geste : sans prévenant branché, la réponse dit le mode essai.
+    expect((await t.call('alex', 'POST', '/visites/alertes/alerte-0000001')).body).toMatchObject({ ok: true, data: { recorded: true, trial: true } });
+
     // Rien n'est parti réellement ; ni clé, ni numéro, ni dictée au journal [R13] ; la chaîne tient.
     const entries = await t.journal.all();
     expect(JSON.stringify(entries)).not.toMatch(/test-cle|33600000001|balcon et|wa\.me/);
