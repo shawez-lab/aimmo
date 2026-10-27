@@ -87,7 +87,8 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
     const r = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 9000 } });
     if (!r.ok) throw new Error(r.code);
     expect(r.document.status).toBe('incomplet');
-    expect(r.document.missing).toEqual(['bien.surface', 'bien.pieces', 'bien.prix', 'honoraires.charge', 'mandat.duree_mois']);
+    expect(r.document.missing).toEqual(['mandant.nom', 'bien.surface', 'bien.pieces', 'bien.prix', 'honoraires.charge', 'mandat.duree_mois']);
+    expect(r.document.content).toContain('[à compléter : nom du mandant]');
     expect(r.document.content).toContain('<span class="manque">[à compléter : surface du bien]</span>');
     expect(canSignForReal(r.document)).toBe(false);
     for (const inputs of [{ 'honoraires.montant': -1 }, { 'honoraires.montant': 9000.5 }, { 'honoraires.charge': 'notaire' }, { 'mandat.duree_mois': 0 }, { autre: 1 }]) {
@@ -159,5 +160,32 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
 
   it('le rendu échappe le texte du modèle lui-même', () => {
     expect(renderDocument('A <b> & {{bien.reference}}', { 'bien.reference': '"x"' }, { title: 't', trial: false })).toContain('<p>A &lt;b&gt; &amp; &quot;x&quot;</p>');
+  });
+
+  it('[R40] une version d’essai nouvelle ne remplace pas la version validée en vigueur', async () => {
+    const t = await setup();
+    const v1 = await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY);
+    await t.modeles.validate(t.conformite, v1.ok ? v1.template.id : '');
+    await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY.replace('Durée', 'Durée du mandat'));
+    const r = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', ...(await t.client(1)), inputs: INPUTS });
+    expect(r.ok && [r.document.templateVersion, r.document.mode]).toEqual([1, 'reel']);
+  });
+
+  it('[R40] un mandat exclusif sans clause mise en évidence est refusé', async () => {
+    const t = await setup();
+    expect(await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY.replace('!! ', ''))).toEqual({ ok: false, rule: 'R40', code: 'no_evidence' });
+    expect((await t.modeles.createVersion(t.direction, 'mandat_vente_simple', BODY.replace('!! ', ''))).ok).toBe(true);
+  });
+
+  it('[R16] la lecture du bien est écrite au journal avant que le document soit rendu', async () => {
+    const t = await setup();
+    await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY);
+    const c = await t.client(1);
+    await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', ...c, inputs: INPUTS });
+    const types = (await t.journal.all()).map((e) => [e.type, e.subject]);
+    const read = types.findIndex(([type, subject]) => type === 'bien.lu' && subject === `property:${c.propertyId}`);
+    const made = types.findIndex(([type]) => type === 'document.genere');
+    expect(read).toBeGreaterThanOrEqual(0);
+    expect(read).toBeLessThan(made);
   });
 });

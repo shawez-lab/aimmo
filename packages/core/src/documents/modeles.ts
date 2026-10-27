@@ -12,7 +12,7 @@
  * fiche et du bien [R16] ; le journal ne porte que des identifiants et des nombres [R13].
  */
 import { Acces } from '../acces/acces.ts';
-import { decideAccess, type Viewer } from '../acces/droits.ts';
+import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -79,7 +79,7 @@ export interface GenerateRequest {
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' };
+type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' };
 
 const PLACEHOLDER = /\{\{\s*([a-z_.]+)\s*\}\}/g;
 const MAX_BODY = 50_000;
@@ -202,6 +202,8 @@ export class Modeles {
     if (fields.some((f) => !TEMPLATE_FIELDS[f])) return { ok: false, rule: 'R40', code: 'unknown_field' };
     // Un champ mal écrit (accolades sans nom reconnu) serait recopié tel quel : refusé.
     if (/\{\{|\}\}/.test(body.replace(PLACEHOLDER, ''))) return { ok: false, rule: 'R40', code: 'unknown_field' };
+    // Un mandat exclusif met sa clause d'exclusivité en évidence : un paragraphe qui commence par `!! `.
+    if (kind === 'mandat_vente_exclusif' && !body.replace(/\r\n?/g, '\n').split(/\n{2,}/).some((p) => p.startsWith('!! '))) return { ok: false, rule: 'R40', code: 'no_evidence' };
     const hash = await sha256(JSON.stringify([kind, body, fields]));
     for (let attempt = 0; attempt < 5; attempt++) {
       const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM document_templates WHERE network_id = ? AND kind = ?', [viewer.networkId, kind]);
@@ -251,14 +253,17 @@ export class Modeles {
     if (!read.ok) return read;
     if (read.view !== 'full') return this.refuse(viewer, 'person', 'not_assigned', `person:${request.personId}`);
     const fiche = read.value;
-    const property = await this.db.first<{ id: string; network_id: string; agent_id: string | null; status: string; reference: string; kind: string; postal_code: string | null; city: string | null; surface_m2: number | null; rooms: number | null; price_eur: number | null }>(
-      'SELECT * FROM properties WHERE id = ?',
-      [request.propertyId],
-    );
-    const propertyDecision = property ? decideAccess(viewer, { kind: 'property', networkId: property.network_id, agentId: property.agent_id, status: property.status as never }) : null;
-    if (!property || !propertyDecision?.allowed || propertyDecision.view !== 'full') return this.refuse(viewer, 'property', property ? 'not_assigned' : 'unknown', `property:${request.propertyId}`);
+    // Le bien passe par la lecture sous droits : la lecture est écrite au journal avant d'être rendue [R16].
+    const readProperty = await this.acces.readProperty(viewer, request.propertyId);
+    if (!readProperty.ok) return readProperty;
+    if (readProperty.view !== 'full') return this.refuse(viewer, 'property', 'not_assigned', `property:${request.propertyId}`);
+    const property = readProperty.value;
 
-    const template = await this.db.first<TemplateRow>('SELECT * FROM document_templates WHERE network_id = ? AND kind = ? ORDER BY version DESC LIMIT 1', [viewer.networkId, request.kind]);
+    // Le modèle en vigueur : la dernière version validée ; tant qu'aucune ne l'est, la dernière version d'essai, qui ne
+    // donne qu'un document d'essai. Une nouvelle version d'essai ne remplace jamais une version validée.
+    const template =
+      (await this.db.first<TemplateRow>(`SELECT * FROM document_templates WHERE network_id = ? AND kind = ? AND status = 'valide' ORDER BY version DESC LIMIT 1`, [viewer.networkId, request.kind])) ??
+      (await this.db.first<TemplateRow>('SELECT * FROM document_templates WHERE network_id = ? AND kind = ? ORDER BY version DESC LIMIT 1', [viewer.networkId, request.kind]));
     if (!template) return { ok: false, rule: 'R40', code: 'no_template' };
 
     const agentId = viewer.role === 'agent' ? viewer.userId : (fiche.members.map((m) => m.agent_id).find((a) => a !== null) ?? property.agent_id);
@@ -268,7 +273,8 @@ export class Modeles {
     const text = (v: string | null | undefined): string | null => (v === null || v === undefined || v.trim() === '' ? null : v.trim());
     const day = localTime(this.now(), TIME_ZONE).date;
     const base: Record<string, string | null> = {
-      'mandant.nom': text([fiche.person.first_name, fiche.person.last_name].filter((p) => p && p.trim()).join(' ')),
+      // Le mandant est identifié par son prénom et son nom : l'un sans l'autre ne suffit pas.
+      'mandant.nom': text(fiche.person.first_name) && text(fiche.person.last_name) ? `${text(fiche.person.first_name)} ${text(fiche.person.last_name)}` : null,
       'bien.reference': text(property.reference),
       'bien.type': text(PROPERTY_KIND[property.kind] ?? null),
       'bien.commune': text([property.postal_code, property.city].filter(Boolean).join(' ')),
