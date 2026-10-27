@@ -260,7 +260,7 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Reste : remarques mineures de Codex (#25) : agent parti sur une fiche réunie lors d'une attribution, reprise des effets d'une attribution interrompue, délai qui repart à chaque nouveau message ; relecture forte (1 P1 corrigé), Codex sans P0 ni P1.
 
 ### Q04 · Tâche « rappeler » et liste des contacts chauds
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : Q02, Q03
 - Cahier : M03, point 5 ; Feuille de route, décembre 2026 : rapport du matin.
 - Objectif : une tâche « rappeler » pour chaque contact chaud, chez son agent, et la liste des contacts chauds du matin et du soir, rendue par l'API sous droits d'accès [R16].
