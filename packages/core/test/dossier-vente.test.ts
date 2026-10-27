@@ -61,10 +61,21 @@ describeWithSqlite('O07 · offre acceptée et dossier de vente', () => {
     const b = await t.record({ amountEur: 206000 });
     for (const o of [a, b]) await transmission.transmit(t.agent, o.id, { via: 'telephone' });
     t.setClock(new Date('2027-03-01T12:00:00.000Z'));
-    for (const o of [a, b]) await transmission.respond(t.agent, o.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T11:00:00.000Z' });
+    expect(await transmission.respond(t.agent, a.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T11:00:00.000Z' })).toMatchObject({ ok: true });
+    // Une seconde acceptation sur le même bien est refusée : une seule offre acceptée à la fois.
+    expect(await transmission.respond(t.agent, b.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T11:00:00.000Z' })).toEqual({ ok: false, rule: null, code: 'other_accepted' });
+    expect(await transmission.stateOf(b)).toBe('transmise');
     expect(await dossiers.open(t.direction, a.id)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await dossiers.open(t.agent, a.id)).toMatchObject({ ok: true, value: { amountEur: 205000 } });
-    expect(await dossiers.open(t.agent, b.id)).toEqual({ ok: false, rule: null, code: 'already_open' });
+    expect(await dossiers.open(t.agent, b.id)).toEqual({ ok: false, rule: null, code: 'not_accepted' });
+    // Ni par une contre-offre acceptée ensuite.
+    await transmission.respond(t.agent, b.id, { outcome: 'contre_offre', proofRef: PROOF, respondedAt: '2027-03-01T11:30:00.000Z' });
+    const contre = new ContreOffres(t.db, t.acces, t.journal, { now: t.now });
+    const v = await contre.propose(t.agent, b.id, { amountEur: 207000, validUntil: '2027-03-05', proofRef: PROOF });
+    if (!v.ok) throw new Error(v.code);
+    await contre.transmit(t.agent, v.value.id, { via: 'telephone' });
+    t.setClock(new Date('2027-03-01T13:00:00.000Z'));
+    expect(await contre.respond(t.agent, v.value.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T12:30:00.000Z' })).toEqual({ ok: false, rule: null, code: 'other_accepted' });
     expect(await dossiers.startCompromis(t.agent, 'dossier-inconnu')).toEqual({ ok: false, rule: null, code: 'unknown_file' });
     await expect(t.db.run('DELETE FROM sale_files')).rejects.toThrow(/rien ne s'efface/);
   });

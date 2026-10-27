@@ -37,7 +37,7 @@ export interface Proposal {
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
-  | { ok: false; rule: null; code: 'unknown_offer' | 'unknown_property' | 'unknown_proposal' | 'no_counter_asked' | 'bad_amount' | 'bad_date' | 'bad_proof' | 'bad_via' | 'bad_outcome' | 'already_transmitted' | 'already_answered' | 'not_transmitted' | 'busy' | 'no_owner' | 'already_recorded' }
+  | { ok: false; rule: null; code: 'unknown_offer' | 'unknown_property' | 'unknown_proposal' | 'no_counter_asked' | 'bad_amount' | 'bad_date' | 'bad_proof' | 'bad_via' | 'bad_outcome' | 'already_transmitted' | 'already_answered' | 'not_transmitted' | 'busy' | 'no_owner' | 'already_recorded' | 'other_accepted' }
   | { ok: false; rule: 'R59'; code: 'expired' }
   | { ok: false; rule: string; code: 'message_refused'; reason: string };
 
@@ -164,6 +164,10 @@ export class ContreOffres {
     const at = new Date(input.respondedAt);
     if (at.getTime() < Date.parse(p.transmittedAt)) return { ok: false, rule: null, code: 'bad_date' };
     if (input.outcome === 'acceptee' && localTime(at, TIME_ZONE).date > p.validUntil) return { ok: false, rule: 'R59', code: 'expired' };
+    if (input.outcome === 'acceptee') {
+      const offer = await this.offers.offerFor(viewer, p.offerId, true);
+      if (offer.ok && (await this.offers.otherAccepted(offer.offer.propertyId, p.offerId))) return { ok: false, rule: null, code: 'other_accepted' };
+    }
     const { changes } = await this.db.run(
       'INSERT INTO proposal_responses (proposal_id, outcome, proof_ref, responded_at, recorded_by, at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (proposal_id) DO NOTHING',
       [proposalId, input.outcome, input.proofRef, at.toISOString(), this.actor(viewer), this.now().toISOString()],
