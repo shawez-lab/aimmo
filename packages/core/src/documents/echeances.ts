@@ -14,6 +14,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DocumentFacts } from './modeles.ts';
 import { mandateEndDay } from './retractation.ts';
+import { mandateTerms } from './avenants.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const MANDATE_DEADLINES_JOB = 'mandats.echeances';
@@ -83,9 +84,13 @@ export class EcheancesMandats {
           facts = null;
         }
         const due: { kind: MandateTask['kind']; day: string; lead: number }[] = [];
-        if (facts && facts.durationMonths !== null) due.push({ kind: 'fin_mandat', day: mandateEndDay(signedAt, facts.durationMonths), lead: this.settings.endLeadDays });
+
         // La période exclusive ne compte que si le mandat dure au-delà ; un mandat plus court n'y arrive jamais.
-        const end = facts && facts.durationMonths !== null ? mandateEndDay(signedAt, facts.durationMonths) : null;
+        // La durée en vigueur, avenants signés compris (D07).
+        const terms = await mandateTerms(this.db, row.mandate_id);
+        const duration = terms?.durationMonths ?? facts?.durationMonths ?? null;
+        const end = duration !== null ? mandateEndDay(signedAt, duration) : null;
+        if (end !== null) due.push({ kind: 'fin_mandat', day: end, lead: this.settings.endLeadDays });
         if (row.kind === 'mandat_vente_exclusif' && end !== null && mandateEndDay(signedAt, EXCLUSIVE_PERIOD_MONTHS) < end) due.push({ kind: 'fin_periode_exclusive', day: mandateEndDay(signedAt, EXCLUSIVE_PERIOD_MONTHS), lead: this.settings.exclusiveLeadDays });
         for (const d of due) {
           // La tâche est rangée dès que le délai est atteint, jusqu'au jour de l'échéance compris.

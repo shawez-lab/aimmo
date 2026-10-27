@@ -12,6 +12,7 @@ import {
   FicheClient,
   CATEGORIES,
   ControlesSignature,
+  SignatureAvenant,
   EcheancesMandats,
   Diffusion,
   SignaturePapier,
@@ -345,13 +346,14 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, _params, request) => {
       const body = await readJson(request);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs sont admis.');
-      const { kind, personId, propertyId, inputs } = body;
+      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs', 'mandateId'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs, mandateId sont admis.');
+      const { kind, personId, propertyId, inputs, mandateId } = body;
+      if (mandateId !== undefined && (typeof mandateId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(mandateId))) return failure(400, 'invalid_ids', 'mandateId mal formé.');
       if (typeof personId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(personId) || typeof propertyId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(propertyId)) {
         return failure(400, 'invalid_ids', 'personId et propertyId attendus.');
       }
       if (inputs !== undefined && (inputs === null || typeof inputs !== 'object' || Array.isArray(inputs))) return failure(400, 'invalid_inputs', 'inputs : un objet.');
-      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}) });
+      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}), ...(mandateId ? { mandateId } : {}) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.document });
       return r.rule === 'R16' ? refusal(r) : json(r.code === 'no_template' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
     },
@@ -487,6 +489,33 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer) => {
       const r = await new EcheancesMandats(s.db, s.journal, { now: s.now }).list(viewer);
       return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.tasks }) : refusal(r);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/documents/${ID}/signature-avenant$`),
+    name: 'document.signature_avenant',
+    // Un avenant signé sur papier : contrôlé à l'instant, rangé avec son exemplaire ; le mandat change alors [R41].
+    handle: async (s, viewer, [id], request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['signedAt', 'place', 'scanRef'].includes(k))) return failure(400, 'unexpected_field', 'Seuls signedAt, place, scanRef sont admis.');
+      if (typeof body.signedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.signedAt)) return failure(400, 'invalid_date', 'signedAt : un instant ISO en UTC.');
+      const r = await new SignatureAvenant(s.db, s.acces, s.journal, { now: s.now }).register(viewer, id!, { signedAt: new Date(body.signedAt), place: body.place as never, scanRef: body.scanRef as string });
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      if (r.rule === 'R16') return refusal(r);
+      return json(r.code === 'already_signed' ? 409 : 400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/mandats/${ID}/conditions$`),
+    name: 'mandat.conditions',
+    // Les conditions en vigueur d'un mandat (prix, durée) et l'historique de ses avenants signés [R16].
+    handle: async (s, viewer, [id]) => {
+      const r = await new SignatureAvenant(s.db, s.acces, s.journal, { now: s.now }).terms(viewer, id!);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
     },
   },
   {

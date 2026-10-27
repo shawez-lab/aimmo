@@ -21,6 +21,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { RegistreMandats } from '../mandats/registre.ts';
 import type { DocumentFacts } from './modeles.ts';
+import { mandateTerms } from './avenants.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const WITHDRAWAL_DAYS = 14;
@@ -115,9 +116,12 @@ export class Diffusion {
       facts = null;
     }
     const signedAt = new Date(row.signed_at);
-    if (!facts || facts.durationMonths === null) return decision(false, 'duration_unknown');
+    // La durée en vigueur : celle du mandat, ou du dernier avenant signé qui la change (D07).
+    const terms = await mandateTerms(this.db, row.mandate_id);
+    const duration = terms?.durationMonths ?? facts?.durationMonths ?? null;
+    if (duration === null) return decision(false, 'duration_unknown');
     // La fin du mandat se compte en jours de Paris ; un 31 sans équivalent devient le dernier jour du mois [R42].
-    if (localTime(at, TIME_ZONE).date >= mandateEndDay(signedAt, facts.durationMonths)) return decision(false, 'expired');
+    if (localTime(at, TIME_ZONE).date >= mandateEndDay(signedAt, duration)) return decision(false, 'expired');
     const last = withdrawalLastDay(signedAt, row.place);
     if (last !== null && localTime(at, TIME_ZONE).date <= last) {
       if (await this.db.first('SELECT mandate_id FROM mandate_early_starts WHERE mandate_id = ?', [row.mandate_id])) return decision(true, 'allowed_early_start', last);
