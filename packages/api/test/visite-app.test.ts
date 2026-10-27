@@ -207,6 +207,13 @@ describe('T08 · écran de la visite', () => {
 });
 
 describe('T08 · visite sans prénom', () => {
+  it('un bien qui n’est plus dans les droits : la visite reste ouverte pour la sécurité, sans le bien ni ses acquéreurs', async () => {
+    const t = await openVisit({ 'GET /v1/visites/v1': ok({ ...VISIT, property: null }) });
+    expect(t.els['visite-titre']!.textContent).toBe('Visite');
+    expect(t.els['visite-corps']!.textContent).toContain('Le bien n’est plus dans vos droits');
+    expect(t.els['visite-corps']!.all().some((e) => e.textContent === 'Acquéreurs pour ce bien')).toBe(false);
+  });
+
   it('le prénom n’est pas un droit : une visite sans prénom s’ouvre, la route contrôle l’accès', async () => {
     const t = await run({ 'GET /v1/rendez-vous/jour': ok({ ...RDV, appointments: [{ ...RDV.appointments[0], firstName: null }] }), 'GET /v1/visites/v1': ok({ ...VISIT, visitor: { firstName: null } }) });
     await t.click(t.byText(t.els.rdv!, 'Ouvrir la visite'));

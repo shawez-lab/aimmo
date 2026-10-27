@@ -165,6 +165,12 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'POST', `/visites/modeles/${tpl!.id}/validation`)).status).toBe(403);
     expect((await t.call('ailleurs', 'GET', `/visites/${id}`)).status).toBe(404);
     expect((await t.call('ailleurs', 'GET', `/acquereurs/projets/${t.project.id}/recherche`)).status).toBe(404);
+    // Le bien passe à un autre agent et se vend : l'écran de la visite ne le montre plus [R16].
+    await t.db.run("UPDATE properties SET agent_id = ?, status = 'sold' WHERE id = ?", [t.sam.userId, t.propertyId]);
+    const screen = await t.call('alex', 'GET', `/visites/${id}`);
+    expect(screen.status).toBe(200);
+    expect(screen.body.data.property).toBeNull();
+    expect(JSON.stringify(screen.body)).not.toMatch(/REF-T-1|Dijon/);
   });
 
   it('saisies mal formées : 400, rien n’est écrit ; une adresse inconnue rend 404', async () => {

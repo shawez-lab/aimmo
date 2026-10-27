@@ -183,7 +183,10 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
     get('visites.visite', `/visites/${ID}`, async (s, v, [a]) => {
       const access = await visites(s).accessVisit(v, a!);
       if (!access.ok) return reply(access);
-      return reply({ ok: true, value: await visitScreen(s, fiche(s), a!) });
+      const screen = await visitScreen(s, fiche(s), a!);
+      // Le bien est relu sous les droits du lecteur : un bien vendu ou retiré d'un autre agent ne se montre plus [R16].
+      const property = await s.acces.readProperty(v, screen.property.id);
+      return reply({ ok: true, value: property.ok ? screen : { ...screen, property: null } });
     }),
     get('visites.bon', `/visites/${ID}/bon`, async (s, v, [a]) => reply(await visites(s).slipOf(v, a!))),
     post('visites.bon.signature', `/visites/${ID}/bon/signature`, async (s, v, [a], body) => {
