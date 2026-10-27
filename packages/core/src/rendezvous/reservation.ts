@@ -229,25 +229,23 @@ export class RendezVous {
     return freeSlots({ availability, kind, from, to, now: this.now(), booked, busy, settings: this.settings });
   }
 
-  /** Les tranches que tient un rendez-vous : le sien, et, sur place, élargi de la moitié du trajet de chaque côté. */
-  private holdsOf(kind: AppointmentKind, start: Date, end: Date): { layer: 'own' | 'site'; unit: number }[] {
-    const units: { layer: 'own' | 'site'; unit: number }[] = [];
-    for (let u = Math.floor(start.getTime() / UNIT_MS); u < Math.ceil(end.getTime() / UNIT_MS); u++) units.push({ layer: 'own', unit: u });
-    if (isOnSite(kind)) {
-      const pad = Math.ceil((this.settings.travelMinutes * MINUTE) / 2 / UNIT_MS);
-      for (let u = Math.floor(start.getTime() / UNIT_MS) - pad; u < Math.ceil(end.getTime() / UNIT_MS) + pad; u++) units.push({ layer: 'site', unit: u });
-    }
-    return units;
-  }
-
-  /** Tient les tranches en une seule instruction : tout ou rien. `false` si une tranche est déjà tenue [R32]. */
+  /**
+   * Tient les tranches en une seule instruction, tout ou rien : la sienne pour tous les types, et, sur place, élargie de
+   * la moitié du trajet de chaque côté. Les tranches sont produites par la base, en peu de paramètres (D1 en limite le
+   * nombre). `false` si une tranche est déjà tenue [R32].
+   */
   private async hold(agentId: string, appointmentId: string, kind: AppointmentKind, start: Date, end: Date): Promise<boolean> {
-    const units = this.holdsOf(kind, start, end);
-    const values = units.map(() => '(?, ?, ?, ?)').join(', ');
+    const first = Math.floor(start.getTime() / UNIT_MS);
+    const last = Math.ceil(end.getTime() / UNIT_MS);
+    const pad = Math.ceil((this.settings.travelMinutes * MINUTE) / 2 / UNIT_MS);
     try {
       await this.db.run(
-        `INSERT INTO appointment_holds (agent_id, layer, unit, appointment_id) VALUES ${values}`,
-        units.flatMap((h) => [agentId, h.layer, h.unit, appointmentId]),
+        `INSERT INTO appointment_holds (agent_id, layer, unit, appointment_id)
+         WITH RECURSIVE own(u) AS (SELECT ? UNION ALL SELECT u + 1 FROM own WHERE u + 1 < ?),
+                        site(u) AS (SELECT ? UNION ALL SELECT u + 1 FROM site WHERE u + 1 < ?)
+         SELECT ?, 'own', u, ? FROM own
+         UNION ALL SELECT ?, 'site', u, ? FROM site WHERE ? = 1`,
+        [first, last, first - pad, last + pad, agentId, appointmentId, agentId, appointmentId, isOnSite(kind) ? 1 : 0],
       );
       return true;
     } catch (error) {
