@@ -34,6 +34,7 @@ export const INDEX_HTML = `<!doctype html>
 <p id="journee">Votre journée s’affichera ici.</p>
 </section>
 <p id="attente">Chargement…</p>
+<p id="note" role="status" hidden></p>
 </main>
 </body>
 </html>
@@ -116,7 +117,9 @@ export const APP_JS = `'use strict';
     });
     var key = readKey();
     if (key) enter(key); else show('connexion');
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' }).catch(function () { /* sans cache, l'application marche quand même */ });
+    var offline = 'Cet appareil ne garde pas l’application : elle ne s’ouvrira qu’avec du réseau.';
+    function warn() { $('note').textContent = offline; $('note').hidden = false; }
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' }).catch(warn); else warn();
   });
 })();
 `;

@@ -61,9 +61,9 @@ describe('A01 · fichiers de l’application', () => {
   });
 
   it('[R16] une clé refusée ne montre rien et est effacée ; une panne ne l’efface pas ; la déconnexion l’efface', async () => {
-    const run = async (answer: () => Promise<Response>, stored: string | null) => {
+    const run = async (answer: () => Promise<Response>, stored: string | null, navigator: Record<string, unknown> = {}) => {
       const els: Record<string, { hidden: boolean; textContent: string; value: string; listeners: Record<string, (e: unknown) => void>; addEventListener: (n: string, f: (e: unknown) => void) => void }> = {};
-      for (const id of ['connexion', 'accueil', 'attente', 'sortir', 'bonjour', 'erreur', 'form-connexion', 'cle']) {
+      for (const id of ['connexion', 'accueil', 'attente', 'sortir', 'bonjour', 'erreur', 'form-connexion', 'cle', 'note']) {
         const listeners: Record<string, (e: unknown) => void> = {};
         els[id] = { hidden: true, textContent: '', value: '', listeners, addEventListener: (n, f) => (listeners[n] = f) };
       }
@@ -77,7 +77,7 @@ describe('A01 · fichiers de l’application', () => {
           calls.push({ url, headers: init.headers });
           return answer();
         },
-        navigator: {},
+        navigator,
       });
       docListeners.DOMContentLoaded!();
       await new Promise((r) => setTimeout(r, 0));
@@ -89,6 +89,12 @@ describe('A01 · fichiers de l’application', () => {
     expect(ok.els.accueil!.hidden).toBe(false);
     expect(ok.els.bonjour!.textContent).toBe('Bonjour Alex');
     expect(ok.calls).toEqual([{ url: '/v1/moi', headers: { authorization: `Bearer ${KEY}` } }]);
+    // Sans service worker, l'agent est prévenu, la panne n'est pas avalée.
+    expect(ok.els.note!.hidden).toBe(false);
+    const failing = await run(async () => Response.json({ ok: true, data: { role: 'agent', firstName: 'Alex' } }), KEY, { serviceWorker: { register: () => Promise.reject(new Error('refus')) } });
+    expect(failing.els.note!.textContent).toMatch(/réseau/);
+    const working = await run(async () => Response.json({ ok: true, data: { role: 'agent', firstName: 'Alex' } }), KEY, { serviceWorker: { register: () => Promise.resolve({}) } });
+    expect(working.els.note!.hidden).toBe(true);
     ok.els.sortir!.listeners.click!({});
     expect(ok.storage.has('aimmo.cle')).toBe(false);
     expect(ok.els.accueil!.hidden).toBe(true);
