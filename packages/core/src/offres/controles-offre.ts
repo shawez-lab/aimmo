@@ -75,7 +75,7 @@ export class ControlesOffre {
   }
 
   /** La dernière vérification d'identité de la personne, toutes fiches réunies, dans la fenêtre du réglage (comme D03). */
-  private async identitySeenAt(networkId: string, personId: string, at: Date): Promise<string | null> {
+  async identitySeenAt(networkId: string, personId: string, at: Date): Promise<string | null> {
     const ids = await this.unique.membersOf(personId);
     const since = new Date(at.getTime() - this.settings.identityDays * DAY).toISOString();
     const row = await this.db.first<{ seen_at: string }>(

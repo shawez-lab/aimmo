@@ -5,3 +5,4 @@ export * from './transmission.ts';
 export * from './echeances.ts';
 export * from './contre-offres.ts';
 export * from './comparatif.ts';
+export * from './dossier-vente.ts';
