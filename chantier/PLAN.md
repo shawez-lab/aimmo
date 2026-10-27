@@ -522,14 +522,15 @@ Décidé, lecture prudente : la première version sert la journée de l'agent, r
 - Critères : seulement les données de l'agent [R16] ; un texte affiché est toujours échappé (aucun code injecté par un message de client) ; écran utilisable sur téléphone ; l'ordre du plan est celui du socle, jamais retrié par l'application [R35].
 
 ### A03 · Fiche du client et gestes de l'agent
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : toute exclusion active ferme l'appel, quel que soit le canal où elle a été notée ; une tâche inconnue est refusée comme celle d'un autre ; aucun code interne n'est affiché.
 - Qui : Claude · Relecture : forte · Dépend de : A02
 - Cahier : Le produit, « ses clients, biens et dossiers » ; Architecture technique, « appel en un geste depuis l'application ».
 - Objectif : depuis une ligne du plan, la fiche du client (projets, sources, accords, derniers messages) ; appel en un geste par le lien téléphone de l'appareil ; « rappel fait » par une route `POST /v1/rappels/<id>/fait` ; aucun envoi de message.
 - Critères : une fiche qui n'est pas à l'agent est refusée [R16] ; « rappel fait » garde la ligne [R17] ; une personne exclue ou arrêtée est signalée sur sa fiche et n'a pas de bouton d'appel [R02, R04].
 
 ### A04 · Mesure de l'usage du matin
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : A02, G02
 - Cahier : Feuille de route, janvier 2027 : « application et plan du jour utilisés chaque matin pendant une semaine ».
 - Objectif : chaque agent voit, pour lui seul, les jours où il a ouvert son plan avant midi sur les 7 derniers jours ; la direction voit le nombre de jours d'usage du réseau, sans classement des agents [R14].
