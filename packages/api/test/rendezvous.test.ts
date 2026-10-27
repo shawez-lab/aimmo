@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest';
-import { APPOINTMENT_PURPOSE, FicheClient, RendezVous, SqlJournalStore, applyMigrations, parisInstant, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { expect, it, vi } from 'vitest';
+import { APPOINTMENT_PURPOSE, FicheClient, RappelsRendezVous, RendezVous, SqlJournalStore, TrialOutbox, applyMigrations, parisInstant, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { handleRequest, sha256Hex } from '../src/index.ts';
 import { fromD1 } from '../src/d1.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
@@ -177,6 +177,54 @@ describeWithSqlite('V08 · réservation depuis le site et les messages, en mode 
     const r = await w.call('reservation', w.bookAsk(slots[0]!.start, { email: undefined, phone: '06 12 34 56 78' }));
     expect(await w.rdv.byToken(r.body.token as string)).toMatchObject({ person_id: known.id, confirmation_status: 'sent' });
     expect(await w.db.all('SELECT message_id FROM trial_outbox')).toHaveLength(1);
+  });
+
+  it('la confirmation et les rappels visent la coordonnée donnée, pas une plus ancienne de la fiche', async () => {
+    const w = await world();
+    const known = await w.store.createPerson({ networkId: w.net.id, agentId: w.paul.id, firstName: 'Léa' });
+    await w.store.addIdentifier({ networkId: w.net.id, personId: known.id, kind: 'email', value: 'ancien.mail@example.test' });
+    await w.store.addIdentifier({ networkId: w.net.id, personId: known.id, kind: 'phone', value: '+33612345678' });
+    const spy = vi.spyOn(TrialOutbox.prototype, 'deliver');
+    try {
+      const slots = (await w.call('creneaux', w.slotsAsk({ from: '2026-11-11' }))).body.slots as { start: string }[];
+      const r = await w.call('reservation', w.bookAsk(slots[0]!.start, { email: 'Nouveau.Mail@example.test', phone: '06 12 34 56 78' }));
+      expect(await w.rdv.byToken(r.body.token as string)).toMatchObject({ person_id: known.id, confirmation_status: 'sent', confirmation_to: 'nouveau.mail@example.test' });
+      expect(spy.mock.calls.map((c) => c[0].to)).toEqual(['nouveau.mail@example.test']);
+      // Le rappel de la veille vise la même coordonnée.
+      await new RappelsRendezVous(w.db, w.journal, { now: () => at('2026-11-10', '10:00') }).run();
+      expect(spy.mock.calls.map((c) => c[0].to)).toEqual(['nouveau.mail@example.test', 'nouveau.mail@example.test']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('une coordonnée qui n’est pas à la fiche est refusée par le contrôle central', async () => {
+    const w = await world();
+    const known = await w.store.createPerson({ networkId: w.net.id, agentId: w.paul.id, firstName: 'Léa' });
+    await w.store.addIdentifier({ networkId: w.net.id, personId: known.id, kind: 'email', value: 'lea.exemple@example.test' });
+    await w.store.addConsent({ networkId: w.net.id, personId: known.id, purpose: APPOINTMENT_PURPOSE, channel: 'email', proof: 'test', givenAt: new Date('2026-01-01T00:00:00Z') });
+    const r = await w.rdv.book({ networkId: w.net.id, agentId: w.paul.id, personId: known.id, kind: 'estimation', start: at('2026-11-11', '09:00'), source: 'agent', channel: 'email', to: 'autre.personne@example.test' });
+    expect(r).toMatchObject({ ok: true, confirmation: { status: 'refused', rule: null } });
+    expect(await w.db.all('SELECT message_id FROM trial_outbox')).toHaveLength(0);
+  });
+
+  it('[R13] le journal en panne après une réservation en ligne : le rendez-vous et son jeton sont rendus, avec un avertissement', async () => {
+    const w = await world();
+    const slots = (await w.call('creneaux', w.slotsAsk())).body.slots as { start: string }[];
+    const original = SqlJournalStore.prototype.append;
+    const spy = vi.spyOn(SqlJournalStore.prototype, 'append').mockImplementation(async function (this: SqlJournalStore, ...args: Parameters<SqlJournalStore['append']>) {
+      if (JSON.stringify(args).includes('rdv.en_ligne')) throw new Error('panne du journal');
+      return original.apply(this, args);
+    });
+    try {
+      const r = await w.call('reservation', w.bookAsk(slots[0]!.start));
+      expect(r.status).toBe(200);
+      expect(r.body).toMatchObject({ ok: true, warning: 'journal_failed', confirmation: { booked: true } });
+      expect((await w.rdv.byToken(r.body.token as string))?.status).toBe('booked');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(JSON.stringify(await w.db.all("SELECT * FROM journal WHERE type = 'api.erreur'"))).toContain('rendez-vous.journal');
   });
 
   it('un contact porté par deux fiches distinctes : le rendez-vous tient, sans confirmation par message', async () => {

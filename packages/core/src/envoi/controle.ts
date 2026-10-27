@@ -49,6 +49,11 @@ export interface SendOrder {
   sellerNames?: readonly string[];
   /** Nombre de questions permis dans le texte. */
   maxQuestions?: number;
+  /**
+   * La coordonnée à viser, normalisée, quand la personne l'a choisie (réservation en ligne, V09) : elle doit être une
+   * coordonnée de la fiche pour ce canal, fiches réunies comprises ; sinon l'envoi est refusé. Absente : la première.
+   */
+  to?: string | null;
 }
 
 export type SendStatus = 'sent' | 'refused' | 'failed';
@@ -227,7 +232,10 @@ export class ControleEnvois {
     const to =
       thread?.ref ??
       session ??
-      IDENTIFIER_FOR[order.channel].map((kind) => view.identifiers.find((i) => i.kind === kind)).find((i) => i !== undefined)?.value;
+      (order.to
+        ? view.identifiers.find((i) => i.value === order.to && IDENTIFIER_FOR[order.channel].includes(i.kind))?.value
+        : IDENTIFIER_FOR[order.channel].map((kind) => view.identifiers.find((i) => i.kind === kind)).find((i) => i !== undefined)?.value);
+    if (!to && order.to) return log('refused', null, 'La coordonnée demandée n’est pas à la fiche pour ce canal.');
     if (!to) return log('refused', null, 'Aucun identifiant de la personne pour ce canal.');
     const sentBefore = view.messages.filter((m) => m.direction === 'out' && !failed.has(m.id) && Date.parse(m.occurred_at) <= at.getTime());
 

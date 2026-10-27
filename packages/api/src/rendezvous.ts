@@ -1,5 +1,6 @@
 import { ONLINE_KINDS, ONLINE_SOURCES, ReservationEnLigne, SqlJournalStore, parisInstant, type AppointmentKind, type AppointmentSource, type SqlDatabase } from '@aimmo/core';
 import { intakeFromRequest, parseIntakeKeys, sha256Hex } from './auth.ts';
+import { journalError } from './app.ts';
 import { VISITOR, takeSlot } from './assistant.ts';
 
 /**
@@ -130,5 +131,9 @@ export async function handleBooking(request: Request, path: string, config: Book
   }
   // La confirmation rendue est toujours la même : l'état réel de son envoi (refus pour exclusion, arrêt, doublon) dirait
   // si la personne est connue du réseau. Il reste sur le rendez-vous et au journal [R16].
-  return json(200, { ok: true, mode: 'essai', sent: false, appointment: result.appointment, token: result.token, confirmation: { booked: true } });
+  if (result.warning) {
+    // Le rendez-vous et son jeton sont rendus ; la panne du journal est notée à part, sans donnée [R13].
+    await journalError(new SqlJournalStore(config.db), 'intake:site_booking', 'rendez-vous.journal', new Error('journal_failed'), config.now).catch(() => undefined);
+  }
+  return json(200, { ok: true, mode: 'essai', sent: false, appointment: result.appointment, token: result.token, confirmation: { booked: true }, ...(result.warning ? { warning: result.warning } : {}) });
 }
