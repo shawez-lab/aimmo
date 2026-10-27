@@ -52,6 +52,7 @@ it('un registre mal écrit est refusé', () => {
   expect(() => new Planificateur({} as SqlDatabase, {} as SqlJournalStore, [{ ...ok, hours: [] }])).toThrow();
   expect(() => new Planificateur({} as SqlDatabase, {} as SqlJournalStore, [{ ...ok, name: 'Avec espace' }])).toThrow();
   expect(() => new Planificateur({} as SqlDatabase, {} as SqlJournalStore, [{ ...ok, weekdays: [0] }])).toThrow();
+  expect(() => new Planificateur({} as SqlDatabase, {} as SqlJournalStore, [{ ...ok, minute: 60 }])).toThrow();
 });
 
 describeWithSqlite('B02 · planificateur du socle', () => {
@@ -131,6 +132,14 @@ describeWithSqlite('B02 · planificateur du socle', () => {
     expect((await runScheduler({ db: w.db, mode: 'essai', now: w.now }))?.ran).toEqual(['rdv.briefs']);
     expect(fetchSpy).not.toHaveBeenCalled();
     expect((await w.passages()).map((e) => e.data.job)).toEqual(['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels', 'rdv.briefs', 'rdv.briefs']);
+  });
+
+  it('G02 · le plan du jour passe au déclencheur de 7 h 30 de Paris, pas à celui de 7 h 07', async () => {
+    const w = await world();
+    w.setClock(WINTER_07H);
+    expect((await runScheduler({ db: w.db, mode: 'essai', now: w.now }))?.ran).not.toContain('mandats.plan_du_jour');
+    w.setClock(WINTER_07H + 25 * 60_000);
+    expect((await runScheduler({ db: w.db, mode: 'essai', now: w.now }))?.ran).toEqual(['mandats.plan_du_jour']);
   });
 
   it('hors mode essai, rien ne passe', async () => {

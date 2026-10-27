@@ -68,7 +68,7 @@ export class Acces {
   }
 
   /** La liste des fiches qu'on a le droit de voir : pour un agent, ses clients seulement. */
-  async listPersons(viewer: Viewer): Promise<AccessResult<Person[]>> {
+  async listPersons(viewer: Viewer, via?: string): Promise<AccessResult<Person[]>> {
     const blocked = await this.checkViewer(viewer, 'person', null);
     if (blocked) return blocked;
     if (!decideAccess(viewer, { kind: 'person', networkId: viewer.networkId, agentIds: [viewer.userId] }).allowed) {
@@ -99,6 +99,8 @@ export class Acces {
       role: viewer.role,
       count: visible.length,
       persons: visible.map((person) => personSubject(person.id)),
+      // Lu par le système pour l'agent, comme le plan du jour figé par le planificateur.
+      ...(via === undefined ? {} : { via }),
     });
     return { ok: true, view: 'full', value: visible };
   }
