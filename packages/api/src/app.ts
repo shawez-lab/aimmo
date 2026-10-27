@@ -17,6 +17,7 @@ import {
   Qualification,
   ROUTES as NEXT_MODULES,
   PlansDuJour,
+  UsageMatin,
   Rappels,
   Reception,
   ReconnaissanceBien,
@@ -234,6 +235,16 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer) => {
       const day = await new JourneeRendezVous(s.db, s.journal, { now: s.now }).read(viewer);
       return day.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: day.value }) : refusal({ rule: day.rule, code: day.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/usage\/matin$/,
+    name: 'usage.matin',
+    // L'usage du matin sur 7 jours : l'agent voit ses jours ; la direction, des nombres du réseau, sans classement [R14].
+    handle: async (s, viewer) => {
+      const usage = await new UsageMatin(s.db, s.journal, { now: s.now }).read(viewer);
+      return usage.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: usage.value }) : refusal({ rule: usage.rule, code: usage.code });
     },
   },
   {

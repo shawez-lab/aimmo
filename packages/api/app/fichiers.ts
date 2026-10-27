@@ -46,6 +46,11 @@ export const INDEX_HTML = `<!doctype html>
 <p id="rdv-etat" class="etat"></p>
 <ul id="rdv" class="liste"></ul>
 </section>
+<section class="bloc" aria-labelledby="titre-semaine">
+<h3 id="titre-semaine">Ma semaine</h3>
+<p id="semaine-etat" class="etat"></p>
+<ul id="semaine" class="liste"></ul>
+</section>
 </section>
 <section id="fiche" hidden>
 <button id="retour" type="button">Retour à ma journée</button>
@@ -312,6 +317,14 @@ export const APP_JS = `'use strict';
   }
   // Chaque entrée, sortie ou refus ouvre une nouvelle session : une réponse d'une session finie n'est jamais montrée.
   var session = 0;
+  // L'usage du matin : pour l'agent seul, ses propres jours ; aucune comparaison avec les autres [R14].
+  function renderWeek(list, data) {
+    if (!data || data.scope !== 'agent' || !Array.isArray(data.days)) return 'Mesure indisponible.';
+    list.appendChild(el('li', 'Plan ouvert avant midi : ' + data.openedDays + ' jour(s) sur ' + data.days.length + '.'));
+    var marks = data.days.map(function (d) { return date(d.day + 'T12:00:00Z').slice(0, 5) + (d.opened ? ' oui' : ' non'); }).join(' · ');
+    list.appendChild(el('li', marks, 'doux'));
+    return null;
+  }
   function part(id, request, render, mine) {
     var list = $(id);
     var state = $(id + '-etat');
@@ -340,6 +353,7 @@ export const APP_JS = `'use strict';
       part('plan', api('/v1/plan-du-jour', key), renderPlan, mine),
       part('chauds', api('/v1/contacts-chauds', key), renderHot, mine),
       part('rdv', api('/v1/rendez-vous/jour', key), renderAppointments, mine),
+      part('semaine', api('/v1/usage/matin', key), renderWeek, mine),
     ]).then(function (done) {
       if (mine !== session) return;
       // Une clé refusée en cours de route : rien n'est gardé à l'écran ni sur l'appareil.
@@ -347,7 +361,7 @@ export const APP_JS = `'use strict';
     });
   }
   function wipe() {
-    ['plan', 'chauds', 'rdv'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
+    ['plan', 'chauds', 'rdv', 'semaine'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
     wipeFiche();
   }
   function wipeFiche() {
