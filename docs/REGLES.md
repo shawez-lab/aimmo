@@ -32,6 +32,6 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R26 | Bascule prudente. Une automatisation existante ne fait partir aucun message par le socle tant qu'elle est en mode essai ou en ombre ; elle passe ensuite à 10 % des envois pendant 7 jours, puis à tous si les écarts tiennent, et revient d'elle-même en ombre au premier écart non expliqué ou à la première panne. | non | B01, B04 |
 | R27 | Aucun prix inventé. Une fourchette ne s'appuie que sur des ventes réelles de la source, chacune avec sa date ; sans 5 ventes comparables au moins, pas de fourchette, et la raison est dite. | oui | E01 |
 | R28 | Date des données. Toute estimation dit la date des dernières ventes utilisées, signale quand les plus récentes manquent encore, et dit clairement quand DVF ne couvre pas le département (Bas-Rhin, Haut-Rhin, Moselle, Mayotte). | oui | E01 |
-| R29 | Ventes anonymes. Les données publiques de ventes ne servent jamais à identifier une personne : une vente citée n'a ni nom, ni numéro de voie. | non | E02 |
+| R29 | Ventes anonymes. Les données publiques de ventes ne servent jamais à identifier une personne : une vente citée n'a ni nom, ni numéro de voie. | oui | E02 |
 | R30 | Avis validé. Aucun avis de valeur ne part sans la validation de l'agent qui suit le bien. | non | E04 |
 | R31 | Estimation en ligne. Sans visite, seule la fourchette de la commune est donnée, jamais le prix d'un bien précis. | non | E05 |
