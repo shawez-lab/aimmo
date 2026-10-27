@@ -892,3 +892,82 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Objectif : exporter `offres` depuis `@aimmo/core` et remplacer l'import relatif de `packages/api/src/offres.ts` ; ajouter `offreRoutes()` aux routes de `app.ts` ; lancer `syncOffres` chaque jour depuis le planificateur, une fois par créneau.
 - Critères : les routes répondent derrière la clé d'API [R16] ; le passage quotidien tourne une fois par jour [R56, R59] ; rien ne part réellement tant que le plan n'a pas mis d'envoi en service.
 - Attend : rien.
+
+**M10 · Compromis et acte, mai 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-27 par la voie 2. Ids `N..` pour Notaire. Cahier : M10 Compromis et acte ; Feuille de route, mai 2027 : « 3 dossiers tests complets, sans pièce manquante » ; critères « chaque dossier en cours a ses échéances et ses alertes », « aucune relance envoyée hors des heures d'envoi ».
+Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; le compromis et l'acte sont rédigés par le notaire, AIMMO lui transmet un dossier complet et ne rédige aucun acte. Une pièce est une référence de stockage (R2, derrière une interface, faux stockage dans les tests), jamais son contenu ; une pièce d'identité ou anti-blanchiment n'est jamais une pièce du dossier : seul l'état « identité vérifiée » de D03 y figure [R15]. Les échéances légales sont calculées par le code depuis les dates saisies avec leur preuve (rétractation de 10 jours à compter du lendemain de la première présentation de la notification, reportée au premier jour ouvrable si elle tombe un samedi, un dimanche ou un jour férié ; réponse de la commune 2 mois après la réception de la déclaration d'intention d'aliéner) ; les autres dates (prêt, acte) sont lues dans le compromis, jamais inventées [R10]. Le financement est suivi tel que déclaré, jamais évalué [R14]. AIMMO ne reçoit jamais de fonds. Toute relance ou information aux clients et au notaire passe par le contrôle central, en mode essai, dans les heures d'envoi [R01, R26]. Le suivi des commerces (engagement de confidentialité) vient avec M16 ; les espaces propriétaire et acquéreur avec M11 et M13 (juin 2027) : M10 prépare leurs vues. Le code de M10 vit dans `packages/core/src/dossiers/`, ses migrations à partir de `0301`, ses routes dans `packages/api/src/dossiers.ts`, sans toucher aux fichiers du socle ni à ceux de M09 sauf par une tâche qui le dit.
+
+### N01 · Pièces du dossier notaire
+- Statut : en cours (voie 2)
+- Qui : Claude · Relecture : forte · Dépend de : O07
+- Cahier : M10, « Dossier notaire » ; Conformité, données minimales.
+- Objectif : la liste des pièces attendues pour un dossier de vente, calculée par des règles écrites selon le bien (titre de propriété, diagnostics, documents de copropriété pour un lot, fiches de renseignements du vendeur et de l'acquéreur) ; l'agent range chaque pièce reçue par sa référence de stockage, datée et attribuée ; la liste des pièces manquantes ; le dossier est « complet » quand rien ne manque.
+- Critères : la liste dépend seulement des données du bien, la même pour tous [R60] ; une pièce reçue ne s'efface ni ne change, une nouvelle version s'ajoute [R17] ; une pièce d'identité, un document anti-blanchiment ou un RIB sont refusés comme pièce, l'identité n'y figure que comme état vérifié [R15] ; seul l'agent du dossier y accède [R16] ; 3 dossiers tests (maison, appartement en copropriété, terrain) arrivent à « complet ».
+- Attend : rien.
+
+### N02 · Échéancier du dossier et alertes à l'agent
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : N01
+- Cahier : M10, « Échéancier ».
+- Objectif : à la signature du compromis, l'agent saisit les dates avec leur preuve (signature, première présentation de la notification à l'acquéreur, date limite du prêt, dépôt de la déclaration d'intention d'aliéner, demande de l'état daté, date prévue de l'acte) ; le code calcule la fin de la rétractation et la date de réponse de la commune ; chaque jour, une tâche pour l'agent avant chaque échéance, une seule par échéance.
+- Critères : fin de rétractation exacte, jours fériés et fins de semaine compris, sur un jeu de cas écrits [R61] ; aucune échéance sans date saisie ni preuve, rien d'inventé [R10, R61] ; chaque dossier en cours a ses échéances et ses alertes, sur horloge simulée à l'heure de Paris ; une seule tâche par échéance.
+- Attend : rien.
+
+### N03 · Relances des pièces manquantes, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : N01, B02
+- Cahier : M10, « relances automatiques » et règles.
+- Objectif : chaque jour, pour chaque pièce manquante attendue d'un client, une relance préparée et passée par le contrôle central, rangée dans la boîte d'essai ; texte écrit par le code, sans IA, nommant la pièce ; l'agent voit ce qui est parti et ce qui a été refusé.
+- Critères : aucune relance hors des heures d'envoi, sur horloge simulée de la nuit au dimanche [R01] ; jamais à une personne exclue ou arrêtée [R02, R04] ; une relance par pièce et par période réglée [R05] ; rien ne part réellement [R26] ; une pièce reçue arrête ses relances.
+- Attend : rien.
+
+### N04 · Suivi du financement déclaré
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : N02
+- Cahier : M10, « Suivi du financement ».
+- Objectif : les étapes du prêt déclarées par l'acquéreur ou son courtier (demande déposée, accord de principe, offre de prêt émise, offre acceptée, refus), chacune avec sa date et qui l'a déclarée ; une alerte à l'agent quand la date limite du prêt approche sans offre de prêt déclarée.
+- Critères : aucune note, aucun score, aucun tri sur le financement, ni dans les données ni dans les routes [R14] ; seules les étapes d'une liste fermée sont acceptées ; l'alerte part une fois, avant la date limite réglée.
+- Attend : rien.
+
+### N05 · Aucun fonds, bouclier contre le faux RIB (Jamais vu)
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : N03
+- Cahier : M10, règle « AIMMO ne reçoit jamais de fonds ».
+- Objectif : aucun texte d'AIMMO à un client ou au notaire ne demande un paiement ni ne porte de coordonnée bancaire ; chaque message reçu dans la conversation d'un dossier en cours qui parle de virement, d'acompte, de séquestre ou de changement de RIB, ou qui porte un IBAN, déclenche aussitôt une alerte à l'agent, et le client reçoit, dans les heures d'envoi, le rappel écrit qu'AIMMO ne demande jamais de fonds ni de changement de coordonnées bancaires. Jamais vu : aucun réseau ni logiciel ne surveille ainsi la fraude au faux RIB pendant toute la vente.
+- Critères : un texte sortant avec IBAN, RIB ou demande de paiement est refusé par le contrôle, la raison au journal sans la donnée [R62] ; un message reçu suspect donne une alerte à l'agent en moins d'une minute, une seule par message [R18, R62] ; l'IBAN reçu n'est ni rangé en clair ni envoyé à une IA [R15] ; le rappel au client respecte R01 à R05 ; aucune table ni route ne reçoit ou ne suit des fonds.
+- Attend : rien.
+
+### N06 · Acte signé : vente close, commission due
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : N02
+- Cahier : M10, « Acte signé » ; M13 et M11 pour la suite.
+- Objectif : l'agent rapporte l'acte signé avec sa preuve (référence de l'attestation du notaire) ; le dossier se clôt, le bien passe « vendu », la commission devient due au montant du mandat en vigueur, rangée pour M13, et l'après-vente est marqué à démarrer pour M11.
+- Critères : pas d'acte sans compromis en préparation et sans dossier complet [R58, R60] ; la commission vient du mandat en vigueur, avenants compris, jamais d'une saisie [R10, R63] ; une seule clôture par dossier ; rien ne s'efface [R17] ; la publication montre le bien vendu au passage suivant.
+- Attend : rien.
+
+### N07 · Chemin critique de la vente (Jamais vu)
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : N02, N04, N06
+- Cahier : M10, « Suivi en direct » ; L'IA et l'humain, « suit les échéances, informe les clients ».
+- Objectif : pour chaque dossier, le code calcule la date d'acte au plus tôt possible et nomme ce qui la tient (pièce manquante, rétractation, réponse de la commune, prêt, état daté), étape par étape, avec qui doit agir ; une vue vendeur et une vue acquéreur, chacune sans la donnée personnelle de l'autre partie, prêtes pour les espaces de M11. Jamais vu : aucun réseau ne dit au client, à tout moment, ce qui retarde son acte et qui le tient.
+- Critères : même calcul pour les mêmes données, chaque ligne avec sa raison, sans IA [R61] ; aucune date inventée, ce qui manque est dit [R10] ; la vue vendeur ne porte ni nom ni coordonnée de l'acquéreur, et l'inverse [R19, R52] ; sur 3 dossiers tests, l'élément bloquant est le bon à chaque étape.
+- Attend : rien.
+
+### N08 · Routes de M10
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : N01 à N07
+- Cahier : M10 ; Feuille de route, mai 2027.
+- Objectif : les routes `/v1/dossiers` (pièces, échéancier, financement, acte, chemin critique, alertes) dans `packages/api/src/dossiers.ts`, de la même forme que celles de `app.ts`, et `syncDossiers`, le passage quotidien (échéances, relances, financement), sans toucher au socle.
+- Critères : chaque route sous R16, chaque refus une ligne au journal ; 3 dossiers tests complets, sans pièce manquante, suivis par les routes de l'offre acceptée à l'acte ; le passage quotidien rejoué n'ajoute rien.
+- Attend : rien.
+
+### N09 · Branchement de M10 dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : N08
+- Cahier : M10.
+- Objectif : exporter `dossiers` depuis `@aimmo/core` ; ajouter les routes de M10 à `app.ts` ; lancer `syncDossiers` chaque jour depuis le planificateur, une fois par créneau ; brancher le contrôle du bouclier (N05) à la réception des messages.
+- Critères : les routes répondent derrière la clé d'API [R16] ; le passage tourne une fois par jour ; rien ne part réellement tant que le plan n'a pas mis d'envoi en service.
+- Attend : rien.
