@@ -47,6 +47,12 @@ export const INDEX_HTML = `<!doctype html>
 <ul id="rdv" class="liste"></ul>
 </section>
 </section>
+<section id="fiche" hidden>
+<button id="retour" type="button">Retour à ma journée</button>
+<h2 id="fiche-nom"></h2>
+<p id="fiche-etat" class="etat" role="status"></p>
+<div id="fiche-corps"></div>
+</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -73,6 +79,9 @@ h3 { margin: 0 0 8px; font-size: 1.05rem; }
 .liste p { margin: 4px 0 0; }
 .doux, .etat { color: var(--doux); font-size: 0.9rem; }
 .retard { color: #b3261e; }
+.alerte { padding: 12px; border: 2px solid #b3261e; border-radius: 8px; }
+.appel { display: inline-flex; align-items: center; min-height: 44px; margin-top: 12px; padding: 8px 16px; border-radius: 8px; background: var(--accent); color: var(--fond); text-decoration: none; }
+.liste button, #fiche-corps button { margin-top: 8px; }
 details { margin-top: 8px; }
 summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--accent); }
 h4 { margin: 12px 0 4px; font-size: 0.95rem; }
@@ -118,6 +127,7 @@ export const APP_JS = `'use strict';
       li.appendChild(el('strong', String(item.rank) + '. ' + (item.firstName || 'Prénom inconnu')));
       li.appendChild(el('p', item.reason));
       li.appendChild(el('p', 'Place : ' + item.order, 'doux'));
+      li.appendChild(ficheButton(item.personId));
       list.appendChild(li);
     });
     if (data.hiddenSinceFrozen > 0) list.appendChild(el('li', String(data.hiddenSinceFrozen) + ' ligne(s) retirée(s) depuis 7 h 30.', 'doux'));
@@ -130,6 +140,7 @@ export const APP_JS = `'use strict';
       li.appendChild(el('strong', c.firstName || 'Prénom inconnu'));
       li.appendChild(el('p', c.reason));
       li.appendChild(el('p', (c.overdue ? 'En retard : à rappeler depuis ' : 'À rappeler avant ') + hour(c.dueAt), c.overdue ? 'retard' : 'doux'));
+      li.appendChild(ficheButton(c.personId));
       list.appendChild(li);
     });
     return contacts.length === 0 ? 'Aucun contact chaud à rappeler.' : null;
@@ -177,6 +188,123 @@ export const APP_JS = `'use strict';
     });
     return appointments.length === 0 ? 'Aucun rendez-vous aujourd’hui.' : null;
   }
+  var currentKey = null;
+  var ID = /^[A-Za-z0-9_-]{1,64}$/;
+  var TEL = /^tel:[+]?[0-9]{6,15}$/;
+  var PROJECTS = { sell: 'Vendre', buy: 'Acheter', rent_out: 'Mettre en location', rent: 'Louer', invest: 'Investir', sell_business: 'Céder une entreprise', buy_business: 'Reprendre une entreprise', valuation: 'Faire estimer' };
+  var PURPOSES = { valuation_follow_up: 'suivi de l’avis de valeur', value_tracking: 'suivi de la valeur du bien', prospecting: 'prospection', appointment: 'rendez-vous' };
+  var EXCLUSIONS = { network_list: 'sur la liste d’exclusion', stop: 'a demandé l’arrêt', refused: 'a dit non', sold: 'a déjà vendu', followed_elsewhere: 'suivi par quelqu’un d’autre' };
+  function date(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    try { return d.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' }); } catch (e) { return ''; }
+  }
+  function ficheButton(personId) {
+    var b = el('button', 'Voir la fiche');
+    b.setAttribute('type', 'button');
+    b.addEventListener('click', function () { openFiche(personId); });
+    return b;
+  }
+  function block(title, rows) {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', title));
+    var ul = el('ul', null, 'liste');
+    rows.forEach(function (r) { ul.appendChild(r); });
+    if (rows.length === 0) box.appendChild(el('p', 'Rien pour le moment.', 'etat'));
+    box.appendChild(ul);
+    return box;
+  }
+  function line(text, note) {
+    var li = el('li', text);
+    if (note) li.appendChild(el('p', note, 'doux'));
+    return li;
+  }
+  function renderFiche(f, personId) {
+    var body = $('fiche-corps');
+    clear(body);
+    $('fiche-nom').textContent = [f.firstName, f.lastName].filter(function (x) { return x; }).join(' ') || 'Nom inconnu';
+    var contact = f.contact || { allowed: false, reasons: [] };
+    // Personne exclue ou qui a demandé l'arrêt : signalée, sans bouton d'appel [R02, R04].
+    if (!contact.allowed) {
+      var reasons = (contact.reasons || []).map(function (r) { return EXCLUSIONS[r] || r; }).join(', ');
+      body.appendChild(el('p', 'Ne plus contacter : ' + (reasons || 'exclusion active') + '.', 'alerte'));
+    } else if (typeof f.call === 'string' && TEL.test(f.call)) {
+      var a = el('a', 'Appeler', 'appel');
+      a.setAttribute('href', f.call);
+      body.appendChild(a);
+    } else {
+      body.appendChild(el('p', 'Aucun numéro sur la fiche.', 'doux'));
+    }
+    var callbacks = (f.callbacks || []).map(function (c) {
+      var li = line(c.reason, c.doneAt ? 'Fait le ' + date(c.doneAt) : 'À rappeler avant le ' + date(c.dueAt) + ' à ' + hour(c.dueAt));
+      if (!c.doneAt && ID.test(c.taskId)) {
+        var b = el('button', 'Rappel fait');
+        b.setAttribute('type', 'button');
+        b.addEventListener('click', function () { callbackDone(c.taskId, personId); });
+        li.appendChild(b);
+      }
+      return li;
+    });
+    body.appendChild(block('Rappels', callbacks));
+    body.appendChild(block('Projets', (f.projects || []).map(function (p) {
+      var budget = p.budgetMaxEur ? ', budget jusqu’à ' + p.budgetMaxEur + ' €' : '';
+      return line((PROJECTS[p.kind] || p.kind) + ' (étape : ' + p.stage + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
+    })));
+    body.appendChild(block('Origines', (f.sources || []).map(function (s) { return line(s.channel + (s.detail ? ' (' + s.detail + ')' : ''), 'Le ' + date(s.occurredAt)); })));
+    body.appendChild(block('Accords', (f.consents || []).map(function (c) {
+      return line((PURPOSES[c.purpose] || c.purpose) + ' par ' + c.channel, c.withdrawnAt ? 'Retiré le ' + date(c.withdrawnAt) : 'Donné le ' + date(c.givenAt));
+    })));
+    body.appendChild(block('Derniers messages', (f.messages || []).map(function (m) {
+      return line(m.body, (m.direction === 'in' ? 'Reçu' : 'Envoyé') + ' par ' + m.channel + ', le ' + date(m.occurredAt) + ' à ' + hour(m.occurredAt));
+    })));
+  }
+  // La réponse d'une demande de fiche : clé refusée, fiche hors des droits, panne, ou la fiche.
+  function ficheAnswer(r) {
+    if (r.status === 401) return { refused: true };
+    return r.json().then(function (body) {
+      if (r.status === 403 && body && body.code === 'agent_inactive') return { refused: true };
+      if (r.status === 403 || r.status === 404) return { denied: true };
+      if (!r.ok || !body || body.ok !== true) return { failed: true };
+      return { body: body };
+    }, function () { return { failed: true }; });
+  }
+  function openFiche(personId) {
+    if (!currentKey || typeof personId !== 'string' || !ID.test(personId)) return Promise.resolve(false);
+    var mine = session;
+    var key = currentKey;
+    wipeFiche();
+    $('fiche-etat').textContent = 'Chargement…';
+    show('fiche');
+    return api('/v1/fiches/' + encodeURIComponent(personId) + '/resume', key).then(ficheAnswer).then(function (res) {
+      if (mine !== session) return false;
+      if (res.refused) { forgetKey(); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
+      if (res.denied) { $('fiche-etat').textContent = 'Cette fiche n’est pas dans vos droits.'; return false; }
+      if (res.failed) { $('fiche-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      $('fiche-etat').textContent = '';
+      renderFiche(res.body.data, personId);
+      return true;
+    }, function () {
+      if (mine !== session) return false;
+      $('fiche-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.';
+      return false;
+    });
+  }
+  // « Rappel fait » : rien n'est envoyé ; la fiche est relue pour montrer la ligne gardée.
+  function callbackDone(taskId, personId) {
+    if (!currentKey || !ID.test(taskId)) return Promise.resolve(false);
+    var mine = session;
+    var key = currentKey;
+    return api('/v1/rappels/' + encodeURIComponent(taskId) + '/fait', key, 'POST').then(function (r) {
+      if (mine !== session) return false;
+      if (r.status === 401) { forgetKey(); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
+      if (!r.ok) { $('fiche-etat').textContent = 'Le rappel n’a pas pu être marqué fait.'; return false; }
+      return openFiche(personId);
+    }, function () {
+      if (mine !== session) return false;
+      $('fiche-etat').textContent = 'Pas de réseau : le rappel n’est pas marqué fait.';
+      return false;
+    });
+  }
   // Chaque entrée, sortie ou refus ouvre une nouvelle session : une réponse d'une session finie n'est jamais montrée.
   var session = 0;
   function part(id, request, render, mine) {
@@ -215,16 +343,23 @@ export const APP_JS = `'use strict';
   }
   function wipe() {
     ['plan', 'chauds', 'rdv'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
+    wipeFiche();
+  }
+  function wipeFiche() {
+    clear($('fiche-corps'));
+    $('fiche-nom').textContent = '';
+    $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente'].forEach(function (s) { $(s).hidden = s !== id; });
-    $('sortir').hidden = id !== 'accueil';
+    ['connexion', 'accueil', 'attente', 'fiche'].forEach(function (s) { $(s).hidden = s !== id; });
+    $('sortir').hidden = id !== 'accueil' && id !== 'fiche';
   }
-  function api(path, key) {
-    return fetch(path, { headers: { authorization: 'Bearer ' + key }, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
+  function api(path, key, method) {
+    return fetch(path, { method: method || 'GET', headers: { authorization: 'Bearer ' + key }, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
   }
   function refuse(message) {
     session += 1;
+    currentKey = null;
     wipe();
     $('bonjour').textContent = '';
     $('erreur').textContent = message;
@@ -253,6 +388,7 @@ export const APP_JS = `'use strict';
       if (!res.body) return refuse('Le service ne répond pas. Réessayez dans un moment.');
       $('bonjour').textContent = me.firstName ? 'Bonjour ' + me.firstName : 'Bonjour';
       $('erreur').hidden = true;
+      currentKey = key;
       show('accueil');
       return day(key, mine).then(function () { return true; });
     }, function () {
@@ -269,8 +405,16 @@ export const APP_JS = `'use strict';
       $('erreur').hidden = true;
       if (writeKey(key)) enter(key); else { $('erreur').textContent = 'Cet appareil ne peut pas garder la clé.'; $('erreur').hidden = false; }
     });
+    $('retour').addEventListener('click', function () {
+      if (!currentKey) return;
+      session += 1;
+      wipeFiche();
+      show('accueil');
+      day(currentKey, session);
+    });
     $('sortir').addEventListener('click', function () {
       session += 1;
+      currentKey = null;
       forgetKey();
       $('bonjour').textContent = '';
       wipe();

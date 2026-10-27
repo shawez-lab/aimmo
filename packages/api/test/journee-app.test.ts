@@ -90,9 +90,9 @@ describe('A02 · écran « Ma journée »', () => {
     expect(els.accueil!.hidden).toBe(false);
     const shown = items(els.plan!);
     expect(shown).toEqual([
-      '1. ZoéA demandé à être rappeléePlace : règle 1',
-      `2. ${INJECTED}Avis de valeur envoyé il y a 31 joursPlace : règle 3`,
-      '3. AnaEstimation sans rendez-vousPlace : règle 4',
+      '1. ZoéA demandé à être rappeléePlace : règle 1Voir la fiche',
+      `2. ${INJECTED}Avis de valeur envoyé il y a 31 joursPlace : règle 3Voir la fiche`,
+      '3. AnaEstimation sans rendez-vousPlace : règle 4Voir la fiche',
       '1 ligne(s) retirée(s) depuis 7 h 30.',
     ]);
     // Le script ne trie rien : aucun appel de tri dans le code de la page.
@@ -102,14 +102,14 @@ describe('A02 · écran « Ma journée »', () => {
   it('un texte venu d’un client reste un texte : aucun élément n’est créé par son contenu', async () => {
     const { els } = await run(DAY);
     const all = [els.plan!, els.chauds!, els.rdv!].flatMap((l) => l.all());
-    expect(all.map((e) => e.tagName).filter((t) => !['li', 'strong', 'p', 'details', 'summary', 'h4', 'ul', 'span', 'a'].includes(t))).toEqual([]);
+    expect(all.map((e) => e.tagName).filter((t) => !['li', 'strong', 'p', 'details', 'summary', 'h4', 'ul', 'span', 'a', 'button'].includes(t))).toEqual([]);
     expect(els.plan!.textContent).toContain(INJECTED);
     expect(els.rdv!.textContent).toContain(INJECTED);
   });
 
   it('contacts chauds et rendez-vous du jour avec leur brief ; seul l’itinéraire de navigation devient un lien', async () => {
     const { els } = await run(DAY);
-    expect(items(els.chauds!)).toEqual(['LéoVendeur sous 3 moisEn retard : à rappeler depuis 10:00']);
+    expect(items(els.chauds!)).toEqual(['LéoVendeur sous 3 moisEn retard : à rappeler depuis 10:00Voir la fiche']);
     const [first, second] = els.rdv!.children;
     expect(first!.children[0]!.textContent).toBe('10:00 à 11:00 · Estimation · Léa');
     const links = first!.all().filter((e) => e.tagName === 'a');

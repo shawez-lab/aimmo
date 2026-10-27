@@ -58,7 +58,7 @@ describe('A01 · fichiers de l’application', () => {
     expect(js).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/);
     expect(js).toContain("authorization: 'Bearer ' + key");
     // Les seules adresses appelées sont fixes : aucune n'est construite avec la clé.
-    expect(js.match(/(?:api|fetch)\(([^,)]+)/g)?.sort()).toEqual(['api(path', 'fetch(path', "api('/v1/plan-du-jour'", "api('/v1/contacts-chauds'", "api('/v1/rendez-vous/jour'", "api('/v1/moi'"].sort());
+    expect(js.match(/(?:api|fetch)\(([^,)]+)/g)?.sort()).toEqual(['api(path', 'fetch(path', "api('/v1/plan-du-jour'", "api('/v1/contacts-chauds'", "api('/v1/rendez-vous/jour'", "api('/v1/moi'", "api('/v1/fiches/' + encodeURIComponent(personId", "api('/v1/rappels/' + encodeURIComponent(taskId"].sort());
   });
 
   it('[R16] une clé refusée ne montre rien et est effacée ; une panne ne l’efface pas ; la déconnexion l’efface', async () => {
