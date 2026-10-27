@@ -12,6 +12,7 @@ import {
   FicheClient,
   CATEGORIES,
   ControlesSignature,
+  SignaturePapier,
   FicheAgent,
   Modeles,
   FicheUnique,
@@ -401,6 +402,39 @@ const ROUTES: RouteDef[] = [
       const r = await controles(s).check(viewer, id!);
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/documents/${ID}/signature-papier$`),
+    name: 'document.signature_papier',
+    // Un mandat signé sur papier : contrôlé à l'instant, rangé avec sa source, numéroté, exemplaire produit [R39, R41].
+    handle: async (s, viewer, [id], request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['signedAt', 'place', 'scanRef', 'source', 'sourceDetail'].includes(k))) return failure(400, 'unexpected_field', 'Seuls signedAt, place, scanRef, source, sourceDetail sont admis.');
+      if (typeof body.signedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.signedAt)) return failure(400, 'invalid_date', 'signedAt : un instant ISO en UTC.');
+      const r = await new SignaturePapier(s.db, s.acces, s.journal, { now: s.now }).register(viewer, id!, {
+        signedAt: new Date(body.signedAt),
+        place: body.place as never,
+        scanRef: body.scanRef as string,
+        source: typeof body.source === 'string' ? body.source : null,
+        sourceDetail: typeof body.sourceDetail === 'string' ? body.sourceDetail : null,
+      });
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      if (r.rule === 'R16') return refusal(r);
+      return json(r.code === 'already_signed' ? 409 : 400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/documents/${ID}/exemplaire$`),
+    name: 'document.exemplaire',
+    // L'exemplaire du mandant, avec son numéro au registre [R39] : qui voit la fiche en entier [R16].
+    handle: async (s, viewer, [id]) => {
+      const r = await new SignaturePapier(s.db, s.acces, s.journal, { now: s.now }).copy(viewer, id!);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { number: r.number, content: r.content } });
+      return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
     },
   },
   {
