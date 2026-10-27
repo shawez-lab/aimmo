@@ -47,6 +47,8 @@ export interface OfferInput {
   loanEur: unknown;
   signedRef: unknown;
   receivedAt: unknown;
+  /** Clé d'envoi facultative : un double envoi avec la même clé rend l'offre déjà enregistrée. */
+  requestKey?: unknown;
 }
 
 export interface Offer {
@@ -202,6 +204,15 @@ export class RegistreOffres {
     const now = this.now();
     const today = localTime(now, TIME_ZONE).date;
     const bad = (field: string): Problem => ({ ok: false, rule: null, code: 'invalid', field });
+    const requestKey = input.requestKey ?? null;
+    if (requestKey !== null && (typeof requestKey !== 'string' || !/^[A-Za-z0-9_-]{16,64}$/.test(requestKey))) return bad('requestKey');
+    const known = async (): Promise<Offer | null> => {
+      if (requestKey === null) return null;
+      const row = await this.db.first<Row>('SELECT * FROM offer_register WHERE property_id = ? AND request_key = ?', [propertyId, requestKey]);
+      return row ? toOffer(row) : null;
+    };
+    const already = await known();
+    if (already) return { ok: true, value: already };
     if (typeof input.buyerPersonId !== 'string' || input.buyerPersonId.length > 64) return bad('buyerPersonId');
     if (!isInt(input.amountEur, 1, 100_000_000)) return bad('amountEur');
     const conditions = parseConditions(input.conditions);
@@ -249,11 +260,14 @@ export class RegistreOffres {
       const hash = await hashOffer(line);
       try {
         await this.db.run(
-          `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash],
+          `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash, request_key)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash, requestKey],
         );
       } catch (error) {
+        // Le même envoi, arrivé en même temps : l'offre enregistrée par l'autre est rendue.
+        const twin = await known();
+        if (twin) return { ok: true, value: twin };
         // Un autre enregistrement a pris ce rang : on recommence avec le suivant.
         if (/UNIQUE|ajout seul/i.test(String(error))) continue;
         throw error;
