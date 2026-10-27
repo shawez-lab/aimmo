@@ -51,7 +51,7 @@ async function setup() {
   // Un bien de Sam : le fichier commun le rend visitable par les clients d'Alex.
   const property = (overrides: { surfaceM2?: number } = {}) =>
     store.createProperty({ networkId: network.id, agentId: sam.id, reference: 'B-TALANT', kind: 'home', postalCode: '21240', city: 'Talant', priceEur: 280_000, surfaceM2: overrides.surfaceM2 ?? 95, rooms: 4, status: 'available' });
-  return { db, journal, store, visites, network, alex, sam, as, buyer, property, blocked };
+  return { db, journal, store, visites, rdv, network, alex, sam, as, buyer, property, blocked };
 }
 
 describeWithSqlite('T04 · visite et bon de visite', () => {
@@ -134,6 +134,39 @@ describeWithSqlite('T04 · visite et bon de visite', () => {
     await expect(t.db.run('DELETE FROM visits')).rejects.toThrow();
     await expect(t.db.run("UPDATE visit_slips SET content = 'x'")).rejects.toThrow();
     await expect(t.db.run('DELETE FROM visit_slip_templates')).rejects.toThrow();
+  });
+
+  it('une visite décalée par l’agenda garde son lien : le nouveau rendez-vous a sa visite et un bon à sa date, l’ancien garde le sien', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const r = await t.visites.schedule(t.as('agent', t.alex.id), { propertyId: p.id, projectId: b.project.id, start: WEDNESDAY_10H });
+    if (!r.ok) throw new Error(r.code);
+    const moved = await t.rdv.moveFromAgenda(r.visit.appointment.id, new Date(WEDNESDAY_10H.getTime() + 4 * 3_600_000));
+    if (!moved.ok) throw new Error(moved.code);
+    const fresh = await t.visites.slipOf(t.as('agent', t.alex.id), moved.appointment.id);
+    expect(fresh).toMatchObject({ ok: true });
+    if (fresh.ok) expect(fresh.slip.content).toContain('09/12/2026 à 14 h 00');
+    const old = await t.visites.slipOf(t.as('agent', t.alex.id), r.visit.appointment.id);
+    expect(old).toMatchObject({ ok: true, slip: { id: r.visit.slip.id } });
+    const visits = await t.db.all<{ project_id: string }>('SELECT project_id FROM visits');
+    expect(visits.map((v) => v.project_id)).toEqual([b.project.id, b.project.id]);
+  });
+
+  it('un agent dont le client est passé à un autre agent ne lit plus le bon ; chaque lecture du bon va au journal [R16]', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const r = await t.visites.schedule(t.as('agent', t.alex.id), { propertyId: p.id, projectId: b.project.id, start: WEDNESDAY_10H });
+    if (!r.ok) throw new Error(r.code);
+    const before = (await t.journal.all()).filter((e) => e.type === 'fiche.lue').length;
+    expect(await t.visites.slipOf(t.as('agent', t.alex.id), r.visit.appointment.id)).toMatchObject({ ok: true });
+    expect((await t.journal.all()).filter((e) => e.type === 'fiche.lue').length).toBe(before + 1);
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, b.person.id]);
+    expect(await t.visites.slipOf(t.as('agent', t.alex.id), r.visit.appointment.id)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.visites.recordPaperSignature(t.as('agent', t.alex.id), r.visit.appointment.id, { signedAt: new Date(TUESDAY_10H), scanRef: 'x.pdf' })).toMatchObject({ ok: false, rule: 'R16' });
   });
 
   it('seuls l’agent de l’acquéreur et la direction [R16] ; un partenaire, un autre agent ou la conformité refusés, au journal', async () => {

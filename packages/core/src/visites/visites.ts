@@ -13,7 +13,9 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { DiffusionGate } from '../acquereurs/rapprochement.ts';
+import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 import type { OutboundChannelName, Project } from '../db/types.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { renderDocument, sha256, templateFields, type FieldSource } from '../documents/modeles.ts';
@@ -90,6 +92,8 @@ interface TemplateRow {
   hash: string;
 }
 
+type SlipProperty = { id: string; reference: string; kind: string; postal_code: string | null; city: string | null; surface_m2: number | null; rooms: number | null; price_eur: number | null };
+
 interface SlipRow {
   id: string;
   appointment_id: string;
@@ -119,6 +123,7 @@ export class Visites {
   private readonly newId: () => string;
   private readonly gate: DiffusionGate;
   private readonly rdv: RendezVous;
+  private readonly fiche: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -130,6 +135,7 @@ export class Visites {
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.gate = options.diffusion ?? new Diffusion(db, acces, journal, { now: this.now });
     this.rdv = options.rendezVous ?? new RendezVous(db, journal, { now: this.now });
+    this.fiche = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
   }
 
   private actor(viewer: Viewer): string {
@@ -273,14 +279,50 @@ export class Visites {
     return { ok: true };
   }
 
+  /**
+   * La visite d'un rendez-vous, pour qui voit la fiche de l'acquéreur en entier aujourd'hui : la lecture passe par les
+   * droits, qui l'écrivent au journal avant de rendre quoi que ce soit [R16]. Un rendez-vous qui en remplace un autre
+   * (décalé par le lien ou par l'agenda) reprend la visite de celui qu'il remplace, avec un bon neuf à sa date.
+   */
   private async visitFor(viewer: Viewer, appointmentId: string): Promise<{ ok: true; agentId: string } | VisitRefusal> {
-    const v = await this.db.first<{ network_id: string; agent_id: string }>('SELECT network_id, agent_id FROM visits WHERE appointment_id = ?', [appointmentId]);
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'visit', 'role', `visit:${appointmentId}`);
+    const v = await this.visitRow(appointmentId);
     if (!v || v.network_id !== viewer.networkId) return this.refuse(viewer, 'visit', 'unknown', `visit:${appointmentId}`);
-    if (viewer.role === 'direction') return { ok: true, agentId: v.agent_id };
-    if (viewer.role !== 'agent' || viewer.userId !== v.agent_id) return this.refuse(viewer, 'visit', viewer.role === 'agent' ? 'not_assigned' : 'role', `visit:${appointmentId}`);
-    const agent = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
-    if (agent?.status !== 'active') return this.refuse(viewer, 'visit', 'agent_inactive', `visit:${appointmentId}`);
+    const read = await this.acces.readFiche(viewer, v.person_id);
+    if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+    if (read.view !== 'full') return this.refuse(viewer, 'visit', 'not_assigned', `visit:${appointmentId}`);
     return { ok: true, agentId: v.agent_id };
+  }
+
+  private async visitRow(appointmentId: string): Promise<{ network_id: string; agent_id: string; person_id: string } | null> {
+    const direct = await this.db.first<{ network_id: string; agent_id: string; person_id: string }>('SELECT network_id, agent_id, person_id FROM visits WHERE appointment_id = ?', [appointmentId]);
+    if (direct) return direct;
+    // Remonter la suite des remplacements jusqu'à la visite d'origine.
+    let id: string | null = appointmentId;
+    for (let depth = 0; id !== null && depth < 20; depth += 1) {
+      const appt: { replaces_id: string | null } | null = await this.db.first<{ replaces_id: string | null }>('SELECT replaces_id FROM appointments WHERE id = ?', [id]);
+      id = appt?.replaces_id ?? null;
+      if (id === null) return null;
+      const origin = await this.db.first<{ network_id: string; property_id: string; project_id: string; person_id: string; agent_id: string }>(
+        'SELECT network_id, property_id, project_id, person_id, agent_id FROM visits WHERE appointment_id = ?',
+        [id],
+      );
+      if (!origin) continue;
+      const appointment = await this.rdv.get(appointmentId);
+      if (!appointment || appointment.network_id !== origin.network_id) return null;
+      const { changes } = await this.db.run(
+        `INSERT INTO visits (appointment_id, network_id, property_id, project_id, person_id, agent_id, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'system:visites', ?) ON CONFLICT DO NOTHING`,
+        [appointmentId, origin.network_id, origin.property_id, origin.project_id, origin.person_id, appointment.agent_id, this.now().toISOString()],
+      );
+      if (changes === 1) {
+        const property = await this.db.first<SlipProperty>('SELECT * FROM properties WHERE id = ?', [origin.property_id]);
+        const members = (await this.fiche.view(origin.person_id)).members;
+        if (property && (await this.currentTemplate(origin.network_id))) await this.makeSlip(origin.network_id, appointment, appointment.agent_id, property, members);
+      }
+      return { network_id: origin.network_id, agent_id: appointment.agent_id, person_id: origin.person_id };
+    }
+    return null;
   }
 
   /** Le modèle en vigueur : la dernière version validée ; sinon la dernière d'essai, qui ne donne qu'un bon d'essai. */
@@ -296,7 +338,7 @@ export class Visites {
     networkId: string,
     appointment: Appointment,
     agentId: string,
-    property: { id: string; reference: string; kind: string; postal_code: string | null; city: string | null; surface_m2: number | null; rooms: number | null; price_eur: number | null },
+    property: SlipProperty,
     members: readonly { first_name: string | null; last_name: string | null }[],
   ): Promise<VisitSlip> {
     const template = await this.currentTemplate(networkId);
