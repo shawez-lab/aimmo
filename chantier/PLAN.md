@@ -602,7 +602,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : l'avenant porte la référence et le numéro du mandat ; le prix du mandat change seulement quand l'avenant est signé ; rien n'est effacé [R17].
 
 ### D08 · Signature en ligne AIMMO, en mode essai
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : D03
 - Cahier : M06, « Signature électronique AIMMO ».
 - Objectif : code à usage unique par mail (rangé dans la boîte d'essai, jamais envoyé), signature manuscrite à l'écran possible, empreinte du document, horodatage, dossier de preuve ; chaque signataire reçoit son exemplaire (dans la boîte d'essai).
@@ -610,7 +610,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H24, H05.
 
 ### D09 · Mesure : mandat signé en moins de 10 minutes
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : la chronologie se lit dans la base (avis validé, document, contrôle, numéro), sans rien ajouter ; « moins de 10 minutes » strictement ; la mesure réelle attend H08 et H23.
 - Qui : Claude · Relecture : normale · Dépend de : D04, E04
 - Cahier : M06, critère « un mandat test signé en moins de 10 minutes à partir de l'estimation, et numéroté au registre ».
 - Objectif : un parcours de test, de l'avis de valeur au mandat numéroté, sur une horloge simulée et des données inventées, avec le temps de chaque étape ; la marche à suivre pour le mesurer avec Shawez sur un vrai rendez-vous.
