@@ -68,7 +68,12 @@ const ABBREVIATIONS: Record<string, string> = {
 
 /** La voie lisible, comme sur le site, sans aucun numéro devant [R29]. */
 export function readableStreet(raw: string): string {
-  const withoutNumber = String(raw).trim().replace(/^\d+\s*(?:bis|ter|quater|[a-z])?\b[\s,]*/i, '');
+  // Numéros simples ou composés (`12`, `12-14`, `12/14`, `3 bis`, `7B`) : tout le préfixe part ; ce qui commence
+  // encore par un chiffre n'est pas cité.
+  const withoutNumber = String(raw)
+    .trim()
+    .replace(/^(?:[\d\s\-/,&.]+(?:bis|ter|quater|[a-z])?\b[\s,]*)+/i, '');
+  if (/^\d/.test(withoutNumber)) return '';
   const words = withoutNumber.split(/\s+/).filter(Boolean);
   return words
     .map((word, i) => {

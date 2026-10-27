@@ -72,8 +72,12 @@ describe('E02 · ventes DVF du site comme source', () => {
     const src = new DvfSiteSales(reader(store));
     expect(await src.within('apartment', CENTER.lat, CENTER.lon, 500)).toEqual([]);
     expect(src.skipped.tiles).toBe(1);
-    const bad = new DvfSiteSales(async (path) => (path === 't/1_1.json' ? '{illisible' : null));
-    expect(await bad.coverage()).toBeNull();
+    // Derrière un index valable, une tuile illisible est écartée et comptée.
+    const unreadable = new DvfSiteSales(reader());
+    expect(await unreadable.within('apartment', 0.07, 0.07, 100)).toEqual([]);
+    expect(unreadable.skipped.tiles).toBe(1);
+    const noIndex = new DvfSiteSales(async (path) => (path === 't/1_1.json' ? '{illisible' : null));
+    expect(await noIndex.coverage()).toBeNull();
     const broken = new DvfSiteSales(async () => {
       throw new Error('réseau');
     });
@@ -88,7 +92,11 @@ describe('E02 · ventes DVF du site comme source', () => {
     expect(await src.detail(`${HOME}:15`)).toBeNull();
     expect(await src.detail('../../secret:1')).toBeNull();
     expect(await src.detail('9_9:0')).toBeNull();
-    for (const raw of ['12 RUE DES ESSAIS', '3 bis AV DU TEST', '7B PL DE LA GARE', '101, BD DU PARC']) expect(readableStreet(raw), raw).not.toMatch(/\d/);
+    for (const raw of ['12 RUE DES ESSAIS', '3 bis AV DU TEST', '7B PL DE LA GARE', '101, BD DU PARC', '12-14 RUE DES ESSAIS', '12/14 RUE DES ESSAIS', '12 - 14 bis RUE DES ESSAIS', '5 & 7 RUE DU TEST', '12-14B RUE DES ESSAIS']) {
+      expect(readableStreet(raw), raw).not.toMatch(/\d/);
+      expect(readableStreet(raw), raw).toMatch(/^(Rue|Avenue|Place|Boulevard) /);
+    }
+    expect(readableStreet('12 BD DU PARC')).toBe('Boulevard du Parc');
     expect(readableTown('SAINT-TEST-LES-ESSAIS')).toBe('Saint-Test-les-Essais');
   });
 
