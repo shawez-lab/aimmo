@@ -181,6 +181,8 @@ describeWithSqlite('N02 · échéancier du dossier et alertes à l’agent', () 
     expect(await e.run(t.network.id)).toBe(0);
     const samTasks = await e.tasksOf(t.sam);
     expect(samTasks.ok && samTasks.tasks.map((x) => x.kind)).toEqual(['a_saisir', 'a_saisir', 'a_saisir', 'a_saisir', 'a_saisir']);
+    // Chaque lecture des tâches est au journal [R16].
+    expect((await t.journal.bySubject(`agent:${t.sam.userId}`)).filter((x) => x.type === 'dossier.taches_lues').at(-1)?.data).toEqual({ rule: 'R16', files: [`sale_file:${t.fileId}`] });
     const refusals = (await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((x) => x.type === 'acces.refuse');
     expect(refusals.length).toBeGreaterThanOrEqual(4);
     // Le journal porte le type de date, jamais la date ni la preuve.

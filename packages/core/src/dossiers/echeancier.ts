@@ -328,6 +328,8 @@ export class Echeancier {
         tasks.push({ fileId: r.file_id, propertyId: r.property_id, deadline: r.deadline, kind: 'avant_echeance', day: r.due_day, createdAt: r.created_at });
       }
     }
+    // Chaque lecture est écrite au journal, sans donnée personnelle : qui, quand, quels dossiers [R16].
+    await appendEvent(this.journal, { type: 'dossier.taches_lues', actor: actorOf(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R16', files: [...new Set(tasks.map((x) => `sale_file:${x.fileId}`))] } }, this.now);
     tasks.sort((a, b) => ((a.day ?? '') < (b.day ?? '') ? -1 : (a.day ?? '') > (b.day ?? '') ? 1 : DEADLINES.indexOf(a.deadline) - DEADLINES.indexOf(b.deadline)));
     return { ok: true, tasks };
   }

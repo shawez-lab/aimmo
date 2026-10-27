@@ -183,6 +183,8 @@ export class FinancementDossier {
       }
       alerts.push({ fileId: r.file_id, propertyId: r.property_id, kind: r.kind, day: r.due_day, createdAt: r.created_at });
     }
+    // Chaque lecture est écrite au journal, sans donnée personnelle : qui, quand, combien de dossiers [R16].
+    await appendEvent(this.journal, { type: 'dossier.alertes_lues', actor: actorOf(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R16', files: [...new Set(alerts.map((x) => `sale_file:${x.fileId}`))] } }, this.now);
     return { ok: true, alerts };
   }
 }

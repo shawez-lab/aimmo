@@ -105,5 +105,8 @@ describeWithSqlite('N04 · suivi du financement déclaré', () => {
     expect(await t.fin.alertsOf(t.agent)).toEqual({ ok: true, alerts: [] });
     expect(await t.fin.run(t.network.id)).toBe(1);
     expect(await t.fin.alertsOf(t.sam)).toMatchObject({ ok: true, alerts: [{ kind: 'sans_offre_de_pret' }] });
+    // Chaque lecture des alertes est au journal, avec le dossier lu, sans donnée personnelle.
+    const reads = await t.journal.bySubject(`agent:${t.sam.userId}`);
+    expect(reads.filter((e) => e.type === 'dossier.alertes_lues').at(-1)?.data).toEqual({ rule: 'R16', files: [`sale_file:${t.fileId}`] });
   });
 });
