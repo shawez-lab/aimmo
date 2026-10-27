@@ -167,6 +167,14 @@ describeWithSqlite('T06 · compte rendu de visite dicté', () => {
     expect(await t.comptes.validate(t.as('agent', t.alex.id), v.id, { ...GOOD, opinion: 'Jean a aimé le séjour.' })).toMatchObject({ ok: false, rule: 'R52', code: 'buyer_named' });
   });
 
+  it('une particule de nom ne nomme personne : « Le Gall » n’interdit pas « le visiteur »', async () => {
+    const t = await setup({ write: async () => GOOD });
+    const v = await t.visit('Inès', 'Le Gall');
+    await t.comptes.dictate(t.as('agent', t.alex.id), v.id, 'Il a aimé la lumière du séjour et le jardin, cuisine à refaire.');
+    expect(await t.comptes.validate(t.as('agent', t.alex.id), v.id, { ...GOOD, opinion: 'Le visiteur a aimé la lumière du séjour.' })).toMatchObject({ ok: true, delivery: 'sent' });
+    expect(await t.comptes.validate(t.as('agent', t.alex.id), v.id)).toMatchObject({ ok: true, delivery: 'sent' });
+  });
+
   it('validé la nuit : il attend l’heure [R01] et part au passage suivant ; seul l’agent de l’acquéreur ou la direction [R16]', async () => {
     const t = await setup({ write: async () => GOOD });
     const v = await t.visit();

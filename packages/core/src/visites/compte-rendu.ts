@@ -56,6 +56,10 @@ const OFFER_WORDS = /\b(?:offre|proposition|proposer|faire une offre|pret a ache
 const OFFER_DENIED = /\b(?:ne|n|pas|aucune?|jamais|sans|plus)\b[^.!?]{0,40}\b(?:offre|proposition|proposer|acheter|achete|signer)\b/;
 const CONTACT = /@|\+\d{2}|\b00\d{2}|\b0\d(?:[ .-]?\d{2}){4}\b/;
 
+/** Les particules d'un nom composé, qui ne nomment personne seules : « Le » de « Le Gall », « de » de « de Vries ». */
+const PARTICLES = new Set(['le', 'la', 'les', 'de', 'du', 'des', 'd', 'l', 'van', 'von', 'der', 'den', 'da', 'di', 'del', 'della', 'dos', 'das', 'el', 'al', 'ben', 'bin', 'et', 'y', 'saint', 'sainte']);
+const nameWords = (n: string): string[] => plain(n).split(/[^\p{L}]+/u).filter((w) => w.length > 1 && !PARTICLES.has(w));
+
 /** Retire les coordonnées connues des fiches, telles qu'elles y sont, et tout compte en « @ » [R15]. */
 export function redactIdentifiers(text: string, identifiers: readonly string[]): string {
   let out = text;
@@ -69,7 +73,7 @@ export function redactIdentifiers(text: string, identifiers: readonly string[]):
 
 /** Retire chaque mot d'un nom connu, accents et casse ignorés : « Ines » comme « Inès » [R15]. */
 export function redactNames(text: string, names: readonly string[]): string {
-  const keys = new Set(names.flatMap((n) => n.split(/[^\p{L}]+/u)).map((w) => plain(w)).filter((w) => w.length > 1));
+  const keys = new Set(names.flatMap(nameWords));
   return text.replace(/\p{L}+/gu, (word) => (keys.has(plain(word)) ? '[nom]' : word));
 }
 
@@ -177,7 +181,7 @@ export class ComptesRendus {
     const members = (await this.fiche.view(personId)).members;
     const whole = members.flatMap((m) => [m.first_name, m.last_name]).filter((n): n is string => typeof n === 'string' && n.trim().length > 1);
     // Les noms entiers et chacun de leurs mots : « Jean-Pierre », « Jean », « Pierre ».
-    return [...new Set([...whole, ...whole.flatMap((n) => n.split(/[^\p{L}]+/u)).filter((w) => w.length > 1)])];
+    return [...new Set([...whole, ...whole.flatMap((n) => n.split(/[^\p{L}]+/u)).filter((w) => w.length > 1 && !PARTICLES.has(plain(w)))])];
   }
 
   /** La dictée de l'agent, et le compte rendu que l'IA en tire ; tant qu'il n'est pas validé, une nouvelle dictée le remplace. */
@@ -290,7 +294,7 @@ export class ComptesRendus {
   private names(report: VisitReport, names: readonly string[]): boolean {
     const text = ` ${plain([report.opinion, ...report.strengths, ...report.reservations].join(' ')).replace(/[^\p{L}]+/gu, ' ')} `;
     // Chaque mot d'un nom compte seul : « Jean » pour « Jean-Pierre » [R52].
-    return names.some((n) => plain(n).split(/[^\p{L}]+/u).some((w) => w.length > 1 && text.includes(` ${w} `)));
+    return names.some((n) => nameWords(n).some((w) => text.includes(` ${w} `)));
   }
 
   private async seller(networkId: string, propertyId: string): Promise<{ person_id: string; agent_id: string } | null> {
