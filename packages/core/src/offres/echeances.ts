@@ -59,14 +59,21 @@ export class EcheancesOffres {
   }
 
   /** Les tâches d'échéance de l'agent, pour lui seul, celles des offres encore sans réponse [R16]. */
-  async tasksOf(viewer: Viewer): Promise<OfferTask[]> {
-    if (viewer.role !== 'agent') return [];
+  async tasksOf(viewer: Viewer): Promise<{ ok: true; tasks: OfferTask[] } | { ok: false; rule: 'R16'; code: 'not_agent' | 'agent_inactive' }> {
+    const refuse = async (code: 'not_agent' | 'agent_inactive') => {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'offer_tasks', code } }, this.now);
+      return { ok: false as const, rule: 'R16' as const, code };
+    };
+    if (viewer.role !== 'agent') return refuse('not_agent');
+    // Un agent parti, ou d'un autre réseau, ne voit plus rien [R16].
+    const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [viewer.userId]);
+    if (!agent || agent.network_id !== viewer.networkId || agent.status !== 'active') return refuse('agent_inactive');
     const rows = await this.db.all<{ offer_id: string; property_id: string; last_day: string; created_at: string }>(
       `SELECT k.offer_id, o.property_id, k.last_day, k.created_at FROM offer_tasks k JOIN offer_register o ON o.id = k.offer_id
        WHERE k.network_id = ? AND k.agent_id = ? AND NOT EXISTS (SELECT 1 FROM offer_responses r WHERE r.offer_id = k.offer_id)
        ORDER BY k.last_day, k.created_at`,
       [viewer.networkId, viewer.userId],
     );
-    return rows.map((r) => ({ offerId: r.offer_id, propertyId: r.property_id, lastDay: r.last_day, createdAt: r.created_at }));
+    return { ok: true, tasks: rows.map((r) => ({ offerId: r.offer_id, propertyId: r.property_id, lastDay: r.last_day, createdAt: r.created_at })) };
   }
 }
