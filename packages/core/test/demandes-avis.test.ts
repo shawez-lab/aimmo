@@ -347,6 +347,26 @@ describeWithSqlite('F02 · demande d’avis le lendemain de l’acte, à tous, e
     expect(box[0]!.body).not.toBe(box[1]!.body);
   });
 
+  it('[R05] une demande en attente d’une fiche réunie ensuite à une autre ne laisse ni doublon ni fausse tâche', async () => {
+    const t = await setup({ link: false });
+    const a = await t.client('Ana', 'Un');
+    const a2 = await t.client('Ana', 'Un');
+    t.close('f1', '2027-03-08', [{ personId: a2, side: 'vendeur' }]);
+    await t.passes('2027-03-09', '2027-03-09');
+    await new FicheUnique(t.db, new FicheClient(t.db, { now: t.now }), { now: t.now }).merge({ survivorId: a, mergedId: a2, reason: 'même personne, test' });
+    t.setClock(paris('2027-03-10', 9));
+    await t.avis.setReviewLink(t.agent, t.alexId, LINK);
+    await t.passes('2027-03-10', '2027-03-20');
+    expect(await t.outboxCount()).toBe(1);
+    const list = await t.avis.list(t.agent);
+    expect(list.ok && list.value.map((r) => [r.personId === a ? 'gardée' : 'réunie', r.status, r.rule]).sort()).toEqual([
+      ['gardée', 'sent', null],
+      ['réunie', 'closed', 'fiche_reunie'],
+    ]);
+    const tasks = await t.avis.openTasks(t.agent);
+    expect(tasks.ok && tasks.value).toEqual([]);
+  });
+
   it('[R16] [R13] un agent ne voit que les demandes de ses dossiers ; le journal ne garde ni texte ni coordonnée', async () => {
     const t = await setup();
     const a = await t.client('Ana', 'Un');

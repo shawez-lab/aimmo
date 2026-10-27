@@ -243,6 +243,11 @@ export class DemandesAvis {
         seen.add(root);
         clients.push({ personId: root, side: c.side });
       }
+      // Une demande en attente d'une fiche réunie depuis à une autre est close : la demande part sous la fiche gardée.
+      for (const r of await this.db.all<{ person_id: string }>("SELECT person_id FROM review_requests WHERE file_id = ? AND status IN ('waiting', 'failed')", [sale.fileId])) {
+        if (seen.has(r.person_id) || !seen.has(await this.unique.rootOf(r.person_id))) continue;
+        await this.db.run("UPDATE review_requests SET status = 'closed', rule = 'fiche_reunie', updated_at = ? WHERE file_id = ? AND person_id = ? AND status IN ('waiting', 'failed')", [at, sale.fileId, r.person_id]);
+      }
       // Chaque demande est rangée tout de suite, même sans lien : le délai la clora et l'agent sera prévenu.
       for (const c of clients) {
         await this.db.run(
