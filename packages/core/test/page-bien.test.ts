@@ -15,11 +15,12 @@ const INPUT: PageInput = {
     body: 'Au 3e étage avec ascenseur.\nBalcon.',
     mentions: `Prix : 210${S}000${N}€ honoraires inclus, soit 200${S}000${N}€ hors honoraires et 5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.\nCarte professionnelle n° CPI 0000.`,
     priceEur: 210000,
+    media: [],
   },
   agent: { firstName: 'Alex', lastName: 'Agent', phone: '03 00 00 00 00', email: 'alex@exemple.test' },
   photos: [
-    { ref: 'biens/b1/0b6f1d2e-1111-4a2b-8c3d-000000000001.jpg', kind: 'photo', edit: 'aucune' },
-    { ref: 'biens/b1/0b6f1d2e-2222-4a2b-8c3d-000000000002.jpg', kind: 'photo', edit: 'amenagement_virtuel' },
+    { ref: 'biens/b1/0b6f1d2e-1111-4a2b-8c3d-000000000001.jpg', kind: 'photo', overlay: null },
+    { ref: 'biens/b1/0b6f1d2e-2222-4a2b-8c3d-000000000002.jpg', kind: 'photo', overlay: 'Aménagement virtuel' },
   ],
 };
 
@@ -48,7 +49,7 @@ describe('P05 · page du bien et fiche imprimable', () => {
   it('l’état et le prix suivent la version : sous offre, vendu, retiré', () => {
     expect(renderListingPage({ ...INPUT, payload: { ...INPUT.payload, state: 'sous_offre' } })).toContain('Sous offre');
     expect(renderListingPage({ ...INPUT, payload: { ...INPUT.payload, state: 'vendu', priceEur: 200000 } })).toContain(`200${S}000${N}€`);
-    const retired = renderListingPage({ ...INPUT, payload: { reference: 'REF-T-1', version: 4, state: 'retiree', title: null, body: null, mentions: null, priceEur: null } });
+    const retired = renderListingPage({ ...INPUT, payload: { reference: 'REF-T-1', version: 4, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] } });
     expect(retired).toContain("Ce bien n'est plus proposé à la vente.");
     expect(retired).toContain('content="noindex"');
     expect(retired).not.toMatch(/€|<img|Balcon/);
@@ -65,7 +66,7 @@ describe('P05 · page du bien et fiche imprimable', () => {
   });
 
   it('la fiche imprimable a exactement deux pages A4, la première porte le prix et les mentions, quatre photos au plus', () => {
-    const many = { ...INPUT, photos: Array.from({ length: 9 }, (_, i) => ({ ref: `biens/b1/0b6f1d2e-1111-4a2b-8c3d-00000000000${i}.jpg`, kind: 'photo' as const, edit: 'aucune' as const })) };
+    const many = { ...INPUT, photos: Array.from({ length: 9 }, (_, i) => ({ ref: `biens/b1/0b6f1d2e-1111-4a2b-8c3d-00000000000${i}.jpg`, kind: 'photo' as const, overlay: null })) };
     const html = renderListingPrint(many)!;
     expect(html.match(/<section class="page">/g)).toHaveLength(2);
     expect(html).toContain('@page{size:A4');

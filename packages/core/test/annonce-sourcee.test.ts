@@ -117,6 +117,15 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(codes('Classé D au DPE, GES C.')).toEqual([]);
   });
 
+  it('[R46] un point d’abréviation ne coupe pas une adresse en deux phrases', () => {
+    const r = traceListing('Appartement à Dijon', 'Au 12 av. des Essais. Au 3e étage.', FACTS);
+    expect(r.ok).toBe(false);
+    expect(r.sentences.map((s) => s.text)).toEqual(['Appartement à Dijon', 'Au 12 av. des Essais.', 'Au 3e étage.']);
+    expect(r.sentences[1]!.problems.some((p) => p.code === 'adresse')).toBe(true);
+    expect(traceListing('Appartement à Dijon', 'Proche du bd. Essai.', FACTS).ok).toBe(false);
+    expect(traceListing('Appartement à Dijon', 'Écrit par une I.A. Au 3e étage.', FACTS).ok).toBe(false);
+  });
+
   it('[R46] critères discriminants lus au pluriel, au féminin, sans accents ; « réservé aux »', () => {
     expect(codes('Réservé aux Français.')).toEqual(['critere_discriminant:reserve aux', 'critere_discriminant:francais']);
     expect(codes('Voisins musulmans.')).toEqual(['critere_discriminant:musulmans']);

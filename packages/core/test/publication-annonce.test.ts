@@ -165,7 +165,7 @@ describeWithSqlite('P04 · publication partout, au même prix, en mode essai', (
     const all = await t.publication.syncAll(t.network.id);
     expect(all).toHaveLength(1);
     const p = t.channels[0]!.received[0]!;
-    expect(Object.keys(p).sort()).toEqual(['body', 'mentions', 'priceEur', 'reference', 'state', 'title', 'version']);
+    expect(Object.keys(p).sort()).toEqual(['body', 'media', 'mentions', 'priceEur', 'reference', 'state', 'title', 'version']);
     expect(JSON.stringify(p)).not.toMatch(/Léa|Exemple|rue /);
     await expect(t.db.run('DELETE FROM listing_versions')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run('UPDATE listing_pushes SET outcome = \'ok\'')).rejects.toThrow(/ne change plus/);

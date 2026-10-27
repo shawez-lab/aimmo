@@ -87,7 +87,7 @@ const NO_UNIT_FIELDS: (keyof ListingFacts)[] = ['buildYear', 'postalCode'];
 
 const NUMBER = /\d{1,3}(?:[   ]\d{3})+(?:,\d+)?|\d+(?:,\d+)?/g;
 
-const VOIE = /(?<![\p{L}\p{N}])(rue|ruelle|avenue|av\.|boulevard|bd|place|chemin|impasse|allée|route|quai|cours|square|passage|faubourg|rond-point|lieu-dit|lotissement|résidence)\s+(\S+)(?:\s+(\S+))?/giu;
+const VOIE = /(?<![\p{L}\p{N}])(rue|r\.|ruelle|avenue|av\.?|boulevard|bd\.?|bvd\.?|pl\.|place|chemin|ch\.|chem\.?|impasse|imp\.|allée|all\.|route|rte\.?|quai|cours|crs\.?|square|sq\.?|passage|pass\.|faubourg|fg\.?|fbg\.?|rond-point|lieu-dit|lotissement|lot\.|résidence|rés\.)\s+(\S+)(?:\s+(\S+))?/giu;
 const VOIE_LINK = new Set(['de', 'du', 'des', 'la', 'le', 'les', 'saint', 'sainte', 'st', 'ste']);
 
 /** Une voie nommée : le mot de la voie suivi d'un article, d'un nom propre ou d'un nombre. */
@@ -104,7 +104,7 @@ function findStreet(sentence: string): string | null {
   }
   return null;
 }
-const STREET_NUMBER = /\b\d{1,4}\s*(?:bis|ter)?\s*,?\s+(rue|avenue|boulevard|bd|chemin|impasse|allée|route|quai|cours)\b/iu;
+const STREET_NUMBER = /\b\d{1,4}\s*(?:bis|ter)?\s*,?\s+(rue|r\.|avenue|av\.?|boulevard|bd\.?|chemin|ch\.|impasse|imp\.|allée|route|rte\.?|quai|cours)(?![\p{L}])/iu;
 
 /** Critères discriminants dans l'accès au logement : liste fermée, volontairement large [R46]. */
 export const DISCRIMINATORY_TERMS: readonly string[] = [
@@ -190,30 +190,35 @@ function numericSources(f: ListingFacts): { field: keyof ListingFacts; value: nu
 const parseNumber = (raw: string): number => Number(raw.replace(/[   ]/g, '').replace(',', '.'));
 
 /** Découpe en phrases : après un point, un point d'exclamation ou d'interrogation, ou un retour à la ligne. */
+/** Abréviations après lesquelles un point ne finit pas la phrase : « av. des Essais » reste d'un bloc. */
+const ABBREVIATIONS = /(?:^|[\s(])(?:av|bd|boul|r|pl|imp|ch|chem|all|fg|faub|rte|st|ste|sq|n°|no|num|bis|ter|m|mme|mlle|dr|env|cf|etc|réf|ref|ex|p|[\p{L}])\.$/iu;
+
 export function sentences(text: string): string[] {
-  return text
+  const pieces = text
     // Un simple retour à la ligne ne coupe pas une phrase : « sans\nenfants » reste lu d'un bloc.
     .split(/(?<=[.!?])\s+|\n\s*\n/u)
     .map((s) => s.replace(/\s+/g, ' '))
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+  const out: string[] = [];
+  for (const piece of pieces) {
+    const prev = out[out.length - 1];
+    if (prev !== undefined && ABBREVIATIONS.test(prev)) out[out.length - 1] = `${prev} ${piece}`;
+    else out.push(piece);
+  }
+  return out;
 }
 
 /** Contrôle une phrase : ses sources et ses problèmes. */
-export function traceSentence(sentence: string, facts: ListingFacts): SourcedSentence {
-  const sources: SourcedSentence['sources'] = [];
+/**
+ * Ce qu'aucun texte public ne peut porter, phrase ou sous-titre : une adresse ou une voie nommée, un critère
+ * discriminant [R46], un mot interdit. Sans contrôle des nombres : sert aussi aux textes des vidéos (P06).
+ */
+export function publicTextProblems(sentence: string): SentenceProblem[] {
   const problems: SentenceProblem[] = [];
   const lower = norm(sentence);
-  const numbers = numericSources(facts);
-  const addSource = (field: keyof ListingFacts, value: string) => {
-    if (!sources.some((s) => s.field === field && s.value === value)) sources.push({ field, value });
-  };
-
-  // Adresse [R46].
   const street = STREET_NUMBER.exec(sentence)?.[0] ?? findStreet(sentence);
   if (street) problems.push({ code: 'adresse', value: street });
-
-  // Critères discriminants [R46] et mots interdits.
   // Chaque passage refusé est nommé une fois, tel qu'il est lu (sans accents), même si plusieurs termes le trouvent.
   const flagged = (terms: readonly string[], code: 'critere_discriminant' | 'mot_interdit') => {
     const found: { at: number; text: string }[] = [];
@@ -223,10 +228,23 @@ export function traceSentence(sentence: string, facts: ListingFacts): SourcedSen
         if (!found.some((f) => at < f.at + f.text.length && f.at < at + m[0].length)) found.push({ at, text: m[0] });
       }
     }
-    for (const f of found.sort((a, b) => a.at - b.at)) problems.push({ code, value: f.text });
+    for (const f of found.sort((x, y) => x.at - y.at)) problems.push({ code, value: f.text });
   };
   flagged(DISCRIMINATORY_TERMS, 'critere_discriminant');
   flagged(FORBIDDEN_TERMS, 'mot_interdit');
+  return problems;
+}
+
+export function traceSentence(sentence: string, facts: ListingFacts): SourcedSentence {
+  const sources: SourcedSentence['sources'] = [];
+  const problems: SentenceProblem[] = [];
+  const lower = norm(sentence);
+  const numbers = numericSources(facts);
+  const addSource = (field: keyof ListingFacts, value: string) => {
+    if (!sources.some((s) => s.field === field && s.value === value)) sources.push({ field, value });
+  };
+
+  problems.push(...publicTextProblems(sentence));
 
   // Nombres [R47] : chacun doit être la valeur d'un champ de la fiche, et du champ que son unité désigne.
   const check = (value: number, raw: string, after: string, before: string) => {
