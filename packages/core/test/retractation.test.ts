@@ -168,4 +168,14 @@ describeWithSqlite('D05 · rétractation et diffusion bloquée', () => {
     expect(await t.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM mandate_register WHERE kind = 'annulation'`)).toEqual({ n: 1 });
     expect(await t.diffusion.recordWithdrawal(t.direction, a.mandateId, proof)).toEqual({ ok: false, rule: null, code: 'already_recorded' });
   });
+
+  it('[R16] un mandat inconnu ou d’un autre réseau est refusé, et le refus est au journal', async () => {
+    const t = await setup();
+    const a = await t.signed('hors_agence');
+    const proof = { proof: 'x', receivedAt: SIGNED };
+    const before = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
+    expect(await t.diffusion.recordWithdrawal({ role: 'direction', userId: 'd', networkId: 'autre-reseau' } as Viewer, a.mandateId, proof)).toEqual({ ok: false, rule: null, code: 'unknown_mandate' });
+    expect(await t.diffusion.recordEarlyStart(t.direction, 'inconnu', proof)).toEqual({ ok: false, rule: null, code: 'unknown_mandate' });
+    expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse').length).toBe(before + 2);
+  });
 });

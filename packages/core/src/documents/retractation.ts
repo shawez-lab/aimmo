@@ -165,7 +165,11 @@ export class Diffusion {
       return { ok: false, rule: 'R16', code: 'role' };
     }
     const m = await this.db.first<{ person_id: string; network_id: string; agent_id: string }>('SELECT person_id, network_id, agent_id FROM mandates WHERE id = ?', [mandateId]);
-    if (!m || m.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_mandate' };
+    if (!m || m.network_id !== viewer.networkId) {
+      // Inconnu ou d'un autre réseau : refusé sans dire s'il existe, et le refus est au journal [R16].
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'mandate', code: 'unknown' } }, this.now);
+      return { ok: false, rule: null, code: 'unknown_mandate' };
+    }
     // Les mêmes droits que le registre : l'agent du mandat lui-même, ou la direction.
     if (viewer.role === 'agent' && m.agent_id !== viewer.userId) {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { rule: 'R16', role: 'agent', kind: 'mandate', code: 'not_assigned' } }, this.now);
@@ -173,12 +177,18 @@ export class Diffusion {
     }
     const read = await this.acces.readFiche(viewer, m.person_id);
     if (!read.ok) return read;
-    if (read.view !== 'full') return { ok: false, rule: 'R16', code: 'not_assigned' };
+    if (read.view !== 'full') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'mandate', code: 'not_assigned' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
     const row = await this.db.first<SignedMandateRow>(
       `SELECT s.mandate_id, s.network_id, s.signed_at, s.place, s.number, d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ?`,
       [mandateId],
     );
-    if (!row) return { ok: false, rule: null, code: 'unknown_mandate' };
+    if (!row) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'mandate', code: 'unknown' } }, this.now);
+      return { ok: false, rule: null, code: 'unknown_mandate' };
+    }
     return { ok: true, row };
   }
 
