@@ -7,6 +7,7 @@ import {
   SqlJournalStore,
   applyMigrations,
   checkText,
+  euros,
   fromSyncSqlite,
   verifyChain,
   type PublicFacts,
@@ -87,11 +88,16 @@ describeWithSqlite('E04 · brouillon d’avis de valeur et validation par l’ag
     let seen: ValuationBrief | null = null;
     const good = await world(async (b) => {
       seen = b;
-      return `Votre appartement vaut entre ${b.low} € et ${b.high} €, d’après ${b.comparables} ventes.`;
+      return `Votre appartement vaut entre ${euros(b.low)} et ${euros(b.high)}, d’après ${b.comparables} ventes.`;
     });
     const r = await good.draft();
     expect(r.text_by).toBe('ai');
     expect(r.text.endsWith(ADVICE_NOTICE)).toBe(true);
+    // [R28] La date des ventes utilisées et le manque des plus récentes sont dits par le code, quel que soit l'auteur.
+    expect(r.text).toContain('Ventes utilisées jusqu’à septembre 2025, données publiées jusqu’à décembre 2025.');
+    expect(r.text).toContain('ne sont pas encore publiées');
+    const vague = await world(async () => 'Votre appartement a une belle valeur.');
+    expect((await vague.draft()).text_by).toBe('fallback');
     expect(JSON.stringify(seen)).not.toMatch(/Essai|Rue|"lat"|"lon"/);
 
     const liar = await world(async () => 'Votre appartement vaut 999 999 €.');
@@ -130,12 +136,33 @@ describeWithSqlite('E04 · brouillon d’avis de valeur et validation par l’ag
     await expect(w.db.run('DELETE FROM valuation_reports')).rejects.toThrow();
   });
 
+  it('[R10] [R06] le texte de l’agent passe le contrôle du texte ; la fourchette dite est celle qui part', async () => {
+    const w = await world();
+    const r = await w.draft();
+    const paul = w.as('agent', w.paul.id);
+    expect(await w.avis.adjust(paul, r.id, { text: `Notre IA estime votre bien entre ${euros(r.computed_low)} et ${euros(r.computed_high)}.` })).toMatchObject({ ok: false, code: 'text_refused' });
+    expect(await w.avis.adjust(paul, r.id, { text: `Votre bien vaut entre ${euros(r.computed_low)} et 999 999 €.` })).toMatchObject({ ok: false, code: 'text_refused' });
+    expect(await w.avis.adjust(paul, r.id, { text: '   ' })).toMatchObject({ ok: false, code: 'text_refused' });
+    // Un texte qui ne dit pas la fourchette retenue ne peut pas être validé.
+    const silent = await w.avis.adjust(paul, r.id, { text: 'Votre bien est lumineux et bien tenu.' });
+    expect(silent.ok).toBe(true);
+    expect(await w.avis.validate(paul, r.id)).toMatchObject({ ok: false, code: 'range_not_in_text' });
+    // Fourchette changée sans nouveau texte : la phrase de fourchette du code suit.
+    const v = await world();
+    const d = await v.draft();
+    const changed = await v.avis.adjust(v.as('agent', v.paul.id), d.id, { low: 150000, high: 170000 });
+    if (!changed.ok) throw new Error(changed.code);
+    expect(changed.value.text).toContain('entre 150 000 € et 170 000 €');
+    expect(changed.value.text).not.toContain(euros(d.computed_low));
+    expect((await v.avis.validate(v.as('agent', v.paul.id), d.id)).ok).toBe(true);
+  });
+
   it('les ajustements de l’agent sont gardés à côté du calcul, et la mention d’avis reste', async () => {
     const w = await world();
     const r = await w.draft();
     const paul = w.as('agent', w.paul.id);
     expect(await w.avis.adjust(paul, r.id, { low: 10, high: 5 })).toMatchObject({ ok: false, code: 'invalid_range' });
-    const a = await w.avis.adjust(paul, r.id, { low: 150000, high: 170000, text: 'Après visite, votre bien est lumineux et bien tenu.' });
+    const a = await w.avis.adjust(paul, r.id, { low: 150000, high: 170000, text: 'Après visite, votre bien est lumineux et bien tenu. Je le situe entre 150 000 € et 170 000 €.' });
     if (!a.ok) throw new Error(a.code);
     expect(a.value).toMatchObject({ computed_low: r.computed_low, computed_high: r.computed_high, agent_low: 150000, agent_high: 170000, text_by: 'agent', computed: r.computed });
     expect(a.value.text.endsWith(ADVICE_NOTICE)).toBe(true);

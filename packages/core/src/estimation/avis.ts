@@ -70,7 +70,7 @@ export interface ValuationReport {
   validated_at: string | null;
 }
 
-export type AvisRefusal = 'unknown' | 'not_following_agent' | 'already_validated' | 'not_validated' | 'invalid_range';
+export type AvisRefusal = 'unknown' | 'not_following_agent' | 'already_validated' | 'not_validated' | 'invalid_range' | 'text_refused' | 'range_not_in_text';
 export type AvisResult<T> = { ok: true; value: T } | { ok: false; rule: 'R30'; code: AvisRefusal };
 
 export interface DraftInput {
@@ -100,7 +100,7 @@ export const ADVICE_NOTICE =
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const monthLabel = (yyyyMm: string): string => `${MONTHS[Number(yyyyMm.slice(5, 7)) - 1] ?? ''} ${yyyyMm.slice(0, 4)}`.trim();
 /** Les milliers séparés par une espace simple, pour que le contrôle du texte lise le nombre entier [R10]. */
-const euros = (n: number): string => `${String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`;
+export const euros = (n: number): string => `${String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`;
 
 function timeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -174,13 +174,20 @@ export class AvisDeValeur {
     }
     if (b.energyClass) lines.push(`Diagnostic énergétique connu : classe ${b.energyClass}.`);
     if (b.risks.length > 0) lines.push(`Risques signalés sur la commune : ${b.risks.join(', ').toLowerCase()}.`);
-    if (b.dataMonth) {
-      lines.push(
-        `Données de ventes publiées jusqu’à ${monthLabel(b.dataMonth)}.${b.recentMissing ? ' Les ventes des derniers mois ne sont pas encore publiées : votre agent complète avec le marché qu’il connaît.' : ''}`,
-      );
-    }
     lines.push('Pour la mise en vente, votre agent vous propose un plan de commercialisation adapté à votre bien et à votre calendrier.');
     return lines.join('\n\n');
+  }
+
+  /**
+   * Le pied que le code ajoute toujours, quel que soit l'auteur du texte : la date des ventes utilisées et des données,
+   * ce qui manque encore [R28], puis la mention d'avis.
+   */
+  private footer(b: ValuationBrief): string {
+    const data = [
+      `Ventes utilisées jusqu’à ${monthLabel(b.latestUsedSale)}${b.dataMonth ? `, données publiées jusqu’à ${monthLabel(b.dataMonth)}` : ''}.`,
+      ...(b.recentMissing ? ['Les ventes des derniers mois ne sont pas encore publiées : votre agent complète avec le marché qu’il connaît.'] : []),
+    ].join(' ');
+    return `${data}\n\n${ADVICE_NOTICE}`;
   }
 
   /** Le brouillon, toujours : un texte de l'IA qui ne passe pas le contrôle est remplacé par le secours. */
@@ -188,7 +195,10 @@ export class AvisDeValeur {
     const { brief, figures } = this.briefOf(input);
     const property = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ? AND network_id = ?', [input.propertyId, input.networkId]);
     if (!property) throw new Error('Bien inconnu dans ce réseau.');
-    const check = (text: string) => checkText(`${text}\n\n${ADVICE_NOTICE}`, { audience: 'client', channel: 'email', figures });
+    const footer = this.footer(brief);
+    const check = (text: string) => checkText(`${text}\n\n${footer}`, { audience: 'client', channel: 'email', figures });
+    // Le texte dit la fourchette du calcul, telle quelle : sinon il part au secours.
+    const saysRange = (text: string) => text.includes(euros(brief.low)) && text.includes(euros(brief.high));
     let text = this.fallbackText(brief);
     let by: ValuationReport['text_by'] = 'fallback';
     let aiNote: string | null = null;
@@ -196,11 +206,11 @@ export class AvisDeValeur {
       try {
         const written = (await timeout(this.options.writer.write(brief), this.options.aiTimeoutMs ?? 30_000)).trim();
         const problems = check(written);
-        if (problems.length === 0) {
+        if (problems.length === 0 && saysRange(written)) {
           text = written;
           by = 'ai';
         } else {
-          aiNote = problems[0]!.rule;
+          aiNote = problems[0]?.rule ?? 'range_missing';
         }
       } catch {
         aiNote = 'timeout_or_error';
@@ -226,6 +236,8 @@ export class AvisDeValeur {
       energyClass: brief.energyClass,
       risks: brief.risks,
       missing: input.facts?.missing ?? null,
+      figures,
+      footer,
     };
     const at = this.now().toISOString();
     const report: ValuationReport = {
@@ -239,7 +251,7 @@ export class AvisDeValeur {
       computed_high: input.range.high,
       agent_low: null,
       agent_high: null,
-      text: `${text}\n\n${ADVICE_NOTICE}`,
+      text: `${text}\n\n${footer}`,
       text_by: by,
       created_at: at,
       updated_at: at,
@@ -285,7 +297,20 @@ export class AvisDeValeur {
     const high = change.high ?? r.agent_high ?? r.computed_high;
     if (!Number.isInteger(low) || !Number.isInteger(high) || low <= 0 || high < low) return { ok: false, rule: 'R30', code: 'invalid_range' };
     const rangeChanged = change.low !== undefined || change.high !== undefined;
-    const text = change.text === undefined ? r.text : change.text.trim().includes(ADVICE_NOTICE) ? change.text.trim() : `${change.text.trim()}\n\n${ADVICE_NOTICE}`;
+    const computed = JSON.parse(r.computed) as { figures: (string | number)[]; footer: string };
+    const before = { low: r.agent_low ?? r.computed_low, high: r.agent_high ?? r.computed_high };
+    let text: string;
+    if (change.text !== undefined) {
+      // Le texte de l'agent passe le même contrôle que celui de l'IA [R06 à R10] ; le pied du code reste.
+      const body = change.text.trim().replace(computed.footer, '').trim();
+      text = `${body}\n\n${computed.footer}`;
+      if (body === '' || checkText(text, { audience: 'client', channel: 'email', figures: [...computed.figures, low, high] }).length > 0) {
+        return { ok: false, rule: 'R30', code: 'text_refused' };
+      }
+    } else {
+      // Fourchette changée sans nouveau texte : la phrase de fourchette suit.
+      text = r.text.split(euros(before.low)).join(euros(low)).split(euros(before.high)).join(euros(high));
+    }
     const at = this.now().toISOString();
     await this.db.run(
       'UPDATE valuation_reports SET agent_low = ?, agent_high = ?, text = ?, text_by = ?, updated_at = ? WHERE id = ? AND status = ?',
@@ -300,6 +325,11 @@ export class AvisDeValeur {
   async validate(viewer: Viewer, id: string): Promise<AvisResult<ValuationReport>> {
     const found = await this.mine(viewer, id);
     if (!found.ok) return found;
+    const r = found.value;
+    // L'avis validé ne porte qu'une fourchette : celle qui partira.
+    if (!r.text.includes(euros(r.agent_low ?? r.computed_low)) || !r.text.includes(euros(r.agent_high ?? r.computed_high))) {
+      return { ok: false, rule: 'R30', code: 'range_not_in_text' };
+    }
     const at = this.now().toISOString();
     await this.db.run("UPDATE valuation_reports SET status = 'validated', validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ? AND status = 'draft'", [
       viewer.userId,
