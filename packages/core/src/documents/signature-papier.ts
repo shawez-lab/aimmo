@@ -234,10 +234,17 @@ export class SignaturePapier {
 
   /** L'exemplaire du mandant : celui qui voit la fiche en entier [R16]. */
   async copy(viewer: Viewer, documentId: string): Promise<{ ok: true; content: string; number: string } | Refusal | { ok: false; rule: null; code: 'not_signed' }> {
-    const row = await this.db.first<SignedRow & { person_id: string }>(
-      'SELECT s.*, d.person_id FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.document_id = ? AND s.network_id = ?',
-      [documentId, viewer.networkId],
-    );
+    // Un mandat signé, ou un avenant signé (D07), qui porte le numéro de son mandat.
+    const row =
+      (await this.db.first<{ copy_content: string | null; number: string | null; person_id: string }>(
+        'SELECT s.copy_content, s.number, d.person_id FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.document_id = ? AND s.network_id = ?',
+        [documentId, viewer.networkId],
+      )) ??
+      (await this.db.first<{ copy_content: string | null; number: string | null; person_id: string }>(
+        `SELECT a.copy_content, s.number, d.person_id FROM signed_amendments a JOIN documents d ON d.id = a.document_id
+         JOIN signed_documents s ON s.mandate_id = a.mandate_id WHERE a.document_id = ? AND a.network_id = ?`,
+        [documentId, viewer.networkId],
+      ));
     if (!row || row.copy_content === null || row.number === null) return { ok: false, rule: null, code: 'not_signed' };
     const read = await this.acces.readFiche(viewer, row.person_id);
     if (!read.ok) return read;

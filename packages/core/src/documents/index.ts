@@ -3,3 +3,5 @@ export * from './controles.ts';
 export * from './signature-papier.ts';
 export * from './retractation.ts';
 export * from './echeances.ts';
+export * from './avenants.ts';
+export * from './conditions.ts';

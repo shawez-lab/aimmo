@@ -17,6 +17,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { localTime } from '../envoi/horaires.ts';
+import { mandateExpired } from './conditions.ts';
 
 export const DOCUMENT_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif', 'avenant_mandat'] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
@@ -40,6 +41,10 @@ export const TEMPLATE_FIELDS: Readonly<Record<string, { source: FieldSource; lab
   'registre.numero': { source: 'signature', label: 'numéro au registre' },
   'signature.date': { source: 'signature', label: 'date de signature' },
   'signature.lieu': { source: 'signature', label: 'lieu de signature' },
+  'mandat.numero': { source: 'base', label: 'numéro du mandat au registre' },
+  'avenant.objet': { source: 'base', label: 'objet de l’avenant' },
+  'avenant.prix': { source: 'saisie', label: 'nouveau prix' },
+  'avenant.duree_mois': { source: 'saisie', label: 'nouvelle durée du mandat' },
 });
 
 export interface TemplateInfo {
@@ -76,18 +81,22 @@ export interface DocumentFacts {
   feeEur: number | null;
   feeCharge: 'vendeur' | 'acquereur' | null;
   durationMonths: number | null;
+  /** Pour un avenant : le mandat modifié. Ses prix et durée sont alors les nouveaux, s'ils changent. */
+  mandateId?: string | null;
 }
 
 export interface GenerateRequest {
   kind: DocumentKind;
   personId: string;
   propertyId: string;
-  /** Les champs saisis par l'agent : honoraires et durée seulement. */
-  inputs?: { 'honoraires.montant'?: unknown; 'honoraires.charge'?: unknown; 'mandat.duree_mois'?: unknown };
+  /** Les champs saisis par l'agent : honoraires et durée ; pour un avenant, nouveau prix et nouvelle durée. */
+  inputs?: { 'honoraires.montant'?: unknown; 'honoraires.charge'?: unknown; 'mandat.duree_mois'?: unknown; 'avenant.prix'?: unknown; 'avenant.duree_mois'?: unknown };
+  /** Pour un avenant : le mandat signé et numéroté qu'il modifie. */
+  mandateId?: string;
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' };
+type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' | 'bad_mandate' };
 
 const PLACEHOLDER = /\{\{\s*([a-z_.]+)\s*\}\}/g;
 const MAX_BODY = 50_000;
@@ -224,6 +233,8 @@ export class Modeles {
     if (/\{\{|\}\}/.test(body.replace(PLACEHOLDER, ''))) return { ok: false, rule: 'R40', code: 'unknown_field' };
     // Le numéro du registre figure sur l'exemplaire du mandant : tout mandat de vente en porte le champ [R39].
     if (kind !== 'avenant_mandat' && !fields.includes('registre.numero')) return { ok: false, rule: 'R40', code: 'no_number_field' };
+    // Un avenant porte la référence du mandat qu'il modifie : son numéro au registre.
+    if (kind === 'avenant_mandat' && !fields.includes('mandat.numero')) return { ok: false, rule: 'R40', code: 'no_number_field' };
     // Un mandat exclusif met sa clause d'exclusivité en évidence : un paragraphe qui commence par `!! `.
     if (kind === 'mandat_vente_exclusif' && !body.replace(/\r\n?/g, '\n').split(/\n{2,}/).some((p) => p.startsWith('!! '))) return { ok: false, rule: 'R40', code: 'no_evidence' };
     const hash = await sha256(JSON.stringify([kind, body, fields]));
@@ -288,6 +299,14 @@ export class Modeles {
       (await this.db.first<TemplateRow>('SELECT * FROM document_templates WHERE network_id = ? AND kind = ? ORDER BY version DESC LIMIT 1', [viewer.networkId, request.kind]));
     if (!template) return { ok: false, rule: 'R40', code: 'no_template' };
 
+    // Un avenant se rattache à un mandat signé, numéroté, en cours, du même mandant et du même bien.
+    let linked: { id: string; number: string; facts: DocumentFacts | null } | null = null;
+    if (template.kind === 'avenant_mandat') {
+      if (typeof request.mandateId !== 'string') return { ok: false, rule: null, code: 'bad_mandate' };
+      linked = await this.mandateInForce(viewer.networkId, request.mandateId, fiche.members.map((m) => m.id), property.id);
+      if (!linked) return { ok: false, rule: null, code: 'bad_mandate' };
+    } else if (request.mandateId !== undefined) return { ok: false, rule: null, code: 'bad_mandate' };
+
     const agentId = viewer.role === 'agent' ? viewer.userId : (fiche.members.map((m) => m.agent_id).find((a) => a !== null) ?? property.agent_id);
     if (!agentId) return this.refuse(viewer, 'person', 'not_assigned', `person:${request.personId}`);
     const agent = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ? AND network_id = ?', [agentId, viewer.networkId]);
@@ -306,17 +325,35 @@ export class Modeles {
       'agent.nom': agent ? text(`${agent.first_name} ${agent.last_name}`) : null,
       'reseau.nom': text(network?.name),
       'document.date': `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`,
+      'mandat.numero': linked ? linked.number : null,
+      'avenant.objet': linked ? amendmentObject(inputs) : null,
       ...inputs,
     };
     // Les faits utiles aux contrôles avant signature (D03), tels qu'ils étaient à la génération.
     const raw = request.inputs ?? {};
-    const facts: DocumentFacts = {
-      priceEur: property.price_eur ?? null,
-      feeEur: typeof raw['honoraires.montant'] === 'number' ? raw['honoraires.montant'] : null,
-      feeCharge: raw['honoraires.charge'] === 'vendeur' || raw['honoraires.charge'] === 'acquereur' ? raw['honoraires.charge'] : null,
-      durationMonths: typeof raw['mandat.duree_mois'] === 'number' ? raw['mandat.duree_mois'] : null,
-    };
+    const facts: DocumentFacts = linked
+      ? {
+          // Un avenant : les honoraires du mandat, et les nouveaux prix et durée s'ils changent.
+          priceEur: typeof raw['avenant.prix'] === 'number' ? raw['avenant.prix'] : null,
+          feeEur: linked.facts?.feeEur ?? null,
+          feeCharge: linked.facts?.feeCharge ?? null,
+          durationMonths: typeof raw['avenant.duree_mois'] === 'number' ? raw['avenant.duree_mois'] : null,
+          mandateId: linked.id,
+        }
+      : {
+          priceEur: property.price_eur ?? null,
+          feeEur: typeof raw['honoraires.montant'] === 'number' ? raw['honoraires.montant'] : null,
+          feeCharge: raw['honoraires.charge'] === 'vendeur' || raw['honoraires.charge'] === 'acquereur' ? raw['honoraires.charge'] : null,
+          durationMonths: typeof raw['mandat.duree_mois'] === 'number' ? raw['mandat.duree_mois'] : null,
+        };
     const fields = JSON.parse(template.fields) as string[];
+    // Toute saisie doit figurer sur le document signé ; pour un avenant, l'objet écrit tous les changements.
+    const supplied = Object.entries(request.inputs ?? {}).filter(([, v]) => v !== undefined && v !== null).map(([k]) => k);
+    const rendered = (k: string): boolean => fields.includes(k) || (template.kind === 'avenant_mandat' && fields.includes('avenant.objet') && (k === 'avenant.prix' || k === 'avenant.duree_mois'));
+    if (supplied.some((k) => !rendered(k))) return { ok: false, rule: 'R40', code: 'bad_input' };
+    if (template.kind !== 'avenant_mandat' && supplied.some((k) => k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
+    // Un avenant ne change que le prix et la durée par ses propres champs : les saisies du mandat n'y ont pas cours.
+    if (template.kind === 'avenant_mandat' && supplied.some((k) => !k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
     const missing = fields.filter((f) => TEMPLATE_FIELDS[f]?.source !== 'signature' && (base[f] === null || base[f] === undefined));
     const mode = template.status === 'valide' ? 'reel' : 'essai';
     const content = renderDocument(template.body, base, { title: `${KIND_TITLE[template.kind]} · ${base['bien.reference'] ?? ''}`, trial: mode === 'essai' });
@@ -325,9 +362,9 @@ export class Modeles {
     const at = this.now().toISOString();
     const status = missing.length === 0 ? 'complet' : 'incomplet';
     await this.db.run(
-      `INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at, facts)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, viewer.networkId, template.id, Number(template.version), template.hash, template.kind, mode, status, JSON.stringify(missing), agentId, fiche.person.id, property.id, content, contentHash, this.actor(viewer), at, JSON.stringify(facts)],
+      `INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at, facts, mandate_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, viewer.networkId, template.id, Number(template.version), template.hash, template.kind, mode, status, JSON.stringify(missing), agentId, fiche.person.id, property.id, content, contentHash, this.actor(viewer), at, JSON.stringify(facts), linked?.id ?? null],
     );
     await appendEvent(
       this.journal,
@@ -338,6 +375,30 @@ export class Modeles {
       ok: true,
       document: { id, kind: template.kind, mode, status, missing, templateId: template.id, templateVersion: Number(template.version), templateHash: template.hash, content, contentHash, createdAt: at },
     };
+  }
+
+  /** Le mandat signé, numéroté, non annulé ni rétracté, du même mandant et du même bien ; ou null. */
+  private async mandateInForce(networkId: string, mandateId: string, personIds: string[], propertyId: string): Promise<{ id: string; number: string; facts: DocumentFacts | null } | null> {
+    const row = await this.db.first<{ id: string; person_id: string; property_id: string | null; number: string | null; facts: string | null; seq: number | null }>(
+      `SELECT m.id, m.person_id, m.property_id, s.number, d.facts, r.seq FROM mandates m
+       JOIN signed_documents s ON s.mandate_id = m.id AND s.copy_content IS NOT NULL
+       JOIN documents d ON d.id = s.document_id
+       LEFT JOIN mandate_register r ON r.mandate_id = m.id AND r.kind = 'inscription'
+       WHERE m.id = ? AND m.network_id = ?`,
+      [mandateId, networkId],
+    );
+    if (!row || row.number === null || row.seq === null || row.property_id !== propertyId || !personIds.includes(row.person_id)) return null;
+    if (await this.db.first('SELECT mandate_id FROM mandate_withdrawals WHERE mandate_id = ?', [mandateId])) return null;
+    if (await this.db.first(`SELECT seq FROM mandate_register WHERE network_id = ? AND kind = 'annulation' AND cancels_seq = ?`, [networkId, Number(row.seq)])) return null;
+    // Un mandat échu ne se prolonge pas par un avenant : il faudrait un nouveau mandat [R42].
+    if (await mandateExpired(this.db, mandateId, this.now())) return null;
+    let facts: DocumentFacts | null = null;
+    try {
+      facts = row.facts ? (JSON.parse(row.facts) as DocumentFacts) : null;
+    } catch {
+      facts = null;
+    }
+    return { id: row.id, number: row.number, facts };
   }
 
   /** Un document : celui qui voit la fiche en entier (son agent, la direction, la conformité) [R16]. */
@@ -381,10 +442,29 @@ export class Modeles {
 }
 
 /** Les saisies de l'agent, vérifiées : montant entier en euros, charge, durée en mois ; null si l'une est mal formée. */
+/** L'objet de l'avenant, écrit par le code depuis les saisies : prix, durée ; null si rien ne change. */
+function amendmentObject(inputs: Record<string, string | null>): string | null {
+  const parts = [
+    inputs['avenant.prix'] ? `prix de vente porté à ${inputs['avenant.prix']}` : null,
+    inputs['avenant.duree_mois'] ? `durée du mandat portée à ${inputs['avenant.duree_mois']}` : null,
+  ].filter((p): p is string => p !== null);
+  return parts.length === 0 ? null : parts.join(' ; ');
+}
+
 function readInputs(raw: Record<string, unknown>): Record<string, string | null> | null {
-  const allowed = new Set(['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois']);
+  const allowed = new Set(['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'avenant.prix', 'avenant.duree_mois']);
   if (Object.keys(raw).some((k) => !allowed.has(k))) return null;
-  const out: Record<string, string | null> = { 'honoraires.montant': null, 'honoraires.charge': null, 'mandat.duree_mois': null };
+  const out: Record<string, string | null> = { 'honoraires.montant': null, 'honoraires.charge': null, 'mandat.duree_mois': null, 'avenant.prix': null, 'avenant.duree_mois': null };
+  const price = raw['avenant.prix'];
+  if (price !== undefined && price !== null) {
+    if (typeof price !== 'number' || !Number.isInteger(price) || price < 1 || price > 1_000_000_000) return null;
+    out['avenant.prix'] = `${number.format(price)} €`;
+  }
+  const newMonths = raw['avenant.duree_mois'];
+  if (newMonths !== undefined && newMonths !== null) {
+    if (typeof newMonths !== 'number' || !Number.isInteger(newMonths) || newMonths < 1 || newMonths > 120) return null;
+    out['avenant.duree_mois'] = `${newMonths} mois`;
+  }
   const amount = raw['honoraires.montant'];
   if (amount !== undefined && amount !== null) {
     if (typeof amount !== 'number' || !Number.isInteger(amount) || amount < 0 || amount > 10_000_000) return null;

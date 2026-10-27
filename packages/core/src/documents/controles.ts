@@ -23,10 +23,11 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DocumentFacts } from './modeles.ts';
+import { mandateExpired } from './conditions.ts';
 
 export const IDENTITY_PIECES = ['carte_identite', 'passeport', 'permis_conduire'] as const;
 export type IdentityPiece = (typeof IDENTITY_PIECES)[number];
-export const CHECK_NAMES = ['champs', 'modele', 'honoraires', 'mandants', 'identite'] as const;
+export const CHECK_NAMES = ['champs', 'modele', 'honoraires', 'mandants', 'identite', 'mandat'] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 
 export interface CheckLine {
@@ -118,8 +119,8 @@ export class ControlesSignature {
   /** Le contrôle d'un document avant signature : chaque ligne, et le verdict ; gardé et écrit au journal [R41]. */
   async check(viewer: Viewer, documentId: string): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, 'document', 'role', `document:${documentId}`);
-    const doc = await this.db.first<{ id: string; network_id: string; mode: string; status: string; person_id: string; property_id: string | null; facts: string | null }>(
-      'SELECT id, network_id, mode, status, person_id, property_id, facts FROM documents WHERE id = ?',
+    const doc = await this.db.first<{ id: string; network_id: string; kind: string; mode: string; status: string; person_id: string; property_id: string | null; facts: string | null; mandate_id: string | null }>(
+      'SELECT id, network_id, kind, mode, status, person_id, property_id, facts, mandate_id FROM documents WHERE id = ?',
       [documentId],
     );
     if (!doc || doc.network_id !== viewer.networkId) return this.refuse(viewer, 'document', 'unknown', `document:${documentId}`);
@@ -136,10 +137,13 @@ export class ControlesSignature {
     const lines: CheckLine[] = [];
     lines.push({ check: 'champs', ok: doc.status === 'complet', code: doc.status === 'complet' ? 'complete' : 'missing_fields' });
     lines.push({ check: 'modele', ok: doc.mode === 'reel', code: doc.mode === 'reel' ? 'validated_template' : 'trial_template' });
-    lines.push(await this.fees(doc.network_id, doc.facts));
+    const amendment = doc.kind === 'avenant_mandat';
+    lines.push(await this.fees(doc.network_id, doc.facts, amendment));
     const mandants = await this.mandants(doc.person_id, doc.property_id);
     lines.push(mandants);
     lines.push(await this.identity(doc.network_id, doc.person_id, at));
+    // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
+    if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
 
     const passed = lines.every((l) => l.ok);
     const result: SignatureCheck = { documentId: doc.id, passed, lines, checkedAt: at.toISOString() };
@@ -160,7 +164,19 @@ export class ControlesSignature {
     return { ok: true, value: result };
   }
 
-  private async fees(networkId: string, rawFacts: string | null): Promise<CheckLine> {
+  private async linkedMandate(networkId: string, mandateId: string | null): Promise<CheckLine> {
+    const line = (ok: boolean, code: string): CheckLine => ({ check: 'mandat', ok, code });
+    if (!mandateId) return line(false, 'no_mandate');
+    const inscription = await this.db.first<{ seq: number }>(`SELECT seq FROM mandate_register WHERE mandate_id = ? AND kind = 'inscription' AND network_id = ?`, [mandateId, networkId]);
+    if (!inscription) return line(false, 'mandate_not_numbered');
+    if (await this.db.first('SELECT mandate_id FROM mandate_withdrawals WHERE mandate_id = ?', [mandateId])) return line(false, 'mandate_withdrawn');
+    if (await this.db.first(`SELECT seq FROM mandate_register WHERE network_id = ? AND kind = 'annulation' AND cancels_seq = ?`, [networkId, Number(inscription.seq)])) return line(false, 'mandate_cancelled');
+    // Un mandat échu ne reçoit plus d'avenant, même préparé avant son échéance [R42].
+    if (await mandateExpired(this.db, mandateId, this.now())) return line(false, 'mandate_expired');
+    return line(true, 'mandate_in_force');
+  }
+
+  private async fees(networkId: string, rawFacts: string | null, amendment = false): Promise<CheckLine> {
     let facts: DocumentFacts | null = null;
     try {
       facts = rawFacts ? (JSON.parse(rawFacts) as DocumentFacts) : null;
@@ -168,6 +184,8 @@ export class ControlesSignature {
       facts = null;
     }
     const line = (ok: boolean, code: string): CheckLine => ({ check: 'honoraires', ok, code });
+    // Un avenant sans nouveau prix ne change pas les honoraires ; avec un nouveau prix, ils doivent rester au barème.
+    if (amendment && facts && facts.priceEur === null) return line(true, 'fees_unchanged');
     if (!facts || facts.feeEur === null || facts.priceEur === null) return line(false, 'fee_or_price_unknown');
     if (facts.feeCharge === null) return line(false, 'fee_payer_unknown');
     const schedule = await this.db.first<{ max_rate_bp: number; min_eur: number }>('SELECT max_rate_bp, min_eur FROM fee_schedules WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
