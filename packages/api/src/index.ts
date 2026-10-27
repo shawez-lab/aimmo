@@ -7,3 +7,4 @@ export * from './meta.ts';
 export * from './assistant.ts';
 export * from './planificateur.ts';
 export * from './estimation.ts';
+export * from './rendezvous.ts';

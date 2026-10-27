@@ -242,6 +242,20 @@ describeWithSqlite('V05 · brief du rendez-vous', () => {
     await expect(w.db.run('DELETE FROM appointment_briefs')).rejects.toThrow();
   });
 
+  it('[R16] un rendez-vous n’ouvre pas la fiche d’un client ni le bien suivis par un autre agent', async () => {
+    const w = await world();
+    const { property } = await fullData(w);
+    // Lise a un rendez-vous avec la cliente de Paul, pour le bien de Paul (en préparation, hors du fichier commun).
+    await w.rdv.setAvailability(w.asLise, { weekly: [{ weekday: 2, from: '08:00', to: '12:00' }] });
+    const a = await w.book(at('2026-11-10', '10:00'), { agentId: w.lise.id, propertyId: property.id });
+    await w.runAt(at('2026-11-10', '08:07'));
+    const r = await w.briefs.read(w.asLise, a.id);
+    if (!r.ok) throw new Error(r.code);
+    const text = JSON.stringify(r.brief);
+    for (const secret of ['Léa', 'Exemple', 'estimer mon appartement', 'REF-TEST-1', 'instagram', 'Quartier Test', '3100']) expect(text, secret).not.toContain(secret);
+    expect(missing(r.brief)).toEqual(expect.arrayContaining(['client:Client', 'histoire:Histoire', 'bien:Bien']));
+  });
+
   it('[R13] le journal ne porte ni nom, ni texte de message, ni contenu du brief', async () => {
     const w = await world();
     const { property } = await fullData(w);

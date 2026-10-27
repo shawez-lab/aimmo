@@ -91,6 +91,13 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - Limites, par heure pleine : 10 demandes par visiteur, 600 par réseau ; au-delà, 429. Seule une empreinte de `visitorId` est gardée, pour les limites, et elle change à chaque heure pleine : elle ne relie pas les demandes d’un visiteur dans le temps [R15]. Rien n’est effacé.
 - Des fichiers de ventes manquants ou illisibles pendant la demande : pas de fourchette (`donnees_absentes`), et leur nombre au journal.
 
+## Réservation des rendez-vous, en mode essai (V08)
+
+- `POST /v1/rendez-vous/creneaux` `{ visitorId, agentId, kind, from, days }` et `POST /v1/rendez-vous/reservation` `{ visitorId, agentId, kind, start, source, firstName?, email | phone, consentProof, propertyId? }`, avec la seule clé de dépôt `site_booking` (secret `INTAKE_KEYS`), pour le site, l'assistant et l'espace client.
+- Les créneaux ne portent que leur début et leur fin ; un agent inconnu ou d'un autre réseau rend une liste vide. `kind` : `estimation`, `visite` ou `appel` ; la signature reste à l'agent. 14 jours au plus.
+- Seul un créneau proposé se réserve. L'accord « rendez-vous » est enregistré au moment de réserver avec la preuve donnée (`consentProof`) [R03] ; il est retiré aussitôt si la réservation ne passe pas. La réponse rend la confirmation et le jeton du lien (`RDV_LINK_BASE`), jamais si la personne était connue ; rien ne part en mode essai [R26].
+- Limites par visiteur et par heure (30 demandes de créneaux, 3 réservations) et par réseau (1 000).
+
 ## Planificateur (B02)
 
 - Le Worker a un déclencheur horaire (`[triggers]` de `wrangler.toml`, à la 7e minute de chaque heure UTC) : il passe les tâches à heure fixe dues à l'heure de Paris, été comme hiver. Plus aucune tâche du système ne doit être planifiée ailleurs, ni dans GitHub Actions, ni dans une application (bascule de `taches.yml` en B04).
