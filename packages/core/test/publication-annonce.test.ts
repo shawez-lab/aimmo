@@ -30,8 +30,11 @@ const MIN = 60_000;
 class FakeChannel implements ListingChannel {
   received: ListingPayload[] = [];
   failNext = 0;
+  /** Quand il est posé, l'envoi attend qu'on le libère : un envoi lent, encore en cours. */
+  gate: Promise<void> | null = null;
   constructor(readonly channel: Channel) {}
   async push(payload: ListingPayload): Promise<void> {
+    if (this.gate) await this.gate;
     if (this.failNext > 0) {
       this.failNext--;
       throw new Error('portail_indisponible');
@@ -291,4 +294,37 @@ it('P04 · un canal inconnu ou en double est refusé à la construction', () => 
   const db = {} as SqlDatabase;
   expect(() => new Publication(db, {} as Acces, {} as never, { channels: [new FakeChannel('site'), new FakeChannel('site')] })).toThrow(/double/);
   expect(() => new Publication(db, {} as Acces, {} as never, { channels: [new FakeChannel('fax' as Channel)] })).toThrow(/inconnu/);
+});
+
+describeWithSqlite('P04 · un passage à la fois par bien', () => {
+  it('[R42] un envoi ancien encore en cours ne passe jamais après un retrait : le second passage attend son tour', async () => {
+    const t = await setup();
+    t.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    await t.annonces.validate(t.agent, t.draftId);
+    t.setClock(new Date('2027-03-01T10:00:00.000Z'));
+    let release: () => void = () => {};
+    t.channels[0]!.gate = new Promise<void>((r) => (release = r));
+    const first = t.publication.sync(t.network.id, t.propertyId);
+    await new Promise((r) => setTimeout(r, 20));
+    // Pendant que la version 1 est en route, le mandat est annulé ; un second passage ne fait rien tant que le premier tient le bien.
+    await new RegistreMandats(t.db, t.journal, { now: t.now }).cancel(t.direction, t.mandateId, 'termination');
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ busy: true, created: false, pushed: [] });
+    t.channels[0]!.gate = null;
+    release();
+    expect(await first).toMatchObject({ version: 1, state: 'en_vente' });
+    // Le passage suivant retire l'annonce partout : la dernière chose reçue par chaque canal est le retrait.
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 2, state: 'retiree', created: true });
+    expect(t.channels.map((c) => c.received.at(-1)?.state)).toEqual(['retiree', 'retiree', 'retiree', 'retiree']);
+  });
+
+  it('un bail échu est repris : un passage tombé en route ne bloque pas le bien pour toujours', async () => {
+    const t = await setup();
+    t.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    await t.annonces.validate(t.agent, t.draftId);
+    t.setClock(new Date('2027-03-01T10:00:00.000Z'));
+    await t.db.run("INSERT INTO listing_sync_leases (property_id, token, expires_at) VALUES (?, 'ancien', ?)", [t.propertyId, '2027-03-01T10:04:00.000Z']);
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ busy: true });
+    t.setClock(new Date('2027-03-01T10:05:00.000Z'));
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 1, created: true, pushed: ['site', 'reseaux', 'google', 'portails'] });
+  });
 });
