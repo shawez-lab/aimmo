@@ -11,6 +11,7 @@ import {
   SqlJournalStore,
   applyMigrations,
   fromSyncSqlite,
+  mandateEndDay,
   withdrawalLastDay,
   type SqlDatabase,
   type Viewer,
@@ -131,5 +132,40 @@ describeWithSqlite('D05 · rétractation et diffusion bloquée', () => {
     await t.diffusion.recordEarlyStart(t.direction, a.mandateId, proof);
     await expect(t.db.run('DELETE FROM mandate_early_starts')).rejects.toThrow(/gardée/);
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/Léa|Exemple/);
+  });
+
+  it('[R42] la fin du mandat se compte en jours de Paris, ramenée au dernier jour du mois', () => {
+    expect(mandateEndDay(paris('2027-01-31', '10:00'), 1)).toBe('2027-02-28');
+    expect(mandateEndDay(paris('2027-02-01', '00:30'), 1)).toBe('2027-03-01');
+    expect(mandateEndDay(paris('2027-11-30', '10:00'), 3)).toBe('2028-02-29');
+    expect(mandateEndDay(paris('2027-02-10', '10:00'), 12)).toBe('2028-02-10');
+  });
+
+  it('[R42, R16] une rétractation n’écrit rien si le registre ne peut pas l’annuler ; une reprise fait l’annulation manquante', async () => {
+    const t = await setup();
+    const a = await t.signed('hors_agence');
+    t.setClock(paris('2027-02-12', '10:00'));
+    const proof = { proof: 'formulaire reçu (test)', receivedAt: paris('2027-02-12', '09:00') };
+    // La fiche passe à Sam : il la voit, mais il n'est pas l'agent du mandat ; refusé, rien d'écrit.
+    await t.db.run('UPDATE persons SET agent_id = ?', [t.sam.id]);
+    expect(await t.diffusion.recordWithdrawal(t.as('agent', t.sam.id), a.mandateId, proof)).toMatchObject({ ok: false, rule: 'R16', code: 'not_assigned' });
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM mandate_withdrawals')).toEqual({ n: 0 });
+    // L'annulation au registre est coupée : la rétractation est rangée ; la reprise fait l'annulation et réussit.
+    let cut = true;
+    const flaky: SqlDatabase = {
+      ...t.db,
+      run: async (sql, params) => {
+        if (cut && sql.includes('INSERT INTO mandate_register')) throw new Error('coupure');
+        return t.db.run(sql, params);
+      },
+    };
+    const { Acces: AccesClass, FicheClient: Fc, FicheUnique: Fu } = await import('../src/index.ts');
+    const store = new Fc(flaky);
+    const acces = new AccesClass(flaky, store, new Fu(flaky, store), t.journal, { now: () => paris('2027-02-12', '10:00') });
+    await expect(new Diffusion(flaky, acces, t.journal, { now: () => paris('2027-02-12', '10:00') }).recordWithdrawal(t.direction, a.mandateId, proof)).rejects.toThrow(/coupure/);
+    cut = false;
+    expect(await t.diffusion.recordWithdrawal(t.direction, a.mandateId, proof)).toEqual({ ok: true });
+    expect(await t.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM mandate_register WHERE kind = 'annulation'`)).toEqual({ n: 1 });
+    expect(await t.diffusion.recordWithdrawal(t.direction, a.mandateId, proof)).toEqual({ ok: false, rule: null, code: 'already_recorded' });
   });
 });

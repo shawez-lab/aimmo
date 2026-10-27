@@ -41,6 +41,18 @@ export function withdrawalLastDay(signedAt: Date, place: string): string | null 
   return last;
 }
 
+/** Le jour, `AAAA-MM-JJ` à Paris, où le mandat n'est plus en cours : même quantième, N mois plus tard. */
+export function mandateEndDay(signedAt: Date, months: number): string {
+  const start = localTime(signedAt, TIME_ZONE).date;
+  const y = Number(start.slice(0, 4));
+  const m = Number(start.slice(5, 7)) - 1 + months;
+  const year = y + Math.floor(m / 12);
+  const month = (m % 12) + 1;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const day = Math.min(Number(start.slice(8, 10)), lastDay);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 export type DiffusionReason =
   | 'no_mandate'
   | 'cancelled'
@@ -69,7 +81,7 @@ interface SignedMandateRow {
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: 'R42' | null; code: 'bad_proof' | 'bad_date' | 'unknown_mandate' | 'no_withdrawal_period' | 'delay_over' | 'already_recorded' | 'withdrawn' };
+type Problem = { ok: false; rule: 'R42' | null; code: 'bad_proof' | 'bad_date' | 'unknown_mandate' | 'no_withdrawal_period' | 'delay_over' | 'already_recorded' | 'withdrawn' | 'not_inscribed' };
 
 export class Diffusion {
   private readonly now: () => Date;
@@ -104,9 +116,8 @@ export class Diffusion {
     }
     const signedAt = new Date(row.signed_at);
     if (!facts || facts.durationMonths === null) return decision(false, 'duration_unknown');
-    const end = new Date(signedAt);
-    end.setUTCMonth(end.getUTCMonth() + facts.durationMonths);
-    if (at.getTime() >= end.getTime()) return decision(false, 'expired');
+    // La fin du mandat se compte en jours de Paris ; un 31 sans équivalent devient le dernier jour du mois [R42].
+    if (localTime(at, TIME_ZONE).date >= mandateEndDay(signedAt, facts.durationMonths)) return decision(false, 'expired');
     const last = withdrawalLastDay(signedAt, row.place);
     if (last !== null && localTime(at, TIME_ZONE).date <= last) {
       if (await this.db.first('SELECT mandate_id FROM mandate_early_starts WHERE mandate_id = ?', [row.mandate_id])) return decision(true, 'allowed_early_start', last);
@@ -153,8 +164,13 @@ export class Diffusion {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'mandate', code: 'role' } }, this.now);
       return { ok: false, rule: 'R16', code: 'role' };
     }
-    const m = await this.db.first<{ person_id: string; network_id: string }>('SELECT person_id, network_id FROM mandates WHERE id = ?', [mandateId]);
+    const m = await this.db.first<{ person_id: string; network_id: string; agent_id: string }>('SELECT person_id, network_id, agent_id FROM mandates WHERE id = ?', [mandateId]);
     if (!m || m.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_mandate' };
+    // Les mêmes droits que le registre : l'agent du mandat lui-même, ou la direction.
+    if (viewer.role === 'agent' && m.agent_id !== viewer.userId) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { rule: 'R16', role: 'agent', kind: 'mandate', code: 'not_assigned' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
     const read = await this.acces.readFiche(viewer, m.person_id);
     if (!read.ok) return read;
     if (read.view !== 'full') return { ok: false, rule: 'R16', code: 'not_assigned' };
@@ -195,6 +211,8 @@ export class Diffusion {
     if (last === null) return { ok: false, rule: 'R42', code: 'no_withdrawal_period' };
     if (input.receivedAt.getTime() < Date.parse(found.row.signed_at)) return { ok: false, rule: null, code: 'bad_date' };
     if (localTime(input.receivedAt, TIME_ZONE).date > last) return { ok: false, rule: 'R42', code: 'delay_over' };
+    // Un mandat pas encore numéroté ne s'annule pas au registre : la signature (D04) doit d'abord être reprise.
+    if (found.row.number === null) return { ok: false, rule: null, code: 'not_inscribed' };
     const { changes } = await this.db.run(
       'INSERT INTO mandate_withdrawals (mandate_id, network_id, proof, received_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (mandate_id) DO NOTHING',
       [mandateId, viewer.networkId, input.proof.trim(), input.receivedAt.toISOString(), this.actor(viewer), this.now().toISOString()],
@@ -203,6 +221,7 @@ export class Diffusion {
     // L'inscription au registre est annulée ; une reprise après coupure le fait si ce n'est pas déjà fait.
     const cancelled = await this.registre.cancel(viewer, mandateId, 'withdrawal');
     if (!cancelled.ok && cancelled.code !== 'already_cancelled') return cancelled as Refusal | Problem;
-    return changes === 1 ? { ok: true } : { ok: false, rule: null, code: 'already_recorded' };
+    // Une reprise qui vient de faire l'annulation manquante réussit ; une rétractation déjà complète est signalée.
+    return changes === 1 || cancelled.ok ? { ok: true } : { ok: false, rule: null, code: 'already_recorded' };
   }
 }
