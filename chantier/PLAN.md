@@ -514,7 +514,7 @@ Décidé, lecture prudente : la première version sert la journée de l'agent, r
 - Attend : H04 pour la mise en ligne, H22 pour l'usage réel.
 
 ### A02 · Ma journée
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : A01, G02, Q04, V05
 - Cahier : Le produit, « sa journée qui appeler, où aller, le brief de chaque rendez-vous » ; M20, plan du jour.
 - Objectif : l'écran d'accueil montre le plan du jour (raison et place de chaque ligne), les contacts chauds et les rendez-vous du jour avec leur brief ; une route `GET /v1/rendez-vous/jour` rend les rendez-vous du jour de l'agent et leur brief rangé.
