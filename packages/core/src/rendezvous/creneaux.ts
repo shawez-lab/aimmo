@@ -90,6 +90,8 @@ export function checkAvailability(a: Availability): void {
   }
   for (const r of ranges) {
     if (minutesOf(r.from) >= minutesOf(r.to)) throw new Error('Une plage finit après son début.');
+    // Les rendez-vous se réservent par tranches de 5 minutes : une plage commence et finit sur l'une d'elles.
+    if (minutesOf(r.from) % 5 !== 0 || minutesOf(r.to) % 5 !== 0) throw new Error('Une plage commence et finit sur un multiple de 5 minutes.');
   }
 }
 
