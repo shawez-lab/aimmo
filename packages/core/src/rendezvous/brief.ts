@@ -13,7 +13,7 @@
  * réglage par type de rendez-vous, plus une question par donnée utile absente.
  */
 import type { SqlDatabase } from '../db/sql.ts';
-import type { Viewer } from '../acces/droits.ts';
+import { decideAccess, type Viewer } from '../acces/droits.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -225,6 +225,107 @@ export class BriefsRendezVous {
     const ids = await this.fiche.membersOf(row.person_id);
     const inIds = placeholders(ids.length);
 
+    // Le client et son histoire, seulement si l'agent du rendez-vous a le droit de voir la fiche, fusions comprises :
+    // un rendez-vous ne lui ouvre pas la fiche d'un client suivi par un autre agent [R16].
+    const members = await this.db.all<{ agent_id: string | null }>(`SELECT agent_id FROM persons WHERE id IN (${inIds})`, ids);
+    const access = decideAccess({ role: 'agent', userId: row.agent_id, networkId: row.network_id }, { kind: 'person', networkId: row.network_id, agentIds: members.map((m) => m.agent_id) });
+    let deadlineKnown = false;
+    if (access.allowed) {
+      deadlineKnown = await this.clientItems(row, ids, add);
+    } else {
+      add('client', 'Client', null, '', 'fiche suivie par un autre agent, ou sans agent : demander l’attribution');
+      add('histoire', 'Histoire', null, '', 'fiche suivie par un autre agent, ou sans agent : demander l’attribution');
+    }
+
+    // Le bien.
+    const found = row.property_id
+      ? await this.db.first<{
+          agent_id: string | null;
+          reference: string;
+          kind: string;
+          postal_code: string | null;
+          city: string | null;
+          surface_m2: number | null;
+          rooms: number | null;
+          price_eur: number | null;
+          status: string;
+        }>('SELECT agent_id, reference, kind, postal_code, city, surface_m2, rooms, price_eur, status FROM properties WHERE id = ?', [row.property_id])
+      : null;
+    // Le bien, seulement s'il est à l'agent ou dans le fichier commun du réseau [R16].
+    const propertyAccess = found
+      ? decideAccess({ role: 'agent', userId: row.agent_id, networkId: row.network_id }, { kind: 'property', networkId: row.network_id, agentId: found.agent_id, status: found.status as never })
+      : null;
+    const property = found && propertyAccess?.allowed ? found : null;
+    const questions: string[] = [];
+    if (!property) {
+      add('bien', 'Bien', null, SOURCE.bien, found ? 'bien suivi par un autre agent, hors du fichier commun' : 'aucun bien lié au rendez-vous');
+    } else {
+      add('bien', 'Référence', property.reference, SOURCE.bien, '');
+      add('bien', 'Type', `${PROPERTY_KIND[property.kind] ?? property.kind}, ${PROPERTY_STATUS[property.status] ?? property.status}`, SOURCE.bien, '');
+      add('bien', 'Commune', [property.postal_code, property.city].filter(Boolean).join(' '), SOURCE.bien, 'commune absente de la fiche du bien');
+      add('bien', 'Surface', property.surface_m2 !== null ? `${number.format(property.surface_m2)} m²` : null, SOURCE.bien, 'surface absente');
+      add('bien', 'Pièces', property.rooms !== null ? String(property.rooms) : null, SOURCE.bien, 'nombre de pièces absent');
+      add('bien', 'Prix', property.price_eur !== null ? eur(property.price_eur) : null, SOURCE.bien, 'prix absent');
+      if (property.surface_m2 === null) questions.push('Quelle est la surface du bien ?');
+      if (property.rooms === null) questions.push('Combien de pièces compte le bien ?');
+      if (property.price_eur === null && row.kind !== 'estimation') questions.push('Quel est le prix du bien ?');
+      const detail = await this.db.first<{ neighborhood: string | null; highlight: string | null }>('SELECT neighborhood, highlight FROM property_details WHERE property_id = ?', [row.property_id]);
+      add('bien', 'Quartier', detail?.neighborhood, SOURCE.detail, 'quartier absent');
+      if (detail?.highlight) add('bien', 'Point fort', detail.highlight, SOURCE.detail, '');
+    }
+
+    // Les ventes du quartier : celles citées par le dernier avis de valeur du bien.
+    const report = property && row.property_id
+      ? await this.db.first<{ computed: string; created_at: string; status: string }>(
+          'SELECT computed, created_at, status FROM valuation_reports WHERE property_id = ? ORDER BY created_at DESC, id DESC LIMIT 1',
+          [row.property_id],
+        )
+      : null;
+    const cited = report ? readCited(report.computed) : null;
+    if (!report || !cited || cited.sales.length === 0) {
+      add('ventes', 'Ventes du quartier', null, '', row.property_id ? 'aucun avis de valeur avec des ventes pour ce bien' : 'aucun bien lié au rendez-vous');
+    } else {
+      const source = `avis de valeur du ${day(report.created_at)}${report.status === 'draft' ? ' (brouillon)' : ''}${cited.source ? `, ${cited.source}` : ''}`;
+      for (const s of cited.sales.slice(0, this.settings.sales)) {
+        add('ventes', 'Vente', `${s.month} · ${number.format(s.surface)} m² · ${eur(s.pricePerM2)} le m² · à ${number.format(s.distance)} m`, source, '');
+      }
+      if (cited.medianPerM2 !== null) add('ventes', 'Prix médian au m²', eur(cited.medianPerM2), source, '');
+      if (cited.lastSale) add('ventes', 'Dernière vente publiée', cited.lastSale, source, '');
+    }
+
+    // Les questions à prévoir et les documents à apporter.
+    if (access.allowed && !deadlineKnown) questions.push('Quel est le délai du projet ?');
+    for (const q of questions) add('questions', 'Question', q, SOURCE.manque, '');
+    for (const q of this.settings.questions[row.kind]) add('questions', 'Question', q, SOURCE.reglage, '');
+    const documents = this.settings.documents[row.kind];
+    if (documents.length === 0) add('documents', 'Documents', null, SOURCE.reglage, 'aucun document prévu pour ce type de rendez-vous');
+    for (const d of documents) add('documents', 'Document', d, SOURCE.reglage, '');
+
+    // L'itinéraire.
+    if (!isOnSite(row.kind)) {
+      add('itineraire', 'Itinéraire', 'sans objet : rendez-vous par téléphone', SOURCE.type, '');
+    } else {
+      const town = property ? [property.postal_code, property.city].filter(Boolean).join(' ') : '';
+      add(
+        'itineraire',
+        'Itinéraire vers la commune',
+        town ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${town}, France`)}` : null,
+        SOURCE.commune,
+        property ? 'commune absente : pas d’itinéraire' : 'aucun bien lié au rendez-vous : pas d’itinéraire',
+      );
+      add('itineraire', 'Adresse exacte', null, '', 'l’adresse exacte n’est pas gardée dans la base : à demander au client');
+    }
+
+    return { appointmentId: row.id, kind: row.kind, start: row.start_at, preparedAt: this.now().toISOString(), items };
+  }
+
+  /** Le client et son histoire ; rend vrai si un délai du projet est connu. */
+  private async clientItems(
+    row: AppointmentRow,
+    ids: string[],
+    add: (section: BriefSection, label: string, value: string | null | undefined, source: string, missing: string) => void,
+  ): Promise<boolean> {
+    const inIds = placeholders(ids.length);
     // Le client.
     const person = await this.db.first<{ first_name: string | null; last_name: string | null; created_at: string }>(
       'SELECT first_name, last_name, created_at FROM persons WHERE id = ?',
@@ -303,81 +404,7 @@ export class BriefsRendezVous {
       SOURCE.rdv,
       'aucun rendez-vous précédent',
     );
-
-    // Le bien.
-    const property = row.property_id
-      ? await this.db.first<{
-          reference: string;
-          kind: string;
-          postal_code: string | null;
-          city: string | null;
-          surface_m2: number | null;
-          rooms: number | null;
-          price_eur: number | null;
-          status: string;
-        }>('SELECT reference, kind, postal_code, city, surface_m2, rooms, price_eur, status FROM properties WHERE id = ?', [row.property_id])
-      : null;
-    const questions: string[] = [];
-    if (!property) {
-      add('bien', 'Bien', null, SOURCE.bien, 'aucun bien lié au rendez-vous');
-    } else {
-      add('bien', 'Référence', property.reference, SOURCE.bien, '');
-      add('bien', 'Type', `${PROPERTY_KIND[property.kind] ?? property.kind}, ${PROPERTY_STATUS[property.status] ?? property.status}`, SOURCE.bien, '');
-      add('bien', 'Commune', [property.postal_code, property.city].filter(Boolean).join(' '), SOURCE.bien, 'commune absente de la fiche du bien');
-      add('bien', 'Surface', property.surface_m2 !== null ? `${number.format(property.surface_m2)} m²` : null, SOURCE.bien, 'surface absente');
-      add('bien', 'Pièces', property.rooms !== null ? String(property.rooms) : null, SOURCE.bien, 'nombre de pièces absent');
-      add('bien', 'Prix', property.price_eur !== null ? eur(property.price_eur) : null, SOURCE.bien, 'prix absent');
-      if (property.surface_m2 === null) questions.push('Quelle est la surface du bien ?');
-      if (property.rooms === null) questions.push('Combien de pièces compte le bien ?');
-      if (property.price_eur === null && row.kind !== 'estimation') questions.push('Quel est le prix du bien ?');
-      const detail = await this.db.first<{ neighborhood: string | null; highlight: string | null }>('SELECT neighborhood, highlight FROM property_details WHERE property_id = ?', [row.property_id]);
-      add('bien', 'Quartier', detail?.neighborhood, SOURCE.detail, 'quartier absent');
-      if (detail?.highlight) add('bien', 'Point fort', detail.highlight, SOURCE.detail, '');
-    }
-
-    // Les ventes du quartier : celles citées par le dernier avis de valeur du bien.
-    const report = row.property_id
-      ? await this.db.first<{ computed: string; created_at: string; status: string }>(
-          'SELECT computed, created_at, status FROM valuation_reports WHERE property_id = ? ORDER BY created_at DESC, id DESC LIMIT 1',
-          [row.property_id],
-        )
-      : null;
-    const cited = report ? readCited(report.computed) : null;
-    if (!report || !cited || cited.sales.length === 0) {
-      add('ventes', 'Ventes du quartier', null, '', row.property_id ? 'aucun avis de valeur avec des ventes pour ce bien' : 'aucun bien lié au rendez-vous');
-    } else {
-      const source = `avis de valeur du ${day(report.created_at)}${report.status === 'draft' ? ' (brouillon)' : ''}${cited.source ? `, ${cited.source}` : ''}`;
-      for (const s of cited.sales.slice(0, this.settings.sales)) {
-        add('ventes', 'Vente', `${s.month} · ${number.format(s.surface)} m² · ${eur(s.pricePerM2)} le m² · à ${number.format(s.distance)} m`, source, '');
-      }
-      if (cited.medianPerM2 !== null) add('ventes', 'Prix médian au m²', eur(cited.medianPerM2), source, '');
-      if (cited.lastSale) add('ventes', 'Dernière vente publiée', cited.lastSale, source, '');
-    }
-
-    // Les questions à prévoir et les documents à apporter.
-    if (!qualification?.deadline && projects.every((p) => !p.deadline)) questions.push('Quel est le délai du projet ?');
-    for (const q of questions) add('questions', 'Question', q, SOURCE.manque, '');
-    for (const q of this.settings.questions[row.kind]) add('questions', 'Question', q, SOURCE.reglage, '');
-    const documents = this.settings.documents[row.kind];
-    if (documents.length === 0) add('documents', 'Documents', null, SOURCE.reglage, 'aucun document prévu pour ce type de rendez-vous');
-    for (const d of documents) add('documents', 'Document', d, SOURCE.reglage, '');
-
-    // L'itinéraire.
-    if (!isOnSite(row.kind)) {
-      add('itineraire', 'Itinéraire', 'sans objet : rendez-vous par téléphone', SOURCE.type, '');
-    } else {
-      const town = property ? [property.postal_code, property.city].filter(Boolean).join(' ') : '';
-      add(
-        'itineraire',
-        'Itinéraire vers la commune',
-        town ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${town}, France`)}` : null,
-        SOURCE.commune,
-        property ? 'commune absente : pas d’itinéraire' : 'aucun bien lié au rendez-vous : pas d’itinéraire',
-      );
-      add('itineraire', 'Adresse exacte', null, '', 'l’adresse exacte n’est pas gardée dans la base : à demander au client');
-    }
-
-    return { appointmentId: row.id, kind: row.kind, start: row.start_at, preparedAt: this.now().toISOString(), items };
+    return !!qualification?.deadline || projects.some((p) => !!p.deadline);
   }
 
   private async prepare(row: AppointmentRow): Promise<boolean> {

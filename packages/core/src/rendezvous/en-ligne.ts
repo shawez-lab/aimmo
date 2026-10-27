@@ -138,6 +138,8 @@ export class ReservationEnLigne {
     let created = false;
     if (known.length > 0) {
       personId = [...known].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))[0]!.id;
+      // Le contact donné sert la confirmation : un numéro connu en WhatsApp est aussi rangé comme téléphone (SMS).
+      if (!ambiguous) await this.fiche.addIdentifier({ networkId: input.networkId, personId, kind: contact.kind, value: normalized });
     } else {
       const person = await this.store.createPerson({ networkId: input.networkId, agentId: input.agentId, firstName });
       await this.store.addIdentifier({ networkId: input.networkId, personId: person.id, kind: contact.kind, value: normalized });
