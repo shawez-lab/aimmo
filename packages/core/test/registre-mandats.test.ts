@@ -186,4 +186,30 @@ describeWithSqlite('D01 · registre des mandats', () => {
     }
     expect(await u.registre.check(u.network.id)).toEqual({ ok: false, lines: 4, brokenAt: 4, problem: 'anchor' });
   });
+
+  it('[R39, R13] l’ancre écrite au journal n’a jamais l’air d’un numéro ; un contrôle pendant une inscription ne crie pas à tort', async () => {
+    const { registerAnchor } = await import('../src/index.ts');
+    // Une empreinte qui contient une suite de chiffres comme un numéro de téléphone.
+    const hash = '0504538642' + 'a'.repeat(54);
+    expect(registerAnchor(hash)).toMatch(/^[a-p]{64}$/);
+    const t = await setup();
+    await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const a = await t.mandate();
+    const b = await t.mandate();
+    await t.registre.inscribe(t.direction, a);
+    // Une inscription se termine entre la lecture du registre et celle du journal.
+    let once = false;
+    const racing: SqlDatabase = {
+      ...t.db,
+      all: async <T>(sql: string, params?: readonly (string | number | null)[]) => {
+        const rows = await t.db.all<T>(sql, params);
+        if (!once && sql.includes('FROM mandate_register WHERE network_id = ? ORDER BY seq')) {
+          once = true;
+          await t.registre.inscribe(t.direction, b);
+        }
+        return rows;
+      },
+    };
+    expect(await new RegistreMandats(racing, t.journal).check(t.network.id)).toEqual({ ok: true, lines: 2 });
+  });
 });

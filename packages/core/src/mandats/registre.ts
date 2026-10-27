@@ -94,6 +94,12 @@ export async function hashRegisterLine(line: Omit<LineRow, 'hash'>): Promise<str
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * L'ancre d'une ligne au journal : son empreinte écrite en lettres (0 → a … f → p). Une suite de chiffres d'une
+ * empreinte pourrait ressembler à un numéro de téléphone, que le journal refuse à bon droit [R13].
+ */
+export const registerAnchor = (hash: string): string => hash.replace(/[0-9a-f]/g, (c) => String.fromCharCode(97 + parseInt(c, 16)));
+
 const formatNumber = (s: RegisterSettings, value: number): string => `${s.prefix}${String(value).padStart(s.width, '0')}`;
 
 const toLine = (r: LineRow): RegisterLine => ({
@@ -235,7 +241,7 @@ export class RegistreMandats {
       };
     });
     if (!line) return { ok: false, rule: 'R39', code: 'already_inscribed' };
-    await appendEvent(this.journal, { type: 'registre.inscrit', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: line.seq, number: line.number, hash: line.hash } }, this.now);
+    await appendEvent(this.journal, { type: 'registre.inscrit', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: line.seq, number: line.number, anchor: registerAnchor(line.hash) } }, this.now);
     return { ok: true, line: toLine(line) };
   }
 
@@ -263,7 +269,7 @@ export class RegistreMandats {
       actor: this.actor(viewer),
     }));
     if (!line) return { ok: false, rule: null, code: 'already_cancelled' };
-    await appendEvent(this.journal, { type: 'registre.annule', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: line.seq, cancels: Number(inscription.seq), reason, hash: line.hash } }, this.now);
+    await appendEvent(this.journal, { type: 'registre.annule', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: line.seq, cancels: Number(inscription.seq), reason, anchor: registerAnchor(line.hash) } }, this.now);
     return { ok: true, line: toLine(line) };
   }
 
@@ -291,8 +297,21 @@ export class RegistreMandats {
     return { ok: true, value: report };
   }
 
-  /** Le contrôle lui-même, sans droits : pour le planificateur et les tests. */
+  /**
+   * Le contrôle lui-même, sans droits : pour le planificateur et les tests. Une inscription peut se terminer pendant
+   * la lecture (ligne écrite, ancre pas encore, ou l'inverse) : un écart est relu deux fois avant d'être rendu ; une
+   * modification réelle, elle, reste.
+   */
   async check(networkId: string): Promise<IntegrityReport> {
+    let report = await this.checkOnce(networkId);
+    for (let i = 0; i < 2 && !report.ok; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      report = await this.checkOnce(networkId);
+    }
+    return report;
+  }
+
+  private async checkOnce(networkId: string): Promise<IntegrityReport> {
     const rows = await this.db.all<LineRow>('SELECT * FROM mandate_register WHERE network_id = ? ORDER BY seq', [networkId]);
     const settings = await this.settings(networkId);
     // L'ancre : chaque ligne inscrite a laissé son rang et son empreinte au journal, lui-même chaîné et en ajout seul.
@@ -301,8 +320,8 @@ export class RegistreMandats {
     const events = await this.db.all<{ data: string }>(`SELECT data FROM journal WHERE type IN ('registre.inscrit', 'registre.annule') ORDER BY seq`);
     for (const e of events) {
       try {
-        const d = JSON.parse(e.data) as { network?: unknown; seq?: unknown; hash?: unknown };
-        if (d.network === networkId && typeof d.seq === 'number' && typeof d.hash === 'string') anchors.set(d.seq, d.hash);
+        const d = JSON.parse(e.data) as { network?: unknown; seq?: unknown; anchor?: unknown };
+        if (d.network === networkId && typeof d.seq === 'number' && typeof d.anchor === 'string') anchors.set(d.seq, d.anchor);
       } catch {
         // Une ligne illisible du journal n'ancre rien.
       }
@@ -316,7 +335,7 @@ export class RegistreMandats {
       if (row.prev_hash !== prev) return broken('chain');
       const { hash, ...rest } = row;
       if ((await hashRegisterLine(rest)) !== hash) return broken('hash');
-      if (anchors.get(row.seq) !== hash) return broken('anchor');
+      if (anchors.get(row.seq) !== registerAnchor(hash)) return broken('anchor');
       if (row.kind === 'inscription') {
         if (!settings || row.number_value !== expected || row.number !== formatNumber(settings, expected)) return broken('number');
         expected += 1;
