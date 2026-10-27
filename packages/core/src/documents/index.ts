@@ -6,3 +6,4 @@ export * from './echeances.ts';
 export * from './avenants.ts';
 export * from './conditions.ts';
 export * from './chronologie.ts';
+export * from './signature-en-ligne.ts';

@@ -602,7 +602,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : l'avenant porte la référence et le numéro du mandat ; le prix du mandat change seulement quand l'avenant est signé ; rien n'est effacé [R17].
 
 ### D08 · Signature en ligne AIMMO, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : le code et l'exemplaire passent par le contrôle central, avec l'accord du signataire (finalité `signature_en_ligne`), rangés dans la boîte d'essai ; en essai le code y est lisible pour tester, et devra être scellé avant tout usage réel (H05, H24) ; essais faux comptés dans la base ; Codex n'a pas relu la dernière version en 50 min, fusion sans lui.
 - Qui : Claude · Relecture : forte · Dépend de : D03
 - Cahier : M06, « Signature électronique AIMMO ».
 - Objectif : code à usage unique par mail (rangé dans la boîte d'essai, jamais envoyé), signature manuscrite à l'écran possible, empreinte du document, horodatage, dossier de preuve ; chaque signataire reçoit son exemplaire (dans la boîte d'essai).
@@ -617,6 +618,76 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Objectif : un parcours de test, de l'avis de valeur au mandat numéroté, sur une horloge simulée et des données inventées, avec le temps de chaque étape ; la marche à suivre pour le mesurer avec Shawez sur un vrai rendez-vous.
 - Critères : le parcours de test passe ; le temps passé par le système est mesuré et sous la cible ; la marche à suivre est écrite dans `docs/MESURE.md`.
 
+**M08 · Acquéreurs et visites, avril 2027.**
+
+Découpé le 2026-10-27 par la voie 1. Ids `T..` pour Trouver l'acquéreur. Cahier : M08 Acquéreurs et visites ; Feuille de route, avril 2027 : « sur 10 biens tests, au moins 8 des 10 premiers acquéreurs proposés respectent tous les critères obligatoires ».
+Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi réel : alertes, comptes rendus et points de la semaine passent par le contrôle central et sont rangés dans la boîte d'essai ; le lien WhatsApp de l'agent est préparé, jamais ouvert pour lui. L'IA (alertes, compte rendu) est derrière une interface, fausse IA dans les tests, vraie IA avec H13 ; elle ne reçoit ni nom, ni coordonnée, ni adresse exacte [R15]. Le rapprochement lit la table `properties` du socle et un bien proposable est un bien que `canDiffuse` de D05 autorise [R42] ; la fiche complète de M07 (P01) l'enrichira quand elle sera fusionnée, sans que M08 touche aux fichiers de la voie 2 (`packages/core/src/annonces/`). Les vues par canal du point de la semaine viennent de P08 : tant qu'il n'est pas fusionné, elles sont « non communiquées » [R53]. Le partage des honoraires entre agents (fichier commun) et le rendement pour un investisseur (M17) viendront avec ces modules. Les migrations de M08 prennent les numéros à partir de `0101`, pour ne jamais croiser celles de la voie 2. Le code de M08 vit dans `packages/core/src/acquereurs/` et `packages/core/src/visites/`.
+
+### T01 · Fiche acquéreur
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : Q01
+- Cahier : M08, « Fiche acquéreur » ; règle « aucun critère discriminant dans la recherche ».
+- Objectif : pour un projet d'achat, une fiche de recherche versionnée (rien ne s'efface) : types de bien, communes (liste fermée du réglage), surface et pièces minimales, budget maximal, contraintes dans une liste fermée (extérieur, stationnement, ascenseur, plain-pied, etc.), financement déclaré, urgence ; mise à jour depuis la qualification de Q01, seulement avec ce que le message dit, chaque champ avec sa source (message, agent).
+- Critères : aucun champ hors liste fermée, aucun critère discriminant [R50] ; une mise à jour crée une version, l'ancienne reste lisible [R17] ; un champ que le message ne dit pas n'est jamais rempli [R10] ; lecture et écriture sous R16, refus au journal ; rien de personnel au journal [R13].
+- Attend : rien.
+
+### T02 · Rapprochement des acquéreurs, par le code
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : T01, D05
+- Cahier : M08, « Rapprochement », « Fichier commun » ; Feuille de route, avril 2027.
+- Objectif : pour un bien diffusable [R42], la liste classée des acquéreurs du réseau entier (fichier commun) : critères obligatoires (type, commune, budget, surface, pièces) avec les tolérances écrites en réglage, puis classement par règles écrites (écart aux critères, urgence déclarée, fraîcheur du projet), jamais par le financement ni la solvabilité [R14], chaque ligne avec ses raisons ; jamais une personne exclue ou qui a demandé l'arrêt.
+- Jamais vu : **carte de la demande**. Pour chaque bien, l'agent voit combien d'acquéreurs actifs du réseau le cherchent, et quel critère seul écarte le plus d'acquéreurs proches (« 12 acquéreurs écartés seulement par la surface, 7 seulement par la commune »), calculé par le code, sans aucun nom. Aucun réseau ni logiciel ne montre ainsi à l'agent la demande réelle autour d'un bien, critère par critère.
+- Critères : sur 10 biens tests et un fichier inventé, au moins 8 des 10 premiers acquéreurs proposés respectent tous les critères obligatoires [R51] ; chaque proposition porte ses raisons ; aucun critère discriminant [R50] ; aucun classement par financement [R14] ; aucun acquéreur exclu ou arrêté [R02, R04] ; la carte de la demande est juste sur le jeu inventé et sans donnée personnelle ; lecture sous R16.
+- Attend : rien.
+
+### T03 · Alertes aux acquéreurs, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : T02
+- Cahier : M08, « Alertes » et règles ; critère « aucun doublon d'alerte sur 30 jours ».
+- Objectif : quand un bien devient diffusable, une alerte aux acquéreurs rapprochés qui l'ont demandée : message personnalisé rédigé par l'IA derrière une interface à partir des seules données du bien et des critères (fausse IA dans les tests, texte de secours du code si elle est en panne), mail ou message selon l'accord, passé par le contrôle central et rangé dans la boîte d'essai, avec un lien de désinscription ; pour WhatsApp, un lien pré-rempli préparé pour l'agent, seulement après le contrôle central, et l'envoi enregistré quand l'agent le confirme.
+- Critères : aucune alerte sans accord en cours pour les alertes, et un lien de désinscription dans chacune [R49] ; jamais deux fois le même bien à la même personne, tous canaux confondus, WhatsApp de l'agent compris, même avec deux envois simultanés : aucun doublon sur 30 jours sur horloge simulée [R05] ; exclusions, arrêts et horaires respectés [R01, R02, R04] ; « agent immobilier » et « offert » [R07] ; l'IA ne reçoit ni nom, ni coordonnée, ni adresse exacte [R15] ; un texte avec un chiffre absent du bien est refusé ; rien ne part réellement.
+- Attend : H05 et H06 pour l'envoi réel, plus tard.
+
+### T04 · Visite et bon de visite
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : T01, V02, D02
+- Cahier : M08, « Visites » ; M06, bibliothèque de modèles.
+- Objectif : une visite est un rendez-vous de V02 relié à un bien et à un projet d'achat ; le bon de visite est généré depuis la bibliothèque de D02 (modèle d'essai tant que H08 n'est pas fait), signé sur papier ou en ligne en essai (D08) ; le rappel de la veille vient de V04.
+- Critères : une visite sans bien diffusable est refusée [R42] ; le bon de visite porte le bien, la date et le visiteur, jamais l'adresse exacte dans la confirmation au visiteur [R19] ; un champ manquant le laisse incomplet [R40] ; une visite annulée garde son bon, rien n'est effacé [R17].
+- Attend : H08 pour le modèle réel.
+
+### T05 · Visite sécurisée
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : T04
+- Cahier : M08, « Visite sécurisée ».
+- Objectif : avant la visite, le visiteur confirme son identité et son téléphone (code à usage unique par le contrôle central, rangé dans la boîte d'essai) ; l'agent peut partager sa tournée du jour avec un proche par un lien qui expire, sans nom de client ni adresse exacte ; une alerte en un geste range l'heure et le lieu de la visite en cours et prévient la direction (boîte d'essai).
+- Critères : aucune visite confirmée sans identité et téléphone confirmés [R54] ; un code ne sert qu'une fois et expire ; le lien de tournée expire et ne montre ni nom de client ni adresse exacte [R15] ; l'alerte est enregistrée même si l'envoi échoue, et réessayée sans doublon ; rien ne part réellement.
+- Attend : H05 pour l'envoi réel.
+
+### T06 · Compte rendu de visite dicté
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : T04
+- Cahier : M08, « Compte rendu de visite » ; critère « 5 comptes rendus de visite envoyés au vendeur sous 24 heures ».
+- Objectif : l'agent dicte une phrase ou 30 secondes (le texte vient de la dictée du téléphone) ; l'IA, derrière une interface, en tire le compte rendu (avis, points forts, réserves, intérêt, prêt à faire une offre) ; l'agent le valide en un geste ; le vendeur le reçoit sans le nom de l'acquéreur (boîte d'essai) ; la fiche acquéreur est mise à jour, une relance est programmée, et une tâche « préparer l'offre » est créée si l'acheteur se dit prêt.
+- Critères : rien ne part au vendeur sans validation de l'agent, et jamais avec le nom ou une coordonnée de l'acquéreur [R52] ; le compte rendu ne porte que ce que la dictée dit, un fait absent n'est pas inventé ; 5 comptes rendus de test validés sont dans la boîte d'essai en moins de 24 heures sur horloge simulée ; une seule relance par visite [R18] ; IA en panne : la dictée brute est gardée et l'agent peut écrire lui-même.
+- Attend : H13 pour la vraie IA.
+
+### T07 · Point de la semaine au vendeur
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : T06, B02
+- Cahier : M08, « Point de la semaine au vendeur » et règles ; critère « 5 vendeurs reçoivent leur point deux lundis de suite ».
+- Objectif : chaque lundi, par le planificateur, un point par mandat en cours : vues (P08 quand il sera fusionné), contacts reçus pour le bien (C03), visites et avis des visiteurs (T06), prochaines actions de l'agent ; préparé pour l'agent, qui le valide ; passé par le contrôle central et rangé dans la boîte d'essai.
+- Critères : chaque chiffre est lu dans la base, une donnée absente est écrite « non communiquée » [R53] ; aucune mention de baisse de prix, refusée par une liste fermée de tournures [R53] ; aucun nom d'acquéreur [R52] ; un seul point par mandat et par lundi [R18] ; sur horloge simulée, 5 vendeurs tests reçoivent leur point deux lundis de suite, à l'heure de Paris ; rien ne part réellement.
+- Attend : rien.
+
+### T08 · Routes et écrans « Acquéreurs » et « Visite » de l'application de l'agent
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : T03, T05, T06, T07
+- Cahier : M08 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : les routes `/v1/acquereurs` (fiche, rapprochement, carte de la demande, alertes), `/v1/visites` (visite, bon, confirmation, alerte, compte rendu) et `/v1/points` ; dans l'application de l'agent, l'écran d'un bien avec ses acquéreurs et sa carte de la demande, et l'écran de visite avec le bouton de dictée, la validation en un geste et l'alerte en un geste.
+- Critères : chaque route sous R16, refus au journal ; un parcours de test complet, du bien diffusable à l'alerte, la visite, le compte rendu et le point du lundi ; écrans accessibles, beaux sur téléphone d'abord, sans texte générique.
+- Attend : rien.
+
 **M07 · Commercialiser, mars 2027.**
 
 Voie : 2
@@ -625,7 +696,8 @@ Découpé le 2026-10-27 par la voie 2. Ids `P..` pour Publier. Cahier : M07 Comm
 Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune publication réelle : les canaux (site, réseaux sociaux, fiche Google, portails) sont derrière une interface, avec un faux canal dans les tests, et ce qui « part » est rangé dans la boîte d'essai. Toute publication passe par la seule porte `canDiffuse` de D05 [R42], puis par la liste de contrôle des mentions [R43]. Le prix publié vient du mandat en vigueur, avenants compris, jamais d'une saisie [R44]. L'IA rédige l'annonce derrière une interface (fausse IA dans les tests, vraie IA avec H13), à partir des seules données du bien ; les mentions obligatoires sont calculées et placées par le code, jamais par l'IA ; l'agent valide. Les pages des biens de `shawez-immo` restent en place, intouchées, jusqu'à une tâche de bascule à part. Pendant la preuve à Dijon, les portails sont servis par le logiciel de l'agence ; l'export AIMMO est construit en essai et attend H10. Le numéro de carte professionnelle est un réglage du réseau (H09). Le montage de la vidéo vient avec M19 Studio ; M07 porte le plan de tournage et le contrôle « sans adresse visible ». Les biens d'exception (dossier en anglais, visites privées) viendront après la preuve. Les fichiers du socle ne sont pas touchés par la voie 2 : le code de M07 vit dans `packages/core/src/annonces/`, ses routes dans `packages/api/src/annonces.ts`, branchées par une seule ligne quand la voie 1 n'a pas `app.ts` en cours.
 
 ### P01 · Fiche du bien complète
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : aucun texte libre dans la fiche ; références de photos données par le stockage (`biens/<id du bien>/<identifiant>.<ext>`) ; une vidéo ne porte pas d'aménagement virtuel
 - Qui : Claude · Relecture : forte · Dépend de : D05
 - Cahier : M07, « Fiche du bien complète » ; Conformité, « Publier les annonces » (énergie, copropriété, risques).
 - Objectif : la fiche de commercialisation d'un bien, versionnée (une modification crée une version, rien ne s'efface) : caractéristiques (surface, pièces, chambres, étage, année, chauffage, extérieurs), diagnostic énergétique (classes énergie et climat de A à G, dépenses annuelles minimale et maximale, année de référence des prix, date du diagnostic), copropriété (lot ou non, nombre de lots, charges annuelles moyennes, procédure en cours), risques (zone concernée ou non), photos et vidéo par leur référence de stockage, avec leur état « retouchée » ou « aménagement virtuel ». L'adresse exacte reste hors de la fiche publique [R19].
@@ -633,7 +705,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P02 · Mentions obligatoires et liste de contrôle
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : P01
 - Cahier : Conformité, « Publier les annonces » ; M07, règles ; critère « 10 annonces tests passent la liste de contrôle des mentions ».
 - Objectif : une fonction du code calcule et place les mentions obligatoires d'une annonce à partir du bien et du mandat en vigueur : prix honoraires inclus en plus grand, prix hors honoraires et honoraires TTC en pourcentage quand l'acquéreur les paie ; classes énergie et climat, logement très énergivore (F ou G), dépenses annuelles avec l'année de référence ; copropriété (lots, charges, procédure) ; renvoi vers Géorisques si le bien est en zone concernée ; numéro de carte professionnelle (réglage du réseau). Une liste de contrôle rend chaque mention « présente » ou « manquante » avec sa raison.
