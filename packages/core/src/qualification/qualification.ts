@@ -21,6 +21,7 @@ import {
   ROUTES,
   checkAiQualification,
   projectKindOf,
+  isCriterion,
   qualifyByRules,
   withoutNames,
   type Category,
@@ -28,6 +29,7 @@ import {
   type Qualified,
   type Route,
 } from './regles.ts';
+import { scoreContact, type Temperature } from './note.ts';
 
 /** Ce que l'IA reçoit : le strict nécessaire, aucune coordonnée [R15]. */
 export interface QualifyBrief {
@@ -98,6 +100,25 @@ function mergeCriteria(current: string | null, add: { criteria: readonly string[
   return current !== null && next === current ? current : next;
 }
 
+export interface ContactScoreRow {
+  qualification_id: string;
+  network_id: string;
+  person_id: string;
+  score: number;
+  temperature: Temperature;
+  reason: string;
+  created_at: string;
+}
+
+function parseCriteria(json: string): Criterion[] {
+  try {
+    const value: unknown = JSON.parse(json);
+    return Array.isArray(value) ? value.filter(isCriterion) : [];
+  } catch {
+    return [];
+  }
+}
+
 export class Qualification {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -126,7 +147,11 @@ export class Qualification {
     const row = await this.reception.get(inboundId);
     if (!row || row.kind === 'unreadable' || row.person_id === null) return null;
     const existing = await this.get(inboundId);
-    if (existing) return existing;
+    if (existing) {
+      // Une note interrompue (Worker coupé) est reprise : chaque qualification a la sienne.
+      await this.scoreOf(existing);
+      return existing;
+    }
 
     const recognition = await this.biens.recognize(row.network_id, {
       postRef: row.post_ref,
@@ -202,7 +227,11 @@ export class Qualification {
         at,
       ],
     );
-    if (changes !== 1) return this.get(inboundId);
+    if (changes !== 1) {
+      const other = await this.get(inboundId);
+      if (other) await this.scoreOf(other);
+      return other;
+    }
 
     const projectId = await this.project(root.id, root.network_id, root.agent_id, view.members.map((m) => m.id), q, text, propertyId);
     if (projectId) await this.db.run('UPDATE qualifications SET project_id = ? WHERE id = ?', [projectId, id]);
@@ -216,7 +245,29 @@ export class Qualification {
       },
       this.now,
     );
-    return this.get(inboundId);
+    const stored = await this.get(inboundId);
+    if (stored) await this.scoreOf(stored);
+    return stored;
+  }
+
+  /** La note de la qualification, par barème fixe, rangée une seule fois [R24]. */
+  async scoreOf(row: QualificationRow): Promise<ContactScoreRow> {
+    const score = scoreContact({
+      category: row.category,
+      deadline: row.deadline,
+      city: row.city,
+      criteria: parseCriteria(row.criteria),
+      amountGiven: row.budget_min_eur !== null || row.budget_max_eur !== null || row.price_eur !== null,
+      propertyRecognized: row.property_id !== null,
+    });
+    await this.db.run(
+      `INSERT INTO contact_scores (qualification_id, network_id, person_id, score, temperature, reason, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (qualification_id) DO NOTHING`,
+      [row.id, row.network_id, row.person_id, score.score, score.temperature, score.reason, this.now().toISOString()],
+    );
+    const stored = await this.db.first<ContactScoreRow>('SELECT * FROM contact_scores WHERE qualification_id = ?', [row.id]);
+    if (!stored) throw new Error('Note introuvable après son rangement.');
+    return stored;
   }
 
   /** Les noms connus de la personne, fiches réunies comprises, et celui que le canal donne. */

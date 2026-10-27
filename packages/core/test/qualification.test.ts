@@ -91,6 +91,17 @@ describeWithSqlite('Q01 · qualification d’un message rattaché', () => {
     expect(qa!.project_id).toBe(qb!.project_id);
   });
 
+  it('[R24] chaque qualification a sa note par barème fixe, rangée une fois avec sa raison', async () => {
+    const t = await setup();
+    const id = await t.form('Je souhaite vendre ma maison à Daix rapidement.');
+    const q = (await t.qualification.qualify(id))!;
+    await t.qualification.qualify(id);
+    const scores = await t.db.all<{ qualification_id: string; score: number; temperature: string; reason: string }>('SELECT * FROM contact_scores');
+    expect(scores).toEqual([
+      expect.objectContaining({ qualification_id: q.id, score: 70, temperature: 'hot', reason: 'Vendeur, délai immédiat, commune donnée : 70, chaud.' }),
+    ]);
+  });
+
   it('[R18] un message n’est qualifié qu’une fois, même deux fois en même temps', async () => {
     const t = await setup();
     const id = await t.form('Je souhaite vendre ma maison à Daix.');
