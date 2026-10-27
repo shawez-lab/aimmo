@@ -301,7 +301,9 @@ export class SuiviDeValeur {
     } else {
       const range = await ranges.forTown(row.postal_code, row.town, row.kind);
       if (!range.ok) {
-        status = 'no_data';
+        // Données absentes pour l'heure (source indisponible) : la période est reprise au passage suivant ; un manque
+        // durable (peu de ventes, hors zone) vaut pour la période.
+        status = range.reason === 'donnees_absentes' ? 'waiting' : 'no_data';
       } else {
         const names = await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${placeholders(ids.length)})`, ids);
         const firstName = names.map((n) => n.first_name).find((n) => n) ?? null;

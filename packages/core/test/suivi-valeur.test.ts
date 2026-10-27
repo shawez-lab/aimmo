@@ -186,9 +186,21 @@ describeWithSqlite('G04 · suivi de valeur, en mode essai', () => {
     expect(await t.outbox()).toEqual([]);
   });
 
+  it('une source indisponible pour l’heure ne fait pas perdre la période : l’envoi est repris au passage suivant', async () => {
+    const t = await setup({ ok: false, reason: 'donnees_absentes', next: 'appointment' });
+    const lea = await t.owner('Léa');
+    await t.enrol(lea.id);
+    t.setClock(JULY_TUE_10H);
+    expect((await t.suivi.run()).outcomes.map((o) => o.status)).toEqual(['waiting']);
+    t.setRange({ ok: true, value: RANGE });
+    t.setClock(JULY_TUE_10H + 3_600_000);
+    expect((await t.suivi.run()).outcomes.map((o) => [o.period, o.status])).toEqual([[1, 'sent']]);
+    expect(await t.outbox()).toHaveLength(1);
+  });
+
   it('seule une intention positive de vendre, sans négation, compte', () => {
     for (const yes of ['Je pense à vendre ma maison l’an prochain.', 'Nous envisageons de vendre.', 'On songe à vendre.', 'Je suis prête à vendre.', 'J’aimerais mettre ma maison en vente.']) expect(saysSellingIntent(yes)).toBe(true);
-    for (const no of ['Je ne veux pas vendre.', 'Pas question de vendre ma maison.', 'Je ne pense pas vendre avant 10 ans.', 'Je ne vends jamais.', 'Merci pour les chiffres.', 'Mon voisin pense à vendre.', 'Je veux acheter.']) expect(saysSellingIntent(no)).toBe(false);
+    for (const no of ['Je ne veux pas vendre.', 'Pas question de vendre ma maison.', 'Je ne pense pas vendre avant 10 ans.', 'Je ne vends jamais.', 'Merci pour les chiffres.', 'Mon voisin pense à vendre.', 'Mon voisin est prêt à vendre.', 'Je veux acheter.']) expect(saysSellingIntent(no)).toBe(false);
   });
 
   it('une réponse « je pense à vendre » alerte l’agent une fois, et le plan du jour le porte en tête des rendez-vous à proposer', async () => {
