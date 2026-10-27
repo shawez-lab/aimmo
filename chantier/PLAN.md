@@ -514,14 +514,15 @@ Décidé, lecture prudente : la première version sert la journée de l'agent, r
 - Attend : H04 pour la mise en ligne, H22 pour l'usage réel.
 
 ### A02 · Ma journée
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : prénom et brief rendus seulement si l'agent voit encore la fiche et le bien ; brief caché si la fiche a été fusionnée ou défusionnée depuis ; chaque fiche rendue et chaque refus écrits au journal.
 - Qui : Claude · Relecture : forte · Dépend de : A01, G02, Q04, V05
 - Cahier : Le produit, « sa journée qui appeler, où aller, le brief de chaque rendez-vous » ; M20, plan du jour.
 - Objectif : l'écran d'accueil montre le plan du jour (raison et place de chaque ligne), les contacts chauds et les rendez-vous du jour avec leur brief ; une route `GET /v1/rendez-vous/jour` rend les rendez-vous du jour de l'agent et leur brief rangé.
 - Critères : seulement les données de l'agent [R16] ; un texte affiché est toujours échappé (aucun code injecté par un message de client) ; écran utilisable sur téléphone ; l'ordre du plan est celui du socle, jamais retrié par l'application [R35].
 
 ### A03 · Fiche du client et gestes de l'agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : A02
 - Cahier : Le produit, « ses clients, biens et dossiers » ; Architecture technique, « appel en un geste depuis l'application ».
 - Objectif : depuis une ligne du plan, la fiche du client (projets, sources, accords, derniers messages) ; appel en un geste par le lien téléphone de l'appareil ; « rappel fait » par une route `POST /v1/rappels/<id>/fait` ; aucun envoi de message.
