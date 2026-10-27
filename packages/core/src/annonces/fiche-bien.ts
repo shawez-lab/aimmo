@@ -65,7 +65,7 @@ export type Coownership =
   | { isCoownership: true; lots: number; annualChargesEur: number; proceedings: boolean };
 
 export interface Media {
-  /** Référence de stockage, par exemple `biens/REF-1/salon.jpg`. */
+  /** Référence de stockage : `biens/<id du bien>/<identifiant tiré au hasard>.<jpg|png|webp|mp4>`. */
   ref: string;
   kind: MediaKind;
   edit: MediaEdit;
@@ -94,7 +94,10 @@ export type SheetProblem = { ok: false; rule: null; code: 'invalid'; field: stri
 type Refusal = { ok: false; rule: 'R16'; code: string };
 
 const MAX_MEDIA = 80;
-const MEDIA_REF = /^[A-Za-z0-9][A-Za-z0-9._\-/]{0,199}$/;
+// La référence est donnée par le stockage, jamais écrite à la main : le dossier du bien, puis un identifiant tiré au
+// hasard. Aucun nom de fichier libre, qui pourrait porter une adresse [R46], ni la photo d'un autre bien.
+const MEDIA_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:jpg|png|webp|mp4)$/;
+const MEDIA_EXT: Record<MediaKind, readonly string[]> = { photo: ['jpg', 'png', 'webp'], video: ['mp4'], visite_virtuelle: ['mp4'] };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; field: string };
@@ -120,7 +123,7 @@ function validDay(v: unknown): v is string {
 }
 
 /** Contrôle une fiche saisie, champ par champ. Le premier champ fautif est nommé. */
-export function parseSheet(input: unknown, today: Date): Parsed<PropertySheet> {
+export function parseSheet(input: unknown, today: Date, propertyId: string): Parsed<PropertySheet> {
   const bad = (field: string): Parsed<PropertySheet> => ({ ok: false, field });
   if (!isRecord(input)) return bad('fiche');
   const extra = onlyKeys(input, ['characteristics', 'energy', 'coownership', 'risks', 'media'], '');
@@ -227,9 +230,12 @@ export function parseSheet(input: unknown, today: Date): Parsed<PropertySheet> {
     if (!isRecord(m)) return bad(`media.${i}`);
     const mExtra = onlyKeys(m, ['ref', 'kind', 'edit'], `media.${i}`);
     if (mExtra) return bad(mExtra);
-    if (typeof m.ref !== 'string' || !MEDIA_REF.test(m.ref) || m.ref.includes('..') || refs.has(m.ref)) return bad(`media.${i}.ref`);
     if (!(MEDIA_KINDS as readonly unknown[]).includes(m.kind)) return bad(`media.${i}.kind`);
+    const prefix = `biens/${propertyId}/`;
+    const file = typeof m.ref === 'string' && m.ref.startsWith(prefix) ? m.ref.slice(prefix.length) : '';
+    if (!MEDIA_FILE.test(file) || !MEDIA_EXT[m.kind as MediaKind].includes(file.split('.')[1]!) || refs.has(m.ref as string)) return bad(`media.${i}.ref`);
     if (!(MEDIA_EDITS as readonly unknown[]).includes(m.edit)) return bad(`media.${i}.edit`);
+    if (typeof m.ref !== 'string') return bad(`media.${i}.ref`);
     // Une vidéo ou une visite virtuelle ne se « meuble » pas ici : l'aménagement virtuel est une photo (P06).
     if (m.kind !== 'photo' && m.edit === 'amenagement_virtuel') return bad(`media.${i}.edit`);
     refs.add(m.ref);
@@ -299,7 +305,7 @@ export class FicheBien {
     }
     const read = await this.canRead(viewer, propertyId);
     if (!read.ok) return read;
-    const parsed = parseSheet(input, this.now());
+    const parsed = parseSheet(input, this.now(), propertyId);
     if (!parsed.ok) return { ok: false, rule: null, code: 'invalid', field: parsed.field };
     const data = JSON.stringify(parsed.value);
     const createdAt = this.now().toISOString();
@@ -346,12 +352,6 @@ export class FicheBien {
     if (!read.ok) return read;
     const rows = await this.db.all<SheetRow>('SELECT property_id, version, data, created_by, created_at FROM property_sheets WHERE property_id = ? ORDER BY version', [propertyId]);
     return { ok: true, value: rows.map(toVersion) };
-  }
-
-  /** Pour le système (mentions, publication) : la dernière version, sans droits ni journal. */
-  async latest(propertyId: string): Promise<SheetVersion | null> {
-    const row = await this.latestRow(propertyId);
-    return row ? toVersion(row) : null;
   }
 
   private latestRow(propertyId: string): Promise<SheetRow | null> {
