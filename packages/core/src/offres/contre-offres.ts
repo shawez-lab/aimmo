@@ -168,11 +168,21 @@ export class ContreOffres {
       const offer = await this.offers.offerFor(viewer, p.offerId, true);
       if (offer.ok && (await this.offers.otherAccepted(offer.offer.propertyId, p.offerId))) return { ok: false, rule: null, code: 'other_accepted' };
     }
+    // Comme pour l'offre : l'acceptation n'est rangée que si aucune autre offre du bien n'est acceptée, dans la même instruction.
+    const owner = await this.db.first<{ property_id: string }>('SELECT property_id FROM offer_register WHERE id = ?', [p.offerId]);
+    const pid = owner?.property_id ?? '';
     const { changes } = await this.db.run(
-      'INSERT INTO proposal_responses (proposal_id, outcome, proof_ref, responded_at, recorded_by, at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (proposal_id) DO NOTHING',
-      [proposalId, input.outcome, input.proofRef, at.toISOString(), this.actor(viewer), this.now().toISOString()],
+      `INSERT INTO proposal_responses (proposal_id, outcome, proof_ref, responded_at, recorded_by, at)
+       SELECT ?, ?, ?, ?, ?, ? WHERE (? <> 'acceptee' OR (
+          NOT EXISTS (SELECT 1 FROM offer_responses r JOIN offer_register o ON o.id = r.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee')
+          AND NOT EXISTS (SELECT 1 FROM proposal_responses r JOIN offer_proposals p ON p.id = r.proposal_id JOIN offer_register o ON o.id = p.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee')
+          AND NOT EXISTS (SELECT 1 FROM sale_files f WHERE f.property_id = ? AND f.offer_id <> ?))) ON CONFLICT (proposal_id) DO NOTHING`,
+      [proposalId, input.outcome, input.proofRef, at.toISOString(), this.actor(viewer), this.now().toISOString(), input.outcome, pid, p.offerId, pid, p.offerId, pid, p.offerId],
     );
-    if (changes !== 1) return { ok: false, rule: null, code: 'already_answered' };
+    if (changes !== 1) {
+      if (await this.db.first('SELECT proposal_id FROM proposal_responses WHERE proposal_id = ?', [proposalId])) return { ok: false, rule: null, code: 'already_answered' };
+      return { ok: false, rule: null, code: 'other_accepted' };
+    }
     await appendEvent(this.journal, { type: 'offre.proposition_reponse', actor: this.actor(viewer), subject: `offer:${p.offerId}`, data: { rule: 'R57', seq: p.seq, outcome: input.outcome } }, this.now);
     return { ok: true };
   }

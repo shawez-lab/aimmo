@@ -79,4 +79,25 @@ describeWithSqlite('O07 · offre acceptée et dossier de vente', () => {
     expect(await dossiers.startCompromis(t.agent, 'dossier-inconnu')).toEqual({ ok: false, rule: null, code: 'unknown_file' });
     await expect(t.db.run('DELETE FROM sale_files')).rejects.toThrow(/rien ne s'efface/);
   });
+
+  it('[R16] le compromis lit l’identité de l’acquéreur seulement avec le droit de voir sa fiche ; deux acceptations simultanées, une seule passe', async () => {
+    const t = await setupOffre();
+    const transmission = new TransmissionOffres(t.db, t.acces, t.journal, { now: t.now });
+    const dossiers = new DossiersVente(t.db, t.acces, t.journal, { now: t.now });
+    // Une offre d'un acquéreur suivi par un autre agent, enregistrée par la direction.
+    const other = await t.store.createPerson({ networkId: t.network.id, agentId: t.sam.userId, firstName: 'Autre', lastName: 'Exemple' });
+    const theirs = await t.offres.record(t.direction, t.propertyId, t.input({ buyerPersonId: other.id }));
+    if (!theirs.ok) throw new Error(theirs.code);
+    const mine = await t.record({ amountEur: 206000 });
+    for (const o of [theirs.value, mine]) await transmission.transmit(t.agent, o.id, { via: 'telephone' });
+    t.setClock(new Date('2027-03-01T12:00:00.000Z'));
+    const both = await Promise.all([theirs.value, mine].map((o) => transmission.respond(t.agent, o.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T11:00:00.000Z' })));
+    expect(both.filter((r) => r.ok)).toHaveLength(1);
+    expect(both.filter((r) => !r.ok)).toEqual([{ ok: false, rule: null, code: 'other_accepted' }]);
+    const accepted = both[0]!.ok ? theirs.value : mine;
+    if (accepted.id !== theirs.value.id) return; // l'ordre dépend de l'exécution ; le cas utile est celui de l'acquéreur de l'autre agent
+    const file = await dossiers.open(t.agent, theirs.value.id);
+    if (!file.ok) throw new Error(file.code);
+    expect(await dossiers.startCompromis(t.agent, file.value.id)).toMatchObject({ ok: false, rule: 'R16' });
+  });
 });

@@ -42,7 +42,7 @@ export class DossiersVente {
 
   constructor(
     private readonly db: SqlDatabase,
-    acces: Acces,
+    private readonly acces: Acces,
     private readonly journal: JournalStore,
     options: { now?: () => Date; newId?: () => string } = {},
   ) {
@@ -101,6 +101,13 @@ export class DossiersVente {
     }
     const found = await this.transmission.offerFor(viewer, f.offer_id, true);
     if (!found.ok) return found as Refusal | Problem;
+    // L'identité est une donnée de l'acquéreur : il faut voir sa fiche en entier, lecture écrite au journal [R16].
+    const buyer = await this.acces.readFiche(viewer, f.buyer_person_id);
+    if (!buyer.ok) return buyer as Refusal;
+    if (buyer.view !== 'full') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `person:${f.buyer_person_id}`, data: { rule: 'R16', role: String(viewer.role), kind: 'sale_file', code: 'not_assigned' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
     const seen = await this.controles.identitySeenAt(viewer.networkId, f.buyer_person_id, this.now());
     if (seen === null) {
       await appendEvent(this.journal, { type: 'dossier.bloque', actor: this.actor(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R58', code: 'identity_missing' } }, this.now);
