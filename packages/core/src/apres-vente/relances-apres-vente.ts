@@ -76,10 +76,15 @@ export function anniversary(day: string, years: number): string {
 const yearsBefore = (day: string, years: number): string => anniversary(day, -years);
 
 const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
+/**
+ * La première lettre du jeton, qui suit « / » dans le texte : jamais a, c, g, i ni r, pour qu'aucun jeton ne commence
+ * comme un mot que le contrôle du texte lit comme une mention de l'IA, « gpt », « robot », « assistant »… [R06].
+ */
+const FIRST_LETTERS = 'bdefhjklmnopqstuvwxyz';
 /** Un jeton de lettres seules : aucun chiffre dans le texte qui ne vienne de la base [R10]. */
-function newToken(): string {
+export function newAfterSaleToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return [...bytes].map((b) => LETTERS[b % 26]).join('');
+  return [...bytes].map((b, i) => (i === 0 ? FIRST_LETTERS[b % FIRST_LETTERS.length] : LETTERS[b % 26])).join('');
 }
 
 async function sha256(text: string): Promise<string> {
@@ -242,7 +247,7 @@ export class RelancesApresVente {
   }
 
   private async newUnsubscribeLink(networkId: string, personId: string, at: Date): Promise<string> {
-    const token = newToken();
+    const token = newAfterSaleToken();
     await this.db.run('INSERT INTO after_sale_unsubscribe_tokens (token_hash, network_id, person_id, created_at, used_at) VALUES (?, ?, ?, ?, NULL)', [await sha256(token), networkId, personId, at.toISOString()]);
     return `${this.unsubscribeBase ?? ''}${token}`;
   }

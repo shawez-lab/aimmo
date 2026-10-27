@@ -6,11 +6,13 @@ import {
   afterSaleText,
   anniversary,
   checkAfterSaleUnsubscribeBase,
+  newAfterSaleToken,
   type AfterSaleChoice,
   type ClosedSale,
 } from '../src/apres-vente/index.ts';
 import { FicheClient } from '../src/db/fiche-client.ts';
 import { FicheUnique } from '../src/fiche/fusion.ts';
+import { checkText } from '../src/envoi/texte.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { FakeDossiersClos } from './apres-vente-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
@@ -43,6 +45,18 @@ it('[R65] [R08] [R10] le texte d’une relance est écrit par le code : sans pro
     `Bonjour, il y a deux ans, vous avez vendu votre bien, référence A. Votre agent immobilier reste là pour toute question sur ce bien : il suffit de répondre à ce message. Ne plus recevoir ces messages : ${BASE}x`,
   );
   expect(afterSaleText('Léa', 'acquereur', 1, { city: 'Dijon', reference: 'A' }, 'x')).toContain('il y a un an, vous avez acheté votre bien à Dijon');
+});
+
+it('[R06] [R10] aucun jeton de désinscription ne fait lire au contrôle du texte une mention de l’IA ni un chiffre', () => {
+  for (let i = 0; i < 2000; i++) {
+    const token = newAfterSaleToken();
+    expect(token).toMatch(/^[a-z]{32}$/);
+    expect(checkText(afterSaleText('Léa', 'vendeur', 1, { city: 'Dijon', reference: 'REF-T-1' }, `${BASE}${token}`), { audience: 'client', channel: 'email', figures: [1] })).toEqual([]);
+  }
+  // Les débuts que le contrôle lirait comme l'IA ne sont jamais tirés.
+  for (const word of ['gpt', 'robot', 'assistant', 'chatbot', 'automatiquement']) {
+    expect(checkText(afterSaleText('Léa', 'vendeur', 1, { city: 'Dijon', reference: 'REF-T-1' }, `${BASE}${word}`), { audience: 'client', channel: 'email', figures: [1] }).map((p) => p.rule)).toContain('R06');
+  }
 });
 
 it('les dates clés sont les anniversaires de l’acte ; le 29 février devient le 28 les années qui n’en ont pas', () => {
