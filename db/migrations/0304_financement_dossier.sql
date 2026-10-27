@@ -19,8 +19,10 @@ CREATE TABLE IF NOT EXISTS sale_file_financing_alerts (
   kind TEXT NOT NULL CHECK (kind IN ('sans_offre_de_pret', 'refus_declare')),
   -- La date limite du prêt visée, ou le jour du refus déclaré.
   due_day TEXT NOT NULL,
+  -- Le rang de l'étape déclarée pour un refus : deux refus du même jour, deux alertes. Vide pour la date limite.
+  step_seq TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  PRIMARY KEY (file_id, kind, due_day, agent_id)
+  PRIMARY KEY (file_id, kind, due_day, step_seq, agent_id)
 );
 CREATE TRIGGER IF NOT EXISTS sale_file_financing_fige BEFORE UPDATE ON sale_file_financing BEGIN SELECT RAISE(ABORT, 'sale_file_financing : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS sale_file_financing_sans_effacement BEFORE DELETE ON sale_file_financing BEGIN SELECT RAISE(ABORT, 'sale_file_financing : rien ne s''efface'); END;

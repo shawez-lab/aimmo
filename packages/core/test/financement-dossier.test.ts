@@ -67,12 +67,16 @@ describeWithSqlite('N04 · suivi du financement déclaré', () => {
     expect(await t.fin.run(t.network.id)).toBe(1);
     expect(await t.fin.run(t.network.id)).toBe(0);
     expect(await t.fin.alertsOf(t.agent)).toMatchObject({ ok: true, alerts: [{ kind: 'refus_declare', day: '2027-03-19' }] });
+    // Un second refus le même jour, d'une autre banque : sa propre alerte.
+    await t.fin.declare(t.agent, t.fileId, { step: 'refus', day: '2027-03-19', declaredBy: 'acquereur' });
+    expect(await t.fin.run(t.network.id)).toBe(1);
+    expect(await t.fin.run(t.network.id)).toBe(0);
     t.setClock(at9('2027-04-28'));
     expect(await t.fin.run(t.network.id)).toBe(1);
     // La date limite est prorogée par avenant : l'ancienne alerte ne compte plus, une nouvelle viendra à son heure.
     await t.e.record(t.agent, t.fileId, { kind: 'date_limite_pret', day: '2027-06-10', proofRef: PROOF });
     const a = await t.fin.alertsOf(t.agent);
-    expect(a.ok && a.alerts.map((x) => x.kind)).toEqual(['refus_declare']);
+    expect(a.ok && a.alerts.map((x) => x.kind)).toEqual(['refus_declare', 'refus_declare']);
     t.setClock(at9('2027-05-26'));
     expect(await t.fin.run(t.network.id)).toBe(1);
   });

@@ -133,10 +133,10 @@ export class FinancementDossier {
       [networkId],
     );
     let created = 0;
-    const alert = async (f: { id: string; agent_id: string }, kind: FinancingAlert['kind'], day: string) => {
+    const alert = async (f: { id: string; agent_id: string }, kind: FinancingAlert['kind'], day: string, seq = '') => {
       const { changes } = await this.db.run(
-        'INSERT INTO sale_file_financing_alerts (file_id, network_id, agent_id, kind, due_day, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
-        [f.id, networkId, f.agent_id, kind, day, this.now().toISOString()],
+        'INSERT INTO sale_file_financing_alerts (file_id, network_id, agent_id, kind, due_day, step_seq, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+        [f.id, networkId, f.agent_id, kind, day, seq, this.now().toISOString()],
       );
       if (changes !== 1) return;
       created += 1;
@@ -146,7 +146,8 @@ export class FinancementDossier {
       if (!f.agent_id) continue;
       const fin = await this.read(f.id, f.offer_id);
       if (!fin.hasLoanCondition) continue;
-      for (const s of fin.steps) if (s.step === 'refus') await alert({ id: f.id, agent_id: f.agent_id }, 'refus_declare', s.day);
+      // Une alerte par refus déclaré, même deux le même jour.
+      for (const [i, s] of fin.steps.entries()) if (s.step === 'refus') await alert({ id: f.id, agent_id: f.agent_id }, 'refus_declare', s.day, String(i + 1));
       const limit = (await this.echeancier.scheduleOf(f)).lines.find((l) => l.deadline === 'date_limite_pret')?.day ?? null;
       if (!limit || today > limit || addDays(limit, -this.notice) > today) continue;
       if (fin.steps.some((s) => s.step === 'offre_pret_emise' || s.step === 'offre_pret_acceptee')) continue;
