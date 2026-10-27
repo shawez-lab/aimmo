@@ -647,9 +647,17 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : T02
 - Cahier : M08, « Alertes » et règles ; critère « aucun doublon d'alerte sur 30 jours ».
-- Objectif : quand un bien devient diffusable, une alerte aux acquéreurs rapprochés qui l'ont demandée : message personnalisé rédigé par l'IA derrière une interface à partir des seules données du bien et des critères (fausse IA dans les tests, texte de secours du code si elle est en panne), mail ou message selon l'accord, passé par le contrôle central et rangé dans la boîte d'essai, avec un lien de désinscription ; pour WhatsApp, un lien pré-rempli préparé pour l'agent, seulement après le contrôle central, et l'envoi enregistré quand l'agent le confirme.
+- Objectif : quand un bien devient diffusable, une alerte aux acquéreurs rapprochés qui l'ont demandée : message personnalisé rédigé par l'IA derrière une interface à partir des seules données du bien et des critères (fausse IA dans les tests, texte de secours du code si elle est en panne), mail ou message selon l'accord, passé par le contrôle central et rangé dans la boîte d'essai, avec un lien de désinscription. WhatsApp par le téléphone de l'agent : T09.
 - Critères : aucune alerte sans accord en cours pour les alertes, et un lien de désinscription dans chacune [R49] ; jamais deux fois le même bien à la même personne, tous canaux confondus, WhatsApp de l'agent compris, même avec deux envois simultanés : aucun doublon sur 30 jours sur horloge simulée [R05] ; exclusions, arrêts et horaires respectés [R01, R02, R04] ; « agent immobilier » et « offert » [R07] ; l'IA ne reçoit ni nom, ni coordonnée, ni adresse exacte [R15] ; un texte avec un chiffre absent du bien est refusé ; rien ne part réellement.
 - Attend : H05 et H06 pour l'envoi réel, plus tard.
+
+### T09 · Alerte WhatsApp en un geste, par le téléphone de l'agent
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : T03
+- Cahier : M08, « Alertes » : « un message WhatsApp à l'initiative de l'agent part de son téléphone, en un geste, seulement après le contrôle central : exclusions, accord, horaires. L'envoi est enregistré. »
+- Objectif : pour un acquéreur rapproché, l'agent demande un lien WhatsApp pré-rempli ; le contrôle central décide (exclusions, arrêt, accord, horaires, jamais deux fois le même bien), sans la fenêtre de Meta qui ne vaut que pour les envois automatiques, puis prépare le lien sans jamais l'ouvrir ; l'envoi est enregistré, écrit par l'agent, quand il confirme.
+- Critères : aucun lien sans accord en cours pour les alertes sur WhatsApp [R49] ; jamais un bien déjà proposé, ni deux liens du même bien [R05] ; exclusions, arrêt et horaires [R01, R02, R04] ; seuls l'agent du client et la direction [R16] ; le message est enregistré comme écrit par l'agent, une seule fois même confirmé deux fois [R18] ; rien ne part du serveur.
+- Attend : rien.
 
 ### T04 · Visite et bon de visite
 - Statut : à faire
@@ -736,7 +744,8 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien pour l'essai ; les canaux réels plus tard (H06, H07, H10).
 
 ### P05 · Page du bien et fiche PDF à la marque de l'agent
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : fiche imprimable en HTML de deux pages A4 fixes (page 1 : prix, mentions, 4 photos ; page 2 : texte et agent), vérifiée sous Chromium ; coordonnées professionnelles de l'agent réglées par lui ou la direction, jamais pour un agent parti ; un agent parti n'est plus montré
 - Qui : Claude · Relecture : normale · Dépend de : P04
 - Cahier : M07, « Page du bien » et « fiche PDF » ; Organisation, exigence de design (protocole, section 9).
 - Objectif : depuis la version publiée, une page HTML du bien et une fiche imprimable de deux pages au nom et aux coordonnées professionnelles de l'agent, avec prix, mentions et état (en vente, sous offre, vendu) mis à jour d'eux-mêmes ; rapide, accessible, belle sur téléphone d'abord, suivant le système de design d'AIMMO.
@@ -744,7 +753,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P06 · Photos et vidéo sans tromper ni montrer l'adresse
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : P01
 - Cahier : M07, « Vidéo du bien » et règle de l'aménagement virtuel ; Conformité, « Photos et vidéos ».
 - Objectif : une photo marquée « aménagement virtuel » porte la mention sur l'image publiée ; un plan de tournage du bien tiré de sa fiche (pièces, extérieurs, atouts) ; un contrôle des sous-titres et du texte de la vidéo qui refuse une adresse exacte.
