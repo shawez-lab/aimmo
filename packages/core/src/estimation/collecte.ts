@@ -90,11 +90,14 @@ export interface CollecteOptions {
   now?: () => Date;
   /** En dessous, l'adresse est jugée incertaine et rien d'autre n'est cherché. */
   minScore?: number;
+  /** Au-delà, une source qui ne répond pas est en panne : elle ne retient pas les autres. */
+  timeoutMs?: number;
 }
 
 export class CollecteBien {
   private readonly now: () => Date;
   private readonly minScore: number;
+  private readonly timeoutMs: number;
 
   constructor(
     private readonly services: CollecteServices,
@@ -102,15 +105,22 @@ export class CollecteBien {
   ) {
     this.now = options.now ?? (() => new Date());
     this.minScore = options.minScore ?? 0.6;
+    this.timeoutMs = options.timeoutMs ?? 10_000;
   }
 
   private async attempt<T>(source: string, run: () => Promise<T | null>): Promise<Collected<T>> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const value = await run();
+      const late = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('délai dépassé')), this.timeoutMs);
+      });
+      const value = await Promise.race([run(), late]);
       const collectedAt = this.now().toISOString();
       return value === null ? { ok: false, source, collectedAt, reason: 'introuvable' } : { ok: true, value, source, collectedAt };
     } catch {
       return { ok: false, source, collectedAt: this.now().toISOString(), reason: 'panne' };
+    } finally {
+      clearTimeout(timer);
     }
   }
 

@@ -43,4 +43,4 @@ Le critère de M04 : pour 10 biens tests, toutes les données publiques sont ret
 AIMMO_BIENS=/chemin/hors/du/depot/biens.txt npx vitest run packages/core/test/collecte.test.ts
 ```
 
-La vérification affiche le nombre de biens complets et, par **numéro de ligne**, les données qui manquent, sans recopier l'adresse. Elle échoue s'il en manque une. Sans le fichier, ce test est sauté.
+Il faut 10 adresses au moins, sinon la vérification échoue. Elle affiche le nombre de biens complets et, par **numéro de ligne**, les données qui manquent, sans recopier l'adresse. Elle échoue s'il en manque une. Sans le fichier, ce test est sauté.

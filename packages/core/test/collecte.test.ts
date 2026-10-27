@@ -74,6 +74,15 @@ describe('E03 · collecte des données publiques du bien', () => {
     expect(facts.missing).toEqual(['parcel', 'energy', 'risks']);
   });
 
+  it('une source qui ne répond plus est en panne après le délai, sans retenir les autres', async () => {
+    const services = publicDataServices(fakeFetch(ALL_OK));
+    const stalled: CollecteServices = { ...services, cadastre: { parcelAt: () => new Promise(() => {}) } };
+    const facts = await new CollecteBien(stalled, { now: NOW, timeoutMs: 30 }).collect(ADDRESS);
+    expect(facts.parcel).toMatchObject({ ok: false, reason: 'panne' });
+    expect(facts.energy.ok && facts.risks.ok && facts.address.ok).toBe(true);
+    expect(facts.missing).toEqual(['parcel']);
+  });
+
   it('sans adresse sûre, rien d’autre n’est cherché', async () => {
     const lost = fakeFetch({ ...ALL_OK, geocoder: { status: 200, body: { features: [] } } });
     const facts = await collect(publicDataServices(lost)).collect(ADDRESS);
@@ -128,6 +137,8 @@ describe.runIf(process.env.AIMMO_BIENS)('E03 · vérification réelle sur biens 
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean);
+    // Le critère porte sur 10 biens au moins : un fichier plus court ne prouve rien.
+    expect(lines.length, 'au moins 10 adresses').toBeGreaterThanOrEqual(10);
     const real = new CollecteBien(publicDataServices((url, init) => fetch(url, init)));
     const gaps: string[] = [];
     for (const [i, line] of lines.entries()) {
