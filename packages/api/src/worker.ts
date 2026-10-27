@@ -2,7 +2,7 @@ import { handleRequest } from './app.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { runScheduler } from './planificateur.ts';
-import { BanGeocoder, DvfSiteSales } from '@aimmo/core';
+import { BanGeocoder, DvfSiteSales, httpDvfReader } from '@aimmo/core';
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
@@ -26,15 +26,13 @@ export interface Env {
   DVF_BASE_URL?: string;
 }
 
-/** Les données publiques de l'estimation en ligne ; sans `DVF_BASE_URL` en https, le service reste fermé. */
+/**
+ * Les données publiques de l'estimation en ligne (E05), lues en GET seulement : jamais un envoi. Sans `DVF_BASE_URL`
+ * en https, le service reste fermé.
+ */
 function estimationServices(env: Env) {
-  const base = env.DVF_BASE_URL;
-  if (!base || !/^https:\/\/[^\s]+\/$/.test(base)) return undefined;
-  const sales = new DvfSiteSales(async (path) => {
-    const res = await fetch(new URL(path, base).toString(), { headers: { accept: 'application/json, text/plain' } });
-    return res.ok ? res.text() : null;
-  });
-  return { geocoder: new BanGeocoder((url, init) => fetch(url, init)), sales };
+  const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;
+  return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;
 }
 
 export default {

@@ -211,3 +211,19 @@ export class DvfSiteSales implements SalesSource {
     }
   }
 }
+
+/**
+ * Lecteur des fichiers DVF publics du site, par HTTPS et en lecture seule (GET), à partir d'une fonction `fetch`
+ * donnée. Seuls les chemins produits par `DvfSiteSales` sont lus, sous l'adresse de base.
+ */
+export function httpDvfReader(
+  fetcher: (url: string, init?: { headers?: Record<string, string> }) => Promise<{ ok: boolean; text(): Promise<string> }>,
+  base: string,
+): DvfFileReader | null {
+  if (!/^https:\/\/[^\s]+\/$/.test(base)) return null;
+  return async (path) => {
+    if (!/^(index\.json|t\/-?\d{1,4}_-?\d{1,4}\.json|d\/-?\d{1,4}_-?\d{1,4}\.txt)$/.test(path)) return null;
+    const res = await fetcher(new URL(path, base).toString(), { headers: { accept: 'application/json, text/plain' } });
+    return res.ok ? res.text() : null;
+  };
+}

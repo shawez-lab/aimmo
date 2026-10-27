@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DvfSiteSales, Fourchette, readableStreet, readableTown, type DvfFileReader } from '../src/index.ts';
+import { DvfSiteSales, Fourchette, httpDvfReader, readableStreet, readableTown, type DvfFileReader } from '../src/index.ts';
 
 // Fichiers inventés au format de `donnees-dvf/` du site : aucune vente réelle.
 const STEP = 0.05;
@@ -113,5 +113,22 @@ describe('E02 · ventes DVF du site comme source', () => {
     expect(r.comparables).toHaveLength(14);
     expect(r.latestUsedSale).toBe('2024-05');
     expect(r.data.lastSale).toBe('2025-12-30');
+  });
+
+  it('le lecteur HTTPS ne lit que les fichiers DVF, sous son adresse, en GET', async () => {
+    const urls: string[] = [];
+    const fetcher = async (url: string, init?: { headers?: Record<string, string> }) => {
+      urls.push(url);
+      expect(init).not.toHaveProperty('method');
+      expect(init).not.toHaveProperty('body');
+      return { ok: true, text: async () => '{}' };
+    };
+    expect(httpDvfReader(fetcher, 'http://site.example/donnees-dvf/')).toBeNull();
+    expect(httpDvfReader(fetcher, 'https://site.example/donnees-dvf')).toBeNull();
+    const read = httpDvfReader(fetcher, 'https://site.example/donnees-dvf/')!;
+    expect(await read('index.json')).toBe('{}');
+    expect(await read(`t/${HOME}.json`)).toBe('{}');
+    for (const bad of ['../secret', 'https://autre.example/x', 't/1_1.json?x', '/etc/passwd', 'd/a_b.txt']) expect(await read(bad), bad).toBeNull();
+    expect(urls).toEqual(['https://site.example/donnees-dvf/index.json', `https://site.example/donnees-dvf/t/${HOME}.json`]);
   });
 });
