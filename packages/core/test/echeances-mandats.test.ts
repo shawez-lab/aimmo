@@ -47,14 +47,14 @@ async function setup() {
   await controles.setFeeSchedule(direction, { maxRatePercent: 5, minEur: 0 });
   await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'T-', firstNumber: 1, width: 3 });
   let n = 0;
-  const signed = async (kind: 'mandat_vente_exclusif' | 'mandat_vente_simple', place: 'agence' | 'hors_agence' = 'agence') => {
+  const signed = async (kind: 'mandat_vente_exclusif' | 'mandat_vente_simple', place: 'agence' | 'hors_agence' = 'agence', months = 12) => {
     n += 1;
     const p = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Léa', lastName: `Exemple${n}` });
     const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: `REF-T-${n}`, kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60, rooms: 3, priceEur: 200000 });
     const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
     await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
     await controles.recordIdentity(agent, p.id, { piece: 'carte_identite', seenAt: SIGNED });
-    const d = await modeles.generate(agent, { kind, personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 } });
+    const d = await modeles.generate(agent, { kind, personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': months } });
     if (!d.ok) throw new Error(d.code);
     const r = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt: SIGNED, place, scanRef: `scans/test-${n}.pdf`, source: 'referral' });
     if (!r.ok) throw new Error(r.code);
@@ -64,7 +64,7 @@ async function setup() {
   const at = (d: Date) => {
     clock = d;
   };
-  return { db, journal, acces, network, agent, direction, as, sam, signed, echeances, at };
+  return { db, journal, acces, network, registre: new RegistreMandats(db, journal, { now }), agent, direction, as, sam, signed, echeances, at };
 }
 
 describeWithSqlite('D06 · échéances des mandats', () => {
@@ -109,5 +109,18 @@ describeWithSqlite('D06 · échéances des mandats', () => {
     expect(await t.echeances.list(t.as('agent', t.sam.id))).toEqual({ ok: true, tasks: [] });
     expect(await t.echeances.list(t.direction)).toMatchObject({ ok: false, rule: 'R16' });
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/Léa|Exemple/);
+  });
+
+  it('un mandat exclusif plus court que 3 mois n’a pas d’échéance de période ; un mandat annulé après sa tâche ne la montre plus', async () => {
+    const t = await setup();
+    await t.signed('mandat_vente_exclusif', 'agence', 1);
+    t.at(paris('2027-04-25'));
+    expect(await t.echeances.run()).toBe(0);
+    const m = await t.signed('mandat_vente_exclusif');
+    expect(await t.echeances.run()).toBe(1);
+    expect(await t.registre.cancel(t.direction, m, 'termination')).toMatchObject({ ok: true });
+    expect(await t.echeances.list(t.agent)).toEqual({ ok: true, tasks: [] });
+    // La tâche reste gardée, seulement plus montrée.
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM mandate_tasks')).toEqual({ n: 1 });
   });
 });

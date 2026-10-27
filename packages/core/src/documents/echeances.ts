@@ -84,7 +84,9 @@ export class EcheancesMandats {
         }
         const due: { kind: MandateTask['kind']; day: string; lead: number }[] = [];
         if (facts && facts.durationMonths !== null) due.push({ kind: 'fin_mandat', day: mandateEndDay(signedAt, facts.durationMonths), lead: this.settings.endLeadDays });
-        if (row.kind === 'mandat_vente_exclusif') due.push({ kind: 'fin_periode_exclusive', day: mandateEndDay(signedAt, EXCLUSIVE_PERIOD_MONTHS), lead: this.settings.exclusiveLeadDays });
+        // La période exclusive ne compte que si le mandat dure au-delà ; un mandat plus court n'y arrive jamais.
+        const end = facts && facts.durationMonths !== null ? mandateEndDay(signedAt, facts.durationMonths) : null;
+        if (row.kind === 'mandat_vente_exclusif' && end !== null && mandateEndDay(signedAt, EXCLUSIVE_PERIOD_MONTHS) < end) due.push({ kind: 'fin_periode_exclusive', day: mandateEndDay(signedAt, EXCLUSIVE_PERIOD_MONTHS), lead: this.settings.exclusiveLeadDays });
         for (const d of due) {
           // La tâche est rangée dès que le délai est atteint, jusqu'au jour de l'échéance compris.
           if (today < addDays(d.day, -d.lead) || today > d.day) continue;
@@ -117,7 +119,12 @@ export class EcheancesMandats {
     const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [viewer.userId]);
     if (!agent || agent.network_id !== viewer.networkId || agent.status !== 'active') return refuse('agent_inactive');
     const rows = await this.db.all<{ id: string; mandate_id: string; kind: MandateTask['kind']; due_day: string; done_at: string | null }>(
-      `SELECT id, mandate_id, kind, due_day, done_at FROM mandate_tasks WHERE network_id = ? AND agent_id = ? ORDER BY CASE WHEN done_at IS NULL THEN 0 ELSE 1 END, due_day, id`,
+      // Un mandat rétracté ou annulé au registre n'a plus d'échéance à montrer ; ses tâches restent gardées.
+      `SELECT t.id, t.mandate_id, t.kind, t.due_day, t.done_at FROM mandate_tasks t WHERE t.network_id = ? AND t.agent_id = ?
+       AND NOT EXISTS (SELECT 1 FROM mandate_withdrawals w WHERE w.mandate_id = t.mandate_id)
+       AND NOT EXISTS (SELECT 1 FROM mandate_register r JOIN mandate_register c ON c.network_id = r.network_id AND c.kind = 'annulation' AND c.cancels_seq = r.seq
+                       WHERE r.mandate_id = t.mandate_id AND r.kind = 'inscription')
+       ORDER BY CASE WHEN t.done_at IS NULL THEN 0 ELSE 1 END, t.due_day, t.id`,
       [viewer.networkId, viewer.userId],
     );
     return { ok: true, tasks: rows.map((r) => ({ id: r.id, mandateId: r.mandate_id, kind: r.kind, dueDay: r.due_day, reason: REASON[r.kind], doneAt: r.done_at })) };
