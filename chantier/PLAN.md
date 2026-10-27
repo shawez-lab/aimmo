@@ -797,3 +797,75 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Objectif : exporter `annonces` depuis `@aimmo/core` et remplacer l'import relatif de `packages/api/src/annonces.ts` ; ajouter `annonceRoutes()` aux routes de `app.ts` ; lancer `syncAnnonces` toutes les 15 minutes depuis le déclencheur du Worker ; servir la page publique du bien et sa fiche imprimable (`PageBien`) et les médias ; dans l'application de l'agent, un écran « Mettre en vente » qui montre la liste de contrôle, l'annonce sourcée phrase par phrase (chaque nombre relié à son champ) et le bouton de validation.
 - Critères : les routes répondent derrière la clé d'API [R16] ; le passage tourne toutes les 15 minutes, une seule fois par créneau ; la page publique ne montre qu'une version publiée, sans adresse [R46] ; écran accessible, sans texte générique, beau sur téléphone d'abord.
 - Attend : rien.
+
+**M09 · Offres, mai 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-27 par la voie 2. Ids `O..` pour Offre. Cahier : M09 Offres ; Feuille de route, mai 2027 : « une offre test suivie de bout en bout » ; règles R14 (aucune évaluation de solvabilité) et R15 (aucune pièce d'identité hors du coffre).
+Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit les délais ; il n'accepte, ne refuse, ne contre-propose ni ne négocie jamais : seule une réponse du vendeur, rapportée par l'agent avec sa preuve, change l'état d'une offre [R57]. La première version range l'offre comme un enregistrement structuré (montant, conditions suspensives, validité, financement déclaré) avec la référence de l'offre signée sur papier ; la signature en ligne de l'offre viendra avec un modèle « offre d'achat » dans la bibliothèque de M06, quand la voie qui tient M06 l'aura ajouté. Le financement déclaré ne sert qu'à vérifier la cohérence des montants, jamais à noter l'acquéreur [R14]. L'identité de l'acquéreur est un état (vérifiée ou non, par qui, quand), lu dans le contrôle d'identité de D03, jamais une copie [R15]. La transmission au vendeur passe par le contrôle central des envois, en mode essai, après validation de l'agent. M10 n'existe pas encore : l'offre acceptée ouvre un dossier de vente minimal, que M10 complétera, et ce dossier reste bloqué tant que l'identité de chaque acquéreur n'est pas vérifiée [R58]. Le code de M09 vit dans `packages/core/src/offres/` et ses migrations à partir de `0201`, sans toucher aux fichiers du socle.
+
+### O01 · Offre écrite enregistrée, avec son registre chaîné
+- Statut : en cours (voie 2)
+- Qui : Claude · Relecture : forte · Dépend de : D04, T01
+- Cahier : M09, « Offre écrite » ; règle « toute offre reçue est transmise au vendeur ».
+- Objectif : l'agent enregistre une offre reçue pour un bien en vente : acquéreur (sa fiche), montant, conditions suspensives dans une liste fermée (prêt avec montant et durée, vente d'un autre bien, permis, autre), durée de validité, financement déclaré (apport, prêt), référence de l'offre signée ; chaque offre reçoit un numéro dans le registre des offres du bien, chaîné par empreintes, en ajout seul ; l'historique de l'offre est horodaté.
+- Jamais vu : **registre des offres vérifiable par le vendeur**. Chaque offre reçue prend sa place dans un registre chaîné du bien ; le vendeur voit le nombre d'offres reçues et peut vérifier qu'aucune n'a été retenue ni modifiée après coup. Aucun réseau ne prouve ainsi au vendeur qu'il a vu toutes les offres.
+- Critères : une offre sans montant, sans validité ou avec une condition hors liste est refusée, le champ nommé ; deux offres simultanées ont deux numéros sans trou ; une modification directe d'une ligne du registre est détectée par le contrôle [R56] ; rien ne s'efface [R17] ; seuls l'agent du bien et la direction enregistrent ou lisent une offre [R16] ; aucune donnée personnelle au journal [R13].
+- Attend : rien.
+
+### O02 · Contrôles de l'offre, sans évaluer personne
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : O01
+- Cahier : M09, « Contrôles ».
+- Objectif : à l'enregistrement et à la demande, un contrôle écrit, ligne par ligne : identité de chaque acquéreur vérifiée ou non (état lu dans D03), cohérence entre le montant et le financement déclaré (apport plus prêt couvrent le prix offert et les frais annoncés), offre dans sa durée de validité ; le résultat est un constat, jamais une note.
+- Critères : aucun score, aucun classement, aucune évaluation de solvabilité [R14] ; le contrôle ne lit aucune pièce d'identité [R15] ; écart de financement chiffré et montré sans jugement ; résultat au journal en codes, sans montant ni nom [R13].
+- Attend : rien.
+
+### O03 · Transmission au vendeur et réponse horodatée
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : O02
+- Cahier : M09, « Transmission » ; règles « aucun programme n'accepte une offre ni ne négocie un prix », « toute offre reçue est transmise au vendeur ».
+- Objectif : l'agent valide la transmission de chaque offre au vendeur (message par le contrôle central, en mode essai) ; la réponse du vendeur (acceptation, refus, contre-offre) est rapportée par l'agent avec sa preuve et son heure ; un contrôle quotidien signale toute offre enregistrée et pas transmise.
+- Critères : une offre non transmise après le délai réglé est signalée à l'agent et à la direction [R56] ; aucune fonction ne change l'état d'une offre sans une réponse du vendeur rapportée avec preuve [R57] ; l'envoi passe par le contrôle central (horaires, exclusions) [R01, R02] ; historique complet et horodaté.
+- Attend : rien pour l'essai.
+
+### O04 · Contre-offres et historique de la négociation
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : O03
+- Cahier : M09, « Transmission », « contre-offre ».
+- Objectif : une contre-offre du vendeur crée une nouvelle proposition liée à l'offre, transmise à l'acquéreur après validation de l'agent ; la réponse de l'acquéreur est rapportée de la même façon ; la chaîne complète se lit dans l'ordre.
+- Critères : une chaîne offre, contre-offre, nouvelle offre se lit dans l'ordre avec chaque heure ; une proposition remplacée ne peut plus être acceptée ; aucun montant proposé par le système [R57].
+- Attend : rien.
+
+### O05 · Délais de validité suivis
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : O01
+- Cahier : M09, règle « les délais de validité sont suivis et rappelés à l'agent ».
+- Objectif : chaque jour, une tâche pour l'agent avant l'échéance d'une offre sans réponse (délai en réglage), et l'offre passe « échue » le lendemain de sa fin, à l'heure de Paris.
+- Critères : une seule tâche par échéance ; une offre échue ne peut plus être acceptée [R59] ; calcul juste à l'heure de Paris ; rien n'est envoyé au vendeur ni à l'acquéreur.
+- Attend : rien.
+
+### O06 · Tableau comparatif des offres pour le vendeur
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : O02
+- Cahier : M09, « Plusieurs offres ».
+- Objectif : pour un bien, toutes les offres en cours côte à côte : montant, net vendeur après honoraires du mandat, conditions suspensives, durée de validité restante, date de signature souhaitée ; dans l'ordre d'arrivée, sans aucun tri ni note.
+- Critères : aucun classement ni recommandation [R14, R57] ; net vendeur calculé juste depuis le mandat en vigueur ; aucune coordonnée de l'acquéreur ; toutes les offres reçues y figurent [R56].
+- Attend : rien.
+
+### O07 · Offre acceptée : dossier de vente, bloqué sans identité vérifiée
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : O03
+- Cahier : M09, « Offre acceptée » ; critère « aucun compromis préparé sans identité vérifiée de l'acquéreur ».
+- Objectif : une acceptation rapportée avec preuve ouvre un dossier de vente minimal (bien, offre, acquéreurs, vendeur), que M10 complétera ; le dossier ne peut passer à « compromis en préparation » tant que l'identité de chaque acquéreur n'est pas vérifiée ; le bien passe « sous offre » pour la publication (M07).
+- Critères : aucun compromis préparé sans identité vérifiée [R58] ; une seule offre acceptée par bien à la fois ; le parcours de test d'une offre, de l'enregistrement au dossier, garde un historique complet et horodaté.
+- Attend : rien.
+
+### O08 · Routes de M09
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : O07
+- Cahier : M09.
+- Objectif : les routes `/v1/offres` dans `packages/api/src/offres.ts`, de la même forme que celles de `app.ts`, sans toucher au socle ; leur branchement suit, comme P10, par la voie qui tient le socle.
+- Critères : chaque route sous R16, chaque refus une ligne au journal ; une offre test suivie de bout en bout par les routes.
+- Attend : rien.
