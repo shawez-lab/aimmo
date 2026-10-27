@@ -34,6 +34,8 @@ const MAX_DRAWING = 200_000;
 export const ONLINE_SIGNATURE_PURPOSE = 'signature_en_ligne';
 
 export interface SignatureProof {
+  /** L'exemplaire est-il parti au signataire ? Sinon, `sendCopy` le reprendra. */
+  copySent?: boolean;
   documentId: string;
   contentHash: string;
   signedAt: string;
@@ -195,27 +197,64 @@ export class SignatureEnLigne {
     const signedAt = this.now().toISOString();
     const drawingHash = input.drawing ? await sha256(input.drawing) : null;
     const proof: SignatureProof = { documentId: session.document_id, contentHash, signedAt, method: drawingHash ? 'code_et_trace' : 'code', drawingHash, mode: 'essai', realSignature: false };
+    // L'exemplaire : le document signé, suivi de sa preuve, gardé avec la session pour être relu et envoyé.
+    const copy = `${doc.content}\n<!-- Signature en ligne d'essai : session ${sessionId}, empreinte ${contentHash}, ${signedAt}, ${proof.method} -->\n`;
     const { changes } = await this.db.run(
-      `UPDATE signature_sessions SET status = 'signee', signed_at = ?, drawing_hash = ?, proof = ? WHERE id = ? AND status = 'ouverte'`,
-      [signedAt, drawingHash, JSON.stringify(proof), sessionId],
+      `UPDATE signature_sessions SET status = 'signee', signed_at = ?, drawing_hash = ?, proof = ?, copy_content = ?, copy_status = 'a_envoyer' WHERE id = ? AND status = 'ouverte'`,
+      [signedAt, drawingHash, JSON.stringify(proof), copy, sessionId],
     );
     // Le code vient de servir à une autre demande : il ne sert qu'une fois.
     if (changes !== 1) return { ok: false, rule: null, code: 'already_signed' };
     await appendEvent(this.journal, { type: 'signature.essai', actor: this.actor(viewer), subject: `document:${session.document_id}`, data: { session: sessionId, method: proof.method, realSignature: false } }, this.now);
-    // Le signataire reçoit son exemplaire, par le contrôle central (en essai : dans la boîte d'essai).
-    const agent = await this.db.first<{ agent_id: string }>('SELECT agent_id FROM documents WHERE id = ?', [session.document_id]);
+    // Le signataire reçoit son exemplaire, par le contrôle central ; refusé pour l'heure, il est repris plus tard.
+    const copySent = await this.sendCopy(viewer, sessionId);
+    return { ok: true, value: { ...proof, copySent } };
+  }
+
+  /**
+   * Envoie au signataire la référence de son exemplaire, par le contrôle central, si ce n'est pas déjà fait. Un refus
+   * (heure, exclusion…) laisse l'exemplaire « à envoyer » : une nouvelle demande le reprendra.
+   */
+  async sendCopy(viewer: Viewer, sessionId: string): Promise<boolean> {
+    const session = await this.db.first<SessionRow & { copy_status: string | null }>('SELECT * FROM signature_sessions WHERE id = ? AND network_id = ?', [sessionId, viewer.networkId]);
+    if (!session || session.status !== 'signee') return false;
+    if (session.copy_status === 'envoye') return true;
+    const doc = await this.db.first<{ person_id: string; agent_id: string }>('SELECT person_id, agent_id FROM documents WHERE id = ?', [session.document_id]);
+    if (!doc) return false;
+    // Seul celui qui voit la fiche en entier, agent ou direction, demande l'envoi [R16].
+    const read = await this.acces.readFiche(viewer, doc.person_id);
+    if (!read.ok || read.view !== 'full' || (viewer.role !== 'agent' && viewer.role !== 'direction')) return false;
     const hello = await this.greeting(doc.person_id);
-    await this.envois.send({
+    const result = await this.envois.send({
       networkId: viewer.networkId,
-      agentId: agent?.agent_id ?? null,
+      agentId: doc.agent_id,
       personId: doc.person_id,
       channel: 'email',
       kind: 'alert',
       purpose: ONLINE_SIGNATURE_PURPOSE,
       subject: `signature:${sessionId}:exemplaire`,
-      fallbackTexts: [`${hello}Votre document signé en ligne est joint : gardez cet exemplaire. Signature d’essai, sans valeur juridique.`],
+      fallbackTexts: [`${hello}Votre document signé en ligne est enregistré sous la référence ${sessionId}. Votre exemplaire vous est remis avec ce message. Signature d’essai, sans valeur juridique.`],
+      // La référence est un identifiant, pas un chiffre à vérifier : ses nombres sont permis [R10].
+      figures: sessionId.match(/\d+/g) ?? [],
     });
-    return { ok: true, value: proof };
+    if (result.status !== 'sent') return false;
+    await this.db.run(`UPDATE signature_sessions SET copy_status = 'envoye' WHERE id = ? AND copy_status = 'a_envoyer'`, [sessionId]);
+    return true;
+  }
+
+  /** L'exemplaire d'une signature en ligne : qui voit la fiche du document en entier [R16]. */
+  async copy(viewer: Viewer, sessionId: string): Promise<{ ok: true; content: string; sent: boolean } | Refusal | { ok: false; rule: null; code: 'unknown_session' | 'not_signed' }> {
+    const session = await this.db.first<SessionRow & { copy_content: string | null; copy_status: string | null }>('SELECT * FROM signature_sessions WHERE id = ? AND network_id = ?', [sessionId, viewer.networkId]);
+    if (!session) return { ok: false, rule: null, code: 'unknown_session' };
+    if (session.status !== 'signee' || !session.copy_content) return { ok: false, rule: null, code: 'not_signed' };
+    const doc = (await this.db.first<{ person_id: string }>('SELECT person_id FROM documents WHERE id = ?', [session.document_id]))!;
+    const read = await this.acces.readFiche(viewer, doc.person_id);
+    if (!read.ok) return read;
+    if (read.view !== 'full') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `signature:${sessionId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'not_assigned' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
+    return { ok: true, content: session.copy_content, sent: session.copy_status === 'envoye' };
   }
 
   /** Le premier message s'adresse à la personne par son prénom [R08]. */

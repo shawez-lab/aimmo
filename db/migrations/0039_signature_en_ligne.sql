@@ -16,12 +16,18 @@ CREATE TABLE IF NOT EXISTS signature_sessions (
   -- Empreinte de la signature manuscrite tracée à l'écran, si elle l'a été ; jamais le tracé lui-même.
   drawing_hash TEXT,
   -- Le dossier de preuve : document, empreinte, horodatage, méthode ; en JSON, sans donnée personnelle.
-  proof TEXT
+  proof TEXT,
+  -- L'exemplaire signé (le document et sa preuve), et son envoi au signataire : à envoyer, puis envoyé.
+  copy_content TEXT,
+  copy_status TEXT CHECK (copy_status IS NULL OR copy_status IN ('a_envoyer', 'envoye'))
 );
 CREATE INDEX IF NOT EXISTS signature_sessions_document ON signature_sessions (document_id, created_at);
 CREATE TRIGGER IF NOT EXISTS signature_sessions_garde BEFORE DELETE ON signature_sessions BEGIN SELECT RAISE(ABORT, 'signature gardée'); END;
--- Une session signée ou bloquée ne change plus.
+-- Une session signée ou bloquée ne change plus, sauf l'envoi de l'exemplaire qui passe d'« à envoyer » à « envoyé ».
 CREATE TRIGGER IF NOT EXISTS signature_sessions_fige BEFORE UPDATE ON signature_sessions
-WHEN OLD.status <> 'ouverte' OR NEW.id IS NOT OLD.id OR NEW.document_id IS NOT OLD.document_id OR NEW.content_hash IS NOT OLD.content_hash
+WHEN (OLD.status <> 'ouverte' AND NOT (OLD.status = 'signee' AND OLD.copy_status = 'a_envoyer' AND NEW.copy_status = 'envoye'
+       AND NEW.status IS OLD.status AND NEW.proof IS OLD.proof AND NEW.copy_content IS OLD.copy_content AND NEW.signed_at IS OLD.signed_at
+       AND NEW.attempts IS OLD.attempts AND NEW.drawing_hash IS OLD.drawing_hash))
+  OR NEW.id IS NOT OLD.id OR NEW.document_id IS NOT OLD.document_id OR NEW.content_hash IS NOT OLD.content_hash
   OR NEW.code_hash IS NOT OLD.code_hash OR NEW.expires_at IS NOT OLD.expires_at OR NEW.created_at IS NOT OLD.created_at
 BEGIN SELECT RAISE(ABORT, 'signature figée'); END;

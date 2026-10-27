@@ -567,6 +567,27 @@ const ROUTES: RouteDef[] = [
   },
   {
     method: 'GET',
+    pattern: new RegExp(`^/signatures/${ID}/exemplaire$`),
+    name: 'signature.exemplaire',
+    // L'exemplaire d'une signature en ligne d'essai, et s'il est parti au signataire [R16].
+    handle: async (s, viewer, [id]) => {
+      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).copy(viewer, id!);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { content: r.content, sent: r.sent } });
+      return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/signatures/${ID}/exemplaire$`),
+    name: 'signature.exemplaire_envoi',
+    // Reprend l'envoi de l'exemplaire refusé plus tôt (heure, exclusion…), par le contrôle central.
+    handle: async (s, viewer, [id]) => {
+      const sent = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).sendCopy(viewer, id!);
+      return json(sent ? 200 : 409, { ok: sent, mode: TRIAL_MODE, sent });
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/attribution\/regles$/,
     name: 'attribution.regles',
     // Les règles d'attribution, publiées, les mêmes pour tous [R25] : rien de personnel.

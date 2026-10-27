@@ -148,4 +148,27 @@ describeWithSqlite('D08 · signature en ligne AIMMO, en mode essai', () => {
     expect(await t.online.start(t.agent, t.documentId, CONSENT)).toMatchObject({ ok: false, rule: 'R01', code: 'send_refused' });
     expect(await t.online.start(t.agent, t.documentId, { consentProof: '' })).toEqual({ ok: false, rule: null, code: 'bad_consent' });
   });
+
+  it('l’exemplaire signé est gardé et lisible ; refusé pour l’heure, son envoi est repris plus tard', async () => {
+    const t = await setup();
+    t.at(8 * 3_600_000 + 58 * 60_000); // 19 h 58 à Paris
+    const s = await t.online.start(t.agent, t.documentId, CONSENT);
+    if (!s.ok) throw new Error(s.code);
+    t.at(9 * 3_600_000 + 1 * 60_000); // 20 h 01 : le code est encore valable, l'envoi d'initiative non
+    const r = await t.online.sign(t.agent, s.value.sessionId, { code: (await t.codes())[0]! });
+    expect(r).toMatchObject({ ok: true, value: { copySent: false } });
+    const copy = await t.online.copy(t.agent, s.value.sessionId);
+    expect(copy.ok && copy.sent).toBe(false);
+    expect(copy.ok && copy.content).toContain('Mandat de test');
+    expect(copy.ok && copy.content).toContain(`session ${s.value.sessionId}`);
+    expect(await t.online.copy({ role: 'agent', userId: t.sam.id, networkId: t.network.id } as Viewer, s.value.sessionId)).toMatchObject({ ok: false, rule: 'R16' });
+    t.at(22 * 3_600_000); // le lendemain, 9 h à Paris
+    expect(await t.online.sendCopy({ role: 'agent', userId: t.sam.id, networkId: t.network.id } as Viewer, s.value.sessionId)).toBe(false);
+    expect(await t.online.sendCopy(t.agent, s.value.sessionId)).toBe(true);
+    expect(await t.online.sendCopy(t.agent, s.value.sessionId)).toBe(true);
+    const sent = await t.db.all<{ body: string }>(`SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.body LIKE '%exemplaire%'`);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.body).toContain(s.value.sessionId);
+    await expect(t.db.run(`UPDATE signature_sessions SET copy_status = 'a_envoyer'`)).rejects.toThrow(/figée/);
+  });
 });
