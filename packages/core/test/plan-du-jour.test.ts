@@ -132,12 +132,12 @@ describeWithSqlite('G01 · plan du jour : contenu et ordre', () => {
     ]);
     const [first, second, third, fourth] = plan.items;
     expect(first!.reason).toMatch(/^Rappel demandé\. /);
-    expect(first!.order).toMatch(/^1\. rappel demandé ; 2\. délai annoncé : tout de suite/);
+    expect(first!.order).toMatch(/^1\. rappel demandé ; 2\. pas de réponse « pense à vendre » ; 3\. délai annoncé : tout de suite/);
     expect(first!.basis.kind).toBe('request');
-    expect(second!.order).toContain('2. délai annoncé : échéance le 2027-02-06');
+    expect(second!.order).toContain('3. délai annoncé : échéance le 2027-02-06');
     expect(third).toMatchObject({ reportId: report, reason: expect.stringContaining('à relancer') });
-    expect(third!.order).toContain('3. avis de valeur envoyé le 2026-12-09');
-    expect(fourth!.order).toContain('2. délai non annoncé');
+    expect(third!.order).toContain('4. avis de valeur envoyé le 2026-12-09');
+    expect(fourth!.order).toContain('3. délai non annoncé');
     // Aucune ligne ne vient d'une IA : chaque raison et chaque explication sont des textes fixes du code.
     for (const item of plan.items) expect(item.reason.length).toBeGreaterThan(0);
   });
@@ -237,7 +237,7 @@ describeWithSqlite('G01 · plan du jour : contenu et ordre', () => {
     expect(plan.items).toHaveLength(1);
     expect(plan.items[0]).toMatchObject({ personId: hugo, kind: 'callback' });
     // L'avis le plus ancien compte quand même dans l'explication.
-    expect(plan.items[0]!.order).toContain('3. avis de valeur envoyé le 2026-12-09');
+    expect(plan.items[0]!.order).toContain('4. avis de valeur envoyé le 2026-12-09');
   });
 
   it('une estimation n’est plus à relancer après une réponse, un échange de l’agent ou un rendez-vous ; un rendez-vous à venir retire la ligne « rendez-vous à proposer »', async () => {

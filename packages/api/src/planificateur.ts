@@ -1,4 +1,4 @@
-import { Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, vendorFollowUpJob, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 
 export interface SchedulerConfig {
@@ -8,6 +8,8 @@ export interface SchedulerConfig {
   jobs?: readonly ScheduledJob[];
   /** Variable `RDV_LINK_BASE` : début du lien pour décaler ou annuler un rendez-vous ; absent, les rappels partent sans lien. */
   appointmentLinkBase?: string | undefined;
+  /** La fourchette des communes (E05) pour le suivi de valeur ; absente, le suivi ne prépare aucun envoi. */
+  communeRanges?: CommuneRanges | null;
   now?: () => Date;
 }
 
@@ -29,6 +31,8 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       appointmentBriefJob(config.db, journal, { now }),
       // Plan du jour de chaque agent, figé à 7 h 30 (G02), sans aucun envoi.
       dailyPlanJob(config.db, journal, { now }),
+      // Suivi de valeur (G04) : réponses lues, envois par les canaux du mode essai seulement.
+      valueTrackingJob(config.db, journal, { now, ranges: config.communeRanges ?? null }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
