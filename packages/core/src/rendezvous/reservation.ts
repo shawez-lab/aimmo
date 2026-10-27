@@ -408,6 +408,28 @@ export class RendezVous {
   async reschedule(token: string, start: Date, channel: OutboundChannelName | null = null): Promise<BookingResult | { ok: false; rule: null; code: 'unknown' | 'not_booked' }> {
     const old = await this.byToken(token);
     if (!old) return { ok: false, rule: null, code: 'unknown' };
+    return this.moveAppointment(old, start, channel, 'client:lien');
+  }
+
+  /** Un rendez-vous déplacé par l'agent dans son agenda (V03) : mêmes règles qu'un décalage [R32, R33]. */
+  async moveFromAgenda(id: string, start: Date): Promise<BookingResult | { ok: false; rule: null; code: 'unknown' | 'not_booked' }> {
+    const old = await this.get(id);
+    if (!old) return { ok: false, rule: null, code: 'unknown' };
+    return this.moveAppointment(old, start, null, 'system:agenda');
+  }
+
+  /** Un rendez-vous supprimé par l'agent dans son agenda (V03) : annulé, créneau libéré. */
+  async cancelFromAgenda(id: string): Promise<Appointment | null> {
+    const appointment = await this.get(id);
+    return appointment ? this.cancelAppointment(appointment, 'system:agenda') : null;
+  }
+
+  private async moveAppointment(
+    old: Appointment,
+    start: Date,
+    channel: OutboundChannelName | null,
+    actor: string,
+  ): Promise<BookingResult | { ok: false; rule: null; code: 'unknown' | 'not_booked' }> {
     const at = this.now().toISOString();
     // L'ancien rendez-vous est pris d'abord, par une seule instruction : un lien ne décale qu'une fois, même en double clic.
     const claimed = await this.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ? AND status = 'booked'", [at, at, old.id]);
@@ -439,7 +461,7 @@ export class RendezVous {
     }
     // Le décalage est fait : une panne du journal à ce moment ne doit pas faire perdre le nouveau lien. Elle est rendue
     // à l'appelant (`warning`), et le nouveau rendez-vous garde `replaces_id` dans la base [R13].
-    const logged = await this.log('rdv.decale', 'client:lien', (await this.get(old.id))!, { replaced_by: result.appointment.id }).then(
+    const logged = await this.log('rdv.decale', actor, (await this.get(old.id))!, { replaced_by: result.appointment.id }).then(
       () => true,
       () => false,
     );
