@@ -210,30 +210,17 @@ export class DemandesAvis {
     const local = localTime(now, TIME_ZONE);
     const today = local.date;
     const at = now.toISOString();
-    // Une demande restée en attente au-delà du délai ne partira plus : elle est close, avec sa raison.
-    // L'agent en est prévenu par une tâche, une par dossier, et chaque fermeture va au journal.
-    const late = await this.db.all<{ file_id: string; person_id: string; agent_id: string; side: string }>(
-      "SELECT file_id, person_id, agent_id, side FROM review_requests WHERE network_id = ? AND status IN ('waiting', 'failed') AND due_day < ? ORDER BY file_id, person_id",
-      [networkId, addDays(today, -REVIEW_WINDOW_DAYS)],
-    );
-    for (const r of late) {
-      const { changes } = await this.db.run("UPDATE review_requests SET status = 'closed', rule = 'delai_depasse', updated_at = ? WHERE file_id = ? AND person_id = ? AND status IN ('waiting', 'failed')", [at, r.file_id, r.person_id]);
-      if (changes !== 1) continue;
-      await this.db.run(
-        "INSERT INTO after_sale_tasks (id, network_id, agent_id, file_id, kind, created_at, done_at) VALUES (?, ?, ?, ?, 'avis_non_parti', ?, NULL) ON CONFLICT DO NOTHING",
-        [this.newId(), networkId, r.agent_id, r.file_id, at],
-      );
-      await appendEvent(this.journal, { type: 'apres_vente.demande_avis', actor: 'system:apres-vente', subject: `sale_file:${r.file_id}`, data: { mode: 'essai', side: r.side, status: 'closed', rule: 'delai_depasse' } }, this.now);
-    }
+    const deadline = addDays(today, -REVIEW_WINDOW_DAYS);
     // Les dossiers les plus anciens d'abord : le plafond du jour ne laisse jamais un client derrière les suivants [R11, R64].
-    const sales = [...(await this.dossiers.closedBetween(networkId, addDays(today, -REVIEW_WINDOW_DAYS - 1), addDays(today, -1)))].sort(
+    // Trois jours de plus que le délai : un dossier qui vient d'en sortir est clos avec ses clients sous les yeux, même
+    // après un dimanche sans passage.
+    const sales = [...(await this.dossiers.closedBetween(networkId, addDays(today, -REVIEW_WINDOW_DAYS - 3), addDays(today, -1)))].sort(
       (a, b) => a.closedOn.localeCompare(b.closedOn) || a.fileId.localeCompare(b.fileId),
     );
     let sent = 0;
     for (const sale of sales) {
       const dueDay = addDays(sale.closedOn, 1);
-      // Le lendemain de l'acte, à partir de 10 h ; jamais avant, jamais après le délai.
-      if (dueDay > today || (dueDay === today && local.minutes < REVIEW_HOUR * 60) || dueDay < addDays(today, -REVIEW_WINDOW_DAYS)) continue;
+      if (dueDay > today || (dueDay === today && local.minutes < REVIEW_HOUR * 60)) continue;
       // Une demande par client, fiches réunies comprises : le premier côté nommé l'emporte.
       const seen = new Set<string>();
       const clients: { personId: string; side: 'vendeur' | 'acquereur' }[] = [];
@@ -243,11 +230,12 @@ export class DemandesAvis {
         seen.add(root);
         clients.push({ personId: root, side: c.side });
       }
-      // Une demande en attente d'une fiche réunie depuis à une autre est close : la demande part sous la fiche gardée.
-      for (const r of await this.db.all<{ person_id: string }>("SELECT person_id FROM review_requests WHERE file_id = ? AND status IN ('waiting', 'failed')", [sale.fileId])) {
-        if (seen.has(r.person_id) || !seen.has(await this.unique.rootOf(r.person_id))) continue;
-        await this.db.run("UPDATE review_requests SET status = 'closed', rule = 'fiche_reunie', updated_at = ? WHERE file_id = ? AND person_id = ? AND status IN ('waiting', 'failed')", [at, sale.fileId, r.person_id]);
+      if (dueDay < deadline) {
+        await this.expire(networkId, sale.fileId, seen);
+        continue;
       }
+      // Une demande en attente d'une fiche réunie depuis à une autre reste en attente, sans partir : la demande part sous
+      // la fiche gardée ; si la réunion est défaite dans le délai, elle repart d'elle-même.
       // Chaque demande est rangée tout de suite, même sans lien : le délai la clora et l'agent sera prévenu.
       for (const c of clients) {
         await this.db.run(
@@ -303,7 +291,39 @@ export class DemandesAvis {
         if (status === 'sent') sent += 1;
       }
     }
+    // Une demande d'un dossier que M10 ne rend plus : close, l'agent prévenu.
+    for (const f of await this.db.all<{ file_id: string }>("SELECT DISTINCT file_id FROM review_requests WHERE network_id = ? AND status IN ('waiting', 'failed') AND due_day < ? ORDER BY file_id", [networkId, deadline])) {
+      await this.expire(networkId, f.file_id, null);
+    }
     return sent;
+  }
+
+  /**
+   * Une demande restée en attente au-delà du délai ne partira plus : elle est close, avec sa raison, au journal.
+   * - la fiche a été réunie à une autre dont la demande est partie : `fiche_reunie`, rien à faire pour l'agent ;
+   * - la fiche n'est plus celle d'un client du dossier, une réunion ayant été défaite : `plus_client`, rien à faire ;
+   * - sinon `delai_depasse`, et l'agent reçoit une tâche « demande d'avis non partie », une par dossier.
+   * `clients` : les fiches gardées des clients du dossier, ou `null` si le dossier n'est plus rendu par M10.
+   */
+  private async expire(networkId: string, fileId: string, clients: ReadonlySet<string> | null): Promise<void> {
+    const at = this.now().toISOString();
+    const rows = await this.db.all<{ person_id: string; agent_id: string; side: string }>(
+      "SELECT person_id, agent_id, side FROM review_requests WHERE file_id = ? AND status IN ('waiting', 'failed') ORDER BY person_id",
+      [fileId],
+    );
+    for (const r of rows) {
+      const root = await this.unique.rootOf(r.person_id);
+      const merged = root !== r.person_id && !!(await this.db.first("SELECT 1 AS x FROM review_requests WHERE file_id = ? AND person_id = ? AND status = 'sent'", [fileId, root]));
+      const reason = merged ? 'fiche_reunie' : clients && !clients.has(root) ? 'plus_client' : 'delai_depasse';
+      const { changes } = await this.db.run("UPDATE review_requests SET status = 'closed', rule = ?, updated_at = ? WHERE file_id = ? AND person_id = ? AND status IN ('waiting', 'failed')", [reason, at, fileId, r.person_id]);
+      if (changes !== 1) continue;
+      await appendEvent(this.journal, { type: 'apres_vente.demande_avis', actor: 'system:apres-vente', subject: `sale_file:${fileId}`, data: { mode: 'essai', side: r.side, status: 'closed', rule: reason } }, this.now);
+      if (reason !== 'delai_depasse') continue;
+      await this.db.run(
+        "INSERT INTO after_sale_tasks (id, network_id, agent_id, file_id, kind, created_at, done_at) VALUES (?, ?, ?, ?, 'avis_non_parti', ?, NULL) ON CONFLICT DO NOTHING",
+        [this.newId(), networkId, r.agent_id, fileId, at],
+      );
+    }
   }
 
   /** Les demandes d'avis : un agent voit celles de ses dossiers, la direction et la conformité celles du réseau [R16]. */

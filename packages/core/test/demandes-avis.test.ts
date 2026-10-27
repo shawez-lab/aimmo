@@ -367,6 +367,31 @@ describeWithSqlite('F02 · demande d’avis le lendemain de l’acte, à tous, e
     expect(tasks.ok && tasks.value).toEqual([]);
   });
 
+  it('[R64] une réunion de fiches défaite dans le délai laisse repartir la demande du client', async () => {
+    const t = await setup({ link: false });
+    const a = await t.client('Ana', 'Un');
+    const b = await t.client('Bea', 'Deux');
+    t.close('f1', '2027-03-08', [{ personId: b, side: 'vendeur' }]);
+    await t.passes('2027-03-09', '2027-03-09');
+    const unique = new FicheUnique(t.db, new FicheClient(t.db, { now: t.now }), { now: t.now });
+    const m = await unique.merge({ survivorId: a, mergedId: b, reason: 'erreur de test' });
+    await t.passes('2027-03-10', '2027-03-10');
+    await unique.undoMerge(m.id);
+    t.setClock(paris('2027-03-11', 9));
+    await t.avis.setReviewLink(t.agent, t.alexId, LINK);
+    await t.passes('2027-03-11', '2027-03-20');
+    expect(await t.inbox(b)).toHaveLength(1);
+    expect(await t.inbox(a)).toHaveLength(0);
+    // La ligne rangée sous la fiche gardée pendant la réunion est close sans tâche : l'autre n'est pas un client du dossier.
+    const list = await t.avis.list(t.agent);
+    expect(list.ok && list.value.map((r) => [r.personId === b ? 'client' : 'autre', r.status, r.rule]).sort()).toEqual([
+      ['autre', 'closed', 'plus_client'],
+      ['client', 'sent', null],
+    ]);
+    const tasks = await t.avis.openTasks(t.agent);
+    expect(tasks.ok && tasks.value).toEqual([]);
+  });
+
   it('[R16] [R13] un agent ne voit que les demandes de ses dossiers ; le journal ne garde ni texte ni coordonnée', async () => {
     const t = await setup();
     const a = await t.client('Ana', 'Un');
