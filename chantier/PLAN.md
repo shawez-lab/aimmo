@@ -473,14 +473,14 @@ Décidé, lecture prudente : la première version, pour la preuve à Dijon, couv
 - Critères : le même plan pour les mêmes données, ordre expliqué ligne par ligne, aucune note de l'IA [R35] ; seulement les clients de l'agent [R16] ; une personne exclue, arrêtée, sans demande récente ni accord en cours n'y figure jamais, et son retrait est compté sans donnée personnelle [R36] ; un contact n'y figure qu'une fois, sous sa raison la plus forte.
 
 ### G02 · Plan du jour à 7 h 30, par le planificateur
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : normale · Dépend de : G01, B02
 - Cahier : M20, « Critères d'acceptation » : « le plan du jour arrive chaque matin à 7 h 30 dans l'application ».
 - Objectif : le planificateur du socle fige à 7 h 30, heure de Paris, le plan du jour de chaque agent actif, une fois par agent et par jour ; une route `GET /v1/plan-du-jour` le rend à l'agent seul ; le passage est écrit au journal sans donnée personnelle.
 - Critères : 7 h 30 de Paris été comme hiver ; un plan par agent et par jour même si le déclencheur passe deux fois ; un autre agent ne lit pas ce plan [R16] ; un plan figé ne change plus ; aucun envoi.
 
 ### G03 · Chaque mandat a sa source
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : S03
 - Cahier : M20, point 7 « Mesure », « Règles », « Critères d'acceptation ».
 - Objectif : un mandat signé se range seulement avec sa source (site, estimation en ligne, suivi de valeur, recommandation, réseaux, portail, connaissance de l'agent, autre avec un mot), reprise de la fiche quand elle est connue ; une source « liste achetée » ou « ventes publiques » est refusée ; un compte mensuel des mandats par source, sans donnée personnelle.
