@@ -160,6 +160,11 @@ export class Recommandations {
     // L'agent qui suit le proche reçoit la tâche ; un proche sans agent va à celui qui saisit, ou à l'agent du client.
     const agentId = followedBy ?? (viewer.role === 'agent' ? viewer.userId : referrerAgent);
     if (!referredId) referredId = (await this.store.createPerson({ networkId, agentId, firstName: typedName })).id;
+    else if (followedBy === null && agentId !== null) {
+      // Un proche connu que personne ne suit passe à l'agent de la tâche : sans cela, il ne pourrait pas ouvrir sa fiche.
+      const members = await this.fiche.membersOf(referredId);
+      await this.db.run(`UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${members.map(() => '?').join(', ')}) AND agent_id IS NULL`, [agentId, at.toISOString(), ...members]);
+    }
     for (const id of ids) {
       // Une coordonnée déjà rangée n'est pas ajoutée de nouveau.
       if ((await this.fiche.findByIdentifier(networkId, id.kind, id.value)).length === 0) await this.fiche.addIdentifier({ networkId, agentId, personId: referredId, kind: id.kind, value: id.value });
@@ -241,6 +246,10 @@ export class Recommandations {
     const row = await this.db.first<ReferralRow>('SELECT * FROM referrals WHERE id = ?', [referralId]);
     if (!row || row.network_id !== viewer.networkId || row.call_due_at === null) return this.refused(viewer, `referral:${referralId}`, 'unknown');
     if (viewer.role !== 'agent' || viewer.userId !== row.agent_id) return this.refused(viewer, `referral:${referralId}`, 'not_assigned');
+    // Les droits d'aujourd'hui, pas ceux du jour de la recommandation : un agent parti, ou une fiche passée à un autre, ne la marque plus [R16].
+    const read = await this.acces.readFiche(viewer, await this.fiche.rootOf(row.referred_id));
+    if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+    if (read.view !== 'full') return this.refused(viewer, `referral:${referralId}`, 'not_assigned');
     await this.db.run('UPDATE referrals SET call_done_at = ? WHERE id = ? AND call_done_at IS NULL', [this.now().toISOString(), referralId]);
     return { ok: true };
   }

@@ -141,6 +141,13 @@ describeWithSqlite('F01 · recommandation d’un proche', () => {
     // La tâche d'Omar est chez Sam, pas chez Alex ; « appel fait » par Sam seulement.
     expect((await t.reco.callsOf(t.as('agent', t.sam.id))) as unknown).toMatchObject({ ok: true, value: [{ referralId: other.value.id, firstName: 'Omar' }] });
     expect(await t.reco.callDone(agent, other.value.id)).toMatchObject({ ok: false, rule: 'R16' });
+    // Iris, que personne ne suivait, passe à Alex : sa tâche est dans sa liste et il ouvre sa fiche.
+    expect((await t.reco.callsOf(agent)) as unknown).toMatchObject({ ok: true, value: expect.arrayContaining([expect.objectContaining({ referralId: none.value.id, personId: orphan.id, firstName: 'Iris' })]) });
+    // Les droits d'aujourd'hui : Sam parti ne marque plus l'appel.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.sam.id]);
+    expect(await t.reco.callDone(t.as('agent', t.sam.id), other.value.id)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.db.first('SELECT call_done_at FROM referrals WHERE id = ?', [other.value.id])).toEqual({ call_done_at: null });
+    await t.db.run("UPDATE agents SET status = 'active' WHERE id = ?", [t.sam.id]);
     expect(await t.reco.callDone(t.as('agent', t.sam.id), other.value.id)).toEqual({ ok: true });
     await expect(t.db.run('DELETE FROM referrals')).rejects.toThrow();
   });
