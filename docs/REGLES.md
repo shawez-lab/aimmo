@@ -50,7 +50,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R44 | Prix publié. Le prix publié est celui du mandat en vigueur, avenants signés compris, et le même sur tous les canaux. | non | P02, P04 |
 | R45 | Diagnostic avant publication. Aucune annonce publiée sans diagnostic énergétique du bien. | oui | P02 |
 | R46 | Rien qui situe ni qui exclue. Jamais d'adresse exacte en public, ni dans le texte, la page, la fiche, l'export ou la vidéo ; aucun critère discriminant dans le texte d'une annonce. | non | P03, P05, P06 |
-| R47 | Annonce sans invention. Le texte d'une annonce ne porte que des faits de la fiche du bien, chacun relié à sa source ; aucune annonce n'est publiée sans la validation de l'agent du bien. | non | P03 |
+| R47 | Annonce sans invention. Le texte d'une annonce ne porte que des faits de la fiche du bien, chacun relié à sa source ; aucune annonce n'est publiée sans la validation de l'agent du bien. | oui | P03 |
 | R48 | Aménagement virtuel. Une image modifiée par l'IA, pièce meublée ou travaux simulés, porte la mention « aménagement virtuel » sur l'image. | non | P06 |
 | R49 | Alertes demandées. Une alerte de bien ne part qu'à un acquéreur qui l'a demandée (accord en cours pour les alertes), avec un lien de désinscription, après le contrôle central. | non | T03 |
 | R50 | Recherche sans discrimination. La fiche acquéreur et le rapprochement ne portent aucun critère discriminant (origine, religion, situation de famille, handicap, nationalité, etc., liste fermée) ; seuls des critères sur le bien et le projet comptent. | non | T01, T02 |
