@@ -116,7 +116,11 @@ export class SignaturePapier {
     if (!checked.ok) return checked;
 
     let row = await this.db.first<SignedRow>('SELECT * FROM signed_documents WHERE document_id = ?', [documentId]);
-    if (row && row.number !== null && row.copy_content !== null) return { ok: false, rule: null, code: 'already_signed' };
+    if (row && row.number !== null && row.copy_content !== null) {
+      // Déjà signé ; si la ligne de journal de la signature a manqué (panne), elle est écrite maintenant [R13].
+      await this.ensureSignedEvent(viewer, row);
+      return { ok: false, rule: null, code: 'already_signed' };
+    }
     if (!checked.value.passed) return { ok: false, rule: 'R41', code: 'checks_failed', check: checked.value };
 
     // 1. Le document est réservé : un seul enregistrement, quelles que soient les demandes simultanées.
@@ -194,13 +198,16 @@ export class SignaturePapier {
       const copyHash = await sha256(copy);
       await this.db.run('UPDATE signed_documents SET copy_content = ?, copy_hash = ?, completed_at = ? WHERE document_id = ? AND copy_content IS NULL', [copy, copyHash, this.now().toISOString(), documentId]);
       row = (await this.db.first<SignedRow>('SELECT * FROM signed_documents WHERE document_id = ?', [documentId]))!;
-      await appendEvent(
-        this.journal,
-        { type: 'mandat.signe', actor: this.actor(viewer), subject: `document:${documentId}`, data: { mandate: mandateId, place: row.place, numberRegistered: true } },
-        this.now,
-      );
     }
+    await this.ensureSignedEvent(viewer, row);
     return { ok: true, value: { documentId, mandateId, number: row.number!, place: row.place, signedAt: row.signed_at, copyHash: row.copy_hash! } };
+  }
+
+  /** La ligne de journal de la signature, écrite une fois ; reprise si une panne l'a empêchée. */
+  private async ensureSignedEvent(viewer: Viewer, row: SignedRow): Promise<void> {
+    const subject = `document:${row.document_id}`;
+    if (await this.db.first(`SELECT seq FROM journal WHERE type = 'mandat.signe' AND subject = ? LIMIT 1`, [subject])) return;
+    await appendEvent(this.journal, { type: 'mandat.signe', actor: this.actor(viewer), subject, data: { mandate: row.mandate_id ?? '', place: row.place, numberRegistered: row.number !== null } }, this.now);
   }
 
   private async hasRecordedEvent(mandateId: string): Promise<boolean> {

@@ -191,4 +191,22 @@ describeWithSqlite('D04 · mandat signé sur papier, numéroté au registre', ()
     expect(ranged).toHaveLength(1);
     expect(ranged[0]!.data).toMatchObject({ source: 'referral', resumed: true });
   });
+
+  it('[R13] une panne du journal à la fin de la signature est reprise par la redemande', async () => {
+    const t = await setup();
+    const d = await t.mandateDoc();
+    let fail = true;
+    const flaky = { ...t.journal, append: async (entry: Parameters<typeof t.journal.append>[0]) => {
+      if (fail && entry.type === 'mandat.signe') {
+        fail = false;
+        throw new Error('journal en panne');
+      }
+      return t.journal.append(entry);
+    }, last: () => t.journal.last(), all: () => t.journal.all() } as typeof t.journal;
+    await expect(new SignaturePapier(t.db, t.acces, flaky, { now: () => NOW }).register(t.agent, d.documentId, PAPER)).rejects.toThrow(/journal en panne/);
+    expect(await t.papier.register(t.agent, d.documentId, PAPER)).toEqual({ ok: false, rule: null, code: 'already_signed' });
+    expect((await t.journal.all()).filter((e) => e.type === 'mandat.signe')).toHaveLength(1);
+    await t.papier.register(t.agent, d.documentId, PAPER);
+    expect((await t.journal.all()).filter((e) => e.type === 'mandat.signe')).toHaveLength(1);
+  });
 });
