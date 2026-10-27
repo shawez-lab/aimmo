@@ -193,10 +193,14 @@ export class Publication {
       const { changes } = await this.db.run(
         `INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at)
          SELECT ?, ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ? FROM listing_versions WHERE property_id = ?
-         HAVING COALESCE((SELECT payload_hash FROM listing_versions WHERE property_id = ? ORDER BY seq DESC LIMIT 1), '') <> ?`,
+         HAVING COALESCE((SELECT payload_hash FROM listing_versions WHERE property_id = ? ORDER BY seq DESC LIMIT 1), '') <> ?
+            AND EXISTS (SELECT 1 FROM listing_sync_leases WHERE property_id = ? AND token = ? AND expires_at > ?)`,
         [
           id, propertyId, networkId, content.state, 'publish' in want ? want.draftId : null, content.priceEur, JSON.stringify(content), hash, reason, this.now().toISOString(), propertyId,
           propertyId, hash,
+          // Seul le passage qui tient encore le bail écrit une version : un passage dont le bail a échu ne peut pas
+          // écrire une version périmée par-dessus le travail du passage suivant [R42].
+          propertyId, lease, this.now().toISOString(),
         ],
       ).catch((error: unknown) => {
         if (/UNIQUE/i.test(String(error))) return { changes: 0 };
