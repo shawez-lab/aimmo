@@ -231,8 +231,76 @@ describe('A02 · réponse arrivée après la sortie', () => {
     held['/v1/contacts-chauds']!(Response.json({ ok: true, data: HOT }));
     held['/v1/rendez-vous/jour']!(Response.json({ ok: false }, { status: 403 }));
     await tick();
-    expect([els.plan!, els.chauds!, els.rdv!].map((l) => l.children.length)).toEqual([0, 0, 0]);
+    expect([els.plan!, els.chauds!, els.rdv!, els.semaine!].map((l) => l.children.length)).toEqual([0, 0, 0, 0]);
     expect(storage.get('aimmo.cle')).toBe('n'.repeat(40));
     expect(els.accueil!.hidden).toBe(false);
+  });
+});
+
+describe('A04 · « Ma semaine » dans l’application', () => {
+  it('[R14] l’agent voit ses seuls jours d’usage du matin, sans comparaison', async () => {
+    const days = ['04', '05', '06', '07', '08', '09', '10'].map((d) => ({ day: `2026-11-${d}`, opened: d !== '06' && d !== '10' }));
+    const { els } = await run({ ...DAY, '/v1/usage/matin': ok({ scope: 'agent', days, openedDays: 5 }) });
+    expect(items(els.semaine!)).toEqual(['Plan ouvert avant midi : 5 jour(s) sur 7.', '04/11 oui · 05/11 oui · 06/11 non · 07/11 oui · 08/11 oui · 09/11 oui · 10/11 non']);
+    // Une réponse du réseau n'est pas montrée dans l'écran de l'agent.
+    const network = await run({ ...DAY, '/v1/usage/matin': ok({ scope: 'network', days: [], daysUsed: 0, activeAgents: 3 }) });
+    expect(network.els['semaine-etat']!.textContent).toBe('Mesure indisponible.');
+    expect(network.els.semaine!.children).toHaveLength(0);
+  });
+});
+
+describeWithSqlite('A04 · route /v1/usage/matin', () => {
+  it('[R14, R16] l’agent reçoit ses 7 jours, la direction des nombres sans nom, la conformité est refusée', async () => {
+    const d1 = fakeD1(openMemoryDatabase());
+    const db = fromD1(d1);
+    await applyMigrations(db, loadMigrations());
+    const fiches = new FicheClient(db);
+    const network = await fiches.createNetwork('Réseau test');
+    const alex = await fiches.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
+    const keys = await Promise.all(
+      [
+        { key: KEY_AGENT, role: 'agent', userId: alex.id },
+        { key: KEY_DIRECTION, role: 'direction', userId: 'direction-1' },
+        { key: KEY_OTHER, role: 'compliance', userId: 'conformite-1' },
+      ].map(async ({ key, ...rest }) => ({ sha256: await sha256Hex(key), networkId: network.id, ...rest })),
+    );
+    const env: Env = { DB: d1, MODE: 'essai', API_KEYS: JSON.stringify(keys) };
+    const get = (key: string) => worker.fetch(new Request(`${BASE}/v1/usage/matin`, { headers: { authorization: `Bearer ${key}` } }), env);
+    const mine = (await (await get(KEY_AGENT)).json()) as { data: { scope: string; days: unknown[]; openedDays: number } };
+    expect(mine.data).toMatchObject({ scope: 'agent', openedDays: 0 });
+    expect(mine.data.days).toHaveLength(7);
+    const all = (await (await get(KEY_DIRECTION)).json()) as { data: unknown };
+    expect(all.data).toMatchObject({ scope: 'network', daysUsed: 0, activeAgents: 1 });
+    expect(JSON.stringify(all)).not.toContain(alex.id);
+    expect((await get(KEY_OTHER)).status).toBe(403);
+  });
+});
+
+describe('A04 · la semaine est lue après le plan', () => {
+  it('l’usage du matin n’est demandé qu’une fois le plan lu, pour que l’ouverture de ce matin compte', async () => {
+    const order: string[] = [];
+    let releasePlan: (() => void) | null = null;
+    const answers: Answers = {
+      ...DAY,
+      '/v1/plan-du-jour': () =>
+        new Promise<Response>((resolve) => {
+          releasePlan = () => {
+            order.push('plan lu');
+            resolve(Response.json({ ok: true, data: PLAN }));
+          };
+        }),
+      '/v1/usage/matin': async () => {
+        order.push('semaine demandée');
+        return Response.json({ ok: true, data: { scope: 'agent', days: [{ day: '2026-11-10', opened: true }], openedDays: 1 } });
+      },
+    };
+    const pending = run(answers);
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(order).toEqual([]);
+    releasePlan!();
+    const { els } = await pending;
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(order).toEqual(['plan lu', 'semaine demandée']);
+    expect(els.semaine!.children[0]!.textContent).toBe('Plan ouvert avant midi : 1 jour(s) sur 1.');
   });
 });
