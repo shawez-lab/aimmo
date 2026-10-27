@@ -25,10 +25,12 @@ import { plain } from '../envoi/texte.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { SELLER_UPDATE_PURPOSE, type VisitReport } from './compte-rendu.ts';
+import { withoutContactDetails } from '../captation/premiere-reponse.ts';
+import { CONTACT, SELLER_UPDATE_PURPOSE, nameWords, type VisitReport } from './compte-rendu.ts';
+import { numbersIn } from '../envoi/texte.ts';
 
 /** Les tournures d'une baisse de prix, liste fermée : refusées partout dans le point [R53]. */
-export const PRICE_DROP = /\b(?:baisse|baisser|baissons|diminu\w*|reduire|reduction|revoir le prix|revoir a la baisse|ajuster le prix|ajustement du prix|repositionn\w*|prix trop eleve|prix trop haut|rabais|remise)\b/;
+export const PRICE_DROP = /\bprix\b|€|\bcher\b|\bmoins\b|abaiss|\b(?:baisse|baisser|baissons|diminu\w*|reduire|reduction|revoir le prix|revoir a la baisse|ajuster le prix|ajustement du prix|repositionn\w*|prix trop eleve|prix trop haut|rabais|remise)\b/;
 
 export interface WeeklyFigures {
   week: string;
@@ -159,7 +161,16 @@ export class PointSemaine {
       return { ok: true, delivery: row.delivery_status, rule: row.delivery_rule };
     }
     if (!Array.isArray(nextActions) || nextActions.length > 5 || nextActions.some((a) => typeof a !== 'string' || a.trim() === '' || a.length > 200)) return { ok: false, rule: null, code: 'bad_actions' };
+    // Le prix ne se discute que de vive voix : aucune action n'en parle, ni n'avance un chiffre [R10, R53].
     if (nextActions.some((a) => PRICE_DROP.test(plain(a)))) return { ok: false, rule: 'R53', code: 'price_drop' };
+    if (nextActions.some((a) => /\d/.test(a))) return { ok: false, rule: 'R10', code: 'figure' };
+    // Ni le nom ni une coordonnée d'une personne venue pour ce bien [R52].
+    const people = await this.peopleOf(row.network_id, row.property_id, row.person_id);
+    const named = (a: string): boolean => {
+      const text = ` ${plain(a).replace(/[^\p{L}]+/gu, ' ')} `;
+      return CONTACT.test(a) || withoutContactDetails(a) !== a || people.words.some((w) => text.includes(` ${w} `)) || people.identifiers.some((x) => plain(a).includes(x));
+    };
+    if (nextActions.some(named)) return { ok: false, rule: 'R52', code: 'buyer_named' };
     const iso = this.now().toISOString();
     const { changes } = await this.db.run(
       "UPDATE weekly_points SET next_actions = ?, status = 'valide', validated_by = ?, validated_at = ?, updated_at = ? WHERE mandate_id = ? AND week = ? AND status = 'prepare'",
@@ -192,6 +203,29 @@ export class PointSemaine {
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.view !== 'full') return refuse('not_assigned');
     return { ok: true, row };
+  }
+
+  /**
+   * Les mots des noms et les coordonnées des personnes venues pour ce bien (visites, messages), hors du vendeur
+   * lui-même, dont le prénom ouvre le point.
+   */
+  private async peopleOf(networkId: string, propertyId: string, sellerId: string): Promise<{ words: string[]; identifiers: string[] }> {
+    const ids = await this.db.all<{ person_id: string }>(
+      `SELECT person_id FROM appointments WHERE network_id = ? AND property_id = ?
+       UNION SELECT person_id FROM qualifications WHERE network_id = ? AND property_id = ?`,
+      [networkId, propertyId, networkId, propertyId],
+    );
+    const seller = await this.fiche.view(sellerId);
+    const sellerWords = new Set(seller.members.flatMap((m) => [m.first_name, m.last_name]).filter((n): n is string => !!n).flatMap(nameWords));
+    const words = new Set<string>();
+    const identifiers = new Set<string>();
+    for (const { person_id } of ids) {
+      const view = await this.fiche.view(person_id);
+      if (view.person.id === seller.person.id) continue;
+      for (const m of view.members) for (const n of [m.first_name, m.last_name]) if (n) for (const w of nameWords(n)) if (!sellerWords.has(w)) words.add(w);
+      for (const i of view.identifiers) if (i.value.length > 2) identifiers.add(plain(i.value));
+    }
+    return { words: [...words], identifiers: [...identifiers] };
   }
 
   private async firstName(personId: string): Promise<string | null> {
@@ -249,8 +283,10 @@ export class PointSemaine {
         purpose: SELLER_UPDATE_PURPOSE,
         subject: `point_semaine:${mandateId}:${week}`,
         fallbackTexts: [text],
-        // Les chiffres des avis et des actions viennent de comptes rendus validés et de l'agent.
-        figures: [...numbers, ...text.match(/\d+/g)!.map(Number)],
+        // Les chiffres de la base, et ceux des avis venus de comptes rendus validés ; jamais d'autres [R10].
+        figures: [...numbers, ...figures.opinions.flatMap(numbersIn).map(Number)],
+        // Aucun nom d'une personne venue pour ce bien [R52].
+        sellerNames: (await this.peopleOf(row.network_id, row.property_id, row.person_id)).words,
       });
       messageId = result.messageId;
       rule = result.status === 'sent' ? null : result.rule;

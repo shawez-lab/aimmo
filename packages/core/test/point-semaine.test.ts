@@ -46,7 +46,7 @@ async function setup() {
   const as = (role: 'agent' | 'direction' | 'compliance', userId: string) => ({ role, userId, networkId: network.id });
   /** Un vendeur inventé d'Alex, son bien, son mandat en cours et son accord pour le suivi de la vente. */
   const seller = async (i: number) => {
-    const person = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: `Vendeur${i}`, lastName: 'Test' });
+    const person = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: `Vendeur${'ABCDEFGH'[i]}`, lastName: 'Test' });
     await store.addIdentifier({ networkId: network.id, personId: person.id, kind: 'email', value: `vendeur${i}@example.test` });
     await store.addConsent({ networkId: network.id, personId: person.id, purpose: SELLER_UPDATE_PURPOSE, channel: 'email', proof: 'mandat', givenAt: new Date(MON1_8H - 30 * 24 * HOUR) });
     const property = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: `B${i}`, kind: 'home', city: 'Talant', priceEur: 250_000, surfaceM2: 90, rooms: 4, status: 'available' });
@@ -118,6 +118,29 @@ describeWithSqlite('T07 · point de la semaine au vendeur', () => {
     await expect(t.db.run('DELETE FROM weekly_points')).rejects.toThrow();
   });
 
+  it('une action ne porte ni chiffre, ni prix, ni nom ou coordonnée d’un visiteur [R10, R52, R53]', async () => {
+    const t = await setup();
+    const s = await t.seller(1);
+    const store = new FicheClient(t.db, { now: t.now });
+    const buyer = await store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Inès', lastName: 'Durand' });
+    await store.addIdentifier({ networkId: t.network.id, personId: buyer.id, kind: 'email', value: 'ines.durand@example.test' });
+    await t.db.run(
+      "INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at) VALUES ('a1', ?, ?, ?, ?, 'visite', ?, ?, 'honored', 'h1', 'agent', ?, ?)",
+      [t.network.id, t.alex.id, buyer.id, s.property.id, '2026-12-09T09:00:00.000Z', '2026-12-09T09:45:00.000Z', new Date(MON1_8H).toISOString(), new Date(MON1_8H).toISOString()],
+    );
+    await t.point.prepare(t.network.id);
+    t.setClock(MON1_8H + HOUR);
+    const v = (a: string) => t.point.validate(t.as('agent', t.alex.id), s.mandateId, '2026-12-07', [a]);
+    expect(await v('présenter le bien à 229 000 € aux acquéreurs')).toMatchObject({ ok: false, rule: 'R53' });
+    expect(await v('abaisser le prix demandé')).toMatchObject({ ok: false, rule: 'R53' });
+    expect(await v('12 visites prévues')).toMatchObject({ ok: false, rule: 'R10' });
+    expect(await v('rappeler M. Durand pour sa contre-visite')).toMatchObject({ ok: false, rule: 'R52' });
+    expect(await v('écrire à ines.durand@example.test')).toMatchObject({ ok: false, rule: 'R52' });
+    expect(await t.inbox(s.person.id)).toEqual([]);
+    expect(await v('organiser une contre-visite')).toMatchObject({ ok: true, delivery: 'sent' });
+    expect((await t.inbox(s.person.id))[0]!.body).toContain('Visites faites : 1');
+  });
+
   it('seuls l’agent du mandat et la direction [R16] ; validé un dimanche, il attend l’heure [R01] ; rien de personnel au journal [R13]', async () => {
     const t = await setup();
     const s = await t.seller(1);
@@ -131,7 +154,7 @@ describeWithSqlite('T07 · point de la semaine au vendeur', () => {
     expect(await t.point.retry()).toBe(1);
     expect(await t.inbox(s.person.id)).toHaveLength(1);
     const entries = await t.journal.all();
-    expect(JSON.stringify(entries)).not.toMatch(/Vendeur1|vendeur1@|Talant/);
+    expect(JSON.stringify(entries)).not.toMatch(/VendeurB|vendeur1@|Talant/);
     expect((await verifyChain(entries)).ok).toBe(true);
   });
 });

@@ -54,11 +54,11 @@ const numbersIn = (text: string): string[] =>
   (text.replace(/[  ]/g, ' ').match(/\d+(?:[ .]\d{3})*(?:,\d+)?/g) ?? []).map((n) => n.replace(/[ .]/g, '').replace(',', '.').replace(/^0+(?=\d)/, ''));
 const OFFER_WORDS = /\b(?:offre|proposition|proposer|faire une offre|pret a acheter|prete a acheter|prets a acheter|signer|achete|acheter)\b/;
 const OFFER_DENIED = /\b(?:ne|n|pas|aucune?|jamais|sans|plus)\b[^.!?]{0,40}\b(?:offre|proposition|proposer|acheter|achete|signer)\b/;
-const CONTACT = /@|\+\d{2}|\b00\d{2}|\b0\d(?:[ .-]?\d{2}){4}\b/;
+export const CONTACT = /@|\+\d{2}|\b00\d{2}|\b0\d(?:[ .-]?\d{2}){4}\b/;
 
 /** Les particules d'un nom composé, qui ne nomment personne seules : « Le » de « Le Gall », « de » de « de Vries ». */
 const PARTICLES = new Set(['le', 'la', 'les', 'de', 'du', 'des', 'd', 'l', 'van', 'von', 'der', 'den', 'da', 'di', 'del', 'della', 'dos', 'das', 'el', 'al', 'ben', 'bin', 'et', 'y', 'saint', 'sainte']);
-const nameWords = (n: string): string[] => plain(n).split(/[^\p{L}]+/u).filter((w) => w.length > 1 && !PARTICLES.has(w));
+export const nameWords = (n: string): string[] => plain(n).split(/[^\p{L}]+/u).filter((w) => w.length > 1 && !PARTICLES.has(w));
 
 /** Retire les coordonnées connues des fiches, telles qu'elles y sont, et tout compte en « @ » [R15]. */
 export function redactIdentifiers(text: string, identifiers: readonly string[]): string {
