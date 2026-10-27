@@ -1,6 +1,7 @@
 import {
   AIMMO_VERSION,
   ATTRIBUTION_RULES,
+  ControleBaseLegale,
   AUTOMATION_NAMES,
   Acces,
   Automatisations,
@@ -185,6 +186,16 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer) => {
       const plan = await new PlansDuJour(s.db, s.journal, { now: s.now }).read(viewer);
       return plan.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: plan.value }) : refusal({ rule: plan.rule, code: plan.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/plan-du-jour\/controle$/,
+    name: 'plan_du_jour.controle',
+    // Les écarts du contrôle de la base légale sur 30 jours : des nombres seulement ; direction et conformité [R16].
+    handle: async (s, viewer) => {
+      const alerts = await new ControleBaseLegale(s.db, s.journal, { now: s.now }).alerts(viewer);
+      return alerts.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: alerts.value }) : refusal({ rule: alerts.rule, code: alerts.code });
     },
   },
   {

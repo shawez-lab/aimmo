@@ -185,6 +185,14 @@ describeWithSqlite('API du socle de bout en bout, sur une base D1 locale', () =>
     expect(JSON.stringify(await lines(w))).not.toContain('Camille');
   });
 
+  it('[R16] les écarts du contrôle de la base légale : direction seulement, des nombres', async () => {
+    const direction = await call(w.env, '/v1/plan-du-jour/controle', { key: KEY_DIRECTION });
+    expect(direction.status).toBe(200);
+    expect(await body(direction)).toMatchObject({ ok: true, data: [] });
+    expect((await call(w.env, '/v1/plan-du-jour/controle', { key: KEY_AGENT })).status).toBe(403);
+    expect((await call(w.env, '/v1/plan-du-jour/controle', { key: KEY_PARTNER })).status).toBe(403);
+  });
+
   it('[R16] la liste des contacts chauds répond sous droits : un partenaire est refusé', async () => {
     const agent = await call(w.env, '/v1/contacts-chauds', { key: KEY_AGENT });
     expect(agent.status).toBe(200);

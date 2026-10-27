@@ -1,4 +1,4 @@
-import { Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 
 export interface SchedulerConfig {
@@ -33,6 +33,8 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       dailyPlanJob(config.db, journal, { now }),
       // Suivi de valeur (G04) : réponses lues, envois par les canaux du mode essai seulement.
       valueTrackingJob(config.db, journal, { now, ranges: config.communeRanges ?? null }),
+      // Contrôle de la base légale des plans du jour sur 30 jours (G05), à 8 h.
+      legalBasisJob(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
