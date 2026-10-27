@@ -675,8 +675,8 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : T04
 - Cahier : M08, « Visite sécurisée ».
-- Objectif : avant la visite, le visiteur confirme son identité et son téléphone (code à usage unique par le contrôle central, rangé dans la boîte d'essai) ; l'agent peut partager sa tournée du jour avec un proche par un lien qui expire, sans nom de client ni adresse exacte ; une alerte en un geste range l'heure et le lieu de la visite en cours et prévient la direction (boîte d'essai).
-- Critères : aucune visite confirmée sans identité et téléphone confirmés [R54] ; un code ne sert qu'une fois et expire ; le lien de tournée expire et ne montre ni nom de client ni adresse exacte [R15] ; l'alerte est enregistrée même si l'envoi échoue, et réessayée sans doublon ; rien ne part réellement.
+- Objectif : avant la visite, le visiteur confirme son identité et son téléphone (code à usage unique par le contrôle central, rangé dans la boîte d'essai) ; l'agent peut partager sa tournée du jour avec un proche par le message de V07, sans nom de client ni adresse exacte ; une alerte en un geste range l'heure et le lieu de la visite en cours et prévient la direction (boîte d'essai).
+- Critères : aucune visite confirmée sans identité et téléphone confirmés [R54] ; un code ne sert qu'une fois et expire ; la tournée partagée est celle de V07, un message aux heures et communes seulement, sans nom de client ni adresse [R09, R15] (décidé le 2026-10-27 : pas de lien, rien à faire expirer) ; l'alerte est enregistrée même si l'envoi échoue, et réessayée sans doublon ; rien ne part réellement.
 - Attend : H05 pour l'envoi réel.
 
 ### T06 · Compte rendu de visite dicté

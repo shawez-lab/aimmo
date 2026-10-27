@@ -57,7 +57,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R51 | Rapprochement par règles écrites. Les acquéreurs proposés pour un bien le sont par le code, selon leurs critères et des tolérances écrites en réglage, chacun avec ses raisons ; jamais par une note de l'IA sur les personnes, ni par le financement ou la solvabilité de l'acquéreur [R14]. | oui | T02 |
 | R52 | Compte rendu sans nom. Le compte rendu de visite remis au vendeur ne porte ni le nom ni les coordonnées de l'acquéreur, et part seulement après la validation de l'agent. | non | T06 |
 | R53 | Point au vendeur vérifié. Le point de la semaine ne porte que des chiffres lus dans la base ; une donnée absente est écrite « non communiquée » ; il ne parle jamais de baisse de prix. | non | T07 |
-| R54 | Visite sécurisée. Aucune visite confirmée tant que le visiteur n'a pas confirmé son identité et son téléphone ; l'agent dispose d'une alerte en un geste. | non | T05 |
+| R54 | Visite sécurisée. Aucune visite confirmée tant que le visiteur n'a pas confirmé son identité et son téléphone ; l'agent dispose d'une alerte en un geste. | oui | T05 |
 | R56 | Offres transmises. Toute offre reçue est enregistrée dans le registre chaîné du bien et transmise au vendeur ; une offre non transmise est signalée, et toute modification du registre après coup est détectée. | non | O01, O03, O06 |
 | R57 | Aucune décision automatique sur une offre. Aucun programme n'accepte, ne refuse, ne contre-propose une offre ni ne négocie un prix : seule une réponse du vendeur, rapportée par l'agent avec sa preuve, change l'état d'une offre. | non | O03, O04, O06 |
 | R58 | Identité avant compromis. Aucun compromis préparé tant que l'identité de chaque acquéreur n'est pas vérifiée. | non | O07 |

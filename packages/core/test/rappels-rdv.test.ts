@@ -177,7 +177,7 @@ describeWithSqlite('V04 · rappels la veille et le jour même', () => {
     expect((await w.rdv.get(r.appointment.id))!.confirmation_status).toBe('sent');
     expect(await w.runAt(at('2026-11-10', '09:00'))).toEqual([]);
     const [confirmation] = await w.bodies();
-    expect(confirmation).toContain('Bonjour Léa, votre visite est confirmée le jeudi 12 novembre à 9 h.');
+    expect(confirmation).toContain('Bonjour Léa, votre visite est réservée le jeudi 12 novembre à 9 h.'); // [R54]
     expect(confirmation).toContain(`${LINK}${sentToken}`);
     expect((await w.rdv.byToken(sentToken))!.id).toBe(r.appointment.id);
     // Puis la veille et le jour même, normalement.
