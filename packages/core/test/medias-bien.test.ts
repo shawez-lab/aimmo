@@ -67,6 +67,9 @@ describeWithSqlite('P06 · publication des photos et vidéos', () => {
     expect(await medias.checkVideoText(t.agent, t.propertyId, video, { subtitles: ['Sans', 'enfants.'], caption: 'Visite' })).toMatchObject({ ok: false, rule: 'R46' });
     expect(await medias.checkVideoText(t.agent, t.propertyId, video, { subtitles: ['Bienvenue au 12 av. des Essais.'], caption: 'Visite' })).toMatchObject({ ok: false, rule: 'R46' });
     expect(await medias.checkVideoText(t.agent, t.propertyId, video, { subtitles: ['Visite.'], caption: 'Au 3 bd. de l’Essai.' })).toMatchObject({ ok: false, rule: 'R46' });
+    for (const abbr of ['r.', 'rte.', 'ch.', 'imp.', 'all.', 'fg.', 'sq.']) {
+      expect(await medias.checkVideoText(t.agent, t.propertyId, video, { subtitles: [`Bienvenue au douze ${abbr} des Essais.`], caption: 'Visite' }), abbr).toMatchObject({ ok: false, rule: 'R46' });
+    }
     await t.publication.sync(t.network.id, t.propertyId);
     expect(t.channels[0]!.received.at(-1)!.media.some((m) => m.kind === 'video')).toBe(false);
     // Un texte propre : la vidéo part au passage suivant, partout.
@@ -79,7 +82,7 @@ describeWithSqlite('P06 · publication des photos et vidéos', () => {
     expect(t.channels[0]!.received.at(-1)!.media.some((m) => m.kind === 'video')).toBe(false);
     // Au journal : l'issue et les codes, jamais le texte.
     const entries = (await t.journal.bySubject(`property:${t.propertyId}`)).filter((e) => e.type === 'video.texte_controle');
-    expect(entries.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['refuse', 'refuse', 'refuse', 'refuse', 'refuse', 'refuse', 'refuse', 'refuse', 'ok', 'refuse']);
+    expect(entries.map((e) => (e.data as { outcome: string }).outcome)).toEqual([...Array(15).fill('refuse'), 'ok', 'refuse']);
     expect(JSON.stringify(entries)).not.toMatch(/Essais|Darcy|Tests|famille/);
   });
 

@@ -87,7 +87,7 @@ const NO_UNIT_FIELDS: (keyof ListingFacts)[] = ['buildYear', 'postalCode'];
 
 const NUMBER = /\d{1,3}(?:[   ]\d{3})+(?:,\d+)?|\d+(?:,\d+)?/g;
 
-const VOIE = /(?<![\p{L}\p{N}])(rue|ruelle|avenue|av\.?|boulevard|bd\.?|bvd\.?|pl\.|place|chemin|impasse|allée|route|quai|cours|square|passage|faubourg|rond-point|lieu-dit|lotissement|résidence)\s+(\S+)(?:\s+(\S+))?/giu;
+const VOIE = /(?<![\p{L}\p{N}])(rue|r\.|ruelle|avenue|av\.?|boulevard|bd\.?|bvd\.?|pl\.|place|chemin|ch\.|chem\.?|impasse|imp\.|allée|all\.|route|rte\.?|quai|cours|crs\.?|square|sq\.?|passage|pass\.|faubourg|fg\.?|fbg\.?|rond-point|lieu-dit|lotissement|lot\.|résidence|rés\.)\s+(\S+)(?:\s+(\S+))?/giu;
 const VOIE_LINK = new Set(['de', 'du', 'des', 'la', 'le', 'les', 'saint', 'sainte', 'st', 'ste']);
 
 /** Une voie nommée : le mot de la voie suivi d'un article, d'un nom propre ou d'un nombre. */
