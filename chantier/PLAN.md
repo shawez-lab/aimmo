@@ -1005,7 +1005,8 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Attend : rien.
 
 ### F02 · Demande d'avis le lendemain de l'acte, à tous, en mode essai
-- Statut : à faire
+- Statut : en cours
+- Décidé (2026-10-27) : faite avant N06, comme le prévoit la lecture prudente de M11 : le dossier clos est lu par une interface, avec un faux dossier clos dans les tests ; N06 la branchera.
 - Qui : Claude · Relecture : forte · Dépend de : N06
 - Cahier : M11, « Demande d'avis » ; règle « l'avis est demandé à tous les clients, sans tri préalable, sans contrepartie ».
 - Objectif : le lendemain d'un dossier clos, à 10 h, heure de Paris, une demande d'avis à chaque client du dossier, écrite par le code avec le lien de la fiche Google de l'agent (réglage de l'agent), passée par le contrôle central, rangée dans la boîte d'essai ; une seule par personne et par dossier.
