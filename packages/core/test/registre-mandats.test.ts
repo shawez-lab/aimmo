@@ -240,4 +240,28 @@ describeWithSqlite('D01 · registre des mandats', () => {
     await appendEvent(t.journal, { type: 'registre.inscrit', actor: 'direction:x', subject: null, data: { network: t.network.id, seq: 2, number: 'T-002', anchor: registerAnchor(hash) } }, () => new Date(NOW));
     expect(await t.registre.check(t.network.id)).toMatchObject({ ok: false, brokenAt: 2, problem: 'anchor' });
   });
+
+  it('[R39, R13] un numéro long n’arrête pas le journal ; une inscription dont l’ancre a manqué la reprend à la redemande', async () => {
+    const t = await setup();
+    await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 10 });
+    const a = await t.mandate();
+    const r = await t.registre.inscribe(t.direction, a);
+    expect(r.ok && r.line.number).toBe('T-0000000001');
+    expect(JSON.stringify(await t.journal.all())).not.toContain('T-0000000001');
+
+    // Le journal tombe juste après l'écriture de la ligne.
+    const b = await t.mandate();
+    let fail = true;
+    const flaky = { ...t.journal, append: async (entry: Parameters<typeof t.journal.append>[0]) => {
+      if (fail && entry.type === 'registre.inscrit') {
+        fail = false;
+        throw new Error('journal en panne');
+      }
+      return t.journal.append(entry);
+    }, last: () => t.journal.last(), all: () => t.journal.all() } as typeof t.journal;
+    await expect(new RegistreMandats(t.db, flaky, { now: () => new Date(NOW) }).inscribe(t.direction, b)).rejects.toThrow(/journal en panne/);
+    expect(await t.registre.check(t.network.id)).toMatchObject({ ok: false, brokenAt: 2, problem: 'anchor' });
+    expect(await t.registre.inscribe(t.direction, b)).toEqual({ ok: false, rule: 'R39', code: 'already_inscribed' });
+    expect(await t.registre.check(t.network.id)).toEqual({ ok: true, lines: 2 });
+  });
 });

@@ -168,7 +168,7 @@ export class RegistreMandats {
       [viewer.networkId, settings.prefix, settings.firstNumber, settings.width, this.actor(viewer), this.now().toISOString()],
     );
     if (changes !== 1) return { ok: false, rule: null, code: 'already_configured' };
-    await appendEvent(this.journal, { type: 'registre.regle', actor: this.actor(viewer), subject: null, data: { prefix: settings.prefix, firstNumber: settings.firstNumber, width: settings.width } }, this.now);
+    await appendEvent(this.journal, { type: 'registre.regle', actor: this.actor(viewer), subject: null, data: { prefixLength: settings.prefix.length, firstNumber: settings.firstNumber, width: settings.width } }, this.now);
     return { ok: true };
   }
 
@@ -227,6 +227,18 @@ export class RegistreMandats {
     return false;
   }
 
+  private async anchored(networkId: string, seq: number): Promise<boolean> {
+    const events = await this.db.all<{ data: string }>(`SELECT data FROM journal WHERE type IN ('registre.inscrit', 'registre.annule') ORDER BY seq`);
+    return events.some((e) => {
+      try {
+        const d = JSON.parse(e.data) as { network?: unknown; seq?: unknown };
+        return d.network === networkId && d.seq === seq;
+      } catch {
+        return false;
+      }
+    });
+  }
+
   private inscriptionOf(mandateId: string): Promise<LineRow | null> {
     return this.db.first<LineRow>(`SELECT * FROM mandate_register WHERE mandate_id = ? AND kind = 'inscription'`, [mandateId]);
   }
@@ -237,7 +249,14 @@ export class RegistreMandats {
     if (!found.ok) return found;
     const settings = await this.settings(viewer.networkId);
     if (!settings) return { ok: false, rule: null, code: 'not_configured' };
-    if (await this.inscriptionOf(mandateId)) return { ok: false, rule: 'R39', code: 'already_inscribed' };
+    const known = await this.inscriptionOf(mandateId);
+    if (known) {
+      // Une inscription faite dont l'ancre n'a pas pu être écrite (panne du journal) : la redemande l'écrit.
+      if (!(await this.anchored(viewer.networkId, Number(known.seq)))) {
+        await appendEvent(this.journal, { type: 'registre.inscrit', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: Number(known.seq), numberValue: Number(known.number_value), anchor: registerAnchor(known.hash), resumed: true } }, this.now);
+      }
+      return { ok: false, rule: 'R39', code: 'already_inscribed' };
+    }
     if (!(await this.sound(viewer))) return { ok: false, rule: 'R39', code: 'register_broken' };
     const at = this.now().toISOString();
     const line = await this.append(viewer.networkId, (_last, count) => {
@@ -257,7 +276,7 @@ export class RegistreMandats {
       };
     });
     if (!line) return { ok: false, rule: 'R39', code: 'already_inscribed' };
-    await appendEvent(this.journal, { type: 'registre.inscrit', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: line.seq, number: line.number, anchor: registerAnchor(line.hash) } }, this.now);
+    await appendEvent(this.journal, { type: 'registre.inscrit', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: line.seq, numberValue: line.number_value, anchor: registerAnchor(line.hash) } }, this.now);
     return { ok: true, line: toLine(line) };
   }
 
@@ -268,8 +287,14 @@ export class RegistreMandats {
     if (!found.ok) return found;
     const inscription = await this.inscriptionOf(mandateId);
     if (!inscription) return { ok: false, rule: null, code: 'not_inscribed' };
-    const done = await this.db.first('SELECT seq FROM mandate_register WHERE network_id = ? AND kind = ? AND cancels_seq = ?', [viewer.networkId, 'annulation', inscription.seq]);
-    if (done) return { ok: false, rule: null, code: 'already_cancelled' };
+    const done = await this.db.first<{ seq: number; hash: string }>('SELECT seq, hash FROM mandate_register WHERE network_id = ? AND kind = ? AND cancels_seq = ?', [viewer.networkId, 'annulation', inscription.seq]);
+    if (done) {
+      // Une annulation faite dont l'ancre n'a pas pu être écrite : la redemande l'écrit.
+      if (!(await this.anchored(viewer.networkId, Number(done.seq)))) {
+        await appendEvent(this.journal, { type: 'registre.annule', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: Number(done.seq), cancels: Number(inscription.seq), reason, anchor: registerAnchor(done.hash), resumed: true } }, this.now);
+      }
+      return { ok: false, rule: null, code: 'already_cancelled' };
+    }
     if (!(await this.sound(viewer))) return { ok: false, rule: 'R39', code: 'register_broken' };
     const at = this.now().toISOString();
     const line = await this.append(viewer.networkId, () => ({
