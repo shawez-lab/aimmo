@@ -13,8 +13,8 @@ const KEY_AGENT = 'test-cle-controle-agent-aaaaaaaaaaaaaaaaaaaaaaa';
 const KEY_DIRECTION = 'test-cle-controle-direction-ccccccccccccccccccc';
 const KEY_COMPLIANCE = 'test-cle-controle-conformite-ddddddddddddddddddd';
 
-describeWithSqlite('D03 · routes des contrôles avant signature', () => {
-  it('[R41, R16] barème, identité vérifiée, puis contrôle passé ; sans identité, refusé', async () => {
+describeWithSqlite('D03, D04 · routes des contrôles avant signature et de la signature papier', () => {
+  it('[R41, R16, R39] barème, identité vérifiée, contrôle passé, puis mandat signé et numéroté ; sans identité, refusé', async () => {
     const d1 = fakeD1(openMemoryDatabase());
     const db = fromD1(d1);
     await applyMigrations(db, loadMigrations());
@@ -36,7 +36,7 @@ describeWithSqlite('D03 · routes des contrôles avant signature', () => {
     const post = async (path: string, key: string, body: unknown = {}) =>
       worker.fetch(new Request(`${BASE}${path}`, { method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), env);
 
-    const template = (await (await post('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_simple', body: 'Test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}.' })).json()) as { data: { id: string } };
+    const template = (await (await post('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_simple', body: 'Test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{registre.numero}}.' })).json()) as { data: { id: string } };
     await post(`/v1/modeles/${template.data.id}/validation`, KEY_COMPLIANCE);
     expect((await post('/v1/honoraires/bareme', KEY_AGENT, { maxRatePercent: 5, minEur: 3000 })).status).toBe(403);
     expect((await post('/v1/honoraires/bareme', KEY_DIRECTION, { maxRatePercent: 5, minEur: 3000 })).status).toBe(200);
@@ -47,6 +47,15 @@ describeWithSqlite('D03 · routes des contrôles avant signature', () => {
     expect((await post(`/v1/fiches/${lea.id}/identite`, KEY_AGENT, { piece: 'carte_identite', seenAt: new Date().toISOString() })).status).toBe(200);
     const after = (await (await post(`/v1/documents/${doc.data.id}/controle`, KEY_AGENT)).json()) as { data: { passed: boolean } };
     expect(after.data.passed).toBe(true);
+    // D04 : signé sur papier, numéroté au registre, exemplaire avec son numéro.
+    await post('/v1/registre/reglage', KEY_DIRECTION, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const paper = { signedAt: new Date(Date.now() - 60_000).toISOString(), place: 'agence', scanRef: 'scans/test-1.pdf', source: 'referral' };
+    const signed = await post(`/v1/documents/${doc.data.id}/signature-papier`, KEY_AGENT, paper);
+    expect(signed.status).toBe(200);
+    expect(((await signed.json()) as { data: { number: string } }).data.number).toBe('T-001');
+    expect((await post(`/v1/documents/${doc.data.id}/signature-papier`, KEY_AGENT, paper)).status).toBe(409);
+    const copy = (await (await worker.fetch(new Request(`${BASE}/v1/documents/${doc.data.id}/exemplaire`, { headers: { authorization: `Bearer ${KEY_AGENT}` } }), env)).json()) as { data: { number: string; content: string } };
+    expect(copy.data.content).toContain('<span class="signe">T-001</span>');
     expect(JSON.stringify(await new SqlJournalStore(db).all())).not.toMatch(/test-cle|Léa/);
   });
 });

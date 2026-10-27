@@ -39,7 +39,7 @@ describeWithSqlite('D02 · routes des modèles et des documents', () => {
         new Request(`${BASE}${path}`, body === undefined ? { headers: { authorization: `Bearer ${key}` } } : { method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }),
         env,
       );
-    const body = 'Mandat de test entre {{mandant.nom}} et {{agent.nom}} pour {{bien.reference}}.\n\n' + 'Texte long de test. '.repeat(1000);
+    const body = 'Mandat de test entre {{mandant.nom}} et {{agent.nom}} pour {{bien.reference}}, numéro {{registre.numero}}.\n\n' + 'Texte long de test. '.repeat(1000);
     expect((await call('/v1/modeles', KEY_AGENT, { kind: 'mandat_vente_simple', body })).status).toBe(403);
     const created = await call('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_simple', body });
     expect(created.status).toBe(200);
@@ -53,7 +53,7 @@ describeWithSqlite('D02 · routes des modèles et des documents', () => {
     expect((await call(`/v1/modeles/${template.id}/validation`, KEY_COMPLIANCE, {})).status).toBe(200);
     const real = (await (await gen(KEY_AGENT)).json()) as { data: { id: string; mode: string; content: string } };
     expect(real.data.mode).toBe('reel');
-    expect(real.data.content).toContain('Mandat de test entre Léa Exemple et Alex Agent pour REF-T-1.');
+    expect(real.data.content).toContain('Mandat de test entre Léa Exemple et Alex Agent pour REF-T-1, numéro <span class="a-signer">[numéro au registre à la signature]</span>.');
     expect((await gen(KEY_OTHER)).status).toBe(403);
     expect((await call(`/v1/documents/${real.data.id}`, KEY_AGENT)).status).toBe(200);
     expect((await call(`/v1/documents/${real.data.id}`, KEY_OTHER)).status).toBe(403);

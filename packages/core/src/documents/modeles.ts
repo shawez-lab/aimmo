@@ -87,7 +87,7 @@ export interface GenerateRequest {
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' };
+type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' };
 
 const PLACEHOLDER = /\{\{\s*([a-z_.]+)\s*\}\}/g;
 const MAX_BODY = 50_000;
@@ -98,7 +98,7 @@ export async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+export const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 /** Les champs d'un texte de modèle, dans l'ordre de leur première apparition. */
 export function templateFields(body: string): string[] {
@@ -125,7 +125,7 @@ export function renderDocument(body: string, values: Readonly<Record<string, str
         const name = m[1]!;
         const field = TEMPLATE_FIELDS[name]!;
         const value = values[name];
-        if (field.source === 'signature') out += `<span class="a-signer">[${escapeHtml(field.label)} à la signature]</span>`;
+        if (field.source === 'signature') out += signatureSpan(name);
         else if (value === null || value === undefined) out += `<span class="manque">[à compléter : ${escapeHtml(field.label)}]</span>`;
         else out += escapeHtml(value);
         last = m.index + m[0].length;
@@ -137,6 +137,18 @@ export function renderDocument(body: string, values: Readonly<Record<string, str
     .join('\n');
   const banner = options.trial ? '<p class="essai">DOCUMENT D’ESSAI : modèle non validé, sans aucune valeur juridique.</p>\n' : '';
   return `<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n<title>${escapeHtml(options.title)}</title>\n<style>${PRINT_CSS}</style>\n</head>\n<body>\n${banner}${html}\n</body>\n</html>\n`;
+}
+
+export const signatureSpan = (name: string): string => `<span class="a-signer">[${escapeHtml(TEMPLATE_FIELDS[name]!.label)} à la signature]</span>`;
+
+/**
+ * L'exemplaire signé : chaque champ de signature du document (numéro au registre, date, lieu) prend sa valeur, échappée.
+ * Le reste du document ne change pas, au caractère près.
+ */
+export function fillSignatureFields(content: string, values: Readonly<Record<'registre.numero' | 'signature.date' | 'signature.lieu', string>>): string {
+  let out = content;
+  for (const [name, value] of Object.entries(values)) out = out.split(signatureSpan(name)).join(`<span class="signe">${escapeHtml(value)}</span>`);
+  return out;
 }
 
 /** Une signature réelle n'accepte qu'un document complet, fait sur un modèle validé [R40]. */
@@ -210,6 +222,8 @@ export class Modeles {
     if (fields.some((f) => !TEMPLATE_FIELDS[f])) return { ok: false, rule: 'R40', code: 'unknown_field' };
     // Un champ mal écrit (accolades sans nom reconnu) serait recopié tel quel : refusé.
     if (/\{\{|\}\}/.test(body.replace(PLACEHOLDER, ''))) return { ok: false, rule: 'R40', code: 'unknown_field' };
+    // Le numéro du registre figure sur l'exemplaire du mandant : tout mandat de vente en porte le champ [R39].
+    if (kind !== 'avenant_mandat' && !fields.includes('registre.numero')) return { ok: false, rule: 'R40', code: 'no_number_field' };
     // Un mandat exclusif met sa clause d'exclusivité en évidence : un paragraphe qui commence par `!! `.
     if (kind === 'mandat_vente_exclusif' && !body.replace(/\r\n?/g, '\n').split(/\n{2,}/).some((p) => p.startsWith('!! '))) return { ok: false, rule: 'R40', code: 'no_evidence' };
     const hash = await sha256(JSON.stringify([kind, body, fields]));
