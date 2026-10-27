@@ -31,7 +31,21 @@ export const INDEX_HTML = `<!doctype html>
 </section>
 <section id="accueil" hidden>
 <h2 id="bonjour"></h2>
-<p id="journee">Votre journée s’affichera ici.</p>
+<section class="bloc" aria-labelledby="titre-plan">
+<h3 id="titre-plan">Mon plan du jour</h3>
+<p id="plan-etat" class="etat"></p>
+<ol id="plan" class="liste"></ol>
+</section>
+<section class="bloc" aria-labelledby="titre-chauds">
+<h3 id="titre-chauds">Contacts chauds à rappeler</h3>
+<p id="chauds-etat" class="etat"></p>
+<ul id="chauds" class="liste"></ul>
+</section>
+<section class="bloc" aria-labelledby="titre-rdv">
+<h3 id="titre-rdv">Rendez-vous du jour</h3>
+<p id="rdv-etat" class="etat"></p>
+<ul id="rdv" class="liste"></ul>
+</section>
 </section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
@@ -52,6 +66,18 @@ input { width: 100%; padding: 12px; font-size: 1rem; border: 1px solid var(--dou
 button { margin-top: 12px; min-height: 44px; padding: 8px 16px; font-size: 1rem; border: 0; border-radius: 8px; background: var(--accent); color: var(--fond); }
 header button { margin: 0; }
 #erreur { color: #b3261e; }
+.bloc { margin-top: 24px; }
+h3 { margin: 0 0 8px; font-size: 1.05rem; }
+.liste { list-style: none; margin: 0; padding: 0; }
+.liste > li { padding: 12px 0; border-top: 1px solid var(--doux); overflow-wrap: anywhere; }
+.liste p { margin: 4px 0 0; }
+.doux, .etat { color: var(--doux); font-size: 0.9rem; }
+.retard { color: #b3261e; }
+details { margin-top: 8px; }
+summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--accent); }
+h4 { margin: 12px 0 4px; font-size: 0.95rem; }
+.brief ul { margin: 0; padding-left: 18px; }
+a { color: var(--accent); }
 `;
 
 /**
@@ -65,6 +91,131 @@ export const APP_JS = `'use strict';
   function readKey() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function writeKey(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }
   function forgetKey() { try { localStorage.removeItem(KEY); } catch (e) { /* rien à effacer */ } }
+  function el(tag, text, cls) {
+    var n = document.createElement(tag);
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    if (cls) n.className = cls;
+    return n;
+  }
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+  function hour(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    try { return d.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; }
+  }
+  var KINDS = { estimation: 'Estimation', visite: 'Visite', signature: 'Signature', appel: 'Appel' };
+  var STATUS = { honored: 'honoré', absent: 'client absent' };
+  var SECTIONS = { client: 'Le client', histoire: 'Son histoire', bien: 'Le bien', ventes: 'Ventes du quartier', questions: 'Questions à prévoir', documents: 'Documents à apporter', itineraire: 'Itinéraire' };
+  var MISSING = { not_ready: 'Le brief sera prêt une heure avant le rendez-vous.', no_access: 'Fiche suivie par un autre agent : ni brief ni détail.', changed: 'La fiche a changé depuis le brief : il n’est pas montré.', property: 'Le bien n’est plus dans vos droits : le brief n’est pas montré.' };
+  // Le seul lien extérieur admis : l'itinéraire du brief, vers l'application de navigation.
+  var ROUTE = /^https:\\/\\/www\\.google\\.com\\/maps\\/dir\\/\\?api=1&destination=[A-Za-z0-9%._~!*'()-]+$/;
+  // Le plan est rendu dans l'ordre reçu du socle, jamais retrié ici [R35].
+  function renderPlan(list, data) {
+    if (!data) return 'Le plan du jour sera prêt à 7 h 30.';
+    var items = Array.isArray(data.items) ? data.items : [];
+    items.forEach(function (item) {
+      var li = el('li');
+      li.appendChild(el('strong', String(item.rank) + '. ' + (item.firstName || 'Prénom inconnu')));
+      li.appendChild(el('p', item.reason));
+      li.appendChild(el('p', 'Place : ' + item.order, 'doux'));
+      list.appendChild(li);
+    });
+    if (data.hiddenSinceFrozen > 0) list.appendChild(el('li', String(data.hiddenSinceFrozen) + ' ligne(s) retirée(s) depuis 7 h 30.', 'doux'));
+    return items.length === 0 && !(data.hiddenSinceFrozen > 0) ? 'Rien au plan aujourd’hui.' : null;
+  }
+  function renderHot(list, data) {
+    var contacts = data && Array.isArray(data.contacts) ? data.contacts : [];
+    contacts.forEach(function (c) {
+      var li = el('li');
+      li.appendChild(el('strong', c.firstName || 'Prénom inconnu'));
+      li.appendChild(el('p', c.reason));
+      li.appendChild(el('p', (c.overdue ? 'En retard : à rappeler depuis ' : 'À rappeler avant ') + hour(c.dueAt), c.overdue ? 'retard' : 'doux'));
+      list.appendChild(li);
+    });
+    return contacts.length === 0 ? 'Aucun contact chaud à rappeler.' : null;
+  }
+  function renderBrief(brief) {
+    var box = el('details', null, 'brief');
+    box.appendChild(el('summary', 'Brief du rendez-vous'));
+    var items = Array.isArray(brief.items) ? brief.items : [];
+    var current = null;
+    var ul = null;
+    items.forEach(function (item) {
+      if (item.section !== current) {
+        current = item.section;
+        box.appendChild(el('h4', SECTIONS[current] || current));
+        ul = el('ul');
+        box.appendChild(ul);
+      }
+      var li = el('li');
+      if (item.value === null || item.value === undefined) {
+        li.appendChild(el('span', item.label + ' : manque, ' + item.missing, 'doux'));
+      } else if (item.section === 'itineraire' && typeof item.value === 'string' && ROUTE.test(item.value)) {
+        var a = el('a', 'Ouvrir l’itinéraire');
+        a.setAttribute('href', item.value);
+        a.setAttribute('target', '_blank');
+        a.setAttribute('rel', 'noopener noreferrer');
+        li.appendChild(a);
+      } else {
+        li.appendChild(el('span', item.label + ' : ' + item.value));
+        if (item.source) li.appendChild(el('span', ' (' + item.source + ')', 'doux'));
+      }
+      ul.appendChild(li);
+    });
+    return box;
+  }
+  function renderAppointments(list, data) {
+    var appointments = data && Array.isArray(data.appointments) ? data.appointments : [];
+    appointments.forEach(function (a) {
+      var li = el('li');
+      var head = hour(a.start) + ' à ' + hour(a.end) + ' · ' + (KINDS[a.kind] || a.kind) + (a.firstName ? ' · ' + a.firstName : '');
+      li.appendChild(el('strong', head));
+      if (STATUS[a.status]) li.appendChild(el('p', 'Rendez-vous ' + STATUS[a.status] + '.', 'doux'));
+      if (a.brief) li.appendChild(renderBrief(a.brief));
+      else li.appendChild(el('p', MISSING[a.briefMissing] || MISSING.not_ready, 'doux'));
+      list.appendChild(li);
+    });
+    return appointments.length === 0 ? 'Aucun rendez-vous aujourd’hui.' : null;
+  }
+  // Chaque entrée, sortie ou refus ouvre une nouvelle session : une réponse d'une session finie n'est jamais montrée.
+  var session = 0;
+  function part(id, request, render, mine) {
+    var list = $(id);
+    var state = $(id + '-etat');
+    clear(list);
+    state.textContent = 'Chargement…';
+    return request.then(function (r) {
+      if (r.status === 401 || r.status === 403) return { refused: true };
+      if (!r.ok) return { failed: true };
+      return r.json().then(function (body) { return { body: body }; });
+    }).then(function (res) {
+      if (mine !== session) return true;
+      if (res.refused) return false;
+      if (res.failed || !res.body || res.body.ok !== true) { state.textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return true; }
+      var empty = render(list, res.body.data);
+      state.textContent = empty || '';
+      return true;
+    }, function () {
+      if (mine !== session) return true;
+      clear(list);
+      state.textContent = 'Indisponible pour le moment. Réessayez plus tard.';
+      return true;
+    });
+  }
+  function day(key, mine) {
+    return Promise.all([
+      part('plan', api('/v1/plan-du-jour', key), renderPlan, mine),
+      part('chauds', api('/v1/contacts-chauds', key), renderHot, mine),
+      part('rdv', api('/v1/rendez-vous/jour', key), renderAppointments, mine),
+    ]).then(function (done) {
+      if (mine !== session) return;
+      // Une clé refusée en cours de route : rien n'est gardé à l'écran ni sur l'appareil.
+      if (done.indexOf(false) !== -1) { wipe(); forgetKey(); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); }
+    });
+  }
+  function wipe() {
+    ['plan', 'chauds', 'rdv'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
+  }
   function show(id) {
     ['connexion', 'accueil', 'attente'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id !== 'accueil';
@@ -73,6 +224,8 @@ export const APP_JS = `'use strict';
     return fetch(path, { headers: { authorization: 'Bearer ' + key }, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
   }
   function refuse(message) {
+    session += 1;
+    wipe();
     $('bonjour').textContent = '';
     $('erreur').textContent = message;
     $('erreur').hidden = false;
@@ -80,6 +233,9 @@ export const APP_JS = `'use strict';
     return false;
   }
   function enter(key) {
+    session += 1;
+    var mine = session;
+    wipe();
     show('attente');
     return api('/v1/moi', key).then(function (r) {
       // Clé refusée : elle est effacée de l'appareil. Une panne ou une erreur du serveur ne l'efface pas.
@@ -87,6 +243,8 @@ export const APP_JS = `'use strict';
       if (!r.ok) return { refused: false };
       return r.json().then(function (body) { return { body: body }; });
     }).then(function (res) {
+      // Une réponse d'une session finie (sortie, autre clé) ne touche plus à rien.
+      if (mine !== session) return false;
       var me = res.body && res.body.data;
       if (res.refused || (res.body && (!me || me.role !== 'agent'))) {
         forgetKey();
@@ -96,8 +254,9 @@ export const APP_JS = `'use strict';
       $('bonjour').textContent = me.firstName ? 'Bonjour ' + me.firstName : 'Bonjour';
       $('erreur').hidden = true;
       show('accueil');
-      return true;
+      return day(key, mine).then(function () { return true; });
     }, function () {
+      if (mine !== session) return false;
       return refuse('Pas de réseau. Réessayez dans un moment.');
     });
   }
@@ -111,8 +270,10 @@ export const APP_JS = `'use strict';
       if (writeKey(key)) enter(key); else { $('erreur').textContent = 'Cet appareil ne peut pas garder la clé.'; $('erreur').hidden = false; }
     });
     $('sortir').addEventListener('click', function () {
+      session += 1;
       forgetKey();
       $('bonjour').textContent = '';
+      wipe();
       show('connexion');
     });
     var key = readKey();

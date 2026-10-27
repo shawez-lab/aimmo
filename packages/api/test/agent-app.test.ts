@@ -8,6 +8,7 @@ import worker, { type Env } from '../src/worker.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { fakeD1 } from './fake-d1.ts';
+import { fakeDocument, pageIds } from './fake-dom.ts';
 
 // Clés inventées pour les tests, jamais utilisées ailleurs.
 const KEY_AGENT = 'test-cle-app-agent-aaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -57,21 +58,16 @@ describe('A01 · fichiers de l’application', () => {
     expect(js).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/);
     expect(js).toContain("authorization: 'Bearer ' + key");
     // Les seules adresses appelées sont fixes : aucune n'est construite avec la clé.
-    expect(js.match(/(?:api|fetch)\(([^,)]+)/g)).toEqual(['api(path', 'fetch(path', "api('/v1/moi'"]);
+    expect(js.match(/(?:api|fetch)\(([^,)]+)/g)?.sort()).toEqual(['api(path', 'fetch(path', "api('/v1/plan-du-jour'", "api('/v1/contacts-chauds'", "api('/v1/rendez-vous/jour'", "api('/v1/moi'"].sort());
   });
 
   it('[R16] une clé refusée ne montre rien et est effacée ; une panne ne l’efface pas ; la déconnexion l’efface', async () => {
     const run = async (answer: () => Promise<Response>, stored: string | null, navigator: Record<string, unknown> = {}) => {
-      const els: Record<string, { hidden: boolean; textContent: string; value: string; listeners: Record<string, (e: unknown) => void>; addEventListener: (n: string, f: (e: unknown) => void) => void }> = {};
-      for (const id of ['connexion', 'accueil', 'attente', 'sortir', 'bonjour', 'erreur', 'form-connexion', 'cle', 'note']) {
-        const listeners: Record<string, (e: unknown) => void> = {};
-        els[id] = { hidden: true, textContent: '', value: '', listeners, addEventListener: (n, f) => (listeners[n] = f) };
-      }
+      const { els, listeners: docListeners, document } = fakeDocument(pageIds(AGENT_APP_FILES['/app/']!));
       const storage = new Map<string, string>(stored === null ? [] : [['aimmo.cle', stored]]);
-      const docListeners: Record<string, () => void> = {};
       const calls: { url: string; headers: Record<string, string> }[] = [];
       runInNewContext(AGENT_APP_FILES['/app/app.js']!, {
-        document: { getElementById: (id: string) => els[id], addEventListener: (n: string, f: () => void) => (docListeners[n] = f) },
+        document,
         localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
         fetch: (url: string, init: { headers: Record<string, string> }) => {
           calls.push({ url, headers: init.headers });
@@ -88,7 +84,8 @@ describe('A01 · fichiers de l’application', () => {
     const ok = await run(async () => Response.json({ ok: true, data: { role: 'agent', firstName: 'Alex' } }), KEY);
     expect(ok.els.accueil!.hidden).toBe(false);
     expect(ok.els.bonjour!.textContent).toBe('Bonjour Alex');
-    expect(ok.calls).toEqual([{ url: '/v1/moi', headers: { authorization: `Bearer ${KEY}` } }]);
+    // Après /v1/moi, la journée : plan, contacts chauds, rendez-vous, toujours avec la clé dans l'en-tête seulement.
+    expect(ok.calls).toEqual(['/v1/moi', '/v1/plan-du-jour', '/v1/contacts-chauds', '/v1/rendez-vous/jour'].map((url) => ({ url, headers: { authorization: `Bearer ${KEY}` } })));
     // Sans service worker, l'agent est prévenu, la panne n'est pas avalée.
     expect(ok.els.note!.hidden).toBe(false);
     const failing = await run(async () => Response.json({ ok: true, data: { role: 'agent', firstName: 'Alex' } }), KEY, { serviceWorker: { register: () => Promise.reject(new Error('refus')) } });
