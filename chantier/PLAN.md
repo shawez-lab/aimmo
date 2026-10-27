@@ -569,7 +569,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : un document incomplet ou hors barème ne peut pas être signé ; aucun mandat signé sans identification de chaque vendeur [R41] ; le contrôle est écrit au journal sans donnée personnelle [R13].
 
 ### D04 · Mandat signé sur papier, numéroté au registre
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : le document est réservé d'abord, puis mandat (identifiant tiré du document), numéro et exemplaire remplis une fois chacun ; une reprise continue sans rien refaire et réécrit une ligne de journal manquée ; tout mandat de vente porte le champ de numéro.
 - Qui : Claude · Relecture : forte · Dépend de : D01, D03
 - Cahier : M06, « Papier toujours possible », règle « le numéro du registre figure sur l'exemplaire du mandant » ; critère « un mandat de l'agence généré par AIMMO, numéroté dans le registre de l'agence ».
 - Objectif : l'agent enregistre un mandat généré et signé sur papier (date, lieu de signature, scan rangé par sa référence) ; s'il passe les contrôles de D03, il reçoit son numéro au registre et devient un mandat signé (G03, avec sa source [R38]) ; l'exemplaire du mandant est produit avec son numéro.
@@ -577,7 +578,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H23 pour l'usage réel.
 
 ### D05 · Rétractation et diffusion bloquée
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : D04
 - Cahier : M06, « Rétractation », règle « aucune annonce ni diffusion sans mandat signé et numéroté » ; critère « la diffusion reste bloquée pendant le délai de rétractation ».
 - Objectif : selon le lieu de signature (hors agence ou à distance), un délai de 14 jours calculé à l'heure de Paris, avec le formulaire de rétractation joint ; une seule fonction dit si un bien peut être diffusé, utilisée par tout ce qui publie : mandat signé, numéroté, en cours, et hors délai de rétractation sauf demande écrite du vendeur rangée avec sa preuve ; une rétractation reçue arrête le mandat.
