@@ -43,5 +43,6 @@ CREATE INDEX IF NOT EXISTS document_checks_document ON document_checks (document
 CREATE TRIGGER IF NOT EXISTS fee_schedules_sans_changement BEFORE UPDATE ON fee_schedules BEGIN SELECT RAISE(ABORT, 'barème en ajout seul'); END;
 CREATE TRIGGER IF NOT EXISTS fee_schedules_sans_effacement BEFORE DELETE ON fee_schedules BEGIN SELECT RAISE(ABORT, 'barème en ajout seul'); END;
 CREATE TRIGGER IF NOT EXISTS identity_checks_sans_changement BEFORE UPDATE ON identity_checks BEGIN SELECT RAISE(ABORT, 'vérification gardée'); END;
+CREATE TRIGGER IF NOT EXISTS identity_checks_sans_effacement BEFORE DELETE ON identity_checks BEGIN SELECT RAISE(ABORT, 'vérification gardée'); END;
 CREATE TRIGGER IF NOT EXISTS document_checks_sans_changement BEFORE UPDATE ON document_checks BEGIN SELECT RAISE(ABORT, 'contrôle gardé'); END;
 CREATE TRIGGER IF NOT EXISTS document_checks_sans_effacement BEFORE DELETE ON document_checks BEGIN SELECT RAISE(ABORT, 'contrôle gardé'); END;
