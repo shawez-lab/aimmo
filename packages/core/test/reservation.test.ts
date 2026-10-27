@@ -171,10 +171,39 @@ describeWithSqlite('V02 · réservation, confirmation et annulation', () => {
     expect(await w.rdv.reschedule(r.token, at('2026-11-10', '15:00'))).toEqual({ ok: false, rule: null, code: 'not_booked' });
   });
 
+  it('un lien ne décale qu’une fois, même en double clic ; l’ancien créneau est bien libéré', async () => {
+    const w = await world();
+    const r = await w.book(at('2026-11-10', '09:00'));
+    if (!r.ok) throw new Error('réservation refusée');
+    const same = await Promise.all([w.rdv.reschedule(r.token, at('2026-11-10', '15:00')), w.rdv.reschedule(r.token, at('2026-11-10', '15:00'))]);
+    expect(same.filter((x) => x.ok)).toHaveLength(1);
+    expect(await w.rdv.bookedOf(w.paul.id)).toHaveLength(1);
+    // Le créneau de 9 h est vraiment libre : proposé et réservable.
+    expect((await w.book(at('2026-11-10', '09:00'))).ok).toBe(true);
+    const s = await w.book(at('2026-11-12', '09:00'));
+    if (!s.ok) throw new Error('réservation refusée');
+    const two = await Promise.all([w.rdv.reschedule(s.token, at('2026-11-12', '14:00')), w.rdv.reschedule(s.token, at('2026-11-12', '16:00'))]);
+    expect(two.filter((x) => x.ok)).toHaveLength(1);
+    const booked = await w.rdv.bookedOf(w.paul.id);
+    expect(booked.filter((b) => b.start_at.startsWith('2026-11-12'))).toHaveLength(1);
+    const leftover = await w.db.all<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM appointment_holds h JOIN appointments a ON a.id = h.appointment_id WHERE h.released_at IS NULL AND a.status <> 'booked'",
+    );
+    expect(leftover[0]!.n).toBe(0);
+  });
+
+  it('[R01] réservé le soir : la confirmation attend les heures d’envoi, rien ne part la nuit', async () => {
+    const w = await world();
+    w.setClock(at('2026-11-09', '21:30'));
+    const r = await w.book(at('2026-11-12', '09:00'), { channel: 'email' });
+    expect(r).toMatchObject({ ok: true, confirmation: { status: 'refused', rule: 'R01' }, appointment: { confirmation_status: 'waiting' } });
+    expect(await w.db.all('SELECT message_id FROM trial_outbox')).toHaveLength(0);
+  });
+
   it('la confirmation passe tout de suite par le contrôle central, en mode essai : rangée, jamais envoyée [R26]', async () => {
     const w = await world();
     const r = await w.book(at('2026-11-10', '09:00'), { channel: 'email' });
-    expect(r).toMatchObject({ ok: true, confirmation: { status: 'sent', rule: null } });
+    expect(r).toMatchObject({ ok: true, confirmation: { status: 'sent', rule: null }, appointment: { confirmation_status: 'sent' } });
     const out = await w.db.all<{ body: string }>("SELECT body FROM messages WHERE direction = 'out'");
     expect(out).toHaveLength(1);
     expect(out[0]!.body).toContain('confirmé le mardi 10 novembre à 9 h');

@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS appointments (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   cancelled_at TEXT,
+  -- La confirmation par message : `sent` (en essai : rangée), `waiting` refusée pour l'heure [R01] et reprise par les
+  -- rappels (V04), `refused` refusée par une autre règle ; NULL sans canal.
+  confirmation_status TEXT CHECK (confirmation_status IS NULL OR confirmation_status IN ('sent', 'waiting', 'refused', 'failed')),
   UNIQUE (id, network_id),
   FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT,
   FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT,

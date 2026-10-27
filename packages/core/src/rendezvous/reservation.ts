@@ -58,6 +58,7 @@ export interface Appointment {
   created_at: string;
   updated_at: string;
   cancelled_at: string | null;
+  confirmation_status: 'sent' | 'waiting' | 'refused' | 'failed' | null;
 }
 
 export type BookingRefusal =
@@ -259,7 +260,7 @@ export class RendezVous {
   }
 
   async get(id: string): Promise<Appointment | null> {
-    return this.db.first<Appointment>('SELECT id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, source, replaces_id, created_at, updated_at, cancelled_at FROM appointments WHERE id = ?', [id]);
+    return this.db.first<Appointment>('SELECT id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, source, replaces_id, created_at, updated_at, cancelled_at, confirmation_status FROM appointments WHERE id = ?', [id]);
   }
 
   async byToken(token: string): Promise<Appointment | null> {
@@ -327,9 +328,12 @@ export class RendezVous {
         figures,
       });
       confirmation = { status: sent.status, rule: sent.rule };
+      // Refusée pour l'heure [R01] : la confirmation attend, les rappels (V04) l'enverront dans les heures d'envoi.
+      const status = sent.status === 'sent' ? 'sent' : sent.status === 'failed' ? 'failed' : sent.rule === 'R01' ? 'waiting' : 'refused';
+      await this.db.run('UPDATE appointments SET confirmation_status = ? WHERE id = ?', [status, id]);
       await this.log('rdv.confirmation.essai', 'system:rdv', appointment, { mode: 'essai', sent: false, status: sent.status, rule: sent.rule });
     }
-    return { ok: true, appointment, token, confirmation };
+    return { ok: true, appointment: (await this.get(id))!, token, confirmation };
   }
 
   private async cancelAppointment(appointment: Appointment, actor: string): Promise<Appointment | null> {
@@ -367,23 +371,25 @@ export class RendezVous {
   async reschedule(token: string, start: Date, channel: OutboundChannelName | null = null): Promise<BookingResult | { ok: false; rule: null; code: 'unknown' | 'not_booked' }> {
     const old = await this.byToken(token);
     if (!old) return { ok: false, rule: null, code: 'unknown' };
-    if (old.status !== 'booked') return { ok: false, rule: null, code: 'not_booked' };
+    const at = this.now().toISOString();
+    // L'ancien rendez-vous est pris d'abord, par une seule instruction : un lien ne décale qu'une fois, même en double clic.
+    const claimed = await this.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ? AND status = 'booked'", [at, at, old.id]);
+    if (claimed.changes !== 1) return { ok: false, rule: null, code: 'not_booked' };
     await this.release(old.id);
     const result = await this.book(
       { networkId: old.network_id, agentId: old.agent_id, personId: old.person_id, propertyId: old.property_id, kind: old.kind, start, source: old.source, channel },
       old.id,
     );
     if (!result.ok) {
-      // L'ancien rendez-vous reprend ses tranches. Si un autre les a prises entre-temps, il est annulé, et c'est noté.
-      if (!(await this.hold(old.agent_id, old.id, old.kind, new Date(old.start_at), new Date(old.end_at)))) {
-        await this.cancelAppointment(old, 'system:rdv');
-        await this.log('rdv.perdu', 'system:rdv', old, {});
+      // L'ancien rendez-vous revient, avec ses tranches. Si un autre les a prises entre-temps, il reste annulé, et c'est noté.
+      if (await this.hold(old.agent_id, old.id, old.kind, new Date(old.start_at), new Date(old.end_at))) {
+        await this.db.run("UPDATE appointments SET status = 'booked', cancelled_at = NULL, updated_at = ? WHERE id = ? AND status = 'cancelled'", [this.now().toISOString(), old.id]);
+      } else {
+        await this.log('rdv.perdu', 'system:rdv', (await this.get(old.id))!, {});
       }
       return result;
     }
-    const at = this.now().toISOString();
-    await this.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ? AND status = 'booked'", [at, at, old.id]);
-    await this.log('rdv.decale', 'client:lien', old, { replaced_by: result.appointment.id });
+    await this.log('rdv.decale', 'client:lien', (await this.get(old.id))!, { replaced_by: result.appointment.id });
     return result;
   }
 
