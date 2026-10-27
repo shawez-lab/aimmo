@@ -215,7 +215,8 @@ export class Echeancier {
     return { hasLoanCondition: conditions.some((c) => c.kind === 'pret'), isCoownershipLot: coownership === null ? null : coownership.isCoownership };
   }
 
-  private async compute(file: { id: string; offer_id: string; property_id: string }): Promise<Schedule> {
+  /** L'échéancier d'un dossier, pour les passages du système, qui ne montrent rien à personne : sans contrôle d'accès. */
+  async scheduleOf(file: { id: string; offer_id: string; property_id: string }): Promise<Schedule> {
     const dates = await this.datesOf(file.id);
     const days = Object.fromEntries(Object.entries(dates).map(([k, v]) => [k, v.day])) as Partial<Record<DateKind, string>>;
     return { fileId: file.id, dates, lines: scheduleLines(days, await this.facts(file)) };
@@ -225,7 +226,7 @@ export class Echeancier {
   async schedule(viewer: Viewer, fileId: string): Promise<{ ok: true; value: Schedule } | FileRefusal | FileUnknown> {
     const g = await this.gate(viewer, fileId, false);
     if (!g.ok) return g;
-    return { ok: true, value: await this.compute(g.file) };
+    return { ok: true, value: await this.scheduleOf(g.file) };
   }
 
   /** L'agent du dossier saisit une date du compromis, avec sa preuve. Une correction s'ajoute en nouvelle version [R17]. */
@@ -261,7 +262,7 @@ export class Echeancier {
       throw error;
     }
     await appendEvent(this.journal, { type: 'dossier.date', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R61', kind, version } }, this.now);
-    return { ok: true, value: await this.compute(g.file) };
+    return { ok: true, value: await this.scheduleOf(g.file) };
   }
 
   /**
@@ -279,7 +280,7 @@ export class Echeancier {
     let created = 0;
     for (const f of files) {
       if (!f.agent_id) continue;
-      const s = await this.compute(f);
+      const s = await this.scheduleOf(f);
       for (const l of s.lines) {
         let due: string | null = null;
         if (l.status === 'a_saisir') due = '';
@@ -319,7 +320,7 @@ export class Echeancier {
     const schedules = new Map<string, Schedule>();
     const tasks: FileTask[] = [];
     for (const r of rows) {
-      if (!schedules.has(r.file_id)) schedules.set(r.file_id, await this.compute({ id: r.file_id, offer_id: r.offer_id, property_id: r.property_id }));
+      if (!schedules.has(r.file_id)) schedules.set(r.file_id, await this.scheduleOf({ id: r.file_id, offer_id: r.offer_id, property_id: r.property_id }));
       const line = schedules.get(r.file_id)!.lines.find((l) => l.deadline === r.deadline)!;
       if (r.due_day === '') {
         if (line.status === 'a_saisir') tasks.push({ fileId: r.file_id, propertyId: r.property_id, deadline: r.deadline, kind: 'a_saisir', day: null, createdAt: r.created_at });
@@ -327,6 +328,8 @@ export class Echeancier {
         tasks.push({ fileId: r.file_id, propertyId: r.property_id, deadline: r.deadline, kind: 'avant_echeance', day: r.due_day, createdAt: r.created_at });
       }
     }
+    // Chaque lecture est écrite au journal, sans donnée personnelle : qui, quand, quels dossiers [R16].
+    await appendEvent(this.journal, { type: 'dossier.taches_lues', actor: actorOf(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R16', files: [...new Set(tasks.map((x) => `sale_file:${x.fileId}`))] } }, this.now);
     tasks.sort((a, b) => ((a.day ?? '') < (b.day ?? '') ? -1 : (a.day ?? '') > (b.day ?? '') ? 1 : DEADLINES.indexOf(a.deadline) - DEADLINES.indexOf(b.deadline)));
     return { ok: true, tasks };
   }
