@@ -199,6 +199,8 @@ describe('T08 · écran de la visite', () => {
   it('[R16] une clé refusée pendant la visite efface l’écran et la clé ; une visite hors des droits est dite', async () => {
     const denied = await openVisit({ 'GET /v1/visites/v1': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
     expect(denied.els['visite-etat']!.textContent).toBe('Cette visite n’est pas dans vos droits.');
+    const online = await openVisit({ 'GET /v1/visites/v1': no(404, { ok: false, rule: 'R16', code: 'unknown' }) });
+    expect(online.els['visite-etat']!.textContent).toMatch(/^Pas de dossier de visite pour ce rendez-vous/);
     const refused = await openVisit({ 'GET /v1/visites/v1': no(401, { ok: false, code: 'unauthorized' }) });
     expect(refused.els.connexion!.hidden).toBe(false);
     expect(refused.storage.has('aimmo.cle')).toBe(false);

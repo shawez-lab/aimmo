@@ -492,7 +492,9 @@ export const APP_JS = `'use strict';
     return send('/v1/visites/' + encodeURIComponent(id), 'GET').then(function (res) {
       if (res.gone) return false;
       if (res.offline) { $('visite-etat').textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
-      if (res.status === 403 || res.status === 404) { $('visite-etat').textContent = 'Cette visite n’est pas dans vos droits.'; return false; }
+      if (res.status === 403) { $('visite-etat').textContent = 'Cette visite n’est pas dans vos droits.'; return false; }
+      // Une visite réservée en ligne n'a pas encore de dossier de visite : elle n'est rattachée à aucune recherche d'achat.
+      if (res.status === 404) { $('visite-etat').textContent = 'Pas de dossier de visite pour ce rendez-vous : s’il a été réservé en ligne, il n’est pas encore rattaché à la recherche d’un acquéreur.'; return false; }
       if (!res.ok) { $('visite-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
       $('visite-etat').textContent = '';
       renderVisit(res.body.data);
