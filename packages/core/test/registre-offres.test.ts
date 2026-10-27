@@ -127,6 +127,13 @@ describeWithSqlite('O01 · registre des offres', () => {
     const t = await setup();
     t.setClock(new Date('2027-02-20T10:00:00.000Z')); // pendant le délai de rétractation
     expect(await t.offres.record(t.agent, t.propertyId, t.input({ receivedAt: '2027-02-20T09:00:00.000Z', validUntil: '2027-02-27' }))).toEqual({ ok: false, rule: 'R42', code: 'not_on_sale' });
+    t.setClock(new Date('2027-03-01T10:00:00.000Z'));
+    for (const status of ['sold', 'rented', 'withdrawn']) {
+      await t.db.run('UPDATE properties SET status = ? WHERE id = ?', [status, t.propertyId]);
+      expect(await t.offres.record(t.agent, t.propertyId, t.input()), status).toEqual({ ok: false, rule: 'R42', code: 'not_on_sale' });
+    }
+    await t.db.run("UPDATE properties SET status = 'under_offer' WHERE id = ?", [t.propertyId]);
+    expect(await t.offres.record(t.agent, t.propertyId, t.input())).toMatchObject({ ok: true });
   });
 
   it('[R16] seuls l’agent du bien et la direction enregistrent et lisent ; chaque refus au journal', async () => {

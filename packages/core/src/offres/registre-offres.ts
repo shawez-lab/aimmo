@@ -219,7 +219,9 @@ export class RegistreOffres {
     if (buyer.view !== 'full') return this.refuse(viewer, `person:${input.buyerPersonId}`, 'not_assigned');
     // Un bien reçoit des offres seulement s'il est en vente sous mandat (D05) [R42].
     const sale = await this.diffusion.canDiffuse(g.networkId, propertyId, now);
-    if (!sale.allowed) return { ok: false, rule: 'R42', code: 'not_on_sale' };
+    const status = await this.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [propertyId]);
+    // Vendu, loué ou retiré de la vente : plus d'offre, même si le mandat court encore.
+    if (!sale.allowed || !status || ['sold', 'rented', 'withdrawn'].includes(status.status)) return { ok: false, rule: 'R42', code: 'not_on_sale' };
 
     // Une ancre manquée après une panne du journal est reprise d'abord, pour une ligne intacte seulement.
     await this.resumeAnchors(viewer, propertyId);
