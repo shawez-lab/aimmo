@@ -98,7 +98,7 @@ export async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+export const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 /** Les champs d'un texte de modèle, dans l'ordre de leur première apparition. */
 export function templateFields(body: string): string[] {
@@ -139,7 +139,7 @@ export function renderDocument(body: string, values: Readonly<Record<string, str
   return `<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n<title>${escapeHtml(options.title)}</title>\n<style>${PRINT_CSS}</style>\n</head>\n<body>\n${banner}${html}\n</body>\n</html>\n`;
 }
 
-const signatureSpan = (name: string): string => `<span class="a-signer">[${escapeHtml(TEMPLATE_FIELDS[name]!.label)} à la signature]</span>`;
+export const signatureSpan = (name: string): string => `<span class="a-signer">[${escapeHtml(TEMPLATE_FIELDS[name]!.label)} à la signature]</span>`;
 
 /**
  * L'exemplaire signé : chaque champ de signature du document (numéro au registre, date, lieu) prend sa valeur, échappée.

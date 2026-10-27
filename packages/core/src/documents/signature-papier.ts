@@ -21,7 +21,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { Mandats } from '../mandats/source.ts';
 import { RegistreMandats } from '../mandats/registre.ts';
 import { ControlesSignature, type SignatureCheck } from './controles.ts';
-import { fillSignatureFields, sha256 } from './modeles.ts';
+import { escapeHtml, fillSignatureFields, sha256, signatureSpan } from './modeles.ts';
 
 export const SIGNATURE_PLACES = ['agence', 'hors_agence', 'distance'] as const;
 export type SignaturePlace = (typeof SIGNATURE_PLACES)[number];
@@ -69,7 +69,8 @@ interface SignedRow {
 export class SignaturePapier {
   private readonly now: () => Date;
   private readonly controles: ControlesSignature;
-  private readonly mandats: Mandats;
+  private readonly fiche: FicheUnique;
+  private readonly options: { now?: () => Date; newId?: () => string };
   private readonly registre: RegistreMandats;
 
   constructor(
@@ -80,7 +81,8 @@ export class SignaturePapier {
   ) {
     this.now = options.now ?? (() => new Date());
     this.controles = new ControlesSignature(db, acces, journal, options);
-    this.mandats = new Mandats(db, new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now }), journal, options);
+    this.fiche = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
+    this.options = options;
     this.registre = new RegistreMandats(db, journal, { now: this.now });
   }
 
@@ -106,6 +108,8 @@ export class SignaturePapier {
       return { ok: false, rule: 'R16', code: 'unknown' };
     }
     if (!MANDATE_KINDS.includes(doc.kind)) return { ok: false, rule: null, code: 'not_a_mandate' };
+    // Sans champ de numéro, l'exemplaire du mandant ne porterait pas son numéro : pas de numéro du tout [R39].
+    if (!doc.content.includes(signatureSpan('registre.numero'))) return { ok: false, rule: 'R39', code: 'no_number_field' };
 
     // Les contrôles, maintenant, sur ce document ; ils vérifient aussi les droits sur la fiche et le bien [R16, R41].
     const checked = await this.controles.check(viewer, documentId);
@@ -128,14 +132,29 @@ export class SignaturePapier {
 
     // 2. Le mandat signé, avec sa source [R38].
     if (row.mandate_id === null) {
-      const mandate = await this.mandats.record(this.acces, viewer, {
-        personId: doc.person_id,
-        propertyId: doc.property_id,
-        signedAt,
-        source: input.source ?? null,
-        sourceDetail: input.sourceDetail ?? null,
-      });
-      if (!mandate.ok) return mandate as Problem | Refusal;
+      // L'identifiant du mandat est tiré du document : deux demandes, ou une reprise après coupure, ne rangent jamais
+      // deux mandats pour un même document.
+      const fixedId = `m-${documentId}`;
+      const existing = await this.db.first<{ id: string }>('SELECT id FROM mandates WHERE id = ?', [fixedId]);
+      let mandate: { ok: true; id: string } | Problem | Refusal;
+      if (existing) mandate = { ok: true, id: existing.id };
+      else {
+        try {
+          const recorded = await new Mandats(this.db, this.fiche, this.journal, { ...this.options, newId: () => fixedId }).record(this.acces, viewer, {
+            personId: doc.person_id,
+            propertyId: doc.property_id,
+            signedAt,
+            source: input.source ?? null,
+            sourceDetail: input.sourceDetail ?? null,
+          });
+          mandate = recorded.ok ? { ok: true, id: recorded.id } : (recorded as Problem | Refusal);
+        } catch (error) {
+          // Une autre demande vient de ranger ce même mandat : on le reprend.
+          if (!(await this.db.first('SELECT id FROM mandates WHERE id = ?', [fixedId]))) throw error;
+          mandate = { ok: true, id: fixedId };
+        }
+      }
+      if (!mandate.ok) return mandate;
       const { changes } = await this.db.run('UPDATE signed_documents SET mandate_id = ? WHERE document_id = ? AND mandate_id IS NULL', [mandate.id, documentId]);
       row = (await this.db.first<SignedRow>('SELECT * FROM signed_documents WHERE document_id = ?', [documentId]))!;
       // Une autre demande a posé son mandat entre-temps : celui-ci reste rangé, sans numéro ; on le dit au journal.
@@ -165,6 +184,8 @@ export class SignaturePapier {
         'signature.date': `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`,
         'signature.lieu': PLACE_LABEL[row.place],
       });
+      // Le numéro doit figurer sur l'exemplaire ; sinon rien n'est figé [R39].
+      if (!copy.includes(`<span class="signe">${escapeHtml(row.number!)}</span>`)) return { ok: false, rule: 'R39', code: 'no_number_on_copy' };
       const copyHash = await sha256(copy);
       await this.db.run('UPDATE signed_documents SET copy_content = ?, copy_hash = ?, completed_at = ? WHERE document_id = ? AND copy_content IS NULL', [copy, copyHash, this.now().toISOString(), documentId]);
       row = (await this.db.first<SignedRow>('SELECT * FROM signed_documents WHERE document_id = ?', [documentId]))!;
@@ -186,7 +207,10 @@ export class SignaturePapier {
     if (!row || row.copy_content === null || row.number === null) return { ok: false, rule: null, code: 'not_signed' };
     const read = await this.acces.readFiche(viewer, row.person_id);
     if (!read.ok) return read;
-    if (read.view !== 'full') return { ok: false, rule: 'R16', code: 'not_assigned' };
+    if (read.view !== 'full') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'exemplaire', code: 'not_assigned' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
     return { ok: true, content: row.copy_content, number: row.number };
   }
 }

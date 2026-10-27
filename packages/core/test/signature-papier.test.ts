@@ -86,6 +86,7 @@ describeWithSqlite('D04 · mandat signé sur papier, numéroté au registre', ()
     expect(new Set(numbers).size).toBeLessThanOrEqual(1);
     expect(await t.papier.register(t.agent, d.documentId, PAPER)).toEqual({ ok: false, rule: null, code: 'already_signed' });
     expect(await t.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM mandate_register WHERE kind = 'inscription'`)).toEqual({ n: 1 });
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM mandates')).toEqual({ n: 1 });
     const other = await t.mandateDoc();
     const r = await t.papier.register(t.agent, other.documentId, PAPER);
     expect(r.ok && r.value.number).toBe('T-0102');
@@ -127,5 +128,49 @@ describeWithSqlite('D04 · mandat signé sur papier, numéroté au registre', ()
     expect((await t.papier.copy(t.direction, d.documentId)).ok).toBe(true);
     expect(await t.modeles.createVersion(t.direction, 'mandat_vente_simple', 'Mandat sans numéro : {{mandant.nom}}.')).toEqual({ ok: false, rule: 'R40', code: 'no_number_field' });
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/Léa|Exemple/);
+  });
+
+  it('[R39] une coupure juste après le mandat rangé ne range pas un second mandat à la reprise', async () => {
+    const t = await setup();
+    const d = await t.mandateDoc();
+    let cut = true;
+    const flaky: SqlDatabase = {
+      ...t.db,
+      run: async (sql, params) => {
+        if (cut && sql.startsWith('UPDATE signed_documents SET mandate_id')) {
+          cut = false;
+          throw new Error('coupure');
+        }
+        return t.db.run(sql, params);
+      },
+    };
+    await expect(new SignaturePapier(flaky, t.acces, t.journal, { now: () => NOW }).register(t.agent, d.documentId, PAPER)).rejects.toThrow(/coupure/);
+    expect((await t.papier.register(t.agent, d.documentId, PAPER)).ok).toBe(true);
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM mandates')).toEqual({ n: 1 });
+  });
+
+  it('[R39] un document dont le modèle n’a pas de champ de numéro n’est pas numéroté', async () => {
+    const t = await setup();
+    // Un modèle validé d'avant l'exigence du champ, posé directement.
+    await t.db.run(
+      `INSERT INTO document_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at, validated_by, validated_at)
+       VALUES ('ancien', ?, 'mandat_vente_simple', 1, 'valide', 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}.', '["mandant.nom","honoraires.montant","honoraires.charge"]', 'x', 'direction:d', ?, 'compliance:c', ?)`,
+      [t.network.id, NOW.toISOString(), NOW.toISOString()],
+    );
+    const d = await t.mandateDoc();
+    const p = await t.db.first<{ person_id: string; property_id: string }>('SELECT person_id, property_id FROM documents WHERE id = ?', [d.documentId]);
+    const doc = await t.modeles.generate(t.agent, { kind: 'mandat_vente_simple', personId: p!.person_id, propertyId: p!.property_id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'vendeur' } });
+    if (!doc.ok) throw new Error(doc.code);
+    expect(await t.papier.register(t.agent, doc.document.id, PAPER)).toEqual({ ok: false, rule: 'R39', code: 'no_number_field' });
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM mandate_register')).toEqual({ n: 0 });
+  });
+
+  it('[R16] un refus de l’exemplaire est écrit au journal', async () => {
+    const t = await setup();
+    const d = await t.mandateDoc();
+    await t.papier.register(t.agent, d.documentId, PAPER);
+    const before = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
+    await t.papier.copy(t.as('agent', t.sam.id), d.documentId);
+    expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse').length).toBe(before + 1);
   });
 });
