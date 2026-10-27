@@ -118,6 +118,16 @@ describe('P10 · écran « Mettre en vente »', () => {
     expect(t.byText(t.els['vente-corps']!, 'Valider l’annonce')).toBeUndefined();
   });
 
+  it('une lecture en échec n’est jamais montrée comme un état vide, et aucun geste n’est proposé dessus', async () => {
+    const t = await run({ 'GET /v1/annonces/b1/brouillon': no(500, { ok: false, code: 'internal_error' }), 'GET /v1/annonces/b1/publication': () => Promise.reject(new TypeError('hors ligne')) });
+    await t.click(t.byText(t.els.biens!, 'Mettre en vente'));
+    const text = t.els['vente-corps']!.textContent;
+    expect(text).toContain('L’annonce n’a pas pu être lue.');
+    expect(text).toContain('L’état de la publication n’a pas pu être lu.');
+    expect(text).not.toMatch(/Aucune annonce rédigée|Pas encore publiée/);
+    expect(t.byText(t.els['vente-corps']!, 'Rédiger l’annonce')).toBeUndefined();
+  });
+
   it('[R16] un bien hors des droits est dit ; une clé refusée efface tout', async () => {
     const denied = await run({ 'GET /v1/annonces/b1/controle': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
     await denied.click(denied.byText(denied.els.biens!, 'Mettre en vente'));

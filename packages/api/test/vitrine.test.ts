@@ -68,8 +68,10 @@ describeWithSqlite('P10 · branchement de M07 dans le socle', () => {
     expect(published!.getTime() - DELAY_END.getTime()).toBeLessThan(60 * MIN);
     const runs = await t.db.all<{ slot: string }>("SELECT slot FROM scheduled_runs WHERE job = 'annonces.publication' ORDER BY slot");
     expect(new Set(runs.map((r) => r.slot)).size).toBe(runs.length);
-    expect(quarterSlot(new Date('2027-02-24T23:14:59.000Z'))).toBe('2027-02-25T00:00');
-    expect(quarterSlot(new Date('2027-02-24T23:15:00.000Z'))).toBe('2027-02-25T00:15');
+    expect(quarterSlot(new Date('2027-02-24T23:14:59.000Z'))).toBe('2027-02-24T23:00Z');
+    expect(quarterSlot(new Date('2027-02-24T23:15:00.000Z'))).toBe('2027-02-24T23:15Z');
+    // L'heure qui revient au changement d'heure d'automne garde ses propres créneaux.
+    expect(quarterSlot(new Date('2027-10-31T00:00:00.000Z'))).not.toBe(quarterSlot(new Date('2027-10-31T01:00:00.000Z')));
     // Le Worker n'a qu'un déclencheur, tous les quarts d'heure.
     expect(readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8')).toMatch(/^crons = \["\*\/15 \* \* \* \*"\]$/m);
   });

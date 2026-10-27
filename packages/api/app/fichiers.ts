@@ -817,7 +817,10 @@ export const APP_JS = `'use strict';
       if (all[0].status === 403 || all[0].status === 404) { $('vente-etat').textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
       if (!all[0].ok) { $('vente-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
       $('vente-etat').textContent = '';
-      renderVente(propertyId, all[0].body.data, all[1].ok ? all[1].body.data : null, all[2].ok ? all[2].body.data : null);
+      // Seul « aucune annonce » est un état vide ; une lecture en échec est dite comme telle, sans geste proposé.
+      var draft = all[1].ok ? all[1].body.data : all[1].status === 404 && all[1].body && all[1].body.code === 'no_draft' ? null : undefined;
+      var status = all[2].ok ? all[2].body.data : undefined;
+      renderVente(propertyId, all[0].body.data, draft, status);
       return true;
     });
   }
@@ -845,7 +848,10 @@ export const APP_JS = `'use strict';
     body.appendChild(check);
     var text = section('L’annonce, phrase par phrase');
     var base = '/v1/annonces/' + encodeURIComponent(propertyId);
-    if (!draft) {
+    if (draft === undefined) {
+      text.appendChild(el('p', 'L’annonce n’a pas pu être lue. Réessayez dans un moment.', 'alerte'));
+      body.appendChild(text);
+    } else if (!draft) {
       text.appendChild(el('p', 'Aucune annonce rédigée pour ce bien.', 'doux'));
       text.appendChild(button('Rédiger l’annonce', function () { venteAct(base + '/brouillon', 'L’annonce n’a pas pu être rédigée.'); }));
       body.appendChild(text);
@@ -866,7 +872,8 @@ export const APP_JS = `'use strict';
       body.appendChild(text);
     }
     var pub = section('Publication');
-    if (!status) pub.appendChild(el('p', 'Pas encore publiée : elle part d’elle-même au passage suivant, une fois l’annonce validée et le délai de rétractation fini.', 'doux'));
+    if (status === undefined) pub.appendChild(el('p', 'L’état de la publication n’a pas pu être lu. Réessayez dans un moment.', 'alerte'));
+    else if (!status) pub.appendChild(el('p', 'Pas encore publiée : elle part d’elle-même au passage suivant, une fois l’annonce validée et le délai de rétractation fini.', 'doux'));
     else {
       pub.appendChild(el('p', 'Version ' + status.version + ', ' + (LISTING_STATES[status.state] || 'publiée') + (status.priceEur ? ', au prix de ' + price(status.priceEur) : '') + '.'));
       var ch = el('ul', null, 'liste');

@@ -76,12 +76,13 @@ export async function handleVitrine(request: Request, db: SqlDatabase, media: Me
   return new Response(request.method === 'HEAD' ? null : object.body, { status: 200, headers: headers(MEDIA_TYPES[file![3]!]!) });
 }
 
-/** Le créneau d'un quart d'heure, heure de Paris : `AAAA-MM-JJTHH:MM`. */
+/**
+ * Le créneau d'un quart d'heure, en UTC : `AAAA-MM-JJTHH:MMZ`. En UTC, l'heure qui revient au changement d'heure
+ * d'automne garde ses quatre créneaux, chacun distinct.
+ */
 export function quarterSlot(at: Date): string {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(at);
-  const get = (type: string) => parts.find((p) => p.type === type)!.value;
-  const quarter = String(Math.floor(Number(get('minute')) / 15) * 15).padStart(2, '0');
-  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${quarter}`;
+  const quarter = new Date(Math.floor(at.getTime() / 900_000) * 900_000);
+  return `${quarter.toISOString().slice(0, 16)}Z`;
 }
 
 export const LISTING_SYNC_JOB = 'annonces.publication';
