@@ -254,4 +254,24 @@ describeWithSqlite('G04 · suivi de valeur, en mode essai', () => {
     const seen = new Set([...first.outcomes, ...second.outcomes].map((o) => o.trackingId));
     expect(seen.size).toBe(3);
   });
+
+  it('une source en panne ne fait pas plus d’essais par passage que le lot réglé, et la panne remonte', async () => {
+    const t = await setup();
+    for (const who of ['Anne', 'Bruno', 'Chloé']) await t.enrol((await t.owner(who)).id);
+    let calls = 0;
+    const suivi = new SuiviDeValeur(t.db, t.journal, {
+      now: t.now,
+      settings: { intervalDays: 182, batch: 1 },
+      ranges: {
+        forTown: async () => {
+          calls += 1;
+          throw new Error('panne (test)');
+        },
+      },
+    });
+    t.setClock(JULY_TUE_10H);
+    await expect(suivi.run()).rejects.toThrow();
+    expect(calls).toBe(1);
+    expect(await t.sends()).toEqual([{ period: 1, status: 'waiting', rule: null }]);
+  });
 });

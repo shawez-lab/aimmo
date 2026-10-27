@@ -252,15 +252,21 @@ export class SuiviDeValeur {
     );
     const outcomes: TrackingOutcome[] = [];
     let failure: unknown = null;
+    // Chaque essai réservé compte, panne comprise : une source en panne ne multiplie pas les appels.
+    let attempts = 0;
     for (const row of rows) {
-      if (outcomes.length >= this.settings.batch) break;
+      if (attempts >= this.settings.batch) break;
       const period = Math.floor((at.getTime() - Date.parse(row.created_at)) / interval);
       if (period < 1) continue;
       // Une panne sur un suivi n'arrête pas les autres ; elle remonte ensuite au planificateur, jamais avalée [R13].
       try {
         const outcome = await this.sendOne(row, period, ranges, at);
-        if (outcome) outcomes.push(outcome);
+        if (outcome) {
+          outcomes.push(outcome);
+          attempts += 1;
+        }
       } catch (error) {
+        attempts += 1;
         failure ??= error;
       }
     }
