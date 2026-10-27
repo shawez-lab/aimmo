@@ -543,7 +543,8 @@ Découpé le 2026-10-27. Ids `D..` pour Documents. Cahier : M06 Mandats et docum
 Décidé, lecture prudente : la première version sert les mandats de vente, leurs avenants et le registre ; les autres documents (location, recherche, délégation, bon de visite, offre, fonds de commerce, contrats d'agent) arriveront avec M08, M09, M14, M15 et M16, sur la même bibliothèque. Tant que Marion Gravelin et l'avocat n'ont pas validé les modèles (H08), la bibliothèque ne porte que des modèles d'essai inventés, marqués « essai », qu'aucun document réel ne peut utiliser. Pendant la preuve à Dijon, le numéro vient du registre de GRAVELIN IMMO (H23) et la signature se fait sur papier ou avec l'outil de l'agence : la signature en ligne AIMMO est construite en mode essai, et ne sert qu'une fois son dossier de preuve validé par l'avocat (H24). L'IA ne rédige aucune clause. Rien n'est envoyé à un client tant que le plan n'a pas mis d'envoi en service.
 
 ### D01 · Registre des mandats chaîné
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : chaque ligne est ancrée au journal (rang et empreinte écrite en lettres) ; un registre dont le contrôle échoue ne reçoit plus de ligne et l'écart est écrit au journal ; une ancre manquée après une panne du journal est reprise à la redemande ; R39 passe en service avec D04 (numéro sur l'exemplaire du mandant).
 - Qui : Claude · Relecture : forte · Dépend de : G03
 - Cahier : M06, « Registre des mandats » ; critère « une modification du registre après coup est détectée ».
 - Objectif : un registre par réseau, en ajout seul : à l'inscription d'un mandat signé, un numéro dans l'ordre chronologique, au format et à partir du prochain numéro réglés pour le réseau ; chaque ligne porte l'empreinte de la précédente ; un contrôle d'intégrité relit toute la chaîne ; une ligne corrigée ne s'efface pas, une ligne d'annulation la suit.
@@ -551,7 +552,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H23 pour le numéro réel de l'agence ; les tests utilisent un registre inventé.
 
 ### D02 · Bibliothèque de modèles datés et versionnés
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : D01
 - Cahier : M06, « Bibliothèque de modèles », règle « le modèle en vigueur à la date de signature est conservé avec le document ».
 - Objectif : des modèles par type de document (mandat de vente simple, exclusif, avenant), versionnés, datés, avec la liste de leurs champs et leur état « essai » ou « validé » (validé seulement par une personne désignée, jamais par le code) ; un document généré remplit les champs depuis la base, garde la version et l'empreinte du modèle utilisé ; rendu en HTML imprimable, clause d'exclusivité en évidence.
