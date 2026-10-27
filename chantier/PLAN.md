@@ -807,6 +807,14 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Critères : les routes répondent derrière la clé d'API [R16] ; le passage tourne toutes les 15 minutes, une seule fois par créneau ; la page publique ne montre qu'une version publiée, sans adresse [R46] ; écran accessible, sans texte générique, beau sur téléphone d'abord.
 - Attend : rien.
 
+### P11 · Passage de publication : une panne d'un réseau n'arrête pas les autres
+- Statut : à faire
+- Qui : Claude, voie 1 (`packages/api/src/vitrine.ts`) · Relecture : normale · Dépend de : P10
+- Cahier : M07.
+- Objectif : dans `runListingSync`, chaque réseau passe dans son propre essai : une panne va au journal, sans donnée, le réseau suivant passe, et le créneau est marqué en erreur à la fin (comme `offres.quotidien`, O09).
+- Critères : un test avec deux réseaux, le premier en panne : le second publie, une ligne `api.erreur` au journal, créneau en erreur.
+- Attend : rien.
+
 **M09 · Offres, mai 2027.**
 
 Voie : 2
@@ -888,7 +896,8 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O09 · Branchement de M09 dans le socle
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : M09 exporté en espace de noms `offres` ; passage `offres.quotidien` à 6 h ; une panne d'un réseau ou d'un contrôle n'arrête pas les autres.
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : O08
 - Cahier : M09 ; règles « les délais de validité sont suivis et rappelés à l'agent », « toute offre reçue est transmise au vendeur ».
 - Objectif : exporter `offres` depuis `@aimmo/core` et remplacer l'import relatif de `packages/api/src/offres.ts` ; ajouter `offreRoutes()` aux routes de `app.ts` ; lancer `syncOffres` chaque jour depuis le planificateur, une fois par créneau.
