@@ -506,7 +506,7 @@ Découpé le 2026-10-27. Ids `A..` pour Application. Cahier : Le produit, « App
 Décidé, lecture prudente : la première version sert la journée de l'agent, rien de plus : plan du jour, contacts chauds, rendez-vous du jour avec leur brief, fiche du client, appel en un geste. Les documents à signer, la dictée, les messages prêts à envoyer et les chiffres viendront avec M06, M08 et M13. L'application est une page web installable servie par le Worker `aimmo-api` lui-même (pas de nouveau service à créer), sans dépendance de construction ; elle ne lit que par l'API sous les droits de l'agent [R16] et ne garde aucune donnée de client sur le téléphone : seul l'écran vide de l'application est mis en cache. L'agent s'y connecte avec sa clé d'API personnelle (H22), saisie une fois et gardée sur son appareil, jamais dans une adresse. Aucun envoi depuis l'application tant que le plan n'a pas mis d'envoi en service. Pas de note ni de classement des agents [R14].
 
 ### A01 · Coquille de l'application web installable
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : S09
 - Cahier : Le produit, « Application de l'agent » ; Architecture technique.
 - Objectif : le Worker sert `/app/` : page, manifeste, icône et service worker, avec des en-têtes de sécurité stricts (politique de contenu, pas d'appel hors de l'API) ; écran de connexion par clé personnelle, vérifiée par une route `GET /v1/moi` qui ne rend que le rôle et le prénom de l'agent ; déconnexion qui efface la clé de l'appareil.
