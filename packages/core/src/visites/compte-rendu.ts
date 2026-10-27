@@ -72,7 +72,8 @@ export function checkReport(raw: unknown, dictation: string): { ok: true; report
   if (!(INTEREST_LEVELS as readonly unknown[]).includes(r.interest)) return { ok: false, code: 'shape' };
   if (typeof r.readyToOffer !== 'boolean') return { ok: false, code: 'shape' };
   const texts = [r.opinion, ...r.strengths, ...r.reservations];
-  if (texts.some((t) => CONTACT.test(t))) return { ok: false, code: 'contact' };
+  // Ni mail, ni téléphone, ni adresse postale [R52].
+  if (texts.some((t) => CONTACT.test(t) || withoutContactDetails(t) !== t)) return { ok: false, code: 'contact' };
   const allowed = new Set(numbersIn(dictation));
   if (texts.some((t) => numbersIn(t).some((n) => !allowed.has(n)))) return { ok: false, code: 'invented_figure' };
   if (r.readyToOffer && !OFFER_WORDS.test(plain(dictation))) return { ok: false, code: 'invented_offer' };
@@ -199,7 +200,11 @@ export class ComptesRendus {
     if (!visit.ok) return visit;
     const row = await this.db.first<ReportRow>('SELECT * FROM visit_reports WHERE appointment_id = ?', [appointmentId]);
     if (!row) return { ok: false, rule: null, code: 'no_dictation' };
-    if (row.status === 'valide') return { ok: true, delivery: row.delivery_status ?? 'none', rule: row.delivery_rule };
+    if (row.status === 'valide') {
+      // Validé mais jamais parti (panne avant l'envoi) : il part maintenant.
+      if (row.delivery_status === null) return this.sendToSeller(appointmentId);
+      return { ok: true, delivery: row.delivery_status, rule: row.delivery_rule };
+    }
     const v = (await this.db.first<{ network_id: string; person_id: string; property_id: string; project_id: string; agent_id: string }>(
       'SELECT network_id, person_id, property_id, project_id, agent_id FROM visits WHERE appointment_id = ?',
       [appointmentId],
@@ -215,6 +220,10 @@ export class ComptesRendus {
     }
     if (!report) return { ok: false, rule: null, code: 'no_report' };
     if (this.names(report, await this.buyerNames(v.person_id))) return { ok: false, rule: 'R52', code: 'buyer_named' };
+    // Aucune coordonnée de la fiche de l'acquéreur, telle qu'elle y est rangée [R52].
+    const reportText = plain([report.opinion, ...report.strengths, ...report.reservations].join(' '));
+    const identifiers = (await this.fiche.view(v.person_id)).identifiers.map((i) => plain(i.value)).filter((x) => x.length > 2);
+    if (identifiers.some((x) => reportText.includes(x) || reportText.replace(/[\s.-]/g, '').includes(x.replace(/[\s.+-]/g, '')))) return { ok: false, rule: 'R52', code: 'contact' };
     const at = this.now();
     const iso = at.toISOString();
     const { changes } = await this.db.run(
@@ -243,7 +252,9 @@ export class ComptesRendus {
 
   /** Reprend les comptes rendus validés qui n'ont pas pu partir pour l'heure ou une panne. */
   async retry(): Promise<number> {
-    const rows = await this.db.all<{ appointment_id: string }>("SELECT appointment_id FROM visit_reports WHERE status = 'valide' AND delivery_status IN ('waiting', 'failed')");
+    const rows = await this.db.all<{ appointment_id: string }>(
+      "SELECT appointment_id FROM visit_reports WHERE status = 'valide' AND (delivery_status IS NULL OR delivery_status IN ('waiting', 'failed'))",
+    );
     let sent = 0;
     for (const r of rows) if ((await this.sendToSeller(r.appointment_id)).delivery === 'sent') sent += 1;
     return sent;
@@ -278,6 +289,7 @@ export class ComptesRendus {
       rule = null;
     } else {
       const sellerFirst = (await this.fiche.view(seller.person_id)).members.map((m) => m.first_name).find((n) => n) ?? null;
+      const sellerNames = await this.buyerNames(seller.person_id);
       const report = JSON.parse(row.report!) as VisitReport;
       const { text, figures } = sellerReportText(sellerFirst, new Date(appointment.start_at), report);
       const result = await this.controle.send({
@@ -291,7 +303,8 @@ export class ComptesRendus {
         fallbackTexts: [text],
         figures,
         // Le nom de l'acquéreur ne va jamais au vendeur [R52] : le contrôle du texte le refuse.
-        sellerNames: await this.buyerNames(v.person_id),
+        // Un prénom commun au vendeur et à l'acquéreur reste permis : c'est celui de la salutation.
+        sellerNames: (await this.buyerNames(v.person_id)).filter((n) => !sellerNames.some((x) => plain(x) === plain(n))),
       });
       messageId = result.messageId;
       rule = result.status === 'sent' ? null : result.rule;
