@@ -1,4 +1,4 @@
-import { Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, appointmentReminderJob, vendorFollowUpJob, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, appointmentBriefJob, appointmentReminderJob, vendorFollowUpJob, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 
 export interface SchedulerConfig {
@@ -20,12 +20,13 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
   const now = config.now ?? (() => new Date());
   const journal = new SqlJournalStore(config.db);
   try {
-    // Tâches du site notées sans appel, relance des vendeurs (E06) et rappels des rendez-vous (V04), par les canaux
-    // du mode essai.
+    // Tâches du site notées sans appel ; relance des vendeurs (E06) et rappels des rendez-vous (V04), par les canaux
+    // du mode essai ; briefs des rendez-vous (V05), rangés pour l'agent, sans aucun envoi.
     const jobs = config.jobs ?? [
       ...SITE_JOBS_TRIAL,
       vendorFollowUpJob(config.db, journal, { now }),
       appointmentReminderJob(config.db, journal, { now, linkBase: config.appointmentLinkBase || null }),
+      appointmentBriefJob(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
