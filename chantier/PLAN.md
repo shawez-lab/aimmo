@@ -374,3 +374,66 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Objectif : un banc qui compare la fourchette AIMMO à l'estimation de l'agent sur des biens anonymisés gardés hors du dépôt, et rend l'écart médian et chaque écart avec son explication.
 - Critères : écart médian de moins de 10 % sur 20 biens réels ; aucun bien réel dans le dépôt ; le banc se saute sans fichier.
 - Attend : H19.
+
+**M05 · Rendez-vous, février 2027.**
+
+Découpé le 2026-10-27. Ids `V..` pour rendez-Vous. Cahier : M05 Rendez-vous ; Feuille de route, février 2027.
+Décidé, lecture prudente : l'agenda Google passe par une interface, avec un faux agenda dans les tests ; le vrai branchement attend H21. Tout message (confirmation, rappel, tournée partagée) passe par le contrôle central, avec les seuls canaux du mode essai tant que le plan n'a pas mis d'envoi en service. Les durées et le temps de trajet sont des réglages.
+
+### V01 · Disponibilités et créneaux libres
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : rien
+- Cahier : M05, « Créneaux libres » et « Règles ».
+- Objectif : à partir des disponibilités que l'agent fixe (jours, heures, exceptions) et des événements occupés de son agenda (interface), rendre les créneaux libres par type de rendez-vous (estimation, visite, signature, appel), chacun avec sa durée, en gardant le temps de trajet entre deux rendez-vous.
+- Critères : aucun créneau hors des disponibilités de l'agent ni sur un événement occupé [R33] ; aucun créneau qui chevauche un rendez-vous ou ne laisse pas le temps de trajet [R32] ; heure de Paris, changement d'heure compris ; un appel ne demande pas de trajet.
+
+### V02 · Réservation, confirmation et annulation
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : V01
+- Cahier : M05, « Réservation en ligne » et « Critères d'acceptation ».
+- Objectif : la table des rendez-vous ; réserver un créneau libre de façon atomique, confirmer tout de suite par le contrôle central (mode essai), décaler ou annuler par un lien à jeton ; le créneau annulé redevient libre aussitôt.
+- Critères : deux réservations du même créneau en même temps, une seule passe [R32] ; une annulation libère le créneau en moins d'une minute ; 10 rendez-vous tests sans doublon ni oubli ; le lien ne porte ni nom ni coordonnée, et ne sert qu'à son rendez-vous.
+
+### V03 · Agenda Google derrière une interface
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : V02
+- Cahier : M05, « Branchements » (API Google Agenda, dans les deux sens).
+- Objectif : lire les événements occupés de l'agent et écrire ses rendez-vous dans son agenda, derrière une interface ; un faux agenda dans les tests ; une modification faite dans l'agenda revient sur le rendez-vous.
+- Critères : un rendez-vous n'est écrit qu'une fois dans l'agenda ; une panne de l'agenda ne perd aucune réservation et est notée ; l'agenda ne reçoit que l'heure, le type et un intitulé sans coordonnée.
+- Attend : H21 pour le vrai branchement ; le reste se fait avant.
+
+### V04 · Rappels la veille et le jour même
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : V02, B02
+- Cahier : M05, « Rappels » et « Règles ».
+- Objectif : par le planificateur, un rappel la veille et un le jour même, avec le lien pour décaler ou annuler, par le contrôle central, en mode essai.
+- Critères : aucun rappel le dimanche ni hors des heures d'envoi [R01] ; un rappel de chaque sorte au plus par rendez-vous [R05] ; rien pour un rendez-vous annulé ; jamais à une personne exclue ou qui a demandé l'arrêt [R02, R04].
+
+### V05 · Brief du rendez-vous
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : V02, E01
+- Cahier : M05, « Brief du rendez-vous ».
+- Objectif : une heure avant chaque rendez-vous, un brief rangé pour l'agent : le client et son histoire, le bien, les ventes du quartier, les questions à prévoir, les documents à apporter, le lien d'itinéraire vers l'application de navigation.
+- Critères : chaque élément du brief vient de la base ou d'une source citée, rien d'inventé [R34] ; ce qui manque est dit ; 10 briefs tests prêts une heure avant ; le brief n'est lu que par l'agent du rendez-vous.
+
+### V06 · Statut et compte rendu
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : V02
+- Cahier : M05, « Statut ».
+- Objectif : l'agent marque le rendez-vous honoré, absent ou annulé, puis range son compte rendu (texte dicté, la transcription viendra avec l'application de l'agent) ; une tâche suit un absent.
+- Critères : seul l'agent du rendez-vous change son statut ; un statut final ne change plus ; le journal ne porte pas le texte du compte rendu [R13].
+
+### V07 · Visites enchaînées et tournée partagée
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : V01
+- Cahier : M05, « Visites enchaînées » et « Règles » (tournée partagée).
+- Objectif : proposer un ordre de visites dans un même secteur qui tient dans les disponibilités et les temps de trajet ; l'agent peut envoyer sa tournée du jour à un proche ou à son accompagnateur, par le contrôle central, en mode essai.
+- Critères : l'ordre proposé respecte R32 et R33 ; la tournée envoyée ne porte que les heures et les communes, jamais d'adresse exacte ni de nom de client [R09] ; rien ne part sans que l'agent le demande.
+
+### V08 · Réservation depuis le site et les messages, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : V02
+- Cahier : M05, « Réservation en ligne ».
+- Objectif : des routes de l'API pour lister les créneaux libres d'un agent et réserver, appelées par le site, l'assistant et l'espace client, avec la clé de l'appelant ; en mode essai.
+- Critères : aucune donnée de l'agenda au-delà des créneaux libres ; limites d'appels ; une réservation rend sa confirmation tout de suite ; rien ne part en mode essai.
+- Attend : H14 pour le premier appelant réel.

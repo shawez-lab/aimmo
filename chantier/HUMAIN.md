@@ -25,5 +25,6 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H18 | Préparer 50 contacts réels anonymisés (sans nom, numéro, mail ni adresse), chacun avec le classement que Shawez lui aurait donné, au format décrit dans `docs/MESURE.md`, et lancer la mesure comme il l'explique, sur une machine hors du dépôt (jamais dans le dépôt) | Shawez | Q05, mesure de M03 | signalé le 2026-10-27 |
 | H19 | Préparer 20 biens réels anonymisés (sans adresse exacte, nom ni numéro) avec l'estimation que l'agent en a faite, au format que décrira E07, et lancer la mesure comme il l'expliquera, hors du dépôt | Shawez | E07, mesure de M04 | signalé le 2026-10-27 |
 | H20 | Lancer la vérification de la collecte sur 10 adresses de biens connus de l'agence, hors du dépôt, comme le décrit `docs/MESURE.md` (la séance de Claude n'a pas accès aux services publics) | Shawez | E03, critère de M04 | plus tard |
+| H21 | Accorder l'accès à Google Agenda par API (écran d'accord de Google) pour l'agenda de chaque agent, quand V03 le demandera | Shawez | V03 réel | plus tard |
 
 Quand une tâche à moins de trois places de la tête du plan attend une ligne « plus tard », la séance la marque « signalé le <date> » et la dit une fois dans « Besoin de toi ».
