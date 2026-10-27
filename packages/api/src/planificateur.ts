@@ -1,4 +1,4 @@
-import { Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, alertsJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Acces, FicheClient, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 
 export interface SchedulerConfig {
@@ -41,6 +41,11 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       mandateDeadlinesJob(config.db, journal, { now }),
       // Alertes aux acquéreurs (T03), de 9 h à 19 h, par les canaux du mode essai seulement.
       alertsJob(config.db, journal, { now, unsubscribeBase: config.alertUnsubscribeBase || null }),
+      // Comptes rendus de visite validés en attente (T06), au passage suivant, par les canaux du mode essai.
+      visitReportsJob(config.db, journal, () => {
+        const store = new FicheClient(config.db, { now });
+        return new Visites(config.db, journal, new Acces(config.db, store, new FicheUnique(config.db, store, { now }), journal, { now }), { now });
+      }, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
