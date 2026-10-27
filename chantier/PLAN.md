@@ -260,12 +260,14 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Reste : remarques mineures de Codex (#25) : agent parti sur une fiche réunie lors d'une attribution, reprise des effets d'une attribution interrompue, délai qui repart à chaque nouveau message ; relecture forte (1 P1 corrigé), Codex sans P0 ni P1.
 
 ### Q04 · Tâche « rappeler » et liste des contacts chauds
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : Q02, Q03
 - Cahier : M03, point 5 ; Feuille de route, décembre 2026 : rapport du matin.
 - Objectif : une tâche « rappeler » pour chaque contact chaud, chez son agent, et la liste des contacts chauds du matin et du soir, rendue par l'API sous droits d'accès [R16].
 - Critères : chaque contact chaud a sa tâche en moins d'une minute, sur une horloge simulée ; une seule tâche par contact et par projet [R18] ; la liste ne montre à un agent que ses contacts [R16] ; aucun contact exclu n'y figure [R25] ; aucune notification n'est envoyée (l'application viendra en janvier).
 - Attend : rien.
+- Décidé (2026-10-27) : la clé d'une tâche est son projet (une seule tâche par projet, fusion comprise) ; « matin » avant 14 h, heure de Paris, « soir » ensuite ; la liste passe par `Acces.listPersons` [R16].
+- Reste : remarque mineure de Codex (#26) : tâches portées par une fiche réunie à une fiche visible ; relecture forte (1 P1 corrigé), Codex sans P0 ni P1.
 
 ### Q05 · Qualification dans la chaîne de captation, et mesure sur cas réels
 - Statut : à faire
