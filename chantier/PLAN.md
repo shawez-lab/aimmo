@@ -701,7 +701,8 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : rien.
 
 ### T08 · Routes et écrans « Acquéreurs » et « Visite » de l'application de l'agent
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : la dictée passe par le micro du clavier du téléphone, sans reconnaissance vocale dans le navigateur (elle enverrait la dictée à un service extérieur) ; le lien WhatsApp ne sert qu'une fois et expire au bout de deux minutes ; en mode essai l'écran dit que la direction n'est pas prévenue par message et donne le 112. Reste à faire, hors T08 : rattacher une visite réservée en ligne (V08) à la recherche d'un acquéreur, pour lui ouvrir un dossier de visite.
 - Qui : Claude · Relecture : forte · Dépend de : T03, T05, T06, T07
 - Cahier : M08 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/acquereurs` (fiche, rapprochement, carte de la demande, alertes), `/v1/visites` (visite, bon, confirmation, alerte, compte rendu) et `/v1/points` ; dans l'application de l'agent, l'écran d'un bien avec ses acquéreurs et sa carte de la demande, et l'écran de visite avec le bouton de dictée, la validation en un geste et l'alerte en un geste.
