@@ -12,6 +12,7 @@ import {
   FicheClient,
   CATEGORIES,
   FicheUnique,
+  JourneeRendezVous,
   Qualification,
   ROUTES as NEXT_MODULES,
   PlansDuJour,
@@ -202,6 +203,16 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer) => {
       const plan = await new PlansDuJour(s.db, s.journal, { now: s.now }).read(viewer);
       return plan.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: plan.value }) : refusal({ rule: plan.rule, code: plan.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/rendez-vous\/jour$/,
+    name: 'rendez_vous.jour',
+    // Les rendez-vous du jour de l'agent, heure de Paris, avec leur brief rangé : l'agent seul lit les siens [R16].
+    handle: async (s, viewer) => {
+      const day = await new JourneeRendezVous(s.db, s.journal, { now: s.now }).read(viewer);
+      return day.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: day.value }) : refusal({ rule: day.rule, code: day.code });
     },
   },
   {

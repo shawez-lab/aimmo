@@ -1,0 +1,64 @@
+/**
+ * Un petit document inventé pour faire tourner le script de l'application de l'agent dans les tests, sans
+ * navigateur. Il ne sait pas lire du HTML : un texte posé reste un texte, ce qui est exactement ce que le script doit
+ * faire.
+ */
+export class FakeElement {
+  hidden = true;
+  value = '';
+  className = '';
+  children: FakeElement[] = [];
+  attributes: Record<string, string> = {};
+  listeners: Record<string, (e: unknown) => void> = {};
+  private text = '';
+
+  constructor(
+    readonly tagName: string,
+    readonly id: string | null = null,
+  ) {}
+
+  get textContent(): string {
+    return this.text + this.children.map((c) => c.textContent).join('');
+  }
+  set textContent(v: string) {
+    this.children = [];
+    this.text = v;
+  }
+  get firstChild(): FakeElement | null {
+    return this.children[0] ?? null;
+  }
+  appendChild(child: FakeElement): FakeElement {
+    this.children.push(child);
+    return child;
+  }
+  removeChild(child: FakeElement): FakeElement {
+    this.children = this.children.filter((c) => c !== child);
+    return child;
+  }
+  setAttribute(name: string, value: string): void {
+    this.attributes[name] = String(value);
+  }
+  addEventListener(name: string, f: (e: unknown) => void): void {
+    this.listeners[name] = f;
+  }
+  /** Tous les éléments en dessous, en profondeur. */
+  all(): FakeElement[] {
+    return this.children.flatMap((c) => [c, ...c.all()]);
+  }
+}
+
+/** Les éléments de la page qui portent un `id`, tels que le script les cherche. */
+export function fakeDocument(ids: readonly string[]) {
+  const els: Record<string, FakeElement> = {};
+  for (const id of ids) els[id] = new FakeElement('div', id);
+  const listeners: Record<string, () => void> = {};
+  const document = {
+    getElementById: (id: string) => els[id],
+    createElement: (tag: string) => new FakeElement(tag),
+    addEventListener: (n: string, f: () => void) => (listeners[n] = f),
+  };
+  return { els, listeners, document };
+}
+
+/** Les `id` de la page servie, lus dans son HTML. */
+export const pageIds = (html: string): string[] => [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]!);
