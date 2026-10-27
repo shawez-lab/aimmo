@@ -1,3 +1,4 @@
+import { UNSUBSCRIBE_PATH, handleUnsubscribe } from './alertes.ts';
 import {
   AIMMO_VERSION,
   ATTRIBUTION_RULES,
@@ -808,6 +809,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // L'application de l'agent (A01) : une coquille sans aucune donnée, servie seulement en mode essai.
   const app = handleAgentApp(request);
   if (app) return config.mode === TRIAL_MODE ? app : failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+  // La désinscription des alertes (T03) : une page publique, sans clé, hors de /v1 pour que le lien n'ait aucun chiffre.
+  if (url.pathname.startsWith(UNSUBSCRIBE_PATH)) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    try {
+      const page = await handleUnsubscribe(request, { db: config.db, now });
+      if (page) return page;
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:desinscription', 'alertes.desinscription', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
   if (!url.pathname.startsWith(`${API_PREFIX}/`)) return failure(404, 'not_found', 'Adresse inconnue.');
   const path = url.pathname.slice(API_PREFIX.length);
 

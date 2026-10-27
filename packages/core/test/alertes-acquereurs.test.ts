@@ -39,7 +39,7 @@ async function setup(options: { writer?: { write(brief: AlertBrief): Promise<str
   const diffusion: DiffusionGate = {
     canDiffuse: async (_n, id) => (blocked.has(id) ? { allowed: false, reason: 'withdrawal_period' } : { allowed: true, reason: 'allowed' }),
   };
-  const alertes = new Alertes(db, journal, { now, diffusion, ...(options.writer ? { writer: options.writer } : {}) });
+  const alertes = new Alertes(db, journal, { now, diffusion, unsubscribeBase: BASE, ...(options.writer ? { writer: options.writer } : {}) });
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
   const direction = { role: 'direction' as const, userId: 'd1', networkId: network.id };
@@ -63,9 +63,10 @@ async function setup(options: { writer?: { write(brief: AlertBrief): Promise<str
       `SELECT m.id, m.body, m.channel, m.person_id FROM messages m JOIN trial_outbox t ON t.message_id = m.id ${personId ? 'WHERE m.person_id = ?' : ''} ORDER BY m.occurred_at`,
       personId ? [personId] : [],
     );
-  return { db, store, journal, alertes, network, alex, buyer, property, sent, blocked, setClock: (t: number) => (clock = t), clock: () => clock };
+  return { db, store, journal, alertes, diffusion, network, alex, buyer, property, sent, blocked, setClock: (t: number) => (clock = t), clock: () => clock };
 }
 
+const BASE = 'https://aimmo.example.test/alertes/desinscription/';
 const TALANT = { propertyKinds: ['house' as const], communes: ['Talant'], budgetMaxEur: 300_000 };
 const MAISON = { city: 'Talant', price: 280_000, surface: 95, rooms: 4 };
 
@@ -115,7 +116,7 @@ describeWithSqlite('T03 · alertes aux acquéreurs, en mode essai', () => {
     const props = [await t.property('B1', MAISON), await t.property('B2', { ...MAISON, price: 250_000 })];
     // Deux passages en même temps : un seul message par bien et par personne.
     await Promise.all([t.alertes.run(), t.alertes.run()]);
-    const planificateur = new Planificateur(t.db, t.journal, [alertsJob(t.db, t.journal, { now: () => new Date(t.clock()), diffusion: { canDiffuse: async () => ({ allowed: true, reason: 'allowed' }) } })], { now: () => new Date(t.clock()) });
+    const planificateur = new Planificateur(t.db, t.journal, [alertsJob(t.db, t.journal, { now: () => new Date(t.clock()), unsubscribeBase: BASE, diffusion: { canDiffuse: async () => ({ allowed: true, reason: 'allowed' }) } })], { now: () => new Date(t.clock()) });
     for (let h = 1; h <= 30 * 24; h += 1) {
       t.setClock(TUESDAY_10H + h * HOUR);
       await planificateur.tick();
@@ -127,6 +128,42 @@ describeWithSqlite('T03 · alertes aux acquéreurs, en mode essai', () => {
     const subjects = await t.db.all<{ person_id: string; subject: string; n: number }>('SELECT person_id, subject, count(*) AS n FROM message_subjects GROUP BY person_id, subject');
     expect(subjects).toHaveLength(4);
     for (const s of subjects) expect(Number(s.n)).toBe(1);
+  });
+
+  it('sans lien de désinscription réglé, aucune alerte ne part, et le journal le dit [R49]', async () => {
+    const t = await setup();
+    await t.buyer('Inès', TALANT);
+    await t.property('B1', MAISON);
+    const sans = new Alertes(t.db, t.journal, { diffusion: t.diffusion, now: () => new Date(t.clock()) });
+    expect(await sans.run()).toEqual([]);
+    expect(await t.sent()).toHaveLength(0);
+    expect((await t.journal.all()).some((e) => e.type === 'alerte.sans_lien')).toBe(true);
+    expect(() => new Alertes(t.db, t.journal, { unsubscribeBase: 'https://aimmo.example.test/v1/desinscription/' })).toThrow();
+  });
+
+  it('un refus qui tient au canal laisse essayer le canal accordé suivant [R22]', async () => {
+    const t = await setup();
+    const b = await t.buyer('Inès', TALANT, 'instagram');
+    await t.store.addIdentifier({ networkId: t.network.id, personId: b.person.id, kind: 'phone', value: '+33 6 00 00 00 01' });
+    await t.store.addConsent({ networkId: t.network.id, personId: b.person.id, purpose: ALERT_PURPOSE, channel: 'sms', proof: 'test', givenAt: new Date(TUESDAY_10H - 10 * DAY) });
+    // Dernier message Instagram il y a trois jours : la fenêtre de Meta est fermée.
+    await t.store.recordMessage({ networkId: t.network.id, personId: b.person.id, channel: 'instagram', direction: 'in', authorKind: 'person', body: 'Bonjour', occurredAt: new Date(TUESDAY_10H - 3 * DAY) });
+    const prop = await t.property('B1', MAISON);
+    expect(await t.alertes.forProperty(t.network.id, prop.id)).toMatchObject([{ status: 'sent' }]);
+    const msgs = await t.sent();
+    expect(msgs.map((m) => m.channel)).toEqual(['sms']);
+  });
+
+  it('un bien déjà envoyé à la personne par un autre chemin, WhatsApp de l’agent compris, bloque l’alerte [R05]', async () => {
+    const t = await setup();
+    const b = await t.buyer('Inès', TALANT);
+    const prop = await t.property('B1', MAISON);
+    const earlier = await t.store.recordMessage({ networkId: t.network.id, personId: b.person.id, channel: 'whatsapp', direction: 'out', authorKind: 'agent', body: 'Je vous envoie ce bien.', occurredAt: new Date(TUESDAY_10H - DAY) });
+    await t.db.run('INSERT INTO message_subjects (message_id, network_id, person_id, subject, created_at) VALUES (?, ?, ?, ?, ?)', [earlier.id, t.network.id, b.person.id, `bien:${prop.id}`, new Date(TUESDAY_10H - DAY).toISOString()]);
+    expect(await t.alertes.forProperty(t.network.id, prop.id)).toMatchObject([{ status: 'refused', rule: 'R05' }]);
+    expect(await t.sent()).toHaveLength(0);
+    // Refus définitif : le passage suivant ne réessaie pas.
+    expect(await t.alertes.forProperty(t.network.id, prop.id)).toMatchObject([{ status: 'done' }]);
   });
 
   it('le contrôle central garde exclusions, arrêt et horaires [R01, R02, R04] ; une alerte refusée pour l’heure part au passage suivant', async () => {

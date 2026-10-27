@@ -58,8 +58,11 @@ export interface AlertesOptions {
   diffusion?: DiffusionGate;
   /** Les canaux ; absents : ceux du mode essai, rien ne part [R26]. */
   channels?: readonly OutboundChannel[];
-  /** Le début du lien de désinscription, sans chiffre ; le jeton s'y ajoute. */
-  unsubscribeBase?: string;
+  /**
+   * Le début du lien de désinscription, en https, sans chiffre, terminé par `/` ; le jeton s'y ajoute. Absent : aucune
+   * alerte ne part, faute de désinscription possible [R49].
+   */
+  unsubscribeBase?: string | null;
   now?: () => Date;
 }
 
@@ -126,7 +129,7 @@ export class Alertes {
   private readonly fiche: FicheUnique;
   private readonly controle: ControleEnvois;
   private readonly rapprochement: Rapprochement;
-  private readonly unsubscribeBase: string;
+  private readonly unsubscribeBase: string | null;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -144,12 +147,19 @@ export class Alertes {
     });
     const gate = options.diffusion ?? new Diffusion(db, new Acces(db, this.store, this.fiche, journal, { now: this.now }), journal, { now: this.now });
     this.rapprochement = new Rapprochement(db, this.fiche, gate, journal, { now: this.now });
-    this.unsubscribeBase = options.unsubscribeBase ?? 'https://aimmo-api.invalid/alertes/desinscription/';
-    if (/\d/.test(this.unsubscribeBase)) throw new Error('Le lien de désinscription ne porte aucun chiffre [R10].');
+    this.unsubscribeBase = options.unsubscribeBase ?? null;
+    if (this.unsubscribeBase !== null && !/^https:\/\/[^\s\d]+\/$/.test(this.unsubscribeBase)) {
+      throw new Error('Le lien de désinscription est en https, sans chiffre [R10], terminé par « / ».');
+    }
   }
 
   /** Un passage : chaque bien en vente du réseau, chaque acquéreur qui en remplit tous les critères. */
   async run(): Promise<AlertOutcome[]> {
+    if (this.unsubscribeBase === null) {
+      // Sans lien de désinscription, aucune alerte : la tâche le dit au journal, sans donnée [R49].
+      await appendEvent(this.journal, { type: 'alerte.sans_lien', actor: 'system:alertes', subject: null, data: { rule: 'R49' } }, this.now);
+      return [];
+    }
     const properties = await this.db.all<{ id: string; network_id: string }>(
       "SELECT id, network_id FROM properties WHERE status = 'available' ORDER BY created_at, id",
     );
@@ -160,6 +170,7 @@ export class Alertes {
 
   /** Les alertes d'un bien : rien si la diffusion le refuse [R42]. */
   async forProperty(networkId: string, propertyId: string): Promise<AlertOutcome[]> {
+    if (this.unsubscribeBase === null) return [];
     const matches = (await this.rapprochement.systemMatches(networkId, propertyId)).filter((m) => m.status === 'match');
     const outcomes: AlertOutcome[] = [];
     for (const m of matches) outcomes.push(await this.alertOne(networkId, propertyId, m.personId, m.projectId, m.agentId, m.property));
@@ -212,7 +223,8 @@ export class Alertes {
       `SELECT channel FROM consents WHERE person_id IN (${placeholders(ids.length)}) AND purpose = ? AND given_at <= ? AND (withdrawn_at IS NULL OR withdrawn_at > ?)`,
       [...ids, ALERT_PURPOSE, iso, iso],
     );
-    const channel = ALERT_CHANNELS.find((c) => consents.some((k) => k.channel === c));
+    const channels = ALERT_CHANNELS.filter((c) => consents.some((k) => k.channel === c));
+    const channel = channels[0];
     if (!channel) return { propertyId, personId, status: 'no_consent', rule: 'R49' };
 
     // Réservation : de deux passages simultanés, un seul envoie.
@@ -231,6 +243,7 @@ export class Alertes {
     let status: AlertOutcome['status'];
     let rule: string | null;
     let messageId: string | null = null;
+    let usedChannel: OutboundChannelName = channel;
     try {
       const token = newToken();
       await this.db.run('INSERT INTO alert_unsubscribe_tokens (token_hash, network_id, person_id, created_at, used_at) VALUES (?, ?, ?, ?, NULL)', [
@@ -242,38 +255,47 @@ export class Alertes {
       const link = `Ne plus recevoir ces alertes : ${this.unsubscribeBase}${token}`;
       const names = await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${placeholders(ids.length)})`, ids);
       const firstName = names.map((n) => n.first_name).find((n) => n) ?? null;
-      const brief: AlertBrief = {
-        channel,
-        property: {
-          kind: property.kind,
-          city: property.city,
-          priceEur: property.priceEur,
-          surfaceM2: property.surfaceM2,
-          rooms: property.rooms,
-          bedrooms: property.bedrooms,
-          features: property.features,
-        },
-      };
       const writer = this.options.writer;
       // Le lien est placé par le code, jamais par l'IA [R49].
       const withLink = (text: string): string => `${text.trim()}\n\n${link}`;
-      const result = await this.controle.send({
-        networkId,
-        agentId,
-        personId,
-        projectId,
-        channel,
-        kind: 'alert',
-        purpose: ALERT_PURPOSE,
-        propertyIds: [propertyId],
-        // L'IA écrit le corps, sans salutation : le prénom, qu'elle ne reçoit pas, est placé par le code [R08, R15].
-        ...(writer ? { compose: async () => withLink(`${firstName ? `Bonjour ${firstName},` : 'Bonjour,'} ${(await writer.write(brief)).trim()}`) } : {}),
-        fallbackTexts: [withLink(alertFallbackText(firstName, brief.property, channel))],
-        figures: [property.priceEur, property.surfaceM2, property.rooms, property.bedrooms].filter((n): n is number => n !== null),
-      });
-      messageId = result.messageId;
-      rule = result.status === 'sent' ? null : result.rule;
-      status = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' ? 'waiting' : 'refused';
+      status = 'refused';
+      rule = null;
+      // Chaque canal accordé, dans l'ordre : un refus qui tient au canal (fenêtre de Meta, accord du canal, pas de
+      // coordonnée) laisse essayer le suivant ; un refus qui tient à la personne, au bien ou à l'heure arrête là.
+      for (const via of channels) {
+        const brief: AlertBrief = {
+          channel: via,
+          property: {
+            kind: property.kind,
+            city: property.city,
+            priceEur: property.priceEur,
+            surfaceM2: property.surfaceM2,
+            rooms: property.rooms,
+            bedrooms: property.bedrooms,
+            features: property.features,
+          },
+        };
+        const result = await this.controle.send({
+          networkId,
+          agentId,
+          personId,
+          projectId,
+          channel: via,
+          kind: 'alert',
+          purpose: ALERT_PURPOSE,
+          propertyIds: [propertyId],
+          // L'IA écrit le corps, sans salutation : le prénom, qu'elle ne reçoit pas, est placé par le code [R08, R15].
+          ...(writer ? { compose: async () => withLink(`${firstName ? `Bonjour ${firstName},` : 'Bonjour,'} ${(await writer.write(brief)).trim()}`) } : {}),
+          fallbackTexts: [withLink(alertFallbackText(firstName, brief.property, via))],
+          figures: [property.priceEur, property.surfaceM2, property.rooms, property.bedrooms].filter((n): n is number => n !== null),
+        });
+        messageId = result.messageId;
+        rule = result.status === 'sent' ? null : result.rule;
+        status = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' ? 'waiting' : 'refused';
+        usedChannel = via;
+        const channelBound = result.status === 'refused' && (result.rule === 'R22' || result.rule === 'R03' || result.rule === null);
+        if (!channelBound) break;
+      }
     } catch (error) {
       // Une panne avant l'envoi ne perd pas l'alerte : elle repart au passage suivant ; le contrôle central garde
       // l'anti-doublon du bien [R05].
@@ -284,10 +306,11 @@ export class Alertes {
       ]);
       throw error;
     }
-    await this.db.run('UPDATE property_alerts SET status = ?, rule = ?, message_id = ?, updated_at = ? WHERE property_id = ? AND person_id = ?', [
+    await this.db.run('UPDATE property_alerts SET status = ?, rule = ?, message_id = ?, channel = ?, updated_at = ? WHERE property_id = ? AND person_id = ?', [
       status,
       rule,
       messageId,
+      usedChannel,
       this.now().toISOString(),
       propertyId,
       personId,

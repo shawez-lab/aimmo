@@ -26,6 +26,8 @@ export interface Env {
   DVF_BASE_URL?: string;
   /** Début du lien pour décaler ou annuler un rendez-vous (V04), en https, sans chiffre, terminé par `/`. */
   RDV_LINK_BASE?: string;
+  /** Début du lien de désinscription des alertes (T03), en https, sans chiffre, terminé par `/alertes/desinscription/`. */
+  ALERT_UNSUBSCRIBE_BASE?: string;
 }
 
 /**
@@ -63,6 +65,7 @@ export default {
       db: fromD1(env.DB),
       mode: env.MODE,
       appointmentLinkBase: env.RDV_LINK_BASE,
+      alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       communeRanges: estimation ? new EstimationEnLigne(estimation.geocoder, estimation.sales) : null,
     });
   },

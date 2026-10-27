@@ -10,6 +10,8 @@ export interface SchedulerConfig {
   appointmentLinkBase?: string | undefined;
   /** La fourchette des communes (E05) pour le suivi de valeur ; absente, le suivi ne prépare aucun envoi. */
   communeRanges?: CommuneRanges | null;
+  /** Variable `ALERT_UNSUBSCRIBE_BASE` : début du lien de désinscription des alertes ; absente, aucune alerte [R49]. */
+  alertUnsubscribeBase?: string | undefined;
   now?: () => Date;
 }
 
@@ -38,7 +40,7 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Échéances des mandats (D06), à 6 h : tâches pour l'agent, sans aucun envoi.
       mandateDeadlinesJob(config.db, journal, { now }),
       // Alertes aux acquéreurs (T03), de 9 h à 19 h, par les canaux du mode essai seulement.
-      alertsJob(config.db, journal, { now }),
+      alertsJob(config.db, journal, { now, unsubscribeBase: config.alertUnsubscribeBase || null }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
