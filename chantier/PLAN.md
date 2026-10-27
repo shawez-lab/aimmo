@@ -716,7 +716,8 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : H09 pour le vrai numéro de carte ; les tests utilisent un numéro inventé.
 
 ### P03 · Annonce rédigée par l'IA, sourcée, validée par l'agent
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : un nombre doit venir du champ que son unité désigne, sans unité seulement l'année, le code postal ou le total d'étages après « sur » ; le prix n'est jamais dans le texte ; toute voie nommée est refusée ; critères discriminants et équipements sans champ en listes fermées, lues sans accents, au pluriel et au féminin ; texte de l'IA refusé remplacé par le texte de secours du code ; Codex sans relecture au bout de 15 min, fusion sans lui
 - Qui : Claude · Relecture : forte · Dépend de : P02
 - Cahier : M07, « Annonce » et « L'IA et l'humain » ; Conformité, non-discrimination.
 - Objectif : l'IA, derrière une interface (fausse IA dans les tests), propose un titre et un texte à partir des seules données de la fiche ; le code vérifie le texte, y ajoute les mentions de P02, et l'agent du bien le valide ou le corrige ; seule une version validée peut être publiée.
@@ -725,7 +726,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : H13 pour la vraie IA.
 
 ### P04 · Publication partout, au même prix, en mode essai
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : P03
 - Cahier : M07, « Diffusion » ; critères « publié partout en moins d'une heure, au même prix » et « changement de prix répercuté partout en moins de 15 minutes ».
 - Objectif : publier une annonce validée vers chaque canal (site, réseaux sociaux, fiche Google, portails) derrière une interface, en mode essai ; une version publiée unique, la même partout ; un changement de prix (avenant signé) ou d'état (sous offre, vendu, mandat arrêté) crée une nouvelle version poussée à chaque canal par le planificateur ; un retrait quand `canDiffuse` dit non.
