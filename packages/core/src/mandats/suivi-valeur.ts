@@ -95,7 +95,7 @@ interface TrackingRow {
  * message. Dans le doute, pas d'alerte : l'agent ne démarche jamais quelqu'un qui a dit non. Règles fixes, sans IA.
  */
 const SELLING_INTENT =
-  /\b(je|j|nous|on)\s+(pense|pensons|envisage|envisageons|souhaite|souhaitons|voudrais|voudrions|veux|voulons|aimerais|aimerions|compte|comptons|vais|allons|songe|songeons|reflechis|reflechissons|prevois|prevoyons)\s+(serieusement\s+|bien\s+|peut etre\s+)?(a|de|d)?\s*(vendre|mettre en vente|la vente)\b|\b(pret|prets|prete|pretes)\s+a\s+vendre\b|\bmettre (ma|mon|notre|nos) \S+ en vente\b/;
+  /\b(je|j|nous|on)\s+(pense|pensons|envisage|envisageons|souhaite|souhaitons|voudrais|voudrions|veux|voulons|aimerais|aimerions|compte|comptons|vais|allons|songe|songeons|reflechis|reflechissons|prevois|prevoyons)\s+(serieusement\s+|bien\s+|peut etre\s+)?(a|de|d)?\s*(vendre|mettre en vente|la vente)\b|\b(je suis|nous sommes|on est)\s+(pret|prets|prete|pretes)\s+a\s+vendre\b|\bmettre (ma|mon|notre|nos) \S+ en vente\b/;
 const NEGATION = /\b(ne|n)\b[^.!?]{0,40}\b(pas|plus|jamais|point|guere)\b|\bpas (question|du tout|maintenant|pour l instant|pour le moment|encore)\b|\bhors de question\b|\baucune(ment)?\b|\bnon merci\b|\bjamais\b|\bstop\b/;
 
 export function saysSellingIntent(text: string): boolean {
