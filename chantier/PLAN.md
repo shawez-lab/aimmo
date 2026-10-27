@@ -334,7 +334,7 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Critères : aucune écriture ni appel autre qu'une lecture ; jamais de numéro de voie ni de nom rendu [R29] ; une tuile absente ou illisible ne casse rien et est comptée ; jeux de test inventés au format du site.
 
 ### E03 · Collecte des données publiques du bien
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : normale · Dépend de : E01
 - Cahier : M04, « Collecte automatique » et « Branchements ».
 - Objectif : à partir d'une adresse, retrouver ses coordonnées (Base adresse nationale), la parcelle (cadastre), le diagnostic énergétique (ADEME) et les risques (Géorisques), chacun derrière une interface, avec ce qui manque dit clairement.
@@ -342,7 +342,7 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Attend : H20 pour la vérification réelle sur 10 biens ; le reste se fait avant.
 
 ### E04 · Brouillon d'avis de valeur et validation par l'agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : E01, E02, E03
 - Cahier : M04, « Rédaction par l'IA » et « Validation ».
 - Objectif : un brouillon d'avis (méthode, comparables sans nom, fourchette, arguments, plan de commercialisation, date des données) rangé sur le bien ; l'IA rédige derrière une interface, un texte de secours sans IA sinon ; l'agent ajuste la fourchette et le texte, puis valide ; la mise en page à la marque de l'agent se fait sur le brouillon validé.
