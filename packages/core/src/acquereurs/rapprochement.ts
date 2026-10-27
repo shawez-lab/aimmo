@@ -326,6 +326,32 @@ export class Rapprochement {
     return { ok: true, value: { activeBuyers: active, matching, nearMisses } };
   }
 
+  /**
+   * Le rapprochement fait par le système, sans lecteur : pour les alertes (T03), sur tout le réseau. Rend, pour chaque
+   * personne, son meilleur projet, avec l'agent qui la suit ; jamais une donnée de plus. Le bien doit être diffusable,
+   * sinon rien [R42].
+   */
+  async systemMatches(
+    networkId: string,
+    propertyId: string,
+  ): Promise<{ personId: string; projectId: string; agentId: string | null; status: 'match' | 'tolerated'; property: MatchProperty }[]> {
+    const p = await this.db.first<Property>('SELECT * FROM properties WHERE id = ? AND network_id = ?', [propertyId, networkId]);
+    if (!p) return [];
+    if (!(await this.diffusion.canDiffuse(networkId, propertyId, this.now())).allowed) return [];
+    const property = await this.toMatch(p);
+    const out: { personId: string; projectId: string; agentId: string | null; status: 'match' | 'tolerated'; property: MatchProperty }[] = [];
+    for (const c of await this.candidates(networkId)) {
+      const best = c.projects
+        .map((x): Scored => ({ c, ...x, m: matchBuyer(property, x.search, this.tolerances) }))
+        .filter((x) => x.m.status !== 'miss')
+        .sort(compareScored)[0];
+      if (!best) continue;
+      const agentId = c.agentIds.find((a) => a !== null) ?? null;
+      out.push({ personId: c.rootId, projectId: best.projectId, agentId, status: best.m.status as 'match' | 'tolerated', property });
+    }
+    return out;
+  }
+
   /** Le bien vu par le rapprochement : sa fiche de base, et sa fiche complète (P01) quand elle existe. */
   private async toMatch(p: Property): Promise<MatchProperty> {
     let bedrooms: number | null = null;
