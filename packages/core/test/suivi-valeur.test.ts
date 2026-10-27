@@ -12,6 +12,7 @@ import {
   fromSyncSqlite,
   valueTrackingJob,
   valueTrackingText,
+  saysSellingIntent,
   type CommuneRanges,
   type CommuneResult,
   type SqlDatabase,
@@ -185,6 +186,11 @@ describeWithSqlite('G04 · suivi de valeur, en mode essai', () => {
     expect(await t.outbox()).toEqual([]);
   });
 
+  it('seule une intention positive de vendre, sans négation, compte', () => {
+    for (const yes of ['Je pense à vendre ma maison l’an prochain.', 'Nous envisageons de vendre.', 'On songe à vendre.', 'Je suis prête à vendre.', 'J’aimerais mettre ma maison en vente.']) expect(saysSellingIntent(yes)).toBe(true);
+    for (const no of ['Je ne veux pas vendre.', 'Pas question de vendre ma maison.', 'Je ne pense pas vendre avant 10 ans.', 'Je ne vends jamais.', 'Merci pour les chiffres.', 'Mon voisin pense à vendre.', 'Je veux acheter.']) expect(saysSellingIntent(no)).toBe(false);
+  });
+
   it('une réponse « je pense à vendre » alerte l’agent une fois, et le plan du jour le porte en tête des rendez-vous à proposer', async () => {
     const t = await setup();
     const lea = await t.owner('Léa');
@@ -194,7 +200,15 @@ describeWithSqlite('G04 · suivi de valeur, en mode essai', () => {
     t.setClock(JULY_TUE_10H);
     await t.suivi.run();
     // Une réponse sans intention de vendre ne déclenche rien.
-    await t.store.recordMessage({ networkId: t.network.id, personId: lea.id, channel: 'email', direction: 'in', authorKind: 'person', body: 'Merci pour ces chiffres.', occurredAt: new Date(JULY_TUE_10H + 3_600_000) });
+    for (const [i, body] of [
+      'Merci pour ces chiffres.',
+      'Merci, mais je ne veux pas vendre ma maison.',
+      'Pas question de vendre ma maison pour le moment.',
+      'Je ne pense pas vendre ma maison avant 10 ans.',
+      'Je pense à vendre, mais pas maintenant.',
+    ].entries()) {
+      await t.store.recordMessage({ networkId: t.network.id, personId: lea.id, channel: 'email', direction: 'in', authorKind: 'person', body, occurredAt: new Date(JULY_TUE_10H + 3_600_000 + i * 1000) });
+    }
     t.setClock(JULY_TUE_10H + 2 * 3_600_000);
     expect(await t.suivi.readAnswers()).toBe(0);
     await t.store.recordMessage({ networkId: t.network.id, personId: lea.id, channel: 'email', direction: 'in', authorKind: 'person', body: 'Merci, je pense à vendre ma maison l’an prochain.', occurredAt: new Date(JULY_TUE_10H + 3 * 3_600_000) });

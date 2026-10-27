@@ -20,7 +20,7 @@ import type { EstimatedKind } from '../estimation/fourchette.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { classifyByRules } from '../qualification/regles.ts';
+import { plain } from '../envoi/texte.ts';
 
 /** Finalité de l'accord du suivi de valeur [R03]. */
 export const VALUE_TRACKING_PURPOSE = 'value_tracking';
@@ -88,6 +88,19 @@ interface TrackingRow {
   kind: EstimatedKind;
   channel: TrackingChannel;
   created_at: string;
+}
+
+/**
+ * La personne dit penser à vendre : une intention positive, à la première personne, sans aucune négation dans le
+ * message. Dans le doute, pas d'alerte : l'agent ne démarche jamais quelqu'un qui a dit non. Règles fixes, sans IA.
+ */
+const SELLING_INTENT =
+  /\b(je|j|nous|on)\s+(pense|pensons|envisage|envisageons|souhaite|souhaitons|voudrais|voudrions|veux|voulons|aimerais|aimerions|compte|comptons|vais|allons|songe|songeons|reflechis|reflechissons|prevois|prevoyons)\s+(serieusement\s+|bien\s+|peut etre\s+)?(a|de|d)?\s*(vendre|mettre en vente|la vente)\b|\b(pret|prets|prete|pretes)\s+a\s+vendre\b|\bmettre (ma|mon|notre|nos) \S+ en vente\b/;
+const NEGATION = /\b(ne|n)\b[^.!?]{0,40}\b(pas|plus|jamais|point|guere)\b|\bpas (question|du tout|maintenant|pour l instant|pour le moment|encore)\b|\bhors de question\b|\baucune(ment)?\b|\bnon merci\b|\bjamais\b|\bstop\b/;
+
+export function saysSellingIntent(text: string): boolean {
+  const p = plain(text).replace(/[^a-z0-9]+/g, ' ');
+  return SELLING_INTENT.test(p) && !NEGATION.test(p);
 }
 
 const DAY = 86_400_000;
@@ -213,7 +226,7 @@ export class SuiviDeValeur {
         [...ids, t.first_sent],
       );
       for (const answer of answers) {
-        if (classifyByRules(answer.body) !== 'seller') continue;
+        if (!saysSellingIntent(answer.body)) continue;
         const id = this.newId();
         const { changes } = await this.db.run(
           `INSERT INTO value_tracking_alerts (id, tracking_id, network_id, person_id, message_id, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
