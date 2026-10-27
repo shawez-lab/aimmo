@@ -653,7 +653,8 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : H05 et H06 pour l'envoi réel, plus tard.
 
 ### T09 · Alerte WhatsApp en un geste, par le téléphone de l'agent
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : option `byAgent` du contrôle central, réservée au port `AgentWhatsAppLink` qui fabrique le lien en mémoire ; message rangé, écrit par l'agent, dès la préparation, pour que le bien ne soit jamais proposé deux fois ; texte du code, sans IA ; la direction prépare au nom de l'agent qui suit la personne ; l'écran (T08) ouvre le lien aussitôt et ne le garde pas.
 - Qui : Claude · Relecture : forte · Dépend de : T03
 - Cahier : M08, « Alertes » : « un message WhatsApp à l'initiative de l'agent part de son téléphone, en un geste, seulement après le contrôle central : exclusions, accord, horaires. L'envoi est enregistré. »
 - Objectif : pour un acquéreur rapproché, l'agent demande un lien WhatsApp pré-rempli ; le contrôle central décide (exclusions, arrêt, accord, horaires, jamais deux fois le même bien), sans la fenêtre de Meta qui ne vaut que pour les envois automatiques, puis prépare le lien sans jamais l'ouvrir ; l'envoi est enregistré, écrit par l'agent, quand il confirme.
@@ -661,7 +662,7 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : rien.
 
 ### T04 · Visite et bon de visite
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : T01, V02, D02
 - Cahier : M08, « Visites » ; M06, bibliothèque de modèles.
 - Objectif : une visite est un rendez-vous de V02 relié à un bien et à un projet d'achat ; le bon de visite est généré depuis la bibliothèque de D02 (modèle d'essai tant que H08 n'est pas fait), signé sur papier ou en ligne en essai (D08) ; le rappel de la veille vient de V04.
