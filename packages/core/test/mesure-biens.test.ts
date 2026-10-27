@@ -66,11 +66,32 @@ describeWithSqlite('P08 · mesure par bien', () => {
     expect(r).toEqual({ ok: true, value: { week: '2027-03-01', views: { site: 150, reseaux: 0, google: 0, portails: 300 }, totalViews: 450, contacts: 2, visits: { done: 1, planned: 1 } } });
   });
 
+  it('un contact compte à l’heure de son message, et une fois par personne même sur deux fiches réunies', async () => {
+    const { t, mesure } = await seed();
+    // Un message reçu le dimanche soir, qualifié seulement le lundi : il compte dans la semaine de sa réception.
+    await t.db.run(
+      "INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, status, person_id, received_at, created_at) VALUES ('in-tard', ?, 'd-tard', 'site', 'form', 'processed', ?, '2027-03-07T20:00:00.000Z', '2027-03-07T20:00:00.000Z')",
+      [t.network.id, t.personId],
+    );
+    const extra = (await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Test4', lastName: 'Exemple' })).id;
+    await t.db.run("INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, status, person_id, received_at, created_at) VALUES ('in-x', ?, 'd-x', 'site', 'form', 'processed', ?, '2027-03-05T20:00:00.000Z', '2027-03-05T20:00:00.000Z')", [t.network.id, extra]);
+    await t.db.run("INSERT INTO qualifications (id, network_id, inbound_id, person_id, category, property_id, source, created_at) VALUES ('q-tard', ?, 'in-x', ?, 'buyer', ?, 'rules', '2027-03-08T09:00:00.000Z')", [t.network.id, extra, t.propertyId]);
+    let r = await mesure.weekly(t.agent, t.propertyId, '2027-03-01');
+    expect(r.ok && r.value.contacts).toBe(3);
+    // La fiche Test4 est réunie à celle de Léa : une seule personne.
+    await t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES ('f-1', ?, ?, ?, ?, 'doublon', '2027-03-08T09:00:00.000Z', '2027-03-08T09:00:00.000Z')", [t.network.id, t.alexId, t.personId, extra]);
+    r = await mesure.weekly(t.agent, t.propertyId, '2027-03-01');
+    expect(r.ok && r.value.contacts).toBe(2);
+  });
+
   it('un seul relevé par bien, canal et jour ; jamais un jour à venir ; rien ne s’efface', async () => {
     const { t, mesure } = await seed();
     expect(await mesure.recordViews(t.network.id, t.propertyId, 'site', '2027-03-01', 5)).toEqual({ ok: false, rule: null, code: 'already_recorded' });
     expect(await mesure.recordViews(t.network.id, t.propertyId, 'site', '2027-03-09', 5)).toEqual({ ok: false, rule: null, code: 'bad_day' });
     expect(await mesure.recordViews(t.network.id, t.propertyId, 'site', '2027-02-30', 5)).toEqual({ ok: false, rule: null, code: 'bad_day' });
+    expect(await mesure.recordViews(t.network.id, t.propertyId, 'site', '2027-13-01', 5)).toEqual({ ok: false, rule: null, code: 'bad_day' });
+    expect(await mesure.recordViews(t.network.id, t.propertyId, 'site', '2027-01-32', 5)).toEqual({ ok: false, rule: null, code: 'bad_day' });
+    expect(await mesure.weekly(t.agent, t.propertyId, '2027-13-01')).toEqual({ ok: false, rule: null, code: 'bad_day' });
     expect(await mesure.recordViews(t.network.id, t.propertyId, 'site', '2027-03-02', -1)).toEqual({ ok: false, rule: null, code: 'bad_views' });
     expect(await mesure.recordViews(t.network.id, t.propertyId, 'fax' as never, '2027-03-02', 1)).toEqual({ ok: false, rule: null, code: 'bad_channel' });
     expect(await mesure.recordViews('autre-reseau', t.propertyId, 'site', '2027-03-02', 1)).toEqual({ ok: false, rule: null, code: 'unknown_property' });
