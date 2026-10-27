@@ -113,6 +113,24 @@ describe('V01 · disponibilités et créneaux libres', () => {
     for (const s of autumn) expect(withinAvailability(s, sunday)).toBe(true);
   });
 
+  it('[R33] une borne de plage dans l’heure qui n’existe pas n’allonge jamais la plage', () => {
+    const sunday: Availability = { weekly: [{ weekday: 7, from: '01:00', to: '02:30' }] };
+    const settings = { ...DEFAULT_SLOT_SETTINGS, minNoticeMinutes: 0 };
+    const slots = freeSlots({ availability: sunday, kind: 'estimation', from: new Date('2027-03-27T12:00:00Z'), to: new Date('2027-03-28T12:00:00Z'), now: new Date('2027-03-01T00:00:00Z'), booked: [], busy: [], settings });
+    // La plage dure une heure réelle, de 1 h à 3 h (2 h n'existe pas) : seul 01:00 tient.
+    expect(slots.map((s) => s.start.toISOString())).toEqual(['2027-03-28T00:00:00.000Z']);
+    expect(withinAvailability({ start: new Date('2027-03-28T00:30:00Z'), end: new Date('2027-03-28T01:30:00Z') }, sunday)).toBe(false);
+  });
+
+  it('au passage à l’heure d’hiver, un créneau qui tient en temps réel est proposé', () => {
+    const sunday: Availability = { weekly: [{ weekday: 7, from: '01:00', to: '03:00' }] };
+    const settings = { ...DEFAULT_SLOT_SETTINGS, minNoticeMinutes: 0 };
+    const slots = freeSlots({ availability: sunday, kind: 'estimation', from: new Date('2027-10-30T12:00:00Z'), to: new Date('2027-10-31T12:00:00Z'), now: new Date('2027-10-01T00:00:00Z'), booked: [], busy: [], settings });
+    // La plage dure 3 heures réelles : le premier 02:15 finit au second 02:15, dans la plage.
+    expect(slots.map((s) => s.start.toISOString())).toContain(parisInstant('2027-10-31', 135)!.toISOString());
+    for (const s of slots) expect(withinAvailability(s, sunday)).toBe(true);
+  });
+
   it('des disponibilités mal formées sont refusées', () => {
     expect(() => checkAvailability({ weekly: [{ weekday: 8, from: '09:00', to: '10:00' }] })).toThrow('Jour');
     expect(() => checkAvailability({ weekly: [{ weekday: 1, from: '11:00', to: '10:00' }] })).toThrow('plage');

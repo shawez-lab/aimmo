@@ -132,17 +132,25 @@ function addDays(date: string, days: number): string {
 
 const overlaps = (a: Interval, b: Interval, gapMs: number): boolean => a.start.getTime() < b.end.getTime() + gapMs && b.start.getTime() < a.end.getTime() + gapMs;
 
-/** Le créneau tient-il entier dans une plage de l'agent, le même jour [R33] ? */
+/**
+ * L'instant d'une borne de plage. Une borne dans l'heure qui n'existe pas (passage à l'heure d'été) est ramenée à
+ * l'instant du saut, la première minute qui existe après elle : la plage ne s'allonge jamais.
+ */
+function boundaryInstant(date: string, minutes: number, timeZone: string): Date {
+  for (let m = minutes; m <= minutes + 120 && m < 24 * 60; m++) {
+    const at = parisInstant(date, m, timeZone);
+    if (at) return at;
+  }
+  // 24:00 ou au-delà : minuit du lendemain.
+  return parisInstant(addDays(date, 1), 0, timeZone) ?? new Date(NaN);
+}
+
+/** Le créneau tient-il entier dans une plage de l'agent, le même jour [R33] ? Comparé en instants réels. */
 export function withinAvailability(slot: Interval, a: Availability, timeZone = AGENDA_TIME_ZONE): boolean {
   const s = localTime(slot.start, timeZone);
-  const e = localTime(new Date(slot.end.getTime() - MINUTE), timeZone);
-  if (s.date !== e.date) return false;
-  const length = (slot.end.getTime() - slot.start.getTime()) / MINUTE;
   return rangesOn(a, s.date, s.weekday).some(([from, to]) => {
-    if (s.minutes < from) return false;
-    const rangeEnd = parisInstant(s.date, to, timeZone);
-    const rangeStart = parisInstant(s.date, from, timeZone);
-    if (!rangeEnd || !rangeStart) return s.minutes + length <= to;
+    const rangeStart = boundaryInstant(s.date, from, timeZone);
+    const rangeEnd = boundaryInstant(s.date, to, timeZone);
     return slot.start.getTime() >= rangeStart.getTime() && slot.end.getTime() <= rangeEnd.getTime();
   });
 }
@@ -195,7 +203,8 @@ export function freeSlots(input: FreeSlotsInput): Slot[] {
   for (let date = localTime(new Date(earliest), timeZone).date; date <= last; date = addDays(date, 1)) {
     const weekday = localTime(parisInstant(date, 12 * 60, timeZone)!, timeZone).weekday;
     for (const [from, to] of rangesOn(input.availability, date, weekday)) {
-      for (let m = from; m + duration <= to; m += settings.stepMinutes) {
+      // Toutes les heures de début de la plage ; la durée se vérifie sur l'intervalle réel, changement d'heure compris.
+      for (let m = from; m < to; m += settings.stepMinutes) {
         const start = parisInstant(date, m, timeZone);
         if (!start) continue;
         const slot: Slot = { kind: input.kind, start, end: new Date(start.getTime() + duration * MINUTE) };
