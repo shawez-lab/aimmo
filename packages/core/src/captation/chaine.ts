@@ -20,6 +20,10 @@ import { Reception } from '../reception/reception.ts';
 import { trialChannels } from './essai.ts';
 import { PremiereReponse, type ReplyWriter } from './premiere-reponse.ts';
 import { ConversationRelais, type RelayOutcome } from './relais.ts';
+import { appendEvent } from '../journal/journal.ts';
+import { Attribution } from '../qualification/attribution.ts';
+import { Qualification, type Qualifier } from '../qualification/qualification.ts';
+import { Rappels } from '../qualification/rappel.ts';
 
 export type ChainStatus =
   /** Le même message, déjà reçu : rien de plus [R18]. */
@@ -46,12 +50,18 @@ export interface ChainHooks {
   beforeReply?: () => Promise<void>;
 }
 
+/** Ce qui suit la réponse : qualifier, noter, attribuer, créer la tâche (M03). Ne doit jamais retarder la réponse. */
+export interface AfterReply {
+  (inboundId: string): Promise<void>;
+}
+
 export class ChaineCaptation {
   constructor(
     private readonly reception: Reception,
     private readonly rattachement: Rattachement,
     private readonly relais: ConversationRelais,
     private readonly now: () => Date = () => new Date(),
+    private readonly afterReply: AfterReply | null = null,
   ) {}
 
   async receive(
@@ -99,10 +109,13 @@ export class ChaineCaptation {
           if (hooks.beforeReply) await hooks.beforeReply();
           const resumed = await this.relais.process(item.inboundId);
           if (resumed.status === 'skipped' || resumed.status === 'silent') {
+            // Une qualification interrompue est reprise, sans doublon [R18].
+            if (this.afterReply) await this.afterReply(item.inboundId);
             results.push(done('duplicate'));
             continue;
           }
           results.push(done(resumed.status, resumed.status === 'replied' ? (resumed.reply.result?.messageId ?? null) : null));
+          if (this.afterReply) await this.afterReply(item.inboundId);
           continue;
         }
       }
@@ -121,6 +134,8 @@ export class ChaineCaptation {
       const relayed = await this.relais.process(item.inboundId);
       const messageId = relayed.status === 'replied' ? (relayed.reply.result?.messageId ?? null) : null;
       results.push(done(relayed.status, messageId));
+      // La réponse est prête : la qualification suit, et ne la retarde jamais.
+      if (this.afterReply) await this.afterReply(item.inboundId);
     }
     return results;
   }
@@ -132,6 +147,10 @@ export interface CaptationOptions {
   channels?: readonly OutboundChannel[];
   writer?: ReplyWriter;
   budget?: AiBudget;
+  /** L'IA qui classe et extrait (M03) ; absente : règles fixes. */
+  qualifier?: Qualifier;
+  /** Faux : la chaîne s'arrête à la réponse, sans qualifier (pour éprouver chaque étape à part). Vrai par défaut. */
+  withQualification?: boolean;
 }
 
 /** Assemble toute la chaîne sur une base. Sans canaux fournis, elle tourne en mode essai. */
@@ -151,5 +170,38 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
   const premiere = new PremiereReponse(db, fiche, reception, new ReconnaissanceBien(db), controle, options.writer ? { writer: options.writer } : {});
   const acces = new Acces(db, store, fiche, journal, { now });
   const relais = new ConversationRelais(db, store, fiche, reception, premiere, acces, { now });
-  return { chaine: new ChaineCaptation(reception, rattachement, relais, now), store, fiche, reception, relais, controle };
+  const qualification = new Qualification(db, store, fiche, reception, new ReconnaissanceBien(db), journal, {
+    now,
+    ...(options.qualifier ? { qualifier: options.qualifier } : {}),
+  });
+  const attribution = new Attribution(db, fiche, journal, { now });
+  const rappels = new Rappels(db, fiche, journal, { now });
+  // Qualifier, noter, attribuer, créer la tâche : une erreur est écrite au journal, sans texte ni coordonnée [R13],
+  // et n'empêche jamais la réponse déjà prête ; le prochain envoi du même message reprend là où elle s'est arrêtée.
+  const afterReply: AfterReply = async (inboundId) => {
+    try {
+      const q = await qualification.qualify(inboundId);
+      if (!q) return;
+      const a = await attribution.attribute(q.id);
+      if (a) await rappels.forQualification(q.id);
+    } catch (error) {
+      await appendEvent(
+        journal,
+        { type: 'qualification.erreur', actor: 'system:qualification', subject: `inbound:${inboundId}`, data: { error: error instanceof Error ? error.name : 'unknown' } },
+        now,
+      );
+    }
+  };
+  return {
+    chaine: new ChaineCaptation(reception, rattachement, relais, now, options.withQualification === false ? null : afterReply),
+    store,
+    fiche,
+    reception,
+    relais,
+    controle,
+    qualification,
+    attribution,
+    rappels,
+    acces,
+  };
 }

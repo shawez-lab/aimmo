@@ -10,6 +10,7 @@ import {
   verifyChain,
   type JournalEntry,
   type SqlDatabase,
+  createCaptation,
 } from '@aimmo/core';
 import { handleRequest, sha256Hex } from '../src/index.ts';
 import { fromD1 } from '../src/d1.ts';
@@ -165,6 +166,19 @@ describeWithSqlite('API du socle de bout en bout, sur une base D1 locale', () =>
     expect(agent.status).toBe(200);
     expect(await body(agent)).toMatchObject({ ok: true, data: { contacts: [] } });
     expect((await call(w.env, '/v1/contacts-chauds', { key: KEY_PARTNER })).status).toBe(403);
+  });
+
+  it('[R16] la correction du classement : la direction corrige une fiche sans agent, un agent étranger est refusé', async () => {
+    const { chaine } = createCaptation(w.db, w.journal);
+    await chaine.receive(w.net, 'site_form', { submissionId: 'corr-1', email: 'corr@example.test', message: 'Bonjour, une question sur le quartier.' });
+    const q = await w.db.first<{ id: string; category: string }>('SELECT id, category FROM qualifications ORDER BY rowid DESC LIMIT 1');
+    expect(q!.category).toBe('curious');
+    const path = `/v1/qualifications/${q!.id}/correction`;
+    expect((await call(w.env, path, { key: KEY_AGENT, method: 'POST', body: { category: 'buyer' } })).status).toBe(403);
+    expect((await call(w.env, path, { key: KEY_DIRECTION, method: 'POST', body: { category: 'investor' } })).status).toBe(400);
+    expect((await call(w.env, '/v1/qualifications/inconnue/correction', { key: KEY_DIRECTION, method: 'POST', body: { category: 'buyer' } })).status).toBe(404);
+    expect((await call(w.env, path, { key: KEY_DIRECTION, method: 'POST', body: { category: 'buyer', route: 'M17' } })).status).toBe(200);
+    expect(await w.db.all('SELECT category, route FROM qualification_corrections')).toEqual([{ category: 'buyer', route: 'M17' }]);
   });
 
   it('la santé répond sans clé et sans rien lire', async () => {

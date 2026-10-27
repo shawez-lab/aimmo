@@ -23,7 +23,7 @@ async function setup() {
   let clock = TUESDAY_10H;
   const now = (): Date => new Date(clock);
   const journal = new SqlJournalStore(db);
-  const { chaine, store, fiche, reception } = createCaptation(db, journal, { now });
+  const { chaine, store, fiche, reception } = createCaptation(db, journal, { now, withQualification: false });
   const qualification = new Qualification(db, store, fiche, reception, new ReconnaissanceBien(db), journal, { now });
   const attribution = new Attribution(db, fiche, journal, { now });
   const network = await store.createNetwork('Réseau test');
