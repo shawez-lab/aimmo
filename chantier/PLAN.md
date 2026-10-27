@@ -358,14 +358,16 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Critères : aucun prix précis d'un bien rendu [R31] ; limites d'appels ; aucune donnée du visiteur gardée au-delà de sa demande ; mode essai.
 
 ### E06 · Suivi du vendeur
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : relance après 3 jours sans réponse du vendeur ni message de son agent (réglage `delayDays`, le cahier ne le chiffre pas) ; refus pour l'heure repris au créneau suivant, tout autre refus définitif.
+- Reste : le vrai envoi de l'avis et de la relance, quand le plan mettra un canal en service.
 - Qui : Claude · Relecture : normale · Dépend de : E04, B02
 - Cahier : M04, « Suivi ».
 - Objectif : après l'envoi d'un avis, une relance du vendeur s'il ne répond pas, par le planificateur et le contrôle central, en mode essai.
 - Critères : une relance par avis au plus, dans les heures d'envoi [R01], jamais à une personne exclue ou qui a demandé l'arrêt [R02, R04] ; rien ne part en mode essai.
 
 ### E07 · Mesure sur 20 biens
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : E01, E02
 - Cahier : M04, « Critères d'acceptation » ; Feuille de route, janvier 2027.
 - Objectif : un banc qui compare la fourchette AIMMO à l'estimation de l'agent sur des biens anonymisés gardés hors du dépôt, et rend l'écart médian et chaque écart avec son explication.
