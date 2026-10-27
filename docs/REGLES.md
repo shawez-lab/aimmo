@@ -38,3 +38,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R32 | Pas de double réservation. Deux rendez-vous d'un agent ne se chevauchent jamais, et le temps de trajet entre deux rendez-vous sur place est toujours laissé. | oui | V01, V02 |
 | R33 | Disponibilités de l'agent. Aucun créneau n'est proposé hors des disponibilités que l'agent a fixées, ni sur un événement occupé de son agenda. | oui | V01 |
 | R34 | Brief vrai. Le brief d'un rendez-vous ne porte que des données de la base ou d'une source citée ; ce qui manque est dit, rien n'est inventé. | oui | V05 |
+| R35 | Plan du jour par règles écrites. L'ordre du plan du jour suit des règles écrites dans le code, les mêmes pour tous, chaque ligne avec sa raison ; jamais une note de l'IA sur les personnes. | non | G01 |
+| R36 | Base légale de la prospection. Le plan du jour et le suivi de valeur ne portent que des personnes qui ont une demande récente ou un accord en cours ; jamais une personne exclue ou qui a demandé l'arrêt. | non | G01, G04, G05 |
+| R37 | Sources interdites. Aucune liste achetée, aucune donnée de ventes publiques utilisée pour retrouver un propriétaire. | non | G03 |
+| R38 | Source du mandat. Chaque mandat signé a sa source renseignée. | non | G03 |

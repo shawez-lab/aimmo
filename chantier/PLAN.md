@@ -459,3 +459,43 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Cahier : M05, « Réservation en ligne » ; remarques P2 de Codex sur #44.
 - Objectif : la confirmation et les rappels d'un rendez-vous réservé en ligne visent la coordonnée donnée à la réservation, même si la fiche porte un autre mail plus ancien (le contrôle central reçoit une coordonnée précise, qui doit appartenir à la fiche) ; une panne du journal après une réservation en ligne réussie rend quand même le rendez-vous et son jeton, avec un avertissement.
 - Critères : la boîte d'essai montre la confirmation adressée au mail donné, pas à l'ancien ; une coordonnée qui n'est pas à la fiche est refusée ; journal en panne après réservation : réponse 200 avec jeton et avertissement, panne notée [R13].
+
+**M20 · Gagner des mandats, première version, janvier 2027.**
+
+Découpé le 2026-10-27. Ids `G..` pour Gagner. Cahier : M20 Gagner des mandats ; Feuille de route, janvier 2027 : « premières versions de M20 et de l'application de l'agent », « application et plan du jour utilisés chaque matin pendant une semaine ».
+Décidé, lecture prudente : la première version, pour la preuve à Dijon, couvre le plan du jour, le suivi de valeur et la source de chaque mandat, avec leurs trois critères d'acceptation. Les lettres de quartier, le dossier de présentation, les recommandations et la relance des anciens contacts viendront avec le module complet (octobre 2027), après M06, M11, M18 et M19 dont ils dépendent. Le plan du jour est calculé par le code, par des règles écrites et les mêmes pour tous, sans IA [R35] ; il ne porte que les clients de l'agent [R16], et seulement des personnes qui ont une base légale : une demande de leur part encore récente ou un accord en cours, jamais une personne exclue ou qui a demandé l'arrêt [R36]. Aucune donnée de ventes publiques ne sert à retrouver un propriétaire [R29, R37]. Rien n'est envoyé à un client par M20 tant que le plan n'a pas mis d'envoi en service : tout passe par le contrôle central, en mode essai. Les durées (demande « récente », estimation « à relancer ») sont des réglages : 13 mois pour une demande, 30 jours pour relancer une estimation sans réponse, jusqu'à ce que Shawez en décide autrement. L'application de l'agent est découpée à part, après M20.
+
+### G01 · Plan du jour : contenu et ordre
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : Q04, E06, V02
+- Cahier : M20, point 1, « Règles ».
+- Objectif : une fonction du socle qui, pour un agent et une date, rend son plan du jour : propriétaires qui ont demandé un rappel (tâches « rappeler » ouvertes), estimations à relancer (avis envoyé sans réponse ni rendez-vous depuis le délai réglé), rendez-vous à proposer (projet de vente ou d'estimation sans rendez-vous à venir) ; chaque ligne dit sa raison en une ligne et sa base légale. L'ordre suit des règles écrites : demande de rappel d'abord, puis délai annoncé par le propriétaire le plus proche, puis estimation la plus ancienne ; à égalité, la plus ancienne demande.
+- Critères : le même plan pour les mêmes données, ordre expliqué ligne par ligne, aucune note de l'IA [R35] ; seulement les clients de l'agent [R16] ; une personne exclue, arrêtée, sans demande récente ni accord en cours n'y figure jamais, et son retrait est compté sans donnée personnelle [R36] ; un contact n'y figure qu'une fois, sous sa raison la plus forte.
+
+### G02 · Plan du jour à 7 h 30, par le planificateur
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : G01, B02
+- Cahier : M20, « Critères d'acceptation » : « le plan du jour arrive chaque matin à 7 h 30 dans l'application ».
+- Objectif : le planificateur du socle fige à 7 h 30, heure de Paris, le plan du jour de chaque agent actif, une fois par agent et par jour ; une route `GET /v1/plan-du-jour` le rend à l'agent seul ; le passage est écrit au journal sans donnée personnelle.
+- Critères : 7 h 30 de Paris été comme hiver ; un plan par agent et par jour même si le déclencheur passe deux fois ; un autre agent ne lit pas ce plan [R16] ; un plan figé ne change plus ; aucun envoi.
+
+### G03 · Chaque mandat a sa source
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : S03
+- Cahier : M20, point 7 « Mesure », « Règles », « Critères d'acceptation ».
+- Objectif : un mandat signé se range seulement avec sa source (site, estimation en ligne, suivi de valeur, recommandation, réseaux, portail, connaissance de l'agent, autre avec un mot), reprise de la fiche quand elle est connue ; une source « liste achetée » ou « ventes publiques » est refusée ; un compte mensuel des mandats par source, sans donnée personnelle.
+- Critères : aucun mandat sans source [R38] ; source interdite refusée avec sa règle [R37] ; compte du mois juste sur un jeu inventé ; rien ne s'efface [R17].
+
+### G04 · Suivi de valeur, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : G01, E06
+- Cahier : M20, point 2 « Suivi de valeur ».
+- Objectif : un propriétaire qui l'a demandé, avec son accord enregistré pour ce suivi, reçoit à intervalle réglé (6 mois) la fourchette de sa commune, par le planificateur et le contrôle central, en mode essai ; quand il répond qu'il pense à vendre, l'agent est alerté et le plan du jour le porte en tête des rendez-vous à proposer.
+- Critères : jamais sans accord en cours pour ce suivi [R03, R36] ; un envoi par période au plus [R05], dans les heures d'envoi [R01] ; seule la fourchette de la commune, jamais le prix d'un bien précis [R31] ; rien ne part en mode essai [R26].
+
+### G05 · Contrôle de la base légale sur 30 jours
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : G02
+- Cahier : M20, « Critères d'acceptation » : « aucun contact sans base légale dans le plan, sur 30 jours ».
+- Objectif : un contrôle qui relit les plans figés des 30 derniers jours et vérifie, ligne par ligne, que chaque personne avait une base légale au jour du plan ; un rapport sans donnée personnelle, et une alerte à la direction s'il trouve un écart.
+- Critères : un plan avec un contact sans base légale est trouvé, compté et signalé ; un plan sans écart rend zéro ; le rapport ne contient aucune donnée personnelle [R13].
