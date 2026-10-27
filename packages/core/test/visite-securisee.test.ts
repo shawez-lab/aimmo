@@ -54,7 +54,7 @@ async function setup(notifier?: DirectionNotifier) {
     const m = await db.first<{ body: string }>("SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.channel = 'sms' ORDER BY m.occurred_at DESC, m.rowid DESC LIMIT 1");
     return /(\d{6})/.exec(m!.body)![1]!;
   };
-  return { db, journal, store, securite, network, alex, sam, as, person, appointmentId, lastCode, setClock: (t: number) => (clock = t), clock: () => clock };
+  return { db, journal, store, securite, visites, network, alex, sam, as, person, appointmentId, lastCode, setClock: (t: number) => (clock = t), clock: () => clock };
 }
 
 describeWithSqlite('T05 · visite sécurisée', () => {
@@ -150,6 +150,23 @@ describeWithSqlite('T05 · visite sécurisée', () => {
     expect(await t.securite.raise(t.as('direction', 'd1'), 'alerte-0002')).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.securite.raise(t.as('agent', t.sam.id), 'alerte-0001')).toMatchObject({ ok: false, rule: 'R16' });
     await expect(t.db.run('DELETE FROM safety_alerts')).rejects.toThrow();
+  });
+
+  it('l’alerte retient la visite en cours plutôt que la suivante ; les refus d’accès vont au journal [R16]', async () => {
+    const t = await setup();
+    // Une seconde visite à 11 h 15 ; l'alerte part à 10 h 30, pendant la première.
+    const p2 = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'B2', kind: 'home', city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, status: 'available' });
+    const project = (await t.db.first<{ id: string }>('SELECT id FROM projects'))!;
+    const v2 = await t.visites.schedule(t.as('agent', t.alex.id), { propertyId: p2.id, projectId: project.id, start: new Date(WEDNESDAY_10H.getTime() + 75 * MINUTE) });
+    if (!v2.ok) throw new Error(v2.code);
+    t.setClock(WEDNESDAY_10H.getTime() + 30 * MINUTE);
+    await t.securite.raise(t.as('agent', t.alex.id), 'alerte-0010');
+    const row = await t.db.first<{ town: string; appointment_id: string }>("SELECT town, appointment_id FROM safety_alerts WHERE id = 'alerte-0010'");
+    expect(row).toEqual({ town: 'Talant', appointment_id: t.appointmentId });
+    const before = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
+    await t.securite.list(t.as('agent', t.alex.id));
+    await t.securite.raise(t.as('direction', 'd1'), 'alerte-0011');
+    expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse').length).toBe(before + 2);
   });
 
   it('sans panne, la direction est prévenue aussitôt, en essai : une ligne au journal, rien ne part', async () => {

@@ -101,6 +101,11 @@ export class VisiteSecurisee {
     return `${String(viewer.role)}:${viewer.userId}`;
   }
 
+  private async refused(viewer: Viewer, subject: string | null, code: string): Promise<SafetyRefusal> {
+    await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind: 'safety_alert', code } }, this.now);
+    return { ok: false, rule: 'R16', code };
+  }
+
   /**
    * Envoie au visiteur son code, par SMS, par le contrôle central. L'accord du visiteur est rangé avec sa preuve
    * s'il n'y est pas déjà [R03]. Un nouveau code remplace l'ancien.
@@ -194,7 +199,11 @@ export class VisiteSecurisee {
       'UPDATE visit_safety SET code_hash = NULL, phone_confirmed_at = ?, identity_confirmed_at = ? WHERE appointment_id = ? AND code_hash = ? AND phone_confirmed_at IS NULL',
       [iso, iso, appointmentId, row.code_hash],
     );
-    if (done.changes === 1) await appendEvent(this.journal, { type: 'visite.confirmee', actor: this.actor(viewer), subject: `visit:${appointmentId}`, data: { rule: 'R54' } }, this.now);
+    if (done.changes !== 1) {
+      // Un nouveau code a pris la place de celui-ci entre-temps : seule une confirmation rangée compte [R54].
+      return (await this.isConfirmed(appointmentId)) ? { ok: true, confirmed: true } : { ok: false, rule: 'R54', code: 'superseded' };
+    }
+    await appendEvent(this.journal, { type: 'visite.confirmee', actor: this.actor(viewer), subject: `visit:${appointmentId}`, data: { rule: 'R54' } }, this.now);
     return { ok: true, confirmed: true };
   }
 
@@ -212,19 +221,22 @@ export class VisiteSecurisee {
    * avec la visite en cours s'il y en a une ; puis la direction est prévenue. Un envoi en panne est repris.
    */
   async raise(viewer: Viewer, alertId: string): Promise<{ ok: true; recorded: true; notified: boolean } | SafetyRefusal> {
-    if (viewer.role !== 'agent') return { ok: false, rule: 'R16', code: 'role' };
+    if (viewer.role !== 'agent') return this.refused(viewer, null, 'role');
     if (typeof alertId !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(alertId)) return { ok: false, rule: null, code: 'bad_id' };
     const agent = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
-    if (agent?.status !== 'active') return { ok: false, rule: 'R16', code: 'agent_inactive' };
+    if (agent?.status !== 'active') return this.refused(viewer, null, 'agent_inactive');
     const at = this.now();
     const iso = at.toISOString();
-    // La visite en cours, ou la prochaine dans l'heure : sa commune et son heure, rien d'autre.
-    const current = await this.db.first<{ id: string; start_at: string; city: string | null }>(
-      `SELECT a.id, a.start_at, p.city FROM appointments a JOIN visits v ON v.appointment_id = a.id JOIN properties p ON p.id = v.property_id
-       WHERE a.agent_id = ? AND a.network_id = ? AND a.status = 'booked' AND a.start_at <= ? AND a.end_at >= ?
-       ORDER BY a.start_at DESC LIMIT 1`,
-      [viewer.userId, viewer.networkId, new Date(at.getTime() + 3_600_000).toISOString(), iso],
-    );
+    // La visite en cours d'abord ; sinon la prochaine dans l'heure : sa commune et son heure, rien d'autre.
+    const pick = (where: string, order: string, params: string[]) =>
+      this.db.first<{ id: string; start_at: string; city: string | null }>(
+        `SELECT a.id, a.start_at, p.city FROM appointments a JOIN visits v ON v.appointment_id = a.id JOIN properties p ON p.id = v.property_id
+         WHERE a.agent_id = ? AND a.network_id = ? AND a.status = 'booked' AND ${where} ORDER BY ${order} LIMIT 1`,
+        [viewer.userId, viewer.networkId, ...params],
+      );
+    const current =
+      (await pick('a.start_at <= ? AND a.end_at >= ?', 'a.start_at DESC', [iso, iso])) ??
+      (await pick('a.start_at > ? AND a.start_at <= ?', 'a.start_at ASC', [iso, new Date(at.getTime() + 3_600_000).toISOString()]));
     const { changes } = await this.db.run(
       `INSERT INTO safety_alerts (id, network_id, agent_id, appointment_id, raised_at, town, visit_start_at, notified_at, attempts) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0)
        ON CONFLICT (id) DO NOTHING`,
@@ -232,7 +244,7 @@ export class VisiteSecurisee {
     );
     if (changes === 1) await appendEvent(this.journal, { type: 'visite.alerte', actor: this.actor(viewer), subject: `alert:${alertId}`, data: { visit: current ? 1 : 0 } }, this.now);
     const row = await this.db.first<{ agent_id: string; network_id: string }>('SELECT agent_id, network_id FROM safety_alerts WHERE id = ?', [alertId]);
-    if (!row || row.agent_id !== viewer.userId || row.network_id !== viewer.networkId) return { ok: false, rule: 'R16', code: 'not_assigned' };
+    if (!row || row.agent_id !== viewer.userId || row.network_id !== viewer.networkId) return this.refused(viewer, `alert:${alertId}`, 'not_assigned');
     return { ok: true, recorded: true, notified: await this.notifyOne(alertId) };
   }
 
@@ -246,7 +258,7 @@ export class VisiteSecurisee {
 
   /** Les alertes du réseau, pour la direction seule. */
   async list(viewer: Viewer): Promise<{ ok: true; alerts: (SafetyAlert & { notified: boolean })[] } | SafetyRefusal> {
-    if (viewer.role !== 'direction') return { ok: false, rule: 'R16', code: 'role' };
+    if (viewer.role !== 'direction') return this.refused(viewer, null, 'role');
     const rows = await this.db.all<{ id: string; agent_id: string; raised_at: string; town: string | null; visit_start_at: string | null; appointment_id: string | null; notified_at: string | null }>(
       'SELECT * FROM safety_alerts WHERE network_id = ? ORDER BY raised_at DESC',
       [viewer.networkId],
