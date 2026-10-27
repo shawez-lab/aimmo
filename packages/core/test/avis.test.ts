@@ -1,0 +1,158 @@
+import { expect, it } from 'vitest';
+import {
+  ADVICE_NOTICE,
+  AvisDeValeur,
+  FicheClient,
+  Fourchette,
+  SqlJournalStore,
+  applyMigrations,
+  checkText,
+  fromSyncSqlite,
+  verifyChain,
+  type PublicFacts,
+  type RangeResult,
+  type Sale,
+  type ValuationBrief,
+  type Viewer,
+} from '../src/index.ts';
+import { loadMigrations } from './migrations.ts';
+import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+
+// Ventes inventées, toutes autour d'un point fictif.
+const SALES: Sale[] = Array.from({ length: 14 }, (_, i) => ({
+  id: `t:${i}`,
+  kind: 'apartment' as const,
+  lat: 47.3225 + i * 0.0002,
+  lon: 5.0412,
+  surface: 60 + i,
+  pricePerM2: 2500 + i * 20,
+  month: `2025-0${(i % 9) + 1}`,
+}));
+const NOW = () => new Date('2026-10-27T09:00:00.000Z');
+
+async function range(): Promise<Extract<RangeResult, { ok: true }>> {
+  const r = await new Fourchette(
+    { coverage: async () => ({ department: '21', lastSale: '2025-12-30', years: [2023, 2024, 2025], source: 'DVF test' }), within: async () => SALES },
+    undefined,
+    NOW,
+  ).estimate({ kind: 'apartment', surface: 65, lat: 47.3225, lon: 5.0412, postalCode: '21000', floor: 2, balcony: true, energyClass: 'E' });
+  if (!r.ok) throw new Error(r.reason);
+  return r;
+}
+
+const FACTS: PublicFacts = {
+  address: { ok: true, source: 'BAN', collectedAt: NOW().toISOString(), value: { label: '1 Rue de l’Essai 21000 Dijon', lat: 47.3225, lon: 5.0412, postalCode: '21000', inseeCode: '21231', town: 'Dijon', banId: 'x', score: 0.9 } },
+  parcel: { ok: false, source: 'Cadastre', collectedAt: NOW().toISOString(), reason: 'panne' },
+  energy: { ok: true, source: 'ADEME', collectedAt: NOW().toISOString(), value: { energyClass: 'E', ghgClass: null, date: '2024-01-10', diagnosisNumber: null } },
+  risks: { ok: true, source: 'Géorisques', collectedAt: NOW().toISOString(), value: [{ code: '11', label: 'Inondation' }] },
+  missing: ['parcel'],
+};
+
+async function world(writer?: (b: ValuationBrief) => Promise<string>) {
+  const db = fromSyncSqlite(openMemoryDatabase());
+  await applyMigrations(db, loadMigrations());
+  const store = new FicheClient(db);
+  const net = await store.createNetwork('Réseau test');
+  const other = await store.createNetwork('Autre réseau');
+  const paul = await store.createAgent({ networkId: net.id, firstName: 'Paul', lastName: 'Essai' });
+  const lise = await store.createAgent({ networkId: net.id, firstName: 'Lise', lastName: 'Essai' });
+  const property = await store.createProperty({ networkId: net.id, agentId: paul.id, reference: 'B-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 65 });
+  const journal = new SqlJournalStore(db);
+  const avis = new AvisDeValeur(db, journal, { now: NOW, ...(writer ? { writer: { write: writer } } : {}), aiTimeoutMs: 50 });
+  const as = (role: Viewer['role'], userId: string, networkId = net.id): Viewer => ({ role, userId, networkId });
+  const draft = async () => avis.draft({ networkId: net.id, propertyId: property.id, kind: 'apartment', surface: 65, range: await range(), facts: FACTS, details: new Map([['t:0', { street: 'Rue des Essais', town: 'Dijon' }]]) });
+  return { db, store, net, other, paul, lise, property, journal, avis, as, draft };
+}
+
+describeWithSqlite('E04 · brouillon d’avis de valeur et validation par l’agent', () => {
+  it('sans IA, le code écrit un brouillon complet, aux seuls chiffres du calcul [R10] [R28]', async () => {
+    const w = await world();
+    const r = await w.draft();
+    const calc = await range();
+    expect(r).toMatchObject({ status: 'draft', text_by: 'fallback', computed_low: calc.low, computed_high: calc.high, agent_id: w.paul.id });
+    expect(r.text).toContain(`${String(calc.low).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`);
+    expect(r.text).toContain('décembre 2025');
+    expect(r.text).toContain('ne sont pas encore publiées');
+    expect(r.text).toContain('classe E');
+    expect(r.text).toContain('plan de commercialisation');
+    expect(r.text.endsWith(ADVICE_NOTICE)).toBe(true);
+    expect(checkText(r.text, { audience: 'client', channel: 'email', figures: [] }).map((p) => p.rule)).toContain('R10');
+    const computed = JSON.parse(r.computed) as { cited: { street?: string; month: string }[]; data: { lastSale: string } };
+    expect(computed.data.lastSale).toBe('2025-12-30');
+    expect(computed.cited[0]).toMatchObject({ street: 'Rue des Essais', month: expect.stringMatching(/^\d{4}-\d{2}$/) });
+    for (const c of computed.cited) expect(c.street ?? '').not.toMatch(/\d/);
+  });
+
+  it('l’IA rédige à partir d’un brief sans nom ni adresse ; un texte qui invente un chiffre est remplacé', async () => {
+    let seen: ValuationBrief | null = null;
+    const good = await world(async (b) => {
+      seen = b;
+      return `Votre appartement vaut entre ${b.low} € et ${b.high} €, d’après ${b.comparables} ventes.`;
+    });
+    const r = await good.draft();
+    expect(r.text_by).toBe('ai');
+    expect(r.text.endsWith(ADVICE_NOTICE)).toBe(true);
+    expect(JSON.stringify(seen)).not.toMatch(/Essai|Rue|"lat"|"lon"/);
+
+    const liar = await world(async () => 'Votre appartement vaut 999 999 €.');
+    expect((await liar.draft()).text_by).toBe('fallback');
+    const slow = await world(() => new Promise(() => {}));
+    expect((await slow.draft()).text_by).toBe('fallback');
+    const ai = await world(async () => 'Notre IA estime votre bien.');
+    expect((await ai.draft()).text_by).toBe('fallback');
+    const entries = await ai.journal.all();
+    expect(entries.find((e) => e.type === 'avis.brouillon')?.data).toMatchObject({ textBy: 'fallback', aiRefused: 'R06' });
+  });
+
+  it('[R30] aucun avis ne part sans la validation de l’agent qui suit le bien', async () => {
+    const w = await world();
+    const r = await w.draft();
+    expect(await w.avis.releasable(r.id)).toEqual({ ok: false, rule: 'R30', code: 'not_validated' });
+    for (const viewer of [w.as('agent', w.lise.id), w.as('direction', 'dir-1'), w.as('compliance', 'conf-1'), w.as('partner', 'p-1'), w.as('agent', w.paul.id, w.other.id)]) {
+      const v = await w.avis.validate(viewer, r.id);
+      expect(v.ok, `${viewer.role}`).toBe(false);
+    }
+    expect(await w.avis.releasable(r.id)).toMatchObject({ ok: false, code: 'not_validated' });
+    const ok = await w.avis.validate(w.as('agent', w.paul.id), r.id);
+    expect(ok).toMatchObject({ ok: true, value: { status: 'validated', validated_by: w.paul.id } });
+    expect(await w.avis.releasable(r.id)).toMatchObject({ ok: true, value: { low: r.computed_low, high: r.computed_high } });
+  });
+
+  it('[R30] un agent parti ne valide plus ; un avis validé ne change plus', async () => {
+    const w = await world();
+    const r = await w.draft();
+    await w.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [w.paul.id]);
+    expect(await w.avis.validate(w.as('agent', w.paul.id), r.id)).toMatchObject({ ok: false, code: 'not_following_agent' });
+    await w.db.run("UPDATE agents SET status = 'active' WHERE id = ?", [w.paul.id]);
+    await w.avis.validate(w.as('agent', w.paul.id), r.id);
+    expect(await w.avis.adjust(w.as('agent', w.paul.id), r.id, { low: 100000 })).toMatchObject({ ok: false, code: 'already_validated' });
+    await expect(w.db.run("UPDATE valuation_reports SET text = 'autre' WHERE id = ?", [r.id])).rejects.toThrow();
+    await expect(w.db.run('DELETE FROM valuation_reports')).rejects.toThrow();
+  });
+
+  it('les ajustements de l’agent sont gardés à côté du calcul, et la mention d’avis reste', async () => {
+    const w = await world();
+    const r = await w.draft();
+    const paul = w.as('agent', w.paul.id);
+    expect(await w.avis.adjust(paul, r.id, { low: 10, high: 5 })).toMatchObject({ ok: false, code: 'invalid_range' });
+    const a = await w.avis.adjust(paul, r.id, { low: 150000, high: 170000, text: 'Après visite, votre bien est lumineux et bien tenu.' });
+    if (!a.ok) throw new Error(a.code);
+    expect(a.value).toMatchObject({ computed_low: r.computed_low, computed_high: r.computed_high, agent_low: 150000, agent_high: 170000, text_by: 'agent', computed: r.computed });
+    expect(a.value.text.endsWith(ADVICE_NOTICE)).toBe(true);
+    await w.avis.validate(paul, r.id);
+    expect(await w.avis.releasable(r.id)).toMatchObject({ ok: true, value: { low: 150000, high: 170000 } });
+  });
+
+  it('[R13] le journal ne porte ni texte ni chiffre de l’avis, et sa chaîne tient', async () => {
+    const w = await world();
+    const r = await w.draft();
+    await w.avis.validate(w.as('agent', w.lise.id), r.id);
+    await w.avis.validate(w.as('agent', w.paul.id), r.id);
+    const entries = await w.journal.all();
+    expect(entries.map((e) => e.type)).toEqual(['avis.brouillon', 'avis.refuse', 'avis.valide']);
+    const dump = JSON.stringify(entries);
+    expect(dump).not.toContain(String(r.computed_low));
+    expect(dump).not.toContain('Dijon');
+    expect((await verifyChain(entries)).ok).toBe(true);
+  });
+});
