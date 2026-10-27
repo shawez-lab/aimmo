@@ -16,6 +16,7 @@ export * from './qualification/index.ts';
 export * from './bascule/index.ts';
 export * from './estimation/index.ts';
 export * from './rendezvous/index.ts';
+export * from './mandats/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
