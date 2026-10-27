@@ -38,6 +38,7 @@ it('[R62] aucun texte d’AIMMO ne porte de coordonnée bancaire ni ne demande u
   }
   // Le rappel du bouclier et toutes les relances de pièces passent.
   expect(fundsInOutgoing(fundsReminderText('Léa'))).toBe(false);
+  expect(fundsInOutgoing(fundsReminderText('Léa', { city: 'Dijon', reference: 'REF-T-1' }))).toBe(false);
   // Une référence d'agence n'est pas un IBAN.
   expect(fundsInOutgoing('Le bien réf. AB12 CDEF GHIJ KL est à Dijon')).toBe(false);
   expect(fundsInOutgoing('Pour la vente de votre bien à Dijon, référence DJ21-2027-0045,')).toBe(false);
@@ -146,6 +147,9 @@ describeWithSqlite('N05 · aucun fonds, bouclier contre le faux RIB', () => {
     const sam = await t.bouclier.alertsOf(t.sam);
     expect(alex.ok && alex.alerts.map((x) => [x.fileId, x.side])).toEqual([[t.fileId, 'vendeur']]);
     expect(sam.ok && sam.alerts.map((x) => [x.fileId, x.side])).toEqual([['dossier-9', 'acquereur']]);
+    // Un rappel par dossier, chacun nommant son bien : deux messages différents.
+    const sent = await t.inbox(t.personId);
+    expect(sent.map((x) => /REF-T-\d/.exec(x.body)?.[0]).sort()).toEqual(['REF-T-1', 'REF-T-9']);
     expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM sale_file_fund_alerts'))?.n).toBe(2);
   });
 

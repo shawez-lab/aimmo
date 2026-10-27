@@ -76,8 +76,10 @@ export function fundsInOutgoing(text: string): boolean {
 }
 
 /** Le rappel au client, écrit par le code, sans chiffre ni coordonnée. */
-export function fundsReminderText(firstName: string | null): string {
-  return `${firstName ? `Bonjour ${firstName},` : 'Bonjour,'} un rappel important pour votre vente : votre agent immobilier ne vous demandera jamais de virement, d'acompte ni de changement de coordonnées bancaires, et ne reçoit jamais de fonds. L'argent de la vente passe seulement par le notaire. Au moindre doute sur un message, appelez votre notaire au numéro que vous connaissez déjà, avant tout paiement.`;
+export function fundsReminderText(firstName: string | null, property: { city: string | null; reference: string } | null = null): string {
+  // Le bien nommé par sa commune et sa référence d'agence, jamais son adresse [R19] : deux dossiers, deux messages [R05].
+  const sale = property ? `la vente de votre bien${property.city ? ` à ${property.city}` : ''}, référence ${property.reference}` : 'votre vente';
+  return `${firstName ? `Bonjour ${firstName},` : 'Bonjour,'} un rappel important pour ${sale} : votre agent immobilier ne vous demandera jamais de virement, d'acompte ni de changement de coordonnées bancaires, et ne reçoit jamais de fonds. L'argent de la vente passe seulement par le notaire. Au moindre doute sur un message, appelez votre notaire au numéro que vous connaissez déjà, avant tout paiement.`;
 }
 
 export interface FundAlert {
@@ -170,7 +172,8 @@ export class BouclierFonds {
     );
     if (!a || (a.reminder_status !== null && a.reminder_status !== 'waiting' && a.reminder_status !== 'failed')) return;
     const first = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [a.person_id]);
-    const text = fundsReminderText(first?.first_name ?? null);
+    const property = await this.db.first<{ city: string | null; reference: string }>('SELECT p.city, p.reference FROM sale_files f JOIN properties p ON p.id = f.property_id WHERE f.id = ?', [a.file_id]);
+    const text = fundsReminderText(first?.first_name ?? null, property);
     if (fundsInOutgoing(text)) throw new Error('Le rappel du bouclier ne peut pas porter de coordonnée bancaire [R62].');
     const r = await this.controle.send({
       networkId: a.network_id,
@@ -182,7 +185,7 @@ export class BouclierFonds {
       // Une fois par personne et par dossier [R05].
       subject: `rappel_fonds:${a.file_id}`,
       fallbackTexts: [text],
-      figures: [],
+      figures: (property?.reference.match(/\d+/g) ?? []).map(Number),
     });
     const status = r.status === 'sent' ? 'sent' : r.status === 'failed' ? 'failed' : r.rule === 'R01' ? 'waiting' : 'refused';
     await this.db.run('UPDATE sale_file_fund_alerts SET reminder_status = ?, reminder_rule = ? WHERE message_id = ? AND file_id = ?', [status, r.status === 'sent' ? null : r.rule, messageId, fileId]);
