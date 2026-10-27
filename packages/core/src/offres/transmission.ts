@@ -43,7 +43,7 @@ export const PROOF_REF = /^preuves\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
-  | { ok: false; rule: null; code: 'unknown_offer' | 'unknown_property' | 'no_owner' | 'bad_via' | 'bad_proof' | 'bad_date' | 'bad_outcome' | 'already_transmitted' | 'already_answered' | 'not_transmitted' }
+  | { ok: false; rule: null; code: 'unknown_offer' | 'unknown_property' | 'no_owner' | 'bad_via' | 'bad_proof' | 'bad_date' | 'bad_outcome' | 'already_transmitted' | 'already_answered' | 'not_transmitted' | 'other_accepted' }
   | { ok: false; rule: 'R59'; code: 'expired' }
   | { ok: false; rule: string; code: 'message_refused'; reason: string };
 
@@ -99,6 +99,26 @@ export class TransmissionOffres {
     const list = await this.registre.list(viewer, row.property_id);
     if (!list.ok) return list as Refusal | Problem;
     return { ok: true, offer: list.value.find((o) => o.id === offerId)!, networkId: g.networkId, agentId: g.agentId };
+  }
+
+  /**
+   * Une autre offre du même bien est-elle déjà acceptée (réponse directe, dernière proposition acceptée, ou dossier
+   * ouvert) ? Une seule offre acceptée à la fois par bien.
+   */
+  async otherAccepted(propertyId: string, offerId: string): Promise<boolean> {
+    const direct = await this.db.first(
+      `SELECT r.offer_id FROM offer_responses r JOIN offer_register o ON o.id = r.offer_id
+       WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee' LIMIT 1`,
+      [propertyId, offerId],
+    );
+    if (direct) return true;
+    const proposal = await this.db.first(
+      `SELECT p.id FROM offer_proposals p JOIN offer_register o ON o.id = p.offer_id JOIN proposal_responses r ON r.proposal_id = p.id
+       WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee' LIMIT 1`,
+      [propertyId, offerId],
+    );
+    if (proposal) return true;
+    return !!(await this.db.first('SELECT id FROM sale_files WHERE property_id = ? AND offer_id <> ? LIMIT 1', [propertyId, offerId]));
   }
 
   /** L'état d'une offre, lu dans les seuls faits enregistrés. */
@@ -167,11 +187,22 @@ export class TransmissionOffres {
     if (respondedAt.getTime() < Date.parse(found.offer.receivedAt) || respondedAt.getTime() < Date.parse(transmitted.at)) return { ok: false, rule: null, code: 'bad_date' };
     // Une acceptation arrivée après le dernier jour de validité, à Paris, ne vaut pas [R59].
     if (input.outcome === 'acceptee' && localTime(respondedAt, TIME_ZONE).date > found.offer.validUntil) return { ok: false, rule: 'R59', code: 'expired' };
+    if (input.outcome === 'acceptee' && (await this.otherAccepted(found.offer.propertyId, offerId))) return { ok: false, rule: null, code: 'other_accepted' };
+    // L'acceptation n'est rangée que si aucune autre offre du bien n'est acceptée, vérifié dans la même instruction :
+    // deux acceptations simultanées ne passent jamais toutes les deux.
+    const pid = found.offer.propertyId;
     const { changes } = await this.db.run(
-      'INSERT INTO offer_responses (offer_id, network_id, outcome, proof_ref, responded_at, recorded_by, at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (offer_id) DO NOTHING',
-      [offerId, found.networkId, input.outcome, input.proofRef, respondedAt.toISOString(), this.actor(viewer), this.now().toISOString()],
+      `INSERT INTO offer_responses (offer_id, network_id, outcome, proof_ref, responded_at, recorded_by, at)
+       SELECT ?, ?, ?, ?, ?, ?, ? WHERE (? <> 'acceptee' OR (
+          NOT EXISTS (SELECT 1 FROM offer_responses r JOIN offer_register o ON o.id = r.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee')
+          AND NOT EXISTS (SELECT 1 FROM proposal_responses r JOIN offer_proposals p ON p.id = r.proposal_id JOIN offer_register o ON o.id = p.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee')
+          AND NOT EXISTS (SELECT 1 FROM sale_files f WHERE f.property_id = ? AND f.offer_id <> ?))) ON CONFLICT (offer_id) DO NOTHING`,
+      [offerId, found.networkId, input.outcome, input.proofRef, respondedAt.toISOString(), this.actor(viewer), this.now().toISOString(), input.outcome, pid, offerId, pid, offerId, pid, offerId],
     );
-    if (changes !== 1) return { ok: false, rule: null, code: 'already_answered' };
+    if (changes !== 1) {
+      if (await this.db.first('SELECT offer_id FROM offer_responses WHERE offer_id = ?', [offerId])) return { ok: false, rule: null, code: 'already_answered' };
+      return { ok: false, rule: null, code: 'other_accepted' };
+    }
     await appendEvent(this.journal, { type: 'offre.reponse', actor: this.actor(viewer), subject: `offer:${offerId}`, data: { rule: 'R57', outcome: input.outcome } }, this.now);
     return { ok: true, value: { outcome: input.outcome } };
   }
