@@ -381,14 +381,15 @@ Découpé le 2026-10-27. Ids `V..` pour rendez-Vous. Cahier : M05 Rendez-vous ; 
 Décidé, lecture prudente : l'agenda Google passe par une interface, avec un faux agenda dans les tests ; le vrai branchement attend H21. Tout message (confirmation, rappel, tournée partagée) passe par le contrôle central, avec les seuls canaux du mode essai tant que le plan n'a pas mis d'envoi en service. Les durées et le temps de trajet sont des réglages.
 
 ### V01 · Disponibilités et créneaux libres
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : réglages de départ estimation 60 min, visite 45, signature 60, appel 20, trajet 30 min (aussi autour des événements occupés de l'agenda), pas de 15 min, délai minimal 2 h.
 - Qui : Claude · Relecture : forte · Dépend de : rien
 - Cahier : M05, « Créneaux libres » et « Règles ».
 - Objectif : à partir des disponibilités que l'agent fixe (jours, heures, exceptions) et des événements occupés de son agenda (interface), rendre les créneaux libres par type de rendez-vous (estimation, visite, signature, appel), chacun avec sa durée, en gardant le temps de trajet entre deux rendez-vous.
 - Critères : aucun créneau hors des disponibilités de l'agent ni sur un événement occupé [R33] ; aucun créneau qui chevauche un rendez-vous ou ne laisse pas le temps de trajet [R32] ; heure de Paris, changement d'heure compris ; un appel ne demande pas de trajet.
 
 ### V02 · Réservation, confirmation et annulation
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : V01
 - Cahier : M05, « Réservation en ligne » et « Critères d'acceptation ».
 - Objectif : la table des rendez-vous ; réserver un créneau libre de façon atomique, confirmer tout de suite par le contrôle central (mode essai), décaler ou annuler par un lien à jeton ; le créneau annulé redevient libre aussitôt.
