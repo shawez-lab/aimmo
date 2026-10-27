@@ -203,13 +203,22 @@ export class Publication {
   }
 
   /** Un passage pour tous les biens du réseau qui ont une annonce ou une version publiée. */
-  async syncAll(networkId: string): Promise<{ propertyId: string; result: SyncResult }[]> {
+  async syncAll(networkId: string): Promise<{ propertyId: string; result: SyncResult | null }[]> {
     const rows = await this.db.all<{ property_id: string }>(
       'SELECT DISTINCT property_id FROM listing_drafts WHERE network_id = ? UNION SELECT DISTINCT property_id FROM listing_versions WHERE network_id = ? ORDER BY property_id',
       [networkId, networkId],
     );
-    const out: { propertyId: string; result: SyncResult }[] = [];
-    for (const r of rows) out.push({ propertyId: r.property_id, result: await this.sync(networkId, r.property_id) });
+    const out: { propertyId: string; result: SyncResult | null }[] = [];
+    for (const r of rows) {
+      try {
+        out.push({ propertyId: r.property_id, result: await this.sync(networkId, r.property_id) });
+      } catch {
+        // Un bien en erreur n'arrête pas le passage des autres : leurs retraits doivent partir [R42]. L'échec est
+        // écrit au journal, sans le texte de l'erreur, et le bien est repris au passage suivant.
+        await appendEvent(this.journal, { type: 'annonce.passage_echec', actor: 'system:publication', subject: `property:${r.property_id}`, data: { rule: 'R42', code: 'erreur' } }, this.now);
+        out.push({ propertyId: r.property_id, result: null });
+      }
+    }
     return out;
   }
 

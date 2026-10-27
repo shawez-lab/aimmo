@@ -40,7 +40,7 @@ class FakeChannel implements ListingChannel {
   }
 }
 
-async function setup() {
+async function setup(options: { card?: boolean } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = new Date('2027-02-10T10:00:00.000Z');
@@ -74,7 +74,7 @@ async function setup() {
     coownership: { isCoownership: true, lots: 24, annualChargesEur: 1800, proceedings: false },
     risks: { inRiskZone: false },
   });
-  await new MentionsAnnonce(db, acces, journal, { now }).setCardNumber(direction, 'CPI 2101 2027 000 000 001');
+  if (options.card !== false) await new MentionsAnnonce(db, acces, journal, { now }).setCardNumber(direction, 'CPI 2101 2027 000 000 001');
   const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'acquereur', 'mandat.duree_mois': 12 } });
   if (!d.ok) throw new Error(d.code);
   const signed = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt: SIGNED, place: 'hors_agence', scanRef: 'scans/mandat.pdf', source: 'referral' });
@@ -199,6 +199,49 @@ describeWithSqlite('P04 · publication partout, au même prix, en mode essai', (
     expect(await e.publication.sync(e.network.id, e.propertyId)).toMatchObject({ version: 2, state: 'retiree' });
     const retired = (await e.journal.bySubject(`property:${e.propertyId}`)).find((x) => x.type === 'annonce.retiree');
     expect(retired?.data).toEqual({ rule: 'R42', seq: 2, state: 'retiree', reason: 'expired' });
+  });
+
+  it('[R43] sans liste de contrôle complète rien n’est publié, et une annonce en ligne est retirée au passage suivant', async () => {
+    const t = await setup({ card: false });
+    t.setClock(new Date('2027-03-01T10:00:00.000Z'));
+    // Sans numéro de carte, l'annonce ne peut même pas être validée, et rien ne part.
+    expect(await t.annonces.validate(t.agent, t.draftId)).toMatchObject({ ok: false, rule: 'R43', code: 'mentions_incomplete' });
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toEqual({ version: null, state: null, created: false, pushed: [], failed: [] });
+    // Une annonce en ligne dont une mention vient à manquer est retirée partout.
+    const u = await setup();
+    u.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    await u.annonces.validate(u.agent, u.draftId);
+    u.setClock(new Date('2027-03-01T10:00:00.000Z'));
+    await u.publication.sync(u.network.id, u.propertyId);
+    await u.db.run("UPDATE properties SET kind = 'commercial' WHERE id = ?", [u.propertyId]);
+    expect(await u.publication.sync(u.network.id, u.propertyId)).toMatchObject({ version: 2, state: 'retiree', created: true });
+    expect(u.channels.map((c) => c.received.at(-1)?.state)).toEqual(['retiree', 'retiree', 'retiree', 'retiree']);
+    const retired = (await u.journal.bySubject(`property:${u.propertyId}`)).find((x) => x.type === 'annonce.retiree');
+    expect(retired?.data).toEqual({ rule: 'R42', seq: 2, state: 'retiree', reason: 'mentions_incompletes' });
+  });
+
+  it('[R42] un bien en erreur n’arrête pas le passage des autres ; l’échec est au journal', async () => {
+    const t = await setup();
+    t.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    await t.annonces.validate(t.agent, t.draftId);
+    t.setClock(new Date('2027-03-01T10:00:00.000Z'));
+    const original = t.publication.sync.bind(t.publication);
+    let calls = 0;
+    t.publication.sync = async (networkId, propertyId) => {
+      calls++;
+      if (calls === 1) throw new Error('panne passagère');
+      return original(networkId, propertyId);
+    };
+    // Un second bien inventé, avec un brouillon, pour que le passage en compte deux.
+    await t.db.run("INSERT INTO properties (id, network_id, agent_id, reference, kind, status, created_at, updated_at) SELECT 'bien-2', network_id, agent_id, 'REF-T-2', 'home', 'draft', created_at, updated_at FROM properties WHERE id = ?", [t.propertyId]);
+    await t.annonces.propose(t.agent, 'bien-2');
+    const all = await t.publication.syncAll(t.network.id);
+    expect(all).toHaveLength(2);
+    expect(all.filter((x) => x.result === null)).toHaveLength(1);
+    const failed = all.find((x) => x.result === null)!.propertyId;
+    const entry = (await t.journal.bySubject(`property:${failed}`)).find((e) => e.type === 'annonce.passage_echec');
+    expect(entry?.data).toEqual({ rule: 'R42', code: 'erreur' });
+    expect(JSON.stringify(entry)).not.toContain('panne');
   });
 
   it('l’état du bien suit : sous offre, vendu, retiré de la vente', async () => {
