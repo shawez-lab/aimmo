@@ -270,9 +270,11 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Reste : remarque mineure de Codex (#26) : tâches portées par une fiche réunie à une fiche visible ; relecture forte (1 P1 corrigé), Codex sans P0 ni P1.
 
 ### Q05 · Qualification dans la chaîne de captation, et mesure sur cas réels
-- Statut : en cours
+- Statut : fait (2026-10-27), sauf la mesure réelle qui attend H13 et H18
 - Qui : Claude · Relecture : forte · Dépend de : Q04, C08
 - Cahier : M03, « Critères d'acceptation » ; Feuille de route, décembre 2026.
 - Objectif : brancher Q01 à Q04 derrière chaque message reçu, en mode essai, et un banc de mesure qui compare le classement à celui de Shawez sur des cas anonymisés, sans aucune donnée personnelle dans le dépôt.
 - Critères : chaque nouveau contact a fiche, qualification, note, agent et, s'il est chaud, sa tâche en moins d'une minute ; le banc rend le taux d'accord et la liste des écarts, sans texte de message au journal [R13] ; 90 % de 50 cas réels quand H18 et H13 sont faits.
 - Attend : H13 et H18 pour la mesure réelle ; le reste se fait avant.
+- Décidé (2026-10-27) : la suite de M03 passe après toutes les réponses du lot et ne lève jamais d'erreur ; banc de mesure par `AIMMO_CAS` hors du dépôt (`docs/MESURE.md`), sauté sans fichier.
+- Reste : mesure réelle (H13, H18) ; au branchement réel (C09), qualifier par `ctx.waitUntil` du Worker pour que la réponse HTTP n'attende pas une vraie IA ; relecture forte (2 P1 corrigés), relecture de Codex restée en cours plus de 30 min, fusion sans elle (#27).
