@@ -85,14 +85,25 @@ export class ComparatifOffres {
       const proposals = chain.ok ? chain.value.filter((e) => e.event.startsWith('proposition:') && e.amountEur !== undefined) : [];
       const last = proposals[proposals.length - 1];
       const amount = last?.amountEur ?? offer.amountEur;
-      const state = await this.transmission.stateOf(offer);
-      const open = state === 'recue' || state === 'transmise';
+      let state = await this.transmission.stateOf(offer);
+      let lastDay = offer.validUntil;
+      // Après des contre-offres, l'état et la validité sont ceux de la dernière proposition.
+      if (last && chain.ok) {
+        const answered = chain.value.filter((e) => /^proposition:\d+:(acceptee|refusee|contre_offre)$/.test(e.event)).pop();
+        const lastSeq = Number(last.event.split(':')[1]);
+        const outcome = answered && Number(answered.event.split(':')[1]) === lastSeq ? answered.event.split(':')[2] : null;
+        if (outcome === 'acceptee' || outcome === 'refusee') state = outcome;
+        const proposal = await this.db.first<{ valid_until: string }>('SELECT valid_until FROM offer_proposals WHERE offer_id = ? AND seq = ?', [offer.id, lastSeq]);
+        if (proposal) lastDay = proposal.valid_until;
+        if (outcome === null) state = today > lastDay ? 'echue' : 'contre_offre';
+      }
+      const open = state === 'recue' || state === 'transmise' || (last !== undefined && state === 'contre_offre');
       rows.push({
         seq: offer.seq,
         amountEur: amount,
         netSellerEur: fee === null ? null : amount - fee,
         conditions: offer.conditions.map((c) => c.kind),
-        daysLeft: open ? dayNumber(offer.validUntil) - dayNumber(today) : null,
+        daysLeft: open ? dayNumber(lastDay) - dayNumber(today) : null,
         state,
         counterProposals: proposals.length,
       });
