@@ -45,7 +45,7 @@ export interface RappelsOptions {
   now?: () => Date;
   /** Début du lien pour décaler ou annuler, terminé par `/`, sans chiffre ; absent, le rappel part sans lien. */
   linkBase?: string | null;
-  /** Rendez-vous traités au plus par passage et par sorte. */
+  /** Rendez-vous lus au plus par passage : les confirmations en attente, puis le double pour la veille et le jour. */
   batch?: number;
   newToken?: () => string;
 }
@@ -111,7 +111,7 @@ export class RappelsRendezVous {
   ) {
     this.now = options.now ?? (() => new Date());
     this.linkBase = options.linkBase ?? null;
-    this.batch = options.batch ?? 100;
+    this.batch = options.batch ?? 500;
     this.newToken = options.newToken ?? newBookingToken;
     if (this.linkBase && !LINK_BASE.test(this.linkBase)) throw new Error('Début de lien non valable : https, sans chiffre, terminé par /.');
     const store = new FicheClient(db, { now: this.now });
@@ -141,6 +141,7 @@ export class RappelsRendezVous {
     const upcoming = await this.db.all<Row>(
       `SELECT ${COLUMNS} FROM appointments
        WHERE status = 'booked' AND confirmation_channel IS NOT NULL AND start_at > ? AND start_at < ?
+       AND NOT EXISTS (SELECT 1 FROM appointment_reminders r WHERE r.appointment_id = appointments.id AND r.kind = 'jour' AND r.status <> 'waiting')
        ORDER BY start_at, id LIMIT ?`,
       [stamp, new Date(at.getTime() + 2 * DAY_MS + 3_600_000).toISOString(), this.batch * 2],
     );
