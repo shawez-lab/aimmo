@@ -394,6 +394,11 @@ export class Visites {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (appointment_id) DO NOTHING`,
       [id, appointment.id, networkId, template.id, Number(template.version), template.hash, mode, status, JSON.stringify(missing), content, contentHash, this.now().toISOString()],
     );
+    if (changes !== 1) {
+      // Un autre appel a rangé le bon d'abord : c'est lui qui fait foi.
+      const stored = await this.db.first<SlipRow>('SELECT * FROM visit_slips WHERE appointment_id = ?', [appointment.id]);
+      if (stored) return toSlip(stored);
+    }
     if (changes === 1) await appendEvent(this.journal, { type: 'bon_visite.genere', actor: 'system:visites', subject: `visit:${appointment.id}`, data: { slip: id, mode, status, missing: missing.length } }, this.now);
     return { id, appointmentId: appointment.id, templateVersion: Number(template.version), mode, status, missing, content, contentHash, signedAt: null };
   }
