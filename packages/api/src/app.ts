@@ -57,6 +57,7 @@ import { BOOKING_PATH, BOOKING_SLOTS_PATH, handleBooking, type BookingLimits } f
 import type { DetailedSales, Geocoder } from '@aimmo/core';
 import { m08Routes } from './acquereurs.ts';
 import { annonceRoutes } from './annonces.ts';
+import { offreRoutes } from './offres.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
@@ -909,8 +910,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
 
   // Une même adresse peut servir à lire (GET) et à écrire (POST) : la route est choisie par l'adresse et la méthode.
   // Les routes de M08 (T08) suivent celles du socle ; elles portent le lien de désinscription du réseau.
-  // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication.
-  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }), ...annonceRoutes()];
+  // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication ; puis celles de M09 (O09) : les offres.
+  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }), ...annonceRoutes(), ...offreRoutes()];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
   const route = matching.find((candidate) => candidate.method === request.method);

@@ -1,5 +1,6 @@
 import { Acces, FicheClient, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
+import { offersDailyJob } from './offres.ts';
 
 export interface SchedulerConfig {
   db: SqlDatabase;
@@ -51,6 +52,8 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
         const store = new FicheClient(config.db, { now });
         return new Acces(config.db, store, new FicheUnique(config.db, store, { now }), journal, { now });
       }, { now }),
+      // Offres (O09), à 6 h : offres non transmises signalées [R56], tâches la veille des échéances [R59], sans envoi.
+      offersDailyJob(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
