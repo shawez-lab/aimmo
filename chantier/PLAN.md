@@ -480,14 +480,14 @@ Décidé, lecture prudente : la première version, pour la preuve à Dijon, couv
 - Critères : 7 h 30 de Paris été comme hiver ; un plan par agent et par jour même si le déclencheur passe deux fois ; un autre agent ne lit pas ce plan [R16] ; un plan figé ne change plus ; aucun envoi.
 
 ### G03 · Chaque mandat a sa source
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : S03
 - Cahier : M20, point 7 « Mesure », « Règles », « Critères d'acceptation ».
 - Objectif : un mandat signé se range seulement avec sa source (site, estimation en ligne, suivi de valeur, recommandation, réseaux, portail, connaissance de l'agent, autre avec un mot), reprise de la fiche quand elle est connue ; une source « liste achetée » ou « ventes publiques » est refusée ; un compte mensuel des mandats par source, sans donnée personnelle.
 - Critères : aucun mandat sans source [R38] ; source interdite refusée avec sa règle [R37] ; compte du mois juste sur un jeu inventé ; rien ne s'efface [R17].
 
 ### G04 · Suivi de valeur, en mode essai
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : G01, E06
 - Cahier : M20, point 2 « Suivi de valeur ».
 - Objectif : un propriétaire qui l'a demandé, avec son accord enregistré pour ce suivi, reçoit à intervalle réglé (6 mois) la fourchette de sa commune, par le planificateur et le contrôle central, en mode essai ; quand il répond qu'il pense à vendre, l'agent est alerté et le plan du jour le porte en tête des rendez-vous à proposer.
