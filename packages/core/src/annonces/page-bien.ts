@@ -16,7 +16,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import type { Media, PropertySheet } from './fiche-bien.ts';
+import type { PublishedMedia } from './medias.ts';
 import { euros } from './mentions.ts';
 import type { ListingPayload, ListingState } from './publication.ts';
 
@@ -30,8 +30,8 @@ export interface AgentCard {
 export interface PageInput {
   payload: ListingPayload;
   agent: AgentCard | null;
-  /** Les photos de la fiche publiée, dans l'ordre. */
-  photos: Media[];
+  /** Les photos de la version publiée, dans l'ordre, avec leur mention [R48]. */
+  photos: PublishedMedia[];
 }
 
 const STATE_LABEL: Record<ListingState, string> = { en_vente: 'En vente', sous_offre: 'Sous offre', vendu: 'Vendu', retiree: 'Retiré de la vente' };
@@ -71,14 +71,14 @@ h1{font-size:20pt;line-height:1.15;margin:8mm 0 3mm}.prix{font-size:30pt;font-we
 .photos img{width:100%;height:52mm;object-fit:cover}.virtuel{position:absolute;left:2mm;bottom:2mm;background:#14202e;color:#fff;font:700 7pt system-ui,sans-serif;padding:1mm 2mm}
 .texte{white-space:pre-line;margin:6mm 0}.agent{position:absolute;left:16mm;right:16mm;bottom:14mm;border-top:1pt solid #1f3a5f;padding-top:3mm;font-size:9.5pt}`;
 
-function photoList(photos: Media[], limit: number): string {
+function photoList(photos: PublishedMedia[], limit: number): string {
   const items = photos
     .filter((p) => p.kind === 'photo')
     .slice(0, limit)
     .map((p) => {
       // Une photo d'aménagement virtuel porte la mention sur l'image elle-même [R48].
-      const virtual = p.edit === 'amenagement_virtuel' ? '<span class="virtuel">Aménagement virtuel</span>' : '';
-      const alt = p.edit === 'amenagement_virtuel' ? 'Photo du bien, aménagement virtuel' : 'Photo du bien';
+      const virtual = p.overlay ? `<span class="virtuel">${escapeHtml(p.overlay)}</span>` : '';
+      const alt = p.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien';
       return `<li><img src="${escapeHtml(mediaUrl(p.ref))}" alt="${alt}" loading="lazy" decoding="async">${virtual}</li>`;
     });
   return items.length > 0 ? `<ul class="photos">${items.join('')}</ul>` : '';
@@ -165,20 +165,13 @@ export class PageBien {
 
   /** Ce que la page et la fiche montrent : la dernière version publiée, l'agent du bien, les photos de la fiche publiée. */
   async inputFor(networkId: string, propertyId: string): Promise<PageInput | null> {
-    const v = await this.db.first<{ network_id: string; seq: number; payload: string; draft_id: string | null }>(
-      'SELECT network_id, seq, payload, draft_id FROM listing_versions WHERE property_id = ? ORDER BY seq DESC LIMIT 1',
+    const v = await this.db.first<{ network_id: string; seq: number; payload: string }>(
+      'SELECT network_id, seq, payload FROM listing_versions WHERE property_id = ? ORDER BY seq DESC LIMIT 1',
       [propertyId],
     );
     if (!v || v.network_id !== networkId) return null;
     const payload = { ...(JSON.parse(v.payload) as Omit<ListingPayload, 'version'>), version: Number(v.seq) };
-    let photos: Media[] = [];
-    if (v.draft_id) {
-      const sheet = await this.db.first<{ data: string }>(
-        'SELECT s.data FROM listing_drafts d JOIN property_sheets s ON s.property_id = d.property_id AND s.version = d.sheet_version WHERE d.id = ?',
-        [v.draft_id],
-      );
-      photos = sheet ? (JSON.parse(sheet.data) as PropertySheet).media.filter((m) => m.kind === 'photo') : [];
-    }
+    const photos = (payload.media ?? []).filter((m) => m.kind === 'photo');
     const a = await this.db.first<{ first_name: string; last_name: string; status: string }>('SELECT a.first_name, a.last_name, a.status FROM properties p JOIN agents a ON a.id = p.agent_id WHERE p.id = ?', [propertyId]);
     const card = await this.db.first<{ phone: string; email: string }>(
       'SELECT c.phone, c.email FROM agent_public_cards c JOIN properties p ON p.agent_id = c.agent_id WHERE p.id = ? ORDER BY c.set_at DESC, c.rowid DESC LIMIT 1',

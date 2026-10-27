@@ -200,20 +200,15 @@ export function sentences(text: string): string[] {
 }
 
 /** Contrôle une phrase : ses sources et ses problèmes. */
-export function traceSentence(sentence: string, facts: ListingFacts): SourcedSentence {
-  const sources: SourcedSentence['sources'] = [];
+/**
+ * Ce qu'aucun texte public ne peut porter, phrase ou sous-titre : une adresse ou une voie nommée, un critère
+ * discriminant [R46], un mot interdit. Sans contrôle des nombres : sert aussi aux textes des vidéos (P06).
+ */
+export function publicTextProblems(sentence: string): SentenceProblem[] {
   const problems: SentenceProblem[] = [];
   const lower = norm(sentence);
-  const numbers = numericSources(facts);
-  const addSource = (field: keyof ListingFacts, value: string) => {
-    if (!sources.some((s) => s.field === field && s.value === value)) sources.push({ field, value });
-  };
-
-  // Adresse [R46].
   const street = STREET_NUMBER.exec(sentence)?.[0] ?? findStreet(sentence);
   if (street) problems.push({ code: 'adresse', value: street });
-
-  // Critères discriminants [R46] et mots interdits.
   // Chaque passage refusé est nommé une fois, tel qu'il est lu (sans accents), même si plusieurs termes le trouvent.
   const flagged = (terms: readonly string[], code: 'critere_discriminant' | 'mot_interdit') => {
     const found: { at: number; text: string }[] = [];
@@ -223,10 +218,23 @@ export function traceSentence(sentence: string, facts: ListingFacts): SourcedSen
         if (!found.some((f) => at < f.at + f.text.length && f.at < at + m[0].length)) found.push({ at, text: m[0] });
       }
     }
-    for (const f of found.sort((a, b) => a.at - b.at)) problems.push({ code, value: f.text });
+    for (const f of found.sort((x, y) => x.at - y.at)) problems.push({ code, value: f.text });
   };
   flagged(DISCRIMINATORY_TERMS, 'critere_discriminant');
   flagged(FORBIDDEN_TERMS, 'mot_interdit');
+  return problems;
+}
+
+export function traceSentence(sentence: string, facts: ListingFacts): SourcedSentence {
+  const sources: SourcedSentence['sources'] = [];
+  const problems: SentenceProblem[] = [];
+  const lower = norm(sentence);
+  const numbers = numericSources(facts);
+  const addSource = (field: keyof ListingFacts, value: string) => {
+    if (!sources.some((s) => s.field === field && s.value === value)) sources.push({ field, value });
+  };
+
+  problems.push(...publicTextProblems(sentence));
 
   // Nombres [R47] : chacun doit être la valeur d'un champ de la fiche, et du champ que son unité désigne.
   const check = (value: number, raw: string, after: string, before: string) => {

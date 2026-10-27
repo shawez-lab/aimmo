@@ -23,6 +23,7 @@ import { Diffusion } from '../documents/retractation.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { Annonces } from './annonces.ts';
+import { MediasBien, type PublishedMedia } from './medias.ts';
 import { computeMentions, MentionsAnnonce } from './mentions.ts';
 
 export const CHANNELS = ['site', 'reseaux', 'google', 'portails'] as const;
@@ -40,6 +41,8 @@ export interface ListingPayload {
   body: string | null;
   mentions: string | null;
   priceEur: number | null;
+  /** Photos et vidéos publiables, la mention « Aménagement virtuel » à poser sur l'image quand il le faut [R48]. */
+  media: PublishedMedia[];
 }
 
 /** Un canal de diffusion. Il remplace l'annonce de la référence par la version reçue, ou la retire. */
@@ -88,6 +91,7 @@ export class Publication {
   private readonly diffusion: Diffusion;
   private readonly annonces: Annonces;
   private readonly mentions: MentionsAnnonce;
+  private readonly medias: MediasBien;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -106,6 +110,7 @@ export class Publication {
     this.diffusion = new Diffusion(db, acces, journal, { now: this.now });
     this.annonces = new Annonces(db, acces, journal, { now: this.now });
     this.mentions = new MentionsAnnonce(db, acces, journal, { now: this.now });
+    this.medias = new MediasBien(db, acces, journal, { now: this.now });
   }
 
   private async latest(propertyId: string): Promise<VersionRow | null> {
@@ -125,7 +130,7 @@ export class Publication {
     if (!checklist?.complete || checklist.publishedPriceEur === null) return { retract: 'mentions_incompletes' };
     return {
       draftId: draft.id,
-      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur },
+      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, draft.sheetVersion) },
     };
   }
 
@@ -141,7 +146,7 @@ export class Publication {
     let created = false;
     if ('publish' in want || (before && before.state !== 'retiree')) {
       const content: Omit<ListingPayload, 'version'> =
-        'publish' in want ? want.publish : { reference: property.reference, state: 'retiree', title: null, body: null, mentions: null, priceEur: null };
+        'publish' in want ? want.publish : { reference: property.reference, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] };
       const hash = await sha256(JSON.stringify(content));
       const reason = 'publish' in want ? 'publication' : want.retract;
       // La version n'est créée que si son contenu diffère de la dernière, dans la même instruction : deux passages
