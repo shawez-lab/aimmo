@@ -122,6 +122,8 @@ const errorName = (e: unknown): string => (e instanceof Error ? e.name : 'unknow
 
 export class AgendaSync {
   private readonly now: () => Date;
+  /** Les événements dont le déplacement est en train d'être repris : ils ne bloquent pas leur propre rendez-vous. */
+  private readonly moving = new Set<string>();
 
   constructor(
     private readonly db: SqlDatabase,
@@ -133,11 +135,28 @@ export class AgendaSync {
     this.now = options.now ?? (() => new Date());
   }
 
-  /** Les événements occupés de l'agent, pour les créneaux : sans les annulés, sans ceux qu'AIMMO a écrits. */
+  /**
+   * Les événements occupés de l'agent, pour les créneaux : sans les annulés. Un événement écrit par AIMMO n'est écarté
+   * que s'il montre exactement son rendez-vous tenu ; déplacé, allongé ou orphelin, il reste occupé tant qu'il n'est
+   * pas réconcilié [R33].
+   */
   busySource(): BusySource {
     return {
-      busy: async (agentId: string, from: Date, to: Date): Promise<Interval[]> =>
-        (await this.provider.events(agentId, from, to)).filter((e) => !e.cancelled && !(e.key ?? '').startsWith(AGENDA_KEY_PREFIX)).map((e) => ({ start: e.start, end: e.end })),
+      busy: async (agentId: string, from: Date, to: Date): Promise<Interval[]> => {
+        const out: Interval[] = [];
+        for (const e of await this.provider.events(agentId, from, to)) {
+          if (e.cancelled || this.moving.has(e.id)) continue;
+          if (e.key?.startsWith(AGENDA_KEY_PREFIX)) {
+            const a = await this.db.first<{ start_at: string; end_at: string }>(
+              "SELECT a.start_at, a.end_at FROM appointment_calendar c JOIN appointments a ON a.id = c.appointment_id WHERE c.agent_id = ? AND c.event_id = ? AND a.status = 'booked'",
+              [agentId, e.id],
+            );
+            if (a && new Date(a.start_at).getTime() === e.start.getTime() && new Date(a.end_at).getTime() === e.end.getTime()) continue;
+          }
+          out.push({ start: e.start, end: e.end });
+        }
+        return out;
+      },
     };
   }
 
@@ -183,11 +202,20 @@ export class AgendaSync {
       }
       let current = await this.row(a.id);
       // Un rendez-vous décalé reprend l'événement de celui qu'il remplace : l'agenda n'a jamais deux événements pour lui.
+      // La chaîne des décalages est suivie jusqu'au rendez-vous qui tient encore l'événement.
       if (!current?.event_id && a.replaces_id) {
-        const replaced = await this.row(a.replaces_id);
-        if (replaced?.event_id) {
-          await this.setRow(a.replaces_id, a.agent_id, { synced_status: 'replaced', state: 'synced' });
-          await this.setRow(a.id, a.agent_id, { event_id: replaced.event_id });
+        const chain: string[] = [];
+        let back: string | null = a.replaces_id;
+        let owner: CalendarRow | null = null;
+        while (back && chain.length < 50) {
+          chain.push(back);
+          owner = await this.row(back);
+          if (owner?.event_id) break;
+          back = (await this.db.first<{ replaces_id: string | null }>('SELECT replaces_id FROM appointments WHERE id = ?', [back]))?.replaces_id ?? null;
+        }
+        if (owner?.event_id) {
+          for (const id of chain) await this.setRow(id, a.agent_id, { synced_status: 'replaced', state: 'synced' });
+          await this.setRow(a.id, a.agent_id, { event_id: owner.event_id });
           current = await this.row(a.id);
         }
       }
@@ -244,12 +272,25 @@ export class AgendaSync {
         result.cancelled++;
         continue;
       }
-      if (event.start.getTime() === new Date(a.start_at).getTime()) continue;
-      const moved = await this.rdv.moveFromAgenda(a.id, event.start);
+      if (event.start.getTime() === new Date(a.start_at).getTime()) {
+        if (event.end.getTime() === new Date(a.end_at).getTime()) continue;
+        // Seule la fin a changé : la durée du type est la règle, l'événement y est remis et c'est noté.
+        await this.setRow(a.id, a.agent_id, { state: 'conflict', synced_start: null });
+        await this.log('rdv.agenda.conflit', a, { rule: null, code: 'duration' });
+        result.conflicts++;
+        continue;
+      }
+      this.moving.add(event.id);
+      let moved: Awaited<ReturnType<RendezVous['moveFromAgenda']>>;
+      try {
+        moved = await this.rdv.moveFromAgenda(a.id, event.start);
+      } finally {
+        this.moving.delete(event.id);
+      }
       if (moved.ok) {
-        // Le nouveau rendez-vous tient le même événement, déjà à la bonne heure.
         await this.setRow(a.id, a.agent_id, { synced_status: 'replaced', state: 'synced' });
-        await this.setRow(moved.appointment.id, a.agent_id, { event_id: event.id, synced_status: 'booked', synced_start: moved.appointment.start_at, state: 'synced' });
+        // Le nouveau rendez-vous tient le même événement ; il est réécrit au passage pour reprendre la durée du type.
+        await this.setRow(moved.appointment.id, a.agent_id, { event_id: event.id, synced_status: 'booked', synced_start: moved.appointment.start_at, state: 'pending' });
         result.moved++;
       } else {
         // Refusé par les règles : le rendez-vous reste où il était, l'événement y sera remis, l'agent le saura.

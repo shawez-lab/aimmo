@@ -134,6 +134,40 @@ describeWithSqlite('V03 · agenda de l’agent dans les deux sens', () => {
     expect(conflicts[0]!.data).toMatchObject({ rule: 'R32' });
   });
 
+  it('[R33] un événement d’AIMMO déplacé ou allongé par l’agent reste occupé tant qu’il n’est pas réconcilié', async () => {
+    const w = await world();
+    const a = await w.book(at('2026-11-10', '09:00'));
+    const b = await w.book(at('2026-11-12', '09:00'));
+    await w.sync.run();
+    const ea = w.events().find((e) => e.key === `aimmo:${a.appointment.id}`)!;
+    const eb = w.events().find((e) => e.key === `aimmo:${b.appointment.id}`)!;
+    w.agenda.agentEdit(w.paul.id, { id: ea.id, start: at('2026-11-10', '14:00'), end: at('2026-11-10', '15:00') });
+    w.agenda.agentEdit(w.paul.id, { id: eb.id, end: at('2026-11-12', '12:00') });
+    const other = { networkId: w.paul.network_id, agentId: w.paul.id, personId: w.lea.id, kind: 'appel' as const, source: 'agent' as const };
+    expect(await w.rdv.book({ ...other, start: at('2026-11-10', '14:00') })).toMatchObject({ ok: false, rule: 'R33' });
+    expect(await w.rdv.book({ ...other, start: at('2026-11-12', '11:00') })).toMatchObject({ ok: false, rule: 'R33' });
+    // Réconcilié : le déplacement est pris, l'allongement refusé et l'événement remis à la durée du type.
+    expect(await w.sync.run()).toMatchObject({ moved: 1, conflicts: 1 });
+    expect(w.events().find((e) => e.id === eb.id)!.end).toEqual(at('2026-11-12', '10:00'));
+    expect((await w.rdv.book({ ...other, start: at('2026-11-12', '11:00') })).ok).toBe(true);
+    expect(await w.rdv.book({ ...other, start: at('2026-11-10', '14:30') })).toMatchObject({ ok: false, rule: 'R32' });
+  });
+
+  it('décalé deux fois avant l’écriture : l’événement passe au dernier, jamais deux événements', async () => {
+    const w = await world();
+    const a = await w.book(at('2026-11-10', '09:00'));
+    await w.sync.push();
+    const b = await w.rdv.reschedule(a.token, at('2026-11-10', '14:00'));
+    if (!b.ok) throw new Error('décalage refusé');
+    const c = await w.rdv.reschedule(b.token, at('2026-11-10', '16:00'));
+    if (!c.ok) throw new Error('décalage refusé');
+    await w.sync.push();
+    const live = w.events().filter((e) => !e.cancelled);
+    expect(live).toHaveLength(1);
+    expect(live[0]!.start).toEqual(at('2026-11-10', '16:00'));
+    expect(w.events()).toHaveLength(1);
+  });
+
   it('une panne de l’agenda ne perd aucune réservation : notée, puis reprise', async () => {
     const w = await world();
     const r = await w.book(at('2026-11-10', '09:00'));
