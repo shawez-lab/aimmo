@@ -96,18 +96,23 @@ export class ControleBaseLegale {
       report.byDay[day] = (report.byDay[day] ?? 0) + 1;
     };
     for (const row of rows) {
-      let items: StoredItem[];
+      let items: unknown[];
       try {
         const parsed: unknown = JSON.parse(row.items);
-        items = Array.isArray(parsed) ? (parsed as StoredItem[]) : [];
+        items = Array.isArray(parsed) ? (parsed as unknown[]) : [];
         if (!Array.isArray(parsed)) gap(row.day, 'unreadable');
       } catch {
         gap(row.day, 'unreadable');
         continue;
       }
       const at = new Date(row.computed_at);
-      for (const item of items) {
+      for (const raw of items) {
         report.items += 1;
+        if (raw === null || typeof raw !== 'object') {
+          gap(row.day, 'unreadable');
+          continue;
+        }
+        const item = raw as StoredItem;
         // Les fiches réunies au moment du plan ; sans elles, la ligne ne peut pas être vérifiée : c'est un écart.
         const members = Array.isArray(item.memberIds) ? item.memberIds.filter((m): m is string => typeof m === 'string') : [];
         if (members.length === 0 || typeof item.personId !== 'string' || !members.includes(item.personId)) {

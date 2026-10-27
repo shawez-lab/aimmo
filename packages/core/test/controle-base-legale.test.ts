@@ -67,21 +67,21 @@ describeWithSqlite('G05 · contrôle de la base légale sur 30 jours', () => {
     await t.db.run(`INSERT INTO daily_plans (agent_id, day, network_id, items, removed, computed_at) VALUES (?, '2027-01-11', ?, ?, '{}', ?)`, [
       t.alex.id,
       t.network.id,
-      JSON.stringify([{ personId: ghost.id, memberIds: [ghost.id] }, { personId: ghost.id }]),
+      JSON.stringify([{ personId: ghost.id, memberIds: [ghost.id] }, { personId: ghost.id }, null, 7]),
       new Date(PLAN_1 + DAY).toISOString(),
     ]);
     t.setClock(CHECK);
     const report = await t.controle.run(t.network.id);
-    expect(report).toMatchObject({ plans: 2, items: 4, gaps: 3, byReason: { excluded: 1, withdrawn: 0, noBasis: 1, unreadable: 1 }, byDay: { '2027-01-10': 1, '2027-01-11': 2 } });
+    expect(report).toMatchObject({ plans: 2, items: 6, gaps: 5, byReason: { excluded: 1, withdrawn: 0, noBasis: 1, unreadable: 3 }, byDay: { '2027-01-10': 1, '2027-01-11': 4 } });
     const alerts = await t.controle.alerts(t.as('direction', 'dir-1'));
-    expect(alerts.ok && alerts.value.map((a) => a.gaps)).toEqual([3]);
+    expect(alerts.ok && alerts.value.map((a) => a.gaps)).toEqual([5]);
     expect(await t.controle.alerts(t.as('compliance', 'conf-1'))).toMatchObject({ ok: true });
     // Le rapport, l'alerte et le journal ne portent que des nombres [R13].
     const everything = JSON.stringify([report, alerts, await t.journal.all(), await t.db.all('SELECT * FROM legal_basis_checks')]);
     expect(everything).not.toMatch(/Léa|Ugo|example\.test/);
     // Ni même un identifiant de fiche dans le rapport rangé et l'alerte.
     expect(JSON.stringify([report, alerts, await t.db.all('SELECT * FROM legal_basis_checks')])).not.toContain(lea);
-    expect((await t.journal.all()).filter((e) => e.type === 'plan_du_jour.controle.ecart').map((e) => e.data.gaps)).toEqual([3]);
+    expect((await t.journal.all()).filter((e) => e.type === 'plan_du_jour.controle.ecart').map((e) => e.data.gaps)).toEqual([5]);
   });
 
   it('ne relit que les 30 derniers jours, et seulement le réseau contrôlé', async () => {
