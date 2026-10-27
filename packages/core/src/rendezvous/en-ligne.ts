@@ -12,7 +12,7 @@
  * créneau proposé se réserve en ligne : il est vérifié avant toute fiche nouvelle.
  */
 import type { SqlDatabase } from '../db/sql.ts';
-import type { Channel, IdentifierKind } from '../db/types.ts';
+import type { Channel, IdentifierKind, Person } from '../db/types.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { normalizeIdentifier } from '../fiche/normalize.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
@@ -111,15 +111,17 @@ export class ReservationEnLigne {
     if (proof === '' || proof.length > MAX_PROOF) return { ok: false, code: 'bad_consent', rule: null };
     const firstName = input.firstName?.trim() || null;
     if (firstName !== null && !NAME.test(firstName)) return { ok: false, code: 'bad_name', rule: null };
-    // Un seul moyen de contact, celui de la confirmation : le mail d'abord, sinon le téléphone (SMS).
-    const contact: { kind: IdentifierKind; channel: Channel; value: string } | null = input.email
-      ? { kind: 'email', channel: 'email', value: input.email }
-      : input.phone
-        ? { kind: 'phone', channel: 'sms', value: input.phone }
-        : null;
-    if (!contact) return { ok: false, code: 'no_contact', rule: null };
-    const normalized = normalizeIdentifier(contact.kind, contact.value);
-    if (normalized === null) return { ok: false, code: 'bad_contact', rule: null };
+    // Tous les contacts donnés servent à retrouver la personne ; la confirmation part par le mail d'abord, sinon par
+    // le téléphone (SMS).
+    const given: { kind: IdentifierKind; value: string }[] = [];
+    for (const [kind, raw] of [['email', input.email], ['phone', input.phone]] as const) {
+      if (!raw) continue;
+      const value = normalizeIdentifier(kind, raw);
+      if (value === null) return { ok: false, code: 'bad_contact', rule: null };
+      given.push({ kind, value });
+    }
+    if (given.length === 0) return { ok: false, code: 'no_contact', rule: null };
+    const channel: Channel = given[0]!.kind === 'email' ? 'email' : 'sms';
     if (!(await this.agentIn(input.networkId, input.agentId))) return { ok: false, code: 'unknown_agent', rule: null };
 
     // En ligne, seul un créneau proposé se réserve : vérifié avant de créer une fiche, la base tranchera ensuite [R32].
@@ -128,21 +130,23 @@ export class ReservationEnLigne {
     if (!around.some((s) => s.start.getTime() === input.start.getTime())) return { ok: false, code: 'not_free', rule: null };
 
     const at = this.now();
-    // La fiche gardée, téléphone et WhatsApp confondus, fusions comprises : une exclusion ou un arrêt notés sur
-    // l'une ne se contournent pas en réservant avec l'autre [R02, R04].
-    const known = await this.fiche.findByIdentifier(input.networkId, contact.kind, normalized);
-    // Plusieurs fiches distinctes portent ce contact : le rendez-vous va à la plus ancienne, sans confirmation par
-    // message, pour ne pas écrire à quelqu'un dont les exclusions sont sur une autre fiche ; l'agent tranchera.
+    // Les fiches gardées de chaque contact donné, téléphone et WhatsApp confondus, fusions comprises : une exclusion
+    // ou un arrêt notés sur l'une ne se contournent pas en réservant avec un autre contact [R02, R04].
+    const byId = new Map<string, Person>();
+    for (const g of given) for (const p of await this.fiche.findByIdentifier(input.networkId, g.kind, g.value)) byId.set(p.id, p);
+    const known = [...byId.values()];
+    // Plusieurs fiches distinctes : le rendez-vous va à la plus ancienne, sans confirmation par message, pour ne pas
+    // écrire à quelqu'un dont les exclusions sont sur une autre fiche ; l'agent tranchera.
     const ambiguous = known.length > 1;
     let personId: string;
     let created = false;
     if (known.length > 0) {
       personId = [...known].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))[0]!.id;
-      // Le contact donné sert la confirmation : un numéro connu en WhatsApp est aussi rangé comme téléphone (SMS).
-      if (!ambiguous) await this.fiche.addIdentifier({ networkId: input.networkId, personId, kind: contact.kind, value: normalized });
+      // Les contacts donnés servent la confirmation : un numéro connu en WhatsApp est aussi rangé comme téléphone (SMS).
+      if (!ambiguous) for (const g of given) await this.fiche.addIdentifier({ networkId: input.networkId, personId, kind: g.kind, value: g.value });
     } else {
       const person = await this.store.createPerson({ networkId: input.networkId, agentId: input.agentId, firstName });
-      await this.store.addIdentifier({ networkId: input.networkId, personId: person.id, kind: contact.kind, value: normalized });
+      for (const g of given) await this.store.addIdentifier({ networkId: input.networkId, personId: person.id, kind: g.kind, value: g.value });
       personId = person.id;
       created = true;
     }
@@ -151,7 +155,7 @@ export class ReservationEnLigne {
       networkId: input.networkId,
       personId,
       purpose: APPOINTMENT_PURPOSE,
-      channel: contact.channel,
+      channel,
       proof: `réservation en ligne (${input.source}) le ${at.toISOString()} : ${proof}`,
       givenAt: at,
     });
@@ -165,7 +169,7 @@ export class ReservationEnLigne {
         kind: input.kind,
         start: input.start,
         source: input.source,
-        channel: ambiguous ? null : contact.channel,
+        channel: ambiguous ? null : channel,
       });
     } catch (error) {
       await this.store.withdrawConsent(consent.id, this.now());

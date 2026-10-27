@@ -155,6 +155,20 @@ describeWithSqlite('V08 · réservation depuis le site et les messages, en mode 
     expect(await w.db.all('SELECT message_id FROM trial_outbox')).toHaveLength(0);
   });
 
+  it('[R04] un mail nouveau et un téléphone d’une fiche qui a dit stop : la fiche est retrouvée, rien ne part', async () => {
+    const w = await world();
+    const known = await w.store.createPerson({ networkId: w.net.id, agentId: w.paul.id, firstName: 'Léa' });
+    await w.store.addIdentifier({ networkId: w.net.id, personId: known.id, kind: 'phone', value: '+33612345678' });
+    await w.store.addExclusion({ networkId: w.net.id, personId: known.id, reason: 'stop', notedAt: new Date('2026-01-01T00:00:00Z') });
+    const before = (await w.db.all('SELECT id FROM persons')).length;
+    const slots = (await w.call('creneaux', w.slotsAsk())).body.slots as { start: string }[];
+    const r = await w.call('reservation', w.bookAsk(slots[0]!.start, { email: 'nouveau.mail@example.test', phone: '06 12 34 56 78' }));
+    expect(r.status).toBe(200);
+    expect((await w.db.all('SELECT id FROM persons')).length).toBe(before);
+    expect(await w.rdv.byToken(r.body.token as string)).toMatchObject({ person_id: known.id, confirmation_status: 'refused' });
+    expect(await w.db.all('SELECT message_id FROM trial_outbox')).toHaveLength(0);
+  });
+
   it('un numéro connu en WhatsApp seulement sert aussi la confirmation par SMS', async () => {
     const w = await world();
     const known = await w.store.createPerson({ networkId: w.net.id, firstName: 'Léa' });
