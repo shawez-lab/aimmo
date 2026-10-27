@@ -13,6 +13,7 @@ import type { RefusalCode, Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { DEADLINES, type Deadline } from '../qualification/regles.ts';
+import { INBOUND_CHANNELS } from '../reception/entrant.ts';
 
 export interface PlanSettings {
   /** Jours pendant lesquels une demande de la personne vaut base légale. Réglage de départ : 13 mois. */
@@ -27,6 +28,12 @@ export const DEFAULT_PLAN_SETTINGS: PlanSettings = Object.freeze({ requestDays: 
 export const PLAN_CONSENT_PURPOSES: readonly string[] = Object.freeze(['valuation_follow_up', 'value_tracking', 'prospecting']);
 
 /** Étapes d'un projet avant tout mandat, où un rendez-vous reste à proposer. */
+/**
+ * Sources qui sont une demande de la personne : elle a écrit ou rempli un formulaire. Une reprise d'outil
+ * (GoHighLevel, ManyChat) ou une saisie de l'agent n'en est pas une [R36].
+ */
+export const REQUEST_SOURCE_CHANNELS: readonly string[] = Object.freeze([...INBOUND_CHANNELS]);
+
 export const OPEN_STAGES: readonly string[] = Object.freeze(['new', 'recue', 'appele']);
 
 export type PlanItemKind = 'callback' | 'appointment' | 'valuation';
@@ -62,7 +69,7 @@ export interface DailyPlan {
   computedAt: string;
   items: PlanItem[];
   /** Personnes qui avaient une raison d'y être mais n'y sont pas, comptées sans donnée personnelle [R36]. */
-  removed: { excluded: number; noBasis: number };
+  removed: { excluded: number; withdrawn: number; noBasis: number };
 }
 
 export type PlanResult = { ok: true; value: DailyPlan } | { ok: false; rule: 'R16'; code: RefusalCode | 'not_agent' };
@@ -160,7 +167,7 @@ export class PlanDuJour {
     if (!visible.ok) return visible;
     const at = this.now();
     const stamp = at.toISOString();
-    const removed = { excluded: 0, noBasis: 0 };
+    const removed = { excluded: 0, withdrawn: 0, noBasis: 0 };
     const items: Candidate[] = [];
     const seen = new Set<string>();
     for (const listed of visible.value) {
@@ -174,6 +181,11 @@ export class PlanDuJour {
       // Une personne exclue ou qui a demandé l'arrêt, sur n'importe quel canal, n'est jamais au plan [R36].
       if (await this.excluded(ids, stamp)) {
         removed.excluded += 1;
+        continue;
+      }
+      // Un accord de recontact retiré l'emporte sur toute demande : la personne a dit non [R03, R36].
+      if (await this.withdrawn(ids, stamp)) {
+        removed.withdrawn += 1;
         continue;
       }
       const basis = await this.basisOf(ids, at);
@@ -333,13 +345,26 @@ export class PlanDuJour {
     const request = await this.db.first<{ at: string | null }>(
       `SELECT max(at) AS at FROM (
          SELECT occurred_at AS at FROM messages WHERE person_id IN (${inIds}) AND direction = 'in'
-         UNION ALL SELECT occurred_at AS at FROM sources WHERE person_id IN (${inIds})
+         UNION ALL SELECT occurred_at AS at FROM sources WHERE person_id IN (${inIds}) AND channel IN (${placeholders(REQUEST_SOURCE_CHANNELS.length)})
          UNION ALL SELECT created_at AS at FROM callback_tasks WHERE person_id IN (${inIds})
        ) WHERE at <= ?`,
-      [...ids, ...ids, ...ids, stamp],
+      [...ids, ...ids, ...REQUEST_SOURCE_CHANNELS, ...ids, stamp],
     );
     if (request?.at && request.at >= from) return { kind: 'request', since: request.at, purpose: null };
     return null;
+  }
+
+  /** Un accord pour une finalité du plan, retiré, sans nouvel accord donné depuis pour la même finalité. */
+  private async withdrawn(ids: readonly string[], at: string): Promise<boolean> {
+    const inIds = placeholders(ids.length);
+    const row = await this.db.first<{ n: number }>(
+      `SELECT count(*) AS n FROM consents w WHERE w.person_id IN (${inIds}) AND w.purpose IN (${placeholders(PLAN_CONSENT_PURPOSES.length)})
+       AND w.withdrawn_at IS NOT NULL AND w.withdrawn_at <= ?
+       AND NOT EXISTS (SELECT 1 FROM consents c WHERE c.person_id IN (${inIds}) AND c.purpose = w.purpose
+         AND c.given_at >= w.withdrawn_at AND c.given_at <= ? AND (c.withdrawn_at IS NULL OR c.withdrawn_at > ?))`,
+      [...ids, ...PLAN_CONSENT_PURPOSES, at, ...ids, at, at],
+    );
+    return Number(row?.n ?? 0) > 0;
   }
 
   private async excluded(ids: readonly string[], at: string): Promise<boolean> {

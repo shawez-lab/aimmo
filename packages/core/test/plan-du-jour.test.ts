@@ -184,7 +184,7 @@ describeWithSqlite('G01 · plan du jour : contenu et ordre', () => {
     t.setClock(PLAN_AT);
     const plan = await t.planOf(t.alex.id);
     expect(plan.items.map((i) => i.personId)).toEqual([kept.id]);
-    expect(plan.removed).toEqual({ excluded: 2, noBasis: 0 });
+    expect(plan.removed).toEqual({ excluded: 2, withdrawn: 0, noBasis: 0 });
     expect(JSON.stringify(plan.removed)).not.toMatch(/Stéphane|Sofia/);
   });
 
@@ -204,7 +204,26 @@ describeWithSqlite('G01 · plan du jour : contenu et ordre', () => {
     expect(plan.items.map((i) => i.personId).sort()).toEqual([consented.id, recent.id].sort());
     expect(plan.items.find((i) => i.personId === consented.id)!.basis).toMatchObject({ kind: 'consent', purpose: 'valuation_follow_up' });
     expect(plan.items.find((i) => i.personId === recent.id)!.basis.kind).toBe('request');
-    expect(plan.removed).toEqual({ excluded: 0, noBasis: 2 });
+    expect(plan.removed).toEqual({ excluded: 0, withdrawn: 1, noBasis: 1 });
+  });
+
+  it('[R36] une reprise d’outil récente n’est pas une demande ; un accord retiré l’emporte sur une demande récente, un nouvel accord le rétablit', async () => {
+    const t = await setup();
+    const imported = await t.person('Igor', { sourceAt: PLAN_AT - 3 * 365 * DAY });
+    await t.store.addSource({ networkId: t.network.id, agentId: t.alex.id, personId: imported.id, channel: 'gohighlevel', detail: 'reprise (test)', occurredAt: new Date(PLAN_AT - 10 * DAY) });
+    const refused = await t.person('Jade', { stage: 'avis', sourceAt: START });
+    await t.valuationSent(refused.id, START + DAY);
+    const c1 = await t.store.addConsent({ networkId: t.network.id, personId: refused.id, purpose: 'valuation_follow_up', channel: 'email', proof: 'case cochée (test)', givenAt: new Date(START) });
+    await t.store.withdrawConsent(c1.id, new Date(START + 2 * DAY));
+    const back = await t.person('Kim', { sourceAt: START });
+    const c2 = await t.store.addConsent({ networkId: t.network.id, personId: back.id, purpose: 'valuation_follow_up', channel: 'email', proof: 'case cochée (test)', givenAt: new Date(START) });
+    await t.store.withdrawConsent(c2.id, new Date(START + DAY));
+    await t.store.addConsent({ networkId: t.network.id, personId: back.id, purpose: 'valuation_follow_up', channel: 'email', proof: 'case recochée (test)', givenAt: new Date(START + 5 * DAY) });
+    t.setClock(PLAN_AT);
+    const plan = await t.planOf(t.alex.id);
+    expect(plan.items.map((i) => i.personId)).toEqual([back.id]);
+    expect(plan.items[0]!.basis).toMatchObject({ kind: 'consent' });
+    expect(plan.removed).toEqual({ excluded: 0, withdrawn: 1, noBasis: 1 });
   });
 
   it('un contact n’y figure qu’une fois, sous sa raison la plus forte, même après une fusion de fiches', async () => {
