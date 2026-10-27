@@ -435,14 +435,16 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Critères : seul l'agent du rendez-vous change son statut ; un statut final ne change plus ; le journal ne porte pas le texte du compte rendu [R13].
 
 ### V07 · Visites enchaînées et tournée partagée
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : le secteur est la commune (pas de coordonnées des biens en base) ; 8 visites au plus ; proposition seule, rien réservé ; le proche est une fiche du réseau avec son accord `route_share` [R03] ; les appels ne sont pas dans la tournée ; une tournée changée peut repartir.
+- Reste : relecture de Codex impossible (H03), fusion sans elle (#43).
 - Qui : Claude · Relecture : normale · Dépend de : V01
 - Cahier : M05, « Visites enchaînées » et « Règles » (tournée partagée).
 - Objectif : proposer un ordre de visites dans un même secteur qui tient dans les disponibilités et les temps de trajet ; l'agent peut envoyer sa tournée du jour à un proche ou à son accompagnateur, par le contrôle central, en mode essai.
 - Critères : l'ordre proposé respecte R32 et R33 ; la tournée envoyée ne porte que les heures et les communes, jamais d'adresse exacte ni de nom de client [R09] ; rien ne part sans que l'agent le demande.
 
 ### V08 · Réservation depuis le site et les messages, en mode essai
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : V02
 - Cahier : M05, « Réservation en ligne ».
 - Objectif : des routes de l'API pour lister les créneaux libres d'un agent et réserver, appelées par le site, l'assistant et l'espace client, avec la clé de l'appelant ; en mode essai.
