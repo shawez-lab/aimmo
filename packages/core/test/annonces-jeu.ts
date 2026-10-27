@@ -1,0 +1,112 @@
+// Jeu de test commun aux tâches de M07 : un réseau, un bien, un vendeur et un mandat inventés, prêts à publier.
+import {
+  Acces,
+  ControlesSignature,
+  FicheClient,
+  FicheUnique,
+  Modeles,
+  RegistreMandats,
+  SignatureAvenant,
+  SignaturePapier,
+  SqlJournalStore,
+  applyMigrations,
+  fromSyncSqlite,
+  type SqlDatabase,
+  type Viewer,
+} from '../src/index.ts';
+import { Annonces, CHANNELS, FicheBien, MentionsAnnonce, Publication, type Channel, type ListingChannel, type ListingPayload } from '../src/annonces/index.ts';
+import { loadMigrations } from './migrations.ts';
+import { openMemoryDatabase } from './sqlite.ts';
+
+// Réseau, bien, vendeur et mandat inventés.
+const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
+const AMENDMENT = 'Avenant de test au mandat n° {{mandat.numero}} : {{avenant.objet}}.\n\nMandant : {{mandant.nom}}. Signé le {{signature.date}}, {{signature.lieu}}.';
+export const SIGNED = new Date('2027-02-10T09:00:00.000Z'); // un mercredi, hors de l'agence : délai jusqu'au 24 février inclus
+export const DELAY_END = new Date('2027-02-24T23:00:00.000Z'); // 25 février, 0 h à Paris
+export const MIN = 60_000;
+
+/** Un canal de test qui garde ce qu'il reçoit, et peut tomber en panne à la demande. */
+export class FakeChannel implements ListingChannel {
+  received: ListingPayload[] = [];
+  failNext = 0;
+  constructor(readonly channel: Channel) {}
+  async push(payload: ListingPayload): Promise<void> {
+    if (this.failNext > 0) {
+      this.failNext--;
+      throw new Error('portail_indisponible');
+    }
+    this.received.push(payload);
+  }
+}
+
+export async function setupAnnonce(options: { card?: boolean } = {}) {
+  const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+  await applyMigrations(db, loadMigrations());
+  let clock = new Date('2027-02-10T10:00:00.000Z');
+  const now = () => clock;
+  const journal = new SqlJournalStore(db);
+  const store = new FicheClient(db, { now });
+  const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
+  const modeles = new Modeles(db, acces, journal, { now });
+  const controles = new ControlesSignature(db, acces, journal, { now });
+  const network = await store.createNetwork('Réseau test');
+  const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
+  const sam = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Agent' });
+  const as = (role: string, userId: string): Viewer => ({ role, userId, networkId: network.id }) as Viewer;
+  const agent = as('agent', alex.id);
+  const direction = as('direction', 'direction-1');
+  for (const [kind, body] of [['mandat_vente_simple', MANDATE], ['avenant_mandat', AMENDMENT]] as const) {
+    const v = await modeles.createVersion(direction, kind, body);
+    if (!v.ok) throw new Error(v.code);
+    await modeles.validate(as('compliance', 'c-1'), v.template.id);
+  }
+  await controles.setFeeSchedule(direction, { maxRatePercent: 6, minEur: 0 });
+  await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+  const p = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Léa', lastName: 'Exemple' });
+  const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'REF-T-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
+  const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
+  await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
+  await controles.recordIdentity(agent, p.id, { piece: 'carte_identite', seenAt: SIGNED });
+  await new FicheBien(db, acces, journal, { now }).save(agent, b.id, {
+    characteristics: { bedrooms: 2, floor: 3, floorsTotal: 5, buildYear: 1965, heating: 'collectif', outdoor: ['balcon'], parkingSpaces: 1, elevator: true },
+    energy: { energyClass: 'D', climateClass: 'C', annualCostMinEur: 1100, annualCostMaxEur: 1550, costReferenceYear: 2023, diagnosedOn: '2027-01-15' },
+    coownership: { isCoownership: true, lots: 24, annualChargesEur: 1800, proceedings: false },
+    risks: { inRiskZone: false },
+    media: [
+      { ref: `biens/${b.id}/0b6f1d2e-1111-4a2b-8c3d-000000000001.jpg`, kind: 'photo', edit: 'lumiere_cadrage' },
+      { ref: `biens/${b.id}/0b6f1d2e-2222-4a2b-8c3d-000000000002.jpg`, kind: 'photo', edit: 'amenagement_virtuel' },
+      { ref: `biens/${b.id}/0b6f1d2e-3333-4a2b-8c3d-000000000003.mp4`, kind: 'video', edit: 'aucune' },
+    ],
+  });
+  if (options.card !== false) await new MentionsAnnonce(db, acces, journal, { now }).setCardNumber(direction, 'CPI 2101 2027 000 000 001');
+  const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'acquereur', 'mandat.duree_mois': 12 } });
+  if (!d.ok) throw new Error(d.code);
+  const signed = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt: SIGNED, place: 'hors_agence', scanRef: 'scans/mandat.pdf', source: 'referral' });
+  if (!signed.ok) throw new Error(signed.code);
+  const annonces = new Annonces(db, acces, journal, { now });
+  const draft = await annonces.propose(agent, b.id);
+  if (!draft.ok) throw new Error(draft.code);
+  const channels = CHANNELS.map((c) => new FakeChannel(c));
+  const publication = new Publication(db, acces, journal, { now, channels });
+  const amend = async (priceEur: number) => {
+    const a = await modeles.generate(agent, { kind: 'avenant_mandat', personId: p.id, propertyId: b.id, mandateId: signed.value.mandateId, inputs: { 'avenant.prix': priceEur } });
+    if (!a.ok) throw new Error(a.code);
+    const r = await new SignatureAvenant(db, acces, journal, { now }).register(agent, a.document.id, { signedAt: clock, place: 'agence', scanRef: `scans/avenant-${priceEur}.pdf` });
+    if (!r.ok) throw new Error(r.code);
+  };
+  return {
+    db, journal, acces, annonces, publication, channels, agent, direction, alexId: alex.id, sam: as('agent', sam.id), network, propertyId: b.id, draftId: draft.value.id, mandateId: signed.value.mandateId, amend,
+    now, setClock: (at: Date) => (clock = at),
+    /** Les passages du planificateur, toutes les 15 minutes, de `from` à `to` inclus ; rend l'heure du premier passage qui publie. */
+    async runEvery15(from: Date, to: Date): Promise<Date | null> {
+      let first: Date | null = null;
+      for (let t = from.getTime(); t <= to.getTime(); t += 15 * MIN) {
+        clock = new Date(t);
+        const r = await publication.sync(network.id, b.id);
+        if (first === null && r.created) first = clock;
+      }
+      return first;
+    },
+  };
+}
+
