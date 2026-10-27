@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { BouclierFonds, PIECES, SALE_FOLLOW_UP_PURPOSE, fundSignals, fundsInOutgoing, fundsReminderText, reminderText } from '../src/dossiers/index.ts';
+import { BouclierFonds, PIECES, RelancesPieces, SALE_FOLLOW_UP_PURPOSE, fundSignals, fundsInOutgoing, fundsReminderText, reminderText } from '../src/dossiers/index.ts';
+import type { JournalStore } from '../src/index.ts';
 import { setupDossier } from './dossiers-jeu.ts';
 import { migrationsDir } from './migrations.ts';
 import { describeWithSqlite } from './sqlite.ts';
@@ -12,10 +13,23 @@ const paris = (day: string, hour: number, minute = 0) => new Date(Date.parse(`${
 
 it('[R62] un message reçu qui parle d’argent est reconnu, sans rien garder du texte', () => {
   expect(fundSignals(`Bonjour, le notaire a changé de banque, voici le nouveau RIB : ${IBAN}`)).toEqual(['iban', 'coordonnees_bancaires']);
-  expect(fundSignals('Pouvez-vous me confirmer le virement de l’acompte sur le compte séquestre ?')).toEqual(['virement', 'acompte', 'sequestre']);
+  expect(fundSignals('Pouvez-vous me confirmer le virement de l’acompte sur le compte séquestre ?')).toEqual(['coordonnees_bancaires', 'virement', 'acompte', 'sequestre']);
   expect(fundSignals('Il faut régler la somme avant vendredi, merci de payer par carte')).toEqual(['paiement']);
   expect(fundSignals('Bonjour, je vous envoie le titre de propriété demain. Bonne journée')).toEqual([]);
   expect(fundSignals('Le règlement de copropriété est joint')).toEqual([]);
+  // De vrais tours de la fraude au faux RIB : pluriels, impératifs, « fonds », « sur le compte », coordonnées changées.
+  for (const t of [
+    'Bonjour, suite à un contrôle, nos coordonnées ont changé. Merci d’effectuer les virements sur le compte ci-joint.',
+    'Virez les fonds sur ce compte avant vendredi svp',
+    'Versez la somme de 25 000 € sur le compte de l’étude',
+    'Les fonds doivent être envoyés sur le compte ci-dessous',
+    'Réglez le dépôt de 10 % au plus vite',
+    'Payez les frais de notaire sur ce lien',
+    'Nos nouvelles coordonnées sont en pièce jointe, merci de les utiliser pour les acomptes',
+    'Voici notre numéro de compte',
+    `IBAN : ${IBAN.replace(/ /g, '')}`,
+  ]) expect([t, fundSignals(t).length > 0]).toEqual([t, true]);
+  expect(fundSignals('Le fonds de commerce n’est pas concerné, je vous envoie le titre')).toEqual([]);
 });
 
 it('[R62] aucun texte d’AIMMO ne porte de coordonnée bancaire ni ne demande un paiement', () => {
@@ -24,6 +38,9 @@ it('[R62] aucun texte d’AIMMO ne porte de coordonnée bancaire ni ne demande u
   }
   // Le rappel du bouclier et toutes les relances de pièces passent.
   expect(fundsInOutgoing(fundsReminderText('Léa'))).toBe(false);
+  // Une référence d'agence n'est pas un IBAN.
+  expect(fundsInOutgoing('Le bien réf. AB12 CDEF GHIJ KL est à Dijon')).toBe(false);
+  expect(fundsInOutgoing('Pour la vente de votre bien à Dijon, référence DJ21-2027-0045,')).toBe(false);
   for (const p of PIECES) expect(fundsInOutgoing(reminderText('Léa', p, '2027-03-11', { city: 'Dijon', reference: 'REF-T-1' }))).toBe(false);
 });
 
@@ -110,6 +127,35 @@ describeWithSqlite('N05 · aucun fonds, bouclier contre le faux RIB', () => {
     expect(await t.inbox(t.buyerId)).toEqual([]);
     await expect(t.db.run('DELETE FROM sale_file_fund_alerts')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE sale_file_fund_alerts SET signals = '[]'")).rejects.toThrow(/rien ne change/);
+  });
+
+  it('un rappel resté sans issue après une panne repart au passage suivant', async () => {
+    const t = await setup();
+    t.setClock(paris('2027-03-08', 10));
+    const m = await t.receive(t.buyerId, 'Voici mon RIB');
+    // Une panne entre l'alerte et l'envoi : l'alerte est rangée, le rappel n'a pas d'issue.
+    const j = t.journal;
+    const failing: JournalStore = {
+      append: async (e) => { if (e.type === 'dossier.alerte_fonds') throw new Error('panne'); return j.append(e); },
+      last: () => j.last(), all: () => j.all(), bySubject: (x) => j.bySubject(x), byPeriod: (a, b) => j.byPeriod(a, b),
+    };
+    const broken = new BouclierFonds(t.db, t.acces, failing, { now: t.now });
+    await expect(broken.scan(m.id)).rejects.toThrow('panne');
+    expect((await t.db.first<{ reminder_status: string | null }>('SELECT reminder_status FROM sale_file_fund_alerts WHERE message_id = ?', [m.id]))?.reminder_status).toBeNull();
+    await t.bouclier.run(t.network.id, paris('2027-03-08', 9));
+    expect(await t.inbox(t.buyerId)).toHaveLength(1);
+  });
+
+  it('[R62] une relance de pièce dont le texte porterait un signal bancaire est refusée, sans rien envoyer', async () => {
+    const t = await setup();
+    await t.db.run("UPDATE properties SET reference = 'RIB-7' WHERE id = ?", [t.propertyId]);
+    t.setClock(paris('2027-03-08', 10));
+    const r = new RelancesPieces(t.db, t.acces, t.journal, t.storage, { now: t.now });
+    expect(await r.run(t.network.id)).toBe(0);
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM trial_outbox'))?.n).toBe(0);
+    const rows = await r.ofFile(t.agent, t.fileId);
+    expect(rows.ok && rows.value.map((x) => [x.status, x.rule])).toEqual(Array(5).fill(['refused', 'R62']));
+    expect(JSON.stringify(await t.journal.bySubject(`sale_file:${t.fileId}`))).not.toContain('RIB-7');
   });
 
   it('[R16] les alertes à l’agent du bien seul, chaque lecture au journal', async () => {

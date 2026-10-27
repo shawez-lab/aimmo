@@ -35,17 +35,18 @@ import type { JournalStore } from '../journal/types.ts';
 import { actorOf, type FileRefusal } from './acces-dossier.ts';
 import { SALE_FOLLOW_UP_PURPOSE } from './relances.ts';
 
-/** Un IBAN, avec ou sans espaces : deux lettres, deux chiffres, puis 11 à 30 caractères. */
-const IBAN = /\b[a-z]{2}\d{2}(?:[ -]?[a-z0-9]){11,30}\b/i;
+/** Un IBAN, avec ou sans espaces tous les 4 caractères : deux lettres, deux chiffres, puis 12 à 30 caractères. */
+const IBAN = /\b[a-z]{2}\d{2}(?: ?[a-z0-9]{4}){3,7}(?: ?[a-z0-9]{1,4})?\b/i;
 
 export type FundSignal = 'iban' | 'coordonnees_bancaires' | 'virement' | 'acompte' | 'sequestre' | 'paiement';
 
+// Les formes courantes, pluriels et impératifs compris. « Règlement » seul ne compte pas : règlement de copropriété.
 const INBOUND: [FundSignal, RegExp][] = [
-  ['coordonnees_bancaires', /\b(?:rib|bic|swift|iban|coordonnees bancaires|releve d'identite bancaire|nouveau compte|changement de compte|changement de banque|autre compte|compte bancaire)\b/],
-  ['virement', /\b(?:virement|virer|vire|transfert de fonds|transferer)\b/],
-  ['acompte', /\b(?:acompte|arrhes|depot de garantie)\b/],
-  ['sequestre', /\b(?:sequestre|consignation)\b/],
-  ['paiement', /\b(?:payer|paiement|verser|versement|regler la somme|frais a regler)\b/],
+  ['coordonnees_bancaires', /\b(?:ribs?|bic|swift|iban|coordonnees bancaires|releve d'identite bancaire|nouveaux? comptes?|changement de (?:compte|banque|coordonnees)|autre compte|comptes? bancaires?|numero de compte|nouvelles? coordonnees|coordonnees (?:\w+ )?(?:ont |a )?change\w*|sur (?:le|ce|notre|un|leur|votre) (?:nouveau )?compte|compte ci-(?:joint|dessous|apres))\b/],
+  ['virement', /\b(?:virements?|vire[rsz]?|virons|virent|transferts? de fonds|transfere[rsz]?|fonds(?! de commerce))\b/],
+  ['acompte', /\b(?:acomptes?|arrhes|depots? de garantie)\b/],
+  ['sequestre', /\b(?:sequestres?|consignation)\b/],
+  ['paiement', /\b(?:paye[rsz]?|paie[sz]?|payons|paiements?|verse[rsz]?|versons|versements?|regle[rz]|reglons|regler la somme|reglement de la somme|frais a regler)\b/],
 ];
 
 /** Les signaux d'argent d'un message reçu, dans un ordre fixe, sans rien garder du texte. */
@@ -190,7 +191,8 @@ export class BouclierFonds {
       [networkId, since.toISOString()],
     );
     for (const r of rows) await this.scan(r.id);
-    for (const w of await this.db.all<{ message_id: string }>("SELECT message_id FROM sale_file_fund_alerts WHERE network_id = ? AND reminder_status IN ('waiting', 'failed')", [networkId])) await this.remind(w.message_id);
+    // Un rappel resté sans issue (panne entre l'alerte et l'envoi), ou qui attendait l'heure, repart.
+    for (const w of await this.db.all<{ message_id: string }>("SELECT message_id FROM sale_file_fund_alerts WHERE network_id = ? AND (reminder_status IS NULL OR reminder_status IN ('waiting', 'failed'))", [networkId])) await this.remind(w.message_id);
     return (await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM sale_file_fund_alerts WHERE network_id = ?', [networkId]))!.n - before;
   }
 
