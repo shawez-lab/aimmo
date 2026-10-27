@@ -857,7 +857,8 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O06 · Tableau comparatif des offres pour le vendeur
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : ordre d'arrivée, sans tri ; net vendeur = montant moins les honoraires fixés au mandat ; état et validité de la dernière contre-offre ; état du registre montré ; date de signature souhaitée pas encore saisie
 - Qui : Claude · Relecture : normale · Dépend de : O02
 - Cahier : M09, « Plusieurs offres ».
 - Objectif : pour un bien, toutes les offres en cours côte à côte : montant, net vendeur après honoraires du mandat, conditions suspensives, durée de validité restante, date de signature souhaitée ; dans l'ordre d'arrivée, sans aucun tri ni note.
@@ -865,7 +866,7 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O07 · Offre acceptée : dossier de vente, bloqué sans identité vérifiée
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : O03
 - Cahier : M09, « Offre acceptée » ; critère « aucun compromis préparé sans identité vérifiée de l'acquéreur ».
 - Objectif : une acceptation rapportée avec preuve ouvre un dossier de vente minimal (bien, offre, acquéreurs, vendeur), que M10 complétera ; le dossier ne peut passer à « compromis en préparation » tant que l'identité de chaque acquéreur n'est pas vérifiée ; le bien passe « sous offre » pour la publication (M07).
