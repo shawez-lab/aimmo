@@ -257,7 +257,6 @@ export class Qualification {
       deadline: row.deadline,
       city: row.city,
       criteria: parseCriteria(row.criteria),
-      amountGiven: row.budget_min_eur !== null || row.budget_max_eur !== null || row.price_eur !== null,
       propertyRecognized: row.property_id !== null,
     });
     await this.db.run(

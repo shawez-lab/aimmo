@@ -6,7 +6,6 @@ const input = (over: Partial<ScoreInput> = {}): ScoreInput => ({
   deadline: null,
   city: null,
   criteria: [],
-  amountGiven: false,
   propertyRecognized: false,
   ...over,
 });
@@ -50,10 +49,16 @@ describe('Q02 · note et température par barème fixe', () => {
       `${base}, budget 150 000 €, avec un prêt.`,
       `${base}, budget 150 000 €. Je suis retraité, divorcé, avec trois enfants.`,
       `${base}, budget 150 000 €. Nous sommes un jeune couple de médecins.`,
+      // Sans budget : un montant qui ne dit que le financement ne change rien non plus.
+      `${base}.`,
+      `${base}, prêt accordé de 250 000 €.`,
+      `${base}, achat comptant, 300 000 € disponibles.`,
+      `${base}, la banque me prête 200 000 €.`,
+      `${base}, apport de 50 000 €.`,
     ];
     const scores = variants.map((text) => {
       const q = qualifyByRules(text);
-      return scoreContact({ ...q, amountGiven: q.budgetMaxEur !== null || q.priceEur !== null, propertyRecognized: false });
+      return scoreContact({ ...q, propertyRecognized: false });
     });
     expect(new Set(scores.map((s) => JSON.stringify(s))).size).toBe(1);
     // Le barème n'a même pas de place pour le financement.

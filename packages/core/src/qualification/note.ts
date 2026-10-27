@@ -2,16 +2,14 @@
  * La note d'un contact, de 0 à 100, et sa température (M03, Q02), par un barème fixe écrit ici, sans IA : chaque note
  * a sa raison en une ligne, et le même contact a toujours la même note [R24].
  *
- * Le barème ne lit que la demande : catégorie, bien cité, délai, précision (commune, montant annoncé, critères). Il ne
- * lit jamais le financement, ni la valeur d'un budget, ni rien sur la personne [R14, R24].
+ * Le barème ne lit que la demande : catégorie, bien cité, délai, précision (commune, critères). Il ne lit aucun
+ * montant : un montant peut dire le financement, que la note ne doit jamais suivre, ni rien sur la personne [R14, R24].
  */
 import type { Category, Deadline, Qualified } from './regles.ts';
 
 export type Temperature = 'cold' | 'warm' | 'hot';
 
 export interface ScoreInput extends Pick<Qualified, 'category' | 'deadline' | 'city' | 'criteria'> {
-  /** Un montant (budget ou prix) a été annoncé : seulement sa présence, jamais sa valeur. */
-  amountGiven: boolean;
   propertyRecognized: boolean;
 }
 
@@ -28,7 +26,6 @@ export interface ScoreSettings {
   property: number;
   deadline: Readonly<Record<Deadline, number>>;
   city: number;
-  amount: number;
   /** À partir de deux critères. */
   criteria: number;
   /** Seuils : chaud à partir de `hot`, tiède à partir de `warm`. */
@@ -41,7 +38,6 @@ export const DEFAULT_SCORE_SETTINGS: ScoreSettings = Object.freeze({
   property: 20,
   deadline: Object.freeze({ now: 25, within_3_months: 15, within_6_months: 8, within_1_year: 3, later: -10 }),
   city: 5,
-  amount: 5,
   criteria: 5,
   hot: 60,
   warm: 35,
@@ -86,10 +82,6 @@ export function scoreContact(input: ScoreInput, settings: ScoreSettings = DEFAUL
   if (input.city) {
     score += settings.city;
     parts.push('commune donnée');
-  }
-  if (input.amountGiven) {
-    score += settings.amount;
-    parts.push('montant annoncé');
   }
   if (input.criteria.length >= 2) {
     score += settings.criteria;
