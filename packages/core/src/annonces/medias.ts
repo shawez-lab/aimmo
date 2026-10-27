@@ -104,8 +104,9 @@ export class MediasBien {
     // (« au 12 », « rue des Essais ») est lue d'un bloc [R46].
     const continuous = (text.subtitles as string[]).join(' ');
     const seen = new Set<string>();
+    // Les textes entiers aussi, sans découpage : un point mal placé ne coupe jamais une adresse en deux.
     const refused = [...all, continuous]
-      .flatMap((line) => sentences(line))
+      .flatMap((line) => [...sentences(line), line.replace(/\s+/g, ' ').trim()])
       .map((s) => ({ text: s, problems: publicTextProblems(s) }))
       .filter((s) => s.problems.length > 0 && !seen.has(s.text) && (seen.add(s.text), true));
     const outcome = refused.length === 0 ? 'ok' : 'refuse';
