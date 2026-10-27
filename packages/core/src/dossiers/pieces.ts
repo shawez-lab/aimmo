@@ -44,6 +44,9 @@ export const PIECES = [
   'pre_etat_date',
   'carnet_entretien',
   'mesurage_carrez',
+  'notice_information',
+  'pppt_dtg',
+  'dta_parties_communes',
   'fiche_renseignements_acquereur',
 ] as const;
 export type Piece = (typeof PIECES)[number];
@@ -62,7 +65,7 @@ export type PieceReason =
   | 'construit_avant_1949'
   | 'installation_plus_15_ans'
   | 'chauffage_gaz'
-  | 'chauffage_inconnu'
+  | 'installation_gaz_possible'
   | 'terrain'
   | 'lot_copropriete';
 
@@ -110,18 +113,22 @@ export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, 
       // Plomb (constat de risque d'exposition) : logement construit avant le 1er janvier 1949.
       if (buildYear === null) add('plomb', 'vendeur', 'annee_construction_inconnue');
       else if (buildYear < 1949) add('plomb', 'vendeur', 'construit_avant_1949');
-      // Électricité : installation de plus de 15 ans. Son âge n'est pas dans la fiche : celui du bâtiment en tient lieu.
+      // Électricité : installation de plus de 15 ans. Son âge n'est pas dans la fiche : celui du bâtiment en tient lieu,
+      // et seule l'année est connue : 15 ans pile comptent, une installation de janvier a ses 15 ans dans l'année.
+      const old = buildYear === null || year - buildYear >= 15;
       if (buildYear === null) add('electricite', 'vendeur', 'annee_construction_inconnue');
-      else if (year - buildYear > 15) add('electricite', 'vendeur', 'installation_plus_15_ans');
-      // Gaz : installation intérieure de plus de 15 ans, quand le bien est chauffé au gaz ou qu'on ne sait pas.
-      const heating = c?.heating ?? null;
-      const gasOld = buildYear === null || year - buildYear > 15;
-      if (heating === null && gasOld) add('gaz', 'vendeur', 'chauffage_inconnu');
-      else if (heating === 'individuel_gaz' && gasOld) add('gaz', 'vendeur', 'chauffage_gaz');
+      else if (old) add('electricite', 'vendeur', 'installation_plus_15_ans');
+      // Gaz : toute installation intérieure de plus de 15 ans, chauffage, cuisson ou eau chaude. La fiche ne dit pas s'il
+      // y a du gaz : il est demandé pour tout logement ancien ; sans installation, la pièce est l'attestation d'absence.
+      if (old) add('gaz', 'vendeur', c?.heating === 'individuel_gaz' ? 'chauffage_gaz' : 'installation_gaz_possible');
     }
     if (sheet && sheet.coownership === null) unknown.push('copropriete');
     if (sheet?.coownership?.isCoownership) {
-      for (const p of ['reglement_copropriete', 'pv_assemblees', 'fiche_synthetique', 'pre_etat_date', 'carnet_entretien', 'mesurage_carrez'] as const) add(p, 'vendeur', 'lot_copropriete');
+      // Loi ALUR : les documents remis à l'acquéreur d'un lot, dont la notice d'information et le plan pluriannuel de
+      // travaux ou le diagnostic technique global ; le dossier technique amiante des parties communes si l'immeuble
+      // a son permis d'avant juillet 1997, ou si on ne sait pas.
+      for (const p of ['reglement_copropriete', 'pv_assemblees', 'fiche_synthetique', 'pre_etat_date', 'carnet_entretien', 'mesurage_carrez', 'notice_information', 'pppt_dtg'] as const) add(p, 'vendeur', 'lot_copropriete');
+      if (buildYear === null || buildYear <= 1997) add('dta_parties_communes', 'vendeur', buildYear === null ? 'annee_construction_inconnue' : 'construit_avant_juillet_1997');
     }
   }
   add('fiche_renseignements_acquereur', 'acquereur', 'toujours');
@@ -132,6 +139,8 @@ export interface ReceivedPiece {
   piece: Piece;
   version: number;
   ref: string;
+  /** La date du document, `AAAA-MM-JJ` : sa durée de validité est jugée à l'acte (N06). */
+  issuedOn: string;
   receivedAt: string;
 }
 
@@ -157,11 +166,17 @@ export interface PieceStore {
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
 export type PieceProblem =
-  | { ok: false; rule: null; code: 'unknown_file' | 'unknown_piece' | 'not_expected' | 'bad_ref' | 'not_stored' | 'ref_used' | 'business' | 'busy' }
+  | { ok: false; rule: null; code: 'unknown_file' | 'unknown_piece' | 'not_expected' | 'bad_ref' | 'not_stored' | 'ref_used' | 'business' | 'busy' | 'bad_date' }
   | { ok: false; rule: 'R15'; code: 'forbidden_piece' };
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const REF_FILE = new RegExp(`^${UUID}\\.(?:pdf|jpg|png)$`);
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+function validDay(v: unknown): v is string {
+  if (typeof v !== 'string' || !DAY.test(v)) return false;
+  const d = new Date(`${v}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
 
 export class PiecesDossier {
   private readonly now: () => Date;
@@ -200,7 +215,11 @@ export class PiecesDossier {
       return { ok: false, rule: null, code: 'unknown_file' };
     }
     const p = await this.acces.readProperty(viewer, file.property_id);
-    if (!p.ok) return p.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_file' } : (p as Refusal);
+    if (!p.ok) {
+      // Chaque refus est aussi écrit sous le dossier, pas seulement sous le bien [R16].
+      await this.refuse(viewer, fileId, p.code);
+      return p.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_file' } : (p as Refusal);
+    }
     if (p.view !== 'full') return this.refuse(viewer, fileId, 'not_assigned');
     if (write && (viewer.role !== 'agent' || viewer.userId !== p.value.agent_id)) return this.refuse(viewer, fileId, 'role');
     return { ok: true, file, kind: p.value.kind as PropertyKind };
@@ -223,12 +242,12 @@ export class PiecesDossier {
   private async compute(file: { id: string; network_id: string; property_id: string; buyer_person_id: string }, kind: PropertyKind): Promise<{ ok: true; value: FileStatus } | PieceProblem> {
     const list = await this.expected(file.property_id, kind);
     if (!list) return { ok: false, rule: null, code: 'business' };
-    const rows = await this.db.all<{ piece: Piece; version: number; ref: string; received_at: string }>(
-      `SELECT piece, version, ref, received_at FROM sale_file_pieces p WHERE file_id = ?
+    const rows = await this.db.all<{ piece: Piece; version: number; ref: string; issued_on: string; received_at: string }>(
+      `SELECT piece, version, ref, issued_on, received_at FROM sale_file_pieces p WHERE file_id = ?
        AND version = (SELECT MAX(version) FROM sale_file_pieces q WHERE q.file_id = p.file_id AND q.piece = p.piece)`,
       [file.id],
     );
-    const latest = new Map(rows.map((r) => [r.piece, { piece: r.piece, version: Number(r.version), ref: r.ref, receivedAt: r.received_at }]));
+    const latest = new Map(rows.map((r) => [r.piece, { piece: r.piece, version: Number(r.version), ref: r.ref, issuedOn: r.issued_on, receivedAt: r.received_at }]));
     const lines: PieceLine[] = list.pieces.map((e) => ({ ...e, received: latest.get(e.piece) ?? null }));
     const missing = lines.filter((l) => l.received === null).map((l) => l.piece);
     const identity = (await this.controles.identitySeenAt(file.network_id, file.buyer_person_id, this.now())) !== null ? 'verifiee' : 'non_verifiee';
@@ -240,7 +259,7 @@ export class PiecesDossier {
    * L'agent du dossier range une pièce reçue par sa référence de stockage. Une pièce interdite est refusée [R15] ; une
    * pièce non attendue aussi. Une pièce déjà reçue reçoit une nouvelle version, l'ancienne reste [R17].
    */
-  async add(viewer: Viewer, fileId: string, input: { piece: string; ref: string }): Promise<{ ok: true; value: FileStatus } | Refusal | PieceProblem> {
+  async add(viewer: Viewer, fileId: string, input: { piece: string; ref: string; issuedOn: string }): Promise<{ ok: true; value: FileStatus } | Refusal | PieceProblem> {
     const g = await this.gate(viewer, fileId, true);
     if (!g.ok) return g;
     if ((FORBIDDEN_PIECES as readonly string[]).includes(input.piece)) {
@@ -255,14 +274,16 @@ export class PiecesDossier {
     // La référence est donnée par le stockage, dans le dossier de ce dossier de vente : aucun nom de fichier libre.
     const prefix = `dossiers/${fileId}/`;
     if (typeof input.ref !== 'string' || !input.ref.startsWith(prefix) || !REF_FILE.test(input.ref.slice(prefix.length))) return { ok: false, rule: null, code: 'bad_ref' };
+    // La date du document : un vrai jour, jamais dans le futur, à Paris ; jamais inventée, saisie par l'agent [R10].
+    if (!validDay(input.issuedOn) || input.issuedOn > localTime(this.now(), TIME_ZONE).date) return { ok: false, rule: null, code: 'bad_date' };
     if (!(await this.store.has(input.ref))) return { ok: false, rule: null, code: 'not_stored' };
     if (await this.db.first('SELECT 1 FROM sale_file_pieces WHERE ref = ?', [input.ref])) return { ok: false, rule: null, code: 'ref_used' };
     const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM sale_file_pieces WHERE file_id = ? AND piece = ?', [fileId, piece]);
     const version = Number(last?.v ?? 0) + 1;
     try {
       await this.db.run(
-        'INSERT INTO sale_file_pieces (id, file_id, network_id, piece, version, ref, received_at, by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [this.newId(), fileId, g.file.network_id, piece, version, input.ref, this.now().toISOString(), this.actor(viewer)],
+        'INSERT INTO sale_file_pieces (id, file_id, network_id, piece, version, ref, issued_on, received_at, by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [this.newId(), fileId, g.file.network_id, piece, version, input.ref, input.issuedOn, this.now().toISOString(), this.actor(viewer)],
       );
     } catch (error) {
       // Deux envois en même temps : la même version ou la même référence ne s'écrivent qu'une fois.

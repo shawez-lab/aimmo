@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS sale_file_pieces (
   version INTEGER NOT NULL CHECK (version >= 1),
   -- `dossiers/<id du dossier>/<identifiant tiré au hasard>.<pdf|jpg|png>`, donné par le stockage.
   ref TEXT NOT NULL UNIQUE,
+  -- La date du document lui-même (`AAAA-MM-JJ`), pour juger sa durée de validité à l'acte (N06).
+  issued_on TEXT NOT NULL,
   received_at TEXT NOT NULL,
   by TEXT NOT NULL,
   UNIQUE (file_id, piece, version)

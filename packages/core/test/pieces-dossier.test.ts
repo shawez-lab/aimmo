@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import type { PropertySheet } from '../src/annonces/index.ts';
-import { FORBIDDEN_PIECES, expectedPieces } from '../src/dossiers/index.ts';
+import { FORBIDDEN_PIECES, PiecesDossier, expectedPieces } from '../src/dossiers/index.ts';
+import type { SqlDatabase } from '../src/index.ts';
 import { setupDossier, type DossierKind } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -12,35 +13,42 @@ const sheet = (patch: { buildYear?: number | null; heating?: PropertySheet['char
   media: [],
 });
 
+const DOC = '2027-02-15';
+
 const names = (l: ReturnType<typeof expectedPieces>) => l?.pieces.map((p) => `${p.piece}:${p.reason}`);
 
 it('[R60] la liste des pièces suit des règles écrites, chaque ligne avec sa raison, la même pour les mêmes données', () => {
   const copro = sheet({ coownership: { isCoownership: true, lots: 24, annualChargesEur: 1800, proceedings: false } });
   expect(names(expectedPieces('home', copro, 2027))).toEqual([
     'titre_propriete:toujours', 'fiche_renseignements_vendeur:toujours', 'etat_risques:toujours', 'dpe:bien_bati',
-    'amiante:construit_avant_juillet_1997', 'electricite:installation_plus_15_ans',
+    'amiante:construit_avant_juillet_1997', 'electricite:installation_plus_15_ans', 'gaz:installation_gaz_possible',
     'reglement_copropriete:lot_copropriete', 'pv_assemblees:lot_copropriete', 'fiche_synthetique:lot_copropriete',
     'pre_etat_date:lot_copropriete', 'carnet_entretien:lot_copropriete', 'mesurage_carrez:lot_copropriete',
+    'notice_information:lot_copropriete', 'pppt_dtg:lot_copropriete', 'dta_parties_communes:construit_avant_juillet_1997',
     'fiche_renseignements_acquereur:toujours',
   ]);
   expect(expectedPieces('home', copro, 2027)).toEqual(expectedPieces('home', copro, 2027));
-  // Une maison récente chauffée au gaz : ni amiante, ni plomb, ni électricité ; le gaz seulement après 15 ans.
-  expect(names(expectedPieces('home', sheet({ buildYear: 2015, heating: 'individuel_gaz' }), 2027))).toEqual([
+  // Une maison récente chauffée au gaz : ni amiante, ni plomb, ni électricité ; le gaz seulement à partir de 15 ans.
+  expect(names(expectedPieces('home', sheet({ buildYear: 2013, heating: 'individuel_gaz' }), 2027))).toEqual([
     'titre_propriete:toujours', 'fiche_renseignements_vendeur:toujours', 'etat_risques:toujours', 'dpe:bien_bati', 'fiche_renseignements_acquereur:toujours',
   ]);
-  expect(names(expectedPieces('home', sheet({ buildYear: 2010, heating: 'individuel_gaz' }), 2027))).toContain('gaz:chauffage_gaz');
-  expect(names(expectedPieces('home', sheet({ buildYear: 2010, heating: 'pompe_a_chaleur' }), 2027))).not.toContain('gaz:chauffage_inconnu');
+  expect(names(expectedPieces('home', sheet({ buildYear: 2012, heating: 'individuel_gaz' }), 2027))).toContain('gaz:chauffage_gaz');
+  // Le gaz sert aussi à la cuisson et à l'eau chaude : demandé pour tout logement de 15 ans ou plus, quel que soit le chauffage.
+  for (const heating of ['pompe_a_chaleur', 'individuel_electrique', 'collectif', 'autre', 'fioul', 'bois', null] as const) {
+    expect(names(expectedPieces('home', sheet({ buildYear: 2012, heating }), 2027))).toContain('gaz:installation_gaz_possible');
+  }
   // Bornes : 1997 compris pour l'amiante, avant 1949 pour le plomb, plus de 15 ans pour l'électricité.
   expect(names(expectedPieces('home', sheet({ buildYear: 1997 }), 2027))).toContain('amiante:construit_avant_juillet_1997');
   expect(names(expectedPieces('home', sheet({ buildYear: 1998 }), 2027))?.some((n) => n.startsWith('amiante'))).toBe(false);
   expect(names(expectedPieces('home', sheet({ buildYear: 1948 }), 2027))).toContain('plomb:construit_avant_1949');
   expect(names(expectedPieces('home', sheet({ buildYear: 1949 }), 2027))?.some((n) => n.startsWith('plomb'))).toBe(false);
-  expect(names(expectedPieces('home', sheet({ buildYear: 2012 }), 2027))?.some((n) => n.startsWith('electricite'))).toBe(false);
-  expect(names(expectedPieces('home', sheet({ buildYear: 2011 }), 2027))).toContain('electricite:installation_plus_15_ans');
+  // Seule l'année est connue : 15 ans pile comptent.
+  expect(names(expectedPieces('home', sheet({ buildYear: 2013 }), 2027))?.some((n) => n.startsWith('electricite') || n.startsWith('gaz'))).toBe(false);
+  expect(names(expectedPieces('home', sheet({ buildYear: 2012 }), 2027))).toContain('electricite:installation_plus_15_ans');
   // Lecture prudente : une donnée inconnue fait demander le diagnostic.
   expect(names(expectedPieces('home', sheet({ buildYear: null, heating: null }), 2027))).toEqual([
     'titre_propriete:toujours', 'fiche_renseignements_vendeur:toujours', 'etat_risques:toujours', 'dpe:bien_bati',
-    'amiante:annee_construction_inconnue', 'plomb:annee_construction_inconnue', 'electricite:annee_construction_inconnue', 'gaz:chauffage_inconnu',
+    'amiante:annee_construction_inconnue', 'plomb:annee_construction_inconnue', 'electricite:annee_construction_inconnue', 'gaz:installation_gaz_possible',
     'fiche_renseignements_acquereur:toujours',
   ]);
   // Un local commercial : ni plomb, ni électricité, ni gaz, qui visent les logements.
@@ -64,7 +72,7 @@ it('[R60] la liste des pièces suit des règles écrites, chaque ligne avec sa r
 });
 
 describeWithSqlite('N01 · pièces du dossier notaire', () => {
-  for (const [kind, count] of [['appartement', 13], ['maison', 7], ['terrain', 5]] as [DossierKind, number][]) {
+  for (const [kind, count] of [['appartement', 17], ['maison', 7], ['terrain', 5]] as [DossierKind, number][]) {
     it(`[R60] le dossier test « ${kind} » arrive à « complet » quand chaque pièce est reçue et l'identité vérifiée`, async () => {
       const t = await setupDossier(kind);
       const first = await t.pieces.status(t.agent, t.fileId);
@@ -73,7 +81,7 @@ describeWithSqlite('N01 · pièces du dossier notaire', () => {
       expect(first.value).toMatchObject({ complete: false, identity: 'non_verifiee', unknown: [] });
       expect(first.value.missing).toHaveLength(count);
       for (const piece of first.value.missing) {
-        const r = await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload() });
+        const r = await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: DOC });
         expect(r.ok).toBe(true);
       }
       const all = await t.pieces.status(t.agent, t.fileId);
@@ -91,7 +99,7 @@ describeWithSqlite('N01 · pièces du dossier notaire', () => {
   it('[R15] une pièce d’identité, un document anti-blanchiment ou un RIB ne sont jamais des pièces du dossier', async () => {
     const t = await setupDossier();
     for (const piece of FORBIDDEN_PIECES) {
-      expect(await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload() })).toEqual({ ok: false, rule: 'R15', code: 'forbidden_piece' });
+      expect(await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: DOC })).toEqual({ ok: false, rule: 'R15', code: 'forbidden_piece' });
     }
     expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM sale_file_pieces'))?.n).toBe(0);
     const refused = (await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'dossier.piece_refusee');
@@ -105,40 +113,62 @@ describeWithSqlite('N01 · pièces du dossier notaire', () => {
 
   it('une pièce inconnue, non attendue, une référence libre, absente du stockage ou déjà prise sont refusées', async () => {
     const t = await setupDossier();
-    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'photo_du_vendeur', ref: t.upload() })).toEqual({ ok: false, rule: null, code: 'unknown_piece' });
+    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'photo_du_vendeur', ref: t.upload(), issuedOn: DOC })).toEqual({ ok: false, rule: null, code: 'unknown_piece' });
     // Un appartement n'a pas de bornage.
-    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'bornage', ref: t.upload() })).toEqual({ ok: false, rule: null, code: 'not_expected' });
+    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'bornage', ref: t.upload(), issuedOn: DOC })).toEqual({ ok: false, rule: null, code: 'not_expected' });
     for (const ref of [`dossiers/${t.fileId}/titre rue des Lilas.pdf`, `biens/${t.propertyId}/0b6f1d2e-4444-4a2b-8c3d-000000000999.pdf`, t.upload('pdf', 'autre-dossier'), `dossiers/${t.fileId}/0b6f1d2e-4444-4a2b-8c3d-000000000998.docx`]) {
-      expect(await t.pieces.add(t.agent, t.fileId, { piece: 'titre_propriete', ref })).toEqual({ ok: false, rule: null, code: 'bad_ref' });
+      expect(await t.pieces.add(t.agent, t.fileId, { piece: 'titre_propriete', ref, issuedOn: DOC })).toEqual({ ok: false, rule: null, code: 'bad_ref' });
     }
-    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'titre_propriete', ref: `dossiers/${t.fileId}/0b6f1d2e-4444-4a2b-8c3d-000000000997.pdf` })).toEqual({ ok: false, rule: null, code: 'not_stored' });
+    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'titre_propriete', ref: `dossiers/${t.fileId}/0b6f1d2e-4444-4a2b-8c3d-000000000997.pdf`, issuedOn: DOC })).toEqual({ ok: false, rule: null, code: 'not_stored' });
     const ref = t.upload();
-    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'titre_propriete', ref })).toMatchObject({ ok: true });
-    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'dpe', ref })).toEqual({ ok: false, rule: null, code: 'ref_used' });
+    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'titre_propriete', ref, issuedOn: DOC })).toMatchObject({ ok: true });
+    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'dpe', ref, issuedOn: DOC })).toEqual({ ok: false, rule: null, code: 'ref_used' });
+    // La date du document : un vrai jour, jamais dans le futur à Paris.
+    for (const issuedOn of ['2027-02-30', '15/02/2027', '2027-13-45', '2027-03-02', '']) {
+      expect(await t.pieces.add(t.agent, t.fileId, { piece: 'dpe', ref: t.upload(), issuedOn })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    }
+    const today = await t.pieces.add(t.agent, t.fileId, { piece: 'dpe', ref: t.upload(), issuedOn: '2027-03-01' });
+    expect(today.ok && today.value.lines.find((l) => l.piece === 'dpe')?.received?.issuedOn).toBe('2027-03-01');
   });
 
   it('[R17] une nouvelle version s’ajoute, l’ancienne reste ; rien ne change ni ne s’efface', async () => {
     const t = await setupDossier();
     const v1 = t.upload();
     const v2 = t.upload('jpg');
-    await t.pieces.add(t.agent, t.fileId, { piece: 'dpe', ref: v1 });
-    const r = await t.pieces.add(t.agent, t.fileId, { piece: 'dpe', ref: v2 });
+    await t.pieces.add(t.agent, t.fileId, { piece: 'dpe', ref: v1, issuedOn: DOC });
+    const r = await t.pieces.add(t.agent, t.fileId, { piece: 'dpe', ref: v2, issuedOn: DOC });
     expect(r.ok && r.value.lines.find((l) => l.piece === 'dpe')?.received).toMatchObject({ version: 2, ref: v2 });
     expect((await t.db.all<{ ref: string }>("SELECT ref FROM sale_file_pieces WHERE piece = 'dpe' ORDER BY version")).map((x) => x.ref)).toEqual([v1, v2]);
     await expect(t.db.run('DELETE FROM sale_file_pieces')).rejects.toThrow(/rien ne s'efface/);
+    // Deux envois en même temps de la même pièce : le second a lu la même dernière version que le premier (lecture
+    // rendue en retard ici) ; il est refusé « busy », sans rien écrire.
+    const stale: SqlDatabase = {
+      ...t.db,
+      run: (sql, params) => t.db.run(sql, params),
+      all: (sql, params) => t.db.all(sql, params),
+      first: async (sql, params) => (/MAX\(version\) AS v/.test(sql) ? ({ v: 1 } as never) : t.db.first(sql, params)),
+    } as SqlDatabase;
+    const late = new PiecesDossier(stale, t.acces, t.journal, t.storage, { now: t.now });
+    expect(await late.add(t.agent, t.fileId, { piece: 'dpe', ref: t.upload(), issuedOn: DOC })).toEqual({ ok: false, rule: null, code: 'busy' });
+    expect((await t.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM sale_file_pieces WHERE piece = 'dpe'"))?.n).toBe(2);
     await expect(t.db.run("UPDATE sale_file_pieces SET ref = 'x'")).rejects.toThrow(/rien ne change/);
   });
 
   it('[R16] seul l’agent du dossier range une pièce ; la direction lit ; un autre agent ne voit rien ; chaque refus au journal', async () => {
     const t = await setupDossier();
-    expect(await t.pieces.add(t.direction, t.fileId, { piece: 'dpe', ref: t.upload() })).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.pieces.add(t.direction, t.fileId, { piece: 'dpe', ref: t.upload(), issuedOn: DOC })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.pieces.status(t.direction, t.fileId)).toMatchObject({ ok: true });
+    const compliance = { role: 'compliance' as const, networkId: t.network.id, userId: 'c-1' };
+    expect(await t.pieces.status(compliance, t.fileId)).toMatchObject({ ok: true });
+    expect(await t.pieces.add(compliance, t.fileId, { piece: 'dpe', ref: t.upload(), issuedOn: DOC })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.pieces.status(t.sam, t.fileId)).toMatchObject({ ok: false, rule: 'R16' });
-    expect(await t.pieces.add(t.sam, t.fileId, { piece: 'dpe', ref: t.upload() })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.pieces.add(t.sam, t.fileId, { piece: 'dpe', ref: t.upload(), issuedOn: DOC })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.pieces.status(t.agent, 'dossier-inconnu')).toEqual({ ok: false, rule: null, code: 'unknown_file' });
     expect(await t.pieces.status({ ...t.agent, networkId: 'autre-reseau' }, t.fileId)).toEqual({ ok: false, rule: null, code: 'unknown_file' });
     const refusals = (await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'acces.refuse');
     expect(refusals.map((e) => e.data.code)).toEqual(expect.arrayContaining(['role', 'unknown']));
+    // Le refus fait à un autre agent par le bien est aussi écrit sous le dossier.
+    expect(refusals.filter((e) => e.actor === `agent:${t.sam.userId}`)).toHaveLength(2);
     expect((await t.journal.bySubject('sale_file:dossier-inconnu')).map((e) => e.type)).toEqual(['acces.refuse']);
   });
 
@@ -150,7 +180,7 @@ describeWithSqlite('N01 · pièces du dossier notaire', () => {
     const s = await t.pieces.status(t.agent, t.fileId);
     if (!s.ok) throw new Error(s.code);
     expect(s.value.unknown).toEqual(['copropriete']);
-    for (const piece of s.value.missing) await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload() });
+    for (const piece of s.value.missing) await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: DOC });
     await t.verifyBuyer();
     expect(await t.pieces.status(t.agent, t.fileId)).toMatchObject({ ok: true, value: { missing: [], unknown: ['copropriete'], complete: false } });
   });
