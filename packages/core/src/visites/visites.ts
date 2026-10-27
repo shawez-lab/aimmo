@@ -243,7 +243,7 @@ export class Visites {
   async slipOf(viewer: Viewer, appointmentId: string): Promise<{ ok: true; slip: VisitSlip } | VisitRefusal> {
     const visit = await this.visitFor(viewer, appointmentId);
     if (!visit.ok) return visit;
-    const row = await this.db.first<SlipRow>('SELECT * FROM visit_slips WHERE appointment_id = ?', [appointmentId]);
+    const row = await this.ensureSlip(appointmentId);
     if (!row) return { ok: false, rule: null, code: 'no_slip' };
     return { ok: true, slip: toSlip(row) };
   }
@@ -252,7 +252,7 @@ export class Visites {
   async recordPaperSignature(viewer: Viewer, appointmentId: string, input: { signedAt: Date; scanRef: string }): Promise<{ ok: true; slip: VisitSlip } | VisitRefusal> {
     const visit = await this.visitFor(viewer, appointmentId);
     if (!visit.ok) return visit;
-    const row = await this.db.first<SlipRow>('SELECT * FROM visit_slips WHERE appointment_id = ?', [appointmentId]);
+    const row = await this.ensureSlip(appointmentId);
     if (!row) return { ok: false, rule: null, code: 'no_slip' };
     if (row.status !== 'complet') return { ok: false, rule: 'R40', code: 'incomplete' };
     if (Number.isNaN(input.signedAt.getTime()) || input.signedAt.getTime() > this.now().getTime()) return { ok: false, rule: null, code: 'bad_date' };
@@ -310,19 +310,38 @@ export class Visites {
       if (!origin) continue;
       const appointment = await this.rdv.get(appointmentId);
       if (!appointment || appointment.network_id !== origin.network_id) return null;
-      const { changes } = await this.db.run(
+      // Le bien doit pouvoir être diffusé encore pour qu'une visite décalée soit reprise ; l'ancienne garde son bon [R42].
+      const gate = await this.gate.canDiffuse(origin.network_id, origin.property_id, this.now());
+      if (!gate.allowed) {
+        await appendEvent(this.journal, { type: 'visite.refusee', actor: 'system:visites', subject: `property:${origin.property_id}`, data: { rule: 'R42', code: gate.reason } }, this.now);
+        return null;
+      }
+      await this.db.run(
         `INSERT INTO visits (appointment_id, network_id, property_id, project_id, person_id, agent_id, created_by, created_at)
          VALUES (?, ?, ?, ?, ?, ?, 'system:visites', ?) ON CONFLICT DO NOTHING`,
         [appointmentId, origin.network_id, origin.property_id, origin.project_id, origin.person_id, appointment.agent_id, this.now().toISOString()],
       );
-      if (changes === 1) {
-        const property = await this.db.first<SlipProperty>('SELECT * FROM properties WHERE id = ?', [origin.property_id]);
-        const members = (await this.fiche.view(origin.person_id)).members;
-        if (property && (await this.currentTemplate(origin.network_id))) await this.makeSlip(origin.network_id, appointment, appointment.agent_id, property, members);
-      }
       return { network_id: origin.network_id, agent_id: appointment.agent_id, person_id: origin.person_id };
     }
     return null;
+  }
+
+  /**
+   * Le bon d'une visite ; s'il manque (une panne après l'enregistrement de la visite), il est refait, une seule fois
+   * même en cas d'appels simultanés.
+   */
+  private async ensureSlip(appointmentId: string): Promise<SlipRow | null> {
+    const row = await this.db.first<SlipRow>('SELECT * FROM visit_slips WHERE appointment_id = ?', [appointmentId]);
+    if (row) return row;
+    const v = await this.db.first<{ network_id: string; property_id: string; person_id: string; agent_id: string }>(
+      'SELECT network_id, property_id, person_id, agent_id FROM visits WHERE appointment_id = ?',
+      [appointmentId],
+    );
+    const appointment = v ? await this.rdv.get(appointmentId) : null;
+    const property = v ? await this.db.first<SlipProperty>('SELECT * FROM properties WHERE id = ?', [v.property_id]) : null;
+    if (!v || !appointment || !property || !(await this.currentTemplate(v.network_id))) return null;
+    await this.makeSlip(v.network_id, appointment, v.agent_id, property, (await this.fiche.view(v.person_id)).members);
+    return this.db.first<SlipRow>('SELECT * FROM visit_slips WHERE appointment_id = ?', [appointmentId]);
   }
 
   /** Le modèle en vigueur : la dernière version validée ; sinon la dernière d'essai, qui ne donne qu'un bon d'essai. */
@@ -370,12 +389,12 @@ export class Visites {
     const contentHash = await sha256(content);
     const id = this.newId();
     const status = missing.length === 0 ? 'complet' : 'incomplet';
-    await this.db.run(
+    const { changes } = await this.db.run(
       `INSERT INTO visit_slips (id, appointment_id, network_id, template_id, template_version, template_hash, mode, status, missing, content, content_hash, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (appointment_id) DO NOTHING`,
       [id, appointment.id, networkId, template.id, Number(template.version), template.hash, mode, status, JSON.stringify(missing), content, contentHash, this.now().toISOString()],
     );
-    await appendEvent(this.journal, { type: 'bon_visite.genere', actor: 'system:visites', subject: `visit:${appointment.id}`, data: { slip: id, mode, status, missing: missing.length } }, this.now);
+    if (changes === 1) await appendEvent(this.journal, { type: 'bon_visite.genere', actor: 'system:visites', subject: `visit:${appointment.id}`, data: { slip: id, mode, status, missing: missing.length } }, this.now);
     return { id, appointmentId: appointment.id, templateVersion: Number(template.version), mode, status, missing, content, contentHash, signedAt: null };
   }
 }

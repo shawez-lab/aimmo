@@ -154,6 +154,30 @@ describeWithSqlite('T04 · visite et bon de visite', () => {
     expect(visits.map((v) => v.project_id)).toEqual([b.project.id, b.project.id]);
   });
 
+  it('une visite décalée sur un bien qui ne peut plus être diffusé n’est pas reprise [R42] ; un bon manquant après une panne est refait', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const r = await t.visites.schedule(t.as('agent', t.alex.id), { propertyId: p.id, projectId: b.project.id, start: WEDNESDAY_10H });
+    if (!r.ok) throw new Error(r.code);
+    t.blocked.add(p.id);
+    const moved = await t.rdv.moveFromAgenda(r.visit.appointment.id, new Date(WEDNESDAY_10H.getTime() + 4 * 3_600_000));
+    if (!moved.ok) throw new Error(moved.code);
+    expect(await t.visites.slipOf(t.as('agent', t.alex.id), moved.appointment.id)).toMatchObject({ ok: false, code: 'unknown' });
+    expect(await t.visites.slipOf(t.as('agent', t.alex.id), r.visit.appointment.id)).toMatchObject({ ok: true });
+    t.blocked.delete(p.id);
+    // Une visite rangée sans son bon (panne entre les deux) : le bon est refait à la lecture suivante, une fois.
+    const booked = await t.rdv.book({ networkId: t.network.id, agentId: t.alex.id, personId: b.person.id, propertyId: p.id, kind: 'visite', start: new Date(WEDNESDAY_10H.getTime() + 24 * 3_600_000), source: 'agent' });
+    if (!booked.ok) throw new Error(booked.code);
+    await t.db.run("INSERT INTO visits (appointment_id, network_id, property_id, project_id, person_id, agent_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 'test', ?)", [booked.appointment.id, t.network.id, p.id, b.project.id, b.person.id, t.alex.id, new Date(TUESDAY_10H).toISOString()]);
+    const [x, y] = await Promise.all([t.visites.slipOf(t.as('agent', t.alex.id), booked.appointment.id), t.visites.slipOf(t.as('agent', t.alex.id), booked.appointment.id)]);
+    expect(x).toMatchObject({ ok: true });
+    expect(y).toMatchObject({ ok: true });
+    const n = await t.db.first<{ n: number }>('SELECT count(*) AS n FROM visit_slips WHERE appointment_id = ?', [booked.appointment.id]);
+    expect(Number(n!.n)).toBe(1);
+  });
+
   it('un agent dont le client est passé à un autre agent ne lit plus le bon ; chaque lecture du bon va au journal [R16]', async () => {
     const t = await setup();
     await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
