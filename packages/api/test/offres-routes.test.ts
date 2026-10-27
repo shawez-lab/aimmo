@@ -60,6 +60,12 @@ describeWithSqlite('O08 · routes de M09', () => {
     expect(again.body.data.offer.id).toBe(a.body.data.offer.id);
     expect((await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}`)).body.data).toHaveLength(1);
     expect((await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(t.buyerId, { requestKey: 'court' }))).body).toMatchObject({ code: 'invalid', field: 'requestKey' });
+    // La même clé avec une autre offre : refusée, écrite au journal, le registre garde une seule ligne pour cette clé.
+    const reused = await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(t.buyerId, { requestKey: 'cle-envoi-0000000002', amountEur: 210000 }));
+    expect(reused.status).toBe(409);
+    expect(reused.body).toMatchObject({ rule: 'R56', code: 'request_key_reused' });
+    expect((await t.journal.all()).filter((e) => e.type === 'offre.cle_reutilisee')).toHaveLength(1);
+    expect((await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}`)).body.data).toHaveLength(1);
     expect((await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(t.buyerId))).body.data.offer.seq).toBe(2);
   });
 
@@ -67,6 +73,17 @@ describeWithSqlite('O08 · routes de M09', () => {
     const t = await setup();
     const rec = await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(t.buyerId));
     const offerId = rec.body.data.offer.id as string;
+    // Une contre-offre et un dossier, pour éprouver aussi leurs routes.
+    await t.call(t.agent, 'POST', `/offres/${offerId}/transmission`, { via: 'telephone' });
+    t.setClock(new Date('2027-03-01T12:00:00.000Z'));
+    await t.call(t.agent, 'POST', `/offres/${offerId}/reponse`, { outcome: 'contre_offre', proofRef: PROOF, respondedAt: '2027-03-01T11:00:00.000Z' });
+    const proposal = await t.call(t.agent, 'POST', `/offres/${offerId}/propositions`, { amountEur: 210000, validUntil: '2027-03-05', proofRef: PROOF });
+    const proposalId = proposal.body.data.id as string;
+    await t.call(t.agent, 'POST', `/offres/propositions/${proposalId}/transmission`, { via: 'telephone' });
+    t.setClock(new Date('2027-03-01T13:00:00.000Z'));
+    await t.call(t.agent, 'POST', `/offres/propositions/${proposalId}/reponse`, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T12:30:00.000Z' });
+    const file = await t.call(t.agent, 'POST', `/offres/${offerId}/dossier`);
+    const fileId = file.body.data.id as string;
     const refusals = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
     const cases: [string, 'GET' | 'POST', string, unknown?][] = [
       ['enregistrer', 'POST', `/offres/biens/${t.propertyId}`, offerBody(t.buyerId)],
@@ -75,17 +92,20 @@ describeWithSqlite('O08 · routes de M09', () => {
       ['historique', 'GET', `/offres/${offerId}/historique`],
       ['controle', 'POST', `/offres/${offerId}/controle`],
       ['transmission', 'POST', `/offres/${offerId}/transmission`, { via: 'telephone' }],
-      ['reponse', 'POST', `/offres/${offerId}/reponse`, { outcome: 'refusee', proofRef: PROOF, respondedAt: '2027-03-01T09:30:00.000Z' }],
+      ['reponse', 'POST', `/offres/${offerId}/reponse`, { outcome: 'refusee', proofRef: PROOF, respondedAt: '2027-03-01T11:30:00.000Z' }],
       ['proposition', 'POST', `/offres/${offerId}/propositions`, { amountEur: 210000, validUntil: '2027-03-05', proofRef: PROOF }],
       ['dossier', 'POST', `/offres/${offerId}/dossier`],
+      ['proposition.transmission', 'POST', `/offres/propositions/${proposalId}/transmission`, { via: 'telephone' }],
+      ['proposition.reponse', 'POST', `/offres/propositions/${proposalId}/reponse`, { outcome: 'refusee', proofRef: PROOF, respondedAt: '2027-03-01T12:40:00.000Z' }],
+      ['compromis', 'POST', `/offres/dossiers/${fileId}/compromis`],
+      ['taches (direction)', 'GET', '/offres/taches'],
     ];
     for (const [name, method, path, body] of cases) {
       const before = await refusals();
-      const r = await t.call(t.sam, method, path, body);
+      const r = await t.call(name === 'taches (direction)' ? t.direction : t.sam, method, path, body);
       expect(r.status, name).toBe(403);
       expect((await refusals()) - before, name).toBe(1);
     }
-    expect((await t.call(t.direction, 'GET', '/offres/taches')).status).toBe(403);
     expect((await t.call(t.agent, 'GET', '/offres/taches')).body).toMatchObject({ ok: true, tasks: [] });
     expect((await t.call(t.agent, 'POST', '/offres/offre-inconnue/controle')).status).toBe(404);
     const route = offreRoutes().find((r) => r.name === 'offres.transmission')!;

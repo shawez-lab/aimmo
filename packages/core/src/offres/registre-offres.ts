@@ -143,7 +143,8 @@ type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: null; code: 'invalid'; field: string }
   | { ok: false; rule: null; code: 'unknown_property' | 'unknown_buyer' | 'busy' }
-  | { ok: false; rule: 'R42'; code: 'not_on_sale' };
+  | { ok: false; rule: 'R42'; code: 'not_on_sale' }
+  | { ok: false; rule: 'R56'; code: 'request_key_reused' };
 
 const toOffer = (r: Row): Offer => ({
   id: r.id,
@@ -211,8 +212,7 @@ export class RegistreOffres {
       const row = await this.db.first<Row>('SELECT * FROM offer_register WHERE property_id = ? AND request_key = ?', [propertyId, requestKey]);
       return row ? toOffer(row) : null;
     };
-    const already = await known();
-    if (already) return { ok: true, value: already };
+
     if (typeof input.buyerPersonId !== 'string' || input.buyerPersonId.length > 64) return bad('buyerPersonId');
     if (!isInt(input.amountEur, 1, 100_000_000)) return bad('amountEur');
     const conditions = parseConditions(input.conditions);
@@ -237,6 +237,18 @@ export class RegistreOffres {
 
     // Une ancre manquée après une panne du journal est reprise d'abord, pour une ligne intacte seulement.
     await this.resumeAnchors(viewer, propertyId);
+    // Un rejeu avec la même clé ne rend l'offre déjà enregistrée que si c'est bien la même offre ; une offre différente
+    // envoyée avec une clé déjà prise est refusée et le refus écrit au journal, jamais avalée [R56].
+    const sameOffer = (o: Offer): boolean =>
+      o.buyerPersonId === buyer.value.person.id && o.amountEur === input.amountEur && JSON.stringify(o.conditions) === JSON.stringify(conditions.value) &&
+      o.validUntil === input.validUntil && o.downPaymentEur === input.downPaymentEur && o.loanEur === input.loanEur && o.signedRef === input.signedRef && o.receivedAt === receivedAt;
+    const replay = async (o: Offer): Promise<{ ok: true; value: Offer } | Problem> => {
+      if (sameOffer(o)) return { ok: true, value: o };
+      await appendEvent(this.journal, { type: 'offre.cle_reutilisee', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R56', seq: o.seq } }, this.now);
+      return { ok: false, rule: 'R56', code: 'request_key_reused' };
+    };
+    const already = await known();
+    if (already) return replay(already);
     for (let attempt = 0; attempt < 5; attempt++) {
       const last = await this.db.first<{ seq: number; hash: string }>('SELECT seq, hash FROM offer_register WHERE property_id = ? ORDER BY seq DESC LIMIT 1', [propertyId]);
       const line: Omit<Row, 'hash'> = {
@@ -267,7 +279,7 @@ export class RegistreOffres {
       } catch (error) {
         // Le même envoi, arrivé en même temps : l'offre enregistrée par l'autre est rendue.
         const twin = await known();
-        if (twin) return { ok: true, value: twin };
+        if (twin) return replay(twin);
         // Un autre enregistrement a pris ce rang : on recommence avec le suivant.
         if (/UNIQUE|ajout seul/i.test(String(error))) continue;
         throw error;
