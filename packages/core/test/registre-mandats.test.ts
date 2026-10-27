@@ -212,4 +212,32 @@ describeWithSqlite('D01 · registre des mandats', () => {
     };
     expect(await new RegistreMandats(racing, t.journal).check(t.network.id)).toEqual({ ok: true, lines: 2 });
   });
+
+  it('[R39] après un effacement en fin de registre, aucun rang ni numéro n’est redonné, et l’effacement reste visible', async () => {
+    const t = await setup();
+    await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const ids = [await t.mandate(), await t.mandate()];
+    for (const id of ids) await t.registre.inscribe(t.direction, id);
+    t.raw.exec('DROP TRIGGER mandate_register_sans_effacement');
+    await t.db.run('DELETE FROM mandate_register WHERE network_id = ? AND seq = 2', [t.network.id]);
+    const next = await t.mandate();
+    expect(await t.registre.inscribe(t.direction, next)).toEqual({ ok: false, rule: 'R39', code: 'register_broken' });
+    expect(await t.registre.cancel(t.direction, ids[0]!, 'error')).toEqual({ ok: false, rule: 'R39', code: 'register_broken' });
+    expect((await t.journal.all()).filter((e) => e.type === 'registre.alerte').map((e) => e.data)).toEqual([
+      { network: t.network.id, lines: 1, brokenAt: 2, problem: 'missing' },
+      { network: t.network.id, lines: 1, brokenAt: 2, problem: 'missing' },
+    ]);
+    // Même en forçant une ligne de remplacement au rang effacé, l'ancre d'origine la contredit.
+    const { hashRegisterLine, registerAnchor, appendEvent } = await import('../src/index.ts');
+    const first = (await t.db.first<Record<string, unknown>>('SELECT * FROM mandate_register WHERE network_id = ? AND seq = 1', [t.network.id]))!;
+    const fake = { ...first, seq: 2, mandate_id: next, number_value: 2, number: 'T-002', prev_hash: first.hash } as Record<string, unknown>;
+    delete fake.hash;
+    const hash = await hashRegisterLine(fake as never);
+    await t.db.run(
+      `INSERT INTO mandate_register (network_id, seq, kind, mandate_id, number_value, number, agent_id, property_id, signed_at, cancels_seq, reason, at, actor, prev_hash, hash) VALUES (?, 2, 'inscription', ?, 2, 'T-002', ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+      [t.network.id, next, fake.agent_id as string, (fake.property_id as string | null) ?? null, fake.signed_at as string, fake.at as string, fake.actor as string, fake.prev_hash as string, hash],
+    );
+    await appendEvent(t.journal, { type: 'registre.inscrit', actor: 'direction:x', subject: null, data: { network: t.network.id, seq: 2, number: 'T-002', anchor: registerAnchor(hash) } }, () => new Date(NOW));
+    expect(await t.registre.check(t.network.id)).toMatchObject({ ok: false, brokenAt: 2, problem: 'anchor' });
+  });
 });

@@ -46,7 +46,7 @@ export type IntegrityReport =
   | { ok: false; lines: number; brokenAt: number; problem: 'hash' | 'chain' | 'sequence' | 'number' | 'mandate' | 'anchor' | 'missing' };
 
 type Refusal = { ok: false; rule: 'R16'; code: 'role' | 'agent_inactive' | 'not_assigned' | 'unknown' };
-type Problem = { ok: false; rule: 'R39' | null; code: 'not_configured' | 'already_configured' | 'bad_settings' | 'already_inscribed' | 'not_inscribed' | 'already_cancelled' | 'bad_reason' | 'busy' };
+type Problem = { ok: false; rule: 'R39' | null; code: 'not_configured' | 'already_configured' | 'bad_settings' | 'already_inscribed' | 'not_inscribed' | 'already_cancelled' | 'bad_reason' | 'register_broken' };
 
 /** Empreinte de départ d'un registre vide. */
 export const REGISTER_GENESIS = '0'.repeat(64);
@@ -212,6 +212,21 @@ export class RegistreMandats {
     return null;
   }
 
+  /**
+   * Un registre dont le contrôle échoue ne reçoit plus de ligne : un rang ou un numéro effacé ne doit jamais être
+   * redonné, ce qui cacherait l'effacement. L'écart est écrit au journal, sans donnée, pour la direction [R39].
+   */
+  private async sound(viewer: Viewer): Promise<boolean> {
+    const report = await this.check(viewer.networkId);
+    if (report.ok) return true;
+    await appendEvent(
+      this.journal,
+      { type: 'registre.alerte', actor: this.actor(viewer), subject: null, data: { network: viewer.networkId, lines: report.lines, brokenAt: report.brokenAt, problem: report.problem } },
+      this.now,
+    );
+    return false;
+  }
+
   private inscriptionOf(mandateId: string): Promise<LineRow | null> {
     return this.db.first<LineRow>(`SELECT * FROM mandate_register WHERE mandate_id = ? AND kind = 'inscription'`, [mandateId]);
   }
@@ -223,6 +238,7 @@ export class RegistreMandats {
     const settings = await this.settings(viewer.networkId);
     if (!settings) return { ok: false, rule: null, code: 'not_configured' };
     if (await this.inscriptionOf(mandateId)) return { ok: false, rule: 'R39', code: 'already_inscribed' };
+    if (!(await this.sound(viewer))) return { ok: false, rule: 'R39', code: 'register_broken' };
     const at = this.now().toISOString();
     const line = await this.append(viewer.networkId, (_last, count) => {
       const value = settings.firstNumber + count;
@@ -254,6 +270,7 @@ export class RegistreMandats {
     if (!inscription) return { ok: false, rule: null, code: 'not_inscribed' };
     const done = await this.db.first('SELECT seq FROM mandate_register WHERE network_id = ? AND kind = ? AND cancels_seq = ?', [viewer.networkId, 'annulation', inscription.seq]);
     if (done) return { ok: false, rule: null, code: 'already_cancelled' };
+    if (!(await this.sound(viewer))) return { ok: false, rule: 'R39', code: 'register_broken' };
     const at = this.now().toISOString();
     const line = await this.append(viewer.networkId, () => ({
       kind: 'annulation',
@@ -317,15 +334,22 @@ export class RegistreMandats {
     // L'ancre : chaque ligne inscrite a laissé son rang et son empreinte au journal, lui-même chaîné et en ajout seul.
     // Une ligne réécrite avec toute la suite recalculée, ou des lignes effacées en fin de registre, ne la retrouvent plus.
     const anchors = new Map<number, string>();
+    // Deux ancres pour un même rang : une ligne a été effacée puis son rang repris. Le premier tel rang est rendu.
+    let conflict: number | null = null;
     const events = await this.db.all<{ data: string }>(`SELECT data FROM journal WHERE type IN ('registre.inscrit', 'registre.annule') ORDER BY seq`);
     for (const e of events) {
       try {
         const d = JSON.parse(e.data) as { network?: unknown; seq?: unknown; anchor?: unknown };
-        if (d.network === networkId && typeof d.seq === 'number' && typeof d.anchor === 'string') anchors.set(d.seq, d.anchor);
+        if (d.network === networkId && typeof d.seq === 'number' && typeof d.anchor === 'string') {
+          const known = anchors.get(d.seq);
+          if (known !== undefined && known !== d.anchor) conflict = conflict === null ? d.seq : Math.min(conflict, d.seq);
+          else anchors.set(d.seq, d.anchor);
+        }
       } catch {
         // Une ligne illisible du journal n'ancre rien.
       }
     }
+    if (conflict !== null) return { ok: false, lines: rows.length, brokenAt: conflict, problem: 'anchor' };
     let prev = REGISTER_GENESIS;
     let expected = settings?.firstNumber ?? 1;
     for (let i = 0; i < rows.length; i++) {
