@@ -17,6 +17,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { localTime } from '../envoi/horaires.ts';
+import { mandateExpired } from './conditions.ts';
 
 export const DOCUMENT_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif', 'avenant_mandat'] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
@@ -346,6 +347,11 @@ export class Modeles {
           durationMonths: typeof raw['mandat.duree_mois'] === 'number' ? raw['mandat.duree_mois'] : null,
         };
     const fields = JSON.parse(template.fields) as string[];
+    // Toute saisie doit figurer sur le document signé ; pour un avenant, l'objet écrit tous les changements.
+    const supplied = Object.entries(request.inputs ?? {}).filter(([, v]) => v !== undefined && v !== null).map(([k]) => k);
+    const rendered = (k: string): boolean => fields.includes(k) || (template.kind === 'avenant_mandat' && fields.includes('avenant.objet') && (k === 'avenant.prix' || k === 'avenant.duree_mois'));
+    if (supplied.some((k) => !rendered(k))) return { ok: false, rule: 'R40', code: 'bad_input' };
+    if (template.kind !== 'avenant_mandat' && supplied.some((k) => k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
     const missing = fields.filter((f) => TEMPLATE_FIELDS[f]?.source !== 'signature' && (base[f] === null || base[f] === undefined));
     const mode = template.status === 'valide' ? 'reel' : 'essai';
     const content = renderDocument(template.body, base, { title: `${KIND_TITLE[template.kind]} · ${base['bien.reference'] ?? ''}`, trial: mode === 'essai' });
@@ -382,6 +388,8 @@ export class Modeles {
     if (!row || row.number === null || row.seq === null || row.property_id !== propertyId || !personIds.includes(row.person_id)) return null;
     if (await this.db.first('SELECT mandate_id FROM mandate_withdrawals WHERE mandate_id = ?', [mandateId])) return null;
     if (await this.db.first(`SELECT seq FROM mandate_register WHERE network_id = ? AND kind = 'annulation' AND cancels_seq = ?`, [networkId, Number(row.seq)])) return null;
+    // Un mandat échu ne se prolonge pas par un avenant : il faudrait un nouveau mandat [R42].
+    if (await mandateExpired(this.db, mandateId, this.now())) return null;
     let facts: DocumentFacts | null = null;
     try {
       facts = row.facts ? (JSON.parse(row.facts) as DocumentFacts) : null;

@@ -125,4 +125,36 @@ describeWithSqlite('D07 · avenant au mandat', () => {
     expect(await t.modeles.createVersion(t.direction, 'avenant_mandat', 'Avenant sans numéro : {{avenant.objet}}.')).toEqual({ ok: false, rule: 'R40', code: 'no_number_field' });
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/Léa|Exemple/);
   });
+
+  it('[R42] un mandat échu ne se prolonge pas par un avenant, même préparé avant l’échéance', async () => {
+    const t = await setup();
+    const a = await t.amendment({ 'avenant.duree_mois': 24 });
+    if (!a.ok) throw new Error(a.code);
+    t.now(new Date('2028-03-01T10:00:00.000Z'));
+    await new ControlesSignature(t.db, t.acces, t.journal, { now: () => new Date('2028-03-01T10:00:00.000Z') }).recordIdentity(t.agent, t.personId, { piece: 'carte_identite', seenAt: new Date('2028-02-20T10:00:00.000Z') });
+    const r = await t.avenants.register(t.agent, a.document.id, { signedAt: new Date('2028-03-01T09:00:00.000Z'), place: 'agence', scanRef: 'scans/a.pdf' });
+    expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['mandate_expired']);
+    expect(await t.amendment({ 'avenant.duree_mois': 24 })).toEqual({ ok: false, rule: null, code: 'bad_mandate' });
+  });
+
+  it('[R40] une saisie que le modèle n’écrit pas est refusée : les conditions en vigueur sont celles du document signé', async () => {
+    const t = await setup();
+    const v = await t.modeles.createVersion(t.direction, 'avenant_mandat', 'Avenant de test au mandat n° {{mandat.numero}} : durée portée à {{avenant.duree_mois}}.');
+    if (!v.ok) throw new Error(v.code);
+    await t.modeles.validate(t.as('compliance', 'c-1'), v.template.id);
+    expect(await t.amendment({ 'avenant.duree_mois': 24, 'avenant.prix': 190000 })).toEqual({ ok: false, rule: 'R40', code: 'bad_input' });
+    expect((await t.amendment({ 'avenant.duree_mois': 24 })).ok).toBe(true);
+    expect(await t.modeles.generate(t.agent, { kind: 'mandat_vente_simple', personId: t.personId, propertyId: t.propertyId, inputs: { 'avenant.prix': 1 } })).toEqual({ ok: false, rule: 'R40', code: 'bad_input' });
+  });
+
+  it('une échéance déplacée par un avenant signé n’est plus montrée, mais reste gardée', async () => {
+    const t = await setup();
+    const early = new EcheancesMandats(t.db, t.journal, { now: () => new Date('2028-01-15T10:00:00.000Z') });
+    expect(await early.run()).toBe(1);
+    const a = await t.amendment({ 'avenant.duree_mois': 24 });
+    if (!a.ok) throw new Error(a.code);
+    expect((await t.avenants.register(t.agent, a.document.id, { signedAt: LATER, place: 'agence', scanRef: 'scans/a.pdf' })).ok).toBe(true);
+    expect(await early.list(t.agent)).toEqual({ ok: true, tasks: [] });
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM mandate_tasks')).toEqual({ n: 1 });
+  });
 });

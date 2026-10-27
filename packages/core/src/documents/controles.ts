@@ -23,6 +23,7 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DocumentFacts } from './modeles.ts';
+import { mandateExpired } from './conditions.ts';
 
 export const IDENTITY_PIECES = ['carte_identite', 'passeport', 'permis_conduire'] as const;
 export type IdentityPiece = (typeof IDENTITY_PIECES)[number];
@@ -170,6 +171,8 @@ export class ControlesSignature {
     if (!inscription) return line(false, 'mandate_not_numbered');
     if (await this.db.first('SELECT mandate_id FROM mandate_withdrawals WHERE mandate_id = ?', [mandateId])) return line(false, 'mandate_withdrawn');
     if (await this.db.first(`SELECT seq FROM mandate_register WHERE network_id = ? AND kind = 'annulation' AND cancels_seq = ?`, [networkId, Number(inscription.seq)])) return line(false, 'mandate_cancelled');
+    // Un mandat échu ne reçoit plus d'avenant, même préparé avant son échéance [R42].
+    if (await mandateExpired(this.db, mandateId, this.now())) return line(false, 'mandate_expired');
     return line(true, 'mandate_in_force');
   }
 

@@ -13,8 +13,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DocumentFacts } from './modeles.ts';
-import { mandateEndDay } from './retractation.ts';
-import { mandateTerms } from './avenants.ts';
+import { mandateEndDay, mandateTerms } from './conditions.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const MANDATE_DEADLINES_JOB = 'mandats.echeances';
@@ -132,7 +131,19 @@ export class EcheancesMandats {
        ORDER BY CASE WHEN t.done_at IS NULL THEN 0 ELSE 1 END, t.due_day, t.id`,
       [viewer.networkId, viewer.userId],
     );
-    return { ok: true, tasks: rows.map((r) => ({ id: r.id, mandateId: r.mandate_id, kind: r.kind, dueDay: r.due_day, reason: REASON[r.kind], doneAt: r.done_at })) };
+    // Une échéance déplacée par un avenant signé n'est plus à faire : la tâche reste gardée, plus montrée.
+    const current: MandateTask[] = [];
+    for (const r of rows) {
+      const signed = await this.db.first<{ signed_at: string }>('SELECT signed_at FROM signed_documents WHERE mandate_id = ?', [r.mandate_id]);
+      const terms = await mandateTerms(this.db, r.mandate_id);
+      if (signed && terms && terms.durationMonths !== null) {
+        const end = mandateEndDay(new Date(signed.signed_at), terms.durationMonths);
+        if (r.kind === 'fin_mandat' && r.due_day !== end) continue;
+        if (r.kind === 'fin_periode_exclusive' && r.due_day >= end) continue;
+      }
+      current.push({ id: r.id, mandateId: r.mandate_id, kind: r.kind, dueDay: r.due_day, reason: REASON[r.kind], doneAt: r.done_at });
+    }
+    return { ok: true, tasks: current };
   }
 }
 
