@@ -6,7 +6,7 @@
  * Rien n'est déduit de la personne : seulement ce qu'elle demande, dans une liste fermée de champs et de mots.
  */
 import type { ProjectKind } from '../db/types.ts';
-import { numbersIn, plain } from '../envoi/texte.ts';
+import { plain } from '../envoi/texte.ts';
 
 /** Vendeur, acquéreur, demande d'estimation, mise en location, professionnel, partenaire, curiosité, indésirable. */
 export const CATEGORIES = ['seller', 'buyer', 'valuation', 'rent_out', 'professional', 'partner', 'curious', 'spam'] as const;
@@ -346,7 +346,8 @@ export function checkAiQualification(raw: unknown, text: string, communes: reado
   if (o.financing !== null && o.financing !== declaredFinancing(text)) {
     return { rule: 'R24', reason: 'Financement non déclaré par la personne : jamais évalué.' };
   }
-  const inText = new Set([...amountsIn(text), ...numbersIn(text).map(Number)]);
+  // Seulement les montants du message : une surface ou un nombre de pièces n'en sont pas.
+  const inText = new Set(amountsIn(text));
   if ([o.budgetMinEur, o.budgetMaxEur, o.priceEur].some((v) => v !== null && !inText.has(v as number))) {
     return { rule: 'R10', reason: 'Montant absent du message.' };
   }
@@ -379,4 +380,26 @@ export function projectKindOf(q: Pick<Qualified, 'category' | 'route'>, text: st
     default:
       return null;
   }
+}
+
+const SIGN_OFF = /\n\s*(?:cordialement|bien [aà] (?:vous|toi)|bonne (?:journ[eé]e|soir[eé]e)|merci d['’]avance|merci par avance|[aà] bient[oô]t|salutations)\b[\s\S]*$/iu;
+const SELF_NAMED = /\b([Jj]e m['’]appelle|[Jj]e me nomme|[Jj]e suis|[Mm]oi c['’]est|[Cc]['’]est|[Ii]ci)(\s+)(\p{Lu}[\p{L}'’-]*(?:\s+\p{Lu}[\p{L}'’-]*)*)/gu;
+
+/**
+ * Le texte que l'IA peut lire pour qualifier : sans les noms connus de la fiche, sans le nom que la personne se
+ * donne (« je suis Zoé Exemple »), sans la signature après une formule de fin [R15]. Les communes restent.
+ */
+export function withoutNames(text: string, knownNames: readonly string[], communes: readonly string[] = DEFAULT_COMMUNES): string {
+  let out = text.normalize('NFC');
+  const cut = SIGN_OFF.exec(out);
+  if (cut) out = out.slice(0, cut.index);
+  const isCommune = (words: string): boolean => communes.some((c) => communeKey(c) === communeKey(words));
+  out = out.replace(SELF_NAMED, (all: string, intro: string, space: string, name: string) => (isCommune(name) ? all : `${intro}${space}[nom]`));
+  for (const name of knownNames) {
+    const n = name.normalize('NFC').trim();
+    if (n.length < 2 || isCommune(n)) continue;
+    const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`(^|[^\\p{L}])${escaped}(?=$|[^\\p{L}])`, 'giu'), '$1[nom]');
+  }
+  return out.trim();
 }

@@ -22,6 +22,7 @@ import {
   checkAiQualification,
   projectKindOf,
   qualifyByRules,
+  withoutNames,
   type Category,
   type Criterion,
   type Qualified,
@@ -82,6 +83,21 @@ function timeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
+/** Les critères du projet, complétés : rien de ce qui y est déjà n'est retiré ni remplacé. */
+function mergeCriteria(current: string | null, add: { criteria: readonly string[]; city: string | null }): string {
+  let known: { criteria?: unknown; city?: unknown } = {};
+  try {
+    const parsed: unknown = current ? JSON.parse(current) : {};
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) known = parsed as typeof known;
+  } catch {
+    known = {};
+  }
+  const before = Array.isArray(known.criteria) ? (known.criteria as unknown[]).filter((c): c is string => typeof c === 'string') : [];
+  const merged = { ...known, criteria: [...new Set([...before, ...add.criteria])], city: typeof known.city === 'string' ? known.city : add.city };
+  const next = JSON.stringify(merged);
+  return current !== null && next === current ? current : next;
+}
+
 export class Qualification {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -127,7 +143,8 @@ export class Qualification {
     let source: 'ai' | 'rules' = 'rules';
     if (this.options.qualifier) {
       const brief: QualifyBrief = {
-        text: withoutContactDetails(text),
+        // Ni coordonnée, ni nom : l'IA n'en a pas besoin pour classer [R15].
+        text: withoutNames(withoutContactDetails(text), await this.namesOf(row.person_id, row.sender_name)),
         channel: row.channel,
         propertyRecognized: propertyId !== null,
         communes: this.communes,
@@ -202,6 +219,13 @@ export class Qualification {
     return this.get(inboundId);
   }
 
+  /** Les noms connus de la personne, fiches réunies comprises, et celui que le canal donne. */
+  private async namesOf(personId: string, senderName: string | null): Promise<string[]> {
+    const view = await this.fiche.view(personId);
+    const names = view.members.flatMap((m) => [m.first_name, m.last_name]);
+    return [...new Set([...names, senderName].filter((n): n is string => !!n))];
+  }
+
   /** Ouvre le projet de ce type, ou complète celui de la fiche : un champ déjà rempli n'est jamais remplacé. */
   private async project(
     personId: string,
@@ -235,18 +259,17 @@ export class Qualification {
     // Un champ déjà rempli n'est jamais remplacé ; les critères nouveaux s'ajoutent.
     await this.db.run('UPDATE projects SET budget_min_eur = ?, updated_at = ? WHERE id = ? AND budget_min_eur IS NULL AND ? IS NOT NULL', [budgetMin, at, projectId, budgetMin]);
     await this.db.run('UPDATE projects SET budget_max_eur = ?, updated_at = ? WHERE id = ? AND budget_max_eur IS NULL AND ? IS NOT NULL', [budgetMax, at, projectId, budgetMax]);
+    // Les critères se complètent par comparaison et échange : deux messages traités en même temps n'effacent pas
+    // les critères l'un de l'autre.
     if (criteria) {
-      let known: { criteria?: unknown; city?: unknown } = {};
-      try {
-        const parsed: unknown = found.criteria ? JSON.parse(found.criteria) : {};
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) known = parsed as typeof known;
-      } catch {
-        known = {};
+      let current = found.criteria;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const next = mergeCriteria(current, criteria);
+        if (next === current) break;
+        const { changes } = await this.db.run('UPDATE projects SET criteria = ?, updated_at = ? WHERE id = ? AND criteria IS ?', [next, at, projectId, current]);
+        if (changes === 1) break;
+        current = (await this.db.first<{ criteria: string | null }>('SELECT criteria FROM projects WHERE id = ?', [projectId]))?.criteria ?? null;
       }
-      const before = Array.isArray(known.criteria) ? (known.criteria as unknown[]).filter((c): c is string => typeof c === 'string') : [];
-      const merged = { ...known, criteria: [...new Set([...before, ...criteria.criteria])], city: typeof known.city === 'string' ? known.city : criteria.city };
-      const next = JSON.stringify(merged);
-      if (next !== found.criteria) await this.db.run('UPDATE projects SET criteria = ?, updated_at = ? WHERE id = ?', [next, at, projectId]);
     }
     if (propertyId) {
       const role = kind === 'sell' || kind === 'valuation' ? null : 'interested';

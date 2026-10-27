@@ -6,6 +6,7 @@ import {
   declaredFinancing,
   findCommune,
   qualifyByRules,
+  withoutNames,
   type Qualified,
 } from '../src/index.ts';
 import { QUALIFICATION_CASES } from './fixtures/qualification-cas.ts';
@@ -93,6 +94,17 @@ describe('Q01 · classer et extraire par règles fixes', () => {
   });
 });
 
+describe('Q01 · ce que l’IA peut lire [R15]', () => {
+  it('[R15] ni le nom que la personne se donne, ni les noms connus, ni la signature ; les communes restent', () => {
+    expect(withoutNames('Bonjour, je m’appelle Zoé Exemple et je cherche à Talant.', [])).toBe('Bonjour, je m’appelle [nom] et je cherche à Talant.');
+    expect(withoutNames('Moi c’est Basile, maison à Dijon svp', [])).toBe('Moi c’est [nom], maison à Dijon svp');
+    expect(withoutNames('Bonjour, ici Dijon centre ?', [])).toBe('Bonjour, ici Dijon centre ?');
+    expect(withoutNames('Bonjour, Mme Lambda cherche un T2.', ['Lambda'])).toBe('Bonjour, Mme [nom] cherche un T2.');
+    expect(withoutNames('Je cherche un T2.\nCordialement,\nAlix Exemple\n06 00 00 00 00', [])).toBe('Je cherche un T2.');
+    expect(withoutNames('Je suis médecin et je cherche un appartement.', [])).toBe('Je suis médecin et je cherche un appartement.');
+  });
+});
+
 describe('Q01 · sortie de l’IA, bornée par les règles', () => {
   const text = 'Nous cherchons une maison à Talant, budget 320 000 €, prêt en cours, avec jardin.';
   const good = {
@@ -133,5 +145,8 @@ describe('Q01 · sortie de l’IA, bornée par les règles', () => {
 
   it('[R10] un montant absent du message est refusé', () => {
     expect(checkAiQualification({ ...good, budgetMaxEur: 350_000 }, text)).toMatchObject({ rule: 'R10' });
+    // Une surface ou un nombre de pièces ne deviennent jamais un budget.
+    const t3 = 'Je cherche un T3 de 65 m² à Talant.';
+    expect(checkAiQualification({ ...good, city: 'Talant', financing: null, budgetMaxEur: 65 }, t3)).toMatchObject({ rule: 'R10' });
   });
 });

@@ -71,6 +71,17 @@ describeWithSqlite('Q01 · qualification d’un message rattaché', () => {
     expect(JSON.parse(projects[0]!.criteria)).toEqual({ criteria: ['house', 'garden'], city: 'Talant' });
   });
 
+  it('deux messages qualifiés en même temps ne s’effacent pas leurs critères', async () => {
+    const t = await setup();
+    const a = await t.form('Je cherche une maison avec jardin à Talant.');
+    const b = await t.form('Je cherche une maison avec garage.');
+    await Promise.all([t.qualification.qualify(a), t.qualification.qualify(b)]);
+    const [project] = await t.db.all<{ criteria: string }>('SELECT criteria FROM projects');
+    const merged = JSON.parse(project!.criteria) as { criteria: string[]; city: string };
+    expect(merged.city).toBe('Talant');
+    expect([...merged.criteria].sort()).toEqual(['garage', 'garden', 'house']);
+  });
+
   it('deux messages de la même personne qualifiés en même temps n’ouvrent qu’un projet', async () => {
     const t = await setup();
     const a = await t.form('Je souhaite vendre ma maison à Daix.');
@@ -108,11 +119,12 @@ describeWithSqlite('Q01 · qualification d’un message rattaché', () => {
       },
     };
     const t = await setup(qualifier);
-    const id = await t.form('Je vends mon appartement à Dijon, rappelez-moi au 06 12 34 56 78 ou zoe@example.test, 3 rue des Essais.');
+    const id = await t.form('Bonjour, je suis Zoé Exemple. Je vends mon appartement à Dijon, rappelez-moi au 06 12 34 56 78 ou zoe@example.test, 3 rue des Essais.\nCordialement,\nZ. Exemple, Société Inventée');
     expect(await t.qualification.qualify(id)).toMatchObject({ category: 'seller', source: 'ai', deadline: 'now' });
     expect(briefs).toHaveLength(1);
     expect(Object.keys(briefs[0]!).sort()).toEqual(['channel', 'communes', 'propertyRecognized', 'text']);
-    expect(briefs[0]!.text).not.toMatch(/06 12|example\.test|rue des Essais|Zoé/);
+    expect(briefs[0]!.text).not.toMatch(/06 12|example\.test|rue des Essais|Zoé|Exemple|Inventée/);
+    expect(briefs[0]!.text).toContain('Je vends mon appartement à Dijon');
   });
 
   it('[R23] [R24] une sortie de l’IA hors des champs prévus ou qui prête un financement est refusée : les règles fixes la remplacent, au journal sans texte', async () => {
