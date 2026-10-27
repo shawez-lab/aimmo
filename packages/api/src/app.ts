@@ -11,6 +11,7 @@ import {
   DecisionEnvoi,
   FicheClient,
   CATEGORIES,
+  FicheAgent,
   FicheUnique,
   JourneeRendezVous,
   Qualification,
@@ -160,6 +161,26 @@ const ROUTES: RouteDef[] = [
     pattern: new RegExp(`^/fiches/${ID}$`),
     name: 'fiche',
     handle: async (s, viewer, [id]) => answer(await s.acces.readFiche(viewer, id!)),
+  },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/fiches/${ID}/resume$`),
+    name: 'fiche.resume',
+    // La fiche pour l'application de l'agent : projets, origines, accords, derniers messages, rappels, numéro à
+    // appeler ; refusée hors des droits [R16] ; sans numéro pour une personne exclue ou arrêtée [R02, R04].
+    handle: async (s, viewer, [id]) => {
+      const fiche = await new FicheAgent(s.db, s.acces, { now: s.now }).read(viewer, id!);
+      return fiche.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: fiche.value }) : refusal({ rule: fiche.rule, code: fiche.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/rappels/${ID}/fait$`),
+    name: 'rappel.fait',
+    // « Rappel fait » : la tâche garde sa ligne [R17] ; seul celui qui voit la fiche en entier la marque [R16].
+    // Une tâche inconnue est refusée comme une tâche d'un autre : rien n'est dit de son existence.
+    handle: async (s, viewer, [id]) =>
+      (await s.rappels.done(s.acces, viewer, id!)) ? json(200, { ok: true, mode: TRIAL_MODE, sent: false }) : json(403, { ok: false, rule: 'R16', code: 'not_assigned' }),
   },
   {
     method: 'GET',

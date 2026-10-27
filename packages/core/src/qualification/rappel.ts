@@ -116,10 +116,15 @@ export class Rappels {
   /** La tâche est faite : elle garde sa ligne [R17]. Seul celui qui voit la fiche en entier la marque [R16]. */
   async done(acces: Acces, viewer: Viewer, taskId: string): Promise<boolean> {
     const task = await this.db.first<CallbackTaskRow>('SELECT * FROM callback_tasks WHERE id = ? AND network_id = ?', [taskId, viewer.networkId]);
-    if (!task) return false;
+    if (!task) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'callback_task', code: 'unknown' } }, this.now);
+      return false;
+    }
     const read = await acces.readFiche(viewer, task.person_id);
     if (!read.ok || read.view !== 'full') return false;
-    await this.db.run('UPDATE callback_tasks SET done_at = ? WHERE id = ? AND done_at IS NULL', [this.now().toISOString(), taskId]);
+    const { changes } = await this.db.run('UPDATE callback_tasks SET done_at = ? WHERE id = ? AND done_at IS NULL', [this.now().toISOString(), taskId]);
+    // Le geste est écrit au journal, une fois, sans donnée personnelle [R13].
+    if (changes === 1) await appendEvent(this.journal, { type: 'rappel.fait', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `person:${task.person_id}`, data: { task: taskId } }, this.now);
     return true;
   }
 
