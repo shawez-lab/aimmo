@@ -6,8 +6,13 @@ import {
   CHANNELS,
   DecisionEnvoi,
   FicheClient,
+  CATEGORIES,
   FicheUnique,
+  Qualification,
+  ROUTES as NEXT_MODULES,
   Rappels,
+  Reception,
+  ReconnaissanceBien,
   SEND_KINDS,
   SqlJournalStore,
   appendEvent,
@@ -80,6 +85,7 @@ interface Services {
   acces: Acces;
   decision: DecisionEnvoi;
   rappels: Rappels;
+  qualification: Qualification;
   now: () => Date;
 }
 
@@ -93,6 +99,7 @@ function services(db: SqlDatabase, now: () => Date): Services {
     acces: new Acces(db, fiches, unique, journal, { now }),
     decision: new DecisionEnvoi(db, fiches, unique, { now }),
     rappels: new Rappels(db, unique, journal, { now }),
+    qualification: new Qualification(db, fiches, unique, new Reception(db, undefined, now), new ReconnaissanceBien(db), journal, { now }),
     now,
   };
 }
@@ -139,6 +146,12 @@ const ROUTES: RouteDef[] = [
     pattern: /^\/envois\/decision$/,
     name: 'envois.decision',
     handle: sendDecision,
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/qualifications/${ID}/correction$`),
+    name: 'qualification.correction',
+    handle: correctQualification,
   },
   {
     method: 'GET',
@@ -244,6 +257,26 @@ async function sendDecision(s: Services, viewer: Viewer, _params: string[], requ
     s.now,
   );
   return json(200, { ok: true, mode: TRIAL_MODE, sent: false, data: decision });
+}
+
+/**
+ * La correction du classement par l'agent : gardée telle quelle, elle rejoint les cas de mesure. Seul celui qui voit
+ * la fiche en entier corrige [R16] ; la qualification d'origine reste [R17].
+ */
+async function correctQualification(s: Services, viewer: Viewer, [id]: string[], request: Request): Promise<Response> {
+  const body = await readJson(request);
+  if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+  const { category, route } = body;
+  if (typeof category !== 'string' || !(CATEGORIES as readonly string[]).includes(category)) {
+    return failure(400, 'invalid_category', `category attendue parmi : ${CATEGORIES.join(', ')}.`);
+  }
+  if (route !== undefined && route !== null && (typeof route !== 'string' || !(NEXT_MODULES as readonly string[]).includes(route))) {
+    return failure(400, 'invalid_route', `route attendue parmi : ${NEXT_MODULES.join(', ')}, ou null.`);
+  }
+  const row = await s.db.first<{ network_id: string }>('SELECT network_id FROM qualifications WHERE id = ?', [id!]);
+  if (!row || row.network_id !== viewer.networkId) return json(404, { ok: false, rule: 'R16', code: 'unknown' });
+  const done = await s.qualification.correct(s.acces, viewer, id!, category as (typeof CATEGORIES)[number], (route ?? null) as (typeof NEXT_MODULES)[number] | null);
+  return done ? json(200, { ok: true, mode: TRIAL_MODE }) : json(403, { ok: false, rule: 'R16', code: 'not_assigned' });
 }
 
 /** Vérifie toute la chaîne du journal. Direction et conformité seulement [R16]. */

@@ -22,7 +22,7 @@ async function setup(qualifier?: Qualifier) {
   await applyMigrations(db, loadMigrations());
   const now = (): Date => TUESDAY_10H;
   const journal = new SqlJournalStore(db);
-  const { chaine, store, fiche, reception } = createCaptation(db, journal, { now });
+  const { chaine, store, fiche, reception } = createCaptation(db, journal, { now, withQualification: false });
   const biens = new ReconnaissanceBien(db);
   const qualification = new Qualification(db, store, fiche, reception, biens, journal, { now, ...(qualifier ? { qualifier } : {}) });
   const network = await store.createNetwork('Réseau test');
