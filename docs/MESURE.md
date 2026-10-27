@@ -31,3 +31,16 @@ Sans le fichier, ce test est sauté.
 Aujourd'hui, ce sont les règles fixes qui sont mesurées. La mesure de la vraie IA viendra avec H13.
 
 Les corrections faites par les agents (`POST /v1/qualifications/<id>/correction`) s'ajoutent aux cas de mesure : elles se lisent avec `Qualification.correctedCases`.
+
+# Vérification de la collecte sur 10 biens tests (M04, E03)
+
+Le critère de M04 : pour 10 biens tests, toutes les données publiques sont retrouvées automatiquement (adresse, parcelle, diagnostic énergétique, risques). Les adresses ne viennent **jamais** dans le dépôt.
+
+1. Écrire un fichier texte hors du dépôt, une adresse complète par ligne (numéro, voie, code postal, commune), 10 lignes, de biens que l'agence connaît et qui ont un diagnostic énergétique.
+2. Sur une machine reliée à Internet :
+
+```
+AIMMO_BIENS=/chemin/hors/du/depot/biens.txt npx vitest run packages/core/test/collecte.test.ts
+```
+
+La vérification affiche le nombre de biens complets et, par **numéro de ligne**, les données qui manquent, sans recopier l'adresse. Elle échoue s'il en manque une. Sans le fichier, ce test est sauté.
