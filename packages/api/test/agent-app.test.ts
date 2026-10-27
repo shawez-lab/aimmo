@@ -60,6 +60,59 @@ describe('A01 · fichiers de l’application', () => {
     expect(js.match(/(?:api|fetch)\(([^,)]+)/g)).toEqual(['api(path', 'fetch(path', "api('/v1/moi'"]);
   });
 
+  it('[R16] une clé refusée ne montre rien et est effacée ; une panne ne l’efface pas ; la déconnexion l’efface', async () => {
+    const run = async (answer: () => Promise<Response>, stored: string | null) => {
+      const els: Record<string, { hidden: boolean; textContent: string; value: string; listeners: Record<string, (e: unknown) => void>; addEventListener: (n: string, f: (e: unknown) => void) => void }> = {};
+      for (const id of ['connexion', 'accueil', 'attente', 'sortir', 'bonjour', 'erreur', 'form-connexion', 'cle']) {
+        const listeners: Record<string, (e: unknown) => void> = {};
+        els[id] = { hidden: true, textContent: '', value: '', listeners, addEventListener: (n, f) => (listeners[n] = f) };
+      }
+      const storage = new Map<string, string>(stored === null ? [] : [['aimmo.cle', stored]]);
+      const docListeners: Record<string, () => void> = {};
+      const calls: { url: string; headers: Record<string, string> }[] = [];
+      runInNewContext(AGENT_APP_FILES['/app/app.js']!, {
+        document: { getElementById: (id: string) => els[id], addEventListener: (n: string, f: () => void) => (docListeners[n] = f) },
+        localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
+        fetch: (url: string, init: { headers: Record<string, string> }) => {
+          calls.push({ url, headers: init.headers });
+          return answer();
+        },
+        navigator: {},
+      });
+      docListeners.DOMContentLoaded!();
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+      return { els, storage, calls };
+    };
+    const KEY = 'k'.repeat(40);
+    const ok = await run(async () => Response.json({ ok: true, data: { role: 'agent', firstName: 'Alex' } }), KEY);
+    expect(ok.els.accueil!.hidden).toBe(false);
+    expect(ok.els.bonjour!.textContent).toBe('Bonjour Alex');
+    expect(ok.calls).toEqual([{ url: '/v1/moi', headers: { authorization: `Bearer ${KEY}` } }]);
+    ok.els.sortir!.listeners.click!({});
+    expect(ok.storage.has('aimmo.cle')).toBe(false);
+    expect(ok.els.accueil!.hidden).toBe(true);
+    expect(ok.els.bonjour!.textContent).toBe('');
+
+    for (const answer of [
+      async () => Response.json({ ok: false, code: 'unauthorized' }, { status: 401 }),
+      async () => Response.json({ ok: false, rule: 'R16', code: 'agent_inactive' }, { status: 403 }),
+      async () => Response.json({ ok: true, data: { role: 'direction', firstName: null } }),
+    ]) {
+      const refused = await run(answer, KEY);
+      expect(refused.els.accueil!.hidden).toBe(true);
+      expect(refused.els.connexion!.hidden).toBe(false);
+      expect(refused.els.bonjour!.textContent).toBe('');
+      expect(refused.storage.has('aimmo.cle')).toBe(false);
+    }
+    for (const answer of [async () => Promise.reject(new TypeError('hors ligne')), async () => new Response('panne', { status: 503 })]) {
+      const offline = await run(answer, KEY);
+      expect(offline.els.accueil!.hidden).toBe(true);
+      expect(offline.storage.get('aimmo.cle')).toBe(KEY);
+      expect(offline.els.erreur!.textContent).toMatch(/Réessayez/);
+    }
+  });
+
   it('le service worker ne garde que la coquille ; une réponse de l’API n’est jamais mise en cache', async () => {
     const stored: string[] = [];
     const listeners: Record<string, (event: unknown) => void> = {};

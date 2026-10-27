@@ -71,23 +71,33 @@ export const APP_JS = `'use strict';
   function api(path, key) {
     return fetch(path, { headers: { authorization: 'Bearer ' + key }, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
   }
+  function refuse(message) {
+    $('bonjour').textContent = '';
+    $('erreur').textContent = message;
+    $('erreur').hidden = false;
+    show('connexion');
+    return false;
+  }
   function enter(key) {
     show('attente');
     return api('/v1/moi', key).then(function (r) {
-      if (!r.ok) throw new Error('refus');
-      return r.json();
-    }).then(function (body) {
-      var me = body && body.data;
-      if (!me || me.role !== 'agent') throw new Error('role');
+      // Clé refusée : elle est effacée de l'appareil. Une panne ou une erreur du serveur ne l'efface pas.
+      if (r.status === 401 || r.status === 403) return { refused: true };
+      if (!r.ok) return { refused: false };
+      return r.json().then(function (body) { return { body: body }; });
+    }).then(function (res) {
+      var me = res.body && res.body.data;
+      if (res.refused || (res.body && (!me || me.role !== 'agent'))) {
+        forgetKey();
+        return refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.');
+      }
+      if (!res.body) return refuse('Le service ne répond pas. Réessayez dans un moment.');
       $('bonjour').textContent = me.firstName ? 'Bonjour ' + me.firstName : 'Bonjour';
+      $('erreur').hidden = true;
       show('accueil');
       return true;
-    }).catch(function () {
-      forgetKey();
-      $('erreur').textContent = 'Clé refusée. Vérifiez-la ou demandez-en une nouvelle.';
-      $('erreur').hidden = false;
-      show('connexion');
-      return false;
+    }, function () {
+      return refuse('Pas de réseau. Réessayez dans un moment.');
     });
   }
   document.addEventListener('DOMContentLoaded', function () {
