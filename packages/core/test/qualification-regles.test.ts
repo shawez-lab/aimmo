@@ -29,7 +29,7 @@ describe('Q01 · classer et extraire par règles fixes', () => {
   });
 
   it('extraction : commune, budget, délai, financement déclaré, critères', () => {
-    const q = qualifyByRules('Nous recherchons une maison avec jardin à Fontaine-lès-Dijon, entre 300 000 et 350 000 euros, 4 pièces, accord de principe de la banque, d’ici 3 mois.');
+    const q = qualifyByRules('Nous recherchons une maison avec jardin à Fontaine-lès-Dijon, entre 300 000 et 350 000 euros, 4 pièces, nous avons l’accord de principe de la banque, d’ici 3 mois.');
     expect(q).toEqual<Qualified>({
       category: 'buyer',
       route: null,
@@ -52,6 +52,8 @@ describe('Q01 · classer et extraire par règles fixes', () => {
     // Espaces insécables, fines ou non, comme les écrit un clavier français.
     expect(amountsIn('budget 300\u00a0000\u00a0€')).toEqual([300_000]);
     expect(amountsIn('budget 300\u202f000 €')).toEqual([300_000]);
+    // Un loyer, avec sa devise.
+    expect(amountsIn('loyer de 650 € par mois, 3 pièces, 2e étage')).toEqual([650]);
     expect(findCommune('près de fontaine les dijon')).toBe('Fontaine-lès-Dijon');
     expect(findCommune('à Dijon centre')).toBe('Dijon');
     expect(findCommune('à Lyon')).toBeNull();
@@ -74,13 +76,18 @@ describe('Q01 · classer et extraire par règles fixes', () => {
       ['Pas de prêt accordé pour l’instant.', null],
       ['J’attends l’accord de principe.', 'loan_in_progress'],
       ['Pas de cash, il faut un prêt.', 'loan_needed'],
-      ['Je ne paierai pas comptant, besoin d’un prêt.', 'loan_needed'],
+      ['Je ne paierai pas comptant, besoin d’un prêt.', null],
       ['Sans financement pour le moment.', null],
       ['Sans prêt pour le moment.', null],
       ['Achat sans prêt.', 'cash'],
       ['Accord de prêt obtenu.', 'loan_approved'],
       ['Comptant ou avec un prêt, je ne sais pas.', null],
       ['Je cherche une maison sans accord de prêt.', null],
+      ['Si j’obtiens un accord de prêt, je pourrai acheter une maison.', null],
+      ['Je vais demander un accord de prêt pour acheter une maison.', null],
+      ['Accord de principe de la banque.', null],
+      ['Nous avons l’accord de principe de la banque.', 'loan_approved'],
+      ['Si je peux, je paierai comptant.', null],
     ] as const) {
       expect(declaredFinancing(text), text).toBe(expected);
     }

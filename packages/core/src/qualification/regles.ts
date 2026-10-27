@@ -210,7 +210,9 @@ export function amountsIn(text: string): number[] {
     if (!Number.isFinite(value)) continue;
     const before = p.slice(Math.max(0, (m.index ?? 0) - 20), m.index ?? 0);
     const amount = thousand ? value * 1000 : value;
-    if ((thousand || currency || MONEY_CONTEXT.test(before)) && amount >= 1000 && amount <= 100_000_000) found.push(Math.round(amount));
+    // Un loyer s'écrit en centaines d'euros : avec la devise, dès 100 € ; sinon, dès 1 000.
+    const floor = currency ? 100 : 1000;
+    if ((thousand || currency || MONEY_CONTEXT.test(before)) && amount >= floor && amount <= 100_000_000) found.push(Math.round(amount));
   }
   return found;
 }
@@ -225,6 +227,8 @@ function deadlineOf(p: string): Deadline | null {
 }
 
 const NEGATION = /\b(?:pas|ne|n'|jamais|aucun|aucune|plus|ni|sans)\b|\bpour (?:le moment|l'instant)\b|\bencore\b/;
+// Un accord seulement espéré, à demander ou au conditionnel n'est pas déclaré : rien n'est rangé.
+const HYPOTHETICAL = /\b(?:paierai|paierons|payerai|payerons|aurai|aurons|obtiendrai|obtiendrons|si|s'il|quand|lorsque|des que|une fois|je vais|nous allons|on va|demander|pourrai|pourrais|pourrions|pourrons|espere|esperons|aimerais|voudrais|devrait|devrais|devrions|peut-etre|eventuellement|bientot|prochainement)\b/;
 const WAITING = /\b(?:j'attends|nous attendons|on attend|en attente (?:de|d'|du))\b/;
 const FINANCING_WORDS = /\b(?:accord (?:de|du)|pret|credit|emprunt|financement|banque|comptant|cash|fonds propres)\b/;
 
@@ -236,8 +240,16 @@ function financingOfClause(c: string): Financing | null {
   // « Sans prêt » déclare un achat comptant ; toute autre négation, ou « pour le moment », ne déclare rien.
   const cash = /\bsans (?:pret|credit|emprunt)\b/.test(c);
   if (NEGATION.test(cash ? c.replace(/\bsans (?:pret|credit|emprunt)\b/g, '') : c)) return null;
+  if (HYPOTHETICAL.test(c)) return null;
   if (cash || /\b(?:comptant|cash|fonds propres)\b/.test(c)) return 'cash';
-  if (/\b(?:accord (?:de|du) (?:pret|principe|financement|la banque|ma banque|banque)|pret (?:accorde|valide|obtenu)|financement (?:valide|accorde|obtenu|ok))\b/.test(c)) return 'loan_approved';
+  // Un accord acquis, dit comme tel : « j'ai l'accord de principe », « accord de prêt obtenu », « prêt accordé ».
+  if (
+    /\b(?:j'ai|nous avons|on a|avons obtenu|ai obtenu|avec)\s+(?:deja\s+)?(?:un |l'|mon |notre |notre )?accord (?:de|du) (?:pret|principe|financement|la banque|ma banque|notre banque|banque)\b/.test(c) ||
+    /\baccord (?:de|du) (?:pret|principe|financement|banque)\b[^.]*\b(?:obtenu|accorde|valide|en poche|recu|signe)\b/.test(c) ||
+    /\b(?:pret|financement) (?:accorde|valide|obtenu|ok)\b/.test(c)
+  ) {
+    return 'loan_approved';
+  }
   if (/\b(?:pret en cours|financement en cours|dossier (?:de pret |de financement )?en cours|rendez-vous (?:avec|a) (?:la|ma) banque|mon courtier|simulation de pret)\b/.test(c)) return 'loan_in_progress';
   if (/\b(?:avec (?:un|mon) (?:pret|credit)|besoin d'un (?:pret|credit)|(?:faire|faut) un (?:pret|credit))\b/.test(c)) return 'loan_needed';
   return null;
@@ -248,7 +260,11 @@ function financingOfClause(c: string): Financing | null {
  * l'attend seulement ou se contredit [R24]. Jamais évalué.
  */
 export function declaredFinancing(text: string): Financing | null {
-  const clauses = plain(text).split(/[.;!?\n,]|\bmais\b|\bet\b|\bou\b/);
+  // Une phrase au conditionnel, au futur ou à l'hypothèse ne déclare rien, même découpée par des virgules.
+  const sentences = plain(text)
+    .split(/[.;!?\n]/)
+    .filter((sentence) => !HYPOTHETICAL.test(sentence));
+  const clauses = sentences.flatMap((sentence) => sentence.split(/,|\bmais\b|\bet\b|\bou\b/));
   const found = new Set(clauses.map(financingOfClause).filter((f): f is Financing => f !== null));
   return found.size === 1 ? [...found][0]! : null;
 }

@@ -54,7 +54,7 @@ describeWithSqlite('Q01 · qualification d’un message rattaché', () => {
     expect(await t.db.all('SELECT role FROM project_properties')).toEqual([{ role: 'interested' }]);
 
     // Même personne, nouveau message : le projet est complété, jamais remplacé.
-    const second = await t.form('Je cherche toujours, entre 300 000 et 350 000 €, accord de principe de la banque.');
+    const second = await t.form('Je cherche toujours, entre 300 000 et 350 000 €, j’ai l’accord de principe de la banque.');
     const q2 = await t.qualification.qualify(second);
     expect(q2).toMatchObject({ category: 'buyer', project_id: projects[0]!.id, financing: 'loan_approved' });
     const after = await t.db.all<{ budget_min_eur: number; budget_max_eur: number }>('SELECT * FROM projects');

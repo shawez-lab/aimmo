@@ -273,9 +273,13 @@ export class Qualification {
     }
     if (propertyId) {
       const role = kind === 'sell' || kind === 'valuation' ? null : 'interested';
-      const linked = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM project_properties WHERE project_id = ? AND property_id = ?', [projectId, propertyId]);
-      if (role && Number(linked?.n ?? 0) === 0) {
-        await this.store.linkProjectProperty({ networkId, agentId, projectId, propertyId, role });
+      // Le lien au bien, une seule fois, même pour deux messages traités en même temps.
+      if (role) {
+        await this.db.run(
+          `INSERT INTO project_properties (project_id, property_id, network_id, agent_id, role, created_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (project_id, property_id, role) DO NOTHING`,
+          [projectId, propertyId, networkId, agentId, role, this.now().toISOString()],
+        );
       }
     }
     return projectId;
