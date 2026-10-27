@@ -327,14 +327,14 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Décidé (2026-10-27) : le cahier ne chiffre pas l'ajustement du diagnostic énergétique ; réglage de départ A +3 %, B +2 %, C et D 0, E -2 %, F -5 %, G -8 %, dans les bornes de -25 % à +18 %, à confirmer par Shawez sur la mesure de E07.
 
 ### E02 · Ventes DVF du site comme source
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : normale · Dépend de : E01
 - Cahier : M04, « Données » et « Branchements » (fichiers DVF de data.gouv.fr).
 - Objectif : lire les ventes DVF déjà préparées par le site (`donnees-dvf/` : index, tuiles, détails), en lecture seule, comme source de E01 ; le détail d'une vente donne la voie sans numéro et la commune.
 - Critères : aucune écriture ni appel autre qu'une lecture ; jamais de numéro de voie ni de nom rendu [R29] ; une tuile absente ou illisible ne casse rien et est comptée ; jeux de test inventés au format du site.
 
 ### E03 · Collecte des données publiques du bien
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : E01
 - Cahier : M04, « Collecte automatique » et « Branchements ».
 - Objectif : à partir d'une adresse, retrouver ses coordonnées (Base adresse nationale), la parcelle (cadastre), le diagnostic énergétique (ADEME) et les risques (Géorisques), chacun derrière une interface, avec ce qui manque dit clairement.
