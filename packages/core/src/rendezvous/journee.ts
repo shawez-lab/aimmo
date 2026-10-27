@@ -108,6 +108,12 @@ export class JourneeRendezVous {
       let briefMissing: DayAppointment['briefMissing'] = null;
       if (!allowed) {
         briefMissing = 'no_access';
+        // Le refus est écrit au journal, à la fiche du rendez-vous, avant la réponse, sans donnée [R16, R13].
+        await appendEvent(
+          this.journal,
+          { type: 'acces.refuse', actor, subject: personSubject(row.person_id), data: { rule: 'R16', role: 'agent', kind: 'person', code: 'not_assigned', via: 'rendez_vous.jour', appointment: `appointment:${row.id}` } },
+          this.now,
+        );
       } else {
         const root = await this.unique.rootOf(row.person_id);
         const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [root]);

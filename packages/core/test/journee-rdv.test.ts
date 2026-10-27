@@ -128,6 +128,11 @@ describeWithSqlite('A02 · rendez-vous du jour de l’agent', () => {
     expect(r.ok && r.value.appointments).toEqual([expect.objectContaining({ id: a.appointment.id, firstName: null, brief: null, briefMissing: 'no_access' })]);
     // Rien de la fiche n'est rendu : aucune lecture de fiche au journal pour cette consultation.
     expect(await w.db.all(`SELECT seq FROM journal WHERE type = 'fiche.lue'`)).toEqual([]);
+    // Le refus, lui, est écrit à la fiche, sans donnée.
+    const refused = await w.db.all<{ subject: string; data: string }>(`SELECT subject, data FROM journal WHERE type = 'acces.refuse'`);
+    expect(refused.map((e) => [e.subject, JSON.parse(e.data)])).toEqual([
+      [`person:${lea.id}`, { rule: 'R16', role: 'agent', kind: 'person', code: 'not_assigned', via: 'rendez_vous.jour', appointment: `appointment:${a.appointment.id}` }],
+    ]);
     await w.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [w.paul.id, lea.id]);
 
     // Une autre fiche de Paul fusionnée dans celle de Léa après le brief : le brief rangé ne la connaît pas.
