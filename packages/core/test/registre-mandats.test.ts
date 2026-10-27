@@ -1,0 +1,159 @@
+import { expect, it } from 'vitest';
+import { Acces, FicheClient, FicheUnique, Mandats, RegistreMandats, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
+import { loadMigrations } from './migrations.ts';
+import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+
+// Tout est inventé : registre d'essai, préfixe « T- ».
+const NOW = Date.parse('2027-02-10T10:00:00.000Z');
+
+async function setup() {
+  const raw = openMemoryDatabase();
+  const db: SqlDatabase = fromSyncSqlite(raw);
+  await applyMigrations(db, loadMigrations());
+  let clock = NOW;
+  const now = (): Date => new Date(clock);
+  const journal = new SqlJournalStore(db);
+  const store = new FicheClient(db, { now });
+  const fiche = new FicheUnique(db, store, { now });
+  const acces = new Acces(db, store, fiche, journal, { now });
+  const mandats = new Mandats(db, fiche, journal, { now });
+  const registre = new RegistreMandats(db, journal, { now });
+  const network = await store.createNetwork('Réseau test');
+  const other = await store.createNetwork('Autre réseau');
+  const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
+  const sam = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Agent' });
+  const as = (role: string, userId: string, networkId = network.id): Viewer => ({ role, userId, networkId }) as Viewer;
+  const direction = as('direction', 'direction-1');
+  const mandate = async (agentId = alex.id): Promise<string> => {
+    const p = await store.createPerson({ networkId: network.id, agentId, firstName: 'Léa' });
+    const r = await mandats.record(acces, as('agent', agentId), { personId: p.id, signedAt: new Date(clock), source: 'referral' });
+    if (!r.ok) throw new Error(r.code);
+    clock += 60_000;
+    return r.id;
+  };
+  return { raw, db, journal, registre, network, other, alex, sam, as, direction, mandate };
+}
+
+describeWithSqlite('D01 · registre des mandats', () => {
+  it('[R39] chaque mandat reçoit le numéro suivant, au format du réseau, sans trou, une seule fois', async () => {
+    const t = await setup();
+    const m1 = await t.mandate();
+    expect(await t.registre.inscribe(t.as('agent', t.alex.id), m1)).toEqual({ ok: false, rule: null, code: 'not_configured' });
+    expect(await t.registre.configure(t.as('agent', t.alex.id), { prefix: 'T-', firstNumber: 41, width: 5 })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 41, width: 5 })).toEqual({ ok: true });
+    expect(await t.registre.configure(t.direction, { prefix: 'X-', firstNumber: 1, width: 3 })).toEqual({ ok: false, rule: null, code: 'already_configured' });
+    expect(await t.registre.configure(t.as('direction', 'd', t.other.id), { prefix: '<b>', firstNumber: 1, width: 3 })).toEqual({ ok: false, rule: null, code: 'bad_settings' });
+
+    const ids = [m1, await t.mandate(), await t.mandate(t.sam.id)];
+    const numbers: string[] = [];
+    for (const id of ids) {
+      const viewer = id === ids[2] ? t.as('agent', t.sam.id) : t.as('agent', t.alex.id);
+      const r = await t.registre.inscribe(viewer, id);
+      if (!r.ok) throw new Error(r.code);
+      numbers.push(r.line.number);
+    }
+    expect(numbers).toEqual(['T-00041', 'T-00042', 'T-00043']);
+    expect(await t.registre.inscribe(t.as('agent', t.alex.id), m1)).toEqual({ ok: false, rule: 'R39', code: 'already_inscribed' });
+    // Le format ne change plus une fois le registre ouvert, même directement en base.
+    await expect(t.db.run(`UPDATE mandate_register_settings SET first_number = 1 WHERE network_id = ?`, [t.network.id])).rejects.toThrow(/format figé/);
+  });
+
+  it('[R39] des inscriptions simultanées n’ont jamais le même numéro ni de trou', async () => {
+    const t = await setup();
+    await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const ids: string[] = [];
+    for (let i = 0; i < 8; i++) ids.push(await t.mandate());
+    const results = await Promise.all(ids.map((id) => t.registre.inscribe(t.direction, id)));
+    const numbers = results.map((r) => (r.ok ? r.line.numberValue : -1)).sort((a, b) => a - b);
+    expect(numbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    // Une autre inscription qui prend le rang entre la lecture et l'écriture : la suivante recommence et prend le rang d'après.
+    const late = await t.mandate();
+    const sneaky = await t.mandate();
+    let injected = false;
+    const racing: SqlDatabase = {
+      ...t.db,
+      first: async <T>(sql: string, params?: readonly (string | number | null)[]) => {
+        const row = await t.db.first<T>(sql, params);
+        if (!injected && sql.includes('COUNT(*)')) {
+          injected = true;
+          await new RegistreMandats(t.db, t.journal, { now: () => new Date(NOW) }).inscribe(t.direction, sneaky);
+        }
+        return row;
+      },
+    };
+    const r = await new RegistreMandats(racing, t.journal, { now: () => new Date(NOW) }).inscribe(t.direction, late);
+    expect(r.ok && r.line.number).toBe('T-010');
+    expect(await t.registre.check(t.network.id)).toEqual({ ok: true, lines: 10 });
+  });
+
+  it('[R39, R17] une modification après coup est détectée ; rien ne s’efface ; une erreur se corrige par une annulation', async () => {
+    const t = await setup();
+    await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const ids = [await t.mandate(), await t.mandate(), await t.mandate()];
+    for (const id of ids) await t.registre.inscribe(t.direction, id);
+    expect(await t.registre.check(t.network.id)).toEqual({ ok: true, lines: 3 });
+
+    await expect(t.db.run('UPDATE mandate_register SET number = ? WHERE seq = 2', ['T-999'])).rejects.toThrow(/ajout seul/);
+    await expect(t.db.run('DELETE FROM mandate_register WHERE seq = 3')).rejects.toThrow(/ajout seul/);
+
+    // Annulation : une ligne de plus, le numéro reste donné, le suivant ne le reprend pas.
+    expect(await t.registre.cancel(t.direction, ids[1]!, 'bad' as never)).toEqual({ ok: false, rule: null, code: 'bad_reason' });
+    const c = await t.registre.cancel(t.direction, ids[1]!, 'error');
+    expect(c.ok && [c.line.kind, c.line.number, c.line.cancelsSeq]).toEqual(['annulation', 'T-002', 2]);
+    expect(await t.registre.cancel(t.direction, ids[1]!, 'error')).toEqual({ ok: false, rule: null, code: 'already_cancelled' });
+    const next = await t.mandate();
+    const n = await t.registre.inscribe(t.direction, next);
+    expect(n.ok && n.line.number).toBe('T-004');
+    expect(await t.registre.check(t.network.id)).toEqual({ ok: true, lines: 5 });
+
+    // Quelqu'un qui a la main sur la base retire les gardes et réécrit une ligne : le contrôle le voit.
+    t.raw.exec('DROP TRIGGER mandate_register_sans_modification');
+    await t.db.run(`UPDATE mandate_register SET signed_at = '2027-01-01T00:00:00.000Z' WHERE network_id = ? AND seq = 2`, [t.network.id]);
+    expect(await t.registre.check(t.network.id)).toEqual({ ok: false, lines: 5, brokenAt: 2, problem: 'hash' });
+  });
+
+  it('[R39] une ligne réécrite avec une empreinte recalculée casse le lien suivant ; un mandat changé après inscription se voit', async () => {
+    const t = await setup();
+    await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const ids = [await t.mandate(), await t.mandate()];
+    for (const id of ids) await t.registre.inscribe(t.direction, id);
+    t.raw.exec('DROP TRIGGER mandate_register_sans_modification');
+    const { hashRegisterLine } = await import('../src/index.ts');
+    const row = (await t.db.first<Record<string, unknown>>('SELECT * FROM mandate_register WHERE network_id = ? AND seq = 1', [t.network.id]))!;
+    const forged = { ...row, property_id: null, at: '2027-02-01T00:00:00.000Z' } as never as Parameters<typeof hashRegisterLine>[0];
+    const hash = await hashRegisterLine(forged);
+    await t.db.run('UPDATE mandate_register SET at = ?, hash = ? WHERE network_id = ? AND seq = 1', ['2027-02-01T00:00:00.000Z', hash, t.network.id]);
+    expect(await t.registre.check(t.network.id)).toMatchObject({ ok: false, brokenAt: 2, problem: 'chain' });
+
+    const u = await setup();
+    await u.registre.configure(u.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const m = await u.mandate();
+    await u.registre.inscribe(u.direction, m);
+    // Le mandat rangé est figé en base ; quelqu'un retire la garde et le réécrit.
+    u.raw.exec('DROP TRIGGER mandates_fige');
+    await u.db.run('UPDATE mandates SET signed_at = ? WHERE id = ?', ['2026-12-31T00:00:00.000Z', m]);
+    expect(await u.registre.check(u.network.id)).toEqual({ ok: false, lines: 1, brokenAt: 1, problem: 'mandate' });
+    // Le contrôle par la direction le dit, et l'écrit au journal sans donnée personnelle.
+    const v = await u.registre.verify(u.direction);
+    expect(v).toEqual({ ok: true, value: { ok: false, lines: 1, brokenAt: 1, problem: 'mandate' } });
+    expect(JSON.stringify(await u.journal.all())).not.toMatch(/Léa/);
+  });
+
+  it('[R16] seuls l’agent du mandat, la direction et la conformité lisent une ligne ; la conformité n’inscrit pas ; refus au journal', async () => {
+    const t = await setup();
+    await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const m = await t.mandate();
+    expect(await t.registre.inscribe(t.as('agent', t.sam.id), m)).toMatchObject({ ok: false, rule: 'R16', code: 'not_assigned' });
+    expect(await t.registre.inscribe(t.as('compliance', 'c-1'), m)).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.registre.inscribe(t.as('direction', 'd', t.other.id), m)).toMatchObject({ ok: false, rule: 'R16', code: 'unknown' });
+    await t.registre.inscribe(t.as('agent', t.alex.id), m);
+    for (const viewer of [t.as('agent', t.alex.id), t.direction, t.as('compliance', 'c-1')]) {
+      const r = await t.registre.linesOf(viewer, m);
+      expect(r.ok && r.lines.map((l) => l.number)).toEqual(['T-001']);
+    }
+    for (const viewer of [t.as('agent', t.sam.id), t.as('partner', 'p-1')]) expect(await t.registre.linesOf(viewer, m)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.registre.verify(t.as('agent', t.alex.id))).toMatchObject({ ok: false, rule: 'R16' });
+    const refused = (await t.journal.all()).filter((e) => e.type === 'acces.refuse');
+    expect(refused).toHaveLength(6);
+  });
+});
