@@ -36,13 +36,21 @@ export function mentionsReward(text: string): boolean {
 
 export type ReferralRefusal = { ok: false; rule: 'R16' | 'R66' | 'R03' | null; code: string };
 
+/**
+ * Ce que rend une recommandation rangée : la même chose que le proche soit nouveau, déjà client du lecteur, d'un autre
+ * agent, exclu ou sans accord ; rien n'y dit qui le suit [R16].
+ */
 export interface Referral {
   id: string;
-  referrerId: string;
-  referredId: string;
-  /** La tâche « appeler » : seulement pour l'agent qui suit le proche, s'il l'a accepté et n'est pas exclu. */
-  callDueAt: string | null;
-  callDoneAt: string | null;
+  recorded: true;
+}
+
+/** Une tâche « appeler » ouverte d'un agent. */
+export interface ReferralCall {
+  referralId: string;
+  personId: string;
+  firstName: string | null;
+  dueAt: string;
 }
 
 interface ReferralRow {
@@ -51,6 +59,7 @@ interface ReferralRow {
   referrer_id: string;
   referred_id: string;
   project_id: string | null;
+  first_name: string | null;
   agent_id: string | null;
   callable: number;
   call_due_at: string | null;
@@ -89,44 +98,54 @@ export class Recommandations {
     return { ok: false, rule: 'R16', code };
   }
 
+  /** Une personne opposée : exclusion active ou accord « recommandation » retiré [R02, R03, R04]. */
+  private async opposed(personId: string, at: Date): Promise<boolean> {
+    const view = await this.fiche.view(personId);
+    return (
+      view.exclusions.some((e) => e.lifted_at === null || Date.parse(e.lifted_at) > at.getTime()) ||
+      view.consents.some((c) => c.purpose === REFERRAL_PURPOSE && c.withdrawn_at !== null)
+    );
+  }
+
   /**
    * L'agent du client, ou la direction, range la recommandation d'un proche. Le proche est rattaché à sa fiche s'il en
-   * a une, créé sinon. Rend la recommandation ; la tâche « appeler » n'y figure que si elle est pour ce lecteur.
+   * a une, créé sinon. La réponse est la même dans tous les cas [R16] ; chaque refus va au journal, sans donnée [R13].
    */
   async recommend(viewer: Viewer, referrerPersonId: string, input: unknown): Promise<{ ok: true; value: Referral } | ReferralRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refused(viewer, `person:${referrerPersonId}`, 'role');
     const read = await this.acces.readFiche(viewer, referrerPersonId);
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.view !== 'full') return this.refused(viewer, `person:${referrerPersonId}`, 'not_assigned');
+    const referrer = read.value.person;
+    const stop = async (rule: ReferralRefusal['rule'], code: string): Promise<ReferralRefusal> => {
+      await appendEvent(this.journal, { type: 'recommandation.refusee', actor: this.actor(viewer), subject: `person:${referrer.id}`, data: { rule, code } }, this.now);
+      return { ok: false, rule, code };
+    };
 
     // La forme d'abord : aucun champ en dehors de la liste, donc aucun champ de récompense possible [R66].
-    if (input === null || typeof input !== 'object' || Array.isArray(input)) return { ok: false, rule: null, code: 'bad_shape' };
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) return stop(null, 'bad_shape');
     const raw = input as Record<string, unknown>;
-    if (Object.keys(raw).some((k) => !(REFERRAL_FIELDS as readonly string[]).includes(k))) return { ok: false, rule: 'R66', code: 'unknown_field' };
-    const texts = Object.values(raw).filter((v): v is string => typeof v === 'string');
-    if (texts.some(mentionsReward)) {
-      await appendEvent(this.journal, { type: 'recommandation.refusee', actor: this.actor(viewer), subject: `person:${read.value.person.id}`, data: { rule: 'R66', code: 'reward' } }, this.now);
-      return { ok: false, rule: 'R66', code: 'reward' };
-    }
+    if (Object.keys(raw).some((k) => !(REFERRAL_FIELDS as readonly string[]).includes(k))) return stop('R66', 'unknown_field');
+    if (Object.values(raw).some((v) => typeof v === 'string' && mentionsReward(v))) return stop('R66', 'reward');
     const { firstName, email, phone, projectKind, callable, proof } = raw;
-    if (firstName !== undefined && firstName !== null && (typeof firstName !== 'string' || firstName.trim() === '' || firstName.length > 60)) return { ok: false, rule: null, code: 'bad_first_name' };
-    if (typeof projectKind !== 'string' || !(PROJECT_KINDS as readonly string[]).includes(projectKind)) return { ok: false, rule: null, code: 'bad_project' };
-    if (typeof callable !== 'boolean') return { ok: false, rule: null, code: 'bad_callable' };
-    if (callable && (typeof proof !== 'string' || proof.trim() === '' || proof.length > 300)) return { ok: false, rule: 'R03', code: 'bad_proof' };
+    if (firstName !== undefined && firstName !== null && (typeof firstName !== 'string' || firstName.trim() === '' || firstName.trim().length > 60)) return stop(null, 'bad_first_name');
+    if (typeof projectKind !== 'string' || !(PROJECT_KINDS as readonly string[]).includes(projectKind)) return stop(null, 'bad_project');
+    if (typeof callable !== 'boolean') return stop(null, 'bad_callable');
+    if (callable && (typeof proof !== 'string' || proof.trim() === '' || proof.length > 300)) return stop('R03', 'bad_proof');
     const ids: { kind: IdentifierKind; value: string }[] = [];
     for (const [kind, value] of [['email', email], ['phone', phone]] as const) {
       if (value === undefined || value === null) continue;
-      if (typeof value !== 'string' || value.length > 254 || normalizeIdentifier(kind, value) === null) return { ok: false, rule: null, code: `bad_${kind}` };
+      if (typeof value !== 'string' || value.length > 254 || normalizeIdentifier(kind, value) === null) return stop(null, `bad_${kind}`);
       ids.push({ kind, value });
     }
-    if (ids.length === 0) return { ok: false, rule: null, code: 'no_contact' };
+    if (ids.length === 0) return stop(null, 'no_contact');
 
     const networkId = viewer.networkId;
-    const referrer = read.value.person;
     const referrerAgent = read.value.members.map((m) => m.agent_id).find((a) => a !== null) ?? null;
     const at = this.now();
+    const typedName = typeof firstName === 'string' ? firstName.trim() : null;
 
-    // Le proche : sa fiche gardée s'il est connu du réseau, une nouvelle fiche sinon.
+    // Le proche : sa fiche gardée s'il est connu du réseau. Tout est vérifié avant la première écriture.
     let referredId: string | null = null;
     for (const id of ids) {
       const found = await this.fiche.findByIdentifier(networkId, id.kind, id.value);
@@ -135,51 +154,50 @@ export class Recommandations {
         break;
       }
     }
-    const members = referredId ? (await this.fiche.view(referredId)).members : [];
-    if (referredId && (await this.fiche.membersOf(referredId)).includes(referrer.id)) return { ok: false, rule: null, code: 'same_person' };
-    const followedBy = members.map((m) => m.agent_id).find((a) => a !== null) ?? null;
-    const agentId = referredId ? followedBy : viewer.role === 'agent' ? viewer.userId : referrerAgent;
-    if (!referredId) {
-      const person = await this.store.createPerson({ networkId, agentId, firstName: typeof firstName === 'string' ? firstName.trim() : null });
-      referredId = person.id;
-    }
+    if (referredId && (await this.fiche.membersOf(referredId)).includes(referrer.id)) return stop(null, 'same_person');
+    if (referredId && (await this.db.first('SELECT id FROM referrals WHERE referrer_id = ? AND referred_id = ?', [referrer.id, referredId]))) return stop(null, 'already_referred');
+    const followedBy = referredId ? ((await this.fiche.view(referredId)).members.map((m) => m.agent_id).find((a) => a !== null) ?? null) : null;
+    // L'agent qui suit le proche reçoit la tâche ; un proche sans agent va à celui qui saisit, ou à l'agent du client.
+    const agentId = followedBy ?? (viewer.role === 'agent' ? viewer.userId : referrerAgent);
+    if (!referredId) referredId = (await this.store.createPerson({ networkId, agentId, firstName: typedName })).id;
     for (const id of ids) {
-      // Une coordonnée déjà rangée sur la fiche n'est pas ajoutée de nouveau.
-      const known = await this.fiche.findByIdentifier(networkId, id.kind, id.value);
-      if (known.length === 0) await this.fiche.addIdentifier({ networkId, agentId, personId: referredId, kind: id.kind, value: id.value });
+      // Une coordonnée déjà rangée n'est pas ajoutée de nouveau.
+      if ((await this.fiche.findByIdentifier(networkId, id.kind, id.value)).length === 0) await this.fiche.addIdentifier({ networkId, agentId, personId: referredId, kind: id.kind, value: id.value });
     }
     const project = await this.store.createProject({ networkId, agentId, personId: referredId, kind: projectKind as ProjectKind });
-    const firstOfReferrer = read.value.members.map((m) => m.first_name).find((n) => n) ?? null;
-    await this.store.addSource({ networkId, agentId, personId: referredId, projectId: project.id, channel: REFERRAL_SOURCE, detail: firstOfReferrer ? `recommandé par ${firstOfReferrer}` : 'recommandé par un client', occurredAt: at });
+    // La source ne nomme pas le client : la fiche du proche peut être celle d'un autre agent [R16].
+    await this.store.addSource({ networkId, agentId, personId: referredId, projectId: project.id, channel: REFERRAL_SOURCE, detail: 'recommandé par un client', occurredAt: at });
 
-    // Une personne exclue ou qui a demandé l'arrêt n'est jamais rappelée, et la parole d'un tiers ne vaut pas accord [R02, R04].
-    const view = await this.fiche.view(referredId);
-    const excluded = view.exclusions.some((e) => e.lifted_at === null || Date.parse(e.lifted_at) > at.getTime());
-    const withdrawn = view.consents.some((c) => c.purpose === REFERRAL_PURPOSE && c.withdrawn_at !== null);
-    const callTask = callable === true && !excluded && !withdrawn && agentId !== null;
+    // Une personne opposée n'est jamais rappelée, et la parole d'un tiers ne vaut pas accord [R02, R03, R04].
+    const callTask = callable === true && agentId !== null && !(await this.opposed(referredId, at));
     if (callTask) {
       await this.store.addConsent({ networkId, agentId, personId: referredId, purpose: REFERRAL_PURPOSE, channel: 'phone', proof: `${(proof as string).trim()} (selon le client qui recommande)`, givenAt: at });
     }
     const id = this.newId();
     const due = callTask ? new Date(at.getTime() + REFERRAL_CALL_HOURS * 3_600_000).toISOString() : null;
     const { changes } = await this.db.run(
-      `INSERT INTO referrals (id, network_id, referrer_id, referred_id, project_id, agent_id, callable, call_due_at, call_done_at, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT (referrer_id, referred_id) DO NOTHING`,
-      [id, networkId, referrer.id, referredId, project.id, agentId, callable ? 1 : 0, due, this.actor(viewer), at.toISOString()],
+      `INSERT INTO referrals (id, network_id, referrer_id, referred_id, project_id, first_name, agent_id, callable, call_due_at, call_done_at, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT (referrer_id, referred_id) DO NOTHING`,
+      [id, networkId, referrer.id, referredId, project.id, typedName, agentId, callable ? 1 : 0, due, this.actor(viewer), at.toISOString()],
     );
-    if (changes !== 1) return { ok: false, rule: null, code: 'already_referred' };
+    if (changes !== 1) return stop(null, 'already_referred');
     await appendEvent(
       this.journal,
       { type: 'recommandation.rangee', actor: this.actor(viewer), subject: `person:${referredId}`, data: { rule: 'R66', referrer: `person:${referrer.id}`, call: callTask } },
       this.now,
     );
-    // La tâche n'est dite qu'à l'agent qui la reçoit : rien ne dit au lecteur qui suit le proche [R16].
-    const mine = callTask && viewer.role === 'agent' && agentId === viewer.userId;
-    return { ok: true, value: { id, referrerId: referrer.id, referredId, callDueAt: mine ? due : null, callDoneAt: null } };
+    return { ok: true, value: { id, recorded: true } };
   }
 
-  /** Qui a recommandé cette personne, et qui elle a recommandé : sur les deux fiches, pour qui voit la fiche [R16]. */
-  async linksOf(viewer: Viewer, personId: string): Promise<{ ok: true; value: { recommendedBy: { personId: string | null; firstName: string | null }[]; recommended: { personId: string | null; firstName: string | null }[] } } | ReferralRefusal> {
+  /**
+   * Qui a recommandé cette personne, et qui elle a recommandé, pour qui voit la fiche [R16]. Du côté du client, le
+   * proche est dit par le prénom saisi, jamais par sa fiche ; du côté du proche, le client n'est nommé que si le
+   * lecteur voit aussi sa fiche.
+   */
+  async linksOf(
+    viewer: Viewer,
+    personId: string,
+  ): Promise<{ ok: true; value: { recommendedBy: { firstName: string | null }[]; recommended: { referralId: string; firstName: string | null }[] } } | ReferralRefusal> {
     const read = await this.acces.readFiche(viewer, personId);
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.view !== 'full') return this.refused(viewer, `person:${personId}`, 'not_assigned');
@@ -190,19 +208,32 @@ export class Recommandations {
       ...members,
       ...members,
     ]);
-    // L'autre fiche n'est nommée que si le lecteur la voit aussi ; sinon, seulement qu'il y a un lien.
-    const name = async (id: string): Promise<{ personId: string | null; firstName: string | null }> => {
-      const other = await this.acces.readFiche(viewer, id);
-      if (other.ok && other.view === 'full') return { personId: other.value.person.id, firstName: other.value.members.map((m) => m.first_name).find((n) => n) ?? null };
-      return { personId: null, firstName: null };
-    };
-    const recommendedBy = [];
-    const recommended = [];
+    const recommendedBy: { firstName: string | null }[] = [];
+    const recommended: { referralId: string; firstName: string | null }[] = [];
     for (const r of rows) {
-      if (members.includes(r.referred_id)) recommendedBy.push(await name(r.referrer_id));
-      if (members.includes(r.referrer_id)) recommended.push(await name(r.referred_id));
+      if (members.includes(r.referrer_id)) recommended.push({ referralId: r.id, firstName: r.first_name });
+      if (members.includes(r.referred_id)) {
+        const other = await this.acces.readFiche(viewer, r.referrer_id);
+        recommendedBy.push({ firstName: other.ok && other.view === 'full' ? (other.value.members.map((m) => m.first_name).find((n) => n) ?? null) : null });
+      }
     }
     return { ok: true, value: { recommendedBy, recommended } };
+  }
+
+  /** Les tâches « appeler » ouvertes de l'agent ; une personne devenue opposée n'y figure plus [R02, R04]. */
+  async callsOf(viewer: Viewer): Promise<{ ok: true; value: ReferralCall[] } | ReferralRefusal> {
+    if (viewer.role !== 'agent') return this.refused(viewer, null, 'role');
+    const rows = await this.db.all<ReferralRow>('SELECT * FROM referrals WHERE network_id = ? AND agent_id = ? AND call_due_at IS NOT NULL AND call_done_at IS NULL ORDER BY call_due_at, id', [viewer.networkId, viewer.userId]);
+    const at = this.now();
+    const calls: ReferralCall[] = [];
+    for (const r of rows) {
+      const root = await this.fiche.rootOf(r.referred_id);
+      if (await this.opposed(root, at)) continue;
+      const read = await this.acces.readFiche(viewer, root);
+      if (!read.ok || read.view !== 'full') continue;
+      calls.push({ referralId: r.id, personId: root, firstName: read.value.members.map((m) => m.first_name).find((n) => n) ?? null, dueAt: r.call_due_at! });
+    }
+    return { ok: true, value: calls };
   }
 
   /** « Appel fait » : l'agent qui a la tâche seulement ; la ligne reste [R17]. */

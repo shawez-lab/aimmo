@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS referrals (
   referrer_id TEXT NOT NULL,
   referred_id TEXT NOT NULL,
   project_id TEXT,
+  -- Le prénom tel que l'agent l'a saisi : c'est lui que voit celui qui recommande, jamais la fiche d'un autre agent [R16].
+  first_name TEXT CHECK (first_name IS NULL OR length(first_name) BETWEEN 1 AND 60),
   -- L'agent qui suit le proche : celui qui reçoit la tâche « appeler ».
   agent_id TEXT,
   -- Le proche accepte d'être appelé, selon le client qui recommande ; la preuve est rangée avec l'accord (consents).
@@ -25,7 +27,7 @@ CREATE TRIGGER IF NOT EXISTS referrals_garde BEFORE DELETE ON referrals BEGIN SE
 CREATE TRIGGER IF NOT EXISTS referrals_fige
 BEFORE UPDATE ON referrals
 WHEN NEW.id IS NOT OLD.id OR NEW.network_id IS NOT OLD.network_id OR NEW.referrer_id IS NOT OLD.referrer_id OR NEW.referred_id IS NOT OLD.referred_id
-  OR NEW.project_id IS NOT OLD.project_id OR NEW.agent_id IS NOT OLD.agent_id OR NEW.callable IS NOT OLD.callable OR NEW.call_due_at IS NOT OLD.call_due_at
+  OR NEW.project_id IS NOT OLD.project_id OR NEW.first_name IS NOT OLD.first_name OR NEW.agent_id IS NOT OLD.agent_id OR NEW.callable IS NOT OLD.callable OR NEW.call_due_at IS NOT OLD.call_due_at
   OR NEW.created_by IS NOT OLD.created_by OR NEW.created_at IS NOT OLD.created_at OR OLD.call_done_at IS NOT NULL
 BEGIN
   SELECT RAISE(ABORT, 'recommandation figée');
