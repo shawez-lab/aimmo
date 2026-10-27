@@ -1,0 +1,277 @@
+/**
+ * Les routes de M08 Acquéreurs et visites (T08), sous `/v1/acquereurs`, `/v1/visites` et `/v1/points` :
+ *
+ *   GET  /acquereurs/projets/:projet/recherche          la recherche de l'acquéreur et ses versions
+ *   POST /acquereurs/projets/:projet/recherche          une nouvelle version de la recherche [R50]
+ *   GET  /acquereurs/biens/:bien                        les acquéreurs proposés pour un bien diffusable [R51]
+ *   GET  /acquereurs/biens/:bien/carte                  la carte de la demande du bien
+ *   POST /acquereurs/biens/:bien/whatsapp/:projet       le lien WhatsApp de l'agent, après le contrôle central
+ *   POST /acquereurs/whatsapp/:message/envoye           l'agent dit que son message est parti
+ *   POST /visites                                       fixer une visite, avec son bon [R40]
+ *   GET  /visites/alertes                               les alertes de sécurité du réseau (direction)
+ *   POST /visites/alertes/:alerte                       l'alerte en un geste
+ *   POST /visites/modeles                               une version du modèle de bon de visite (direction)
+ *   POST /visites/modeles/:modele/validation            sa validation
+ *   GET  /visites/:visite                               l'écran de la visite : bien, heure, bon, sécurité, compte rendu
+ *   GET  /visites/:visite/bon                           le bon de visite
+ *   POST /visites/:visite/bon/signature                 le bon signé sur papier
+ *   POST /visites/:visite/annulation                    annuler la visite
+ *   POST /visites/:visite/code                          le code envoyé au visiteur [R54]
+ *   POST /visites/:visite/confirmation                  code et nom du visiteur [R54]
+ *   POST /visites/:visite/compte-rendu/dictee           la dictée de l'agent
+ *   POST /visites/:visite/compte-rendu/validation       la validation en un geste [R52]
+ *   GET  /points?semaine=AAAA-MM-JJ                     les points de la semaine à valider
+ *   GET  /points/:mandat/:semaine                       un point préparé [R53]
+ *   POST /points/:mandat/:semaine/validation            sa validation avec les prochaines actions [R53]
+ *
+ * Chaque route passe par les droits de la couche métier, qui écrit chaque refus au journal [R16]. Aucune route
+ * n'envoie elle-même : tout envoi passe par le contrôle central des envois, en mode essai [R26].
+ */
+import {
+  AlerteWhatsApp,
+  ComptesRendus,
+  Diffusion,
+  FicheAcquereur,
+  FicheClient,
+  FicheUnique,
+  INTEREST_LEVELS,
+  PointSemaine,
+  Rapprochement,
+  Visites,
+  VisiteSecurisee,
+  appendEvent,
+  type Acces,
+  type DirectionNotifier,
+  type JournalStore,
+  type ReportWriter,
+  type SqlDatabase,
+  type Viewer,
+  type VisitReport,
+} from '@aimmo/core';
+
+const TRIAL_MODE = 'essai';
+const MAX_BODY_BYTES = 16_000;
+const ID = '([A-Za-z0-9_-]{1,64})';
+const WEEK = '(\\d{4}-\\d{2}-\\d{2})';
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{3})?)?Z$/;
+
+export interface M08Services {
+  db: SqlDatabase;
+  journal: JournalStore;
+  acces: Acces;
+  now: () => Date;
+}
+
+export interface M08Options {
+  /** Début du lien de désinscription des alertes (`ALERT_UNSUBSCRIBE_BASE`) ; absent, aucun lien WhatsApp [R49]. */
+  unsubscribeBase?: string | null;
+  /** L'IA qui rédige le compte rendu (H13) ; absente, l'agent écrit lui-même. */
+  reportWriter?: ReportWriter;
+  /** Qui prévient la direction d'une alerte ; absent, l'essai : une ligne au journal. */
+  notifier?: DirectionNotifier;
+}
+
+export interface M08Route {
+  method: 'GET' | 'POST';
+  pattern: RegExp;
+  /** Nom de la route pour le journal : jamais l'identifiant demandé. */
+  name: string;
+  handle: (s: M08Services, viewer: Viewer, params: string[], request: Request) => Promise<Response>;
+}
+
+const json = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
+  });
+const failure = (status: number, code: string, message: string): Response => json(status, { ok: false, code, message });
+const badBody = (): Response => failure(400, 'invalid_body', 'Corps JSON attendu.');
+
+type Outcome = { ok: true; [k: string]: unknown } | { ok: false; rule?: string | null; code: string; [k: string]: unknown };
+
+/**
+ * Une réponse de la couche métier. 403 pour un refus de droits, 404 pour un inconnu (rien n'est dit de son
+ * existence), 409 pour une règle ou un état, 400 pour une saisie mal formée.
+ */
+export function reply(result: Outcome): Response {
+  const { ok: _ok, ...rest } = result;
+  if (result.ok) {
+    const keys = Object.keys(rest);
+    const data = keys.length === 1 && keys[0] === 'value' ? rest.value : rest;
+    return json(200, { ok: true, mode: TRIAL_MODE, sent: false, data });
+  }
+  const rule = result.rule ?? null;
+  if (rule === 'R16') return json(result.code === 'unknown' ? 404 : 403, { ok: false, ...rest, rule });
+  if (rule) return json(409, { ok: false, ...rest, rule });
+  if (/^(bad|invalid)_/.test(result.code)) return json(400, { ok: false, ...rest, rule });
+  return json(409, { ok: false, ...rest, rule });
+}
+
+async function readJson(request: Request): Promise<Record<string, unknown> | null> {
+  if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) return null;
+  const text = await request.text();
+  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return null;
+  try {
+    const value: unknown = JSON.parse(text);
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Une saisie de compte rendu : seulement la forme connue, le contenu est contrôlé par la couche métier [R52]. */
+function reportOf(value: unknown): VisitReport | undefined | null {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'object' || Array.isArray(value)) return null;
+  const r = value as Record<string, unknown>;
+  const list = (x: unknown): x is string[] => Array.isArray(x) && x.length <= 8 && x.every((s) => typeof s === 'string' && s.length <= 200);
+  if (typeof r.opinion !== 'string' || r.opinion.length > 1000 || !list(r.strengths) || !list(r.reservations)) return null;
+  if (typeof r.interest !== 'string' || !(INTEREST_LEVELS as readonly string[]).includes(r.interest) || typeof r.readyToOffer !== 'boolean') return null;
+  return { opinion: r.opinion, strengths: r.strengths, reservations: r.reservations, interest: r.interest as VisitReport['interest'], readyToOffer: r.readyToOffer };
+}
+
+/** Les routes de M08, à ajouter à celles de `app.ts`. */
+export function m08Routes(options: M08Options = {}): M08Route[] {
+  const fiche = (s: M08Services) => new FicheUnique(s.db, new FicheClient(s.db, { now: s.now }), { now: s.now });
+  const diffusion = (s: M08Services) => new Diffusion(s.db, s.acces, s.journal, { now: s.now });
+  const recherche = (s: M08Services) => new FicheAcquereur(s.db, s.journal, { now: s.now });
+  const rapprochement = (s: M08Services) => new Rapprochement(s.db, fiche(s), diffusion(s), s.journal, { now: s.now });
+  const whatsapp = (s: M08Services) => new AlerteWhatsApp(s.db, s.journal, s.acces, { now: s.now, unsubscribeBase: options.unsubscribeBase ?? null });
+  const visites = (s: M08Services) => new Visites(s.db, s.journal, s.acces, { now: s.now });
+  const securite = (s: M08Services) => new VisiteSecurisee(s.db, s.journal, visites(s), { now: s.now, ...(options.notifier ? { notifier: options.notifier } : {}) });
+  const comptes = (s: M08Services) => new ComptesRendus(s.db, s.journal, visites(s), { now: s.now, ...(options.reportWriter ? { writer: options.reportWriter } : {}) });
+  const points = (s: M08Services) => new PointSemaine(s.db, s.journal, s.acces, { now: s.now });
+  const post = (name: string, path: string, run: (s: M08Services, v: Viewer, p: string[], body: Record<string, unknown>) => Promise<Response>): M08Route => ({
+    method: 'POST',
+    pattern: new RegExp(`^${path}$`),
+    name,
+    handle: async (s, v, p, request) => {
+      const body = request.headers.get('content-length') === '0' || !request.body ? {} : await readJson(request);
+      return body ? run(s, v, p, body) : badBody();
+    },
+  });
+  const get = (name: string, path: string, run: M08Route['handle']): M08Route => ({ method: 'GET', pattern: new RegExp(`^${path}$`), name, handle: run });
+
+  return [
+    // Acquéreurs.
+    get('acquereurs.recherche', `/acquereurs/projets/${ID}/recherche`, async (s, v, [p]) => reply(await recherche(s).read(s.acces, v, p!))),
+    post('acquereurs.recherche.modifier', `/acquereurs/projets/${ID}/recherche`, async (s, v, [p], body) => reply(await recherche(s).update(s.acces, v, p!, body))),
+    get('acquereurs.bien', `/acquereurs/biens/${ID}`, async (s, v, [b]) => reply(await rapprochement(s).propose(s.acces, v, b!))),
+    get('acquereurs.carte', `/acquereurs/biens/${ID}/carte`, async (s, v, [b]) => reply(await rapprochement(s).demandMap(s.acces, v, b!))),
+    post('acquereurs.whatsapp', `/acquereurs/biens/${ID}/whatsapp/${ID}`, async (s, v, [b, p]) => reply(await whatsapp(s).prepare(v, b!, p!))),
+    post('acquereurs.whatsapp.envoye', `/acquereurs/whatsapp/${ID}/envoye`, async (s, v, [m]) => reply(await whatsapp(s).confirm(v, m!))),
+
+    // Visites. Les adresses fixes d'abord : « alertes » et « modeles » ne sont pas des visites.
+    post('visites.fixer', '/visites', async (s, v, _p, body) => {
+      const { propertyId, projectId, start } = body;
+      if (typeof propertyId !== 'string' || typeof projectId !== 'string' || !new RegExp(`^${ID}$`).test(propertyId) || !new RegExp(`^${ID}$`).test(projectId)) {
+        return failure(400, 'invalid_ids', 'propertyId et projectId attendus.');
+      }
+      if (typeof start !== 'string' || !INSTANT.test(start) || Number.isNaN(Date.parse(start))) return failure(400, 'invalid_start', 'start : un instant ISO en UTC.');
+      return reply(await visites(s).schedule(v, { propertyId, projectId, start: new Date(start) }));
+    }),
+    get('visites.alertes', '/visites/alertes', async (s, v) => reply(await securite(s).list(v))),
+    post('visites.alerte', `/visites/alertes/${ID}`, async (s, v, [a]) => reply(await securite(s).raise(v, a!))),
+    post('visites.modele', '/visites/modeles', async (s, v, _p, body) =>
+      typeof body.body === 'string' ? reply(await visites(s).createSlipTemplate(v, body.body)) : failure(400, 'invalid_template', 'body : le texte du modèle.'),
+    ),
+    post('visites.modele.validation', `/visites/modeles/${ID}/validation`, async (s, v, [t]) => reply(await visites(s).validateSlipTemplate(v, t!))),
+    get('visites.visite', `/visites/${ID}`, async (s, v, [a]) => {
+      const access = await visites(s).accessVisit(v, a!);
+      if (!access.ok) return reply(access);
+      return reply({ ok: true, value: await visitScreen(s, fiche(s), a!) });
+    }),
+    get('visites.bon', `/visites/${ID}/bon`, async (s, v, [a]) => reply(await visites(s).slipOf(v, a!))),
+    post('visites.bon.signature', `/visites/${ID}/bon/signature`, async (s, v, [a], body) => {
+      const { signedAt, scanRef } = body;
+      if (typeof signedAt !== 'string' || !INSTANT.test(signedAt) || Number.isNaN(Date.parse(signedAt))) return failure(400, 'invalid_signed_at', 'signedAt : un instant ISO en UTC.');
+      if (typeof scanRef !== 'string') return failure(400, 'invalid_scan', 'scanRef : la référence du bon numérisé.');
+      return reply(await visites(s).recordPaperSignature(v, a!, { signedAt: new Date(signedAt), scanRef }));
+    }),
+    post('visites.annulation', `/visites/${ID}/annulation`, async (s, v, [a]) => reply(await visites(s).cancel(v, a!))),
+    post('visites.code', `/visites/${ID}/code`, async (s, v, [a], body) => reply(await securite(s).sendCode(v, a!, { consentProof: typeof body.consentProof === 'string' ? body.consentProof : '' }))),
+    post('visites.confirmation', `/visites/${ID}/confirmation`, async (s, v, [a], body) => {
+      const { code, lastName } = body;
+      if (typeof code !== 'string' || code.length > 12 || typeof lastName !== 'string' || lastName.length > 80) return failure(400, 'invalid_confirmation', 'code et lastName attendus.');
+      return reply(await securite(s).confirm(v, a!, { code, lastName }));
+    }),
+    post('visites.dictee', `/visites/${ID}/compte-rendu/dictee`, async (s, v, [a], body) => {
+      const { dictation } = body;
+      if (typeof dictation !== 'string' || dictation.trim() === '' || dictation.length > 5000) return failure(400, 'invalid_dictation', 'dictation : de 1 à 5 000 caractères.');
+      return reply(await comptes(s).dictate(v, a!, dictation));
+    }),
+    post('visites.compte_rendu.validation', `/visites/${ID}/compte-rendu/validation`, async (s, v, [a], body) => {
+      const report = reportOf(body.report);
+      if (report === null) return failure(400, 'invalid_report', 'report : avis, points forts, réserves, intérêt, prêt à faire une offre.');
+      return reply(await comptes(s).validate(v, a!, report));
+    }),
+
+    // Points de la semaine.
+    get('points.liste', '/points', async (s, v, _p, request) => {
+      const week = new URL(request.url).searchParams.get('semaine') ?? '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) return failure(400, 'invalid_week', 'semaine : le lundi, AAAA-MM-JJ.');
+      return reply(await pointsOf(s, points(s), v, week));
+    }),
+    get('points.point', `/points/${ID}/${WEEK}`, async (s, v, [m, w]) => reply(await points(s).read(v, m!, w!))),
+    post('points.validation', `/points/${ID}/${WEEK}/validation`, async (s, v, [m, w], body) => {
+      const actions = body.actions ?? [];
+      if (!Array.isArray(actions)) return failure(400, 'invalid_actions', 'actions : une liste de phrases.');
+      return reply(await points(s).validate(v, m!, w!, actions as string[]));
+    }),
+  ];
+}
+
+/** Ce que montre l'écran d'une visite ; appelé seulement après le contrôle des droits [R16]. Ni nom de famille ni coordonnée. */
+async function visitScreen(s: M08Services, fiche: FicheUnique, appointmentId: string) {
+  const v = (await s.db.first<{ start_at: string; end_at: string; status: string; property_id: string; project_id: string; person_id: string; reference: string; city: string | null }>(
+    `SELECT a.start_at, a.end_at, a.status, vi.property_id, vi.project_id, vi.person_id, p.reference, p.city
+     FROM visits vi JOIN appointments a ON a.id = vi.appointment_id JOIN properties p ON p.id = vi.property_id WHERE vi.appointment_id = ?`,
+    [appointmentId],
+  ))!;
+  const slip = await s.db.first<{ status: string; mode: string; signed_at: string | null }>('SELECT status, mode, signed_at FROM visit_slips WHERE appointment_id = ?', [appointmentId]);
+  const safety = await s.db.first<{ code_expires_at: string | null; code_hash: string | null; phone_confirmed_at: string | null; identity_confirmed_at: string | null }>(
+    'SELECT code_expires_at, code_hash, phone_confirmed_at, identity_confirmed_at FROM visit_safety WHERE appointment_id = ?',
+    [appointmentId],
+  );
+  const report = await s.db.first<{ report: string | null; source: string | null; status: string; delivery_status: string | null }>(
+    'SELECT report, source, status, delivery_status FROM visit_reports WHERE appointment_id = ?',
+    [appointmentId],
+  );
+  const firstName = (await fiche.view(v.person_id)).members.map((m) => m.first_name).find((n) => n) ?? null;
+  const confirmed = Boolean(safety?.phone_confirmed_at && safety.identity_confirmed_at);
+  return {
+    appointmentId,
+    start: v.start_at,
+    end: v.end_at,
+    status: v.status,
+    property: { id: v.property_id, reference: v.reference, city: v.city },
+    projectId: v.project_id,
+    visitor: { firstName },
+    slip: slip ? { status: slip.status, mode: slip.mode, signed: slip.signed_at !== null } : null,
+    safety: confirmed ? 'confirmee' : safety?.code_hash ? 'code_envoye' : 'a_confirmer',
+    report: report
+      ? { status: report.status, source: report.source, report: report.report ? (JSON.parse(report.report) as VisitReport) : null, delivery: report.delivery_status }
+      : null,
+  };
+}
+
+/** Les points de la semaine que le lecteur peut lire : les siens pour un agent, ceux du réseau pour la direction [R16]. */
+async function pointsOf(s: M08Services, points: PointSemaine, viewer: Viewer, week: string) {
+  if (viewer.role !== 'agent' && viewer.role !== 'direction') {
+    await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'weekly_point', code: 'role' } }, s.now);
+    return { ok: false as const, rule: 'R16', code: 'role' };
+  }
+  const rows = await s.db.all<{ mandate_id: string; property_id: string; reference: string; status: string; delivery_status: string | null }>(
+    `SELECT w.mandate_id, w.property_id, p.reference, w.status, w.delivery_status FROM weekly_points w JOIN properties p ON p.id = w.property_id
+     WHERE w.network_id = ? AND w.week = ? ${viewer.role === 'agent' ? 'AND w.agent_id = ?' : ''} ORDER BY p.reference, w.mandate_id`,
+    viewer.role === 'agent' ? [viewer.networkId, week, viewer.userId] : [viewer.networkId, week],
+  );
+  const list = [];
+  for (const r of rows) {
+    // Chaque point passe le contrôle de la fiche du vendeur : un agent parti ou une fiche réunie hors de ses droits ne le voit plus.
+    const read = await points.read(viewer, r.mandate_id, week);
+    if (!read.ok) continue;
+    list.push({ mandateId: r.mandate_id, week, property: { id: r.property_id, reference: r.reference }, status: r.status, delivery: r.delivery_status, text: read.text });
+  }
+  return { ok: true as const, value: { week, points: list } };
+}
