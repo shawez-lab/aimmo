@@ -118,6 +118,23 @@ describeWithSqlite('Q03 · attribution à l’agent de la commune', () => {
     expect(await t.attribution.attribute(await t.contact('pro', 'Je suis courtier et je vous propose un partenariat à Talant.'))).toMatchObject({ agent_id: null, reason: 'no_zone' });
   });
 
+  it('[R25] une fiche réunie reste à l’agent qui suivait l’une de ses fiches, et la réattribution les déplace ensemble', async () => {
+    const t = await setup();
+    for (const agent of [t.alex, t.sam, t.lou]) await t.attribution.addZone(t.network.id, agent.id, 'Dijon');
+    const followed = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Zoé' });
+    const q = await t.contact('zoe', 'Je souhaite vendre mon appartement à Dijon.');
+    const fresh = await t.personOf(q);
+    await t.fiche.merge({ survivorId: fresh, mergedId: followed.id, reason: 'même personne' });
+    const a = (await t.attribution.attribute(q))!;
+    expect(a).toMatchObject({ agent_id: t.alex.id, reason: 'already_followed' });
+    // La fiche gardée ne prend pas un autre agent que celui de la fiche réunie.
+    expect((await t.store.getPerson(fresh))!.agent_id).toBeNull();
+    t.setClock(TUESDAY_10H + 25 * HOUR);
+    const [next] = await t.attribution.reassignOverdue(t.network.id);
+    expect(next!.agent_id).not.toBe(t.alex.id);
+    expect((await t.store.getPerson(followed.id))!.agent_id).toBe(next!.agent_id);
+  });
+
   it('[R25] même contact, même agent, quel que soit l’ordre d’arrivée des contacts', async () => {
     const results: string[][] = [];
     for (const order of [

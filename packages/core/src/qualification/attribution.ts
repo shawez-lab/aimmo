@@ -141,7 +141,8 @@ export class Attribution {
 
     let agentId: string | null = null;
     let reason: AttributionReason;
-    const followed = root.agent_id ? await this.activeAgent(q.network_id, root.agent_id) : null;
+    // L'agent qui suit déjà le client, sur toutes les fiches réunies : la fiche gardée d'abord.
+    const followed = await this.followedBy(q.network_id, [root.agent_id, ...view.members.map((m) => m.agent_id)]);
     if (followed) {
       agentId = followed;
       reason = 'already_followed';
@@ -162,7 +163,7 @@ export class Attribution {
     );
     const row = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE qualification_id = ?', [qualificationId]);
     if (changes === 1 && row) {
-      if (agentId) await this.assign(root.id, agentId, null);
+      if (agentId && !followed) await this.assign(root.id, agentId, null);
       await this.log('attribution', root.id, { rule: 'R25', reason, toDirection: agentId === null, callbackHours: hours });
     }
     return row;
@@ -207,7 +208,7 @@ export class Attribution {
         [id, networkId, root.id, next, a.callback_hours, a.id, at.toISOString()],
       );
       if (changes !== 1) continue;
-      await this.assign(root.id, next, a.agent_id);
+      await this.assign(root.id, next, a.agent_id, ids);
       await this.log('attribution.reattribuee', root.id, { rule: 'R25', toDirection: next === null, tries: tried.size });
       const row = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE id = ?', [id]);
       if (row) made.push(row);
@@ -216,10 +217,16 @@ export class Attribution {
   }
 
   /** La fiche passe à l'agent ; seulement si elle n'a pas d'agent en activité, ou si elle était à `from`. */
-  private async assign(personId: string, agentId: string | null, from: string | null): Promise<void> {
+  private async assign(personId: string, agentId: string | null, from: string | null, members: readonly string[] = [personId]): Promise<void> {
     const at = this.now().toISOString();
     if (from !== null) {
-      await this.db.run('UPDATE persons SET agent_id = ?, updated_at = ? WHERE id = ? AND agent_id = ?', [agentId, at, personId, from]);
+      // Toutes les fiches réunies que suivait l'agent quittent ses mains : la fiche n'a jamais deux agents.
+      await this.db.run(`UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${placeholders(members.length)}) AND agent_id = ?`, [
+        agentId,
+        at,
+        ...members,
+        from,
+      ]);
       return;
     }
     await this.db.run(
@@ -258,9 +265,14 @@ export class Attribution {
     return Number(row?.n ?? 0) > 0;
   }
 
-  private async activeAgent(networkId: string, agentId: string): Promise<string | null> {
-    const row = await this.db.first<{ id: string }>("SELECT id FROM agents WHERE id = ? AND network_id = ? AND status = 'active'", [agentId, networkId]);
-    return row?.id ?? null;
+  /** Le premier agent en activité de la liste, dans l'ordre donné ; null s'il n'y en a pas. */
+  private async followedBy(networkId: string, agentIds: readonly (string | null)[]): Promise<string | null> {
+    for (const agentId of agentIds) {
+      if (!agentId) continue;
+      const row = await this.db.first<{ id: string }>("SELECT id FROM agents WHERE id = ? AND network_id = ? AND status = 'active'", [agentId, networkId]);
+      if (row) return row.id;
+    }
+    return null;
   }
 
   private async agentsOf(networkId: string, commune: string): Promise<string[]> {
