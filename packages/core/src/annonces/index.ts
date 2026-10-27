@@ -6,3 +6,4 @@ export * from './annonces.ts';
 export * from './publication.ts';
 export * from './page-bien.ts';
 export * from './medias.ts';
+export * from './portails.ts';
