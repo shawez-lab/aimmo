@@ -586,14 +586,15 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : aucune diffusion sans mandat signé et numéroté [R42] ; diffusion refusée pendant le délai, permise le lendemain de sa fin, permise plus tôt avec la demande écrite ; une rétractation arrête la diffusion [R42].
 
 ### D06 · Échéances des mandats
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : tâches rangées à 6 h, 30 jours avant la fin du mandat et 15 jours avant la fin de la période exclusive ; pas de période exclusive pour un mandat plus court ; un mandat rétracté ou annulé ne montre plus ses tâches, gardées.
 - Qui : Claude · Relecture : normale · Dépend de : D04
 - Cahier : M06, « Échéances ».
 - Objectif : chaque jour, une tâche pour l'agent avant la fin d'un mandat et avant la fin de la période de 3 mois d'un mandat exclusif, avec le renouvellement proposé à temps (délais en réglage) ; rien n'est envoyé au vendeur.
 - Critères : une seule tâche par échéance [R18] ; calcul juste à l'heure de Paris sur un jeu inventé ; aucun envoi.
 
 ### D07 · Avenant au mandat
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : D04
 - Cahier : M06, « Avenant au mandat ».
 - Objectif : un avenant généré depuis le modèle, lié au mandat par sa référence et son numéro, pour un changement de prix, de durée ou de conditions ; mêmes contrôles et même enregistrement que le mandat ; le mandat garde l'historique de ses avenants.
