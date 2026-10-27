@@ -155,6 +155,19 @@ describeWithSqlite('E04 · brouillon d’avis de valeur et validation par l’ag
     expect(changed.value.text).toContain('entre 150 000 € et 170 000 €');
     expect(changed.value.text).not.toContain(euros(d.computed_low));
     expect((await v.avis.validate(v.as('agent', v.paul.id), d.id)).ok).toBe(true);
+    // La nouvelle borne basse vaut l'ancienne borne haute : chaque borne n'est remplacée qu'une fois.
+    const u = await world();
+    const e = await u.draft();
+    const shifted = await u.avis.adjust(u.as('agent', u.paul.id), e.id, { low: e.computed_high, high: e.computed_high + 20000 });
+    if (!shifted.ok) throw new Error(shifted.code);
+    expect(shifted.value.text).toContain(`entre ${euros(e.computed_high)} et ${euros(e.computed_high + 20000)}`);
+    expect((await u.avis.validate(u.as('agent', u.paul.id), e.id)).ok).toBe(true);
+  });
+
+  it('une surface décimale s’écrit à la française et passe le contrôle', async () => {
+    const w = await world();
+    const r = await w.avis.draft({ networkId: w.net.id, propertyId: w.property.id, kind: 'apartment', surface: 65.5, range: await range() });
+    expect(r.text).toContain('65,5 m²');
   });
 
   it('les ajustements de l’agent sont gardés à côté du calcul, et la mention d’avis reste', async () => {

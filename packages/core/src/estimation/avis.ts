@@ -166,7 +166,7 @@ export class AvisDeValeur {
   private fallbackText(b: ValuationBrief): string {
     const what = b.kind === 'house' ? 'maison' : 'appartement';
     const lines = [
-      `Pour votre ${what} de ${b.surface} m²${b.town ? ` à ${b.town}` : ''}, nous estimons la valeur entre ${euros(b.low)} et ${euros(b.high)}.`,
+      `Pour votre ${what} de ${String(b.surface).replace('.', ',')} m²${b.town ? ` à ${b.town}` : ''}, nous estimons la valeur entre ${euros(b.low)} et ${euros(b.high)}.`,
       `Méthode : ${b.comparables} ventes réelles de biens comparables, situées à moins de ${b.radius} m, dont la plus récente date de ${monthLabel(b.latestUsedSale)}. Leur prix médian est de ${euros(b.medianPerM2)} le m², soit ${euros(b.pricePerM2)} le m² pour votre bien une fois ses caractéristiques prises en compte.`,
     ];
     if (b.adjustments.length > 0) {
@@ -309,7 +309,13 @@ export class AvisDeValeur {
       }
     } else {
       // Fourchette changée sans nouveau texte : la phrase de fourchette suit.
-      text = r.text.split(euros(before.low)).join(euros(low)).split(euros(before.high)).join(euros(high));
+      const swap = new Map([
+        [euros(before.low), euros(low)],
+        [euros(before.high), euros(high)],
+      ]);
+      const pattern = new RegExp([...swap.keys()].map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
+      // En un seul passage : une borne déjà remplacée n'est jamais remplacée une seconde fois.
+      text = r.text.replace(pattern, (m) => swap.get(m) ?? m);
     }
     const at = this.now().toISOString();
     await this.db.run(
