@@ -941,7 +941,8 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N04 · Suivi du financement déclaré
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : relecture de Codex de la correction de son P0 (lectures au journal) restée sans réponse 30 min, fusion sans elle (#98).
 - Qui : Claude · Relecture : normale · Dépend de : N02
 - Cahier : M10, « Suivi du financement ».
 - Objectif : les étapes du prêt déclarées par l'acquéreur ou son courtier (demande déposée, accord de principe, offre de prêt émise, offre acceptée, refus), chacune avec sa date et qui l'a déclarée ; une alerte à l'agent quand la date limite du prêt approche sans offre de prêt déclarée.
@@ -949,7 +950,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N05 · Aucun fonds, bouclier contre le faux RIB (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : N03
 - Cahier : M10, règle « AIMMO ne reçoit jamais de fonds ».
 - Objectif : aucun texte d'AIMMO à un client ou au notaire ne demande un paiement ni ne porte de coordonnée bancaire ; chaque message reçu dans la conversation d'un dossier en cours qui parle de virement, d'acompte, de séquestre ou de changement de RIB, ou qui porte un IBAN, déclenche aussitôt une alerte à l'agent, et le client reçoit, dans les heures d'envoi, le rappel écrit qu'AIMMO ne demande jamais de fonds ni de changement de coordonnées bancaires. Jamais vu : aucun réseau ni logiciel ne surveille ainsi la fraude au faux RIB pendant toute la vente.
