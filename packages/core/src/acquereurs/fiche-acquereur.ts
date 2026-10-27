@@ -437,6 +437,21 @@ export class FicheAcquereur {
     if (q.deadline !== null) said.urgency = q.deadline;
 
     const source = `message:${q.inbound_id}`;
+    const receivedAt = async (inboundId: string): Promise<string | null> =>
+      (await this.db.first<{ received_at: string }>('SELECT received_at FROM inbound_messages WHERE id = ?', [inboundId]))?.received_at ?? null;
+    const mine = await receivedAt(q.inbound_id);
+    // La date des messages déjà sources d'un champ : un message plus ancien, rejoué ou traité en retard, ne remplace
+    // jamais ce qu'un message plus récent a dit. Une source inconnue ici (écrite entre-temps) est tenue pour plus récente.
+    const dates = new Map<string, string | null>();
+    for (const from of Object.values((await this.current(project.id))?.sources ?? {})) {
+      if (from?.startsWith('message:') && !dates.has(from)) dates.set(from, await receivedAt(from.slice('message:'.length)));
+    }
+    const newer = (from: string): boolean => {
+      if (from === source) return false;
+      if (!dates.has(from)) return true;
+      const theirs = dates.get(from) ?? null;
+      return mine === null || (theirs !== null && mine < theirs);
+    };
     const result = await this.addVersion(
       project,
       'system:qualification',
@@ -449,8 +464,10 @@ export class FicheAcquereur {
           // La parole de l'agent l'emporte sur un message.
           const from = sources[field];
           if (from !== undefined && !from.startsWith('message:')) continue;
-          // Les listes s'ajoutent à ce qui est déjà dit ; un nombre ou un état dit plus tard remplace l'ancien.
-          changes[field] = Array.isArray(value) ? [...new Set([...(previous[field] as string[]), ...value])] : value;
+          // Les listes s'ajoutent à ce qui est déjà dit ; un nombre ou un état dit plus tard remplace l'ancien, jamais
+          // celui d'un message plus récent.
+          if (Array.isArray(value)) changes[field] = [...new Set([...(previous[field] as string[]), ...value])];
+          else if (from === undefined || !newer(from)) changes[field] = value;
         }
         return changes as Partial<BuyerSearch>;
       },
@@ -485,9 +502,8 @@ export class FicheAcquereur {
         if (same(value, previous[field])) continue;
         (next as unknown as Record<string, unknown>)[field] = value;
         changed.push(field);
-        const empty = value === null || (Array.isArray(value) && value.length === 0);
-        if (empty) delete sources[field];
-        else sources[field] = source;
+        // Même vidé, un champ garde qui l'a vidé : un message suivant ne le remplit pas contre l'avis de l'agent.
+        sources[field] = source;
       }
       if (changed.length === 0) return { ok: true, created: false, value: last };
       const version = (last?.version ?? 0) + 1;

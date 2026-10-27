@@ -15,13 +15,13 @@ import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
 const TUESDAY_10H = Date.parse('2026-12-08T09:00:00.000Z');
 
-async function setup() {
+async function setup(withQualification = true) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = TUESDAY_10H;
   const now = (): Date => new Date((clock += 1000));
   const journal = new SqlJournalStore(db);
-  const { chaine, store, fiche, attribution } = createCaptation(db, journal, { now });
+  const { chaine, store, fiche, attribution, qualification } = createCaptation(db, journal, { now, withQualification });
   const acces = new Acces(db, store, fiche, journal, { now });
   const acquereurs = new FicheAcquereur(db, journal, { now });
   const network = await store.createNetwork('Réseau test');
@@ -40,7 +40,7 @@ async function setup() {
     return q!;
   };
   const as = (role: 'agent' | 'direction' | 'compliance' | 'partner', userId: string) => ({ role, userId, networkId: network.id });
-  return { db, journal, acces, acquereurs, network, alex, sam, contact, as };
+  return { db, journal, acces, acquereurs, qualification, network, alex, sam, contact, as };
 }
 
 describeWithSqlite('T01 · fiche acquéreur', () => {
@@ -122,6 +122,32 @@ describeWithSqlite('T01 · fiche acquéreur', () => {
     expect(cur!.search.budgetMaxEur).toBe(280_000);
     expect(cur!.search.features).toContain('garage');
     expect(cur!.sources.features).toBe(`message:${q2.inbound_id}`);
+  });
+
+  it('quand l’agent vide un critère, un message suivant ne le remet pas', async () => {
+    const t = await setup();
+    const q1 = await t.contact('Inès', 'Je cherche une maison à Talant, budget maximum 320 000 €.');
+    await t.acquereurs.update(t.acces, t.as('agent', t.alex.id), q1.project_id!, { communes: null, budgetMaxEur: null });
+    await t.contact('Inès', 'Je cherche toujours une maison à Talant, budget maximum 330 000 €, avec garage.');
+    const cur = await t.acquereurs.current(q1.project_id!);
+    expect(cur!.search.communes).toEqual([]);
+    expect(cur!.search.budgetMaxEur).toBeNull();
+    expect(cur!.search.features).toContain('garage');
+  });
+
+  it('un message plus ancien, traité après un plus récent, ne remplace pas ce que le récent a dit', async () => {
+    const t = await setup(false);
+    await t.contact('Inès', 'Je cherche une maison à Talant, budget maximum 200 000 €.');
+    await t.contact('Inès', 'Je cherche une maison à Talant, budget maximum 300 000 €, avec garage.');
+    const [ia, ib] = await t.db.all<{ id: string }>('SELECT id FROM inbound_messages ORDER BY received_at');
+    const a = (await t.qualification.qualify(ia!.id))!;
+    const b = (await t.qualification.qualify(ib!.id))!;
+    expect(b.project_id).toBe(a.project_id);
+    await t.acquereurs.fromQualification(b.id);
+    await t.acquereurs.fromQualification(a.id);
+    const cur = await t.acquereurs.current(a.project_id!);
+    expect(cur!.search.budgetMaxEur).toBe(300_000);
+    expect(cur!.sources.budgetMaxEur).toBe(`message:${b.inbound_id}`);
   });
 
   it('aucun champ hors liste, aucun critère discriminant : refusé avec R50, au journal sans la valeur [R13]', async () => {
