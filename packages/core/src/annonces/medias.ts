@@ -100,7 +100,14 @@ export class MediasBien {
     const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
     const media = sheet ? (JSON.parse(sheet.data) as PropertySheet).media : [];
     if (!media.some((m) => m.ref === mediaRef && m.kind !== 'photo')) return { ok: false, rule: null, code: 'unknown_media' };
-    const refused = all.flatMap((line) => sentences(line)).map((s) => ({ text: s, problems: publicTextProblems(s) })).filter((s) => s.problems.length > 0);
+    // Chaque ligne seule, puis tous les sous-titres à la suite : une adresse coupée entre deux sous-titres
+    // (« au 12 », « rue des Essais ») est lue d'un bloc [R46].
+    const continuous = (text.subtitles as string[]).join(' ');
+    const seen = new Set<string>();
+    const refused = [...all, continuous]
+      .flatMap((line) => sentences(line))
+      .map((s) => ({ text: s, problems: publicTextProblems(s) }))
+      .filter((s) => s.problems.length > 0 && !seen.has(s.text) && (seen.add(s.text), true));
     const outcome = refused.length === 0 ? 'ok' : 'refuse';
     await this.db.run('INSERT INTO video_text_checks (id, property_id, network_id, media_ref, outcome, text_hash, checked_by, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
       this.newId(), propertyId, viewer.networkId, mediaRef, outcome, await sha256(JSON.stringify(all)), `${String(viewer.role)}:${viewer.userId}`, this.now().toISOString(),
