@@ -154,8 +154,11 @@ export interface FileStatus {
   lines: PieceLine[];
   missing: Piece[];
   unknown: UnknownData[];
-  /** Un état, jamais une copie : vérifiée dans la fenêtre du réglage de D03, ou non [R15, R58]. */
-  identity: 'verifiee' | 'non_verifiee';
+  /**
+   * Un état, jamais une copie : vérifiée dans la fenêtre du réglage de D03, ou non [R15, R58]. `non_visible` : qui lit
+   * ne voit pas la fiche de l'acquéreur en entier, l'état ne lui est pas dit et le dossier n'est pas dit complet [R16].
+   */
+  identity: 'verifiee' | 'non_verifiee' | 'non_visible';
   complete: boolean;
 }
 
@@ -236,10 +239,10 @@ export class PiecesDossier {
   async status(viewer: Viewer, fileId: string): Promise<{ ok: true; value: FileStatus } | Refusal | PieceProblem> {
     const g = await this.gate(viewer, fileId, false);
     if (!g.ok) return g;
-    return this.compute(g.file, g.kind);
+    return this.compute(viewer, g.file, g.kind);
   }
 
-  private async compute(file: { id: string; network_id: string; property_id: string; buyer_person_id: string }, kind: PropertyKind): Promise<{ ok: true; value: FileStatus } | PieceProblem> {
+  private async compute(viewer: Viewer, file: { id: string; network_id: string; property_id: string; buyer_person_id: string }, kind: PropertyKind): Promise<{ ok: true; value: FileStatus } | PieceProblem> {
     const list = await this.expected(file.property_id, kind);
     if (!list) return { ok: false, rule: null, code: 'business' };
     const rows = await this.db.all<{ piece: Piece; version: number; ref: string; issued_on: string; received_at: string }>(
@@ -250,7 +253,11 @@ export class PiecesDossier {
     const latest = new Map(rows.map((r) => [r.piece, { piece: r.piece, version: Number(r.version), ref: r.ref, issuedOn: r.issued_on, receivedAt: r.received_at }]));
     const lines: PieceLine[] = list.pieces.map((e) => ({ ...e, received: latest.get(e.piece) ?? null }));
     const missing = lines.filter((l) => l.received === null).map((l) => l.piece);
-    const identity = (await this.controles.identitySeenAt(file.network_id, file.buyer_person_id, this.now())) !== null ? 'verifiee' : 'non_verifiee';
+    // L'identité est une donnée de l'acquéreur : il faut voir sa fiche en entier, lecture écrite au journal [R16].
+    const buyer = await this.acces.readFiche(viewer, file.buyer_person_id);
+    let identity: FileStatus['identity'] = 'non_visible';
+    if (buyer.ok && buyer.view === 'full') identity = (await this.controles.identitySeenAt(file.network_id, file.buyer_person_id, this.now())) !== null ? 'verifiee' : 'non_verifiee';
+    else if (buyer.ok) await this.refuse(viewer, file.id, 'buyer_not_assigned');
     const complete = missing.length === 0 && list.unknown.length === 0 && identity === 'verifiee';
     return { ok: true, value: { fileId: file.id, lines, missing, unknown: list.unknown, identity, complete } };
   }
@@ -291,6 +298,6 @@ export class PiecesDossier {
       throw error;
     }
     await appendEvent(this.journal, { type: 'dossier.piece_recue', actor: this.actor(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R60', piece, version } }, this.now);
-    return this.compute(g.file, g.kind);
+    return this.compute(viewer, g.file, g.kind);
   }
 }

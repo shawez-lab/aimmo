@@ -172,6 +172,24 @@ describeWithSqlite('N01 · pièces du dossier notaire', () => {
     expect((await t.journal.bySubject('sale_file:dossier-inconnu')).map((e) => e.type)).toEqual(['acces.refuse']);
   });
 
+  it('[R16] l’état d’identité de l’acquéreur n’est dit qu’à qui voit sa fiche en entier, lecture écrite au journal', async () => {
+    const t = await setupDossier('terrain');
+    const s = await t.pieces.status(t.agent, t.fileId);
+    if (!s.ok) throw new Error(s.code);
+    for (const piece of s.value.missing) await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: DOC });
+    await t.verifyBuyer();
+    const before = (await t.journal.bySubject(`person:${t.buyerId}`)).length;
+    expect(await t.pieces.status(t.agent, t.fileId)).toMatchObject({ ok: true, value: { identity: 'verifiee', complete: true } });
+    expect((await t.journal.bySubject(`person:${t.buyerId}`)).length).toBeGreaterThan(before);
+    // L'acquéreur est confié à un autre agent : l'agent du bien ne connaît plus l'état de son identité.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.userId, t.buyerId]);
+    const hidden = await t.pieces.status(t.agent, t.fileId);
+    expect(hidden).toMatchObject({ ok: true, value: { identity: 'non_visible', complete: false } });
+    const added = await t.pieces.add(t.agent, t.fileId, { piece: 'bornage', ref: t.upload(), issuedOn: DOC });
+    expect(added.ok && added.value.identity).toBe('non_visible');
+    expect((await t.journal.bySubject(`person:${t.buyerId}`)).some((e) => e.type === 'acces.refuse')).toBe(true);
+  });
+
   it('[R60] sans fiche du bien ou sans copropriété connue, le dossier n’est jamais complet', async () => {
     const t = await setupDossier();
     const current = await t.db.first<{ data: string; version: number }>('SELECT data, version FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [t.propertyId]);
