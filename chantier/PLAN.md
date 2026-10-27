@@ -691,7 +691,9 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : H13 pour la vraie IA.
 
 ### T07 · Point de la semaine au vendeur
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : préparé le lundi à 8 h pour chaque mandat en cours (délai de rétractation compris), validé par l'agent avec ses prochaines actions ; une action ne porte ni chiffre, ni prix, ni nom ou coordonnée d'une personne venue pour le bien ; le texte entier est contrôlé avant d'être figé ; au plus huit avis ; vues « non communiquées » sans relevé ; R53 en service.
+- Reste : relecture de Codex de la dernière correction (P2) restée en cours plus de 20 min, fusion sans elle (#87).
 - Qui : Claude · Relecture : forte · Dépend de : T06, B02
 - Cahier : M08, « Point de la semaine au vendeur » et règles ; critère « 5 vendeurs reçoivent leur point deux lundis de suite ».
 - Objectif : chaque lundi, par le planificateur, un point par mandat en cours : vues (P08 quand il sera fusionné), contacts reçus pour le bien (C03), visites et avis des visiteurs (T06), prochaines actions de l'agent ; préparé pour l'agent, qui le valide ; passé par le contrôle central et rangé dans la boîte d'essai.
