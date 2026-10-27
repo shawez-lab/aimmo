@@ -65,6 +65,13 @@ describeWithSqlite('O02 · contrôle d’une offre en base', () => {
     expect(await controles.check(t.agent, 'offre-inconnue')).toEqual({ ok: false, rule: null, code: 'unknown_offer' });
     expect(await controles.check({ role: 'direction', userId: 'd-2', networkId: 'autre' } as never, offer.id)).toEqual({ ok: false, rule: null, code: 'unknown_offer' });
     expect((await t.journal.bySubject('offer:offre-inconnue')).filter((e) => e.type === 'acces.refuse')).toHaveLength(1);
+    // Une offre d'un acquéreur suivi par un autre agent, enregistrée par la direction : l'agent du bien ne lit pas son identité.
+    const other = await t.store.createPerson({ networkId: t.network.id, agentId: t.sam.userId, firstName: 'Autre', lastName: 'Exemple' });
+    const theirs = await t.offres.record(t.direction, t.propertyId, t.input({ buyerPersonId: other.id }));
+    if (!theirs.ok) throw new Error(theirs.code);
+    expect(await controles.check(t.agent, theirs.value.id)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.db.all('SELECT id FROM offer_checks WHERE offer_id = ?', [theirs.value.id])).toHaveLength(0);
+    expect(await controles.check(t.direction, theirs.value.id)).toMatchObject({ ok: true });
   });
 
   it('[R15] la règle d’identité est celle de D03 : fenêtre du réglage à la milliseconde, toutes les fiches réunies', async () => {
