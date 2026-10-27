@@ -93,9 +93,10 @@ interface Row {
   created_at: string;
   confirmation_status: string | null;
   confirmation_channel: OutboundChannelName;
+  confirmation_to: string | null;
 }
 
-const COLUMNS = 'id, network_id, agent_id, person_id, kind, start_at, created_at, confirmation_status, confirmation_channel';
+const COLUMNS = 'id, network_id, agent_id, person_id, kind, start_at, created_at, confirmation_status, confirmation_channel, confirmation_to';
 
 export class RappelsRendezVous {
   private readonly now: () => Date;
@@ -225,6 +226,7 @@ export class RappelsRendezVous {
         agentId: row.agent_id,
         personId: row.person_id,
         channel: row.confirmation_channel,
+        to: row.confirmation_to,
         kind: 'reminder',
         purpose: APPOINTMENT_PURPOSE,
         // Le sujet de la confirmation est celui de la réservation : le contrôle ne la fait jamais deux fois [R05].

@@ -55,6 +55,8 @@ export type OnlineBookingResult =
       ok: true;
       appointment: { kind: AppointmentKind; start: string; end: string };
       token: string;
+      /** Le rendez-vous est pris, mais son écriture au journal a échoué : à signaler par l'appelant. */
+      warning?: 'journal_failed';
       confirmation: { status: 'sent' | 'refused' | 'failed'; rule: string | null } | null;
     }
   | { ok: false; code: string; rule: 'R32' | 'R33' | null };
@@ -170,6 +172,8 @@ export class ReservationEnLigne {
         start: input.start,
         source: input.source,
         channel: ambiguous ? null : channel,
+        // La confirmation et les rappels visent la coordonnée donnée, pas une plus ancienne de la fiche (V09).
+        to: ambiguous ? null : given[0]!.value,
       });
     } catch (error) {
       await this.store.withdrawConsent(consent.id, this.now());
@@ -181,13 +185,19 @@ export class ReservationEnLigne {
       await this.log(input, created, false, booked.code, ambiguous);
       return { ok: false, code: booked.code, rule: booked.rule };
     }
-    await this.log(input, created, true, null, ambiguous);
+    // Le rendez-vous est pris : une panne du journal à ce moment ne doit pas faire perdre son jeton. Elle est rendue
+    // à l'appelant (`warning`), comme pour un décalage [R13].
+    const logged = await this.log(input, created, true, null, ambiguous).then(
+      () => true,
+      () => false,
+    );
     const confirmation = booked.confirmation ? { status: booked.confirmation.status, rule: booked.confirmation.rule } : null;
     return {
       ok: true,
       appointment: { kind: booked.appointment.kind, start: booked.appointment.start_at, end: booked.appointment.end_at },
       token: booked.token,
       confirmation,
+      ...(logged && !booked.warning ? {} : { warning: 'journal_failed' as const }),
     };
   }
 
