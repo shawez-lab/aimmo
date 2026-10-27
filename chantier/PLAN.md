@@ -312,3 +312,59 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Attend : H13 et H18 pour la mesure réelle ; le reste se fait avant.
 - Décidé (2026-10-27) : la suite de M03 passe après toutes les réponses du lot et ne lève jamais d'erreur ; banc de mesure par `AIMMO_CAS` hors du dépôt (`docs/MESURE.md`), sauté sans fichier.
 - Reste : mesure réelle (H13, H18) ; au branchement réel (C09), qualifier par `ctx.waitUntil` du Worker pour que la réponse HTTP n'attende pas une vraie IA ; relecture forte (2 P1 corrigés), relecture de Codex restée en cours plus de 30 min, fusion sans elle (#27).
+
+**M04 · Estimer, janvier 2027.**
+
+Découpé le 2026-10-27. Ids `E..` pour Estimer. Cahier : M04 Estimer ; Feuille de route, janvier 2027 : « sur 20 biens, écart médian de moins de 10 % entre la fourchette AIMMO et l'estimation de l'agent ».
+Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`functions/_lib/estimation.js` de `shawez-immo`, lu sans être modifié) au lieu de la refaire : comparables DVF de même type et de surface proche, rayon élargi jusqu'à 12 ventes, médiane du prix au m², marge par l'écart interquartile, ajustements bornés ; le diagnostic énergétique s'y ajoute comme le demande le cahier. Les calculs sont faits par le code ; l'IA ne rédige que le texte, derrière une interface, avec une fausse IA dans les tests. Les données publiques (DVF, ADEME, Géorisques, Base adresse nationale, cadastre) passent par des interfaces, avec de faux jeux inventés dans les tests. Aucun avis ne part sans validation de l'agent, et aucun ne part réellement tant que le plan n'a pas mis d'envoi en service.
+
+### E01 · Fourchette de prix par le code
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : rien
+- Cahier : M04, « Ce que fait le module » (calcul par le code) et « Règles ».
+- Objectif : à partir d'une liste de ventes réelles (source abstraite) et des caractéristiques du bien, choisir les comparables, calculer le prix au m² médian, la fourchette basse et haute, les ajustements écrits (étage, extérieur, état, époque, diagnostic énergétique), et rendre la date des dernières ventes utilisées.
+- Critères : chaque comparable rendu est une vente de la source, avec sa date [R27] ; moins de 5 comparables, type non résidentiel ou bien hors zone couverte : pas de fourchette, avec sa raison [R27] ; la date des dernières ventes et l'avertissement quand les plus récentes manquent sont toujours rendus [R28] ; Bas-Rhin, Haut-Rhin, Moselle et Mayotte : aucune vente DVF, et le résultat le dit [R28] ; mêmes résultats que la méthode du site sur des cas inventés.
+- Décidé (2026-10-27) : le cahier ne chiffre pas l'ajustement du diagnostic énergétique ; réglage de départ A +3 %, B +2 %, C et D 0, E -2 %, F -5 %, G -8 %, dans les bornes de -25 % à +18 %, à confirmer par Shawez sur la mesure de E07.
+
+### E02 · Ventes DVF du site comme source
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : E01
+- Cahier : M04, « Données » et « Branchements » (fichiers DVF de data.gouv.fr).
+- Objectif : lire les ventes DVF déjà préparées par le site (`donnees-dvf/` : index, tuiles, détails), en lecture seule, comme source de E01 ; le détail d'une vente donne la voie sans numéro et la commune.
+- Critères : aucune écriture ni appel autre qu'une lecture ; jamais de numéro de voie ni de nom rendu [R29] ; une tuile absente ou illisible ne casse rien et est comptée ; jeux de test inventés au format du site.
+
+### E03 · Collecte des données publiques du bien
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : E01
+- Cahier : M04, « Collecte automatique » et « Branchements ».
+- Objectif : à partir d'une adresse, retrouver ses coordonnées (Base adresse nationale), la parcelle (cadastre), le diagnostic énergétique (ADEME) et les risques (Géorisques), chacun derrière une interface, avec ce qui manque dit clairement.
+- Critères : chaque donnée porte sa source et sa date ; une source en panne ne bloque pas les autres ; aucune donnée personnelle envoyée aux services publics au-delà de l'adresse du bien ; la vérification réelle sur 10 biens tests se lance à la main, hors des tests automatiques.
+
+### E04 · Brouillon d'avis de valeur et validation par l'agent
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : E01, E02, E03
+- Cahier : M04, « Rédaction par l'IA » et « Validation ».
+- Objectif : un brouillon d'avis (méthode, comparables sans nom, fourchette, arguments, plan de commercialisation, date des données) rangé sur le bien ; l'IA rédige derrière une interface, un texte de secours sans IA sinon ; l'agent ajuste la fourchette et le texte, puis valide ; la mise en page à la marque de l'agent se fait sur le brouillon validé.
+- Critères : aucun avis ne peut partir sans validation de l'agent qui suit le bien [R30] ; chaque chiffre du texte vient du calcul [R10] ; l'avis dit que c'est un avis et que le prix appartient au vendeur ; les ajustements de l'agent sont gardés à côté du calcul.
+
+### E05 · Estimation en ligne du site
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : E01, E02
+- Cahier : M04, « Estimation en ligne ».
+- Objectif : une route de l'API pour le site qui rend la fourchette de la commune seulement, jamais le prix d'un bien précis sans visite, puis propose un rendez-vous.
+- Critères : aucun prix précis d'un bien rendu [R31] ; limites d'appels ; aucune donnée du visiteur gardée au-delà de sa demande ; mode essai.
+
+### E06 · Suivi du vendeur
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : E04, B02
+- Cahier : M04, « Suivi ».
+- Objectif : après l'envoi d'un avis, une relance du vendeur s'il ne répond pas, par le planificateur et le contrôle central, en mode essai.
+- Critères : une relance par avis au plus, dans les heures d'envoi [R01], jamais à une personne exclue ou qui a demandé l'arrêt [R02, R04] ; rien ne part en mode essai.
+
+### E07 · Mesure sur 20 biens
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : E01, E02
+- Cahier : M04, « Critères d'acceptation » ; Feuille de route, janvier 2027.
+- Objectif : un banc qui compare la fourchette AIMMO à l'estimation de l'agent sur des biens anonymisés gardés hors du dépôt, et rend l'écart médian et chaque écart avec son explication.
+- Critères : écart médian de moins de 10 % sur 20 biens réels ; aucun bien réel dans le dépôt ; le banc se saute sans fichier.
+- Attend : H19.
