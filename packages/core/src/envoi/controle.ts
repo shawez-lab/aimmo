@@ -42,6 +42,12 @@ export interface SendOrder {
    * bien proposé puisse encore être diffusé [R42]. Refusée : rien ne part, le refus va au journal avec sa règle.
    */
   stillAllowed?: () => Promise<{ allowed: boolean; rule: string; reason: string }>;
+  /**
+   * Message de l'agent, envoyé de son propre téléphone (T09) : la décision ne retient ni R21 ni R22, aucune mention
+   * de l'assistant n'est ajoutée [R06], le message est rangé comme écrit par l'agent, et il est remis à ce port (qui
+   * prépare le lien pour l'agent) au lieu du canal du réseau. Pas d'IA : le texte est celui du code.
+   */
+  byAgent?: { port: OutboundChannel };
   /** Sujet d'un envoi d'initiative, par exemple `relance:projet-12` [R05]. Obligatoire hors réponse, sauf biens. */
   subject?: string | undefined;
   /** Biens proposés : chacun ne part qu'une fois à la personne [R05]. */
@@ -219,6 +225,7 @@ export class ControleEnvois {
           kind: order.kind,
           ...(order.purpose === undefined ? {} : { purpose: order.purpose }),
           ...(order.consentOnEveryChannel ? { consentOnEveryChannel: true } : {}),
+          ...(order.byAgent ? { byAgent: true } : {}),
           conversationId: order.conversationId ?? null,
           at: when,
         },
@@ -229,7 +236,10 @@ export class ControleEnvois {
     const decision = await decide(at);
     if (!decision.allowed) return log('refused', decision.rule, decision.reason);
 
-    const port = this.channels.get(order.channel);
+    if (order.byAgent && (order.byAgent.port.channel !== order.channel || !agentId || order.compose)) {
+      return log('refused', null, 'Un message de l’agent cite son agent et son canal, sans IA.');
+    }
+    const port = order.byAgent ? order.byAgent.port : this.channels.get(order.channel);
     if (!port) return log('refused', null, 'Canal non branché.');
     // Sur Instagram et Facebook, on répond dans la conversation reçue : le compte propre au canal (message privé)
     // ou le commentaire (réponse privée) ; un nom de compte ne sert pas d'adresse chez Meta (C07). La conversation
@@ -269,7 +279,8 @@ export class ControleEnvois {
       order.conversationId ? m.conversation_id === order.conversationId : m.conversation_id === null && m.channel === order.channel;
     const conversation = sentBefore.filter(inConversation);
     const firstOfConversation = conversation.length === 0;
-    const withMention = !conversation.some((m) => AUTOMATIC.has(m.author_kind));
+    // L'agent qui écrit lui-même n'a pas de mention d'assistant à porter [R06].
+    const withMention = !order.byAgent && !conversation.some((m) => AUTOMATIC.has(m.author_kind));
 
     let mention = '';
     if (withMention) {
@@ -428,7 +439,7 @@ export class ControleEnvois {
         projectId: order.projectId ?? null,
         conversationId: order.conversationId ?? null,
         channel: order.channel,
-        authorKind: chosen.ai ? 'ai' : 'system',
+        authorKind: order.byAgent ? 'agent' : chosen.ai ? 'ai' : 'system',
         body,
         occurredAt: at,
       },

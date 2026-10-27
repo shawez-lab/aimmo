@@ -257,7 +257,7 @@ export class Rapprochement {
     if (!read.ok) return read;
     const gate = await this.diffusion.canDiffuse(viewer.networkId, propertyId, this.now());
     if (!gate.allowed) return this.refused(viewer, propertyId, 'R42', gate.reason);
-    const property = await this.toMatch(read.value);
+    const property = await this.propertyForMatch(read.value);
     const ranked: Scored[] = [];
     for (const c of await this.candidates(viewer.networkId)) {
       if (!decideAccess(viewer, { kind: 'person', networkId: viewer.networkId, agentIds: c.agentIds }).allowed) continue;
@@ -299,7 +299,7 @@ export class Rapprochement {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refused(viewer, propertyId, 'R16', 'role');
     const read = await acces.readProperty(viewer, propertyId);
     if (!read.ok) return read;
-    const property = await this.toMatch(read.value);
+    const property = await this.propertyForMatch(read.value);
     let active = 0;
     let matching = 0;
     const near = new Map<MandatoryCriterion, number>();
@@ -338,7 +338,7 @@ export class Rapprochement {
     const p = await this.db.first<Property>('SELECT * FROM properties WHERE id = ? AND network_id = ?', [propertyId, networkId]);
     if (!p) return [];
     if (!(await this.diffusion.canDiffuse(networkId, propertyId, this.now())).allowed) return [];
-    const property = await this.toMatch(p);
+    const property = await this.propertyForMatch(p);
     const out: { personId: string; projectId: string; agentId: string | null; status: 'match' | 'tolerated'; property: MatchProperty }[] = [];
     for (const c of await this.candidates(networkId)) {
       const best = c.projects
@@ -353,7 +353,7 @@ export class Rapprochement {
   }
 
   /** Le bien vu par le rapprochement : sa fiche de base, et sa fiche complète (P01) quand elle existe. */
-  private async toMatch(p: Property): Promise<MatchProperty> {
+  async propertyForMatch(p: Property): Promise<MatchProperty> {
     let bedrooms: number | null = null;
     const features: BuyerFeature[] = [];
     const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [p.id]);
