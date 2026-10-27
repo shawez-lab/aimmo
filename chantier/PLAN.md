@@ -705,7 +705,8 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P02 · Mentions obligatoires et liste de contrôle
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : prix du mandat = prix hors honoraires à la charge de l'acquéreur ; pourcentage du prix hors honoraires, au centième, le demi vers le haut ; seul un mandat en vigueur (diffusable ou en délai de rétractation) donne un prix ; terrain sans DPE ; commerces et entreprises avec M16 ; carte professionnelle réglée par la direction
 - Qui : Claude · Relecture : forte · Dépend de : P01
 - Cahier : Conformité, « Publier les annonces » ; M07, règles ; critère « 10 annonces tests passent la liste de contrôle des mentions ».
 - Objectif : une fonction du code calcule et place les mentions obligatoires d'une annonce à partir du bien et du mandat en vigueur : prix honoraires inclus en plus grand, prix hors honoraires et honoraires TTC en pourcentage quand l'acquéreur les paie ; classes énergie et climat, logement très énergivore (F ou G), dépenses annuelles avec l'année de référence ; copropriété (lots, charges, procédure) ; renvoi vers Géorisques si le bien est en zone concernée ; numéro de carte professionnelle (réglage du réseau). Une liste de contrôle rend chaque mention « présente » ou « manquante » avec sa raison.
@@ -713,7 +714,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : H09 pour le vrai numéro de carte ; les tests utilisent un numéro inventé.
 
 ### P03 · Annonce rédigée par l'IA, sourcée, validée par l'agent
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : P02
 - Cahier : M07, « Annonce » et « L'IA et l'humain » ; Conformité, non-discrimination.
 - Objectif : l'IA, derrière une interface (fausse IA dans les tests), propose un titre et un texte à partir des seules données de la fiche ; le code vérifie le texte, y ajoute les mentions de P02, et l'agent du bien le valide ou le corrige ; seule une version validée peut être publiée.
