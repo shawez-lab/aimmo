@@ -99,6 +99,17 @@ describeWithSqlite('T05 · visite sécurisée', () => {
     await expect(t.db.run('UPDATE visit_safety SET phone_confirmed_at = NULL')).rejects.toThrow();
   });
 
+  it('un accord retiré par le visiteur ne se redonne pas par la seule parole de l’agent [R03] ; la réservation ne dit jamais « confirmée » [R54]', async () => {
+    const t = await setup();
+    const agent = t.as('agent', t.alex.id);
+    const c = await t.store.addConsent({ networkId: t.network.id, personId: t.person.id, purpose: 'visite_securisee', channel: 'sms', proof: 'test', givenAt: new Date(TUESDAY_10H - 60 * MINUTE) });
+    await t.store.withdrawConsent(c.id, new Date(TUESDAY_10H - 30 * MINUTE));
+    expect(await t.securite.sendCode(agent, t.appointmentId, { consentProof: 'accord oral' })).toEqual({ ok: false, rule: 'R03', code: 'consent_withdrawn' });
+    expect(await t.db.all("SELECT * FROM messages WHERE channel = 'sms'")).toEqual([]);
+    const bodies = await t.db.all<{ body: string }>("SELECT body FROM messages WHERE direction = 'out'");
+    for (const b of bodies) expect(b.body).not.toMatch(/confirmée/);
+  });
+
   it('le code respecte l’arrêt et les horaires [R01, R04] ; seuls l’agent du visiteur et la direction [R16]', async () => {
     const t = await setup();
     expect(await t.securite.sendCode(t.as('agent', t.sam.id), t.appointmentId, { consentProof: 'accord' })).toMatchObject({ ok: false, rule: 'R16' });

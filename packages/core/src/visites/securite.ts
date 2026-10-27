@@ -5,8 +5,9 @@
  * dispose d'une alerte en un geste : elle est rangée d'abord, avec l'heure, la commune et l'heure de la visite en cours,
  * puis la direction est prévenue ; un envoi en panne est réessayé, sans doublon.
  *
- * Décidé, lecture prudente : la tournée partagée avec un proche existe déjà (V07, heures et communes seulement, par le
- * contrôle central) ; T05 ne la refait pas. Le code part par SMS, avec l'accord du visiteur, donné à l'agent et dont
+ * Décidé, lecture prudente : la tournée partagée avec un proche existe déjà (V07) : un message par le contrôle central,
+ * avec les heures et les communes seulement, plutôt qu'un lien ; T05 ne la refait pas. La confirmation de réservation
+ * d'une visite dit « réservée », jamais « confirmée » [R54]. Le code part par SMS, avec l'accord du visiteur, donné à l'agent et dont
  * l'agent garde la preuve [R03]. Un code vaut 30 minutes, cinq essais faux le bloquent.
  */
 import type { Viewer } from '../acces/droits.ts';
@@ -119,6 +120,14 @@ export class VisiteSecurisee {
       [...members, VISIT_SAFETY_PURPOSE],
     );
     const at = this.now();
+    // Un accord retiré par le visiteur ne se redonne pas par la seule parole de l'agent [R03].
+    if (!consent) {
+      const withdrawn = await this.db.first(
+        `SELECT id FROM consents WHERE person_id IN (${members.map(() => '?').join(', ')}) AND purpose = ? AND channel = 'sms' AND withdrawn_at IS NOT NULL`,
+        [...members, VISIT_SAFETY_PURPOSE],
+      );
+      if (withdrawn) return { ok: false, rule: 'R03', code: 'consent_withdrawn' };
+    }
     if (!consent) await this.store.addConsent({ networkId: v.network_id, personId: v.person_id, purpose: VISIT_SAFETY_PURPOSE, channel: 'sms', proof: input.consentProof.trim(), givenAt: at });
     const code = newCode();
     const expiresAt = new Date(at.getTime() + VISIT_CODE_TTL_MINUTES * 60_000).toISOString();
