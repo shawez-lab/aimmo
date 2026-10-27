@@ -4,3 +4,4 @@ export * from './agenda.ts';
 export * from './rappels.ts';
 export * from './brief.ts';
 export * from './statut.ts';
+export * from './tournee.ts';
