@@ -206,10 +206,24 @@ export class TransmissionOffres {
       [networkId, limit],
     );
     const alerted: string[] = [];
+    const announce = (offerId: string, agentId: string) =>
+      appendEvent(this.journal, { type: 'offre.non_transmise', actor: 'system:offres', subject: `offer:${offerId}`, data: { rule: 'R56', agent: `agent:${agentId}`, to: ['agent', 'direction'] } }, this.now);
+    // Une alerte rangée dont l'annonce au journal a manqué (panne juste après) est annoncée au passage suivant, une fois.
+    const pending = await this.db.all<{ offer_id: string; agent_id: string }>(
+      'SELECT offer_id, agent_id FROM offer_untransmitted_alerts WHERE network_id = ? ORDER BY at',
+      [networkId],
+    );
+    for (const p of pending) {
+      const said = (await this.journal.bySubject(`offer:${p.offer_id}`)).some((e) => e.type === 'offre.non_transmise');
+      if (!said) {
+        await announce(p.offer_id, p.agent_id);
+        alerted.push(p.offer_id);
+      }
+    }
     for (const r of rows) {
       const { changes } = await this.db.run('INSERT INTO offer_untransmitted_alerts (offer_id, network_id, agent_id, at) VALUES (?, ?, ?, ?) ON CONFLICT (offer_id) DO NOTHING', [r.id, networkId, r.agent_id, this.now().toISOString()]);
       if (changes !== 1) continue;
-      await appendEvent(this.journal, { type: 'offre.non_transmise', actor: 'system:offres', subject: `offer:${r.id}`, data: { rule: 'R56', agent: `agent:${r.agent_id}`, to: ['agent', 'direction'] } }, this.now);
+      await announce(r.id, r.agent_id);
       alerted.push(r.id);
     }
     return alerted;
