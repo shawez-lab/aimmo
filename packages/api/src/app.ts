@@ -12,6 +12,7 @@ import {
   FicheClient,
   CATEGORIES,
   ControlesSignature,
+  Diffusion,
   SignaturePapier,
   FicheAgent,
   Modeles,
@@ -435,6 +436,46 @@ const ROUTES: RouteDef[] = [
       const r = await new SignaturePapier(s.db, s.acces, s.journal, { now: s.now }).copy(viewer, id!);
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { number: r.number, content: r.content } });
       return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/biens/${ID}/diffusion$`),
+    name: 'bien.diffusion',
+    // Le bien peut-il être diffusé : mandat signé, numéroté, en cours, hors délai de rétractation [R42].
+    handle: async (s, viewer, [id]) => {
+      const r = await new Diffusion(s.db, s.acces, s.journal, { now: s.now }).read(viewer, id!);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : refusal(r);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/mandats/${ID}/debut-anticipe$`),
+    name: 'mandat.debut_anticipe',
+    // La demande écrite du vendeur de diffuser avant la fin du délai de rétractation, avec sa preuve [R42].
+    handle: async (s, viewer, [id], request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['proof', 'receivedAt'].includes(k))) return failure(400, 'unexpected_field', 'Seuls proof et receivedAt sont admis.');
+      if (typeof body.receivedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.receivedAt)) return failure(400, 'invalid_date', 'receivedAt : un instant ISO en UTC.');
+      const r = await new Diffusion(s.db, s.acces, s.journal, { now: s.now }).recordEarlyStart(viewer, id!, { proof: body.proof as string, receivedAt: new Date(body.receivedAt) });
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE });
+      return r.rule === 'R16' ? refusal(r) : json(r.code === 'unknown_mandate' ? 404 : r.code === 'already_recorded' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/mandats/${ID}/retractation$`),
+    name: 'mandat.retractation',
+    // La rétractation reçue dans le délai : le mandat s'arrête, son inscription est annulée [R42].
+    handle: async (s, viewer, [id], request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['proof', 'receivedAt'].includes(k))) return failure(400, 'unexpected_field', 'Seuls proof et receivedAt sont admis.');
+      if (typeof body.receivedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.receivedAt)) return failure(400, 'invalid_date', 'receivedAt : un instant ISO en UTC.');
+      const r = await new Diffusion(s.db, s.acces, s.journal, { now: s.now }).recordWithdrawal(viewer, id!, { proof: body.proof as string, receivedAt: new Date(body.receivedAt) });
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE });
+      return r.rule === 'R16' ? refusal(r) : json(r.code === 'unknown_mandate' ? 404 : r.code === 'already_recorded' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
     },
   },
   {
