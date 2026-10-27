@@ -996,7 +996,8 @@ Découpé le 2026-10-27 par la voie 1. Ids `F..` pour Fidéliser. Cahier : M11 A
 Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), lu par une interface (« dossier clos le … »), avec un faux dossier clos dans les tests tant que N06 n'est pas fusionnée. Tout envoi passe par le contrôle central, en mode essai, dans les heures d'envoi [R01, R26]. La demande d'avis va à chaque client du dossier (vendeurs et acquéreurs), sans tri selon sa satisfaction et sans contrepartie [R64] ; AIMMO n'écrit jamais d'avis à la place d'un client. Le lien vers la fiche Google de l'agent est un réglage de l'agent ; l'API Google Business Profile (H07) viendra pour lire les avis, pas pour en publier. Les relances après la vente : à un an, seulement à qui ne s'y est pas opposé, au-delà seulement avec l'accord donné à l'acte, avec désinscription dans chaque message [R65]. Une recommandation arrive dans M02 avec sa source, et n'est jamais rémunérée à un particulier [R66] : aucun champ de récompense, aucun texte qui en promet. La note de satisfaction est rangée pour M13. Le code vit dans `packages/core/src/apres-vente/`, ses migrations à partir de `0401`, ses routes dans `packages/api/src/apres-vente.ts`.
 
 ### F01 · Recommandation d'un proche, rangée dans M02 avec sa source
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : la réponse ne dit jamais qui suit le proche ; la source ne nomme pas le client ; un proche sans agent passe à l'agent de la tâche ; une opposition après coup retire la tâche de la liste.
 - Qui : Claude · Relecture : forte · Dépend de : C02
 - Cahier : M11, « Recommandations » ; Conformité, consentement.
 - Objectif : l'agent saisit qu'un client recommande un proche (prénom, une coordonnée, le projet, et ce que le proche a accepté : être appelé par l'agent, avec la preuve dite par le client) ; le proche arrive dans la fiche unique (rattachée si elle existe) avec la source « recommandation » qui nomme le client qui recommande ; une tâche « appeler » pour l'agent ; un lien « qui a recommandé qui » lisible sur les deux fiches.
@@ -1049,4 +1050,5 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Cahier : M11 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/apres-vente` (recommandation, choix des relances, lien de la fiche Google, satisfaction, tâches) dans `packages/api/src/apres-vente.ts`, branchées dans `app.ts`, le passage quotidien au planificateur, et dans l'application de l'agent l'écran d'un dossier clos : demandes parties, tâches « remercier », recommandations, note.
 - Critères : chaque route sous R16, refus au journal ; un parcours de test, de l'acte à la relance d'un an ; écran accessible, sans texte générique, beau sur téléphone d'abord.
+- Reste de F01 : deux saisies simultanées du même proche peuvent laisser un projet et une source en trop (D1 sans transaction interactive) : la route de recommandation porte une clé d'idempotence.
 - Attend : rien.
