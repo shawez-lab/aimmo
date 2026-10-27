@@ -14,7 +14,8 @@
  * Décidé, lecture prudente : le mandat qui compte est celui en vigueur le jour du compromis, quand la vente est
  * conclue ; les honoraires sont ceux du document signé, qu'un avenant ne change pas ; le constat plomb compte un an,
  * comme s'il avait trouvé du plomb, faute de connaître son résultat ; l'acte ne se rapporte pas avant le compromis ni
- * dans le futur.
+ * dans le futur ; un DPE fait avant le 1er juillet 2021 n'est plus valable depuis 2025 ; un mandat signé après le
+ * compromis, ou encore dans son délai de rétractation, ne donne pas de commission : la direction tranche.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -45,9 +46,24 @@ export function validUntil(issuedOn: string, months: number): string {
   return new Date(same.getTime() - 86_400_000).toISOString().slice(0, 10);
 }
 
+/** Un DPE fait avant le 1er juillet 2021, ancienne méthode, n'est plus valable depuis le 1er janvier 2025. */
+export const DPE_NEW_METHOD_FROM = '2021-07-01';
+export const DPE_OLD_METHOD_UNTIL = '2024-12-31';
+
 /** Les pièces reçues périmées au jour de l'acte. Fonction pure. */
 export function expiredPieces(lines: { piece: Piece; received: { issuedOn: string } | null }[], actOn: string, validity: Partial<Record<Piece, number>> = DEFAULT_VALIDITY_MONTHS): Piece[] {
-  return lines.filter((l) => l.received && validity[l.piece] !== undefined && validUntil(l.received.issuedOn, validity[l.piece]!) < actOn).map((l) => l.piece);
+  return lines
+    .filter((l) => {
+      if (!l.received || validity[l.piece] === undefined) return false;
+      if (validUntil(l.received.issuedOn, validity[l.piece]!) < actOn) return true;
+      return l.piece === 'dpe' && l.received.issuedOn < DPE_NEW_METHOD_FROM && actOn > DPE_OLD_METHOD_UNTIL;
+    })
+    .map((l) => l.piece);
+}
+
+/** Les honoraires d'un document de mandat signé, en euros entiers, ou null : jamais deviné [R63]. */
+export function feeFrom(facts: Pick<DocumentFacts, 'feeEur'> | null): number | null {
+  return facts && typeof facts.feeEur === 'number' && Number.isInteger(facts.feeEur) && facts.feeEur >= 0 ? facts.feeEur : null;
 }
 
 export interface Closing {
@@ -113,7 +129,11 @@ export class ActeVente {
     const signedOn = input.signedOn;
     if (typeof input.proofRef !== 'string' || !PROOF_REF.test(input.proofRef)) return { ok: false, rule: null, code: 'bad_proof' };
     if (signedOn > localTime(this.now(), TIME_ZONE).date) return { ok: false, rule: null, code: 'future_day' };
-    if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'already_closed' };
+    // Une clôture déjà complète : rien de plus, sauf le bien encore à passer « vendu » après une coupure.
+    if (await this.db.first('SELECT 1 FROM sale_commissions WHERE file_id = ?', [fileId])) {
+      await this.db.run("UPDATE properties SET status = 'sold', updated_at = ? WHERE id = ? AND status = 'under_offer'", [this.now().toISOString(), g.file.property_id]);
+      return { ok: false, rule: null, code: 'already_closed' };
+    }
     const property = await this.db.first<{ status: string; agent_id: string }>('SELECT status, agent_id FROM properties WHERE id = ?', [g.file.property_id]);
     if (property?.status !== 'under_offer') return { ok: false, rule: null, code: 'not_under_offer' };
     const blocked = async <T extends ActProblem>(p: T): Promise<T> => {
@@ -132,9 +152,13 @@ export class ActeVente {
     if (!status.value.complete || expired.length > 0) {
       return blocked({ ok: false, rule: 'R60', code: 'incomplete', missing: status.value.missing, expired, unknown: status.value.unknown, identity: status.value.identity });
     }
-    // La commission : les honoraires du mandat en vigueur le jour du compromis, tels qu'au document signé [R63].
+    // La commission : les honoraires du mandat en vigueur le jour du compromis, tels qu'au document signé [R63]. Un
+    // mandat encore dans son délai de rétractation sans demande écrite du vendeur n'est pas en vigueur ; un mandat
+    // signé après le compromis non plus (loi Hoguet : le mandat écrit précède la négociation).
     const decision = await this.diffusion.canDiffuse(g.file.network_id, g.file.property_id, new Date(`${compromis}T11:00:00.000Z`));
-    if (!decision.mandateId || !['allowed', 'allowed_early_start', 'withdrawal_period'].includes(decision.reason)) return blocked({ ok: false, rule: 'R63', code: 'no_mandate_in_force' });
+    if (!decision.mandateId || !['allowed', 'allowed_early_start'].includes(decision.reason)) return blocked({ ok: false, rule: 'R63', code: 'no_mandate_in_force' });
+    const mandate = await this.db.first<{ signed_at: string }>('SELECT signed_at FROM mandates WHERE id = ?', [decision.mandateId]);
+    if (!mandate || localTime(new Date(mandate.signed_at), TIME_ZONE).date > compromis) return blocked({ ok: false, rule: 'R63', code: 'no_mandate_in_force' });
     const doc = await this.db.first<{ facts: string | null }>('SELECT d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL', [decision.mandateId]);
     let facts: DocumentFacts | null = null;
     try {
@@ -142,21 +166,23 @@ export class ActeVente {
     } catch {
       facts = null;
     }
-    if (!facts || typeof facts.feeEur !== 'number' || !Number.isInteger(facts.feeEur) || facts.feeEur < 0) return blocked({ ok: false, rule: 'R63', code: 'fee_unknown' });
+    const fee = feeFrom(facts);
+    if (fee === null) return blocked({ ok: false, rule: 'R63', code: 'fee_unknown' });
     const iso = this.now().toISOString();
-    try {
-      await this.db.run("INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, ?, ?, 'a_demarrer', ?, ?)", [fileId, g.file.network_id, signedOn, input.proofRef, iso, actorOf(viewer)]);
-    } catch (error) {
-      if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: 'already_closed' };
-      throw error;
-    }
-    await this.db.run(
-      "INSERT INTO sale_commissions (file_id, network_id, mandate_id, agent_id, fee_eur, fee_charge, due_on, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'due', ?)",
-      [fileId, g.file.network_id, decision.mandateId, property.agent_id, facts.feeEur, facts.feeCharge ?? null, signedOn, iso],
+    // Des écritures reprenables : après une coupure, un nouvel essai complète ce qui manque, sans rien doubler. La
+    // clôture déjà rangée garde son jour ; la commission en dépend.
+    await this.db.run("INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, ?, ?, 'a_demarrer', ?, ?) ON CONFLICT (file_id) DO NOTHING", [fileId, g.file.network_id, signedOn, input.proofRef, iso, actorOf(viewer)]);
+    const closed = (await this.db.first<{ signed_on: string }>('SELECT signed_on FROM sale_file_closings WHERE file_id = ?', [fileId]))!;
+    const { changes } = await this.db.run(
+      "INSERT INTO sale_commissions (file_id, network_id, mandate_id, agent_id, fee_eur, fee_charge, due_on, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'due', ?) ON CONFLICT (file_id) DO NOTHING",
+      [fileId, g.file.network_id, decision.mandateId, property.agent_id, fee, facts?.feeCharge ?? null, closed.signed_on, iso],
     );
+    if (changes !== 1) return { ok: false, rule: null, code: 'already_closed' };
+    await appendEvent(this.journal, { type: 'dossier.acte_signe', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R63', mandate: `mandate:${decision.mandateId}` } }, this.now);
     // Le bien est vendu : la publication le montre ainsi au passage suivant (M07).
     await this.db.run("UPDATE properties SET status = 'sold', updated_at = ? WHERE id = ? AND status = 'under_offer'", [iso, g.file.property_id]);
-    await appendEvent(this.journal, { type: 'dossier.acte_signe', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R63', mandate: `mandate:${decision.mandateId}` } }, this.now);
-    return { ok: true, value: (await this.read(fileId))! };
+    const value = await this.read(fileId);
+    if (!value) throw new Error('Clôture incomplète du dossier de vente.');
+    return { ok: true, value };
   }
 }

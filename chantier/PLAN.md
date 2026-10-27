@@ -960,6 +960,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 
 ### N06 · Acte signé : vente close, commission due
 - Statut : en cours (voie 2)
+- Décidé (2026-10-28) : le mandat qui compte est celui en vigueur au compromis, signé au plus tard ce jour-là et hors délai de rétractation (sauf demande écrite) ; sinon pas de commission, la direction tranche ; DPE d'avant juillet 2021 périmé depuis 2025 ; plomb compté un an faute de résultat connu ; écritures reprenables après une coupure
 - Qui : Claude · Relecture : forte · Dépend de : N02
 - Cahier : M10, « Acte signé » ; M13 et M11 pour la suite.
 - Objectif : l'agent rapporte l'acte signé avec sa preuve (référence de l'attestation du notaire) ; le dossier se clôt, le bien passe « vendu », la commission devient due au montant du mandat en vigueur, rangée pour M13, et l'après-vente est marqué à démarrer pour M11.

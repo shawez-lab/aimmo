@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { ActeVente, Echeancier, expiredPieces, validUntil } from '../src/dossiers/index.ts';
+import { ActeVente, Echeancier, expiredPieces, feeFrom, validUntil } from '../src/dossiers/index.ts';
+import type { SqlDatabase } from '../src/index.ts';
 import { PROOF, setupDossier, type DossierKind } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -19,6 +20,19 @@ it('[R60] une pièce datée est valable jusqu’à la veille du même jour, des 
   ];
   expect(expiredPieces(lines, '2027-06-09')).toEqual(['etat_risques', 'dpe']);
   expect(expiredPieces(lines, '2027-06-10')).toEqual(['etat_risques', 'electricite', 'dpe']);
+  // Gaz 3 ans, plomb 1 an.
+  expect(expiredPieces([{ piece: 'gaz', received: { issuedOn: '2024-06-09' } }, { piece: 'plomb', received: { issuedOn: '2026-06-09' } }], '2027-06-10')).toEqual(['gaz', 'plomb']);
+  expect(expiredPieces([{ piece: 'gaz', received: { issuedOn: '2024-06-11' } }, { piece: 'plomb', received: { issuedOn: '2026-06-11' } }], '2027-06-10')).toEqual([]);
+  // Un DPE de l'ancienne méthode, d'avant juillet 2021, n'est plus valable depuis 2025 ; un DPE de juillet 2021 l'est.
+  expect(expiredPieces([{ piece: 'dpe', received: { issuedOn: '2020-05-01' } }], '2027-06-10')).toEqual(['dpe']);
+  expect(expiredPieces([{ piece: 'dpe', received: { issuedOn: '2020-05-01' } }], '2024-12-31')).toEqual([]);
+  expect(expiredPieces([{ piece: 'dpe', received: { issuedOn: '2021-07-01' } }], '2027-06-10')).toEqual([]);
+});
+
+it('[R63] les honoraires viennent du document signé, entiers et connus, jamais devinés', () => {
+  expect(feeFrom({ feeEur: 10000 })).toBe(10000);
+  expect(feeFrom({ feeEur: 0 })).toBe(0);
+  for (const f of [null, { feeEur: null }, { feeEur: -1 }, { feeEur: 10.5 }]) expect(feeFrom(f as never)).toBeNull();
 });
 
 describeWithSqlite('N06 · acte signé : vente close, commission due', () => {
@@ -62,7 +76,7 @@ describeWithSqlite('N06 · acte signé : vente close, commission due', () => {
     expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ state: 'vendu' });
   });
 
-  it('[R60] pas d’acte avec une pièce manquante, une pièce périmée ce jour-là, ou l’identité non vérifiée', async () => {
+  it('[R60] pas d’acte avec une pièce manquante ou une pièce périmée ce jour-là', async () => {
     const t = await ready('appartement', '2026-11-01');
     t.setClock(at9('2027-06-11'));
     // L'état des risques du 1er novembre est périmé le 1er mai.
@@ -78,6 +92,51 @@ describeWithSqlite('N06 · acte signé : vente close, commission due', () => {
     expect(await acte.record(u.agent, u.fileId, { signedOn: '2027-03-10', proofRef: ACT_PROOF })).toMatchObject({ ok: false, rule: 'R60', code: 'incomplete', missing: ['titre_propriete', 'fiche_renseignements_vendeur', 'etat_risques', 'bornage', 'fiche_renseignements_acquereur'] });
     expect((await u.journal.bySubject(`sale_file:${u.fileId}`)).filter((e) => e.type === 'dossier.acte_refuse').map((e) => e.data.rule)).toEqual(['R60']);
     expect((await u.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [u.propertyId]))?.status).toBe('under_offer');
+  });
+
+  it('[R60] pas d’acte si l’identité de l’acquéreur n’est plus vérifiée, même toutes les pièces reçues', async () => {
+    const t = await ready();
+    // Le contrôle d'identité a une durée de validité (D03) : bien plus tard, il faut le refaire.
+    t.setClock(at9('2028-06-11'));
+    const r = await t.acte.record(t.agent, t.fileId, { signedOn: '2028-06-10', proofRef: ACT_PROOF });
+    expect(r).toMatchObject({ ok: false, rule: 'R60', code: 'incomplete', identity: 'non_verifiee' });
+  });
+
+  it('[R63] pas de commission sans mandat en vigueur au compromis : signé après, ou encore dans son délai de rétractation', async () => {
+    for (const compromis of ['2027-02-05', '2027-02-20']) {
+      const t = await setupDossier('terrain');
+      await t.startCompromis();
+      t.setClock(at9('2027-03-10'));
+      await new Echeancier(t.db, t.acces, t.journal, { now: t.now }).record(t.agent, t.fileId, { kind: 'compromis_signe', day: compromis, proofRef: PROOF });
+      const s = await t.pieces.status(t.agent, t.fileId);
+      if (!s.ok) throw new Error(s.code);
+      for (const piece of s.value.missing) await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: '2027-03-05' });
+      const acte = new ActeVente(t.db, t.acces, t.journal, t.storage, { now: t.now });
+      // Le mandat du jeu est signé le 10 février hors de l'agence : rétractation jusqu'au 24 février.
+      expect([compromis, await acte.record(t.agent, t.fileId, { signedOn: '2027-03-10', proofRef: ACT_PROOF })]).toEqual([compromis, { ok: false, rule: 'R63', code: 'no_mandate_in_force' }]);
+      expect((await t.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [t.propertyId]))?.status).toBe('under_offer');
+      expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'dossier.acte_refuse').map((e) => e.data.rule)).toEqual(['R63']);
+    }
+  });
+
+  it('une coupure entre la clôture et la commission : un nouvel essai complète, sans rien doubler', async () => {
+    const t = await ready();
+    t.setClock(at9('2027-06-11'));
+    let fail = true;
+    const flaky: SqlDatabase = {
+      exec: (q) => t.db.exec(q),
+      all: (q, p) => t.db.all(q, p),
+      first: (q, p) => t.db.first(q, p),
+      run: async (q, p) => {
+        if (fail && q.includes('INSERT INTO sale_commissions')) { fail = false; throw new Error('coupure'); }
+        return t.db.run(q, p);
+      },
+    };
+    await expect(new ActeVente(flaky, t.acces, t.journal, t.storage, { now: t.now }).record(t.agent, t.fileId, { signedOn: '2027-06-10', proofRef: ACT_PROOF })).rejects.toThrow('coupure');
+    expect((await t.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [t.propertyId]))?.status).toBe('under_offer');
+    expect(await t.acte.record(t.agent, t.fileId, { signedOn: '2027-06-10', proofRef: ACT_PROOF })).toMatchObject({ ok: true, value: { commission: { feeEur: 10000, dueOn: '2027-06-10' } } });
+    expect((await t.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [t.propertyId]))?.status).toBe('sold');
+    expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'dossier.acte_signe')).toHaveLength(1);
   });
 
   it('[R58] pas d’acte sans compromis en préparation ni compromis signé ; un jour réel, prouvé, ni futur ni avant le compromis', async () => {
