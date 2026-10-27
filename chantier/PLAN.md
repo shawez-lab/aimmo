@@ -240,12 +240,14 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Reste : branchement dans la chaîne et correction depuis l'API (Q05) ; remarques mineures de Codex laissées (#23) : critères niés (« sans jardin »), budget « frais inclus », contexte des montants dans le contrôle de l'IA, délai dans le projet ; relecture forte (1 P0 corrigé), Codex : 5 P0 et 2 P1 corrigés en 5 tours, dernière version sans P0 ni P1.
 
 ### Q02 · Note et température
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : Q01
 - Cahier : M03, point 3 et « Règles » : chaque note explicable par sa raison écrite.
 - Objectif : une note de 0 à 100 et une température (froid, tiède, chaud) par barème fixe écrit dans le code, d'après la catégorie, le bien reconnu, le délai et la précision de la demande, avec la raison en une ligne.
 - Critères : chaque note a sa raison en une ligne, sans donnée personnelle [R24] ; la note ne dépend jamais du financement ni de la solvabilité, ni d'aucun critère discriminant : changer seulement ces champs ne la change pas [R14, R24] ; même contact, même note.
 - Attend : rien.
+- Décidé (2026-10-27), lecture prudente : le barème ne lit aucun montant (un montant peut dire le financement) [R24] ; un candidat à une location (suite M15, hors propriétaire) ne reçoit aucune note [R14] ; un partenaire ou un indésirable valent 0.
+- Reste : relecture forte (1 P0 corrigé), Codex : 1 P0 corrigé, sa relecture de la correction restée en cours 25 min, fusion sans elle (#24).
 
 ### Q03 · Zones et attribution à l'agent
 - Statut : à faire
