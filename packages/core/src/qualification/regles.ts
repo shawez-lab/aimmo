@@ -197,7 +197,8 @@ export function classifyByRules(text: string, ctx: ClassifyContext = {}): Catego
   return 'curious';
 }
 
-const AMOUNT = /(\d+(?:[  .]\d{3})*(?:,\d+)?)\s*(k|k€|keur|mille)?\s*(€|euros?|eur\b)?/g;
+// « k » seul, jamais le début de « km » ou de « kg ».
+const AMOUNT = /(\d+(?:[ \u00a0\u202f.]\d{3})*(?:,\d+)?)\s*(k€|keur|k(?![\p{L}\d])|mille\b)?\s*(€|euros?\b|eur\b)?/gu;
 const MONEY_CONTEXT = /(?:budget|prix|maximum|max|jusqu.a|entre|autour de|environ|vers)\W*$/;
 
 /** Les montants du message, en euros : seulement ceux qui en sont sûrement, jamais « 3 pièces » ni « 2 ans ». */

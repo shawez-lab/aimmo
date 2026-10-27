@@ -54,6 +54,9 @@ describe('Q01 · classer et extraire par règles fixes', () => {
     expect(amountsIn('budget 300\u202f000 €')).toEqual([300_000]);
     // Un loyer, avec sa devise.
     expect(amountsIn('loyer de 650 € par mois, 3 pièces, 2e étage')).toEqual([650]);
+    // Une distance ou un poids ne sont pas des milliers d'euros.
+    expect(amountsIn('maison à 10 km de Dijon, budget 250k')).toEqual([250_000]);
+    expect(amountsIn('à 15 kms de Beaune, terrain de 800 m²')).toEqual([]);
     expect(findCommune('près de fontaine les dijon')).toBe('Fontaine-lès-Dijon');
     expect(findCommune('à Dijon centre')).toBe('Dijon');
     expect(findCommune('à Lyon')).toBeNull();
