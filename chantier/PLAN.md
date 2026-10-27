@@ -444,9 +444,18 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Critères : l'ordre proposé respecte R32 et R33 ; la tournée envoyée ne porte que les heures et les communes, jamais d'adresse exacte ni de nom de client [R09] ; rien ne part sans que l'agent le demande.
 
 ### V08 · Réservation depuis le site et les messages, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : clé de dépôt `site_booking` ; estimation, visite et appel seulement ; seul un créneau proposé se réserve ; personne retrouvée par tous les contacts donnés (fiche unique, téléphone et WhatsApp confondus), sinon fiche neuve suivie par l'agent ; plusieurs fiches distinctes : pas de confirmation par message ; accord retiré si la réservation échoue ; confirmation rendue toujours la même `{ booked: true }` [R16]. Le brief (V05) ne montre client, histoire et bien que si l'agent du rendez-vous a le droit de les voir.
+- Reste : les deux P2 de Codex, en V09.
 - Qui : Claude · Relecture : forte · Dépend de : V02
 - Cahier : M05, « Réservation en ligne ».
 - Objectif : des routes de l'API pour lister les créneaux libres d'un agent et réserver, appelées par le site, l'assistant et l'espace client, avec la clé de l'appelant ; en mode essai.
 - Critères : aucune donnée de l'agenda au-delà des créneaux libres ; l'accord « rendez-vous » de la personne enregistré avec sa preuve au moment où elle réserve [R03] ; limites d'appels ; une réservation rend sa confirmation tout de suite ; rien ne part en mode essai.
 - Attend : H14 pour le premier appelant réel.
+
+### V09 · Confirmation à la coordonnée donnée, et journal en panne après une réservation en ligne
+- Statut : en cours
+- Qui : Claude · Relecture : normale · Dépend de : V08
+- Cahier : M05, « Réservation en ligne » ; remarques P2 de Codex sur #44.
+- Objectif : la confirmation et les rappels d'un rendez-vous réservé en ligne visent la coordonnée donnée à la réservation, même si la fiche porte un autre mail plus ancien (le contrôle central reçoit une coordonnée précise, qui doit appartenir à la fiche) ; une panne du journal après une réservation en ligne réussie rend quand même le rendez-vous et son jeton, avec un avertissement.
+- Critères : la boîte d'essai montre la confirmation adressée au mail donné, pas à l'ancien ; une coordonnée qui n'est pas à la fiche est refusée ; journal en panne après réservation : réponse 200 avec jeton et avertissement, panne notée [R13].
