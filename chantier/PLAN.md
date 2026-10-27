@@ -616,3 +616,83 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Cahier : M06, critère « un mandat test signé en moins de 10 minutes à partir de l'estimation, et numéroté au registre ».
 - Objectif : un parcours de test, de l'avis de valeur au mandat numéroté, sur une horloge simulée et des données inventées, avec le temps de chaque étape ; la marche à suivre pour le mesurer avec Shawez sur un vrai rendez-vous.
 - Critères : le parcours de test passe ; le temps passé par le système est mesuré et sous la cible ; la marche à suivre est écrite dans `docs/MESURE.md`.
+
+**M07 · Commercialiser, mars 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-27 par la voie 2. Ids `P..` pour Publier. Cahier : M07 Commercialiser ; Conformité, « Publier les annonces » ; Feuille de route, mars 2027 : « 10 annonces passent la liste de contrôle des mentions ».
+Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune publication réelle : les canaux (site, réseaux sociaux, fiche Google, portails) sont derrière une interface, avec un faux canal dans les tests, et ce qui « part » est rangé dans la boîte d'essai. Toute publication passe par la seule porte `canDiffuse` de D05 [R42], puis par la liste de contrôle des mentions [R43]. Le prix publié vient du mandat en vigueur, avenants compris, jamais d'une saisie [R44]. L'IA rédige l'annonce derrière une interface (fausse IA dans les tests, vraie IA avec H13), à partir des seules données du bien ; les mentions obligatoires sont calculées et placées par le code, jamais par l'IA ; l'agent valide. Les pages des biens de `shawez-immo` restent en place, intouchées, jusqu'à une tâche de bascule à part. Pendant la preuve à Dijon, les portails sont servis par le logiciel de l'agence ; l'export AIMMO est construit en essai et attend H10. Le numéro de carte professionnelle est un réglage du réseau (H09). Le montage de la vidéo vient avec M19 Studio ; M07 porte le plan de tournage et le contrôle « sans adresse visible ». Les biens d'exception (dossier en anglais, visites privées) viendront après la preuve. Les fichiers du socle ne sont pas touchés par la voie 2 : le code de M07 vit dans `packages/core/src/annonces/`, ses routes dans `packages/api/src/annonces.ts`, branchées par une seule ligne quand la voie 1 n'a pas `app.ts` en cours.
+
+### P01 · Fiche du bien complète
+- Statut : en cours (voie 2)
+- Qui : Claude · Relecture : forte · Dépend de : D05
+- Cahier : M07, « Fiche du bien complète » ; Conformité, « Publier les annonces » (énergie, copropriété, risques).
+- Objectif : la fiche de commercialisation d'un bien, versionnée (une modification crée une version, rien ne s'efface) : caractéristiques (surface, pièces, chambres, étage, année, chauffage, extérieurs), diagnostic énergétique (classes énergie et climat de A à G, dépenses annuelles minimale et maximale, année de référence des prix, date du diagnostic), copropriété (lot ou non, nombre de lots, charges annuelles moyennes, procédure en cours), risques (zone concernée ou non), photos et vidéo par leur référence de stockage, avec leur état « retouchée » ou « aménagement virtuel ». L'adresse exacte reste hors de la fiche publique [R19].
+- Critères : chaque champ est contrôlé (classes dans A à G, montants positifs, dépense minimale au plus égale à la maximale, date de diagnostic non future) ; une modification crée une version, l'ancienne reste lisible [R17] ; seuls l'agent du bien et la direction écrivent, et chaque refus va au journal [R16] ; aucune donnée personnelle au journal [R13].
+- Attend : rien.
+
+### P02 · Mentions obligatoires et liste de contrôle
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : P01
+- Cahier : Conformité, « Publier les annonces » ; M07, règles ; critère « 10 annonces tests passent la liste de contrôle des mentions ».
+- Objectif : une fonction du code calcule et place les mentions obligatoires d'une annonce à partir du bien et du mandat en vigueur : prix honoraires inclus en plus grand, prix hors honoraires et honoraires TTC en pourcentage quand l'acquéreur les paie ; classes énergie et climat, logement très énergivore (F ou G), dépenses annuelles avec l'année de référence ; copropriété (lots, charges, procédure) ; renvoi vers Géorisques si le bien est en zone concernée ; numéro de carte professionnelle (réglage du réseau). Une liste de contrôle rend chaque mention « présente » ou « manquante » avec sa raison.
+- Critères : 10 annonces tests passent la liste de contrôle, au caractère près [R43] ; un champ manquant bloque, avec la mention manquante nommée [R43] ; sans diagnostic énergétique, rien ne passe [R45] ; le prix vient du mandat en vigueur, avenant de prix compris, jamais d'une saisie [R44] ; pourcentage d'honoraires calculé juste et arrondi par une règle écrite.
+- Attend : H09 pour le vrai numéro de carte ; les tests utilisent un numéro inventé.
+
+### P03 · Annonce rédigée par l'IA, sourcée, validée par l'agent
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : P02
+- Cahier : M07, « Annonce » et « L'IA et l'humain » ; Conformité, non-discrimination.
+- Objectif : l'IA, derrière une interface (fausse IA dans les tests), propose un titre et un texte à partir des seules données de la fiche ; le code vérifie le texte, y ajoute les mentions de P02, et l'agent du bien le valide ou le corrige ; seule une version validée peut être publiée.
+- Jamais vu : **annonce sourcée**. Chaque chiffre et chaque fait du texte est relié au champ de la fiche dont il vient, montré à l'agent phrase par phrase ; un nombre, une surface, une année ou un équipement sans source dans la fiche rend le texte refusé, avant même la validation. Aucun réseau ni outil d'IA grand public ne prouve ainsi qu'une annonce n'invente rien.
+- Critères : un texte qui cite un nombre absent de la fiche est refusé, la phrase en cause nommée [R47] ; un texte avec une adresse exacte (numéro et voie) est refusé [R46] ; un texte avec un critère discriminant (origine, religion, situation de famille, handicap, nationalité, etc., liste fermée) est refusé [R46] ; « gratuit », « mandataire » ou une mention de l'IA sont refusés ; rien n'est publiable sans validation de l'agent du bien [R47] ; l'IA ne reçoit ni nom, ni coordonnée, ni adresse exacte [R15] ; une IA en panne laisse un texte de secours fait par le code depuis la fiche.
+- Attend : H13 pour la vraie IA.
+
+### P04 · Publication partout, au même prix, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : P03
+- Cahier : M07, « Diffusion » ; critères « publié partout en moins d'une heure, au même prix » et « changement de prix répercuté partout en moins de 15 minutes ».
+- Objectif : publier une annonce validée vers chaque canal (site, réseaux sociaux, fiche Google, portails) derrière une interface, en mode essai ; une version publiée unique, la même partout ; un changement de prix (avenant signé) ou d'état (sous offre, vendu, mandat arrêté) crée une nouvelle version poussée à chaque canal par le planificateur ; un retrait quand `canDiffuse` dit non.
+- Critères : aucune publication sans `canDiffuse` [R42], sans liste de contrôle complète [R43] ni sans validation [R47] ; même prix sur tous les canaux [R44] ; sur horloge simulée, publié partout en moins d'une heure, prix répercuté en moins de 15 minutes ; un mandat rétracté ou échu retire l'annonce partout au passage suivant ; un canal en panne est réessayé sans doublon ; rien ne part réellement.
+- Attend : rien pour l'essai ; les canaux réels plus tard (H06, H07, H10).
+
+### P05 · Page du bien et fiche PDF à la marque de l'agent
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : P04
+- Cahier : M07, « Page du bien » et « fiche PDF » ; Organisation, exigence de design (protocole, section 9).
+- Objectif : depuis la version publiée, une page HTML du bien et une fiche imprimable de deux pages au nom et aux coordonnées professionnelles de l'agent, avec prix, mentions et état (en vente, sous offre, vendu) mis à jour d'eux-mêmes ; rapide, accessible, belle sur téléphone d'abord, suivant le système de design d'AIMMO.
+- Critères : aucune adresse exacte ni nom du vendeur dans la page ou la fiche [R46] ; mentions de P02 présentes et prix inclus en plus grand [R43] ; état et prix suivent la dernière version publiée ; tout texte échappé ; fiche de deux pages au plus à l'impression.
+- Attend : rien.
+
+### P06 · Photos et vidéo sans tromper ni montrer l'adresse
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : P01
+- Cahier : M07, « Vidéo du bien » et règle de l'aménagement virtuel ; Conformité, « Photos et vidéos ».
+- Objectif : une photo marquée « aménagement virtuel » porte la mention sur l'image publiée ; un plan de tournage du bien tiré de sa fiche (pièces, extérieurs, atouts) ; un contrôle des sous-titres et du texte de la vidéo qui refuse une adresse exacte.
+- Critères : aucune image d'aménagement virtuel publiée sans sa mention [R48] ; une photo retouchée au-delà de la lumière et du cadrage est refusée ; des sous-titres avec une adresse exacte sont refusés [R46] ; plan de tournage sans rien d'inventé.
+- Attend : rien.
+
+### P07 · Export au format des portails, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : P04
+- Cahier : M07, « Diffusion », « export au format de chaque portail ».
+- Objectif : un flux d'export par portail derrière une interface, rempli depuis la version publiée, avec un format d'essai décrit dans `docs/PORTAILS.md` ; les formats réels s'ajoutent avec H10.
+- Critères : le flux porte le prix publié et les mentions [R43, R44] ; jamais d'adresse exacte [R46] ; un bien retiré sort du flux au passage suivant ; flux identique pour une même version.
+- Attend : H10 pour les vrais portails.
+
+### P08 · Mesure par bien : vues, contacts, visites
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : P04
+- Cahier : M07, « Mesure ».
+- Objectif : par bien et par semaine, les vues par canal, les contacts reçus pour ce bien (C03) et les visites (M05), lus pour le point hebdomadaire au vendeur que fera M08.
+- Critères : compte juste sur un jeu inventé, à l'heure de Paris ; aucune donnée personnelle dans la mesure ; seuls l'agent du bien et la direction la lisent [R16].
+- Attend : rien.
+
+### P09 · Routes et écran « Mettre en vente » de l'application de l'agent
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : P04, P05
+- Cahier : M07 ; Feuille de route, mars 2027 ; critère « mis en vente moins d'une heure après la fin du délai de rétractation ».
+- Objectif : les routes `/v1/annonces` (fiche, brouillon, validation, publication, état) dans `packages/api/src/annonces.ts`, et un écran de l'application de l'agent qui montre la liste de contrôle, l'annonce sourcée phrase par phrase et le bouton de validation.
+- Critères : chaque route sous R16, refus au journal ; un parcours de test complet, de la fin du délai de rétractation à la publication partout, en moins d'une heure sur horloge simulée ; écran accessible et sans texte générique.
+- Attend : rien.
