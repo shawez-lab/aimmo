@@ -83,7 +83,8 @@ export class ChronologieMandat {
         numberedAt: row.completed_at,
         steps: { valuationToDocument: seconds(valuationAt, row.doc_created), documentToCheck: seconds(row.doc_created, checkAt), checkToNumbered: seconds(checkAt, row.completed_at) },
         totalSeconds: total,
-        underTarget: total === null ? null : total <= MANDATE_TARGET_SECONDS,
+        // « En moins de 10 minutes » : comparaison stricte, sur la durée exacte, pas arrondie.
+        underTarget: valuationAt === null ? null : Date.parse(row.completed_at) - Date.parse(valuationAt) < MANDATE_TARGET_SECONDS * 1000,
       },
     };
   }

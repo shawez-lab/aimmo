@@ -104,4 +104,9 @@ describeWithSqlite('D09 · mandat signé en moins de 10 minutes à partir de l�
     expect(await chrono.read({ role: 'direction', userId: 'd', networkId: 'autre' }, r.mandateId)).toEqual({ ok: false, rule: null, code: 'unknown_mandate' });
     expect(JSON.stringify(await r.journal.all())).not.toMatch(/Léa|Exemple/);
   });
+
+  it('exactement 10 minutes n’est pas « moins de 10 minutes »', async () => {
+    const r = await parcours({ generate: 2, check: 5, sign: 10 });
+    expect(r.timeline.ok && [r.timeline.value.totalSeconds, r.timeline.value.underTarget]).toEqual([600, false]);
+  });
 });
