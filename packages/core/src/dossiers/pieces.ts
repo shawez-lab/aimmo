@@ -25,6 +25,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { ControlesOffre } from '../offres/controles-offre.ts';
+import { gateSaleFile, refuseFile, type PropertyKind } from './acces-dossier.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 
@@ -75,10 +76,11 @@ export interface ExpectedPiece {
   reason: PieceReason;
 }
 
-export type PropertyKind = 'home' | 'land' | 'building' | 'commercial' | 'business_walls' | 'business';
 
 /** Ce qui manque au bien pour dresser la liste : la fiche entière, ou la copropriété. */
 export type UnknownData = 'fiche_bien' | 'copropriete';
+
+export type { PropertyKind } from './acces-dossier.ts';
 
 export interface ExpectedList {
   pieces: ExpectedPiece[];
@@ -202,30 +204,12 @@ export class PiecesDossier {
     return `${String(viewer.role)}:${viewer.userId}`;
   }
 
-  private async refuse(viewer: Viewer, fileId: string, code: string): Promise<Refusal> {
-    await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'sale_file_pieces', code } }, this.now);
-    return { ok: false, rule: 'R16', code };
+  private refuse(viewer: Viewer, fileId: string, code: string): Promise<Refusal> {
+    return refuseFile(this.journal, this.now, viewer, fileId, 'sale_file_pieces', code);
   }
 
-  /**
-   * Le dossier, s'il est visible en entier : son bien vu en entier (agent du bien, direction, conformité), lecture écrite
-   * au journal [R16]. `write` : seul l'agent du bien.
-   */
-  private async gate(viewer: Viewer, fileId: string, write: boolean): Promise<{ ok: true; file: { id: string; network_id: string; property_id: string; buyer_person_id: string }; kind: PropertyKind } | Refusal | PieceProblem> {
-    const file = await this.db.first<{ id: string; network_id: string; property_id: string; buyer_person_id: string }>('SELECT id, network_id, property_id, buyer_person_id FROM sale_files WHERE id = ?', [fileId]);
-    if (!file || file.network_id !== viewer.networkId) {
-      await this.refuse(viewer, fileId, 'unknown');
-      return { ok: false, rule: null, code: 'unknown_file' };
-    }
-    const p = await this.acces.readProperty(viewer, file.property_id);
-    if (!p.ok) {
-      // Chaque refus est aussi écrit sous le dossier, pas seulement sous le bien [R16].
-      await this.refuse(viewer, fileId, p.code);
-      return p.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_file' } : (p as Refusal);
-    }
-    if (p.view !== 'full') return this.refuse(viewer, fileId, 'not_assigned');
-    if (write && (viewer.role !== 'agent' || viewer.userId !== p.value.agent_id)) return this.refuse(viewer, fileId, 'role');
-    return { ok: true, file, kind: p.value.kind as PropertyKind };
+  private gate(viewer: Viewer, fileId: string, write: boolean) {
+    return gateSaleFile({ db: this.db, acces: this.acces, journal: this.journal, now: this.now }, viewer, fileId, write, 'sale_file_pieces');
   }
 
   private async expected(propertyId: string, kind: PropertyKind): Promise<ExpectedList | null> {

@@ -914,6 +914,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 
 ### N02 · Échéancier du dossier et alertes à l'agent
 - Statut : en cours (voie 2)
+- Décidé (2026-10-27) : la demande unique de pièces ou de visite de la commune suspend son délai, qui reprend pour ce qui restait, au moins un mois ; toute fin d'échéance légale un samedi, un dimanche ou un jour férié est reportée au jour ouvrable suivant ; une tâche par échéance, par date et par agent responsable du bien ; une échéance sans sa date donne une tâche « à saisir »
 - Qui : Claude · Relecture : forte · Dépend de : N01
 - Cahier : M10, « Échéancier ».
 - Objectif : à la signature du compromis, l'agent saisit les dates avec leur preuve (signature, première présentation de la notification à l'acquéreur, date limite du prêt, dépôt de la déclaration d'intention d'aliéner, demande de l'état daté, date prévue de l'acte) ; le code calcule la fin de la rétractation et la date de réponse de la commune ; chaque jour, une tâche pour l'agent avant chaque échéance, une seule par échéance.
