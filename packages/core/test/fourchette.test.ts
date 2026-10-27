@@ -120,6 +120,12 @@ describe('E01 · fourchette de prix par le code', () => {
     expect(late.data).toMatchObject({ lastSale: '2025-12-30', years: [2023, 2024, 2025], source: 'DVF test', recentMissing: true, monthsSinceLastSale: 10 });
     const fresh = await range(new MemorySales(ALL), () => new Date('2026-02-15T10:00:00.000Z')).estimate(flat({}));
     expect(fresh.data).toMatchObject({ recentMissing: false, monthsSinceLastSale: 2 });
+    if (!late.ok) throw new Error(late.reason);
+    expect(late.latestUsedSale).toBe(late.comparables.map((c) => c.month).sort().at(-1));
+    // Des comparables anciens dans des données récentes : c'est la date des ventes utilisées qui est dite.
+    const old = ALL.filter((s) => s.kind === 'apartment').slice(0, 6).map((s) => ({ ...s, lat: 47.3225, lon: 5.0412, surface: 65, month: '2020-01' }));
+    const aged = await range(new MemorySales(old, { ...COVERAGE, lastSale: '2026-10-01' })).estimate(flat({}));
+    expect(aged).toMatchObject({ ok: true, latestUsedSale: '2020-01', data: { lastSale: '2026-10-01' } });
     const refused = await range().estimate(flat({ kind: 'land' }));
     expect(refused.data.lastSale).toBe('2025-12-30');
   });

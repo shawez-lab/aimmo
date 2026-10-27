@@ -85,6 +85,7 @@ export interface Adjustment {
 }
 
 export interface DataInfo {
+  /** Dernière vente publiée dans les données, toutes ventes confondues ; celle des comparables est `latestUsedSale`. */
   lastSale: string | null;
   years: readonly number[];
   source: string | null;
@@ -113,6 +114,8 @@ export type RangeResult =
       /** Médiane du prix au m² des comparables. */
       medianPerM2: number;
       margin: number;
+      /** Mois de la vente la plus récente parmi les comparables retenus, `AAAA-MM` [R28]. */
+      latestUsedSale: string;
       comparables: Comparable[];
       /** Distance de la vente retenue la plus éloignée, arrondie aux 50 m supérieurs. */
       radius: number;
@@ -284,6 +287,7 @@ export class Fourchette {
       pricePerM2: Math.round(m2),
       medianPerM2: Math.round(median),
       margin,
+      latestUsedSale: comparables.reduce((latest, c) => (c.month > latest ? c.month : latest), comparables[0]!.month),
       comparables,
       radius,
       adjustments: adj.lines.map(([label, v]) => ({ label, pct: Math.round(v * 100) })),
