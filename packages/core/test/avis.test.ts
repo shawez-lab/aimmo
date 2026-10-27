@@ -164,6 +164,27 @@ describeWithSqlite('E04 · brouillon d’avis de valeur et validation par l’ag
     expect((await u.avis.validate(u.as('agent', u.paul.id), e.id)).ok).toBe(true);
   });
 
+  it('[R30] une modification faite pendant la validation demande une nouvelle validation', async () => {
+    const w = await world();
+    const r = await w.draft();
+    const paul = w.as('agent', w.paul.id);
+    expect(await w.avis.adjust(paul, r.id, { low: 160000, high: 160000 })).toMatchObject({ ok: false, code: 'invalid_range' });
+    // Le texte change entre la lecture de la validation et son écriture.
+    const original = w.avis.get.bind(w.avis);
+    let first = true;
+    w.avis.get = async (id: string) => {
+      const seen = await original(id);
+      if (first) {
+        first = false;
+        await w.db.run("UPDATE valuation_reports SET text = 'Votre bien est lumineux.', updated_at = ? WHERE id = ?", ['2026-10-27T09:00:01.000Z', id]);
+      }
+      return seen;
+    };
+    expect(await w.avis.validate(paul, r.id)).toMatchObject({ ok: false, code: 'changed_meanwhile' });
+    w.avis.get = original;
+    expect((await w.avis.get(r.id))?.status).toBe('draft');
+  });
+
   it('une surface décimale s’écrit à la française et passe le contrôle', async () => {
     const w = await world();
     const r = await w.avis.draft({ networkId: w.net.id, propertyId: w.property.id, kind: 'apartment', surface: 65.5, range: await range() });

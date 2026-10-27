@@ -70,7 +70,7 @@ export interface ValuationReport {
   validated_at: string | null;
 }
 
-export type AvisRefusal = 'unknown' | 'not_following_agent' | 'already_validated' | 'not_validated' | 'invalid_range' | 'text_refused' | 'range_not_in_text';
+export type AvisRefusal = 'unknown' | 'not_following_agent' | 'already_validated' | 'not_validated' | 'invalid_range' | 'text_refused' | 'range_not_in_text' | 'changed_meanwhile';
 export type AvisResult<T> = { ok: true; value: T } | { ok: false; rule: 'R30'; code: AvisRefusal };
 
 export interface DraftInput {
@@ -295,7 +295,7 @@ export class AvisDeValeur {
     const r = found.value;
     const low = change.low ?? r.agent_low ?? r.computed_low;
     const high = change.high ?? r.agent_high ?? r.computed_high;
-    if (!Number.isInteger(low) || !Number.isInteger(high) || low <= 0 || high < low) return { ok: false, rule: 'R30', code: 'invalid_range' };
+    if (!Number.isInteger(low) || !Number.isInteger(high) || low <= 0 || high <= low) return { ok: false, rule: 'R30', code: 'invalid_range' };
     const rangeChanged = change.low !== undefined || change.high !== undefined;
     const computed = JSON.parse(r.computed) as { figures: (string | number)[]; footer: string };
     const before = { low: r.agent_low ?? r.computed_low, high: r.agent_high ?? r.computed_high };
@@ -337,12 +337,13 @@ export class AvisDeValeur {
       return { ok: false, rule: 'R30', code: 'range_not_in_text' };
     }
     const at = this.now().toISOString();
-    await this.db.run("UPDATE valuation_reports SET status = 'validated', validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ? AND status = 'draft'", [
-      viewer.userId,
-      at,
-      at,
-      id,
-    ]);
+    // On valide la version vérifiée, et elle seule : une modification faite entre-temps demande une nouvelle validation.
+    const done = await this.db.run(
+      `UPDATE valuation_reports SET status = 'validated', validated_by = ?, validated_at = ?, updated_at = ?
+       WHERE id = ? AND status = 'draft' AND text = ? AND agent_low IS ? AND agent_high IS ? AND updated_at = ?`,
+      [viewer.userId, at, at, id, r.text, r.agent_low, r.agent_high, r.updated_at],
+    );
+    if (done.changes !== 1) return { ok: false, rule: 'R30', code: 'changed_meanwhile' };
     const validated = (await this.get(id))!;
     await this.log('avis.valide', `agent:${viewer.userId}`, validated, {});
     return { ok: true, value: validated };
