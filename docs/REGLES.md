@@ -61,4 +61,4 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R56 | Offres transmises. Toute offre reçue est enregistrée dans le registre chaîné du bien et transmise au vendeur ; une offre non transmise est signalée, et toute modification du registre après coup est détectée. | oui | O01, O03, O06 |
 | R57 | Aucune décision automatique sur une offre. Aucun programme n'accepte, ne refuse, ne contre-propose une offre ni ne négocie un prix : seule une réponse du vendeur, rapportée par l'agent avec sa preuve, change l'état d'une offre. | oui | O03, O04, O06 |
 | R58 | Identité avant compromis. Aucun compromis préparé tant que l'identité de chaque acquéreur n'est pas vérifiée. | non | O07 |
-| R59 | Validité des offres. La durée de validité d'une offre est suivie ; l'agent est prévenu avant l'échéance, et une offre échue ne peut plus être acceptée. | non | O05 |
+| R59 | Validité des offres. La durée de validité d'une offre est suivie ; l'agent est prévenu avant l'échéance, et une offre échue ne peut plus être acceptée. | oui | O03, O05 |
