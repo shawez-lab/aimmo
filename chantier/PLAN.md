@@ -808,7 +808,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P11 · Passage de publication : une panne d'un réseau n'arrête pas les autres
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (`packages/api/src/vitrine.ts`) · Relecture : normale · Dépend de : P10
 - Cahier : M07.
 - Objectif : dans `runListingSync`, chaque réseau passe dans son propre essai : une panne va au journal, sans donnée, le réseau suivant passe, et le créneau est marqué en erreur à la fin (comme `offres.quotidien`, O09).
