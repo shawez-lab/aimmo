@@ -389,14 +389,16 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Critères : aucun créneau hors des disponibilités de l'agent ni sur un événement occupé [R33] ; aucun créneau qui chevauche un rendez-vous ou ne laisse pas le temps de trajet [R32] ; heure de Paris, changement d'heure compris ; un appel ne demande pas de trajet.
 
 ### V02 · Réservation, confirmation et annulation
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : la confirmation est un envoi d'initiative (heures d'envoi R01, accord « rendez-vous » R03) ; refusée pour l'heure, elle attend V04. Plages et trajet en multiples de 5 minutes.
+- Reste : relecture de Codex de la dernière version restée en cours près de 30 min, fusion sans elle (#38), toutes ses remarques précédentes corrigées.
 - Qui : Claude · Relecture : forte · Dépend de : V01
 - Cahier : M05, « Réservation en ligne » et « Critères d'acceptation ».
 - Objectif : la table des rendez-vous ; réserver un créneau libre de façon atomique, confirmer tout de suite par le contrôle central (mode essai), décaler ou annuler par un lien à jeton ; le créneau annulé redevient libre aussitôt.
 - Critères : deux réservations du même créneau en même temps, une seule passe [R32] ; une annulation libère le créneau en moins d'une minute ; 10 rendez-vous tests sans doublon ni oubli ; le lien ne porte ni nom ni coordonnée, et ne sert qu'à son rendez-vous.
 
 ### V03 · Agenda Google derrière une interface
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : V02
 - Cahier : M05, « Branchements » (API Google Agenda, dans les deux sens).
 - Objectif : lire les événements occupés de l'agent et écrire ses rendez-vous dans son agenda, derrière une interface ; un faux agenda dans les tests ; une modification faite dans l'agenda revient sur le rendez-vous.
@@ -408,7 +410,7 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Qui : Claude · Relecture : normale · Dépend de : V02, B02
 - Cahier : M05, « Rappels » et « Règles ».
 - Objectif : par le planificateur, un rappel la veille et un le jour même, avec le lien pour décaler ou annuler, par le contrôle central, en mode essai.
-- Critères : aucun rappel le dimanche ni hors des heures d'envoi [R01] ; un rappel de chaque sorte au plus par rendez-vous [R05] ; rien pour un rendez-vous annulé ; jamais à une personne exclue ou qui a demandé l'arrêt [R02, R04].
+- Critères : aucun rappel le dimanche ni hors des heures d'envoi [R01] ; un rappel de chaque sorte au plus par rendez-vous [R05] ; rien pour un rendez-vous annulé ; jamais à une personne exclue ou qui a demandé l'arrêt [R02, R04] ; les confirmations en attente (`confirmation_status = 'waiting'`, refusées pour l'heure en V02) partent au premier créneau des heures d'envoi.
 
 ### V05 · Brief du rendez-vous
 - Statut : à faire
@@ -436,5 +438,5 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Qui : Claude · Relecture : forte · Dépend de : V02
 - Cahier : M05, « Réservation en ligne ».
 - Objectif : des routes de l'API pour lister les créneaux libres d'un agent et réserver, appelées par le site, l'assistant et l'espace client, avec la clé de l'appelant ; en mode essai.
-- Critères : aucune donnée de l'agenda au-delà des créneaux libres ; limites d'appels ; une réservation rend sa confirmation tout de suite ; rien ne part en mode essai.
+- Critères : aucune donnée de l'agenda au-delà des créneaux libres ; l'accord « rendez-vous » de la personne enregistré avec sa preuve au moment où elle réserve [R03] ; limites d'appels ; une réservation rend sa confirmation tout de suite ; rien ne part en mode essai.
 - Attend : H14 pour le premier appelant réel.
