@@ -905,7 +905,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Qui : Claude · Relecture : forte · Dépend de : O07
 - Cahier : M10, « Dossier notaire » ; Conformité, données minimales.
 - Objectif : la liste des pièces attendues pour un dossier de vente, calculée par des règles écrites selon le bien (titre de propriété, diagnostics, documents de copropriété pour un lot, fiches de renseignements du vendeur et de l'acquéreur) ; l'agent range chaque pièce reçue par sa référence de stockage, datée et attribuée ; la liste des pièces manquantes ; le dossier est « complet » quand rien ne manque.
-- Critères : la liste dépend seulement des données du bien, la même pour tous [R60] ; une pièce reçue ne s'efface ni ne change, une nouvelle version s'ajoute [R17] ; une pièce d'identité, un document anti-blanchiment ou un RIB sont refusés comme pièce, l'identité n'y figure que comme état vérifié [R15] ; seul l'agent du dossier y accède [R16] ; 3 dossiers tests (maison, appartement en copropriété, terrain) arrivent à « complet ».
+- Critères : la liste dépend seulement des données du bien, la même pour tous [R60] ; une pièce reçue ne s'efface ni ne change, une nouvelle version s'ajoute [R17] ; une pièce d'identité, un document anti-blanchiment ou un RIB sont refusés comme pièce, l'identité n'y figure que comme état vérifié [R15] ; seul l'agent du dossier range une pièce, l'agent, la direction et la conformité lisent [R16] ; 3 dossiers tests (maison, appartement en copropriété, terrain) arrivent à « complet ».
 - Attend : rien.
 
 ### N02 · Échéancier du dossier et alertes à l'agent
