@@ -51,7 +51,7 @@ export interface AssistantConfig {
 /** Ce que le visiteur apprend du sort de son message : jamais si la personne est exclue ou connue [R02, R16]. */
 export type AssistantStatus = 'ready' | 'with_agent' | 'none';
 
-const VISITOR = /^[A-Za-z0-9_-]{16,128}$/;
+export const VISITOR = /^[A-Za-z0-9_-]{16,128}$/;
 const MESSAGE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SESSION = /^[0-9a-f]{64}$/;
 const MAX_BODY_BYTES = 10_000;
@@ -92,7 +92,7 @@ const bucketOf = (at: Date): string => at.toISOString().slice(0, 13);
  * Prend une place dans la limite, en une seule instruction : deux appels simultanés ne la dépassent pas.
  * Rend faux si la limite est atteinte.
  */
-async function takeSlot(db: SqlDatabase, networkId: string, scope: string, cap: number, at: Date): Promise<boolean> {
+export async function takeSlot(db: SqlDatabase, networkId: string, scope: string, cap: number, at: Date): Promise<boolean> {
   const bucket = bucketOf(at);
   const { changes } = await db.run(
     `INSERT INTO assistant_calls (id, network_id, scope, bucket, created_at)

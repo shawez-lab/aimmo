@@ -6,3 +6,4 @@ export * from './courrier.ts';
 export * from './meta.ts';
 export * from './assistant.ts';
 export * from './planificateur.ts';
+export * from './estimation.ts';
