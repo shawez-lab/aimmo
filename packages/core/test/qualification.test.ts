@@ -102,6 +102,14 @@ describeWithSqlite('Q01 · qualification d’un message rattaché', () => {
     ]);
   });
 
+  it('[R14] un candidat à une location est qualifié, sans aucune note', async () => {
+    const t = await setup();
+    const q = (await t.qualification.qualify(await t.form('Je cherche une location à Dijon, un T2, au plus vite.')))!;
+    expect(q).toMatchObject({ category: 'buyer', route: 'M15' });
+    expect(await t.qualification.scoreOf(q)).toBeNull();
+    expect(await t.db.all('SELECT * FROM contact_scores')).toEqual([]);
+  });
+
   it('[R18] un message n’est qualifié qu’une fois, même deux fois en même temps', async () => {
     const t = await setup();
     const id = await t.form('Je souhaite vendre ma maison à Daix.');

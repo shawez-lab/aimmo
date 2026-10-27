@@ -250,15 +250,17 @@ export class Qualification {
     return stored;
   }
 
-  /** La note de la qualification, par barème fixe, rangée une seule fois [R24]. */
-  async scoreOf(row: QualificationRow): Promise<ContactScoreRow> {
+  /** La note de la qualification, par barème fixe, rangée une seule fois [R24] ; aucune pour un candidat à une location [R14]. */
+  async scoreOf(row: QualificationRow): Promise<ContactScoreRow | null> {
     const score = scoreContact({
       category: row.category,
+      route: row.route,
       deadline: row.deadline,
       city: row.city,
       criteria: parseCriteria(row.criteria),
       propertyRecognized: row.property_id !== null,
     });
+    if (score === null) return null;
     await this.db.run(
       `INSERT INTO contact_scores (qualification_id, network_id, person_id, score, temperature, reason, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (qualification_id) DO NOTHING`,

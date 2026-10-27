@@ -9,7 +9,7 @@ import type { Category, Deadline, Qualified } from './regles.ts';
 
 export type Temperature = 'cold' | 'warm' | 'hot';
 
-export interface ScoreInput extends Pick<Qualified, 'category' | 'deadline' | 'city' | 'criteria'> {
+export interface ScoreInput extends Pick<Qualified, 'category' | 'route' | 'deadline' | 'city' | 'criteria'> {
   propertyRecognized: boolean;
 }
 
@@ -64,7 +64,14 @@ const DEADLINE_FR: Record<Deadline, string> = {
 
 const TEMPERATURE_FR: Record<Temperature, string> = { hot: 'chaud', warm: 'tiède', cold: 'froid' };
 
-export function scoreContact(input: ScoreInput, settings: ScoreSettings = DEFAULT_SCORE_SETTINGS): Score {
+/** Un candidat à une location : il ne reçoit aucune note, jamais [R14]. Il part vers M15. */
+export function isRentalApplicant(input: Pick<Qualified, 'category' | 'route'>): boolean {
+  return input.category !== 'rent_out' && input.route === 'M15';
+}
+
+/** La note du contact ; null pour un candidat à une location, qu'aucune note ne classe [R14]. */
+export function scoreContact(input: ScoreInput, settings: ScoreSettings = DEFAULT_SCORE_SETTINGS): Score | null {
+  if (isRentalApplicant(input)) return null;
   // Un partenaire ou un message indésirable n'est pas un contact à rappeler : zéro, froid, quoi qu'il dise.
   if (input.category === 'partner' || input.category === 'spam') {
     return { score: 0, temperature: 'cold', reason: `${CATEGORY_FR[input.category]} : 0, froid.` };

@@ -3,6 +3,7 @@ import { CATEGORIES, DEADLINES, FINANCINGS, qualifyByRules, scoreContact, type S
 
 const input = (over: Partial<ScoreInput> = {}): ScoreInput => ({
   category: 'buyer',
+  route: null,
   deadline: null,
   city: null,
   criteria: [],
@@ -14,7 +15,7 @@ describe('Q02 · note et température par barème fixe', () => {
   it('[R24] chaque note a sa raison en une ligne, sans donnée personnelle, et le même contact a la même note', () => {
     for (const category of CATEGORIES) {
       for (const deadline of [null, ...DEADLINES]) {
-        const s = scoreContact(input({ category, deadline, city: 'Talant', propertyRecognized: true }));
+        const s = scoreContact(input({ category, deadline, city: 'Talant', propertyRecognized: true }))!;
         expect(s.score).toBeGreaterThanOrEqual(0);
         expect(s.score).toBeLessThanOrEqual(100);
         expect(s.reason).not.toMatch(/\n/);
@@ -32,11 +33,17 @@ describe('Q02 · note et température par barème fixe', () => {
       temperature: 'hot',
       reason: 'Vendeur, délai immédiat, commune donnée : 70, chaud.',
     });
-    expect(scoreContact(input({ category: 'buyer', propertyRecognized: true, deadline: 'within_3_months' })).temperature).toBe('hot');
-    expect(scoreContact(input({ category: 'buyer' })).temperature).toBe('cold');
-    expect(scoreContact(input({ category: 'curious', deadline: 'now', propertyRecognized: true })).temperature).toBe('warm');
+    expect(scoreContact(input({ category: 'buyer', propertyRecognized: true, deadline: 'within_3_months' }))!.temperature).toBe('hot');
+    expect(scoreContact(input({ category: 'buyer' }))!.temperature).toBe('cold');
+    expect(scoreContact(input({ category: 'curious', deadline: 'now', propertyRecognized: true }))!.temperature).toBe('warm');
     expect(scoreContact(input({ category: 'partner', deadline: 'now', propertyRecognized: true }))).toMatchObject({ score: 0, temperature: 'cold' });
     expect(scoreContact(input({ category: 'spam', deadline: 'now' }))).toMatchObject({ score: 0, temperature: 'cold' });
+  });
+
+  it('[R14] un candidat à une location ne reçoit aucune note ; un propriétaire qui met en location, si', () => {
+    expect(scoreContact(input({ category: 'buyer', route: 'M15', deadline: 'now', propertyRecognized: true }))).toBeNull();
+    expect(scoreContact(input({ category: 'curious', route: 'M15' }))).toBeNull();
+    expect(scoreContact(input({ category: 'rent_out', route: 'M15', deadline: 'now' }))).toMatchObject({ temperature: 'warm' });
   });
 
   it('[R14] [R24] la note ne dépend ni du financement, ni de la valeur du budget, ni de rien sur la personne', () => {
