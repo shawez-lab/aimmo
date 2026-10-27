@@ -755,7 +755,8 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P06 · Photos et vidéo sans tromper ni montrer l'adresse
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : la version publiée porte ses médias, la mention « Aménagement virtuel » à poser sur l'image ; une vidéo ne part qu'après un dernier contrôle réussi de ses sous-titres et de sa légende, lus un par un, à la suite et entiers ; un point d'abréviation ne coupe plus une phrase ; voies abrégées reconnues
 - Qui : Claude · Relecture : normale · Dépend de : P01
 - Cahier : M07, « Vidéo du bien » et règle de l'aménagement virtuel ; Conformité, « Photos et vidéos ».
 - Objectif : une photo marquée « aménagement virtuel » porte la mention sur l'image publiée ; un plan de tournage du bien tiré de sa fiche (pièces, extérieurs, atouts) ; un contrôle des sous-titres et du texte de la vidéo qui refuse une adresse exacte.
@@ -763,7 +764,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P07 · Export au format des portails, en mode essai
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : P04
 - Cahier : M07, « Diffusion », « export au format de chaque portail ».
 - Objectif : un flux d'export par portail derrière une interface, rempli depuis la version publiée, avec un format d'essai décrit dans `docs/PORTAILS.md` ; les formats réels s'ajoutent avec H10.
