@@ -23,7 +23,7 @@ export const DOCUMENT_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif', '
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
 
 /** D'où vient la valeur d'un champ : la base, une saisie de l'agent, ou la signature (rempli plus tard). */
-type FieldSource = 'base' | 'saisie' | 'signature';
+export type FieldSource = 'base' | 'saisie' | 'signature';
 export const TEMPLATE_FIELDS: Readonly<Record<string, { source: FieldSource; label: string }>> = Object.freeze({
   'mandant.nom': { source: 'base', label: 'nom du mandant' },
   'bien.reference': { source: 'base', label: 'référence du bien' },
@@ -121,7 +121,12 @@ const PRINT_CSS =
  * Le document rendu en HTML imprimable. Le texte du modèle et chaque valeur sont échappés ; un champ absent est
  * montré « à compléter », un champ de signature « à la signature » ; un document d'essai porte un bandeau.
  */
-export function renderDocument(body: string, values: Readonly<Record<string, string | null>>, options: { title: string; trial: boolean }): string {
+export function renderDocument(
+  body: string,
+  values: Readonly<Record<string, string | null>>,
+  options: { title: string; trial: boolean; fields?: Readonly<Record<string, { source: FieldSource; label: string }>> },
+): string {
+  const registry = options.fields ?? TEMPLATE_FIELDS;
   const paragraphs = body.replace(/\r\n?/g, '\n').split(/\n{2,}/);
   const html = paragraphs
     .map((paragraph) => {
@@ -132,9 +137,9 @@ export function renderDocument(body: string, values: Readonly<Record<string, str
       for (const m of text.matchAll(PLACEHOLDER)) {
         out += escapeHtml(text.slice(last, m.index));
         const name = m[1]!;
-        const field = TEMPLATE_FIELDS[name]!;
+        const field = registry[name]!;
         const value = values[name];
-        if (field.source === 'signature') out += signatureSpan(name);
+        if (field.source === 'signature') out += `<span class="a-signer">[${escapeHtml(field.label)} à la signature]</span>`;
         else if (value === null || value === undefined) out += `<span class="manque">[à compléter : ${escapeHtml(field.label)}]</span>`;
         else out += escapeHtml(value);
         last = m.index + m[0].length;
