@@ -487,14 +487,14 @@ Décidé, lecture prudente : la première version, pour la preuve à Dijon, couv
 - Critères : aucun mandat sans source [R38] ; source interdite refusée avec sa règle [R37] ; compte du mois juste sur un jeu inventé ; rien ne s'efface [R17].
 
 ### G04 · Suivi de valeur, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : G01, E06
 - Cahier : M20, point 2 « Suivi de valeur ».
 - Objectif : un propriétaire qui l'a demandé, avec son accord enregistré pour ce suivi, reçoit à intervalle réglé (6 mois) la fourchette de sa commune, par le planificateur et le contrôle central, en mode essai ; quand il répond qu'il pense à vendre, l'agent est alerté et le plan du jour le porte en tête des rendez-vous à proposer.
 - Critères : jamais sans accord en cours pour ce suivi [R03, R36] ; un envoi par période au plus [R05], dans les heures d'envoi [R01] ; seule la fourchette de la commune, jamais le prix d'un bien précis [R31] ; rien ne part en mode essai [R26].
 
 ### G05 · Contrôle de la base légale sur 30 jours
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : G02
 - Cahier : M20, « Critères d'acceptation » : « aucun contact sans base légale dans le plan, sur 30 jours ».
 - Objectif : un contrôle qui relit les plans figés des 30 derniers jours et vérifie, ligne par ligne, que chaque personne avait une base légale au jour du plan ; un rapport sans donnée personnelle, et une alerte à la direction s'il trouve un écart.
