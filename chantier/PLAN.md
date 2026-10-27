@@ -302,7 +302,8 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Reste : remarque mineure de Codex (#26) : tâches portées par une fiche réunie à une fiche visible ; relecture forte (1 P1 corrigé), Codex sans P0 ni P1.
 
 ### Q05 · Qualification dans la chaîne de captation, et mesure sur cas réels
-- Statut : fait (2026-10-27), sauf la mesure réelle qui attend H13 et H18
+- Statut : fait (2026-10-27)
+- Reste : la mesure réelle, qui attend H13 et H18.
 - Qui : Claude · Relecture : forte · Dépend de : Q04, C08
 - Cahier : M03, « Critères d'acceptation » ; Feuille de route, décembre 2026.
 - Objectif : brancher Q01 à Q04 derrière chaque message reçu, en mode essai, et un banc de mesure qui compare le classement à celui de Shawez sur des cas anonymisés, sans aucune donnée personnelle dans le dépôt.

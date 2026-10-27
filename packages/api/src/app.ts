@@ -1,7 +1,10 @@
 import {
   AIMMO_VERSION,
   ATTRIBUTION_RULES,
+  AUTOMATION_NAMES,
   Acces,
+  Automatisations,
+  REF_PATTERN,
   DEFAULT_ATTRIBUTION_SETTINGS,
   CHANNELS,
   DecisionEnvoi,
@@ -21,6 +24,7 @@ import {
   personSubject,
   verifyChain,
   type AccessResult,
+  type Automation,
   type Channel,
   type JournalStore,
   type SendKind,
@@ -317,6 +321,55 @@ async function intakeForm(request: Request, config: ApiConfig, now: () => Date):
   }
 }
 
+/** Une adresse plausible, sans la normaliser ici : la fiche le fait, et une adresse inconnue est simplement refusée. */
+const MAX_EMAIL_LENGTH = 254;
+const MAX_TEXT_LENGTH = 4_000;
+const MAX_FIGURES = 30;
+
+/**
+ * Une automatisation du site demande si son envoi peut partir (B01), en mode essai : le socle décide par le contrôle
+ * central et n'envoie rien [R26]. La clé `site_auto` ne lit aucune fiche : seule la décision et sa règle reviennent.
+ */
+async function automationSend(request: Request, config: ApiConfig, now: () => Date): Promise<Response> {
+  if (request.method !== 'POST') return failure(405, 'method_not_allowed', 'Méthode non admise.');
+  const keys = parseIntakeKeys(config.intakeKeys);
+  if (keys === null) return failure(503, 'keys_not_configured', 'Demandes fermées : aucune clé configurée.');
+  const intake = await intakeFromRequest(request, keys, 'site_auto');
+  if (intake === null) return failure(401, 'unauthorized', 'Clé absente ou refusée.');
+  const body = await readJson(request);
+  if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+  const { automation, email, ref, text, figures } = body;
+  if (typeof automation !== 'string' || !(AUTOMATION_NAMES as readonly string[]).includes(automation)) {
+    return failure(400, 'invalid_automation', `automation attendue parmi : ${AUTOMATION_NAMES.join(', ')}.`);
+  }
+  if (typeof email !== 'string' || email.length > MAX_EMAIL_LENGTH || !email.includes('@')) return failure(400, 'invalid_email', 'email manquant ou mal formé.');
+  if (typeof ref !== 'string' || !REF_PATTERN.test(ref)) return failure(400, 'invalid_ref', 'ref manquante ou mal formée.');
+  if (typeof text !== 'string' || text.trim() === '' || text.length > MAX_TEXT_LENGTH) return failure(400, 'invalid_text', 'text manquant ou trop long.');
+  if (
+    figures !== undefined &&
+    (!Array.isArray(figures) ||
+      figures.length > MAX_FIGURES ||
+      !figures.every((f) => (typeof f === 'string' && f.length <= 40) || (typeof f === 'number' && Number.isFinite(f))))
+  ) {
+    return failure(400, 'invalid_figures', 'figures doit être une courte liste de nombres ou de textes courts.');
+  }
+  const journal = new SqlJournalStore(config.db);
+  try {
+    const decision = await new Automatisations(config.db, journal, { now }).request({
+      networkId: intake.networkId,
+      automation: automation as Automation,
+      email,
+      ref,
+      text,
+      ...(figures === undefined ? {} : { figures: figures as (string | number)[] }),
+    });
+    return json(200, { ok: true, mode: TRIAL_MODE, sent: false, data: { status: decision.status, rule: decision.rule, code: decision.code, reason: decision.reason } });
+  } catch (error) {
+    await journalError(journal, 'intake:site_auto', 'automatisations.envoi', error, now);
+    return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+  }
+}
+
 /** Jamais d'erreur avalée : une ligne au journal, sans le détail qui pourrait porter une donnée [R13]. */
 export async function journalError(journal: JournalStore, actor: string, route: string, error: unknown, now: () => Date): Promise<void> {
   try {
@@ -344,6 +397,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   }
 
   if (path === '/captation/formulaire') return intakeForm(request, config, now);
+
+  if (path === '/automatisations/envoi') return automationSend(request, config, now);
 
   if (path === ASSISTANT_PATH || path.startsWith(`${ASSISTANT_PATH}/`)) {
     try {
