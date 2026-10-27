@@ -3,3 +3,4 @@ export * from './fiche-bien.ts';
 export * from './mentions.ts';
 export * from './annonce-sourcee.ts';
 export * from './annonces.ts';
+export * from './publication.ts';
