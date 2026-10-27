@@ -38,7 +38,39 @@ export const MANDATE_SOURCE_LABELS: Readonly<Record<MandateSource, string>> = Ob
 });
 
 /** Sources interdites [R37] : refusées par leur nom, même tapées à la main. */
-export const FORBIDDEN_SOURCES: readonly string[] = Object.freeze(['purchased_list', 'public_sales', 'dvf', 'bought_list']);
+export const FORBIDDEN_SOURCES: readonly string[] = Object.freeze([
+  'purchased_list',
+  'bought_list',
+  'public_sales',
+  'dvf',
+  'liste_achetee',
+  'fichier_achete',
+  'ventes_publiques',
+  'valeurs_foncieres',
+]);
+
+/** Un texte ramené à des mots simples : minuscules, sans accents, apostrophes, tirets et soulignés en espaces. */
+function plain(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/** Un code de source ramené à sa forme simple : `Liste-achetée` → `liste_achetee`. */
+const sourceCode = (raw: string): string => plain(raw).replace(/ /g, '_');
+
+const BUY_WORD = /\b(achat|achats|achet\w*|pay[ea]\w*|lou[ea]\w*|acqui\w*|bought|purchas\w*)\b/;
+const FILE_WORD = /\b(listes?|listings?|fichiers?|bases?|adresses?|contacts?|leads?|lists?)\b/;
+const PUBLIC_SALES = /\bdvf\b|\bventes? publiques?\b|\bdonnees? (publiques? )?de ventes?\b|\bvaleurs? foncieres?\b|\bpublic sales\b/;
+
+/** Une source interdite écrite en clair, dans un code ou dans le détail d'« autre » [R37]. */
+export function isForbiddenSource(text: string): boolean {
+  const t = plain(text);
+  return PUBLIC_SALES.test(t) || (BUY_WORD.test(t) && FILE_WORD.test(t));
+}
 
 /**
  * La source d'une fiche, par le canal de sa première source connue. Un canal d'import d'outil (GoHighLevel, ManyChat)
@@ -53,9 +85,6 @@ const CHANNEL_SOURCES: Readonly<Record<string, { kind: MandateSource; detail: st
   whatsapp: { kind: 'other', detail: 'WhatsApp' },
   email: { kind: 'other', detail: 'mail reçu' },
 });
-
-/** Les mêmes sources interdites, écrites en clair dans le détail d'« autre » [R37]. */
-const FORBIDDEN_DETAIL = /(liste|fichier|base)s?\s+(de\s+\S+\s+)?achet|\bdvf\b|ventes?\s+publiques?|donn[ée]es\s+de\s+ventes|valeurs?\s+fonci[eè]res?/i;
 
 const DETAIL_MAX = 80;
 
@@ -112,12 +141,12 @@ export class Mandats {
   /** Range un mandat signé, avec sa source ; seul l'agent qui suit la fiche, ou la direction, le range [R16]. */
   async record(acces: Acces, viewer: Viewer, input: NewMandate): Promise<MandateResult> {
     if (!(input.signedAt instanceof Date) || Number.isNaN(input.signedAt.getTime())) return { ok: false, rule: null, code: 'bad_date' };
-    const raw = typeof input.source === 'string' ? input.source.trim().toLowerCase() : null;
-    if (raw !== null && FORBIDDEN_SOURCES.includes(raw)) return { ok: false, rule: 'R37', code: 'forbidden_source' };
+    const raw = typeof input.source === 'string' ? sourceCode(input.source) : null;
+    if (raw !== null && (FORBIDDEN_SOURCES.includes(raw) || isForbiddenSource(input.source as string))) return { ok: false, rule: 'R37', code: 'forbidden_source' };
     if (raw !== null && raw !== '' && !(MANDATE_SOURCES as readonly string[]).includes(raw)) return { ok: false, rule: 'R38', code: 'unknown_source' };
     const detail = typeof input.sourceDetail === 'string' && input.sourceDetail.trim() !== '' ? input.sourceDetail.trim() : null;
     if (detail !== null && detail.length > DETAIL_MAX) return { ok: false, rule: 'R38', code: 'detail_too_long' };
-    if (detail !== null && FORBIDDEN_DETAIL.test(detail)) return { ok: false, rule: 'R37', code: 'forbidden_source' };
+    if (detail !== null && isForbiddenSource(detail)) return { ok: false, rule: 'R37', code: 'forbidden_source' };
 
     const read = await acces.readFiche(viewer, input.personId);
     if (!read.ok) return read;
@@ -197,6 +226,12 @@ export class Mandats {
       const decision = await acces.canSeeFigures(viewer, target);
       if (!decision.allowed) return { ok: false, rule: 'R16', code: decision.code };
     } else if (viewer.role !== 'direction') {
+      // Le refus est écrit au journal, comme tout refus de lecture [R13, R16].
+      await appendEvent(
+        this.journal,
+        { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'figures', code: 'role', month } },
+        this.now,
+      );
       return { ok: false, rule: 'R16', code: 'role' };
     }
     // Les bornes du mois, heure de Paris : on prend large en temps universel, puis on garde le mois local exact.

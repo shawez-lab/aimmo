@@ -55,16 +55,18 @@ describeWithSqlite('G03 · chaque mandat a sa source', () => {
     const t = await setup();
     const a = await t.person(t.alex.id, 'Léa');
     const me = t.as('agent', t.alex.id);
-    for (const source of ['purchased_list', 'public_sales', 'DVF']) {
+    for (const source of ['purchased_list', 'public_sales', 'DVF', 'liste_achetee', 'Ventes-publiques', 'purchased-list', 'fichier acheté']) {
       expect(await t.mandats.record(t.acces, me, { personId: a, signedAt: new Date(NOW), source })).toEqual({ ok: false, rule: 'R37', code: 'forbidden_source' });
     }
-    for (const sourceDetail of ['liste achetée chez un courtier', 'fichier de propriétaires acheté', 'ventes publiques DVF', 'données de ventes du quartier']) {
+    for (const sourceDetail of ['liste achetée chez un courtier', 'fichier de propriétaires acheté', 'ventes publiques DVF', 'données de ventes du quartier', 'liste d’adresses achetée', "liste d'adresses achetée", 'fichier propriétaires acheté', 'achat de fichier', 'listing payé', 'base de contacts louée', 'valeurs foncières']) {
       expect(await t.mandats.record(t.acces, me, { personId: a, signedAt: new Date(NOW), source: 'other', sourceDetail })).toEqual({ ok: false, rule: 'R37', code: 'forbidden_source' });
     }
     await expect(
       t.db.run(`INSERT INTO mandates (id, network_id, agent_id, person_id, signed_at, source_kind, recorded_by, created_at) VALUES ('x', ?, ?, ?, ?, 'purchased_list', 'test', ?)`, [t.network.id, t.alex.id, a, new Date(NOW).toISOString(), new Date(NOW).toISOString()]),
     ).rejects.toThrow();
     expect(await t.db.all('SELECT id FROM mandates')).toEqual([]);
+    // Un détail honnête qui contient un de ces mots seul reste admis.
+    expect(await t.mandats.record(t.acces, me, { personId: a, signedAt: new Date(NOW), source: 'other', sourceDetail: 'achat d’une maison voisine' })).toMatchObject({ ok: true });
   });
 
   it('[R16] seul l’agent qui suit la fiche, ou la direction, range un mandat', async () => {
@@ -98,7 +100,10 @@ describeWithSqlite('G03 · chaque mandat a sa source', () => {
     const january = await t.mandats.monthly(t.acces, t.as('direction', 'dir-1'), '2027-01');
     expect(january.ok && january.value.bySource.portal).toBe(1);
     expect(await t.mandats.monthly(t.acces, me, '2027-02', t.sam.id)).toMatchObject({ ok: true, value: { agentId: t.alex.id } });
+    const before = (await t.journal.all()).length;
     expect(await t.mandats.monthly(t.acces, t.as('partner', 'p-1'), '2027-02')).toMatchObject({ ok: false, rule: 'R16' });
+    // [R16] le refus est écrit au journal.
+    expect((await t.journal.all()).slice(before).map((e) => [e.type, e.data.code])).toEqual([['acces.refuse', 'role']]);
     expect(await t.mandats.monthly(t.acces, me, '2027-13')).toEqual({ ok: false, rule: null, code: 'bad_month' });
     expect(JSON.stringify(network)).not.toMatch(/Inventé|Léa|Paul/);
     // Le journal ne porte ni le détail de la source ni un nom.
