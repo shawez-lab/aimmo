@@ -24,6 +24,8 @@ export interface Env {
   META_APP_IDS?: string;
   /** Adresse publique des fichiers DVF du site, lus en lecture seule (E05), par exemple `https://…/donnees-dvf/`. */
   DVF_BASE_URL?: string;
+  /** Début du lien pour décaler ou annuler un rendez-vous (V04), en https, sans chiffre, terminé par `/`. */
+  RDV_LINK_BASE?: string;
 }
 
 /**
@@ -55,7 +57,7 @@ export default {
   },
   /** Déclencheur horaire (wrangler.toml, `[triggers]`) : le planificateur du socle (B02). */
   async scheduled(_controller: unknown, env: Env): Promise<void> {
-    await runScheduler({ db: fromD1(env.DB), mode: env.MODE });
+    await runScheduler({ db: fromD1(env.DB), mode: env.MODE, appointmentLinkBase: env.RDV_LINK_BASE });
   },
   async email(message: InboundEmail, env: Env): Promise<void> {
     await handleEmail(message, {

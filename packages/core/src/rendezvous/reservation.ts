@@ -59,6 +59,8 @@ export interface Appointment {
   updated_at: string;
   cancelled_at: string | null;
   confirmation_status: 'sent' | 'waiting' | 'refused' | 'failed' | null;
+  /** Le canal de la confirmation, que les rappels reprennent (V04) ; NULL : aucun message. */
+  confirmation_channel: OutboundChannelName | null;
 }
 
 export type BookingRefusal =
@@ -272,12 +274,16 @@ export class RendezVous {
   }
 
   async get(id: string): Promise<Appointment | null> {
-    return this.db.first<Appointment>('SELECT id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, source, replaces_id, created_at, updated_at, cancelled_at, confirmation_status FROM appointments WHERE id = ?', [id]);
+    return this.db.first<Appointment>('SELECT id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, source, replaces_id, created_at, updated_at, cancelled_at, confirmation_status, confirmation_channel FROM appointments WHERE id = ?', [id]);
   }
 
   async byToken(token: string): Promise<Appointment | null> {
     if (!/^[a-z]{32}$/.test(token)) return null;
-    const row = await this.db.first<{ id: string }>('SELECT id FROM appointments WHERE token_hash = ?', [await tokenHash(token)]);
+    const hash = await tokenHash(token);
+    // Le lien de la confirmation, ou celui d'un rappel (V04) : chacun ne sert qu'à son rendez-vous.
+    const row =
+      (await this.db.first<{ id: string }>('SELECT id FROM appointments WHERE token_hash = ?', [hash])) ??
+      (await this.db.first<{ id: string }>('SELECT appointment_id AS id FROM appointment_links WHERE token_hash = ?', [hash]));
     return row ? this.get(row.id) : null;
   }
 
@@ -314,9 +320,9 @@ export class RendezVous {
     const at = now.toISOString();
     try {
       await this.db.run(
-        `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?)`,
-        [id, req.networkId, req.agentId, req.personId, req.propertyId ?? null, req.kind, start.toISOString(), end.toISOString(), await tokenHash(token), req.source, replacesId, at, at],
+        `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at, confirmation_channel)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?, ?)`,
+        [id, req.networkId, req.agentId, req.personId, req.propertyId ?? null, req.kind, start.toISOString(), end.toISOString(), await tokenHash(token), req.source, replacesId, at, at, req.channel ?? null],
       );
     } catch (error) {
       await this.release(id);

@@ -126,11 +126,11 @@ describeWithSqlite('B02 · planificateur du socle', () => {
     const w = await world();
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     expect(SITE_JOBS_TRIAL.map((j) => j.name)).toEqual(['site.rappels_visite', 'site.courriers_vendeur']);
-    expect(await runScheduler({ db: w.db, mode: 'essai', now: w.now })).toMatchObject({ ran: ['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur'] });
+    expect(await runScheduler({ db: w.db, mode: 'essai', now: w.now })).toMatchObject({ ran: ['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels'] });
     w.setClock(WINTER_07H);
     expect((await runScheduler({ db: w.db, mode: 'essai', now: w.now }))?.ran).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect((await w.passages()).map((e) => e.data.job)).toEqual(['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur']);
+    expect((await w.passages()).map((e) => e.data.job)).toEqual(['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels']);
   });
 
   it('hors mode essai, rien ne passe', async () => {
@@ -144,10 +144,10 @@ describeWithSqlite('B02 · planificateur du socle', () => {
     const w = await world();
     vi.useFakeTimers({ now: WINTER_18H, toFake: ['Date'] });
     try {
-      await worker.scheduled({}, { DB: w.d1, MODE: 'essai' } as Env);
+      await worker.scheduled({}, { DB: w.d1, MODE: 'essai', RDV_LINK_BASE: 'https://rdv.example.test/r/' } as Env);
     } finally {
       vi.useRealTimers();
     }
-    expect((await w.passages()).map((e) => e.data.job)).toEqual(['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur']);
+    expect((await w.passages()).map((e) => e.data.job)).toEqual(['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels']);
   });
 });
