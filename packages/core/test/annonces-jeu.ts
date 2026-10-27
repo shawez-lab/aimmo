@@ -98,7 +98,7 @@ export async function setupAnnonce(options: { card?: boolean } = {}) {
     if (!r.ok) throw new Error(r.code);
   };
   return {
-    db, journal, acces, annonces, publication, channels, agent, direction, alexId: alex.id, sam: as('agent', sam.id), network, propertyId: b.id, draftId: draft.value.id, mandateId: signed.value.mandateId, amend,
+    db, journal, acces, annonces, publication, channels, agent, direction, alexId: alex.id, store, personId: p.id, sam: as('agent', sam.id), network, propertyId: b.id, draftId: draft.value.id, mandateId: signed.value.mandateId, amend,
     now, setClock: (at: Date) => (clock = at),
     /** Les passages du planificateur, toutes les 15 minutes, de `from` à `to` inclus ; rend l'heure du premier passage qui publie. */
     async runEvery15(from: Date, to: Date): Promise<Date | null> {
