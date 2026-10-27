@@ -8,9 +8,9 @@
  * Chaque route passe par les droits de la couche métier [R16], qui écrit chaque refus au journal. Aucune route
  * n'accepte, ne refuse ni ne négocie : seule une réponse rapportée avec preuve change l'état d'une offre [R57].
  */
-import type { Acces, JournalStore, SqlDatabase, Viewer } from '@aimmo/core';
-// M09 n'est pas encore exporté par `@aimmo/core` (fichier du socle) : on le lit à sa place.
-import { ComparatifOffres, ContreOffres, ControlesOffre, DossiersVente, EcheancesOffres, RegistreOffres, TransmissionOffres } from '../../core/src/offres/index.ts';
+import { Acces, FicheClient, FicheUnique, offres as m09, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
+
+const { ComparatifOffres, ContreOffres, ControlesOffre, DossiersVente, EcheancesOffres, RegistreOffres, TransmissionOffres } = m09;
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 16_000;
@@ -111,4 +111,24 @@ export async function syncOffres(s: OffreServices, networkId: string): Promise<{
   const untransmitted = await new TransmissionOffres(s.db, s.acces, s.journal, { now: s.now }).alertUntransmitted(networkId);
   const deadlines = await new EcheancesOffres(s.db, s.journal, { now: s.now }).run(networkId);
   return { untransmitted: untransmitted.length, deadlines: deadlines.length };
+}
+
+export const OFFERS_DAILY_JOB = 'offres.quotidien';
+
+/**
+ * Le passage quotidien des offres au planificateur (O09) : chaque réseau, à 6 h, heure de Paris, une fois par jour
+ * (le créneau est réservé par le planificateur). Rien n'est envoyé : signalements et tâches pour l'agent [R56, R59].
+ */
+export function offersDailyJob(db: SqlDatabase, journal: JournalStore, options: { now?: () => Date } = {}): ScheduledJob {
+  const now = options.now ?? (() => new Date());
+  return {
+    name: OFFERS_DAILY_JOB,
+    hours: [6],
+    run: async () => {
+      const store = new FicheClient(db, { now });
+      const s: OffreServices = { db, journal, acces: new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now }), now };
+      const networks = await db.all<{ id: string }>('SELECT id FROM networks ORDER BY id');
+      for (const n of networks) await syncOffres(s, n.id);
+    },
+  };
 }
