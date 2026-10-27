@@ -69,7 +69,7 @@ h1{font-size:20pt;line-height:1.15;margin:8mm 0 3mm}.prix{font-size:30pt;font-we
 .mentions{border-left:2pt solid #1f3a5f;padding:2mm 4mm;margin:6mm 0;font-size:9pt;white-space:pre-line}
 .photos{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin:0;padding:0;list-style:none}.photos li{position:relative}
 .photos img{width:100%;height:52mm;object-fit:cover}.virtuel{position:absolute;left:2mm;bottom:2mm;background:#14202e;color:#fff;font:700 7pt system-ui,sans-serif;padding:1mm 2mm}
-.texte{white-space:pre-line;margin:6mm 0}.agent{position:absolute;left:16mm;right:16mm;bottom:14mm;border-top:1pt solid #1f3a5f;padding-top:3mm;font-size:9.5pt}`;
+.page+.page{padding-bottom:42mm}.texte{margin:6mm 0}.agent{position:absolute;left:16mm;right:16mm;bottom:14mm;border-top:1pt solid #1f3a5f;padding-top:3mm;font-size:9.5pt}`;
 
 function photoList(photos: Media[], limit: number): string {
   const items = photos
@@ -124,7 +124,9 @@ export function renderListingPrint(input: PageInput): string | null {
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(p.title)}</title><style>${PRINT_CSS}</style></head><body>` +
     `<section class="page">${brand}<h1>${escapeHtml(p.title)}</h1><span class="etat">${STATE_LABEL[p.state]}</span>` +
     `<p class="prix">${escapeHtml(euros(p.priceEur))}</p><div class="mentions">${escapeHtml(p.mentions)}</div>${photoList(input.photos, MAX_PRINT_PHOTOS)}</section>` +
-    `<section class="page">${brand}<p class="texte">${escapeHtml(p.body)}</p>${agentBlock(input.agent)}</section>` +
+    // Sur papier, les retours à la ligne deviennent des espaces : 3 000 caractères tiennent toujours dans la page 2,
+    // au-dessus de la carte de l'agent, sans rien couper.
+    `<section class="page">${brand}<p class="texte">${escapeHtml(p.body.replace(/\s*\n\s*/g, ' '))}</p>${agentBlock(input.agent)}</section>` +
     `</body></html>`
   );
 }
@@ -154,8 +156,13 @@ export class PageBien {
     }
     if (typeof card.phone !== 'string' || !PHONE.test(card.phone.trim())) return { ok: false, rule: null, code: 'bad_phone' };
     if (typeof card.email !== 'string' || !EMAIL.test(card.email.trim())) return { ok: false, rule: null, code: 'bad_email' };
-    const agent = await this.db.first<{ network_id: string }>('SELECT network_id FROM agents WHERE id = ?', [agentId]);
+    const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [agentId]);
     if (!agent || agent.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_agent' };
+    // Un agent parti ne règle plus rien, et ses coordonnées ne changent plus [R16].
+    if (agent.status !== 'active') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `agent:${agentId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'agent_card', code: 'agent_inactive' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'agent_inactive' };
+    }
     await this.db.run('INSERT INTO agent_public_cards (id, agent_id, network_id, phone, email, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
       this.newId(), agentId, viewer.networkId, card.phone.trim(), card.email.trim(), `${String(viewer.role)}:${viewer.userId}`, this.now().toISOString(),
     ]);
