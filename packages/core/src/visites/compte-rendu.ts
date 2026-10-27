@@ -175,7 +175,9 @@ export class ComptesRendus {
   /** Les noms connus de l'acquéreur, interdits dans tout ce qui va au vendeur [R52] et retirés de ce que lit l'IA. */
   private async buyerNames(personId: string): Promise<string[]> {
     const members = (await this.fiche.view(personId)).members;
-    return members.flatMap((m) => [m.first_name, m.last_name]).filter((n): n is string => typeof n === 'string' && n.trim().length > 1);
+    const whole = members.flatMap((m) => [m.first_name, m.last_name]).filter((n): n is string => typeof n === 'string' && n.trim().length > 1);
+    // Les noms entiers et chacun de leurs mots : « Jean-Pierre », « Jean », « Pierre ».
+    return [...new Set([...whole, ...whole.flatMap((n) => n.split(/[^\p{L}]+/u)).filter((w) => w.length > 1)])];
   }
 
   /** La dictée de l'agent, et le compte rendu que l'IA en tire ; tant qu'il n'est pas validé, une nouvelle dictée le remplace. */
@@ -194,7 +196,8 @@ export class ComptesRendus {
           ...(await this.fiche.view(v.person_id)).identifiers,
           ...(seller ? (await this.fiche.view(seller.person_id)).identifiers : []),
         ].map((i) => i.value);
-        const brief = redactNames(withoutNames(withoutContactDetails(redactIdentifiers(dictation, identifiers)), names), names);
+        // Les adresses mail entières d'abord, puis les coordonnées connues et les comptes, puis les noms [R15].
+        const brief = redactNames(withoutNames(redactIdentifiers(withoutContactDetails(dictation), identifiers), names), names);
         const raw = await timeout(writer.write({ dictation: brief }), this.options.aiTimeoutMs ?? 20_000);
         const checked = checkReport(raw, dictation);
         if (checked.ok && !this.names(checked.report, names)) report = checked.report;
@@ -286,10 +289,8 @@ export class ComptesRendus {
 
   private names(report: VisitReport, names: readonly string[]): boolean {
     const text = ` ${plain([report.opinion, ...report.strengths, ...report.reservations].join(' ')).replace(/[^\p{L}]+/gu, ' ')} `;
-    return names.some((n) => {
-      const key = plain(n).replace(/[^\p{L}]+/gu, ' ').trim();
-      return key.length > 1 && text.includes(` ${key} `);
-    });
+    // Chaque mot d'un nom compte seul : « Jean » pour « Jean-Pierre » [R52].
+    return names.some((n) => plain(n).split(/[^\p{L}]+/u).some((w) => w.length > 1 && text.includes(` ${w} `)));
   }
 
   private async seller(networkId: string, propertyId: string): Promise<{ person_id: string; agent_id: string } | null> {

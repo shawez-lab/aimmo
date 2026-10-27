@@ -158,6 +158,15 @@ describeWithSqlite('T06 · compte rendu de visite dicté', () => {
     expect(sent[0]!.body).toContain('Bonjour Victor,');
   });
 
+  it('un prénom composé compte mot par mot, et une adresse mail inconnue ne va pas à l’IA [R15, R52]', async () => {
+    const briefs: string[] = [];
+    const t = await setup({ write: async (b) => { briefs.push(b.dictation); return GOOD; } });
+    const v = await t.visit('Jean-Pierre', 'Martin-Leroy');
+    await t.comptes.dictate(t.as('agent', t.alex.id), v.id, 'Jean a aimé, son mail lea.martin@example.test, Leroy aussi.');
+    expect(briefs[0]).not.toMatch(/Jean|lea|martin|Leroy|example/i);
+    expect(await t.comptes.validate(t.as('agent', t.alex.id), v.id, { ...GOOD, opinion: 'Jean a aimé le séjour.' })).toMatchObject({ ok: false, rule: 'R52', code: 'buyer_named' });
+  });
+
   it('validé la nuit : il attend l’heure [R01] et part au passage suivant ; seul l’agent de l’acquéreur ou la direction [R16]', async () => {
     const t = await setup({ write: async () => GOOD });
     const v = await t.visit();
