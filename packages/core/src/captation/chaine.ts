@@ -81,6 +81,7 @@ export class ChaineCaptation {
     }
     const ingested = await this.reception.store(networkId, adapted);
     const results: ChainResult[] = [];
+    const toQualify: string[] = [];
     for (const item of ingested.received) {
       const done = (status: ChainStatus, messageId: string | null = null): ChainResult => ({
         inboundId: item.inboundId,
@@ -110,12 +111,12 @@ export class ChaineCaptation {
           const resumed = await this.relais.process(item.inboundId);
           if (resumed.status === 'skipped' || resumed.status === 'silent') {
             // Une qualification interrompue est reprise, sans doublon [R18].
-            if (this.afterReply) await this.afterReply(item.inboundId);
+            toQualify.push(item.inboundId);
             results.push(done('duplicate'));
             continue;
           }
           results.push(done(resumed.status, resumed.status === 'replied' ? (resumed.reply.result?.messageId ?? null) : null));
-          if (this.afterReply) await this.afterReply(item.inboundId);
+          toQualify.push(item.inboundId);
           continue;
         }
       }
@@ -134,9 +135,11 @@ export class ChaineCaptation {
       const relayed = await this.relais.process(item.inboundId);
       const messageId = relayed.status === 'replied' ? (relayed.reply.result?.messageId ?? null) : null;
       results.push(done(relayed.status, messageId));
-      // La réponse est prête : la qualification suit, et ne la retarde jamais.
-      if (this.afterReply) await this.afterReply(item.inboundId);
+      toQualify.push(item.inboundId);
     }
+    // Toutes les réponses du lot sont prêtes : la qualification suit, et ne retarde aucune d'elles. Elle ne lève
+    // jamais d'erreur (voir createCaptation).
+    if (this.afterReply) for (const inboundId of toQualify) await this.afterReply(inboundId);
     return results;
   }
 }
@@ -185,11 +188,17 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
       const a = await attribution.attribute(q.id);
       if (a) await rappels.forQualification(q.id);
     } catch (error) {
-      await appendEvent(
-        journal,
-        { type: 'qualification.erreur', actor: 'system:qualification', subject: `inbound:${inboundId}`, data: { error: error instanceof Error ? error.name : 'unknown' } },
-        now,
-      );
+      try {
+        await appendEvent(
+          journal,
+          { type: 'qualification.erreur', actor: 'system:qualification', subject: `inbound:${inboundId}`, data: { error: error instanceof Error ? error.name : 'unknown' } },
+          now,
+        );
+      } catch {
+        // Le journal lui-même est en panne : la réponse est déjà prête, rien ne doit l'empêcher ; la trace va à la
+        // console, sans donnée [R13], et le prochain envoi du même message reprendra la qualification.
+        console.error('aimmo : qualification non faite, journal indisponible');
+      }
     }
   };
   return {

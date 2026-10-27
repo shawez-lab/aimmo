@@ -8,6 +8,7 @@ import {
   measure,
   parseMeasureCases,
   qualifyByRules,
+  type Qualifier,
   type SqlDatabase,
 } from '../src/index.ts';
 import { QUALIFICATION_CASES } from './fixtures/qualification-cas.ts';
@@ -18,13 +19,14 @@ const TUESDAY_10H = Date.parse('2026-12-08T09:00:00.000Z');
 const SUNDAY_23H = Date.parse('2026-12-06T22:00:00.000Z');
 const MINUTE = 60_000;
 
-async function setup() {
+/** `qualifier` reçoit de quoi avancer l'horloge : une IA lente, simulée. */
+async function setup(qualifier?: (tick: () => void) => Qualifier) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = TUESDAY_10H;
   const now = (): Date => new Date(clock);
   const journal = new SqlJournalStore(db);
-  const captation = createCaptation(db, journal, { now });
+  const captation = createCaptation(db, journal, { now, ...(qualifier ? { qualifier: qualifier(() => (clock += 15_000)) } : {}) });
   const network = await captation.store.createNetwork('Réseau test');
   const alex = await captation.store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
   await captation.attribution.addZone(network.id, alex.id, 'Talant');
@@ -54,6 +56,30 @@ describeWithSqlite('Q05 · qualification dans la chaîne de captation', () => {
     expect(tasks).toHaveLength(2);
     const list = await t.captation.rappels.hotList(t.captation.acces, { role: 'agent', userId: t.alex.id, networkId: t.network.id });
     expect(list.ok && list.value.contacts).toHaveLength(2);
+  });
+
+  it('une IA de qualification lente ne retarde aucune réponse du lot, et tout est rangé en moins d’une minute', async () => {
+    // Chaque qualification prend 15 secondes de l'horloge simulée, puis rend une sortie refusée : règles fixes.
+    const t = await setup((tick) => ({ qualify: async () => (tick(), { nope: true }) }));
+    const messaging = [1, 2, 3].map((n) => ({
+      sender: { id: `IGSID-${n}` },
+      recipient: { id: 'IG-OWN-1' },
+      timestamp: TUESDAY_10H,
+      message: { mid: `ig-mid-${n}`, text: 'Je souhaite vendre ma maison à Talant rapidement.' },
+    }));
+    const results = await t.captation.chaine.receive(t.network.id, 'instagram', { object: 'instagram', entry: [{ id: 'IG-OWN-1', time: TUESDAY_10H, messaging }] }, { ownIds: ['IG-OWN-1'] });
+    expect(results).toHaveLength(3);
+    for (const r of results) expect(r.elapsedMs).toBe(0);
+    const rows = await t.db.all<{ q: string; a: string; c: string | null }>(
+      `SELECT q.created_at AS q, a.created_at AS a, c.created_at AS c FROM qualifications q
+       JOIN attributions a ON a.qualification_id = q.id LEFT JOIN callback_tasks c ON c.qualification_id = q.id`,
+    );
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      for (const at of [row.q, row.a]) expect(Date.parse(at) - TUESDAY_10H).toBeLessThan(MINUTE);
+    }
+    expect(rows.filter((r) => r.c !== null)).toHaveLength(3);
+    for (const row of rows) expect(Date.parse(row.c!) - TUESDAY_10H).toBeLessThan(MINUTE);
   });
 
   it('[R18] le même message reçu deux fois n’est qualifié et attribué qu’une fois', async () => {
