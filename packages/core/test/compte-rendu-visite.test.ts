@@ -10,6 +10,7 @@ import {
   Visites,
   applyMigrations,
   checkReport,
+  redactIdentifiers,
   redactNames,
   fromSyncSqlite,
   verifyChain,
@@ -106,6 +107,7 @@ describeWithSqlite('T06 · compte rendu de visite dicté', () => {
     expect(checkReport({ ...GOOD, readyToOffer: true }, 'a aimé le séjour')).toEqual({ ok: false, code: 'invented_offer' });
     expect(checkReport({ ...GOOD, readyToOffer: true }, 'veut faire une offre demain')).toMatchObject({ ok: true });
     expect(checkReport({ ...GOOD, readyToOffer: true }, 'Il ne veut pas faire une offre.')).toEqual({ ok: false, code: 'invented_offer' });
+    expect(redactIdentifiers('Son Instagram @acheteur_x, ou acheteur_x tout court, ou @autre.compte.', ['acheteur_x'])).toBe('Son Instagram @[coordonnée], ou [coordonnée] tout court, ou [compte].');
     expect(redactNames('Ines DURAND a aimé le séjour, Inès aussi.', ['Inès', 'Durand'])).toBe('[nom] [nom] a aimé le séjour, [nom] aussi.');
     expect(checkReport({ ...GOOD, note: 'x' }, 'a aimé')).toEqual({ ok: false, code: 'shape' });
     const t = await setup({ write: async () => ({ ...GOOD, opinion: 'Prêt à mettre 260 000 €.' }) });

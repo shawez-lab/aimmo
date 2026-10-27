@@ -56,6 +56,17 @@ const OFFER_WORDS = /\b(?:offre|proposition|proposer|faire une offre|pret a ache
 const OFFER_DENIED = /\b(?:ne|n|pas|aucune?|jamais|sans|plus)\b[^.!?]{0,40}\b(?:offre|proposition|proposer|acheter|achete|signer)\b/;
 const CONTACT = /@|\+\d{2}|\b00\d{2}|\b0\d(?:[ .-]?\d{2}){4}\b/;
 
+/** Retire les coordonnées connues des fiches, telles qu'elles y sont, et tout compte en « @ » [R15]. */
+export function redactIdentifiers(text: string, identifiers: readonly string[]): string {
+  let out = text;
+  for (const raw of identifiers) {
+    const value = raw.replace(/^@/, '').trim();
+    if (value.length < 3) continue;
+    out = out.replace(new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[coordonnée]');
+  }
+  return out.replace(/@[\p{L}\d_]+(?:\.[\p{L}\d_]+)*/gu, '[compte]');
+}
+
 /** Retire chaque mot d'un nom connu, accents et casse ignorés : « Ines » comme « Inès » [R15]. */
 export function redactNames(text: string, names: readonly string[]): string {
   const keys = new Set(names.flatMap((n) => n.split(/[^\p{L}]+/u)).map((w) => plain(w)).filter((w) => w.length > 1));
@@ -179,7 +190,12 @@ export class ComptesRendus {
     const writer = this.options.writer;
     if (writer) {
       try {
-        const raw = await timeout(writer.write({ dictation: redactNames(withoutNames(withoutContactDetails(dictation), names), names) }), this.options.aiTimeoutMs ?? 20_000);
+        const identifiers = [
+          ...(await this.fiche.view(v.person_id)).identifiers,
+          ...(seller ? (await this.fiche.view(seller.person_id)).identifiers : []),
+        ].map((i) => i.value);
+        const brief = redactNames(withoutNames(withoutContactDetails(redactIdentifiers(dictation, identifiers)), names), names);
+        const raw = await timeout(writer.write({ dictation: brief }), this.options.aiTimeoutMs ?? 20_000);
         const checked = checkReport(raw, dictation);
         if (checked.ok && !this.names(checked.report, names)) report = checked.report;
         else await appendEvent(this.journal, { type: 'compte_rendu.ia_refusee', actor: 'system:compte_rendu', subject: `visit:${appointmentId}`, data: { code: checked.ok ? 'buyer_named' : checked.code } }, this.now);
