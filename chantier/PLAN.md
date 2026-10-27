@@ -408,14 +408,16 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Attend : H21 pour le vrai branchement ; le reste se fait avant.
 
 ### V04 · Rappels la veille et le jour même
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : veille et jour même en dates de Paris ; un rappel manqué ce jour-là (dimanche, férié, hors heures) n'est pas reporté ; pas de rappel le jour où un autre message du même rendez-vous est déjà parti ; chaque rappel porte un lien neuf ; sans canal choisi à la réservation, aucun message. Tâche `rdv.rappels` du lundi au samedi, 8 h à 19 h ; lien par `RDV_LINK_BASE`.
+- Reste : relecture de Codex impossible (« Repository could not be found », deux fois), fusion sans elle (#40) ; ranger `RDV_LINK_BASE` au déploiement.
 - Qui : Claude · Relecture : normale · Dépend de : V02, B02
 - Cahier : M05, « Rappels » et « Règles ».
 - Objectif : par le planificateur, un rappel la veille et un le jour même, avec le lien pour décaler ou annuler, par le contrôle central, en mode essai.
 - Critères : aucun rappel le dimanche ni hors des heures d'envoi [R01] ; un rappel de chaque sorte au plus par rendez-vous [R05] ; rien pour un rendez-vous annulé ; jamais à une personne exclue ou qui a demandé l'arrêt [R02, R04] ; les confirmations en attente (`confirmation_status = 'waiting'`, refusées pour l'heure en V02) partent au premier créneau des heures d'envoi.
 
 ### V05 · Brief du rendez-vous
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : V02, E01
 - Cahier : M05, « Brief du rendez-vous ».
 - Objectif : une heure avant chaque rendez-vous, un brief rangé pour l'agent : le client et son histoire, le bien, les ventes du quartier, les questions à prévoir, les documents à apporter, le lien d'itinéraire vers l'application de navigation.
