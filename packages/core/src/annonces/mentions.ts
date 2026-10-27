@@ -110,7 +110,7 @@ export function computeMentions(input: MentionsInput): Checklist {
     items.push({
       id: 'prix',
       status: 'presente',
-      text: `Prix : ${euros(publishedPriceEur)} honoraires inclus, dont ${feePercent(t.feeEur, t.priceEur)} TTC à la charge de l'acquéreur (${euros(t.priceEur)} hors honoraires).`,
+      text: `Prix : ${euros(publishedPriceEur)} honoraires inclus, soit ${euros(t.priceEur)} hors honoraires et ${feePercent(t.feeEur, t.priceEur)} TTC du prix hors honoraires, à la charge de l'acquéreur.`,
     });
   } else {
     publishedPriceEur = t.priceEur;
@@ -203,14 +203,17 @@ export class MentionsAnnonce {
 
   /**
    * Les données des mentions d'un bien, lues par le système : le mandat en vigueur, la dernière fiche, la carte.
-   * Le mandat retenu est celui que la porte de diffusion retient (D05) ; sans mandat signé, le prix manque.
+   * Le mandat retenu est celui que la porte de diffusion retient (D05) ; sans mandat en vigueur, le prix manque.
    */
   async inputFor(networkId: string, propertyId: string): Promise<MentionsInput | null> {
     const property = await this.db.first<{ kind: PropertyKind; network_id: string }>('SELECT kind, network_id FROM properties WHERE id = ?', [propertyId]);
     if (!property || property.network_id !== networkId) return null;
     const decision = await this.diffusion.canDiffuse(networkId, propertyId, this.now());
     let terms: PriceTerms | null = null;
-    if (decision.mandateId !== null) {
+    // Seul un mandat en vigueur donne un prix : diffusable, ou signé et numéroté mais encore dans son délai de
+    // rétractation. Un mandat rétracté, annulé, échu, sans durée ou pas encore numéroté n'en donne aucun [R44].
+    const inForceReasons = ['allowed', 'allowed_early_start', 'withdrawal_period'];
+    if (decision.mandateId !== null && inForceReasons.includes(decision.reason)) {
       const inForce = await mandateTerms(this.db, decision.mandateId);
       const base = await this.db.first<{ facts: string | null }>(
         'SELECT d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL',

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   Acces,
   ControlesSignature,
+  Diffusion,
   FicheClient,
   FicheUnique,
   Modeles,
@@ -43,7 +44,7 @@ const CASES: { name: string; input: MentionsInput; price: number; text: string }
     name: '1 · appartement, honoraires acquéreur, 5 %',
     input: { kind: 'home', terms: { priceEur: 200000, feeEur: 10000, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD },
     price: 210000,
-    text: [`Prix : 210${S}000${N}€ honoraires inclus, dont 5${N}% TTC à la charge de l'acquéreur (200${S}000${N}€ hors honoraires).`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
+    text: [`Prix : 210${S}000${N}€ honoraires inclus, soit 200${S}000${N}€ hors honoraires et 5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '2 · maison, honoraires vendeur',
@@ -55,13 +56,13 @@ const CASES: { name: string; input: MentionsInput; price: number; text: string }
     name: '3 · pourcentage arrondi au centième',
     input: { kind: 'home', terms: { priceEur: 210000, feeEur: 9500, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD },
     price: 219500,
-    text: [`Prix : 219${S}500${N}€ honoraires inclus, dont 4,52${N}% TTC à la charge de l'acquéreur (210${S}000${N}€ hors honoraires).`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
+    text: [`Prix : 219${S}500${N}€ honoraires inclus, soit 210${S}000${N}€ hors honoraires et 4,52${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '4 · pourcentage à un chiffre après la virgule',
     input: { kind: 'home', terms: { priceEur: 100000, feeEur: 4500, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD },
     price: 104500,
-    text: [`Prix : 104${S}500${N}€ honoraires inclus, dont 4,5${N}% TTC à la charge de l'acquéreur (100${S}000${N}€ hors honoraires).`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
+    text: [`Prix : 104${S}500${N}€ honoraires inclus, soit 100${S}000${N}€ hors honoraires et 4,5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '5 · logement classé F, très énergivore',
@@ -73,13 +74,13 @@ const CASES: { name: string; input: MentionsInput; price: number; text: string }
     name: '6 · logement classé G',
     input: { kind: 'home', terms: { priceEur: 75000, feeEur: 6000, feeCharge: 'acquereur' }, sheet: sheet({ energy: { energyClass: 'G', climateClass: 'G', annualCostMinEur: 3900, annualCostMaxEur: 5300, costReferenceYear: 2023, diagnosedOn: '2027-02-20' } }), cardNumber: CARD },
     price: 81000,
-    text: [`Prix : 81${S}000${N}€ honoraires inclus, dont 8${N}% TTC à la charge de l'acquéreur (75${S}000${N}€ hors honoraires).`, energie('G', 'G', `3${S}900`, `5${S}300`, 2023, true), CARTE].join('\n'),
+    text: [`Prix : 81${S}000${N}€ honoraires inclus, soit 75${S}000${N}€ hors honoraires et 8${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('G', 'G', `3${S}900`, `5${S}300`, 2023, true), CARTE].join('\n'),
   },
   {
     name: '7 · copropriété sans procédure',
     input: { kind: 'home', terms: { priceEur: 180000, feeEur: 9000, feeCharge: 'acquereur' }, sheet: sheet({ coownership: { isCoownership: true, lots: 24, annualChargesEur: 1800, proceedings: false } }), cardNumber: CARD },
     price: 189000,
-    text: [`Prix : 189${S}000${N}€ honoraires inclus, dont 5${N}% TTC à la charge de l'acquéreur (180${S}000${N}€ hors honoraires).`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), `Bien en copropriété : 24 lots, charges annuelles moyennes de 1${S}800${N}€. Aucune procédure en cours.`, CARTE].join('\n'),
+    text: [`Prix : 189${S}000${N}€ honoraires inclus, soit 180${S}000${N}€ hors honoraires et 5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), `Bien en copropriété : 24 lots, charges annuelles moyennes de 1${S}800${N}€. Aucune procédure en cours.`, CARTE].join('\n'),
   },
   {
     name: '8 · copropriété avec procédure, un seul lot',
@@ -91,7 +92,7 @@ const CASES: { name: string; input: MentionsInput; price: number; text: string }
     name: '9 · bien en zone de risque',
     input: { kind: 'home', terms: { priceEur: 1250000, feeEur: 50000, feeCharge: 'acquereur' }, sheet: sheet({ risks: { inRiskZone: true } }), cardNumber: CARD },
     price: 1300000,
-    text: [`Prix : 1${S}300${S}000${N}€ honoraires inclus, dont 4${N}% TTC à la charge de l'acquéreur (1${S}250${S}000${N}€ hors honoraires).`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), GEO, CARTE].join('\n'),
+    text: [`Prix : 1${S}300${S}000${N}€ honoraires inclus, soit 1${S}250${S}000${N}€ hors honoraires et 4${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), GEO, CARTE].join('\n'),
   },
   {
     name: '10 · terrain, sans diagnostic énergétique',
@@ -157,7 +158,7 @@ describe('P02 · mentions obligatoires', () => {
 const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
 const AMENDMENT = 'Avenant de test au mandat n° {{mandat.numero}} : {{avenant.objet}}.\n\nMandant : {{mandant.nom}}. Signé le {{signature.date}}, {{signature.lieu}}.';
 
-async function setup(feeCharge: 'vendeur' | 'acquereur' = 'acquereur') {
+async function setup(feeCharge: 'vendeur' | 'acquereur' = 'acquereur', place: 'agence' | 'hors_agence' = 'agence') {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = new Date('2027-02-10T10:00:00.000Z');
@@ -190,7 +191,7 @@ async function setup(feeCharge: 'vendeur' | 'acquereur' = 'acquereur') {
   const signMandate = async () => {
     const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': feeCharge, 'mandat.duree_mois': 12 } });
     if (!d.ok) throw new Error(d.code);
-    const signed = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt: new Date('2027-02-10T09:00:00.000Z'), place: 'agence', scanRef: 'scans/mandat.pdf', source: 'referral' });
+    const signed = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt: new Date('2027-02-10T09:00:00.000Z'), place, scanRef: 'scans/mandat.pdf', source: 'referral' });
     if (!signed.ok) throw new Error(signed.code);
     return signed.value.mandateId;
   };
@@ -202,7 +203,7 @@ async function setup(feeCharge: 'vendeur' | 'acquereur' = 'acquereur') {
     if (!r.ok) throw new Error(r.code);
   };
   const fullSheet = { energy: { energyClass: 'C', climateClass: 'C', annualCostMinEur: 900, annualCostMaxEur: 1300, costReferenceYear: 2023, diagnosedOn: '2027-01-15' }, coownership: { isCoownership: false }, risks: { inRiskZone: false } };
-  return { db, journal, mentions, fiches, agent, direction, compliance: as('compliance', 'c-1'), sam: as('agent', sam.id), propertyId: b.id, signMandate, signPriceAmendment, fullSheet };
+  return { db, journal, acces, now, setClock: (d: Date) => (clock = d), mentions, fiches, agent, direction, compliance: as('compliance', 'c-1'), sam: as('agent', sam.id), propertyId: b.id, signMandate, signPriceAmendment, fullSheet };
 }
 
 describeWithSqlite('P02 · liste de contrôle d’un bien', () => {
@@ -224,7 +225,7 @@ describeWithSqlite('P02 · liste de contrôle d’un bien', () => {
     await t.signPriceAmendment(mandateId, 190000);
     const after = await t.mentions.check(t.agent, t.propertyId);
     expect(after.ok && after.value.publishedPriceEur).toBe(200000);
-    expect(after.ok && after.value.text).toContain(`Prix : 200${S}000${N}€ honoraires inclus, dont 5,26${N}% TTC à la charge de l'acquéreur (190${S}000${N}€ hors honoraires).`);
+    expect(after.ok && after.value.text).toContain(`Prix : 200${S}000${N}€ honoraires inclus, soit 190${S}000${N}€ hors honoraires et 5,26${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`);
   });
 
   it('[R43] [R45] une fiche sans diagnostic ou sans carte bloque la liste', async () => {
@@ -253,5 +254,35 @@ describeWithSqlite('P02 · liste de contrôle d’un bien', () => {
     await t.mentions.setCardNumber(t.direction, CARD);
     await expect(t.db.run('DELETE FROM listing_settings')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE listing_settings SET card_number = 'X1234'")).rejects.toThrow(/ne change plus/);
+  });
+
+  it('[R44] un mandat rétracté, annulé, échu ou sans durée ne donne aucun prix ; en délai de rétractation, si', async () => {
+    const price = async (t: Awaited<ReturnType<typeof setup>>) => {
+      const r = await t.mentions.check(t.agent, t.propertyId);
+      if (!r.ok) throw new Error(r.code);
+      return r.value.items[0];
+    };
+    // En délai de rétractation : le mandat est en vigueur, le prix est connu (la diffusion attend, P04).
+    const w = await setup('acquereur', 'hors_agence');
+    const wm = await w.signMandate();
+    expect((await price(w))!.status).toBe('presente');
+    // Rétracté dans le délai : plus de prix.
+    w.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    const withdrawn = await new Diffusion(w.db, w.acces, w.journal, { now: w.now }).recordWithdrawal(w.agent, wm, { proof: 'lettre recommandée reçue', receivedAt: new Date('2027-02-12T09:00:00.000Z') });
+    expect(withdrawn).toEqual({ ok: true });
+    expect(await price(w)).toEqual({ id: 'prix', status: 'manquante', reason: 'pas_de_mandat' });
+    // Annulé au registre.
+    const c = await setup();
+    const cm = await c.signMandate();
+    expect((await price(c))!.status).toBe('presente');
+    expect(await new RegistreMandats(c.db, c.journal, { now: c.now }).cancel(c.direction, cm, 'termination')).toMatchObject({ ok: true });
+    expect(await price(c)).toEqual({ id: 'prix', status: 'manquante', reason: 'pas_de_mandat' });
+    // Échu : 12 mois après la signature.
+    const e = await setup();
+    await e.signMandate();
+    e.setClock(new Date('2028-02-10T10:00:00.000Z'));
+    expect(await price(e)).toEqual({ id: 'prix', status: 'manquante', reason: 'pas_de_mandat' });
+    e.setClock(new Date('2028-02-09T10:00:00.000Z'));
+    expect((await price(e))!.status).toBe('presente');
   });
 });
