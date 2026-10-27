@@ -20,6 +20,8 @@ export * from './mandats/index.ts';
 export * from './documents/index.ts';
 export * from './acquereurs/index.ts';
 export * from './visites/index.ts';
+// M07 sous son propre nom : certains noms (CHANNELS, euros…) existent déjà dans le socle.
+export * as annonces from './annonces/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';

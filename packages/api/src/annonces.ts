@@ -10,19 +10,12 @@
  * R47], au passage suivant ou par la route de passage immédiat.
  */
 import { appendEvent, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
-// Le module M07 n'est pas encore exporté par `@aimmo/core` (fichier du socle) : on le lit à sa place.
-import {
-  Annonces,
-  FicheBien,
-  MediasBien,
-  MentionsAnnonce,
-  MesureBiens,
-  Publication,
-  shootingPlan,
-  type ListingChannel,
-  type ListingWriter,
-  type PropertySheet,
-} from '../../core/src/annonces/index.ts';
+import { annonces as m07 } from '@aimmo/core';
+
+const { Annonces, FicheBien, MediasBien, MentionsAnnonce, MesureBiens, Publication, shootingPlan } = m07;
+type ListingChannel = m07.ListingChannel;
+type ListingWriter = m07.ListingWriter;
+type PropertySheet = m07.PropertySheet;
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 64_000;
