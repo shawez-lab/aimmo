@@ -230,12 +230,14 @@ Découpé le 2026-10-27. Ids `Q..` pour Qualifier. Cahier : M03 Qualifier ; Feui
 Décidé, lecture prudente : l'IA classe et extrait derrière une interface, avec une fausse IA dans les tests et un classement par règles fixes quand elle manque ; la note et l'attribution suivent des règles fixes écrites dans le code, sans IA, pour que chaque note soit explicable et chaque attribution la même pour tous [R14] ; rien n'est envoyé à qui que ce soit par M03 ; le délai de rappel de la charte de service n'est pas chiffré dans le cahier : c'est un réglage, le jour même pour un contact chaud et 24 heures sinon, jusqu'à ce que Shawez en décide autrement.
 
 ### Q01 · Classer et extraire un contact
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : C05
 - Cahier : M03, « Ce que fait le module » points 1 et 2, « Règles ».
 - Objectif : pour chaque message rattaché, une qualification : catégorie (vendeur, acquéreur, estimation, mise en location, professionnel, partenaire, curiosité, indésirable) et champs extraits (bien, commune, budget ou prix, délai, financement déclaré, critères), rangés dans le projet de la fiche, créé ou complété. L'IA passe par une interface ; sans elle, des règles fixes sur les mots du message. Une location est marquée pour M15, un commerce pour M16, un investisseur pour M17.
 - Critères : un jeu de 50 cas inventés couvre les 8 catégories, classés juste par les règles fixes à 90 % au moins ; une sortie de l'IA hors des champs prévus ou portant une donnée sensible est refusée et remplacée par les règles fixes [R23] ; le financement n'est rangé que s'il est déclaré dans le message, jamais évalué [R24] ; rien ne part chez l'IA au-delà du texte reçu, sans coordonnée [R15] ; une correction de l'agent est gardée et rejoint les cas de test.
 - Attend : H13 pour la vraie IA seulement.
+- Décidé (2026-10-27), lecture prudente : commune prise dans une liste fermée (réglage) et critères dans une liste fermée de mots sur le bien ; un financement n'est rangé que dit comme acquis ou en cours, jamais nié, espéré, au futur ni contradictoire [R24] ; l'IA ne lit ni coordonnée, ni nom, ni signature [R15] ; ses montants doivent être des montants du message ; le délai déclaré reste dans la qualification, la colonne `projects.deadline` étant une date qu'il faudrait inventer [R10].
+- Reste : branchement dans la chaîne et correction depuis l'API (Q05) ; remarques mineures de Codex laissées (#23) : critères niés (« sans jardin »), budget « frais inclus », contexte des montants dans le contrôle de l'IA, délai dans le projet ; relecture forte (1 P0 corrigé), Codex : 5 P0 et 2 P1 corrigés en 5 tours, dernière version sans P0 ni P1.
 
 ### Q02 · Note et température
 - Statut : à faire
