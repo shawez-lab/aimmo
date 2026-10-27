@@ -358,7 +358,7 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Critères : aucun prix précis d'un bien rendu [R31] ; limites d'appels ; aucune donnée du visiteur gardée au-delà de sa demande ; mode essai.
 
 ### E06 · Suivi du vendeur
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : E04, B02
 - Cahier : M04, « Suivi ».
 - Objectif : après l'envoi d'un avis, une relance du vendeur s'il ne répond pas, par le planificateur et le contrôle central, en mode essai.
