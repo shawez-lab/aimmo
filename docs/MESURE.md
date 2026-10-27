@@ -44,3 +44,33 @@ AIMMO_BIENS=/chemin/hors/du/depot/biens.txt npx vitest run packages/core/test/co
 ```
 
 Il faut 10 adresses au moins, sinon la vérification échoue. Elle affiche le nombre de biens complets et, par **numéro de ligne**, les données qui manquent, sans recopier l'adresse. Elle échoue s'il en manque une. Sans le fichier, ce test est sauté.
+
+# Mesure de l'estimation sur 20 biens (M04, E07)
+
+Le critère de M04 : sur 20 biens, écart médian de moins de 10 % entre la fourchette AIMMO et l'estimation de l'agent, chaque écart expliqué. Les biens réels ne viennent **jamais** dans le dépôt.
+
+## Préparer les biens (H19)
+
+Un fichier CSV, séparé par des points-virgules, en UTF-8, avec une ligne d'en-tête. Les colonnes peuvent venir dans n'importe quel ordre :
+
+```
+type;surface;lat;lon;code_postal;estimation_agent;etage;ascenseur;balcon;terrasse;dpe
+appartement;65;47.323;5.041;21000;170000;2;oui;oui;non;D
+maison;120;47.301;5.012;21160;310000;;;;oui;E
+```
+
+- Obligatoires : **type** (`appartement` ou `maison`), **surface** (m²), **lat** et **lon** arrondies à **trois décimales au plus** (une centaine de mètres : la coordonnée désigne le quartier, pas le bien ; plus précises, la ligne est refusée), **code_postal**, **estimation_agent** (en euros, la valeur que l'agent a donnée).
+- Facultatives : `etage`, `terrain` (m²), `ascenseur`, `balcon`, `terrasse`, `parking`, `cave`, `piscine`, `garage`, `plain_pied` (`oui` ou `non`), `etat` (`travaux`, `à rafraîchir`, `bon`, `neuf`), `epoque` (`avant1948`, `1948-1974`, `1975-2000`, `2001-2012`, `apres2012`), `dpe` (lettre de A à G).
+- Jamais d'adresse, de nom ni de numéro.
+
+Il faut au moins 20 biens qui reçoivent une fourchette. Le fichier se range hors du dépôt.
+
+## Lancer la mesure
+
+```
+AIMMO_ESTIMATIONS=/chemin/hors/du/depot/biens.csv AIMMO_DVF=https://<adresse des fichiers DVF du site>/ npx vitest run packages/core/test/mesure-estimation.test.ts
+```
+
+`AIMMO_DVF` est l'adresse https des fichiers DVF publics du site (la même que `DVF_BASE_URL`), ou un dossier local qui contient `index.json`, `t/` et `d/`.
+
+La mesure affiche le nombre de biens mesurés, l'écart médian, le nombre d'estimations tombées dans la fourchette, puis, par **numéro de ligne**, l'écart et son explication (ventes retenues, rayon, ajustements, marge, position de l'estimation de l'agent), sans recopier les coordonnées. Elle échoue sous 20 biens mesurés ou à 10 % d'écart médian et plus. Sans le fichier, ce test est sauté.

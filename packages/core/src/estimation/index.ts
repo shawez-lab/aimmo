@@ -4,3 +4,4 @@ export * from './collecte.ts';
 export * from './avis.ts';
 export * from './en-ligne.ts';
 export * from './suivi.ts';
+export * from './mesure.ts';
