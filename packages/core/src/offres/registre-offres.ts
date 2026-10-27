@@ -47,6 +47,8 @@ export interface OfferInput {
   loanEur: unknown;
   signedRef: unknown;
   receivedAt: unknown;
+  /** Clé d'envoi facultative : un double envoi avec la même clé rend l'offre déjà enregistrée. */
+  requestKey?: unknown;
 }
 
 export interface Offer {
@@ -141,7 +143,8 @@ type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: null; code: 'invalid'; field: string }
   | { ok: false; rule: null; code: 'unknown_property' | 'unknown_buyer' | 'busy' }
-  | { ok: false; rule: 'R42'; code: 'not_on_sale' };
+  | { ok: false; rule: 'R42'; code: 'not_on_sale' }
+  | { ok: false; rule: 'R56'; code: 'request_key_reused' };
 
 const toOffer = (r: Row): Offer => ({
   id: r.id,
@@ -202,6 +205,27 @@ export class RegistreOffres {
     const now = this.now();
     const today = localTime(now, TIME_ZONE).date;
     const bad = (field: string): Problem => ({ ok: false, rule: null, code: 'invalid', field });
+    const requestKey = input.requestKey ?? null;
+    if (requestKey !== null && (typeof requestKey !== 'string' || !/^[A-Za-z0-9_-]{16,64}$/.test(requestKey))) return bad('requestKey');
+    const known = async (): Promise<Offer | null> => {
+      if (requestKey === null) return null;
+      const row = await this.db.first<Row>('SELECT * FROM offer_register WHERE property_id = ? AND request_key = ?', [propertyId, requestKey]);
+      return row ? toOffer(row) : null;
+    };
+    // Un rejeu se reconnaît avant les contrôles qui dépendent de l'heure ou de l'état du bien : rejouée plus tard, la même
+    // offre est rendue telle qu'enregistrée, au lieu d'être refusée comme une nouvelle.
+    const early = await known();
+    if (early) {
+      const conds = parseConditions(input.conditions);
+      const received = typeof input.receivedAt === 'string' && Number.isFinite(Date.parse(input.receivedAt)) ? new Date(input.receivedAt).toISOString() : null;
+      const same = conds.ok && received === early.receivedAt && input.amountEur === early.amountEur && JSON.stringify(conds.value) === JSON.stringify(early.conditions) &&
+        input.validUntil === early.validUntil && input.downPaymentEur === early.downPaymentEur && input.loanEur === early.loanEur && input.signedRef === early.signedRef;
+      const buyerRead = same && typeof input.buyerPersonId === 'string' ? await this.acces.readFiche(viewer, input.buyerPersonId) : null;
+      if (buyerRead?.ok && buyerRead.value.person.id === early.buyerPersonId) return { ok: true, value: early };
+      await appendEvent(this.journal, { type: 'offre.cle_reutilisee', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R56', seq: early.seq } }, this.now);
+      return { ok: false, rule: 'R56', code: 'request_key_reused' };
+    }
+
     if (typeof input.buyerPersonId !== 'string' || input.buyerPersonId.length > 64) return bad('buyerPersonId');
     if (!isInt(input.amountEur, 1, 100_000_000)) return bad('amountEur');
     const conditions = parseConditions(input.conditions);
@@ -226,6 +250,18 @@ export class RegistreOffres {
 
     // Une ancre manquée après une panne du journal est reprise d'abord, pour une ligne intacte seulement.
     await this.resumeAnchors(viewer, propertyId);
+    // Un rejeu avec la même clé ne rend l'offre déjà enregistrée que si c'est bien la même offre ; une offre différente
+    // envoyée avec une clé déjà prise est refusée et le refus écrit au journal, jamais avalée [R56].
+    const sameOffer = (o: Offer): boolean =>
+      o.buyerPersonId === buyer.value.person.id && o.amountEur === input.amountEur && JSON.stringify(o.conditions) === JSON.stringify(conditions.value) &&
+      o.validUntil === input.validUntil && o.downPaymentEur === input.downPaymentEur && o.loanEur === input.loanEur && o.signedRef === input.signedRef && o.receivedAt === receivedAt;
+    const replay = async (o: Offer): Promise<{ ok: true; value: Offer } | Problem> => {
+      if (sameOffer(o)) return { ok: true, value: o };
+      await appendEvent(this.journal, { type: 'offre.cle_reutilisee', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R56', seq: o.seq } }, this.now);
+      return { ok: false, rule: 'R56', code: 'request_key_reused' };
+    };
+    const already = await known();
+    if (already) return replay(already);
     for (let attempt = 0; attempt < 5; attempt++) {
       const last = await this.db.first<{ seq: number; hash: string }>('SELECT seq, hash FROM offer_register WHERE property_id = ? ORDER BY seq DESC LIMIT 1', [propertyId]);
       const line: Omit<Row, 'hash'> = {
@@ -249,11 +285,14 @@ export class RegistreOffres {
       const hash = await hashOffer(line);
       try {
         await this.db.run(
-          `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash],
+          `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash, request_key)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash, requestKey],
         );
       } catch (error) {
+        // Le même envoi, arrivé en même temps : l'offre enregistrée par l'autre est rendue.
+        const twin = await known();
+        if (twin) return replay(twin);
         // Un autre enregistrement a pris ce rang : on recommence avec le suivant.
         if (/UNIQUE|ajout seul/i.test(String(error))) continue;
         throw error;
