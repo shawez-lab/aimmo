@@ -62,12 +62,28 @@ export interface TraceResult {
 
 const SPELLED: Record<string, number> = {
   un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10, onze: 11, douze: 12, treize: 13,
-  quatorze: 14, quinze: 15, seize: 16, vingt: 20, trente: 30, quarante: 40, cinquante: 50, soixante: 60, cent: 100, mille: 1000,
+  quatorze: 14, quinze: 15, seize: 16, vingt: 20, vingts: 20, trente: 30, quarante: 40, cinquante: 50, soixante: 60, septante: 70, octante: 80, nonante: 90, cent: 100, cents: 100, mille: 1000, million: 1_000_000, millions: 1_000_000,
   premier: 1, première: 1, deuxième: 2, second: 2, seconde: 2, troisième: 3, quatrième: 4, cinquième: 5, sixième: 6, septième: 7, huitième: 8, neuvième: 9, dixième: 10,
 };
 // « un », « une » et « neuf » sont surtout des mots ordinaires : ils ne comptent comme nombres que devant une unité.
 const SPELLED_NEEDS_UNIT = new Set(['un', 'une', 'neuf']);
-const UNIT_AFTER = /^\s*(pièces?|chambres?|étages?|niveaux?|places?|m²|m2|mètres?|ans?|salles?|lots?)\b/i;
+const UNIT_AFTER = /^\s*(pieces?|chambres?|etages?|niveaux?|places?|m²|m2|metres?|ans?|salles?|lots?)(?![\p{L}\p{N}])/iu;
+
+/**
+ * Le champ que l'unité qui suit un nombre lui impose : « 3 chambres » doit être le nombre de chambres, pas celui des
+ * pièces. Lu sur le texte sans accents. Une unité reconnue sans champ (« ans », « lots », « salles ») n'a pas de source.
+ */
+const UNITS: { re: RegExp; fields: (keyof ListingFacts)[] }[] = [
+  { re: /^\s*(?:e|er|ere|eme|ieme)?\s*(?:etages?|niveaux?)(?![\p{L}])/u, fields: ['floor', 'floorsTotal'] },
+  { re: /^\s*(?:e|er|ere|eme|ieme)(?![\p{L}])/u, fields: ['floor'] },
+  { re: /^\s*pieces?(?![\p{L}])/u, fields: ['rooms'] },
+  { re: /^\s*chambres?(?![\p{L}])/u, fields: ['bedrooms'] },
+  { re: /^\s*(?:m²|m2|metres? carres?|metres?)(?![\p{L}\p{N}])/u, fields: ['surfaceM2', 'landM2'] },
+  { re: /^\s*(?:places?|parkings?|garages?|box|stationnements?)(?![\p{L}])/u, fields: ['parkingSpaces'] },
+  { re: /^\s*(?:ans?|annees?|salles?|lots?|km|minutes?|min|%|€|euros?)(?![\p{L}])/u, fields: [] },
+];
+/** Sans unité, un nombre ne peut être que l'année de construction, le code postal, ou le total d'étages après « sur ». */
+const NO_UNIT_FIELDS: (keyof ListingFacts)[] = ['buildYear', 'postalCode'];
 
 const NUMBER = /\d{1,3}(?:[   ]\d{3})+(?:,\d+)?|\d+(?:,\d+)?/g;
 
@@ -96,12 +112,13 @@ export const DISCRIMINATORY_TERMS: readonly string[] = [
   'catholique', 'protestant', 'nationalité', 'étranger', 'étrangère', 'étrangers', 'français uniquement', 'française uniquement', 'handicap', 'handicapé', 'handicapée',
   'sans enfant', 'sans enfants', "pas d'enfant", "pas d'enfants", 'couple', 'couples', 'célibataire', 'célibataires', 'retraité', 'retraités', 'retraitée', 'famille', 'familles',
   'familial', 'familiale', 'jeune couple', 'jeunes', 'senior', 'seniors', 'âgé', 'âgée', 'âge', 'homme', 'hommes', 'femme', 'femmes', 'sexe', 'orientation', 'mœurs', 'moeurs',
-  'grossesse', 'enceinte', 'opinion', 'opinions', 'syndicat', 'syndical', 'patronyme', 'apparence', 'réservé à', 'réservée à', 'exclusivement pour', 'idéal pour',
+  'grossesse', 'enceinte', 'opinion', 'opinions', 'syndicat', 'syndical', 'patronyme', 'apparence', 'réservé à', 'réservée à', 'réservés à', 'réservées à', 'réservé aux', 'réservée aux', 'réservés aux', 'réservées aux',
+  'exclusivement pour', 'exclusivement aux', 'exclusivement à', 'uniquement pour', 'idéal pour', 'français', 'française', 'européen', 'européenne', 'africain', 'africaine', 'maghrébin', 'asiatique',
 ];
 
 /** Mots jamais permis dans un texte destiné au public (AGENTS.md). */
 export const FORBIDDEN_TERMS: readonly string[] = [
-  'gratuit', 'gratuite', 'gratuitement', 'mandataire', 'mandataires', 'ia', 'intelligence artificielle', 'chatgpt', 'gpt', 'robot', 'algorithme', 'généré', 'générée', 'automatiquement',
+  'gratuit', 'gratuite', 'gratuits', 'gratuites', 'gratuitement', 'mandataire', 'mandataires', 'ia', 'intelligence artificielle', 'chatgpt', 'gpt', 'robot', 'algorithme', 'généré', 'générée', 'automatiquement',
 ];
 
 /** Équipements et états reconnus : avec le test qui dit si la fiche les porte. Un terme sans champ n'a jamais de source. */
@@ -133,10 +150,24 @@ const FEATURES: { terms: string[]; field: keyof ListingFacts | null; has: (f: Li
   },
 ];
 
-const norm = (s: string): string => s.toLowerCase().replace(/[’`]/g, "'").replace(/\s+/g, ' ');
+/**
+ * Texte comparable : minuscules, sans accents, apostrophes droites, espaces réunies, et sigles à points lus d'un
+ * bloc (« I.A. » → « ia »). Les termes cherchés passent par la même fonction.
+ */
+const norm = (s: string): string =>
+  s
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[’`]/g, "'")
+    .replace(/(?<![\p{L}])((?:\p{L}\.){2,})/gu, (m) => m.replace(/\./g, ''))
+    .replace(/\s+/g, ' ');
+const SPELLED_NORM = new Map(Object.entries(SPELLED).map(([k, v]) => [norm(k), v] as const));
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Un terme, entier, entre deux limites de mot (lettres accentuées comprises). */
 const termRe = (t: string): RegExp => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(t)}(?![\\p{L}\\p{N}])`, 'iu');
+/** Un terme au singulier ou au pluriel, au masculin ou au féminin : « musulman » lit aussi « musulmanes ». */
+const termFormsRe = (t: string): RegExp => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(t)}(?:e|s|es|x)?(?![\\p{L}\\p{N}])`, 'iu');
 
 /** Les nombres de la fiche, chacun avec son champ. */
 function numericSources(f: ListingFacts): { field: keyof ListingFacts; value: number }[] {
@@ -161,7 +192,9 @@ const parseNumber = (raw: string): number => Number(raw.replace(/[   ]/g, '')
 /** Découpe en phrases : après un point, un point d'exclamation ou d'interrogation, ou un retour à la ligne. */
 export function sentences(text: string): string[] {
   return text
-    .split(/(?<=[.!?])\s+|\n+/u)
+    // Un simple retour à la ligne ne coupe pas une phrase : « sans\nenfants » reste lu d'un bloc.
+    .split(/(?<=[.!?])\s+|\n\s*\n/u)
+    .map((s) => s.replace(/\s+/g, ' '))
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 }
@@ -181,31 +214,62 @@ export function traceSentence(sentence: string, facts: ListingFacts): SourcedSen
   if (street) problems.push({ code: 'adresse', value: street });
 
   // Critères discriminants [R46] et mots interdits.
-  for (const term of DISCRIMINATORY_TERMS) if (termRe(norm(term)).test(lower)) problems.push({ code: 'critere_discriminant', value: term });
-  for (const term of FORBIDDEN_TERMS) if (termRe(term).test(lower)) problems.push({ code: 'mot_interdit', value: term });
+  // Chaque passage refusé est nommé une fois, tel qu'il est lu (sans accents), même si plusieurs termes le trouvent.
+  const flagged = (terms: readonly string[], code: 'critere_discriminant' | 'mot_interdit') => {
+    const found: { at: number; text: string }[] = [];
+    for (const term of terms) {
+      for (const m of lower.matchAll(new RegExp(termFormsRe(norm(term)).source, 'giu'))) {
+        const at = m.index ?? 0;
+        if (!found.some((f) => at < f.at + f.text.length && f.at < at + m[0].length)) found.push({ at, text: m[0] });
+      }
+    }
+    for (const f of found.sort((a, b) => a.at - b.at)) problems.push({ code, value: f.text });
+  };
+  flagged(DISCRIMINATORY_TERMS, 'critere_discriminant');
+  flagged(FORBIDDEN_TERMS, 'mot_interdit');
 
-  // Nombres en chiffres [R47] : chacun doit être une valeur de la fiche. Le numéro d'une voie est déjà refusé.
-  const matchesSource = (value: number): { field: keyof ListingFacts } | undefined => numbers.find((n) => n.value === value);
-  for (const m of sentence.matchAll(NUMBER)) {
-    const raw = m[0];
-    const value = parseNumber(raw);
-    const src = matchesSource(value);
-    if (src) addSource(src.field, raw.replace(/[  ]/g, ' '));
+  // Nombres [R47] : chacun doit être la valeur d'un champ de la fiche, et du champ que son unité désigne.
+  const check = (value: number, raw: string, after: string, before: string) => {
+    const unit = UNITS.find((u) => u.re.test(after));
+    let fields: (keyof ListingFacts)[];
+    if (unit) fields = unit.fields;
+    else if (/(?<![\p{L}])sur\s*$/u.test(before)) fields = ['floorsTotal'];
+    else fields = NO_UNIT_FIELDS;
+    const src = numbers.find((n) => fields.includes(n.field) && n.value === value);
+    if (src) addSource(src.field, raw);
     else problems.push({ code: 'nombre_sans_source', value: raw });
+  };
+  // Chiffres non latins et chiffres romains : jamais de source.
+  for (const m of sentence.matchAll(/[^\P{Nd}0-9]+/gu)) problems.push({ code: 'nombre_sans_source', value: m[0] });
+  for (const m of sentence.matchAll(/(?<![\p{L}])[IVXLCDM]+(?:e|er|ème|eme)?(?=\s+(?:siècle|siecle|étage|etage|arrondissement))/gu)) problems.push({ code: 'nombre_sans_source', value: m[0] });
+  for (const m of lower.matchAll(NUMBER)) {
+    const raw = m[0];
+    const at = m.index ?? 0;
+    check(parseNumber(raw), raw.replace(/[\u00a0\u202f]/g, ' '), lower.slice(at + raw.length), lower.slice(0, at));
   }
-  // Nombres en lettres.
-  for (const m of lower.matchAll(/[\p{L}]+/gu)) {
-    const word = m[0];
-    const value = SPELLED[word];
-    if (value === undefined) continue;
-    if (SPELLED_NEEDS_UNIT.has(word) && !UNIT_AFTER.test(lower.slice((m.index ?? 0) + word.length))) continue;
-    const src = matchesSource(value);
-    if (src) addSource(src.field, word);
-    else problems.push({ code: 'nombre_sans_source', value: word });
+  // Nombres en lettres ; un nombre composé (« quatre-vingts », « deux cents ») n'est jamais lu comme une source.
+  for (const m of lower.matchAll(/[\p{L}]+(?:-[\p{L}]+)*/gu)) {
+    const parts = m[0].split('-');
+    const at = m.index ?? 0;
+    const values = parts.map((p) => SPELLED_NORM.get(p));
+    if (values.every((v) => v === undefined)) continue;
+    const after = lower.slice(at + m[0].length);
+    const nextWord = /^\s+([\p{L}]+)/u.exec(after)?.[1];
+    const compound = parts.length > 1 || (nextWord !== undefined && SPELLED_NORM.has(nextWord) && !['un', 'une', 'neuf'].includes(nextWord));
+    const prev = /([\p{L}]+)\s+$/u.exec(lower.slice(0, at))?.[1];
+    const partOfPrevious = prev !== undefined && SPELLED_NORM.has(prev) && !['un', 'une', 'neuf'].includes(prev) && parts.length === 1;
+    if (partOfPrevious) continue; // déjà compté avec le mot d'avant
+    if (compound) {
+      problems.push({ code: 'nombre_sans_source', value: nextWord && parts.length === 1 ? `${m[0]} ${nextWord}` : m[0] });
+      continue;
+    }
+    const word = parts[0]!;
+    if (SPELLED_NEEDS_UNIT.has(word) && !UNIT_AFTER.test(after)) continue;
+    check(values[0]!, word, after, lower.slice(0, at));
   }
 
-  // Classes du diagnostic.
-  for (const m of sentence.matchAll(/\bclasse\s+(?:énergie\s+|climat\s+|énergétique\s+)?([A-Za-z])\b/giu)) {
+  // Classes du diagnostic, sous toutes leurs formes : « classe énergie : B », « DPE B », « étiquette GES C ».
+  for (const m of lower.matchAll(/(?<![\p{L}])(?:classe|classee?|dpe|etiquette|ges)(?:\s*[:\-–]\s*|\s+)(?:(?:energie|energetique|climat|ges|dpe)(?:\s*[:\-–]\s*|\s+))?([a-g])(?![\p{L}'])/gu)) {
     const letter = m[1]!.toUpperCase();
     if (letter === facts.energyClass) addSource('energyClass', letter);
     else if (letter === facts.climateClass) addSource('climateClass', letter);

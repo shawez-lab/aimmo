@@ -43,7 +43,7 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
   it('[R47] chaque nombre et chaque fait d’une phrase vraie est relié à son champ', () => {
     const s = traceSentence('Appartement de 62 m² à Dijon, 3 pièces dont 2 chambres, au 3e étage sur 5 avec ascenseur et balcon.', FACTS);
     expect(s.problems).toEqual([]);
-    expect(s.sources.map((x) => x.field).sort()).toEqual(['bedrooms', 'city', 'elevator', 'floorsTotal', 'outdoor', 'rooms', 'surfaceM2'].sort());
+    expect(s.sources.map((x) => x.field).sort()).toEqual(['bedrooms', 'city', 'elevator', 'floor', 'floorsTotal', 'outdoor', 'rooms', 'surfaceM2'].sort());
     expect(traceSentence('Construit en 1965, classe énergie D, chauffage collectif, une place de parking.', FACTS).problems).toEqual([]);
     expect(traceSentence('Trois pièces lumineuses, deux chambres.', FACTS).problems).toEqual([]);
   });
@@ -64,7 +64,7 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(codes('Avec jardin.')).toEqual(['fait_sans_source:jardin']);
     expect(codes('Avec piscine et cave.')).toEqual(['fait_sans_source:piscine', 'fait_sans_source:cave']);
     expect(codes('Entièrement rénové.')).toEqual(['fait_sans_source:rénové']);
-    expect(codes('Classe énergie B.')).toEqual(['fait_sans_source:Classe énergie B']);
+    expect(codes('Classe énergie B.')).toEqual(['fait_sans_source:classe energie b']);
     expect(codes('Sans ascenseur.')).toEqual(['fait_sans_source:sans ascenseur']);
     expect(codes('Chauffage au gaz.')).toEqual(['fait_sans_source:chauffage au gaz']);
     expect(codes('Au rez-de-chaussée.')).toEqual(['fait_sans_source:rez-de-chaussée']);
@@ -81,10 +81,10 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
   });
 
   it('[R46] un critère discriminant est refusé, liste fermée', () => {
-    expect(codes('Idéal pour une famille.')).toEqual(['critere_discriminant:famille', 'critere_discriminant:idéal pour']);
+    expect(codes('Idéal pour une famille.')).toEqual(['critere_discriminant:ideal pour', 'critere_discriminant:famille']);
     expect(codes('Pas d’enfants, couple uniquement.')).toEqual(["critere_discriminant:pas d'enfants", 'critere_discriminant:couple']);
-    expect(codes('Réservé à un retraité.')).toEqual(['critere_discriminant:retraité', 'critere_discriminant:réservé à']);
-    expect(codes('Nationalité française exigée.')).toEqual(['critere_discriminant:nationalité']);
+    expect(codes('Réservé à un retraité.')).toEqual(['critere_discriminant:reserve a', 'critere_discriminant:retraite']);
+    expect(codes('Nationalité française exigée.')).toEqual(['critere_discriminant:nationalite', 'critere_discriminant:francaise']);
     expect(codes('Au 3e étage.')).toEqual([]);
   });
 
@@ -92,7 +92,45 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(codes('Estimation gratuite.')).toEqual(['mot_interdit:gratuite']);
     expect(codes('Votre mandataire vous accueille.')).toEqual(['mot_interdit:mandataire']);
     expect(codes('Texte rédigé par une IA.')).toEqual(['mot_interdit:ia']);
-    expect(codes('Description générée automatiquement.')).toEqual(['mot_interdit:générée', 'mot_interdit:automatiquement']);
+    expect(codes('Description générée automatiquement.')).toEqual(['mot_interdit:generee', 'mot_interdit:automatiquement']);
+  });
+
+  it('[R47] un nombre doit venir du champ que son unité désigne ; composés, romains et chiffres non latins n’ont pas de source', () => {
+    const f: ListingFacts = { ...FACTS, surfaceM2: 65, floor: 1, floorsTotal: 4, buildYear: 1970 };
+    expect(codes('Appartement de 3 chambres.', f)).toEqual(['nombre_sans_source:3']);
+    expect(codes('Au 3e étage.', f)).toEqual(['nombre_sans_source:3']);
+    expect(codes('Au 1er étage sur 4.', f)).toEqual([]);
+    expect(codes('Trois chambres.', f)).toEqual(['nombre_sans_source:trois']);
+    expect(codes('Quatre-vingts mètres carrés.', f)).toEqual(['nombre_sans_source:quatre-vingts']);
+    expect(codes('À deux cents mètres du centre.', f)).toEqual(['nombre_sans_source:deux cents']);
+    expect(codes('Immeuble du XIXe siècle.', f)).toEqual(['nombre_sans_source:XIXe']);
+    expect(codes('Surface de ١٢٠ m².', f)).toEqual(['nombre_sans_source:١٢٠']);
+    expect(codes('Bâti il y a 3 ans.', f)).toEqual(['nombre_sans_source:3']);
+    expect(codes('Construit en 1970.', f)).toEqual([]);
+    expect(codes('Résidence de 3 étages.', f).length).toBeGreaterThan(0);
+  });
+
+  it('[R47] une classe énergie inventée est refusée, quelle que soit son écriture', () => {
+    expect(codes('Classe énergie : B.')).toEqual(['fait_sans_source:classe energie : b']);
+    expect(codes('DPE B.')).toEqual(['fait_sans_source:dpe b']);
+    expect(codes('Étiquette énergie A.')).toEqual(['fait_sans_source:etiquette energie a']);
+    expect(codes('Classé D au DPE, GES C.')).toEqual([]);
+  });
+
+  it('[R46] critères discriminants lus au pluriel, au féminin, sans accents ; « réservé aux »', () => {
+    expect(codes('Réservé aux Français.')).toEqual(['critere_discriminant:reserve aux', 'critere_discriminant:francais']);
+    expect(codes('Voisins musulmans.')).toEqual(['critere_discriminant:musulmans']);
+    expect(codes("Pas d'etrangers.")).toEqual(['critere_discriminant:etrangers']);
+    expect(codes('Ideal pour handicape.')).toEqual(['critere_discriminant:ideal pour', 'critere_discriminant:handicape']);
+  });
+
+  it('un retour à la ligne ne coupe pas un terme ; « I.A. » et « gratuits » sont refusés', () => {
+    const r = traceListing('Appartement à Dijon', 'Logement sans\nenfants.', FACTS);
+    expect(r.ok).toBe(false);
+    expect(traceListing('Appartement à Dijon', 'Chauffage\nau gaz.', FACTS).ok).toBe(false);
+    expect(traceListing('Appartement à Dijon', 'Écrit par une\nintelligence\nartificielle.', FACTS).ok).toBe(false);
+    expect(codes('Texte rédigé par une I.A. au calme.')).toEqual(['mot_interdit:ia']);
+    expect(codes('Honoraires gratuits.')).toEqual(['mot_interdit:gratuits']);
   });
 
   it('le texte de secours fait par le code passe toujours le contrôle, pour des biens variés', () => {
