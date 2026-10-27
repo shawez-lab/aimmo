@@ -38,6 +38,7 @@ import { intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } f
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter } from '@aimmo/core';
 import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
+import { handleAgentApp } from './agent-app.ts';
 import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './estimation.ts';
 import { BOOKING_PATH, BOOKING_SLOTS_PATH, handleBooking, type BookingLimits } from './rendezvous.ts';
 import type { DetailedSales, Geocoder } from '@aimmo/core';
@@ -132,6 +133,21 @@ interface RouteDef {
 const ID = '([A-Za-z0-9_-]{1,64})';
 
 const ROUTES: RouteDef[] = [
+  {
+    method: 'GET',
+    pattern: /^\/moi$/,
+    name: 'moi',
+    // Qui porte la clé : le rôle, et le prénom pour un agent en activité ; rien d'autre [R16].
+    handle: async (s, viewer) => {
+      if (viewer.role !== 'agent') return json(200, { ok: true, mode: TRIAL_MODE, data: { role: viewer.role, firstName: null } });
+      const agent = await s.db.first<{ first_name: string; status: string; network_id: string }>('SELECT first_name, status, network_id FROM agents WHERE id = ?', [viewer.userId]);
+      if (!agent || agent.status !== 'active' || agent.network_id !== viewer.networkId) {
+        await appendEvent(s.journal, { type: 'acces.refuse', actor: `agent:${viewer.userId}`, subject: null, data: { rule: 'R16', role: 'agent', kind: 'session', code: 'agent_inactive' } }, s.now);
+        return refusal({ rule: 'R16', code: 'agent_inactive' });
+      }
+      return json(200, { ok: true, mode: TRIAL_MODE, data: { role: 'agent', firstName: agent.first_name } });
+    },
+  },
   {
     method: 'GET',
     pattern: /^\/fiches$/,
@@ -417,6 +433,9 @@ export async function journalError(journal: JournalStore, actor: string, route: 
 export async function handleRequest(request: Request, config: ApiConfig): Promise<Response> {
   const now = config.now ?? (() => new Date());
   const url = new URL(request.url);
+  // L'application de l'agent (A01) : une coquille sans aucune donnée, servie seulement en mode essai.
+  const app = handleAgentApp(request);
+  if (app) return config.mode === TRIAL_MODE ? app : failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
   if (!url.pathname.startsWith(`${API_PREFIX}/`)) return failure(404, 'not_found', 'Adresse inconnue.');
   const path = url.pathname.slice(API_PREFIX.length);
 

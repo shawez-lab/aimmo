@@ -16,6 +16,7 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | POST | `/v1/envois/decision` | la décision d'envoi et la règle qui a décidé, sans rien envoyer | selon R16 |
 | POST | `/v1/qualifications/<id>/correction` | corrige la catégorie d'un contact, `{"category": "buyer", "route": null}` ; la correction est gardée et rejoint les cas de mesure | qui voit la fiche en entier (R16) |
 | GET | `/v1/contacts-chauds` | les contacts chauds à rappeler, matin ou soir, avec la raison de leur note : un agent ne voit que les siens, jamais une personne exclue | agent, direction, conformité (R16, R25) |
+| GET | `/v1/moi` | qui porte la clé : le rôle, et le prénom pour un agent en activité ; sert à la connexion de l'application de l'agent | toute clé ; un agent parti est refusé (R16) |
 | GET | `/v1/plan-du-jour` | le plan du jour de l'agent, figé à 7 h 30 heure de Paris par le planificateur : rappels demandés, estimations à relancer, rendez-vous à proposer, dans l'ordre écrit, chaque ligne avec sa raison et sa base légale ; `null` avant 7 h 30 | l'agent lui-même seulement (R16, R35, R36) |
 | GET | `/v1/plan-du-jour/controle` | les écarts du contrôle quotidien de la base légale des plans du jour sur 30 jours, non encore vus : des nombres par raison et par jour, jamais une fiche | direction, conformité (R16, R36) |
 | GET | `/v1/attribution/regles` | les règles d'attribution des contacts, les délais de rappel et les communes : les mêmes pour tous [R25] | toute clé |
@@ -121,3 +122,10 @@ npx wrangler@4.149.0 d1 migrations apply aimmo --local
 echo 'API_KEYS=[...]' > .dev.vars   # jamais commité
 npx wrangler@4.149.0 dev --local
 ```
+
+## Application de l'agent (A01)
+
+- Le Worker sert l'application web installable à l'adresse `/app/`, en mode essai seulement : page, style, script, manifeste, icône et service worker. Aucune donnée n'y est écrite : l'application lit tout par l'API, sous les droits de l'agent (R16).
+- L'agent s'y connecte avec sa clé personnelle (H22), saisie une fois et gardée sur son appareil ; elle part seulement dans l'en-tête `Authorization`, jamais dans une adresse. « Se déconnecter » l'efface de l'appareil.
+- Le service worker ne garde que la coquille de l'application ; aucune réponse de l'API n'est mise en cache. Politique de contenu stricte : aucun script en ligne, aucun appel hors de ce Worker.
+- Les fichiers que reçoit le navigateur sont dans `packages/api/app/fichiers.ts`, hors du code du Worker.
