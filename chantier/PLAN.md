@@ -1006,7 +1006,7 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Attend : rien.
 
 ### F02 · Demande d'avis le lendemain de l'acte, à tous, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-27) : faite avant N06, comme le prévoit la lecture prudente de M11 : le dossier clos est lu par une interface, avec un faux dossier clos dans les tests ; N06 la branchera.
 - Qui : Claude · Relecture : forte · Dépend de : N06
 - Cahier : M11, « Demande d'avis » ; règle « l'avis est demandé à tous les clients, sans tri préalable, sans contrepartie ».
@@ -1023,7 +1023,7 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Attend : rien.
 
 ### F04 · Relance un an après la vente, sans jamais relancer une personne opposée
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : F02
 - Cahier : M11, « Relances aux dates clés » ; règle « relances seulement aux clients qui ne s'y sont pas opposés, avec désinscription dans chaque message ».
 - Objectif : à l'acte, l'agent range le choix du client (relances après la vente : oui, non, ou seulement à un an) avec sa preuve ; un an après la clôture, une relance écrite par le code, avec un lien de désinscription ; au-delà d'un an, seulement avec l'accord donné à l'acte ; une opposition dite plus tard arrête tout.
@@ -1052,5 +1052,6 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Cahier : M11 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/apres-vente` (recommandation, choix des relances, lien de la fiche Google, satisfaction, tâches) dans `packages/api/src/apres-vente.ts`, branchées dans `app.ts`, le passage quotidien au planificateur, et dans l'application de l'agent l'écran d'un dossier clos : demandes parties, tâches « remercier », recommandations, note.
 - Critères : chaque route sous R16, refus au journal ; un parcours de test, de l'acte à la relance d'un an ; écran accessible, sans texte générique, beau sur téléphone d'abord.
+- Reste de F02 : brancher `reviewRequestJob` au planificateur avec le `DossiersClos` de N06 ; routes du lien de la fiche Google (`setReviewLink`), des demandes (`list`) et des tâches (`openTasks`, `lien_avis` et `avis_non_parti`). Le plafond de R11, 2 demandes d'avis par jour pour tout le réseau, ne suffira pas quand le réseau clora plus de 2 ventes par jour : les demandes en trop sont closes et confiées à l'agent ; un plafond par agent serait un changement de R11, à décider avec Shawez.
 - Reste de F01 : deux saisies simultanées du même proche peuvent laisser un projet et une source en trop (D1 sans transaction interactive) : la route de recommandation porte une clé d'idempotence.
 - Attend : rien.
