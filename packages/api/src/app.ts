@@ -11,6 +11,7 @@ import {
   DecisionEnvoi,
   FicheClient,
   CATEGORIES,
+  ChronologieMandat,
   ControlesSignature,
   SignatureAvenant,
   EcheancesMandats,
@@ -514,6 +515,17 @@ const ROUTES: RouteDef[] = [
     // Les conditions en vigueur d'un mandat (prix, durée) et l'historique de ses avenants signés [R16].
     handle: async (s, viewer, [id]) => {
       const r = await new SignatureAvenant(s.db, s.acces, s.journal, { now: s.now }).terms(viewer, id!);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/mandats/${ID}/chronologie$`),
+    name: 'mandat.chronologie',
+    // La chronologie d'un mandat, de l'avis validé au numéro : la mesure du critère de M06 ; direction, conformité.
+    handle: async (s, viewer, [id]) => {
+      const r = await new ChronologieMandat(s.db, s.journal, { now: s.now }).read(viewer, id!);
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
     },
