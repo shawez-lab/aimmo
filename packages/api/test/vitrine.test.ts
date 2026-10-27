@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { expect, it } from 'vitest';
-import { verifyChain } from '@aimmo/core';
+import { expect, it, vi } from 'vitest';
+import { annonces, verifyChain } from '@aimmo/core';
 import { handleRequest } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { quarterSlot, runListingSync, type MediaStore } from '../src/vitrine.ts';
@@ -116,5 +116,25 @@ describeWithSqlite('P10 · branchement de M07 dans le socle', () => {
     expect(without.status).toBe(404);
     // Hors mode essai, la vitrine est fermée comme le reste.
     expect((await handleRequest(new Request(`${BASE}/biens/${t.propertyId}`), { db: t.db, apiKeys: undefined, mode: 'reel', now: t.now })).status).toBe(503);
+  });
+
+  it('une panne d’un réseau n’empêche pas les autres de publier ; elle va au journal et le créneau est en erreur', async () => {
+    const t = await setup();
+    await t.annonces.validate(t.agent, t.draftId);
+    await t.db.run("INSERT INTO networks (id, name, created_at) VALUES ('0-reseau-en-panne', 'Réseau en panne', '2027-01-01T00:00:00.000Z')");
+    const real = annonces.Publication.prototype.syncAll;
+    const spy = vi.spyOn(annonces.Publication.prototype, 'syncAll').mockImplementation(async function (this: InstanceType<typeof annonces.Publication>, networkId: string) {
+      if (networkId === '0-reseau-en-panne') throw new TypeError('panne');
+      return real.call(this, networkId);
+    });
+    try {
+      t.setClock(new Date(DELAY_END.getTime() + 5 * MIN));
+      expect(await runListingSync(t.db, t.now)).toMatchObject({ ran: true, properties: 1 });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM listing_versions')).toEqual({ n: 1 });
+    expect(await t.db.all("SELECT outcome FROM scheduled_runs WHERE job = 'annonces.publication'")).toEqual([{ outcome: 'error' }]);
+    expect((await t.journal.all()).filter((e) => e.type === 'api.erreur' && e.data.route === 'annonces.publication')).toHaveLength(1);
   });
 });
