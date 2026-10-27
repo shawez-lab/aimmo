@@ -838,7 +838,8 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien pour l'essai.
 
 ### O04 · Contre-offres et historique de la négociation
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : propositions transmises de vive voix ou par écrit, attesté ; une proposition n'existe qu'après une réponse « contre-offre » ; montants donnés par les parties ; les contre-offres sans réponse ont leur tâche avant l'échéance (O05)
 - Qui : Claude · Relecture : normale · Dépend de : O03
 - Cahier : M09, « Transmission », « contre-offre ».
 - Objectif : une contre-offre du vendeur crée une nouvelle proposition liée à l'offre, transmise à l'acquéreur après validation de l'agent ; la réponse de l'acquéreur est rapportée de la même façon ; la chaîne complète se lit dans l'ordre.
@@ -855,7 +856,7 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O06 · Tableau comparatif des offres pour le vendeur
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : O02
 - Cahier : M09, « Plusieurs offres ».
 - Objectif : pour un bien, toutes les offres en cours côte à côte : montant, net vendeur après honoraires du mandat, conditions suspensives, durée de validité restante, date de signature souhaitée ; dans l'ordre d'arrivée, sans aucun tri ni note.
