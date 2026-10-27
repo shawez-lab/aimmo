@@ -134,6 +134,25 @@ describeWithSqlite('G02 · plan du jour à 7 h 30, par le planificateur', () => 
     expect(sam.ok && sam.value?.items).toEqual([]);
   });
 
+  it('[R16] une ligne dont les fiches réunies ont changé depuis 7 h 30 (défusion) n’est plus rendue', async () => {
+    const t = await setup();
+    const a = await t.person(t.alex.id, 'Léa', WINTER_7H30 - DAY);
+    const b = await t.person(t.alex.id, 'Léa', WINTER_7H30 - 2 * DAY);
+    const { FicheUnique } = await import('../src/index.ts');
+    const unique = new FicheUnique(t.db, t.store, { now: () => new Date(WINTER_7H30 - 1000) });
+    const merge = await unique.merge({ survivorId: a, mergedId: b, reason: 'même personne (test)' });
+    t.setClock(WINTER_7H30);
+    await t.plans.freezeAll();
+    const before = await t.plans.read(t.as('agent', t.alex.id));
+    expect(before.ok && before.value?.items.map((i) => i.personId)).toEqual([a]);
+    expect(JSON.stringify(before)).not.toContain('memberIds');
+    await unique.undoMerge(merge.id);
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, b]);
+    const after = await t.plans.read(t.as('agent', t.alex.id));
+    expect(after.ok && after.value?.items).toEqual([]);
+    expect(after.ok && after.value?.hiddenSinceFrozen).toBe(1);
+  });
+
   it('[R13] le journal note le passage et les lectures sans donnée personnelle ; aucun envoi', async () => {
     const t = await setup();
     await t.person(t.alex.id, 'Léa', WINTER_7H30 - DAY);

@@ -38,6 +38,8 @@ export type FrozenPlanRead =
   | { ok: true; value: FrozenPlan | null }
   | { ok: false; rule: 'R16'; code: 'not_agent' | 'agent_inactive' };
 
+type StoredItem = DailyPlan['items'][number] & { memberIds?: string[] };
+
 interface DailyPlanRow {
   agent_id: string;
   day: string;
@@ -86,9 +88,12 @@ export class PlansDuJour {
         const result = await this.plan.compute(this.acces, viewer, ACTOR);
         if (!result.ok) continue;
         const plan = result.value;
+        // Chaque ligne garde les fiches réunies d'où viennent ses données : une défusion ensuite la masque à la lecture.
+        const stored: StoredItem[] = [];
+        for (const item of plan.items) stored.push({ ...item, memberIds: [...(await this.unique.membersOf(item.personId))].sort() });
         const { changes } = await this.db.run(
           `INSERT INTO daily_plans (agent_id, day, network_id, items, removed, computed_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-          [agent.id, day, agent.network_id, JSON.stringify(plan.items), JSON.stringify(plan.removed), plan.computedAt],
+          [agent.id, day, agent.network_id, JSON.stringify(stored), JSON.stringify(plan.removed), plan.computedAt],
         );
         if (changes !== 1) {
           already += 1;
@@ -133,12 +138,15 @@ export class PlansDuJour {
     const roots = new Set<string>();
     for (const person of visible.value) roots.add(await this.unique.rootOf(person.id));
     const at = this.now();
-    const stored = JSON.parse(row.items) as DailyPlan['items'];
+    const stored = JSON.parse(row.items) as StoredItem[];
     const items: DailyPlan['items'] = [];
-    for (const item of stored) {
+    for (const { memberIds, ...item } of stored) {
       const root = await this.unique.rootOf(item.personId);
       if (!roots.has(root)) continue;
       const ids = await this.unique.membersOf(root);
+      // Les fiches réunies ont changé depuis 7 h 30 (fusion ou défusion) : la ligne peut porter des données d'une
+      // fiche qui n'est plus celle-ci. Dans le doute, elle n'est pas rendue [R16].
+      if (memberIds === undefined || [...ids].sort().join('|') !== memberIds.join('|')) continue;
       if (!(await this.plan.eligibility(ids, at)).ok) continue;
       items.push(item);
     }

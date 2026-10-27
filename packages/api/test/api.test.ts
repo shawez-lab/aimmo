@@ -166,7 +166,7 @@ describeWithSqlite('API du socle de bout en bout, sur une base D1 locale', () =>
     const day = localDay(new Date(), 'Europe/Paris');
     // Camille a demandé une estimation hier : elle a sa base légale à la lecture [R36].
     await w.fiches.addSource({ networkId: w.net, agentId: w.agentId, personId: w.mine, channel: 'site', detail: 'estimation (test)', occurredAt: new Date(Date.now() - 86_400_000) });
-    const items = [{ rank: 1, personId: w.mine, firstName: 'Camille', kind: 'appointment', reason: 'Demande d’estimation sans rendez-vous : rendez-vous à proposer.', order: '1. pas de rappel demandé', basis: { kind: 'request', since: '2026-10-18T08:00:00.000Z', purpose: null }, projectId: null, taskId: null, reportId: null }];
+    const items = [{ memberIds: [w.mine], rank: 1, personId: w.mine, firstName: 'Camille', kind: 'appointment', reason: 'Demande d’estimation sans rendez-vous : rendez-vous à proposer.', order: '1. pas de rappel demandé', basis: { kind: 'request', since: '2026-10-18T08:00:00.000Z', purpose: null }, projectId: null, taskId: null, reportId: null }];
     await w.db.run(`INSERT INTO daily_plans (agent_id, day, network_id, items, removed, computed_at) VALUES (?, ?, ?, ?, ?, ?)`, [
       w.agentId,
       day,
