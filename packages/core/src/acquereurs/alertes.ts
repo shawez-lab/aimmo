@@ -95,7 +95,7 @@ const FEATURE_LABEL: Record<BuyerFeature, string> = {
 const eur = (n: number): string => `${new Intl.NumberFormat('fr-FR').format(n).replace(/ | /g, ' ')} €`;
 
 /** Le texte de secours, fait par le code depuis le bien seul : vouvoiement, prénom, aucun chiffre inventé [R08, R10]. */
-export function alertFallbackText(firstName: string | null, p: AlertBrief['property'], channel: OutboundChannelName = 'email'): string {
+export function alertFallbackText(firstName: string | null, p: AlertBrief['property'], channel: OutboundChannelName = 'email', byAgent = false): string {
   const facts = [
     `${KIND_LABEL[p.kind] ?? 'bien'}${p.city ? ` à ${p.city}` : ''}`,
     ...(p.surfaceM2 !== null ? [`${String(p.surfaceM2).replace('.', ',')} m²`] : []),
@@ -108,6 +108,8 @@ export function alertFallbackText(firstName: string | null, p: AlertBrief['prope
   const what = `${facts.join(', ')}${extras.length > 0 ? `, avec ${extras.join(', ')}` : ''}`;
   // Tutoiement sur Instagram, vouvoiement ailleurs [R08].
   if (channel === 'instagram') return `${hello} un bien correspond à ta recherche : ${what}. Ton agent immobilier t’en dit plus sur simple réponse.`;
+  // Écrit par l'agent lui-même, de son téléphone (T09) : il parle en son nom.
+  if (byAgent) return `${hello} un bien correspond à votre recherche : ${what}. Dites-moi si vous souhaitez le visiter.`;
   return `${hello} un bien correspond à votre recherche : ${what}. Votre agent immobilier vous en dit plus sur simple réponse.`;
 }
 
@@ -121,6 +123,29 @@ function newToken(): string {
 async function sha256(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Un lien de désinscription neuf pour la personne, rangé par l'empreinte de son jeton seulement, et la ligne à placer
+ * à la fin d'une alerte [R49].
+ */
+export async function newUnsubscribeLine(db: SqlDatabase, networkId: string, personId: string, base: string, at: Date): Promise<string> {
+  const token = newToken();
+  await db.run('INSERT INTO alert_unsubscribe_tokens (token_hash, network_id, person_id, created_at, used_at) VALUES (?, ?, ?, ?, NULL)', [
+    await sha256(token),
+    networkId,
+    personId,
+    at.toISOString(),
+  ]);
+  return `Ne plus recevoir ces alertes : ${base}${token}`;
+}
+
+/** Le début du lien de désinscription est en https, sans chiffre [R10], terminé par « / ». */
+export function checkUnsubscribeBase(base: string | null): string | null {
+  if (base !== null && !/^https:\/\/[^\s\d]+\/$/.test(base)) {
+    throw new Error('Le lien de désinscription est en https, sans chiffre [R10], terminé par « / ».');
+  }
+  return base;
 }
 
 export class Alertes {
@@ -148,10 +173,7 @@ export class Alertes {
     });
     const gate = (this.gate = options.diffusion ?? new Diffusion(db, new Acces(db, this.store, this.fiche, journal, { now: this.now }), journal, { now: this.now }));
     this.rapprochement = new Rapprochement(db, this.fiche, gate, journal, { now: this.now });
-    this.unsubscribeBase = options.unsubscribeBase ?? null;
-    if (this.unsubscribeBase !== null && !/^https:\/\/[^\s\d]+\/$/.test(this.unsubscribeBase)) {
-      throw new Error('Le lien de désinscription est en https, sans chiffre [R10], terminé par « / ».');
-    }
+    this.unsubscribeBase = checkUnsubscribeBase(options.unsubscribeBase ?? null);
   }
 
   /** Un passage : chaque bien en vente du réseau, chaque acquéreur qui en remplit tous les critères. */
@@ -246,14 +268,7 @@ export class Alertes {
     let messageId: string | null = null;
     let usedChannel: OutboundChannelName = channel;
     try {
-      const token = newToken();
-      await this.db.run('INSERT INTO alert_unsubscribe_tokens (token_hash, network_id, person_id, created_at, used_at) VALUES (?, ?, ?, ?, NULL)', [
-        await sha256(token),
-        networkId,
-        personId,
-        iso,
-      ]);
-      const link = `Ne plus recevoir ces alertes : ${this.unsubscribeBase}${token}`;
+      const link = await newUnsubscribeLine(this.db, networkId, personId, this.unsubscribeBase ?? '', at);
       const names = await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${placeholders(ids.length)})`, ids);
       const firstName = names.map((n) => n.first_name).find((n) => n) ?? null;
       const writer = this.options.writer;
