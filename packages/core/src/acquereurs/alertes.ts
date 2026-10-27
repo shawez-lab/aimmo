@@ -130,6 +130,7 @@ export class Alertes {
   private readonly controle: ControleEnvois;
   private readonly rapprochement: Rapprochement;
   private readonly unsubscribeBase: string | null;
+  private readonly gate: DiffusionGate;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -145,7 +146,7 @@ export class Alertes {
       journal: new SqlSendJournal(db, undefined, this.now),
       now: this.now,
     });
-    const gate = options.diffusion ?? new Diffusion(db, new Acces(db, this.store, this.fiche, journal, { now: this.now }), journal, { now: this.now });
+    const gate = (this.gate = options.diffusion ?? new Diffusion(db, new Acces(db, this.store, this.fiche, journal, { now: this.now }), journal, { now: this.now }));
     this.rapprochement = new Rapprochement(db, this.fiche, gate, journal, { now: this.now });
     this.unsubscribeBase = options.unsubscribeBase ?? null;
     if (this.unsubscribeBase !== null && !/^https:\/\/[^\s\d]+\/$/.test(this.unsubscribeBase)) {
@@ -285,6 +286,11 @@ export class Alertes {
           purpose: ALERT_PURPOSE,
           // L'accord des alertes est revérifié après la rédaction, sur tout canal : une désinscription l'emporte [R49].
           consentOnEveryChannel: true,
+          // Le bien doit pouvoir être diffusé encore au moment d'envoyer, après la rédaction [R42].
+          stillAllowed: async () => {
+            const d = await this.gate.canDiffuse(networkId, propertyId, this.now());
+            return { allowed: d.allowed, rule: 'R42', reason: d.allowed ? 'Bien diffusable.' : 'Le bien ne peut plus être diffusé.' };
+          },
           propertyIds: [propertyId],
           // L'IA écrit le corps, sans salutation : le prénom, qu'elle ne reçoit pas, est placé par le code [R08, R15].
           ...(writer ? { compose: async () => withLink(`${firstName ? `Bonjour ${firstName},` : 'Bonjour,'} ${(await writer.write(brief)).trim()}`) } : {}),
@@ -293,7 +299,8 @@ export class Alertes {
         });
         messageId = result.messageId;
         rule = result.status === 'sent' ? null : result.rule;
-        status = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' ? 'waiting' : 'refused';
+        // Refusée pour l'heure [R01] ou parce que le bien ne peut plus être diffusé [R42] : reprise si cela change.
+        status = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' || result.rule === 'R42' ? 'waiting' : 'refused';
         usedChannel = via;
         const channelBound = result.status === 'refused' && (result.rule === 'R22' || result.rule === 'R03' || result.rule === null);
         if (!channelBound) break;

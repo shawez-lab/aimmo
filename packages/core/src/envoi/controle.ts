@@ -37,6 +37,11 @@ export interface SendOrder {
   purpose?: string;
   /** L'accord est exigé sur tout canal, et revérifié après la rédaction (alertes de biens, R49). */
   consentOnEveryChannel?: boolean;
+  /**
+   * Une condition propre à l'envoi, revérifiée juste avant l'enregistrement, après la rédaction : par exemple qu'un
+   * bien proposé puisse encore être diffusé [R42]. Refusée : rien ne part, le refus va au journal avec sa règle.
+   */
+  stillAllowed?: () => Promise<{ allowed: boolean; rule: string; reason: string }>;
   /** Sujet d'un envoi d'initiative, par exemple `relance:projet-12` [R05]. Obligatoire hors réponse, sauf biens. */
   subject?: string | undefined;
   /** Biens proposés : chacun ne part qu'une fois à la personne [R05]. */
@@ -346,6 +351,10 @@ export class ControleEnvois {
     // La rédaction a pu durer : un arrêt ou une exclusion arrivés entre-temps l'emportent [R02, R04].
     const last = await decide(this.now());
     if (!last.allowed) return log('refused', last.rule, last.reason);
+    if (order.stillAllowed) {
+      const still = await order.stillAllowed();
+      if (!still.allowed) return log('refused', still.rule, still.reason);
+    }
 
     // Réservation atomique des sujets, du texte et de la mention : de deux envois simultanés, un seul passe [R05, R06].
     const reservationId = crypto.randomUUID();

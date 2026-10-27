@@ -194,6 +194,19 @@ describeWithSqlite('T03 · alertes aux acquéreurs, en mode essai', () => {
     expect((await t.sent())[0]!.body).toContain('95,5 m²');
   });
 
+  it('un bien qui ne peut plus être diffusé pendant la rédaction ne part pas, et l’alerte attend [R42]', async () => {
+    let block: (() => void) | null = null;
+    const t = await setup({ writer: { write: async () => { block?.(); return 'une maison à Talant correspond à votre recherche.'; } } });
+    await t.buyer('Inès', TALANT);
+    const prop = await t.property('B1', MAISON);
+    block = () => t.blocked.add(prop.id);
+    expect(await t.alertes.forProperty(t.network.id, prop.id)).toMatchObject([{ status: 'waiting', rule: 'R42' }]);
+    expect(await t.sent()).toHaveLength(0);
+    block = null;
+    t.blocked.delete(prop.id);
+    expect(await t.alertes.forProperty(t.network.id, prop.id)).toMatchObject([{ status: 'sent' }]);
+  });
+
   it('le contrôle central garde exclusions, arrêt et horaires [R01, R02, R04] ; une alerte refusée pour l’heure part au passage suivant', async () => {
     const t = await setup();
     const stop = await t.buyer('Arrêt', TALANT);
