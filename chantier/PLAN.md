@@ -662,7 +662,9 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : rien.
 
 ### T04 · Visite et bon de visite
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : la bibliothèque de D02 n'admet que les types de mandat (contrainte de sa table) ; le bon de visite a ses modèles à part, aux mêmes règles (direction crée, conformité valide) ; signature papier seulement, la signature en ligne du bon avec H24 ; une visite décalée reprend sa visite si le bien est encore diffusable, avec un bon neuf ; un bon manquant après une panne est refait à la lecture.
+- Reste : relecture de Codex de la dernière correction (un P2) restée en cours 20 min, fusion sans elle (#76).
 - Qui : Claude · Relecture : normale · Dépend de : T01, V02, D02
 - Cahier : M08, « Visites » ; M06, bibliothèque de modèles.
 - Objectif : une visite est un rendez-vous de V02 relié à un bien et à un projet d'achat ; le bon de visite est généré depuis la bibliothèque de D02 (modèle d'essai tant que H08 n'est pas fait), signé sur papier ou en ligne en essai (D08) ; le rappel de la veille vient de V04.
@@ -670,7 +672,7 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : H08 pour le modèle réel.
 
 ### T05 · Visite sécurisée
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : T04
 - Cahier : M08, « Visite sécurisée ».
 - Objectif : avant la visite, le visiteur confirme son identité et son téléphone (code à usage unique par le contrôle central, rangé dans la boîte d'essai) ; l'agent peut partager sa tournée du jour avec un proche par un lien qui expire, sans nom de client ni adresse exacte ; une alerte en un geste range l'heure et le lieu de la visite en cours et prévient la direction (boîte d'essai).
