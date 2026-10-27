@@ -56,6 +56,17 @@ describeWithSqlite('D03, D04 · routes des contrôles avant signature et de la s
     expect((await post(`/v1/documents/${doc.data.id}/signature-papier`, KEY_AGENT, paper)).status).toBe(409);
     const copy = (await (await worker.fetch(new Request(`${BASE}/v1/documents/${doc.data.id}/exemplaire`, { headers: { authorization: `Bearer ${KEY_AGENT}` } }), env)).json()) as { data: { number: string; content: string } };
     expect(copy.data.content).toContain('<span class="signe">T-001</span>');
+    // D05 : la décision de diffusion se lit sous les droits du bien ; ce modèle de test n'a pas de durée.
+    const bienId = bien.id;
+    const decision = (await (await worker.fetch(new Request(`${BASE}/v1/biens/${bienId}/diffusion`, { headers: { authorization: `Bearer ${KEY_AGENT}` } }), env)).json()) as { data: { allowed: boolean; reason: string } };
+    expect(decision.data).toMatchObject({ allowed: false, reason: 'duration_unknown' });
+    const signedBody = (await (await worker.fetch(new Request(`${BASE}/v1/documents/${doc.data.id}/exemplaire`, { headers: { authorization: `Bearer ${KEY_AGENT}` } }), env)).json()) as { data: unknown };
+    expect(signedBody.data).toBeTruthy();
+    const mandate = await db.first<{ id: string }>('SELECT id FROM mandates');
+    const late = await post(`/v1/mandats/${mandate!.id}/retractation`, KEY_AGENT, { proof: 'test', receivedAt: new Date().toISOString() });
+    expect(late.status).toBe(400);
+    expect(((await late.json()) as { code: string }).code).toBe('no_withdrawal_period');
+    expect((await post(`/v1/mandats/${mandate!.id}/retractation`, KEY_AGENT, { proof: 'test', receivedAt: 'hier' })).status).toBe(400);
     expect(JSON.stringify(await new SqlJournalStore(db).all())).not.toMatch(/test-cle|Léa/);
   });
 });
