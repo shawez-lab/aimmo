@@ -4,3 +4,4 @@ export * from './controles-offre.ts';
 export * from './transmission.ts';
 export * from './echeances.ts';
 export * from './contre-offres.ts';
+export * from './comparatif.ts';
