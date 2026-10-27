@@ -152,15 +152,19 @@ export class PointSemaine {
   }
 
   /** L'agent valide, avec ses prochaines actions ; jamais une baisse de prix [R53]. Le point part alors. */
-  async validate(viewer: Viewer, mandateId: string, week: string, nextActions: readonly string[] = []): Promise<{ ok: true; delivery: string; rule: string | null } | PointRefusal> {
+  async validate(viewer: Viewer, mandateId: string, week: string, actions: readonly string[] = []): Promise<{ ok: true; delivery: string; rule: string | null } | PointRefusal> {
     const access = await this.access(viewer, mandateId, week);
     if (!access.ok) return access;
     const row = access.row;
+    let nextActions: readonly string[] = actions;
     if (row.status === 'valide') {
       if (row.delivery_status === null) return this.send(mandateId, week);
       return { ok: true, delivery: row.delivery_status, rule: row.delivery_rule };
     }
     if (!Array.isArray(nextActions) || nextActions.length > 5 || nextActions.some((a) => typeof a !== 'string' || a.trim() === '' || a.length > 200)) return { ok: false, rule: null, code: 'bad_actions' };
+    // Les actions sont contrôlées telles qu'elles partiront : sans parenthèses, qui ne doivent pas couper un nom [R08, R52].
+    nextActions = nextActions.map((a) => a.replace(/[()]/g, '').trim());
+    if (nextActions.some((a) => a === '')) return { ok: false, rule: null, code: 'bad_actions' };
     // Le prix ne se discute que de vive voix : aucune action n'en parle, ni n'avance un chiffre [R10, R53].
     if (nextActions.some((a) => PRICE_DROP.test(plain(a)))) return { ok: false, rule: 'R53', code: 'price_drop' };
     if (nextActions.some((a) => /\d/.test(a))) return { ok: false, rule: 'R10', code: 'figure' };

@@ -138,6 +138,7 @@ describeWithSqlite('T07 · point de la semaine au vendeur', () => {
     expect(await v('écrire à ines.durand@example.test')).toMatchObject({ ok: false, rule: 'R52' });
     // Un visiteur qui porte le nom du vendeur reste protégé.
     expect(await v('rappeler Monsieur Test pour sa contre-visite')).toMatchObject({ ok: false, rule: 'R52' });
+    expect(await v('rappeler Monsieur Te(st) pour sa contre-visite')).toMatchObject({ ok: false, rule: 'R52' });
     // Une action refusée par le contrôle du texte ne fige pas le point : elle se corrige.
     expect(await v('organiser une visite gratuite')).toMatchObject({ ok: false, rule: 'R07', code: 'text_refused' });
     expect(await t.inbox(s.person.id)).toEqual([]);
