@@ -696,7 +696,8 @@ Découpé le 2026-10-27 par la voie 2. Ids `P..` pour Publier. Cahier : M07 Comm
 Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune publication réelle : les canaux (site, réseaux sociaux, fiche Google, portails) sont derrière une interface, avec un faux canal dans les tests, et ce qui « part » est rangé dans la boîte d'essai. Toute publication passe par la seule porte `canDiffuse` de D05 [R42], puis par la liste de contrôle des mentions [R43]. Le prix publié vient du mandat en vigueur, avenants compris, jamais d'une saisie [R44]. L'IA rédige l'annonce derrière une interface (fausse IA dans les tests, vraie IA avec H13), à partir des seules données du bien ; les mentions obligatoires sont calculées et placées par le code, jamais par l'IA ; l'agent valide. Les pages des biens de `shawez-immo` restent en place, intouchées, jusqu'à une tâche de bascule à part. Pendant la preuve à Dijon, les portails sont servis par le logiciel de l'agence ; l'export AIMMO est construit en essai et attend H10. Le numéro de carte professionnelle est un réglage du réseau (H09). Le montage de la vidéo vient avec M19 Studio ; M07 porte le plan de tournage et le contrôle « sans adresse visible ». Les biens d'exception (dossier en anglais, visites privées) viendront après la preuve. Les fichiers du socle ne sont pas touchés par la voie 2 : le code de M07 vit dans `packages/core/src/annonces/`, ses routes dans `packages/api/src/annonces.ts`, branchées par une seule ligne quand la voie 1 n'a pas `app.ts` en cours.
 
 ### P01 · Fiche du bien complète
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : aucun texte libre dans la fiche ; références de photos données par le stockage (`biens/<id du bien>/<identifiant>.<ext>`) ; une vidéo ne porte pas d'aménagement virtuel
 - Qui : Claude · Relecture : forte · Dépend de : D05
 - Cahier : M07, « Fiche du bien complète » ; Conformité, « Publier les annonces » (énergie, copropriété, risques).
 - Objectif : la fiche de commercialisation d'un bien, versionnée (une modification crée une version, rien ne s'efface) : caractéristiques (surface, pièces, chambres, étage, année, chauffage, extérieurs), diagnostic énergétique (classes énergie et climat de A à G, dépenses annuelles minimale et maximale, année de référence des prix, date du diagnostic), copropriété (lot ou non, nombre de lots, charges annuelles moyennes, procédure en cours), risques (zone concernée ou non), photos et vidéo par leur référence de stockage, avec leur état « retouchée » ou « aménagement virtuel ». L'adresse exacte reste hors de la fiche publique [R19].
@@ -704,7 +705,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P02 · Mentions obligatoires et liste de contrôle
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : P01
 - Cahier : Conformité, « Publier les annonces » ; M07, règles ; critère « 10 annonces tests passent la liste de contrôle des mentions ».
 - Objectif : une fonction du code calcule et place les mentions obligatoires d'une annonce à partir du bien et du mandat en vigueur : prix honoraires inclus en plus grand, prix hors honoraires et honoraires TTC en pourcentage quand l'acquéreur les paie ; classes énergie et climat, logement très énergivore (F ou G), dépenses annuelles avec l'année de référence ; copropriété (lots, charges, procédure) ; renvoi vers Géorisques si le bien est en zone concernée ; numéro de carte professionnelle (réglage du réseau). Une liste de contrôle rend chaque mention « présente » ou « manquante » avec sa raison.
