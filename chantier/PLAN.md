@@ -530,7 +530,8 @@ Décidé, lecture prudente : la première version sert la journée de l'agent, r
 - Critères : une fiche qui n'est pas à l'agent est refusée [R16] ; « rappel fait » garde la ligne [R17] ; une personne exclue ou arrêtée est signalée sur sa fiche et n'a pas de bouton d'appel [R02, R04].
 
 ### A04 · Mesure de l'usage du matin
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : un jour compte quand le plan déjà figé est ouvert avant midi, heure de Paris, lu dans le journal ; les 7 jours comprennent aujourd'hui ; la direction voit par jour un nombre d'agents, sans nom.
 - Qui : Claude · Relecture : normale · Dépend de : A02, G02
 - Cahier : Feuille de route, janvier 2027 : « application et plan du jour utilisés chaque matin pendant une semaine ».
 - Objectif : chaque agent voit, pour lui seul, les jours où il a ouvert son plan avant midi sur les 7 derniers jours ; la direction voit le nombre de jours d'usage du réseau, sans classement des agents [R14].
