@@ -11,6 +11,8 @@ import {
   fromSyncSqlite,
   verifyChain,
   weeklyPointJob,
+  weeklyPointText,
+  checkText,
   type MandateGate,
   type SqlDatabase,
 } from '../src/index.ts';
@@ -144,6 +146,13 @@ describeWithSqlite('T07 · point de la semaine au vendeur', () => {
     expect(await t.inbox(s.person.id)).toEqual([]);
     expect(await v('organiser une contre-visite')).toMatchObject({ ok: true, delivery: 'sent' });
     expect((await t.inbox(s.person.id))[0]!.body).toContain('Visites faites : 1');
+  });
+
+  it('au plus huit avis : un point chargé reste sous la longueur d’un mail', () => {
+    const opinions = Array.from({ length: 8 }, () => 'a'.repeat(298));
+    const text = weeklyPointText('Victor', { week: '2026-12-07', views: 3, contacts: 2, visitsDone: 14, visitsPlanned: 0, opinions, moreOpinions: true }, ['organiser une contre-visite']);
+    expect(text).toContain('et d’autres avis');
+    expect(checkText(text, { audience: 'client', channel: 'email', firstOfConversation: false, firstName: 'Victor', figures: [3, 2, 14, 0, 7, 12, 13] }).filter((p) => p.rule === 'length')).toEqual([]);
   });
 
   it('seuls l’agent du mandat et la direction [R16] ; validé un dimanche, il attend l’heure [R01] ; rien de personnel au journal [R13]', async () => {

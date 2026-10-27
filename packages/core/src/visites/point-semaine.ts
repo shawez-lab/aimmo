@@ -32,6 +32,9 @@ import { numbersIn } from '../envoi/texte.ts';
 /** Les tournures d'une baisse de prix, liste fermée : refusées partout dans le point [R53]. */
 export const PRICE_DROP = /\bprix\b|€|\bcher\b|\bmoins\b|abaiss|\b(?:baisse|baisser|baissons|diminu\w*|reduire|reduction|revoir le prix|revoir a la baisse|ajuster le prix|ajustement du prix|repositionn\w*|prix trop eleve|prix trop haut|rabais|remise)\b/;
 
+/** Au plus huit avis dans un point. */
+export const MAX_OPINIONS = 8;
+
 export interface WeeklyFigures {
   week: string;
   /** null : aucun canal n'a rapporté de vues pour la semaine. */
@@ -40,6 +43,8 @@ export interface WeeklyFigures {
   visitsDone: number;
   visitsPlanned: number;
   opinions: string[];
+  /** D'autres avis que ceux montrés, au-delà de huit : le point reste lisible et sous la longueur d'un mail. */
+  moreOpinions?: boolean;
 }
 
 export type PointRefusal = { ok: false; rule: string | null; code: string };
@@ -56,7 +61,7 @@ export function weeklyPointText(firstName: string | null, f: WeeklyFigures, next
     `Vues de l’annonce : ${f.views === null ? 'non communiquées' : number(f.views)}.`,
     `Contacts reçus : ${number(f.contacts)}.`,
     `Visites faites : ${number(f.visitsDone)} ; visites prévues : ${number(f.visitsPlanned)}.`,
-    f.opinions.length > 0 ? `Avis des visiteurs : ${f.opinions.join(' / ')}` : 'Avis des visiteurs : non communiqués.',
+    f.opinions.length > 0 ? `Avis des visiteurs : ${f.opinions.join(' / ')}${f.moreOpinions ? ' / et d’autres avis, que votre agent immobilier vous donne de vive voix.' : ''}` : 'Avis des visiteurs : non communiqués.',
     nextActions.length > 0 ? `Prochaines actions : ${nextActions.join(' ; ')}.` : 'Prochaines actions : votre agent immobilier vous les précise de vive voix.',
   ];
   return lines.join('\n').replace(/[()]/g, '');
@@ -285,7 +290,8 @@ export class PointSemaine {
       contacts: m.value.contacts,
       visitsDone: m.value.visits.done,
       visitsPlanned: m.value.visits.planned,
-      opinions,
+      opinions: opinions.slice(-MAX_OPINIONS),
+      ...(opinions.length > MAX_OPINIONS ? { moreOpinions: true } : {}),
     };
   }
 
