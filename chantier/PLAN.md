@@ -561,14 +561,15 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H08 pour les modèles réels.
 
 ### D03 · Contrôles avant signature
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : identité valable un an ; le modèle ne nomme qu'un mandant, un bien à plusieurs propriétaires ne passe pas encore ; un bien sans propriétaire connu ne passe pas ; D04 devra exiger un contrôle réussi sur le document à signer.
 - Qui : Claude · Relecture : forte · Dépend de : D02
 - Cahier : M06, « Contrôles avant signature » ; règle anti-blanchiment.
 - Objectif : avant toute signature, un contrôle écrit : champs obligatoires remplis, honoraires conformes au barème du réseau (réglage) et qui les paie, mandants égaux aux propriétaires du bien, identité de chaque mandant vérifiée (pièce vue, date, par qui, rangée hors de la fiche [R15]) ; le résultat, ligne par ligne, est rendu à l'agent.
 - Critères : un document incomplet ou hors barème ne peut pas être signé ; aucun mandat signé sans identification de chaque vendeur [R41] ; le contrôle est écrit au journal sans donnée personnelle [R13].
 
 ### D04 · Mandat signé sur papier, numéroté au registre
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : D01, D03
 - Cahier : M06, « Papier toujours possible », règle « le numéro du registre figure sur l'exemplaire du mandant » ; critère « un mandat de l'agence généré par AIMMO, numéroté dans le registre de l'agence ».
 - Objectif : l'agent enregistre un mandat généré et signé sur papier (date, lieu de signature, scan rangé par sa référence) ; s'il passe les contrôles de D03, il reçoit son numéro au registre et devient un mandat signé (G03, avec sa source [R38]) ; l'exemplaire du mandant est produit avec son numéro.
