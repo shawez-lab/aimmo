@@ -14,8 +14,8 @@ import { DEFAULT_RANGE_SETTINGS, departmentOf, type EstimatedKind, type Sale, ty
 
 export interface DetailedSales extends SalesSource {
   detail(saleId: string): Promise<SaleDetail | null>;
-  /** Fichiers ou ventes illisibles rencontrés jusqu'ici. */
-  readonly skipped: { tiles: number; details: number };
+  /** Les ventes du cercle et le nombre de fichiers ou de lignes illisibles pour cette recherche. */
+  scan(kind: EstimatedKind, lat: number, lon: number, radius: number): Promise<{ sales: Sale[]; issues: number }>;
 }
 
 export interface CommuneEstimate {
@@ -82,8 +82,7 @@ export class EstimationEnLigne {
     const place = await this.geocoder.geocode(`${postalCode} ${town.trim()}`);
     if (!place || place.postalCode !== postalCode || !sameTown(place.town, town)) return none('commune_introuvable');
 
-    const before = this.sales.skipped.tiles + this.sales.skipped.details;
-    const around = await this.sales.within(kind, place.lat, place.lon, this.settings.radius);
+    const { sales: around, issues } = await this.sales.scan(kind, place.lat, place.lon, this.settings.radius);
     const inTown: Sale[] = [];
     let unknown = 0;
     for (const sale of around) {
@@ -92,8 +91,7 @@ export class EstimationEnLigne {
       else if (sameTown(detail.town, place.town)) inTown.push(sale);
     }
     // Une partie des ventes illisible : la fourchette serait faussée, mieux vaut ne rien dire que dire faux.
-    const missingFiles = this.sales.skipped.tiles + this.sales.skipped.details - before;
-    if (missingFiles > 0 || unknown > 0) return { ok: false, reason: 'donnees_absentes', next: 'appointment', missingFiles: missingFiles + unknown };
+    if (issues > 0 || unknown > 0) return { ok: false, reason: 'donnees_absentes', next: 'appointment', missingFiles: issues + unknown };
     if (inTown.length < this.settings.minimum) return none('peu_de_ventes');
     const perM2 = inTown.map((s) => s.pricePerM2).sort((a, b) => a - b);
     const months = inTown.map((s) => s.month).sort();

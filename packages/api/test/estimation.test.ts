@@ -151,6 +151,26 @@ describeWithSqlite('E05 · estimation en ligne du site', () => {
     expect(Number(logged.at(-1)?.data['missingFiles'])).toBeGreaterThan(0);
   });
 
+  it('une tuile illisible ou une ligne mal formée compte à chaque demande, même gardée en mémoire', async () => {
+    const w = await world();
+    const [x, y] = tile.split('_').map(Number) as [number, number];
+    const missing = dvfFiles();
+    const idx = JSON.parse(missing.get('index.json')!) as { tuiles: string[] };
+    idx.tuiles.push(`${x + 1}_${y}`);
+    missing.set('index.json', JSON.stringify(idx));
+    const shared = new DvfSiteSales(async (p) => missing.get(p) ?? null);
+    const cfg = { ...w.config, estimation: { geocoder: w.geocoder, sales: shared } };
+    for (const visitorId of ['visiteur-essai-0000000021', 'visiteur-essai-0000000022']) {
+      expect((await w.call(w.ask({ visitorId }), KEY_EST, cfg)).body, visitorId).toMatchObject({ data: null, reason: 'donnees_absentes' });
+    }
+    const malformed = dvfFiles();
+    const rows = JSON.parse(malformed.get(`t/${tile}.json`)!) as unknown[];
+    rows.push([47.3, 5.04, 0, 'soixante', 2500, 202401, 3, 0]);
+    malformed.set(`t/${tile}.json`, JSON.stringify(rows));
+    const cfg2 = { ...w.config, estimation: { geocoder: w.geocoder, sales: new DvfSiteSales(async (p) => malformed.get(p) ?? null) } };
+    expect((await w.call(w.ask({ visitorId: 'visiteur-essai-0000000023' }), KEY_EST, cfg2)).body).toMatchObject({ data: null, reason: 'donnees_absentes' });
+  });
+
   it('clé `site_estimate` seulement ; sans données branchées ou hors essai, fermé', async () => {
     const w = await world();
     expect((await w.call(w.ask(), KEY_CHAT)).status).toBe(401);
