@@ -672,7 +672,9 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : H08 pour le modèle réel.
 
 ### T05 · Visite sécurisée
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : identité confirmée par le nom du visiteur, égal à celui de sa fiche (aucune pièce), téléphone par un code SMS de 30 minutes, 5 essais ; la réservation d'une visite dit « réservée », jamais « confirmée » ; la tournée partagée est celle de V07 ; l'alerte retient la visite en cours, sinon la prochaine dans l'heure ; la direction est prévenue par une interface, en essai une ligne au journal ; R54 en service.
+- Reste : relecture de Codex de la dernière correction restée en cours plus de 25 min, fusion sans elle (#80).
 - Qui : Claude · Relecture : forte · Dépend de : T04
 - Cahier : M08, « Visite sécurisée ».
 - Objectif : avant la visite, le visiteur confirme son identité et son téléphone (code à usage unique par le contrôle central, rangé dans la boîte d'essai) ; l'agent peut partager sa tournée du jour avec un proche par le message de V07, sans nom de client ni adresse exacte ; une alerte en un geste range l'heure et le lieu de la visite en cours et prévient la direction (boîte d'essai).
@@ -680,7 +682,7 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : H05 pour l'envoi réel.
 
 ### T06 · Compte rendu de visite dicté
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : T04
 - Cahier : M08, « Compte rendu de visite » ; critère « 5 comptes rendus de visite envoyés au vendeur sous 24 heures ».
 - Objectif : l'agent dicte une phrase ou 30 secondes (le texte vient de la dictée du téléphone) ; l'IA, derrière une interface, en tire le compte rendu (avis, points forts, réserves, intérêt, prêt à faire une offre) ; l'agent le valide en un geste ; le vendeur le reçoit sans le nom de l'acquéreur (boîte d'essai) ; la fiche acquéreur est mise à jour, une relance est programmée, et une tâche « préparer l'offre » est créée si l'acheteur se dit prêt.
