@@ -808,7 +808,8 @@ Découpé le 2026-10-27 par la voie 2. Ids `O..` pour Offre. Cahier : M09 Offres
 Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit les délais ; il n'accepte, ne refuse, ne contre-propose ni ne négocie jamais : seule une réponse du vendeur, rapportée par l'agent avec sa preuve, change l'état d'une offre [R57]. La première version range l'offre comme un enregistrement structuré (montant, conditions suspensives, validité, financement déclaré) avec la référence de l'offre signée sur papier ; la signature en ligne de l'offre viendra avec un modèle « offre d'achat » dans la bibliothèque de M06, quand la voie qui tient M06 l'aura ajouté. Le financement déclaré ne sert qu'à vérifier la cohérence des montants, jamais à noter l'acquéreur [R14]. L'identité de l'acquéreur est un état (vérifiée ou non, par qui, quand), lu dans le contrôle d'identité de D03, jamais une copie [R15]. La transmission au vendeur passe par le contrôle central des envois, en mode essai, après validation de l'agent. M10 n'existe pas encore : l'offre acceptée ouvre un dossier de vente minimal, que M10 complétera, et ce dossier reste bloqué tant que l'identité de chaque acquéreur n'est pas vérifiée [R58]. Le code de M09 vit dans `packages/core/src/offres/` et ses migrations à partir de `0201`, sans toucher aux fichiers du socle.
 
 ### O01 · Offre écrite enregistrée, avec son registre chaîné
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : le registre est l'offre elle-même, une ligne par offre, chaînée et ancrée au journal, une ancre par rang ; ancre manquée reprise au prochain enregistrement ; conditions : prêt, vente d'un autre bien, permis, certificat d'urbanisme, autre sans texte ; validité de 1 à 60 jours ; bien vendu, loué ou retiré : plus d'offre ; acquéreur d'un autre agent : par la direction
 - Qui : Claude · Relecture : forte · Dépend de : D04, T01
 - Cahier : M09, « Offre écrite » ; règle « toute offre reçue est transmise au vendeur ».
 - Objectif : l'agent enregistre une offre reçue pour un bien en vente : acquéreur (sa fiche), montant, conditions suspensives dans une liste fermée (prêt avec montant et durée, vente d'un autre bien, permis, autre), durée de validité, financement déclaré (apport, prêt), référence de l'offre signée ; chaque offre reçoit un numéro dans le registre des offres du bien, chaîné par empreintes, en ajout seul ; l'historique de l'offre est horodaté.
@@ -817,10 +818,10 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O02 · Contrôles de l'offre, sans évaluer personne
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : O01
 - Cahier : M09, « Contrôles ».
-- Objectif : à l'enregistrement et à la demande, un contrôle écrit, ligne par ligne : identité de chaque acquéreur vérifiée ou non (état lu dans D03), cohérence entre le montant et le financement déclaré (apport plus prêt couvrent le prix offert et les frais annoncés), offre dans sa durée de validité ; le résultat est un constat, jamais une note.
+- Objectif : à l'enregistrement et à la demande, un contrôle écrit, ligne par ligne : identité de chaque acquéreur vérifiée ou non (état lu dans D03), cohérence entre le montant et le financement déclaré (apport plus prêt couvrent le prix offert ; l'offre ne porte pas de frais), offre dans sa durée de validité ; le résultat est un constat, jamais une note.
 - Critères : aucun score, aucun classement, aucune évaluation de solvabilité [R14] ; le contrôle ne lit aucune pièce d'identité [R15] ; écart de financement chiffré et montré sans jugement ; résultat au journal en codes, sans montant ni nom [R13].
 - Attend : rien.
 
@@ -869,5 +870,5 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Qui : Claude · Relecture : forte · Dépend de : O07
 - Cahier : M09.
 - Objectif : les routes `/v1/offres` dans `packages/api/src/offres.ts`, de la même forme que celles de `app.ts`, sans toucher au socle ; leur branchement suit, comme P10, par la voie qui tient le socle.
-- Critères : chaque route sous R16, chaque refus une ligne au journal ; une offre test suivie de bout en bout par les routes.
+- Critères : chaque route sous R16, chaque refus une ligne au journal ; une offre test suivie de bout en bout par les routes ; un double envoi de la même offre (clé d'idempotence) ne crée qu'une ligne au registre.
 - Attend : rien.
