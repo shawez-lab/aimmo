@@ -624,7 +624,9 @@ Découpé le 2026-10-27 par la voie 1. Ids `T..` pour Trouver l'acquéreur. Cahi
 Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi réel : alertes, comptes rendus et points de la semaine passent par le contrôle central et sont rangés dans la boîte d'essai ; le lien WhatsApp de l'agent est préparé, jamais ouvert pour lui. L'IA (alertes, compte rendu) est derrière une interface, fausse IA dans les tests, vraie IA avec H13 ; elle ne reçoit ni nom, ni coordonnée, ni adresse exacte [R15]. Le rapprochement lit la table `properties` du socle et un bien proposable est un bien que `canDiffuse` de D05 autorise [R42] ; la fiche complète de M07 (P01) l'enrichira quand elle sera fusionnée, sans que M08 touche aux fichiers de la voie 2 (`packages/core/src/annonces/`). Les vues par canal du point de la semaine viennent de P08 : tant qu'il n'est pas fusionné, elles sont « non communiquées » [R53]. Le partage des honoraires entre agents (fichier commun) et le rendement pour un investisseur (M17) viendront avec ces modules. Les migrations de M08 prennent les numéros à partir de `0101`, pour ne jamais croiser celles de la voie 2. Le code de M08 vit dans `packages/core/src/acquereurs/` et `packages/core/src/visites/`.
 
 ### T01 · Fiche acquéreur
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : un champ écrit ou vidé par l'agent n'est plus changé par un message ; un message plus ancien ne remplace pas ce qu'un plus récent a dit ; « studio » est rangé en appartement ; la conformité lit sans écrire ; R50 passe en service avec T02.
+- Reste : relecture de Codex restée en cours 30 min, fusion sans elle (#66).
 - Qui : Claude · Relecture : forte · Dépend de : Q01
 - Cahier : M08, « Fiche acquéreur » ; règle « aucun critère discriminant dans la recherche ».
 - Objectif : pour un projet d'achat, une fiche de recherche versionnée (rien ne s'efface) : types de bien, communes (liste fermée du réglage), surface et pièces minimales, budget maximal, contraintes dans une liste fermée (extérieur, stationnement, ascenseur, plain-pied, etc.), financement déclaré, urgence ; mise à jour depuis la qualification de Q01, seulement avec ce que le message dit, chaque champ avec sa source (message, agent).
@@ -632,7 +634,7 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : rien.
 
 ### T02 · Rapprochement des acquéreurs, par le code
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : T01, D05
 - Cahier : M08, « Rapprochement », « Fichier commun » ; Feuille de route, avril 2027.
 - Objectif : pour un bien diffusable [R42], la liste classée des acquéreurs du réseau entier (fichier commun) : critères obligatoires (type, commune, budget, surface, pièces) avec les tolérances écrites en réglage, puis classement par règles écrites (écart aux critères, urgence déclarée, fraîcheur du projet), jamais par le financement ni la solvabilité [R14], chaque ligne avec ses raisons ; jamais une personne exclue ou qui a demandé l'arrêt.
