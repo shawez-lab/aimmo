@@ -250,7 +250,7 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Reste : relecture forte (1 P0 corrigé), Codex : 1 P0 corrigé, sa relecture de la correction restée en cours 25 min, fusion sans elle (#24).
 
 ### Q03 · Zones et attribution à l'agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : Q01
 - Cahier : M03, points 4 et 6 ; « Branchements » : zones des agents par commune.
 - Objectif : les zones des agents par commune, puis l'attribution de chaque contact qualifié à l'agent de sa commune par règles fixes, sans IA, et la réattribution par la même règle si le contact n'est pas rappelé dans le délai de la charte ; les règles, lisibles, rendues par l'API pour l'application.
