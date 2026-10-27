@@ -12,6 +12,7 @@ import {
   FicheClient,
   CATEGORIES,
   ControlesSignature,
+  EcheancesMandats,
   Diffusion,
   SignaturePapier,
   FicheAgent,
@@ -476,6 +477,16 @@ const ROUTES: RouteDef[] = [
       const r = await new Diffusion(s.db, s.acces, s.journal, { now: s.now }).recordWithdrawal(viewer, id!, { proof: body.proof as string, receivedAt: new Date(body.receivedAt) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE });
       return r.rule === 'R16' ? refusal(r) : json(r.code === 'unknown_mandate' ? 404 : r.code === 'already_recorded' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/mandats\/echeances$/,
+    name: 'mandats.echeances',
+    // Les tâches d'échéance de l'agent lui-même : fin de mandat, fin de période exclusive [R16].
+    handle: async (s, viewer) => {
+      const r = await new EcheancesMandats(s.db, s.journal, { now: s.now }).list(viewer);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.tasks }) : refusal(r);
     },
   },
   {
