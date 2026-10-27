@@ -188,11 +188,21 @@ export class TransmissionOffres {
     // Une acceptation arrivée après le dernier jour de validité, à Paris, ne vaut pas [R59].
     if (input.outcome === 'acceptee' && localTime(respondedAt, TIME_ZONE).date > found.offer.validUntil) return { ok: false, rule: 'R59', code: 'expired' };
     if (input.outcome === 'acceptee' && (await this.otherAccepted(found.offer.propertyId, offerId))) return { ok: false, rule: null, code: 'other_accepted' };
+    // L'acceptation n'est rangée que si aucune autre offre du bien n'est acceptée, vérifié dans la même instruction :
+    // deux acceptations simultanées ne passent jamais toutes les deux.
+    const pid = found.offer.propertyId;
     const { changes } = await this.db.run(
-      'INSERT INTO offer_responses (offer_id, network_id, outcome, proof_ref, responded_at, recorded_by, at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (offer_id) DO NOTHING',
-      [offerId, found.networkId, input.outcome, input.proofRef, respondedAt.toISOString(), this.actor(viewer), this.now().toISOString()],
+      `INSERT INTO offer_responses (offer_id, network_id, outcome, proof_ref, responded_at, recorded_by, at)
+       SELECT ?, ?, ?, ?, ?, ?, ? WHERE (? <> 'acceptee' OR (
+          NOT EXISTS (SELECT 1 FROM offer_responses r JOIN offer_register o ON o.id = r.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee')
+          AND NOT EXISTS (SELECT 1 FROM proposal_responses r JOIN offer_proposals p ON p.id = r.proposal_id JOIN offer_register o ON o.id = p.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee')
+          AND NOT EXISTS (SELECT 1 FROM sale_files f WHERE f.property_id = ? AND f.offer_id <> ?))) ON CONFLICT (offer_id) DO NOTHING`,
+      [offerId, found.networkId, input.outcome, input.proofRef, respondedAt.toISOString(), this.actor(viewer), this.now().toISOString(), input.outcome, pid, offerId, pid, offerId, pid, offerId],
     );
-    if (changes !== 1) return { ok: false, rule: null, code: 'already_answered' };
+    if (changes !== 1) {
+      if (await this.db.first('SELECT offer_id FROM offer_responses WHERE offer_id = ?', [offerId])) return { ok: false, rule: null, code: 'already_answered' };
+      return { ok: false, rule: null, code: 'other_accepted' };
+    }
     await appendEvent(this.journal, { type: 'offre.reponse', actor: this.actor(viewer), subject: `offer:${offerId}`, data: { rule: 'R57', outcome: input.outcome } }, this.now);
     return { ok: true, value: { outcome: input.outcome } };
   }
