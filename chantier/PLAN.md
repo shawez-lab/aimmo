@@ -152,6 +152,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Objectif : sur une branche de `shawez-immo` et une proposition à fusionner par Shawez, le site appelle `POST /v1/automatisations/envoi` avant chaque rappel de visite et chaque courrier gardé, garde son propre envoi inchangé, et note les deux décisions ; un rapport compte les écarts, sans donnée personnelle.
 - Critères : le site envoie exactement comme avant, même si le socle ne répond pas ; écarts comptés par règle ; aucune donnée personnelle dans le rapport.
 - Attend : H04, H14, et la fusion par Shawez de la proposition sur `shawez-immo`.
+- À régler ici : en essai, le contrôle range le message du site comme sortant sur la fiche, avec la mention de l'assistant [R06] ; en ombre, il faut qu'un message que le site envoie lui-même compte une seule fois dans la pression commerciale [R11] et que la mention soit celle que le site met vraiment.
 
 ### B04 · 10 % puis partout, avec retour arrière automatique
 - Statut : à faire
