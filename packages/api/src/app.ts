@@ -1,6 +1,8 @@
 import {
   AIMMO_VERSION,
+  ATTRIBUTION_RULES,
   Acces,
+  DEFAULT_ATTRIBUTION_SETTINGS,
   CHANNELS,
   DecisionEnvoi,
   FicheClient,
@@ -134,6 +136,22 @@ const ROUTES: RouteDef[] = [
     pattern: /^\/envois\/decision$/,
     name: 'envois.decision',
     handle: sendDecision,
+  },
+  {
+    method: 'GET',
+    pattern: /^\/attribution\/regles$/,
+    name: 'attribution.regles',
+    // Les règles d'attribution, publiées, les mêmes pour tous [R25] : rien de personnel.
+    handle: async () =>
+      json(200, {
+        ok: true,
+        mode: TRIAL_MODE,
+        data: {
+          rules: ATTRIBUTION_RULES,
+          callbackHours: { hot: DEFAULT_ATTRIBUTION_SETTINGS.hotCallbackHours, other: DEFAULT_ATTRIBUTION_SETTINGS.otherCallbackHours },
+          communes: DEFAULT_ATTRIBUTION_SETTINGS.communes,
+        },
+      }),
   },
   {
     method: 'GET',

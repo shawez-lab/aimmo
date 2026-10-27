@@ -152,6 +152,14 @@ describeWithSqlite('API du socle de bout en bout, sur une base D1 locale', () =>
     w = await world();
   });
 
+  it('[R25] les règles d’attribution sont publiées à toute clé, les mêmes pour tous ; sans clé, rien', async () => {
+    const asAgent = await body(await call(w.env, '/v1/attribution/regles', { key: KEY_AGENT }));
+    const asDirection = await body(await call(w.env, '/v1/attribution/regles', { key: KEY_DIRECTION }));
+    expect(asAgent).toEqual(asDirection);
+    expect(JSON.stringify(asAgent)).toMatch(/Aucune IA/);
+    expect((await call(w.env, '/v1/attribution/regles')).status).toBe(401);
+  });
+
   it('la santé répond sans clé et sans rien lire', async () => {
     const response = await call(w.env, '/v1/sante');
     expect(response.status).toBe(200);
