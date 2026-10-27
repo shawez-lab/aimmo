@@ -227,9 +227,45 @@ describeWithSqlite('V02 · réservation, confirmation et annulation', () => {
       last: () => w.journal.last(),
     } as unknown as typeof w.journal;
     const moved = await new RendezVous(w.db, journal, { now: () => NOW }).reschedule(r.token, at('2026-11-10', '15:00'));
-    expect(moved).toMatchObject({ ok: true, appointment: { replaces_id: r.appointment.id } });
+    expect(moved).toMatchObject({ ok: true, warning: 'journal_failed', appointment: { replaces_id: r.appointment.id } });
     if (!moved.ok) throw new Error('décalage refusé');
     expect((await w.rdv.cancel(moved.token)).ok).toBe(true);
+  });
+
+  it('une libération restée en panne se termine à la demande suivante', async () => {
+    const w = await world();
+    const r = await w.book(at('2026-11-10', '09:00'));
+    if (!r.ok) throw new Error('réservation refusée');
+    let broken = true;
+    const db = {
+      ...w.db,
+      exec: w.db.exec.bind(w.db),
+      all: w.db.all.bind(w.db),
+      first: w.db.first.bind(w.db),
+      run: (sql: string, params?: Parameters<typeof w.db.run>[1]) => {
+        if (broken && sql.startsWith('UPDATE appointment_holds')) {
+          broken = false;
+          return Promise.reject(new Error('panne passagère'));
+        }
+        return w.db.run(sql, params);
+      },
+    };
+    await expect(new RendezVous(db, w.journal, { now: () => NOW }).cancel(r.token)).rejects.toThrow('panne passagère');
+    expect(await w.book(at('2026-11-10', '09:00'))).toMatchObject({ ok: false, rule: 'R32' });
+    expect(await w.rdv.cancel(r.token)).toEqual({ ok: false, code: 'not_booked' });
+    expect((await w.book(at('2026-11-10', '09:00'))).ok).toBe(true);
+  });
+
+  it('un trajet impair est partagé exactement : un créneau proposé se réserve', async () => {
+    const w = await world();
+    const settings = { durations: { estimation: 60, visite: 45, signature: 60, appel: 20 }, travelMinutes: 15, stepMinutes: 15, minNoticeMinutes: 120, travelAroundBusy: true };
+    const rdv = new RendezVous(w.db, w.journal, { now: () => NOW, settings });
+    const base = { networkId: w.net.id, agentId: w.paul.id, personId: w.lea.id, kind: 'visite' as const, source: 'site' as const };
+    expect((await rdv.book({ ...base, start: at('2026-11-10', '09:00') })).ok).toBe(true); // 9:00 à 9:45
+    const offered = (await rdv.freeSlotsFor(w.paul.id, 'visite', at('2026-11-10', '00:00'), at('2026-11-10', '12:00'))).map((x) => x.start.getTime());
+    expect(offered[0]).toBe(at('2026-11-10', '10:00').getTime());
+    expect((await rdv.book({ ...base, start: at('2026-11-10', '10:00') })).ok).toBe(true);
+    expect(() => new RendezVous(w.db, w.journal, { settings: { ...settings, travelMinutes: 12 } })).toThrow('multiple de 5');
   });
 
   it('des plages hors des tranches de 5 minutes sont refusées : chaque créneau proposé se réserve', async () => {

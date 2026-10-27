@@ -74,7 +74,14 @@ export type BookingRefusal =
   | 'taken';
 
 export type BookingResult =
-  | { ok: true; appointment: Appointment; token: string; confirmation: Pick<SendResult, 'status' | 'rule'> | null }
+  | {
+      ok: true;
+      appointment: Appointment;
+      token: string;
+      confirmation: Pick<SendResult, 'status' | 'rule'> | null;
+      /** La réservation est faite, mais son écriture au journal a échoué : à signaler par l'appelant. */
+      warning?: 'journal_failed';
+    }
   | { ok: false; rule: 'R32' | 'R33' | null; code: BookingRefusal };
 
 export interface BookingRequest {
@@ -169,6 +176,7 @@ export class RendezVous {
     this.settings = options.settings ?? DEFAULT_SLOT_SETTINGS;
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.newToken = options.newToken ?? newBookingToken;
+    if (!Number.isInteger(this.settings.travelMinutes / 5) || this.settings.travelMinutes < 0) throw new Error('Temps de trajet non valable : un multiple de 5 minutes.');
     if (options.linkBase && !/^https:\/\/[^\s\d]+\/$/.test(options.linkBase)) throw new Error('Début de lien non valable : https, sans chiffre, terminé par /.');
     const store = new FicheClient(db, { now: this.now });
     const fiche = new FicheUnique(db, store, { now: this.now });
@@ -238,7 +246,11 @@ export class RendezVous {
   private async hold(agentId: string, appointmentId: string, kind: AppointmentKind, start: Date, end: Date): Promise<boolean> {
     const first = Math.floor(start.getTime() / UNIT_MS);
     const last = Math.ceil(end.getTime() / UNIT_MS);
-    const pad = Math.ceil((this.settings.travelMinutes * MINUTE) / 2 / UNIT_MS);
+    // Le trajet est partagé entre l'avant et l'après, l'avant arrondi en bas, l'après en haut : entre deux rendez-vous
+    // sur place, l'après de l'un et l'avant de l'autre font exactement le trajet réglé, comme dans conflictOf [R32].
+    const travelUnits = (this.settings.travelMinutes * MINUTE) / UNIT_MS;
+    const before = Math.floor(travelUnits / 2);
+    const after = travelUnits - before;
     try {
       await this.db.run(
         `INSERT INTO appointment_holds (agent_id, layer, unit, appointment_id)
@@ -246,7 +258,7 @@ export class RendezVous {
                         site(u) AS (SELECT ? UNION ALL SELECT u + 1 FROM site WHERE u + 1 < ?)
          SELECT ?, 'own', u, ? FROM own
          UNION ALL SELECT ?, 'site', u, ? FROM site WHERE ? = 1`,
-        [first, last, first - pad, last + pad, agentId, appointmentId, agentId, appointmentId, isOnSite(kind) ? 1 : 0],
+        [first, last, first - before, last + after, agentId, appointmentId, agentId, appointmentId, isOnSite(kind) ? 1 : 0],
       );
       return true;
     } catch (error) {
@@ -359,7 +371,12 @@ export class RendezVous {
   private async cancelAppointment(appointment: Appointment, actor: string): Promise<Appointment | null> {
     const at = this.now().toISOString();
     const done = await this.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ? AND status = 'booked'", [at, at, appointment.id]);
-    if (done.changes !== 1) return null;
+    if (done.changes !== 1) {
+      // Déjà annulé : une libération restée en panne se termine ici, à la nouvelle demande.
+      const current = await this.get(appointment.id);
+      if (current?.status === 'cancelled') await this.release(appointment.id);
+      return null;
+    }
     // Le créneau redevient libre aussitôt.
     await this.release(appointment.id);
     const cancelled = (await this.get(appointment.id))!;
@@ -420,10 +437,13 @@ export class RendezVous {
       await restore();
       return result;
     }
-    // Le décalage est fait : une panne du journal à ce moment ne doit pas faire perdre le nouveau lien. Le nouveau
-    // rendez-vous porte `replaces_id`, qui garde la trace du décalage dans la base.
-    await this.log('rdv.decale', 'client:lien', (await this.get(old.id))!, { replaced_by: result.appointment.id }).catch(() => undefined);
-    return result;
+    // Le décalage est fait : une panne du journal à ce moment ne doit pas faire perdre le nouveau lien. Elle est rendue
+    // à l'appelant (`warning`), et le nouveau rendez-vous garde `replaces_id` dans la base [R13].
+    const logged = await this.log('rdv.decale', 'client:lien', (await this.get(old.id))!, { replaced_by: result.appointment.id }).then(
+      () => true,
+      () => false,
+    );
+    return logged ? result : { ...result, warning: 'journal_failed' };
   }
 
   /** Les rendez-vous tenus d'un agent, pour vérifier qu'aucun ne se chevauche. */
