@@ -2,7 +2,7 @@ import { handleRequest } from './app.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { runScheduler } from './planificateur.ts';
-import { BanGeocoder, DvfSiteSales, httpDvfReader } from '@aimmo/core';
+import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
@@ -58,7 +58,13 @@ export default {
   },
   /** Déclencheur horaire (wrangler.toml, `[triggers]`) : le planificateur du socle (B02). */
   async scheduled(_controller: unknown, env: Env): Promise<void> {
-    await runScheduler({ db: fromD1(env.DB), mode: env.MODE, appointmentLinkBase: env.RDV_LINK_BASE });
+    const estimation = estimationServices(env);
+    await runScheduler({
+      db: fromD1(env.DB),
+      mode: env.MODE,
+      appointmentLinkBase: env.RDV_LINK_BASE,
+      communeRanges: estimation ? new EstimationEnLigne(estimation.geocoder, estimation.sales) : null,
+    });
   },
   async email(message: InboundEmail, env: Env): Promise<void> {
     await handleEmail(message, {

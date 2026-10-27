@@ -118,16 +118,21 @@ interface Candidate {
   valuationSentAt: string | null;
   /** Demande la plus ancienne qui justifie la ligne. */
   requestedAt: string;
+  /** A répondu au suivi de valeur qu'il pense à vendre (G04). */
+  sellingIntent: boolean;
 }
 
 /**
- * L'ordre écrit du plan [R35] : 1. demande de rappel d'abord ; 2. délai annoncé par le propriétaire le plus proche ;
- * 3. avis de valeur le plus ancien ; 4. demande la plus ancienne ; 5. identifiant de la fiche, pour que le même jeu
- * de données donne toujours le même plan.
+ * L'ordre écrit du plan [R35] : 1. demande de rappel d'abord ; 2. puis le propriétaire qui a répondu au suivi de valeur
+ * qu'il pense à vendre ; 3. délai annoncé par le propriétaire le plus proche ; 4. avis de valeur le plus ancien ;
+ * 5. demande la plus ancienne ; enfin l'identifiant de la fiche, pour que le même jeu de données donne toujours le
+ * même plan.
  */
 function comparePlanCandidates(a: Candidate, b: Candidate): number {
   const callback = Number(b.kind === 'callback') - Number(a.kind === 'callback');
   if (callback !== 0) return callback;
+  const selling = Number(b.sellingIntent) - Number(a.sellingIntent);
+  if (selling !== 0) return selling;
   const byDate = (x: string | null, y: string | null): number => (x === y ? 0 : x === null ? 1 : y === null ? -1 : x < y ? -1 : 1);
   return (
     byDate(a.horizon, b.horizon) ||
@@ -139,9 +144,10 @@ function comparePlanCandidates(a: Candidate, b: Candidate): number {
 
 function explain(c: Candidate): string {
   const parts = [c.kind === 'callback' ? '1. rappel demandé' : '1. pas de rappel demandé'];
-  parts.push(c.horizonLabel ? `2. délai annoncé : ${c.horizonLabel}` : '2. délai non annoncé');
-  parts.push(c.valuationSentAt ? `3. avis de valeur envoyé le ${day(c.valuationSentAt)}` : '3. pas d’avis de valeur envoyé');
-  parts.push(`4. demande du ${day(c.requestedAt)}`);
+  parts.push(c.sellingIntent ? '2. pense à vendre, réponse au suivi de valeur' : '2. pas de réponse « pense à vendre »');
+  parts.push(c.horizonLabel ? `3. délai annoncé : ${c.horizonLabel}` : '3. délai non annoncé');
+  parts.push(c.valuationSentAt ? `4. avis de valeur envoyé le ${day(c.valuationSentAt)}` : '4. pas d’avis de valeur envoyé');
+  parts.push(`5. demande du ${day(c.requestedAt)}`);
   return parts.join(' ; ');
 }
 
@@ -232,7 +238,7 @@ export class PlanDuJour {
     const inIds = placeholders(ids.length);
     const stamp = at.toISOString();
     const deadline = await this.deadlineOf(ids);
-    const base = { personId: root, firstName: null, basis: { kind: 'request' as const, since: stamp, purpose: null }, ...deadline };
+    const base = { personId: root, firstName: null, basis: { kind: 'request' as const, since: stamp, purpose: null }, sellingIntent: false, ...deadline };
     const out: Candidate[] = [];
 
     // 1. Rappel demandé : la tâche « rappeler » encore ouverte.
@@ -296,9 +302,31 @@ export class PlanDuJour {
         });
       }
     }
-    // L'avis le plus ancien sert à l'ordre de toutes les lignes de la personne.
+    // 4. A répondu au suivi de valeur qu'il pense à vendre (G04) : rendez-vous à proposer, en tête des rendez-vous.
+    const alerts = await this.db.all<{ id: string; created_at: string }>(
+      `SELECT a.id, a.created_at FROM value_tracking_alerts a WHERE a.person_id IN (${inIds}) AND a.created_at >= ? AND a.created_at <= ?
+       AND NOT EXISTS (SELECT 1 FROM appointments r WHERE r.person_id IN (${inIds}) AND (r.created_at > a.created_at OR (r.status = 'booked' AND r.start_at >= ?)))
+       ORDER BY a.created_at, a.id`,
+      [...ids, cutoff, stamp, ...ids, stamp],
+    );
+    const alert = alerts[0];
+    if (alert) {
+      out.push({
+        ...base,
+        kind: 'appointment',
+        reason: 'A répondu au suivi de valeur qu’il pense à vendre : rendez-vous à proposer.',
+        projectId: null,
+        taskId: null,
+        reportId: null,
+        valuationSentAt: null,
+        requestedAt: alert.created_at,
+        sellingIntent: true,
+      });
+    }
+    // L'avis le plus ancien et la réponse « pense à vendre » servent à l'ordre de toutes les lignes de la personne.
     const oldest = out.find((c) => c.kind === 'valuation')?.valuationSentAt ?? null;
-    return out.map((c) => ({ ...c, valuationSentAt: c.valuationSentAt ?? oldest }));
+    const selling = alert !== undefined;
+    return out.map((c) => ({ ...c, valuationSentAt: c.valuationSentAt ?? oldest, sellingIntent: selling }));
   }
 
   /** Le délai annoncé le plus proche : échéance du projet, ou délai de la qualification compté depuis sa date. */
