@@ -148,6 +148,15 @@ export class Mandats {
     if (detail !== null && detail.length > DETAIL_MAX) return { ok: false, rule: 'R38', code: 'detail_too_long' };
     if (detail !== null && isForbiddenSource(detail)) return { ok: false, rule: 'R37', code: 'forbidden_source' };
 
+    // Ranger un mandat change les chiffres : l'agent ou la direction seulement, quel que soit le droit de lecture.
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') {
+      await appendEvent(
+        this.journal,
+        { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'mandate', code: 'role' } },
+        this.now,
+      );
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
     const read = await acces.readFiche(viewer, input.personId);
     if (!read.ok) return read;
     if (read.view !== 'full') return { ok: false, rule: 'R16', code: 'not_assigned' };
@@ -175,10 +184,12 @@ export class Mandats {
       sourceDetail = kind === 'other' ? detail : null;
     } else {
       // Reprise de la fiche : sa première source connue, si son canal dit d'où vient la personne.
-      const first = await this.db.first<{ id: string; channel: string }>(
-        `SELECT id, channel FROM sources WHERE person_id IN (${placeholders(ids.length)}) ORDER BY occurred_at, created_at, id LIMIT 1`,
+      const first = await this.db.first<{ id: string; channel: string; detail: string | null }>(
+        `SELECT id, channel, detail FROM sources WHERE person_id IN (${placeholders(ids.length)}) ORDER BY occurred_at, created_at, id LIMIT 1`,
         ids,
       );
+      // Une source de fiche qui dit venir d'une liste achetée ou des ventes publiques n'est jamais reprise [R37].
+      if (first && (isForbiddenSource(first.channel) || (first.detail !== null && isForbiddenSource(first.detail)))) return { ok: false, rule: 'R37', code: 'forbidden_source' };
       const mapped = first ? CHANNEL_SOURCES[first.channel] : undefined;
       if (!first || !mapped) return { ok: false, rule: 'R38', code: 'missing_source' };
       kind = mapped.kind;

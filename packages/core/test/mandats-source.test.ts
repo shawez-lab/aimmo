@@ -65,6 +65,10 @@ describeWithSqlite('G03 · chaque mandat a sa source', () => {
       t.db.run(`INSERT INTO mandates (id, network_id, agent_id, person_id, signed_at, source_kind, recorded_by, created_at) VALUES ('x', ?, ?, ?, ?, 'purchased_list', 'test', ?)`, [t.network.id, t.alex.id, a, new Date(NOW).toISOString(), new Date(NOW).toISOString()]),
     ).rejects.toThrow();
     expect(await t.db.all('SELECT id FROM mandates')).toEqual([]);
+    // Une source de fiche qui dit venir d'une liste achetée n'est pas reprise.
+    const bought = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Ida' });
+    await t.store.addSource({ networkId: t.network.id, agentId: t.alex.id, personId: bought.id, channel: 'email', detail: 'liste achetée', occurredAt: new Date(NOW - DAY) });
+    expect(await t.mandats.record(t.acces, me, { personId: bought.id, signedAt: new Date(NOW) })).toEqual({ ok: false, rule: 'R37', code: 'forbidden_source' });
     // Un détail honnête qui contient un de ces mots seul reste admis.
     expect(await t.mandats.record(t.acces, me, { personId: a, signedAt: new Date(NOW), source: 'other', sourceDetail: 'achat d’une maison voisine' })).toMatchObject({ ok: true });
   });
@@ -74,6 +78,8 @@ describeWithSqlite('G03 · chaque mandat a sa source', () => {
     const a = await t.person(t.alex.id, 'Léa');
     expect(await t.mandats.record(t.acces, t.as('agent', t.sam.id), { personId: a, signedAt: new Date(NOW), source: 'site' })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.mandats.record(t.acces, t.as('partner', 'p-1'), { personId: a, signedAt: new Date(NOW), source: 'site' })).toMatchObject({ ok: false, rule: 'R16' });
+    // La conformité lit la fiche, mais ne range pas de mandat.
+    expect(await t.mandats.record(t.acces, { role: 'compliance', userId: 'conf-1', networkId: t.network.id }, { personId: a, signedAt: new Date(NOW), source: 'site' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     const byDirection = await t.mandats.record(t.acces, t.as('direction', 'dir-1'), { personId: a, signedAt: new Date(NOW), source: 'site' });
     expect(byDirection.ok).toBe(true);
     expect(await t.db.all('SELECT agent_id, recorded_by FROM mandates')).toEqual([{ agent_id: t.alex.id, recorded_by: 'direction:dir-1' }]);
