@@ -221,6 +221,13 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect((await t.journal.all()).some((e) => e.type === 'rapprochement.fiche_illisible')).toBe(true);
   });
 
+  it('la limite de tolérance se compare sans arrondi', () => {
+    const s: BuyerSearch = { propertyKinds: [], communes: [], features: [], surfaceMinM2: 79, roomsMin: null, bedroomsMin: null, budgetMaxEur: 200_000, financing: null, urgency: null };
+    expect(matchBuyer({ kind: 'home', city: null, priceEur: 210_000, surfaceM2: 71.1, rooms: null, bedrooms: null, features: [] }, s)).toMatchObject({ status: 'tolerated', unmet: [] });
+    expect(matchBuyer({ kind: 'home', city: null, priceEur: 210_001, surfaceM2: 71.1, rooms: null, bedrooms: null, features: [] }, s)).toMatchObject({ status: 'miss', unmet: ['budget'] });
+    expect(matchBuyer({ kind: 'home', city: null, priceEur: 200_000, surfaceM2: 71.09, rooms: null, bedrooms: null, features: [] }, s)).toMatchObject({ status: 'miss', unmet: ['surface'] });
+  });
+
   it('aucun acquéreur proposé pour un bien que la diffusion refuse [R42]', async () => {
     const t = await setup();
     await t.buyer(t.alex.id, 'Inès', { propertyKinds: ['house'], communes: ['Talant'] });

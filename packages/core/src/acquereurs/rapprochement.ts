@@ -120,8 +120,9 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
     else if (price <= budget) add('budget', 'met', `Prix ${eur(price)} dans le budget de ${eur(budget)}.`);
     else {
       // En centièmes de pour cent, pour éviter les arrondis à la limite.
-      const over = Math.ceil(((price - budget) * 10_000) / budget) / 100;
-      if (over <= tolerances.budgetOverPct) {
+      // La limite se compare sans arrondi ; l'arrondi ne sert qu'à l'affichage.
+      const over = Math.round(((price - budget) * 10_000) / budget) / 100;
+      if ((price - budget) * 100 <= tolerances.budgetOverPct * budget + 1e-9) {
         gap += over;
         add('budget', 'tolerated', `Prix ${over.toLocaleString('fr-FR')} % au-dessus du budget, dans la tolérance de ${tolerances.budgetOverPct} %.`);
       } else add('budget', 'unmet', 'Prix au-dessus du budget.');
@@ -133,8 +134,8 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
     if (surface === null) add('surface', 'unmet', 'Surface du bien inconnue.');
     else if (surface >= min) add('surface', 'met', `Surface ${surface} m² pour ${min} m² au moins.`);
     else {
-      const under = Math.ceil(((min - surface) * 10_000) / min) / 100;
-      if (under <= tolerances.surfaceUnderPct) {
+      const under = Math.round(((min - surface) * 10_000) / min) / 100;
+      if ((min - surface) * 100 <= tolerances.surfaceUnderPct * min + 1e-9) {
         gap += under;
         add('surface', 'tolerated', `Surface ${under.toLocaleString('fr-FR')} % sous le minimum, dans la tolérance de ${tolerances.surfaceUnderPct} %.`);
       } else add('surface', 'unmet', 'Surface sous le minimum.');
