@@ -818,7 +818,8 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O02 · Contrôles de l'offre, sans évaluer personne
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : identité selon la règle de D03 (même réglage, fiches réunies), lue seulement avec le droit de voir la fiche de l'acquéreur ; cohérence sur le prix offert ; contrôle fait à l'enregistrement et à la demande
 - Qui : Claude · Relecture : forte · Dépend de : O01
 - Cahier : M09, « Contrôles ».
 - Objectif : à l'enregistrement et à la demande, un contrôle écrit, ligne par ligne : identité de chaque acquéreur vérifiée ou non (état lu dans D03), cohérence entre le montant et le financement déclaré (apport plus prêt couvrent le prix offert ; l'offre ne porte pas de frais), offre dans sa durée de validité ; le résultat est un constat, jamais une note.
@@ -826,7 +827,7 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O03 · Transmission au vendeur et réponse horodatée
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : O02
 - Cahier : M09, « Transmission » ; règles « aucun programme n'accepte une offre ni ne négocie un prix », « toute offre reçue est transmise au vendeur ».
 - Objectif : l'agent valide la transmission de chaque offre au vendeur (message par le contrôle central, en mode essai) ; la réponse du vendeur (acceptation, refus, contre-offre) est rapportée par l'agent avec sa preuve et son heure ; un contrôle quotidien signale toute offre enregistrée et pas transmise.
