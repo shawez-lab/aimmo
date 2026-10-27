@@ -877,9 +877,18 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O08 · Routes de M09
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : routes et passage quotidien dans `packages/api/src/offres.ts`, sans toucher au socle ; clé d'envoi des offres (rejeu rendu tel qu'enregistré, clé reprise pour une autre offre refusée) ; branchement confié à la voie qui tient le socle (O09)
 - Qui : Claude · Relecture : forte · Dépend de : O07
 - Cahier : M09.
 - Objectif : les routes `/v1/offres` dans `packages/api/src/offres.ts`, de la même forme que celles de `app.ts`, et les passages quotidiens (offres non transmises, échéances), sans toucher au socle ; leur branchement dans `app.ts` et au planificateur suit, comme P10, par la voie qui tient le socle.
 - Critères : chaque route sous R16, chaque refus une ligne au journal ; une offre test suivie de bout en bout par les routes ; un double envoi de la même offre (clé d'idempotence) ne crée qu'une ligne au registre.
+- Attend : rien.
+
+### O09 · Branchement de M09 dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : O08
+- Cahier : M09 ; règles « les délais de validité sont suivis et rappelés à l'agent », « toute offre reçue est transmise au vendeur ».
+- Objectif : exporter `offres` depuis `@aimmo/core` et remplacer l'import relatif de `packages/api/src/offres.ts` ; ajouter `offreRoutes()` aux routes de `app.ts` ; lancer `syncOffres` chaque jour depuis le planificateur, une fois par créneau.
+- Critères : les routes répondent derrière la clé d'API [R16] ; le passage quotidien tourne une fois par jour [R56, R59] ; rien ne part réellement tant que le plan n'a pas mis d'envoi en service.
 - Attend : rien.
