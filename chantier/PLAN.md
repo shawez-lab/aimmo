@@ -536,3 +536,75 @@ Décidé, lecture prudente : la première version sert la journée de l'agent, r
 - Cahier : Feuille de route, janvier 2027 : « application et plan du jour utilisés chaque matin pendant une semaine ».
 - Objectif : chaque agent voit, pour lui seul, les jours où il a ouvert son plan avant midi sur les 7 derniers jours ; la direction voit le nombre de jours d'usage du réseau, sans classement des agents [R14].
 - Critères : compte juste sur un jeu inventé, à l'heure de Paris ; aucun classement ni note d'agent [R14] ; aucune donnée de client.
+
+**M06 · Mandats et documents, février 2027.**
+
+Découpé le 2026-10-27. Ids `D..` pour Documents. Cahier : M06 Mandats et documents ; Feuille de route, février 2027 : « premier mandat de l'agence généré par AIMMO et numéroté dans le registre de l'agence ».
+Décidé, lecture prudente : la première version sert les mandats de vente, leurs avenants et le registre ; les autres documents (location, recherche, délégation, bon de visite, offre, fonds de commerce, contrats d'agent) arriveront avec M08, M09, M14, M15 et M16, sur la même bibliothèque. Tant que Marion Gravelin et l'avocat n'ont pas validé les modèles (H08), la bibliothèque ne porte que des modèles d'essai inventés, marqués « essai », qu'aucun document réel ne peut utiliser. Pendant la preuve à Dijon, le numéro vient du registre de GRAVELIN IMMO (H23) et la signature se fait sur papier ou avec l'outil de l'agence : la signature en ligne AIMMO est construite en mode essai, et ne sert qu'une fois son dossier de preuve validé par l'avocat (H24). L'IA ne rédige aucune clause. Rien n'est envoyé à un client tant que le plan n'a pas mis d'envoi en service.
+
+### D01 · Registre des mandats chaîné
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : G03
+- Cahier : M06, « Registre des mandats » ; critère « une modification du registre après coup est détectée ».
+- Objectif : un registre par réseau, en ajout seul : à l'inscription d'un mandat signé, un numéro dans l'ordre chronologique, au format et à partir du prochain numéro réglés pour le réseau ; chaque ligne porte l'empreinte de la précédente ; un contrôle d'intégrité relit toute la chaîne ; une ligne corrigée ne s'efface pas, une ligne d'annulation la suit.
+- Critères : deux inscriptions simultanées n'ont jamais le même numéro, sans trou [R39] ; une modification directe d'une ligne en base est détectée par le contrôle [R39] ; aucune ligne effacée [R17] ; seuls l'agent du mandat, la direction et la conformité lisent une ligne [R16].
+- Attend : H23 pour le numéro réel de l'agence ; les tests utilisent un registre inventé.
+
+### D02 · Bibliothèque de modèles datés et versionnés
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : D01
+- Cahier : M06, « Bibliothèque de modèles », règle « le modèle en vigueur à la date de signature est conservé avec le document ».
+- Objectif : des modèles par type de document (mandat de vente simple, exclusif, avenant), versionnés, datés, avec la liste de leurs champs et leur état « essai » ou « validé » (validé seulement par une personne désignée, jamais par le code) ; un document généré remplit les champs depuis la base, garde la version et l'empreinte du modèle utilisé ; rendu en HTML imprimable, clause d'exclusivité en évidence.
+- Critères : un champ absent laisse le document « incomplet », jamais un texte inventé [R40] ; un modèle « essai » ne peut produire qu'un document d'essai, refusé à la signature réelle ; changer un modèle crée une version, le document garde la sienne ; 5 mandats tests générés identiques à leur modèle, au caractère près.
+- Attend : H08 pour les modèles réels.
+
+### D03 · Contrôles avant signature
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : D02
+- Cahier : M06, « Contrôles avant signature » ; règle anti-blanchiment.
+- Objectif : avant toute signature, un contrôle écrit : champs obligatoires remplis, honoraires conformes au barème du réseau (réglage) et qui les paie, mandants égaux aux propriétaires du bien, identité de chaque mandant vérifiée (pièce vue, date, par qui, rangée hors de la fiche [R15]) ; le résultat, ligne par ligne, est rendu à l'agent.
+- Critères : un document incomplet ou hors barème ne peut pas être signé ; aucun mandat signé sans identification de chaque vendeur [R41] ; le contrôle est écrit au journal sans donnée personnelle [R13].
+
+### D04 · Mandat signé sur papier, numéroté au registre
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : D01, D03
+- Cahier : M06, « Papier toujours possible », règle « le numéro du registre figure sur l'exemplaire du mandant » ; critère « un mandat de l'agence généré par AIMMO, numéroté dans le registre de l'agence ».
+- Objectif : l'agent enregistre un mandat généré et signé sur papier (date, lieu de signature, scan rangé par sa référence) ; s'il passe les contrôles de D03, il reçoit son numéro au registre et devient un mandat signé (G03, avec sa source [R38]) ; l'exemplaire du mandant est produit avec son numéro.
+- Critères : le numéro figure sur l'exemplaire du mandant [R39] ; un mandat qui échoue aux contrôles n'est pas numéroté ; un même document ne reçoit jamais deux numéros.
+- Attend : H23 pour l'usage réel.
+
+### D05 · Rétractation et diffusion bloquée
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : D04
+- Cahier : M06, « Rétractation », règle « aucune annonce ni diffusion sans mandat signé et numéroté » ; critère « la diffusion reste bloquée pendant le délai de rétractation ».
+- Objectif : selon le lieu de signature (hors agence ou à distance), un délai de 14 jours calculé à l'heure de Paris, avec le formulaire de rétractation joint ; une seule fonction dit si un bien peut être diffusé, utilisée par tout ce qui publie : mandat signé, numéroté, en cours, et hors délai de rétractation sauf demande écrite du vendeur rangée avec sa preuve ; une rétractation reçue arrête le mandat.
+- Critères : aucune diffusion sans mandat signé et numéroté [R42] ; diffusion refusée pendant le délai, permise le lendemain de sa fin, permise plus tôt avec la demande écrite ; une rétractation arrête la diffusion [R42].
+
+### D06 · Échéances des mandats
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : D04
+- Cahier : M06, « Échéances ».
+- Objectif : chaque jour, une tâche pour l'agent avant la fin d'un mandat et avant la fin de la période de 3 mois d'un mandat exclusif, avec le renouvellement proposé à temps (délais en réglage) ; rien n'est envoyé au vendeur.
+- Critères : une seule tâche par échéance [R18] ; calcul juste à l'heure de Paris sur un jeu inventé ; aucun envoi.
+
+### D07 · Avenant au mandat
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : D04
+- Cahier : M06, « Avenant au mandat ».
+- Objectif : un avenant généré depuis le modèle, lié au mandat par sa référence et son numéro, pour un changement de prix, de durée ou de conditions ; mêmes contrôles et même enregistrement que le mandat ; le mandat garde l'historique de ses avenants.
+- Critères : l'avenant porte la référence et le numéro du mandat ; le prix du mandat change seulement quand l'avenant est signé ; rien n'est effacé [R17].
+
+### D08 · Signature en ligne AIMMO, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : D03
+- Cahier : M06, « Signature électronique AIMMO ».
+- Objectif : code à usage unique par mail (rangé dans la boîte d'essai, jamais envoyé), signature manuscrite à l'écran possible, empreinte du document, horodatage, dossier de preuve ; chaque signataire reçoit son exemplaire (dans la boîte d'essai).
+- Critères : un code ne sert qu'une fois et expire ; un document modifié après signature est détecté par son empreinte ; tant que H24 n'est pas fait, une signature en ligne ne rend jamais un mandat signé réel.
+- Attend : H24, H05.
+
+### D09 · Mesure : mandat signé en moins de 10 minutes
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : D04, E04
+- Cahier : M06, critère « un mandat test signé en moins de 10 minutes à partir de l'estimation, et numéroté au registre ».
+- Objectif : un parcours de test, de l'avis de valeur au mandat numéroté, sur une horloge simulée et des données inventées, avec le temps de chaque étape ; la marche à suivre pour le mesurer avec Shawez sur un vrai rendez-vous.
+- Critères : le parcours de test passe ; le temps passé par le système est mesuré et sous la cible ; la marche à suivre est écrite dans `docs/MESURE.md`.

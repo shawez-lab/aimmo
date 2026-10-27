@@ -12,7 +12,7 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H05 | Accorder l'accès à Gmail par API sur l'écran d'accord de Google | Shawez | S11 | signalé le 2026-10-26 |
 | H06 | Vérification de l'entreprise et validation de l'application AIMMO chez Meta | Shawez | M02 | signalé le 2026-10-26 |
 | H07 | Accès à l'API Google Business Profile | Shawez | M01 | plus tard |
-| H08 | Modèles juridiques validés par Marion Gravelin et l'avocat | Marion, avocat | M06 | plus tard |
+| H08 | Modèles juridiques validés par Marion Gravelin et l'avocat | Marion, avocat | M06 | signalé le 2026-10-27 |
 | H09 | Création de la société AIMMO, carte professionnelle, assurance, médiateur | Shawez, Marion | pilote | plus tard |
 | H10 | Comptes et accords de flux avec les portails | Shawez | diffusion sur les portails | plus tard |
 | H11 | Codex accepte les tâches confiées par un commentaire `@codex` | Shawez | tâches de Codex | fait (2026-10-26) : Codex a pris S07 et l'a faite, mais n'a pas pu pousser son commit (voir H12) |
@@ -27,5 +27,7 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H20 | Lancer la vérification de la collecte sur 10 adresses de biens connus de l'agence, hors du dépôt, comme le décrit `docs/MESURE.md` (la séance de Claude n'a pas accès aux services publics) | Shawez | E03, critère de M04 | plus tard |
 | H21 | Accorder l'accès à Google Agenda par API (écran d'accord de Google) pour l'agenda de chaque agent, quand V03 le demandera | Shawez | V03 réel | signalé le 2026-10-27 |
 | H22 | Créer la clé d'API personnelle de chaque agent qui utilisera l'application (32 caractères ou plus, gardée dans un coffre), ranger son empreinte dans le secret `API_KEYS` du Worker `aimmo-api` avec le rôle `agent` et son identifiant, comme le décrit `docs/API.md`, puis la saisir une fois dans l'application sur son téléphone | Shawez | A01 réel, usage de l'application | signalé le 2026-10-27 |
+| H23 | Donner le format du registre des mandats de GRAVELIN IMMO et le prochain numéro libre, au moment de passer au registre AIMMO | Shawez, Marion | D01, D04 réels | signalé le 2026-10-27 |
+| H24 | Faire valider par l'avocat le dossier de preuve de la signature en ligne AIMMO, avant tout usage réel | Shawez, avocat | D08 réel | plus tard |
 
 Quand une tâche à moins de trois places de la tête du plan attend une ligne « plus tard », la séance la marque « signalé le <date> » et la dit une fois dans « Besoin de toi ».
