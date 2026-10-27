@@ -14,6 +14,8 @@
  * - sans choix rangé, aucune relance : « ne pas s'y être opposé » se prouve, comme un accord [R03, R65] ; un `oui` ou un
  *   `un_an` range l'accord `relances_apres_vente` sur le mail, avec la même preuve ; un `non` le retire, fiches réunies
  *   comprises, pour tous les dossiers de la personne ;
+ * - un `oui` ou un `un_an` ne se range qu'à l'acte, au plus 7 jours après pour une saisie en retard, et jamais après un
+ *   `non` du même dossier : une opposition est définitive ; un `non` se range à tout moment ;
  * - sans lien de désinscription réglé, aucune relance ne part [R65] ;
  * - une relance refusée pour l'heure attend le passage suivant [R01], dans les 7 jours ; au-delà, elle est close, au
  *   journal ; toute autre règle la refuse pour de bon ;
@@ -40,12 +42,14 @@ export const AFTER_SALE_CHOICES = ['oui', 'un_an', 'non'] as const;
 export type AfterSaleChoice = (typeof AFTER_SALE_CHOICES)[number];
 /** Les dates clés : de un à cinq ans après l'acte. */
 export const KEY_YEARS = [1, 2, 3, 4, 5] as const;
+/** Un `oui` ou un `un_an` se range à l'acte : au plus ce nombre de jours après, pour une saisie faite en retard. */
+export const CHOICE_GRACE_DAYS = 7;
 /** Passé ce nombre de jours après la date clé, une relance qui n'a pas pu partir est close. */
 export const AFTER_SALE_WINDOW_DAYS = 7;
 
 const YEAR_WORDS: Record<number, string> = { 1: 'un an', 2: 'deux ans', 3: 'trois ans', 4: 'quatre ans', 5: 'cinq ans' };
 
-export type AfterSaleRefusal = { ok: false; rule: 'R16' | null; code: string };
+export type AfterSaleRefusal = { ok: false; rule: 'R16' | 'R65' | null; code: string };
 
 export interface AfterSaleReminder {
   fileId: string;
@@ -158,6 +162,14 @@ export class RelancesApresVente {
     const roots = await Promise.all(sale.clients.map((c) => this.unique.rootOf(c.personId)));
     if (!roots.includes(root)) return { ok: false, rule: null, code: 'not_client' };
     const at = this.now();
+    if (input.choice !== 'non') {
+      // L'accord se donne à l'acte, et seulement là : rangé au plus 7 jours après, jamais après une opposition [R65].
+      const today = localTime(at, TIME_ZONE).date;
+      if (today < sale.closedOn || today > addDays(sale.closedOn, CHOICE_GRACE_DAYS)) return { ok: false, rule: 'R65', code: 'not_at_signing' };
+      const ids = await this.unique.membersOf(root);
+      const opposed = await this.db.first(`SELECT 1 AS x FROM after_sale_choices WHERE file_id = ? AND choice = 'non' AND person_id IN (${ids.map(() => '?').join(', ')})`, [fileId, ...ids]);
+      if (opposed) return { ok: false, rule: 'R65', code: 'opposed' };
+    }
     await this.db.run('INSERT INTO after_sale_choices (id, network_id, file_id, person_id, choice, proof, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
       this.newId(),
       viewer.networkId,

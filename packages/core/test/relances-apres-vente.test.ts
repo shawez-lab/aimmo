@@ -80,8 +80,13 @@ describeWithSqlite('F04 · relance un an après la vente, sans jamais relancer u
       dossiers.sales.push(s);
       return s;
     };
+    /** Le choix rangé ; un accord se range le jour de l'acte, à 11 h, l'horloge revenant ensuite où elle était. */
     const choose = async (fileId: string, personId: string, choice: AfterSaleChoice, proof = 'case cochée à l’acte, test') => {
+      const before = t.now();
+      const sale = dossiers.sales.find((s) => s.fileId === fileId);
+      if (choice !== 'non' && sale) t.setClock(paris(sale.closedOn, 11));
       const r = await relances.recordChoice(t.agent, fileId, personId, { choice, proof });
+      t.setClock(before);
       if (!r.ok) throw new Error(r.code);
     };
     const inbox = (personId: string) =>
@@ -250,6 +255,7 @@ describeWithSqlite('F04 · relance un an après la vente, sans jamais relancer u
     const a = await t.client('Ana');
     const other = await t.client('Zoe');
     t.close('f1', '2027-03-08', [{ personId: a, side: 'vendeur' }]);
+    t.setClock(paris('2027-03-08', 11));
     expect(await t.relances.recordChoice(t.sam, 'f1', a, { choice: 'oui', proof: 'test' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.relances.recordChoice(t.direction, 'f1', a, { choice: 'oui', proof: 'test' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.relances.recordChoice(t.agent, 'inconnu', a, { choice: 'oui', proof: 'test' })).toEqual({ ok: false, rule: null, code: 'unknown_file' });
@@ -262,6 +268,35 @@ describeWithSqlite('F04 · relance un an après la vente, sans jamais relancer u
     // Un choix rangé ne s'efface ni ne change : un nouveau s'ajoute.
     await expect(t.db.run('DELETE FROM after_sale_choices')).rejects.toThrow();
     await expect(t.db.run("UPDATE after_sale_choices SET choice = 'non'")).rejects.toThrow();
+  });
+
+  it('[R65] un accord ne se range qu’à l’acte, jamais après une opposition : aucune relance ne repart', async () => {
+    const t = await setup();
+    const a = await t.client('Ana');
+    const b = await t.client('Bea');
+    t.close('f1', '2027-03-08', [{ personId: a, side: 'vendeur' }, { personId: b, side: 'acquereur' }]);
+    t.setClock(paris('2027-03-08', 11));
+    await t.choose('f1', a, 'oui');
+    // Un « oui » rangé deux ans après l'acte, sur un dossier sans choix : refusé.
+    t.setClock(paris('2029-01-10', 11));
+    expect(await t.relances.recordChoice(t.agent, 'f1', b, { choice: 'oui', proof: 'appel, test' })).toEqual({ ok: false, rule: 'R65', code: 'not_at_signing' });
+    // Une saisie en retard de quelques jours reste possible.
+    t.setClock(paris('2027-03-12', 11));
+    expect(await t.relances.recordChoice(t.agent, 'f1', b, { choice: 'un_an', proof: 'case cochée, test' })).toEqual({ ok: true });
+    await t.passes('2028-03-08', '2028-03-09');
+    const box = await t.inbox(a);
+    expect(box).toHaveLength(1);
+    const token = box[0]!.body.slice(box[0]!.body.indexOf(BASE) + BASE.length);
+    expect(await t.relances.unsubscribe(token)).toBe(true);
+    // Après la désinscription, un « oui » est refusé, même dans le délai de saisie ; un « non » passe toujours.
+    t.setClock(paris('2027-03-09', 11));
+    expect(await t.relances.recordChoice(t.agent, 'f1', a, { choice: 'oui', proof: 'appel, test' })).toEqual({ ok: false, rule: 'R65', code: 'opposed' });
+    t.setClock(paris('2028-06-01', 11));
+    expect(await t.relances.recordChoice(t.agent, 'f1', a, { choice: 'oui', proof: 'appel, test' })).toEqual({ ok: false, rule: 'R65', code: 'not_at_signing' });
+    expect(await t.relances.recordChoice(t.agent, 'f1', b, { choice: 'non', proof: 'appel, test' })).toEqual({ ok: true });
+    await t.passes('2029-03-08', '2029-03-12');
+    expect(await t.inbox(a)).toHaveLength(1);
+    expect(await t.inbox(b)).toHaveLength(1);
   });
 
   it('[R16] [R13] un agent ne voit que les relances de ses dossiers ; le journal ne garde ni texte ni coordonnée', async () => {
