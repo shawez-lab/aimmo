@@ -913,7 +913,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N02 · Échéancier du dossier et alertes à l'agent
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
 - Décidé (2026-10-27) : la demande unique de pièces ou de visite de la commune suspend son délai, qui reprend pour ce qui restait, au moins un mois ; toute fin d'échéance légale un samedi, un dimanche ou un jour férié est reportée au jour ouvrable suivant ; une tâche par échéance, par date et par agent responsable du bien ; une échéance sans sa date donne une tâche « à saisir »
 - Qui : Claude · Relecture : forte · Dépend de : N01
 - Cahier : M10, « Échéancier ».
@@ -922,7 +922,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N03 · Relances des pièces manquantes, en mode essai
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : N01, B02
 - Cahier : M10, « relances automatiques » et règles.
 - Objectif : chaque jour, pour chaque pièce manquante attendue d'un client, une relance préparée et passée par le contrôle central, rangée dans la boîte d'essai ; texte écrit par le code, sans IA, nommant la pièce ; l'agent voit ce qui est parti et ce qui a été refusé.
