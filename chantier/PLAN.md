@@ -319,7 +319,7 @@ Découpé le 2026-10-27. Ids `E..` pour Estimer. Cahier : M04 Estimer ; Feuille 
 Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`functions/_lib/estimation.js` de `shawez-immo`, lu sans être modifié) au lieu de la refaire : comparables DVF de même type et de surface proche, rayon élargi jusqu'à 12 ventes, médiane du prix au m², marge par l'écart interquartile, ajustements bornés ; le diagnostic énergétique s'y ajoute comme le demande le cahier. Les calculs sont faits par le code ; l'IA ne rédige que le texte, derrière une interface, avec une fausse IA dans les tests. Les données publiques (DVF, ADEME, Géorisques, Base adresse nationale, cadastre) passent par des interfaces, avec de faux jeux inventés dans les tests. Aucun avis ne part sans validation de l'agent, et aucun ne part réellement tant que le plan n'a pas mis d'envoi en service.
 
 ### E01 · Fourchette de prix par le code
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : rien
 - Cahier : M04, « Ce que fait le module » (calcul par le code) et « Règles ».
 - Objectif : à partir d'une liste de ventes réelles (source abstraite) et des caractéristiques du bien, choisir les comparables, calculer le prix au m² médian, la fourchette basse et haute, les ajustements écrits (étage, extérieur, état, époque, diagnostic énergétique), et rendre la date des dernières ventes utilisées.
@@ -327,7 +327,7 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Décidé (2026-10-27) : le cahier ne chiffre pas l'ajustement du diagnostic énergétique ; réglage de départ A +3 %, B +2 %, C et D 0, E -2 %, F -5 %, G -8 %, dans les bornes de -25 % à +18 %, à confirmer par Shawez sur la mesure de E07.
 
 ### E02 · Ventes DVF du site comme source
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : E01
 - Cahier : M04, « Données » et « Branchements » (fichiers DVF de data.gouv.fr).
 - Objectif : lire les ventes DVF déjà préparées par le site (`donnees-dvf/` : index, tuiles, détails), en lecture seule, comme source de E01 ; le détail d'une vente donne la voie sans numéro et la commune.
