@@ -1,4 +1,4 @@
-import { Acces, FicheClient, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Acces, FicheClient, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 
 export interface SchedulerConfig {
@@ -45,6 +45,11 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       visitReportsJob(config.db, journal, () => {
         const store = new FicheClient(config.db, { now });
         return new Visites(config.db, journal, new Acces(config.db, store, new FicheUnique(config.db, store, { now }), journal, { now }), { now });
+      }, { now }),
+      // Point de la semaine au vendeur (T07) : préparé le lundi pour l'agent, envoyé après sa validation.
+      weeklyPointJob(config.db, journal, () => {
+        const store = new FicheClient(config.db, { now });
+        return new Acces(config.db, store, new FicheUnique(config.db, store, { now }), journal, { now });
       }, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
