@@ -183,6 +183,23 @@ describeWithSqlite('E04 · brouillon d’avis de valeur et validation par l’ag
     expect(await w.avis.validate(paul, r.id)).toMatchObject({ ok: false, code: 'changed_meanwhile' });
     w.avis.get = original;
     expect((await w.avis.get(r.id))?.status).toBe('draft');
+
+    // Et l'inverse : une validation passée pendant un ajustement ; l'ajustement n'est pas fait, et c'est dit.
+    const v = await world();
+    const d = await v.draft();
+    const read = v.avis.get.bind(v.avis);
+    let once = true;
+    v.avis.get = async (id: string) => {
+      const seen = await read(id);
+      if (once) {
+        once = false;
+        await v.db.run("UPDATE valuation_reports SET status = 'validated', validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ?", [v.paul.id, '2026-10-27T09:00:01.000Z', '2026-10-27T09:00:01.000Z', id]);
+      }
+      return seen;
+    };
+    expect(await v.avis.adjust(v.as('agent', v.paul.id), d.id, { low: 150000, high: 170000 })).toMatchObject({ ok: false, code: 'changed_meanwhile' });
+    v.avis.get = read;
+    expect(await v.avis.get(d.id)).toMatchObject({ status: 'validated', agent_low: null });
   });
 
   it('une surface décimale s’écrit à la française et passe le contrôle', async () => {

@@ -318,10 +318,13 @@ export class AvisDeValeur {
       text = r.text.replace(pattern, (m) => swap.get(m) ?? m);
     }
     const at = this.now().toISOString();
-    await this.db.run(
-      'UPDATE valuation_reports SET agent_low = ?, agent_high = ?, text = ?, text_by = ?, updated_at = ? WHERE id = ? AND status = ?',
-      [rangeChanged ? low : r.agent_low, rangeChanged ? high : r.agent_high, text, change.text === undefined ? r.text_by : 'agent', at, id, 'draft'],
+    // Sur la version lue seulement : validée ou modifiée entre-temps, l'ajustement n'est pas fait, et c'est dit.
+    const done = await this.db.run(
+      `UPDATE valuation_reports SET agent_low = ?, agent_high = ?, text = ?, text_by = ?, updated_at = ?
+       WHERE id = ? AND status = 'draft' AND text = ? AND agent_low IS ? AND agent_high IS ? AND updated_at = ?`,
+      [rangeChanged ? low : r.agent_low, rangeChanged ? high : r.agent_high, text, change.text === undefined ? r.text_by : 'agent', at, id, r.text, r.agent_low, r.agent_high, r.updated_at],
     );
+    if (done.changes !== 1) return { ok: false, rule: 'R30', code: 'changed_meanwhile' };
     const updated = (await this.get(id))!;
     await this.log('avis.ajuste', `agent:${viewer.userId}`, updated, { range: rangeChanged, text: change.text !== undefined });
     return { ok: true, value: updated };
