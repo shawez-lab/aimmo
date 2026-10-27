@@ -219,7 +219,7 @@ describe('A02 · réponse arrivée après la sortie', () => {
       for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
     };
     await tick();
-    expect(Object.keys(held)).toHaveLength(4);
+    expect(Object.keys(held)).toHaveLength(3);
     els.sortir!.listeners.click!({});
     // L'agent suivant entre sur le même appareil.
     late = false;
@@ -230,7 +230,6 @@ describe('A02 · réponse arrivée après la sortie', () => {
     held['/v1/plan-du-jour']!(Response.json({ ok: true, data: PLAN }));
     held['/v1/contacts-chauds']!(Response.json({ ok: true, data: HOT }));
     held['/v1/rendez-vous/jour']!(Response.json({ ok: false }, { status: 403 }));
-    held['/v1/usage/matin']!(Response.json({ ok: true, data: { scope: 'agent', days: [{ day: '2026-11-10', opened: true }], openedDays: 1 } }));
     await tick();
     expect([els.plan!, els.chauds!, els.rdv!, els.semaine!].map((l) => l.children.length)).toEqual([0, 0, 0, 0]);
     expect(storage.get('aimmo.cle')).toBe('n'.repeat(40));
@@ -274,5 +273,34 @@ describeWithSqlite('A04 · route /v1/usage/matin', () => {
     expect(all.data).toMatchObject({ scope: 'network', daysUsed: 0, activeAgents: 1 });
     expect(JSON.stringify(all)).not.toContain(alex.id);
     expect((await get(KEY_OTHER)).status).toBe(403);
+  });
+});
+
+describe('A04 · la semaine est lue après le plan', () => {
+  it('l’usage du matin n’est demandé qu’une fois le plan lu, pour que l’ouverture de ce matin compte', async () => {
+    const order: string[] = [];
+    let releasePlan: (() => void) | null = null;
+    const answers: Answers = {
+      ...DAY,
+      '/v1/plan-du-jour': () =>
+        new Promise<Response>((resolve) => {
+          releasePlan = () => {
+            order.push('plan lu');
+            resolve(Response.json({ ok: true, data: PLAN }));
+          };
+        }),
+      '/v1/usage/matin': async () => {
+        order.push('semaine demandée');
+        return Response.json({ ok: true, data: { scope: 'agent', days: [{ day: '2026-11-10', opened: true }], openedDays: 1 } });
+      },
+    };
+    const pending = run(answers);
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(order).toEqual([]);
+    releasePlan!();
+    const { els } = await pending;
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(order).toEqual(['plan lu', 'semaine demandée']);
+    expect(els.semaine!.children[0]!.textContent).toBe('Plan ouvert avant midi : 1 jour(s) sur 1.');
   });
 });

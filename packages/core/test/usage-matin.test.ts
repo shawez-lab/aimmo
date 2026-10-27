@@ -103,4 +103,26 @@ describeWithSqlite('A04 · usage du matin', () => {
     }
     expect((await w.journal.all()).filter((e) => e.type === 'acces.refuse')).toHaveLength(4);
   });
+
+  it('aucune donnée de client n’est lue ni rendue, même quand le journal en porte la trace', async () => {
+    const w = await world('2026-11-10T09:00:00.000Z');
+    const store = new FicheClient(w.db);
+    const lea = await store.createPerson({ networkId: w.net.id, agentId: w.paul.id, firstName: 'Léa', lastName: 'Exemple' });
+    await appendEvent(w.journal, { type: 'fiche.lue', actor: `agent:${w.paul.id}`, subject: `person:${lea.id}`, data: { rule: 'R16' } }, () => new Date('2026-11-10T07:00:00.000Z'));
+    await w.read(w.paul.id, '2026-11-10T07:01:00.000Z', '2026-11-10');
+    const seen: string[] = [];
+    const spy = { ...w.db, all: (sql: string, params?: unknown[]) => (seen.push(sql), w.db.all(sql, params as never)), first: (sql: string, params?: unknown[]) => (seen.push(sql), w.db.first(sql, params as never)) };
+    const usage = new UsageMatin(spy as typeof w.db, w.journal, { now: () => new Date('2026-11-10T09:00:00.000Z') });
+    for (const viewer of [w.as('agent', w.paul.id), w.as('direction', 'direction-1')]) {
+      const r = await usage.read(viewer);
+      const text = JSON.stringify(r);
+      expect(r.ok).toBe(true);
+      expect(text).not.toContain(lea.id);
+      expect(text).not.toMatch(/Léa|Exemple|person:/);
+      expect(Object.keys(r.ok ? r.value : {}).sort()).toEqual(r.ok && r.value.scope === 'agent' ? ['days', 'openedDays', 'scope'] : ['activeAgents', 'days', 'daysUsed', 'scope']);
+    }
+    // Seules la table des agents et les lectures du plan dans le journal sont lues ; aucune table de client.
+    expect(seen.every((sql) => /FROM agents|FROM journal WHERE type = 'plan_du_jour.lu'/.test(sql))).toBe(true);
+    expect(seen.some((sql) => /persons|messages|projects|consents|identifiers/.test(sql))).toBe(false);
+  });
 });

@@ -350,10 +350,13 @@ export const APP_JS = `'use strict';
   }
   function day(key, mine) {
     return Promise.all([
-      part('plan', api('/v1/plan-du-jour', key), renderPlan, mine),
+      // La semaine est lue après le plan : l'ouverture de ce matin y compte déjà.
+      part('plan', api('/v1/plan-du-jour', key), renderPlan, mine).then(function (done) {
+        if (!done || mine !== session) return done;
+        return part('semaine', api('/v1/usage/matin', key), renderWeek, mine);
+      }),
       part('chauds', api('/v1/contacts-chauds', key), renderHot, mine),
       part('rdv', api('/v1/rendez-vous/jour', key), renderAppointments, mine),
-      part('semaine', api('/v1/usage/matin', key), renderWeek, mine),
     ]).then(function (done) {
       if (mine !== session) return;
       // Une clé refusée en cours de route : rien n'est gardé à l'écran ni sur l'appareil.
