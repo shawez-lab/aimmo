@@ -86,6 +86,11 @@ export interface SendRequest {
   conversationId?: string | null;
   /** L'accord est exigé sur tout canal, Instagram et Facebook compris (alertes de biens, R49). */
   consentOnEveryChannel?: boolean;
+  /**
+   * Message écrit et envoyé par l'agent lui-même, de son téléphone (T09) : ni l'assistant [R21] ni la fenêtre de Meta
+   * [R22], qui ne valent que pour les envois automatiques ; arrêt, exclusions, horaires et accord restent [R01 à R04].
+   */
+  byAgent?: boolean;
   at: Date;
 }
 
@@ -143,7 +148,10 @@ export function decideSend(
 
   // R21 : l'assistant se tait pour de bon dans une conversation où un humain a répondu, que l'agent a reprise
   // (rendez-vous pris, reprise à la main) ou qui a dépassé le nombre d'échanges permis.
-  if (request.conversationId) {
+  const automatic = request.byAgent !== true;
+  if (!automatic) {
+    // L'agent écrit lui-même : l'assistant n'est pas en cause [R21].
+  } else if (request.conversationId) {
     checked.push('R21');
     const conversation = facts.messages.filter((m) => m.conversation_id === request.conversationId && Date.parse(m.occurred_at) <= at);
     if (conversation.some((m) => m.direction === 'out' && m.author_kind === 'agent')) {
@@ -268,7 +276,7 @@ export function decideSend(
 
   // R22 : sur les canaux de Meta, rien ne part hors de la fenêtre ouverte par le dernier message du client,
   // dans cette conversation quand elle est citée, sinon sur ce canal.
-  if ((META_CHANNELS as readonly string[]).includes(request.channel)) {
+  if (automatic && (META_CHANNELS as readonly string[]).includes(request.channel)) {
     checked.push('R22');
     const lastIn = Math.max(
       -Infinity,
