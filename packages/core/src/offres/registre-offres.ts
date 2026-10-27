@@ -206,7 +206,8 @@ export class RegistreOffres {
     if (!isInt(input.amountEur, 1, 100_000_000)) return bad('amountEur');
     const conditions = parseConditions(input.conditions);
     if (!conditions.ok) return bad(conditions.field);
-    if (!(typeof input.receivedAt === 'string') || !Number.isFinite(Date.parse(input.receivedAt)) || Date.parse(input.receivedAt) > now.getTime()) return bad('receivedAt');
+    // Une heure complète avec son fuseau : jamais lue selon le fuseau du serveur.
+    if (!(typeof input.receivedAt === 'string') || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(input.receivedAt) || !Number.isFinite(Date.parse(input.receivedAt)) || Date.parse(input.receivedAt) > now.getTime()) return bad('receivedAt');
     const receivedAt = new Date(input.receivedAt).toISOString();
     const receivedDay = localTime(new Date(receivedAt), TIME_ZONE).date;
     if (!validDay(input.validUntil) || input.validUntil < receivedDay || input.validUntil > addDays(receivedDay, MAX_VALIDITY_DAYS) || input.validUntil < today) return bad('validUntil');

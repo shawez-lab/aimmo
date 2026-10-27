@@ -55,12 +55,13 @@ describeWithSqlite('O03 · transmission et réponse', () => {
     await t.transmission.alertUntransmitted(t.network.id);
     expect(await t.transmission.transmit(t.agent, offer.id, { via: 'en_personne' })).toEqual({ ok: false, rule: null, code: 'already_transmitted' });
     expect(await t.transmission.stateOf(offer)).toBe('transmise');
+    t.setClock(new Date('2027-03-01T11:00:00.000Z'));
     // Sans preuve, pas de réponse ; une réponse unique.
-    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: 'oui', respondedAt: '2027-03-01T09:30:00.000Z' })).toEqual({ ok: false, rule: null, code: 'bad_proof' });
-    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'peut-etre', proofRef: PROOF, respondedAt: '2027-03-01T09:30:00.000Z' })).toEqual({ ok: false, rule: null, code: 'bad_outcome' });
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: 'oui', respondedAt: '2027-03-01T10:30:00.000Z' })).toEqual({ ok: false, rule: null, code: 'bad_proof' });
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'peut-etre', proofRef: PROOF, respondedAt: '2027-03-01T10:30:00.000Z' })).toEqual({ ok: false, rule: null, code: 'bad_outcome' });
     expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'refusee', proofRef: PROOF, respondedAt: '2027-03-01T08:00:00.000Z' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
-    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'refusee', proofRef: PROOF, respondedAt: '2027-03-01T09:30:00.000Z' })).toMatchObject({ ok: true });
-    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T09:40:00.000Z' })).toEqual({ ok: false, rule: null, code: 'already_answered' });
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'refusee', proofRef: PROOF, respondedAt: '2027-03-01T10:30:00.000Z' })).toMatchObject({ ok: true });
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T10:40:00.000Z' })).toEqual({ ok: false, rule: null, code: 'already_answered' });
     expect(await t.transmission.stateOf(offer)).toBe('refusee');
     await expect(t.db.run("UPDATE offer_responses SET outcome = 'acceptee'")).rejects.toThrow(/rien ne change/);
   });
@@ -73,8 +74,21 @@ describeWithSqlite('O03 · transmission et réponse', () => {
     t.setClock(new Date('2027-03-06T10:00:00.000Z'));
     expect(await t.transmission.stateOf(offer)).toBe('echue');
     expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-05T23:30:00.000Z' })).toEqual({ ok: false, rule: 'R59', code: 'expired' });
-    // Le 5 mars à 22 h 59 à Paris, encore valable.
-    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-05T21:59:00.000Z' })).toMatchObject({ ok: true });
+    // Une heure sans fuseau n'est jamais lue selon le serveur.
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-05T21:59' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-05' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    // Le 5 mars à 22 h 59 à Paris, encore valable ; écrit avec le décalage de Paris.
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-05T22:59:00+01:00' })).toMatchObject({ ok: true });
+  });
+
+  it('[R59] une offre transmise après son échéance ne peut pas être acceptée : jamais de réponse avant la transmission', async () => {
+    const t = await setup();
+    const offer = await t.record({ validUntil: '2027-03-05' });
+    t.setClock(new Date('2027-03-10T10:00:00.000Z'));
+    expect(await t.transmission.transmit(t.agent, offer.id, { via: 'en_personne' })).toMatchObject({ ok: true });
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-04T10:00:00.000Z' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-10T10:00:00.000Z' })).toEqual({ ok: false, rule: 'R59', code: 'expired' });
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'refusee', proofRef: PROOF, respondedAt: '2027-03-10T10:00:00.000Z' })).toMatchObject({ ok: true });
   });
 
   it('[R01] [R02] le message passe par le contrôle central : refusé la nuit ou pour une personne exclue, rien n’est transmis', async () => {

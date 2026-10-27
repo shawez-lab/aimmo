@@ -37,6 +37,8 @@ export type OfferState = 'recue' | 'transmise' | 'acceptee' | 'refusee' | 'contr
 export type Via = 'message' | 'telephone' | 'en_personne';
 export type ResponseOutcome = 'acceptee' | 'refusee' | 'contre_offre';
 
+/** Un instant complet : date, heure et fuseau (Z ou décalage). */
+export const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 const PROOF_REF = /^preuves\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:pdf|jpg|png|eml|txt)$/;
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
@@ -154,13 +156,15 @@ export class TransmissionOffres {
   async respond(viewer: Viewer, offerId: string, input: { outcome: unknown; proofRef: unknown; respondedAt: unknown }): Promise<{ ok: true; value: { outcome: ResponseOutcome } } | Refusal | Problem> {
     if (input.outcome !== 'acceptee' && input.outcome !== 'refusee' && input.outcome !== 'contre_offre') return { ok: false, rule: null, code: 'bad_outcome' };
     if (typeof input.proofRef !== 'string' || !PROOF_REF.test(input.proofRef)) return { ok: false, rule: null, code: 'bad_proof' };
-    if (typeof input.respondedAt !== 'string' || !Number.isFinite(Date.parse(input.respondedAt)) || Date.parse(input.respondedAt) > this.now().getTime()) return { ok: false, rule: null, code: 'bad_date' };
+    // Une heure complète avec son fuseau : jamais lue selon le fuseau du serveur.
+    if (typeof input.respondedAt !== 'string' || !ISO_INSTANT.test(input.respondedAt) || !Number.isFinite(Date.parse(input.respondedAt)) || Date.parse(input.respondedAt) > this.now().getTime()) return { ok: false, rule: null, code: 'bad_date' };
     const found = await this.offerFor(viewer, offerId, true);
     if (!found.ok) return found;
     const transmitted = await this.db.first<{ at: string }>('SELECT at FROM offer_transmissions WHERE offer_id = ?', [offerId]);
     if (!transmitted) return { ok: false, rule: null, code: 'not_transmitted' };
     const respondedAt = new Date(input.respondedAt);
-    if (respondedAt.getTime() < Date.parse(found.offer.receivedAt)) return { ok: false, rule: null, code: 'bad_date' };
+    // Le vendeur ne répond qu'à une offre qu'on lui a transmise : jamais avant la transmission.
+    if (respondedAt.getTime() < Date.parse(found.offer.receivedAt) || respondedAt.getTime() < Date.parse(transmitted.at)) return { ok: false, rule: null, code: 'bad_date' };
     // Une acceptation arrivée après le dernier jour de validité, à Paris, ne vaut pas [R59].
     if (input.outcome === 'acceptee' && localTime(respondedAt, TIME_ZONE).date > found.offer.validUntil) return { ok: false, rule: 'R59', code: 'expired' };
     const { changes } = await this.db.run(
