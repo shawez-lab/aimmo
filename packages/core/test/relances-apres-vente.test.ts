@@ -9,6 +9,8 @@ import {
   type AfterSaleChoice,
   type ClosedSale,
 } from '../src/apres-vente/index.ts';
+import { FicheClient } from '../src/db/fiche-client.ts';
+import { FicheUnique } from '../src/fiche/fusion.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { FakeDossiersClos } from './apres-vente-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
@@ -297,6 +299,20 @@ describeWithSqlite('F04 · relance un an après la vente, sans jamais relancer u
     await t.passes('2029-03-08', '2029-03-12');
     expect(await t.inbox(a)).toHaveLength(1);
     expect(await t.inbox(b)).toHaveLength(1);
+  });
+
+  it('[R65] un « non » rangé sur une fiche l’emporte après la réunion avec une fiche qui disait « oui »', async () => {
+    const t = await setup();
+    const a = await t.client('Ana');
+    const a2 = await t.client('Ana');
+    t.close('f1', '2027-03-08', [{ personId: a, side: 'vendeur' }, { personId: a2, side: 'vendeur' }]);
+    await t.choose('f1', a, 'oui');
+    await t.choose('f1', a2, 'non');
+    await new FicheUnique(t.db, new FicheClient(t.db, { now: t.now }), { now: t.now }).merge({ survivorId: a, mergedId: a2, reason: 'même personne, test' });
+    await t.passes('2028-03-08', '2028-03-12');
+    expect(await t.outboxCount()).toBe(0);
+    const list = await t.relances.list(t.agent);
+    expect(list.ok && list.value).toMatchObject([{ personId: a, year: 1, status: 'refused', rule: 'R65' }]);
   });
 
   it('[R16] [R13] un agent ne voit que les relances de ses dossiers ; le journal ne garde ni texte ni coordonnée', async () => {

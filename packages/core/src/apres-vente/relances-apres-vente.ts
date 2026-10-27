@@ -194,9 +194,14 @@ export class RelancesApresVente {
     return { ok: true };
   }
 
-  /** Le dernier choix rangé pour ce dossier et cette personne, fiches réunies comprises. */
+  /**
+   * Le choix qui vaut pour ce dossier et cette personne, fiches réunies comprises : un `non` rangé sur l'une des fiches
+   * l'emporte toujours, une opposition est définitive [R65] ; sinon le dernier choix rangé.
+   */
   private async choiceOf(fileId: string, personId: string): Promise<AfterSaleChoice | null> {
     const ids = await this.unique.membersOf(personId);
+    const opposed = await this.db.first(`SELECT 1 AS x FROM after_sale_choices WHERE file_id = ? AND choice = 'non' AND person_id IN (${ids.map(() => '?').join(', ')})`, [fileId, ...ids]);
+    if (opposed) return 'non';
     const row = await this.db.first<{ choice: AfterSaleChoice }>(
       `SELECT choice FROM after_sale_choices WHERE file_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) ORDER BY recorded_at DESC, rowid DESC LIMIT 1`,
       [fileId, ...ids],
