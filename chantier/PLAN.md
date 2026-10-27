@@ -602,7 +602,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : l'avenant porte la référence et le numéro du mandat ; le prix du mandat change seulement quand l'avenant est signé ; rien n'est effacé [R17].
 
 ### D08 · Signature en ligne AIMMO, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : le code et l'exemplaire passent par le contrôle central, avec l'accord du signataire (finalité `signature_en_ligne`), rangés dans la boîte d'essai ; en essai le code y est lisible pour tester, et devra être scellé avant tout usage réel (H05, H24) ; essais faux comptés dans la base ; Codex n'a pas relu la dernière version en 50 min, fusion sans lui.
 - Qui : Claude · Relecture : forte · Dépend de : D03
 - Cahier : M06, « Signature électronique AIMMO ».
 - Objectif : code à usage unique par mail (rangé dans la boîte d'essai, jamais envoyé), signature manuscrite à l'écran possible, empreinte du document, horodatage, dossier de preuve ; chaque signataire reçoit son exemplaire (dans la boîte d'essai).
