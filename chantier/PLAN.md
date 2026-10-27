@@ -426,14 +426,16 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Critères : chaque élément du brief vient de la base ou d'une source citée, rien d'inventé [R34] ; ce qui manque est dit ; 10 briefs tests prêts une heure avant ; le brief n'est lu que par l'agent du rendez-vous.
 
 ### V06 · Statut et compte rendu
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : honoré ou absent se marque une fois le rendez-vous commencé ; annulé passe par l'annulation de V02 ; un compte rendu est figé, d'autres peuvent s'ajouter ; une tâche `follow_absent` par absent.
+- Reste : relecture de Codex impossible (H03), fusion sans elle (#42).
 - Qui : Claude · Relecture : normale · Dépend de : V02
 - Cahier : M05, « Statut ».
 - Objectif : l'agent marque le rendez-vous honoré, absent ou annulé, puis range son compte rendu (texte dicté, la transcription viendra avec l'application de l'agent) ; une tâche suit un absent.
 - Critères : seul l'agent du rendez-vous change son statut ; un statut final ne change plus ; le journal ne porte pas le texte du compte rendu [R13].
 
 ### V07 · Visites enchaînées et tournée partagée
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : V01
 - Cahier : M05, « Visites enchaînées » et « Règles » (tournée partagée).
 - Objectif : proposer un ordre de visites dans un même secteur qui tient dans les disponibilités et les temps de trajet ; l'agent peut envoyer sa tournée du jour à un proche ou à son accompagnateur, par le contrôle central, en mode essai.
