@@ -642,13 +642,15 @@ export const APP_JS = `'use strict';
       return out + Date.now().toString(36) + Math.floor(Math.random() * 1e9).toString(36);
     }
   }
-  function raiseAlert() {
+  function raiseAlert(retried) {
     if (!alertId) alertId = newAlertId();
     var box = $('alerte-etat');
     box.hidden = false;
     box.textContent = 'Alerte en cours d’envoi…';
     return send('/v1/visites/alertes/' + alertId, 'POST').then(function (res) {
       if (res.gone) return false;
+      // Un identifiant déjà rangé au nom d'un autre (même téléphone, autre agent) : un nouvel identifiant, une fois.
+      if (res.status === 403 && retried !== true) { alertId = null; return raiseAlert(true); }
       if (res.offline || !res.ok) {
         box.textContent = res.offline ? 'Pas de réseau : l’alerte n’est pas partie. Appuyez de nouveau, ou appelez le 112 si vous êtes en danger.' : 'L’alerte n’est pas partie. Appelez le 112 si vous êtes en danger.';
         return false;
@@ -742,6 +744,7 @@ export const APP_JS = `'use strict';
     $('alerte-etat').hidden = true;
     visitId = null;
     currentBien = null;
+    alertId = null;
   }
   function wipeFiche() {
     clear($('fiche-corps'));
@@ -823,7 +826,7 @@ export const APP_JS = `'use strict';
     }
     $('visite-retour').addEventListener('click', home);
     $('bien-retour').addEventListener('click', function () { if (visitId) openVisit(visitId); else home(); });
-    $('alerte').addEventListener('click', raiseAlert);
+    $('alerte').addEventListener('click', function () { raiseAlert(false); });
     $('sortir').addEventListener('click', function () {
       session += 1;
       currentKey = null;

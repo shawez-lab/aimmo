@@ -163,6 +163,30 @@ describe('T08 · écran de la visite', () => {
     expect(t.calls.at(-1)!.url).not.toBe(first.url);
   });
 
+  it('l’identifiant d’une alerte non aboutie ne survit pas à la sortie ; un identifiant refusé [R16] est remplacé une fois', async () => {
+    const t = await openVisit({ 'GET /v1/visites/v1': ok(VISIT) });
+    await t.click(t.els.alerte!);
+    const lost = t.calls.at(-1)!.url;
+    await t.click(t.els.sortir!);
+    t.table[`POST ${lost}`] = no(403, { ok: false, rule: 'R16', code: 'not_assigned' });
+    t.table['POST /v1/visites/alertes/*'] = ok({ recorded: true, notified: true });
+    t.els.cle!.value = 'n'.repeat(40);
+    t.els['form-connexion']!.listeners.submit!({ preventDefault: () => undefined });
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+    await t.click(t.byText(t.els.rdv!, 'Ouvrir la visite'));
+    await t.click(t.els.alerte!);
+    const after = t.calls.filter((c) => c.url.startsWith('/v1/visites/alertes/')).map((c) => c.url);
+    expect(after.at(-1)).not.toBe(lost);
+    expect(t.els['alerte-etat']!.textContent).toBe('Alerte reçue : la direction est prévenue.');
+    // Sur le même téléphone : un identifiant refusé, puis un nouveau, une seule fois.
+    const u = await openVisit({ 'GET /v1/visites/v1': ok(VISIT), 'POST /v1/visites/alertes/*': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
+    await u.click(u.els.alerte!);
+    const tries = u.calls.filter((c) => c.url.startsWith('/v1/visites/alertes/')).map((c) => c.url);
+    expect(tries).toHaveLength(2);
+    expect(tries[0]).not.toBe(tries[1]);
+    expect(u.els['alerte-etat']!.textContent).toContain('le 112');
+  });
+
   it('[R16] une clé refusée pendant la visite efface l’écran et la clé ; une visite hors des droits est dite', async () => {
     const denied = await openVisit({ 'GET /v1/visites/v1': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
     expect(denied.els['visite-etat']!.textContent).toBe('Cette visite n’est pas dans vos droits.');
