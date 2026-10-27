@@ -66,6 +66,12 @@ describeWithSqlite('O08 · routes de M09', () => {
     expect(reused.body).toMatchObject({ rule: 'R56', code: 'request_key_reused' });
     expect((await t.journal.all()).filter((e) => e.type === 'offre.cle_reutilisee')).toHaveLength(1);
     expect((await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}`)).body.data).toHaveLength(1);
+    // Rejouée bien plus tard, après la fin de validité, la même offre est rendue, pas refusée comme nouvelle.
+    t.setClock(new Date('2027-03-20T10:00:00.000Z'));
+    const late = await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, body);
+    expect(late.status).toBe(200);
+    expect(late.body.data.offer.id).toBe(a.body.data.offer.id);
+    t.setClock(new Date('2027-03-01T10:00:00.000Z'));
     expect((await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(t.buyerId))).body.data.offer.seq).toBe(2);
   });
 

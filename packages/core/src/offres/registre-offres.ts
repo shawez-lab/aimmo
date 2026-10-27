@@ -212,6 +212,19 @@ export class RegistreOffres {
       const row = await this.db.first<Row>('SELECT * FROM offer_register WHERE property_id = ? AND request_key = ?', [propertyId, requestKey]);
       return row ? toOffer(row) : null;
     };
+    // Un rejeu se reconnaît avant les contrôles qui dépendent de l'heure ou de l'état du bien : rejouée plus tard, la même
+    // offre est rendue telle qu'enregistrée, au lieu d'être refusée comme une nouvelle.
+    const early = await known();
+    if (early) {
+      const conds = parseConditions(input.conditions);
+      const received = typeof input.receivedAt === 'string' && Number.isFinite(Date.parse(input.receivedAt)) ? new Date(input.receivedAt).toISOString() : null;
+      const same = conds.ok && received === early.receivedAt && input.amountEur === early.amountEur && JSON.stringify(conds.value) === JSON.stringify(early.conditions) &&
+        input.validUntil === early.validUntil && input.downPaymentEur === early.downPaymentEur && input.loanEur === early.loanEur && input.signedRef === early.signedRef;
+      const buyerRead = same && typeof input.buyerPersonId === 'string' ? await this.acces.readFiche(viewer, input.buyerPersonId) : null;
+      if (buyerRead?.ok && buyerRead.value.person.id === early.buyerPersonId) return { ok: true, value: early };
+      await appendEvent(this.journal, { type: 'offre.cle_reutilisee', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R56', seq: early.seq } }, this.now);
+      return { ok: false, rule: 'R56', code: 'request_key_reused' };
+    }
 
     if (typeof input.buyerPersonId !== 'string' || input.buyerPersonId.length > 64) return bad('buyerPersonId');
     if (!isInt(input.amountEur, 1, 100_000_000)) return bad('amountEur');
