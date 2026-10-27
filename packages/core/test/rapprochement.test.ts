@@ -206,6 +206,21 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(map).toEqual({ ok: true, value: { activeBuyers: 1, matching: 1, nearMisses: [] } });
   });
 
+  it('une recherche sans critère sur le bien n’est jamais proposée sans raison [R51] ; une fiche du bien illisible va au journal', async () => {
+    const t = await setup();
+    await t.buyer(t.alex.id, 'Vide', { urgency: 'now', features: ['garden'] });
+    const ok = await t.buyer(t.alex.id, 'Pleine', { communes: ['Talant'] });
+    const prop = await t.property(t.alex.id, 'B1', { city: 'Talant', price: 250_000, surface: 90, rooms: 4 });
+    await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('s1', ?, ?, 1, '\"illisible\"', 'agent:x', ?)", [prop.id, t.network.id, new Date(START).toISOString()]);
+    const r = await t.rapprochement.propose(t.acces, t.direction, prop.id);
+    if (!r.ok) throw new Error('refus');
+    expect(r.value.map((v) => v.projectId)).toEqual([ok.project.id]);
+    for (const v of r.value) expect(v.reasons.length).toBeGreaterThan(0);
+    expect(await t.rapprochement.demandMap(t.acces, t.direction, prop.id)).toMatchObject({ ok: true, value: { activeBuyers: 1, matching: 1 } });
+    expect(matchBuyer({ kind: 'home', city: 'Talant', priceEur: 1, surfaceM2: 1, rooms: 1, bedrooms: null, features: [] }, { propertyKinds: [], communes: [], features: [], surfaceMinM2: null, roomsMin: null, bedroomsMin: null, budgetMaxEur: null, financing: 'cash', urgency: 'now' })).toMatchObject({ status: 'miss' });
+    expect((await t.journal.all()).some((e) => e.type === 'rapprochement.fiche_illisible')).toBe(true);
+  });
+
   it('aucun acquéreur proposé pour un bien que la diffusion refuse [R42]', async () => {
     const t = await setup();
     await t.buyer(t.alex.id, 'Inès', { propertyKinds: ['house'], communes: ['Talant'] });

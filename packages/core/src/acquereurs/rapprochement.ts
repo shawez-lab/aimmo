@@ -158,9 +158,11 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
     else add('bedrooms', 'unmet', 'Pas assez de chambres.');
   }
 
+  const featuresMet = search.features.filter((f) => property.features.includes(f));
+  // Une recherche sans aucun critère sur le bien ne se rapproche de rien : aucune proposition sans raison [R51].
+  if (checks.length === 0) return { status: 'miss', checks, unmet: [], featuresMet, gap: 0 };
   const unmet = checks.filter((c) => c.state === 'unmet').map((c) => c.criterion);
   const status = unmet.length > 0 ? 'miss' : checks.some((c) => c.state === 'tolerated') ? 'tolerated' : 'match';
-  const featuresMet = search.features.filter((f) => property.features.includes(f));
   return { status, checks, unmet, featuresMet, gap };
 }
 
@@ -330,13 +332,21 @@ export class Rapprochement {
     const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [p.id]);
     if (sheet) {
       try {
-        const c = (JSON.parse(sheet.data) as { characteristics?: { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown } }).characteristics ?? {};
+        const parsed: unknown = JSON.parse(sheet.data);
+        const raw = typeof parsed === 'object' && parsed !== null ? (parsed as { characteristics?: unknown }).characteristics : undefined;
+        if (typeof raw !== 'object' || raw === null) throw new Error('fiche du bien sans caractéristiques');
+        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown };
         if (typeof c.bedrooms === 'number') bedrooms = c.bedrooms;
         if (Array.isArray(c.outdoor)) for (const o of c.outdoor) if (typeof o === 'string' && OUTDOOR_FEATURE[o]) features.push(OUTDOOR_FEATURE[o]);
         if (c.elevator === true) features.push('elevator');
         if (typeof c.parkingSpaces === 'number' && c.parkingSpaces > 0) features.push('parking');
       } catch {
-        // Une fiche illisible ne donne rien de plus que la fiche de base.
+        // Une fiche illisible ne donne rien de plus que la fiche de base ; l'écart est écrit au journal, sans donnée.
+        await appendEvent(
+          this.journal,
+          { type: 'rapprochement.fiche_illisible', actor: 'system:rapprochement', subject: `property:${p.id}`, data: { rule: 'R51' } },
+          this.now,
+        );
       }
     }
     return { kind: p.kind, city: p.city, priceEur: p.price_eur, surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features };
@@ -361,11 +371,21 @@ export class Rapprochement {
     for (const row of rows) {
       if (CLOSED_STAGES.includes(row.stage)) continue;
       if (row.created_at < since) continue;
+      const search = toVersion(row).search;
+      // Une recherche sans aucun critère sur le bien n'est pas encore une recherche : elle ne compte pas.
+      if (
+        search.propertyKinds.length === 0 &&
+        search.communes.length === 0 &&
+        search.budgetMaxEur === null &&
+        search.surfaceMinM2 === null &&
+        search.roomsMin === null &&
+        search.bedroomsMin === null
+      ) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person.id;
       const known = byRoot.get(root);
       if (known) {
-        known.projects.push({ projectId: row.project_id, search: toVersion(row).search, movedAt: row.created_at });
+        known.projects.push({ projectId: row.project_id, search, movedAt: row.created_at });
         continue;
       }
       const ids = view.members.map((m) => m.id);
@@ -379,7 +399,7 @@ export class Rapprochement {
         memberIds: ids,
         agentIds: view.members.map((m) => m.agent_id),
         firstName: view.members.map((m) => m.first_name).find((n) => n) ?? null,
-        projects: [{ projectId: row.project_id, search: toVersion(row).search, movedAt: row.created_at }],
+        projects: [{ projectId: row.project_id, search, movedAt: row.created_at }],
       });
     }
     return [...byRoot.values()];
