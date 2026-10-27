@@ -130,10 +130,17 @@ export class SuiviVendeur {
       [due, this.settings.batch],
     );
     const outcomes: FollowUpOutcome[] = [];
+    let failure: unknown = null;
     for (const row of rows) {
-      const outcome = await this.followUp(row, at);
-      if (outcome) outcomes.push(outcome);
+      // Une panne sur un avis n'arrête pas les autres ; elle remonte ensuite au planificateur, jamais avalée [R13].
+      try {
+        const outcome = await this.followUp(row, at);
+        if (outcome) outcomes.push(outcome);
+      } catch (error) {
+        failure ??= error;
+      }
     }
+    if (failure !== null) throw failure;
     return outcomes;
   }
 
@@ -151,7 +158,23 @@ export class SuiviVendeur {
       inserted.changes === 1 ||
       (await this.db.run(`UPDATE valuation_follow_ups SET status = 'pending', updated_at = ? WHERE report_id = ? AND status = 'waiting'`, [stamp, row.report_id])).changes === 1;
     if (!claimed) return null;
+    try {
+      return await this.afterClaim(row, at);
+    } catch (error) {
+      // Une panne après la réservation ne perd pas la relance : elle repart au créneau suivant. Le sujet de l'envoi
+      // garde l'anti-doublon du contrôle central, une relance déjà rangée n'est jamais refaite [R05].
+      await this.db.run(`UPDATE valuation_follow_ups SET status = 'waiting', updated_at = ? WHERE report_id = ? AND status = 'pending'`, [
+        this.now().toISOString(),
+        row.report_id,
+      ]);
+      throw error;
+    }
+  }
 
+  private async afterClaim(
+    row: { report_id: string; network_id: string; person_id: string; channel: DeliveryChannel; conversation_id: string | null; sent_at: string; agent_id: string | null },
+    at: Date,
+  ): Promise<FollowUpOutcome> {
     // Le vendeur a répondu, ou son agent lui a écrit, depuis l'envoi : pas de relance, jamais.
     const ids = await this.fiche.membersOf(row.person_id);
     const answered = await this.db.first<{ id: string }>(

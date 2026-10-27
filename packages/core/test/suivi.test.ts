@@ -179,6 +179,33 @@ describeWithSqlite('E06 · suivi du vendeur', () => {
     }
   });
 
+  it('une panne après la réservation ne perd pas la relance, qui repart au créneau suivant une seule fois', async () => {
+    const w = await world();
+    const r = await w.sendNoted();
+    let broken = true;
+    const flaky = {
+      ...w.db,
+      exec: w.db.exec.bind(w.db),
+      run: w.db.run.bind(w.db),
+      first: <T>(sql: string, params?: readonly (string | number | null)[]) => {
+        if (broken && sql.includes('author_kind')) {
+          broken = false;
+          return Promise.reject(new Error('panne passagère'));
+        }
+        return w.db.first<T>(sql, params as never);
+      },
+      all: w.db.all.bind(w.db),
+    };
+    w.setClock(TUE_1000);
+    await expect(new SuiviVendeur(flaky, w.journal, { now: w.now }).run()).rejects.toThrow('panne passagère');
+    expect(await w.outbox()).toHaveLength(0);
+    w.setClock(WED_1000);
+    expect(await w.suivi.run()).toEqual([{ reportId: r.id, status: 'sent', rule: null, delivered: false }]);
+    w.setClock(THU_1000);
+    expect(await w.suivi.run()).toEqual([]);
+    expect(await w.outbox()).toHaveLength(1);
+  });
+
   it('la tâche du planificateur passe une fois par créneau, du lundi au samedi', async () => {
     const w = await world();
     await w.sendNoted();
