@@ -250,12 +250,14 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Reste : relecture forte (1 P0 corrigé), Codex : 1 P0 corrigé, sa relecture de la correction restée en cours 25 min, fusion sans elle (#24).
 
 ### Q03 · Zones et attribution à l'agent
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : Q01
 - Cahier : M03, points 4 et 6 ; « Branchements » : zones des agents par commune.
 - Objectif : les zones des agents par commune, puis l'attribution de chaque contact qualifié à l'agent de sa commune par règles fixes, sans IA, et la réattribution par la même règle si le contact n'est pas rappelé dans le délai de la charte ; les règles, lisibles, rendues par l'API pour l'application.
 - Critères : aucun contact exclu ou qui a dit stop n'est attribué [R25] ; même contact, même agent, quel que soit l'ordre d'arrivée ; commune sans agent : à la direction, jamais au hasard ; réattribution dans le délai simulé, une seule fois par délai, écrite au journal [R13] ; un agent parti ne reçoit plus rien.
 - Attend : la liste des communes de chaque agent, plus tard, au recrutement ; les tests utilisent des zones inventées.
+- Décidé (2026-10-27), lecture prudente : tirage fixe (FNV-1a) sur l'identifiant de la fiche parmi les agents en activité de la commune ; un client suivi sur l'une de ses fiches réunies reste à cet agent ; partenaire à la direction, indésirable à personne ; délais de rappel en réglage, 8 heures si chaud, 24 sinon ; rappelé = un message sortant écrit par un humain du réseau depuis l'attribution.
+- Reste : remarques mineures de Codex (#25) : agent parti sur une fiche réunie lors d'une attribution, reprise des effets d'une attribution interrompue, délai qui repart à chaque nouveau message ; relecture forte (1 P1 corrigé), Codex sans P0 ni P1.
 
 ### Q04 · Tâche « rappeler » et liste des contacts chauds
 - Statut : à faire
