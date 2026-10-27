@@ -594,7 +594,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : une seule tâche par échéance [R18] ; calcul juste à l'heure de Paris sur un jeu inventé ; aucun envoi.
 
 ### D07 · Avenant au mandat
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : un avenant change le prix ou la durée, par ses seuls champs, écrits sur le document signé ; pas d'avenant sur un mandat échu ; il ne touche pas au prix affiché du bien (M07) ; la diffusion et les échéances suivent la durée en vigueur.
 - Qui : Claude · Relecture : normale · Dépend de : D04
 - Cahier : M06, « Avenant au mandat ».
 - Objectif : un avenant généré depuis le modèle, lié au mandat par sa référence et son numéro, pour un changement de prix, de durée ou de conditions ; mêmes contrôles et même enregistrement que le mandat ; le mandat garde l'historique de ses avenants.
