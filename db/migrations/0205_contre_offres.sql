@@ -33,3 +33,14 @@ CREATE TRIGGER IF NOT EXISTS proposal_transmissions_fige BEFORE UPDATE ON propos
 CREATE TRIGGER IF NOT EXISTS proposal_transmissions_sans_effacement BEFORE DELETE ON proposal_transmissions BEGIN SELECT RAISE(ABORT, 'proposal_transmissions : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS proposal_responses_fige BEFORE UPDATE ON proposal_responses BEGIN SELECT RAISE(ABORT, 'proposal_responses : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS proposal_responses_sans_effacement BEFORE DELETE ON proposal_responses BEGIN SELECT RAISE(ABORT, 'proposal_responses : rien ne s''efface'); END;
+
+-- La tâche de l'agent avant l'échéance d'une proposition sans réponse, une par proposition [R59].
+CREATE TABLE IF NOT EXISTS proposal_tasks (
+  proposal_id TEXT PRIMARY KEY REFERENCES offer_proposals (id) ON DELETE RESTRICT,
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  agent_id TEXT NOT NULL,
+  last_day TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS proposal_tasks_fige BEFORE UPDATE ON proposal_tasks BEGIN SELECT RAISE(ABORT, 'proposal_tasks : rien ne change'); END;
+CREATE TRIGGER IF NOT EXISTS proposal_tasks_sans_effacement BEFORE DELETE ON proposal_tasks BEGIN SELECT RAISE(ABORT, 'proposal_tasks : rien ne s''efface'); END;

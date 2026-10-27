@@ -17,7 +17,7 @@ describeWithSqlite('O05 · délais de validité suivis', () => {
     t.setClock(new Date('2027-03-08T23:00:00.000Z')); // 9 mars, 0 h à Paris
     expect(await echeances.run(t.network.id)).toEqual([a.id]);
     expect(await echeances.run(t.network.id)).toEqual([]);
-    expect(await echeances.tasksOf(t.agent)).toEqual({ ok: true, tasks: [{ offerId: a.id, propertyId: t.propertyId, lastDay: '2027-03-10', createdAt: '2027-03-08T23:00:00.000Z' }] });
+    expect(await echeances.tasksOf(t.agent)).toEqual({ ok: true, tasks: [{ offerId: a.id, proposalId: null, propertyId: t.propertyId, lastDay: '2027-03-10', createdAt: '2027-03-08T23:00:00.000Z' }] });
     expect(await echeances.tasksOf(t.sam)).toEqual({ ok: true, tasks: [] });
     expect(await echeances.tasksOf(t.direction)).toEqual({ ok: false, rule: 'R16', code: 'not_agent' });
     // [R16] Un agent parti, ou qui se dit d'un autre réseau, ne voit plus ses tâches ; le refus est au journal.

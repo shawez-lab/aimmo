@@ -838,7 +838,7 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien pour l'essai.
 
 ### O04 · Contre-offres et historique de la négociation
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : O03
 - Cahier : M09, « Transmission », « contre-offre ».
 - Objectif : une contre-offre du vendeur crée une nouvelle proposition liée à l'offre, transmise à l'acquéreur après validation de l'agent ; la réponse de l'acquéreur est rapportée de la même façon ; la chaîne complète se lit dans l'ordre.
@@ -846,7 +846,8 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O05 · Délais de validité suivis
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : une tâche la veille du dernier jour (réglage), une par offre sans réponse ; liste sous R16 comme les échéances des mandats ; offre échue le lendemain, à Paris
 - Qui : Claude · Relecture : normale · Dépend de : O01
 - Cahier : M09, règle « les délais de validité sont suivis et rappelés à l'agent ».
 - Objectif : chaque jour, une tâche pour l'agent avant l'échéance d'une offre sans réponse (délai en réglage), et l'offre passe « échue » le lendemain de sa fin, à l'heure de Paris.
