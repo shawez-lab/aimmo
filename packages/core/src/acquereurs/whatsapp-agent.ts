@@ -16,7 +16,7 @@ import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Project } from '../db/types.ts';
 import { Diffusion } from '../documents/retractation.ts';
-import type { DeliveryReceipt, OutboundChannel, OutboundMessage } from '../envoi/canaux.ts';
+import { AgentWhatsAppLink } from '../envoi/canaux.ts';
 import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
@@ -26,19 +26,6 @@ import type { JournalStore } from '../journal/types.ts';
 import { ALERT_PURPOSE, alertFallbackText, checkUnsubscribeBase, newUnsubscribeLine } from './alertes.ts';
 import { FicheAcquereur } from './fiche-acquereur.ts';
 import { Rapprochement, matchBuyer, type DiffusionGate } from './rapprochement.ts';
-
-/** Le port de l'agent : il ne remet rien, il prépare le lien `wa.me` que l'agent ouvrira de son téléphone. */
-class AgentLinkPort implements OutboundChannel {
-  readonly channel = 'whatsapp' as const;
-  link: string | null = null;
-
-  async deliver(message: OutboundMessage): Promise<DeliveryReceipt> {
-    const digits = message.to.replace(/\D/g, '');
-    if (digits.length < 8) throw new Error('numéro WhatsApp non valable');
-    this.link = `https://wa.me/${digits}?text=${encodeURIComponent(message.body)}`;
-    return { externalId: null };
-  }
-}
 
 export type WhatsAppRefusal = { ok: false; rule: string | null; code: string; reason?: string };
 
@@ -104,7 +91,7 @@ export class AlerteWhatsApp {
     const at = this.now();
     const line = await newUnsubscribeLine(this.db, viewer.networkId, root.id, this.unsubscribeBase, at);
     const firstName = fiche.value.members.map((m) => m.first_name).find((n) => n) ?? null;
-    const port = new AgentLinkPort();
+    const port = new AgentWhatsAppLink();
     const result = await this.controle.send({
       networkId: viewer.networkId,
       agentId,

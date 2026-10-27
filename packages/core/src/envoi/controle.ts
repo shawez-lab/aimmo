@@ -13,7 +13,7 @@
 import type { IdentifierKind, Message, OutboundChannelName } from '../db/types.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
-import type { OutboundChannel } from './canaux.ts';
+import { AgentWhatsAppLink, type OutboundChannel } from './canaux.ts';
 import type { SendKind } from './decision.ts';
 import type { DecisionEnvoi } from './service.ts';
 import { localTime } from './horaires.ts';
@@ -47,7 +47,7 @@ export interface SendOrder {
    * de l'assistant n'est ajoutée [R06], le message est rangé comme écrit par l'agent, et il est remis à ce port (qui
    * prépare le lien pour l'agent) au lieu du canal du réseau. Pas d'IA : le texte est celui du code.
    */
-  byAgent?: { port: OutboundChannel };
+  byAgent?: { port: AgentWhatsAppLink };
   /** Sujet d'un envoi d'initiative, par exemple `relance:projet-12` [R05]. Obligatoire hors réponse, sauf biens. */
   subject?: string | undefined;
   /** Biens proposés : chacun ne part qu'une fois à la personne [R05]. */
@@ -236,7 +236,7 @@ export class ControleEnvois {
     const decision = await decide(at);
     if (!decision.allowed) return log('refused', decision.rule, decision.reason);
 
-    if (order.byAgent && (order.byAgent.port.channel !== order.channel || !agentId || order.compose)) {
+    if (order.byAgent && (!(order.byAgent.port instanceof AgentWhatsAppLink) || order.byAgent.port.channel !== order.channel || !agentId || order.compose)) {
       return log('refused', null, 'Un message de l’agent cite son agent et son canal, sans IA.');
     }
     const port = order.byAgent ? order.byAgent.port : this.channels.get(order.channel);
