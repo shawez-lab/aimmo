@@ -367,7 +367,8 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Critères : une relance par avis au plus, dans les heures d'envoi [R01], jamais à une personne exclue ou qui a demandé l'arrêt [R02, R04] ; rien ne part en mode essai.
 
 ### E07 · Mesure sur 20 biens
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Reste : la mesure réelle sur 20 biens (H19), qui dira aussi si le réglage du diagnostic énergétique de E01 tient ; relecture de Codex restée en cours plus de 30 min, fusion sans elle (#36).
 - Qui : Claude · Relecture : normale · Dépend de : E01, E02
 - Cahier : M04, « Critères d'acceptation » ; Feuille de route, janvier 2027.
 - Objectif : un banc qui compare la fourchette AIMMO à l'estimation de l'agent sur des biens anonymisés gardés hors du dépôt, et rend l'écart médian et chaque écart avec son explication.
