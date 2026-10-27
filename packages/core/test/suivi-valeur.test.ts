@@ -239,4 +239,19 @@ describeWithSqlite('G04 · suivi de valeur, en mode essai', () => {
     expect(plan.ok && plan.value.items[0]!.reason).toBe('A répondu au suivi de valeur qu’il pense à vendre : rendez-vous à proposer.');
     expect(plan.ok && plan.value.items[0]!.order).toContain('2. pense à vendre, réponse au suivi de valeur');
   });
+
+  it('un suivi qui attend sa source ne bloque pas les autres : le passage suivant prend d’abord ceux qui n’ont pas été essayés', async () => {
+    const t = await setup();
+    const owners = [];
+    for (const who of ['Anne', 'Bruno', 'Chloé']) owners.push(await t.owner(who));
+    for (const o of owners) await t.enrol(o.id);
+    const suivi = new SuiviDeValeur(t.db, t.journal, { now: t.now, settings: { intervalDays: 182, batch: 2 }, ranges: { forTown: async () => ({ ok: false, reason: 'donnees_absentes', next: 'appointment' }) } });
+    t.setClock(JULY_TUE_10H);
+    const first = await suivi.run();
+    t.setClock(JULY_TUE_10H + 3_600_000);
+    const second = await suivi.run();
+    expect(first.outcomes).toHaveLength(2);
+    const seen = new Set([...first.outcomes, ...second.outcomes].map((o) => o.trackingId));
+    expect(seen.size).toBe(3);
+  });
 });

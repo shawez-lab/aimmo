@@ -243,9 +243,13 @@ export class SuiviDeValeur {
   private async sendDue(ranges: CommuneRanges): Promise<TrackingOutcome[]> {
     const at = this.now();
     const interval = this.settings.intervalDays * DAY;
-    const rows = await this.db.all<TrackingRow>('SELECT * FROM value_tracking WHERE created_at <= ? ORDER BY created_at, id', [
-      new Date(at.getTime() - interval).toISOString(),
-    ]);
+    // Les suivis jamais essayés d'abord, puis le plus ancien essai : un suivi qui attend sa source ne bloque pas les autres.
+    const rows = await this.db.all<TrackingRow>(
+      `SELECT t.* FROM value_tracking t
+       LEFT JOIN (SELECT tracking_id, max(updated_at) AS last FROM value_tracking_sends GROUP BY tracking_id) s ON s.tracking_id = t.id
+       WHERE t.created_at <= ? ORDER BY s.last IS NOT NULL, s.last, t.created_at, t.id`,
+      [new Date(at.getTime() - interval).toISOString()],
+    );
     const outcomes: TrackingOutcome[] = [];
     let failure: unknown = null;
     for (const row of rows) {
