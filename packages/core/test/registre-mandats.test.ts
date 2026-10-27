@@ -264,4 +264,24 @@ describeWithSqlite('D01 · registre des mandats', () => {
     expect(await t.registre.inscribe(t.direction, b)).toEqual({ ok: false, rule: 'R39', code: 'already_inscribed' });
     expect(await t.registre.check(t.network.id)).toEqual({ ok: true, lines: 2 });
   });
+
+  it('[R39] l’ancre d’une annulation reprise garde la raison rangée au registre', async () => {
+    const t = await setup();
+    await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const a = await t.mandate();
+    await t.registre.inscribe(t.direction, a);
+    let fail = true;
+    const flaky = { ...t.journal, append: async (entry: Parameters<typeof t.journal.append>[0]) => {
+      if (fail && entry.type === 'registre.annule') {
+        fail = false;
+        throw new Error('journal en panne');
+      }
+      return t.journal.append(entry);
+    }, last: () => t.journal.last(), all: () => t.journal.all() } as typeof t.journal;
+    await expect(new RegistreMandats(t.db, flaky, { now: () => new Date(NOW) }).cancel(t.direction, a, 'error')).rejects.toThrow(/journal en panne/);
+    expect(await t.registre.cancel(t.direction, a, 'termination')).toEqual({ ok: false, rule: null, code: 'already_cancelled' });
+    const resumed = (await t.journal.all()).filter((e) => e.type === 'registre.annule');
+    expect(resumed.map((e) => (e.data as { reason: string }).reason)).toEqual(['error']);
+    expect(await t.registre.check(t.network.id)).toEqual({ ok: true, lines: 2 });
+  });
 });

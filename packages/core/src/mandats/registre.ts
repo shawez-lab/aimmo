@@ -287,11 +287,11 @@ export class RegistreMandats {
     if (!found.ok) return found;
     const inscription = await this.inscriptionOf(mandateId);
     if (!inscription) return { ok: false, rule: null, code: 'not_inscribed' };
-    const done = await this.db.first<{ seq: number; hash: string }>('SELECT seq, hash FROM mandate_register WHERE network_id = ? AND kind = ? AND cancels_seq = ?', [viewer.networkId, 'annulation', inscription.seq]);
+    const done = await this.db.first<{ seq: number; hash: string; reason: CancelReason }>('SELECT seq, hash, reason FROM mandate_register WHERE network_id = ? AND kind = ? AND cancels_seq = ?', [viewer.networkId, 'annulation', inscription.seq]);
     if (done) {
       // Une annulation faite dont l'ancre n'a pas pu être écrite : la redemande l'écrit.
       if (!(await this.anchored(viewer.networkId, Number(done.seq)))) {
-        await appendEvent(this.journal, { type: 'registre.annule', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: Number(done.seq), cancels: Number(inscription.seq), reason, anchor: registerAnchor(done.hash), resumed: true } }, this.now);
+        await appendEvent(this.journal, { type: 'registre.annule', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: Number(done.seq), cancels: Number(inscription.seq), reason: done.reason, anchor: registerAnchor(done.hash), resumed: true } }, this.now);
       }
       return { ok: false, rule: null, code: 'already_cancelled' };
     }
