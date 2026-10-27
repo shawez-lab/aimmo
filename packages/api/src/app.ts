@@ -36,6 +36,8 @@ import { intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } f
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter } from '@aimmo/core';
 import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
+import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './estimation.ts';
+import type { DetailedSales, Geocoder } from '@aimmo/core';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -59,6 +61,9 @@ export interface ApiConfig {
   assistantLimits?: AssistantLimits;
   /** L'IA qui rédige les réponses de l'assistant du site, une fois branchée (H13). */
   writer?: ReplyWriter;
+  /** Estimation en ligne du site (E05) : Base adresse nationale et ventes DVF ; absents, le service est fermé. */
+  estimation?: { geocoder: Geocoder; sales: DetailedSales };
+  estimationLimits?: EstimationLimits;
   now?: () => Date;
 }
 
@@ -399,6 +404,21 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   if (path === '/captation/formulaire') return intakeForm(request, config, now);
 
   if (path === '/automatisations/envoi') return automationSend(request, config, now);
+
+  if (path === ESTIMATION_PATH) {
+    try {
+      return await handleEstimation(request, {
+        db: config.db,
+        intakeKeys: config.intakeKeys,
+        ...(config.estimation ? { services: config.estimation } : {}),
+        ...(config.estimationLimits ? { limits: config.estimationLimits } : {}),
+        now,
+      });
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'intake:site_estimate', 'estimation.commune', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
 
   if (path === ASSISTANT_PATH || path.startsWith(`${ASSISTANT_PATH}/`)) {
     try {

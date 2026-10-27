@@ -34,4 +34,4 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R28 | Date des données. Toute estimation dit la date des dernières ventes utilisées, signale quand les plus récentes manquent encore, et dit clairement quand DVF ne couvre pas le département (Bas-Rhin, Haut-Rhin, Moselle, Mayotte). | oui | E01 |
 | R29 | Ventes anonymes. Les données publiques de ventes ne servent jamais à identifier une personne : une vente citée n'a ni nom, ni numéro de voie. | oui | E02 |
 | R30 | Avis validé. Aucun avis de valeur ne part sans la validation de l'agent qui suit le bien. | oui | E04 |
-| R31 | Estimation en ligne. Sans visite, seule la fourchette de la commune est donnée, jamais le prix d'un bien précis. | non | E05 |
+| R31 | Estimation en ligne. Sans visite, seule la fourchette de la commune est donnée, jamais le prix d'un bien précis. | oui | E05 |

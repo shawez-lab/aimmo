@@ -2,6 +2,7 @@ import { handleRequest } from './app.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { runScheduler } from './planificateur.ts';
+import { BanGeocoder, DvfSiteSales, httpDvfReader } from '@aimmo/core';
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
@@ -21,15 +22,28 @@ export interface Env {
   META_NETWORK_ID?: string;
   META_OWN_IDS?: string;
   META_APP_IDS?: string;
+  /** Adresse publique des fichiers DVF du site, lus en lecture seule (E05), par exemple `https://…/donnees-dvf/`. */
+  DVF_BASE_URL?: string;
+}
+
+/**
+ * Les données publiques de l'estimation en ligne (E05), lues en GET seulement : jamais un envoi. Sans `DVF_BASE_URL`
+ * en https, le service reste fermé.
+ */
+function estimationServices(env: Env) {
+  const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;
+  return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;
 }
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
+    const estimation = estimationServices(env);
     return handleRequest(request, {
       db: fromD1(env.DB),
       apiKeys: env.API_KEYS,
       intakeKeys: env.INTAKE_KEYS,
       mode: env.MODE,
+      ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,
         verifyTokenSha256: env.META_VERIFY_TOKEN_SHA256,

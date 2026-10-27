@@ -95,10 +95,10 @@ export function readableTown(raw: string): string {
 
 export class DvfSiteSales implements SalesSource {
   private index: Promise<DvfIndex | null> | null = null;
-  private readonly tiles = new Map<string, Promise<unknown[][]>>();
+  private readonly tiles = new Map<string, Promise<unknown[][] | null>>();
   private readonly details = new Map<string, Promise<string[] | null>>();
   /** Tuiles annoncées mais absentes ou illisibles, et ventes mal formées écartées. */
-  readonly skipped = { tiles: 0, sales: 0 };
+  readonly skipped = { tiles: 0, sales: 0, details: 0 };
 
   constructor(private readonly read: DvfFileReader) {}
 
@@ -112,7 +112,8 @@ export class DvfSiteSales implements SalesSource {
     return idx ? { department: idx.departement, lastSale: idx.derniere_vente, years: idx.annees, source: idx.source } : null;
   }
 
-  private tile(name: string): Promise<unknown[][]> {
+  /** Une tuile, ou `null` si elle est absente ou illisible ; l'échec reste en mémoire, il est redit à chaque fois. */
+  private tile(name: string): Promise<unknown[][] | null> {
     let p = this.tiles.get(name);
     if (!p) {
       p = this.read(`t/${name}.json`).then(
@@ -124,11 +125,11 @@ export class DvfSiteSales implements SalesSource {
             // illisible : compté ci-dessous
           }
           this.skipped.tiles++;
-          return [];
+          return null;
         },
         () => {
           this.skipped.tiles++;
-          return [];
+          return null;
         },
       );
       this.tiles.set(name, p);
@@ -137,8 +138,17 @@ export class DvfSiteSales implements SalesSource {
   }
 
   async within(kind: EstimatedKind, lat: number, lon: number, radius: number): Promise<Sale[]> {
+    return (await this.scan(kind, lat, lon, radius)).sales;
+  }
+
+  /**
+   * Les ventes du cercle, et le nombre de problèmes rencontrés pour cette recherche : tuile absente ou illisible,
+   * ligne mal formée. Une tuile en échec compte à chaque recherche qui la touche, même gardée en mémoire.
+   */
+  async scan(kind: EstimatedKind, lat: number, lon: number, radius: number): Promise<{ sales: Sale[]; issues: number }> {
     const idx = await this.loadIndex();
-    if (!idx) return [];
+    if (!idx) return { sales: [], issues: 1 };
+    let issues = 0;
     const known = new Set(idx.tuiles);
     const step = idx.tuile;
     const dLat = radius / 111320;
@@ -150,16 +160,27 @@ export class DvfSiteSales implements SalesSource {
         const name = `${x}_${y}`;
         if (!known.has(name)) continue;
         const rows = await this.tile(name);
+        if (rows === null) {
+          issues++;
+          continue;
+        }
         rows.forEach((row, i) => {
-          if (!Array.isArray(row) || row[2] !== wanted) return;
+          if (!Array.isArray(row) || (row[2] !== 0 && row[2] !== 1)) {
+            this.skipped.sales++;
+            issues++;
+            return;
+          }
+          if (row[2] !== wanted) return;
           const [rLat, rLon, , surface, pm2, month, rooms, land] = row as number[];
           if (![rLat, rLon, surface, pm2, month].every((n) => typeof n === 'number' && Number.isFinite(n)) || !(surface! > 0) || !(pm2! > 0)) {
             this.skipped.sales++;
+            issues++;
             return;
           }
           const m = month!;
           if (m < 190001 || m % 100 < 1 || m % 100 > 12) {
             this.skipped.sales++;
+            issues++;
             return;
           }
           out.push({
@@ -176,7 +197,7 @@ export class DvfSiteSales implements SalesSource {
         });
       }
     }
-    return out;
+    return { sales: out, issues };
   }
 
   /** Le détail publié d'une vente : prix signé, voie sans numéro, commune [R29]. `null` s'il manque. */
@@ -189,8 +210,14 @@ export class DvfSiteSales implements SalesSource {
     let p = this.details.get(name!);
     if (!p) {
       p = this.read(`d/${name}.txt`).then(
-        (text) => (text === null ? null : text.split('\n')),
-        () => null,
+        (text) => {
+          if (text === null) this.skipped.details++;
+          return text === null ? null : text.split('\n');
+        },
+        () => {
+          this.skipped.details++;
+          return null;
+        },
       );
       this.details.set(name!, p);
     }
@@ -210,4 +237,20 @@ export class DvfSiteSales implements SalesSource {
       return null;
     }
   }
+}
+
+/**
+ * Lecteur des fichiers DVF publics du site, par HTTPS et en lecture seule (GET), à partir d'une fonction `fetch`
+ * donnée. Seuls les chemins produits par `DvfSiteSales` sont lus, sous l'adresse de base.
+ */
+export function httpDvfReader(
+  fetcher: (url: string, init?: { headers?: Record<string, string> }) => Promise<{ ok: boolean; text(): Promise<string> }>,
+  base: string,
+): DvfFileReader | null {
+  if (!/^https:\/\/[^\s]+\/$/.test(base)) return null;
+  return async (path) => {
+    if (!/^(index\.json|t\/-?\d{1,4}_-?\d{1,4}\.json|d\/-?\d{1,4}_-?\d{1,4}\.txt)$/.test(path)) return null;
+    const res = await fetcher(new URL(path, base).toString(), { headers: { accept: 'application/json, text/plain' } });
+    return res.ok ? res.text() : null;
+  };
 }
