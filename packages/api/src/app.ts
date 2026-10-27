@@ -13,6 +13,8 @@ import {
   CATEGORIES,
   ChronologieMandat,
   ControlesSignature,
+  SignatureEnLigne,
+  TrialCodeSender,
   SignatureAvenant,
   EcheancesMandats,
   Diffusion,
@@ -528,6 +530,37 @@ const ROUTES: RouteDef[] = [
       const r = await new ChronologieMandat(s.db, s.journal, { now: s.now }).read(viewer, id!);
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/documents/${ID}/signature-en-ligne$`),
+    name: 'document.signature_en_ligne',
+    // Ouvre une session de signature en ligne, en essai : le code n'est envoyé nulle part tant que H05 n'est pas fait,
+    // et la signature ne rend jamais un mandat réel tant que H24 n'est pas fait [R41].
+    handle: async (s, viewer, [id]) => {
+      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, new TrialCodeSender(s.journal, s.now), { now: s.now }).start(viewer, id!);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      if (r.rule === 'R16') return refusal(r);
+      return json(400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/signatures/${ID}$`),
+    name: 'signature.code',
+    // La signature par le code reçu, et le tracé à l'écran s'il y en a un : toujours une signature d'essai.
+    handle: async (s, viewer, [id], request) => {
+      const body = await readJson(request, 220_000);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'Seuls code et drawing sont admis.');
+      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, new TrialCodeSender(s.journal, s.now), { now: s.now }).sign(viewer, id!, {
+        code: typeof body.code === 'string' ? body.code : '',
+        drawing: typeof body.drawing === 'string' ? body.drawing : null,
+      });
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      if (r.rule === 'R16') return refusal(r);
+      return json(r.code === 'unknown_session' ? 404 : r.code === 'already_signed' || r.code === 'blocked' ? 409 : 400, { ok: false, code: r.code });
     },
   },
   {
