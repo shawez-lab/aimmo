@@ -54,7 +54,7 @@ async function setup(notifier?: DirectionNotifier) {
     const m = await db.first<{ body: string }>("SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.channel = 'sms' ORDER BY m.occurred_at DESC, m.rowid DESC LIMIT 1");
     return /(\d{6})/.exec(m!.body)![1]!;
   };
-  return { db, journal, store, securite, visites, network, alex, sam, as, person, appointmentId, lastCode, setClock: (t: number) => (clock = t), clock: () => clock };
+  return { db, journal, store, securite, visites, rdv, network, alex, sam, as, person, appointmentId, lastCode, setClock: (t: number) => (clock = t), clock: () => clock };
 }
 
 describeWithSqlite('T05 · visite sécurisée', () => {
@@ -167,6 +167,22 @@ describeWithSqlite('T05 · visite sécurisée', () => {
     await t.securite.list(t.as('agent', t.alex.id));
     await t.securite.raise(t.as('direction', 'd1'), 'alerte-0011');
     expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse').length).toBe(before + 2);
+  });
+
+  it('un nom vide ou sans lettre latine ne passe jamais pour celui de la fiche [R54] ; l’alerte retrouve une visite décalée', async () => {
+    const t = await setup();
+    const agent = t.as('agent', t.alex.id);
+    await t.db.run("UPDATE persons SET last_name = '王' WHERE id = ?", [t.person.id]);
+    await t.securite.sendCode(agent, t.appointmentId, { consentProof: 'accord oral' });
+    const code = await t.lastCode();
+    expect(await t.securite.confirm(agent, t.appointmentId, { code, lastName: '' })).toMatchObject({ ok: false, code: 'bad_identity' });
+    expect(await t.securite.confirm(agent, t.appointmentId, { code, lastName: '李' })).toMatchObject({ ok: false, code: 'bad_identity' });
+    expect(await t.securite.confirm(agent, t.appointmentId, { code, lastName: '王' })).toEqual({ ok: true, confirmed: true });
+    const moved = await t.rdv.moveFromAgenda(t.appointmentId, new Date(WEDNESDAY_10H.getTime() + 120 * MINUTE));
+    if (!moved.ok) throw new Error(moved.code);
+    t.setClock(WEDNESDAY_10H.getTime() + 130 * MINUTE);
+    await t.securite.raise(agent, 'alerte-0020');
+    expect(await t.db.first("SELECT town, appointment_id FROM safety_alerts WHERE id = 'alerte-0020'")).toEqual({ town: 'Talant', appointment_id: moved.appointment.id });
   });
 
   it('sans panne, la direction est prévenue aussitôt, en essai : une ligne au journal, rien ne part', async () => {

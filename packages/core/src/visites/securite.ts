@@ -38,7 +38,12 @@ function newCode(): string {
   }
 }
 
-const sameName = (a: string, b: string): boolean => plain(a).replace(/[^a-z]+/g, ' ').trim() === plain(b).replace(/[^a-z]+/g, ' ').trim();
+const nameKey = (n: string): string => plain(n).replace(/[^\p{L}]+/gu, ' ').trim();
+/** Même nom, sans accents ni casse ; un nom vide ne vaut jamais un autre. */
+const sameName = (a: string, b: string): boolean => {
+  const x = nameKey(a);
+  return x !== '' && x === nameKey(b);
+};
 
 export type SafetyRefusal = { ok: false; rule: string | null; code: string };
 
@@ -230,8 +235,9 @@ export class VisiteSecurisee {
     // La visite en cours d'abord ; sinon la prochaine dans l'heure : sa commune et son heure, rien d'autre.
     const pick = (where: string, order: string, params: string[]) =>
       this.db.first<{ id: string; start_at: string; city: string | null }>(
-        `SELECT a.id, a.start_at, p.city FROM appointments a JOIN visits v ON v.appointment_id = a.id JOIN properties p ON p.id = v.property_id
-         WHERE a.agent_id = ? AND a.network_id = ? AND a.status = 'booked' AND ${where} ORDER BY ${order} LIMIT 1`,
+        // Toute visite de l'agent, décalée comprise : le rendez-vous porte lui-même son bien.
+        `SELECT a.id, a.start_at, p.city FROM appointments a JOIN properties p ON p.id = a.property_id
+         WHERE a.agent_id = ? AND a.network_id = ? AND a.kind = 'visite' AND a.status = 'booked' AND ${where} ORDER BY ${order} LIMIT 1`,
         [viewer.userId, viewer.networkId, ...params],
       );
     const current =
