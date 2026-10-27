@@ -494,7 +494,7 @@ Décidé, lecture prudente : la première version, pour la preuve à Dijon, couv
 - Critères : jamais sans accord en cours pour ce suivi [R03, R36] ; un envoi par période au plus [R05], dans les heures d'envoi [R01] ; seule la fourchette de la commune, jamais le prix d'un bien précis [R31] ; rien ne part en mode essai [R26].
 
 ### G05 · Contrôle de la base légale sur 30 jours
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : normale · Dépend de : G02
 - Cahier : M20, « Critères d'acceptation » : « aucun contact sans base légale dans le plan, sur 30 jours ».
 - Objectif : un contrôle qui relit les plans figés des 30 derniers jours et vérifie, ligne par ligne, que chaque personne avait une base légale au jour du plan ; un rapport sans donnée personnelle, et une alerte à la direction s'il trouve un écart.
