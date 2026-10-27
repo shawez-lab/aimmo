@@ -376,17 +376,28 @@ export class RendezVous {
     const claimed = await this.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ? AND status = 'booked'", [at, at, old.id]);
     if (claimed.changes !== 1) return { ok: false, rule: null, code: 'not_booked' };
     await this.release(old.id);
-    const result = await this.book(
-      { networkId: old.network_id, agentId: old.agent_id, personId: old.person_id, propertyId: old.property_id, kind: old.kind, start, source: old.source, channel },
-      old.id,
-    );
-    if (!result.ok) {
-      // L'ancien rendez-vous revient, avec ses tranches. Si un autre les a prises entre-temps, il reste annulé, et c'est noté.
+    // L'ancien rendez-vous revient, avec ses tranches. Si un autre les a prises entre-temps, il reste annulé, et c'est noté.
+    const restore = async (): Promise<void> => {
       if (await this.hold(old.agent_id, old.id, old.kind, new Date(old.start_at), new Date(old.end_at))) {
         await this.db.run("UPDATE appointments SET status = 'booked', cancelled_at = NULL, updated_at = ? WHERE id = ? AND status = 'cancelled'", [this.now().toISOString(), old.id]);
       } else {
         await this.log('rdv.perdu', 'system:rdv', (await this.get(old.id))!, {});
       }
+    };
+    let result: BookingResult;
+    try {
+      result = await this.book(
+        { networkId: old.network_id, agentId: old.agent_id, personId: old.person_id, propertyId: old.property_id, kind: old.kind, start, source: old.source, channel },
+        old.id,
+      );
+    } catch (error) {
+      // Une panne (agenda, base) avant la nouvelle réservation ne fait pas perdre l'ancienne.
+      const created = await this.db.first<{ id: string }>("SELECT id FROM appointments WHERE replaces_id = ? AND status = 'booked'", [old.id]);
+      if (!created) await restore();
+      throw error;
+    }
+    if (!result.ok) {
+      await restore();
       return result;
     }
     await this.log('rdv.decale', 'client:lien', (await this.get(old.id))!, { replaced_by: result.appointment.id });

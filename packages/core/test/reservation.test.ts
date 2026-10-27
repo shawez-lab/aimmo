@@ -192,6 +192,22 @@ describeWithSqlite('V02 · réservation, confirmation et annulation', () => {
     expect(leftover[0]!.n).toBe(0);
   });
 
+  it('une panne de l’agenda pendant un décalage ne fait pas perdre le rendez-vous', async () => {
+    const w = await world();
+    const r = await w.book(at('2026-11-10', '09:00'));
+    if (!r.ok) throw new Error('réservation refusée');
+    const broken = new RendezVous(w.db, w.journal, { now: () => NOW, agenda: { busy: async () => Promise.reject(new Error('agenda en panne')) } });
+    await expect(broken.reschedule(r.token, at('2026-11-10', '15:00'))).rejects.toThrow('agenda en panne');
+    expect((await w.rdv.get(r.appointment.id))!.status).toBe('booked');
+    expect(await w.book(at('2026-11-10', '09:00'))).toMatchObject({ ok: false, rule: 'R32' });
+    expect((await w.rdv.reschedule(r.token, at('2026-11-10', '15:00'))).ok).toBe(true);
+  });
+
+  it('des plages hors des tranches de 5 minutes sont refusées : chaque créneau proposé se réserve', async () => {
+    const w = await world();
+    expect(await w.rdv.setAvailability(w.asPaul, { weekly: [{ weekday: 2, from: '09:02', to: '12:02' }] })).toEqual({ ok: false, code: 'invalid' });
+  });
+
   it('[R01] réservé le soir : la confirmation attend les heures d’envoi, rien ne part la nuit', async () => {
     const w = await world();
     w.setClock(at('2026-11-09', '21:30'));

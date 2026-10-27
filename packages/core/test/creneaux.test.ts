@@ -135,6 +135,7 @@ describe('V01 · disponibilités et créneaux libres', () => {
     expect(() => checkAvailability({ weekly: [{ weekday: 8, from: '09:00', to: '10:00' }] })).toThrow('Jour');
     expect(() => checkAvailability({ weekly: [{ weekday: 1, from: '11:00', to: '10:00' }] })).toThrow('plage');
     expect(() => checkAvailability({ weekly: [{ weekday: 1, from: '9h', to: '10:00' }] })).toThrow('HH:MM');
+    expect(() => checkAvailability({ weekly: [{ weekday: 1, from: '09:02', to: '10:00' }] })).toThrow('5 minutes');
     expect(() => checkAvailability({ weekly: [], exceptions: [{ date: '10/11/2026', ranges: [] }] })).toThrow('AAAA-MM-JJ');
   });
 
