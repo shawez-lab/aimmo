@@ -77,6 +77,10 @@ describe('P05 · page du bien et fiche imprimable', () => {
     expect(page1!.match(/<img /g)).toHaveLength(4);
     expect(page2).toContain('class="texte"');
     expect(page2).toContain('agent immobilier');
+    // Sur papier, les retours à la ligne deviennent des espaces : rien n'est coupé, rien ne passe sous la carte de l'agent.
+    const lines = renderListingPrint({ ...INPUT, payload: { ...INPUT.payload, body: Array.from({ length: 60 }, () => 'Balcon.').join('\n') } })!;
+    expect(lines).toContain(`<p class="texte">${Array.from({ length: 60 }, () => 'Balcon.').join(' ')}</p>`);
+    expect(lines).toContain('.page+.page{padding-bottom:42mm}');
   });
 });
 
@@ -117,5 +121,11 @@ describeWithSqlite('P05 · page et fiche depuis la version publiée', () => {
     expect(await pages.setAgentCard(t.direction, 'agent-inconnu', { phone: '0300000001', email: 'a@exemple.test' })).toEqual({ ok: false, rule: null, code: 'unknown_agent' });
     expect(await pages.setAgentCard(t.direction, t.alexId, { phone: '0300000001', email: 'a@exemple.test' })).toEqual({ ok: true });
     await expect(t.db.run('DELETE FROM agent_public_cards')).rejects.toThrow(/rien ne s'efface/);
+    // Un agent parti ne règle plus ses coordonnées, ni lui ni la direction ; le refus est au journal.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alexId]);
+    expect(await pages.setAgentCard(t.agent, t.alexId, { phone: '0300000002', email: 'b@exemple.test' })).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect(await pages.setAgentCard(t.direction, t.alexId, { phone: '0300000002', email: 'b@exemple.test' })).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect((await t.journal.bySubject(`agent:${t.alexId}`)).filter((e) => e.type === 'acces.refuse' && (e.data as { code: string }).code === 'agent_inactive')).toHaveLength(2);
+    expect(await t.db.all('SELECT id FROM agent_public_cards')).toHaveLength(1);
   });
 });
