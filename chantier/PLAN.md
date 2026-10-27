@@ -634,7 +634,8 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : rien.
 
 ### T02 · Rapprochement des acquéreurs, par le code
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : tolérances par défaut budget +5 %, surface −10 %, pièces 0 ; le type « logement » du socle répond à maison et appartement ; une valeur du bien inconnue ne remplit pas son critère ; une recherche sans critère sur le bien ne compte pas ; acquéreur actif : projet non clos et recherche modifiée depuis moins de 180 jours ; une ligne par personne, son meilleur projet ; R50 et R51 en service.
 - Qui : Claude · Relecture : forte · Dépend de : T01, D05
 - Cahier : M08, « Rapprochement », « Fichier commun » ; Feuille de route, avril 2027.
 - Objectif : pour un bien diffusable [R42], la liste classée des acquéreurs du réseau entier (fichier commun) : critères obligatoires (type, commune, budget, surface, pièces) avec les tolérances écrites en réglage, puis classement par règles écrites (écart aux critères, urgence déclarée, fraîcheur du projet), jamais par le financement ni la solvabilité [R14], chaque ligne avec ses raisons ; jamais une personne exclue ou qui a demandé l'arrêt.
@@ -643,7 +644,7 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : rien.
 
 ### T03 · Alertes aux acquéreurs, en mode essai
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : T02
 - Cahier : M08, « Alertes » et règles ; critère « aucun doublon d'alerte sur 30 jours ».
 - Objectif : quand un bien devient diffusable, une alerte aux acquéreurs rapprochés qui l'ont demandée : message personnalisé rédigé par l'IA derrière une interface à partir des seules données du bien et des critères (fausse IA dans les tests, texte de secours du code si elle est en panne), mail ou message selon l'accord, passé par le contrôle central et rangé dans la boîte d'essai, avec un lien de désinscription ; pour WhatsApp, un lien pré-rempli préparé pour l'agent, seulement après le contrôle central, et l'envoi enregistré quand l'agent le confirme.
