@@ -35,6 +35,8 @@ export interface SendOrder {
   kind: SendKind;
   /** Finalité de l'accord [R03] ; par défaut, le type. */
   purpose?: string;
+  /** L'accord est exigé sur tout canal, et revérifié après la rédaction (alertes de biens, R49). */
+  consentOnEveryChannel?: boolean;
   /** Sujet d'un envoi d'initiative, par exemple `relance:projet-12` [R05]. Obligatoire hors réponse, sauf biens. */
   subject?: string | undefined;
   /** Biens proposés : chacun ne part qu'une fois à la personne [R05]. */
@@ -211,6 +213,7 @@ export class ControleEnvois {
           channel: order.channel,
           kind: order.kind,
           ...(order.purpose === undefined ? {} : { purpose: order.purpose }),
+          ...(order.consentOnEveryChannel ? { consentOnEveryChannel: true } : {}),
           conversationId: order.conversationId ?? null,
           at: when,
         },

@@ -98,7 +98,7 @@ const eur = (n: number): string => `${new Intl.NumberFormat('fr-FR').format(n).r
 export function alertFallbackText(firstName: string | null, p: AlertBrief['property'], channel: OutboundChannelName = 'email'): string {
   const facts = [
     `${KIND_LABEL[p.kind] ?? 'bien'}${p.city ? ` à ${p.city}` : ''}`,
-    ...(p.surfaceM2 !== null ? [`${p.surfaceM2} m²`] : []),
+    ...(p.surfaceM2 !== null ? [`${String(p.surfaceM2).replace('.', ',')} m²`] : []),
     ...(p.rooms !== null ? [`${p.rooms} pièces`] : []),
     ...(p.bedrooms !== null ? [`${p.bedrooms} chambres`] : []),
     ...(p.priceEur !== null ? [eur(p.priceEur)] : []),
@@ -283,6 +283,8 @@ export class Alertes {
           channel: via,
           kind: 'alert',
           purpose: ALERT_PURPOSE,
+          // L'accord des alertes est revérifié après la rédaction, sur tout canal : une désinscription l'emporte [R49].
+          consentOnEveryChannel: true,
           propertyIds: [propertyId],
           // L'IA écrit le corps, sans salutation : le prénom, qu'elle ne reçoit pas, est placé par le code [R08, R15].
           ...(writer ? { compose: async () => withLink(`${firstName ? `Bonjour ${firstName},` : 'Bonjour,'} ${(await writer.write(brief)).trim()}`) } : {}),

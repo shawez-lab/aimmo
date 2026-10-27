@@ -166,6 +166,34 @@ describeWithSqlite('T03 · alertes aux acquéreurs, en mode essai', () => {
     expect(await t.alertes.forProperty(t.network.id, prop.id)).toMatchObject([{ status: 'done' }]);
   });
 
+  it('une désinscription pendant la rédaction l’emporte, Instagram compris [R49]', async () => {
+    let withdraw: (() => Promise<void>) | null = null;
+    const t = await setup({
+      writer: {
+        write: async () => {
+          await withdraw?.();
+          return 'une maison à Talant correspond à ta recherche.';
+        },
+      },
+    });
+    const b = await t.buyer('Inès', TALANT, 'instagram');
+    await t.store.recordMessage({ networkId: t.network.id, personId: b.person.id, channel: 'instagram', direction: 'in', authorKind: 'person', body: 'Bonjour', occurredAt: new Date(TUESDAY_10H - HOUR) });
+    withdraw = async () => {
+      for (const c of await t.store.listConsents(b.person.id)) await t.store.withdrawConsent(c.id, new Date(TUESDAY_10H));
+    };
+    const prop = await t.property('B1', MAISON);
+    expect(await t.alertes.forProperty(t.network.id, prop.id)).toMatchObject([{ status: 'refused', rule: 'R03' }]);
+    expect(await t.sent()).toHaveLength(0);
+  });
+
+  it('une surface à virgule passe le contrôle des chiffres du texte de secours [R10]', async () => {
+    const t = await setup();
+    await t.buyer('Inès', TALANT);
+    const prop = await t.property('B1', { ...MAISON, surface: 95.5 });
+    expect(await t.alertes.forProperty(t.network.id, prop.id)).toMatchObject([{ status: 'sent' }]);
+    expect((await t.sent())[0]!.body).toContain('95,5 m²');
+  });
+
   it('le contrôle central garde exclusions, arrêt et horaires [R01, R02, R04] ; une alerte refusée pour l’heure part au passage suivant', async () => {
     const t = await setup();
     const stop = await t.buyer('Arrêt', TALANT);
