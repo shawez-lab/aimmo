@@ -866,7 +866,8 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O07 · Offre acceptée : dossier de vente, bloqué sans identité vérifiée
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : dossier ouvert par l'agent du bien après une acceptation rapportée avec preuve ; une seule offre acceptée par bien, vérifié dans l'instruction d'insertion ; le bien passe « sous offre » ; compromis bloqué sans identité vérifiée, lue sous les droits de la fiche de l'acquéreur
 - Qui : Claude · Relecture : forte · Dépend de : O03
 - Cahier : M09, « Offre acceptée » ; critère « aucun compromis préparé sans identité vérifiée de l'acquéreur ».
 - Objectif : une acceptation rapportée avec preuve ouvre un dossier de vente minimal (bien, offre, acquéreurs, vendeur), que M10 complétera ; le dossier ne peut passer à « compromis en préparation » tant que l'identité de chaque acquéreur n'est pas vérifiée ; le bien passe « sous offre » pour la publication (M07).
@@ -874,7 +875,7 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O08 · Routes de M09
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : O07
 - Cahier : M09.
 - Objectif : les routes `/v1/offres` dans `packages/api/src/offres.ts`, de la même forme que celles de `app.ts`, et les passages quotidiens (offres non transmises, échéances), sans toucher au socle ; leur branchement dans `app.ts` et au planificateur suit, comme P10, par la voie qui tient le socle.
