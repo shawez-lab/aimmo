@@ -38,3 +38,8 @@ Signaler en P1 :
 - un critère d'acceptation de la tâche sans test ;
 - une modification hors du périmètre de la tâche ;
 - une erreur avalée sans trace dans le journal ni texte de secours.
+
+## Exigence
+
+- Chaque module a au moins une fonction « Jamais vu », testée, que les concurrents n'ont pas. Une proposition qui livre un écran générique, au look de site fait par une IA, est un P1.
+- Zéro bogue toléré : tout comportement a son test, tout cas limite aussi.

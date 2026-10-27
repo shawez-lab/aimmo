@@ -6,6 +6,7 @@ Le chantier tourne sans arrêt, sans horaire. Une séance enchaîne les tâches,
 
 1. Lire ce fichier, `chantier/PLAN.md`, `chantier/HUMAIN.md` et les 10 dernières lignes de `chantier/JOURNAL.md`. Rien d'autre à ce stade.
 2. **Verrou.** Lire `chantier/VERROU.md`.
+   - La voie 2 lit `chantier/VERROU-2.md` au lieu de `chantier/VERROU.md` (section 8).
    - S'il dit « occupé » depuis moins de 3 heures : arrêter la séance, sans rien écrire. Dernier message : « Fait : rien, une autre séance travaille. »
    - Sinon : y écrire `occupé depuis <AAAA-MM-JJ HH:MM> (heure de Paris)`, commit `chantier : verrou`, push sur main. Si le push est refusé parce que main a bougé : `git pull --rebase`, relire le verrou, recommencer cette étape une fois.
 3. **Propositions ouvertes d'abord.** Lister les propositions de modification ouvertes (`gh api repos/shawez-lab/aimmo/pulls --jq '.[] | [.number, .head.ref, .title] | @tsv'`). Pour chacune :
@@ -63,3 +64,20 @@ Quand plus aucune tâche n'est prête : lire dans la Feuille de route le module 
 - Jamais d'audit, jamais de relecture en série, jamais relire un fichier déjà lu dans la séance.
 - Lire le cahier par recherche ciblée, jamais un onglet entier quand une partie suffit.
 - La séance s'arrête dès que sa tâche est finie, même s'il reste du temps.
+
+## 8. Deux voies en parallèle
+
+Deux séances travaillent en même temps, chacune sur son module, pour aller deux fois plus vite.
+
+- **Voie 1**, la tâche planifiée `trig_01WHDD3Cn9ywcnwa3R9omsQK`, verrou `chantier/VERROU.md` : suit le plan dans l'ordre, et saute tout ce qui est réservé à la voie 2.
+- **Voie 2**, la tâche planifiée « Chef de chantier AIMMO voie 2 », verrou `chantier/VERROU-2.md` : prend le module de la Feuille de route qui suit celui de la voie 1 et qu'aucune voie n'a commencé. Elle le réserve en écrivant sous son titre dans `PLAN.md` : `Voie : 2`, puis le découpe et le fait. Ses tâches en cours portent « en cours (voie 2) ». Elle relance la voie 2, jamais la voie 1.
+- Les deux voies ne touchent jamais au même fichier de code en même temps. Si un fichier du socle doit changer, la voie 2 laisse la tâche à la voie 1 et passe à la suivante.
+- `PLAN.md` et `JOURNAL.md` : toujours `git pull --rebase` juste avant de les modifier ; en cas de conflit, garder les deux lignes.
+
+## 9. Exigence : mille fois mieux
+
+AIMMO doit faire ce que personne d'autre ne fait. Chaque module découpé contient au moins une tâche « Jamais vu » : une fonction qu'aucun réseau, logiciel ou outil d'IA grand public n'offre, écrite comme critère d'acceptation testable, et nommée dans la proposition. Chaque écran suit le système de design d'AIMMO : rien de générique, rien qui ressemble à un site fait par une IA, rapide, accessible, beau sur téléphone d'abord.
+
+## 10. Exploiter Codex au maximum
+
+Codex relit chaque proposition. En plus, quand il laisse des remarques P2, commenter `@codex corrige tes remarques sur cette branche`. S'il pousse un commit, noter dans `HUMAIN.md` que H12 est réglé : les tâches marquées « Qui : Codex » peuvent alors lui être confiées de nouveau, en parallèle des deux voies.
