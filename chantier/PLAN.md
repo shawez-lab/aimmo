@@ -139,7 +139,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : rien ne part jamais (canaux d'essai seulement) [R26] ; une personne inconnue, exclue ou arrêtée, la nuit ou le dimanche, un doublon de sujet : refusés avec leur règle [R01, R02, R05] ; le texte du site passe le contrôle du texte ; le journal ne porte ni adresse ni texte [R13] ; une autre clé que `site_auto` est refusée.
 
 ### B02 · Planificateur du socle
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : normale · Dépend de : B01
 - Cahier : Feuille de route, novembre 2026 : « plus aucune tâche du système planifiée dans les applications ».
 - Objectif : le Worker `aimmo-api` a un déclencheur horaire et un registre des tâches à heure fixe, à l'heure de Paris ; chaque tâche ne passe qu'une fois par créneau, son passage est écrit au journal ; les tâches du site y sont inscrites en mode essai (le passage est noté, rien n'est appelé).
