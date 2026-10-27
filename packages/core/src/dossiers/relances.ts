@@ -30,6 +30,7 @@ import type { JournalStore } from '../journal/types.ts';
 import type { ScheduledJob } from '../bascule/planificateur.ts';
 import { SELLER_UPDATE_PURPOSE, nameWords } from '../visites/compte-rendu.ts';
 import { gateSaleFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
+import { fundsInOutgoing } from './bouclier.ts';
 import { PiecesDossier, type Piece, type PieceStore } from './pieces.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -181,6 +182,13 @@ export class RelancesPieces {
         const other = side === 'vendeur' ? f.buyer_person_id : seller?.person_id;
         const firstName = await this.firstName(personId);
         const reference = { city: f.city, reference: f.reference };
+        const text = reminderText(firstName, piece, last ? today : null, reference);
+        // Jamais de coordonnée bancaire ni de demande de paiement dans un texte d'AIMMO [R62].
+        if (fundsInOutgoing(text)) {
+          await this.db.run("UPDATE sale_file_reminders SET status = 'refused', rule = 'R62', updated_at = ? WHERE file_id = ? AND piece = ? AND day = ? AND status IN ('waiting', 'failed')", [this.now().toISOString(), f.id, piece, today]);
+          await appendEvent(this.journal, { type: 'dossier.relance', actor: 'system:dossiers', subject: `sale_file:${f.id}`, data: { mode: 'essai', piece, status: 'refused', rule: 'R62' } }, this.now);
+          continue;
+        }
         const result = await this.controle.send({
           networkId,
           agentId: f.agent_id,
@@ -189,7 +197,7 @@ export class RelancesPieces {
           kind: 'follow_up',
           purpose: SALE_FOLLOW_UP_PURPOSE,
           subject: `relance_piece:${f.id}:${piece}:${today}`,
-          fallbackTexts: [reminderText(firstName, piece, last ? today : null, reference)],
+          fallbackTexts: [text],
           // La date du rappel et les chiffres de la référence du bien, lus dans la base [R10].
           figures: [...(last ? [Number(today.slice(8, 10)), Number(today.slice(5, 7))] : []), ...(f.reference.match(/\d+/g) ?? []).map(Number)],
           // Le nom de l'autre partie n'apparaît jamais [R19].

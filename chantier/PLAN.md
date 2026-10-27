@@ -951,6 +951,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 
 ### N05 · Aucun fonds, bouclier contre le faux RIB (Jamais vu)
 - Statut : en cours (voie 2)
+- Décidé (2026-10-28) : une alerte à l'agent par message suspect, le rappel au client une fois par personne et par dossier ; seules les sortes de signaux sont rangées ; le branchement à la réception et le masquage de l'IBAN dans le message rangé vont au socle (N09)
 - Qui : Claude · Relecture : forte · Dépend de : N03
 - Cahier : M10, règle « AIMMO ne reçoit jamais de fonds ».
 - Objectif : aucun texte d'AIMMO à un client ou au notaire ne demande un paiement ni ne porte de coordonnée bancaire ; chaque message reçu dans la conversation d'un dossier en cours qui parle de virement, d'acompte, de séquestre ou de changement de RIB, ou qui porte un IBAN, déclenche aussitôt une alerte à l'agent, et le client reçoit, dans les heures d'envoi, le rappel écrit qu'AIMMO ne demande jamais de fonds ni de changement de coordonnées bancaires. Jamais vu : aucun réseau ni logiciel ne surveille ainsi la fraude au faux RIB pendant toute la vente.
@@ -985,7 +986,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Statut : à faire
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : N08
 - Cahier : M10.
-- Objectif : exporter `dossiers` depuis `@aimmo/core` ; ajouter les routes de M10 à `app.ts` ; lancer `syncDossiers` chaque jour depuis le planificateur, une fois par créneau ; brancher le contrôle du bouclier (N05) à la réception des messages.
+- Objectif : exporter `dossiers` depuis `@aimmo/core` ; ajouter les routes de M10 à `app.ts` ; lancer `syncDossiers` chaque jour depuis le planificateur, une fois par créneau ; brancher `BouclierFonds.scan` (N05) à la réception des messages, dès qu'un message est rattaché à sa fiche, et masquer l'IBAN dans le message rangé [R15] ; appliquer `fundsInOutgoing` dans le contrôle central à tout texte destiné à un client [R62] ; lancer `pieceReminderJob` (N03).
 - Critères : les routes répondent derrière la clé d'API [R16] ; le passage tourne une fois par jour ; rien ne part réellement tant que le plan n'a pas mis d'envoi en service.
 - Attend : rien.
 
