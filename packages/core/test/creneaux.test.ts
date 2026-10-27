@@ -77,6 +77,18 @@ describe('V01 · disponibilités et créneaux libres', () => {
     expect(conflictOf({ kind: 'estimation', start: paris('2026-11-10 15:00'), end: paris('2026-11-10 16:00') }, booked, [])).toBe('R32');
   });
 
+  it('[R33] des plages qui se chevauchent ou se touchent : ni créneau en double, ni créneau perdu', () => {
+    const overlap: Availability = { weekly: [{ weekday: 2, from: '09:00', to: '12:00' }, { weekday: 2, from: '11:00', to: '13:00' }] };
+    const a = starts(freeSlots({ availability: overlap, kind: 'estimation', ...day('2026-11-10'), now: NOW, booked: [], busy: [] }));
+    expect(new Set(a).size).toBe(a.length);
+    expect(a.at(-1)).toBe('12:00');
+    const touching: Availability = { weekly: [{ weekday: 2, from: '09:00', to: '12:00' }, { weekday: 2, from: '12:00', to: '13:00' }] };
+    const b = starts(freeSlots({ availability: touching, kind: 'estimation', ...day('2026-11-10'), now: NOW, booked: [], busy: [] }));
+    expect(b).toContain('11:30');
+    expect(b).toEqual(a);
+    expect(withinAvailability({ start: paris('2026-11-10 11:30'), end: paris('2026-11-10 12:30') }, touching)).toBe(true);
+  });
+
   it('jamais dans le passé ni avant le délai minimal', () => {
     const now = paris('2026-11-10 10:10');
     const slots = freeSlots({ availability: WEEK, kind: 'appel', ...day('2026-11-10'), now, booked: [], busy: [] });

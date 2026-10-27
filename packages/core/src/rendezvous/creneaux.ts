@@ -97,7 +97,15 @@ export function checkAvailability(a: Availability): void {
 function rangesOn(a: Availability, date: string, weekday: number): [number, number][] {
   const exception = (a.exceptions ?? []).find((e) => e.date === date);
   const ranges = exception ? exception.ranges : a.weekly.filter((w) => w.weekday === weekday);
-  return ranges.map((r) => [minutesOf(r.from), minutesOf(r.to)] as [number, number]).sort((x, y) => x[0] - y[0]);
+  const sorted = ranges.map((r) => [minutesOf(r.from), minutesOf(r.to)] as [number, number]).sort((x, y) => x[0] - y[0]);
+  // Deux plages qui se chevauchent ou se touchent n'en font qu'une : ni créneau en double, ni créneau perdu à la jointure.
+  const merged: [number, number][] = [];
+  for (const [from, to] of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && from <= last[1]) last[1] = Math.max(last[1], to);
+    else merged.push([from, to]);
+  }
+  return merged;
 }
 
 /**
