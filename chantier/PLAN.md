@@ -552,7 +552,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H23 pour le numéro réel de l'agence ; les tests utilisent un registre inventé.
 
 ### D02 · Bibliothèque de modèles datés et versionnés
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : la validation d'un modèle est faite par le rôle conformité ; le modèle en vigueur est la dernière version validée, sinon la dernière d'essai ; un mandat exclusif exige un paragraphe mis en évidence ; le mandant est identifié par prénom et nom ; Codex resté en cours 30 min, fusion sans lui.
 - Qui : Claude · Relecture : forte · Dépend de : D01
 - Cahier : M06, « Bibliothèque de modèles », règle « le modèle en vigueur à la date de signature est conservé avec le document ».
 - Objectif : des modèles par type de document (mandat de vente simple, exclusif, avenant), versionnés, datés, avec la liste de leurs champs et leur état « essai » ou « validé » (validé seulement par une personne désignée, jamais par le code) ; un document généré remplit les champs depuis la base, garde la version et l'empreinte du modèle utilisé ; rendu en HTML imprimable, clause d'exclusivité en évidence.
@@ -560,7 +561,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H08 pour les modèles réels.
 
 ### D03 · Contrôles avant signature
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : D02
 - Cahier : M06, « Contrôles avant signature » ; règle anti-blanchiment.
 - Objectif : avant toute signature, un contrôle écrit : champs obligatoires remplis, honoraires conformes au barème du réseau (réglage) et qui les paie, mandants égaux aux propriétaires du bien, identité de chaque mandant vérifiée (pièce vue, date, par qui, rangée hors de la fiche [R15]) ; le résultat, ligne par ligne, est rendu à l'agent.
