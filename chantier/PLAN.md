@@ -398,7 +398,9 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Critères : deux réservations du même créneau en même temps, une seule passe [R32] ; une annulation libère le créneau en moins d'une minute ; 10 rendez-vous tests sans doublon ni oubli ; le lien ne porte ni nom ni coordonnée, et ne sert qu'à son rendez-vous.
 
 ### V03 · Agenda Google derrière une interface
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : un déplacement fait dans l'agenda suit les règles d'un décalage ; refusé, ou fin seule changée, l'événement est remis et le conflit noté ; agenda en panne, aucune réservation nouvelle.
+- Reste : le fournisseur Google réel (H21) ; relecture de Codex de la dernière version restée en cours près de 30 min, fusion sans elle (#39), ses deux P0 et son P2 précédents corrigés.
 - Qui : Claude · Relecture : normale · Dépend de : V02
 - Cahier : M05, « Branchements » (API Google Agenda, dans les deux sens).
 - Objectif : lire les événements occupés de l'agent et écrire ses rendez-vous dans son agenda, derrière une interface ; un faux agenda dans les tests ; une modification faite dans l'agenda revient sur le rendez-vous.
