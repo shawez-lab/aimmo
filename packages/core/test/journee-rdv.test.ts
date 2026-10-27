@@ -142,4 +142,24 @@ describeWithSqlite('A02 · rendez-vous du jour de l’agent', () => {
     const m = await w.journee.read(w.asPaul);
     expect(m.ok && m.value.appointments[0]).toMatchObject({ firstName: 'Léa', brief: null, briefMissing: 'changed' });
   });
+
+  it('[R16] un bien d’un autre agent sorti du fichier commun depuis le brief cache le brief, et le refus est au journal', async () => {
+    const w = await world();
+    const lea = await w.person(w.paul.id, 'Léa');
+    const bien = await w.store.createProperty({ networkId: w.net.id, agentId: w.lise.id, reference: 'REF-TEST-9', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 50, rooms: 2, priceEur: 150000 });
+    await w.db.run(`UPDATE properties SET status = 'available' WHERE id = ?`, [bien.id]);
+    const a = await w.book(w.paul.id, lea.id, at('2026-11-10', '10:00'));
+    await w.db.run('UPDATE appointments SET property_id = ? WHERE id = ?', [bien.id, a.appointment.id]);
+    w.setClock(at('2026-11-10', '08:07'));
+    expect(await w.briefs.run()).toEqual([a.appointment.id]);
+    const before = await w.journee.read(w.asPaul);
+    expect(before.ok && JSON.stringify(before.value.appointments[0]?.brief)).toContain('REF-TEST-9');
+    await w.db.run(`UPDATE properties SET status = 'withdrawn' WHERE id = ?`, [bien.id]);
+    const after = await w.journee.read(w.asPaul);
+    expect(after.ok && after.value.appointments[0]).toMatchObject({ firstName: 'Léa', brief: null, briefMissing: 'property' });
+    expect(JSON.stringify(after)).not.toContain('REF-TEST-9');
+    const refused = await w.db.all<{ subject: string; data: string }>(`SELECT subject, data FROM journal WHERE type = 'acces.refuse'`);
+    expect(refused.map((e) => e.subject)).toEqual([`property:${bien.id}`]);
+    expect(JSON.parse(refused[0]!.data)).toMatchObject({ rule: 'R16', kind: 'property', via: 'rendez_vous.jour' });
+  });
 });

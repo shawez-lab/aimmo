@@ -30,8 +30,8 @@ export interface DayAppointment {
   /** Prénom du client, seulement si l'agent voit sa fiche maintenant. */
   firstName: string | null;
   brief: Brief | null;
-  /** Pourquoi le brief manque : pas encore prêt, fiche hors des droits de l'agent, ou fiche changée depuis. */
-  briefMissing: 'not_ready' | 'no_access' | 'changed' | null;
+  /** Pourquoi le brief manque : pas encore prêt, fiche hors des droits de l'agent, fiche changée depuis, ou bien hors de ses droits maintenant. */
+  briefMissing: 'not_ready' | 'no_access' | 'changed' | 'property' | null;
 }
 
 export interface DayAppointments {
@@ -47,6 +47,7 @@ interface Row {
   network_id: string;
   agent_id: string;
   person_id: string;
+  property_id: string | null;
   kind: AppointmentKind;
   start_at: string;
   end_at: string;
@@ -71,6 +72,31 @@ export class JourneeRendezVous {
     this.unique = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
   }
 
+  /**
+   * Le bien du rendez-vous est-il encore visible par l'agent ? Le brief rangé en porte les détails du moment : un bien
+   * passé depuis hors de ses droits (retiré du fichier commun, vendu, confié à un autre agent) cache le brief entier, et
+   * le refus est écrit au journal [R16].
+   */
+  private async propertyAllowed(viewer: Viewer, row: Row, actor: string): Promise<boolean> {
+    if (row.property_id === null) return true;
+    const property = await this.db.first<{ network_id: string; agent_id: string | null; status: string }>('SELECT network_id, agent_id, status FROM properties WHERE id = ?', [row.property_id]);
+    const decision = property
+      ? decideAccess(viewer, { kind: 'property', networkId: property.network_id, agentId: property.agent_id, status: property.status as never })
+      : null;
+    if (decision?.allowed) return true;
+    await appendEvent(
+      this.journal,
+      {
+        type: 'acces.refuse',
+        actor,
+        subject: `property:${row.property_id}`,
+        data: { rule: 'R16', role: 'agent', kind: 'property', code: decision && !decision.allowed ? decision.code : 'unknown', via: 'rendez_vous.jour', appointment: `appointment:${row.id}` },
+      },
+      this.now,
+    );
+    return false;
+  }
+
   async read(viewer: Viewer): Promise<DayAppointmentsRead> {
     const actor = `${String(viewer.role)}:${viewer.userId}`;
     const refuse = async (code: 'not_agent' | 'agent_inactive'): Promise<DayAppointmentsRead> => {
@@ -86,7 +112,7 @@ export class JourneeRendezVous {
     const to = parisInstant(nextDay(day), 0);
     if (!from || !to) throw new Error('day_bounds');
     const rows = await this.db.all<Row>(
-      `SELECT id, network_id, agent_id, person_id, kind, start_at, end_at, status FROM appointments
+      `SELECT id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status FROM appointments
        WHERE network_id = ? AND agent_id = ? AND status <> 'cancelled' AND start_at >= ? AND start_at < ?
        ORDER BY start_at, id`,
       [viewer.networkId, viewer.userId, from.toISOString(), to.toISOString()],
@@ -134,6 +160,7 @@ export class JourneeRendezVous {
             [viewer.networkId, ...touched, ...touched, stored.prepared_at, stored.prepared_at],
           );
           if (changed) briefMissing = 'changed';
+          else if (!(await this.propertyAllowed(viewer, row, actor))) briefMissing = 'property';
           else brief = JSON.parse(stored.content) as Brief;
         }
       }
