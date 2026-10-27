@@ -117,6 +117,7 @@ describeWithSqlite('O01 · registre des offres', () => {
     expect(await bad({ validUntil: '2027-02-31' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'validUntil' });
     expect(await bad({ conditions: [{ kind: 'financement_parents' }] })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'conditions.0' });
     expect(await bad({ receivedAt: '2027-03-02T09:00:00.000Z' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'receivedAt' });
+    expect(await bad({ receivedAt: '2027-03-01T09:00' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'receivedAt' });
     expect(await bad({ signedRef: 'offres/12-rue-des-Essais.pdf' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'signedRef' });
     expect(await bad({ loanEur: -1 })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'loanEur' });
     expect(await bad({ buyerPersonId: 'personne-inconnue' })).toEqual({ ok: false, rule: null, code: 'unknown_buyer' });
