@@ -112,7 +112,7 @@ describeWithSqlite('D01 · registre des mandats', () => {
     expect(await t.registre.check(t.network.id)).toEqual({ ok: false, lines: 5, brokenAt: 2, problem: 'hash' });
   });
 
-  it('[R39] une ligne réécrite avec une empreinte recalculée casse le lien suivant ; un mandat changé après inscription se voit', async () => {
+  it('[R39] une ligne réécrite avec une empreinte recalculée perd son ancre ; un mandat changé après inscription se voit', async () => {
     const t = await setup();
     await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
     const ids = [await t.mandate(), await t.mandate()];
@@ -123,7 +123,8 @@ describeWithSqlite('D01 · registre des mandats', () => {
     const forged = { ...row, property_id: null, at: '2027-02-01T00:00:00.000Z' } as never as Parameters<typeof hashRegisterLine>[0];
     const hash = await hashRegisterLine(forged);
     await t.db.run('UPDATE mandate_register SET at = ?, hash = ? WHERE network_id = ? AND seq = 1', ['2027-02-01T00:00:00.000Z', hash, t.network.id]);
-    expect(await t.registre.check(t.network.id)).toMatchObject({ ok: false, brokenAt: 2, problem: 'chain' });
+    // L'empreinte réécrite ne retrouve plus son ancre au journal.
+    expect(await t.registre.check(t.network.id)).toMatchObject({ ok: false, brokenAt: 1, problem: 'anchor' });
 
     const u = await setup();
     await u.registre.configure(u.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
@@ -155,5 +156,34 @@ describeWithSqlite('D01 · registre des mandats', () => {
     expect(await t.registre.verify(t.as('agent', t.alex.id))).toMatchObject({ ok: false, rule: 'R16' });
     const refused = (await t.journal.all()).filter((e) => e.type === 'acces.refuse');
     expect(refused).toHaveLength(6);
+  });
+
+  it('[R39, R17] des lignes effacées en fin de registre, ou une ligne réécrite avec toute la suite recalculée, sont détectées', async () => {
+    const t = await setup();
+    await t.registre.configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const ids = [await t.mandate(), await t.mandate(), await t.mandate()];
+    for (const id of ids) await t.registre.inscribe(t.direction, id);
+    t.raw.exec('DROP TRIGGER mandate_register_sans_effacement');
+    await t.db.run('DELETE FROM mandate_register WHERE network_id = ? AND seq = 3', [t.network.id]);
+    expect(await t.registre.check(t.network.id)).toEqual({ ok: false, lines: 2, brokenAt: 3, problem: 'missing' });
+
+    const u = await setup();
+    await u.registre.configure(u.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+    const m = [await u.mandate(), await u.mandate(), await u.mandate()];
+    for (const id of m) await u.registre.inscribe(u.direction, id);
+    await u.registre.cancel(u.direction, m[0]!, 'error');
+    u.raw.exec('DROP TRIGGER mandate_register_sans_modification');
+    const { hashRegisterLine } = await import('../src/index.ts');
+    // Réécrit la raison de l'annulation, puis recalcule l'empreinte de cette ligne et de toute la suite.
+    const rows = await u.db.all<Record<string, unknown>>('SELECT * FROM mandate_register WHERE network_id = ? ORDER BY seq', [u.network.id]);
+    let prev = rows[2]!.hash as string;
+    for (const row of rows.slice(3)) {
+      const changed = { ...row, reason: 'withdrawal', actor: 'direction:autre', prev_hash: prev } as Record<string, unknown>;
+      delete changed.hash;
+      const hash = await hashRegisterLine(changed as never);
+      await u.db.run('UPDATE mandate_register SET reason = ?, actor = ?, prev_hash = ?, hash = ? WHERE network_id = ? AND seq = ?', ['withdrawal', 'direction:autre', prev, hash, u.network.id, row.seq as number]);
+      prev = hash;
+    }
+    expect(await u.registre.check(u.network.id)).toEqual({ ok: false, lines: 4, brokenAt: 4, problem: 'anchor' });
   });
 });

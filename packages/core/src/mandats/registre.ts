@@ -43,7 +43,7 @@ export interface RegisterLine {
 
 export type IntegrityReport =
   | { ok: true; lines: number }
-  | { ok: false; lines: number; brokenAt: number; problem: 'hash' | 'chain' | 'sequence' | 'number' | 'mandate' };
+  | { ok: false; lines: number; brokenAt: number; problem: 'hash' | 'chain' | 'sequence' | 'number' | 'mandate' | 'anchor' | 'missing' };
 
 type Refusal = { ok: false; rule: 'R16'; code: 'role' | 'agent_inactive' | 'not_assigned' | 'unknown' };
 type Problem = { ok: false; rule: 'R39' | null; code: 'not_configured' | 'already_configured' | 'bad_settings' | 'already_inscribed' | 'not_inscribed' | 'already_cancelled' | 'bad_reason' | 'busy' };
@@ -235,7 +235,7 @@ export class RegistreMandats {
       };
     });
     if (!line) return { ok: false, rule: 'R39', code: 'already_inscribed' };
-    await appendEvent(this.journal, { type: 'registre.inscrit', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { seq: line.seq, number: line.number } }, this.now);
+    await appendEvent(this.journal, { type: 'registre.inscrit', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: line.seq, number: line.number, hash: line.hash } }, this.now);
     return { ok: true, line: toLine(line) };
   }
 
@@ -263,7 +263,7 @@ export class RegistreMandats {
       actor: this.actor(viewer),
     }));
     if (!line) return { ok: false, rule: null, code: 'already_cancelled' };
-    await appendEvent(this.journal, { type: 'registre.annule', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { seq: line.seq, cancels: Number(inscription.seq), reason } }, this.now);
+    await appendEvent(this.journal, { type: 'registre.annule', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { network: viewer.networkId, seq: line.seq, cancels: Number(inscription.seq), reason, hash: line.hash } }, this.now);
     return { ok: true, line: toLine(line) };
   }
 
@@ -295,6 +295,18 @@ export class RegistreMandats {
   async check(networkId: string): Promise<IntegrityReport> {
     const rows = await this.db.all<LineRow>('SELECT * FROM mandate_register WHERE network_id = ? ORDER BY seq', [networkId]);
     const settings = await this.settings(networkId);
+    // L'ancre : chaque ligne inscrite a laissé son rang et son empreinte au journal, lui-même chaîné et en ajout seul.
+    // Une ligne réécrite avec toute la suite recalculée, ou des lignes effacées en fin de registre, ne la retrouvent plus.
+    const anchors = new Map<number, string>();
+    const events = await this.db.all<{ data: string }>(`SELECT data FROM journal WHERE type IN ('registre.inscrit', 'registre.annule') ORDER BY seq`);
+    for (const e of events) {
+      try {
+        const d = JSON.parse(e.data) as { network?: unknown; seq?: unknown; hash?: unknown };
+        if (d.network === networkId && typeof d.seq === 'number' && typeof d.hash === 'string') anchors.set(d.seq, d.hash);
+      } catch {
+        // Une ligne illisible du journal n'ancre rien.
+      }
+    }
     let prev = REGISTER_GENESIS;
     let expected = settings?.firstNumber ?? 1;
     for (let i = 0; i < rows.length; i++) {
@@ -304,6 +316,7 @@ export class RegistreMandats {
       if (row.prev_hash !== prev) return broken('chain');
       const { hash, ...rest } = row;
       if ((await hashRegisterLine(rest)) !== hash) return broken('hash');
+      if (anchors.get(row.seq) !== hash) return broken('anchor');
       if (row.kind === 'inscription') {
         if (!settings || row.number_value !== expected || row.number !== formatNumber(settings, expected)) return broken('number');
         expected += 1;
@@ -312,6 +325,9 @@ export class RegistreMandats {
       }
       prev = hash;
     }
+    // Des lignes ancrées au journal mais absentes du registre : elles ont été effacées.
+    const missing = [...anchors.keys()].filter((seq) => seq > rows.length).sort((a, b) => a - b)[0];
+    if (missing !== undefined) return { ok: false, lines: rows.length, brokenAt: missing, problem: 'missing' };
     return { ok: true, lines: rows.length };
   }
 }
