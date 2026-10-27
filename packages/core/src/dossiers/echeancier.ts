@@ -92,6 +92,9 @@ const nextWorkingDay = (day: string): string => {
   return d;
 };
 
+/** La fin du délai de la commune sans suspension, reportée au jour ouvrable suivant. */
+export const preemptionBaseEnd = (receivedOn: string): string => nextWorkingDay(addMonths(receivedOn, PREEMPTION_MONTHS));
+
 /**
  * Le jour où la commune doit avoir répondu sur son droit de préemption, ou null tant que le délai est suspendu.
  * 2 mois après la réception de la déclaration, au dernier jour du mois s'il est plus court. Une demande unique de pièces
@@ -100,7 +103,8 @@ const nextWorkingDay = (day: string): string => {
  * suivant, pour ne jamais dire acquis un silence qui ne l'est pas encore.
  */
 export function preemptionLastDay(receivedOn: string, suspendedOn?: string, resumedOn?: string): string | null {
-  let end = addMonths(receivedOn, PREEMPTION_MONTHS);
+  // La fin sans suspension, reportée au jour ouvrable : une demande faite jusqu'à ce jour suspend encore le délai.
+  let end = preemptionBaseEnd(receivedOn);
   if (suspendedOn && suspendedOn <= end) {
     if (!resumedOn) return null;
     const rest = addDays(resumedOn, daysBetween(suspendedOn, end));
@@ -136,7 +140,7 @@ export function scheduleLines(dates: Partial<Record<DateKind, string>>, facts: {
   const lines: ScheduleLine[] = [
     line('fin_retractation', 'calcul', 'notification_acquereur', n ? buyerWithdrawalLastDay(n) : null),
     !dia ? line('reponse_preemption', 'calcul', 'dia_recue', null)
-      : dates.dia_suspension && !dates.dia_reprise && dates.dia_suspension <= addMonths(dia, PREEMPTION_MONTHS) ? { deadline: 'reponse_preemption', source: 'calcul', from: 'dia_suspension', day: null, status: 'suspendue' }
+      : dates.dia_suspension && !dates.dia_reprise && dates.dia_suspension <= preemptionBaseEnd(dia) ? { deadline: 'reponse_preemption', source: 'calcul', from: 'dia_suspension', day: null, status: 'suspendue' }
       : line('reponse_preemption', 'calcul', dates.dia_reprise ? 'dia_reprise' : 'dia_recue', preemptionLastDay(dia, dates.dia_suspension, dates.dia_reprise)),
     facts.hasLoanCondition ? line('date_limite_pret', 'saisie', 'date_limite_pret', dates.date_limite_pret ?? null) : { deadline: 'date_limite_pret', source: 'saisie', from: 'date_limite_pret', day: null, status: 'sans_objet' },
     // La copropriété inconnue : l'état daté est demandé, par prudence.
@@ -144,6 +148,18 @@ export function scheduleLines(dates: Partial<Record<DateKind, string>>, facts: {
     line('acte', 'saisie', 'acte_prevu', dates.acte_prevu ?? null),
   ];
   return lines;
+}
+
+/** Ce qui cloche dans l'ordre d'un ensemble de dates, ou null. */
+export function orderProblem(d: Partial<Record<DateKind, string>>): 'compromis_first' | 'before_compromis' | 'out_of_order' | null {
+  const signed = d.compromis_signe;
+  const others = DATE_KINDS.filter((k) => k !== 'compromis_signe' && d[k] !== undefined);
+  if (!signed) return others.length ? 'compromis_first' : null;
+  if (others.some((k) => d[k]! < signed)) return 'before_compromis';
+  for (const [k, before] of Object.entries(AFTER) as [DateKind, DateKind][]) {
+    if (d[k] !== undefined && (d[before] === undefined || d[k]! < d[before]!)) return 'out_of_order';
+  }
+  return null;
 }
 
 export interface FileTask {
@@ -228,16 +244,12 @@ export class Echeancier {
     }
     if (PAST_KINDS.includes(kind) && day > this.today()) return { ok: false, rule: null, code: 'future_day' };
     const dates = await this.datesOf(fileId);
-    if (kind !== 'compromis_signe') {
-      const signed = dates.compromis_signe?.day;
-      if (!signed) return { ok: false, rule: null, code: 'compromis_first' };
-      if (day < signed) return { ok: false, rule: null, code: 'before_compromis' };
-      const before = AFTER[kind];
-      if (before && (!dates[before] || day < dates[before]!.day)) return { ok: false, rule: null, code: 'out_of_order' };
-    } else {
-      // Corriger la signature après coup ne peut pas la placer après une date déjà saisie qui la suit.
-      for (const [k, v] of Object.entries(dates)) if (k !== 'compromis_signe' && v.day < day) return { ok: false, rule: null, code: 'before_compromis' };
-    }
+    // Les dates telles qu'elles seraient après cette saisie : toutes doivent rester dans l'ordre, y compris celles déjà
+    // saisies qui suivent la date corrigée.
+    const proposed = Object.fromEntries(Object.entries(dates).map(([k, v]) => [k, v.day])) as Partial<Record<DateKind, string>>;
+    proposed[kind] = day;
+    const problem = orderProblem(proposed);
+    if (problem) return { ok: false, rule: null, code: problem };
     const version = (dates[kind]?.version ?? 0) + 1;
     try {
       await this.db.run(

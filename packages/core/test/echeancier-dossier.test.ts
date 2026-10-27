@@ -33,8 +33,11 @@ it('[R61] la demande de pièces ou de visite suspend le délai de la commune ; i
   expect(preemptionLastDay('2027-03-15', '2027-04-20')).toBeNull();
   // Restaient 25 jours : moins d'un mois, la commune a un mois dès la reprise.
   expect(preemptionLastDay('2027-03-15', '2027-04-20', '2027-05-03')).toBe('2027-06-03');
-  // Restaient 56 jours : ils courent dès la reprise.
-  expect(preemptionLastDay('2027-03-15', '2027-03-20', '2027-04-01')).toBe('2027-05-27');
+  // Restaient 59 jours jusqu'à la fin reportée du 18 mai : ils courent dès la reprise (30 mai, un dimanche : le 31).
+  expect(preemptionLastDay('2027-03-15', '2027-03-20', '2027-04-01')).toBe('2027-05-31');
+  // Une demande faite pendant le report au jour ouvrable suspend encore le délai.
+  expect(preemptionLastDay('2027-03-15', '2027-05-17')).toBeNull();
+  expect(scheduleLines({ dia_recue: '2027-03-15', dia_suspension: '2027-05-17' }, { hasLoanCondition: true, isCoownershipLot: true }).find((l) => l.deadline === 'reponse_preemption')?.status).toBe('suspendue');
   // Une demande après la fin du délai ne le rouvre pas.
   expect(preemptionLastDay('2027-03-15', '2027-05-20', '2027-05-25')).toBe('2027-05-18');
   const facts = { hasLoanCondition: true, isCoownershipLot: true };
@@ -136,6 +139,12 @@ describeWithSqlite('N02 · échéancier du dossier et alertes à l’agent', () 
     await e.record(t.agent, t.fileId, { kind: 'dia_recue', day: '2027-03-10', proofRef: PROOF });
     expect(await e.record(t.agent, t.fileId, { kind: 'dia_reprise', day: '2027-03-10', proofRef: PROOF })).toEqual({ ok: false, rule: null, code: 'out_of_order' });
     expect(await e.record(t.agent, t.fileId, { kind: 'dia_suspension', day: '2027-03-10', proofRef: PROOF })).toMatchObject({ ok: true });
+    await e.record(t.agent, t.fileId, { kind: 'dia_reprise', day: '2027-03-10', proofRef: PROOF });
+    // Corriger une date qui en précède d'autres ne peut pas défaire l'ordre de celles déjà saisies.
+    t.setClock(PARIS_9H('2027-03-12'));
+    expect(await e.record(t.agent, t.fileId, { kind: 'dia_suspension', day: '2027-03-11', proofRef: PROOF })).toEqual({ ok: false, rule: null, code: 'out_of_order' });
+    expect(await e.record(t.agent, t.fileId, { kind: 'dia_recue', day: '2027-03-11', proofRef: PROOF })).toEqual({ ok: false, rule: null, code: 'out_of_order' });
+    t.setClock(PARIS_9H('2027-03-10'));
     // Une date à venir, lue dans le compromis, peut être dans le futur.
     expect(await e.record(t.agent, t.fileId, { kind: 'acte_prevu', day: '2027-06-10', proofRef: PROOF })).toMatchObject({ ok: true });
     // Corriger la signature après l'acte prévu : refusé.
