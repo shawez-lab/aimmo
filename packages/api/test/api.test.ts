@@ -11,6 +11,7 @@ import {
   type JournalEntry,
   type SqlDatabase,
   createCaptation,
+  localDay,
 } from '@aimmo/core';
 import { handleRequest, sha256Hex } from '../src/index.ts';
 import { fromD1 } from '../src/d1.ts';
@@ -159,6 +160,27 @@ describeWithSqlite('API du socle de bout en bout, sur une base D1 locale', () =>
     expect(asAgent).toEqual(asDirection);
     expect(JSON.stringify(asAgent)).toMatch(/Aucune IA/);
     expect((await call(w.env, '/v1/attribution/regles')).status).toBe(401);
+  });
+
+  it('[R16] le plan du jour figé : chaque agent lit le sien, null avant 7 h 30 ; direction et partenaire refusés', async () => {
+    const day = localDay(new Date(), 'Europe/Paris');
+    const items = [{ rank: 1, personId: w.mine, firstName: 'Camille', kind: 'appointment', reason: 'Demande d’estimation sans rendez-vous : rendez-vous à proposer.', order: '1. pas de rappel demandé', basis: { kind: 'request', since: '2026-10-18T08:00:00.000Z', purpose: null }, projectId: null, taskId: null, reportId: null }];
+    await w.db.run(`INSERT INTO daily_plans (agent_id, day, network_id, items, removed, computed_at) VALUES (?, ?, ?, ?, ?, ?)`, [
+      w.agentId,
+      day,
+      w.net,
+      JSON.stringify(items),
+      JSON.stringify({ excluded: 0, withdrawn: 0, noBasis: 0 }),
+      new Date().toISOString(),
+    ]);
+    const mine = await call(w.env, '/v1/plan-du-jour', { key: KEY_AGENT });
+    expect(mine.status).toBe(200);
+    expect(await body(mine)).toMatchObject({ ok: true, mode: 'essai', data: { agentId: w.agentId, day, items: [{ personId: w.mine }] } });
+    const other = await call(w.env, '/v1/plan-du-jour', { key: KEY_OTHER_AGENT });
+    expect(await body(other)).toMatchObject({ ok: true, data: null });
+    expect((await call(w.env, '/v1/plan-du-jour', { key: KEY_DIRECTION })).status).toBe(403);
+    expect((await call(w.env, '/v1/plan-du-jour', { key: KEY_PARTNER })).status).toBe(403);
+    expect(JSON.stringify(await lines(w))).not.toContain('Camille');
   });
 
   it('[R16] la liste des contacts chauds répond sous droits : un partenaire est refusé', async () => {

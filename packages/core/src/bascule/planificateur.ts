@@ -28,6 +28,8 @@ export interface ScheduledJob {
   hours: readonly number[];
   /** Jours, 1 = lundi … 7 = dimanche ; absent : tous les jours. */
   weekdays?: readonly number[];
+  /** Minute de Paris à partir de laquelle la tâche passe dans son heure ; absente : dès le début de l'heure. */
+  minute?: number;
   run(run: ScheduledRun): Promise<void>;
 }
 
@@ -39,10 +41,10 @@ export interface TickResult {
 }
 
 /** Le créneau d'un instant : `AAAA-MM-JJTHH`, heure de Paris. */
-export function slotOf(at: Date, timeZone = SCHEDULER_TIME_ZONE): { slot: string; hour: number; weekday: number } {
+export function slotOf(at: Date, timeZone = SCHEDULER_TIME_ZONE): { slot: string; hour: number; minute: number; weekday: number } {
   const local = localTime(at, timeZone);
   const hour = Math.floor(local.minutes / 60);
-  return { slot: `${local.date}T${String(hour).padStart(2, '0')}`, hour, weekday: local.weekday };
+  return { slot: `${local.date}T${String(hour).padStart(2, '0')}`, hour, minute: local.minutes % 60, weekday: local.weekday };
 }
 
 const NAME = /^[a-z][a-z0-9_.]{0,63}$/;
@@ -62,6 +64,7 @@ export class Planificateur {
       if (!NAME.test(job.name) || names.has(job.name)) throw new Error(`Nom de tâche non valable ou en double : ${job.name}`);
       if (job.hours.length === 0 || !job.hours.every((h) => Number.isInteger(h) && h >= 0 && h <= 23)) throw new Error(`Heures non valables : ${job.name}`);
       if (job.weekdays && !job.weekdays.every((d) => Number.isInteger(d) && d >= 1 && d <= 7)) throw new Error(`Jours non valables : ${job.name}`);
+      if (job.minute !== undefined && !(Number.isInteger(job.minute) && job.minute >= 0 && job.minute <= 59)) throw new Error(`Minute non valable : ${job.name}`);
       names.add(job.name);
     }
   }
@@ -69,10 +72,12 @@ export class Planificateur {
   /** Un passage du déclencheur : chaque tâche due dans ce créneau, une fois. */
   async tick(): Promise<TickResult> {
     const at = this.now();
-    const { slot, hour, weekday } = slotOf(at);
+    const { slot, hour, minute, weekday } = slotOf(at);
     const result: TickResult = { slot, ran: [], skipped: [], failed: [] };
     for (const job of this.jobs) {
       if (!job.hours.includes(hour) || (job.weekdays && !job.weekdays.includes(weekday))) continue;
+      // Pas encore sa minute : la tâche passera au déclencheur suivant de la même heure.
+      if (job.minute !== undefined && minute < job.minute) continue;
       // Réserver le créneau avant de lancer : deux passages en même temps n'en font qu'un.
       const claimed = await this.db.run('INSERT INTO scheduled_runs (job, slot, started_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [
         job.name,

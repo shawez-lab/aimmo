@@ -161,9 +161,9 @@ export class PlanDuJour {
   }
 
   /** Le plan du jour d'un agent, calculé maintenant, sur ses seuls clients [R16]. */
-  async compute(acces: Acces, viewer: Viewer): Promise<PlanResult> {
+  async compute(acces: Acces, viewer: Viewer, via?: string): Promise<PlanResult> {
     if (viewer.role !== 'agent') return { ok: false, rule: 'R16', code: 'not_agent' };
-    const visible = await acces.listPersons(viewer);
+    const visible = await acces.listPersons(viewer, via);
     if (!visible.ok) return visible;
     const at = this.now();
     const stamp = at.toISOString();

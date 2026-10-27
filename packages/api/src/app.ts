@@ -13,6 +13,7 @@ import {
   FicheUnique,
   Qualification,
   ROUTES as NEXT_MODULES,
+  PlansDuJour,
   Rappels,
   Reception,
   ReconnaissanceBien,
@@ -174,6 +175,16 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer) => {
       const list = await s.rappels.hotList(s.acces, viewer);
       return list.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: list.value }) : refusal({ rule: list.rule, code: list.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/plan-du-jour$/,
+    name: 'plan_du_jour',
+    // Le plan du jour figé à 7 h 30 : l'agent seul lit le sien [R16] ; `null` tant qu'il n'est pas encore figé.
+    handle: async (s, viewer) => {
+      const plan = await new PlansDuJour(s.db, s.journal, { now: s.now }).read(viewer);
+      return plan.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: plan.value }) : refusal({ rule: plan.rule, code: plan.code });
     },
   },
   {
