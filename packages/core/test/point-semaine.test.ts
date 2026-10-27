@@ -122,7 +122,7 @@ describeWithSqlite('T07 · point de la semaine au vendeur', () => {
     const t = await setup();
     const s = await t.seller(1);
     const store = new FicheClient(t.db, { now: t.now });
-    const buyer = await store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Inès', lastName: 'Durand' });
+    const buyer = await store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Inès', lastName: 'Durand-Test' });
     await store.addIdentifier({ networkId: t.network.id, personId: buyer.id, kind: 'email', value: 'ines.durand@example.test' });
     await t.db.run(
       "INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at) VALUES ('a1', ?, ?, ?, ?, 'visite', ?, ?, 'honored', 'h1', 'agent', ?, ?)",
@@ -136,6 +136,10 @@ describeWithSqlite('T07 · point de la semaine au vendeur', () => {
     expect(await v('12 visites prévues')).toMatchObject({ ok: false, rule: 'R10' });
     expect(await v('rappeler M. Durand pour sa contre-visite')).toMatchObject({ ok: false, rule: 'R52' });
     expect(await v('écrire à ines.durand@example.test')).toMatchObject({ ok: false, rule: 'R52' });
+    // Un visiteur qui porte le nom du vendeur reste protégé.
+    expect(await v('rappeler Monsieur Test pour sa contre-visite')).toMatchObject({ ok: false, rule: 'R52' });
+    // Une action refusée par le contrôle du texte ne fige pas le point : elle se corrige.
+    expect(await v('organiser une visite gratuite')).toMatchObject({ ok: false, rule: 'R07', code: 'text_refused' });
     expect(await t.inbox(s.person.id)).toEqual([]);
     expect(await v('organiser une contre-visite')).toMatchObject({ ok: true, delivery: 'sent' });
     expect((await t.inbox(s.person.id))[0]!.body).toContain('Visites faites : 1');

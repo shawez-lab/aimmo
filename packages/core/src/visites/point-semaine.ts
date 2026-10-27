@@ -21,7 +21,7 @@ import { Diffusion, type DiffusionDecision } from '../documents/retractation.ts'
 import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
-import { plain } from '../envoi/texte.ts';
+import { checkText, plain } from '../envoi/texte.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -171,6 +171,18 @@ export class PointSemaine {
       return CONTACT.test(a) || withoutContactDetails(a) !== a || people.words.some((w) => text.includes(` ${w} `)) || people.identifiers.some((x) => plain(a).includes(x));
     };
     if (nextActions.some(named)) return { ok: false, rule: 'R52', code: 'buyer_named' };
+    // Le texte entier passe le contrôle du texte avant d'être figé : une action refusée se corrige [R07, R08].
+    const figures = JSON.parse(row.figures) as WeeklyFigures;
+    const preview = weeklyPointText(await this.firstName(row.person_id), figures, nextActions.map((a) => a.trim()));
+    const problems = checkText(preview, {
+      audience: 'client',
+      channel: 'email',
+      firstOfConversation: false,
+      firstName: await this.firstName(row.person_id),
+      figures: this.allowedFigures(row.week, figures),
+      sellerNames: people.outsideGreeting,
+    });
+    if (problems.length > 0) return { ok: false, rule: problems[0]!.rule, code: 'text_refused' };
     const iso = this.now().toISOString();
     const { changes } = await this.db.run(
       "UPDATE weekly_points SET next_actions = ?, status = 'valide', validated_by = ?, validated_at = ?, updated_at = ? WHERE mandate_id = ? AND week = ? AND status = 'prepare'",
@@ -207,9 +219,9 @@ export class PointSemaine {
 
   /**
    * Les mots des noms et les coordonnées des personnes venues pour ce bien (visites, messages), hors du vendeur
-   * lui-même, dont le prénom ouvre le point.
+   * lui-même. Les actions sont contrôlées sur tous ces mots, même ceux que le vendeur porte aussi [R52].
    */
-  private async peopleOf(networkId: string, propertyId: string, sellerId: string): Promise<{ words: string[]; identifiers: string[] }> {
+  private async peopleOf(networkId: string, propertyId: string, sellerId: string): Promise<{ words: string[]; outsideGreeting: string[]; identifiers: string[] }> {
     const ids = await this.db.all<{ person_id: string }>(
       `SELECT person_id FROM appointments WHERE network_id = ? AND property_id = ?
        UNION SELECT person_id FROM qualifications WHERE network_id = ? AND property_id = ?`,
@@ -222,10 +234,23 @@ export class PointSemaine {
     for (const { person_id } of ids) {
       const view = await this.fiche.view(person_id);
       if (view.person.id === seller.person.id) continue;
-      for (const m of view.members) for (const n of [m.first_name, m.last_name]) if (n) for (const w of nameWords(n)) if (!sellerWords.has(w)) words.add(w);
+      for (const m of view.members) for (const n of [m.first_name, m.last_name]) if (n) for (const w of nameWords(n)) words.add(w);
       for (const i of view.identifiers) if (i.value.length > 2) identifiers.add(plain(i.value));
     }
-    return { words: [...words], identifiers: [...identifiers] };
+    // `outsideGreeting` : les mots qui ne sont pas aussi ceux du vendeur, que la salutation porte.
+    return { words: [...words], outsideGreeting: [...words].filter((w) => !sellerWords.has(w)), identifiers: [...identifiers] };
+  }
+
+  /** Les chiffres permis : ceux de la base, et ceux des avis venus de comptes rendus validés [R10]. */
+  private allowedFigures(week: string, f: WeeklyFigures): number[] {
+    return [
+      f.views ?? 0,
+      f.contacts,
+      f.visitsDone,
+      f.visitsPlanned,
+      ...[week, addDays(week, 6)].flatMap((d) => [Number(d.slice(8, 10)), Number(d.slice(5, 7))]),
+      ...f.opinions.flatMap(numbersIn).map(Number),
+    ];
   }
 
   private async firstName(personId: string): Promise<string | null> {
@@ -273,7 +298,7 @@ export class PointSemaine {
       status = 'refused';
       rule = 'R53';
     } else {
-      const numbers = [figures.views ?? 0, figures.contacts, figures.visitsDone, figures.visitsPlanned, ...[week, addDays(week, 6)].flatMap((d) => [Number(d.slice(8, 10)), Number(d.slice(5, 7))])];
+
       const result = await this.controle.send({
         networkId: row.network_id,
         agentId: row.agent_id,
@@ -284,9 +309,9 @@ export class PointSemaine {
         subject: `point_semaine:${mandateId}:${week}`,
         fallbackTexts: [text],
         // Les chiffres de la base, et ceux des avis venus de comptes rendus validés ; jamais d'autres [R10].
-        figures: [...numbers, ...figures.opinions.flatMap(numbersIn).map(Number)],
+        figures: this.allowedFigures(week, figures),
         // Aucun nom d'une personne venue pour ce bien [R52].
-        sellerNames: (await this.peopleOf(row.network_id, row.property_id, row.person_id)).words,
+        sellerNames: (await this.peopleOf(row.network_id, row.property_id, row.person_id)).outsideGreeting,
       });
       messageId = result.messageId;
       rule = result.status === 'sent' ? null : result.rule;
