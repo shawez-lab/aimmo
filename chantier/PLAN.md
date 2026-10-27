@@ -682,7 +682,8 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : H05 pour l'envoi réel.
 
 ### T06 · Compte rendu de visite dicté
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : la recherche de l'acquéreur ne change pas sur un avis, le compte rendu reste rattaché à son projet ; vendeur = mandant du dernier mandat du bien, accord `suivi_vente` exigé ; relance de l'acquéreur à 48 h ; l'IA reçoit la dictée sans mail, adresse, coordonnée connue, compte ni nom (accents ignorés, mot par mot, particules exceptées) ; une offre niée dans la dictée est refusée ; envoi repris par la tâche `visites.comptes_rendus` ; R52 en service.
 - Qui : Claude · Relecture : forte · Dépend de : T04
 - Cahier : M08, « Compte rendu de visite » ; critère « 5 comptes rendus de visite envoyés au vendeur sous 24 heures ».
 - Objectif : l'agent dicte une phrase ou 30 secondes (le texte vient de la dictée du téléphone) ; l'IA, derrière une interface, en tire le compte rendu (avis, points forts, réserves, intérêt, prêt à faire une offre) ; l'agent le valide en un geste ; le vendeur le reçoit sans le nom de l'acquéreur (boîte d'essai) ; la fiche acquéreur est mise à jour, une relance est programmée, et une tâche « préparer l'offre » est créée si l'acheteur se dit prêt.
@@ -690,7 +691,7 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : H13 pour la vraie IA.
 
 ### T07 · Point de la semaine au vendeur
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : T06, B02
 - Cahier : M08, « Point de la semaine au vendeur » et règles ; critère « 5 vendeurs reçoivent leur point deux lundis de suite ».
 - Objectif : chaque lundi, par le planificateur, un point par mandat en cours : vues (P08 quand il sera fusionné), contacts reçus pour le bien (C03), visites et avis des visiteurs (T06), prochaines actions de l'agent ; préparé pour l'agent, qui le valide ; passé par le contrôle central et rangé dans la boîte d'essai.
