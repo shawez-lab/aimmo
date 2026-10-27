@@ -17,6 +17,7 @@ import {
   Qualification,
   ROUTES as NEXT_MODULES,
   PlansDuJour,
+  RegistreMandats,
   UsageMatin,
   Rappels,
   Reception,
@@ -255,6 +256,40 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer) => {
       const alerts = await new ControleBaseLegale(s.db, s.journal, { now: s.now }).alerts(viewer);
       return alerts.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: alerts.value }) : refusal({ rule: alerts.rule, code: alerts.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/registre\/reglage$/,
+    name: 'registre.reglage',
+    // Le format du registre des mandats : la direction seule, une fois, avant la première inscription [R39].
+    handle: async (s, viewer, _params, request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['prefix', 'firstNumber', 'width'].includes(k))) return failure(400, 'unexpected_field', 'Seuls prefix, firstNumber, width sont admis.');
+      const r = await new RegistreMandats(s.db, s.journal, { now: s.now }).configure(viewer, { prefix: body.prefix as string, firstNumber: body.firstNumber as number, width: body.width as number });
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE });
+      return r.rule === 'R16' ? refusal({ rule: 'R16', code: r.code }) : json(r.code === 'already_configured' ? 409 : 400, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/registre\/controle$/,
+    name: 'registre.controle',
+    // Le contrôle d'intégrité du registre : rangs, empreintes, liens, numéros, mandats figés [R39] ; direction, conformité.
+    handle: async (s, viewer) => {
+      const r = await new RegistreMandats(s.db, s.journal, { now: s.now }).verify(viewer);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : refusal({ rule: r.rule, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/mandats/${ID}/registre$`),
+    name: 'mandat.registre',
+    // Les lignes du registre d'un mandat : son agent, la direction, la conformité [R16].
+    handle: async (s, viewer, [id]) => {
+      const r = await new RegistreMandats(s.db, s.journal, { now: s.now }).linesOf(viewer, id!);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.lines }) : refusal({ rule: r.rule, code: r.code });
     },
   },
   {
