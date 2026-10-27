@@ -70,6 +70,14 @@ export interface GeneratedDocument {
   createdAt: string;
 }
 
+/** Les faits d'un document gardés pour les contrôles : prix du bien, honoraires, qui les paie, durée. */
+export interface DocumentFacts {
+  priceEur: number | null;
+  feeEur: number | null;
+  feeCharge: 'vendeur' | 'acquereur' | null;
+  durationMonths: number | null;
+}
+
 export interface GenerateRequest {
   kind: DocumentKind;
   personId: string;
@@ -286,6 +294,14 @@ export class Modeles {
       'document.date': `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`,
       ...inputs,
     };
+    // Les faits utiles aux contrôles avant signature (D03), tels qu'ils étaient à la génération.
+    const raw = request.inputs ?? {};
+    const facts: DocumentFacts = {
+      priceEur: property.price_eur ?? null,
+      feeEur: typeof raw['honoraires.montant'] === 'number' ? raw['honoraires.montant'] : null,
+      feeCharge: raw['honoraires.charge'] === 'vendeur' || raw['honoraires.charge'] === 'acquereur' ? raw['honoraires.charge'] : null,
+      durationMonths: typeof raw['mandat.duree_mois'] === 'number' ? raw['mandat.duree_mois'] : null,
+    };
     const fields = JSON.parse(template.fields) as string[];
     const missing = fields.filter((f) => TEMPLATE_FIELDS[f]?.source !== 'signature' && (base[f] === null || base[f] === undefined));
     const mode = template.status === 'valide' ? 'reel' : 'essai';
@@ -295,9 +311,9 @@ export class Modeles {
     const at = this.now().toISOString();
     const status = missing.length === 0 ? 'complet' : 'incomplet';
     await this.db.run(
-      `INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, viewer.networkId, template.id, Number(template.version), template.hash, template.kind, mode, status, JSON.stringify(missing), agentId, fiche.person.id, property.id, content, contentHash, this.actor(viewer), at],
+      `INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at, facts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, viewer.networkId, template.id, Number(template.version), template.hash, template.kind, mode, status, JSON.stringify(missing), agentId, fiche.person.id, property.id, content, contentHash, this.actor(viewer), at, JSON.stringify(facts)],
     );
     await appendEvent(
       this.journal,

@@ -11,6 +11,7 @@ import {
   DecisionEnvoi,
   FicheClient,
   CATEGORIES,
+  ControlesSignature,
   FicheAgent,
   Modeles,
   FicheUnique,
@@ -84,6 +85,7 @@ const MAX_BODY_BYTES = 10_000;
 const TEMPLATE_BODY_BYTES = 120_000;
 
 const modeles = (s: Services): Modeles => new Modeles(s.db, s.acces, s.journal, { now: s.now });
+const controles = (s: Services): ControlesSignature => new ControlesSignature(s.db, s.acces, s.journal, { now: s.now });
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), {
@@ -359,6 +361,46 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, [id]) => {
       const r = await modeles(s).read(viewer, id!);
       return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.document }) : refusal(r);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/honoraires\/bareme$/,
+    name: 'honoraires.bareme',
+    // Le barème des honoraires du réseau : taux maximal du prix et minimum ; la direction seule, en ajout seul [R41].
+    handle: async (s, viewer, _params, request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['maxRatePercent', 'minEur'].includes(k))) return failure(400, 'unexpected_field', 'Seuls maxRatePercent et minEur sont admis.');
+      const r = await controles(s).setFeeSchedule(viewer, { maxRatePercent: body.maxRatePercent as number, minEur: body.minEur as number });
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE });
+      return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/fiches/${ID}/identite$`),
+    name: 'fiche.identite',
+    // L'identité vérifiée : la nature de la pièce vue et quand ; jamais son numéro ni sa copie [R15, R41].
+    handle: async (s, viewer, [id], request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['piece', 'seenAt'].includes(k))) return failure(400, 'unexpected_field', 'Seuls piece et seenAt sont admis.');
+      if (typeof body.seenAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.seenAt)) return failure(400, 'invalid_date', 'seenAt : un instant ISO en UTC.');
+      const r = await controles(s).recordIdentity(viewer, id!, { piece: String(body.piece), seenAt: new Date(body.seenAt) });
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { id: r.id } });
+      return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/documents/${ID}/controle$`),
+    name: 'document.controle',
+    // Le contrôle avant signature, ligne par ligne ; un seul échec et le document ne se signe pas [R41].
+    handle: async (s, viewer, [id]) => {
+      const r = await controles(s).check(viewer, id!);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
     },
   },
   {
