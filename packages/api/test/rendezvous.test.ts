@@ -85,7 +85,8 @@ describeWithSqlite('V08 · réservation depuis le site et les messages, en mode 
     const slots = (await w.call('creneaux', w.slotsAsk())).body.slots as { start: string }[];
     const r = await w.call('reservation', w.bookAsk(slots[0]!.start));
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ ok: true, mode: 'essai', sent: false, appointment: { kind: 'estimation', start: slots[0]!.start }, confirmation: { status: 'sent', rule: null } });
+    expect(r.body).toMatchObject({ ok: true, mode: 'essai', sent: false, appointment: { kind: 'estimation', start: slots[0]!.start }, confirmation: { booked: true } });
+    expect((await w.rdv.byToken(r.body.token as string))?.confirmation_status).toBe('sent');
     expect(r.body.token).toMatch(/^[a-z]{32}$/);
     const [lea] = await w.store.findPersonsByIdentifier(w.net.id, 'email', 'lea.exemple@example.test');
     const consents = await w.store.listConsents(lea!.id);
@@ -121,15 +122,20 @@ describeWithSqlite('V08 · réservation depuis le site et les messages, en mode 
     expect(consents.every((c) => c.withdrawn_at !== null)).toBe(true);
   });
 
-  it('la réponse ne dit pas si la personne était connue ; elle est retrouvée par son mail', async () => {
+  it('[R16] la réponse ne dit pas si la personne était connue, exclue ou avait demandé l’arrêt ; elle est retrouvée par son mail', async () => {
     const w = await world();
     const known = await w.store.createPerson({ networkId: w.net.id, firstName: 'Léa', lastName: 'Exemple' });
     await w.store.addIdentifier({ networkId: w.net.id, personId: known.id, kind: 'email', value: 'lea.exemple@example.test' });
+    await w.store.addExclusion({ networkId: w.net.id, personId: known.id, reason: 'stop', notedAt: new Date('2026-01-01T00:00:00Z') });
     const slots = (await w.call('creneaux', w.slotsAsk())).body.slots as { start: string }[];
     const r1 = await w.call('reservation', w.bookAsk(slots[0]!.start));
     const later = (await w.call('creneaux', w.slotsAsk({ from: '2026-11-11' }))).body.slots as { start: string }[];
     const r2 = await w.call('reservation', w.bookAsk(later[0]!.start, { visitorId: 'visiteur-essai-0000000009', email: 'nouveau.exemple@example.test' }));
-    expect(Object.keys(r1.body).sort()).toEqual(Object.keys(r2.body).sort());
+    const shape = (b: Record<string, unknown>) => JSON.stringify({ ...b, token: 'x', appointment: { ...(b.appointment as object), start: 'x', end: 'x' } });
+    expect(r1.status).toBe(200);
+    expect(shape(r1.body)).toBe(shape(r2.body));
+    // L'état réel reste sur le rendez-vous : la confirmation à une personne qui a dit stop est refusée [R02].
+    expect((await w.rdv.byToken(r1.body.token as string))?.confirmation_status).toBe('refused');
     expect(r1.text).not.toContain(known.id);
     expect((await w.rdv.byToken(r1.body.token as string))?.person_id).toBe(known.id);
   });
@@ -140,6 +146,13 @@ describeWithSqlite('V08 · réservation depuis le site et les messages, en mode 
     expect((await w.call('creneaux', w.slotsAsk())).status).toBe(200);
     expect((await w.call('creneaux', w.slotsAsk())).status).toBe(429);
     expect((await w.call('creneaux', w.slotsAsk({ visitorId: 'visiteur-essai-0000000004' }))).status).toBe(200);
+    const slots = (await w.call('creneaux', w.slotsAsk({ visitorId: 'visiteur-essai-0000000005' }))).body.slots as { start: string }[];
+    expect((await w.call('reservation', w.bookAsk(slots[0]!.start))).status).toBe(200);
+    expect((await w.call('reservation', w.bookAsk(slots[slots.length - 1]!.start, { email: 'autre.exemple@example.test' }))).status).toBe(429);
+    const n = await world({ slotsPerVisitor: 10, bookingsPerVisitor: 10, perNetwork: 2 });
+    expect((await n.call('creneaux', n.slotsAsk({ visitorId: 'visiteur-essai-0000000006' }))).status).toBe(200);
+    expect((await n.call('creneaux', n.slotsAsk({ visitorId: 'visiteur-essai-0000000007' }))).status).toBe(200);
+    expect((await n.call('creneaux', n.slotsAsk({ visitorId: 'visiteur-essai-0000000008' }))).status).toBe(429);
     expect((await w.call('creneaux', w.slotsAsk(), KEY_EST)).status).toBe(401);
     expect((await w.call('reservation', w.bookAsk(at('2026-11-10', '10:30').toISOString()), KEY_EST)).status).toBe(401);
   });

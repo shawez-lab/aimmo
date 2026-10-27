@@ -10,7 +10,8 @@ import { VISITOR, takeSlot } from './assistant.ts';
  *   POST /v1/rendez-vous/reservation  { visitorId, agentId, kind, start, source, firstName?, email | phone, consentProof, propertyId? }
  *
  * Les créneaux ne portent que début et fin [R33]. La réservation enregistre l'accord « rendez-vous » avec sa preuve
- * [R03] et rend sa confirmation tout de suite ; rien ne part en mode essai [R26]. Limites d'appels par visiteur et par
+ * [R03] et rend sa confirmation tout de suite, la même pour tous : rien n'y dit si la personne était connue, exclue ou
+ * avait demandé l'arrêt [R16] ; rien ne part en mode essai [R26]. Limites d'appels par visiteur et par
  * réseau, à l'heure.
  */
 export const BOOKING_SLOTS_PATH = '/rendez-vous/creneaux';
@@ -127,5 +128,7 @@ export async function handleBooking(request: Request, path: string, config: Book
     const status = ['not_free', 'taken', 'agenda_busy', 'outside_availability', 'no_availability', 'too_soon', 'bad_time'].includes(result.code) ? 409 : 400;
     return json(status, { ok: false, mode: 'essai', code: result.code, rule: result.rule });
   }
-  return json(200, { ok: true, mode: 'essai', sent: false, appointment: result.appointment, token: result.token, confirmation: result.confirmation });
+  // La confirmation rendue est toujours la même : l'état réel de son envoi (refus pour exclusion, arrêt, doublon) dirait
+  // si la personne est connue du réseau. Il reste sur le rendez-vous et au journal [R16].
+  return json(200, { ok: true, mode: 'essai', sent: false, appointment: result.appointment, token: result.token, confirmation: { booked: true } });
 }
