@@ -140,6 +140,34 @@ describeWithSqlite('V08 · réservation depuis le site et les messages, en mode 
     expect((await w.rdv.byToken(r1.body.token as string))?.person_id).toBe(known.id);
   });
 
+  it('[R02] [R04] un numéro noté en WhatsApp sur une fiche qui a dit stop : retrouvé en réservant par téléphone, rien ne part', async () => {
+    const w = await world();
+    const known = await w.store.createPerson({ networkId: w.net.id, firstName: 'Léa' });
+    await w.store.addIdentifier({ networkId: w.net.id, personId: known.id, kind: 'whatsapp', value: '+33612345678' });
+    await w.store.addExclusion({ networkId: w.net.id, personId: known.id, reason: 'stop', notedAt: new Date('2026-01-01T00:00:00Z') });
+    const before = (await w.db.all('SELECT id FROM persons')).length;
+    const slots = (await w.call('creneaux', w.slotsAsk())).body.slots as { start: string }[];
+    const r = await w.call('reservation', w.bookAsk(slots[0]!.start, { email: undefined, phone: '06 12 34 56 78' }));
+    expect(r.status).toBe(200);
+    expect((await w.db.all('SELECT id FROM persons')).length).toBe(before);
+    const a = await w.rdv.byToken(r.body.token as string);
+    expect(a).toMatchObject({ person_id: known.id, confirmation_status: 'refused' });
+    expect(await w.db.all('SELECT message_id FROM trial_outbox')).toHaveLength(0);
+  });
+
+  it('un contact porté par deux fiches distinctes : le rendez-vous tient, sans confirmation par message', async () => {
+    const w = await world();
+    for (const name of ['Léa', 'Lou']) {
+      const p = await w.store.createPerson({ networkId: w.net.id, firstName: name });
+      await w.store.addIdentifier({ networkId: w.net.id, personId: p.id, kind: 'email', value: 'partage.exemple@example.test' });
+    }
+    const slots = (await w.call('creneaux', w.slotsAsk())).body.slots as { start: string }[];
+    const r = await w.call('reservation', w.bookAsk(slots[0]!.start, { email: 'partage.exemple@example.test' }));
+    expect(r.body).toMatchObject({ ok: true, confirmation: { booked: true } });
+    expect((await w.rdv.byToken(r.body.token as string))?.confirmation_status).toBeNull();
+    expect(await w.db.all('SELECT message_id FROM trial_outbox')).toHaveLength(0);
+  });
+
   it('limites d’appels par visiteur et par réseau ; seule la clé site_booking ouvre la réservation', async () => {
     const w = await world({ slotsPerVisitor: 2, bookingsPerVisitor: 1, perNetwork: 100 });
     expect((await w.call('creneaux', w.slotsAsk())).status).toBe(200);

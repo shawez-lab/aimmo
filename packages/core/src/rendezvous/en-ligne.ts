@@ -15,6 +15,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import type { Channel, IdentifierKind } from '../db/types.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { normalizeIdentifier } from '../fiche/normalize.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { AppointmentKind, BusySource, SlotSettings } from './creneaux.ts';
@@ -68,6 +69,7 @@ export interface EnLigneOptions {
 export class ReservationEnLigne {
   private readonly now: () => Date;
   private readonly store: FicheClient;
+  private readonly fiche: FicheUnique;
   private readonly rdv: RendezVous;
 
   constructor(
@@ -77,6 +79,7 @@ export class ReservationEnLigne {
   ) {
     this.now = options.now ?? (() => new Date());
     this.store = new FicheClient(db, { now: this.now });
+    this.fiche = new FicheUnique(db, this.store, { now: this.now });
     this.rdv = new RendezVous(db, journal, {
       now: this.now,
       ...(options.settings ? { settings: options.settings } : {}),
@@ -125,7 +128,12 @@ export class ReservationEnLigne {
     if (!around.some((s) => s.start.getTime() === input.start.getTime())) return { ok: false, code: 'not_free', rule: null };
 
     const at = this.now();
-    const known = await this.store.findPersonsByIdentifier(input.networkId, contact.kind, normalized);
+    // La fiche gardée, téléphone et WhatsApp confondus, fusions comprises : une exclusion ou un arrêt notés sur
+    // l'une ne se contournent pas en réservant avec l'autre [R02, R04].
+    const known = await this.fiche.findByIdentifier(input.networkId, contact.kind, normalized);
+    // Plusieurs fiches distinctes portent ce contact : le rendez-vous va à la plus ancienne, sans confirmation par
+    // message, pour ne pas écrire à quelqu'un dont les exclusions sont sur une autre fiche ; l'agent tranchera.
+    const ambiguous = known.length > 1;
     let personId: string;
     let created = false;
     if (known.length > 0) {
@@ -155,7 +163,7 @@ export class ReservationEnLigne {
         kind: input.kind,
         start: input.start,
         source: input.source,
-        channel: contact.channel,
+        channel: ambiguous ? null : contact.channel,
       });
     } catch (error) {
       await this.store.withdrawConsent(consent.id, this.now());
@@ -164,10 +172,10 @@ export class ReservationEnLigne {
     if (!booked.ok) {
       // Pas de rendez-vous : l'accord donné pour lui est retiré aussitôt, la ligne reste.
       await this.store.withdrawConsent(consent.id, this.now());
-      await this.log(input, created, false, booked.code);
+      await this.log(input, created, false, booked.code, ambiguous);
       return { ok: false, code: booked.code, rule: booked.rule };
     }
-    await this.log(input, created, true, null);
+    await this.log(input, created, true, null, ambiguous);
     const confirmation = booked.confirmation ? { status: booked.confirmation.status, rule: booked.confirmation.rule } : null;
     return {
       ok: true,
@@ -177,10 +185,10 @@ export class ReservationEnLigne {
     };
   }
 
-  private async log(input: OnlineBooking, created: boolean, ok: boolean, code: string | null): Promise<void> {
+  private async log(input: OnlineBooking, created: boolean, ok: boolean, code: string | null, ambiguous: boolean): Promise<void> {
     await appendEvent(
       this.journal,
-      { type: 'rdv.en_ligne', actor: `intake:${input.source}`, subject: `agent:${input.agentId}`, data: { mode: 'essai', kind: input.kind, ok, code, newPerson: created } },
+      { type: 'rdv.en_ligne', actor: `intake:${input.source}`, subject: `agent:${input.agentId}`, data: { mode: 'essai', kind: input.kind, ok, code, newPerson: created, ambiguous } },
       this.now,
     );
   }
