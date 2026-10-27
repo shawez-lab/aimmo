@@ -22,6 +22,7 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | POST | `/v1/captation/formulaire` | dépose un formulaire « Être rappelé » ; rend seulement des statuts, la réponse est prête en mode essai, jamais envoyée | clé de dépôt `site_form` (`INTAKE_KEYS`) |
 | POST | `/v1/assistant/sessions` | ouvre une conversation de l'assistant du site, rend son jeton `sessionId` | clé de dépôt `site_chat` (`INTAKE_KEYS`) |
 | POST | `/v1/assistant/sessions/<sessionId>/messages` | un message du visiteur ; rend un statut, la réponse est prête en mode essai, jamais rendue | clé de dépôt `site_chat` (`INTAKE_KEYS`) |
+| POST | `/v1/automatisations/envoi` | une automatisation du site demande si son envoi peut partir ; rend la décision et sa règle, rien n'est envoyé | clé de dépôt `site_auto` (`INTAKE_KEYS`) |
 
 Corps de `/v1/envois/decision` : `{"personId": "...", "channel": "email", "kind": "reply", "conversationId": "...", "purpose": "...", "at": "2026-10-19T08:00:00Z"}`. Chaque lecture, chaque refus et chaque décision sont écrits au journal [R13, R16].
 
@@ -71,6 +72,14 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - De bout en bout comme les autres canaux : rangé une fois, rattaché, réponse composée, **contrôle central** (arrêt, exclusions, relais à l'agent, mention de l'assistant au premier message, chiffres, discrétion du bien [R02, R04, R06, R10, R19, R21]), puis boîte d'essai. Sur la session de l'assistant, seule la réponse au visiteur part, dans sa session et dans l'heure de son message : jamais de message d'initiative [R03, R01].
 - Le statut ne dit jamais si la personne est exclue ou déjà connue [R02, R16] : `ready` (réponse prête), `with_agent` (l'agent a la main ou doit répondre lui-même), `none` (rien de plus).
 - Hors essai, la réponse sera rendue dans `reply` par le canal `SiteSessionChannel`, qui la remet à la seule session du visiteur et ne garde rien. L'intégration au site de `shawez-immo` est une tâche à part, par une proposition, jamais directement sur main.
+
+## Automatisations du site, en mode essai (B01)
+
+- Appelé par le serveur du site avant chaque envoi d'une de ses automatisations, jamais par le navigateur : la clé de dépôt `site_auto` (secret `INTAKE_KEYS`, `"source": "site_auto"`) ne sert qu'à cette demande ; elle ne lit aucune fiche et ne dépose rien d'autre.
+- Corps : `{"automation": "rappel_visite" | "courrier_vendeur", "email": "...", "ref": "<id de la visite ou du courrier chez le site>", "text": "<le texte du site>", "figures": [14]}`. `ref` : 1 à 64 caractères, lettres, chiffres, `-`, `_` ; `text` : 4 000 caractères au plus ; `figures` : les chiffres du texte qui viennent des données du site [R10].
+- Le socle retrouve la fiche par l'adresse, sans jamais en créer : adresse inconnue → `unknown_person`, adresse portée par plusieurs fiches non réunies → `ambiguous_person`. Puis la demande passe par le **contrôle central**, accord du suivi de l'estimation compris [R01 à R05, R06 à R10], avec les seuls canaux du mode essai : rien ne part [R26].
+- Rend `{"ok": true, "mode": "essai", "sent": false, "data": {"status": "would_send" | "refused" | "failed", "rule": "R01" | … | null, "code": null | "unknown_person" | "ambiguous_person", "reason": "..."}}`. Contrairement à l'assistant du site, la règle est rendue : l'appelant est le site de l'agence lui-même, qui tient déjà la fiche et doit comparer sa décision à celle du socle (B03).
+- Au journal : l'automatisation, la décision, sa règle ; ni l'adresse, ni le texte, ni la référence [R13].
 
 ## Mise en ligne
 
