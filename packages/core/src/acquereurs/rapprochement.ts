@@ -200,13 +200,27 @@ export interface RapprochementOptions {
 }
 
 interface Candidate {
-  projectId: string;
   rootId: string;
   memberIds: string[];
   agentIds: (string | null)[];
   firstName: string | null;
-  search: BuyerSearch;
-  movedAt: string;
+  /** Chaque projet d'achat ouvert de la personne, fiches réunies comprises, la recherche la plus fraîche d'abord. */
+  projects: { projectId: string; search: BuyerSearch; movedAt: string }[];
+}
+
+type Scored = { c: Candidate; projectId: string; search: BuyerSearch; movedAt: string; m: BuyerMatch };
+
+/** L'ordre écrit du classement [R51] : jamais le financement [R14]. */
+function compareScored(a: Scored, b: Scored): number {
+  const strict = Number(a.m.status !== 'match') - Number(b.m.status !== 'match');
+  if (strict !== 0) return strict;
+  if (a.m.gap !== b.m.gap) return a.m.gap - b.m.gap;
+  if (a.m.featuresMet.length !== b.m.featuresMet.length) return b.m.featuresMet.length - a.m.featuresMet.length;
+  const ua = a.search.urgency === null ? 5 : URGENCY_RANK[a.search.urgency];
+  const ub = b.search.urgency === null ? 5 : URGENCY_RANK[b.search.urgency];
+  if (ua !== ub) return ua - ub;
+  if (a.movedAt !== b.movedAt) return a.movedAt < b.movedAt ? 1 : -1;
+  return a.projectId < b.projectId ? -1 : 1;
 }
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
@@ -241,26 +255,20 @@ export class Rapprochement {
     const gate = await this.diffusion.canDiffuse(viewer.networkId, propertyId, this.now());
     if (!gate.allowed) return this.refused(viewer, propertyId, 'R42', gate.reason);
     const property = await this.toMatch(read.value);
-    const ranked: { c: Candidate; m: BuyerMatch }[] = [];
+    const ranked: Scored[] = [];
     for (const c of await this.candidates(viewer.networkId)) {
       if (!decideAccess(viewer, { kind: 'person', networkId: viewer.networkId, agentIds: c.agentIds }).allowed) continue;
-      const m = matchBuyer(property, c.search, this.tolerances);
-      if (m.status !== 'miss') ranked.push({ c, m });
+      // Une ligne par personne : son meilleur projet d'achat pour ce bien.
+      const best = c.projects
+        .map((p): Scored => ({ c, ...p, m: matchBuyer(property, p.search, this.tolerances) }))
+        .filter((x) => x.m.status !== 'miss')
+        .sort(compareScored)[0];
+      if (best) ranked.push(best);
     }
-    ranked.sort((a, b) => {
-      const strict = Number(a.m.status !== 'match') - Number(b.m.status !== 'match');
-      if (strict !== 0) return strict;
-      if (a.m.gap !== b.m.gap) return a.m.gap - b.m.gap;
-      if (a.m.featuresMet.length !== b.m.featuresMet.length) return b.m.featuresMet.length - a.m.featuresMet.length;
-      const ua = a.c.search.urgency === null ? 5 : URGENCY_RANK[a.c.search.urgency];
-      const ub = b.c.search.urgency === null ? 5 : URGENCY_RANK[b.c.search.urgency];
-      if (ua !== ub) return ua - ub;
-      if (a.c.movedAt !== b.c.movedAt) return a.c.movedAt < b.c.movedAt ? 1 : -1;
-      return a.c.projectId < b.c.projectId ? -1 : 1;
-    });
-    const value = ranked.slice(0, Math.max(0, limit)).map(({ c, m }, i): ProposedBuyer => ({
+    ranked.sort(compareScored);
+    const value = ranked.slice(0, Math.max(0, limit)).map(({ c, m, projectId }, i): ProposedBuyer => ({
       rank: i + 1,
-      projectId: c.projectId,
+      projectId,
       personId: c.rootId,
       firstName: c.firstName,
       status: m.status as 'match' | 'tolerated',
@@ -294,9 +302,15 @@ export class Rapprochement {
     const near = new Map<MandatoryCriterion, number>();
     for (const c of await this.candidates(viewer.networkId)) {
       active += 1;
-      const m = matchBuyer(property, c.search, this.tolerances);
-      if (m.status !== 'miss') matching += 1;
-      else if (m.unmet.length === 1) near.set(m.unmet[0]!, (near.get(m.unmet[0]!) ?? 0) + 1);
+      const matches = c.projects.map((p) => matchBuyer(property, p.search, this.tolerances));
+      if (matches.some((m) => m.status !== 'miss')) {
+        matching += 1;
+        continue;
+      }
+      // Proche : aucun projet ne correspond, et le plus proche n'est écarté que par un critère ; une personne ne
+      // compte qu'une fois, pour le critère de son projet le plus frais parmi les plus proches.
+      const closest = matches.find((m) => m.unmet.length === 1);
+      if (closest) near.set(closest.unmet[0]!, (near.get(closest.unmet[0]!) ?? 0) + 1);
     }
     const nearMisses = MANDATORY_CRITERIA.filter((k) => near.has(k))
       .map((criterion) => ({ criterion, count: near.get(criterion)! }))
@@ -329,8 +343,8 @@ export class Rapprochement {
   }
 
   /**
-   * Les acquéreurs actifs du réseau : la dernière recherche de chaque projet d'achat ouvert, une seule par personne
-   * réunie (la plus fraîche), jamais une personne exclue ou qui a demandé l'arrêt [R02, R04].
+   * Les acquéreurs actifs du réseau : la dernière recherche de chaque projet d'achat ouvert, groupées par personne
+   * réunie, jamais une personne exclue ou qui a demandé l'arrêt [R02, R04].
    */
   private async candidates(networkId: string): Promise<Candidate[]> {
     const at = this.now();
@@ -349,22 +363,23 @@ export class Rapprochement {
       if (row.created_at < since) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person.id;
-      if (byRoot.has(root)) continue;
+      const known = byRoot.get(root);
+      if (known) {
+        known.projects.push({ projectId: row.project_id, search: toVersion(row).search, movedAt: row.created_at });
+        continue;
+      }
       const ids = view.members.map((m) => m.id);
       const excluded = await this.db.first<{ n: number }>(
         `SELECT count(*) AS n FROM exclusions WHERE person_id IN (${placeholders(ids.length)}) AND noted_at <= ? AND (lifted_at IS NULL OR lifted_at > ?)`,
         [...ids, nowIso, nowIso],
       );
       if (Number(excluded?.n ?? 0) > 0) continue;
-      const v = toVersion(row);
       byRoot.set(root, {
-        projectId: row.project_id,
         rootId: root,
         memberIds: ids,
         agentIds: view.members.map((m) => m.agent_id),
         firstName: view.members.map((m) => m.first_name).find((n) => n) ?? null,
-        search: v.search,
-        movedAt: row.created_at,
+        projects: [{ projectId: row.project_id, search: toVersion(row).search, movedAt: row.created_at }],
       });
     }
     return [...byRoot.values()];

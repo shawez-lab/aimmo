@@ -74,7 +74,7 @@ async function setup(gate?: DiffusionGate) {
   const property = (agentId: string, ref: string, p: { kind?: PropertyKind; city: string; price: number; surface: number; rooms: number }) =>
     store.createProperty({ networkId: network.id, agentId, reference: ref, kind: p.kind ?? 'home', city: p.city, priceEur: p.price, surfaceM2: p.surface, rooms: p.rooms, status: 'available' });
   const as = (role: 'agent' | 'direction' | 'compliance' | 'partner', userId: string) => ({ role, userId, networkId: network.id });
-  return { db, store, fiche, journal, acces, rapprochement, network, alex, sam, direction, buyer, property, as, blocked, setClock: (t: number) => (clock = t) };
+  return { db, store, fiche, journal, acces, acquereurs, rapprochement, network, alex, sam, direction, buyer, property, as, blocked, setClock: (t: number) => (clock = t) };
 }
 
 describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
@@ -191,6 +191,19 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     const entries = await t.journal.all();
     expect(entries.filter((e) => e.type === 'acces.refuse').length).toBeGreaterThanOrEqual(4);
     expect((await verifyChain(entries)).ok).toBe(true);
+  });
+
+  it('une personne à deux projets d’achat ouverts est proposée pour son projet qui correspond, une seule fois', async () => {
+    const t = await setup();
+    const x = await t.buyer(t.alex.id, 'Deux', { propertyKinds: ['house'], communes: ['Talant'], budgetMaxEur: 300_000 });
+    const y = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: x.person.id, kind: 'buy' });
+    await t.acquereurs.update(t.acces, t.direction, y.id, { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 150_000 });
+    const prop = await t.property(t.alex.id, 'B1', { city: 'Talant', price: 280_000, surface: 90, rooms: 4 });
+    const r = await t.rapprochement.propose(t.acces, t.direction, prop.id);
+    if (!r.ok) throw new Error('refus');
+    expect(r.value.map((v) => v.projectId)).toEqual([x.project.id]);
+    const map = await t.rapprochement.demandMap(t.acces, t.direction, prop.id);
+    expect(map).toEqual({ ok: true, value: { activeBuyers: 1, matching: 1, nearMisses: [] } });
   });
 
   it('aucun acquéreur proposé pour un bien que la diffusion refuse [R42]', async () => {
