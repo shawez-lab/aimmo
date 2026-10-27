@@ -52,26 +52,42 @@ describeWithSqlite('P09 · routes de M07', () => {
     expect(status.body).toMatchObject({ ok: true, data: { version: 1, state: 'en_vente', priceEur: 210000, channels: { site: 'publiee', reseaux: 'publiee', google: 'publiee', portails: 'publiee' } } });
   });
 
-  it('[R16] chaque route passe par les droits ; un refus rend 403 et va au journal', async () => {
+  it('[R16] chaque route passe par les droits ; chaque refus rend 403 et écrit une ligne au journal', async () => {
     const t = await setup();
-    for (const [method, path] of [
-      ['GET', `/annonces/${t.propertyId}/fiche`],
-      ['GET', `/annonces/${t.propertyId}/controle`],
-      ['GET', `/annonces/${t.propertyId}/brouillon`],
-      ['POST', `/annonces/${t.propertyId}/brouillon`],
-      ['GET', `/annonces/${t.propertyId}/publication`],
-      ['POST', `/annonces/${t.propertyId}/publication`],
-      ['GET', `/annonces/${t.propertyId}/semaine?lundi=2027-03-01`],
-    ] as const) {
-      const r = await t.call(t.sam, method, path);
-      expect(r.status, `${method} ${path}`).toBe(403);
-      expect(r.body).toMatchObject({ ok: false, rule: 'R16' });
+    const video = `biens/${t.propertyId}/0b6f1d2e-3333-4a2b-8c3d-000000000003.mp4`;
+    const refusals = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
+    const cases: [string, 'GET' | 'POST', string, unknown?][] = [
+      ['fiche', 'GET', `/annonces/${t.propertyId}/fiche`],
+      ['fiche.enregistrer', 'POST', `/annonces/${t.propertyId}/fiche`, {}],
+      ['controle', 'GET', `/annonces/${t.propertyId}/controle`],
+      ['brouillon', 'GET', `/annonces/${t.propertyId}/brouillon`],
+      ['brouillon.proposer', 'POST', `/annonces/${t.propertyId}/brouillon`],
+      ['correction', 'POST', `/annonces/${t.propertyId}/correction`, { title: 'Appartement à Dijon', body: 'Au 3e étage.' }],
+      ['validation', 'POST', `/annonces/brouillons/${t.draftId}/validation`],
+      ['publication', 'GET', `/annonces/${t.propertyId}/publication`],
+      ['publication.passage', 'POST', `/annonces/${t.propertyId}/publication`],
+      ['semaine', 'GET', `/annonces/${t.propertyId}/semaine?lundi=2027-03-01`],
+      ['video.controle', 'POST', `/annonces/${t.propertyId}/videos/controle`, { ref: video, subtitles: ['Visite.'], caption: 'Visite' }],
+      ['plan_tournage', 'GET', `/annonces/${t.propertyId}/plan-de-tournage`],
+    ];
+    for (const [name, method, path, body] of cases) {
+      const before = await refusals();
+      const r = await t.call(t.sam, method, path, body);
+      expect(r.status, name).toBe(403);
+      expect(r.body, name).toMatchObject({ ok: false, rule: 'R16' });
+      expect((await refusals()) - before, name).toBe(1);
     }
+    // La conformité lit, mais ne valide pas ; un agent d'un autre réseau ne voit pas le brouillon.
     const compliance = { role: 'compliance', userId: 'c-1', networkId: t.network.id } as Viewer;
+    expect((await t.call(compliance, 'POST', `/annonces/brouillons/${t.draftId}/validation`)).status).toBe(403);
     expect((await t.call(compliance, 'POST', `/annonces/${t.propertyId}/publication`)).status).toBe(403);
+    const stranger = { role: 'agent', userId: 'agent-ailleurs', networkId: 'autre-reseau' } as Viewer;
+    const before = await refusals();
+    const r = await t.call(stranger, 'POST', `/annonces/brouillons/${t.draftId}/validation`);
+    expect(r.status).toBe(404);
+    expect((await refusals()) - before).toBe(1);
+    expect((await t.journal.bySubject(`listing:${t.draftId}`)).filter((e) => e.type === 'acces.refuse')).toHaveLength(1);
     expect((await t.call(t.agent, 'GET', '/annonces/bien-inconnu/fiche')).status).toBe(404);
-    const refusals = (await t.journal.bySubject(`property:${t.propertyId}`)).filter((e) => e.type === 'acces.refuse');
-    expect(refusals.length).toBeGreaterThanOrEqual(8);
   });
 
   it('les corps mal formés sont refusés ; une correction qui invente rend 409 avec la phrase en cause', async () => {
