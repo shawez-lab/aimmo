@@ -8,7 +8,8 @@ const root = fileURLToPath(new URL('../../../', import.meta.url));
 const read = (path: string): string => readFileSync(root + path, 'utf8');
 
 const TASK_STATUS =
-  /^(à faire|en cours(?: \(voie 2\))?|chez Codex depuis le .+|fait \(\d{4}-\d{2}-\d{2}\)|bloquée : .+)$/;
+  // « en cours (voie 2) » : une tâche prise par la seconde voie du chantier (PROTOCOLE, section 8).
+  /^(à faire|en cours( \(voie 2\))?|chez Codex depuis le .+|fait \(\d{4}-\d{2}-\d{2}\)|bloquée : .+)$/;
 
 describe('fondations du dépôt', () => {
   it('le cœur se charge', () => {
