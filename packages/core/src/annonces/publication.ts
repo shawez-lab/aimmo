@@ -42,7 +42,11 @@ export interface ListingPayload {
   priceEur: number | null;
 }
 
-/** Un canal de diffusion. Il remplace l'annonce de la référence par la version reçue, ou la retire. */
+/**
+ * Un canal de diffusion. Il remplace l'annonce de la référence par la version reçue, ou la retire. Contrat : un canal
+ * n'applique jamais une version plus ancienne que la dernière qu'il a appliquée pour cette référence ; c'est la
+ * seconde garde, après le bail d'un passage par bien, contre un envoi en retard [R42].
+ */
 export interface ListingChannel {
   readonly channel: Channel;
   push(payload: ListingPayload): Promise<void>;
@@ -59,7 +63,12 @@ export interface SyncResult {
   created: boolean;
   pushed: Channel[];
   failed: Channel[];
+  /** Un autre passage travaille sur ce bien : rien n'est fait, le passage suivant reprendra. */
+  busy?: true;
 }
+
+/** Durée du bail d'un passage sur un bien. */
+export const SYNC_LEASE_MS = 5 * 60_000;
 
 interface VersionRow {
   id: string;
@@ -136,6 +145,35 @@ export class Publication {
   async sync(networkId: string, propertyId: string): Promise<SyncResult> {
     const property = await this.db.first<{ network_id: string; reference: string; status: PropertyStatus }>('SELECT network_id, reference, status FROM properties WHERE id = ?', [propertyId]);
     if (!property || property.network_id !== networkId) return { version: null, state: null, created: false, pushed: [], failed: [] };
+    // Un seul passage à la fois par bien [R42] : sans le bail, rien n'est fait.
+    const lease = await this.acquire(propertyId);
+    if (!lease) return { version: null, state: null, created: false, pushed: [], failed: [], busy: true };
+    try {
+      return await this.syncHeld(networkId, propertyId, property, lease);
+    } finally {
+      await this.db.run('UPDATE listing_sync_leases SET expires_at = ? WHERE property_id = ? AND token = ?', [new Date(0).toISOString(), propertyId, lease]);
+    }
+  }
+
+  /** Prend le bail du bien, ou rend null s'il est tenu par un autre passage et pas encore échu. */
+  private async acquire(propertyId: string): Promise<string | null> {
+    const token = this.newId();
+    const now = this.now();
+    await this.db.run(
+      `INSERT INTO listing_sync_leases (property_id, token, expires_at) VALUES (?, ?, ?)
+       ON CONFLICT (property_id) DO UPDATE SET token = excluded.token, expires_at = excluded.expires_at WHERE listing_sync_leases.expires_at <= ?`,
+      [propertyId, token, new Date(now.getTime() + SYNC_LEASE_MS).toISOString(), now.toISOString()],
+    );
+    const held = await this.db.first<{ token: string }>('SELECT token FROM listing_sync_leases WHERE property_id = ?', [propertyId]);
+    return held?.token === token ? token : null;
+  }
+
+  private async holds(propertyId: string, token: string): Promise<boolean> {
+    const held = await this.db.first<{ token: string; expires_at: string }>('SELECT token, expires_at FROM listing_sync_leases WHERE property_id = ?', [propertyId]);
+    return held?.token === token && held.expires_at > this.now().toISOString();
+  }
+
+  private async syncHeld(networkId: string, propertyId: string, property: { reference: string; status: PropertyStatus }, lease: string): Promise<SyncResult> {
     const want = await this.desired(networkId, propertyId, property.reference, property.status);
     const before = await this.latest(propertyId);
     let created = false;
@@ -171,15 +209,17 @@ export class Publication {
     }
     const current = await this.latest(propertyId);
     if (!current) return { version: null, state: null, created, pushed: [], failed: [] };
-    const { pushed, failed } = await this.pushAll(propertyId, current);
+    const { pushed, failed } = await this.pushAll(propertyId, current, lease);
     return { version: Number(current.seq), state: current.state, created, pushed, failed };
   }
 
-  private async pushAll(propertyId: string, v: VersionRow): Promise<{ pushed: Channel[]; failed: Channel[] }> {
+  private async pushAll(propertyId: string, v: VersionRow, lease: string): Promise<{ pushed: Channel[]; failed: Channel[] }> {
     const pushed: Channel[] = [];
     const failed: Channel[] = [];
     const payload: ListingPayload = { ...(JSON.parse(v.payload) as Omit<ListingPayload, 'version'>), version: Number(v.seq) };
     for (const c of this.channels) {
+      // Bail perdu (passage trop long) : on s'arrête, le passage suivant reprendra avec la dernière version.
+      if (!(await this.holds(propertyId, lease))) break;
       if (await this.db.first('SELECT id FROM listing_pushes WHERE version_id = ? AND channel = ? AND outcome = ?', [v.id, c.channel, 'ok'])) continue;
       try {
         await c.push(structuredClone(payload));

@@ -55,3 +55,18 @@ BEFORE UPDATE ON listing_pushes
 BEGIN
   SELECT RAISE(ABORT, 'listing_pushes : un essai rangé ne change plus');
 END;
+
+-- Un seul passage à la fois par bien : un bail court, pris en une instruction, repris seulement une fois échu. Il
+-- empêche qu'un envoi ancien, encore en cours, arrive après un retrait plus récent [R42]. Le bail change, rien ne
+-- s'efface : ce n'est pas une donnée, seulement un verrou.
+CREATE TABLE IF NOT EXISTS listing_sync_leases (
+  property_id TEXT PRIMARY KEY,
+  token TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
+CREATE TRIGGER IF NOT EXISTS listing_sync_leases_sans_effacement
+BEFORE DELETE ON listing_sync_leases
+BEGIN
+  SELECT RAISE(ABORT, 'listing_sync_leases : rien ne s''efface');
+END;

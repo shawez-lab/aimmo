@@ -29,8 +29,11 @@ export const MIN = 60_000;
 export class FakeChannel implements ListingChannel {
   received: ListingPayload[] = [];
   failNext = 0;
+  /** Quand il est posé, l'envoi attend qu'on le libère : un envoi lent, encore en cours. */
+  gate: Promise<void> | null = null;
   constructor(readonly channel: Channel) {}
   async push(payload: ListingPayload): Promise<void> {
+    if (this.gate) await this.gate;
     if (this.failNext > 0) {
       this.failNext--;
       throw new Error('portail_indisponible');
