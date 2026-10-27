@@ -29,5 +29,6 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H22 | Créer la clé d'API personnelle de chaque agent qui utilisera l'application (32 caractères ou plus, gardée dans un coffre), ranger son empreinte dans le secret `API_KEYS` du Worker `aimmo-api` avec le rôle `agent` et son identifiant, comme le décrit `docs/API.md`, puis la saisir une fois dans l'application sur son téléphone | Shawez | A01 réel, usage de l'application | signalé le 2026-10-27 |
 | H23 | Donner le format du registre des mandats de GRAVELIN IMMO et le prochain numéro libre, au moment de passer au registre AIMMO | Shawez, Marion | D01, D04 réels | signalé le 2026-10-27 |
 | H24 | Faire valider par l'avocat le dossier de preuve de la signature en ligne AIMMO, avant tout usage réel | Shawez, avocat | D08 réel | plus tard |
+| H25 | Créer dans Cloudflare un stockage R2 `aimmo-medias` et le lier au Worker `aimmo-api` sous le nom `MEDIA` (après H04) | Shawez | photos de la vitrine (P10) | plus tard |
 
 Quand une tâche à moins de trois places de la tête du plan attend une ligne « plus tard », la séance la marque « signalé le <date> » et la dit une fois dans « Besoin de toi ».

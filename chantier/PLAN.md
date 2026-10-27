@@ -799,7 +799,8 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P10 · Branchement de M07 dans le socle, page publique et écran « Mettre en vente »
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : M07 exporté en espace de noms `annonces` (noms déjà pris dans le socle) ; un seul cron toutes les 15 minutes, créneaux du passage en UTC ; vitrine `/biens/:id` sans index tant que le chantier est en essai ; photos depuis un stockage R2 `MEDIA` facultatif (H25).
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/api/src/app.ts`, `packages/api/src/worker.ts`, application de l'agent) · Relecture : forte · Dépend de : P09
 - Cahier : M07 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : exporter `annonces` depuis `@aimmo/core` et remplacer l'import relatif de `packages/api/src/annonces.ts` ; ajouter `annonceRoutes()` aux routes de `app.ts` ; lancer `syncAnnonces` toutes les 15 minutes depuis le déclencheur du Worker ; servir la page publique du bien et sa fiche imprimable (`PageBien`) et les médias ; dans l'application de l'agent, un écran « Mettre en vente » qui montre la liste de contrôle, l'annonce sourcée phrase par phrase (chaque nombre relié à son champ) et le bouton de validation.
