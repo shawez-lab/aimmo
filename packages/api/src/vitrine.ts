@@ -105,15 +105,9 @@ export async function runListingSync(db: SqlDatabase, now: () => Date = () => ne
   try {
     const networks = await db.all<{ id: string }>('SELECT id FROM networks ORDER BY id');
     for (const n of networks) {
-      // Un réseau en panne n'empêche pas les autres de publier.
-      try {
-        const r = await syncAnnonces(s, n.id);
-        properties += r.properties;
-        failed += r.failed;
-      } catch (error) {
-        outcome = 'error';
-        await journalError(journal, 'system:planificateur', LISTING_SYNC_JOB, error, now);
-      }
+      const r = await syncAnnonces(s, n.id);
+      properties += r.properties;
+      failed += r.failed;
     }
   } catch (error) {
     outcome = 'error';
