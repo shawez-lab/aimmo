@@ -40,5 +40,5 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R34 | Brief vrai. Le brief d'un rendez-vous ne porte que des données de la base ou d'une source citée ; ce qui manque est dit, rien n'est inventé. | oui | V05 |
 | R35 | Plan du jour par règles écrites. L'ordre du plan du jour suit des règles écrites dans le code, les mêmes pour tous, chaque ligne avec sa raison ; jamais une note de l'IA sur les personnes. | oui | G01 |
 | R36 | Base légale de la prospection. Le plan du jour et le suivi de valeur ne portent que des personnes qui ont une demande récente ou un accord en cours ; jamais une personne exclue ou qui a demandé l'arrêt. | oui | G01, G04, G05 |
-| R37 | Sources interdites. Aucune liste achetée, aucune donnée de ventes publiques utilisée pour retrouver un propriétaire. | non | G03 |
-| R38 | Source du mandat. Chaque mandat signé a sa source renseignée. | non | G03 |
+| R37 | Sources interdites. Aucune liste achetée, aucune donnée de ventes publiques utilisée pour retrouver un propriétaire. | oui | G03 |
+| R38 | Source du mandat. Chaque mandat signé a sa source renseignée. | oui | G03 |
