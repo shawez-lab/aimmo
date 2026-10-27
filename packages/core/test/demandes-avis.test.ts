@@ -238,7 +238,7 @@ describeWithSqlite('F02 · demande d’avis le lendemain de l’acte, à tous, e
     expect(await t.avis.run(t.network.id)).toBe(0);
     expect(await t.outboxCount()).toBe(0);
     const tasks = await t.avis.openTasks(t.agent);
-    expect(tasks.ok && tasks.value).toEqual([{ fileId: 'f1', agentId: t.alexId, createdAt: paris('2027-03-09', 10, 5).toISOString() }]);
+    expect(tasks.ok && tasks.value).toEqual([{ fileId: 'f1', agentId: t.alexId, kind: 'lien_avis', createdAt: paris('2027-03-09', 10, 5).toISOString() }]);
     expect((await t.journal.bySubject('sale_file:f1')).filter((e) => e.type === 'apres_vente.lien_avis_manquant')).toHaveLength(1);
     // Un autre agent ne voit pas la tâche [R16].
     const sam = await t.avis.openTasks(t.sam);
@@ -250,6 +250,49 @@ describeWithSqlite('F02 · demande d’avis le lendemain de l’acte, à tous, e
     expect(after.ok && after.value).toEqual([]);
     t.setClock(paris('2027-03-10', 10, 5));
     expect(await t.avis.run(t.network.id)).toBe(1);
+  });
+
+  it('[R11] [R64] plus de clients que de places : les plus anciens d’abord ; une demande non partie dans le délai est close, au journal, et l’agent est prévenu', async () => {
+    const t = await setup();
+    // Cinq dossiers de deux clients clos chaque jour du lundi au mercredi : 30 demandes pour 2 places par jour.
+    // Le faux M10 rend les plus récents d'abord.
+    const days = ['2027-03-08', '2027-03-09', '2027-03-10'];
+    const firstFile: string[] = [];
+    for (const day of days) {
+      for (let i = 0; i < 5; i++) {
+        const fileId = `${day}-${i}`;
+        if (i === 0) firstFile.push(fileId);
+        t.close(fileId, day, [{ personId: await t.client(`Ven${i}`, 'Un'), side: 'vendeur' }, { personId: await t.client(`Ach${i}`, 'Deux'), side: 'acquereur' }]);
+      }
+    }
+    t.dossiers.sales.reverse();
+    t.setClock(paris('2027-03-09', 10, 5));
+    expect(await t.avis.run(t.network.id)).toBe(2);
+    let list = await t.avis.list(t.agent);
+    expect(list.ok && list.value.filter((r) => r.status === 'sent').map((r) => r.fileId)).toEqual([firstFile[0], firstFile[0]]);
+    await t.passes('2027-03-10', '2027-03-20');
+    list = await t.avis.list(t.agent);
+    const rows = list.ok ? list.value : [];
+    expect(rows).toHaveLength(30);
+    // Neuf jours d'envoi avant la fin du dernier délai, deux places chacun ; les plus anciens d'abord : les dix clients
+    // du premier jour sont tous servis, aucun d'un jour plus récent ne passe avant eux.
+    const sent = rows.filter((r) => r.status === 'sent');
+    expect(sent).toHaveLength(18);
+    expect(rows.filter((r) => r.dueDay === '2027-03-09').every((r) => r.status === 'sent')).toBe(true);
+    const lastFirstDay = Math.max(...sent.filter((r) => r.dueDay === '2027-03-09').map((r) => Date.parse(r.updatedAt)));
+    expect(sent.filter((r) => r.dueDay > '2027-03-09').every((r) => Date.parse(r.updatedAt) > lastFirstDay)).toBe(true);
+    const closed = rows.filter((r) => r.status === 'closed');
+    expect(closed).toHaveLength(12);
+    expect(closed.every((r) => r.rule === 'delai_depasse' && r.dueDay > '2027-03-09')).toBe(true);
+    // Chaque fermeture est au journal ; l'agent a une tâche par dossier concerné.
+    for (const fileId of new Set(closed.map((r) => r.fileId))) {
+      const events = (await t.journal.bySubject(`sale_file:${fileId}`)).filter((e) => e.type === 'apres_vente.demande_avis' && JSON.stringify(e).includes('delai_depasse'));
+      expect(events).toHaveLength(closed.filter((r) => r.fileId === fileId).length);
+    }
+    const tasks = await t.avis.openTasks(t.agent);
+    expect(tasks.ok && tasks.value.filter((x) => x.kind === 'avis_non_parti').map((x) => x.fileId).sort()).toEqual([...new Set(closed.map((r) => r.fileId))].sort());
+    // Personne ne reçoit deux demandes.
+    expect(await t.outboxCount()).toBe(18);
   });
 
   it('passé le délai de 7 jours, une demande qui n’a pas pu partir est close et ne part plus', async () => {

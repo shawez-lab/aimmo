@@ -15,7 +15,9 @@
  * - le dossier clos est lu par une interface (`DossiersClos`) : M10 (N06) la branchera ; les tests en donnent un faux ;
  * - le canal est le mail, la finalité celle du suivi de la vente (`suivi_vente`), dont l'accord est exigé [R03] ;
  * - sans lien réglé, rien ne part, et l'agent reçoit une tâche « régler le lien de ma fiche Google » par dossier ; un
- *   lien réglé dans les 7 jours qui suivent l'acte laisse partir les demandes ; au-delà, elles sont closes ;
+ *   lien réglé dans les 7 jours qui suivent l'acte laisse partir les demandes ; au-delà, elles sont closes, au journal,
+ *   et l'agent reçoit une tâche « demande d'avis non partie » par dossier, pour la faire lui-même ;
+ * - les dossiers les plus anciens passent d'abord, pour que le plafond du jour [R11] ne laisse personne derrière ;
  * - une demande refusée pour l'heure attend le passage suivant [R01, R11] ; refusée pour le plafond du jour, elle attend
  *   le lendemain [R11] ; toute autre règle, un proche de l'agent compris, la refuse pour de bon, avec sa raison ;
  * - deux fiches réunies d'un même client ne reçoivent qu'une demande par dossier.
@@ -63,6 +65,8 @@ export interface ClosedSale {
 export interface DossiersClos {
   closedBetween(networkId: string, fromDay: string, toDay: string): Promise<readonly ClosedSale[]>;
 }
+
+export type AfterSaleTaskKind = 'lien_avis' | 'avis_non_parti';
 
 export type ReviewStatus = 'sent' | 'waiting' | 'refused' | 'failed' | 'closed';
 
@@ -193,8 +197,24 @@ export class DemandesAvis {
     const today = local.date;
     const at = now.toISOString();
     // Une demande restée en attente au-delà du délai ne partira plus : elle est close, avec sa raison.
-    await this.db.run("UPDATE review_requests SET status = 'closed', rule = 'delai_depasse', updated_at = ? WHERE network_id = ? AND status IN ('waiting', 'failed') AND due_day < ?", [at, networkId, addDays(today, -REVIEW_WINDOW_DAYS)]);
-    const sales = await this.dossiers.closedBetween(networkId, addDays(today, -REVIEW_WINDOW_DAYS - 1), addDays(today, -1));
+    // L'agent en est prévenu par une tâche, une par dossier, et chaque fermeture va au journal.
+    const late = await this.db.all<{ file_id: string; person_id: string; agent_id: string; side: string }>(
+      "SELECT file_id, person_id, agent_id, side FROM review_requests WHERE network_id = ? AND status IN ('waiting', 'failed') AND due_day < ? ORDER BY file_id, person_id",
+      [networkId, addDays(today, -REVIEW_WINDOW_DAYS)],
+    );
+    for (const r of late) {
+      const { changes } = await this.db.run("UPDATE review_requests SET status = 'closed', rule = 'delai_depasse', updated_at = ? WHERE file_id = ? AND person_id = ? AND status IN ('waiting', 'failed')", [at, r.file_id, r.person_id]);
+      if (changes !== 1) continue;
+      await this.db.run(
+        "INSERT INTO after_sale_tasks (id, network_id, agent_id, file_id, kind, created_at, done_at) VALUES (?, ?, ?, ?, 'avis_non_parti', ?, NULL) ON CONFLICT DO NOTHING",
+        [this.newId(), networkId, r.agent_id, r.file_id, at],
+      );
+      await appendEvent(this.journal, { type: 'apres_vente.demande_avis', actor: 'system:apres-vente', subject: `sale_file:${r.file_id}`, data: { mode: 'essai', side: r.side, status: 'closed', rule: 'delai_depasse' } }, this.now);
+    }
+    // Les dossiers les plus anciens d'abord : le plafond du jour ne laisse jamais un client derrière les suivants [R11, R64].
+    const sales = [...(await this.dossiers.closedBetween(networkId, addDays(today, -REVIEW_WINDOW_DAYS - 1), addDays(today, -1)))].sort(
+      (a, b) => a.closedOn.localeCompare(b.closedOn) || a.fileId.localeCompare(b.fileId),
+    );
     let sent = 0;
     for (const sale of sales) {
       const dueDay = addDays(sale.closedOn, 1);
@@ -277,15 +297,18 @@ export class DemandesAvis {
     return { ok: true, value: rows.map((r) => ({ fileId: r.file_id, personId: r.person_id, side: r.side, dueDay: r.due_day, status: r.status, rule: r.rule, updatedAt: r.updated_at })) };
   }
 
-  /** Les tâches « régler le lien de ma fiche Google » encore ouvertes : l'agent ne voit que les siennes [R16]. */
-  async openTasks(viewer: Viewer): Promise<{ ok: true; value: { fileId: string; agentId: string; createdAt: string }[] } | ReviewRefusal> {
+  /**
+   * Les tâches encore ouvertes : « régler le lien de ma fiche Google » (`lien_avis`), « demande d'avis non partie dans
+   * le délai, à faire moi-même » (`avis_non_parti`). L'agent ne voit que les siennes [R16].
+   */
+  async openTasks(viewer: Viewer): Promise<{ ok: true; value: { fileId: string; agentId: string; kind: AfterSaleTaskKind; createdAt: string }[] } | ReviewRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'after_sale_tasks', 'role');
     const own = viewer.role === 'agent';
-    const rows = await this.db.all<{ file_id: string; agent_id: string; created_at: string }>(
-      `SELECT file_id, agent_id, created_at FROM after_sale_tasks WHERE network_id = ? AND kind = 'lien_avis' AND done_at IS NULL${own ? ' AND agent_id = ?' : ''} ORDER BY created_at, file_id`,
+    const rows = await this.db.all<{ file_id: string; agent_id: string; kind: AfterSaleTaskKind; created_at: string }>(
+      `SELECT file_id, agent_id, kind, created_at FROM after_sale_tasks WHERE network_id = ? AND done_at IS NULL${own ? ' AND agent_id = ?' : ''} ORDER BY created_at, file_id, kind`,
       own ? [viewer.networkId, viewer.userId] : [viewer.networkId],
     );
-    return { ok: true, value: rows.map((r) => ({ fileId: r.file_id, agentId: r.agent_id, createdAt: r.created_at })) };
+    return { ok: true, value: rows.map((r) => ({ fileId: r.file_id, agentId: r.agent_id, kind: r.kind, createdAt: r.created_at })) };
   }
 }
 

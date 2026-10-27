@@ -37,13 +37,14 @@ CREATE INDEX IF NOT EXISTS review_requests_agent ON review_requests (agent_id, d
 CREATE TRIGGER IF NOT EXISTS review_requests_garde BEFORE DELETE ON review_requests BEGIN SELECT RAISE(ABORT, 'review_requests : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS review_requests_fige BEFORE UPDATE ON review_requests WHEN OLD.status IN ('sent', 'refused', 'closed') BEGIN SELECT RAISE(ABORT, 'review_requests : une demande partie, refusée ou close ne change plus'); END;
 
--- Les tâches de l'agent après la vente. F02 : « régler le lien de ma fiche Google », une par dossier.
+-- Les tâches de l'agent après la vente. F02 : « régler le lien de ma fiche Google » et « demande d'avis non partie
+-- dans le délai », une de chaque par dossier.
 CREATE TABLE IF NOT EXISTS after_sale_tasks (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   agent_id TEXT NOT NULL,
   file_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('lien_avis')),
+  kind TEXT NOT NULL CHECK (kind IN ('lien_avis', 'avis_non_parti')),
   created_at TEXT NOT NULL,
   done_at TEXT,
   UNIQUE (file_id, kind)
