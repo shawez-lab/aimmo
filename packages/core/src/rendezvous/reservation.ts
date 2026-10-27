@@ -159,7 +159,14 @@ export function confirmationText(kind: AppointmentKind, start: Date, firstName: 
   const hello = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
   const label = KIND_LABEL[kind];
   const text = `${hello} ${label} est confirmé ${when.text}.${link ? ` Pour le décaler ou l’annuler : ${link}` : ''}`;
-  return { text: kind === 'visite' ? text.replace('est confirmé', 'est confirmée') : text, figures: when.figures };
+  // Une visite n'est confirmée qu'une fois le téléphone et l'identité du visiteur confirmés (T05) : la réservation le dit [R54].
+  if (kind === 'visite') {
+    return {
+      text: `${hello} ${label} est réservée ${when.text}. Votre agent immobilier la confirmera avec vous avant la visite.${link ? ` Pour la décaler ou l’annuler : ${link}` : ''}`,
+      figures: when.figures,
+    };
+  }
+  return { text, figures: when.figures };
 }
 
 function isUniqueViolation(error: unknown): boolean {

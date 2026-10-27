@@ -119,6 +119,15 @@ describeWithSqlite('O03 · transmission et réponse', () => {
     expect(await t.transmission.alertUntransmitted(t.network.id)).toEqual([]);
     const alert = (await t.journal.bySubject(`offer:${a.id}`)).find((e) => e.type === 'offre.non_transmise');
     expect(alert?.data).toEqual({ rule: 'R56', agent: `agent:${t.alexId}`, to: ['agent', 'direction'] });
+    // Le journal tombe juste après qu'une alerte est rangée : elle est annoncée au passage suivant, une fois.
+    const c = await t.record();
+    t.setClock(new Date('2027-03-03T10:00:00.000Z'));
+    const j = t.journal;
+    const failing = { last: () => j.last(), all: () => j.all(), bySubject: (x: string) => j.bySubject(x), byPeriod: (x: string, y: string) => j.byPeriod(x, y), append: async () => { throw new Error('panne du journal'); } };
+    await expect(new TransmissionOffres(t.db, t.acces, failing, { now: t.now }).alertUntransmitted(t.network.id)).rejects.toThrow();
+    expect(await t.transmission.alertUntransmitted(t.network.id)).toEqual([c.id]);
+    expect(await t.transmission.alertUntransmitted(t.network.id)).toEqual([]);
+    expect((await t.journal.bySubject(`offer:${c.id}`)).filter((e) => e.type === 'offre.non_transmise')).toHaveLength(1);
   });
 
   it('[R16] seul l’agent du bien transmet et rapporte une réponse ; la direction lit l’historique', async () => {

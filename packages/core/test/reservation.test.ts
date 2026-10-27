@@ -304,7 +304,8 @@ describeWithSqlite('V02 · réservation, confirmation et annulation', () => {
         expect(checkText(text, { audience: 'client', channel: 'email', figures, firstOfConversation: name !== null, firstName: name }), text).toEqual([]);
       }
     }
-    expect(confirmationText('visite', start, 'Léa', null).text).toBe('Bonjour Léa, votre visite est confirmée le mardi 10 novembre à 14 h 30.');
+    // [R54] une visite n'est pas dite confirmée tant que le visiteur ne l'a pas confirmée.
+    expect(confirmationText('visite', start, 'Léa', null).text).toBe('Bonjour Léa, votre visite est réservée le mardi 10 novembre à 14 h 30. Votre agent immobilier la confirmera avec vous avant la visite.');
   });
 
   it('refus nets : délai trop court, heure mal formée, personne d’un autre réseau ; journal sans nom ni coordonnée [R13]', async () => {

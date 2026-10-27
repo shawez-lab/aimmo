@@ -241,7 +241,7 @@ export class Visites {
 
   /** Le bon de visite d'une visite, pour l'agent qui l'a fixée ou la direction [R16]. */
   async slipOf(viewer: Viewer, appointmentId: string): Promise<{ ok: true; slip: VisitSlip } | VisitRefusal> {
-    const visit = await this.visitFor(viewer, appointmentId);
+    const visit = await this.accessVisit(viewer, appointmentId);
     if (!visit.ok) return visit;
     const row = await this.ensureSlip(appointmentId);
     if (!row) return { ok: false, rule: null, code: 'no_slip' };
@@ -250,7 +250,7 @@ export class Visites {
 
   /** La signature sur papier du bon : la date et le scan, rangés une fois, sur un bon complet seulement [R40]. */
   async recordPaperSignature(viewer: Viewer, appointmentId: string, input: { signedAt: Date; scanRef: string }): Promise<{ ok: true; slip: VisitSlip } | VisitRefusal> {
-    const visit = await this.visitFor(viewer, appointmentId);
+    const visit = await this.accessVisit(viewer, appointmentId);
     if (!visit.ok) return visit;
     const row = await this.ensureSlip(appointmentId);
     if (!row) return { ok: false, rule: null, code: 'no_slip' };
@@ -272,7 +272,7 @@ export class Visites {
 
   /** L'agent annule la visite : le rendez-vous est annulé, la visite et son bon restent [R17]. */
   async cancel(viewer: Viewer, appointmentId: string): Promise<{ ok: true } | VisitRefusal> {
-    const visit = await this.visitFor(viewer, appointmentId);
+    const visit = await this.accessVisit(viewer, appointmentId);
     if (!visit.ok) return visit;
     const r = await this.rdv.cancelAsAgent(viewer, appointmentId);
     if (!r.ok) return { ok: false, rule: r.code === 'not_agent' ? 'R16' : null, code: r.code };
@@ -284,7 +284,7 @@ export class Visites {
    * droits, qui l'écrivent au journal avant de rendre quoi que ce soit [R16]. Un rendez-vous qui en remplace un autre
    * (décalé par le lien ou par l'agenda) reprend la visite de celui qu'il remplace, avec un bon neuf à sa date.
    */
-  private async visitFor(viewer: Viewer, appointmentId: string): Promise<{ ok: true; agentId: string } | VisitRefusal> {
+  async accessVisit(viewer: Viewer, appointmentId: string): Promise<{ ok: true; agentId: string } | VisitRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'visit', 'role', `visit:${appointmentId}`);
     const v = await this.visitRow(appointmentId);
     if (!v || v.network_id !== viewer.networkId) return this.refuse(viewer, 'visit', 'unknown', `visit:${appointmentId}`);
