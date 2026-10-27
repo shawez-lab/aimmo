@@ -773,7 +773,8 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : H10 pour les vrais portails.
 
 ### P08 · Mesure par bien : vues, contacts, visites
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : un relevé de vues par bien, canal et jour ; un contact compte à l'heure de son message, une fois par personne, fusions comprises ; visites faites et prévues
 - Qui : Claude · Relecture : normale · Dépend de : P04
 - Cahier : M07, « Mesure ».
 - Objectif : par bien et par semaine, les vues par canal, les contacts reçus pour ce bien (C03) et les visites (M05), lus pour le point hebdomadaire au vendeur que fera M08.
@@ -781,7 +782,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P09 · Routes de M07 et passage de publication
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : P04, P05
 - Cahier : M07 ; Feuille de route, mars 2027 ; critère « mis en vente moins d'une heure après la fin du délai de rétractation ».
 - Objectif : les routes `/v1/annonces` (fiche, liste de contrôle, brouillon, correction, validation, état et passage de publication, semaine, contrôle des vidéos, plan de tournage) dans `packages/api/src/annonces.ts`, de la même forme que celles de `app.ts`, et `syncAnnonces`, le passage de publication d'un réseau, sans toucher aux fichiers du socle.
