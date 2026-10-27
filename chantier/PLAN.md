@@ -634,7 +634,8 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : rien.
 
 ### T02 · Rapprochement des acquéreurs, par le code
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : tolérances par défaut budget +5 %, surface −10 %, pièces 0 ; le type « logement » du socle répond à maison et appartement ; une valeur du bien inconnue ne remplit pas son critère ; une recherche sans critère sur le bien ne compte pas ; acquéreur actif : projet non clos et recherche modifiée depuis moins de 180 jours ; une ligne par personne, son meilleur projet ; R50 et R51 en service.
 - Qui : Claude · Relecture : forte · Dépend de : T01, D05
 - Cahier : M08, « Rapprochement », « Fichier commun » ; Feuille de route, avril 2027.
 - Objectif : pour un bien diffusable [R42], la liste classée des acquéreurs du réseau entier (fichier commun) : critères obligatoires (type, commune, budget, surface, pièces) avec les tolérances écrites en réglage, puis classement par règles écrites (écart aux critères, urgence déclarée, fraîcheur du projet), jamais par le financement ni la solvabilité [R14], chaque ligne avec ses raisons ; jamais une personne exclue ou qui a demandé l'arrêt.
@@ -643,7 +644,7 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : rien.
 
 ### T03 · Alertes aux acquéreurs, en mode essai
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : T02
 - Cahier : M08, « Alertes » et règles ; critère « aucun doublon d'alerte sur 30 jours ».
 - Objectif : quand un bien devient diffusable, une alerte aux acquéreurs rapprochés qui l'ont demandée : message personnalisé rédigé par l'IA derrière une interface à partir des seules données du bien et des critères (fausse IA dans les tests, texte de secours du code si elle est en panne), mail ou message selon l'accord, passé par le contrôle central et rangé dans la boîte d'essai, avec un lien de désinscription ; pour WhatsApp, un lien pré-rempli préparé pour l'agent, seulement après le contrôle central, et l'envoi enregistré quand l'agent le confirme.
@@ -726,7 +727,8 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : H13 pour la vraie IA.
 
 ### P04 · Publication partout, au même prix, en mode essai
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : une version publiée unique pour tous les canaux ; un passage à la fois par bien, par un bail de 5 minutes qui protège aussi l'écriture d'une version ; contrat des canaux : jamais une version plus ancienne que la dernière appliquée ; un bien vendu reste montré « vendu » tant que son mandat le permet ; Codex : 2 P0 corrigés, sa relecture de la dernière correction restée en cours 15 min, fusion sans elle
 - Qui : Claude · Relecture : forte · Dépend de : P03
 - Cahier : M07, « Diffusion » ; critères « publié partout en moins d'une heure, au même prix » et « changement de prix répercuté partout en moins de 15 minutes ».
 - Objectif : publier une annonce validée vers chaque canal (site, réseaux sociaux, fiche Google, portails) derrière une interface, en mode essai ; une version publiée unique, la même partout ; un changement de prix (avenant signé) ou d'état (sous offre, vendu, mandat arrêté) crée une nouvelle version poussée à chaque canal par le planificateur ; un retrait quand `canDiffuse` dit non.
@@ -734,7 +736,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien pour l'essai ; les canaux réels plus tard (H06, H07, H10).
 
 ### P05 · Page du bien et fiche PDF à la marque de l'agent
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : P04
 - Cahier : M07, « Page du bien » et « fiche PDF » ; Organisation, exigence de design (protocole, section 9).
 - Objectif : depuis la version publiée, une page HTML du bien et une fiche imprimable de deux pages au nom et aux coordonnées professionnelles de l'agent, avec prix, mentions et état (en vente, sous offre, vendu) mis à jour d'eux-mêmes ; rapide, accessible, belle sur téléphone d'abord, suivant le système de design d'AIMMO.
@@ -765,10 +767,18 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Critères : compte juste sur un jeu inventé, à l'heure de Paris ; aucune donnée personnelle dans la mesure ; seuls l'agent du bien et la direction la lisent [R16].
 - Attend : rien.
 
-### P09 · Routes et écran « Mettre en vente » de l'application de l'agent
+### P09 · Routes de M07 et passage de publication
 - Statut : à faire
-- Qui : Claude · Relecture : forte · Dépend de : P04, P05
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : P04, P05
 - Cahier : M07 ; Feuille de route, mars 2027 ; critère « mis en vente moins d'une heure après la fin du délai de rétractation ».
-- Objectif : les routes `/v1/annonces` (fiche, brouillon, validation, publication, état) dans `packages/api/src/annonces.ts`, et un écran de l'application de l'agent qui montre la liste de contrôle, l'annonce sourcée phrase par phrase et le bouton de validation.
-- Critères : chaque route sous R16, refus au journal ; un parcours de test complet, de la fin du délai de rétractation à la publication partout, en moins d'une heure sur horloge simulée ; écran accessible et sans texte générique.
+- Objectif : les routes `/v1/annonces` (fiche, liste de contrôle, brouillon, correction, validation, état et passage de publication, semaine, contrôle des vidéos, plan de tournage) dans `packages/api/src/annonces.ts`, de la même forme que celles de `app.ts`, et `syncAnnonces`, le passage de publication d'un réseau, sans toucher aux fichiers du socle.
+- Critères : chaque route sous R16, chaque refus une ligne au journal ; un parcours de test complet par les routes, de la fin du délai de rétractation à la publication partout, en moins d'une heure sur horloge simulée.
+- Attend : rien.
+
+### P10 · Branchement de M07 dans le socle, page publique et écran « Mettre en vente »
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/api/src/app.ts`, `packages/api/src/worker.ts`, application de l'agent) · Relecture : forte · Dépend de : P09
+- Cahier : M07 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : exporter `annonces` depuis `@aimmo/core` et remplacer l'import relatif de `packages/api/src/annonces.ts` ; ajouter `annonceRoutes()` aux routes de `app.ts` ; lancer `syncAnnonces` toutes les 15 minutes depuis le déclencheur du Worker ; servir la page publique du bien et sa fiche imprimable (`PageBien`) et les médias ; dans l'application de l'agent, un écran « Mettre en vente » qui montre la liste de contrôle, l'annonce sourcée phrase par phrase (chaque nombre relié à son champ) et le bouton de validation.
+- Critères : les routes répondent derrière la clé d'API [R16] ; le passage tourne toutes les 15 minutes, une seule fois par créneau ; la page publique ne montre qu'une version publiée, sans adresse [R46] ; écran accessible, sans texte générique, beau sur téléphone d'abord.
 - Attend : rien.
