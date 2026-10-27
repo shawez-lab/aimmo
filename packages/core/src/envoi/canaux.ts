@@ -42,3 +42,19 @@ export class FakeChannel implements OutboundChannel {
     return { externalId: `fake-${this.sent.length}` };
   }
 }
+
+/**
+ * Le port de l'agent (T09) : il ne remet rien, il prépare le lien `wa.me` que l'agent ouvrira de son propre téléphone.
+ * C'est le seul port admis pour un message de l'agent : aucun vrai canal ne peut y passer.
+ */
+export class AgentWhatsAppLink implements OutboundChannel {
+  readonly channel = 'whatsapp' as const;
+  link: string | null = null;
+
+  async deliver(message: OutboundMessage): Promise<DeliveryReceipt> {
+    const digits = message.to.replace(/\D/g, '');
+    if (digits.length < 8) throw new Error('numéro WhatsApp non valable');
+    this.link = `https://wa.me/${digits}?text=${encodeURIComponent(message.body)}`;
+    return { externalId: null };
+  }
+}

@@ -199,8 +199,16 @@ describeWithSqlite('P04 · un passage à la fois par bien', () => {
     t.setClock(new Date('2027-03-01T10:00:00.000Z'));
     let release: () => void = () => {};
     t.channels[0]!.gate = new Promise<void>((r) => (release = r));
+    // On attend que l'envoi soit vraiment en route, sans délai fixe : sûr même sur une machine lente.
+    let reached: () => void = () => {};
+    const inFlight = new Promise<void>((r) => (reached = r));
+    const push = t.channels[0]!.push.bind(t.channels[0]!);
+    t.channels[0]!.push = async (payload) => {
+      reached();
+      return push(payload);
+    };
     const first = t.publication.sync(t.network.id, t.propertyId);
-    await new Promise((r) => setTimeout(r, 20));
+    await inFlight;
     // Pendant que la version 1 est en route, le mandat est annulé ; un second passage ne fait rien tant que le premier tient le bien.
     await new RegistreMandats(t.db, t.journal, { now: t.now }).cancel(t.direction, t.mandateId, 'termination');
     expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ busy: true, created: false, pushed: [] });
@@ -234,11 +242,14 @@ describeWithSqlite('P04 · un passage à la fois par bien', () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => (release = r));
     let pause = true;
+    let reached: () => void = () => {};
+    const paused = new Promise<void>((r) => (reached = r));
     const slowDb = {
       ...t.db,
       run: async (sql: string, params?: readonly (string | number | null)[]) => {
         if (pause && sql.includes('INSERT INTO listing_versions')) {
           pause = false;
+          reached();
           await gate;
         }
         return t.db.run(sql, params);
@@ -246,7 +257,7 @@ describeWithSqlite('P04 · un passage à la fois par bien', () => {
     };
     const slow = new Publication(slowDb, t.acces, t.journal, { now: t.now, channels: t.channels });
     const first = slow.sync(t.network.id, t.propertyId);
-    await new Promise((r) => setTimeout(r, 20));
+    await paused;
     // Six minutes plus tard, le bail a échu ; le mandat est annulé ; un autre passage retire l'annonce.
     t.setClock(new Date('2027-03-01T10:06:00.000Z'));
     await new RegistreMandats(t.db, t.journal, { now: t.now }).cancel(t.direction, t.mandateId, 'termination');
