@@ -327,4 +327,40 @@ describeWithSqlite('P04 · un passage à la fois par bien', () => {
     t.setClock(new Date('2027-03-01T10:05:00.000Z'));
     expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 1, created: true, pushed: ['site', 'reseaux', 'google', 'portails'] });
   });
+
+  it('[R42] un passage dont le bail a échu avant d’écrire ne peut plus écrire de version périmée', async () => {
+    const t = await setup();
+    t.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    await t.annonces.validate(t.agent, t.draftId);
+    t.setClock(new Date('2027-03-01T10:00:00.000Z'));
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 1, created: true });
+    // Un avenant de prix ; le premier passage calcule la version 2 puis s'arrête juste avant de l'écrire.
+    await t.amend(190000);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    let pause = true;
+    const slowDb = {
+      ...t.db,
+      run: async (sql: string, params?: readonly (string | number | null)[]) => {
+        if (pause && sql.includes('INSERT INTO listing_versions')) {
+          pause = false;
+          await gate;
+        }
+        return t.db.run(sql, params);
+      },
+    };
+    const slow = new Publication(slowDb, t.acces, t.journal, { now: t.now, channels: t.channels });
+    const first = slow.sync(t.network.id, t.propertyId);
+    await new Promise((r) => setTimeout(r, 20));
+    // Six minutes plus tard, le bail a échu ; le mandat est annulé ; un autre passage retire l'annonce.
+    t.setClock(new Date('2027-03-01T10:06:00.000Z'));
+    await new RegistreMandats(t.db, t.journal, { now: t.now }).cancel(t.direction, t.mandateId, 'termination');
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 2, state: 'retiree', created: true });
+    release();
+    expect(await first).toMatchObject({ created: false });
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 2, state: 'retiree', created: false });
+    expect(t.channels.map((c) => c.received.at(-1)?.state)).toEqual(['retiree', 'retiree', 'retiree', 'retiree']);
+    const versions = await t.db.all<{ seq: number; state: string }>('SELECT seq, state FROM listing_versions WHERE property_id = ? ORDER BY seq', [t.propertyId]);
+    expect(versions.map((v) => `${v.seq}:${v.state}`)).toEqual(['1:en_vente', '2:retiree']);
+  });
 });
