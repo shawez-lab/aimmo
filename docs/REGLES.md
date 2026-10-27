@@ -37,4 +37,4 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R31 | Estimation en ligne. Sans visite, seule la fourchette de la commune est donnée, jamais le prix d'un bien précis. | oui | E05 |
 | R32 | Pas de double réservation. Deux rendez-vous d'un agent ne se chevauchent jamais, et le temps de trajet entre deux rendez-vous sur place est toujours laissé. | oui | V01, V02 |
 | R33 | Disponibilités de l'agent. Aucun créneau n'est proposé hors des disponibilités que l'agent a fixées, ni sur un événement occupé de son agenda. | oui | V01 |
-| R34 | Brief vrai. Le brief d'un rendez-vous ne porte que des données de la base ou d'une source citée ; ce qui manque est dit, rien n'est inventé. | non | V05 |
+| R34 | Brief vrai. Le brief d'un rendez-vous ne porte que des données de la base ou d'une source citée ; ce qui manque est dit, rien n'est inventé. | oui | V05 |
