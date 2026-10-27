@@ -27,7 +27,11 @@ export interface WeeklyReport {
 }
 
 const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
-const validDay = (d: string): boolean => DAY.test(d) && new Date(`${d}T12:00:00Z`).toISOString().slice(0, 10) === d;
+const validDay = (d: string): boolean => {
+  if (!DAY.test(d)) return false;
+  const t = Date.parse(`${d}T12:00:00Z`);
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === d;
+};
 
 /** Le lundi de la semaine de Paris d'un instant. */
 export function mondayOf(at: Date): string {
@@ -67,6 +71,19 @@ export class MesureBiens {
     return changes === 1 ? { ok: true } : { ok: false, rule: null, code: 'already_recorded' };
   }
 
+  /** La fiche gardée au bout des fusions actives. */
+  private async rootOf(personId: string): Promise<string> {
+    let current = personId;
+    const seen = new Set<string>();
+    while (!seen.has(current)) {
+      seen.add(current);
+      const merge = await this.db.first<{ survivor_id: string }>('SELECT survivor_id FROM person_merges WHERE merged_id = ? AND undone_at IS NULL', [current]);
+      if (!merge) return current;
+      current = merge.survivor_id;
+    }
+    return current;
+  }
+
   /** La semaine d'un bien, lue par l'agent du bien ou la direction [R16]. */
   async weekly(viewer: Viewer, propertyId: string, monday: string): Promise<{ ok: true; value: WeeklyReport } | Refusal | Problem> {
     if (typeof monday !== 'string' || !validDay(monday)) return { ok: false, rule: null, code: 'bad_day' };
@@ -90,11 +107,16 @@ export class MesureBiens {
     // Les dates sont en UTC dans la base : on lit une marge d'un jour de chaque côté, puis on garde la semaine de Paris.
     const from = `${addDays(monday, -1)}T00:00:00.000Z`;
     const to = `${addDays(sunday, 2)}T00:00:00.000Z`;
-    const contactRows = await this.db.all<{ person_id: string; created_at: string }>(
-      'SELECT person_id, created_at FROM qualifications WHERE property_id = ? AND created_at >= ? AND created_at < ?',
+    // Un contact compte à l'heure où son message est arrivé, et une fois par personne : deux fiches réunies sont une
+    // seule personne (fusions actives, S04).
+    const contactRows = await this.db.all<{ person_id: string; received_at: string }>(
+      `SELECT q.person_id, i.received_at FROM qualifications q JOIN inbound_messages i ON i.id = q.inbound_id
+       WHERE q.property_id = ? AND i.received_at >= ? AND i.received_at < ?`,
       [propertyId, from, to],
     );
-    const contacts = new Set(contactRows.filter((r) => inWeek(r.created_at)).map((r) => r.person_id)).size;
+    const roots = new Set<string>();
+    for (const r of contactRows.filter((row) => inWeek(row.received_at))) roots.add(await this.rootOf(r.person_id));
+    const contacts = roots.size;
     const visitRows = await this.db.all<{ status: string; start_at: string }>(
       "SELECT status, start_at FROM appointments WHERE property_id = ? AND kind = 'visite' AND status IN ('booked', 'honored') AND start_at >= ? AND start_at < ?",
       [propertyId, from, to],
