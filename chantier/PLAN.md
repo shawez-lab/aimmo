@@ -903,10 +903,11 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 
 ### N01 · Pièces du dossier notaire
 - Statut : en cours (voie 2)
+- Décidé (2026-10-27) : chaque pièce porte la date du document, saisie par l'agent, pour juger sa validité à l'acte (N06) ; le gaz est demandé pour tout logement de 15 ans ou plus, quel que soit le chauffage (sans installation, la pièce est l'attestation d'absence) ; 15 ans pile comptent ; lot de copropriété : notice d'information, plan pluriannuel de travaux ou diagnostic technique global, et dossier technique amiante des parties communes avant juillet 1997 ; diagnostics dépendant d'un arrêté local (termites, mérule, assainissement) à ajouter par commune plus tard
 - Qui : Claude · Relecture : forte · Dépend de : O07
 - Cahier : M10, « Dossier notaire » ; Conformité, données minimales.
 - Objectif : la liste des pièces attendues pour un dossier de vente, calculée par des règles écrites selon le bien (titre de propriété, diagnostics, documents de copropriété pour un lot, fiches de renseignements du vendeur et de l'acquéreur) ; l'agent range chaque pièce reçue par sa référence de stockage, datée et attribuée ; la liste des pièces manquantes ; le dossier est « complet » quand rien ne manque.
-- Critères : la liste dépend seulement des données du bien, la même pour tous [R60] ; une pièce reçue ne s'efface ni ne change, une nouvelle version s'ajoute [R17] ; une pièce d'identité, un document anti-blanchiment ou un RIB sont refusés comme pièce, l'identité n'y figure que comme état vérifié [R15] ; seul l'agent du dossier y accède [R16] ; 3 dossiers tests (maison, appartement en copropriété, terrain) arrivent à « complet ».
+- Critères : la liste dépend seulement des données du bien, la même pour tous [R60] ; une pièce reçue ne s'efface ni ne change, une nouvelle version s'ajoute [R17] ; une pièce d'identité, un document anti-blanchiment ou un RIB sont refusés comme pièce, l'identité n'y figure que comme état vérifié [R15] ; seul l'agent du dossier range une pièce, l'agent, la direction et la conformité lisent [R16] ; 3 dossiers tests (maison, appartement en copropriété, terrain) arrivent à « complet ».
 - Attend : rien.
 
 ### N02 · Échéancier du dossier et alertes à l'agent
@@ -946,7 +947,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Qui : Claude · Relecture : forte · Dépend de : N02
 - Cahier : M10, « Acte signé » ; M13 et M11 pour la suite.
 - Objectif : l'agent rapporte l'acte signé avec sa preuve (référence de l'attestation du notaire) ; le dossier se clôt, le bien passe « vendu », la commission devient due au montant du mandat en vigueur, rangée pour M13, et l'après-vente est marqué à démarrer pour M11.
-- Critères : pas d'acte sans compromis en préparation et sans dossier complet [R58, R60] ; la commission vient du mandat en vigueur, avenants compris, jamais d'une saisie [R10, R63] ; une seule clôture par dossier ; rien ne s'efface [R17] ; la publication montre le bien vendu au passage suivant.
+- Critères : pas d'acte sans compromis en préparation et sans dossier complet [R58, R60] ; une pièce périmée à la date de l'acte, d'après sa date de document rangée par N01 (état des risques 6 mois, électricité et gaz 3 ans, DPE 10 ans, durées en réglage), compte comme manquante [R60] ; la commission vient du mandat en vigueur, avenants compris, jamais d'une saisie [R10, R63] ; une seule clôture par dossier ; rien ne s'efface [R17] ; la publication montre le bien vendu au passage suivant.
 - Attend : rien.
 
 ### N07 · Chemin critique de la vente (Jamais vu)
