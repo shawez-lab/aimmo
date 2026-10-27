@@ -28,12 +28,19 @@ describeWithSqlite('O06 · tableau comparatif des offres', () => {
         rows: [
           { seq: 1, amountEur: 190000, netSellerEur: 180000, conditions: [], daysLeft: 2, state: 'recue', counterProposals: 0 },
           { seq: 2, amountEur: 215000, netSellerEur: 205000, conditions: ['pret', 'vente_autre_bien'], daysLeft: 9, state: 'recue', counterProposals: 0 },
-          { seq: 3, amountEur: 207000, netSellerEur: 197000, conditions: ['pret'], daysLeft: null, state: 'contre_offre', counterProposals: 1 },
+          { seq: 3, amountEur: 207000, netSellerEur: 197000, conditions: ['pret'], daysLeft: 3, state: 'contre_offre', counterProposals: 1 },
         ],
       },
     });
     // Aucune donnée sur l'acquéreur, aucun classement ni avis.
     expect(JSON.stringify(table)).not.toMatch(/Acheteur|Exemple|buyer|financ|downPayment|score|rang|meilleur|recommand/i);
+    // La contre-offre du vendeur est acceptée : la ligne le dit.
+    const props = await t.db.all<{ id: string }>('SELECT id FROM offer_proposals WHERE offer_id = ?', [mid.id]);
+    await contre.transmit(t.agent, props[0]!.id, { via: 'telephone' });
+    t.setClock(new Date('2027-03-01T14:00:00.000Z'));
+    await contre.respond(t.agent, props[0]!.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T13:30:00.000Z' });
+    const after = await new ComparatifOffres(t.db, t.acces, t.journal, { now: t.now }).table(t.agent, t.propertyId);
+    expect(after.ok && after.value.rows[2]).toMatchObject({ amountEur: 207000, state: 'acceptee', daysLeft: null });
     expect(low.seq).toBe(1);
     expect(high.seq).toBe(2);
   });
