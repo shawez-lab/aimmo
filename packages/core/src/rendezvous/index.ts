@@ -6,3 +6,4 @@ export * from './brief.ts';
 export * from './statut.ts';
 export * from './tournee.ts';
 export * from './en-ligne.ts';
+export * from './journee.ts';
