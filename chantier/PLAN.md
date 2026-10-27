@@ -342,14 +342,15 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Attend : H20 pour la vérification réelle sur 10 biens ; le reste se fait avant.
 
 ### E04 · Brouillon d'avis de valeur et validation par l'agent
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Reste : la mise en page PDF à la marque de l'agent, quand l'application de l'agent l'affichera.
 - Qui : Claude · Relecture : forte · Dépend de : E01, E02, E03
 - Cahier : M04, « Rédaction par l'IA » et « Validation ».
 - Objectif : un brouillon d'avis (méthode, comparables sans nom, fourchette, arguments, plan de commercialisation, date des données) rangé sur le bien ; l'IA rédige derrière une interface, un texte de secours sans IA sinon ; l'agent ajuste la fourchette et le texte, puis valide ; la mise en page à la marque de l'agent se fait sur le brouillon validé.
 - Critères : aucun avis ne peut partir sans validation de l'agent qui suit le bien [R30] ; chaque chiffre du texte vient du calcul [R10] ; l'avis dit que c'est un avis et que le prix appartient au vendeur ; les ajustements de l'agent sont gardés à côté du calcul.
 
 ### E05 · Estimation en ligne du site
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : E01, E02
 - Cahier : M04, « Estimation en ligne ».
 - Objectif : une route de l'API pour le site qui rend la fourchette de la commune seulement, jamais le prix d'un bien précis sans visite, puis propose un rendez-vous.
