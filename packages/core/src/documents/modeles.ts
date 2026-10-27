@@ -1,0 +1,374 @@
+/**
+ * La bibliothèque de modèles et la génération des documents (M06, D02).
+ *
+ * Un modèle est un texte daté et versionné, avec ses champs `{{nom.du.champ}}` pris dans un catalogue fermé. Il ne
+ * change jamais : le modifier crée une version. Il naît « essai » ; seule une personne désignée, avec le rôle
+ * conformité, le passe « validé » (H08), jamais le code. Un document généré remplit chaque champ depuis la base, ou
+ * depuis une saisie de l'agent pour les seuls champs prévus pour cela ; un champ qui manque est montré comme tel et
+ * rend le document « incomplet », jamais un texte inventé. L'IA ne rédige rien [R40].
+ *
+ * Le document garde la version et l'empreinte du modèle utilisé, et son propre contenu, figé. Un modèle « essai » ne
+ * produit qu'un document d'essai, marqué comme tel, qu'aucune signature réelle n'acceptera. Les droits sont ceux de la
+ * fiche et du bien [R16] ; le journal ne porte que des identifiants et des nombres [R13].
+ */
+import { Acces } from '../acces/acces.ts';
+import type { Viewer } from '../acces/droits.ts';
+import type { SqlDatabase } from '../db/sql.ts';
+import { appendEvent } from '../journal/journal.ts';
+import type { JournalStore } from '../journal/types.ts';
+import { localTime } from '../envoi/horaires.ts';
+
+export const DOCUMENT_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif', 'avenant_mandat'] as const;
+export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
+
+/** D'où vient la valeur d'un champ : la base, une saisie de l'agent, ou la signature (rempli plus tard). */
+type FieldSource = 'base' | 'saisie' | 'signature';
+export const TEMPLATE_FIELDS: Readonly<Record<string, { source: FieldSource; label: string }>> = Object.freeze({
+  'mandant.nom': { source: 'base', label: 'nom du mandant' },
+  'bien.reference': { source: 'base', label: 'référence du bien' },
+  'bien.type': { source: 'base', label: 'type de bien' },
+  'bien.commune': { source: 'base', label: 'commune du bien' },
+  'bien.surface': { source: 'base', label: 'surface du bien' },
+  'bien.pieces': { source: 'base', label: 'nombre de pièces' },
+  'bien.prix': { source: 'base', label: 'prix du bien' },
+  'agent.nom': { source: 'base', label: 'nom de l’agent' },
+  'reseau.nom': { source: 'base', label: 'nom du réseau' },
+  'document.date': { source: 'base', label: 'date du document' },
+  'honoraires.montant': { source: 'saisie', label: 'montant des honoraires' },
+  'honoraires.charge': { source: 'saisie', label: 'charge des honoraires' },
+  'mandat.duree_mois': { source: 'saisie', label: 'durée du mandat' },
+  'registre.numero': { source: 'signature', label: 'numéro au registre' },
+  'signature.date': { source: 'signature', label: 'date de signature' },
+  'signature.lieu': { source: 'signature', label: 'lieu de signature' },
+});
+
+export interface TemplateInfo {
+  id: string;
+  kind: DocumentKind;
+  version: number;
+  status: 'essai' | 'valide';
+  body: string;
+  fields: string[];
+  hash: string;
+  createdAt: string;
+  validatedBy: string | null;
+  validatedAt: string | null;
+}
+
+export interface GeneratedDocument {
+  id: string;
+  kind: DocumentKind;
+  mode: 'essai' | 'reel';
+  status: 'complet' | 'incomplet';
+  /** Les champs qui manquent, par leur nom. */
+  missing: string[];
+  templateId: string;
+  templateVersion: number;
+  templateHash: string;
+  content: string;
+  contentHash: string;
+  createdAt: string;
+}
+
+export interface GenerateRequest {
+  kind: DocumentKind;
+  personId: string;
+  propertyId: string;
+  /** Les champs saisis par l'agent : honoraires et durée seulement. */
+  inputs?: { 'honoraires.montant'?: unknown; 'honoraires.charge'?: unknown; 'mandat.duree_mois'?: unknown };
+}
+
+type Refusal = { ok: false; rule: 'R16'; code: string };
+type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' };
+
+const PLACEHOLDER = /\{\{\s*([a-z_.]+)\s*\}\}/g;
+const MAX_BODY = 50_000;
+const TIME_ZONE = 'Europe/Paris';
+
+export async function sha256(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const escapeHtml = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+/** Les champs d'un texte de modèle, dans l'ordre de leur première apparition. */
+export function templateFields(body: string): string[] {
+  return [...new Set([...body.matchAll(PLACEHOLDER)].map((m) => m[1]!))];
+}
+
+const PRINT_CSS =
+  'body{font:12pt/1.5 Georgia,serif;max-width:42rem;margin:2rem auto;padding:0 1rem;color:#111}p{margin:0 0 .8em}.evidence{border:2px solid #111;padding:.6em;font-weight:bold}.essai{border:3px dashed #b3261e;color:#b3261e;padding:.6em;font-weight:bold}.manque{background:#ffe08a}.a-signer{font-style:italic}@media print{body{margin:0}}';
+
+/**
+ * Le document rendu en HTML imprimable. Le texte du modèle et chaque valeur sont échappés ; un champ absent est
+ * montré « à compléter », un champ de signature « à la signature » ; un document d'essai porte un bandeau.
+ */
+export function renderDocument(body: string, values: Readonly<Record<string, string | null>>, options: { title: string; trial: boolean }): string {
+  const paragraphs = body.replace(/\r\n?/g, '\n').split(/\n{2,}/);
+  const html = paragraphs
+    .map((paragraph) => {
+      const evidence = paragraph.startsWith('!! ');
+      const text = evidence ? paragraph.slice(3) : paragraph;
+      let out = '';
+      let last = 0;
+      for (const m of text.matchAll(PLACEHOLDER)) {
+        out += escapeHtml(text.slice(last, m.index));
+        const name = m[1]!;
+        const field = TEMPLATE_FIELDS[name]!;
+        const value = values[name];
+        if (field.source === 'signature') out += `<span class="a-signer">[${escapeHtml(field.label)} à la signature]</span>`;
+        else if (value === null || value === undefined) out += `<span class="manque">[à compléter : ${escapeHtml(field.label)}]</span>`;
+        else out += escapeHtml(value);
+        last = m.index + m[0].length;
+      }
+      out += escapeHtml(text.slice(last));
+      out = out.replace(/\n/g, '<br>');
+      return evidence ? `<p class="evidence">${out}</p>` : `<p>${out}</p>`;
+    })
+    .join('\n');
+  const banner = options.trial ? '<p class="essai">DOCUMENT D’ESSAI : modèle non validé, sans aucune valeur juridique.</p>\n' : '';
+  return `<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n<title>${escapeHtml(options.title)}</title>\n<style>${PRINT_CSS}</style>\n</head>\n<body>\n${banner}${html}\n</body>\n</html>\n`;
+}
+
+/** Une signature réelle n'accepte qu'un document complet, fait sur un modèle validé [R40]. */
+export const canSignForReal = (doc: Pick<GeneratedDocument, 'mode' | 'status'>): boolean => doc.mode === 'reel' && doc.status === 'complet';
+
+const KIND_TITLE: Record<DocumentKind, string> = {
+  mandat_vente_simple: 'Mandat de vente simple',
+  mandat_vente_exclusif: 'Mandat de vente exclusif',
+  avenant_mandat: 'Avenant au mandat',
+};
+const PROPERTY_KIND: Record<string, string> = { home: 'logement', land: 'terrain', building: 'immeuble', commercial: 'local commercial', business_walls: 'murs commerciaux', business: 'fonds de commerce' };
+const number = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
+
+interface TemplateRow {
+  id: string;
+  network_id: string;
+  kind: DocumentKind;
+  version: number;
+  status: 'essai' | 'valide';
+  body: string;
+  fields: string;
+  hash: string;
+  created_at: string;
+  validated_by: string | null;
+  validated_at: string | null;
+}
+
+const toTemplate = (r: TemplateRow): TemplateInfo => ({
+  id: r.id,
+  kind: r.kind,
+  version: Number(r.version),
+  status: r.status,
+  body: r.body,
+  fields: JSON.parse(r.fields) as string[],
+  hash: r.hash,
+  createdAt: r.created_at,
+  validatedBy: r.validated_by,
+  validatedAt: r.validated_at,
+});
+
+export class Modeles {
+  private readonly now: () => Date;
+  private readonly newId: () => string;
+
+  constructor(
+    private readonly db: SqlDatabase,
+    private readonly acces: Acces,
+    private readonly journal: JournalStore,
+    options: { now?: () => Date; newId?: () => string } = {},
+  ) {
+    this.now = options.now ?? (() => new Date());
+    this.newId = options.newId ?? (() => crypto.randomUUID());
+  }
+
+  private actor(viewer: Viewer): string {
+    return `${String(viewer.role)}:${viewer.userId}`;
+  }
+
+  private async refuse(viewer: Viewer, kind: string, code: string, subject: string | null = null): Promise<Refusal> {
+    await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind, code } }, this.now);
+    return { ok: false, rule: 'R16', code };
+  }
+
+  /** Une nouvelle version d'un modèle, à l'état « essai » : la direction seule. */
+  async createVersion(viewer: Viewer, kind: DocumentKind, body: string): Promise<{ ok: true; template: TemplateInfo } | Refusal | Problem> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'template', 'role');
+    if (!(DOCUMENT_KINDS as readonly string[]).includes(kind)) return { ok: false, rule: null, code: 'unknown_kind' };
+    if (typeof body !== 'string' || body.trim() === '') return { ok: false, rule: null, code: 'empty_body' };
+    if (body.length > MAX_BODY) return { ok: false, rule: null, code: 'body_too_long' };
+    const fields = templateFields(body);
+    if (fields.some((f) => !TEMPLATE_FIELDS[f])) return { ok: false, rule: 'R40', code: 'unknown_field' };
+    // Un champ mal écrit (accolades sans nom reconnu) serait recopié tel quel : refusé.
+    if (/\{\{|\}\}/.test(body.replace(PLACEHOLDER, ''))) return { ok: false, rule: 'R40', code: 'unknown_field' };
+    // Un mandat exclusif met sa clause d'exclusivité en évidence : un paragraphe qui commence par `!! `.
+    if (kind === 'mandat_vente_exclusif' && !body.replace(/\r\n?/g, '\n').split(/\n{2,}/).some((p) => p.startsWith('!! '))) return { ok: false, rule: 'R40', code: 'no_evidence' };
+    const hash = await sha256(JSON.stringify([kind, body, fields]));
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM document_templates WHERE network_id = ? AND kind = ?', [viewer.networkId, kind]);
+      const version = Number(last?.v ?? 0) + 1;
+      const id = this.newId();
+      const at = this.now().toISOString();
+      const { changes } = await this.db.run(
+        `INSERT INTO document_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at) VALUES (?, ?, ?, ?, 'essai', ?, ?, ?, ?, ?)
+         ON CONFLICT (network_id, kind, version) DO NOTHING`,
+        [id, viewer.networkId, kind, version, body, JSON.stringify(fields), hash, this.actor(viewer), at],
+      );
+      if (changes !== 1) continue;
+      await appendEvent(this.journal, { type: 'modele.version', actor: this.actor(viewer), subject: `template:${id}`, data: { kind, version } }, this.now);
+      const row = await this.db.first<TemplateRow>('SELECT * FROM document_templates WHERE id = ?', [id]);
+      return { ok: true, template: toTemplate(row!) };
+    }
+    throw new Error('template_version_busy');
+  }
+
+  /** Le modèle passe « validé » : la conformité seule, qui note qui l'a validé (H08). Le code ne valide jamais seul. */
+  async validate(viewer: Viewer, templateId: string): Promise<{ ok: true; template: TemplateInfo } | Refusal | Problem> {
+    if (viewer.role !== 'compliance') return this.refuse(viewer, 'template', 'role', `template:${templateId}`);
+    const row = await this.db.first<TemplateRow>('SELECT * FROM document_templates WHERE id = ? AND network_id = ?', [templateId, viewer.networkId]);
+    if (!row) return { ok: false, rule: null, code: 'unknown_template' };
+    if (row.status !== 'essai') return { ok: false, rule: null, code: 'not_essai' };
+    const at = this.now().toISOString();
+    await this.db.run(`UPDATE document_templates SET status = 'valide', validated_by = ?, validated_at = ? WHERE id = ? AND status = 'essai'`, [this.actor(viewer), at, templateId]);
+    await appendEvent(this.journal, { type: 'modele.valide', actor: this.actor(viewer), subject: `template:${templateId}`, data: { kind: row.kind, version: Number(row.version) } }, this.now);
+    return { ok: true, template: toTemplate((await this.db.first<TemplateRow>('SELECT * FROM document_templates WHERE id = ?', [templateId]))!) };
+  }
+
+  /** Les modèles du réseau, toutes versions : lisibles par tout rôle du réseau, sans donnée de client. */
+  async list(viewer: Viewer): Promise<{ ok: true; templates: TemplateInfo[] } | Refusal> {
+    if (!['agent', 'direction', 'compliance'].includes(viewer.role)) return this.refuse(viewer, 'template', 'role');
+    const rows = await this.db.all<TemplateRow>('SELECT * FROM document_templates WHERE network_id = ? ORDER BY kind, version', [viewer.networkId]);
+    return { ok: true, templates: rows.map(toTemplate) };
+  }
+
+  /** Génère un document depuis la dernière version du modèle, pour une fiche et un bien que l'on voit en entier [R16]. */
+  async generate(viewer: Viewer, request: GenerateRequest): Promise<{ ok: true; document: GeneratedDocument } | Refusal | Problem> {
+    if (!(DOCUMENT_KINDS as readonly string[]).includes(request.kind)) return { ok: false, rule: null, code: 'unknown_kind' };
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'document', 'role');
+    const inputs = readInputs(request.inputs ?? {});
+    if (inputs === null) return { ok: false, rule: null, code: 'bad_input' };
+
+    const read = await this.acces.readFiche(viewer, request.personId);
+    if (!read.ok) return read;
+    if (read.view !== 'full') return this.refuse(viewer, 'person', 'not_assigned', `person:${request.personId}`);
+    const fiche = read.value;
+    // Le bien passe par la lecture sous droits : la lecture est écrite au journal avant d'être rendue [R16].
+    const readProperty = await this.acces.readProperty(viewer, request.propertyId);
+    if (!readProperty.ok) return readProperty;
+    if (readProperty.view !== 'full') return this.refuse(viewer, 'property', 'not_assigned', `property:${request.propertyId}`);
+    const property = readProperty.value;
+
+    // Le modèle en vigueur : la dernière version validée ; tant qu'aucune ne l'est, la dernière version d'essai, qui ne
+    // donne qu'un document d'essai. Une nouvelle version d'essai ne remplace jamais une version validée.
+    const template =
+      (await this.db.first<TemplateRow>(`SELECT * FROM document_templates WHERE network_id = ? AND kind = ? AND status = 'valide' ORDER BY version DESC LIMIT 1`, [viewer.networkId, request.kind])) ??
+      (await this.db.first<TemplateRow>('SELECT * FROM document_templates WHERE network_id = ? AND kind = ? ORDER BY version DESC LIMIT 1', [viewer.networkId, request.kind]));
+    if (!template) return { ok: false, rule: 'R40', code: 'no_template' };
+
+    const agentId = viewer.role === 'agent' ? viewer.userId : (fiche.members.map((m) => m.agent_id).find((a) => a !== null) ?? property.agent_id);
+    if (!agentId) return this.refuse(viewer, 'person', 'not_assigned', `person:${request.personId}`);
+    const agent = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ? AND network_id = ?', [agentId, viewer.networkId]);
+    const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [viewer.networkId]);
+    const text = (v: string | null | undefined): string | null => (v === null || v === undefined || v.trim() === '' ? null : v.trim());
+    const day = localTime(this.now(), TIME_ZONE).date;
+    const base: Record<string, string | null> = {
+      // Le mandant est identifié par son prénom et son nom : l'un sans l'autre ne suffit pas.
+      'mandant.nom': text(fiche.person.first_name) && text(fiche.person.last_name) ? `${text(fiche.person.first_name)} ${text(fiche.person.last_name)}` : null,
+      'bien.reference': text(property.reference),
+      'bien.type': text(PROPERTY_KIND[property.kind] ?? null),
+      'bien.commune': text([property.postal_code, property.city].filter(Boolean).join(' ')),
+      'bien.surface': property.surface_m2 === null ? null : `${number.format(property.surface_m2)} m²`,
+      'bien.pieces': property.rooms === null ? null : String(property.rooms),
+      'bien.prix': property.price_eur === null ? null : `${number.format(property.price_eur)} €`,
+      'agent.nom': agent ? text(`${agent.first_name} ${agent.last_name}`) : null,
+      'reseau.nom': text(network?.name),
+      'document.date': `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`,
+      ...inputs,
+    };
+    const fields = JSON.parse(template.fields) as string[];
+    const missing = fields.filter((f) => TEMPLATE_FIELDS[f]?.source !== 'signature' && (base[f] === null || base[f] === undefined));
+    const mode = template.status === 'valide' ? 'reel' : 'essai';
+    const content = renderDocument(template.body, base, { title: `${KIND_TITLE[template.kind]} · ${base['bien.reference'] ?? ''}`, trial: mode === 'essai' });
+    const contentHash = await sha256(content);
+    const id = this.newId();
+    const at = this.now().toISOString();
+    const status = missing.length === 0 ? 'complet' : 'incomplet';
+    await this.db.run(
+      `INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, viewer.networkId, template.id, Number(template.version), template.hash, template.kind, mode, status, JSON.stringify(missing), agentId, fiche.person.id, property.id, content, contentHash, this.actor(viewer), at],
+    );
+    await appendEvent(
+      this.journal,
+      { type: 'document.genere', actor: this.actor(viewer), subject: `person:${fiche.person.id}`, data: { document: id, kind: template.kind, version: Number(template.version), mode, status, missing: missing.length } },
+      this.now,
+    );
+    return {
+      ok: true,
+      document: { id, kind: template.kind, mode, status, missing, templateId: template.id, templateVersion: Number(template.version), templateHash: template.hash, content, contentHash, createdAt: at },
+    };
+  }
+
+  /** Un document : celui qui voit la fiche en entier (son agent, la direction, la conformité) [R16]. */
+  async read(viewer: Viewer, documentId: string): Promise<{ ok: true; document: GeneratedDocument } | Refusal> {
+    const row = await this.db.first<{
+      id: string;
+      network_id: string;
+      kind: DocumentKind;
+      mode: 'essai' | 'reel';
+      status: 'complet' | 'incomplet';
+      missing: string;
+      template_id: string;
+      template_version: number;
+      template_hash: string;
+      person_id: string;
+      content: string;
+      content_hash: string;
+      created_at: string;
+    }>('SELECT * FROM documents WHERE id = ?', [documentId]);
+    if (!row || row.network_id !== viewer.networkId) return this.refuse(viewer, 'document', 'unknown', `document:${documentId}`);
+    const read = await this.acces.readFiche(viewer, row.person_id);
+    if (!read.ok) return read;
+    if (read.view !== 'full') return this.refuse(viewer, 'document', 'not_assigned', `document:${documentId}`);
+    return {
+      ok: true,
+      document: {
+        id: row.id,
+        kind: row.kind,
+        mode: row.mode,
+        status: row.status,
+        missing: JSON.parse(row.missing) as string[],
+        templateId: row.template_id,
+        templateVersion: Number(row.template_version),
+        templateHash: row.template_hash,
+        content: row.content,
+        contentHash: row.content_hash,
+        createdAt: row.created_at,
+      },
+    };
+  }
+}
+
+/** Les saisies de l'agent, vérifiées : montant entier en euros, charge, durée en mois ; null si l'une est mal formée. */
+function readInputs(raw: Record<string, unknown>): Record<string, string | null> | null {
+  const allowed = new Set(['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois']);
+  if (Object.keys(raw).some((k) => !allowed.has(k))) return null;
+  const out: Record<string, string | null> = { 'honoraires.montant': null, 'honoraires.charge': null, 'mandat.duree_mois': null };
+  const amount = raw['honoraires.montant'];
+  if (amount !== undefined && amount !== null) {
+    if (typeof amount !== 'number' || !Number.isInteger(amount) || amount < 0 || amount > 10_000_000) return null;
+    out['honoraires.montant'] = `${number.format(amount)} €`;
+  }
+  const charge = raw['honoraires.charge'];
+  if (charge !== undefined && charge !== null) {
+    if (charge !== 'vendeur' && charge !== 'acquereur') return null;
+    out['honoraires.charge'] = charge === 'vendeur' ? 'à la charge du vendeur' : 'à la charge de l’acquéreur';
+  }
+  const months = raw['mandat.duree_mois'];
+  if (months !== undefined && months !== null) {
+    if (typeof months !== 'number' || !Number.isInteger(months) || months < 1 || months > 120) return null;
+    out['mandat.duree_mois'] = `${months} mois`;
+  }
+  return out;
+}

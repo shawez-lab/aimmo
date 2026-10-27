@@ -12,6 +12,7 @@ import {
   FicheClient,
   CATEGORIES,
   FicheAgent,
+  Modeles,
   FicheUnique,
   JourneeRendezVous,
   Qualification,
@@ -79,6 +80,10 @@ export interface ApiConfig {
 }
 
 const MAX_BODY_BYTES = 10_000;
+/** Un modèle de mandat tient sur plusieurs pages. */
+const TEMPLATE_BODY_BYTES = 120_000;
+
+const modeles = (s: Services): Modeles => new Modeles(s.db, s.acces, s.journal, { now: s.now });
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), {
@@ -294,6 +299,70 @@ const ROUTES: RouteDef[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/modeles$/,
+    name: 'modeles',
+    // Les modèles du réseau, toutes versions, avec leur état « essai » ou « validé » [R40].
+    handle: async (s, viewer) => {
+      const r = await modeles(s).list(viewer);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.templates }) : refusal(r);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/modeles$/,
+    name: 'modeles.version',
+    // Une nouvelle version d'un modèle, à l'état « essai » : la direction seule [R40].
+    handle: async (s, viewer, _params, request) => {
+      const body = await readJson(request, TEMPLATE_BODY_BYTES);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['kind', 'body'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind et body sont admis.');
+      const r = await modeles(s).createVersion(viewer, body.kind as never, body.body as string);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.template });
+      return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, rule: r.rule, code: r.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/modeles/${ID}/validation$`),
+    name: 'modeles.validation',
+    // Le modèle passe « validé » : la conformité seule, jamais le code (H08).
+    handle: async (s, viewer, [id]) => {
+      const r = await modeles(s).validate(viewer, id!);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.template });
+      return r.rule === 'R16' ? refusal(r) : json(r.code === 'unknown_template' ? 404 : 409, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/documents$/,
+    name: 'documents.generation',
+    // Un document généré depuis la dernière version du modèle, pour une fiche et un bien vus en entier [R16, R40].
+    handle: async (s, viewer, _params, request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs sont admis.');
+      const { kind, personId, propertyId, inputs } = body;
+      if (typeof personId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(personId) || typeof propertyId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(propertyId)) {
+        return failure(400, 'invalid_ids', 'personId et propertyId attendus.');
+      }
+      if (inputs !== undefined && (inputs === null || typeof inputs !== 'object' || Array.isArray(inputs))) return failure(400, 'invalid_inputs', 'inputs : un objet.');
+      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}) });
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.document });
+      return r.rule === 'R16' ? refusal(r) : json(r.code === 'no_template' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/documents/${ID}$`),
+    name: 'document',
+    // Un document : celui qui voit la fiche en entier [R16].
+    handle: async (s, viewer, [id]) => {
+      const r = await modeles(s).read(viewer, id!);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.document }) : refusal(r);
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/attribution\/regles$/,
     name: 'attribution.regles',
     // Les règles d'attribution, publiées, les mêmes pour tous [R25] : rien de personnel.
@@ -316,10 +385,10 @@ const ROUTES: RouteDef[] = [
   },
 ];
 
-async function readJson(request: Request): Promise<Record<string, unknown> | null> {
+async function readJson(request: Request, max = MAX_BODY_BYTES): Promise<Record<string, unknown> | null> {
   if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) return null;
   const text = await request.text();
-  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return null;
+  if (new TextEncoder().encode(text).length > max) return null;
   try {
     const value: unknown = JSON.parse(text);
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -583,9 +652,11 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   const viewer = await viewerFromRequest(request, keys);
   if (viewer === null) return failure(401, 'unauthorized', 'Clé absente ou refusée.');
 
-  const route = ROUTES.find((candidate) => candidate.pattern.test(path));
-  if (!route) return failure(404, 'not_found', 'Adresse inconnue.');
-  if (route.method !== request.method) return failure(405, 'method_not_allowed', 'Méthode non admise.');
+  // Une même adresse peut servir à lire (GET) et à écrire (POST) : la route est choisie par l'adresse et la méthode.
+  const matching = ROUTES.filter((candidate) => candidate.pattern.test(path));
+  if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
+  const route = matching.find((candidate) => candidate.method === request.method);
+  if (!route) return failure(405, 'method_not_allowed', 'Méthode non admise.');
   const params = (route.pattern.exec(path) ?? []).slice(1);
 
   const s = services(config.db, now);
