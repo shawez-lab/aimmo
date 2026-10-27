@@ -84,10 +84,23 @@ export type ReviewRefusal = { ok: false; rule: 'R16' | null; code: string };
 
 const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
-/** Les adresses d'une fiche Google d'établissement, et elles seules. */
-const GOOGLE_HOSTS = new Set(['g.page', 'maps.app.goo.gl', 'search.google.com', 'www.google.com', 'google.com', 'maps.google.com', 'www.google.fr', 'google.fr', 'g.co']);
+/**
+ * Les adresses d'une fiche Google d'établissement, et elles seules : un hôte de Google et un chemin qui désigne une
+ * fiche ou son formulaire d'avis. La page d'accueil ou une recherche de Google ne suffisent pas.
+ */
+const LISTING_PATHS: Record<string, (u: URL) => boolean> = {
+  'g.page': (u) => /^\/(?:r\/)?[\w-]{3,}(?:\/review)?\/?$/.test(u.pathname),
+  'maps.app.goo.gl': (u) => /^\/[\w-]{5,}\/?$/.test(u.pathname),
+  'g.co': (u) => /^\/kgs\/[\w-]{3,}\/?$/.test(u.pathname),
+  'search.google.com': (u) => /^\/local\/(?:writereview|reviews)\/?$/.test(u.pathname) && /^[\w-]{10,}$/.test(u.searchParams.get('placeid') ?? ''),
+  'www.google.com': (u) => /^\/maps\/place\/[^/]+/.test(u.pathname),
+  'google.com': (u) => /^\/maps\/place\/[^/]+/.test(u.pathname),
+  'www.google.fr': (u) => /^\/maps\/place\/[^/]+/.test(u.pathname),
+  'google.fr': (u) => /^\/maps\/place\/[^/]+/.test(u.pathname),
+  'maps.google.com': (u) => /^\/maps\/place\/[^/]+/.test(u.pathname) || (u.pathname === '/' && /^\d{5,}$/.test(u.searchParams.get('cid') ?? '')),
+};
 
-/** Un lien de fiche Google acceptable : https, un hôte de Google, sans identifiants, sans espace, 300 caractères au plus. */
+/** Un lien de fiche Google acceptable : https, une fiche de Google, sans identifiants, sans espace, 300 caractères au plus. */
 export function isReviewLink(url: string): boolean {
   if (url.length < 12 || url.length > 300 || /\s/.test(url) || /[()]/.test(url)) return false;
   let u: URL;
@@ -97,7 +110,8 @@ export function isReviewLink(url: string): boolean {
     return false;
   }
   if (u.protocol !== 'https:' || u.username || u.password || u.port) return false;
-  return GOOGLE_HOSTS.has(u.hostname.toLowerCase());
+  const path = LISTING_PATHS[u.hostname.toLowerCase()];
+  return path ? path(u) : false;
 }
 
 /**
@@ -220,11 +234,6 @@ export class DemandesAvis {
       const dueDay = addDays(sale.closedOn, 1);
       // Le lendemain de l'acte, à partir de 10 h ; jamais avant, jamais après le délai.
       if (dueDay > today || (dueDay === today && local.minutes < REVIEW_HOUR * 60) || dueDay < addDays(today, -REVIEW_WINDOW_DAYS)) continue;
-      const url = await this.linkOf(sale.agentId);
-      if (!url) {
-        await this.missingLink(networkId, sale);
-        continue;
-      }
       // Une demande par client, fiches réunies comprises : le premier côté nommé l'emporte.
       const seen = new Set<string>();
       const clients: { personId: string; side: 'vendeur' | 'acquereur' }[] = [];
@@ -234,16 +243,23 @@ export class DemandesAvis {
         seen.add(root);
         clients.push({ personId: root, side: c.side });
       }
+      // Chaque demande est rangée tout de suite, même sans lien : le délai la clora et l'agent sera prévenu.
+      for (const c of clients) {
+        await this.db.run(
+          "INSERT INTO review_requests (file_id, person_id, network_id, agent_id, side, due_day, status, rule, next_try_day, message_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'waiting', NULL, NULL, NULL, ?) ON CONFLICT DO NOTHING",
+          [sale.fileId, c.personId, networkId, sale.agentId, c.side, dueDay, at],
+        );
+      }
+      const url = await this.linkOf(sale.agentId);
+      if (!url) {
+        await this.missingLink(networkId, sale);
+        await this.db.run("UPDATE review_requests SET rule = 'lien_avis', updated_at = ? WHERE file_id = ? AND status = 'waiting' AND (rule IS NULL OR rule <> 'lien_avis')", [at, sale.fileId]);
+        continue;
+      }
       for (const c of clients) {
         const row = await this.db.first<{ status: ReviewStatus; next_try_day: string | null }>('SELECT status, next_try_day FROM review_requests WHERE file_id = ? AND person_id = ?', [sale.fileId, c.personId]);
-        if (row && row.status !== 'waiting' && row.status !== 'failed') continue;
-        if (row?.next_try_day && row.next_try_day > today) continue;
-        if (!row) {
-          await this.db.run(
-            "INSERT INTO review_requests (file_id, person_id, network_id, agent_id, side, due_day, status, rule, next_try_day, message_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'waiting', NULL, NULL, NULL, ?) ON CONFLICT DO NOTHING",
-            [sale.fileId, c.personId, networkId, sale.agentId, c.side, dueDay, at],
-          );
-        }
+        if (!row || (row.status !== 'waiting' && row.status !== 'failed')) continue;
+        if (row.next_try_day && row.next_try_day > today) continue;
         const firstName = await this.firstName(c.personId);
         const others = clients.filter((o) => o.side !== c.side).map((o) => o.personId);
         const result = await this.controle.send({

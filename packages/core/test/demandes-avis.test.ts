@@ -51,6 +51,12 @@ it('seul un lien https de fiche Google est accepté', () => {
     'https://g.page/r/x review',
     'https://g.page/r/(x)',
     'javascript:alert(1)',
+    'https://www.google.com/',
+    'https://www.google.com/search?q=agence',
+    'https://g.page/',
+    'https://maps.app.goo.gl/',
+    'https://search.google.com/local/writereview',
+    'https://maps.google.com/',
     'g.page/r/x',
     `https://g.page/r/${'x'.repeat(300)}`,
   ]) {
@@ -299,10 +305,19 @@ describeWithSqlite('F02 · demande d’avis le lendemain de l’acte, à tous, e
     const t = await setup({ link: false });
     const a = await t.client('Ana', 'Un');
     t.close('f1', '2027-03-08', [{ personId: a, side: 'vendeur' }]);
+    // L'agent ne règle son lien qu'après le délai : la demande, rangée dès le lendemain, est close au passage suivant.
+    await t.passes('2027-03-09', '2027-03-09');
+    const pending = await t.avis.list(t.agent);
+    expect(pending.ok && pending.value).toMatchObject([{ fileId: 'f1', status: 'waiting', rule: 'lien_avis' }]);
     t.setClock(paris('2027-03-20', 9));
     await t.avis.setReviewLink(t.agent, t.alexId, LINK);
     await t.passes('2027-03-20', '2027-03-22');
     expect(await t.outboxCount()).toBe(0);
+    const closed = await t.avis.list(t.agent);
+    expect(closed.ok && closed.value).toMatchObject([{ fileId: 'f1', status: 'closed', rule: 'delai_depasse' }]);
+    // L'agent garde une tâche : la demande non partie, à faire lui-même ; celle du lien est faite.
+    const tasks = await t.avis.openTasks(t.agent);
+    expect(tasks.ok && tasks.value.map((x) => [x.fileId, x.kind])).toEqual([['f1', 'avis_non_parti']]);
   });
 
   it('[R16] le lien se règle par l’agent lui-même ou la direction ; un lien qui n’est pas une fiche Google est refusé', async () => {
