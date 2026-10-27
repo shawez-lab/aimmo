@@ -764,7 +764,8 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P07 · Export au format des portails, en mode essai
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : format d'essai XML `aimmo-essai-1` ; seuls les biens en vente ou sous offre sont dans le flux ; Codex resté en cours plus de 25 min, fusion sans lui
 - Qui : Claude · Relecture : normale · Dépend de : P04
 - Cahier : M07, « Diffusion », « export au format de chaque portail ».
 - Objectif : un flux d'export par portail derrière une interface, rempli depuis la version publiée, avec un format d'essai décrit dans `docs/PORTAILS.md` ; les formats réels s'ajoutent avec H10.
@@ -772,7 +773,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : H10 pour les vrais portails.
 
 ### P08 · Mesure par bien : vues, contacts, visites
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : P04
 - Cahier : M07, « Mesure ».
 - Objectif : par bien et par semaine, les vues par canal, les contacts reçus pour ce bien (C03) et les visites (M05), lus pour le point hebdomadaire au vendeur que fera M08.
