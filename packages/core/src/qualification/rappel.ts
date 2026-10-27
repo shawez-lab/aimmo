@@ -89,7 +89,16 @@ export class Rappels {
     if (await this.excluded(ids)) return null;
 
     const root = view.person.id;
-    const key = `callback:${root}:${q.project_id ?? 'none'}`;
+    // Un projet n'appartient qu'à une personne : il suffit à la clé, même après une fusion de fiches. Sans projet,
+    // une tâche ouverte sur l'une des fiches réunies vaut pour toutes.
+    if (q.project_id === null) {
+      const open = await this.db.first<CallbackTaskRow>(
+        `SELECT * FROM callback_tasks WHERE person_id IN (${placeholders(ids.length)}) AND project_id IS NULL AND done_at IS NULL ORDER BY created_at LIMIT 1`,
+        ids,
+      );
+      if (open) return open;
+    }
+    const key = q.project_id === null ? `callback:${root}:none` : `callback:project:${q.project_id}`;
     const at = this.now();
     const due = new Date(Date.parse(attribution.created_at) + attribution.callback_hours * 3_600_000);
     const { changes } = await this.db.run(
@@ -130,8 +139,13 @@ export class Rappels {
       [viewer.networkId, ...ids],
     );
     const contacts: HotContact[] = [];
+    // Une ligne par personne et par projet, même si deux fiches réunies portaient chacune leur tâche.
+    const seen = new Set<string>();
     for (const task of tasks) {
       const view = await this.fiche.view(task.person_id);
+      const key = `${view.person.id}:${task.project_id ?? 'none'}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       if (await this.excluded(view.members.map((m) => m.id))) continue;
       contacts.push({
         taskId: task.id,

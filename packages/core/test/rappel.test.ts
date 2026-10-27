@@ -74,6 +74,22 @@ describeWithSqlite('Q04 · tâche « rappeler » et liste des contacts chauds', 
     expect((await t.rappels.forQualification(a.q.id))!.id).toBe(a.task!.id);
   });
 
+  it('[R18] après une fusion de fiches, une seule tâche par projet et une seule ligne dans la liste', async () => {
+    const t = await setup();
+    const a = await t.contact('Hugo', 'Je souhaite vendre ma maison à Talant rapidement.');
+    const b = await t.contact('Hugues', 'Je souhaite vendre ma maison à Talant, c’est urgent.');
+    expect(a.q.person_id).not.toBe(b.q.person_id);
+    const { fiche } = createCaptation(t.db, t.journal);
+    await fiche.merge({ survivorId: b.q.person_id, mergedId: a.q.person_id, reason: 'même personne' });
+    const c = await t.contact('Hugues', 'Je veux vendre ma maison à Talant rapidement.');
+    expect(c.task!.project_id).toBe(a.task!.project_id);
+    const open = await t.db.all<{ project_id: string }>('SELECT project_id FROM callback_tasks WHERE done_at IS NULL');
+    expect(new Set(open.map((o) => o.project_id)).size).toBe(open.length);
+    const list = await t.rappels.hotList(t.acces, t.as('direction', 'dir-1'));
+    const keys = list.ok ? list.value.contacts.map((x) => x.personId) : [];
+    expect(keys).toHaveLength(2);
+  });
+
   it('[R16] la liste ne montre à un agent que ses contacts ; la direction voit tout ; un partenaire rien', async () => {
     const t = await setup();
     await t.contact('Hugo', 'Je souhaite vendre ma maison à Talant rapidement.');
