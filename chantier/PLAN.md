@@ -950,7 +950,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N05 · Aucun fonds, bouclier contre le faux RIB (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : une alerte à l'agent par message suspect, le rappel au client une fois par personne et par dossier ; seules les sortes de signaux sont rangées ; le branchement à la réception et le masquage de l'IBAN dans le message rangé vont au socle (N09)
 - Qui : Claude · Relecture : forte · Dépend de : N03
 - Cahier : M10, règle « AIMMO ne reçoit jamais de fonds ».
@@ -959,7 +959,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N06 · Acte signé : vente close, commission due
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : N02
 - Cahier : M10, « Acte signé » ; M13 et M11 pour la suite.
 - Objectif : l'agent rapporte l'acte signé avec sa preuve (référence de l'attestation du notaire) ; le dossier se clôt, le bien passe « vendu », la commission devient due au montant du mandat en vigueur, rangée pour M13, et l'après-vente est marqué à démarrer pour M11.
