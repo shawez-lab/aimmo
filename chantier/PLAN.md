@@ -923,6 +923,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 
 ### N03 · Relances des pièces manquantes, en mode essai
 - Statut : en cours (voie 2)
+- Décidé (2026-10-27) : seules les pièces que le client a lui-même sont relancées par mail (titre, fiches de renseignements, règlement de copropriété, procès-verbaux), les autres restent des tâches de l'agent ; finalité `suivi_vente`, accord exigé ; le message nomme le bien par sa commune et sa référence d'agence, un rappel porte sa date ; une relance en attente d'un jour passé, ou dont la pièce est arrivée, est close avec sa raison
 - Qui : Claude · Relecture : forte · Dépend de : N01, B02
 - Cahier : M10, « relances automatiques » et règles.
 - Objectif : chaque jour, pour chaque pièce manquante attendue d'un client, une relance préparée et passée par le contrôle central, rangée dans la boîte d'essai ; texte écrit par le code, sans IA, nommant la pièce ; l'agent voit ce qui est parti et ce qui a été refusé.

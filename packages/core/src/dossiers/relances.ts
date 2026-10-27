@@ -28,7 +28,7 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { ScheduledJob } from '../bascule/planificateur.ts';
-import { SELLER_UPDATE_PURPOSE } from '../visites/compte-rendu.ts';
+import { SELLER_UPDATE_PURPOSE, nameWords } from '../visites/compte-rendu.ts';
 import { gateSaleFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
 import { PiecesDossier, type Piece, type PieceStore } from './pieces.ts';
 
@@ -72,13 +72,16 @@ export const PIECE_LABELS: Record<Piece, string> = {
  * Le texte d'une relance, écrit par le code : vouvoiement avec le prénom, aucune parenthèse [R08]. Un rappel porte sa
  * date, `AAAA-MM-JJ` à Paris, la seule donnée chiffrée, pour ne jamais répéter le même message [R05, R10].
  */
-export function reminderText(firstName: string | null, piece: Piece, reminderOn: string | null = null): string {
+export function reminderText(firstName: string | null, piece: Piece, reminderOn: string | null = null, property: { city: string | null; reference: string } | null = null): string {
   const hello = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
   const lead = reminderOn ? `${hello} petit rappel du ${reminderOn.slice(8, 10)}/${reminderOn.slice(5, 7)} :` : hello;
-  return `${lead} pour préparer la vente chez le notaire, il manque encore ${PIECE_LABELS[piece]}. Il vous suffit de répondre à ce message avec la pièce jointe, votre agent immobilier la range dans le dossier. Merci !`;
+  // Le bien est nommé par sa commune et sa référence d'agence, jamais par son adresse [R19] : deux dossiers d'une même
+  // personne ne donnent jamais le même message [R05].
+  const sale = property ? `la vente de votre bien${property.city ? ` à ${property.city}` : ''}, référence ${property.reference},` : 'la vente';
+  return `${lead} pour préparer ${sale} chez le notaire, il manque encore ${PIECE_LABELS[piece]}. Il vous suffit de répondre à ce message avec la pièce jointe, votre agent immobilier la range dans le dossier. Merci !`;
 }
 
-export type ReminderStatus = 'sent' | 'waiting' | 'refused' | 'failed';
+export type ReminderStatus = 'sent' | 'waiting' | 'refused' | 'failed' | 'closed';
 
 export interface Reminder {
   piece: Piece;
@@ -96,6 +99,7 @@ export class RelancesPieces {
   private readonly every: number;
   private readonly controle: ControleEnvois;
   private readonly pieces: PiecesDossier;
+  private readonly unique: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -109,6 +113,7 @@ export class RelancesPieces {
     if (!Number.isInteger(this.every) || this.every < 1 || this.every > 30) throw new Error('Période des relances de pièces : de 1 à 30 jours.');
     const fiches = new FicheClient(db, { now: this.now });
     const unique = new FicheUnique(db, fiches, { now: this.now });
+    this.unique = unique;
     this.controle = new ControleEnvois(db, unique, new DecisionEnvoi(db, fiches, unique, { now: this.now }), {
       channels: trialChannels(db, journal, this.now),
       journal: new SqlSendJournal(db, undefined, this.now),
@@ -121,9 +126,16 @@ export class RelancesPieces {
     return (await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [personId]))?.first_name ?? null;
   }
 
-  private async nameWordsOf(personId: string): Promise<string[]> {
-    const p = await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE id = ?', [personId]);
-    return p ? [p.first_name, p.last_name].filter((n): n is string => !!n && n.trim().length > 1) : [];
+  /**
+   * Les mots des noms de l'autre partie, fiches réunies comprises, interdits dans le message [R19] ; sauf ceux du prénom
+   * du destinataire, qui ouvre le message : deux parties qui portent le même prénom ne bloquent pas la relance.
+   */
+  private async forbiddenNames(otherId: string, recipientFirstName: string | null): Promise<string[]> {
+    const members = await this.unique.membersOf(otherId);
+    const rows = await this.db.all<{ first_name: string | null; last_name: string | null }>(`SELECT first_name, last_name FROM persons WHERE id IN (${members.map(() => '?').join(', ')})`, members);
+    const greeting = new Set(recipientFirstName ? nameWords(recipientFirstName) : []);
+    const words = new Set(rows.flatMap((r) => [r.first_name, r.last_name]).filter((n): n is string => !!n).flatMap(nameWords));
+    return [...words].filter((w) => !greeting.has(w));
   }
 
   /**
@@ -132,8 +144,10 @@ export class RelancesPieces {
    */
   async run(networkId: string): Promise<number> {
     const today = localTime(this.now(), TIME_ZONE).date;
-    const files = await this.db.all<{ id: string; property_id: string; buyer_person_id: string; agent_id: string | null }>(
-      `SELECT f.id, f.property_id, f.buyer_person_id, p.agent_id FROM sale_files f JOIN properties p ON p.id = f.property_id
+    // Une relance restée en attente un jour passé ne repartira plus : elle est close, avec sa raison.
+    await this.db.run("UPDATE sale_file_reminders SET status = 'closed', rule = 'jour_passe', updated_at = ? WHERE network_id = ? AND status IN ('waiting', 'failed') AND day < ?", [this.now().toISOString(), networkId, today]);
+    const files = await this.db.all<{ id: string; property_id: string; buyer_person_id: string; agent_id: string | null; city: string | null; reference: string }>(
+      `SELECT f.id, f.property_id, f.buyer_person_id, p.agent_id, p.city, p.reference FROM sale_files f JOIN properties p ON p.id = f.property_id
        WHERE f.network_id = ? AND p.status = 'under_offer' ORDER BY f.opened_at, f.id`,
       [networkId],
     );
@@ -144,6 +158,10 @@ export class RelancesPieces {
       // Le système lit le dossier comme l'agent du bien, sans rien ouvrir de plus que lui.
       const status = await this.pieces.status({ role: 'agent', networkId, userId: f.agent_id }, f.id);
       if (!status.ok) continue;
+      // Une pièce reçue ferme sa relance encore en attente.
+      for (const l of status.value.lines) {
+        if (l.received) await this.db.run("UPDATE sale_file_reminders SET status = 'closed', rule = 'piece_recue', updated_at = ? WHERE file_id = ? AND piece = ? AND status IN ('waiting', 'failed')", [this.now().toISOString(), f.id, l.piece]);
+      }
       for (const piece of status.value.missing) {
         const side = CLIENT_PIECES[piece];
         if (!side) continue;
@@ -153,7 +171,7 @@ export class RelancesPieces {
         const last = await this.db.first<{ day: string }>("SELECT day FROM sale_file_reminders WHERE file_id = ? AND piece = ? AND status = 'sent' ORDER BY day DESC LIMIT 1", [f.id, piece]);
         if (last && today < addDays(last.day, this.every)) continue;
         const row = await this.db.first<{ status: ReminderStatus }>('SELECT status FROM sale_file_reminders WHERE file_id = ? AND piece = ? AND day = ?', [f.id, piece, today]);
-        if (row && (row.status === 'sent' || row.status === 'refused')) continue;
+        if (row && row.status !== 'waiting' && row.status !== 'failed') continue;
         if (!row) {
           await this.db.run(
             "INSERT INTO sale_file_reminders (file_id, piece, day, network_id, person_id, side, status, rule, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'waiting', NULL, ?) ON CONFLICT DO NOTHING",
@@ -161,6 +179,8 @@ export class RelancesPieces {
           );
         }
         const other = side === 'vendeur' ? f.buyer_person_id : seller?.person_id;
+        const firstName = await this.firstName(personId);
+        const reference = { city: f.city, reference: f.reference };
         const result = await this.controle.send({
           networkId,
           agentId: f.agent_id,
@@ -169,15 +189,16 @@ export class RelancesPieces {
           kind: 'follow_up',
           purpose: SALE_FOLLOW_UP_PURPOSE,
           subject: `relance_piece:${f.id}:${piece}:${today}`,
-          fallbackTexts: [reminderText(await this.firstName(personId), piece, last ? today : null)],
-          figures: last ? [Number(today.slice(8, 10)), Number(today.slice(5, 7))] : [],
+          fallbackTexts: [reminderText(firstName, piece, last ? today : null, reference)],
+          // La date du rappel et les chiffres de la référence du bien, lus dans la base [R10].
+          figures: [...(last ? [Number(today.slice(8, 10)), Number(today.slice(5, 7))] : []), ...(f.reference.match(/\d+/g) ?? []).map(Number)],
           // Le nom de l'autre partie n'apparaît jamais [R19].
-          sellerNames: other ? await this.nameWordsOf(other) : [],
+          sellerNames: other ? await this.forbiddenNames(other, firstName) : [],
         });
         const outcome: ReminderStatus = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' ? 'waiting' : 'refused';
         const rule = result.status === 'sent' ? null : result.rule;
         await this.db.run(
-          "UPDATE sale_file_reminders SET status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE file_id = ? AND piece = ? AND day = ? AND status NOT IN ('sent', 'refused')",
+          "UPDATE sale_file_reminders SET status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE file_id = ? AND piece = ? AND day = ? AND status IN ('waiting', 'failed')",
           [outcome, rule, result.messageId, this.now().toISOString(), f.id, piece, today],
         );
         await appendEvent(this.journal, { type: 'dossier.relance', actor: 'system:dossiers', subject: `sale_file:${f.id}`, data: { mode: 'essai', piece, status: outcome, rule } }, this.now);

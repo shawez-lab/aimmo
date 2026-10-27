@@ -12,10 +12,12 @@ it('[R08] [R10] le texte d’une relance est écrit par le code : il nomme la pi
     expect(text.startsWith('Bonjour Léa,')).toBe(true);
     expect(text).toContain(PIECE_LABELS[piece]);
     expect(text).not.toMatch(/[()\d]|mandataire|gratuit|IA\b|intelligence/);
+    // Deux biens d'une même personne : deux messages différents.
+    expect(reminderText('Léa', piece, null, { city: 'Dijon', reference: 'A' })).not.toBe(reminderText('Léa', piece, null, { city: 'Dijon', reference: 'B' }));
   }
   expect(reminderText(null, 'titre_propriete').startsWith('Bonjour,')).toBe(true);
   // Un rappel porte sa date, et seulement elle : jamais deux fois le même texte.
-  expect(reminderText('Léa', 'dpe', '2027-03-11')).toBe(`Bonjour Léa, petit rappel du 11/03 : pour préparer la vente chez le notaire, il manque encore ${PIECE_LABELS.dpe}. Il vous suffit de répondre à ce message avec la pièce jointe, votre agent immobilier la range dans le dossier. Merci !`);
+  expect(reminderText('Léa', 'dpe', '2027-03-11', { city: 'Dijon', reference: 'REF-T-1' })).toBe(`Bonjour Léa, petit rappel du 11/03 : pour préparer la vente de votre bien à Dijon, référence REF-T-1, chez le notaire, il manque encore ${PIECE_LABELS.dpe}. Il vous suffit de répondre à ce message avec la pièce jointe, votre agent immobilier la range dans le dossier. Merci !`);
 });
 
 describeWithSqlite('N03 · relances des pièces manquantes, en mode essai', () => {
@@ -40,10 +42,17 @@ describeWithSqlite('N03 · relances des pièces manquantes, en mode essai', () =
     }
     expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM trial_outbox'))?.n).toBe(0);
     const waiting = await t.relances.ofFile(t.agent, t.fileId);
-    expect(waiting.ok && waiting.value.every((r) => r.status === 'waiting' && r.rule === 'R01')).toBe(true);
+    // Celles du jour attendent l'heure ; celles des jours passés sont closes.
+    expect(waiting.ok && waiting.value.filter((r) => r.day === '2027-03-08').every((r) => r.status === 'waiting' && r.rule === 'R01')).toBe(true);
+    expect(waiting.ok && waiting.value.filter((r) => r.day === '2027-03-08')).toHaveLength(5);
+    expect(waiting.ok && waiting.value.filter((r) => r.day < '2027-03-08').every((r) => r.status === 'closed' && r.rule === 'jour_passe')).toBe(true);
     // Lundi 9 h : une relance par pièce du client, rangée dans la boîte d'essai.
     t.setClock(paris('2027-03-08', 9));
     expect(await t.relances.run(t.network.id)).toBe(5);
+    // Les relances restées en attente samedi et dimanche sont closes, avec leur raison : plus rien ne reste coincé.
+    const after = await t.relances.ofFile(t.agent, t.fileId);
+    expect(after.ok && after.value.filter((r) => r.day < '2027-03-08').every((r) => r.status === 'closed' && r.rule === 'jour_passe')).toBe(true);
+    expect(after.ok && after.value.filter((r) => r.day === '2027-03-08').every((r) => r.status === 'sent')).toBe(true);
     const seller = await t.inbox(t.personId);
     expect(seller).toHaveLength(4);
     for (const p of clientPieces('vendeur')) expect(seller.some((m) => m.body.includes(PIECE_LABELS[p]))).toBe(true);
@@ -106,6 +115,33 @@ describeWithSqlite('N03 · relances des pièces manquantes, en mode essai', () =
     expect(later.ok && later.value.filter((x) => x.side === 'acquereur' && x.day === '2027-03-12').map((x) => [x.status, x.rule])).toEqual([['refused', 'R03']]);
     await expect(t.db.run('DELETE FROM sale_file_reminders')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE sale_file_reminders SET status = 'waiting'")).rejects.toThrow(/ne change plus/);
+  });
+
+  it('[R19] deux parties au même prénom : la relance part, sans le nom de famille de l’autre', async () => {
+    const t = await setup();
+    await t.db.run("UPDATE persons SET first_name = 'Léa', last_name = 'Durandet' WHERE id = ?", [t.buyerId]);
+    t.setClock(paris('2027-03-08', 9));
+    expect(await t.relances.run(t.network.id)).toBe(5);
+    const buyer = await t.inbox(t.buyerId);
+    expect(buyer[0]!.body).toContain('Bonjour Léa,');
+    expect([...buyer, ...(await t.inbox(t.personId))].some((m) => /Exemple|Durandet/.test(m.body))).toBe(false);
+  });
+
+  it('[R05] deux dossiers d’un même vendeur : chacun reçoit sa relance, le même jour', async () => {
+    const t = await setup();
+    // Un second bien de la même vendeuse, sous offre, avec son dossier : inventé, inscrit directement.
+    const b2 = await t.store.createProperty({ networkId: t.network.id, agentId: t.alexId, reference: 'REF-T-2', kind: 'land', city: 'Talant', priceEur: 90000, status: 'under_offer' });
+    await t.db.run("INSERT INTO mandates (id, network_id, agent_id, person_id, property_id, signed_at, source_kind, recorded_by, created_at) VALUES ('mandat-2', ?, ?, ?, ?, '2027-02-11T09:00:00.000Z', 'site', 'test', '2027-02-11T09:00:00.000Z')", [t.network.id, t.alexId, t.personId, b2.id]);
+    await t.db.run(
+      "INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash) VALUES ('offre-2', ?, ?, 1, ?, 90000, '[]', '2027-03-10', 90000, 0, 'offres/x.pdf', '2027-03-01T09:00:00.000Z', ?, '2027-03-01T09:00:00.000Z', 'test', '', 'h-offre-2')",
+      [t.network.id, b2.id, t.buyerId, t.alexId],
+    );
+    await t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('dossier-2', ?, ?, 'offre-2', ?, 90000, '2027-03-01T13:00:00.000Z', 'test')", [t.network.id, b2.id, t.buyerId]);
+    t.setClock(paris('2027-03-08', 9));
+    // Appartement : 4 pièces du vendeur et 1 de l'acquéreur ; terrain : 2 du vendeur et 1 de l'acquéreur.
+    expect(await t.relances.run(t.network.id)).toBe(8);
+    const seller = await t.inbox(t.personId);
+    expect(seller.filter((m) => m.body.includes(PIECE_LABELS.titre_propriete)).map((m) => /REF-T-\d/.exec(m.body)?.[0]).sort()).toEqual(['REF-T-1', 'REF-T-2']);
   });
 
   it('[R02] jamais à une personne de la liste d’exclusion', async () => {
