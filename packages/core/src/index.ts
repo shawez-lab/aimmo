@@ -19,6 +19,7 @@ export * from './rendezvous/index.ts';
 export * from './mandats/index.ts';
 export * from './documents/index.ts';
 export * from './acquereurs/index.ts';
+export * from './visites/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
