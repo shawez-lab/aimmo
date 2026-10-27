@@ -744,7 +744,8 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien pour l'essai ; les canaux réels plus tard (H06, H07, H10).
 
 ### P05 · Page du bien et fiche PDF à la marque de l'agent
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : fiche imprimable en HTML de deux pages A4 fixes (page 1 : prix, mentions, 4 photos ; page 2 : texte et agent), vérifiée sous Chromium ; coordonnées professionnelles de l'agent réglées par lui ou la direction, jamais pour un agent parti ; un agent parti n'est plus montré
 - Qui : Claude · Relecture : normale · Dépend de : P04
 - Cahier : M07, « Page du bien » et « fiche PDF » ; Organisation, exigence de design (protocole, section 9).
 - Objectif : depuis la version publiée, une page HTML du bien et une fiche imprimable de deux pages au nom et aux coordonnées professionnelles de l'agent, avec prix, mentions et état (en vente, sous offre, vendu) mis à jour d'eux-mêmes ; rapide, accessible, belle sur téléphone d'abord, suivant le système de design d'AIMMO.
@@ -752,7 +753,7 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P06 · Photos et vidéo sans tromper ni montrer l'adresse
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : P01
 - Cahier : M07, « Vidéo du bien » et règle de l'aménagement virtuel ; Conformité, « Photos et vidéos ».
 - Objectif : une photo marquée « aménagement virtuel » porte la mention sur l'image publiée ; un plan de tournage du bien tiré de sa fiche (pièces, extérieurs, atouts) ; un contrôle des sous-titres et du texte de la vidéo qui refuse une adresse exacte.
