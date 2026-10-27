@@ -17,9 +17,15 @@ describeWithSqlite('O05 · délais de validité suivis', () => {
     t.setClock(new Date('2027-03-08T23:00:00.000Z')); // 9 mars, 0 h à Paris
     expect(await echeances.run(t.network.id)).toEqual([a.id]);
     expect(await echeances.run(t.network.id)).toEqual([]);
-    expect(await echeances.tasksOf(t.agent)).toEqual([{ offerId: a.id, propertyId: t.propertyId, lastDay: '2027-03-10', createdAt: '2027-03-08T23:00:00.000Z' }]);
-    expect(await echeances.tasksOf(t.sam)).toEqual([]);
-    expect(await echeances.tasksOf(t.direction)).toEqual([]);
+    expect(await echeances.tasksOf(t.agent)).toEqual({ ok: true, tasks: [{ offerId: a.id, propertyId: t.propertyId, lastDay: '2027-03-10', createdAt: '2027-03-08T23:00:00.000Z' }] });
+    expect(await echeances.tasksOf(t.sam)).toEqual({ ok: true, tasks: [] });
+    expect(await echeances.tasksOf(t.direction)).toEqual({ ok: false, rule: 'R16', code: 'not_agent' });
+    // [R16] Un agent parti, ou qui se dit d'un autre réseau, ne voit plus ses tâches ; le refus est au journal.
+    expect(await echeances.tasksOf({ ...t.agent, networkId: 'autre-reseau' })).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alexId]);
+    expect(await echeances.tasksOf(t.agent)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse' && (e.data as { kind: string }).kind === 'offer_tasks')).toHaveLength(3);
+    await t.db.run("UPDATE agents SET status = 'active' WHERE id = ?", [t.alexId]);
     // Le 11 mars à Paris, l'offre est échue : plus de tâche nouvelle, et elle ne peut plus être acceptée.
     t.setClock(new Date('2027-03-10T23:00:00.000Z'));
     expect(await echeances.run(t.network.id)).toEqual([]);
@@ -43,7 +49,7 @@ describeWithSqlite('O05 · délais de validité suivis', () => {
     const echeances = new EcheancesOffres(t.db, t.journal, { now: t.now, noticeDays: 2 });
     expect(await echeances.run(t.network.id)).toEqual([b.id]);
     await transmission.respond(t.agent, b.id, { outcome: 'refusee', proofRef: PROOF, respondedAt: '2027-03-01T10:45:00.000Z' });
-    expect(await echeances.tasksOf(t.agent)).toEqual([]);
+    expect(await echeances.tasksOf(t.agent)).toEqual({ ok: true, tasks: [] });
     expect(() => new EcheancesOffres(t.db, t.journal, { noticeDays: -1 })).toThrow();
   });
 });
