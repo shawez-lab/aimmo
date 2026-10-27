@@ -84,6 +84,8 @@ export interface SendRequest {
   purpose?: string;
   /** Conversation à laquelle on répond. Obligatoire pour une réponse. */
   conversationId?: string | null;
+  /** L'accord est exigé sur tout canal, Instagram et Facebook compris (alertes de biens, R49). */
+  consentOnEveryChannel?: boolean;
   at: Date;
 }
 
@@ -253,7 +255,7 @@ export function decideSend(
   }
 
   // R03 : accord préalable, en cours, sur ce canal et pour cette finalité.
-  if ((CONSENT_CHANNELS as readonly string[]).includes(request.channel) && !answersPending) {
+  if (((CONSENT_CHANNELS as readonly string[]).includes(request.channel) || request.consentOnEveryChannel === true) && !answersPending) {
     checked.push('R03');
     const purpose = request.purpose ?? request.kind;
     const consent = facts.consents.find(

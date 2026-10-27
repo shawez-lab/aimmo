@@ -1,4 +1,4 @@
-import { Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, alertsJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 
 export interface SchedulerConfig {
@@ -10,6 +10,8 @@ export interface SchedulerConfig {
   appointmentLinkBase?: string | undefined;
   /** La fourchette des communes (E05) pour le suivi de valeur ; absente, le suivi ne prépare aucun envoi. */
   communeRanges?: CommuneRanges | null;
+  /** Variable `ALERT_UNSUBSCRIBE_BASE` : début du lien de désinscription des alertes ; absente, aucune alerte [R49]. */
+  alertUnsubscribeBase?: string | undefined;
   now?: () => Date;
 }
 
@@ -37,6 +39,8 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       legalBasisJob(config.db, journal, { now }),
       // Échéances des mandats (D06), à 6 h : tâches pour l'agent, sans aucun envoi.
       mandateDeadlinesJob(config.db, journal, { now }),
+      // Alertes aux acquéreurs (T03), de 9 h à 19 h, par les canaux du mode essai seulement.
+      alertsJob(config.db, journal, { now, unsubscribeBase: config.alertUnsubscribeBase || null }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

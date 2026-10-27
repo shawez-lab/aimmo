@@ -644,7 +644,8 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : rien.
 
 ### T03 · Alertes aux acquéreurs, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : seuls les acquéreurs qui remplissent tous les critères reçoivent une alerte ; canal pris dans l'ordre mail, Instagram, Facebook, SMS parmi ceux accordés, le suivant essayé après un refus de canal ; refus pour l'heure ou la diffusion repris, les autres définitifs ; l'accord des alertes est exigé et revérifié après la rédaction sur tout canal, et la diffusion juste avant l'envoi (deux options du contrôle central) ; page de désinscription publique hors de `/v1`, GET sans effet ; sans `ALERT_UNSUBSCRIBE_BASE`, aucune alerte ; R49 en service.
 - Qui : Claude · Relecture : forte · Dépend de : T02
 - Cahier : M08, « Alertes » et règles ; critère « aucun doublon d'alerte sur 30 jours ».
 - Objectif : quand un bien devient diffusable, une alerte aux acquéreurs rapprochés qui l'ont demandée : message personnalisé rédigé par l'IA derrière une interface à partir des seules données du bien et des critères (fausse IA dans les tests, texte de secours du code si elle est en panne), mail ou message selon l'accord, passé par le contrôle central et rangé dans la boîte d'essai, avec un lien de désinscription. WhatsApp par le téléphone de l'agent : T09.
@@ -652,7 +653,7 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : H05 et H06 pour l'envoi réel, plus tard.
 
 ### T09 · Alerte WhatsApp en un geste, par le téléphone de l'agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : T03
 - Cahier : M08, « Alertes » : « un message WhatsApp à l'initiative de l'agent part de son téléphone, en un geste, seulement après le contrôle central : exclusions, accord, horaires. L'envoi est enregistré. »
 - Objectif : pour un acquéreur rapproché, l'agent demande un lien WhatsApp pré-rempli ; le contrôle central décide (exclusions, arrêt, accord, horaires, jamais deux fois le même bien), sans la fenêtre de Meta qui ne vaut que pour les envois automatiques, puis prépare le lien sans jamais l'ouvrir ; l'envoi est enregistré, écrit par l'agent, quand il confirme.
