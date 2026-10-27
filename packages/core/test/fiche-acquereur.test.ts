@@ -150,7 +150,7 @@ describeWithSqlite('T01 · fiche acquéreur', () => {
     expect(cur!.sources.budgetMaxEur).toBe(`message:${b.inbound_id}`);
   });
 
-  it('aucun champ hors liste, aucun critère discriminant : refusé avec R50, au journal sans la valeur [R13]', async () => {
+  it('aucun champ hors liste, aucun critère discriminant : refusé [R50], au journal sans la valeur [R13]', async () => {
     const t = await setup();
     const q = await t.contact('Inès', 'Je cherche une maison à Talant.');
     const agent = t.as('agent', t.alex.id);
