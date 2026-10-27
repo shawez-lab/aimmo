@@ -67,5 +67,5 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R62 | Aucun fonds. AIMMO ne reçoit jamais de fonds ; aucun texte d'AIMMO ne demande un paiement ni ne porte de coordonnée bancaire ; un message reçu qui parle de virement, d'acompte, de séquestre ou de RIB dans un dossier en cours alerte aussitôt l'agent. | non | N05 |
 | R63 | Commission due à l'acte. La commission ne devient due qu'à l'acte signé rapporté avec sa preuve, au montant du mandat en vigueur, avenants compris, jamais saisi. | non | N06 |
 | R64 | Avis sans tri. La demande d'avis va à chaque client d'un dossier clos, sans tri selon sa satisfaction, sans contrepartie ; AIMMO n'écrit jamais d'avis à la place d'un client. | oui | F02, F05 |
-| R65 | Relances après la vente. Un an après la vente, seulement à qui ne s'y est pas opposé ; au-delà, seulement avec l'accord donné à l'acte ; chaque message porte une désinscription qui marche. | non | F04, F06 |
+| R65 | Relances après la vente. Un an après la vente, seulement à qui ne s'y est pas opposé ; au-delà, seulement avec l'accord donné à l'acte ; chaque message porte une désinscription qui marche. | oui | F04, F06 |
 | R66 | Recommandation non rémunérée. Une recommandation arrive avec sa source, le client qui recommande ; elle n'est jamais rémunérée à un particulier : aucun champ ni texte de récompense. | non | F01 |
