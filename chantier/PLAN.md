@@ -701,7 +701,7 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 - Attend : rien.
 
 ### T08 · Routes et écrans « Acquéreurs » et « Visite » de l'application de l'agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : T03, T05, T06, T07
 - Cahier : M08 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/acquereurs` (fiche, rapprochement, carte de la demande, alertes), `/v1/visites` (visite, bon, confirmation, alerte, compte rendu) et `/v1/points` ; dans l'application de l'agent, l'écran d'un bien avec ses acquéreurs et sa carte de la demande, et l'écran de visite avec le bouton de dictée, la validation en un geste et l'alerte en un geste.
