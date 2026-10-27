@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest';
-import { verifyChain } from '@aimmo/core';
+import { expect, it, vi } from 'vitest';
+import { offres, verifyChain } from '@aimmo/core';
 import { handleRequest } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { runScheduler } from '../src/planificateur.ts';
@@ -62,5 +62,29 @@ describeWithSqlite('O09 · branchement de M09 dans le socle', () => {
     await runScheduler({ db: t.db, mode: 'essai', now: t.now });
     expect((await t.db.all("SELECT slot FROM scheduled_runs WHERE job = 'offres.quotidien'")).length).toBe(2);
     expect((await verifyChain(await t.journal.all())).ok).toBe(true);
+  });
+
+  it('une panne d’un réseau n’empêche ni les autres réseaux, ni les échéances du même réseau ; elle va au journal et le créneau est en erreur', async () => {
+    const t = await setup();
+    const offer = await t.record();
+    // Un premier réseau, classé avant celui du jeu, dont le contrôle des offres non transmises tombe en panne.
+    await t.db.run("INSERT INTO networks (id, name, created_at) VALUES ('0-reseau-en-panne', 'Réseau en panne', '2027-01-01T00:00:00.000Z')");
+    const real = offres.TransmissionOffres.prototype.alertUntransmitted;
+    const spy = vi.spyOn(offres.TransmissionOffres.prototype, 'alertUntransmitted').mockImplementation(async function (this: InstanceType<typeof offres.TransmissionOffres>, networkId: string) {
+      if (networkId === '0-reseau-en-panne' || networkId === t.network.id) throw new TypeError('panne');
+      return real.call(this, networkId);
+    });
+    try {
+      t.setClock(new Date('2027-03-09T05:00:00.000Z'));
+      await runScheduler({ db: t.db, mode: 'essai', now: t.now });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await t.db.all("SELECT outcome FROM scheduled_runs WHERE job = 'offres.quotidien'")).toEqual([{ outcome: 'error' }]);
+    const entries = await t.journal.all();
+    // Le contrôle des échéances du réseau du jeu a tout de même passé.
+    expect(entries.filter((e) => e.type === 'offre.echeance' && e.subject === `offer:${offer.id}`)).toHaveLength(1);
+    expect(entries.filter((e) => e.type === 'api.erreur' && e.data.route === 'offres.quotidien')).toHaveLength(2);
+    expect(JSON.stringify(entries)).not.toMatch(/panne'|Exemple/);
   });
 });

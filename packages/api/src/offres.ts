@@ -8,6 +8,7 @@
  * Chaque route passe par les droits de la couche métier [R16], qui écrit chaque refus au journal. Aucune route
  * n'accepte, ne refuse ni ne négocie : seule une réponse rapportée avec preuve change l'état d'une offre [R57].
  */
+import { journalError } from './app.ts';
 import { Acces, FicheClient, FicheUnique, offres as m09, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 
 const { ComparatifOffres, ContreOffres, ControlesOffre, DossiersVente, EcheancesOffres, RegistreOffres, TransmissionOffres } = m09;
@@ -108,8 +109,21 @@ export function offreRoutes(): OffreRoute[] {
 
 /** Le passage quotidien des offres d'un réseau : offres non transmises signalées, tâches d'échéance rangées. */
 export async function syncOffres(s: OffreServices, networkId: string): Promise<{ untransmitted: number; deadlines: number }> {
-  const untransmitted = await new TransmissionOffres(s.db, s.acces, s.journal, { now: s.now }).alertUntransmitted(networkId);
-  const deadlines = await new EcheancesOffres(s.db, s.journal, { now: s.now }).run(networkId);
+  // Les deux contrôles sont indépendants : la panne de l'un n'empêche pas l'autre ; elle est relancée ensuite.
+  let failure: unknown = null;
+  let untransmitted: string[] = [];
+  let deadlines: string[] = [];
+  try {
+    untransmitted = await new TransmissionOffres(s.db, s.acces, s.journal, { now: s.now }).alertUntransmitted(networkId);
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    deadlines = await new EcheancesOffres(s.db, s.journal, { now: s.now }).run(networkId);
+  } catch (error) {
+    failure ??= error;
+  }
+  if (failure !== null) throw failure;
   return { untransmitted: untransmitted.length, deadlines: deadlines.length };
 }
 
@@ -128,7 +142,18 @@ export function offersDailyJob(db: SqlDatabase, journal: JournalStore, options: 
       const store = new FicheClient(db, { now });
       const s: OffreServices = { db, journal, acces: new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now }), now };
       const networks = await db.all<{ id: string }>('SELECT id FROM networks ORDER BY id');
-      for (const n of networks) await syncOffres(s, n.id);
+      // Chaque réseau passe, même si un autre tombe en panne ; chaque panne va au journal, sans donnée [R13], et le
+      // créneau est marqué en erreur à la fin.
+      let failed = 0;
+      for (const n of networks) {
+        try {
+          await syncOffres(s, n.id);
+        } catch (error) {
+          failed += 1;
+          await journalError(journal, 'system:planificateur', OFFERS_DAILY_JOB, error, now);
+        }
+      }
+      if (failed > 0) throw new Error('offres_en_panne');
     },
   };
 }
