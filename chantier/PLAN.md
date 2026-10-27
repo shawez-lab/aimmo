@@ -931,7 +931,8 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N03 · Relances des pièces manquantes, en mode essai
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Reste : relecture de Codex restée en cours plus de 30 min, fusion sans elle (#95).
 - Décidé (2026-10-27) : seules les pièces que le client a lui-même sont relancées par mail (titre, fiches de renseignements, règlement de copropriété, procès-verbaux), les autres restent des tâches de l'agent ; finalité `suivi_vente`, accord exigé ; le message nomme le bien par sa commune et sa référence d'agence, un rappel porte sa date ; une relance en attente d'un jour passé, ou dont la pièce est arrivée, est close avec sa raison
 - Qui : Claude · Relecture : forte · Dépend de : N01, B02
 - Cahier : M10, « relances automatiques » et règles.
@@ -940,7 +941,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N04 · Suivi du financement déclaré
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : N02
 - Cahier : M10, « Suivi du financement ».
 - Objectif : les étapes du prêt déclarées par l'acquéreur ou son courtier (demande déposée, accord de principe, offre de prêt émise, offre acceptée, refus), chacune avec sa date et qui l'a déclarée ; une alerte à l'agent quand la date limite du prêt approche sans offre de prêt déclarée.
