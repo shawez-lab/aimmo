@@ -157,4 +157,17 @@ describeWithSqlite('D07 · avenant au mandat', () => {
     expect(await early.list(t.agent)).toEqual({ ok: true, tasks: [] });
     expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM mandate_tasks')).toEqual({ n: 1 });
   });
+
+  it('[R42] un avenant n’accepte pas les saisies du mandat ; son exemplaire signé se lit comme celui du mandat', async () => {
+    const t = await setup();
+    expect(await t.amendment({ 'mandat.duree_mois': 1 })).toEqual({ ok: false, rule: 'R40', code: 'bad_input' });
+    expect(await t.amendment({ 'avenant.prix': 190000, 'honoraires.montant': 1 })).toEqual({ ok: false, rule: 'R40', code: 'bad_input' });
+    const a = await t.amendment({ 'avenant.prix': 190000 });
+    if (!a.ok) throw new Error(a.code);
+    await t.avenants.register(t.agent, a.document.id, { signedAt: LATER, place: 'agence', scanRef: 'scans/a.pdf' });
+    const copy = await new SignaturePapier(t.db, t.acces, t.journal).copy(t.agent, a.document.id);
+    expect(copy.ok && copy.number).toBe('T-001');
+    expect(copy.ok && copy.content).toContain('<span class="signe">01/03/2027</span>');
+    expect(await new SignaturePapier(t.db, t.acces, t.journal).copy(t.as('agent', t.sam.id), a.document.id)).toMatchObject({ ok: false, rule: 'R16' });
+  });
 });

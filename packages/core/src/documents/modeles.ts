@@ -352,6 +352,8 @@ export class Modeles {
     const rendered = (k: string): boolean => fields.includes(k) || (template.kind === 'avenant_mandat' && fields.includes('avenant.objet') && (k === 'avenant.prix' || k === 'avenant.duree_mois'));
     if (supplied.some((k) => !rendered(k))) return { ok: false, rule: 'R40', code: 'bad_input' };
     if (template.kind !== 'avenant_mandat' && supplied.some((k) => k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
+    // Un avenant ne change que le prix et la durée par ses propres champs : les saisies du mandat n'y ont pas cours.
+    if (template.kind === 'avenant_mandat' && supplied.some((k) => !k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
     const missing = fields.filter((f) => TEMPLATE_FIELDS[f]?.source !== 'signature' && (base[f] === null || base[f] === undefined));
     const mode = template.status === 'valide' ? 'reel' : 'essai';
     const content = renderDocument(template.body, base, { title: `${KIND_TITLE[template.kind]} · ${base['bien.reference'] ?? ''}`, trial: mode === 'essai' });
