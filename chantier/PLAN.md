@@ -132,14 +132,14 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Décidé (2026-10-27), lecture prudente : les automatisations qui envoient aujourd'hui sont les deux tâches à heure fixe du site (`taches.yml` → `/api/espace/taches` : rappel de visite la veille de 18 h à 21 h, mails au vendeur gardés la nuit et partis à 8 h) et la première réponse aux leads (`lead-tri.js`), déjà reprise par M02 (C06, C09). Il n'existe pas d'alertes acquéreurs sur le site : elles naîtront directement sur le socle avec M08, il n'y a rien à basculer. La bascule ne refait pas le site : le site garde ses données et ses textes, et demande au socle, avant chaque envoi, s'il peut partir ; le socle passe la demande par le contrôle central (S06). D'abord en ombre (le site envoie comme avant, le socle décide sans rien envoyer, les deux décisions sont comparées), puis le socle décide pour 10 % des envois pendant 7 jours, puis pour tous, avec retour arrière automatique. Les tâches planifiées quittent GitHub Actions pour le planificateur du Worker AIMMO. Rien n'est modifié dans `shawez-immo` sur main : ses changements passent par une branche et une proposition sur ce dépôt-là, fusionnée seulement par Shawez.
 
 ### B01 · Demande d'envoi d'une automatisation, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : S06, S09
 - Cahier : Feuille de route, novembre 2026 ; Architecture technique, « Le contrôle central des envois ».
 - Objectif : une route `POST /v1/automatisations/envoi`, ouverte seulement à une clé de dépôt `site_auto` qui ne lit aucune fiche : le site y dit quelle automatisation (rappel de visite, courrier au vendeur), à quelle adresse, sur quel sujet et avec quel texte ; le socle retrouve la fiche par l'adresse, passe la demande par le contrôle central avec les canaux du mode essai, et rend la décision et sa règle, sans rien envoyer.
 - Critères : rien ne part jamais (canaux d'essai seulement) [R26] ; une personne inconnue, exclue ou arrêtée, la nuit ou le dimanche, un doublon de sujet : refusés avec leur règle [R01, R02, R05] ; le texte du site passe le contrôle du texte ; le journal ne porte ni adresse ni texte [R13] ; une autre clé que `site_auto` est refusée.
 
 ### B02 · Planificateur du socle
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : B01
 - Cahier : Feuille de route, novembre 2026 : « plus aucune tâche du système planifiée dans les applications ».
 - Objectif : le Worker `aimmo-api` a un déclencheur horaire et un registre des tâches à heure fixe, à l'heure de Paris ; chaque tâche ne passe qu'une fois par créneau, son passage est écrit au journal ; les tâches du site y sont inscrites en mode essai (le passage est noté, rien n'est appelé).
