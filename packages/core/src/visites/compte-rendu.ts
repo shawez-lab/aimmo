@@ -53,7 +53,14 @@ export type VisitReportRefusal = { ok: false; rule: string | null; code: string 
 const numbersIn = (text: string): string[] =>
   (text.replace(/[  ]/g, ' ').match(/\d+(?:[ .]\d{3})*(?:,\d+)?/g) ?? []).map((n) => n.replace(/[ .]/g, '').replace(',', '.').replace(/^0+(?=\d)/, ''));
 const OFFER_WORDS = /\b(?:offre|proposition|proposer|faire une offre|pret a acheter|prete a acheter|prets a acheter|signer|achete|acheter)\b/;
+const OFFER_DENIED = /\b(?:ne|n|pas|aucune?|jamais|sans|plus)\b[^.!?]{0,40}\b(?:offre|proposition|proposer|acheter|achete|signer)\b/;
 const CONTACT = /@|\+\d{2}|\b00\d{2}|\b0\d(?:[ .-]?\d{2}){4}\b/;
+
+/** Retire chaque mot d'un nom connu, accents et casse ignorés : « Ines » comme « Inès » [R15]. */
+export function redactNames(text: string, names: readonly string[]): string {
+  const keys = new Set(names.flatMap((n) => n.split(/[^\p{L}]+/u)).map((w) => plain(w)).filter((w) => w.length > 1));
+  return text.replace(/\p{L}+/gu, (word) => (keys.has(plain(word)) ? '[nom]' : word));
+}
 
 const textOk = (v: unknown, max: number): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 
@@ -76,7 +83,8 @@ export function checkReport(raw: unknown, dictation: string): { ok: true; report
   if (texts.some((t) => CONTACT.test(t) || withoutContactDetails(t) !== t)) return { ok: false, code: 'contact' };
   const allowed = new Set(numbersIn(dictation));
   if (texts.some((t) => numbersIn(t).some((n) => !allowed.has(n)))) return { ok: false, code: 'invented_figure' };
-  if (r.readyToOffer && !OFFER_WORDS.test(plain(dictation))) return { ok: false, code: 'invented_offer' };
+  // Une offre seulement si la dictée en parle sans la nier : au moindre doute, l'agent écrit lui-même.
+  if (r.readyToOffer && (!OFFER_WORDS.test(plain(dictation)) || OFFER_DENIED.test(plain(dictation)))) return { ok: false, code: 'invented_offer' };
   return {
     ok: true,
     report: { opinion: r.opinion.trim(), strengths: r.strengths.map((s) => s.trim()), reservations: r.reservations.map((s) => s.trim()), interest: r.interest as Interest, readyToOffer: r.readyToOffer },
@@ -171,7 +179,7 @@ export class ComptesRendus {
     const writer = this.options.writer;
     if (writer) {
       try {
-        const raw = await timeout(writer.write({ dictation: withoutNames(withoutContactDetails(dictation), names) }), this.options.aiTimeoutMs ?? 20_000);
+        const raw = await timeout(writer.write({ dictation: redactNames(withoutNames(withoutContactDetails(dictation), names), names) }), this.options.aiTimeoutMs ?? 20_000);
         const checked = checkReport(raw, dictation);
         if (checked.ok && !this.names(checked.report, names)) report = checked.report;
         else await appendEvent(this.journal, { type: 'compte_rendu.ia_refusee', actor: 'system:compte_rendu', subject: `visit:${appointmentId}`, data: { code: checked.ok ? 'buyer_named' : checked.code } }, this.now);
