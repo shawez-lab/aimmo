@@ -154,6 +154,24 @@ describeWithSqlite('T09 · alerte WhatsApp en un geste, par le téléphone de l�
     expect(row!.agent_id).toBe(t.alex.id);
   });
 
+  it('chaque refus avant le contrôle central va au journal, sans donnée ; un projet clos ou une recherche trop ancienne : rien', async () => {
+    const t = await setup();
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    t.blocked.add(p.id);
+    await t.whatsapp.prepare(t.as('agent', t.alex.id), p.id, b.project.id);
+    t.blocked.delete(p.id);
+    await t.db.run("UPDATE projects SET stage = 'bought' WHERE id = ?", [b.project.id]);
+    expect(await t.whatsapp.prepare(t.as('agent', t.alex.id), p.id, b.project.id)).toMatchObject({ ok: false, rule: 'R51', code: 'inactive' });
+    const old = await t.buyer('Ancienne');
+    t.setClock(TUESDAY_10H + 181 * DAY);
+    expect(await t.whatsapp.prepare(t.as('agent', t.alex.id), p.id, old.project.id)).toMatchObject({ ok: false, rule: 'R51', code: 'inactive' });
+    const refused = (await t.journal.all()).filter((e) => e.type === 'alerte.whatsapp.refusee');
+    expect(refused.map((e) => e.data.rule)).toEqual(['R42', 'R51', 'R51']);
+    expect(JSON.stringify(refused)).not.toMatch(/Inès|Ancienne|33600000001/);
+    expect(await t.messages(b.person.id)).toEqual([]);
+  });
+
   it('la confirmation de l’agent s’enregistre une seule fois, même demandée deux fois [R18] ; un autre agent ne confirme pas [R16]', async () => {
     const t = await setup();
     const b = await t.buyer('Inès');

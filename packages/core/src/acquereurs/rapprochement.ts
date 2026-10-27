@@ -39,6 +39,9 @@ export interface Tolerances {
 }
 export const DEFAULT_TOLERANCES: Readonly<Tolerances> = Object.freeze({ budgetOverPct: 5, surfaceUnderPct: 10, roomsUnder: 0 });
 
+/** Une recherche sans nouvelle depuis plus longtemps ne compte plus, en jours. */
+export const DEFAULT_ACTIVE_DAYS = 180;
+
 /** Les projets clos : leurs recherches ne comptent plus. */
 export const CLOSED_STAGES: readonly string[] = Object.freeze(['lost', 'closed', 'done', 'won', 'abandoned', 'bought']);
 
@@ -243,7 +246,7 @@ export class Rapprochement {
   ) {
     this.now = options.now ?? (() => new Date());
     this.tolerances = options.tolerances ?? DEFAULT_TOLERANCES;
-    this.activeDays = options.activeDays ?? 180;
+    this.activeDays = options.activeDays ?? DEFAULT_ACTIVE_DAYS;
   }
 
   /**

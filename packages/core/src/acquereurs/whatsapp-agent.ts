@@ -25,7 +25,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { ALERT_PURPOSE, alertFallbackText, checkUnsubscribeBase, newUnsubscribeLine } from './alertes.ts';
 import { FicheAcquereur } from './fiche-acquereur.ts';
-import { Rapprochement, matchBuyer, type DiffusionGate } from './rapprochement.ts';
+import { CLOSED_STAGES, DEFAULT_ACTIVE_DAYS, Rapprochement, matchBuyer, type DiffusionGate } from './rapprochement.ts';
 
 export type WhatsAppRefusal = { ok: false; rule: string | null; code: string; reason?: string };
 
@@ -80,13 +80,25 @@ export class AlerteWhatsApp {
     // L'agent qui envoie : celui qui demande, ou, pour la direction, l'agent qui suit la personne.
     const root = fiche.value.person;
     const agentId = viewer.role === 'agent' ? viewer.userId : (fiche.value.members.map((m) => m.agent_id).find((a) => a !== null) ?? null);
-    if (!agentId) return { ok: false, rule: null, code: 'no_agent' };
-    if (this.unsubscribeBase === null) return { ok: false, rule: 'R49', code: 'no_unsubscribe_link' };
+    // Chaque refus avant le contrôle central va au journal, avec sa règle, sans donnée [R13].
+    const stop = async (rule: string | null, code: string): Promise<WhatsAppRefusal> => {
+      await appendEvent(
+        this.journal,
+        { type: 'alerte.whatsapp.refusee', actor: `${viewer.role}:${viewer.userId}`, subject: `person:${root.id}`, data: { rule, code, property: propertyId } },
+        this.now,
+      );
+      return { ok: false, rule, code };
+    };
+    if (!agentId) return stop(null, 'no_agent');
+    if (this.unsubscribeBase === null) return stop('R49', 'no_unsubscribe_link');
     const gate = await this.gate.canDiffuse(viewer.networkId, propertyId, this.now());
-    if (!gate.allowed) return { ok: false, rule: 'R42', code: gate.reason };
+    if (!gate.allowed) return stop('R42', gate.reason);
+    // Comme le rapprochement : un projet clos, ou une recherche sans nouvelle depuis trop longtemps, ne compte plus.
     const search = await this.acquereurs.current(projectId);
+    const stale = search !== null && Date.parse(search.createdAt) < this.now().getTime() - DEFAULT_ACTIVE_DAYS * 86_400_000;
+    if (!search || CLOSED_STAGES.includes(project.stage) || stale) return stop('R51', 'inactive');
     const property = await this.rapprochement.propertyForMatch(read.value);
-    if (!search || matchBuyer(property, search.search).status === 'miss') return { ok: false, rule: 'R51', code: 'not_matching' };
+    if (matchBuyer(property, search.search).status === 'miss') return stop('R51', 'not_matching');
 
     const at = this.now();
     const line = await newUnsubscribeLine(this.db, viewer.networkId, root.id, this.unsubscribeBase, at);
@@ -111,6 +123,7 @@ export class AlerteWhatsApp {
       figures: [property.priceEur, property.surfaceM2, property.rooms, property.bedrooms].filter((n): n is number => n !== null),
     });
     if (result.status !== 'sent' || !result.messageId || !port.link) {
+      // Le refus du contrôle central est déjà dans le journal des envois [R13].
       return { ok: false, rule: result.rule, code: result.status, reason: result.reason };
     }
     await this.db.run(
