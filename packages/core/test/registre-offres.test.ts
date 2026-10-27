@@ -10,7 +10,9 @@ describe('O01 · conditions suspensives', () => {
   it('liste fermée, une fois chacune, le prêt avec son montant et sa durée, dans un ordre fixe', () => {
     expect(parseConditions([{ kind: 'vente_autre_bien' }, { kind: 'pret', amountEur: 150000, durationMonths: 240 }])).toEqual({ ok: true, value: [{ kind: 'pret', amountEur: 150000, durationMonths: 240 }, { kind: 'vente_autre_bien' }] });
     expect(parseConditions([])).toEqual({ ok: true, value: [] });
-    expect(parseConditions([{ kind: 'autre' }])).toEqual({ ok: false, field: 'conditions.0' });
+    expect(parseConditions([{ kind: 'autre' }])).toEqual({ ok: true, value: [{ kind: 'autre' }] });
+    expect(parseConditions([{ kind: 'autre', texte: 'au 12 rue des Essais' }])).toEqual({ ok: false, field: 'conditions.0' });
+    expect(parseConditions([{ kind: 'divers' }])).toEqual({ ok: false, field: 'conditions.0' });
     expect(parseConditions([{ kind: 'pret' }])).toEqual({ ok: false, field: 'conditions.0.amountEur' });
     expect(parseConditions([{ kind: 'pret', amountEur: 1000, durationMonths: 0 }])).toEqual({ ok: false, field: 'conditions.0.durationMonths' });
     expect(parseConditions([{ kind: 'permis_construire' }, { kind: 'permis_construire' }])).toEqual({ ok: false, field: 'conditions.1' });
@@ -82,6 +84,26 @@ describeWithSqlite('O01 · registre des offres', () => {
     await u.db.exec('DROP TRIGGER offer_register_sans_effacement');
     await u.db.run('DELETE FROM offer_register WHERE seq = 2');
     expect(await u.offres.check(u.propertyId)).toEqual({ ok: false, count: 1, brokenAt: 2, problem: 'sequence' });
+    // Puis une offre normale reprend le rang 2 : deux ancres pour un même rang, l'offre effacée reste visible.
+    await u.db.exec("CREATE TRIGGER offer_register_sans_effacement BEFORE DELETE ON offer_register BEGIN SELECT RAISE(ABORT, 'registre des offres en ajout seul'); END;");
+    expect(await u.offres.record(u.agent, u.propertyId, u.input({ amountEur: 190000 }))).toMatchObject({ ok: true, value: { seq: 2 } });
+    expect(await u.offres.check(u.propertyId)).toEqual({ ok: false, count: 2, brokenAt: 2, problem: 'anchor' });
+  });
+
+  it('[R56] une ancre manquée après une panne du journal est reprise au prochain enregistrement', async () => {
+    const t = await setup();
+    await t.offres.record(t.agent, t.propertyId, t.input());
+    // Le journal tombe juste après l'inscription de la deuxième offre.
+    const j = t.journal;
+    const failing = { last: () => j.last(), all: () => j.all(), bySubject: (x: string) => j.bySubject(x), byPeriod: (a: string, b: string) => j.byPeriod(a, b), append: async () => { throw new Error('panne du journal'); } };
+    const broken = new RegistreOffres(t.db, t.acces, failing, { now: t.now });
+    await expect(broken.record(t.direction, t.propertyId, t.input({ amountEur: 207000 }))).rejects.toThrow();
+    expect(await t.offres.check(t.propertyId)).toEqual({ ok: false, count: 2, brokenAt: 2, problem: 'anchor' });
+    // Le prochain enregistrement reprend l'ancre de la ligne intacte, puis inscrit la sienne.
+    expect(await t.offres.record(t.agent, t.propertyId, t.input({ amountEur: 209000 }))).toMatchObject({ ok: true, value: { seq: 3 } });
+    expect(await t.offres.check(t.propertyId)).toEqual({ ok: true, count: 3 });
+    const resumed = (await t.journal.bySubject(`property:${t.propertyId}`)).filter((e) => e.type === 'offre.enregistree' && (e.data as { resumed?: boolean }).resumed);
+    expect(resumed.map((e) => (e.data as { seq: number }).seq)).toEqual([2]);
   });
 
   it('une offre sans montant, sans validité ou avec une condition hors liste est refusée, le champ nommé', async () => {

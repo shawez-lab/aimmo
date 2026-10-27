@@ -27,14 +27,16 @@ const TIME_ZONE = 'Europe/Paris';
 export const OFFER_GENESIS = '0'.repeat(64);
 export const MAX_VALIDITY_DAYS = 60;
 
-export const CONDITION_KINDS = ['pret', 'vente_autre_bien', 'permis_construire', 'certificat_urbanisme'] as const;
+/** `autre` : une autre condition, sans texte libre ; son contenu est dans l'offre signée rangée par sa référence. */
+export const CONDITION_KINDS = ['pret', 'vente_autre_bien', 'permis_construire', 'certificat_urbanisme', 'autre'] as const;
 export type ConditionKind = (typeof CONDITION_KINDS)[number];
 
 export type OfferCondition =
   | { kind: 'pret'; amountEur: number; durationMonths: number }
   | { kind: 'vente_autre_bien' }
   | { kind: 'permis_construire' }
-  | { kind: 'certificat_urbanisme' };
+  | { kind: 'certificat_urbanisme' }
+  | { kind: 'autre' };
 
 export interface OfferInput {
   buyerPersonId: unknown;
@@ -219,6 +221,8 @@ export class RegistreOffres {
     const sale = await this.diffusion.canDiffuse(g.networkId, propertyId, now);
     if (!sale.allowed) return { ok: false, rule: 'R42', code: 'not_on_sale' };
 
+    // Une ancre manquée après une panne du journal est reprise d'abord, pour une ligne intacte seulement.
+    await this.resumeAnchors(viewer, propertyId);
     for (let attempt = 0; attempt < 5; attempt++) {
       const last = await this.db.first<{ seq: number; hash: string }>('SELECT seq, hash FROM offer_register WHERE property_id = ? ORDER BY seq DESC LIMIT 1', [propertyId]);
       const line: Omit<Row, 'hash'> = {
@@ -266,18 +270,39 @@ export class RegistreOffres {
     return { ok: true, value: rows.map(toOffer) };
   }
 
-  /**
-   * Le contrôle du registre d'un bien, sans droits ni donnée personnelle : le nombre d'offres et l'état du registre.
-   * C'est ce que le vendeur peut voir : combien d'offres ont été reçues, et qu'aucune n'a été retirée ni changée.
-   */
-  async check(propertyId: string): Promise<RegisterCheck> {
-    const rows = await this.db.all<Row>('SELECT * FROM offer_register WHERE property_id = ? ORDER BY seq', [propertyId]);
-    const anchors = new Map<number, string>();
+  /** Les ancres du journal pour un bien, par rang : un rang peut en porter plusieurs si quelqu'un a triché. */
+  private async anchorsOf(propertyId: string): Promise<Map<number, Set<string>>> {
+    const anchors = new Map<number, Set<string>>();
     for (const e of await this.journal.bySubject(`property:${propertyId}`)) {
       if (e.type !== 'offre.enregistree') continue;
       const d = e.data as { seq?: number; anchor?: string };
-      if (typeof d.seq === 'number' && typeof d.anchor === 'string') anchors.set(d.seq, d.anchor);
+      if (typeof d.seq !== 'number' || typeof d.anchor !== 'string') continue;
+      const set = anchors.get(d.seq) ?? new Set<string>();
+      set.add(d.anchor);
+      anchors.set(d.seq, set);
     }
+    return anchors;
+  }
+
+  /** Réécrit l'ancre des lignes intactes qui n'en ont aucune (journal en panne juste après l'inscription). */
+  private async resumeAnchors(viewer: Viewer, propertyId: string): Promise<void> {
+    const rows = await this.db.all<Row>('SELECT * FROM offer_register WHERE property_id = ? ORDER BY seq', [propertyId]);
+    const anchors = await this.anchorsOf(propertyId);
+    let prev = OFFER_GENESIS;
+    for (const [i, row] of rows.entries()) {
+      const { hash, ...rest } = row;
+      // Au premier écart, on s'arrête : on n'ancre jamais une ligne qui ne suit pas la chaîne.
+      if (Number(row.seq) !== i + 1 || row.prev_hash !== prev || (await hashOffer(rest)) !== hash) return;
+      const own = anchors.get(i + 1);
+      if (own && !own.has(offerAnchor(hash))) return;
+      if (!own) await appendEvent(this.journal, { type: 'offre.enregistree', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R56', seq: i + 1, anchor: offerAnchor(hash), resumed: true } }, this.now);
+      prev = hash;
+    }
+  }
+
+  private async checkOnce(propertyId: string): Promise<RegisterCheck> {
+    const rows = await this.db.all<Row>('SELECT * FROM offer_register WHERE property_id = ? ORDER BY seq', [propertyId]);
+    const anchors = await this.anchorsOf(propertyId);
     let prev = OFFER_GENESIS;
     for (const [i, row] of rows.entries()) {
       const broken = (problem: 'sequence' | 'chain' | 'hash' | 'anchor'): RegisterCheck => ({ ok: false, count: rows.length, brokenAt: i + 1, problem });
@@ -285,11 +310,24 @@ export class RegistreOffres {
       if (row.prev_hash !== prev) return broken('chain');
       const { hash, ...rest } = row;
       if ((await hashOffer(rest)) !== hash) return broken('hash');
-      if (anchors.get(i + 1) !== offerAnchor(hash)) return broken('anchor');
+      // Une seule ancre par rang, celle de la ligne : deux ancres différentes pour un rang, c'est une ligne remplacée.
+      const own = anchors.get(i + 1);
+      if (!own || own.size !== 1 || !own.has(offerAnchor(hash))) return broken('anchor');
       prev = hash;
     }
-    // Une ancre sans ligne : une offre retirée du registre.
-    if (anchors.size > rows.length) return { ok: false, count: rows.length, brokenAt: rows.length + 1, problem: 'sequence' };
+    // Une ancre au-delà de la dernière ligne : une offre retirée du registre.
+    const highest = Math.max(0, ...anchors.keys());
+    if (highest > rows.length) return { ok: false, count: rows.length, brokenAt: rows.length + 1, problem: 'sequence' };
     return { ok: true, count: rows.length };
+  }
+
+  /**
+   * Le contrôle du registre d'un bien, sans droits ni donnée personnelle : le nombre d'offres et l'état du registre.
+   * C'est ce que le vendeur peut voir : combien d'offres ont été reçues, et qu'aucune n'a été retirée ni changée.
+   * Un écart est relu une fois avant d'être rendu : une inscription en cours, entre la ligne et son ancre, n'en est pas un.
+   */
+  async check(propertyId: string): Promise<RegisterCheck> {
+    const first = await this.checkOnce(propertyId);
+    return first.ok ? first : this.checkOnce(propertyId);
   }
 }
