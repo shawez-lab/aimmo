@@ -11,7 +11,8 @@
  *   notification ; un délai qui finit un samedi, un dimanche ou un jour férié est prolongé jusqu'au premier jour
  *   ouvrable suivant.
  * - Réponse de la commune sur son droit de préemption : 2 mois après la réception de la déclaration ; un mois plus court
- *   finit à son dernier jour. Son silence vaut renonciation.
+ *   finit à son dernier jour. Une demande unique de pièces ou de visite suspend le délai, qui reprend pour ce qui en
+ *   restait, au moins un mois. Son silence vaut renonciation.
  *
  * Chaque jour, une tâche pour l'agent avant chaque échéance (nombre de jours d'avance en réglage), une seule par
  * échéance et par date ; une tâche aussi pour chaque échéance encore à saisir, une seule. Rien n'est envoyé aux clients.
@@ -19,7 +20,8 @@
  * Décidé, lecture prudente : rien ne se saisit avant que le compromis soit en préparation, donc l'identité de
  * l'acquéreur vérifiée [R58] ; la signature du compromis se saisit d'abord, les autres dates ne la précèdent pas ;
  * la date limite du prêt n'a pas d'objet si l'offre n'a pas de condition de prêt, l'état daté si le bien n'est pas un
- * lot de copropriété ; le délai de la commune n'est pas prolongé (la date sert à prévenir l'agent, pas à décider) ;
+ * lot de copropriété ; une fin du délai de la commune un samedi, un dimanche ou un jour férié est reportée au jour
+ * ouvrable suivant, pour ne jamais annoncer trop tôt un silence acquis ;
  * les jours fériés propres à l'Alsace-Moselle ne sont pas comptés.
  */
 import type { Acces } from '../acces/acces.ts';
@@ -36,11 +38,13 @@ const TIME_ZONE = 'Europe/Paris';
 export const BUYER_WITHDRAWAL_DAYS = 10;
 export const PREEMPTION_MONTHS = 2;
 
-export const DATE_KINDS = ['compromis_signe', 'notification_acquereur', 'date_limite_pret', 'dia_recue', 'etat_date_attendu', 'acte_prevu'] as const;
+export const DATE_KINDS = ['compromis_signe', 'notification_acquereur', 'date_limite_pret', 'dia_recue', 'dia_suspension', 'dia_reprise', 'etat_date_attendu', 'acte_prevu'] as const;
 export type DateKind = (typeof DATE_KINDS)[number];
 
 /** Les dates qui ont eu lieu : jamais dans le futur. Les autres sont des dates à venir lues dans le compromis. */
-const PAST_KINDS: readonly DateKind[] = ['compromis_signe', 'notification_acquereur', 'dia_recue'];
+const PAST_KINDS: readonly DateKind[] = ['compromis_signe', 'notification_acquereur', 'dia_recue', 'dia_suspension', 'dia_reprise'];
+/** Une date qui en suppose une autre, et ne la précède pas. */
+const AFTER: Partial<Record<DateKind, DateKind>> = { dia_suspension: 'dia_recue', dia_reprise: 'dia_suspension' };
 
 export const DEADLINES = ['fin_retractation', 'reponse_preemption', 'date_limite_pret', 'etat_date', 'acte'] as const;
 export type Deadline = (typeof DEADLINES)[number];
@@ -70,14 +74,40 @@ export function buyerWithdrawalLastDay(notifiedOn: string): string {
   return last;
 }
 
-/** Le jour où la commune doit avoir répondu : 2 mois après la réception, au dernier jour du mois s'il est plus court. */
-export function preemptionLastDay(receivedOn: string): string {
-  const [y, m, d] = receivedOn.split('-').map(Number) as [number, number, number];
-  const months = m - 1 + PREEMPTION_MONTHS;
+/** Le même jour, `n` mois plus tard ; au dernier jour du mois s'il est plus court. */
+function addMonths(day: string, n: number): string {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+  const months = m - 1 + n;
   const year = y + Math.floor(months / 12);
   const month = months % 12;
   const lastOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(Math.min(d, lastOfMonth)).padStart(2, '0')}`;
+}
+
+const daysBetween = (from: string, to: string): number => Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000);
+
+const nextWorkingDay = (day: string): string => {
+  let d = day;
+  while (!isWorkingDay(d)) d = addDays(d, 1);
+  return d;
+};
+
+/**
+ * Le jour où la commune doit avoir répondu sur son droit de préemption, ou null tant que le délai est suspendu.
+ * 2 mois après la réception de la déclaration, au dernier jour du mois s'il est plus court. Une demande unique de pièces
+ * ou de visite suspend le délai ; il reprend à la réception des pièces ou à la visite, pour ce qui en restait, et au
+ * moins un mois. Lecture prudente : une fin un samedi, un dimanche ou un jour férié est reportée au jour ouvrable
+ * suivant, pour ne jamais dire acquis un silence qui ne l'est pas encore.
+ */
+export function preemptionLastDay(receivedOn: string, suspendedOn?: string, resumedOn?: string): string | null {
+  let end = addMonths(receivedOn, PREEMPTION_MONTHS);
+  if (suspendedOn && suspendedOn <= end) {
+    if (!resumedOn) return null;
+    const rest = addDays(resumedOn, daysBetween(suspendedOn, end));
+    const month = addMonths(resumedOn, 1);
+    end = rest > month ? rest : month;
+  }
+  return nextWorkingDay(end);
 }
 
 export interface ScheduleLine {
@@ -86,8 +116,8 @@ export interface ScheduleLine {
   source: 'calcul' | 'saisie';
   /** Le jour de l'échéance, `AAAA-MM-JJ` ; null quand la date dont elle dépend n'est pas saisie. */
   day: string | null;
-  /** `a_saisir` : la date manque ; `sans_objet` : pas de condition de prêt, pas de copropriété. */
-  status: 'datee' | 'a_saisir' | 'sans_objet';
+  /** `a_saisir` : la date manque ; `sans_objet` : pas de condition de prêt, pas de copropriété ; `suspendue` : le délai de la commune attend ses pièces ou sa visite. */
+  status: 'datee' | 'a_saisir' | 'sans_objet' | 'suspendue';
   /** La date saisie dont l'échéance vient. */
   from: DateKind;
 }
@@ -105,7 +135,9 @@ export function scheduleLines(dates: Partial<Record<DateKind, string>>, facts: {
   const dia = dates.dia_recue;
   const lines: ScheduleLine[] = [
     line('fin_retractation', 'calcul', 'notification_acquereur', n ? buyerWithdrawalLastDay(n) : null),
-    line('reponse_preemption', 'calcul', 'dia_recue', dia ? preemptionLastDay(dia) : null),
+    !dia ? line('reponse_preemption', 'calcul', 'dia_recue', null)
+      : dates.dia_suspension && !dates.dia_reprise && dates.dia_suspension <= addMonths(dia, PREEMPTION_MONTHS) ? { deadline: 'reponse_preemption', source: 'calcul', from: 'dia_suspension', day: null, status: 'suspendue' }
+      : line('reponse_preemption', 'calcul', dates.dia_reprise ? 'dia_reprise' : 'dia_recue', preemptionLastDay(dia, dates.dia_suspension, dates.dia_reprise)),
     facts.hasLoanCondition ? line('date_limite_pret', 'saisie', 'date_limite_pret', dates.date_limite_pret ?? null) : { deadline: 'date_limite_pret', source: 'saisie', from: 'date_limite_pret', day: null, status: 'sans_objet' },
     // La copropriété inconnue : l'état daté est demandé, par prudence.
     facts.isCoownershipLot === false ? { deadline: 'etat_date', source: 'saisie', from: 'etat_date_attendu', day: null, status: 'sans_objet' } : line('etat_date', 'saisie', 'etat_date_attendu', dates.etat_date_attendu ?? null),
@@ -125,7 +157,7 @@ export interface FileTask {
   createdAt: string;
 }
 
-export type ScheduleProblem = { ok: false; rule: null; code: 'unknown_date' | 'bad_day' | 'bad_proof' | 'future_day' | 'before_compromis' | 'compromis_first' | 'busy' } | { ok: false; rule: 'R58'; code: 'compromis_not_started' };
+export type ScheduleProblem = { ok: false; rule: null; code: 'unknown_date' | 'bad_day' | 'bad_proof' | 'future_day' | 'before_compromis' | 'compromis_first' | 'out_of_order' | 'busy' } | { ok: false; rule: 'R58'; code: 'compromis_not_started' };
 
 export class Echeancier {
   private readonly now: () => Date;
@@ -200,6 +232,8 @@ export class Echeancier {
       const signed = dates.compromis_signe?.day;
       if (!signed) return { ok: false, rule: null, code: 'compromis_first' };
       if (day < signed) return { ok: false, rule: null, code: 'before_compromis' };
+      const before = AFTER[kind];
+      if (before && (!dates[before] || day < dates[before]!.day)) return { ok: false, rule: null, code: 'out_of_order' };
     } else {
       // Corriger la signature après coup ne peut pas la placer après une date déjà saisie qui la suit.
       for (const [k, v] of Object.entries(dates)) if (k !== 'compromis_signe' && v.day < day) return { ok: false, rule: null, code: 'before_compromis' };
@@ -240,7 +274,7 @@ export class Echeancier {
         else if (l.status === 'datee' && l.day! >= today && addDays(l.day!, -this.notice[l.deadline]) <= today) due = l.day!;
         if (due === null) continue;
         const { changes } = await this.db.run(
-          'INSERT INTO sale_file_tasks (file_id, network_id, agent_id, deadline, due_day, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (file_id, deadline, due_day) DO NOTHING',
+          'INSERT INTO sale_file_tasks (file_id, network_id, agent_id, deadline, due_day, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (file_id, deadline, due_day, agent_id) DO NOTHING',
           [f.id, networkId, f.agent_id, l.deadline, due, this.now().toISOString()],
         );
         if (changes !== 1) continue;

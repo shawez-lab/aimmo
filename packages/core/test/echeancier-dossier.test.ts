@@ -18,13 +18,28 @@ it('[R61] fin de la rétractation de l’acquéreur : 10 jours dès le lendemain
   for (const [notified, last] of cases) expect([notified, buyerWithdrawalLastDay(notified)]).toEqual([notified, last]);
 });
 
-it('[R61] réponse de la commune : 2 mois après la réception, au dernier jour d’un mois plus court', () => {
-  expect(preemptionLastDay('2027-03-15')).toBe('2027-05-15');
+it('[R61] réponse de la commune : 2 mois après la réception, au dernier jour d’un mois plus court, reportée au jour ouvrable', () => {
+  expect(preemptionLastDay('2027-03-15')).toBe('2027-05-18'); // 15 mai un samedi, 17 le lundi de Pentecôte
+  expect(preemptionLastDay('2027-03-11')).toBe('2027-05-11');
   expect(preemptionLastDay('2027-01-31')).toBe('2027-03-31');
-  expect(preemptionLastDay('2026-12-31')).toBe('2027-02-28');
+  expect(preemptionLastDay('2026-12-31')).toBe('2027-03-01'); // 28 février un dimanche
   expect(preemptionLastDay('2027-12-31')).toBe('2028-02-29');
-  expect(preemptionLastDay('2027-11-15')).toBe('2028-01-15');
-  expect(preemptionLastDay('2027-08-31')).toBe('2027-10-31');
+  expect(preemptionLastDay('2027-11-15')).toBe('2028-01-17'); // un samedi
+  expect(preemptionLastDay('2027-08-31')).toBe('2027-11-02'); // un dimanche, puis la Toussaint
+});
+
+it('[R61] la demande de pièces ou de visite suspend le délai de la commune ; il reprend pour ce qui restait, au moins un mois', () => {
+  // Suspendu : pas de date tant que les pièces ne sont pas reçues.
+  expect(preemptionLastDay('2027-03-15', '2027-04-20')).toBeNull();
+  // Restaient 25 jours : moins d'un mois, la commune a un mois dès la reprise.
+  expect(preemptionLastDay('2027-03-15', '2027-04-20', '2027-05-03')).toBe('2027-06-03');
+  // Restaient 56 jours : ils courent dès la reprise.
+  expect(preemptionLastDay('2027-03-15', '2027-03-20', '2027-04-01')).toBe('2027-05-27');
+  // Une demande après la fin du délai ne le rouvre pas.
+  expect(preemptionLastDay('2027-03-15', '2027-05-20', '2027-05-25')).toBe('2027-05-18');
+  const facts = { hasLoanCondition: true, isCoownershipLot: true };
+  expect(scheduleLines({ dia_recue: '2027-03-15', dia_suspension: '2027-04-20' }, facts).find((l) => l.deadline === 'reponse_preemption')).toEqual({ deadline: 'reponse_preemption', source: 'calcul', from: 'dia_suspension', day: null, status: 'suspendue' });
+  expect(scheduleLines({ dia_recue: '2027-03-15', dia_suspension: '2027-04-20', dia_reprise: '2027-05-03' }, facts).find((l) => l.deadline === 'reponse_preemption')).toEqual({ deadline: 'reponse_preemption', source: 'calcul', from: 'dia_reprise', day: '2027-06-03', status: 'datee' });
 });
 
 it('[R10] [R61] aucune échéance sans sa date : à saisir, ou sans objet, jamais inventée', () => {
@@ -34,7 +49,7 @@ it('[R10] [R61] aucune échéance sans sa date : à saisir, ou sans objet, jamai
   ]);
   const dated = scheduleLines({ compromis_signe: '2027-03-10', notification_acquereur: '2027-03-11', date_limite_pret: '2027-05-10', dia_recue: '2027-03-15', etat_date_attendu: '2027-05-20', acte_prevu: '2027-06-10' }, facts);
   expect(dated.map((l) => [l.deadline, l.source, l.day])).toEqual([
-    ['fin_retractation', 'calcul', '2027-03-22'], ['reponse_preemption', 'calcul', '2027-05-15'], ['date_limite_pret', 'saisie', '2027-05-10'], ['etat_date', 'saisie', '2027-05-20'], ['acte', 'saisie', '2027-06-10'],
+    ['fin_retractation', 'calcul', '2027-03-22'], ['reponse_preemption', 'calcul', '2027-05-18'], ['date_limite_pret', 'saisie', '2027-05-10'], ['etat_date', 'saisie', '2027-05-20'], ['acte', 'saisie', '2027-06-10'],
   ]);
   expect(scheduleLines({}, { hasLoanCondition: false, isCoownershipLot: false }).filter((l) => l.status === 'sans_objet').map((l) => l.deadline)).toEqual(['date_limite_pret', 'etat_date']);
   // Copropriété inconnue : l'état daté reste demandé.
@@ -116,6 +131,11 @@ describeWithSqlite('N02 · échéancier du dossier et alertes à l’agent', () 
     await e.record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-03-09', proofRef: PROOF });
     expect(await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-08', proofRef: PROOF })).toEqual({ ok: false, rule: null, code: 'before_compromis' });
     expect(await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-12', proofRef: PROOF })).toEqual({ ok: false, rule: null, code: 'future_day' });
+    // La suspension suppose la déclaration reçue, la reprise la suspension, dans cet ordre.
+    expect(await e.record(t.agent, t.fileId, { kind: 'dia_suspension', day: '2027-03-10', proofRef: PROOF })).toEqual({ ok: false, rule: null, code: 'out_of_order' });
+    await e.record(t.agent, t.fileId, { kind: 'dia_recue', day: '2027-03-10', proofRef: PROOF });
+    expect(await e.record(t.agent, t.fileId, { kind: 'dia_reprise', day: '2027-03-10', proofRef: PROOF })).toEqual({ ok: false, rule: null, code: 'out_of_order' });
+    expect(await e.record(t.agent, t.fileId, { kind: 'dia_suspension', day: '2027-03-10', proofRef: PROOF })).toMatchObject({ ok: true });
     // Une date à venir, lue dans le compromis, peut être dans le futur.
     expect(await e.record(t.agent, t.fileId, { kind: 'acte_prevu', day: '2027-06-10', proofRef: PROOF })).toMatchObject({ ok: true });
     // Corriger la signature après l'acte prévu : refusé.
@@ -147,6 +167,11 @@ describeWithSqlite('N02 · échéancier du dossier et alertes à l’agent', () 
     // Le bien confié à un autre agent : les tâches de l'ancien ne lui sont plus montrées.
     await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.userId, t.propertyId]);
     expect(await e.tasksOf(t.agent)).toEqual({ ok: true, tasks: [] });
+    // Le nouvel agent reçoit les tâches au passage suivant, une seule fois.
+    expect(await e.run(t.network.id)).toBe(5);
+    expect(await e.run(t.network.id)).toBe(0);
+    const samTasks = await e.tasksOf(t.sam);
+    expect(samTasks.ok && samTasks.tasks.map((x) => x.kind)).toEqual(['a_saisir', 'a_saisir', 'a_saisir', 'a_saisir', 'a_saisir']);
     const refusals = (await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((x) => x.type === 'acces.refuse');
     expect(refusals.length).toBeGreaterThanOrEqual(4);
     // Le journal porte le type de date, jamais la date ni la preuve.

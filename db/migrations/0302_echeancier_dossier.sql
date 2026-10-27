@@ -1,9 +1,9 @@
 -- N02 · Échéancier du dossier de vente (M10). Les dates saisies avec leur preuve, une correction en nouvelle version ;
--- les tâches de l'agent, une par échéance et par date (`due_day` vide : date à saisir). En ajout seul [R17, R61].
+-- les tâches de l'agent, une par échéance, par date et par agent responsable du bien (`due_day` vide : date à saisir). En ajout seul [R17, R61].
 CREATE TABLE IF NOT EXISTS sale_file_dates (
   file_id TEXT NOT NULL REFERENCES sale_files (id) ON DELETE RESTRICT,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  kind TEXT NOT NULL CHECK (kind IN ('compromis_signe', 'notification_acquereur', 'date_limite_pret', 'dia_recue', 'etat_date_attendu', 'acte_prevu')),
+  kind TEXT NOT NULL CHECK (kind IN ('compromis_signe', 'notification_acquereur', 'date_limite_pret', 'dia_recue', 'dia_suspension', 'dia_reprise', 'etat_date_attendu', 'acte_prevu')),
   version INTEGER NOT NULL CHECK (version >= 1),
   day TEXT NOT NULL,
   proof_ref TEXT NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS sale_file_tasks (
   deadline TEXT NOT NULL CHECK (deadline IN ('fin_retractation', 'reponse_preemption', 'date_limite_pret', 'etat_date', 'acte')),
   due_day TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  PRIMARY KEY (file_id, deadline, due_day)
+  PRIMARY KEY (file_id, deadline, due_day, agent_id)
 );
 CREATE INDEX IF NOT EXISTS sale_file_tasks_agent ON sale_file_tasks (network_id, agent_id, created_at);
 CREATE TRIGGER IF NOT EXISTS sale_file_dates_fige BEFORE UPDATE ON sale_file_dates BEGIN SELECT RAISE(ABORT, 'sale_file_dates : rien ne change'); END;
