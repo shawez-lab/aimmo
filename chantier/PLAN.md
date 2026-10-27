@@ -985,3 +985,66 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Objectif : exporter `dossiers` depuis `@aimmo/core` ; ajouter les routes de M10 à `app.ts` ; lancer `syncDossiers` chaque jour depuis le planificateur, une fois par créneau ; brancher le contrôle du bouclier (N05) à la réception des messages.
 - Critères : les routes répondent derrière la clé d'API [R16] ; le passage tourne une fois par jour ; rien ne part réellement tant que le plan n'a pas mis d'envoi en service.
 - Attend : rien.
+
+**M11 · Après la vente, juin 2027.**
+
+Voie : 1
+
+Découpé le 2026-10-27 par la voie 1. Ids `F..` pour Fidéliser. Cahier : M11 Après la vente ; Feuille de route, juin 2027 ; critères « sur 5 dossiers tests arrivés à l'acte, la demande d'avis part le lendemain », « aucune relance à une personne opposée ».
+Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), lu par une interface (« dossier clos le … »), avec un faux dossier clos dans les tests tant que N06 n'est pas fusionnée. Tout envoi passe par le contrôle central, en mode essai, dans les heures d'envoi [R01, R26]. La demande d'avis va à chaque client du dossier (vendeurs et acquéreurs), sans tri selon sa satisfaction et sans contrepartie [R64] ; AIMMO n'écrit jamais d'avis à la place d'un client. Le lien vers la fiche Google de l'agent est un réglage de l'agent ; l'API Google Business Profile (H07) viendra pour lire les avis, pas pour en publier. Les relances après la vente : à un an, seulement à qui ne s'y est pas opposé, au-delà seulement avec l'accord donné à l'acte, avec désinscription dans chaque message [R65]. Une recommandation arrive dans M02 avec sa source, et n'est jamais rémunérée à un particulier [R66] : aucun champ de récompense, aucun texte qui en promet. La note de satisfaction est rangée pour M13. Le code vit dans `packages/core/src/apres-vente/`, ses migrations à partir de `0401`, ses routes dans `packages/api/src/apres-vente.ts`.
+
+### F01 · Recommandation d'un proche, rangée dans M02 avec sa source
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : C02
+- Cahier : M11, « Recommandations » ; Conformité, consentement.
+- Objectif : l'agent saisit qu'un client recommande un proche (prénom, une coordonnée, le projet, et ce que le proche a accepté : être appelé par l'agent, avec la preuve dite par le client) ; le proche arrive dans la fiche unique (rattachée si elle existe) avec la source « recommandation » qui nomme le client qui recommande ; une tâche « appeler » pour l'agent ; un lien « qui a recommandé qui » lisible sur les deux fiches.
+- Critères : la source de la fiche du proche est « recommandation », avec le client qui recommande [R66] ; aucun champ ni texte de récompense : une saisie qui en parle (prime, cadeau, commission, bon d'achat, pourcentage) est refusée [R66] ; sans accord du proche, aucune tâche « appeler » et aucun envoi, la fiche est seulement rangée [R03] ; un proche exclu ou opposé n'est jamais rappelé [R02, R04] ; droits de la fiche [R16] ; rien d'une coordonnée au journal [R13].
+- Attend : rien.
+
+### F02 · Demande d'avis le lendemain de l'acte, à tous, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : N06
+- Cahier : M11, « Demande d'avis » ; règle « l'avis est demandé à tous les clients, sans tri préalable, sans contrepartie ».
+- Objectif : le lendemain d'un dossier clos, à 10 h, heure de Paris, une demande d'avis à chaque client du dossier, écrite par le code avec le lien de la fiche Google de l'agent (réglage de l'agent), passée par le contrôle central, rangée dans la boîte d'essai ; une seule par personne et par dossier.
+- Critères : sur 5 dossiers tests clos, chaque client reçoit sa demande le lendemain, aucun deux fois [R64, R18] ; la demande ne dépend d'aucune note de satisfaction et ne promet rien [R64] ; sans lien réglé, rien ne part et l'agent est prévenu ; une personne exclue ou qui a demandé l'arrêt ne reçoit rien [R02, R04].
+- Attend : rien (H07 seulement pour lire les avis plus tard).
+
+### F03 · Remerciement : l'agent appelle, le message est préparé
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : N06
+- Cahier : M11, « Remerciement ».
+- Objectif : à la clôture, une tâche « appeler pour remercier » par client, au plan du jour de l'agent, et un message de remerciement préparé que l'agent valide ou non ; rien ne part sans sa validation.
+- Critères : une tâche par client et par dossier [R18] ; le message validé passe par le contrôle central, en mode essai ; non validé, rien ne part.
+- Attend : rien.
+
+### F04 · Relance un an après la vente, sans jamais relancer une personne opposée
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : F02
+- Cahier : M11, « Relances aux dates clés » ; règle « relances seulement aux clients qui ne s'y sont pas opposés, avec désinscription dans chaque message ».
+- Objectif : à l'acte, l'agent range le choix du client (relances après la vente : oui, non, ou seulement à un an) avec sa preuve ; un an après la clôture, une relance écrite par le code, avec un lien de désinscription ; au-delà d'un an, seulement avec l'accord donné à l'acte ; une opposition dite plus tard arrête tout.
+- Critères : aucune relance à une personne opposée, sur 30 dossiers tests à horloge simulée [R65] ; chaque message porte la désinscription, qui marche en un geste [R65] ; une seule relance par date clé [R18] ; hors heures d'envoi, rien ne part [R01].
+- Attend : rien.
+
+### F05 · Satisfaction : note et commentaire rangés pour M13
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : F02
+- Cahier : M11, « Satisfaction ».
+- Objectif : le client donne une note de 1 à 5 et un commentaire par un lien à usage unique de sa demande d'avis ; la note est rangée avec le dossier pour M13 ; l'agent la voit ; elle ne change jamais qui reçoit la demande d'avis.
+- Critères : un lien ne sert qu'une fois et expire ; la note ne trie ni ne bloque aucune demande d'avis [R64] ; le commentaire n'est jamais publié ni envoyé comme avis [R64] ; rien du commentaire au journal [R13].
+- Attend : rien.
+
+### F06 · Carnet du propriétaire, un an après (Jamais vu)
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : F04, E01, E02
+- Cahier : M11 ; M20 Gagner des mandats ; M04, fourchette par le code.
+- Objectif : un an après l'achat, et seulement avec son accord donné à l'acte, l'acquéreur devenu propriétaire reçoit le carnet de son bien : la fourchette de valeur calculée par le code depuis les ventes DVF de sa commune (E01, E02), les ventes comparables de l'année, les échéances de ses diagnostics, et rien qu'il n'ait déjà donné ; c'est le premier contact de son futur mandat de vente, sans jamais le lui demander.
+- Critères : chaque chiffre du carnet vient de la base ou des ventes publiques, sinon « non communiqué » [R10] ; sans accord, aucun carnet [R65] ; jamais de démarchage dans le texte : une liste fermée de tournures refuse « vendre maintenant », « estimation gratuite », « profitez » ; 5 carnets tests, chacun relu par le code contre ses sources.
+- Attend : rien.
+
+### F07 · Routes de M11, branchement et écran « Après la vente »
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : F01, F02, F03, F04, F05
+- Cahier : M11 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : les routes `/v1/apres-vente` (recommandation, choix des relances, lien de la fiche Google, satisfaction, tâches) dans `packages/api/src/apres-vente.ts`, branchées dans `app.ts`, le passage quotidien au planificateur, et dans l'application de l'agent l'écran d'un dossier clos : demandes parties, tâches « remercier », recommandations, note.
+- Critères : chaque route sous R16, refus au journal ; un parcours de test, de l'acte à la relance d'un an ; écran accessible, sans texte générique, beau sur téléphone d'abord.
+- Attend : rien.
