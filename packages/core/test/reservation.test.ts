@@ -203,6 +203,21 @@ describeWithSqlite('V02 · réservation, confirmation et annulation', () => {
     expect((await w.rdv.reschedule(r.token, at('2026-11-10', '15:00'))).ok).toBe(true);
   });
 
+  it('le journal en panne au moment de réserver : la réservation est défaite, le créneau reste libre', async () => {
+    const w = await world();
+    let failing = true;
+    const journal = {
+      ...w.journal,
+      append: (...args: Parameters<typeof w.journal.append>) => (failing ? Promise.reject(new Error('journal en panne')) : w.journal.append(...args)),
+      last: (...args: Parameters<typeof w.journal.last>) => w.journal.last(...args),
+    } as unknown as typeof w.journal;
+    const rdv = new RendezVous(w.db, journal, { now: () => NOW });
+    await expect(rdv.book({ networkId: w.net.id, agentId: w.paul.id, personId: w.lea.id, kind: 'estimation', start: at('2026-11-10', '09:00'), source: 'site' })).rejects.toThrow('journal en panne');
+    failing = false;
+    expect(await w.rdv.bookedOf(w.paul.id)).toHaveLength(0);
+    expect((await w.book(at('2026-11-10', '09:00'))).ok).toBe(true);
+  });
+
   it('des plages hors des tranches de 5 minutes sont refusées : chaque créneau proposé se réserve', async () => {
     const w = await world();
     expect(await w.rdv.setAvailability(w.asPaul, { weekly: [{ weekday: 2, from: '09:02', to: '12:02' }] })).toEqual({ ok: false, code: 'invalid' });

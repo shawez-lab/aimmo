@@ -311,29 +311,49 @@ export class RendezVous {
       throw error;
     }
     const appointment = (await this.get(id))!;
-    await this.log('rdv.reserve', `${req.source}`, appointment, {});
+    try {
+      await this.log('rdv.reserve', `${req.source}`, appointment, {});
+    } catch (error) {
+      // Le journal en panne : la réservation est défaite, le créneau libéré, l'appelant peut réessayer [R13].
+      await this.cancelQuietly(id);
+      throw error;
+    }
     let confirmation: Pick<SendResult, 'status' | 'rule'> | null = null;
     if (req.channel) {
-      const link = this.options.linkBase ? `${this.options.linkBase}${token}` : null;
-      const { text, figures } = confirmationText(req.kind, start, person.first_name, link);
-      const sent = await this.controle.send({
-        networkId: req.networkId,
-        agentId: req.agentId,
-        personId: req.personId,
-        channel: req.channel,
-        kind: 'reminder',
-        purpose: APPOINTMENT_PURPOSE,
-        subject: `rdv_confirmation:${id}`,
-        fallbackTexts: [text],
-        figures,
-      });
-      confirmation = { status: sent.status, rule: sent.rule };
-      // Refusée pour l'heure [R01] : la confirmation attend, les rappels (V04) l'enverront dans les heures d'envoi.
-      const status = sent.status === 'sent' ? 'sent' : sent.status === 'failed' ? 'failed' : sent.rule === 'R01' ? 'waiting' : 'refused';
-      await this.db.run('UPDATE appointments SET confirmation_status = ? WHERE id = ?', [status, id]);
-      await this.log('rdv.confirmation.essai', 'system:rdv', appointment, { mode: 'essai', sent: false, status: sent.status, rule: sent.rule });
+      try {
+        const link = this.options.linkBase ? `${this.options.linkBase}${token}` : null;
+        const { text, figures } = confirmationText(req.kind, start, person.first_name, link);
+        const sent = await this.controle.send({
+          networkId: req.networkId,
+          agentId: req.agentId,
+          personId: req.personId,
+          channel: req.channel,
+          kind: 'reminder',
+          purpose: APPOINTMENT_PURPOSE,
+          subject: `rdv_confirmation:${id}`,
+          fallbackTexts: [text],
+          figures,
+        });
+        confirmation = { status: sent.status, rule: sent.rule };
+        // Refusée pour l'heure [R01] : la confirmation attend, les rappels (V04) l'enverront dans les heures d'envoi.
+        const status = sent.status === 'sent' ? 'sent' : sent.status === 'failed' ? 'failed' : sent.rule === 'R01' ? 'waiting' : 'refused';
+        await this.db.run('UPDATE appointments SET confirmation_status = ? WHERE id = ?', [status, id]);
+        await this.log('rdv.confirmation.essai', 'system:rdv', appointment, { mode: 'essai', sent: false, status: sent.status, rule: sent.rule });
+      } catch (error) {
+        // La réservation tient et son lien est rendu ; la panne de la confirmation reste écrite sur le rendez-vous.
+        confirmation = { status: 'failed', rule: null };
+        await this.db.run("UPDATE appointments SET confirmation_status = 'failed' WHERE id = ?", [id]).catch(() => undefined);
+        await this.log('rdv.confirmation.panne', 'system:rdv', appointment, { error: error instanceof Error ? error.name : 'unknown' }).catch(() => undefined);
+      }
     }
     return { ok: true, appointment: (await this.get(id))!, token, confirmation };
+  }
+
+  /** Défait une réservation qui n'a pas pu être menée au bout : annulée, créneau libéré, sans journal. */
+  private async cancelQuietly(id: string): Promise<void> {
+    const at = this.now().toISOString();
+    await this.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ? AND status = 'booked'", [at, at, id]);
+    await this.release(id);
   }
 
   private async cancelAppointment(appointment: Appointment, actor: string): Promise<Appointment | null> {
