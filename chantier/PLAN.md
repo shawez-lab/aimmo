@@ -499,3 +499,37 @@ Décidé, lecture prudente : la première version, pour la preuve à Dijon, couv
 - Cahier : M20, « Critères d'acceptation » : « aucun contact sans base légale dans le plan, sur 30 jours ».
 - Objectif : un contrôle qui relit les plans figés des 30 derniers jours et vérifie, ligne par ligne, que chaque personne avait une base légale au jour du plan ; un rapport sans donnée personnelle, et une alerte à la direction s'il trouve un écart.
 - Critères : un plan avec un contact sans base légale est trouvé, compté et signalé ; un plan sans écart rend zéro ; le rapport ne contient aucune donnée personnelle [R13].
+
+**Application de l'agent, première version, janvier 2027.**
+
+Découpé le 2026-10-27. Ids `A..` pour Application. Cahier : Le produit, « Application de l'agent » ; Architecture technique, application web installable ; Indicateurs, « écran affiché en moins d'une seconde dans 95 % des cas » ; Feuille de route, janvier 2027 : « application et plan du jour utilisés chaque matin pendant une semaine ».
+Décidé, lecture prudente : la première version sert la journée de l'agent, rien de plus : plan du jour, contacts chauds, rendez-vous du jour avec leur brief, fiche du client, appel en un geste. Les documents à signer, la dictée, les messages prêts à envoyer et les chiffres viendront avec M06, M08 et M13. L'application est une page web installable servie par le Worker `aimmo-api` lui-même (pas de nouveau service à créer), sans dépendance de construction ; elle ne lit que par l'API sous les droits de l'agent [R16] et ne garde aucune donnée de client sur le téléphone : seul l'écran vide de l'application est mis en cache. L'agent s'y connecte avec sa clé d'API personnelle (H22), saisie une fois et gardée sur son appareil, jamais dans une adresse. Aucun envoi depuis l'application tant que le plan n'a pas mis d'envoi en service. Pas de note ni de classement des agents [R14].
+
+### A01 · Coquille de l'application web installable
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : S09
+- Cahier : Le produit, « Application de l'agent » ; Architecture technique.
+- Objectif : le Worker sert `/app/` : page, manifeste, icône et service worker, avec des en-têtes de sécurité stricts (politique de contenu, pas d'appel hors de l'API) ; écran de connexion par clé personnelle, vérifiée par une route `GET /v1/moi` qui ne rend que le rôle et le prénom de l'agent ; déconnexion qui efface la clé de l'appareil.
+- Critères : la page et le service worker ne mettent en cache que la coquille, jamais une réponse de l'API ; la clé ne passe jamais dans une adresse ni au journal [R13] ; une clé refusée ne montre rien ; textes en français, sans « mandataire » ni « gratuit » [R07] ; tests sur les en-têtes et le contenu servi.
+- Attend : H04 pour la mise en ligne, H22 pour l'usage réel.
+
+### A02 · Ma journée
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : A01, G02, Q04, V05
+- Cahier : Le produit, « sa journée qui appeler, où aller, le brief de chaque rendez-vous » ; M20, plan du jour.
+- Objectif : l'écran d'accueil montre le plan du jour (raison et place de chaque ligne), les contacts chauds et les rendez-vous du jour avec leur brief ; une route `GET /v1/rendez-vous/jour` rend les rendez-vous du jour de l'agent et leur brief rangé.
+- Critères : seulement les données de l'agent [R16] ; un texte affiché est toujours échappé (aucun code injecté par un message de client) ; écran utilisable sur téléphone ; l'ordre du plan est celui du socle, jamais retrié par l'application [R35].
+
+### A03 · Fiche du client et gestes de l'agent
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : A02
+- Cahier : Le produit, « ses clients, biens et dossiers » ; Architecture technique, « appel en un geste depuis l'application ».
+- Objectif : depuis une ligne du plan, la fiche du client (projets, sources, accords, derniers messages) ; appel en un geste par le lien téléphone de l'appareil ; « rappel fait » par une route `POST /v1/rappels/<id>/fait` ; aucun envoi de message.
+- Critères : une fiche qui n'est pas à l'agent est refusée [R16] ; « rappel fait » garde la ligne [R17] ; une personne exclue ou arrêtée est signalée sur sa fiche et n'a pas de bouton d'appel [R02, R04].
+
+### A04 · Mesure de l'usage du matin
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : A02, G02
+- Cahier : Feuille de route, janvier 2027 : « application et plan du jour utilisés chaque matin pendant une semaine ».
+- Objectif : chaque agent voit, pour lui seul, les jours où il a ouvert son plan avant midi sur les 7 derniers jours ; la direction voit le nombre de jours d'usage du réseau, sans classement des agents [R14].
+- Critères : compte juste sur un jeu inventé, à l'heure de Paris ; aucun classement ni note d'agent [R14] ; aucune donnée de client.

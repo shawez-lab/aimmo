@@ -26,5 +26,6 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H19 | Préparer 20 biens réels anonymisés (sans adresse exacte, nom ni numéro) avec l'estimation que l'agent en a faite, au format que décrira E07, et lancer la mesure comme il l'expliquera, hors du dépôt | Shawez | E07, mesure de M04 | signalé le 2026-10-27 |
 | H20 | Lancer la vérification de la collecte sur 10 adresses de biens connus de l'agence, hors du dépôt, comme le décrit `docs/MESURE.md` (la séance de Claude n'a pas accès aux services publics) | Shawez | E03, critère de M04 | plus tard |
 | H21 | Accorder l'accès à Google Agenda par API (écran d'accord de Google) pour l'agenda de chaque agent, quand V03 le demandera | Shawez | V03 réel | signalé le 2026-10-27 |
+| H22 | Créer la clé d'API personnelle de chaque agent qui utilisera l'application (32 caractères ou plus, gardée dans un coffre), ranger son empreinte dans le secret `API_KEYS` du Worker `aimmo-api` avec le rôle `agent` et son identifiant, comme le décrit `docs/API.md`, puis la saisir une fois dans l'application sur son téléphone | Shawez | A01 réel, usage de l'application | signalé le 2026-10-27 |
 
 Quand une tâche à moins de trois places de la tête du plan attend une ligne « plus tard », la séance la marque « signalé le <date> » et la dit une fois dans « Besoin de toi ».
