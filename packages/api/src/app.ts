@@ -14,7 +14,6 @@ import {
   ChronologieMandat,
   ControlesSignature,
   SignatureEnLigne,
-  TrialCodeSender,
   SignatureAvenant,
   EcheancesMandats,
   Diffusion,
@@ -536,12 +535,15 @@ const ROUTES: RouteDef[] = [
     method: 'POST',
     pattern: new RegExp(`^/documents/${ID}/signature-en-ligne$`),
     name: 'document.signature_en_ligne',
-    // Ouvre une session de signature en ligne, en essai : le code n'est envoyé nulle part tant que H05 n'est pas fait,
-    // et la signature ne rend jamais un mandat réel tant que H24 n'est pas fait [R41].
-    handle: async (s, viewer, [id]) => {
-      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, new TrialCodeSender(s.journal, s.now), { now: s.now }).start(viewer, id!);
+    // Ouvre une session de signature en ligne, en essai : le code passe par le contrôle central et reste dans la boîte
+    // d'essai tant que H05 n'est pas fait ; la signature ne rend jamais un mandat réel tant que H24 n'est pas fait [R41].
+    handle: async (s, viewer, [id], request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => k !== 'consentProof')) return failure(400, 'unexpected_field', 'Seul consentProof est admis.');
+      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).start(viewer, id!, { consentProof: typeof body.consentProof === 'string' ? body.consentProof : '' });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
-      if (r.rule === 'R16') return refusal(r);
+      if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
       return json(400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
     },
   },
@@ -554,12 +556,12 @@ const ROUTES: RouteDef[] = [
       const body = await readJson(request, 220_000);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
       if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'Seuls code et drawing sont admis.');
-      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, new TrialCodeSender(s.journal, s.now), { now: s.now }).sign(viewer, id!, {
+      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).sign(viewer, id!, {
         code: typeof body.code === 'string' ? body.code : '',
         drawing: typeof body.drawing === 'string' ? body.drawing : null,
       });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
-      if (r.rule === 'R16') return refusal(r);
+      if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
       return json(r.code === 'unknown_session' ? 404 : r.code === 'already_signed' || r.code === 'blocked' ? 409 : 400, { ok: false, code: r.code });
     },
   },

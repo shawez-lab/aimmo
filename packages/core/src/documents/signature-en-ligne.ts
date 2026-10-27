@@ -2,7 +2,8 @@
  * La signature en ligne AIMMO (M06, D08), construite en mode essai.
  *
  * Un document contrôlé (D03) ouvre une session : un code à usage unique est envoyé au signataire par mail, par une
- * interface d'envoi (en essai : rangé pour l'essai, jamais envoyé ; le vrai envoi attend H05). Le code n'est jamais
+ * passant par le contrôle central des envois (en essai : rangé dans la boîte d'essai, jamais envoyé ; le vrai envoi
+ * attend H05). Le code n'est jamais
  * gardé, seulement son empreinte ; il expire, ne sert qu'une fois, et cinq essais faux bloquent la session. La
  * signature manuscrite tracée à l'écran est possible : seule son empreinte est gardée. À la signature, le dossier de
  * preuve garde l'empreinte du document, l'horodatage et la méthode ; un document modifié depuis l'ouverture ne se
@@ -16,6 +17,12 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { trialChannels } from '../captation/essai.ts';
+import { FicheClient } from '../db/fiche-client.ts';
+import { ControleEnvois } from '../envoi/controle.ts';
+import { SqlSendJournal } from '../envoi/journal-envois.ts';
+import { DecisionEnvoi } from '../envoi/service.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 import { ControlesSignature, type SignatureCheck } from './controles.ts';
 import { sha256 } from './modeles.ts';
 
@@ -23,10 +30,8 @@ export const CODE_TTL_MINUTES = 10;
 export const MAX_CODE_ATTEMPTS = 5;
 const MAX_DRAWING = 200_000;
 
-/** L'envoi du code au signataire. En essai : rien ne part ; le vrai envoi par mail attend H05. */
-export interface CodeSender {
-  send(input: { networkId: string; personId: string; sessionId: string; code: string }): Promise<void>;
-}
+/** La finalité de l'accord du signataire à recevoir son code et son exemplaire par mail [R03]. */
+export const ONLINE_SIGNATURE_PURPOSE = 'signature_en_ligne';
 
 export interface SignatureProof {
   documentId: string;
@@ -41,7 +46,8 @@ export interface SignatureProof {
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: 'R41'; code: 'checks_failed'; check: SignatureCheck }
-  | { ok: false; rule: null; code: 'unknown_session' | 'expired' | 'blocked' | 'already_signed' | 'wrong_code' | 'document_changed' | 'bad_drawing' | 'unknown_document' | 'bad_schedule' | 'bad_piece' | 'bad_date' };
+  | { ok: false; rule: string | null; code: 'send_refused' }
+  | { ok: false; rule: null; code: 'bad_consent' | 'unknown_session' | 'expired' | 'blocked' | 'already_signed' | 'wrong_code' | 'document_changed' | 'bad_drawing' | 'unknown_document' | 'bad_schedule' | 'bad_piece' | 'bad_date' };
 
 /** Un code de 6 chiffres, tiré au hasard sans biais. */
 function newCode(): string {
@@ -83,28 +89,44 @@ export class SignatureEnLigne {
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
-    private readonly sender: CodeSender,
     options: { now?: () => Date; newId?: () => string } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.controles = new ControlesSignature(db, acces, journal, options);
+    const store = new FicheClient(db, { now: this.now });
+    this.store = store;
+    const fiche = new FicheUnique(db, store, { now: this.now });
+    // Le code et l'exemplaire passent par le contrôle central, avec les seuls canaux du mode essai : rangés dans la
+    // boîte d'essai, jamais envoyés [R26] ; le vrai envoi par mail attend H05.
+    this.envois = new ControleEnvois(db, fiche, new DecisionEnvoi(db, store, fiche, { now: this.now }), {
+      channels: trialChannels(db, journal, this.now),
+      journal: new SqlSendJournal(db, undefined, this.now),
+      now: this.now,
+    });
   }
+
+  private readonly store: FicheClient;
+  private readonly envois: ControleEnvois;
 
   private actor(viewer: Viewer): string {
     return `${String(viewer.role)}:${viewer.userId}`;
   }
 
   /** Ouvre une session de signature pour un document contrôlé et envoie le code au signataire. */
-  async start(viewer: Viewer, documentId: string): Promise<{ ok: true; value: { sessionId: string; expiresAt: string; mode: 'essai' } } | Refusal | Problem> {
+  async start(viewer: Viewer, documentId: string, input: { consentProof: string }): Promise<{ ok: true; value: { sessionId: string; expiresAt: string; mode: 'essai' } } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'role' } }, this.now);
       return { ok: false, rule: 'R16', code: 'role' };
     }
+    if (typeof input.consentProof !== 'string' || input.consentProof.trim() === '' || input.consentProof.length > 300) return { ok: false, rule: null, code: 'bad_consent' };
     const checked = await this.controles.check(viewer, documentId);
     if (!checked.ok) return checked as Refusal | Problem;
     if (!checked.value.passed) return { ok: false, rule: 'R41', code: 'checks_failed', check: checked.value };
-    const doc = (await this.db.first<{ person_id: string; content: string }>('SELECT person_id, content FROM documents WHERE id = ?', [documentId]))!;
+    const doc = (await this.db.first<{ person_id: string; content: string; agent_id: string }>('SELECT person_id, content, agent_id FROM documents WHERE id = ?', [documentId]))!;
+    // Le signataire accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
+    const consent = await this.db.first('SELECT id FROM consents WHERE person_id = ? AND purpose = ? AND channel = ? AND withdrawn_at IS NULL', [doc.person_id, ONLINE_SIGNATURE_PURPOSE, 'email']);
+    if (!consent) await this.store.addConsent({ networkId: viewer.networkId, personId: doc.person_id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
     const id = this.newId();
     const code = newCode();
     const expiresAt = new Date(this.now().getTime() + CODE_TTL_MINUTES * 60_000).toISOString();
@@ -112,7 +134,20 @@ export class SignatureEnLigne {
       `INSERT INTO signature_sessions (id, network_id, document_id, content_hash, code_hash, expires_at, attempts, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, 'ouverte', ?, ?)`,
       [id, viewer.networkId, documentId, await sha256(doc.content), await sha256(`${id}:${code}`), expiresAt, this.actor(viewer), this.now().toISOString()],
     );
-    await this.sender.send({ networkId: viewer.networkId, personId: doc.person_id, sessionId: id, code });
+    const hello = await this.greeting(doc.person_id);
+    const sent = await this.envois.send({
+      networkId: viewer.networkId,
+      agentId: doc.agent_id,
+      personId: doc.person_id,
+      channel: 'email',
+      kind: 'alert',
+      purpose: ONLINE_SIGNATURE_PURPOSE,
+      subject: `signature:${id}`,
+      fallbackTexts: [`${hello}Votre code de signature AIMMO : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne, pas même à votre agent.`],
+      figures: [code, CODE_TTL_MINUTES],
+    });
+    // Refusé (heure, exclusion, arrêt, pas de mail…) : la session reste sans code utilisable et expire.
+    if (sent.status !== 'sent') return { ok: false, rule: sent.rule, code: 'send_refused' };
     await appendEvent(this.journal, { type: 'signature.ouverte', actor: this.actor(viewer), subject: `document:${documentId}`, data: { session: id, mode: 'essai' } }, this.now);
     return { ok: true, value: { sessionId: id, expiresAt, mode: 'essai' } };
   }
@@ -142,10 +177,14 @@ export class SignatureEnLigne {
 
     const given = typeof input.code === 'string' && /^\d{6}$/.test(input.code) ? await sha256(`${sessionId}:${input.code}`) : '';
     if (!given || !sameHash(given, session.code_hash)) {
-      const attempts = Number(session.attempts) + 1;
-      const blocked = attempts >= MAX_CODE_ATTEMPTS;
-      // L'essai est compté seulement si la session est encore ouverte avec ce nombre d'essais : deux essais simultanés comptent deux fois.
-      await this.db.run(`UPDATE signature_sessions SET attempts = ?, status = ? WHERE id = ? AND status = 'ouverte' AND attempts = ?`, [attempts, blocked ? 'bloquee' : 'ouverte', sessionId, Number(session.attempts)]);
+      // L'essai est compté dans la base, en un seul ordre : des essais simultanés comptent chacun [P0].
+      const after = await this.db.first<{ attempts: number; status: string }>(
+        `UPDATE signature_sessions SET attempts = attempts + 1, status = CASE WHEN attempts + 1 >= ? THEN 'bloquee' ELSE status END
+         WHERE id = ? AND status = 'ouverte' RETURNING attempts, status`,
+        [MAX_CODE_ATTEMPTS, sessionId],
+      );
+      const attempts = Number(after?.attempts ?? MAX_CODE_ATTEMPTS);
+      const blocked = !after || after.status === 'bloquee';
       await appendEvent(this.journal, { type: 'signature.code_faux', actor: this.actor(viewer), subject: `signature:${sessionId}`, data: { attempts, blocked } }, this.now);
       return { ok: false, rule: null, code: blocked ? 'blocked' : 'wrong_code' };
     }
@@ -157,13 +196,32 @@ export class SignatureEnLigne {
     const drawingHash = input.drawing ? await sha256(input.drawing) : null;
     const proof: SignatureProof = { documentId: session.document_id, contentHash, signedAt, method: drawingHash ? 'code_et_trace' : 'code', drawingHash, mode: 'essai', realSignature: false };
     const { changes } = await this.db.run(
-      `UPDATE signature_sessions SET status = 'signee', signed_at = ?, drawing_hash = ?, proof = ? WHERE id = ? AND status = 'ouverte' AND attempts = ?`,
-      [signedAt, drawingHash, JSON.stringify(proof), sessionId, Number(session.attempts)],
+      `UPDATE signature_sessions SET status = 'signee', signed_at = ?, drawing_hash = ?, proof = ? WHERE id = ? AND status = 'ouverte'`,
+      [signedAt, drawingHash, JSON.stringify(proof), sessionId],
     );
     // Le code vient de servir à une autre demande : il ne sert qu'une fois.
     if (changes !== 1) return { ok: false, rule: null, code: 'already_signed' };
     await appendEvent(this.journal, { type: 'signature.essai', actor: this.actor(viewer), subject: `document:${session.document_id}`, data: { session: sessionId, method: proof.method, realSignature: false } }, this.now);
+    // Le signataire reçoit son exemplaire, par le contrôle central (en essai : dans la boîte d'essai).
+    const agent = await this.db.first<{ agent_id: string }>('SELECT agent_id FROM documents WHERE id = ?', [session.document_id]);
+    const hello = await this.greeting(doc.person_id);
+    await this.envois.send({
+      networkId: viewer.networkId,
+      agentId: agent?.agent_id ?? null,
+      personId: doc.person_id,
+      channel: 'email',
+      kind: 'alert',
+      purpose: ONLINE_SIGNATURE_PURPOSE,
+      subject: `signature:${sessionId}:exemplaire`,
+      fallbackTexts: [`${hello}Votre document signé en ligne est joint : gardez cet exemplaire. Signature d’essai, sans valeur juridique.`],
+    });
     return { ok: true, value: proof };
+  }
+
+  /** Le premier message s'adresse à la personne par son prénom [R08]. */
+  private async greeting(personId: string): Promise<string> {
+    const p = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [personId]);
+    return p?.first_name ? `Bonjour ${p.first_name},\n\n` : 'Bonjour,\n\n';
   }
 
   /** Le document signé est-il toujours celui de la preuve ? Une modification après coup se voit. */
@@ -173,16 +231,5 @@ export class SignatureEnLigne {
     const proof = JSON.parse(session.proof) as SignatureProof;
     const doc = await this.db.first<{ content: string }>('SELECT content FROM documents WHERE id = ?', [session.document_id]);
     return { signed: true, intact: !!doc && (await sha256(doc.content)) === proof.contentHash };
-  }
-}
-
-/** L'envoi d'essai : rien ne part ; l'envoi est seulement écrit au journal, sans le code ni la coordonnée [R13]. */
-export class TrialCodeSender implements CodeSender {
-  constructor(
-    private readonly journal: JournalStore,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
-  async send(input: { networkId: string; personId: string; sessionId: string; code: string }): Promise<void> {
-    await appendEvent(this.journal, { type: 'envoi.essai', actor: 'system:signature', subject: `person:${input.personId}`, data: { kind: 'signature_code', session: input.sessionId } }, this.now);
   }
 }
