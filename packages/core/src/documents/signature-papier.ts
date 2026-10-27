@@ -137,7 +137,11 @@ export class SignaturePapier {
       const fixedId = `m-${documentId}`;
       const existing = await this.db.first<{ id: string }>('SELECT id FROM mandates WHERE id = ?', [fixedId]);
       let mandate: { ok: true; id: string } | Problem | Refusal;
-      if (existing) mandate = { ok: true, id: existing.id };
+      if (existing) {
+        // Reprise : le mandat est rangé ; si sa ligne de journal a manqué (panne), elle est écrite maintenant [R13].
+        await this.ensureRecordedEvent(viewer, existing.id);
+        mandate = { ok: true, id: existing.id };
+      }
       else {
         try {
           const recorded = await new Mandats(this.db, this.fiche, this.journal, { ...this.options, newId: () => fixedId }).record(this.acces, viewer, {
@@ -149,8 +153,9 @@ export class SignaturePapier {
           });
           mandate = recorded.ok ? { ok: true, id: recorded.id } : (recorded as Problem | Refusal);
         } catch (error) {
-          // Une autre demande vient de ranger ce même mandat : on le reprend.
-          if (!(await this.db.first('SELECT id FROM mandates WHERE id = ?', [fixedId]))) throw error;
+          // Une autre demande a rangé ce même mandat, et son journal est écrit : on le reprend. Toute autre panne
+          // (dont celle du journal après notre propre rangement) remonte ; la redemande la reprendra.
+          if (!(await this.db.first('SELECT id FROM mandates WHERE id = ?', [fixedId])) || !(await this.hasRecordedEvent(fixedId))) throw error;
           mandate = { ok: true, id: fixedId };
         }
       }
@@ -196,6 +201,28 @@ export class SignaturePapier {
       );
     }
     return { ok: true, value: { documentId, mandateId, number: row.number!, place: row.place, signedAt: row.signed_at, copyHash: row.copy_hash! } };
+  }
+
+  private async hasRecordedEvent(mandateId: string): Promise<boolean> {
+    const rows = await this.db.all<{ data: string }>(`SELECT data FROM journal WHERE type = 'mandat.range'`);
+    return rows.some((r) => {
+      try {
+        return (JSON.parse(r.data) as { mandate?: unknown }).mandate === mandateId;
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  private async ensureRecordedEvent(viewer: Viewer, mandateId: string): Promise<void> {
+    if (await this.hasRecordedEvent(mandateId)) return;
+    const m = await this.db.first<{ person_id: string; source_kind: string; source_id: string | null }>('SELECT person_id, source_kind, source_id FROM mandates WHERE id = ?', [mandateId]);
+    if (!m) return;
+    await appendEvent(
+      this.journal,
+      { type: 'mandat.range', actor: this.actor(viewer), subject: `person:${m.person_id}`, data: { mandate: mandateId, source: m.source_kind, fromFiche: m.source_id !== null, resumed: true } },
+      this.now,
+    );
   }
 
   /** L'exemplaire du mandant : celui qui voit la fiche en entier [R16]. */
