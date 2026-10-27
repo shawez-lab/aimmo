@@ -44,6 +44,9 @@ describe('Q01 · classer et extraire par règles fixes', () => {
     const seller = qualifyByRules('Je pense à vendre mon T3 à Quetigny, prix souhaité 210 000 €, pas pressé.');
     expect(seller).toMatchObject({ category: 'seller', city: 'Quetigny', priceEur: 210_000, budgetMaxEur: null, deadline: 'later', criteria: ['rooms:3'] });
     expect(qualifyByRules('Je cherche une maison, budget 280k, sans prêt.')).toMatchObject({ budgetMaxEur: 280_000, financing: 'cash' });
+    // L'apport, les frais ou un revenu ne sont jamais le budget.
+    expect(qualifyByRules('Je cherche une maison, apport de 50 000 €, budget maximum de 300 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison, salaire de 3 000 € par mois.')).toMatchObject({ budgetMaxEur: null });
   });
 
   it('un nombre qui n’est pas un montant n’en devient pas un : pièces, surfaces, années', () => {
@@ -86,6 +89,7 @@ describe('Q01 · classer et extraire par règles fixes', () => {
       ['Accord de prêt obtenu.', 'loan_approved'],
       ['Comptant ou avec un prêt, je ne sais pas.', null],
       ['Je cherche une maison sans accord de prêt.', null],
+      ['Je cherche une maison, je ne suis pas en attente de prêt.', null],
       ['Si j’obtiens un accord de prêt, je pourrai acheter une maison.', null],
       ['Je vais demander un accord de prêt pour acheter une maison.', null],
       ['Accord de principe de la banque.', null],

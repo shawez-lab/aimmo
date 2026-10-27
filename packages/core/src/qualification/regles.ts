@@ -203,8 +203,22 @@ const MONEY_CONTEXT = /(?:budget|prix|maximum|max|jusqu.a|entre|autour de|enviro
 
 /** Les montants du message, en euros : seulement ceux qui en sont sûrement, jamais « 3 pièces » ni « 2 ans ». */
 export function amountsIn(text: string): number[] {
+  return moneyMentions(text).map((m) => m.amount);
+}
+
+interface MoneyMention {
+  amount: number;
+  /** Les mots juste avant le montant, pour savoir ce qu'il désigne. */
+  before: string;
+}
+
+/** Un montant qui n'est ni un budget ni un prix : l'apport, les frais, une mensualité, un revenu. */
+const OTHER_MONEY = /\b(?:apport|frais|mensualites?|salaires?|revenus?|charges|taxe|epargne|loyer actuel|honoraires|commission)\b[^0-9]*$/;
+const LABELLED_MONEY = /\b(?:budget|prix|maximum|max|jusqu.a|plafond|vendre a|mettre a)\b[^0-9]*$/;
+
+function moneyMentions(text: string): MoneyMention[] {
   const p = plain(text).replace(/[\u00a0\u202f]/g, ' ');
-  const found: number[] = [];
+  const found: MoneyMention[] = [];
   for (const m of p.matchAll(AMOUNT)) {
     const [, raw = '', thousand, currency] = m;
     const value = Number(raw.replace(/[ .]/g, '').replace(',', '.'));
@@ -213,7 +227,9 @@ export function amountsIn(text: string): number[] {
     const amount = thousand ? value * 1000 : value;
     // Un loyer s'écrit en centaines d'euros : avec la devise, dès 100 € ; sinon, dès 1 000.
     const floor = currency ? 100 : 1000;
-    if ((thousand || currency || MONEY_CONTEXT.test(before)) && amount >= floor && amount <= 100_000_000) found.push(Math.round(amount));
+    if ((thousand || currency || MONEY_CONTEXT.test(before)) && amount >= floor && amount <= 100_000_000) {
+      found.push({ amount: Math.round(amount), before: p.slice(Math.max(0, (m.index ?? 0) - 30), m.index ?? 0) });
+    }
   }
   return found;
 }
@@ -236,11 +252,12 @@ const FINANCING_WORDS = /\b(?:accord (?:de|du)|pret|credit|emprunt|financement|b
 /** Le financement déclaré dans une seule proposition, ou null si elle le nie, le met au futur ou n'en dit rien. */
 function financingOfClause(c: string): Financing | null {
   if (!FINANCING_WORDS.test(c)) return null;
-  // « J'attends l'accord de la banque » : le dossier est en cours, rien n'est accordé.
-  if (WAITING.test(c)) return 'loan_in_progress';
-  // « Sans prêt » déclare un achat comptant ; toute autre négation, ou « pour le moment », ne déclare rien.
+  // « Sans prêt » déclare un achat comptant ; toute autre négation, ou « pour le moment », ne déclare rien,
+  // pas même une attente (« je ne suis pas en attente de prêt »).
   const cash = /\bsans (?:pret|credit|emprunt)\b/.test(c);
   if (NEGATION.test(cash ? c.replace(/\bsans (?:pret|credit|emprunt)\b/g, '') : c)) return null;
+  // « J'attends l'accord de la banque » : le dossier est en cours, rien n'est accordé.
+  if (WAITING.test(c)) return 'loan_in_progress';
   if (HYPOTHETICAL.test(c)) return null;
   if (cash || /\b(?:comptant|cash|fonds propres)\b/.test(c)) return 'cash';
   // Un accord acquis, dit comme tel : « j'ai l'accord de principe », « accord de prêt obtenu », « prêt accordé ».
@@ -318,7 +335,10 @@ export interface QualifyRulesOptions extends ClassifyContext {
 export function qualifyByRules(text: string, options: QualifyRulesOptions = {}): Qualified {
   const p = plain(text);
   const category = classifyByRules(text, options);
-  const amounts = amountsIn(text);
+  // Le budget ou le prix : jamais l'apport, les frais ni un revenu ; un montant nommé « budget » ou « prix » d'abord.
+  const mentions = moneyMentions(text).filter((m) => !OTHER_MONEY.test(m.before));
+  const labelled = mentions.filter((m) => LABELLED_MONEY.test(m.before));
+  const amounts = (labelled.length > 0 && !/\bentre\b/.test(p) ? labelled : mentions).map((m) => m.amount);
   const range = /\bentre\b/.test(p) && amounts.length >= 2;
   const seller = category === 'seller' || category === 'valuation';
   const wantsAmount = category === 'buyer' || category === 'seller' || category === 'rent_out' || category === 'professional';
