@@ -339,6 +339,7 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Cahier : M04, « Collecte automatique » et « Branchements ».
 - Objectif : à partir d'une adresse, retrouver ses coordonnées (Base adresse nationale), la parcelle (cadastre), le diagnostic énergétique (ADEME) et les risques (Géorisques), chacun derrière une interface, avec ce qui manque dit clairement.
 - Critères : chaque donnée porte sa source et sa date ; une source en panne ne bloque pas les autres ; aucune donnée personnelle envoyée aux services publics au-delà de l'adresse du bien ; la vérification réelle sur 10 biens tests se lance à la main, hors des tests automatiques.
+- Attend : H20 pour la vérification réelle sur 10 biens ; le reste se fait avant.
 
 ### E04 · Brouillon d'avis de valeur et validation par l'agent
 - Statut : à faire
