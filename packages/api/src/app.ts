@@ -7,6 +7,7 @@ import {
   DecisionEnvoi,
   FicheClient,
   FicheUnique,
+  Rappels,
   SEND_KINDS,
   SqlJournalStore,
   appendEvent,
@@ -78,6 +79,7 @@ interface Services {
   journal: JournalStore;
   acces: Acces;
   decision: DecisionEnvoi;
+  rappels: Rappels;
   now: () => Date;
 }
 
@@ -90,6 +92,7 @@ function services(db: SqlDatabase, now: () => Date): Services {
     journal,
     acces: new Acces(db, fiches, unique, journal, { now }),
     decision: new DecisionEnvoi(db, fiches, unique, { now }),
+    rappels: new Rappels(db, unique, journal, { now }),
     now,
   };
 }
@@ -136,6 +139,16 @@ const ROUTES: RouteDef[] = [
     pattern: /^\/envois\/decision$/,
     name: 'envois.decision',
     handle: sendDecision,
+  },
+  {
+    method: 'GET',
+    pattern: /^\/contacts-chauds$/,
+    name: 'contacts.chauds',
+    // Les contacts chauds à rappeler : un agent ne voit que les siens [R16], jamais une personne exclue [R25].
+    handle: async (s, viewer) => {
+      const list = await s.rappels.hotList(s.acces, viewer);
+      return list.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: list.value }) : refusal({ rule: list.rule, code: list.code });
+    },
   },
   {
     method: 'GET',

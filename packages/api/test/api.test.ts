@@ -160,6 +160,13 @@ describeWithSqlite('API du socle de bout en bout, sur une base D1 locale', () =>
     expect((await call(w.env, '/v1/attribution/regles')).status).toBe(401);
   });
 
+  it('[R16] la liste des contacts chauds répond sous droits : un partenaire est refusé', async () => {
+    const agent = await call(w.env, '/v1/contacts-chauds', { key: KEY_AGENT });
+    expect(agent.status).toBe(200);
+    expect(await body(agent)).toMatchObject({ ok: true, data: { contacts: [] } });
+    expect((await call(w.env, '/v1/contacts-chauds', { key: KEY_PARTNER })).status).toBe(403);
+  });
+
   it('la santé répond sans clé et sans rien lire', async () => {
     const response = await call(w.env, '/v1/sante');
     expect(response.status).toBe(200);
