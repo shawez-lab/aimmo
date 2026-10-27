@@ -18,5 +18,9 @@ database_name = "aimmo"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "../../db/migrations"
 
+[triggers]
+# Le planificateur du socle (B02) : chaque heure à la 7e minute (UTC), il passe les tâches dues à l'heure de Paris.
+crons = ["7 * * * *"]
+
 [observability]
 enabled = true

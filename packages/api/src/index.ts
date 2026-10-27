@@ -5,3 +5,4 @@ export * from './mail.ts';
 export * from './courrier.ts';
 export * from './meta.ts';
 export * from './assistant.ts';
+export * from './planificateur.ts';
