@@ -19,6 +19,8 @@ const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T
 
 export interface OfferTask {
   offerId: string;
+  /** La proposition (contre-offre) dont l'échéance approche, ou null pour l'offre elle-même. */
+  proposalId: string | null;
   propertyId: string;
   lastDay: string;
   createdAt: string;
@@ -55,6 +57,20 @@ export class EcheancesOffres {
       await appendEvent(this.journal, { type: 'offre.echeance', actor: 'system:offres', subject: `offer:${r.id}`, data: { rule: 'R59', lastDay: r.valid_until } }, this.now);
       done.push(r.id);
     }
+    // Les propositions (contre-offres) sans réponse : même suivi, une tâche par proposition [R59].
+    const proposals = await this.db.all<{ id: string; offer_id: string; agent_id: string; valid_until: string }>(
+      `SELECT p.id, p.offer_id, o.agent_id, p.valid_until FROM offer_proposals p JOIN offer_register o ON o.id = p.offer_id
+       WHERE p.network_id = ? AND p.valid_until >= ? AND p.valid_until <= ?
+       AND NOT EXISTS (SELECT 1 FROM proposal_responses r WHERE r.proposal_id = p.id)
+       AND NOT EXISTS (SELECT 1 FROM proposal_tasks k WHERE k.proposal_id = p.id) ORDER BY p.valid_until, p.at`,
+      [networkId, today, addDays(today, this.noticeDays)],
+    );
+    for (const p of proposals) {
+      const { changes } = await this.db.run('INSERT INTO proposal_tasks (proposal_id, network_id, agent_id, last_day, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (proposal_id) DO NOTHING', [p.id, networkId, p.agent_id, p.valid_until, this.now().toISOString()]);
+      if (changes !== 1) continue;
+      await appendEvent(this.journal, { type: 'offre.echeance', actor: 'system:offres', subject: `offer:${p.offer_id}`, data: { rule: 'R59', lastDay: p.valid_until, proposal: true } }, this.now);
+      done.push(p.id);
+    }
     return done;
   }
 
@@ -74,6 +90,16 @@ export class EcheancesOffres {
        ORDER BY k.last_day, k.created_at`,
       [viewer.networkId, viewer.userId],
     );
-    return { ok: true, tasks: rows.map((r) => ({ offerId: r.offer_id, propertyId: r.property_id, lastDay: r.last_day, createdAt: r.created_at })) };
+    const proposalRows = await this.db.all<{ proposal_id: string; offer_id: string; property_id: string; last_day: string; created_at: string }>(
+      `SELECT k.proposal_id, p.offer_id, o.property_id, k.last_day, k.created_at FROM proposal_tasks k JOIN offer_proposals p ON p.id = k.proposal_id
+       JOIN offer_register o ON o.id = p.offer_id
+       WHERE k.network_id = ? AND k.agent_id = ? AND NOT EXISTS (SELECT 1 FROM proposal_responses r WHERE r.proposal_id = k.proposal_id)`,
+      [viewer.networkId, viewer.userId],
+    );
+    const tasks: OfferTask[] = [
+      ...rows.map((r) => ({ offerId: r.offer_id, proposalId: null, propertyId: r.property_id, lastDay: r.last_day, createdAt: r.created_at })),
+      ...proposalRows.map((r) => ({ offerId: r.offer_id, proposalId: r.proposal_id, propertyId: r.property_id, lastDay: r.last_day, createdAt: r.created_at })),
+    ].sort((a, b) => (a.lastDay < b.lastDay ? -1 : a.lastDay > b.lastDay ? 1 : a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+    return { ok: true, tasks };
   }
 }

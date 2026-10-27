@@ -70,4 +70,23 @@ describeWithSqlite('O04 · contre-offres', () => {
     expect(await t.contre.respond(t.agent, 'proposition-inconnue', { outcome: 'refusee', proofRef: PROOF, respondedAt: '2027-03-03T09:00:00.000Z' })).toEqual({ ok: false, rule: null, code: 'unknown_proposal' });
     await expect(t.db.run('DELETE FROM offer_proposals')).rejects.toThrow(/rien ne s'efface/);
   });
+
+  it('[R59] une contre-offre sans réponse a sa tâche avant l’échéance, comme une offre', async () => {
+    const t = await setup();
+    const { EcheancesOffres } = await import('../src/offres/index.ts');
+    await t.transmission.respond(t.agent, t.offer.id, { outcome: 'contre_offre', proofRef: PROOF, respondedAt: '2027-03-01T11:00:00.000Z' });
+    const v1 = await t.contre.propose(t.agent, t.offer.id, { amountEur: 215000, validUntil: '2027-03-04', proofRef: PROOF });
+    if (!v1.ok) throw new Error(v1.code);
+    const echeances = new EcheancesOffres(t.db, t.journal, { now: t.now });
+    t.setClock(new Date('2027-03-02T23:00:00.000Z')); // 3 mars, 0 h à Paris : la veille du dernier jour
+    expect(await echeances.run(t.network.id)).toEqual([v1.value.id]);
+    expect(await echeances.run(t.network.id)).toEqual([]);
+    const tasks = await echeances.tasksOf(t.agent);
+    expect(tasks.ok && tasks.tasks).toEqual([{ offerId: t.offer.id, proposalId: v1.value.id, propertyId: t.propertyId, lastDay: '2027-03-04', createdAt: '2027-03-02T23:00:00.000Z' }]);
+    await t.contre.transmit(t.agent, v1.value.id, { via: 'telephone' });
+    t.setClock(new Date('2027-03-03T10:00:00.000Z'));
+    await t.contre.respond(t.agent, v1.value.id, { outcome: 'refusee', proofRef: PROOF, respondedAt: '2027-03-03T09:00:00.000Z' });
+    const after = await echeances.tasksOf(t.agent);
+    expect(after.ok && after.tasks).toEqual([]);
+  });
 });
