@@ -39,7 +39,7 @@ export type ResponseOutcome = 'acceptee' | 'refusee' | 'contre_offre';
 
 /** Un instant complet : date, heure et fuseau (Z ou décalage). */
 export const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
-const PROOF_REF = /^preuves\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:pdf|jpg|png|eml|txt)$/;
+export const PROOF_REF = /^preuves\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:pdf|jpg|png|eml|txt)$/;
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
@@ -84,7 +84,7 @@ export class TransmissionOffres {
   }
 
   /** L'offre et son bien, sous les droits du registre ; pour transmettre ou rapporter une réponse, l'agent du bien seul. */
-  private async offerFor(viewer: Viewer, offerId: string, agentOnly: boolean): Promise<{ ok: true; offer: Offer; networkId: string; agentId: string } | Refusal | Problem> {
+  async offerFor(viewer: Viewer, offerId: string, agentOnly: boolean): Promise<{ ok: true; offer: Offer; networkId: string; agentId: string } | Refusal | Problem> {
     const row = await this.db.first<{ property_id: string; network_id: string }>('SELECT property_id, network_id FROM offer_register WHERE id = ?', [offerId]);
     if (!row || row.network_id !== viewer.networkId) {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `offer:${offerId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'offer', code: 'unknown' } }, this.now);
