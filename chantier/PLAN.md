@@ -829,7 +829,8 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O03 · Transmission au vendeur et réponse horodatée
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : transmission par message (contrôle central, essai, texte du code sans nom de l'acquéreur), au téléphone ou en personne attestés par l'agent ; réponse avec preuve et heure à fuseau, jamais avant la transmission ; alerte d'offre non transmise après 24 h, une fois, reprise si le journal a manqué ; le branchement des passages quotidiens au planificateur suit avec celui de M09 (fichiers du socle) ; Codex sans réponse 18 min à sa seconde relecture, fusion sans lui
 - Qui : Claude · Relecture : forte · Dépend de : O02
 - Cahier : M09, « Transmission » ; règles « aucun programme n'accepte une offre ni ne négocie un prix », « toute offre reçue est transmise au vendeur ».
 - Objectif : l'agent valide la transmission de chaque offre au vendeur (message par le contrôle central, en mode essai) ; la réponse du vendeur (acceptation, refus, contre-offre) est rapportée par l'agent avec sa preuve et son heure ; un contrôle quotidien signale toute offre enregistrée et pas transmise.
@@ -845,7 +846,7 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O05 · Délais de validité suivis
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : O01
 - Cahier : M09, règle « les délais de validité sont suivis et rappelés à l'agent ».
 - Objectif : chaque jour, une tâche pour l'agent avant l'échéance d'une offre sans réponse (délai en réglage), et l'offre passe « échue » le lendemain de sa fin, à l'heure de Paris.
@@ -872,6 +873,6 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Statut : à faire
 - Qui : Claude · Relecture : forte · Dépend de : O07
 - Cahier : M09.
-- Objectif : les routes `/v1/offres` dans `packages/api/src/offres.ts`, de la même forme que celles de `app.ts`, sans toucher au socle ; leur branchement suit, comme P10, par la voie qui tient le socle.
+- Objectif : les routes `/v1/offres` dans `packages/api/src/offres.ts`, de la même forme que celles de `app.ts`, et les passages quotidiens (offres non transmises, échéances), sans toucher au socle ; leur branchement dans `app.ts` et au planificateur suit, comme P10, par la voie qui tient le socle.
 - Critères : chaque route sous R16, chaque refus une ligne au journal ; une offre test suivie de bout en bout par les routes ; un double envoi de la même offre (clé d'idempotence) ne crée qu'une ligne au registre.
 - Attend : rien.
