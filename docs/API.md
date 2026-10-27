@@ -88,7 +88,8 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - Corps : `{"visitorId": "...", "postalCode": "21000", "town": "Dijon", "kind": "appartement" | "maison"}` et rien d'autre : une surface, une adresse ou tout autre champ est refusé (400). Sans visite, pas de prix d'un bien précis [R31].
 - Rend `{"ok": true, "mode": "essai", "data": {"town", "postalCode", "kind", "perM2": {"low", "median", "high"}, "sales", "period": {"from", "to"}, "data": {"lastSale", "source", "recentMissing"}, "next": "appointment"}}` : premier quartile, médiane et troisième quartile du prix au m² des ventes DVF de la commune [R28]. Sans fourchette possible : `"data": null`, `"reason"` (`commune_introuvable`, `hors_zone`, `dvf_non_couvert`, `donnees_absentes`, `peu_de_ventes`) et `"next": "appointment"`.
 - Seuls le code postal et la commune partent à la Base adresse nationale. Les ventes viennent des fichiers DVF publics du site, lus en lecture seule à l'adresse de la variable `DVF_BASE_URL` (en https, terminée par `/`) ; sans elle, le service est fermé (503).
-- Limites, par heure pleine : 10 demandes par visiteur, 600 par réseau ; au-delà, 429. Seule l'empreinte de `visitorId` est gardée, pour les limites [R15].
+- Limites, par heure pleine : 10 demandes par visiteur, 600 par réseau ; au-delà, 429. Seule une empreinte de `visitorId` est gardée, pour les limites, et elle change à chaque heure pleine : elle ne relie pas les demandes d’un visiteur dans le temps [R15]. Rien n’est effacé.
+- Des fichiers de ventes manquants ou illisibles pendant la demande : pas de fourchette (`donnees_absentes`), et leur nombre au journal.
 
 ## Planificateur (B02)
 

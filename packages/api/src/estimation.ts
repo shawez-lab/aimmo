@@ -64,7 +64,9 @@ export async function handleEstimation(request: Request, config: EstimationConfi
 
   const at = config.now();
   const limits = config.limits ?? DEFAULT_ESTIMATION_LIMITS;
-  const visitor = await sha256Hex(`${intake.networkId}:${visitorId}`);
+  // L'empreinte change à chaque heure pleine : elle sert la limite de l'heure, et ne relie pas les demandes d'un
+  // visiteur d'une heure à l'autre. Rien n'est effacé [R17], rien n'est gardé qui suive le visiteur [R15].
+  const visitor = await sha256Hex(`${intake.networkId}:${visitorId}:${at.toISOString().slice(0, 13)}`);
   if (
     !(await takeSlot(config.db, intake.networkId, `estimation:${visitor}`, limits.perVisitor, at)) ||
     !(await takeSlot(config.db, intake.networkId, 'estimation:reseau', limits.perNetwork, at))
@@ -75,7 +77,7 @@ export async function handleEstimation(request: Request, config: EstimationConfi
   const result = await new EstimationEnLigne(config.services.geocoder, config.services.sales, undefined, config.now).forTown(postalCode, town, KINDS[kind]!);
   await appendEvent(
     journal,
-    { type: 'estimation.commune', actor: 'intake:site_estimate', subject: null, data: { mode: 'essai', ok: result.ok, reason: result.ok ? null : result.reason } },
+    { type: 'estimation.commune', actor: 'intake:site_estimate', subject: null, data: { mode: 'essai', ok: result.ok, reason: result.ok ? null : result.reason, missingFiles: result.ok ? null : (result.missingFiles ?? null) } },
     config.now,
   );
   return result.ok

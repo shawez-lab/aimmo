@@ -127,6 +127,30 @@ describeWithSqlite('E05 · estimation en ligne du site', () => {
     expect(dump).not.toContain('Ville-Test');
   });
 
+  it('une limite par réseau, et l’empreinte du visiteur change d’heure en heure', async () => {
+    const w = await world();
+    const cfg = { ...w.config, estimationLimits: { perVisitor: 10, perNetwork: 2 } };
+    expect((await w.call(w.ask({ visitorId: 'visiteur-essai-0000000011' }), KEY_EST, cfg)).status).toBe(200);
+    expect((await w.call(w.ask({ visitorId: 'visiteur-essai-0000000012' }), KEY_EST, cfg)).status).toBe(200);
+    expect((await w.call(w.ask({ visitorId: 'visiteur-essai-0000000013' }), KEY_EST, cfg)).status).toBe(429);
+    const later = { ...cfg, now: () => new Date('2026-10-27T10:00:00.000Z') };
+    expect((await w.call(w.ask({ visitorId: 'visiteur-essai-0000000011' }), KEY_EST, later)).status).toBe(200);
+    const scopes = (await w.db.all<{ scope: string }>("SELECT scope FROM assistant_calls WHERE scope LIKE 'estimation:%' AND scope != 'estimation:reseau'")).map((r) => r.scope);
+    // Quatre empreintes : le même visiteur, à deux heures différentes, en a deux qui ne se relient pas.
+    expect(new Set(scopes).size).toBe(4);
+  });
+
+  it('des ventes illisibles : pas de fourchette faussée, la raison et le nombre au journal', async () => {
+    const w = await world();
+    const files = dvfFiles();
+    files.delete(`d/${tile}.txt`);
+    const cfg = { ...w.config, estimation: { geocoder: w.geocoder, sales: new DvfSiteSales(async (p) => files.get(p) ?? null) } };
+    expect((await w.call(w.ask(), KEY_EST, cfg)).body).toMatchObject({ data: null, reason: 'donnees_absentes', next: 'appointment' });
+    const logged = (await w.journal.all()).filter((e) => e.type === 'estimation.commune');
+    expect(logged.at(-1)?.data).toMatchObject({ ok: false, reason: 'donnees_absentes' });
+    expect(Number(logged.at(-1)?.data['missingFiles'])).toBeGreaterThan(0);
+  });
+
   it('clé `site_estimate` seulement ; sans données branchées ou hors essai, fermé', async () => {
     const w = await world();
     expect((await w.call(w.ask(), KEY_CHAT)).status).toBe(401);

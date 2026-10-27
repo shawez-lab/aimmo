@@ -98,7 +98,7 @@ export class DvfSiteSales implements SalesSource {
   private readonly tiles = new Map<string, Promise<unknown[][]>>();
   private readonly details = new Map<string, Promise<string[] | null>>();
   /** Tuiles annoncées mais absentes ou illisibles, et ventes mal formées écartées. */
-  readonly skipped = { tiles: 0, sales: 0 };
+  readonly skipped = { tiles: 0, sales: 0, details: 0 };
 
   constructor(private readonly read: DvfFileReader) {}
 
@@ -189,8 +189,14 @@ export class DvfSiteSales implements SalesSource {
     let p = this.details.get(name!);
     if (!p) {
       p = this.read(`d/${name}.txt`).then(
-        (text) => (text === null ? null : text.split('\n')),
-        () => null,
+        (text) => {
+          if (text === null) this.skipped.details++;
+          return text === null ? null : text.split('\n');
+        },
+        () => {
+          this.skipped.details++;
+          return null;
+        },
       );
       this.details.set(name!, p);
     }

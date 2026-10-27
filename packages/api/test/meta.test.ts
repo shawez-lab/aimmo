@@ -378,6 +378,20 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
     for (const file of readdirSync(dir)) {
       const source = readFileSync(`${dir}${file}`, 'utf8');
       expect(source, file).not.toMatch(/\b(await|return)\s+fetch\s*\(|globalThis\.fetch|graph\.facebook\.com|manychat\.com/i);
+      // Seule exception, écrite ici : le Worker passe `fetch` aux lecteurs des données publiques de l'estimation en
+      // ligne (E05), qui ne font que des GET, jamais un envoi. Partout ailleurs, aucun usage de `fetch`.
+      const uses = source
+        .split('\n')
+        .filter((line) => /\bfetch\b/.test(line) && !/^\s*(\/\/|\*|\/\*)/.test(line) && !/^\s*fetch\(request: Request/.test(line))
+        .map((line) => line.trim());
+      expect(uses, file).toEqual(
+        file === 'worker.ts'
+          ? [
+              'const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;',
+              'return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;',
+            ]
+          : [],
+      );
     }
   });
 
