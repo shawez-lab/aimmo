@@ -782,7 +782,8 @@ Décidé, lecture prudente : tout M07 se construit en mode essai, sans aucune pu
 - Attend : rien.
 
 ### P09 · Routes de M07 et passage de publication
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : routes et passage dans `packages/api/src/annonces.ts`, sans toucher au socle ; branchement, page publique et écran confiés à la voie 1 (P10)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : P04, P05
 - Cahier : M07 ; Feuille de route, mars 2027 ; critère « mis en vente moins d'une heure après la fin du délai de rétractation ».
 - Objectif : les routes `/v1/annonces` (fiche, liste de contrôle, brouillon, correction, validation, état et passage de publication, semaine, contrôle des vidéos, plan de tournage) dans `packages/api/src/annonces.ts`, de la même forme que celles de `app.ts`, et `syncAnnonces`, le passage de publication d'un réseau, sans toucher aux fichiers du socle.
