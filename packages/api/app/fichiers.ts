@@ -154,7 +154,7 @@ export const APP_JS = `'use strict';
     items.forEach(function (item) {
       if (item.section !== current) {
         current = item.section;
-        box.appendChild(el('h4', SECTIONS[current] || current));
+        box.appendChild(el('h4', SECTIONS[current] || 'Autre'));
         ul = el('ul');
         box.appendChild(ul);
       }
@@ -179,7 +179,7 @@ export const APP_JS = `'use strict';
     var appointments = data && Array.isArray(data.appointments) ? data.appointments : [];
     appointments.forEach(function (a) {
       var li = el('li');
-      var head = hour(a.start) + ' à ' + hour(a.end) + ' · ' + (KINDS[a.kind] || a.kind) + (a.firstName ? ' · ' + a.firstName : '');
+      var head = hour(a.start) + ' à ' + hour(a.end) + ' · ' + (KINDS[a.kind] || 'Rendez-vous') + (a.firstName ? ' · ' + a.firstName : '');
       li.appendChild(el('strong', head));
       if (STATUS[a.status]) li.appendChild(el('p', 'Rendez-vous ' + STATUS[a.status] + '.', 'doux'));
       if (a.brief) li.appendChild(renderBrief(a.brief));
@@ -192,6 +192,11 @@ export const APP_JS = `'use strict';
   var ID = /^[A-Za-z0-9_-]{1,64}$/;
   var TEL = /^tel:[+]?[0-9]{6,15}$/;
   var PROJECTS = { sell: 'Vendre', buy: 'Acheter', rent_out: 'Mettre en location', rent: 'Louer', invest: 'Investir', sell_business: 'Céder une entreprise', buy_business: 'Reprendre une entreprise', valuation: 'Faire estimer' };
+  var STAGES = { new: 'nouveau', recue: 'demande reçue', appele: 'appelé' };
+  var CHANNELS = { email: 'mail', phone: 'téléphone', sms: 'SMS', instagram: 'Instagram', facebook: 'Facebook', whatsapp: 'WhatsApp', site: 'site', gohighlevel: 'reprise de GoHighLevel', manychat: 'reprise de ManyChat', exclusion_list: 'liste d’exclusion' };
+  // Les codes internes ne s'affichent jamais : un code inconnu prend un libellé général.
+  function stage(code) { return STAGES[code] || 'en cours'; }
+  function channel(code) { return CHANNELS[code] || 'autre canal'; }
   var PURPOSES = { valuation_follow_up: 'suivi de l’avis de valeur', value_tracking: 'suivi de la valeur du bien', prospecting: 'prospection', appointment: 'rendez-vous' };
   var EXCLUSIONS = { network_list: 'sur la liste d’exclusion', stop: 'a demandé l’arrêt', refused: 'a dit non', sold: 'a déjà vendu', followed_elsewhere: 'suivi par quelqu’un d’autre' };
   function date(iso) {
@@ -226,7 +231,7 @@ export const APP_JS = `'use strict';
     var contact = f.contact || { allowed: false, reasons: [] };
     // Personne exclue ou qui a demandé l'arrêt : signalée, sans bouton d'appel [R02, R04].
     if (!contact.allowed) {
-      var reasons = (contact.reasons || []).map(function (r) { return EXCLUSIONS[r] || r; }).join(', ');
+      var reasons = (contact.reasons || []).map(function (r) { return EXCLUSIONS[r] || 'autre raison'; }).join(', ');
       body.appendChild(el('p', 'Ne plus contacter : ' + (reasons || 'exclusion active') + '.', 'alerte'));
     } else if (typeof f.call === 'string' && TEL.test(f.call)) {
       var a = el('a', 'Appeler', 'appel');
@@ -248,14 +253,14 @@ export const APP_JS = `'use strict';
     body.appendChild(block('Rappels', callbacks));
     body.appendChild(block('Projets', (f.projects || []).map(function (p) {
       var budget = p.budgetMaxEur ? ', budget jusqu’à ' + p.budgetMaxEur + ' €' : '';
-      return line((PROJECTS[p.kind] || p.kind) + ' (étape : ' + p.stage + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
+      return line((PROJECTS[p.kind] || 'Autre projet') + ' (étape : ' + stage(p.stage) + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
     })));
-    body.appendChild(block('Origines', (f.sources || []).map(function (s) { return line(s.channel + (s.detail ? ' (' + s.detail + ')' : ''), 'Le ' + date(s.occurredAt)); })));
+    body.appendChild(block('Origines', (f.sources || []).map(function (s) { return line(channel(s.channel) + (s.detail ? ' (' + s.detail + ')' : ''), 'Le ' + date(s.occurredAt)); })));
     body.appendChild(block('Accords', (f.consents || []).map(function (c) {
-      return line((PURPOSES[c.purpose] || c.purpose) + ' par ' + c.channel, c.withdrawnAt ? 'Retiré le ' + date(c.withdrawnAt) : 'Donné le ' + date(c.givenAt));
+      return line((PURPOSES[c.purpose] || 'autre accord') + ' par ' + channel(c.channel), c.withdrawnAt ? 'Retiré le ' + date(c.withdrawnAt) : 'Donné le ' + date(c.givenAt));
     })));
     body.appendChild(block('Derniers messages', (f.messages || []).map(function (m) {
-      return line(m.body, (m.direction === 'in' ? 'Reçu' : 'Envoyé') + ' par ' + m.channel + ', le ' + date(m.occurredAt) + ' à ' + hour(m.occurredAt));
+      return line(m.body, (m.direction === 'in' ? 'Reçu' : 'Envoyé') + ' par ' + channel(m.channel) + ', le ' + date(m.occurredAt) + ' à ' + hour(m.occurredAt));
     })));
   }
   // La réponse d'une demande de fiche : clé refusée, fiche hors des droits, panne, ou la fiche.

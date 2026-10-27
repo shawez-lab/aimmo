@@ -79,7 +79,9 @@ describe('A03 · fiche du client dans l’application', () => {
     expect(a.els['fiche-nom']!.textContent).toBe('Léa Exemple');
     const body = a.els['fiche-corps']!;
     expect(tels(body).map((t) => t.attributes.href)).toEqual(['tel:+33600000001']);
-    for (const text of ['Vendre (étape : new), budget jusqu’à 230000 €', 'site (formulaire test)', 'suivi de l’avis de valeur par email', 'Vendeur sous 3 mois']) expect(body.textContent).toContain(text);
+    for (const text of ['Vendre (étape : nouveau), budget jusqu’à 230000 €', 'site (formulaire test)', 'suivi de l’avis de valeur par mail', 'Reçu par mail', 'Vendeur sous 3 mois']) expect(body.textContent).toContain(text);
+    // Aucun code interne affiché.
+    expect(body.textContent).not.toMatch(/\bnew\b|\bemail\b|\bphone\b|valuation_follow_up/);
     // Un message de client reste un texte.
     expect(body.textContent).toContain('<script>alert(1)</script>');
     expect(body.all().some((e) => e.tagName === 'script')).toBe(false);
