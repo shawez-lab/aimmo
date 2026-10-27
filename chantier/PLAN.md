@@ -417,14 +417,16 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Critères : aucun rappel le dimanche ni hors des heures d'envoi [R01] ; un rappel de chaque sorte au plus par rendez-vous [R05] ; rien pour un rendez-vous annulé ; jamais à une personne exclue ou qui a demandé l'arrêt [R02, R04] ; les confirmations en attente (`confirmation_status = 'waiting'`, refusées pour l'heure en V02) partent au premier créneau des heures d'envoi.
 
 ### V05 · Brief du rendez-vous
-- Statut : en cours
+- Statut : fait (2026-10-27)
+- Décidé (2026-10-27) : brief fait par le code, sans IA ; ventes du quartier prises dans le dernier avis de valeur du bien ; itinéraire vers la commune, l'adresse exacte n'étant pas en base (le brief le dit) ; questions et documents en listes de réglage par type ; tâche `rdv.briefs` à toute heure, brief figé.
+- Reste : relecture de Codex impossible (H03), fusion sans elle (#41) ; relecture forte : aucun P0 ni P1.
 - Qui : Claude · Relecture : forte · Dépend de : V02, E01
 - Cahier : M05, « Brief du rendez-vous ».
 - Objectif : une heure avant chaque rendez-vous, un brief rangé pour l'agent : le client et son histoire, le bien, les ventes du quartier, les questions à prévoir, les documents à apporter, le lien d'itinéraire vers l'application de navigation.
 - Critères : chaque élément du brief vient de la base ou d'une source citée, rien d'inventé [R34] ; ce qui manque est dit ; 10 briefs tests prêts une heure avant ; le brief n'est lu que par l'agent du rendez-vous.
 
 ### V06 · Statut et compte rendu
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : V02
 - Cahier : M05, « Statut ».
 - Objectif : l'agent marque le rendez-vous honoré, absent ou annulé, puis range son compte rendu (texte dicté, la transcription viendra avec l'application de l'agent) ; une tâche suit un absent.
