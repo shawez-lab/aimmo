@@ -6,6 +6,7 @@
 export class FakeElement {
   hidden = true;
   value = '';
+  checked = false;
   className = '';
   children: FakeElement[] = [];
   attributes: Record<string, string> = {};

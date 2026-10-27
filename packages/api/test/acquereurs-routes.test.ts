@@ -1,0 +1,186 @@
+import { expect, it } from 'vitest';
+import { ALERT_PURPOSE, PointSemaine, RendezVous, SELLER_UPDATE_PURPOSE, verifyChain } from '@aimmo/core';
+import { handleRequest } from '../src/app.ts';
+import { sha256Hex } from '../src/index.ts';
+import { setupAnnonce } from '../../core/test/annonces-jeu.ts';
+import { describeWithSqlite } from '../../core/test/sqlite.ts';
+
+// Tout est inventé : réseau, bien, vendeur, acquéreur et clés de test.
+const BASE = 'https://aimmo-api.example.test';
+const UNSUBSCRIBE = 'https://aimmo.example.test/alertes/desinscription/';
+const KEYS = { alex: 'test-cle-m08-alex-aaaaaaaaaaaaaaaaaaaaaaaaaaaa', sam: 'test-cle-m08-sam-bbbbbbbbbbbbbbbbbbbbbbbbbbbbb', direction: 'test-cle-m08-direction-cccccccccccccccccccccc', compliance: 'test-cle-m08-conformite-dddddddddddddddddddd', ailleurs: 'test-cle-m08-ailleurs-eeeeeeeeeeeeeeeeeeeeeee' };
+type Who = keyof typeof KEYS;
+const TUESDAY_10H = new Date('2027-03-02T09:00:00.000Z');
+const WEDNESDAY_14H = '2027-03-03T13:00:00.000Z';
+const WEEK = { weekly: [1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, from: '09:00', to: '19:00' })) };
+const TEMPLATE = 'Bon de visite : {{visiteur.nom}} visite {{bien.reference}} le {{visite.date}}.';
+
+async function setup() {
+  const t = await setupAnnonce();
+  const ids: Record<Who, { role: string; userId: string; networkId: string }> = {
+    alex: { role: 'agent', userId: t.alexId, networkId: t.network.id },
+    sam: { role: 'agent', userId: t.sam.userId, networkId: t.network.id },
+    direction: { role: 'direction', userId: 'direction-1', networkId: t.network.id },
+    compliance: { role: 'compliance', userId: 'c-1', networkId: t.network.id },
+    ailleurs: { role: 'agent', userId: 'agent-ailleurs', networkId: 'autre-reseau' },
+  };
+  const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), ...ids[w] }))));
+  const call = async (who: Who, method: 'GET' | 'POST', path: string, body?: unknown) => {
+    const init: RequestInit = { method, headers: { authorization: `Bearer ${KEYS[who]}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) } };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    const r = await handleRequest(new Request(`${BASE}/v1${path}`, init), { db: t.db, apiKeys, mode: 'essai', alertUnsubscribeBase: UNSUBSCRIBE, now: t.now });
+    return { status: r.status, body: (await r.json()) as { ok: boolean; data?: any; code?: string; rule?: string | null } };
+  };
+  // Le vendeur accepte le suivi de sa vente par mail ; l'acquéreur d'Alex, ses alertes sur WhatsApp.
+  const { store, db, journal } = t;
+  await store.addIdentifier({ networkId: t.network.id, personId: t.personId, kind: 'email', value: 'lea@example.test' });
+  await store.addConsent({ networkId: t.network.id, personId: t.personId, purpose: SELLER_UPDATE_PURPOSE, channel: 'email', proof: 'mandat', givenAt: new Date('2027-02-10T09:00:00.000Z') });
+  const buyer = await store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Inès', lastName: 'Durand' });
+  await store.addIdentifier({ networkId: t.network.id, personId: buyer.id, kind: 'phone', value: '+33 6 00 00 00 01' });
+  await store.addConsent({ networkId: t.network.id, personId: buyer.id, purpose: ALERT_PURPOSE, channel: 'whatsapp', proof: 'demande écrite', givenAt: new Date('2027-02-01T09:00:00.000Z') });
+  const project = await store.createProject({ networkId: t.network.id, agentId: t.alexId, personId: buyer.id, kind: 'buy' });
+  await new RendezVous(db, journal, { now: t.now }).setAvailability(ids.alex as never, WEEK);
+  const sms = async () => {
+    const m = await db.first<{ body: string }>("SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.channel = 'sms' ORDER BY m.occurred_at DESC, m.rowid DESC LIMIT 1");
+    return /(\d{6})/.exec(m!.body)![1]!;
+  };
+  const toSeller = () => db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at, m.rowid', [t.personId]);
+  return { ...t, call, buyer, project, sms, toSeller };
+}
+
+describeWithSqlite('T08 · routes de M08', () => {
+  it('parcours complet par les routes : bien diffusable, acquéreurs proposés, alerte WhatsApp, visite sécurisée, compte rendu et point du lundi', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    // L'agent pose la recherche de son acquéreur.
+    const search = await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 220000, surfaceMinM2: 55 });
+    expect(search.status).toBe(200);
+    expect((await t.call('alex', 'GET', `/acquereurs/projets/${t.project.id}/recherche`)).body).toMatchObject({ ok: true, data: { current: { version: 1 } } });
+    // Le bien est diffusable : l'acquéreur est proposé, avec les raisons, et la carte de la demande le compte.
+    const proposed = await t.call('alex', 'GET', `/acquereurs/biens/${t.propertyId}`);
+    expect(proposed.body).toMatchObject({ ok: true, data: [{ rank: 1, projectId: t.project.id, firstName: 'Inès', status: 'match' }] });
+    expect((await t.call('alex', 'GET', `/acquereurs/biens/${t.propertyId}/carte`)).body).toMatchObject({ ok: true, data: { activeBuyers: 1, matching: 1 } });
+    // L'alerte WhatsApp de l'agent : le lien pré-rempli, puis « c'est parti », une seule fois [R18].
+    const wa = await t.call('alex', 'POST', `/acquereurs/biens/${t.propertyId}/whatsapp/${t.project.id}`);
+    expect(wa.status).toBe(200);
+    expect(wa.body.data.link).toMatch(/^https:\/\/wa\.me\/33600000001\?text=/);
+    const sent = await t.call('alex', 'POST', `/acquereurs/whatsapp/${wa.body.data.messageId}/envoye`);
+    expect(sent.body).toMatchObject({ ok: true, data: { confirmedAt: TUESDAY_10H.toISOString() } });
+    // Jamais deux fois le même bien à la même personne [R18].
+    expect((await t.call('alex', 'POST', `/acquereurs/biens/${t.propertyId}/whatsapp/${t.project.id}`)).status).toBe(409);
+
+    // La visite, avec son bon [R40].
+    expect((await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H })).body).toMatchObject({ ok: false, rule: 'R40', code: 'no_template' });
+    const tpl = await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE });
+    expect(tpl.status).toBe(200);
+    const visit = await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H });
+    expect(visit.status).toBe(200);
+    const id = visit.body.data.visit.appointment.id as string;
+    expect((await t.call('alex', 'GET', `/visites/${id}/bon`)).body).toMatchObject({ ok: true, data: { slip: { appointmentId: id } } });
+    const screen = await t.call('alex', 'GET', `/visites/${id}`);
+    expect(screen.body).toMatchObject({ ok: true, data: { property: { id: t.propertyId, reference: 'REF-T-1', city: 'Dijon' }, visitor: { firstName: 'Inès' }, safety: 'a_confirmer', report: null, slip: { mode: 'essai' } } });
+    expect(JSON.stringify(screen.body)).not.toMatch(/Durand|33600000001/);
+
+    // Visite sécurisée : code par SMS, puis code et nom du visiteur [R54].
+    t.setClock(new Date('2027-03-03T12:40:00.000Z'));
+    expect((await t.call('alex', 'POST', `/visites/${id}/code`, { consentProof: 'accord oral du visiteur, noté par l’agent' })).status).toBe(200);
+    expect((await t.call('alex', 'POST', `/visites/${id}/confirmation`, { code: await t.sms(), lastName: 'Martin' })).body).toMatchObject({ ok: false, rule: 'R54', code: 'bad_identity' });
+    expect((await t.call('alex', 'POST', `/visites/${id}/confirmation`, { code: await t.sms(), lastName: 'Durand' })).body).toMatchObject({ ok: true, data: { confirmed: true } });
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.safety).toBe('confirmee');
+
+    // Le compte rendu dicté : sans IA branchée, l'agent écrit, valide en un geste, le vendeur le reçoit sans le nom [R52].
+    t.setClock(new Date('2027-03-03T14:10:00.000Z'));
+    expect((await t.call('alex', 'POST', `/visites/${id}/compte-rendu/dictee`, { dictation: 'Inès a aimé la lumière et le balcon, cuisine à refaire.' })).body).toMatchObject({ ok: true, data: { report: null } });
+    const report = { opinion: 'Le visiteur a aimé la lumière du séjour.', strengths: ['séjour lumineux', 'balcon'], reservations: ['cuisine à refaire'], interest: 'fort', readyToOffer: false };
+    expect((await t.call('alex', 'POST', `/visites/${id}/compte-rendu/validation`, { report: { ...report, opinion: 'Inès Durand a aimé le séjour.' } })).body).toMatchObject({ ok: false, rule: 'R52' });
+    expect((await t.call('alex', 'POST', `/visites/${id}/compte-rendu/validation`, { report })).body).toMatchObject({ ok: true, data: { delivery: 'sent' } });
+    const seller = await t.toSeller();
+    expect(seller.at(-1)!.body).toContain('compte rendu de la visite');
+    expect(JSON.stringify(seller)).not.toMatch(/Inès|Durand/);
+
+    // Le point du lundi : préparé à 8 h, lu et validé par l'agent avec ses prochaines actions [R53].
+    const monday = new Date('2027-03-08T07:00:00.000Z');
+    t.setClock(monday);
+    expect(await new PointSemaine(t.db, t.journal, t.acces, { now: t.now }).prepare(t.network.id)).toBe(1);
+    t.setClock(new Date('2027-03-08T08:30:00.000Z'));
+    const list = await t.call('alex', 'GET', '/points?semaine=2027-03-01');
+    expect(list.body).toMatchObject({ ok: true, data: { week: '2027-03-01', points: [{ mandateId: t.mandateId, status: 'prepare', property: { reference: 'REF-T-1' } }] } });
+    expect(list.body.data.points[0].text).toContain('Avis des visiteurs : Le visiteur a aimé la lumière du séjour');
+    expect((await t.call('sam', 'GET', '/points?semaine=2027-03-01')).body.data.points).toEqual([]);
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: ['Revoir le prix ensemble'] })).body).toMatchObject({ ok: false, rule: 'R53' });
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: ['Organiser de nouvelles visites cette semaine'] })).body).toMatchObject({ ok: true, data: { delivery: 'sent' } });
+    expect((await t.toSeller()).at(-1)!.body).toContain('Organiser de nouvelles visites cette semaine');
+
+    // L'alerte en un geste : sans prévenant branché, la réponse dit le mode essai.
+    expect((await t.call('alex', 'POST', '/visites/alertes/alerte-0000001')).body).toMatchObject({ ok: true, data: { recorded: true, trial: true } });
+
+    // Rien n'est parti réellement ; ni clé, ni numéro, ni dictée au journal [R13] ; la chaîne tient.
+    const entries = await t.journal.all();
+    expect(JSON.stringify(entries)).not.toMatch(/test-cle|33600000001|balcon et|wa\.me/);
+    expect((await verifyChain(entries)).ok).toBe(true);
+  });
+
+  it('[R16] chaque route passe par les droits ; chaque refus rend 403 ou 404 et écrit une ligne au journal', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 220000 });
+    await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE });
+    const wa = await t.call('alex', 'POST', `/acquereurs/biens/${t.propertyId}/whatsapp/${t.project.id}`);
+    const id = (await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H })).body.data.visit.appointment.id as string;
+    await new PointSemaine(t.db, t.journal, t.acces, { now: t.now }).prepare(t.network.id);
+    const week = '2027-02-22';
+    const refusals = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
+    const cases: [Who, 'GET' | 'POST', string, unknown?][] = [
+      ['sam', 'GET', `/acquereurs/projets/${t.project.id}/recherche`],
+      ['sam', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { roomsMin: 3 }],
+      ['compliance', 'GET', `/acquereurs/biens/${t.propertyId}`],
+      ['compliance', 'GET', `/acquereurs/biens/${t.propertyId}/carte`],
+      ['sam', 'POST', `/acquereurs/biens/${t.propertyId}/whatsapp/${t.project.id}`],
+      ['sam', 'POST', `/acquereurs/whatsapp/${wa.body.data.messageId}/envoye`],
+      ['sam', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H }],
+      ['alex', 'GET', '/visites/alertes'],
+      ['direction', 'POST', '/visites/alertes/alerte-0000001'],
+      ['alex', 'POST', '/visites/modeles', { body: TEMPLATE }],
+      ['sam', 'GET', `/visites/${id}`],
+      ['sam', 'GET', `/visites/${id}/bon`],
+      ['sam', 'POST', `/visites/${id}/bon/signature`, { signedAt: WEDNESDAY_14H, scanRef: 'scans/bon.pdf' }],
+      ['sam', 'POST', `/visites/${id}/annulation`],
+      ['sam', 'POST', `/visites/${id}/code`, { consentProof: 'accord' }],
+      ['sam', 'POST', `/visites/${id}/confirmation`, { code: '123456', lastName: 'Durand' }],
+      ['sam', 'POST', `/visites/${id}/compte-rendu/dictee`, { dictation: 'Il a aimé.' }],
+      ['sam', 'POST', `/visites/${id}/compte-rendu/validation`],
+      ['compliance', 'GET', `/points?semaine=${week}`],
+      ['sam', 'GET', `/points/${t.mandateId}/${week}`],
+      ['sam', 'POST', `/points/${t.mandateId}/${week}/validation`, { actions: [] }],
+    ];
+    for (const [who, method, path, body] of cases) {
+      const before = await refusals();
+      const r = await t.call(who, method, path, body);
+      expect([403, 404], `${method} ${path}`).toContain(r.status);
+      expect(r.body, `${method} ${path}`).toMatchObject({ ok: false, rule: 'R16' });
+      expect((await refusals()) - before, `${method} ${path}`).toBe(1);
+    }
+    // Le modèle de bon se valide par la direction seule ; un agent d'un autre réseau ne voit rien.
+    const tpl = await t.db.first<{ id: string }>('SELECT id FROM visit_slip_templates');
+    expect((await t.call('alex', 'POST', `/visites/modeles/${tpl!.id}/validation`)).status).toBe(403);
+    expect((await t.call('ailleurs', 'GET', `/visites/${id}`)).status).toBe(404);
+    expect((await t.call('ailleurs', 'GET', `/acquereurs/projets/${t.project.id}/recherche`)).status).toBe(404);
+    // Le bien passe à un autre agent et se vend : l'écran de la visite ne le montre plus [R16].
+    await t.db.run("UPDATE properties SET agent_id = ?, status = 'sold' WHERE id = ?", [t.sam.userId, t.propertyId]);
+    const screen = await t.call('alex', 'GET', `/visites/${id}`);
+    expect(screen.status).toBe(200);
+    expect(screen.body.data.property).toBeNull();
+    expect(JSON.stringify(screen.body)).not.toMatch(/REF-T-1|Dijon/);
+  });
+
+  it('saisies mal formées : 400, rien n’est écrit ; une adresse inconnue rend 404', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    expect((await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: 'demain' })).status).toBe(400);
+    expect((await t.call('alex', 'POST', '/visites/x1/compte-rendu/dictee', { dictation: '' })).status).toBe(400);
+    expect((await t.call('alex', 'POST', '/visites/x1/compte-rendu/validation', { report: { opinion: 'ok' } })).status).toBe(400);
+    expect((await t.call('alex', 'GET', '/points?semaine=lundi')).status).toBe(400);
+    expect((await t.call('alex', 'GET', '/acquereurs/inconnu')).status).toBe(404);
+    expect(await t.db.all('SELECT * FROM visits')).toEqual([]);
+  });
+});

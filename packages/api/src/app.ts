@@ -55,6 +55,7 @@ import { handleAgentApp } from './agent-app.ts';
 import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './estimation.ts';
 import { BOOKING_PATH, BOOKING_SLOTS_PATH, handleBooking, type BookingLimits } from './rendezvous.ts';
 import type { DetailedSales, Geocoder } from '@aimmo/core';
+import { m08Routes } from './acquereurs.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -84,6 +85,8 @@ export interface ApiConfig {
   /** Réservation des rendez-vous (V08) : limites d'appels, et début du lien pour décaler ou annuler (`RDV_LINK_BASE`). */
   bookingLimits?: BookingLimits;
   appointmentLinkBase?: string | undefined;
+  /** Début du lien de désinscription des alertes (`ALERT_UNSUBSCRIBE_BASE`) : sans lui, aucune alerte WhatsApp de l'agent [R49]. */
+  alertUnsubscribeBase?: string | undefined;
   now?: () => Date;
 }
 
@@ -890,7 +893,9 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   if (viewer === null) return failure(401, 'unauthorized', 'Clé absente ou refusée.');
 
   // Une même adresse peut servir à lire (GET) et à écrire (POST) : la route est choisie par l'adresse et la méthode.
-  const matching = ROUTES.filter((candidate) => candidate.pattern.test(path));
+  // Les routes de M08 (T08) suivent celles du socle ; elles portent le lien de désinscription du réseau.
+  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null })];
+  const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
   const route = matching.find((candidate) => candidate.method === request.method);
   if (!route) return failure(405, 'method_not_allowed', 'Méthode non admise.');

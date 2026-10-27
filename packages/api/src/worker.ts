@@ -48,6 +48,7 @@ export default {
       intakeKeys: env.INTAKE_KEYS,
       mode: env.MODE,
       appointmentLinkBase: env.RDV_LINK_BASE,
+      alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,
