@@ -70,12 +70,13 @@ export async function viewerFromRequest(request: Request, keys: readonly ApiKeyE
  * Les clés de dépôt : chacune ne sert qu'à une source du site, pour un réseau, et ne lit aucune fiche.
  * `site_form` dépose un formulaire « Être rappelé » ; `site_chat` ouvre et fait parler l'assistant du site (C08) ;
  * `site_auto` demande au socle si un envoi d'une automatisation du site peut partir (B01) ;
- * `site_estimate` demande la fourchette de prix au m² d'une commune (E05).
+ * `site_estimate` demande la fourchette de prix au m² d'une commune (E05) ; `site_booking` liste les créneaux libres
+ * d'un agent et réserve un rendez-vous pour le site, l'assistant et l'espace client (V08).
  * Le secret `INTAKE_KEYS` ne contient que leur empreinte :
  *
- *   [{ "sha256": "<64 caractères hexadécimaux>", "networkId": "<id>", "source": "site_form" | "site_chat" | "site_auto" | "site_estimate" }]
+ *   [{ "sha256": "<64 caractères hexadécimaux>", "networkId": "<id>", "source": "site_form" | "site_chat" | "site_auto" | "site_estimate" | "site_booking" }]
  */
-export const INTAKE_SOURCES = ['site_form', 'site_chat', 'site_auto', 'site_estimate'] as const;
+export const INTAKE_SOURCES = ['site_form', 'site_chat', 'site_auto', 'site_estimate', 'site_booking'] as const;
 export type IntakeSource = (typeof INTAKE_SOURCES)[number];
 
 export interface IntakeKeyEntry {

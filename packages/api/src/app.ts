@@ -37,6 +37,7 @@ import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assista
 import type { ReplyWriter } from '@aimmo/core';
 import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
 import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './estimation.ts';
+import { BOOKING_PATH, BOOKING_SLOTS_PATH, handleBooking, type BookingLimits } from './rendezvous.ts';
 import type { DetailedSales, Geocoder } from '@aimmo/core';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
@@ -64,6 +65,9 @@ export interface ApiConfig {
   /** Estimation en ligne du site (E05) : Base adresse nationale et ventes DVF ; absents, le service est fermé. */
   estimation?: { geocoder: Geocoder; sales: DetailedSales };
   estimationLimits?: EstimationLimits;
+  /** Réservation des rendez-vous (V08) : limites d'appels, et début du lien pour décaler ou annuler (`RDV_LINK_BASE`). */
+  bookingLimits?: BookingLimits;
+  appointmentLinkBase?: string | undefined;
   now?: () => Date;
 }
 
@@ -431,6 +435,21 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       });
     } catch (error) {
       await journalError(new SqlJournalStore(config.db), 'intake:site_chat', 'assistant', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+
+  if (path === BOOKING_SLOTS_PATH || path === BOOKING_PATH) {
+    try {
+      return await handleBooking(request, path, {
+        db: config.db,
+        intakeKeys: config.intakeKeys,
+        ...(config.bookingLimits ? { limits: config.bookingLimits } : {}),
+        linkBase: config.appointmentLinkBase ?? null,
+        now,
+      });
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'intake:site_booking', 'rendez-vous', error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
