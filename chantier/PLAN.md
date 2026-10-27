@@ -902,7 +902,8 @@ Découpé le 2026-10-27 par la voie 2. Ids `N..` pour Notaire. Cahier : M10 Comp
 Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; le compromis et l'acte sont rédigés par le notaire, AIMMO lui transmet un dossier complet et ne rédige aucun acte. Une pièce est une référence de stockage (R2, derrière une interface, faux stockage dans les tests), jamais son contenu ; une pièce d'identité ou anti-blanchiment n'est jamais une pièce du dossier : seul l'état « identité vérifiée » de D03 y figure [R15]. Les échéances légales sont calculées par le code depuis les dates saisies avec leur preuve (rétractation de 10 jours à compter du lendemain de la première présentation de la notification, reportée au premier jour ouvrable si elle tombe un samedi, un dimanche ou un jour férié ; réponse de la commune 2 mois après la réception de la déclaration d'intention d'aliéner) ; les autres dates (prêt, acte) sont lues dans le compromis, jamais inventées [R10]. Le financement est suivi tel que déclaré, jamais évalué [R14]. AIMMO ne reçoit jamais de fonds. Toute relance ou information aux clients et au notaire passe par le contrôle central, en mode essai, dans les heures d'envoi [R01, R26]. Le suivi des commerces (engagement de confidentialité) vient avec M16 ; les espaces propriétaire et acquéreur avec M11 et M13 (juin 2027) : M10 prépare leurs vues. Le code de M10 vit dans `packages/core/src/dossiers/`, ses migrations à partir de `0301`, ses routes dans `packages/api/src/dossiers.ts`, sans toucher aux fichiers du socle ni à ceux de M09 sauf par une tâche qui le dit.
 
 ### N01 · Pièces du dossier notaire
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-27)
+- Reste : relecture de Codex de la correction de son P0 restée sans réponse 26 min, fusion sans elle (#90).
 - Décidé (2026-10-27) : chaque pièce porte la date du document, saisie par l'agent, pour juger sa validité à l'acte (N06) ; le gaz est demandé pour tout logement de 15 ans ou plus, quel que soit le chauffage (sans installation, la pièce est l'attestation d'absence) ; 15 ans pile comptent ; lot de copropriété : notice d'information, plan pluriannuel de travaux ou diagnostic technique global, et dossier technique amiante des parties communes avant juillet 1997 ; diagnostics dépendant d'un arrêté local (termites, mérule, assainissement) à ajouter par commune plus tard
 - Qui : Claude · Relecture : forte · Dépend de : O07
 - Cahier : M10, « Dossier notaire » ; Conformité, données minimales.
@@ -911,7 +912,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N02 · Échéancier du dossier et alertes à l'agent
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : N01
 - Cahier : M10, « Échéancier ».
 - Objectif : à la signature du compromis, l'agent saisit les dates avec leur preuve (signature, première présentation de la notification à l'acquéreur, date limite du prêt, dépôt de la déclaration d'intention d'aliéner, demande de l'état daté, date prévue de l'acte) ; le code calcule la fin de la rétractation et la date de réponse de la commune ; chaque jour, une tâche pour l'agent avant chaque échéance, une seule par échéance.
