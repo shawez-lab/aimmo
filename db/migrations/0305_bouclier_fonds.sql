@@ -1,8 +1,8 @@
--- N05 · Bouclier contre le faux RIB (M10). Une alerte par message reçu suspect [R18] : seules les sortes de signaux,
+-- N05 · Bouclier contre le faux RIB (M10). Une alerte par message reçu suspect et par dossier [R18] : seules les sortes de signaux,
 -- jamais le texte ni l'IBAN [R15]. Le rappel au client et son issue. Aucune table ne suit de fonds [R62]. Rien ne
 -- s'efface [R17].
 CREATE TABLE IF NOT EXISTS sale_file_fund_alerts (
-  message_id TEXT PRIMARY KEY REFERENCES messages (id) ON DELETE RESTRICT,
+  message_id TEXT NOT NULL REFERENCES messages (id) ON DELETE RESTRICT,
   file_id TEXT NOT NULL REFERENCES sale_files (id) ON DELETE RESTRICT,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   agent_id TEXT NOT NULL,
@@ -11,7 +11,9 @@ CREATE TABLE IF NOT EXISTS sale_file_fund_alerts (
   signals TEXT NOT NULL CHECK (json_valid(signals)),
   created_at TEXT NOT NULL,
   reminder_status TEXT CHECK (reminder_status IS NULL OR reminder_status IN ('sent', 'waiting', 'refused', 'failed')),
-  reminder_rule TEXT
+  reminder_rule TEXT,
+  -- Une alerte par message et par dossier : une personne qui achète et vend à la fois prévient ses deux agents.
+  PRIMARY KEY (message_id, file_id)
 );
 CREATE INDEX IF NOT EXISTS sale_file_fund_alerts_file ON sale_file_fund_alerts (network_id, file_id, created_at);
 CREATE TRIGGER IF NOT EXISTS sale_file_fund_alerts_sans_effacement BEFORE DELETE ON sale_file_fund_alerts BEGIN SELECT RAISE(ABORT, 'sale_file_fund_alerts : rien ne s''efface'); END;

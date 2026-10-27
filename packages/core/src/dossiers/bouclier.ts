@@ -62,7 +62,10 @@ const OUTGOING: RegExp[] = [
   /\b(?:rib|bic|swift|iban)\b/,
   /\b(?:nos|nouvelles|voici les|voici nos|ci-joint nos|ci-joint les) coordonnees bancaires\b/,
   /\b(?:sur le compte|a l'ordre de)\b/,
-  /\b(?:veuillez|merci de|vous pouvez|pensez a|il vous faut|vous devez|il faut)\s+(?:nous\s+)?(?:virer|verser|regler|payer|effectuer (?:un|le) (?:virement|paiement|versement))\b/,
+  /\b(?:veuillez|merci de|vous pouvez|pensez a|il vous faut|vous devez|il faut|je vous prie de|nous vous prions de)\s+(?:bien vouloir\s+)?(?:nous\s+)?(?:virer|verser|regler|payer|transferer|effectuer)\b/,
+  // L'impératif direct : « payez », « versez », « virez », « réglez », « effectuez le virement ».
+  /\b(?:payez|versez|virez|reglez|transferez|effectuez)\b/,
+  /\b(?:le|un|votre) (?:virement|versement|paiement) (?:de|du|des|sur|a|avant)\b/,
 ];
 
 /** Un texte d'AIMMO qui donne des coordonnées bancaires ou demande un paiement : jamais [R62]. */
@@ -109,54 +112,61 @@ export class BouclierFonds {
     });
   }
 
-  /** Le dossier en cours dont la personne est une partie, et de quel côté, ou null. */
-  private async fileOf(networkId: string, personId: string): Promise<{ id: string; property_id: string; agent_id: string; side: 'vendeur' | 'acquereur' } | null> {
+  /**
+   * Tous les dossiers en cours dont la personne est une partie, et de quel côté : une personne qui achète et vend à la
+   * fois a deux dossiers, et chaque agent doit être prévenu.
+   */
+  private async filesOf(networkId: string, personId: string): Promise<{ id: string; property_id: string; agent_id: string; side: 'vendeur' | 'acquereur' }[]> {
     const ids = await this.unique.membersOf(personId);
     const marks = ids.map(() => '?').join(', ');
-    const buyer = await this.db.first<{ id: string; property_id: string; agent_id: string | null }>(
+    const buyer = await this.db.all<{ id: string; property_id: string; agent_id: string | null }>(
       `SELECT f.id, f.property_id, p.agent_id FROM sale_files f JOIN properties p ON p.id = f.property_id
-       WHERE f.network_id = ? AND p.status = 'under_offer' AND f.buyer_person_id IN (${marks}) ORDER BY f.opened_at DESC LIMIT 1`,
+       WHERE f.network_id = ? AND p.status = 'under_offer' AND f.buyer_person_id IN (${marks}) ORDER BY f.opened_at, f.id`,
       [networkId, ...ids],
     );
-    if (buyer?.agent_id) return { id: buyer.id, property_id: buyer.property_id, agent_id: buyer.agent_id, side: 'acquereur' };
-    const seller = await this.db.first<{ id: string; property_id: string; agent_id: string | null }>(
+    const seller = await this.db.all<{ id: string; property_id: string; agent_id: string | null }>(
       `SELECT f.id, f.property_id, p.agent_id FROM sale_files f JOIN properties p ON p.id = f.property_id
        WHERE f.network_id = ? AND p.status = 'under_offer'
        AND (SELECT m.person_id FROM mandates m WHERE m.network_id = f.network_id AND m.property_id = f.property_id ORDER BY m.signed_at DESC LIMIT 1) IN (${marks})
-       ORDER BY f.opened_at DESC LIMIT 1`,
+       ORDER BY f.opened_at, f.id`,
       [networkId, ...ids],
     );
-    if (seller?.agent_id) return { id: seller.id, property_id: seller.property_id, agent_id: seller.agent_id, side: 'vendeur' };
-    return null;
+    return [
+      ...buyer.filter((f) => f.agent_id).map((f) => ({ id: f.id, property_id: f.property_id, agent_id: f.agent_id!, side: 'acquereur' as const })),
+      ...seller.filter((f) => f.agent_id).map((f) => ({ id: f.id, property_id: f.property_id, agent_id: f.agent_id!, side: 'vendeur' as const })),
+    ];
   }
 
   /**
    * Lit un message reçu, rangé dans `messages`. Rend les signaux trouvés, ou null s'il n'y a rien à faire (message
-   * sortant, personne hors d'un dossier en cours, aucun signal). Une seule alerte par message, même lu deux fois [R18].
+   * sortant, personne hors d'un dossier en cours, aucun signal). Une alerte par message et par dossier de la personne,
+   * même lu deux fois [R18].
    */
   async scan(messageId: string): Promise<FundSignal[] | null> {
     const m = await this.db.first<{ id: string; network_id: string; person_id: string; direction: string; body: string }>('SELECT id, network_id, person_id, direction, body FROM messages WHERE id = ?', [messageId]);
     if (!m || m.direction !== 'in') return null;
     const signals = fundSignals(m.body);
     if (signals.length === 0) return null;
-    const file = await this.fileOf(m.network_id, m.person_id);
-    if (!file) return null;
-    const { changes } = await this.db.run(
-      'INSERT INTO sale_file_fund_alerts (message_id, file_id, network_id, agent_id, person_id, side, signals, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (message_id) DO NOTHING',
-      [m.id, file.id, m.network_id, file.agent_id, m.person_id, file.side, JSON.stringify(signals), this.now().toISOString()],
-    );
-    if (changes !== 1) return signals;
-    // Au journal : les sortes de signaux, jamais le texte, l'IBAN ni la coordonnée [R13, R15].
-    await appendEvent(this.journal, { type: 'dossier.alerte_fonds', actor: 'system:dossiers', subject: `sale_file:${file.id}`, data: { rule: 'R62', message: `message:${m.id}`, side: file.side, signals } }, this.now);
-    await this.remind(m.id);
+    const files = await this.filesOf(m.network_id, m.person_id);
+    if (files.length === 0) return null;
+    for (const file of files) {
+      const { changes } = await this.db.run(
+        "INSERT INTO sale_file_fund_alerts (message_id, file_id, network_id, agent_id, person_id, side, signals, created_at, reminder_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'waiting') ON CONFLICT (message_id, file_id) DO NOTHING",
+        [m.id, file.id, m.network_id, file.agent_id, m.person_id, file.side, JSON.stringify(signals), this.now().toISOString()],
+      );
+      if (changes !== 1) continue;
+      // Au journal : les sortes de signaux, jamais le texte, l'IBAN ni la coordonnée [R13, R15].
+      await appendEvent(this.journal, { type: 'dossier.alerte_fonds', actor: 'system:dossiers', subject: `sale_file:${file.id}`, data: { rule: 'R62', message: `message:${m.id}`, side: file.side, signals } }, this.now);
+    }
+    for (const file of files) await this.remind(m.id, file.id);
     return signals;
   }
 
   /** Le rappel au client d'une alerte, par le contrôle central, en mode essai. */
-  private async remind(messageId: string): Promise<void> {
+  private async remind(messageId: string, fileId: string): Promise<void> {
     const a = await this.db.first<{ file_id: string; network_id: string; agent_id: string; person_id: string; reminder_status: string | null }>(
-      'SELECT file_id, network_id, agent_id, person_id, reminder_status FROM sale_file_fund_alerts WHERE message_id = ?',
-      [messageId],
+      'SELECT file_id, network_id, agent_id, person_id, reminder_status FROM sale_file_fund_alerts WHERE message_id = ? AND file_id = ?',
+      [messageId, fileId],
     );
     if (!a || (a.reminder_status !== null && a.reminder_status !== 'waiting' && a.reminder_status !== 'failed')) return;
     const first = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [a.person_id]);
@@ -175,24 +185,19 @@ export class BouclierFonds {
       figures: [],
     });
     const status = r.status === 'sent' ? 'sent' : r.status === 'failed' ? 'failed' : r.rule === 'R01' ? 'waiting' : 'refused';
-    await this.db.run('UPDATE sale_file_fund_alerts SET reminder_status = ?, reminder_rule = ? WHERE message_id = ?', [status, r.status === 'sent' ? null : r.rule, messageId]);
+    await this.db.run('UPDATE sale_file_fund_alerts SET reminder_status = ?, reminder_rule = ? WHERE message_id = ? AND file_id = ?', [status, r.status === 'sent' ? null : r.rule, messageId, fileId]);
     await appendEvent(this.journal, { type: 'dossier.rappel_fonds', actor: 'system:dossiers', subject: `sale_file:${a.file_id}`, data: { mode: 'essai', status, rule: r.status === 'sent' ? null : r.rule } }, this.now);
   }
 
   /**
-   * Le filet : lit les messages reçus du réseau depuis `since` qui n'ont pas encore été lus, et reprend les rappels
-   * qui attendaient l'heure. Rend le nombre d'alertes nouvelles.
+   * Le filet : relit les messages reçus du réseau depuis `since` (une lecture déjà faite n'ajoute rien), et reprend les
+   * rappels qui attendaient l'heure ou sont restés sans issue après une panne. Rend le nombre d'alertes nouvelles.
    */
   async run(networkId: string, since: Date): Promise<number> {
     const before = (await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM sale_file_fund_alerts WHERE network_id = ?', [networkId]))!.n;
-    const rows = await this.db.all<{ id: string }>(
-      `SELECT m.id FROM messages m WHERE m.network_id = ? AND m.direction = 'in' AND m.occurred_at >= ?
-       AND NOT EXISTS (SELECT 1 FROM sale_file_fund_alerts a WHERE a.message_id = m.id) ORDER BY m.occurred_at, m.id`,
-      [networkId, since.toISOString()],
-    );
+    const rows = await this.db.all<{ id: string }>("SELECT m.id FROM messages m WHERE m.network_id = ? AND m.direction = 'in' AND m.occurred_at >= ? ORDER BY m.occurred_at, m.id", [networkId, since.toISOString()]);
     for (const r of rows) await this.scan(r.id);
-    // Un rappel resté sans issue (panne entre l'alerte et l'envoi), ou qui attendait l'heure, repart.
-    for (const w of await this.db.all<{ message_id: string }>("SELECT message_id FROM sale_file_fund_alerts WHERE network_id = ? AND (reminder_status IS NULL OR reminder_status IN ('waiting', 'failed'))", [networkId])) await this.remind(w.message_id);
+    for (const w of await this.db.all<{ message_id: string; file_id: string }>("SELECT message_id, file_id FROM sale_file_fund_alerts WHERE network_id = ? AND (reminder_status IS NULL OR reminder_status IN ('waiting', 'failed'))", [networkId])) await this.remind(w.message_id, w.file_id);
     return (await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM sale_file_fund_alerts WHERE network_id = ?', [networkId]))!.n - before;
   }
 

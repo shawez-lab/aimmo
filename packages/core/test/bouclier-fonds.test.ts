@@ -33,7 +33,7 @@ it('[R62] un message reçu qui parle d’argent est reconnu, sans rien garder du
 });
 
 it('[R62] aucun texte d’AIMMO ne porte de coordonnée bancaire ni ne demande un paiement', () => {
-  for (const t of [`Voici nos coordonnées bancaires : ${IBAN}`, 'Merci de virer le dépôt sur le compte du notaire', 'Notre RIB est joint', 'Vous pouvez payer à l’ordre de AIMMO', `IBAN ${IBAN.replace(/ /g, '')}`, 'Veuillez effectuer un virement de 10 000 €']) {
+  for (const t of [`Voici nos coordonnées bancaires : ${IBAN}`, 'Merci de virer le dépôt sur le compte du notaire', 'Notre RIB est joint', 'Vous pouvez payer à l’ordre de AIMMO', `IBAN ${IBAN.replace(/ /g, '')}`, 'Veuillez effectuer un virement de 10 000 €', 'Payez les frais de notaire sur ce lien', 'Versez la somme avant vendredi', 'Merci de bien vouloir effectuer le virement', 'Réglez le solde au plus vite', 'Le virement du dépôt est attendu']) {
     expect([t, fundsInOutgoing(t)]).toEqual([t, true]);
   }
   // Le rappel du bouclier et toutes les relances de pièces passent.
@@ -129,6 +129,26 @@ describeWithSqlite('N05 · aucun fonds, bouclier contre le faux RIB', () => {
     await expect(t.db.run("UPDATE sale_file_fund_alerts SET signals = '[]'")).rejects.toThrow(/rien ne change/);
   });
 
+  it('[R62] une personne qui achète et vend à la fois : chaque agent reçoit l’alerte de son dossier', async () => {
+    const t = await setup();
+    // La vendeuse du jeu achète aussi un autre bien, suivi par Sam : son dossier d'achat, inventé, inscrit directement.
+    const b2 = await t.store.createProperty({ networkId: t.network.id, agentId: t.sam.userId, reference: 'REF-T-9', kind: 'land', city: 'Talant', priceEur: 90000, status: 'under_offer' });
+    await t.db.run(
+      "INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash) VALUES ('offre-9', ?, ?, 1, ?, 90000, '[]', '2027-03-10', 90000, 0, 'offres/x.pdf', '2027-03-01T09:00:00.000Z', ?, '2027-03-01T09:00:00.000Z', 'test', '', 'h-offre-9')",
+      [t.network.id, b2.id, t.personId, t.sam.userId],
+    );
+    await t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('dossier-9', ?, ?, 'offre-9', ?, 90000, '2027-03-01T13:00:00.000Z', 'test')", [t.network.id, b2.id, t.personId]);
+    t.setClock(paris('2027-03-08', 10));
+    const m = await t.receive(t.personId, 'Merci de faire le virement sur notre nouveau compte');
+    expect(await t.bouclier.scan(m.id)).toBeTruthy();
+    expect(await t.bouclier.scan(m.id)).toBeTruthy();
+    const alex = await t.bouclier.alertsOf(t.agent);
+    const sam = await t.bouclier.alertsOf(t.sam);
+    expect(alex.ok && alex.alerts.map((x) => [x.fileId, x.side])).toEqual([[t.fileId, 'vendeur']]);
+    expect(sam.ok && sam.alerts.map((x) => [x.fileId, x.side])).toEqual([['dossier-9', 'acquereur']]);
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM sale_file_fund_alerts'))?.n).toBe(2);
+  });
+
   it('un rappel resté sans issue après une panne repart au passage suivant', async () => {
     const t = await setup();
     t.setClock(paris('2027-03-08', 10));
@@ -141,7 +161,8 @@ describeWithSqlite('N05 · aucun fonds, bouclier contre le faux RIB', () => {
     };
     const broken = new BouclierFonds(t.db, t.acces, failing, { now: t.now });
     await expect(broken.scan(m.id)).rejects.toThrow('panne');
-    expect((await t.db.first<{ reminder_status: string | null }>('SELECT reminder_status FROM sale_file_fund_alerts WHERE message_id = ?', [m.id]))?.reminder_status).toBeNull();
+    expect((await t.db.first<{ reminder_status: string | null }>('SELECT reminder_status FROM sale_file_fund_alerts WHERE message_id = ?', [m.id]))?.reminder_status).toBe('waiting');
+    expect(await t.inbox(t.buyerId)).toEqual([]);
     await t.bouclier.run(t.network.id, paris('2027-03-08', 9));
     expect(await t.inbox(t.buyerId)).toHaveLength(1);
   });
