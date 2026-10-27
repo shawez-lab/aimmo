@@ -57,5 +57,11 @@ export async function setupDossier(kind: DossierKind = 'appartement') {
   };
   const verifyBuyer = (seenAt = new Date('2027-03-01T11:30:00.000Z')) =>
     new ControlesSignature(t.db, t.acces, t.journal, { now: t.now }).recordIdentity(t.agent, t.buyerId, { piece: 'passeport', seenAt });
-  return { ...t, offerId: offer.id, fileId, storage, pieces, upload, verifyBuyer };
+  /** Identité vérifiée, compromis en préparation [R58]. */
+  const startCompromis = async () => {
+    await verifyBuyer();
+    const r = await new DossiersVente(t.db, t.acces, t.journal, { now: t.now }).startCompromis(t.agent, fileId);
+    if (!r.ok) throw new Error(r.code);
+  };
+  return { ...t, offerId: offer.id, fileId, storage, pieces, upload, verifyBuyer, startCompromis };
 }

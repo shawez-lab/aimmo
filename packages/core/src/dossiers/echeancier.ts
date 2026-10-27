@@ -1,0 +1,288 @@
+/**
+ * Échéancier du dossier de vente et alertes à l'agent (M10, N02) [R10, R16, R17, R61].
+ *
+ * À la signature du compromis, l'agent du dossier saisit les dates, chacune avec sa preuve : signature, première
+ * présentation de la notification à l'acquéreur, date limite du prêt, réception de la déclaration d'intention
+ * d'aliéner par la commune, état daté attendu du syndic, acte prévu. Une date corrigée s'ajoute en nouvelle version,
+ * l'ancienne reste [R17]. Le code calcule les échéances légales ; les autres sont lues telles que saisies ; aucune
+ * n'est inventée : une échéance sans sa date est dite « à saisir » [R10, R61].
+ *
+ * - Fin de la rétractation de l'acquéreur : 10 jours à compter du lendemain de la première présentation de la
+ *   notification ; un délai qui finit un samedi, un dimanche ou un jour férié est prolongé jusqu'au premier jour
+ *   ouvrable suivant.
+ * - Réponse de la commune sur son droit de préemption : 2 mois après la réception de la déclaration ; un mois plus court
+ *   finit à son dernier jour. Son silence vaut renonciation.
+ *
+ * Chaque jour, une tâche pour l'agent avant chaque échéance (nombre de jours d'avance en réglage), une seule par
+ * échéance et par date ; une tâche aussi pour chaque échéance encore à saisir, une seule. Rien n'est envoyé aux clients.
+ *
+ * Décidé, lecture prudente : rien ne se saisit avant que le compromis soit en préparation, donc l'identité de
+ * l'acquéreur vérifiée [R58] ; la signature du compromis se saisit d'abord, les autres dates ne la précèdent pas ;
+ * la date limite du prêt n'a pas d'objet si l'offre n'a pas de condition de prêt, l'état daté si le bien n'est pas un
+ * lot de copropriété ; le délai de la commune n'est pas prolongé (la date sert à prévenir l'agent, pas à décider) ;
+ * les jours fériés propres à l'Alsace-Moselle ne sont pas comptés.
+ */
+import type { Acces } from '../acces/acces.ts';
+import type { Viewer } from '../acces/droits.ts';
+import type { PropertySheet } from '../annonces/fiche-bien.ts';
+import type { SqlDatabase } from '../db/sql.ts';
+import { frenchHolidays, localTime } from '../envoi/horaires.ts';
+import { appendEvent } from '../journal/journal.ts';
+import type { JournalStore } from '../journal/types.ts';
+import { PROOF_REF } from '../offres/transmission.ts';
+import { actorOf, gateSaleFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
+
+const TIME_ZONE = 'Europe/Paris';
+export const BUYER_WITHDRAWAL_DAYS = 10;
+export const PREEMPTION_MONTHS = 2;
+
+export const DATE_KINDS = ['compromis_signe', 'notification_acquereur', 'date_limite_pret', 'dia_recue', 'etat_date_attendu', 'acte_prevu'] as const;
+export type DateKind = (typeof DATE_KINDS)[number];
+
+/** Les dates qui ont eu lieu : jamais dans le futur. Les autres sont des dates à venir lues dans le compromis. */
+const PAST_KINDS: readonly DateKind[] = ['compromis_signe', 'notification_acquereur', 'dia_recue'];
+
+export const DEADLINES = ['fin_retractation', 'reponse_preemption', 'date_limite_pret', 'etat_date', 'acte'] as const;
+export type Deadline = (typeof DEADLINES)[number];
+
+/** Jours d'avance de la tâche de l'agent, par échéance : des réglages. */
+export const DEFAULT_NOTICE_DAYS: Record<Deadline, number> = { fin_retractation: 1, reponse_preemption: 7, date_limite_pret: 10, etat_date: 7, acte: 7 };
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+function validDay(v: unknown): v is string {
+  if (typeof v !== 'string' || !DAY.test(v)) return false;
+  const d = new Date(`${v}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
+export const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+function isWorkingDay(day: string): boolean {
+  const w = new Date(`${day}T12:00:00Z`).getUTCDay();
+  return w !== 0 && w !== 6 && !frenchHolidays(Number(day.slice(0, 4))).has(day);
+}
+
+/** Dernier jour de la rétractation de l'acquéreur (inclus), depuis la première présentation de la notification. */
+export function buyerWithdrawalLastDay(notifiedOn: string): string {
+  let last = addDays(notifiedOn, BUYER_WITHDRAWAL_DAYS);
+  while (!isWorkingDay(last)) last = addDays(last, 1);
+  return last;
+}
+
+/** Le jour où la commune doit avoir répondu : 2 mois après la réception, au dernier jour du mois s'il est plus court. */
+export function preemptionLastDay(receivedOn: string): string {
+  const [y, m, d] = receivedOn.split('-').map(Number) as [number, number, number];
+  const months = m - 1 + PREEMPTION_MONTHS;
+  const year = y + Math.floor(months / 12);
+  const month = months % 12;
+  const lastOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(Math.min(d, lastOfMonth)).padStart(2, '0')}`;
+}
+
+export interface ScheduleLine {
+  deadline: Deadline;
+  /** `calcul` : par le code depuis une date saisie ; `saisie` : telle que saisie depuis le compromis. */
+  source: 'calcul' | 'saisie';
+  /** Le jour de l'échéance, `AAAA-MM-JJ` ; null quand la date dont elle dépend n'est pas saisie. */
+  day: string | null;
+  /** `a_saisir` : la date manque ; `sans_objet` : pas de condition de prêt, pas de copropriété. */
+  status: 'datee' | 'a_saisir' | 'sans_objet';
+  /** La date saisie dont l'échéance vient. */
+  from: DateKind;
+}
+
+export interface Schedule {
+  fileId: string;
+  dates: Partial<Record<DateKind, { day: string; version: number }>>;
+  lines: ScheduleLine[];
+}
+
+/** L'échéancier, depuis les dates saisies. Fonction pure, dans un ordre fixe : mêmes dates, mêmes échéances [R61]. */
+export function scheduleLines(dates: Partial<Record<DateKind, string>>, facts: { hasLoanCondition: boolean; isCoownershipLot: boolean | null }): ScheduleLine[] {
+  const line = (deadline: Deadline, source: 'calcul' | 'saisie', from: DateKind, day: string | null): ScheduleLine => ({ deadline, source, from, day, status: day === null ? 'a_saisir' : 'datee' });
+  const n = dates.notification_acquereur;
+  const dia = dates.dia_recue;
+  const lines: ScheduleLine[] = [
+    line('fin_retractation', 'calcul', 'notification_acquereur', n ? buyerWithdrawalLastDay(n) : null),
+    line('reponse_preemption', 'calcul', 'dia_recue', dia ? preemptionLastDay(dia) : null),
+    facts.hasLoanCondition ? line('date_limite_pret', 'saisie', 'date_limite_pret', dates.date_limite_pret ?? null) : { deadline: 'date_limite_pret', source: 'saisie', from: 'date_limite_pret', day: null, status: 'sans_objet' },
+    // La copropriété inconnue : l'état daté est demandé, par prudence.
+    facts.isCoownershipLot === false ? { deadline: 'etat_date', source: 'saisie', from: 'etat_date_attendu', day: null, status: 'sans_objet' } : line('etat_date', 'saisie', 'etat_date_attendu', dates.etat_date_attendu ?? null),
+    line('acte', 'saisie', 'acte_prevu', dates.acte_prevu ?? null),
+  ];
+  return lines;
+}
+
+export interface FileTask {
+  fileId: string;
+  propertyId: string;
+  deadline: Deadline;
+  /** `avant_echeance` : l'échéance approche ; `a_saisir` : sa date manque. */
+  kind: 'avant_echeance' | 'a_saisir';
+  /** Le jour de l'échéance, ou null pour une date à saisir. */
+  day: string | null;
+  createdAt: string;
+}
+
+export type ScheduleProblem = { ok: false; rule: null; code: 'unknown_date' | 'bad_day' | 'bad_proof' | 'future_day' | 'before_compromis' | 'compromis_first' | 'busy' } | { ok: false; rule: 'R58'; code: 'compromis_not_started' };
+
+export class Echeancier {
+  private readonly now: () => Date;
+  private readonly notice: Record<Deadline, number>;
+
+  constructor(
+    private readonly db: SqlDatabase,
+    private readonly acces: Acces,
+    private readonly journal: JournalStore,
+    options: { now?: () => Date; noticeDays?: Partial<Record<Deadline, number>> } = {},
+  ) {
+    this.now = options.now ?? (() => new Date());
+    this.notice = { ...DEFAULT_NOTICE_DAYS, ...(options.noticeDays ?? {}) };
+    for (const d of DEADLINES) if (!Number.isInteger(this.notice[d]) || this.notice[d] < 0 || this.notice[d] > 60) throw new Error(`Délai de rappel de l'échéance ${d} : de 0 à 60 jours.`);
+  }
+
+  private gate(viewer: Viewer, fileId: string, write: boolean) {
+    return gateSaleFile({ db: this.db, acces: this.acces, journal: this.journal, now: this.now }, viewer, fileId, write, 'sale_file_schedule');
+  }
+
+  private today(): string {
+    return localTime(this.now(), TIME_ZONE).date;
+  }
+
+  private async datesOf(fileId: string): Promise<Partial<Record<DateKind, { day: string; version: number }>>> {
+    const rows = await this.db.all<{ kind: DateKind; day: string; version: number }>(
+      `SELECT kind, day, version FROM sale_file_dates d WHERE file_id = ?
+       AND version = (SELECT MAX(version) FROM sale_file_dates e WHERE e.file_id = d.file_id AND e.kind = d.kind)`,
+      [fileId],
+    );
+    return Object.fromEntries(rows.map((r) => [r.kind, { day: r.day, version: Number(r.version) }]));
+  }
+
+  private async facts(file: { offer_id: string; property_id: string }): Promise<{ hasLoanCondition: boolean; isCoownershipLot: boolean | null }> {
+    const offer = await this.db.first<{ conditions: string }>('SELECT conditions FROM offer_register WHERE id = ?', [file.offer_id]);
+    const conditions = offer ? (JSON.parse(offer.conditions) as { kind: string }[]) : [];
+    const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [file.property_id]);
+    const coownership = sheet ? (JSON.parse(sheet.data) as PropertySheet).coownership : null;
+    return { hasLoanCondition: conditions.some((c) => c.kind === 'pret'), isCoownershipLot: coownership === null ? null : coownership.isCoownership };
+  }
+
+  private async compute(file: { id: string; offer_id: string; property_id: string }): Promise<Schedule> {
+    const dates = await this.datesOf(file.id);
+    const days = Object.fromEntries(Object.entries(dates).map(([k, v]) => [k, v.day])) as Partial<Record<DateKind, string>>;
+    return { fileId: file.id, dates, lines: scheduleLines(days, await this.facts(file)) };
+  }
+
+  /** L'échéancier du dossier : agent du bien, direction, conformité [R16]. */
+  async schedule(viewer: Viewer, fileId: string): Promise<{ ok: true; value: Schedule } | FileRefusal | FileUnknown> {
+    const g = await this.gate(viewer, fileId, false);
+    if (!g.ok) return g;
+    return { ok: true, value: await this.compute(g.file) };
+  }
+
+  /** L'agent du dossier saisit une date du compromis, avec sa preuve. Une correction s'ajoute en nouvelle version [R17]. */
+  async record(viewer: Viewer, fileId: string, input: { kind: unknown; day: unknown; proofRef: unknown }): Promise<{ ok: true; value: Schedule } | FileRefusal | FileUnknown | ScheduleProblem> {
+    const g = await this.gate(viewer, fileId, true);
+    if (!g.ok) return g;
+    if (typeof input.kind !== 'string' || !(DATE_KINDS as readonly string[]).includes(input.kind)) return { ok: false, rule: null, code: 'unknown_date' };
+    const kind = input.kind as DateKind;
+    if (!validDay(input.day)) return { ok: false, rule: null, code: 'bad_day' };
+    const day = input.day;
+    if (typeof input.proofRef !== 'string' || !PROOF_REF.test(input.proofRef)) return { ok: false, rule: null, code: 'bad_proof' };
+    const started = await this.db.first("SELECT 1 FROM sale_file_steps WHERE file_id = ? AND step = 'compromis_en_preparation'", [fileId]);
+    if (!started) {
+      await appendEvent(this.journal, { type: 'dossier.bloque', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R58', code: 'compromis_not_started' } }, this.now);
+      return { ok: false, rule: 'R58', code: 'compromis_not_started' };
+    }
+    if (PAST_KINDS.includes(kind) && day > this.today()) return { ok: false, rule: null, code: 'future_day' };
+    const dates = await this.datesOf(fileId);
+    if (kind !== 'compromis_signe') {
+      const signed = dates.compromis_signe?.day;
+      if (!signed) return { ok: false, rule: null, code: 'compromis_first' };
+      if (day < signed) return { ok: false, rule: null, code: 'before_compromis' };
+    } else {
+      // Corriger la signature après coup ne peut pas la placer après une date déjà saisie qui la suit.
+      for (const [k, v] of Object.entries(dates)) if (k !== 'compromis_signe' && v.day < day) return { ok: false, rule: null, code: 'before_compromis' };
+    }
+    const version = (dates[kind]?.version ?? 0) + 1;
+    try {
+      await this.db.run(
+        'INSERT INTO sale_file_dates (file_id, network_id, kind, version, day, proof_ref, at, by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [fileId, g.file.network_id, kind, version, day, input.proofRef, this.now().toISOString(), actorOf(viewer)],
+      );
+    } catch (error) {
+      if (/UNIQUE/i.test(String(error))) return { ok: false, rule: null, code: 'busy' };
+      throw error;
+    }
+    await appendEvent(this.journal, { type: 'dossier.date', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R61', kind, version } }, this.now);
+    return { ok: true, value: await this.compute(g.file) };
+  }
+
+  /**
+   * Le passage du jour : pour chaque dossier dont le compromis est signé, une tâche avant chaque échéance datée, et une
+   * pour chaque échéance encore à saisir. Une seule par échéance et par date. Rend le nombre de tâches créées.
+   */
+  async run(networkId: string): Promise<number> {
+    const today = this.today();
+    const files = await this.db.all<{ id: string; offer_id: string; property_id: string; agent_id: string | null }>(
+      `SELECT f.id, f.offer_id, f.property_id, p.agent_id FROM sale_files f JOIN properties p ON p.id = f.property_id
+       WHERE f.network_id = ? AND EXISTS (SELECT 1 FROM sale_file_dates d WHERE d.file_id = f.id AND d.kind = 'compromis_signe')
+       ORDER BY f.opened_at, f.id`,
+      [networkId],
+    );
+    let created = 0;
+    for (const f of files) {
+      if (!f.agent_id) continue;
+      const s = await this.compute(f);
+      for (const l of s.lines) {
+        let due: string | null = null;
+        if (l.status === 'a_saisir') due = '';
+        else if (l.status === 'datee' && l.day! >= today && addDays(l.day!, -this.notice[l.deadline]) <= today) due = l.day!;
+        if (due === null) continue;
+        const { changes } = await this.db.run(
+          'INSERT INTO sale_file_tasks (file_id, network_id, agent_id, deadline, due_day, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (file_id, deadline, due_day) DO NOTHING',
+          [f.id, networkId, f.agent_id, l.deadline, due, this.now().toISOString()],
+        );
+        if (changes !== 1) continue;
+        created += 1;
+        await appendEvent(this.journal, { type: due === '' ? 'dossier.date_a_saisir' : 'dossier.echeance', actor: 'system:dossiers', subject: `sale_file:${f.id}`, data: { rule: 'R61', deadline: l.deadline, ...(due === '' ? {} : { day: due }) } }, this.now);
+      }
+    }
+    return created;
+  }
+
+  /**
+   * Les tâches de l'agent, pour lui seul, encore utiles : une échéance pas encore passée dont la date n'a pas changé, ou
+   * une date toujours à saisir [R16].
+   */
+  async tasksOf(viewer: Viewer): Promise<{ ok: true; tasks: FileTask[] } | FileRefusal> {
+    const refuse = async (code: 'not_agent' | 'agent_inactive') => {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: actorOf(viewer), subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'sale_file_tasks', code } }, this.now);
+      return { ok: false as const, rule: 'R16' as const, code };
+    };
+    if (viewer.role !== 'agent') return refuse('not_agent');
+    const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [viewer.userId]);
+    if (!agent || agent.network_id !== viewer.networkId || agent.status !== 'active') return refuse('agent_inactive');
+    const rows = await this.db.all<{ file_id: string; property_id: string; offer_id: string; deadline: Deadline; due_day: string; created_at: string }>(
+      `SELECT k.file_id, f.property_id, f.offer_id, k.deadline, k.due_day, k.created_at FROM sale_file_tasks k JOIN sale_files f ON f.id = k.file_id
+       JOIN properties p ON p.id = f.property_id
+       WHERE k.network_id = ? AND k.agent_id = ? AND p.agent_id = k.agent_id ORDER BY k.created_at, k.deadline`,
+      [viewer.networkId, viewer.userId],
+    );
+    const today = this.today();
+    const schedules = new Map<string, Schedule>();
+    const tasks: FileTask[] = [];
+    for (const r of rows) {
+      if (!schedules.has(r.file_id)) schedules.set(r.file_id, await this.compute({ id: r.file_id, offer_id: r.offer_id, property_id: r.property_id }));
+      const line = schedules.get(r.file_id)!.lines.find((l) => l.deadline === r.deadline)!;
+      if (r.due_day === '') {
+        if (line.status === 'a_saisir') tasks.push({ fileId: r.file_id, propertyId: r.property_id, deadline: r.deadline, kind: 'a_saisir', day: null, createdAt: r.created_at });
+      } else if (line.day === r.due_day && r.due_day >= today) {
+        tasks.push({ fileId: r.file_id, propertyId: r.property_id, deadline: r.deadline, kind: 'avant_echeance', day: r.due_day, createdAt: r.created_at });
+      }
+    }
+    tasks.sort((a, b) => ((a.day ?? '') < (b.day ?? '') ? -1 : (a.day ?? '') > (b.day ?? '') ? 1 : DEADLINES.indexOf(a.deadline) - DEADLINES.indexOf(b.deadline)));
+    return { ok: true, tasks };
+  }
+}
+
