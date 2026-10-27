@@ -466,14 +466,14 @@ Découpé le 2026-10-27. Ids `G..` pour Gagner. Cahier : M20 Gagner des mandats 
 Décidé, lecture prudente : la première version, pour la preuve à Dijon, couvre le plan du jour, le suivi de valeur et la source de chaque mandat, avec leurs trois critères d'acceptation. Les lettres de quartier, le dossier de présentation, les recommandations et la relance des anciens contacts viendront avec le module complet (octobre 2027), après M06, M11, M18 et M19 dont ils dépendent. Le plan du jour est calculé par le code, par des règles écrites et les mêmes pour tous, sans IA [R35] ; il ne porte que les clients de l'agent [R16], et seulement des personnes qui ont une base légale : une demande de leur part encore récente ou un accord en cours, jamais une personne exclue ou qui a demandé l'arrêt [R36]. Aucune donnée de ventes publiques ne sert à retrouver un propriétaire [R29, R37]. Rien n'est envoyé à un client par M20 tant que le plan n'a pas mis d'envoi en service : tout passe par le contrôle central, en mode essai. Les durées (demande « récente », estimation « à relancer ») sont des réglages : 13 mois pour une demande, 30 jours pour relancer une estimation sans réponse, jusqu'à ce que Shawez en décide autrement. L'application de l'agent est découpée à part, après M20.
 
 ### G01 · Plan du jour : contenu et ordre
-- Statut : en cours
+- Statut : fait (2026-10-27)
 - Qui : Claude · Relecture : forte · Dépend de : Q04, E06, V02
 - Cahier : M20, point 1, « Règles ».
 - Objectif : une fonction du socle qui, pour un agent et une date, rend son plan du jour : propriétaires qui ont demandé un rappel (tâches « rappeler » ouvertes), estimations à relancer (avis envoyé sans réponse ni rendez-vous depuis le délai réglé), rendez-vous à proposer (projet de vente ou d'estimation sans rendez-vous à venir) ; chaque ligne dit sa raison en une ligne et sa base légale. L'ordre suit des règles écrites : demande de rappel d'abord, puis délai annoncé par le propriétaire le plus proche, puis estimation la plus ancienne ; à égalité, la plus ancienne demande.
 - Critères : le même plan pour les mêmes données, ordre expliqué ligne par ligne, aucune note de l'IA [R35] ; seulement les clients de l'agent [R16] ; une personne exclue, arrêtée, sans demande récente ni accord en cours n'y figure jamais, et son retrait est compté sans donnée personnelle [R36] ; un contact n'y figure qu'une fois, sous sa raison la plus forte.
 
 ### G02 · Plan du jour à 7 h 30, par le planificateur
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : G01, B02
 - Cahier : M20, « Critères d'acceptation » : « le plan du jour arrive chaque matin à 7 h 30 dans l'application ».
 - Objectif : le planificateur du socle fige à 7 h 30, heure de Paris, le plan du jour de chaque agent actif, une fois par agent et par jour ; une route `GET /v1/plan-du-jour` le rend à l'agent seul ; le passage est écrit au journal sans donnée personnelle.
