@@ -408,7 +408,7 @@ Décidé, lecture prudente : l'agenda Google passe par une interface, avec un fa
 - Attend : H21 pour le vrai branchement ; le reste se fait avant.
 
 ### V04 · Rappels la veille et le jour même
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : V02, B02
 - Cahier : M05, « Rappels » et « Règles ».
 - Objectif : par le planificateur, un rappel la veille et un le jour même, avec le lien pour décaler ou annuler, par le contrôle central, en mode essai.
