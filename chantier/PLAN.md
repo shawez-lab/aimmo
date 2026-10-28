@@ -15,6 +15,13 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 - Critères : clé jamais écrite en clair hors du navigateur de Shawez (test) ; lien à usage unique, expiré refusé (test) ; empreintes déjà présentes dans `API_KEYS` conservées (test) ; journal sans clé (test [R13]).
 - Ce qu'elle attend d'un humain : rien. Une fois fusionnée, la séance lance elle-même le workflow ; Shawez n'a qu'à cliquer sur le lien reçu par mail.
 
+### Z04 · Lien d'accès de Shawez sans mail Cloudflare
+- Statut : à faire
+- Qui : Claude, relecture forte
+- Dépendances : Z02
+- Objectif : l'envoi par Cloudflare échoue toujours (HTTP 401, code 10000, H33 non réglé). Ajouter au travail « Créer l'accès de Shawez » un mode de remise sans mail : le lien à usage unique, valable 24 heures, est écrit seulement dans le résumé du travail GitHub (dépôt privé, visible du seul compte shawez-lab), jamais dans les journaux du travail ni dans le dépôt. Puis lancer le travail dans ce mode et noter dans « Besoin de toi » : « Ton lien t'attend dans GitHub : Actions > Créer l'accès de Shawez > dernier passage > Summary. »
+- Critères : le lien n'apparaît pas dans la sortie du travail (test) ; le mode mail reste le défaut (test) ; lien à usage unique et expiré refusé (tests de Z02 repris).
+
 ### Z03 · Passe de design de l'application et des pages publiques
 - Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : identité « toits vernissés de Bourgogne » (papier, encre, bordeaux, moutarde, losange des tuiles), polices du système, base unique `packages/core/src/design/systeme.ts`, contrôle dans `audit.ts`, règle R201 ; budgets 14 Ko (page) et 48 Ko (application) compressés ; captures dans `docs/design/captures/` ; axe-core sans violation sur 9 écrans, clair et sombre ; relecture forte 2 P1 et 2 défauts corrigés ; Codex en cours au bout de 15 min, fusion sans lui (#152). U11 peut reprendre.
@@ -1595,15 +1602,27 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : H08 et H24 pour un usage réel ; en mode essai d'ici là.
 
 ### W07 · État des lieux dans l'application, signé par les deux parties
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#157) ; R106 en service ; migration `0907` (0904 était pris). Relecture forte 1 P0 (contrôle par listes noires seulement) et 1 P1 (commune vide) corrigés ; Codex 2 P0 (fidélité hors listes, exemplaires non atomiques) et 2 P1 (photos hors empreinte, correction pendant la clôture) corrigés ; dernière relecture de Codex encore en cours après 20 minutes, fusion sans elle. `closedInventory` sert à W08 ; l'envoi des exemplaires par le contrôle central est dans W10.
+- Décidé (2026-10-28, voie 2) : l'IA ne peut qu'ajouter ou ôter articles et liaisons ; tout autre changement (mot, ordre, accent, pluriel, nombre, négation, saut de ligne) fait prendre le secours. Les signatures sont tracées à l'écran devant l'agent, empreinte seule gardée ; un état des lieux ne se signe que complet (noms, domicile du bailleur, adresse et commune, chaque pièce, compteurs, clés, mobilier d'un meublé).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W06
 - Cahier : M15, « État des lieux » ; L'IA et l'humain.
 - Objectif : l'état des lieux d'entrée (migration `0904`) : pièce par pièce, éléments et état, photos (références), relevés des compteurs, clés remises, texte dicté mis en forme par l'IA derrière une interface avec secours, signature des deux parties, un exemplaire chacun.
 - Critères : l'état des lieux n'est clos qu'avec la signature des deux parties et chaque pièce renseignée [R106] ; l'IA ne fait que mettre en forme : le texte rendu ne contient aucun élément, état ni chiffre absent du dicté, sinon le secours est pris [R106] ; chaque partie reçoit le même exemplaire, de même empreinte [R106] ; rien ne s'efface, une correction est une nouvelle version avant signature [R17].
 - Attend : rien.
 
-### W08 · Remise des clés sans argent pour AIMMO, gestion par un partenaire carte G
+### W12 · Signature en ligne du bail par D08, en mode essai
 - Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W06, D08
+- Cahier : M15, « Bail et annexes » ; M06, « Signature électronique AIMMO ».
+- Objectif : faire signer le bail en vigueur (W06) par le bailleur et le locataire choisi avec la signature en ligne de D08, en mode essai ; ajoutée le 2026-10-28 par la voie 2, car W06 l'avait renvoyée à une tâche qui n'existait pas au plan.
+- Critères : fournit `LeaseSignatureState.signedAt` à W08 (remise des clés, honoraires dus) ; seul le bail en vigueur et complet se signe [R101, R105] ; chaque partie signe l'empreinte du bail ; un bail remplacé après une signature demande de nouvelles signatures ; tant que H08 et H24 ne sont pas faits, la signature ne rend jamais un bail signé réel ; chaque partie reçoit le même exemplaire par le contrôle central.
+- Attend : H08 et H24 pour un usage réel ; en mode essai d'ici là.
+
+### W08 · Remise des clés sans argent pour AIMMO, gestion par un partenaire carte G
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#158) ; R107 en service ; migration `0908`. Relecture forte 1 P1 (état des lieux clos sous un autre bail) corrigé ; Codex 1 P2 (date impossible) corrigé. La signature du bail est lue par l'interface `LeaseSignatureState`, à fournir par W12 ; d'ici là, aucune remise des clés ni aucun honoraire dû en vrai.
+- Décidé (2026-10-28, voie 2) : les honoraires sont la rémunération de l'agence, pas des fonds tenus pour autrui (R107), facturés par K02 ; un état des lieux clos vaut pour son seul bail, un nouveau bail en vigueur demande le sien.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W07, U02
 - Cahier : M15, « Remise des clés » ; Conformité, « Argent du locataire ».
 - Objectif : la remise des clés : dépôt de garantie et premier loyer déclarés versés directement au propriétaire ; honoraires dus à la signature du bail ; proposition de gestion locative par un partenaire de M18 titulaire de la carte G.
