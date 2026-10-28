@@ -1400,7 +1400,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L07 · Demandes des personnes en moins d'un mois, avec preuve
-- Statut : bloquée : au journal du dossier de vente, un événement sans `side` va par défaut à l'acquéreur (satisfaction du vendeur, 4e tour de Codex de la séance du 28/10 soir) ; corrigés dans cette séance : plan figé revérifié, état des lieux et exemplaire du bail au locataire, signatures et exemplaires de l'état des lieux à chaque partie, alertes du vendeur au vendeur, documents à deux parties « à examiner ». Reprise (#159, branche `chantier/L07`) : relever par test chaque type d'événement écrit sous `sale_file:` et le classer (acquéreur, vendeur, auteur, partagé), au lieu d'un défaut
+- Statut : bloquée : au journal du dossier de vente, un événement sans `side` va par défaut à l'acquéreur (satisfaction du vendeur, 4e tour de Codex de la séance du 28/10 soir) ; corrigés dans cette séance : plan figé revérifié, état des lieux et exemplaire du bail au locataire, signatures et exemplaires de l'état des lieux à chaque partie, alertes du vendeur au vendeur, documents à deux parties « à examiner ». Reprise (#159, branche `chantier/L07`) : relever par test chaque type d'événement écrit sous `sale_file:` et le classer (acquéreur, vendeur, auteur, partagé), au lieu d'un défaut ; ajouter aussi `rental_sends` (W10) à la carte
 - Reprise (2026-10-28) : `JOURNAL_SUBJECTS` et relevé testé des sujets (littéraux, fonctions d'aide, sujets construits), journal des biens possédés, masque des autres personnes au journal (`foreignPersons`), localisateurs par champ JSON (`jsonPath`) pour la candidature et la session de signature ; relecture forte 1 P0 et 1 P1 corrigés.
 - Décidé (2026-10-28) : demandes enregistrées par le responsable seul ; échéance d'un mois par `addCalendarMonths`, rappel 7 jours avant et alerte le jour même ; carte des demandes d'accès vérifiée contre le registre (Jamais vu) ; lutte contre le blanchiment écartée (accès par la CNIL, article L561-45) ; effacement en essai, qui garde obligation légale, arrêt (identifiants sous empreinte) et lignes partagées « à examiner » ; demandes des agents, candidats et partenaires traitées à la main pour l'instant.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L06
@@ -1646,7 +1646,9 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W10 · Branchement de M15 dans le socle
-- Statut : en cours
+- Statut : fait (2026-10-29)
+- Décidé (2026-10-29) : routes de M15 servies par le socle, fermées (503) sans le stockage `PIECES`, identité lue au coffre (son état seul) ; passage `location.envois` de 9 h à 19 h ; accord demandé : `suivi_location` par mail ; seuls exclusion, arrêt, doublon et départ de l'agent qui a préparé refusent pour de bon (R02, R04, R05, R86), tout autre refus attend (heure, accord, adresse) ; texte devenu faux (classe corrigée, présentation refaite) jamais envoyé tant qu'il reste faux ; prénom lu sur la fiche réunie ; parenthèses des libellés officiels mises en incise à l'envoi.
+- Reste : rien ne range encore l'accord `suivi_location` (à prévoir dans W11 ou au mandat de location) ; `rental_sends` à ajouter à la carte des demandes d'accès à la reprise de L07 ; relecture forte 2 P1, Codex 1 P0 et 4 P2 corrigés (#164).
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : W09
 - Cahier : M15 ; Branchements.
 - Objectif : exporter `location` depuis `@aimmo/core` ; ajouter ses routes à `app.ts` ; lancer au planificateur les échéances des propriétaires ; passer les textes préparés par le contrôle central des envois, en mode essai.
