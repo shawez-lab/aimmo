@@ -335,7 +335,8 @@ export class EtatCoffre {
     if (!Number.isInteger(maxAgeDays) || maxAgeDays < 0) throw new Error('durée invalide');
     if (kinds.length === 0) return { verifiedOn: null, expired: false };
     const day = localTime(at, TIME_ZONE).date;
-    const since = localTime(new Date(at.getTime() - maxAgeDays * 86_400_000), TIME_ZONE).date;
+    // En jours du calendrier de Paris, sans heure : le passage à l'heure d'été ne décale rien.
+    const since = new Date(Date.parse(`${day}T00:00:00.000Z`) - maxAgeDays * 86_400_000).toISOString().slice(0, 10);
     const iso = at.toISOString();
     const ids = await this.unique.membersOf(personId);
     const rows = await this.db.all<{ verified_on: string; valid_until: string | null }>(
