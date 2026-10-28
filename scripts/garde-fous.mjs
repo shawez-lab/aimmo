@@ -40,7 +40,7 @@ for (const file of tracked) {
 // 2. Chaque règle en service a au moins un test qui porte son numéro.
 const rules = readFileSync('docs/REGLES.md', 'utf8')
   .split('\n')
-  .filter((line) => /^\| R\d{2} \|/.test(line))
+  .filter((line) => /^\| R\d{2,3} \|/.test(line))
   .map((line) => line.split('|').map((cell) => cell.trim()))
   .map((cells) => ({ id: cells[1], inService: cells[3] === 'oui' }));
 
