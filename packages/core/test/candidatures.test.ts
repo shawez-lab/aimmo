@@ -118,6 +118,7 @@ describeWithSqlite('J01 · candidature', () => {
     // Un agent, ou la conformité, ne lit pas les candidatures [R16].
     expect(await t.candidatures.list(t.as('agent'))).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.candidatures.list(t.as('compliance'))).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect((await t.journal.all()).filter((e) => e.type === 'candidatures.lues').map((e) => e.data)).toEqual([{ rule: 'R16', count: 4 }]);
     // Un autre réseau ne voit rien.
     expect(await t.candidatures.list({ role: 'direction', userId: 'd', networkId: t.other.id })).toEqual({ ok: true, value: [] });
   });

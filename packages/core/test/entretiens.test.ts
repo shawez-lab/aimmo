@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase } from '../src/index.ts';
 import { AGENT_FILE_PIECES, Candidatures, Entretiens, INTERVIEW_QUESTIONS } from '../src/reseau/index.ts';
@@ -25,7 +27,22 @@ async function setup() {
   return { db, journal, entretiens, network, other, dir, candidate };
 }
 
-const past = (): string => new Date(clock - 3_600_000).toISOString();
+const soon = (): string => new Date(clock + 3_600_000).toISOString();
+/** Fixe un entretien, laisse passer l'heure, puis le marque tenu. */
+async function heldInterview(t: Awaited<ReturnType<typeof setup>>, id: string): Promise<string> {
+  const s = await t.entretiens.schedule(t.dir, id, { at: soon(), interviewer: 'Shawez' });
+  if (!s.ok) throw new Error('entretien refusé');
+  clock += 2 * 3_600_000;
+  expect(await t.entretiens.markHeld(t.dir, s.interviewId, 'Shawez')).toEqual({ ok: true });
+  return s.interviewId;
+}
+
+it('[R81] la fiche et la décision n’appellent aucune IA : le module n’importe ni IA, ni assistant, ni qualification', () => {
+  const source = readFileSync(fileURLToPath(new URL('../src/reseau/entretiens.ts', import.meta.url)), 'utf8');
+  const imports = [...source.matchAll(/from '([^']+)'/g)].map((m) => m[1]);
+  expect(imports).toEqual(['../acces/droits.ts', '../db/sql.ts', '../journal/journal.ts', '../journal/types.ts', './candidatures.ts']);
+  expect(source).not.toMatch(/fetch\(|compose\(|anthropic|openai/i);
+});
 
 describeWithSqlite('J03 · entretien préparé, décidé par un humain', () => {
   it('[R81] la fiche d’entretien ne contient que le déclaré, les mêmes questions et pièces pour tous, sans note ni avis', async () => {
@@ -51,10 +68,15 @@ describeWithSqlite('J03 · entretien préparé, décidé par un humain', () => {
     const t = await setup();
     const id = await t.candidate('c@example.test');
     expect(await t.entretiens.decide(t.dir, id, { decision: 'oui', reason: 'Projet clair, secteur libre', deciderName: 'Shawez' })).toEqual({ ok: false, rule: 'R81', code: 'no_interview' });
-    // Un entretien fixé dans le futur n'est pas encore tenu.
-    await t.entretiens.schedule(t.dir, id, { at: new Date(clock + 86_400_000).toISOString(), interviewer: 'Shawez' });
+    // Une date passée ne se fixe pas : un entretien ne se déclare pas tenu après coup.
+    expect(await t.entretiens.schedule(t.dir, id, { at: '2000-01-01T09:00:00.000Z', interviewer: 'Shawez' })).toEqual({ ok: false, rule: 'R81', code: 'past_date' });
+    // Un entretien fixé n'est pas tenu : ni avant sa date, ni après sans être marqué tenu.
+    const later = await t.entretiens.schedule(t.dir, id, { at: new Date(clock + 86_400_000).toISOString(), interviewer: 'Shawez' });
+    expect(later.ok && (await t.entretiens.markHeld(t.dir, later.interviewId, 'Shawez'))).toEqual({ ok: false, rule: 'R81', code: 'not_yet' });
+    clock += 2 * 86_400_000;
     expect(await t.entretiens.decide(t.dir, id, { decision: 'oui', reason: 'Projet clair, secteur libre', deciderName: 'Shawez' })).toEqual({ ok: false, rule: 'R81', code: 'no_interview' });
-    expect(await t.entretiens.schedule(t.dir, id, { at: past(), interviewer: 'Shawez' })).toMatchObject({ ok: true });
+    expect(later.ok && (await t.entretiens.markHeld(t.dir, later.interviewId, ' '))).toEqual({ ok: false, rule: 'R81', code: 'no_interviewer' });
+    await heldInterview(t, id);
     expect(await t.entretiens.decide(t.dir, id, { decision: 'oui', reason: '', deciderName: 'Shawez' })).toEqual({ ok: false, rule: 'R81', code: 'no_reason' });
     expect(await t.entretiens.decide(t.dir, id, { decision: 'oui', reason: 'Projet clair, secteur libre' })).toEqual({ ok: false, rule: 'R81', code: 'no_decider' });
     expect(await t.entretiens.decide(t.dir, id, { decision: 'oui', reason: 'Projet clair', deciderName: 'Shawez', score: 9 })).toEqual({ ok: false, rule: 'R81', code: 'unknown_field' });
@@ -63,7 +85,9 @@ describeWithSqlite('J03 · entretien préparé, décidé par un humain', () => {
     expect(await t.entretiens.decide(t.dir, id, { decision: 'oui', reason: 'Projet clair, secteur libre', deciderName: 'Shawez' })).toEqual({ ok: true, decision: 'oui', opensOnboarding: true });
     const sheet = await t.entretiens.prepare(t.dir, id);
     expect(sheet.ok && sheet.value.decision).toMatchObject({ decision: 'oui', deciderName: 'Shawez', reason: 'Projet clair, secteur libre' });
-    expect(sheet.ok && sheet.value.interviews).toHaveLength(2);
+    expect(sheet.ok && sheet.value.interviews.map((i) => i.held)).toEqual([false, true]);
+    expect(await t.entretiens.acceptedIn(t.network.id, id)).toBe(true);
+    expect(await t.entretiens.acceptedIn(t.other.id, id)).toBe(false);
   });
 
   it('[R17] une décision rangée ne change plus ; une nouvelle s’ajoute et la dernière compte', async () => {
@@ -71,13 +95,15 @@ describeWithSqlite('J03 · entretien préparé, décidé par un humain', () => {
     const id = await t.candidate('d@example.test');
     expect(await t.entretiens.decide(t.dir, id, { decision: 'a_revoir', reason: 'Attendre la fin de son contrat actuel', deciderName: 'Marion' })).toMatchObject({ ok: true, opensOnboarding: false });
     expect(await t.entretiens.decide(t.dir, id, { decision: 'non', reason: 'Le candidat a choisi un autre projet', deciderName: 'Marion' })).toMatchObject({ ok: true, decision: 'non' });
-    expect((await t.entretiens.decisionOf(id))?.decision).toBe('non');
+    const sheet = await t.entretiens.prepare(t.dir, id);
+    expect(sheet.ok && sheet.value.decision?.decision).toBe('non');
+    expect(await t.entretiens.acceptedIn(t.network.id, id)).toBe(false);
     expect(await t.db.all('SELECT id FROM candidate_decisions')).toHaveLength(2);
     await expect(t.db.run("UPDATE candidate_decisions SET decision = 'oui'")).rejects.toThrow(/ne change plus/);
     await expect(t.db.run('DELETE FROM candidate_decisions')).rejects.toThrow(/rien ne s'efface/);
     // Même au niveau de la base, un « oui » sans entretien est refusé.
     await expect(
-      t.db.run("INSERT INTO candidate_decisions (id, network_id, candidate_id, decision, reason, decided_by, decider_name, decided_at) VALUES ('x', ?, ?, 'oui', 'motif écrit', 'direction:x', 'Nom', ?)", [t.network.id, id, past()]),
+      t.db.run("INSERT INTO candidate_decisions (id, network_id, candidate_id, decision, reason, decided_by, decider_name, decided_at) VALUES ('x', ?, ?, 'oui', 'motif écrit', 'direction:x', 'Nom', ?)", [t.network.id, id, soon()]),
     ).rejects.toThrow();
   });
 
@@ -91,13 +117,20 @@ describeWithSqlite('J03 · entretien préparé, décidé par un humain', () => {
     ]) {
       expect(await t.entretiens.prepare(viewer, id)).toMatchObject({ ok: false, rule: 'R16' });
       expect(await t.entretiens.decide(viewer, id, { decision: 'non', reason: 'motif écrit', deciderName: 'Quelqu’un' })).toMatchObject({ ok: false, rule: 'R16' });
-      expect(await t.entretiens.schedule(viewer, id, { at: past(), interviewer: 'X' })).toMatchObject({ ok: false, rule: 'R16' });
+      expect(await t.entretiens.schedule(viewer, id, { at: soon(), interviewer: 'X' })).toMatchObject({ ok: false, rule: 'R16' });
     }
+    const own = await t.entretiens.schedule(t.dir, id, { at: soon(), interviewer: 'Shawez' });
+    clock += 2 * 3_600_000;
+    expect(own.ok && (await t.entretiens.markHeld({ role: 'agent', userId: 'a-1', networkId: t.network.id }, own.interviewId, 'X'))).toMatchObject({ ok: false, rule: 'R16' });
+    expect(own.ok && (await t.entretiens.markHeld({ role: 'direction', userId: 'd-2', networkId: t.other.id }, own.interviewId, 'X'))).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.db.all('SELECT id FROM candidate_decisions')).toEqual([]);
-    await t.entretiens.schedule(t.dir, id, { at: past(), interviewer: 'Shawez' });
+    expect(own.ok && (await t.entretiens.markHeld(t.dir, own.interviewId, 'Shawez'))).toEqual({ ok: true });
     await t.entretiens.decide(t.dir, id, { decision: 'oui', reason: 'Motif confidentiel écrit', deciderName: 'Shawez' });
+    await t.entretiens.prepare(t.dir, id);
     const entries = await t.journal.all();
-    expect(entries.filter((e) => e.type === 'acces.refuse')).toHaveLength(9);
+    expect(entries.filter((e) => e.type === 'acces.refuse')).toHaveLength(11);
+    // Chaque lecture d'une fiche d'entretien est au journal [R16].
+    expect(entries.filter((e) => e.type === 'candidature.lue')).toHaveLength(1);
     expect(JSON.stringify(entries)).not.toMatch(/Eli|Essai|Beaune|confidentiel|Shawez|example\.test/);
     expect((await verifyChain(entries)).ok).toBe(true);
   });
