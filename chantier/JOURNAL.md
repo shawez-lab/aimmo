@@ -146,3 +146,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-10-28 04:50 · K05 · tableau du réseau fusionné (#119) : totaux égaux à chaque découpage (agent, zone, source), coûts de l'IA par canal et par mandat ; Codex à sa limite · prochaine : K06
 - 2026-10-28 04:57 · K06 · rapport du matin fusionné (#120) : un par lecteur et par jour ouvré à 7 h 30, période depuis le jour ouvré précédent, chiffres des tableaux de bord ; R68 et R69 en service ; Codex à sa limite · prochaine : K07
 - 2026-10-28 05:04 · K07 · alertes de pilotage fusionnées (#121) : budget de l'IA à 70 %, baisse d'un indicateur, échéance d'un document d'agent, une fois par période ; Codex à sa limite · prochaine : K08
+- 2026-10-28 05:04 · fin de séance · K04 à K07 fusionnés ; R68 et R69 en service ; séance arrêtée pour reprendre K08 sur une séance neuve · prochaine : K08
