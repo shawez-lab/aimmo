@@ -41,6 +41,8 @@ export interface ViaLocator {
   where?: Readonly<Record<string, string>>;
   /** Seulement les lignes de `from` trouvées par cette colonne directe : pas celles de l'autre partie. */
   onlyMatchedBy?: string;
+  /** D'autres colonnes qui doivent aussi valoir celles de la même ligne de `from` (colonne ici → colonne là-bas). */
+  alsoMatch?: Readonly<Record<string, string>>;
 }
 
 /** Un tableau JSON dont chaque élément nomme sa personne : seuls ses éléments sortent. */
@@ -70,6 +72,8 @@ export type AccessMapEntry =
       own?: Readonly<Record<string, readonly string[]>>;
       /** Secrets de sécurité (empreintes de jetons ou de codes) : jamais montrés. */
       secrets?: readonly string[];
+      /** Des colonnes qui mêlent les données d'une autre personne (un document à deux parties) : jamais montrées, leur empreinte reste. */
+      shared?: readonly string[];
       /** Des lignes à écarter : une colonne et les débuts de valeur écartés. */
       /**
        * Des lignes à écarter : celles dont `column` commence par l'un des `prefixes`, et celles dont `marked` contient
@@ -130,7 +134,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   conversation_handovers: { locate: by('person_id') },
   agent_alerts: { locate: by('person_id') },
   outbound_refs: { locate: [via('message_id', 'messages')] },
-  pending_human_replies: { locate: [via('conversation_ref', 'inbound_messages', 'conversation_ref')] },
+  // Une conversation se reconnaît à son réseau, son canal et sa référence.
+  pending_human_replies: { locate: [via('conversation_ref', 'inbound_messages', 'conversation_ref', { alsoMatch: { network_id: 'network_id', channel: 'channel' } })] },
   legal_basis_checks: out('sans_client', 'Contrôle du plan du jour : des nombres par jour et par raison, aucune personne.'),
   // assistant-site
   assistant_sessions: out('non_rattachable', 'Empreinte de session d\'un visiteur du site, sans nom ni coordonnée.'),
@@ -316,9 +321,11 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id' }),
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
+      via('subject', 'rental_listings', 'id', { prefix: 'rental:' }),
       via('subject', 'person_requests', 'id', { prefix: 'person_request:' }),
     ],
-    skip: { column: 'type', prefixes: JOURNAL_LCB_PREFIXES, marked: 'data', markers: JOURNAL_LCB_MARKERS },
+    // L'arrivée d'une candidature, au journal du logement, est la donnée du candidat : elle n'est pas au propriétaire.
+    skip: { column: 'type', prefixes: [...JOURNAL_LCB_PREFIXES, 'location.candidature'], marked: 'data', markers: JOURNAL_LCB_MARKERS },
   },
   registry_reviews: out('sans_client', 'Relecture du registre des traitements.'),
   registry_review_alerts: out('sans_client', 'Alerte de relecture du registre.'),
@@ -342,14 +349,16 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Les pièces du candidat lui-même ; celles d'un garant sont au garant.
   rental_application_pieces: { locate: [via('application_id', 'rental_applications', 'id', { where: { holder: 'candidat' } }), via('holder', 'rental_guarantors')] },
   // La présentation au propriétaire montre les dossiers d'autres personnes : il en voit la date et l'empreinte.
-  rental_presentations: { locate: [via('listing_id', 'rental_listings')], secrets: ['snapshot'] },
+  rental_presentations: { locate: [via('listing_id', 'rental_listings')], shared: ['snapshot'] },
   rental_choices: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications')] },
   rental_fairness_receipts: { locate: by('person_id') },
   rental_lease_templates: out('sans_client', 'Modèle de bail du réseau.'),
-  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications')] },
+  // Le bail et l'état des lieux rendus portent les noms et le domicile des deux parties : leur texte n'est pas montré,
+  // leur empreinte reste ; chaque partie en a reçu son exemplaire.
+  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications')], shared: ['content'] },
   rental_fees: { locate: [via('listing_id', 'rental_listings')] },
   // L'état des lieux et la remise des clés : au propriétaire par son logement, au locataire par son bail.
-  rental_inventories: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases')] },
+  rental_inventories: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases')], shared: ['content'] },
   rental_inventory_signatures: { locate: [via('inventory_id', 'rental_inventories')] },
   rental_inventory_copies: { locate: [via('inventory_id', 'rental_inventories')] },
   rental_handovers: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases')] },
@@ -421,12 +430,16 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
         const parent = carte[l.from];
         if (!parent || 'excluded' in parent) gaps.push({ kind: 'source_inconnue', table, from: l.from });
         else if (!schema.get(l.from)?.columns.includes(l.key)) gaps.push({ kind: 'colonne_inconnue', table: l.from, column: l.key });
+        for (const [here, there] of Object.entries(l.alsoMatch ?? {})) {
+          named.add(here);
+          if (!schema.get(l.from)?.columns.includes(there)) gaps.push({ kind: 'colonne_inconnue', table: l.from, column: there });
+        }
         if (l.onlyMatchedBy && parent && 'locate' in parent && !parent.locate.some((p) => isDirect(p) && p.column === l.onlyMatchedBy)) {
           gaps.push({ kind: 'colonne_inconnue', table: l.from, column: l.onlyMatchedBy });
         }
       }
     }
-    for (const c of [...Object.keys(entry.own ?? {}), ...Object.values(entry.own ?? {}).flat(), ...(entry.secrets ?? []), ...(entry.skip ? [entry.skip.column, ...(entry.skip.marked ? [entry.skip.marked] : [])] : [])]) named.add(c);
+    for (const c of [...Object.keys(entry.own ?? {}), ...Object.values(entry.own ?? {}).flat(), ...(entry.secrets ?? []), ...(entry.shared ?? []), ...(entry.skip ? [entry.skip.column, ...(entry.skip.marked ? [entry.skip.marked] : [])] : [])]) named.add(c);
     for (const c of named) if (!columns.includes(c)) gaps.push({ kind: 'colonne_inconnue', table, column: c });
     // Chaque colonne qui désigne une personne est suivie : sinon la réponse oublierait des lignes, ou montrerait celles d'un autre.
     const followed = new Set(entry.locate.filter(isDirect).map((l) => l.column));

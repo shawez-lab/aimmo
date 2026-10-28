@@ -161,15 +161,21 @@ export async function assembleAccessDetail(
       if ('from' in l) {
         const parents = [...(found.get(l.from)?.entries() ?? [])].filter(([, p]) => !l.onlyMatchedBy || p.matched.has(l.onlyMatchedBy));
         const owned = exclusive.get(l.from) ?? new Set<string>();
+        // Une ligne enfant vaut la clé d'une ligne trouvée, et ses autres colonnes liées valent celles de la même ligne.
+        const pairs = Object.entries(l.alsoMatch ?? {}).sort();
+        const tuple = (value: string, at: (c: string) => SqlValue | undefined, side: 0 | 1): string => JSON.stringify([value, ...pairs.map((p) => at(p[side]) ?? null)]);
         const parentExclusive = new Map<string, boolean>();
         for (const [key, p] of parents) {
           const v = p.row[l.key];
           if (v === null || v === undefined) continue;
-          const value = `${l.prefix ?? ''}${v}`;
-          parentExclusive.set(value, (parentExclusive.get(value) ?? false) || owned.has(key));
+          const t = tuple(`${l.prefix ?? ''}${v}`, (c) => p.row[c], 1);
+          parentExclusive.set(t, (parentExclusive.get(t) ?? false) || owned.has(key));
         }
-        const values = [...parentExclusive.keys()].sort();
-        for (const row of await select(table, l.column, values, l.where ?? {})) add(row, null, parentExclusive.get(String(row[l.column])) ?? false);
+        const values = [...new Set([...parentExclusive.keys()].map((t) => (JSON.parse(t) as string[])[0]!))].sort();
+        for (const row of await select(table, l.column, values, l.where ?? {})) {
+          const t = tuple(String(row[l.column]), (c) => row[c], 0);
+          if (parentExclusive.has(t)) add(row, null, parentExclusive.get(t)!);
+        }
         continue;
       }
       const values = ids.map((id) => `${l.prefix ?? ''}${id}`);
@@ -233,7 +239,7 @@ export async function assembleAccessDetail(
           if (f.matched.has(column)) continue;
           for (const c of [column, ...owned]) row[c] = MASKED;
         }
-        for (const c of entry.secrets ?? []) row[c] = MASKED;
+        for (const c of [...(entry.secrets ?? []), ...(entry.shared ?? [])]) row[c] = MASKED;
         shown.push(row);
       }
       shown.sort((a, b) => {

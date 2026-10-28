@@ -81,7 +81,10 @@ async function seedEveryTable() {
           continue;
         }
         for (const [c, v] of Object.entries(l.where ?? {})) row[c] = v;
-        if ('from' in l) row[l.column] = `${l.prefix ?? ''}${seeded.get(l.from)![p]![l.key]}`;
+        if ('from' in l) {
+          row[l.column] = `${l.prefix ?? ''}${seeded.get(l.from)![p]![l.key]}`;
+          for (const [here, there] of Object.entries(l.alsoMatch ?? {})) row[here] = seeded.get(l.from)![p]![there]!;
+        }
         else row[l.column] = `${l.prefix ?? ''}${p}`;
       }
       await insert(table, row);
@@ -107,7 +110,7 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
       const entry = CARTE_ACCES[section.table]!;
       if (!('locate' in entry)) throw new Error(section.table);
       const expected = { ...seeded.get(section.table)![A]! };
-      for (const c of entry.secrets ?? []) expected[c] = MASKED;
+      for (const c of [...(entry.secrets ?? []), ...(entry.shared ?? [])]) expected[c] = MASKED;
       for (const l of entry.locate) if ('json' in l) expected[l.json] = JSON.stringify([{ personId: A, memberIds: [A], firstName: `${A}|prenom` }]);
       expect(section.rows, section.table).toEqual([expected]);
       // Chaque table vient avec son traitement : finalité, base légale, durée, destinataires (RGPD, article 15).
@@ -162,6 +165,27 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(lines('sale_file_steps')).toEqual([['effacer', 1], ['examiner', 1]]);
     expect(lines('referrals')).toEqual([['effacer', 1], ['examiner', 1]]);
     expect(lines('daily_plans')).toEqual([['examiner', 1]]);
+  });
+
+  it('[R96] une conversation d’un autre réseau ou d’un autre canal, un bail à deux parties : rien de l’autre', async () => {
+    const { db, insert, seeded } = await seedEveryTable();
+    const inbound = seeded.get('inbound_messages')![A]!;
+    // Même référence de conversation, autre canal ou autre réseau : la réponse en attente n'est pas à A.
+    await insert('pending_human_replies', { network_id: inbound.network_id!, channel: 'autre-canal', external_id: 'x1', conversation_ref: inbound.conversation_ref!, body: 'Réponse à quelqu’un d’autre', sent_at: 't', created_at: 't', applied_at: null });
+    await insert('pending_human_replies', { network_id: 'autre-reseau', channel: inbound.channel!, external_id: 'x2', conversation_ref: inbound.conversation_ref!, body: 'Réponse dans un autre réseau', sent_at: 't', created_at: 't', applied_at: null });
+    const response = await assembleAccess(db, [A]);
+    expect(response.sections.find((s) => s.table === 'pending_human_replies')!.rows).toEqual([seeded.get('pending_human_replies')![A]]);
+    // Le bail et l'état des lieux rendus nomment les deux parties : leur texte n'est montré à aucune, l'empreinte reste.
+    const lease = response.sections.find((s) => s.table === 'rental_leases')!.rows[0]!;
+    expect(lease).toMatchObject({ content: MASKED, content_sha256: seeded.get('rental_leases')![A]!.content_sha256 });
+    expect(response.sections.find((s) => s.table === 'rental_inventories')!.rows[0]!.content).toBe(MASKED);
+    // Le journal du logement est au propriétaire, sauf l'arrivée d'une candidature, qui est au candidat.
+    const listing = `rental:${seeded.get('rental_listings')![A]!.id}`;
+    await insert('journal', { seq: 7001, at: 't', type: 'location.faits', actor: 'ag', subject: listing, data: '{"version":2}', prev_hash: 'p', hash: 'h7001' });
+    await insert('journal', { seq: 7002, at: 't', type: 'location.candidature', actor: 'ag', subject: listing, data: '{"application":"rental_application:autre","arrival":3}', prev_hash: 'p', hash: 'h7002' });
+    const types = (await assembleAccess(db, [A])).sections.find((s) => s.table === 'journal')!.rows.map((r) => r.type);
+    expect(types).toContain('location.faits');
+    expect(types).not.toContain('location.candidature');
   });
 
   it('[R96] la lutte contre le blanchiment ne change rien à la réponse : rien ne trahit un signalement', async () => {
