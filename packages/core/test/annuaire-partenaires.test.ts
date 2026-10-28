@@ -162,6 +162,24 @@ describeWithSqlite('U01 · annuaire des partenaires', () => {
     expect(await t.annuaire.coveredOn(t.other.id, diag, 'certification_diagnostic', 'dpe', t.day(0))).toBe(false);
   });
 
+  it('[R73] une correction qui raccourcit une période l’emporte, pour aujourd’hui comme pour le passé', async () => {
+    const t = await setup();
+    const diag = await t.partner('diagnostiqueur', 'Diag Corrigé');
+    await t.credential(diag, 'assurance_rcp');
+    await t.credential(diag, 'certification_diagnostic', { domain: 'dpe', from: t.day(-200), until: t.day(30) });
+    // Erreur de saisie : la certification finissait en fait hier.
+    await t.credential(diag, 'certification_diagnostic', { domain: 'dpe', from: t.day(-200), until: t.day(-1) });
+    expect(await t.annuaire.proposableOn(t.network.id, diag, new Date(clock), 'dpe')).toBe(false);
+    expect(await t.annuaire.coveredOn(t.network.id, diag, 'certification_diagnostic', 'dpe', t.day(0))).toBe(false);
+    expect(await t.annuaire.coveredOn(t.network.id, diag, 'certification_diagnostic', 'dpe', t.day(10))).toBe(false);
+    expect(await t.annuaire.coveredOn(t.network.id, diag, 'certification_diagnostic', 'dpe', t.day(-100))).toBe(true);
+    // Un renouvellement ensuite ne ressuscite pas la période corrigée, mais couvre la sienne.
+    await t.credential(diag, 'certification_diagnostic', { domain: 'dpe', from: t.day(40), until: t.day(400) });
+    expect(await t.annuaire.coveredOn(t.network.id, diag, 'certification_diagnostic', 'dpe', t.day(10))).toBe(false);
+    expect(await t.annuaire.coveredOn(t.network.id, diag, 'certification_diagnostic', 'dpe', t.day(50))).toBe(true);
+    expect(await t.annuaire.coveredOn(t.network.id, diag, 'certification_diagnostic', 'dpe', t.day(-100))).toBe(true);
+  });
+
   it('[R14] la recherche ne rend ni note, ni rang, ni avis, et ne sort que la zone et le métier demandés', async () => {
     const t = await setup();
     const a = await t.partner('notaire', 'Étude A', ['21000', '21121']);
@@ -264,5 +282,18 @@ describeWithSqlite('U01 · annuaire des partenaires', () => {
     await t.credential(id, 'assurance_rcp', { until: t.day(365) });
     expect(await t.annuaire.dueAlerts(t.network.id)).toEqual([]);
     expect(await t.annuaire.dueAlerts(t.other.id)).toEqual([]);
+  });
+
+  it('[R73] un renouvellement qui laisse un trou garde l’alerte de la version en cours', async () => {
+    const t = await setup();
+    const id = await t.partner('notaire', 'Étude du Trou');
+    await t.credential(id, 'assurance_rcp', { from: t.day(-300), until: t.day(10) });
+    await t.credential(id, 'assurance_rcp', { from: t.day(40), until: t.day(400) });
+    expect(await t.annuaire.dueAlerts(t.network.id)).toEqual([{ partnerId: id, kind: 'assurance_rcp', domain: null, validUntil: t.day(10) }]);
+    // Sans trou, pas d'alerte.
+    const id2 = await t.partner('notaire', 'Étude Continue');
+    await t.credential(id2, 'assurance_rcp', { from: t.day(-300), until: t.day(10) });
+    await t.credential(id2, 'assurance_rcp', { from: t.day(11), until: t.day(400) });
+    expect(await t.annuaire.dueAlerts(t.network.id)).toEqual([]);
   });
 });
