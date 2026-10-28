@@ -68,10 +68,11 @@ async function setup() {
   const choix = new ChoixProprietaire(db, listings, apps, files, journal, { now, newId: uuid });
   const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
   const baux = new BauxLocation(db, listings, fees, choix, files, acces, journal, { now, newId: uuid });
-  const formatter = { reply: null as null | ((d: string) => string), calls: [] as { room: string; dictation: string }[] };
+  const formatter = { reply: null as null | ((d: string) => string), calls: [] as { room: string; dictation: string }[], hook: null as null | (() => Promise<void>) };
   const ai = {
     format: async (x: { room: string; dictation: string }) => {
       formatter.calls.push(x);
+      if (formatter.hook) await formatter.hook();
       if (!formatter.reply) throw new Error('indisponible');
       return formatter.reply(x.dictation);
     },
@@ -148,7 +149,13 @@ const DRAW = 'data:image/png;base64,AAAAexemple';
 describe('W07 · mise en forme du dicté', () => {
   it('[R106] la mise en forme fidèle passe ; tout élément, état, chiffre ou négation ajouté est refusé', () => {
     expect(checkFormatted(DICTE, 'Mur côté fenêtre : deux trous de cheville. Sol rayé près de la porte. Pas de trace d’humidité.')).toEqual({ ok: true });
-    expect(checkFormatted(DICTE, 'Murs côté fenêtres : 2 trous de chevilles ; sols rayés près des portes ; pas de traces d’humidité.')).toEqual({ ok: true });
+    expect(checkFormatted(DICTE, 'Mur côté fenêtre : 2 trous de cheville ; sol rayé près de la porte ; pas de trace d’humidité.')).toEqual({ ok: true });
+    // Un pluriel changé, un accent ôté, une couleur ou un constat hors des listes échangé ou omis : fidélité non établie.
+    expect(checkFormatted(DICTE, 'Murs côté fenêtres : 2 trous de chevilles ; sols rayés près des portes ; pas de traces d’humidité.')).toMatchObject({ ok: false, problems: ['words_changed'] });
+    expect(checkFormatted('mur blanc sol noir', 'Mur noir, sol blanc.')).toMatchObject({ ok: false, problems: ['words_changed'] });
+    expect(checkFormatted('mur avec impact', 'Mur.')).toMatchObject({ ok: false, problems: ['words_changed'] });
+    expect(checkFormatted('tache sous la fenêtre', 'Tache sur la fenêtre.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['words_changed']) });
+    expect(checkFormatted('un trou dans le mur', 'Trous dans le mur.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['words_changed']) });
     expect(checkFormatted(DICTE, 'Mur côté fenêtre avec deux trous, sol rayé, plafond fissuré. Pas d’humidité.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['element_added', 'state_added', 'order_changed']) });
     expect(checkFormatted(DICTE, 'Mur côté fenêtre avec trois trous de cheville, sol rayé près de la porte, pas d’humidité.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['number_added']) });
     expect(checkFormatted(DICTE, 'Mur côté fenêtre avec deux trous de cheville, sol rayé près de la porte, trace d’humidité.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['negation_changed']) });
@@ -162,12 +169,12 @@ describe('W07 · mise en forme du dicté', () => {
   it('[R106] la mise en forme n’ajoute aucun mot, n’ôte rien, n’échange rien et ne déplace aucune négation', () => {
     const d = 'mur taché, sol rayé';
     expect(checkFormatted(d, 'Mur taché ; sol rayé.')).toEqual({ ok: true });
-    expect(checkFormatted(d, 'Mur taché, sol rayé ; le locataire accepte une retenue sur le dépôt de garantie.')).toMatchObject({ ok: false, problems: ['word_added'] });
-    expect(checkFormatted(d, 'Mur rayé, sol taché.')).toMatchObject({ ok: false, problems: ['order_changed'] });
-    expect(checkFormatted(d, 'Mur taché.')).toMatchObject({ ok: false, problems: ['order_changed'] });
-    expect(checkFormatted('pas de fuite, mur taché', 'Fuite au mur, pas de tache.')).toMatchObject({ ok: false, problems: ['order_changed'] });
+    expect(checkFormatted(d, 'Mur taché, sol rayé ; le locataire accepte une retenue sur le dépôt de garantie.')).toMatchObject({ ok: false, problems: ['word_added', 'words_changed'] });
+    expect(checkFormatted(d, 'Mur rayé, sol taché.')).toMatchObject({ ok: false, problems: ['words_changed', 'order_changed'] });
+    expect(checkFormatted(d, 'Mur taché.')).toMatchObject({ ok: false, problems: ['words_changed', 'order_changed'] });
+    expect(checkFormatted('pas de fuite, mur taché', 'Fuite au mur, pas de tache.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['order_changed', 'words_changed']) });
     expect(checkFormatted(d, 'Mur taché, sol rayé.\nLocataire : Jean Martin.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['markup', 'word_added']) });
-    expect(checkFormatted(d, 'Mur taché, sol rayé, vu par le mandataire.')).toMatchObject({ ok: false, problems: ['word_added'] });
+    expect(checkFormatted(d, 'Mur taché, sol rayé, vu par le mandataire.')).toMatchObject({ ok: false, problems: ['word_added', 'words_changed'] });
     expect(checkFormatted('compteur à 321,5', 'Compteur à 321,5.')).toEqual({ ok: true });
   });
 
@@ -250,6 +257,8 @@ describeWithSqlite('W07 · état des lieux d’entrée', () => {
     if (!r.ok) throw new Error(r.code);
     const { inventoryId, contentSha256 } = r.value;
     expect(r.value.content).toContain('Photos jointes : 1');
+    // Les photos sont désignées dans le document signé : d'autres photos font une autre empreinte.
+    expect(r.value.content).toContain(`- Photo : ${r.value.rooms[0]!.photos![0]}`);
     expect(await t.edl.sign(t.agent, inventoryId, { party: 'bailleur', contentSha256: 'b'.repeat(64), drawing: DRAW })).toEqual({ ok: false, rule: 'R106', code: 'document_changed' });
     expect(await t.edl.sign(t.agent, inventoryId, { party: 'voisin', contentSha256, drawing: DRAW })).toEqual({ ok: false, rule: null, code: 'bad_party' });
     expect(await t.edl.sign(t.agent, inventoryId, { party: 'bailleur', contentSha256, drawing: '' })).toEqual({ ok: false, rule: null, code: 'bad_drawing' });
@@ -261,7 +270,7 @@ describeWithSqlite('W07 · état des lieux d’entrée', () => {
     const a = await t.edl.copy(t.agent, inventoryId, 'bailleur');
     const b = await t.edl.copy(t.agent, inventoryId, 'locataire');
     expect(a).toEqual(b);
-    expect(a).toEqual({ ok: true, value: { content: r.value.content, contentSha256 } });
+    expect(a).toEqual({ ok: true, value: { content: r.value.content, contentSha256, photos: r.value.rooms[0]!.photos } });
     expect(await sha256(r.value.content)).toBe(contentSha256);
     expect(await t.edl.closedInventory(t.agent.networkId, id)).toEqual({ inventoryId, contentSha256, mode: 'essai' });
     // Le tracé n'est jamais gardé : son empreinte seule.
@@ -290,6 +299,22 @@ describeWithSqlite('W07 · état des lieux d’entrée', () => {
     await expect(t.db.run('DELETE FROM rental_inventory_signatures')).rejects.toThrow(/rien ne s/);
     await expect(t.db.run("UPDATE rental_inventory_copies SET content_sha256 = ?", ['c'.repeat(64)])).rejects.toThrow(/ne change plus/);
     expect((await t.db.all('SELECT id FROM rental_inventories')).length).toBe(2);
+  });
+
+  it('[R106] une correction en cours de mise en forme ne remplace jamais un état des lieux clos entre-temps', async () => {
+    const t = await setup();
+    const id = await t.leased();
+    const v1 = await t.edl.record(t.agent, id, { ...FULL, rooms: ROOMS() });
+    if (!v1.ok) throw new Error(v1.code);
+    await t.edl.sign(t.agent, v1.value.inventoryId, { party: 'bailleur', contentSha256: v1.value.contentSha256, drawing: DRAW });
+    t.formatter.reply = (d) => d;
+    t.formatter.hook = async () => {
+      t.formatter.hook = null;
+      expect(await t.edl.sign(t.agent, v1.value.inventoryId, { party: 'locataire', contentSha256: v1.value.contentSha256, drawing: DRAW })).toEqual({ ok: true, value: { party: 'locataire', closed: true } });
+    };
+    expect(await t.edl.record(t.agent, id, { ...FULL, rooms: ROOMS() })).toEqual({ ok: false, rule: 'R106', code: 'closed' });
+    expect(await t.edl.closedInventory(t.agent.networkId, id)).toMatchObject({ inventoryId: v1.value.inventoryId });
+    expect((await t.db.all('SELECT id FROM rental_inventories')).length).toBe(1);
   });
 
   it('[R106] un bail remplacé après l’état des lieux empêche de le signer', async () => {

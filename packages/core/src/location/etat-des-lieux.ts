@@ -199,8 +199,27 @@ export type FormatProblem =
   | 'number_added'
   | 'negation_changed'
   | 'order_changed'
+  | 'words_changed'
   | 'mentions_ai'
   | 'markup';
+
+/** Les seuls mots qu'une mise en forme peut ajouter ou ôter : articles et liaisons, qui ne changent pas un constat. */
+const FORM_WORDS = new Set(['de', 'd', 'du', 'des', 'la', 'le', 'les', 'l', 'au', 'aux', 'à', 'a', 'et', 'est', 'sont', 'avec', 'ce', 'cet', 'cette', 'ces', 'y']);
+
+/** Les mots porteurs d'un texte, dans l'ordre, tels quels (accents gardés) ; les nombres ramenés à leur valeur. */
+function meaningful(text: string): string[] {
+  return text
+    .normalize('NFC')
+    .toLocaleLowerCase('fr-FR')
+    .replace(/[’']/g, ' ')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w !== '' && !FORM_WORDS.has(w))
+    .map((w) => {
+      if (/^\d+$/.test(w)) return `#${w.replace(/^0+(?=\d)/, '')}`;
+      if (w === 'un' || w === 'une') return '#1';
+      return w !== 'neuf' && Object.prototype.hasOwnProperty.call(NUMBER_WORDS, w) ? `#${NUMBER_WORDS[w]}` : w;
+    });
+}
 
 /**
  * La suite des marques d'un texte, dans l'ordre : éléments, états, chiffres et négations. La mise en forme doit garder
@@ -261,6 +280,9 @@ export function checkFormatted(dictation: string, formatted: string): { ok: true
     return n === null || !numbers.has(n);
   });
   if (added) problems.push('word_added');
+  // Mot à mot et dans l'ordre : hors mots outils, le texte rendu redit exactement les mots du dicté, sans changer un
+  // accent, un nombre (« deux » vaut « 2 ») ni un pluriel. Sinon la fidélité n'est pas établie et le secours est pris.
+  if (JSON.stringify(meaningful(text)) !== JSON.stringify(meaningful(dictation))) problems.push('words_changed');
   const sub = (a: Set<string> | Set<number>, b: Set<string> | Set<number>) => [...a].every((x) => (b as Set<typeof x>).has(x));
   if (!sub(groupsIn(text, ELEMENT_WORDS), groupsIn(dictation, ELEMENT_WORDS))) problems.push('element_added');
   if (!sub(groupsIn(text, STATE_WORDS), groupsIn(dictation, STATE_WORDS))) problems.push('state_added');
@@ -500,7 +522,9 @@ export class EtatsDesLieux {
       if (r.elements.length === 0) lines.push(`- ${hole('éléments et leur état')}`);
       for (const e of r.elements) lines.push(`- ${e.name} : ${ELEMENT_STATES[e.state]}`);
       if (r.text) lines.push(`Observations : ${r.text}`);
+      // Chaque photo est désignée par sa référence dans le document signé : son empreinte couvre les photos jointes.
       if (r.photos.length > 0) lines.push(`Photos jointes : ${r.photos.length}`);
+      for (const ph of r.photos) lines.push(`- Photo : ${ph}`);
       lines.push('');
     }
     lines.push('Relevés des compteurs');
@@ -524,10 +548,14 @@ export class EtatsDesLieux {
 
     for (let attempt = 0; attempt < 5; attempt++) {
       const id = this.newId();
+      let inserted = 0;
       try {
-        await this.db.run(
+        // La nouvelle version n'est rangée que si l'état des lieux n'a pas été clos entre-temps : la vérification et
+        // l'écriture sont une seule instruction [R106].
+        const { changes } = await this.db.run(
           `INSERT INTO rental_inventories (id, listing_id, network_id, version, lease_id, lease_sha256, mode, status, missing, rooms, meters, keys_given, furniture, content, content_sha256, created_by, created_at)
-           SELECT ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM rental_inventories WHERE listing_id = ?`,
+           SELECT ?, ?, ?, m.v, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM (SELECT COALESCE(MAX(version), 0) + 1 AS v FROM rental_inventories WHERE listing_id = ?) m
+           WHERE NOT EXISTS (SELECT 1 FROM rental_inventory_copies c JOIN rental_inventories i ON i.id = c.inventory_id WHERE i.listing_id = ?)`,
           [
             id,
             listing.id,
@@ -546,12 +574,15 @@ export class EtatsDesLieux {
             this.actor(viewer),
             this.now().toISOString(),
             listing.id,
+            listing.id,
           ],
         );
+        inserted = changes;
       } catch (error) {
         if (/UNIQUE/i.test(String(error))) continue;
         throw error;
       }
+      if (inserted !== 1) return { ok: false, rule: 'R106', code: 'closed' };
       const version = Number((await this.db.first<{ version: number }>('SELECT version FROM rental_inventories WHERE id = ?', [id]))!.version);
       await appendEvent(
         this.journal,
@@ -599,39 +630,45 @@ export class EtatsDesLieux {
     if (input.contentSha256 !== row.content_sha256 || (await sha256(row.content)) !== row.content_sha256) return { ok: false, rule: 'R106', code: 'document_changed' };
     const lease = await this.leases.current(row.network_id, row.listing_id);
     if (!lease || lease.leaseId !== row.lease_id) return { ok: false, rule: 'R106', code: 'lease_changed' };
+    // La signature n'est rangée que si cette version est encore la dernière : une correction rangée entre-temps l'emporte.
+    const newer = 'NOT EXISTS (SELECT 1 FROM rental_inventories WHERE listing_id = ? AND version > ?)';
     const { changes } = await this.db.run(
-      `INSERT INTO rental_inventory_signatures (id, inventory_id, party, content_sha256, drawing_sha256, signed_by, signed_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO rental_inventory_signatures (id, inventory_id, party, content_sha256, drawing_sha256, signed_by, signed_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${newer}
        ON CONFLICT (inventory_id, party) DO NOTHING`,
-      [this.newId(), row.id, party, row.content_sha256, await sha256(input.drawing), this.actor(viewer), this.now().toISOString()],
+      [this.newId(), row.id, party, row.content_sha256, await sha256(input.drawing), this.actor(viewer), this.now().toISOString(), row.listing_id, Number(row.version)],
     );
-    if (changes !== 1) return { ok: false, rule: 'R106', code: 'already_signed' };
+    if (changes !== 1) {
+      const mine = await this.db.first('SELECT 1 FROM rental_inventory_signatures WHERE inventory_id = ? AND party = ?', [row.id, party]);
+      return { ok: false, rule: 'R106', code: mine ? 'already_signed' : 'not_latest' };
+    }
     await appendEvent(this.journal, { type: 'location.etat_des_lieux_signe', actor: this.actor(viewer), subject: `rental:${row.listing_id}`, data: { rule: 'R106', version: Number(row.version), party } }, this.now);
     const signed = await this.db.all<{ party: string }>('SELECT party FROM rental_inventory_signatures WHERE inventory_id = ? AND content_sha256 = ?', [row.id, row.content_sha256]);
     const both = PARTIES.every((p) => signed.some((s) => s.party === p));
     if (!both) return { ok: true, value: { party, closed: false } };
     // Clos : un exemplaire par partie, le même, de même empreinte ; l'envoi passe par le contrôle central (W10).
     for (const p of PARTIES) {
-      await this.db.run('INSERT INTO rental_inventory_copies (id, inventory_id, party, content_sha256, prepared_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (inventory_id, party) DO NOTHING', [
-        this.newId(),
-        row.id,
-        p,
-        row.content_sha256,
-        this.now().toISOString(),
-      ]);
+      await this.db.run(
+        `INSERT INTO rental_inventory_copies (id, inventory_id, party, content_sha256, prepared_at) SELECT ?, ?, ?, ?, ? WHERE ${newer} ON CONFLICT (inventory_id, party) DO NOTHING`,
+        [this.newId(), row.id, p, row.content_sha256, this.now().toISOString(), row.listing_id, Number(row.version)],
+      );
     }
+    // Une correction rangée entre la signature et la clôture l'emporte : pas d'exemplaire, la nouvelle version se signe.
+    const copies = await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM rental_inventory_copies WHERE inventory_id = ?', [row.id]);
+    if (Number(copies?.n ?? 0) !== PARTIES.length) return { ok: true, value: { party, closed: false } };
     await appendEvent(this.journal, { type: 'location.etat_des_lieux_clos', actor: this.actor(viewer), subject: `rental:${row.listing_id}`, data: { rule: 'R106', version: Number(row.version) } }, this.now);
     return { ok: true, value: { party, closed: true } };
   }
 
   /** L'exemplaire d'une partie, une fois clos : le contenu signé, vérifié par son empreinte [R106]. */
-  async copy(viewer: Viewer, inventoryId: unknown, party: unknown): Promise<InventoryResult<{ content: string; contentSha256: string }>> {
+  async copy(viewer: Viewer, inventoryId: unknown, party: unknown): Promise<InventoryResult<{ content: string; contentSha256: string; photos: string[] }>> {
     const row = await this.gate(viewer, inventoryId);
     if ('ok' in row) return row;
     if (typeof party !== 'string' || !(PARTIES as readonly string[]).includes(party)) return bad('bad_party');
     const c = await this.db.first<{ content_sha256: string }>('SELECT content_sha256 FROM rental_inventory_copies WHERE inventory_id = ? AND party = ?', [row.id, party]);
     if (!c) return { ok: false, rule: 'R106', code: 'not_closed' };
     if (c.content_sha256 !== row.content_sha256 || (await sha256(row.content)) !== c.content_sha256) return { ok: false, rule: 'R106', code: 'document_changed' };
-    return { ok: true, value: { content: row.content, contentSha256: c.content_sha256 } };
+    const photos = (JSON.parse(row.rooms) as RoomRow[]).flatMap((r) => r.photos);
+    return { ok: true, value: { content: row.content, contentSha256: c.content_sha256, photos } };
   }
 
   /** L'état des lieux clos d'une mise en location, s'il existe : pour la remise des clés (W08). */
