@@ -1289,7 +1289,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Reste : proposition #130 prête, tests verts en local (1226), relecture forte 4 P1 corrigés ; la vérification GitHub ne démarre pas (H28) : à fusionner dès qu'elle passe.
 
 ### J12 · Routes de M14, page de candidature et écrans
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : J01 à J11
 - Cahier : M14 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/reseau` (candidatures, entretiens, dossier d'agent, import, académie, binôme, parrainage, départ) dans `packages/api/src/reseau.ts` ; la page publique de candidature ; dans l'application, les écrans « Mon intégration », « Académie » et, pour la direction, « Candidatures ».
