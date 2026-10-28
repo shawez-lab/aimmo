@@ -1269,6 +1269,8 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 
 ### J10 · Parrainage dans les règles
 - Statut : en cours (voie 2)
+- Décidé (2026-10-28) : le parrain est celui déclaré à la création de l'agent, sinon celui rangé par la direction, jamais deux différents ; un seul niveau, imposé jusque dans la base ; sans taux réglé, aucune prime ; un parrain parti ne garde que les primes déjà reversées.
+- Reste : proposition #128 prête, tests verts en local, en attente des vérifications GitHub (H28) ; pour J13 (voie 1) : passer `primes: new Parrainage(...)` aux `Commissions` de `pilotageHourlyJob` et garder au réseau les parts de `Parrainage.withheld()`.
 - Qui : Claude · Relecture : forte · Dépend de : J04
 - Cahier : Offre aux agents, « Le parrainage, dans les règles » ; M14, « Règles ».
 - Objectif : le parrain d'un agent est rangé à l'entrée ; une prime de parrainage est calculée sur chaque commission réellement encaissée par le filleul, au taux réglé, sur le nombre de niveaux réglé ; elle est montrée au parrain, jamais promise d'avance.
