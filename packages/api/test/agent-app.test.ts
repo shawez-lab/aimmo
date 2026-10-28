@@ -64,7 +64,7 @@ describe('A01 · fichiers de l’application', () => {
     for (const call of sends) expect(call).toMatch(/^send\((?:path|base|'\/v1\/)/);
     // `base` est toujours une adresse fixe de l'API.
     for (const b of js.match(/var base = [^;]+;/g) ?? []) expect(b).toMatch(/^var base = '\/v1\//);
-    expect(js.match(/(?:api|fetch)\(([^,)]+)/g)?.sort()).toEqual(['api(path', 'api(path', 'fetch(path', "api('/v1/plan-du-jour'", "api('/v1/contacts-chauds'", "api('/v1/annonces'", "api('/v1/rendez-vous/jour'", "api('/v1/usage/matin'", "api('/v1/apres-vente/journee'", "api('/v1/moi'", "api('/v1/fiches/' + encodeURIComponent(personId", "api('/v1/rappels/' + encodeURIComponent(taskId"].sort());
+    expect(js.match(/(?:api|fetch)\(([^,)]+)/g)?.sort()).toEqual(['api(path', 'api(path', 'fetch(path', "api('/v1/plan-du-jour'", "api('/v1/contacts-chauds'", "api('/v1/annonces'", "api('/v1/rendez-vous/jour'", "api('/v1/usage/matin'", "api('/v1/apres-vente/journee'", "api('/v1/moi'", "api('/v1/fiches/' + encodeURIComponent(personId", "api('/v1/rappels/' + encodeURIComponent(taskId", "api('/v1/pilotage/export-quotidien?jour=' + day"].sort());
   });
 
   it('[R16] une clé refusée ne montre rien et est effacée ; une panne ne l’efface pas ; la déconnexion l’efface', async () => {
@@ -106,7 +106,9 @@ describe('A01 · fichiers de l’application', () => {
     for (const answer of [
       async () => Response.json({ ok: false, code: 'unauthorized' }, { status: 401 }),
       async () => Response.json({ ok: false, rule: 'R16', code: 'agent_inactive' }, { status: 403 }),
-      async () => Response.json({ ok: true, data: { role: 'direction', firstName: null } }),
+      // La direction a son écran depuis K09 ; la conformité et un partenaire n'ont rien dans l'application.
+      async () => Response.json({ ok: true, data: { role: 'compliance', firstName: null } }),
+      async () => Response.json({ ok: true, data: { role: 'partner', firstName: null } }),
     ]) {
       const refused = await run(answer, KEY);
       expect(refused.els.accueil!.hidden).toBe(true);
