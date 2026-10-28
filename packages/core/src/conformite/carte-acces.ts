@@ -148,6 +148,8 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   task: 'journal',
   alert: 'journal',
   proposal: 'journal',
+  lease_signature: 'journal',
+  signature_bail: ENVOI('code et exemplaire de la signature du bail'),
   offre: ENVOI('transmission d\'une offre'),
   rappel_fonds: ENVOI('rappel des fonds'),
   suivi_valeur: ENVOI('suivi de valeur'),
@@ -435,6 +437,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'appointment_tasks', 'id', { prefix: 'task:' }),
       via('subject', 'safety_alerts', 'id', { prefix: 'alert:' }),
       via('subject', 'offer_proposals', 'id', { prefix: 'proposal:' }),
+      via('subject', 'rental_lease_signatures', 'id', { prefix: 'lease_signature:' }),
     ],
     // Les données d'un événement peuvent nommer une autre personne (`referrer: person:<id>`) : masquées.
     foreignPersons: ['actor', 'data'],
@@ -470,6 +473,11 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Le bail et l'état des lieux rendus portent les noms et le domicile des deux parties : leur texte n'est pas montré,
   // leur empreinte reste ; chaque partie en a reçu son exemplaire.
   rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications')], shared: ['content'] },
+  // La signature en ligne du bail : chaque partie a la sienne ; l'exemplaire signé nomme les deux, son texte n'est
+  // montré à aucune, son empreinte reste.
+  rental_lease_signatures: { locate: by('person_id'), secrets: ['code_hash'] },
+  rental_lease_copies: { locate: [via('lease_id', 'rental_leases')], shared: ['content'] },
+  rental_lease_copy_deliveries: { locate: [via('lease_id', 'rental_lease_copies', 'lease_id')] },
   rental_fees: { locate: [via('listing_id', 'rental_listings')] },
   // L'état des lieux et la remise des clés : au propriétaire par son logement, au locataire par son bail.
   rental_inventories: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases')], shared: ['content'] },
