@@ -639,19 +639,25 @@ export class EtatsDesLieux {
     );
     if (changes !== 1) {
       const mine = await this.db.first('SELECT 1 FROM rental_inventory_signatures WHERE inventory_id = ? AND party = ?', [row.id, party]);
-      return { ok: false, rule: 'R106', code: mine ? 'already_signed' : 'not_latest' };
+      if (!mine) return { ok: false, rule: 'R106', code: 'not_latest' };
+    } else {
+      await appendEvent(this.journal, { type: 'location.etat_des_lieux_signe', actor: this.actor(viewer), subject: `rental:${row.listing_id}`, data: { rule: 'R106', version: Number(row.version), party } }, this.now);
     }
-    await appendEvent(this.journal, { type: 'location.etat_des_lieux_signe', actor: this.actor(viewer), subject: `rental:${row.listing_id}`, data: { rule: 'R106', version: Number(row.version), party } }, this.now);
     const signed = await this.db.all<{ party: string }>('SELECT party FROM rental_inventory_signatures WHERE inventory_id = ? AND content_sha256 = ?', [row.id, row.content_sha256]);
     const both = PARTIES.every((p) => signed.some((s) => s.party === p));
+    // Déjà signé par cette partie : seule une clôture interrompue (les deux signatures, aucun exemplaire) est reprise.
+    if (changes !== 1 && !both) return { ok: false, rule: 'R106', code: 'already_signed' };
     if (!both) return { ok: true, value: { party, closed: false } };
     // Clos : un exemplaire par partie, le même, de même empreinte ; l'envoi passe par le contrôle central (W10).
-    for (const p of PARTIES) {
-      await this.db.run(
-        `INSERT INTO rental_inventory_copies (id, inventory_id, party, content_sha256, prepared_at) SELECT ?, ?, ?, ?, ? WHERE ${newer} ON CONFLICT (inventory_id, party) DO NOTHING`,
-        [this.newId(), row.id, p, row.content_sha256, this.now().toISOString(), row.listing_id, Number(row.version)],
-      );
-    }
+    // Les deux exemplaires en une seule instruction : tous deux ou aucun, jamais un seul [R106].
+    const at = this.now().toISOString();
+    await this.db.run(
+      `INSERT INTO rental_inventory_copies (id, inventory_id, party, content_sha256, prepared_at)
+       SELECT ?, ?, 'bailleur', ?, ? WHERE ${newer}
+       UNION ALL SELECT ?, ?, 'locataire', ?, ? WHERE ${newer}
+       ON CONFLICT (inventory_id, party) DO NOTHING`,
+      [this.newId(), row.id, row.content_sha256, at, row.listing_id, Number(row.version), this.newId(), row.id, row.content_sha256, at, row.listing_id, Number(row.version)],
+    );
     // Une correction rangée entre la signature et la clôture l'emporte : pas d'exemplaire, la nouvelle version se signe.
     const copies = await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM rental_inventory_copies WHERE inventory_id = ?', [row.id]);
     if (Number(copies?.n ?? 0) !== PARTIES.length) return { ok: true, value: { party, closed: false } };

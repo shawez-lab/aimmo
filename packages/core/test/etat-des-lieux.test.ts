@@ -317,6 +317,27 @@ describeWithSqlite('W07 · état des lieux d’entrée', () => {
     expect((await t.db.all('SELECT id FROM rental_inventories')).length).toBe(1);
   });
 
+  it('[R106] les deux exemplaires sont rangés ensemble ou pas du tout ; une clôture interrompue se reprend', async () => {
+    const t = await setup();
+    const id = await t.leased();
+    const r = await t.edl.record(t.agent, id, { ...FULL, rooms: ROOMS() });
+    if (!r.ok) throw new Error(r.code);
+    const { inventoryId, contentSha256 } = r.value;
+    await t.edl.sign(t.agent, inventoryId, { party: 'bailleur', contentSha256, drawing: DRAW });
+    const run = t.db.run.bind(t.db);
+    t.db.run = async (sql, params) => {
+      if (/INSERT INTO rental_inventory_copies/.test(sql)) throw new Error('coupure');
+      return run(sql, params);
+    };
+    await expect(t.edl.sign(t.agent, inventoryId, { party: 'locataire', contentSha256, drawing: DRAW })).rejects.toThrow('coupure');
+    t.db.run = run;
+    expect((await t.db.all('SELECT id FROM rental_inventory_copies')).length).toBe(0);
+    expect(await t.edl.closedInventory(t.agent.networkId, id)).toBeNull();
+    expect(await t.edl.sign(t.agent, inventoryId, { party: 'locataire', contentSha256, drawing: DRAW })).toEqual({ ok: true, value: { party: 'locataire', closed: true } });
+    expect((await t.db.all<{ party: string }>('SELECT party FROM rental_inventory_copies ORDER BY party')).map((c) => c.party)).toEqual(['bailleur', 'locataire']);
+    expect((await t.edl.copy(t.agent, inventoryId, 'locataire')).ok).toBe(true);
+  });
+
   it('[R106] un bail remplacé après l’état des lieux empêche de le signer', async () => {
     const t = await setup();
     const id = await t.leased();
