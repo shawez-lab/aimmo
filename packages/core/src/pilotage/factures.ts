@@ -87,7 +87,7 @@ export class PlateformeEssai implements PlateformeFacturation {
 }
 
 export type InvoiceRefusal = { ok: false; rule: 'R16'; code: string };
-type InvoiceProblem = { ok: false; rule: null | 'R71'; code: 'unknown' | 'already' | 'bad_reason' | 'not_creditable' | 'bad_day' | 'busy' };
+type InvoiceProblem = { ok: false; rule: null | 'R71'; code: 'unknown' | 'already' | 'bad_reason' | 'not_creditable' | 'bad_day' | 'busy' | 'sale_cancelled' };
 
 /** Hors taxe et TVA d'un montant toutes taxes, au centime ; la TVA est le reste, pour que tout se recompte. */
 export function splitVat(ttcCents: number, vatBp: number): { htCents: number; vatCents: number } {
@@ -229,7 +229,7 @@ export class Factures {
 
   /** Le code d'un émetteur dans le numéro : rien pour le réseau, l'agent sinon, pour qu'un numéro soit unique. */
   private issuerCode(issuer: string): string {
-    return issuer === 'reseau' ? '' : `${issuer.slice(6, 14).toUpperCase().replace(/[^A-Z0-9]/g, '')}-`;
+    return issuer === 'reseau' ? '' : `${issuer.slice(6).toUpperCase().replace(/[^A-Z0-9]/g, '')}-`;
   }
 
   private label(kind: InvoiceKind, issuer: string, year: number, number: number): string {
@@ -259,6 +259,12 @@ export class Factures {
       } catch (error) {
         if (correctsId && (await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [correctsId]))) return null;
         if (draftId && (await this.db.first('SELECT 1 FROM invoices WHERE draft_id = ?', [draftId]))) return null;
+        // Seul un conflit de suite (numéro pris, jour passé) se reprend ; toute autre panne va au journal et remonte.
+        const message = error instanceof Error ? error.message : '';
+        if (!/hors suite|UNIQUE constraint/i.test(message)) {
+          await appendEvent(this.journal, { type: 'facture.erreur', actor: by, subject: `sale_file:${fileId}`, data: { kind, error: error instanceof Error ? error.name : 'unknown' } }, this.now);
+          throw error;
+        }
         if (attempt === 2) return 'busy';
       }
     }
@@ -321,6 +327,10 @@ export class Factures {
       // Déjà numérotée : ce qui aurait manqué après une coupure est repris.
       await this.follow(done.id, this.actor(viewer));
       return { ok: false, rule: null, code: 'already' };
+    }
+    // Une vente annulée par un avoir n'émet plus aucune facture, même d'un brouillon préparé avant.
+    if (await this.db.first("SELECT 1 FROM invoices WHERE file_id = ? AND kind = 'avoir' AND json_extract(content, '$.reason') = 'vente_annulee'", [d.file_id])) {
+      return { ok: false, rule: 'R71', code: 'sale_cancelled' };
     }
     const reference = (await this.db.first<{ reference: string }>('SELECT p.reference FROM sale_files f JOIN properties p ON p.id = f.property_id WHERE f.id = ?', [d.file_id]))?.reference ?? '';
     const saleDay = (await this.db.first<{ signed_on: string }>('SELECT signed_on FROM sale_file_closings WHERE file_id = ?', [d.file_id]))?.signed_on ?? null;

@@ -7,7 +7,7 @@ import { describeWithSqlite } from './sqlite.ts';
 // Tout est inventé : vente, clients, agents, montants.
 const ACT_PROOF = 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf';
 const at9 = (day: string) => new Date(`${day}T08:00:00.000Z`);
-const code = (agentId: string) => agentId.slice(0, 8).toUpperCase().replace(/[^A-Z0-9]/g, '');
+const code = (agentId: string) => agentId.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 it('hors taxe et TVA au centime : la TVA est le reste, tout se recompte', () => {
   expect(splitVat(1_000_000, 2000)).toEqual({ htCents: 833_333, vatCents: 166_667 });
@@ -206,6 +206,8 @@ describeWithSqlite('K02 · factures d’honoraires et de reversement, en mode es
     expect(await t.f.prepare(t.network.id)).toBe(0);
     const left = await t.f.drafts(t.direction);
     expect(left.ok && left.value.map((d) => d.kind)).toEqual(['reversement']);
+    // Le brouillon préparé avant l'annulation ne s'émet plus.
+    expect(await t.f.validate(t.direction, left.ok ? left.value[0]!.id : '')).toMatchObject({ ok: false, rule: 'R71', code: 'sale_cancelled' });
     expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'facture.attente').map((e) => e.data.code)).toContain('vente_annulee');
   });
 
@@ -234,5 +236,21 @@ describeWithSqlite('K02 · factures d’honoraires et de reversement, en mode es
     if (!csv.ok) throw new Error('csv');
     expect(csv.value).toContain(`"'=HYPERLINK(""http://x"")"`);
     expect(csv.value).not.toMatch(/;=HYPERLINK/);
+  });
+
+  it('une panne inattendue de l’écriture d’une facture va au journal et remonte, sans se faire passer pour un conflit', async () => {
+    const t = await due();
+    await t.f.prepare(t.network.id);
+    const drafts = await t.f.drafts(t.direction);
+    if (!drafts.ok) throw new Error('drafts');
+    const db = t.db as { run: typeof t.db.run };
+    const run = db.run.bind(t.db);
+    db.run = (async (sql: string, params?: unknown[]) => {
+      if (/INSERT INTO invoices\b/.test(sql)) throw new TypeError('disque plein');
+      return run(sql, params as never);
+    }) as typeof t.db.run;
+    await expect(t.f.validate(t.direction, drafts.value[0]!.id)).rejects.toThrow('disque plein');
+    db.run = run;
+    expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'facture.erreur').map((e) => e.data.error)).toEqual(['TypeError']);
   });
 });
