@@ -1260,6 +1260,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 
 ### J09 · Référent des 90 jours, binôme d'absence et assistance suivie
 - Statut : en cours (voie 2)
+- Reste : proposition #127 prête, tests verts en local ; la vérification GitHub ne démarre plus (facturation de GitHub Actions, H28) : à fusionner dès qu'elle passe.
 - Qui : Claude · Relecture : normale · Dépend de : J04
 - Cahier : M14, « Référent », « Assistance », « Binôme ».
 - Objectif : la direction attribue un référent à chaque nouvel agent pour 90 jours ; deux agents forment un binôme avec un partage des honoraires écrit d'avance ; pendant une absence déclarée, le binôme lit les dossiers en cours de l'absent ; une demande d'assistance est suivie avec son délai (2 h ouvrées pour un humain, 48 h ouvrées pour l'avocat) et alerte la direction avant l'échéance.
@@ -1267,7 +1268,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J10 · Parrainage dans les règles
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : J04
 - Cahier : Offre aux agents, « Le parrainage, dans les règles » ; M14, « Règles ».
 - Objectif : le parrain d'un agent est rangé à l'entrée ; une prime de parrainage est calculée sur chaque commission réellement encaissée par le filleul, au taux réglé, sur le nombre de niveaux réglé ; elle est montrée au parrain, jamais promise d'avance.
