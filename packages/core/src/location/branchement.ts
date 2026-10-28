@@ -83,6 +83,7 @@ export const STALE_RULE = 'perime';
 export class EnvoisLocation {
   private readonly now: () => Date;
   private readonly controle: Pick<ControleEnvoisType, 'send'>;
+  private readonly fiche: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -92,6 +93,7 @@ export class EnvoisLocation {
     this.now = options.now ?? (() => new Date());
     const store = new FicheClient(db, { now: this.now });
     const fiche = new FicheUnique(db, store, { now: this.now });
+    this.fiche = fiche;
     // Les seuls canaux du mode essai : rangé dans la boîte d'essai, jamais envoyé [R26].
     this.controle =
       options.controle ??
@@ -140,8 +142,9 @@ export class EnvoisLocation {
         continue;
       }
       // Le texte préparé salue sans nom (il est rangé tel quel, rejouable) : le prénom n'est ajouté qu'à l'envoi [R08].
-      const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [p.person_id]);
-      const text = outgoingText(p.text, person?.first_name ?? null);
+      // Le prénom de la fiche réunie, comme le contrôle central le lit [R08].
+      const view = await this.fiche.view(p.person_id);
+      const text = outgoingText(p.text, view.members.map((m) => m.first_name).find((n) => n) ?? null);
       const result = await this.controle.send({
         networkId: p.network_id,
         agentId: p.agent_id,

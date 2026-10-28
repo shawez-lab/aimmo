@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { Candidatures, ChoixProprietaire, EnvoisLocation, LOCATION_SEND_HOURS, LOCATION_SEND_JOB, MisesEnLocation, RENTAL_UPDATE_PURPOSE, locationSendJob, outgoingText, sendStatus, type RentalFacts } from '../src/location/index.ts';
+import { FicheUnique } from '../src/fiche/fusion.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -165,6 +166,17 @@ describeWithSqlite('W10 · branchement de M15 dans le socle', () => {
     await new EnvoisLocation(t.db, t.journal, { now: t.now }).run(t.network.id);
     await new EnvoisLocation(t.db, t.journal, { now: t.now }).run(t.network.id);
     expect((await t.outbox()).filter((m) => m.person_id === t.owner.id && /classé G/.test(m.body))).toHaveLength(1);
+  });
+
+  it('[R08] le prénom vient de la fiche réunie : un propriétaire sans prénom fusionné avec sa fiche nommée reçoit son échéance', async () => {
+    const t = await setup();
+    await t.db.run('UPDATE persons SET first_name = NULL WHERE id = ?', [t.owner.id]);
+    const named = await t.store.createPerson({ networkId: t.network.id, agentId: t.agent.userId, firstName: 'Lou', lastName: 'Inventé' });
+    await new FicheUnique(t.db, t.store, { now: t.now }).merge({ survivorId: t.owner.id, mergedId: named.id, reason: 'même propriétaire, test' });
+    await new EnvoisLocation(t.db, t.journal, { now: t.now }).run(t.network.id);
+    const notices = (await t.outbox()).filter((m) => /classé G/.test(m.body));
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.body).toContain('Bonjour Lou, votre logement est classé G');
   });
 
   it('[R86] l’agent qui a fait le contrôle et la présentation est parti : rien de ce qu’il a préparé ne part', async () => {
