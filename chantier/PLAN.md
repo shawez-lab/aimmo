@@ -1229,7 +1229,9 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J07 · Bac à sable du premier parcours (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : le bac à sable est une autre base (interface `SandboxStorage`), jamais celle du réseau ; ses modules n'ont que la boîte d'essai ; une étape compte seulement si son geste est rangé dans cette base ; le parcours fini compte au module d'académie réglé, retenté tant qu'il manque.
+- Reste : J13 fournit la vraie base à part en production (D1 dédiée ou stockage par agent) ; relecture de Codex absente (limite d'usage, H03), fusion sans elle (#124).
 - Qui : Claude · Relecture : forte · Dépend de : J04, J06
 - Cahier : M14, critère « un agent pilote fait seul son premier parcours complet, du contact à l'avis de valeur » ; M02 à M05.
 - Objectif : avant même son dossier complet, le nouvel agent reçoit un réseau d'entraînement à lui : des contacts, des biens et des ventes inventés, où il fait tout son premier parcours avec les vrais modules (contact reçu, qualification, rendez-vous, avis de valeur) ; rien n'en sort jamais ; chaque étape franchie est cochée par le code ; le parcours fini compte comme module de l'académie. Aucun réseau, logiciel ou outil d'IA grand public n'offre une copie fidèle et sans risque de son propre outil pour apprendre le métier.
@@ -1237,7 +1239,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J08 · Entraînement aux objections avec l'IA, sur des cas inventés
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : J06
 - Cahier : M14, « Académie » ; Intelligence artificielle.
 - Objectif : l'agent s'entraîne contre l'IA qui joue un vendeur ou un acquéreur d'un cas inventé de la bibliothèque (objection sur les honoraires, l'exclusivité, le prix) ; le retour cite les règles et les scripts de l'académie ; la séance compte en temps d'académie, non en heures obligatoires sauf réglage.
