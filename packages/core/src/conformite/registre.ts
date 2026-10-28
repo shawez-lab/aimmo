@@ -68,25 +68,44 @@ function splitTopLevel(body: string): string[] {
   return parts;
 }
 
-/** Retire les commentaires `--` et les textes entre apostrophes qui pourraient contenir des mots-clés. */
+/**
+ * Retire les commentaires (en ligne et en bloc) et vide les textes entre apostrophes : ni un commentaire ni un texte ne
+ * peut cacher ou imiter une instruction.
+ */
 function stripComments(sql: string): string {
   let out = '';
-  let quoted = false;
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i]!;
-    if (!quoted && ch === '-' && sql[i + 1] === '-') {
+    if (ch === '-' && sql[i + 1] === '-') {
       while (i < sql.length && sql[i] !== '\n') i++;
       out += '\n';
       continue;
     }
-    if (ch === "'") quoted = !quoted;
+    if (ch === '/' && sql[i + 1] === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      i = end < 0 ? sql.length : end + 1;
+      out += ' ';
+      continue;
+    }
+    if (ch === "'") {
+      let j = i + 1;
+      for (; j < sql.length; j++) {
+        if (sql[j] === "'" && sql[j + 1] === "'") j++;
+        else if (sql[j] === "'") break;
+      }
+      i = j;
+      out += "''";
+      continue;
+    }
     out += ch;
   }
   return out;
 }
 
-const NAME = '["`]?([A-Za-z_][A-Za-z_0-9]*)["`]?';
-const QUALIFIED = `(?:["\`]?[A-Za-z_][A-Za-z_0-9]*["\`]?\\.)?${NAME}`;
+const NAME = '["`\\[]?([A-Za-z_][A-Za-z_0-9]*)["`\\]]?';
+const QUALIFIED = `(?:["\`\\[]?[A-Za-z_][A-Za-z_0-9]*["\`\\]]?\\.)?${NAME}`;
+// Toute instruction qui crée ou modifie une table, quelle que soit sa forme : chacune doit être lue.
+const ANY_TABLE_STATEMENT = /\b(?:CREATE|ALTER)(?:\s+[A-Za-z_]+)*?\s+TABLE\b/gi;
 
 /**
  * Lit chaque `CREATE TABLE` (temporaire ou virtuelle, avec ou sans schéma) et chaque `ALTER TABLE` des migrations, dans
@@ -98,6 +117,13 @@ export function readSchema(migrations: readonly Migration[]): Schema {
   for (const migration of [...migrations].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     const sql = stripComments(migration.sql);
     const statements = new RegExp(`\\b(CREATE\\s+(?:TEMP(?:ORARY)?\\s+)?(?:VIRTUAL\\s+)?TABLE|ALTER\\s+TABLE)\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${QUALIFIED}`, 'gi');
+    const read = new Set([...sql.matchAll(statements)].map((m) => m.index));
+    for (const m of sql.matchAll(ANY_TABLE_STATEMENT)) {
+      if (!read.has(m.index)) {
+        const near = sql.slice(m.index, m.index + 80).replace(/\s+/g, ' ');
+        throw new Error(`migration ${migration.id} : « ${near} », forme que le registre ne sait pas lire`);
+      }
+    }
     for (const m of sql.matchAll(statements)) {
       const table = m[2]!.toLowerCase();
       const rest = sql.slice(m.index! + m[0].length);
@@ -123,7 +149,7 @@ export function readSchema(migrations: readonly Migration[]): Schema {
         }
         if (end < 0) fail('table mal fermée');
         const columns = splitTopLevel(rest.slice(open + 1, end))
-          .map((part) => part.trim().split(/\s+/)[0]?.replace(/["`]/g, '').toLowerCase() ?? '')
+          .map((part) => part.trim().split(/\s+/)[0]?.replace(/["`\[\]]/g, '').toLowerCase() ?? '')
           .filter((name) => name !== '' && !NOT_COLUMN.test(name));
         if (!schema.has(table)) schema.set(table, { migration: migration.id, columns });
         continue;
@@ -170,8 +196,8 @@ const DATA_WORDS = new Set([
   'passport', 'nir', 'ssn', 'tax', 'account', 'login', 'password', 'device', 'useragent', 'cookie', 'family', 'children',
   'spouse', 'marital', 'employer', 'profession', 'street',
 ]);
-// Des noms entiers qui désignent une pièce signée ou un message publié.
-const PERSONAL_COLUMNS = new Set(['signed_ref', 'post_ref', 'external_id']);
+// Des noms entiers qui désignent une pièce signée, un message publié ou l'adresse d'un destinataire.
+const PERSONAL_COLUMNS = new Set(['signed_ref', 'post_ref', 'external_id', 'confirmation_to']);
 
 /** Le nom de la colonne désigne-t-il une donnée personnelle ? */
 export function isPersonalColumn(column: string): boolean {

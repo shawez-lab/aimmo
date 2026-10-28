@@ -103,7 +103,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     destinataires: ['L\'agent attribué', 'La direction du réseau, en lecture', 'Le responsable de la conformité'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)', 'Meta (WhatsApp, Messenger, Instagram)', 'Google (agenda, messagerie)'],
     tables: {
-      appointments: ['agent_id', 'person_id'],
+      appointments: ['agent_id', 'person_id', 'confirmation_to'],
       appointment_holds: ['agent_id'],
       appointment_calendar: ['agent_id'],
       agenda_cursors: ['agent_id'],
@@ -445,7 +445,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   valuation_deliveries: ['network_id', 'channel', 'sent_at'],
   valuation_follow_ups: ['status', 'rule', 'message_id', 'mode', 'updated_at'],
   agent_availabilities: ['network_id', 'availability', 'updated_at'],
-  appointments: ['id', 'network_id', 'property_id', 'kind', 'start_at', 'end_at', 'status', 'token_hash', 'source', 'replaces_id', 'created_at', 'updated_at', 'cancelled_at', 'confirmation_status', 'confirmation_channel', 'confirmation_to'],
+  appointments: ['id', 'network_id', 'property_id', 'kind', 'start_at', 'end_at', 'status', 'token_hash', 'source', 'replaces_id', 'created_at', 'updated_at', 'cancelled_at', 'confirmation_status', 'confirmation_channel'],
   appointment_holds: ['layer', 'unit', 'appointment_id', 'released_at'],
   appointment_calendar: ['appointment_id', 'event_id', 'synced_status', 'synced_start', 'state', 'last_error', 'updated_at'],
   agenda_cursors: ['cursor', 'updated_at'],

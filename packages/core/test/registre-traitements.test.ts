@@ -88,12 +88,20 @@ describe('L06 · registre des traitements vérifié contre la base', () => {
       { id: '0002', sql: 'ALTER TABLE main.c ADD COLUMN body TEXT; ALTER TABLE c RENAME TO d; ALTER TABLE d DROP COLUMN phone; ALTER TABLE a RENAME person_id TO agent_id;' },
     ]);
     expect(Object.fromEntries([...forms].map(([k, v]) => [k, v.columns]))).toEqual({ a: ['agent_id'], b: ['email'], d: ['body'] });
+    // Crochets, commentaires au milieu, textes qui imitent une instruction : rien ne cache une table.
+    const hidden = readSchema([
+      { id: '0001', sql: "CREATE TABLE [crochets] ([email] TEXT); CREATE TABLE /* contacts */ cachee (phone TEXT); CREATE TABLE \"guillemets\" (body TEXT CHECK (body <> 'CREATE TABLE x (y)'));" },
+    ]);
+    expect(Object.fromEntries([...hidden].map(([k, v]) => [k, v.columns]))).toEqual({ crochets: ['email'], cachee: ['phone'], guillemets: ['body'] });
+    expect(gapsOf('CREATE TABLE [unregistered_contacts] (email TEXT);')).toMatchObject([{ kind: 'table_absente', table: 'unregistered_contacts' }]);
+    expect(gapsOf('CREATE TABLE /* contact table */ unregistered_contacts (email TEXT);')).toMatchObject([{ kind: 'table_absente', table: 'unregistered_contacts' }]);
+    expect(() => readSchema([{ id: '0001', sql: 'CREATE TABLE "avec espace" (email TEXT);' }])).toThrow('forme que le registre ne sait pas lire');
     // Une forme inconnue arrête la vérification au lieu de passer en silence.
     expect(() => readSchema([{ id: '0001', sql: 'CREATE VIRTUAL TABLE v USING fts5(body);' }])).toThrow('forme que le registre ne sait pas lire');
     expect(() => readSchema([{ id: '0001', sql: 'CREATE TABLE v AS SELECT * FROM persons;' }])).toThrow('table créée sans liste de colonnes');
     expect(() => readSchema([{ id: '0001', sql: 'ALTER TABLE inconnue ADD COLUMN email TEXT;' }])).toThrow('table inconnue');
     expect(() => readSchema([{ id: '0001', sql: 'CREATE TABLE t (id TEXT); ALTER TABLE t ALTER email;' }])).toThrow('modification');
-    for (const c of ['person_id', 'buyer_person_id', 'first_name', 'email', 'phone', 'body', 'recorded_by', 'validator_name', 'scan_ref', 'signed_ref']) expect(isPersonalColumn(c), c).toBe(true);
+    for (const c of ['confirmation_to', 'person_id', 'buyer_person_id', 'first_name', 'email', 'phone', 'body', 'recorded_by', 'validator_name', 'scan_ref', 'signed_ref']) expect(isPersonalColumn(c), c).toBe(true);
     for (const c of ['id', 'network_id', 'created_at', 'status', 'kind', 'price_eur', 'surface_m2', 'due_day', 'hash']) expect(isPersonalColumn(c), c).toBe(false);
   });
 });
