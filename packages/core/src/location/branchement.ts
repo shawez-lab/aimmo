@@ -51,6 +51,8 @@ interface Pending {
   current: number;
   last_status: string | null;
   last_rule: string | null;
+  /** Qui a fait la préparation (`agent:<id>`, `direction:<id>`) : un agent parti depuis, rien ne part [R86]. */
+  prepared_by: string | null;
 }
 
 /**
@@ -94,7 +96,8 @@ export class EnvoisLocation {
     const notices = await this.db.all<Omit<Pending, 'kind'>>(
       `SELECT x.id, l.network_id, x.owner_person_id AS person_id, p.agent_id, l.id AS subject_ref, x.text, NULL AS recipient, NULL AS application_id,
          (x.energy_class = (SELECT f.energy_class FROM rental_facts f WHERE f.listing_id = x.listing_id ORDER BY f.version DESC LIMIT 1)) AS current,
-         s.status AS last_status, s.rule AS last_rule
+         s.status AS last_status, s.rule AS last_rule,
+         (SELECT c.checked_by FROM rental_checks c WHERE c.listing_id = x.listing_id AND c.checked_at <= x.prepared_at ORDER BY c.checked_at DESC, c.id DESC LIMIT 1) AS prepared_by
        FROM rental_owner_notices x JOIN rental_listings l ON l.id = x.listing_id LEFT JOIN properties p ON p.id = l.property_id
        LEFT JOIN rental_sends s ON s.kind = 'echeance' AND s.ref_id = x.id
        WHERE l.network_id = ? AND ${open} ORDER BY x.prepared_at, x.id`,
@@ -103,7 +106,7 @@ export class EnvoisLocation {
     const receipts = await this.db.all<Omit<Pending, 'kind'>>(
       `SELECT x.id, r.network_id, x.person_id, p.agent_id, r.id AS subject_ref, x.text, x.recipient, x.application_id,
          (r.version = (SELECT MAX(q.version) FROM rental_presentations q WHERE q.listing_id = r.listing_id)) AS current,
-         s.status AS last_status, s.rule AS last_rule
+         s.status AS last_status, s.rule AS last_rule, r.created_by AS prepared_by
        FROM rental_fairness_receipts x JOIN rental_presentations r ON r.id = x.presentation_id
        JOIN rental_listings l ON l.id = r.listing_id LEFT JOIN properties p ON p.id = l.property_id
        LEFT JOIN rental_sends s ON s.kind = 'recu' AND s.ref_id = x.id
@@ -129,6 +132,8 @@ export class EnvoisLocation {
       const result = await this.controle.send({
         networkId: p.network_id,
         agentId: p.agent_id,
+        // L'agent qui a fait le contrôle ou la présentation : parti depuis, le contrôle refuse [R86].
+        preparedBy: p.prepared_by?.startsWith('agent:') ? p.prepared_by.slice('agent:'.length) : null,
         personId: p.person_id,
         channel: 'email',
         kind: 'follow_up',

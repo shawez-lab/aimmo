@@ -161,6 +161,14 @@ describeWithSqlite('W10 · branchement de M15 dans le socle', () => {
     expect(new Set(box.map((m) => m.person_id)).size).toBe(4);
   });
 
+  it('[R86] l’agent qui a fait le contrôle et la présentation est parti : rien de ce qu’il a préparé ne part', async () => {
+    const t = await setup();
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.agent.userId]);
+    await new EnvoisLocation(t.db, t.journal, { now: t.now }).run(t.network.id);
+    expect(await t.outbox()).toHaveLength(0);
+    expect((await t.sends()).map((s) => [s.status, s.rule])).toEqual(Array(4).fill(['refused', 'R86']));
+  });
+
   it('[R01] [R18] le passage du planificateur tourne aux heures d’envoi, une fois par créneau, et rend le même résultat rejoué', async () => {
     const t = await setup();
     const job = locationSendJob(t.db, t.journal, { now: t.now });
