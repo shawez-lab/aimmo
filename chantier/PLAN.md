@@ -1343,7 +1343,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 
 ### L03 · Identification et bénéficiaire effectif, étape bloquante
 - Statut : en cours
-- Reste : proposition #139 ouverte (bâtie sur L02, #134), tests verts en local (1244), en attente des vérifications GitHub (H28).
+- Reste : proposition #139 ouverte (bâtie sur L02, #134), tests verts en local (1250), Codex : dernière version validée (1 P0 et 5 P2 corrigés, 1 P1 confié à L09), en attente des vérifications GitHub (H28).
 - Décidé (2026-10-28) : identité lue au coffre (pièce vérifiée depuis un an au plus, valide ce jour-là, non remplacée) ; la case « pièce vue » de D03 ne suffit plus ; société reconnue à sa déclaration ou à un Kbis ou registre au coffre, redéclarée « personne » par le responsable seul ; mandat papier jugé au jour de sa signature ; relecture forte : 2 P1 corrigés.
 - Qui : Claude, voie 1 (touche aux contrôles de M06 et M09) · Relecture : forte · Dépend de : L01, L02
 - Cahier : Conformité, « Identification du client et du bénéficiaire effectif, au seuil de 25 % ».
