@@ -36,7 +36,11 @@ const text = async (r: Response | null): Promise<string> => {
   return r!.text();
 };
 
-/** Chaque écran d'AIMMO, tel que le navigateur le reçoit. Un nouvel écran s'ajoute ici, sinon le contrôle des sources échoue. */
+/**
+ * Chaque écran d'AIMMO, tel que le navigateur le reçoit. Un fichier source qui pose une feuille de style doit être sur la
+ * liste `STYLED` du contrôle des sources, et ses écrans ici. La page d'avis, qui demande une base, est contrôlée dans
+ * `apres-vente-routes.test.ts` ; le carnet a le même cadre `renderPublicPage`.
+ */
 async function screens(): Promise<{ name: string; html: string; css?: string; js?: string; print?: boolean; budget: { gzipBytes: number } }[]> {
   const get = (path: string) => new Request(`https://aimmo.example.test${path}`);
   return [
@@ -100,13 +104,27 @@ describe('Z03 · système de design d’AIMMO', () => {
     };
     roots.forEach(walk);
     expect(files.length).toBeGreaterThan(50);
-    const offenders = files
-      .filter((f) => !/[\\/]design[\\/](?:systeme|audit)\.ts$/.test(f))
-      .filter((f) => {
-        const source = readFileSync(f, 'utf8');
-        return /#[0-9a-fA-F]{6}\b|\b(?:rgba?|hsla?)\(\s*\d|\sstyle="/.test(source) || /<style>\$\{(?!STYLE\}|CSS\}|PRINT_CSS\}|DESIGN_CSS\}\$\{PUBLIC_PAGE_CSS\})/.test(source);
-      })
-      .map((f) => f.split('packages')[1]);
+    // Les seuls fichiers qui posent une feuille dans une page, et le nom de la feuille qu'ils posent.
+    const STYLED: Record<string, RegExp> = {
+      'core/src/design/systeme.ts': /^<style>\$\{DESIGN_CSS\}\$\{PUBLIC_PAGE_CSS\}<\/style>$/,
+      'core/src/annonces/page-bien.ts': /^<style>\$\{(?:CSS|PRINT_CSS)\}<\/style>$/,
+      'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,
+      'api/src/candidature.ts': /^<style>\$\{STYLE\}<\/style>$/,
+    };
+    const offenders: string[] = [];
+    for (const f of files) {
+      const rel = f.replace(/\\/g, '/').split('/packages/')[1]!;
+      // Le contrôle lui-même cite ce qu'il cherche.
+      if (rel === 'core/src/design/audit.ts') continue;
+      const source = readFileSync(f, 'utf8');
+      if (rel !== 'core/src/design/systeme.ts' && /#[0-9a-fA-F]{6}\b|\b(?:rgba?|hsla?)\(\s*\d/.test(source)) offenders.push(`${rel} : couleur`);
+      if (/\sstyle\s*=\s*["'$]/.test(source)) offenders.push(`${rel} : style en ligne`);
+      const sheets = [...source.matchAll(/<style\b[^>]*>[^<]*<\/style>/g)].map((m) => m[0]);
+      for (const sheet of sheets) if (!STYLED[rel]?.test(sheet)) offenders.push(`${rel} : feuille ${sheet.slice(0, 40)}`);
+      // Une balise ouverte sans sa fermeture sur place ne se contrôle pas : refusée.
+      if ((source.match(/<style\b/g) ?? []).length !== sheets.length) offenders.push(`${rel} : feuille non contrôlable`);
+    }
+    // Les feuilles posées par ces fichiers commencent bien par la base : c'est le test « aucun écran en dehors ».
     expect(offenders).toEqual([]);
   });
 
@@ -118,6 +136,14 @@ describe('Z03 · système de design d’AIMMO', () => {
     expect(localCssProblems('a{font-family:Arial}')).toHaveLength(1);
     expect(localCssProblems('a{font:600 1rem/1 Georgia,serif}')).toHaveLength(1);
     expect(localCssProblems('a{transition:all 1s}')).toHaveLength(1);
+    expect(localCssProblems('a{color:crimson}')).toHaveLength(1);
+    expect(localCssProblems('a{border:1px solid tomato}')).toHaveLength(1);
+    expect(localCssProblems('a{background-color:ButtonText}')).toHaveLength(1);
+    expect(localCssProblems('a{transition-duration:2s;transition-property:all}')).toHaveLength(2);
+    expect(localCssProblems('a{animation-name:x}@keyframes x{from{opacity:0}}')).toHaveLength(2);
+    expect(localCssProblems('a{font:1rem var(--police-titre),Comic Sans MS}')).toHaveLength(1);
+    expect(localCssProblems('a{font-family:"Comic Sans MS"}')).toHaveLength(1);
+    expect(localCssProblems('a{border-top:2px solid var(--encre);box-shadow:inset 4px 0 0 var(--danger);background:transparent}')).toEqual([]);
     expect(localCssProblems('@import "x.css";')).toHaveLength(1);
     expect(localCssProblems('a{color:var(--accent);font:600 var(--t-m)/1 var(--police-titre)}')).toEqual([]);
     expect(screenCssProblems('body{color:var(--encre)}')).toEqual(['la feuille ne commence pas par la base du système de design']);
@@ -133,6 +159,8 @@ describe('Z03 · système de design d’AIMMO', () => {
     expect(htmlProblems(page('<p style="color:red">x</p>'))).toEqual(['style en ligne, hors système de design']);
     expect(htmlProblems(page('', 'width=device-width, user-scalable=no'))).toEqual(['le zoom est bloqué']);
     expect(htmlProblems(page('<p id="x"></p><p id="x"></p>'))).toEqual(['identifiant en double : x']);
+    // Une feuille glissée avec un attribut est contrôlée aussi.
+    expect(htmlProblems(page('<style media="all">a{color:red}</style>'))).toEqual(['la feuille ne commence pas par la base du système de design']);
     // Le budget : trop lourd, ou une police d'ailleurs.
     expect(budgetProblems({ html: page('<link rel="stylesheet" href="https://polices.example.test/x.css">') }, BUDGETS.page)).toEqual(['ressource extérieure : https://polices.example.test/x.css']);
     const heavy = Array.from({ length: 6000 }, (_, i) => `<p>${(i * 7919).toString(36)}${Math.sin(i)}</p>`).join('');

@@ -27,33 +27,60 @@ export function contrastRatio(a: string, b: string): number {
 
 /* ---------- Appartenance au système ---------- */
 
-const COLOR_LITERAL = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/i;
-const COLOR_WORD = /:\s*[^;{}]*\b(?:white|black|red|blue|green|gr[ae]y|yellow|orange|purple|pink|brown|navy|silver|maroon|teal|olive|aqua|fuchsia|lime)\b/i;
-const FAMILY_NAME = /\b(?:serif|sans-serif|monospace|system-ui|cursive|fantasy|Georgia|Arial|Helvetica|Charter|Roboto|Inter|Times)\b|"[^"]+"|'[^']+'/;
+const COLOR_LITERAL = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\(/i;
+/** Les propriétés qui posent une couleur. */
+const COLOR_PROPERTY =
+  /^(?:color|background(?:-color|-image)?|border(?:-(?:top|right|bottom|left|block|inline)(?:-start|-end)?)?(?:-color)?|outline(?:-color)?|box-shadow|text-shadow|fill|stroke|accent-color|caret-color|text-decoration(?:-color)?|column-rule(?:-color)?|scrollbar-color|text-emphasis(?:-color)?)$/;
+/** Les mots permis dans une valeur de couleur : aucun ne pose une teinte. */
+const COLOR_WORDS_OK: ReadonlySet<string> = new Set(['inherit', 'initial', 'unset', 'revert', 'transparent', 'currentcolor', 'none', 'solid', 'dashed', 'dotted', 'double', 'inset', 'outset', 'groove', 'ridge', 'auto', 'thin', 'medium', 'thick', 'underline', 'overline', 'line-through', 'calc']);
+/** Les mots permis dans `font` en plus des jetons : jamais un nom de police. */
+const FONT_WORDS_OK: ReadonlySet<string> = new Set(['normal', 'italic', 'oblique', 'bold', 'bolder', 'lighter', 'small-caps', 'inherit', 'clamp', 'min', 'max', 'calc']);
+
+const withoutTokens = (value: string): string => value.replace(/var\(--[a-z0-9-]+\)/gi, ' ');
+
+/** Les mots qui restent dans une valeur, jetons, nombres et mots permis retirés. Un nom entre guillemets reste. */
+const leftoverWords = (value: string, allowed: ReadonlySet<string>): string[] =>
+  (
+    withoutTokens(value)
+      .replace(/"[^"]*"|'[^']*'/g, ' nom-cite ')
+      .replace(/-?\d*\.?\d+[a-z%]*/gi, ' ')
+      .match(/[a-z][a-z-]*/gi) ?? []
+  ).filter((w) => !allowed.has(w.toLowerCase()));
+
+/** Chaque déclaration `propriété: valeur` d'une feuille. */
+function declarations(css: string): { property: string; value: string }[] {
+  const out: { property: string; value: string }[] = [];
+  for (const block of css.matchAll(/\{([^{}]*)\}/g)) {
+    for (const part of block[1]!.split(';')) {
+      const i = part.indexOf(':');
+      if (i > 0) out.push({ property: part.slice(0, i).trim().toLowerCase(), value: part.slice(i + 1).trim() });
+    }
+  }
+  return out;
+}
 
 /**
  * Les règles propres à un écran, ajoutées après la base du système : elles ne posent ni couleur ni police à elles,
- * ne chargent rien et ne forcent rien. Seuls les jetons (`var(--…)`) et les mots `inherit`, `transparent`,
- * `currentColor` sont permis.
+ * ne chargent rien, ne bougent pas et ne forcent rien. Seuls les jetons (`var(--…)`) et des mots sans teinte
+ * (`inherit`, `transparent`, `currentColor`, `none`, styles de trait) sont permis dans une couleur.
  */
 export function localCssProblems(css: string): string[] {
   const problems: string[] = [];
-  const declarations = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  const color = COLOR_LITERAL.exec(declarations);
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const color = COLOR_LITERAL.exec(text);
   if (color) problems.push(`couleur hors système : ${color[0]}`);
-  const word = COLOR_WORD.exec(declarations);
-  if (word) problems.push(`couleur nommée hors système : ${word[0].trim()}`);
-  for (const m of declarations.matchAll(/font-family\s*:\s*([^;}]+)/gi)) {
-    if (!/^\s*(?:var\(--police-[a-z]+\)|inherit)\s*$/.test(m[1]!)) problems.push(`police hors système : ${m[1]!.trim()}`);
+  for (const d of declarations(text)) {
+    if (COLOR_PROPERTY.test(d.property) && !COLOR_LITERAL.test(d.value) && leftoverWords(d.value, COLOR_WORDS_OK).length > 0) problems.push(`couleur nommée hors système : ${d.property}: ${d.value}`);
+    if (d.property === 'font-family' && !/^(?:var\(--police-[a-z]+\)|inherit)$/.test(d.value)) problems.push(`police hors système : ${d.value}`);
+    if (d.property === 'font' && (!(/var\(--police-[a-z]+\)/.test(d.value) || d.value === 'inherit') || leftoverWords(d.value, FONT_WORDS_OK).length > 0)) {
+      problems.push(`police hors système : ${d.value}`);
+    }
+    if (/^(?:transition|animation)(?:-[a-z-]+)?$/.test(d.property)) problems.push(`mouvement hors système : ${d.property}, seuls ceux de la base respectent « réduire les animations »`);
   }
-  for (const m of declarations.matchAll(/(?:^|[;{\s])font\s*:\s*([^;}]+)/gi)) {
-    const value = m[1]!.replace(/var\(--[a-z-]+\)/g, '');
-    if (!/var\(--police-[a-z]+\)|^\s*inherit\s*$/.test(m[1]!) || FAMILY_NAME.test(value)) problems.push(`police hors système : ${m[1]!.trim()}`);
-  }
-  if (/!important/.test(declarations)) problems.push('« !important » hors système');
-  if (/@import|@font-face/i.test(declarations)) problems.push('chargement hors système (@import ou @font-face)');
-  if (/url\(\s*['"]?(?:https?:)?\/\//i.test(declarations)) problems.push('ressource extérieure dans le CSS');
-  if (/(?:^|[;{\s])(?:transition|animation)\s*:/i.test(declarations)) problems.push('mouvement hors système : seuls ceux de la base respectent « réduire les animations »');
+  if (/!important/.test(text)) problems.push('« !important » hors système');
+  if (/@import|@font-face/i.test(text)) problems.push('chargement hors système (@import ou @font-face)');
+  if (/@keyframes/i.test(text)) problems.push('mouvement hors système : @keyframes');
+  if (/url\(\s*['"]?(?:https?:)?\/\//i.test(text)) problems.push('ressource extérieure dans le CSS');
   return problems;
 }
 
@@ -146,7 +173,7 @@ export function htmlProblems(html: string, options: HtmlAuditOptions = {}): stri
   for (const id of new Set(ids.filter((id, i) => ids.indexOf(id) !== i))) problems.push(`identifiant en double : ${id}`);
   for (const m of body.matchAll(/\stabindex="(\d+)"/gi)) if (Number(m[1]) > 0) problems.push('ordre de tabulation forcé');
   if (/<[a-z][^>]*\sstyle\s*=/i.test(body)) problems.push('style en ligne, hors système de design');
-  for (const m of page.matchAll(/<style>([\s\S]*?)<\/style>/gi)) problems.push(...screenCssProblems(m[1]!));
+  for (const m of page.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) problems.push(...screenCssProblems(m[1]!));
   if (hasAttr(page, 'autofocus')) problems.push('focus forcé à l’ouverture');
   return problems;
 }
@@ -184,7 +211,7 @@ export function budgetProblems(screen: Screen, budget: Budget): string[] {
   for (const m of screen.html.matchAll(/<(?:script|link|img|iframe|source|video|audio)\b[^>]*\s(?:src|href)="([^"]*)"/gi)) {
     if (/^(?:[a-z]+:)?\/\//i.test(m[1]!)) problems.push(`ressource extérieure : ${m[1]}`);
   }
-  for (const css of [screen.css ?? '', ...[...screen.html.matchAll(/<style>([\s\S]*?)<\/style>/gi)].map((m) => m[1]!)]) {
+  for (const css of [screen.css ?? '', ...[...screen.html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]!)]) {
     if (/@import|@font-face|url\(\s*['"]?(?:https?:)?\/\//i.test(css)) problems.push('la feuille charge une ressource extérieure');
   }
   if (/<script\b(?![^>]*\s(?:defer|async|type="module"))[^>]*\ssrc=/i.test(screen.html)) problems.push('script qui bloque l’affichage');

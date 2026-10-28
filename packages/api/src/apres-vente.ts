@@ -387,7 +387,7 @@ export async function handleApresVentePublic(request: Request, config: ApresVent
         'Votre avis sur notre accompagnement',
         `<p>Une note de 1 à 5, et si vous le souhaitez quelques mots. Votre réponse reste entre vous et votre agent immobilier : elle n’est jamais publiée.</p>
 <form method="post" action="${action}"><fieldset><legend>Votre note, de 1 (pas satisfait) à 5 (très satisfait)</legend><div class="notes">${notes}</div></fieldset>
-<label class="bloc" for="commentaire">Un commentaire, si vous le souhaitez</label><textarea id="commentaire" name="commentaire" maxlength="1000"></textarea>
+<label for="commentaire">Un commentaire, si vous le souhaitez</label><textarea id="commentaire" name="commentaire" maxlength="1000"></textarea>
 <button type="submit">Envoyer ma réponse</button></form>`,
       );
     }

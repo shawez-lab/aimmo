@@ -181,6 +181,10 @@ export const DESIGN_CSS =
   '.notes input{position:absolute;opacity:0;width:1px;height:1px}' +
   '.notes label:has(input:checked){background:var(--accent);border-color:var(--accent);color:var(--sur-accent)}' +
   '.notes label:has(input:focus-visible){outline:3px solid var(--anneau);outline-offset:3px}' +
+  // Repli pour les navigateurs sans `:has` : le chiffre choisi et le focus se voient quand même.
+  '.notes input:checked+span{color:var(--accent);text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:.25em}' +
+  '.notes input:focus-visible+span{outline:3px solid var(--anneau);outline-offset:6px}' +
+  '.notes label:has(input:checked) span{color:var(--sur-accent)}' +
   '.chiffres,.valeur,.prix{font-variant-numeric:tabular-nums lining-nums}' +
   // Les mouvements : courts, et aucun pour qui les a coupés.
   '@media (prefers-reduced-motion:no-preference){button,.appel,summary,.notes label{transition:transform var(--m-vite) var(--m-courbe),background-color var(--m-normal) var(--m-courbe),box-shadow var(--m-normal) var(--m-courbe)}button:active,.appel:active{transform:scale(.97)}main>section:not([hidden]){animation:entree var(--m-normal) var(--m-courbe)}}' +
