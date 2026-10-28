@@ -3,3 +3,4 @@ export * from './honoraires.ts';
 export * from './annonce-location.ts';
 export * from './candidatures.ts';
 export * from './choix.ts';
+export * from './bail.ts';
