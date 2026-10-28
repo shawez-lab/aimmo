@@ -58,6 +58,8 @@ export interface Referral {
   chosenPartnerId: string | null;
   consent: { at: string; channel: ConsentChannel } | null;
   createdAt: string;
+  /** Nombre d'étapes rangées : la prochaine prend ce rang plus un, ou rien (deux demandes croisées). */
+  steps: number;
 }
 
 export type ReferralRefusal = { ok: false; rule: 'R16' | 'R73' | 'R74' | 'R75' | null; code: string };
@@ -320,7 +322,9 @@ export class MiseEnRelation {
     state: Exclude<ReferralState, 'proposee'>,
     consent?: { partnerId: string; consentAt: string; channel: ConsentChannel; proofRef: string },
   ): Promise<ReferralRefusal | null> {
-    const seq = (await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM partner_referral_steps WHERE referral_id = ?', [row.id]))!.n + 1;
+    // Le rang vient de l'état validé par l'appelant : si une autre étape est passée entre-temps, l'écriture échoue
+    // (rang déjà pris) au lieu de s'ajouter après une étape qu'elle n'a pas vue. La base vérifie aussi la transition.
+    const seq = current.steps + 1;
     try {
       await this.db.run(
         'INSERT INTO partner_referral_steps (referral_id, seq, state, partner_id, consent_at, consent_channel, consent_proof_ref, actor, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -328,10 +332,10 @@ export class MiseEnRelation {
       );
     } catch (error) {
       // Deux étapes en même temps : une seule passe ; une preuve déjà servie ne sert pas deux fois.
+      if (/étape hors ordre/.test(String(error))) return { ok: false, rule: null, code: 'busy' };
       if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: /consent_proof_ref/.test(String(error)) ? 'proof_used' : 'busy' };
       throw error;
     }
-    void current;
     return null;
   }
 
@@ -355,6 +359,7 @@ export class MiseEnRelation {
       chosenPartnerId: consent?.partner_id ?? null,
       consent: consent ? { at: consent.consent_at!, channel: consent.consent_channel! } : null,
       createdAt: row.created_at,
+      steps: steps.length,
     };
   }
 }
