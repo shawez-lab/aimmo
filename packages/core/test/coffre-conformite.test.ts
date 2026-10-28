@@ -130,7 +130,8 @@ describeWithSqlite('L01 · coffre de la conformité', () => {
       }
     };
     walk(root);
-    expect(readers.sort()).toEqual(['core/src/conformite/coffre.ts']);
+    // Le registre des traitements (L06) nomme la table sans la lire.
+    expect(readers.sort()).toEqual(['core/src/conformite/coffre.ts', 'core/src/conformite/registre-traitements.ts']);
   });
 
   it('[R90] les autres modules ne voient qu’un état : la date de l’identité vérifiée et valide ce jour-là', async () => {
