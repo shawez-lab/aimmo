@@ -29,6 +29,8 @@ export interface Env {
   RDV_LINK_BASE?: string;
   /** Début du lien de désinscription des alertes (T03), en https, sans chiffre, terminé par `/alertes/desinscription/`. */
   ALERT_UNSUBSCRIBE_BASE?: string;
+  /** Début des liens publics de l'après-vente (F07), en https, sans chiffre, terminé par `/apres-vente/`. */
+  APRES_VENTE_BASE?: string;
   /** Les médias des biens (R2), lus par la vitrine ; absent, aucune photo n'est servie. */
   MEDIA?: MediaStore;
 }
@@ -72,6 +74,9 @@ export default {
       appointmentLinkBase: env.RDV_LINK_BASE,
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       communeRanges: estimation ? new EstimationEnLigne(estimation.geocoder, estimation.sales) : null,
+      apresVenteBase: env.APRES_VENTE_BASE,
+      soldSales: estimation?.sales ?? null,
+      geocoder: estimation?.geocoder ?? null,
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));

@@ -1,6 +1,8 @@
 import { Acces, FicheClient, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
+import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
+import type { Geocoder, SalesSource } from '@aimmo/core';
 
 export interface SchedulerConfig {
   db: SqlDatabase;
@@ -13,6 +15,11 @@ export interface SchedulerConfig {
   communeRanges?: CommuneRanges | null;
   /** Variable `ALERT_UNSUBSCRIBE_BASE` : début du lien de désinscription des alertes ; absente, aucune alerte [R49]. */
   alertUnsubscribeBase?: string | undefined;
+  /** Variable `APRES_VENTE_BASE` (`https://…/apres-vente/`) : liens de désinscription, de satisfaction et du carnet (F07). */
+  apresVenteBase?: string | undefined;
+  /** Les ventes publiques et le géocodeur, pour le carnet du propriétaire (F06) ; absents, aucun carnet. */
+  soldSales?: SalesSource | null;
+  geocoder?: Geocoder | null;
   now?: () => Date;
 }
 
@@ -54,6 +61,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       }, { now }),
       // Offres (O09), à 6 h : offres non transmises signalées [R56], tâches la veille des échéances [R59], sans envoi.
       offersDailyJob(config.db, journal, { now }),
+      // Après la vente (F07) : demandes d'avis, remerciements préparés pour l'agent, relances aux dates clés avec le
+      // carnet, par les canaux du mode essai seulement, sur les dossiers clos de M10.
+      ...apresVenteJobs(config.db, journal, { base: apresVenteBase(config.apresVenteBase), sales: config.soldSales ?? null, geocoder: config.geocoder ?? null, now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

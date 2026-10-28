@@ -51,6 +51,12 @@ export const INDEX_HTML = `<!doctype html>
 <p id="biens-etat" class="etat"></p>
 <ul id="biens" class="liste"></ul>
 </section>
+<section class="bloc" aria-labelledby="titre-apres-jour">
+<h3 id="titre-apres-jour">Après mes ventes</h3>
+<p id="apres-jour-etat" class="etat"></p>
+<ul id="apres-jour" class="liste"></ul>
+<button id="apres-ouvrir" type="button" class="secondaire">Mes ventes conclues</button>
+</section>
 <section class="bloc" aria-labelledby="titre-semaine">
 <h3 id="titre-semaine">Ma semaine</h3>
 <p id="semaine-etat" class="etat"></p>
@@ -82,6 +88,12 @@ export const INDEX_HTML = `<!doctype html>
 <h2 id="vente-titre"></h2>
 <p id="vente-etat" class="etat" role="status"></p>
 <div id="vente-corps"></div>
+</section>
+<section id="apres" hidden>
+<button id="apres-retour" type="button" class="retour">Retour à ma journée</button>
+<h2 id="apres-titre">Mes ventes conclues</h2>
+<p id="apres-etat" class="etat" role="status"></p>
+<div id="apres-corps"></div>
 </section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
@@ -129,6 +141,13 @@ label + input, label + textarea, label + select { margin-bottom: 12px; }
 @media (prefers-color-scheme: dark) { .fait { color: #7fd39b; } }
 .acquereur { padding: 12px 0; }
 .acquereur ul { margin: 4px 0 0; padding-left: 18px; }
+.secondaire { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+.vente { margin-top: 24px; padding-top: 12px; border-top: 2px solid var(--accent); }
+.vente h3 { margin-bottom: 0; }
+.client { padding: 12px 0; border-top: 1px solid var(--doux); }
+.client h4 { margin-top: 0; }
+.brouillon { margin: 8px 0; padding: 8px 12px; border-left: 4px solid var(--accent); white-space: pre-wrap; }
+.note { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 `;
 
@@ -399,6 +418,7 @@ export const APP_JS = `'use strict';
       part('chauds', api('/v1/contacts-chauds', key), renderHot, mine),
       part('biens', api('/v1/annonces', key), renderBiens, mine),
       part('rdv', api('/v1/rendez-vous/jour', key), renderAppointments, mine),
+      part('apres-jour', api('/v1/apres-vente/journee', key), renderAfterSaleDay, mine),
     ]).then(function (done) {
       if (mine !== session) return;
       // Une clé refusée en cours de route : rien n'est gardé à l'écran ni sur l'appareil.
@@ -406,9 +426,10 @@ export const APP_JS = `'use strict';
     });
   }
   function wipe() {
-    ['plan', 'chauds', 'rdv', 'semaine', 'biens'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
+    ['plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
     wipeFiche();
     wipeM08();
+    wipeApres();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
   function button(text, onClick) {
@@ -882,6 +903,129 @@ export const APP_JS = `'use strict';
     }
     body.appendChild(pub);
   }
+  /* ---------- M11 : après la vente (F07). ---------- */
+  var SIDES = { vendeur: 'Vendeur', acquereur: 'Acquéreur' };
+  var AFTER_TASKS = { lien_avis: 'Réglez le lien de votre fiche Google : sans lui, aucune demande d’avis ne part.', avis_non_parti: 'La demande d’avis n’a pas pu partir à temps : demandez l’avis vous-même.' };
+  var REVIEW = { sent: 'partie (mode essai)', waiting: 'attend le prochain créneau permis', refused: 'bloquée par le contrôle des envois', failed: 'en échec, sera retentée', closed: 'non partie dans le délai' };
+  var THANKS = { sent: 'message parti (mode essai)', waiting: 'message validé, attend le prochain créneau permis', sending: 'message en cours d’envoi', refused: 'message bloqué par le contrôle des envois', failed: 'message en échec, sera retenté', closed: 'message non parti dans le délai' };
+  var REMINDER = { sent: 'partie (mode essai)', waiting: 'attend le prochain créneau permis', refused: 'bloquée par le contrôle des envois', failed: 'en échec, sera retentée', closed: 'non partie' };
+  function sideName(side, firstName) { return (SIDES[side] || 'Client') + (firstName ? ' · ' + firstName : ''); }
+  // « Ma journée » : les appels pour remercier, les proches recommandés, les tâches ouvertes ; rien n'y est retrié.
+  function renderAfterSaleDay(list, data) {
+    if (!data) return 'Indisponible pour le moment. Réessayez plus tard.';
+    (data.remercier || []).forEach(function (t) {
+      var li = el('li', 'Appeler pour remercier : ' + sideName(t.side, t.firstName));
+      if (t.reference) li.appendChild(el('p', 'Bien ' + t.reference, 'doux'));
+      list.appendChild(li);
+    });
+    (data.recommandations || []).forEach(function (c) {
+      var li = el('li', 'Appeler ' + (c.firstName || 'le proche recommandé') + ', recommandé par un client');
+      li.appendChild(el('p', 'À appeler avant ' + hour(c.dueAt) + ', ' + dayLabel(c.dueAt), 'doux'));
+      if (ID.test(c.referralId)) {
+        var b = button('Appel fait', function () { referralDone(c.referralId, li, b); });
+        li.appendChild(b);
+      }
+      list.appendChild(li);
+    });
+    (data.taches || []).forEach(function (t) {
+      var li = el('li', AFTER_TASKS[t.kind] || 'Tâche après la vente');
+      if (t.reference) li.appendChild(el('p', 'Bien ' + t.reference, 'doux'));
+      list.appendChild(li);
+    });
+    return list.firstChild ? null : 'Rien à faire après vos ventes aujourd’hui.';
+  }
+  function referralDone(id, li, b) {
+    b.disabled = true;
+    return send('/v1/apres-vente/appels/' + encodeURIComponent(id) + '/fait', 'POST').then(function (res) {
+      if (res.gone) return;
+      if (!res.ok) { b.disabled = false; $('apres-jour-etat').textContent = res.offline ? 'Pas de réseau : l’appel n’est pas marqué.' : 'L’appel n’est pas marqué.'; return; }
+      li.removeChild(b);
+      li.appendChild(el('p', 'Appel fait', 'fait'));
+    });
+  }
+  function wipeApres() {
+    clear($('apres-corps'));
+    $('apres-etat').textContent = '';
+  }
+  function openApres() {
+    if (!currentKey) return Promise.resolve(false);
+    session += 1;
+    wipeApres();
+    show('apres');
+    $('apres-etat').textContent = 'Chargement…';
+    return send('/v1/apres-vente/dossiers', 'GET').then(function (res) {
+      if (res.gone) return false;
+      if (!res.ok) { $('apres-etat').textContent = res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      renderApres(Array.isArray(res.body.data) ? res.body.data : []);
+      return true;
+    });
+  }
+  function apresAct(path, body, fallback) {
+    $('apres-etat').textContent = 'Envoi…';
+    return send(path, 'POST', body).then(function (res) {
+      if (res.gone) return false;
+      if (!res.ok) { $('apres-etat').textContent = res.offline ? 'Pas de réseau : rien n’est enregistré.' : refusalText(res.body, fallback); return false; }
+      return openApres().then(function () { $('apres-etat').textContent = 'Enregistré.'; return true; });
+    });
+  }
+  function reviewLinkBlock(body) {
+    var box = section('Le lien de ma fiche Google');
+    box.appendChild(el('p', 'Les demandes d’avis portent ce lien. AIMMO ne publie jamais d’avis à la place d’un client.', 'doux'));
+    var f = field(box, 'lien-avis', 'Adresse de votre fiche Google (https://…)');
+    f.setAttribute('type', 'url');
+    f.setAttribute('inputmode', 'url');
+    f.setAttribute('autocomplete', 'off');
+    box.appendChild(button('Enregistrer le lien', function () {
+      var url = String(f.value || '').trim();
+      if (!url) { $('apres-etat').textContent = 'Saisissez d’abord l’adresse.'; return; }
+      apresAct('/v1/apres-vente/lien-avis', { url: url }, 'Ce lien n’est pas celui d’une fiche Google.');
+    }));
+    body.appendChild(box);
+  }
+  function clientBlock(file, c) {
+    var box = el('div', null, 'client');
+    box.appendChild(el('h4', sideName(c.side, c.firstName)));
+    var base = '/v1/apres-vente/dossiers/' + encodeURIComponent(file.fileId) + '/clients/' + encodeURIComponent(c.personId);
+    var ids = ID.test(file.fileId) && ID.test(c.personId);
+    var t = c.thankYou;
+    if (t) {
+      box.appendChild(el('p', t.calledAt ? 'Appelé pour le remercier le ' + date(t.calledAt) + '.' : 'À appeler pour le remercier.', t.calledAt ? 'fait' : null));
+      if (!t.calledAt && ids) box.appendChild(button('Appel fait', function () { apresAct(base + '/appele', undefined, 'L’appel n’est pas marqué.'); }));
+      box.appendChild(el('p', 'Message préparé, à valider ou non :', 'doux'));
+      box.appendChild(el('p', t.draft, 'brouillon'));
+      if (t.decision === null && ids) {
+        box.appendChild(button('Envoyer ce message', function () { apresAct(base + '/remerciement', { decision: 'send' }, 'Le message n’est pas validé.'); }));
+        box.appendChild(button('Ne pas l’envoyer', function () { apresAct(base + '/remerciement', { decision: 'decline' }, 'Le choix n’est pas enregistré.'); }));
+      } else if (t.decision === 'decline') {
+        box.appendChild(el('p', 'Vous avez choisi de ne pas l’envoyer.', 'doux'));
+      } else if (t.decision === 'send') {
+        box.appendChild(el('p', THANKS[t.sendStatus] || 'message validé', 'doux'));
+      }
+    }
+    box.appendChild(el('p', 'Demande d’avis : ' + (c.review ? (REVIEW[c.review.status] || 'état inconnu') : 'pas encore préparée')));
+    (c.reminders || []).forEach(function (r) { box.appendChild(el('p', 'Nouvelles à ' + r.year + ' an' + (r.year > 1 ? 's' : '') + ' : ' + (REMINDER[r.status] || 'état inconnu'), 'doux')); });
+    if (c.satisfaction) {
+      var n = el('p', null);
+      n.appendChild(el('span', c.satisfaction.score + ' sur 5', 'note'));
+      box.appendChild(el('p', 'Sa note, reçue le ' + date(c.satisfaction.answeredAt) + ' :', 'doux'));
+      box.appendChild(n);
+      if (c.satisfaction.comment) box.appendChild(el('p', c.satisfaction.comment, 'brouillon'));
+    }
+    return box;
+  }
+  function renderApres(files) {
+    var body = $('apres-corps');
+    clear(body);
+    $('apres-etat').textContent = files.length ? '' : 'Aucune vente conclue pour le moment.';
+    files.forEach(function (f) {
+      var box = el('section', null, 'vente');
+      box.appendChild(el('h3', 'Bien ' + (f.reference || 'sans référence') + (f.city ? ', ' + f.city : '')));
+      if (f.closedOn) box.appendChild(el('p', 'Acte signé le ' + dayLabel(f.closedOn + 'T12:00:00Z'), 'doux'));
+      (f.clients || []).forEach(function (c) { box.appendChild(clientBlock(f, c)); });
+      body.appendChild(box);
+    });
+    reviewLinkBlock(body);
+  }
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
     ['visite-titre', 'visite-etat', 'bien-titre', 'bien-etat', 'alerte-etat', 'vente-titre', 'vente-etat'].forEach(function (id) { $(id).textContent = ''; });
@@ -897,7 +1041,7 @@ export const APP_JS = `'use strict';
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -966,10 +1110,13 @@ export const APP_JS = `'use strict';
       session += 1;
       wipeFiche();
       wipeM08();
+      wipeApres();
       show('accueil');
       day(currentKey, session);
     }
     $('visite-retour').addEventListener('click', home);
+    $('apres-retour').addEventListener('click', home);
+    $('apres-ouvrir').addEventListener('click', function () { openApres(); });
     $('vente-retour').addEventListener('click', home);
     $('bien-retour').addEventListener('click', function () { if (visitId) openVisit(visitId); else home(); });
     $('alerte').addEventListener('click', function () { raiseAlert(false); });

@@ -46,6 +46,17 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | POST | `/v1/signatures/<id>` | `{ code, drawing? }` : la signature par le code, et le tracé à l'écran ; 5 codes faux bloquent la session ; un document modifié ne se signe pas ; toujours une signature d'essai (`realSignature: false`) tant que l'avocat n'a pas validé le dossier de preuve (H24) | l'agent de la fiche, la direction (R16) |
 | GET | `/v1/signatures/<id>/exemplaire` | l'exemplaire d'une signature en ligne d'essai (document et preuve) et s'il est parti au signataire | qui voit la fiche en entier (R16) |
 | POST | `/v1/signatures/<id>/exemplaire` | reprend l'envoi de l'exemplaire refusé plus tôt, par le contrôle central | qui voit la fiche en entier (R16) |
+| GET | `/v1/apres-vente/journee` | « Ma journée » après la vente : clients à appeler pour remercier, proches recommandés à appeler, tâches ouvertes (lien de la fiche Google, demande d'avis non partie) | l'agent lui-même (R16) |
+| GET | `/v1/apres-vente/dossiers` | l'écran « Après la vente » : chaque dossier clos, et pour chaque client le remerciement préparé (pour l'agent seul), la demande d'avis, les nouvelles aux dates clés et la note | l'agent de ses dossiers, la direction et la conformité du réseau (R16) |
+| POST | `/v1/apres-vente/fiches/<id>/recommandations` | `{ firstName, email?, phone?, projectKind, callable, proof }` avec l'en-tête `Idempotency-Key` (16 à 64 caractères) : un client recommande un proche, rangé avec sa source ; la même clé ne range qu'une recommandation | l'agent du client, la direction (R16, R66) |
+| GET | `/v1/apres-vente/fiches/<id>/recommandations` | qui a recommandé qui, pour cette fiche | qui voit la fiche en entier (R16) |
+| GET, POST | `/v1/apres-vente/appels`, `/v1/apres-vente/appels/<id>/fait` | les proches recommandés à appeler ; « appel fait » | l'agent qui a la tâche (R16) |
+| POST | `/v1/apres-vente/dossiers/<dossier>/clients/<id>/relances` | `{ choice: oui \| un_an \| non, proof }` : le choix du client sur les nouvelles après la vente | l'agent du dossier (R16, R65) |
+| GET | `/v1/apres-vente/relances` | les nouvelles après la vente et leur issue | l'agent de ses dossiers, direction, conformité (R16) |
+| POST | `/v1/apres-vente/lien-avis` | `{ url, agentId? }` : le lien de la fiche Google de l'agent, que portent les demandes d'avis | l'agent lui-même, la direction pour un agent du réseau (R16) |
+| GET | `/v1/apres-vente/demandes-avis`, `/v1/apres-vente/taches`, `/v1/apres-vente/satisfaction` | les demandes d'avis, les tâches ouvertes, les notes reçues | l'agent de ses dossiers, la direction (et la conformité pour les demandes et les notes) (R16) |
+| GET | `/v1/apres-vente/remerciements?ouverts=1` | les remerciements préparés | l'agent de ses dossiers (R16) |
+| POST | `/v1/apres-vente/dossiers/<dossier>/clients/<id>/remerciement`, `…/appele` | `{ decision: send \| decline }` : rien ne part sans la validation de l'agent, puis par le contrôle central en mode essai ; « appelé » | l'agent du dossier (R16) |
 | GET | `/v1/plan-du-jour/controle` | les écarts du contrôle quotidien de la base légale des plans du jour sur 30 jours, non encore vus : des nombres par raison et par jour, jamais une fiche | direction, conformité (R16, R36) |
 | GET | `/v1/attribution/regles` | les règles d'attribution des contacts, les délais de rappel et les communes : les mêmes pour tous [R25] | toute clé |
 | GET | `/v1/journal/verification` | la chaîne d'empreintes du journal est-elle intacte | direction, conformité |
@@ -137,6 +148,12 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - En mode essai, les tâches du site (`site.rappels_visite` de 18 h à 21 h, `site.courriers_vendeur` de 8 h à 21 h) notent leur passage et n'appellent rien [R26]. Hors mode essai, rien ne passe.
 - Les rappels des rendez-vous (`rdv.rappels`, V04) passent du lundi au samedi de 8 h à 19 h : la confirmation restée en attente, un rappel la veille et un le jour même, par le contrôle central et les seuls canaux du mode essai [R26]. Le lien pour décaler ou annuler commence par la variable `RDV_LINK_BASE` (en https, sans chiffre, terminée par `/`) ; sans elle, les rappels partent sans lien.
 - Les briefs des rendez-vous (`rdv.briefs`, V05) passent à toute heure : chaque rendez-vous tenu reçoit son brief au moins une heure avant, rangé pour son seul agent, sans aucun envoi [R34].
+
+## Après la vente, en mode essai (F07)
+
+- Les pages publiques, sans clé, n'ont qu'un jeton tiré au hasard dans l'adresse : `/apres-vente/desinscription/<jeton>` (désinscription des nouvelles après la vente en un geste, R65), `/apres-vente/avis/<jeton>` (note de 1 à 5 et commentaire, une seule fois, jamais publiés, R64), `/apres-vente/carnet/<jeton>` (le carnet du propriétaire, F06). Elles sont fermées hors mode essai.
+- Leur adresse vient de la variable `APRES_VENTE_BASE`, en https, sans chiffre, terminée par `/apres-vente/` (par exemple `https://aimmo-api.<compte>.workers.dev/apres-vente/` si le nom du compte n'a pas de chiffre). Sans elle, aucune nouvelle après la vente ne part [R65], les demandes d'avis partent sans lien de satisfaction, et aucun carnet ne se fait.
+- Au planificateur, du lundi au samedi de 10 h à 18 h : demandes d'avis le lendemain de l'acte (`apres_vente.demandes_avis`), tâches « remercier » et messages validés (`apres_vente.remerciements`), nouvelles aux anniversaires de l'acte avec le carnet (`apres_vente.relances`). Les dossiers clos sont ceux de M10 (acte signé). La valeur du carnet est calculée autour du centre de la commune (Base adresse nationale), jamais d'une adresse ; sans `DVF_BASE_URL`, aucun carnet.
 
 ## Mise en ligne
 
