@@ -60,7 +60,7 @@ export interface Referral {
   createdAt: string;
 }
 
-export type ReferralRefusal = { ok: false; rule: 'R16' | 'R73' | 'R74' | 'R75' | null; code: string };
+export type ReferralRefusal = { ok: false; rule: 'R16' | 'R73' | 'R74' | 'R75' | 'R76' | null; code: string };
 export type ReferralResult<T> = { ok: true; value: T } | ReferralRefusal;
 
 /** Un générateur pseudo-aléatoire de 32 bits (mulberry32), déterministe pour une graine. */
@@ -255,6 +255,12 @@ export class MiseEnRelation {
     if (!(await this.proofs.has(input.proofRef))) return { ok: false, rule: 'R74', code: 'not_stored' };
     if (!(await this.annuaire.proposableOn(row.network_id, input.partnerId, this.now(), row.domain === '' ? null : (row.domain as DiagnosticDomain)))) {
       return { ok: false, rule: 'R73', code: 'partner_unavailable' };
+    }
+    // Les rémunérations déclarées (U03) doivent avoir été montrées au client après la dernière déclaration [R76].
+    const lastFee = await this.db.first<{ at: string | null }>('SELECT MAX(declared_at) AS at FROM partner_referral_fees WHERE referral_id = ?', [row.id]);
+    if (lastFee?.at) {
+      const shown = await this.db.first('SELECT 1 FROM partner_referral_disclosures WHERE referral_id = ? AND shown_at >= ? LIMIT 1', [row.id, lastFee.at]);
+      if (!shown) return { ok: false, rule: 'R76', code: 'fees_not_disclosed' };
     }
     const done = await this.step(viewer, row, current, 'accord_client', { partnerId: input.partnerId, consentAt, channel: input.channel as ConsentChannel, proofRef: input.proofRef });
     if (done) return done;
