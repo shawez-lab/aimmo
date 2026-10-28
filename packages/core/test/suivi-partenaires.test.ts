@@ -155,6 +155,8 @@ describeWithSqlite('U07 · suivi des demandes confiées', () => {
     const r = await t.pieces.deposit(t.asPartner(req.partnerId), req.referralId, { sort: 'amiante', ref: t.files.put(`partenaires/${req.partnerId}/relations/${req.referralId}`), sha256: SHA, issuedOn: '2027-07-12' });
     expect(r.ok).toBe(true);
     expect(await t.suivi.measure(req.referralId)).toMatchObject({ answered: true, state: 'confiee' });
+    const summary = await t.suivi.summary(t.agent, req.referralId);
+    expect(summary).toMatchObject({ ok: true, value: { source: 'secours', summary: { headline: 'Demande confiée, le partenaire a répondu.' } } });
     set('2027-07-20T08:00:00.000Z');
     expect(await t.suivi.run(t.network.id)).toBe(0);
   });

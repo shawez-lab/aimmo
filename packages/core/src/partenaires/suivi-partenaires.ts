@@ -200,7 +200,9 @@ export function fallbackSummary(facts: SummaryFacts): FollowUpSummary {
   else if (facts.entrustedOn) points.push('Aucune réponse du partenaire pour l’instant.');
   if (facts.documents.length > 0) points.push(`Pièces déposées : ${facts.documents.map((d) => d.sort.replace(/_/g, ' ')).join(', ')}.`);
   for (const f of facts.followUps) points.push(f.kind === 'relance' ? `Relance préparée pour le ${frDay(f.dueOn)}.` : `Alerte à l’agent le ${frDay(f.dueOn)}.`);
-  return { headline: `Demande ${STATE_WORDS[facts.state]}.`, points: points.slice(0, 6) };
+  // Une pièce déposée est une réponse, même quand le partenaire n'a pas encore rangé d'étape.
+  const headline = facts.state === 'confiee' && facts.firstResponseOn ? 'Demande confiée, le partenaire a répondu.' : `Demande ${STATE_WORDS[facts.state]}.`;
+  return { headline, points: points.slice(0, 6) };
 }
 
 interface ReferralRow {
