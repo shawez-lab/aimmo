@@ -199,7 +199,7 @@ const DATA_WORDS = new Set([
   'bic', 'mobile', 'firstname', 'lastname', 'surname', 'nickname', 'nationality', 'ip', 'latitude', 'longitude', 'lat', 'lng', 'geo',
   'location', 'photo', 'picture', 'avatar', 'income', 'salary', 'revenue', 'gender', 'sex', 'health', 'religion', 'signature',
   'passport', 'nir', 'ssn', 'tax', 'account', 'login', 'password', 'device', 'useragent', 'cookie', 'family', 'children',
-  'spouse', 'marital', 'employer', 'profession', 'street',
+  'spouse', 'marital', 'employer', 'profession', 'street', 'postcode', 'zip', 'zipcode',
 ]);
 // Des noms entiers qui désignent une pièce signée, un message publié ou l'adresse d'un destinataire.
 const PERSONAL_COLUMNS = new Set(['signed_ref', 'post_ref', 'external_id', 'confirmation_to']);

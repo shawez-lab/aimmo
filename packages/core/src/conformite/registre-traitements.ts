@@ -362,6 +362,25 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     },
   },
   {
+    id: 'partenaires',
+    finalite: 'Tenir l\'annuaire des partenaires (notaires, courtiers, diagnostiqueurs, artisans) et les mettre en relation avec un client qui l\'a accepté.',
+    baseLegale: 'interet_legitime',
+    personnes: ['Partenaires et leurs contacts', 'Clients mis en relation'],
+    donnees: ['Identité et coordonnées professionnelles', 'Justificatifs datés', 'Accord du client et mise en relation'],
+    duree: 'La durée du partenariat, puis 5 ans ; une mise en relation, 3 ans après le dernier contact du client.',
+    destinataires: ['L\'agent du client', 'La direction du réseau', 'Le partenaire choisi par le client, pour sa mise en relation'],
+    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)', 'Meta (WhatsApp, Messenger, Instagram)', 'Google (agenda, messagerie)'],
+    tables: {
+      partners: ['business_name', 'created_by'],
+      partner_zones: ['postcode'],
+      partner_credentials: ['proof_ref', 'verified_by'],
+      partner_credential_alerts: [],
+      partner_referrals: ['postcode', 'created_by'],
+      partner_referral_options: [],
+      partner_referral_steps: ['consent_proof_ref', 'actor'],
+    },
+  },
+  {
     id: 'preuves-et-registre',
     finalite: 'Garder la preuve de chaque geste au journal chaîné et la relecture du registre des traitements.',
     baseLegale: 'obligation_legale',
@@ -585,6 +604,13 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   vigilance_decisions: ['id', 'network_id', 'alert_id', 'decision', 'decided_on', 'at'],
   registry_reviews: ['id', 'network_id', 'reviewed_on', 'registry_hash', 'recorded_at'],
   registry_review_alerts: ['network_id', 'due_on', 'last_review_on', 'created_at'],
+  partners: ['id', 'network_id', 'trade', 'created_at'],
+  partner_zones: ['partner_id', 'network_id', 'created_at'],
+  partner_credentials: ['id', 'network_id', 'partner_id', 'kind', 'domain', 'version', 'number', 'valid_from', 'valid_until', 'recorded_at'],
+  partner_credential_alerts: ['credential_id', 'alert', 'network_id', 'created_at'],
+  partner_referrals: ['id', 'network_id', 'project_id', 'property_id', 'trade', 'domain', 'seed', 'created_at'],
+  partner_referral_options: ['referral_id', 'position', 'partner_id'],
+  partner_referral_steps: ['referral_id', 'seq', 'state', 'partner_id', 'consent_at', 'consent_channel', 'at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
