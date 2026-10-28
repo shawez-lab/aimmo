@@ -104,7 +104,7 @@ export interface CandidaturesOptions {
   newId?: () => string;
 }
 
-interface AppRow {
+export interface ApplicationRow {
   id: string;
   listing_id: string;
   network_id: string;
@@ -138,10 +138,10 @@ export class Candidatures {
     return typeof personId === 'string' && !!(await this.db.first('SELECT 1 FROM persons WHERE id = ? AND network_id = ?', [personId, networkId]));
   }
 
-  private async app(viewer: Viewer, applicationId: unknown, write: boolean): Promise<ApplicationRefusal | AppRow> {
+  private async app(viewer: Viewer, applicationId: unknown, write: boolean): Promise<ApplicationRefusal | ApplicationRow> {
     const row =
       typeof applicationId === 'string'
-        ? await this.db.first<AppRow>('SELECT id, listing_id, network_id, person_id, arrival, dossierfacile_url, arrived_at FROM rental_applications WHERE id = ? AND network_id = ?', [applicationId, viewer.networkId])
+        ? await this.db.first<ApplicationRow>('SELECT id, listing_id, network_id, person_id, arrival, dossierfacile_url, arrived_at FROM rental_applications WHERE id = ? AND network_id = ?', [applicationId, viewer.networkId])
         : null;
     const listing = await this.listings.listing(viewer, row?.listing_id ?? `application:${String(applicationId)}`, write);
     if ('ok' in listing) return listing;
@@ -250,7 +250,7 @@ export class Candidatures {
   }
 
   /** La complétude par la liste écrite, sans écriture ; jamais un avis sur la solvabilité [R104, R14]. */
-  async completeness(app: AppRow): Promise<{ complete: boolean; missing: Missing[] }> {
+  async completeness(app: ApplicationRow): Promise<{ complete: boolean; missing: Missing[] }> {
     if (app.dossierfacile_url) return { complete: true, missing: [] };
     const pieces = await this.db.all<{ holder: string; category: PieceCategory; sort: string }>('SELECT holder, category, sort FROM rental_application_pieces WHERE application_id = ?', [app.id]);
     const guarantors = await this.db.all<{ id: string; kind: 'personne' | 'visale'; person_id: string | null }>('SELECT id, kind, person_id FROM rental_guarantors WHERE application_id = ? ORDER BY added_at, id', [app.id]);
@@ -267,7 +267,7 @@ export class Candidatures {
     return { complete: missing.length === 0, missing };
   }
 
-  private async view(app: AppRow): Promise<ApplicationView> {
+  private async view(app: ApplicationRow): Promise<ApplicationView> {
     const guarantors = await this.db.all<{ id: string; kind: 'personne' | 'visale'; person_id: string | null }>('SELECT id, kind, person_id FROM rental_guarantors WHERE application_id = ? ORDER BY added_at, id', [app.id]);
     const pieces = await this.db.all<{ holder: string; category: PieceCategory; sort: string }>('SELECT holder, category, sort FROM rental_application_pieces WHERE application_id = ? ORDER BY added_at, id', [app.id]);
     const c = await this.completeness(app);
@@ -298,7 +298,7 @@ export class Candidatures {
     const listing = await this.listings.listing(viewer, listingId, false);
     if ('ok' in listing) return listing;
     await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', what: 'applications' } }, this.now);
-    const rows = await this.db.all<AppRow>('SELECT id, listing_id, network_id, person_id, arrival, dossierfacile_url, arrived_at FROM rental_applications WHERE listing_id = ? ORDER BY arrival', [listing.id]);
+    const rows = await this.db.all<ApplicationRow>('SELECT id, listing_id, network_id, person_id, arrival, dossierfacile_url, arrived_at FROM rental_applications WHERE listing_id = ? ORDER BY arrival', [listing.id]);
     const out: ApplicationView[] = [];
     for (const r of rows) out.push(await this.view(r));
     return { ok: true, value: out };
