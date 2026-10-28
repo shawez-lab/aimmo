@@ -189,8 +189,12 @@ describe('W08 · aucun fonds pour AIMMO', () => {
   });
 
   it('[R107] aucun texte ni aucune route de la location ne propose un compte bancaire au locataire', () => {
-    const sources = [...files(join(ROOT, 'packages', 'core', 'src', 'location'), /\.ts$/), ...files(join(ROOT, 'packages', 'api', 'src'), /location/)];
-    expect(sources.length).toBeGreaterThan(5);
+    // Le code de la location, et toutes les routes et tous les écrans de l'API : aucune ne peut proposer un compte.
+    const location = files(join(ROOT, 'packages', 'core', 'src', 'location'), /\.ts$/);
+    const api = [...files(join(ROOT, 'packages', 'api', 'src'), /\.ts$/), ...files(join(ROOT, 'packages', 'api', 'app'), /\.(?:ts|html|js)$/)];
+    expect(location.length).toBeGreaterThan(5);
+    expect(api.length).toBeGreaterThan(5);
+    const sources = [...location, ...api];
     for (const f of sources) {
       // Le code et ses textes, sans les commentaires (qui citent le RIB parmi les pièces refusées).
       const text = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -229,6 +233,21 @@ describeWithSqlite('W08 · remise des clés', () => {
     await expect(t.db.run('DELETE FROM rental_handovers')).rejects.toThrow(/rien ne s/);
     await expect(t.db.run("UPDATE rental_handovers SET deposit_payee = 'aimmo'")).rejects.toThrow(/ne change plus|CHECK/);
     expect(await t.remises.handOver(t.other, id, { handedOn: '2027-07-12' })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+  });
+
+  it('[R106] un état des lieux clos sous un autre bail ne vaut pas pour la remise des clés', async () => {
+    const t = await setup();
+    const { id } = await closed(t);
+    // Un nouveau bail, signé à son tour : l'état des lieux clos l'a été sous l'ancien.
+    expect((await t.baux.generate(t.agent, id, t.inp(id))).ok).toBe(true);
+    const b = await t.baux.current(t.agent.networkId, id);
+    t.signed.set(b!.leaseId, '2027-07-12T10:00:00.000Z');
+    expect(await t.remises.handOver(t.agent, id, { handedOn: '2027-07-12' })).toEqual({ ok: false, rule: 'R106', code: 'inventory_other_lease' });
+    // Le nouveau bail reçoit son propre état des lieux ; clos, il ouvre la remise des clés.
+    const r = await t.edl.record(t.agent, id, FULL);
+    if (!r.ok) throw new Error(r.code);
+    for (const party of ['bailleur', 'locataire']) await t.edl.sign(t.agent, r.value.inventoryId, { party, contentSha256: r.value.contentSha256, drawing: DRAW });
+    expect((await t.remises.handOver(t.agent, id, { handedOn: '2027-07-12' })).ok).toBe(true);
   });
 
   it('[R102] les honoraires ne sont dus qu’une fois le bail signé, au montant du barème', async () => {

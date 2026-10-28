@@ -112,6 +112,8 @@ export class RemisesDesCles {
     if (!lease) return { ok: false, rule: 'R107', code: 'lease_not_signed' };
     const inventory = await this.inventories.closedInventory(listing.networkId, listing.id);
     if (!inventory) return { ok: false, rule: 'R106', code: 'inventory_not_closed' };
+    // L'état des lieux clos doit être celui du bail signé en vigueur : sous un autre bail, il ne vaut pas [R106].
+    if (inventory.leaseId !== lease.leaseId) return { ok: false, rule: 'R106', code: 'inventory_other_lease' };
     const fees = await this.fees.current(listing.networkId, listing.id);
     const facts = await this.listings.currentFacts(listing.id);
     if (!fees || !facts) return { ok: false, rule: 'R102', code: 'no_fees' };

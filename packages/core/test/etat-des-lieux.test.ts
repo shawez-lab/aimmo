@@ -272,7 +272,7 @@ describeWithSqlite('W07 · état des lieux d’entrée', () => {
     expect(a).toEqual(b);
     expect(a).toEqual({ ok: true, value: { content: r.value.content, contentSha256, photos: r.value.rooms[0]!.photos } });
     expect(await sha256(r.value.content)).toBe(contentSha256);
-    expect(await t.edl.closedInventory(t.agent.networkId, id)).toEqual({ inventoryId, contentSha256, mode: 'essai' });
+    expect(await t.edl.closedInventory(t.agent.networkId, id)).toMatchObject({ inventoryId, contentSha256, mode: 'essai' });
     // Le tracé n'est jamais gardé : son empreinte seule.
     const sigs = await t.db.all<{ party: string; drawing_sha256: string }>('SELECT party, drawing_sha256 FROM rental_inventory_signatures ORDER BY party');
     expect(sigs).toEqual([{ party: 'bailleur', drawing_sha256: await sha256(DRAW) }, { party: 'locataire', drawing_sha256: await sha256(DRAW + 'B') }]);
