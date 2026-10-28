@@ -15,7 +15,9 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
+import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase, SqlValue } from '../db/sql.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -135,6 +137,7 @@ interface ReportRow {
 export class SignalementSoupcon {
   private readonly now: () => Date;
   private readonly newId: () => string;
+  private readonly unique: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -144,6 +147,7 @@ export class SignalementSoupcon {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.unique = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
   }
 
   private actor(viewer: Viewer): string {
@@ -185,7 +189,22 @@ export class SignalementSoupcon {
       scope.mandates = unique(mandates.map((m) => m.id));
       scope.persons = unique(mandates.map((m) => m.person_id));
     }
-    scope.persons = unique([personId, ...scope.persons]);
+    // Chaque partie avec ses fiches réunies (S04), puis les bénéficiaires effectifs d'une société, avec les leurs : leur
+    // identité fait partie de l'identification du client.
+    let persons = unique([personId, ...scope.persons]);
+    for (let round = 0; round < 10; round++) {
+      const members: string[] = [];
+      for (const p of persons) members.push(...(await this.unique.membersOf(p)));
+      const marks = members.map(() => '?').join(', ');
+      const owners = members.length === 0 ? [] : await this.db.all<{ owner_person_id: string }>(
+        `SELECT owner_person_id FROM beneficial_owners WHERE declaration_id IN (SELECT id FROM client_identifications WHERE person_id IN (${marks}))`,
+        members,
+      );
+      const next = unique([...persons, ...members, ...owners.map((o) => o.owner_person_id)]);
+      if (next.length === persons.length) break;
+      persons = next;
+    }
+    scope.persons = persons;
     scope.caseRefs = unique([...scope.mandates.map((m) => `mandate:${m}`), ...scope.offers.map((o) => `offer:${o}`), ...scope.saleFiles.map((f) => `sale_file:${f}`)]);
     return { personId, scope };
   }
@@ -251,6 +270,7 @@ export class SignalementSoupcon {
       const types = new Set((await this.journal.bySubject(subject)).map((e) => e.type));
       if (!types.has('conformite.signalement')) {
         await appendEvent(this.journal, { type: 'conformite.signalement', actor: r.reported_by, subject, data: { rule: 'R94', snapshot: r.snapshot_sha256 } }, this.now);
+        // L'empreinte est permise au journal : le filtre des données personnelles écarte les empreintes SHA-256.
       }
       if (r.decision !== null && !types.has('conformite.signalement_decision')) {
         await appendEvent(this.journal, { type: 'conformite.signalement_decision', actor: r.decided_by!, subject, data: { rule: 'R94', decision: r.decision } }, this.now);

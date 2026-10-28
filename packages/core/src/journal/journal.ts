@@ -10,10 +10,13 @@ const INTERNATIONAL_PHONE = /(?:^|\D)(?:\+|00)\d(?:[ ().-]*\d){7,14}(?:\D|$)/;
 // de téléphone, qui a 15 chiffres au plus : on l'écarte avant de chercher, sinon ses groupes de chiffres
 // séparés par des tirets passeraient pour un numéro.
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+// Une empreinte SHA-256 (64 chiffres hexadécimaux d'un seul tenant) non plus : ses chiffres peuvent former par hasard
+// une suite qui ressemble à un numéro.
+const SHA256 = /(?<![0-9a-z])[0-9a-f]{64}(?![0-9a-z])/gi;
 
 function containsPersonalData(value: JsonValue): boolean {
   if (typeof value === 'string') {
-    const text = value.replace(UUID, ' ');
+    const text = value.replace(UUID, ' ').replace(SHA256, ' ');
     return EMAIL.test(value) || FRENCH_PHONE.test(text) || INTERNATIONAL_PHONE.test(text);
   }
   if (Array.isArray(value)) return value.some(containsPersonalData);

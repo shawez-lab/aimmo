@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { ControleEnvois, DecisionEnvoi, FakeChannel, FicheUnique, SqlSendJournal, conformite, verifyChain, type Channel, type Viewer } from '../src/index.ts';
 import { RegistreOffres } from '../src/offres/index.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
 // Clients, dossier, agents et responsable inventés. Un mardi de mars, à 10 h à Paris.
@@ -110,6 +111,24 @@ describeWithSqlite('L05 · signaler au responsable', () => {
     await t.db.run('DELETE FROM compliance_vault_pieces WHERE id = ?', [sellerPiece]);
     const check = await t.signalement.checkFrozen(t.conformite, onFile!.reportId);
     expect(check.ok && check.value.missing).toContainEqual({ table: 'compliance_vault_pieces', key: sellerPiece });
+  });
+
+  it('[R94] [R17] pour une société, l’identité de chaque bénéficiaire effectif est figée aussi', async () => {
+    const t = await setup();
+    const owner = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Associé', lastName: 'Exemple' });
+    const piece = await identiteAuCoffre(t, t.agent, owner.id, { piece: 'carte_identite', seenAt: NOW });
+    if (!piece.ok) throw new Error(piece.code);
+    await t.db.run("INSERT INTO client_identifications (id, network_id, person_id, entity, owners_count, declared_by, declared_at) VALUES ('decl-0000-0001', ?, ?, 'societe', 1, ?, ?)", [t.network.id, t.personId, `agent:${t.alexId}`, NOW.toISOString()]);
+    await t.db.run("INSERT INTO beneficial_owners (declaration_id, network_id, owner_person_id, share_hundredths) VALUES ('decl-0000-0001', ?, ?, 10000)", [t.network.id, owner.id]);
+    await t.signalement.report(t.agent, t.mandateRef, { note: NOTE });
+    const list = await t.signalement.list(t.conformite);
+    if (!list.ok) throw new Error(list.code);
+    const id = list.value[0]!.reportId;
+    expect(await t.signalement.checkFrozen(t.conformite, id)).toMatchObject({ ok: true, value: { intact: true } });
+    await t.db.exec('DROP TRIGGER IF EXISTS compliance_vault_pieces_sans_effacement');
+    await t.db.run('DELETE FROM compliance_vault_pieces WHERE id = ?', [piece.id]);
+    const check = await t.signalement.checkFrozen(t.conformite, id);
+    expect(check.ok && check.value.missing).toContainEqual({ table: 'compliance_vault_pieces', key: piece.id });
   });
 
   it('[R94] le responsable décide seul, une seule fois, avec sa raison, son nom et sa date ; tout au journal sans nom', async () => {
