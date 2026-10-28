@@ -1392,7 +1392,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L07 · Demandes des personnes en moins d'un mois, avec preuve
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L06
 - Cahier : M12, critère « une demande d'accès d'une personne reçoit sa réponse complète en moins d'un mois, avec preuve » ; Conformité, « Droits des personnes ».
 - Objectif : une demande (accès, rectification, effacement, opposition) enregistrée avec sa date et son canal, l'échéance d'un mois calculée par le code, les alertes au responsable avant l'échéance ; la réponse d'accès assemblée par le code depuis chaque table du registre (L06), avec son empreinte ; l'opposition passe par l'arrêt sur tous les canaux [R04] ; l'effacement par la procédure de M12, qui garde ce que la loi oblige à garder.
