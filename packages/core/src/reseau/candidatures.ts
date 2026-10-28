@@ -199,6 +199,8 @@ export class Candidatures {
       return { ok: false, rule: 'R16', code: 'role' };
     }
     const rows = await this.db.all<CandidateRow>('SELECT * FROM candidates WHERE network_id = ? ORDER BY created_at, id', [viewer.networkId]);
+    // La lecture est écrite au journal avant que la liste soit rendue [R16].
+    await appendEvent(this.journal, { type: 'candidatures.lues', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', count: rows.length } }, this.now);
     return { ok: true, value: rows.map(toCandidate) };
   }
 
