@@ -44,8 +44,8 @@ export interface ViaLocator {
   startsWith?: Readonly<Record<string, string>>;
   /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur (champ → valeur). */
   jsonNot?: Readonly<Record<string, string>>;
-  /** Les lignes ne comptent pas si ces colonnes ont ces valeurs. */
-  except?: Readonly<Record<string, string>>;
+  /** Les lignes ne comptent pas si ces colonnes ont l'une de ces valeurs. */
+  except?: Readonly<Record<string, readonly string[]>>;
   where?: Readonly<Record<string, string>>;
   /** Seulement les lignes de `from` trouvées par cette colonne directe : pas celles de l'autre partie. */
   onlyMatchedBy?: string;
@@ -420,7 +420,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'appointments', 'id', { prefix: 'visit:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
       // Le journal du logement est au propriétaire, sauf l'arrivée d'une candidature, qui est au candidat (ci-dessous).
-      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: 'location.candidature' } }),
+      // Les événements d'une session de signature du bail sont à qui signe (le propriétaire reçoit les siens par sa
+      // propre session, ci-dessous), jamais à l'autre partie.
+      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: ['location.candidature', 'location.signature_ouverte', 'location.signature_essai'] } }),
       // Au journal du logement, ce qui nomme une candidature est au candidat, et ce qui nomme une session de
       // signature du bail est à qui signe.
       via('data', 'rental_applications', 'id', { prefix: 'rental_application:', jsonPath: 'application', startsWith: { subject: 'rental:' } }),

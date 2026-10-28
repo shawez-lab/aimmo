@@ -287,7 +287,10 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(journalOfC).not.toContain(9009);
     const journalOfA = await seqs(A);
     expect(journalOfA).not.toContain(9007);
+    // La signature du locataire n'est pas au propriétaire ; la sienne, si.
+    expect(journalOfA).not.toContain(9008);
     expect(journalOfA).toContain(9009);
+    expect(journalOfC).not.toContain(9009);
     // B, lui, voit l'événement de sa recommandation sous sa propre fiche seulement s'il y est sujet : ici il ne l'est pas.
     expect((await assembleAccess(db, [B])).sections.find((s) => s.table === 'journal')!.rows.some((r) => r.seq === 9003)).toBe(false);
   });
