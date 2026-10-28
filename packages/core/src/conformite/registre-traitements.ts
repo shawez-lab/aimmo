@@ -410,10 +410,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
   },
   {
     id: 'location',
-    finalite: 'Mettre un logement en location sans le gérer : contrôle du logement avant toute annonce, annexes du bail, échéance du propriétaire d\'un logement énergivore.',
+    finalite: 'Mettre un logement en location sans le gérer : contrôle du logement avant toute annonce, annexes du bail, échéance du propriétaire d\'un logement énergivore, candidatures limitées aux pièces de la liste officielle.',
     baseLegale: 'contrat',
-    personnes: ['Propriétaires bailleurs'],
-    donnees: ['Propriétaire du logement', 'Loyer, charges, surface, classe énergie, date du bail', 'Annexes du bail par leur référence de stockage', 'Échéance préparée pour le propriétaire'],
+    personnes: ['Propriétaires bailleurs', 'Candidats locataires et leurs garants'],
+    donnees: ['Propriétaire du logement', 'Loyer, charges, surface, classe énergie, date du bail', 'Annexes du bail par leur référence de stockage', 'Échéance préparée pour le propriétaire', 'Candidatures : ordre d\'arrivée, lien DossierFacile, garants, pièces de la liste officielle par leur référence (jamais d\'identité, rangée au coffre)'],
     duree: 'La durée du mandat de location, puis 5 ans ; une mise en location sans suite, 3 ans après le dernier contact du propriétaire.',
     destinataires: ['L\'agent du logement', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
@@ -427,6 +427,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       rental_listing_communes: ['recorded_by'],
       rental_ads: ['facts_version', 'body', 'created_by'],
       rental_ad_validations: ['text_sha256', 'validated_by'],
+      rental_applications: ['person_id', 'dossierfacile_url', 'created_by'],
+      rental_guarantors: ['person_id', 'added_by'],
+      rental_application_pieces: ['ref', 'sha256', 'added_by'],
       rental_fees: ['facts_version', 'zone', 'tenant_cents', 'tenant_inventory_cents', 'landlord_cents', 'landlord_inventory_cents', 'deposit_cents', 'recorded_by'],
     },
   },
@@ -668,6 +671,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   rental_listing_communes: ['listing_id', 'insee_code', 'recorded_at'],
   rental_ads: ['id', 'listing_id', 'network_id', 'version', 'fees_version', 'sheet_version', 'title', 'mentions', 'origin', 'created_at'],
   rental_ad_validations: ['ad_id', 'validated_at'],
+  rental_applications: ['id', 'listing_id', 'network_id', 'arrival', 'arrived_at'],
+  rental_guarantors: ['id', 'application_id', 'kind', 'added_at'],
+  rental_application_pieces: ['id', 'application_id', 'holder', 'category', 'sort', 'added_at'],
   rental_fees: ['listing_id', 'version', 'insee_code', 'tenant_ceiling_cents', 'inventory_ceiling_cents', 'deposit_ceiling_cents', 'recorded_at'],
 };
 
