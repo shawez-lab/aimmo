@@ -202,8 +202,11 @@ describeWithSqlite('W01 · mise en location contrôlée avant toute annonce', ()
     expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'louable' } });
     clock = Date.parse('2027-12-31T22:00:00.000Z');
     expect(await t.location.advertisable(t.network.id, id)).toBe(true);
+    expect(await t.location.status(t.agent, id)).toMatchObject({ ok: true, value: { stale: false } });
     clock = Date.parse('2027-12-31T23:30:00.000Z');
     expect(await t.location.advertisable(t.network.id, id)).toBe(false);
+    // Le statut dit la même chose : le contrôle d'hier ne vaut plus.
+    expect(await t.location.status(t.agent, id)).toMatchObject({ ok: true, value: { check: { decision: 'louable' }, stale: true } });
     clock = Date.parse('2027-07-12T08:00:00.000Z');
     expect(await t.location.recordFacts(t.agent, id, { ...FACTS, energyClass: 'G', leaseStart: '2024-12-31' })).toEqual({ ok: false, rule: 'R100', code: 'invalid', field: 'leaseStart' });
   });

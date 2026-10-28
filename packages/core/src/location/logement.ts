@@ -485,7 +485,14 @@ export class MisesEnLocation {
     const c = await this.lastCheck(row.id);
     const facts = await this.latestFacts(row.id);
     const required = facts ? requiredAnnexes(facts) : ['dpe', 'erp', 'surface_habitable'] as AnnexKind[];
-    return { ok: true, value: { check: c?.check ?? null, stale: c ? !(await this.current(row.id, c.facts_version, c.annexes_key)) : false, required } };
+    // Un contrôle ne vaut plus quand les faits ou les annexes ont changé, ni quand le temps a rendu le logement
+    // non louable depuis (annexe échue, date d'interdiction passée) : la même réponse qu'`advertisable`.
+    let stale = false;
+    if (c) {
+      stale = !(await this.current(row.id, c.facts_version, c.annexes_key));
+      if (!stale && c.check.decision === 'louable' && facts) stale = checkDwelling(facts, await this.latestAnnexes(row.id), this.today()).length > 0;
+    }
+    return { ok: true, value: { check: c?.check ?? null, stale, required } };
   }
 
   private async lastCheck(listingId: string): Promise<{ check: RentalCheck; facts_version: number; annexes_key: string } | null> {
