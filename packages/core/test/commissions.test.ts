@@ -1,0 +1,161 @@
+import { expect, it } from 'vitest';
+import { ActeVente, Echeancier } from '../src/dossiers/index.ts';
+import { COMMISSION_STATUSES, Commissions, computeShares, type CommissionShare } from '../src/pilotage/index.ts';
+import { PROOF, setupDossier } from './dossiers-jeu.ts';
+import { describeWithSqlite } from './sqlite.ts';
+
+// Tout est inventé : ventes, agents, montants.
+const ACT_PROOF = 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf';
+const at9 = (day: string) => new Date(`${day}T08:00:00.000Z`);
+
+/** 10 ventes passées, chaque part comptée à la main, au centime. */
+const SALES: { fee: number; rate: number; splits?: { agentId: string; ratioBp: number; reason: 'fichier_commun' | 'binome' }[]; prime?: number; expected: [CommissionShare['kind'], number][] }[] = [
+  { fee: 1_000_000, rate: 7000, expected: [['reseau', 300_000], ['agent', 700_000]] },
+  { fee: 1_234_567, rate: 7000, expected: [['reseau', 370_371], ['agent', 864_196]] },
+  { fee: 850_000, rate: 5000, splits: [{ agentId: 'b', ratioBp: 5000, reason: 'fichier_commun' }], expected: [['reseau', 425_000], ['agent', 212_500], ['partage', 212_500]] },
+  { fee: 999_999, rate: 6666, expected: [['reseau', 333_400], ['agent', 666_599]] },
+  { fee: 1_500_000, rate: 8000, prime: 50_000, expected: [['reseau', 250_000], ['agent', 1_200_000], ['parrainage', 50_000]] },
+  { fee: 0, rate: 7000, expected: [['reseau', 0], ['agent', 0]] },
+  { fee: 1_000_001, rate: 7000, splits: [{ agentId: 'b', ratioBp: 3333, reason: 'binome' }], expected: [['reseau', 300_001], ['agent', 466_690], ['partage', 233_310]] },
+  { fee: 2_000_000, rate: 10_000, prime: 10_000, expected: [['reseau', 0], ['agent', 2_000_000]] },
+  { fee: 1_200_000, rate: 0, expected: [['reseau', 1_200_000], ['agent', 0]] },
+  {
+    fee: 777_777,
+    rate: 7500,
+    splits: [{ agentId: 'b', ratioBp: 2500, reason: 'fichier_commun' }, { agentId: 'c', ratioBp: 2500, reason: 'binome' }],
+    prime: 100_000,
+    expected: [['reseau', 94_445], ['agent', 291_666], ['partage', 145_833], ['partage', 145_833], ['parrainage', 100_000]],
+  },
+];
+
+it('[R69] 10 ventes passées recalculées sans écart, au centime ; la somme des parts est toujours les honoraires', () => {
+  for (const [i, s] of SALES.entries()) {
+    const shares = computeShares(s.fee, 'a', s.rate, s.splits ?? [], s.prime ? { parrainId: 'p', amountCents: s.prime } : null);
+    expect([i, shares.map((x) => [x.kind, x.amountCents])]).toEqual([i, s.expected]);
+    expect([i, shares.reduce((a, x) => a + x.amountCents, 0)]).toEqual([i, s.fee]);
+  }
+  expect(() => computeShares(-1, 'a', 7000)).toThrow();
+  expect(() => computeShares(100, 'a', 10_001)).toThrow();
+  expect(() => computeShares(100, 'a', 7000, [{ agentId: 'b', ratioBp: 6000, reason: 'binome' }, { agentId: 'c', ratioBp: 6000, reason: 'binome' }])).toThrow();
+});
+
+async function setup() {
+  const t = await setupDossier('appartement');
+  const echeancier = new Echeancier(t.db, t.acces, t.journal, { now: t.now });
+  const commissions = (options: ConstructorParameters<typeof Commissions>[3] = {}) => new Commissions(t.db, t.acces, t.journal, { now: t.now, ...options });
+  const compromis = async () => {
+    await t.startCompromis();
+    t.setClock(at9('2027-03-11'));
+    for (const [kind, day] of [['compromis_signe', '2027-03-10'], ['notification_acquereur', '2027-03-11'], ['dia_recue', '2027-03-11'], ['date_limite_pret', '2027-05-10'], ['etat_date_attendu', '2027-05-20'], ['acte_prevu', '2027-06-10']] as const) {
+      const r = await echeancier.record(t.agent, t.fileId, { kind, day, proofRef: PROOF });
+      if (!r.ok) throw new Error(r.code);
+    }
+  };
+  const acte = async () => {
+    const status = await t.pieces.status(t.agent, t.fileId);
+    if (!status.ok) throw new Error(status.code);
+    for (const piece of status.value.missing) {
+      const r = await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: '2027-03-11' });
+      if (!r.ok) throw new Error(r.code);
+    }
+    t.setClock(at9('2027-06-11'));
+    const r = await new ActeVente(t.db, t.acces, t.journal, t.storage, { now: t.now }).record(t.agent, t.fileId, { signedOn: '2027-06-10', proofRef: ACT_PROOF });
+    if (!r.ok) throw new Error(r.code);
+  };
+  return { ...t, commissions, compromis, acte };
+}
+
+describeWithSqlite('K01 · cycle de la commission', () => {
+  it('[R67] prévue au compromis, due à l’acte, facturée, payée : dans l’ordre, une fois chacune, avec sa preuve', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    expect(await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 7000 })).toEqual({ ok: true, version: 1 });
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
+    await t.compromis();
+    expect(await c.sync(t.network.id)).toEqual({ planned: 1, due: 0 });
+    // Le jeu signe un mandat à 10 000 € d'honoraires, à la charge de l'acquéreur.
+    let list = await c.list(t.direction);
+    expect(list.ok && list.value).toEqual([
+      {
+        fileId: t.fileId,
+        agentId: t.alexId,
+        compromisOn: '2027-03-10',
+        feeCents: 1_000_000,
+        feeCharge: 'acquereur',
+        status: 'prevue',
+        steps: [{ status: 'prevue', at: at9('2027-03-11').toISOString() }],
+        shares: [
+          { kind: 'reseau', beneficiaryId: null, reason: null, amountCents: 300_000 },
+          { kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 700_000 },
+        ],
+      },
+    ]);
+    // Rien ne se facture ni ne se paie avant l'acte [R67].
+    expect(await c.recordStep(t.network.id, t.fileId, 'facturee', 'factures/essai-1', 'direction:direction-1')).toEqual({ ok: false, rule: 'R67', code: 'out_of_order' });
+    // Une grille changée après le compromis ne change pas la commission prévue.
+    await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 9000 });
+    await t.acte();
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 1 });
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
+    expect(await c.recordStep(t.network.id, t.fileId, 'payee', 'virements/essai-1', 'direction:direction-1')).toEqual({ ok: false, rule: 'R67', code: 'out_of_order' });
+    expect(await c.recordStep(t.network.id, t.fileId, 'facturee', 'mauvaise preuve !', 'direction:direction-1')).toEqual({ ok: false, rule: null, code: 'bad_proof' });
+    expect(await c.recordStep('autre-reseau', t.fileId, 'facturee', 'factures/essai-1', 'direction:direction-1')).toEqual({ ok: false, rule: null, code: 'unknown' });
+    expect(await c.recordStep(t.network.id, t.fileId, 'facturee', 'factures/essai-1', 'direction:direction-1')).toEqual({ ok: true });
+    expect(await c.recordStep(t.network.id, t.fileId, 'facturee', 'factures/essai-2', 'direction:direction-1')).toEqual({ ok: false, rule: null, code: 'already' });
+    expect(await c.recordStep(t.network.id, t.fileId, 'payee', 'virements/essai-1', 'direction:direction-1')).toEqual({ ok: true });
+    list = await c.list(t.direction);
+    expect(list.ok && list.value[0]!.steps.map((s) => s.status)).toEqual([...COMMISSION_STATUSES]);
+    expect(list.ok && list.value[0]!.shares.map((s) => s.amountCents)).toEqual([300_000, 700_000]);
+    // Au journal : les statuts, jamais un montant [R13].
+    const entries = (await t.journal.all()).filter((e) => e.type === 'commission.etape');
+    expect(entries.map((e) => e.data.status)).toEqual(['prevue', 'due', 'facturee', 'payee']);
+    expect(JSON.stringify(entries)).not.toMatch(/700000|300000|10000/);
+    // Rien ne change ni ne s'efface [R17].
+    await expect(t.db.run('UPDATE commissions SET fee_cents = 1 WHERE file_id = ?', [t.fileId])).rejects.toThrow();
+    await expect(t.db.run('DELETE FROM commission_steps WHERE file_id = ?', [t.fileId])).rejects.toThrow();
+    await expect(t.db.run("INSERT INTO commission_steps (file_id, status, proof_ref, at, by) VALUES ('x', 'payee', 'p', 'a', 'b')")).rejects.toThrow();
+  });
+
+  it('[R68] un agent ne voit que ses commissions et ses parts ; partage et parrainage viennent de M14 par des interfaces', async () => {
+    const t = await setup();
+    const c = t.commissions({
+      partages: { of: async () => [{ agentId: t.sam.userId, ratioBp: 5000, reason: 'fichier_commun' }] },
+      primes: { of: async () => ({ parrainId: 'parrain-1', amountCents: 20_000 }) },
+    });
+    await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 7000, agents: [{ agentId: t.alexId, rateBp: 8000 }] });
+    await t.compromis();
+    await c.sync(t.network.id);
+    const all = await c.list(t.direction);
+    expect(all.ok && all.value[0]!.shares.map((s) => [s.kind, s.beneficiaryId, s.amountCents])).toEqual([
+      ['reseau', null, 180_000],
+      ['agent', t.alexId, 400_000],
+      ['partage', t.sam.userId, 400_000],
+      ['parrainage', 'parrain-1', 20_000],
+    ]);
+    const alex = await c.list(t.agent);
+    expect(alex.ok && alex.value[0]!.shares).toEqual([{ kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 400_000 }]);
+    const sam = await c.list(t.sam);
+    expect(sam.ok && sam.value[0]!.shares).toEqual([{ kind: 'partage', beneficiaryId: t.sam.userId, reason: 'fichier_commun', amountCents: 400_000 }]);
+    // Sans part, rien : un autre agent ne voit pas la vente.
+    const other = await t.store.createAgent({ networkId: t.network.id, firstName: 'Noé', lastName: 'Agent' });
+    const none = await c.list({ role: 'agent', networkId: t.network.id, userId: other.id });
+    expect(none.ok && none.value).toEqual([]);
+  });
+
+  it('[R16] seule la direction règle la grille ; chaque refus au journal ; une grille fausse est refusée', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    const refused = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse' && e.data.kind === 'commission_grid').length;
+    expect(await c.setGrid(t.agent, { validFrom: '2027-01-01', defaultRateBp: 9000 })).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await refused()).toBe(1);
+    expect(await c.setGrid(t.direction, { validFrom: '2027-02-30', defaultRateBp: 7000 })).toMatchObject({ code: 'bad_day' });
+    expect(await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 10_001 })).toMatchObject({ code: 'bad_rate' });
+    expect(await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 7000, agents: [{ agentId: 'inconnu', rateBp: 5000 }] })).toMatchObject({ code: 'unknown_agent' });
+    // Sans grille au jour du compromis, aucune commission n'est inventée.
+    await c.setGrid(t.direction, { validFrom: '2027-04-01', defaultRateBp: 7000 });
+    await t.compromis();
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
+    // Un rôle partenaire ne lit rien.
+    expect(await c.list({ role: 'partner', networkId: t.network.id, userId: 'p-1' })).toMatchObject({ ok: false, rule: 'R16' });
+  });
+});
