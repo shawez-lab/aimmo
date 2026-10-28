@@ -1553,7 +1553,9 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W03 · Annonce de location conforme
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#151) ; R103 en service ; relecture forte 1 P0 et 4 P1 corrigés (tournures de santé, de famille et de garant, classe climat, formule de l'énergie, mode des charges), Codex 2 P0 corrigés (sigles à points, vide ou meublé contre les faits). `publishable` sert à la diffusion ; le complément de loyer (communes à loyer encadré) n'est pas proposé.
+- Décidé (2026-10-28, voie 2) : aucune annonce sans dépenses d'énergie dans la fiche du bien, avec une classe de la fiche différente de celle de la mise en location, ni sans mode des charges ; un logement vide n'est jamais au forfait.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W02, P03
 - Cahier : M15, « Annonce » ; L'IA et l'humain.
 - Objectif : l'annonce de location rédigée par l'IA derrière une interface, avec secours sans IA de même forme, validée par l'agent ; ses mentions calculées par le code.
@@ -1561,7 +1563,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W04 · Candidatures limitées aux pièces de la liste officielle
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W01
 - Cahier : M15, « Candidatures » ; Conformité, « Pièces du candidat ».
 - Objectif : la candidature (migration `0903`) : candidat (fiche de M01), cautions, pièces rangées par sorte (liste officielle, une pièce d'identité, un justificatif de domicile, d'activité, de ressources, pour le candidat et chaque caution), lien DossierFacile, date d'arrivée, complétude vérifiée par une liste écrite.
