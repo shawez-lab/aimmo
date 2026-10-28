@@ -1127,7 +1127,9 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K05 · Tableau de bord du réseau : agents, zones, sources, coûts de l'IA
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : zone = zone de l'agent (« sans zone » sinon) ; contact sans agent compté sous la direction ; source d'un contact = canal du message d'origine, d'un mandat = sa source rangée ; coût de l'IA = coût rangé avec chaque message écrit par l'IA.
+- Reste : relecture de Codex impossible (limite d'usage, H03), fusion sur les vérifications (#119).
 - Qui : Claude · Relecture : normale · Dépend de : K04
 - Cahier : M13, « Tableau de bord du réseau ».
 - Objectif : pour la direction : les mêmes chiffres par agent, par commune et par source, et les coûts de l'IA par flux et par mandat signé, lus dans la base.
@@ -1135,7 +1137,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K06 · Rapport du matin, chaque jour ouvré à 7 h 30
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : K05
 - Cahier : M13, « Rapport du matin ».
 - Objectif : chaque jour ouvré à 7 h 30, heure de Paris, un rapport rangé pour la direction et pour chaque agent : les chiffres de la veille, les contacts chauds, les alertes, en quelques lignes écrites par le code.
