@@ -127,8 +127,9 @@ export class Identification {
     for (const o of raw as unknown[]) {
       if (typeof o !== 'object' || o === null) return { ok: false, rule: null, code: 'bad_owner' };
       const { personId: ownerId, sharePercent } = o as Record<string, unknown>;
-      if (typeof ownerId !== 'string' || !Number.isInteger(sharePercent)) return { ok: false, rule: null, code: 'bad_owner' };
-      const share = sharePercent as number;
+      // Au centième près : 33,33 % s'écrit 33.33.
+      if (typeof ownerId !== 'string' || typeof sharePercent !== 'number' || !Number.isFinite(sharePercent) || Math.abs(Math.round(sharePercent * 100) - sharePercent * 100) > 1e-6) return { ok: false, rule: null, code: 'bad_owner' };
+      const share = Math.round(sharePercent * 100) / 100;
       if (share < BENEFICIAL_OWNER_THRESHOLD_PERCENT || share > 100) return { ok: false, rule: 'R92', code: 'share_below_threshold' };
       const owner = await this.acces.readFiche(viewer, ownerId);
       if (!owner.ok) return { ok: false, rule: 'R16', code: owner.code };
@@ -136,13 +137,13 @@ export class Identification {
       const root = await this.unique.rootOf(owner.value.person.id);
       // Un bénéficiaire effectif est une personne physique : ni la société elle-même, ni une fiche qui porte un signe de
       // société [R92].
-      if (root === companyRoot || (await this.companySigns(viewer.networkId, owner.value.person.id, this.now()))) return { ok: false, rule: null, code: 'owner_is_company' };
+      if (root === companyRoot || (await this.isCompany(viewer.networkId, owner.value.person.id, this.now()))) return { ok: false, rule: null, code: 'owner_is_company' };
       if (roots.has(root)) return { ok: false, rule: null, code: 'duplicate_owner' };
       roots.add(root);
-      total += share;
+      total += Math.round(share * 100);
       owners.push({ personId: owner.value.person.id, sharePercent: share });
     }
-    if (total > 100) return { ok: false, rule: null, code: 'shares_above_100' };
+    if (total > 10_000) return { ok: false, rule: null, code: 'shares_above_100' };
 
     const id = this.newId();
     // Sans transaction : la déclaration annonce son nombre de bénéficiaires effectifs et ne compte qu'une fois tous écrits.
@@ -172,6 +173,17 @@ export class Identification {
     );
   }
 
+  /**
+   * Société ou personne, la même règle partout (client et bénéficiaires effectifs) : « personne » ne vaut que déclarée
+   * par le responsable, ou pour une fiche sans aucun signe de société [R92].
+   */
+  private async isCompany(networkId: string, personId: string, before: Date, known?: Awaited<ReturnType<Identification['declaration']>>): Promise<boolean> {
+    const declared = known !== undefined ? known : await this.declaration(networkId, personId, before);
+    if (declared?.entity === 'societe') return true;
+    if (declared?.entity === 'personne' && declared.declared_by.startsWith('compliance:')) return false;
+    return this.companySigns(networkId, personId, before);
+  }
+
   /** Un signe de société : un Kbis ou un registre des bénéficiaires au coffre, ou une déclaration « société » passée. */
   private async companySigns(networkId: string, personId: string, before: Date): Promise<boolean> {
     if (await this.etat.everDeposited(networkId, personId, COMPANY_PIECES, before)) return true;
@@ -196,11 +208,7 @@ export class Identification {
    */
   async status(networkId: string, personId: string, at: Date = this.now(), depositedBy: Date = at): Promise<IdentificationStatus> {
     const declared = await this.declaration(networkId, personId, depositedBy);
-    // « Personne » ne vaut que déclarée par le responsable, ou pour une fiche sans aucun signe de société [R92].
-    const person = declared
-      ? declared.entity === 'personne' && (declared.declared_by.startsWith('compliance:') || !(await this.companySigns(networkId, personId, depositedBy)))
-      : !(await this.companySigns(networkId, personId, depositedBy));
-    if (person) {
+    if (!(await this.isCompany(networkId, personId, depositedBy, declared))) {
       const r = await this.personIdentity(networkId, personId, at, depositedBy);
       return r.ok ? { ok: true, entity: 'personne', verifiedOn: r.verifiedOn } : { ok: false, entity: 'personne', code: r.code };
     }
@@ -215,7 +223,7 @@ export class Identification {
     let oldest = kbis.verifiedOn;
     for (const o of counted) {
       // Un bénéficiaire effectif devenu société (Kbis déposé ensuite) ne compte pas comme personne identifiée [R92].
-      if (await this.companySigns(networkId, o.owner_person_id, depositedBy)) return { ok: false, entity: 'societe', code: 'beneficial_owner_unidentified' };
+      if (await this.isCompany(networkId, o.owner_person_id, depositedBy)) return { ok: false, entity: 'societe', code: 'beneficial_owner_unidentified' };
       const r = await this.personIdentity(networkId, o.owner_person_id, at, depositedBy);
       if (!r.ok) return { ok: false, entity: 'societe', code: 'beneficial_owner_unidentified' };
       if (r.verifiedOn < oldest) oldest = r.verifiedOn;

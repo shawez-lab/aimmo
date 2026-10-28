@@ -203,6 +203,24 @@ describeWithSqlite('L03 · identification et bénéficiaire effectif, étape blo
     expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'beneficial_owner_unidentified' });
   });
 
+  it('[R92] parts au centième près ; une fiche corrigée en « personne » par le responsable redevient un bénéficiaire possible', async () => {
+    const t = await setup();
+    const company = await t.seller('SCI Exemple');
+    const [a, b, c] = [await t.person('Anna'), await t.person('Bruno'), await t.person('Chloé')];
+    await t.deposit(company.personId, { piece: 'extrait_kbis', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    for (const p of [a, b, c]) await t.deposit(p, { piece: 'carte_identite', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    expect(await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: [{ personId: a, sharePercent: 33.333 }] })).toMatchObject({ ok: false, code: 'bad_owner' });
+    expect(await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: [{ personId: a, sharePercent: 50.01 }, { personId: b, sharePercent: 50 }] })).toMatchObject({ ok: false, code: 'shares_above_100' });
+    // Un Kbis déposé par erreur sur la fiche de Chloé : refusée comme bénéficiaire, jusqu'à la correction du responsable.
+    await t.deposit(c, { piece: 'extrait_kbis', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    const owners = [{ personId: a, sharePercent: 33.33 }, { personId: b, sharePercent: 33.33 }, { personId: c, sharePercent: 33.33 }];
+    expect(await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: owners })).toMatchObject({ ok: false, code: 'owner_is_company' });
+    expect(await t.identification.declare(t.compliance, c, { entity: 'personne' })).toMatchObject({ ok: true });
+    expect(await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: owners })).toMatchObject({ ok: true });
+    expect(await t.identityLine(company.documentId)).toEqual({ passed: true, code: 'identity_verified' });
+    expect((await t.db.all<{ share_percent: number }>('SELECT share_percent FROM beneficial_owners')).map((r) => r.share_percent)).toEqual([33.33, 33.33, 33.33]);
+  });
+
   it('[R92] une déclaration à moitié écrite (panne entre deux bénéficiaires) ne compte pas', async () => {
     const t = await setup();
     const company = await t.seller('SCI Exemple');
