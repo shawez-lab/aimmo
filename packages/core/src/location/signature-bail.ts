@@ -387,6 +387,12 @@ export class SignaturesBail implements LeaseSignatureState {
     if ('ok' in listing) return listing;
     const row = typeof leaseId === 'string' ? await this.db.first<{ content: string; content_sha256: string }>('SELECT content, content_sha256 FROM rental_lease_copies WHERE lease_id = ? AND listing_id = ?', [leaseId, listing.id]) : null;
     if (!row) return { ok: false, rule: null, code: 'not_signed' };
+    // L'exemplaire porte l'identité des deux parties : le lecteur doit voir chacune de leurs fiches en entier [R16].
+    const signers = await this.db.all<{ person_id: string }>("SELECT DISTINCT person_id FROM rental_lease_signatures WHERE lease_id = ? AND status = 'signee' ORDER BY person_id", [leaseId as string]);
+    for (const s of signers) {
+      const sees = await this.seesParty(viewer, s.person_id);
+      if (sees !== true) return sees;
+    }
     await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', what: 'lease_copy' } }, this.now);
     return { ok: true, value: { content: row.content, contentSha256: row.content_sha256 } };
   }

@@ -308,4 +308,15 @@ describeWithSqlite('W12 · signature en ligne du bail, en mode essai', () => {
     expect((await t.signatures.status(t.agent.networkId, leaseId))!.copiesSent).toEqual(['bailleur', 'locataire']);
     expect(await t.copies()).toHaveLength(2);
   });
+
+  it('[R16] l’exemplaire n’est rendu qu’à qui voit les fiches des deux parties en entier', async () => {
+    const t = await setup();
+    const { id, leaseId } = await t.leased();
+    await t.signParty(id, 'bailleur');
+    await t.signParty(id, 'locataire');
+    expect((await t.signatures.copy(t.agent, id, leaseId)).ok).toBe(true);
+    // Le locataire passe à un autre agent ; le bien reste à Alex : l'exemplaire ne lui est plus rendu.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.other.userId, t.tenant()]);
+    expect(await t.signatures.copy(t.agent, id, leaseId)).toMatchObject({ ok: false, rule: 'R16' });
+  });
 });
