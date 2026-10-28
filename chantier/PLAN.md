@@ -1417,8 +1417,8 @@ Découpé le 2026-10-28 par la voie 2 : M14 n'a plus de tâche faisable par la v
 Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, dans ses propres tables (annuaire), jamais une fiche client. Chaque partenaire a un métier pris dans une liste fermée (notaire, diagnostiqueur, courtier, artisan, déménageur, photographe, géomètre, gestionnaire titulaire de la carte G, avocat, expert-comptable, promoteur, expert du viager) et ses justificatifs exigés par métier (certification par domaine pour un diagnostiqueur, immatriculation ORIAS pour un courtier, carte G pour un gestionnaire, assurance pour tous), chacun avec sa date de fin de validité et sa preuve ; un justificatif est une référence de stockage, jamais son contenu. Un partenaire sans justificatif valide ce jour-là n'est proposé à personne [R73]. La mise en relation n'existe qu'après l'accord du client enregistré avec sa date et sa preuve [R74] ; le client choisit parmi plusieurs professionnels quand la zone en compte plusieurs : ils lui sont montrés dans un ordre tiré au sort et noté, jamais trié par une note, un avis ou l'IA ; le choix est fait par le client avec l'agent, jamais par l'IA ni par le code [R75, R14]. Aucune rémunération d'un diagnostiqueur, sous aucune forme ; aucune rémunération d'un courtier ou d'une banque tant que le statut requis n'est pas validé par l'avocat (réglage faux par défaut) ; toute autre rémunération est déclarée dans la mise en relation et montrée au client avant son accord [R76]. Un partenaire ne lit que les mises en relation qui lui sont confiées, et seulement le dossier utile de son métier, champ par champ, listé par des règles écrites [R77]. Une pièce déposée par un partenaire est rangée par sa sorte (diagnostic dans la fiche du bien, pièce du notaire dans le dossier de M10, accord de prêt dans le financement du dossier, devis dans la mise en relation) ; une pièce de sorte inconnue va à une file humaine, jamais rangée au hasard [R78]. La prospection de nouveaux partenaires se fait par mail, entre professionnels, à une adresse professionnelle, avec un plafond par jour ouvré (5), le lien d'opposition et l'arrêt sur tous les canaux à la première demande ; tout passe par le contrôle central des envois, en mode essai tant que le plan ne l'a pas mis en service [R79, R01, R02, R04]. Les relances aux partenaires partent dans les heures d'envoi [R01]. Les avis des clients sur un partenaire sont lus par un humain, jamais transformés en note ni en classement. Les offres négociées pour les agents (responsabilité civile, protection juridique, prévoyance) sont une page d'information sans commission pour le réseau, hors de ce découpage tant qu'aucun accord n'existe. Les numéros de règles R73 à R79 et de migrations à partir de `0801` sont réservés à M18. Le code vit dans `packages/core/src/partenaires/`, ses routes dans `packages/api/src/partenaires.ts` ; les fichiers du socle (droits d'accès, `index.ts`, `app.ts`, planificateur, Worker, contrôle central des envois) ne changent que par U09, confiée à la voie 1.
 
 ### U01 · Annuaire des partenaires par zone, justificatifs datés
-- Statut : en cours (voie 2)
-- Reste : proposition #135 ouverte, tests verts en local, relecture forte 2 P1 corrigés, Codex 1 P0 et 1 P2 corrigés (version qui fait foi un jour donné, alertes avant un trou), nouvelle relecture demandée ; la vérification GitHub ne démarre pas (H28).
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#135) après réunion de main, vérifications vertes, Codex sans remarque restante.
 - Décidé (2026-10-28) : le mesurage n'exige que l'assurance ; chaque autre domaine de diagnostic exige sa certification ; une version plus récente, déjà commencée, qui chevauche une période la corrige ; un renouvellement à l'avance ne retire pas la version en cours.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : S08
 - Cahier : M18, « Annuaire par zone » ; Données.
@@ -1427,8 +1427,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U02 · Mise en relation avec l'accord du client, choix du client
-- Statut : en cours (voie 2)
-- Reste : proposition #136 ouverte (bâtie sur U01), tests verts en local, relecture forte 1 P0 corrigé ; vérification bloquée (H28) ; Codex à sa limite.
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#136) après réunion de main, vérifications vertes, Codex sans remarque restante.
 - Décidé (2026-10-28) : la mise en relation part d'un projet du client ; tirage mulberry32 rejouable par sa graine ; preuve d'accord rangée sous `relations/<id>/`.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01
 - Cahier : M18, « Mise en relation » et « Règles ».
@@ -1437,8 +1437,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U03 · Rémunérations des partenaires, déclarées ou refusées
-- Statut : en cours (voie 2)
-- Reste : proposition #137 ouverte (bâtie sur U02), tests verts en local, relecture forte 1 P0 corrigé ; vérification bloquée (H28).
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#137) après réunion de main, vérifications vertes, Codex sans remarque restante.
 - Décidé (2026-10-28) : l'accord du client est refusé tant que le dernier texte montré ne cite pas toutes les rémunérations déclarées.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U02
 - Cahier : M18, « Règles » ; Conformité.
@@ -1447,8 +1447,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : H31 pour rémunérer un courtier ou une banque ; refusé en attendant.
 
 ### U04 · Espace partenaire : le dossier utile, rien d'autre
-- Statut : en cours (voie 2)
-- Reste : proposition #138 ouverte (bâtie sur U03), tests verts en local, relecture forte 1 P1 corrigé, Codex 1 P0 corrigé en U02 (étapes croisées) ; vérification bloquée (H28).
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#138) après réunion de main, vérifications vertes, Codex sans remarque restante.
 - Décidé (2026-10-28) : le nom du client va seulement au notaire, au courtier, au gestionnaire, à l'avocat et à l'expert-comptable ; la certification du domaine est revérifiée à chaque accès.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U02
 - Cahier : M18, « Espace partenaire » ; critère « un partenaire ne voit que les dossiers qui lui sont confiés ».
@@ -1457,8 +1457,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U05 · Pièces déposées par les partenaires, rangées d'elles-mêmes
-- Statut : en cours (voie 2)
-- Reste : proposition #140 ouverte (bâtie sur U04), tests verts en local, relecture forte 1 P0 et 1 P1 corrigés ; vérification bloquée (H28).
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#140) après réunion de main, vérifications vertes, Codex sans remarque restante.
 - Décidé (2026-10-28) : la place de la pièce est rangée avec elle ; diagnostic et bornage à la fiche du bien (le dossier de vente le lira en U09) ; une pièce ne va dans un dossier que si le client du projet y est partie.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U04
 - Cahier : M18, « Pièces rangées d'elles-mêmes » ; M10 ; M06.
@@ -1467,8 +1467,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U06 · Pièce contrôlée contre le justificatif du jour où elle a été faite (Jamais vu)
-- Statut : en cours (voie 2)
-- Reste : proposition #141 ouverte (bâtie sur U05), tests verts en local, relecture forte sans P0 ni P1 ; vérification bloquée (H28).
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#141) après réunion de main, vérifications vertes, Codex sans remarque restante.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U05
 - Cahier : M18, « Annuaire par zone » et « Pièces rangées d'elles-mêmes ».
 - Objectif : au dépôt, chaque pièce est contrôlée contre les justificatifs de son auteur à la date où elle a été faite, et non au jour du dépôt : un diagnostic contre la certification du domaine concerné, un accord de prêt contre l'immatriculation du courtier, une pièce de gestion contre la carte G.
@@ -1476,7 +1476,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U07 · Suivi des demandes, relances et avis lus par un humain
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Décidé (2026-10-28, voie 2) : un partenaire n'est pas une personne de la fiche client, et le contrôle central des envois (`ControleEnvois.send`) n'écrit qu'à une personne de la fiche : U07 range seulement les relances préparées dans une boîte de M18 (texte du code, date due dans les heures d'envoi, jamais deux fois la même), sans rien envoyer ; leur passage par le contrôle central (partenaire relié à une fiche de rôle partenaire, type d'envoi `partner`, plafond de R11) revient à U09, voie 1.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U05
 - Cahier : M18, « Suivi » ; L'IA et l'humain.
