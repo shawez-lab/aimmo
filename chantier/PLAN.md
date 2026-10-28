@@ -1530,7 +1530,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U11 · Écrans de M18 dans l'application
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Reste (2026-10-28, voie 2) : remise à plus tard : la voie 1 modifie `packages/api/app/fichiers.ts` dans Z02 (proposition en cours), puis le refait en entier dans Z03 (passe de design). Les deux voies ne touchent jamais le même fichier en même temps : U11 se fait après la fusion de Z03, dans le nouveau système de design.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U10, Z03 (même fichier `packages/api/app/fichiers.ts`)
 - Cahier : M18 ; Organisation, exigence de design (protocole, section 9).
