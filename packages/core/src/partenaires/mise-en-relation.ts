@@ -62,7 +62,7 @@ export interface Referral {
   steps: number;
 }
 
-export type ReferralRefusal = { ok: false; rule: 'R16' | 'R73' | 'R74' | 'R75' | null; code: string };
+export type ReferralRefusal = { ok: false; rule: 'R16' | 'R73' | 'R74' | 'R75' | 'R76' | null; code: string };
 export type ReferralResult<T> = { ok: true; value: T } | ReferralRefusal;
 
 /** Un générateur pseudo-aléatoire de 32 bits (mulberry32), déterministe pour une graine. */
@@ -258,6 +258,14 @@ export class MiseEnRelation {
     if (!(await this.annuaire.proposableOn(row.network_id, input.partnerId, this.now(), row.domain === '' ? null : (row.domain as DiagnosticDomain)))) {
       return { ok: false, rule: 'R73', code: 'partner_unavailable' };
     }
+    // Les rémunérations déclarées (U03) doivent toutes figurer dans un texte montré au client au plus tard à la date de
+    // son accord : rien ne s'efface, donc un texte qui en cite autant que la base les cite toutes. La base refait ce
+    // contrôle au moment même où l'accord est rangé, pour deux demandes qui se croiseraient [R76].
+    const fees = Number((await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM partner_referral_fees WHERE referral_id = ?', [row.id]))?.n ?? 0);
+    if (fees > 0) {
+      const shown = await this.db.first('SELECT 1 FROM partner_referral_disclosures WHERE referral_id = ? AND shown_at <= ? AND fees_count = ? LIMIT 1', [row.id, consentAt, fees]);
+      if (!shown) return { ok: false, rule: 'R76', code: 'fees_not_disclosed' };
+    }
     const done = await this.step(viewer, row, current, 'accord_client', { partnerId: input.partnerId, consentAt, channel: input.channel as ConsentChannel, proofRef: input.proofRef });
     if (done) return done;
     await appendEvent(this.journal, { type: 'mise_en_relation.accord_client', actor: this.actor(viewer), subject: `referral:${row.id}`, data: { rule: 'R74', partner: `partner:${input.partnerId}`, channel: input.channel } }, this.now);
@@ -332,6 +340,7 @@ export class MiseEnRelation {
       );
     } catch (error) {
       // Deux étapes en même temps : une seule passe ; une preuve déjà servie ne sert pas deux fois.
+      if (/rémunérations non montrées/.test(String(error))) return { ok: false, rule: 'R76', code: 'fees_not_disclosed' };
       if (/étape hors ordre/.test(String(error))) return { ok: false, rule: null, code: 'busy' };
       if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: /consent_proof_ref/.test(String(error)) ? 'proof_used' : 'busy' };
       throw error;
