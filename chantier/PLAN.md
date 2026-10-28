@@ -1205,7 +1205,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien pour la tâche ; H08 pour un contrat réel.
 
 ### J05 · Import des contacts et des biens de l'agent, triés selon la loi
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : J04
 - Cahier : M14, « Import de ses contacts et de ses biens » ; Conformité, consentement ; `docs/REPRISE.md`.
 - Objectif : l'agent dépose un export Hektor, Apimo, Excel ou Google (CSV) ; chaque contact devient ou complète sa fiche, à cet agent, avec la source « import » ; chacun est trié : client avec un mandat ou une vente dans l'export, contact avec accord prouvé (date et preuve dans l'export), ou contact sans base, qui ne reçoit jamais de premier message ; les biens sont rangés comme biens de l'agent, jamais publiés ; un compte rendu dit les nombres et les lignes illisibles.
