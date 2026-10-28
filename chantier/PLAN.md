@@ -1406,6 +1406,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 
 ### U01 · Annuaire des partenaires par zone, justificatifs datés
 - Statut : en cours (voie 2)
+- Reste : proposition #135 ouverte, tests verts en local, relecture forte 2 P1 corrigés, Codex 1 P0 et 1 P2 corrigés (version qui fait foi un jour donné, alertes avant un trou), nouvelle relecture demandée ; la vérification GitHub ne démarre pas (H28).
+- Décidé (2026-10-28) : le mesurage n'exige que l'assurance ; chaque autre domaine de diagnostic exige sa certification ; une version plus récente, déjà commencée, qui chevauche une période la corrige ; un renouvellement à l'avance ne retire pas la version en cours.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : S08
 - Cahier : M18, « Annuaire par zone » ; Données.
 - Objectif : l'annuaire (migration `0801`) : partenaire, métier (liste fermée), zones (codes postaux ou communes), domaines (pour un diagnostiqueur : amiante, plomb, DPE, électricité, gaz, termites, mesurage), justificatifs exigés par métier, chacun avec sorte, numéro déclaré, date de fin de validité, référence de la preuve, qui l'a vérifié ; la recherche des partenaires proposables pour un métier, une zone, un domaine et un jour.
@@ -1413,7 +1415,9 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U02 · Mise en relation avec l'accord du client, choix du client
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Reste : proposition #136 ouverte (bâtie sur U01), tests verts en local, relecture forte 1 P0 corrigé ; vérification bloquée (H28) ; Codex à sa limite.
+- Décidé (2026-10-28) : la mise en relation part d'un projet du client ; tirage mulberry32 rejouable par sa graine ; preuve d'accord rangée sous `relations/<id>/`.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01
 - Cahier : M18, « Mise en relation » et « Règles ».
 - Objectif : la mise en relation (migration `0802`) : dossier (bien, mandat, dossier de vente ou projet), métier, partenaires proposés (ordre tiré au sort, graine notée), partenaire choisi, accord du client (date, canal, preuve), rémunération déclarée, état (proposée, acceptée par le client, confiée, en cours, terminée, abandonnée).
@@ -1421,7 +1425,9 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U03 · Rémunérations des partenaires, déclarées ou refusées
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Reste : proposition #137 ouverte (bâtie sur U02), tests verts en local, relecture forte 1 P0 corrigé ; vérification bloquée (H28).
+- Décidé (2026-10-28) : l'accord du client est refusé tant que le dernier texte montré ne cite pas toutes les rémunérations déclarées.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U02
 - Cahier : M18, « Règles » ; Conformité.
 - Objectif : la déclaration de toute rémunération venant d'un partenaire dans sa mise en relation (sorte, montant ou taux, qui paie, à qui) et le texte montré au client avant son accord.
