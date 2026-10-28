@@ -130,7 +130,7 @@ const CONTACT_HEADERS: Record<ContactField, string[]> = {
   firstName: ['prenom', 'firstname', 'givenname'],
   lastName: ['nom', 'nomdefamille', 'lastname', 'familyname'],
   mandate: ['mandat', 'nmandat', 'numeromandat', 'numerodemandat', 'mandats', 'refmandat', 'mandatsigne', 'mandatnumero'],
-  sale: ['vente', 'ventes', 'venteconclue', 'achat', 'acquisition', 'dateacte', 'datedevente', 'acte'],
+  sale: ['vente', 'ventes', 'venteconclue', 'dateacte', 'datedevente', 'acte'],
   consentAt: ['dateaccord', 'accordle', 'dateconsentement', 'consentementle', 'consentdate', 'optindate', 'dateoptin', 'datedaccord', 'accorddonnele'],
   consentProof: ['preuveaccord', 'preuveconsentement', 'preuvedaccord', 'consentproof', 'preuve', 'sourceaccord', 'sourceconsentement'],
   consentPurpose: ['finalite', 'finaliteaccord', 'finaliteconsentement', 'consentpurpose', 'purpose', 'objetaccord'],
@@ -168,6 +168,29 @@ const clean = (value: string | undefined): string | null => {
 const many = (value: string): string[] => value.split(/[,;|]/).map((v) => v.trim()).filter((v) => v !== '');
 
 const yes = (value: string | null): boolean => value !== null && !NO.has(key(value));
+
+/** Une tournure qui dit l'absence : « pas de mandat », « non signé », « aucune preuve », « inconnue »… */
+const NEGATIVE = /(?:^|[^a-z])(?:pas|non|aucun|aucune|sans|inconnu|inconnue|annule|annulee|nc|na|nr)(?:[^a-z]|$)|nonrenseign|arenseigner|\?/;
+const negative = (value: string): boolean =>
+  NEGATIVE.test(
+    value
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase(),
+  );
+
+/** Un mandat ou une vente prouvés : une référence avec un chiffre, ou une date réelle, sans tournure d'absence. */
+export const provesDeal = (value: string): boolean => !NO.has(key(value)) && !negative(value) && (/\d/.test(value) || exportDay(value) !== null);
+
+/** Une preuve d'accord : un texte d'au moins 5 lettres qui ne dit pas l'absence. */
+export const provesConsent = (value: string): boolean => !NO.has(key(value)) && !negative(value) && key(value).length >= 5;
+
+/** Un identifiant stable, à la forme d'un UUID, tiré d'un texte. */
+async function stableId(text: string): Promise<string> {
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`bien-importe:${text}`)));
+  const hex = [...bytes.slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${((parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 
 async function digest(text: string): Promise<string> {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -266,13 +289,13 @@ export async function readAgentContacts(text: string, format: AgentExportFormat,
       const channelCells = cells(row, 'consentChannel').flatMap(many);
       const channels = channelCells.map((c) => CHANNELS[key(c)]).filter((c): c is Channel => c !== undefined);
       const channelsOk = channelCells.length === channels.length;
-      if (givenOn !== null && givenOn <= today && proof !== null && proof.length <= 200 && purpose !== undefined && channelsOk) {
+      if (givenOn !== null && givenOn <= today && proof !== null && proof.length <= 200 && provesConsent(proof) && purpose !== undefined && channelsOk) {
         consent = { givenOn, proof, purpose, channels: [...new Set(channels)] };
       } else {
         reading.incompleteConsentLines.push(line);
       }
     }
-    const client = cells(row, 'mandate').some(yes) || cells(row, 'sale').some(yes);
+    const client = cells(row, 'mandate').some(provesDeal) || cells(row, 'sale').some(provesDeal);
     const basis: LegalBasis = client ? 'client' : consent ? 'consent' : 'none';
     const contact: ImportedContact = {
       origin,
@@ -495,6 +518,11 @@ export class ImportAgent {
             [networkId, line.contact.origin, agentId, person.id, at.toISOString()],
           );
           if (changes === 1) changed = true;
+          // La fiche reste à l'autre agent, mais une désinscription dite dans l'export vaut arrêt partout [R04].
+          if (line.contact.exclusion === 'stop' && (await this.addStop(person, at))) {
+            report.contacts.exclusions += 1;
+            changed = true;
+          }
         }
         report.contacts.toDirection += 1;
         continue;
@@ -512,7 +540,7 @@ export class ImportAgent {
       report.contacts.created = done.created;
       report.contacts.matched = done.matched;
       report.contacts.merged = done.merged;
-      report.contacts.exclusions = done.exclusions;
+      report.contacts.exclusions += done.exclusions;
       // Une fiche retrouvée entre-temps chez un autre agent reste à part : comptée pour la direction.
       report.contacts.toDirection += done.apart;
       if (done.created + done.merged + done.exclusions > 0) changed = true;
@@ -545,24 +573,26 @@ export class ImportAgent {
         report.properties.known += 1;
         continue;
       }
-      const property = await this.store.createProperty({
-        networkId,
-        agentId,
-        reference: `IMP-${line.origin.slice(-12).toUpperCase()}-${agentId.slice(0, 8)}`,
-        kind: line.kind,
-        postalCode: line.postalCode,
-        city: line.city,
-        surfaceM2: line.surfaceM2,
-        rooms: line.rooms,
-        priceEur: line.priceEur,
-        status: 'draft',
-      });
-      await this.db.run(
-        'INSERT INTO agent_import_properties (network_id, origin_key, agent_id, property_id, export_reference, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        [networkId, line.origin, agentId, property.id, line.reference, at.toISOString()],
+      // Identifiant et référence tirés de la clé d'origine : deux imports en même temps, ou une relance après une
+      // coupure entre les deux écritures, retombent sur le même bien [R18].
+      const propertyId = await stableId(`${networkId}:${line.origin}`);
+      const stamp = at.toISOString();
+      const { changes } = await this.db.run(
+        `INSERT INTO properties (id, network_id, agent_id, reference, kind, postal_code, city, surface_m2, rooms, price_eur, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?) ON CONFLICT DO NOTHING`,
+        [propertyId, networkId, agentId, `IMP-${propertyId.slice(0, 18).toUpperCase()}`, line.kind, line.postalCode, line.city, line.surfaceM2, line.rooms, line.priceEur, stamp, stamp],
       );
-      report.properties.created += 1;
-      changed = true;
+      await this.db.run(
+        `INSERT INTO agent_import_properties (network_id, origin_key, agent_id, property_id, export_reference, created_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT DO NOTHING`,
+        [networkId, line.origin, agentId, propertyId, line.reference, stamp],
+      );
+      if (changes === 1) {
+        report.properties.created += 1;
+        changed = true;
+      } else {
+        report.properties.known += 1;
+      }
     }
 
     report.summary = importSummary(report);
@@ -632,6 +662,18 @@ export class ImportAgent {
     return persons.filter((p): p is Person => p !== null);
   }
 
+  /** Arrêt sur tous les canaux, sauf s'il y en a déjà un en cours sur la fiche réunie [R04]. */
+  private async addStop(person: Person, at: Date): Promise<boolean> {
+    const members = await this.fiche.membersOf(person.id);
+    const active = await this.db.first<{ n: number }>(
+      `SELECT count(*) AS n FROM exclusions WHERE person_id IN (${placeholders(members.length)}) AND reason = 'stop' AND lifted_at IS NULL`,
+      members,
+    );
+    if (Number(active?.n ?? 0) > 0) return false;
+    await this.store.addExclusion({ networkId: person.network_id, agentId: person.agent_id, personId: person.id, reason: 'stop', channel: null, notedAt: at });
+    return true;
+  }
+
   private async addConsents(person: Person, line: AgentContactLine, format: AgentExportFormat): Promise<number> {
     const consent = line.consent!;
     const ids = contactIdentifiers(line.contact);
@@ -643,10 +685,14 @@ export class ImportAgent {
     const proof = `import ${FORMAT_LABEL[format]} · ${consent.proof}`;
     const members = await this.fiche.membersOf(person.id);
     let added = 0;
+    const givenAt = `${consent.givenOn}T12:00:00.000Z`;
     for (const channel of channels) {
+      // Déjà connu, de n'importe quelle source, ou retiré après la date de cet accord : rien n'est rangé. Un export
+      // ancien ne fait jamais revenir un accord que la personne a retiré [R03].
       const known = await this.db.first<{ n: number }>(
-        `SELECT count(*) AS n FROM consents WHERE person_id IN (${placeholders(members.length)}) AND purpose = ? AND channel = ? AND proof = ?`,
-        [...members, consent.purpose, channel, proof],
+        `SELECT count(*) AS n FROM consents WHERE person_id IN (${placeholders(members.length)}) AND purpose = ? AND channel = ?
+         AND (proof = ? OR given_at = ? OR (withdrawn_at IS NOT NULL AND withdrawn_at >= ?))`,
+        [...members, consent.purpose, channel, proof, givenAt, givenAt],
       );
       if (Number(known?.n ?? 0) > 0) continue;
       await this.store.addConsent({
@@ -656,7 +702,7 @@ export class ImportAgent {
         purpose: consent.purpose,
         channel,
         proof,
-        givenAt: new Date(`${consent.givenOn}T12:00:00.000Z`),
+        givenAt: new Date(givenAt),
       });
       added += 1;
     }

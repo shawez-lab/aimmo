@@ -188,6 +188,68 @@ describeWithSqlite("import des contacts et des biens d'un agent", () => {
     expect(await count('SELECT count(*) AS n FROM consents')).toBe(0);
   });
 
+  it("[R03] [R84] un accord retiré ne revient jamais par un nouvel import, quel que soit le format ou la preuve", async () => {
+    const line = (proof: string): string => ['Email;Date accord;Preuve accord;Finalité', `retrait@example.org;2026-01-10;${proof};prospection`].join('\n');
+    await w.importer.run(viewer(), w.agent, { format: 'hektor', contacts: line('formulaire signé') });
+    const person = (await w.unique.findByIdentifier(w.net, 'email', 'retrait@example.org'))[0]!;
+    const consent = (await w.db.first<{ id: string }>('SELECT id FROM consents WHERE person_id = ?', [person.id]))!;
+    await w.fiches.withdrawConsent(consent.id, new Date('2027-02-01T10:00:00.000Z'));
+    const at = new Date('2027-07-20T08:00:00.000Z');
+    expect((await w.envoi.decide(person.id, { channel: 'email', kind: 'prospecting', at })).rule).toBe('R03');
+    await w.importer.run(viewer(), w.agent, { format: 'excel', contacts: line('formulaire signé') });
+    await w.importer.run(viewer(), w.agent, { format: 'apimo', contacts: line('bulletin papier en agence') });
+    expect(await count('SELECT count(*) AS n FROM consents WHERE person_id = ?', [person.id])).toBe(1);
+    expect((await w.envoi.decide(person.id, { channel: 'email', kind: 'prospecting', at })).rule).toBe('R03');
+  });
+
+  it("[R84] [R03] une valeur qui dit l'absence ne fait ni un client ni un accord", async () => {
+    const csv = [
+      'Email;N° mandat;Vente;Date accord;Preuve accord;Finalité',
+      'a@example.org;Pas de mandat;;;;',
+      'b@example.org;non signé;;;;',
+      'c@example.org;;aucune;;;',
+      'd@example.org;;;2026-01-01;aucune preuve;prospection',
+      'e@example.org;;;2026-01-01;Inconnue;prospection',
+      'f@example.org;;;2026-01-01;n/a;prospection',
+      'g@example.org;;;2026-01-01;?;prospection',
+      'h@example.org;M-2026-014;;;;',
+      'i@example.org;;12/05/2025;;;',
+    ].join('\n');
+    const r = await w.importer.run(viewer(), w.agent, { format: 'hektor', contacts: csv });
+    if (!r.ok) throw new Error('refus');
+    expect(r.report.contacts.basis).toEqual({ client: 2, consent: 0, none: 7 });
+    expect(r.report.contacts.incompleteConsentLines).toEqual([5, 6, 7, 8]);
+    expect(await count('SELECT count(*) AS n FROM consents')).toBe(0);
+  });
+
+  it("[R04] [R16] une désinscription d'un contact suivi par un autre agent vaut arrêt sur sa fiche, sans rien d'autre", async () => {
+    const theirs = await w.fiches.createPerson({ networkId: w.net, agentId: w.other, firstName: 'Suivi' });
+    await w.unique.addIdentifier({ networkId: w.net, agentId: w.other, personId: theirs.id, kind: 'email', value: 'suivi@example.org' });
+    await w.fiches.addConsent({ networkId: w.net, agentId: w.other, personId: theirs.id, purpose: 'prospecting', channel: 'email', proof: 'accord test', givenAt: new Date('2026-01-01T10:00:00.000Z') });
+    const at = new Date('2027-07-20T08:00:00.000Z');
+    expect((await w.envoi.decide(theirs.id, { channel: 'email', kind: 'prospecting', at })).allowed).toBe(true);
+    const csv = ['Email;Désinscrit', 'suivi@example.org;oui'].join('\n');
+    const r = await w.importer.run(viewer(), w.agent, { format: 'hektor', contacts: csv });
+    expect(r.ok && r.report.contacts.toDirection).toBe(1);
+    expect(r.ok && r.report.contacts.exclusions).toBe(1);
+    expect((await w.envoi.decide(theirs.id, { channel: 'email', kind: 'prospecting', at })).allowed).toBe(false);
+    expect((await w.fiches.getPerson(theirs.id))!.agent_id).toBe(w.other);
+    await w.importer.run(viewer(), w.agent, { format: 'hektor', contacts: csv });
+    expect(await count("SELECT count(*) AS n FROM exclusions WHERE person_id = ?", [theirs.id])).toBe(1);
+  });
+
+  it('[R18] deux imports de biens en même temps ne font qu\'un bien par référence', async () => {
+    const csv = ['Référence;Type', 'V1;Maison', 'V2;Terrain'].join('\n');
+    const [a, b] = await Promise.all([
+      w.importer.run(viewer(), w.agent, { format: 'hektor', properties: csv }),
+      w.importer.run(viewer(), w.agent, { format: 'hektor', properties: csv }),
+    ]);
+    expect(a.ok && b.ok).toBe(true);
+    expect(await count('SELECT count(*) AS n FROM properties')).toBe(2);
+    expect(await count('SELECT count(*) AS n FROM agent_import_properties')).toBe(2);
+    expect((a.ok ? a.report.properties.created : 0) + (b.ok ? b.report.properties.created : 0)).toBe(2);
+  });
+
   it('[R04] une désinscription dans l\'export vaut arrêt', async () => {
     await w.importer.run(viewer(), w.agent, { format: 'hektor', contacts: hektor(10) });
     const stopped = (await w.unique.findByIdentifier(w.net, 'email', 'contact9@example.org'))[0]!;
