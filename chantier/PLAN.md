@@ -959,7 +959,8 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N06 · Acte signé : vente close, commission due
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : un avenant de durée signé après le compromis est lu par `mandateTerms` (M06) sans filtre de date : refus prudent de la commission, à corriger dans M06 ; relecture de Codex de la dernière correction sans réponse 30 min, fusion sans elle (#102).
 - Décidé (2026-10-28) : le mandat qui compte est celui en vigueur au compromis, signé au plus tard ce jour-là et hors délai de rétractation (sauf demande écrite) ; sinon pas de commission, la direction tranche ; DPE d'avant juillet 2021 périmé depuis 2025 ; plomb compté un an faute de résultat connu ; écritures reprenables après une coupure
 - Qui : Claude · Relecture : forte · Dépend de : N02
 - Cahier : M10, « Acte signé » ; M13 et M11 pour la suite.
@@ -968,7 +969,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N07 · Chemin critique de la vente (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : N02, N04, N06
 - Cahier : M10, « Suivi en direct » ; L'IA et l'humain, « suit les échéances, informe les clients ».
 - Objectif : pour chaque dossier, le code calcule la date d'acte au plus tôt possible et nomme ce qui la tient (pièce manquante, rétractation, réponse de la commune, prêt, état daté), étape par étape, avec qui doit agir ; une vue vendeur et une vue acquéreur, chacune sans la donnée personnelle de l'autre partie, prêtes pour les espaces de M11. Jamais vu : aucun réseau ne dit au client, à tout moment, ce qui retarde son acte et qui le tient.
