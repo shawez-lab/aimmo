@@ -340,8 +340,8 @@ export class BauxLocation {
    * encore louable. Pour la signature (W12) et l'état des lieux (W07) [R101, R102, R105].
    */
   async current(networkId: string, listingId: string): Promise<{ leaseId: string; contentSha256: string; mode: 'essai' | 'reel'; complete: boolean } | null> {
-    const r = await this.db.first<{ id: string; application_id: string; facts_version: number; fees_version: number; mode: 'essai' | 'reel'; status: string; content: string; content_sha256: string }>(
-      'SELECT id, application_id, facts_version, fees_version, mode, status, content, content_sha256 FROM rental_leases WHERE listing_id = ? AND network_id = ? ORDER BY version DESC LIMIT 1',
+    const r = await this.db.first<{ id: string; application_id: string; facts_version: number; fees_version: number; mode: 'essai' | 'reel'; status: string; annexes: string; content: string; content_sha256: string }>(
+      'SELECT id, application_id, facts_version, fees_version, mode, status, annexes, content, content_sha256 FROM rental_leases WHERE listing_id = ? AND network_id = ? ORDER BY version DESC LIMIT 1',
       [listingId, networkId],
     );
     if (!r) return null;
@@ -351,6 +351,12 @@ export class BauxLocation {
     if (!chosen || chosen.applicationId !== r.application_id || facts?.version !== Number(r.facts_version) || fees?.version !== Number(r.fees_version)) return null;
     if (!(await this.listings.advertisable(networkId, listingId))) return null;
     if ((await sha256(r.content)) !== r.content_sha256) return null;
+    // Les diagnostics joints au bail doivent être ceux qui valent aujourd'hui : une annexe remplacée depuis demande un
+    // nouveau bail, qui joint la nouvelle [R101].
+    const joined = (JSON.parse(r.annexes) as { kind: string; ref: string }[]).filter((a) => a.kind !== 'notice_information');
+    const valid = (await this.listings.annexRefs(listingId)).filter((a) => requiredAnnexes(facts!).includes(a.kind));
+    const key = (list: readonly { kind: string; ref: string }[]) => JSON.stringify([...list].map((a) => `${a.kind}:${a.ref}`).sort());
+    if (key(joined) !== key(valid)) return null;
     return { leaseId: r.id, contentSha256: r.content_sha256, mode: r.mode, complete: r.status === 'complet' };
   }
 }

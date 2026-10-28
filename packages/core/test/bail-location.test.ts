@@ -228,6 +228,22 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     expect(await t.baux.current(t.agent.networkId, id)).toBeNull();
   });
 
+  it('[R101] un diagnostic remplacé depuis le bail rend ce bail caduc : un nouveau bail joint la nouvelle annexe', async () => {
+    const t = await setup();
+    await t.template();
+    const id = await t.ready();
+    const r = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(await t.baux.current(t.agent.networkId, id)).toMatchObject({ leaseId: r.ok ? r.value.leaseId : '' });
+    const newErp = t.put(`location/${id}`);
+    expect((await t.listings.addAnnex(t.agent, id, { kind: 'erp', ref: newErp, diagnosedOn: '2027-07-10' })).ok).toBe(true);
+    await t.listings.check(t.agent, id);
+    expect(await t.baux.current(t.agent.networkId, id)).toBeNull();
+    const again = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(await t.baux.current(t.agent.networkId, id)).toMatchObject({ leaseId: again.ok ? again.value.leaseId : '' });
+    const joined = JSON.parse((await t.db.first<{ annexes: string }>('SELECT annexes FROM rental_leases ORDER BY version DESC LIMIT 1'))!.annexes) as { kind: string; ref: string }[];
+    expect(joined.find((a) => a.kind === 'erp')?.ref).toBe(newErp);
+  });
+
   it('[R16] l’agent du logement et la direction font le bail ; un autre agent est refusé', async () => {
     const t = await setup();
     await t.template();
