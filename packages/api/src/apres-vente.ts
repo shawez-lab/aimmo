@@ -52,7 +52,7 @@ const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{16,64}$/;
  */
 export function apresVenteBase(base: string | undefined | null): string | null {
   if (!base) return null;
-  return /^https:\/\/[^\s\d()/]+(\/[^\s\d()/]+)*\/apres-vente\/$/.test(base) ? base : null;
+  return /^https:\/\/[^\s\d()/]+\/apres-vente\/$/.test(base) ? base : null;
 }
 
 export const afterSaleLinks = (base: string) => ({
@@ -151,11 +151,23 @@ async function recommend(s: ApresVenteServices, viewer: Viewer, personId: string
     if (row.status === null || row.body === null) return json(409, { ok: false, rule: null, code: 'in_progress' });
     return json(row.status, JSON.parse(row.body));
   }
-  const result = await services(s).recommandations.recommend(viewer, personId, body);
-  const response = reply(result as Outcome);
-  const text = await response.clone().text();
-  await s.db.run('UPDATE referral_requests SET status = ?, body = ?, answered_at = ? WHERE key_hash = ? AND status IS NULL', [response.status, text, s.now().toISOString(), hash]);
-  return response;
+  const settle = (status: number, text: string) =>
+    s.db.run('UPDATE referral_requests SET status = ?, body = ?, answered_at = ? WHERE key_hash = ? AND status IS NULL', [status, text, s.now().toISOString(), hash]);
+  try {
+    const result = await services(s).recommandations.recommend(viewer, personId, body);
+    const response = reply(result as Outcome);
+    await settle(response.status, await response.clone().text());
+    return response;
+  } catch (error) {
+    // Une panne ne laisse jamais la clé « en cours » pour toujours : elle reçoit sa réponse finale, qui demande une
+    // nouvelle saisie ; l'erreur suit son chemin vers le journal.
+    try {
+      await settle(500, JSON.stringify({ ok: false, rule: null, code: 'retry_with_new_key' }));
+    } catch {
+      // La base elle-même est en panne : l'erreur d'origine est celle qui compte.
+    }
+    throw error;
+  }
 }
 
 /** Un dossier clos tel que l'écran « Après la vente » le montre : rien d'autre que ce que chaque liste permet [R16]. */
@@ -178,7 +190,8 @@ export interface ClosedFileView {
 /** L'écran « Après la vente » : chaque dossier clos du lecteur, ses clients, et ce qui s'est passé pour chacun. */
 async function closedFiles(s: ApresVenteServices, viewer: Viewer): Promise<Response> {
   const sv = services(s);
-  const thanks = await sv.remerciements.list(viewer);
+  // Les remerciements préparés sont à l'agent seul : la direction et la conformité voient le reste du dossier.
+  const thanks = viewer.role === 'agent' ? await sv.remerciements.list(viewer) : { ok: true as const, value: [] };
   if (!thanks.ok) return reply(thanks);
   const reviews = await sv.avis.list(viewer);
   if (!reviews.ok) return reply(reviews);

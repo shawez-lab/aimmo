@@ -47,7 +47,7 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | GET | `/v1/signatures/<id>/exemplaire` | l'exemplaire d'une signature en ligne d'essai (document et preuve) et s'il est parti au signataire | qui voit la fiche en entier (R16) |
 | POST | `/v1/signatures/<id>/exemplaire` | reprend l'envoi de l'exemplaire refusé plus tôt, par le contrôle central | qui voit la fiche en entier (R16) |
 | GET | `/v1/apres-vente/journee` | « Ma journée » après la vente : clients à appeler pour remercier, proches recommandés à appeler, tâches ouvertes (lien de la fiche Google, demande d'avis non partie) | l'agent lui-même (R16) |
-| GET | `/v1/apres-vente/dossiers` | l'écran « Après la vente » : chaque dossier clos, et pour chaque client le remerciement préparé, la demande d'avis, les nouvelles aux dates clés et la note | l'agent de ses dossiers, la direction et la conformité du réseau (R16) |
+| GET | `/v1/apres-vente/dossiers` | l'écran « Après la vente » : chaque dossier clos, et pour chaque client le remerciement préparé (pour l'agent seul), la demande d'avis, les nouvelles aux dates clés et la note | l'agent de ses dossiers, la direction et la conformité du réseau (R16) |
 | POST | `/v1/apres-vente/fiches/<id>/recommandations` | `{ firstName, email?, phone?, projectKind, callable, proof }` avec l'en-tête `Idempotency-Key` (16 à 64 caractères) : un client recommande un proche, rangé avec sa source ; la même clé ne range qu'une recommandation | l'agent du client, la direction (R16, R66) |
 | GET | `/v1/apres-vente/fiches/<id>/recommandations` | qui a recommandé qui, pour cette fiche | qui voit la fiche en entier (R16) |
 | GET, POST | `/v1/apres-vente/appels`, `/v1/apres-vente/appels/<id>/fait` | les proches recommandés à appeler ; « appel fait » | l'agent qui a la tâche (R16) |
@@ -55,7 +55,7 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | GET | `/v1/apres-vente/relances` | les nouvelles après la vente et leur issue | l'agent de ses dossiers, direction, conformité (R16) |
 | POST | `/v1/apres-vente/lien-avis` | `{ url, agentId? }` : le lien de la fiche Google de l'agent, que portent les demandes d'avis | l'agent lui-même, la direction pour un agent du réseau (R16) |
 | GET | `/v1/apres-vente/demandes-avis`, `/v1/apres-vente/taches`, `/v1/apres-vente/satisfaction` | les demandes d'avis, les tâches ouvertes, les notes reçues | l'agent de ses dossiers, la direction (et la conformité pour les demandes et les notes) (R16) |
-| GET | `/v1/apres-vente/remerciements?ouverts=1` | les remerciements préparés | l'agent de ses dossiers, la direction (R16) |
+| GET | `/v1/apres-vente/remerciements?ouverts=1` | les remerciements préparés | l'agent de ses dossiers (R16) |
 | POST | `/v1/apres-vente/dossiers/<dossier>/clients/<id>/remerciement`, `…/appele` | `{ decision: send \| decline }` : rien ne part sans la validation de l'agent, puis par le contrôle central en mode essai ; « appelé » | l'agent du dossier (R16) |
 | GET | `/v1/plan-du-jour/controle` | les écarts du contrôle quotidien de la base légale des plans du jour sur 30 jours, non encore vus : des nombres par raison et par jour, jamais une fiche | direction, conformité (R16, R36) |
 | GET | `/v1/attribution/regles` | les règles d'attribution des contacts, les délais de rappel et les communes : les mêmes pour tous [R25] | toute clé |

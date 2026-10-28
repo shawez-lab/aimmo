@@ -73,6 +73,8 @@ it('le début des liens publics : https, sans chiffre, terminé par /apres-vente
   expect(apresVenteBase('http://aimmo.example.test/apres-vente/')).toBeNull();
   expect(apresVenteBase('https://aimmo2.example.test/apres-vente/')).toBeNull();
   expect(apresVenteBase('https://aimmo.example.test/autre/')).toBeNull();
+  // Le routeur ne sert les pages qu'à la racine : un chemin avant /apres-vente/ donnerait des liens morts [R65].
+  expect(apresVenteBase('https://aimmo.example.test/x/apres-vente/')).toBeNull();
 });
 
 describeWithSqlite('F07 · routes et branchement de M11', () => {
@@ -183,6 +185,12 @@ describeWithSqlite('F07 · routes et branchement de M11', () => {
     expect(files.body.data).toEqual([]);
     const day = await t.call(t.sam, 'GET', '/apres-vente/journee');
     expect(day.body.data).toEqual({ remercier: [], recommandations: [], taches: [] });
+    // La direction et la conformité voient les dossiers clos du réseau, sans les remerciements préparés de l'agent.
+    for (const v of [t.direction, { ...t.direction, role: 'compliance' as const, userId: 'conformite-1' }]) {
+      const seen = await t.call(v, 'GET', '/apres-vente/dossiers');
+      expect([v.role, seen.status]).toEqual([v.role, 200]);
+      expect(seen.body.data[0].clients.map((c: { side: string; thankYou: unknown; review: { status: string } | null }) => [c.side, c.thankYou, !!c.review])).toEqual([['vendeur', null, true], ['acquereur', null, true]]);
+    }
     // La journée est celle d'un agent : la direction est refusée, au journal.
     expect((await t.call(t.direction, 'GET', '/apres-vente/journee')).status).toBe(403);
     // Corps faux : refusé avant tout.
@@ -205,6 +213,21 @@ describeWithSqlite('F07 · routes et branchement de M11', () => {
     expect(await t.db.all('SELECT id FROM referrals')).toHaveLength(1);
     // La même clé par un autre lecteur : refusée, sans rien ranger.
     expect((await t.call(t.direction, 'POST', path, input, key)).body).toMatchObject({ ok: false, code: 'idempotency_key_reused' });
+    // Une panne pendant la saisie : la clé reçoit sa réponse finale, jamais « en cours » pour toujours.
+    const broken = { 'idempotency-key': 'cle-test-panne-0123456789' };
+    const db = t.db as { run: typeof t.db.run };
+    const run = db.run.bind(t.db);
+    let fail = true;
+    db.run = (async (sql: string, params?: unknown[]) => {
+      if (fail && /INSERT INTO referrals\b/.test(sql)) {
+        fail = false;
+        throw new Error('panne');
+      }
+      return run(sql, params as never);
+    }) as typeof t.db.run;
+    await expect(t.call(t.agent, 'POST', path, { ...input, firstName: 'Zoé', email: 'zoe@example.test' }, broken)).rejects.toThrow('panne');
+    db.run = run;
+    expect((await t.call(t.agent, 'POST', path, { ...input, firstName: 'Zoé', email: 'zoe@example.test' }, broken)).body).toMatchObject({ ok: false, code: 'retry_with_new_key' });
     // L'appel « recommandé » est dans la journée de l'agent, et se marque fait.
     const calls = (await t.call(t.agent, 'GET', '/apres-vente/journee')).body.data.recommandations;
     expect(calls).toHaveLength(1);
