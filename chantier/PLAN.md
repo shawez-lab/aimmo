@@ -1117,7 +1117,9 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K04 · Tableau de bord de l'agent, chaque chiffre prouvé (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : contacts = attributions à l'agent ; rendez-vous = tenus ; vente = acte signé dont la commission revient à l'agent (comme N06) ; honoraires à venir = ses parts (agent, partage) prévues, dues ou facturées, pas encore payées ; lignes sans nom, la fiche se lit sous ses droits.
+- Reste : relecture de Codex impossible (limite d'usage, H03), fusion sur les vérifications (#118) ; si M14 réattribue les biens d'un agent parti, rattacher la vente à l'agent du compromis (K01).
 - Qui : Claude · Relecture : forte · Dépend de : K01
 - Cahier : M13, « Tableau de bord de l'agent » ; règle « un agent ne voit que ses propres chiffres ».
 - Objectif : pour l'agent, sur une période : contacts reçus, rendez-vous tenus, mandats signés, ventes, honoraires à venir (prévus et dus), calculés par des requêtes écrites ; chaque chiffre s'ouvre sur la liste exacte des lignes qui le font. Jamais vu : aucun logiciel ne laisse l'agent recompter chacun de ses chiffres, ligne par ligne.
@@ -1125,7 +1127,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K05 · Tableau de bord du réseau : agents, zones, sources, coûts de l'IA
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : K04
 - Cahier : M13, « Tableau de bord du réseau ».
 - Objectif : pour la direction : les mêmes chiffres par agent, par commune et par source, et les coûts de l'IA par flux et par mandat signé, lus dans la base.
