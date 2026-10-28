@@ -1654,7 +1654,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W11 · Écrans de M15 dans l'application
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W09, Z03 (même fichier `packages/api/app/fichiers.ts`)
 - Cahier : M15 ; exigence de design (protocole, section 9).
 - Objectif : dans l'application de l'agent, l'écran « Louer » : contrôle du logement, annonce, candidatures dans leur ordre d'arrivée, bail, état des lieux pièce par pièce sur téléphone.
