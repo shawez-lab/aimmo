@@ -247,7 +247,10 @@ async function today(s: ApresVenteServices, viewer: Viewer): Promise<Response> {
   return reply({
     ok: true,
     value: {
-      remercier: thanks.value.filter((t) => t.calledAt === null).map((t) => ({ fileId: t.fileId, personId: t.personId, firstName: t.firstName, side: t.side, reference: references.get(t.fileId) ?? null })),
+      remercier: thanks.value
+        .filter((t) => t.calledAt === null)
+        .sort((a, b) => a.dueDay.localeCompare(b.dueDay) || a.fileId.localeCompare(b.fileId) || (a.side === b.side ? 0 : a.side === 'vendeur' ? -1 : 1))
+        .map((t) => ({ fileId: t.fileId, personId: t.personId, firstName: t.firstName, side: t.side, reference: references.get(t.fileId) ?? null })),
       recommandations: calls.value,
       taches: tasks.value.map((t) => ({ fileId: t.fileId, kind: t.kind, reference: references.get(t.fileId) ?? null })),
     },
@@ -386,7 +389,12 @@ export async function handleApresVentePublic(request: Request, config: ApresVent
   }
 
   if (kind === 'avis') {
+    const satisfaction = new Satisfaction(config.db, journal, { now });
     if (request.method === 'GET') {
+      const state = await satisfaction.state(token);
+      if (state === 'unknown') return unknownLink();
+      if (state === 'used') return page(409, 'Déjà répondu', '<p>Une réponse a déjà été donnée avec ce lien. Merci.</p>');
+      if (state === 'expired') return page(410, 'Lien expiré', '<p>Ce lien n’est plus valable. Votre agent immobilier reste joignable si vous le souhaitez.</p>');
       const notes = [1, 2, 3, 4, 5].map((n) => `<label><input type="radio" name="note" value="${n}" required><span>${n}</span></label>`).join('');
       return page(
         200,
@@ -403,7 +411,7 @@ export async function handleApresVentePublic(request: Request, config: ApresVent
     if (text.length > 8_000) return page(400, 'Réponse trop longue', '<p>Un commentaire tient en 1 000 caractères.</p>');
     const form = new URLSearchParams(text);
     const score = Number(form.get('note'));
-    const outcome = await new Satisfaction(config.db, journal, { now }).submit(token, { score, comment: form.get('commentaire') });
+    const outcome = await satisfaction.submit(token, { score, comment: form.get('commentaire') });
     if (outcome.ok) return page(200, 'Merci', '<p>Votre réponse est bien arrivée. Votre agent immobilier la lira.</p>');
     const messages: Record<string, [number, string, string]> = {
       unknown: [404, 'Lien inconnu', 'Ce lien n’est pas valable.'],

@@ -1110,6 +1110,7 @@ export const APP_JS = `'use strict';
       session += 1;
       wipeFiche();
       wipeM08();
+      wipeApres();
       show('accueil');
       day(currentKey, session);
     }

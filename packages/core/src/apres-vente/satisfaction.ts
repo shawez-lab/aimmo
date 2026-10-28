@@ -63,6 +63,15 @@ export class Satisfaction {
     this.now = options.now ?? (() => new Date());
   }
 
+  /** L'état d'un lien, pour la page qui le montre, sans rien consommer ni écrire. */
+  async state(token: string): Promise<'open' | 'unknown' | 'used' | 'expired'> {
+    if (typeof token !== 'string' || !/^[a-z]{32}$/.test(token)) return 'unknown';
+    const row = await this.db.first<{ expires_at: string; used_at: string | null }>('SELECT expires_at, used_at FROM satisfaction_tokens WHERE token_hash = ?', [await sha256(token)]);
+    if (!row) return 'unknown';
+    if (row.used_at) return 'used';
+    return this.now().getTime() >= Date.parse(row.expires_at) ? 'expired' : 'open';
+  }
+
   /** La réponse du client, par son lien : une seule fois, avant l'expiration. */
   async submit(token: string, input: { score: number; comment?: string | null }): Promise<SatisfactionOutcome> {
     if (typeof token !== 'string' || !/^[a-z]{32}$/.test(token)) return { ok: false, code: 'unknown' };
