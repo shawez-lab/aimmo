@@ -1006,6 +1006,15 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Critères : la source de la fiche du proche est « recommandation », avec le client qui recommande [R66] ; aucun champ ni texte de récompense : une saisie qui en parle (prime, cadeau, commission, bon d'achat, pourcentage) est refusée [R66] ; sans accord du proche, aucune tâche « appeler » et aucun envoi, la fiche est seulement rangée [R03] ; un proche exclu ou opposé n'est jamais rappelé [R02, R04] ; droits de la fiche [R16] ; rien d'une coordonnée au journal [R13].
 - Attend : rien.
 
+### Z01 · Jetons de lien qui ne déclenchent jamais le contrôle du texte
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Décidé (2026-10-28) : ouverte après une vérification rouge sur #101. Un jeton de rappel de V04 commençait par « gpt », et le contrôle du texte l'a lu comme une mention de l'IA [R06]. Le même défaut existe pour la désinscription des alertes de T03. F04 l'a déjà corrigé pour ses propres jetons (`newAfterSaleToken`).
+- Cahier : M05, « Rappels » ; M08, « Alertes ».
+- Objectif : les jetons de `newBookingToken` (rendezvous/reservation.ts) et de la désinscription des alertes (acquereurs/alertes.ts) ne commencent jamais par a, c, g, i ni r ; un rappel ou une alerte n'est plus jamais refusé pour R06 à cause du hasard.
+- Critères : sur 2 000 tirages, le texte d'un rappel et celui d'une alerte passent le contrôle du texte [R06] ; le test de V04 ne peut plus échouer au hasard.
+- Attend : rien.
+
 ### F02 · Demande d'avis le lendemain de l'acte, à tous, en mode essai
 - Statut : fait (2026-10-28)
 - Décidé (2026-10-27) : faite avant N06, comme le prévoit la lecture prudente de M11 : le dossier clos est lu par une interface, avec un faux dossier clos dans les tests ; N06 la branchera.
