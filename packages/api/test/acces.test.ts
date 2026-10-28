@@ -145,7 +145,8 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
     const cles = ((await res.json()) as { data: { cles: { cle: string }[] } }).data.cles;
     await exchange(w.db, token);
     const journal = JSON.stringify(w.raw.prepare('SELECT * FROM journal').all());
-    expect(journal).toContain('acces.invitation_utilisee');
+    expect(journal).toContain('acces.invitation_tentative');
+    expect((w.raw.prepare('SELECT used_at FROM access_invitations').get() as { used_at: string }).used_at).toBe(T0.toISOString());
     expect(journal).toContain('acces.invitation_refusee');
     expect(journal).not.toContain(token);
     expect(journal).not.toContain(await sha256Hex(token));

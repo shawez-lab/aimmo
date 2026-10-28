@@ -126,8 +126,10 @@ export async function exchangeInvitation(db: SqlDatabase, token: unknown, now: D
       ]);
       keys.push({ role: grant.role, key, sha256 });
     }
-    // Au journal : l'invitation et les rôles ouverts, jamais le jeton, une clé ni son empreinte [R13].
-    await appendEvent(journal, { type: 'acces.invitation_utilisee', actor: 'invitation', subject: invitation.id, data: { roles: grants.map((g) => g.role) } }, () => now);
+    // Au journal, avant le marquage : la tentative, l'invitation et les rôles demandés, jamais le jeton, une clé ni son
+    // empreinte [R13]. L'usage lui-même est prouvé par `used_at`, écrit une seule fois ; une tentative perdue est
+    // suivie de son refus au journal.
+    await appendEvent(journal, { type: 'acces.invitation_tentative', actor: 'invitation', subject: invitation.id, data: { roles: grants.map((g) => g.role) } }, () => now);
     const claimed = await db.run('UPDATE access_invitations SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?', [nowIso, invitation.id, nowIso]);
     if (claimed.changes !== 1) {
       await revoke();
