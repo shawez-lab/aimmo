@@ -344,7 +344,15 @@ export class RelancesApresVente {
           const firstName = await this.firstName(c.personId);
           const link = await this.newUnsubscribeLink(networkId, c.personId, now);
           // À un an, l'acquéreur reçoit le carnet de son bien avec sa relance (F06), jamais sans son accord [R65].
-          const carnet = year === 1 && c.side === 'acquereur' && this.carnets ? await this.carnets.create(networkId, sale, c.personId) : null;
+          let carnet: string | null = null;
+          if (year === 1 && c.side === 'acquereur' && this.carnets) {
+            try {
+              carnet = await this.carnets.create(networkId, sale, c.personId);
+            } catch {
+              // Les ventes publiques ou la base ne répondent pas : la relance part sans carnet, l'erreur va au journal.
+              await appendEvent(this.journal, { type: 'apres_vente.carnet', actor: 'system:apres-vente', subject: `sale_file:${sale.fileId}`, data: { status: 'erreur' } }, this.now);
+            }
+          }
           const result = await this.controle.send({
             networkId,
             agentId: sale.agentId,

@@ -12,7 +12,7 @@ import {
   type ClosedSale,
   type SoldPropertyFacts,
 } from '../src/apres-vente/index.ts';
-import type { Sale, SalesCoverage, SalesSource } from '../src/estimation/fourchette.ts';
+import { Fourchette, type Sale, type SalesCoverage, type SalesSource } from '../src/estimation/fourchette.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { FakeDossiersClos } from './apres-vente-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
@@ -58,20 +58,36 @@ const FACTS: Record<string, SoldPropertyFacts> = {
 };
 
 it('la validité du diagnostic énergétique suit ses règles : 10 ans, et les fins anticipées des anciens', () => {
-  expect(energyValidUntil('2026-11-03')).toBe('2036-11-03');
-  expect(energyValidUntil('2021-07-01')).toBe('2031-07-01');
+  expect(energyValidUntil('2026-11-03')).toBe('2036-11-02');
+  expect(energyValidUntil('2021-07-01')).toBe('2031-06-30');
   expect(energyValidUntil('2021-06-30')).toBe('2024-12-31');
   expect(energyValidUntil('2018-01-01')).toBe('2024-12-31');
   expect(energyValidUntil('2017-12-31')).toBe('2022-12-31');
   expect(energyValidUntil('2013-01-01')).toBe('2022-12-31');
-  expect(energyValidUntil('2012-05-01')).toBe('2012-05-01');
+  expect(energyValidUntil('2012-05-01')).toBe('2022-04-30');
   expect(energyValidUntil('2024-02-29')).toBe('2034-02-28');
+  expect(energyValidUntil('2024-03-01')).toBe('2034-02-28');
 });
 
 it('[R10] [R09] cinq carnets tests, chacun relu par le code contre ses sources ; aucun ne démarche', async () => {
   for (const [name, facts] of Object.entries(FACTS)) {
     const c = await buildCarnet(SALE, facts, SALES, NOW);
     expect(await verifyCarnet(c, SALE, facts, SALES, NOW), name).toEqual([]);
+    // Relecture indépendante de la fabrication du carnet : chaque chiffre contre sa source.
+    const r = await new Fourchette(SALES, undefined, () => NOW).estimate({ kind: facts.kind, surface: facts.surface, lat: facts.lat, lon: facts.lon, postalCode: facts.postalCode, energyClass: facts.energy?.energyClass ?? null });
+    if (r.ok) {
+      expect(c.value).toMatchObject({ known: true, low: r.low, high: r.high, comparables: r.comparables.length, latestSale: r.latestUsedSale, source: COVERAGE.source });
+      expect(c.yearCount).toBe(r.comparables.filter((x) => x.month >= '2027-04').length);
+    } else {
+      expect(c.value.known).toBe(false);
+      expect(c.yearCount).toBe(0);
+    }
+    for (const y of c.yearSales) {
+      expect(SALES.all.some((x) => Math.round(x.surface) === y.surface && Math.round(x.pricePerM2) === y.pricePerM2 && x.month === y.month), name).toBe(true);
+      expect(y.month >= '2027-04').toBe(true);
+    }
+    if (facts.energy) expect(c.energy).toMatchObject({ known: true, energyClass: facts.energy.energyClass, diagnosedOn: facts.energy.diagnosedOn, validUntil: energyValidUntil(facts.energy.diagnosedOn) });
+    else expect(c.energy.known).toBe(false);
     const text = carnetText(c);
     expect(SOLICITATION.test(text), name).toBe(false);
     expect(text).toContain('Ce carnet ne vous demande rien.');
@@ -83,13 +99,23 @@ it('[R10] [R09] cinq carnets tests, chacun relu par le code contre ses sources ;
   expect(carnetText(flat)).toMatch(/Valeur : entre \d{3} \d{3} € et \d{3} \d{3} €, calculée d'après \d+ ventes comparables publiées/);
   expect(flat.yearSales.length).toBeGreaterThan(0);
   expect(flat.yearSales.every((s) => s.month > '2027-03')).toBe(true);
-  expect(carnetText(flat)).toContain('valable jusqu’au 3 novembre 2036'.replace('’', "'"));
+  expect(carnetText(flat)).toContain("valable jusqu'au 2 novembre 2036");
   const old = await buildCarnet(SALE, FACTS['ancienDpe']!, SALES, NOW);
   expect(carnetText(old)).toContain("il n'est plus valable depuis le 31 décembre 2022");
   const land = await buildCarnet(SALE, FACTS['terrain']!, SALES, NOW);
   expect(carnetText(land)).toContain('Valeur : non communiquée, car ce type de bien ne se compare pas aux ventes publiées.');
   expect(carnetText(land)).toContain('Diagnostic énergétique : non communiqué.');
   expect(carnetText(await buildCarnet(SALE, FACTS['sansPosition']!, SALES, NOW))).toContain('Valeur : non communiquée, car la position ou la surface du bien manque.');
+});
+
+it('[R10] plus de 10 ventes dans l’année : le carnet dit leur nombre exact, et montre les 10 plus récentes', async () => {
+  // Les mêmes ventes, toutes publiées à l'automne 2027.
+  const recent = new MemorySales(SALES.all.map((x, i) => ({ ...x, month: `2027-${10 + (i % 3)}` })));
+  const c = await buildCarnet(SALE, FACTS['appartement']!, recent, NOW);
+  expect(c.yearCount).toBeGreaterThan(10);
+  expect(c.yearSales).toHaveLength(10);
+  expect(carnetText(c)).toContain(`Ventes comparables publiées sur les douze derniers mois : ${c.yearCount}, dont les 10 plus récentes :`);
+  expect(checkCarnet(c)).toEqual([]);
 });
 
 it('[R10] un carnet dont un chiffre ne vient pas de ses sources, ou qui démarche, est refusé', async () => {
@@ -181,6 +207,22 @@ describeWithSqlite('F06 · carnet du propriétaire, un an après (Jamais vu)', (
     const box = await u.inbox(c);
     expect(box).toHaveLength(1);
     expect(box[0]!.body).not.toContain(CARNET);
+  });
+
+  it('les ventes publiques en panne : la relance part sans carnet, et l’erreur est au journal', async () => {
+    const t = await setup();
+    const broken = new CarnetsProprietaire(t.db, t.journal, { factsOf: async () => FACTS['appartement']! }, { coverage: async () => { throw new Error('DVF indisponible'); }, within: async () => [] }, { now: t.now, base: CARNET });
+    const relances = new RelancesApresVente(t.db, t.journal, t.dossiers, { now: t.now, unsubscribeBase: BASE, carnets: broken });
+    const a = await t.client('Ana');
+    const v = await t.client('Victor');
+    t.close('f1', '2027-03-09', [{ personId: a, side: 'acquereur' }, { personId: v, side: 'vendeur' }]);
+    t.setClock(paris('2027-03-09', 11));
+    for (const p of [a, v]) await relances.recordChoice(t.agent, 'f1', p, { choice: 'oui', proof: 'case cochée, test' });
+    t.setClock(paris('2028-03-09', 10));
+    expect(await relances.run(t.network.id)).toBe(2);
+    expect((await t.inbox(a))[0]!.body).not.toContain(CARNET);
+    const events = (await t.journal.bySubject('sale_file:f1')).filter((e) => e.type === 'apres_vente.carnet');
+    expect(events.map((e) => (e.data as { status: string }).status)).toEqual(['erreur']);
   });
 
   it('un carnet se fait une fois ; il ne change ni ne s’efface', async () => {

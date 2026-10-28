@@ -16,8 +16,10 @@
  * Décidé, lecture prudente :
  * - les faits du bien vendu (type, surface, position, diagnostic) sont lus par une interface, `BiensVendus`, que M10
  *   (N06) branchera ; sans faits, pas de carnet ;
- * - validité du diagnostic énergétique : 10 ans ; ceux faits du 1er janvier 2013 au 31 décembre 2017 ont cessé de valoir
- *   le 31 décembre 2022, ceux du 1er janvier 2018 au 30 juin 2021 le 31 décembre 2024 ; avant 2013, il n'est plus valable ;
+ * - validité du diagnostic énergétique : 10 ans, jusqu'à la veille de l'anniversaire ; ceux faits du 1er janvier 2013
+ *   au 31 décembre 2017 ont cessé de valoir le 31 décembre 2022, ceux du 1er janvier 2018 au 30 juin 2021 le
+ *   31 décembre 2024 ;
+ * - les ventes de l'année : leur nombre, et les 10 plus récentes ;
  * - le carnet est rangé une fois par client et par dossier, lisible par son lien seulement, qui ne dit aucun nom ; un
  *   carnet fait reste tel quel, même si la relance qui le porte part plus tard.
  */
@@ -55,6 +57,8 @@ export interface Carnet {
   value:
     | { known: true; low: number; high: number; comparables: number; latestSale: string; source: string; recentMissing: boolean }
     | { known: false; reason: string };
+  /** Toutes les ventes comparables des douze derniers mois ; `yearSales` en montre les 10 plus récentes. */
+  yearCount: number;
   yearSales: CarnetComparable[];
   energy: { known: true; energyClass: EnergyClass; diagnosedOn: string; validUntil: string; expired: boolean } | { known: false };
   /** Le jour où le carnet a été fait, `AAAA-MM-JJ`. */
@@ -70,15 +74,19 @@ const REASONS: Record<string, string> = {
   peu_de_ventes: 'trop peu de ventes comparables ont été publiées',
 };
 
-/** Jusqu'à quand vaut un diagnostic énergétique fait ce jour-là. */
+/**
+ * Jusqu'à quand vaut un diagnostic énergétique fait ce jour-là : 10 ans, jusqu'à la veille de l'anniversaire, comme le
+ * porte le diagnostic ; ceux faits du 1er janvier 2013 au 31 décembre 2017 ont cessé de valoir le 31 décembre 2022, ceux
+ * du 1er janvier 2018 au 30 juin 2021 le 31 décembre 2024.
+ */
 export function energyValidUntil(diagnosedOn: string): string {
-  if (diagnosedOn < '2013-01-01') return diagnosedOn;
-  if (diagnosedOn < '2018-01-01') return '2022-12-31';
-  if (diagnosedOn < '2021-07-01') return '2024-12-31';
+  if (diagnosedOn >= '2013-01-01' && diagnosedOn < '2018-01-01') return '2022-12-31';
+  if (diagnosedOn >= '2018-01-01' && diagnosedOn < '2021-07-01') return '2024-12-31';
   const y = Number(diagnosedOn.slice(0, 4)) + 10;
   const md = diagnosedOn.slice(5);
   const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-  return `${y}-${md === '02-29' && !leap ? '02-28' : md}`;
+  const anniversary = `${y}-${md === '02-29' && !leap ? '03-01' : md}`;
+  return new Date(Date.parse(`${anniversary}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 }
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -102,7 +110,11 @@ export function carnetText(c: Carnet): string {
     lines.push(`Valeur : non communiquée, car ${c.value.reason}.`);
   }
   if (c.yearSales.length > 0) {
-    lines.push(`Ventes comparables publiées sur les douze derniers mois : ${c.yearSales.length}.`);
+    lines.push(
+      c.yearCount > c.yearSales.length
+        ? `Ventes comparables publiées sur les douze derniers mois : ${c.yearCount}, dont les ${c.yearSales.length} plus récentes :`
+        : `Ventes comparables publiées sur les douze derniers mois : ${c.yearCount}.`,
+    );
     for (const s of c.yearSales) lines.push(`- ${s.surface} m², ${euros(s.pricePerM2)} le m², ${monthText(s.month)}`);
   } else {
     lines.push('Ventes comparables publiées sur les douze derniers mois : non communiquées.');
@@ -131,7 +143,7 @@ function sourceNumbers(c: Carnet): Set<string> {
   const day = (d: string) => [Number(d.slice(0, 4)), Number(d.slice(5, 7)), Number(d.slice(8, 10))];
   out.push(...(c.reference.match(/\d+/g) ?? []), ...(c.city?.match(/\d+/g) ?? []));
   if (c.value.known) out.push(c.value.low, c.value.high, c.value.comparables, Number(c.value.latestSale.slice(0, 4)), ...(c.value.source.match(/\d+/g) ?? []));
-  out.push(c.yearSales.length);
+  out.push(c.yearCount, c.yearSales.length);
   for (const s of c.yearSales) out.push(s.surface, s.pricePerM2, Number(s.month.slice(0, 4)));
   if (c.energy.known) out.push(...day(c.energy.diagnosedOn), ...day(c.energy.validUntil));
   // « douze derniers mois » s'écrit en toutes lettres ; « m² » porte son exposant, qui n'est pas un chiffre ASCII.
@@ -171,19 +183,14 @@ export async function buildCarnet(sale: Pick<ClosedSale, 'reference' | 'city'>, 
     r.ok && r.data.source
       ? { known: true, low: r.low, high: r.high, comparables: r.comparables.length, latestSale: r.latestUsedSale, source: r.data.source, recentMissing: r.data.recentMissing }
       : { known: false, reason: REASONS[r.ok ? 'donnees_absentes' : r.reason] ?? REASONS['donnees_absentes']! };
-  const yearSales = r.ok
-    ? r.comparables
-        .filter((s) => s.month > yearAgo)
-        .sort((a, b) => b.month.localeCompare(a.month) || a.distance - b.distance)
-        .slice(0, 10)
-        .map((s) => ({ surface: Math.round(s.surface), pricePerM2: Math.round(s.pricePerM2), month: s.month }))
-    : [];
+  const inYear = r.ok ? r.comparables.filter((s) => s.month > yearAgo).sort((a, b) => b.month.localeCompare(a.month) || a.distance - b.distance) : [];
+  const yearSales = inYear.slice(0, 10).map((s) => ({ surface: Math.round(s.surface), pricePerM2: Math.round(s.pricePerM2), month: s.month }));
   let energy: Carnet['energy'] = { known: false };
   if (facts.energy && /^\d{4}-\d{2}-\d{2}$/.test(facts.energy.diagnosedOn)) {
     const validUntil = energyValidUntil(facts.energy.diagnosedOn);
     energy = { known: true, energyClass: facts.energy.energyClass, diagnosedOn: facts.energy.diagnosedOn, validUntil, expired: validUntil < madeOn };
   }
-  return { reference: sale.reference, city: sale.city, value, yearSales, energy, madeOn };
+  return { reference: sale.reference, city: sale.city, value, yearCount: inYear.length, yearSales, energy, madeOn };
 }
 
 async function sha256(text: string): Promise<string> {
