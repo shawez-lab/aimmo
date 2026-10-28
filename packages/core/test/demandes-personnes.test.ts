@@ -145,16 +145,45 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(JSON.stringify(seller)).not.toContain(C);
     const buyer = await assembleAccess(db, [C]);
     expect(buyer.sections.find((s) => s.table === 'sale_file_financing')!.rows).toEqual([expect.objectContaining({ file_id: 'f-c', step: 'pret_accorde' })]);
+    // Au journal aussi : le financement et les alertes de fonds du dossier sont à l'acquéreur seul.
+    await insert('journal', { seq: 8001, at: 't', type: 'dossier.financement', actor: 'ag', subject: 'sale_file:f-c', data: '{"step":"pret_refuse"}', prev_hash: 'p', hash: 'h8001' });
+    await insert('journal', { seq: 8002, at: 't', type: 'dossier.alerte_fonds', actor: 'ag', subject: 'sale_file:f-c', data: '{"side":"acquereur","signals":["iban_change"]}', prev_hash: 'p', hash: 'h8002' });
+    const sellerAfter = JSON.stringify(await assembleAccess(db, [A]));
+    expect(sellerAfter).not.toContain('pret_refuse');
+    expect(sellerAfter).not.toContain('iban_change');
+    expect(sellerAfter).not.toContain(C);
+    const buyerJournal = (await assembleAccess(db, [C])).sections.find((s) => s.table === 'journal')!.rows.map((r) => r.type);
+    expect(buyerJournal.sort()).toEqual(['dossier.alerte_fonds', 'dossier.financement']);
+    // Le plan d'effacement de A n'efface jamais d'office une ligne partagée : son dossier de vente avec C, la
+    // recommandation qui le nomme, sont « à examiner ».
+    const plan = conformite.erasurePlan(await conformite.assembleAccessDetail(db, [A]));
+    const lines = (table: string) => plan.lines.filter((l) => l.table === table).map((l) => [l.action, l.rows]);
+    expect(lines('sale_files')).toEqual([['effacer', 1], ['examiner', 1]]);
+    expect(lines('sale_file_steps')).toEqual([['effacer', 1], ['examiner', 1]]);
+    expect(lines('referrals')).toEqual([['effacer', 1], ['examiner', 1]]);
+    expect(lines('daily_plans')).toEqual([['examiner', 1]]);
   });
 
   it('[R96] la lutte contre le blanchiment ne change rien à la réponse : rien ne trahit un signalement', async () => {
-    const { db, insert } = await seedEveryTable();
+    const { db, insert, seeded } = await seedEveryTable();
     const before = await conformite.sha256Of(await assembleAccess(db, [A]));
     await insert('suspicion_reports', { id: 's-1', network_id: 'n', case_ref: 'mandate:x', person_id: A, note: 'note', snapshot: '{}', snapshot_sha256: 'x', reported_by: 'ag', reported_at: 't' });
     await insert('risk_sheets', { id: 'k-1', network_id: 'n', person_id: A, relation: 'vendeur', case_ref: 'mandate:x', grid_version: 'g', inputs: '{}', criteria: '[]', level: 'eleve', fingerprint: 'f', prepared_by: 'ag', prepared_at: 't' });
     for (const [seq, type] of [[9001, 'risque.prepare'], [9002, 'coffre.depose'], [9003, 'vigilance.alerte'], [9004, 'conformite.signalement'], [9005, 'identification.declaree']] as const) {
       await insert('journal', { seq, at: 't', type, actor: 'ag', subject: `person:${A}`, data: '{}', prev_hash: 'p', hash: `h${seq}` });
     }
+    // Les gestes de la lutte contre le blanchiment écrits par d'autres modules : refus de lire le coffre, la fiche de
+    // risque ou la vigilance, dossier bloqué par l'identification.
+    const mandate = `mandate:${seeded.get('mandates')![A]!.id}`;
+    const others: [number, string, string, string][] = [
+      [9101, 'acces.refuse', `person:${A}`, '{"rule":"R90","kind":"compliance_vault","code":"role"}'],
+      [9102, 'acces.refuse', `person:${A}`, '{"rule":"R91","kind":"risk_sheet","code":"role"}'],
+      [9103, 'acces.refuse', mandate, '{"rule":"R16","kind":"vigilance","code":"role"}'],
+      [9104, 'acces.refuse', `person:${A}`, '{"rule":"R16","kind":"identification","code":"not_assigned"}'],
+      [9105, 'dossier.bloque', `sale_file:${seeded.get('sale_files')![A]!.id}`, '{"rule":"R58","code":"identity_missing"}'],
+      [9106, 'mandat.refuse', mandate, '{"rule":"R92","code":"identity_missing"}'],
+    ];
+    for (const [seq, type, subject, data] of others) await insert('journal', { seq, at: 't', type, actor: 'ag', subject, data, prev_hash: 'p', hash: `h${seq}` });
     expect(await conformite.sha256Of(await assembleAccess(db, [A]))).toBe(before);
   });
 });
@@ -292,6 +321,7 @@ describeWithSqlite('L07 · demandes des personnes en moins d’un mois, avec pre
   it('[R17] [R96] l’effacement, en mode essai tant que H29 n’est pas fait : il garde registre, anti-blanchiment et factures, et n’efface rien', async () => {
     const t = await setup();
     await t.store.addIdentifier({ networkId: t.network.id, personId: t.personId, kind: 'email', value: 'lea.exemple@example.test' });
+    await t.decisions.recordStopRequest({ networkId: t.network.id, personId: t.personId, at: NOW });
     const request = await t.record('effacement');
     expect(await t.demandes.prepareErasure(t.agent, request.id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     const before = await countAll(t.db);
@@ -300,11 +330,13 @@ describeWithSqlite('L07 · demandes des personnes en moins d’un mois, avec pre
     expect(r.value.plan.mode).toBe('essai');
     const action = Object.fromEntries(r.value.plan.lines.map((l) => [l.table, l.action]));
     // Le registre des mandats, les documents signés et le journal sont gardés ; la fiche serait effacée.
-    expect(action).toMatchObject({ mandate_register: 'garder', mandates: 'garder', documents: 'garder', journal: 'garder', persons: 'effacer', person_identifiers: 'effacer' });
+    expect(action).toMatchObject({ mandate_register: 'garder', mandates: 'garder', documents: 'garder', journal: 'garder', persons: 'effacer' });
+    // L'arrêt de la personne reste, ses identifiants sous leur seule empreinte : elle ne sera plus jamais recontactée [R04].
+    expect(action).toMatchObject({ exclusions: 'garder', person_identifiers: 'empreinte' });
     expect(r.value.plan.lines.find((l) => l.table === 'mandate_register')!.rows).toBe(1);
     expect(r.value.plan.alwaysKept.join(' ')).toContain('L561');
     // Les factures sont gardées : leur traitement est une obligation légale.
-    expect(erasurePlan({ personIds: [], notIncluded: [], sections: [{ table: 'invoices', traitement: 'commissions-factures', finalite: '', baseLegale: '', duree: '', destinataires: [], sousTraitants: [], rows: [{}] }] }).lines).toEqual([
+    expect(erasurePlan({ response: { personIds: [], notIncluded: [], sections: [{ table: 'invoices', traitement: 'commissions-factures', finalite: '', baseLegale: '', duree: '', destinataires: [], sousTraitants: [], rows: [{}] }] }, exclusiveRows: { invoices: 1 } }).lines).toEqual([
       expect.objectContaining({ table: 'invoices', action: 'garder' }),
     ]);
     // Rien n'est effacé : seules les lignes de preuve de la demande s'ajoutent.

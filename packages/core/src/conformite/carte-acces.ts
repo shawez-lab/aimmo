@@ -71,7 +71,11 @@ export type AccessMapEntry =
       /** Secrets de sécurité (empreintes de jetons ou de codes) : jamais montrés. */
       secrets?: readonly string[];
       /** Des lignes à écarter : une colonne et les débuts de valeur écartés. */
-      skip?: { column: string; prefixes: readonly string[] };
+      /**
+       * Des lignes à écarter : celles dont `column` commence par l'un des `prefixes`, et celles dont `marked` contient
+       * l'une des valeurs JSON de `markers` (une chaîne entière entre guillemets).
+       */
+      skip?: { column: string; prefixes: readonly string[]; marked?: string; markers?: readonly string[] };
     }
   | { excluded: ExclusionReason; why: string };
 
@@ -88,6 +92,12 @@ const LCB_FT_EXCLUSIONS: Readonly<Record<string, AccessMapEntry>> = Object.fromE
 
 /** Les sortes d'événements du journal qui relèvent de la lutte contre le blanchiment : jamais dans la réponse. */
 export const JOURNAL_LCB_PREFIXES = ['coffre.', 'risque.', 'identification.', 'vigilance.', 'conformite.'] as const;
+/**
+ * Les marques, dans les données d'un événement, d'un geste de la lutte contre le blanchiment écrit par un autre module :
+ * un refus de lire le coffre, une fiche de risque ou une vigilance, un dossier bloqué par l'identification. Un tel
+ * événement n'entre jamais dans la réponse, quelle que soit sa sorte.
+ */
+export const JOURNAL_LCB_MARKERS = ['compliance_vault', 'risk_sheet', 'identification', 'vigilance', 'conformite', 'R58', 'R90', 'R91', 'R92', 'R93', 'R94'] as const;
 
 export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // relation-clients
@@ -302,12 +312,13 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'mandates', 'id', { prefix: 'mandate:' }),
       via('subject', 'documents', 'id', { prefix: 'document:' }),
       via('subject', 'offer_register', 'id', { prefix: 'offer:' }),
-      via('subject', 'sale_files', 'id', { prefix: 'sale_file:' }),
+      // Le dossier de vente au journal porte le financement et les alertes de fonds de l'acquéreur : à lui seul.
+      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id' }),
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
       via('subject', 'person_requests', 'id', { prefix: 'person_request:' }),
     ],
-    skip: { column: 'type', prefixes: JOURNAL_LCB_PREFIXES },
+    skip: { column: 'type', prefixes: JOURNAL_LCB_PREFIXES, marked: 'data', markers: JOURNAL_LCB_MARKERS },
   },
   registry_reviews: out('sans_client', 'Relecture du registre des traitements.'),
   registry_review_alerts: out('sans_client', 'Alerte de relecture du registre.'),
@@ -409,7 +420,7 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
         }
       }
     }
-    for (const c of [...Object.keys(entry.own ?? {}), ...Object.values(entry.own ?? {}).flat(), ...(entry.secrets ?? []), ...(entry.skip ? [entry.skip.column] : [])]) named.add(c);
+    for (const c of [...Object.keys(entry.own ?? {}), ...Object.values(entry.own ?? {}).flat(), ...(entry.secrets ?? []), ...(entry.skip ? [entry.skip.column, ...(entry.skip.marked ? [entry.skip.marked] : [])] : [])]) named.add(c);
     for (const c of named) if (!columns.includes(c)) gaps.push({ kind: 'colonne_inconnue', table, column: c });
     // Chaque colonne qui désigne une personne est suivie : sinon la réponse oublierait des lignes, ou montrerait celles d'un autre.
     const followed = new Set(entry.locate.filter(isDirect).map((l) => l.column));

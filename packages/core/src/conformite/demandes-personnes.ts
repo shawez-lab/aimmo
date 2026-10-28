@@ -93,6 +93,14 @@ interface Found {
   row: Row;
   /** Les colonnes directes par lesquelles la ligne a été trouvée. */
   matched: Set<string>;
+  /** Trouvée par une ligne qui n'est qu'à la personne. */
+  viaExclusive: boolean;
+}
+
+export interface AccessDetail {
+  response: AccessResponse;
+  /** Par table, le nombre de lignes qui ne sont qu'à la personne : ni partagées avec une autre, ni en partie masquées. */
+  exclusiveRows: Record<string, number>;
 }
 
 /**
@@ -104,11 +112,21 @@ export async function assembleAccess(
   personIds: readonly string[],
   options: { carte?: Readonly<Record<string, AccessMapEntry>>; registre?: readonly Traitement[] } = {},
 ): Promise<AccessResponse> {
+  return (await assembleAccessDetail(db, personIds, options)).response;
+}
+
+/** La réponse d'accès, et ce qui n'est qu'à la personne, pour le plan d'effacement. */
+export async function assembleAccessDetail(
+  db: SqlDatabase,
+  personIds: readonly string[],
+  options: { carte?: Readonly<Record<string, AccessMapEntry>>; registre?: readonly Traitement[] } = {},
+): Promise<AccessDetail> {
   const carte = options.carte ?? CARTE_ACCES;
   const registre = options.registre ?? REGISTRE_TRAITEMENTS;
   const ids = [...new Set(personIds)];
   const found = new Map<string, Map<string, Found>>();
   const json = new Map<string, Map<string, string>>();
+  const exclusive = new Map<string, Set<string>>();
 
   const select = async (table: string, column: string, values: readonly string[], where: Readonly<Record<string, string>>): Promise<Row[]> => {
     const rows: Row[] = [];
@@ -125,10 +143,11 @@ export async function assembleAccess(
     const entry = carte[table]!;
     if ('excluded' in entry) continue;
     const rows = new Map<string, Found>();
-    const add = (row: Row, column: string | null): void => {
+    const add = (row: Row, column: string | null, viaExclusive = false): void => {
       const key = JSON.stringify(canonical(row));
-      const known = rows.get(key) ?? { row, matched: new Set<string>() };
+      const known = rows.get(key) ?? { row, matched: new Set<string>(), viaExclusive: false };
       if (column) known.matched.add(column);
+      if (viaExclusive) known.viaExclusive = true;
       rows.set(key, known);
     };
     for (const l of entry.locate) {
@@ -140,9 +159,17 @@ export async function assembleAccess(
         continue;
       }
       if ('from' in l) {
-        const parents = [...(found.get(l.from)?.values() ?? [])].filter((p) => !l.onlyMatchedBy || p.matched.has(l.onlyMatchedBy));
-        const values = [...new Set(parents.map((p) => p.row[l.key]).filter((v): v is string | number => v !== null && v !== undefined).map((v) => `${l.prefix ?? ''}${v}`))].sort();
-        for (const row of await select(table, l.column, values, l.where ?? {})) add(row, null);
+        const parents = [...(found.get(l.from)?.entries() ?? [])].filter(([, p]) => !l.onlyMatchedBy || p.matched.has(l.onlyMatchedBy));
+        const owned = exclusive.get(l.from) ?? new Set<string>();
+        const parentExclusive = new Map<string, boolean>();
+        for (const [key, p] of parents) {
+          const v = p.row[l.key];
+          if (v === null || v === undefined) continue;
+          const value = `${l.prefix ?? ''}${v}`;
+          parentExclusive.set(value, (parentExclusive.get(value) ?? false) || owned.has(key));
+        }
+        const values = [...parentExclusive.keys()].sort();
+        for (const row of await select(table, l.column, values, l.where ?? {})) add(row, null, parentExclusive.get(String(row[l.column])) ?? false);
         continue;
       }
       const values = ids.map((id) => `${l.prefix ?? ''}${id}`);
@@ -172,9 +199,22 @@ export async function assembleAccess(
       json.set(`${table}.${l.json}`, kept);
     }
     if (entry.skip) {
-      const { column, prefixes } = entry.skip;
-      for (const [key, f] of rows) if (prefixes.some((p) => String(f.row[column] ?? '').startsWith(p))) rows.delete(key);
+      const { column, prefixes, marked, markers } = entry.skip;
+      for (const [key, f] of rows) {
+        const prefixed = prefixes.some((p) => String(f.row[column] ?? '').startsWith(p));
+        const text = marked ? String(f.row[marked] ?? '') : '';
+        if (prefixed || (markers ?? []).some((m) => text.includes(JSON.stringify(m)))) rows.delete(key);
+      }
     }
+    // Une ligne n'est qu'à la personne si elle a été trouvée par elle, ou par une ligne qui n'est qu'à elle, et
+    // qu'aucune de ses colonnes n'est celle d'une autre personne. Un tableau partagé (le plan d'un agent) ne l'est jamais.
+    const mine = new Set<string>();
+    const shared = entry.locate.some((l) => 'json' in l);
+    for (const [key, f] of rows) {
+      const masked = Object.keys(entry.own ?? {}).some((c) => !f.matched.has(c));
+      if (!shared && !masked && (f.matched.size > 0 || f.viaExclusive)) mine.add(key);
+    }
+    exclusive.set(table, mine);
     found.set(table, rows);
   }
 
@@ -214,15 +254,21 @@ export async function assembleAccess(
     }
   }
   const notIncluded = (Object.keys(EXCLUSION_LABELS) as ExclusionReason[]).map((reason) => ({ reason, text: EXCLUSION_LABELS[reason] }));
-  return { personIds: ids, sections, notIncluded };
+  const exclusiveRows: Record<string, number> = {};
+  for (const s of sections) exclusiveRows[s.table] = exclusive.get(s.table)?.size ?? 0;
+  return { response: { personIds: ids, sections, notIncluded }, exclusiveRows };
 }
 
 export interface ErasurePlanLine {
   table: string;
   traitement: string;
   rows: number;
-  action: 'effacer' | 'garder';
-  /** Pourquoi garder : la base légale qui l'impose. */
+  /**
+   * `garder` : la loi l'oblige, ou l'arrêt de la personne doit tenir ; `empreinte` : gardé sous sa seule empreinte ;
+   * `effacer` : n'est qu'à la personne ; `examiner` : partagé avec une autre personne, pseudonymisé ou gardé sur
+   * décision du responsable, jamais effacé d'office.
+   */
+  action: 'effacer' | 'garder' | 'empreinte' | 'examiner';
   why: string | null;
 }
 
@@ -234,21 +280,37 @@ export interface ErasurePlan {
   alwaysKept: string[];
 }
 
+export const ERASURE_WHY = {
+  obligation: LEGAL_BASIS_LABELS.obligation_legale,
+  stop: 'L\'opposition et les exclusions restent, pour ne plus jamais écrire à la personne [R04].',
+  identifiers: 'Identifiants gardés sous leur seule empreinte, pour reconnaître la personne et respecter son arrêt [R04].',
+  shared: 'Ligne partagée avec une autre personne : pseudonymisée ou gardée, sur décision du responsable.',
+} as const;
+
 /**
- * Le plan d'effacement : chaque table de la réponse d'accès, effacée ou gardée selon la base légale de son traitement.
- * Une obligation légale garde la table (registre des mandats et documents signés, factures, journal) ; la lutte contre
- * le blanchiment est toujours gardée.
+ * Le plan d'effacement : chaque table de la réponse d'accès. Une obligation légale garde la table (registre des mandats
+ * et documents signés, factures, journal) ; l'arrêt de la personne reste, ses identifiants sous empreinte ; une ligne
+ * partagée avec une autre personne n'est jamais effacée d'office ; la lutte contre le blanchiment est toujours gardée.
  */
-export function erasurePlan(access: AccessResponse, registre: readonly Traitement[] = REGISTRE_TRAITEMENTS): ErasurePlan {
+export function erasurePlan(detail: AccessDetail, registre: readonly Traitement[] = REGISTRE_TRAITEMENTS): ErasurePlan {
   const basisOf = new Map<string, LegalBasis>(registre.map((t) => [t.id, t.baseLegale]));
+  const lines: ErasurePlanLine[] = [];
+  for (const s of detail.response.sections) {
+    const base = { table: s.table, traitement: s.traitement };
+    if (basisOf.get(s.traitement) === 'obligation_legale') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.obligation });
+    else if (s.table === 'exclusions') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.stop });
+    else if (s.table === 'person_identifiers') lines.push({ ...base, rows: s.rows.length, action: 'empreinte', why: ERASURE_WHY.identifiers });
+    else {
+      const own = Math.min(detail.exclusiveRows[s.table] ?? 0, s.rows.length);
+      if (own > 0) lines.push({ ...base, rows: own, action: 'effacer', why: null });
+      if (s.rows.length - own > 0) lines.push({ ...base, rows: s.rows.length - own, action: 'examiner', why: ERASURE_WHY.shared });
+    }
+  }
   return {
     mode: ERASURE_MODE,
-    personIds: access.personIds,
-    lines: access.sections.map((s) => {
-      const keep = basisOf.get(s.traitement) === 'obligation_legale';
-      return { table: s.table, traitement: s.traitement, rows: s.rows.length, action: keep ? 'garder' : 'effacer', why: keep ? LEGAL_BASIS_LABELS.obligation_legale : null };
-    }),
-    alwaysKept: [EXCLUSION_LABELS.lcb_ft, registre.find((t) => t.id === LCB_FT_TRAITEMENT)?.duree ?? ''].filter((s) => s !== ''),
+    personIds: detail.response.personIds,
+    lines,
+    alwaysKept: [EXCLUSION_LABELS.lcb_ft, registre.find((t) => t.id === LCB_FT_TRAITEMENT)?.duree ?? ''].filter((x) => x !== ''),
   };
 }
 
@@ -425,7 +487,7 @@ export class DemandesPersonnes {
     const row = await this.requestOf(viewer, requestId);
     if (!row) return { ok: false, rule: null, code: 'unknown' };
     if (row.kind !== 'effacement') return { ok: false, rule: null, code: 'not_erasure' };
-    const access = await assembleAccess(this.db, await this.fiche.membersOf(row.person_id), { carte: this.carte, registre: this.registre });
+    const access = await assembleAccessDetail(this.db, await this.fiche.membersOf(row.person_id), { carte: this.carte, registre: this.registre });
     const plan = erasurePlan(access, this.registre);
     const sha256 = await sha256Of(plan);
     await this.storeOutput(viewer, row, 'plan_effacement', ERASURE_MODE, sha256);
@@ -435,7 +497,7 @@ export class DemandesPersonnes {
         type: 'rgpd.effacement_essai',
         actor: this.actor(viewer),
         subject: `person_request:${row.id}`,
-        data: { rule: 'R17', mode: ERASURE_MODE, sha256, erased: 0, wouldErase: plan.lines.filter((l) => l.action === 'effacer').reduce((n, l) => n + l.rows, 0), kept: plan.lines.filter((l) => l.action === 'garder').reduce((n, l) => n + l.rows, 0) },
+        data: { rule: 'R17', mode: ERASURE_MODE, sha256, erased: 0, wouldErase: plan.lines.filter((l) => l.action === 'effacer').reduce((n, l) => n + l.rows, 0), kept: plan.lines.filter((l) => l.action !== 'effacer').reduce((n, l) => n + l.rows, 0) },
       },
       this.now,
     );
