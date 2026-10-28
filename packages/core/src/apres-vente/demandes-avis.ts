@@ -35,6 +35,7 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { SELLER_UPDATE_PURPOSE, nameWords } from '../visites/compte-rendu.ts';
+import { checkSatisfactionBase, newSatisfactionLink } from './satisfaction.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const REVIEW_PURPOSE = SELLER_UPDATE_PURPOSE;
@@ -121,11 +122,11 @@ export function isReviewLink(url: string): boolean {
  * Le texte d'une demande d'avis, écrit par le code : vouvoiement avec le prénom, aucune parenthèse [R08], aucun chiffre
  * hors de la référence du bien et du lien [R10], aucune promesse ni contrepartie, un avis bienvenu quel qu'il soit [R64].
  */
-export function reviewText(firstName: string | null, side: 'vendeur' | 'acquereur', property: { city: string | null; reference: string }, url: string): string {
+export function reviewText(firstName: string | null, side: 'vendeur' | 'acquereur', property: { city: string | null; reference: string }, url: string, satisfactionLink: string | null = null): string {
   const hello = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
   const where = `${property.city ? ` à ${property.city}` : ''}, référence ${property.reference}`;
   const thanks = side === 'vendeur' ? `merci encore de nous avoir confié la vente de votre bien${where}.` : `merci encore de votre confiance pour l'achat de votre bien${where}.`;
-  return `${hello} ${thanks} Si vous le voulez bien, vous pouvez donner votre avis sur votre agent immobilier, sur sa fiche Google, que l'expérience vous ait plu ou non : ${url} Votre avis, quel qu'il soit, aide d'autres personnes à choisir. Merci !`;
+  return `${hello} ${thanks} Si vous le voulez bien, vous pouvez donner votre avis sur votre agent immobilier, sur sa fiche Google, que l'expérience vous ait plu ou non : ${url} Votre avis, quel qu'il soit, aide d'autres personnes à choisir.${satisfactionLink ? ` Pour dire à votre agent immobilier seulement ce que vous en avez pensé, sans rien publier : ${satisfactionLink}` : ''} Merci !`;
 }
 
 export class DemandesAvis {
@@ -133,14 +134,17 @@ export class DemandesAvis {
   private readonly newId: () => string;
   private readonly controle: ControleEnvois;
   private readonly unique: FicheUnique;
+  private readonly satisfactionBase: string | null;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
     private readonly dossiers: DossiersClos,
-    options: { now?: () => Date; newId?: () => string } = {},
+    options: { now?: () => Date; newId?: () => string; satisfactionBase?: string | null } = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    // L'adresse du lien de satisfaction (F05) ; absente, la demande d'avis part sans lui.
+    this.satisfactionBase = checkSatisfactionBase(options.satisfactionBase ?? null);
     this.newId = options.newId ?? (() => crypto.randomUUID());
     const fiches = new FicheClient(db, { now: this.now });
     this.unique = new FicheUnique(db, fiches, { now: this.now });
@@ -266,7 +270,9 @@ export class DemandesAvis {
           kind: 'review_request',
           purpose: REVIEW_PURPOSE,
           subject: `avis:${sale.fileId}`,
-          fallbackTexts: [reviewText(firstName, c.side, sale, url)],
+          fallbackTexts: [
+            reviewText(firstName, c.side, sale, url, this.satisfactionBase ? await newSatisfactionLink(this.db, this.satisfactionBase, { networkId, fileId: sale.fileId, personId: c.personId, agentId: sale.agentId }, this.now()) : null),
+          ],
           // Les chiffres de la référence du bien et ceux du lien, lus dans la base [R10].
           figures: [...(sale.reference.match(/\d+/g) ?? []).map(Number), url],
           // Le nom d'un client de l'autre côté n'apparaît jamais [R19].
@@ -359,7 +365,7 @@ export class DemandesAvis {
 export const REVIEW_REQUEST_JOB = 'apres_vente.demandes_avis';
 
 /** Du lundi au samedi, d'heure en heure de 10 h à 18 h : les demandes du jour, et celles qui attendaient [R01, R11]. */
-export function reviewRequestJob(db: SqlDatabase, journal: JournalStore, dossiers: DossiersClos, options: { now?: () => Date } = {}): ScheduledJob {
+export function reviewRequestJob(db: SqlDatabase, journal: JournalStore, dossiers: DossiersClos, options: { now?: () => Date; satisfactionBase?: string | null } = {}): ScheduledJob {
   return {
     name: REVIEW_REQUEST_JOB,
     hours: [10, 11, 12, 13, 14, 15, 16, 17, 18],
