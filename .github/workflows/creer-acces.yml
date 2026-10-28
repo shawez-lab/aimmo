@@ -75,7 +75,8 @@ jobs:
       - name: Masquer les données saisies
         # Lues dans l'événement, jamais posées dans le texte de la commande : le journal du travail ne les montre pas.
         # En remise « resume » (Z04), le prénom et le nom ne sont pas masqués : GitHub masque aussi le résumé, et un
-        # prénom court ou présent dans l'adresse de l'application y casserait le lien (remplacé par ***).
+        # prénom court ou présent dans l'adresse de l'application y casserait le lien (remplacé par ***). Ils ne
+        # s'affichent nulle part : aucune étape ne les reçoit dans son environnement ni ne les écrit.
         run: |
           node -e '
             const inputs = JSON.parse(require("fs").readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")).inputs || {};
@@ -103,12 +104,10 @@ jobs:
           sed -i "s/$D1_PLACEHOLDER/$id/" wrangler.toml
           npx -y "$WRANGLER" d1 migrations apply aimmo --remote
       - name: Invitation et remise du lien
+        # Le prénom, le nom et les adresses ne passent pas par l'environnement de l'étape, que GitHub affiche en tête
+        # de son journal : le programme les lit lui-même dans l'événement du lancement (GITHUB_EVENT_PATH).
         env:
           ACCES_REMISE: ${{ inputs.remise }}
-          ACCES_PRENOM: ${{ inputs.prenom }}
-          ACCES_NOM: ${{ inputs.nom }}
-          ACCES_MAIL: ${{ inputs.mail }}
-          ACCES_EXPEDITEUR: ${{ inputs.expediteur }}
           ACCES_RESEAU: ${{ inputs.reseau }}
           ACCES_AGENT: ${{ inputs.agent }}
         run: node --experimental-strip-types packages/api/outils/creer-acces.ts

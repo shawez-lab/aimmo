@@ -6,9 +6,9 @@ import { handleRequest, sha256Hex } from '../src/index.ts';
 import { fromD1 } from '../src/d1.ts';
 import { exchangeInvitation, mergeKeys, parseGrants, randomToken } from '../src/acces.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { createAccess, invitationLink, invitationMail, invitationSql, invitationSummary, readRequest, sendFailureDetail, sha256, writeSummary, type Runner } from '../outils/creer-acces.ts';
+import { createAccess, invitationLink, invitationMail, invitationSql, invitationSummary, readRequest, sendFailureDetail, sha256, writeSummary, inputsFromEvent, type Runner } from '../outils/creer-acces.ts';
 import { vi } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadMigrations } from '../../core/test/migrations.ts';
@@ -371,6 +371,16 @@ describe('Z04 · le mail reste le défaut', () => {
     const tool = readFileSync(new URL('../outils/creer-acces.ts', import.meta.url), 'utf8');
     expect(tool).toContain('GITHUB_STEP_SUMMARY');
     expect(invitationSummary('https://x.test/app/#invitation=abc', T0)).toContain('Entrer dans AIMMO');
+    expect(tool).toContain('inputsFromEvent(process.env.GITHUB_EVENT_PATH)');
+  });
+
+  it('le prénom, le nom et les adresses sont lus dans l’événement du lancement, pas dans l’environnement affiché', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'aimmo-event-')), 'event.json');
+    writeFileSync(file, JSON.stringify({ inputs: { remise: 'resume', prenom: 'Camille', nom: 'Exemple', mail: '', expediteur: '', reseau: 'x' } }));
+    expect(inputsFromEvent(file)).toEqual({ ACCES_PRENOM: 'Camille', ACCES_NOM: 'Exemple', ACCES_MAIL: '', ACCES_EXPEDITEUR: '' });
+    expect(readRequest({ ACCES_REMISE: 'resume', ACCES_RESEAU: 'reseau-essai', ACCES_AGENT: 'agent-direction', ...inputsFromEvent(file) }).firstName).toBe('Camille');
+    expect(inputsFromEvent(undefined)).toEqual({});
+    expect(inputsFromEvent(join(tmpdir(), 'absent-aimmo.json'))).toEqual({});
   });
 });
 
@@ -401,9 +411,12 @@ describe('Z02 · règles sans base', () => {
     // écrites en clair dans le texte d'une commande.
     const mask = yml.indexOf('::add-mask::');
     expect(mask).toBeGreaterThan(-1);
-    expect(mask).toBeLessThan(yml.indexOf('ACCES_MAIL'));
+    expect(mask).toBeLessThan(yml.indexOf('creer-acces.ts'));
+    // Z04 : le prénom, le nom et les adresses ne passent par l'environnement d'aucune étape (affiché par GitHub) :
+    // seuls la remise, le réseau et l'agent y sont.
     const uses = yml.split('\n').filter((l) => l.includes('${{ inputs.'));
-    expect(uses.length).toBe(7);
+    expect(uses.length).toBe(3);
+    expect(yml).not.toMatch(/inputs\.(?:prenom|nom|mail|expediteur)\b(?! ===)/);
     for (const l of uses) expect(l).toMatch(/^\s+ACCES_[A-Z]+: \$\{\{ inputs\.[a-z]+ \}\}$/);
   });
 

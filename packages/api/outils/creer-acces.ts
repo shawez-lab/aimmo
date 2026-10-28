@@ -17,7 +17,7 @@
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -215,6 +215,27 @@ export function sendFailureDetail(status: number, body: unknown): string {
   return `HTTP ${status}${codes.length ? `, codes ${codes.join(', ')}` : ''}`;
 }
 
+/** Les champs du lancement, lus dans l'événement GitHub plutôt que dans l'environnement de l'étape, qui s'affiche. */
+const EVENT_INPUTS: Readonly<Record<string, string>> = { prenom: 'ACCES_PRENOM', nom: 'ACCES_NOM', mail: 'ACCES_MAIL', expediteur: 'ACCES_EXPEDITEUR' };
+
+/** Lit le prénom, le nom et les adresses dans le fichier de l'événement ; rien si le fichier manque ou est illisible. */
+export function inputsFromEvent(path: string | undefined): Record<string, string> {
+  if (!path) return {};
+  let inputs: unknown;
+  try {
+    inputs = (JSON.parse(readFileSync(path, 'utf8')) as { inputs?: unknown }).inputs;
+  } catch {
+    return {};
+  }
+  if (inputs === null || typeof inputs !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [name, variable] of Object.entries(EVENT_INPUTS)) {
+    const value = (inputs as Record<string, unknown>)[name];
+    if (typeof value === 'string') out[variable] = value;
+  }
+  return out;
+}
+
 /** Ajoute le texte au seul fichier du résumé du travail GitHub ; n'écrit rien d'autre, nulle part. */
 export function writeSummary(markdown: string, env: Record<string, string | undefined>): { ok: boolean } {
   const file = env.GITHUB_STEP_SUMMARY ?? '';
@@ -231,7 +252,7 @@ async function main(): Promise<void> {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID ?? '';
   const apiToken = process.env.CLOUDFLARE_API_TOKEN ?? '';
   const wrangler = process.env.WRANGLER ?? 'wrangler';
-  const ok = await createAccess(process.env, {
+  const ok = await createAccess({ ...process.env, ...inputsFromEvent(process.env.GITHUB_EVENT_PATH) }, {
     d1(sqlFile) {
       const result = spawnSync('npx', ['-y', wrangler, 'd1', 'execute', 'aimmo', '--remote', '--file', sqlFile], { cwd: 'packages/api', stdio: ['ignore', 'ignore', 'inherit'] });
       return { ok: result.status === 0 };
