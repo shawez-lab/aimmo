@@ -1342,7 +1342,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : H29 pour la grille réelle ; une grille d'essai en attendant.
 
 ### L03 · Identification et bénéficiaire effectif, étape bloquante
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (touche aux contrôles de M06 et M09) · Relecture : forte · Dépend de : L01, L02
 - Cahier : Conformité, « Identification du client et du bénéficiaire effectif, au seuil de 25 % ».
 - Objectif : ni mandat signé sans l'identité vérifiée du vendeur au coffre, ni compromis sans celle de chaque acquéreur ; pour une société, les bénéficiaires effectifs à 25 % ou plus, chacun identifié ; les contrôles de D03 et d'O07 lisent l'état du coffre au lieu d'une case cochée.
