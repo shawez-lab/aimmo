@@ -33,7 +33,7 @@ async function setup(withSaleFile = true) {
   const annuaire = new Annuaire(db, files, journal, { now, newId: uuid });
   const relations = new MiseEnRelation(db, annuaire, files, journal, { now, newId: uuid, newSeed: () => 1 });
   const space = new EspacePartenaire(db, annuaire, relations, journal, { now });
-  const pieces = new PiecesPartenaires(db, space, relations, files, journal, { now, newId: uuid });
+  const pieces = new PiecesPartenaires(db, space, relations, annuaire, files, journal, { now, newId: uuid });
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Essai' });
   const bea = await store.createAgent({ networkId: network.id, firstName: 'Béa', lastName: 'Essai' });
