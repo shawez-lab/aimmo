@@ -1281,6 +1281,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 
 ### J11 · Départ d'un agent
 - Statut : en cours (voie 2)
+- Décidé (2026-10-28) : préavis légal L134-11 compté depuis le premier contrat signé du dossier ou la date saisie par la direction (la plus ancienne), prolongé jusqu'à la fin du mois civil ; plus court seulement pour faute grave ou accord commun, signalé ; l'indemnité de fin de contrat n'est jamais chiffrée, seulement dite « à examiner par l'avocat » (démission comprise, L134-13 2°) ; le jour du départ, clients, biens et projets passent au successeur accepté, sinon à la file de la direction ; un successeur est un agent du réseau déjà en activité.
 - Qui : Claude · Relecture : forte · Dépend de : J04
 - Cahier : M14, « Départ d'un agent ».
 - Objectif : la direction range un départ (date, préavis, motif) ; le jour venu, l'agent passe à « parti », son accès est coupé, ses clients et biens vont à la direction pour être réattribués, ses commissions en cours sont listées pour être soldées, ses contenus personnels sont listés pour lui être rendus ; un successeur présenté est rangé, avec l'accord du réseau.
@@ -1288,8 +1289,10 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 - Reste : proposition #130 prête, tests verts en local (1226), relecture forte 4 P1 corrigés ; la vérification GitHub ne démarre pas (H28) : à fusionner dès qu'elle passe.
 
-### J12 · Routes de M14, page de candidature et écrans
+### J12 · Routes de M14 et page de candidature
 - Statut : en cours (voie 2)
+- Décidé (2026-10-28) : la branche part de J09, J10 et J11 réunis (#127, #128, #130, non fusionnés tant que H28 bloque) ; les écrans de l'application sortent en J14, parce qu'ils vivent dans `packages/api/app/fichiers.ts`, que modifie aussi #129 (voie 1) ; le rôle est contrôlé par la route avant tout corps, la couche métier refait son contrôle derrière ; la page `/rejoindre` se ferme d'elle-même si un de ses textes échoue au contrôle de R80 (Jamais vu).
+- Reste : proposition #133 prête, tests verts en local, relecture forte 2 P1 corrigés ; la vérification GitHub ne démarre pas (H28) : à fusionner après #127, #128 et #130.
 - Qui : Claude · Relecture : forte · Dépend de : J01 à J11
 - Cahier : M14 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/reseau` (candidatures, entretiens, dossier d'agent, import, académie, binôme, parrainage, départ) dans `packages/api/src/reseau.ts` ; la page publique de candidature ; dans l'application, les écrans « Mon intégration », « Académie » et, pour la direction, « Candidatures ».
@@ -1300,10 +1303,17 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Statut : à faire
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : J12
 - Cahier : M14 ; critère « aucun accès aux clients avant un dossier d'agent complet ».
-- Objectif : exporter `reseau` depuis `@aimmo/core` ; ajouter les routes de M14 à `app.ts` ; dans les droits d'accès, refuser toute fiche client et tout bien non partagé à un agent dont `DossierAgent.complete` est faux ce jour-là, et à un agent parti ; lancer au planificateur les alertes d'échéances des pièces, du compteur de formation, de l'assistance et les départs du jour.
+- Objectif : exporter `reseau` depuis `@aimmo/core` ; ajouter les routes de M14 à `app.ts` ; dans les droits d'accès, refuser toute fiche client et tout bien non partagé à un agent dont `DossierAgent.complete` est faux ce jour-là, et à un agent parti ; dans les droits d'accès, lire `Departs.isGone` (vrai dès minuit le jour du départ, avant le passage du planificateur) ; dans le contrôle central des envois, refuser tout envoi dont `Departs.sendAllowed` est faux (agent du message ou agent qui l'a préparé) ; lancer `Departs.runDue` au planificateur ; lancer au planificateur les alertes d'échéances des pièces, du compteur de formation, de l'assistance et les départs du jour ; ajouter `reseauRoutes({ pieces, coach, sandbox })` de `packages/api/src/reseau.ts` aux routes de `app.ts`, et servir `/rejoindre` par `handleCandidature` avec la variable `CANDIDATURE_NETWORK_ID`, comme les autres pages publiques (mode essai, erreur au journal).
 - Critères : un agent au dossier incomplet ou échu ne lit aucune fiche client [R82, R16] ; un agent parti ne lit plus rien le jour de son départ [R86] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
 - Attend : rien.
 
+### J14 · Écrans de M14 dans l'application
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : J12 ; après la fusion de #129 (K09, voie 1), qui modifie le même fichier `packages/api/app/fichiers.ts`
+- Cahier : M14 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : dans l'application, les écrans « Mon intégration » (dossier d'agent pièce par pièce, référent, premier parcours), « Académie » (parcours, modules faits, compteur des heures) et, pour la direction, « Candidatures » (ordre d'arrivée, fiche d'entretien, décision nommée), lus par les routes de J12.
+- Critères : chaque écran lit seulement par les routes `/v1/reseau`, refus montré sans rien garder [R16] ; la liste des candidatures n'a ni tri, ni filtre, ni note [R81] ; écrans accessibles (libellés, focus, lecteurs d'écran), beaux sur téléphone d'abord, sans texte générique ; testés comme les autres écrans (`fake-dom`).
+- Attend : rien.
 **M12 · Conformité, avant juillet 2027.**
 
 Voie : 1
