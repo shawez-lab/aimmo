@@ -323,6 +323,29 @@ export class MiseEnRelation {
     return { partnerId: r.chosenPartnerId!, state: r.state };
   }
 
+  /**
+   * Le partenaire confié dit où il en est : en cours, puis terminée. Appelé par l'espace partenaire (U04), qui a déjà
+   * vérifié qui il est ; ici, seul le partenaire confié peut avancer, et seulement dans l'ordre des étapes [R77].
+   */
+  async advanceByPartner(networkId: string, referralId: string, partnerId: string, state: 'en_cours' | 'terminee', actor: string): Promise<ReferralResult<ReferralState>> {
+    const held = await this.entrusted(networkId, referralId);
+    if (!held || held.partnerId !== partnerId) return { ok: false, rule: 'R16', code: 'not_assigned' };
+    const row = (await this.db.first<ReferralRow>('SELECT id, network_id, project_id, property_id, trade, domain, postcode, seed, created_at FROM partner_referrals WHERE id = ?', [referralId]))!;
+    const current = await this.compute(row);
+    if (current.state === state) return { ok: true, value: state };
+    if (!NEXT[current.state].includes(state)) return { ok: false, rule: null, code: 'bad_state' };
+    const done = await this.step({ role: 'partner', userId: partnerId, networkId }, row, current, state);
+    if (done) return done;
+    await appendEvent(this.journal, { type: `mise_en_relation.${state}`, actor, subject: `referral:${referralId}`, data: { state, by: 'partner' } }, this.now);
+    return { ok: true, value: state };
+  }
+
+  /** Quand la mise en relation a été close (terminée ou abandonnée), `null` sinon. */
+  async closedAt(referralId: string): Promise<string | null> {
+    const row = await this.db.first<{ at: string }>("SELECT at FROM partner_referral_steps WHERE referral_id = ? AND state IN ('terminee', 'abandonnee') ORDER BY seq LIMIT 1", [referralId]);
+    return row?.at ?? null;
+  }
+
   private async step(
     viewer: Viewer,
     row: ReferralRow,
