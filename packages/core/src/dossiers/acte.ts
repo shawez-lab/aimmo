@@ -25,6 +25,7 @@ import type { DocumentFacts } from '../documents/modeles.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { ControlesOffre } from '../offres/controles-offre.ts';
 import { PROOF_REF } from '../offres/transmission.ts';
 import { actorOf, gateSaleFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
 import { Echeancier } from './echeancier.ts';
@@ -95,6 +96,7 @@ export class ActeVente {
   private readonly echeancier: Echeancier;
   private readonly diffusion: Diffusion;
   private readonly validity: Partial<Record<Piece, number>>;
+  private readonly controles: ControlesOffre;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -108,6 +110,7 @@ export class ActeVente {
     this.pieces = new PiecesDossier(db, acces, journal, store, { now: this.now });
     this.echeancier = new Echeancier(db, acces, journal, { now: this.now });
     this.diffusion = new Diffusion(db, acces, journal, { now: this.now });
+    this.controles = new ControlesOffre(db, acces, journal, { now: this.now });
   }
 
   private async read(fileId: string): Promise<Closing | null> {
@@ -152,8 +155,16 @@ export class ActeVente {
     const status = await this.pieces.status(viewer, fileId);
     if (!status.ok) return status as FileRefusal | FileUnknown;
     const expired = expiredPieces(status.value.lines, signedOn, this.validity);
-    if (!status.value.complete || expired.length > 0) {
-      return blocked({ ok: false, rule: 'R60', code: 'incomplete', missing: status.value.missing, expired, unknown: status.value.unknown, identity: status.value.identity });
+    // L'identité de l'acquéreur vérifiée au jour de l'acte, pas seulement aujourd'hui : un contrôle fait après l'acte ne
+    // compte pas. Fin du jour de Paris prise au plus tôt (heure d'été), par prudence. Qui ne voit pas la fiche de
+    // l'acquéreur ne peut pas rapporter l'acte [R16].
+    let identity = status.value.identity;
+    if (identity !== 'non_visible') {
+      const seen = await this.controles.identitySeenAt(g.file.network_id, g.file.buyer_person_id, new Date(`${signedOn}T21:59:59.999Z`));
+      identity = seen !== null && localTime(new Date(seen), TIME_ZONE).date <= signedOn ? 'verifiee' : 'non_verifiee';
+    }
+    if (status.value.missing.length > 0 || status.value.unknown.length > 0 || identity !== 'verifiee' || expired.length > 0) {
+      return blocked({ ok: false, rule: 'R60', code: 'incomplete', missing: status.value.missing, expired, unknown: status.value.unknown, identity });
     }
     // La commission : les honoraires du mandat en vigueur le jour du compromis, tels qu'au document signé [R63]. Un
     // mandat encore dans son délai de rétractation sans demande écrite du vendeur n'est pas en vigueur ; un mandat

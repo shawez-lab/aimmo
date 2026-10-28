@@ -104,6 +104,24 @@ describeWithSqlite('N06 · acte signé : vente close, commission due', () => {
     expect(r).toMatchObject({ ok: false, rule: 'R60', code: 'incomplete', identity: 'non_verifiee' });
   });
 
+  it('[R60] un contrôle d’identité fait après l’acte ne compte pas pour un acte rapporté après coup', async () => {
+    const t = await setupDossier('terrain');
+    // L'identité n'est vérifiée que le 11 juin, après l'acte du 10.
+    await t.verifyBuyer(new Date('2027-03-01T11:30:00.000Z'));
+    await new (await import('../src/offres/index.ts')).DossiersVente(t.db, t.acces, t.journal, { now: t.now }).startCompromis(t.agent, t.fileId);
+    t.setClock(at9('2027-03-10'));
+    await new Echeancier(t.db, t.acces, t.journal, { now: t.now }).record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
+    const s = await t.pieces.status(t.agent, t.fileId);
+    if (!s.ok) throw new Error(s.code);
+    for (const piece of s.value.missing) await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: '2027-03-05' });
+    t.setClock(at9('2028-06-12'));
+    // Le contrôle du 1er mars 2027 est trop ancien au 10 juin 2028 ; un nouveau, fait le 11 juin 2028, vient après l'acte.
+    await t.verifyBuyer(new Date('2028-06-11T09:00:00.000Z'));
+    const acte = new ActeVente(t.db, t.acces, t.journal, t.storage, { now: t.now });
+    expect(await acte.record(t.agent, t.fileId, { signedOn: '2028-06-10', proofRef: ACT_PROOF })).toMatchObject({ ok: false, rule: 'R60', code: 'incomplete', identity: 'non_verifiee' });
+    expect(await acte.record(t.agent, t.fileId, { signedOn: '2028-06-11', proofRef: ACT_PROOF })).toMatchObject({ ok: false, rule: 'R60', expired: ['etat_risques'] });
+  });
+
   it('[R63] pas de commission sans mandat en vigueur au compromis : signé après, ou encore dans son délai de rétractation', async () => {
     for (const compromis of ['2027-02-05', '2027-02-20']) {
       const t = await setupDossier('terrain');
