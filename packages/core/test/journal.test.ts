@@ -199,6 +199,15 @@ describe('données personnelles du journal', () => {
     expect(await store.all()).toHaveLength(1);
   });
 
+  it('[R13] accepte une empreinte SHA-256 dont les chiffres ressemblent à un numéro, et refuse un numéro collé à elle', async () => {
+    const hash = `ab0612345678${'c'.repeat(52)}`;
+    expect(hash).toHaveLength(64);
+    await appendEvent(new MemoryJournalStore(), { type: 'x', actor: 'systeme', subject: `sheet:${hash}`, data: { snapshot: hash } }, () => dates[0]!);
+    for (const subject of [`${hash} 0612345678`, `${hash}:06 12 34 56 78`, `${hash.slice(0, 63)}0612345678`]) {
+      await expect(appendEvent(new MemoryJournalStore(), { type: 'x', actor: 'systeme', subject, data: {} }, () => dates[0]!)).rejects.toThrow(/donnée personnelle/i);
+    }
+  });
+
   it("[R13] refuse une adresse mail dont la première partie a la forme d'un UUID", async () => {
     const subject = '550e8400-e29b-41d4-a716-446655440000@relais.example.test';
     await expect(

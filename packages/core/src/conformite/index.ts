@@ -6,3 +6,4 @@ export * from './vigilance.ts';
 export * from './registre.ts';
 export * from './registre-traitements.ts';
 export * from './registre-relecture.ts';
+export * from './signalement.ts';

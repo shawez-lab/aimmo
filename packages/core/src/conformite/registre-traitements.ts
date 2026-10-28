@@ -359,6 +359,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       vigilance_settings: ['amount_threshold_eur', 'validator_name', 'set_by'],
       vigilance_alerts: ['person_id', 'figures', 'raised_by'],
       vigilance_decisions: ['reason', 'validator_name', 'decided_by'],
+      suspicion_reports: ['person_id', 'note', 'snapshot_sha256', 'reported_by'],
+      suspicion_decisions: ['report_id', 'reason', 'validator_name', 'decided_by'],
     },
   },
   {
@@ -613,6 +615,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   vigilance_decisions: ['id', 'network_id', 'alert_id', 'decision', 'decided_on', 'at'],
   registry_reviews: ['id', 'network_id', 'reviewed_on', 'registry_hash', 'recorded_at'],
   registry_review_alerts: ['network_id', 'due_on', 'last_review_on', 'created_at'],
+  suspicion_reports: ['id', 'network_id', 'case_ref', 'snapshot', 'reported_at'],
+  suspicion_decisions: ['network_id', 'decision', 'decided_on', 'at'],
   partners: ['id', 'network_id', 'trade', 'created_at'],
   partner_zones: ['partner_id', 'network_id', 'created_at'],
   partner_credentials: ['id', 'network_id', 'partner_id', 'kind', 'domain', 'version', 'number', 'valid_from', 'valid_until', 'recorded_at'],
