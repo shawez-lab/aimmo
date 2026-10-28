@@ -44,6 +44,8 @@ export interface ViaLocator {
   startsWith?: Readonly<Record<string, string>>;
   /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur (champ → valeur). */
   jsonNot?: Readonly<Record<string, string>>;
+  /** Les lignes ne comptent pas si ces colonnes ont ces valeurs. */
+  except?: Readonly<Record<string, string>>;
   where?: Readonly<Record<string, string>>;
   /** Seulement les lignes de `from` trouvées par cette colonne directe : pas celles de l'autre partie. */
   onlyMatchedBy?: string;
@@ -417,7 +419,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
       via('subject', 'appointments', 'id', { prefix: 'visit:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
-      via('subject', 'rental_listings', 'id', { prefix: 'rental:' }),
+      // Le journal du logement est au propriétaire, sauf l'arrivée d'une candidature, qui est au candidat (ci-dessous).
+      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: 'location.candidature' } }),
+      // Au journal du logement, ce qui nomme une candidature est au candidat, et ce qui nomme une session de
+      // signature du bail est à qui signe.
+      via('data', 'rental_applications', 'id', { prefix: 'rental_application:', jsonPath: 'application', startsWith: { subject: 'rental:' } }),
+      via('data', 'rental_lease_signatures', 'id', { jsonPath: 'session', startsWith: { subject: 'rental:' } }),
       via('subject', 'person_requests', 'id', { prefix: 'person_request:' }),
       // Le journal d'un bien n'est qu'à qui le possède : par son mandat, son projet (bien possédé) ou sa mise en
       // location ; jamais à l'acquéreur qui s'y intéresse.
@@ -441,8 +448,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
     ],
     // Les données d'un événement peuvent nommer une autre personne (`referrer: person:<id>`) : masquées.
     foreignPersons: ['actor', 'data'],
-    // L'arrivée d'une candidature, au journal du logement, est la donnée du candidat : elle n'est pas au propriétaire.
-    skip: { column: 'type', prefixes: [...JOURNAL_LCB_PREFIXES, 'location.candidature'], marked: 'data', markers: JOURNAL_LCB_MARKERS },
+    skip: { column: 'type', prefixes: [...JOURNAL_LCB_PREFIXES], marked: 'data', markers: JOURNAL_LCB_MARKERS },
   },
   registry_reviews: out('sans_client', 'Relecture du registre des traitements.'),
   registry_review_alerts: out('sans_client', 'Alerte de relecture du registre.'),
@@ -548,7 +554,7 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
         named.add(l.column);
         for (const c of Object.keys(l.where ?? {})) named.add(c);
         if (isVia(l)) {
-          for (const c of Object.keys(l.startsWith ?? {})) named.add(c);
+          for (const c of [...Object.keys(l.startsWith ?? {}), ...Object.keys(l.except ?? {})]) named.add(c);
           if (l.jsonNot) named.add('data');
         }
       }

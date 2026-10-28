@@ -273,6 +273,21 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(ofA).not.toContain('cand-c');
     const ofC = (await assembleAccess(db, [C])).sections.find((s) => s.table === 'journal')!.rows.map((r) => r.seq);
     expect(ofC).toEqual([9005]);
+    // L'arrivée de la candidature de C, au journal du logement de A : à C, pas à A.
+    const listingA = seeded.get('rental_listings')![A]!.id!;
+    await insert('journal', { seq: 9007, at: 't', type: 'location.candidature', actor: 'ag', subject: `rental:${listingA}`, data: JSON.stringify({ application: 'rental_application:cand-c', arrival: 99 }), prev_hash: 'p', hash: 'h9007' });
+    // La signature du bail par le locataire C, au journal du logement : à C ; celle de A reste à A.
+    await insert('rental_lease_signatures', { ...seeded.get('rental_lease_signatures')![B]!, id: 'sig-c', person_id: C });
+    await insert('journal', { seq: 9008, at: 't', type: 'location.signature_essai', actor: 'ag', subject: `rental:${listingA}`, data: JSON.stringify({ rule: 'R108', session: 'sig-c', party: 'locataire' }), prev_hash: 'p', hash: 'h9008' });
+    const sigA = seeded.get('rental_lease_signatures')![A]!.id!;
+    await insert('journal', { seq: 9009, at: 't', type: 'location.signature_ouverte', actor: 'ag', subject: `rental:${listingA}`, data: JSON.stringify({ session: sigA, party: 'bailleur' }), prev_hash: 'p', hash: 'h9009' });
+    const seqs = async (who: string) => (await assembleAccess(db, [who])).sections.find((s) => s.table === 'journal')!.rows.map((r) => r.seq);
+    const journalOfC = await seqs(C);
+    expect(journalOfC).toEqual(expect.arrayContaining([9005, 9007, 9008]));
+    expect(journalOfC).not.toContain(9009);
+    const journalOfA = await seqs(A);
+    expect(journalOfA).not.toContain(9007);
+    expect(journalOfA).toContain(9009);
     // B, lui, voit l'événement de sa recommandation sous sa propre fiche seulement s'il y est sujet : ici il ne l'est pas.
     expect((await assembleAccess(db, [B])).sections.find((s) => s.table === 'journal')!.rows.some((r) => r.seq === 9003)).toBe(false);
   });
