@@ -119,8 +119,8 @@ export function checkText(text: string, context: TextContext, settings: TextSett
       problems.push({ rule: 'R08', reason: 'Le premier message s’adresse à la personne par son prénom.' });
     }
   }
-  if (context.audience === 'client' && bankDetailsIn(text)) {
-    problems.push({ rule: 'R62', reason: 'AIMMO ne donne jamais de coordonnée bancaire.' });
+  if (context.audience === 'client' && (bankDetailsIn(text) || paymentRequestIn(text))) {
+    problems.push({ rule: 'R62', reason: 'AIMMO ne demande jamais de paiement et ne donne jamais de coordonnée bancaire.' });
   }
   if (/[()]/.test(text)) problems.push({ rule: 'R08', reason: 'Pas de parenthèses.' });
   if (settings.administrativePhrases.some((phrase) => p.includes(phrase))) {
@@ -157,23 +157,32 @@ export function checkText(text: string, context: TextContext, settings: TextSett
  * par des espaces, des retours à la ligne, des points ou des tirets ; chaque groupe porte au moins un chiffre, pour ne
  * jamais avaler les mots qui suivent. 14 à 34 caractères utiles.
  */
-const IBAN_SOURCE = String.raw`\b[a-z]{2}\d{2}(?:[\s.\-]{0,3}(?=[a-z0-9]*\d)[a-z0-9]{1,11}){1,10}\b`;
+const IBAN_SOURCE = String.raw`\b[A-Za-z]{2}\d{2}(?:[\s.\-]{0,3}(?:(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{1,11}|[A-Z]{4}))+\b`;
 /** Un RIB français écrit seul : banque 5 chiffres, guichet 5, compte 11, clé 2. */
-const RIB_SOURCE = String.raw`\b\d{5}[\s.\-]{0,3}\d{5}[\s.\-]{0,3}[a-z0-9]{11}[\s.\-]{0,3}\d{2}\b`;
+const RIB_SOURCE = String.raw`\b\d{5}[\s.\-]{0,3}\d{5}[\s.\-]{0,3}[A-Za-z0-9]{11}[\s.\-]{0,3}\d{2}\b`;
 const usefulLength = (m: string): number => m.replace(/[\s.\-]/g, '').length;
+/** Un IBAN compte 14 à 34 caractères, dont au moins 10 chiffres : « ab12 avec cela pour » n'en est pas un. */
+const isIban = (m: string): boolean => usefulLength(m) >= 14 && usefulLength(m) <= 34 && (m.match(/\d/g) ?? []).length >= 10;
 export const IBAN = { test: (text: string): boolean => bankNumbers(text).length > 0 };
 /** Ce qui remplace un IBAN ou un RIB dans un message reçu rangé : le bouclier (N05) le lit comme un IBAN [R15]. */
 export const IBAN_MASK = '[IBAN masqué]';
 
+/** Un identifiant tiré au hasard (UUID), qui n'est jamais un IBAN : il est mis à part avant toute recherche. */
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
 function bankNumbers(text: string): string[] {
-  const found = [...text.matchAll(new RegExp(IBAN_SOURCE, 'gi'))].map((m) => m[0]).filter((m) => usefulLength(m) >= 14 && usefulLength(m) <= 34);
-  return [...found, ...[...text.matchAll(new RegExp(RIB_SOURCE, 'gi'))].map((m) => m[0])];
+  const t = text.replace(UUID, ' ');
+  const found = [...t.matchAll(new RegExp(IBAN_SOURCE, 'g'))].map((m) => m[0]).filter(isIban);
+  return [...found, ...[...t.matchAll(new RegExp(RIB_SOURCE, 'g'))].map((m) => m[0])];
 }
 
 /** Le texte, chaque IBAN ou RIB remplacé en entier par `IBAN_MASK`, avant de le ranger [R15]. Le reste ne change pas. */
 export function maskIban(text: string): string {
-  const masked = text.replace(new RegExp(IBAN_SOURCE, 'gi'), (m) => (usefulLength(m) >= 14 && usefulLength(m) <= 34 ? IBAN_MASK : m));
-  return masked.replace(new RegExp(RIB_SOURCE, 'gi'), IBAN_MASK);
+  const uuids = text.match(UUID) ?? [];
+  return text
+    .split(UUID)
+    .map((part) => part.replace(new RegExp(IBAN_SOURCE, 'g'), (m) => (isIban(m) ? IBAN_MASK : m)).replace(new RegExp(RIB_SOURCE, 'g'), IBAN_MASK))
+    .reduce((acc, part, i) => acc + (i > 0 ? uuids[i - 1]! : '') + part, '');
 }
 
 /**
@@ -181,6 +190,21 @@ export function maskIban(text: string): string {
  * qui demandent de payer sont refusées par `fundsInOutgoing` dans les textes écrits par le code de M10 seulement : dans
  * une dictée, « il faut régler la question du parking » ne demande rien.
  */
+/**
+ * Une demande de payer, dans tout texte à un client [R62] : un verbe de paiement suivi, à quelques mots, de ce qui se
+ * paie (somme, montant, acompte, frais, solde, dépôt, honoraires, une somme en euros), ou « effectuer le virement ».
+ * « Il faut régler la question du parking » ou « effectuer des travaux » ne demandent rien.
+ */
+const PAYMENT_REQUEST: RegExp[] = [
+  /\b(?:payer|payez|verser|versez|virer|virez|regler|reglez|transferer|transferez|acquitter|acquittez)\b(?:\s+\S+){0,4}?\s+(?:la somme|le montant|un montant|l'acompte|un acompte|les frais|des frais|vos frais|le solde|le depot|un depot|les honoraires|vos honoraires|\d[\d\s.,]*(?:€|euros?\b))/,
+  /\b(?:effectuer|faire|effectuez|faites)\s+(?:le|un|votre|ce)\s+(?:virement|versement|paiement)\b/,
+];
+
+export function paymentRequestIn(text: string): boolean {
+  const p = plain(text);
+  return PAYMENT_REQUEST.some((re) => re.test(p));
+}
+
 export function bankDetailsIn(text: string): boolean {
   return IBAN.test(text) || text.includes(IBAN_MASK) || /\b(?:rib|bic|swift|iban)\b/.test(plain(text));
 }
