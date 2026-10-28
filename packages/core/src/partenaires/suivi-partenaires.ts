@@ -39,6 +39,8 @@ const DAY = 86_400_000;
 
 /** Jours ouvrés sans réponse avant la relance, puis avant l'alerte à l'agent. Réglage. */
 export const FOLLOW_UP_WORKING_DAYS = 2;
+/** Attente maximale de l'IA pour un résumé, en millisecondes ; au-delà, le secours du code répond [R12]. */
+export const SUMMARY_TIMEOUT_MS = 20_000;
 /** Longueur maximale d'un avis du client. */
 export const MAX_REVIEW_LENGTH = 2000;
 
@@ -191,6 +193,8 @@ const STATE_WORDS: Record<ReferralState, string> = {
   abandonnee: 'abandonnée',
 };
 
+const LATE = Symbol('délai dépassé');
+
 const frDay = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 /** Le secours sans IA : la même structure, écrite par le code depuis les faits seuls [R12]. */
@@ -220,6 +224,8 @@ export interface SuiviPartenairesOptions {
   writer?: FollowUpSummaryWriter | undefined;
   /** Jours ouvrés sans réponse avant la relance, puis avant l'alerte. */
   workingDays?: number;
+  /** Attente maximale de l'IA, en millisecondes. */
+  timeoutMs?: number;
 }
 
 export class SuiviPartenaires {
@@ -227,6 +233,7 @@ export class SuiviPartenaires {
   private readonly newId: () => string;
   private readonly writer: FollowUpSummaryWriter | undefined;
   private readonly workingDays: number;
+  private readonly timeoutMs: number;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -238,6 +245,7 @@ export class SuiviPartenaires {
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.writer = options.writer;
     this.workingDays = options.workingDays ?? FOLLOW_UP_WORKING_DAYS;
+    this.timeoutMs = options.timeoutMs ?? SUMMARY_TIMEOUT_MS;
     if (!Number.isInteger(this.workingDays) || this.workingDays < 1 || this.workingDays > 10) throw new Error('Délai de relance des partenaires : de 1 à 10 jours ouvrés.');
   }
 
@@ -381,15 +389,23 @@ export class SuiviPartenaires {
     const facts = await this.facts(row);
     if (this.writer) {
       let raw: unknown;
-      let failed = false;
+      let failed: 'ia_erreur' | 'ia_delai' | null = null;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<typeof LATE>((resolve) => {
+        timer = setTimeout(() => resolve(LATE), this.timeoutMs);
+      });
       try {
-        raw = await this.writer.write(structuredClone(facts));
+        // Une IA qui ne répond jamais ne bloque pas : passé le délai, le secours répond [R12].
+        raw = await Promise.race([this.writer.write(structuredClone(facts)), late]);
+        if (raw === LATE) failed = 'ia_delai';
       } catch {
-        failed = true;
+        failed = 'ia_erreur';
+      } finally {
+        clearTimeout(timer);
       }
       const checked = failed ? null : checkSummary(raw, facts);
       if (checked) return { ok: true, value: { summary: checked, source: 'ia' } };
-      await appendEvent(this.journal, { type: 'partenaire.resume_secours', actor: this.actor(viewer), subject: `referral:${row.id}`, data: { rule: 'R12', reason: failed ? 'ia_erreur' : 'ia_refusee' } }, this.now);
+      await appendEvent(this.journal, { type: 'partenaire.resume_secours', actor: this.actor(viewer), subject: `referral:${row.id}`, data: { rule: 'R12', reason: failed ?? 'ia_refusee' } }, this.now);
     }
     return { ok: true, value: { summary: fallbackSummary(facts), source: 'secours' } };
   }

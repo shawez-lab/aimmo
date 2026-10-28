@@ -42,7 +42,7 @@ class FakeStore implements ConsentProofStore {
   }
 }
 
-async function setup(writer?: FollowUpSummaryWriter) {
+async function setup(writer?: FollowUpSummaryWriter, timeoutMs?: number) {
   set('2027-07-12T08:00:00.000Z');
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
@@ -54,7 +54,7 @@ async function setup(writer?: FollowUpSummaryWriter) {
   const relations = new MiseEnRelation(db, annuaire, files, journal, { now, newId: uuid, newSeed: () => 7 });
   const space = new EspacePartenaire(db, annuaire, relations, journal, { now });
   const pieces = new PiecesPartenaires(db, space, relations, annuaire, files, journal, { now, newId: uuid });
-  const suivi = new SuiviPartenaires(db, relations, journal, { now, newId: uuid, writer });
+  const suivi = new SuiviPartenaires(db, relations, journal, { now, newId: uuid, writer, ...(timeoutMs ? { timeoutMs } : {}) });
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Essai' });
   const bea = await store.createAgent({ networkId: network.id, firstName: 'Béa', lastName: 'Essai' });
@@ -267,8 +267,8 @@ describeWithSqlite('U07 · suivi des demandes confiées', () => {
 });
 
 describeWithSqlite('U07 · résumé des réponses', () => {
-  const answeredWith = async (writer?: FollowUpSummaryWriter) => {
-    const t = await setup(writer);
+  const answeredWith = async (writer?: FollowUpSummaryWriter, timeoutMs?: number) => {
+    const t = await setup(writer, timeoutMs);
     const req = await t.request();
     set('2027-07-13T10:00:00.000Z');
     await t.space.progress(t.asPartner(req.partnerId), req.referralId, 'en_cours');
@@ -319,6 +319,15 @@ describeWithSqlite('U07 · résumé des réponses', () => {
     expect(r).toMatchObject({ ok: true, value: { source: 'secours', summary: { headline: 'Demande en cours chez le partenaire.' } } });
     const ev = await t.db.all("SELECT 1 FROM journal WHERE type = 'partenaire.resume_secours'");
     expect(ev).toHaveLength(1);
+  });
+
+  it('[R12] une IA qui ne répond jamais : le secours répond passé le délai, et le journal le dit', async () => {
+    const { t, req } = await answeredWith({ write: () => new Promise(() => undefined) }, 50);
+    const r = await t.suivi.summary(t.agent, req.referralId);
+    expect(r).toMatchObject({ ok: true, value: { source: 'secours', summary: { headline: 'Demande en cours chez le partenaire.' } } });
+    const ev = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'partenaire.resume_secours'");
+    expect(ev).toHaveLength(1);
+    expect(ev[0]!.data).toContain('ia_delai');
   });
 
   it('le secours sans IA dit la remise, la première réponse, son délai et les pièces', async () => {
