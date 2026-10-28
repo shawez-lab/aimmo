@@ -1286,6 +1286,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Objectif : la direction range un départ (date, préavis, motif) ; le jour venu, l'agent passe à « parti », son accès est coupé, ses clients et biens vont à la direction pour être réattribués, ses commissions en cours sont listées pour être soldées, ses contenus personnels sont listés pour lui être rendus ; un successeur présenté est rangé, avec l'accord du réseau.
 - Critères : à la date du départ, plus aucune lecture ni écriture de l'agent n'est permise [R86, R16] ; aucun client ni dossier n'est effacé [R17] ; aucun client ne reste sans agent ni sans file de la direction [R86] ; les relances et envois préparés par l'agent parti ne partent plus [R86].
 - Attend : rien.
+- Reste : proposition #130 prête, tests verts en local (1226), relecture forte 4 P1 corrigés ; la vérification GitHub ne démarre pas (H28) : à fusionner dès qu'elle passe.
 
 ### J12 · Routes de M14, page de candidature et écrans
 - Statut : à faire
