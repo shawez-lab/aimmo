@@ -109,7 +109,7 @@ describe('S06 · une seule porte de sortie', () => {
 });
 
 describeWithSqlite('S06 · contrôle central des envois', () => {
-  const migrations = loadMigrations().filter((m) => ['0001_fiche_client', '0003_fusion', '0004_envoi', '0005_controle_envois', '0011_relais'].includes(m.id));
+  const migrations = loadMigrations().filter((m) => ['0001_fiche_client', '0003_fusion', '0004_envoi', '0005_controle_envois', '0011_relais', '0611_depart_agent'].includes(m.id));
 
   async function setup(budgetOk = true) {
     const db = fromSyncSqlite(openMemoryDatabase());

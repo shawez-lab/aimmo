@@ -30,7 +30,8 @@ export type Resource =
 
 export type ResourceKind = Resource['kind'];
 
-export type RefusalCode = 'other_network' | 'not_assigned' | 'role' | 'unknown' | 'agent_inactive';
+/** `agent_file_incomplete` : un agent dont le dossier d'agent n'est pas complet et valide ce jour-là [R82]. */
+export type RefusalCode = 'other_network' | 'not_assigned' | 'role' | 'unknown' | 'agent_inactive' | 'agent_file_incomplete';
 
 export type AccessDecision =
   | { allowed: true; rule: 'R16'; view: 'full' | 'shared' }

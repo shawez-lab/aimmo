@@ -90,6 +90,7 @@ interface PointRow {
   status: 'prepare' | 'valide';
   delivery_status: 'sent' | 'waiting' | 'refused' | 'failed' | null;
   delivery_rule: string | null;
+  validated_by: string | null;
 }
 
 export class PointSemaine {
@@ -312,6 +313,8 @@ export class PointSemaine {
       const result = await this.controle.send({
         networkId: row.network_id,
         agentId: row.agent_id,
+        // Validé par un agent : parti, son point ne part plus, même repris par un autre [R86].
+        preparedBy: row.validated_by?.startsWith('agent:') ? row.validated_by.slice('agent:'.length) : null,
         personId: row.person_id,
         channel: 'email',
         kind: 'follow_up',

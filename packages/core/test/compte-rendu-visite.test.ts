@@ -187,4 +187,18 @@ describeWithSqlite('T06 · compte rendu de visite dicté', () => {
     expect(await t.toSeller()).toHaveLength(1);
     expect(await t.comptes.retry()).toBe(0);
   });
+
+  it('[R86] un compte rendu validé par un agent qui part ensuite ne part plus au vendeur (J13)', async () => {
+    const t = await setup({ write: async () => GOOD });
+    const v = await t.visit();
+    await t.comptes.dictate(t.as('agent', t.alex.id), v.id, 'Il a aimé la lumière du séjour et le jardin, cuisine à refaire.');
+    t.setClock(Date.parse('2026-12-08T21:30:00.000Z'));
+    expect(await t.comptes.validate(t.as('agent', t.alex.id), v.id)).toEqual({ ok: true, delivery: 'waiting', rule: 'R01' });
+    // Alex quitte le réseau ; le mandat du vendeur reste à Sam, toujours là.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    t.setClock(Date.parse('2026-12-09T08:00:00.000Z'));
+    await t.comptes.retry();
+    expect(await t.toSeller()).toHaveLength(0);
+    expect(await t.db.first("SELECT delivery_status, delivery_rule FROM visit_reports WHERE appointment_id = ?", [v.id])).toEqual({ delivery_status: 'refused', delivery_rule: 'R86' });
+  });
 });

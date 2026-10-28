@@ -155,6 +155,18 @@ export function legalNoticeMonths(startedOn: string, noticeGivenOn: string): 1 |
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
+/**
+ * L'agent est-il parti à cet instant ? Inconnu, d'un autre réseau, plus en activité, ou au jour de son départ à Paris,
+ * dès minuit [R86]. Sans journal : lu par les droits d'accès et le contrôle des envois, qui écrivent leur refus.
+ */
+export async function agentGone(db: SqlDatabase, networkId: string, agentId: string, at: Date): Promise<boolean> {
+  const a = await db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [agentId]);
+  if (!a || a.network_id !== networkId) return true;
+  if (a.status !== 'active') return true;
+  const row = await db.first<{ n: number }>('SELECT count(*) AS n FROM agent_departures WHERE agent_id = ? AND cancelled_at IS NULL AND leaves_on <= ?', [agentId, localTime(at, TIME_ZONE).date]);
+  return Number(row?.n ?? 0) > 0;
+}
+
 export interface DepartsOptions {
   now?: () => Date;
   newId?: () => string;
@@ -347,11 +359,7 @@ export class Departs {
    * plus aucune lecture ni écriture, et rien de ce qu'il avait préparé ne part plus [R86, R16].
    */
   async isGone(networkId: string, agentId: string, at: Date): Promise<boolean> {
-    const a = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [agentId]);
-    if (!a || a.network_id !== networkId) return true;
-    if (a.status !== 'active') return true;
-    const row = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM agent_departures WHERE agent_id = ? AND cancelled_at IS NULL AND leaves_on <= ?', [agentId, this.today(at)]);
-    return Number(row?.n ?? 0) > 0;
+    return agentGone(this.db, networkId, agentId, at);
   }
 
   /**

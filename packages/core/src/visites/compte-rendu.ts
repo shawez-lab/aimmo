@@ -133,6 +133,7 @@ interface ReportRow {
   delivery_status: 'sent' | 'waiting' | 'refused' | 'failed' | null;
   delivery_rule: string | null;
   message_id: string | null;
+  validated_by: string | null;
 }
 
 export interface ComptesRendusOptions {
@@ -324,6 +325,8 @@ export class ComptesRendus {
       const result = await this.controle.send({
         networkId: v.network_id,
         agentId: seller.agent_id,
+        // L'agent qui a validé le compte rendu : parti, il ne part plus, même si l'agent de la visite est encore là [R86].
+        preparedBy: row.validated_by?.startsWith('agent:') ? row.validated_by.slice('agent:'.length) : null,
         personId: seller.person_id,
         channel: 'email',
         kind: 'follow_up',

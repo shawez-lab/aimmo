@@ -12,10 +12,13 @@ import {
   type ResourceKind,
   type Viewer,
 } from './droits.ts';
+import { agentState } from './etat-agent.ts';
 
 export type AccessResult<T> =
   | { ok: true; view: 'full' | 'shared'; value: T }
   | { ok: false; rule: 'R16'; code: RefusalCode };
+
+type Refused = { ok: false; rule: 'R16'; code: RefusalCode };
 
 export interface AccesOptions {
   now?: () => Date;
@@ -47,6 +50,8 @@ export class Acces {
     const subject = personSubject(personId);
     const blocked = await this.checkViewer(viewer, 'person', subject);
     if (blocked) return blocked;
+    // Aucune fiche client avant un dossier d'agent complet et valide ce jour-là [R82].
+    if (await this.restricted(viewer)) return this.refused(viewer, 'person', subject, 'agent_file_incomplete');
 
     const person = await this.fiches.getPerson(personId);
     if (!person) return this.refused(viewer, 'person', subject, 'unknown');
@@ -71,6 +76,7 @@ export class Acces {
   async listPersons(viewer: Viewer, via?: string): Promise<AccessResult<Person[]>> {
     const blocked = await this.checkViewer(viewer, 'person', null);
     if (blocked) return blocked;
+    if (await this.restricted(viewer)) return this.refused(viewer, 'person', null, 'agent_file_incomplete');
     if (!decideAccess(viewer, { kind: 'person', networkId: viewer.networkId, agentIds: [viewer.userId] }).allowed) {
       return this.refused(viewer, 'person', null, 'role');
     }
@@ -112,10 +118,12 @@ export class Acces {
     if (blocked) return blocked;
     const property = await this.fiches.getProperty(propertyId);
     if (!property) return this.refused(viewer, 'property', subject, 'unknown');
+    // Un agent au dossier incomplet ne voit que le fichier commun, même pour un bien qui lui est confié [R82].
+    const restricted = await this.restricted(viewer);
     const decision = decideAccess(viewer, {
       kind: 'property',
       networkId: property.network_id,
-      agentId: property.agent_id,
+      agentId: restricted ? null : property.agent_id,
       status: property.status,
     });
     if (!decision.allowed) return this.refused(viewer, 'property', subject, decision.code);
@@ -163,20 +171,25 @@ export class Acces {
 
   /**
    * Un agent doit exister dans le réseau annoncé et être en activité : le jour de son départ, son accès
-   * est coupé. L'identité des autres rôles vient de la connexion (S09).
+   * est coupé dès minuit à Paris, avant même le passage du planificateur [R86]. L'identité des autres rôles vient de
+   * la connexion (S09).
    */
-  private async checkViewer(
-    viewer: Viewer,
-    kind: ResourceKind,
-    subject: string | null,
-  ): Promise<{ ok: false; rule: 'R16'; code: RefusalCode } | null> {
+  private async checkViewer(viewer: Viewer, kind: ResourceKind, subject: string | null): Promise<Refused | null> {
     if (!(ROLES as readonly string[]).includes(viewer.role)) return this.refused(viewer, kind, subject, 'role');
     if (viewer.role !== 'agent') return null;
     const agent = await this.db.first<Agent>('SELECT * FROM agents WHERE id = ?', [viewer.userId]);
     if (!agent || agent.network_id !== viewer.networkId || agent.status !== 'active') {
       return this.refused(viewer, kind, subject, 'agent_inactive');
     }
+    if ((await agentState(this.db, viewer.networkId, viewer.userId, this.now())) === 'parti') {
+      return this.refused(viewer, kind, subject, 'agent_inactive');
+    }
     return null;
+  }
+
+  /** Un agent dont le dossier d'agent n'est pas complet et valide ce jour-là [R82]. */
+  private async restricted(viewer: Viewer): Promise<boolean> {
+    return viewer.role === 'agent' && (await agentState(this.db, viewer.networkId, viewer.userId, this.now())) === 'dossier_incomplet';
   }
 
   private async refused(

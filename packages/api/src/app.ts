@@ -38,6 +38,7 @@ import {
   decideAccess,
   personSubject,
   verifyChain,
+  agentState,
   type AccessResult,
   type Automation,
   type Channel,
@@ -63,6 +64,8 @@ import { dossierRoutes, type DossierRoute, type PieceStore } from './dossiers.ts
 import { pilotageRoutes } from './pilotage.ts';
 import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresVentePublic } from './apres-vente.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
+import { reseauRoutes, type ReseauOptions } from './reseau.ts';
+import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -98,8 +101,36 @@ export interface ApiConfig {
   media?: MediaStore;
   /** Les pièces des dossiers de vente (R2, `PIECES`) ; absent, les routes de M10 sont fermées. */
   pieces?: PieceStore;
+  /** M14 (J13) : le stockage des pièces des dossiers d'agent, l'IA de l'entraînement, le bac à sable ; absents, fermés. */
+  reseau?: ReseauOptions;
+  /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, page « bientôt ». */
+  candidatureNetworkId?: string | undefined;
   now?: () => Date;
 }
+
+/**
+ * Les seules routes qu'un agent dont le dossier d'agent n'est pas complet et valide ce jour-là peut appeler : sa
+ * session, son dossier et ses pièces, sa formation, le bac à sable fictif, l'entraînement, l'assistance, ses primes.
+ * Aucune ne lit ni n'écrit un client ou un bien [R82, R16]. Toute autre route est refusée avant d'être lue.
+ */
+export const OPEN_WITHOUT_AGENT_FILE: ReadonlySet<string> = new Set([
+  'moi',
+  'reseau.mon_dossier',
+  'reseau.dossier',
+  'reseau.piece',
+  'reseau.academie',
+  'reseau.module_fait',
+  'reseau.ma_formation',
+  'reseau.formation',
+  'reseau.bac_a_sable',
+  'reseau.entrainement_cas',
+  'reseau.entrainement',
+  'reseau.entrainement_tour',
+  'reseau.entrainement_fin',
+  'reseau.assistance',
+  'reseau.mes_primes',
+  'reseau.primes',
+]);
 
 const MAX_BODY_BYTES = 10_000;
 /** Un modèle de mandat tient sur plusieurs pages. */
@@ -853,6 +884,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
+  // La page de candidature au réseau (J12), servie par le socle comme les autres pages publiques (J13).
+  if (url.pathname === CANDIDATURE_PATH || url.pathname === `${CANDIDATURE_PATH}/`) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    try {
+      const page = await handleCandidature(request, { db: config.db, networkId: config.candidatureNetworkId || null, now });
+      if (page) return page;
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:candidature', 'reseau.candidature', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
   // La vitrine des biens (P10) : la page publique, la fiche imprimable et les photos de la version publiée.
   if (url.pathname.startsWith('/biens/') || url.pathname.startsWith('/medias/')) {
     if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
@@ -951,8 +993,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // Les routes de M08 (T08) suivent celles du socle ; elles portent le lien de désinscription du réseau.
   // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication ; puis celles de M09 (O09) : les offres ; puis
   // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07) ; puis
-  // celles de M13 (K08) : le pilotage.
-  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }), ...annonceRoutes(), ...offreRoutes(), ...m10Routes(config.pieces ?? null), ...apresVenteRoutes(), ...pilotageRoutes()];
+  // celles de M13 (K08) : le pilotage ; puis celles de M14 (J13) : le réseau et l'académie.
+  const routes: RouteDef[] = [
+    ...ROUTES,
+    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
+    ...annonceRoutes(),
+    ...offreRoutes(),
+    ...m10Routes(config.pieces ?? null),
+    ...apresVenteRoutes(),
+    ...pilotageRoutes(),
+    ...reseauRoutes(config.reseau ?? {}),
+  ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
   const route = matching.find((candidate) => candidate.method === request.method);
@@ -961,6 +1012,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
 
   const s = services(config.db, now);
   try {
+    // Un agent parti ne lit ni n'écrit plus rien, dès minuit le jour de son départ [R86, R16] ; un agent au dossier
+    // incomplet n'a que les routes de son intégration [R82]. Le refus est écrit au journal avant toute lecture.
+    if (viewer.role === 'agent') {
+      const state = await agentState(s.db, viewer.networkId, viewer.userId, now());
+      const code = state === 'parti' ? 'agent_inactive' : state === 'dossier_incomplet' && !OPEN_WITHOUT_AGENT_FILE.has(route.name) ? 'agent_file_incomplete' : null;
+      if (code) {
+        const rule = code === 'agent_inactive' ? 'R16' : 'R82';
+        await appendEvent(s.journal, { type: 'acces.refuse', actor: `agent:${viewer.userId}`, subject: null, data: { rule, role: 'agent', kind: `route.${route.name}`, code } }, now);
+        return json(403, { ok: false, rule, code });
+      }
+    }
     return await route.handle(s, viewer, params, request);
   } catch (error) {
     // Jamais d'erreur avalée : une ligne au journal, sans le détail qui pourrait porter une donnée [R13].

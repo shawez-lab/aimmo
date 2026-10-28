@@ -32,6 +32,17 @@ async function setup() {
       [uuid(), id, id, id, `agents/${id}/${uuid()}.pdf`, day, new Date(clock).toISOString()],
     );
   };
+  /** Les autres pièces du dossier, valides deux ans : le dossier est complet, l'agent lit ses clients (J13) [R82]. */
+  const rest = async (id: string): Promise<void> => {
+    const day = new Date(clock).toISOString().slice(0, 10);
+    const until = addMonths(day, 24);
+    for (const kind of ['attestation_habilitation', 'immatriculation_rsac', 'assurance_rcp', 'attestation_vigilance']) {
+      await db.run(
+        "INSERT INTO agent_file_pieces (id, network_id, agent_id, kind, version, ref, issued_on, valid_until, is_draft, recorded_by, recorded_at) VALUES (?, (SELECT network_id FROM agents WHERE id = ?), ?, ?, 1, ?, ?, ?, 0, 'test', ?)",
+        [uuid(), id, id, kind, `agents/${id}/${uuid()}.pdf`, day, kind === 'attestation_vigilance' ? addMonths(day, 6) : until, new Date(clock).toISOString()],
+      );
+    }
+  };
   const agent = async (lastName: string, network = net): Promise<string> => {
     const id = (await fiches.createAgent({ networkId: network, firstName: 'Camille', lastName })).id;
     await since(id, 0);
@@ -55,7 +66,7 @@ async function setup() {
   const goTo = (day: string, parisHour = 9): void => {
     clock = Date.parse(`${day}T00:00:00.000Z`) + (parisHour - 1) * 3_600_000;
   };
-  return { raw, db, journal, fiches, acces, departs, net, other, dir, agent, since, leaver, keeper, persons, theirs, projects, props, today, daysFrom, goTo };
+  return { raw, db, journal, fiches, acces, departs, net, other, dir, agent, since, rest, leaver, keeper, persons, theirs, projects, props, today, daysFrom, goTo };
 }
 
 describeWithSqlite("Départ d'un agent (J11)", () => {
@@ -157,6 +168,7 @@ describeWithSqlite("Départ d'un agent (J11)", () => {
     const s = await setup();
     const asAgent = { role: 'agent' as const, userId: s.leaver, networkId: s.net };
     const leavesOn = '2027-03-01';
+    await s.rest(s.leaver);
     await s.departs.schedule(s.dir, s.leaver, { noticeGivenOn: s.today(), leavesOn, reason: 'demission_agent' });
     expect((await s.acces.readFiche(asAgent, s.persons[0]!)).ok).toBe(true);
     const before = await s.db.all<{ t: string; n: number }>("SELECT 'p' AS t, count(*) AS n FROM persons UNION ALL SELECT 'b', count(*) FROM properties");

@@ -174,7 +174,14 @@ Au planificateur : chaque heure, `pilotage.passage` (commissions, brouillons de 
 
 ## Réseau et académie, en mode essai (J12)
 
-Sous `/v1/reseau`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Un corps porte seulement les clés de sa route : une clé de plus est refusée (`invalid_body`), sans rien ranger. Rien n'est envoyé : les réponses aux candidats restent dans la boîte d'essai. Branchement dans `app.ts` : J13 (voie 1).
+Sous `/v1/reseau`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Un corps porte seulement les clés de sa route : une clé de plus est refusée (`invalid_body`), sans rien ranger. Rien n'est envoyé : les réponses aux candidats restent dans la boîte d'essai.
+
+Branchement dans le socle (J13) :
+
+- Avant toute route, la clé d'un agent est contrôlée : un agent parti (dès minuit, heure de Paris, le jour de son départ, même avant le planificateur), ou qui n'est pas un agent en activité de son réseau, reçoit 403 `agent_inactive` (R16) sur toutes les routes, `/v1/moi` compris [R86]. Un agent dont le dossier d'agent n'est pas complet et valide ce jour-là reçoit 403 `agent_file_incomplete` (R82) sur toute route hors de son intégration : `/moi`, son dossier et ses pièces, l'académie et sa formation, le bac à sable, l'entraînement, l'assistance, ses primes [R82]. Chaque refus est écrit au journal. Décidé : un agent sans aucun dossier, créé hors de M14 (les agents de l'agence, sous sa carte), garde ses droits ; dès qu'un agent entre par M14 ou qu'une pièce de son dossier est rangée, la règle vaut pour lui.
+- Le contrôle central des envois refuse (R86) tout envoi dont l'agent, ou celui qui l'a préparé (`preparedBy`), est parti.
+- Le planificateur passe chaque heure les départs du jour et les alertes de l'assistance, et à 6 h les échéances des pièces du dossier d'agent et du compteur de formation ; les alertes sont rangées pour les écrans, jamais envoyées.
+- Les pièces des dossiers d'agent sont rangées dans le compartiment R2 `PIECES`, sous `agents/<agent>/` ; sans lui, leurs routes répondent 503. L'entraînement rend les répliques écrites tant qu'aucune IA n'est branchée (H13) ; le bac à sable reste fermé (503).
 
 - Candidatures (direction) : `GET /candidatures`, dans l'ordre d'arrivée, sans note ni tri [R81] ; `GET|POST /candidatures/<id>/entretien` (fiche, puis `at`, `interviewer`) ; `POST /entretiens/<id>/tenu` (`heldByName`) ; `POST /candidatures/<id>/decision` (`decision`, `reason`, `deciderName`) ; `POST /candidatures/<id>/admettre` (`zone`) ; `GET /candidatures/<id>/reponses` ; `GET|POST /reponses` (`topic`, `body`, contrôlé par R80) ; `GET /questions`, `POST /questions/<id>/faite`.
 - Dossier d'agent [R82] : `GET /mon-dossier` ; `GET /agents/<id>/dossier` ; `POST /agents/<id>/pieces` (`kind`, `ref`, `issuedOn`, `validUntil`) ; `POST /agents/<id>/projets` (`kind`). Sans stockage des pièces passé aux routes, réponse 503.
@@ -185,7 +192,7 @@ Sous `/v1/reseau`, chaque route passe par les droits de la couche métier [R16] 
 - Parrainage [R83] : `POST /parrainage/regles` (`rateBp`, `levels`), `POST /agents/<id>/parrain`, `GET /mes-primes`, `GET /agents/<id>/primes`.
 - Départ [R86] : `GET|POST /agents/<id>/depart`, `POST /agents/<id>/depart/annuler`, `POST /agents/<id>/successeur`, `POST /agents/<id>/successeur/decision`, `GET /agents/<id>/solde`, `GET /agents/<id>/contenus`, `GET|POST /reprises`.
 
-La page publique de candidature est servie à `/rejoindre`, sans clé ni script (`packages/api/src/candidature.ts`). Elle reçoit le réseau par la configuration (`CANDIDATURE_NETWORK_ID`, à brancher par J13) ; sans lui, elle dit que les candidatures ne sont pas ouvertes. Chacun de ses textes passe le contrôle des promesses de revenus à chaque service : un texte qui échoue ferme la page (503, `candidature.page_fermee` au journal) [R80]. Le lien d'un parrain est `/rejoindre?parrain=<identifiant de l'agent>`.
+La page publique de candidature est servie à `/rejoindre`, sans clé ni script (`packages/api/src/candidature.ts`). Elle reçoit le réseau par la variable du Worker `CANDIDATURE_NETWORK_ID` ; elle n'est servie qu'en mode essai ; sans lui, elle dit que les candidatures ne sont pas ouvertes. Chacun de ses textes passe le contrôle des promesses de revenus à chaque service : un texte qui échoue ferme la page (503, `candidature.page_fermee` au journal) [R80]. Le lien d'un parrain est `/rejoindre?parrain=<identifiant de l'agent>`.
 
 ## Mise en ligne
 

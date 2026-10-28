@@ -24,6 +24,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { AGENT_FILE_PIECES, type AgentFilePiece, type Entretiens } from './entretiens.ts';
+import { agentFileStatus, type AgentFileStatus, type PieceRow } from './etat-dossier.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 /** Jours avant l'échéance d'une pièce où l'agent est prévenu. */
@@ -50,38 +51,8 @@ export interface AgentPieceStore {
   putDraft(agentId: string, text: string): Promise<string>;
 }
 
-export type PieceState = 'manquante' | 'projet' | 'echue' | 'valide';
-
-export interface AgentFileLine {
-  kind: AgentFilePiece;
-  label: string;
-  state: PieceState;
-  version: number | null;
-  issuedOn: string | null;
-  validUntil: string | null;
-}
-
-export interface AgentFileStatus {
-  agentId: string;
-  complete: boolean;
-  lines: AgentFileLine[];
-  missing: AgentFilePiece[];
-  expired: AgentFilePiece[];
-  drafts: AgentFilePiece[];
-  /** L'étape suivante, en une phrase. */
-  nextStep: string;
-}
-
 export type AgentFileRefusal = { ok: false; rule: 'R16' | 'R15' | 'R82' | null; code: string };
 
-interface PieceRow {
-  id: string;
-  kind: AgentFilePiece;
-  version: number;
-  issued_on: string;
-  valid_until: string | null;
-  is_draft: number;
-}
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const REF_FILE = new RegExp(`^${UUID}\\.(?:pdf|jpg|png|txt)$`);
@@ -273,29 +244,7 @@ export class DossierAgent {
   }
 
   private async compute(agentId: string, at: Date): Promise<AgentFileStatus> {
-    const rows = await this.db.all<PieceRow>('SELECT id, kind, version, issued_on, valid_until, is_draft FROM agent_file_pieces WHERE agent_id = ? ORDER BY kind, version', [agentId]);
-    const day = this.today(at);
-    const lines: AgentFileLine[] = AGENT_FILE_PIECES.map(({ kind, label }) => {
-      const mine = rows.filter((r) => r.kind === kind);
-      // La dernière pièce signée compte ; un projet ne remplace jamais une pièce signée.
-      const signed = mine.filter((r) => r.is_draft === 0).at(-1);
-      const draft = mine.filter((r) => r.is_draft === 1).at(-1);
-      const shown = signed ?? draft;
-      let state: PieceState = 'manquante';
-      if (signed) state = signed.valid_until !== null && signed.valid_until < day ? 'echue' : 'valide';
-      else if (draft) state = 'projet';
-      return { kind, label, state, version: shown ? Number(shown.version) : null, issuedOn: shown?.issued_on ?? null, validUntil: signed?.valid_until ?? null };
-    });
-    const missing = lines.filter((l) => l.state === 'manquante').map((l) => l.kind);
-    const expired = lines.filter((l) => l.state === 'echue').map((l) => l.kind);
-    const drafts = lines.filter((l) => l.state === 'projet').map((l) => l.kind);
-    const complete = lines.every((l) => l.state === 'valide');
-    const first = lines.find((l) => l.state !== 'valide');
-    let nextStep = 'Votre dossier est complet : l’accès à vos clients est ouvert.';
-    if (first?.state === 'manquante') nextStep = `Déposez votre ${lower(first.label)}.`;
-    else if (first?.state === 'projet') nextStep = `Votre ${lower(first.label)} est encore un projet : déposez-le une fois signé.`;
-    else if (first?.state === 'echue') nextStep = `Votre ${lower(first.label)} a expiré le ${frDate(first.validUntil!)} : déposez la nouvelle.`;
-    return { agentId, complete, lines, missing, expired, drafts, nextStep };
+    return agentFileStatus(this.db, agentId, this.today(at));
   }
 
   /**
