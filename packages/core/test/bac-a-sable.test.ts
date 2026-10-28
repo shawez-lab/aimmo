@@ -82,6 +82,7 @@ describeWithSqlite('bac à sable du premier parcours (Jamais vu)', () => {
     if (!after.ok) throw new Error(after.code);
     expect(after.value.steps.map((s) => [s.step, s.done])).toEqual(SANDBOX_STEPS.map((s) => [s, true]));
     expect(after.value.completed).toBe(true);
+    expect(after.value.countedAtAcademy).toBe(true);
     expect(after.value.next).toBeNull();
     expect(Number((await w.db.first<{ n: number }>('SELECT count(*) AS n FROM academy_completions WHERE agent_id = ? AND module_id = ?', [w.newcomer, w.moduleId]))?.n)).toBe(1);
     // Relu : rien de neuf, et le module ne compte qu'une fois.
@@ -140,7 +141,7 @@ describeWithSqlite('bac à sable du premier parcours (Jamais vu)', () => {
     const { appendEvent } = await import('../src/index.ts');
     await appendEvent(w.journal, { type: 'avis.valide', actor: `agent:${w.newcomer}`, subject: null, data: {} }, () => new Date(clock));
     // L'avis validé avant le contact ne compte pas : l'ordre compte.
-    await appendEvent(opened.world.journal, { type: 'avis.valide', actor: `agent:${w.newcomer}`, subject: null, data: {} }, () => new Date(clock));
+    await appendEvent(new SqlJournalStore(opened.world.db), { type: 'avis.valide', actor: `agent:${w.newcomer}`, subject: null, data: {} }, () => new Date(clock));
     await opened.world.inventedContact(0);
     const p = await w.bac.progress(w.as(w.newcomer), w.newcomer);
     if (!p.ok) throw new Error(p.code);
@@ -152,6 +153,53 @@ describeWithSqlite('bac à sable du premier parcours (Jamais vu)', () => {
     for (const t of triggers) await opened.world.db.exec(`DROP TRIGGER "${t.name}"`);
     await opened.world.db.run("UPDATE journal SET type = 'rappel.fait' WHERE seq = 1");
     expect(await w.bac.progress(w.dir, w.newcomer)).toEqual({ ok: false, rule: null, code: 'broken_journal' });
+  });
+
+  it('[R82] des événements écrits à la main, sans le geste rangé, ne cochent rien', async () => {
+    const w = await setup();
+    const opened = await w.bac.open(w.as(w.newcomer));
+    if (!opened.ok) throw new Error(opened.code);
+    const { appendEvent } = await import('../src/index.ts');
+    const forge = new SqlJournalStore(opened.world.db);
+    const t = () => new Date(clock);
+    await appendEvent(forge, { type: 'bac_a_sable.contact_recu', actor: 'system:bac_a_sable', subject: 'person:inventee', data: {} }, t);
+    await appendEvent(forge, { type: 'qualification.rangee', actor: 'system:qualification', subject: 'person:inventee', data: {} }, t);
+    await appendEvent(forge, { type: 'rappel.fait', actor: `agent:${w.newcomer}`, subject: 'person:inventee', data: { task: 'x' } }, t);
+    await appendEvent(forge, { type: 'rdv.reserve', actor: 'agent', subject: 'appointment:x', data: { kind: 'estimation', agent: w.newcomer } }, t);
+    await appendEvent(forge, { type: 'avis.valide', actor: `agent:${w.newcomer}`, subject: 'property:x', data: { report: 'x' } }, t);
+    const p = await w.bac.progress(w.as(w.newcomer), w.newcomer);
+    expect(p.ok && p.value.steps.filter((s) => s.done)).toEqual([]);
+    // Un vrai contact reçu, puis des gestes forgés : seuls contact et qualification comptent.
+    const contact = await opened.world.inventedContact(0);
+    await appendEvent(forge, { type: 'rappel.fait', actor: `agent:${w.newcomer}`, subject: `person:${contact.personId}`, data: { task: 'x' } }, t);
+    await appendEvent(forge, { type: 'rdv.reserve', actor: 'agent', subject: 'appointment:x', data: { kind: 'estimation', agent: w.newcomer } }, t);
+    const q = await w.bac.progress(w.as(w.newcomer), w.newcomer);
+    expect(q.ok && q.value.steps.filter((s) => s.done).map((s) => s.step)).toEqual(['contact_recu', 'qualification']);
+    expect(Number((await w.db.first<{ n: number }>('SELECT count(*) AS n FROM academy_completions'))?.n)).toBe(0);
+  });
+
+  it('un parcours fini que l\'académie refuse est tracé, puis compté dès que le module existe', async () => {
+    const w = await setup();
+    let moduleId = 'module-absent';
+    const bac = new BacASable(w.db, w.journal, w.academie, {
+      migrations: loadMigrations(),
+      storage: w.storage,
+      get academyModuleId() {
+        return moduleId;
+      },
+      now: () => new Date(clock),
+    });
+    const opened = await bac.open(w.as(w.newcomer));
+    if (!opened.ok) throw new Error(opened.code);
+    await parcours(opened.world);
+    const first = await bac.progress(w.as(w.newcomer), w.newcomer);
+    expect(first.ok && [first.value.completed, first.value.countedAtAcademy]).toEqual([true, false]);
+    expect((await w.journal.all()).filter((e) => e.type === 'bac_a_sable.academie_refusee').map((e) => e.data.code)).toEqual(['unknown_module']);
+    moduleId = w.moduleId;
+    const again = await bac.progress(w.dir, w.newcomer);
+    expect(again.ok && again.value.countedAtAcademy).toBe(true);
+    expect(Number((await w.db.first<{ n: number }>('SELECT count(*) AS n FROM academy_completions WHERE module_id = ?', [w.moduleId]))?.n)).toBe(1);
+    expect((await w.journal.all()).filter((e) => e.type === 'bac_a_sable.fini')).toHaveLength(1);
   });
 
   it('[R16] seul l\'agent ouvre son bac à sable ; lui et la direction lisent sa progression ; refus au journal', async () => {

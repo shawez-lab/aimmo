@@ -22,6 +22,8 @@ import { createCaptation } from '../captation/chaine.ts';
 import { trialChannels } from '../captation/essai.ts';
 import { applyMigrations, type Migration } from '../db/migrations.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { FicheClient } from '../db/fiche-client.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 import { AvisDeValeur } from '../estimation/avis.ts';
 import { Fourchette, type Sale } from '../estimation/fourchette.ts';
 import { appendEvent, verifyChain } from '../journal/journal.ts';
@@ -63,6 +65,8 @@ export interface SandboxProgress {
   /** La prochaine étape, en une phrase ; null quand tout est fait. */
   next: string | null;
   completed: boolean;
+  /** Le parcours fini est compté au module d'académie prévu. */
+  countedAtAcademy: boolean;
 }
 
 /** Les contacts inventés qui écrivent à l'agent dans son bac à sable. Domaine réservé aux essais, aucune vraie personne. */
@@ -94,8 +98,8 @@ async function stableId(text: string): Promise<string> {
 
 /** Le monde du bac à sable : les vrais modules, sur la base à part. */
 export interface SandboxWorld {
+  /** La base à part, pour les routes et les tests : jamais montrée à l'agent. */
   db: SqlDatabase;
-  journal: JournalStore;
   networkId: string;
   agentId: string;
   /** L'agent tel que le voient les modules du bac à sable. */
@@ -184,7 +188,6 @@ export class BacASable {
     );
     return {
       db,
-      journal,
       networkId,
       agentId,
       viewer,
@@ -195,35 +198,84 @@ export class BacASable {
       fourchette,
       inventedContact: async (index = 0) => {
         const contact = SANDBOX_CONTACTS[index % SANDBOX_CONTACTS.length]!;
-        // L'arrivée du message, rangée avant que la chaîne ne le traite : c'est elle qui ouvre le parcours.
-        await appendEvent(journal, { type: 'bac_a_sable.contact_recu', actor: 'system:bac_a_sable', subject: null, data: { index } }, now);
         const [result] = await captation.chaine.receive(networkId, 'site_form', { submissionId: `bac-${index}`, email: contact.email, message: contact.message });
         const person = await db.first<{ person_id: string }>("SELECT person_id FROM person_identifiers WHERE network_id = ? AND kind = 'email' AND value = ?", [networkId, contact.email]);
+        // Le message est arrivé et a reçu sa réponse d'essai : c'est ce qui ouvre le parcours.
+        if (result?.status === 'replied' && person) {
+          await appendEvent(journal, { type: 'bac_a_sable.contact_recu', actor: 'system:bac_a_sable', subject: `person:${person.person_id}`, data: { index } }, now);
+        }
         return { personId: person?.person_id ?? null, status: result?.status ?? 'none' };
       },
     };
   }
 
-  /** Les étapes cochées dans l'ordre depuis le journal du bac à sable, jamais saisies. */
-  private stepsFrom(entries: readonly JournalEntry[], agentId: string): Map<SandboxStep, string> {
+  /**
+   * Les étapes cochées depuis le journal du bac à sable, jamais saisies : chaque événement doit être suivi d'un geste
+   * réellement rangé dans la base du bac à sable (contact inventé reçu, qualification, tâche faite par l'agent,
+   * rendez-vous d'estimation réservé, avis validé par l'agent), pour la même personne, dans l'ordre du parcours.
+   */
+  private async stepsFrom(sandbox: SqlDatabase, entries: readonly JournalEntry[], agentId: string): Promise<Map<SandboxStep, string>> {
     const done = new Map<SandboxStep, string>();
-    const actorIsAgent = (e: JournalEntry): boolean => e.actor === `agent:${agentId}`;
-    const matches: Record<SandboxStep, (e: JournalEntry) => boolean> = {
-      contact_recu: (e) => e.type === 'bac_a_sable.contact_recu' && e.actor === 'system:bac_a_sable',
-      qualification: (e) => e.type === 'qualification.rangee',
-      rappel_fait: (e) => e.type === 'rappel.fait' && actorIsAgent(e),
-      rendez_vous: (e) => e.type === 'rdv.reserve' && e.data.kind === 'estimation' && e.data.agent === agentId,
-      avis_valide: (e) => e.type === 'avis.valide' && actorIsAgent(e),
-    };
-    let index = 0;
-    for (const entry of entries) {
-      const step = SANDBOX_STEPS[index];
-      if (step === undefined) break;
-      if (matches[step](entry)) {
-        done.set(step, entry.at);
-        index += 1;
+    const store = new FicheClient(sandbox);
+    const fiche = new FicheUnique(sandbox, store);
+    const id = (subject: string | null, prefix: string): string | null => (subject !== null && subject.startsWith(`${prefix}:`) ? subject.slice(prefix.length + 1) : null);
+    const rootOf = async (personId: string | null): Promise<string | null> => (personId === null || !(await store.getPerson(personId)) ? null : fiche.rootOf(personId));
+    const byAgent = (e: JournalEntry): boolean => e.actor === `agent:${agentId}`;
+
+    let person: string | null = null;
+    let seq = -1;
+    for (const e of entries) {
+      if (e.type !== 'bac_a_sable.contact_recu' || e.actor !== 'system:bac_a_sable') continue;
+      const p = id(e.subject, 'person');
+      const invented = p === null ? null : await sandbox.first("SELECT 1 AS ok FROM person_identifiers WHERE person_id = ? AND kind = 'email' AND value LIKE '%@essai.example'", [p]);
+      const inbound = p === null ? null : await sandbox.first("SELECT 1 AS ok FROM messages WHERE person_id = ? AND direction = 'in'", [p]);
+      if (invented && inbound) {
+        person = await rootOf(p);
+        seq = e.seq;
+        done.set('contact_recu', e.at);
+        break;
       }
     }
+    if (person === null) return done;
+    const sameRoot = async (p: string | null): Promise<boolean> => (await rootOf(p)) === person;
+
+    // La qualification se fait pendant la réception : elle peut précéder l'arrivée rangée, pour la même personne.
+    for (const e of entries) {
+      if (e.type !== 'qualification.rangee' || !(await sameRoot(id(e.subject, 'person')))) continue;
+      const row = await sandbox.first<{ person_id: string }>('SELECT person_id FROM qualifications WHERE person_id = ?', [id(e.subject, 'person')]);
+      if (row) {
+        done.set('qualification', e.at);
+        break;
+      }
+    }
+    if (!done.has('qualification')) return done;
+
+    const next = async (step: SandboxStep, check: (e: JournalEntry) => Promise<boolean>): Promise<boolean> => {
+      for (const e of entries) {
+        if (e.seq <= seq || !(await check(e))) continue;
+        seq = e.seq;
+        done.set(step, e.at);
+        return true;
+      }
+      return false;
+    };
+    const rappel = await next('rappel_fait', async (e) => {
+      if (e.type !== 'rappel.fait' || !byAgent(e) || typeof e.data.task !== 'string') return false;
+      const task = await sandbox.first<{ person_id: string }>('SELECT person_id FROM callback_tasks WHERE id = ? AND done_at IS NOT NULL', [e.data.task]);
+      return task !== null && (await sameRoot(task.person_id));
+    });
+    if (!rappel) return done;
+    const rdv = await next('rendez_vous', async (e) => {
+      if (e.type !== 'rdv.reserve') return false;
+      const a = await sandbox.first<{ person_id: string }>("SELECT person_id FROM appointments WHERE id = ? AND agent_id = ? AND kind = 'estimation'", [id(e.subject, 'appointment'), agentId]);
+      return a !== null && (await sameRoot(a.person_id));
+    });
+    if (!rdv) return done;
+    await next('avis_valide', async (e) => {
+      if (e.type !== 'avis.valide' || !byAgent(e) || typeof e.data.report !== 'string') return false;
+      const r = await sandbox.first("SELECT 1 AS ok FROM valuation_reports WHERE id = ? AND status = 'validated' AND validated_by = ?", [e.data.report, agentId]);
+      return r !== null;
+    });
     return done;
   }
 
@@ -243,7 +295,7 @@ export class BacASable {
       await appendEvent(this.journal, { type: 'bac_a_sable.journal_casse', actor: 'system:bac_a_sable', subject: `agent:${agentId}`, data: {} }, this.now);
       return { ok: false, rule: null, code: 'broken_journal' };
     }
-    const done = this.stepsFrom(entries, agentId);
+    const done = await this.stepsFrom(sandbox, entries, agentId);
     const at = this.now().toISOString();
     for (const [step, stepAt] of done) {
       const { changes } = await this.db.run('INSERT INTO sandbox_steps (agent_id, network_id, step, done_at, checked_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [agentId, viewer.networkId, step, stepAt, at]);
@@ -252,13 +304,22 @@ export class BacASable {
     const completed = done.size === SANDBOX_STEPS.length;
     if (completed && run.completed_at === null) {
       const { changes } = await this.db.run('UPDATE sandbox_runs SET completed_at = ? WHERE agent_id = ? AND completed_at IS NULL', [at, agentId]);
-      if (changes === 1) {
-        await appendEvent(this.journal, { type: 'bac_a_sable.fini', actor: 'system:bac_a_sable', subject: `agent:${agentId}`, data: {} }, this.now);
-        if (this.options.academyModuleId) await this.academie.complete({ role: 'agent', userId: agentId, networkId: viewer.networkId }, this.options.academyModuleId);
+      if (changes === 1) await appendEvent(this.journal, { type: 'bac_a_sable.fini', actor: 'system:bac_a_sable', subject: `agent:${agentId}`, data: {} }, this.now);
+    }
+    // Le parcours fini compte au module prévu ; tant qu'il n'y est pas, chaque lecture le retente et le refus va au journal.
+    let counted = false;
+    if (completed && this.options.academyModuleId) {
+      const moduleId = this.options.academyModuleId;
+      const known = await this.db.first('SELECT 1 AS ok FROM academy_completions WHERE agent_id = ? AND module_id = ?', [agentId, moduleId]);
+      if (known) counted = true;
+      else {
+        const r = await this.academie.complete({ role: 'agent', userId: agentId, networkId: viewer.networkId }, moduleId);
+        counted = r.ok;
+        if (!r.ok) await appendEvent(this.journal, { type: 'bac_a_sable.academie_refusee', actor: 'system:bac_a_sable', subject: `agent:${agentId}`, data: { code: r.code } }, this.now);
       }
     }
     const steps = SANDBOX_STEPS.map((step) => ({ step, label: SANDBOX_STEP_LABELS[step], done: done.has(step), at: done.get(step) ?? null }));
     const next = steps.find((s) => !s.done);
-    return { ok: true, value: { agentId, steps, next: next ? next.label : null, completed } };
+    return { ok: true, value: { agentId, steps, next: next ? next.label : null, completed, countedAtAcademy: counted } };
   }
 }
