@@ -3,6 +3,7 @@ import type { Viewer } from '@aimmo/core';
 import { offreRoutes, syncOffres, type OffreServices } from '../src/offres.ts';
 import { setupOffre, SIGNED_REF } from '../../core/test/offres-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
+import { identiteAuCoffre } from '../../core/test/identite-coffre.ts';
 
 // Une offre test inventée, suivie de bout en bout par les routes.
 const PROOF = 'preuves/0b6f1d2e-9999-4a2b-8c3d-000000000001.pdf';
@@ -42,8 +43,7 @@ describeWithSqlite('O08 · routes de M09', () => {
     const blocked = await t.call(t.agent, 'POST', `/offres/dossiers/${file.body.data.id}/compromis`);
     expect(blocked.status).toBe(409);
     expect(blocked.body).toMatchObject({ rule: 'R58', code: 'identity_missing' });
-    const { ControlesSignature } = await import('@aimmo/core');
-    await new ControlesSignature(t.db, t.acces, t.journal, { now: t.now }).recordIdentity(t.agent, t.buyerId, { piece: 'passeport', seenAt: new Date('2027-03-01T11:30:00.000Z') });
+    await identiteAuCoffre({ db: t.db, acces: t.acces, journal: t.journal, now: t.now }, t.agent, t.buyerId, { piece: 'passeport', seenAt: new Date('2027-03-01T11:30:00.000Z') });
     expect((await t.call(t.agent, 'POST', `/offres/dossiers/${file.body.data.id}/compromis`)).status).toBe(200);
     const history = await t.call(t.direction, 'GET', `/offres/${offerId}/historique`);
     expect(history.body.data.map((e: { event: string }) => e.event)).toEqual(['recue', 'enregistree', 'controlee', 'transmise:telephone', 'reponse:acceptee']);

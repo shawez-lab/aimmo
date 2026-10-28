@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, RegistreMandats, SignaturePapier, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 
 // Modèle, registre et personnes inventés pour les tests.
 const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test mise en évidence.\n\nNuméro au registre : {{registre.numero}}. Signé le {{signature.date}}, {{signature.lieu}}.';
@@ -39,7 +40,7 @@ async function setup() {
     const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: `REF-T-${n}`, kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60, rooms: 3, priceEur: 200000 });
     const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
     await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
-    if (identity) await controles.recordIdentity(agent, p.id, { piece: 'carte_identite', seenAt: NOW });
+    if (identity) await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: NOW });
     const d = await modeles.generate(agent, { kind: 'mandat_vente_exclusif', personId: p.id, propertyId: b.id, inputs: INPUTS });
     if (!d.ok) throw new Error(d.code);
     return { documentId: d.document.id, content: d.document.content, personId: p.id };

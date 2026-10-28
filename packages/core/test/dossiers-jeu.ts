@@ -1,9 +1,9 @@
 // Jeu de test commun aux tâches de M10 : l'offre acceptée de M09 et son dossier de vente, inventés.
-import { ControlesSignature } from '../src/index.ts';
 import { FicheBien } from '../src/annonces/index.ts';
 import { PiecesDossier, type PieceStore } from '../src/dossiers/index.ts';
 import { DossiersVente, TransmissionOffres } from '../src/offres/index.ts';
 import { setupOffre } from './offres-jeu.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 
 export const PROOF = 'preuves/0b6f1d2e-9999-4a2b-8c3d-000000000001.pdf';
 
@@ -56,7 +56,7 @@ export async function setupDossier(kind: DossierKind = 'appartement', offerPatch
     return ref;
   };
   const verifyBuyer = (seenAt = new Date('2027-03-01T11:30:00.000Z')) =>
-    new ControlesSignature(t.db, t.acces, t.journal, { now: t.now }).recordIdentity(t.agent, t.buyerId, { piece: 'passeport', seenAt });
+    identiteAuCoffre({ db: t.db, acces: t.acces, journal: t.journal, now: t.now }, t.agent, t.buyerId, { piece: 'passeport', seenAt });
   /** Identité vérifiée, compromis en préparation [R58]. */
   const startCompromis = async () => {
     await verifyBuyer();
