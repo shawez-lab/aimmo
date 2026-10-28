@@ -1077,3 +1077,114 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Reste de F02 : brancher `reviewRequestJob` au planificateur avec le `DossiersClos` de N06 ; routes du lien de la fiche Google (`setReviewLink`), des demandes (`list`) et des tâches (`openTasks`, `lien_avis` et `avis_non_parti`). Le plafond de R11, 2 demandes d'avis par jour pour tout le réseau, ne suffira pas quand le réseau clora plus de 2 ventes par jour : les demandes en trop sont closes et confiées à l'agent ; un plafond par agent serait un changement de R11, à décider avec Shawez.
 - Reste de F01 : deux saisies simultanées du même proche peuvent laisser un projet et une source en trop (D1 sans transaction interactive) : la route de recommandation porte une clé d'idempotence.
 - Attend : rien.
+
+**M14 · Réseau et académie, juillet 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-28 par la voie 2. Ids `J..` pour Joindre le réseau. Cahier : M14 Réseau et académie ; Offre aux agents, « Le parrainage, dans les règles » et « L'essai de 30 jours » ; Feuille de route, juillet 2027 : « 3 personnes extérieures font tout le parcours de candidature » ; critères « un agent pilote fait seul son premier parcours complet, du contact à l'avis de valeur », « aucun accès aux clients avant un dossier d'agent complet », « un import test de 500 contacts depuis un export Hektor ou Excel, sans doublon et sans aucun message envoyé hors règles ».
+Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses propres tables, jamais dans la fiche client. L'IA informe et organise, un humain nommé décide de chaque entrée : aucune note, aucun score, aucun classement, aucun tri de candidats, ni par l'IA ni par le code ; les candidatures se lisent dans l'ordre d'arrivée [R14, R81]. Aucun texte de recrutement (page, réponse de l'assistant, message à un candidat) ne promet de revenus : une liste fermée de tournures et tout montant par mois ou par an sont refusés [R80]. Le dossier d'agent liste des pièces par des règles écrites, chacune avec sa date de fin de validité saisie avec sa preuve (contrat d'agent commercial signé, attestation d'habilitation du titulaire de la carte, immatriculation au registre des agents commerciaux, assurance de responsabilité civile professionnelle, attestation de vigilance de moins de 6 mois) ; une pièce est une référence de stockage, jamais son contenu ; sans dossier complet et valide ce jour-là, aucun accès aux clients [R82]. Les modèles du contrat et de l'attestation viennent de M06 et attendent H08 : en attendant, ils sont générés en mode essai, marqués « projet ». Le parrainage ne paie qu'après une commission encaissée par le filleul, jamais à l'arrivée, sans frais d'entrée, sur un nombre de niveaux réglé (1 tant que l'avocat ne l'a pas fixé) [R83]. L'import des contacts d'un agent les range sans doublon, chacun trié par sa base légale, et n'envoie rien : un contact sans accord prouvé ne reçoit jamais de premier message [R03, R84]. Les heures de formation obligatoire sont comptées par le code depuis les présences et modules faits (réglages : 14 h par an, 42 h sur 3 ans dont 2 h de déontologie et 2 h de non-discrimination), avec alertes avant l'échéance ; l'académie n'impose aucun horaire [R85]. Au départ d'un agent : accès coupé le jour même, clients repris par la direction, rien effacé [R86, R17]. Les numéros de règles R80 à R89 et de migrations à partir de `0601` sont réservés à M14, pour ne jamais croiser la voie 1. Le code vit dans `packages/core/src/reseau/`, ses routes dans `packages/api/src/reseau.ts` ; les fichiers du socle (droits d'accès, `index.ts`, `app.ts`, planificateur, Worker) ne changent que par J13, confiée à la voie 1.
+
+### J01 · Candidature et textes de recrutement sans promesse de revenus
+- Statut : en cours (voie 2)
+- Qui : Claude · Relecture : forte · Dépend de : rien
+- Cahier : M14, « Candidature » et « Règles » ; Offre aux agents, parrainage.
+- Objectif : un candidat dépose sa candidature (prénom, nom, une coordonnée, commune, statut actuel et expérience déclarés, question libre, source : vidéo, podcast, page, parrain), avec son accord pour être recontacté au sujet de sa candidature et sa preuve ; elle est rangée dans `candidates`, une seule fois par coordonnée ; le contrôle des textes de recrutement refuse toute promesse de revenus.
+- Critères : la table n'a aucun champ de note, de score ni de rang ; la liste des candidatures se lit dans l'ordre d'arrivée, sans autre tri [R81] ; une même coordonnée déposée deux fois ne fait qu'une candidature [R18] ; « gagnez », « revenus garantis », « jusqu'à 10 000 € », « 5 000 €/mois », « devenez riche », « liberté financière » et tout montant par mois ou par an sont refusés dans un texte de recrutement, sur 30 cas tests [R80] ; rien d'une coordonnée au journal [R13] ; sans accord, aucun message au candidat [R03].
+- Attend : rien.
+
+### J02 · Réponses de l'assistant aux questions des candidats
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : J01
+- Cahier : M14, « Candidature » ; Intelligence artificielle, mention de l'assistant.
+- Objectif : l'assistant répond aux questions d'un candidat seulement à partir de réponses écrites et datées par la direction (questions fréquentes : statut d'agent commercial, frais, essai de 30 jours, formation, parrainage) ; sans réponse écrite, il le dit et passe la question à un humain ; chaque réponse passe par le contrôle central, en mode essai.
+- Critères : aucune réponse ne contient ce qui n'est pas dans une réponse écrite [R10] ; chaque réponse passe le contrôle de R80 ; le premier message porte la mention de l'assistant [R06] ; une question sur la rémunération renvoie à la grille écrite, jamais à un chiffre de revenu [R80] ; une question sans réponse écrite crée une tâche pour la direction.
+- Attend : rien (réponses réelles écrites par Shawez plus tard, dans l'application).
+
+### J03 · Entretien préparé à partir du déclaré, décidé par un humain
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : J01
+- Cahier : M14, « Entretien » ; « L'IA et l'humain ».
+- Objectif : pour chaque candidature, une fiche d'entretien préparée par le code : ce que le candidat a déclaré, les mêmes questions pour tous, les pièces qu'il devra fournir ; l'entretien est fixé, mené et décidé par un humain nommé, qui range sa décision (oui, non, à revoir) avec son motif écrit ; un oui ouvre le parcours d'intégration (J04).
+- Critères : la fiche ne contient que le déclaré et la liste commune de questions, la même pour tous [R81] ; aucune décision sans un humain nommé et un motif [R81, R14] ; une décision rangée ne change plus, une nouvelle s'ajoute [R17] ; l'IA ne lit ni ne résume le candidat pour décider [R81] ; seule la direction lit les candidatures et décide [R16].
+- Attend : rien.
+
+### J04 · Dossier d'agent et parcours d'intégration pas à pas
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : J03
+- Cahier : M14, « Intégration » ; Conformité ; Offre aux agents, « Ce que l'agent s'engage à faire ».
+- Objectif : à l'entrée décidée, un dossier d'agent : la liste des pièces attendues par des règles écrites (contrat d'agent commercial signé, attestation d'habilitation, immatriculation, assurance de responsabilité civile professionnelle, attestation de vigilance), chacune rangée par sa référence de stockage avec sa date de fin de validité ; le parcours guidé dit l'étape suivante en une phrase ; `DossierAgent.complete(agentId, at)` dit si le dossier est complet et valide à cette date, et pourquoi sinon.
+- Critères : un dossier sans une pièce, ou avec une pièce échue (attestation de vigilance de plus de 6 mois comprise), n'est jamais complet [R82] ; une pièce rangée ne change plus, une nouvelle version s'ajoute [R17] ; une pièce d'identité ou un RIB sont refusés comme pièce [R15] ; l'agent est prévenu 30 jours avant l'échéance d'une pièce ; le contrat et l'attestation générés par M06 portent « projet » tant que H08 n'est pas fait.
+- Attend : rien pour la tâche ; H08 pour un contrat réel.
+
+### J05 · Import des contacts et des biens de l'agent, triés selon la loi
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : J04
+- Cahier : M14, « Import de ses contacts et de ses biens » ; Conformité, consentement ; `docs/REPRISE.md`.
+- Objectif : l'agent dépose un export Hektor, Apimo, Excel ou Google (CSV) ; chaque contact devient ou complète sa fiche, à cet agent, avec la source « import » ; chacun est trié : client avec un mandat ou une vente dans l'export, contact avec accord prouvé (date et preuve dans l'export), ou contact sans base, qui ne reçoit jamais de premier message ; les biens sont rangés comme biens de l'agent, jamais publiés ; un compte rendu dit les nombres et les lignes illisibles.
+- Critères : sur un export test de 500 contacts inventés (Hektor et Excel), aucun doublon, relancé deux fois sans rien doubler [R84, R18] ; aucun message ne part à l'import, et un contact sans base n'est jamais contacté le premier [R03, R84] ; une fiche existante suivie par un autre agent n'est jamais reprise, elle va à la direction [R16] ; rien d'une coordonnée au journal [R13] ; aucun accord inventé.
+- Attend : rien (vrais exports plus tard, hors du dépôt).
+
+### J06 · Académie : parcours, modules et compteur des heures obligatoires
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : J04
+- Cahier : M14, « Académie », « Formation en salle », « Communauté ».
+- Objectif : des modules courts (vidéo YouTube en accès restreint par sa référence, script, durée), rangés en parcours (entrée, puis par spécialité) ; les séances en salle, en direct, mensuelles et régionales avec la présence saisie par un humain ; le compteur des heures de formation obligatoire de chaque agent, par période, avec déontologie et non-discrimination à part ; alertes à l'agent avant l'échéance.
+- Critères : le compteur ne compte que des modules faits et des présences rangées [R85, R10] ; sur 10 agents tests à horloge simulée, chaque manque est signalé 90 et 30 jours avant l'échéance [R85] ; l'académie n'impose aucun horaire et ne note pas l'agent [R14] ; seule la direction et l'agent lui-même lisent son compteur [R16].
+- Attend : rien.
+
+### J07 · Bac à sable du premier parcours (Jamais vu)
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : J04, J06
+- Cahier : M14, critère « un agent pilote fait seul son premier parcours complet, du contact à l'avis de valeur » ; M02 à M05.
+- Objectif : avant même son dossier complet, le nouvel agent reçoit un réseau d'entraînement à lui : des contacts, des biens et des ventes inventés, où il fait tout son premier parcours avec les vrais modules (contact reçu, qualification, rendez-vous, avis de valeur) ; rien n'en sort jamais ; chaque étape franchie est cochée par le code ; le parcours fini compte comme module de l'académie. Aucun réseau, logiciel ou outil d'IA grand public n'offre une copie fidèle et sans risque de son propre outil pour apprendre le métier.
+- Critères : le bac à sable vit dans son propre réseau, sans aucune donnée réelle, et aucun envoi n'en sort, même mis en service [R82, R01-R04 par le contrôle central] ; le parcours complet se fait de bout en bout dans un test ; les étapes sont cochées par les événements du journal du bac à sable, jamais saisies ; l'agent ne voit aucun client réel tant que son dossier n'est pas complet [R82].
+- Attend : rien.
+
+### J08 · Entraînement aux objections avec l'IA, sur des cas inventés
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : J06
+- Cahier : M14, « Académie » ; Intelligence artificielle.
+- Objectif : l'agent s'entraîne contre l'IA qui joue un vendeur ou un acquéreur d'un cas inventé de la bibliothèque (objection sur les honoraires, l'exclusivité, le prix) ; le retour cite les règles et les scripts de l'académie ; la séance compte en temps d'académie, non en heures obligatoires sauf réglage.
+- Critères : un cas ne contient aucune donnée de client : il est refusé s'il cite une coordonnée ou une fiche [R15] ; sans IA (H13), un texte de secours le dit et rien ne casse [R12] ; aucune note de l'agent n'est rangée ni montrée à la direction [R14] ; aucun texte ne promet de revenus [R80].
+- Attend : rien (H13 pour la vraie IA).
+
+### J09 · Référent des 90 jours, binôme d'absence et assistance suivie
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : J04
+- Cahier : M14, « Référent », « Assistance », « Binôme ».
+- Objectif : la direction attribue un référent à chaque nouvel agent pour 90 jours ; deux agents forment un binôme avec un partage des honoraires écrit d'avance ; pendant une absence déclarée, le binôme lit les dossiers en cours de l'absent ; une demande d'assistance est suivie avec son délai (2 h ouvrées pour un humain, 48 h ouvrées pour l'avocat) et alerte la direction avant l'échéance.
+- Critères : le binôme ne lit les dossiers que pendant l'absence déclarée, et plus rien après [R16] ; le partage est écrit avant l'absence et ne change plus [R17] ; les délais d'assistance sont calculés en heures ouvrées par le code ; aucune donnée de client dans une demande d'assistance passée à l'avocat sans nécessité [R15].
+- Attend : rien.
+
+### J10 · Parrainage dans les règles
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : J04
+- Cahier : Offre aux agents, « Le parrainage, dans les règles » ; M14, « Règles ».
+- Objectif : le parrain d'un agent est rangé à l'entrée ; une prime de parrainage est calculée sur chaque commission réellement encaissée par le filleul, au taux réglé, sur le nombre de niveaux réglé ; elle est montrée au parrain, jamais promise d'avance.
+- Critères : aucune prime à l'arrivée d'un agent ni sans commission encaissée [R83] ; aucun frais d'entrée nulle part [R83] ; au-delà du nombre de niveaux réglé (1 par défaut), aucune prime [R83] ; un parrain parti ne touche rien de nouveau ; aucun texte de parrainage ne promet de revenus [R80] ; 10 cas tests de commissions encaissées, avoirs compris.
+- Attend : rien (taux et niveaux réels avec l'avocat, H09).
+
+### J11 · Départ d'un agent
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : J04
+- Cahier : M14, « Départ d'un agent ».
+- Objectif : la direction range un départ (date, préavis, motif) ; le jour venu, l'agent passe à « parti », son accès est coupé, ses clients et biens vont à la direction pour être réattribués, ses commissions en cours sont listées pour être soldées, ses contenus personnels sont listés pour lui être rendus ; un successeur présenté est rangé, avec l'accord du réseau.
+- Critères : à la date du départ, plus aucune lecture ni écriture de l'agent n'est permise [R86, R16] ; aucun client ni dossier n'est effacé [R17] ; aucun client ne reste sans agent ni sans file de la direction [R86] ; les relances et envois préparés par l'agent parti ne partent plus [R86].
+- Attend : rien.
+
+### J12 · Routes de M14, page de candidature et écrans
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : J01 à J11
+- Cahier : M14 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : les routes `/v1/reseau` (candidatures, entretiens, dossier d'agent, import, académie, binôme, parrainage, départ) dans `packages/api/src/reseau.ts` ; la page publique de candidature ; dans l'application, les écrans « Mon intégration », « Académie » et, pour la direction, « Candidatures ».
+- Critères : chaque route sous R16, refus au journal ; un parcours de test de la candidature à l'agent au dossier complet, fait de bout en bout par 3 candidats inventés ; écrans accessibles, beaux sur téléphone d'abord, sans texte générique ; la page de candidature passe le contrôle de R80.
+- Attend : rien.
+
+### J13 · Branchement de M14 dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : J12
+- Cahier : M14 ; critère « aucun accès aux clients avant un dossier d'agent complet ».
+- Objectif : exporter `reseau` depuis `@aimmo/core` ; ajouter les routes de M14 à `app.ts` ; dans les droits d'accès, refuser toute fiche client et tout bien non partagé à un agent dont `DossierAgent.complete` est faux ce jour-là, et à un agent parti ; lancer au planificateur les alertes d'échéances des pièces, du compteur de formation, de l'assistance et les départs du jour.
+- Critères : un agent au dossier incomplet ou échu ne lit aucune fiche client [R82, R16] ; un agent parti ne lit plus rien le jour de son départ [R86] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
+- Attend : rien.
