@@ -1147,7 +1147,9 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K07 · Alertes : budget de l'IA, chute d'un indicateur, échéance d'un document d'agent
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : budget de l'IA sans valeur par défaut (pas d'alerte tant que la direction ne l'a pas réglé) ; baisse comparée en moyenne par jour, 7 jours jusqu'à la veille contre les 28 précédents, une alerte par indicateur et par semaine ; échéances des documents d'agent par une interface, branchée sur le dossier d'agent de M14 par K08.
+- Reste : relecture de Codex impossible (limite d'usage, H03), fusion sur les vérifications (#121).
 - Qui : Claude · Relecture : normale · Dépend de : K06
 - Cahier : M13, « Alertes ».
 - Objectif : une alerte à la direction quand le coût de l'IA du mois atteint 70 % du budget réglé, quand un indicateur du réseau baisse de plus du seuil réglé sur 7 jours par rapport aux 28 précédents, et avant l'échéance d'un document d'agent (lue par une interface de M14).
