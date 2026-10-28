@@ -1506,7 +1506,9 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U10 · Routes de M18 et espace partenaire en ligne
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#147) ; relecture forte 1 P1 corrigé (date impossible stockée sans trace) ; Codex 2 P0 et 2 P2 corrigés dans la page (réponses dépassées ou d'une autre session ignorées, formulaire de dépôt vidé à chaque demande). Branchement des routes, de la page `/partenaire/`, de l'opposition `/partenaires/opposition/` et du stockage R2 des fichiers des partenaires revient à U09 (voie 1).
+- Décidé (2026-10-28, voie 2) : le partenaire dépose le fichier lui-même ; le serveur contrôle accès, sorte et date avant de le stocker, choisit sa référence et calcule son empreinte ; sans stockage lié, 503 et rien n'est rangé.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01 à U08
 - Cahier : M18 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/partenaires` (annuaire, mises en relation, accord du client, rémunérations, espace partenaire, dépôt de pièces, suivi, prospection) dans `packages/api/src/partenaires.ts` ; la page de l'espace partenaire, belle sur téléphone d'abord.
@@ -1514,7 +1516,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U11 · Écrans de M18 dans l'application
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U10 ; après la fusion de #129 (même fichier `packages/api/app/fichiers.ts`)
 - Cahier : M18 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : dans l'application de l'agent, l'écran « Partenaires » : proposer au client (ordre tiré au sort), enregistrer son accord, suivre les demandes et les pièces.
