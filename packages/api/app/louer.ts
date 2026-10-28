@@ -67,6 +67,8 @@ export const LOUER_JS = `
   var GAS = { aucune: 'Pas d’installation de gaz', moins_de_15_ans: 'Gaz, installation de moins de 15 ans', plus_de_15_ans: 'Gaz, installation de plus de 15 ans' };
   var PIECES_MISSING = { identite: 'pièce d’identité vérifiée', domicile: 'justificatif de domicile', activite: 'justificatif d’activité', ressources: 'justificatif de ressources', visa_visale: 'visa Visale' };
   var PARTY_NAMES = { bailleur: 'le bailleur', locataire: 'le locataire' };
+  var PARTY_TO = { bailleur: 'au bailleur', locataire: 'au locataire' };
+  var PARTY_OF = { bailleur: 'du bailleur', locataire: 'du locataire' };
   var LOUER_REFUSALS = {
     not_assigned: 'Ce logement est suivi par un autre agent.',
     agent_inactive: 'Votre accès d’agent n’est plus actif.',
@@ -539,7 +541,7 @@ export const LOUER_JS = `
       var consent = field(box, 'accord-' + n, 'Comment ' + PARTY_NAMES[party] + ' a accepté de signer en ligne', 'textarea');
       consent.setAttribute('rows', '2');
       consent.setAttribute('maxlength', '300');
-      box.appendChild(button('Envoyer le code de signature à ' + PARTY_NAMES[party], function () {
+      box.appendChild(button('Envoyer le code de signature ' + PARTY_TO[party], function () {
         var text = String(consent.value || '').trim();
         if (!text) { louerState(LOUER_REFUSALS.bad_consent); return; }
         louerAct(base + '/bail/signatures', { party: party, consentProof: text }, 'Le code n’est pas envoyé.', '', true).then(function (r) {
@@ -561,7 +563,7 @@ export const LOUER_JS = `
       louerAct('/v1/location/signatures-bail/' + encodeURIComponent(s), b, 'La signature n’est pas rangée.', 'Signature rangée (essai).', true).then(function (r) {
         if (!r) return;
         delete signing[key];
-        openLocation(louerId, $('louer-titre').textContent, 'Signature de ' + PARTY_NAMES[party] + ' rangée (essai).');
+        openLocation(louerId, $('louer-titre').textContent, 'Signature ' + PARTY_OF[party] + ' rangée (essai).');
       });
     }));
     return box;
@@ -777,7 +779,7 @@ export const LOUER_JS = `
         louerAct('/v1/location/etats-des-lieux/' + encodeURIComponent(inv.inventoryId) + '/signatures', { party: party, contentSha256: inv.contentSha256, drawing: t }, 'La signature n’est pas rangée.', '', true).then(function (r) {
           if (!r) return;
           inventories[k] = true;
-          openLocation(id, $('louer-titre').textContent, r.closed ? 'État des lieux signé des deux parties.' : 'Signature de ' + PARTY_NAMES[party] + ' rangée.');
+          openLocation(id, $('louer-titre').textContent, r.closed ? 'État des lieux signé des deux parties.' : 'Signature ' + PARTY_OF[party] + ' rangée.');
         });
       }));
     });
