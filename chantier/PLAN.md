@@ -1530,8 +1530,9 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U11 · Écrans de M18 dans l'application
-- Statut : en cours (voie 2)
-- Reste (2026-10-28, voie 2) : remise à plus tard : la voie 1 modifie `packages/api/app/fichiers.ts` dans Z02 (proposition en cours), puis le refait en entier dans Z03 (passe de design). Les deux voies ne touchent jamais le même fichier en même temps : U11 se fait après la fusion de Z03, dans le nouveau système de design.
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#163). Branchement des routes `/v1/partenaires/projets` et `/preuve-accord` par U09 (voie 1), avec `files` et `uploads` sur le même stockage pour que l'accord retrouve la preuve rangée ; la preuve d'un accord écrit est une note recopiée, le dépôt d'une photo du document viendra plus tard.
+- Décidé (2026-10-28, voie 2) : l'agent note ce que le client a dit ; le serveur range la note comme preuve et donne son heure, que l'accord reprend ; prénom rendu seulement sous `decideAccess` (fiches réunies), chaque prénom un `fiche.lue` ; biens filtrés par les droits ; projets par pages de 50 ; relecture forte 1 P0 et 1 P1, Codex 1 P0 et 3 P2 corrigés.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U10, Z03 (même fichier `packages/api/app/fichiers.ts`)
 - Cahier : M18 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : dans l'application de l'agent, l'écran « Partenaires » : proposer au client (ordre tiré au sort), enregistrer son accord, suivre les demandes et les pièces.
