@@ -978,7 +978,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N08 · Routes de M10
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
 - Qui : Claude · Relecture : forte · Dépend de : N01 à N07
 - Cahier : M10 ; Feuille de route, mai 2027.
 - Objectif : les routes `/v1/dossiers` (pièces, échéancier, financement, acte, chemin critique, alertes) dans `packages/api/src/dossiers.ts`, de la même forme que celles de `app.ts`, et `syncDossiers`, le passage quotidien (échéances, relances, financement), sans toucher au socle.
@@ -987,7 +987,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 
 ### N09 · Branchement de M10 dans le socle
 - Statut : à faire
-- Décidé (2026-10-28) : `packages/api/src/dossiers.ts` expose `dossierRoutes()`, `syncDossiers`, `dossiersJob` (tous les jours de 9 h à 19 h, relances jamais le dimanche) et `R2PieceStore` ; il importe M10 par un chemin relatif, à remplacer par `dossiers` de `@aimmo/core` ; la tâche `pieceReminderJob` du cœur n'est plus à lancer, `dossiersJob` la contient ; le bucket R2 des pièces est à déclarer dans le Worker
+- Décidé (2026-10-28) : `packages/api/src/dossiers.ts` expose `dossierRoutes()`, `syncDossiers`, `dossiersJob` (tous les jours de 9 h à 19 h, relances jamais le dimanche) et `R2PieceStore` ; il importe M10 par un chemin relatif, à remplacer par `dossiers` de `@aimmo/core` ; la tâche `pieceReminderJob` du cœur n'est plus à lancer, `dossiersJob` la contient ; le bucket R2 des pièces est à déclarer dans le Worker ; tant que `scan` n'est pas branché à la réception, le filet du bouclier ne relit que 48 h de messages
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : N08
 - Cahier : M10.
 - Objectif : exporter `dossiers` depuis `@aimmo/core` ; ajouter les routes de M10 à `app.ts` ; lancer `syncDossiers` chaque jour depuis le planificateur, une fois par créneau ; brancher `BouclierFonds.scan` (N05) à la réception des messages, dès qu'un message est rattaché à sa fiche, et masquer l'IBAN dans le message rangé [R15] ; appliquer `fundsInOutgoing` dans le contrôle central à tout texte destiné à un client [R62] ; lancer `dossiersJob` (N08), qui contient les relances (N03).
