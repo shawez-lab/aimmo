@@ -162,12 +162,29 @@ const isCertified = (v: unknown): v is CertifiedDomain => typeof v === 'string' 
 const kindLabel = (kind: CredentialKind, domain: CertifiedDomain | null): string =>
   domain ? `Certification ${CERTIFIED_DOMAINS.find((d) => d.domain === domain)!.label}` : CREDENTIAL_KINDS.find((k) => k.kind === kind)!.label;
 
-/** Un justificatif est-il valide ce jour-là ? Bornes comprises. */
-const stateOn = (row: CredentialRow | undefined, day: string): CredentialState => {
-  if (!row) return 'manquant';
-  if (row.valid_from > day) return 'a_venir';
-  if (row.valid_until < day) return 'echu';
-  return 'valide';
+/**
+ * La version qui fait foi un jour donné, parmi les versions d'un même justificatif (même sorte, même domaine) : celle
+ * dont la période contient le jour, sauf si une version plus récente, déjà commencée ce jour-là, chevauche sa période,
+ * c'est-à-dire la corrige. Ainsi une correction qui raccourcit une période l'emporte, un renouvellement rangé à l'avance
+ * ne retire pas la version en cours avant son premier jour, et une version passée reste vraie pour sa propre période,
+ * pour juger une pièce faite à cette date (U06) [R73, R17]. `null` : rien ne couvre ce jour.
+ */
+export function authoritativeOn<T extends { version: number; valid_from: string; valid_until: string }>(versions: readonly T[], day: string): T | null {
+  const overlaps = (a: T, b: T): boolean => a.valid_from <= b.valid_until && b.valid_from <= a.valid_until;
+  const covering = versions
+    .filter((v) => v.valid_from <= day && day <= v.valid_until)
+    .filter((v) => !versions.some((w) => Number(w.version) > Number(v.version) && w.valid_from <= day && overlaps(w, v)));
+  return covering.sort((a, b) => Number(b.version) - Number(a.version))[0] ?? null;
+}
+
+/** Ce qu'on montre d'un justificatif ce jour-là : la version qui fait foi, sinon le renouvellement à venir, sinon l'échue. */
+const shownOn = (versions: readonly CredentialRow[], day: string): { row: CredentialRow | undefined; state: CredentialState } => {
+  const valid = authoritativeOn(versions, day);
+  if (valid) return { row: valid, state: 'valide' };
+  const next = versions.filter((v) => v.valid_from > day).sort((a, b) => (a.valid_from < b.valid_from ? -1 : a.valid_from > b.valid_from ? 1 : Number(b.version) - Number(a.version)))[0];
+  if (next) return { row: next, state: 'a_venir' };
+  const past = [...versions].sort((a, b) => (a.valid_until > b.valid_until ? -1 : a.valid_until < b.valid_until ? 1 : Number(b.version) - Number(a.version)))[0];
+  return past ? { row: past, state: 'echu' } : { row: undefined, state: 'manquant' };
 };
 
 const reasonOf = (line: CredentialLine): string | null => {
@@ -372,16 +389,19 @@ export class Annuaire {
   }
 
   /**
-   * Un justificatif de ce partenaire couvrait-il ce jour ? Une version dont la période contient le jour suffit, même
-   * remplacée depuis : c'est ce qui valait le jour où une pièce a été faite (U06) [R73].
+   * Un justificatif de ce partenaire couvrait-il ce jour ? La version qui faisait foi ce jour-là décide, même remplacée
+   * depuis par un renouvellement ; une correction qui a raccourci sa période l'emporte (`authoritativeOn`). C'est ce qui
+   * valait le jour où une pièce a été faite (U06) [R73].
    */
   async coveredOn(networkId: string, partnerId: string, kind: CredentialKind, domain: CertifiedDomain | null, day: string): Promise<boolean> {
     if (!validDay(day)) return false;
-    const row = await this.db.first(
-      'SELECT 1 FROM partner_credentials WHERE network_id = ? AND partner_id = ? AND kind = ? AND domain = ? AND valid_from <= ? AND valid_until >= ? LIMIT 1',
-      [networkId, partnerId, kind, domain ?? '', day, day],
-    );
-    return row !== null && row !== undefined;
+    const rows = await this.db.all<CredentialRow>('SELECT id, kind, domain, version, valid_from, valid_until FROM partner_credentials WHERE network_id = ? AND partner_id = ? AND kind = ? AND domain = ?', [
+      networkId,
+      partnerId,
+      kind,
+      domain ?? '',
+    ]);
+    return authoritativeOn(rows, day) !== null;
   }
 
   /** Le partenaire est-il proposable ce jour-là ? Lu par la mise en relation (U02) et l'espace partenaire (U04) [R73]. */
@@ -398,19 +418,13 @@ export class Annuaire {
     const zones = await this.db.all<{ postcode: string }>('SELECT postcode FROM partner_zones WHERE partner_id = ? ORDER BY postcode', [partnerId]);
     const rows = await this.db.all<CredentialRow>('SELECT id, kind, domain, version, valid_from, valid_until FROM partner_credentials WHERE partner_id = ? ORDER BY kind, domain, version', [partnerId]);
     const day = this.today(at);
-    // La dernière version déjà commencée ce jour-là compte : elle corrige les précédentes [R17]. Un renouvellement rangé
-    // à l'avance ne retire donc pas la version en cours ; il ne compte qu'à son premier jour. Sans version commencée,
-    // la dernière est montrée, « à venir ».
-    const latest = (kind: CredentialKind, domain: string): CredentialRow | undefined => {
-      const mine = rows.filter((r) => r.kind === kind && r.domain === domain);
-      const started = mine.filter((r) => r.valid_from <= day).at(-1);
-      // Une version commencée mais échue cède la place au renouvellement à venir, pour dire la bonne date à l'agent.
-      if (started && started.valid_until >= day) return started;
-      return mine.filter((r) => r.valid_from > day && (!started || r.version > started.version)).at(-1) ?? started ?? mine.at(-1);
-    };
+    // La version qui fait foi ce jour-là décide (`authoritativeOn`) [R73, R17].
     const line = (kind: CredentialKind, domain: CertifiedDomain | null): CredentialLine => {
-      const row = latest(kind, domain ?? '');
-      return { kind, domain, label: kindLabel(kind, domain), state: stateOn(row, day), version: row ? Number(row.version) : null, validFrom: row?.valid_from ?? null, validUntil: row?.valid_until ?? null };
+      const { row, state } = shownOn(
+        rows.filter((r) => r.kind === kind && r.domain === (domain ?? '')),
+        day,
+      );
+      return { kind, domain, label: kindLabel(kind, domain), state, version: row ? Number(row.version) : null, validFrom: row?.valid_from ?? null, validUntil: row?.valid_until ?? null };
     };
     const lines: CredentialLine[] = REQUIRED_CREDENTIALS[p.trade].map((k) => line(k, null));
     let domains: DiagnosticDomain[] = [];
@@ -433,19 +447,32 @@ export class Annuaire {
   }
 
   /**
-   * Les justificatifs (dernière version) qui arrivent à échéance dans les 30 jours : une alerte par justificatif, une
-   * seule fois. Rendues au planificateur (U09), qui préviendra la direction ; rien n'est envoyé ici [R73].
+   * Les justificatifs qui font foi aujourd'hui et arrivent à échéance dans les 30 jours, sans qu'aucune autre version
+   * ne couvre le lendemain de leur échéance : une alerte par justificatif, une seule fois. Un renouvellement qui laisse
+   * un trou garde donc l'alerte. Rendues au planificateur (U09), qui préviendra la direction ; rien n'est envoyé ici [R73].
    */
   async dueAlerts(networkId: string): Promise<{ partnerId: string; kind: CredentialKind; domain: CertifiedDomain | null; validUntil: string }[]> {
     const day = this.today();
     const limit = addDays(day, PARTNER_CREDENTIAL_ALERT_DAYS);
-    const rows = await this.db.all<CredentialRow & { partner_id: string }>(
+    const all = await this.db.all<CredentialRow & { partner_id: string }>(
       `SELECT c.id, c.partner_id, c.kind, c.domain, c.version, c.valid_from, c.valid_until FROM partner_credentials c
-       WHERE c.network_id = ? AND c.valid_until >= ? AND c.valid_until <= ?
-       AND c.version = (SELECT MAX(d.version) FROM partner_credentials d WHERE d.partner_id = c.partner_id AND d.kind = c.kind AND d.domain = c.domain)
-       ORDER BY c.valid_until, c.partner_id, c.kind, c.domain`,
-      [networkId, day, limit],
+       WHERE c.network_id = ? AND c.partner_id IN (SELECT partner_id FROM partner_credentials WHERE network_id = ? AND valid_until >= ? AND valid_until <= ?)
+       ORDER BY c.partner_id, c.kind, c.domain, c.version`,
+      [networkId, networkId, day, limit],
     );
+    const groups = new Map<string, (CredentialRow & { partner_id: string })[]>();
+    for (const r of all) {
+      const key = `${r.partner_id}|${r.kind}|${r.domain}`;
+      groups.set(key, [...(groups.get(key) ?? []), r]);
+    }
+    const rows: (CredentialRow & { partner_id: string })[] = [];
+    for (const versions of groups.values()) {
+      const current = authoritativeOn(versions, day);
+      if (!current || current.valid_until > limit) continue;
+      if (authoritativeOn(versions, addDays(current.valid_until, 1))) continue;
+      rows.push(current);
+    }
+    rows.sort((a, b) => (a.valid_until < b.valid_until ? -1 : a.valid_until > b.valid_until ? 1 : a.partner_id < b.partner_id ? -1 : 1));
     const out: { partnerId: string; kind: CredentialKind; domain: CertifiedDomain | null; validUntil: string }[] = [];
     for (const r of rows) {
       const { changes } = await this.db.run("INSERT INTO partner_credential_alerts (credential_id, alert, network_id, created_at) VALUES (?, 'j30', ?, ?) ON CONFLICT DO NOTHING", [r.id, networkId, this.now().toISOString()]);
