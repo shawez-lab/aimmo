@@ -1564,7 +1564,9 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W04 · Candidatures limitées aux pièces de la liste officielle
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#153) ; R104 en service ; relecture forte 1 P0 (annexe II de la caution) et 2 P1 corrigés ; la relecture de Codex tournait encore au bout de 20 minutes, fusion sur vérifications vertes. Migration `0904` (et non `0903`, prise par W03) ; l'état des lieux de W07 prendra `0905`.
+- Décidé (2026-10-28, voie 2) : la pièce d'identité du candidat et de chaque garant ne vit qu'au coffre de la conformité (L01), la candidature lit l'état « identité vérifiée » ; la caution d'une personne morale n'est pas encore proposée ; aucune IA dans la complétude.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W01
 - Cahier : M15, « Candidatures » ; Conformité, « Pièces du candidat ».
 - Objectif : la candidature (migration `0903`) : candidat (fiche de M01), cautions, pièces rangées par sorte (liste officielle, une pièce d'identité, un justificatif de domicile, d'activité, de ressources, pour le candidat et chaque caution), lien DossierFacile, date d'arrivée, complétude vérifiée par une liste écrite.
@@ -1572,7 +1574,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W05 · Dossiers montrés au propriétaire dans leur ordre d'arrivée, reçu d'équité (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W04
 - Cahier : M15, « Présentation au propriétaire » ; Conformité, « Non-discrimination ».
 - Objectif : la présentation des dossiers complets au propriétaire et l'enregistrement de son choix ; le reçu d'équité.
