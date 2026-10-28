@@ -30,3 +30,19 @@ CREATE TABLE IF NOT EXISTS partner_referral_disclosures (
 CREATE INDEX IF NOT EXISTS partner_referral_disclosures_referral ON partner_referral_disclosures (referral_id, shown_at);
 CREATE TRIGGER IF NOT EXISTS partner_referral_disclosures_garde BEFORE DELETE ON partner_referral_disclosures BEGIN SELECT RAISE(ABORT, 'partner_referral_disclosures : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS partner_referral_disclosures_fige BEFORE UPDATE ON partner_referral_disclosures BEGIN SELECT RAISE(ABORT, 'partner_referral_disclosures : un texte montré ne change plus'); END;
+
+-- La base garde elle-même les deux invariants, d'un seul coup, même si deux demandes se croisent [R76] :
+-- aucune rémunération ne s'ajoute une fois une étape rangée (accord du client ou suite) ;
+CREATE TRIGGER IF NOT EXISTS partner_referral_fees_avant_accord BEFORE INSERT ON partner_referral_fees
+WHEN EXISTS (SELECT 1 FROM partner_referral_steps WHERE referral_id = NEW.referral_id)
+BEGIN SELECT RAISE(ABORT, 'partner_referral_fees : accord du client déjà rangé'); END;
+-- aucun accord n'est rangé sans un texte montré, au plus tard à la date de l'accord, qui cite toutes les rémunérations.
+CREATE TRIGGER IF NOT EXISTS partner_referral_steps_remunerations_montrees BEFORE INSERT ON partner_referral_steps
+WHEN NEW.state = 'accord_client'
+  AND EXISTS (SELECT 1 FROM partner_referral_fees WHERE referral_id = NEW.referral_id)
+  AND NOT EXISTS (
+    SELECT 1 FROM partner_referral_disclosures d
+    WHERE d.referral_id = NEW.referral_id AND d.shown_at <= NEW.consent_at
+      AND d.fees_count = (SELECT COUNT(*) FROM partner_referral_fees f WHERE f.referral_id = NEW.referral_id)
+  )
+BEGIN SELECT RAISE(ABORT, 'partner_referral_steps : rémunérations non montrées avant l''accord'); END;

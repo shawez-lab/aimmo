@@ -256,13 +256,13 @@ export class MiseEnRelation {
     if (!(await this.annuaire.proposableOn(row.network_id, input.partnerId, this.now(), row.domain === '' ? null : (row.domain as DiagnosticDomain)))) {
       return { ok: false, rule: 'R73', code: 'partner_unavailable' };
     }
-    // Les rémunérations déclarées (U03) doivent toutes figurer dans le dernier texte montré au client : rien ne
-    // s'efface, donc le nombre de rémunérations ne fait que monter, et le dernier texte doit les citer toutes. On ne se
-    // fie pas aux heures, qui peuvent être égales ou se croiser [R76].
+    // Les rémunérations déclarées (U03) doivent toutes figurer dans un texte montré au client au plus tard à la date de
+    // son accord : rien ne s'efface, donc un texte qui en cite autant que la base les cite toutes. La base refait ce
+    // contrôle au moment même où l'accord est rangé, pour deux demandes qui se croiseraient [R76].
     const fees = Number((await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM partner_referral_fees WHERE referral_id = ?', [row.id]))?.n ?? 0);
     if (fees > 0) {
-      const last = await this.db.first<{ fees_count: number }>('SELECT fees_count FROM partner_referral_disclosures WHERE referral_id = ? ORDER BY rowid DESC LIMIT 1', [row.id]);
-      if (!last || Number(last.fees_count) !== fees) return { ok: false, rule: 'R76', code: 'fees_not_disclosed' };
+      const shown = await this.db.first('SELECT 1 FROM partner_referral_disclosures WHERE referral_id = ? AND shown_at <= ? AND fees_count = ? LIMIT 1', [row.id, consentAt, fees]);
+      if (!shown) return { ok: false, rule: 'R76', code: 'fees_not_disclosed' };
     }
     const done = await this.step(viewer, row, current, 'accord_client', { partnerId: input.partnerId, consentAt, channel: input.channel as ConsentChannel, proofRef: input.proofRef });
     if (done) return done;
@@ -359,6 +359,7 @@ export class MiseEnRelation {
       );
     } catch (error) {
       // Deux étapes en même temps : une seule passe ; une preuve déjà servie ne sert pas deux fois.
+      if (/rémunérations non montrées/.test(String(error))) return { ok: false, rule: 'R76', code: 'fees_not_disclosed' };
       if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: /consent_proof_ref/.test(String(error)) ? 'proof_used' : 'busy' };
       throw error;
     }

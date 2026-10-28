@@ -129,6 +129,44 @@ describeWithSqlite('U03 · rémunérations des partenaires', () => {
     expect((await t.relations.recordConsent(t.agent, r.referralId, { ...t.consent(r.referralId, a), consentAt: new Date(clock).toISOString() })).ok).toBe(true);
   });
 
+  it('[R76] un accord daté d’avant le texte montré est refusé, même si le texte cite toutes les rémunérations', async () => {
+    const t = await setup();
+    const a = await t.partner('artisan', 'Artisan Daté');
+    const r = await t.propose('artisan');
+    const before = new Date(clock).toISOString();
+    clock += 60_000;
+    await t.fees.declare(t.agent, r.referralId, { partnerId: a, kind: 'commission', amountCents: 1000, payer: 'partenaire', payee: 'reseau' });
+    await t.fees.disclose(t.agent, r.referralId);
+    expect(await t.relations.recordConsent(t.agent, r.referralId, { ...t.consent(r.referralId, a), consentAt: before })).toEqual({ ok: false, rule: 'R76', code: 'fees_not_disclosed' });
+    expect((await t.relations.recordConsent(t.agent, r.referralId, t.consent(r.referralId, a))).ok).toBe(true);
+  });
+
+  it('[R76] la base refuse d’elle-même une rémunération après l’accord, et un accord sans texte montré, si deux demandes se croisent', async () => {
+    const t = await setup();
+    const a = await t.partner('artisan', 'Artisan Croisé');
+    const r = await t.propose('artisan');
+    expect((await t.relations.recordConsent(t.agent, r.referralId, t.consent(r.referralId, a))).ok).toBe(true);
+    // Une déclaration qui aurait vu l'état « proposée » juste avant l'accord arrive après lui : la base la refuse.
+    await expect(
+      t.db.run("INSERT INTO partner_referral_fees (id, referral_id, partner_id, kind, amount_cents, payer, payee, declared_by, declared_at) VALUES ('f-x', ?, ?, 'commission', 100, 'partenaire', 'reseau', 'agent:x', ?)", [
+        r.referralId,
+        a,
+        new Date(clock).toISOString(),
+      ]),
+    ).rejects.toThrow(/accord du client déjà rangé/);
+    // Un accord qui aurait vu zéro rémunération arrive après une déclaration non montrée : la base le refuse.
+    const r2 = await t.propose('artisan');
+    await t.fees.declare(t.agent, r2.referralId, { partnerId: a, kind: 'cadeau', amountCents: 500, payer: 'partenaire', payee: 'agent' });
+    await expect(
+      t.db.run("INSERT INTO partner_referral_steps (referral_id, seq, state, partner_id, consent_at, consent_channel, consent_proof_ref, actor, at) VALUES (?, 1, 'accord_client', ?, ?, 'oral', 'p-x', 'agent:x', ?)", [
+        r2.referralId,
+        a,
+        new Date(clock).toISOString(),
+        new Date(clock).toISOString(),
+      ]),
+    ).rejects.toThrow(/rémunérations non montrées/);
+  });
+
   it('[R76] après l’accord du client, plus aucune rémunération ne s’ajoute : il faut un nouvel accord', async () => {
     const t = await setup();
     const a = await t.partner('demenageur', 'Déménagements Express');
