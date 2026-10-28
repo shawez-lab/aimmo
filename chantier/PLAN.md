@@ -1080,6 +1080,77 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Reste de F01 : deux saisies simultanées du même proche peuvent laisser un projet et une source en trop (D1 sans transaction interactive) : la route de recommandation porte une clé d'idempotence.
 - Attend : rien.
 
+**M13 · Pilotage et finances, juin 2027.**
+
+Voie : 1
+
+Découpé le 2026-10-28 par la voie 1. Ids `K..` pour Kilomètres et chiffres. Cahier : M13 Pilotage et finances ; Feuille de route, juin 2027 : « chiffres identiques au contrôle manuel pendant 2 semaines » ; critères « 10 ventes passées recalculées sans écart », « le rapport du matin arrive chaque jour ouvré à 7 h 30 ».
+Décidé, lecture prudente : tous les chiffres viennent de la base, par des requêtes écrites, jamais d'une saisie ni de l'IA ; l'IA n'évalue aucun agent et ne décide de rien les concernant ; aucun classement d'agents n'est montré à un agent [R14, R68, R69]. Une commission naît « prévue » au compromis, devient « due » seulement à l'acte rapporté par N06 (ou à la signature du bail, quand M15 existera), puis « facturée » et « payée », chaque passage dans l'ordre, avec sa preuve, jamais un montant saisi [R63, R67]. La part de l'agent et celle du réseau viennent d'une grille datée et versionnée réglée par la direction ; le partage entre agents (fichier commun, binôme d'une absence) et la prime de parrainage (M14, R83) sont lus par des interfaces, avec un faux dans les tests tant que M14 ne les fournit pas. Une facture a un numéro continu, chronologique, sans trou ; elle ne change ni ne s'efface, un avoir la corrige [R17, R71] ; aucune facture réelle tant que la plateforme agréée de facturation électronique et les modalités de l'expert-comptable ne sont pas en place (H26) : la plateforme est derrière une interface, en mode essai. Le reversement à l'agent est dû sous 24 h ouvrées après l'encaissement rapporté avec sa preuve, la direction est alertée avant l'échéance [R70]. Les numéros de règles R67 à R72 et de migrations à partir de `0501` sont réservés à M13. Le code vit dans `packages/core/src/pilotage/`, ses routes dans `packages/api/src/pilotage.ts`.
+
+### K01 · Cycle de la commission : prévue, due, facturée, payée
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : N06
+- Cahier : M13, « Commissions » et « Règles ».
+- Objectif : une commission par dossier de vente, calculée par le code depuis le mandat en vigueur (honoraires, avenants compris) : « prévue » dès le compromis, « due » à l'acte (N06), puis « facturée » (K02) et « payée » (K03) ; la part de l'agent et la part du réseau par une grille datée (taux de l'agent, partage du fichier commun, binôme, prime de parrainage lue par une interface), la grille en vigueur au jour du compromis.
+- Critères : 10 ventes passées tests recalculées sans écart, au centime, contre des montants écrits à la main [R69] ; aucun montant saisi, aucune route ne reçoit un montant [R63, R67] ; les statuts se suivent dans l'ordre, chacun avec sa preuve, une seule fois [R18, R67] ; une grille changée ne change pas une commission déjà prévue ; un agent ne voit que ses commissions [R16, R68] ; rien ne s'efface [R17].
+- Attend : rien.
+
+### K02 · Factures d'honoraires et de reversement, en mode essai
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : K01
+- Cahier : M13, « Factures » et « Branchements ».
+- Objectif : à la commission due, la facture d'honoraires du réseau au client qui paie (mentions obligatoires, numéro continu par réseau et par année) et la facture de reversement de l'agent au réseau, préparées par le code et validées par la direction ; émises par l'interface de la plateforme agréée (fausse plateforme d'essai) ; un avoir pour toute correction ; export comptable au format tableur (CSV).
+- Critères : numéros continus, chronologiques, sans trou ni doublon, même en deux validations simultanées [R71] ; une facture émise ne change ni ne s'efface, un avoir la corrige [R17, R71] ; rien ne part à une vraie plateforme [R26] ; l'export recompte au centime les montants des factures ; aucune donnée bancaire [R15].
+- Attend : H26 pour le réel seulement.
+
+### K03 · Encaissement et reversement sous 24 h ouvrées
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : K02
+- Cahier : M13, règle du versement sous 24 h ouvrées.
+- Objectif : la direction rapporte l'encaissement des honoraires avec sa preuve ; le reversement de l'agent devient exigible sous 24 h ouvrées (jours ouvrés, fériés compris) ; une tâche pour la direction, une alerte avant l'échéance, puis le versement rapporté avec sa preuve passe la commission à « payée ».
+- Critères : l'échéance exacte sur un jeu de cas écrits (vendredi soir, veille de férié) [R70] ; une alerte une seule fois, avant l'échéance, sur horloge simulée [R18] ; aucun fonds reçu ni suivi par AIMMO au-delà du statut et de sa preuve [R62].
+- Attend : rien.
+
+### K04 · Tableau de bord de l'agent, chaque chiffre prouvé (Jamais vu)
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : K01
+- Cahier : M13, « Tableau de bord de l'agent » ; règle « un agent ne voit que ses propres chiffres ».
+- Objectif : pour l'agent, sur une période : contacts reçus, rendez-vous tenus, mandats signés, ventes, honoraires à venir (prévus et dus), calculés par des requêtes écrites ; chaque chiffre s'ouvre sur la liste exacte des lignes qui le font. Jamais vu : aucun logiciel ne laisse l'agent recompter chacun de ses chiffres, ligne par ligne.
+- Critères : chaque chiffre est égal au nombre ou à la somme des lignes qu'il montre, sur un jeu test complet [R69] ; un agent ne voit que ses chiffres, sans comparaison ni rang [R14, R68] ; aucune IA dans le calcul.
+- Attend : rien.
+
+### K05 · Tableau de bord du réseau : agents, zones, sources, coûts de l'IA
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : K04
+- Cahier : M13, « Tableau de bord du réseau ».
+- Objectif : pour la direction : les mêmes chiffres par agent, par commune et par source, et les coûts de l'IA par flux et par mandat signé, lus dans la base.
+- Critères : la somme par agent égale le total du réseau, par zone et par source aussi [R69] ; seule la direction le lit [R16] ; aucune note ni score d'agent [R14].
+- Attend : rien.
+
+### K06 · Rapport du matin, chaque jour ouvré à 7 h 30
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : K05
+- Cahier : M13, « Rapport du matin ».
+- Objectif : chaque jour ouvré à 7 h 30, heure de Paris, un rapport rangé pour la direction et pour chaque agent : les chiffres de la veille, les contacts chauds, les alertes, en quelques lignes écrites par le code.
+- Critères : un rapport par lecteur et par jour ouvré, aucun le week-end ni un jour férié, un seul même si le planificateur repasse [R18] ; chaque chiffre vient du tableau de bord [R69] ; un agent n'a que les siens [R68].
+- Attend : rien.
+
+### K07 · Alertes : budget de l'IA, chute d'un indicateur, échéance d'un document d'agent
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : K06
+- Cahier : M13, « Alertes ».
+- Objectif : une alerte à la direction quand le coût de l'IA du mois atteint 70 % du budget réglé, quand un indicateur du réseau baisse de plus du seuil réglé sur 7 jours par rapport aux 28 précédents, et avant l'échéance d'un document d'agent (lue par une interface de M14).
+- Critères : une alerte par seuil et par période [R18] ; seuils en réglage, les mêmes pour tous [R25] ; aucune alerte sur la personne d'un agent, seulement sur des chiffres [R14].
+- Attend : rien.
+
+### K08 · Routes de M13, écran « Mes chiffres » et mesure contre le comptage manuel
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : K01 à K07
+- Cahier : M13 ; Feuille de route, juin 2027.
+- Objectif : les routes `/v1/pilotage`, les passages au planificateur (rapport du matin, alertes, reversements), l'écran « Mes chiffres » dans l'application de l'agent et le tableau de bord de la direction ; un export quotidien des chiffres pour les comparer au comptage manuel pendant 2 semaines, comme le décrit `docs/MESURE.md`.
+- Critères : chaque route sous R16, refus au journal ; écran accessible, sans texte générique, beau sur téléphone d'abord ; l'export du jour égale le tableau de bord.
+- Attend : H27 pour la mesure réelle seulement.
+
 **M14 · Réseau et académie, juillet 2027.**
 
 Voie : 2

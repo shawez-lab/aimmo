@@ -31,5 +31,7 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H24 | Faire valider par l'avocat le dossier de preuve de la signature en ligne AIMMO, avant tout usage réel | Shawez, avocat | D08 réel | plus tard |
 | H25 | Créer dans Cloudflare un stockage R2 `aimmo-medias` et le lier au Worker `aimmo-api` sous le nom `MEDIA` (après H04) | Shawez | photos de la vitrine (P10) | plus tard |
 | H25 | À la mise en service des dossiers de vente et de l'après-vente : créer le compartiment R2 des pièces des dossiers et le lier au Worker `aimmo-api` sous le nom `PIECES` ; donner à la variable `APRES_VENTE_BASE` l'adresse publique du Worker suivie de `/apres-vente/` (sans chiffre), comme le décrit `docs/API.md` | Shawez | M10 et M11 réels | plus tard |
+| H26 | Choisir la plateforme agréée de facturation électronique, ouvrir son compte et ranger sa clé dans les secrets du Worker ; faire valider par l'expert-comptable les modalités de facturation des reversements aux agents | Shawez, expert-comptable | K02 réel | plus tard |
+| H27 | Tenir pendant 2 semaines le comptage manuel des chiffres (contacts, rendez-vous, mandats, ventes, honoraires) et le comparer à l'export quotidien, comme le décrira `docs/MESURE.md` | Shawez | mesure de M13 | plus tard |
 
 Quand une tâche à moins de trois places de la tête du plan attend une ligne « plus tard », la séance la marque « signalé le <date> » et la dit une fois dans « Besoin de toi ».
