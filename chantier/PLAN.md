@@ -1117,7 +1117,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K04 · Tableau de bord de l'agent, chaque chiffre prouvé (Jamais vu)
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : K01
 - Cahier : M13, « Tableau de bord de l'agent » ; règle « un agent ne voit que ses propres chiffres ».
 - Objectif : pour l'agent, sur une période : contacts reçus, rendez-vous tenus, mandats signés, ventes, honoraires à venir (prévus et dus), calculés par des requêtes écrites ; chaque chiffre s'ouvre sur la liste exacte des lignes qui le font. Jamais vu : aucun logiciel ne laisse l'agent recompter chacun de ses chiffres, ligne par ligne.
