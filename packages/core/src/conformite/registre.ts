@@ -85,18 +85,29 @@ function stripComments(sql: string): string {
   return out;
 }
 
-/** Lit chaque `CREATE TABLE` et chaque `ALTER TABLE … ADD COLUMN` des migrations, dans l'ordre. */
+const NAME = '["`]?([A-Za-z_][A-Za-z_0-9]*)["`]?';
+const QUALIFIED = `(?:["\`]?[A-Za-z_][A-Za-z_0-9]*["\`]?\\.)?${NAME}`;
+
+/**
+ * Lit chaque `CREATE TABLE` (temporaire ou virtuelle, avec ou sans schéma) et chaque `ALTER TABLE` des migrations, dans
+ * l'ordre : colonne ajoutée, renommée ou retirée, table renommée. Une forme que la lecture ne comprend pas arrête la
+ * vérification au lieu de passer en silence.
+ */
 export function readSchema(migrations: readonly Migration[]): Schema {
   const schema: Schema = new Map();
   for (const migration of [...migrations].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     const sql = stripComments(migration.sql);
-    const statements = /\b(CREATE\s+(?:VIRTUAL\s+)?TABLE|ALTER\s+TABLE)\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([A-Za-z_][A-Za-z_0-9]*)["`]?/gi;
+    const statements = new RegExp(`\\b(CREATE\\s+(?:TEMP(?:ORARY)?\\s+)?(?:VIRTUAL\\s+)?TABLE|ALTER\\s+TABLE)\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${QUALIFIED}`, 'gi');
     for (const m of sql.matchAll(statements)) {
       const table = m[2]!.toLowerCase();
       const rest = sql.slice(m.index! + m[0].length);
+      const fail = (what: string): never => {
+        throw new Error(`migration ${migration.id} : ${what} (table ${table}), forme que le registre ne sait pas lire`);
+      };
       if (/^CREATE/i.test(m[1]!)) {
+        if (/^\s*USING\b/i.test(rest)) fail('table virtuelle');
+        if (!/^\s*\(/.test(rest)) fail('table créée sans liste de colonnes');
         const open = rest.indexOf('(');
-        if (open < 0) continue;
         let depth = 0;
         let end = -1;
         let quoted = false;
@@ -110,21 +121,32 @@ export function readSchema(migrations: readonly Migration[]): Schema {
             break;
           }
         }
-        if (end < 0) throw new Error(`migration ${migration.id} : table ${table} mal fermée`);
+        if (end < 0) fail('table mal fermée');
         const columns = splitTopLevel(rest.slice(open + 1, end))
           .map((part) => part.trim().split(/\s+/)[0]?.replace(/["`]/g, '').toLowerCase() ?? '')
           .filter((name) => name !== '' && !NOT_COLUMN.test(name));
         if (!schema.has(table)) schema.set(table, { migration: migration.id, columns });
-      } else {
-        const add = /^\s+ADD\s+(?:COLUMN\s+)?["`]?([A-Za-z_][A-Za-z_0-9]*)/i.exec(rest);
-        const entry = schema.get(table);
-        if (add && entry && !entry.columns.includes(add[1]!.toLowerCase())) entry.columns.push(add[1]!.toLowerCase());
-        const rename = /^\s+RENAME\s+TO\s+["`]?([A-Za-z_][A-Za-z_0-9]*)/i.exec(rest);
-        if (rename && entry) {
-          schema.delete(table);
-          schema.set(rename[1]!.toLowerCase(), entry);
-        }
+        continue;
       }
+      const entry = schema.get(table) ?? fail('modification d\'une table inconnue');
+      const add = new RegExp(`^\\s+ADD\\s+(?:COLUMN\\s+)?${NAME}`, 'i').exec(rest);
+      const renameTable = new RegExp(`^\\s+RENAME\\s+TO\\s+${QUALIFIED}`, 'i').exec(rest);
+      const renameColumn = new RegExp(`^\\s+RENAME\\s+(?:COLUMN\\s+)?${NAME}\\s+TO\\s+${NAME}`, 'i').exec(rest);
+      const drop = new RegExp(`^\\s+DROP\\s+(?:COLUMN\\s+)?${NAME}`, 'i').exec(rest);
+      if (renameTable) {
+        schema.delete(table);
+        schema.set(renameTable[1]!.toLowerCase(), entry);
+      } else if (renameColumn) {
+        const from = renameColumn[1]!.toLowerCase();
+        const i = entry.columns.indexOf(from);
+        if (i < 0) fail(`colonne ${from} inconnue`);
+        entry.columns[i] = renameColumn[2]!.toLowerCase();
+      } else if (add) {
+        const column = add[1]!.toLowerCase();
+        if (!entry.columns.includes(column)) entry.columns.push(column);
+      } else if (drop) {
+        entry.columns = entry.columns.filter((c) => c !== drop[1]!.toLowerCase());
+      } else fail('modification');
     }
   }
   return schema;
@@ -142,7 +164,11 @@ const DATA_WORDS = new Set([
   'dictation', 'note', 'question', 'experience', 'payload', 'identifiers', 'proof', 'scan', 'storage', 'value', 'criteria',
   'detail', 'reason', 'report', 'subject', 'conversation', 'draft', 'figures', 'inputs', 'data', 'items', 'removed', 'facts',
   'trace', 'replies', 'situation', 'url', 'sha256', 'drawing', 'conditions', 'lines', 'signals', 'zone', 'topic', 'score',
-  'temperature', 'financing', 'budget', 'amount', 'fee', 'card', 'copy', 'ai', 'fallback',
+  'temperature', 'financing', 'budget', 'amount', 'fee', 'card', 'copy', 'ai', 'fallback', 'birth', 'born', 'age', 'iban',
+  'bic', 'mobile', 'firstname', 'lastname', 'surname', 'nickname', 'nationality', 'ip', 'latitude', 'longitude', 'lat', 'lng', 'geo',
+  'location', 'photo', 'picture', 'avatar', 'income', 'salary', 'revenue', 'gender', 'sex', 'health', 'religion', 'signature',
+  'passport', 'nir', 'ssn', 'tax', 'account', 'login', 'password', 'device', 'useragent', 'cookie', 'family', 'children',
+  'spouse', 'marital', 'employer', 'profession', 'street',
 ]);
 // Des noms entiers qui désignent une pièce signée ou un message publié.
 const PERSONAL_COLUMNS = new Set(['signed_ref', 'post_ref', 'external_id']);
@@ -162,6 +188,8 @@ export type RegistryGap =
   | { kind: 'table_inconnue'; table: string; where: string }
   | { kind: 'table_en_double'; table: string; where: string[] }
   | { kind: 'technique_avec_donnee'; table: string; columns: string[] }
+  | { kind: 'colonne_non_classee'; table: string; column: string }
+  | { kind: 'colonne_mal_classee'; table: string; column: string }
   | { kind: 'traitement_incomplet'; traitement: string; field: string };
 
 /** Compare le registre aux migrations : une liste vide veut dire que le registre dit toute la base, et rien de plus. */
@@ -169,6 +197,7 @@ export function checkRegistry(
   schema: Schema,
   registre: readonly Traitement[],
   sansDonnee: Readonly<Record<string, string>>,
+  colonnesSansDonnee: Readonly<Record<string, readonly string[]>>,
 ): RegistryGap[] {
   const gaps: RegistryGap[] = [];
   const where = new Map<string, string[]>();
@@ -201,15 +230,26 @@ export function checkRegistry(
       gaps.push({ kind: 'table_absente', table, migration, columns: personal });
       continue;
     }
+    const others = colonnesSansDonnee[table] ?? [];
+    // Une colonne dite sans donnée personnelle dont le nom en désigne une est mal classée.
+    for (const column of others) if (isPersonalColumn(column)) gaps.push({ kind: 'colonne_mal_classee', table, column });
+    for (const column of others) if (!columns.includes(column)) gaps.push({ kind: 'colonne_inconnue', table, traitement: places[0]!, column });
     if (places[0] === 'sans donnée personnelle') {
       if (personal.length > 0) gaps.push({ kind: 'technique_avec_donnee', table, columns: personal });
+      for (const column of columns) if (!isPersonalColumn(column) && !others.includes(column)) gaps.push({ kind: 'colonne_non_classee', table, column });
       continue;
     }
     const t = registre.find((r) => r.id === places[0])!;
     const declared = t.tables[table]!;
     for (const column of personal) if (!declared.includes(column)) gaps.push({ kind: 'colonne_absente', table, traitement: t.id, column });
     for (const column of declared) if (!columns.includes(column)) gaps.push({ kind: 'colonne_inconnue', table, traitement: t.id, column });
+    // Toute colonne est classée : personnelle au traitement, ou sans donnée personnelle. Une colonne nouvelle au nom
+    // anodin ne passe donc pas sans qu'on l'ait regardée.
+    for (const column of columns) {
+      if (!isPersonalColumn(column) && !declared.includes(column) && !others.includes(column)) gaps.push({ kind: 'colonne_non_classee', table, column });
+    }
   }
+  for (const table of Object.keys(colonnesSansDonnee)) if (!where.has(table)) gaps.push({ kind: 'table_inconnue', table, where: 'colonnes sans donnée personnelle' });
   return gaps;
 }
 
@@ -228,13 +268,21 @@ export function describeGap(gap: RegistryGap): string {
       return `la table ${gap.table} est inscrite plusieurs fois : ${gap.where.join(', ')}`;
     case 'technique_avec_donnee':
       return `la table ${gap.table} est dite sans donnée personnelle mais porte ${gap.columns.join(', ')}`;
+    case 'colonne_non_classee':
+      return `la colonne ${gap.table}.${gap.column} n'est classée nulle part : à inscrire au registre, comme donnée personnelle de son traitement ou comme colonne sans donnée personnelle`;
+    case 'colonne_mal_classee':
+      return `la colonne ${gap.table}.${gap.column} est dite sans donnée personnelle, mais son nom en désigne une`;
     case 'traitement_incomplet':
       return `le traitement ${gap.traitement} n'a pas de ${gap.field} valable`;
   }
 }
 
 /** L'empreinte du registre relu : elle change dès qu'une ligne du registre change. */
-export async function registryFingerprint(registre: readonly Traitement[], sansDonnee: Readonly<Record<string, string>>): Promise<string> {
+export async function registryFingerprint(
+  registre: readonly Traitement[],
+  sansDonnee: Readonly<Record<string, string>>,
+  colonnesSansDonnee: Readonly<Record<string, readonly string[]>>,
+): Promise<string> {
   const canonical = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(canonical);
     if (value && typeof value === 'object') {
@@ -242,6 +290,6 @@ export async function registryFingerprint(registre: readonly Traitement[], sansD
     }
     return value;
   };
-  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(canonical({ registre, sansDonnee })))));
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(canonical({ registre, sansDonnee, colonnesSansDonnee })))));
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 }

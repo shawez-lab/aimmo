@@ -3,7 +3,9 @@ import { FicheClient, SqlJournalStore, applyMigrations, conformite, fromSyncSqli
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
-const { readSchema, checkRegistry, describeGap, isPersonalColumn, REGISTRE_TRAITEMENTS, TABLES_SANS_DONNEE_PERSONNELLE } = conformite;
+const { readSchema, describeGap, isPersonalColumn, REGISTRE_TRAITEMENTS, TABLES_SANS_DONNEE_PERSONNELLE, COLONNES_SANS_DONNEE_PERSONNELLE } = conformite;
+const checkRegistry = (schema: conformite.Schema, registre: readonly conformite.Traitement[], sansDonnee: Readonly<Record<string, string>>, colonnes = COLONNES_SANS_DONNEE_PERSONNELLE) =>
+  conformite.checkRegistry(schema, registre, sansDonnee, colonnes);
 
 // Une migration de test inventée, ajoutée après toutes les vraies.
 const extra = (sql: string) => [...loadMigrations(), { id: '9999_essai', sql }];
@@ -41,8 +43,22 @@ describe('L06 · registre des traitements vérifié contre la base', () => {
 
   it('[R95] une colonne de donnée personnelle ajoutée à une table inscrite fait échouer la vérification', () => {
     expect(gapsOf('ALTER TABLE persons ADD COLUMN birth_town TEXT;')).toEqual([{ kind: 'colonne_absente', table: 'persons', traitement: 'relation-clients', column: 'birth_town' }]);
-    // Une colonne sans donnée personnelle passe.
-    expect(gapsOf('ALTER TABLE persons ADD COLUMN archived_at TEXT;')).toEqual([]);
+    // Les données courantes d'une personne sont toutes reconnues.
+    for (const column of ['birth_date', 'iban', 'mobile', 'firstname', 'nationality', 'ip', 'latitude', 'photo_ref', 'income_eur', 'street']) {
+      expect(gapsOf(`ALTER TABLE persons ADD COLUMN ${column} TEXT;`), column).toEqual([{ kind: 'colonne_absente', table: 'persons', traitement: 'relation-clients', column }]);
+      expect(gapsOf(`ALTER TABLE listing_views ADD COLUMN ${column} TEXT;`), column).toEqual([{ kind: 'technique_avec_donnee', table: 'listing_views', columns: [column] }]);
+    }
+    // Même une colonne au nom anodin doit être classée : rien n'entre sans qu'on l'ait regardé.
+    expect(gapsOf('ALTER TABLE persons ADD COLUMN archived_at TEXT;')).toEqual([{ kind: 'colonne_non_classee', table: 'persons', column: 'archived_at' }]);
+    expect(gapsOf('ALTER TABLE listing_views ADD COLUMN xyz TEXT;')).toEqual([{ kind: 'colonne_non_classee', table: 'listing_views', column: 'xyz' }]);
+    // Une colonne renommée en donnée personnelle est vue.
+    expect(gapsOf('ALTER TABLE listing_views RENAME COLUMN day TO visitor_email;')).toEqual([
+      { kind: 'colonne_inconnue', table: 'listing_views', traitement: 'sans donnée personnelle', column: 'day' },
+      { kind: 'technique_avec_donnee', table: 'listing_views', columns: ['visitor_email'] },
+    ]);
+    // Une colonne classée sans donnée personnelle au nom personnel est refusée.
+    const wrong = { ...COLONNES_SANS_DONNEE_PERSONNELLE, persons: [...COLONNES_SANS_DONNEE_PERSONNELLE.persons!, 'first_name'] };
+    expect(checkRegistry(readSchema(loadMigrations()), REGISTRE_TRAITEMENTS, TABLES_SANS_DONNEE_PERSONNELLE, wrong)).toEqual([{ kind: 'colonne_mal_classee', table: 'persons', column: 'first_name' }]);
     // Une table dite « sans donnée personnelle » qui en gagne une est refusée.
     expect(gapsOf('ALTER TABLE listing_views ADD COLUMN visitor_phone TEXT;')).toEqual([{ kind: 'technique_avec_donnee', table: 'listing_views', columns: ['visitor_phone'] }]);
   });
@@ -66,6 +82,17 @@ describe('L06 · registre des traitements vérifié contre la base', () => {
     ]);
     expect([...schema.keys()]).toEqual(['t']);
     expect(schema.get('t')!.columns).toEqual(['id', 'kind', 'phone', 'note']);
+    // Temporaire, avec schéma, renommée : chaque forme est lue.
+    const forms = readSchema([
+      { id: '0001', sql: 'CREATE TEMP TABLE a (person_id TEXT); CREATE TEMPORARY TABLE IF NOT EXISTS b (email TEXT); CREATE TABLE main.c (phone TEXT);' },
+      { id: '0002', sql: 'ALTER TABLE main.c ADD COLUMN body TEXT; ALTER TABLE c RENAME TO d; ALTER TABLE d DROP COLUMN phone; ALTER TABLE a RENAME person_id TO agent_id;' },
+    ]);
+    expect(Object.fromEntries([...forms].map(([k, v]) => [k, v.columns]))).toEqual({ a: ['agent_id'], b: ['email'], d: ['body'] });
+    // Une forme inconnue arrête la vérification au lieu de passer en silence.
+    expect(() => readSchema([{ id: '0001', sql: 'CREATE VIRTUAL TABLE v USING fts5(body);' }])).toThrow('forme que le registre ne sait pas lire');
+    expect(() => readSchema([{ id: '0001', sql: 'CREATE TABLE v AS SELECT * FROM persons;' }])).toThrow('table créée sans liste de colonnes');
+    expect(() => readSchema([{ id: '0001', sql: 'ALTER TABLE inconnue ADD COLUMN email TEXT;' }])).toThrow('table inconnue');
+    expect(() => readSchema([{ id: '0001', sql: 'CREATE TABLE t (id TEXT); ALTER TABLE t ALTER email;' }])).toThrow('modification');
     for (const c of ['person_id', 'buyer_person_id', 'first_name', 'email', 'phone', 'body', 'recorded_by', 'validator_name', 'scan_ref', 'signed_ref']) expect(isPersonalColumn(c), c).toBe(true);
     for (const c of ['id', 'network_id', 'created_at', 'status', 'kind', 'price_eur', 'surface_m2', 'due_day', 'hash']) expect(isPersonalColumn(c), c).toBe(false);
   });
@@ -144,6 +171,8 @@ describeWithSqlite('L06 · relecture trimestrielle du registre', () => {
     await t.relecture.recordReview(t.conformite, { reviewedOn: '2026-11-02', validatorName: 'Camille Conforme' });
     const changed = REGISTRE_TRAITEMENTS.map((x, i) => (i === 0 ? { ...x, duree: `${x.duree} Modifié.` } : x));
     const later = new conformite.RelectureRegistre(t.db, t.journal, { now: () => new Date(clock), registre: changed });
+    const sameColumns = new conformite.RelectureRegistre(t.db, t.journal, { now: () => new Date(clock), colonnesSansDonnee: { ...COLONNES_SANS_DONNEE_PERSONNELLE, persons: [] } });
+    expect(await sameColumns.status(t.conformite)).toMatchObject({ ok: true, value: { changedSinceReview: true } });
     expect(await later.status(t.conformite)).toMatchObject({ ok: true, value: { changedSinceReview: true } });
     expect(await t.relecture.status(t.conformite)).toMatchObject({ ok: true, value: { changedSinceReview: false } });
   });

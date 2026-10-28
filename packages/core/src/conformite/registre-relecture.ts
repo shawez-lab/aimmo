@@ -15,7 +15,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { registryFingerprint, type Traitement } from './registre.ts';
-import { REGISTRE_ECRIT_LE, REGISTRE_TRAITEMENTS, TABLES_SANS_DONNEE_PERSONNELLE } from './registre-traitements.ts';
+import { COLONNES_SANS_DONNEE_PERSONNELLE, REGISTRE_ECRIT_LE, REGISTRE_TRAITEMENTS, TABLES_SANS_DONNEE_PERSONNELLE } from './registre-traitements.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -67,6 +67,7 @@ export class RelectureRegistre {
   private readonly newId: () => string;
   private readonly registre: readonly Traitement[];
   private readonly sansDonnee: Readonly<Record<string, string>>;
+  private readonly colonnesSansDonnee: Readonly<Record<string, readonly string[]>>;
   private readonly writtenOn: string;
 
   constructor(
@@ -77,6 +78,7 @@ export class RelectureRegistre {
       newId?: () => string;
       registre?: readonly Traitement[];
       sansDonnee?: Readonly<Record<string, string>>;
+      colonnesSansDonnee?: Readonly<Record<string, readonly string[]>>;
       writtenOn?: string;
     } = {},
   ) {
@@ -84,6 +86,7 @@ export class RelectureRegistre {
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.registre = options.registre ?? REGISTRE_TRAITEMENTS;
     this.sansDonnee = options.sansDonnee ?? TABLES_SANS_DONNEE_PERSONNELLE;
+    this.colonnesSansDonnee = options.colonnesSansDonnee ?? COLONNES_SANS_DONNEE_PERSONNELLE;
     this.writtenOn = options.writtenOn ?? REGISTRE_ECRIT_LE;
   }
 
@@ -115,7 +118,7 @@ export class RelectureRegistre {
     const last = await this.lastReview(networkId);
     const lastReviewOn = last?.reviewed_on ?? this.writtenOn;
     const dueOn = addCalendarMonths(lastReviewOn, REGISTRY_REVIEW_MONTHS);
-    const registryHash = await registryFingerprint(this.registre, this.sansDonnee);
+    const registryHash = await registryFingerprint(this.registre, this.sansDonnee, this.colonnesSansDonnee);
     return {
       lastReviewOn,
       initial: last === null,
