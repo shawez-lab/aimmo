@@ -149,14 +149,26 @@ describe('W07 · mise en forme du dicté', () => {
   it('[R106] la mise en forme fidèle passe ; tout élément, état, chiffre ou négation ajouté est refusé', () => {
     expect(checkFormatted(DICTE, 'Mur côté fenêtre : deux trous de cheville. Sol rayé près de la porte. Pas de trace d’humidité.')).toEqual({ ok: true });
     expect(checkFormatted(DICTE, 'Murs côté fenêtres : 2 trous de chevilles ; sols rayés près des portes ; pas de traces d’humidité.')).toEqual({ ok: true });
-    expect(checkFormatted(DICTE, 'Mur côté fenêtre avec deux trous, sol rayé, plafond fissuré. Pas d’humidité.')).toEqual({ ok: false, problems: ['element_added', 'state_added'] });
-    expect(checkFormatted(DICTE, 'Mur côté fenêtre avec trois trous de cheville, sol rayé près de la porte, pas d’humidité.')).toEqual({ ok: false, problems: ['number_added'] });
-    expect(checkFormatted(DICTE, 'Mur côté fenêtre avec deux trous de cheville, sol rayé près de la porte, trace d’humidité.')).toEqual({ ok: false, problems: ['negation_changed'] });
-    expect(checkFormatted('sol propre', 'Sol propre, en bon état.')).toEqual({ ok: false, problems: ['state_added'] });
-    expect(checkFormatted('sol propre', 'Sol propre (mis en forme par l’IA).')).toEqual({ ok: false, problems: ['mentions_ai'] });
-    expect(checkFormatted('sol propre', '<b>Sol propre</b>')).toEqual({ ok: false, problems: ['markup'] });
+    expect(checkFormatted(DICTE, 'Mur côté fenêtre avec deux trous, sol rayé, plafond fissuré. Pas d’humidité.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['element_added', 'state_added', 'order_changed']) });
+    expect(checkFormatted(DICTE, 'Mur côté fenêtre avec trois trous de cheville, sol rayé près de la porte, pas d’humidité.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['number_added']) });
+    expect(checkFormatted(DICTE, 'Mur côté fenêtre avec deux trous de cheville, sol rayé près de la porte, trace d’humidité.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['negation_changed']) });
+    expect(checkFormatted('sol propre', 'Sol propre, en bon état.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['word_added', 'state_added']) });
+    expect(checkFormatted('sol propre', 'Sol propre (mis en forme par l’IA).')).toMatchObject({ ok: false, problems: expect.arrayContaining(['mentions_ai']) });
+    expect(checkFormatted('sol propre', '<b>Sol propre</b>')).toMatchObject({ ok: false, problems: expect.arrayContaining(['markup']) });
     expect(checkFormatted('sol propre', '')).toMatchObject({ ok: false, problems: expect.arrayContaining(['empty']) });
-    expect(checkFormatted('sol propre', 'Sol propre. '.repeat(60))).toMatchObject({ ok: false, problems: ['too_long'] });
+    expect(checkFormatted('sol propre', 'Sol propre. '.repeat(60))).toMatchObject({ ok: false, problems: expect.arrayContaining(['too_long']) });
+  });
+
+  it('[R106] la mise en forme n’ajoute aucun mot, n’ôte rien, n’échange rien et ne déplace aucune négation', () => {
+    const d = 'mur taché, sol rayé';
+    expect(checkFormatted(d, 'Mur taché ; sol rayé.')).toEqual({ ok: true });
+    expect(checkFormatted(d, 'Mur taché, sol rayé ; le locataire accepte une retenue sur le dépôt de garantie.')).toMatchObject({ ok: false, problems: ['word_added'] });
+    expect(checkFormatted(d, 'Mur rayé, sol taché.')).toMatchObject({ ok: false, problems: ['order_changed'] });
+    expect(checkFormatted(d, 'Mur taché.')).toMatchObject({ ok: false, problems: ['order_changed'] });
+    expect(checkFormatted('pas de fuite, mur taché', 'Fuite au mur, pas de tache.')).toMatchObject({ ok: false, problems: ['order_changed'] });
+    expect(checkFormatted(d, 'Mur taché, sol rayé.\nLocataire : Jean Martin.')).toMatchObject({ ok: false, problems: expect.arrayContaining(['markup', 'word_added']) });
+    expect(checkFormatted(d, 'Mur taché, sol rayé, vu par le mandataire.')).toMatchObject({ ok: false, problems: ['word_added'] });
+    expect(checkFormatted('compteur à 321,5', 'Compteur à 321,5.')).toEqual({ ok: true });
   });
 
   it('[R106] le secours est le dicté lui-même, propre', () => {
@@ -211,6 +223,14 @@ describeWithSqlite('W07 · état des lieux d’entrée', () => {
     const half = await t.edl.record(t.agent, id, { ...FULL, rooms: ROOMS() });
     expect(half.ok && half.value.missing).toEqual(['bailleur.nom']);
     expect(half.ok && half.value.content).toContain('[à compléter : nom du bailleur]');
+    await t.db.run("UPDATE persons SET last_name = 'Inventé' WHERE id = ?", [t.owner.id]);
+    // Sans commune sur la fiche du bien, l'état des lieux reste incomplet et ne se signe pas [R40].
+    await t.db.run("UPDATE properties SET city = NULL");
+    const nocity = await t.edl.record(t.agent, id, { ...FULL, rooms: ROOMS() });
+    expect(nocity).toMatchObject({ ok: true, value: { status: 'incomplet', missing: ['logement.commune'] } });
+    expect(nocity.ok && nocity.value.content).toContain('[à compléter : commune du logement]');
+    const s2 = nocity.ok ? nocity.value : null;
+    expect(await t.edl.sign(t.agent, s2!.inventoryId, { party: 'bailleur', contentSha256: s2!.contentSha256, drawing: DRAW })).toEqual({ ok: false, rule: 'R106', code: 'incomplete' });
   });
 
   it('[R106] un meublé exige l’inventaire du mobilier', async () => {

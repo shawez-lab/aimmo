@@ -115,8 +115,17 @@ const STATE_WORDS: readonly (readonly string[])[] = [
   ['décollé', 'décollement'], ['rouillé', 'rouille'], ['bouché', 'fuite', 'fuit'], ['grippé', 'dur'], ['branlant', 'descellé'], ['calcaire', 'tartre'],
 ];
 
-/** La négation change le sens d'un constat : présente d'un côté, absente de l'autre, elle fait prendre le secours. */
-const NEGATIONS = ['pas', 'sans', 'aucun', 'aucune', 'ni', 'non', 'jamais', 'rien', 'nul', 'nulle', 'ne', 'n'];
+/** La négation change le sens d'un constat : elle doit rester à sa place, sinon le secours est pris. */
+const NEGATIONS = ['pas', 'sans', 'aucun', 'aucune', 'ni', 'non', 'jamais', 'rien', 'nul', 'nulle'];
+
+/**
+ * Les seuls mots que la mise en forme peut ajouter : des mots outils, qui ne portent ni élément, ni état, ni chiffre, ni
+ * personne. Tout autre mot du texte rendu doit venir du dicté [R106].
+ */
+const TOOL_WORDS = new Set([
+  'de', 'd', 'du', 'des', 'la', 'le', 'les', 'l', 'un', 'une', 'au', 'aux', 'a', 'avec', 'et', 'ou', 'sur', 'sous', 'pres', 'dans', 'en', 'est', 'sont',
+  'ce', 'cet', 'cette', 'ces', 'son', 'sa', 'ses', 'leur', 'leurs', 'qui', 'que', 'y', 'par', 'pour', 'ne', 'n', 'il', 'elle', 'ils', 'elles', 'on',
+]);
 
 /** Tout mot qui parlerait de l'IA dans un texte remis aux parties [R06]. */
 const AI_WORDS = ['ia', 'intelligence artificielle', 'assistant', 'chatgpt', 'gpt', 'claude', 'algorithme', 'automatique', 'automatiquement', 'robot'];
@@ -181,23 +190,83 @@ function has(text: string, list: readonly string[]): boolean {
   return list.some((l) => ws.includes(` ${words(l).join(' ')} `));
 }
 
-export type FormatProblem = 'empty' | 'too_long' | 'element_added' | 'state_added' | 'number_added' | 'negation_changed' | 'mentions_ai' | 'markup';
+export type FormatProblem =
+  | 'empty'
+  | 'too_long'
+  | 'word_added'
+  | 'element_added'
+  | 'state_added'
+  | 'number_added'
+  | 'negation_changed'
+  | 'order_changed'
+  | 'mentions_ai'
+  | 'markup';
 
 /**
- * Le texte de l'IA ne fait que mettre en forme le dicté : aucun élément, aucun état, aucun chiffre ni aucune négation
- * absents du dicté, rien sur l'IA, aucun balisage [R106, R06].
+ * La suite des marques d'un texte, dans l'ordre : éléments, états, chiffres et négations. La mise en forme doit garder
+ * exactement la même suite que le dicté : rien d'ajouté, rien d'ôté, rien d'échangé, aucune négation déplacée.
+ */
+function marks(text: string): string[] {
+  const ws = words(text);
+  const stems = ws.map(stem);
+  const phrases: { forms: string[][]; mark: string }[] = [];
+  ELEMENT_WORDS.forEach((forms, i) => phrases.push({ forms: forms.map((f) => words(f).map(stem)), mark: `E${i}` }));
+  STATE_WORDS.forEach((forms, i) => phrases.push({ forms: forms.map((f) => words(f).map(stem)), mark: `S${i}` }));
+  // Les expressions les plus longues d'abord : « plan de travail » avant « plan ».
+  const all = phrases.flatMap((p) => p.forms.map((f) => ({ f, mark: p.mark }))).sort((a, b) => b.f.length - a.f.length);
+  const out: string[] = [];
+  for (let i = 0; i < ws.length; ) {
+    const w = ws[i]!;
+    if (/^\d/.test(w)) {
+      out.push(`N${w.replace(/^0+(?=\d)/, '')}`);
+      i += 1;
+      continue;
+    }
+    if (w !== 'neuf' && Object.prototype.hasOwnProperty.call(NUMBER_WORDS, w)) {
+      out.push(`N${NUMBER_WORDS[w]}`);
+      i += 1;
+      continue;
+    }
+    if (NEGATIONS.includes(w)) {
+      out.push('NEG');
+      i += 1;
+      continue;
+    }
+    const hit = all.find((p) => p.f.length > 0 && p.f.every((x, k) => stems[i + k] === x));
+    if (hit) {
+      out.push(hit.mark);
+      i += hit.f.length;
+      continue;
+    }
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * Le texte de l'IA ne fait que mettre en forme le dicté : chaque mot vient du dicté, hors mots outils ; la suite des
+ * éléments, états, chiffres et négations est celle du dicté ; une seule ligne, aucun balisage, rien sur l'IA [R106, R06].
  */
 export function checkFormatted(dictation: string, formatted: string): { ok: true } | { ok: false; problems: FormatProblem[] } {
   const problems: FormatProblem[] = [];
   const text = formatted.trim();
   if (text === '') problems.push('empty');
   if (text.length > Math.max(400, dictation.length * 2)) problems.push('too_long');
-  if (/[<>{}[\]`*#|]/.test(text)) problems.push('markup');
+  if (/[<>{}[\]`*#|\r\n\u2028\u2029]/.test(text)) problems.push('markup');
+  const known = new Set(words(dictation).map(stem));
+  const numbers = numbersIn(dictation);
+  const added = words(text).some((w) => {
+    if (TOOL_WORDS.has(w) || known.has(stem(w))) return false;
+    const n = /^\d/.test(w) ? w.replace(/^0+(?=\d)/, '') : w !== 'neuf' && Object.prototype.hasOwnProperty.call(NUMBER_WORDS, w) ? NUMBER_WORDS[w]! : null;
+    return n === null || !numbers.has(n);
+  });
+  if (added) problems.push('word_added');
   const sub = (a: Set<string> | Set<number>, b: Set<string> | Set<number>) => [...a].every((x) => (b as Set<typeof x>).has(x));
   if (!sub(groupsIn(text, ELEMENT_WORDS), groupsIn(dictation, ELEMENT_WORDS))) problems.push('element_added');
   if (!sub(groupsIn(text, STATE_WORDS), groupsIn(dictation, STATE_WORDS))) problems.push('state_added');
-  if (!sub(numbersIn(text), numbersIn(dictation))) problems.push('number_added');
+  if (!sub(numbersIn(text), numbers)) problems.push('number_added');
   if (has(text, NEGATIONS) !== has(dictation, NEGATIONS)) problems.push('negation_changed');
+  if (JSON.stringify(marks(text)) !== JSON.stringify(marks(dictation))) problems.push('order_changed');
   if (has(text, AI_WORDS) && !has(dictation, AI_WORDS)) problems.push('mentions_ai');
   return problems.length === 0 ? { ok: true } : { ok: false, problems };
 }
@@ -403,6 +472,8 @@ export class EtatsDesLieux {
     if (ownerAddress === null) missing.push('bailleur.domicile');
     if (names[1] === null) missing.push('locataire.nom');
     if (address === null) missing.push('logement.adresse');
+    const p = await this.db.first<{ city: string | null }>('SELECT city FROM properties WHERE id = ?', [listing.propertyId]);
+    if (!p?.city || p.city.trim() === '') missing.push('logement.commune');
     if (shaped.length === 0) missing.push('pieces');
     shaped.forEach((r, i) => {
       if (r.elements.length === 0) missing.push(`piece.${i + 1}`);
@@ -411,7 +482,6 @@ export class EtatsDesLieux {
     if (keys.length === 0) missing.push('cles');
     if (facts.furnished && furniture.length === 0) missing.push('mobilier');
 
-    const p = await this.db.first<{ city: string | null }>('SELECT city FROM properties WHERE id = ?', [listing.propertyId]);
     const today = localTime(this.now(), 'Europe/Paris').date;
     const trial = lease.mode !== 'reel';
     const hole = (label: string) => `[à compléter : ${label}]`;
