@@ -151,12 +151,25 @@ describeWithSqlite('L04 · vigilance renforcée et origine des fonds', () => {
     expect(String(r.alerts[1]!.figures.sheet)).toMatch(/^risk_sheet:/);
   });
 
-  it('[R93] l’agent reçoit la demande d’origine des fonds, neutre, sans l’alerte ni ses chiffres ; rien n’est envoyé', async () => {
+  it('[R93] l’agent reçoit la demande d’origine des fonds décidée par le responsable, neutre, sans l’alerte ni ses chiffres ; rien n’est envoyé', async () => {
     const t = await setup();
     await t.valuation();
     const ref = await t.offer(400000);
+    // Tant que le responsable n'a rien décidé, l'agent ne reçoit rien.
+    expect(await t.vigilance.examine(t.agent, ref)).toEqual({ ok: true, fundsRequest: null });
+    const seen = await t.vigilance.examine(t.conformite, ref);
+    const id = seen.ok ? seen.alerts![0]!.alertId : '';
+    await t.vigilance.decide(t.conformite, id, { decision: 'origine_des_fonds_demandee', reason: 'apport à justifier', validatorName: 'Camille Conforme' });
     const r = await t.vigilance.examine(t.agent, ref);
     expect(r).toEqual({ ok: true, fundsRequest: { caseRef: ref, text: conformite.FUNDS_REQUEST_TEXT, documents: conformite.FUNDS_REQUEST_DOCUMENTS, sent: false } });
+    // Une alerte classée par le responsable ne donne aucune demande.
+    const other = await t.offer(1_500_000);
+    const o = await t.vigilance.examine(t.conformite, other);
+    for (const a of o.ok ? o.alerts! : []) await t.vigilance.decide(t.conformite, a.alertId, { decision: 'classee', reason: 'vente d’un bien justifiée', validatorName: 'Camille Conforme' });
+    expect(await t.vigilance.examine(t.agent, other)).toEqual({ ok: true, fundsRequest: null });
+    // La direction, qui lit le journal d'une fiche, n'y trouve ni alerte ni décision.
+    const j = await t.acces.readJournalOf(t.direction, t.buyerId);
+    expect(j.ok && j.value.filter((e) => e.type.startsWith('vigilance.'))).toEqual([]);
     expect(conformite.FUNDS_REQUEST_TEXT).not.toMatch(/\d|alerte|vigilance|soupçon|exposée|comptant|écart|R93/i);
     // L'agent ne lit pas la liste des alertes, ne décide pas, ne règle rien.
     expect(await t.vigilance.list(t.agent)).toEqual({ ok: false, rule: 'R93', code: 'role' });

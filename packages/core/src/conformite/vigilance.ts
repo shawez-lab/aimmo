@@ -12,8 +12,9 @@
  *
  * L'alerte ne bloque ni ne refuse rien : aucun contrôle de mandat, d'offre ou de compromis ne lit ces tables, et la
  * décision reste au responsable, avec son nom et sa date [R14]. Seul le responsable voit les alertes ; l'agent du
- * dossier ne reçoit que la demande d'origine des fonds préparée pour lui, au texte neutre et identique pour tous, qui ne
- * dit ni l'alerte ni sa règle ; ni le client ni l'autre partie n'ont rien à lire ici. Rien n'est envoyé, rien ne
+ * dossier ne reçoit que la demande d'origine des fonds préparée pour lui quand le responsable a décidé de la faire, au
+ * texte neutre et identique pour tous, qui ne dit ni l'alerte ni sa règle. Le journal range alertes et décisions sous
+ * la référence de l'alerte, jamais sous la fiche du client, que la direction peut lire ; ni le client ni l'autre partie n'ont rien à lire ici. Rien n'est envoyé, rien ne
  * s'efface [R17].
  */
 import type { Acces } from '../acces/acces.ts';
@@ -326,7 +327,7 @@ export class VigilanceRenforcee {
   /**
    * Examine un dossier (`offer:<id>` ou `mandate:<id>`) avec les règles et le réglage en vigueur, et range les alertes
    * nouvelles. L'agent du client (vue complète) ou le responsable ; tout autre est refusé, au journal. Le responsable
-   * reçoit les alertes du dossier ; l'agent, seulement la demande d'origine des fonds si une alerte existe.
+   * reçoit les alertes du dossier ; l'agent, seulement la demande d'origine des fonds décidée par le responsable.
    */
   async examine(
     viewer: Viewer,
@@ -353,7 +354,13 @@ export class VigilanceRenforcee {
     }
     const rows = await this.db.all<AlertRow>('SELECT * FROM vigilance_alerts WHERE network_id = ? AND case_ref = ? ORDER BY raised_at, rowid', [viewer.networkId, caseRef]);
     for (const row of rows) await this.ensureRaisedEvent(row);
-    const fundsRequest: FundsRequest | null = rows.length > 0 ? { caseRef, text: FUNDS_REQUEST_TEXT, documents: FUNDS_REQUEST_DOCUMENTS, sent: false } : null;
+    // La demande n'est préparée qu'une fois le responsable décidé à la faire : une alerte classée n'en donne aucune.
+    const asked = await this.db.first(
+      `SELECT d.alert_id FROM vigilance_decisions d JOIN vigilance_alerts a ON a.id = d.alert_id
+       WHERE a.network_id = ? AND a.case_ref = ? AND d.decision = 'origine_des_fonds_demandee' LIMIT 1`,
+      [viewer.networkId, caseRef],
+    );
+    const fundsRequest: FundsRequest | null = asked ? { caseRef, text: FUNDS_REQUEST_TEXT, documents: FUNDS_REQUEST_DOCUMENTS, sent: false } : null;
     if (viewer.role !== 'compliance') return { ok: true, fundsRequest };
     const alerts: VigilanceAlert[] = [];
     for (const row of rows) alerts.push(await this.toAlert(row));
@@ -397,7 +404,7 @@ export class VigilanceRenforcee {
     }
     await appendEvent(
       this.journal,
-      { type: 'vigilance.decision', actor: this.actor(viewer), subject: `person:${row.person_id}`, data: { rule: 'R93', alert: `vigilance_alert:${row.id}`, decision: input.decision } },
+      { type: 'vigilance.decision', actor: this.actor(viewer), subject: `vigilance_alert:${row.id}`, data: { rule: 'R93', alert: `vigilance_alert:${row.id}`, decision: input.decision } },
       this.now,
     );
     return { ok: true, alert: await this.toAlert(row) };
@@ -409,7 +416,7 @@ export class VigilanceRenforcee {
     if (seen) return;
     await appendEvent(
       this.journal,
-      { type: 'vigilance.alerte', actor: row.raised_by, subject: `person:${row.person_id}`, data: { rule: 'R93', alert: `vigilance_alert:${row.id}`, key: row.rule_key, case: row.case_ref, settings: row.settings_version } },
+      { type: 'vigilance.alerte', actor: row.raised_by, subject: `vigilance_alert:${row.id}`, data: { rule: 'R93', alert: `vigilance_alert:${row.id}` } },
       this.now,
     );
   }
