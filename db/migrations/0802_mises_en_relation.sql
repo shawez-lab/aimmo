@@ -47,3 +47,19 @@ CREATE TABLE IF NOT EXISTS partner_referral_steps (
 );
 CREATE TRIGGER IF NOT EXISTS partner_referral_steps_garde BEFORE DELETE ON partner_referral_steps BEGIN SELECT RAISE(ABORT, 'partner_referral_steps : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS partner_referral_steps_fige BEFORE UPDATE ON partner_referral_steps BEGIN SELECT RAISE(ABORT, 'partner_referral_steps : une étape ne change plus'); END;
+
+-- Les étapes se suivent sans trou, et seulement dans l'ordre permis : une demande validée contre un état ancien
+-- ne peut pas s'ajouter après une étape qu'elle n'a pas vue [R74, R77].
+CREATE TRIGGER IF NOT EXISTS partner_referral_steps_ordre BEFORE INSERT ON partner_referral_steps
+WHEN NEW.seq <> (SELECT COUNT(*) + 1 FROM partner_referral_steps WHERE referral_id = NEW.referral_id)
+  OR NOT (
+    (NEW.seq = 1 AND NEW.state IN ('accord_client', 'abandonnee'))
+    OR EXISTS (
+      SELECT 1 FROM partner_referral_steps p WHERE p.referral_id = NEW.referral_id AND p.seq = NEW.seq - 1 AND (
+        (p.state = 'accord_client' AND NEW.state IN ('confiee', 'abandonnee'))
+        OR (p.state = 'confiee' AND NEW.state IN ('en_cours', 'terminee', 'abandonnee'))
+        OR (p.state = 'en_cours' AND NEW.state IN ('terminee', 'abandonnee'))
+      )
+    )
+  )
+BEGIN SELECT RAISE(ABORT, 'partner_referral_steps : étape hors ordre'); END;
