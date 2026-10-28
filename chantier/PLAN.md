@@ -1239,7 +1239,9 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J08 · Entraînement aux objections avec l'IA, sur des cas inventés
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : le retour est écrit par le code (règles et points de script abordés ou non), jamais une note ; la direction ne lit que le temps ; la séance ne compte pas en heures obligatoires tant que la direction ne le règle pas.
+- Reste : vraie IA avec H13 ; relecture de Codex absente (limite d'usage, H03), fusion sans elle (#126).
 - Qui : Claude · Relecture : normale · Dépend de : J06
 - Cahier : M14, « Académie » ; Intelligence artificielle.
 - Objectif : l'agent s'entraîne contre l'IA qui joue un vendeur ou un acquéreur d'un cas inventé de la bibliothèque (objection sur les honoraires, l'exclusivité, le prix) ; le retour cite les règles et les scripts de l'académie ; la séance compte en temps d'académie, non en heures obligatoires sauf réglage.
@@ -1247,7 +1249,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien (H13 pour la vraie IA).
 
 ### J09 · Référent des 90 jours, binôme d'absence et assistance suivie
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : J04
 - Cahier : M14, « Référent », « Assistance », « Binôme ».
 - Objectif : la direction attribue un référent à chaque nouvel agent pour 90 jours ; deux agents forment un binôme avec un partage des honoraires écrit d'avance ; pendant une absence déclarée, le binôme lit les dossiers en cours de l'absent ; une demande d'assistance est suivie avec son délai (2 h ouvrées pour un humain, 48 h ouvrées pour l'avocat) et alerte la direction avant l'échéance.
