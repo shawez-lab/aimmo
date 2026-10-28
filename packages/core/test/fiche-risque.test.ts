@@ -143,6 +143,15 @@ describeWithSqlite('L02 · fiche de risque de chaque client', () => {
     const r2 = await t.risque.prepare(t.agent, t.personId, { relation: 'mandat', declarations: NO });
     if (!r2.ok) throw new Error(r2.code);
     expect(await t.risque.validate(t.conformite, r2.sheet.sheetId, { validatorName: 'Camille Conforme' })).toMatchObject({ ok: true, sheet: { validation: { decision: 'validee', level: 'moyen', reason: null } } });
+    // Chaque validation au journal : la fiche, la décision, le niveau calculé et le niveau retenu, sans nom en clair.
+    const validated = (await t.journal.all()).filter((e) => e.type === 'risque.validee');
+    expect(validated.map((e) => e.data)).toEqual([
+      { rule: 'R91', sheet: `risk_sheet:${r.sheet.sheetId}`, decision: 'corrigee', computed: 'moyen', level: 'faible' },
+      { rule: 'R91', sheet: `risk_sheet:${r2.sheet.sheetId}`, decision: 'validee', computed: 'moyen', level: 'moyen' },
+    ]);
+    const text = JSON.stringify(validated);
+    for (const word of ['Camille', 'Léa', 'Exemple', 'Pièce vue']) expect(text).not.toContain(word);
+    expect(await verifyChain(await t.journal.all())).toMatchObject({ ok: true });
     // L'agent relit ses fiches, validées ou non, sans jamais pouvoir les valider.
     const list = await t.risque.list(t.agent, t.personId);
     expect(list.ok && list.value.map((s) => s.status)).toEqual(['validee', 'validee']);
