@@ -1097,7 +1097,9 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K02 · Factures d'honoraires et de reversement, en mode essai
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : TVA 20 % sur les honoraires, aucune sur les reversements tant que l'expert-comptable n'a pas validé (H26) ; numéro calculé dans l'écriture même ; numéro des reversements et de leurs avoirs préfixé par l'identifiant entier de l'agent ; une vente annulée par un avoir n'émet plus aucune facture ; identifiants légaux de l'émetteur, adresse du client et conditions de paiement non inventés, attendus avec H09 et H26.
+- Reste : relecture de Codex de la dernière correction impossible, limite d'usage de Codex atteinte ; fusion sans elle (#115).
 - Qui : Claude · Relecture : forte · Dépend de : K01
 - Cahier : M13, « Factures » et « Branchements ».
 - Objectif : à la commission due, la facture d'honoraires du réseau au client qui paie (mentions obligatoires, numéro continu par réseau et par année) et la facture de reversement de l'agent au réseau, préparées par le code et validées par la direction ; émises par l'interface de la plateforme agréée (fausse plateforme d'essai) ; un avoir pour toute correction ; export comptable au format tableur (CSV).
@@ -1105,7 +1107,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : H26 pour le réel seulement.
 
 ### K03 · Encaissement et reversement sous 24 h ouvrées
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : K02
 - Cahier : M13, règle du versement sous 24 h ouvrées.
 - Objectif : la direction rapporte l'encaissement des honoraires avec sa preuve ; le reversement de l'agent devient exigible sous 24 h ouvrées (jours ouvrés, fériés compris) ; une tâche pour la direction, une alerte avant l'échéance, puis le versement rapporté avec sa preuve passe la commission à « payée ».
