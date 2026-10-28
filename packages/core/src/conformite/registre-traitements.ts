@@ -385,7 +385,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       partner_reviews: ['text', 'recorded_by'],
       partner_review_reads: ['reader'],
       partner_prospects: ['email', 'address_kind', 'business_name', 'added_by'],
-      partner_prospect_mails: ['text', 'optout_token_sha256'],
+      partner_prospect_mails: ['text', 'optout_token_sha256', 'decision_reason'],
       partner_prospect_optouts: ['email'],
     },
   },
@@ -627,7 +627,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   partner_reviews: ['id', 'network_id', 'referral_id', 'channel', 'recorded_at'],
   partner_review_reads: ['review_id', 'read_at'],
   partner_prospects: ['id', 'network_id', 'trade', 'source', 'added_at'],
-  partner_prospect_mails: ['id', 'network_id', 'prospect_id', 'day', 'prepared_at'],
+  partner_prospect_mails: ['id', 'network_id', 'prospect_id', 'day', 'decision_rule', 'prepared_at'],
   partner_prospect_optouts: ['network_id', 'via', 'at'],
 };
 

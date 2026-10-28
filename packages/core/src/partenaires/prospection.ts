@@ -11,11 +11,12 @@
  * les canaux et pour toujours [R04, R02] ; la base la vérifie encore au moment même de l'écriture.
  *
  * Chaque mail est soumis à la décision unique du contrôle central des envois (`decideSend`, type `prospecting`,
- * canal mail), avec l'opposition comme arrêt [R04]. Décidé, lecture prudente (2026-10-28, voie 2) : tel qu'écrit,
- * R03 exige un accord préalable pour tout premier mail, prospection entre professionnels comprise ; tant que H32
- * n'est pas tranché et que R03 n'a pas reçu son exception écrite, le réglage `professionalException` reste faux, le
- * contrôle refuse sous R03 et rien n'est préparé. Même permis, rien ne part d'ici : le mail est rangé dans la boîte
- * de M18, en mode essai ; son passage réel par le contrôle central revient au branchement (U09).
+ * canal mail), avec l'opposition comme arrêt [R04] ; aucun accord n'est fabriqué ici. Décidé, lecture prudente
+ * (2026-10-28, voie 2) : tel qu'écrit, R03 exige un accord préalable pour tout premier mail, prospection entre
+ * professionnels comprise ; tant que H32 n'est pas tranché et que R03 n'a pas reçu son exception écrite, dans la règle
+ * et dans `decideSend`, le contrôle refuse sous R03 : le mail est préparé comme brouillon, avec ce refus rangé à côté.
+ * Un refus d'heure [R01] ou d'opposition [R04, R02] ne prépare rien. Rien ne part d'ici : le passage réel de chaque
+ * brouillon par le contrôle central des envois, qui redécide à ce moment, revient au branchement (U09).
  *
  * Rien ne change ni ne s'efface [R17] ; chaque ajout, préparation, refus et opposition au journal, sans adresse [R13].
  */
@@ -83,6 +84,8 @@ export interface PreparedMail {
   prospectId: string;
   day: string;
   text: string;
+  /** La règle du contrôle central qui refuse l'envoi (R03 tant que H32 n'est pas tranché), ou `null`. */
+  decisionRule: string | null;
 }
 
 export type ProspectRefusal = { ok: false; rule: 'R16' | 'R79' | 'R05' | 'R04' | null; code: string };
@@ -95,11 +98,6 @@ export interface ProspectionOptions {
   optOutBase?: string | null;
   /** Plafond par jour ouvré. */
   perWorkingDay?: number;
-  /**
-   * L'exception de R03 pour la prospection entre professionnels (information et opposition à chaque mail). Faux tant
-   * que H32 n'est pas tranché et que la règle n'est pas écrite dans `docs/REGLES.md` : le contrôle refuse alors sous R03.
-   */
-  professionalException?: boolean;
 }
 
 export class Prospection {
@@ -107,7 +105,6 @@ export class Prospection {
   private readonly newId: () => string;
   private readonly optOutBase: string | null;
   private readonly perDay: number;
-  private readonly exception: boolean;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -118,8 +115,8 @@ export class Prospection {
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.optOutBase = checkUnsubscribeBase(options.optOutBase ?? null);
     this.perDay = options.perWorkingDay ?? PROSPECT_MAILS_PER_WORKING_DAY;
+    // La base tient aussi le plafond de 5 : un réglage ne peut que l'abaisser.
     if (!Number.isInteger(this.perDay) || this.perDay < 0 || this.perDay > PROSPECT_MAILS_PER_WORKING_DAY) throw new Error(`Plafond de prospection : de 0 à ${PROSPECT_MAILS_PER_WORKING_DAY} par jour ouvré [R79].`);
-    this.exception = options.professionalException ?? false;
   }
 
   private actor(viewer: Viewer): string {
@@ -209,15 +206,14 @@ export class Prospection {
   }
 
   /** La décision du contrôle central pour un premier mail, avec l'opposition comme arrêt [R03, R04, R01]. */
-  private decide(addedAt: string, opposedAt: string | null): SendDecision {
+  private decide(opposedAt: string | null): SendDecision {
     const at = this.now();
     return decideSend(
       { channel: 'email', kind: 'prospecting', purpose: PROSPECTING_PURPOSE, at },
       {
         exclusions: opposedAt ? [{ reason: 'stop', channel: null, noted_at: opposedAt, lifted_at: null }] : [],
-        // L'exception entre professionnels, une fois écrite (H32) : l'information et l'opposition à chaque mail tiennent
-        // lieu d'accord, de l'ajout de l'adresse jusqu'à son opposition. Faux par défaut : refus sous R03.
-        consents: this.exception ? [{ purpose: PROSPECTING_PURPOSE, channel: 'email', given_at: addedAt, withdrawn_at: opposedAt }] : [],
+        // Aucun accord n'est fabriqué : sans l'exception écrite dans R03 (H32), le contrôle refuse sous R03.
+        consents: [],
         messages: [],
         relations: [],
         sentToday: { review_request: 0, partner: 0 },
@@ -244,8 +240,8 @@ export class Prospection {
     if (left <= 0) return 0;
     const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [networkId]);
     if (!network) return 0;
-    const candidates = await this.db.all<{ id: string; trade: PartnerTrade; added_at: string }>(
-      `SELECT p.id, p.trade, p.added_at FROM partner_prospects p
+    const candidates = await this.db.all<{ id: string; trade: PartnerTrade }>(
+      `SELECT p.id, p.trade FROM partner_prospects p
        WHERE p.network_id = ? AND NOT EXISTS (SELECT 1 FROM partner_prospect_mails m WHERE m.prospect_id = p.id)
          AND NOT EXISTS (SELECT 1 FROM partner_prospect_optouts o WHERE o.network_id = p.network_id AND o.email = p.email)
        ORDER BY p.added_at, p.id`,
@@ -255,9 +251,9 @@ export class Prospection {
     let refused: SendDecision | null = null;
     for (const c of candidates) {
       if (left <= 0) break;
-      const decision = this.decide(c.added_at, null);
-      if (!decision.allowed) {
-        // Le même refus vaut pour toutes les adresses de ce passage (heures, accord) : un seul au journal.
+      const decision = this.decide(null);
+      if (!decision.allowed && decision.rule !== 'R03') {
+        // Hors des heures d'envoi : rien n'est préparé, le passage suivant reprend ; un seul refus au journal.
         refused = decision;
         break;
       }
@@ -270,23 +266,20 @@ export class Prospection {
       const token = newAlertToken();
       const text = `${body}\n\nNe plus recevoir de message de notre part : ${this.optOutBase}${token}`;
       try {
-        await this.db.run('INSERT INTO partner_prospect_mails (id, network_id, prospect_id, day, text, optout_token_sha256, prepared_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
-          this.newId(),
-          networkId,
-          c.id,
-          local.date,
-          text,
-          await sha256(token),
-          now.toISOString(),
-        ]);
+        await this.db.run(
+          'INSERT INTO partner_prospect_mails (id, network_id, prospect_id, day, text, optout_token_sha256, decision_rule, decision_reason, prepared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [this.newId(), networkId, c.id, local.date, text, await sha256(token), decision.rule, decision.reason, now.toISOString()],
+        );
       } catch (error) {
+        // Un autre passage a atteint le plafond du jour : on s'arrête [R79].
+        if (/plafond du jour/.test(String(error))) break;
         // Une opposition passée entre la lecture et l'écriture l'emporte ; un autre passage a pu écrire avant [R04, R05].
         if (/adresse opposée|UNIQUE/i.test(String(error))) continue;
         throw error;
       }
       left--;
       prepared++;
-      await appendEvent(this.journal, { type: 'prospection.mail_prepare', actor: 'system:partenaires', subject: `partner_prospect:${c.id}`, data: { rule: 'R79', mode: 'essai', day: local.date } }, this.now);
+      await appendEvent(this.journal, { type: 'prospection.mail_prepare', actor: 'system:partenaires', subject: `partner_prospect:${c.id}`, data: { rule: 'R79', mode: 'essai', day: local.date, decision: decision.rule } }, this.now);
     }
     if (refused) {
       await appendEvent(this.journal, { type: 'prospection.refusee', actor: 'system:partenaires', subject: null, data: { rule: refused.rule, reason: refused.reason, waiting: candidates.length } }, this.now);
@@ -299,7 +292,7 @@ export class Prospection {
     const denied = await this.gate(viewer, 'partner_prospect:mails');
     if (denied) return denied;
     if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return { ok: false, rule: null, code: 'bad_day' };
-    const rows = await this.db.all<{ prospect_id: string; day: string; text: string }>('SELECT prospect_id, day, text FROM partner_prospect_mails WHERE network_id = ? AND day = ? ORDER BY prepared_at, id', [viewer.networkId, day]);
-    return { ok: true, value: rows.map((r) => ({ prospectId: r.prospect_id, day: r.day, text: r.text })) };
+    const rows = await this.db.all<{ prospect_id: string; day: string; text: string; decision_rule: string | null }>('SELECT prospect_id, day, text, decision_rule FROM partner_prospect_mails WHERE network_id = ? AND day = ? ORDER BY prepared_at, id', [viewer.networkId, day]);
+    return { ok: true, value: rows.map((r) => ({ prospectId: r.prospect_id, day: r.day, text: r.text, decisionRule: r.decision_rule })) };
   }
 }

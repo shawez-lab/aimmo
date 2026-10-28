@@ -28,11 +28,19 @@ CREATE TABLE IF NOT EXISTS partner_prospect_mails (
   text TEXT NOT NULL CHECK (length(text) BETWEEN 50 AND 1200),
   -- L'empreinte du jeton du lien d'opposition, jamais le jeton lui-même.
   optout_token_sha256 TEXT NOT NULL UNIQUE CHECK (length(optout_token_sha256) = 64),
+  -- La décision du contrôle central au moment de la préparation : la règle qui refuse (R03 tant que H32 n'est pas
+  -- tranché), ou rien si l'envoi était permis. Le branchement (U09) redécide au moment de l'envoi.
+  decision_rule TEXT,
+  decision_reason TEXT NOT NULL,
   prepared_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS partner_prospect_mails_day ON partner_prospect_mails (network_id, day);
 CREATE TRIGGER IF NOT EXISTS partner_prospect_mails_garde BEFORE DELETE ON partner_prospect_mails BEGIN SELECT RAISE(ABORT, 'partner_prospect_mails : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS partner_prospect_mails_fige BEFORE UPDATE ON partner_prospect_mails BEGIN SELECT RAISE(ABORT, 'partner_prospect_mails : un mail préparé ne change plus'); END;
+-- Le plafond du jour ouvré, tenu par la base même quand deux passages tournent ensemble [R79].
+CREATE TRIGGER IF NOT EXISTS partner_prospect_mails_plafond BEFORE INSERT ON partner_prospect_mails
+WHEN (SELECT COUNT(*) FROM partner_prospect_mails WHERE network_id = NEW.network_id AND day = NEW.day) >= 5
+BEGIN SELECT RAISE(ABORT, 'partner_prospect_mails : plafond du jour atteint'); END;
 -- Une adresse opposée ne reçoit plus rien, vérifié au moment même de l'écriture [R04].
 CREATE TRIGGER IF NOT EXISTS partner_prospect_mails_opposition BEFORE INSERT ON partner_prospect_mails
 WHEN EXISTS (SELECT 1 FROM partner_prospect_optouts o JOIN partner_prospects p ON p.email = o.email AND p.network_id = o.network_id WHERE p.id = NEW.prospect_id)
