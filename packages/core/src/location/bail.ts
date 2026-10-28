@@ -35,7 +35,7 @@ export const LEASE_FIELDS: Readonly<Record<string, { source: FieldSource; label:
   'bailleur.nom': { source: 'base', label: 'nom du bailleur' },
   'bailleur.domicile': { source: 'saisie', label: 'domicile du bailleur' },
   'agent.nom': { source: 'base', label: 'nom de l’agent immobilier' },
-  'mandataire.carte': { source: 'saisie', label: 'carte professionnelle du mandataire' },
+  'mandataire.carte': { source: 'saisie', label: 'carte professionnelle de l’agent immobilier' },
   'logement.pieces': { source: 'base', label: 'nombre de pièces principales' },
   'logement.habitat': { source: 'saisie', label: 'type d’habitat' },
   'logement.equipements': { source: 'saisie', label: 'équipements du logement' },
@@ -51,7 +51,7 @@ export const LEASE_FIELDS: Readonly<Record<string, { source: FieldSource; label:
   'charges.montant': { source: 'base', label: 'montant des charges' },
   'charges.mode': { source: 'base', label: 'mode de règlement des charges' },
   'depot.montant': { source: 'base', label: 'dépôt de garantie' },
-  'honoraires.locataire': { source: 'base', label: 'honoraires à la charge du locataire' },
+  'honoraires.locataire': { source: 'base', label: 'honoraires à la charge du locataire, état des lieux compris' },
   'honoraires.etat_des_lieux': { source: 'base', label: 'honoraires d’état des lieux à la charge du locataire' },
   'honoraires.bailleur': { source: 'base', label: 'honoraires à la charge du bailleur' },
   'annexes.liste': { source: 'base', label: 'liste des annexes' },
@@ -99,12 +99,23 @@ export interface Lease {
 export type LeaseRefusal = Omit<LocationRefusal, 'rule'> & { rule: LocationRefusal['rule'] | 'R105' | 'R40' };
 export type LeaseResult<T> = { ok: true; value: T } | LeaseRefusal;
 
-/** Les annexes du bail, par leur nom : celles exigées par W01, la notice d'information, l'état des lieux, l'inventaire. */
+/**
+ * Les annexes du bail, par leur nom : les diagnostics exigés par W01 et la notice d'information, joints au bail par leur
+ * référence ; l'état des lieux d'entrée et, pour un meublé, l'inventaire, établis à la remise des clés (W07).
+ */
 export function leaseAnnexes(required: readonly string[], furnished: boolean): string[] {
   const out = required.map((k) => ANNEX_KINDS.find((a) => a.kind === k)?.label ?? k);
-  out.push('Notice d’information relative aux droits et obligations des locataires et des bailleurs', 'État des lieux d’entrée');
-  if (furnished) out.push('Inventaire et état détaillé du mobilier');
+  out.push('Notice d’information relative aux droits et obligations des locataires et des bailleurs');
+  out.push(furnished ? 'État des lieux d’entrée et inventaire détaillé du mobilier, établis à la remise des clés' : 'État des lieux d’entrée, établi à la remise des clés');
   return out;
+}
+
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const NOTICE_FILE = new RegExp(`^${UUID}\\.pdf$`);
+
+/** Le stockage des pièces du bail : seule l'existence d'une référence est lue. */
+export interface LeaseFileStore {
+  has(ref: string): Promise<boolean>;
 }
 
 export interface BailOptions {
@@ -131,6 +142,7 @@ export class BauxLocation {
     private readonly listings: MisesEnLocation,
     private readonly fees: HonorairesLocation,
     private readonly choices: ChoixProprietaire,
+    private readonly files: LeaseFileStore,
     private readonly journal: JournalStore,
     options: BailOptions = {},
   ) {
@@ -193,7 +205,7 @@ export class BauxLocation {
   async generate(
     viewer: Viewer,
     listingId: unknown,
-    input: { address?: unknown; ownerAddress?: unknown; habitat?: unknown; equipment?: unknown; professionalCard?: unknown } = {},
+    input: { address?: unknown; ownerAddress?: unknown; habitat?: unknown; equipment?: unknown; professionalCard?: unknown; noticeRef?: unknown } = {},
   ): Promise<LeaseResult<Lease>> {
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
@@ -216,6 +228,14 @@ export class BauxLocation {
     const equipment = text(input.equipment, EQUIPMENT, 'bad_equipment');
     const card = text(input.professionalCard, CARD, 'bad_card');
     for (const v of [address, ownerAddress, equipment, card]) if (v !== null && typeof v === 'object') return v;
+    // La notice d'information est jointe par sa référence ; sans elle, le bail reste incomplet [R101].
+    let noticeRef: string | null = null;
+    if (input.noticeRef !== undefined && input.noticeRef !== null) {
+      const prefix = `location/${listing.id}/bail/`;
+      if (typeof input.noticeRef !== 'string' || !input.noticeRef.startsWith(prefix) || !NOTICE_FILE.test(input.noticeRef.slice(prefix.length))) return { ok: false, rule: null, code: 'bad_notice_ref' };
+      if (!(await this.files.has(input.noticeRef))) return { ok: false, rule: null, code: 'not_stored' };
+      noticeRef = input.noticeRef;
+    }
     const habitat = input.habitat === undefined || input.habitat === null ? null : input.habitat;
     if (habitat !== null && (typeof habitat !== 'string' || !Object.prototype.hasOwnProperty.call(HABITATS, habitat))) return { ok: false, rule: null, code: 'bad_habitat' };
     const kind: LeaseKind = facts.furnished ? 'bail_meuble' : 'bail_vide';
@@ -256,7 +276,7 @@ export class BauxLocation {
       'charges.montant': `${euros(facts.chargesCents)} € par mois`,
       'charges.mode': facts.chargesMode === 'forfait' ? 'forfait' : 'provision, avec régularisation annuelle',
       'depot.montant': `${euros(fees.depositCents)} €`,
-      'honoraires.locataire': `${euros(fees.tenantCents)} € TTC`,
+      'honoraires.locataire': `${euros(fees.tenantCents + fees.tenantInventoryCents)} € TTC`,
       'honoraires.etat_des_lieux': `${euros(fees.tenantInventoryCents)} € TTC`,
       'honoraires.bailleur': `${euros(fees.landlordCents + fees.landlordInventoryCents)} € TTC`,
       'annexes.liste': annexes.join(' ; '),
@@ -265,6 +285,10 @@ export class BauxLocation {
     };
     const fields = JSON.parse(template.fields) as string[];
     const missing = fields.filter((f) => LEASE_FIELDS[f]!.source !== 'signature' && (values[f] === null || values[f] === undefined));
+    // Les annexes jointes : chaque diagnostic exigé par sa référence (W01 les a dits présents et valides), et la notice.
+    const attached = (await this.listings.annexRefs(listing.id)).filter((a) => requiredAnnexes(facts).includes(a.kind));
+    if (noticeRef === null) missing.push('annexe.notice_information');
+    const annexRefs = [...attached, ...(noticeRef ? [{ kind: 'notice_information', ref: noticeRef }] : [])];
     const trial = template.status !== 'valide';
     const title = kind === 'bail_meuble' ? 'Bail de location meublée' : 'Bail de location vide';
     const content = renderDocument(template.body, values, { title, trial, fields: LEASE_FIELDS });
@@ -273,8 +297,8 @@ export class BauxLocation {
       const id = this.newId();
       try {
         await this.db.run(
-          `INSERT INTO rental_leases (id, listing_id, network_id, version, application_id, template_id, template_version, template_hash, facts_version, fees_version, mode, status, missing, content, content_sha256, created_by, created_at)
-           SELECT ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM rental_leases WHERE listing_id = ?`,
+          `INSERT INTO rental_leases (id, listing_id, network_id, version, application_id, template_id, template_version, template_hash, facts_version, fees_version, mode, status, missing, annexes, content, content_sha256, created_by, created_at)
+           SELECT ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM rental_leases WHERE listing_id = ?`,
           [
             id,
             listing.id,
@@ -288,6 +312,7 @@ export class BauxLocation {
             trial ? 'essai' : 'reel',
             missing.length === 0 ? 'complet' : 'incomplet',
             JSON.stringify(missing),
+            JSON.stringify(annexRefs),
             content,
             contentSha,
             this.actor(viewer),

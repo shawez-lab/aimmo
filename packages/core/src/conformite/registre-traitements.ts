@@ -683,7 +683,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   rental_choices: ['listing_id', 'presentation_id', 'application_id', 'decided_at', 'channel', 'recorded_at'],
   rental_fairness_receipts: ['id', 'presentation_id', 'application_id', 'prepared_at'],
   rental_lease_templates: ['id', 'network_id', 'kind', 'version', 'status', 'fields', 'hash', 'created_at', 'validated_at'],
-  rental_leases: ['id', 'listing_id', 'network_id', 'version', 'application_id', 'template_id', 'template_version', 'template_hash', 'fees_version', 'mode', 'status', 'missing', 'created_at'],
+  rental_leases: ['id', 'listing_id', 'network_id', 'version', 'application_id', 'template_id', 'template_version', 'template_hash', 'fees_version', 'mode', 'status', 'missing', 'annexes', 'created_at'],
   rental_fees: ['listing_id', 'version', 'insee_code', 'tenant_ceiling_cents', 'inventory_ceiling_cents', 'deposit_ceiling_cents', 'recorded_at'],
 };
 

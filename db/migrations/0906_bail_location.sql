@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS rental_leases (
   mode TEXT NOT NULL CHECK (mode IN ('essai', 'reel')),
   status TEXT NOT NULL CHECK (status IN ('complet', 'incomplet')),
   missing TEXT NOT NULL CHECK (json_valid(missing)),
+  -- Les annexes jointes, par leur sorte et leur référence de stockage : diagnostics de W01 et notice d'information.
+  annexes TEXT NOT NULL CHECK (json_valid(annexes)),
   content TEXT NOT NULL,
   content_sha256 TEXT NOT NULL CHECK (length(content_sha256) = 64),
   created_by TEXT NOT NULL,
