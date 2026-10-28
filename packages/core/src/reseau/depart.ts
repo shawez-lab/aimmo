@@ -2,9 +2,10 @@
  * Départ d'un agent (M14, J11) [R86, R16, R17].
  *
  * La direction range un départ d'avance : le jour où le préavis est donné, le jour du départ et un motif codé, jamais
- * un texte libre. Le préavis légal de l'agent commercial (1 mois la première année, 2 la deuxième commencée, 3 ensuite)
- * est calculé par le code depuis l'entrée de l'agent ; un départ plus court n'est admis que pour une faute grave ou un
- * accord des deux parties, et il est alors signalé. Une indemnité de fin de contrat n'est jamais chiffrée ici : le code
+ * un texte libre. Le préavis légal de l'agent commercial (1 mois la première année, 2 la deuxième commencée, 3 ensuite,
+ * prolongé jusqu'à la fin du mois civil) est calculé par le code depuis le début du contrat : le premier contrat signé du
+ * dossier, ou la date saisie par la direction, jamais la création de la fiche. Un départ plus court n'est admis que pour
+ * une faute grave ou un accord des deux parties, et il est alors signalé. Une indemnité de fin de contrat n'est jamais chiffrée ici : le code
  * dit seulement, selon le motif, qu'elle est possible et qu'elle est à faire chiffrer par l'avocat.
  *
  * L'agent qui part peut présenter un successeur, un agent du réseau en activité ; il ne reprend les clients et les biens
@@ -12,7 +13,7 @@
  *
  * Le jour du départ, à Paris, `isGone` est vrai dès minuit : les droits d'accès et le contrôle des envois le lisent au
  * branchement (J13), avant même le passage du planificateur. `runDue`, lancé par le planificateur, fait le reste, et se
- * relance sans rien changer : l'agent passe à « parti », chacun de ses clients et de ses biens passe à son successeur
+ * relance sans rien changer : l'agent passe à « parti », chacun de ses clients, de ses biens et de ses projets passe à son successeur
  * accepté, sinon à la file de la direction ; chaque passage est rangé, aucune fiche n'est effacée [R17], aucune ne reste
  * sans agent ni hors de la file [R86]. La direction réattribue ensuite depuis sa file.
  *
@@ -43,7 +44,13 @@ export const DEPARTURE_REASON_LABELS: Readonly<Record<DepartureReason, string>> 
 /** Motifs où un départ avant la fin du préavis légal est admis. */
 const SHORT_NOTICE_ALLOWED: readonly DepartureReason[] = ['faute_grave', 'accord_mutuel'];
 /** Motifs où une indemnité de fin de contrat peut être due (Code de commerce, L134-12 et L134-13) : à faire chiffrer. */
-const INDEMNITY_POSSIBLE: readonly DepartureReason[] = ['fin_par_reseau', 'accord_mutuel', 'age_maladie'];
+// Une fin à l'initiative de l'agent ouvre droit à l'indemnité si elle est justifiée par des circonstances imputables au
+// réseau (L134-13, 2°) : le code ne peut pas en juger, l'avocat l'examine.
+const INDEMNITY_POSSIBLE: readonly DepartureReason[] = ['demission_agent', 'fin_par_reseau', 'accord_mutuel', 'age_maladie'];
+
+export const HANDOVER_KINDS = ['person', 'property', 'project'] as const;
+export type HandoverKind = (typeof HANDOVER_KINDS)[number];
+const TABLE_OF: Readonly<Record<HandoverKind, string>> = Object.freeze({ person: 'persons', property: 'properties', project: 'projects' });
 
 export type DepartureRefusal = { ok: false; rule: 'R16' | 'R86' | null; code: string };
 
@@ -56,7 +63,7 @@ export interface Departure {
   reasonLabel: string;
   /** Le préavis légal, en mois, à la date du préavis. */
   noticeMonths: number;
-  /** Le jour où le préavis légal finit ; un départ avant ce jour est un préavis réduit. */
+  /** Le dernier jour couvert par le préavis légal ; un départ ce jour-là ou avant est un préavis réduit. */
   noticeEndsOn: string;
   reducedNotice: boolean;
   /** Une indemnité de fin de contrat peut être due : jamais chiffrée par le code. */
@@ -69,7 +76,7 @@ export interface Departure {
 
 export interface HandoverLine {
   departureId: string;
-  kind: 'person' | 'property';
+  kind: HandoverKind;
   subjectId: string;
   fromAgentId: string;
   since: string;
@@ -125,6 +132,21 @@ export function addMonths(day: string, months: number): string {
  * Le préavis légal de l'agent commercial (Code de commerce, L134-11) : 1 mois pendant la première année du contrat,
  * 2 mois pendant la deuxième année commencée, 3 mois à partir de la troisième année commencée.
  */
+/** Le dernier jour du mois civil d'un jour. */
+export function endOfMonth(day: string): string {
+  const [y, m] = day.split('-').map(Number) as [number, number];
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+}
+
+/**
+ * La fin du préavis légal : le délai compté depuis le jour du préavis, puis prolongé jusqu'à la fin du mois civil
+ * (L134-11, alinéa 4, lecture prudente : le contrat type ne dit pas le contraire). Le contrat court jusqu'à ce jour
+ * inclus ; le départ, jour où l'accès est coupé, vient au plus tôt le lendemain.
+ */
+export function legalNoticeEnd(noticeGivenOn: string, months: number): string {
+  return endOfMonth(addMonths(noticeGivenOn, months));
+}
+
 export function legalNoticeMonths(startedOn: string, noticeGivenOn: string): 1 | 2 | 3 {
   if (noticeGivenOn < addMonths(startedOn, 12)) return 1;
   if (noticeGivenOn < addMonths(startedOn, 24)) return 2;
@@ -177,8 +199,8 @@ export class Departs {
   }
 
   private describe(row: DepartureRow): Departure {
-    const noticeEndsOn = addMonths(row.notice_given_on, row.notice_months);
-    const reducedNotice = row.leaves_on < noticeEndsOn;
+    const noticeEndsOn = legalNoticeEnd(row.notice_given_on, row.notice_months);
+    const reducedNotice = row.leaves_on <= noticeEndsOn;
     const processed = row.processed_at !== null;
     const indemnityToReview = INDEMNITY_POSSIBLE.includes(row.reason);
     let nextStep = `Départ prévu le ${frDate(row.leaves_on)} : ce jour-là, l’accès de l’agent est coupé et ses clients passent ${row.successor_status === 'accepte' ? 'à son successeur' : 'à la direction'}.`;
@@ -206,7 +228,7 @@ export class Departs {
    * La direction range le départ d'un agent en activité : jour du préavis, jour du départ, motif. Le préavis légal est
    * calculé par le code ; un départ avant sa fin n'est admis que pour faute grave ou d'un commun accord.
    */
-  async schedule(viewer: Viewer, agentId: string, input: { noticeGivenOn: unknown; leavesOn: unknown; reason: unknown }): Promise<{ ok: true; value: Departure } | DepartureRefusal> {
+  async schedule(viewer: Viewer, agentId: string, input: { noticeGivenOn: unknown; leavesOn: unknown; reason: unknown; contractStartedOn?: unknown }): Promise<{ ok: true; value: Departure } | DepartureRefusal> {
     const agent = await this.gate(viewer, agentId, true);
     if ('ok' in agent) return agent;
     if (agent.status !== 'active') return { ok: false, rule: 'R86', code: 'already_left' };
@@ -216,10 +238,20 @@ export class Departs {
     if (!validDay(input.noticeGivenOn) || input.noticeGivenOn > today) return { ok: false, rule: null, code: 'bad_notice_date' };
     // Le jour du départ ne se range jamais dans le passé : ce qui a été fait ce jour-là ne se réécrit pas.
     if (!validDay(input.leavesOn) || input.leavesOn < today || input.leavesOn < input.noticeGivenOn) return { ok: false, rule: null, code: 'bad_leave_date' };
-    const startedOn = this.today(new Date(agent.created_at));
+    // Le début du contrat, jamais la date de création de la fiche : le premier contrat signé du dossier, ou la date
+    // saisie par la direction depuis le contrat ; avec les deux, la plus ancienne, qui donne le préavis le plus long.
+    const signed = await this.db.first<{ d: string | null }>(
+      "SELECT MIN(issued_on) AS d FROM agent_file_pieces WHERE agent_id = ? AND kind = 'contrat_agent_commercial' AND is_draft = 0",
+      [agentId],
+    );
+    const given = input.contractStartedOn;
+    if (given !== undefined && given !== null && given !== '' && (!validDay(given) || given > today)) return { ok: false, rule: null, code: 'bad_contract_date' };
+    const starts = [signed?.d ?? null, validDay(given) ? given : null].filter((d): d is string => d !== null).sort();
+    const startedOn = starts[0];
+    if (!startedOn) return { ok: false, rule: null, code: 'no_contract_date' };
     if (input.noticeGivenOn < startedOn) return { ok: false, rule: null, code: 'bad_notice_date' };
     const months = legalNoticeMonths(startedOn, input.noticeGivenOn);
-    if (input.leavesOn < addMonths(input.noticeGivenOn, months) && !SHORT_NOTICE_ALLOWED.includes(reason)) return { ok: false, rule: null, code: 'notice_too_short' };
+    if (input.leavesOn <= legalNoticeEnd(input.noticeGivenOn, months) && !SHORT_NOTICE_ALLOWED.includes(reason)) return { ok: false, rule: null, code: 'notice_too_short' };
     if (await this.current(agentId)) return { ok: false, rule: null, code: 'already_scheduled' };
     const id = this.newId();
     try {
@@ -338,13 +370,13 @@ export class Departs {
    * clients et ses biens passent à son successeur accepté, sinon à la file de la direction. Se relance sans rien
    * changer. Rend les départs faits à ce passage.
    */
-  async runDue(networkId: string): Promise<{ agentId: string; persons: number; properties: number; toSuccessor: boolean }[]> {
+  async runDue(networkId: string): Promise<{ agentId: string; persons: number; properties: number; projects: number; toSuccessor: boolean }[]> {
     const day = this.today();
     const due = await this.db.all<DepartureRow>(
       'SELECT * FROM agent_departures WHERE network_id = ? AND cancelled_at IS NULL AND processed_at IS NULL AND leaves_on <= ? ORDER BY leaves_on, agent_id',
       [networkId, day],
     );
-    const done: { agentId: string; persons: number; properties: number; toSuccessor: boolean }[] = [];
+    const done: { agentId: string; persons: number; properties: number; projects: number; toSuccessor: boolean }[] = [];
     for (const row of due) {
       const at = this.now().toISOString();
       // 1. L'accès est coupé d'abord : c'est ce qui ne doit jamais attendre [R86, R16].
@@ -353,20 +385,22 @@ export class Departs {
       const successor = row.successor_status === 'accepte' && row.successor_agent_id && (await this.canReceive(networkId, row.successor_agent_id)) ? row.successor_agent_id : null;
       const persons = await this.handOver(row, 'person', successor);
       const properties = await this.handOver(row, 'property', successor);
+      // Les projets de l'agent (vente, achat, location…) suivent : aucun ne reste sans suivi [R86].
+      const projects = await this.handOver(row, 'project', successor);
       const { changes } = await this.db.run('UPDATE agent_departures SET processed_at = ? WHERE id = ? AND processed_at IS NULL AND cancelled_at IS NULL', [at, row.id]);
       if (changes !== 1) continue;
-      const total = await this.db.first<{ p: number; b: number }>(
-        "SELECT sum(kind = 'person') AS p, sum(kind = 'property') AS b FROM agent_departure_handovers WHERE departure_id = ?",
+      const total = await this.db.first<{ p: number; b: number; j: number }>(
+        "SELECT sum(kind = 'person') AS p, sum(kind = 'property') AS b, sum(kind = 'project') AS j FROM agent_departure_handovers WHERE departure_id = ?",
         [row.id],
       );
-      const entry = { agentId: row.agent_id, persons: Number(total?.p ?? persons), properties: Number(total?.b ?? properties), toSuccessor: successor !== null };
+      const entry = { agentId: row.agent_id, persons: Number(total?.p ?? persons), properties: Number(total?.b ?? properties), projects: Number(total?.j ?? projects), toSuccessor: successor !== null };
       await appendEvent(
         this.journal,
         {
           type: 'agent.parti',
           actor: 'system:planificateur',
           subject: `agent:${row.agent_id}`,
-          data: { rule: 'R86', persons: entry.persons, properties: entry.properties, to: successor ? `agent:${successor}` : 'direction' },
+          data: { rule: 'R86', persons: entry.persons, properties: entry.properties, projects: entry.projects, to: successor ? `agent:${successor}` : 'direction' },
         },
         this.now,
       );
@@ -379,8 +413,8 @@ export class Departs {
    * Passe chaque client (ou bien) de l'agent parti à `to` (NULL : la direction), en rangeant le passage avant de le
    * faire ; recommence tant qu'il en reste, pour qu'une fiche rangée entre-temps ne reste pas chez l'agent parti.
    */
-  private async handOver(row: DepartureRow, kind: 'person' | 'property', to: string | null): Promise<number> {
-    const table = kind === 'person' ? 'persons' : 'properties';
+  private async handOver(row: DepartureRow, kind: HandoverKind, to: string | null): Promise<number> {
+    const table = TABLE_OF[kind];
     let moved = 0;
     for (let round = 0; round < 5; round++) {
       const ids = (await this.db.all<{ id: string }>(`SELECT id FROM ${table} WHERE network_id = ? AND agent_id = ? ORDER BY id`, [row.network_id, row.agent_id])).map((r) => r.id);
@@ -407,12 +441,13 @@ export class Departs {
    */
   async queue(viewer: Viewer): Promise<{ ok: true; value: HandoverLine[] } | DepartureRefusal> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'agent_departure:queue', 'role');
-    const rows = await this.db.all<{ departure_id: string; kind: 'person' | 'property'; subject_id: string; from_agent_id: string; at: string }>(
+    const rows = await this.db.all<{ departure_id: string; kind: HandoverKind; subject_id: string; from_agent_id: string; at: string }>(
       `SELECT h.departure_id, h.kind, h.subject_id, h.from_agent_id, h.at FROM agent_departure_handovers h
        WHERE h.network_id = ? AND h.to_agent_id IS NULL
          AND NOT EXISTS (SELECT 1 FROM agent_departure_reassignments r WHERE r.departure_id = h.departure_id AND r.kind = h.kind AND r.subject_id = h.subject_id)
          AND ((h.kind = 'person' AND EXISTS (SELECT 1 FROM persons p WHERE p.id = h.subject_id AND p.agent_id IS NULL))
-           OR (h.kind = 'property' AND EXISTS (SELECT 1 FROM properties b WHERE b.id = h.subject_id AND b.agent_id IS NULL)))
+           OR (h.kind = 'property' AND EXISTS (SELECT 1 FROM properties b WHERE b.id = h.subject_id AND b.agent_id IS NULL))
+           OR (h.kind = 'project' AND EXISTS (SELECT 1 FROM projects j WHERE j.id = h.subject_id AND j.agent_id IS NULL)))
        ORDER BY h.at, h.kind, h.subject_id`,
       [viewer.networkId],
     );
@@ -420,44 +455,65 @@ export class Departs {
     return { ok: true, value: rows.map((r) => ({ departureId: r.departure_id, kind: r.kind, subjectId: r.subject_id, fromAgentId: r.from_agent_id, since: r.at })) };
   }
 
-  /** La direction réattribue un client ou un bien de sa file à un agent en activité ; une fois [R86, R16]. */
+  /**
+   * La direction réattribue un client, un bien ou un projet de sa file à un agent en activité ; une fois [R86, R16].
+   * Les projets du client qui attendent dans la file le suivent chez le même agent.
+   */
   async reassign(viewer: Viewer, input: { kind: unknown; subjectId: unknown; toAgentId: unknown }): Promise<{ ok: true } | DepartureRefusal> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'agent_departure:queue', 'role');
-    if (input.kind !== 'person' && input.kind !== 'property') return { ok: false, rule: null, code: 'bad_kind' };
+    if (typeof input.kind !== 'string' || !(HANDOVER_KINDS as readonly string[]).includes(input.kind)) return { ok: false, rule: null, code: 'bad_kind' };
     if (typeof input.subjectId !== 'string' || typeof input.toAgentId !== 'string') return { ok: false, rule: null, code: 'bad_input' };
-    const kind = input.kind;
-    const table = kind === 'person' ? 'persons' : 'properties';
+    if (!(await this.canReceive(viewer.networkId, input.toAgentId))) {
+      return (await this.inQueue(viewer.networkId, input.kind as HandoverKind, input.subjectId)) ? { ok: false, rule: 'R86', code: 'bad_agent' } : { ok: false, rule: null, code: 'not_in_queue' };
+    }
+    const done = await this.reassignOne(viewer, input.kind as HandoverKind, input.subjectId, input.toAgentId);
+    if (!done) return { ok: false, rule: null, code: 'not_in_queue' };
+    if (input.kind === 'person') {
+      const projects = await this.db.all<{ id: string }>('SELECT id FROM projects WHERE person_id = ? AND agent_id IS NULL ORDER BY id', [input.subjectId]);
+      for (const p of projects) await this.reassignOne(viewer, 'project', p.id, input.toAgentId);
+    }
+    return { ok: true };
+  }
+
+  private async inQueue(networkId: string, kind: HandoverKind, subjectId: string): Promise<string | null> {
+    const table = TABLE_OF[kind];
     const h = await this.db.first<{ departure_id: string }>(
       `SELECT h.departure_id FROM agent_departure_handovers h JOIN ${table} t ON t.id = h.subject_id
        WHERE h.network_id = ? AND h.kind = ? AND h.subject_id = ? AND h.to_agent_id IS NULL AND t.agent_id IS NULL
          AND NOT EXISTS (SELECT 1 FROM agent_departure_reassignments r WHERE r.departure_id = h.departure_id AND r.kind = h.kind AND r.subject_id = h.subject_id)
        ORDER BY h.at DESC`,
-      [viewer.networkId, kind, input.subjectId],
+      [networkId, kind, subjectId],
     );
-    if (!h) return { ok: false, rule: null, code: 'not_in_queue' };
-    if (!(await this.canReceive(viewer.networkId, input.toAgentId))) return { ok: false, rule: 'R86', code: 'bad_agent' };
+    return h?.departure_id ?? null;
+  }
+
+  /** Réattribue une ligne de la file ; faux si elle n'y est pas (ou plus). */
+  private async reassignOne(viewer: Viewer, kind: HandoverKind, subjectId: string, toAgentId: string): Promise<boolean> {
+    const table = TABLE_OF[kind];
+    const departureId = await this.inQueue(viewer.networkId, kind, subjectId);
+    if (!departureId) return false;
     const at = this.now().toISOString();
     try {
       await this.db.run('INSERT INTO agent_departure_reassignments (departure_id, kind, subject_id, network_id, to_agent_id, by, at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
-        h.departure_id,
+        departureId,
         kind,
-        input.subjectId,
+        subjectId,
         viewer.networkId,
-        input.toAgentId,
+        toAgentId,
         this.actor(viewer),
         at,
       ]);
     } catch (error) {
-      if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: 'not_in_queue' };
+      if (/UNIQUE|PRIMARY/i.test(String(error))) return false;
       throw error;
     }
-    await this.db.run(`UPDATE ${table} SET agent_id = ?, updated_at = ? WHERE id = ? AND agent_id IS NULL`, [input.toAgentId, at, input.subjectId]);
+    await this.db.run(`UPDATE ${table} SET agent_id = ?, updated_at = ? WHERE id = ? AND agent_id IS NULL`, [toAgentId, at, subjectId]);
     await appendEvent(
       this.journal,
-      { type: 'agent_depart.reattribue', actor: this.actor(viewer), subject: `${kind}:${input.subjectId}`, data: { rule: 'R86', to: `agent:${input.toAgentId}` } },
+      { type: 'agent_depart.reattribue', actor: this.actor(viewer), subject: `${kind}:${subjectId}`, data: { rule: 'R86', to: `agent:${toAgentId}` } },
       this.now,
     );
-    return { ok: true };
+    return true;
   }
 
   /** Les commissions de l'agent pas encore payées, et ce qui lui en revient : à solder. Direction et conformité [R16]. */

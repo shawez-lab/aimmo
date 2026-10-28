@@ -41,11 +41,11 @@ WHEN OLD.id IS NOT NEW.id OR OLD.network_id IS NOT NEW.network_id OR OLD.agent_i
   OR (OLD.successor_status IN ('accepte', 'refuse') AND (OLD.successor_agent_id IS NOT NEW.successor_agent_id OR OLD.successor_status IS NOT NEW.successor_status))
 BEGIN SELECT RAISE(ABORT, 'agent_departures : un départ rangé ne change plus'); END;
 
--- Chaque client et chaque bien qui quitte l'agent parti : d'où il vient, où il va (NULL : la file de la direction).
+-- Chaque client, chaque bien et chaque projet qui quitte l'agent parti : d'où il vient, où il va (NULL : la file de la direction).
 CREATE TABLE IF NOT EXISTS agent_departure_handovers (
   departure_id TEXT NOT NULL REFERENCES agent_departures (id) ON DELETE RESTRICT,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  kind TEXT NOT NULL CHECK (kind IN ('person', 'property')),
+  kind TEXT NOT NULL CHECK (kind IN ('person', 'property', 'project')),
   subject_id TEXT NOT NULL,
   from_agent_id TEXT NOT NULL,
   to_agent_id TEXT,
@@ -59,7 +59,7 @@ CREATE TRIGGER IF NOT EXISTS agent_departure_handovers_fige BEFORE UPDATE ON age
 -- La direction réattribue ensuite ce qui est dans sa file, une fois par client ou par bien et par départ.
 CREATE TABLE IF NOT EXISTS agent_departure_reassignments (
   departure_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('person', 'property')),
+  kind TEXT NOT NULL CHECK (kind IN ('person', 'property', 'project')),
   subject_id TEXT NOT NULL,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   to_agent_id TEXT NOT NULL,
