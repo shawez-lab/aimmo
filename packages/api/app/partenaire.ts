@@ -138,6 +138,9 @@ export const PARTNER_JS = `'use strict';
   function writeKey(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }
   function forgetKey() { try { localStorage.removeItem(KEY); } catch (e) { /* rien à effacer */ } }
   function clear(id) { var e = el(id); while (e.firstChild) e.removeChild(e.firstChild); }
+  function today() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  /** Le formulaire de dépôt appartient à une seule demande : vidé à chaque changement de demande et à la déconnexion. */
+  function resetForm() { el('fichier').value = ''; el('faite').value = today(); say('depot', ''); }
   function say(id, text) { el(id).textContent = text || ''; }
   function show(id) { ['entree', 'liste', 'detail'].forEach(function (s) { el(s).hidden = s !== id; }); el('sortir').hidden = id === 'entree'; }
   function refusal(body) { return (body && REFUSALS[body.code]) || 'La demande n’a pas abouti. Réessayez dans un instant.'; }
@@ -185,7 +188,8 @@ export const PARTNER_JS = `'use strict';
 
   function open(id) {
     say('etat', '');
-    say('depot', '');
+    current = null;
+    resetForm();
     return api('/v1/partenaires/espace/' + encodeURIComponent(id)).then(function (res) {
       if (!res) return;
       if (res.status !== 200) { say('etat', refusal(res.body)); return; }
@@ -255,13 +259,12 @@ export const PARTNER_JS = `'use strict';
       if (!writeKey(v)) { say('etat', 'Ce navigateur ne garde pas la clé : ouvrez la page hors navigation privée.'); return; }
       loadList();
     });
-    el('sortir').addEventListener('click', function () { session += 1; forgetKey(); current = null; clear('dossier'); clear('demandes'); show('entree'); });
-    el('retour').addEventListener('click', function () { current = null; loadList(); });
+    el('sortir').addEventListener('click', function () { session += 1; forgetKey(); current = null; resetForm(); clear('dossier'); clear('demandes'); show('entree'); });
+    el('retour').addEventListener('click', function () { current = null; resetForm(); loadList(); });
     el('commencer').addEventListener('click', function () { progress('en_cours'); });
     el('terminer').addEventListener('click', function () { progress('terminee'); });
     el('form-piece').addEventListener('submit', function (e) { e.preventDefault(); depositPiece(); });
-    var today = new Date();
-    el('faite').value = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    resetForm();
     if (readKey()) loadList(); else show('entree');
   });
 })();

@@ -482,6 +482,18 @@ describe('U10 · page de l’espace partenaire', () => {
     expect(dep.headers['content-type']).toBe('application/pdf');
     expect(dep.body).toBe(file);
     expect(els.depot!.textContent).toBe('Pièce reçue. Rangée dans la fiche du bien.');
+    // Un fichier choisi pour une demande ne suit jamais vers une autre : le formulaire est vidé à chaque ouverture.
+    els.fichier!.value = 'C:\\fakepath\\autre.pdf';
+    els.faite!.value = '2027-01-01';
+    els.retour!.listeners.click!({});
+    expect(els.fichier!.value).toBe('');
+    expect(els.faite!.value).not.toBe('2027-01-01');
+    els.fichier!.value = 'C:\\fakepath\\autre.pdf';
+    button.listeners.click!({});
+    expect(els.fichier!.value).toBe('');
+    expect(els.depot!.textContent).toBe('');
+    await flush();
+    await flush();
     // Une réponse arrivée après la déconnexion est ignorée : rien du dossier ne revient à l'écran.
     let release: () => void = () => undefined;
     const slowFetchGate = new Promise<void>((r) => (release = r));
