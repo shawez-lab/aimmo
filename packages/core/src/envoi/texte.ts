@@ -177,12 +177,12 @@ export function maskIban(text: string): string {
 }
 
 /**
- * Ce que tout texte à un client refuse [R62] : un IBAN, un RIB, ou le nom même de coordonnées bancaires. Les tournures
+ * Ce que tout texte à un client refuse [R62] : un IBAN, un RIB, ou les mots RIB, BIC, SWIFT ou IBAN. Les tournures
  * qui demandent de payer sont refusées par `fundsInOutgoing` dans les textes écrits par le code de M10 seulement : dans
  * une dictée, « il faut régler la question du parking » ne demande rien.
  */
 export function bankDetailsIn(text: string): boolean {
-  return IBAN.test(text) || text.includes(IBAN_MASK) || /\b(?:rib|bic|swift|iban)\b/.test(plain(text)) || /\bcoordonnees bancaires\b/.test(plain(text));
+  return IBAN.test(text) || text.includes(IBAN_MASK) || /\b(?:rib|bic|swift|iban)\b/.test(plain(text));
 }
 
 const OUTGOING_FUNDS: RegExp[] = [
