@@ -3,3 +3,6 @@ export * from './risque.ts';
 export * from './identification.ts';
 export * from './pieces-identite.ts';
 export * from './vigilance.ts';
+export * from './registre.ts';
+export * from './registre-traitements.ts';
+export * from './registre-relecture.ts';
