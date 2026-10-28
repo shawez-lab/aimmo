@@ -8,8 +8,8 @@
  * passe sans le contrôle des promesses de revenus [R80]. Rien n'est envoyé d'ici : les réponses aux candidats restent
  * dans la boîte d'essai.
  *
- * Les fichiers du socle (droits d'accès, `index.ts`, `app.ts`, planificateur, Worker) ne changent pas ici : le
- * branchement est J13, confié à la voie 1.
+ * Le branchement dans le socle (J13) : ces routes suivent celles de `app.ts`, qui refuse d'abord un agent parti et,
+ * hors des routes de son intégration, un agent au dossier incomplet.
  */
 import { DecisionEnvoi, FicheClient, FicheUnique, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import {
@@ -28,6 +28,33 @@ import {
   type BacASableOptions,
   type ObjectionCoach,
 } from '../../core/src/reseau/index.ts';
+
+/** Le stockage R2 des pièces des dossiers d'agent : l'existence d'une référence, et le rangement d'un projet. */
+export interface R2AgentBucket {
+  head(key: string): Promise<unknown | null>;
+  put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+}
+
+/**
+ * Les pièces des dossiers d'agent dans le compartiment R2 des pièces, sous `agents/<agent>/` (J13). Un projet préparé
+ * par le réseau y est rangé sous un nom tiré au hasard ; aucun contenu n'est jamais relu d'ici.
+ */
+export class R2AgentPieceStore implements AgentPieceStore {
+  constructor(
+    private readonly bucket: R2AgentBucket,
+    private readonly newId: () => string = () => crypto.randomUUID(),
+  ) {}
+
+  async has(ref: string): Promise<boolean> {
+    return (await this.bucket.head(ref)) !== null;
+  }
+
+  async putDraft(agentId: string, text: string): Promise<string> {
+    const ref = `agents/${agentId}/${this.newId()}.txt`;
+    await this.bucket.put(ref, text, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
+    return ref;
+  }
+}
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 16_000;

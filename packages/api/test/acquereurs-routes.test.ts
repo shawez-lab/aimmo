@@ -163,8 +163,9 @@ describeWithSqlite('T08 · routes de M08', () => {
     // Le modèle de bon se valide par la direction seule ; un agent d'un autre réseau ne voit rien.
     const tpl = await t.db.first<{ id: string }>('SELECT id FROM visit_slip_templates');
     expect((await t.call('alex', 'POST', `/visites/modeles/${tpl!.id}/validation`)).status).toBe(403);
-    expect((await t.call('ailleurs', 'GET', `/visites/${id}`)).status).toBe(404);
-    expect((await t.call('ailleurs', 'GET', `/acquereurs/projets/${t.project.id}/recherche`)).status).toBe(404);
+    // Sa clé ne correspond à aucun agent en activité de son réseau : refusée avant toute lecture (J13) [R16].
+    expect((await t.call('ailleurs', 'GET', `/visites/${id}`)).body).toMatchObject({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect((await t.call('ailleurs', 'GET', `/acquereurs/projets/${t.project.id}/recherche`)).status).toBe(403);
     // Le bien passe à un autre agent et se vend : l'écran de la visite ne le montre plus [R16].
     await t.db.run("UPDATE properties SET agent_id = ?, status = 'sold' WHERE id = ?", [t.sam.userId, t.propertyId]);
     const screen = await t.call('alex', 'GET', `/visites/${id}`);

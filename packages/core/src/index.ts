@@ -31,6 +31,8 @@ export * from './apres-vente/index.ts';
 export * as pilotage from './pilotage/index.ts';
 // M12 sous son propre nom, comme M13.
 export * as conformite from './conformite/index.ts';
+// M14 sous son propre nom, comme M12 et M13 (J13).
+export * as reseau from './reseau/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';

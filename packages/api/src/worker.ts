@@ -4,6 +4,7 @@ import { fromD1, type D1Database } from './d1.ts';
 import { runScheduler } from './planificateur.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
+import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 
 /**
@@ -32,8 +33,13 @@ export interface Env {
   ALERT_UNSUBSCRIBE_BASE?: string;
   /** Début des liens publics de l'après-vente (F07), en https, sans chiffre, terminé par `/apres-vente/`. */
   APRES_VENTE_BASE?: string;
-  /** Les pièces des dossiers de vente (R2) ; absent, les routes et le passage de M10 sont fermés. */
-  PIECES?: R2Like;
+  /**
+   * Les pièces des dossiers de vente (R2) ; absent, les routes et le passage de M10 sont fermés. Les pièces des dossiers
+   * d'agent (M14) y sont rangées sous `agents/<agent>/` ; absent, leurs routes répondent « indisponible ».
+   */
+  PIECES?: R2Like & R2AgentBucket;
+  /** Le réseau qui reçoit les candidatures de la page `/rejoindre` (J13) ; absent, la page dit « bientôt ». */
+  CANDIDATURE_NETWORK_ID?: string;
   /** Les médias des biens (R2), lus par la vitrine ; absent, aucune photo n'est servie. */
   MEDIA?: MediaStore;
 }
@@ -59,6 +65,9 @@ export default {
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       ...(env.MEDIA ? { media: env.MEDIA } : {}),
       ...(env.PIECES ? { pieces: new R2PieceStore(env.PIECES) } : {}),
+      // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites ; le bac à sable reste fermé.
+      reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null },
+      candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
       ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,

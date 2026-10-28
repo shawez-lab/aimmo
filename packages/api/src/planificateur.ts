@@ -1,4 +1,4 @@
-import { Acces, FicheClient, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Acces, FicheClient, reseau, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
@@ -74,6 +74,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Pilotage (K08) : commissions, factures d'essai et reversements chaque heure ; alertes à 6 h, avec les pièces du
       // dossier d'agent ; rapport du matin du lundi au vendredi à 7 h 30, rangé, jamais envoyé.
       ...pilotageJobs(config.db, journal, { now }),
+      // Réseau (J13) : départs du jour et alertes de l'assistance chaque heure ; à 6 h, échéances des pièces du dossier
+      // d'agent et du compteur de formation. Alertes rangées pour les écrans, jamais envoyées.
+      ...reseau.reseauJobs(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

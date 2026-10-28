@@ -2,6 +2,7 @@
  * Le contrôle central des envois : le seul chemin de sortie de tout message. Aucun autre code n'appelle un canal.
  *
  * Dans l'ordre, d'après le cahier (Architecture technique, « Le contrôle central des envois ») :
+ *   0. l'agent du message, et celui qui l'a préparé, sont encore là : rien ne part dès le jour de son départ [R86] ;
  *   1. décision d'envoi de S05 : arrêt, exclusions, horaires, plafonds, accord [R01 à R04, R11] ;
  *   2. anti-doublon par sujet : un bien, une relance ou une alerte, une seule fois par personne [R05] ;
  *   3. texte : celui de l'IA si son budget le permet et qu'elle répond à temps, sinon un texte de secours [R12] ;
@@ -19,6 +20,7 @@ import type { DecisionEnvoi } from './service.ts';
 import { localTime } from './horaires.ts';
 import type { SendJournal } from './journal-envois.ts';
 import { DEFAULT_TEXT_SETTINGS, checkText, plain, type TextSettings } from './texte.ts';
+import { agentGone } from '../reseau/depart.ts';
 
 /** Plafond du coût de l'IA [R12]. */
 export interface AiBudget {
@@ -28,6 +30,8 @@ export interface AiBudget {
 export interface SendOrder {
   networkId: string;
   agentId?: string | null;
+  /** L'agent qui a préparé ou validé l'envoi, s'il n'est pas l'agent du message : il part, l'envoi ne part plus [R86]. */
+  preparedBy?: string | null;
   personId: string;
   projectId?: string | null;
   conversationId?: string | null;
@@ -205,6 +209,11 @@ export class ControleEnvois {
       });
       return result;
     };
+
+    // 0. Un envoi au nom d'un agent parti, ou préparé par lui, ne part plus, dès minuit le jour du départ [R86].
+    for (const id of [agentId, order.preparedBy ?? null]) {
+      if (id !== null && id !== '' && (await agentGone(this.db, order.networkId, id, at))) return log('refused', 'R86', 'L’agent de cet envoi a quitté le réseau.');
+    }
 
     const view = await this.fiche.view(order.personId);
     const ids = view.members.map((p) => p.id);

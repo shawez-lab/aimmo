@@ -32,9 +32,21 @@ async function setup() {
       [uuid(), id, id, id, `agents/${id}/${uuid()}.pdf`, day, new Date(clock).toISOString()],
     );
   };
+  /** Les autres pièces du dossier, valides deux ans : le dossier est complet, l'agent lit ses clients (J13) [R82]. */
+  const rest = async (id: string): Promise<void> => {
+    const day = new Date(clock).toISOString().slice(0, 10);
+    const until = addMonths(day, 24);
+    for (const kind of ['attestation_habilitation', 'immatriculation_rsac', 'assurance_rcp', 'attestation_vigilance']) {
+      await db.run(
+        "INSERT INTO agent_file_pieces (id, network_id, agent_id, kind, version, ref, issued_on, valid_until, is_draft, recorded_by, recorded_at) VALUES (?, (SELECT network_id FROM agents WHERE id = ?), ?, ?, 1, ?, ?, ?, 0, 'test', ?)",
+        [uuid(), id, id, kind, `agents/${id}/${uuid()}.pdf`, day, kind === 'attestation_vigilance' ? addMonths(day, 6) : until, new Date(clock).toISOString()],
+      );
+    }
+  };
   const agent = async (lastName: string, network = net): Promise<string> => {
     const id = (await fiches.createAgent({ networkId: network, firstName: 'Camille', lastName })).id;
     await since(id, 0);
+    await rest(id);
     return id;
   };
   const leaver = await agent('Partant');
