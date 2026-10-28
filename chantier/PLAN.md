@@ -1334,7 +1334,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 ### L02 · Fiche de risque de chaque client, validée par le responsable
 - Statut : en cours
 - Reste : proposition #134 ouverte (bâtie sur L01, #131), tests verts en local (1235), en attente des vérifications GitHub (H28).
-- Décidé (2026-10-28) : grille d'essai `essai-2026-10-28` en code ; sources : 4 déclarations fermées oui/non, état d'identité du coffre, montant de l'offre au registre ; le niveau est le plus haut des critères ; Jamais vu : rejeu de la fiche à l'identique ; relecture forte : 1 P1 corrigé (validation vérifiée au journal).
+- Décidé (2026-10-28) : grille d'essai `essai-2026-10-28` en code ; sources : 4 déclarations fermées oui/non, état d'identité du coffre, montant de l'offre au registre ; le niveau est le plus haut des critères ; Jamais vu : rejeu de la fiche à l'identique ; relecture forte : 1 P1 corrigé (validation vérifiée au journal) ; Codex : 1 P1 corrigé (événements repris si le journal a manqué), nouvelle relecture demandée.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L01
 - Cahier : Conformité, « Classement écrit des risques et analyse de chaque client avant l'entrée en relation ».
 - Objectif : à l'entrée en relation (mandat pour un vendeur, offre pour un acquéreur), une fiche de risque préparée par des règles écrites et datées, chaque critère avec sa source (déclaré, document, base) ; le responsable la valide ou la corrige, avec son nom et sa date.
