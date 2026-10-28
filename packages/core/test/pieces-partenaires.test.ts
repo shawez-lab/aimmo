@@ -67,7 +67,7 @@ async function setup(withSaleFile = true) {
     const r = await annuaire.addPartner(dir, { trade, businessName: `Partenaire ${trade}`, postcodes: ['21000'] });
     if (!r.ok) throw new Error(r.code);
     const id = r.value.partnerId;
-    const kinds = { courtier: ['immatriculation_orias'], geometre: ['inscription_ordre'] }[trade] ?? [];
+    const kinds = { courtier: ['immatriculation_orias'], geometre: ['inscription_ordre'], avocat: ['inscription_ordre'], expert_comptable: ['inscription_ordre'], gestionnaire: ['carte_g'] }[trade] ?? [];
     for (const kind of ['assurance_rcp', ...kinds]) await annuaire.addCredential(dir, id, { kind, number: 'N-1', validFrom: day(-30), validUntil: day(300), proofRef: files.put(`partenaires/${id}`) });
     if (domain && domain !== 'mesurage') await annuaire.addCredential(dir, id, { kind: 'certification_diagnostic', domain, number: 'C-1', validFrom: day(-30), validUntil: day(300), proofRef: files.put(`partenaires/${id}`) });
     return id;
@@ -114,6 +114,24 @@ describeWithSqlite('U05 · pièces des partenaires', () => {
     const queued = await t.db.all("SELECT id FROM partner_documents WHERE destination = 'agent_queue'");
     expect(queued).toHaveLength(0);
     expect(await t.db.all('SELECT id FROM partner_documents')).toHaveLength(6);
+  });
+
+  it('[R78] chaque sorte connue est rangée au bon endroit, avec le bon nom de pièce', async () => {
+    const t = await setup();
+    for (const [sort, rule] of Object.entries(PIECE_RULES)) {
+      const trade = rule.trades[0]!;
+      const project = rule.to === 'financing' ? t.buyProject.id : t.project.id;
+      const req = await t.request(trade, trade === 'diagnostiqueur' ? (rule.domain ?? 'amiante') : undefined, true, project);
+      const expected =
+        rule.to === 'diagnostic'
+          ? { destination: 'property', targetId: t.property.id, piece: rule.piece ?? sort }
+          : rule.to === 'referral'
+            ? { destination: 'referral', targetId: req.referralId, piece: null }
+            : rule.to === 'financing'
+              ? { destination: 'financing', targetId: t.saleFileId, piece: sort }
+              : { destination: 'sale_file', targetId: t.saleFileId, piece: rule.piece ?? sort };
+      expect(await t.deposit(req, sort), sort).toMatchObject({ ok: true, value: { sort, reason: 'rule', ...expected } });
+    }
   });
 
   it('[R78] sans dossier de vente, un diagnostic va à la fiche du bien ; une pièce du notaire ou un accord de prêt vont à la file', async () => {
