@@ -15,6 +15,13 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 - Critères : clé jamais écrite en clair hors du navigateur de Shawez (test) ; lien à usage unique, expiré refusé (test) ; empreintes déjà présentes dans `API_KEYS` conservées (test) ; journal sans clé (test [R13]).
 - Ce qu'elle attend d'un humain : rien. Une fois fusionnée, la séance lance elle-même le workflow ; Shawez n'a qu'à cliquer sur le lien reçu par mail.
 
+### Z04 · Lien d'accès de Shawez sans mail Cloudflare
+- Statut : à faire
+- Qui : Claude, relecture forte
+- Dépendances : Z02
+- Objectif : l'envoi par Cloudflare échoue toujours (HTTP 401, code 10000, H33 non réglé). Ajouter au travail « Créer l'accès de Shawez » un mode de remise sans mail : le lien à usage unique, valable 24 heures, est écrit seulement dans le résumé du travail GitHub (dépôt privé, visible du seul compte shawez-lab), jamais dans les journaux du travail ni dans le dépôt. Puis lancer le travail dans ce mode et noter dans « Besoin de toi » : « Ton lien t'attend dans GitHub : Actions > Créer l'accès de Shawez > dernier passage > Summary. »
+- Critères : le lien n'apparaît pas dans la sortie du travail (test) ; le mode mail reste le défaut (test) ; lien à usage unique et expiré refusé (tests de Z02 repris).
+
 ### Z03 · Passe de design de l'application et des pages publiques
 - Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : identité « toits vernissés de Bourgogne » (papier, encre, bordeaux, moutarde, losange des tuiles), polices du système, base unique `packages/core/src/design/systeme.ts`, contrôle dans `audit.ts`, règle R201 ; budgets 14 Ko (page) et 48 Ko (application) compressés ; captures dans `docs/design/captures/` ; axe-core sans violation sur 9 écrans, clair et sombre ; relecture forte 2 P1 et 2 défauts corrigés ; Codex en cours au bout de 15 min, fusion sans lui (#152). U11 peut reprendre.
