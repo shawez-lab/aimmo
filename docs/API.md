@@ -16,7 +16,7 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | POST | `/v1/envois/decision` | la décision d'envoi et la règle qui a décidé, sans rien envoyer | selon R16 |
 | POST | `/v1/qualifications/<id>/correction` | corrige la catégorie d'un contact, `{"category": "buyer", "route": null}` ; la correction est gardée et rejoint les cas de mesure | qui voit la fiche en entier (R16) |
 | GET | `/v1/contacts-chauds` | les contacts chauds à rappeler, matin ou soir, avec la raison de leur note : un agent ne voit que les siens, jamais une personne exclue | agent, direction, conformité (R16, R25) |
-| GET | `/v1/moi` | qui porte la clé : le rôle, et le prénom pour un agent en activité ; sert à la connexion de l'application de l'agent | toute clé ; un agent parti est refusé (R16) |
+| GET | `/v1/moi` | qui porte la clé : le rôle, et le prénom pour un agent en activité ; sert à la connexion de l'application : un agent arrive sur sa journée, la direction sur l'écran « Le réseau » (K09), tout autre rôle est refusé | toute clé ; un agent parti est refusé (R16) |
 | GET | `/v1/plan-du-jour` | le plan du jour de l'agent, figé à 7 h 30 heure de Paris par le planificateur : rappels demandés, estimations à relancer, rendez-vous à proposer, dans l'ordre écrit, chaque ligne avec sa raison et sa base légale ; `null` avant 7 h 30 | l'agent lui-même seulement (R16, R35, R36) |
 | GET | `/v1/fiches/<id>/resume` | la fiche pour l'application de l'agent : projets, origines, accords, 10 derniers messages, rappels ; `contact.allowed` faux et `call` nul pour une personne exclue ou qui a demandé l'arrêt ; lecture ou refus écrits au journal | l'agent de la fiche, la direction, la conformité, comme `/v1/fiches/<id>` (R02, R04, R16) |
 | POST | `/v1/rappels/<id>/fait` | marque un rappel fait, sans corps ; la tâche garde sa ligne ; rien n'est envoyé ; une tâche inconnue ou d'un autre est refusée de la même façon | qui voit la fiche en entier : l'agent de la fiche, la direction, la conformité (R16, R17) |
@@ -171,6 +171,21 @@ Sous `/v1/pilotage`, chaque route passe par les droits de la couche métier [R16
 - `GET /export-quotidien?jour=` (CSV) : l'export du jour pour la mesure contre le comptage manuel (`docs/MESURE.md`).
 
 Au planificateur : chaque heure, `pilotage.passage` (commissions, brouillons de factures, reprise des transmissions, alertes de reversement) ; à 6 h, `pilotage.alertes`, avec les fins de validité des pièces du dossier d'agent (M14) ; du lundi au vendredi à 7 h 30, `pilotage.rapport_matin`, rangé et lu dans l'application, jamais envoyé.
+
+## Réseau et académie, en mode essai (J12)
+
+Sous `/v1/reseau`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Un corps porte seulement les clés de sa route : une clé de plus est refusée (`invalid_body`), sans rien ranger. Rien n'est envoyé : les réponses aux candidats restent dans la boîte d'essai. Branchement dans `app.ts` : J13 (voie 1).
+
+- Candidatures (direction) : `GET /candidatures`, dans l'ordre d'arrivée, sans note ni tri [R81] ; `GET|POST /candidatures/<id>/entretien` (fiche, puis `at`, `interviewer`) ; `POST /entretiens/<id>/tenu` (`heldByName`) ; `POST /candidatures/<id>/decision` (`decision`, `reason`, `deciderName`) ; `POST /candidatures/<id>/admettre` (`zone`) ; `GET /candidatures/<id>/reponses` ; `GET|POST /reponses` (`topic`, `body`, contrôlé par R80) ; `GET /questions`, `POST /questions/<id>/faite`.
+- Dossier d'agent [R82] : `GET /mon-dossier` ; `GET /agents/<id>/dossier` ; `POST /agents/<id>/pieces` (`kind`, `ref`, `issuedOn`, `validUntil`) ; `POST /agents/<id>/projets` (`kind`). Sans stockage des pièces passé aux routes, réponse 503.
+- Import [R84] : `POST /import` (`format`, `contacts`, `properties` en texte, 2 Mo au plus), pour l'agent qui appelle, jamais un autre ; `GET /import/a-reprendre` (direction).
+- Académie [R85] : `GET /academie` ; `POST /academie/modules`, `POST /academie/seances`, `POST /academie/seances/<id>/presence` (direction) ; `POST /academie/modules/<id>/fait` ; `GET /ma-formation`, `GET /agents/<id>/formation` ; `GET /agents/<id>/bac-a-sable` (503 sans son stockage à part).
+- Entraînement : `GET /entrainement/cas`, `POST /entrainement` (`caseKey`), `POST /entrainement/<id>/tour` (`text`), `POST /entrainement/<id>/fin`.
+- Accompagnement : `POST /agents/<id>/referent`, `POST /binomes`, `POST /agents/<id>/absence`, `GET /agents/<id>/dossiers-couverts`, `POST /assistance`, `POST /assistance/<id>/repondue`.
+- Parrainage [R83] : `POST /parrainage/regles` (`rateBp`, `levels`), `POST /agents/<id>/parrain`, `GET /mes-primes`, `GET /agents/<id>/primes`.
+- Départ [R86] : `GET|POST /agents/<id>/depart`, `POST /agents/<id>/depart/annuler`, `POST /agents/<id>/successeur`, `POST /agents/<id>/successeur/decision`, `GET /agents/<id>/solde`, `GET /agents/<id>/contenus`, `GET|POST /reprises`.
+
+La page publique de candidature est servie à `/rejoindre`, sans clé ni script (`packages/api/src/candidature.ts`). Elle reçoit le réseau par la configuration (`CANDIDATURE_NETWORK_ID`, à brancher par J13) ; sans lui, elle dit que les candidatures ne sont pas ouvertes. Chacun de ses textes passe le contrôle des promesses de revenus à chaque service : un texte qui échoue ferme la page (503, `candidature.page_fermee` au journal) [R80]. Le lien d'un parrain est `/rejoindre?parrain=<identifiant de l'agent>`.
 
 ## Mise en ligne
 
