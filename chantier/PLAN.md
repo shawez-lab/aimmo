@@ -1396,3 +1396,98 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts` ; dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes, signalements, demandes et échéances, relecture du registre) et le dépôt d'une pièce par l'agent ; les passages au planificateur ; l'export depuis `@aimmo/core`.
 - Critères : chaque route sous R16, refus au journal ; un agent ne voit jamais l'écran du responsable ; écran accessible, beau sur téléphone d'abord, sans texte générique ; les passages tournent une fois par créneau.
 - Attend : rien.
+
+**M18 · Partenaires, juillet 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-28 par la voie 2 : M14 n'a plus de tâche faisable par la voie 2 (J13 revient à la voie 1, J14 attend la fusion de #129), et M18 est le module de juillet 2027 qu'aucune voie n'a commencé. Ids `U..` pour Unir les partenaires. Cahier : M18 Partenaires ; Feuille de route, juillet 2027 : « 5 demandes à des partenaires suivies jusqu'au bout » ; critères « pièces rangées sans erreur », « un partenaire ne voit que les dossiers qui lui sont confiés », « aucune mise en relation sans accord enregistré du client ».
+Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, dans ses propres tables (annuaire), jamais une fiche client. Chaque partenaire a un métier pris dans une liste fermée (notaire, diagnostiqueur, courtier, artisan, déménageur, photographe, géomètre, gestionnaire titulaire de la carte G, avocat, expert-comptable, promoteur, expert du viager) et ses justificatifs exigés par métier (certification par domaine pour un diagnostiqueur, immatriculation ORIAS pour un courtier, carte G pour un gestionnaire, assurance pour tous), chacun avec sa date de fin de validité et sa preuve ; un justificatif est une référence de stockage, jamais son contenu. Un partenaire sans justificatif valide ce jour-là n'est proposé à personne [R73]. La mise en relation n'existe qu'après l'accord du client enregistré avec sa date et sa preuve [R74] ; le client choisit parmi plusieurs professionnels quand la zone en compte plusieurs : ils lui sont montrés dans un ordre tiré au sort et noté, jamais trié par une note, un avis ou l'IA ; le choix est fait par le client avec l'agent, jamais par l'IA ni par le code [R75, R14]. Aucune rémunération d'un diagnostiqueur, sous aucune forme ; aucune rémunération d'un courtier ou d'une banque tant que le statut requis n'est pas validé par l'avocat (réglage faux par défaut) ; toute autre rémunération est déclarée dans la mise en relation et montrée au client avant son accord [R76]. Un partenaire ne lit que les mises en relation qui lui sont confiées, et seulement le dossier utile de son métier, champ par champ, listé par des règles écrites [R77]. Une pièce déposée par un partenaire est rangée par sa sorte (diagnostic dans la fiche du bien, pièce du notaire dans le dossier de M10, accord de prêt dans le financement du dossier, devis dans la mise en relation) ; une pièce de sorte inconnue va à une file humaine, jamais rangée au hasard [R78]. La prospection de nouveaux partenaires se fait par mail, entre professionnels, à une adresse professionnelle, avec un plafond par jour ouvré (5), le lien d'opposition et l'arrêt sur tous les canaux à la première demande ; tout passe par le contrôle central des envois, en mode essai tant que le plan ne l'a pas mis en service [R79, R01, R02, R04]. Les relances aux partenaires partent dans les heures d'envoi [R01]. Les avis des clients sur un partenaire sont lus par un humain, jamais transformés en note ni en classement. Les offres négociées pour les agents (responsabilité civile, protection juridique, prévoyance) sont une page d'information sans commission pour le réseau, hors de ce découpage tant qu'aucun accord n'existe. Les numéros de règles R73 à R79 et de migrations à partir de `0801` sont réservés à M18. Le code vit dans `packages/core/src/partenaires/`, ses routes dans `packages/api/src/partenaires.ts` ; les fichiers du socle (droits d'accès, `index.ts`, `app.ts`, planificateur, Worker, contrôle central des envois) ne changent que par U09, confiée à la voie 1.
+
+### U01 · Annuaire des partenaires par zone, justificatifs datés
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : S08
+- Cahier : M18, « Annuaire par zone » ; Données.
+- Objectif : l'annuaire (migration `0801`) : partenaire, métier (liste fermée), zones (codes postaux ou communes), domaines (pour un diagnostiqueur : amiante, plomb, DPE, électricité, gaz, termites, mesurage), justificatifs exigés par métier, chacun avec sorte, numéro déclaré, date de fin de validité, référence de la preuve, qui l'a vérifié ; la recherche des partenaires proposables pour un métier, une zone, un domaine et un jour.
+- Critères : un partenaire dont un justificatif exigé manque ou est échu ce jour-là n'est jamais proposable, et la raison est dite à l'agent [R73] ; un diagnostiqueur n'est proposable que pour les domaines couverts par une certification valide [R73] ; la recherche ne rend jamais de note, de rang ni d'avis [R14] ; rien ne s'efface, un justificatif remplacé reste [R17] ; chaque ajout et chaque vérification au journal [R13].
+- Attend : rien.
+
+### U02 · Mise en relation avec l'accord du client, choix du client
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01
+- Cahier : M18, « Mise en relation » et « Règles ».
+- Objectif : la mise en relation (migration `0802`) : dossier (bien, mandat, dossier de vente ou projet), métier, partenaires proposés (ordre tiré au sort, graine notée), partenaire choisi, accord du client (date, canal, preuve), rémunération déclarée, état (proposée, acceptée par le client, confiée, en cours, terminée, abandonnée).
+- Critères : aucune mise en relation n'est confiée sans accord du client enregistré avec sa date et sa preuve [R74] ; quand la zone compte au moins 2 partenaires proposables, au moins 2 sont montrés (réglage : 3 au plus) ; l'ordre est tiré au sort, rejouable par sa graine, jamais par une note ni un avis [R75] ; le choix est toujours celui d'un humain nommé, aucune fonction de l'IA ni du code ne choisit [R75] ; chaque changement d'état au journal.
+- Attend : rien.
+
+### U03 · Rémunérations des partenaires, déclarées ou refusées
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U02
+- Cahier : M18, « Règles » ; Conformité.
+- Objectif : la déclaration de toute rémunération venant d'un partenaire dans sa mise en relation (sorte, montant ou taux, qui paie, à qui) et le texte montré au client avant son accord.
+- Critères : toute rémunération venant d'un diagnostiqueur est refusée, sous toute forme (commission, cadeau, remise, prestation) [R76] ; toute rémunération d'un courtier ou d'une banque est refusée tant que le réglage du statut validé par l'avocat est faux [R76] ; une rémunération non déclarée ne peut pas être ajoutée après l'accord du client : il faut un nouvel accord [R76] ; le texte montré au client cite chaque rémunération et passe le contrôle des textes (aucune mention de l'IA, R06) ; chaque déclaration au journal.
+- Attend : H31 pour rémunérer un courtier ou une banque ; refusé en attendant.
+
+### U04 · Espace partenaire : le dossier utile, rien d'autre
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U02
+- Cahier : M18, « Espace partenaire » ; critère « un partenaire ne voit que les dossiers qui lui sont confiés ».
+- Objectif : la lecture par un partenaire de ses mises en relation confiées et de leur dossier utile, défini par métier, champ par champ (un diagnostiqueur : adresse du bien, surface, année, domaines demandés, créneaux ; un notaire : parties et pièces du dossier de vente ; un courtier : projet de l'acquéreur avec son accord, sans autre donnée de la fiche) ; le partenaire indique où il en est.
+- Critères : un partenaire ne lit jamais une mise en relation qui ne lui est pas confiée, ni une fois terminée au-delà du réglage (30 jours) [R77, R16] ; il ne reçoit que les champs listés pour son métier, testés champ par champ, jamais la fiche client entière ni une donnée sensible [R77, R23] ; chaque lecture et chaque refus au journal avant de rendre la donnée [R13] ; un partenaire dont un justificatif est échu est refusé [R73].
+- Attend : rien.
+
+### U05 · Pièces déposées par les partenaires, rangées d'elles-mêmes
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U04
+- Cahier : M18, « Pièces rangées d'elles-mêmes » ; M10 ; M06.
+- Objectif : le dépôt d'une pièce par un partenaire dans sa mise en relation (sorte, référence de stockage, empreinte, date) et son rangement : diagnostic dans la fiche du bien, pièce du notaire dans les pièces du dossier de vente de M10, accord de prêt dans le financement du dossier, devis dans la mise en relation.
+- Critères : chaque sorte connue est rangée au bon endroit, testé pour chacune, sans erreur sur 5 demandes complètes [R78] ; une pièce de sorte inconnue, ou dont la sorte ne va pas avec le métier du déposant, va à la file de l'agent et n'est rangée nulle part [R78] ; un partenaire ne dépose que dans ses mises en relation confiées [R77] ; une pièce n'est jamais son contenu, seulement sa référence ; rien ne s'efface, une pièce remplacée reste [R17].
+- Attend : rien.
+
+### U06 · Pièce contrôlée contre le justificatif du jour où elle a été faite (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U05
+- Cahier : M18, « Annuaire par zone » et « Pièces rangées d'elles-mêmes ».
+- Objectif : au dépôt, chaque pièce est contrôlée contre les justificatifs de son auteur à la date où elle a été faite, et non au jour du dépôt : un diagnostic contre la certification du domaine concerné, un accord de prêt contre l'immatriculation du courtier, une pièce de gestion contre la carte G.
+- Critères : Jamais vu : un diagnostic fait à une date où la certification de son domaine était échue, ou d'un domaine que le diagnostiqueur ne couvre pas, est refusé au rangement et signalé à l'agent avec la raison, avant qu'il n'entre dans un dossier de vente [R78, R73] ; un diagnostic fait pendant la validité puis déposé après son échéance est accepté ; la décision est rejouable à l'identique ; aucune pièce n'est jugée par l'IA.
+- Attend : rien.
+
+### U07 · Suivi des demandes, relances et avis lus par un humain
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U05
+- Cahier : M18, « Suivi » ; L'IA et l'humain.
+- Objectif : pour chaque mise en relation confiée : délai de réponse mesuré, relance préparée au partenaire après le réglage (2 jours ouvrés sans réponse), puis alerte à l'agent ; résumé des réponses par l'IA derrière une interface, avec un secours sans IA ; avis du client sur le service rendu, rangé pour lecture humaine.
+- Critères : une relance part seulement dans les heures d'envoi et par le contrôle central des envois, en mode essai [R01, R79] ; jamais deux fois la même relance [R05] ; un avis n'est jamais transformé en note, en rang ni en tri des partenaires [R14, R75] ; le résumé de l'IA ne reçoit aucune donnée sensible et le secours sans IA rend la même structure [R15, R23] ; chaque relance et chaque alerte au journal.
+- Attend : rien.
+
+### U08 · Prospection de nouveaux partenaires entre professionnels
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01
+- Cahier : M18, « Nouveaux partenaires » et « État ».
+- Objectif : la liste des partenaires à contacter (adresse professionnelle, métier, source publique), le mail de présentation préparé, le plafond par jour ouvré, l'opposition.
+- Critères : au plus 5 premiers mails par jour ouvré (réglage), jamais deux fois à la même adresse [R79, R05] ; seulement une adresse professionnelle, jamais une adresse personnelle déclarée comme telle [R79] ; chaque mail a son lien d'opposition, et une opposition arrête tout sur tous les canaux [R79, R04, R02] ; tout passe par le contrôle central des envois en mode essai, rien ne part réellement [R79] ; le texte ne promet rien et ne parle pas de l'IA [R06].
+- Attend : rien.
+
+### U09 · Branchement de M18 dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`, contrôle central des envois) · Relecture : forte · Dépend de : U10
+- Cahier : M18 ; Branchements.
+- Objectif : exporter `partenaires` depuis `@aimmo/core` ; dans les droits d'accès, le rôle `partner` lit seulement ses mises en relation confiées (U04) et rien d'autre ; ajouter les routes de M18 à `app.ts` ; lancer au planificateur les relances, les alertes d'échéance des justificatifs et la prospection du jour.
+- Critères : un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
+- Attend : rien.
+
+### U10 · Routes de M18 et espace partenaire en ligne
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01 à U08
+- Cahier : M18 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : les routes `/v1/partenaires` (annuaire, mises en relation, accord du client, rémunérations, espace partenaire, dépôt de pièces, suivi, prospection) dans `packages/api/src/partenaires.ts` ; la page de l'espace partenaire, belle sur téléphone d'abord.
+- Critères : chaque route sous R16, rôle contrôlé avant le corps, refus au journal ; un parcours de test de 5 demandes inventées (diagnostic, notaire, courtier, artisan, géomètre) suivies jusqu'au bout, pièces rangées sans erreur ; page accessible, sans texte générique.
+- Attend : rien.
+
+### U11 · Écrans de M18 dans l'application
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U10 ; après la fusion de #129 (même fichier `packages/api/app/fichiers.ts`)
+- Cahier : M18 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : dans l'application de l'agent, l'écran « Partenaires » : proposer au client (ordre tiré au sort), enregistrer son accord, suivre les demandes et les pièces.
+- Critères : l'écran lit seulement par les routes `/v1/partenaires` [R16] ; aucune liste n'est triée par une note [R75] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
+- Attend : rien.
