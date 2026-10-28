@@ -6,13 +6,14 @@
  * retirée ne montre plus rien du bien. Aucune adresse, aucun nom du vendeur : la version publiée n'en porte pas [R46].
  * Tout texte est échappé.
  *
- * Le dessin suit le système de l'application AIMMO (encre marine, papier blanc), avec une mise en page de catalogue :
+ * Le dessin suit le système de design d'AIMMO (Z03), avec une mise en page de catalogue :
  * prix en grands chiffres, état comme un tampon, mentions lisibles et non cachées. Téléphone d'abord ; la fiche
  * imprimable a exactement deux pages A4, la première porte toujours le prix et les mentions.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { DESIGN_CSS, PRINT_DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -42,34 +43,38 @@ const EMAIL = /^[^\s@<>"']{1,64}@[A-Za-z0-9.-]{1,60}\.[A-Za-z]{2,}$/;
 
 const mediaUrl = (ref: string): string => `/medias/${ref.split('/').map(encodeURIComponent).join('/')}`;
 
-const CSS = `:root{color-scheme:light dark;--fond:#fff;--papier:#f6f4ef;--texte:#14202e;--accent:#1f3a5f;--doux:#5b6b7d;--trait:#d9dee5}
-@media (prefers-color-scheme:dark){:root{--fond:#10161d;--papier:#17202a;--texte:#e8eef4;--accent:#8fb3dd;--doux:#9aa8b6;--trait:#2a3644}}
-*{box-sizing:border-box}body{margin:0;background:var(--fond);color:var(--texte);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:46rem;margin:0 auto;padding:0 16px 48px}
-.marque{display:flex;justify-content:space-between;align-items:baseline;padding:14px 16px;border-bottom:1px solid var(--trait);font-size:.85rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
-h1{font:600 clamp(1.5rem,5vw,2.2rem)/1.15 Georgia,"Iowan Old Style",serif;margin:28px 0 8px}
-.etat{display:inline-block;border:2px solid var(--accent);color:var(--accent);padding:2px 10px;font-weight:700;font-size:.8rem;letter-spacing:.1em;text-transform:uppercase;transform:rotate(-2deg)}
-.prix{font:700 clamp(2rem,9vw,3.2rem)/1 Georgia,serif;font-variant-numeric:tabular-nums;margin:18px 0 4px;color:var(--accent)}
-.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:8px;margin:24px 0;padding:0;list-style:none}
-.photos li{position:relative;margin:0}.photos img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--papier)}
-.virtuel{position:absolute;left:8px;bottom:8px;background:rgba(20,32,46,.85);color:#fff;font-size:.75rem;font-weight:700;padding:2px 8px;letter-spacing:.04em}
-.texte{white-space:pre-line;font-size:1.05rem}
-.mentions{background:var(--papier);border-left:4px solid var(--accent);padding:14px 16px;margin:28px 0;font-size:.92rem;white-space:pre-line}
-.agent{border-top:1px solid var(--trait);padding-top:18px;margin-top:28px}.agent a{color:var(--accent);font-weight:600}
-.retire{margin:56px 0;font-size:1.2rem;color:var(--doux)}
-a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}`;
+/** La page du bien : la base du système de design d'AIMMO (Z03), puis la mise en page de catalogue, en jetons [R201]. */
+const CSS =
+  DESIGN_CSS +
+  `.tete{display:flex;justify-content:space-between;align-items:center;gap:var(--e-4);padding:var(--e-4)}
+.ref{font-size:var(--t-xs);letter-spacing:.12em;text-transform:uppercase;color:var(--doux)}
+main{max-width:56rem;margin:0 auto;padding:0 var(--e-4) var(--e-8)}
+h1{margin:var(--e-6) 0 var(--e-3);max-width:24ch}
+.etat{display:inline-block;padding:var(--e-1) var(--e-3);border:2px solid var(--accent);color:var(--accent);font-weight:700;font-size:var(--t-xs);letter-spacing:.12em;text-transform:uppercase;border-radius:var(--r-s);transform:rotate(-2deg)}
+.prix{font:600 clamp(2.4rem,11vw,3.6rem)/1 var(--police-titre);margin:var(--e-4) 0 var(--e-2);color:var(--accent);letter-spacing:-.02em}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:var(--e-2);margin:var(--e-5) calc(-1 * var(--e-4));padding:0;list-style:none}
+.photos li{position:relative;margin:0}.photos img{width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--trait)}
+.virtuel{position:absolute;left:var(--e-2);bottom:var(--e-2);background:var(--encre);color:var(--papier);font-size:var(--t-xs);font-weight:700;padding:2px var(--e-2);border-radius:var(--r-s);letter-spacing:.04em}
+.texte{white-space:pre-line;font-size:var(--t-l);line-height:1.6;max-width:38rem}
+.mentions{background:var(--surface);border-radius:var(--r-m);box-shadow:inset 4px 0 0 var(--moutarde);padding:var(--e-4) var(--e-5);margin:var(--e-6) 0;font-size:var(--t-s);white-space:pre-line;max-width:38rem}
+.agent{border-top:1px solid var(--trait);padding-top:var(--e-5);margin-top:var(--e-6)}.agent a{font-weight:600}
+.retire{margin:var(--e-7) 0;font-size:var(--t-l);color:var(--doux)}
+@media (min-width:48rem){.photos{margin-left:0;margin-right:0}.photos img{border-radius:var(--r-m)}}`;
 
-const PRINT_CSS = `@page{size:A4;margin:0}*{box-sizing:border-box}
-body{margin:0;color:#14202e;font:10.5pt/1.45 Georgia,"Iowan Old Style",serif}
+/** La fiche imprimable : les jetons du papier, deux pages A4 exactement. */
+const PRINT_CSS =
+  PRINT_DESIGN_CSS +
+  `@page{size:A4;margin:0}
+body{font:10.5pt/1.45 var(--police-titre)}
 .page{width:210mm;height:297mm;padding:16mm 16mm 14mm;overflow:hidden;break-after:page;page-break-after:always;position:relative}
 .page:last-child{break-after:auto;page-break-after:auto}
-.marque{font:600 8pt/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#1f3a5f;border-bottom:1pt solid #1f3a5f;padding-bottom:4mm}
-h1{font-size:20pt;line-height:1.15;margin:8mm 0 3mm}.prix{font-size:30pt;font-weight:700;color:#1f3a5f;margin:4mm 0}
-.etat{display:inline-block;border:1.5pt solid #1f3a5f;color:#1f3a5f;padding:1mm 3mm;font:700 8pt system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase}
-.mentions{border-left:2pt solid #1f3a5f;padding:2mm 4mm;margin:6mm 0;font-size:9pt;white-space:pre-line}
+.marque{font:600 8pt/1 var(--police-texte);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border-bottom:1pt solid var(--accent);padding-bottom:4mm}
+h1{font-size:20pt;line-height:1.15;margin:8mm 0 3mm}.prix{font-size:30pt;font-weight:700;color:var(--accent);margin:4mm 0}
+.etat{display:inline-block;border:1.5pt solid var(--accent);color:var(--accent);padding:1mm 3mm;font:700 8pt var(--police-texte);letter-spacing:.1em;text-transform:uppercase}
+.mentions{border-left:2pt solid var(--moutarde);padding:2mm 4mm;margin:6mm 0;font-size:9pt;white-space:pre-line}
 .photos{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin:0;padding:0;list-style:none}.photos li{position:relative}
-.photos img{width:100%;height:52mm;object-fit:cover}.virtuel{position:absolute;left:2mm;bottom:2mm;background:#14202e;color:#fff;font:700 7pt system-ui,sans-serif;padding:1mm 2mm}
-.page+.page{padding-bottom:42mm}.texte{margin:6mm 0}.agent{position:absolute;left:16mm;right:16mm;bottom:14mm;border-top:1pt solid #1f3a5f;padding-top:3mm;font-size:9.5pt}`;
+.photos img{width:100%;height:52mm;object-fit:cover}.virtuel{position:absolute;left:2mm;bottom:2mm;background:var(--encre);color:var(--papier);font:700 7pt var(--police-texte);padding:1mm 2mm}
+.page+.page{padding-bottom:42mm}.texte{margin:6mm 0}.agent{position:absolute;left:16mm;right:16mm;bottom:14mm;border-top:1pt solid var(--accent);padding-top:3mm;font-size:9.5pt}`;
 
 function photoList(photos: PublishedMedia[], limit: number): string {
   const items = photos
@@ -97,8 +102,8 @@ function agentBlock(agent: AgentCard | null): string {
 export function renderListingPage(input: PageInput): string {
   const p = input.payload;
   const title = p.state === 'retiree' || !p.title ? 'Bien retiré de la vente' : p.title;
-  const head = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="${p.state === 'retiree' ? 'noindex' : 'index'}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>`;
-  const brand = `<header class="marque"><span>AIMMO</span><span>Réf. ${escapeHtml(p.reference)}</span></header>`;
+  const head = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="${p.state === 'retiree' ? 'noindex' : 'index'}"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>`;
+  const brand = `<header class="tete"><p class="marque">AIMMO</p><p class="ref">Réf. ${escapeHtml(p.reference)}</p></header><div class="frise" aria-hidden="true"></div>`;
   if (p.state === 'retiree' || p.priceEur === null || !p.body || !p.mentions) {
     return `${head}<body>${brand}<main><h1>${escapeHtml(title)}</h1><p class="retire">Ce bien n'est plus proposé à la vente.</p>${agentBlock(input.agent)}</main></body></html>`;
   }

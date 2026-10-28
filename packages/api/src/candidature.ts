@@ -11,7 +11,7 @@
  * case libre, rangée avec sa preuve, et sans elle personne ne recontacte le candidat [R03]. Aucune coordonnée ne va au
  * journal [R13]. Rien n'est envoyé d'ici.
  */
-import { appendEvent, SqlJournalStore, type SqlDatabase } from '@aimmo/core';
+import { appendEvent, DESIGN_CSS, SqlJournalStore, THEME_COLOR, type SqlDatabase } from '@aimmo/core';
 import { CANDIDATE_EXPERIENCES, CANDIDATE_SOURCES, CANDIDATE_STATUSES, Candidatures, checkRecruitingText } from '../../core/src/reseau/index.ts';
 
 export const CANDIDATURE_PATH = '/rejoindre';
@@ -139,54 +139,44 @@ export function pageProblems(): string[] {
   return failing;
 }
 
-const STYLE = `
-:root{color-scheme:light dark;--papier:#f4f1ea;--encre:#16202b;--doux:#5a6270;--trait:#d9d3c7;--accent:#1f3a5f;--accent-doux:#e3e8ef;--alerte:#9b1c1c}
-@media (prefers-color-scheme:dark){:root{--papier:#12161b;--encre:#ece8e0;--doux:#a7aeb8;--trait:#2b323b;--accent:#9dbbe0;--accent-doux:#1b2533;--alerte:#f2a3a3}}
-*{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--papier);color:var(--encre);font:17px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:40rem;margin:0 auto;padding:2rem 1rem 4rem}
-.marque{font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--doux);margin:0 0 2.5rem}
-h1,h2{font-family:"Iowan Old Style","Charter","Georgia",serif;font-weight:600;letter-spacing:-.01em}
-h1{font-size:2.4rem;line-height:1.1;margin:0 0 1rem}
-.chapeau{font-size:1.2rem;line-height:1.5;margin:0 0 2.5rem}
-h2{font-size:1.45rem;line-height:1.2;margin:3rem 0 1rem;padding-top:1.2rem;border-top:2px solid var(--encre)}
-h2 small{display:block;font:600 .75rem/1.4 system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--doux);margin-bottom:.3rem}
-p{margin:0 0 1rem}
-.doux{color:var(--doux);font-size:.95rem}
+/** La page suit le système de design d'AIMMO (Z03) : sa base, puis sa mise en page, en jetons seulement [R201]. */
+const STYLE = DESIGN_CSS + `
+main{max-width:var(--colonne);margin:0 auto;padding:var(--e-5) var(--e-4) var(--e-8)}
+main>.marque{margin:0 0 var(--e-4)}
+main>.frise{margin:0 0 var(--e-7);border-radius:var(--r-rond)}
+h1{margin:0 0 var(--e-4)}
+.chapeau{font-size:var(--t-l);line-height:1.5;margin:0 0 var(--e-6)}
+h2{margin:var(--e-7) 0 var(--e-4);padding-top:var(--e-4);border-top:2px solid var(--encre)}
+h2 small{display:block;font:600 var(--t-xs)/1.4 var(--police-texte);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:var(--e-1)}
 dl.offre{margin:0}
-dl.offre div{display:grid;grid-template-columns:1fr;gap:.15rem;padding:.8rem 0;border-bottom:1px solid var(--trait)}
+dl.offre div{display:grid;grid-template-columns:1fr;gap:var(--e-1);padding:var(--e-3) 0;border-bottom:1px solid var(--trait)}
 dl.offre dt{font-weight:600}
 dl.offre dd{margin:0;color:var(--doux)}
-@media (min-width:36rem){dl.offre div{grid-template-columns:11rem 1fr;gap:1rem}}
-table{width:100%;border-collapse:collapse;margin:0 0 1rem}
-th,td{text-align:left;padding:.7rem 0;border-bottom:1px solid var(--trait);vertical-align:top}
-caption{caption-side:bottom;text-align:left;padding-top:.6rem}
-td{text-align:right;font-weight:700;color:var(--accent);white-space:nowrap;padding-left:1rem}
-.sans{margin:0;padding:1rem 1.1rem;background:var(--accent-doux);border-left:4px solid var(--accent);list-style:none}
-.sans li+li{margin-top:.7rem}
-ul.liste{margin:0 0 1rem;padding-left:1.1rem}
-ul.liste li+li{margin-top:.4rem}
+@media (min-width:36rem){dl.offre div{grid-template-columns:11rem 1fr;gap:var(--e-4)}}
+table{width:100%;border-collapse:collapse;margin:0 0 var(--e-4)}
+th,td{text-align:left;padding:var(--e-3) 0;border-bottom:1px solid var(--trait);vertical-align:top}
+caption{caption-side:bottom;text-align:left;padding-top:var(--e-2)}
+td{text-align:right;font:600 var(--t-l)/1.2 var(--police-titre);color:var(--accent);white-space:nowrap;padding-left:var(--e-4);font-variant-numeric:tabular-nums lining-nums}
+.sans{margin:0;padding:var(--e-4) var(--e-4);background:var(--accent-doux);border-radius:var(--r-m);box-shadow:inset 4px 0 0 var(--accent);list-style:none}
+.sans li+li{margin-top:var(--e-3)}
+ul.liste{margin:0 0 var(--e-4);padding-left:var(--e-5)}
+ul.liste li+li{margin-top:var(--e-2)}
 ol.etapes{counter-reset:e;list-style:none;margin:0;padding:0}
-ol.etapes li{counter-increment:e;position:relative;padding:0 0 1.2rem 3rem}
-ol.etapes li::before{content:counter(e);position:absolute;left:0;top:0;width:2rem;height:2rem;border:2px solid var(--encre);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700}
+ol.etapes li{counter-increment:e;position:relative;padding:0 0 var(--e-5) var(--e-7)}
+ol.etapes li::before{content:counter(e);position:absolute;left:0;top:0;width:32px;height:32px;background:var(--moutarde);color:var(--sur-moutarde);transform:rotate(45deg);border-radius:var(--r-s);display:flex;align-items:center;justify-content:center;font-weight:700}
 ol.etapes strong{display:block}
-form{margin-top:1rem}
-fieldset{border:0;margin:0 0 1.5rem;padding:0}
-legend{font-family:"Iowan Old Style","Charter","Georgia",serif;font-size:1.15rem;font-weight:600;margin-bottom:.6rem;padding:0}
-label{display:block;font-weight:600;margin:0 0 .35rem}
-.aide{display:block;font-weight:400;color:var(--doux);font-size:.9rem}
-input[type=text],input[type=email],input[type=tel],select,textarea{display:block;width:100%;min-height:48px;padding:.7rem .8rem;margin:0 0 1rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--doux);border-radius:.5rem}
-textarea{min-height:7rem;resize:vertical}
-.case{display:flex;gap:.8rem;align-items:flex-start;font-weight:400;margin:.5rem 0}
-.case input{flex:none;width:24px;height:24px;margin:.15rem 0 0}
+form{margin-top:var(--e-4)}
+fieldset{margin:0 0 var(--e-5)}
+legend{font:600 var(--t-l)/1.2 var(--police-titre);margin-bottom:var(--e-2)}
+label{margin:var(--e-3) 0 var(--e-2)}
+.aide{display:block;font-weight:400;color:var(--doux);font-size:var(--t-s)}
+.case{align-items:flex-start}
+.case input{margin-top:2px}
 .piege{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
-button{font:inherit;font-weight:600;min-height:52px;width:100%;padding:.8rem 1.2rem;border:0;border-radius:.5rem;background:var(--accent);color:var(--papier);cursor:pointer}
-.erreur{padding:1rem 1.1rem;border:2px solid var(--alerte);border-radius:.5rem;margin:0 0 1.5rem}
+form button[type=submit]{width:100%;min-height:56px;margin-top:var(--e-4)}
+.erreur{padding:var(--e-4);border-radius:var(--r-m);background:var(--danger-doux);box-shadow:inset 4px 0 0 var(--danger);margin:0 0 var(--e-5)}
 .erreur p{margin:0}
-[aria-invalid=true]{border-color:var(--alerte);border-width:2px}
-a{color:var(--accent)}
-:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+[aria-invalid=true]{border-color:var(--danger);border-width:2px}
 `;
 
 function html(status: number, title: string, body: string): Response {
@@ -197,6 +187,7 @@ function html(status: number, title: string, body: string): Response {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="description" content="${escape(PAGE_TEXT.lede)}">
+<meta name="theme-color" content="${THEME_COLOR}">
 <title>${escape(title)}</title>
 <style>${STYLE}</style>
 </head>
@@ -249,7 +240,7 @@ export function candidaturePage(values: FormValues = {}, error: { message: strin
   const sponsor = values.parrain && AGENT_ID.test(values.parrain) ? values.parrain : null;
   const select = (name: 'currentStatus' | 'experience' | 'source', label: string, body: string): string =>
     `<label for="${name}">${escape(label)}</label><select id="${name}" name="${name}" required${inv === name ? ' aria-invalid="true" aria-describedby="erreur"' : ''}>${body}</select>`;
-  return `<p class="marque">${escape(t.kicker)}</p>
+  return `<p class="marque">${escape(t.kicker)}</p><div class="frise" aria-hidden="true"></div>
 <h1>${escape(t.title)}</h1>
 <p class="chapeau">${escape(t.lede)}</p>
 <p><a href="#candidater">Déposer ma candidature</a></p>
@@ -299,7 +290,7 @@ ${sponsor ? `<input type="hidden" name="parrain" value="${escape(sponsor)}">` : 
 </form>`;
 }
 
-const thanks = (): Response => html(200, 'Candidature reçue · AIMMO', `<p class="marque">${escape(PAGE_TEXT.kicker)}</p><h1>Merci</h1><p class="chapeau">${escape(PAGE_TEXT.thanks)}</p>`);
+const thanks = (): Response => html(200, 'Candidature reçue · AIMMO', `<p class="marque">${escape(PAGE_TEXT.kicker)}</p><div class="frise" aria-hidden="true"></div><h1>Merci</h1><p class="chapeau">${escape(PAGE_TEXT.thanks)}</p>`);
 
 export interface CandidatureConfig {
   db: SqlDatabase;
@@ -322,7 +313,7 @@ export async function handleCandidature(request: Request, config: CandidatureCon
     await appendEvent(journal, { type: 'candidature.page_fermee', actor: 'system:candidature', subject: 'page:rejoindre', data: { rule: 'R80', count: problems.length } }, now);
     return html(503, 'Page fermée · AIMMO', '<h1>Page fermée</h1><p>Cette page est en cours de relecture. Revenez bientôt.</p>');
   }
-  if (!config.networkId) return html(503, 'Bientôt · AIMMO', `<p class="marque">${escape(PAGE_TEXT.kicker)}</p><h1>Bientôt</h1><p class="chapeau">Les candidatures au réseau ne sont pas encore ouvertes. Revenez bientôt.</p>`);
+  if (!config.networkId) return html(503, 'Bientôt · AIMMO', `<p class="marque">${escape(PAGE_TEXT.kicker)}</p><div class="frise" aria-hidden="true"></div><h1>Bientôt</h1><p class="chapeau">Les candidatures au réseau ne sont pas encore ouvertes. Revenez bientôt.</p>`);
 
   if (request.method === 'GET' || request.method === 'HEAD') {
     const parrain = url.searchParams.get('parrain') ?? undefined;

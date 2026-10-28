@@ -28,6 +28,7 @@ import {
   SqlJournalStore,
   afterSaleReminderJob,
   appendEvent,
+  renderPublicPage,
   reviewRequestJob,
   thankYouJob,
   type CarnetMaker,
@@ -339,41 +340,7 @@ const CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; 
 const escape = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function page(status: number, title: string, body: string): Response {
-  const html = `<!doctype html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<meta name="referrer" content="no-referrer">
-<title>${escape(title)}</title>
-<style>
-:root{color-scheme:light dark;--fond:#f7f5f0;--texte:#1d1b18;--doux:#5f5a52;--accent:#1f4d3a}
-@media (prefers-color-scheme:dark){:root{--fond:#161513;--texte:#efece6;--doux:#b5afa4;--accent:#8fc9ac}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--fond);color:var(--texte);font:17px/1.55 system-ui,sans-serif}
-main{max-width:34rem;margin:0 auto;padding:2.5rem 1rem 3rem}
-h1{font-size:1.45rem;line-height:1.25;margin:0 0 1rem}
-p{margin:0 0 .9rem}
-.doux{color:var(--doux);font-size:.95rem}
-fieldset{border:0;margin:0 0 1.2rem;padding:0}
-legend{font-weight:600;margin-bottom:.6rem}
-.notes{display:flex;gap:.5rem}
-.notes label{flex:1;display:flex;align-items:center;justify-content:center;min-height:52px;border:2px solid var(--doux);border-radius:.6rem;font-weight:600;cursor:pointer}
-.notes input{position:absolute;opacity:0;width:1px;height:1px}
-.notes input:checked+span{color:var(--accent)}
-.notes label:has(input:checked){border-color:var(--accent);outline:2px solid var(--accent)}
-.notes input:focus-visible+span{outline:3px solid var(--texte);outline-offset:3px}
-label.bloc{display:block;font-weight:600;margin-bottom:.4rem}
-textarea{width:100%;min-height:8rem;padding:.8rem;font:inherit;color:inherit;background:transparent;border:1px solid var(--doux);border-radius:.6rem}
-textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-button{font:inherit;border:0;border-radius:.6rem;padding:.8rem 1.2rem;margin-top:1rem;background:var(--accent);color:var(--fond);cursor:pointer;min-height:44px}
-button:focus-visible{outline:3px solid var(--texte);outline-offset:3px}
-ul{padding-left:1.2rem}
-</style>
-</head>
-<body><main><h1>${escape(title)}</h1>${body}</main></body>
-</html>`;
+  const html = renderPublicPage({ title, body, kicker: 'Après la vente' });
   return new Response(html, {
     status,
     headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': CSP, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY' },

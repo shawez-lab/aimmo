@@ -300,10 +300,12 @@ describe('T08 · écrans accessibles et faits pour le téléphone', () => {
     expect(fields.length).toBeGreaterThanOrEqual(7);
     for (const f of fields) expect(corps.all().some((l) => l.tagName === 'label' && l.attributes.for === f.attributes.id), f.attributes.id).toBe(true);
     const css = AGENT_APP_FILES['/app/app.css']!;
-    expect(css).toMatch(/button \{[^}]*min-height: 44px/);
-    expect(css).toMatch(/select \{[^}]*min-height: 44px/);
-    expect(css).toMatch(/:focus-visible[^{]*\{[^}]*outline: 3px/);
-    expect(css).toMatch(/\.danger \{[^}]*background: #b3261e/);
+    // Les mesures et les couleurs viennent du système de design (Z03).
+    expect(css).toContain('--cible:48px');
+    expect(css).toMatch(/(?:^|\})button,\.appel\{[^}]*min-height:var\(--cible\)/);
+    expect(css).toMatch(/input,select,textarea\{[^}]*min-height:var\(--cible\)/);
+    expect(css).toMatch(/:focus-visible\{outline:3px solid var\(--anneau\)/);
+    expect(css).toMatch(/button\.danger,\.danger\{[^}]*background:var\(--danger\)/);
     expect(HTML).toContain('<p id="alerte-etat" role="alert" hidden></p>');
   });
 });

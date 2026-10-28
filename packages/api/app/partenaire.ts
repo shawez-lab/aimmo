@@ -1,3 +1,5 @@
+import { DESIGN_CSS, THEME_COLOR } from '@aimmo/core';
+
 /**
  * L'espace partenaire en ligne (U10) : une page servie par le Worker, sans construction ni dépendance, qui ne lit que
  * par les routes `/v1/partenaires/espace` sous les droits du partenaire [R16, R77]. La clé du partenaire est saisie une
@@ -12,16 +14,17 @@ export const PARTNER_HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
-<meta name="theme-color" content="#f4f1ea">
+<meta name="theme-color" content="${THEME_COLOR}">
 <title>Espace partenaire · AIMMO</title>
 <link rel="stylesheet" href="/partenaire/partenaire.css">
 <script src="/partenaire/partenaire.js" defer></script>
 </head>
 <body>
 <header class="tete">
-<p class="marque">AIMMO<span>Espace partenaire</span></p>
+<div><p class="marque">AIMMO</p><p class="sous-marque">Espace partenaire</p></div>
 <button type="button" id="sortir" class="discret" hidden>Se déconnecter</button>
 </header>
+<div class="frise" aria-hidden="true"></div>
 <main>
 <p id="etat" class="etat" role="status" aria-live="polite"></p>
 
@@ -68,37 +71,25 @@ export const PARTNER_HTML = `<!doctype html>
 </html>
 `;
 
-export const PARTNER_CSS = `:root { color-scheme: light dark; --fond: #f4f1ea; --carte: #fffdf8; --texte: #1c1a17; --doux: #5d574d; --accent: #7a3b1d; --trait: #d9d2c3; --ok: #2f5d3a; }
-@media (prefers-color-scheme: dark) { :root { --fond: #171512; --carte: #211e1a; --texte: #f0ece4; --doux: #b8b0a2; --accent: #e3a57f; --trait: #3a352d; --ok: #8fc9a0; } }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--fond); color: var(--texte); font: 17px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
-.tete { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: max(1rem, env(safe-area-inset-top)) 1rem 1rem; border-bottom: 1px solid var(--trait); }
-.marque { margin: 0; font-weight: 800; letter-spacing: .08em; }
-.marque span { display: block; font-weight: 500; letter-spacing: 0; color: var(--doux); font-size: .85rem; }
-main { max-width: 36rem; margin: 0 auto; padding: 1.25rem 1rem 4rem; }
-h1 { font-size: 1.5rem; line-height: 1.2; margin: .5rem 0 1rem; }
-h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
-p { margin: 0 0 1rem; }
-.doux { color: var(--doux); }
-.etat:empty { display: none; }
-.etat { padding: .75rem 1rem; border-left: 4px solid var(--accent); background: var(--carte); border-radius: .5rem; }
-label { display: block; font-weight: 600; margin: 1rem 0 .35rem; }
-input, select { width: 100%; font: inherit; min-height: 48px; padding: .6rem .75rem; border: 1px solid var(--trait); border-radius: .6rem; background: var(--carte); color: var(--texte); }
-button { font: inherit; font-weight: 600; min-height: 48px; padding: .7rem 1.25rem; border: 0; border-radius: .7rem; background: var(--accent); color: var(--carte); cursor: pointer; margin-top: 1rem; }
-button.second { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
-button.discret { background: transparent; color: var(--doux); padding: .4rem 0; min-height: 44px; margin: 0; font-weight: 500; }
-button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid var(--texte); outline-offset: 2px; }
-button:disabled { opacity: .5; cursor: not-allowed; }
-.demandes { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; }
-.demandes button { width: 100%; text-align: left; margin: 0; background: var(--carte); color: var(--texte); border: 1px solid var(--trait); border-radius: .9rem; padding: 1rem; display: grid; gap: .2rem; }
-.demandes small { color: var(--doux); font-weight: 500; }
-.pastille { display: inline-block; padding: .2rem .7rem; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); font-weight: 600; font-size: .9rem; }
-.dossier { display: grid; grid-template-columns: auto 1fr; gap: .4rem 1rem; background: var(--carte); border: 1px solid var(--trait); border-radius: .9rem; padding: 1rem; margin: 1rem 0; }
+/** La feuille de l'espace partenaire : la base du système de design (Z03), puis sa mise en page, en jetons [R201]. */
+export const PARTNER_CSS = DESIGN_CSS + `
+.tete { display: flex; align-items: center; justify-content: space-between; gap: var(--e-4); padding: max(var(--e-4), env(safe-area-inset-top)) var(--e-4) var(--e-4); }
+.sous-marque { margin: var(--e-1) 0 0 20px; color: var(--doux); font-size: var(--t-s); }
+.tete button { margin: 0; }
+main { max-width: var(--colonne); margin: 0 auto; padding: var(--e-5) var(--e-4) var(--e-8); }
+h1 { margin: var(--e-2) 0 var(--e-4); }
+h2 { font-size: var(--t-l); margin: var(--e-6) 0 var(--e-2); }
+#entree form button[type=submit], #form-piece button[type=submit] { width: 100%; margin-top: var(--e-5); }
+.etat:not(:empty) { padding: var(--e-3) var(--e-4); background: var(--surface); border-radius: var(--r-m); box-shadow: inset 4px 0 0 var(--accent); color: var(--encre); }
+.demandes { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--e-3); }
+.demandes button { width: 100%; justify-content: space-between; text-align: left; margin: 0; padding: var(--e-4) var(--e-5); background: var(--surface); color: var(--encre); border: 1px solid var(--trait); border-radius: var(--r-l); box-shadow: var(--ombre); }
+.demandes button span { font: 600 var(--t-l)/1.2 var(--police-titre); }
+.demandes small { color: var(--doux); font-weight: 500; font-size: var(--t-s); }
+.dossier { display: grid; grid-template-columns: auto 1fr; gap: var(--e-2) var(--e-4); background: var(--surface); border: 1px solid var(--trait); border-radius: var(--r-l); padding: var(--e-5) var(--e-4); margin: var(--e-4) 0; }
 .dossier dt { color: var(--doux); }
-.dossier dd { margin: 0; font-weight: 600; }
-.actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.dossier dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--e-3); }
 .actions button { flex: 1 1 10rem; }
-@media (prefers-reduced-motion: no-preference) { button { transition: transform .08s ease; } button:active { transform: scale(.98); } }
 `;
 
 export const PARTNER_JS = `'use strict';
