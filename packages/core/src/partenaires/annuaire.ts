@@ -65,9 +65,12 @@ export const CERTIFIED_DOMAINS = [
   { domain: 'termites', label: 'termites' },
 ] as const;
 export type CertifiedDomain = (typeof CERTIFIED_DOMAINS)[number]['domain'];
-/** Domaines qu'on peut demander à un diagnostiqueur : chacun exige sa certification (lecture prudente). */
-export type DiagnosticDomain = CertifiedDomain;
-export const DIAGNOSTIC_DOMAINS: readonly DiagnosticDomain[] = CERTIFIED_DOMAINS.map((d) => d.domain);
+/**
+ * Domaines qu'on peut demander à un diagnostiqueur. Le mesurage de la surface n'exige aucune certification : l'assurance
+ * suffit. Chacun des autres exige sa certification [R73].
+ */
+export type DiagnosticDomain = CertifiedDomain | 'mesurage';
+export const DIAGNOSTIC_DOMAINS: readonly DiagnosticDomain[] = [...CERTIFIED_DOMAINS.map((d) => d.domain), 'mesurage'];
 
 /** Les justificatifs exigés par métier, hors certifications de diagnostic (exigées par domaine). Règle écrite [R73]. */
 export const REQUIRED_CREDENTIALS: Readonly<Record<PartnerTrade, readonly CredentialKind[]>> = Object.freeze({
@@ -108,7 +111,7 @@ export interface PartnerStatus {
   trade: PartnerTrade;
   businessName: string;
   postcodes: string[];
-  /** Tous les justificatifs exigés sont valides ce jour-là (pour un diagnostiqueur : assurance et au moins un domaine certifié). */
+  /** Tous les justificatifs exigés sont valides ce jour-là (pour un diagnostiqueur : son assurance ; ses domaines sont listés à part). */
   proposable: boolean;
   /** Domaines de diagnostic proposables ce jour-là (vide hors diagnostiqueur). */
   domains: DiagnosticDomain[];
@@ -353,10 +356,10 @@ export class Annuaire {
         else unavailable.push({ ...card, reasons: s.reasons });
         continue;
       }
-      // Un diagnostiqueur : son assurance, plus la certification du domaine demandé [R73].
+      // Un diagnostiqueur : son assurance, plus la certification du domaine demandé, sauf pour le mesurage [R73].
       const base = s.lines.filter((l) => l.domain === null);
-      const cert = s.lines.filter((l) => l.domain === domain);
-      const needed = [...base, ...(cert.length > 0 ? cert : [this.missingCert(domain)])];
+      const cert = domain === 'mesurage' ? [] : s.lines.filter((l) => l.domain === domain);
+      const needed = domain === 'mesurage' ? base : [...base, ...(cert.length > 0 ? cert : [this.missingCert(domain)])];
       const reasons = needed.map(reasonOf).filter((r): r is string => r !== null);
       if (reasons.length === 0) proposable.push(card);
       else unavailable.push({ ...card, reasons });
@@ -395,8 +398,16 @@ export class Annuaire {
     const zones = await this.db.all<{ postcode: string }>('SELECT postcode FROM partner_zones WHERE partner_id = ? ORDER BY postcode', [partnerId]);
     const rows = await this.db.all<CredentialRow>('SELECT id, kind, domain, version, valid_from, valid_until FROM partner_credentials WHERE partner_id = ? ORDER BY kind, domain, version', [partnerId]);
     const day = this.today(at);
-    // La dernière version de chaque justificatif compte [R17].
-    const latest = (kind: CredentialKind, domain: string): CredentialRow | undefined => rows.filter((r) => r.kind === kind && r.domain === domain).at(-1);
+    // La dernière version déjà commencée ce jour-là compte : elle corrige les précédentes [R17]. Un renouvellement rangé
+    // à l'avance ne retire donc pas la version en cours ; il ne compte qu'à son premier jour. Sans version commencée,
+    // la dernière est montrée, « à venir ».
+    const latest = (kind: CredentialKind, domain: string): CredentialRow | undefined => {
+      const mine = rows.filter((r) => r.kind === kind && r.domain === domain);
+      const started = mine.filter((r) => r.valid_from <= day).at(-1);
+      // Une version commencée mais échue cède la place au renouvellement à venir, pour dire la bonne date à l'agent.
+      if (started && started.valid_until >= day) return started;
+      return mine.filter((r) => r.valid_from > day && (!started || r.version > started.version)).at(-1) ?? started ?? mine.at(-1);
+    };
     const line = (kind: CredentialKind, domain: CertifiedDomain | null): CredentialLine => {
       const row = latest(kind, domain ?? '');
       return { kind, domain, label: kindLabel(kind, domain), state: stateOn(row, day), version: row ? Number(row.version) : null, validFrom: row?.valid_from ?? null, validUntil: row?.valid_until ?? null };
@@ -404,20 +415,19 @@ export class Annuaire {
     const lines: CredentialLine[] = REQUIRED_CREDENTIALS[p.trade].map((k) => line(k, null));
     let domains: DiagnosticDomain[] = [];
     const reasons = lines.map(reasonOf).filter((r): r is string => r !== null);
-    let proposable = reasons.length === 0;
+    const proposable = reasons.length === 0;
     if (p.trade === 'diagnostiqueur') {
       const certDomains = CERTIFIED_DOMAINS.map((d) => d.domain).filter((d) => rows.some((r) => r.kind === 'certification_diagnostic' && r.domain === d));
       const certLines = certDomains.map((d) => line('certification_diagnostic', d));
       lines.push(...certLines);
       const valid = certLines.filter((l) => l.state === 'valide').map((l) => l.domain!);
-      if (proposable) domains = valid;
+      // Sans assurance valide, un diagnostiqueur n'est proposable pour rien ; avec elle, pour le mesurage et ses domaines
+      // certifiés ce jour-là.
+      if (proposable) domains = [...valid, 'mesurage'];
       for (const l of certLines) {
         const r = reasonOf(l);
         if (r) reasons.push(r);
       }
-      if (certDomains.length === 0) reasons.push('Certification : aucune rangée.');
-      // Sans assurance valide, ou sans aucune certification valide, un diagnostiqueur n'est proposable pour rien.
-      proposable = proposable && valid.length > 0;
     }
     return { partnerId, trade: p.trade, businessName: p.business_name, postcodes: zones.map((z) => z.postcode), proposable, domains, lines, reasons };
   }

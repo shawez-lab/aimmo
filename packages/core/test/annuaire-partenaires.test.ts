@@ -103,12 +103,12 @@ describeWithSqlite('U01 · annuaire des partenaires', () => {
     const t = await setup();
     const diag = await t.partner('diagnostiqueur', 'Diagnostics Bourgogne');
     await t.credential(diag, 'assurance_rcp');
-    // Assurance seule : rien.
-    expect((await t.annuaire.status(t.dir, diag)).ok && (await t.annuaire.status(t.dir, diag))).toMatchObject({ value: { proposable: false, domains: [] } });
+    // Assurance seule : le mesurage seulement, qui n'exige aucune certification.
+    expect(await t.annuaire.status(t.dir, diag)).toMatchObject({ ok: true, value: { proposable: true, domains: ['mesurage'] } });
     await t.credential(diag, 'certification_diagnostic', { domain: 'amiante' });
     await t.credential(diag, 'certification_diagnostic', { domain: 'plomb', from: t.day(-800), until: t.day(-1) });
     const s = await t.annuaire.status(t.dir, diag);
-    expect(s.ok && s.value).toMatchObject({ proposable: true, domains: ['amiante'] });
+    expect(s.ok && s.value).toMatchObject({ proposable: true, domains: ['amiante', 'mesurage'] });
     const amiante = await t.annuaire.search(t.agent, { trade: 'diagnostiqueur', postcode: '21000', domain: 'amiante' });
     expect(amiante.ok && amiante.value.proposable.map((p) => p.partnerId)).toEqual([diag]);
     const plomb = await t.annuaire.search(t.agent, { trade: 'diagnostiqueur', postcode: '21000', domain: 'plomb' });
@@ -119,6 +119,35 @@ describeWithSqlite('U01 · annuaire des partenaires', () => {
     expect(await t.annuaire.search(t.agent, { trade: 'diagnostiqueur', postcode: '21000' })).toEqual({ ok: false, rule: null, code: 'domain_required' });
     expect(await t.annuaire.proposableOn(t.network.id, diag, new Date(clock), 'amiante')).toBe(true);
     expect(await t.annuaire.proposableOn(t.network.id, diag, new Date(clock), 'plomb')).toBe(false);
+    const mesurage = await t.annuaire.search(t.agent, { trade: 'diagnostiqueur', postcode: '21000', domain: 'mesurage' });
+    expect(mesurage.ok && mesurage.value.proposable.map((p) => p.partnerId)).toEqual([diag]);
+  });
+
+  it('[R73] sans assurance valide, un diagnostiqueur n’est proposable pour rien, même pas le mesurage', async () => {
+    const t = await setup();
+    const diag = await t.partner('diagnostiqueur', 'Diagnostics Sans Assurance');
+    await t.credential(diag, 'certification_diagnostic', { domain: 'amiante' });
+    const s = await t.annuaire.status(t.dir, diag);
+    expect(s.ok && s.value).toMatchObject({ proposable: false, domains: [] });
+    for (const domain of ['amiante', 'mesurage']) {
+      const r = await t.annuaire.search(t.agent, { trade: 'diagnostiqueur', postcode: '21000', domain });
+      expect(r.ok && r.value.unavailable[0]!.reasons).toEqual(['Assurance de responsabilité civile professionnelle : manquante.']);
+    }
+  });
+
+  it('[R73] un renouvellement rangé à l’avance ne retire pas le partenaire tant que la version en cours le couvre', async () => {
+    const t = await setup();
+    const notaire = await t.partner('notaire', 'Étude du Renouveau');
+    await t.credential(notaire, 'assurance_rcp', { from: t.day(-300), until: t.day(20) });
+    const renewed = await t.credential(notaire, 'assurance_rcp', { from: t.day(21), until: t.day(400) });
+    expect(renewed).toMatchObject({ proposable: true, reasons: [] });
+    expect(renewed.lines[0]).toMatchObject({ version: 1, validUntil: t.day(20) });
+    expect(await t.annuaire.proposableOn(t.network.id, notaire, new Date(clock + 21 * DAY))).toBe(true);
+    const later = await t.annuaire.search(t.agent, { trade: 'notaire', postcode: '21000' });
+    expect(later.ok && later.value.proposable.map((p) => p.partnerId)).toEqual([notaire]);
+    // Un correctif rangé pour la même période (version plus récente, déjà commencée) remplace la précédente.
+    const fixed = await t.credential(notaire, 'assurance_rcp', { from: t.day(-300), until: t.day(-1) });
+    expect(fixed).toMatchObject({ proposable: false });
   });
 
   it('[R73] une version remplacée ne compte plus aujourd’hui, mais couvrait les jours de sa période', async () => {
