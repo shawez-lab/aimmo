@@ -2,6 +2,7 @@
  * Rangement des messages reçus [C01] : chaque message une seule fois [R18], les illisibles signalés à l'agent,
  * chaque réception écrite au journal sans donnée personnelle [R13]. Rien n'est jamais effacé [R17].
  */
+import { maskIban } from '../envoi/texte.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { adaptInbound, type InboundSource } from './adaptateurs.ts';
 import type {
@@ -127,8 +128,9 @@ export class Reception {
         message.sender.channelId,
         message.sender.name,
         JSON.stringify(message.sender.identifiers),
-        message.subject,
-        message.text,
+        // Un IBAN reçu n'est jamais rangé en clair [R15] : le masque garde le signal pour le bouclier (N05).
+        message.subject === null ? null : maskIban(message.subject),
+        maskIban(message.text),
         message.postRef,
         message.propertyRef,
         message.portal,

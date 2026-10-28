@@ -149,7 +149,12 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - Les rappels des rendez-vous (`rdv.rappels`, V04) passent du lundi au samedi de 8 h à 19 h : la confirmation restée en attente, un rappel la veille et un le jour même, par le contrôle central et les seuls canaux du mode essai [R26]. Le lien pour décaler ou annuler commence par la variable `RDV_LINK_BASE` (en https, sans chiffre, terminée par `/`) ; sans elle, les rappels partent sans lien.
 - Les briefs des rendez-vous (`rdv.briefs`, V05) passent à toute heure : chaque rendez-vous tenu reçoit son brief au moins une heure avant, rangé pour son seul agent, sans aucun envoi [R34].
 
-## Après la vente, en mode essai (F07)
+## Dossiers de vente, en mode essai (N09)
+
+- Les routes `/v1/dossiers/…` de M10 (pièces, échéancier, financement, acte, chemin critique, relances, tâches, alertes) sont servies derrière la clé d'API, sous les droits de la couche métier [R16]. Elles ont besoin du stockage des pièces, le compartiment R2 lié sous le nom `PIECES` ; sans lui, chacune répond 503 `pieces_not_configured`, et le passage des dossiers ne tourne pas.
+- Au planificateur, `dossiers.passage`, de 9 h à 19 h chaque jour : échéances, alertes de financement, filet du bouclier contre le faux RIB, relances des pièces par le contrôle central (pas le dimanche).
+- Chaque message reçu est rangé sans IBAN en clair, remplacé par `[IBAN masqué]` [R15] ; dès qu'il est rattaché à sa fiche, le bouclier le lit et alerte l'agent d'un dossier en cours [R62]. Le contrôle central refuse tout texte à un client qui porte un IBAN, un RIB ou demande de payer [R62].
+
 
 - Les pages publiques, sans clé, n'ont qu'un jeton tiré au hasard dans l'adresse : `/apres-vente/desinscription/<jeton>` (désinscription des nouvelles après la vente en un geste, R65), `/apres-vente/avis/<jeton>` (note de 1 à 5 et commentaire, une seule fois, jamais publiés, R64), `/apres-vente/carnet/<jeton>` (le carnet du propriétaire, F06). Elles sont fermées hors mode essai.
 - Leur adresse vient de la variable `APRES_VENTE_BASE`, en https, sans chiffre, terminée par `/apres-vente/` (par exemple `https://aimmo-api.<compte>.workers.dev/apres-vente/` si le nom du compte n'a pas de chiffre). Sans elle, aucune nouvelle après la vente ne part [R65], les demandes d'avis partent sans lien de satisfaction, et aucun carnet ne se fait.

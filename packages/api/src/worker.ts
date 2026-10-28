@@ -2,6 +2,7 @@ import { TRIAL_MODE, handleRequest } from './app.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { runScheduler } from './planificateur.ts';
+import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 
@@ -31,6 +32,8 @@ export interface Env {
   ALERT_UNSUBSCRIBE_BASE?: string;
   /** Début des liens publics de l'après-vente (F07), en https, sans chiffre, terminé par `/apres-vente/`. */
   APRES_VENTE_BASE?: string;
+  /** Les pièces des dossiers de vente (R2) ; absent, les routes et le passage de M10 sont fermés. */
+  PIECES?: R2Like;
   /** Les médias des biens (R2), lus par la vitrine ; absent, aucune photo n'est servie. */
   MEDIA?: MediaStore;
 }
@@ -55,6 +58,7 @@ export default {
       appointmentLinkBase: env.RDV_LINK_BASE,
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       ...(env.MEDIA ? { media: env.MEDIA } : {}),
+      ...(env.PIECES ? { pieces: new R2PieceStore(env.PIECES) } : {}),
       ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,
@@ -77,6 +81,7 @@ export default {
       apresVenteBase: env.APRES_VENTE_BASE,
       soldSales: estimation?.sales ?? null,
       geocoder: estimation?.geocoder ?? null,
+      pieces: env.PIECES ? new R2PieceStore(env.PIECES) : null,
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));

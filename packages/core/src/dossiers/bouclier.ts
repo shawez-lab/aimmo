@@ -17,8 +17,8 @@
  *
  * Décidé, lecture prudente : le rappel part une fois par personne et par dossier (sujet `rappel_fonds:<dossier>`),
  * pour ne pas noyer le client ; une alerte de l'agent part à chaque message suspect ; un rappel refusé pour l'heure
- * repart au passage suivant. Le branchement de `scan` à la réception des messages, et le masquage de l'IBAN dans le
- * message rangé, sont dans le socle (N09).
+ * repart au passage suivant. `scan` est branché à la réception des messages, et l'IBAN est masqué dans le message
+ * rangé avant même son rattachement (N09) : le bouclier lit le masque comme un IBAN.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -28,15 +28,12 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
-import { plain } from '../envoi/texte.ts';
+import { IBAN, IBAN_MASK, fundsInOutgoing, plain } from '../envoi/texte.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { actorOf, type FileRefusal } from './acces-dossier.ts';
 import { SALE_FOLLOW_UP_PURPOSE } from './relances.ts';
-
-/** Un IBAN, avec ou sans espaces tous les 4 caractères : deux lettres, deux chiffres, puis 12 à 30 caractères. */
-const IBAN = /\b[a-z]{2}\d{2}(?: ?[a-z0-9]{4}){3,7}(?: ?[a-z0-9]{1,4})?\b/i;
 
 export type FundSignal = 'iban' | 'coordonnees_bancaires' | 'virement' | 'acompte' | 'sequestre' | 'paiement';
 
@@ -53,27 +50,12 @@ const INBOUND: [FundSignal, RegExp][] = [
 export function fundSignals(text: string): FundSignal[] {
   const p = plain(text);
   const found: FundSignal[] = [];
-  if (IBAN.test(text.replace(/\s+/g, ' '))) found.push('iban');
+  if (IBAN.test(text.replace(/\s+/g, ' ')) || text.includes(IBAN_MASK)) found.push('iban');
   for (const [signal, re] of INBOUND) if (re.test(p)) found.push(signal);
   return found;
 }
 
-const OUTGOING: RegExp[] = [
-  /\b(?:rib|bic|swift|iban)\b/,
-  /\b(?:nos|nouvelles|voici les|voici nos|ci-joint nos|ci-joint les) coordonnees bancaires\b/,
-  /\b(?:sur le compte|a l'ordre de)\b/,
-  /\b(?:veuillez|merci de|vous pouvez|pensez a|il vous faut|vous devez|il faut|je vous prie de|nous vous prions de)\s+(?:bien vouloir\s+)?(?:nous\s+)?(?:virer|verser|regler|payer|transferer|effectuer)\b/,
-  // L'impératif direct : « payez », « versez », « virez », « réglez », « effectuez le virement ».
-  /\b(?:payez|versez|virez|reglez|transferez|effectuez)\b/,
-  /\b(?:le|un|votre) (?:virement|versement|paiement) (?:de|du|des|sur|a|avant)\b/,
-];
-
-/** Un texte d'AIMMO qui donne des coordonnées bancaires ou demande un paiement : jamais [R62]. */
-export function fundsInOutgoing(text: string): boolean {
-  if (IBAN.test(text.replace(/\s+/g, ' '))) return true;
-  const p = plain(text);
-  return OUTGOING.some((re) => re.test(p));
-}
+export { fundsInOutgoing };
 
 /** Le rappel au client, écrit par le code, sans chiffre ni coordonnée. */
 export function fundsReminderText(firstName: string | null, property: { city: string | null; reference: string } | null = null): string {

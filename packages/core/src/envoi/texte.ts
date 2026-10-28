@@ -7,12 +7,13 @@
  *   R09  jamais d'adresse exacte ; dans un contenu public, jamais le nom d'un client ;
  *   R10  chaque chiffre vient des données fournies ;
  *   R19  jamais le nom du vendeur d'un bien dans un message à un client ;
+ *   R62  aucun texte à un client ne porte de coordonnée bancaire ni ne demande de payer ;
  *   question : pas plus de questions que permis, quand l'appelant le dit ;
  *   longueur, par canal.
  */
 import type { OutboundChannelName } from '../db/types.ts';
 
-export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R19' | 'question' | 'length';
+export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R19' | 'R62' | 'question' | 'length';
 
 export interface TextProblem {
   rule: TextRule;
@@ -118,6 +119,9 @@ export function checkText(text: string, context: TextContext, settings: TextSett
       problems.push({ rule: 'R08', reason: 'Le premier message s’adresse à la personne par son prénom.' });
     }
   }
+  if (context.audience === 'client' && fundsInOutgoing(text)) {
+    problems.push({ rule: 'R62', reason: 'AIMMO ne demande jamais de paiement et ne donne jamais de coordonnée bancaire.' });
+  }
   if (/[()]/.test(text)) problems.push({ rule: 'R08', reason: 'Pas de parenthèses.' });
   if (settings.administrativePhrases.some((phrase) => p.includes(phrase))) {
     problems.push({ rule: 'R08', reason: 'Pas de formule administrative.' });
@@ -146,4 +150,36 @@ export function checkText(text: string, context: TextContext, settings: TextSett
     problems.push({ rule: 'R10', reason: 'Un chiffre du texte ne vient pas des données fournies.' });
   }
   return problems;
+}
+
+/** Un IBAN, avec ou sans espaces tous les 4 caractères : deux lettres, deux chiffres, puis 12 à 30 caractères. */
+export const IBAN = /\b[a-z]{2}\d{2}(?: ?[a-z0-9]{4}){3,7}(?: ?[a-z0-9]{1,4})?\b/i;
+const IBAN_ALL = new RegExp(IBAN.source, 'gi');
+/** Ce qui remplace un IBAN dans un message reçu rangé : le bouclier (N05) le lit comme un IBAN [R15]. */
+export const IBAN_MASK = '[IBAN masqué]';
+
+/** Le texte, chaque IBAN remplacé par `IBAN_MASK`, avant de le ranger [R15]. Les espaces sont gardés ailleurs. */
+export function maskIban(text: string): string {
+  // Un IBAN peut être coupé par plusieurs espaces ou un retour à la ligne : on cherche sur le texte aux blancs réduits
+  // seulement si le texte brut n'en montre aucun, pour ne rien changer d'autre.
+  const masked = text.replace(IBAN_ALL, IBAN_MASK);
+  if (masked !== text || !IBAN.test(text.replace(/\s+/g, ' '))) return masked;
+  return text.replace(/\s+/g, ' ').replace(IBAN_ALL, IBAN_MASK);
+}
+
+const OUTGOING_FUNDS: RegExp[] = [
+  /\b(?:rib|bic|swift|iban)\b/,
+  /\b(?:nos|nouvelles|voici les|voici nos|ci-joint nos|ci-joint les) coordonnees bancaires\b/,
+  /\b(?:sur le compte|a l'ordre de)\b/,
+  /\b(?:veuillez|merci de|vous pouvez|pensez a|il vous faut|vous devez|il faut|je vous prie de|nous vous prions de)\s+(?:bien vouloir\s+)?(?:nous\s+)?(?:virer|verser|regler|payer|transferer|effectuer)\b/,
+  // L'impératif direct : « payez », « versez », « virez », « réglez », « effectuez le virement ».
+  /\b(?:payez|versez|virez|reglez|transferez|effectuez)\b/,
+  /\b(?:le|un|votre) (?:virement|versement|paiement) (?:de|du|des|sur|a|avant)\b/,
+];
+
+/** Un texte d'AIMMO qui donne des coordonnées bancaires ou demande un paiement : jamais [R62]. */
+export function fundsInOutgoing(text: string): boolean {
+  if (IBAN.test(text.replace(/\s+/g, ' ')) || text.includes(IBAN_MASK)) return true;
+  const p = plain(text);
+  return OUTGOING_FUNDS.some((re) => re.test(p));
 }

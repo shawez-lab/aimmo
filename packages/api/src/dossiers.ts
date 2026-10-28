@@ -2,16 +2,17 @@
  * Les routes de M10 Compromis et acte (N08), sous `/v1/dossiers`, et les passages des dossiers pour le planificateur.
  *
  * Comme `offres.ts` à sa création, ce fichier ne touche pas aux fichiers du socle : il expose `dossierRoutes()`, de la
- * même forme que les routes de `app.ts`, `syncDossiers` et les tâches planifiées. M10 n'est pas encore exporté par
- * `@aimmo/core` : l'import est relatif jusqu'au branchement dans le socle par la voie qui le tient (N09).
+ * même forme que les routes de `app.ts`, `syncDossiers` et les tâches planifiées, branchés dans le socle par N09.
  *
  * Chaque route passe par les droits de la couche métier [R16], qui écrit chaque refus au journal. Rien n'est envoyé
  * réellement : relances et rappels passent par le contrôle central, en mode essai [R26]. Aucune route ne reçoit ni
  * ne suit de fonds [R62].
  */
 import { journalError } from './app.ts';
-import { Acces, FicheClient, FicheUnique, localTime, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { ActeVente, BouclierFonds, CheminCritique, Echeancier, FinancementDossier, PiecesDossier, RelancesPieces, type PieceStore } from '../../core/src/dossiers/index.ts';
+import { Acces, FicheClient, FicheUnique, dossiers as m10, localTime, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
+
+const { ActeVente, BouclierFonds, CheminCritique, Echeancier, FinancementDossier, PiecesDossier, RelancesPieces } = m10;
+export type PieceStore = m10.PieceStore;
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 16_000;

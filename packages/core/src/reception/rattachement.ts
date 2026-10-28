@@ -57,6 +57,11 @@ export interface RattachementOptions {
    * Bien plus long que tout traitement réel : un Worker est arrêté bien avant.
    */
   staleAfterMinutes?: number;
+  /**
+   * Appelé une fois le message rangé dans sa fiche, à chaque rattachement, reprise comprise : le bouclier contre le faux
+   * RIB (N05) le lit aussitôt. Il ne doit jamais lever d'erreur ; il est idempotent.
+   */
+  afterAttach?: (messageId: string) => Promise<void>;
 }
 
 /** Finalité de l'accord né d'un message que la personne a écrit d'elle-même : lui répondre (S05). */
@@ -127,7 +132,10 @@ export class Rattachement {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.staleAfterMinutes = options.staleAfterMinutes ?? 10;
+    this.afterAttach = options.afterAttach ?? null;
   }
+
+  private readonly afterAttach: ((messageId: string) => Promise<void>) | null;
 
   private readonly staleAfterMinutes: number;
 
@@ -260,6 +268,7 @@ export class Rattachement {
     const view = await this.fiche.view(target.id);
     const silenced = view.exclusions.some((e) => activeAt(e, at.getTime()));
     await this.reception.markProcessed(inboundId, { personId: target.id, messageId });
+    if (this.afterAttach) await this.afterAttach(messageId);
     const reason =
       outcome === 'created'
         ? 'fiche créée'

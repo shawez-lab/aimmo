@@ -24,6 +24,8 @@ export * from './visites/index.ts';
 export * as annonces from './annonces/index.ts';
 // M09 sous son propre nom, comme M07 : `CheckLine` existe déjà dans le socle.
 export * as offres from './offres/index.ts';
+// M10 sous son propre nom, comme M07 et M09.
+export * as dossiers from './dossiers/index.ts';
 export * from './apres-vente/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';

@@ -30,5 +30,6 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H23 | Donner le format du registre des mandats de GRAVELIN IMMO et le prochain numéro libre, au moment de passer au registre AIMMO | Shawez, Marion | D01, D04 réels | signalé le 2026-10-27 |
 | H24 | Faire valider par l'avocat le dossier de preuve de la signature en ligne AIMMO, avant tout usage réel | Shawez, avocat | D08 réel | plus tard |
 | H25 | Créer dans Cloudflare un stockage R2 `aimmo-medias` et le lier au Worker `aimmo-api` sous le nom `MEDIA` (après H04) | Shawez | photos de la vitrine (P10) | plus tard |
+| H25 | À la mise en service des dossiers de vente et de l'après-vente : créer le compartiment R2 des pièces des dossiers et le lier au Worker `aimmo-api` sous le nom `PIECES` ; donner à la variable `APRES_VENTE_BASE` l'adresse publique du Worker suivie de `/apres-vente/` (sans chiffre), comme le décrit `docs/API.md` | Shawez | M10 et M11 réels | plus tard |
 
 Quand une tâche à moins de trois places de la tête du plan attend une ligne « plus tard », la séance la marque « signalé le <date> » et la dit une fois dans « Besoin de toi ».
