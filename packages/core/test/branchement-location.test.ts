@@ -153,12 +153,18 @@ describeWithSqlite('W10 · branchement de M15 dans le socle', () => {
     const box = await t.outbox();
     expect(box.some((m) => m.person_id === t.owner.id && /classé G/.test(m.body))).toBe(false);
     expect(box.filter((m) => /classé/.test(m.body))).toEqual([]);
-    const stale = await t.db.all<{ kind: string }>("SELECT kind FROM rental_sends WHERE status = 'refused' AND rule = 'perime' ORDER BY kind");
+    const stale = await t.db.all<{ kind: string }>("SELECT kind FROM rental_sends WHERE status = 'waiting' AND rule = 'perime' ORDER BY kind");
     // L'échéance et les trois reçus de la première présentation.
     expect(stale.map((s) => s.kind)).toEqual(['echeance', 'recu', 'recu', 'recu']);
     // La dernière présentation : trois candidats et le propriétaire, chacun une fois.
     expect(box).toHaveLength(4);
     expect(new Set(box.map((m) => m.person_id)).size).toBe(4);
+    // La classe G rétablie par une nouvelle correction : l'échéance redevient vraie et part, une seule fois.
+    await t.listings.recordFacts(t.agent, t.listingId, FACTS);
+    await t.listings.check(t.agent, t.listingId);
+    await new EnvoisLocation(t.db, t.journal, { now: t.now }).run(t.network.id);
+    await new EnvoisLocation(t.db, t.journal, { now: t.now }).run(t.network.id);
+    expect((await t.outbox()).filter((m) => m.person_id === t.owner.id && /classé G/.test(m.body))).toHaveLength(1);
   });
 
   it('[R86] l’agent qui a fait le contrôle et la présentation est parti : rien de ce qu’il a préparé ne part', async () => {

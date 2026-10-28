@@ -13,8 +13,8 @@
  *
  * Décidé, lecture prudente : l'accord demandé est celui du suivi de la location (`suivi_location`), par mail ; sans cet
  * accord, rien ne part : le texte reste préparé, lisible par l'agent, et le contrôle redemande l'accord à chaque
- * passage. Un texte devenu faux avant son envoi (classe énergie corrigée, présentation refaite) est refusé, jamais
- * envoyé. Le passage tourne une fois par heure, de
+ * passage. Un texte devenu faux avant son envoi (classe énergie corrigée, présentation refaite) n'est pas envoyé : il
+ * attend, et ne part que s'il redevient vrai. Le passage tourne une fois par heure, de
  * 9 h à 19 h, aux heures où un envoi peut partir [R01].
  */
 import type { ScheduledJob } from '../bascule/planificateur.ts';
@@ -120,9 +120,10 @@ export class EnvoisLocation {
   async run(networkId: string): Promise<number> {
     let n = 0;
     for (const p of await this.pending(networkId)) {
-      // Un texte devenu faux (classe corrigée depuis, présentation refaite) ne part jamais : refusé, avec sa raison.
+      // Un texte devenu faux (classe corrigée depuis, présentation refaite) ne part pas : il attend, avec sa raison,
+      // et repart seulement s'il redevient vrai (la classe rétablie par une nouvelle correction).
       if (!Number(p.current)) {
-        await this.record(p, 'refused', STALE_RULE);
+        await this.record(p, 'waiting', STALE_RULE);
         n += 1;
         continue;
       }

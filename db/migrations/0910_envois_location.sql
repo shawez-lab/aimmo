@@ -1,7 +1,7 @@
 -- W10 : ce que M15 a préparé pour un client (échéance du propriétaire, reçus d'équité), passé par le contrôle central
--- des envois au planificateur. Une ligne par texte préparé : « envoyé » et « refusé » (exclusion, arrêt, texte devenu
--- faux) sont définitifs ; « en attente » (hors des heures d'envoi, accord pas encore donné) et « en échec » (canal en
--- panne) sont repris au passage suivant [R01, R03, R18].
+-- des envois au planificateur. Une ligne par texte préparé : « envoyé » et « refusé » (exclusion, arrêt, agent parti)
+-- sont définitifs ; « en attente » (hors des heures d'envoi, accord pas encore donné, texte devenu faux) et « en échec »
+-- (canal en panne) sont repris au passage suivant [R01, R03, R18].
 CREATE TABLE IF NOT EXISTS rental_sends (
   kind TEXT NOT NULL CHECK (kind IN ('echeance', 'recu')),
   -- L'identifiant de `rental_owner_notices` ou de `rental_fairness_receipts`.
