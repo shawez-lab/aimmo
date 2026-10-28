@@ -431,6 +431,7 @@ describe('U10 · page de l’espace partenaire', () => {
       'POST /v1/partenaires/espace/r1/pieces?sorte=amiante&faite_le=2027-07-11': () => ({ status: 200, body: { ok: true, data: { destination: 'property' } } }),
     };
     const flush = () => new Promise((r) => setTimeout(r, 0));
+    let pending: Promise<void> | null = null;
     runInNewContext(PARTNER_SPACE_FILES['/partenaire/partenaire.js']!, {
       document,
       localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
@@ -438,7 +439,8 @@ describe('U10 · page de l’espace partenaire', () => {
         calls.push({ url, method: init.method, headers: init.headers, body: init.body });
         const a = answers[`${init.method} ${url}`];
         const res = a ? a() : { status: 401, body: { ok: false } };
-        return Promise.resolve({ status: res.status, json: () => Promise.resolve(res.body) });
+        const answer = { status: res.status, json: () => Promise.resolve(res.body) };
+        return pending ? pending.then(() => answer) : Promise.resolve(answer);
       },
       Date,
       String,
@@ -480,6 +482,22 @@ describe('U10 · page de l’espace partenaire', () => {
     expect(dep.headers['content-type']).toBe('application/pdf');
     expect(dep.body).toBe(file);
     expect(els.depot!.textContent).toBe('Pièce reçue. Rangée dans la fiche du bien.');
+    // Une réponse arrivée après la déconnexion est ignorée : rien du dossier ne revient à l'écran.
+    let release: () => void = () => undefined;
+    const slowFetchGate = new Promise<void>((r) => (release = r));
+    pending = slowFetchGate;
+    button.listeners.click!({});
+    els.sortir!.listeners.click!({});
+    expect(els.dossier!.textContent).toBe('');
+    release();
+    await flush();
+    await flush();
+    await flush();
+    expect(els.entree!.hidden).toBe(false);
+    expect(els.detail!.hidden).toBe(true);
+    expect(els.dossier!.textContent).toBe('');
+    pending = null;
+    storage.set('aimmo.partenaire.cle', 'k'.repeat(40));
     // Une clé refusée est effacée, l'entrée revient.
     answers['GET /v1/partenaires/espace'] = () => ({ status: 401, body: { ok: false } });
     els.retour!.listeners.click!({});

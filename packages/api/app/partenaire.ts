@@ -130,11 +130,14 @@ export const PARTNER_JS = `'use strict';
     bad_state: 'Ce changement n’est pas possible à cette étape.'
   };
   var current = null;
+  /** Chaque déconnexion ou nouvelle clé change de session : une réponse d'une session passée est ignorée. */
+  var session = 0;
 
   function el(id) { return document.getElementById(id); }
   function readKey() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function writeKey(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }
   function forgetKey() { try { localStorage.removeItem(KEY); } catch (e) { /* rien à effacer */ } }
+  function clear(id) { var e = el(id); while (e.firstChild) e.removeChild(e.firstChild); }
   function say(id, text) { el(id).textContent = text || ''; }
   function show(id) { ['entree', 'liste', 'detail'].forEach(function (s) { el(s).hidden = s !== id; }); el('sortir').hidden = id === 'entree'; }
   function refusal(body) { return (body && REFUSALS[body.code]) || 'La demande n’a pas abouti. Réessayez dans un instant.'; }
@@ -145,10 +148,12 @@ export const PARTNER_JS = `'use strict';
     var options = init || {};
     var headers = options.headers || {};
     headers.authorization = 'Bearer ' + key;
+    var mine = session;
     return fetch(path, { method: options.method || 'GET', headers: headers, body: options.body, cache: 'no-store' }).then(function (r) {
-      if (r.status === 401) { forgetKey(); show('entree'); say('etat', 'Clé refusée. Saisissez-la de nouveau.'); return null; }
-      return r.json().then(function (body) { return { status: r.status, body: body }; }, function () { return { status: r.status, body: null }; });
-    }, function () { say('etat', 'Pas de connexion. Réessayez dans un instant.'); return null; });
+      if (mine !== session) return null;
+      if (r.status === 401) { session += 1; forgetKey(); show('entree'); say('etat', 'Clé refusée. Saisissez-la de nouveau.'); return null; }
+      return r.json().then(function (body) { return mine === session ? { status: r.status, body: body } : null; }, function () { return mine === session ? { status: r.status, body: null } : null; });
+    }, function () { if (mine === session) say('etat', 'Pas de connexion. Réessayez dans un instant.'); return null; });
   }
 
   function loadList() {
@@ -246,10 +251,11 @@ export const PARTNER_JS = `'use strict';
       var v = el('cle').value.trim();
       el('cle').value = '';
       if (v.length < 32) { say('etat', 'La clé compte au moins 32 caractères.'); return; }
+      session += 1;
       if (!writeKey(v)) { say('etat', 'Ce navigateur ne garde pas la clé : ouvrez la page hors navigation privée.'); return; }
       loadList();
     });
-    el('sortir').addEventListener('click', function () { forgetKey(); current = null; show('entree'); });
+    el('sortir').addEventListener('click', function () { session += 1; forgetKey(); current = null; clear('dossier'); clear('demandes'); show('entree'); });
     el('retour').addEventListener('click', function () { current = null; loadList(); });
     el('commencer').addEventListener('click', function () { progress('en_cours'); });
     el('terminer').addEventListener('click', function () { progress('terminee'); });
