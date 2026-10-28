@@ -1,0 +1,249 @@
+/**
+ * Les routes de M14 Réseau et académie (J12), sous `/v1/reseau`.
+ *
+ * Chaque route passe par les droits de la couche métier [R16], qui écrit chaque refus au journal : la direction lit les
+ * candidatures, décide des entrées, range les pièces des autres et les départs ; un agent lit son dossier, sa formation,
+ * ses primes et ses dossiers couverts, jamais ceux d'un autre. Aucune route ne note, ne classe ni ne trie un candidat
+ * [R81] : la liste vient de la couche métier dans l'ordre d'arrivée, rendue telle quelle. Aucun texte de recrutement ne
+ * passe sans le contrôle des promesses de revenus [R80]. Rien n'est envoyé d'ici : les réponses aux candidats restent
+ * dans la boîte d'essai.
+ *
+ * Les fichiers du socle (droits d'accès, `index.ts`, `app.ts`, planificateur, Worker) ne changent pas ici : le
+ * branchement est J13, confié à la voie 1.
+ */
+import { DecisionEnvoi, FicheClient, FicheUnique, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import {
+  Academie,
+  Accompagnement,
+  BacASable,
+  Candidatures,
+  Departs,
+  DossierAgent,
+  Entrainement,
+  Entretiens,
+  ImportAgent,
+  Parrainage,
+  ReponsesCandidats,
+  type AgentPieceStore,
+  type BacASableOptions,
+  type ObjectionCoach,
+} from '../../core/src/reseau/index.ts';
+
+export const TRIAL_MODE = 'essai';
+const MAX_BODY_BYTES = 16_000;
+/** Un import tient dans un export de quelques milliers de lignes : au-delà, il est refusé sans rien ranger. */
+const MAX_IMPORT_BYTES = 2_000_000;
+const ID = '([A-Za-z0-9_-]{1,64})';
+
+export interface ReseauServices {
+  db: SqlDatabase;
+  journal: JournalStore;
+  now: () => Date;
+}
+
+export interface ReseauOptions {
+  /** Le stockage des pièces des dossiers d'agent. Absent : les routes des pièces répondent « indisponible ». */
+  pieces?: AgentPieceStore | null;
+  /** L'IA de l'entraînement aux objections. Absente : les répliques écrites des cas, toujours. */
+  coach?: ObjectionCoach;
+  /** Le bac à sable, avec son stockage à part. Absent : sa progression répond « indisponible ». */
+  sandbox?: Omit<BacASableOptions, 'now'> | null;
+}
+
+export interface ReseauRoute {
+  method: 'GET' | 'POST';
+  pattern: RegExp;
+  /** Nom de la route pour le journal : jamais l'identifiant demandé. */
+  name: string;
+  handle: (s: ReseauServices, viewer: Viewer, params: string[], request: Request) => Promise<Response>;
+}
+
+const HEADERS = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
+const json = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...HEADERS } });
+
+type Outcome = { ok: true; [k: string]: unknown } | { ok: false; rule: string | null; code: string; [k: string]: unknown };
+
+/** 200 ; 403 pour un refus de droits (404 pour un inconnu) ; 409 pour une autre règle ; 404 pour un objet inconnu ; 400 sinon. */
+export function reply(result: Outcome): Response {
+  if (result.ok) {
+    const { ok: _ok, value, ...rest } = result as { ok: true; value?: unknown; [k: string]: unknown };
+    return json(200, { ok: true, mode: TRIAL_MODE, data: value ?? null, ...rest });
+  }
+  const { ok: _ok, ...rest } = result;
+  if (result.rule === 'R16') return json(/^unknown/.test(result.code) ? 404 : 403, { ok: false, ...rest });
+  if (result.rule) return json(409, { ok: false, ...rest });
+  // Un objet inconnu est un 404 ; une valeur inconnue (format, champ) reste une demande mal formée.
+  if (/^unknown(?!_(?:format|field|kind|topic|track))/.test(result.code) || result.code === 'not_found') return json(404, { ok: false, ...rest });
+  return json(400, { ok: false, ...rest });
+}
+
+async function readJson(request: Request, max = MAX_BODY_BYTES): Promise<Record<string, unknown> | null> {
+  if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) return null;
+  const text = await request.text();
+  if (new TextEncoder().encode(text).length > max) return null;
+  try {
+    const value: unknown = JSON.parse(text);
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+const badBody = (): Response => json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
+const unavailable = (what: string): Response => json(503, { ok: false, rule: null, code: 'unavailable', message: `${what} n’est pas encore en service.` });
+
+/** Les seules clés admises dans un corps : une clé de plus est refusée, sans rien ranger. */
+const only = (body: Record<string, unknown>, keys: readonly string[]): boolean => Object.keys(body).every((k) => keys.includes(k));
+
+/** Les services de M14, construits pour une requête. */
+export function reseauServices(s: ReseauServices, options: ReseauOptions = {}) {
+  const opts = { now: s.now };
+  const fiches = new FicheClient(s.db, opts);
+  const unique = new FicheUnique(s.db, fiches, opts);
+  const entretiens = new Entretiens(s.db, s.journal, opts);
+  const academie = new Academie(s.db, s.journal, opts);
+  return {
+    candidatures: new Candidatures(s.db, s.journal, opts),
+    reponses: new ReponsesCandidats(s.db, s.journal, opts),
+    entretiens,
+    dossier: options.pieces ? new DossierAgent(s.db, fiches, entretiens, options.pieces, s.journal, opts) : null,
+    import: new ImportAgent(s.db, fiches, unique, new DecisionEnvoi(s.db, fiches, unique, opts), s.journal, opts),
+    academie,
+    sandbox: options.sandbox ? new BacASable(s.db, s.journal, academie, { ...options.sandbox, now: s.now }) : null,
+    entrainement: new Entrainement(s.db, s.journal, { ...opts, ...(options.coach ? { coach: options.coach } : {}) }),
+    accompagnement: new Accompagnement(s.db, s.journal, opts),
+    parrainage: new Parrainage(s.db, s.journal, opts),
+    departs: new Departs(s.db, s.journal, opts),
+  };
+}
+
+/** Les routes de M14, à ajouter à celles de `app.ts` (J13). */
+export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
+  type Handler = (m: ReturnType<typeof reseauServices>, v: Viewer, params: string[], body: Record<string, unknown>) => Promise<Response>;
+  /** Une écriture : un corps JSON, aux seules clés admises. */
+  const write =
+    (keys: readonly string[], fn: Handler, max = MAX_BODY_BYTES): ReseauRoute['handle'] =>
+    async (s, v, params, request) => {
+      const body = await readJson(request, max);
+      if (!body || !only(body, keys)) return badBody();
+      return fn(reseauServices(s, options), v, params, body);
+    };
+  /** Une lecture : aucun corps. */
+  const read =
+    (fn: (m: ReturnType<typeof reseauServices>, v: Viewer, params: string[]) => Promise<Response>): ReseauRoute['handle'] =>
+    async (s, v, params) =>
+      fn(reseauServices(s, options), v, params);
+  const P = '^/reseau';
+  const A = `${P}/agents/${ID}`;
+  const route = (method: ReseauRoute['method'], path: string, name: string, handle: ReseauRoute['handle']): ReseauRoute => ({ method, pattern: new RegExp(`${path}$`), name: `reseau.${name}`, handle });
+  const noPieces = (): Response => unavailable('Le stockage des pièces du dossier d’agent');
+
+  return [
+    /* ---------- Candidatures, entretiens, décisions : la direction seule [R81, R16]. ---------- */
+    // L'ordre d'arrivée, tel que la couche métier le rend : aucun tri, aucun filtre, aucun paramètre de classement [R81].
+    route('GET', `${P}/candidatures`, 'candidatures', read(async (m, v) => reply(await m.candidatures.list(v)))),
+    route('GET', `${P}/candidatures/${ID}/entretien`, 'fiche_entretien', read(async (m, v, [id]) => reply(await m.entretiens.prepare(v, id!)))),
+    route('POST', `${P}/candidatures/${ID}/entretien`, 'entretien', write(['at', 'interviewer'], async (m, v, [id], b) => reply(await m.entretiens.schedule(v, id!, { at: b.at, interviewer: b.interviewer })))),
+    route('POST', `${P}/entretiens/${ID}/tenu`, 'entretien_tenu', write(['heldByName'], async (m, v, [id], b) => reply(await m.entretiens.markHeld(v, id!, b.heldByName)))),
+    // La décision d'un humain nommé, avec sa raison : la couche métier refuse toute autre clé [R81].
+    route('POST', `${P}/candidatures/${ID}/decision`, 'decision', write(['decision', 'reason', 'deciderName'], async (m, v, [id], b) => reply(await m.entretiens.decide(v, id!, b)))),
+    route('GET', `${P}/candidatures/${ID}/reponses`, 'reponses_candidat', read(async (m, v, [id]) => reply(await m.reponses.repliesOf(v, id!)))),
+    route('GET', `${P}/reponses`, 'reponses', read(async (m, v) => reply(await m.reponses.current(v)))),
+    // Une réponse écrite par la direction passe le contrôle des promesses de revenus [R80] dans la couche métier.
+    route('POST', `${P}/reponses`, 'reponse_ecrite', write(['topic', 'body'], async (m, v, _p, b) => reply(await m.reponses.write(v, b.topic, b.body)))),
+    route('GET', `${P}/questions`, 'questions', read(async (m, v) => reply(await m.reponses.openTasks(v)))),
+    route('POST', `${P}/questions/${ID}/faite`, 'question_faite', read(async (m, v, [id]) => reply(await m.reponses.taskDone(v, id!)))),
+
+    /* ---------- Dossier d'agent [R82]. ---------- */
+    route('POST', `${P}/candidatures/${ID}/admettre`, 'admettre', write(['zone'], async (m, v, [id], b) => (m.dossier ? reply(await m.dossier.admit(v, id!, b.zone === undefined ? {} : { zone: b.zone })) : noPieces()))),
+    route('GET', `${P}/mon-dossier`, 'mon_dossier', read(async (m, v) => (m.dossier ? reply(await m.dossier.status(v, v.userId)) : noPieces()))),
+    route('GET', `${A}/dossier`, 'dossier', read(async (m, v, [id]) => (m.dossier ? reply(await m.dossier.status(v, id!)) : noPieces()))),
+    route(
+      'POST',
+      `${A}/pieces`,
+      'piece',
+      write(['kind', 'ref', 'issuedOn', 'validUntil'], async (m, v, [id], b) =>
+        m.dossier ? reply(await m.dossier.addPiece(v, id!, { kind: b.kind, ref: b.ref, issuedOn: b.issuedOn, ...(b.validUntil === undefined ? {} : { validUntil: b.validUntil }) })) : noPieces(),
+      ),
+    ),
+    route('POST', `${A}/projets`, 'projet_piece', write(['kind'], async (m, v, [id], b) => (m.dossier ? reply(await m.dossier.prepareDraft(v, id!, b.kind)) : noPieces()))),
+
+    /* ---------- Import des contacts et des biens de l'agent : rien n'est envoyé [R84]. ---------- */
+    route(
+      'POST',
+      `${P}/import`,
+      'import',
+      write(
+        ['format', 'contacts', 'properties'],
+        async (m, v, _p, b) => {
+          if ((b.contacts !== undefined && typeof b.contacts !== 'string') || (b.properties !== undefined && typeof b.properties !== 'string')) return badBody();
+          const r = await m.import.run(v, v.userId, { format: b.format, ...(b.contacts === undefined ? {} : { contacts: b.contacts as string }), ...(b.properties === undefined ? {} : { properties: b.properties as string }) });
+          return reply(r.ok ? { ok: true, value: r.report } : r);
+        },
+        MAX_IMPORT_BYTES,
+      ),
+    ),
+    route('GET', `${P}/import/a-reprendre`, 'import_direction', read(async (m, v) => reply(await m.import.referrals(v)))),
+
+    /* ---------- Académie : aucun horaire imposé, heures comptées par le code [R85]. ---------- */
+    route('GET', `${P}/academie`, 'academie', read(async (m, v) => reply(await m.academie.tracks(v)))),
+    route(
+      'POST',
+      `${P}/academie/modules`,
+      'module',
+      write(['title', 'track', 'position', 'videoId', 'scriptRef', 'durationMinutes', 'topic', 'mandatory'], async (m, v, _p, b) =>
+        reply(await m.academie.addModule(v, b as Parameters<Academie['addModule']>[1])),
+      ),
+    ),
+    route('POST', `${P}/academie/modules/${ID}/fait`, 'module_fait', read(async (m, v, [id]) => reply(await m.academie.complete(v, id!)))),
+    route(
+      'POST',
+      `${P}/academie/seances`,
+      'seance',
+      write(['kind', 'title', 'heldOn', 'durationMinutes', 'topic', 'mandatory'], async (m, v, _p, b) => reply(await m.academie.addSession(v, b as Parameters<Academie['addSession']>[1]))),
+    ),
+    route('POST', `${P}/academie/seances/${ID}/presence`, 'presence', write(['agentId', 'recorderName'], async (m, v, [id], b) => reply(await m.academie.recordAttendance(v, id!, { agentId: b.agentId, recorderName: b.recorderName })))),
+    route('GET', `${P}/ma-formation`, 'ma_formation', read(async (m, v) => reply(await m.academie.counter(v, v.userId)))),
+    route('GET', `${A}/formation`, 'formation', read(async (m, v, [id]) => reply(await m.academie.counter(v, id!)))),
+    route('GET', `${A}/bac-a-sable`, 'bac_a_sable', read(async (m, v, [id]) => (m.sandbox ? reply(await m.sandbox.progress(v, id!)) : unavailable('Le bac à sable')))),
+
+    /* ---------- Entraînement aux objections, sur des cas inventés. ---------- */
+    route('GET', `${P}/entrainement/cas`, 'entrainement_cas', read(async (m, v) => reply(await m.entrainement.cases(v)))),
+    route('POST', `${P}/entrainement`, 'entrainement', write(['caseKey'], async (m, v, _p, b) => (typeof b.caseKey === 'string' ? reply(await m.entrainement.start(v, b.caseKey)) : badBody()))),
+    route('POST', `${P}/entrainement/${ID}/tour`, 'entrainement_tour', write(['text'], async (m, v, [id], b) => reply(await m.entrainement.turn(v, id!, b.text)))),
+    route('POST', `${P}/entrainement/${ID}/fin`, 'entrainement_fin', read(async (m, v, [id]) => reply(await m.entrainement.end(v, id!)))),
+
+    /* ---------- Référent, binôme, absences, assistance. ---------- */
+    route('POST', `${A}/referent`, 'referent', write(['referentId'], async (m, v, [id], b) => reply(await m.accompagnement.assignReferent(v, id!, b.referentId)))),
+    route('POST', `${P}/binomes`, 'binome', write(['agentA', 'agentB', 'coverSharePct'], async (m, v, _p, b) => reply(await m.accompagnement.writePair(v, { agentA: b.agentA, agentB: b.agentB, coverSharePct: b.coverSharePct })))),
+    route('POST', `${A}/absence`, 'absence', write(['from', 'until', 'coverAgentId'], async (m, v, [id], b) => reply(await m.accompagnement.declareAbsence(v, id!, { from: b.from, until: b.until, coverAgentId: b.coverAgentId })))),
+    // Le binôme ne lit les dossiers de l'absent que pendant l'absence déclarée [R16].
+    route('GET', `${A}/dossiers-couverts`, 'dossiers_couverts', read(async (m, v, [id]) => reply(await m.accompagnement.coverFiles(v, id!)))),
+    route('POST', `${P}/assistance`, 'assistance', write(['level', 'topic', 'body'], async (m, v, _p, b) => reply(await m.accompagnement.ask(v, { level: b.level, topic: b.topic, body: b.body })))),
+    route('POST', `${P}/assistance/${ID}/repondue`, 'assistance_repondue', read(async (m, v, [id]) => reply(await m.accompagnement.answer(v, id!)))),
+
+    /* ---------- Parrainage [R83]. ---------- */
+    route('POST', `${P}/parrainage/regles`, 'parrainage_regles', write(['rateBp', 'levels'], async (m, v, _p, b) => reply(await m.parrainage.setRules(v, { rateBp: b.rateBp, ...(b.levels === undefined ? {} : { levels: b.levels }) })))),
+    route('POST', `${A}/parrain`, 'parrain', write(['sponsorId'], async (m, v, [id], b) => reply(await m.parrainage.recordSponsor(v, id!, b.sponsorId)))),
+    route('GET', `${P}/mes-primes`, 'mes_primes', read(async (m, v) => reply(await m.parrainage.primesOf(v, v.userId)))),
+    route('GET', `${A}/primes`, 'primes', read(async (m, v, [id]) => reply(await m.parrainage.primesOf(v, id!)))),
+
+    /* ---------- Départ d'un agent [R86]. ---------- */
+    route('GET', `${A}/depart`, 'depart', read(async (m, v, [id]) => reply(await m.departs.get(v, id!)))),
+    route(
+      'POST',
+      `${A}/depart`,
+      'depart_range',
+      write(['noticeGivenOn', 'leavesOn', 'reason', 'contractStartedOn'], async (m, v, [id], b) =>
+        reply(await m.departs.schedule(v, id!, { noticeGivenOn: b.noticeGivenOn, leavesOn: b.leavesOn, reason: b.reason, ...(b.contractStartedOn === undefined ? {} : { contractStartedOn: b.contractStartedOn }) })),
+      ),
+    ),
+    route('POST', `${A}/depart/annuler`, 'depart_annule', read(async (m, v, [id]) => reply(await m.departs.cancel(v, id!)))),
+    route('POST', `${A}/successeur`, 'successeur', write(['successorId'], async (m, v, [id], b) => reply(await m.departs.presentSuccessor(v, id!, b.successorId)))),
+    route('POST', `${A}/successeur/decision`, 'successeur_decision', write(['accept'], async (m, v, [id], b) => reply(await m.departs.decideSuccessor(v, id!, b.accept)))),
+    route('GET', `${A}/solde`, 'solde', read(async (m, v, [id]) => reply(await m.departs.settlement(v, id!)))),
+    route('GET', `${A}/contenus`, 'contenus', read(async (m, v, [id]) => reply(await m.departs.personalContents(v, id!)))),
+    route('GET', `${P}/reprises`, 'reprises', read(async (m, v) => reply(await m.departs.queue(v)))),
+    route('POST', `${P}/reprises`, 'reprise', write(['kind', 'subjectId', 'toAgentId'], async (m, v, _p, b) => reply(await m.departs.reassign(v, { kind: b.kind, subjectId: b.subjectId, toAgentId: b.toAgentId })))),
+  ];
+}
