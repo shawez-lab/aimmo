@@ -305,9 +305,12 @@ export class MiseEnRelation {
       networkId,
     ]);
     if (!row) return null;
+    // Seule une étape « confiée » rangée ouvre la mise en relation au partenaire : un accord suivi d'un abandon, sans
+    // jamais confier, ne lui donne rien [R74].
+    const confided = await this.db.first('SELECT 1 FROM partner_referral_steps WHERE referral_id = ? AND state = ? LIMIT 1', [row.id, 'confiee']);
+    if (!confided) return null;
     const r = await this.compute(row);
-    if (r.chosenPartnerId === null || r.state === 'proposee' || r.state === 'accord_client') return null;
-    return { partnerId: r.chosenPartnerId, state: r.state };
+    return { partnerId: r.chosenPartnerId!, state: r.state };
   }
 
   private async step(

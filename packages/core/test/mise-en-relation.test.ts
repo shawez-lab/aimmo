@@ -196,6 +196,20 @@ describeWithSqlite('U02 · mise en relation', () => {
     expect(await t.relations.entrusted(t.network.id, id)).toEqual({ partnerId: a, state: 'abandonnee' });
   });
 
+  it('[R74] un accord suivi d’un abandon, sans jamais confier, n’ouvre rien au partenaire', async () => {
+    const t = await setup();
+    const a = await t.partner('notaire', 'Étude A');
+    const r = await t.relations.propose(t.agent, { projectId: t.project.id, trade: 'notaire', postcode: '21000' });
+    if (!r.ok) throw new Error(r.code);
+    const id = r.value.referralId;
+    expect(await t.relations.entrusted(t.network.id, id)).toBeNull();
+    await t.relations.recordConsent(t.agent, id, t.consent(id, a));
+    expect(await t.relations.entrusted(t.network.id, id)).toBeNull();
+    expect((await t.relations.close(t.agent, id, 'abandonnee')).ok).toBe(true);
+    expect(await t.relations.entrusted(t.network.id, id)).toBeNull();
+    expect(await t.relations.entrusted(t.other.id, id)).toBeNull();
+  });
+
   it('une preuve d’accord ne sert qu’une fois', async () => {
     const t = await setup();
     const a = await t.partner('notaire', 'Étude A');
