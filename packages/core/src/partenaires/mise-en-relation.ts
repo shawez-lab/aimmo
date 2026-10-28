@@ -256,11 +256,13 @@ export class MiseEnRelation {
     if (!(await this.annuaire.proposableOn(row.network_id, input.partnerId, this.now(), row.domain === '' ? null : (row.domain as DiagnosticDomain)))) {
       return { ok: false, rule: 'R73', code: 'partner_unavailable' };
     }
-    // Les rémunérations déclarées (U03) doivent avoir été montrées au client après la dernière déclaration [R76].
-    const lastFee = await this.db.first<{ at: string | null }>('SELECT MAX(declared_at) AS at FROM partner_referral_fees WHERE referral_id = ?', [row.id]);
-    if (lastFee?.at) {
-      const shown = await this.db.first('SELECT 1 FROM partner_referral_disclosures WHERE referral_id = ? AND shown_at >= ? LIMIT 1', [row.id, lastFee.at]);
-      if (!shown) return { ok: false, rule: 'R76', code: 'fees_not_disclosed' };
+    // Les rémunérations déclarées (U03) doivent toutes figurer dans le dernier texte montré au client : rien ne
+    // s'efface, donc le nombre de rémunérations ne fait que monter, et le dernier texte doit les citer toutes. On ne se
+    // fie pas aux heures, qui peuvent être égales ou se croiser [R76].
+    const fees = Number((await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM partner_referral_fees WHERE referral_id = ?', [row.id]))?.n ?? 0);
+    if (fees > 0) {
+      const last = await this.db.first<{ fees_count: number }>('SELECT fees_count FROM partner_referral_disclosures WHERE referral_id = ? ORDER BY rowid DESC LIMIT 1', [row.id]);
+      if (!last || Number(last.fees_count) !== fees) return { ok: false, rule: 'R76', code: 'fees_not_disclosed' };
     }
     const done = await this.step(viewer, row, current, 'accord_client', { partnerId: input.partnerId, consentAt, channel: input.channel as ConsentChannel, proofRef: input.proofRef });
     if (done) return done;

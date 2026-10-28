@@ -22,10 +22,10 @@ class FakeStore implements ConsentProofStore {
   }
 }
 
-async function setup(brokerStatusValidated = false) {
+async function setup(brokerStatusValidated = false, frozen = false) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
-  const now = (): Date => new Date((clock += 1000));
+  const now = (): Date => new Date(frozen ? clock : (clock += 1000));
   const journal = new SqlJournalStore(db);
   const store = new FicheClient(db, { now });
   const files = new FakeStore();
@@ -115,6 +115,18 @@ describeWithSqlite('U03 · rémunérations des partenaires', () => {
     const again = await t.fees.disclose(t.agent, r.referralId);
     expect(again.ok && again.value.text).toContain('Studio Clair : si vous le choisissez, il verse à votre agent une remise de 10 % du montant de sa prestation ; il verse à votre agent un cadeau de 20,00 €.');
     expect((await t.relations.recordConsent(t.agent, r.referralId, t.consent(r.referralId, a))).ok).toBe(true);
+  });
+
+  it('[R76] une rémunération déclarée à la même milliseconde que le texte montré n’y figure pas : l’accord est refusé', async () => {
+    const t = await setup(false, true);
+    const a = await t.partner('photographe', 'Studio Figé');
+    const r = await t.propose('photographe');
+    const shown = await t.fees.disclose(t.agent, r.referralId);
+    expect(shown.ok && shown.value.fees).toHaveLength(0);
+    await t.fees.declare(t.agent, r.referralId, { partnerId: a, kind: 'cadeau', amountCents: 2000, payer: 'partenaire', payee: 'agent' });
+    expect(await t.relations.recordConsent(t.agent, r.referralId, { ...t.consent(r.referralId, a), consentAt: new Date(clock).toISOString() })).toEqual({ ok: false, rule: 'R76', code: 'fees_not_disclosed' });
+    await t.fees.disclose(t.agent, r.referralId);
+    expect((await t.relations.recordConsent(t.agent, r.referralId, { ...t.consent(r.referralId, a), consentAt: new Date(clock).toISOString() })).ok).toBe(true);
   });
 
   it('[R76] après l’accord du client, plus aucune rémunération ne s’ajoute : il faut un nouvel accord', async () => {
