@@ -435,6 +435,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       rental_fairness_receipts: ['recipient', 'person_id', 'text'],
       rental_lease_templates: ['body', 'created_by', 'validated_by'],
       rental_leases: ['facts_version', 'content', 'content_sha256', 'created_by'],
+      rental_inventories: ['rooms', 'meters', 'content', 'content_sha256', 'lease_sha256', 'created_by'],
+      rental_inventory_signatures: ['content_sha256', 'drawing_sha256', 'signed_by'],
+      rental_inventory_copies: ['content_sha256'],
       rental_fees: ['facts_version', 'zone', 'tenant_cents', 'tenant_inventory_cents', 'landlord_cents', 'landlord_inventory_cents', 'deposit_cents', 'recorded_by'],
     },
   },
@@ -684,6 +687,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   rental_fairness_receipts: ['id', 'presentation_id', 'application_id', 'prepared_at'],
   rental_lease_templates: ['id', 'network_id', 'kind', 'version', 'status', 'fields', 'hash', 'created_at', 'validated_at'],
   rental_leases: ['id', 'listing_id', 'network_id', 'version', 'application_id', 'template_id', 'template_version', 'template_hash', 'fees_version', 'mode', 'status', 'missing', 'annexes', 'created_at'],
+  rental_inventories: ['id', 'listing_id', 'network_id', 'version', 'lease_id', 'mode', 'status', 'missing', 'keys_given', 'furniture', 'created_at'],
+  rental_inventory_signatures: ['id', 'inventory_id', 'party', 'signed_at'],
+  rental_inventory_copies: ['id', 'inventory_id', 'party', 'prepared_at'],
   rental_fees: ['listing_id', 'version', 'insee_code', 'tenant_ceiling_cents', 'inventory_ceiling_cents', 'deposit_ceiling_cents', 'recorded_at'],
 };
 
