@@ -82,6 +82,11 @@ export type AccessMapEntry =
        * l'une des valeurs JSON de `markers` (une chaîne entière entre guillemets).
        */
       skip?: { column: string; prefixes: readonly string[]; marked?: string; markers?: readonly string[] };
+      /**
+       * Des colonnes (texte ou JSON) où toute référence à une autre fiche de personne, `person:<id>` ou `<id>`, est
+       * masquée ; la ligne n'est alors plus à la seule personne (à examiner avant un effacement).
+       */
+      foreignPersons?: readonly string[];
     }
   | { excluded: ExclusionReason; why: string };
 
@@ -104,6 +109,73 @@ export const JOURNAL_LCB_PREFIXES = ['coffre.', 'risque.', 'identification.', 'v
  * événement n'entre jamais dans la réponse, quelle que soit sa sorte.
  */
 export const JOURNAL_LCB_MARKERS = ['compliance_vault', 'risk_sheet', 'identification', 'vigilance', 'conformite', 'R58', 'R90', 'R91', 'R92', 'R93', 'R94'] as const;
+
+/**
+ * Chaque préfixe de sujet écrit dans le code (`subject: \`<préfixe>:…\``), et ce qu'en fait la réponse d'accès.
+ * `journal` : le journal est lu sous ce préfixe (une entrée de `CARTE_ACCES.journal.locate`). Sinon, la raison pour
+ * laquelle il ne l'est pas. Un test relève chaque préfixe du code et exige qu'il soit ici : un nouveau sujet ne peut
+ * pas manquer à la réponse sans qu'on l'ait décidé.
+ */
+export type JournalSubjectUse = 'journal' | { excluded: ExclusionReason | 'envoi'; why: string };
+
+const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
+
+export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
+  person: 'journal',
+  mandate: 'journal',
+  document: 'journal',
+  offer: 'journal',
+  sale_file: 'journal',
+  appointment: 'journal',
+  visit: 'journal',
+  rental_application: 'journal',
+  rental: 'journal',
+  person_request: 'journal',
+  property: 'journal',
+  project: 'journal',
+  referral: 'journal',
+  signature: 'journal',
+  rental_presentation: 'journal',
+  listing: 'journal',
+  inbound: 'journal',
+  message: 'journal',
+  task: 'journal',
+  alert: 'journal',
+  proposal: 'journal',
+  offre: ENVOI('transmission d\'une offre'),
+  rappel_fonds: ENVOI('rappel des fonds'),
+  suivi_valeur: ENVOI('suivi de valeur'),
+  merci: ENVOI('remerciement'),
+  avis: ENVOI('demande d\'avis'),
+  apres_vente: ENVOI('relance après la vente'),
+  visite_code: ENVOI('code de sécurité de visite'),
+  compte_rendu: ENVOI('compte rendu'),
+  point_semaine: ENVOI('point de la semaine'),
+  relance_avis: ENVOI('relance d\'un avis de valeur'),
+  relance_piece: ENVOI('relance d\'une pièce'),
+  rdv_confirmation: ENVOI('confirmation de rendez-vous'),
+  tournee: ENVOI('tournée de visites'),
+  agent: { excluded: 'agent', why: 'Un agent du réseau.' },
+  agent_pair: { excluded: 'agent', why: 'Un binôme d\'agents.' },
+  academy_module: { excluded: 'agent', why: 'Formation des agents.' },
+  academy_session: { excluded: 'agent', why: 'Formation des agents.' },
+  training_case: { excluded: 'agent', why: 'Entraînement des agents.' },
+  training_session: { excluded: 'agent', why: 'Entraînement des agents.' },
+  assistance: { excluded: 'agent', why: 'Assistance d\'un agent par le réseau.' },
+  recruiting_answer: { excluded: 'candidat', why: 'Réponse à un candidat au réseau.' },
+  candidate: { excluded: 'candidat', why: 'Un candidat au réseau.' },
+  partner: { excluded: 'partenaire', why: 'Un partenaire professionnel.' },
+  partner_prospect: { excluded: 'partenaire', why: 'Un futur partenaire.' },
+  network: { excluded: 'sans_client', why: 'Le réseau lui-même.' },
+  template: { excluded: 'sans_client', why: 'Modèle de document.' },
+  lease_template: { excluded: 'sans_client', why: 'Modèle de bail.' },
+  visit_template: { excluded: 'sans_client', why: 'Modèle de bon de visite.' },
+  commune: { excluded: 'sans_client', why: 'Zone d\'une commune.' },
+  page: { excluded: 'sans_client', why: 'Page publique.' },
+  registry: { excluded: 'sans_client', why: 'Relecture du registre des traitements.' },
+  vigilance_alert: { excluded: 'lcb_ft', why: 'Alerte de vigilance.' },
+  suspicion_report: { excluded: 'lcb_ft', why: 'Signalement au responsable.' },
+};
 
 export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // relation-clients
@@ -333,7 +405,24 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
       via('subject', 'rental_listings', 'id', { prefix: 'rental:' }),
       via('subject', 'person_requests', 'id', { prefix: 'person_request:' }),
+      // Le journal d'un bien n'est qu'à qui le possède : par son mandat, son projet (bien possédé) ou sa mise en
+      // location ; jamais à l'acquéreur qui s'y intéresse.
+      via('subject', 'mandates', 'property_id', { prefix: 'property:' }),
+      via('subject', 'project_properties', 'property_id', { prefix: 'property:', parentWhere: { role: 'owned' } }),
+      via('subject', 'rental_listings', 'property_id', { prefix: 'property:' }),
+      via('subject', 'projects', 'id', { prefix: 'project:' }),
+      via('subject', 'partner_referrals', 'id', { prefix: 'referral:' }),
+      via('subject', 'signature_sessions', 'id', { prefix: 'signature:' }),
+      via('subject', 'rental_presentations', 'id', { prefix: 'rental_presentation:' }),
+      via('subject', 'listing_drafts', 'id', { prefix: 'listing:' }),
+      via('subject', 'inbound_messages', 'id', { prefix: 'inbound:' }),
+      via('subject', 'messages', 'id', { prefix: 'message:' }),
+      via('subject', 'appointment_tasks', 'id', { prefix: 'task:' }),
+      via('subject', 'safety_alerts', 'id', { prefix: 'alert:' }),
+      via('subject', 'offer_proposals', 'id', { prefix: 'proposal:' }),
     ],
+    // Les données d'un événement peuvent nommer une autre personne (`referrer: person:<id>`) : masquées.
+    foreignPersons: ['actor', 'data'],
     // L'arrivée d'une candidature, au journal du logement, est la donnée du candidat : elle n'est pas au propriétaire.
     skip: { column: 'type', prefixes: [...JOURNAL_LCB_PREFIXES, 'location.candidature'], marked: 'data', markers: JOURNAL_LCB_MARKERS },
   },

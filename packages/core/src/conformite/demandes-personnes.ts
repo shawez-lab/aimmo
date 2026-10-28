@@ -95,6 +95,8 @@ interface Found {
   matched: Set<string>;
   /** Trouvée par une ligne qui n'est qu'à la personne. */
   viaExclusive: boolean;
+  /** Une référence à une autre personne y a été masquée. */
+  foreign?: boolean;
 }
 
 export interface AccessDetail {
@@ -213,13 +215,65 @@ export async function assembleAccessDetail(
         if (prefixed || (markers ?? []).some((m) => text.includes(JSON.stringify(m)))) rows.delete(key);
       }
     }
+    // Les références à une autre fiche de personne, dans les colonnes désignées, sont masquées.
+    if (entry.foreignPersons && rows.size > 0) {
+      const candidates = new Set<string>();
+      const strings = (value: unknown, at: (v: string) => void): void => {
+        if (typeof value === 'string') at(value);
+        else if (Array.isArray(value)) for (const v of value) strings(v, at);
+        else if (value && typeof value === 'object') for (const v of Object.values(value)) strings(v, at);
+      };
+      const idOf = (v: string): string => (v.startsWith('person:') ? v.slice('person:'.length) : v);
+      const parsed = new Map<string, unknown>();
+      for (const [key, f] of rows) {
+        for (const c of entry.foreignPersons) {
+          const raw = f.row[c];
+          if (typeof raw !== 'string') continue;
+          let value: unknown = raw;
+          try {
+            value = JSON.parse(raw);
+          } catch {
+            value = raw;
+          }
+          parsed.set(`${key}\u0000${c}`, value);
+          strings(value, (v) => {
+            const id = idOf(v);
+            if (id && !ids.includes(id)) candidates.add(id);
+          });
+        }
+      }
+      const known = new Set<string>();
+      const list = [...candidates].sort();
+      for (let i = 0; i < list.length; i += CHUNK) {
+        const part = list.slice(i, i + CHUNK);
+        for (const r of await db.all<{ id: string }>(`SELECT id FROM persons WHERE id IN (${placeholders(part.length)})`, part)) known.add(String(r.id));
+      }
+      if (known.size > 0) {
+        const scrub = (value: unknown, hit: () => void): unknown => {
+          if (typeof value === 'string') return known.has(idOf(value)) ? (hit(), MASKED) : value;
+          if (Array.isArray(value)) return value.map((v) => scrub(v, hit));
+          if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrub(v, hit)]));
+          return value;
+        };
+        for (const [key, f] of rows) {
+          for (const c of entry.foreignPersons) {
+            if (!parsed.has(`${key}\u0000${c}`)) continue;
+            let touched = false;
+            const clean = scrub(parsed.get(`${key}\u0000${c}`), () => (touched = true));
+            if (!touched) continue;
+            f.row = { ...f.row, [c]: typeof f.row[c] === 'string' && typeof clean !== 'string' ? JSON.stringify(clean) : (clean as SqlValue) };
+            f.foreign = true;
+          }
+        }
+      }
+    }
     // Une ligne n'est qu'à la personne si elle a été trouvée par elle, ou par une ligne qui n'est qu'à elle, et
     // qu'aucune de ses colonnes n'est celle d'une autre personne. Un tableau partagé (le plan d'un agent) ne l'est jamais.
     const mine = new Set<string>();
     const shared = entry.locate.some((l) => 'json' in l);
     for (const [key, f] of rows) {
       const masked = Object.keys(entry.own ?? {}).some((c) => !f.matched.has(c));
-      if (!shared && !masked && (f.matched.size > 0 || f.viaExclusive)) mine.add(key);
+      if (!shared && !masked && !f.foreign && (f.matched.size > 0 || f.viaExclusive)) mine.add(key);
     }
     exclusive.set(table, mine);
     found.set(table, rows);

@@ -1,10 +1,12 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DecisionEnvoi, FicheUnique, applyMigrations, conformite, fromSyncSqlite, verifyChain, type SqlDatabase, type SqlValue, type Viewer } from '../src/index.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
-const { CARTE_ACCES, REGISTRE_TRAITEMENTS, MASKED, accessOrder, assembleAccess, checkAccessMap, describeAccessGap, readSchema, erasurePlan } = conformite;
+const { CARTE_ACCES, JOURNAL_SUBJECTS, REGISTRE_TRAITEMENTS, MASKED, accessOrder, assembleAccess, checkAccessMap, describeAccessGap, readSchema, erasurePlan } = conformite;
 
 // Deux personnes inventées : chaque valeur rangée pour l'une porte son identifiant, pour voir d'où vient chaque donnée.
 const A = 'pa-0001';
@@ -42,6 +44,45 @@ describe('L07 · carte des demandes d’accès vérifiée contre la base (Jamais
     expect(checkAccessMap(readSchema(loadMigrations()), REGISTRE_TRAITEMENTS, phantom)).toEqual([{ kind: 'colonne_inconnue', table: 'consents', column: 'fantome' }]);
     const loop = { ...CARTE_ACCES, projects: { locate: [{ column: 'person_id' }, { column: 'id', from: 'project_properties', key: 'project_id' }] } };
     expect(checkAccessMap(readSchema(loadMigrations()), REGISTRE_TRAITEMENTS, loop).map((g) => g.kind)).toEqual(['boucle']);
+  });
+});
+
+/** Chaque préfixe de sujet écrit dans le code de `packages/core/src` et `packages/api/src`. */
+function subjectPrefixesInCode(): Map<string, string> {
+  const found = new Map<string, string>();
+  const root = new URL('../../', import.meta.url).pathname;
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.ts$/.test(name)) {
+        const text = readFileSync(path, 'utf8');
+        for (const m of text.matchAll(/subject[A-Za-z]*\s*(?::|=)\s*[`'"]([a-z_]+):/g)) if (!found.has(m[1]!)) found.set(m[1]!, path.slice(root.length));
+      }
+    }
+  };
+  walk(join(root, 'core/src'));
+  walk(join(root, 'api/src'));
+  return found;
+}
+
+describe('L07 · chaque sujet du journal écrit dans le code est lu ou écarté', () => {
+  it('[R96] un préfixe de sujet du code absent de JOURNAL_SUBJECTS fait échouer la vérification', () => {
+    const inCode = subjectPrefixesInCode();
+    // Le relevé trouve bien les sujets connus, sinon le test ne prouverait rien.
+    for (const known of ['person', 'property', 'referral', 'mandate', 'agent']) expect(inCode.has(known), known).toBe(true);
+    const missing = [...inCode].filter(([prefix]) => !(prefix in JOURNAL_SUBJECTS)).map(([prefix, file]) => `${prefix}: (${file})`);
+    expect(missing).toEqual([]);
+  });
+
+  it('[R96] un préfixe dit « lu » l’est par la carte du journal, et la carte ne lit aucun préfixe non déclaré', () => {
+    const journal = CARTE_ACCES.journal!;
+    if (!('locate' in journal)) throw new Error('journal');
+    const read = new Set(journal.locate.map((l) => ('prefix' in l ? l.prefix ?? '' : '')).filter(Boolean).map((p) => p.replace(/:$/, '')));
+    const declared = Object.entries(JOURNAL_SUBJECTS).filter(([, use]) => use === 'journal').map(([p]) => p);
+    expect([...read].sort()).toEqual([...declared].sort());
+    // Chaque écart dit pourquoi.
+    for (const [prefix, use] of Object.entries(JOURNAL_SUBJECTS)) if (use !== 'journal') expect(use.why.length, prefix).toBeGreaterThan(5);
   });
 });
 
@@ -165,6 +206,33 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(lines('sale_file_steps')).toEqual([['effacer', 1], ['examiner', 1]]);
     expect(lines('referrals')).toEqual([['effacer', 1], ['examiner', 1]]);
     expect(lines('daily_plans')).toEqual([['examiner', 1]]);
+  });
+
+  it('[R96] le journal d’un bien possédé est à son propriétaire, et une autre personne nommée dans un événement est masquée', async () => {
+    const { db, insert, seeded } = await seedEveryTable();
+    // Le bien mis en vente par A : la validation de son avis de valeur, au journal du bien.
+    const sold = seeded.get('mandates')![A]!.property_id!;
+    await insert('journal', { seq: 9001, at: 't', type: 'avis.valide', actor: 'ag', subject: `property:${sold}`, data: '{"report":"avis-1"}', prev_hash: 'p', hash: 'h9001' });
+    // Un bien que A regarde seulement : son journal n'est pas à A.
+    await insert('project_properties', { project_id: seeded.get('projects')![A]!.id!, property_id: 'bien-regarde', network_id: 'n', agent_id: 'ag', role: 'interested', created_at: 't' });
+    await insert('journal', { seq: 9002, at: 't', type: 'avis.valide', actor: 'ag', subject: 'property:bien-regarde', data: '{"report":"avis-du-voisin"}', prev_hash: 'p', hash: 'h9002' });
+    // A est recommandé par B : l'événement est à A, le nom de B y est masqué.
+    await insert('journal', { seq: 9003, at: 't', type: 'recommandation.rangee', actor: 'ag', subject: `person:${A}`, data: JSON.stringify({ rule: 'R66', referrer: `person:${B}`, call: true, list: [B] }), prev_hash: 'p', hash: 'h9003' });
+    // Le journal d'une mise en relation de A avec un partenaire.
+    await insert('journal', { seq: 9004, at: 't', type: 'mise_en_relation.confiee', actor: 'ag', subject: `referral:${seeded.get('partner_referrals')![A]!.id}`, data: '{"partner":"partner:p1"}', prev_hash: 'p', hash: 'h9004' });
+    const detail = await conformite.assembleAccessDetail(db, [A]);
+    const rows = detail.response.sections.find((s) => s.table === 'journal')!.rows;
+    const bySeq = (seq: number) => rows.find((r) => r.seq === seq);
+    expect(bySeq(9001)).toMatchObject({ type: 'avis.valide' });
+    expect(bySeq(9002)).toBeUndefined();
+    expect(JSON.parse(String(bySeq(9003)!.data))).toEqual({ rule: 'R66', referrer: MASKED, call: true, list: [MASKED] });
+    expect(bySeq(9004)).toMatchObject({ type: 'mise_en_relation.confiee' });
+    expect(JSON.stringify(detail.response)).not.toContain(B);
+    // Une ligne qui nommait une autre personne n'est plus à la seule personne (le journal, lui, est gardé par la loi).
+    expect(detail.exclusiveRows.journal).toBe(rows.length - 1);
+    expect(conformite.erasurePlan(detail).lines.filter((l) => l.table === 'journal').map((l) => l.action)).toEqual(['garder']);
+    // B, lui, voit l'événement de sa recommandation sous sa propre fiche seulement s'il y est sujet : ici il ne l'est pas.
+    expect((await assembleAccess(db, [B])).sections.find((s) => s.table === 'journal')!.rows.some((r) => r.seq === 9003)).toBe(false);
   });
 
   it('[R96] une conversation d’un autre réseau ou d’un autre canal, un bail à deux parties : rien de l’autre', async () => {
