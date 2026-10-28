@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { checkText } from '../src/envoi/texte.ts';
-import { Candidatures, ChoixProprietaire, MisesEnLocation, candidateReceiptText, ownerReceiptText, type RentalFacts } from '../src/location/index.ts';
+import { Candidatures, ChoixProprietaire, MisesEnLocation, candidateReceiptText, ownerReceiptText, verificationCode, type RentalFacts } from '../src/location/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -33,6 +33,13 @@ describe('W05 · reçus d’équité', () => {
     const o = ownerReceiptText(4, '2027-07-12', 'f'.repeat(64));
     expect(o).toContain('les 4 dossiers complets reçus vous sont présentés');
     expect(o).toContain('Le choix vous appartient');
+    // La référence n'a aucun chiffre : jamais prise pour un montant ni un numéro de compte, quelle que soit l'empreinte.
+    expect(verificationCode('0123456789abcdef'.repeat(4))).toBe('abcd-efgh-jkmn-pqrs');
+    for (const fp of ['de89370400440532013000'.padEnd(64, '0'), 'fr7630006000011234567890189'.replace(/[^0-9a-f]/g, '0').padEnd(64, '1'), 'f'.repeat(64)]) {
+      const text = ownerReceiptText(2, '2027-07-12', fp);
+      expect(text.split('ordre : ')[1]).not.toMatch(/\d/);
+      expect(checkText(text, { audience: 'client', channel: 'email', figures: [2, 12, 2027] }).filter((x) => x.rule !== 'R08' && x.rule !== 'length')).toEqual([]);
+    }
     for (const text of [c, o]) {
       const figures = (text.match(/\d+/g) ?? []).map(Number);
       expect(checkText(text, { audience: 'client', channel: 'email', figures }).filter((p) => p.rule !== 'R08' && p.rule !== 'length')).toEqual([]);
@@ -117,7 +124,7 @@ describeWithSqlite('W05 · présentation au propriétaire et choix', () => {
     expect(r.ok && r.value[2]!.text).toContain('en position 2');
     expect(r.ok && r.value[2]!.text).toContain('Il manque encore : un justificatif d’activité ; un justificatif de ressources');
     expect(r.ok && r.value[3]!.text).toContain('les 2 dossiers complets reçus vous sont présentés');
-    expect(r.ok && r.value[3]!.text).toContain(p.ok ? p.value.sha256.slice(0, 16) : 'x');
+    expect(r.ok && r.value[3]!.text).toContain(verificationCode(p.ok ? p.value.sha256 : 'x'.repeat(64)));
     // Rien ne part : aucun message.
     expect(await t.db.all('SELECT 1 FROM messages')).toHaveLength(0);
     const prepared = await t.events('location.recu_prepare');

@@ -107,11 +107,20 @@ export function candidateReceiptText(arrivedOn: string, arrival: number, pieces:
   );
 }
 
+/**
+ * La référence de vérification, en lettres seules, par groupes de quatre : tirée de l'empreinte, sans aucun chiffre,
+ * pour qu'aucun contrôle des textes ne la prenne pour un montant ou un numéro de compte.
+ */
+export function verificationCode(fingerprint: string): string {
+  const letters = fingerprint.slice(0, 16).replace(/[0-9a-f]/g, (c) => 'abcdefghjkmnpqrs'[parseInt(c, 16)]!);
+  return letters.match(/.{4}/g)!.join('-');
+}
+
 /** La preuve au propriétaire : combien de dossiers, dans quel ordre, et l'empreinte qui permet de le vérifier. */
 export function ownerReceiptText(count: number, presentedOn: string, fingerprint: string): string {
   return (
     `Bonjour, ${count === 1 ? 'le dossier complet reçu vous est présenté' : `les ${count} dossiers complets reçus vous sont présentés`} le ${dayInFrench(presentedOn)}, dans leur ordre d'arrivée, sans note ni classement. ` +
-    `Le choix vous appartient. Référence de vérification de cet ordre : ${fingerprint.slice(0, 16)}.`
+    `Le choix vous appartient. Référence de vérification de cet ordre : ${verificationCode(fingerprint)}.`
   );
 }
 
