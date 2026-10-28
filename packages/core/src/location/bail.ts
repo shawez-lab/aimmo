@@ -113,6 +113,14 @@ export function leaseAnnexes(required: readonly string[], furnished: boolean): s
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const NOTICE_FILE = new RegExp(`^${UUID}\\.pdf$`);
 
+/** La lecture d'une fiche sous les droits du lecteur (`Acces.readFiche`), écrite au journal avant d'être rendue [R16]. */
+export interface PersonReader {
+  readFiche(
+    viewer: Viewer,
+    personId: string,
+  ): Promise<{ ok: true; view: 'full' | 'shared'; value: { person: { first_name: string | null; last_name: string | null } } } | { ok: false; rule: 'R16'; code: string }>;
+}
+
 /** Le stockage des pièces du bail : seule l'existence d'une référence est lue. */
 export interface LeaseFileStore {
   has(ref: string): Promise<boolean>;
@@ -143,6 +151,7 @@ export class BauxLocation {
     private readonly fees: HonorairesLocation,
     private readonly choices: ChoixProprietaire,
     private readonly files: LeaseFileStore,
+    private readonly persons: PersonReader,
     private readonly journal: JournalStore,
     options: BailOptions = {},
   ) {
@@ -245,13 +254,20 @@ export class BauxLocation {
       [listing.networkId, kind],
     );
     if (!template) return { ok: false, rule: null, code: 'no_template' };
-    const person = (id: string) => this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE id = ?', [id]);
     const fullName = (p: { first_name: string | null; last_name: string | null } | null) => {
       const n = [p?.first_name, p?.last_name].filter((x) => x && x.trim() !== '').join(' ');
       return n === '' ? null : n;
     };
-    const owner = fullName(await person(listing.ownerPersonId));
-    const tenant = fullName(await person(chosen.personId));
+    // Les noms du bailleur et du locataire passent par la lecture des fiches sous droits : refus s'ils ne sont pas lisibles
+    // en entier par celui qui fait le bail [R16].
+    const names: (string | null)[] = [];
+    for (const personId of [listing.ownerPersonId, chosen.personId]) {
+      const read = await this.persons.readFiche(viewer, personId);
+      if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+      if (read.view !== 'full') return this.refuse(viewer, `person:${personId}`, 'not_assigned');
+      names.push(fullName(read.value.person));
+    }
+    const [owner, tenant] = names as [string | null, string | null];
     const p = await this.db.first<{ city: string | null; rooms: number | null; agent_id: string | null }>('SELECT city, rooms, agent_id FROM properties WHERE id = ?', [listing.propertyId]);
     const agentRow = p?.agent_id ? await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM agents WHERE id = ?', [p.agent_id]) : null;
     const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [listing.networkId]);

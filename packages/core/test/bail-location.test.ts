@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import {
   BauxLocation,
   Candidatures,
@@ -78,7 +78,8 @@ async function setup() {
   const identity = { state: async () => ({ identityVerifiedOn: '2027-07-10' }) };
   const apps = new Candidatures(db, listings, identity, files, journal, { now, newId: uuid });
   const choix = new ChoixProprietaire(db, listings, apps, files, journal, { now, newId: uuid });
-  const baux = new BauxLocation(db, listings, fees, choix, files, journal, { now, newId: uuid });
+  const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
+  const baux = new BauxLocation(db, listings, fees, choix, files, acces, journal, { now, newId: uuid });
   const network = await store.createNetwork('Réseau Essai');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Essai' });
   const bea = await store.createAgent({ networkId: network.id, firstName: 'Béa', lastName: 'Essai' });
@@ -118,7 +119,7 @@ async function setup() {
     return r.value;
   };
   const inp = (id: string) => ({ ...INPUT, noticeRef: put(`location/${id}/bail`) });
-  return { db, listings, fees, baux, agent, other, dir, compliance, ready, template, inp, put };
+  return { db, listings, fees, baux, agent, other, dir, compliance, ready, template, inp, put, owner, bea };
 }
 
 describeWithSqlite('W06 · bail depuis les modèles', () => {
@@ -251,5 +252,10 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     expect(await t.baux.generate(t.other, id, t.inp(id))).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.baux.generate(t.compliance, id, t.inp(id))).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect((await t.baux.generate(t.dir, id, t.inp(id))).ok).toBe(true);
+    // Le bailleur suivi par un autre agent : ses nom et domicile ne sortent pas dans un bail fait par Alex.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.bea.id, t.owner.id]);
+    const r = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(r).toMatchObject({ ok: false, rule: 'R16' });
+    expect(JSON.stringify(r)).not.toContain('Bailleur');
   });
 });
