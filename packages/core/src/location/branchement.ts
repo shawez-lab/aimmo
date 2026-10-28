@@ -56,8 +56,8 @@ interface Pending {
 }
 
 /**
- * Le statut rangé d’après la réponse du contrôle : envoyé, refusé pour de bon (FINAL_REFUSALS), ou en attente (rien ne
- * part sans lui, le contrôle le redemande à chaque passage) [R01, R03], la panne se reprend, le reste est fini.
+ * Le statut rangé d’après la réponse du contrôle : envoyé ; refusé pour de bon (`FINAL_REFUSALS`) ; en échec, repris ;
+ * sinon en attente (heure, accord ou adresse manquants), le contrôle redécidant au passage suivant [R01, R03].
  */
 export function sendStatus(r: Pick<SendResult, 'status' | 'rule'>): RentalSendStatus {
   if (r.status === 'sent') return 'sent';
