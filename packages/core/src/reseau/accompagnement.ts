@@ -169,7 +169,7 @@ export class Accompagnement {
   async referentOf(networkId: string, agentId: string, at: Date = this.now()): Promise<{ referentId: string; until: string } | null> {
     const day = this.today(at);
     const row = await this.db.first<{ referent_id: string; until_day: string }>(
-      'SELECT referent_id, until_day FROM agent_referents WHERE network_id = ? AND agent_id = ? AND from_day <= ? AND until_day >= ? ORDER BY created_at DESC, id DESC LIMIT 1',
+      'SELECT referent_id, until_day FROM agent_referents WHERE network_id = ? AND agent_id = ? AND from_day <= ? AND until_day >= ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
       [networkId, agentId, day, day],
     );
     return row ? { referentId: row.referent_id, until: row.until_day } : null;
@@ -208,7 +208,7 @@ export class Accompagnement {
     if (typeof input.coverAgentId !== 'string' || input.coverAgentId === agentId || !(await this.active(viewer.networkId, input.coverAgentId))) return { ok: false, rule: null, code: 'invalid_cover' };
     const [a, b] = [agentId, input.coverAgentId].sort() as [string, string];
     const pair = await this.db.first<{ id: string; cover_share_pct: number }>(
-      'SELECT id, cover_share_pct FROM agent_pairs WHERE network_id = ? AND agent_a = ? AND agent_b = ? AND created_at < ? ORDER BY created_at DESC, id DESC LIMIT 1',
+      'SELECT id, cover_share_pct FROM agent_pairs WHERE network_id = ? AND agent_a = ? AND agent_b = ? AND created_at < ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
       [viewer.networkId, a, b, this.now().toISOString()],
     );
     if (!pair) return { ok: false, rule: 'R17', code: 'no_share_written' };
@@ -227,7 +227,7 @@ export class Accompagnement {
     const row = await this.db.first<{ id: string; cover_share_pct: number }>(
       `SELECT x.id, p.cover_share_pct FROM agent_absences x JOIN agent_pairs p ON p.id = x.pair_id
        WHERE x.network_id = ? AND x.agent_id = ? AND x.cover_agent_id = ? AND x.from_day <= ? AND x.until_day >= ?
-       ORDER BY x.declared_at DESC LIMIT 1`,
+       ORDER BY x.declared_at DESC, x.rowid DESC LIMIT 1`,
       [networkId, absentId, coverId, day, day],
     );
     if (!row) return null;
