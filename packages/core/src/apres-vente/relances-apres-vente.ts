@@ -15,7 +15,8 @@
  *   `un_an` range l'accord `relances_apres_vente` sur le mail, avec la même preuve ; un `non` le retire, fiches réunies
  *   comprises, pour tous les dossiers de la personne ;
  * - un `oui` ou un `un_an` ne se range qu'à l'acte, au plus 7 jours après pour une saisie en retard, et jamais après un
- *   `non` du même dossier : une opposition est définitive ; un `non` se range à tout moment ;
+ *   `non` de la personne, pour quelque dossier que ce soit, fiches réunies comprises : une opposition est définitive et
+ *   arrête tout ; un `non` se range à tout moment ;
  * - sans lien de désinscription réglé, aucune relance ne part [R65] ;
  * - une relance refusée pour l'heure attend le passage suivant [R01], dans les 7 jours ; au-delà, elle est close, au
  *   journal ; toute autre règle la refuse pour de bon ;
@@ -172,7 +173,7 @@ export class RelancesApresVente {
       const today = localTime(at, TIME_ZONE).date;
       if (today < sale.closedOn || today > addDays(sale.closedOn, CHOICE_GRACE_DAYS)) return { ok: false, rule: 'R65', code: 'not_at_signing' };
       const ids = await this.unique.membersOf(root);
-      const opposed = await this.db.first(`SELECT 1 AS x FROM after_sale_choices WHERE file_id = ? AND choice = 'non' AND person_id IN (${ids.map(() => '?').join(', ')})`, [fileId, ...ids]);
+      const opposed = await this.db.first(`SELECT 1 AS x FROM after_sale_choices WHERE choice = 'non' AND person_id IN (${ids.map(() => '?').join(', ')})`, ids);
       if (opposed) return { ok: false, rule: 'R65', code: 'opposed' };
     }
     await this.db.run('INSERT INTO after_sale_choices (id, network_id, file_id, person_id, choice, proof, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
@@ -200,12 +201,13 @@ export class RelancesApresVente {
   }
 
   /**
-   * Le choix qui vaut pour ce dossier et cette personne, fiches réunies comprises : un `non` rangé sur l'une des fiches
-   * l'emporte toujours, une opposition est définitive [R65] ; sinon le dernier choix rangé.
+   * Le choix qui vaut pour ce dossier et cette personne, fiches réunies comprises : un `non` rangé sur l'une des fiches,
+   * pour n'importe lequel de ses dossiers, l'emporte toujours, une opposition est définitive et arrête tout [R65] ;
+   * sinon le dernier choix rangé pour ce dossier.
    */
   private async choiceOf(fileId: string, personId: string): Promise<AfterSaleChoice | null> {
     const ids = await this.unique.membersOf(personId);
-    const opposed = await this.db.first(`SELECT 1 AS x FROM after_sale_choices WHERE file_id = ? AND choice = 'non' AND person_id IN (${ids.map(() => '?').join(', ')})`, [fileId, ...ids]);
+    const opposed = await this.db.first(`SELECT 1 AS x FROM after_sale_choices WHERE choice = 'non' AND person_id IN (${ids.map(() => '?').join(', ')})`, ids);
     if (opposed) return 'non';
     const row = await this.db.first<{ choice: AfterSaleChoice }>(
       `SELECT choice FROM after_sale_choices WHERE file_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) ORDER BY recorded_at DESC, rowid DESC LIMIT 1`,

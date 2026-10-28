@@ -329,6 +329,23 @@ describeWithSqlite('F04 · relance un an après la vente, sans jamais relancer u
     expect(list.ok && list.value).toMatchObject([{ personId: a, year: 1, status: 'refused', rule: 'R65' }]);
   });
 
+  it('[R65] un « non » sur un autre dossier arrête tout, fiches réunies comprises, et empêche un nouvel accord', async () => {
+    const t = await setup();
+    const a = await t.client('Ana');
+    const a2 = await t.client('Ana');
+    t.close('f1', '2027-03-08', [{ personId: a, side: 'vendeur' }]);
+    t.close('f2', '2027-03-09', [{ personId: a2, side: 'acquereur' }]);
+    await t.choose('f1', a, 'oui');
+    await t.choose('f2', a2, 'non');
+    await new FicheUnique(t.db, new FicheClient(t.db, { now: t.now }), { now: t.now }).merge({ survivorId: a, mergedId: a2, reason: 'même personne, test' });
+    await t.passes('2028-03-08', '2028-03-12');
+    expect(await t.outboxCount()).toBe(0);
+    // Un nouveau dossier de la même personne : l'accord est refusé, l'opposition tient.
+    t.close('f3', '2028-04-01', [{ personId: a, side: 'acquereur' }]);
+    t.setClock(paris('2028-04-01', 11));
+    expect(await t.relances.recordChoice(t.agent, 'f3', a, { choice: 'oui', proof: 'case cochée, test' })).toEqual({ ok: false, rule: 'R65', code: 'opposed' });
+  });
+
   it('[R16] [R13] un agent ne voit que les relances de ses dossiers ; le journal ne garde ni texte ni coordonnée', async () => {
     const t = await setup();
     const a = await t.client('Ana');
