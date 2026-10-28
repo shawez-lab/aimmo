@@ -2,7 +2,8 @@
  * Le contrôle central des envois : le seul chemin de sortie de tout message. Aucun autre code n'appelle un canal.
  *
  * Dans l'ordre, d'après le cahier (Architecture technique, « Le contrôle central des envois ») :
- *   0. l'agent du message, et celui qui l'a préparé, sont encore là : rien ne part dès le jour de son départ [R86] ;
+ *   0. rien ne part au nom d'un agent parti ni de ce qu'il a préparé, dès le jour de son départ ; un suivi passe à
+ *      celui qui suit la fiche après la reprise [R86] ;
  *   1. décision d'envoi de S05 : arrêt, exclusions, horaires, plafonds, accord [R01 à R04, R11] ;
  *   2. anti-doublon par sujet : un bien, une relance ou une alerte, une seule fois par personne [R05] ;
  *   3. texte : celui de l'IA si son budget le permet et qu'elle répond à temps, sinon un texte de secours [R12] ;
@@ -174,7 +175,7 @@ export class ControleEnvois {
     if (order.kind !== 'reply' && subjects.length === 0) {
       throw new Error('Un envoi d’initiative cite son sujet ou ses biens [R05].');
     }
-    const agentId = order.agentId ?? null;
+    let agentId = order.agentId ?? null;
     const log = async (
       outcome: SendStatus,
       rule: string | null,
@@ -211,11 +212,21 @@ export class ControleEnvois {
     };
 
     // 0. Un envoi au nom d'un agent parti, ou préparé par lui, ne part plus, dès minuit le jour du départ [R86].
-    for (const id of [agentId, order.preparedBy ?? null]) {
-      if (id !== null && id !== '' && (await agentGone(this.db, order.networkId, id, at))) return log('refused', 'R86', 'L’agent de cet envoi a quitté le réseau.');
-    }
+    // Un envoi préparé ou validé par lui : jamais. Un suivi du système (relance, alerte) rangé à son nom : il ne part plus
+    // en son nom ; une fois la fiche passée à son successeur ou à la direction, il part au nom de celui qui la suit, pour
+    // qu'aucun suivi ne s'arrête [R86].
+    const preparedBy = order.preparedBy ?? null;
+    if (preparedBy !== null && preparedBy !== '' && (await agentGone(this.db, order.networkId, preparedBy, at))) return log('refused', 'R86', 'L’agent qui a préparé cet envoi a quitté le réseau.');
 
     const view = await this.fiche.view(order.personId);
+    if (agentId !== null && agentId !== '' && (await agentGone(this.db, order.networkId, agentId, at))) {
+      const current = view.person.agent_id;
+      // Un message écrit par l'agent lui-même, de son téléphone, ne passe jamais à un autre.
+      if (order.byAgent) return log('refused', 'R86', 'L’agent de cet envoi a quitté le réseau.');
+      if (current === null || current === '') agentId = null;
+      else if (current !== agentId && !(await agentGone(this.db, order.networkId, current, at))) agentId = current;
+      else return log('refused', 'R86', 'L’agent de cet envoi a quitté le réseau.');
+    }
     const ids = view.members.map((p) => p.id);
     // Les messages dont l'envoi a échoué ne comptent ni pour la décision, ni pour l'anti-doublon, ni pour la mention.
     const failed = new Set(

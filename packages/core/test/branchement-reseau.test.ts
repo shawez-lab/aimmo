@@ -168,6 +168,9 @@ describeWithSqlite('J13 · branchement de M14 dans le socle', () => {
       'Bonjour Léa, un point sur votre projet vous sera proposé très bientôt.',
       'Bonjour Léa, nous gardons votre projet en tête et reprenons contact sous peu.',
       'Bonjour Léa, votre projet avance : votre agent vous appelle prochainement.',
+      'Bonjour Léa, nous restons à votre écoute pour la suite de votre projet.',
+      'Bonjour Léa, la suite de votre projet vous sera présentée par téléphone.',
+      'Bonjour Léa, merci pour votre confiance, nous revenons vers vous.',
     ];
     const order = (extra: { agentId?: string | null; preparedBy?: string | null }) => ({
       networkId: t.network,
@@ -197,6 +200,15 @@ describeWithSqlite('J13 · branchement de M14 dans le socle', () => {
     const other = await controle.send(order({ agentId: t.sam }));
     expect([other.status, other.rule]).toEqual(['sent', null]);
     expect(email.sent.length).toBe(2);
+    // Après la reprise par la direction, un suivi du système rangé au nom de l'agent parti part au nom du réseau ; ce qu'il
+    // avait préparé, jamais.
+    expect((await departs.runDue(t.network)).map((d) => d.agentId)).toEqual([t.alex]);
+    expect((await t.store.getPerson(t.client))!.agent_id).toBeNull();
+    t.setClock('2027-01-14T09:00:00.000Z');
+    const follow = await controle.send(order({ agentId: t.alex }));
+    expect([follow.status, follow.rule]).toEqual(['sent', null]);
+    expect(await controle.send(order({ agentId: null, preparedBy: t.alex }))).toMatchObject({ status: 'refused', rule: 'R86' });
+    expect(await t.db.first<{ agent_id: string | null }>('SELECT agent_id FROM send_log WHERE message_id = ?', [follow.messageId])).toEqual({ agent_id: null });
   });
 
   it('[R86] [R18] le planificateur fait les départs du jour au premier passage après minuit, une fois par créneau', async () => {

@@ -307,7 +307,7 @@ export class ComptesRendus {
   private async sendToSeller(appointmentId: string): Promise<{ ok: true; delivery: string; rule: string | null }> {
     const row = (await this.db.first<ReportRow>('SELECT * FROM visit_reports WHERE appointment_id = ?', [appointmentId]))!;
     if (row.delivery_status === 'sent' || row.delivery_status === 'refused') return { ok: true, delivery: row.delivery_status, rule: row.delivery_rule };
-    const v = (await this.db.first<{ network_id: string; person_id: string; property_id: string }>('SELECT network_id, person_id, property_id FROM visits WHERE appointment_id = ?', [appointmentId]))!;
+    const v = (await this.db.first<{ network_id: string; person_id: string; property_id: string; agent_id: string }>('SELECT network_id, person_id, property_id, agent_id FROM visits WHERE appointment_id = ?', [appointmentId]))!;
     const appointment = (await this.db.first<{ start_at: string }>('SELECT start_at FROM appointments WHERE id = ?', [appointmentId]))!;
     const seller = await this.seller(v.network_id, v.property_id);
     let status: 'sent' | 'waiting' | 'refused' | 'failed';
@@ -324,6 +324,8 @@ export class ComptesRendus {
       const result = await this.controle.send({
         networkId: v.network_id,
         agentId: seller.agent_id,
+        // Le compte rendu est validé par l'agent de la visite : parti, il ne part plus [R86].
+        preparedBy: v.agent_id,
         personId: seller.person_id,
         channel: 'email',
         kind: 'follow_up',
