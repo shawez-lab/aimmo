@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ControleEnvois, DecisionEnvoi, FakeChannel, FicheUnique, SqlSendJournal, conformite, verifyChain, type Channel, type Viewer } from '../src/index.ts';
+import { RegistreOffres } from '../src/offres/index.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -72,6 +73,43 @@ describeWithSqlite('L05 · signaler au responsable', () => {
     // Rien ne s'efface ni ne change du signalement.
     await expect(t.db.run('DELETE FROM suspicion_reports')).rejects.toThrow('signalement gardé');
     await expect(t.db.run("UPDATE suspicion_reports SET note = 'x'")).rejects.toThrow('signalement gardé');
+  });
+
+  it('[R94] [R17] une offre ou un dossier de vente figent aussi le mandat, le vendeur et leur conformité', async () => {
+    const t = await setup();
+    const buyer = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Acheteur', lastName: 'Exemple' });
+    const offer = await new RegistreOffres(t.db, t.acces, t.journal, { now: t.now }).record(t.agent, t.propertyId, {
+      buyerPersonId: buyer.id, amountEur: 195000, conditions: [], validUntil: '2027-03-20', downPaymentEur: 195000, loanEur: 0,
+      signedRef: 'offres/0b6f1d2e-1111-4a2b-8c3d-000000000001.pdf', receivedAt: '2027-03-09T08:00:00.000Z',
+    });
+    if (!offer.ok) throw new Error(offer.code);
+    const fileId = '0b6f1d2e-9999-4a2b-8c3d-000000000009';
+    await t.db.run(
+      'INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [fileId, t.network.id, t.propertyId, offer.value.id, buyer.id, 195000, NOW.toISOString(), `agent:${t.alexId}`],
+    );
+    const sellerPiece = (await t.db.first<{ id: string }>('SELECT id FROM compliance_vault_pieces WHERE person_id = ?', [t.personId]))!.id;
+    for (const ref of [`offer:${offer.value.id}`, `sale_file:${fileId}`]) {
+      expect(await t.signalement.report(t.agent, ref, { note: NOTE })).toEqual({ ok: true, status: 'transmis' });
+    }
+    const list = await t.signalement.list(t.conformite);
+    if (!list.ok) throw new Error(list.code);
+    const onOffer = list.value.find((r) => r.caseRef.startsWith('offer:'));
+    const onFile = list.value.find((r) => r.caseRef.startsWith('sale_file:'));
+    expect(onOffer).toMatchObject({ caseRef: `offer:${offer.value.id}`, personId: buyer.id });
+    expect(onFile).toMatchObject({ caseRef: `sale_file:${fileId}`, personId: buyer.id });
+    for (const r of [onOffer!, onFile!]) expect(await t.signalement.checkFrozen(t.conformite, r.reportId)).toMatchObject({ ok: true, value: { intact: true } });
+    // L'offre d'origine changée de force : le dossier de vente le voit, comme l'offre.
+    await t.db.exec('DROP TRIGGER IF EXISTS offer_register_sans_modification');
+    await t.db.run('UPDATE offer_register SET amount_eur = 150000 WHERE id = ?', [offer.value.id]);
+    for (const r of [onOffer!, onFile!]) {
+      expect(await t.signalement.checkFrozen(t.conformite, r.reportId)).toMatchObject({ ok: true, value: { intact: false, changed: [{ table: 'offer_register', key: offer.value.id }] } });
+    }
+    // La pièce du vendeur effacée de force : le dossier de vente le voit aussi.
+    await t.db.exec('DROP TRIGGER IF EXISTS compliance_vault_pieces_sans_effacement');
+    await t.db.run('DELETE FROM compliance_vault_pieces WHERE id = ?', [sellerPiece]);
+    const check = await t.signalement.checkFrozen(t.conformite, onFile!.reportId);
+    expect(check.ok && check.value.missing).toContainEqual({ table: 'compliance_vault_pieces', key: sellerPiece });
   });
 
   it('[R94] le responsable décide seul, une seule fois, avec sa raison, son nom et sa date ; tout au journal sans nom', async () => {

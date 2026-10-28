@@ -101,8 +101,9 @@ describe('L04 · règles de vigilance renforcée', () => {
     };
     roots.forEach(walk);
     const readers = files.filter((f) => /vigilance_(alerts|decisions|settings)/.test(readFileSync(f, 'utf8'))).map((f) => f.split(/[\\/]/).slice(-2).join('/'));
-    // Le registre des traitements (L06) nomme les tables sans les lire.
-    expect(readers).toEqual(['conformite/registre-traitements.ts', 'conformite/vigilance.ts']);
+    // Le registre des traitements (L06) nomme les tables sans les lire ; le signalement (L05) n'en garde que
+    // l'empreinte de chaque ligne, pour figer le dossier, et ne bloque rien.
+    expect(readers.sort()).toEqual(['conformite/registre-traitements.ts', 'conformite/signalement.ts', 'conformite/vigilance.ts']);
   });
 });
 
