@@ -54,7 +54,7 @@ async function setup(options: { consent?: boolean } = {}) {
   // Classé G : l'échéance du propriétaire est préparée au contrôle, jamais envoyée par lui.
   await listings.check(agent, listingId);
   const candidates: string[] = [];
-  for (const name of ['Camille', 'Dominique']) {
+  const candidate = async (name: string) => {
     const pid = (await person(name)).id;
     candidates.push(pid);
     const a = await apps.apply(agent, listingId, { personId: pid });
@@ -64,13 +64,14 @@ async function setup(options: { consent?: boolean } = {}) {
       refs.add(ref);
       expect((await apps.addPiece(agent, id, { holder: 'candidat', sort, ref, sha256: SHA })).ok).toBe(true);
     }
-  }
+  };
+  for (const name of ['Camille', 'Dominique']) await candidate(name);
   expect((await choix.present(agent, listingId)).ok).toBe(true);
   const outbox = () =>
     db.all<{ person_id: string; body: string }>('SELECT m.person_id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id ORDER BY m.occurred_at, m.person_id');
   const sends = () => db.all<{ kind: string; status: string; rule: string | null }>('SELECT kind, status, rule FROM rental_sends ORDER BY kind, ref_id');
   const events = (type: string) => db.all<{ subject: string; data: string }>('SELECT subject, data FROM journal WHERE type = ? ORDER BY seq', [type]);
-  return { db, store, journal, network, owner, candidates, listingId, outbox, sends, events, now, setClock: (t: number) => (clock = t) };
+  return { db, store, journal, network, owner, candidates, candidate, listings, choix, agent, listingId, outbox, sends, events, now, setClock: (t: number) => (clock = t) };
 }
 
 describeWithSqlite('W10 · branchement de M15 dans le socle', () => {
@@ -124,12 +125,40 @@ describeWithSqlite('W10 · branchement de M15 dans le socle', () => {
     await expect(t.db.run("UPDATE rental_sends SET status = 'waiting'")).rejects.toThrow(/issue définitive/);
     await expect(t.db.run('DELETE FROM rental_sends')).rejects.toThrow(/rien ne s'efface/);
 
-    // Sans l'accord du suivi de la location, rien ne part : refusé, le texte reste préparé [R03].
+    // Sans l'accord du suivi de la location, rien ne part : le texte reste préparé et attend l'accord, redemandé à
+    // chaque passage ; le journal ne le note qu'une fois [R03, R13].
     const u = await setup({ consent: false });
-    expect(await new EnvoisLocation(u.db, u.journal, { now: u.now }).run(u.network.id)).toBe(4);
-    expect((await u.sends()).map((s) => [s.status, s.rule])).toEqual(Array(4).fill(['refused', 'R03']));
+    const later = new EnvoisLocation(u.db, u.journal, { now: u.now });
+    expect(await later.run(u.network.id)).toBe(4);
+    expect(await later.run(u.network.id)).toBe(4);
+    expect((await u.sends()).map((s) => [s.status, s.rule])).toEqual(Array(4).fill(['waiting', 'R03']));
     expect(await u.outbox()).toHaveLength(0);
-    expect(await u.db.all('SELECT 1 FROM rental_owner_notices')).toHaveLength(1);
+    expect(await u.events('location.envoi')).toHaveLength(4);
+    // L'accord donné ensuite : le passage suivant envoie, une seule fois.
+    await u.store.addConsent({ networkId: u.network.id, personId: u.owner.id, purpose: RENTAL_UPDATE_PURPOSE, channel: 'email', proof: 'accord donné plus tard', givenAt: u.now() });
+    await later.run(u.network.id);
+    // Son échéance et sa preuve de la présentation ; les candidats attendent toujours leur accord.
+    expect((await u.outbox()).map((m) => m.person_id)).toEqual([u.owner.id, u.owner.id]);
+    expect(await u.events('location.envoi')).toHaveLength(6);
+  });
+
+  it('[R100] [R105] [R10] un texte devenu faux avant son envoi ne part jamais : classe corrigée, présentation refaite', async () => {
+    const t = await setup();
+    // La classe saisie était fausse : corrigée en C, l'échéance « classé G » n'a plus lieu d'être.
+    await t.listings.recordFacts(t.agent, t.listingId, { ...FACTS, energyClass: 'C', finalEnergyKwh: 150 });
+    // Un dossier de plus, et la présentation refaite : seuls les reçus de la dernière partent.
+    await t.candidate('Eden');
+    expect((await t.choix.present(t.agent, t.listingId)).ok).toBe(true);
+    await new EnvoisLocation(t.db, t.journal, { now: t.now }).run(t.network.id);
+    const box = await t.outbox();
+    expect(box.some((m) => m.person_id === t.owner.id && /classé G/.test(m.body))).toBe(false);
+    expect(box.filter((m) => /classé/.test(m.body))).toEqual([]);
+    const stale = await t.db.all<{ kind: string }>("SELECT kind FROM rental_sends WHERE status = 'refused' AND rule = 'perime' ORDER BY kind");
+    // L'échéance et les trois reçus de la première présentation.
+    expect(stale.map((s) => s.kind)).toEqual(['echeance', 'recu', 'recu', 'recu']);
+    // La dernière présentation : trois candidats et le propriétaire, chacun une fois.
+    expect(box).toHaveLength(4);
+    expect(new Set(box.map((m) => m.person_id)).size).toBe(4);
   });
 
   it('[R01] [R18] le passage du planificateur tourne aux heures d’envoi, une fois par créneau, et rend le même résultat rejoué', async () => {
@@ -146,7 +175,8 @@ describeWithSqlite('W10 · branchement de M15 dans le socle', () => {
     expect(sendStatus({ status: 'sent', rule: null })).toBe('sent');
     expect(sendStatus({ status: 'failed', rule: null })).toBe('failed');
     expect(sendStatus({ status: 'refused', rule: 'R01' })).toBe('waiting');
-    expect(sendStatus({ status: 'refused', rule: 'R03' })).toBe('refused');
+    expect(sendStatus({ status: 'refused', rule: 'R03' })).toBe('waiting');
+    expect(sendStatus({ status: 'refused', rule: 'R04' })).toBe('refused');
   });
 });
 

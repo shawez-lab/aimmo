@@ -12,7 +12,9 @@
  * du même sujet [R05], et une issue définitive n'est plus relue [R18].
  *
  * Décidé, lecture prudente : l'accord demandé est celui du suivi de la location (`suivi_location`), par mail ; sans cet
- * accord, le contrôle refuse et le texte reste préparé, lisible par l'agent. Le passage tourne une fois par heure, de
+ * accord, rien ne part : le texte reste préparé, lisible par l'agent, et le contrôle redemande l'accord à chaque
+ * passage. Un texte devenu faux avant son envoi (classe énergie corrigée, présentation refaite) est refusé, jamais
+ * envoyé. Le passage tourne une fois par heure, de
  * 9 h à 19 h, aux heures où un envoi peut partir [R01].
  */
 import type { ScheduledJob } from '../bascule/planificateur.ts';
@@ -45,14 +47,24 @@ interface Pending {
   text: string;
   recipient: string | null;
   application_id: string | null;
+  /** Le texte vaut encore : l'échéance pour la classe des derniers faits, le reçu de la dernière présentation. */
+  current: number;
+  last_status: string | null;
+  last_rule: string | null;
 }
 
-/** Le statut rangé d'après la réponse du contrôle : l'heure attend, la panne se reprend, le reste est fini. */
+/**
+ * Le statut rangé d'après la réponse du contrôle : l'heure attend, l'accord manquant attend qu'il soit donné (rien ne
+ * part sans lui, le contrôle le redemande à chaque passage) [R01, R03], la panne se reprend, le reste est fini.
+ */
 export function sendStatus(r: Pick<SendResult, 'status' | 'rule'>): RentalSendStatus {
   if (r.status === 'sent') return 'sent';
   if (r.status === 'failed') return 'failed';
-  return r.rule === 'R01' ? 'waiting' : 'refused';
+  return r.rule === 'R01' || r.rule === 'R03' ? 'waiting' : 'refused';
 }
+
+/** La raison rangée d'un texte devenu faux avant son envoi : classe corrigée, présentation refaite. */
+export const STALE_RULE = 'perime';
 
 export class EnvoisLocation {
   private readonly now: () => Date;
@@ -80,15 +92,21 @@ export class EnvoisLocation {
   private async pending(networkId: string): Promise<Pending[]> {
     const open = "NOT EXISTS (SELECT 1 FROM rental_sends s WHERE s.kind = ? AND s.ref_id = x.id AND s.status IN ('sent', 'refused'))";
     const notices = await this.db.all<Omit<Pending, 'kind'>>(
-      `SELECT x.id, l.network_id, x.owner_person_id AS person_id, p.agent_id, l.id AS subject_ref, x.text, NULL AS recipient, NULL AS application_id
+      `SELECT x.id, l.network_id, x.owner_person_id AS person_id, p.agent_id, l.id AS subject_ref, x.text, NULL AS recipient, NULL AS application_id,
+         (x.energy_class = (SELECT f.energy_class FROM rental_facts f WHERE f.listing_id = x.listing_id ORDER BY f.version DESC LIMIT 1)) AS current,
+         s.status AS last_status, s.rule AS last_rule
        FROM rental_owner_notices x JOIN rental_listings l ON l.id = x.listing_id LEFT JOIN properties p ON p.id = l.property_id
+       LEFT JOIN rental_sends s ON s.kind = 'echeance' AND s.ref_id = x.id
        WHERE l.network_id = ? AND ${open} ORDER BY x.prepared_at, x.id`,
       [networkId, 'echeance'],
     );
     const receipts = await this.db.all<Omit<Pending, 'kind'>>(
-      `SELECT x.id, r.network_id, x.person_id, p.agent_id, r.id AS subject_ref, x.text, x.recipient, x.application_id
+      `SELECT x.id, r.network_id, x.person_id, p.agent_id, r.id AS subject_ref, x.text, x.recipient, x.application_id,
+         (r.version = (SELECT MAX(q.version) FROM rental_presentations q WHERE q.listing_id = r.listing_id)) AS current,
+         s.status AS last_status, s.rule AS last_rule
        FROM rental_fairness_receipts x JOIN rental_presentations r ON r.id = x.presentation_id
        JOIN rental_listings l ON l.id = r.listing_id LEFT JOIN properties p ON p.id = l.property_id
+       LEFT JOIN rental_sends s ON s.kind = 'recu' AND s.ref_id = x.id
        WHERE r.network_id = ? AND ${open} ORDER BY x.prepared_at, x.id`,
       [networkId, 'recu'],
     );
@@ -99,6 +117,12 @@ export class EnvoisLocation {
   async run(networkId: string): Promise<number> {
     let n = 0;
     for (const p of await this.pending(networkId)) {
+      // Un texte devenu faux (classe corrigée depuis, présentation refaite) ne part jamais : refusé, avec sa raison.
+      if (!Number(p.current)) {
+        await this.record(p, 'refused', STALE_RULE);
+        n += 1;
+        continue;
+      }
       // Le texte préparé salue sans nom (il est rangé tel quel, rejouable) : le prénom n'est ajouté qu'à l'envoi [R08].
       const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [p.person_id]);
       const text = person?.first_name ? p.text.replace(/^Bonjour,/, `Bonjour ${person.first_name},`) : p.text;
@@ -116,21 +140,25 @@ export class EnvoisLocation {
         figures: (text.match(/\d+/g) ?? []).map(Number),
       });
       const status = sendStatus(result);
-      const rule = status === 'sent' ? null : result.rule;
-      const at = this.now().toISOString();
-      await this.db.run(
-        `INSERT INTO rental_sends (kind, ref_id, network_id, status, rule, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (kind, ref_id) DO UPDATE SET status = excluded.status, rule = excluded.rule, updated_at = excluded.updated_at`,
-        [p.kind, p.id, p.network_id, status, rule, at],
-      );
-      // Au journal : la sorte, l'issue et la règle ; jamais le texte ni le nom [R13]. Un reçu porte, comme sa
-      // préparation, son destinataire et la candidature : la réponse d'accès le rend ainsi à qui il est (L07).
-      const subject = p.kind === 'echeance' ? `rental:${p.subject_ref}` : `rental_presentation:${p.subject_ref}`;
-      const data = p.kind === 'echeance' ? { kind: p.kind, ref: p.id, mode: 'essai', status, rule } : { kind: p.kind, ref: p.id, recipient: p.recipient, application: p.application_id, mode: 'essai', status, rule };
-      await appendEvent(this.journal, { type: 'location.envoi', actor: 'system:location', subject, data }, this.now);
+      await this.record(p, status, status === 'sent' ? null : result.rule);
       n += 1;
     }
     return n;
+  }
+
+  /** Range l'issue ; le journal ne la note que quand elle change, pas à chaque passage qui attend encore. */
+  private async record(p: Pending, status: RentalSendStatus, rule: string | null): Promise<void> {
+    const at = this.now().toISOString();
+    await this.db.run(
+      `INSERT INTO rental_sends (kind, ref_id, network_id, status, rule, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (kind, ref_id) DO UPDATE SET status = excluded.status, rule = excluded.rule, updated_at = excluded.updated_at`,
+      [p.kind, p.id, p.network_id, status, rule, at],
+    );
+    // Au journal : la sorte, l'issue et la règle ; jamais le texte ni le nom [R13]. Un reçu porte, comme sa
+    // préparation, son destinataire et la candidature : la réponse d'accès le rend ainsi à qui il est (L07).
+    const subject = p.kind === 'echeance' ? `rental:${p.subject_ref}` : `rental_presentation:${p.subject_ref}`;
+    const data = p.kind === 'echeance' ? { kind: p.kind, ref: p.id, mode: 'essai', status, rule } : { kind: p.kind, ref: p.id, recipient: p.recipient, application: p.application_id, mode: 'essai', status, rule };
+    if (p.last_status !== status || p.last_rule !== rule) await appendEvent(this.journal, { type: 'location.envoi', actor: 'system:location', subject, data }, this.now);
   }
 }
 
