@@ -33,6 +33,12 @@ export type LeaseKind = (typeof LEASE_KINDS)[number];
 
 export const LEASE_FIELDS: Readonly<Record<string, { source: FieldSource; label: string }>> = Object.freeze({
   'bailleur.nom': { source: 'base', label: 'nom du bailleur' },
+  'bailleur.domicile': { source: 'saisie', label: 'domicile du bailleur' },
+  'agent.nom': { source: 'base', label: 'nom de l’agent immobilier' },
+  'mandataire.carte': { source: 'saisie', label: 'carte professionnelle du mandataire' },
+  'logement.pieces': { source: 'base', label: 'nombre de pièces principales' },
+  'logement.habitat': { source: 'saisie', label: 'type d’habitat' },
+  'logement.equipements': { source: 'saisie', label: 'équipements du logement' },
   'locataire.nom': { source: 'base', label: 'nom du locataire' },
   'logement.adresse': { source: 'saisie', label: 'adresse du logement' },
   'logement.commune': { source: 'base', label: 'commune du logement' },
@@ -58,12 +64,16 @@ export const LEASE_FIELDS: Readonly<Record<string, { source: FieldSource; label:
 /** Les champs qu'un modèle de bail doit porter : sans eux, il est refusé [R101, R102]. */
 export const REQUIRED_LEASE_FIELDS: readonly string[] = [
   'bailleur.nom', 'locataire.nom', 'logement.adresse', 'logement.surface_habitable', 'bail.debut', 'bail.duree', 'loyer.hors_charges', 'charges.montant',
-  'charges.mode', 'depot.montant', 'honoraires.locataire', 'honoraires.etat_des_lieux', 'annexes.liste',
+  'charges.mode', 'depot.montant', 'honoraires.locataire', 'honoraires.etat_des_lieux', 'annexes.liste', 'bailleur.domicile', 'reseau.nom', 'agent.nom',
+  'mandataire.carte', 'logement.pieces', 'logement.habitat', 'logement.equipements',
 ];
 
 const PLACEHOLDER = /\{\{\s*([a-z_.]+)\s*\}\}/g;
 const MAX_BODY = 50_000;
 const ADDRESS = /^[\p{L}\p{N} ,.'’-]{5,160}$/u;
+const CARD = /^CPI [0-9A-Z ]{6,30}$/;
+const EQUIPMENT = /^[\p{L}\p{N} ,.'’()-]{3,400}$/u;
+export const HABITATS = { collectif: 'immeuble collectif', individuel: 'habitat individuel' } as const;
 
 export interface LeaseTemplate {
   id: string;
@@ -180,7 +190,11 @@ export class BauxLocation {
    * Fait le bail depuis la dernière version du modèle de son type, pour le candidat choisi, sur les derniers faits et le
    * barème en vigueur [R105, R101, R102].
    */
-  async generate(viewer: Viewer, listingId: unknown, input: { address?: unknown } = {}): Promise<LeaseResult<Lease>> {
+  async generate(
+    viewer: Viewer,
+    listingId: unknown,
+    input: { address?: unknown; ownerAddress?: unknown; habitat?: unknown; equipment?: unknown; professionalCard?: unknown } = {},
+  ): Promise<LeaseResult<Lease>> {
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
     const chosen = await this.choices.chosen(listing.networkId, listing.id);
@@ -190,10 +204,26 @@ export class BauxLocation {
     if (!fees) return { ok: false, rule: 'R102', code: 'no_fees' };
     const facts = (await this.listings.currentFacts(listing.id))!;
     if (!facts.chargesMode) return { ok: false, rule: null, code: 'missing_charges_mode' };
-    const address = input.address === undefined || input.address === null ? null : input.address;
-    if (address !== null && (typeof address !== 'string' || !ADDRESS.test(address.trim()))) return { ok: false, rule: null, code: 'bad_address' };
+    const today = localTime(this.now(), 'Europe/Paris').date;
+    // Un bail ne prend pas effet dans le passé : de nouveaux faits, avec une nouvelle date, sont à ranger [R100].
+    if (facts.leaseStart < today) return { ok: false, rule: null, code: 'lease_start_passed' };
+    const text = (v: unknown, re: RegExp, code: string): string | null | LeaseRefusal => {
+      if (v === undefined || v === null) return null;
+      return typeof v === 'string' && re.test(v.trim()) ? v.trim() : { ok: false, rule: null, code };
+    };
+    const address = text(input.address, ADDRESS, 'bad_address');
+    const ownerAddress = text(input.ownerAddress, ADDRESS, 'bad_owner_address');
+    const equipment = text(input.equipment, EQUIPMENT, 'bad_equipment');
+    const card = text(input.professionalCard, CARD, 'bad_card');
+    for (const v of [address, ownerAddress, equipment, card]) if (v !== null && typeof v === 'object') return v;
+    const habitat = input.habitat === undefined || input.habitat === null ? null : input.habitat;
+    if (habitat !== null && (typeof habitat !== 'string' || !Object.prototype.hasOwnProperty.call(HABITATS, habitat))) return { ok: false, rule: null, code: 'bad_habitat' };
     const kind: LeaseKind = facts.furnished ? 'bail_meuble' : 'bail_vide';
-    const template = await this.db.first<TemplateRow>('SELECT id, kind, version, status, body, fields, hash FROM rental_lease_templates WHERE network_id = ? AND kind = ? ORDER BY version DESC LIMIT 1', [listing.networkId, kind]);
+    // Le modèle en vigueur : la dernière version validée ; à défaut, la dernière d'essai, qui ne fait qu'un bail d'essai.
+    const template = await this.db.first<TemplateRow>(
+      "SELECT id, kind, version, status, body, fields, hash FROM rental_lease_templates WHERE network_id = ? AND kind = ? ORDER BY status = 'valide' DESC, version DESC LIMIT 1",
+      [listing.networkId, kind],
+    );
     if (!template) return { ok: false, rule: null, code: 'no_template' };
     const person = (id: string) => this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE id = ?', [id]);
     const fullName = (p: { first_name: string | null; last_name: string | null } | null) => {
@@ -202,14 +232,20 @@ export class BauxLocation {
     };
     const owner = fullName(await person(listing.ownerPersonId));
     const tenant = fullName(await person(chosen.personId));
-    const p = await this.db.first<{ city: string | null }>('SELECT city FROM properties WHERE id = ?', [listing.propertyId]);
+    const p = await this.db.first<{ city: string | null; rooms: number | null; agent_id: string | null }>('SELECT city, rooms, agent_id FROM properties WHERE id = ?', [listing.propertyId]);
+    const agentRow = p?.agent_id ? await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM agents WHERE id = ?', [p.agent_id]) : null;
     const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [listing.networkId]);
     const annexes = leaseAnnexes(requiredAnnexes(facts), facts.furnished);
-    const today = localTime(this.now(), 'Europe/Paris').date;
     const values: Record<string, string | null> = {
       'bailleur.nom': owner,
+      'bailleur.domicile': ownerAddress as string | null,
+      'agent.nom': fullName(agentRow),
+      'mandataire.carte': card as string | null,
+      'logement.pieces': p?.rooms === null || p?.rooms === undefined ? null : String(p.rooms),
+      'logement.habitat': habitat === null ? null : HABITATS[habitat as keyof typeof HABITATS],
+      'logement.equipements': equipment as string | null,
       'locataire.nom': tenant,
-      'logement.adresse': address === null ? null : (address as string).trim(),
+      'logement.adresse': address as string | null,
       'logement.commune': p?.city ?? null,
       'logement.surface_habitable': `${euros(facts.livingAreaHundredths)} m²`,
       'logement.classe_energie': facts.energyClass,

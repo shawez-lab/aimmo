@@ -31,9 +31,12 @@ const FACTS: RentalFacts = {
   leaseStart: '2027-09-01',
   chargesMode: 'provision',
 };
+const INPUT = { address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'collectif', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001' };
 const FEES = { tenantCents: 34_000, tenantInventoryCents: 12_750, landlordCents: 34_000, landlordInventoryCents: 12_750, depositCents: 65_000 };
 const BODY = [
-  'Bail de {{bail.type}} entre {{bailleur.nom}}, bailleur, et {{locataire.nom}}, locataire.',
+  'Bail de {{bail.type}} entre {{bailleur.nom}}, domicilié {{bailleur.domicile}}, bailleur, et {{locataire.nom}}, locataire.',
+  'Mandataire : {{reseau.nom}}, représenté par {{agent.nom}}, carte professionnelle {{mandataire.carte}}.',
+  'Désignation : {{logement.habitat}}, {{logement.pieces}} pièces principales ; équipements : {{logement.equipements}}.',
   'Logement : {{logement.adresse}}, {{logement.commune}}, surface habitable {{logement.surface_habitable}}, classe énergie {{logement.classe_energie}}.',
   'Prise d’effet le {{bail.debut}}, pour {{bail.duree}}.',
   'Loyer : {{loyer.hors_charges}} ; charges : {{charges.montant}}, en {{charges.mode}} ; dépôt de garantie : {{depot.montant}}.',
@@ -80,7 +83,7 @@ async function setup() {
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Essai' });
   const bea = await store.createAgent({ networkId: network.id, firstName: 'Béa', lastName: 'Essai' });
   const owner = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Bailleur', lastName: 'Inventé' });
-  const home = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'L-1', kind: 'home', postalCode: '21000', city: 'Villeneuve-Essai' });
+  const home = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'L-1', kind: 'home', postalCode: '21000', city: 'Villeneuve-Essai', rooms: 2 });
   const agent = { role: 'agent' as const, userId: alex.id, networkId: network.id };
   const other = { role: 'agent' as const, userId: bea.id, networkId: network.id };
   const dir = { role: 'direction' as const, userId: 'dir-1', networkId: network.id };
@@ -122,7 +125,7 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     const t = await setup();
     await t.template();
     const id = await t.ready();
-    const r = await t.baux.generate(t.agent, id, { address: '12 allée des Essais' });
+    const r = await t.baux.generate(t.agent, id, INPUT);
     expect(r).toMatchObject({ ok: true, value: { version: 1, mode: 'essai', status: 'complet', missing: [] } });
     const html = r.ok ? r.value.content : '';
     expect(html).toContain('Candidat2 Inventé');
@@ -134,6 +137,9 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     expect(html).toContain('surface habitable 42,50 m²');
     expect(html).toContain('Annexes : Diagnostic de performance énergétique ; État des risques ; Surface habitable ; Notice d’information');
     expect(html).toContain('DOCUMENT D’ESSAI');
+    expect(html).toContain('Mandataire : Réseau Essai, représenté par Alex Essai, carte professionnelle CPI 2101 2027 000 000 001.');
+    expect(html).toContain('Désignation : immeuble collectif, 2 pièces principales');
+    expect(html).toContain('domicilié 3 chemin des Exemples');
     expect(await t.baux.current(t.agent.networkId, id)).toMatchObject({ leaseId: r.ok ? r.value.leaseId : '', mode: 'essai', complete: true });
     // Le journal ne garde ni nom, ni adresse, ni montant.
     for (const e of await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'location.bail'")) expect(e.data).not.toMatch(/Inventé|allée|650/);
@@ -143,30 +149,46 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     const t = await setup();
     await t.template();
     const id = await t.ready({}, false);
-    expect(await t.baux.generate(t.agent, id, { address: '12 allée des Essais' })).toEqual({ ok: false, rule: 'R105', code: 'no_choice' });
+    expect(await t.baux.generate(t.agent, id, INPUT)).toEqual({ ok: false, rule: 'R105', code: 'no_choice' });
     const t2 = await setup();
     await t2.template();
     const id2 = await t2.ready({ leaseStart: '2027-07-14' });
     // L'état des risques du 1er juillet vaut jusqu'au 31 décembre ; on passe au 1er janvier 2028 : il est échu.
     clock = Date.parse('2028-01-01T08:00:00.000Z');
-    expect(await t2.baux.generate(t2.agent, id2, { address: '12 allée des Essais' })).toEqual({ ok: false, rule: 'R101', code: 'not_rentable' });
+    expect(await t2.baux.generate(t2.agent, id2, INPUT)).toEqual({ ok: false, rule: 'R101', code: 'not_rentable' });
+    // Un bail ne prend pas effet dans le passé, même pour un logement encore louable.
+    const t3 = await setup();
+    await t3.template();
+    const id3 = await t3.ready({ leaseStart: '2027-07-20' });
+    clock = Date.parse('2027-07-21T08:00:00.000Z');
+    expect(await t3.baux.generate(t3.agent, id3, INPUT)).toEqual({ ok: false, rule: null, code: 'lease_start_passed' });
   });
 
   it('[R40] un champ qui manque rend le bail incomplet, jamais inventé ; un modèle validé fait un bail réel', async () => {
     const t = await setup();
     const tpl = await t.template();
     const id = await t.ready();
-    const r = await t.baux.generate(t.agent, id);
+    const r = await t.baux.generate(t.agent, id, { ...INPUT, address: undefined });
     expect(r).toMatchObject({ ok: true, value: { status: 'incomplet', missing: ['logement.adresse'] } });
+    // Chaque mention exigée de la loi de 1989 sans valeur laisse le bail incomplet.
+    const bare = await t.baux.generate(t.agent, id);
+    expect(bare.ok && bare.value.missing.sort()).toEqual(['bailleur.domicile', 'logement.adresse', 'logement.equipements', 'logement.habitat', 'mandataire.carte']);
     expect(r.ok && r.value.content).toContain('[à compléter : adresse du logement]');
     expect(await t.baux.current(t.agent.networkId, id)).toMatchObject({ complete: false });
-    expect(await t.baux.generate(t.agent, id, { address: '<script>' })).toEqual({ ok: false, rule: null, code: 'bad_address' });
+    expect(await t.baux.generate(t.agent, id, { ...INPUT, address: '<script>' })).toEqual({ ok: false, rule: null, code: 'bad_address' });
+    expect(await t.baux.generate(t.agent, id, { ...INPUT, professionalCard: '12345' })).toEqual({ ok: false, rule: null, code: 'bad_card' });
+    expect(await t.baux.generate(t.agent, id, { ...INPUT, habitat: 'chateau' })).toEqual({ ok: false, rule: null, code: 'bad_habitat' });
     expect(await t.baux.validateTemplate(t.dir, tpl.id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.baux.validateTemplate(t.compliance, tpl.id)).toEqual({ ok: true, value: true });
     expect(await t.baux.validateTemplate(t.compliance, tpl.id)).toEqual({ ok: false, rule: null, code: 'not_essai' });
-    const real = await t.baux.generate(t.agent, id, { address: '12 allée des Essais' });
-    expect(real).toMatchObject({ ok: true, value: { version: 2, mode: 'reel', status: 'complet' } });
+    const real = await t.baux.generate(t.agent, id, INPUT);
+    expect(real).toMatchObject({ ok: true, value: { version: 3, mode: 'reel', status: 'complet' } });
     expect(real.ok && real.value.content).not.toContain('DOCUMENT D’ESSAI');
+    // Une nouvelle version d'essai du modèle ne remplace pas la version validée : le modèle en vigueur reste celui-ci.
+    await t.template();
+    const again = await t.baux.generate(t.agent, id, INPUT);
+    expect(again).toMatchObject({ ok: true, value: { mode: 'reel' } });
+    expect((await t.db.first<{ template_id: string }>('SELECT template_id FROM rental_leases ORDER BY version DESC LIMIT 1'))!.template_id).toBe(tpl.id);
     await expect(t.db.run("UPDATE rental_leases SET content = 'x'")).rejects.toThrow(/ne change plus/);
     await expect(t.db.run("UPDATE rental_lease_templates SET body = 'x'")).rejects.toThrow(/ne change plus/);
   });
@@ -187,9 +209,9 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     const t = await setup();
     await t.template();
     const id = await t.ready({ furnished: true, chargesMode: 'forfait' });
-    expect(await t.baux.generate(t.agent, id, { address: '12 allée des Essais' })).toEqual({ ok: false, rule: null, code: 'no_template' });
+    expect(await t.baux.generate(t.agent, id, INPUT)).toEqual({ ok: false, rule: null, code: 'no_template' });
     await t.template('bail_meuble');
-    const r = await t.baux.generate(t.agent, id, { address: '12 allée des Essais' });
+    const r = await t.baux.generate(t.agent, id, INPUT);
     expect(r.ok && r.value.content).toContain('pour un an');
     expect(r.ok && r.value.content).toContain('en forfait');
     expect(r.ok && r.value.annexes).toContain('Inventaire et état détaillé du mobilier');
@@ -201,8 +223,8 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     const t = await setup();
     await t.template();
     const id = await t.ready();
-    expect(await t.baux.generate(t.other, id, { address: '12 allée des Essais' })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
-    expect(await t.baux.generate(t.compliance, id, { address: '12 allée des Essais' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
-    expect((await t.baux.generate(t.dir, id, { address: '12 allée des Essais' })).ok).toBe(true);
+    expect(await t.baux.generate(t.other, id, INPUT)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+    expect(await t.baux.generate(t.compliance, id, INPUT)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect((await t.baux.generate(t.dir, id, INPUT)).ok).toBe(true);
   });
 });
