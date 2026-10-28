@@ -1574,7 +1574,9 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W05 · Dossiers montrés au propriétaire dans leur ordre d'arrivée, reçu d'équité (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#154) ; R105 en service ; relecture forte 3 P1 corrigés (pièces du garant dans le reçu, reçus rejouables, reçus des dossiers incomplets), Codex 1 P1 et 1 P2 corrigés (reçus sans dossier complet, référence de vérification sans chiffre). Les reçus préparés passent par le contrôle central en W10.
+- Décidé (2026-10-28, voie 2) : le propriétaire voit chaque dossier par son rang d'arrivée, ses pièces et ses garants, sans le nom du candidat ; chaque candidat, présenté ou encore incomplet, reçoit son reçu d'équité ; un seul choix par mise en location.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W04
 - Cahier : M15, « Présentation au propriétaire » ; Conformité, « Non-discrimination ».
 - Objectif : la présentation des dossiers complets au propriétaire et l'enregistrement de son choix ; le reçu d'équité.
@@ -1582,7 +1584,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W06 · Bail et annexes depuis les modèles, signés en ligne
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W05, D08
 - Cahier : M15, « Bail et annexes » ; Conformité, « Bail et état des lieux ».
 - Objectif : le bail vide ou meublé et ses annexes faits depuis les modèles datés de M06 (D02) avec les données de la mise en location, signés par la signature en ligne de D08, en mode essai.
