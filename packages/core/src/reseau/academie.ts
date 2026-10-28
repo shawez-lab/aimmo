@@ -1,0 +1,377 @@
+/**
+ * Académie du réseau (M14, J06) [R85].
+ *
+ * Des modules courts (une vidéo YouTube en accès restreint, par son identifiant ; un script par sa référence ; une
+ * durée), rangés en parcours : l'entrée, puis une spécialité. Des séances en salle, en direct, mensuelles ou
+ * régionales, dont la présence est saisie par un humain nommé de la direction.
+ *
+ * Le compteur des heures de formation obligatoire est calculé par le code, et seulement depuis des modules faits et
+ * des présences rangées [R85, R10] : par année d'activité (14 h), et par période de 3 ans (42 h, dont 2 h de
+ * déontologie et 2 h de non-discrimination). Les périodes partent du jour d'entrée de l'agent. Quand une obligation
+ * manque, l'agent est prévenu 90 puis 30 jours avant l'échéance, une seule fois par palier ; les alertes sont rendues
+ * au planificateur (J13), rien n'est envoyé ici.
+ *
+ * L'académie forme : elle n'impose aucun horaire, aucune date limite de module, et ne note pas l'agent [R14]. Seuls
+ * l'agent lui-même et la direction lisent son compteur [R16]. La direction range les modules, les séances et les
+ * présences ; l'agent marque ses modules faits. Au journal, des identifiants internes et des nombres [R13].
+ */
+import type { Viewer } from '../acces/droits.ts';
+import type { SqlDatabase } from '../db/sql.ts';
+import { localTime } from '../envoi/horaires.ts';
+import { appendEvent } from '../journal/journal.ts';
+import type { JournalStore } from '../journal/types.ts';
+
+const TIME_ZONE = 'Europe/Paris';
+
+export const ACADEMY_TRACKS = ['entree', 'vente', 'location', 'commerces', 'investissement', 'conformite'] as const;
+export type AcademyTrack = (typeof ACADEMY_TRACKS)[number];
+
+export const ACADEMY_TOPICS = ['general', 'deontologie', 'non_discrimination'] as const;
+export type AcademyTopic = (typeof ACADEMY_TOPICS)[number];
+
+export const SESSION_KINDS = ['salle', 'direct', 'mensuelle', 'regionale'] as const;
+export type SessionKind = (typeof SESSION_KINDS)[number];
+
+export type Obligation = 'annuelle' | 'triennale' | 'deontologie' | 'non_discrimination';
+
+/** Réglages des heures obligatoires, en minutes, et des paliers d'alerte, en jours avant l'échéance. */
+export interface AcademySettings {
+  annualMinutes: number;
+  triennialMinutes: number;
+  deontologyMinutes: number;
+  nonDiscriminationMinutes: number;
+  alertDays: readonly number[];
+}
+
+export const ACADEMY_SETTINGS: Readonly<AcademySettings> = Object.freeze({
+  annualMinutes: 14 * 60,
+  triennialMinutes: 42 * 60,
+  deontologyMinutes: 2 * 60,
+  nonDiscriminationMinutes: 2 * 60,
+  alertDays: Object.freeze([90, 30]),
+});
+
+export interface ObligationStatus {
+  obligation: Obligation;
+  /** Premier jour de la période, `AAAA-MM-JJ`. */
+  from: string;
+  /** Dernier jour de la période, compris. */
+  until: string;
+  requiredMinutes: number;
+  doneMinutes: number;
+  missingMinutes: number;
+  daysLeft: number;
+}
+
+export interface TrainingCounter {
+  agentId: string;
+  /** Jour d'entrée de l'agent, d'où partent les périodes. */
+  startedOn: string;
+  obligations: ObligationStatus[];
+}
+
+export interface AcademyAlert {
+  agentId: string;
+  obligation: Obligation;
+  until: string;
+  daysBefore: number;
+  missingMinutes: number;
+  /** Ce que l'agent lira, en une phrase. */
+  text: string;
+}
+
+export type AcademyRefusal = { ok: false; rule: 'R16' | null; code: string };
+
+export interface AcademieOptions {
+  now?: () => Date;
+  newId?: () => string;
+  settings?: AcademySettings;
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+
+const validDay = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !DAY.test(v)) return false;
+  const d = new Date(`${v}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};
+
+/** Le même jour, n années plus tard ; un 29 février devient le 28 les années sans. */
+export function addYears(day: string, years: number): string {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+  const last = new Date(Date.UTC(y + years, m, 0)).getUTCDate();
+  return new Date(Date.UTC(y + years, m - 1, Math.min(d, last), 12)).toISOString().slice(0, 10);
+}
+
+const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const daysBetween = (from: string, to: string): number => Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000);
+const frDate = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`;
+
+/** « 1 h 30 », « 45 min », « 14 h ». */
+export function hours(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h} h` : `${h} h ${String(m).padStart(2, '0')}`;
+}
+
+const LABEL: Record<Obligation, string> = {
+  annuelle: "de formation pour l'année",
+  triennale: 'de formation sur 3 ans',
+  deontologie: 'de déontologie',
+  non_discrimination: 'de non-discrimination',
+};
+
+/** La période (année ou 3 ans) qui contient le jour, à partir du jour d'entrée. */
+function periodOf(startedOn: string, today: string, years: number): { from: string; until: string } {
+  let k = Math.max(0, Math.floor(daysBetween(startedOn, today) / (365.25 * years)) - 1);
+  while (addYears(startedOn, (k + 1) * years) <= today) k += 1;
+  while (k > 0 && addYears(startedOn, k * years) > today) k -= 1;
+  const from = addYears(startedOn, k * years);
+  return { from, until: addDays(addYears(startedOn, (k + 1) * years), -1) };
+}
+
+interface Done {
+  day: string;
+  minutes: number;
+  topic: AcademyTopic;
+}
+
+export class Academie {
+  private readonly now: () => Date;
+  private readonly newId: () => string;
+  private readonly settings: AcademySettings;
+
+  constructor(
+    private readonly db: SqlDatabase,
+    private readonly journal: JournalStore,
+    options: AcademieOptions = {},
+  ) {
+    this.now = options.now ?? (() => new Date());
+    this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.settings = options.settings ?? ACADEMY_SETTINGS;
+  }
+
+  private actor(viewer: Viewer): string {
+    return `${String(viewer.role)}:${viewer.userId}`;
+  }
+
+  private today(at: Date = this.now()): string {
+    return localTime(at, TIME_ZONE).date;
+  }
+
+  private async refuse(viewer: Viewer, subject: string | null, kind: string, code: string): Promise<AcademyRefusal> {
+    await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind, code } }, this.now);
+    return { ok: false, rule: 'R16', code };
+  }
+
+  private async agent(networkId: string, agentId: string): Promise<{ status: string; created_at: string } | null> {
+    return this.db.first<{ status: string; created_at: string }>('SELECT status, created_at FROM agents WHERE id = ? AND network_id = ?', [agentId, networkId]);
+  }
+
+  /** La direction range un module. Un module ne porte ni date limite ni horaire [R85]. */
+  async addModule(
+    viewer: Viewer,
+    input: { title: unknown; track: unknown; position: unknown; videoId: unknown; scriptRef?: unknown; durationMinutes: unknown; topic?: unknown; mandatory?: unknown },
+  ): Promise<{ ok: true; moduleId: string } | AcademyRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, null, 'academy_module', 'role');
+    const title = typeof input.title === 'string' ? input.title.trim() : '';
+    if (title.length < 3 || title.length > 120) return { ok: false, rule: null, code: 'invalid_title' };
+    if (typeof input.track !== 'string' || !(ACADEMY_TRACKS as readonly string[]).includes(input.track)) return { ok: false, rule: null, code: 'invalid_track' };
+    if (!Number.isInteger(input.position) || (input.position as number) < 1 || (input.position as number) > 999) return { ok: false, rule: null, code: 'invalid_position' };
+    if (typeof input.videoId !== 'string' || !VIDEO_ID.test(input.videoId)) return { ok: false, rule: null, code: 'invalid_video' };
+    const scriptRef = input.scriptRef === undefined || input.scriptRef === null ? null : input.scriptRef;
+    if (scriptRef !== null && (typeof scriptRef !== 'string' || scriptRef.length < 1 || scriptRef.length > 200)) return { ok: false, rule: null, code: 'invalid_script' };
+    if (!Number.isInteger(input.durationMinutes) || (input.durationMinutes as number) < 1 || (input.durationMinutes as number) > 480) return { ok: false, rule: null, code: 'invalid_duration' };
+    const topic = input.topic ?? 'general';
+    if (typeof topic !== 'string' || !(ACADEMY_TOPICS as readonly string[]).includes(topic)) return { ok: false, rule: null, code: 'invalid_topic' };
+    const mandatory = input.mandatory ?? true;
+    if (typeof mandatory !== 'boolean') return { ok: false, rule: null, code: 'invalid_mandatory' };
+    const id = this.newId();
+    const { changes } = await this.db.run(
+      `INSERT INTO academy_modules (id, network_id, title, track, position, video_id, script_ref, duration_minutes, topic, mandatory, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+      [id, viewer.networkId, title, input.track, input.position as number, input.videoId, scriptRef as string | null, input.durationMinutes as number, topic, mandatory ? 1 : 0, this.actor(viewer), this.now().toISOString()],
+    );
+    if (changes !== 1) return { ok: false, rule: null, code: 'position_taken' };
+    await appendEvent(this.journal, { type: 'academie.module', actor: this.actor(viewer), subject: `academy_module:${id}`, data: { track: input.track, minutes: input.durationMinutes as number, topic } }, this.now);
+    return { ok: true, moduleId: id };
+  }
+
+  /** Les parcours : l'entrée d'abord, puis chaque spécialité, dans l'ordre des positions. Tout agent du réseau les lit. */
+  async tracks(
+    viewer: Viewer,
+  ): Promise<{ ok: true; value: { track: AcademyTrack; modules: { id: string; title: string; position: number; videoId: string; durationMinutes: number; topic: AcademyTopic; mandatory: boolean }[] }[] } | AcademyRefusal> {
+    if (viewer.role === 'partner') return this.refuse(viewer, null, 'academy_tracks', 'role');
+    const rows = await this.db.all<{ id: string; title: string; track: AcademyTrack; position: number; video_id: string; duration_minutes: number; topic: AcademyTopic; mandatory: number }>(
+      'SELECT id, title, track, position, video_id, duration_minutes, topic, mandatory FROM academy_modules WHERE network_id = ? ORDER BY position, id',
+      [viewer.networkId],
+    );
+    const value = ACADEMY_TRACKS.map((track) => ({
+      track,
+      modules: rows
+        .filter((r) => r.track === track)
+        .map((r) => ({ id: r.id, title: r.title, position: r.position, videoId: r.video_id, durationMinutes: r.duration_minutes, topic: r.topic, mandatory: r.mandatory === 1 })),
+    })).filter((t) => t.modules.length > 0);
+    return { ok: true, value };
+  }
+
+  /** L'agent marque un module fait, une seule fois. Le jour compté est celui où il l'a fait. */
+  async complete(viewer: Viewer, moduleId: string): Promise<{ ok: true; already: boolean } | AcademyRefusal> {
+    if (viewer.role !== 'agent') return this.refuse(viewer, `academy_module:${moduleId}`, 'academy_completion', 'role');
+    const agent = await this.agent(viewer.networkId, viewer.userId);
+    if (!agent || agent.status !== 'active') return this.refuse(viewer, `academy_module:${moduleId}`, 'academy_completion', 'agent_inactive');
+    const module = await this.db.first<{ id: string }>('SELECT id FROM academy_modules WHERE id = ? AND network_id = ?', [moduleId, viewer.networkId]);
+    if (!module) return { ok: false, rule: null, code: 'unknown_module' };
+    const at = this.now();
+    const { changes } = await this.db.run(
+      'INSERT INTO academy_completions (module_id, agent_id, network_id, completed_at, completed_on) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+      [moduleId, viewer.userId, viewer.networkId, at.toISOString(), this.today(at)],
+    );
+    if (changes === 1) await appendEvent(this.journal, { type: 'academie.module_fait', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { module: `academy_module:${moduleId}` } }, this.now);
+    return { ok: true, already: changes !== 1 };
+  }
+
+  /** La direction range une séance tenue (ou à tenir) un jour donné. */
+  async addSession(
+    viewer: Viewer,
+    input: { kind: unknown; title: unknown; heldOn: unknown; durationMinutes: unknown; topic?: unknown; mandatory?: unknown },
+  ): Promise<{ ok: true; sessionId: string } | AcademyRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, null, 'academy_session', 'role');
+    if (typeof input.kind !== 'string' || !(SESSION_KINDS as readonly string[]).includes(input.kind)) return { ok: false, rule: null, code: 'invalid_kind' };
+    const title = typeof input.title === 'string' ? input.title.trim() : '';
+    if (title.length < 3 || title.length > 120) return { ok: false, rule: null, code: 'invalid_title' };
+    if (!validDay(input.heldOn)) return { ok: false, rule: null, code: 'invalid_day' };
+    if (!Number.isInteger(input.durationMinutes) || (input.durationMinutes as number) < 1 || (input.durationMinutes as number) > 480) return { ok: false, rule: null, code: 'invalid_duration' };
+    const topic = input.topic ?? 'general';
+    if (typeof topic !== 'string' || !(ACADEMY_TOPICS as readonly string[]).includes(topic)) return { ok: false, rule: null, code: 'invalid_topic' };
+    const mandatory = input.mandatory ?? true;
+    if (typeof mandatory !== 'boolean') return { ok: false, rule: null, code: 'invalid_mandatory' };
+    const id = this.newId();
+    await this.db.run(
+      `INSERT INTO academy_sessions (id, network_id, kind, title, held_on, duration_minutes, topic, mandatory, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, viewer.networkId, input.kind, title, input.heldOn, input.durationMinutes as number, topic, mandatory ? 1 : 0, this.actor(viewer), this.now().toISOString()],
+    );
+    await appendEvent(this.journal, { type: 'academie.seance', actor: this.actor(viewer), subject: `academy_session:${id}`, data: { kind: input.kind, minutes: input.durationMinutes as number, topic } }, this.now);
+    return { ok: true, sessionId: id };
+  }
+
+  /**
+   * La direction range la présence d'un agent à une séance déjà tenue, avec le nom de l'humain qui la saisit. Une
+   * présence ne se devine jamais : sans cette saisie, la séance ne compte pas [R85, R10].
+   */
+  async recordAttendance(viewer: Viewer, sessionId: string, input: { agentId: unknown; recorderName: unknown }): Promise<{ ok: true; already: boolean } | AcademyRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `academy_session:${sessionId}`, 'academy_attendance', 'role');
+    const name = typeof input.recorderName === 'string' ? input.recorderName.trim() : '';
+    if (name.length < 2 || name.length > 80) return { ok: false, rule: null, code: 'recorder_required' };
+    const session = await this.db.first<{ held_on: string }>('SELECT held_on FROM academy_sessions WHERE id = ? AND network_id = ?', [sessionId, viewer.networkId]);
+    if (!session) return { ok: false, rule: null, code: 'unknown_session' };
+    if (session.held_on > this.today()) return { ok: false, rule: null, code: 'session_not_held' };
+    if (typeof input.agentId !== 'string') return { ok: false, rule: null, code: 'unknown_agent' };
+    const agent = await this.agent(viewer.networkId, input.agentId);
+    if (!agent) return { ok: false, rule: null, code: 'unknown_agent' };
+    const { changes } = await this.db.run(
+      'INSERT INTO academy_attendance (session_id, agent_id, network_id, recorded_by, recorder_name, recorded_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+      [sessionId, input.agentId, viewer.networkId, this.actor(viewer), name, this.now().toISOString()],
+    );
+    if (changes === 1) await appendEvent(this.journal, { type: 'academie.presence', actor: this.actor(viewer), subject: `agent:${input.agentId}`, data: { session: `academy_session:${sessionId}` } }, this.now);
+    return { ok: true, already: changes !== 1 };
+  }
+
+  /** Le compteur d'un agent : lu par l'agent lui-même et par la direction, personne d'autre [R16]. */
+  async counter(viewer: Viewer, agentId: string): Promise<{ ok: true; value: TrainingCounter } | AcademyRefusal> {
+    const agent = await this.agent(viewer.networkId, agentId);
+    if (!agent) return this.refuse(viewer, `agent:${agentId}`, 'training_counter', 'unknown');
+    const allowed = viewer.role === 'direction' || (viewer.role === 'agent' && viewer.userId === agentId);
+    if (!allowed) return this.refuse(viewer, `agent:${agentId}`, 'training_counter', viewer.role === 'agent' ? 'not_assigned' : 'role');
+    return { ok: true, value: await this.compute(viewer.networkId, agentId, this.today()) };
+  }
+
+  private async startedOn(networkId: string, agentId: string): Promise<string> {
+    const onboarding = await this.db.first<{ created_at: string }>('SELECT created_at FROM agent_onboardings WHERE agent_id = ? AND network_id = ?', [agentId, networkId]);
+    const agent = await this.agent(networkId, agentId);
+    const at = onboarding?.created_at ?? agent?.created_at;
+    if (!at) throw new Error(`Agent inconnu : ${agentId}`);
+    return this.today(new Date(at));
+  }
+
+  /** Les minutes obligatoires faites, par jour et par thème : modules faits et présences rangées, rien d'autre [R85]. */
+  private async done(agentId: string): Promise<Done[]> {
+    const modules = await this.db.all<{ day: string; minutes: number; topic: AcademyTopic }>(
+      `SELECT c.completed_on AS day, m.duration_minutes AS minutes, m.topic AS topic FROM academy_completions c
+       JOIN academy_modules m ON m.id = c.module_id WHERE c.agent_id = ? AND m.mandatory = 1`,
+      [agentId],
+    );
+    const sessions = await this.db.all<{ day: string; minutes: number; topic: AcademyTopic }>(
+      `SELECT s.held_on AS day, s.duration_minutes AS minutes, s.topic AS topic FROM academy_attendance a
+       JOIN academy_sessions s ON s.id = a.session_id WHERE a.agent_id = ? AND s.mandatory = 1`,
+      [agentId],
+    );
+    return [...modules, ...sessions];
+  }
+
+  private async compute(networkId: string, agentId: string, today: string): Promise<TrainingCounter> {
+    const startedOn = await this.startedOn(networkId, agentId);
+    const done = await this.done(agentId);
+    const s = this.settings;
+    const sum = (p: { from: string; until: string }, topic?: AcademyTopic): number =>
+      done.filter((d) => d.day >= p.from && d.day <= p.until && (topic === undefined || d.topic === topic)).reduce((a, d) => a + d.minutes, 0);
+    const year = periodOf(startedOn, today < startedOn ? startedOn : today, 1);
+    const three = periodOf(startedOn, today < startedOn ? startedOn : today, 3);
+    const line = (obligation: Obligation, p: { from: string; until: string }, required: number, doneMinutes: number): ObligationStatus => ({
+      obligation,
+      from: p.from,
+      until: p.until,
+      requiredMinutes: required,
+      doneMinutes,
+      missingMinutes: Math.max(0, required - doneMinutes),
+      daysLeft: daysBetween(today, p.until),
+    });
+    return {
+      agentId,
+      startedOn,
+      obligations: [
+        line('annuelle', year, s.annualMinutes, sum(year)),
+        line('triennale', three, s.triennialMinutes, sum(three)),
+        line('deontologie', three, s.deontologyMinutes, sum(three, 'deontologie')),
+        line('non_discrimination', three, s.nonDiscriminationMinutes, sum(three, 'non_discrimination')),
+      ],
+    };
+  }
+
+  /**
+   * Les alertes du jour, pour le planificateur (J13) : pour chaque agent actif et chaque obligation qui manque, une
+   * alerte au palier le plus proche atteint (90 puis 30 jours avant l'échéance), une seule fois [R85].
+   */
+  async dueAlerts(networkId: string): Promise<AcademyAlert[]> {
+    const today = this.today();
+    const agents = await this.db.all<{ id: string }>("SELECT id FROM agents WHERE network_id = ? AND status = 'active' ORDER BY id", [networkId]);
+    const thresholds = [...this.settings.alertDays].sort((a, b) => a - b);
+    const out: AcademyAlert[] = [];
+    for (const { id } of agents) {
+      const counter = await this.compute(networkId, id, today);
+      for (const o of counter.obligations) {
+        if (o.missingMinutes === 0 || o.daysLeft < 0) continue;
+        const reached = thresholds.find((t) => o.daysLeft <= t);
+        if (reached === undefined) continue;
+        const { changes } = await this.db.run(
+          `INSERT INTO academy_alerts (agent_id, network_id, obligation, period_end, days_before, missing_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT DO NOTHING`,
+          [id, networkId, o.obligation, o.until, reached, o.missingMinutes, this.now().toISOString()],
+        );
+        if (changes !== 1) continue;
+        out.push({
+          agentId: id,
+          obligation: o.obligation,
+          until: o.until,
+          daysBefore: reached,
+          missingMinutes: o.missingMinutes,
+          text: `Il vous reste ${hours(o.missingMinutes)} ${LABEL[o.obligation]} à faire avant le ${frDate(o.until)}, à votre rythme.`,
+        });
+        await appendEvent(this.journal, { type: 'academie.alerte', actor: 'system:academie', subject: `agent:${id}`, data: { obligation: o.obligation, daysBefore: reached, missingMinutes: o.missingMinutes } }, this.now);
+      }
+    }
+    return out;
+  }
+}
