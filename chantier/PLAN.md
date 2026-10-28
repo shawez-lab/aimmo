@@ -1467,6 +1467,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 
 ### U07 · Suivi des demandes, relances et avis lus par un humain
 - Statut : à faire
+- Décidé (2026-10-28, voie 2) : un partenaire n'est pas une personne de la fiche client, et le contrôle central des envois (`ControleEnvois.send`) n'écrit qu'à une personne de la fiche : U07 range seulement les relances préparées dans une boîte de M18 (texte du code, date due dans les heures d'envoi, jamais deux fois la même), sans rien envoyer ; leur passage par le contrôle central (partenaire relié à une fiche de rôle partenaire, type d'envoi `partner`, plafond de R11) revient à U09, voie 1.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U05
 - Cahier : M18, « Suivi » ; L'IA et l'humain.
 - Objectif : pour chaque mise en relation confiée : délai de réponse mesuré, relance préparée au partenaire après le réglage (2 jours ouvrés sans réponse), puis alerte à l'agent ; résumé des réponses par l'IA derrière une interface, avec un secours sans IA ; avis du client sur le service rendu, rangé pour lecture humaine.
@@ -1475,6 +1476,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 
 ### U08 · Prospection de nouveaux partenaires entre professionnels
 - Statut : à faire
+- Décidé (2026-10-28, voie 2) : tel qu'écrit, R03 exige un accord préalable pour tout premier mail d'initiative, prospection entre professionnels comprise ; tant que H32 n'est pas tranché, U08 prépare la liste et les mails en mode essai, et le contrôle les refuse sous R03. Rien ne part.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01
 - Cahier : M18, « Nouveaux partenaires » et « État ».
 - Objectif : la liste des partenaires à contacter (adresse professionnelle, métier, source publique), le mail de présentation préparé, le plafond par jour ouvré, l'opposition.
