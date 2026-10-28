@@ -438,6 +438,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       rental_inventories: ['rooms', 'meters', 'content', 'content_sha256', 'lease_sha256', 'created_by'],
       rental_inventory_signatures: ['content_sha256', 'drawing_sha256', 'signed_by'],
       rental_inventory_copies: ['content_sha256'],
+      rental_handovers: ['deposit_cents', 'first_rent_cents', 'text', 'text_sha256', 'recorded_by'],
+      rental_management_links: ['linked_by'],
       rental_fees: ['facts_version', 'zone', 'tenant_cents', 'tenant_inventory_cents', 'landlord_cents', 'landlord_inventory_cents', 'deposit_cents', 'recorded_by'],
     },
   },
@@ -690,6 +692,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   rental_inventories: ['id', 'listing_id', 'network_id', 'version', 'lease_id', 'mode', 'status', 'missing', 'keys_given', 'furniture', 'created_at'],
   rental_inventory_signatures: ['id', 'inventory_id', 'party', 'signed_at'],
   rental_inventory_copies: ['id', 'inventory_id', 'party', 'prepared_at'],
+  rental_handovers: ['id', 'listing_id', 'network_id', 'lease_id', 'inventory_id', 'handed_on', 'deposit_payee', 'first_rent_payee', 'recorded_at'],
+  rental_management_links: ['id', 'listing_id', 'network_id', 'referral_id', 'partner_id', 'linked_at'],
   rental_fees: ['listing_id', 'version', 'insee_code', 'tenant_ceiling_cents', 'inventory_ceiling_cents', 'deposit_ceiling_cents', 'recorded_at'],
 };
 
