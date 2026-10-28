@@ -19,8 +19,12 @@ describe('fondations du dépôt', () => {
   it('chaque règle a un numéro unique et un état connu', () => {
     const rows = read('docs/REGLES.md')
       .split('\n')
-      .filter((line) => /^\| R\d{2} \|/.test(line));
+      .filter((line) => /^\| R\d{2,3} \|/.test(line));
     expect(rows.length).toBeGreaterThan(0);
+    // Les règles à trois chiffres (M15, à partir de R100) sont lues comme les autres.
+    expect(rows.some((row) => row.startsWith('| R100 |'))).toBe(true);
+    // Les vérifications lisent les mêmes lignes : une règle à trois chiffres en service sans test les fait échouer.
+    expect(read('scripts/garde-fous.mjs')).toContain('/^\\| R\\d{2,3} \\|/');
     const ids = rows.map((row) => row.split('|')[1]?.trim());
     expect(new Set(ids).size).toBe(ids.length);
     for (const row of rows) {

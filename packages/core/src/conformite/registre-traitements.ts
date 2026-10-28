@@ -406,6 +406,23 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       registry_review_alerts: [],
     },
   },
+  {
+    id: 'location',
+    finalite: 'Mettre un logement en location sans le gérer : contrôle du logement avant toute annonce, annexes du bail, échéance du propriétaire d\'un logement énergivore.',
+    baseLegale: 'contrat',
+    personnes: ['Propriétaires bailleurs'],
+    donnees: ['Propriétaire du logement', 'Loyer, charges, surface, classe énergie, date du bail', 'Annexes du bail par leur référence de stockage', 'Échéance préparée pour le propriétaire'],
+    duree: 'La durée du mandat de location, puis 5 ans ; une mise en location sans suite, 3 ans après le dernier contact du propriétaire.',
+    destinataires: ['L\'agent du logement', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
+    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
+    tables: {
+      rental_listings: ['owner_person_id', 'created_by'],
+      rental_facts: ['rent_cents', 'charges_cents', 'recorded_by'],
+      rental_annexes: ['ref', 'recorded_by'],
+      rental_checks: ['facts_version', 'checked_by'],
+      rental_owner_notices: ['owner_person_id', 'text'],
+    },
+  },
 ];
 
 /** Les tables sans aucune donnée personnelle, chacune avec sa raison. */
@@ -633,6 +650,11 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   partner_prospects: ['id', 'network_id', 'trade', 'source', 'added_at'],
   partner_prospect_mails: ['id', 'network_id', 'prospect_id', 'day', 'decision_rule', 'prepared_at'],
   partner_prospect_optouts: ['network_id', 'via', 'at'],
+  rental_listings: ['id', 'network_id', 'property_id', 'created_at'],
+  rental_facts: ['listing_id', 'version', 'furnished', 'living_area_hundredths', 'energy_class', 'final_energy_kwh', 'build_year', 'electricity_over_15', 'gas', 'lease_start', 'recorded_at'],
+  rental_annexes: ['id', 'listing_id', 'kind', 'version', 'diagnosed_on', 'valid_until', 'recorded_at'],
+  rental_checks: ['id', 'listing_id', 'annexes_key', 'decision', 'reasons', 'checked_at'],
+  rental_owner_notices: ['id', 'listing_id', 'energy_class', 'banned_from', 'prepared_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
