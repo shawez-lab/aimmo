@@ -314,6 +314,9 @@ describe('W11 · écran « Louer » de l’application', () => {
     t.input('Nombre').value = '2';
     const inv = { inventoryId: 'i1', listingId: 'l1', version: 1, mode: 'essai', status: 'complet', missing: [], rooms: [], content: `ÉTAT DES LIEUX D’ENTRÉE\nDOCUMENT D’ESSAI, SANS VALEUR ${INJECTED}`, contentSha256: 'd'.repeat(64) };
     t.table['POST /v1/location/l1/etat-des-lieux'] = ok(inv);
+    // L'écran relu après le rangement : l'état des lieux en cours vient du serveur, pas de la mémoire du téléphone.
+    const suivi = (signed: string[]) => ok({ facts: FACTS, fees: null, lease: { ...LEASE, bailleur: '2027-07-12T09:00:00.000Z', locataire: '2027-07-12T09:05:00.000Z' }, inventoryClosed: false, inventory: { ...inv, leaseId: 'bl1', signed } });
+    t.table['GET /v1/location/l1/suivi'] = suivi([]);
     await t.click(t.byText('Ranger l’état des lieux'));
     expect(JSON.parse(t.posts()[0]!.body!)).toEqual({
       rooms: [
@@ -338,12 +341,43 @@ describe('W11 · écran « Louer » de l’application', () => {
     for (let x = 12; x < 60; x += 6) pad.listeners.pointermove!({ offsetX: x, offsetY: 30 });
     pad.listeners.pointerup!({});
     t.table['POST /v1/location/etats-des-lieux/i1/signatures'] = ok({ party: 'bailleur', closed: false });
+    t.table['GET /v1/location/l1/suivi'] = suivi(['bailleur']);
     await t.click(t.byText('Signer pour le bailleur'));
     const b = JSON.parse(t.posts()[0]!.body!);
     expect(b).toMatchObject({ party: 'bailleur', contentSha256: 'd'.repeat(64) });
     expect(b.drawing).toMatch(/^[0-9, ;]{10,}$/);
     expect(t.state()).toBe('Signature du bailleur rangée.');
     expect(t.body().textContent).toContain('Signé par le bailleur.');
+    expect(t.body().textContent).toContain('Le refaire annulerait la signature déjà donnée');
+    // Un rechargement de l'application garde l'état des lieux à signer : seul le locataire reste à signer.
+    const u = await run({ 'GET /v1/location/l1/suivi': suivi(['bailleur']), 'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c1' }) });
+    await u.openL1();
+    expect(u.byText('Signer pour le bailleur')).toBeUndefined();
+    expect(u.byText('Signer pour le locataire')).toBeDefined();
+    expect(u.body().textContent).toContain(`DOCUMENT D’ESSAI, SANS VALEUR ${INJECTED}`);
+  });
+
+  it('[R108] un code de signature expiré : dit en clair, la séance est oubliée et un nouveau code peut partir', async () => {
+    const t = await run({
+      'GET /v1/location/l1/suivi': ok({ facts: FACTS, fees: null, lease: LEASE, inventoryClosed: false }),
+      'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c1' }),
+    });
+    await t.openL1();
+    t.input('Comment le bailleur a accepté de signer en ligne').value = 'Accord écrit reçu ce matin.';
+    t.table['POST /v1/location/l1/bail/signatures'] = ok({ sessionId: 's9', leaseId: 'bl1', contentSha256: 'c'.repeat(64), expiresAt: '2027-07-12T09:15:00.000Z', mode: 'essai' });
+    await t.click(t.byText('Envoyer le code de signature au bailleur'));
+    t.input('Code reçu par le bailleur').value = '654321';
+    t.table['POST /v1/location/signatures-bail/s9'] = no(409, { ok: false, rule: null, code: 'expired' });
+    await t.click(t.byText('Signer pour le bailleur'));
+    expect(t.state()).toBe('Code expiré : envoyez-en un nouveau.');
+    expect(t.byText('Envoyer le code de signature au bailleur')).toBeDefined();
+    // Le bouton « Renvoyer un code » ramène aussi au premier pas, sans rien envoyer.
+    t.input('Comment le bailleur a accepté de signer en ligne').value = 'Accord écrit reçu ce matin.';
+    await t.click(t.byText('Envoyer le code de signature au bailleur'));
+    const before = t.posts().length;
+    await t.click(t.byText('Renvoyer un code'));
+    expect(t.posts()).toHaveLength(before);
+    expect(t.byText('Envoyer le code de signature au bailleur')).toBeDefined();
   });
 
   it('les libellés du bail sont tous distincts sous leur clé courte, et le script ne nomme aucun « mandataire »', () => {

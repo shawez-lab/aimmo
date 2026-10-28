@@ -137,7 +137,7 @@ const core = locationCore;
 
 /**
  * L'avancée d'une mise en location (W11) : les derniers faits rangés, les honoraires en vigueur, le bail en vigueur et ses signatures d'essai,
- * l'état des lieux clos ou non. Rien d'une personne : ni nom, ni coordonnée. La lecture est au journal [R16].
+ * l'état des lieux clos ou en cours de signature. Rien d'une personne (hors le contenu de l'état des lieux, document des deux parties) : ni nom, ni coordonnée. La lecture est au journal [R16].
  */
 async function progress(s: LocationServices, v: Viewer, id: string): Promise<Outcome> {
   const c = core(s);
@@ -149,6 +149,7 @@ async function progress(s: LocationServices, v: Viewer, id: string): Promise<Out
   const signed = lease ? await c.signatures.status(listing.networkId, lease.leaseId) : null;
   const closed = await c.inventories.closedInventory(listing.networkId, listing.id);
   const f = await c.fees.current(listing.networkId, listing.id);
+  const open = lease ? await c.inventories.pending(listing.networkId, listing.id) : null;
   return {
     ok: true,
     value: {
@@ -156,6 +157,8 @@ async function progress(s: LocationServices, v: Viewer, id: string): Promise<Out
       fees: f ? { tenantCents: f.tenantCents, tenantInventoryCents: f.tenantInventoryCents, landlordCents: f.landlordCents, landlordInventoryCents: f.landlordInventoryCents, depositCents: f.depositCents } : null,
       lease: lease ? { leaseId: lease.leaseId, mode: lease.mode, complete: lease.complete, bailleur: signed?.bailleur ?? null, locataire: signed?.locataire ?? null, copiesSent: signed?.copiesSent ?? [] } : null,
       inventoryClosed: closed !== null && lease !== null && closed.leaseId === lease.leaseId,
+      // L'état des lieux du bail en vigueur, rangé mais pas encore signé des deux parties : à signer sans le refaire.
+      inventory: open && lease && open.leaseId === lease.leaseId ? open : null,
     },
   };
 }

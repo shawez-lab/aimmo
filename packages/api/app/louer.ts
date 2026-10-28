@@ -163,6 +163,8 @@ export const LOUER_JS = `
     return d;
   }
   var louerPage = 0;
+  // Le code du dernier refus, pour qu'un geste sache par exemple qu'un code de signature est à renvoyer.
+  var louerLastCode = null;
   var louerId = null;
   function openLouer(message, page) {
     if (!currentKey) return Promise.resolve(false);
@@ -201,7 +203,9 @@ export const LOUER_JS = `
     louerState('Envoi…');
     return send(path, 'POST', body).then(function (res) {
       if (res.gone) return null;
+      louerLastCode = null;
       if (!res.ok) {
+        louerLastCode = (res.body && res.body.code) || null;
         var text = res.offline ? 'Pas de réseau : rien n’est enregistré.' : louerRefusal(res.body, fallback);
         if (res.body && Array.isArray(res.body.problems) && res.body.problems.length) text += ' ' + res.body.problems.map(problemText).join(' ');
         louerState(text);
@@ -218,8 +222,7 @@ export const LOUER_JS = `
     return 'Une phrase est à revoir.';
   }
   var louerSeq = 0;
-  // Ce qu'un état des lieux rangé attend encore de signatures, gardé le temps de la session.
-  var inventories = {};
+  // Les séances de signature du bail ouvertes depuis cet appareil : le code attend d'être saisi.
   var signing = {};
   function openLocation(id, title, message) {
     if (!currentKey || !ID.test(id)) return Promise.resolve(false);
@@ -557,15 +560,25 @@ export const LOUER_JS = `
     code.setAttribute('maxlength', '6');
     code.setAttribute('autocomplete', 'one-time-code');
     var trace = pad(box, 'Trace de la signature, facultative');
+    var resend = button('Renvoyer un code', function () { delete signing[key]; openLocation(louerId, $('louer-titre').textContent, 'Notez de nouveau l’accord, puis envoyez un nouveau code.'); });
+    resend.className = 'secondaire';
     box.appendChild(button('Signer pour ' + PARTY_NAMES[party], function () {
       var b = { code: String(code.value || '').trim() };
       if (trace.value()) b.drawing = trace.value();
       louerAct('/v1/location/signatures-bail/' + encodeURIComponent(s), b, 'La signature n’est pas rangée.', 'Signature rangée (essai).', true).then(function (r) {
+        // Un code expiré, bloqué ou remplacé : la séance est oubliée, l'écran propose d'envoyer un nouveau code.
+        if (!r && ['expired', 'blocked', 'superseded', 'unknown_session'].indexOf(louerLastCode) !== -1) {
+          var said = louerRefusal({ code: louerLastCode }, '');
+          delete signing[key];
+          openLocation(louerId, $('louer-titre').textContent, said);
+          return;
+        }
         if (!r) return;
         delete signing[key];
         openLocation(louerId, $('louer-titre').textContent, 'Signature ' + PARTY_OF[party] + ' rangée (essai).');
       });
     }));
+    box.appendChild(resend);
     return box;
   }
   // Une zone où tracer du doigt : la trace est une suite de points, jamais une image envoyée ailleurs.
@@ -615,8 +628,9 @@ export const LOUER_JS = `
   function inventoryBlock(id, base, p) {
     var box = section('L’état des lieux d’entrée');
     if (p.inventoryClosed) { box.appendChild(el('p', 'Signé des deux parties : un exemplaire pour chacun.', 'fait')); return box; }
-    var done = inventories[id];
-    if (done && done.leaseId === p.lease.leaseId) box.appendChild(inventorySign(id, done.inventory));
+    // L'état des lieux rangé et pas encore signé des deux parties est relu du serveur : un rechargement ne le perd pas.
+    var done = p.inventory || null;
+    if (done) box.appendChild(inventorySign(id, done));
     var n = ++louerSeq;
     var d = details(box, done ? 'Refaire l’état des lieux' : 'Faire l’état des lieux, pièce par pièce');
     if (!done) d.setAttribute('open', '');
@@ -758,7 +772,6 @@ export const LOUER_JS = `
       if (problem) { louerState(problem); return; }
       louerAct(base + '/etat-des-lieux', b, 'L’état des lieux n’est pas rangé.', '', true).then(function (inv) {
         if (!inv || !ID.test(inv.inventoryId)) return;
-        inventories[id] = { leaseId: p.lease.leaseId, inventory: inv };
         openLocation(id, $('louer-titre').textContent, inv.status === 'complet' ? 'État des lieux rangé, complet : relisez-le avec les deux parties, puis signez.' : 'État des lieux rangé, incomplet : ' + (inv.missing || []).join(', ') + '.');
       });
     }));
@@ -769,16 +782,15 @@ export const LOUER_JS = `
     box.appendChild(el('h4', 'À relire avec les deux parties'));
     box.appendChild(el('p', inv.content, 'brouillon'));
     if (inv.status !== 'complet') { box.appendChild(el('p', 'Incomplet : complétez-le avant de le signer.', 'alerte')); return box; }
+    if ((inv.signed || []).length) box.appendChild(el('p', 'Le refaire annulerait la signature déjà donnée : faites signer cette version.', 'doux'));
     ['bailleur', 'locataire'].forEach(function (party) {
-      var k = inv.inventoryId + ':' + party;
-      if (inventories[k]) { box.appendChild(el('p', 'Signé par ' + PARTY_NAMES[party] + '.', 'fait')); return; }
+      if ((inv.signed || []).indexOf(party) !== -1) { box.appendChild(el('p', 'Signé par ' + PARTY_NAMES[party] + '.', 'fait')); return; }
       var trace = pad(box, party === 'bailleur' ? 'Signature du bailleur' : 'Signature du locataire');
       box.appendChild(button('Signer pour ' + PARTY_NAMES[party], function () {
         var t = trace.value();
         if (!t) { louerState(LOUER_REFUSALS.bad_drawing); return; }
         louerAct('/v1/location/etats-des-lieux/' + encodeURIComponent(inv.inventoryId) + '/signatures', { party: party, contentSha256: inv.contentSha256, drawing: t }, 'La signature n’est pas rangée.', '', true).then(function (r) {
           if (!r) return;
-          inventories[k] = true;
           openLocation(id, $('louer-titre').textContent, r.closed ? 'État des lieux signé des deux parties.' : 'Signature ' + PARTY_OF[party] + ' rangée.');
         });
       }));

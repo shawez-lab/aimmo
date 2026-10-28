@@ -346,6 +346,26 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     // Rien d'une personne ni d'une note : ni prénom, ni nom, ni identifiant de personne.
     const text = JSON.stringify([mine, p, pres]);
     expect(text).not.toMatch(/Ambre|Basile|Céleste|Inventé|Bailleur|personId|\b(?:score|note|rang|rank)\b/);
+    // Un nouveau bail : son état des lieux rangé et signé d'une seule partie est relu par l'avancée, sans être refait [R106].
+    const bail2 = await t.ok(t.agent, 'POST', `/location/${r.id}/bail`, { address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'individuel', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001', noticeRef: t.put(`location/${r.id}/bail`) });
+    const edl = await t.ok(t.agent, 'POST', `/location/${r.id}/etat-des-lieux`, { address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', rooms: [{ name: 'Séjour', elements: [{ name: 'Murs', state: 'bon' }] }], meters: [{ kind: 'eau_froide', index: '42' }], keys: [{ kind: 'Clé', count: 1 }] });
+    let q = await t.ok(t.agent, 'GET', `/location/${r.id}/suivi`);
+    expect(q.lease.leaseId).toBe(bail2.leaseId);
+    expect(q.inventoryClosed).toBe(false);
+    expect(q.inventory).toMatchObject({ inventoryId: edl.inventoryId, leaseId: bail2.leaseId, status: 'complet', contentSha256: edl.contentSha256, signed: [] });
+    await t.ok(t.agent, 'POST', `/location/etats-des-lieux/${edl.inventoryId}/signatures`, { party: 'bailleur', contentSha256: edl.contentSha256, drawing: DRAW });
+    q = await t.ok(t.agent, 'GET', `/location/${r.id}/suivi`);
+    expect(q.inventory.signed).toEqual(['bailleur']);
+    expect(q.inventory.content).toBe(edl.content);
+    // La conformité lit ; un bien réattribué sort de la liste de l'ancien agent, qui ne lit plus rien ; un agent inactif est refusé.
+    expect((await t.ok(t.compliance, 'GET', '/location')).listings).toHaveLength(2);
+    expect((await t.ok(t.compliance, 'GET', `/location/${second.id}/suivi`)).lease).toBeNull();
+    await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.other.userId, second.home.id]);
+    expect((await t.ok(t.agent, 'GET', '/location')).listings.map((l: { listingId: string }) => l.listingId)).toEqual([r.id]);
+    expect((await t.ok(t.other, 'GET', '/location')).listings.map((l: { listingId: string }) => l.listingId)).toEqual([second.id]);
+    for (const path of [`/location/${second.id}/suivi`, `/location/${second.id}/presentation`]) expect((await t.call(t.agent, 'GET', path)).status).toBe(403);
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.agent.userId]);
+    for (const path of ['/location', `/location/${r.id}/suivi`, `/location/${r.id}/presentation`]) expect((await t.call(t.agent, 'GET', path)).status).toBe(403);
     // Un autre agent est refusé et le refus est au journal ; chaque lecture de l'agent l'est aussi [R16].
     for (const path of [`/location/${r.id}/suivi`, `/location/${r.id}/presentation`]) expect((await t.call(t.other, 'GET', path)).status).toBe(403);
     const reads = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'location.lue'");
