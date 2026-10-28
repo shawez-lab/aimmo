@@ -18,6 +18,7 @@ import {
 } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 
 // Modèle, registre et personnes inventés. Février 2027 : Paris est à UTC+1.
 const BODY = 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
@@ -53,7 +54,7 @@ async function setup(duration: number | null = 12) {
     const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: `REF-T-${n}`, kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60, rooms: 3, priceEur: 200000 });
     const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
     await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
-    await controles.recordIdentity(agent, p.id, { piece: 'carte_identite', seenAt: SIGNED });
+    await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: SIGNED });
     const inputs = { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', ...(duration === null ? {} : { 'mandat.duree_mois': duration }) } as const;
     const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: inputs as never });
     if (!d.ok) throw new Error(d.code);

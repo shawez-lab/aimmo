@@ -16,6 +16,7 @@ import {
 import { Annonces, FACT_KEYS, FicheBien, MentionsAnnonce, fallbackListing, traceListing, traceSentence, type ListingFacts, type ListingWriter } from '../src/annonces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 
 // Biens et textes inventés.
 const FACTS: ListingFacts = {
@@ -198,7 +199,7 @@ async function setup(writer?: ListingWriter, options: { timeoutMs?: number } = {
   const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'REF-T-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
   await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
-  await controles.recordIdentity(agent, p.id, { piece: 'carte_identite', seenAt: new Date('2027-02-10T09:00:00.000Z') });
+  await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: new Date('2027-02-10T09:00:00.000Z') });
   const fiches = new FicheBien(db, acces, journal, { now });
   await fiches.save(agent, b.id, SHEET(b.id));
   const mentions = new MentionsAnnonce(db, acces, journal, { now });

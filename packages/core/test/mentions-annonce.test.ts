@@ -18,6 +18,7 @@ import {
 import { FicheBien, MentionsAnnonce, computeMentions, euros, feePercent, type MentionsInput, type PropertySheet } from '../src/annonces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 
 // Biens, mandats et numéro de carte inventés.
 const S = ' ';
@@ -185,7 +186,7 @@ async function setup(feeCharge: 'vendeur' | 'acquereur' = 'acquereur', place: 'a
   const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'REF-T-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60, rooms: 3, priceEur: 200000 });
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
   await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
-  await controles.recordIdentity(agent, p.id, { piece: 'carte_identite', seenAt: new Date('2027-02-10T09:00:00.000Z') });
+  await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: new Date('2027-02-10T09:00:00.000Z') });
   const mentions = new MentionsAnnonce(db, acces, journal, { now });
   const fiches = new FicheBien(db, acces, journal, { now });
   const signMandate = async () => {

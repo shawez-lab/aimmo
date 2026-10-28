@@ -13,6 +13,7 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import type { IdentificationCode } from '../conformite/identification.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { ContreOffres } from './contre-offres.ts';
@@ -31,7 +32,7 @@ export interface SaleFile {
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: null; code: 'unknown_offer' | 'unknown_property' | 'unknown_file' | 'not_accepted' | 'already_open' | 'not_on_sale' | 'already_started' | string }
-  | { ok: false; rule: 'R58'; code: 'identity_missing' };
+  | { ok: false; rule: 'R58'; code: IdentificationCode };
 
 export class DossiersVente {
   private readonly now: () => Date;
@@ -108,10 +109,12 @@ export class DossiersVente {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `person:${f.buyer_person_id}`, data: { rule: 'R16', role: String(viewer.role), kind: 'sale_file', code: 'not_assigned' } }, this.now);
       return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
-    const seen = await this.controles.identitySeenAt(viewer.networkId, f.buyer_person_id, this.now());
-    if (seen === null) {
-      await appendEvent(this.journal, { type: 'dossier.bloque', actor: this.actor(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R58', code: 'identity_missing' } }, this.now);
-      return { ok: false, rule: 'R58', code: 'identity_missing' };
+    // L'identité lue au coffre de la conformité : pièce valide ce jour-là ; pour une société, Kbis et bénéficiaires
+    // effectifs identifiés (L03) [R58, R92].
+    const identification = await this.controles.identificationAt(viewer.networkId, f.buyer_person_id, this.now());
+    if (!identification.ok) {
+      await appendEvent(this.journal, { type: 'dossier.bloque', actor: this.actor(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R58', code: identification.code } }, this.now);
+      return { ok: false, rule: 'R58', code: identification.code };
     }
     const { changes } = await this.db.run("INSERT INTO sale_file_steps (file_id, step, at, by) VALUES (?, 'compromis_en_preparation', ?, ?) ON CONFLICT DO NOTHING", [fileId, this.now().toISOString(), this.actor(viewer)]);
     if (changes !== 1) return { ok: false, rule: null, code: 'already_started' };
