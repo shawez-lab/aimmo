@@ -1,0 +1,786 @@
+import { ANNEX_KINDS, CHOICE_CHANNELS, ELEMENT_STATES, HABITATS, LEASE_FIELDS, METER_KINDS } from '../../core/src/location/index.ts';
+
+/**
+ * L'écran « Louer » de l'application de l'agent (W11), en morceaux posés dans `fichiers.ts` : sa section de page, son
+ * entrée sur l'accueil, sa mise en page et son script.
+ *
+ * L'écran ne lit et n'écrit que par les routes `/v1/location` [R16]. Les candidatures sont montrées dans l'ordre
+ * d'arrivée reçu de l'API, jamais retriées, jamais notées ni filtrées sur un revenu [R105] ; aucun nom de candidat n'est
+ * montré, seulement le numéro d'arrivée. Aucun champ ne fait passer d'argent par AIMMO [R107]. Tout texte reçu est posé
+ * avec `textContent`. Les montants et les plafonds sont ceux que le code calcule [R102] : l'écran les montre, il ne les
+ * calcule pas.
+ */
+
+/** Les libellés de M15, tirés du code métier pour ne jamais diverger. */
+const ANNEXES = Object.fromEntries(ANNEX_KINDS.map((a) => [a.kind, a.label]));
+/** Les champs du bail, chacun par une clé courte (quatre lettres par partie du nom) : l'écran n'en montre que le libellé. */
+const shortKey = (k: string): string => k.split('.').map((x) => x.slice(0, 4)).join('.');
+const LEASE_LABELS = { ...Object.fromEntries(Object.entries(LEASE_FIELDS).map(([k, v]) => [shortKey(k), v.label])), [shortKey('annexe.notice_information')]: 'notice d’information' };
+const CHANNEL_LABELS: Record<(typeof CHOICE_CHANNELS)[number], string> = { oral: 'De vive voix', ecrit: 'Par écrit', mail: 'Par mail', sms: 'Par SMS', whatsapp: 'Par WhatsApp' };
+
+export const LOUER_HOME_HTML = `<section class="bloc" aria-labelledby="titre-louer-accueil">
+<h3 id="titre-louer-accueil">Mes locations</h3>
+<p class="etat">Du contrôle du logement à l’état des lieux signé, étape par étape. Aucun loyer ni dépôt ne passe par AIMMO.</p>
+<button id="louer-ouvrir" type="button" class="secondaire">Ouvrir mes mises en location</button>
+</section>
+`;
+
+export const LOUER_HTML = `<section id="louer" hidden>
+<button id="louer-retour" type="button" class="retour">Retour à ma journée</button>
+<h2 id="louer-titre">Louer</h2>
+<p class="doux">Les dossiers complets sont montrés au propriétaire dans leur ordre d’arrivée, sans note ni tri : il choisit.</p>
+<p id="louer-etat" class="etat" role="status"></p>
+<div id="louer-corps"></div>
+</section>
+`;
+
+export const LOUER_CSS = `
+#louer { padding-top: var(--e-2); }
+.parcours { display: flex; flex-wrap: wrap; gap: var(--e-2); margin: 0 0 var(--e-4); padding: 0; list-style: none; counter-reset: etape; }
+.parcours li { counter-increment: etape; display: inline-flex; align-items: center; gap: var(--e-2); min-height: 32px; padding: var(--e-1) var(--e-3); border-radius: var(--r-rond); border: 1.5px solid var(--trait); font-size: var(--t-s); }
+.parcours li::before { content: counter(etape); font: 600 var(--t-s)/1 var(--police-titre); color: var(--doux); }
+.parcours li.fait { border-color: var(--succes); }
+.parcours li.fait::before { color: var(--succes); }
+.parcours li.bloque { border-color: var(--danger); color: var(--danger); }
+.parcours li[aria-current="step"] { background: var(--accent); border-color: var(--accent); color: var(--sur-accent); }
+.parcours li[aria-current="step"]::before { color: var(--sur-accent); }
+.dossiers { margin: var(--e-2) 0; padding-left: var(--e-6); }
+.dossiers > li { padding: var(--e-3) 0; border-top: 1px solid var(--trait); }
+.dossiers > li:first-child { border-top: 0; }
+.dossiers > li::marker { color: var(--moutarde); font: 600 var(--t-l)/1 var(--police-titre); }
+.piece { margin-top: var(--e-4); padding: var(--e-3) var(--e-4); border: 1.5px dashed var(--trait); border-radius: var(--r-m); }
+.ligne { display: flex; gap: var(--e-2); align-items: flex-end; }
+.ligne > div { flex: 1 1 0; min-width: 0; }
+.trace { display: block; width: 100%; height: 140px; margin-top: var(--e-2); background: var(--papier); border: 1.5px solid var(--doux); border-radius: var(--r-m); touch-action: none; cursor: crosshair; }
+`;
+
+/** Le script de l'écran : posé dans le script de l'application, il en reprend les outils (`el`, `send`, `field`…). */
+export const LOUER_JS = `
+  /* ---------- M15 : l'écran « Louer » (W11). Les dossiers dans l'ordre d'arrivée reçu, jamais retriés ni notés [R105]. ---------- */
+  var ANNEXES = ${JSON.stringify(ANNEXES)};
+  var LEASE_LABELS = ${JSON.stringify(LEASE_LABELS)};
+  var ELEMENT_STATES = ${JSON.stringify(ELEMENT_STATES)};
+  var METERS = ${JSON.stringify(METER_KINDS)};
+  var HABITATS = ${JSON.stringify(HABITATS)};
+  var CHOICE_CHANNELS = ${JSON.stringify(CHANNEL_LABELS)};
+  var CLASSES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+  var GAS = { aucune: 'Pas d’installation de gaz', moins_de_15_ans: 'Gaz, installation de moins de 15 ans', plus_de_15_ans: 'Gaz, installation de plus de 15 ans' };
+  var PIECES_MISSING = { identite: 'pièce d’identité vérifiée', domicile: 'justificatif de domicile', activite: 'justificatif d’activité', ressources: 'justificatif de ressources', visa_visale: 'visa Visale' };
+  var PARTY_NAMES = { bailleur: 'le bailleur', locataire: 'le locataire' };
+  var LOUER_REFUSALS = {
+    not_assigned: 'Ce logement est suivi par un autre agent.',
+    agent_inactive: 'Votre accès d’agent n’est plus actif.',
+    no_facts: 'Saisissez d’abord les faits du logement.',
+    invalid: 'Un champ n’est pas valable : vérifiez la saisie.',
+    no_commune: 'Indiquez d’abord le code INSEE de la commune.',
+    bad_insee: 'Le code INSEE compte 5 caractères.',
+    commune_set: 'La commune est déjà rangée pour ce logement.',
+    tenant_ceiling: 'Les honoraires du locataire dépassent le plafond.',
+    inventory_ceiling: 'L’état des lieux du locataire dépasse le plafond.',
+    over_landlord: 'La part du locataire ne peut pas dépasser celle du bailleur.',
+    inventory_over_landlord: 'L’état des lieux du locataire ne peut pas dépasser celui du bailleur.',
+    deposit_ceiling: 'Le dépôt de garantie dépasse le plafond.',
+    not_advertisable: 'Le logement n’est pas louable aujourd’hui : refaites le contrôle.',
+    not_rentable: 'Le logement n’est pas louable aujourd’hui : refaites le contrôle.',
+    no_fees: 'Rangez d’abord les honoraires et le dépôt.',
+    missing_energy_cost: 'La fiche du bien n’a pas encore ses dépenses d’énergie.',
+    already_validated: 'Cette annonce est déjà validée.',
+    no_application: 'Aucune candidature pour le moment.',
+    already_chosen: 'Le propriétaire a déjà choisi.',
+    not_latest_presentation: 'Une présentation plus récente existe : l’écran est relu.',
+    not_presented: 'Le propriétaire choisit parmi les dossiers présentés, et seulement eux.',
+    bad_date: 'La date du choix n’est pas valable (pas dans le futur).',
+    before_presentation: 'Le choix ne peut pas précéder la présentation.',
+    bad_channel: 'Dites comment le propriétaire a fait son choix.',
+    bad_proof: 'La référence de la preuve n’est pas celle d’une preuve de ce logement.',
+    not_stored: 'Ce fichier n’est pas rangé : rangez-le d’abord.',
+    incomplete: 'Ce dossier n’est plus complet.',
+    no_choice: 'Le propriétaire n’a pas encore choisi.',
+    missing_charges_mode: 'Dites dans les faits si les charges sont une provision ou un forfait.',
+    lease_start_passed: 'La date de début du bail est passée : rangez de nouveaux faits.',
+    bad_address: 'L’adresse n’est pas valable.',
+    bad_owner_address: 'Le domicile du bailleur n’est pas valable.',
+    bad_equipment: 'La liste des équipements n’est pas valable.',
+    bad_card: 'La carte professionnelle s’écrit « CPI » puis son numéro.',
+    bad_notice_ref: 'La référence de la notice n’est pas celle d’un fichier de ce logement.',
+    bad_habitat: 'Choisissez le type d’habitat.',
+    no_template: 'Aucun modèle de bail validé dans le réseau.',
+    bad_party: 'Partie inconnue.',
+    bad_consent: 'Notez comment la partie a accepté de signer en ligne.',
+    already_signed: 'Cette partie a déjà signé.',
+    bad_code: 'Code faux : vérifiez-le avec la partie.',
+    expired: 'Code expiré : envoyez-en un nouveau.',
+    blocked: 'Trop d’essais avec ce code : envoyez-en un nouveau.',
+    superseded: 'Un nouveau code a été envoyé : saisissez le dernier reçu.',
+    unknown_session: 'Envoyez d’abord le code à la partie.',
+    bad_drawing: 'Tracez la signature dans le cadre.',
+    lease_changed: 'Le bail a changé depuis : il est à signer de nouveau.',
+    not_signed: 'Les deux parties doivent d’abord signer.',
+    no_current_lease: 'Aucun bail en vigueur pour ce logement.',
+    lease_incomplete: 'Le bail est incomplet : complétez-le d’abord.',
+    closed: 'L’état des lieux est déjà signé des deux parties.',
+    bad_rooms: 'Une pièce n’est pas valable : un nom, et l’état de chaque élément.',
+    bad_meters: 'Un relevé de compteur n’est pas valable : des chiffres seulement.',
+    bad_keys: 'Une ligne de clés n’est pas valable : une sorte et un nombre.',
+    bad_furniture: 'Une ligne du mobilier n’est pas valable.',
+    document_changed: 'L’état des lieux a changé : relisez-le et signez la dernière version.',
+    stale: 'L’état des lieux a changé : relisez-le et signez la dernière version.',
+    busy: 'Une autre demande est en cours : réessayez dans un instant.',
+  };
+  function louerRefusal(body, fallback) { return (body && LOUER_REFUSALS[body.code]) || fallback; }
+  function louerState(text) { $('louer-etat').textContent = text; }
+  function wipeLouer() {
+    clear($('louer-corps'));
+    $('louer-etat').textContent = '';
+    $('louer-titre').textContent = 'Louer';
+    louerId = null;
+  }
+  // Des euros saisis (« 650 » ou « 650,50 ») en centimes ; rien d'autre n'est admis.
+  function toCents(text) {
+    var t = String(text || '').replace(/[\\s\\u00a0\\u202f€]/g, '').replace(',', '.');
+    if (!/^\\d{1,7}(\\.\\d{1,2})?$/.test(t)) return null;
+    return Math.round(Number(t) * 100);
+  }
+  function centsText(c) { return typeof c === 'number' ? (c / 100).toFixed(2).replace('.', ',').replace(/,00$/, '') : ''; }
+  function whole(text, max) {
+    var t = String(text || '').trim();
+    if (!/^\\d{1,6}$/.test(t)) return null;
+    var n = Number(t);
+    return n <= max ? n : null;
+  }
+  function select(box, id, label, options, value) {
+    var s = field(box, id, label, 'select');
+    Object.keys(options).forEach(function (k) { var o = el('option', options[k]); o.value = k; s.appendChild(o); });
+    s.value = value;
+    return s;
+  }
+  function details(box, title) {
+    var d = el('details');
+    d.appendChild(el('summary', title));
+    box.appendChild(d);
+    return d;
+  }
+  var louerPage = 0;
+  var louerId = null;
+  function openLouer(message, page) {
+    if (!currentKey) return Promise.resolve(false);
+    if (typeof page === 'number') louerPage = page;
+    session += 1;
+    wipeLouer();
+    show('louer');
+    louerState('Chargement…');
+    return send('/v1/location' + (louerPage ? '?page=' + louerPage : ''), 'GET').then(function (res) {
+      if (res.gone) return false;
+      if (!res.ok) { louerState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : louerRefusal(res.body, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
+      var d = res.body.data || {};
+      var list = Array.isArray(d.listings) ? d.listings : [];
+      var body = $('louer-corps');
+      if (!list.length && !louerPage) body.appendChild(el('p', 'Aucune mise en location pour le moment. Elle s’ouvre depuis le bien du propriétaire.', 'doux'));
+      if (louerPage) body.appendChild(button('Logements précédents', function () { openLouer('', louerPage - 1); }));
+      var ul = el('ul', null, 'liste');
+      list.forEach(function (l) {
+        if (!ID.test(l.listingId)) return;
+        var li = el('li');
+        li.appendChild(el('strong', 'Bien ' + l.reference + (l.city ? ', ' + l.city : '')));
+        li.appendChild(el('p', l.decision === 'louable' ? 'Contrôlé : louable' : l.decision === 'bloque' ? 'Contrôlé : bloqué avant toute annonce' : 'Pas encore contrôlé', l.decision === 'louable' ? 'fait' : l.decision === 'bloque' ? 'retard' : 'doux'));
+        li.appendChild(button('Ouvrir', function () { openLocation(l.listingId, 'Bien ' + l.reference); }));
+        ul.appendChild(li);
+      });
+      body.appendChild(ul);
+      if (d.more === true) body.appendChild(button('Logements suivants', function () { openLouer('', louerPage + 1); }));
+      louerState(message || '');
+      return true;
+    });
+  }
+  // Un geste sur le logement ouvert : la réponse est dite, puis l'écran relu pour montrer l'état rangé.
+  function louerAct(path, body, fallback, done, keep) {
+    var id = louerId;
+    var title = $('louer-titre').textContent;
+    louerState('Envoi…');
+    return send(path, 'POST', body).then(function (res) {
+      if (res.gone) return null;
+      if (!res.ok) {
+        var text = res.offline ? 'Pas de réseau : rien n’est enregistré.' : louerRefusal(res.body, fallback);
+        if (res.body && Array.isArray(res.body.problems) && res.body.problems.length) text += ' ' + res.body.problems.map(problemText).join(' ');
+        louerState(text);
+        if (res.body && res.body.code === 'not_latest_presentation') openLocation(id, title, text);
+        return null;
+      }
+      if (keep) { louerState(done); return res.body.data; }
+      return openLocation(id, title, done).then(function () { return res.body.data; });
+    });
+  }
+  function problemText(p) {
+    if (p && p.code === 'critere_location') return 'Critère interdit : « ' + p.value + ' ».';
+    if (p && p.code === 'fait_sans_source') return 'Fait sans source : « ' + p.value + ' ».';
+    return 'Une phrase est à revoir.';
+  }
+  var louerSeq = 0;
+  // Ce qu'un état des lieux rangé attend encore de signatures, gardé le temps de la session.
+  var inventories = {};
+  var signing = {};
+  function openLocation(id, title, message) {
+    if (!currentKey || !ID.test(id)) return Promise.resolve(false);
+    session += 1;
+    var mine = session;
+    clear($('louer-corps'));
+    louerId = id;
+    $('louer-titre').textContent = title || 'Logement';
+    show('louer');
+    louerState('Chargement…');
+    var base = '/v1/location/' + encodeURIComponent(id);
+    var reads = [base, base + '/suivi', base + '/plafonds', base + '/annonces', base + '/candidatures', base + '/presentation', base + '/echeances'];
+    return Promise.all(reads.map(function (path) { return send(path, 'GET'); })).then(function (all) {
+      if (mine !== session || all.some(function (x) { return x.gone; })) return false;
+      if (all[0].offline) { louerState('Pas de réseau. Réessayez dans un moment.'); return false; }
+      if (!all[0].ok || !all[1].ok) { louerState(all[0].status === 403 ? 'Ce logement n’est pas dans vos droits.' : 'Indisponible pour le moment. Réessayez plus tard.'); return false; }
+      var data = all.map(function (x) { return x.ok ? x.body.data : null; });
+      renderLocation(id, base, data, all[2].body);
+      louerState(message || '');
+      return true;
+    });
+  }
+  function renderLocation(id, base, d, ceilingsBody) {
+    var status = d[0] || {};
+    var p = d[1] || {};
+    var ads = Array.isArray(d[3]) ? d[3] : [];
+    var apps = Array.isArray(d[4]) ? d[4] : [];
+    var pres = (d[5] && d[5].presentation) || null;
+    var chosen = (d[5] && d[5].chosenApplicationId) || null;
+    var lease = p.lease || null;
+    var check = status.check;
+    var rentable = !!(check && check.decision === 'louable' && !status.stale);
+    var body = $('louer-corps');
+    var steps = [
+      ['Logement', rentable ? 'fait' : check && check.decision === 'bloque' && !status.stale ? 'bloque' : ''],
+      ['Honoraires', p.fees ? 'fait' : ''],
+      ['Annonce', ads.some(function (a) { return a.validatedAt; }) ? 'fait' : ''],
+      ['Dossiers', pres ? 'fait' : ''],
+      ['Choix', chosen ? 'fait' : ''],
+      ['Bail', lease && lease.bailleur && lease.locataire ? 'fait' : ''],
+      ['État des lieux', p.inventoryClosed ? 'fait' : ''],
+    ];
+    var rail = el('ol', null, 'parcours');
+    rail.setAttribute('aria-label', 'Étapes de la mise en location');
+    var current = false;
+    steps.forEach(function (s) {
+      var li = el('li', s[0] + (s[1] === 'fait' ? ' · fait' : s[1] === 'bloque' ? ' · bloqué' : ''), s[1] || null);
+      if (!current && s[1] !== 'fait') { current = true; li.setAttribute('aria-current', 'step'); }
+      rail.appendChild(li);
+    });
+    body.appendChild(rail);
+    body.appendChild(dwellingBlock(base, status, p.facts, d[6] || []));
+    body.appendChild(feesBlock(base, d[2], ceilingsBody, p.fees));
+    body.appendChild(adBlock(base, ads, rentable));
+    body.appendChild(applicationsBlock(base, apps, pres, chosen));
+    if (chosen) body.appendChild(leaseBlock(base, lease));
+    if (lease && lease.complete) body.appendChild(inventoryBlock(id, base, p));
+  }
+  function reasonText(r) {
+    var a = ANNEXES[r.kind] || 'Annexe';
+    if (r.code === 'energy_class') return 'Classe énergie ' + r.energyClass + ' : interdite à la location depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
+    if (r.code === 'final_energy') return r.finalEnergyKwh + ' kWh/m²/an en énergie finale : au-delà de 450, interdit depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
+    if (r.code === 'living_area') return 'Surface habitable sous 9 m².';
+    if (r.code === 'annex_missing') return a + ' : manquant.';
+    if (r.code === 'annex_expired') return a + ' : échu le ' + date(r.validUntil + 'T12:00:00Z') + '.';
+    if (r.code === 'annex_future') return a + ' : daté dans le futur.';
+    return 'Raison inconnue.';
+  }
+  function dwellingBlock(base, status, facts, notices) {
+    var box = section('Le logement');
+    var c = status.check;
+    if (!c) box.appendChild(el('p', 'Pas encore contrôlé : saisissez les faits et les annexes, puis contrôlez.', 'doux'));
+    else if (status.stale) box.appendChild(el('p', 'Les faits ou les annexes ont changé depuis le dernier contrôle, ou le temps l’a rendu caduc : contrôlez de nouveau.', 'alerte'));
+    else if (c.decision === 'louable') box.appendChild(el('p', 'Louable : contrôlé le ' + date(c.checkedAt) + '.', 'fait'));
+    else {
+      box.appendChild(el('p', 'Bloqué avant toute annonce : ce logement ne peut pas être proposé.', 'alerte'));
+      var ul = el('ul');
+      (c.reasons || []).forEach(function (r) { ul.appendChild(el('li', reasonText(r))); });
+      box.appendChild(ul);
+    }
+    if (c && c.bannedFrom) box.appendChild(el('p', 'Classe énergie interdite à la location à partir du ' + date(c.bannedFrom + 'T12:00:00Z') + '.', 'doux'));
+    if (facts) {
+      box.appendChild(el('p', (facts.furnished ? 'Meublé' : 'Vide') + ' · ' + centsText(facts.rentCents) + ' € hors charges · ' + String(facts.livingAreaHundredths / 100).replace('.', ',') + ' m² · classe ' + facts.energyClass + ' · bail au ' + date(facts.leaseStart + 'T12:00:00Z'), 'doux'));
+    }
+    box.appendChild(factsForm(base, facts));
+    var need = (status.required || []).map(function (k) { return ANNEXES[k] || k; });
+    if (need.length) box.appendChild(el('p', 'Annexes exigées : ' + need.join(', ') + '.', 'doux'));
+    box.appendChild(annexForm(base, status.required || []));
+    box.appendChild(button('Contrôler le logement', function () { louerAct(base + '/controle', undefined, 'Le contrôle n’est pas fait.', 'Contrôle fait.'); }));
+    notices.forEach(function (n) {
+      box.appendChild(el('h4', 'Échéance préparée pour le propriétaire'));
+      box.appendChild(el('p', 'Mode essai : elle partira par le contrôle central des envois, rien ne part d’ici.', 'doux'));
+      box.appendChild(el('p', n.text, 'brouillon'));
+    });
+    return box;
+  }
+  function factsForm(base, f) {
+    var n = ++louerSeq;
+    var d = details(el('div'), f ? 'Corriger les faits du logement' : 'Saisir les faits du logement');
+    var furnished = select(d, 'meuble-' + n, 'Location', { vide: 'Vide', meuble: 'Meublée' }, f && f.furnished ? 'meuble' : 'vide');
+    var rent = field(d, 'loyer-' + n, 'Loyer hors charges, en euros par mois');
+    var charges = field(d, 'charges-' + n, 'Charges, en euros par mois');
+    var mode = select(d, 'mode-' + n, 'Les charges sont', { provision: 'Une provision, régularisée chaque année', forfait: 'Un forfait (meublé seulement)' }, (f && f.chargesMode) || 'provision');
+    var area = field(d, 'surface-' + n, 'Surface habitable, en m²');
+    var cls = select(d, 'classe-' + n, 'Classe énergie du DPE', CLASSES.reduce(function (o, k) { o[k] = k; return o; }, {}), (f && f.energyClass) || 'D');
+    var kwh = field(d, 'kwh-' + n, 'Consommation en énergie finale, kWh/m²/an');
+    var year = field(d, 'annee-' + n, 'Année de construction');
+    var elec = checkbox(d, 'elec-' + n, 'Installation électrique de plus de 15 ans');
+    var gas = select(d, 'gaz-' + n, 'Gaz', GAS, (f && f.gas) || 'aucune');
+    var start = field(d, 'debut-' + n, 'Début du bail envisagé');
+    start.setAttribute('type', 'date');
+    [rent, charges, area, kwh, year].forEach(function (x) { x.setAttribute('inputmode', 'decimal'); x.setAttribute('autocomplete', 'off'); });
+    if (f) {
+      rent.value = centsText(f.rentCents);
+      charges.value = centsText(f.chargesCents);
+      area.value = String(f.livingAreaHundredths / 100).replace('.', ',');
+      kwh.value = String(f.finalEnergyKwh);
+      year.value = String(f.buildYear);
+      elec.checked = !!f.electricityOver15;
+      start.value = f.leaseStart;
+    }
+    d.appendChild(button('Ranger les faits', function () {
+      var a = toCents(area.value);
+      var b = { furnished: furnished.value === 'meuble', rentCents: toCents(rent.value), chargesCents: toCents(charges.value), livingAreaHundredths: a, energyClass: cls.value, finalEnergyKwh: whole(kwh.value, 10000), buildYear: whole(year.value, 2100), electricityOver15: !!elec.checked, gas: gas.value, leaseStart: start.value, chargesMode: mode.value };
+      if (b.rentCents === null || b.chargesCents === null || a === null || b.finalEnergyKwh === null || b.buildYear === null || !start.value) { louerState('Remplissez chaque champ : des nombres, et la date du bail.'); return; }
+      louerAct(base + '/faits', b, 'Les faits ne sont pas rangés.', 'Faits rangés : contrôlez de nouveau le logement.');
+    }));
+    return d;
+  }
+  function annexForm(base, required) {
+    var n = ++louerSeq;
+    var d = details(el('div'), 'Joindre une annexe');
+    var kinds = {};
+    Object.keys(ANNEXES).forEach(function (k) { kinds[k] = ANNEXES[k]; });
+    var kind = select(d, 'annexe-' + n, 'Annexe', kinds, required[0] || 'dpe');
+    var ref = field(d, 'annexe-ref-' + n, 'Référence du fichier rangé');
+    ref.setAttribute('autocomplete', 'off');
+    ref.setAttribute('spellcheck', 'false');
+    var on = field(d, 'annexe-date-' + n, 'Date du diagnostic');
+    on.setAttribute('type', 'date');
+    d.appendChild(button('Joindre l’annexe', function () {
+      louerAct(base + '/annexes', { kind: kind.value, ref: String(ref.value || '').trim(), diagnosedOn: on.value }, 'L’annexe n’est pas jointe : vérifiez la référence et la date.', 'Annexe jointe : contrôlez de nouveau le logement.');
+    }));
+    return d;
+  }
+  function feesBlock(base, c, ceilingsBody, fees) {
+    var box = section('Honoraires et dépôt de garantie');
+    box.appendChild(el('p', 'Plafonds calculés par le code, depuis la surface et la zone de la commune. AIMMO ne reçoit jamais ni loyer ni dépôt.', 'doux'));
+    if (!c) {
+      var code = ceilingsBody && ceilingsBody.code;
+      box.appendChild(el('p', code === 'no_commune' ? 'Indiquez la commune du logement pour connaître les plafonds.' : louerRefusal(ceilingsBody, 'Plafonds indisponibles pour le moment.'), 'doux'));
+      if (code === 'no_commune') {
+        var n = ++louerSeq;
+        var insee = field(box, 'insee-' + n, 'Code INSEE de la commune');
+        insee.setAttribute('maxlength', '5');
+        insee.setAttribute('autocomplete', 'off');
+        box.appendChild(button('Ranger la commune', function () { louerAct(base + '/commune', { inseeCode: String(insee.value || '').trim().toUpperCase() }, 'La commune n’est pas rangée.', 'Commune rangée.'); }));
+      }
+      return box;
+    }
+    if (c.zone === 'inconnue') box.appendChild(el('p', 'Zone de la commune inconnue : le plafond le plus bas s’applique.', 'doux'));
+    var ul = el('ul', null, 'liste');
+    ul.appendChild(line('Honoraires du locataire : ' + euros(c.tenantCeilingCents) + ' au plus'));
+    ul.appendChild(line('État des lieux à sa charge : ' + euros(c.inventoryCeilingCents) + ' au plus'));
+    ul.appendChild(line('Dépôt de garantie : ' + euros(c.depositCeilingCents) + ' au plus'));
+    box.appendChild(ul);
+    if (fees) box.appendChild(el('p', 'Rangés : locataire ' + euros(fees.tenantCents) + ' dont état des lieux ' + euros(fees.tenantInventoryCents) + ', bailleur ' + euros(fees.landlordCents) + ', dépôt ' + euros(fees.depositCents) + '.', 'fait'));
+    var m = ++louerSeq;
+    var d = details(box, fees ? 'Changer les honoraires' : 'Ranger les honoraires');
+    var src = fees || { tenantCents: c.tenantCeilingCents, tenantInventoryCents: c.inventoryCeilingCents, landlordCents: c.tenantCeilingCents, landlordInventoryCents: c.inventoryCeilingCents, depositCents: c.depositCeilingCents };
+    var inputs = [['tenantCents', 'Honoraires du locataire, hors état des lieux, en euros'], ['tenantInventoryCents', 'État des lieux à la charge du locataire, en euros'], ['landlordCents', 'Honoraires du bailleur, hors état des lieux, en euros'], ['landlordInventoryCents', 'État des lieux à la charge du bailleur, en euros'], ['depositCents', 'Dépôt de garantie, en euros']].map(function (x, i) {
+      var f = field(d, 'hon-' + m + '-' + i, x[1]);
+      f.setAttribute('inputmode', 'decimal');
+      f.value = centsText(src[x[0]]);
+      return [x[0], f];
+    });
+    d.appendChild(button('Ranger les honoraires', function () {
+      var b = {};
+      var bad = false;
+      inputs.forEach(function (x) { var v = toCents(x[1].value); if (v === null) bad = true; b[x[0]] = v; });
+      if (bad) { louerState('Des montants en euros, par exemple 425 ou 425,50.'); return; }
+      louerAct(base + '/honoraires', b, 'Les honoraires ne sont pas rangés.', 'Honoraires rangés.');
+    }));
+    return box;
+  }
+  function adBlock(base, ads, rentable) {
+    var box = section('L’annonce');
+    var ad = ads.length ? ads[ads.length - 1] : null;
+    if (!rentable) box.appendChild(el('p', 'L’annonce attend un logement contrôlé louable.', 'doux'));
+    if (ad) {
+      box.appendChild(el('h4', ad.title));
+      box.appendChild(el('p', ad.body, 'brouillon'));
+      box.appendChild(el('p', ad.mentions, 'doux'));
+      box.appendChild(el('p', ad.origin === 'ia' ? 'Rédigée par l’IA, chaque fait relié au code.' : ad.origin === 'secours' ? 'Rédigée sans IA, depuis les faits rangés.' : 'Écrite par vous.', 'doux'));
+      if (ad.validatedAt) box.appendChild(el('p', 'Validée le ' + date(ad.validatedAt) + '.', 'fait'));
+      else if (ID.test(ad.adId)) box.appendChild(button('Valider l’annonce', function () { louerAct('/v1/location/annonces/' + encodeURIComponent(ad.adId) + '/validation', undefined, 'L’annonce n’est pas validée.', 'Annonce validée.'); }));
+    }
+    if (rentable) {
+      var again = button(ad ? 'Préparer une nouvelle version' : 'Préparer l’annonce', function () { louerAct(base + '/annonces/brouillon', undefined, 'L’annonce n’est pas préparée.', 'Annonce préparée : relisez-la avant de la valider.'); });
+      if (ad) again.className = 'secondaire';
+      box.appendChild(again);
+    }
+    return box;
+  }
+  function missingText(m) { return (PIECES_MISSING[m.what] || 'pièce') + (m.holder === 'candidat' ? '' : ' du garant'); }
+  function applicationsBlock(base, apps, pres, chosen) {
+    var box = section('Les candidatures');
+    box.appendChild(el('p', 'Dans leur ordre d’arrivée, et lui seul. Seules les pièces de la liste officielle sont demandées ; l’IA ne regarde que la complétude.', 'doux'));
+    if (!apps.length) { box.appendChild(el('p', 'Aucune candidature pour le moment.', 'doux')); return box; }
+    var ol = el('ol', null, 'dossiers');
+    // L'ordre reçu de l'API est celui des arrivées : il n'est jamais retrié ici [R105].
+    apps.forEach(function (a) {
+      var li = el('li');
+      li.appendChild(el('strong', 'Dossier arrivé ' + (a.arrival === 1 ? 'en premier' : 'en ' + a.arrival + 'ᵉ') + (a.applicationId === chosen ? ' · choisi par le propriétaire' : '')));
+      li.appendChild(el('p', 'Le ' + date(a.arrivedAt) + (a.dossierFacile ? ' · dossier DossierFacile' : '') + ' · ' + (a.pieces || []).length + ' pièce' + ((a.pieces || []).length > 1 ? 's' : '') + (a.guarantors && a.guarantors.length ? ' · garant' : ''), 'doux'));
+      li.appendChild(el('p', a.complete ? 'Complet' : 'Incomplet : manque ' + (a.missing || []).map(missingText).join(', ') + '.', a.complete ? 'fait' : null));
+      ol.appendChild(li);
+    });
+    box.appendChild(ol);
+    if (!chosen) {
+      var again = button(pres ? 'Présenter de nouveau au propriétaire' : 'Présenter les dossiers complets au propriétaire', function () {
+        louerAct(base + '/presentation', undefined, 'La présentation n’est pas faite.', 'Présentation faite : les reçus d’équité sont préparés en mode essai.');
+      });
+      if (pres) again.className = 'secondaire';
+      box.appendChild(again);
+    }
+    if (pres) box.appendChild(choiceBlock(base, pres, chosen));
+    return box;
+  }
+  function choiceBlock(base, pres, chosen) {
+    var box = el('div', null, 'proposer');
+    box.appendChild(el('h4', 'Présentés au propriétaire le ' + date(pres.createdAt)));
+    if (!pres.files.length) { box.appendChild(el('p', 'Aucun dossier complet à lui présenter : les candidats ont reçu ce qui leur manque.', 'doux')); return box; }
+    var ol = el('ol', null, 'dossiers');
+    pres.files.forEach(function (f) {
+      var li = el('li', 'Dossier arrivé ' + (f.arrival === 1 ? 'en premier' : 'en ' + f.arrival + 'ᵉ') + ', le ' + date(f.arrivedOn + 'T12:00:00Z'));
+      li.appendChild(el('p', (f.pieces || []).join(', ') + (f.guarantors && f.guarantors.length ? ' ; garant : ' + f.guarantors.map(function (g) { return g === 'visale' ? 'Visale' : 'une personne'; }).join(', ') : ''), 'doux'));
+      ol.appendChild(li);
+    });
+    box.appendChild(ol);
+    if (chosen) { box.appendChild(el('p', 'Le propriétaire a choisi : son choix est rangé avec sa date et sa preuve.', 'fait')); return box; }
+    var n = ++louerSeq;
+    var set = el('fieldset');
+    set.appendChild(el('legend', 'Le dossier choisi par le propriétaire'));
+    var radios = [];
+    pres.files.forEach(function (f, i) {
+      if (!ID.test(f.applicationId)) return;
+      var wrap = el('div', null, 'case');
+      var c = el('input');
+      c.setAttribute('type', 'radio');
+      c.setAttribute('name', 'dossier-' + n);
+      c.setAttribute('id', 'dossier-' + n + '-' + i);
+      c.value = f.applicationId;
+      var l = el('label', 'Dossier arrivé ' + (f.arrival === 1 ? 'en premier' : 'en ' + f.arrival + 'ᵉ'));
+      l.setAttribute('for', 'dossier-' + n + '-' + i);
+      wrap.appendChild(c);
+      wrap.appendChild(l);
+      set.appendChild(wrap);
+      radios.push(c);
+    });
+    box.appendChild(set);
+    var when = field(box, 'quand-' + n, 'Quand il a choisi');
+    when.setAttribute('type', 'datetime-local');
+    var how = select(box, 'comment-' + n, 'Comment il l’a dit', CHOICE_CHANNELS, 'oral');
+    var proof = field(box, 'preuve-' + n, 'Référence de la preuve rangée');
+    proof.setAttribute('autocomplete', 'off');
+    proof.setAttribute('spellcheck', 'false');
+    box.appendChild(button('Enregistrer son choix', function () {
+      var picked = radios.filter(function (c) { return c.checked; })[0];
+      if (!picked) { louerState('Cochez le dossier choisi par le propriétaire.'); return; }
+      var at = new Date(when.value);
+      if (!when.value || isNaN(at.getTime())) { louerState('Indiquez quand le propriétaire a choisi.'); return; }
+      louerAct(base + '/choix', { presentationId: pres.presentationId, applicationId: picked.value, decidedAt: at.toISOString(), channel: how.value, proofRef: String(proof.value || '').trim() }, 'Le choix n’est pas enregistré.', 'Choix du propriétaire enregistré.');
+    }));
+    return box;
+  }
+  function leaseBlock(base, lease) {
+    var box = section('Le bail');
+    if (lease) {
+      box.appendChild(el('p', (lease.complete ? 'Bail en vigueur, complet' : 'Bail en vigueur, incomplet : complétez-le') + (lease.mode === 'essai' ? ' · document d’essai, sans valeur tant que les modèles ne sont pas validés.' : '.'), lease.complete ? 'fait' : 'alerte'));
+      ['bailleur', 'locataire'].forEach(function (party) { box.appendChild(signBlock(base, lease, party)); });
+      if (lease.bailleur && lease.locataire) {
+        if (lease.copiesSent && lease.copiesSent.length === 2) box.appendChild(el('p', 'Un exemplaire préparé pour chacun (mode essai).', 'fait'));
+        else box.appendChild(button('Préparer un exemplaire pour chacun', function () { louerAct(base + '/bail/exemplaires', undefined, 'Les exemplaires ne sont pas préparés.', 'Exemplaires préparés : ils partiront par le contrôle central, en mode essai.'); }));
+      }
+    } else box.appendChild(el('p', 'Le bail se fait depuis le modèle validé du réseau, avec les faits, les honoraires et le dossier choisi.', 'doux'));
+    var n = ++louerSeq;
+    var d = details(box, lease ? 'Refaire le bail (les signatures seront à refaire)' : 'Préparer le bail');
+    var address = field(d, 'bail-adresse-' + n, 'Adresse du logement');
+    var owner = field(d, 'bail-domicile-' + n, 'Domicile du bailleur');
+    var habitat = select(d, 'bail-habitat-' + n, 'Type d’habitat', HABITATS, 'collectif');
+    var equipment = field(d, 'bail-equipements-' + n, 'Équipements du logement', 'textarea');
+    equipment.setAttribute('rows', '3');
+    equipment.setAttribute('maxlength', '400');
+    var card = field(d, 'bail-carte-' + n, 'Carte professionnelle (CPI …)');
+    var notice = field(d, 'bail-notice-' + n, 'Référence de la notice d’information rangée');
+    [address, owner, card, notice].forEach(function (x) { x.setAttribute('autocomplete', 'off'); });
+    d.appendChild(button('Préparer le bail', function () {
+      var b = { habitat: habitat.value };
+      [['address', address], ['ownerAddress', owner], ['equipment', equipment], ['professionalCard', card], ['noticeRef', notice]].forEach(function (x) { var v = String(x[1].value || '').trim(); if (v) b[x[0]] = v; });
+      louerAct(base + '/bail', b, 'Le bail n’est pas préparé.', '', true).then(function (l) {
+        if (!l) return;
+        var missing = (l.missing || []).map(function (k) { return LEASE_LABELS[String(k).split('.').map(function (x) { return x.slice(0, 4); }).join('.')] || 'un champ'; });
+        openLocation(louerId, $('louer-titre').textContent, missing.length ? 'Bail préparé, à compléter : ' + missing.join(', ') + '.' : 'Bail préparé, complet : il est à signer.');
+      });
+    }));
+    return box;
+  }
+  // La signature d'une partie : son accord pour signer en ligne, le code reçu, et une trace facultative du doigt.
+  function signBlock(base, lease, party) {
+    var box = el('div', null, 'client');
+    box.appendChild(el('h4', party === 'bailleur' ? 'Signature du bailleur' : 'Signature du locataire'));
+    if (lease[party]) { box.appendChild(el('p', 'Signé le ' + date(lease[party]) + ' à ' + hour(lease[party]) + ' (essai).', 'fait')); return box; }
+    if (!lease.complete) { box.appendChild(el('p', 'À signer une fois le bail complet.', 'doux')); return box; }
+    var n = ++louerSeq;
+    var key = lease.leaseId + ':' + party;
+    var s = signing[key];
+    if (!s) {
+      var consent = field(box, 'accord-' + n, 'Comment ' + PARTY_NAMES[party] + ' a accepté de signer en ligne', 'textarea');
+      consent.setAttribute('rows', '2');
+      consent.setAttribute('maxlength', '300');
+      box.appendChild(button('Envoyer le code de signature à ' + PARTY_NAMES[party], function () {
+        var text = String(consent.value || '').trim();
+        if (!text) { louerState(LOUER_REFUSALS.bad_consent); return; }
+        louerAct(base + '/bail/signatures', { party: party, consentProof: text }, 'Le code n’est pas envoyé.', '', true).then(function (r) {
+          if (!r || !ID.test(r.sessionId)) return;
+          signing[key] = r.sessionId;
+          openLocation(louerId, $('louer-titre').textContent, 'Code préparé pour ' + PARTY_NAMES[party] + ' (mode essai) : saisissez-le quand il vous le dit.');
+        });
+      }));
+      return box;
+    }
+    var code = field(box, 'code-' + n, 'Code reçu par ' + PARTY_NAMES[party]);
+    code.setAttribute('inputmode', 'numeric');
+    code.setAttribute('maxlength', '6');
+    code.setAttribute('autocomplete', 'one-time-code');
+    var trace = pad(box, 'Trace de la signature, facultative');
+    box.appendChild(button('Signer pour ' + PARTY_NAMES[party], function () {
+      var b = { code: String(code.value || '').trim() };
+      if (trace.value()) b.drawing = trace.value();
+      louerAct('/v1/location/signatures-bail/' + encodeURIComponent(s), b, 'La signature n’est pas rangée.', 'Signature rangée (essai).', true).then(function (r) {
+        if (!r) return;
+        delete signing[key];
+        openLocation(louerId, $('louer-titre').textContent, 'Signature de ' + PARTY_NAMES[party] + ' rangée (essai).');
+      });
+    }));
+    return box;
+  }
+  // Une zone où tracer du doigt : la trace est une suite de points, jamais une image envoyée ailleurs.
+  function pad(box, label) {
+    var n = ++louerSeq;
+    box.appendChild(el('p', label, 'doux'));
+    var c = el('canvas', null, 'trace');
+    c.setAttribute('id', 'trace-' + n);
+    c.setAttribute('role', 'img');
+    c.setAttribute('aria-label', label + ' : tracez avec le doigt dans ce cadre');
+    c.setAttribute('width', '320');
+    c.setAttribute('height', '140');
+    var strokes = [];
+    var down = false;
+    var ctx = null;
+    try { ctx = c.getContext ? c.getContext('2d') : null; } catch (e) { ctx = null; }
+    function at(e) { return [Math.max(0, Math.round(Number(e.offsetX) || 0)), Math.max(0, Math.round(Number(e.offsetY) || 0))]; }
+    c.addEventListener('pointerdown', function (e) {
+      if (e && e.preventDefault) e.preventDefault();
+      down = true;
+      strokes.push([at(e)]);
+      if (ctx) { ctx.beginPath(); ctx.moveTo(at(e)[0], at(e)[1]); }
+    });
+    c.addEventListener('pointermove', function (e) {
+      if (!down || strokes.length > 200) return;
+      var s = strokes[strokes.length - 1];
+      if (s.length < 2000) s.push(at(e));
+      if (ctx) { ctx.lineTo(at(e)[0], at(e)[1]); ctx.stroke(); }
+    });
+    c.addEventListener('pointerup', function () { down = false; });
+    c.addEventListener('pointerleave', function () { down = false; });
+    box.appendChild(c);
+    var wipeIt = button('Effacer la trace', function () {
+      strokes = [];
+      if (ctx) try { ctx.clearRect(0, 0, 320, 140); } catch (e) { /* rien à effacer */ }
+    });
+    wipeIt.className = 'secondaire';
+    box.appendChild(wipeIt);
+    return {
+      value: function () {
+        var t = strokes.filter(function (s) { return s.length > 1; }).map(function (s) { return s.map(function (p) { return p[0] + ',' + p[1]; }).join(' '); }).join(';');
+        return t.length >= 10 ? t : '';
+      },
+    };
+  }
+  // L'état des lieux d'entrée, pièce par pièce, sur le téléphone : l'IA ne fait que mettre en forme le dicté [R106].
+  function inventoryBlock(id, base, p) {
+    var box = section('L’état des lieux d’entrée');
+    if (p.inventoryClosed) { box.appendChild(el('p', 'Signé des deux parties : un exemplaire pour chacun.', 'fait')); return box; }
+    var done = inventories[id];
+    if (done && done.leaseId === p.lease.leaseId) box.appendChild(inventorySign(id, done.inventory));
+    var n = ++louerSeq;
+    var d = details(box, done ? 'Refaire l’état des lieux' : 'Faire l’état des lieux, pièce par pièce');
+    if (!done) d.setAttribute('open', '');
+    var address = field(d, 'edl-adresse-' + n, 'Adresse du logement');
+    var owner = field(d, 'edl-domicile-' + n, 'Domicile du bailleur');
+    var rooms = [];
+    var roomsBox = el('div');
+    d.appendChild(roomsBox);
+    function addRoom(name) {
+      var k = rooms.length + 1;
+      var r = el('fieldset', null, 'piece');
+      r.appendChild(el('legend', 'Pièce ' + k));
+      var nm = field(r, 'edl-' + n + '-piece-' + k, 'Nom de la pièce');
+      nm.value = name || '';
+      var items = [];
+      var list = el('div');
+      r.appendChild(list);
+      function addItem(label) {
+        var j = items.length + 1;
+        var row = el('div', null, 'ligne');
+        var a = el('div');
+        var b = el('div');
+        var what = field(a, 'edl-' + n + '-' + k + '-el-' + j, 'Élément');
+        what.value = label || '';
+        // Aucun état n'est choisi d'avance : il est constaté, jamais supposé.
+        var states = { '': 'À constater' };
+        Object.keys(ELEMENT_STATES).forEach(function (s) { states[s] = ELEMENT_STATES[s]; });
+        var st = select(b, 'edl-' + n + '-' + k + '-etat-' + j, 'État', states, '');
+        row.appendChild(a);
+        row.appendChild(b);
+        list.appendChild(row);
+        items.push([what, st]);
+      }
+      ['Sol', 'Murs', 'Plafond', 'Fenêtres', 'Portes'].forEach(addItem);
+      var more = button('Ajouter un élément', function () { addItem(''); });
+      more.className = 'secondaire';
+      r.appendChild(more);
+      var dict = field(r, 'edl-' + n + '-dicte-' + k, 'Observations dictées (l’IA ne fait que les mettre en forme)', 'textarea');
+      dict.setAttribute('rows', '3');
+      dict.setAttribute('maxlength', '4000');
+      roomsBox.appendChild(r);
+      rooms.push({ name: nm, items: items, dict: dict });
+    }
+    addRoom('Entrée');
+    var plus = button('Ajouter une pièce', function () { addRoom(''); });
+    plus.className = 'secondaire';
+    d.appendChild(plus);
+    d.appendChild(el('h4', 'Compteurs'));
+    var meters = Object.keys(METERS).map(function (kind) {
+      var f = field(d, 'edl-' + n + '-compteur-' + kind, METERS[kind] + ' : index relevé');
+      f.setAttribute('inputmode', 'decimal');
+      return [kind, f];
+    });
+    d.appendChild(el('h4', 'Clés remises'));
+    var keys = [];
+    var keysBox = el('div');
+    d.appendChild(keysBox);
+    function addKey() {
+      var j = keys.length + 1;
+      var row = el('div', null, 'ligne');
+      var a = el('div');
+      var b = el('div');
+      var kind = field(a, 'edl-' + n + '-cle-' + j, 'Clé ou badge');
+      var count = field(b, 'edl-' + n + '-cles-' + j, 'Nombre');
+      count.setAttribute('inputmode', 'numeric');
+      row.appendChild(a);
+      row.appendChild(b);
+      keysBox.appendChild(row);
+      keys.push([kind, count]);
+    }
+    addKey();
+    var moreKey = button('Ajouter des clés', addKey);
+    moreKey.className = 'secondaire';
+    d.appendChild(moreKey);
+    var furniture = [];
+    if (p.facts && p.facts.furnished) {
+      d.appendChild(el('h4', 'Mobilier'));
+      var fBox = el('div');
+      d.appendChild(fBox);
+      var addFurniture = function () {
+        var j = furniture.length + 1;
+        var row = el('div', null, 'ligne');
+        var a = el('div');
+        var b = el('div');
+        var c = el('div');
+        var item = field(a, 'edl-' + n + '-meuble-' + j, 'Meuble');
+        var count = field(b, 'edl-' + n + '-meubles-' + j, 'Nombre');
+        count.setAttribute('inputmode', 'numeric');
+        var states = { '': 'À constater' };
+        Object.keys(ELEMENT_STATES).forEach(function (s) { states[s] = ELEMENT_STATES[s]; });
+        var st = select(c, 'edl-' + n + '-meuble-etat-' + j, 'État', states, '');
+        row.appendChild(a);
+        row.appendChild(b);
+        row.appendChild(c);
+        fBox.appendChild(row);
+        furniture.push([item, count, st]);
+      };
+      addFurniture();
+      var moreF = button('Ajouter un meuble', addFurniture);
+      moreF.className = 'secondaire';
+      d.appendChild(moreF);
+    }
+    d.appendChild(button('Ranger l’état des lieux', function () {
+      var problem = '';
+      var b = { rooms: [], meters: [], keys: [], furniture: [] };
+      var a1 = String(address.value || '').trim();
+      var a2 = String(owner.value || '').trim();
+      if (a1) b.address = a1;
+      if (a2) b.ownerAddress = a2;
+      rooms.forEach(function (r) {
+        var name = String(r.name.value || '').trim();
+        var els = [];
+        r.items.forEach(function (x) {
+          var w = String(x[0].value || '').trim();
+          if (!w) return;
+          if (!x[1].value) problem = 'Constatez l’état de chaque élément, ou retirez son nom.';
+          els.push({ name: w, state: x[1].value });
+        });
+        var dict = String(r.dict.value || '').trim();
+        if (!name && !els.length && !dict) return;
+        if (!name) problem = 'Donnez un nom à chaque pièce.';
+        b.rooms.push({ name: name, elements: els, dictation: dict || null });
+      });
+      meters.forEach(function (m) { var v = String(m[1].value || '').trim(); if (v) b.meters.push({ kind: m[0], index: v }); });
+      keys.forEach(function (k) {
+        var kind = String(k[0].value || '').trim();
+        if (!kind && !String(k[1].value || '').trim()) return;
+        var c = whole(k[1].value, 50);
+        if (!kind || !c) problem = 'Pour les clés : une sorte et un nombre.';
+        b.keys.push({ kind: kind, count: c });
+      });
+      furniture.forEach(function (f) {
+        var item = String(f[0].value || '').trim();
+        if (!item) return;
+        var c = whole(f[1].value, 99);
+        if (!c || !f[2].value) problem = 'Pour chaque meuble : un nombre et son état constaté.';
+        b.furniture.push({ item: item, count: c, state: f[2].value });
+      });
+      if (problem) { louerState(problem); return; }
+      louerAct(base + '/etat-des-lieux', b, 'L’état des lieux n’est pas rangé.', '', true).then(function (inv) {
+        if (!inv || !ID.test(inv.inventoryId)) return;
+        inventories[id] = { leaseId: p.lease.leaseId, inventory: inv };
+        openLocation(id, $('louer-titre').textContent, inv.status === 'complet' ? 'État des lieux rangé, complet : relisez-le avec les deux parties, puis signez.' : 'État des lieux rangé, incomplet : ' + (inv.missing || []).join(', ') + '.');
+      });
+    }));
+    return box;
+  }
+  function inventorySign(id, inv) {
+    var box = el('div', null, 'vente');
+    box.appendChild(el('h4', 'À relire avec les deux parties'));
+    box.appendChild(el('p', inv.content, 'brouillon'));
+    if (inv.status !== 'complet') { box.appendChild(el('p', 'Incomplet : complétez-le avant de le signer.', 'alerte')); return box; }
+    ['bailleur', 'locataire'].forEach(function (party) {
+      var k = inv.inventoryId + ':' + party;
+      if (inventories[k]) { box.appendChild(el('p', 'Signé par ' + PARTY_NAMES[party] + '.', 'fait')); return; }
+      var trace = pad(box, party === 'bailleur' ? 'Signature du bailleur' : 'Signature du locataire');
+      box.appendChild(button('Signer pour ' + PARTY_NAMES[party], function () {
+        var t = trace.value();
+        if (!t) { louerState(LOUER_REFUSALS.bad_drawing); return; }
+        louerAct('/v1/location/etats-des-lieux/' + encodeURIComponent(inv.inventoryId) + '/signatures', { party: party, contentSha256: inv.contentSha256, drawing: t }, 'La signature n’est pas rangée.', '', true).then(function (r) {
+          if (!r) return;
+          inventories[k] = true;
+          openLocation(id, $('louer-titre').textContent, r.closed ? 'État des lieux signé des deux parties.' : 'Signature de ' + PARTY_NAMES[party] + ' rangée.');
+        });
+      }));
+    });
+    return box;
+  }
+`;

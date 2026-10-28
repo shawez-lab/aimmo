@@ -135,7 +135,37 @@ export function locationCore(s: LocationServices) {
 
 const core = locationCore;
 
+/**
+ * L'avancée d'une mise en location (W11) : les derniers faits rangés, les honoraires en vigueur, le bail en vigueur et ses signatures d'essai,
+ * l'état des lieux clos ou non. Rien d'une personne : ni nom, ni coordonnée. La lecture est au journal [R16].
+ */
+async function progress(s: LocationServices, v: Viewer, id: string): Promise<Outcome> {
+  const c = core(s);
+  const listing = await c.listings.listing(v, id, false);
+  if ('ok' in listing) return listing;
+  await appendEvent(s.journal, { type: 'location.lue', actor: `${String(v.role)}:${v.userId}`, subject: `rental:${listing.id}`, data: { rule: 'R16', what: 'progress' } }, s.now);
+  const facts = await c.listings.currentFacts(listing.id);
+  const lease = await c.leases.current(listing.networkId, listing.id);
+  const signed = lease ? await c.signatures.status(listing.networkId, lease.leaseId) : null;
+  const closed = await c.inventories.closedInventory(listing.networkId, listing.id);
+  const f = await c.fees.current(listing.networkId, listing.id);
+  return {
+    ok: true,
+    value: {
+      facts,
+      fees: f ? { tenantCents: f.tenantCents, tenantInventoryCents: f.tenantInventoryCents, landlordCents: f.landlordCents, landlordInventoryCents: f.landlordInventoryCents, depositCents: f.depositCents } : null,
+      lease: lease ? { leaseId: lease.leaseId, mode: lease.mode, complete: lease.complete, bailleur: signed?.bailleur ?? null, locataire: signed?.locataire ?? null, copiesSent: signed?.copiesSent ?? [] } : null,
+      inventoryClosed: closed !== null && lease !== null && closed.leaseId === lease.leaseId,
+    },
+  };
+}
+
 const ROUTES: LocationRoute[] = [
+  /* Les mises en location lisibles et l'avancée de l'une d'elles, pour l'écran « Louer » (W11) [R16]. */
+  { method: 'GET', pattern: /^\/location$/, name: 'location.liste', roles: READERS, handle: async (s, v, _p, r) => reply(await core(s).listings.mine(v, new URL(r.url).searchParams.get('page') ?? 0)) },
+  { method: 'GET', pattern: new RegExp(`^/location/${ID}/suivi$`), name: 'location.suivi', roles: READERS, handle: async (s, v, [id]) => reply(await progress(s, v, id!)) },
+  { method: 'GET', pattern: new RegExp(`^/location/${ID}/presentation$`), name: 'location.presentation.lue', roles: READERS, handle: async (s, v, [id]) => reply(await core(s).choices.last(v, id)) },
+
   /* Le logement et son contrôle (W01) [R100, R101]. */
   {
     method: 'POST',
