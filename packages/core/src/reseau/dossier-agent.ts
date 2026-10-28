@@ -105,6 +105,13 @@ const frDate = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}/
 const labelOf = (kind: AgentFilePiece): string => AGENT_FILE_PIECES.find((p) => p.kind === kind)!.label;
 const lower = (s: string): string => s.charAt(0).toLocaleLowerCase('fr') + s.slice(1);
 
+/** L'identifiant de l'agent d'une candidature : une empreinte stable, à la forme d'un UUID. */
+export async function agentIdFor(candidateId: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`agent:${candidateId}`)));
+  const hex = [...digest.slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${((parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
 export interface DossierAgentOptions {
   now?: () => Date;
   newId?: () => string;
@@ -160,22 +167,23 @@ export class DossierAgent {
     if (already) return { ok: true, agentId: already.agent_id };
     const c = (await this.db.first<{ first_name: string; last_name: string | null }>('SELECT first_name, last_name FROM candidates WHERE id = ?', [candidateId]))!;
     const zone = typeof input.zone === 'string' && input.zone.trim() !== '' && input.zone.trim().length <= 80 ? input.zone.trim() : null;
-    const agent = await this.store.createAgent({ networkId: viewer.networkId, firstName: c.first_name, lastName: c.last_name ?? '', zone });
-    const { changes } = await this.db.run('INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (candidate_id) DO NOTHING', [
-      agent.id,
+    // L'identifiant de l'agent est tiré de la candidature : deux entrées en même temps n'en créent qu'un [R18].
+    const agentId = await agentIdFor(candidateId);
+    const at = this.now().toISOString();
+    await this.db.run(
+      "INSERT INTO agents (id, network_id, first_name, last_name, zone, status, sponsor_agent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', NULL, ?, ?) ON CONFLICT (id) DO NOTHING",
+      [agentId, viewer.networkId, c.first_name, c.last_name ?? '', zone, at, at],
+    );
+    const { changes } = await this.db.run('INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
+      agentId,
       viewer.networkId,
       candidateId,
       this.actor(viewer),
-      this.now().toISOString(),
+      at,
     ]);
-    if (changes !== 1) {
-      // Deux entrées en même temps : l'agent créé en trop reste sans dossier, et part aussitôt.
-      await this.db.run("UPDATE agents SET status = 'left', updated_at = ? WHERE id = ?", [this.now().toISOString(), agent.id]);
-      const row = (await this.db.first<{ agent_id: string }>('SELECT agent_id FROM agent_onboardings WHERE candidate_id = ?', [candidateId]))!;
-      return { ok: true, agentId: row.agent_id };
-    }
-    await appendEvent(this.journal, { type: 'agent.entre', actor: this.actor(viewer), subject: `agent:${agent.id}`, data: { candidate: `candidate:${candidateId}` } }, this.now);
-    return { ok: true, agentId: agent.id };
+    if (changes !== 1) return { ok: true, agentId };
+    await appendEvent(this.journal, { type: 'agent.entre', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { candidate: `candidate:${candidateId}` } }, this.now);
+    return { ok: true, agentId };
   }
 
   /**

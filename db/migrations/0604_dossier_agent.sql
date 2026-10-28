@@ -43,3 +43,4 @@ CREATE TABLE IF NOT EXISTS agent_file_alerts (
   PRIMARY KEY (piece_id, alert)
 );
 CREATE TRIGGER IF NOT EXISTS agent_file_alerts_garde BEFORE DELETE ON agent_file_alerts BEGIN SELECT RAISE(ABORT, 'agent_file_alerts : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS agent_file_alerts_fige BEFORE UPDATE ON agent_file_alerts BEGIN SELECT RAISE(ABORT, 'agent_file_alerts : une alerte ne change plus'); END;

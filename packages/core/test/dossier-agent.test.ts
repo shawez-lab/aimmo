@@ -181,6 +181,17 @@ describeWithSqlite('J04 · dossier d’agent', () => {
     expect((await verifyChain(entries)).ok).toBe(true);
   });
 
+  it('[R18] deux entrées du même candidat en même temps ne créent qu’un agent', async () => {
+    const t = await setup();
+    const cand = await t.accepted('h@example.test');
+    const before = (await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM agents'))!.n;
+    const [x, y] = await Promise.all([t.dossier.admit(t.dir, cand), t.dossier.admit(t.dir, cand)]);
+    expect(x).toEqual(y);
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM agents'))!.n).toBe(before + 1);
+    expect(await t.db.all('SELECT agent_id FROM agent_onboardings')).toHaveLength(1);
+    expect(await t.db.all("SELECT id FROM agents WHERE status = 'left'")).toEqual([]);
+  });
+
   it('[R82] sans « oui » d’un humain, personne n’entre', async () => {
     const t = await setup();
     const c = new Candidatures(t.db, t.journal, { now: () => new Date(clock) });
