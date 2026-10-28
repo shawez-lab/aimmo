@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { Candidatures, ChoixProprietaire, EnvoisLocation, LOCATION_SEND_HOURS, LOCATION_SEND_JOB, MisesEnLocation, RENTAL_UPDATE_PURPOSE, locationSendJob, sendStatus, type RentalFacts } from '../src/location/index.ts';
+import { Candidatures, ChoixProprietaire, EnvoisLocation, LOCATION_SEND_HOURS, LOCATION_SEND_JOB, MisesEnLocation, RENTAL_UPDATE_PURPOSE, locationSendJob, outgoingText, sendStatus, type RentalFacts } from '../src/location/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -191,6 +191,11 @@ describeWithSqlite('W10 · branchement de M15 dans le socle', () => {
     expect(sendStatus({ status: 'refused', rule: 'R01' })).toBe('waiting');
     expect(sendStatus({ status: 'refused', rule: 'R03' })).toBe('waiting');
     expect(sendStatus({ status: 'refused', rule: 'R04' })).toBe('refused');
+    // Sans adresse encore : le texte attend, il partira quand le mail sera connu.
+    expect(sendStatus({ status: 'refused', rule: null })).toBe('waiting');
+    for (const rule of ['R02', 'R05', 'R86']) expect(sendStatus({ status: 'refused', rule })).toBe('refused');
+    // Un libellé officiel entre parenthèses passe en incise : le contrôle des textes refuse les parenthèses [R08].
+    expect(outgoingText('Bonjour, vos pièces : Carte professionnelle (profession libérale) ; Avis d’imposition.', 'Camille')).toBe('Bonjour Camille, vos pièces : Carte professionnelle, profession libérale ; Avis d’imposition.');
   });
 });
 

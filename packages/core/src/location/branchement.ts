@@ -56,13 +56,25 @@ interface Pending {
 }
 
 /**
- * Le statut rangé d'après la réponse du contrôle : l'heure attend, l'accord manquant attend qu'il soit donné (rien ne
+ * Le statut rangé d’après la réponse du contrôle : envoyé, refusé pour de bon (FINAL_REFUSALS), ou en attente (rien ne
  * part sans lui, le contrôle le redemande à chaque passage) [R01, R03], la panne se reprend, le reste est fini.
  */
 export function sendStatus(r: Pick<SendResult, 'status' | 'rule'>): RentalSendStatus {
   if (r.status === 'sent') return 'sent';
   if (r.status === 'failed') return 'failed';
-  return r.rule === 'R01' || r.rule === 'R03' ? 'waiting' : 'refused';
+  return FINAL_REFUSALS.includes(r.rule ?? '') ? 'refused' : 'waiting';
+}
+
+/**
+ * Les refus définitifs : exclusion [R02], arrêt [R04], déjà envoyé [R05], agent parti [R86]. Tout autre refus (heure,
+ * accord ou adresse manquants…) attend : le texte reste préparé et le contrôle redécide au passage suivant.
+ */
+export const FINAL_REFUSALS: readonly string[] = ['R02', 'R04', 'R05', 'R86'];
+
+/** Le texte envoyé : salué par le prénom [R08], et sans parenthèse, celles des libellés officiels mises en incise [R08]. */
+export function outgoingText(prepared: string, firstName: string | null): string {
+  const greeted = firstName ? prepared.replace(/^Bonjour,/, `Bonjour ${firstName},`) : prepared;
+  return greeted.replace(/\s*\(([^()]*)\)/g, ', $1');
 }
 
 /** La raison rangée d'un texte devenu faux avant son envoi : classe corrigée, présentation refaite. */
@@ -129,7 +141,7 @@ export class EnvoisLocation {
       }
       // Le texte préparé salue sans nom (il est rangé tel quel, rejouable) : le prénom n'est ajouté qu'à l'envoi [R08].
       const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [p.person_id]);
-      const text = person?.first_name ? p.text.replace(/^Bonjour,/, `Bonjour ${person.first_name},`) : p.text;
+      const text = outgoingText(p.text, person?.first_name ?? null);
       const result = await this.controle.send({
         networkId: p.network_id,
         agentId: p.agent_id,
