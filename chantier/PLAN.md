@@ -1167,7 +1167,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : H27 pour la mesure réelle seulement.
 
 ### K09 · Écran « Le réseau » pour la direction
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : K08
 - Cahier : M13, « Tableau de bord du réseau » et « Alertes ».
 - Objectif : la direction se connecte à l'application avec sa clé et retrouve, sur téléphone d'abord, le tableau de bord du réseau (par agent, zone, source, coûts de l'IA), ses alertes, les reversements à faire, les brouillons de factures à valider et le téléchargement de l'export du jour, par les routes `/v1/pilotage` de K08.
