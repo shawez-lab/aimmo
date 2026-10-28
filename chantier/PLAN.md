@@ -1088,7 +1088,8 @@ Découpé le 2026-10-28 par la voie 1. Ids `K..` pour Kilomètres et chiffres. C
 Décidé, lecture prudente : tous les chiffres viennent de la base, par des requêtes écrites, jamais d'une saisie ni de l'IA ; l'IA n'évalue aucun agent et ne décide de rien les concernant ; aucun classement d'agents n'est montré à un agent [R14, R68, R69]. Une commission naît « prévue » au compromis, devient « due » seulement à l'acte rapporté par N06 (ou à la signature du bail, quand M15 existera), puis « facturée » et « payée », chaque passage dans l'ordre, avec sa preuve, jamais un montant saisi [R63, R67]. La part de l'agent et celle du réseau viennent d'une grille datée et versionnée réglée par la direction ; le partage entre agents (fichier commun, binôme d'une absence) et la prime de parrainage (M14, R83) sont lus par des interfaces, avec un faux dans les tests tant que M14 ne les fournit pas. Une facture a un numéro continu, chronologique, sans trou ; elle ne change ni ne s'efface, un avoir la corrige [R17, R71] ; aucune facture réelle tant que la plateforme agréée de facturation électronique et les modalités de l'expert-comptable ne sont pas en place (H26) : la plateforme est derrière une interface, en mode essai. Le reversement à l'agent est dû sous 24 h ouvrées après l'encaissement rapporté avec sa preuve, la direction est alertée avant l'échéance [R70]. Les numéros de règles R67 à R72 et de migrations à partir de `0501` sont réservés à M13. Le code vit dans `packages/core/src/pilotage/`, ses routes dans `packages/api/src/pilotage.ts`.
 
 ### K01 · Cycle de la commission : prévue, due, facturée, payée
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : parts arrondies au centime inférieur, le reste au réseau ; prime de parrainage prise sur la part du réseau ; aucune grille pour le passé ; la conformité n'a pas les chiffres (droits du socle) ; l'agent qui ne fait que partager voit sa part sans les honoraires ; écart d'honoraires, de mandat ou de jour de compromis à l'acte : la commission reste prévue, la direction tranche.
 - Qui : Claude · Relecture : forte · Dépend de : N06
 - Cahier : M13, « Commissions » et « Règles ».
 - Objectif : une commission par dossier de vente, calculée par le code depuis le mandat en vigueur (honoraires, avenants compris) : « prévue » dès le compromis, « due » à l'acte (N06), puis « facturée » (K02) et « payée » (K03) ; la part de l'agent et la part du réseau par une grille datée (taux de l'agent, partage du fichier commun, binôme, prime de parrainage lue par une interface), la grille en vigueur au jour du compromis.
@@ -1096,7 +1097,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K02 · Factures d'honoraires et de reversement, en mode essai
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : K01
 - Cahier : M13, « Factures » et « Branchements ».
 - Objectif : à la commission due, la facture d'honoraires du réseau au client qui paie (mentions obligatoires, numéro continu par réseau et par année) et la facture de reversement de l'agent au réseau, préparées par le code et validées par la direction ; émises par l'interface de la plateforme agréée (fausse plateforme d'essai) ; un avoir pour toute correction ; export comptable au format tableur (CSV).
