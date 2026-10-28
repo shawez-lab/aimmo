@@ -213,9 +213,16 @@ export class EspacePartenaire {
     if (want('budgetMaxEur')) out.budgetMaxEur = project.budget_max_eur;
     if (want('deadline')) out.deadline = project.deadline;
     if (want('saleAmountEur') || want('saleOpenedOn')) {
-      const sale = src.property_id
-        ? await this.db.first<{ amount_eur: number; opened_at: string }>('SELECT amount_eur, opened_at FROM sale_files WHERE property_id = ? AND network_id = ?', [src.property_id, src.network_id])
+      // Le dossier de vente n'est montré que si le client du projet y est partie : propriétaire du bien ou acquéreur du
+      // dossier. Jamais le dossier d'un autre client [R77].
+      const found = src.property_id
+        ? await this.db.first<{ amount_eur: number; opened_at: string; buyer_person_id: string }>(
+            'SELECT amount_eur, opened_at, buyer_person_id FROM sale_files WHERE property_id = ? AND network_id = ?',
+            [src.property_id, src.network_id],
+          )
         : null;
+      const owner = found ? await this.db.first("SELECT 1 FROM project_properties WHERE project_id = ? AND property_id = ? AND role = 'owned'", [src.project_id, src.property_id]) : null;
+      const sale = found && (owner || found.buyer_person_id === project.person_id) ? found : null;
       if (want('saleAmountEur')) out.saleAmountEur = sale?.amount_eur ?? null;
       if (want('saleOpenedOn')) out.saleOpenedOn = sale ? sale.opened_at.slice(0, 10) : null;
     }

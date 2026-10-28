@@ -52,9 +52,12 @@ async function setup() {
     if (trade === 'diagnostiqueur') await annuaire.addCredential(dir, id, { kind: 'certification_diagnostic', domain: 'amiante', number: 'C-1', validFrom: day(-30), validUntil: day(until), proofRef: files.put(`partenaires/${id}`) });
     return id;
   };
+  const buyer = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Second', lastName: 'Acquéreur' });
+  const interested = await store.createProject({ networkId: network.id, agentId: alex.id, personId: buyer.id, kind: 'buy' });
+  await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: interested.id, propertyId: property.id, role: 'interested' });
   /** Une mise en relation proposée, acceptée par le client et confiée au partenaire. */
-  const entrusted = async (partnerId: string, trade: string, confide = true): Promise<string> => {
-    const r = await relations.propose(agent, { projectId: project.id, trade, domain: trade === 'diagnostiqueur' ? 'amiante' : undefined, propertyId: property.id });
+  const entrustedFor = async (partnerId: string, trade: string, projectId: string, confide = true): Promise<string> => {
+    const r = await relations.propose(agent, { projectId, trade, domain: trade === 'diagnostiqueur' ? 'amiante' : undefined, propertyId: property.id });
     if (!r.ok) throw new Error(r.code);
     const id = r.value.referralId;
     const c = await relations.recordConsent(agent, id, { partnerId, consentAt: new Date(clock - 500).toISOString(), channel: 'ecrit', proofRef: files.put(`relations/${id}`) });
@@ -62,13 +65,14 @@ async function setup() {
     if (confide) await relations.entrust(agent, id);
     return id;
   };
+  const entrusted = (partnerId: string, trade: string, confide = true): Promise<string> => entrustedFor(partnerId, trade, project.id, confide);
   /** Range une version plus récente de la certification d'un domaine, valable jusqu'à `until` jours : elle corrige la précédente. */
   const annuaireCert = async (partnerId: string, domain: string, until: number): Promise<void> => {
     const r = await annuaire.addCredential(dir, partnerId, { kind: 'certification_diagnostic', domain, number: 'C-2', validFrom: day(-30), validUntil: day(until), proofRef: files.put(`partenaires/${partnerId}`) });
     if (!r.ok) throw new Error(r.code);
   };
   const as = (partnerId: string, networkId = network.id) => ({ role: 'partner' as const, userId: partnerId, networkId });
-  return { db, journal, store, relations, space, network, other, agent, dir, partner, entrusted, as, annuaireCert };
+  return { db, journal, store, relations, space, network, other, agent, dir, partner, entrusted, entrustedFor, as, annuaireCert, propertyId: property.id, interestedProjectId: interested.id };
 }
 
 describeWithSqlite('U04 · espace partenaire', () => {
@@ -98,6 +102,22 @@ describeWithSqlite('U04 · espace partenaire', () => {
     expect(rc.ok && rc.value.file).toEqual({ clientFirstName: 'Camille', clientLastName: 'Exemple', projectKind: 'sell', budgetMinEur: 180000, budgetMaxEur: 210000, deadline: null, postcode: '21000' });
     const rn = await t.space.read(t.as(nt), await t.entrusted(nt, 'notaire'));
     expect(rn.ok && rn.value.file).toMatchObject({ priceEur: 230000, clientFirstName: 'Camille', clientLastName: 'Exemple', saleAmountEur: null });
+  });
+
+  it('[R77] un notaire confié par un acquéreur qui n’est pas partie au dossier de vente n’en voit rien', async () => {
+    const t = await setup();
+    // Le bien a un dossier de vente avec un autre acquéreur ; un second acquéreur intéressé demande un notaire.
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('dv-1', ?, ?, 'o-1', 'acheteur-x', 215000, '2027-07-01T10:00:00.000Z', 'agent:x')", [
+      t.network.id,
+      t.propertyId,
+    ]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    const nt = await t.partner('notaire', 'Étude Prudente');
+    const owner = await t.space.read(t.as(nt), await t.entrusted(nt, 'notaire'));
+    expect(owner.ok && owner.value.file).toMatchObject({ saleAmountEur: 215000, saleOpenedOn: '2027-07-01' });
+    const other = await t.space.read(t.as(nt), await t.entrustedFor(nt, 'notaire', t.interestedProjectId));
+    expect(other.ok && other.value.file).toMatchObject({ saleAmountEur: null, saleOpenedOn: null });
   });
 
   it('[R77] [R16] un partenaire ne lit jamais une mise en relation qui ne lui est pas confiée', async () => {
