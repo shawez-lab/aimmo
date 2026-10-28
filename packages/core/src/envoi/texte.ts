@@ -154,26 +154,95 @@ export function checkText(text: string, context: TextContext, settings: TextSett
 
 /**
  * Un IBAN, tel qu'on l'écrit : deux lettres, deux chiffres, puis des groupes de lettres et de chiffres séparés ou non
- * par des espaces, des retours à la ligne, des points ou des tirets ; chaque groupe porte au moins un chiffre, pour ne
- * jamais avaler les mots qui suivent. 14 à 34 caractères utiles.
+ * par des espaces, des retours à la ligne, des points ou des tirets (trois au plus d'affilée) ; 14 à 34 caractères
+ * utiles, dont au moins 10 chiffres. Il est cherché par un parcours linéaire, jamais par une expression qui pourrait
+ * s'emballer sur un texte reçu de l'extérieur. Parmi les fins possibles, la plus longue dont la clé (modulo 97) est
+ * juste l'emporte ; à défaut, la plus longue dont le dernier groupe porte un chiffre et dont seuls les deux premiers
+ * groupes peuvent être sans chiffre (code de banque) : les mots qui suivent ne sont jamais avalés.
  */
-const IBAN_SOURCE = String.raw`\b[A-Za-z]{2}\d{2}(?:[\s.\-]{0,3}(?:(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{1,11}|[A-Z]{4}))+\b`;
-/** Un RIB français écrit seul : banque 5 chiffres, guichet 5, compte 11, clé 2. */
-const RIB_SOURCE = String.raw`\b\d{5}[\s.\-]{0,3}\d{5}[\s.\-]{0,3}[A-Za-z0-9]{11}[\s.\-]{0,3}\d{2}\b`;
-const usefulLength = (m: string): number => m.replace(/[\s.\-]/g, '').length;
-/** Un IBAN compte 14 à 34 caractères, dont au moins 10 chiffres : « ab12 avec cela pour » n'en est pas un. */
-const isIban = (m: string): boolean => usefulLength(m) >= 14 && usefulLength(m) <= 34 && (m.match(/\d/g) ?? []).length >= 10;
-export const IBAN = { test: (text: string): boolean => bankNumbers(text).length > 0 };
+const isAlnum = (c: string | undefined): boolean => c !== undefined && /[A-Za-z0-9]/.test(c);
+const isDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
+const isLetter = (c: string | undefined): boolean => c !== undefined && /[A-Za-z]/.test(c);
+const isSep = (c: string | undefined): boolean => c !== undefined && /[\s.\-]/.test(c);
+
+function mod97(chars: string): boolean {
+  const s = (chars.slice(4) + chars.slice(0, 4)).toUpperCase();
+  let r = 0;
+  for (const ch of s) {
+    const v = isDigit(ch) ? ch : String(ch.charCodeAt(0) - 55);
+    for (const d of v) r = (r * 10 + Number(d)) % 97;
+  }
+  return r === 1;
+}
+
+/** Les plages `[début, fin[` des IBAN du texte. */
+function ibanSpans(text: string): [number, number][] {
+  const spans: [number, number][] = [];
+  let i = 0;
+  while (i < text.length - 3) {
+    if (isAlnum(text[i - 1]) || !isLetter(text[i]) || !isLetter(text[i + 1]) || !isDigit(text[i + 2]) || !isDigit(text[i + 3])) {
+      i += 1;
+      continue;
+    }
+    let chars = text.slice(i, i + 4);
+    let digits = 2;
+    let j = i + 4;
+    let group = 0;
+    let groupHasDigit = true;
+    let lettersOnlyLate = false;
+    let best: number | null = null;
+    let fallback: number | null = null;
+    while (j <= text.length && chars.length <= 34) {
+      // Une fin de groupe : la place d'une fin possible.
+      if (!isAlnum(text[j])) {
+        if (group > 0 && !groupHasDigit && group > 2) lettersOnlyLate = true;
+        const ok = chars.length >= 14 && digits >= 10;
+        if (ok && mod97(chars)) best = j;
+        if (ok && groupHasDigit && !lettersOnlyLate) fallback = j;
+        let k = j;
+        while (k < text.length && k - j < 3 && isSep(text[k])) k += 1;
+        if (k === j && j < text.length && !isSep(text[j])) break;
+        if (!isAlnum(text[k])) break;
+        j = k;
+        group += 1;
+        groupHasDigit = false;
+        continue;
+      }
+      chars += text[j];
+      if (isDigit(text[j])) {
+        digits += 1;
+        groupHasDigit = true;
+      }
+      j += 1;
+    }
+    const end = best ?? fallback;
+    if (end !== null) {
+      spans.push([i, end]);
+      i = end;
+    } else {
+      i += 1;
+    }
+  }
+  return spans;
+}
+
+/** Un RIB français écrit seul : banque 5 chiffres, guichet 5, compte 11, clé 2 ; longueurs fixes, sans emballement. */
+const RIB = /\b\d{5}[\s.\-]{0,3}\d{5}[\s.\-]{0,3}[A-Za-z0-9]{11}[\s.\-]{0,3}\d{2}\b/g;
+export const IBAN = { test: (text: string): boolean => maskIban(text) !== text };
 /** Ce qui remplace un IBAN ou un RIB dans un message reçu rangé : le bouclier (N05) le lit comme un IBAN [R15]. */
 export const IBAN_MASK = '[IBAN masqué]';
 
 /** Un identifiant tiré au hasard (UUID), qui n'est jamais un IBAN : il est mis à part avant toute recherche. */
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
-function bankNumbers(text: string): string[] {
-  const t = text.replace(UUID, ' ');
-  const found = [...t.matchAll(new RegExp(IBAN_SOURCE, 'g'))].map((m) => m[0]).filter(isIban);
-  return [...found, ...[...t.matchAll(new RegExp(RIB_SOURCE, 'g'))].map((m) => m[0])];
+function maskPart(part: string): string {
+  let out = '';
+  let at = 0;
+  for (const [a, b] of ibanSpans(part)) {
+    out += part.slice(at, a) + IBAN_MASK;
+    at = b;
+  }
+  return (out + part.slice(at)).replace(RIB, IBAN_MASK);
 }
 
 /** Le texte, chaque IBAN ou RIB remplacé en entier par `IBAN_MASK`, avant de le ranger [R15]. Le reste ne change pas. */
@@ -181,15 +250,10 @@ export function maskIban(text: string): string {
   const uuids = text.match(UUID) ?? [];
   return text
     .split(UUID)
-    .map((part) => part.replace(new RegExp(IBAN_SOURCE, 'g'), (m) => (isIban(m) ? IBAN_MASK : m)).replace(new RegExp(RIB_SOURCE, 'g'), IBAN_MASK))
+    .map(maskPart)
     .reduce((acc, part, i) => acc + (i > 0 ? uuids[i - 1]! : '') + part, '');
 }
 
-/**
- * Ce que tout texte à un client refuse [R62] : un IBAN, un RIB, ou les mots RIB, BIC, SWIFT ou IBAN. Les tournures
- * qui demandent de payer sont refusées par `fundsInOutgoing` dans les textes écrits par le code de M10 seulement : dans
- * une dictée, « il faut régler la question du parking » ne demande rien.
- */
 /**
  * Une demande de payer, dans tout texte à un client [R62] : un verbe de paiement suivi, à quelques mots, de ce qui se
  * paie (somme, montant, acompte, frais, solde, dépôt, honoraires, une somme en euros), ou « effectuer le virement ».

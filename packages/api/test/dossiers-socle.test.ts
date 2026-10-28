@@ -58,10 +58,16 @@ it('[R15] un IBAN reçu est masqué, même coupé par des espaces ; le bouclier 
   expect(maskIban(`Mon RIB : ${IBAN}, merci.`)).toBe('Mon RIB : [IBAN masqué], merci.');
   expect(maskIban('Rien de bancaire ici.')).toBe('Rien de bancaire ici.');
   for (const written of ['FR76 3000 6000 0112 3456\n7890 189', 'FR76 3000 6000 0112  3456 7890 189', 'FR76-3000-6000-0112-3456-7890-189', 'FR76 30006 00001 12345678901 89', 'FR7630006000011234567890189', '30006 00001 12345678901 89', 'GB82 WEST 1234 5698 7654 32', 'GB82WEST12345698765432']) {
+    expect([written, maskIban(`${written} POUR VOUS`)]).toEqual([written, '[IBAN masqué] POUR VOUS']);
     expect([written, maskIban(`Voici : ${written} merci beaucoup`)]).toEqual([written, 'Voici : [IBAN masqué] merci beaucoup']);
   }
   // Rien d'autre n'est masqué : téléphone, code postal, référence, surface.
   expect(m10.fundSignals('GB82 WEST 1234 5698 7654 32')).toContain('iban');
+  // Un texte reçu piégé ne fait pas s'emballer la recherche.
+  const started = Date.now();
+  const trap = `FR76${'1'.repeat(30)}abcdefghijklmnop ${'FR76 1 '.repeat(2000)}`;
+  maskIban(trap);
+  expect(Date.now() - started).toBeLessThan(500);
   for (const plainText of ['Appelez-moi au 06 12 34 56 78.', 'Le lot ab12 avec cela pour vous, merci.', 'Référence 3f2a4b1c-9d8e-4f7a-b6c5-1234567890ab enregistrée.', 'Dijon 21000, bien REF-T-1, T3 de 62 m², 210 000 €.']) expect(maskIban(plainText)).toBe(plainText);
   expect(m10.fundSignals(maskIban(`virement sur ${IBAN}`))).toContain('iban');
 });
