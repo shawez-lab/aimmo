@@ -13,14 +13,18 @@
  * de parrainage, prise sur la part du réseau ; le reste au réseau. Décidé, lecture prudente : chaque part est arrondie
  * au centime inférieur, le reste va au réseau, pour qu'un agent ne reçoive jamais un centime qui n'est pas calculé ;
  * le partage et le parrainage viennent de M14 par des interfaces, sans rien tant qu'elles ne sont pas branchées ; une
- * commission prévue ne change plus, même si la grille change ; une différence d'honoraires à l'acte n'est jamais
- * corrigée par le code : la commission reste prévue, l'écart va au journal, la direction tranche.
+ * commission prévue ne change plus, même si la grille change ; une grille ne vaut jamais pour le passé (son premier
+ * jour est au plus tôt celui où elle est réglée), pour qu'une vente ait le même calcul quel que soit le moment du
+ * passage ; une différence d'honoraires, de mandat ou de jour du compromis à l'acte n'est jamais corrigée par le
+ * code : la commission reste prévue, l'écart va au journal, la direction tranche. Un dossier qui ne peut pas être
+ * calculé (sans agent, sans mandat en vigueur, sans grille, partage faux) est dit une fois au journal, sans montant.
  */
 import type { Acces } from '../acces/acces.ts';
 import { ROLES, type Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { mandateFeeAt } from '../dossiers/acte.ts';
+import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 
@@ -90,9 +94,11 @@ export interface GridInput {
 
 export interface CommissionView {
   fileId: string;
-  agentId: string;
+  /** L'agent de la vente, les honoraires et qui les paie : pour la direction, la conformité et l'agent de la vente ;
+   * `null` pour un agent qui n'a qu'une part de partage ou de parrainage [R68]. */
+  agentId: string | null;
   compromisOn: string;
-  feeCents: number;
+  feeCents: number | null;
   feeCharge: 'vendeur' | 'acquereur' | null;
   status: CommissionStatus;
   steps: { status: CommissionStatus; at: string }[];
@@ -101,7 +107,7 @@ export interface CommissionView {
 }
 
 export type CommissionRefusal = { ok: false; rule: 'R16'; code: string };
-type GridProblem = { ok: false; rule: null; code: 'bad_day' | 'bad_rate' | 'unknown_agent' | 'duplicate_agent' };
+type GridProblem = { ok: false; rule: null; code: 'bad_day' | 'past_day' | 'bad_rate' | 'unknown_agent' | 'duplicate_agent' };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const validDay = (v: unknown): v is string => typeof v === 'string' && DAY.test(v) && new Date(`${v}T12:00:00Z`).toISOString().slice(0, 10) === v;
@@ -149,6 +155,7 @@ export class Commissions {
   async setGrid(viewer: Viewer, input: GridInput): Promise<{ ok: true; version: number } | CommissionRefusal | GridProblem> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'commission_grid', 'role');
     if (!validDay(input.validFrom)) return { ok: false, rule: null, code: 'bad_day' };
+    if (input.validFrom < localTime(this.now(), 'Europe/Paris').date) return { ok: false, rule: null, code: 'past_day' };
     if (!validRate(input.defaultRateBp)) return { ok: false, rule: null, code: 'bad_rate' };
     const agents = input.agents ?? [];
     if (!Array.isArray(agents)) return { ok: false, rule: null, code: 'bad_rate' };
@@ -163,30 +170,38 @@ export class Commissions {
     const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM commission_grids WHERE network_id = ?', [viewer.networkId]);
     const version = (last?.v ?? 0) + 1;
     const id = this.newId();
-    await this.db.run('INSERT INTO commission_grids (id, network_id, version, valid_from, default_rate_bp, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+    // Une seule écriture : une grille n'existe jamais sans ses taux d'agents.
+    await this.db.run('INSERT INTO commission_grids (id, network_id, version, valid_from, default_rate_bp, agent_rates, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
       id,
       viewer.networkId,
       version,
       input.validFrom,
       input.defaultRateBp,
+      JSON.stringify(Object.fromEntries(agents.map((a) => [a.agentId, a.rateBp]))),
       this.actor(viewer),
       this.now().toISOString(),
     ]);
-    for (const a of agents) await this.db.run('INSERT INTO commission_grid_agents (grid_id, agent_id, rate_bp) VALUES (?, ?, ?)', [id, a.agentId, a.rateBp]);
     await appendEvent(this.journal, { type: 'commission.grille', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { version, validFrom: input.validFrom } }, this.now);
     return { ok: true, version };
   }
 
   /** La grille en vigueur pour un compromis de ce jour : la dernière version applicable à ce jour. */
-  private async gridAt(networkId: string, day: string): Promise<{ id: string; default_rate_bp: number } | null> {
-    return this.db.first<{ id: string; default_rate_bp: number }>('SELECT id, default_rate_bp FROM commission_grids WHERE network_id = ? AND valid_from <= ? ORDER BY valid_from DESC, version DESC LIMIT 1', [
+  private async gridAt(networkId: string, day: string): Promise<{ id: string; default_rate_bp: number; agent_rates: string } | null> {
+    return this.db.first<{ id: string; default_rate_bp: number; agent_rates: string }>('SELECT id, default_rate_bp, agent_rates FROM commission_grids WHERE network_id = ? AND valid_from <= ? ORDER BY valid_from DESC, version DESC LIMIT 1', [
       networkId,
       day,
     ]);
   }
 
-  private async rateOf(gridId: string, defaultRate: number, agentId: string): Promise<number> {
-    return (await this.db.first<{ rate_bp: number }>('SELECT rate_bp FROM commission_grid_agents WHERE grid_id = ? AND agent_id = ?', [gridId, agentId]))?.rate_bp ?? defaultRate;
+  private rateOf(grid: { default_rate_bp: number; agent_rates: string }, agentId: string): number {
+    const rates = JSON.parse(grid.agent_rates) as Record<string, number>;
+    return Object.hasOwn(rates, agentId) ? rates[agentId]! : grid.default_rate_bp;
+  }
+
+  /** Un dossier qui attend : dit une fois au journal par dossier et par raison, sans montant ni nom [R13]. */
+  private async waiting(fileId: string, type: 'commission.attente' | 'commission.ecart', code: string): Promise<void> {
+    const seen = (await this.journal.bySubject(`sale_file:${fileId}`)).some((e) => e.type === type && e.data.code === code);
+    if (!seen) await appendEvent(this.journal, { type, actor: 'system:pilotage', subject: `sale_file:${fileId}`, data: { rule: 'R67', code } }, this.now);
   }
 
   /**
@@ -206,36 +221,56 @@ export class Commissions {
       [networkId],
     );
     for (const f of files) {
-      const existing = await this.db.first<{ agent_id: string; fee_cents: number; grid_id: string }>('SELECT agent_id, fee_cents, grid_id FROM commissions WHERE file_id = ?', [f.id]);
-      let row = existing;
+      let row = await this.db.first<{ agent_id: string; fee_cents: number; grid_id: string }>('SELECT agent_id, fee_cents, grid_id FROM commissions WHERE file_id = ?', [f.id]);
       if (!row) {
-        if (!f.agent_id) continue;
+        if (!f.agent_id) {
+          await this.waiting(f.id, 'commission.attente', 'no_agent');
+          continue;
+        }
         const fee = await mandateFeeAt(this.db, this.diffusion, networkId, f.property_id, f.day);
-        if (!fee.ok) continue;
+        if (!fee.ok) {
+          await this.waiting(f.id, 'commission.attente', fee.code);
+          continue;
+        }
         const grid = await this.gridAt(networkId, f.day);
-        if (!grid) continue;
+        if (!grid) {
+          await this.waiting(f.id, 'commission.attente', 'no_grid');
+          continue;
+        }
         await this.db.run(
           'INSERT INTO commissions (file_id, network_id, agent_id, mandate_id, compromis_on, fee_cents, fee_charge, grid_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (file_id) DO NOTHING',
           [f.id, networkId, f.agent_id, fee.mandateId, f.day, fee.feeEur * 100, fee.feeCharge, grid.id, at],
         );
         row = (await this.db.first<{ agent_id: string; fee_cents: number; grid_id: string }>('SELECT agent_id, fee_cents, grid_id FROM commissions WHERE file_id = ?', [f.id]))!;
       }
-      // Les parts, une fois : reprises après une coupure, jamais doublées (clé : dossier et rang).
-      const grid = (await this.db.first<{ default_rate_bp: number }>('SELECT default_rate_bp FROM commission_grids WHERE id = ?', [row.grid_id]))!;
-      const rate = await this.rateOf(row.grid_id, grid.default_rate_bp, row.agent_id);
-      const splits = this.partages ? await this.partages.of(networkId, f.id, row.agent_id) : [];
-      const networkBefore = row.fee_cents - Math.floor((row.fee_cents * rate) / 10_000);
-      const prime = this.primes ? await this.primes.of(networkId, row.agent_id, networkBefore) : null;
-      const shares = computeShares(row.fee_cents, row.agent_id, rate, splits, prime);
-      for (const [i, sh] of shares.entries()) {
-        await this.db.run('INSERT INTO commission_shares (file_id, seq, kind, beneficiary_id, reason, amount_cents) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
-          f.id,
-          i + 1,
-          sh.kind,
-          sh.beneficiaryId,
-          sh.reason,
-          sh.amountCents,
-        ]);
+      // Les parts, en une seule écriture, seulement s'il n'y en a aucune : deux passages ou une reprise ne mêlent
+      // jamais deux calculs.
+      if (!(await this.db.first('SELECT 1 FROM commission_shares WHERE file_id = ?', [f.id]))) {
+        const grid = (await this.db.first<{ default_rate_bp: number; agent_rates: string }>('SELECT default_rate_bp, agent_rates FROM commission_grids WHERE id = ?', [row.grid_id]))!;
+        const rate = this.rateOf(grid, row.agent_id);
+        let shares: CommissionShare[];
+        try {
+          const splits = this.partages ? await this.partages.of(networkId, f.id, row.agent_id) : [];
+          const networkBefore = row.fee_cents - Math.floor((row.fee_cents * rate) / 10_000);
+          const prime = this.primes ? await this.primes.of(networkId, row.agent_id, networkBefore) : null;
+          shares = computeShares(row.fee_cents, row.agent_id, rate, splits, prime);
+        } catch {
+          await this.waiting(f.id, 'commission.attente', 'partage_invalide');
+          continue;
+        }
+        const values = shares.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+        await this.db.run(
+          `INSERT INTO commission_shares (file_id, seq, kind, beneficiary_id, reason, amount_cents)
+           SELECT column1, column2, column3, column4, column5, column6 FROM (VALUES ${values})
+           WHERE NOT EXISTS (SELECT 1 FROM commission_shares WHERE file_id = ?)`,
+          [...shares.flatMap((sh, i) => [f.id, i + 1, sh.kind, sh.beneficiaryId, sh.reason, sh.amountCents]), f.id],
+        );
+      }
+      // L'étape « prévue » seulement sur des parts qui font les honoraires, au centime [R69].
+      const sum = (await this.db.first<{ n: number | null }>('SELECT SUM(amount_cents) AS n FROM commission_shares WHERE file_id = ?', [f.id]))?.n ?? 0;
+      if (sum !== row.fee_cents) {
+        await this.waiting(f.id, 'commission.ecart', 'parts');
+        continue;
       }
       const { changes } = await this.db.run("INSERT INTO commission_steps (file_id, status, proof_ref, at, by) VALUES (?, 'prevue', ?, ?, 'system:pilotage') ON CONFLICT DO NOTHING", [f.id, f.proof_ref, at]);
       if (changes === 1) {
@@ -254,10 +289,19 @@ export class Commissions {
       [networkId],
     );
     for (const k of closed) {
-      const c = (await this.db.first<{ fee_cents: number; mandate_id: string }>('SELECT fee_cents, mandate_id FROM commissions WHERE file_id = ?', [k.file_id]))!;
-      if (c.fee_cents !== k.fee_eur * 100 || c.mandate_id !== k.mandate_id) {
-        // Jamais corrigé par le code : la direction tranche [R63]. Une ligne par passage tant que l'écart demeure.
-        await appendEvent(this.journal, { type: 'commission.ecart', actor: 'system:pilotage', subject: `sale_file:${k.file_id}`, data: { rule: 'R63', mandate: c.mandate_id === k.mandate_id } }, this.now);
+      const c = (await this.db.first<{ fee_cents: number; mandate_id: string; compromis_on: string }>('SELECT fee_cents, mandate_id, compromis_on FROM commissions WHERE file_id = ?', [k.file_id]))!;
+      const latest = await this.db.first<{ day: string }>("SELECT day FROM sale_file_dates WHERE file_id = ? AND kind = 'compromis_signe' ORDER BY version DESC LIMIT 1", [k.file_id]);
+      // Jamais corrigé par le code : la direction tranche [R63]. Dit une fois par raison.
+      if (c.fee_cents !== k.fee_eur * 100) {
+        await this.waiting(k.file_id, 'commission.ecart', 'honoraires');
+        continue;
+      }
+      if (c.mandate_id !== k.mandate_id) {
+        await this.waiting(k.file_id, 'commission.ecart', 'mandat');
+        continue;
+      }
+      if (latest?.day !== c.compromis_on) {
+        await this.waiting(k.file_id, 'commission.ecart', 'compromis');
         continue;
       }
       const { changes } = await this.db.run("INSERT INTO commission_steps (file_id, status, proof_ref, at, by) VALUES (?, 'due', ?, ?, 'system:pilotage') ON CONFLICT DO NOTHING", [k.file_id, k.proof_ref, at]);
@@ -313,12 +357,13 @@ export class Commissions {
       )
         .filter((s) => !own || s.beneficiary_id === viewer.userId)
         .map((s) => ({ kind: s.kind, beneficiaryId: s.beneficiary_id, reason: s.reason, amountCents: s.amount_cents }));
+      const whole = !own || r.agent_id === viewer.userId;
       value.push({
         fileId: r.file_id,
-        agentId: r.agent_id,
+        agentId: whole ? r.agent_id : null,
         compromisOn: r.compromis_on,
-        feeCents: r.fee_cents,
-        feeCharge: r.fee_charge,
+        feeCents: whole ? r.fee_cents : null,
+        feeCharge: whole ? r.fee_charge : null,
         status: steps.at(-1)!.status,
         steps,
         shares,

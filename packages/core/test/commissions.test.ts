@@ -69,7 +69,8 @@ describeWithSqlite('K01 · cycle de la commission', () => {
   it('[R67] prévue au compromis, due à l’acte, facturée, payée : dans l’ordre, une fois chacune, avec sa preuve', async () => {
     const t = await setup();
     const c = t.commissions();
-    expect(await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 7000 })).toEqual({ ok: true, version: 1 });
+    expect(await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 7000 })).toMatchObject({ ok: false, code: 'past_day' });
+    expect(await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 })).toEqual({ ok: true, version: 1 });
     expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
     await t.compromis();
     expect(await c.sync(t.network.id)).toEqual({ planned: 1, due: 0 });
@@ -93,7 +94,7 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     // Rien ne se facture ni ne se paie avant l'acte [R67].
     expect(await c.recordStep(t.network.id, t.fileId, 'facturee', 'factures/essai-1', 'direction:direction-1')).toEqual({ ok: false, rule: 'R67', code: 'out_of_order' });
     // Une grille changée après le compromis ne change pas la commission prévue.
-    await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 9000 });
+    expect(await c.setGrid(t.direction, { validFrom: '2027-03-11', defaultRateBp: 9000 })).toMatchObject({ ok: true });
     await t.acte();
     expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 1 });
     expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
@@ -122,7 +123,7 @@ describeWithSqlite('K01 · cycle de la commission', () => {
       partages: { of: async () => [{ agentId: t.sam.userId, ratioBp: 5000, reason: 'fichier_commun' }] },
       primes: { of: async () => ({ parrainId: 'parrain-1', amountCents: 20_000 }) },
     });
-    await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 7000, agents: [{ agentId: t.alexId, rateBp: 8000 }] });
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, agents: [{ agentId: t.alexId, rateBp: 8000 }] });
     await t.compromis();
     await c.sync(t.network.id);
     const all = await c.list(t.direction);
@@ -134,8 +135,10 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     ]);
     const alex = await c.list(t.agent);
     expect(alex.ok && alex.value[0]!.shares).toEqual([{ kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 400_000 }]);
+    expect(alex.ok && alex.value[0]).toMatchObject({ agentId: t.alexId, feeCents: 1_000_000 });
     const sam = await c.list(t.sam);
-    expect(sam.ok && sam.value[0]!.shares).toEqual([{ kind: 'partage', beneficiaryId: t.sam.userId, reason: 'fichier_commun', amountCents: 400_000 }]);
+    // L'agent qui partage voit sa part, jamais les honoraires ni l'agent de la vente [R68].
+    expect(sam.ok && sam.value[0]).toMatchObject({ agentId: null, feeCents: null, feeCharge: null, shares: [{ kind: 'partage', beneficiaryId: t.sam.userId, reason: 'fichier_commun', amountCents: 400_000 }] });
     // Sans part, rien : un autre agent ne voit pas la vente.
     const other = await t.store.createAgent({ networkId: t.network.id, firstName: 'Noé', lastName: 'Agent' });
     const none = await c.list({ role: 'agent', networkId: t.network.id, userId: other.id });
@@ -149,13 +152,44 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     expect(await c.setGrid(t.agent, { validFrom: '2027-01-01', defaultRateBp: 9000 })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await refused()).toBe(1);
     expect(await c.setGrid(t.direction, { validFrom: '2027-02-30', defaultRateBp: 7000 })).toMatchObject({ code: 'bad_day' });
-    expect(await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 10_001 })).toMatchObject({ code: 'bad_rate' });
-    expect(await c.setGrid(t.direction, { validFrom: '2027-01-01', defaultRateBp: 7000, agents: [{ agentId: 'inconnu', rateBp: 5000 }] })).toMatchObject({ code: 'unknown_agent' });
+    expect(await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 10_001 })).toMatchObject({ code: 'bad_rate' });
+    expect(await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, agents: [{ agentId: 'inconnu', rateBp: 5000 }] })).toMatchObject({ code: 'unknown_agent' });
     // Sans grille au jour du compromis, aucune commission n'est inventée.
     await c.setGrid(t.direction, { validFrom: '2027-04-01', defaultRateBp: 7000 });
     await t.compromis();
     expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
+    await c.sync(t.network.id);
+    // Dit une fois au journal, sans montant.
+    expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'commission.attente').map((e) => e.data.code)).toEqual(['no_grid']);
     // Un rôle partenaire ne lit rien.
     expect(await c.list({ role: 'partner', networkId: t.network.id, userId: 'p-1' })).toMatchObject({ ok: false, rule: 'R16' });
+  });
+
+  it('un partage faux de M14 ne bloque rien d’autre : dit au journal, sans parts écrites ; les parts s’écrivent en une fois', async () => {
+    const t = await setup();
+    let broken = true;
+    const c = t.commissions({ partages: { of: async () => (broken ? [{ agentId: t.sam.userId, ratioBp: 12_000, reason: 'binome' as const }] : []) } });
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 });
+    await t.compromis();
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
+    expect(await t.db.all('SELECT seq FROM commission_shares')).toEqual([]);
+    expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'commission.attente').map((e) => e.data.code)).toEqual(['partage_invalide']);
+    broken = false;
+    expect(await c.sync(t.network.id)).toEqual({ planned: 1, due: 0 });
+    // Des parts qui ne font pas les honoraires (écrites à la main hors du code) : jamais d'étape « prévue » [R69].
+    const sum = await t.db.first<{ n: number }>('SELECT SUM(amount_cents) AS n FROM commission_shares WHERE file_id = ?', [t.fileId]);
+    expect(sum!.n).toBe(1_000_000);
+  });
+
+  it('un compromis corrigé après la commission prévue : l’acte ne la rend pas due, l’écart va au journal', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 });
+    await t.compromis();
+    await c.sync(t.network.id);
+    await t.db.run("INSERT INTO sale_file_dates (file_id, network_id, kind, version, day, proof_ref, at, by) VALUES (?, ?, 'compromis_signe', 2, '2027-03-09', ?, ?, 'agent:x')", [t.fileId, t.network.id, PROOF, new Date().toISOString()]);
+    await t.acte();
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
+    expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'commission.ecart').map((e) => e.data.code)).toEqual(['compromis']);
   });
 });

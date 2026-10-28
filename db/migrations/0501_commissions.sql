@@ -9,15 +9,11 @@ CREATE TABLE IF NOT EXISTS commission_grids (
   valid_from TEXT NOT NULL,
   -- La part de l'agent, en points de base des honoraires (7 000 = 70 %).
   default_rate_bp INTEGER NOT NULL CHECK (default_rate_bp BETWEEN 0 AND 10000),
+  -- Les taux propres à certains agents, `{"<agent>": <points de base>}`, rangés avec la grille en une seule écriture.
+  agent_rates TEXT NOT NULL CHECK (json_valid(agent_rates)),
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
   UNIQUE (network_id, version)
-);
-CREATE TABLE IF NOT EXISTS commission_grid_agents (
-  grid_id TEXT NOT NULL REFERENCES commission_grids (id) ON DELETE RESTRICT,
-  agent_id TEXT NOT NULL,
-  rate_bp INTEGER NOT NULL CHECK (rate_bp BETWEEN 0 AND 10000),
-  PRIMARY KEY (grid_id, agent_id)
 );
 CREATE TABLE IF NOT EXISTS commissions (
   file_id TEXT PRIMARY KEY REFERENCES sale_files (id) ON DELETE RESTRICT,
@@ -55,8 +51,6 @@ CREATE TABLE IF NOT EXISTS commission_steps (
 );
 CREATE TRIGGER IF NOT EXISTS commission_grids_fige BEFORE UPDATE ON commission_grids BEGIN SELECT RAISE(ABORT, 'commission_grids : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS commission_grids_garde BEFORE DELETE ON commission_grids BEGIN SELECT RAISE(ABORT, 'commission_grids : rien ne s''efface'); END;
-CREATE TRIGGER IF NOT EXISTS commission_grid_agents_fige BEFORE UPDATE ON commission_grid_agents BEGIN SELECT RAISE(ABORT, 'commission_grid_agents : rien ne change'); END;
-CREATE TRIGGER IF NOT EXISTS commission_grid_agents_garde BEFORE DELETE ON commission_grid_agents BEGIN SELECT RAISE(ABORT, 'commission_grid_agents : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS commissions_fige BEFORE UPDATE ON commissions BEGIN SELECT RAISE(ABORT, 'commissions : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS commissions_garde BEFORE DELETE ON commissions BEGIN SELECT RAISE(ABORT, 'commissions : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS commission_shares_fige BEFORE UPDATE ON commission_shares BEGIN SELECT RAISE(ABORT, 'commission_shares : rien ne change'); END;
