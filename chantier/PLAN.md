@@ -4,6 +4,23 @@ Statuts possibles : `à faire`, `en cours`, `chez Codex depuis le <date>`, `fait
 Relecture : `normale` = tests + relecture de Codex. `forte` = tests + relecture de Codex + relecture par un agent séparé.
 Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le découpage des modules suivants se fait au fil de l'eau (protocole, section 5).
 
+## Priorité de Shawez (avant tout le reste, voie 1)
+
+### Z02 · Accès de Shawez à l'application en un clic
+- Statut : à faire
+- Qui : Claude, relecture forte
+- Dépendances : aucune
+- Objectif : l'application https://aimmo-api.shawez.workers.dev/app/ répond « API fermée : aucune clé configurée ». Shawez doit pouvoir entrer sans rien taper de technique. Un workflow GitHub lancé à la main (« Créer l'accès de Shawez ») tire une clé au hasard, range seulement son empreinte dans le secret `API_KEYS` du Worker avec `wrangler secret put` (le jeton Cloudflare est déjà dans les secrets du dépôt), crée la fiche agent de Shawez avec le rôle direction et agent, et lui remet la clé par un lien d'invitation à usage unique, valable 24 heures, envoyé à shawez@gravelin-immo.com. La clé n'apparaît jamais dans les journaux, le dépôt ni le chat. Le lien ouvre l'application déjà connectée.
+- Critères : clé jamais écrite en clair hors du navigateur de Shawez (test) ; lien à usage unique, expiré refusé (test) ; empreintes déjà présentes dans `API_KEYS` conservées (test) ; journal sans clé (test [R13]).
+- Ce qu'elle attend d'un humain : rien. Une fois fusionnée, la séance lance elle-même le workflow ; Shawez n'a qu'à cliquer sur le lien reçu par mail.
+
+### Z03 · Passe de design de l'application et des pages publiques
+- Statut : à faire
+- Qui : Claude, relecture forte
+- Dépendances : Z02
+- Objectif : un système de design propre à AIMMO (couleurs, typographie, espacements, composants, mouvements) appliqué à tous les écrans existants, téléphone d'abord. Rien de générique ni qui ressemble à un site fait par une IA ; niveau des meilleures applis du monde. Captures avant et après dans la proposition.
+- Critères : chaque écran passe un contrôle d'accessibilité automatique et un budget de performance (tests) ; aucun écran en dehors du système de design (test) ; Codex relit aussi les captures.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
@@ -1167,8 +1184,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : H27 pour la mesure réelle seulement.
 
 ### K09 · Écran « Le réseau » pour la direction
-- Statut : en cours
-- Reste : proposition #129 ouverte, tests verts en local, en attente des vérifications GitHub (H28).
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : la direction arrive sur « Le réseau » à la connexion, la conformité et les partenaires restent refusés ; chaque total refait la somme de ses lignes à l’écran et dit un écart ; une facture s’émet en deux gestes ; l’export se télécharge avec la clé dans l’en-tête ; relecture forte : 1 P1 corrigé (clé refusée pendant l’export). Codex : aucune remarque.
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : K08
 - Cahier : M13, « Tableau de bord du réseau » et « Alertes ».
@@ -1322,8 +1338,7 @@ Découpé le 2026-10-28 par la voie 1. La Feuille de route pose M12 comme préal
 Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle central des envois, exclusions et arrêts, mentions des annonces et des documents, registre des mandats, mention de l'assistant, dossier d'agent de M14) : il le relie. Le système bloque, enregistre, alerte et prépare ; le responsable de la conformité (rôle `compliance`) décide, déclare un soupçon et répond aux personnes ; aucune décision n'est prise par l'IA, aucune pièce d'identité ni aucun document anti-blanchiment ne lui est jamais envoyé [R15]. Le coffre est une référence de stockage derrière une interface (faux stockage dans les tests), jamais le contenu d'une pièce, et seul le responsable le lit, chaque lecture au journal. La fiche de risque est préparée par des règles écrites (type d'opération, montant, pays déclaré, personne politiquement exposée déclarée, paiement), jamais par l'IA, et ne compte que si le responsable la valide ; elle ne sert jamais à trier un client ni à refuser un service sans décision humaine [R14]. Un signalement fige le dossier et ne donne aucune information au client : aucun texte, aucune relance, aucun refus visible ne le trahit, et seul le responsable le voit. L'effacement ne passe que par la procédure de M12 (demande de la personne ou 3 ans sans contact ni consentement), garde ce que la loi oblige à garder (registre des mandats, anti-blanchiment, factures) et s'écrit au journal [R17] ; tant que le responsable n'est pas nommé (H29), l'effacement reste en mode essai : il liste ce qu'il effacerait et n'efface rien. Les numéros de règles R90 à R99 et de migrations à partir de `0701` sont réservés à M12. Le code vit dans `packages/core/src/conformite/`, ses routes dans `packages/api/src/conformite.ts`.
 
 ### L01 · Coffre de la conformité, réservé au responsable
-- Statut : en cours
-- Reste : proposition #131 ouverte, tests verts en local (1224), en attente des vérifications GitHub (H28).
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : le coffre lit toutes les fiches réunies (S04) ; une pièce d'identité déposée range aussi l'identité vérifiée de D03 ; un test refuse que tout autre fichier du code lise la table du coffre ; relecture forte : 1 P1 corrigé (fiches fusionnées).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : S08
 - Cahier : M12, « Anti-blanchiment » et « Règles » ; Conformité, « Conservation des documents ».
@@ -1343,7 +1358,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 
 ### L03 · Identification et bénéficiaire effectif, étape bloquante
 - Statut : en cours
-- Reste : proposition #139 ouverte (bâtie sur L02, #134), tests verts en local (1244), en attente des vérifications GitHub (H28).
+- Reste : proposition #139 ouverte (bâtie sur L02, #134), tests verts en local (1250), Codex : dernière version validée (1 P0 et 5 P2 corrigés, 1 P1 confié à L09), en attente des vérifications GitHub (H28).
 - Décidé (2026-10-28) : identité lue au coffre (pièce vérifiée depuis un an au plus, valide ce jour-là, non remplacée) ; la case « pièce vue » de D03 ne suffit plus ; société reconnue à sa déclaration ou à un Kbis ou registre au coffre, redéclarée « personne » par le responsable seul ; mandat papier jugé au jour de sa signature ; relecture forte : 2 P1 corrigés.
 - Qui : Claude, voie 1 (touche aux contrôles de M06 et M09) · Relecture : forte · Dépend de : L01, L02
 - Cahier : Conformité, « Identification du client et du bénéficiaire effectif, au seuil de 25 % ».
@@ -1353,6 +1368,8 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 
 ### L04 · Vigilance renforcée et origine des fonds
 - Statut : en cours
+- Reste : proposition #142 ouverte (bâtie sur L03, #139), tests verts en local (1263), en attente des vérifications GitHub (H28).
+- Décidé (2026-10-28) : réglage d'essai `essai-2026-10-28` (écart 20 % autour de la fourchette du dernier avis validé, montant 1 000 000 €), réglé ensuite par le responsable, versionné ; déclarations lues sur la fiche de risque de L02 ; la demande d'origine des fonds n'est préparée pour l'agent qu'après la décision « origine des fonds demandée » du responsable ; alertes et décisions au journal sous la référence de l'alerte, jamais sous la fiche du client ; relecture forte : 2 P1 corrigés. L'examen automatique à l'inscription d'une offre et à la signature d'un mandat est à brancher en L09.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L02
 - Cahier : Conformité, « Vigilance renforcée : montant inhabituel, prix sans lien avec la valeur, personne politiquement exposée ».
 - Objectif : des alertes au responsable par des règles écrites et réglables : prix d'une offre ou d'un mandat écarté de la fourchette d'estimation de M04 au-delà d'un seuil, montant au-dessus d'un seuil, personne politiquement exposée déclarée, paiement comptant déclaré ; la demande d'origine des fonds est préparée pour l'agent, la décision reste au responsable.
@@ -1395,7 +1412,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Statut : à faire
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : L01 à L08
 - Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
-- Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts` ; dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes, signalements, demandes et échéances, relecture du registre) et le dépôt d'une pièce par l'agent ; les passages au planificateur ; l'export depuis `@aimmo/core`.
+- Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts`, dont le dépôt d'une pièce au coffre (`CoffreConformite.deposit`) et la déclaration personne ou société avec ses bénéficiaires effectifs (`Identification.declare`), seules portes de l'identification depuis L03 ; AIMMO ne se met pas en service entre L03 et L09 ; dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes, signalements, demandes et échéances, relecture du registre) et le dépôt d'une pièce par l'agent ; les passages au planificateur ; l'export depuis `@aimmo/core`.
 - Critères : chaque route sous R16, refus au journal ; un agent ne voit jamais l'écran du responsable ; écran accessible, beau sur téléphone d'abord, sans texte générique ; les passages tournent une fois par créneau.
 - Attend : rien.
 
