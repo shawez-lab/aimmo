@@ -1054,7 +1054,7 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Attend : rien.
 
 ### F06 · Carnet du propriétaire, un an après (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-10-28)
 - Qui : Claude · Relecture : forte · Dépend de : F04, E01, E02
 - Cahier : M11 ; M20 Gagner des mandats ; M04, fourchette par le code.
 - Objectif : un an après l'achat, et seulement avec son accord donné à l'acte, l'acquéreur devenu propriétaire reçoit le carnet de son bien : la fourchette de valeur calculée par le code depuis les ventes DVF de sa commune (E01, E02), les ventes comparables de l'année, les échéances de ses diagnostics, et rien qu'il n'ait déjà donné ; c'est le premier contact de son futur mandat de vente, sans jamais le lui demander.
@@ -1067,6 +1067,7 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Cahier : M11 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/apres-vente` (recommandation, choix des relances, lien de la fiche Google, satisfaction, tâches) dans `packages/api/src/apres-vente.ts`, branchées dans `app.ts`, le passage quotidien au planificateur, et dans l'application de l'agent l'écran d'un dossier clos : demandes parties, tâches « remercier », recommandations, note.
 - Critères : chaque route sous R16, refus au journal ; un parcours de test, de l'acte à la relance d'un an ; écran accessible, sans texte générique, beau sur téléphone d'abord.
+- Reste de F06 : page publique du carnet (`CarnetsProprietaire.read`), réglage de son adresse, `BiensVendus` branché avec N06, `carnets` passé à `afterSaleReminderJob`.
 - Reste de F03 : routes `decide`, `markCalled`, `list` ; appels « remercier » dans « Ma journée » ; `thankYouJob` au planificateur.
 - Reste de F05 : page publique de la note et route de réponse (`Satisfaction.submit`), réglage `satisfactionBase` de `reviewRequestJob`, réponses dans l'écran de l'agent.
 - Reste de F04 : brancher `afterSaleReminderJob` au planificateur, avec l'adresse de désinscription en réglage ; routes du choix (`recordChoice`), de la désinscription (`unsubscribe`, page publique) et de la liste.
