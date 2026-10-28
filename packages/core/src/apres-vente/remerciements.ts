@@ -34,7 +34,7 @@ export const THANK_YOU_PURPOSE = REVIEW_PURPOSE;
 /** Les dossiers clos depuis au plus ce nombre de jours reçoivent leurs tâches ; un message validé attend au plus autant. */
 export const THANK_YOU_WINDOW_DAYS = 7;
 
-export type ThankYouSendStatus = 'sent' | 'waiting' | 'refused' | 'failed' | 'closed';
+export type ThankYouSendStatus = 'sent' | 'waiting' | 'sending' | 'refused' | 'failed' | 'closed';
 
 export interface ThankYouTask {
   fileId: string;
@@ -106,6 +106,9 @@ export class Remerciements {
         const root = await this.unique.rootOf(c.personId);
         if (seen.has(root)) continue;
         seen.add(root);
+        // Une tâche déjà créée pour une fiche réunie depuis à celle-ci compte : rien en double [R18].
+        const existing = await this.db.all<{ person_id: string }>('SELECT person_id FROM thank_you_tasks WHERE file_id = ?', [sale.fileId]);
+        if ((await Promise.all(existing.map((e) => this.unique.rootOf(e.person_id)))).includes(root)) continue;
         const draft = thankYouText(await this.firstName(root), c.side, sale);
         const { changes } = await this.db.run(
           `INSERT INTO thank_you_tasks (file_id, person_id, network_id, agent_id, side, due_day, draft, called_at, decision, decided_at, send_status, rule, message_id, created_at, updated_at)
@@ -118,6 +121,8 @@ export class Remerciements {
         }
       }
     }
+    // Un message pris par un passage interrompu depuis plus de 10 minutes est rendu, pour être retenté.
+    await this.db.run("UPDATE thank_you_tasks SET send_status = 'failed', updated_at = ? WHERE network_id = ? AND send_status = 'sending' AND updated_at < ?", [at, networkId, new Date(this.now().getTime() - 10 * 60_000).toISOString()]);
     // Un message validé resté en attente plus de 7 jours ne part plus.
     for (const r of await this.db.all<{ file_id: string; person_id: string }>(
       "SELECT file_id, person_id FROM thank_you_tasks WHERE network_id = ? AND decision = 'send' AND send_status IN ('waiting', 'failed') AND decided_at < ? ORDER BY file_id, person_id",
@@ -141,7 +146,10 @@ export class Remerciements {
       'SELECT network_id, agent_id, side, draft, send_status FROM thank_you_tasks WHERE file_id = ? AND person_id = ?',
       [fileId, personId],
     );
-    if (!t || (t.send_status !== 'waiting' && t.send_status !== 'failed')) return t?.send_status ?? 'refused';
+    if (!t || (t.send_status !== 'waiting' && t.send_status !== 'failed')) return t?.send_status === 'sending' ? 'waiting' : (t?.send_status ?? 'refused');
+    // Le message est pris avant l'envoi : deux passages simultanés n'en envoient qu'un, et l'issue rangée est la vraie.
+    const claim = await this.db.run("UPDATE thank_you_tasks SET send_status = 'sending', updated_at = ? WHERE file_id = ? AND person_id = ? AND send_status IN ('waiting', 'failed')", [this.now().toISOString(), fileId, personId]);
+    if (claim.changes !== 1) return 'waiting';
     const others = (await this.db.all<{ person_id: string }>('SELECT person_id FROM thank_you_tasks WHERE file_id = ? AND side <> ?', [fileId, t.side])).map((o) => o.person_id);
     const sale = await this.dossiers.byId(t.network_id, fileId);
     const result = await this.controle.send({
@@ -161,7 +169,7 @@ export class Remerciements {
     const status: ThankYouSendStatus = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' ? 'waiting' : 'refused';
     const rule = result.status === 'sent' ? null : result.rule;
     await this.db.run(
-      "UPDATE thank_you_tasks SET send_status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE file_id = ? AND person_id = ? AND send_status IN ('waiting', 'failed')",
+      "UPDATE thank_you_tasks SET send_status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE file_id = ? AND person_id = ? AND send_status = 'sending'",
       [status, rule, result.messageId, this.now().toISOString(), fileId, personId],
     );
     await appendEvent(this.journal, { type: 'apres_vente.remerciement', actor: 'system:apres-vente', subject: `sale_file:${fileId}`, data: { mode: 'essai', status, rule } }, this.now);

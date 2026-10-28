@@ -132,6 +132,28 @@ describeWithSqlite('F03 · remerciement : l’agent appelle, le message est pré
     expect(list.ok && list.value.map((r) => [r.fileId, r.sendStatus, r.rule])).toEqual([['f1', 'closed', 'delai_depasse']]);
   });
 
+  it('[R18] [R05] une fiche réunie après la création de sa tâche n’en crée pas une autre ; deux envois simultanés n’en font qu’un', async () => {
+    const t = await setup();
+    const s = await t.client('Sara');
+    const s2 = await t.client('Sara');
+    t.close('f1', '2027-03-08', [{ personId: s2, side: 'vendeur' }]);
+    t.setClock(paris('2027-03-08', 18));
+    await t.merci.run(t.network.id);
+    await new FicheUnique(t.db, new FicheClient(t.db, { now: t.now }), { now: t.now }).merge({ survivorId: s, mergedId: s2, reason: 'même personne, test' });
+    t.setClock(paris('2027-03-09', 9));
+    await t.merci.run(t.network.id);
+    const list = await t.merci.list(t.agent);
+    expect(list.ok && list.value).toHaveLength(1);
+    // La décision et un passage en même temps : un seul message, et l'issue rangée est celle de l'envoi.
+    t.setClock(paris('2027-03-09', 21));
+    expect(await t.merci.decide(t.agent, 'f1', s2, 'send')).toEqual({ ok: true, status: 'waiting' });
+    t.setClock(paris('2027-03-10', 10));
+    await Promise.all([t.merci.run(t.network.id), t.merci.run(t.network.id), t.merci.run(t.network.id)]);
+    expect(await t.outbox()).toBe(1);
+    const after = await t.merci.list(t.agent);
+    expect(after.ok && after.value.map((r) => [r.sendStatus, r.rule])).toEqual([['sent', null]]);
+  });
+
   it('[R16] seul l’agent du dossier, encore actif, voit et décide', async () => {
     const t = await setup();
     const s = await t.client('Sara');

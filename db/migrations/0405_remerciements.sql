@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS thank_you_tasks (
   -- `send` : l'agent valide le message ; `decline` : il ne l'envoie pas. Absent : rien ne part.
   decision TEXT CHECK (decision IS NULL OR decision IN ('send', 'decline')),
   decided_at TEXT,
-  send_status TEXT CHECK (send_status IS NULL OR send_status IN ('sent', 'waiting', 'refused', 'failed', 'closed')),
+  -- `sending` : un passage a pris le message et l'envoie ; un seul à la fois.
+  send_status TEXT CHECK (send_status IS NULL OR send_status IN ('sent', 'waiting', 'sending', 'refused', 'failed', 'closed')),
   rule TEXT,
   message_id TEXT,
   created_at TEXT NOT NULL,
