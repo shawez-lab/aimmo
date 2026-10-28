@@ -132,6 +132,8 @@ export const PARTNER_JS = `'use strict';
   var current = null;
   /** Chaque déconnexion ou nouvelle clé change de session : une réponse d'une session passée est ignorée. */
   var session = 0;
+  /** Le numéro de la dernière demande ouverte. */
+  var opening = 0;
 
   function el(id) { return document.getElementById(id); }
   function readKey() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
@@ -190,9 +192,12 @@ export const PARTNER_JS = `'use strict';
     say('etat', '');
     current = null;
     resetForm();
+    var ticket = ++opening;
     return api('/v1/partenaires/espace/' + encodeURIComponent(id)).then(function (res) {
-      if (!res) return;
+      // Seule la dernière demande ouverte remplit la page : une réponse dépassée est ignorée.
+      if (!res || ticket !== opening) return;
       if (res.status !== 200) { say('etat', refusal(res.body)); return; }
+      resetForm();
       current = res.body.data;
       el('titre-detail').textContent = current.tradeLabel;
       el('statut').textContent = STATES[current.state] || current.state;
@@ -259,8 +264,8 @@ export const PARTNER_JS = `'use strict';
       if (!writeKey(v)) { say('etat', 'Ce navigateur ne garde pas la clé : ouvrez la page hors navigation privée.'); return; }
       loadList();
     });
-    el('sortir').addEventListener('click', function () { session += 1; forgetKey(); current = null; resetForm(); clear('dossier'); clear('demandes'); show('entree'); });
-    el('retour').addEventListener('click', function () { current = null; resetForm(); loadList(); });
+    el('sortir').addEventListener('click', function () { session += 1; opening += 1; forgetKey(); current = null; resetForm(); clear('dossier'); clear('demandes'); show('entree'); });
+    el('retour').addEventListener('click', function () { opening += 1; current = null; resetForm(); loadList(); });
     el('commencer').addEventListener('click', function () { progress('en_cours'); });
     el('terminer').addEventListener('click', function () { progress('terminee'); });
     el('form-piece').addEventListener('submit', function (e) { e.preventDefault(); depositPiece(); });

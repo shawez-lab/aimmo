@@ -422,7 +422,7 @@ describe('U10 · page de l’espace partenaire', () => {
     const storage = new Map<string, string>([['aimmo.partenaire.cle', 'k'.repeat(40)]]);
     const calls: { url: string; method: string; headers: Record<string, string>; body: unknown }[] = [];
     const answers: Record<string, () => { status: number; body: unknown }> = {
-      'GET /v1/partenaires/espace': () => ({ status: 200, body: { ok: true, data: [{ referralId: 'r1', trade: 'diagnostiqueur', tradeLabel: 'Diagnostiqueur certifié', state: 'confiee' }] } }),
+      'GET /v1/partenaires/espace': () => ({ status: 200, body: { ok: true, data: [{ referralId: 'r1', trade: 'diagnostiqueur', tradeLabel: 'Diagnostiqueur certifié', state: 'confiee' }, { referralId: 'r2', trade: 'notaire', tradeLabel: 'Notaire', state: 'confiee' }] } }),
       'GET /v1/partenaires/espace/r1': () => ({
         status: 200,
         body: { ok: true, data: { referralId: 'r1', trade: 'diagnostiqueur', tradeLabel: 'Diagnostiqueur certifié', state: 'confiee', file: { domain: 'amiante', postcode: '21000', surfaceM2: 64 }, sorts: [{ sort: 'amiante', label: 'Constat amiante' }] } },
@@ -458,6 +458,8 @@ describe('U10 · page de l’espace partenaire', () => {
     for (const c of calls) expect(c.url).not.toContain('k'.repeat(40));
     // Ouvrir la demande.
     const button = els.demandes!.all().find((e) => e.tagName === 'button')!;
+    const second = els.demandes!.all().filter((e) => e.tagName === 'button')[1]!;
+    const runOpen = (_id: string) => second.listeners.click!({});
     button.listeners.click!({});
     await flush();
     await flush();
@@ -494,6 +496,26 @@ describe('U10 · page de l’espace partenaire', () => {
     expect(els.depot!.textContent).toBe('');
     await flush();
     await flush();
+    // Deux demandes ouvertes l'une après l'autre : la réponse dépassée de la première ne remplace jamais la seconde.
+    answers['GET /v1/partenaires/espace/r2'] = () => ({
+      status: 200,
+      body: { ok: true, data: { referralId: 'r2', trade: 'notaire', tradeLabel: 'Notaire', state: 'confiee', file: { postcode: '21000' }, sorts: [{ sort: 'titre_propriete', label: 'Titre de propriété' }] } },
+    });
+    let releaseA: () => void = () => undefined;
+    pending = new Promise<void>((r) => (releaseA = r));
+    button.listeners.click!({});
+    pending = null;
+    runOpen('r2');
+    await flush();
+    await flush();
+    expect(els['titre-detail']!.textContent).toBe('Notaire');
+    els.fichier!.value = 'C:\\fakepath\\b.pdf';
+    releaseA();
+    await flush();
+    await flush();
+    expect(els['titre-detail']!.textContent).toBe('Notaire');
+    expect(els.fichier!.value).toBe('C:\\fakepath\\b.pdf');
+    els.fichier!.value = '';
     // Une réponse arrivée après la déconnexion est ignorée : rien du dossier ne revient à l'écran.
     let release: () => void = () => undefined;
     const slowFetchGate = new Promise<void>((r) => (release = r));
