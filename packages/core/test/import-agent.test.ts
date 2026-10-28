@@ -301,7 +301,10 @@ describeWithSqlite("import des contacts et des biens d'un agent", () => {
 
   it('[R13] rien d\'une coordonnée ni d\'un nom au journal, et la chaîne reste intacte', async () => {
     await w.importer.run(viewer(), w.agent, { format: 'hektor', contacts: hektor(20), properties: 'Référence;Type;Ville;Adresse\nV1;Maison;Dijon;12 rue Inventée' });
-    const text = JSON.stringify(await w.journal.all());
+    // Les empreintes et les identifiants tirés au hasard sont retirés d'abord : un « 0610 » dans un hash n'est pas un numéro.
+    const text = JSON.stringify(await w.journal.all())
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<id>')
+      .replace(/[0-9a-f]{64}/g, '<empreinte>');
     expect(text).not.toMatch(/example\.org|06 ?10|Essai\d|formulaire|rue Inventée|V1\b/);
     expect(text).toContain('reseau.import');
     expect((await verifyChain(await w.journal.all())).ok).toBe(true);
