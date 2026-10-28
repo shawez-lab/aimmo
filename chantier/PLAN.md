@@ -1378,7 +1378,8 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : H29.
 
 ### L06 · Registre des traitements vérifié contre la base (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : registre en code (`conformite/registre-traitements.ts`), 17 traitements ; toute colonne de la base classée, personnelle à son traitement ou sans donnée personnelle ; toute forme de migration non lue arrête la vérification ; relecture au 2026-10-28 par défaut, échéance à 3 mois ; relecture forte : 2 P1 corrigés ; Codex : 3 P0 et 2 P2 corrigés. Appel quotidien de `RelectureRegistre.run` et écran en L09.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : Conformité, « Base légale notée pour chaque traitement, dans un registre des traitements relu chaque trimestre » ; « Sous-traitants ».
 - Objectif : le registre des traitements écrit dans le dépôt (finalité, base légale, données, durée, destinataires, sous-traitants), relié aux tables de la base ; Jamais vu : une vérification automatique échoue dès qu'une migration ajoute une table ou une colonne de donnée personnelle qui n'est pas au registre ; la date de la dernière relecture trimestrielle est un réglage, l'alerte part au responsable avant son échéance.
