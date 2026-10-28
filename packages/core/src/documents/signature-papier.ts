@@ -51,7 +51,7 @@ type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: 'R41'; code: 'checks_failed'; check: SignatureCheck }
   | { ok: false; rule: 'R39'; code: string }
-  | { ok: false; rule: 'R38' | 'R37' | 'R92'; code: string }
+  | { ok: false; rule: 'R38' | 'R37'; code: string }
   | { ok: false; rule: null; code: 'bad_date' | 'bad_place' | 'bad_scan' | 'not_a_mandate' | 'already_signed' | 'unknown_document' | string };
 
 interface SignedRow {
@@ -121,13 +121,15 @@ export class SignaturePapier {
       await this.ensureSignedEvent(viewer, row);
       return { ok: false, rule: null, code: 'already_signed' };
     }
-    if (!checked.value.passed) return { ok: false, rule: 'R41', code: 'checks_failed', check: checked.value };
-    // L'identité du mandant se juge aussi au jour de la signature : une pièce vérifiée après coup ne couvre pas un mandat
-    // signé avant (L03) [R92].
+    // Un mandat papier se juge au jour de sa signature pour l'identité du mandant (L03) : une pièce vérifiée après coup ne
+    // le couvre pas, et une pièce valide ce jour-là, échue depuis, ne le bloque pas. Les autres lignes, au jour présent [R41, R92].
     const atSignature = await this.controles.identityAtSignature(doc.network_id, doc.person_id, input.signedAt);
-    if (!atSignature.ok) {
-      await appendEvent(this.journal, { type: 'document.bloque', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R92', code: atSignature.code } }, this.now);
-      return { ok: false, rule: 'R92', code: 'identity_not_verified_at_signature' };
+    const lines = checked.value.lines.map((l) => (l.check === 'identite' ? atSignature : l));
+    if (!lines.every((l) => l.ok)) {
+      if (!atSignature.ok) {
+        await appendEvent(this.journal, { type: 'document.bloque', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R92', code: atSignature.code } }, this.now);
+      }
+      return { ok: false, rule: 'R41', code: 'checks_failed', check: { ...checked.value, passed: false, lines } };
     }
 
     // 1. Le document est réservé : un seul enregistrement, quelles que soient les demandes simultanées.
