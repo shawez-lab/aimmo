@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DESIGN_CSS } from '../src/design/systeme.ts';
 import { PageBien, renderListingPage, renderListingPrint, type PageInput } from '../src/annonces/index.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
@@ -36,7 +37,10 @@ describe('P05 · page du bien et fiche imprimable', () => {
     expect(html).toContain('name="viewport"');
     // Le prix en grand vient avant les mentions, qui sont lisibles et non cachées.
     expect(html.indexOf('class="prix"')).toBeLessThan(html.indexOf('class="mentions"'));
-    expect(html).not.toMatch(/display:\s*none|hidden/);
+    // Rien de la page ne cache quoi que ce soit : seule la base du système sait cacher un élément marqué `hidden`.
+    expect(html).toContain(DESIGN_CSS);
+    // La frise décorative est seulement tue aux lecteurs d'écran.
+    expect(html.replace(DESIGN_CSS, '').replace('<div class="frise" aria-hidden="true"></div>', '')).not.toMatch(/display:\s*none|hidden/);
   });
 
   it('[R48] une photo d’aménagement virtuel porte la mention sur l’image, dans la page et la fiche', () => {

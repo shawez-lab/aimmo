@@ -11,6 +11,7 @@
  * produit qu'un document d'essai, marqué comme tel, qu'aucune signature réelle n'acceptera. Les droits sont ceux de la
  * fiche et du bien [R16] ; le journal ne porte que des identifiants et des nombres [R13].
  */
+import { PRINT_DESIGN_CSS } from '../design/systeme.ts';
 import { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -114,8 +115,10 @@ export function templateFields(body: string): string[] {
   return [...new Set([...body.matchAll(PLACEHOLDER)].map((m) => m[1]!))];
 }
 
+/** Les documents suivent le système de design d'AIMMO pour le papier (Z03), en jetons seulement [R201]. */
 const PRINT_CSS =
-  'body{font:12pt/1.5 Georgia,serif;max-width:42rem;margin:2rem auto;padding:0 1rem;color:#111}p{margin:0 0 .8em}.evidence{border:2px solid #111;padding:.6em;font-weight:bold}.essai{border:3px dashed #b3261e;color:#b3261e;padding:.6em;font-weight:bold}.manque{background:#ffe08a}.a-signer{font-style:italic}@media print{body{margin:0}}';
+  PRINT_DESIGN_CSS +
+  'body{font:12pt/1.5 var(--police-titre);max-width:42rem;margin:2rem auto;padding:0 1rem}p{margin:0 0 .8em}.evidence{border:2px solid var(--encre);padding:.6em;font-weight:bold}.essai{border:3px dashed var(--danger);color:var(--danger);padding:.6em;font-weight:bold}.manque{background:var(--moutarde);color:var(--sur-moutarde)}.a-signer{font-style:italic}@media print{body{margin:0}}';
 
 /**
  * Le document rendu en HTML imprimable. Le texte du modèle et chaque valeur sont échappés ; un champ absent est
@@ -150,7 +153,7 @@ export function renderDocument(
     })
     .join('\n');
   const banner = options.trial ? '<p class="essai">DOCUMENT D’ESSAI : modèle non validé, sans aucune valeur juridique.</p>\n' : '';
-  return `<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n<title>${escapeHtml(options.title)}</title>\n<style>${PRINT_CSS}</style>\n</head>\n<body>\n${banner}${html}\n</body>\n</html>\n`;
+  return `<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${escapeHtml(options.title)}</title>\n<style>${PRINT_CSS}</style>\n</head>\n<body>\n${banner}${html}\n</body>\n</html>\n`;
 }
 
 export const signatureSpan = (name: string): string => `<span class="a-signer">[${escapeHtml(TEMPLATE_FIELDS[name]!.label)} à la signature]</span>`;

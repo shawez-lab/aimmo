@@ -1,3 +1,5 @@
+import { DESIGN_CSS, DESIGN_ICON_SVG, PALETTE, THEME_COLOR } from '@aimmo/core';
+
 /**
  * Les fichiers de l'application de l'agent (A01), tels que le navigateur de l'agent les reçoit. Ce code tourne sur le
  * téléphone de l'agent, pas dans le Worker : il n'appelle que l'API de la même adresse (politique de contenu
@@ -8,7 +10,7 @@ export const INDEX_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1f3a5f">
+<meta name="theme-color" content="${THEME_COLOR}">
 <meta name="referrer" content="no-referrer">
 <title>AIMMO</title>
 <link rel="manifest" href="/app/manifest.webmanifest">
@@ -17,7 +19,8 @@ export const INDEX_HTML = `<!doctype html>
 <script src="/app/app.js" defer></script>
 </head>
 <body>
-<header><h1>AIMMO</h1><button id="sortir" type="button" hidden>Se déconnecter</button></header>
+<header class="tete"><h1 class="marque">AIMMO</h1><button id="sortir" type="button" class="secondaire" hidden>Se déconnecter</button></header>
+<div class="frise" aria-hidden="true"></div>
 <main>
 <section id="connexion" hidden>
 <h2>Connexion</h2>
@@ -154,61 +157,56 @@ export const INDEX_HTML = `<!doctype html>
 </html>
 `;
 
-export const APP_CSS = `:root { color-scheme: light dark; --fond: #ffffff; --texte: #14202e; --accent: #1f3a5f; --doux: #5b6b7d; }
-@media (prefers-color-scheme: dark) { :root { --fond: #10161d; --texte: #e8eef4; --accent: #8fb3dd; --doux: #9aa8b6; } }
-* { box-sizing: border-box; }
-body { margin: 0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--fond); color: var(--texte); }
-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--doux); }
-h1 { margin: 0; font-size: 1.25rem; color: var(--accent); }
-main { padding: 16px; max-width: 40rem; margin: 0 auto; }
-label { display: block; margin-bottom: 4px; }
-input { width: 100%; padding: 12px; font-size: 1rem; border: 1px solid var(--doux); border-radius: 8px; background: transparent; color: inherit; }
-button { margin-top: 12px; min-height: 44px; padding: 8px 16px; font-size: 1rem; border: 0; border-radius: 8px; background: var(--accent); color: var(--fond); }
-header button { margin: 0; }
-#erreur { color: #b3261e; }
-.bloc { margin-top: 24px; }
-h3 { margin: 0 0 8px; font-size: 1.05rem; }
-.liste { list-style: none; margin: 0; padding: 0; }
-.liste > li { padding: 12px 0; border-top: 1px solid var(--doux); overflow-wrap: anywhere; }
-.liste p { margin: 4px 0 0; }
-.doux, .etat { color: var(--doux); font-size: 0.9rem; }
-.retard { color: #b3261e; }
-.alerte { padding: 12px; border: 2px solid #b3261e; border-radius: 8px; }
-.appel { display: inline-flex; align-items: center; min-height: 44px; margin-top: 12px; padding: 8px 16px; border-radius: 8px; background: var(--accent); color: var(--fond); text-decoration: none; }
-.liste button, #fiche-corps button { margin-top: 8px; }
-details { margin-top: 8px; }
-summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--accent); }
-h4 { margin: 12px 0 4px; font-size: 0.95rem; }
-.brief ul { margin: 0; padding-left: 18px; }
-a { color: var(--accent); }
-textarea, select { width: 100%; padding: 12px; font: inherit; border: 1px solid var(--doux); border-radius: 8px; background: transparent; color: inherit; }
-textarea { min-height: 7rem; resize: vertical; }
-select { min-height: 44px; }
-label + input, label + textarea, label + select { margin-bottom: 12px; }
-.case { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-top: 8px; }
-.case input { width: 24px; height: 24px; flex: none; }
-.danger { width: 100%; background: #b3261e; color: #ffffff; font-weight: 600; }
-.retour { background: transparent; color: var(--accent); padding-left: 0; }
-.fait { color: #1b6e3a; font-weight: 600; }
-@media (prefers-color-scheme: dark) { .fait { color: #7fd39b; } }
-.acquereur { padding: 12px 0; }
-.acquereur ul { margin: 4px 0 0; padding-left: 18px; }
-.secondaire { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
-.vente { margin-top: 24px; padding-top: 12px; border-top: 2px solid var(--accent); }
+/**
+ * La feuille de l'application : la base du système de design d'AIMMO (Z03), puis la mise en page de ses écrans, en
+ * jetons seulement [R201].
+ */
+export const APP_CSS = DESIGN_CSS + `
+body { min-height: 100dvh; }
+.tete { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--e-4); padding: max(var(--e-3), env(safe-area-inset-top)) var(--e-4) var(--e-3); background: var(--papier); }
+.tete h1 { font-size: var(--t-s); }
+.tete button { margin: 0; min-height: 40px; padding: var(--e-2) var(--e-4); font-size: var(--t-s); }
+main { max-width: var(--colonne); margin: 0 auto; padding: var(--e-5) var(--e-4) var(--e-8); }
+main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); }
+#bonjour::after { content: ""; display: block; width: 48px; height: 4px; margin-top: var(--e-3); background: var(--moutarde); border-radius: var(--r-rond); }
+#connexion { padding-top: var(--e-6); }
+#connexion form button { width: 100%; margin-top: var(--e-5); }
+#erreur { margin-top: var(--e-4); }
+#erreur:not(:empty) { padding: var(--e-3) var(--e-4); border-radius: var(--r-m); background: var(--danger-doux); color: var(--encre); box-shadow: inset 4px 0 0 var(--danger); }
+#attente { color: var(--doux); padding: var(--e-7) 0; text-align: center; }
+#note:not([hidden]) { position: fixed; left: var(--e-4); right: var(--e-4); bottom: max(var(--e-4), env(safe-area-inset-bottom)); max-width: var(--colonne); margin: 0 auto; padding: var(--e-3) var(--e-4); border-radius: var(--r-m); background: var(--encre); color: var(--papier); box-shadow: var(--ombre); z-index: 3; }
+.bloc > h3 { margin-bottom: var(--e-2); }
+.bloc > .etat { margin: 0; }
+.bloc > button.secondaire { width: 100%; }
+.liste > li > strong:first-child { font-size: var(--t-l); font-family: var(--police-titre); font-weight: 600; }
+.liste button, #fiche-corps button { margin-top: var(--e-3); }
+.appel { margin-top: var(--e-3); }
+details { margin-top: var(--e-2); }
+summary { min-height: var(--cible); display: flex; align-items: center; cursor: pointer; color: var(--accent); font-weight: 600; list-style-position: inside; }
+h4 { margin: var(--e-4) 0 var(--e-1); }
+.brief ul { margin: 0; padding-left: var(--e-5); }
+.brief li { padding: var(--e-1) 0; }
+#fiche, #visite, #bien, #vente, #apres, #chiffres, #reseau { padding-top: var(--e-2); }
+#visite .danger { margin: var(--e-2) 0 var(--e-4); }
+.acquereur { padding: var(--e-3) 0; }
+.acquereur ul { margin: var(--e-1) 0 0; padding-left: var(--e-5); }
+.vente { margin-top: var(--e-5); padding: var(--e-5) var(--e-4); background: var(--surface); border: 1px solid var(--trait); border-radius: var(--r-l); }
 .vente h3 { margin-bottom: 0; }
-.client { padding: 12px 0; border-top: 1px solid var(--doux); }
+.client { padding: var(--e-4) 0; border-top: 1px solid var(--trait); }
 .client h4 { margin-top: 0; }
-.brouillon { margin: 8px 0; padding: 8px 12px; border-left: 4px solid var(--accent); white-space: pre-wrap; }
-.note { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
-.periodes { display: flex; flex-wrap: wrap; gap: 8px; }
-.periodes button { margin-top: 0; flex: 1 1 auto; }
-.periodes button[aria-pressed="true"] { background: var(--accent); color: var(--fond); }
-.chiffre { border-top: 1px solid var(--doux); }
-.chiffre summary { justify-content: space-between; gap: 12px; color: var(--texte); }
-.chiffre .valeur { font-size: 1.6rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
-.chiffre ul { margin: 0 0 12px; padding-left: 18px; }
-.chiffre li { padding: 4px 0; }
-button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.brouillon { margin: var(--e-2) 0; padding: var(--e-3) var(--e-4); background: var(--papier); border-radius: var(--r-m); box-shadow: inset 4px 0 0 var(--accent); white-space: pre-wrap; }
+.note { font: 600 var(--t-xl)/1 var(--police-titre); color: var(--accent); }
+.periodes { display: flex; gap: var(--e-1); padding: var(--e-1); margin: var(--e-2) 0 var(--e-4); background: var(--surface); border: 1px solid var(--trait); border-radius: var(--r-rond); }
+.periodes button { flex: 1 1 0; margin: 0; min-height: 44px; padding: var(--e-2) var(--e-3); border-radius: var(--r-rond); font-size: var(--t-s); }
+.periodes button.secondaire { box-shadow: none; }
+.periodes button[aria-pressed="true"] { background: var(--accent); color: var(--sur-accent); }
+.chiffre { border-top: 1px solid var(--trait); }
+.chiffre:first-child { border-top: 0; }
+.chiffre summary { justify-content: space-between; gap: var(--e-3); color: var(--encre); font-weight: 400; }
+.chiffre .valeur { font: 600 var(--t-xl)/1 var(--police-titre); color: var(--accent); }
+.chiffre ul { margin: 0 0 var(--e-3); padding-left: var(--e-5); }
+.chiffre li { padding: var(--e-1) 0; }
+#reseau-export-jour { margin-bottom: var(--e-2); }
 `;
 
 /**
@@ -1594,10 +1592,10 @@ export const MANIFEST = JSON.stringify({
   start_url: '/app/',
   scope: '/app/',
   display: 'standalone',
-  background_color: '#ffffff',
-  theme_color: '#1f3a5f',
+  background_color: PALETTE.clair.papier,
+  theme_color: PALETTE.clair.papier,
   icons: [{ src: '/app/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
 });
 
-export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1f3a5f"/><path d="M14 32 32 16l18 16v18H38V38H26v12H14z" fill="#ffffff"/></svg>`;
+export const ICON_SVG = DESIGN_ICON_SVG;
 

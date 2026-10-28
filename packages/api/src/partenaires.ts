@@ -10,7 +10,7 @@
  * Aucune route ne rend de note, de rang ni d'avis transformé en tri [R14, R75]. Une pièce n'est jamais lue : seules
  * sa référence et son empreinte circulent ; le fichier déposé par un partenaire va au stockage, jamais au journal.
  */
-import { appendEvent, localTime, SqlJournalStore, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { appendEvent, localTime, renderPublicPage, SqlJournalStore, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import {
   Annuaire,
   EspacePartenaire,
@@ -509,29 +509,7 @@ const CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; 
 const escape = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 function page(status: number, title: string, body: string): Response {
-  const html = `<!doctype html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<meta name="referrer" content="no-referrer">
-<title>${escape(title)}</title>
-<style>
-:root{color-scheme:light dark;--fond:#f4f1ea;--carte:#fffdf8;--texte:#1c1a17;--doux:#5d574d;--accent:#7a3b1d;--trait:#d9d2c3}
-@media (prefers-color-scheme:dark){:root{--fond:#171512;--carte:#211e1a;--texte:#f0ece4;--doux:#b8b0a2;--accent:#e3a57f;--trait:#3a352d}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--fond);color:var(--texte);font:17px/1.55 system-ui,sans-serif}
-main{max-width:32rem;margin:0 auto;padding:3rem 1rem}
-.carte{background:var(--carte);border:1px solid var(--trait);border-radius:1rem;padding:1.5rem 1.25rem}
-h1{font-size:1.4rem;line-height:1.25;margin:0 0 1rem}
-p{margin:0 0 1rem}
-button{font:inherit;font-weight:600;min-height:48px;padding:.7rem 1.4rem;border:0;border-radius:.7rem;background:var(--accent);color:var(--carte);cursor:pointer}
-button:focus-visible{outline:3px solid var(--texte);outline-offset:3px}
-</style>
-</head>
-<body><main><div class="carte"><h1>${escape(title)}</h1>${body}</div></main></body>
-</html>`;
+  const html = renderPublicPage({ title, body });
   return new Response(html, {
     status,
     headers: {

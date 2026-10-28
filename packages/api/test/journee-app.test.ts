@@ -144,9 +144,11 @@ describe('A02 · écran « Ma journée »', () => {
   it('écran fait pour le téléphone : largeur de l’appareil, colonne unique, cibles d’au moins 44 px', () => {
     expect(HTML).toContain('name="viewport" content="width=device-width, initial-scale=1');
     const css = AGENT_APP_FILES['/app/app.css']!;
-    expect(css).toMatch(/main \{[^}]*max-width: 40rem/);
-    expect(css).toMatch(/summary \{[^}]*min-height: 44px/);
-    expect(css).toMatch(/overflow-wrap: anywhere/);
+    // Les mesures viennent du système de design (Z03) : une colonne de 38rem, des cibles de 48 px.
+    expect(css).toContain('--cible:48px;--colonne:38rem');
+    expect(css).toMatch(/main \{[^}]*max-width: var\(--colonne\)/);
+    expect(css).toMatch(/summary \{[^}]*min-height: var\(--cible\)/);
+    expect(css).toMatch(/overflow-wrap: ?anywhere/);
   });
 });
 

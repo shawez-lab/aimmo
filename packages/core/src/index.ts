@@ -49,3 +49,16 @@ export type {
   JsonPrimitive,
   JsonValue,
 } from './journal/types.ts';
+export {
+  DESIGN_CSS,
+  ICON_SVG as DESIGN_ICON_SVG,
+  PAIRES_TEXTE,
+  PAIRES_TRAIT,
+  PALETTE,
+  POLICES,
+  PRINT_DESIGN_CSS,
+  PUBLIC_PAGE_CSS,
+  THEME_COLOR,
+  renderPublicPage,
+} from './design/systeme.ts';
+export type { PublicPageOptions, Teinte } from './design/systeme.ts';
