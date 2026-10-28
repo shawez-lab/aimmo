@@ -116,16 +116,27 @@ export interface RendezVousOptions {
 const UNIT_MS = 5 * 60_000;
 const MINUTE = 60_000;
 
+/**
+ * Le jeton suit « / » dans le texte : sa première lettre n'est jamais a, c, g, i ni r, pour qu'il ne commence jamais
+ * comme un mot que le contrôle du texte lit comme une mention de l'IA, « gpt », « robot », « assistant »… [R06].
+ */
+export const TOKEN_FIRST_LETTERS = 'bdefhjklmnopqstuvwxyz';
+
 /** Un jeton de 32 lettres minuscules (environ 150 bits) : sans chiffre, il ne se confond pas avec un chiffre du texte [R10]. */
 export function newBookingToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(64));
   let out = '';
   for (const b of bytes) {
-    // 234 = 9 × 26 : on écarte le reste pour garder des lettres également probables.
-    if (b < 234) out += String.fromCharCode(97 + (b % 26));
+    if (out.length === 0) {
+      // 231 = 11 × 21 : on écarte le reste pour garder des premières lettres également probables.
+      if (b < 231) out += TOKEN_FIRST_LETTERS[b % TOKEN_FIRST_LETTERS.length];
+    } else if (b < 234) {
+      // 234 = 9 × 26 : on écarte le reste pour garder des lettres également probables.
+      out += String.fromCharCode(97 + (b % 26));
+    }
     if (out.length === 32) return out;
   }
-  return out + newBookingToken().slice(0, 32 - out.length);
+  return out.length === 0 ? newBookingToken() : out + newBookingToken().slice(1, 33 - out.length);
 }
 
 export async function tokenHash(token: string): Promise<string> {

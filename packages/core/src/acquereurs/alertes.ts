@@ -114,10 +114,14 @@ export function alertFallbackText(firstName: string | null, p: AlertBrief['prope
 }
 
 const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
-/** Un jeton de lettres seules : aucun chiffre dans le texte qui ne vienne de la base [R10]. */
-function newToken(): string {
+const TOKEN_FIRST_LETTERS = 'bdefhjklmnopqstuvwxyz';
+/**
+ * Un jeton de lettres seules : aucun chiffre dans le texte qui ne vienne de la base [R10] ; sa première lettre, qui
+ * suit « / », n'est jamais a, c, g, i ni r, pour qu'il ne commence jamais comme une mention de l'IA [R06].
+ */
+export function newAlertToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return [...bytes].map((b) => LETTERS[b % 26]).join('');
+  return [...bytes].map((b, i) => (i === 0 ? TOKEN_FIRST_LETTERS[b % TOKEN_FIRST_LETTERS.length] : LETTERS[b % 26])).join('');
 }
 
 async function sha256(text: string): Promise<string> {
@@ -130,7 +134,7 @@ async function sha256(text: string): Promise<string> {
  * à la fin d'une alerte [R49].
  */
 export async function newUnsubscribeLine(db: SqlDatabase, networkId: string, personId: string, base: string, at: Date): Promise<string> {
-  const token = newToken();
+  const token = newAlertToken();
   await db.run('INSERT INTO alert_unsubscribe_tokens (token_hash, network_id, person_id, created_at, used_at) VALUES (?, ?, ?, ?, NULL)', [
     await sha256(token),
     networkId,
