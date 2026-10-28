@@ -210,6 +210,35 @@ describeWithSqlite('U02 · mise en relation', () => {
     expect(await t.relations.entrusted(t.other.id, id)).toBeNull();
   });
 
+  it('[R74] deux demandes croisées : celle validée contre un état ancien échoue, et la base refuse toute étape hors ordre', async () => {
+    const t = await setup();
+    const a = await t.partner('notaire', 'Étude A');
+    const r = await t.relations.propose(t.agent, { projectId: t.project.id, trade: 'notaire', postcode: '21000' });
+    if (!r.ok) throw new Error(r.code);
+    const id = r.value.referralId;
+    // L'accord est validé, puis l'abandon passe avant son écriture : l'accord n'est pas rangé après l'abandon.
+    const proofs = t.files as unknown as { has(ref: string): Promise<boolean> };
+    const has = proofs.has.bind(proofs);
+    let release: () => void = () => undefined;
+    proofs.has = async (ref: string) => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return has(ref);
+    };
+    const pending = t.relations.recordConsent(t.agent, id, t.consent(id, a));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    proofs.has = has;
+    expect((await t.relations.close(t.agent, id, 'abandonnee')).ok).toBe(true);
+    release();
+    expect(await pending).toEqual({ ok: false, rule: null, code: 'busy' });
+    const got = await t.relations.get(t.agent, id);
+    expect(got.ok && got.value).toMatchObject({ state: 'abandonnee', chosenPartnerId: null });
+    expect(await t.relations.entrust(t.agent, id)).toMatchObject({ ok: false });
+    await expect(
+      t.db.run("INSERT INTO partner_referral_steps (referral_id, seq, state, actor, at) VALUES (?, 2, 'confiee', 'x', 'y')", [id]),
+    ).rejects.toThrow(/étape hors ordre/);
+    await expect(t.db.run("INSERT INTO partner_referral_steps (referral_id, seq, state, actor, at) VALUES (?, 5, 'terminee', 'x', 'y')", [id])).rejects.toThrow(/étape hors ordre/);
+  });
+
   it('une preuve d’accord ne sert qu’une fois', async () => {
     const t = await setup();
     const a = await t.partner('notaire', 'Étude A');
