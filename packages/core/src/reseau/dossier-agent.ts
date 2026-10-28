@@ -259,7 +259,10 @@ export class DossierAgent {
   async status(viewer: Viewer, agentId: string): Promise<{ ok: true; value: AgentFileStatus } | AgentFileRefusal> {
     const denied = await this.gate(viewer, agentId, false);
     if (denied) return denied;
-    return { ok: true, value: await this.compute(agentId, this.now()) };
+    const value = await this.compute(agentId, this.now());
+    // La lecture est écrite au journal avant que le dossier soit rendu, sans référence ni nom [R16, R13].
+    await appendEvent(this.journal, { type: 'dossier_agent.lu', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R16', kind: 'agent_file' } }, this.now);
+    return { ok: true, value };
   }
 
   /** Le dossier est-il complet et valide à cette date ? Lu par les droits d'accès au branchement (J13) [R82]. */

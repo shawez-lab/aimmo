@@ -177,6 +177,8 @@ describeWithSqlite('J04 · dossier d’agent', () => {
     expect(await t.dossier.status({ role: 'agent', userId: a.agentId, networkId: t.network.id }, a.agentId)).toMatchObject({ ok: false, code: 'agent_inactive' });
     expect(await t.dossier.complete(t.network.id, a.agentId, new Date(clock))).toBe(false);
     const entries = await t.journal.all();
+    // Chaque lecture réussie du dossier est au journal, avec qui l'a lu [R16].
+    expect(entries.filter((e) => e.type === 'dossier_agent.lu').map((e) => e.actor)).toEqual([`compliance:c`]);
     expect(JSON.stringify(entries)).not.toMatch(/Ana|Nouvelle|example\.test|agents\//);
     expect((await verifyChain(entries)).ok).toBe(true);
   });
