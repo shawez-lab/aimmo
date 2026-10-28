@@ -7,8 +7,8 @@
  *    les tire au moment où le lien sert, et n'en garde que l'empreinte.
  * 3. Envoie le lien, une seule fois, à l'adresse donnée au lancement, par l'envoi de mails de Cloudflare.
  *
- * Ce mail n'est pas un envoi au sens du contrôle central : il ne s'adresse à aucun client, il va à la personne qui
- * dirige le réseau, à l'adresse qu'elle a donnée en lançant le travail, et il ne contient que son lien d'accès.
+ * Ce mail suit R98 : il n'est pas un envoi au sens du contrôle central, il ne s'adresse à aucun client, il va à la
+ * personne du réseau, à l'adresse donnée en lançant le travail, et il ne contient que son lien d'accès.
  * Rien n'est écrit dans le dépôt, ni au journal du travail : ni le jeton, ni le lien, ni l'adresse.
  *
  * Le secret `API_KEYS` du Worker n'est jamais lu ni réécrit : ses empreintes restent toutes.

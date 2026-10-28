@@ -206,3 +206,9 @@ npx wrangler@4.149.0 dev --local
 - L'agent s'y connecte avec sa clé personnelle (H22), saisie une fois et gardée sur son appareil ; elle part seulement dans l'en-tête `Authorization`, jamais dans une adresse. « Se déconnecter » l'efface de l'appareil.
 - Le service worker ne garde que la coquille de l'application ; aucune réponse de l'API n'est mise en cache. Politique de contenu stricte : aucun script en ligne, aucun appel hors de ce Worker.
 - Les fichiers que reçoit le navigateur sont dans `packages/api/app/fichiers.ts`, hors du code du Worker.
+
+## Accès en un clic (Z02)
+
+Le travail GitHub « Créer l'accès de Shawez », lancé à la main depuis main, range une invitation (empreinte du jeton seule, valable 24 heures, rôles agent et direction), crée la fiche d'agent si elle manque, puis envoie le lien par l'envoi de mails de Cloudflare à l'adresse saisie au lancement [R98]. Il faut un jeton Cloudflare avec le droit « Email Sending: Edit », et une adresse d'expédition sur un domaine du compte ; l'adresse qui reçoit doit être une adresse de destination vérifiée du routage mail, tant qu'aucun domaine d'envoi n'est enrôlé.
+
+Le lien `…/app/#invitation=<jeton>` ouvre l'application, qui échange le jeton une seule fois par `POST /v1/acces/invitation` (`{ "jeton": "…" }`, sans clé) contre deux clés tirées par le Worker. La base ne garde que leur empreinte (table `access_keys`), qui s'ajoute aux empreintes du secret `API_KEYS` : le secret n'est jamais lu ni réécrit. Une clé se retire en datant `revoked_at`. Refus : 400 jeton mal formé, 404 inconnu, 410 déjà servi ou expiré.

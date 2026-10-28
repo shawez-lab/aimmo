@@ -80,7 +80,7 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
     expect(await direction.json()).toMatchObject({ data: { role: 'direction' } });
   });
 
-  it('un lien ne sert qu’une fois, même pour deux échanges simultanés', async () => {
+  it('un lien ne sert qu’une fois, même pour deux échanges simultanés [R98]', async () => {
     const w = await world();
     const token = await invite(w);
     const [a, b] = await Promise.all([exchange(w.db, token), exchange(w.db, token)]);
@@ -91,7 +91,7 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
     expect((w.raw.prepare('SELECT COUNT(*) AS n FROM access_keys').get() as { n: number }).n).toBe(2);
   });
 
-  it('un lien expiré est refusé à la 24e heure, accepté juste avant', async () => {
+  it('un lien expiré est refusé à la 24e heure, accepté juste avant [R98]', async () => {
     const w = await world();
     const late = await invite(w);
     const res = await exchange(w.db, late, new Date(T0.getTime() + 24 * 3600_000));
@@ -113,7 +113,7 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
     expect((w.raw.prepare('SELECT COUNT(*) AS n FROM access_keys').get() as { n: number }).n).toBe(0);
   });
 
-  it('le journal garde l’usage et les refus, sans jeton, clé ni empreinte de clé [R13]', async () => {
+  it('le journal garde l’usage et les refus, sans jeton, clé ni empreinte de clé [R13] [R98]', async () => {
     const w = await world();
     const token = await invite(w);
     const res = await exchange(w.db, token);
@@ -241,7 +241,7 @@ describe('Z02 · règles sans base', () => {
     expect(parseGrants('oups')).toBeNull();
   });
 
-  it('le travail GitHub ne lit ni ne réécrit API_KEYS, et ne tourne que depuis main', () => {
+  it('le travail GitHub ne lit ni ne réécrit API_KEYS, ne tourne que depuis main et masque les données saisies [R98]', () => {
     const yml = readFileSync(new URL('../../../.github/workflows/creer-acces.yml', import.meta.url), 'utf8');
     const tool = readFileSync(new URL('../outils/creer-acces.ts', import.meta.url), 'utf8');
     for (const text of [yml, tool]) expect(text).not.toMatch(/secret\s+(?:put|bulk)|'secret'/);
@@ -249,6 +249,14 @@ describe('Z02 · règles sans base', () => {
     expect(yml).toContain('workflow_dispatch');
     // Aucune adresse ni aucun nom réels écrits dans le dépôt : tout est donné au lancement.
     expect(yml).not.toMatch(/@[a-z0-9-]+\.[a-z]{2,}/i);
+    // Les données saisies sont masquées dans le journal du travail avant toute étape qui les lit, sans jamais être
+    // écrites en clair dans le texte d'une commande.
+    const mask = yml.indexOf('::add-mask::');
+    expect(mask).toBeGreaterThan(-1);
+    expect(mask).toBeLessThan(yml.indexOf('ACCES_MAIL'));
+    const uses = yml.split('\n').filter((l) => l.includes('inputs.'));
+    expect(uses.length).toBe(6);
+    for (const l of uses) expect(l).toMatch(/^\s+ACCES_[A-Z]+: \$\{\{ inputs\.[a-z]+ \}\}$/);
   });
 
   it('exchangeInvitation refuse un jeton qui n’est pas une chaîne', async () => {

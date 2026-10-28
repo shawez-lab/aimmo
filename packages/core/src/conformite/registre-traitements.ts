@@ -312,8 +312,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     tables: {
       networks: ['name'],
       agents: ['first_name', 'last_name', 'zone', 'sponsor_agent_id'],
-      access_invitations: ['grants'],
-      access_keys: ['user_id'],
+      access_invitations: ['token_sha256', 'grants'],
+      access_keys: ['sha256', 'user_id'],
       agent_zones: ['agent_id', 'commune'],
       agent_availabilities: ['agent_id'],
       agent_public_cards: ['agent_id', 'phone', 'email', 'set_by'],
@@ -432,8 +432,8 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
 export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly string[]>> = {
   networks: ['id', 'created_at'],
   agents: ['id', 'network_id', 'status', 'created_at', 'updated_at'],
-  access_invitations: ['id', 'network_id', 'token_sha256', 'expires_at', 'created_at', 'used_at'],
-  access_keys: ['sha256', 'network_id', 'role', 'invitation_id', 'created_at', 'revoked_at'],
+  access_invitations: ['id', 'network_id', 'expires_at', 'created_at', 'used_at'],
+  access_keys: ['network_id', 'role', 'invitation_id', 'created_at', 'revoked_at'],
   persons: ['id', 'network_id', 'language', 'contact_status', 'last_contact_at', 'created_at', 'updated_at'],
   person_identifiers: ['id', 'network_id', 'kind', 'created_at'],
   consents: ['id', 'network_id', 'purpose', 'channel', 'given_at', 'withdrawn_at', 'created_at'],

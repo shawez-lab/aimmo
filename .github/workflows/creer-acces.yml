@@ -63,6 +63,15 @@ jobs:
             echo "::error::Secrets Cloudflare absents (H04) : rien n'est créé."
             exit 1
           fi
+      - name: Masquer les données saisies
+        # Lues dans l'événement, jamais posées dans le texte de la commande : le journal du travail ne les montre pas.
+        run: |
+          node -e '
+            const inputs = JSON.parse(require("fs").readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")).inputs || {};
+            for (const name of ["prenom", "nom", "mail", "expediteur"]) {
+              const value = String(inputs[name] || "").trim();
+              if (value) console.log("::add-mask::" + value);
+            }'
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
