@@ -1157,7 +1157,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K08 · Routes de M13, écran « Mes chiffres » et mesure contre le comptage manuel
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : K01 à K07
 - Cahier : M13 ; Feuille de route, juin 2027.
 - Objectif : les routes `/v1/pilotage`, les passages au planificateur (rapport du matin, alertes, reversements), l'écran « Mes chiffres » dans l'application de l'agent et le tableau de bord de la direction ; un export quotidien des chiffres pour les comparer au comptage manuel pendant 2 semaines, comme le décrit `docs/MESURE.md`.
