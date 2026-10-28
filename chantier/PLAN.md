@@ -1370,7 +1370,8 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L05 · Signaler au responsable : dossier figé, rien au client (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : signalement d'un dossier `mandate:`, `offer:` ou `sale_file:` ; copie figée par empreinte du dossier et de la conformité de chaque partie (fiches réunies et bénéficiaires effectifs compris) ; aucun autre code ne lit ses tables ; le filtre du journal écarte les empreintes SHA-256 ; relecture forte : 1 P1 corrigé ; Codex : 1 P0 et 1 P1 corrigés. Routes et écran en L09.
 - Qui : Claude, voie 1 (touche au contrôle central des envois) · Relecture : forte · Dépend de : L01
 - Cahier : Conformité, « Déclaration de soupçon à Tracfin, sans délai, même pour une tentative ».
 - Objectif : un bouton « signaler au responsable » sur un dossier ; le dossier est figé (aucun changement, aucune pièce effacée), le responsable est alerté sans délai et décide seul de la déclaration ; Jamais vu : le contrôle central des envois garde le cours normal des messages déjà prévus et n'ajoute ni ne retire rien qui pourrait trahir le signalement, et un test prouve que le client voit exactement les mêmes textes, avec ou sans signalement.
