@@ -13,7 +13,10 @@
  * Les étapes s'ajoutent à la suite, rien ne change ni ne s'efface [R17] ; chacune est écrite au journal, sans nom [R13].
  * Rien n'est envoyé ici : la demande au partenaire part à son espace (U04) et par le contrôle central des envois (U09).
  */
-import type { Viewer } from '../acces/droits.ts';
+import { decideAccess, type Viewer } from '../acces/droits.ts';
+import { personSubject } from '../acces/acces.ts';
+import { FicheClient } from '../db/fiche-client.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -329,22 +332,45 @@ export class MiseEnRelation {
    * [R75, R14]. Du client, seul le prénom.
    */
   async projects(viewer: Viewer): Promise<ReferralResult<ProjectReferrals[]>> {
-    let rows: { id: string; kind: string; stage: string; first_name: string | null }[];
+    let rows: { id: string; kind: string; stage: string; person_id: string }[];
     if (viewer.role === 'agent') {
       const agent = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
       if (agent?.status !== 'active') return this.refuse(viewer, `agent:${viewer.userId}`, 'agent_inactive');
       rows = await this.db.all(
-        'SELECT pr.id, pr.kind, pr.stage, pe.first_name FROM projects pr JOIN persons pe ON pe.id = pr.person_id WHERE pr.network_id = ? AND pr.agent_id = ? ORDER BY pr.created_at, pr.id LIMIT ?',
+        'SELECT pr.id, pr.kind, pr.stage, pr.person_id FROM projects pr WHERE pr.network_id = ? AND pr.agent_id = ? ORDER BY pr.created_at, pr.id LIMIT ?',
         [viewer.networkId, viewer.userId, MAX_PROJECTS],
       );
     } else if (viewer.role === 'direction') {
       rows = await this.db.all(
-        'SELECT pr.id, pr.kind, pr.stage, pe.first_name FROM projects pr JOIN persons pe ON pe.id = pr.person_id WHERE pr.network_id = ? AND EXISTS (SELECT 1 FROM partner_referrals r WHERE r.project_id = pr.id) ORDER BY pr.created_at, pr.id LIMIT ?',
+        'SELECT pr.id, pr.kind, pr.stage, pr.person_id FROM projects pr WHERE pr.network_id = ? AND EXISTS (SELECT 1 FROM partner_referrals r WHERE r.project_id = pr.id) ORDER BY pr.created_at, pr.id LIMIT ?',
         [viewer.networkId, MAX_PROJECTS],
       );
     } else return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
     const out: ProjectReferrals[] = [];
+    const actor = this.actor(viewer);
+    const unique = new FicheUnique(this.db, new FicheClient(this.db, { now: this.now }), { now: this.now });
+    // Le prénom du client n'est rendu que si sa fiche, fiches réunies comprises, est dans les droits ; chaque lecture et
+    // chaque refus sont écrits au journal avant la réponse, sans nom [R16, R13].
+    const reads: { root: string; members: string[]; project: string }[] = [];
     for (const p of rows) {
+      const ids = await unique.membersOf(p.person_id);
+      const members = await this.db.all<{ agent_id: string | null; network_id: string }>(`SELECT agent_id, network_id FROM persons WHERE id IN (${ids.map(() => '?').join(', ')})`, ids);
+      const allowed =
+        members.length === ids.length &&
+        members.every((m) => m.network_id === viewer.networkId) &&
+        decideAccess(viewer, { kind: 'person', networkId: viewer.networkId, agentIds: members.map((m) => m.agent_id) }).allowed;
+      let firstName: string | null = null;
+      if (allowed) {
+        const root = await unique.rootOf(p.person_id);
+        firstName = (await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [root]))?.first_name ?? null;
+        reads.push({ root, members: ids, project: p.id });
+      } else {
+        await appendEvent(
+          this.journal,
+          { type: 'acces.refuse', actor, subject: personSubject(p.person_id), data: { rule: 'R16', role: String(viewer.role), kind: 'person', code: 'not_assigned', via: 'partenaires.projets', project: `project:${p.id}` } },
+          this.now,
+        );
+      }
       const properties = await this.db.all<{ id: string; reference: string; postal_code: string | null; city: string | null }>(
         'SELECT pp.property_id AS id, p.reference, p.postal_code, p.city FROM project_properties pp JOIN properties p ON p.id = pp.property_id WHERE pp.project_id = ? AND p.network_id = ? ORDER BY p.created_at, p.id',
         [p.id, viewer.networkId],
@@ -359,11 +385,19 @@ export class MiseEnRelation {
         projectId: p.id,
         kind: p.kind,
         stage: p.stage,
-        firstName: p.first_name,
+        firstName,
         properties: properties.map((x) => ({ propertyId: x.id, reference: x.reference, postcode: x.postal_code, city: x.city })),
         referrals: computed,
       });
     }
+    for (const read of reads) {
+      await appendEvent(
+        this.journal,
+        { type: 'fiche.lue', actor, subject: personSubject(read.root), data: { rule: 'R16', role: String(viewer.role), via: 'partenaires.projets', project: `project:${read.project}`, members: read.members.map((m) => personSubject(m)) } },
+        this.now,
+      );
+    }
+    await appendEvent(this.journal, { type: 'partenaires.projets.lu', actor, subject: `${String(viewer.role)}:${viewer.userId}`, data: { rule: 'R16', projects: out.length, names: reads.length } }, this.now);
     return { ok: true, value: out };
   }
 

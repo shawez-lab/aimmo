@@ -412,6 +412,23 @@ describeWithSqlite('U11 · routes de l’écran « Partenaires »', () => {
     expect(await t.call(t.partnerViewer(ids[0]!), 'GET', '/partenaires/projets')).toMatchObject({ status: 403, body: { rule: 'R16' } });
   });
 
+  it('[R16] [R13] chaque prénom rendu est une lecture au journal ; une fiche confiée à un autre agent reste sans prénom', async () => {
+    const t = await setup();
+    const seller = (await t.db.first<{ person_id: string }>('SELECT person_id FROM projects WHERE id = ?', [t.project.id]))!.person_id;
+    const buyer = (await t.db.first<{ person_id: string }>('SELECT person_id FROM projects WHERE id = ?', [t.buyProject.id]))!.person_id;
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.other.userId, seller]);
+    const mine = await t.call(t.agent, 'GET', '/partenaires/projets');
+    expect(mine.body.data.map((x: { firstName: string | null }) => x.firstName)).toEqual([null, 'Acheteur']);
+    const reads = await t.events('fiche.lue');
+    expect(reads.map((e) => e.subject)).toEqual([`person:${buyer}`]);
+    expect(JSON.parse(reads[0]!.data)).toMatchObject({ rule: 'R16', via: 'partenaires.projets', project: `project:${t.buyProject.id}` });
+    const refused = (await t.events('acces.refuse')).filter((e) => JSON.parse(e.data).via === 'partenaires.projets');
+    expect(refused.map((e) => e.subject)).toEqual([`person:${seller}`]);
+    const listed = await t.events('partenaires.projets.lu');
+    expect(JSON.parse(listed[0]!.data)).toEqual({ rule: 'R16', projects: 2, names: 1 });
+    for (const e of [...reads, ...refused, ...listed]) expect(e.data).not.toMatch(/Vendeur|Acheteur|Inventé/);
+  });
+
   it('[R16] un agent inactif ne lit plus ses projets', async () => {
     const t = await setup();
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.agent.userId]);

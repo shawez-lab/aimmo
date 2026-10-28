@@ -191,7 +191,15 @@ describe('U11 · écran « Partenaires » de l’application', () => {
     expect(t.els['partenaires-etat']!.textContent).toBe('Tirage fait : montrez au client les professionnels proposés, dans cet ordre.');
     // Sans bien : le code postal ; aucun professionnel dans la zone, dit en clair [R73].
     t.calls.length = 0;
-    const cp = t.byId(t.els['partenaires-corps']!.all().find((e) => e.attributes.id?.startsWith('cp-'))!.attributes.id!)!;
+    const cps = t.els['partenaires-corps']!.all().filter((e) => e.attributes.id?.startsWith('cp-'));
+    expect(cps).toHaveLength(2);
+    // Un bien sans code postal : le code saisi part avec le bien.
+    cps[0]!.value = '21000';
+    t.table['POST /v1/partenaires/relations'] = ok(referral({ referralId: 'r3' }));
+    await t.click(t.els['partenaires-corps']!.all().filter((e) => e.tagName === 'button' && e.textContent === 'Tirer au sort et proposer au client')[0]);
+    expect(t.calls[0]).toMatchObject({ body: JSON.stringify({ projectId: 'pr1', trade: 'notaire', propertyId: 'b1', postcode: '21000' }) });
+    t.calls.length = 0;
+    const cp = t.els['partenaires-corps']!.all().filter((e) => e.attributes.id?.startsWith('cp-'))[1]!;
     cp.value = ' 21240 ';
     t.table['POST /v1/partenaires/relations'] = no(409, { ok: false, rule: 'R73', code: 'no_partner' });
     const again = t.els['partenaires-corps']!.all().filter((e) => e.tagName === 'button' && e.textContent === 'Tirer au sort et proposer au client');

@@ -1313,21 +1313,23 @@ export const APP_JS = `'use strict';
     Object.keys(DOMAINS).forEach(function (k) { var o = el('option', DOMAINS[k]); o.value = k; domain.appendChild(o); });
     domain.value = '';
     var props = (p.properties || []).filter(function (b) { return ID.test(b.propertyId); });
-    var place;
+    var place = null;
     if (props.length) {
       place = field(box, 'bien-' + n, 'Bien concerné', 'select');
       props.forEach(function (b) { var o = el('option', 'Bien ' + b.reference); o.value = b.propertyId; place.appendChild(o); });
       place.value = props[0].propertyId;
-    } else {
-      place = field(box, 'cp-' + n, 'Code postal du lieu');
-      place.setAttribute('inputmode', 'numeric');
-      place.setAttribute('maxlength', '5');
-      place.setAttribute('autocomplete', 'off');
     }
+    // Le code postal du bien compte d'abord ; ce champ sert quand le projet n'a pas de bien, ou un bien sans code postal.
+    var cp = field(box, 'cp-' + n, props.length ? 'Code postal du lieu, si le bien n’en a pas' : 'Code postal du lieu');
+    cp.setAttribute('inputmode', 'numeric');
+    cp.setAttribute('maxlength', '5');
+    cp.setAttribute('autocomplete', 'off');
     box.appendChild(button('Tirer au sort et proposer au client', function () {
       var body = { projectId: p.projectId, trade: trade.value };
       if (trade.value === 'diagnostiqueur') body.domain = domain.value;
-      if (props.length) body.propertyId = place.value; else body.postcode = String(place.value || '').trim();
+      if (place) body.propertyId = place.value;
+      var code = String(cp.value || '').trim();
+      if (code || !place) body.postcode = code;
       partAct('/v1/partenaires/relations', body, 'La proposition n’est pas faite.', 'Tirage fait : montrez au client les professionnels proposés, dans cet ordre.');
     }));
     return box;
