@@ -2,6 +2,7 @@ import { Acces, FicheClient, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJou
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
+import { pilotageJobs } from './pilotage.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
 import type { Geocoder, SalesSource } from '@aimmo/core';
 
@@ -70,6 +71,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Après la vente (F07) : demandes d'avis, remerciements préparés pour l'agent, relances aux dates clés avec le
       // carnet, par les canaux du mode essai seulement, sur les dossiers clos de M10.
       ...apresVenteJobs(config.db, journal, { base: apresVenteBase(config.apresVenteBase), sales: config.soldSales ?? null, geocoder: config.geocoder ?? null, now }),
+      // Pilotage (K08) : commissions, factures d'essai et reversements chaque heure ; alertes à 6 h, avec les pièces du
+      // dossier d'agent ; rapport du matin du lundi au vendredi à 7 h 30, rangé, jamais envoyé.
+      ...pilotageJobs(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
