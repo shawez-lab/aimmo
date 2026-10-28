@@ -1303,3 +1303,82 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Objectif : exporter `reseau` depuis `@aimmo/core` ; ajouter les routes de M14 à `app.ts` ; dans les droits d'accès, refuser toute fiche client et tout bien non partagé à un agent dont `DossierAgent.complete` est faux ce jour-là, et à un agent parti ; lancer au planificateur les alertes d'échéances des pièces, du compteur de formation, de l'assistance et les départs du jour.
 - Critères : un agent au dossier incomplet ou échu ne lit aucune fiche client [R82, R16] ; un agent parti ne lit plus rien le jour de son départ [R86] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
 - Attend : rien.
+
+**M12 · Conformité, avant juillet 2027.**
+
+Voie : 1
+
+Découpé le 2026-10-28 par la voie 1. La Feuille de route pose M12 comme préalable de juillet 2027 (M14, M18) : la voie 1 le prend avant M18. Ids `L..` pour la Loi. Cahier : M12 Conformité ; Conformité, « Données personnelles » et « Anti-blanchiment » ; critères « un agent dont l'attestation expire perd l'accès aux clients le jour même » (porté par J04 et J13) et « une demande d'accès d'une personne reçoit sa réponse complète en moins d'un mois, avec preuve ».
+Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle central des envois, exclusions et arrêts, mentions des annonces et des documents, registre des mandats, mention de l'assistant, dossier d'agent de M14) : il le relie. Le système bloque, enregistre, alerte et prépare ; le responsable de la conformité (rôle `compliance`) décide, déclare un soupçon et répond aux personnes ; aucune décision n'est prise par l'IA, aucune pièce d'identité ni aucun document anti-blanchiment ne lui est jamais envoyé [R15]. Le coffre est une référence de stockage derrière une interface (faux stockage dans les tests), jamais le contenu d'une pièce, et seul le responsable le lit, chaque lecture au journal. La fiche de risque est préparée par des règles écrites (type d'opération, montant, pays déclaré, personne politiquement exposée déclarée, paiement), jamais par l'IA, et ne compte que si le responsable la valide ; elle ne sert jamais à trier un client ni à refuser un service sans décision humaine [R14]. Un signalement fige le dossier et ne donne aucune information au client : aucun texte, aucune relance, aucun refus visible ne le trahit, et seul le responsable le voit. L'effacement ne passe que par la procédure de M12 (demande de la personne ou 3 ans sans contact ni consentement), garde ce que la loi oblige à garder (registre des mandats, anti-blanchiment, factures) et s'écrit au journal [R17] ; tant que le responsable n'est pas nommé (H29), l'effacement reste en mode essai : il liste ce qu'il effacerait et n'efface rien. Les numéros de règles R90 à R99 et de migrations à partir de `0701` sont réservés à M12. Le code vit dans `packages/core/src/conformite/`, ses routes dans `packages/api/src/conformite.ts`.
+
+### L01 · Coffre de la conformité, réservé au responsable
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : S08
+- Cahier : M12, « Anti-blanchiment » et « Règles » ; Conformité, « Conservation des documents ».
+- Objectif : un coffre séparé, dans ses propres tables, où l'agent dépose la référence d'une pièce d'identité ou d'un document anti-blanchiment vérifiée (sorte, personne, dossier, date de vérification, qui l'a vérifiée, empreinte), jamais son contenu ; seul le responsable de la conformité lit le coffre ; la fiche client et les autres modules n'en voient qu'un état : « identité vérifiée le <date> ».
+- Critères : un agent dépose mais ne relit jamais une pièce, même la sienne ; la direction et les partenaires sont refusés ; chaque lecture et chaque refus au journal, sans donnée personnelle en clair [R16, R13, R90] ; aucun champ du coffre ne passe dans un texte, une fiche ou un appel à l'IA [R15] ; rien ne s'efface, une pièce remplacée reste au coffre [R17] ; Jamais vu : l'agent voit à l'écran ce qu'il a déposé disparaître de son téléphone au moment du dépôt, et la preuve de dépôt (empreinte et heure) lui reste.
+- Attend : rien.
+
+### L02 · Fiche de risque de chaque client, validée par le responsable
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : L01
+- Cahier : Conformité, « Classement écrit des risques et analyse de chaque client avant l'entrée en relation ».
+- Objectif : à l'entrée en relation (mandat pour un vendeur, offre pour un acquéreur), une fiche de risque préparée par des règles écrites et datées, chaque critère avec sa source (déclaré, document, base) ; le responsable la valide ou la corrige, avec son nom et sa date.
+- Critères : le même client donne toujours la même fiche avec les mêmes règles ; aucun critère n'est tiré par l'IA ni d'une donnée sensible [R23] ; une fiche non validée ne vaut rien et le dit ; la fiche ne trie aucun client et ne refuse rien seule [R14, R91] ; chaque fiche et chaque validation au journal.
+- Attend : H29 pour la grille réelle ; une grille d'essai en attendant.
+
+### L03 · Identification et bénéficiaire effectif, étape bloquante
+- Statut : à faire
+- Qui : Claude, voie 1 (touche aux contrôles de M06 et M09) · Relecture : forte · Dépend de : L01, L02
+- Cahier : Conformité, « Identification du client et du bénéficiaire effectif, au seuil de 25 % ».
+- Objectif : ni mandat signé sans l'identité vérifiée du vendeur au coffre, ni compromis sans celle de chaque acquéreur ; pour une société, les bénéficiaires effectifs à 25 % ou plus, chacun identifié ; les contrôles de D03 et d'O07 lisent l'état du coffre au lieu d'une case cochée.
+- Critères : un mandat ou un compromis sans pièce vérifiée et valide ce jour-là est refusé avec la règle [R58, R92] ; une société sans bénéficiaire effectif déclaré est refusée ; une pièce échue bloque comme une pièce absente ; les tests de D03 et d'O07 passent toujours.
+- Attend : rien.
+
+### L04 · Vigilance renforcée et origine des fonds
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : L02
+- Cahier : Conformité, « Vigilance renforcée : montant inhabituel, prix sans lien avec la valeur, personne politiquement exposée ».
+- Objectif : des alertes au responsable par des règles écrites et réglables : prix d'une offre ou d'un mandat écarté de la fourchette d'estimation de M04 au-delà d'un seuil, montant au-dessus d'un seuil, personne politiquement exposée déclarée, paiement comptant déclaré ; la demande d'origine des fonds est préparée pour l'agent, la décision reste au responsable.
+- Critères : chaque alerte cite sa règle et ses chiffres lus dans la base [R10, R93] ; l'alerte ne bloque ni ne refuse rien seule [R14] ; aucune alerte n'est visible du client ni de l'autre partie ; mêmes données, mêmes alertes.
+- Attend : rien.
+
+### L05 · Signaler au responsable : dossier figé, rien au client (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 1 (touche au contrôle central des envois) · Relecture : forte · Dépend de : L01
+- Cahier : Conformité, « Déclaration de soupçon à Tracfin, sans délai, même pour une tentative ».
+- Objectif : un bouton « signaler au responsable » sur un dossier ; le dossier est figé (aucun changement, aucune pièce effacée), le responsable est alerté sans délai et décide seul de la déclaration ; Jamais vu : le contrôle central des envois garde le cours normal des messages déjà prévus et n'ajoute ni ne retire rien qui pourrait trahir le signalement, et un test prouve que le client voit exactement les mêmes textes, avec ou sans signalement.
+- Critères : seul le responsable voit qu'un signalement existe, l'agent qui l'a fait voit seulement « transmis » [R16, R94] ; aucun texte au client ne cite le signalement, ni par l'IA ni par le code ; rien ne s'efface [R17] ; le signalement et la décision du responsable au journal.
+- Attend : H29.
+
+### L06 · Registre des traitements vérifié contre la base (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
+- Cahier : Conformité, « Base légale notée pour chaque traitement, dans un registre des traitements relu chaque trimestre » ; « Sous-traitants ».
+- Objectif : le registre des traitements écrit dans le dépôt (finalité, base légale, données, durée, destinataires, sous-traitants), relié aux tables de la base ; Jamais vu : une vérification automatique échoue dès qu'une migration ajoute une table ou une colonne de donnée personnelle qui n'est pas au registre ; la date de la dernière relecture trimestrielle est un réglage, l'alerte part au responsable avant son échéance.
+- Critères : chaque table de donnée personnelle des migrations figure au registre, avec sa base légale et sa durée [R95] ; une table de test ajoutée sans registre fait échouer le test ; l'alerte de relecture part 15 jours avant l'échéance, une seule fois.
+- Attend : rien.
+
+### L07 · Demandes des personnes en moins d'un mois, avec preuve
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : L06
+- Cahier : M12, critère « une demande d'accès d'une personne reçoit sa réponse complète en moins d'un mois, avec preuve » ; Conformité, « Droits des personnes ».
+- Objectif : une demande (accès, rectification, effacement, opposition) enregistrée avec sa date et son canal, l'échéance d'un mois calculée par le code, les alertes au responsable avant l'échéance ; la réponse d'accès assemblée par le code depuis chaque table du registre (L06), avec son empreinte ; l'opposition passe par l'arrêt sur tous les canaux [R04] ; l'effacement par la procédure de M12, qui garde ce que la loi oblige à garder.
+- Critères : une demande d'accès test produit une réponse qui contient chaque donnée de la personne dans chaque table du registre, et rien d'une autre personne [R96] ; échéance et alertes vérifiées jour par jour ; un effacement garde registre des mandats, anti-blanchiment et factures, et s'écrit au journal [R17] ; tant que H29 n'est pas fait, l'effacement est en mode essai et n'efface rien ; aucun envoi réel de la réponse tant que le plan ne l'a pas mis en service.
+- Attend : H29 pour l'effacement réel.
+
+### L08 · Prospects à 3 ans et procédure de fuite
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : L07
+- Cahier : Conformité, « Durées » et « Fuite de données ».
+- Objectif : chaque jour, la liste des prospects arrivés à 3 ans après leur dernier contact sans consentement : demande de consentement préparée en mode essai, puis effacement par la procédure de L07 sans réponse ; une procédure de fuite : accès coupés d'un geste, évaluation saisie par le responsable, échéance de 72 heures pour la CNIL calculée par le code, liste des personnes concernées.
+- Critères : un prospect contacté il y a 3 ans moins un jour n'est pas listé, à 3 ans il l'est [R97] ; un client sous mandat ou une vente close n'est jamais listé ; l'échéance de 72 heures et ses alertes vérifiées heure par heure ; rien n'est envoyé ni effacé réellement tant que le plan ne l'a pas mis en service [R26, R17].
+- Attend : H29.
+
+### L09 · Routes de M12, écran « Conformité » et branchement dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : L01 à L08
+- Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts` ; dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes, signalements, demandes et échéances, relecture du registre) et le dépôt d'une pièce par l'agent ; les passages au planificateur ; l'export depuis `@aimmo/core`.
+- Critères : chaque route sous R16, refus au journal ; un agent ne voit jamais l'écran du responsable ; écran accessible, beau sur téléphone d'abord, sans texte générique ; les passages tournent une fois par créneau.
+- Attend : rien.
