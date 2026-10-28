@@ -268,7 +268,21 @@ describeWithSqlite('L03 · identification et bénéficiaire effectif, étape blo
     await t.deposit(s.personId, { piece: 'passeport', seenAt: new Date('2027-03-01T10:00:00.000Z'), validUntil: '2027-03-09' });
     expect(await t.identityLine(s.documentId)).toEqual({ passed: false, code: 'identity_expired' });
     const r = await papier.register(t.agent, s.documentId, { signedAt: new Date('2027-03-09T10:00:00.000Z'), place: 'hors_agence', scanRef: 'scans/2027/03/test-4.pdf', source: 'referral' });
-    expect(r).toMatchObject({ ok: true });
+    expect(r).toMatchObject({ ok: true });    // Le contrôle gardé est celui du jour de la signature, réussi.
+    expect(await t.controles.last(s.documentId)).toMatchObject({ passed: true });
+  });
+
+  it('[R92] mandat papier repris après une coupure : l’identité se juge à la date de la première demande, gardée', async () => {
+    const t = await setup();
+    const papier = new SignaturePapier(t.db, t.acces, t.journal, { now: () => NOW });
+    await new RegistreMandats(t.db, t.journal, { now: () => NOW }).configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 4 });
+    const s = await t.seller();
+    await t.deposit(s.personId, { piece: 'carte_identite', seenAt: new Date('2027-03-05T10:00:00.000Z') });
+    const first = await papier.register(t.agent, s.documentId, { signedAt: new Date('2027-03-09T10:00:00.000Z'), place: 'hors_agence', scanRef: 'scans/2027/03/test-5.pdf' } as never);
+    expect(first).toMatchObject({ ok: false, code: 'missing_source' });
+    // La reprise porte une autre date : la date gardée (9 mars, identité vérifiée le 5) fait foi.
+    const retry = await papier.register(t.agent, s.documentId, { signedAt: new Date('2027-03-01T10:00:00.000Z'), place: 'hors_agence', scanRef: 'scans/2027/03/test-5.pdf', source: 'referral' });
+    expect(retry).toMatchObject({ ok: true });
   });
 
   it('[R16] [R17] [R13] seuls l’agent de la fiche et le responsable déclarent ; rien ne s’efface ; le journal ne porte que des codes', async () => {

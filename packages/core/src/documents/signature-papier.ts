@@ -111,26 +111,21 @@ export class SignaturePapier {
     // Sans champ de numéro, l'exemplaire du mandant ne porterait pas son numéro : pas de numéro du tout [R39].
     if (!doc.content.includes(signatureSpan('registre.numero'))) return { ok: false, rule: 'R39', code: 'no_number_field' };
 
+    // Une reprise garde la date de la première demande : c'est elle qui juge l'identité du mandant (L03) [R92].
+    let row = await this.db.first<SignedRow>('SELECT * FROM signed_documents WHERE document_id = ?', [documentId]);
+    const effectiveSignedAt = row ? new Date(row.signed_at) : input.signedAt;
+
     // Les contrôles, maintenant, sur ce document ; ils vérifient aussi les droits sur la fiche et le bien [R16, R41].
-    const checked = await this.controles.check(viewer, documentId);
+    // L'identité se juge au jour de la signature, les autres lignes au jour présent ; le résultat est gardé tel quel.
+    const checked = await this.controles.check(viewer, documentId, { identitySignedAt: effectiveSignedAt });
     if (!checked.ok) return checked;
 
-    let row = await this.db.first<SignedRow>('SELECT * FROM signed_documents WHERE document_id = ?', [documentId]);
     if (row && row.number !== null && row.copy_content !== null) {
       // Déjà signé ; si la ligne de journal de la signature a manqué (panne), elle est écrite maintenant [R13].
       await this.ensureSignedEvent(viewer, row);
       return { ok: false, rule: null, code: 'already_signed' };
     }
-    // Un mandat papier se juge au jour de sa signature pour l'identité du mandant (L03) : une pièce vérifiée après coup ne
-    // le couvre pas, et une pièce valide ce jour-là, échue depuis, ne le bloque pas. Les autres lignes, au jour présent [R41, R92].
-    const atSignature = await this.controles.identityAtSignature(doc.network_id, doc.person_id, input.signedAt);
-    const lines = checked.value.lines.map((l) => (l.check === 'identite' ? atSignature : l));
-    if (!lines.every((l) => l.ok)) {
-      if (!atSignature.ok) {
-        await appendEvent(this.journal, { type: 'document.bloque', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R92', code: atSignature.code } }, this.now);
-      }
-      return { ok: false, rule: 'R41', code: 'checks_failed', check: { ...checked.value, passed: false, lines } };
-    }
+    if (!checked.value.passed) return { ok: false, rule: 'R41', code: 'checks_failed', check: checked.value };
 
     // 1. Le document est réservé : un seul enregistrement, quelles que soient les demandes simultanées.
     if (!row) {
@@ -139,6 +134,12 @@ export class SignaturePapier {
         [documentId, viewer.networkId, input.signedAt.toISOString(), input.place, input.scanRef, this.actor(viewer), this.now().toISOString()],
       );
       row = (await this.db.first<SignedRow>('SELECT * FROM signed_documents WHERE document_id = ?', [documentId]))!;
+      // Une demande simultanée a réservé avec une autre date : c'est la sienne qui vaut, l'identité se rejuge à cette date.
+      if (row.signed_at !== effectiveSignedAt.toISOString()) {
+        const again = await this.controles.check(viewer, documentId, { identitySignedAt: new Date(row.signed_at) });
+        if (!again.ok) return again;
+        if (!again.value.passed) return { ok: false, rule: 'R41', code: 'checks_failed', check: again.value };
+      }
     }
     // Une reprise garde la date, le lieu et le scan de la première demande.
     const signedAt = new Date(row.signed_at);

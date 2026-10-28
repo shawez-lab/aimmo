@@ -123,8 +123,12 @@ export class ControlesSignature {
     return { ok: true, id };
   }
 
-  /** Le contrôle d'un document avant signature : chaque ligne, et le verdict ; gardé et écrit au journal [R41]. */
-  async check(viewer: Viewer, documentId: string): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
+  /**
+   * Le contrôle d'un document avant signature : chaque ligne, et le verdict ; gardé et écrit au journal [R41]. Pour un
+   * mandat signé sur papier et enregistré après coup, `identitySignedAt` juge l'identité au jour de la signature (L03) :
+   * une pièce vérifiée après ne la couvre pas, une pièce valide ce jour-là, échue depuis, ne la bloque pas [R92].
+   */
+  async check(viewer: Viewer, documentId: string, options: { identitySignedAt?: Date } = {}): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, 'document', 'role', `document:${documentId}`);
     const doc = await this.db.first<{ id: string; network_id: string; kind: string; mode: string; status: string; person_id: string; property_id: string | null; facts: string | null; mandate_id: string | null }>(
       'SELECT id, network_id, kind, mode, status, person_id, property_id, facts, mandate_id FROM documents WHERE id = ?',
@@ -148,7 +152,7 @@ export class ControlesSignature {
     lines.push(await this.fees(doc.network_id, doc.facts, amendment));
     const mandants = await this.mandants(doc.person_id, doc.property_id);
     lines.push(mandants);
-    lines.push(await this.identity(doc.network_id, doc.person_id, at));
+    lines.push(options.identitySignedAt ? await this.identityAtSignature(doc.network_id, doc.person_id, options.identitySignedAt) : await this.identity(doc.network_id, doc.person_id, at));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
 
