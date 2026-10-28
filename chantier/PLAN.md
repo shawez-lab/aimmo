@@ -16,7 +16,8 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 - Ce qu'elle attend d'un humain : rien. Une fois fusionnée, la séance lance elle-même le workflow ; Shawez n'a qu'à cliquer sur le lien reçu par mail.
 
 ### Z04 · Lien d'accès de Shawez sans mail Cloudflare
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : entrée `remise` (`mail` par défaut, `resume`) ; en `resume`, le lien n'est écrit que dans `GITHUB_STEP_SUMMARY` ; prénom, nom et adresses lus dans l'événement du lancement, jamais dans l'environnement affiché des étapes ; prénom et nom non masqués en `resume` (le masque de GitHub casserait le lien du résumé) ; relecture forte 2 P1, Codex 1 P0 corrigés (#161) ; travail lancé le 2026-10-28 à 21:53 en `resume`, réussi.
 - Qui : Claude, relecture forte
 - Dépendances : Z02
 - Objectif : l'envoi par Cloudflare échoue toujours (HTTP 401, code 10000, H33 non réglé). Ajouter au travail « Créer l'accès de Shawez » un mode de remise sans mail : le lien à usage unique, valable 24 heures, est écrit seulement dans le résumé du travail GitHub (dépôt privé, visible du seul compte shawez-lab), jamais dans les journaux du travail ni dans le dépôt. Puis lancer le travail dans ce mode et noter dans « Besoin de toi » : « Ton lien t'attend dans GitHub : Actions > Créer l'accès de Shawez > dernier passage > Summary. »
@@ -1399,7 +1400,8 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L07 · Demandes des personnes en moins d'un mois, avec preuve
-- Statut : bloquée : Codex trouve à chaque tour un sujet du journal non lu (`property:`, `visit:`, `rental:`) ou une référence d'une autre personne dans `journal.data` ; deux tours corrigés (#159, branche `chantier/L07`, vérifications vertes). Reprise : test qui relève chaque préfixe de sujet écrit dans le code et exige qu'il soit lu ou écarté, et masque des `person:<id>` étrangers dans `journal.data`
+- Statut : en cours
+- Reprise (2026-10-28) : `JOURNAL_SUBJECTS` et relevé testé des sujets, journal des biens possédés, masque des autres personnes au journal (#159).
 - Décidé (2026-10-28) : demandes enregistrées par le responsable seul ; échéance d'un mois par `addCalendarMonths`, rappel 7 jours avant et alerte le jour même ; carte des demandes d'accès vérifiée contre le registre (Jamais vu) ; lutte contre le blanchiment écartée (accès par la CNIL, article L561-45) ; effacement en essai, qui garde obligation légale, arrêt (identifiants sous empreinte) et lignes partagées « à examiner » ; demandes des agents, candidats et partenaires traitées à la main pour l'instant.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L06
 - Cahier : M12, critère « une demande d'accès d'une personne reçoit sa réponse complète en moins d'un mois, avec preuve » ; Conformité, « Droits des personnes ».
@@ -1614,7 +1616,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 
 ### W12 · Signature en ligne du bail par D08, en mode essai
 - Statut : fait (2026-10-28)
-- Reste : fusionnée (#160) ; R108 en service ; migration `0909`. Relecture forte 2 P1 corrigés (remise impossible après un changement de faits, conformité qui lisait l'exemplaire) ; Codex 1 P0 corrigé (fiches des signataires), 1 P0 réfuté et corrigé dans le texte (le canal n'a pas de pièce jointe : l'avis porte la référence et l'empreinte, l'agent remet l'exemplaire) ; dernière relecture de Codex en cours après 10 min, fusion sans elle.
+- Reste : fusionnée (#160) ; R108 en service ; migration `0909`. Relecture forte 2 P1 corrigés (remise impossible après un changement de faits, conformité qui lisait l'exemplaire) ; Codex 1 P0 corrigé (fiches des signataires), 1 P0 réfuté et corrigé dans le texte (le canal n'a pas de pièce jointe : l'avis porte la référence et l'empreinte, l'agent remet l'exemplaire) ; dernière version validée par Codex (« Didn't find any major issues », b99ac9d).
 - Décidé (2026-10-28, voie 2) : `REAL_LEASE_SIGNATURE` reste faux dans le code jusqu'à une tâche du plan après H08 et H24 ; `signedAt` (W08) ne rend donc rien de réel ; le parcours d'essai (W09) lit `trialState()`, jamais branché sur la remise des clés réelle (W10) ; l'envoi du document lui-même attend H05 et W10.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W06, D08
 - Cahier : M15, « Bail et annexes » ; M06, « Signature électronique AIMMO ».
@@ -1633,7 +1635,9 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W09 · Routes de M15 et parcours de 3 mises en location tests
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#162). Routes dans `packages/api/src/location.ts`, à brancher dans `app.ts` par W10 (voie 1) avec ses services (`identity` = coffre de conformité, `files` = stockage, IA facultatives). Relecture forte 1 P1 corrigé (R16 essayé sur chaque route et chaque rôle) ; Codex resté en cours 20 min, fusion sans lui.
+- Décidé (2026-10-28, voie 2) : la remise des clés des routes lit `signedAt` (signature réelle), jamais `trialState()` ; aucun partenaire n'est admis sur `/v1/location`.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W01 à W08
 - Cahier : M15 ; Feuille de route, août 2027.
 - Objectif : les routes `/v1/location` dans `packages/api/src/location.ts` ; le parcours de 3 mises en location tests de bout en bout.
