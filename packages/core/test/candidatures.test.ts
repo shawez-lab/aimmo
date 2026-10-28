@@ -56,6 +56,13 @@ describe('J01 · textes de recrutement', () => {
     'Mille euros de prime de bienvenue',
     'Votre réussite assurée',
     'Revenus illimités pour les ambitieux',
+    'Touchez 5000 par mois',
+    'Jusqu’à 8 000 par mois',
+    'Encaissez 100 000 par an',
+    'Un revenu mensuel de 4000',
+    'Vous toucherez 4000 net chaque mois',
+    'Atteindre 8000 mensuels',
+    'Des revenus à six chiffres',
   ];
   const allowed = [
     'Aucun pack mensuel : 0 € pour travailler avec le système',
@@ -68,9 +75,13 @@ describe('J01 · textes de recrutement', () => {
     'Un gain de temps sur chaque dossier',
     'Vous restez libre de votre organisation et de vos horaires',
     'La grille de partage des commissions est la même pour tous',
+    'L’académie vous aide à gagner des mandats et à gagner en autonomie',
+    'Une séance en ligne chaque mois, une rencontre par région chaque trimestre',
+    'Un préavis de 1 mois de préavis la première année, 14 heures de formation par an',
+    '2 jours de formation chaque mois au début',
   ];
 
-  it('[R80] 20 promesses de revenus refusées, 10 textes honnêtes acceptés', () => {
+  it('[R80] 27 promesses de revenus refusées, 14 textes honnêtes acceptés', () => {
     for (const t of refused) expect(checkRecruitingText(t), t).toMatchObject({ ok: false, rule: 'R80' });
     for (const t of allowed) expect(checkRecruitingText(t), t).toEqual({ ok: true });
   });

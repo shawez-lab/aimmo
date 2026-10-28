@@ -24,7 +24,7 @@ const plain = (s: string): string =>
  * temps » : un texte de recrutement ne parle pas de ce que l'agent gagnera.
  */
 const PROMISES: readonly RegExp[] = [
-  /\bgagn\w*\b(?!\s+(?:du|de|en)\s+temps)/,
+  /\bgagn\w*\b(?!\s+(?:(?:du|de|en)\s+temps|des\s+mandats|en\s+autonomie|en\s+confiance)\b)/,
   /\bgains?\b(?!\s+de\s+temps)/,
   /\brevenus?\s+(?:garanti|assure|illimite|passif|confortable|eleve|important|record|stable|regulier|complementaire|fixe)s?\b/,
   /\b(?:salaire|remuneration|commissions?|chiffre d'affaires)\s+(?:garanti|assure|illimite|minimum|record)e?s?\b/,
@@ -36,6 +36,8 @@ const PROMISES: readonly RegExp[] = [
   /\bmillionnaires?\b/,
   /\bargent\s+facile\b/,
   /\brevenus?\s+de\s+\d/,
+  /\brevenus?\s+(?:mensuel|annuel)s?\s+de\b/,
+  /\b(?:a|de)\s+(?:cinq|six|sept|huit|\d)\s+chiffres\b/,
   /\bjusqu'(?:a|au)\s+\d[\d\s.,]*\s*(?:k\b|k?€|euros?\b|eur\b)/,
   /\b(?:sans\s+effort|riche\s+rapidement|vivre\s+de\s+vos\s+rentes)\b/,
   /\b(?:rentabilite|reussite)\s+(?:assuree|garantie)\b/,
@@ -48,6 +50,13 @@ const WORD_AMOUNT = /\b(?:un|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|vingt
 
 const nonZero = (digits: string): boolean => /[1-9]/.test(digits);
 
+/**
+ * Un nombre suivi, à trois mots près, d'une période de revenu : « 5000 par mois », « 8 000 mensuels », « 100 000 par
+ * an », « 4000 net chaque mois ». Un nombre de jours, de semaines, de mois de préavis ou un pourcentage n'en est pas un.
+ */
+const PERIOD_AMOUNT =
+  /(\d[\d\s.,]*)(?!\s*(?:%|pour\s*cent|jours?\b|semaines?\b|mois\s+de\s+preavis|premiers?\b|ans?\b|heures?\b|h\b))\s*(?:[a-z']+\s+){0,3}?(?:par\s+mois|par\s+an(?:nee)?|\/\s*mois|\/\s*an\b|mensuel(?:le)?s?|annuel(?:le)?s?|chaque\s+(?:mois|annee)|tous\s+les\s+mois)\b/g;
+
 export function checkRecruitingText(text: string): RecruitingCheck {
   const t = plain(text);
   const reasons: RecruitingReason[] = [];
@@ -56,6 +65,7 @@ export function checkRecruitingText(text: string): RecruitingCheck {
   for (const re of AMOUNTS) {
     for (const m of t.matchAll(re)) if (nonZero(m[1] ?? '')) amount = true;
   }
+  for (const m of t.matchAll(PERIOD_AMOUNT)) if (nonZero(m[1] ?? '')) amount = true;
   if (amount) reasons.push('amount');
   return reasons.length === 0 ? { ok: true } : { ok: false, rule: 'R80', reasons };
 }
