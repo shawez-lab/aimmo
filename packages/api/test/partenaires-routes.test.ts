@@ -381,6 +381,92 @@ describeWithSqlite('U10 · routes de M18', () => {
   });
 });
 
+describeWithSqlite('U11 · routes de l’écran « Partenaires »', () => {
+  it('[R16] [R75] l’agent lit ses seuls projets, partenaires dans l’ordre du tirage ; la direction, les projets qui ont une demande', async () => {
+    const t = await setup();
+    const ids = [await t.partner('notaire'), await t.partner('notaire'), await t.partner('notaire'), await t.partner('notaire')];
+    const p = await t.call(t.agent, 'POST', '/partenaires/relations', { json: { projectId: t.project.id, trade: 'notaire', propertyId: t.property.id } });
+    expect(p.status).toBe(200);
+    const mine = await t.call(t.agent, 'GET', '/partenaires/projets');
+    expect(mine.status).toBe(200);
+    expect(mine.body.data.map((x: { projectId: string }) => x.projectId)).toEqual([t.project.id, t.buyProject.id]);
+    const first = mine.body.data[0];
+    expect(first).toMatchObject({ kind: 'sell', firstName: 'Vendeur', properties: [{ propertyId: t.property.id, reference: 'T-1', postcode: '21000' }] });
+    // Du client, le prénom seul : ni nom, ni coordonnée.
+    expect(JSON.stringify(mine.body.data)).not.toContain('Inventé');
+    // Les partenaires montrés gardent l'ordre du tirage rangé, sans note ni rang [R75, R14].
+    expect(first.referrals).toHaveLength(1);
+    const shown = first.referrals[0].shown.map((x: { partnerId: string }) => x.partnerId);
+    expect(shown).toHaveLength(3);
+    expect(shown).toEqual(p.body.data.shown.map((x: { partnerId: string }) => x.partnerId));
+    for (const id of shown) expect(ids).toContain(id);
+    expect(JSON.stringify(first.referrals)).not.toMatch(/"(?:note|score|rank|rating)"/);
+    // Un autre agent ne voit rien des projets d'Alex.
+    const other = await t.call(t.other, 'GET', '/partenaires/projets');
+    expect(other).toMatchObject({ status: 200, body: { data: [] } });
+    // La direction voit le seul projet qui a une demande.
+    const dir = await t.call(t.dir, 'GET', '/partenaires/projets');
+    expect(dir.body.data.map((x: { projectId: string }) => x.projectId)).toEqual([t.project.id]);
+    // La conformité et un partenaire sont refusés, au journal.
+    expect(await t.call(t.compliance, 'GET', '/partenaires/projets')).toMatchObject({ status: 403, body: { rule: 'R16', code: 'role' } });
+    expect(await t.call(t.partnerViewer(ids[0]!), 'GET', '/partenaires/projets')).toMatchObject({ status: 403, body: { rule: 'R16' } });
+  });
+
+  it('[R16] un agent inactif ne lit plus ses projets', async () => {
+    const t = await setup();
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.agent.userId]);
+    expect(await t.call(t.agent, 'GET', '/partenaires/projets')).toMatchObject({ status: 403, body: { rule: 'R16', code: 'agent_inactive' } });
+  });
+
+  it('[R74] [R13] l’accord noté par l’agent devient une preuve rangée, que l’accord reprend ; le journal garde l’empreinte seule', async () => {
+    const t = await setup();
+    const partnerId = await t.partner('artisan');
+    const p = await t.call(t.agent, 'POST', '/partenaires/relations', { json: { projectId: t.project.id, trade: 'artisan', propertyId: t.property.id } });
+    const id = p.body.data.referralId as string;
+    const NOTE = 'Le client a choisi cet artisan au téléphone, le 12 juillet.';
+    // Note trop courte, canal inconnu : refusés, rien n'est rangé.
+    expect(await t.call(t.agent, 'POST', `/partenaires/relations/${id}/preuve-accord`, { json: { channel: 'oral', note: 'oui' } })).toMatchObject({ status: 409, body: { rule: 'R74', code: 'bad_note' } });
+    expect(await t.call(t.agent, 'POST', `/partenaires/relations/${id}/preuve-accord`, { json: { channel: 'pigeon', note: NOTE } })).toMatchObject({ status: 409, body: { rule: 'R74', code: 'bad_channel' } });
+    expect(await t.call(t.agent, 'POST', `/partenaires/relations/${id}/preuve-accord`, { json: { channel: 'oral', note: 'Une note\u0000 cachée ici' } })).toMatchObject({ status: 409, body: { code: 'bad_note' } });
+    // Un autre agent ne note rien sur la demande d'Alex [R16].
+    expect(await t.call(t.other, 'POST', `/partenaires/relations/${id}/preuve-accord`, { json: { channel: 'oral', note: NOTE } })).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    expect(t.files.uploaded.size).toBe(0);
+    const proof = await t.call(t.agent, 'POST', `/partenaires/relations/${id}/preuve-accord`, { json: { channel: 'oral', note: NOTE } });
+    expect(proof.status).toBe(200);
+    const { proofRef, sha256, at } = proof.body.data as { proofRef: string; sha256: string; at: string };
+    expect(proofRef).toMatch(new RegExp(`^relations/${id}/[0-9a-f-]{36}\\.txt$`));
+    const stored = t.files.uploaded.get(proofRef)!;
+    expect(stored.type).toBe('text/plain; charset=utf-8');
+    const text = new TextDecoder().decode(stored.bytes);
+    expect(text).toContain(NOTE);
+    expect(text).toContain('de vive voix');
+    const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', stored.bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    expect(sha256).toBe(digest);
+    // L'accord reprend la preuve et l'heure du serveur.
+    const c = await t.call(t.agent, 'POST', `/partenaires/relations/${id}/accord`, { json: { partnerId, consentAt: at, channel: 'oral', proofRef } });
+    expect(c).toMatchObject({ status: 200, body: { data: { state: 'accord_client', chosenPartnerId: partnerId } } });
+    // Une fois l'accord rangé, plus de nouvelle note.
+    expect(await t.call(t.agent, 'POST', `/partenaires/relations/${id}/preuve-accord`, { json: { channel: 'oral', note: NOTE } })).toMatchObject({ status: 400, body: { code: 'bad_state' } });
+    // Le journal garde l'empreinte, jamais la note ni la référence.
+    const logged = await t.events('mise_en_relation.preuve_accord');
+    expect(logged).toHaveLength(1);
+    expect(JSON.parse(logged[0]!.data)).toEqual({ rule: 'R74', channel: 'oral', sha256 });
+    for (const e of await t.db.all<{ data: string }>('SELECT data FROM journal')) {
+      expect(e.data).not.toContain('téléphone');
+      expect(e.data).not.toContain(proofRef);
+    }
+  });
+
+  it('sans stockage, la note d’accord est refusée et rien n’est rangé', async () => {
+    const t = await setup({ uploads: false });
+    await t.partner('artisan');
+    const p = await t.call(t.agent, 'POST', '/partenaires/relations', { json: { projectId: t.project.id, trade: 'artisan', propertyId: t.property.id } });
+    const r = await t.call(t.agent, 'POST', `/partenaires/relations/${p.body.data.referralId}/preuve-accord`, { json: { channel: 'oral', note: 'Accord donné de vive voix ce matin.' } });
+    expect(r).toMatchObject({ status: 503, body: { code: 'storage_unavailable' } });
+    expect(await t.events('mise_en_relation.preuve_accord')).toHaveLength(0);
+  });
+});
+
 describe('U10 · page de l’espace partenaire', () => {
   it('[R07] textes en français, sans « mandataire » ni « gratuit », sans mention de l’IA', () => {
     for (const body of Object.values(PARTNER_SPACE_FILES)) {
