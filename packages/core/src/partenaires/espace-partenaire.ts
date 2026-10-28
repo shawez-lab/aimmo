@@ -167,6 +167,21 @@ export class EspacePartenaire {
     return { ok: true, value: { referralId, trade: src.trade, state, file } };
   }
 
+  /**
+   * Le partenaire peut-il agir sur cette mise en relation (déposer une pièce, U05) ? Seulement si elle lui est confiée et
+   * encore ouverte, ses justificatifs valides ; tout refus est écrit au journal [R77, R73, R16].
+   */
+  async access(viewer: Viewer, referralId: unknown): Promise<SpaceResult<ReferralState>> {
+    const subject = `referral:${String(referralId)}`;
+    const denied = await this.gate(viewer, subject);
+    if (denied) return denied;
+    const held = typeof referralId === 'string' ? await this.held(viewer, referralId) : null;
+    if (!held) return this.refuse(viewer, subject, 'not_assigned');
+    if (held === 'credentials') return this.refuse(viewer, subject, 'credentials', 'R73');
+    if (held !== 'confiee' && held !== 'en_cours') return this.refuse(viewer, subject, 'closed');
+    return { ok: true, value: held };
+  }
+
   /** Le partenaire dit où il en est [R77]. */
   async progress(viewer: Viewer, referralId: unknown, state: unknown): Promise<SpaceResult<ReferralState>> {
     const subject = `referral:${String(referralId)}`;
