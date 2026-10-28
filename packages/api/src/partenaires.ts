@@ -27,6 +27,7 @@ import {
 } from '../../core/src/partenaires/index.ts';
 import { PARTNER_CSS, PARTNER_HTML, PARTNER_JS } from '../app/partenaire.ts';
 import { journalError } from './app.ts';
+import { SORT_LABELS } from './partenaires-sortes.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 8_000;
@@ -240,24 +241,38 @@ async function deposit(s: PartenairesServices, viewer: Viewer, [id]: string[], r
   return reply(done);
 }
 
-/** Les sortes qu'un partenaire peut déposer pour cette demande, avec leur nom en français. */
-export const SORT_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  dpe: 'Diagnostic de performance énergétique',
-  amiante: 'Constat amiante',
-  plomb: 'Constat de risque d’exposition au plomb',
-  electricite: 'Diagnostic électricité',
-  gaz: 'Diagnostic gaz',
-  termites: 'État relatif aux termites',
-  mesurage_carrez: 'Mesurage loi Carrez',
-  bornage: 'Plan de bornage',
-  titre_propriete: 'Titre de propriété',
-  pre_etat_date: 'Pré-état daté',
-  projet_compromis: 'Projet de compromis',
-  projet_acte: 'Projet d’acte',
-  accord_principe: 'Accord de principe',
-  offre_pret: 'Offre de prêt',
-  devis: 'Devis',
-});
+/** Une note d'accord : 10 à 1 000 caractères, sans caractère de contrôle autre que le retour à la ligne. */
+export const MAX_CONSENT_NOTE = 1000;
+const CONSENT_CHANNEL_LABELS: Readonly<Record<string, string>> = Object.freeze({ oral: 'de vive voix', ecrit: 'par écrit', mail: 'par mail', sms: 'par SMS', whatsapp: 'par WhatsApp' });
+
+/**
+ * L'agent note l'accord du client, tel que le client l'a donné : le serveur range cette note comme preuve, sous une
+ * référence qu'il choisit, et rend la référence, son empreinte et l'heure du serveur, que l'accord reprend ensuite
+ * [R74]. Seulement pour une proposition encore ouverte, par l'agent du projet ou la direction [R16]. La note va au
+ * stockage, jamais au journal : le journal garde l'empreinte seule [R13].
+ */
+async function consentNote(s: PartenairesServices, viewer: Viewer, [id]: string[], b: Record<string, unknown>): Promise<Response> {
+  const c = core(s);
+  const current = await c.relations.get(viewer, id);
+  if (!current.ok) return reply(current);
+  if (current.value.state !== 'proposee') return reply({ ok: false, rule: null, code: 'bad_state' });
+  const channel = typeof b.channel === 'string' ? b.channel : '';
+  if (!CONSENT_CHANNEL_LABELS[channel]) return reply({ ok: false, rule: 'R74', code: 'bad_channel' });
+  const note = typeof b.note === 'string' ? b.note.trim() : '';
+  // eslint-disable-next-line no-control-regex
+  if (note.length < 10 || note.length > MAX_CONSENT_NOTE || /[\u0000-\u0009\u000b-\u001f\u007f]/.test(note)) return reply({ ok: false, rule: 'R74', code: 'bad_note' });
+  if (!s.uploads) return json(503, { ok: false, rule: null, code: 'storage_unavailable' });
+  const at = s.now().toISOString();
+  const text = [`Accord du client pour la mise en relation ${current.value.referralId}`, `Donné ${CONSENT_CHANNEL_LABELS[channel]}`, `Noté par ${viewer.role}:${viewer.userId}, le ${at}`, '', note, ''].join('\n');
+  const bytes = new TextEncoder().encode(text);
+  const proofRef = `relations/${current.value.referralId}/${crypto.randomUUID()}.txt`;
+  const sha256 = await sha256Hex(bytes);
+  await s.uploads.put(proofRef, bytes, 'text/plain; charset=utf-8');
+  await appendEvent(s.journal, { type: 'mise_en_relation.preuve_accord', actor: `${viewer.role}:${viewer.userId}`, subject: `referral:${current.value.referralId}`, data: { rule: 'R74', channel, sha256 } }, s.now);
+  return reply({ ok: true, value: { proofRef, sha256, at, channel } });
+}
+
+export { SORT_LABELS } from './partenaires-sortes.ts';
 
 export function sortsFor(trade: PartnerTrade, domain: string | null): { sort: string; label: string }[] {
   return Object.entries(PIECE_RULES)
@@ -377,6 +392,22 @@ const ROUTES: PartenairesRoute[] = [
     name: 'partenaires.relation.pieces',
     roles: STAFF,
     handle: async (s, v, [id]) => reply(await core(s).pieces.placements(v, id)),
+  },
+
+  /* L'écran « Partenaires » de l'application (U11) : les projets de l'agent, la preuve d'un accord noté par l'agent. */
+  {
+    method: 'GET',
+    pattern: /^\/partenaires\/projets$/,
+    name: 'partenaires.projets',
+    roles: STAFF,
+    handle: async (s, v, _p, r) => reply(await core(s).relations.projects(v, new URL(r.url).searchParams.get('page') ?? 0)),
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/partenaires/relations/${ID}/preuve-accord$`),
+    name: 'partenaires.relation.preuve_accord',
+    roles: STAFF,
+    handle: withBody(consentNote),
   },
 
   /* Le suivi (U07) : délais mesurés, relances préparées, avis lus par un humain, jamais une note [R14]. */

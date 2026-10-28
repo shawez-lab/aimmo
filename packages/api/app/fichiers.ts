@@ -1,4 +1,10 @@
 import { DESIGN_CSS, DESIGN_ICON_SVG, PALETTE, THEME_COLOR } from '@aimmo/core';
+import { CERTIFIED_DOMAINS, PARTNER_TRADES } from '../../core/src/partenaires/annuaire.ts';
+import { SORT_LABELS } from '../src/partenaires-sortes.ts';
+
+/** Les métiers et domaines de M18, tels que l'écran « Partenaires » les nomme (U11). */
+const TRADE_NAMES = PARTNER_TRADES.map((t) => ({ trade: t.trade, label: t.label }));
+const DOMAIN_NAMES: Record<string, string> = { ...Object.fromEntries(CERTIFIED_DOMAINS.map((d) => [d.domain, d.label])), mesurage: 'mesurage de la surface' };
 
 /**
  * Les fichiers de l'application de l'agent (A01), tels que le navigateur de l'agent les reçoit. Ce code tourne sur le
@@ -61,6 +67,11 @@ export const INDEX_HTML = `<!doctype html>
 <ul id="apres-jour" class="liste"></ul>
 <button id="apres-ouvrir" type="button" class="secondaire">Mes ventes conclues</button>
 </section>
+<section class="bloc" aria-labelledby="titre-partenaires-accueil">
+<h3 id="titre-partenaires-accueil">Mes partenaires</h3>
+<p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
+<button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
+</section>
 <section class="bloc" aria-labelledby="titre-chiffres-accueil">
 <h3 id="titre-chiffres-accueil">Mes chiffres</h3>
 <p class="etat">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
@@ -103,6 +114,13 @@ export const INDEX_HTML = `<!doctype html>
 <h2 id="apres-titre">Mes ventes conclues</h2>
 <p id="apres-etat" class="etat" role="status"></p>
 <div id="apres-corps"></div>
+</section>
+<section id="partenaires" hidden>
+<button id="partenaires-retour" type="button" class="retour">Retour à ma journée</button>
+<h2 id="partenaires-titre">Mes partenaires</h2>
+<p class="doux">Personne ne paie pour être proposé ni pour passer devant : l’ordre est tiré au sort, et le client choisit.</p>
+<p id="partenaires-etat" class="etat" role="status"></p>
+<div id="partenaires-corps"></div>
 </section>
 <section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
@@ -186,7 +204,15 @@ summary { min-height: var(--cible); display: flex; align-items: center; cursor: 
 h4 { margin: var(--e-4) 0 var(--e-1); }
 .brief ul { margin: 0; padding-left: var(--e-5); }
 .brief li { padding: var(--e-1) 0; }
-#fiche, #visite, #bien, #vente, #apres, #chiffres, #reseau { padding-top: var(--e-2); }
+#fiche, #visite, #bien, #vente, #apres, #chiffres, #reseau, #partenaires { padding-top: var(--e-2); }
+.tirage { margin: var(--e-2) 0; padding-left: var(--e-6); }
+.tirage li { padding: var(--e-2) 0; font-family: var(--police-titre); font-size: var(--t-l); }
+.tirage li::marker { color: var(--moutarde); font-weight: 600; }
+.tirage .fait { font-family: inherit; font-size: var(--t-s); }
+fieldset { margin: var(--e-3) 0; padding: 0; border: 0; }
+legend { font-weight: 600; margin-bottom: var(--e-2); }
+.proposer { margin-top: var(--e-4); padding-top: var(--e-4); border-top: 2px dashed var(--trait); }
+.suivi { margin-top: var(--e-3); }
 #visite .danger { margin: var(--e-2) 0 var(--e-4); }
 .acquereur { padding: var(--e-3) 0; }
 .acquereur ul { margin: var(--e-1) 0 0; padding-left: var(--e-5); }
@@ -501,6 +527,7 @@ export const APP_JS = `'use strict';
     wipeApres();
     wipeChiffres();
     wipeReseau();
+    wipePartenaires();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
   function button(text, onClick) {
@@ -1097,6 +1124,256 @@ export const APP_JS = `'use strict';
     });
     reviewLinkBlock(body);
   }
+  /* ---------- M18 : l'écran « Partenaires » (U11). L'ordre du tirage tel que rangé, jamais retrié ni noté [R75, R14]. ---------- */
+  var TRADES = ${JSON.stringify(TRADE_NAMES)};
+  var DOMAINS = ${JSON.stringify(DOMAIN_NAMES)};
+  var SORTS = ${JSON.stringify(SORT_LABELS)};
+  var REFERRAL_STATES = { proposee: 'Proposée au client : à lui de choisir', accord_client: 'Le client a choisi : à confier', confiee: 'Confiée : en attente de sa réponse', en_cours: 'En cours chez le professionnel', terminee: 'Terminée', abandonnee: 'Abandonnée' };
+  var CONSENT_CHANNELS = { oral: 'De vive voix', ecrit: 'Par écrit', mail: 'Par mail', sms: 'Par SMS', whatsapp: 'Par WhatsApp' };
+  var CONSENT_HOW = { oral: 'de vive voix', ecrit: 'par écrit', mail: 'par mail', sms: 'par SMS', whatsapp: 'par WhatsApp' };
+  var DESTINATIONS = { property: 'rangée dans le bien', sale_file: 'rangée dans le dossier de vente', financing: 'rangée au financement', referral: 'gardée avec la demande', agent_queue: 'à ranger par vous' };
+  var PARTNER_REFUSALS = {
+    no_partner: 'Aucun professionnel de ce métier n’est disponible dans cette zone aujourd’hui.',
+    partner_unavailable: 'Ce professionnel n’est plus disponible : un justificatif a expiré. Proposez de nouveau.',
+    fees_not_disclosed: 'Montrez d’abord au client le texte des rémunérations, puis notez son accord.',
+    not_shown: 'Le client choisit parmi les professionnels tirés au sort, et seulement eux.',
+    bad_postcode: 'Indiquez le code postal du lieu, en 5 chiffres.',
+    domain_required: 'Choisissez le diagnostic demandé.',
+    bad_property: 'Ce bien n’est pas celui du projet.',
+    bad_state: 'Cette demande a déjà changé : l’écran est relu.',
+    no_consent: 'Notez d’abord l’accord du client.',
+    bad_note: 'Notez ce que le client a dit, en 10 à 1 000 caractères.',
+    bad_channel: 'Dites comment le client a donné son accord.',
+    bad_consent_date: 'L’heure de l’accord n’est pas valable : notez-le de nouveau.',
+    not_stored: 'La preuve de l’accord n’est pas rangée : notez-le de nouveau.',
+    storage_unavailable: 'Le rangement des preuves n’est pas encore ouvert : rien n’est enregistré.',
+    text_refused: 'Le texte des rémunérations n’a pas passé le contrôle : prévenez la direction.',
+  };
+  function partnerRefusal(body, fallback) { return (body && PARTNER_REFUSALS[body.code]) || fallback; }
+  function tradeName(t) {
+    for (var i = 0; i < TRADES.length; i++) if (TRADES[i].trade === t) return TRADES[i].label;
+    return 'Professionnel';
+  }
+  function duration(minutes) {
+    var m = Math.max(0, Math.round(Number(minutes) || 0));
+    if (m < 60) return m + ' min';
+    if (m < 1440) return Math.round(m / 60) + ' h';
+    return Math.round(m / 1440) + ' j';
+  }
+  var formSeq = 0;
+  function wipePartenaires() {
+    clear($('partenaires-corps'));
+    $('partenaires-etat').textContent = '';
+  }
+  function partenairesState(text) { $('partenaires-etat').textContent = text; }
+  var partenairesPage = 0;
+  function openPartenaires(message, page) {
+    if (!currentKey) return Promise.resolve(false);
+    if (typeof page === 'number') partenairesPage = page;
+    session += 1;
+    wipePartenaires();
+    show('partenaires');
+    partenairesState('Chargement…');
+    return send('/v1/partenaires/projets' + (partenairesPage ? '?page=' + partenairesPage : ''), 'GET').then(function (res) {
+      if (res.gone) return false;
+      if (!res.ok) { partenairesState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.status === 403 ? 'Ces demandes ne sont pas dans vos droits.' : 'Indisponible pour le moment. Réessayez plus tard.'); return false; }
+      var d = res.body.data || {};
+      renderPartenaires(Array.isArray(d.projects) ? d.projects : [], partenairesPage, d.more === true);
+      partenairesState(message || '');
+      return true;
+    });
+  }
+  // Un geste : la réponse est dite, puis l'écran relu pour montrer l'état rangé.
+  function partAct(path, body, fallback, done) {
+    partenairesState('Envoi…');
+    return send(path, 'POST', body).then(function (res) {
+      if (res.gone) return false;
+      if (!res.ok) {
+        partenairesState(res.offline ? 'Pas de réseau : rien n’est enregistré.' : partnerRefusal(res.body, fallback));
+        if (res.body && res.body.code === 'bad_state') return openPartenaires(partnerRefusal(res.body, fallback));
+        return false;
+      }
+      return openPartenaires(done);
+    });
+  }
+  function renderPartenaires(projects, page, more) {
+    var body = $('partenaires-corps');
+    clear(body);
+    if (!projects.length && !page) { body.appendChild(el('p', 'Aucun projet suivi pour le moment.', 'doux')); return; }
+    // Les projets dans leur ordre de création, par pages : aucun n'est jamais perdu au-delà de la première.
+    if (page) body.appendChild(button('Projets précédents', function () { openPartenaires('', page - 1); }));
+    projects.forEach(function (p) {
+      if (!ID.test(p.projectId)) return;
+      var box = el('section', null, 'vente');
+      box.appendChild(el('h3', (PROJECTS[p.kind] || 'Projet') + (p.firstName ? ' · ' + p.firstName : '')));
+      (p.properties || []).forEach(function (b) { box.appendChild(el('p', 'Bien ' + b.reference + (b.city ? ', ' + b.city : ''), 'doux')); });
+      (p.referrals || []).forEach(function (r) { box.appendChild(referralBlock(r)); });
+      box.appendChild(proposeForm(p));
+      body.appendChild(box);
+    });
+    if (more) body.appendChild(button('Projets suivants', function () { openPartenaires('', page + 1); }));
+  }
+  function referralBlock(r) {
+    var box = el('div', null, 'client');
+    box.appendChild(el('h4', tradeName(r.trade) + (r.domain ? ' · ' + (DOMAINS[r.domain] || 'diagnostic') : '')));
+    box.appendChild(el('p', REFERRAL_STATES[r.state] || 'État inconnu', r.state === 'terminee' ? 'fait' : null));
+    var chosen = null;
+    var ol = el('ol', null, 'tirage');
+    (r.shown || []).forEach(function (s) {
+      var li = el('li', s.businessName);
+      if (s.partnerId === r.chosenPartnerId) { chosen = s; li.appendChild(el('span', ' · choisi par le client', 'fait')); }
+      ol.appendChild(li);
+    });
+    box.appendChild(el('p', 'Tirés au sort le ' + date(r.createdAt) + ', dans cet ordre :', 'doux'));
+    box.appendChild(ol);
+    if (r.consent) box.appendChild(el('p', 'Accord du client ' + (CONSENT_HOW[r.consent.channel] || 'donné') + ', le ' + date(r.consent.at) + ' à ' + hour(r.consent.at) + '.', 'doux'));
+    if (!ID.test(r.referralId)) return box;
+    var base = '/v1/partenaires/relations/' + encodeURIComponent(r.referralId);
+    if (r.state === 'proposee') consentForm(box, r, base);
+    if (r.state === 'accord_client' && chosen) {
+      var name = chosen.businessName;
+      box.appendChild(button('Confier la demande à ' + name, function () { partAct(base + '/confier', undefined, 'La demande n’est pas confiée.', 'Demande confiée à ' + name + '.'); }));
+    }
+    // Le suivi reste lisible une fois la demande close : les pièces déposées ne disparaissent jamais de l'écran.
+    if (r.state === 'confiee' || r.state === 'en_cours' || r.state === 'terminee' || (r.state === 'abandonnee' && r.consent)) {
+      var suivi = el('div', null, 'suivi');
+      box.appendChild(button('Voir ses réponses et ses pièces', function () { follow(suivi, base); }));
+      box.appendChild(suivi);
+    }
+    if (r.state === 'confiee' || r.state === 'en_cours') {
+      box.appendChild(button('Marquer la demande terminée', function () { partAct(base + '/cloture', { outcome: 'terminee' }, 'La demande n’est pas close.', 'Demande terminée.'); }));
+    }
+    if (r.state !== 'terminee' && r.state !== 'abandonnee') {
+      var drop = button('Abandonner la demande', function () {
+        if (!drop.confirming) { drop.confirming = true; drop.textContent = 'Confirmer l’abandon'; return; }
+        partAct(base + '/cloture', { outcome: 'abandonnee' }, 'La demande n’est pas abandonnée.', 'Demande abandonnée.');
+      });
+      drop.className = 'secondaire';
+      box.appendChild(drop);
+    }
+    return box;
+  }
+  // L'accord du client : le texte des rémunérations lui est montré, il choisit parmi les tirés au sort, l'agent note ce qu'il a dit [R74, R75, R76].
+  function consentForm(box, r, base) {
+    var n = ++formSeq;
+    var fees = el('div');
+    box.appendChild(button('Montrer au client le texte des rémunérations', function () {
+      partenairesState('Chargement…');
+      send(base + '/remunerations', 'GET').then(function (res) {
+        if (res.gone) return;
+        if (!res.ok || !res.body.data) { partenairesState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : partnerRefusal(res.body, 'Le texte n’est pas disponible.')); return; }
+        clear(fees);
+        fees.appendChild(el('p', 'À lire au client avant son choix (montré à l’instant) :', 'doux'));
+        fees.appendChild(el('p', res.body.data.text, 'brouillon'));
+        partenairesState('Texte prêt à montrer au client.');
+      });
+    }));
+    box.appendChild(fees);
+    var set = el('fieldset');
+    set.appendChild(el('legend', 'Le professionnel choisi par le client'));
+    var radios = [];
+    (r.shown || []).forEach(function (s, i) {
+      if (!ID.test(s.partnerId)) return;
+      var wrap = el('div', null, 'case');
+      var c = el('input');
+      c.setAttribute('type', 'radio');
+      c.setAttribute('name', 'choix-' + n);
+      c.setAttribute('id', 'choix-' + n + '-' + i);
+      c.value = s.partnerId;
+      var l = el('label', s.businessName);
+      l.setAttribute('for', 'choix-' + n + '-' + i);
+      wrap.appendChild(c);
+      wrap.appendChild(l);
+      set.appendChild(wrap);
+      radios.push(c);
+    });
+    box.appendChild(set);
+    var channel = field(box, 'canal-' + n, 'Comment le client a donné son accord', 'select');
+    Object.keys(CONSENT_CHANNELS).forEach(function (k) { var o = el('option', CONSENT_CHANNELS[k]); o.value = k; channel.appendChild(o); });
+    channel.value = 'oral';
+    var note = field(box, 'note-' + n, 'Ce que le client a dit, et quand', 'textarea');
+    note.setAttribute('maxlength', '1000');
+    note.setAttribute('rows', '3');
+    box.appendChild(button('Enregistrer son accord', function () {
+      var picked = radios.filter(function (c) { return c.checked; })[0];
+      if (!picked) { partenairesState('Cochez le professionnel choisi par le client.'); return; }
+      var text = String(note.value || '').trim();
+      if (text.length < 10) { partenairesState(PARTNER_REFUSALS.bad_note); return; }
+      partenairesState('Envoi…');
+      send(base + '/preuve-accord', 'POST', { channel: channel.value, note: text }).then(function (res) {
+        if (res.gone) return;
+        var d = res.ok && res.body.data;
+        if (!d) { partenairesState(res.offline ? 'Pas de réseau : rien n’est enregistré.' : partnerRefusal(res.body, 'L’accord n’est pas enregistré.')); return; }
+        partAct(base + '/accord', { partnerId: picked.value, consentAt: d.at, channel: d.channel, proofRef: d.proofRef }, 'L’accord n’est pas enregistré.', 'Accord du client enregistré.');
+      });
+    }));
+  }
+  function proposeForm(p) {
+    var n = ++formSeq;
+    var box = el('div', null, 'proposer');
+    box.appendChild(el('h4', 'Proposer un professionnel'));
+    var trade = field(box, 'metier-' + n, 'Métier', 'select');
+    TRADES.forEach(function (t) { var o = el('option', t.label); o.value = t.trade; trade.appendChild(o); });
+    trade.value = TRADES[0].trade;
+    var domain = field(box, 'domaine-' + n, 'Diagnostic demandé, pour un diagnostiqueur', 'select');
+    var none = el('option', 'Sans objet');
+    none.value = '';
+    domain.appendChild(none);
+    Object.keys(DOMAINS).forEach(function (k) { var o = el('option', DOMAINS[k]); o.value = k; domain.appendChild(o); });
+    domain.value = '';
+    var props = (p.properties || []).filter(function (b) { return ID.test(b.propertyId); });
+    var place = null;
+    if (props.length) {
+      place = field(box, 'bien-' + n, 'Bien concerné', 'select');
+      props.forEach(function (b) { var o = el('option', 'Bien ' + b.reference); o.value = b.propertyId; place.appendChild(o); });
+      place.value = props[0].propertyId;
+    }
+    // Le code postal du bien compte d'abord ; ce champ sert quand le projet n'a pas de bien, ou un bien sans code postal.
+    var cp = field(box, 'cp-' + n, props.length ? 'Code postal du lieu, si le bien n’en a pas' : 'Code postal du lieu');
+    cp.setAttribute('inputmode', 'numeric');
+    cp.setAttribute('maxlength', '5');
+    cp.setAttribute('autocomplete', 'off');
+    box.appendChild(button('Tirer au sort et proposer au client', function () {
+      var body = { projectId: p.projectId, trade: trade.value };
+      if (trade.value === 'diagnostiqueur') body.domain = domain.value;
+      if (place) body.propertyId = place.value;
+      var code = String(cp.value || '').trim();
+      if (code || !place) body.postcode = code;
+      partAct('/v1/partenaires/relations', body, 'La proposition n’est pas faite.', 'Tirage fait : montrez au client les professionnels proposés, dans cet ordre.');
+    }));
+    return box;
+  }
+  // Le suivi d'une demande confiée : son délai de réponse, les relances préparées, les pièces rangées, le résumé des faits.
+  function follow(box, base) {
+    clear(box);
+    box.appendChild(el('p', 'Chargement…', 'doux'));
+    return Promise.all([send(base + '/suivi', 'GET'), send(base + '/pieces', 'GET'), send(base + '/resume', 'GET')]).then(function (all) {
+      clear(box);
+      if (all.some(function (x) { return x.gone; })) return false;
+      if (all.some(function (x) { return x.offline; })) { box.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'doux')); return false; }
+      if (!all[0].ok) { box.appendChild(el('p', 'Suivi indisponible pour le moment.', 'doux')); return false; }
+      var m = (all[0].body.data && all[0].body.data.measure) || {};
+      if (m.answered) box.appendChild(el('p', 'Première réponse en ' + duration(m.delayMinutes) + '.', 'fait'));
+      else if (m.entrustedAt) box.appendChild(el('p', 'Sans réponse depuis ' + duration(m.delayMinutes) + '.', m.delayMinutes > 2880 ? 'retard' : null));
+      ((all[0].body.data && all[0].body.data.followUps) || []).forEach(function (f) {
+        box.appendChild(el('p', (f.kind === 'relance' ? 'Relance préparée pour le ' : 'Alerte pour vous le ') + date(f.dueAt) + ' (mode essai, rien ne part).', 'doux'));
+      });
+      var piecesRead = all[1].ok && Array.isArray(all[1].body.data);
+      var pieces = piecesRead ? all[1].body.data : [];
+      box.appendChild(el('h4', !piecesRead ? 'Pièces indisponibles pour le moment : réessayez plus tard' : pieces.length ? 'Pièces déposées' : 'Aucune pièce déposée pour le moment'));
+      var ul = el('ul', null, 'liste');
+      pieces.forEach(function (x) { ul.appendChild(line((SORTS[x.sort] || 'Pièce') + (x.version > 1 ? ', version ' + x.version : ''), DESTINATIONS[x.destination] || 'rangée')); });
+      box.appendChild(ul);
+      var s = all[2].ok && all[2].body.data && all[2].body.data.summary;
+      if (s) {
+        box.appendChild(el('p', s.headline, 'brouillon'));
+        var pts = el('ul');
+        (s.points || []).forEach(function (t) { pts.appendChild(el('li', t)); });
+        box.appendChild(pts);
+      }
+      return true;
+    });
+  }
   /* ---------- M13 : mes chiffres (K08). Chaque chiffre s'ouvre sur ses lignes ; rien n'est comparé à un autre agent. ---------- */
   var APPOINTMENT_KINDS = { estimation: 'Rendez-vous d’estimation', visite: 'Visite', signature: 'Signature', appel: 'Appel' };
   var FEE_STATUS = { prevue: 'prévue, compromis signé', due: 'due, acte signé', facturee: 'facturée, en attente du versement' };
@@ -1392,7 +1669,7 @@ export const APP_JS = `'use strict';
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1518,6 +1795,7 @@ export const APP_JS = `'use strict';
       wipeM08();
       wipeApres();
       wipeChiffres();
+      wipePartenaires();
       show('accueil');
       day(currentKey, session);
     }
@@ -1525,6 +1803,8 @@ export const APP_JS = `'use strict';
     $('apres-retour').addEventListener('click', home);
     $('apres-ouvrir').addEventListener('click', function () { openApres(); });
     $('chiffres-retour').addEventListener('click', home);
+    $('partenaires-retour').addEventListener('click', home);
+    $('partenaires-ouvrir').addEventListener('click', function () { openPartenaires('', 0); });
     $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', home);
