@@ -134,7 +134,9 @@ export class Identification {
       if (!owner.ok) return { ok: false, rule: 'R16', code: owner.code };
       if (owner.view !== 'full') return this.refuse(viewer, ownerId, 'not_assigned');
       const root = await this.unique.rootOf(owner.value.person.id);
-      if (root === companyRoot) return { ok: false, rule: null, code: 'owner_is_company' };
+      // Un bénéficiaire effectif est une personne physique : ni la société elle-même, ni une fiche qui porte un signe de
+      // société [R92].
+      if (root === companyRoot || (await this.companySigns(viewer.networkId, owner.value.person.id, this.now()))) return { ok: false, rule: null, code: 'owner_is_company' };
       if (roots.has(root)) return { ok: false, rule: null, code: 'duplicate_owner' };
       roots.add(root);
       total += share;
@@ -143,8 +145,9 @@ export class Identification {
     if (total > 100) return { ok: false, rule: null, code: 'shares_above_100' };
 
     const id = this.newId();
-    await this.db.run('INSERT INTO client_identifications (id, network_id, person_id, entity, declared_by, declared_at) VALUES (?, ?, ?, ?, ?, ?)', [
-      id, viewer.networkId, company, input.entity, this.actor(viewer), this.now().toISOString(),
+    // Sans transaction : la déclaration annonce son nombre de bénéficiaires effectifs et ne compte qu'une fois tous écrits.
+    await this.db.run('INSERT INTO client_identifications (id, network_id, person_id, entity, owners_count, declared_by, declared_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+      id, viewer.networkId, company, input.entity, owners.length, this.actor(viewer), this.now().toISOString(),
     ]);
     for (const o of owners) {
       await this.db.run('INSERT INTO beneficial_owners (declaration_id, network_id, owner_person_id, share_percent) VALUES (?, ?, ?, ?)', [id, viewer.networkId, o.personId, o.sharePercent]);
@@ -157,11 +160,14 @@ export class Identification {
     return { ok: true, id };
   }
 
-  /** La dernière déclaration faite avant `before`, toutes fiches réunies du client. */
+  /** La dernière déclaration complète faite avant `before`, toutes fiches réunies du client. */
   private async declaration(networkId: string, personId: string, before: Date): Promise<{ id: string; entity: 'personne' | 'societe'; declared_by: string } | null> {
     const ids = await this.unique.membersOf(personId);
     return this.db.first<{ id: string; entity: 'personne' | 'societe'; declared_by: string }>(
-      `SELECT id, entity, declared_by FROM client_identifications WHERE network_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND declared_at <= ? ORDER BY declared_at DESC, rowid DESC LIMIT 1`,
+      `SELECT c.id, c.entity, c.declared_by FROM client_identifications c
+       WHERE c.network_id = ? AND c.person_id IN (${ids.map(() => '?').join(', ')}) AND c.declared_at <= ?
+         AND (SELECT COUNT(*) FROM beneficial_owners b WHERE b.declaration_id = c.id) = c.owners_count
+       ORDER BY c.declared_at DESC, c.rowid DESC LIMIT 1`,
       [networkId, ...ids, before.toISOString()],
     );
   }
@@ -208,6 +214,8 @@ export class Identification {
     if (counted.length === 0) return { ok: false, entity: 'societe', code: 'beneficial_owners_missing' };
     let oldest = kbis.verifiedOn;
     for (const o of counted) {
+      // Un bénéficiaire effectif devenu société (Kbis déposé ensuite) ne compte pas comme personne identifiée [R92].
+      if (await this.companySigns(networkId, o.owner_person_id, depositedBy)) return { ok: false, entity: 'societe', code: 'beneficial_owner_unidentified' };
       const r = await this.personIdentity(networkId, o.owner_person_id, at, depositedBy);
       if (!r.ok) return { ok: false, entity: 'societe', code: 'beneficial_owner_unidentified' };
       if (r.verifiedOn < oldest) oldest = r.verifiedOn;

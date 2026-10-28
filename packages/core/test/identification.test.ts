@@ -186,6 +186,40 @@ describeWithSqlite('L03 · identification et bénéficiaire effectif, étape blo
     expect(ok).toMatchObject({ ok: true });
   });
 
+  it('[R92] un bénéficiaire effectif est une personne physique : une fiche qui porte un Kbis ne compte jamais comme bénéficiaire identifié', async () => {
+    const t = await setup();
+    const company = await t.seller('SCI Exemple');
+    const holding = await t.person('Holding');
+    const anna = await t.person('Anna');
+    await t.deposit(company.personId, { piece: 'extrait_kbis', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    await t.deposit(holding, { piece: 'extrait_kbis', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    await t.deposit(holding, { piece: 'carte_identite', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    expect(await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: [{ personId: holding, sharePercent: 100 }] })).toMatchObject({ ok: false, code: 'owner_is_company' });
+    // Déclarée personne physique, puis un Kbis déposé sur sa fiche : elle cesse de compter.
+    await t.deposit(anna, { piece: 'carte_identite', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: [{ personId: anna, sharePercent: 100 }] });
+    expect(await t.identityLine(company.documentId)).toEqual({ passed: true, code: 'identity_verified' });
+    await t.deposit(anna, { piece: 'extrait_kbis', seenAt: new Date('2027-03-02T10:00:00.000Z') });
+    expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'beneficial_owner_unidentified' });
+  });
+
+  it('[R92] une déclaration à moitié écrite (panne entre deux bénéficiaires) ne compte pas', async () => {
+    const t = await setup();
+    const company = await t.seller('SCI Exemple');
+    const anna = await t.person('Anna');
+    const bruno = await t.person('Bruno');
+    await t.deposit(company.personId, { piece: 'extrait_kbis', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    await t.deposit(anna, { piece: 'carte_identite', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    // La panne : la déclaration annonce deux bénéficiaires, un seul est écrit.
+    await t.db.run("INSERT INTO client_identifications (id, network_id, person_id, entity, owners_count, declared_by, declared_at) VALUES ('decl-1', ?, ?, 'societe', 2, ?, ?)", [t.network.id, company.personId, `agent:${t.agent.userId}`, NOW.toISOString()]);
+    await t.db.run("INSERT INTO beneficial_owners (declaration_id, network_id, owner_person_id, share_percent) VALUES ('decl-1', ?, ?, 50)", [t.network.id, anna]);
+    expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'beneficial_owners_missing' });
+    // Reprise complète : les deux bénéficiaires effectifs comptent, et Bruno doit être identifié.
+    expect(await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: [{ personId: anna, sharePercent: 50 }, { personId: bruno, sharePercent: 50 }] })).toMatchObject({ ok: true });
+    expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'beneficial_owner_unidentified' });
+    await expect(t.db.run("INSERT INTO client_identifications (id, network_id, person_id, entity, owners_count, declared_by, declared_at) VALUES ('decl-2', ?, ?, 'personne', 1, 'x', ?)", [t.network.id, company.personId, NOW.toISOString()])).rejects.toThrow();
+  });
+
   it('[R16] [R17] [R13] seuls l’agent de la fiche et le responsable déclarent ; rien ne s’efface ; le journal ne porte que des codes', async () => {
     const t = await setup();
     const company = await t.seller('SCI Exemple');

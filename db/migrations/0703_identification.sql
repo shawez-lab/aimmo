@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS client_identifications (
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   person_id TEXT NOT NULL,
   entity TEXT NOT NULL CHECK (entity IN ('personne', 'societe')),
+  -- Le nombre de bénéficiaires effectifs annoncés : une déclaration ne compte qu'une fois tous écrits.
+  owners_count INTEGER NOT NULL CHECK (owners_count >= 0 AND (entity = 'societe' OR owners_count = 0)),
   declared_by TEXT NOT NULL,
   declared_at TEXT NOT NULL,
   FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT
