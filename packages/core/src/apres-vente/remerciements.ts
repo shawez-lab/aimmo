@@ -171,10 +171,14 @@ export class Remerciements {
     let messageId = result.messageId;
     if (result.rule === 'R05') {
       // Le contrôle central dit que ce remerciement est déjà parti : un passage interrompu après l'envoi, avant d'en
-      // ranger l'issue. L'issue rangée est alors celle de cet envoi.
+      // ranger l'issue. S'il a bien été remis, l'issue rangée est celle de cet envoi ; sinon, le refus R05 reste.
       const members = await this.unique.membersOf(personId);
+      // La réservation seule ne prouve rien : il faut la remise, la boîte d'essai ou le journal des envois.
       const already = await this.db.first<{ message_id: string }>(
-        `SELECT message_id FROM send_reservations WHERE key = ? AND message_id IS NOT NULL AND person_id IN (${members.map(() => '?').join(', ')}) LIMIT 1`,
+        `SELECT r.message_id FROM send_reservations r
+         WHERE r.key = ? AND r.message_id IS NOT NULL AND r.person_id IN (${members.map(() => '?').join(', ')})
+           AND (EXISTS (SELECT 1 FROM trial_outbox o WHERE o.message_id = r.message_id) OR EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = r.message_id AND l.outcome = 'sent'))
+         LIMIT 1`,
         [`sujet:merci:${fileId}`, ...members],
       );
       if (already) {

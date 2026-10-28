@@ -180,6 +180,25 @@ describeWithSqlite('F03 · remerciement : l’agent appelle, le message est pré
     expect(list.ok && list.value.map((r) => [r.sendStatus, r.rule])).toEqual([['sent', null]]);
   });
 
+  it('[R05] une réservation sans remise ne fait pas croire à un envoi : la tâche reste refusée, avec sa règle', async () => {
+    const t = await setup();
+    const s = await t.client('Sara');
+    t.close('f1', '2027-03-08', [{ personId: s, side: 'vendeur' }]);
+    t.setClock(paris('2027-03-08', 18));
+    await t.merci.run(t.network.id);
+    t.setClock(paris('2027-03-09', 21));
+    await t.merci.decide(t.agent, 'f1', s, 'send');
+    // Un passage arrêté net juste après avoir lié le message à sa réservation, avant la remise : la réservation existe,
+    // le message n'a jamais été remis.
+    const m = await t.store.recordMessage({ networkId: t.network.id, personId: s, channel: 'email', direction: 'out', authorKind: 'system', body: 'brouillon jamais remis', occurredAt: t.now() });
+    await t.db.run('INSERT INTO send_reservations (person_id, key, reservation_id, network_id, message_id, created_at) VALUES (?, ?, ?, ?, ?, ?)', [s, 'sujet:merci:f1', 'reservation-test', t.network.id, m.id, t.now().toISOString()]);
+    t.setClock(paris('2027-03-10', 10, 20));
+    await t.merci.run(t.network.id);
+    expect(await t.outbox()).toBe(0);
+    const list = await t.merci.list(t.agent);
+    expect(list.ok && list.value.map((r) => [r.sendStatus, r.rule])).toEqual([['refused', 'R05']]);
+  });
+
   it('[R16] seul l’agent du dossier, encore actif, voit et décide', async () => {
     const t = await setup();
     const s = await t.client('Sara');
