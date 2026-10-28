@@ -94,7 +94,7 @@ export interface OwnerNotice {
   text: string;
 }
 
-export type LocationRefusal = { ok: false; rule: 'R16' | 'R100' | 'R101' | null; code: string; field?: string };
+export type LocationRefusal = { ok: false; rule: 'R16' | 'R100' | 'R101' | 'R102' | null; code: string; field?: string };
 export type LocationResult<T> = { ok: true; value: T } | LocationRefusal;
 
 /** Le stockage des annexes : seule l'existence d'une référence est lue, jamais son contenu. */
@@ -403,6 +403,18 @@ export class MisesEnLocation {
     }
     await appendEvent(this.journal, { type: 'location.annexe', actor: this.actor(viewer), subject: `rental:${row.id}`, data: { kind, version, validUntil } }, this.now);
     return { ok: true, value: { kind, version, validUntil } };
+  }
+
+  /** Pour les autres parties de M15 : la mise en location sous les mêmes droits [R16]. */
+  async listing(viewer: Viewer, listingId: unknown, write: boolean): Promise<LocationRefusal | { id: string; networkId: string; propertyId: string; ownerPersonId: string }> {
+    const row = await this.load(viewer, listingId, write);
+    if ('ok' in row) return row;
+    return { id: row.id, networkId: row.network_id, propertyId: row.property_id, ownerPersonId: row.owner_person_id };
+  }
+
+  /** Les derniers faits rangés, ou `null`. */
+  async currentFacts(listingId: string): Promise<(RentalFacts & { version: number }) | null> {
+    return this.latestFacts(listingId);
   }
 
   private async latestFacts(listingId: string): Promise<(RentalFacts & { version: number }) | null> {
