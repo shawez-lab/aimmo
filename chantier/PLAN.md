@@ -16,7 +16,8 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 - Ce qu'elle attend d'un humain : rien. Une fois fusionnée, la séance lance elle-même le workflow ; Shawez n'a qu'à cliquer sur le lien reçu par mail.
 
 ### Z03 · Passe de design de l'application et des pages publiques
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : identité « toits vernissés de Bourgogne » (papier, encre, bordeaux, moutarde, losange des tuiles), polices du système, base unique `packages/core/src/design/systeme.ts`, contrôle dans `audit.ts`, règle R201 ; budgets 14 Ko (page) et 48 Ko (application) compressés ; captures dans `docs/design/captures/` ; axe-core sans violation sur 9 écrans, clair et sombre ; relecture forte 2 P1 et 2 défauts corrigés ; Codex en cours au bout de 15 min, fusion sans lui (#152). U11 peut reprendre.
 - Qui : Claude, relecture forte
 - Dépendances : Z02
 - Objectif : un système de design propre à AIMMO (couleurs, typographie, espacements, composants, mouvements) appliqué à tous les écrans existants, téléphone d'abord. Rien de générique ni qui ressemble à un site fait par une IA ; niveau des meilleures applis du monde. Captures avant et après dans la proposition.
