@@ -49,18 +49,31 @@ export function dayInWords(at: Date): string {
   return `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
 }
 
+/** L'instant de Paris qui porte cette date et ces minutes locales ; une heure sautée au printemps glisse d'une heure. */
+function parisInstant(date: string, minutes: number): Date {
+  const base = Date.parse(`${date}T00:00:00.000Z`) + minutes * MINUTE;
+  for (const offset of [60, 120, 0]) {
+    const t = new Date(base - offset * MINUTE);
+    const l = localTime(t, TIME_ZONE);
+    if (l.date === date && l.minutes === minutes) return t;
+  }
+  return new Date(base - 60 * MINUTE);
+}
+
 /**
- * L'instant `days` jours ouvrés après `from`, à la même heure : chaque jour du lundi au vendredi hors jour férié
- * compte, à Paris. Un départ un samedi compte à partir du lundi.
+ * L'instant `days` jours ouvrés après `from`, à la même heure de Paris : chaque jour du lundi au vendredi hors jour
+ * férié compte, à Paris, en dates locales (un changement d'heure ne décale pas le jour compté). Un départ un samedi
+ * compte à partir du lundi.
  */
 export function addWorkingDays(from: Date, days: number): Date {
-  let at = from.getTime();
+  const start = localTime(from, TIME_ZONE);
+  let date = start.date;
   let left = days;
   while (left > 0) {
-    at += DAY;
-    if (isWorkingDay(localTime(new Date(at), TIME_ZONE))) left--;
+    date = new Date(Date.parse(`${date}T12:00:00.000Z`) + DAY).toISOString().slice(0, 10);
+    if (isWorkingDay(localTime(new Date(`${date}T12:00:00.000Z`), TIME_ZONE))) left--;
   }
-  return new Date(at);
+  return parisInstant(date, start.minutes);
 }
 
 const inSendingHours = (at: Date): boolean => {

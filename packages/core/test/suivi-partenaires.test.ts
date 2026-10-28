@@ -101,6 +101,17 @@ describe('U07 · calendrier des relances', () => {
     expect(addWorkingDays(new Date('2027-07-10T08:00:00.000Z'), 2).toISOString()).toBe('2027-07-13T08:00:00.000Z');
   });
 
+  it('[R01] aux changements d’heure, près de minuit, le jour compté reste celui de Paris', () => {
+    // Vendredi 26 mars 2027 à 23 h 30 (heure d'hiver) ; passage à l'heure d'été le 28, lundi de Pâques le 29 :
+    // mardi 30 et mercredi 31, à 23 h 30 (heure d'été).
+    expect(addWorkingDays(new Date('2027-03-26T22:30:00.000Z'), 2).toISOString()).toBe('2027-03-31T21:30:00.000Z');
+    // Vendredi 29 octobre 2027 à 0 h 30 (heure d'été) ; retour à l'heure d'hiver le 31, lundi 1er novembre férié :
+    // mardi 2 et mercredi 3, à 0 h 30 (heure d'hiver).
+    expect(addWorkingDays(new Date('2027-10-28T22:30:00.000Z'), 2).toISOString()).toBe('2027-11-02T23:30:00.000Z');
+    // Vendredi 23 octobre 2026 à 23 h 30 (heure d'été) ; retour à l'heure d'hiver le 25 : mardi 27 à 23 h 30.
+    expect(addWorkingDays(new Date('2026-10-23T21:30:00.000Z'), 2).toISOString()).toBe('2026-10-27T22:30:00.000Z');
+  });
+
   it('[R01] une relance préparée hors des heures d’envoi est due au premier instant permis', () => {
     // Dans les heures : tout de suite.
     expect(nextSendingSlot(new Date('2027-07-14T10:00:00.000Z')).toISOString()).toBe('2027-07-14T10:00:00.000Z');
@@ -214,6 +225,10 @@ describeWithSqlite('U07 · suivi des demandes confiées', () => {
     expect(f.value.followUps.map((x) => x.kind)).toEqual(['relance', 'alerte_agent']);
     expect(f.value.followUps[1]).toMatchObject({ recipient: `agent:${t.agent.userId}` });
     expect(f.value.followUps[1]!.text).toContain('12 juillet');
+    const alerts = await t.db.all<{ actor: string; subject: string; data: string }>("SELECT actor, subject, data FROM journal WHERE type = 'partenaire.alerte_agent'");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.subject).toBe(`referral:${req.referralId}`);
+    for (const word of ['Clémence', 'Imaginaire', 'Zéphyr', '21000', 'juillet']) expect(JSON.stringify(alerts)).not.toContain(word);
   });
 
   it('une réponse du partenaire arrête relance et alerte ; une demande close aussi', async () => {
