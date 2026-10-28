@@ -1613,7 +1613,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : H08 et H24 pour un usage réel ; en mode essai d'ici là.
 
 ### W08 · Remise des clés sans argent pour AIMMO, gestion par un partenaire carte G
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W07, U02
 - Cahier : M15, « Remise des clés » ; Conformité, « Argent du locataire ».
 - Objectif : la remise des clés : dépôt de garantie et premier loyer déclarés versés directement au propriétaire ; honoraires dus à la signature du bail ; proposition de gestion locative par un partenaire de M18 titulaire de la carte G.
