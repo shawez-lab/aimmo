@@ -1437,7 +1437,9 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : H31 pour rémunérer un courtier ou une banque ; refusé en attendant.
 
 ### U04 · Espace partenaire : le dossier utile, rien d'autre
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Reste : proposition #138 ouverte (bâtie sur U03), tests verts en local, relecture forte 1 P1 corrigé, Codex 1 P0 corrigé en U02 (étapes croisées) ; vérification bloquée (H28).
+- Décidé (2026-10-28) : le nom du client va seulement au notaire, au courtier, au gestionnaire, à l'avocat et à l'expert-comptable ; la certification du domaine est revérifiée à chaque accès.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U02
 - Cahier : M18, « Espace partenaire » ; critère « un partenaire ne voit que les dossiers qui lui sont confiés ».
 - Objectif : la lecture par un partenaire de ses mises en relation confiées et de leur dossier utile, défini par métier, champ par champ (un diagnostiqueur : adresse du bien, surface, année, domaines demandés, créneaux ; un notaire : parties et pièces du dossier de vente ; un courtier : projet de l'acquéreur avec son accord, sans autre donnée de la fiche) ; le partenaire indique où il en est.
@@ -1445,7 +1447,9 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U05 · Pièces déposées par les partenaires, rangées d'elles-mêmes
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Reste : proposition #140 ouverte (bâtie sur U04), tests verts en local, relecture forte 1 P0 et 1 P1 corrigés ; vérification bloquée (H28).
+- Décidé (2026-10-28) : la place de la pièce est rangée avec elle ; diagnostic et bornage à la fiche du bien (le dossier de vente le lira en U09) ; une pièce ne va dans un dossier que si le client du projet y est partie.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U04
 - Cahier : M18, « Pièces rangées d'elles-mêmes » ; M10 ; M06.
 - Objectif : le dépôt d'une pièce par un partenaire dans sa mise en relation (sorte, référence de stockage, empreinte, date) et son rangement : diagnostic dans la fiche du bien, pièce du notaire dans les pièces du dossier de vente de M10, accord de prêt dans le financement du dossier, devis dans la mise en relation.
@@ -1453,7 +1457,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U06 · Pièce contrôlée contre le justificatif du jour où elle a été faite (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Reste : proposition #141 ouverte (bâtie sur U05), tests verts en local, relecture forte sans P0 ni P1 ; vérification bloquée (H28).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U05
 - Cahier : M18, « Annuaire par zone » et « Pièces rangées d'elles-mêmes ».
 - Objectif : au dépôt, chaque pièce est contrôlée contre les justificatifs de son auteur à la date où elle a été faite, et non au jour du dépôt : un diagnostic contre la certification du domaine concerné, un accord de prêt contre l'immatriculation du courtier, une pièce de gestion contre la carte G.
