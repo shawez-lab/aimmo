@@ -171,4 +171,19 @@ describeWithSqlite('T07 · point de la semaine au vendeur', () => {
     expect(JSON.stringify(entries)).not.toMatch(/VendeurB|vendeur1@|Talant/);
     expect((await verifyChain(entries)).ok).toBe(true);
   });
+
+  it('[R86] un point validé par un agent parti ne part plus, même après la reprise de ses clients par un autre (J13)', async () => {
+    const t = await setup();
+    const s = await t.seller(1);
+    await t.point.prepare(t.network.id);
+    t.setClock(Date.parse('2026-12-13T20:00:00.000Z'));
+    expect(await t.point.validate(t.as('agent', t.alex.id), s.mandateId, '2026-12-07')).toEqual({ ok: true, delivery: 'waiting', rule: 'R01' });
+    // Alex part ; son vendeur est repris par Sam avant le passage suivant.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, s.person.id]);
+    t.setClock(MON1_8H + HOUR);
+    await t.point.retry();
+    expect(await t.inbox(s.person.id)).toHaveLength(0);
+    expect(await t.db.first('SELECT delivery_status, delivery_rule FROM weekly_points WHERE mandate_id = ?', [s.mandateId])).toEqual({ delivery_status: 'refused', delivery_rule: 'R86' });
+  });
 });

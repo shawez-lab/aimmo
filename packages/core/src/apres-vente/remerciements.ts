@@ -155,6 +155,8 @@ export class Remerciements {
     const result = await this.controle.send({
       networkId: t.network_id,
       agentId: t.agent_id,
+      // Le remerciement est validé par l'agent du dossier : parti, il ne part plus [R86].
+      preparedBy: t.agent_id,
       personId,
       channel: 'email',
       kind: 'follow_up',
