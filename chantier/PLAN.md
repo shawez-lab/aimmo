@@ -1281,6 +1281,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 
 ### J11 · Départ d'un agent
 - Statut : en cours (voie 2)
+- Décidé (2026-10-28) : préavis légal L134-11 compté depuis le premier contrat signé du dossier ou la date saisie par la direction (la plus ancienne), prolongé jusqu'à la fin du mois civil ; plus court seulement pour faute grave ou accord commun, signalé ; l'indemnité de fin de contrat n'est jamais chiffrée, seulement dite « à examiner par l'avocat » (démission comprise, L134-13 2°) ; le jour du départ, clients, biens et projets passent au successeur accepté, sinon à la file de la direction ; un successeur est un agent du réseau déjà en activité.
 - Qui : Claude · Relecture : forte · Dépend de : J04
 - Cahier : M14, « Départ d'un agent ».
 - Objectif : la direction range un départ (date, préavis, motif) ; le jour venu, l'agent passe à « parti », son accès est coupé, ses clients et biens vont à la direction pour être réattribués, ses commissions en cours sont listées pour être soldées, ses contenus personnels sont listés pour lui être rendus ; un successeur présenté est rangé, avec l'accord du réseau.
@@ -1299,6 +1300,6 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Statut : à faire
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : J12
 - Cahier : M14 ; critère « aucun accès aux clients avant un dossier d'agent complet ».
-- Objectif : exporter `reseau` depuis `@aimmo/core` ; ajouter les routes de M14 à `app.ts` ; dans les droits d'accès, refuser toute fiche client et tout bien non partagé à un agent dont `DossierAgent.complete` est faux ce jour-là, et à un agent parti ; lancer au planificateur les alertes d'échéances des pièces, du compteur de formation, de l'assistance et les départs du jour.
+- Objectif : exporter `reseau` depuis `@aimmo/core` ; ajouter les routes de M14 à `app.ts` ; dans les droits d'accès, refuser toute fiche client et tout bien non partagé à un agent dont `DossierAgent.complete` est faux ce jour-là, et à un agent parti ; dans les droits d'accès, lire `Departs.isGone` (vrai dès minuit le jour du départ, avant le passage du planificateur) ; dans le contrôle central des envois, refuser tout envoi dont `Departs.sendAllowed` est faux (agent du message ou agent qui l'a préparé) ; lancer `Departs.runDue` au planificateur ; lancer au planificateur les alertes d'échéances des pièces, du compteur de formation, de l'assistance et les départs du jour.
 - Critères : un agent au dossier incomplet ou échu ne lit aucune fiche client [R82, R16] ; un agent parti ne lit plus rien le jour de son départ [R86] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
 - Attend : rien.
