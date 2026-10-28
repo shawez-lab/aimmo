@@ -109,6 +109,15 @@ describeWithSqlite('U06 · pièce contrôlée contre le justificatif du jour où
     expect(await g.deposit('bornage', -10)).toMatchObject({ value: { destination: 'property', piece: 'bornage', reason: 'rule' } });
   });
 
+  it('[R73] un accord de prêt d’un courtier non immatriculé à l’ORIAS ce jour-là va à la file', async () => {
+    const t = await setup();
+    // Le courtier doit être l'acquéreur du dossier pour que son accord soit rangé : sans dossier, il va à la file
+    // pour une autre raison ; ici seul compte que le contrôle du jour passe d'abord.
+    const c = await t.request('courtier', [INSURED, ['immatriculation_orias', [-20, 600]]]);
+    expect(await c.deposit('offre_pret', -40)).toMatchObject({ value: { destination: 'agent_queue', reason: 'credential_not_valid_on_date' } });
+    expect(await c.deposit('offre_pret', -10)).toMatchObject({ value: { destination: 'agent_queue', reason: 'no_sale_file' } });
+  });
+
   it('[R73] une version corrigée qui raccourcit la certification l’emporte pour juger la pièce', async () => {
     const t = await setup();
     // Saisie d'abord jusqu'à J+600, corrigée ensuite : elle finissait à J-40 ; renouvelée à partir de J-30.
