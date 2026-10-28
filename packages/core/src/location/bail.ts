@@ -255,8 +255,10 @@ export class BauxLocation {
     );
     if (!template) return { ok: false, rule: null, code: 'no_template' };
     const fullName = (p: { first_name: string | null; last_name: string | null } | null) => {
-      const n = [p?.first_name, p?.last_name].filter((x) => x && x.trim() !== '').join(' ');
-      return n === '' ? null : n;
+      // Prénom et nom exigés tous les deux : une identité à moitié laisse le champ à compléter [R40].
+      const first = p?.first_name?.trim() ?? '';
+      const last = p?.last_name?.trim() ?? '';
+      return first === '' || last === '' ? null : `${first} ${last}`;
     };
     // Les noms du bailleur et du locataire passent par la lecture des fiches sous droits : refus s'ils ne sont pas lisibles
     // en entier par celui qui fait le bail [R16].

@@ -194,6 +194,12 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     const real = await t.baux.generate(t.agent, id, t.inp(id));
     expect(real).toMatchObject({ ok: true, value: { version: 3, mode: 'reel', status: 'complet' } });
     expect(real.ok && real.value.content).not.toContain('DOCUMENT D’ESSAI');
+    // Un bailleur sans nom de famille n'est jamais nommé par son seul prénom : le bail reste à compléter.
+    await t.db.run('UPDATE persons SET last_name = NULL WHERE id = ?', [t.owner.id]);
+    const half = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(half).toMatchObject({ ok: true, value: { status: 'incomplet', missing: ['bailleur.nom'] } });
+    expect(half.ok && half.value.content).not.toContain('Bailleur Inventé');
+    await t.db.run("UPDATE persons SET last_name = 'Inventé' WHERE id = ?", [t.owner.id]);
     // Une nouvelle version d'essai du modèle ne remplace pas la version validée : le modèle en vigueur reste celui-ci.
     await t.template();
     const again = await t.baux.generate(t.agent, id, t.inp(id));
