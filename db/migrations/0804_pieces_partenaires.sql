@@ -24,3 +24,9 @@ CREATE INDEX IF NOT EXISTS partner_documents_referral ON partner_documents (refe
 CREATE TRIGGER IF NOT EXISTS partner_documents_garde BEFORE DELETE ON partner_documents BEGIN SELECT RAISE(ABORT, 'partner_documents : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS partner_documents_fige BEFORE UPDATE ON partner_documents BEGIN SELECT RAISE(ABORT, 'partner_documents : une pièce déposée ne change plus'); END;
 
+
+-- Une pièce ne s'ajoute qu'à une mise en relation confiée et encore ouverte, vérifié au moment même de l'écriture :
+-- une clôture passée entre le contrôle d'accès et le dépôt l'emporte [R77].
+CREATE TRIGGER IF NOT EXISTS partner_documents_ouverte BEFORE INSERT ON partner_documents
+WHEN COALESCE((SELECT state FROM partner_referral_steps WHERE referral_id = NEW.referral_id ORDER BY seq DESC LIMIT 1), '') NOT IN ('confiee', 'en_cours')
+BEGIN SELECT RAISE(ABORT, 'partner_documents : mise en relation close'); END;

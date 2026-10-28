@@ -198,6 +198,24 @@ describeWithSqlite('U05 · pièces des partenaires', () => {
     expect(await t.deposit(a, 'devis')).toEqual({ ok: false, rule: 'R16', code: 'closed' });
   });
 
+  it('[R77] une clôture passée pendant le dépôt l’emporte : la pièce n’est pas rangée', async () => {
+    const t = await setup();
+    const a = await t.request('artisan');
+    const has = t.files.has.bind(t.files);
+    let release: () => void = () => undefined;
+    t.files.has = async (ref: string) => {
+      await new Promise<void>((resolve) => (release = resolve));
+      return has(ref);
+    };
+    const pending = t.deposit(a, 'devis');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    t.files.has = has;
+    expect((await t.relations.close(t.agent, a.referralId, 'abandonnee')).ok).toBe(true);
+    release();
+    expect(await pending).toEqual({ ok: false, rule: 'R16', code: 'closed' });
+    expect(await t.db.all('SELECT id FROM partner_documents')).toHaveLength(0);
+  });
+
   it('[R17] une pièce remplacée reste ; rien ne change ni ne s’efface ; références et dates contrôlées', async () => {
     const t = await setup();
     const a = await t.request('photographe');

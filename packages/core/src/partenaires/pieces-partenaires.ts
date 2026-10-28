@@ -160,6 +160,7 @@ export class PiecesPartenaires {
         [docId, src.network_id, id, viewer.userId, input.sort, version, input.ref, input.sha256, input.issuedOn, this.now().toISOString(), place.destination, place.targetId, place.piece, place.reason],
       );
     } catch (error) {
+      if (/mise en relation close/.test(String(error))) return { ok: false, rule: 'R16', code: 'closed' };
       if (/UNIQUE/i.test(String(error))) return { ok: false, rule: null, code: /\.ref/.test(String(error)) ? 'ref_used' : 'busy' };
       throw error;
     }
