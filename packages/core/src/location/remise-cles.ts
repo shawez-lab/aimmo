@@ -28,7 +28,7 @@ import { euros } from './annonce-location.ts';
 import type { BauxLocation } from './bail.ts';
 import type { EtatsDesLieux } from './etat-des-lieux.ts';
 import type { HonorairesLocation } from './honoraires.ts';
-import { dayInFrench, type LocationRefusal, type MisesEnLocation } from './logement.ts';
+import { dayInFrench, validDay, type LocationRefusal, type MisesEnLocation } from './logement.ts';
 
 /** La signature du bail en vigueur, rendue par la signature en ligne du bail (W12). */
 export interface LeaseSignatureState {
@@ -62,8 +62,6 @@ export interface RemiseClesOptions {
   now?: () => Date;
   newId?: () => string;
 }
-
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export class RemisesDesCles {
   private readonly now: () => Date;
@@ -105,7 +103,7 @@ export class RemisesDesCles {
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
     const today = localTime(this.now(), 'Europe/Paris').date;
-    if (typeof input.handedOn !== 'string' || !DAY.test(input.handedOn) || Number.isNaN(Date.parse(`${input.handedOn}T00:00:00Z`)) || input.handedOn > today) {
+    if (!validDay(input.handedOn) || input.handedOn > today) {
       return { ok: false, rule: null, code: 'bad_date' };
     }
     const lease = await this.signedLease(listing.networkId, listing.id);

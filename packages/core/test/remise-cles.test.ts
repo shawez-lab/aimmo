@@ -217,6 +217,7 @@ describeWithSqlite('W08 · remise des clés', () => {
     for (const party of ['bailleur', 'locataire']) await t.edl.sign(t.agent, r.value.inventoryId, { party, contentSha256: r.value.contentSha256, drawing: DRAW });
     expect(await t.remises.handOver(t.agent, id, { handedOn: '2099-01-01' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
     expect(await t.remises.handOver(t.agent, id, { handedOn: 'hier' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    expect(await t.remises.handOver(t.agent, id, { handedOn: '2027-02-31' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
     const h = await t.remises.handOver(t.agent, id, { handedOn: '2027-07-12' });
     expect(h).toMatchObject({ ok: true, value: { depositPaidTo: 'proprietaire', firstRentPaidTo: 'proprietaire', depositCents: 65_000, firstRentCents: 70_000 } });
     const text = h.ok ? h.value.text : '';
