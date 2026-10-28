@@ -41,3 +41,19 @@ Ces fichiers contiennent des données personnelles : **jamais dans le dépôt**.
 - Une ligne avec une coordonnée illisible à côté d'une lisible est reprise, et rapportée par son numéro pour être complétée.
 - Une fiche retrouvée mais suivie par un autre agent n'est pas réunie : la direction attribue la personne ; les exclusions valent pour toutes ses fiches.
 - Le rapport et le journal ne contiennent que des nombres et des identifiants internes [R13].
+
+## Import d'un agent (J05)
+
+Un agent qui rejoint le réseau dépose un export CSV de Hektor, Apimo, Excel ou Google Contacts (`ImportAgent.run`). Les vrais exports ne vont jamais dans le dépôt.
+
+**Contacts.** Il faut au moins une colonne de mail ou de téléphone. Colonnes reconnues (sans accents, casse, espaces ni ponctuation) : identifiant ou référence ; mail (`Email`, `Mail`, `E-mail 1 - Value`…) ; téléphone (`Téléphone portable`, `Tel`, `Phone 1 - Value`…) ; prénom, nom ; `N° mandat` ou `Mandat` ; `Vente` ou `Date de vente` ; `Date accord`, `Preuve accord`, `Finalité`, `Canal accord` ; `Désinscrit`, `Opposition`, `Ne pas contacter`.
+
+Chaque contact est trié par ce que l'export prouve, et rien d'autre [R84] :
+
+- **client** : un mandat ou une vente est rempli pour lui ;
+- **accord prouvé** : une date passée (`AAAA-MM-JJ` ou `JJ/MM/AAAA`), une preuve et une finalité de la liste fermée (prospection, alertes, suivi) ; l'accord est rangé tel quel, pour cette finalité, sur le canal dit ou, à défaut, sur le mail et le téléphone de la ligne ;
+- **sans base** : rien de cela. Aucun accord n'est créé : le contrôle central refuse tout premier message [R03].
+
+Un accord incomplet, daté dans le futur ou sur un canal inconnu ne vaut rien et sa ligne est signalée. Une désinscription vaut arrêt sur tous les canaux [R04]. Une personne déjà suivie par un autre agent, ou sans agent, n'est pas touchée : elle va à la direction (`ImportAgent.referrals`) [R16]. L'import se relance sans rien doubler [R18] et n'envoie rien.
+
+**Biens.** Colonnes `Référence` et `Type` obligatoires ; `Code postal`, `Ville`, `Surface`, `Pièces`, `Prix` lus s'ils sont là. L'adresse n'est jamais lue. Chaque bien est rangé à l'agent, en brouillon : l'import ne publie rien. Un type inconnu ou une référence manquante : ligne signalée, jamais devinée.
