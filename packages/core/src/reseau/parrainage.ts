@@ -84,7 +84,7 @@ export class Parrainage implements PrimesParrainage {
 
   private async rules(networkId: string): Promise<{ rateBp: number; levels: number } | null> {
     const row = await this.db.first<{ rate_bp: number; levels: number }>(
-      'SELECT rate_bp, levels FROM referral_settings WHERE network_id = ? AND written_at <= ? ORDER BY written_at DESC, id DESC LIMIT 1',
+      'SELECT rate_bp, levels FROM referral_settings WHERE network_id = ? AND written_at <= ? ORDER BY written_at DESC, rowid DESC LIMIT 1',
       [networkId, this.now().toISOString()],
     );
     return row ? { rateBp: row.rate_bp, levels: row.levels } : null;
