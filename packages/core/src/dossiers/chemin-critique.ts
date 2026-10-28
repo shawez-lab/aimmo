@@ -108,15 +108,17 @@ export function criticalPath(fileId: string, input: PathInput): CriticalPath {
     // Les étapes dans l'ordre où elles ont été déclarées ; le jour d'une offre de prêt est celui où l'acquéreur l'a reçue.
     const steps = input.financing;
     const last = steps.at(-1);
-    const offer = [...steps].reverse().find((s) => s.step === 'offre_pret_emise');
+    // Seules comptent les étapes après le dernier refus : un financement qui repart repart de zéro.
+    const tail = steps.slice(steps.map((x) => x.step).lastIndexOf('refus') + 1);
+    const offerAt = tail.map((x) => x.step).lastIndexOf('offre_pret_emise');
+    const offer = offerAt >= 0 ? tail[offerAt]! : null;
     const acceptable = offer ? addDays(offer.day, LOAN_REFLECTION_DAYS + 1) : null;
-    // Une acceptation ne compte qu'au onzième jour après la réception de l'offre, au plus tôt.
-    const accepted = steps.some((s) => s.step === 'offre_pret_acceptee' && acceptable !== null && s.day >= acceptable);
-    // Un refus déclaré en dernier bloque, même après une acceptation : la banque s'est retirée.
+    // Une acceptation ne compte qu'après cette offre, au onzième jour après sa réception au plus tôt.
+    const accepted = offer !== null && tail.slice(offerAt + 1).some((x) => x.step === 'offre_pret_acceptee' && x.day >= acceptable!);
     if (last?.step === 'refus') lines.push({ reason: 'refus_de_pret', item: 'pret', who: 'acquereur', notBefore: null });
     else if (accepted) {
       // Rien : la condition de prêt est levée.
-    } else if (offer && steps.lastIndexOf(offer) > steps.map((s) => s.step).lastIndexOf('refus')) lines.push({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: acceptable });
+    } else if (offer) lines.push({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: acceptable });
     else lines.push({ reason: 'offre_pret_attendue', item: 'pret', who: 'banque', notBefore: addDays(input.today, LOAN_REFLECTION_DAYS + 1) });
   }
   const e = at('etat_date');
