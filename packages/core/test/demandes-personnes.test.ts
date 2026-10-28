@@ -318,6 +318,20 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     for (const seq of [9101, 9104, 9105]) expect(owner).not.toContain(seq);
     // Le même logement, vu d'une autre personne sans bail : rien.
     expect(JSON.stringify(await assembleAccess(db, ['pc-0009']))).not.toContain('etat_des_lieux');
+    // Les signatures et les exemplaires de l'état des lieux : chaque partie n'a que les siens.
+    for (const party of ['bailleur', 'locataire']) {
+      await insert('rental_inventory_signatures', { id: `sig-edl-${party}`, inventory_id: 'edl-c', party, content_sha256: 'x', drawing_sha256: `trace-${party}`, signed_by: 'ag', signed_at: `t-${party}` });
+      await insert('rental_inventory_copies', { id: `copie-edl-${party}`, inventory_id: 'edl-c', party, content_sha256: 'x', prepared_at: `t-${party}` });
+    }
+    const parties = async (who: string, table: string) =>
+      (await assembleAccess(db, [who])).sections.find((s) => s.table === table)!.rows.filter((r) => r.inventory_id === 'edl-c').map((r) => r.party);
+    expect(await parties(C, 'rental_inventory_signatures')).toEqual(['locataire']);
+    expect(await parties(A, 'rental_inventory_signatures')).toEqual(['bailleur']);
+    expect(await parties(C, 'rental_inventory_copies')).toEqual(['locataire']);
+    expect(await parties(A, 'rental_inventory_copies')).toEqual(['bailleur']);
+    // Un bail et un état des lieux à deux parties ne sont jamais proposés à l'effacement : « à examiner ».
+    const tenantPlan = conformite.erasurePlan(await conformite.assembleAccessDetail(db, [C]));
+    for (const table of ['rental_leases', 'rental_inventories']) expect(tenantPlan.lines.filter((l) => l.table === table).map((l) => l.action)).not.toContain('effacer');
     // B, lui, voit l'événement de sa recommandation sous sa propre fiche seulement s'il y est sujet : ici il ne l'est pas.
     expect((await assembleAccess(db, [B])).sections.find((s) => s.table === 'journal')!.rows.some((r) => r.seq === 9003)).toBe(false);
   });

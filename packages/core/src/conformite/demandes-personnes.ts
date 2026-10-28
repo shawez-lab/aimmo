@@ -324,9 +324,10 @@ export async function assembleAccessDetail(
       }
     }
     // Une ligne n'est qu'à la personne si elle a été trouvée par elle, ou par une ligne qui n'est qu'à elle, et
-    // qu'aucune de ses colonnes n'est celle d'une autre personne. Un tableau partagé (le plan d'un agent) ne l'est jamais.
+    // qu'aucune de ses colonnes n'est celle d'une autre personne. Un tableau partagé (le plan d'un agent) ne l'est jamais,
+    // ni un document à deux parties (colonnes `shared` : un bail, un état des lieux), ni ce qui en dépend.
     const mine = new Set<string>();
-    const shared = entry.locate.some((l) => 'json' in l);
+    const shared = entry.locate.some((l) => 'json' in l) || (entry.shared ?? []).length > 0;
     for (const [key, f] of rows) {
       const masked = Object.keys(entry.own ?? {}).some((c) => !f.matched.has(c));
       if (!shared && !masked && !f.foreign && (f.matched.size > 0 || f.viaExclusive)) mine.add(key);

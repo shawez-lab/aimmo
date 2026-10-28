@@ -508,9 +508,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   rental_lease_copy_deliveries: { locate: [via('lease_id', 'rental_lease_copies', 'lease_id')] },
   rental_fees: { locate: [via('listing_id', 'rental_listings')] },
   // L'état des lieux et la remise des clés : au propriétaire par son logement, au locataire par son bail.
-  rental_inventories: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases'), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'locataire', tag: 'locataire' })], shared: ['content'] },
-  rental_inventory_signatures: { locate: [via('inventory_id', 'rental_inventories')] },
-  rental_inventory_copies: { locate: [via('inventory_id', 'rental_inventories')] },
+  rental_inventories: { locate: [via('listing_id', 'rental_listings', 'id', { tag: 'bailleur' }), via('lease_id', 'rental_leases'), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'locataire', tag: 'locataire' })], shared: ['content'] },
+  // La signature et l'exemplaire de chaque partie sont à elle seule : le propriétaire par son logement, le locataire par son bail.
+  rental_inventory_signatures: { locate: [via('inventory_id', 'rental_inventories', 'id', { onlyMatchedBy: 'bailleur', where: { party: 'bailleur' } }), via('inventory_id', 'rental_inventories', 'id', { onlyMatchedBy: 'locataire', where: { party: 'locataire' } })] },
+  rental_inventory_copies: { locate: [via('inventory_id', 'rental_inventories', 'id', { onlyMatchedBy: 'bailleur', where: { party: 'bailleur' } }), via('inventory_id', 'rental_inventories', 'id', { onlyMatchedBy: 'locataire', where: { party: 'locataire' } })] },
   rental_handovers: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases')] },
   rental_management_links: { locate: [via('listing_id', 'rental_listings')] },
 };
