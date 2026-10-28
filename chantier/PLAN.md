@@ -1157,12 +1157,22 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K08 · Routes de M13, écran « Mes chiffres » et mesure contre le comptage manuel
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : export du jour lu dans le tableau de bord du réseau, honoraires des ventes du jour en euros ; pièces d'agent lues en lecture seule (dernière version signée, agents actifs, échues comprises) ; l'application n'admet que les agents (A01) : l'écran de la direction passe en K09 ; numéro de reversement gardant les tirets de l'identifiant (échec aléatoire de K02 au journal, corrigé).
+- Reste : relecture de Codex impossible (limite d'usage, H03), fusion sur les vérifications (#125).
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : K01 à K07
 - Cahier : M13 ; Feuille de route, juin 2027.
 - Objectif : les routes `/v1/pilotage`, les passages au planificateur (rapport du matin, alertes, reversements), l'écran « Mes chiffres » dans l'application de l'agent et le tableau de bord de la direction ; un export quotidien des chiffres pour les comparer au comptage manuel pendant 2 semaines, comme le décrit `docs/MESURE.md`.
 - Critères : chaque route sous R16, refus au journal ; écran accessible, sans texte générique, beau sur téléphone d'abord ; l'export du jour égale le tableau de bord.
 - Attend : H27 pour la mesure réelle seulement.
+
+### K09 · Écran « Le réseau » pour la direction
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : K08
+- Cahier : M13, « Tableau de bord du réseau » et « Alertes ».
+- Objectif : la direction se connecte à l'application avec sa clé et retrouve, sur téléphone d'abord, le tableau de bord du réseau (par agent, zone, source, coûts de l'IA), ses alertes, les reversements à faire, les brouillons de factures à valider et le téléchargement de l'export du jour, par les routes `/v1/pilotage` de K08.
+- Critères : un agent qui se connecte garde son écran actuel, sans rien du réseau [R68] ; la direction voit chaque total égal à la somme de ses lignes [R69], les agents listés par identifiant, jamais classés [R14] ; écran accessible, sans texte générique.
+- Attend : rien.
 
 **M14 · Réseau et académie, juillet 2027.**
 
