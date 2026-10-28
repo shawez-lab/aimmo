@@ -58,6 +58,7 @@ import type { DetailedSales, Geocoder } from '@aimmo/core';
 import { m08Routes } from './acquereurs.ts';
 import { annonceRoutes } from './annonces.ts';
 import { offreRoutes } from './offres.ts';
+import { dossierRoutes, type DossierRoute, type PieceStore } from './dossiers.ts';
 import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresVentePublic } from './apres-vente.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
 
@@ -93,6 +94,8 @@ export interface ApiConfig {
   alertUnsubscribeBase?: string | undefined;
   /** Les médias des biens (R2, `MEDIA`) ; absent, aucune photo n'est servie. */
   media?: MediaStore;
+  /** Les pièces des dossiers de vente (R2, `PIECES`) ; absent, les routes de M10 sont fermées. */
+  pieces?: PieceStore;
   now?: () => Date;
 }
 
@@ -799,6 +802,14 @@ async function automationSend(request: Request, config: ApiConfig, now: () => Da
   }
 }
 
+/** Les routes de M10 avec le stockage des pièces ; sans lui, chacune répond 503, sans rien lire. */
+function m10Routes(pieces: PieceStore | null): RouteDef[] {
+  return dossierRoutes().map((r: DossierRoute) => ({
+    ...r,
+    handle: (s, viewer, params, request) => (pieces ? r.handle({ ...s, pieces }, viewer, params, request) : Promise.resolve(failure(503, 'pieces_not_configured', 'Dossiers fermés : aucun stockage des pièces.'))),
+  }));
+}
+
 /** Jamais d'erreur avalée : une ligne au journal, sans le détail qui pourrait porter une donnée [R13]. */
 export async function journalError(journal: JournalStore, actor: string, route: string, error: unknown, now: () => Date): Promise<void> {
   try {
@@ -923,8 +934,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // Une même adresse peut servir à lire (GET) et à écrire (POST) : la route est choisie par l'adresse et la méthode.
   // Les routes de M08 (T08) suivent celles du socle ; elles portent le lien de désinscription du réseau.
   // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication ; puis celles de M09 (O09) : les offres ; puis
-  // celles de M11 (F07) : l'après-vente.
-  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }), ...annonceRoutes(), ...offreRoutes(), ...apresVenteRoutes()];
+  // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07).
+  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }), ...annonceRoutes(), ...offreRoutes(), ...m10Routes(config.pieces ?? null), ...apresVenteRoutes()];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
   const route = matching.find((candidate) => candidate.method === request.method);

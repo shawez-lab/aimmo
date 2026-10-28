@@ -7,12 +7,13 @@
  *   R09  jamais d'adresse exacte ; dans un contenu public, jamais le nom d'un client ;
  *   R10  chaque chiffre vient des données fournies ;
  *   R19  jamais le nom du vendeur d'un bien dans un message à un client ;
+ *   R62  aucun texte à un client ne porte de coordonnée bancaire ni ne demande de payer ;
  *   question : pas plus de questions que permis, quand l'appelant le dit ;
  *   longueur, par canal.
  */
 import type { OutboundChannelName } from '../db/types.ts';
 
-export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R19' | 'question' | 'length';
+export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R19' | 'R62' | 'question' | 'length';
 
 export interface TextProblem {
   rule: TextRule;
@@ -118,6 +119,9 @@ export function checkText(text: string, context: TextContext, settings: TextSett
       problems.push({ rule: 'R08', reason: 'Le premier message s’adresse à la personne par son prénom.' });
     }
   }
+  if (context.audience === 'client' && (bankDetailsIn(text) || paymentRequestIn(text))) {
+    problems.push({ rule: 'R62', reason: 'AIMMO ne demande jamais de paiement et ne donne jamais de coordonnée bancaire.' });
+  }
   if (/[()]/.test(text)) problems.push({ rule: 'R08', reason: 'Pas de parenthèses.' });
   if (settings.administrativePhrases.some((phrase) => p.includes(phrase))) {
     problems.push({ rule: 'R08', reason: 'Pas de formule administrative.' });
@@ -146,4 +150,142 @@ export function checkText(text: string, context: TextContext, settings: TextSett
     problems.push({ rule: 'R10', reason: 'Un chiffre du texte ne vient pas des données fournies.' });
   }
   return problems;
+}
+
+/**
+ * Un IBAN, tel qu'on l'écrit : deux lettres, deux chiffres, puis des groupes de lettres et de chiffres séparés ou non
+ * par des espaces, des retours à la ligne, des points ou des tirets (trois au plus d'affilée) ; 14 à 34 caractères
+ * utiles, dont au moins 10 chiffres. Il est cherché par un parcours linéaire, jamais par une expression qui pourrait
+ * s'emballer sur un texte reçu de l'extérieur. Parmi les fins possibles, la plus longue dont la clé (modulo 97) est
+ * juste l'emporte ; à défaut, la plus longue dont le dernier groupe porte un chiffre et dont seuls les deux premiers
+ * groupes peuvent être sans chiffre (code de banque) : les mots qui suivent ne sont jamais avalés.
+ */
+const isAlnum = (c: string | undefined): boolean => c !== undefined && /[A-Za-z0-9]/.test(c);
+const isDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
+const isLetter = (c: string | undefined): boolean => c !== undefined && /[A-Za-z]/.test(c);
+const isSep = (c: string | undefined): boolean => c !== undefined && /[\s.\-]/.test(c);
+
+function mod97(chars: string): boolean {
+  const s = (chars.slice(4) + chars.slice(0, 4)).toUpperCase();
+  let r = 0;
+  for (const ch of s) {
+    const v = isDigit(ch) ? ch : String(ch.charCodeAt(0) - 55);
+    for (const d of v) r = (r * 10 + Number(d)) % 97;
+  }
+  return r === 1;
+}
+
+/** Les plages `[début, fin[` des IBAN du texte. */
+function ibanSpans(text: string): [number, number][] {
+  const spans: [number, number][] = [];
+  let i = 0;
+  while (i < text.length - 3) {
+    if (isAlnum(text[i - 1]) || !isLetter(text[i]) || !isLetter(text[i + 1]) || !isDigit(text[i + 2]) || !isDigit(text[i + 3])) {
+      i += 1;
+      continue;
+    }
+    let chars = text.slice(i, i + 4);
+    let digits = 2;
+    let j = i + 4;
+    let group = 0;
+    let groupHasDigit = true;
+    let lettersOnlyLate = false;
+    let best: number | null = null;
+    let fallback: number | null = null;
+    while (j <= text.length && chars.length <= 34) {
+      // Une fin de groupe : la place d'une fin possible.
+      if (!isAlnum(text[j])) {
+        if (group > 0 && !groupHasDigit && group > 2) lettersOnlyLate = true;
+        const ok = chars.length >= 14 && digits >= 10;
+        if (ok && mod97(chars)) best = j;
+        if (ok && groupHasDigit && !lettersOnlyLate) fallback = j;
+        let k = j;
+        while (k < text.length && k - j < 3 && isSep(text[k])) k += 1;
+        if (k === j && j < text.length && !isSep(text[j])) break;
+        if (!isAlnum(text[k])) break;
+        j = k;
+        group += 1;
+        groupHasDigit = false;
+        continue;
+      }
+      chars += text[j];
+      if (isDigit(text[j])) {
+        digits += 1;
+        groupHasDigit = true;
+      }
+      j += 1;
+    }
+    const end = best ?? fallback;
+    if (end !== null) {
+      spans.push([i, end]);
+      i = end;
+    } else {
+      i += 1;
+    }
+  }
+  return spans;
+}
+
+/** Un RIB français écrit seul : banque 5 chiffres, guichet 5, compte 11, clé 2 ; longueurs fixes, sans emballement. */
+const RIB = /\b\d{5}[\s.\-]{0,3}\d{5}[\s.\-]{0,3}[A-Za-z0-9]{11}[\s.\-]{0,3}\d{2}\b/g;
+export const IBAN = { test: (text: string): boolean => maskIban(text) !== text };
+/** Ce qui remplace un IBAN ou un RIB dans un message reçu rangé : le bouclier (N05) le lit comme un IBAN [R15]. */
+export const IBAN_MASK = '[IBAN masqué]';
+
+/** Un identifiant tiré au hasard (UUID), qui n'est jamais un IBAN : il est mis à part avant toute recherche. */
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+function maskPart(part: string): string {
+  let out = '';
+  let at = 0;
+  for (const [a, b] of ibanSpans(part)) {
+    out += part.slice(at, a) + IBAN_MASK;
+    at = b;
+  }
+  return (out + part.slice(at)).replace(RIB, IBAN_MASK);
+}
+
+/** Le texte, chaque IBAN ou RIB remplacé en entier par `IBAN_MASK`, avant de le ranger [R15]. Le reste ne change pas. */
+export function maskIban(text: string): string {
+  const uuids = text.match(UUID) ?? [];
+  return text
+    .split(UUID)
+    .map(maskPart)
+    .reduce((acc, part, i) => acc + (i > 0 ? uuids[i - 1]! : '') + part, '');
+}
+
+/**
+ * Une demande de payer, dans tout texte à un client [R62] : un verbe de paiement suivi, à quelques mots, de ce qui se
+ * paie (somme, montant, acompte, frais, solde, dépôt, honoraires, une somme en euros), ou « effectuer le virement ».
+ * « Il faut régler la question du parking » ou « effectuer des travaux » ne demandent rien.
+ */
+const PAYMENT_REQUEST: RegExp[] = [
+  /\b(?:payer|payez|verser|versez|virer|virez|regler|reglez|transferer|transferez|acquitter|acquittez)\b(?:\s+\S+){0,4}?\s+(?:la somme|le montant|un montant|l'acompte|un acompte|les frais|des frais|vos frais|le solde|le depot|un depot|les honoraires|vos honoraires|\d[\d\s.,]*(?:€|euros?\b))/,
+  /\b(?:effectuer|faire|effectuez|faites)\s+(?:le|un|votre|ce)\s+(?:virement|versement|paiement)\b/,
+];
+
+export function paymentRequestIn(text: string): boolean {
+  const p = plain(text);
+  return PAYMENT_REQUEST.some((re) => re.test(p));
+}
+
+export function bankDetailsIn(text: string): boolean {
+  return IBAN.test(text) || text.includes(IBAN_MASK) || /\b(?:rib|bic|swift|iban)\b/.test(plain(text));
+}
+
+const OUTGOING_FUNDS: RegExp[] = [
+  /\b(?:rib|bic|swift|iban)\b/,
+  /\b(?:nos|nouvelles|voici les|voici nos|ci-joint nos|ci-joint les) coordonnees bancaires\b/,
+  /\b(?:sur le compte|a l'ordre de)\b/,
+  /\b(?:veuillez|merci de|vous pouvez|pensez a|il vous faut|vous devez|il faut|je vous prie de|nous vous prions de)\s+(?:bien vouloir\s+)?(?:nous\s+)?(?:virer|verser|regler|payer|transferer|effectuer)\b/,
+  // L'impératif direct : « payez », « versez », « virez », « réglez », « effectuez le virement ».
+  /\b(?:payez|versez|virez|reglez|transferez|effectuez)\b/,
+  /\b(?:le|un|votre) (?:virement|versement|paiement) (?:de|du|des|sur|a|avant)\b/,
+];
+
+/** Un texte d'AIMMO qui donne des coordonnées bancaires ou demande un paiement : jamais [R62]. */
+export function fundsInOutgoing(text: string): boolean {
+  if (bankDetailsIn(text)) return true;
+  const p = plain(text);
+  return OUTGOING_FUNDS.some((re) => re.test(p));
 }

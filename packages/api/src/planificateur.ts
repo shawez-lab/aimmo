@@ -2,6 +2,7 @@ import { Acces, FicheClient, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJou
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
+import { dossiersJob, type PieceStore } from './dossiers.ts';
 import type { Geocoder, SalesSource } from '@aimmo/core';
 
 export interface SchedulerConfig {
@@ -20,6 +21,8 @@ export interface SchedulerConfig {
   /** Les ventes publiques et le géocodeur, pour le carnet du propriétaire (F06) ; absents, aucun carnet. */
   soldSales?: SalesSource | null;
   geocoder?: Geocoder | null;
+  /** Le stockage des pièces des dossiers (R2, `PIECES`) ; absent, le passage des dossiers ne tourne pas. */
+  pieces?: PieceStore | null;
   now?: () => Date;
 }
 
@@ -61,6 +64,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       }, { now }),
       // Offres (O09), à 6 h : offres non transmises signalées [R56], tâches la veille des échéances [R59], sans envoi.
       offersDailyJob(config.db, journal, { now }),
+      // Dossiers de vente (N09), de 9 h à 19 h : échéances, alertes de financement, filet du bouclier contre le faux
+      // RIB, relances des pièces par les canaux du mode essai ; seulement avec le stockage des pièces.
+      ...(config.pieces ? [dossiersJob(config.db, journal, config.pieces, { now })] : []),
       // Après la vente (F07) : demandes d'avis, remerciements préparés pour l'agent, relances aux dates clés avec le
       // carnet, par les canaux du mode essai seulement, sur les dossiers clos de M10.
       ...apresVenteJobs(config.db, journal, { base: apresVenteBase(config.apresVenteBase), sales: config.soldSales ?? null, geocoder: config.geocoder ?? null, now }),

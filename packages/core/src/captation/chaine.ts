@@ -25,6 +25,7 @@ import { Attribution } from '../qualification/attribution.ts';
 import { Qualification, type Qualifier } from '../qualification/qualification.ts';
 import { Rappels } from '../qualification/rappel.ts';
 import { FicheAcquereur } from '../acquereurs/fiche-acquereur.ts';
+import { BouclierFonds } from '../dossiers/bouclier.ts';
 
 export type ChainStatus =
   /** Le même message, déjà reçu : rien de plus [R18]. */
@@ -164,7 +165,22 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
   const fiche = new FicheUnique(db, store, { now });
   const decisions = new DecisionEnvoi(db, store, fiche, { now });
   const reception = new Reception(db, undefined, now);
-  const rattachement = new Rattachement(db, store, fiche, decisions, reception, { now });
+  // Le bouclier contre le faux RIB (N05) lit chaque message reçu dès qu'il est rangé dans sa fiche ; une panne va au
+  // journal, sans texte [R13], et le filet du passage des dossiers le relira.
+  let bouclier: BouclierFonds | null = null;
+  const afterAttach = async (messageId: string): Promise<void> => {
+    try {
+      bouclier ??= new BouclierFonds(db, new Acces(db, store, fiche, journal, { now }), journal, { now });
+      await bouclier.scan(messageId);
+    } catch (error) {
+      try {
+        await appendEvent(journal, { type: 'dossier.bouclier_erreur', actor: 'system:dossiers', subject: `message:${messageId}`, data: { error: error instanceof Error ? error.name : 'unknown' } }, now);
+      } catch {
+        console.error('aimmo : bouclier non passé, journal indisponible');
+      }
+    }
+  };
+  const rattachement = new Rattachement(db, store, fiche, decisions, reception, { now, afterAttach });
   const controle = new ControleEnvois(db, fiche, decisions, {
     channels: options.channels ?? trialChannels(db, journal, now),
     journal: new SqlSendJournal(db, undefined, now),
