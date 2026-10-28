@@ -1007,7 +1007,7 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Attend : rien.
 
 ### Z01 · Jetons de lien qui ne déclenchent jamais le contrôle du texte
-- Statut : en cours
+- Statut : fait (2026-10-28)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Décidé (2026-10-28) : ouverte après une vérification rouge sur #101. Un jeton de rappel de V04 commençait par « gpt », et le contrôle du texte l'a lu comme une mention de l'IA [R06]. Le même défaut existe pour la désinscription des alertes de T03. F04 l'a déjà corrigé pour ses propres jetons (`newAfterSaleToken`).
 - Cahier : M05, « Rappels » ; M08, « Alertes ».
@@ -1042,7 +1042,7 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Attend : rien.
 
 ### F05 · Satisfaction : note et commentaire rangés pour M13
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : F02
 - Cahier : M11, « Satisfaction ».
 - Objectif : le client donne une note de 1 à 5 et un commentaire par un lien à usage unique de sa demande d'avis ; la note est rangée avec le dossier pour M13 ; l'agent la voit ; elle ne change jamais qui reçoit la demande d'avis.
