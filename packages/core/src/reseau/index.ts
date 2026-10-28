@@ -8,3 +8,4 @@ export * from './academie.ts';
 export * from './bac-a-sable.ts';
 export * from './entrainement.ts';
 export * from './accompagnement.ts';
+export * from './parrainage.ts';
