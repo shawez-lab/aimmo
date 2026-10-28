@@ -4,6 +4,23 @@ Statuts possibles : `à faire`, `en cours`, `chez Codex depuis le <date>`, `fait
 Relecture : `normale` = tests + relecture de Codex. `forte` = tests + relecture de Codex + relecture par un agent séparé.
 Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le découpage des modules suivants se fait au fil de l'eau (protocole, section 5).
 
+## Priorité de Shawez (avant tout le reste, voie 1)
+
+### Z02 · Accès de Shawez à l'application en un clic
+- Statut : à faire
+- Qui : Claude, relecture forte
+- Dépendances : aucune
+- Objectif : l'application https://aimmo-api.shawez.workers.dev/app/ répond « API fermée : aucune clé configurée ». Shawez doit pouvoir entrer sans rien taper de technique. Un workflow GitHub lancé à la main (« Créer l'accès de Shawez ») tire une clé au hasard, range seulement son empreinte dans le secret `API_KEYS` du Worker avec `wrangler secret put` (le jeton Cloudflare est déjà dans les secrets du dépôt), crée la fiche agent de Shawez avec le rôle direction et agent, et lui remet la clé par un lien d'invitation à usage unique, valable 24 heures, envoyé à shawez@gravelin-immo.com. La clé n'apparaît jamais dans les journaux, le dépôt ni le chat. Le lien ouvre l'application déjà connectée.
+- Critères : clé jamais écrite en clair hors du navigateur de Shawez (test) ; lien à usage unique, expiré refusé (test) ; empreintes déjà présentes dans `API_KEYS` conservées (test) ; journal sans clé (test [R13]).
+- Ce qu'elle attend d'un humain : rien. Une fois fusionnée, la séance lance elle-même le workflow ; Shawez n'a qu'à cliquer sur le lien reçu par mail.
+
+### Z03 · Passe de design de l'application et des pages publiques
+- Statut : à faire
+- Qui : Claude, relecture forte
+- Dépendances : Z02
+- Objectif : un système de design propre à AIMMO (couleurs, typographie, espacements, composants, mouvements) appliqué à tous les écrans existants, téléphone d'abord. Rien de générique ni qui ressemble à un site fait par une IA ; niveau des meilleures applis du monde. Captures avant et après dans la proposition.
+- Critères : chaque écran passe un contrôle d'accessibilité automatique et un budget de performance (tests) ; aucun écran en dehors du système de design (test) ; Codex relit aussi les captures.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
@@ -1167,8 +1184,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : H27 pour la mesure réelle seulement.
 
 ### K09 · Écran « Le réseau » pour la direction
-- Statut : en cours
-- Reste : proposition #129 ouverte, tests verts en local, en attente des vérifications GitHub (H28).
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : la direction arrive sur « Le réseau » à la connexion, la conformité et les partenaires restent refusés ; chaque total refait la somme de ses lignes à l’écran et dit un écart ; une facture s’émet en deux gestes ; l’export se télécharge avec la clé dans l’en-tête ; relecture forte : 1 P1 corrigé (clé refusée pendant l’export). Codex : aucune remarque.
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : K08
 - Cahier : M13, « Tableau de bord du réseau » et « Alertes ».
@@ -1281,6 +1297,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 
 ### J11 · Départ d'un agent
 - Statut : en cours (voie 2)
+- Décidé (2026-10-28) : préavis légal L134-11 compté depuis le premier contrat signé du dossier ou la date saisie par la direction (la plus ancienne), prolongé jusqu'à la fin du mois civil ; plus court seulement pour faute grave ou accord commun, signalé ; l'indemnité de fin de contrat n'est jamais chiffrée, seulement dite « à examiner par l'avocat » (démission comprise, L134-13 2°) ; le jour du départ, clients, biens et projets passent au successeur accepté, sinon à la file de la direction ; un successeur est un agent du réseau déjà en activité.
 - Qui : Claude · Relecture : forte · Dépend de : J04
 - Cahier : M14, « Départ d'un agent ».
 - Objectif : la direction range un départ (date, préavis, motif) ; le jour venu, l'agent passe à « parti », son accès est coupé, ses clients et biens vont à la direction pour être réattribués, ses commissions en cours sont listées pour être soldées, ses contenus personnels sont listés pour lui être rendus ; un successeur présenté est rangé, avec l'accord du réseau.
@@ -1288,8 +1305,10 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 - Reste : proposition #130 prête, tests verts en local (1226), relecture forte 4 P1 corrigés ; la vérification GitHub ne démarre pas (H28) : à fusionner dès qu'elle passe.
 
-### J12 · Routes de M14, page de candidature et écrans
-- Statut : à faire
+### J12 · Routes de M14 et page de candidature
+- Statut : en cours (voie 2)
+- Décidé (2026-10-28) : la branche part de J09, J10 et J11 réunis (#127, #128, #130, non fusionnés tant que H28 bloque) ; les écrans de l'application sortent en J14, parce qu'ils vivent dans `packages/api/app/fichiers.ts`, que modifie aussi #129 (voie 1) ; le rôle est contrôlé par la route avant tout corps, la couche métier refait son contrôle derrière ; la page `/rejoindre` se ferme d'elle-même si un de ses textes échoue au contrôle de R80 (Jamais vu).
+- Reste : proposition #133 prête, tests verts en local, relecture forte 2 P1 corrigés ; la vérification GitHub ne démarre pas (H28) : à fusionner après #127, #128 et #130.
 - Qui : Claude · Relecture : forte · Dépend de : J01 à J11
 - Cahier : M14 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/reseau` (candidatures, entretiens, dossier d'agent, import, académie, binôme, parrainage, départ) dans `packages/api/src/reseau.ts` ; la page publique de candidature ; dans l'application, les écrans « Mon intégration », « Académie » et, pour la direction, « Candidatures ».
@@ -1300,10 +1319,17 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Statut : à faire
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : J12
 - Cahier : M14 ; critère « aucun accès aux clients avant un dossier d'agent complet ».
-- Objectif : exporter `reseau` depuis `@aimmo/core` ; ajouter les routes de M14 à `app.ts` ; dans les droits d'accès, refuser toute fiche client et tout bien non partagé à un agent dont `DossierAgent.complete` est faux ce jour-là, et à un agent parti ; lancer au planificateur les alertes d'échéances des pièces, du compteur de formation, de l'assistance et les départs du jour.
+- Objectif : exporter `reseau` depuis `@aimmo/core` ; ajouter les routes de M14 à `app.ts` ; dans les droits d'accès, refuser toute fiche client et tout bien non partagé à un agent dont `DossierAgent.complete` est faux ce jour-là, et à un agent parti ; dans les droits d'accès, lire `Departs.isGone` (vrai dès minuit le jour du départ, avant le passage du planificateur) ; dans le contrôle central des envois, refuser tout envoi dont `Departs.sendAllowed` est faux (agent du message ou agent qui l'a préparé) ; lancer `Departs.runDue` au planificateur ; lancer au planificateur les alertes d'échéances des pièces, du compteur de formation, de l'assistance et les départs du jour ; ajouter `reseauRoutes({ pieces, coach, sandbox })` de `packages/api/src/reseau.ts` aux routes de `app.ts`, et servir `/rejoindre` par `handleCandidature` avec la variable `CANDIDATURE_NETWORK_ID`, comme les autres pages publiques (mode essai, erreur au journal).
 - Critères : un agent au dossier incomplet ou échu ne lit aucune fiche client [R82, R16] ; un agent parti ne lit plus rien le jour de son départ [R86] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
 - Attend : rien.
 
+### J14 · Écrans de M14 dans l'application
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : J12 ; après la fusion de #129 (K09, voie 1), qui modifie le même fichier `packages/api/app/fichiers.ts`
+- Cahier : M14 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : dans l'application, les écrans « Mon intégration » (dossier d'agent pièce par pièce, référent, premier parcours), « Académie » (parcours, modules faits, compteur des heures) et, pour la direction, « Candidatures » (ordre d'arrivée, fiche d'entretien, décision nommée), lus par les routes de J12.
+- Critères : chaque écran lit seulement par les routes `/v1/reseau`, refus montré sans rien garder [R16] ; la liste des candidatures n'a ni tri, ni filtre, ni note [R81] ; écrans accessibles (libellés, focus, lecteurs d'écran), beaux sur téléphone d'abord, sans texte générique ; testés comme les autres écrans (`fake-dom`).
+- Attend : rien.
 **M12 · Conformité, avant juillet 2027.**
 
 Voie : 1
@@ -1312,7 +1338,8 @@ Découpé le 2026-10-28 par la voie 1. La Feuille de route pose M12 comme préal
 Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle central des envois, exclusions et arrêts, mentions des annonces et des documents, registre des mandats, mention de l'assistant, dossier d'agent de M14) : il le relie. Le système bloque, enregistre, alerte et prépare ; le responsable de la conformité (rôle `compliance`) décide, déclare un soupçon et répond aux personnes ; aucune décision n'est prise par l'IA, aucune pièce d'identité ni aucun document anti-blanchiment ne lui est jamais envoyé [R15]. Le coffre est une référence de stockage derrière une interface (faux stockage dans les tests), jamais le contenu d'une pièce, et seul le responsable le lit, chaque lecture au journal. La fiche de risque est préparée par des règles écrites (type d'opération, montant, pays déclaré, personne politiquement exposée déclarée, paiement), jamais par l'IA, et ne compte que si le responsable la valide ; elle ne sert jamais à trier un client ni à refuser un service sans décision humaine [R14]. Un signalement fige le dossier et ne donne aucune information au client : aucun texte, aucune relance, aucun refus visible ne le trahit, et seul le responsable le voit. L'effacement ne passe que par la procédure de M12 (demande de la personne ou 3 ans sans contact ni consentement), garde ce que la loi oblige à garder (registre des mandats, anti-blanchiment, factures) et s'écrit au journal [R17] ; tant que le responsable n'est pas nommé (H29), l'effacement reste en mode essai : il liste ce qu'il effacerait et n'efface rien. Les numéros de règles R90 à R99 et de migrations à partir de `0701` sont réservés à M12. Le code vit dans `packages/core/src/conformite/`, ses routes dans `packages/api/src/conformite.ts`.
 
 ### L01 · Coffre de la conformité, réservé au responsable
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : le coffre lit toutes les fiches réunies (S04) ; une pièce d'identité déposée range aussi l'identité vérifiée de D03 ; un test refuse que tout autre fichier du code lise la table du coffre ; relecture forte : 1 P1 corrigé (fiches fusionnées).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : S08
 - Cahier : M12, « Anti-blanchiment » et « Règles » ; Conformité, « Conservation des documents ».
 - Objectif : un coffre séparé, dans ses propres tables, où l'agent dépose la référence d'une pièce d'identité ou d'un document anti-blanchiment vérifiée (sorte, personne, dossier, date de vérification, qui l'a vérifiée, empreinte), jamais son contenu ; seul le responsable de la conformité lit le coffre ; la fiche client et les autres modules n'en voient qu'un état : « identité vérifiée le <date> ».
@@ -1320,7 +1347,9 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L02 · Fiche de risque de chaque client, validée par le responsable
-- Statut : à faire
+- Statut : en cours
+- Reste : proposition #134 ouverte (bâtie sur L01, #131), tests verts en local (1235), en attente des vérifications GitHub (H28).
+- Décidé (2026-10-28) : grille d'essai `essai-2026-10-28` en code ; sources : 4 déclarations fermées oui/non, état d'identité du coffre, montant de l'offre au registre ; le niveau est le plus haut des critères ; Jamais vu : rejeu de la fiche à l'identique ; relecture forte : 1 P1 corrigé (validation vérifiée au journal) ; Codex : 1 P1 corrigé (événements repris si le journal a manqué), nouvelle relecture demandée.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L01
 - Cahier : Conformité, « Classement écrit des risques et analyse de chaque client avant l'entrée en relation ».
 - Objectif : à l'entrée en relation (mandat pour un vendeur, offre pour un acquéreur), une fiche de risque préparée par des règles écrites et datées, chaque critère avec sa source (déclaré, document, base) ; le responsable la valide ou la corrige, avec son nom et sa date.
@@ -1328,7 +1357,9 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : H29 pour la grille réelle ; une grille d'essai en attendant.
 
 ### L03 · Identification et bénéficiaire effectif, étape bloquante
-- Statut : à faire
+- Statut : en cours
+- Reste : proposition #139 ouverte (bâtie sur L02, #134), tests verts en local (1250), Codex : dernière version validée (1 P0 et 5 P2 corrigés, 1 P1 confié à L09), en attente des vérifications GitHub (H28).
+- Décidé (2026-10-28) : identité lue au coffre (pièce vérifiée depuis un an au plus, valide ce jour-là, non remplacée) ; la case « pièce vue » de D03 ne suffit plus ; société reconnue à sa déclaration ou à un Kbis ou registre au coffre, redéclarée « personne » par le responsable seul ; mandat papier jugé au jour de sa signature ; relecture forte : 2 P1 corrigés.
 - Qui : Claude, voie 1 (touche aux contrôles de M06 et M09) · Relecture : forte · Dépend de : L01, L02
 - Cahier : Conformité, « Identification du client et du bénéficiaire effectif, au seuil de 25 % ».
 - Objectif : ni mandat signé sans l'identité vérifiée du vendeur au coffre, ni compromis sans celle de chaque acquéreur ; pour une société, les bénéficiaires effectifs à 25 % ou plus, chacun identifié ; les contrôles de D03 et d'O07 lisent l'état du coffre au lieu d'une case cochée.
@@ -1336,7 +1367,9 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L04 · Vigilance renforcée et origine des fonds
-- Statut : à faire
+- Statut : en cours
+- Reste : proposition #142 ouverte (bâtie sur L03, #139), tests verts en local (1263), en attente des vérifications GitHub (H28).
+- Décidé (2026-10-28) : réglage d'essai `essai-2026-10-28` (écart 20 % autour de la fourchette du dernier avis validé, montant 1 000 000 €), réglé ensuite par le responsable, versionné ; déclarations lues sur la fiche de risque de L02 ; la demande d'origine des fonds n'est préparée pour l'agent qu'après la décision « origine des fonds demandée » du responsable ; alertes et décisions au journal sous la référence de l'alerte, jamais sous la fiche du client ; relecture forte : 2 P1 corrigés. L'examen automatique à l'inscription d'une offre et à la signature d'un mandat est à brancher en L09.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L02
 - Cahier : Conformité, « Vigilance renforcée : montant inhabituel, prix sans lien avec la valeur, personne politiquement exposée ».
 - Objectif : des alertes au responsable par des règles écrites et réglables : prix d'une offre ou d'un mandat écarté de la fourchette d'estimation de M04 au-delà d'un seuil, montant au-dessus d'un seuil, personne politiquement exposée déclarée, paiement comptant déclaré ; la demande d'origine des fonds est préparée pour l'agent, la décision reste au responsable.
@@ -1379,6 +1412,114 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Statut : à faire
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : L01 à L08
 - Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
-- Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts` ; dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes, signalements, demandes et échéances, relecture du registre) et le dépôt d'une pièce par l'agent ; les passages au planificateur ; l'export depuis `@aimmo/core`.
+- Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts`, dont le dépôt d'une pièce au coffre (`CoffreConformite.deposit`) et la déclaration personne ou société avec ses bénéficiaires effectifs (`Identification.declare`), seules portes de l'identification depuis L03 ; AIMMO ne se met pas en service entre L03 et L09 ; dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes, signalements, demandes et échéances, relecture du registre) et le dépôt d'une pièce par l'agent ; les passages au planificateur ; l'export depuis `@aimmo/core`.
 - Critères : chaque route sous R16, refus au journal ; un agent ne voit jamais l'écran du responsable ; écran accessible, beau sur téléphone d'abord, sans texte générique ; les passages tournent une fois par créneau.
+- Attend : rien.
+
+**M18 · Partenaires, juillet 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-28 par la voie 2 : M14 n'a plus de tâche faisable par la voie 2 (J13 revient à la voie 1, J14 attend la fusion de #129), et M18 est le module de juillet 2027 qu'aucune voie n'a commencé. Ids `U..` pour Unir les partenaires. Cahier : M18 Partenaires ; Feuille de route, juillet 2027 : « 5 demandes à des partenaires suivies jusqu'au bout » ; critères « pièces rangées sans erreur », « un partenaire ne voit que les dossiers qui lui sont confiés », « aucune mise en relation sans accord enregistré du client ».
+Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, dans ses propres tables (annuaire), jamais une fiche client. Chaque partenaire a un métier pris dans une liste fermée (notaire, diagnostiqueur, courtier, artisan, déménageur, photographe, géomètre, gestionnaire titulaire de la carte G, avocat, expert-comptable, promoteur, expert du viager) et ses justificatifs exigés par métier (certification par domaine pour un diagnostiqueur, immatriculation ORIAS pour un courtier, carte G pour un gestionnaire, assurance pour tous), chacun avec sa date de fin de validité et sa preuve ; un justificatif est une référence de stockage, jamais son contenu. Un partenaire sans justificatif valide ce jour-là n'est proposé à personne [R73]. La mise en relation n'existe qu'après l'accord du client enregistré avec sa date et sa preuve [R74] ; le client choisit parmi plusieurs professionnels quand la zone en compte plusieurs : ils lui sont montrés dans un ordre tiré au sort et noté, jamais trié par une note, un avis ou l'IA ; le choix est fait par le client avec l'agent, jamais par l'IA ni par le code [R75, R14]. Aucune rémunération d'un diagnostiqueur, sous aucune forme ; aucune rémunération d'un courtier ou d'une banque tant que le statut requis n'est pas validé par l'avocat (réglage faux par défaut) ; toute autre rémunération est déclarée dans la mise en relation et montrée au client avant son accord [R76]. Un partenaire ne lit que les mises en relation qui lui sont confiées, et seulement le dossier utile de son métier, champ par champ, listé par des règles écrites [R77]. Une pièce déposée par un partenaire est rangée par sa sorte (diagnostic dans la fiche du bien, pièce du notaire dans le dossier de M10, accord de prêt dans le financement du dossier, devis dans la mise en relation) ; une pièce de sorte inconnue va à une file humaine, jamais rangée au hasard [R78]. La prospection de nouveaux partenaires se fait par mail, entre professionnels, à une adresse professionnelle, avec un plafond par jour ouvré (5), le lien d'opposition et l'arrêt sur tous les canaux à la première demande ; tout passe par le contrôle central des envois, en mode essai tant que le plan ne l'a pas mis en service [R79, R01, R02, R04]. Les relances aux partenaires partent dans les heures d'envoi [R01]. Les avis des clients sur un partenaire sont lus par un humain, jamais transformés en note ni en classement. Les offres négociées pour les agents (responsabilité civile, protection juridique, prévoyance) sont une page d'information sans commission pour le réseau, hors de ce découpage tant qu'aucun accord n'existe. Les numéros de règles R73 à R79 et de migrations à partir de `0801` sont réservés à M18. Le code vit dans `packages/core/src/partenaires/`, ses routes dans `packages/api/src/partenaires.ts` ; les fichiers du socle (droits d'accès, `index.ts`, `app.ts`, planificateur, Worker, contrôle central des envois) ne changent que par U09, confiée à la voie 1.
+
+### U01 · Annuaire des partenaires par zone, justificatifs datés
+- Statut : en cours (voie 2)
+- Reste : proposition #135 ouverte, tests verts en local, relecture forte 2 P1 corrigés, Codex 1 P0 et 1 P2 corrigés (version qui fait foi un jour donné, alertes avant un trou), nouvelle relecture demandée ; la vérification GitHub ne démarre pas (H28).
+- Décidé (2026-10-28) : le mesurage n'exige que l'assurance ; chaque autre domaine de diagnostic exige sa certification ; une version plus récente, déjà commencée, qui chevauche une période la corrige ; un renouvellement à l'avance ne retire pas la version en cours.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : S08
+- Cahier : M18, « Annuaire par zone » ; Données.
+- Objectif : l'annuaire (migration `0801`) : partenaire, métier (liste fermée), zones (codes postaux ou communes), domaines (pour un diagnostiqueur : amiante, plomb, DPE, électricité, gaz, termites, mesurage), justificatifs exigés par métier, chacun avec sorte, numéro déclaré, date de fin de validité, référence de la preuve, qui l'a vérifié ; la recherche des partenaires proposables pour un métier, une zone, un domaine et un jour.
+- Critères : un partenaire dont un justificatif exigé manque ou est échu ce jour-là n'est jamais proposable, et la raison est dite à l'agent [R73] ; un diagnostiqueur n'est proposable que pour les domaines couverts par une certification valide [R73] ; la recherche ne rend jamais de note, de rang ni d'avis [R14] ; rien ne s'efface, un justificatif remplacé reste [R17] ; chaque ajout et chaque vérification au journal [R13].
+- Attend : rien.
+
+### U02 · Mise en relation avec l'accord du client, choix du client
+- Statut : en cours (voie 2)
+- Reste : proposition #136 ouverte (bâtie sur U01), tests verts en local, relecture forte 1 P0 corrigé ; vérification bloquée (H28) ; Codex à sa limite.
+- Décidé (2026-10-28) : la mise en relation part d'un projet du client ; tirage mulberry32 rejouable par sa graine ; preuve d'accord rangée sous `relations/<id>/`.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01
+- Cahier : M18, « Mise en relation » et « Règles ».
+- Objectif : la mise en relation (migration `0802`) : dossier (bien, mandat, dossier de vente ou projet), métier, partenaires proposés (ordre tiré au sort, graine notée), partenaire choisi, accord du client (date, canal, preuve), rémunération déclarée, état (proposée, acceptée par le client, confiée, en cours, terminée, abandonnée).
+- Critères : aucune mise en relation n'est confiée sans accord du client enregistré avec sa date et sa preuve [R74] ; quand la zone compte au moins 2 partenaires proposables, au moins 2 sont montrés (réglage : 3 au plus) ; l'ordre est tiré au sort, rejouable par sa graine, jamais par une note ni un avis [R75] ; le choix est toujours celui d'un humain nommé, aucune fonction de l'IA ni du code ne choisit [R75] ; chaque changement d'état au journal.
+- Attend : rien.
+
+### U03 · Rémunérations des partenaires, déclarées ou refusées
+- Statut : en cours (voie 2)
+- Reste : proposition #137 ouverte (bâtie sur U02), tests verts en local, relecture forte 1 P0 corrigé ; vérification bloquée (H28).
+- Décidé (2026-10-28) : l'accord du client est refusé tant que le dernier texte montré ne cite pas toutes les rémunérations déclarées.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U02
+- Cahier : M18, « Règles » ; Conformité.
+- Objectif : la déclaration de toute rémunération venant d'un partenaire dans sa mise en relation (sorte, montant ou taux, qui paie, à qui) et le texte montré au client avant son accord.
+- Critères : toute rémunération venant d'un diagnostiqueur est refusée, sous toute forme (commission, cadeau, remise, prestation) [R76] ; toute rémunération d'un courtier ou d'une banque est refusée tant que le réglage du statut validé par l'avocat est faux [R76] ; une rémunération non déclarée ne peut pas être ajoutée après l'accord du client : il faut un nouvel accord [R76] ; le texte montré au client cite chaque rémunération et passe le contrôle des textes (aucune mention de l'IA, R06) ; chaque déclaration au journal.
+- Attend : H31 pour rémunérer un courtier ou une banque ; refusé en attendant.
+
+### U04 · Espace partenaire : le dossier utile, rien d'autre
+- Statut : en cours (voie 2)
+- Reste : proposition #138 ouverte (bâtie sur U03), tests verts en local, relecture forte 1 P1 corrigé, Codex 1 P0 corrigé en U02 (étapes croisées) ; vérification bloquée (H28).
+- Décidé (2026-10-28) : le nom du client va seulement au notaire, au courtier, au gestionnaire, à l'avocat et à l'expert-comptable ; la certification du domaine est revérifiée à chaque accès.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U02
+- Cahier : M18, « Espace partenaire » ; critère « un partenaire ne voit que les dossiers qui lui sont confiés ».
+- Objectif : la lecture par un partenaire de ses mises en relation confiées et de leur dossier utile, défini par métier, champ par champ (un diagnostiqueur : adresse du bien, surface, année, domaines demandés, créneaux ; un notaire : parties et pièces du dossier de vente ; un courtier : projet de l'acquéreur avec son accord, sans autre donnée de la fiche) ; le partenaire indique où il en est.
+- Critères : un partenaire ne lit jamais une mise en relation qui ne lui est pas confiée, ni une fois terminée au-delà du réglage (30 jours) [R77, R16] ; il ne reçoit que les champs listés pour son métier, testés champ par champ, jamais la fiche client entière ni une donnée sensible [R77, R23] ; chaque lecture et chaque refus au journal avant de rendre la donnée [R13] ; un partenaire dont un justificatif est échu est refusé [R73].
+- Attend : rien.
+
+### U05 · Pièces déposées par les partenaires, rangées d'elles-mêmes
+- Statut : en cours (voie 2)
+- Reste : proposition #140 ouverte (bâtie sur U04), tests verts en local, relecture forte 1 P0 et 1 P1 corrigés ; vérification bloquée (H28).
+- Décidé (2026-10-28) : la place de la pièce est rangée avec elle ; diagnostic et bornage à la fiche du bien (le dossier de vente le lira en U09) ; une pièce ne va dans un dossier que si le client du projet y est partie.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U04
+- Cahier : M18, « Pièces rangées d'elles-mêmes » ; M10 ; M06.
+- Objectif : le dépôt d'une pièce par un partenaire dans sa mise en relation (sorte, référence de stockage, empreinte, date) et son rangement : diagnostic dans la fiche du bien, pièce du notaire dans les pièces du dossier de vente de M10, accord de prêt dans le financement du dossier, devis dans la mise en relation.
+- Critères : chaque sorte connue est rangée au bon endroit, testé pour chacune, sans erreur sur 5 demandes complètes [R78] ; une pièce de sorte inconnue, ou dont la sorte ne va pas avec le métier du déposant, va à la file de l'agent et n'est rangée nulle part [R78] ; un partenaire ne dépose que dans ses mises en relation confiées [R77] ; une pièce n'est jamais son contenu, seulement sa référence ; rien ne s'efface, une pièce remplacée reste [R17].
+- Attend : rien.
+
+### U06 · Pièce contrôlée contre le justificatif du jour où elle a été faite (Jamais vu)
+- Statut : en cours (voie 2)
+- Reste : proposition #141 ouverte (bâtie sur U05), tests verts en local, relecture forte sans P0 ni P1 ; vérification bloquée (H28).
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U05
+- Cahier : M18, « Annuaire par zone » et « Pièces rangées d'elles-mêmes ».
+- Objectif : au dépôt, chaque pièce est contrôlée contre les justificatifs de son auteur à la date où elle a été faite, et non au jour du dépôt : un diagnostic contre la certification du domaine concerné, un accord de prêt contre l'immatriculation du courtier, une pièce de gestion contre la carte G.
+- Critères : Jamais vu : un diagnostic fait à une date où la certification de son domaine était échue, ou d'un domaine que le diagnostiqueur ne couvre pas, est refusé au rangement et signalé à l'agent avec la raison, avant qu'il n'entre dans un dossier de vente [R78, R73] ; un diagnostic fait pendant la validité puis déposé après son échéance est accepté ; la décision est rejouable à l'identique ; aucune pièce n'est jugée par l'IA.
+- Attend : rien.
+
+### U07 · Suivi des demandes, relances et avis lus par un humain
+- Statut : à faire
+- Décidé (2026-10-28, voie 2) : un partenaire n'est pas une personne de la fiche client, et le contrôle central des envois (`ControleEnvois.send`) n'écrit qu'à une personne de la fiche : U07 range seulement les relances préparées dans une boîte de M18 (texte du code, date due dans les heures d'envoi, jamais deux fois la même), sans rien envoyer ; leur passage par le contrôle central (partenaire relié à une fiche de rôle partenaire, type d'envoi `partner`, plafond de R11) revient à U09, voie 1.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U05
+- Cahier : M18, « Suivi » ; L'IA et l'humain.
+- Objectif : pour chaque mise en relation confiée : délai de réponse mesuré, relance préparée au partenaire après le réglage (2 jours ouvrés sans réponse), puis alerte à l'agent ; résumé des réponses par l'IA derrière une interface, avec un secours sans IA ; avis du client sur le service rendu, rangé pour lecture humaine.
+- Critères : une relance part seulement dans les heures d'envoi et par le contrôle central des envois, en mode essai [R01, R79] ; jamais deux fois la même relance [R05] ; un avis n'est jamais transformé en note, en rang ni en tri des partenaires [R14, R75] ; le résumé de l'IA ne reçoit aucune donnée sensible et le secours sans IA rend la même structure [R15, R23] ; chaque relance et chaque alerte au journal.
+- Attend : rien.
+
+### U08 · Prospection de nouveaux partenaires entre professionnels
+- Statut : à faire
+- Décidé (2026-10-28, voie 2) : tel qu'écrit, R03 exige un accord préalable pour tout premier mail d'initiative, prospection entre professionnels comprise ; tant que H32 n'est pas tranché, U08 prépare la liste et les mails en mode essai, et le contrôle les refuse sous R03. Rien ne part.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01
+- Cahier : M18, « Nouveaux partenaires » et « État ».
+- Objectif : la liste des partenaires à contacter (adresse professionnelle, métier, source publique), le mail de présentation préparé, le plafond par jour ouvré, l'opposition.
+- Critères : au plus 5 premiers mails par jour ouvré (réglage), jamais deux fois à la même adresse [R79, R05] ; seulement une adresse professionnelle, jamais une adresse personnelle déclarée comme telle [R79] ; chaque mail a son lien d'opposition, et une opposition arrête tout sur tous les canaux [R79, R04, R02] ; tout passe par le contrôle central des envois en mode essai, rien ne part réellement [R79] ; le texte ne promet rien et ne parle pas de l'IA [R06].
+- Attend : rien.
+
+### U09 · Branchement de M18 dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`, contrôle central des envois) · Relecture : forte · Dépend de : U10
+- Cahier : M18 ; Branchements.
+- Objectif : exporter `partenaires` depuis `@aimmo/core` ; dans les droits d'accès, le rôle `partner` lit seulement ses mises en relation confiées (U04) et rien d'autre ; ajouter les routes de M18 à `app.ts` ; lancer au planificateur les relances, les alertes d'échéance des justificatifs et la prospection du jour.
+- Critères : un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
+- Attend : rien.
+
+### U10 · Routes de M18 et espace partenaire en ligne
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01 à U08
+- Cahier : M18 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : les routes `/v1/partenaires` (annuaire, mises en relation, accord du client, rémunérations, espace partenaire, dépôt de pièces, suivi, prospection) dans `packages/api/src/partenaires.ts` ; la page de l'espace partenaire, belle sur téléphone d'abord.
+- Critères : chaque route sous R16, rôle contrôlé avant le corps, refus au journal ; un parcours de test de 5 demandes inventées (diagnostic, notaire, courtier, artisan, géomètre) suivies jusqu'au bout, pièces rangées sans erreur ; page accessible, sans texte générique.
+- Attend : rien.
+
+### U11 · Écrans de M18 dans l'application
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U10 ; après la fusion de #129 (même fichier `packages/api/app/fichiers.ts`)
+- Cahier : M18 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : dans l'application de l'agent, l'écran « Partenaires » : proposer au client (ordre tiré au sort), enregistrer son accord, suivre les demandes et les pièces.
+- Critères : l'écran lit seulement par les routes `/v1/partenaires` [R16] ; aucune liste n'est triée par une note [R75] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
 - Attend : rien.
