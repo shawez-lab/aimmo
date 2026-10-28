@@ -171,6 +171,13 @@ export class HonorairesLocation {
   async ceilings(viewer: Viewer, listingId: unknown): Promise<LocationResult<FeeCeilings & { factsVersion: number; inseeCode: string }>> {
     const listing = await this.listings.listing(viewer, listingId, false);
     if ('ok' in listing) return listing;
+    // La lecture est écrite au journal avant que la donnée soit rendue [R16, R13].
+    await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', what: 'ceilings' } }, this.now);
+    return this.compute(listing.id);
+  }
+
+  private async compute(listingId: string): Promise<LocationResult<FeeCeilings & { factsVersion: number; inseeCode: string }>> {
+    const listing = { id: listingId };
     const inseeCode = await this.communeOf(listing.id);
     if (!inseeCode) return { ok: false, rule: null, code: 'no_commune' };
     const facts = await this.listings.currentFacts(listing.id);
@@ -193,7 +200,7 @@ export class HonorairesLocation {
     for (const k of FEE_KEYS) {
       if (!cents(input[k])) return { ok: false, rule: null, code: 'invalid', field: k };
     }
-    const c = await this.ceilings(viewer, listing.id);
+    const c = await this.compute(listing.id);
     if (!c.ok) return c;
     const fees: FeeInput = {
       tenantCents: input.tenantCents as number,

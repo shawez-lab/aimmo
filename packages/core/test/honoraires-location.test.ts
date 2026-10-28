@@ -166,6 +166,9 @@ describeWithSqlite('W02 · honoraires et dépôt de garantie', () => {
     expect(await t.fees.record(t.other, id, OK)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.fees.record(t.compliance, id, OK)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect((await t.fees.ceilings(t.compliance, id)).ok).toBe(true);
+    // Chaque lecture des plafonds est au journal avant d'être rendue.
+    const reads = (await t.events('location.lue')).map((e) => JSON.parse(e.data));
+    expect(reads).toEqual([{ rule: 'R16', what: 'ceilings' }]);
     expect((await t.fees.record(t.dir, id, { ...OK, tenantCents: 34_000, landlordCents: 50_000 })).ok).toBe(true);
     expect(await t.fees.current('autre-reseau', id)).toBeNull();
   });
