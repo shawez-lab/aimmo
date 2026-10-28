@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { htmlProblems } from '../../core/src/design/audit.ts';
 import { REVIEW_PURPOSE, SqlBiensVendus, SqlDossiersClos, type Viewer } from '@aimmo/core';
 import { apresVenteBase, apresVenteJobs, apresVenteRoutes, handleApresVentePublic, type ApresVenteServices } from '../src/apres-vente.ts';
 import { handleRequest } from '../src/app.ts';
@@ -116,6 +117,8 @@ describeWithSqlite('F07 · routes et branchement de M11', () => {
     const form = await t.page('GET', `/apres-vente/avis/${token}`);
     expect(form.status).toBe(200);
     expect(form.html).toContain('name="note"');
+    // [R201] la page d'avis suit le système de design et passe le contrôle d'accessibilité.
+    expect(htmlProblems(form.html)).toEqual([]);
     expect(form.csp).toContain("form-action 'self'");
     expect((await t.page('POST', `/apres-vente/avis/${token}`, 'note=5&commentaire=Tr%C3%A8s+bien+suivi%20%3Cb%3Emerci%3C%2Fb%3E')).status).toBe(200);
     expect((await t.page('POST', `/apres-vente/avis/${token}`, 'note=1')).status).toBe(409);

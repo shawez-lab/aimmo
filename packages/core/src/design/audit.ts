@@ -168,7 +168,7 @@ export interface Budget {
 /** 14 Ko compressés : une page publique arrive au premier aller-retour. L'application de l'agent a sa coquille. */
 export const BUDGETS = Object.freeze({
   page: Object.freeze({ gzipBytes: 14 * 1024 }),
-  application: Object.freeze({ gzipBytes: 70 * 1024 }),
+  application: Object.freeze({ gzipBytes: 48 * 1024 }),
 });
 
 export const gzipSize = (text: string): number => gzipSync(Buffer.from(text, 'utf8'), { level: 9 }).length;

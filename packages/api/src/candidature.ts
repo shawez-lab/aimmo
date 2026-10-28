@@ -142,7 +142,7 @@ export function pageProblems(): string[] {
 /** La page suit le système de design d'AIMMO (Z03) : sa base, puis sa mise en page, en jetons seulement [R201]. */
 const STYLE = DESIGN_CSS + `
 main{max-width:var(--colonne);margin:0 auto;padding:var(--e-5) var(--e-4) var(--e-8)}
-main>.marque{margin:0 0 var(--e-4)}
+main>.marque{margin:0 0 var(--e-4);line-height:1.4;letter-spacing:.12em;font-size:var(--t-xs);align-items:flex-start}
 main>.frise{margin:0 0 var(--e-7);border-radius:var(--r-rond)}
 h1{margin:0 0 var(--e-4)}
 .chapeau{font-size:var(--t-l);line-height:1.5;margin:0 0 var(--e-6)}
