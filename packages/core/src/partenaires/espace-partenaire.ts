@@ -118,14 +118,19 @@ export class EspacePartenaire {
     return null;
   }
 
-  /** La mise en relation est-elle confiée à ce partenaire, et encore lisible aujourd'hui ? */
-  private async held(viewer: Viewer, referralId: string): Promise<ReferralState | null> {
+  /**
+   * La mise en relation est-elle confiée à ce partenaire, et encore lisible aujourd'hui ? Pour un domaine de diagnostic,
+   * la certification de ce domaine doit aussi être valide ce jour-là : sinon `credentials` [R77, R73].
+   */
+  private async held(viewer: Viewer, referralId: string): Promise<ReferralState | 'credentials' | null> {
     const held = await this.relations.entrusted(viewer.networkId, referralId);
     if (!held || held.partnerId !== viewer.userId) return null;
     if (held.state === 'terminee' || held.state === 'abandonnee') {
       const closed = await this.relations.closedAt(referralId);
       if (!closed || this.now().getTime() - Date.parse(closed) > CLOSED_ACCESS_DAYS * 86_400_000) return null;
     }
+    const r = (await this.db.first<{ domain: string }>('SELECT domain FROM partner_referrals WHERE id = ?', [referralId]))!;
+    if (r.domain !== '' && !(await this.annuaire.proposableOn(viewer.networkId, viewer.userId, this.now(), r.domain as DiagnosticDomain))) return 'credentials';
     return held.state;
   }
 
@@ -141,7 +146,7 @@ export class EspacePartenaire {
     const out: { referralId: string; trade: PartnerTrade; state: ReferralState }[] = [];
     for (const r of rows) {
       const state = await this.held(viewer, r.referral_id);
-      if (state) out.push({ referralId: r.referral_id, trade: r.trade, state });
+      if (state && state !== 'credentials') out.push({ referralId: r.referral_id, trade: r.trade, state });
     }
     await appendEvent(this.journal, { type: 'espace_partenaire.liste', actor: this.actor(viewer), subject: `partner:${viewer.userId}`, data: { rule: 'R77', count: out.length } }, this.now);
     return { ok: true, value: out };
@@ -155,6 +160,7 @@ export class EspacePartenaire {
     if (typeof referralId !== 'string') return this.refuse(viewer, subject, 'not_assigned');
     const state = await this.held(viewer, referralId);
     if (!state) return this.refuse(viewer, subject, 'not_assigned');
+    if (state === 'credentials') return this.refuse(viewer, subject, 'credentials', 'R73');
     const src = (await this.db.first<Source>('SELECT id, network_id, project_id, property_id, trade, domain, postcode FROM partner_referrals WHERE id = ?', [referralId]))!;
     const file = await this.file(src);
     await appendEvent(this.journal, { type: 'espace_partenaire.lu', actor: this.actor(viewer), subject, data: { rule: 'R77', fields: Object.keys(file).sort() } }, this.now);
@@ -167,8 +173,10 @@ export class EspacePartenaire {
     const denied = await this.gate(viewer, subject);
     if (denied) return denied;
     if (state !== 'en_cours' && state !== 'terminee') return { ok: false, rule: null, code: 'bad_state' };
-    if (typeof referralId !== 'string' || !(await this.held(viewer, referralId))) return this.refuse(viewer, subject, 'not_assigned');
-    const r = await this.relations.advanceByPartner(viewer.networkId, referralId, viewer.userId, state, this.actor(viewer));
+    const held = typeof referralId === 'string' ? await this.held(viewer, referralId) : null;
+    if (!held) return this.refuse(viewer, subject, 'not_assigned');
+    if (held === 'credentials') return this.refuse(viewer, subject, 'credentials', 'R73');
+    const r = await this.relations.advanceByPartner(viewer.networkId, referralId as string, viewer.userId, state, this.actor(viewer));
     if (!r.ok) return { ok: false, rule: r.rule === 'R16' ? 'R16' : null, code: r.code };
     return { ok: true, value: r.value };
   }

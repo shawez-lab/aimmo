@@ -62,8 +62,13 @@ async function setup() {
     if (confide) await relations.entrust(agent, id);
     return id;
   };
+  /** Range une version plus récente de la certification d'un domaine, valable jusqu'à `until` jours : elle corrige la précédente. */
+  const annuaireCert = async (partnerId: string, domain: string, until: number): Promise<void> => {
+    const r = await annuaire.addCredential(dir, partnerId, { kind: 'certification_diagnostic', domain, number: 'C-2', validFrom: day(-30), validUntil: day(until), proofRef: files.put(`partenaires/${partnerId}`) });
+    if (!r.ok) throw new Error(r.code);
+  };
   const as = (partnerId: string, networkId = network.id) => ({ role: 'partner' as const, userId: partnerId, networkId });
-  return { db, journal, store, relations, space, network, other, agent, dir, partner, entrusted, as };
+  return { db, journal, store, relations, space, network, other, agent, dir, partner, entrusted, as, annuaireCert };
 }
 
 describeWithSqlite('U04 · espace partenaire', () => {
@@ -141,6 +146,20 @@ describeWithSqlite('U04 · espace partenaire', () => {
     clock += 5 * DAY;
     expect(await t.space.read(t.as(a), ref)).toEqual({ ok: false, rule: 'R73', code: 'credentials' });
     expect(await t.space.list(t.as(a))).toEqual({ ok: false, rule: 'R73', code: 'credentials' });
+  });
+
+  it('[R73] un diagnostiqueur dont la certification du domaine est échue ne lit plus le dossier et n’avance plus', async () => {
+    const t = await setup();
+    const d = await t.partner('diagnostiqueur', 'Diag Court');
+    // Certification amiante seulement 3 jours, assurance 300 jours.
+    await t.annuaireCert(d, 'amiante', 3);
+    const ref = await t.entrusted(d, 'diagnostiqueur');
+    expect((await t.space.read(t.as(d), ref)).ok).toBe(true);
+    clock += 5 * DAY;
+    expect(await t.space.read(t.as(d), ref)).toEqual({ ok: false, rule: 'R73', code: 'credentials' });
+    expect(await t.space.progress(t.as(d), ref, 'terminee')).toEqual({ ok: false, rule: 'R73', code: 'credentials' });
+    const l = await t.space.list(t.as(d));
+    expect(l.ok && l.value).toEqual([]);
   });
 
   it('[R13] chaque lecture et chaque refus au journal, sans nom ni donnée du dossier', async () => {
