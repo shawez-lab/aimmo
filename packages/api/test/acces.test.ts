@@ -88,7 +88,32 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
     const again = await exchange(w.db, token, new Date(T0.getTime() + 60_000));
     expect(again.status).toBe(410);
     expect(await again.json()).toMatchObject({ error: { code: 'invitation_used' } });
-    expect((w.raw.prepare('SELECT COUNT(*) AS n FROM access_keys').get() as { n: number }).n).toBe(2);
+    expect((w.raw.prepare('SELECT COUNT(*) AS n FROM access_keys WHERE revoked_at IS NULL').get() as { n: number }).n).toBe(2);
+  });
+
+  it('une panne pendant l’échange ne brûle pas le lien, et ses clés n’ouvrent rien [R98]', async () => {
+    const w = await world();
+    const token = await invite(w);
+    // La seconde clé échoue à s'écrire.
+    let inserts = 0;
+    const flaky: SqlDatabase = {
+      ...w.db,
+      exec: (sql) => w.db.exec(sql),
+      all: (sql, p) => w.db.all(sql, p),
+      first: (sql, p) => w.db.first(sql, p),
+      run: (sql, p) => {
+        if (sql.startsWith('INSERT INTO access_keys') && ++inserts === 2) return Promise.reject(new Error('panne'));
+        return w.db.run(sql, p);
+      },
+    };
+    const failed = await handleRequest(new Request(`${BASE}/v1/acces/invitation`, { method: 'POST', body: JSON.stringify({ jeton: token }) }), { db: flaky, apiKeys: undefined, mode: 'essai', now: () => T0 });
+    expect(failed.status).toBe(500);
+    expect((w.raw.prepare('SELECT used_at FROM access_invitations').get() as { used_at: string | null }).used_at).toBeNull();
+    expect((w.raw.prepare('SELECT COUNT(*) AS n FROM access_keys WHERE revoked_at IS NULL').get() as { n: number }).n).toBe(0);
+    const retry = await exchange(w.db, token, new Date(T0.getTime() + 60_000));
+    expect(retry.status).toBe(200);
+    const cles = ((await retry.json()) as { data: { cles: { cle: string }[] } }).data.cles;
+    expect((await call(w.db, '/v1/moi', { headers: { authorization: `Bearer ${cles[0]!.cle}` } })).status).toBe(200);
   });
 
   it('un lien expiré est refusé à la 24e heure, accepté juste avant [R98]', async () => {
@@ -345,6 +370,27 @@ describe('Z02 · la page ouvre l’application déjà connectée', () => {
     });
     expect(cut.calls.some((c) => c.url === '/v1/acces/invitation')).toBe(false);
     expect(cut.els.erreur!.textContent).toContain('incomplet');
+  });
+
+  it('une clé de direction retirée n’efface que elle : la journée d’agent reste ouverte', async () => {
+    const t = await open('', async () => {
+      throw new Error('aucun appel attendu');
+    }, [['aimmo.cle', AGENT_KEY], ['aimmo.cle.direction', 'r'.repeat(43)]]);
+    expect(t.els['vers-reseau']!.hidden).toBe(false);
+    t.els['vers-reseau']!.listeners.click!({});
+    await settle();
+    expect(t.storage.get('aimmo.cle')).toBe(AGENT_KEY);
+    expect(t.storage.has('aimmo.cle.direction')).toBe(false);
+    expect(t.els.accueil!.hidden).toBe(false);
+  });
+
+  it('une clé d’agent retirée laisse la direction entrer', async () => {
+    const t = await open('', async () => {
+      throw new Error('aucun appel attendu');
+    }, [['aimmo.cle', 'r'.repeat(43)], ['aimmo.cle.direction', DIR_KEY]]);
+    expect(t.storage.get('aimmo.cle')).toBe(DIR_KEY);
+    expect(t.storage.has('aimmo.cle.direction')).toBe(false);
+    expect(t.els.reseau!.hidden).toBe(false);
   });
 
   it('sans lien, l’application s’ouvre comme avant avec la clé de l’appareil, sans bouton vers le réseau', async () => {

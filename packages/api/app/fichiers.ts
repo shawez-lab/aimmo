@@ -227,9 +227,11 @@ export const APP_JS = `'use strict';
   function writeKey(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }
   function readDirectionKey() { try { return localStorage.getItem(KEY_DIRECTION); } catch (e) { return null; } }
   function writeDirectionKey(v) { try { localStorage.setItem(KEY_DIRECTION, v); return true; } catch (e) { return false; } }
-  function forgetKey() {
-    try { localStorage.removeItem(KEY); } catch (e) { /* rien à effacer */ }
-    try { localStorage.removeItem(KEY_DIRECTION); } catch (e) { /* rien à effacer */ }
+  // Sans argument : la sortie efface les deux clés. Avec une clé refusée : seule celle-ci est effacée, l'autre reste.
+  function forgetKey(refused) {
+    [KEY, KEY_DIRECTION].forEach(function (slot) {
+      try { if (refused === undefined || localStorage.getItem(slot) === refused) localStorage.removeItem(slot); } catch (e) { /* rien à effacer */ }
+    });
   }
   function el(tag, text, cls) {
     var n = document.createElement(tag);
@@ -416,7 +418,7 @@ export const APP_JS = `'use strict';
     show('fiche');
     return api('/v1/fiches/' + encodeURIComponent(personId) + '/resume', key).then(ficheAnswer).then(function (res) {
       if (mine !== session) return false;
-      if (res.refused) { forgetKey(); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
+      if (res.refused) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
       if (res.denied) { $('fiche-etat').textContent = 'Cette fiche n’est pas dans vos droits.'; return false; }
       if (res.failed) { $('fiche-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
       $('fiche-etat').textContent = '';
@@ -435,7 +437,7 @@ export const APP_JS = `'use strict';
     var key = currentKey;
     return api('/v1/rappels/' + encodeURIComponent(taskId) + '/fait', key, 'POST').then(function (r) {
       if (mine !== session) return false;
-      if (r.status === 401) { forgetKey(); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
+      if (r.status === 401) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
       if (!r.ok) { $('fiche-etat').textContent = 'Le rappel n’a pas pu être marqué fait.'; return false; }
       return openFiche(personId);
     }, function () {
@@ -491,7 +493,7 @@ export const APP_JS = `'use strict';
     ]).then(function (done) {
       if (mine !== session) return;
       // Une clé refusée en cours de route : rien n'est gardé à l'écran ni sur l'appareil.
-      if (done.indexOf(false) !== -1) { wipe(); forgetKey(); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); }
+      if (done.indexOf(false) !== -1) { wipe(); forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); }
     });
   }
   function wipe() {
@@ -580,7 +582,7 @@ export const APP_JS = `'use strict';
     return api(path, currentKey, method, body).then(function (r) {
       return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
         if (mine !== session) return { gone: true };
-        if (r.status === 401 || (r.status === 403 && b && b.code === 'agent_inactive')) { forgetKey(); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return { gone: true }; }
+        if (r.status === 401 || (r.status === 403 && b && b.code === 'agent_inactive')) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return { gone: true }; }
         return { status: r.status, ok: r.ok && !!b && b.ok === true, body: b };
       });
     }, function () { return mine !== session ? { gone: true } : { offline: true }; });
@@ -1353,7 +1355,7 @@ export const APP_JS = `'use strict';
       if (r.status === 401 || r.status === 403) {
         return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
           if (mine !== session) return false;
-          if (r.status === 401 || (b && b.code === 'agent_inactive')) { forgetKey(); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
+          if (r.status === 401 || (b && b.code === 'agent_inactive')) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
           state.textContent = 'Export indisponible pour ce jour. Réessayez plus tard.';
           return false;
         });
@@ -1467,7 +1469,12 @@ export const APP_JS = `'use strict';
       var me = res.body && res.body.data;
       // L'agent a sa journée ; la direction a l'écran du réseau (K09) ; tout autre rôle est refusé ici.
       if (res.refused || (res.body && (!me || (me.role !== 'agent' && me.role !== 'direction')))) {
-        forgetKey();
+        forgetKey(key);
+        // L'autre clé de l'appareil, si elle reste, garde son accès.
+        // Celle de la direction, seule restante, devient la clé de l'appareil.
+        if (!readKey() && readDirectionKey()) { var kept = readDirectionKey(); forgetKey(); writeKey(kept); }
+        var other = readKey();
+        if (other && other !== key) return enter(other);
         return refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.');
       }
       if (!res.body) return refuse('Le service ne répond pas. Réessayez dans un moment.');

@@ -56,7 +56,9 @@ export function parseGrants(raw: string): Grant[] | null {
 /** Les clés remises par invitation et non retirées, sous la même forme que celles du secret `API_KEYS`. */
 export async function invitedKeys(db: SqlDatabase): Promise<ApiKeyEntry[]> {
   const rows = await db.all<{ sha256: string; role: string; user_id: string; network_id: string }>(
-    'SELECT sha256, role, user_id, network_id FROM access_keys WHERE revoked_at IS NULL ORDER BY created_at, sha256',
+    // Seulement les clés d'une invitation qui a servi : celles d'un échange interrompu n'ouvrent rien.
+    `SELECT k.sha256, k.role, k.user_id, k.network_id FROM access_keys k JOIN access_invitations i ON i.id = k.invitation_id
+     WHERE k.revoked_at IS NULL AND i.used_at IS NOT NULL ORDER BY k.created_at, k.sha256`,
   );
   return rows
     .filter((r) => (ROLES as readonly string[]).includes(r.role))
@@ -77,8 +79,7 @@ export type ExchangeResult =
   | { ok: false; status: number; code: 'invalid_token' | 'unknown_invitation' | 'invitation_used' | 'invitation_expired' | 'invalid_invitation'; message: string };
 
 /**
- * Échange un jeton contre des clés neuves. L'invitation est d'abord marquée « utilisée » par une seule écriture
- * conditionnelle : deux échanges simultanés ne peuvent pas réussir tous les deux.
+ * Échange un jeton contre des clés neuves, une seule fois.
  */
 export async function exchangeInvitation(db: SqlDatabase, token: unknown, now: Date): Promise<ExchangeResult> {
   if (typeof token !== 'string' || !INVITATION_TOKEN.test(token)) {
@@ -103,29 +104,46 @@ export async function exchangeInvitation(db: SqlDatabase, token: unknown, now: D
   const grants = parseGrants(invitation.grants);
   if (grants === null) return { ok: false, status: 409, code: 'invalid_invitation', message: 'Invitation mal formée : rien n’est ouvert.' };
 
-  const claimed = await db.run('UPDATE access_invitations SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?', [nowIso, invitation.id, nowIso]);
-  if (claimed.changes !== 1) {
-    await appendEvent(journal, { type: 'acces.invitation_refusee', actor: 'invitation', subject: invitation.id, data: { reason: 'used' } }, () => now);
-    return { ok: false, status: 410, code: 'invitation_used', message: 'Ce lien a déjà servi. Demandez-en un nouveau.' };
+  // Les clés sont rangées d'abord, mais ne servent qu'une fois l'invitation marquée « utilisée » (voir
+  // `invitedKeys`) ; le marquage vient en dernier, par une seule écriture conditionnelle. Une panne avant lui laisse
+  // le lien intact, à rouvrir ; deux échanges simultanés ne peuvent pas réussir tous les deux.
+  const keys: { role: Grant['role']; key: string; sha256: string }[] = [];
+  const revoke = async () => {
+    for (const k of keys) await db.run('UPDATE access_keys SET revoked_at = ? WHERE sha256 = ? AND revoked_at IS NULL', [nowIso, k.sha256]);
+  };
+  try {
+    for (const grant of grants) {
+      const key = randomToken(32);
+      if (key.length < MIN_KEY_LENGTH) throw new Error('clé trop courte');
+      const sha256 = await sha256Hex(key);
+      await db.run('INSERT INTO access_keys (sha256, network_id, role, user_id, invitation_id, created_at) VALUES (?, ?, ?, ?, ?, ?)', [
+        sha256,
+        invitation.network_id,
+        grant.role,
+        grant.userId,
+        invitation.id,
+        nowIso,
+      ]);
+      keys.push({ role: grant.role, key, sha256 });
+    }
+    // Au journal : l'invitation et les rôles ouverts, jamais le jeton, une clé ni son empreinte [R13].
+    await appendEvent(journal, { type: 'acces.invitation_utilisee', actor: 'invitation', subject: invitation.id, data: { roles: grants.map((g) => g.role) } }, () => now);
+    const claimed = await db.run('UPDATE access_invitations SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?', [nowIso, invitation.id, nowIso]);
+    if (claimed.changes !== 1) {
+      await revoke();
+      await appendEvent(journal, { type: 'acces.invitation_refusee', actor: 'invitation', subject: invitation.id, data: { reason: 'used' } }, () => now);
+      return { ok: false, status: 410, code: 'invitation_used', message: 'Ce lien a déjà servi. Demandez-en un nouveau.' };
+    }
+  } catch (error) {
+    // Aucune clé de cet essai n'a été remise : elles sont retirées, puis l'erreur remonte au journal de la route.
+    try {
+      await revoke();
+    } catch {
+      /* les clés restent inconnues de tous ; l'erreur d'origine est écrite au journal par la route */
+    }
+    throw error;
   }
-
-  const keys: { role: Grant['role']; key: string }[] = [];
-  for (const grant of grants) {
-    const key = randomToken(32);
-    if (key.length < MIN_KEY_LENGTH) throw new Error('clé trop courte');
-    await db.run('INSERT INTO access_keys (sha256, network_id, role, user_id, invitation_id, created_at) VALUES (?, ?, ?, ?, ?, ?)', [
-      await sha256Hex(key),
-      invitation.network_id,
-      grant.role,
-      grant.userId,
-      invitation.id,
-      nowIso,
-    ]);
-    keys.push({ role: grant.role, key });
-  }
-  // Au journal : l'invitation et les rôles ouverts, jamais le jeton, une clé ni son empreinte [R13].
-  await appendEvent(journal, { type: 'acces.invitation_utilisee', actor: 'invitation', subject: invitation.id, data: { roles: grants.map((g) => g.role) } }, () => now);
-  return { ok: true, keys };
+  return { ok: true, keys: keys.map(({ role, key }) => ({ role, key })) };
 }
 
 const NO_STORE = { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8', 'referrer-policy': 'no-referrer' };
