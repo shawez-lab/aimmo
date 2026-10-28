@@ -986,7 +986,9 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N09 · Branchement de M10 dans le socle
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : routes de M10 fermées (503) sans le compartiment R2 `PIECES` (H25), passage `dossiers.passage` seulement avec lui ; `dossiersJob` fait déjà les relances des pièces, `pieceReminderJob` n'est pas branché à part ; IBAN et RIB masqués à la réception (corps, objet, contenu illisible texte par texte) par un parcours linéaire borné par la clé modulo 97 ; au contrôle central, R62 refuse pour tout texte à un client les coordonnées bancaires et les demandes de payer qui nomment ce qui se paie, la liste complète restant aux textes du code de M10.
+- Reste : les messages reçus rangés avant N09 gardent leur IBAN en clair (mode essai) ; les échos des réponses de l'agent par Meta ne sont pas masqués ; relecture de Codex de la dernière correction restée en cours, fusion sans elle (#111).
 - Décidé (2026-10-28) : `packages/api/src/dossiers.ts` expose `dossierRoutes()`, `syncDossiers`, `dossiersJob` (tous les jours de 9 h à 19 h, relances jamais le dimanche) et `R2PieceStore` ; il importe M10 par un chemin relatif, à remplacer par `dossiers` de `@aimmo/core` ; la tâche `pieceReminderJob` du cœur n'est plus à lancer, `dossiersJob` la contient ; le bucket R2 des pièces est à déclarer dans le Worker ; tant que `scan` n'est pas branché à la réception, le filet du bouclier ne relit que 48 h de messages
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : N08
 - Cahier : M10.
