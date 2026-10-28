@@ -131,6 +131,11 @@ export const LOUER_JS = `
   };
   function louerRefusal(body, fallback) { return (body && LOUER_REFUSALS[body.code]) || fallback; }
   function louerState(text) { $('louer-etat').textContent = text; }
+  // À la sortie ou au changement de clé : rien de la personne précédente ne reste sur l'appareil (texte du bail, séances).
+  function forgetLouer() {
+    leaseTexts = {};
+    signing = {};
+  }
   function wipeLouer() {
     clear($('louer-corps'));
     $('louer-etat').textContent = '';

@@ -105,7 +105,7 @@ async function run(answers: Record<string, Answer> = {}) {
     await click(byText('Ouvrir', 0));
     calls.length = 0;
   };
-  return { els, calls, table, byText, click, input, body, state, posts, openList, openL1 };
+  return { els, calls, table, byText, click, input, body, state, posts, openList, openL1, settle };
 }
 
 describe('W11 · écran « Louer » de l’application', () => {
@@ -366,6 +366,14 @@ describe('W11 · écran « Louer » de l’application', () => {
     expect(t.state()).toBe('Bail préparé, complet : il est à signer.');
     expect(t.body().textContent).toContain(`BAIL D’ESSAI ${INJECTED}`);
     expect(t.body().textContent).toContain('Lire le bail avec les parties');
+    // Une sortie puis une autre clé : le texte du bail ne reste pas sur l'appareil [R16].
+    await t.click(t.els.sortir);
+    t.els.cle!.value = 'z'.repeat(40);
+    t.els['form-connexion']!.listeners.submit!({ preventDefault: () => undefined });
+    await t.settle();
+    await t.openL1();
+    expect(t.body().textContent).not.toContain('BAIL D’ESSAI');
+    expect(t.body().textContent).toContain('Le texte du bail se relit sur l’appareil qui l’a préparé');
   });
 
   it('[R108] un code de signature expiré : dit en clair, la séance est oubliée et un nouveau code peut partir', async () => {

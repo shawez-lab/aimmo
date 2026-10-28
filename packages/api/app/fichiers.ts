@@ -530,6 +530,7 @@ export const APP_JS = `'use strict';
     wipeReseau();
     wipePartenaires();
     wipeLouer();
+    forgetLouer();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
   function button(text, onClick) {
