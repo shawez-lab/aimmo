@@ -16,7 +16,7 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 - Ce qu'elle attend d'un humain : rien. Une fois fusionnée, la séance lance elle-même le workflow ; Shawez n'a qu'à cliquer sur le lien reçu par mail.
 
 ### Z04 · Lien d'accès de Shawez sans mail Cloudflare
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte
 - Dépendances : Z02
 - Objectif : l'envoi par Cloudflare échoue toujours (HTTP 401, code 10000, H33 non réglé). Ajouter au travail « Créer l'accès de Shawez » un mode de remise sans mail : le lien à usage unique, valable 24 heures, est écrit seulement dans le résumé du travail GitHub (dépôt privé, visible du seul compte shawez-lab), jamais dans les journaux du travail ni dans le dépôt. Puis lancer le travail dans ce mode et noter dans « Besoin de toi » : « Ton lien t'attend dans GitHub : Actions > Créer l'accès de Shawez > dernier passage > Summary. »
@@ -1399,7 +1399,8 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L07 · Demandes des personnes en moins d'un mois, avec preuve
-- Statut : en cours
+- Statut : bloquée : Codex trouve à chaque tour un sujet du journal non lu (`property:`, `visit:`, `rental:`) ou une référence d'une autre personne dans `journal.data` ; deux tours corrigés (#159, branche `chantier/L07`, vérifications vertes). Reprise : test qui relève chaque préfixe de sujet écrit dans le code et exige qu'il soit lu ou écarté, et masque des `person:<id>` étrangers dans `journal.data`
+- Décidé (2026-10-28) : demandes enregistrées par le responsable seul ; échéance d'un mois par `addCalendarMonths`, rappel 7 jours avant et alerte le jour même ; carte des demandes d'accès vérifiée contre le registre (Jamais vu) ; lutte contre le blanchiment écartée (accès par la CNIL, article L561-45) ; effacement en essai, qui garde obligation légale, arrêt (identifiants sous empreinte) et lignes partagées « à examiner » ; demandes des agents, candidats et partenaires traitées à la main pour l'instant.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L06
 - Cahier : M12, critère « une demande d'accès d'une personne reçoit sa réponse complète en moins d'un mois, avec preuve » ; Conformité, « Droits des personnes ».
 - Objectif : une demande (accès, rectification, effacement, opposition) enregistrée avec sa date et son canal, l'échéance d'un mois calculée par le code, les alertes au responsable avant l'échéance ; la réponse d'accès assemblée par le code depuis chaque table du registre (L06), avec son empreinte ; l'opposition passe par l'arrêt sur tous les canaux [R04] ; l'effacement par la procédure de M12, qui garde ce que la loi oblige à garder.
@@ -1612,7 +1613,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W12 · Signature en ligne du bail par D08, en mode essai
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W06, D08
 - Cahier : M15, « Bail et annexes » ; M06, « Signature électronique AIMMO ».
 - Objectif : faire signer le bail en vigueur (W06) par le bailleur et le locataire choisi avec la signature en ligne de D08, en mode essai ; ajoutée le 2026-10-28 par la voie 2, car W06 l'avait renvoyée à une tâche qui n'existait pas au plan.
