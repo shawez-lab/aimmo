@@ -111,6 +111,40 @@ export const INDEX_HTML = `<!doctype html>
 <p id="chiffres-etat" class="etat" role="status"></p>
 <div id="chiffres-corps"></div>
 </section>
+<section id="reseau" hidden>
+<h2 id="reseau-titre">Le réseau</h2>
+<div class="periodes" role="group" aria-label="Période">
+<button id="reseau-mois" type="button" class="secondaire" aria-pressed="true">Ce mois-ci</button>
+<button id="reseau-precedent" type="button" class="secondaire" aria-pressed="false">Mois dernier</button>
+<button id="reseau-annee" type="button" class="secondaire" aria-pressed="false">12 derniers mois</button>
+</div>
+<p id="reseau-etat" class="etat" role="status"></p>
+<div id="reseau-corps"></div>
+<section class="bloc" aria-labelledby="titre-reseau-alertes">
+<h3 id="titre-reseau-alertes">Alertes</h3>
+<p id="reseau-alertes-etat" class="etat" role="status"></p>
+<ul id="reseau-alertes" class="liste"></ul>
+</section>
+<section class="bloc" aria-labelledby="titre-reseau-reversements">
+<h3 id="titre-reseau-reversements">Reversements à faire</h3>
+<p id="reseau-reversements-etat" class="etat" role="status"></p>
+<ul id="reseau-reversements" class="liste"></ul>
+</section>
+<section class="bloc" aria-labelledby="titre-reseau-brouillons">
+<h3 id="titre-reseau-brouillons">Factures à valider</h3>
+<p class="doux">Mode essai : une facture validée part à la plateforme d’essai, jamais à une vraie plateforme. Elle ne change plus ensuite : un avoir la corrige.</p>
+<p id="reseau-brouillons-etat" class="etat" role="status"></p>
+<ul id="reseau-brouillons" class="liste"></ul>
+</section>
+<section class="bloc" aria-labelledby="titre-reseau-export">
+<h3 id="titre-reseau-export">Export du jour</h3>
+<p class="doux">Les chiffres d’un jour, au format tableur, pour les comparer au comptage manuel.</p>
+<label for="reseau-export-jour">Jour</label>
+<input id="reseau-export-jour" type="date" required>
+<button id="reseau-export" type="button" class="secondaire">Télécharger l’export</button>
+<p id="reseau-export-etat" class="etat" role="status"></p>
+</section>
+</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -455,6 +489,7 @@ export const APP_JS = `'use strict';
     wipeM08();
     wipeApres();
     wipeChiffres();
+    wipeReseau();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
   function button(text, onClick) {
@@ -1123,6 +1158,205 @@ export const APP_JS = `'use strict';
       return true;
     });
   }
+  /* ---------- M13 : l'écran « Le réseau » de la direction (K09). Les agents dans l'ordre de leur identifiant, jamais classés [R14] ; chaque total montre ses lignes et dit s'il leur est égal [R69]. ---------- */
+  var COUNTERS = [
+    { key: 'contacts', one: 'Contact reçu', many: 'Contacts reçus' },
+    { key: 'appointments', one: 'Rendez-vous tenu', many: 'Rendez-vous tenus' },
+    { key: 'mandates', one: 'Mandat signé', many: 'Mandats signés' },
+    { key: 'sales', one: 'Vente', many: 'Ventes' },
+  ];
+  var MANDATE_SOURCES = { site: 'site', online_valuation: 'estimation en ligne', value_tracking: 'suivi de la valeur', referral: 'recommandation', social: 'réseaux sociaux', portal: 'portail', agent_network: 'réseau de l’agent', neighbourhood_letter: 'lettre de quartier', other: 'autre origine' };
+  var INDICATORS = { contacts: 'les contacts reçus', appointments: 'les rendez-vous tenus', mandates: 'les mandats signés', sales: 'les ventes' };
+  var PIECES = { contrat_agent_commercial: 'contrat d’agent commercial', attestation_habilitation: 'attestation d’habilitation', immatriculation_rsac: 'immatriculation au RSAC', assurance_rcp: 'assurance de responsabilité civile professionnelle', attestation_vigilance: 'attestation de vigilance' };
+  var reseauRange = 'mois';
+  function agentName(id) { return id ? 'Agent ' + id : 'Direction, sans agent'; }
+  function count(n) { var x = Number(n); return isFinite(x) ? x : 0; }
+  function percent(bp) { return (count(bp) / 100).toLocaleString('fr-FR') + ' %'; }
+  function issuerName(issuer) { return issuer === 'reseau' ? 'le réseau' : /^agent:/.test(String(issuer)) ? 'l’agent ' + String(issuer).slice(6) : 'émetteur inconnu'; }
+  /** Un total et ses lignes : le total est celui de la base, la somme est refaite ici, un écart est dit, jamais caché. */
+  function totalWithLines(body, label, total, lines) {
+    var d = el('details', null, 'chiffre');
+    var s = el('summary');
+    s.appendChild(el('span', label));
+    s.appendChild(el('span', total, 'valeur'));
+    d.appendChild(s);
+    var list = el('ul');
+    var sum = 0;
+    lines.forEach(function (l) { sum += count(l.value); list.appendChild(el('li', l.label + ' : ' + l.value)); });
+    if (list.firstChild) d.appendChild(list); else d.appendChild(el('p', 'Aucune ligne sur la période.', 'doux'));
+    d.appendChild(sum === count(total) ? el('p', 'Total égal à la somme des lignes.', 'doux') : el('p', 'Écart : la somme des lignes fait ' + sum + '. À signaler.', 'retard'));
+    body.appendChild(d);
+  }
+  function renderReseau(data) {
+    var body = $('reseau-corps');
+    clear(body);
+    var totals = data.totals || {};
+    var agents = Array.isArray(data.byAgent) ? data.byAgent : [];
+    var zones = Array.isArray(data.byZone) ? data.byZone : [];
+    var h = el('h3', 'Par agent');
+    body.appendChild(h);
+    COUNTERS.forEach(function (c) {
+      var n = count(totals[c.key]);
+      totalWithLines(body, plural(n, c.one, c.many), n, agents.map(function (a) { return { label: agentName(a.agentId), value: count(a[c.key]) }; }));
+    });
+    body.appendChild(el('p', 'Les agents sont listés dans l’ordre de leur identifiant, sans rang ni note.', 'doux'));
+    body.appendChild(el('h3', 'Par commune'));
+    COUNTERS.forEach(function (c) {
+      var n = count(totals[c.key]);
+      totalWithLines(body, plural(n, c.one, c.many), n, zones.map(function (z) { return { label: z.zone ? String(z.zone) : 'Sans commune', value: count(z[c.key]) }; }));
+    });
+    var src = data.bySource || {};
+    body.appendChild(el('h3', 'Par origine'));
+    totalWithLines(body, plural(count(totals.contacts), 'Contact reçu', 'Contacts reçus'), count(totals.contacts), (src.contacts || []).map(function (x) { return { label: channel(x.channel), value: count(x.count) }; }));
+    totalWithLines(body, plural(count(totals.mandates), 'Mandat signé', 'Mandats signés'), count(totals.mandates), (src.mandates || []).map(function (x) { return { label: MANDATE_SOURCES[x.source] || 'autre origine', value: count(x.count) }; }));
+    var ai = data.aiCosts || {};
+    body.appendChild(el('h3', 'Coûts de l’IA'));
+    var d = el('details', null, 'chiffre');
+    var s = el('summary');
+    s.appendChild(el('span', 'Sur la période'));
+    s.appendChild(el('span', euros(ai.totalCents || 0), 'valeur'));
+    d.appendChild(s);
+    var list = el('ul');
+    var sum = 0;
+    (ai.byChannel || []).forEach(function (x) { sum += count(x.cents); list.appendChild(el('li', channel(x.channel) + ' : ' + euros(x.cents))); });
+    if (list.firstChild) d.appendChild(list); else d.appendChild(el('p', 'Aucun texte écrit par l’IA sur la période.', 'doux'));
+    d.appendChild(sum === count(ai.totalCents) ? el('p', 'Total égal à la somme des lignes.', 'doux') : el('p', 'Écart : la somme des lignes fait ' + euros(sum) + '. À signaler.', 'retard'));
+    body.appendChild(d);
+    body.appendChild(el('p', ai.perSignedMandateCents === null || ai.perSignedMandateCents === undefined ? 'Aucun mandat signé sur la période : pas de coût par mandat.' : 'Par mandat signé : ' + euros(ai.perSignedMandateCents) + '.', 'doux'));
+  }
+  function alertText(a) {
+    var x = a.data || {};
+    if (a.kind === 'budget_ia') return 'Le coût de l’IA du mois atteint ' + percent(x.thresholdBp) + ' du budget réglé.';
+    if (a.kind === 'baisse_indicateur') return 'Baisse sur ' + (INDICATORS[x.indicator] || 'un indicateur') + ' : ' + count(x.last7) + ' sur les 7 derniers jours, contre ' + count(x.previous28) + ' sur les 28 précédents.';
+    if (a.kind === 'document_agent') return 'Pièce à renouveler pour l’agent ' + (x.agentId || '') + ' : ' + (PIECES[x.document] || 'une pièce de son dossier') + ', valable jusqu’au ' + date(x.validUntil + 'T12:00:00Z') + '.';
+    return 'Alerte de pilotage.';
+  }
+  function renderAlertes(items) {
+    var list = $('reseau-alertes');
+    clear(list);
+    $('reseau-alertes-etat').textContent = items.length ? '' : 'Aucune alerte.';
+    items.forEach(function (a) {
+      var li = el('li', alertText(a));
+      li.appendChild(el('p', 'Le ' + date(a.createdAt) + ' à ' + hour(a.createdAt), 'doux'));
+      list.appendChild(li);
+    });
+  }
+  function renderReversements(items) {
+    var list = $('reseau-reversements');
+    clear(list);
+    $('reseau-reversements-etat').textContent = items.length ? '' : 'Aucun reversement à faire.';
+    items.forEach(function (t) {
+      var late = (t.alerts || []).indexOf('echeance_depassee') !== -1;
+      var li = el('li', 'Dossier ' + t.fileId + ' : à verser avant le ' + date(t.payoutDueAt) + ' à ' + hour(t.payoutDueAt));
+      li.appendChild(el('p', 'Honoraires encaissés le ' + date(t.receivedAt) + '.', 'doux'));
+      if (late) li.appendChild(el('p', 'Échéance dépassée.', 'retard'));
+      list.appendChild(li);
+    });
+  }
+  var DRAFT_PROBLEMS = { already: 'Cette facture est déjà émise.', sale_cancelled: 'La vente est annulée par un avoir : plus aucune facture ne s’émet.', busy: 'Une autre validation est en cours. Réessayez dans un moment.', unknown: 'Cette facture n’existe plus.' };
+  function renderBrouillons(items, mine) {
+    var list = $('reseau-brouillons');
+    clear(list);
+    $('reseau-brouillons-etat').textContent = items.length ? '' : 'Aucune facture à valider.';
+    items.forEach(function (f) {
+      var li = el('li', (f.kind === 'honoraires' ? 'Honoraires' : 'Reversement') + ' émis par ' + issuerName(f.issuer) + ' : ' + euros(f.amountCents) + ' toutes taxes, TVA ' + percent(f.vatBp));
+      li.appendChild(el('p', 'Dossier ' + f.fileId + ', préparée le ' + date(f.createdAt) + '.', 'doux'));
+      var state = el('p', '', 'etat');
+      state.setAttribute('role', 'status');
+      if (ID.test(f.id)) {
+        // Une facture émise ne change plus [R71] : la validation demande un second geste.
+        var armed = false;
+        var b = button('Valider cette facture', function () {
+          if (!armed) { armed = true; b.textContent = 'Confirmer : émettre la facture'; state.textContent = 'Une fois émise, elle ne change plus. Touchez de nouveau pour confirmer.'; return; }
+          validateDraft(f.id, li, b, state, mine);
+        });
+        li.appendChild(b);
+      }
+      li.appendChild(state);
+      list.appendChild(li);
+    });
+  }
+  function validateDraft(id, li, b, state, mine) {
+    if (b.disabled) return Promise.resolve(false);
+    b.disabled = true;
+    state.textContent = 'Validation…';
+    return send('/v1/pilotage/factures/brouillons/' + encodeURIComponent(id) + '/valider', 'POST').then(function (res) {
+      if (res.gone || mine !== session) return false;
+      if (!res.ok) {
+        b.disabled = false;
+        state.textContent = res.offline ? 'Pas de réseau : rien n’est émis. Réessayez dans un moment.' : (res.body && DRAFT_PROBLEMS[res.body.code]) || 'La facture n’est pas émise. Réessayez plus tard.';
+        return false;
+      }
+      var v = res.body.data;
+      li.removeChild(b);
+      state.textContent = 'Facture émise en mode essai' + (v && v.content && typeof v.content.label === 'string' ? ' : ' + v.content.label : '') + '.';
+      return true;
+    });
+  }
+  function wipeReseau() {
+    ['reseau-corps', 'reseau-alertes', 'reseau-reversements', 'reseau-brouillons'].forEach(function (id) { clear($(id)); });
+    ['reseau-etat', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat'].forEach(function (id) { $(id).textContent = ''; });
+  }
+  function reseauPart(stateId, request, render, mine) {
+    $(stateId).textContent = 'Chargement…';
+    return request.then(function (res) {
+      if (res.gone || mine !== session) return false;
+      if (!res.ok) { $(stateId).textContent = res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      $(stateId).textContent = '';
+      render(res.body.data, mine);
+      return true;
+    });
+  }
+  function openReseau(range) {
+    if (!currentKey) return Promise.resolve(false);
+    reseauRange = range || reseauRange;
+    session += 1;
+    var mine = session;
+    wipeReseau();
+    show('reseau');
+    ['mois', 'precedent', 'annee'].forEach(function (r) { $('reseau-' + r).setAttribute('aria-pressed', r === reseauRange ? 'true' : 'false'); });
+    if (!$('reseau-export-jour').value) $('reseau-export-jour').value = shiftDay(parisToday(), -1);
+    var p = periodOf(reseauRange);
+    var list = function (x) { return Array.isArray(x) ? x : []; };
+    return Promise.all([
+      reseauPart('reseau-etat', send('/v1/pilotage/reseau?du=' + p.from + '&au=' + p.to, 'GET'), function (data) {
+        $('reseau-etat').textContent = 'Du ' + date(p.from + 'T12:00:00Z') + ' au ' + date(p.to + 'T12:00:00Z') + '.';
+        renderReseau(data || {});
+      }, mine),
+      reseauPart('reseau-alertes-etat', send('/v1/pilotage/alertes', 'GET'), function (d) { renderAlertes(list(d)); }, mine),
+      reseauPart('reseau-reversements-etat', send('/v1/pilotage/reversements', 'GET'), function (d) { renderReversements(list(d)); }, mine),
+      reseauPart('reseau-brouillons-etat', send('/v1/pilotage/factures/brouillons', 'GET'), function (d, m) { renderBrouillons(list(d), m); }, mine),
+    ]).then(function (done) { return done.every(function (x) { return x; }); });
+  }
+  /** L'export se télécharge avec la clé dans l'en-tête, jamais dans l'adresse [R13] ; le fichier reste sur l'appareil de la direction. */
+  function downloadExport() {
+    var day = $('reseau-export-jour').value;
+    var state = $('reseau-export-etat');
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(day)) { state.textContent = 'Choisissez un jour.'; return Promise.resolve(false); }
+    if (!currentKey) return Promise.resolve(false);
+    var mine = session;
+    state.textContent = 'Préparation…';
+    return api('/v1/pilotage/export-quotidien?jour=' + day, currentKey).then(function (r) {
+      if (mine !== session) return false;
+      if (!r.ok) { state.textContent = 'Export indisponible pour ce jour. Réessayez plus tard.'; return false; }
+      return r.blob().then(function (blob) {
+        if (mine !== session) return false;
+        var url = URL.createObjectURL(blob);
+        var a = el('a', 'Enregistrer le fichier');
+        a.href = url;
+        a.download = 'chiffres-' + day + '.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+        state.textContent = 'Export du ' + date(day + 'T12:00:00Z') + ' téléchargé.';
+        return true;
+      });
+    }, function () {
+      if (mine === session) state.textContent = 'Pas de réseau. Réessayez dans un moment.';
+      return false;
+    });
+  }
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
     ['visite-titre', 'visite-etat', 'bien-titre', 'bien-etat', 'alerte-etat', 'vente-titre', 'vente-etat'].forEach(function (id) { $(id).textContent = ''; });
@@ -1138,7 +1372,7 @@ export const APP_JS = `'use strict';
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1171,11 +1405,17 @@ export const APP_JS = `'use strict';
       // Une réponse d'une session finie (sortie, autre clé) ne touche plus à rien.
       if (mine !== session) return false;
       var me = res.body && res.body.data;
-      if (res.refused || (res.body && (!me || me.role !== 'agent'))) {
+      // L'agent a sa journée ; la direction a l'écran du réseau (K09) ; tout autre rôle est refusé ici.
+      if (res.refused || (res.body && (!me || (me.role !== 'agent' && me.role !== 'direction')))) {
         forgetKey();
         return refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.');
       }
       if (!res.body) return refuse('Le service ne répond pas. Réessayez dans un moment.');
+      if (me.role === 'direction') {
+        $('erreur').hidden = true;
+        currentKey = key;
+        return openReseau('mois');
+      }
       $('bonjour').textContent = me.firstName ? 'Bonjour ' + me.firstName : 'Bonjour';
       $('erreur').hidden = true;
       currentKey = key;
@@ -1219,6 +1459,8 @@ export const APP_JS = `'use strict';
     $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', home);
+    ['mois', 'precedent', 'annee'].forEach(function (r) { $('reseau-' + r).addEventListener('click', function () { openReseau(r); }); });
+    $('reseau-export').addEventListener('click', function () { downloadExport(); });
     $('bien-retour').addEventListener('click', function () { if (visitId) openVisit(visitId); else home(); });
     $('alerte').addEventListener('click', function () { raiseAlert(false); });
     $('sortir').addEventListener('click', function () {
