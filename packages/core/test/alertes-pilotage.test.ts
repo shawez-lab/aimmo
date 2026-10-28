@@ -50,8 +50,8 @@ describeWithSqlite('K07 · alertes de pilotage', () => {
     t.setClock(new Date('2027-06-21T04:00:00.000Z'));
     expect(await t.alertes.run(t.network.id)).toBe(1);
     // Au journal : la sorte et la clé, jamais un montant [R13].
-    // Seules les données de la ligne comptent : une empreinte peut contenir « 700 » par hasard.
-    expect(JSON.stringify((await t.journal.all()).filter((e) => e.type === 'pilotage.alerte').map((e) => e.data))).not.toMatch(/699|700/);
+    // Seules les données de la ligne comptent : une empreinte ou un identifiant tiré au hasard peut contenir « 700 ».
+    expect(JSON.stringify((await t.journal.all()).filter((e) => e.type === 'pilotage.alerte').map((e) => e.data)).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<id>')).not.toMatch(/699|700/);
   });
 
   it('[R16, R25] la direction seule règle et lit ; réglages faux refusés ; sans budget, pas d’alerte de budget', async () => {
