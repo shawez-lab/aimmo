@@ -1219,7 +1219,9 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien (vrais exports plus tard, hors du dépôt).
 
 ### J06 · Académie : parcours, modules et compteur des heures obligatoires
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : périodes comptées depuis le jour d'entrée de l'agent (année et 3 ans) ; une séance compte seulement avec une présence saisie par la direction après sa date ; une alerte au palier le plus proche atteint, une seule fois ; module de 8 h au plus.
+- Reste : relecture de Codex absente (limite d'usage, H03), fusion sans elle (#123).
 - Qui : Claude · Relecture : normale · Dépend de : J04
 - Cahier : M14, « Académie », « Formation en salle », « Communauté ».
 - Objectif : des modules courts (vidéo YouTube en accès restreint par sa référence, script, durée), rangés en parcours (entrée, puis par spécialité) ; les séances en salle, en direct, mensuelles et régionales avec la présence saisie par un humain ; le compteur des heures de formation obligatoire de chaque agent, par période, avec déontologie et non-discrimination à part ; alertes à l'agent avant l'échéance.
@@ -1227,7 +1229,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J07 · Bac à sable du premier parcours (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : J04, J06
 - Cahier : M14, critère « un agent pilote fait seul son premier parcours complet, du contact à l'avis de valeur » ; M02 à M05.
 - Objectif : avant même son dossier complet, le nouvel agent reçoit un réseau d'entraînement à lui : des contacts, des biens et des ventes inventés, où il fait tout son premier parcours avec les vrais modules (contact reçu, qualification, rendez-vous, avis de valeur) ; rien n'en sort jamais ; chaque étape franchie est cochée par le code ; le parcours fini compte comme module de l'académie. Aucun réseau, logiciel ou outil d'IA grand public n'offre une copie fidèle et sans risque de son propre outil pour apprendre le métier.
