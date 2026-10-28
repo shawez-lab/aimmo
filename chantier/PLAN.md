@@ -1613,7 +1613,9 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W12 · Signature en ligne du bail par D08, en mode essai
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#160) ; R108 en service ; migration `0909`. Relecture forte 2 P1 corrigés (remise impossible après un changement de faits, conformité qui lisait l'exemplaire) ; Codex 1 P0 corrigé (fiches des signataires), 1 P0 réfuté et corrigé dans le texte (le canal n'a pas de pièce jointe : l'avis porte la référence et l'empreinte, l'agent remet l'exemplaire) ; dernière relecture de Codex en cours après 10 min, fusion sans elle.
+- Décidé (2026-10-28, voie 2) : `REAL_LEASE_SIGNATURE` reste faux dans le code jusqu'à une tâche du plan après H08 et H24 ; `signedAt` (W08) ne rend donc rien de réel ; le parcours d'essai (W09) lit `trialState()`, jamais branché sur la remise des clés réelle (W10) ; l'envoi du document lui-même attend H05 et W10.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W06, D08
 - Cahier : M15, « Bail et annexes » ; M06, « Signature électronique AIMMO ».
 - Objectif : faire signer le bail en vigueur (W06) par le bailleur et le locataire choisi avec la signature en ligne de D08, en mode essai ; ajoutée le 2026-10-28 par la voie 2, car W06 l'avait renvoyée à une tâche qui n'existait pas au plan.
@@ -1631,7 +1633,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W09 · Routes de M15 et parcours de 3 mises en location tests
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W01 à W08
 - Cahier : M15 ; Feuille de route, août 2027.
 - Objectif : les routes `/v1/location` dans `packages/api/src/location.ts` ; le parcours de 3 mises en location tests de bout en bout.
