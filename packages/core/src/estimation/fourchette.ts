@@ -160,7 +160,7 @@ export function departmentOf(postalCode: string): string | null {
   return code.startsWith('97') ? code.slice(0, 3) : code.slice(0, 2);
 }
 
-function distance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+export function distance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const k = Math.PI / 180;
   const x = (lon2 - lon1) * k * Math.cos(((lat1 + lat2) / 2) * k);
   const y = (lat2 - lat1) * k;

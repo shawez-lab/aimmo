@@ -51,6 +51,11 @@ export const AFTER_SALE_WINDOW_DAYS = 7;
 
 const YEAR_WORDS: Record<number, string> = { 1: 'un an', 2: 'deux ans', 3: 'trois ans', 4: 'quatre ans', 5: 'cinq ans' };
 
+/** Ce qui fait le carnet du propriétaire (F06) et rend un lien vers lui, ou `null`. */
+export interface CarnetMaker {
+  create(networkId: string, sale: ClosedSale, personId: string): Promise<string | null>;
+}
+
 export type AfterSaleRefusal = { ok: false; rule: 'R16' | 'R65' | null; code: string };
 
 export interface AfterSaleReminder {
@@ -104,11 +109,11 @@ export function checkAfterSaleUnsubscribeBase(base: string | null): string | nul
  * Le texte d'une relance, écrit par le code : vouvoiement avec le prénom, aucune parenthèse [R08], aucun chiffre hors
  * de la référence du bien [R10], aucune proposition ; le lien de désinscription à la fin [R65].
  */
-export function afterSaleText(firstName: string | null, side: 'vendeur' | 'acquereur', year: number, property: { city: string | null; reference: string }, unsubscribeLink: string): string {
+export function afterSaleText(firstName: string | null, side: 'vendeur' | 'acquereur', year: number, property: { city: string | null; reference: string }, unsubscribeLink: string, carnetLink: string | null = null): string {
   const hello = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
   const what = side === 'vendeur' ? 'vous avez vendu votre bien' : 'vous avez acheté votre bien';
   const where = `${property.city ? ` à ${property.city}` : ''}, référence ${property.reference}`;
-  return `${hello} il y a ${YEAR_WORDS[year]}, ${what}${where}. Votre agent immobilier reste là pour toute question sur ce bien : il suffit de répondre à ce message. Ne plus recevoir ces messages : ${unsubscribeLink}`;
+  return `${hello} il y a ${YEAR_WORDS[year]}, ${what}${where}. Votre agent immobilier reste là pour toute question sur ce bien : il suffit de répondre à ce message.${carnetLink ? ` Le carnet de votre bien, un an après, sans rien à remplir : ${carnetLink}` : ''} Ne plus recevoir ces messages : ${unsubscribeLink}`;
 }
 
 export class RelancesApresVente {
@@ -118,13 +123,15 @@ export class RelancesApresVente {
   private readonly unique: FicheUnique;
   private readonly controle: ControleEnvois;
   private readonly unsubscribeBase: string | null;
+  private readonly carnets: CarnetMaker | null;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
     private readonly dossiers: DossiersClos,
-    options: { now?: () => Date; newId?: () => string; unsubscribeBase?: string | null } = {},
+    options: { now?: () => Date; newId?: () => string; unsubscribeBase?: string | null; carnets?: CarnetMaker | null } = {},
   ) {
+    this.carnets = options.carnets ?? null;
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.store = new FicheClient(db, { now: this.now });
@@ -336,6 +343,16 @@ export class RelancesApresVente {
           }
           const firstName = await this.firstName(c.personId);
           const link = await this.newUnsubscribeLink(networkId, c.personId, now);
+          // À un an, l'acquéreur reçoit le carnet de son bien avec sa relance (F06), jamais sans son accord [R65].
+          let carnet: string | null = null;
+          if (year === 1 && c.side === 'acquereur' && this.carnets) {
+            try {
+              carnet = await this.carnets.create(networkId, sale, c.personId);
+            } catch {
+              // Les ventes publiques ou la base ne répondent pas : la relance part sans carnet, l'erreur va au journal.
+              await appendEvent(this.journal, { type: 'apres_vente.carnet', actor: 'system:apres-vente', subject: `sale_file:${sale.fileId}`, data: { status: 'erreur' } }, this.now);
+            }
+          }
           const result = await this.controle.send({
             networkId,
             agentId: sale.agentId,
@@ -344,7 +361,7 @@ export class RelancesApresVente {
             kind: 'follow_up',
             purpose: AFTER_SALE_PURPOSE,
             subject: `apres_vente:${sale.fileId}:${year}`,
-            fallbackTexts: [afterSaleText(firstName, c.side, year, sale, link)],
+            fallbackTexts: [afterSaleText(firstName, c.side, year, sale, link, carnet)],
             // Les chiffres de la référence du bien, lus dans la base [R10].
             figures: (sale.reference.match(/\d+/g) ?? []).map(Number),
             // Le nom d'un client de l'autre côté n'apparaît jamais [R19].
@@ -376,7 +393,7 @@ export class RelancesApresVente {
 export const AFTER_SALE_REMINDER_JOB = 'apres_vente.relances';
 
 /** Du lundi au samedi, d'heure en heure de 10 h à 18 h : les relances du jour, et celles qui attendaient [R01]. */
-export function afterSaleReminderJob(db: SqlDatabase, journal: JournalStore, dossiers: DossiersClos, options: { now?: () => Date; unsubscribeBase?: string | null } = {}): ScheduledJob {
+export function afterSaleReminderJob(db: SqlDatabase, journal: JournalStore, dossiers: DossiersClos, options: { now?: () => Date; unsubscribeBase?: string | null; carnets?: CarnetMaker | null } = {}): ScheduledJob {
   return {
     name: AFTER_SALE_REMINDER_JOB,
     hours: [10, 11, 12, 13, 14, 15, 16, 17, 18],
