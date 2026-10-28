@@ -23,7 +23,7 @@ import type { Viewer } from '../acces/droits.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
-import { IDENTITY_PIECES } from '../documents/controles.ts';
+import { IDENTITY_PIECES } from './pieces-identite.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -306,5 +306,70 @@ export class CoffreConformite {
       [networkId, ...ids, ...kinds, day, day, `${day}T23:59:59.999Z`],
     );
     return { identityVerifiedOn: row?.verified_on ?? null };
+  }
+}
+
+/** Ce que le coffre dit d'une sorte de pièces pour une personne, à un instant : jamais la pièce ni sa référence. */
+export interface VaultPieceStatus {
+  /** La date de vérification de la pièce la plus récente valide ce jour-là, ou `null`. */
+  verifiedOn: string | null;
+  /** Une pièce existe mais n'est plus valide ce jour-là (date de fin passée) : elle bloque comme une pièce absente. */
+  expired: boolean;
+}
+
+/**
+ * La lecture seule du coffre pour les contrôles (L03) : une pièce compte à l'instant `at` si elle était déjà déposée,
+ * vérifiée depuis au plus `maxAgeDays` jours, valide ce jour-là (Paris) et pas encore remplacée. Ni sorte, ni
+ * référence, ni empreinte ne sortent d'ici.
+ */
+export class EtatCoffre {
+  private readonly unique: FicheUnique;
+
+  constructor(private readonly db: SqlDatabase, options: { now?: () => Date } = {}) {
+    const now = options.now ?? (() => new Date());
+    this.unique = new FicheUnique(db, new FicheClient(db, { now }), { now });
+  }
+
+  /**
+   * `depositedBy` : la limite de dépôt, `at` par défaut. Pour un mandat signé sur papier et enregistré ensuite, la pièce
+   * est jugée au jour de la signature (`at`) mais a pu être déposée jusqu'à l'enregistrement.
+   */
+  async pieceStatus(networkId: string, personId: string, kinds: readonly VaultPieceKind[], at: Date, maxAgeDays: number, depositedBy: Date = at): Promise<VaultPieceStatus> {
+    if (!(at instanceof Date) || Number.isNaN(at.getTime()) || !(depositedBy instanceof Date) || Number.isNaN(depositedBy.getTime())) throw new Error('instant invalide');
+    if (!Number.isInteger(maxAgeDays) || maxAgeDays < 0) throw new Error('durée invalide');
+    if (kinds.length === 0) return { verifiedOn: null, expired: false };
+    const day = localTime(at, TIME_ZONE).date;
+    // En jours du calendrier de Paris, sans heure : le passage à l'heure d'été ne décale rien.
+    const since = new Date(Date.parse(`${day}T00:00:00.000Z`) - maxAgeDays * 86_400_000).toISOString().slice(0, 10);
+    const iso = at.toISOString();
+    const ids = await this.unique.membersOf(personId);
+    const rows = await this.db.all<{ verified_on: string; valid_until: string | null }>(
+      `SELECT p.verified_on, p.valid_until FROM compliance_vault_pieces p
+       WHERE p.network_id = ? AND p.person_id IN (${ids.map(() => '?').join(', ')}) AND p.kind IN (${kinds.map(() => '?').join(', ')})
+         AND p.deposited_at <= ? AND p.verified_on <= ?
+         AND NOT EXISTS (SELECT 1 FROM compliance_vault_pieces n WHERE n.replaces_id = p.id AND n.deposited_at <= ?)`,
+      [networkId, ...ids, ...kinds, depositedBy.toISOString(), day, iso],
+    );
+    let verifiedOn: string | null = null;
+    let expired = false;
+    for (const r of rows) {
+      if (r.valid_until !== null && r.valid_until < day) {
+        expired = true;
+        continue;
+      }
+      if (r.verified_on < since) continue;
+      if (verifiedOn === null || r.verified_on > verifiedOn) verifiedOn = r.verified_on;
+    }
+    return { verifiedOn, expired: verifiedOn === null && expired };
+  }
+
+  /** Une pièce de ces sortes a-t-elle jamais été déposée pour la personne, toutes fiches réunies, avant `before` ? */
+  async everDeposited(networkId: string, personId: string, kinds: readonly VaultPieceKind[], before: Date): Promise<boolean> {
+    const ids = await this.unique.membersOf(personId);
+    const row = await this.db.first(
+      `SELECT 1 FROM compliance_vault_pieces WHERE network_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND kind IN (${kinds.map(() => '?').join(', ')}) AND deposited_at <= ? LIMIT 1`,
+      [networkId, ...ids, ...kinds, before.toISOString()],
+    );
+    return !!row;
   }
 }

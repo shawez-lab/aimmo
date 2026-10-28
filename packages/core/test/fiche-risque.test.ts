@@ -73,9 +73,12 @@ describeWithSqlite('L02 · fiche de risque de chaque client', () => {
     const r = await t.risque.prepare(t.agent, t.personId, { relation: 'mandat', caseRef: `mandate:${t.mandateId}`, declarations: NO });
     expect(r).toMatchObject({ ok: true });
     if (!r.ok) return;
-    expect(r.sheet).toMatchObject({ relation: 'mandat', gridVersion: 'essai-2026-10-28', trialGrid: true, status: 'non_validee', validation: null, computedLevel: 'moyen', preparedBy: `agent:${t.alexId}` });
-    // Pas de pièce au coffre (D03 seul ne vaut pas le coffre) : l'identité compte « moyen ».
-    expect(r.sheet.criteria.find((c) => c.key === 'identite_verifiee')).toMatchObject({ source: 'document', observed: 'aucune pièce valide' });
+    expect(r.sheet).toMatchObject({ relation: 'mandat', gridVersion: 'essai-2026-10-28', trialGrid: true, status: 'non_validee', validation: null, computedLevel: 'faible', preparedBy: `agent:${t.alexId}` });
+    // La pièce du vendeur déposée au coffre pour signer son mandat (L03) : l'identité compte « faible ».
+    expect(r.sheet.criteria.find((c) => c.key === 'identite_verifiee')).toMatchObject({ source: 'document', observed: 'vérifiée le 2027-02-10' });
+    // Sans pièce au coffre, l'identité compte « moyen ».
+    const buyer = await t.risque.prepare(t.agent, t.buyerId, { relation: 'mandat', declarations: NO });
+    expect(buyer.ok && buyer.sheet.criteria.find((c) => c.key === 'identite_verifiee')).toMatchObject({ observed: 'aucune pièce valide', level: 'moyen' });
     expect(r.sheet.notice).toContain('ne vaut rien tant que le responsable de la conformité ne l’a pas validée');
     expect(r.sheet.notice).toContain('ne trie aucun client et ne refuse rien');
   });
@@ -128,7 +131,7 @@ describeWithSqlite('L02 · fiche de risque de chaque client', () => {
 
   it('[R91] seul le responsable valide, avec son nom et sa date, ou corrige avec sa raison ; une seule fois', async () => {
     const t = await setup();
-    const r = await t.risque.prepare(t.agent, t.personId, { relation: 'mandat', declarations: NO });
+    const r = await t.risque.prepare(t.agent, t.buyerId, { relation: 'mandat', declarations: NO });
     if (!r.ok) throw new Error(r.code);
     for (const viewer of [t.agent, t.sam, t.direction, t.partner]) {
       expect(await t.risque.validate(viewer, r.sheet.sheetId, { validatorName: 'Camille Conforme' })).toEqual({ ok: false, rule: 'R91', code: 'role' });
@@ -140,7 +143,7 @@ describeWithSqlite('L02 · fiche de risque de chaque client', () => {
     expect(v).toMatchObject({ ok: true, sheet: { status: 'validee', computedLevel: 'moyen', validation: { decision: 'corrigee', level: 'faible', validatorName: 'Camille Conforme', validatedOn: '2027-03-10' } } });
     expect(v.ok && v.sheet.notice).not.toContain('ne vaut rien');
     expect(await t.risque.validate(t.conformite, r.sheet.sheetId, { validatorName: 'Camille Conforme' })).toEqual({ ok: false, rule: null, code: 'already_validated' });
-    const r2 = await t.risque.prepare(t.agent, t.personId, { relation: 'mandat', declarations: NO });
+    const r2 = await t.risque.prepare(t.agent, t.buyerId, { relation: 'mandat', declarations: NO });
     if (!r2.ok) throw new Error(r2.code);
     expect(await t.risque.validate(t.conformite, r2.sheet.sheetId, { validatorName: 'Camille Conforme' })).toMatchObject({ ok: true, sheet: { validation: { decision: 'validee', level: 'moyen', reason: null } } });
     // Chaque validation au journal : la fiche, la décision, le niveau calculé et le niveau retenu, sans nom en clair.
@@ -153,7 +156,7 @@ describeWithSqlite('L02 · fiche de risque de chaque client', () => {
     for (const word of ['Camille', 'Léa', 'Exemple', 'Pièce vue']) expect(text).not.toContain(word);
     expect(await verifyChain(await t.journal.all())).toMatchObject({ ok: true });
     // L'agent relit ses fiches, validées ou non, sans jamais pouvoir les valider.
-    const list = await t.risque.list(t.agent, t.personId);
+    const list = await t.risque.list(t.agent, t.buyerId);
     expect(list.ok && list.value.map((s) => s.status)).toEqual(['validee', 'validee']);
   });
 
@@ -196,18 +199,18 @@ describeWithSqlite('L02 · fiche de risque de chaque client', () => {
     };
     const risque = new conformite.FicheRisque(t.db, t.acces, t.coffre, flaky, { now: t.now });
     failing = true;
-    await expect(risque.prepare(t.agent, t.personId, { relation: 'mandat', declarations: NO })).rejects.toThrow('journal en panne');
+    await expect(risque.prepare(t.agent, t.buyerId, { relation: 'mandat', declarations: NO })).rejects.toThrow('journal en panne');
     failing = false;
     const sheetId = (await t.db.first<{ id: string }>('SELECT id FROM risk_sheets'))!.id;
     // La relecture de la fiche reprend l'événement de préparation manquant.
-    await risque.list(t.agent, t.personId);
+    await risque.list(t.agent, t.buyerId);
     failing = true;
     await expect(risque.validate(t.conformite, sheetId, { validatorName: 'Camille Conforme' })).rejects.toThrow('journal en panne');
     failing = false;
     // La validation est rangée ; la relance la dit déjà faite et écrit enfin les deux événements.
     expect(await risque.validate(t.conformite, sheetId, { validatorName: 'Camille Conforme' })).toEqual({ ok: false, rule: null, code: 'already_validated' });
     expect(await risque.validate(t.conformite, sheetId, { validatorName: 'Camille Conforme' })).toEqual({ ok: false, rule: null, code: 'already_validated' });
-    await risque.list(t.agent, t.personId);
+    await risque.list(t.agent, t.buyerId);
     const events = (await t.journal.all()).filter((e) => e.type.startsWith('risque.'));
     expect(events.map((e) => [e.type, e.actor, e.data])).toEqual([
       ['risque.prepare', `agent:${t.alexId}`, { rule: 'R91', sheet: `risk_sheet:${sheetId}`, grid: 'essai-2026-10-28', level: 'moyen' }],

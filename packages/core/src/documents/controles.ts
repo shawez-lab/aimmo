@@ -7,7 +7,8 @@
  * - honoraires : montant, prix et qui les paie connus, montant dans le barème du réseau (taux maximal du prix et
  *   minimum, réglés par la direction) ;
  * - mandants : les propriétaires du bien connus dans la base sont exactement le mandant du document ;
- * - identité : l'identité de chaque mandant a été vérifiée (pièce vue, quand, par qui) depuis moins d'un an.
+ * - identité : l'identité du mandant est vérifiée au coffre de la conformité, pièce valide ce jour-là et vérifiée depuis
+ *   moins d'un an ; pour une société, son Kbis et chaque bénéficiaire effectif à 25 % ou plus (L03) [R92].
  * Un seul échec suffit : le document ne peut pas être signé. Le résultat est gardé et rendu à l'agent.
  *
  * Décidé, lecture prudente : le modèle ne porte qu'un mandant ; un bien à plusieurs propriétaires ne passe pas tant
@@ -20,13 +21,14 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { Identification } from '../conformite/identification.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DocumentFacts } from './modeles.ts';
 import { mandateExpired } from './conditions.ts';
 
-export const IDENTITY_PIECES = ['carte_identite', 'passeport', 'permis_conduire'] as const;
-export type IdentityPiece = (typeof IDENTITY_PIECES)[number];
+import { IDENTITY_PIECES } from '../conformite/pieces-identite.ts';
+export { IDENTITY_PIECES, type IdentityPiece } from '../conformite/pieces-identite.ts';
 export const CHECK_NAMES = ['champs', 'modele', 'honoraires', 'mandants', 'identite', 'mandat'] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 
@@ -61,6 +63,7 @@ export class ControlesSignature {
   private readonly newId: () => string;
   private readonly settings: ControlSettings;
   private readonly unique: FicheUnique;
+  private readonly identification: Identification;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -72,6 +75,7 @@ export class ControlesSignature {
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.settings = options.settings ?? DEFAULT_CONTROL_SETTINGS;
     this.unique = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
+    this.identification = new Identification(db, null, null, { now: this.now, maxAgeDays: this.settings.identityDays });
   }
 
   private actor(viewer: Viewer): string {
@@ -94,7 +98,10 @@ export class ControlesSignature {
     return { ok: true };
   }
 
-  /** L'identité vérifiée d'une personne : pièce vue, quand, par qui ; l'agent de la fiche ou la conformité. */
+  /**
+   * La trace « pièce vue » d'une personne (D03), gardée pour l'historique : depuis L03, elle ne suffit plus, seul le
+   * coffre de la conformité fait foi [R92].
+   */
   async recordIdentity(viewer: Viewer, personId: string, input: { piece: string; seenAt: Date }): Promise<{ ok: true; id: string } | Refusal | Problem> {
     if (!(IDENTITY_PIECES as readonly string[]).includes(input.piece)) return { ok: false, rule: null, code: 'bad_piece' };
     if (!(input.seenAt instanceof Date) || Number.isNaN(input.seenAt.getTime()) || input.seenAt.getTime() > this.now().getTime()) return { ok: false, rule: null, code: 'bad_date' };
@@ -116,8 +123,12 @@ export class ControlesSignature {
     return { ok: true, id };
   }
 
-  /** Le contrôle d'un document avant signature : chaque ligne, et le verdict ; gardé et écrit au journal [R41]. */
-  async check(viewer: Viewer, documentId: string): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
+  /**
+   * Le contrôle d'un document avant signature : chaque ligne, et le verdict ; gardé et écrit au journal [R41]. Pour un
+   * mandat signé sur papier et enregistré après coup, `identitySignedAt` juge l'identité au jour de la signature (L03) :
+   * une pièce vérifiée après ne la couvre pas, une pièce valide ce jour-là, échue depuis, ne la bloque pas [R92].
+   */
+  async check(viewer: Viewer, documentId: string, options: { identitySignedAt?: Date } = {}): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, 'document', 'role', `document:${documentId}`);
     const doc = await this.db.first<{ id: string; network_id: string; kind: string; mode: string; status: string; person_id: string; property_id: string | null; facts: string | null; mandate_id: string | null }>(
       'SELECT id, network_id, kind, mode, status, person_id, property_id, facts, mandate_id FROM documents WHERE id = ?',
@@ -141,7 +152,7 @@ export class ControlesSignature {
     lines.push(await this.fees(doc.network_id, doc.facts, amendment));
     const mandants = await this.mandants(doc.person_id, doc.property_id);
     lines.push(mandants);
-    lines.push(await this.identity(doc.network_id, doc.person_id, at));
+    lines.push(options.identitySignedAt ? await this.identityAtSignature(doc.network_id, doc.person_id, options.identitySignedAt) : await this.identity(doc.network_id, doc.person_id, at));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
 
@@ -212,13 +223,18 @@ export class ControlesSignature {
   }
 
   private async identity(networkId: string, personId: string, at: Date): Promise<CheckLine> {
-    const ids = await this.unique.membersOf(personId);
-    const since = new Date(at.getTime() - this.settings.identityDays * DAY).toISOString();
-    const found = await this.db.first<{ id: string }>(
-      `SELECT id FROM identity_checks WHERE network_id = ? AND person_id IN (${placeholders(ids.length)}) AND seen_at >= ? AND seen_at <= ? LIMIT 1`,
-      [networkId, ...ids, since, at.toISOString()],
-    );
-    return { check: 'identite', ok: !!found, code: found ? 'identity_verified' : 'identity_missing' };
+    // L'état du coffre, jamais une case cochée [R92].
+    const status = await this.identification.status(networkId, personId, at);
+    return { check: 'identite', ok: status.ok, code: status.ok ? 'identity_verified' : status.code };
+  }
+
+  /**
+   * L'identification du mandant au jour d'une signature passée (mandat papier enregistré après coup) : pièce vérifiée ce
+   * jour-là au plus tard et valide ce jour-là, déposée au coffre au plus tard maintenant [R92].
+   */
+  async identityAtSignature(networkId: string, personId: string, signedAt: Date): Promise<CheckLine> {
+    const status = await this.identification.status(networkId, personId, signedAt, this.now());
+    return { check: 'identite', ok: status.ok, code: status.ok ? 'identity_verified' : status.code };
   }
 
   /** Le dernier contrôle gardé d'un document. */

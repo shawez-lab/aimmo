@@ -19,6 +19,7 @@ import {
 } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 
 // Modèles, registre et personnes inventés.
 const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
@@ -53,7 +54,7 @@ async function setup() {
   const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'REF-T-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60, rooms: 3, priceEur: 200000 });
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
   await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
-  await controles.recordIdentity(agent, p.id, { piece: 'carte_identite', seenAt: SIGNED });
+  await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: SIGNED });
   const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 } });
   if (!d.ok) throw new Error(d.code);
   const signed = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt: SIGNED, place: 'agence', scanRef: 'scans/mandat.pdf', source: 'referral' });
@@ -131,7 +132,7 @@ describeWithSqlite('D07 · avenant au mandat', () => {
     const a = await t.amendment({ 'avenant.duree_mois': 24 });
     if (!a.ok) throw new Error(a.code);
     t.now(new Date('2028-03-01T10:00:00.000Z'));
-    await new ControlesSignature(t.db, t.acces, t.journal, { now: () => new Date('2028-03-01T10:00:00.000Z') }).recordIdentity(t.agent, t.personId, { piece: 'carte_identite', seenAt: new Date('2028-02-20T10:00:00.000Z') });
+    await identiteAuCoffre({ db: t.db, acces: t.acces, journal: t.journal, now: () => new Date('2028-03-01T10:00:00.000Z') }, t.agent, t.personId, { piece: 'carte_identite', seenAt: new Date('2028-02-20T10:00:00.000Z') });
     const r = await t.avenants.register(t.agent, a.document.id, { signedAt: new Date('2028-03-01T09:00:00.000Z'), place: 'agence', scanRef: 'scans/a.pdf' });
     expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['mandate_expired']);
     expect(await t.amendment({ 'avenant.duree_mois': 24 })).toEqual({ ok: false, rule: null, code: 'bad_mandate' });

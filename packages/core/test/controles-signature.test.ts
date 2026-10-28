@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 
 // Modèle, barème et personnes inventés pour les tests.
 const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, {{bien.prix}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test mise en évidence.\n\nNuméro : {{registre.numero}}.';
@@ -40,7 +41,9 @@ async function setup(validate = true) {
     if (!d.ok) throw new Error(d.code);
     return { personId: p.id, propertyId: b.id, documentId: d.document.id, projectId: project.id };
   };
-  return { db, journal, store, controles, network, alex, sam, as, agent, direction, conformite, seller };
+  /** La pièce d'identité déposée au coffre : la seule identité que lit le contrôle depuis L03 [R92]. */
+  const identite = (viewer: Viewer, personId: string, input: { piece: string; seenAt: Date; validUntil?: string | null }) => identiteAuCoffre({ db, acces, journal, now }, viewer, personId, input);
+  return { db, journal, store, controles, network, alex, sam, as, agent, direction, conformite, seller, identite };
 }
 
 const failed = (r: Awaited<ReturnType<ControlesSignature['check']>>) => (r.ok ? r.value.lines.filter((l) => !l.ok).map((l) => l.code) : [r.code]);
@@ -49,7 +52,7 @@ describeWithSqlite('D03 · contrôles avant signature', () => {
   it('[R41] un document complet, au barème, au bon mandant identifié passe ; le résultat est gardé et rendu ligne par ligne', async () => {
     const t = await setup();
     const s = await t.seller();
-    expect(await t.controles.recordIdentity(t.agent, s.personId, { piece: 'carte_identite', seenAt: new Date('2027-02-01T10:00:00Z') })).toMatchObject({ ok: true });
+    expect(await t.identite(t.agent, s.personId, { piece: 'carte_identite', seenAt: new Date('2027-02-01T10:00:00Z') })).toMatchObject({ ok: true });
     const r = await t.controles.check(t.agent, s.documentId);
     expect(r).toEqual({
       ok: true,
@@ -75,13 +78,15 @@ describeWithSqlite('D03 · contrôles avant signature', () => {
     expect(failed(await t.controles.check(t.agent, s.documentId))).toEqual(['identity_missing']);
     await t.controles.recordIdentity(t.agent, s.personId, { piece: 'passeport', seenAt: new Date('2026-01-01T10:00:00Z') });
     expect(failed(await t.controles.check(t.agent, s.documentId))).toEqual(['identity_missing']);
+    await t.identite(t.agent, s.personId, { piece: 'passeport', seenAt: new Date('2026-01-01T10:00:00Z') });
+    expect(failed(await t.controles.check(t.agent, s.documentId))).toEqual(['identity_missing']);
     expect(await t.controles.recordIdentity(t.agent, s.personId, { piece: 'titre_inconnu', seenAt: NOW })).toEqual({ ok: false, rule: null, code: 'bad_piece' });
     expect(await t.controles.recordIdentity(t.agent, s.personId, { piece: 'passeport', seenAt: new Date('2027-03-01T00:00:00Z') })).toEqual({ ok: false, rule: null, code: 'bad_date' });
   });
 
   it('[R41] incomplet, modèle d’essai, hors barème, payeur inconnu, mandant différent du propriétaire : refusé', async () => {
     const t = await setup();
-    const id = async (s: { personId: string }) => t.controles.recordIdentity(t.agent, s.personId, { piece: 'carte_identite', seenAt: NOW });
+    const id = async (s: { personId: string }) => t.identite(t.agent, s.personId, { piece: 'carte_identite', seenAt: NOW });
     const incomplete = await t.seller({ inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'vendeur' } });
     await id(incomplete);
     expect(failed(await t.controles.check(t.agent, incomplete.documentId))).toEqual(['missing_fields']);
@@ -107,7 +112,7 @@ describeWithSqlite('D03 · contrôles avant signature', () => {
 
     const trial = await setup(false);
     const s = await trial.seller();
-    await trial.controles.recordIdentity(trial.agent, s.personId, { piece: 'carte_identite', seenAt: NOW });
+    await trial.identite(trial.agent, s.personId, { piece: 'carte_identite', seenAt: NOW });
     expect(failed(await trial.controles.check(trial.agent, s.documentId))).toEqual(['trial_template']);
   });
 
@@ -125,7 +130,7 @@ describeWithSqlite('D03 · contrôles avant signature', () => {
     }
     const t = await setup();
     const s = await t.seller();
-    await t.controles.recordIdentity(t.agent, s.personId, { piece: 'carte_identite', seenAt: NOW });
+    await t.identite(t.agent, s.personId, { piece: 'carte_identite', seenAt: NOW });
     await expect(t.db.run('DELETE FROM fee_schedules')).rejects.toThrow(/ajout seul/);
     // Un barème plus strict réglé ensuite est en vigueur.
     await t.controles.setFeeSchedule(t.direction, { maxRatePercent: 4, minEur: 3000 });
@@ -139,6 +144,7 @@ describeWithSqlite('D03 · contrôles avant signature', () => {
     expect(await t.controles.recordIdentity(t.as('agent', t.sam.id), s.personId, { piece: 'carte_identite', seenAt: NOW })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.controles.recordIdentity(t.direction, s.personId, { piece: 'carte_identite', seenAt: NOW })).toMatchObject({ ok: false, rule: 'R16' });
     expect((await t.controles.recordIdentity(t.conformite, s.personId, { piece: 'carte_identite', seenAt: NOW })).ok).toBe(true);
+    expect((await t.identite(t.conformite, s.personId, { piece: 'carte_identite', seenAt: NOW })).ok).toBe(true);
     const columns = await t.db.all<{ name: string }>(`SELECT name FROM pragma_table_info('identity_checks')`);
     expect(columns.map((c) => c.name).sort()).toEqual(['checked_by', 'created_at', 'id', 'network_id', 'person_id', 'piece', 'seen_at']);
     for (const viewer of [t.agent, t.direction, t.conformite]) expect((await t.controles.check(viewer, s.documentId)).ok).toBe(true);
