@@ -170,6 +170,9 @@ describeWithSqlite('U01 · annuaire des partenaires', () => {
     // Erreur de saisie : la certification finissait en fait hier.
     await t.credential(diag, 'certification_diagnostic', { domain: 'dpe', from: t.day(-200), until: t.day(-1) });
     expect(await t.annuaire.proposableOn(t.network.id, diag, new Date(clock), 'dpe')).toBe(false);
+    const said = await t.annuaire.search(t.agent, { trade: 'diagnostiqueur', postcode: '21000', domain: 'dpe' });
+    const yesterday = t.day(-1);
+    expect(said.ok && said.value.unavailable[0]!.reasons).toEqual([`Certification performance énergétique : échue le ${yesterday.slice(8, 10)}/${yesterday.slice(5, 7)}/${yesterday.slice(0, 4)}.`]);
     expect(await t.annuaire.coveredOn(t.network.id, diag, 'certification_diagnostic', 'dpe', t.day(0))).toBe(false);
     expect(await t.annuaire.coveredOn(t.network.id, diag, 'certification_diagnostic', 'dpe', t.day(10))).toBe(false);
     expect(await t.annuaire.coveredOn(t.network.id, diag, 'certification_diagnostic', 'dpe', t.day(-100))).toBe(true);

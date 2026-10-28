@@ -183,7 +183,10 @@ const shownOn = (versions: readonly CredentialRow[], day: string): { row: Creden
   if (valid) return { row: valid, state: 'valide' };
   const next = versions.filter((v) => v.valid_from > day).sort((a, b) => (a.valid_from < b.valid_from ? -1 : a.valid_from > b.valid_from ? 1 : Number(b.version) - Number(a.version)))[0];
   if (next) return { row: next, state: 'a_venir' };
-  const past = [...versions].sort((a, b) => (a.valid_until > b.valid_until ? -1 : a.valid_until < b.valid_until ? 1 : Number(b.version) - Number(a.version)))[0];
+  // Une version corrigée par une plus récente qui la chevauche ne sert plus à dire la date d'échéance.
+  const overlaps = (a: CredentialRow, b: CredentialRow): boolean => a.valid_from <= b.valid_until && b.valid_from <= a.valid_until;
+  const current = versions.filter((v) => v.valid_from <= day && !versions.some((w) => Number(w.version) > Number(v.version) && w.valid_from <= day && overlaps(w, v)));
+  const past = [...current].sort((a, b) => (a.valid_until > b.valid_until ? -1 : a.valid_until < b.valid_until ? 1 : Number(b.version) - Number(a.version)))[0];
   return past ? { row: past, state: 'echu' } : { row: undefined, state: 'manquant' };
 };
 
