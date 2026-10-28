@@ -58,6 +58,7 @@ import type { DetailedSales, Geocoder } from '@aimmo/core';
 import { m08Routes } from './acquereurs.ts';
 import { annonceRoutes } from './annonces.ts';
 import { offreRoutes } from './offres.ts';
+import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresVentePublic } from './apres-vente.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
@@ -828,6 +829,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
+  // Les pages publiques de l'après-vente (F07) : désinscription des relances, note de satisfaction, carnet du propriétaire.
+  if (url.pathname.startsWith(APRES_VENTE_PATH)) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    try {
+      const page = await handleApresVentePublic(request, { db: config.db, now });
+      if (page) return page;
+    } catch (error) {
+      await apresVentePublicError(config.db, error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
   // La vitrine des biens (P10) : la page publique, la fiche imprimable et les photos de la version publiée.
   if (url.pathname.startsWith('/biens/') || url.pathname.startsWith('/medias/')) {
     if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
@@ -910,8 +922,9 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
 
   // Une même adresse peut servir à lire (GET) et à écrire (POST) : la route est choisie par l'adresse et la méthode.
   // Les routes de M08 (T08) suivent celles du socle ; elles portent le lien de désinscription du réseau.
-  // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication ; puis celles de M09 (O09) : les offres.
-  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }), ...annonceRoutes(), ...offreRoutes()];
+  // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication ; puis celles de M09 (O09) : les offres ; puis
+  // celles de M11 (F07) : l'après-vente.
+  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }), ...annonceRoutes(), ...offreRoutes(), ...apresVenteRoutes()];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
   const route = matching.find((candidate) => candidate.method === request.method);

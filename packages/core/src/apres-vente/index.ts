@@ -4,3 +4,4 @@ export * from './relances-apres-vente.ts';
 export * from './satisfaction.ts';
 export * from './remerciements.ts';
 export * from './carnet.ts';
+export * from './dossiers-clos.ts';
