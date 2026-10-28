@@ -1063,7 +1063,7 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Attend : rien.
 
 ### F07 · Routes de M11, branchement et écran « Après la vente »
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : F01, F02, F03, F04, F05
 - Cahier : M11 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/apres-vente` (recommandation, choix des relances, lien de la fiche Google, satisfaction, tâches) dans `packages/api/src/apres-vente.ts`, branchées dans `app.ts`, le passage quotidien au planificateur, et dans l'application de l'agent l'écran d'un dossier clos : demandes parties, tâches « remercier », recommandations, note.
