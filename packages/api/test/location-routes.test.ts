@@ -357,6 +357,13 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     q = await t.ok(t.agent, 'GET', `/location/${r.id}/suivi`);
     expect(q.inventory.signed).toEqual(['bailleur']);
     expect(q.inventory.content).toBe(edl.content);
+    // Le bien passe à un autre agent sans ses clients : l'état des lieux, qui porte leurs noms, ne lui est pas rendu [R16].
+    const moveTo = (who: string) => t.db.run('UPDATE properties SET agent_id = ? WHERE id = (SELECT property_id FROM rental_listings WHERE id = ?)', [who, r.id]);
+    await moveTo(t.other.userId);
+    const seen = await t.ok(t.other, 'GET', `/location/${r.id}/suivi`);
+    expect(seen.inventory).toBeNull();
+    expect(JSON.stringify(seen)).not.toContain('Inventé');
+    await moveTo(t.agent.userId);
     // La conformité lit ; un bien réattribué sort de la liste de l'ancien agent, qui ne lit plus rien ; un agent inactif est refusé.
     expect((await t.ok(t.compliance, 'GET', '/location')).listings).toHaveLength(2);
     expect((await t.ok(t.compliance, 'GET', `/location/${second.id}/suivi`)).lease).toBeNull();

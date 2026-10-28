@@ -357,6 +357,17 @@ describe('W11 · écran « Louer » de l’application', () => {
     expect(u.body().textContent).toContain(`DOCUMENT D’ESSAI, SANS VALEUR ${INJECTED}`);
   });
 
+  it('le bail préparé se relit avant la signature', async () => {
+    const t = await run({ 'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c1' }) });
+    await t.openL1();
+    t.table['POST /v1/location/l1/bail'] = ok({ leaseId: 'bl1', listingId: 'l1', version: 1, mode: 'essai', status: 'complet', missing: [], annexes: [], content: `BAIL D’ESSAI ${INJECTED}`, contentSha256: 'c'.repeat(64) });
+    t.table['GET /v1/location/l1/suivi'] = ok({ facts: FACTS, fees: null, lease: LEASE, inventoryClosed: false, inventory: null });
+    await t.click(t.byText('Préparer le bail'));
+    expect(t.state()).toBe('Bail préparé, complet : il est à signer.');
+    expect(t.body().textContent).toContain(`BAIL D’ESSAI ${INJECTED}`);
+    expect(t.body().textContent).toContain('Lire le bail avec les parties');
+  });
+
   it('[R108] un code de signature expiré : dit en clair, la séance est oubliée et un nouveau code peut partir', async () => {
     const t = await run({
       'GET /v1/location/l1/suivi': ok({ facts: FACTS, fees: null, lease: LEASE, inventoryClosed: false }),

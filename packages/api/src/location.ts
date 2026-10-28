@@ -149,7 +149,7 @@ async function progress(s: LocationServices, v: Viewer, id: string): Promise<Out
   const signed = lease ? await c.signatures.status(listing.networkId, lease.leaseId) : null;
   const closed = await c.inventories.closedInventory(listing.networkId, listing.id);
   const f = await c.fees.current(listing.networkId, listing.id);
-  const open = lease ? await c.inventories.pending(listing.networkId, listing.id) : null;
+  const open = lease ? await c.inventories.pending(v, listing.id) : null;
   return {
     ok: true,
     value: {

@@ -224,6 +224,8 @@ export const LOUER_JS = `
   var louerSeq = 0;
   // Les séances de signature du bail ouvertes depuis cet appareil : le code attend d'être saisi.
   var signing = {};
+  // Le texte du bail préparé depuis cet appareil, par version : à relire avec les parties avant de signer.
+  var leaseTexts = {};
   function openLocation(id, title, message) {
     if (!currentKey || !ID.test(id)) return Promise.resolve(false);
     session += 1;
@@ -503,6 +505,10 @@ export const LOUER_JS = `
     var box = section('Le bail');
     if (lease) {
       box.appendChild(el('p', (lease.complete ? 'Bail en vigueur, complet' : 'Bail en vigueur, incomplet : complétez-le') + (lease.mode === 'essai' ? ' · document d’essai, sans valeur tant que les modèles ne sont pas validés.' : '.'), lease.complete ? 'fait' : 'alerte'));
+      if (leaseTexts[lease.leaseId]) {
+        var read = details(box, 'Lire le bail avec les parties');
+        read.appendChild(el('p', leaseTexts[lease.leaseId], 'brouillon'));
+      } else box.appendChild(el('p', 'Le texte du bail se relit sur l’appareil qui l’a préparé ; refaites-le ici pour le relire avant de signer.', 'doux'));
       ['bailleur', 'locataire'].forEach(function (party) { box.appendChild(signBlock(base, lease, party)); });
       if (lease.bailleur && lease.locataire) {
         if (lease.copiesSent && lease.copiesSent.length === 2) box.appendChild(el('p', 'Un exemplaire préparé pour chacun (mode essai).', 'fait'));
@@ -525,6 +531,7 @@ export const LOUER_JS = `
       [['address', address], ['ownerAddress', owner], ['equipment', equipment], ['professionalCard', card], ['noticeRef', notice]].forEach(function (x) { var v = String(x[1].value || '').trim(); if (v) b[x[0]] = v; });
       louerAct(base + '/bail', b, 'Le bail n’est pas préparé.', '', true).then(function (l) {
         if (!l) return;
+        if (ID.test(l.leaseId) && typeof l.content === 'string') leaseTexts[l.leaseId] = l.content;
         var missing = (l.missing || []).map(function (k) { return LEASE_LABELS[String(k).split('.').map(function (x) { return x.slice(0, 4); }).join('.')] || 'un champ'; });
         openLocation(louerId, $('louer-titre').textContent, missing.length ? 'Bail préparé, à compléter : ' + missing.join(', ') + '.' : 'Bail préparé, complet : il est à signer.');
       });
