@@ -986,7 +986,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N09 · Branchement de M10 dans le socle
-- Statut : à faire
+- Statut : en cours
 - Décidé (2026-10-28) : `packages/api/src/dossiers.ts` expose `dossierRoutes()`, `syncDossiers`, `dossiersJob` (tous les jours de 9 h à 19 h, relances jamais le dimanche) et `R2PieceStore` ; il importe M10 par un chemin relatif, à remplacer par `dossiers` de `@aimmo/core` ; la tâche `pieceReminderJob` du cœur n'est plus à lancer, `dossiersJob` la contient ; le bucket R2 des pièces est à déclarer dans le Worker ; tant que `scan` n'est pas branché à la réception, le filet du bouclier ne relit que 48 h de messages
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : N08
 - Cahier : M10.
@@ -1063,7 +1063,9 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Attend : rien.
 
 ### F07 · Routes de M11, branchement et écran « Après la vente »
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : dossiers clos lus dans la base de M10 (`SqlDossiersClos`) : vendeur du mandat de la commission, puis acquéreur ; un logement est un appartement s'il est un lot de copropriété, une maison sinon, inconnu sans fiche (pas de carnet) ; position du carnet : centre de la commune par la Base adresse nationale, jamais une adresse ; une variable `APRES_VENTE_BASE` pour les trois liens publics, à la racine `/apres-vente/` ; les remerciements préparés restent à l'agent seul.
+- Reste : relecture de Codex de la dernière correction (son P2) restée en cours plus de 10 min, fusion sans elle (#109) ; la mise en service attend `APRES_VENTE_BASE` et `DVF_BASE_URL`.
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : F01, F02, F03, F04, F05
 - Cahier : M11 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/apres-vente` (recommandation, choix des relances, lien de la fiche Google, satisfaction, tâches) dans `packages/api/src/apres-vente.ts`, branchées dans `app.ts`, le passage quotidien au planificateur, et dans l'application de l'agent l'écran d'un dossier clos : demandes parties, tâches « remercier », recommandations, note.
