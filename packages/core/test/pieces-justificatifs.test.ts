@@ -63,7 +63,8 @@ async function setup() {
     await relations.entrust(agent, id);
     const deposit = (sort: string, issuedDay: number) =>
       pieces.deposit({ role: 'partner', userId: partnerId, networkId: network.id }, id, { sort, ref: files.put(`partenaires/${partnerId}/relations/${id}`), sha256: SHA, issuedOn: day(issuedDay) });
-    return { partnerId, referralId: id, deposit };
+    const read = () => space.read({ role: 'partner', userId: partnerId, networkId: network.id }, id);
+    return { partnerId, referralId: id, deposit, read };
   };
   return { db, pieces, property, project, request };
 }
@@ -86,6 +87,17 @@ describeWithSqlite('U06 · pièce contrôlée contre le justificatif du jour où
     const t = await setup();
     const d = await t.request('diagnostiqueur', [INSURED, ['certification_diagnostic', [-700, -10], 'dpe'], ['certification_diagnostic', [-9, 600], 'dpe']], 'dpe');
     expect(await d.deposit('dpe', -20)).toMatchObject({ ok: true, value: { destination: 'property', targetId: t.property.id, piece: 'dpe', reason: 'rule' } });
+  });
+
+  it('[R73] [R78] sans renouvellement, un diagnostic fait pendant la validité se dépose encore après l’échéance', async () => {
+    const t = await setup();
+    const d = await t.request('diagnostiqueur', [INSURED, ['certification_diagnostic', [-700, 3], 'amiante']], 'amiante');
+    clock += 10 * DAY;
+    // La certification a expiré il y a 7 jours, sans renouvellement : le dossier ne se lit plus, mais la pièce faite avant se dépose.
+    expect(await d.read()).toEqual({ ok: false, rule: 'R73', code: 'credentials' });
+    expect(await d.deposit('amiante', -12)).toMatchObject({ ok: true, value: { destination: 'property', reason: 'rule' } });
+    // Une pièce faite après l'échéance va à la file.
+    expect(await d.deposit('amiante', -2)).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'certification_not_valid_on_date' } });
   });
 
   it('[R73] un diagnostic fait avant que le diagnostiqueur ne soit certifié pour ce domaine est refusé au rangement', async () => {

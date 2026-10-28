@@ -169,7 +169,9 @@ export class PiecesPartenaires {
 
   /** Le partenaire confié dépose une pièce ; elle est rangée aussitôt par la règle écrite, ou va à la file de l'agent [R78]. */
   async deposit(viewer: Viewer, referralId: unknown, input: { sort: unknown; ref: unknown; sha256: unknown; issuedOn: unknown }): Promise<DepositResult<DepositedPiece>> {
-    const access = await this.space.access(viewer, referralId);
+    // Une pièce déjà faite se dépose même si un justificatif a expiré depuis : elle est jugée sur ceux du jour où elle a
+    // été faite, contrôle toujours appliqué ci-dessous (U06) [R73, R78].
+    const access = await this.space.access(viewer, referralId, { credentialsToday: false });
     if (!access.ok) return access;
     const id = referralId as string;
     const subject = `referral:${id}`;
