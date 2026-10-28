@@ -16,7 +16,8 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 - Ce qu'elle attend d'un humain : rien. Une fois fusionnée, la séance lance elle-même le workflow ; Shawez n'a qu'à cliquer sur le lien reçu par mail.
 
 ### Z04 · Lien d'accès de Shawez sans mail Cloudflare
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : entrée `remise` (`mail` par défaut, `resume`) ; en `resume`, le lien n'est écrit que dans `GITHUB_STEP_SUMMARY` ; prénom, nom et adresses lus dans l'événement du lancement, jamais dans l'environnement affiché des étapes ; prénom et nom non masqués en `resume` (le masque de GitHub casserait le lien du résumé) ; relecture forte 2 P1, Codex 1 P0 corrigés (#161) ; travail lancé le 2026-10-28 à 21:53 en `resume`, réussi.
 - Qui : Claude, relecture forte
 - Dépendances : Z02
 - Objectif : l'envoi par Cloudflare échoue toujours (HTTP 401, code 10000, H33 non réglé). Ajouter au travail « Créer l'accès de Shawez » un mode de remise sans mail : le lien à usage unique, valable 24 heures, est écrit seulement dans le résumé du travail GitHub (dépôt privé, visible du seul compte shawez-lab), jamais dans les journaux du travail ni dans le dépôt. Puis lancer le travail dans ce mode et noter dans « Besoin de toi » : « Ton lien t'attend dans GitHub : Actions > Créer l'accès de Shawez > dernier passage > Summary. »
@@ -1399,7 +1400,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L07 · Demandes des personnes en moins d'un mois, avec preuve
-- Statut : bloquée : Codex trouve à chaque tour un sujet du journal non lu (`property:`, `visit:`, `rental:`) ou une référence d'une autre personne dans `journal.data` ; deux tours corrigés (#159, branche `chantier/L07`, vérifications vertes). Reprise : test qui relève chaque préfixe de sujet écrit dans le code et exige qu'il soit lu ou écarté, et masque des `person:<id>` étrangers dans `journal.data`
+- Statut : en cours (reprise : `JOURNAL_SUBJECTS` et relevé testé des sujets, journal des biens possédés, masque des autres personnes au journal ; #159)
 - Décidé (2026-10-28) : demandes enregistrées par le responsable seul ; échéance d'un mois par `addCalendarMonths`, rappel 7 jours avant et alerte le jour même ; carte des demandes d'accès vérifiée contre le registre (Jamais vu) ; lutte contre le blanchiment écartée (accès par la CNIL, article L561-45) ; effacement en essai, qui garde obligation légale, arrêt (identifiants sous empreinte) et lignes partagées « à examiner » ; demandes des agents, candidats et partenaires traitées à la main pour l'instant.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L06
 - Cahier : M12, critère « une demande d'accès d'une personne reçoit sa réponse complète en moins d'un mois, avec preuve » ; Conformité, « Droits des personnes ».
