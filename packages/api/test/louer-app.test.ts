@@ -240,6 +240,10 @@ describe('W11 · écran « Louer » de l’application', () => {
     await t.click(t.byText('Ranger les honoraires'));
     expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ tenantCents: 40_000, tenantInventoryCents: 12_750, landlordCents: 42_500, landlordInventoryCents: 12_750, depositCents: 65_000 });
     expect(t.state()).toBe('Le dépôt de garantie dépasse le plafond.');
+    // Les honoraires rangés : le total à la charge de chacun, état des lieux compris, comme dans l'annonce et le bail.
+    const v = await run({ 'GET /v1/location/l1/suivi': ok({ facts: FACTS, fees: { tenantCents: 42_500, tenantInventoryCents: 12_750, landlordCents: 42_500, landlordInventoryCents: 12_750, depositCents: 65_000 }, lease: null, inventoryClosed: false }) });
+    await v.openL1();
+    expect(v.body().textContent).toContain('Rangés : à la charge du locataire 552,50 €, dont état des lieux 127,50 € ; du bailleur 552,50 €, dont état des lieux 127,50 € ; dépôt 650,00 €.');
     // Sans commune : le code INSEE est demandé, rien d'autre.
     const u = await run({ 'GET /v1/location/l1/plafonds': no(400, { ok: false, rule: null, code: 'no_commune' }) });
     await u.openL1();

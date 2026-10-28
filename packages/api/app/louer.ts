@@ -396,7 +396,7 @@ export const LOUER_JS = `
     ul.appendChild(line('État des lieux à sa charge : ' + euros(c.inventoryCeilingCents) + ' au plus'));
     ul.appendChild(line('Dépôt de garantie : ' + euros(c.depositCeilingCents) + ' au plus'));
     box.appendChild(ul);
-    if (fees) box.appendChild(el('p', 'Rangés : locataire ' + euros(fees.tenantCents) + ' dont état des lieux ' + euros(fees.tenantInventoryCents) + ', bailleur ' + euros(fees.landlordCents) + ', dépôt ' + euros(fees.depositCents) + '.', 'fait'));
+    if (fees) box.appendChild(el('p', 'Rangés : à la charge du locataire ' + euros(fees.tenantCents + fees.tenantInventoryCents) + ', dont état des lieux ' + euros(fees.tenantInventoryCents) + ' ; du bailleur ' + euros(fees.landlordCents + fees.landlordInventoryCents) + ', dont état des lieux ' + euros(fees.landlordInventoryCents) + ' ; dépôt ' + euros(fees.depositCents) + '.', 'fait'));
     var m = ++louerSeq;
     var d = details(box, fees ? 'Changer les honoraires' : 'Ranger les honoraires');
     var src = fees || { tenantCents: c.tenantCeilingCents, tenantInventoryCents: c.inventoryCeilingCents, landlordCents: c.tenantCeilingCents, landlordInventoryCents: c.inventoryCeilingCents, depositCents: c.depositCeilingCents };
