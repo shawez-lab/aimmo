@@ -268,12 +268,8 @@ export class FicheRisque {
       'INSERT INTO risk_sheets (id, network_id, person_id, relation, case_ref, grid_version, inputs, criteria, level, fingerprint, prepared_by, prepared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [id, viewer.networkId, fiche.person.id, relation, caseRef, grid.version, JSON.stringify(inputs), JSON.stringify(criteria), level, fingerprint, this.actor(viewer), at],
     );
-    await appendEvent(
-      this.journal,
-      { type: 'risque.prepare', actor: this.actor(viewer), subject: `person:${fiche.person.id}`, data: { rule: 'R91', sheet: `risk_sheet:${id}`, grid: grid.version, level } },
-      this.now,
-    );
     const row = (await this.db.first<SheetRow>('SELECT * FROM risk_sheets WHERE id = ?', [id]))!;
+    await this.ensurePreparedEvent(row);
     return { ok: true, sheet: this.toSheet(row, null) };
   }
 
@@ -296,7 +292,8 @@ export class FicheRisque {
     if (input.reason !== undefined && input.reason !== null && (typeof input.reason !== 'string' || input.reason.length > 1000)) return { ok: false, rule: null, code: 'bad_reason' };
     const decision = level === row.level ? 'validee' : 'corrigee';
     if (decision === 'corrigee' && reason === null) return { ok: false, rule: null, code: 'missing_reason' };
-    if (await this.db.first('SELECT sheet_id FROM risk_validations WHERE sheet_id = ?', [row.id])) return { ok: false, rule: null, code: 'already_validated' };
+    await this.ensurePreparedEvent(row);
+    if (await this.db.first('SELECT sheet_id FROM risk_validations WHERE sheet_id = ?', [row.id])) return this.alreadyValidated(row);
     const at = this.now().toISOString();
     const validatedOn = localTime(this.now(), TIME_ZONE).date;
     try {
@@ -306,14 +303,10 @@ export class FicheRisque {
       );
     } catch (error) {
       // Deux validations en même temps : une seule passe.
-      if (await this.db.first('SELECT sheet_id FROM risk_validations WHERE sheet_id = ?', [row.id])) return { ok: false, rule: null, code: 'already_validated' };
+      if (await this.db.first('SELECT sheet_id FROM risk_validations WHERE sheet_id = ?', [row.id])) return this.alreadyValidated(row);
       throw error;
     }
-    await appendEvent(
-      this.journal,
-      { type: 'risque.validee', actor: this.actor(viewer), subject: `person:${row.person_id}`, data: { rule: 'R91', sheet: `risk_sheet:${row.id}`, decision, computed: row.level, level } },
-      this.now,
-    );
+    await this.ensureValidatedEvent(row);
     return { ok: true, sheet: this.toSheet(row, await this.validationOf(row.id)) };
   }
 
@@ -327,7 +320,13 @@ export class FicheRisque {
       [viewer.networkId, ...ids],
     );
     const out: RiskSheet[] = [];
-    for (const row of rows) out.push(this.toSheet(row, await this.validationOf(row.id)));
+    for (const row of rows) {
+      // Une fiche ou une validation dont l'écriture au journal a échoué y est reprise avant d'être rendue.
+      await this.ensurePreparedEvent(row);
+      const validation = await this.validationOf(row.id);
+      if (validation) await this.ensureValidatedEvent(row);
+      out.push(this.toSheet(row, validation));
+    }
     return { ok: true, value: out };
   }
 
@@ -359,6 +358,38 @@ export class FicheRisque {
       this.now,
     );
     return { ok: true, same, fingerprint, differences };
+  }
+
+  /** Une validation déjà rangée : son événement au journal est repris s'il manque, puis le refus. */
+  private async alreadyValidated(row: SheetRow): Promise<RiskRefusal> {
+    await this.ensureValidatedEvent(row);
+    return { ok: false, rule: null, code: 'already_validated' };
+  }
+
+  private async hasEvent(type: string, sheetId: string): Promise<boolean> {
+    return (await this.db.first(`SELECT seq FROM journal WHERE type = ? AND json_extract(data, '$.sheet') = ? LIMIT 1`, [type, `risk_sheet:${sheetId}`])) !== null;
+  }
+
+  /** L'événement de préparation, écrit une fois ; repris s'il a manqué (journal en panne après l'écriture de la fiche). */
+  private async ensurePreparedEvent(row: SheetRow): Promise<void> {
+    if (await this.hasEvent('risque.prepare', row.id)) return;
+    await appendEvent(
+      this.journal,
+      { type: 'risque.prepare', actor: row.prepared_by, subject: `person:${row.person_id}`, data: { rule: 'R91', sheet: `risk_sheet:${row.id}`, grid: row.grid_version, level: row.level } },
+      this.now,
+    );
+  }
+
+  /** L'événement de validation, écrit une fois, d'après la validation rangée ; repris s'il a manqué. */
+  private async ensureValidatedEvent(row: SheetRow): Promise<void> {
+    if (await this.hasEvent('risque.validee', row.id)) return;
+    const v = await this.db.first<ValidationRow & { validated_by: string }>('SELECT * FROM risk_validations WHERE sheet_id = ?', [row.id]);
+    if (!v) return;
+    await appendEvent(
+      this.journal,
+      { type: 'risque.validee', actor: v.validated_by, subject: `person:${row.person_id}`, data: { rule: 'R91', sheet: `risk_sheet:${row.id}`, decision: v.decision, computed: row.level, level: v.level } },
+      this.now,
+    );
   }
 
   private async validationOf(sheetId: string): Promise<RiskValidation | null> {
