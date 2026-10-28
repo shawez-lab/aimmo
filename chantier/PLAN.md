@@ -1169,7 +1169,8 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J02 · Réponses de l'assistant aux questions des candidats
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : relecture de Codex restée en cours 26 min, fusion sans elle (#112) ; l'envoi réel aux candidats passera par le contrôle central au branchement (J13).
 - Qui : Claude · Relecture : normale · Dépend de : J01
 - Cahier : M14, « Candidature » ; Intelligence artificielle, mention de l'assistant.
 - Objectif : l'assistant répond aux questions d'un candidat seulement à partir de réponses écrites et datées par la direction (questions fréquentes : statut d'agent commercial, frais, essai de 30 jours, formation, parrainage) ; sans réponse écrite, il le dit et passe la question à un humain ; chaque réponse passe par le contrôle central, en mode essai.
