@@ -293,4 +293,13 @@ describe('U11 · écran « Partenaires » de l’application', () => {
     expect(text).toContain('Pièces indisponibles pour le moment');
     expect(text).not.toContain('Aucune pièce déposée');
   });
+
+  it('une demande terminée garde son suivi lisible, sans geste pour la clore de nouveau', async () => {
+    const t = await run({ 'GET /v1/partenaires/projets': ok({ projects: [{ ...PROJECTS[0], referrals: [referral({ state: 'terminee', chosenPartnerId: 'pz' })] }], page: 0, more: false }) });
+    await t.open();
+    const body = t.els['partenaires-corps']!;
+    expect(t.byText(body, 'Voir ses réponses et ses pièces')).toBeDefined();
+    expect(t.byText(body, 'Marquer la demande terminée')).toBeUndefined();
+    expect(t.byText(body, 'Abandonner la demande')).toBeUndefined();
+  });
 });

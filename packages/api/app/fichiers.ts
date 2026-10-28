@@ -1234,10 +1234,13 @@ export const APP_JS = `'use strict';
       var name = chosen.businessName;
       box.appendChild(button('Confier la demande à ' + name, function () { partAct(base + '/confier', undefined, 'La demande n’est pas confiée.', 'Demande confiée à ' + name + '.'); }));
     }
-    if (r.state === 'confiee' || r.state === 'en_cours') {
+    // Le suivi reste lisible une fois la demande close : les pièces déposées ne disparaissent jamais de l'écran.
+    if (r.state === 'confiee' || r.state === 'en_cours' || r.state === 'terminee' || (r.state === 'abandonnee' && r.consent)) {
       var suivi = el('div', null, 'suivi');
       box.appendChild(button('Voir ses réponses et ses pièces', function () { follow(suivi, base); }));
       box.appendChild(suivi);
+    }
+    if (r.state === 'confiee' || r.state === 'en_cours') {
       box.appendChild(button('Marquer la demande terminée', function () { partAct(base + '/cloture', { outcome: 'terminee' }, 'La demande n’est pas close.', 'Demande terminée.'); }));
     }
     if (r.state !== 'terminee' && r.state !== 'abandonnee') {
