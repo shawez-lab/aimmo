@@ -152,6 +152,7 @@ async function seedEveryTable() {
         if ('from' in l && l.jsonPath) {
           row[l.column] = JSON.stringify({ [l.jsonPath]: `${l.prefix ?? ''}${seeded.get(l.from)![p]![l.key]}` });
           for (const [c, start] of Object.entries(l.startsWith ?? {})) row[c] = `${start}${p}`;
+          for (const [here, there] of Object.entries(l.alsoMatch ?? {})) row[here] = `${l.alsoMatchPrefix?.[here] ?? ''}${seeded.get(l.from)![p]![there]}`;
         } else if ('from' in l) {
           row[l.column] = `${l.prefix ?? ''}${seeded.get(l.from)![p]![l.key]}`;
           for (const [here, there] of Object.entries(l.alsoMatch ?? {})) row[here] = seeded.get(l.from)![p]![there]!;
@@ -291,8 +292,45 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(journalOfA).not.toContain(9008);
     expect(journalOfA).toContain(9009);
     expect(journalOfC).not.toContain(9009);
+    // L'état des lieux du locataire C, retrouvé par son bail (version 7 du logement de A) : sa signature et la clôture
+    // sont à C ; la signature du propriétaire reste à A ; la version 8, d'un autre bail, n'est pas à C.
+    await insert('rental_leases', { ...seeded.get('rental_leases')![B]!, id: 'bail-c', listing_id: listingA, application_id: 'cand-c' });
+    await insert('rental_inventories', { ...seeded.get('rental_inventories')![B]!, id: 'edl-c', listing_id: listingA, lease_id: 'bail-c', version: 7 });
+    await insert('rental_lease_copies', { ...seeded.get('rental_lease_copies')![B]!, lease_id: 'bail-c', listing_id: listingA, content_sha256: 'exemplaire-de-c' });
+    const event = (seq: number, type: string, data: Record<string, unknown>) => insert('journal', { seq, at: 't', type, actor: 'ag', subject: `rental:${listingA}`, data: JSON.stringify(data), prev_hash: 'p', hash: `h${seq}` });
+    await event(9101, 'location.etat_des_lieux_signe', { rule: 'R106', version: 7, party: 'locataire' });
+    await event(9102, 'location.etat_des_lieux_signe', { rule: 'R106', version: 7, party: 'bailleur' });
+    await event(9103, 'location.etat_des_lieux_clos', { rule: 'R106', version: 7 });
+    await event(9104, 'location.etat_des_lieux_signe', { rule: 'R106', version: 8, party: 'locataire' });
+    await event(9105, 'location.bail_exemplaire', { rule: 'R108', party: 'locataire', copy: 'exemplaire-de-c' });
+    await event(9106, 'location.bail_exemplaire', { rule: 'R108', party: 'bailleur', copy: 'exemplaire-de-c' });
+    const tenant = await seqs(C);
+    expect(tenant).toEqual(expect.arrayContaining([9101, 9103, 9105]));
+    for (const seq of [9102, 9104, 9106]) expect(tenant).not.toContain(seq);
+    const owner = await seqs(A);
+    expect(owner).toEqual(expect.arrayContaining([9102, 9103, 9106]));
+    for (const seq of [9101, 9104, 9105]) expect(owner).not.toContain(seq);
+    // Le même logement, vu d'une autre personne sans bail : rien.
+    expect(JSON.stringify(await assembleAccess(db, ['pc-0009']))).not.toContain('etat_des_lieux');
     // B, lui, voit l'événement de sa recommandation sous sa propre fiche seulement s'il y est sujet : ici il ne l'est pas.
     expect((await assembleAccess(db, [B])).sections.find((s) => s.table === 'journal')!.rows.some((r) => r.seq === 9003)).toBe(false);
+  });
+
+  it('[R96] un élément du plan du jour figé quand deux fiches étaient réunies n’est rendu à aucune après leur séparation', async () => {
+    const { db, insert } = await seedEveryTable();
+    const C = 'pc-0003';
+    const D = 'pc-0004';
+    const item = (personId: string, memberIds: string[]) => ({ personId, memberIds, firstName: `${personId}|prenom`, why: `${personId}|projet` });
+    await insert('daily_plans', { agent_id: 'agent-9', network_id: 'n', day: '2026-10-01', computed_at: 't', removed: '[]', items: JSON.stringify([item(D, [C, D]), item(C, [C])]) });
+    // C a été séparé de D : l'élément de D, figé quand ils étaient réunis, ne sort pas pour C, ni pour D.
+    const ofC = JSON.stringify(await assembleAccess(db, [C]));
+    expect(ofC).toContain(`${C}|projet`);
+    expect(ofC).not.toContain(D);
+    expect(JSON.stringify(await assembleAccess(db, [D]))).not.toContain(`${D}|projet`);
+    // Réunies de nouveau, les deux fiches retrouvent les deux éléments.
+    const both = JSON.stringify(await assembleAccess(db, [C, D]));
+    expect(both).toContain(`${C}|projet`);
+    expect(both).toContain(`${D}|projet`);
   });
 
   it('[R96] une conversation d’un autre réseau ou d’un autre canal, un bail à deux parties : rien de l’autre', async () => {

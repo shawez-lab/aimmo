@@ -47,10 +47,14 @@ export interface ViaLocator {
   /** Les lignes ne comptent pas si ces colonnes ont l'une de ces valeurs. */
   except?: Readonly<Record<string, readonly string[]>>;
   where?: Readonly<Record<string, string>>;
-  /** Seulement les lignes de `from` trouvées par cette colonne directe : pas celles de l'autre partie. */
+  /** Seulement les lignes de `from` trouvées par cette colonne directe, ou portant cette marque (`tag`) : pas celles de l'autre partie. */
   onlyMatchedBy?: string;
   /** D'autres colonnes qui doivent aussi valoir celles de la même ligne de `from` (colonne ici → colonne là-bas). */
   alsoMatch?: Readonly<Record<string, string>>;
+  /** Pour une colonne de `alsoMatch` : le préfixe ajouté à la valeur de la ligne de `from` (`rental:` devant l'identifiant du logement). */
+  alsoMatchPrefix?: Readonly<Record<string, string>>;
+  /** Les lignes trouvées par ce chemin portent cette marque, que `onlyMatchedBy` d'une table suivante peut exiger. */
+  tag?: string;
   /** Seulement les lignes de `from` qui ont ces valeurs. */
   parentWhere?: Readonly<Record<string, string>>;
 }
@@ -60,6 +64,11 @@ export interface JsonLocator {
   json: string;
   /** Les champs de l'élément qui portent l'identifiant, une valeur ou une liste. */
   idFields: readonly string[];
+  /**
+   * Des champs dont chaque valeur doit être une fiche de la personne : un élément qui nomme aussi une autre fiche
+   * (une fusion annulée depuis) n'est pas rendu, comme il n'est plus relu ailleurs.
+   */
+  onlyMine?: readonly string[];
 }
 
 export type Locator = DirectLocator | ViaLocator | JsonLocator;
@@ -253,7 +262,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   appointment_briefs: { locate: [via('appointment_id', 'appointments')] },
   appointment_reports: { locate: [via('appointment_id', 'appointments')] },
   appointment_tasks: { locate: by('person_id') },
-  daily_plans: { locate: [{ json: 'items', idFields: ['personId', 'memberIds'] }] },
+  daily_plans: { locate: [{ json: 'items', idFields: ['personId', 'memberIds'], onlyMine: ['personId', 'memberIds'] }] },
   visits: { locate: by('person_id') },
   visit_slip_templates: out('sans_client', 'Modèle de bon de visite du réseau.'),
   visit_slips: { locate: [via('appointment_id', 'appointments')] },
@@ -422,11 +431,17 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       // Le journal du logement est au propriétaire, sauf l'arrivée d'une candidature, qui est au candidat (ci-dessous).
       // Les événements d'une session de signature du bail sont à qui signe (le propriétaire reçoit les siens par sa
       // propre session, ci-dessous), jamais à l'autre partie.
-      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: ['location.candidature', 'location.signature_ouverte', 'location.signature_essai'] } }),
+      // Ce qui est fait par le locataire en tant que partie (sa signature de l'état des lieux, son exemplaire du bail)
+      // est au locataire seul.
+      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: ['location.candidature', 'location.signature_ouverte', 'location.signature_essai'] }, jsonNot: { party: 'locataire' } }),
       // Au journal du logement, ce qui nomme une candidature est au candidat, et ce qui nomme une session de
       // signature du bail est à qui signe.
       via('data', 'rental_applications', 'id', { prefix: 'rental_application:', jsonPath: 'application', startsWith: { subject: 'rental:' } }),
       via('data', 'rental_lease_signatures', 'id', { jsonPath: 'session', startsWith: { subject: 'rental:' } }),
+      // L'état des lieux du locataire, retrouvé par son bail : le logement et la version au journal, jamais ce que le
+      // propriétaire y a signé ; son exemplaire du bail, par l'empreinte de l'exemplaire.
+      via('data', 'rental_inventories', 'version', { jsonPath: 'version', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.etat_des_lieux' }, alsoMatch: { subject: 'listing_id' }, alsoMatchPrefix: { subject: 'rental:' }, jsonNot: { party: 'bailleur' } }),
+      via('data', 'rental_lease_copies', 'content_sha256', { jsonPath: 'copy', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.bail_exemplaire' }, jsonNot: { party: 'bailleur' } }),
       via('subject', 'person_requests', 'id', { prefix: 'person_request:' }),
       // Le journal d'un bien n'est qu'à qui le possède : par son mandat, son projet (bien possédé) ou sa mise en
       // location ; jamais à l'acquéreur qui s'y intéresse.
@@ -480,15 +495,16 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   rental_lease_templates: out('sans_client', 'Modèle de bail du réseau.'),
   // Le bail et l'état des lieux rendus portent les noms et le domicile des deux parties : leur texte n'est pas montré,
   // leur empreinte reste ; chaque partie en a reçu son exemplaire.
-  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications')], shared: ['content'] },
+  // Le bail retrouvé par la candidature est celui du locataire : marqué, pour lui rendre ce qu'il y a fait en partie.
+  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications', 'id', { tag: 'locataire' })], shared: ['content'] },
   // La signature en ligne du bail : chaque partie a la sienne ; l'exemplaire signé nomme les deux, son texte n'est
   // montré à aucune, son empreinte reste.
   rental_lease_signatures: { locate: by('person_id'), secrets: ['code_hash'] },
-  rental_lease_copies: { locate: [via('lease_id', 'rental_leases')], shared: ['content'] },
+  rental_lease_copies: { locate: [via('lease_id', 'rental_leases'), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'locataire', tag: 'locataire' })], shared: ['content'] },
   rental_lease_copy_deliveries: { locate: [via('lease_id', 'rental_lease_copies', 'lease_id')] },
   rental_fees: { locate: [via('listing_id', 'rental_listings')] },
   // L'état des lieux et la remise des clés : au propriétaire par son logement, au locataire par son bail.
-  rental_inventories: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases')], shared: ['content'] },
+  rental_inventories: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases'), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'locataire', tag: 'locataire' })], shared: ['content'] },
   rental_inventory_signatures: { locate: [via('inventory_id', 'rental_inventories')] },
   rental_inventory_copies: { locate: [via('inventory_id', 'rental_inventories')] },
   rental_handovers: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases')] },
@@ -569,7 +585,8 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
           named.add(here);
           if (!schema.get(l.from)?.columns.includes(there)) gaps.push({ kind: 'colonne_inconnue', table: l.from, column: there });
         }
-        if (l.onlyMatchedBy && parent && 'locate' in parent && !parent.locate.some((p) => isDirect(p) && p.column === l.onlyMatchedBy)) {
+        for (const here of Object.keys(l.alsoMatchPrefix ?? {})) if (!(here in (l.alsoMatch ?? {}))) gaps.push({ kind: 'colonne_inconnue', table, column: here });
+        if (l.onlyMatchedBy && parent && 'locate' in parent && !parent.locate.some((p) => (isDirect(p) && p.column === l.onlyMatchedBy) || (isVia(p) && p.tag === l.onlyMatchedBy))) {
           gaps.push({ kind: 'colonne_inconnue', table: l.from, column: l.onlyMatchedBy });
         }
       }

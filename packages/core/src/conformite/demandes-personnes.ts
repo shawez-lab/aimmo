@@ -93,6 +93,8 @@ interface Found {
   row: Row;
   /** Les colonnes directes par lesquelles la ligne a été trouvée. */
   matched: Set<string>;
+  /** Les marques (`tag`) des chemins qui l'ont trouvée : elles ne rendent pas la ligne exclusive. */
+  tags: Set<string>;
   /** Trouvée par une ligne qui n'est qu'à la personne. */
   viaExclusive: boolean;
   /** Une référence à une autre personne y a été masquée. */
@@ -147,7 +149,7 @@ export async function assembleAccessDetail(
     const rows: Row[] = [];
     const starts = Object.keys(l.startsWith ?? {}).sort();
     const where = Object.keys(l.where ?? {}).sort();
-    const target = l.jsonPath ? `CASE WHEN json_valid("${l.column}") THEN json_extract("${l.column}", ?) END` : `"${l.column}"`;
+    const target = l.jsonPath ? `CASE WHEN json_valid("${l.column}") THEN CAST(json_extract("${l.column}", ?) AS TEXT) END` : `"${l.column}"`;
     for (let i = 0; i < values.length; i += CHUNK) {
       const part = values.slice(i, i + CHUNK);
       const condition = [...starts.map((c) => ` AND substr("${c}", 1, ?) = ?`), ...where.map((c) => ` AND "${c}" = ?`)].join('');
@@ -167,10 +169,11 @@ export async function assembleAccessDetail(
     const entry = carte[table]!;
     if ('excluded' in entry) continue;
     const rows = new Map<string, Found>();
-    const add = (row: Row, column: string | null, viaExclusive = false): void => {
+    const add = (row: Row, column: string | null, viaExclusive = false, tag?: string): void => {
       const key = JSON.stringify(canonical(row));
-      const known = rows.get(key) ?? { row, matched: new Set<string>(), viaExclusive: false };
+      const known = rows.get(key) ?? { row, matched: new Set<string>(), tags: new Set<string>(), viaExclusive: false };
       if (column) known.matched.add(column);
+      if (tag) known.tags.add(tag);
       if (viaExclusive) known.viaExclusive = true;
       rows.set(key, known);
     };
@@ -183,7 +186,7 @@ export async function assembleAccessDetail(
         continue;
       }
       if ('from' in l) {
-        const parents = [...(found.get(l.from)?.entries() ?? [])].filter(([, p]) => !l.onlyMatchedBy || p.matched.has(l.onlyMatchedBy))
+        const parents = [...(found.get(l.from)?.entries() ?? [])].filter(([, p]) => !l.onlyMatchedBy || p.matched.has(l.onlyMatchedBy) || p.tags.has(l.onlyMatchedBy))
           .filter(([, p]) => Object.entries(l.parentWhere ?? {}).every(([c, v]) => p.row[c] === v));
         const owned = exclusive.get(l.from) ?? new Set<string>();
         // Une ligne enfant vaut la clé d'une ligne trouvée, et ses autres colonnes liées valent celles de la même ligne.
@@ -193,7 +196,11 @@ export async function assembleAccessDetail(
         for (const [key, p] of parents) {
           const v = p.row[l.key];
           if (v === null || v === undefined) continue;
-          const t = tuple(`${l.prefix ?? ''}${v}`, (c) => p.row[c], 1);
+          const t = tuple(`${l.prefix ?? ''}${v}`, (c) => {
+            const here = pairs.find((pair) => pair[1] === c)?.[0];
+            const start = here === undefined ? undefined : l.alsoMatchPrefix?.[here];
+            return start === undefined || p.row[c] === null || p.row[c] === undefined ? p.row[c] : `${start}${p.row[c]}`;
+          }, 1);
           parentExclusive.set(t, (parentExclusive.get(t) ?? false) || owned.has(key));
         }
         const values = [...new Set([...parentExclusive.keys()].map((t) => (JSON.parse(t) as string[])[0]!))].sort();
@@ -201,7 +208,7 @@ export async function assembleAccessDetail(
           if (!l.jsonPath) return String(row[l.column]);
           try {
             const v = (JSON.parse(String(row[l.column])) as Record<string, unknown>)[l.jsonPath];
-            return typeof v === 'string' ? v : '';
+            return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '';
           } catch {
             return '';
           }
@@ -219,7 +226,7 @@ export async function assembleAccessDetail(
           if (Object.entries(l.jsonNot ?? {}).some(([field, v]) => jsonField(row, field) === v)) continue;
           if (Object.entries(l.except ?? {}).some(([c, values]) => values.includes(String(row[c])))) continue;
           const t = tuple(childValue(row), (c) => row[c], 0);
-          if (parentExclusive.has(t)) add(row, null, parentExclusive.get(t)!);
+          if (parentExclusive.has(t)) add(row, null, parentExclusive.get(t)!, l.tag);
         }
         continue;
       }
@@ -239,6 +246,12 @@ export async function assembleAccessDetail(
         }
         const mine = (Array.isArray(items) ? items : []).filter((item) => {
           if (!item || typeof item !== 'object') return false;
+          const values = (field: string): unknown[] => {
+            const v = (item as Record<string, unknown>)[field];
+            return v === undefined ? [] : Array.isArray(v) ? v : [v];
+          };
+          // Un élément qui nomme aussi une autre fiche (fusion annulée depuis) n'est rendu à aucune des deux.
+          if ((l.onlyMine ?? []).some((field) => values(field).some((x) => typeof x !== 'string' || !ids.includes(x)))) return false;
           return l.idFields.some((field) => {
             const v = (item as Record<string, unknown>)[field];
             return (typeof v === 'string' && ids.includes(v)) || (Array.isArray(v) && v.some((x) => typeof x === 'string' && ids.includes(x)));
