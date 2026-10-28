@@ -7,7 +7,7 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 ## Priorité de Shawez (avant tout le reste, voie 1)
 
 ### Z02 · Accès de Shawez à l'application en un clic
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte
 - Dépendances : aucune
 - Objectif : l'application https://aimmo-api.shawez.workers.dev/app/ répond « API fermée : aucune clé configurée ». Shawez doit pouvoir entrer sans rien taper de technique. Un workflow GitHub lancé à la main (« Créer l'accès de Shawez ») tire une clé au hasard, range seulement son empreinte dans le secret `API_KEYS` du Worker avec `wrangler secret put` (le jeton Cloudflare est déjà dans les secrets du dépôt), crée la fiche agent de Shawez avec le rôle direction et agent, et lui remet la clé par un lien d'invitation à usage unique, valable 24 heures, envoyé à shawez@gravelin-immo.com. La clé n'apparaît jamais dans les journaux, le dépôt ni le chat. Le lien ouvre l'application déjà connectée.
