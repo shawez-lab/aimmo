@@ -27,6 +27,7 @@ import {
 } from '../../core/src/partenaires/index.ts';
 import { PARTNER_CSS, PARTNER_HTML, PARTNER_JS } from '../app/partenaire.ts';
 import { journalError } from './app.ts';
+import { SORT_LABELS } from './partenaires-sortes.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 8_000;
@@ -271,24 +272,7 @@ async function consentNote(s: PartenairesServices, viewer: Viewer, [id]: string[
   return reply({ ok: true, value: { proofRef, sha256, at, channel } });
 }
 
-/** Les sortes qu'un partenaire peut déposer pour cette demande, avec leur nom en français. */
-export const SORT_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  dpe: 'Diagnostic de performance énergétique',
-  amiante: 'Constat amiante',
-  plomb: 'Constat de risque d’exposition au plomb',
-  electricite: 'Diagnostic électricité',
-  gaz: 'Diagnostic gaz',
-  termites: 'État relatif aux termites',
-  mesurage_carrez: 'Mesurage loi Carrez',
-  bornage: 'Plan de bornage',
-  titre_propriete: 'Titre de propriété',
-  pre_etat_date: 'Pré-état daté',
-  projet_compromis: 'Projet de compromis',
-  projet_acte: 'Projet d’acte',
-  accord_principe: 'Accord de principe',
-  offre_pret: 'Offre de prêt',
-  devis: 'Devis',
-});
+export { SORT_LABELS } from './partenaires-sortes.ts';
 
 export function sortsFor(trade: PartnerTrade, domain: string | null): { sort: string; label: string }[] {
   return Object.entries(PIECE_RULES)
