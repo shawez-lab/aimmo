@@ -144,3 +144,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-10-28 04:33 · fin de séance · F07, N09, K01, K02, K03 fusionnés ; M13 découpé ; R67, R70, R71 en service · prochaine : K04
 - 2026-10-28 04:43 · K04 · tableau de bord de l'agent fusionné (#118), Jamais vu : chaque chiffre avec les lignes qui le font, bornes de jours de Paris ; relecture forte sans P0 ni P1 ; Codex à sa limite · prochaine : K05
 - 2026-10-28 04:50 · K05 · tableau du réseau fusionné (#119) : totaux égaux à chaque découpage (agent, zone, source), coûts de l'IA par canal et par mandat ; Codex à sa limite · prochaine : K06
+- 2026-10-28 04:57 · K06 · rapport du matin fusionné (#120) : un par lecteur et par jour ouvré à 7 h 30, période depuis le jour ouvré précédent, chiffres des tableaux de bord ; R68 et R69 en service ; Codex à sa limite · prochaine : K07

@@ -1137,7 +1137,9 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K06 · Rapport du matin, chaque jour ouvré à 7 h 30
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : période = du jour ouvré précédent à la veille (le lundi couvre vendredi à dimanche) ; rapport rangé, lu dans l'application, jamais envoyé ; alertes : rappels en retard pour l'agent, reversements à faire pour la direction.
+- Reste : relecture de Codex impossible (limite d'usage, H03), fusion sur les vérifications (#120) ; branchement au planificateur et écran avec K08.
 - Qui : Claude · Relecture : normale · Dépend de : K05
 - Cahier : M13, « Rapport du matin ».
 - Objectif : chaque jour ouvré à 7 h 30, heure de Paris, un rapport rangé pour la direction et pour chaque agent : les chiffres de la veille, les contacts chauds, les alertes, en quelques lignes écrites par le code.
@@ -1145,7 +1147,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : rien.
 
 ### K07 · Alertes : budget de l'IA, chute d'un indicateur, échéance d'un document d'agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : normale · Dépend de : K06
 - Cahier : M13, « Alertes ».
 - Objectif : une alerte à la direction quand le coût de l'IA du mois atteint 70 % du budget réglé, quand un indicateur du réseau baisse de plus du seuil réglé sur 7 jours par rapport aux 28 précédents, et avant l'échéance d'un document d'agent (lue par une interface de M14).
