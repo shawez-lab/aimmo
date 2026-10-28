@@ -46,8 +46,13 @@ export const SOURCE_LABELS: Readonly<Record<(typeof CANDIDATE_SOURCES)[number], 
 
 const escape = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+const deepFreeze = <T>(value: T): T => {
+  if (value && typeof value === 'object') for (const v of Object.values(value)) deepFreeze(v);
+  return Object.freeze(value);
+};
+
 /** Les textes de la page, en clair : ce qui est contrôlé [R80] est exactement ce qui est publié. */
-export const PAGE_TEXT = Object.freeze({
+export const PAGE_TEXT = deepFreeze({
   kicker: 'Réseau d’agents immobiliers · né à Dijon',
   title: 'Rejoindre AIMMO',
   lede: 'Vous signez des mandats et vous accompagnez vos clients. Le réseau prend le reste : les contacts qualifiés, les documents, la diffusion, le suivi jusqu’à l’acte.',
@@ -210,7 +215,7 @@ function html(status: number, title: string, body: string): Response {
   });
 }
 
-type FormValues = Partial<Record<'firstName' | 'lastName' | 'email' | 'phone' | 'town' | 'currentStatus' | 'experience' | 'source' | 'question' | 'parrain', string>> & { consent?: boolean };
+type FormValues = { [K in 'firstName' | 'lastName' | 'email' | 'phone' | 'town' | 'currentStatus' | 'experience' | 'source' | 'question' | 'parrain']?: string | undefined } & { consent?: boolean };
 
 /** Le message d'un refus de la couche métier, et le champ qu'il vise. */
 const ERRORS: Readonly<Record<string, [string, keyof FormValues | null]>> = Object.freeze({
@@ -301,6 +306,8 @@ export interface CandidatureConfig {
   /** Le réseau qui reçoit les candidatures. Absent : la page dit que les candidatures ne sont pas encore ouvertes. */
   networkId: string | null;
   now?: () => Date;
+  /** Le contrôle des textes avant de servir la page [R80] ; remplacé seulement par les tests. */
+  problems?: () => string[];
 }
 
 /** La page de candidature, ou `null` si l'adresse n'est pas à elle. */
@@ -310,7 +317,7 @@ export async function handleCandidature(request: Request, config: CandidatureCon
   const now = config.now ?? (() => new Date());
   const journal = new SqlJournalStore(config.db);
   // Un texte qui promettrait un revenu ferme la page : rien n'est publié sans passer le contrôle [R80].
-  const problems = pageProblems();
+  const problems = (config.problems ?? pageProblems)();
   if (problems.length > 0) {
     await appendEvent(journal, { type: 'candidature.page_fermee', actor: 'system:candidature', subject: 'page:rejoindre', data: { rule: 'R80', count: problems.length } }, now);
     return html(503, 'Page fermée · AIMMO', '<h1>Page fermée</h1><p>Cette page est en cours de relecture. Revenez bientôt.</p>');

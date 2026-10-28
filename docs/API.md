@@ -172,6 +172,21 @@ Sous `/v1/pilotage`, chaque route passe par les droits de la couche métier [R16
 
 Au planificateur : chaque heure, `pilotage.passage` (commissions, brouillons de factures, reprise des transmissions, alertes de reversement) ; à 6 h, `pilotage.alertes`, avec les fins de validité des pièces du dossier d'agent (M14) ; du lundi au vendredi à 7 h 30, `pilotage.rapport_matin`, rangé et lu dans l'application, jamais envoyé.
 
+## Réseau et académie, en mode essai (J12)
+
+Sous `/v1/reseau`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Un corps porte seulement les clés de sa route : une clé de plus est refusée (`invalid_body`), sans rien ranger. Rien n'est envoyé : les réponses aux candidats restent dans la boîte d'essai. Branchement dans `app.ts` : J13 (voie 1).
+
+- Candidatures (direction) : `GET /candidatures`, dans l'ordre d'arrivée, sans note ni tri [R81] ; `GET|POST /candidatures/<id>/entretien` (fiche, puis `at`, `interviewer`) ; `POST /entretiens/<id>/tenu` (`heldByName`) ; `POST /candidatures/<id>/decision` (`decision`, `reason`, `deciderName`) ; `POST /candidatures/<id>/admettre` (`zone`) ; `GET /candidatures/<id>/reponses` ; `GET|POST /reponses` (`topic`, `body`, contrôlé par R80) ; `GET /questions`, `POST /questions/<id>/faite`.
+- Dossier d'agent [R82] : `GET /mon-dossier` ; `GET /agents/<id>/dossier` ; `POST /agents/<id>/pieces` (`kind`, `ref`, `issuedOn`, `validUntil`) ; `POST /agents/<id>/projets` (`kind`). Sans stockage des pièces passé aux routes, réponse 503.
+- Import [R84] : `POST /import` (`format`, `contacts`, `properties` en texte, 2 Mo au plus), pour l'agent qui appelle, jamais un autre ; `GET /import/a-reprendre` (direction).
+- Académie [R85] : `GET /academie` ; `POST /academie/modules`, `POST /academie/seances`, `POST /academie/seances/<id>/presence` (direction) ; `POST /academie/modules/<id>/fait` ; `GET /ma-formation`, `GET /agents/<id>/formation` ; `GET /agents/<id>/bac-a-sable` (503 sans son stockage à part).
+- Entraînement : `GET /entrainement/cas`, `POST /entrainement` (`caseKey`), `POST /entrainement/<id>/tour` (`text`), `POST /entrainement/<id>/fin`.
+- Accompagnement : `POST /agents/<id>/referent`, `POST /binomes`, `POST /agents/<id>/absence`, `GET /agents/<id>/dossiers-couverts`, `POST /assistance`, `POST /assistance/<id>/repondue`.
+- Parrainage [R83] : `POST /parrainage/regles` (`rateBp`, `levels`), `POST /agents/<id>/parrain`, `GET /mes-primes`, `GET /agents/<id>/primes`.
+- Départ [R86] : `GET|POST /agents/<id>/depart`, `POST /agents/<id>/depart/annuler`, `POST /agents/<id>/successeur`, `POST /agents/<id>/successeur/decision`, `GET /agents/<id>/solde`, `GET /agents/<id>/contenus`, `GET|POST /reprises`.
+
+La page publique de candidature est servie à `/rejoindre`, sans clé ni script (`packages/api/src/candidature.ts`). Elle reçoit le réseau par la configuration (`CANDIDATURE_NETWORK_ID`, à brancher par J13) ; sans lui, elle dit que les candidatures ne sont pas ouvertes. Chacun de ses textes passe le contrôle des promesses de revenus à chaque service : un texte qui échoue ferme la page (503, `candidature.page_fermee` au journal) [R80]. Le lien d'un parrain est `/rejoindre?parrain=<identifiant de l'agent>`.
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).
