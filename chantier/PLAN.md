@@ -1042,7 +1042,7 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Attend : rien.
 
 ### F05 · Satisfaction : note et commentaire rangés pour M13
-- Statut : en cours
+- Statut : fait (2026-10-28)
 - Qui : Claude · Relecture : normale · Dépend de : F02
 - Cahier : M11, « Satisfaction ».
 - Objectif : le client donne une note de 1 à 5 et un commentaire par un lien à usage unique de sa demande d'avis ; la note est rangée avec le dossier pour M13 ; l'agent la voit ; elle ne change jamais qui reçoit la demande d'avis.
@@ -1063,6 +1063,7 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Cahier : M11 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/apres-vente` (recommandation, choix des relances, lien de la fiche Google, satisfaction, tâches) dans `packages/api/src/apres-vente.ts`, branchées dans `app.ts`, le passage quotidien au planificateur, et dans l'application de l'agent l'écran d'un dossier clos : demandes parties, tâches « remercier », recommandations, note.
 - Critères : chaque route sous R16, refus au journal ; un parcours de test, de l'acte à la relance d'un an ; écran accessible, sans texte générique, beau sur téléphone d'abord.
+- Reste de F05 : page publique de la note et route de réponse (`Satisfaction.submit`), réglage `satisfactionBase` de `reviewRequestJob`, réponses dans l'écran de l'agent.
 - Reste de F04 : brancher `afterSaleReminderJob` au planificateur, avec l'adresse de désinscription en réglage ; routes du choix (`recordChoice`), de la désinscription (`unsubscribe`, page publique) et de la liste.
 - Reste de F02 : brancher `reviewRequestJob` au planificateur avec le `DossiersClos` de N06 ; routes du lien de la fiche Google (`setReviewLink`), des demandes (`list`) et des tâches (`openTasks`, `lien_avis` et `avis_non_parti`). Le plafond de R11, 2 demandes d'avis par jour pour tout le réseau, ne suffira pas quand le réseau clora plus de 2 ventes par jour : les demandes en trop sont closes et confiées à l'agent ; un plafond par agent serait un changement de R11, à décider avec Shawez.
 - Reste de F01 : deux saisies simultanées du même proche peuvent laisser un projet et une source en trop (D1 sans transaction interactive) : la route de recommandation porte une clé d'idempotence.
