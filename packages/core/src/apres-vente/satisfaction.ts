@@ -77,14 +77,15 @@ export class Satisfaction {
     const raw = input.comment ?? null;
     if (raw !== null && typeof raw !== 'string') return { ok: false, code: 'invalid_comment' };
     const comment = raw === null || raw.trim() === '' ? null : raw.trim();
-    if (comment !== null && comment.length > SATISFACTION_COMMENT_MAX) return { ok: false, code: 'invalid_comment' };
-    // Le lien sert une fois : deux envois simultanés n'en rangent qu'un.
-    const { changes } = await this.db.run('UPDATE satisfaction_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL', [at.toISOString(), row.token_hash]);
-    if (changes !== 1) return { ok: false, code: 'used' };
+    // Ni caractère de contrôle, hors retour à la ligne et tabulation, ni plus de 1 000 caractères.
+    if (comment !== null && (comment.length > SATISFACTION_COMMENT_MAX || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(comment))) return { ok: false, code: 'invalid_comment' };
+    // La réponse d'abord : si elle ne peut pas être rangée, le lien n'est pas consommé et le client peut réessayer.
+    // Une seule réponse par client et par dossier : deux envois simultanés n'en rangent qu'une.
     const inserted = await this.db.run(
       'INSERT INTO satisfaction_answers (file_id, person_id, network_id, agent_id, score, comment, answered_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
       [row.file_id, row.person_id, row.network_id, row.agent_id, input.score, comment, at.toISOString()],
     );
+    await this.db.run('UPDATE satisfaction_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL', [at.toISOString(), row.token_hash]);
     if (inserted.changes !== 1) return { ok: false, code: 'used' };
     // Au journal : le dossier et la note, jamais le commentaire [R13].
     await appendEvent(this.journal, { type: 'apres_vente.satisfaction', actor: 'client:lien', subject: `sale_file:${row.file_id}`, data: { score: input.score, comment: comment !== null } }, this.now);

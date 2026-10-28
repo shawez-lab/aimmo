@@ -80,7 +80,22 @@ describeWithSqlite('F05 · satisfaction : note et commentaire rangés pour M13',
     expect(await t.satisfaction.submit('pas un jeton', { score: 3 })).toEqual({ ok: false, code: 'unknown' });
     for (const score of [0, 6, 2.5, Number.NaN]) expect(await t.satisfaction.submit(token, { score })).toEqual({ ok: false, code: 'invalid_score' });
     expect(await t.satisfaction.submit(token, { score: 3, comment: 'x'.repeat(1001) })).toEqual({ ok: false, code: 'invalid_comment' });
-    // Trente jours après la demande, le lien a expiré.
+    for (const comment of ['\u0000', 'bien\u0007', '\u007f']) expect(await t.satisfaction.submit(token, { score: 3, comment })).toEqual({ ok: false, code: 'invalid_comment' });
+    // Une réponse refusée ne consomme pas le lien : le client peut réessayer, puis le lien sert une fois.
+    t.setClock(paris('2027-03-10', 12));
+    expect(await t.satisfaction.submit(token, { score: 3, comment: 'Ligne un\nLigne deux' })).toEqual({ ok: true });
+    expect(await t.satisfaction.submit(token, { score: 3 })).toEqual({ ok: false, code: 'used' });
+    const list = await t.satisfaction.list(t.direction);
+    expect(list.ok && list.value.map((r) => r.comment)).toEqual(['Ligne un\nLigne deux']);
+  });
+
+  it('trente jours après la demande, le lien a expiré', async () => {
+    const t = await setup();
+    const a = await t.client('Ana');
+    t.close('f1', '2027-03-08', [{ personId: a, side: 'vendeur' }]);
+    t.setClock(paris('2027-03-09', 10, 5));
+    await t.avis.run(t.network.id);
+    const token = await t.tokenOf(a);
     t.setClock(new Date(paris('2027-03-09', 10, 5).getTime() + 30 * 86_400_000));
     expect(await t.satisfaction.submit(token, { score: 3 })).toEqual({ ok: false, code: 'expired' });
     const list = await t.satisfaction.list(t.direction);
