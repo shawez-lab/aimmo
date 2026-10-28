@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS rental_lease_copies (
 CREATE TRIGGER IF NOT EXISTS rental_lease_copies_garde BEFORE DELETE ON rental_lease_copies BEGIN SELECT RAISE(ABORT, 'rental_lease_copies : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS rental_lease_copies_fige BEFORE UPDATE ON rental_lease_copies BEGIN SELECT RAISE(ABORT, 'rental_lease_copies : un exemplaire ne change plus'); END;
 
--- La remise de l'exemplaire à chaque partie, par le contrôle central (en essai : boîte d'essai) ; une ligne par partie.
+-- L'avis de l'exemplaire (référence et empreinte) remis à chaque partie par le contrôle central (en essai : boîte
+-- d'essai), pour vérifier l'exemplaire que l'agent lui remet ; une ligne par partie.
 CREATE TABLE IF NOT EXISTS rental_lease_copy_deliveries (
   lease_id TEXT NOT NULL REFERENCES rental_lease_copies (lease_id) ON DELETE RESTRICT,
   party TEXT NOT NULL CHECK (party IN ('bailleur', 'locataire')),

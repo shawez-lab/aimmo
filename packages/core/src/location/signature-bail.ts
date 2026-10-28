@@ -9,7 +9,10 @@
  * signature vaut pour un bail et une empreinte, jamais pour le suivant.
  *
  * Quand les deux parties ont signé, un seul exemplaire est fait (le bail suivi des deux preuves) et chaque partie en
- * reçoit la référence et l'empreinte, les mêmes, par le contrôle central.
+ * reçoit l'avis par le contrôle central : la même référence et la même empreinte, pour vérifier l'exemplaire que l'agent
+ * lui remet (`copy`). Décidé, lecture prudente : le canal n'a pas de pièce jointe et aucune page client ne sert le bail ;
+ * l'envoi du document lui-même attend le vrai canal mail (H05) et le branchement (W10). La remise enregistrée est celle
+ * de l'avis, jamais celle du document.
  *
  * Tant que H08 (modèles validés) et H24 (dossier de preuve validé par l'avocat) ne sont pas faits, une signature reste
  * d'essai : `signedAt`, lu par la remise des clés (W08), ne rend jamais un bail signé réel. Le parcours d'essai lit la
@@ -367,7 +370,7 @@ export class SignaturesBail implements LeaseSignatureState {
         purpose: ONLINE_SIGNATURE_PURPOSE,
         subject: `signature_bail:${leaseId}:exemplaire`,
         fallbackTexts: [
-          `${await this.greeting(s.person_id)}Votre bail signé en ligne par les deux parties est enregistré sous la référence ${reference}, empreinte ${copy.content_sha256}. Votre exemplaire vous est remis avec ce message. Signature d’essai, sans valeur juridique.`,
+          `${await this.greeting(s.person_id)}Votre bail signé en ligne par les deux parties est enregistré sous la référence ${reference}. Votre agent vous remet votre exemplaire, le même pour le bailleur et le locataire : il porte l’empreinte ${copy.content_sha256}. Signature d’essai, sans valeur juridique.`,
         ],
         // La référence et l'empreinte sont des identifiants, pas des chiffres à vérifier : leurs nombres sont permis [R10].
         figures: [...(leaseId.match(/\d+/g) ?? []), ...(copy.content_sha256.match(/\d+/g) ?? [])],
