@@ -132,6 +132,7 @@ export class RelectureRegistre {
   /** L'état de la relecture : le responsable de la conformité et la direction le lisent. */
   async status(viewer: Viewer): Promise<{ ok: true; value: RegistryReviewStatus } | RegistryRefusal> {
     if (viewer.role !== 'compliance' && viewer.role !== 'direction') return this.refuse(viewer, 'role');
+    await this.journalReviews(viewer.networkId);
     return { ok: true, value: await this.statusOf(viewer.networkId) };
   }
 
@@ -151,12 +152,24 @@ export class RelectureRegistre {
       'INSERT INTO registry_reviews (id, network_id, reviewed_on, validator_name, registry_hash, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [id, viewer.networkId, input.reviewedOn, input.validatorName.trim(), before.registryHash, this.actor(viewer), this.now().toISOString()],
     );
-    await appendEvent(
-      this.journal,
-      { type: 'registre.relecture', actor: this.actor(viewer), subject: `registry:${viewer.networkId}`, data: { rule: 'R95', review: `registry_review:${id}`, reviewedOn: input.reviewedOn, registryHash: before.registryHash } },
-      this.now,
-    );
+    await this.journalReviews(viewer.networkId);
     return { ok: true, value: await this.statusOf(viewer.networkId) };
+  }
+
+  /** Chaque relecture rangée a son événement au journal : une relecture rangée sans lui est reprise, une seule fois. */
+  private async journalReviews(networkId: string): Promise<void> {
+    const subject = `registry:${networkId}`;
+    const rows = await this.db.all<{ id: string; reviewed_on: string; registry_hash: string; recorded_by: string }>(
+      'SELECT id, reviewed_on, registry_hash, recorded_by FROM registry_reviews WHERE network_id = ? ORDER BY recorded_at, id',
+      [networkId],
+    );
+    if (rows.length === 0) return;
+    const done = new Set((await this.journal.bySubject(subject)).filter((e) => e.type === 'registre.relecture').map((e) => e.data.review));
+    for (const r of rows) {
+      const review = `registry_review:${r.id}`;
+      if (done.has(review)) continue;
+      await appendEvent(this.journal, { type: 'registre.relecture', actor: r.recorded_by, subject, data: { rule: 'R95', review, reviewedOn: r.reviewed_on, registryHash: r.registry_hash } }, this.now);
+    }
   }
 
   /**
@@ -164,6 +177,7 @@ export class RelectureRegistre {
    * échéance. Rend le nombre d'alertes levées (0 ou 1). Une alerte rangée sans son événement est reprise au journal.
    */
   async run(networkId: string): Promise<number> {
+    await this.journalReviews(networkId);
     const status = await this.statusOf(networkId);
     if (this.today() < status.noticeOn) return 0;
     const { changes } = await this.db.run(

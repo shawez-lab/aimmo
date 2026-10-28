@@ -195,7 +195,7 @@ describeWithSqlite('L06 · relecture trimestrielle du registre', () => {
     let failing = true;
     const flaky = {
       append: async (e: Parameters<typeof t.journal.append>[0]) => {
-        if (failing && e.type === 'registre.relecture_alerte') throw new Error('journal en panne');
+        if (failing && e.type.startsWith('registre.relecture')) throw new Error('journal en panne');
         return t.journal.append(e);
       },
       last: () => t.journal.last(),
@@ -211,5 +211,14 @@ describeWithSqlite('L06 · relecture trimestrielle du registre', () => {
     expect(await relecture.run(t.network.id)).toBe(0);
     await relecture.alerts(t.conformite);
     expect((await t.journal.all()).filter((e) => e.type === 'registre.relecture_alerte')).toHaveLength(1);
+    // Une relecture rangée sans son événement est reprise par la lecture de l'état, puis par le passage du jour.
+    failing = true;
+    await expect(relecture.recordReview(t.conformite, { reviewedOn: '2027-01-13', validatorName: 'Camille Conforme' })).rejects.toThrow('journal en panne');
+    failing = false;
+    expect(await relecture.status(t.direction)).toMatchObject({ ok: true, value: { lastReviewOn: '2027-01-13' } });
+    await relecture.run(t.network.id);
+    const reviews = (await t.journal.all()).filter((e) => e.type === 'registre.relecture');
+    expect(reviews.map((e) => [e.actor, e.data.reviewedOn])).toEqual([['compliance:conformite-1', '2027-01-13']]);
+    expect(await verifyChain(await t.journal.all())).toMatchObject({ ok: true });
   });
 });
