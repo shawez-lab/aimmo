@@ -18,6 +18,7 @@ import {
 } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 
 // Parcours de test, de l'avis de valeur validé au mandat numéroté, sur une horloge simulée. Tout est inventé.
 const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, {{bien.prix}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test.\n\nNuméro : {{registre.numero}}, le {{signature.date}}, {{signature.lieu}}.';
@@ -55,7 +56,7 @@ async function parcours(minutes: { generate: number; check: number; sign: number
      VALUES ('avis-1', ?, ?, ?, 'validated', '{}', 190000, 210000, 'texte de test', 'fallback', ?, ?, ?, ?)`,
     [network.id, b.id, alex.id, new Date(T0 - 5 * MIN).toISOString(), new Date(T0).toISOString(), `agent:${alex.id}`, new Date(T0).toISOString()],
   );
-  await controles.recordIdentity(agent, p.id, { piece: 'carte_identite', seenAt: new Date(T0) });
+  await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: new Date(T0) });
 
   const timings: Record<string, number> = {};
   const step = async <T>(name: string, at: number, run: () => Promise<T>): Promise<T> => {

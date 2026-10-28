@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest';
-import { ControlesSignature } from '../src/index.ts';
 import { Publication } from '../src/annonces/index.ts';
 import { ContreOffres, ControlesOffre, DossiersVente, TransmissionOffres } from '../src/offres/index.ts';
 import { setupOffre } from './offres-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 
 // Une offre test de bout en bout, inventée.
 const PROOF = 'preuves/0b6f1d2e-9999-4a2b-8c3d-000000000001.pdf';
@@ -40,7 +40,7 @@ describeWithSqlite('O07 · offre acceptée et dossier de vente', () => {
     // Compromis bloqué tant que l'identité n'est pas vérifiée.
     expect(await dossiers.startCompromis(t.agent, opened.value.id)).toEqual({ ok: false, rule: 'R58', code: 'identity_missing' });
     expect((await t.journal.bySubject(`sale_file:${opened.value.id}`)).map((e) => e.type)).toEqual(['dossier.bloque']);
-    await new ControlesSignature(t.db, t.acces, t.journal, { now: t.now }).recordIdentity(t.agent, t.buyerId, { piece: 'passeport', seenAt: new Date('2027-03-02T09:30:00.000Z') });
+    await identiteAuCoffre({ db: t.db, acces: t.acces, journal: t.journal, now: t.now }, t.agent, t.buyerId, { piece: 'passeport', seenAt: new Date('2027-03-02T09:30:00.000Z') });
     const started = await dossiers.startCompromis(t.agent, opened.value.id);
     expect(started).toMatchObject({ ok: true, value: { steps: [{ step: 'compromis_en_preparation' }] } });
     expect(await dossiers.startCompromis(t.agent, opened.value.id)).toEqual({ ok: false, rule: null, code: 'already_started' });

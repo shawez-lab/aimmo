@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { FicheClient, SqlJournalStore, applyMigrations } from '@aimmo/core';
+import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, type Viewer } from '@aimmo/core';
+import { identiteAuCoffre } from '../../core/test/identite-coffre.ts';
 import { sha256Hex } from '../src/index.ts';
 import { fromD1 } from '../src/d1.ts';
 import worker, { type Env } from '../src/worker.ts';
@@ -45,6 +46,13 @@ describeWithSqlite('D03, D04 · routes des contrôles avant signature et de la s
     expect(before.data.passed).toBe(false);
     expect((await post(`/v1/fiches/${lea.id}/identite`, KEY_AGENT, { piece: 'carte_identite', seenAt: '2020-01-01', numero: 'x' })).status).toBe(400);
     expect((await post(`/v1/fiches/${lea.id}/identite`, KEY_AGENT, { piece: 'carte_identite', seenAt: new Date().toISOString() })).status).toBe(200);
+    // Depuis L03, la case « pièce vue » ne suffit plus : seule la pièce déposée au coffre fait foi [R92].
+    const still = (await (await post(`/v1/documents/${doc.data.id}/controle`, KEY_AGENT)).json()) as { data: { passed: boolean } };
+    expect(still.data.passed).toBe(false);
+    const journal = new SqlJournalStore(db);
+    const acces = new Acces(db, store, new FicheUnique(db, store), journal);
+    const deposited = await identiteAuCoffre({ db, acces, journal, now: () => new Date() }, { role: 'agent', userId: alex.id, networkId: network.id } as Viewer, lea.id, { piece: 'carte_identite', seenAt: new Date() });
+    expect(deposited.ok).toBe(true);
     const after = (await (await post(`/v1/documents/${doc.data.id}/controle`, KEY_AGENT)).json()) as { data: { passed: boolean } };
     expect(after.data.passed).toBe(true);
     // D04 : signé sur papier, numéroté au registre, exemplaire avec son numéro.

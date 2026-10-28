@@ -11,9 +11,8 @@
  * elle porte sur le prix offert, l'offre ne portant pas de frais.
  */
 import type { Acces } from '../acces/acces.ts';
-import { FicheClient } from '../db/fiche-client.ts';
 import { DEFAULT_CONTROL_SETTINGS, type ControlSettings } from '../documents/controles.ts';
-import { FicheUnique } from '../fiche/fusion.ts';
+import { Identification, type IdentificationStatus } from '../conformite/identification.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
@@ -22,7 +21,6 @@ import type { JournalStore } from '../journal/types.ts';
 import { RegistreOffres, type Offer, type OfferInput } from './registre-offres.ts';
 
 const TIME_ZONE = 'Europe/Paris';
-const DAY = 86_400_000;
 
 export type CheckLine =
   | { check: 'identite'; status: 'verifiee'; checkedOn: string }
@@ -58,7 +56,7 @@ export class ControlesOffre {
   private readonly now: () => Date;
   private readonly newId: () => string;
   private readonly registre: RegistreOffres;
-  private readonly unique: FicheUnique;
+  private readonly identification: Identification;
   private readonly settings: ControlSettings;
 
   constructor(
@@ -71,18 +69,21 @@ export class ControlesOffre {
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.settings = options.settings ?? DEFAULT_CONTROL_SETTINGS;
     this.registre = new RegistreOffres(db, acces, journal, { now: this.now, newId: this.newId });
-    this.unique = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
+    this.identification = new Identification(db, null, null, { now: this.now, maxAgeDays: this.settings.identityDays });
   }
 
-  /** La dernière vérification d'identité de la personne, toutes fiches réunies, dans la fenêtre du réglage (comme D03). */
+  /** L'état d'identification de la personne au coffre de la conformité, à l'instant `at` (L03) [R92]. */
+  async identificationAt(networkId: string, personId: string, at: Date): Promise<IdentificationStatus> {
+    return this.identification.status(networkId, personId, at);
+  }
+
+  /**
+   * La vérification d'identité qui vaut à l'instant `at`, toutes fiches réunies, lue au coffre (L03) : midi UTC du jour
+   * de vérification, ou null si la pièce manque, a échu ou date de plus que le réglage [R92].
+   */
   async identitySeenAt(networkId: string, personId: string, at: Date): Promise<string | null> {
-    const ids = await this.unique.membersOf(personId);
-    const since = new Date(at.getTime() - this.settings.identityDays * DAY).toISOString();
-    const row = await this.db.first<{ seen_at: string }>(
-      `SELECT seen_at FROM identity_checks WHERE network_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND seen_at >= ? AND seen_at <= ? ORDER BY seen_at DESC LIMIT 1`,
-      [networkId, ...ids, since, at.toISOString()],
-    );
-    return row?.seen_at ?? null;
+    const status = await this.identification.status(networkId, personId, at);
+    return status.ok ? `${status.verifiedOn}T12:00:00.000Z` : null;
   }
 
   /** Enregistre une offre et la contrôle aussitôt : chaque offre enregistrée a son contrôle écrit. */
