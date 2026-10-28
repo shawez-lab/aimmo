@@ -5,7 +5,9 @@
  * 2. Range en base, par `wrangler d1 execute`, l'empreinte du jeton, son échéance (24 heures), les rôles qu'il ouvre
  *    (agent et direction), et la fiche d'agent de la personne si elle manque. Aucune clé n'est créée ici : le Worker
  *    les tire au moment où le lien sert, et n'en garde que l'empreinte.
- * 3. Envoie le lien, une seule fois, à l'adresse donnée au lancement, par l'envoi de mails de Cloudflare.
+ * 3. Remet le lien, une seule fois. Par défaut (`ACCES_REMISE=mail`), par l'envoi de mails de Cloudflare à l'adresse
+ *    donnée au lancement. En mode `resume` (Z04), sans mail : le lien est écrit seulement dans le résumé du travail
+ *    GitHub (fichier `GITHUB_STEP_SUMMARY`, dépôt privé), jamais dans la sortie du travail ni dans le dépôt.
  *
  * Ce mail suit R200 : il n'est pas un envoi au sens du contrôle central, il ne s'adresse à aucun client, il va à la
  * personne du réseau, à l'adresse donnée en lançant le travail, et il ne contient que son lien d'accès.
@@ -15,14 +17,18 @@
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export const TTL_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_APP_URL = 'https://aimmo-api.shawez.workers.dev/app/';
 
+/** Comment le lien est remis : par mail (le défaut) ou dans le résumé du travail GitHub (Z04). */
+export type Delivery = 'mail' | 'resume';
+
 export interface AccessRequest {
+  delivery: Delivery;
   firstName: string;
   lastName: string;
   email: string;
@@ -39,7 +45,11 @@ const ID = /^[a-z0-9][a-z0-9-]{1,62}$/;
 /** Lit et vérifie la demande ; une valeur douteuse arrête tout avant la moindre écriture. */
 export function readRequest(env: Record<string, string | undefined>): AccessRequest {
   const get = (name: string): string => (env[name] ?? '').trim();
+  const mode = get('ACCES_REMISE') || 'mail';
+  if (mode !== 'mail' && mode !== 'resume') throw new Error('Mode de remise inconnu : « mail » ou « resume ».');
+  const delivery: Delivery = mode;
   const request: AccessRequest = {
+    delivery,
     firstName: get('ACCES_PRENOM'),
     lastName: get('ACCES_NOM'),
     email: get('ACCES_MAIL'),
@@ -50,8 +60,14 @@ export function readRequest(env: Record<string, string | undefined>): AccessRequ
   };
   if (!NAME.test(request.firstName)) throw new Error('Prénom manquant ou mal formé.');
   if (!NAME.test(request.lastName)) throw new Error('Nom manquant ou mal formé.');
-  if (!EMAIL.test(request.email)) throw new Error('Adresse du destinataire manquante ou mal formée.');
-  if (!EMAIL.test(request.sender)) throw new Error('Adresse d’expédition manquante ou mal formée.');
+  if (delivery === 'mail') {
+    if (!EMAIL.test(request.email)) throw new Error('Adresse du destinataire manquante ou mal formée.');
+    if (!EMAIL.test(request.sender)) throw new Error('Adresse d’expédition manquante ou mal formée.');
+  } else {
+    // Sans mail, aucune adresse n'est gardée, même donnée par erreur au lancement.
+    request.email = '';
+    request.sender = '';
+  }
   if (!ID.test(request.networkId)) throw new Error('Identifiant du réseau mal formé.');
   if (!ID.test(request.agentId)) throw new Error('Identifiant de l’agent mal formé.');
   let url: URL;
@@ -129,9 +145,28 @@ export function invitationMail(request: AccessRequest, link: string, now: Date):
   return { to: request.email, from: request.sender, subject: 'Votre accès à AIMMO', text, html };
 }
 
+/**
+ * Le résumé du travail en mode `resume` : le lien et son mode d'emploi, sans prénom, nom ni adresse (les données
+ * saisies sont masquées par GitHub et n'ont rien à y faire).
+ */
+export function invitationSummary(link: string, now: Date): string {
+  const until = parisTime(new Date(now.getTime() + TTL_MS));
+  return [
+    '## Votre accès à AIMMO',
+    '',
+    `[Entrer dans AIMMO](${link})`,
+    '',
+    'Ouvrez ce lien sur votre téléphone (appui long, puis copier, si besoin) : vous serez connecté sans rien saisir.',
+    `Il ne sert qu’une fois et reste valable jusqu’au ${until}. Ne le transférez à personne.`,
+    '',
+  ].join('\n');
+}
+
 export interface Runner {
   d1(sqlFile: string): { ok: boolean };
   send(mail: ReturnType<typeof invitationMail>): Promise<{ ok: boolean; detail: string }>;
+  /** Écrit dans le résumé du travail GitHub, jamais dans sa sortie. Absent : le mode `resume` refuse de tourner. */
+  summary?(markdown: string): { ok: boolean };
   log(line: string): void;
   now(): Date;
 }
@@ -139,6 +174,10 @@ export interface Runner {
 /** Le déroulé complet. Les lignes écrites au journal du travail ne portent ni jeton, ni lien, ni adresse. */
 export async function createAccess(env: Record<string, string | undefined>, runner: Runner): Promise<boolean> {
   const request = readRequest(env);
+  if (request.delivery === 'resume' && !runner.summary) {
+    runner.log('Aucun résumé de travail où écrire le lien : rien n’est créé.');
+    return false;
+  }
   const now = runner.now();
   const token = newToken();
   const dir = mkdtempSync(join(tmpdir(), 'aimmo-acces-'));
@@ -149,7 +188,16 @@ export async function createAccess(env: Record<string, string | undefined>, runn
     return false;
   }
   runner.log('Invitation rangée en base (empreinte seule), valable 24 heures.');
-  const sent = await runner.send(invitationMail(request, invitationLink(request.appUrl, token), now));
+  const link = invitationLink(request.appUrl, token);
+  if (request.delivery === 'resume') {
+    if (!runner.summary!(invitationSummary(link, now)).ok) {
+      runner.log('Le lien n’a pas pu être écrit dans le résumé. L’invitation, que personne ne connaît, expirera seule dans 24 heures.');
+      return false;
+    }
+    runner.log('Lien écrit dans le résumé du travail (Summary), sans mail.');
+    return true;
+  }
+  const sent = await runner.send(invitationMail(request, link, now));
   if (!sent.ok) {
     runner.log(`Le mail n’est pas parti (${sent.detail}). L’invitation, que personne ne connaît, expirera seule dans 24 heures.`);
     return false;
@@ -190,6 +238,16 @@ async function main(): Promise<void> {
       }
       const success = response.ok && body !== null && typeof body === 'object' && (body as { success?: unknown }).success === true;
       return { ok: success, detail: sendFailureDetail(response.status, body) };
+    },
+    summary(markdown) {
+      const file = process.env.GITHUB_STEP_SUMMARY ?? '';
+      if (!file) return { ok: false };
+      try {
+        appendFileSync(file, markdown, { mode: 0o600 });
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
     },
     log: (line) => console.log(line),
     now: () => new Date(),

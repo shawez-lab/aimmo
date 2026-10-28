@@ -1,13 +1,22 @@
 name: Créer l'accès de Shawez
 
 # Z02 · Lancé à la main, depuis main seulement. Range une invitation à usage unique, valable 24 heures (empreinte
-# seule), puis envoie le lien par mail à l'adresse donnée ici. Le lien ouvre l'application déjà connectée : le Worker
+# seule), puis envoie le lien par mail à l'adresse donnée ici ; en remise « resume » (Z04), sans mail, le lien est
+# écrit seulement dans le résumé du travail (Summary), jamais dans sa sortie. Le lien ouvre l'application déjà connectée : le Worker
 # tire alors les clés et n'en garde que l'empreinte. Le secret API_KEYS n'est ni lu ni réécrit.
 # Le prénom, le nom et les adresses sont donnés au lancement : ils ne sont jamais écrits dans le dépôt.
 
 on:
   workflow_dispatch:
     inputs:
+      remise:
+        description: Remise du lien (mail, ou resume pour l'écrire seulement dans le résumé du travail)
+        required: true
+        default: mail
+        type: choice
+        options:
+          - mail
+          - resume
       prenom:
         description: Prénom
         required: true
@@ -17,12 +26,12 @@ on:
         required: true
         type: string
       mail:
-        description: Adresse qui reçoit le lien
-        required: true
+        description: Adresse qui reçoit le lien (remise mail)
+        required: false
         type: string
       expediteur:
-        description: Adresse d'expédition, sur un domaine du compte Cloudflare
-        required: true
+        description: Adresse d'expédition, sur un domaine du compte Cloudflare (remise mail)
+        required: false
         type: string
       reseau:
         description: Identifiant du réseau
@@ -90,8 +99,9 @@ jobs:
           fi
           sed -i "s/$D1_PLACEHOLDER/$id/" wrangler.toml
           npx -y "$WRANGLER" d1 migrations apply aimmo --remote
-      - name: Invitation et mail
+      - name: Invitation et remise du lien
         env:
+          ACCES_REMISE: ${{ inputs.remise }}
           ACCES_PRENOM: ${{ inputs.prenom }}
           ACCES_NOM: ${{ inputs.nom }}
           ACCES_MAIL: ${{ inputs.mail }}

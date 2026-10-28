@@ -6,7 +6,8 @@ import { handleRequest, sha256Hex } from '../src/index.ts';
 import { fromD1 } from '../src/d1.ts';
 import { exchangeInvitation, mergeKeys, parseGrants, randomToken } from '../src/acces.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { createAccess, invitationLink, invitationMail, invitationSql, readRequest, sendFailureDetail, sha256, type Runner } from '../outils/creer-acces.ts';
+import { createAccess, invitationLink, invitationMail, invitationSql, invitationSummary, readRequest, sendFailureDetail, sha256, type Runner } from '../outils/creer-acces.ts';
+import { vi } from 'vitest';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase, type SqliteDatabase } from '../../core/test/sqlite.ts';
 import { fakeD1 } from './fake-d1.ts';
@@ -252,6 +253,105 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
   });
 });
 
+describeWithSqlite('Z04 · lien remis dans le résumé du travail, sans mail', () => {
+  const RESUME = { ACCES_REMISE: 'resume', ACCES_PRENOM: 'Camille', ACCES_NOM: 'Exemple', ACCES_RESEAU: 'reseau-essai', ACCES_AGENT: 'agent-direction' };
+
+  function runnerFor(w: World, out: { logs: string[]; summaries: string[]; sent: number; sql: string }, summaryOk = true): Runner {
+    return {
+      d1(file) {
+        out.sql = readFileSync(file, 'utf8');
+        w.sql(out.sql);
+        return { ok: true };
+      },
+      async send() {
+        out.sent += 1;
+        return { ok: true, detail: '' };
+      },
+      summary(markdown) {
+        if (summaryOk) out.summaries.push(markdown);
+        return { ok: summaryOk };
+      },
+      log: (l) => out.logs.push(l),
+      now: () => T0,
+    };
+  }
+
+  it('le lien est écrit dans le seul résumé : ni dans la sortie du travail, ni au mail, ni en base', async () => {
+    const w = await world();
+    const out = { logs: [] as string[], summaries: [] as string[], sent: 0, sql: '' };
+    const printed: string[] = [];
+    const spies = [
+      vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void printed.push(a.join(' '))),
+      vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => void printed.push(a.join(' '))),
+      vi.spyOn(process.stdout, 'write').mockImplementation((c: string | Uint8Array) => (printed.push(String(c)), true)),
+    ];
+    try {
+      expect(await createAccess(RESUME, runnerFor(w, out))).toBe(true);
+    } finally {
+      for (const s of spies) s.mockRestore();
+    }
+    expect(out.sent).toBe(0);
+    expect(out.summaries).toHaveLength(1);
+    const token = /#invitation=([A-Za-z0-9_-]{43})\)/.exec(out.summaries[0]!)![1]!;
+    expect(out.summaries[0]).toContain(invitationLink('https://aimmo-api.shawez.workers.dev/app/', token));
+    // Ni prénom ni nom dans le résumé : les données saisies y seraient masquées et n'y servent à rien.
+    expect(out.summaries[0]).not.toMatch(/Camille|Exemple/);
+    const output = [...out.logs, ...printed].join('\n');
+    expect(output).not.toContain(token);
+    expect(output).not.toMatch(/invitation=|[A-Za-z0-9_-]{43}/);
+    expect(out.logs.join('\n')).toContain('résumé');
+    expect(out.sql).not.toContain(token);
+    expect(out.sql).toContain(sha256(token));
+    // Usage unique et échéance de 24 heures, comme en Z02.
+    expect((await exchange(w.db, token)).status).toBe(200);
+    expect((await exchange(w.db, token)).status).not.toBe(200);
+    const late = await world();
+    const out2 = { logs: [] as string[], summaries: [] as string[], sent: 0, sql: '' };
+    expect(await createAccess(RESUME, runnerFor(late, out2))).toBe(true);
+    const token2 = /#invitation=([A-Za-z0-9_-]{43})\)/.exec(out2.summaries[0]!)![1]!;
+    expect((await exchange(late.db, token2, new Date(T0.getTime() + 24 * 3600 * 1000))).status).not.toBe(200);
+    expect((await exchange(late.db, token2, new Date(T0.getTime() + 24 * 3600 * 1000 - 1000))).status).toBe(200);
+  });
+
+  it('sans résumé où écrire, rien n’est créé ; un résumé refusé laisse une invitation que personne ne connaît', async () => {
+    const w = await world();
+    const out = { logs: [] as string[], summaries: [] as string[], sent: 0, sql: '' };
+    const { summary: _omit, ...withoutSummary } = runnerFor(w, out);
+    expect(await createAccess(RESUME, withoutSummary)).toBe(false);
+    expect(out.sql).toBe('');
+    expect(await createAccess(RESUME, runnerFor(w, out, false))).toBe(false);
+    expect(out.sent).toBe(0);
+    expect(out.logs.join('\n')).not.toMatch(/invitation=|[A-Za-z0-9_-]{43}/);
+  });
+});
+
+describe('Z04 · le mail reste le défaut', () => {
+  it('sans mode, ou en mode mail, le lien part par mail et les adresses sont exigées', () => {
+    expect(readRequest(ENV).delivery).toBe('mail');
+    expect(readRequest({ ...ENV, ACCES_REMISE: 'mail' }).delivery).toBe('mail');
+    expect(() => readRequest({ ...ENV, ACCES_MAIL: '' })).toThrow();
+    expect(() => readRequest({ ...ENV, ACCES_REMISE: 'Slack' })).toThrow();
+  });
+
+  it('en mode resume, aucune adresse n’est exigée ni gardée', () => {
+    const r = readRequest({ ...ENV, ACCES_REMISE: 'resume' });
+    expect(r).toMatchObject({ delivery: 'resume', email: '', sender: '' });
+    expect(readRequest({ ...ENV, ACCES_REMISE: 'resume', ACCES_MAIL: '', ACCES_EXPEDITEUR: '' }).delivery).toBe('resume');
+  });
+
+  it('le travail GitHub propose mail par défaut, et passe la remise au programme', () => {
+    const yml = readFileSync(new URL('../../../.github/workflows/creer-acces.yml', import.meta.url), 'utf8');
+    const block = /\n      remise:\n([\s\S]*?)\n      prenom:/.exec(yml)![1]!;
+    expect(block).toContain('default: mail');
+    expect(block).toMatch(/options:\n\s+- mail\n\s+- resume/);
+    expect(yml).toContain('ACCES_REMISE: ${{ inputs.remise }}');
+    // Le programme n'écrit le résumé que dans le fichier GITHUB_STEP_SUMMARY.
+    const tool = readFileSync(new URL('../outils/creer-acces.ts', import.meta.url), 'utf8');
+    expect(tool).toContain('GITHUB_STEP_SUMMARY');
+    expect(invitationSummary('https://x.test/app/#invitation=abc', T0)).toContain('Entrer dans AIMMO');
+  });
+});
+
 describe('Z02 · règles sans base', () => {
   it('les clés du secret passent toujours avant celles des invitations, aucune n’est perdue', () => {
     const a = { sha256: 'a'.repeat(64), role: 'direction' as const, userId: 'd', networkId: 'n' };
@@ -281,7 +381,7 @@ describe('Z02 · règles sans base', () => {
     expect(mask).toBeGreaterThan(-1);
     expect(mask).toBeLessThan(yml.indexOf('ACCES_MAIL'));
     const uses = yml.split('\n').filter((l) => l.includes('inputs.'));
-    expect(uses.length).toBe(6);
+    expect(uses.length).toBe(7);
     for (const l of uses) expect(l).toMatch(/^\s+ACCES_[A-Z]+: \$\{\{ inputs\.[a-z]+ \}\}$/);
   });
 
