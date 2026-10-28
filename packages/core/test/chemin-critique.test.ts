@@ -12,7 +12,7 @@ const base = (patch: Partial<PathInput> = {}): PathInput => ({
   plannedActDay: '2027-06-10',
   pieces: allPieces,
   hasLoanCondition: true,
-  financing: [{ step: 'offre_pret_acceptee', day: '2027-04-20' }],
+  financing: [{ step: 'offre_pret_emise', day: '2027-04-05' }, { step: 'offre_pret_acceptee', day: '2027-04-20' }],
   ...patch,
 });
 
@@ -34,6 +34,16 @@ it('[R61] le chemin critique suit des règles écrites : même calcul pour les m
   expect(criticalPath('d', base({ financing: [], today: '2027-05-15' })).holder).toEqual({ reason: 'offre_pret_attendue', item: 'pret', who: 'banque', notBefore: '2027-05-26' });
   // Un refus après l'offre bloque sans date.
   expect(criticalPath('d', base({ financing: [{ step: 'offre_pret_emise', day: '2027-04-01' }, { step: 'refus', day: '2027-04-02' }] })).holder).toMatchObject({ reason: 'refus_de_pret', notBefore: null });
+  // Une acceptation déclarée avant le onzième jour ne compte pas : la réflexion tient encore.
+  expect(criticalPath('d', base({ financing: [{ step: 'offre_pret_emise', day: '2027-05-15' }, { step: 'offre_pret_acceptee', day: '2027-05-20' }] })).holder).toEqual({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: '2027-05-26' });
+  // Un refus suivi d'une nouvelle demande ne bloque plus : l'offre est attendue.
+  expect(criticalPath('d', base({ today: '2027-05-15', financing: [{ step: 'refus', day: '2027-04-02' }, { step: 'demande_deposee', day: '2027-04-10' }] })).holder).toEqual({ reason: 'offre_pret_attendue', item: 'pret', who: 'banque', notBefore: '2027-05-26' });
+  // Un refus après une offre : la nouvelle offre est attendue seulement après une nouvelle demande.
+  expect(criticalPath('d', base({ financing: [{ step: 'offre_pret_emise', day: '2027-04-01' }, { step: 'refus', day: '2027-04-02' }, { step: 'accord_principe', day: '2027-04-10' }] })).lines.find((l) => l.item === 'pret')?.reason).toBe('offre_pret_attendue');
+  // Un acte prévu trop tôt est dit en retard, et les pièces sont jugées au jour au plus tôt, pas à l'acte prévu.
+  const tooEarly = criticalPath('d', base({ plannedActDay: '2027-05-14', pieces: { ...allPieces, lines: [{ piece: 'etat_risques', side: 'vendeur', reason: 'toujours', received: { piece: 'etat_risques', version: 1, ref: 'x', issuedOn: '2026-11-15', receivedAt: 'x' } }] } }));
+  expect(tooEarly).toMatchObject({ late: true, earliestActDay: '2027-05-20' });
+  expect(tooEarly.lines.find((l) => l.reason === 'piece_perimee')).toEqual({ reason: 'piece_perimee', item: 'etat_risques', who: 'vendeur', notBefore: null });
   // Un acte prévu trop tôt est dit en retard.
   expect(criticalPath('d', base({ plannedActDay: '2027-05-01' })).late).toBe(true);
 });
@@ -50,7 +60,8 @@ it('[R10] ce qui manque est dit, jamais inventé : pièces, identité, dates à 
     ['date_a_saisir', 'etat_date', 'agent'], ['date_a_saisir', 'acte', 'agent'], ['piece_manquante', 'dpe', 'vendeur'],
     ['donnee_du_bien_inconnue', 'copropriete', 'agent'], ['identite_a_verifier', null, 'acquereur'],
   ]);
-  expect(p).toMatchObject({ conditional: true, holder: { reason: 'date_a_saisir', item: 'fin_retractation' }, plannedActDay: null, late: false });
+  // Sans la rétractation ni la réponse de la commune datées, pas de jour au plus tôt.
+  expect(p).toMatchObject({ earliestActDay: null, conditional: true, holder: { reason: 'date_a_saisir', item: 'fin_retractation' }, plannedActDay: null, late: false });
   // Une pièce valable aujourd'hui mais périmée à l'acte prévu est nommée.
   const stale = criticalPath('d', base({ pieces: { ...allPieces, lines: [{ piece: 'etat_risques', side: 'vendeur', reason: 'toujours', received: { piece: 'etat_risques', version: 1, ref: 'x', issuedOn: '2026-12-02', receivedAt: 'x' } }] } }));
   expect(stale.holder).toEqual({ reason: 'piece_perimee', item: 'etat_risques', who: 'vendeur', notBefore: null });
@@ -65,6 +76,13 @@ it('[R52] [R19] chaque vue tait l’autre partie : le vendeur ne voit du prêt q
     pieces: { lines: [{ piece: 'titre_propriete', side: 'vendeur', reason: 'toujours', received: null }, { piece: 'fiche_renseignements_vendeur', side: 'vendeur', reason: 'toujours', received: null }, { piece: 'fiche_renseignements_acquereur', side: 'acquereur', reason: 'toujours', received: null }], missing: ['titre_propriete', 'fiche_renseignements_vendeur', 'fiche_renseignements_acquereur'], unknown: [], identity: 'verifiee' },
   }));
   const seller = partyView(p, 'vendeur');
+  // La vue du vendeur est la même quel que soit l'état du prêt, tant qu'il n'est pas obtenu : rien ne s'en devine.
+  const views = [[], [{ step: 'offre_pret_emise', day: '2027-05-20' }], [{ step: 'demande_deposee', day: '2027-03-12' }, { step: 'refus', day: '2027-03-20' }]].map((financing) =>
+    partyView(criticalPath('d', base({ today: '2027-04-25', financing: financing as PathInput['financing'] })), 'vendeur'),
+  );
+  expect(views[1]).toEqual(views[0]);
+  expect(views[2]).toEqual(views[0]);
+  expect(views[0]).toMatchObject({ earliestActDay: '2027-05-20', conditional: true });
   expect(JSON.stringify(seller)).not.toMatch(/refus|demande_deposee|offre_pret/);
   expect(seller.remaining.filter((r) => r.item === 'pret')).toEqual([{ reason: 'pret_en_cours', item: 'pret', who: 'autre_partie', notBefore: null }]);
   expect(seller.yourActions).toEqual([{ reason: 'piece_manquante', item: 'titre_propriete' }, { reason: 'piece_manquante', item: 'fiche_renseignements_vendeur' }]);
@@ -86,8 +104,8 @@ describeWithSqlite('N07 · chemin critique de la vente', () => {
         if (!r.ok) throw new Error(r.code);
         return r.value;
       };
-      // 1. Le dossier vient de s'ouvrir : les dates sont à saisir.
-      expect((await holder()).path.holder).toMatchObject({ reason: 'date_a_saisir', item: 'fin_retractation', who: 'agent' });
+      // 1. Le dossier vient de s'ouvrir : les dates sont à saisir, pas de jour au plus tôt.
+      expect((await holder()).path).toMatchObject({ earliestActDay: null, holder: { reason: 'date_a_saisir', item: 'fin_retractation', who: 'agent' } });
       await t.startCompromis();
       t.setClock(at9('2027-03-11'));
       for (const [k, day] of [['compromis_signe', '2027-03-10'], ['notification_acquereur', '2027-03-11'], ['dia_recue', '2027-03-11'], ['date_limite_pret', '2027-05-10'], ['etat_date_attendu', '2027-05-20'], ['acte_prevu', '2027-06-10']]) await e.record(t.agent, t.fileId, { kind: k, day, proofRef: PROOF });

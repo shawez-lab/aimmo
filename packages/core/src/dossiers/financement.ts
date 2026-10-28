@@ -3,6 +3,7 @@
  *
  * L'agent du dossier range les étapes du prêt telles que l'acquéreur ou son courtier les déclarent, chacune avec sa
  * date et qui l'a déclarée : demande déposée, accord de principe, offre de prêt émise, offre de prêt acceptée, refus.
+ * Pour l'offre de prêt, le jour déclaré est celui où l'acquéreur l'a reçue : le délai de réflexion en part (N07).
  * Une liste fermée, sans montant, sans taux, sans pièce : aucune note, aucun score, aucun tri sur le financement, ni
  * dans les données ni dans ce qui est rendu [R14]. Chaque jour, une alerte à l'agent quand la date limite du prêt
  * approche (réglage : 15 jours) sans offre de prêt déclarée, une seule par date limite ; et une alerte dès qu'un refus

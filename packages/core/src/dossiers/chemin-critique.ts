@@ -12,9 +12,12 @@
  * Règles écrites :
  * - l'acte ne se signe pas avant le lendemain de la fin de la rétractation, ni avant le lendemain de la date de réponse
  *   de la commune (son silence ne vaut renonciation qu'à la fin du délai), ni avant l'état daté attendu ;
- * - avec une condition de prêt : une offre de prêt s'accepte au plus tôt le onzième jour après sa réception (délai de
- *   réflexion de 10 jours) ; sans offre déclarée, ce jour se compte depuis aujourd'hui, au mieux ; une offre acceptée
- *   lève la contrainte ; un refus déclaré bloque, sans date ;
+ * - avec une condition de prêt : une offre de prêt s'accepte au plus tôt le onzième jour après sa réception par
+ *   l'acquéreur (délai de réflexion de 10 jours, le jour déclaré de l'offre est celui de sa réception) ; sans offre
+ *   déclarée, ce jour se compte depuis aujourd'hui, au mieux ; une offre acceptée ce onzième jour ou après lève la
+ *   contrainte, une acceptation déclarée plus tôt ne compte pas ; un refus bloque, sans date, tant qu'il est la
+ *   dernière étape déclarée ;
+ * - sans la rétractation ou la réponse de la commune datées, le jour au plus tôt ne se calcule pas ;
  * - une pièce manquante, une pièce périmée au jour visé, une identité non vérifiée, une donnée du bien inconnue ou une
  *   date à saisir bloquent sans date : le jour au plus tôt est alors « au plus tôt si » et ces lignes sont nommées ;
  * - l'élément qui tient le dossier est, s'il y en a, le premier blocage sans date ; sinon la contrainte datée la plus
@@ -65,6 +68,8 @@ export interface PathLine {
 
 export interface CriticalPath {
   fileId: string;
+  /** Le jour où le chemin est calculé, à Paris. */
+  today: string;
   /** Le jour d'acte au plus tôt, si toutes les lignes sans date sont levées ; null s'il ne peut pas se calculer. */
   earliestActDay: string | null;
   /** true : des lignes bloquent sans date, le jour au plus tôt suppose qu'elles soient levées. */
@@ -100,15 +105,17 @@ export function criticalPath(fileId: string, input: PathInput): CriticalPath {
   else if (c?.status === 'suspendue') lines.push({ reason: 'delai_commune_suspendu', item: 'reponse_preemption', who: 'commune', notBefore: null });
   else if (c?.status === 'a_saisir') lines.push({ reason: 'date_a_saisir', item: 'reponse_preemption', who: 'agent', notBefore: null });
   if (input.hasLoanCondition) {
+    // Les étapes dans l'ordre où elles ont été déclarées ; le jour d'une offre de prêt est celui où l'acquéreur l'a reçue.
     const steps = input.financing;
-    const accepted = steps.some((s) => s.step === 'offre_pret_acceptee');
+    const last = steps.at(-1);
     const offer = [...steps].reverse().find((s) => s.step === 'offre_pret_emise');
-    const lastRefusal = [...steps].reverse().find((s) => s.step === 'refus');
-    const refusalAfterOffer = lastRefusal && (!offer || lastRefusal.day >= offer.day);
+    const acceptable = offer ? addDays(offer.day, LOAN_REFLECTION_DAYS + 1) : null;
+    // Une acceptation ne compte qu'au onzième jour après la réception de l'offre, au plus tôt.
+    const accepted = steps.some((s) => s.step === 'offre_pret_acceptee' && acceptable !== null && s.day >= acceptable);
     if (accepted) {
       // Rien : la condition de prêt est levée.
-    } else if (refusalAfterOffer) lines.push({ reason: 'refus_de_pret', item: 'pret', who: 'acquereur', notBefore: null });
-    else if (offer) lines.push({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: addDays(offer.day, LOAN_REFLECTION_DAYS + 1) });
+    } else if (last?.step === 'refus') lines.push({ reason: 'refus_de_pret', item: 'pret', who: 'acquereur', notBefore: null });
+    else if (offer && steps.lastIndexOf(offer) > steps.map((s) => s.step).lastIndexOf('refus')) lines.push({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: acceptable });
     else lines.push({ reason: 'offre_pret_attendue', item: 'pret', who: 'banque', notBefore: addDays(input.today, LOAN_REFLECTION_DAYS + 1) });
   }
   const e = at('etat_date');
@@ -118,7 +125,8 @@ export function criticalPath(fileId: string, input: PathInput): CriticalPath {
   if (a?.status === 'a_saisir') lines.push({ reason: 'date_a_saisir', item: 'acte', who: 'agent', notBefore: null });
   // Le jour au plus tôt des seules contraintes datées : pour juger les pièces périmées.
   const dated = lines.filter((l) => l.notBefore !== null).reduce((d, l) => max(d, l.notBefore!), input.today);
-  const target = input.plannedActDay ?? dated;
+  // Le jour visé : l'acte prévu, mais jamais avant le jour au plus tôt où il peut avoir lieu.
+  const target = max(input.plannedActDay ?? dated, dated);
   for (const l of input.pieces.lines) {
     if (!l.received) lines.push({ reason: 'piece_manquante', item: l.piece, who: l.side, notBefore: null });
   }
@@ -133,13 +141,16 @@ export function criticalPath(fileId: string, input: PathInput): CriticalPath {
   if (!holder) {
     for (const l of lines) if (l.notBefore !== null && l.notBefore > input.today && (!holder || l.notBefore > holder.notBefore!)) holder = l;
   }
-  const earliest = dated;
+  // Sans la rétractation ou la réponse de la commune datées, le jour au plus tôt ne se calcule pas [R10].
+  const legalUnknown = lines.some((l) => (l.item === 'fin_retractation' || l.item === 'reponse_preemption') && l.notBefore === null);
+  const earliest = legalUnknown ? null : dated;
   return {
     fileId,
+    today: input.today,
     earliestActDay: earliest,
     conditional: undated.length > 0,
     plannedActDay: input.plannedActDay,
-    late: input.plannedActDay !== null && input.plannedActDay < earliest,
+    late: input.plannedActDay !== null && earliest !== null && input.plannedActDay < earliest,
     holder,
     lines,
   };
@@ -176,8 +187,24 @@ export function partyView(path: CriticalPath, side: 'vendeur' | 'acquereur'): Pa
     remaining.push({ reason: l.reason, item: l.item, who: l.who === other ? 'autre_partie' : l.who, notBefore: l.notBefore });
   }
   if (otherPieces > 0) remaining.push({ reason: 'pieces_de_l_autre_partie', item: null, who: 'autre_partie', notBefore: null, count: otherPieces });
+  if (side === 'vendeur') {
+    // Le jour au plus tôt du vendeur se calcule sans le prêt : rien ne laisse deviner l'étape du financement de
+    // l'acquéreur ; tant que le prêt n'est pas obtenu, ce jour suppose qu'il le soit.
+    const visible = path.lines.filter((l) => l.item !== 'pret');
+    const loanOpen = path.lines.some((l) => l.item === 'pret');
+    const legalUnknown = visible.some((l) => (l.item === 'fin_retractation' || l.item === 'reponse_preemption') && l.notBefore === null);
+    const earliest = legalUnknown || path.earliestActDay === null ? null : visible.filter((l) => l.notBefore !== null).reduce((d, l) => max(d, l.notBefore!), path.today);
+    return {
+      fileId: path.fileId,
+      earliestActDay: earliest,
+      conditional: loanOpen || visible.some((l) => l.notBefore === null),
+      plannedActDay: path.plannedActDay,
+      remaining,
+      yourActions: path.lines.filter((l) => l.who === side && ACTIONS.includes(l.reason)).map((l) => ({ reason: l.reason, item: l.item })),
+    };
+  }
   // Ce que la partie a à faire, pas les délais qui courent pour elle (rétractation, réflexion sur l'offre de prêt).
-  const yourActions = path.lines.filter((l) => l.who === side && ACTIONS.includes(l.reason) && !(side === 'vendeur' && l.item === 'pret')).map((l) => ({ reason: l.reason, item: l.item }));
+  const yourActions = path.lines.filter((l) => l.who === side && ACTIONS.includes(l.reason)).map((l) => ({ reason: l.reason, item: l.item }));
   return { fileId: path.fileId, earliestActDay: path.earliestActDay, conditional: path.conditional, plannedActDay: path.plannedActDay, remaining, yourActions };
 }
 

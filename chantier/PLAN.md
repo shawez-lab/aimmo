@@ -970,6 +970,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 
 ### N07 · Chemin critique de la vente (Jamais vu)
 - Statut : en cours (voie 2)
+- Décidé (2026-10-28) : le jour déclaré d'une offre de prêt est celui de sa réception par l'acquéreur, d'où part le délai de réflexion de 10 jours ; une acceptation plus tôt ne compte pas ; un refus ne bloque que s'il est la dernière étape ; sans rétractation ni réponse de la commune datées, pas de jour au plus tôt ; la vue du vendeur se calcule sans le prêt
 - Qui : Claude · Relecture : forte · Dépend de : N02, N04, N06
 - Cahier : M10, « Suivi en direct » ; L'IA et l'humain, « suit les échéances, informe les clients ».
 - Objectif : pour chaque dossier, le code calcule la date d'acte au plus tôt possible et nomme ce qui la tient (pièce manquante, rétractation, réponse de la commune, prêt, état daté), étape par étape, avec qui doit agir ; une vue vendeur et une vue acquéreur, chacune sans la donnée personnelle de l'autre partie, prêtes pour les espaces de M11. Jamais vu : aucun réseau ne dit au client, à tout moment, ce qui retarde son acte et qui le tient.
