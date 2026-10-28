@@ -65,6 +65,8 @@ import { pilotageRoutes } from './pilotage.ts';
 import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresVentePublic } from './apres-vente.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
 import { reseauRoutes, type ReseauOptions } from './reseau.ts';
+import { locationRoutes, type LocationRoute, type LocationServices } from './location.ts';
+import { conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
@@ -103,6 +105,8 @@ export interface ApiConfig {
   pieces?: PieceStore;
   /** M14 (J13) : le stockage des pièces des dossiers d'agent, l'IA de l'entraînement, le bac à sable ; absents, fermés. */
   reseau?: ReseauOptions;
+  /** M15 (W10) : les IA de l'annonce et de l'état des lieux ; absentes, les secours sans IA [R103, R106]. */
+  location?: Pick<LocationServices, 'adWriter' | 'inventoryFormatter'>;
   /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, page « bientôt ». */
   candidatureNetworkId?: string | undefined;
   now?: () => Date;
@@ -836,6 +840,27 @@ async function automationSend(request: Request, config: ApiConfig, now: () => Da
 }
 
 /** Les routes de M10 avec le stockage des pièces ; sans lui, chacune répond 503, sans rien lire. */
+/** Le coffre de conformité n'est lu que pour son état d'identité : rien n'y est rangé depuis M15. */
+const NO_VAULT_STORAGE: conformite.VaultStorage = { put: () => Promise.reject(new Error('Le coffre ne range rien depuis M15.')) };
+
+/**
+ * Les routes de M15 (W10) : pièces et annexes lues dans le stockage des pièces (`PIECES`), seule leur existence ;
+ * l'identité vérifiée lue au coffre de conformité, seul son état [R104]. Sans stockage, elles sont fermées.
+ */
+function m15Routes(pieces: PieceStore | null, options: Pick<LocationServices, 'adWriter' | 'inventoryFormatter'>): RouteDef[] {
+  return locationRoutes().map((r: LocationRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => {
+      if (!pieces) return Promise.resolve(failure(503, 'pieces_not_configured', 'Location fermée : aucun stockage des pièces.'));
+      const coffre = new conformite.CoffreConformite(s.db, s.acces, NO_VAULT_STORAGE, s.journal, { now: s.now });
+      const services: LocationServices = { db: s.db, journal: s.journal, now: s.now, files: pieces, identity: { state: (networkId, personId) => coffre.state(networkId, personId) }, ...options };
+      return r.handle(services, viewer, params, request);
+    },
+  }));
+}
+
 function m10Routes(pieces: PieceStore | null): RouteDef[] {
   return dossierRoutes().map((r: DossierRoute) => ({
     ...r,
@@ -993,7 +1018,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // Les routes de M08 (T08) suivent celles du socle ; elles portent le lien de désinscription du réseau.
   // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication ; puis celles de M09 (O09) : les offres ; puis
   // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07) ; puis
-  // celles de M13 (K08) : le pilotage ; puis celles de M14 (J13) : le réseau et l'académie.
+  // celles de M13 (K08) : le pilotage ; puis celles de M14 (J13) : le réseau et l'académie ; puis celles de M15 (W10) :
+  // la location, fermées sans le stockage des pièces.
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
@@ -1003,6 +1029,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...apresVenteRoutes(),
     ...pilotageRoutes(),
     ...reseauRoutes(config.reseau ?? {}),
+    ...m15Routes(config.pieces ?? null, config.location ?? {}),
   ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
