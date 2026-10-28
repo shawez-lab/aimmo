@@ -209,7 +209,8 @@ export class CoffreConformite {
         viewer.networkId,
         person.id,
         input.kind,
-        `${input.verifiedOn}T12:00:00.000Z`,
+        // Jamais dans l'avenir : une pièce vérifiée aujourd'hui vaut tout de suite pour les contrôles (D03, O07).
+        new Date(Math.min(Date.parse(`${input.verifiedOn}T12:00:00.000Z`), this.now().getTime())).toISOString(),
         this.actor(viewer),
         at,
       ]);

@@ -163,7 +163,8 @@ describeWithSqlite('L01 · coffre de la conformité', () => {
       return c.ok ? c.value.lines.find((l) => l.check === 'identite')?.code : c.code;
     };
     expect(await identity()).toBe('identity_missing');
-    await t.coffre.deposit(t.agent, t.person.id, deposit({ kind: 'passeport' }));
+    // Vérifiée le jour même, déposée avant midi : elle vaut tout de suite.
+    await t.coffre.deposit(t.agent, t.person.id, deposit({ kind: 'passeport', verifiedOn: '2027-03-10' }));
     expect(await identity()).toBe('identity_verified');
   });
 
