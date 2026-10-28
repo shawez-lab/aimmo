@@ -31,6 +31,7 @@ export const INDEX_HTML = `<!doctype html>
 </section>
 <section id="accueil" hidden>
 <h2 id="bonjour"></h2>
+<button id="vers-reseau" type="button" class="secondaire" hidden>Voir le réseau</button>
 <section class="bloc" aria-labelledby="titre-plan">
 <h3 id="titre-plan">Mon plan du jour</h3>
 <p id="plan-etat" class="etat"></p>
@@ -112,6 +113,7 @@ export const INDEX_HTML = `<!doctype html>
 <div id="chiffres-corps"></div>
 </section>
 <section id="reseau" hidden>
+<button id="vers-journee" type="button" class="retour" hidden>Ma journée d’agent</button>
 <h2 id="reseau-titre">Le réseau</h2>
 <div class="periodes" role="group" aria-label="Période">
 <button id="reseau-mois" type="button" class="secondaire" aria-pressed="true">Ce mois-ci</button>
@@ -216,10 +218,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 export const APP_JS = `'use strict';
 (function () {
   var KEY = 'aimmo.cle';
+  // La seconde clé d'une personne qui est à la fois agent et direction (Z02) : celle de la direction.
+  var KEY_DIRECTION = 'aimmo.cle.direction';
+  // Le lien d'invitation (Z02) : le jeton suit « # », que le navigateur n'envoie jamais au serveur.
+  var INVITATION = /^#invitation=([A-Za-z0-9_-]{43})$/;
   var $ = function (id) { return document.getElementById(id); };
   function readKey() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function writeKey(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }
-  function forgetKey() { try { localStorage.removeItem(KEY); } catch (e) { /* rien à effacer */ } }
+  function readDirectionKey() { try { return localStorage.getItem(KEY_DIRECTION); } catch (e) { return null; } }
+  function writeDirectionKey(v) { try { localStorage.setItem(KEY_DIRECTION, v); return true; } catch (e) { return false; } }
+  function forgetKey() {
+    try { localStorage.removeItem(KEY); } catch (e) { /* rien à effacer */ }
+    try { localStorage.removeItem(KEY_DIRECTION); } catch (e) { /* rien à effacer */ }
+  }
   function el(tag, text, cls) {
     var n = document.createElement(tag);
     if (text !== undefined && text !== null) n.textContent = String(text);
@@ -1400,6 +1411,46 @@ export const APP_JS = `'use strict';
     show('connexion');
     return false;
   }
+  /**
+   * Échange le jeton d'invitation contre des clés neuves (Z02), une seule fois. La clé d'agent devient la clé de
+   * l'appareil ; celle de la direction, quand il y a les deux, est gardée à côté pour passer d'un écran à l'autre.
+   */
+  function accept(token) {
+    session += 1;
+    var mine = session;
+    show('attente');
+    var init = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jeton: token }), cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' };
+    return fetch('/v1/acces/invitation', init).then(function (r) {
+      return r.json().then(function (b) { return { status: r.status, body: b }; }, function () { return { status: r.status, body: null }; });
+    }).then(function (res) {
+      if (mine !== session) return false;
+      var cles = res.status === 200 && res.body && res.body.data && res.body.data.cles;
+      if (!cles || !cles.length) {
+        var code = res.body && res.body.error && res.body.error.code;
+        if (code === 'invitation_used') return refuse('Ce lien a déjà servi. Demandez un nouveau lien.');
+        if (code === 'invitation_expired') return refuse('Ce lien a expiré : il ne vaut que 24 heures. Demandez un nouveau lien.');
+        if (res.status >= 500) return refuse('Le service ne répond pas. Rouvrez le lien dans un moment.');
+        return refuse('Ce lien d’invitation n’est pas reconnu.');
+      }
+      var agent = null;
+      var direction = null;
+      cles.forEach(function (c) {
+        if (c && typeof c.cle === 'string' && c.cle.length >= 32) {
+          if (c.role === 'agent') agent = c.cle;
+          if (c.role === 'direction') direction = c.cle;
+        }
+      });
+      var main = agent || direction;
+      if (!main) return refuse('Ce lien d’invitation n’ouvre aucun accès à cette application.');
+      forgetKey();
+      if (!writeKey(main)) return refuse('Cet appareil ne peut pas garder la clé.');
+      if (agent && direction) writeDirectionKey(direction);
+      return enter(main);
+    }, function () {
+      if (mine !== session) return false;
+      return refuse('Pas de réseau. Rouvrez le lien du mail quand le réseau revient ; s’il a déjà servi, demandez-en un nouveau.');
+    });
+  }
   function enter(key) {
     session += 1;
     var mine = session;
@@ -1423,8 +1474,12 @@ export const APP_JS = `'use strict';
       if (me.role === 'direction') {
         $('erreur').hidden = true;
         currentKey = key;
+        var agentKey = readKey();
+        $('vers-journee').hidden = !agentKey || agentKey === key;
         return openReseau('mois');
       }
+      var directionKey = readDirectionKey();
+      $('vers-reseau').hidden = !directionKey || directionKey === key;
       $('bonjour').textContent = me.firstName ? 'Bonjour ' + me.firstName : 'Bonjour';
       $('erreur').hidden = true;
       currentKey = key;
@@ -1480,8 +1535,22 @@ export const APP_JS = `'use strict';
       wipe();
       show('connexion');
     });
-    var key = readKey();
-    if (key) enter(key); else show('connexion');
+    $('vers-reseau').addEventListener('click', function () { var k = readDirectionKey(); if (k) enter(k); });
+    $('vers-journee').addEventListener('click', function () { var k = readKey(); if (k) enter(k); });
+    var hash = typeof location !== 'undefined' ? String(location.hash || '') : '';
+    var invited = INVITATION.exec(hash);
+    if (hash.indexOf('#invitation=') === 0) {
+      // Le jeton quitte aussitôt la barre d'adresse et l'historique, qu'il ait servi ou non.
+      try { if (typeof history !== 'undefined') history.replaceState(null, '', '/app/'); } catch (e) { /* rien à remplacer */ }
+    }
+    if (invited) {
+      accept(invited[1]);
+    } else if (hash.indexOf('#invitation=') === 0) {
+      refuse('Lien d’invitation incomplet. Ouvrez le lien du mail en entier.');
+    } else {
+      var key = readKey();
+      if (key) enter(key); else show('connexion');
+    }
     var offline = 'Cet appareil ne garde pas l’application : elle ne s’ouvrira qu’avec du réseau.';
     function warn() { $('note').textContent = offline; $('note').hidden = false; }
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' }).catch(warn); else warn();

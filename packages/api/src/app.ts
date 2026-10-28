@@ -48,6 +48,7 @@ import {
   type Viewer,
 } from '@aimmo/core';
 import { intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } from './auth.ts';
+import { INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys } from './acces.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter } from '@aimmo/core';
 import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
@@ -927,8 +928,22 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     return handleMeta(request, { ...meta, db: config.db, now });
   }
 
-  const keys = parseApiKeys(config.apiKeys);
-  if (keys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
+  // L'accès en un clic (Z02) : un jeton d'invitation, à usage unique, échangé contre des clés neuves.
+  if (`/v1${path}` === INVITATION_PATH) {
+    try {
+      return await handleInvitation(request, config.db, now());
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:invitation', 'acces.invitation', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+
+  // Les clés du secret `API_KEYS`, et celles remises par une invitation (Z02). Un secret présent mais mal formé
+  // ferme toute l'API, même s'il existe des clés d'invitation : lecture prudente.
+  const secretKeys = config.apiKeys === undefined || config.apiKeys.trim() === '' ? [] : parseApiKeys(config.apiKeys);
+  if (secretKeys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
+  const keys = mergeKeys(secretKeys, await invitedKeys(config.db));
+  if (keys.length === 0) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
   const viewer = await viewerFromRequest(request, keys);
   if (viewer === null) return failure(401, 'unauthorized', 'Clé absente ou refusée.');
 
