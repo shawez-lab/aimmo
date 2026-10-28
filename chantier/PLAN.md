@@ -1584,7 +1584,8 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W06 · Bail et annexes depuis les modèles, signés en ligne
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#155) ; relecture forte faite, Codex 4 P0 et 2 P1 corrigés (annexes jointes par leur référence, total du locataire avec l'état des lieux, libellé « agent immobilier », bail caduc quand un diagnostic est remplacé, noms lus sous les droits des fiches [R16], prénom et nom exigés [R40]). Signature en mode essai tant que H08 et H24 ne sont pas faits ; l'état des lieux et l'inventaire du meublé sont établis par W07.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W05, D08
 - Cahier : M15, « Bail et annexes » ; Conformité, « Bail et état des lieux ».
 - Objectif : le bail vide ou meublé et ses annexes faits depuis les modèles datés de M06 (D02) avec les données de la mise en location, signés par la signature en ligne de D08, en mode essai.
@@ -1592,7 +1593,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : H08 et H24 pour un usage réel ; en mode essai d'ici là.
 
 ### W07 · État des lieux dans l'application, signé par les deux parties
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W06
 - Cahier : M15, « État des lieux » ; L'IA et l'humain.
 - Objectif : l'état des lieux d'entrée (migration `0904`) : pièce par pièce, éléments et état, photos (références), relevés des compteurs, clés remises, texte dicté mis en forme par l'IA derrière une interface avec secours, signature des deux parties, un exemplaire chacun.
