@@ -48,6 +48,15 @@ describe('W03 · texte et mentions de l’annonce', () => {
     expect(rentalCriteria('Revenus égaux à trois fois le loyer')).toEqual(['revenus', 'trois fois le loyer']);
     expect(rentalCriteria('Pas d’APL')).toEqual(["pas d'apl"]);
     expect(rentalCriteria('Deux pièces avec balcon, au calme.')).toEqual([]);
+    // Un sigle à points ou à tirets se lit d'un bloc.
+    for (const text of ['C.D.I. exigé.', 'C.D.I exigé', 'C-D-I exigé.', 'Pas de R.S.A.']) expect(rentalCriteria(text), text).not.toEqual([]);
+    expect(checkRentalAd('Logement', 'C.D.I. exigé.', AD_FACTS).ok).toBe(false);
+    // Vide ou meublé : le texte dit ce que disent les faits.
+    expect(checkRentalAd('Logement', 'Location meublée.', AD_FACTS).problems).toEqual([{ code: 'fait_sans_source', value: 'meublee' }]);
+    expect(checkRentalAd('Logement', 'Appartement non meublé.', AD_FACTS).ok).toBe(true);
+    expect(checkRentalAd('Logement', 'Location vide.', { ...AD_FACTS, furnished: true }).ok).toBe(false);
+    expect(checkRentalAd('Logement', 'Logement non meublé.', { ...AD_FACTS, furnished: true }).ok).toBe(false);
+    expect(checkRentalAd('Logement', 'Studio meublé.', { ...AD_FACTS, furnished: true }).ok).toBe(true);
     // Santé, situation de famille, ressources, sexe, et le garant lié à la France sous toutes ses tournures.
     for (const text of ['Locataire en bonne santé.', 'Pas de malade.', 'Personne valide.', 'Marié uniquement.', 'Personne seule.', 'Pas de chômeurs.', 'Pas de RSA.', 'Pour monsieur.',
       'Garant obligatoire en France.', 'Garant résidant en France.', 'Caution domiciliée en France.', 'Garants français exigés.', 'En France, un garant est demandé.']) {
@@ -163,6 +172,8 @@ describeWithSqlite('W03 · annonce de location conforme', () => {
       async () => ({ title: 'Deux pièces', body: 'Idéal pour étudiant, garant en France exigé.' }),
       async () => ({ title: 'Deux pièces', body: 'Avec piscine et cave.' }),
       async () => ({ title: 'Deux pièces', body: 'Loyer 700 euros.' }),
+      async () => ({ title: 'Deux pièces', body: 'C.D.I. exigé.' }),
+      async () => ({ title: 'Deux pièces meublé', body: 'Location meublée.' }),
       () => new Promise<{ title: string; body: string }>(() => undefined),
       async () => {
         throw new Error('panne');
@@ -173,7 +184,7 @@ describeWithSqlite('W03 · annonce de location conforme', () => {
       const r = await t.ads.draft(t.agent, id);
       expect(r).toMatchObject({ ok: true, value: { origin: 'secours' } });
       expect(r.ok && checkRentalAd(r.value.title, r.value.body, { ...AD_FACTS }).ok).toBe(true);
-      expect(r.ok && r.value.body).not.toMatch(/etudiant|étudiant|piscine|700/);
+      expect(r.ok && r.value.body).not.toMatch(/etudiant|étudiant|piscine|700|C\.D\.I|meublé/);
     }
     const t = await setup({ writer: async () => ({ title: 'Deux pièces', body: 'Réservé aux fonctionnaires.' }) });
     await t.ads.draft(t.agent, await t.ready());
@@ -186,6 +197,8 @@ describeWithSqlite('W03 · annonce de location conforme', () => {
   it('[R103] le texte de l’agent est contrôlé de même : refusé avec ses problèmes, ou rangé en nouvelle version', async () => {
     const t = await setup();
     const id = await t.ready();
+    expect(await t.ads.write(t.agent, id, { title: 'Deux pièces', body: 'C.D.I. exigé.' })).toMatchObject({ ok: false, rule: 'R103', code: 'text_refused' });
+    expect(await t.ads.write(t.agent, id, { title: 'Deux pièces', body: 'Location meublée.' })).toMatchObject({ ok: false, rule: 'R103', code: 'text_refused' });
     const bad = await t.ads.write(t.agent, id, { title: 'Deux pièces', body: 'CDI exigé, sans enfants.' });
     expect(bad).toMatchObject({ ok: false, rule: 'R103', code: 'text_refused' });
     expect(!bad.ok && bad.problems?.map((p) => p.code).sort()).toEqual(['critere_discriminant', 'critere_location', 'critere_location']);

@@ -67,6 +67,8 @@ const norm = (s: string): string =>
     .replace(/\p{M}/gu, '')
     .toLowerCase()
     .replace(/[’`]/g, "'")
+    // Les sigles à points ou à tirets se lisent d'un bloc : « C.D.I. » et « C-D-I » sont « cdi ».
+    .replace(/(?<![\p{L}])\p{L}(?:[.-]\p{L})+\.?(?![\p{L}])/gu, (m) => m.replace(/[.-]/g, ''))
     .replace(/\s+/g, ' ');
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -86,13 +88,25 @@ export function rentalCriteria(text: string): string[] {
   return found;
 }
 
-export type AdProblem = SentenceProblem | { code: 'critere_location'; value: string };
+export type AdProblem = SentenceProblem | { code: 'critere_location'; value: string } | { code: 'fait_sans_source'; value: string };
+
+/** Ce que le texte dit du type de location doit être ce que disent les faits : vide ou meublé [R47]. */
+export function furnishedClaims(text: string, furnished: boolean): string[] {
+  const lower = norm(text);
+  const out: string[] = [];
+  const unfurnished = /(?<![\p{L}])(?:non[- ]?meubl(?:e|ee|es|ees)|location (?:vide|nue)|(?:logement|appartement|maison|studio|bien) (?:vide|nu|nue))(?![\p{L}])/u.exec(lower);
+  const furnishedWord = /(?<![\p{L}])(?<!non[- ]?)meubl(?:e|ee|es|ees)(?![\p{L}])|(?<![\p{L}])(?:entierement equipe|tout equipe|equipe et meuble)(?![\p{L}])/u.exec(lower);
+  if (!furnished && furnishedWord) out.push(furnishedWord[0]);
+  if (furnished && unfurnished) out.push(unfurnished[0]);
+  return out;
+}
 
 /** Le contrôle complet d'un texte d'annonce de location : M07, puis la liste propre à la location. */
-export function checkRentalAd(title: string, body: string, facts: ListingFacts): { ok: boolean; problems: AdProblem[] } {
+export function checkRentalAd(title: string, body: string, facts: RentalAdFacts): { ok: boolean; problems: AdProblem[] } {
   const trace = traceListing(title, body, facts);
   const problems: AdProblem[] = trace.sentences.flatMap((s) => s.problems);
   for (const value of rentalCriteria(`${title}\n${body}`)) problems.push({ code: 'critere_location', value });
+  for (const value of furnishedClaims(`${title}\n${body}`, facts.furnished)) problems.push({ code: 'fait_sans_source', value });
   return { ok: trace.ok && problems.length === 0, problems };
 }
 
