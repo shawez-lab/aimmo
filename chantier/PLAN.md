@@ -1400,7 +1400,8 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L07 · Demandes des personnes en moins d'un mois, avec preuve
-- Statut : en cours (reprise : `JOURNAL_SUBJECTS` et relevé testé des sujets, journal des biens possédés, masque des autres personnes au journal ; #159)
+- Statut : en cours
+- Reprise (2026-10-28) : `JOURNAL_SUBJECTS` et relevé testé des sujets, journal des biens possédés, masque des autres personnes au journal (#159).
 - Décidé (2026-10-28) : demandes enregistrées par le responsable seul ; échéance d'un mois par `addCalendarMonths`, rappel 7 jours avant et alerte le jour même ; carte des demandes d'accès vérifiée contre le registre (Jamais vu) ; lutte contre le blanchiment écartée (accès par la CNIL, article L561-45) ; effacement en essai, qui garde obligation légale, arrêt (identifiants sous empreinte) et lignes partagées « à examiner » ; demandes des agents, candidats et partenaires traitées à la main pour l'instant.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L06
 - Cahier : M12, critère « une demande d'accès d'une personne reçoit sa réponse complète en moins d'un mois, avec preuve » ; Conformité, « Droits des personnes ».
