@@ -1615,7 +1615,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 
 ### W12 · Signature en ligne du bail par D08, en mode essai
 - Statut : fait (2026-10-28)
-- Reste : fusionnée (#160) ; R108 en service ; migration `0909`. Relecture forte 2 P1 corrigés (remise impossible après un changement de faits, conformité qui lisait l'exemplaire) ; Codex 1 P0 corrigé (fiches des signataires), 1 P0 réfuté et corrigé dans le texte (le canal n'a pas de pièce jointe : l'avis porte la référence et l'empreinte, l'agent remet l'exemplaire) ; dernière relecture de Codex en cours après 10 min, fusion sans elle.
+- Reste : fusionnée (#160) ; R108 en service ; migration `0909`. Relecture forte 2 P1 corrigés (remise impossible après un changement de faits, conformité qui lisait l'exemplaire) ; Codex 1 P0 corrigé (fiches des signataires), 1 P0 réfuté et corrigé dans le texte (le canal n'a pas de pièce jointe : l'avis porte la référence et l'empreinte, l'agent remet l'exemplaire) ; dernière version validée par Codex (« Didn't find any major issues », b99ac9d).
 - Décidé (2026-10-28, voie 2) : `REAL_LEASE_SIGNATURE` reste faux dans le code jusqu'à une tâche du plan après H08 et H24 ; `signedAt` (W08) ne rend donc rien de réel ; le parcours d'essai (W09) lit `trialState()`, jamais branché sur la remise des clés réelle (W10) ; l'envoi du document lui-même attend H05 et W10.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W06, D08
 - Cahier : M15, « Bail et annexes » ; M06, « Signature électronique AIMMO ».
