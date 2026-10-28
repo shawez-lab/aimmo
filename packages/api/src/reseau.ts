@@ -11,7 +11,7 @@
  * Les fichiers du socle (droits d'accès, `index.ts`, `app.ts`, planificateur, Worker) ne changent pas ici : le
  * branchement est J13, confié à la voie 1.
  */
-import { DecisionEnvoi, FicheClient, FicheUnique, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { DecisionEnvoi, FicheClient, FicheUnique, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import {
   Academie,
   Accompagnement,
@@ -95,6 +95,62 @@ const unavailable = (what: string): Response => json(503, { ok: false, rule: nul
 /** Les seules clés admises dans un corps : une clé de plus est refusée, sans rien ranger. */
 const only = (body: Record<string, unknown>, keys: readonly string[]): boolean => Object.keys(body).every((k) => keys.includes(k));
 
+/**
+ * Qui peut appeler une route, contrôlé avant tout le reste : `direction` ; `self`, la direction ou l'agent dont
+ * l'identifiant est dans l'adresse ; les variantes `_or_compliance` ajoutent la lecture par la conformité ; `member`,
+ * tout rôle du réseau sauf un partenaire, la couche métier décidant du reste. Un partenaire n'a aucune route de M14.
+ */
+type Access = 'direction' | 'direction_or_compliance' | 'self' | 'self_or_compliance' | 'member';
+
+const ACCESS: Readonly<Record<string, Access>> = Object.freeze({
+  candidatures: 'direction',
+  fiche_entretien: 'direction',
+  entretien: 'direction',
+  entretien_tenu: 'direction',
+  decision: 'direction',
+  reponses_candidat: 'direction',
+  reponses: 'direction',
+  reponse_ecrite: 'direction',
+  questions: 'direction',
+  question_faite: 'direction',
+  admettre: 'direction',
+  projet_piece: 'direction',
+  import_direction: 'direction',
+  module: 'direction',
+  seance: 'direction',
+  presence: 'direction',
+  referent: 'direction',
+  binome: 'direction',
+  assistance_repondue: 'direction',
+  parrainage_regles: 'direction',
+  parrain: 'direction',
+  depart_range: 'direction',
+  depart_annule: 'direction',
+  successeur: 'direction',
+  successeur_decision: 'direction',
+  reprises: 'direction',
+  reprise: 'direction',
+  depart: 'direction_or_compliance',
+  solde: 'direction_or_compliance',
+  contenus: 'direction_or_compliance',
+  dossier: 'self_or_compliance',
+  piece: 'self',
+  absence: 'self',
+  formation: 'self',
+  primes: 'self',
+  bac_a_sable: 'self',
+});
+
+/** Le code du refus, ou `null` si le rôle peut appeler la route. */
+function gate(access: Access, method: ReseauRoute['method'], v: Viewer, agentId: string | undefined): string | null {
+  if (v.role === 'direction') return null;
+  const compliance = v.role === 'compliance' && method === 'GET' && (access === 'direction_or_compliance' || access === 'self_or_compliance');
+  if (compliance) return null;
+  if (access === 'member') return v.role === 'partner' ? 'role' : null;
+  if ((access === 'self' || access === 'self_or_compliance') && v.role === 'agent') return v.userId === agentId ? null : 'not_assigned';
+  return 'role';
+}
+
 /** Les services de M14, construits pour une requête. */
 export function reseauServices(s: ReseauServices, options: ReseauOptions = {}) {
   const opts = { now: s.now };
@@ -135,7 +191,23 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
       fn(reseauServices(s, options), v, params);
   const P = '^/reseau';
   const A = `${P}/agents/${ID}`;
-  const route = (method: ReseauRoute['method'], path: string, name: string, handle: ReseauRoute['handle']): ReseauRoute => ({ method, pattern: new RegExp(`${path}$`), name: `reseau.${name}`, handle });
+  // Le rôle est contrôlé avant même de lire le corps : un refus est toujours écrit au journal, quel que soit le corps [R16].
+  // La couche métier refait son propre contrôle, plus fin, derrière.
+  const route = (method: ReseauRoute['method'], path: string, name: string, handle: ReseauRoute['handle']): ReseauRoute => {
+    const access = ACCESS[name] ?? 'member';
+    return {
+      method,
+      pattern: new RegExp(`${path}$`),
+      name: `reseau.${name}`,
+      handle: async (s, v, params, request) => {
+        const code = gate(access, method, v, params[0]);
+        if (code === null) return handle(s, v, params, request);
+        const subject = path.startsWith(A) && params[0] ? `agent:${params[0]}` : null;
+        await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject, data: { rule: 'R16', role: String(v.role), kind: `reseau.${name}`, code } }, s.now);
+        return json(403, { ok: false, rule: 'R16', code });
+      },
+    };
+  };
   const noPieces = (): Response => unavailable('Le stockage des pièces du dossier d’agent');
 
   return [

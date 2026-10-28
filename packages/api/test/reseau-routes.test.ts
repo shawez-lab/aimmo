@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { AGENT_FILE_PIECES, type AgentPieceStore } from '../../core/src/reseau/index.ts';
+import { AGENT_FILE_PIECES, checkRecruitingText, type AgentPieceStore } from '../../core/src/reseau/index.ts';
 import { handleCandidature } from '../src/candidature.ts';
 import { reseauRoutes, type ReseauServices } from '../src/reseau.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
@@ -75,34 +75,116 @@ async function setup() {
 }
 
 describeWithSqlite('J12 · routes de M14', () => {
-  it('[R16] chaque route de la direction refuse un agent et un partenaire, et chaque refus est au journal', async () => {
+  /** L'adresse d'une route, ses identifiants remplacés par `id`. */
+  const pathOf = (pattern: RegExp, id: string): string => pattern.source.replace(/\(\[A-Za-z0-9_-\]\{1,64\}\)/g, id).replace(/^\^/, '').replace(/\$$/, '');
+  /** Les routes où l'appelant agit seulement sur ce qui est à lui : le rôle d'agent suffit, la couche métier fait le reste. */
+  const OWN = ['reseau.mon_dossier', 'reseau.import', 'reseau.academie', 'reseau.module_fait', 'reseau.ma_formation', 'reseau.entrainement_cas', 'reseau.entrainement', 'reseau.assistance', 'reseau.mes_primes'];
+  /** Les routes d'agent sur la chose d'un autre : la couche métier refuse un agent tiers. */
+  const OTHERS = ['reseau.dossiers_couverts', 'reseau.entrainement_tour', 'reseau.entrainement_fin'];
+  const refusals = async (t: Awaited<ReturnType<typeof setup>>) => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
+  /** Un appel sans corps lisible : le refus de droits doit venir avant toute lecture du corps. */
+  const raw = async (t: Awaited<ReturnType<typeof setup>>, route: ReturnType<typeof reseauRoutes>[number], viewer: Viewer, id: string) => {
+    const path = pathOf(route.pattern, id);
+    const res = await route.handle({ db: t.db, journal: t.journal, now: t.now }, viewer, (route.pattern.exec(path) ?? []).slice(1), new Request(`https://api.exemple.test/v1${path}`, route.method === 'POST' ? { method: 'POST', body: 'pas du json' } : {}));
+    return { status: res.status, body: (await res.json()) as { rule?: string | null; code?: string } };
+  };
+
+  it('[R16] un partenaire est refusé sur chaque route de M14, avant tout corps, et chaque refus est au journal', async () => {
     const t = await setup();
-    const agent: Viewer = { role: 'agent', userId: 'agent-x', networkId: t.network.id };
     const partner: Viewer = { role: 'partner', userId: 'partenaire-1', networkId: t.network.id };
-    const before = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
-    const reads = ['/reseau/candidatures', '/reseau/candidatures/c-1/entretien', '/reseau/candidatures/c-1/reponses', '/reseau/reponses', '/reseau/questions', '/reseau/reprises', '/reseau/agents/agent-y/dossier', '/reseau/agents/agent-y/formation', '/reseau/agents/agent-y/primes', '/reseau/agents/agent-y/depart', '/reseau/agents/agent-y/solde', '/reseau/agents/agent-y/contenus'];
-    for (const path of reads) {
-      for (const v of [agent, partner]) expect([path, v.role, (await t.call(v, 'GET', path)).status]).toEqual([path, v.role, expect.toBeOneOf([403, 404])]);
+    const routes = reseauRoutes({ pieces: t.pieces });
+    expect(routes.length).toBeGreaterThanOrEqual(45);
+    for (const route of routes) {
+      const before = await refusals(t);
+      const r = await raw(t, route, partner, 'agent-cible');
+      expect([route.name, r.status, r.body.rule]).toEqual([route.name, 403, 'R16']);
+      expect([route.name, (await refusals(t)) - before]).toEqual([route.name, 1]);
     }
-    const writes: [string, unknown][] = [
-      ['/reseau/candidatures/c-1/entretien', { at: '2027-08-01T08:00:00.000Z', interviewer: 'Shawez' }],
-      ['/reseau/candidatures/c-1/decision', { decision: 'oui', reason: 'Projet clair', deciderName: 'Shawez' }],
-      ['/reseau/candidatures/c-1/admettre', {}],
-      ['/reseau/reponses', { topic: 'frais', body: 'Aucun frais d’entrée.' }],
-      ['/reseau/academie/modules', { title: 'Le mandat', track: 'entree', position: 1, videoId: 'abcdefghijk', durationMinutes: 30 }],
-      ['/reseau/academie/seances', { kind: 'direct', title: 'Séance du mois', heldOn: '2027-07-01', durationMinutes: 60 }],
-      ['/reseau/binomes', { agentA: 'a', agentB: 'b', coverSharePct: 30 }],
-      ['/reseau/parrainage/regles', { rateBp: 500 }],
-      ['/reseau/agents/agent-y/depart', { noticeGivenOn: '2027-07-01', leavesOn: '2027-08-31', reason: 'demission_agent' }],
-      ['/reseau/reprises', { kind: 'person', subjectId: 'p-1', toAgentId: 'agent-x' }],
-    ];
-    for (const [path, body] of writes) {
-      const r = await t.call(agent, 'POST', path, body);
-      expect([path, r.status, r.body.rule]).toEqual([path, expect.toBeOneOf([403, 404]), 'R16']);
-    }
-    const after = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
-    expect(after - before).toBeGreaterThanOrEqual(reads.length * 2 + writes.length);
     expect((await verifyChain(await t.journal.all())).ok).toBe(true);
+  });
+
+  it('[R16] un agent tiers est refusé sur chaque route de la direction et sur chaque route d’un autre agent, avant tout corps', async () => {
+    const t = await setup();
+    const routes = reseauRoutes({ pieces: t.pieces });
+    const names = routes.map((r) => r.name);
+    // Chaque route est classée : une route ajoutée sans décision fait échouer ce test.
+    expect(new Set([...OWN, ...OTHERS]).size).toBe(OWN.length + OTHERS.length);
+    for (const n of [...OWN, ...OTHERS]) expect(names).toContain(n);
+    const tiers: Viewer = { role: 'agent', userId: 'agent-tiers', networkId: t.network.id };
+    for (const route of routes.filter((r) => !OWN.includes(r.name) && !OTHERS.includes(r.name))) {
+      const before = await refusals(t);
+      const r = await raw(t, route, tiers, 'agent-cible');
+      expect([route.name, r.status, r.body.rule]).toEqual([route.name, 403, 'R16']);
+      expect([route.name, (await refusals(t)) - before]).toEqual([route.name, 1]);
+    }
+    // Sur la chose d'un autre agent, la couche métier refuse : dossiers d'un absent qu'il ne couvre pas, séance d'entraînement d'un autre.
+    const cover = await t.call(tiers, 'GET', '/reseau/agents/agent-cible/dossiers-couverts');
+    expect([cover.status, cover.body.rule]).toEqual([403, 'R16']);
+    for (const path of ['/reseau/entrainement/seance-autre/tour', '/reseau/entrainement/seance-autre/fin']) {
+      const r = await t.call(tiers, 'POST', path, path.endsWith('tour') ? { text: 'Bonjour' } : undefined);
+      expect([path, r.status]).toEqual([path, expect.toBeOneOf([403, 404])]);
+      expect(r.body.ok).toBe(false);
+    }
+    // La conformité lit le départ et le dossier, n'écrit rien.
+    const compliance: Viewer = { role: 'compliance', userId: 'conformite-1', networkId: t.network.id };
+    for (const route of routes.filter((r) => r.method === 'POST' && !OWN.includes(r.name) && !OTHERS.includes(r.name))) {
+      expect([route.name, (await raw(t, route, compliance, 'agent-cible')).status]).toEqual([route.name, 403]);
+    }
+    expect((await t.call(compliance, 'GET', '/reseau/candidatures')).status).toBe(403);
+    expect((await verifyChain(await t.journal.all())).ok).toBe(true);
+  });
+
+  it('[R16] binôme et absence : le binôme lit les dossiers de l’absent pendant l’absence, et plus rien après [R17]', async () => {
+    const t = await setup();
+    const paul = await t.admitted('Paul', 'paul@exemple.test');
+    const lea = await t.admitted('Léa', 'lea@exemple.test');
+    const asPaul: Viewer = { role: 'agent', userId: paul, networkId: t.network.id };
+    const asLea: Viewer = { role: 'agent', userId: lea, networkId: t.network.id };
+    expect((await t.call(asPaul, 'POST', '/reseau/binomes', { agentA: paul, agentB: lea, coverSharePct: 90 })).status).toBe(403);
+    expect((await t.call(t.direction, 'POST', '/reseau/binomes', { agentA: paul, agentB: lea, coverSharePct: 30 })).status).toBe(200);
+    t.advance(60_000);
+    // Léa ne déclare pas l'absence de Paul.
+    expect((await t.call(asLea, 'POST', `/reseau/agents/${paul}/absence`, { from: t.today(), until: t.plusDays(2), coverAgentId: lea })).status).toBe(403);
+    const absence = await t.call(asPaul, 'POST', `/reseau/agents/${paul}/absence`, { from: t.today(), until: t.plusDays(2), coverAgentId: lea });
+    expect(absence.body).toMatchObject({ ok: true, coverSharePct: 30 });
+    expect((await t.call(asLea, 'GET', `/reseau/agents/${paul}/dossiers-couverts`)).status).toBe(200);
+    t.advance(4 * DAY);
+    const after = await t.call(asLea, 'GET', `/reseau/agents/${paul}/dossiers-couverts`);
+    expect([after.status, after.body.rule]).toEqual([403, 'R16']);
+  });
+
+  it('[R83] parrainage par les routes : règles et parrain par la direction, primes lues par le parrain seul, sans promesse', async () => {
+    const t = await setup();
+    const parrain = await t.admitted('Sam', 'sam@exemple.test');
+    const filleul = await t.admitted('Eva', 'eva@exemple.test');
+    const asParrain: Viewer = { role: 'agent', userId: parrain, networkId: t.network.id };
+    expect((await t.call(asParrain, 'POST', '/reseau/parrainage/regles', { rateBp: 5000 })).status).toBe(403);
+    expect((await t.call(t.direction, 'POST', '/reseau/parrainage/regles', { rateBp: 1000 })).status).toBe(200);
+    expect((await t.call(t.direction, 'POST', `/reseau/agents/${filleul}/parrain`, { sponsorId: parrain })).status).toBe(200);
+    // Aucune prime à l'arrivée : rien tant que le filleul n'a encaissé aucune commission.
+    const mine = await t.call(asParrain, 'GET', '/reseau/mes-primes');
+    expect(mine.body.data).toMatchObject({ primes: [], totalCents: 0 });
+    expect(checkRecruitingText(mine.body.data.text).ok).toBe(true);
+    expect((await t.call({ ...asParrain, userId: filleul }, 'GET', `/reseau/agents/${parrain}/primes`)).status).toBe(403);
+    expect((await t.call(t.direction, 'GET', `/reseau/agents/${parrain}/primes`)).status).toBe(200);
+  });
+
+  it('[R86] départ par les routes : rangé par la direction, lu par la conformité, refusé à l’agent, annulable', async () => {
+    const t = await setup();
+    const leaver = await t.admitted('Tom', 'tom@exemple.test');
+    const asLeaver: Viewer = { role: 'agent', userId: leaver, networkId: t.network.id };
+    const input = { noticeGivenOn: t.today(), leavesOn: t.plusDays(60), reason: 'demission_agent', contractStartedOn: t.today() };
+    expect((await t.call(asLeaver, 'POST', `/reseau/agents/${leaver}/depart`, input)).status).toBe(403);
+    const ranged = await t.call(t.direction, 'POST', `/reseau/agents/${leaver}/depart`, input);
+    expect(ranged.status).toBe(200);
+    const compliance: Viewer = { role: 'compliance', userId: 'conformite-1', networkId: t.network.id };
+    expect((await t.call(compliance, 'GET', `/reseau/agents/${leaver}/depart`)).body.data).toMatchObject({ agentId: leaver });
+    expect((await t.call(compliance, 'GET', `/reseau/agents/${leaver}/solde`)).status).toBe(200);
+    expect((await t.call(t.direction, 'GET', '/reseau/reprises')).status).toBe(200);
+    expect((await t.call(t.direction, 'POST', `/reseau/agents/${leaver}/depart/annuler`)).status).toBe(200);
+    expect((await t.call(t.direction, 'GET', `/reseau/agents/${leaver}/depart`)).body.data).toBeNull();
+    // Aucun agent n'est effacé [R17].
+    expect(await t.db.all('SELECT id FROM agents WHERE id = ?', [leaver])).toHaveLength(1);
   });
 
   it('un corps illisible ou porteur d’une clé de plus est refusé sans rien ranger', async () => {
