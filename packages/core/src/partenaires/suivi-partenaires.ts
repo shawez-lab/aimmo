@@ -31,6 +31,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DiagnosticDomain, PartnerTrade } from './annuaire.ts';
 import { CONSENT_CHANNELS, type ConsentChannel, type MiseEnRelation, type ReferralState } from './mise-en-relation.ts';
+import { PIECE_RULES } from './pieces-partenaires.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 const MINUTE = 60_000;
@@ -366,7 +367,9 @@ export class SuiviPartenaires {
       entrustedOn: m.entrustedAt ? day(m.entrustedAt) : null,
       firstResponseOn: m.firstResponseAt ? day(m.firstResponseAt) : null,
       delayHours: m.answered && m.delayMinutes !== null ? Math.round(m.delayMinutes / 60) : null,
-      documents: docs.map((d) => ({ sort: d.sort, destination: d.destination, depositedOn: day(d.deposited_at) })),
+      // Une sorte inconnue est écrite par le partenaire et pourrait porter un nom : seule une sorte de la règle écrite
+      // passe, toute autre devient « autre » avant d'aller à l'IA [R15, R23].
+      documents: docs.map((d) => ({ sort: Object.hasOwn(PIECE_RULES, d.sort) ? d.sort : 'autre', destination: d.destination, depositedOn: day(d.deposited_at) })),
       followUps: fups.map((f) => ({ kind: f.kind, dueOn: day(f.due_at) })),
     };
   }

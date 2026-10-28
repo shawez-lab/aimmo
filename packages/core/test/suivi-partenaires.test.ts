@@ -287,6 +287,16 @@ describeWithSqlite('U07 · résumé des réponses', () => {
     for (const word of ['Clémence', 'Imaginaire', 'Zéphyr', '21000', 'T-7', req.partnerId, t.project.id, t.person.id, 'Alex']) expect(json).not.toContain(word);
   });
 
+  it('[R15] [R23] une sorte de pièce inconnue, écrite par le partenaire, n’arrive jamais telle quelle à l’IA', async () => {
+    const seen: SummaryFacts[] = [];
+    const { t, req } = await answeredWith({ write: async (f) => (seen.push(f), { headline: 'Deux pièces déposées.', points: [] }) });
+    const r = await t.pieces.deposit(t.asPartner(req.partnerId), req.referralId, { sort: 'rapport_jean_dupont', ref: t.files.put(`partenaires/${req.partnerId}/relations/${req.referralId}`), sha256: SHA, issuedOn: '2027-07-13' });
+    expect(r).toMatchObject({ ok: true, value: { destination: 'agent_queue' } });
+    await t.suivi.summary(t.agent, req.referralId);
+    expect(seen[0]!.documents.map((d) => d.sort)).toEqual(['amiante', 'autre']);
+    expect(JSON.stringify(seen)).not.toMatch(/jean|dupont/i);
+  });
+
   it('[R12] une IA qui invente un chiffre, rend une autre forme, donne une coordonnée ou échoue : le secours rend la même structure', async () => {
     const answers: unknown[] = [
       { headline: 'Le partenaire a répondu en 2 h.', points: [] },
