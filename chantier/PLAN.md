@@ -1616,11 +1616,13 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W06, D08
 - Cahier : M15, « Bail et annexes » ; M06, « Signature électronique AIMMO ».
 - Objectif : faire signer le bail en vigueur (W06) par le bailleur et le locataire choisi avec la signature en ligne de D08, en mode essai ; ajoutée le 2026-10-28 par la voie 2, car W06 l'avait renvoyée à une tâche qui n'existait pas au plan.
-- Critères : seul le bail en vigueur et complet se signe [R101, R105] ; chaque partie signe l'empreinte du bail ; un bail remplacé après une signature demande de nouvelles signatures ; tant que H08 et H24 ne sont pas faits, la signature ne rend jamais un bail signé réel ; chaque partie reçoit le même exemplaire par le contrôle central.
+- Critères : fournit `LeaseSignatureState.signedAt` à W08 (remise des clés, honoraires dus) ; seul le bail en vigueur et complet se signe [R101, R105] ; chaque partie signe l'empreinte du bail ; un bail remplacé après une signature demande de nouvelles signatures ; tant que H08 et H24 ne sont pas faits, la signature ne rend jamais un bail signé réel ; chaque partie reçoit le même exemplaire par le contrôle central.
 - Attend : H08 et H24 pour un usage réel ; en mode essai d'ici là.
 
 ### W08 · Remise des clés sans argent pour AIMMO, gestion par un partenaire carte G
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#158) ; R107 en service ; migration `0908`. Relecture forte 1 P1 (état des lieux clos sous un autre bail) corrigé ; Codex 1 P2 (date impossible) corrigé. La signature du bail est lue par l'interface `LeaseSignatureState`, à fournir par W12 ; d'ici là, aucune remise des clés ni aucun honoraire dû en vrai.
+- Décidé (2026-10-28, voie 2) : les honoraires sont la rémunération de l'agence, pas des fonds tenus pour autrui (R107), facturés par K02 ; un état des lieux clos vaut pour son seul bail, un nouveau bail en vigueur demande le sien.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W07, U02
 - Cahier : M15, « Remise des clés » ; Conformité, « Argent du locataire ».
 - Objectif : la remise des clés : dépôt de garantie et premier loyer déclarés versés directement au propriétaire ; honoraires dus à la signature du bail ; proposition de gestion locative par un partenaire de M18 titulaire de la carte G.
