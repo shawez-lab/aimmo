@@ -42,6 +42,12 @@ export class FakeElement {
   addEventListener(name: string, f: (e: unknown) => void): void {
     this.listeners[name] = f;
   }
+  /** Un clic du script sur l'élément (un lien de téléchargement, par exemple) : compté, et son écouteur appelé. */
+  clicks = 0;
+  click(): void {
+    this.clicks += 1;
+    this.listeners.click?.({});
+  }
   /** Tous les éléments en dessous, en profondeur. */
   all(): FakeElement[] {
     return this.children.flatMap((c) => [c, ...c.all()]);
