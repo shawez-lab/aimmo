@@ -77,10 +77,8 @@ it('[R10] [R09] cinq carnets tests, chacun relu par le code contre ses sources ;
     const r = await new Fourchette(SALES, undefined, () => NOW).estimate({ kind: facts.kind, surface: facts.surface, lat: facts.lat, lon: facts.lon, postalCode: facts.postalCode, energyClass: facts.energy?.energyClass ?? null });
     if (r.ok) {
       expect(c.value).toMatchObject({ known: true, low: r.low, high: r.high, comparables: r.comparables.length, latestSale: r.latestUsedSale, source: COVERAGE.source });
-      expect(c.yearCount).toBe(r.comparables.filter((x) => x.month >= '2027-04').length);
     } else {
       expect(c.value.known).toBe(false);
-      expect(c.yearCount).toBe(0);
     }
     for (const y of c.yearSales) {
       expect(SALES.all.some((x) => Math.round(x.surface) === y.surface && Math.round(x.pricePerM2) === y.pricePerM2 && x.month === y.month), name).toBe(true);
@@ -116,6 +114,21 @@ it('[R10] plus de 10 ventes dans l’année : le carnet dit leur nombre exact, e
   expect(c.yearSales).toHaveLength(10);
   expect(carnetText(c)).toContain(`Ventes comparables publiées sur les douze derniers mois : ${c.yearCount}, dont les 10 plus récentes :`);
   expect(checkCarnet(c)).toEqual([]);
+});
+
+it('[R10] les ventes de l’année ne dépendent pas de l’échantillon de la fourchette : plus de 40 ventes, ou moins de 5', async () => {
+  // 40 ventes proches de l'an passé et 10 ventes de cette année un peu plus loin : la fourchette garde les 40 proches.
+  const near: Sale[] = Array.from({ length: 40 }, (_, i) => ({ id: `p${i}`, kind: 'apartment', lat: 47.3225 + i * 0.00001, lon: 5.0412, surface: 60 + (i % 10), pricePerM2: 2500 + i, month: '2026-11' }));
+  const far: Sale[] = Array.from({ length: 10 }, (_, i) => ({ id: `l${i}`, kind: 'apartment', lat: 47.3245, lon: 5.0412 + i * 0.00001, surface: 64, pricePerM2: 3000 + i, month: '2027-11' }));
+  const c = await buildCarnet(SALE, FACTS['appartement']!, new MemorySales([...near, ...far]), NOW);
+  expect(c.value.known).toBe(true);
+  expect(c.yearCount).toBe(10);
+  expect(c.yearSales.every((y) => y.month === '2027-11')).toBe(true);
+  // Trois ventes seulement : pas de fourchette, mais les ventes de l'année sont montrées.
+  const few = await buildCarnet(SALE, FACTS['appartement']!, new MemorySales(far.slice(0, 3)), NOW);
+  expect(few.value.known).toBe(false);
+  expect(few.yearCount).toBe(3);
+  expect(checkCarnet(few)).toEqual([]);
 });
 
 it('[R10] un carnet dont un chiffre ne vient pas de ses sources, ou qui démarche, est refusé', async () => {

@@ -19,12 +19,14 @@
  * - validité du diagnostic énergétique : 10 ans, jusqu'à la veille de l'anniversaire ; ceux faits du 1er janvier 2013
  *   au 31 décembre 2017 ont cessé de valoir le 31 décembre 2022, ceux du 1er janvier 2018 au 30 juin 2021 le
  *   31 décembre 2024 ;
- * - les ventes de l'année : leur nombre, et les 10 plus récentes ;
+ * - les ventes de l'année : cherchées à part de la fourchette, dans son rayon et au moins le deuxième rayon de recherche ;
+ *   leur nombre,
+ *   et les 10 plus récentes ;
  * - le carnet est rangé une fois par client et par dossier, lisible par son lien seulement, qui ne dit aucun nom ; un
  *   carnet fait reste tel quel, même si la relance qui le porte part plus tard.
  */
 import type { SqlDatabase } from '../db/sql.ts';
-import { Fourchette, type EnergyClass, type EstimatedKind, type RangeResult, type SalesSource } from '../estimation/fourchette.ts';
+import { DEFAULT_RANGE_SETTINGS, Fourchette, distance, type EnergyClass, type EstimatedKind, type RangeResult, type SalesSource } from '../estimation/fourchette.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { ClosedSale } from './demandes-avis.ts';
@@ -183,7 +185,20 @@ export async function buildCarnet(sale: Pick<ClosedSale, 'reference' | 'city'>, 
     r.ok && r.data.source
       ? { known: true, low: r.low, high: r.high, comparables: r.comparables.length, latestSale: r.latestUsedSale, source: r.data.source, recentMissing: r.data.recentMissing }
       : { known: false, reason: REASONS[r.ok ? 'donnees_absentes' : r.reason] ?? REASONS['donnees_absentes']! };
-  const inYear = r.ok ? r.comparables.filter((s) => s.month > yearAgo).sort((a, b) => b.month.localeCompare(a.month) || a.distance - b.distance) : [];
+  // Les ventes de l'année sont cherchées à part de la fourchette, qui ne garde que les 40 plus proches et rien sous 5 :
+  // même type, surface comparable, dans le rayon de la fourchette, et au moins le deuxième rayon de recherche.
+  let inYear: { surface: number; pricePerM2: number; month: string; distance: number }[] = [];
+  if ((facts.kind === 'apartment' || facts.kind === 'house') && facts.lat !== null && facts.lon !== null && facts.surface && facts.surface > 0) {
+    const kind = facts.kind;
+    const radius = Math.max(r.ok ? r.radius : 0, DEFAULT_RANGE_SETTINGS.radii[kind][1]!);
+    const [minRatio, maxRatio] = DEFAULT_RANGE_SETTINGS.surfaceRatio[kind];
+    const around = await sales.within(kind, facts.lat, facts.lon, radius);
+    inYear = around
+      .filter((x) => x.kind === kind && x.month > yearAgo && x.surface / facts.surface! >= minRatio && x.surface / facts.surface! <= maxRatio)
+      .map((x) => ({ surface: x.surface, pricePerM2: x.pricePerM2, month: x.month, distance: distance(facts.lat!, facts.lon!, x.lat, x.lon) }))
+      .filter((x) => x.distance <= radius)
+      .sort((a, b) => b.month.localeCompare(a.month) || a.distance - b.distance);
+  }
   const yearSales = inYear.slice(0, 10).map((s) => ({ surface: Math.round(s.surface), pricePerM2: Math.round(s.pricePerM2), month: s.month }));
   let energy: Carnet['energy'] = { known: false };
   if (facts.energy && /^\d{4}-\d{2}-\d{2}$/.test(facts.energy.diagnosedOn)) {
