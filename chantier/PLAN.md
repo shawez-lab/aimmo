@@ -1176,7 +1176,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien (réponses réelles écrites par Shawez plus tard, dans l'application).
 
 ### J03 · Entretien préparé à partir du déclaré, décidé par un humain
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : J01
 - Cahier : M14, « Entretien » ; « L'IA et l'humain ».
 - Objectif : pour chaque candidature, une fiche d'entretien préparée par le code : ce que le candidat a déclaré, les mêmes questions pour tous, les pièces qu'il devra fournir ; l'entretien est fixé, mené et décidé par un humain nommé, qui range sa décision (oui, non, à revoir) avec son motif écrit ; un oui ouvre le parcours d'intégration (J04).
