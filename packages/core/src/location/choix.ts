@@ -185,7 +185,9 @@ export class ChoixProprietaire {
         guarantors: guarantors.map((g) => g.kind),
       });
     }
-    if (files.length === 0) return { ok: false, rule: null, code: 'no_complete_file' };
+    // Sans aucun dossier complet, la présentation se fait quand même pour les reçus des candidats : le propriétaire,
+    // lui, n'a rien à voir ni de reçu à recevoir.
+    if (files.length === 0 && waiting.length === 0) return { ok: false, rule: null, code: 'no_application' };
     const presentedOn = this.today();
     const text = snapshotText(presentedOn, files, waiting);
     const fingerprint = await sha256(text);
@@ -210,7 +212,7 @@ export class ChoixProprietaire {
     );
     for (const f of files) await this.prepare(id, 'candidat', f.applicationId, people.get(f.applicationId)!, candidateReceiptText(f.arrivedOn, f.arrival, f.pieces, f.dossierFacile));
     for (const w of waiting) await this.prepare(id, 'candidat', w.applicationId, people.get(w.applicationId)!, waitingReceiptText(w.arrivedOn, w.arrival, w.pieces, w.missing));
-    await this.prepare(id, 'proprietaire', null, listing.ownerPersonId, ownerReceiptText(files.length, presentedOn, fingerprint));
+    if (files.length > 0) await this.prepare(id, 'proprietaire', null, listing.ownerPersonId, ownerReceiptText(files.length, presentedOn, fingerprint));
     return { ok: true, value: { presentationId: id, listingId: listing.id, version, files, sha256: fingerprint, createdAt: at } };
   }
 
@@ -259,7 +261,7 @@ export class ChoixProprietaire {
     const expected = new Map<string, string>();
     for (const [arrival, arrivedOn, applicationId, dossierFacile, pieces] of files) expected.set(`candidat:${applicationId}`, candidateReceiptText(arrivedOn, arrival, pieces, dossierFacile));
     for (const [arrival, arrivedOn, applicationId, pieces, missing] of snap.waiting) expected.set(`candidat:${applicationId}`, waitingReceiptText(arrivedOn, arrival, pieces, missing));
-    expected.set('proprietaire:', ownerReceiptText(files.length, snap.presentedOn, p.snapshot_sha256));
+    if (files.length > 0) expected.set('proprietaire:', ownerReceiptText(files.length, snap.presentedOn, p.snapshot_sha256));
     const stored = await this.db.all<{ recipient: string; application_id: string | null; text: string }>('SELECT recipient, application_id, text FROM rental_fairness_receipts WHERE presentation_id = ?', [p.id]);
     const events = await this.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'location.recu_prepare' AND subject = ?", [`rental_presentation:${p.id}`]);
     const loggedHashes = new Map<string, string>(events.map((e) => JSON.parse(e.data) as { recipient: string; application: string | null; sha256: string }).map((e): [string, string] => [`${e.recipient}:${e.application ?? ''}`, e.sha256]));

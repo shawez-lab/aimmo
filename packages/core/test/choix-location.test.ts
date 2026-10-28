@@ -146,6 +146,20 @@ describeWithSqlite('W05 · présentation au propriétaire et choix', () => {
     expect(await t.choix.replay(t.agent.networkId, pid)).toBe(false);
   });
 
+  it('[R105] sans aucun dossier complet, chaque candidat reçoit quand même son reçu ; le propriétaire n’a rien à choisir', async () => {
+    const t = await setup();
+    const a = await t.candidate(1, false);
+    await t.candidate(2, false);
+    const p = await t.choix.present(t.agent, t.listingId);
+    expect(p).toMatchObject({ ok: true, value: { files: [] } });
+    const pid = p.ok ? p.value.presentationId : '';
+    const r = await t.choix.receipts(t.agent, t.listingId, pid);
+    expect(r.ok && r.value.map((x) => x.recipient)).toEqual(['candidat', 'candidat']);
+    expect(r.ok && r.value[0]!.text).toContain('Il manque encore');
+    expect(await t.choix.replay(t.agent.networkId, pid)).toBe(true);
+    expect(await t.choix.recordChoice(t.agent, t.listingId, { presentationId: pid, applicationId: a.id, decidedAt: new Date(clock).toISOString(), channel: 'mail', proofRef: t.proof() })).toEqual({ ok: false, rule: 'R105', code: 'not_presented' });
+  });
+
   it('[R104] [R105] le reçu du candidat ne cite que ses pièces, jamais celles de son garant', async () => {
     const t = await setup();
     const a = await t.candidate(1);
@@ -193,7 +207,7 @@ describeWithSqlite('W05 · présentation au propriétaire et choix', () => {
 
   it('[R16] l’agent du logement présente et range le choix ; un autre agent est refusé ; sans dossier complet, rien', async () => {
     const t = await setup();
-    expect(await t.choix.present(t.agent, t.listingId)).toEqual({ ok: false, rule: null, code: 'no_complete_file' });
+    expect(await t.choix.present(t.agent, t.listingId)).toEqual({ ok: false, rule: null, code: 'no_application' });
     await t.candidate(1);
     expect(await t.choix.present(t.other, t.listingId)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.choix.present(t.compliance, t.listingId)).toEqual({ ok: false, rule: 'R16', code: 'role' });
