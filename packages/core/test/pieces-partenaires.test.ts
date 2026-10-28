@@ -41,14 +41,21 @@ async function setup(withSaleFile = true) {
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: person.id, kind: 'sell' });
   const property = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'T-1', kind: 'home', postalCode: '21000' });
   await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: property.id, role: 'owned' });
+  const buyer = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Acheteur', lastName: 'Inventé' });
+  const buyProject = await store.createProject({ networkId: network.id, agentId: alex.id, personId: buyer.id, kind: 'buy' });
+  await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: buyProject.id, propertyId: property.id, role: 'interested' });
+  const other = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Autre', lastName: 'Inventé' });
+  const otherProject = await store.createProject({ networkId: network.id, agentId: alex.id, personId: other.id, kind: 'buy' });
+  await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: otherProject.id, propertyId: property.id, role: 'interested' });
   const saleFileId = 'dossier-vente-test';
   if (withSaleFile) {
     // Un dossier de vente inventé, rangé sans passer par M09 : seule son existence compte ici.
     await db.exec('PRAGMA foreign_keys = OFF');
-    await db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES (?, ?, ?, 'offre-test', 'acheteur-test', 200000, ?, 'agent:x')", [
+    await db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES (?, ?, ?, 'offre-test', ?, 200000, ?, 'agent:x')", [
       saleFileId,
       network.id,
       property.id,
+      buyer.id,
       new Date(clock).toISOString(),
     ]);
     await db.exec('PRAGMA foreign_keys = ON');
@@ -66,9 +73,9 @@ async function setup(withSaleFile = true) {
     return id;
   };
   /** Une demande confiée à un partenaire, avec l'accord du client. */
-  const request = async (trade: string, domain?: string, withProperty = true): Promise<{ partnerId: string; referralId: string }> => {
+  const request = async (trade: string, domain?: string, withProperty = true, projectId = project.id): Promise<{ partnerId: string; referralId: string }> => {
     const partnerId = await partner(trade, domain);
-    const r = await relations.propose(agent, { projectId: project.id, trade, domain, propertyId: withProperty ? property.id : undefined, postcode: '21000' });
+    const r = await relations.propose(agent, { projectId, trade, domain, propertyId: withProperty ? property.id : undefined, postcode: '21000' });
     if (!r.ok) throw new Error(r.code);
     const id = r.value.referralId;
     const c = await relations.recordConsent(agent, id, { partnerId, consentAt: new Date(clock - 500).toISOString(), channel: 'ecrit', proofRef: files.put(`relations/${id}`) });
@@ -78,7 +85,7 @@ async function setup(withSaleFile = true) {
   };
   const deposit = (req: { partnerId: string; referralId: string }, sort: string, extra: Record<string, unknown> = {}) =>
     pieces.deposit({ role: 'partner', userId: req.partnerId, networkId: network.id }, req.referralId, { sort, ref: files.put(`partenaires/${req.partnerId}/relations/${req.referralId}`), sha256: SHA, issuedOn: day(-1), ...extra });
-  return { db, journal, relations, pieces, network, agent, bea, dir, property, project, saleFileId, request, deposit, files, day };
+  return { db, journal, relations, pieces, network, agent, bea, dir, property, project, buyProject, otherProject, saleFileId, request, deposit, files, day };
 }
 
 describeWithSqlite('U05 · pièces des partenaires', () => {
@@ -86,16 +93,16 @@ describeWithSqlite('U05 · pièces des partenaires', () => {
     const t = await setup();
     const diag = await t.request('diagnostiqueur', 'amiante');
     const notaire = await t.request('notaire');
-    const courtier = await t.request('courtier');
+    const courtier = await t.request('courtier', undefined, true, t.buyProject.id);
     const artisan = await t.request('artisan');
     const geometre = await t.request('geometre');
     const expected: [typeof diag, string, string, string, string | null][] = [
-      [diag, 'amiante', 'sale_file', t.saleFileId, 'amiante'],
+      [diag, 'amiante', 'property', t.property.id, 'amiante'],
       [notaire, 'titre_propriete', 'sale_file', t.saleFileId, 'titre_propriete'],
       [notaire, 'projet_compromis', 'sale_file', t.saleFileId, 'projet_compromis'],
       [courtier, 'offre_pret', 'financing', t.saleFileId, 'offre_pret'],
       [artisan, 'devis', 'referral', artisan.referralId, null],
-      [geometre, 'bornage', 'sale_file', t.saleFileId, 'bornage'],
+      [geometre, 'bornage', 'property', t.property.id, 'bornage'],
     ];
     for (const [req, sort, destination, targetId, piece] of expected) {
       const r = await t.deposit(req, sort);
@@ -115,7 +122,7 @@ describeWithSqlite('U05 · pièces des partenaires', () => {
     expect(await t.deposit(diag, 'dpe')).toMatchObject({ ok: true, value: { destination: 'property', targetId: t.property.id, piece: 'dpe' } });
     const notaire = await t.request('notaire');
     expect(await t.deposit(notaire, 'titre_propriete')).toMatchObject({ ok: true, value: { destination: 'agent_queue', targetId: t.project.id, reason: 'no_sale_file' } });
-    const courtier = await t.request('courtier');
+    const courtier = await t.request('courtier', undefined, true, t.buyProject.id);
     expect(await t.deposit(courtier, 'accord_principe')).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'no_sale_file' } });
     const termites = await t.request('diagnostiqueur', 'termites');
     expect(await t.deposit(termites, 'termites')).toMatchObject({ ok: true, value: { destination: 'property', piece: 'termites' } });
@@ -132,6 +139,24 @@ describeWithSqlite('U05 · pièces des partenaires', () => {
     const sansBien = await t.request('diagnostiqueur', 'gaz', false);
     expect(await t.deposit(sansBien, 'gaz')).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'no_property' } });
     for (const rule of Object.values(PIECE_RULES)) expect(rule.trades.length).toBeGreaterThan(0);
+  });
+
+  it('[R78] une pièce n’entre jamais dans le dossier d’un client qui n’y est pas partie', async () => {
+    const t = await setup();
+    // Le prêt du vendeur n'est pas celui de l'acquéreur du dossier.
+    const pretVendeur = await t.request('courtier');
+    expect(await t.deposit(pretVendeur, 'offre_pret')).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'not_party' } });
+    // Un autre acquéreur intéressé par le bien n'est pas partie au dossier de vente.
+    const pretAutre = await t.request('courtier', undefined, true, t.otherProject.id);
+    expect(await t.deposit(pretAutre, 'offre_pret')).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'not_party' } });
+    const notaireAutre = await t.request('notaire', undefined, true, t.otherProject.id);
+    expect(await t.deposit(notaireAutre, 'projet_acte')).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'not_party' } });
+    // Un diagnostic demandé par un acquéreur ne va pas à la fiche du bien d'un autre.
+    const diagAutre = await t.request('diagnostiqueur', 'dpe', true, t.otherProject.id);
+    expect(await t.deposit(diagAutre, 'dpe')).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'not_party' } });
+    // L'acquéreur du dossier, lui, y est partie : sa pièce du notaire y va.
+    const notaireAcquereur = await t.request('notaire', undefined, true, t.buyProject.id);
+    expect(await t.deposit(notaireAcquereur, 'projet_acte')).toMatchObject({ ok: true, value: { destination: 'sale_file', targetId: t.saleFileId } });
   });
 
   it('[R15] une pièce d’identité, un document anti-blanchiment ou un RIB ne sont jamais acceptés', async () => {

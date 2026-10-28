@@ -4,12 +4,12 @@
  * Le partenaire confié (U04) dépose une pièce dans sa mise en relation ouverte : sa sorte, sa référence de stockage,
  * son empreinte et la date du document ; jamais son contenu. Une règle écrite (`PIECE_RULES`) dit, pour chaque sorte,
  * quels métiers peuvent la déposer et où elle va :
- * - un diagnostic va au dossier de vente du bien s'il existe, sinon à la fiche du bien ;
- * - une pièce du notaire va au dossier de vente ;
- * - un accord de prêt va au financement du dossier de vente ;
+ * - un diagnostic ou un bornage va à la fiche du bien, si le client du projet en est le propriétaire ;
+ * - une pièce du notaire va au dossier de vente, si le client du projet en est le vendeur ou l'acquéreur ;
+ * - un accord de prêt va au financement du dossier de vente, si le client du projet en est l'acquéreur ;
  * - un devis reste dans la mise en relation.
  * Une sorte inconnue, une sorte qui ne va pas avec le métier du déposant, un diagnostic d'un autre domaine que celui
- * demandé, ou une destination absente (pas de bien, pas de dossier de vente) envoient la pièce à la file de l'agent du
+ * demandé, une destination absente (pas de bien, pas de dossier de vente) ou un client qui n'y est pas partie envoient la pièce à la file de l'agent du
  * projet, avec la raison : elle n'est rangée nulle part au hasard [R78]. Une pièce d'identité, un document
  * anti-blanchiment ou un RIB ne sont jamais acceptés ici [R15].
  *
@@ -33,7 +33,7 @@ export type Destination = 'property' | 'sale_file' | 'financing' | 'referral' | 
 interface PieceRule {
   /** Métiers qui peuvent déposer cette sorte. */
   trades: readonly PartnerTrade[];
-  /** Où elle va : un diagnostic va au dossier de vente s'il existe, sinon à la fiche du bien. */
+  /** Où elle va : un diagnostic à la fiche du bien, le reste au dossier de vente, à son financement ou à la mise en relation. */
   to: 'diagnostic' | 'sale_file' | 'financing' | 'referral';
   /** Le domaine de diagnostic que la sorte prouve, à comparer au domaine demandé. */
   domain?: string;
@@ -182,15 +182,25 @@ export class PiecesPartenaires {
       const reason = await check({ networkId: src.network_id, partnerId, trade: src.trade, sort, issuedOn });
       if (reason) return queue(reason);
     }
-    const sale = src.property_id ? await this.db.first<{ id: string }>('SELECT id FROM sale_files WHERE property_id = ? AND network_id = ?', [src.property_id, src.network_id]) : null;
     if (rule.to === 'referral') return { destination: 'referral', targetId: src.id, piece: null, reason: 'rule' };
+    if (!src.property_id) return queue('no_property');
+    // Le client du projet doit être partie au bien ou au dossier : jamais une pièce d'un client chez un autre [R78, R16].
+    const owner = await this.db.first("SELECT 1 FROM project_properties WHERE project_id = ? AND property_id = ? AND role = 'owned'", [src.project_id, src.property_id]);
     if (rule.to === 'diagnostic') {
-      if (!src.property_id) return queue('no_property');
-      if (sale && rule.piece) return { destination: 'sale_file', targetId: sale.id, piece: rule.piece, reason: 'rule' };
+      // Un diagnostic ou un bornage va toujours à la fiche du bien, d'où le dossier de vente le lit (U09).
+      if (!owner) return queue('not_party');
       return { destination: 'property', targetId: src.property_id, piece: rule.piece ?? sort, reason: 'rule' };
     }
+    const sale = await this.db.first<{ id: string; buyer_person_id: string }>('SELECT id, buyer_person_id FROM sale_files WHERE property_id = ? AND network_id = ?', [src.property_id, src.network_id]);
     if (!sale) return queue('no_sale_file');
-    if (rule.to === 'financing') return { destination: 'financing', targetId: sale.id, piece: sort, reason: 'rule' };
+    const person = (await this.db.first<{ person_id: string }>('SELECT person_id FROM projects WHERE id = ?', [src.project_id]))!;
+    const buyer = sale.buyer_person_id === person.person_id;
+    if (rule.to === 'financing') {
+      // Un accord de prêt est celui de l'acquéreur du dossier, et de lui seul.
+      if (!buyer) return queue('not_party');
+      return { destination: 'financing', targetId: sale.id, piece: sort, reason: 'rule' };
+    }
+    if (!owner && !buyer) return queue('not_party');
     return { destination: 'sale_file', targetId: sale.id, piece: rule.piece ?? sort, reason: 'rule' };
   }
 
