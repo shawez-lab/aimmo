@@ -1025,7 +1025,8 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 - Attend : rien (H07 seulement pour lire les avis plus tard).
 
 ### F03 · Remerciement : l'agent appelle, le message est préparé
-- Statut : à faire
+- Statut : en cours
+- Décidé (2026-10-28) : faite avant N06, comme F02 : le dossier clos est lu par l'interface `DossiersClos` ; les appels « remercier » sont listés par F03 pour l'agent, et F07 les met dans « Ma journée ».
 - Qui : Claude · Relecture : normale · Dépend de : N06
 - Cahier : M11, « Remerciement ».
 - Objectif : à la clôture, une tâche « appeler pour remercier » par client, au plan du jour de l'agent, et un message de remerciement préparé que l'agent valide ou non ; rien ne part sans sa validation.
