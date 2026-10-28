@@ -23,6 +23,8 @@ it('[R60] une pièce datée est valable jusqu’à la veille du même jour, des 
   // Gaz 3 ans, plomb 1 an.
   expect(expiredPieces([{ piece: 'gaz', received: { issuedOn: '2024-06-09' } }, { piece: 'plomb', received: { issuedOn: '2026-06-09' } }], '2027-06-10')).toEqual(['gaz', 'plomb']);
   expect(expiredPieces([{ piece: 'gaz', received: { issuedOn: '2024-06-11' } }, { piece: 'plomb', received: { issuedOn: '2026-06-11' } }], '2027-06-10')).toEqual([]);
+  // Un document daté après l'acte n'existait pas encore : il manque.
+  expect(expiredPieces([{ piece: 'titre_propriete', received: { issuedOn: '2027-06-11' } }], '2027-06-10')).toEqual(['titre_propriete']);
   // Un DPE de l'ancienne méthode, d'avant juillet 2021, n'est plus valable depuis 2025 ; un DPE de juillet 2021 l'est.
   expect(expiredPieces([{ piece: 'dpe', received: { issuedOn: '2020-05-01' } }], '2027-06-10')).toEqual(['dpe']);
   expect(expiredPieces([{ piece: 'dpe', received: { issuedOn: '2020-05-01' } }], '2024-12-31')).toEqual([]);
@@ -117,6 +119,31 @@ describeWithSqlite('N06 · acte signé : vente close, commission due', () => {
       expect((await t.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [t.propertyId]))?.status).toBe('under_offer');
       expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'dossier.acte_refuse').map((e) => e.data.rule)).toEqual(['R63']);
     }
+  });
+
+  it('[R63] une demande de début anticipé reçue après le compromis ne rend pas le mandat en vigueur ce jour-là', async () => {
+    for (const [received, expected] of [['2027-02-23T09:00:00.000Z', false], ['2027-02-19T09:00:00.000Z', true]] as const) {
+      const t = await setupDossier('terrain');
+      await t.startCompromis();
+      t.setClock(at9('2027-03-10'));
+      await new Echeancier(t.db, t.acces, t.journal, { now: t.now }).record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-02-20', proofRef: PROOF });
+      const s = await t.pieces.status(t.agent, t.fileId);
+      if (!s.ok) throw new Error(s.code);
+      for (const piece of s.value.missing) await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: '2027-03-05' });
+      const { Diffusion } = await import('../src/documents/retractation.ts');
+      expect(await new Diffusion(t.db, t.acces, t.journal, { now: t.now }).recordEarlyStart(t.agent, t.mandateId, { proof: 'demande écrite du vendeur', receivedAt: new Date(received) })).toEqual({ ok: true });
+      const r = await new ActeVente(t.db, t.acces, t.journal, t.storage, { now: t.now }).record(t.agent, t.fileId, { signedOn: '2027-03-10', proofRef: ACT_PROOF });
+      expect([received, r.ok]).toEqual([received, expected]);
+      if (!expected) expect(r).toEqual({ ok: false, rule: 'R63', code: 'no_mandate_in_force' });
+    }
+  });
+
+  it('[R60] un acte rapporté après coup ne compte pas une pièce datée après lui', async () => {
+    const t = await ready('terrain');
+    t.setClock(at9('2027-06-12'));
+    // Le titre reçu en dernier est daté du 11 juin, après l'acte du 10.
+    await t.pieces.add(t.agent, t.fileId, { piece: 'titre_propriete', ref: t.upload(), issuedOn: '2027-06-11' });
+    expect(await t.acte.record(t.agent, t.fileId, { signedOn: '2027-06-10', proofRef: ACT_PROOF })).toMatchObject({ ok: false, rule: 'R60', code: 'incomplete', expired: ['titre_propriete'] });
   });
 
   it('une coupure entre la clôture et la commission : un nouvel essai complète, sans rien doubler', async () => {

@@ -54,7 +54,10 @@ export const DPE_OLD_METHOD_UNTIL = '2024-12-31';
 export function expiredPieces(lines: { piece: Piece; received: { issuedOn: string } | null }[], actOn: string, validity: Partial<Record<Piece, number>> = DEFAULT_VALIDITY_MONTHS): Piece[] {
   return lines
     .filter((l) => {
-      if (!l.received || validity[l.piece] === undefined) return false;
+      if (!l.received) return false;
+      // Un document daté après l'acte n'existait pas encore ce jour-là : il manque.
+      if (l.received.issuedOn > actOn) return true;
+      if (validity[l.piece] === undefined) return false;
       if (validUntil(l.received.issuedOn, validity[l.piece]!) < actOn) return true;
       return l.piece === 'dpe' && l.received.issuedOn < DPE_NEW_METHOD_FROM && actOn > DPE_OLD_METHOD_UNTIL;
     })
@@ -159,6 +162,11 @@ export class ActeVente {
     if (!decision.mandateId || !['allowed', 'allowed_early_start'].includes(decision.reason)) return blocked({ ok: false, rule: 'R63', code: 'no_mandate_in_force' });
     const mandate = await this.db.first<{ signed_at: string }>('SELECT signed_at FROM mandates WHERE id = ?', [decision.mandateId]);
     if (!mandate || localTime(new Date(mandate.signed_at), TIME_ZONE).date > compromis) return blocked({ ok: false, rule: 'R63', code: 'no_mandate_in_force' });
+    // Un début avant la fin de la rétractation ne compte que si la demande écrite du vendeur était reçue au compromis.
+    if (decision.reason === 'allowed_early_start') {
+      const early = await this.db.first<{ received_at: string }>('SELECT received_at FROM mandate_early_starts WHERE mandate_id = ?', [decision.mandateId]);
+      if (!early || localTime(new Date(early.received_at), TIME_ZONE).date > compromis) return blocked({ ok: false, rule: 'R63', code: 'no_mandate_in_force' });
+    }
     const doc = await this.db.first<{ facts: string | null }>('SELECT d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL', [decision.mandateId]);
     let facts: DocumentFacts | null = null;
     try {
