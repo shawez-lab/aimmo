@@ -229,7 +229,9 @@ export class Factures {
 
   /** Le code d'un émetteur dans le numéro : rien pour le réseau, l'agent sinon, pour qu'un numéro soit unique. */
   private issuerCode(issuer: string): string {
-    return issuer === 'reseau' ? '' : `${issuer.slice(6).toUpperCase().replace(/[^A-Z0-9]/g, '')}-`;
+    // Les tirets de l'identifiant sont gardés : collés, les chiffres d'un UUID peuvent former un faux numéro de
+    // téléphone, que le journal refuse ; un UUID entier est reconnu comme identifiant interne [R13].
+    return issuer === 'reseau' ? '' : `${issuer.slice(6).toUpperCase().replace(/[^A-Z0-9-]/g, '')}-`;
   }
 
   private label(kind: InvoiceKind, issuer: string, year: number, number: number): string {

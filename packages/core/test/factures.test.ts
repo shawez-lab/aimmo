@@ -2,12 +2,28 @@ import { expect, it } from 'vitest';
 import { ActeVente, Echeancier } from '../src/dossiers/index.ts';
 import { Commissions, Factures, PlateformeEssai, splitVat } from '../src/pilotage/index.ts';
 import { PROOF, setupDossier } from './dossiers-jeu.ts';
+import { appendEvent } from '../src/journal/journal.ts';
+import { MemoryJournalStore } from '../src/journal/memory-store.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
 // Tout est inventé : vente, clients, agents, montants.
 const ACT_PROOF = 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf';
 const at9 = (day: string) => new Date(`${day}T08:00:00.000Z`);
-const code = (agentId: string) => agentId.toUpperCase().replace(/[^A-Z0-9]/g, '');
+const code = (agentId: string) => agentId.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+
+it('[R13] le numéro d’un reversement ne forme jamais un faux numéro de téléphone que le journal refuserait', async () => {
+  // Un identifiant d'agent dont les chiffres, collés sans tirets, ressembleraient à un numéro de portable.
+  const agentId = 'aaaaaaaa-aa06-1234-5678-aaaaaaaaaaaa';
+  const label = (Factures.prototype as unknown as { label: (k: string, i: string, y: number, n: number) => string }).label.call(
+    { issuerCode: (Factures.prototype as unknown as { issuerCode: (i: string) => string }).issuerCode },
+    'reversement',
+    `agent:${agentId}`,
+    2027,
+    1,
+  );
+  expect(label).toBe('RV-AAAAAAAA-AA06-1234-5678-AAAAAAAAAAAA-2027-00001');
+  await expect(appendEvent(new MemoryJournalStore(), { type: 'facture.emise', actor: 'direction:d1', subject: 'sale_file:f1', data: { label } }, () => new Date())).resolves.toBeDefined();
+});
 
 it('hors taxe et TVA au centime : la TVA est le reste, tout se recompte', () => {
   expect(splitVat(1_000_000, 2000)).toEqual({ htCents: 833_333, vatCents: 166_667 });
