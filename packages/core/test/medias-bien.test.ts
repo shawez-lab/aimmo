@@ -43,7 +43,7 @@ describeWithSqlite('P06 · publication des photos et vidéos', () => {
       const photos = c.received.at(-1)!.media.filter((m) => m.kind === 'photo');
       expect(photos).toHaveLength(2);
       expect(photos.map((p) => p.overlay)).toEqual([null, VIRTUAL_STAGING_LABEL]);
-      expect(photos.every((p) => (p.ref.includes('2222') ? p.overlay === 'Aménagement virtuel' : p.overlay === null))).toBe(true);
+      expect(photos.every((p) => (p.ref.endsWith('/0b6f1d2e-2222-4a2b-8c3d-000000000002.jpg') ? p.overlay === 'Aménagement virtuel' : p.overlay === null))).toBe(true);
     }
   });
 

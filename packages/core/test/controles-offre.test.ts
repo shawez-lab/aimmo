@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ControlesOffre, offerCheckLines, type Offer } from '../src/offres/index.ts';
 import { setupOffre } from './offres-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
+import { identiteAuCoffre } from './identite-coffre.ts';
 
 // Offres inventées.
 const OFFER: Offer = {
@@ -40,8 +41,7 @@ describeWithSqlite('O02 · contrôle d’une offre en base', () => {
     let r = await controles.check(t.agent, offer.id);
     expect(r.ok && r.value.map((l) => `${l.check}:${l.status}`)).toEqual(['identite:non_verifiee', 'financement:ecart', 'pret:coherent', 'validite:en_cours']);
     expect(r.ok && r.value[1]).toEqual({ check: 'financement', status: 'ecart', missingEur: 15000 });
-    const { ControlesSignature } = await import('../src/index.ts');
-    await new ControlesSignature(t.db, t.acces, t.journal, { now: t.now }).recordIdentity(t.agent, t.buyerId, { piece: 'passeport', seenAt: new Date('2027-02-27T09:00:00.000Z') });
+    await identiteAuCoffre({ db: t.db, acces: t.acces, journal: t.journal, now: t.now }, t.agent, t.buyerId, { piece: 'passeport', seenAt: new Date('2027-02-27T09:00:00.000Z') });
     r = await controles.check(t.agent, offer.id);
     expect(r.ok && r.value[0]).toEqual({ check: 'identite', status: 'verifiee', checkedOn: '2027-02-27' });
     expect(JSON.stringify(r)).not.toMatch(/passeport|carte_identite/);
@@ -74,22 +74,25 @@ describeWithSqlite('O02 · contrôle d’une offre en base', () => {
     expect(await controles.check(t.direction, theirs.value.id)).toMatchObject({ ok: true });
   });
 
-  it('[R15] la règle d’identité est celle de D03 : fenêtre du réglage à la milliseconde, toutes les fiches réunies', async () => {
+  it('[R15] la règle d’identité est celle de D03 : pièce au coffre, fenêtre du réglage au jour près, toutes les fiches réunies', async () => {
     const t = await setupOffre();
     const offer = await t.record();
-    const { ControlesSignature } = await import('../src/index.ts');
     // Une seconde fiche de la même personne, vérifiée, puis réunie à celle de l'offre.
     const twin = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Acheteur', lastName: 'Exemple' });
-    await new ControlesSignature(t.db, t.acces, t.journal, { now: t.now }).recordIdentity(t.agent, twin.id, { piece: 'carte_identite', seenAt: new Date('2026-09-02T10:00:00.000Z') });
+    await identiteAuCoffre({ db: t.db, acces: t.acces, journal: t.journal, now: t.now }, t.agent, twin.id, { piece: 'carte_identite', seenAt: new Date('2026-09-02T10:00:00.000Z') });
     const controles = new ControlesOffre(t.db, t.acces, t.journal, { now: t.now, settings: { identityDays: 180 } });
     let r = await controles.check(t.agent, offer.id);
     expect(r.ok && r.value[0]).toEqual({ check: 'identite', status: 'non_verifiee' });
     await t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES ('f-1', ?, ?, ?, ?, 'doublon', '2027-03-01T09:00:00.000Z', '2027-03-01T09:00:00.000Z')", [t.network.id, t.alexId, t.buyerId, twin.id]);
-    // 180 jours pile avant maintenant : compte encore ; une milliseconde de plus : ne compte plus.
+    // Au coffre, la vérification est datée au jour (L03) : 180 jours avant aujourd'hui compte encore, tout le jour ;
+    // le lendemain, elle ne compte plus.
     t.setClock(new Date('2027-03-01T10:00:00.000Z'));
     r = await controles.check(t.agent, offer.id);
     expect(r.ok && r.value[0]).toEqual({ check: 'identite', status: 'verifiee', checkedOn: '2026-09-02' });
-    t.setClock(new Date('2027-03-01T10:00:00.001Z'));
+    t.setClock(new Date('2027-03-01T22:00:00.000Z'));
+    r = await controles.check(t.agent, offer.id);
+    expect(r.ok && r.value[0]).toEqual({ check: 'identite', status: 'verifiee', checkedOn: '2026-09-02' });
+    t.setClock(new Date('2027-03-02T10:00:00.000Z'));
     r = await controles.check(t.agent, offer.id);
     expect(r.ok && r.value[0]).toEqual({ check: 'identite', status: 'non_verifiee' });
     // Une vérification datée après l'instant du contrôle ne compte pas.
