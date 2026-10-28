@@ -1178,7 +1178,8 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien (réponses réelles écrites par Shawez plus tard, dans l'application).
 
 ### J03 · Entretien préparé à partir du déclaré, décidé par un humain
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : un entretien se fixe à une date à venir, puis est marqué tenu une fois la date passée, avec la personne qui l'a mené ; un « oui » exige un entretien tenu ; J04 lit seulement `acceptedIn`, jamais le motif.
 - Qui : Claude · Relecture : forte · Dépend de : J01
 - Cahier : M14, « Entretien » ; « L'IA et l'humain ».
 - Objectif : pour chaque candidature, une fiche d'entretien préparée par le code : ce que le candidat a déclaré, les mêmes questions pour tous, les pièces qu'il devra fournir ; l'entretien est fixé, mené et décidé par un humain nommé, qui range sa décision (oui, non, à revoir) avec son motif écrit ; un oui ouvre le parcours d'intégration (J04).
@@ -1186,7 +1187,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J04 · Dossier d'agent et parcours d'intégration pas à pas
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : J03
 - Cahier : M14, « Intégration » ; Conformité ; Offre aux agents, « Ce que l'agent s'engage à faire ».
 - Objectif : à l'entrée décidée, un dossier d'agent : la liste des pièces attendues par des règles écrites (contrat d'agent commercial signé, attestation d'habilitation, immatriculation, assurance de responsabilité civile professionnelle, attestation de vigilance), chacune rangée par sa référence de stockage avec sa date de fin de validité ; le parcours guidé dit l'étape suivante en une phrase ; `DossierAgent.complete(agentId, at)` dit si le dossier est complet et valide à cette date, et pourquoi sinon.
