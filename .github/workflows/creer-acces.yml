@@ -1,0 +1,101 @@
+name: Créer l'accès de Shawez
+
+# Z02 · Lancé à la main, depuis main seulement. Range une invitation à usage unique, valable 24 heures (empreinte
+# seule), puis envoie le lien par mail à l'adresse donnée ici. Le lien ouvre l'application déjà connectée : le Worker
+# tire alors les clés et n'en garde que l'empreinte. Le secret API_KEYS n'est ni lu ni réécrit.
+# Le prénom, le nom et les adresses sont donnés au lancement : ils ne sont jamais écrits dans le dépôt.
+
+on:
+  workflow_dispatch:
+    inputs:
+      prenom:
+        description: Prénom
+        required: true
+        type: string
+      nom:
+        description: Nom
+        required: true
+        type: string
+      mail:
+        description: Adresse qui reçoit le lien
+        required: true
+        type: string
+      expediteur:
+        description: Adresse d'expédition, sur un domaine du compte Cloudflare
+        required: true
+        type: string
+      reseau:
+        description: Identifiant du réseau
+        required: true
+        default: aimmo
+        type: string
+      agent:
+        description: Identifiant de la fiche d'agent
+        required: true
+        default: agent-direction
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deployer-api
+  cancel-in-progress: false
+
+env:
+  WRANGLER: wrangler@4.149.0
+  WRANGLER_SEND_METRICS: 'false'
+  D1_PLACEHOLDER: 00000000-0000-0000-0000-000000000000
+
+jobs:
+  creer:
+    name: Créer l'accès
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Secrets Cloudflare présents (H04)
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Secrets Cloudflare absents (H04) : rien n'est créé."
+            exit 1
+          fi
+      - name: Masquer les données saisies
+        # Lues dans l'événement, jamais posées dans le texte de la commande : le journal du travail ne les montre pas.
+        run: |
+          node -e '
+            const inputs = JSON.parse(require("fs").readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")).inputs || {};
+            for (const name of ["prenom", "nom", "mail", "expediteur"]) {
+              const value = String(inputs[name] || "").trim();
+              if (value) console.log("::add-mask::" + value);
+            }'
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Base D1 et migrations
+        working-directory: packages/api
+        run: |
+          id="$(npx -y "$WRANGLER" d1 list --json | node -e '
+            let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => {
+              const base = JSON.parse(s).find((d) => d.name === "aimmo");
+              process.stdout.write(base ? base.uuid : "");
+            });')"
+          if ! printf '%s' "$id" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "::error::Base D1 aimmo introuvable : lancer d'abord « Déployer l'API »."
+            exit 1
+          fi
+          sed -i "s/$D1_PLACEHOLDER/$id/" wrangler.toml
+          npx -y "$WRANGLER" d1 migrations apply aimmo --remote
+      - name: Invitation et mail
+        env:
+          ACCES_PRENOM: ${{ inputs.prenom }}
+          ACCES_NOM: ${{ inputs.nom }}
+          ACCES_MAIL: ${{ inputs.mail }}
+          ACCES_EXPEDITEUR: ${{ inputs.expediteur }}
+          ACCES_RESEAU: ${{ inputs.reseau }}
+          ACCES_AGENT: ${{ inputs.agent }}
+        run: node --experimental-strip-types packages/api/outils/creer-acces.ts
