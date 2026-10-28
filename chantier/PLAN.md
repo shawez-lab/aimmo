@@ -4,6 +4,23 @@ Statuts possibles : `à faire`, `en cours`, `chez Codex depuis le <date>`, `fait
 Relecture : `normale` = tests + relecture de Codex. `forte` = tests + relecture de Codex + relecture par un agent séparé.
 Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le découpage des modules suivants se fait au fil de l'eau (protocole, section 5).
 
+## Priorité de Shawez (avant tout le reste, voie 1)
+
+### Z02 · Accès de Shawez à l'application en un clic
+- Statut : à faire
+- Qui : Claude, relecture forte
+- Dépendances : aucune
+- Objectif : l'application https://aimmo-api.shawez.workers.dev/app/ répond « API fermée : aucune clé configurée ». Shawez doit pouvoir entrer sans rien taper de technique. Un workflow GitHub lancé à la main (« Créer l'accès de Shawez ») tire une clé au hasard, range seulement son empreinte dans le secret `API_KEYS` du Worker avec `wrangler secret put` (le jeton Cloudflare est déjà dans les secrets du dépôt), crée la fiche agent de Shawez avec le rôle direction et agent, et lui remet la clé par un lien d'invitation à usage unique, valable 24 heures, envoyé à shawez@gravelin-immo.com. La clé n'apparaît jamais dans les journaux, le dépôt ni le chat. Le lien ouvre l'application déjà connectée.
+- Critères : clé jamais écrite en clair hors du navigateur de Shawez (test) ; lien à usage unique, expiré refusé (test) ; empreintes déjà présentes dans `API_KEYS` conservées (test) ; journal sans clé (test [R13]).
+- Ce qu'elle attend d'un humain : rien. Une fois fusionnée, la séance lance elle-même le workflow ; Shawez n'a qu'à cliquer sur le lien reçu par mail.
+
+### Z03 · Passe de design de l'application et des pages publiques
+- Statut : à faire
+- Qui : Claude, relecture forte
+- Dépendances : Z02
+- Objectif : un système de design propre à AIMMO (couleurs, typographie, espacements, composants, mouvements) appliqué à tous les écrans existants, téléphone d'abord. Rien de générique ni qui ressemble à un site fait par une IA ; niveau des meilleures applis du monde. Captures avant et après dans la proposition.
+- Critères : chaque écran passe un contrôle d'accessibilité automatique et un budget de performance (tests) ; aucun écran en dehors du système de design (test) ; Codex relit aussi les captures.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
