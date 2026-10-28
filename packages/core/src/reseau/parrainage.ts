@@ -63,6 +63,16 @@ export class Parrainage implements PrimesParrainage {
     return (await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [agentId, networkId]))?.status ?? null;
   }
 
+  /**
+   * Le parrain d'un agent : celui déclaré à sa création (depuis sa candidature), sinon celui rangé par la direction à
+   * son entrée. Les deux ne peuvent jamais se contredire (`recordSponsor` le refuse).
+   */
+  async sponsorOf(networkId: string, agentId: string): Promise<string | null> {
+    const declared = await this.db.first<{ sponsor_agent_id: string | null }>('SELECT sponsor_agent_id FROM agents WHERE id = ? AND network_id = ?', [agentId, networkId]);
+    if (declared?.sponsor_agent_id) return declared.sponsor_agent_id;
+    return (await this.db.first<{ sponsor_id: string }>('SELECT sponsor_id FROM sponsorships WHERE agent_id = ? AND network_id = ?', [agentId, networkId]))?.sponsor_id ?? null;
+  }
+
   /** La direction règle le taux (sur la part du réseau) et le nombre de niveaux ; plus d'un niveau est refusé [R83]. */
   async setRules(viewer: Viewer, input: { rateBp: unknown; levels?: unknown }): Promise<{ ok: true } | ReferralRefusal> {
     if (viewer.role !== 'direction') return this.refuse(viewer, null, 'role');
@@ -99,11 +109,13 @@ export class Parrainage implements PrimesParrainage {
     if ((await this.status(viewer.networkId, agentId)) !== 'active') return { ok: false, rule: null, code: 'unknown_agent' };
     if (sponsorId === agentId || (await this.status(viewer.networkId, sponsorId)) !== 'active') return { ok: false, rule: null, code: 'invalid_sponsor' };
     const sponsor = sponsorId as string;
+    const declared = (await this.db.first<{ sponsor_agent_id: string | null }>('SELECT sponsor_agent_id FROM agents WHERE id = ?', [agentId]))?.sponsor_agent_id ?? null;
+    if (declared !== null && declared !== sponsor) return { ok: false, rule: 'R83', code: 'other_sponsor_declared' };
     // Pas de boucle : le parrain n'a pas l'agent parmi ses parrains.
     let cursor: string | null = sponsor;
     for (let depth = 0; cursor !== null && depth < 100; depth += 1) {
       if (cursor === agentId) return { ok: false, rule: null, code: 'loop' };
-      cursor = (await this.db.first<{ sponsor_id: string }>('SELECT sponsor_id FROM sponsorships WHERE agent_id = ?', [cursor]))?.sponsor_id ?? null;
+      cursor = await this.sponsorOf(viewer.networkId, cursor);
     }
     const sold = await this.db.first('SELECT 1 AS ok FROM commissions WHERE network_id = ? AND agent_id = ? LIMIT 1', [viewer.networkId, agentId]);
     if (sold) return { ok: false, rule: 'R83', code: 'after_first_commission' };
@@ -125,13 +137,13 @@ export class Parrainage implements PrimesParrainage {
    */
   async of(networkId: string, agentId: string, networkShareCents: number): Promise<{ parrainId: string; amountCents: number } | null> {
     if (!Number.isInteger(networkShareCents) || networkShareCents <= 0) return null;
-    const row = await this.db.first<{ sponsor_id: string }>('SELECT sponsor_id FROM sponsorships WHERE agent_id = ? AND network_id = ?', [agentId, networkId]);
-    if (!row) return null;
-    if ((await this.status(networkId, row.sponsor_id)) !== 'active') return null;
+    const sponsorId = await this.sponsorOf(networkId, agentId);
+    if (!sponsorId) return null;
+    if ((await this.status(networkId, sponsorId)) !== 'active') return null;
     const rules = await this.rules(networkId);
     if (!rules || rules.rateBp === 0 || rules.levels < 1) return null;
     const amountCents = Math.floor((networkShareCents * rules.rateBp) / 10_000);
-    return amountCents > 0 ? { parrainId: row.sponsor_id, amountCents } : null;
+    return amountCents > 0 ? { parrainId: sponsorId, amountCents } : null;
   }
 
   /**
@@ -150,12 +162,35 @@ export class Parrainage implements PrimesParrainage {
        ORDER BY r.received_at, s.file_id`,
       [sponsorId, viewer.networkId],
     );
+    // Un parrain parti ne touche rien de nouveau : seules restent les primes déjà reversées avant son départ.
+    const left = (await this.status(viewer.networkId, sponsorId)) !== 'active';
     const primes: ReferralPrime[] = [];
     for (const r of rows) {
       if (await this.cancelled(r.file_id)) continue;
+      if (left && !(await this.db.first('SELECT 1 AS ok FROM commission_payouts WHERE file_id = ?', [r.file_id]))) continue;
       primes.push({ fileId: r.file_id, agentId: r.agent_id, amountCents: r.amount_cents, receivedAt: r.received_at });
     }
     return { ok: true, value: { primes, totalCents: primes.reduce((a, p) => a + p.amountCents, 0), text: REFERRAL_TEXT } };
+  }
+
+  /**
+   * Les primes figées au compromis mais à ne pas reverser : parrain parti avant le reversement, ou facture annulée.
+   * Pour M13 (J13), qui les garde au réseau.
+   */
+  async withheld(networkId: string): Promise<{ fileId: string; sponsorId: string; amountCents: number }[]> {
+    const rows = await this.db.all<{ file_id: string; beneficiary_id: string; amount_cents: number }>(
+      `SELECT s.file_id, s.beneficiary_id, s.amount_cents FROM commission_shares s JOIN commissions c ON c.file_id = s.file_id
+       WHERE s.kind = 'parrainage' AND c.network_id = ? AND s.amount_cents > 0
+       AND NOT EXISTS (SELECT 1 FROM commission_payouts p WHERE p.file_id = s.file_id) ORDER BY s.file_id`,
+      [networkId],
+    );
+    const out: { fileId: string; sponsorId: string; amountCents: number }[] = [];
+    for (const r of rows) {
+      const left = (await this.status(networkId, r.beneficiary_id)) !== 'active';
+      const hasInvoice = await this.db.first("SELECT 1 AS ok FROM invoices WHERE file_id = ? AND kind = 'honoraires'", [r.file_id]);
+      if (left || (hasInvoice && (await this.cancelled(r.file_id)))) out.push({ fileId: r.file_id, sponsorId: r.beneficiary_id, amountCents: r.amount_cents });
+    }
+    return out;
   }
 
   /** Vrai si la dernière facture d'honoraires du dossier est annulée par un avoir, ou s'il n'y en a aucune. */

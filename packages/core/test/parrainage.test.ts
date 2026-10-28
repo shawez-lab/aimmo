@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { computeShares } from '../src/pilotage/index.ts';
+import { ActeVente, Echeancier } from '../src/dossiers/index.ts';
+import { Commissions, Encaissements, Factures, PlateformeEssai, computeShares } from '../src/pilotage/index.ts';
+import { PROOF, setupDossier } from './dossiers-jeu.ts';
 import { Parrainage, REFERRAL_TEXT, checkRecruitingText } from '../src/reseau/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -28,7 +30,7 @@ async function setup() {
    * Une commission du filleul, rangée telle que M13 la range (les tables de K01 à K03 sont remplies directement : le
    * cycle complet est éprouvé par leurs propres tests). Rend son dossier.
    */
-  const sale = async (o: { agentId?: string; networkShare: number; received?: boolean; invoice?: 'aucune' | 'emise' | 'annulee' | 'annulee_puis_refaite' }) => {
+  const sale = async (o: { agentId?: string; networkShare: number; received?: boolean; paid?: boolean; invoice?: 'aucune' | 'emise' | 'annulee' | 'annulee_puis_refaite' }) => {
     raw.exec('PRAGMA foreign_keys = OFF');
     const fileId = `dossier-${++n}`;
     const agentId = o.agentId ?? filleul;
@@ -58,6 +60,7 @@ async function setup() {
     if (o.received ?? true) {
       await db.run("INSERT INTO commission_receipts (file_id, network_id, received_at, proof_ref, payout_due_at, recorded_by, created_at) VALUES (?, ?, ?, 'preuve', ?, 'dir', ?)", [fileId, network.id, stamp, stamp, stamp]);
     }
+    if (o.paid) await db.run("INSERT INTO commission_payouts (file_id, network_id, paid_at, proof_ref, recorded_by, created_at) VALUES (?, ?, ?, 'virement', 'dir', ?)", [fileId, network.id, stamp, stamp]);
     raw.exec('PRAGMA foreign_keys = ON');
     return { fileId, prime };
   };
@@ -126,16 +129,91 @@ describeWithSqlite('parrainage dans les règles', () => {
     await expect(w.db.run("INSERT INTO referral_settings (id, network_id, rate_bp, levels, written_by, written_at) VALUES ('x', ?, 100, 2, 'dir', '2027-01-01')", [w.network.id])).rejects.toThrow();
   });
 
-  it('[R83] un parrain parti ne touche rien de nouveau ; ce qui était encaissé avant reste', async () => {
+  it('[R83] un parrain parti ne touche rien de nouveau ; ce qui lui était déjà reversé reste', async () => {
     const w = await setup();
     await w.p.setRules(w.dir, { rateBp: 1000 });
     await w.p.recordSponsor(w.dir, w.filleul, w.parrain);
-    await w.sale({ networkShare: 500_000 });
+    await w.sale({ networkShare: 500_000, paid: true });
     await w.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [w.parrain]);
     const after = await w.sale({ networkShare: 300_000 });
     expect(after.prime).toBeNull();
     const r = await w.p.primesOf(w.dir, w.parrain);
     expect(r.ok && r.value.primes.map((x) => x.amountCents)).toEqual([50_000]);
+  });
+
+  it('[R83] un parrain parti entre le compromis et le reversement ne touche pas la prime figée ; le déjà reversé reste', async () => {
+    const w = await setup();
+    await w.p.setRules(w.dir, { rateBp: 1000 });
+    await w.p.recordSponsor(w.dir, w.filleul, w.parrain);
+    const paid = await w.sale({ networkShare: 500_000, paid: true });
+    const pending = await w.sale({ networkShare: 300_000, received: false });
+    expect(pending.prime).toEqual({ parrainId: w.parrain, amountCents: 30_000 });
+    await w.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [w.parrain]);
+    // L'encaissement arrive après son départ.
+    w.raw.exec('PRAGMA foreign_keys = OFF');
+    await w.db.run("INSERT INTO commission_receipts (file_id, network_id, received_at, proof_ref, payout_due_at, recorded_by, created_at) VALUES (?, ?, '2027-08-01T08:00:00.000Z', 'preuve', '2027-08-02T08:00:00.000Z', 'dir', '2027-08-01T08:00:00.000Z')", [pending.fileId, w.network.id]);
+    w.raw.exec('PRAGMA foreign_keys = ON');
+    const r = await w.p.primesOf(w.dir, w.parrain);
+    expect(r.ok && r.value.primes.map((x) => x.fileId)).toEqual([paid.fileId]);
+    // M13 sait que cette part figée n'est pas à reverser.
+    expect(await w.p.withheld(w.network.id)).toEqual([{ fileId: pending.fileId, sponsorId: w.parrain, amountCents: 30_000 }]);
+  });
+
+  it('[R83] le parrain déclaré à la création de l\'agent compte ; un autre ne peut pas être rangé', async () => {
+    const w = await setup();
+    await w.p.setRules(w.dir, { rateBp: 1000 });
+    const declared = (await w.store.createAgent({ networkId: w.network.id, firstName: 'Dé', lastName: 'Claré', sponsorAgentId: w.parrain })).id;
+    expect(await w.p.sponsorOf(w.network.id, declared)).toBe(w.parrain);
+    expect(await w.p.of(w.network.id, declared, 100_000)).toEqual({ parrainId: w.parrain, amountCents: 10_000 });
+    expect(await w.p.recordSponsor(w.dir, declared, w.autre)).toEqual({ ok: false, rule: 'R83', code: 'other_sponsor_declared' });
+    expect(await w.p.recordSponsor(w.dir, declared, w.parrain)).toEqual({ ok: true });
+  });
+
+  it('[R83] cycle complet par M13 : la prime entre dans les parts au compromis et n\'est montrée qu\'après l\'encaissement', async () => {
+    const t = await setupDossier('appartement');
+    const p = new Parrainage(t.db, t.journal, { now: t.now });
+    const sponsorId = '00000000-0000-4000-8000-00000000abcd';
+    const stamp = t.now().toISOString();
+    await t.db.run("INSERT INTO agents (id, network_id, first_name, last_name, zone, status, sponsor_agent_id, created_at, updated_at) VALUES (?, ?, 'Par', 'Rain', NULL, 'active', NULL, ?, ?)", [sponsorId, t.network.id, stamp, stamp]);
+    expect(await p.recordSponsor(t.direction, t.agent.userId, sponsorId)).toEqual({ ok: true });
+    expect(await p.setRules(t.direction, { rateBp: 1000 })).toEqual({ ok: true });
+    const at9 = (day: string) => new Date(`${day}T08:00:00.000Z`);
+    const c = new Commissions(t.db, t.acces, t.journal, { now: t.now, primes: p });
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 });
+    await t.startCompromis();
+    t.setClock(at9('2027-03-11'));
+    const echeancier = new Echeancier(t.db, t.acces, t.journal, { now: t.now });
+    for (const [kind, day] of [['compromis_signe', '2027-03-10'], ['notification_acquereur', '2027-03-11'], ['dia_recue', '2027-03-11'], ['date_limite_pret', '2027-05-10'], ['etat_date_attendu', '2027-05-20'], ['acte_prevu', '2027-06-10']] as const) {
+      const r = await echeancier.record(t.agent, t.fileId, { kind, day, proofRef: PROOF });
+      if (!r.ok) throw new Error(r.code);
+    }
+    await c.sync(t.network.id);
+    const share = await t.db.first<{ amount_cents: number }>("SELECT amount_cents FROM commission_shares WHERE file_id = ? AND kind = 'parrainage'", [t.fileId]);
+    expect(share!.amount_cents).toBeGreaterThan(0);
+    const before = await p.primesOf(t.direction, sponsorId);
+    expect(before.ok && before.value.primes).toEqual([]);
+    const status = await t.pieces.status(t.agent, t.fileId);
+    if (!status.ok) throw new Error(status.code);
+    for (const piece of status.value.missing) {
+      const r = await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: '2027-03-11' });
+      if (!r.ok) throw new Error(r.code);
+    }
+    t.setClock(at9('2027-06-11'));
+    const acte = await new ActeVente(t.db, t.acces, t.journal, t.storage, { now: t.now }).record(t.agent, t.fileId, { signedOn: '2027-06-10', proofRef: 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf' });
+    if (!acte.ok) throw new Error(acte.code);
+    await c.sync(t.network.id);
+    const f = new Factures(t.db, t.acces, t.journal, { now: t.now, plateforme: new PlateformeEssai() });
+    await f.prepare(t.network.id);
+    const drafts = await f.drafts(t.direction);
+    if (!drafts.ok) throw new Error('drafts');
+    for (const d of drafts.value.filter((x) => x.kind === 'honoraires')) await f.validate(t.direction, d.id);
+    const afterInvoice = await p.primesOf(t.direction, sponsorId);
+    expect(afterInvoice.ok && afterInvoice.value.primes).toEqual([]);
+    t.setClock(new Date('2027-06-18T16:30:00.000Z'));
+    const e = new Encaissements(t.db, t.acces, t.journal, { now: t.now });
+    expect((await e.recordReceipt(t.direction, t.fileId, { receivedAt: '2027-06-18T16:00:00.000Z', proofRef: 'releves/essai-1' })).ok).toBe(true);
+    const after = await p.primesOf({ role: 'agent', userId: sponsorId, networkId: t.network.id }, sponsorId);
+    expect(after.ok && after.value.primes.map((x) => [x.fileId, x.amountCents])).toEqual([[t.fileId, share!.amount_cents]]);
   });
 
   it('[R83] aucun frais d\'entrée nulle part : aucune colonne, aucun montant à l\'arrivée', async () => {
