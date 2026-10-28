@@ -140,19 +140,21 @@ export function dossierRoutes(): DossierRoute[] {
 export async function syncDossiers(s: DossierServices, networkId: string): Promise<{ deadlines: number; financing: number; funds: number; reminders: number }> {
   const sv = services(s);
   let failure: unknown = null;
-  const step = async (fn: () => Promise<number>): Promise<number> => {
+  // Chaque panne est écrite au journal sous le nom de son étape, sans donnée [R13] ; la première est relancée à la fin.
+  const step = async (name: string, fn: () => Promise<number>): Promise<number> => {
     try {
       return await fn();
     } catch (error) {
+      await journalError(s.journal, 'system:planificateur', `${DOSSIERS_JOB}.${name}`, error, s.now);
       failure ??= error;
       return 0;
     }
   };
-  const deadlines = await step(() => sv.echeancier.run(networkId));
-  const financing = await step(() => sv.financement.run(networkId));
-  const funds = await step(() => sv.bouclier.run(networkId, new Date(s.now().getTime() - SHIELD_LOOKBACK_HOURS * 3_600_000)));
+  const deadlines = await step('echeances', () => sv.echeancier.run(networkId));
+  const financing = await step('financement', () => sv.financement.run(networkId));
+  const funds = await step('bouclier', () => sv.bouclier.run(networkId, new Date(s.now().getTime() - SHIELD_LOOKBACK_HOURS * 3_600_000)));
   // Le dimanche, aucune relance ne part [R01] : le passage ne les prépare pas, pour ne laisser aucune attente vaine.
-  const reminders = localTime(s.now(), 'Europe/Paris').weekday === 7 ? 0 : await step(() => sv.relances.run(networkId));
+  const reminders = localTime(s.now(), 'Europe/Paris').weekday === 7 ? 0 : await step('relances', () => sv.relances.run(networkId));
   if (failure !== null) throw failure;
   return { deadlines, financing, funds, reminders };
 }
