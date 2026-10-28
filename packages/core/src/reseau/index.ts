@@ -9,3 +9,4 @@ export * from './bac-a-sable.ts';
 export * from './entrainement.ts';
 export * from './accompagnement.ts';
 export * from './parrainage.ts';
+export * from './depart.ts';
