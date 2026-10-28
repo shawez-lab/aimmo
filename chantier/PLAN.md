@@ -1353,6 +1353,8 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 
 ### L04 · Vigilance renforcée et origine des fonds
 - Statut : en cours
+- Reste : proposition #142 ouverte (bâtie sur L03, #139), tests verts en local (1263), en attente des vérifications GitHub (H28).
+- Décidé (2026-10-28) : réglage d'essai `essai-2026-10-28` (écart 20 % autour de la fourchette du dernier avis validé, montant 1 000 000 €), réglé ensuite par le responsable, versionné ; déclarations lues sur la fiche de risque de L02 ; la demande d'origine des fonds n'est préparée pour l'agent qu'après la décision « origine des fonds demandée » du responsable ; alertes et décisions au journal sous la référence de l'alerte, jamais sous la fiche du client ; relecture forte : 2 P1 corrigés. L'examen automatique à l'inscription d'une offre et à la signature d'un mandat est à brancher en L09.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L02
 - Cahier : Conformité, « Vigilance renforcée : montant inhabituel, prix sans lien avec la valeur, personne politiquement exposée ».
 - Objectif : des alertes au responsable par des règles écrites et réglables : prix d'une offre ou d'un mandat écarté de la fourchette d'estimation de M04 au-delà d'un seuil, montant au-dessus d'un seuil, personne politiquement exposée déclarée, paiement comptant déclaré ; la demande d'origine des fonds est préparée pour l'agent, la décision reste au responsable.
