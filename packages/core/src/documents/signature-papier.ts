@@ -51,7 +51,7 @@ type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: 'R41'; code: 'checks_failed'; check: SignatureCheck }
   | { ok: false; rule: 'R39'; code: string }
-  | { ok: false; rule: 'R38' | 'R37'; code: string }
+  | { ok: false; rule: 'R38' | 'R37' | 'R92'; code: string }
   | { ok: false; rule: null; code: 'bad_date' | 'bad_place' | 'bad_scan' | 'not_a_mandate' | 'already_signed' | 'unknown_document' | string };
 
 interface SignedRow {
@@ -122,6 +122,13 @@ export class SignaturePapier {
       return { ok: false, rule: null, code: 'already_signed' };
     }
     if (!checked.value.passed) return { ok: false, rule: 'R41', code: 'checks_failed', check: checked.value };
+    // L'identité du mandant se juge aussi au jour de la signature : une pièce vérifiée après coup ne couvre pas un mandat
+    // signé avant (L03) [R92].
+    const atSignature = await this.controles.identityAtSignature(doc.network_id, doc.person_id, input.signedAt);
+    if (!atSignature.ok) {
+      await appendEvent(this.journal, { type: 'document.bloque', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R92', code: atSignature.code } }, this.now);
+      return { ok: false, rule: 'R92', code: 'identity_not_verified_at_signature' };
+    }
 
     // 1. Le document est réservé : un seul enregistrement, quelles que soient les demandes simultanées.
     if (!row) {

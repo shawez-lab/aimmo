@@ -11,8 +11,13 @@
  * d'identité vérifiée et valide. Une société déclarée sans bénéficiaire effectif est refusée.
  *
  * Décidé, lecture prudente :
- * - sans déclaration, le client est une personne physique : une société jamais déclarée ne passe donc pas, faute de
- *   pièce d'identité à son nom ;
+ * - sans déclaration, le client est une personne physique, sauf s'il porte un signe de société : un extrait Kbis ou un
+ *   registre des bénéficiaires effectifs au coffre, ou une déclaration « société » passée. Une pièce d'identité déposée
+ *   sur la fiche d'une société ne la fait donc jamais passer pour une personne ;
+ * - redéclarer « personne » une fiche qui porte un signe de société est réservé au responsable de la conformité :
+ *   l'agent ne peut pas se passer ainsi des bénéficiaires effectifs ;
+ * - un mandat signé sur papier se juge au jour de sa signature : la pièce doit avoir été vérifiée ce jour-là au plus
+ *   tard et valide ce jour-là, même si elle a été déposée au coffre ensuite, avant l'enregistrement ;
  * - la fiche de risque (L02) ne sert jamais à savoir si un client est une société : aucun contrôle ne la lit [R91] ;
  * - le cas d'une société dont personne n'atteint 25 % (représentant légal retenu à défaut) attend la procédure validée
  *   par l'avocat (H29) : elle ne se déclare pas ici et reste bloquée ;
@@ -45,6 +50,9 @@ export type IdentificationCode =
 export type IdentificationStatus =
   | { ok: true; entity: 'personne' | 'societe'; verifiedOn: string }
   | { ok: false; entity: 'personne' | 'societe'; code: IdentificationCode };
+
+/** Les pièces qui font d'une fiche une société. */
+const COMPANY_PIECES = ['extrait_kbis', 'registre_beneficiaires'] as const;
 
 export interface BeneficialOwnerInput {
   personId: string;
@@ -107,6 +115,11 @@ export class Identification {
     if (read.view !== 'full') return this.refuse(viewer, personId, 'not_assigned');
     const company = read.value.person.id;
     const companyRoot = await this.unique.rootOf(company);
+    // Se passer des bénéficiaires effectifs d'une société en la disant « personne » : le responsable seul [R92].
+    if (input.entity === 'personne' && viewer.role !== 'compliance' && (await this.companySigns(viewer.networkId, company, this.now()))) {
+      await appendEvent(this.journal, { type: 'identification.refusee', actor: this.actor(viewer), subject: `person:${company}`, data: { rule: 'R92', code: 'company_downgrade' } }, this.now);
+      return { ok: false, rule: 'R92', code: 'company_downgrade' };
+    }
 
     const owners: { personId: string; sharePercent: number }[] = [];
     const roots = new Set<string>();
@@ -144,39 +157,58 @@ export class Identification {
     return { ok: true, id };
   }
 
-  /** La dernière déclaration valable à l'instant `at`, toutes fiches réunies du client. */
-  private async declaration(networkId: string, personId: string, at: Date): Promise<{ id: string; entity: 'personne' | 'societe' } | null> {
+  /** La dernière déclaration faite avant `before`, toutes fiches réunies du client. */
+  private async declaration(networkId: string, personId: string, before: Date): Promise<{ id: string; entity: 'personne' | 'societe'; declared_by: string } | null> {
     const ids = await this.unique.membersOf(personId);
-    return this.db.first<{ id: string; entity: 'personne' | 'societe' }>(
-      `SELECT id, entity FROM client_identifications WHERE network_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND declared_at <= ? ORDER BY declared_at DESC, rowid DESC LIMIT 1`,
-      [networkId, ...ids, at.toISOString()],
+    return this.db.first<{ id: string; entity: 'personne' | 'societe'; declared_by: string }>(
+      `SELECT id, entity, declared_by FROM client_identifications WHERE network_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND declared_at <= ? ORDER BY declared_at DESC, rowid DESC LIMIT 1`,
+      [networkId, ...ids, before.toISOString()],
     );
   }
 
-  private async personIdentity(networkId: string, personId: string, at: Date): Promise<{ ok: true; verifiedOn: string } | { ok: false; code: 'identity_missing' | 'identity_expired' }> {
-    const s = await this.etat.pieceStatus(networkId, personId, IDENTITY_PIECES, at, this.maxAgeDays);
+  /** Un signe de société : un Kbis ou un registre des bénéficiaires au coffre, ou une déclaration « société » passée. */
+  private async companySigns(networkId: string, personId: string, before: Date): Promise<boolean> {
+    if (await this.etat.everDeposited(networkId, personId, COMPANY_PIECES, before)) return true;
+    const ids = await this.unique.membersOf(personId);
+    const row = await this.db.first(
+      `SELECT 1 FROM client_identifications WHERE network_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND entity = 'societe' AND declared_at <= ? LIMIT 1`,
+      [networkId, ...ids, before.toISOString()],
+    );
+    return !!row;
+  }
+
+  private async personIdentity(networkId: string, personId: string, at: Date, depositedBy: Date): Promise<{ ok: true; verifiedOn: string } | { ok: false; code: 'identity_missing' | 'identity_expired' }> {
+    const s = await this.etat.pieceStatus(networkId, personId, IDENTITY_PIECES, at, this.maxAgeDays, depositedBy);
     if (s.verifiedOn) return { ok: true, verifiedOn: s.verifiedOn };
     return { ok: false, code: s.expired ? 'identity_expired' : 'identity_missing' };
   }
 
   /**
    * L'état d'identification d'un client à l'instant `at` : vérifié (avec la plus ancienne des dates qui le fondent), ou
-   * la raison du blocage, en un code [R92]. Lecture seule ; les droits sont ceux de l'appelant.
+   * la raison du blocage, en un code [R92]. Lecture seule ; les droits sont ceux de l'appelant. `depositedBy` : jusqu'à
+   * quand une pièce ou une déclaration a pu être déposée (`at` par défaut ; l'enregistrement d'un mandat papier).
    */
-  async status(networkId: string, personId: string, at: Date = this.now()): Promise<IdentificationStatus> {
-    const declared = await this.declaration(networkId, personId, at);
-    if (!declared || declared.entity === 'personne') {
-      const r = await this.personIdentity(networkId, personId, at);
+  async status(networkId: string, personId: string, at: Date = this.now(), depositedBy: Date = at): Promise<IdentificationStatus> {
+    const declared = await this.declaration(networkId, personId, depositedBy);
+    // « Personne » ne vaut que déclarée par le responsable, ou pour une fiche sans aucun signe de société [R92].
+    const person = declared
+      ? declared.entity === 'personne' && (declared.declared_by.startsWith('compliance:') || !(await this.companySigns(networkId, personId, depositedBy)))
+      : !(await this.companySigns(networkId, personId, depositedBy));
+    if (person) {
+      const r = await this.personIdentity(networkId, personId, at, depositedBy);
       return r.ok ? { ok: true, entity: 'personne', verifiedOn: r.verifiedOn } : { ok: false, entity: 'personne', code: r.code };
     }
-    const kbis = await this.etat.pieceStatus(networkId, personId, ['extrait_kbis'], at, this.maxAgeDays);
+    const kbis = await this.etat.pieceStatus(networkId, personId, ['extrait_kbis'], at, this.maxAgeDays, depositedBy);
     if (!kbis.verifiedOn) return { ok: false, entity: 'societe', code: kbis.expired ? 'kbis_expired' : 'kbis_missing' };
-    const owners = await this.db.all<{ owner_person_id: string; share_percent: number }>('SELECT owner_person_id, share_percent FROM beneficial_owners WHERE declaration_id = ? ORDER BY owner_person_id', [declared.id]);
+    // Une société sans déclaration « société » n'a aucun bénéficiaire effectif déclaré : refusée.
+    const owners = declared?.entity === 'societe'
+      ? await this.db.all<{ owner_person_id: string; share_percent: number }>('SELECT owner_person_id, share_percent FROM beneficial_owners WHERE declaration_id = ? ORDER BY owner_person_id', [declared.id])
+      : [];
     const counted = owners.filter((o) => Number(o.share_percent) >= BENEFICIAL_OWNER_THRESHOLD_PERCENT);
     if (counted.length === 0) return { ok: false, entity: 'societe', code: 'beneficial_owners_missing' };
     let oldest = kbis.verifiedOn;
     for (const o of counted) {
-      const r = await this.personIdentity(networkId, o.owner_person_id, at);
+      const r = await this.personIdentity(networkId, o.owner_person_id, at, depositedBy);
       if (!r.ok) return { ok: false, entity: 'societe', code: 'beneficial_owner_unidentified' };
       if (r.verifiedOn < oldest) oldest = r.verifiedOn;
     }

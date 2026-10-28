@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
-import { Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, SqlJournalStore, applyMigrations, conformite, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
+import { Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, RegistreMandats, SignaturePapier, SqlJournalStore, applyMigrations, conformite, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { DossiersVente } from '../src/offres/index.ts';
 import { setupDossier } from './dossiers-jeu.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
@@ -141,19 +141,49 @@ describeWithSqlite('L03 · identification et bénéficiaire effectif, étape blo
     expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'beneficial_owner_unidentified' });
   });
 
-  it('[R92] la dernière déclaration compte ; une société jamais déclarée reste une personne sans pièce, donc bloquée', async () => {
+  it('[R92] une fiche qui porte un Kbis reste une société : une pièce d’identité à son nom ne la fait pas passer, et l’agent ne peut pas la redéclarer « personne »', async () => {
     const t = await setup();
     const company = await t.seller('SARL Exemple');
-    await t.deposit(company.personId, { piece: 'extrait_kbis', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    // Jamais déclarée, sans rien au coffre : une personne sans pièce.
     expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'identity_missing' });
+    await t.deposit(company.personId, { piece: 'extrait_kbis', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'beneficial_owners_missing' });
+    // La pièce du gérant déposée sur la fiche de la société ne remplace pas les bénéficiaires effectifs.
+    await t.deposit(company.personId, { piece: 'carte_identite', seenAt: new Date('2027-03-01T10:00:00.000Z') });
+    expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'beneficial_owners_missing' });
+    expect(await t.identification.declare(t.agent, company.personId, { entity: 'personne' })).toEqual({ ok: false, rule: 'R92', code: 'company_downgrade' });
+    expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'beneficial_owners_missing' });
     const anna = await t.person('Anna');
     await t.deposit(anna, { piece: 'carte_identite', seenAt: new Date('2027-03-01T10:00:00.000Z') });
     await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: [{ personId: anna, sharePercent: 100 }] });
     expect(await t.identityLine(company.documentId)).toEqual({ passed: true, code: 'identity_verified' });
-    // Redéclarée personne physique : sa propre pièce redevient exigée.
+    // Une société déclarée sans Kbis au coffre ne se redéclare pas non plus « personne » par l'agent.
+    const other = await t.seller('SAS Exemple');
+    await t.identification.declare(t.agent, other.personId, { entity: 'societe', beneficialOwners: [{ personId: anna, sharePercent: 100 }] });
+    expect(await t.identification.declare(t.agent, other.personId, { entity: 'personne' })).toMatchObject({ ok: false, rule: 'R92', code: 'company_downgrade' });
+    // Le responsable seul peut corriger : la dernière déclaration compte, sa propre pièce redevient exigée.
     t.setClock(new Date('2027-03-10T11:00:00.000Z'));
-    await t.identification.declare(t.agent, company.personId, { entity: 'personne' });
-    expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'identity_missing' });
+    expect(await t.identification.declare(t.compliance, company.personId, { entity: 'personne' })).toMatchObject({ ok: true });
+    expect(await t.identityLine(company.documentId)).toEqual({ passed: true, code: 'identity_verified' });
+    expect(await t.identification.status(t.network.id, company.personId, new Date('2027-03-10T11:00:00.000Z'))).toMatchObject({ ok: true, entity: 'personne' });
+  });
+
+  it('[R92] un mandat signé sur papier se juge au jour de sa signature : une pièce vérifiée après coup ne le couvre pas', async () => {
+    const t = await setup();
+    const papier = new SignaturePapier(t.db, t.acces, t.journal, { now: () => NOW });
+    await new RegistreMandats(t.db, t.journal, { now: () => NOW }).configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 4 });
+    const s = await t.seller();
+    // Signé le 1er mars ; pièce vérifiée le 5 mars, déposée avant l'enregistrement.
+    await t.deposit(s.personId, { piece: 'carte_identite', seenAt: new Date('2027-03-05T10:00:00.000Z') });
+    expect(await t.identityLine(s.documentId)).toEqual({ passed: true, code: 'identity_verified' });
+    const late = await papier.register(t.agent, s.documentId, { signedAt: new Date('2027-03-01T10:00:00.000Z'), place: 'hors_agence', scanRef: 'scans/2027/03/test-1.pdf', source: 'referral' });
+    expect(late).toEqual({ ok: false, rule: 'R92', code: 'identity_not_verified_at_signature' });
+    expect(await t.db.first('SELECT document_id FROM signed_documents WHERE document_id = ?', [s.documentId])).toBeNull();
+    // Vérifiée le jour de la signature et déposée ensuite : le mandat s'enregistre.
+    const s2 = await t.seller('Noé');
+    await t.deposit(s2.personId, { piece: 'passeport', seenAt: new Date('2027-03-01T08:00:00.000Z'), validUntil: '2030-01-01' });
+    const ok = await papier.register(t.agent, s2.documentId, { signedAt: new Date('2027-03-01T10:00:00.000Z'), place: 'hors_agence', scanRef: 'scans/2027/03/test-2.pdf', source: 'referral' });
+    expect(ok).toMatchObject({ ok: true });
   });
 
   it('[R16] [R17] [R13] seuls l’agent de la fiche et le responsable déclarent ; rien ne s’efface ; le journal ne porte que des codes', async () => {

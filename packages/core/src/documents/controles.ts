@@ -224,6 +224,15 @@ export class ControlesSignature {
     return { check: 'identite', ok: status.ok, code: status.ok ? 'identity_verified' : status.code };
   }
 
+  /**
+   * L'identification du mandant au jour d'une signature passée (mandat papier enregistré après coup) : pièce vérifiée ce
+   * jour-là au plus tard et valide ce jour-là, déposée au coffre au plus tard maintenant [R92].
+   */
+  async identityAtSignature(networkId: string, personId: string, signedAt: Date): Promise<CheckLine> {
+    const status = await this.identification.status(networkId, personId, signedAt, this.now());
+    return { check: 'identite', ok: status.ok, code: status.ok ? 'identity_verified' : status.code };
+  }
+
   /** Le dernier contrôle gardé d'un document. */
   async last(documentId: string): Promise<SignatureCheck | null> {
     const row = await this.db.first<{ document_id: string; passed: number; lines: string; checked_at: string }>('SELECT document_id, passed, lines, checked_at FROM document_checks WHERE document_id = ? ORDER BY checked_at DESC, rowid DESC LIMIT 1', [documentId]);

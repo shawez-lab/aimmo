@@ -330,8 +330,12 @@ export class EtatCoffre {
     this.unique = new FicheUnique(db, new FicheClient(db, { now }), { now });
   }
 
-  async pieceStatus(networkId: string, personId: string, kinds: readonly VaultPieceKind[], at: Date, maxAgeDays: number): Promise<VaultPieceStatus> {
-    if (!(at instanceof Date) || Number.isNaN(at.getTime())) throw new Error('instant invalide');
+  /**
+   * `depositedBy` : la limite de dépôt, `at` par défaut. Pour un mandat signé sur papier et enregistré ensuite, la pièce
+   * est jugée au jour de la signature (`at`) mais a pu être déposée jusqu'à l'enregistrement.
+   */
+  async pieceStatus(networkId: string, personId: string, kinds: readonly VaultPieceKind[], at: Date, maxAgeDays: number, depositedBy: Date = at): Promise<VaultPieceStatus> {
+    if (!(at instanceof Date) || Number.isNaN(at.getTime()) || !(depositedBy instanceof Date) || Number.isNaN(depositedBy.getTime())) throw new Error('instant invalide');
     if (!Number.isInteger(maxAgeDays) || maxAgeDays < 0) throw new Error('durée invalide');
     if (kinds.length === 0) return { verifiedOn: null, expired: false };
     const day = localTime(at, TIME_ZONE).date;
@@ -344,7 +348,7 @@ export class EtatCoffre {
        WHERE p.network_id = ? AND p.person_id IN (${ids.map(() => '?').join(', ')}) AND p.kind IN (${kinds.map(() => '?').join(', ')})
          AND p.deposited_at <= ? AND p.verified_on <= ?
          AND NOT EXISTS (SELECT 1 FROM compliance_vault_pieces n WHERE n.replaces_id = p.id AND n.deposited_at <= ?)`,
-      [networkId, ...ids, ...kinds, iso, day, iso],
+      [networkId, ...ids, ...kinds, depositedBy.toISOString(), day, iso],
     );
     let verifiedOn: string | null = null;
     let expired = false;
@@ -357,5 +361,15 @@ export class EtatCoffre {
       if (verifiedOn === null || r.verified_on > verifiedOn) verifiedOn = r.verified_on;
     }
     return { verifiedOn, expired: verifiedOn === null && expired };
+  }
+
+  /** Une pièce de ces sortes a-t-elle jamais été déposée pour la personne, toutes fiches réunies, avant `before` ? */
+  async everDeposited(networkId: string, personId: string, kinds: readonly VaultPieceKind[], before: Date): Promise<boolean> {
+    const ids = await this.unique.membersOf(personId);
+    const row = await this.db.first(
+      `SELECT 1 FROM compliance_vault_pieces WHERE network_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND kind IN (${kinds.map(() => '?').join(', ')}) AND deposited_at <= ? LIMIT 1`,
+      [networkId, ...ids, ...kinds, before.toISOString()],
+    );
+    return !!row;
   }
 }
