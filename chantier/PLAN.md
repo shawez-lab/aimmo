@@ -1613,7 +1613,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W12 · Signature en ligne du bail par D08, en mode essai
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W06, D08
 - Cahier : M15, « Bail et annexes » ; M06, « Signature électronique AIMMO ».
 - Objectif : faire signer le bail en vigueur (W06) par le bailleur et le locataire choisi avec la signature en ligne de D08, en mode essai ; ajoutée le 2026-10-28 par la voie 2, car W06 l'avait renvoyée à une tâche qui n'existait pas au plan.
