@@ -16,7 +16,7 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 - Ce qu'elle attend d'un humain : rien. Une fois fusionnée, la séance lance elle-même le workflow ; Shawez n'a qu'à cliquer sur le lien reçu par mail.
 
 ### Z03 · Passe de design de l'application et des pages publiques
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte
 - Dépendances : Z02
 - Objectif : un système de design propre à AIMMO (couleurs, typographie, espacements, composants, mouvements) appliqué à tous les écrans existants, téléphone d'abord. Rien de générique ni qui ressemble à un site fait par une IA ; niveau des meilleures applis du monde. Captures avant et après dans la proposition.
