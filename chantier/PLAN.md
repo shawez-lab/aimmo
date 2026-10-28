@@ -1343,8 +1343,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L02 · Fiche de risque de chaque client, validée par le responsable
-- Statut : en cours
-- Reste : proposition #134 ouverte (bâtie sur L01, #131), tests verts en local (1235), en attente des vérifications GitHub (H28).
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : grille d'essai `essai-2026-10-28` en code ; sources : 4 déclarations fermées oui/non, état d'identité du coffre, montant de l'offre au registre ; le niveau est le plus haut des critères ; Jamais vu : rejeu de la fiche à l'identique ; relecture forte : 1 P1 corrigé (validation vérifiée au journal) ; Codex : 1 P1 corrigé (événements repris si le journal a manqué), nouvelle relecture demandée.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L01
 - Cahier : Conformité, « Classement écrit des risques et analyse de chaque client avant l'entrée en relation ».
@@ -1353,8 +1352,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : H29 pour la grille réelle ; une grille d'essai en attendant.
 
 ### L03 · Identification et bénéficiaire effectif, étape bloquante
-- Statut : en cours
-- Reste : proposition #139 ouverte (bâtie sur L02, #134), tests verts en local (1250), Codex : dernière version validée (1 P0 et 5 P2 corrigés, 1 P1 confié à L09), en attente des vérifications GitHub (H28).
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : identité lue au coffre (pièce vérifiée depuis un an au plus, valide ce jour-là, non remplacée) ; la case « pièce vue » de D03 ne suffit plus ; société reconnue à sa déclaration ou à un Kbis ou registre au coffre, redéclarée « personne » par le responsable seul ; mandat papier jugé au jour de sa signature ; relecture forte : 2 P1 corrigés.
 - Qui : Claude, voie 1 (touche aux contrôles de M06 et M09) · Relecture : forte · Dépend de : L01, L02
 - Cahier : Conformité, « Identification du client et du bénéficiaire effectif, au seuil de 25 % ».
@@ -1363,8 +1361,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L04 · Vigilance renforcée et origine des fonds
-- Statut : en cours
-- Reste : proposition #142 ouverte (bâtie sur L03, #139), tests verts en local (1263), en attente des vérifications GitHub (H28).
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : réglage d'essai `essai-2026-10-28` (écart 20 % autour de la fourchette du dernier avis validé, montant 1 000 000 €), réglé ensuite par le responsable, versionné ; déclarations lues sur la fiche de risque de L02 ; la demande d'origine des fonds n'est préparée pour l'agent qu'après la décision « origine des fonds demandée » du responsable ; alertes et décisions au journal sous la référence de l'alerte, jamais sous la fiche du client ; relecture forte : 2 P1 corrigés. L'examen automatique à l'inscription d'une offre et à la signature d'un mandat est à brancher en L09.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L02
 - Cahier : Conformité, « Vigilance renforcée : montant inhabituel, prix sans lien avec la valeur, personne politiquement exposée ».
@@ -1381,7 +1378,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : H29.
 
 ### L06 · Registre des traitements vérifié contre la base (Jamais vu)
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : Conformité, « Base légale notée pour chaque traitement, dans un registre des traitements relu chaque trimestre » ; « Sous-traitants ».
 - Objectif : le registre des traitements écrit dans le dépôt (finalité, base légale, données, durée, destinataires, sous-traitants), relié aux tables de la base ; Jamais vu : une vérification automatique échoue dès qu'une migration ajoute une table ou une colonne de donnée personnelle qui n'est pas au registre ; la date de la dernière relecture trimestrielle est un réglage, l'alerte part au responsable avant son échéance.
