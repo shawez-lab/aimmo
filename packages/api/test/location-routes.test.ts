@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { OFFICIAL_PIECES } from '../../core/src/location/index.ts';
 import { locationRoutes, type LocationServices } from '../src/location.ts';
+import type { Viewer as V } from '@aimmo/core';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
@@ -267,5 +268,47 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     expect(await t.call(t.agent, 'POST', `/location/${id}/faits`, undefined, '{pas du json')).toEqual({ status: 400, body: { ok: false, rule: null, code: 'invalid_body' } });
     // Une mise en location inconnue : 404.
     expect((await t.call(t.agent, 'GET', '/location/inconnue')).status).toBe(404);
+  });
+
+  it('[R16] chaque route refuse tout rôle non admis avant de lire le corps, au journal sans identifiant ; jamais un partenaire', async () => {
+    const t = await setup();
+    const routes = locationRoutes();
+    const roles: V['role'][] = ['agent', 'direction', 'compliance', 'partner'];
+    const roleOf = (name: string) => routes.find((r) => r.name === name)!.roles;
+    expect(roleOf('location.zone')).toEqual(['direction']);
+    expect(roleOf('location.modele_bail')).toEqual(['direction']);
+    expect(roleOf('location.modele_bail.validation')).toEqual(['compliance']);
+    expect(roleOf('location.annonce.validation')).toEqual(['agent']);
+    let refused = 0;
+    const before = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
+    for (const route of routes) {
+      expect(route.roles, route.name).not.toContain('partner');
+      const path = route.pattern.source
+        .replace(/^\^/, '')
+        .replace(/\$$/, '')
+        .replace(/\(\[A-Za-z0-9_-\]\{1,64\}\)/g, 'cle-piege')
+        .replace('(bailleur|locataire)', 'bailleur')
+        .replace(/\\\//g, '/');
+      expect(path, route.name).toMatch(/^\/location[a-z0-9/_-]*$/);
+      for (const role of roles) {
+        if (route.roles.includes(role)) continue;
+        const viewer = { role, userId: 'u-1', networkId: t.agent.networkId } as V;
+        const init: RequestInit = { method: route.method };
+        if (route.method === 'POST') {
+          init.headers = { 'content-type': 'application/json' };
+          init.body = JSON.stringify({ piege: true });
+        }
+        const request = new Request(`https://api.exemple.test/v1${path}`, init);
+        const response = await route.handle(t.s, viewer, (route.pattern.exec(path) ?? []).slice(1), request);
+        expect(response.status, `${role} ${route.name}`).toBe(403);
+        expect(await response.json()).toEqual({ ok: false, rule: 'R16', code: 'role' });
+        expect(request.bodyUsed, `${role} ${route.name}`).toBe(false);
+        refused++;
+      }
+    }
+    const after = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').slice(before);
+    expect(after).toHaveLength(refused);
+    expect(refused).toBeGreaterThan(routes.length);
+    expect(JSON.stringify(after)).not.toContain('cle-piege');
   });
 });
