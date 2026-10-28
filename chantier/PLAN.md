@@ -1189,7 +1189,9 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J04 · Dossier d'agent et parcours d'intégration pas à pas
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : l'identifiant de l'agent est tiré de sa candidature (une seule entrée) ; fin de validité obligatoire pour l'habilitation et l'assurance, facultative pour l'immatriculation, aucune pour le contrat, calculée pour la vigilance (6 mois moins un jour) ; un projet ne compte jamais et ne remplace pas une pièce signée.
+- Reste : tant que J13 n'a pas branché `DossierAgent.complete` dans les droits, un agent entré a les droits d'un agent actif.
 - Qui : Claude · Relecture : forte · Dépend de : J03
 - Cahier : M14, « Intégration » ; Conformité ; Offre aux agents, « Ce que l'agent s'engage à faire ».
 - Objectif : à l'entrée décidée, un dossier d'agent : la liste des pièces attendues par des règles écrites (contrat d'agent commercial signé, attestation d'habilitation, immatriculation, assurance de responsabilité civile professionnelle, attestation de vigilance), chacune rangée par sa référence de stockage avec sa date de fin de validité ; le parcours guidé dit l'étape suivante en une phrase ; `DossierAgent.complete(agentId, at)` dit si le dossier est complet et valide à cette date, et pourquoi sinon.
