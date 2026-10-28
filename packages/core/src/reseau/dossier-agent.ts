@@ -1,0 +1,316 @@
+/**
+ * Dossier d'agent et parcours d'intégration (M14, J04) [R82].
+ *
+ * Un candidat retenu (dernière décision « oui », J03) entre au réseau : la direction crée son agent, une seule fois.
+ * Son dossier liste les pièces attendues par des règles écrites, les mêmes pour tous (`AGENT_FILE_PIECES`) ; chaque
+ * pièce est rangée par sa référence de stockage, jamais son contenu, avec la date du document et sa date de fin de
+ * validité saisie depuis le document ; celle de l'attestation de vigilance est calculée par le code, 6 mois après sa
+ * date. Une pièce rangée ne change plus : une nouvelle version s'ajoute, la dernière compte [R17].
+ *
+ * `complete(networkId, agentId, at)` dit si le dossier est complet et valide ce jour-là, et pourquoi sinon : une pièce
+ * manquante, échue ou seulement en projet suffit à le dire incomplet [R82]. Le contrat et l'attestation préparés par le
+ * réseau portent « PROJET » tant que les modèles ne sont pas validés (H08) et ne comptent jamais comme pièce signée.
+ * Une pièce d'identité, un document anti-blanchiment ou un RIB ne sont jamais une pièce du dossier [R15].
+ *
+ * L'agent lui-même, la direction et la conformité lisent le dossier ; l'agent et la direction y rangent une pièce
+ * [R16]. Aucun nom ni aucune référence au journal [R13]. Rien n'est envoyé ici : les alertes d'échéance sont rendues au
+ * planificateur (J13), une seule fois par pièce.
+ */
+import type { Viewer } from '../acces/droits.ts';
+import type { FicheClient } from '../db/fiche-client.ts';
+import type { SqlDatabase } from '../db/sql.ts';
+import { FORBIDDEN_PIECES } from '../dossiers/pieces.ts';
+import { localTime } from '../envoi/horaires.ts';
+import { appendEvent } from '../journal/journal.ts';
+import type { JournalStore } from '../journal/types.ts';
+import { AGENT_FILE_PIECES, type AgentFilePiece, type Entretiens } from './entretiens.ts';
+
+const TIME_ZONE = 'Europe/Paris';
+/** Jours avant l'échéance d'une pièce où l'agent est prévenu. */
+export const AGENT_PIECE_ALERT_DAYS = 30;
+/** Durée de validité d'une attestation de vigilance, en mois. */
+export const VIGILANCE_MONTHS = 6;
+
+/** Ce que chaque pièce exige comme fin de validité : aucune (contrat), facultative, ou obligatoire. */
+const VALIDITY: Readonly<Record<AgentFilePiece, 'none' | 'optional' | 'required' | 'computed'>> = Object.freeze({
+  contrat_agent_commercial: 'none',
+  attestation_habilitation: 'required',
+  immatriculation_rsac: 'optional',
+  assurance_rcp: 'required',
+  attestation_vigilance: 'computed',
+});
+
+/** Les pièces que le réseau prépare lui-même, en projet tant que leur modèle n'est pas validé (H08). */
+export const DRAFTABLE_PIECES = ['contrat_agent_commercial', 'attestation_habilitation'] as const satisfies readonly AgentFilePiece[];
+
+export interface AgentPieceStore {
+  /** La référence existe dans le stockage. */
+  has(ref: string): Promise<boolean>;
+  /** Range un document préparé par le réseau, rend sa référence. */
+  putDraft(agentId: string, text: string): Promise<string>;
+}
+
+export type PieceState = 'manquante' | 'projet' | 'echue' | 'valide';
+
+export interface AgentFileLine {
+  kind: AgentFilePiece;
+  label: string;
+  state: PieceState;
+  version: number | null;
+  issuedOn: string | null;
+  validUntil: string | null;
+}
+
+export interface AgentFileStatus {
+  agentId: string;
+  complete: boolean;
+  lines: AgentFileLine[];
+  missing: AgentFilePiece[];
+  expired: AgentFilePiece[];
+  drafts: AgentFilePiece[];
+  /** L'étape suivante, en une phrase. */
+  nextStep: string;
+}
+
+export type AgentFileRefusal = { ok: false; rule: 'R16' | 'R15' | 'R82' | null; code: string };
+
+interface PieceRow {
+  id: string;
+  kind: AgentFilePiece;
+  version: number;
+  issued_on: string;
+  valid_until: string | null;
+  is_draft: number;
+}
+
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const REF_FILE = new RegExp(`^${UUID}\\.(?:pdf|jpg|png|txt)$`);
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const validDay = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !DAY.test(v)) return false;
+  const d = new Date(`${v}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};
+/** Ajoute des mois à un jour, en restant au dernier jour du mois s'il le faut ; puis retire un jour. */
+export function vigilanceUntil(issuedOn: string): string {
+  const [y, m, d] = issuedOn.split('-').map(Number) as [number, number, number];
+  const target = new Date(Date.UTC(y, m - 1 + VIGILANCE_MONTHS, 1));
+  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, last));
+  target.setUTCDate(target.getUTCDate() - 1);
+  return target.toISOString().slice(0, 10);
+}
+const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const frDate = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`;
+const labelOf = (kind: AgentFilePiece): string => AGENT_FILE_PIECES.find((p) => p.kind === kind)!.label;
+const lower = (s: string): string => s.charAt(0).toLocaleLowerCase('fr') + s.slice(1);
+
+export interface DossierAgentOptions {
+  now?: () => Date;
+  newId?: () => string;
+}
+
+export class DossierAgent {
+  private readonly now: () => Date;
+  private readonly newId: () => string;
+
+  constructor(
+    private readonly db: SqlDatabase,
+    private readonly store: FicheClient,
+    private readonly entretiens: Entretiens,
+    private readonly pieces: AgentPieceStore,
+    private readonly journal: JournalStore,
+    options: DossierAgentOptions = {},
+  ) {
+    this.now = options.now ?? (() => new Date());
+    this.newId = options.newId ?? (() => crypto.randomUUID());
+  }
+
+  private actor(viewer: Viewer): string {
+    return `${String(viewer.role)}:${viewer.userId}`;
+  }
+
+  private async refuse(viewer: Viewer, subject: string, code: string): Promise<AgentFileRefusal> {
+    await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind: 'agent_file', code } }, this.now);
+    return { ok: false, rule: 'R16', code };
+  }
+
+  /** Qui lit (ou écrit) le dossier d'un agent : l'agent lui-même, actif ; la direction ; la conformité en lecture. */
+  private async gate(viewer: Viewer, agentId: string, write: boolean): Promise<AgentFileRefusal | null> {
+    const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [agentId]);
+    if (!agent || agent.network_id !== viewer.networkId) return this.refuse(viewer, `agent:${agentId}`, 'unknown');
+    if (viewer.role === 'direction') return null;
+    if (viewer.role === 'compliance' && !write) return null;
+    if (viewer.role === 'agent' && viewer.userId === agentId) return agent.status === 'active' ? null : this.refuse(viewer, `agent:${agentId}`, 'agent_inactive');
+    return this.refuse(viewer, `agent:${agentId}`, viewer.role === 'agent' ? 'not_assigned' : 'role');
+  }
+
+  private today(at: Date = this.now()): string {
+    return localTime(at, TIME_ZONE).date;
+  }
+
+  /**
+   * La direction fait entrer un candidat retenu : son agent est créé, une seule fois par candidature. Sans « oui »
+   * rangé par un humain (J03), rien n'est créé [R81].
+   */
+  async admit(viewer: Viewer, candidateId: string, input: { zone?: unknown } = {}): Promise<{ ok: true; agentId: string } | AgentFileRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `candidate:${candidateId}`, 'role');
+    if (!(await this.entretiens.acceptedIn(viewer.networkId, candidateId))) return { ok: false, rule: null, code: 'not_accepted' };
+    const already = await this.db.first<{ agent_id: string }>('SELECT agent_id FROM agent_onboardings WHERE candidate_id = ?', [candidateId]);
+    if (already) return { ok: true, agentId: already.agent_id };
+    const c = (await this.db.first<{ first_name: string; last_name: string | null }>('SELECT first_name, last_name FROM candidates WHERE id = ?', [candidateId]))!;
+    const zone = typeof input.zone === 'string' && input.zone.trim() !== '' && input.zone.trim().length <= 80 ? input.zone.trim() : null;
+    const agent = await this.store.createAgent({ networkId: viewer.networkId, firstName: c.first_name, lastName: c.last_name ?? '', zone });
+    const { changes } = await this.db.run('INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (candidate_id) DO NOTHING', [
+      agent.id,
+      viewer.networkId,
+      candidateId,
+      this.actor(viewer),
+      this.now().toISOString(),
+    ]);
+    if (changes !== 1) {
+      // Deux entrées en même temps : l'agent créé en trop reste sans dossier, et part aussitôt.
+      await this.db.run("UPDATE agents SET status = 'left', updated_at = ? WHERE id = ?", [this.now().toISOString(), agent.id]);
+      const row = (await this.db.first<{ agent_id: string }>('SELECT agent_id FROM agent_onboardings WHERE candidate_id = ?', [candidateId]))!;
+      return { ok: true, agentId: row.agent_id };
+    }
+    await appendEvent(this.journal, { type: 'agent.entre', actor: this.actor(viewer), subject: `agent:${agent.id}`, data: { candidate: `candidate:${candidateId}` } }, this.now);
+    return { ok: true, agentId: agent.id };
+  }
+
+  /**
+   * Range une pièce reçue, par sa référence de stockage dans le dossier de l'agent. La fin de validité est saisie
+   * depuis le document, sauf pour l'attestation de vigilance, où le code la calcule [R82, R10].
+   */
+  async addPiece(viewer: Viewer, agentId: string, input: { kind: unknown; ref: unknown; issuedOn: unknown; validUntil?: unknown }): Promise<{ ok: true; value: AgentFileStatus } | AgentFileRefusal> {
+    const denied = await this.gate(viewer, agentId, true);
+    if (denied) return denied;
+    if (typeof input.kind === 'string' && (FORBIDDEN_PIECES as readonly string[]).includes(input.kind)) {
+      await appendEvent(this.journal, { type: 'dossier_agent.piece_refusee', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R15', kind: input.kind } }, this.now);
+      return { ok: false, rule: 'R15', code: 'forbidden_piece' };
+    }
+    if (typeof input.kind !== 'string' || !AGENT_FILE_PIECES.some((p) => p.kind === input.kind)) return { ok: false, rule: null, code: 'unknown_piece' };
+    const kind = input.kind as AgentFilePiece;
+    const prefix = `agents/${agentId}/`;
+    if (typeof input.ref !== 'string' || !input.ref.startsWith(prefix) || !REF_FILE.test(input.ref.slice(prefix.length))) return { ok: false, rule: null, code: 'bad_ref' };
+    const today = this.today();
+    if (!validDay(input.issuedOn) || input.issuedOn > today) return { ok: false, rule: null, code: 'bad_date' };
+    const rule = VALIDITY[kind];
+    let validUntil: string | null = null;
+    if (rule === 'computed') validUntil = vigilanceUntil(input.issuedOn);
+    else if (input.validUntil !== undefined && input.validUntil !== null && input.validUntil !== '') {
+      if (rule === 'none' || !validDay(input.validUntil) || input.validUntil < input.issuedOn) return { ok: false, rule: null, code: 'bad_valid_until' };
+      validUntil = input.validUntil;
+    } else if (rule === 'required') return { ok: false, rule: 'R82', code: 'valid_until_required' };
+    if (!(await this.pieces.has(input.ref))) return { ok: false, rule: null, code: 'not_stored' };
+    return this.record(viewer, agentId, kind, input.ref, input.issuedOn, validUntil, false);
+  }
+
+  private async record(viewer: Viewer, agentId: string, kind: AgentFilePiece, ref: string, issuedOn: string, validUntil: string | null, draft: boolean): Promise<{ ok: true; value: AgentFileStatus } | AgentFileRefusal> {
+    if (await this.db.first('SELECT 1 FROM agent_file_pieces WHERE ref = ?', [ref])) return { ok: false, rule: null, code: 'ref_used' };
+    const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM agent_file_pieces WHERE agent_id = ? AND kind = ?', [agentId, kind]);
+    const version = Number(last?.v ?? 0) + 1;
+    try {
+      await this.db.run(
+        'INSERT INTO agent_file_pieces (id, network_id, agent_id, kind, version, ref, issued_on, valid_until, is_draft, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [this.newId(), viewer.networkId, agentId, kind, version, ref, issuedOn, validUntil, draft ? 1 : 0, this.actor(viewer), this.now().toISOString()],
+      );
+    } catch (error) {
+      if (/UNIQUE/i.test(String(error))) return { ok: false, rule: null, code: /\.ref/.test(String(error)) ? 'ref_used' : 'busy' };
+      throw error;
+    }
+    await appendEvent(this.journal, { type: draft ? 'dossier_agent.projet_prepare' : 'dossier_agent.piece_rangee', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R82', kind, version } }, this.now);
+    return { ok: true, value: await this.compute(agentId, this.now()) };
+  }
+
+  /**
+   * La direction prépare le contrat d'agent commercial ou l'attestation d'habilitation. Tant que les modèles ne sont
+   * pas validés (H08), le document porte « PROJET » et ne compte jamais comme pièce signée [R82].
+   */
+  async prepareDraft(viewer: Viewer, agentId: string, kind: unknown): Promise<{ ok: true; value: AgentFileStatus } | AgentFileRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `agent:${agentId}`, 'role');
+    const denied = await this.gate(viewer, agentId, true);
+    if (denied) return denied;
+    if (typeof kind !== 'string' || !(DRAFTABLE_PIECES as readonly string[]).includes(kind)) return { ok: false, rule: null, code: 'not_draftable' };
+    const agent = (await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ?', [agentId]))!;
+    const network = (await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [viewer.networkId]))!;
+    const today = this.today();
+    const text = [
+      'PROJET — modèle en attente de validation juridique. Ne pas signer.',
+      '',
+      kind === 'contrat_agent_commercial' ? 'Contrat d’agent commercial' : 'Attestation d’habilitation',
+      `Réseau : ${network.name}`,
+      `Agent : ${agent.first_name} ${agent.last_name}`.trim(),
+      `Préparé le ${frDate(today)}`,
+    ].join('\n');
+    const ref = await this.pieces.putDraft(agentId, text);
+    return this.record(viewer, agentId, kind as AgentFilePiece, ref, today, null, true);
+  }
+
+  /** L'état du dossier, pour qui a le droit de le lire [R16]. */
+  async status(viewer: Viewer, agentId: string): Promise<{ ok: true; value: AgentFileStatus } | AgentFileRefusal> {
+    const denied = await this.gate(viewer, agentId, false);
+    if (denied) return denied;
+    return { ok: true, value: await this.compute(agentId, this.now()) };
+  }
+
+  /** Le dossier est-il complet et valide à cette date ? Lu par les droits d'accès au branchement (J13) [R82]. */
+  async complete(networkId: string, agentId: string, at: Date): Promise<boolean> {
+    const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [agentId]);
+    if (!agent || agent.network_id !== networkId || agent.status !== 'active') return false;
+    return (await this.compute(agentId, at)).complete;
+  }
+
+  private async compute(agentId: string, at: Date): Promise<AgentFileStatus> {
+    const rows = await this.db.all<PieceRow>('SELECT id, kind, version, issued_on, valid_until, is_draft FROM agent_file_pieces WHERE agent_id = ? ORDER BY kind, version', [agentId]);
+    const day = this.today(at);
+    const lines: AgentFileLine[] = AGENT_FILE_PIECES.map(({ kind, label }) => {
+      const mine = rows.filter((r) => r.kind === kind);
+      // La dernière pièce signée compte ; un projet ne remplace jamais une pièce signée.
+      const signed = mine.filter((r) => r.is_draft === 0).at(-1);
+      const draft = mine.filter((r) => r.is_draft === 1).at(-1);
+      const shown = signed ?? draft;
+      let state: PieceState = 'manquante';
+      if (signed) state = signed.valid_until !== null && signed.valid_until < day ? 'echue' : 'valide';
+      else if (draft) state = 'projet';
+      return { kind, label, state, version: shown ? Number(shown.version) : null, issuedOn: shown?.issued_on ?? null, validUntil: signed?.valid_until ?? null };
+    });
+    const missing = lines.filter((l) => l.state === 'manquante').map((l) => l.kind);
+    const expired = lines.filter((l) => l.state === 'echue').map((l) => l.kind);
+    const drafts = lines.filter((l) => l.state === 'projet').map((l) => l.kind);
+    const complete = lines.every((l) => l.state === 'valide');
+    const first = lines.find((l) => l.state !== 'valide');
+    let nextStep = 'Votre dossier est complet : l’accès à vos clients est ouvert.';
+    if (first?.state === 'manquante') nextStep = `Déposez votre ${lower(first.label)}.`;
+    else if (first?.state === 'projet') nextStep = `Votre ${lower(first.label)} est encore un projet : déposez-le une fois signé.`;
+    else if (first?.state === 'echue') nextStep = `Votre ${lower(first.label)} a expiré le ${frDate(first.validUntil!)} : déposez la nouvelle.`;
+    return { agentId, complete, lines, missing, expired, drafts, nextStep };
+  }
+
+  /**
+   * Les pièces qui arrivent à échéance dans les 30 jours : une alerte par pièce, une seule fois [R82]. Rendues au
+   * planificateur (J13), qui préviendra l'agent ; rien n'est envoyé ici.
+   */
+  async dueAlerts(networkId: string): Promise<{ agentId: string; kind: AgentFilePiece; validUntil: string }[]> {
+    const day = this.today();
+    const limit = addDays(day, AGENT_PIECE_ALERT_DAYS);
+    const rows = await this.db.all<PieceRow & { agent_id: string }>(
+      `SELECT p.id, p.agent_id, p.kind, p.version, p.issued_on, p.valid_until, p.is_draft FROM agent_file_pieces p JOIN agents a ON a.id = p.agent_id
+       WHERE p.network_id = ? AND a.status = 'active' AND p.is_draft = 0 AND p.valid_until IS NOT NULL AND p.valid_until >= ? AND p.valid_until <= ?
+       AND p.version = (SELECT MAX(q.version) FROM agent_file_pieces q WHERE q.agent_id = p.agent_id AND q.kind = p.kind AND q.is_draft = 0)
+       ORDER BY p.valid_until, p.agent_id, p.kind`,
+      [networkId, day, limit],
+    );
+    const out: { agentId: string; kind: AgentFilePiece; validUntil: string }[] = [];
+    for (const r of rows) {
+      const { changes } = await this.db.run("INSERT INTO agent_file_alerts (piece_id, alert, network_id, agent_id, created_at) VALUES (?, 'j30', ?, ?, ?) ON CONFLICT DO NOTHING", [
+        r.id,
+        networkId,
+        r.agent_id,
+        this.now().toISOString(),
+      ]);
+      if (changes === 1) out.push({ agentId: r.agent_id, kind: r.kind, validUntil: r.valid_until! });
+    }
+    return out;
+  }
+}
