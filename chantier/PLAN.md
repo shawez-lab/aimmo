@@ -1209,7 +1209,9 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien pour la tâche ; H08 pour un contrat réel.
 
 ### J05 · Import des contacts et des biens de l'agent, triés selon la loi
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : un accord importé exige une date passée, une preuve qui ne dit pas l'absence et une finalité de liste fermée (prospection, alertes, suivi) ; un accord retiré ne revient jamais par un import ; une personne suivie par un autre agent ou sans agent va à la direction, seule sa désinscription y est rangée ; biens en brouillon, adresse jamais lue.
+- Reste : relecture de Codex absente (limite d'usage, H03), fusion sans elle (#122).
 - Qui : Claude · Relecture : forte · Dépend de : J04
 - Cahier : M14, « Import de ses contacts et de ses biens » ; Conformité, consentement ; `docs/REPRISE.md`.
 - Objectif : l'agent dépose un export Hektor, Apimo, Excel ou Google (CSV) ; chaque contact devient ou complète sa fiche, à cet agent, avec la source « import » ; chacun est trié : client avec un mandat ou une vente dans l'export, contact avec accord prouvé (date et preuve dans l'export), ou contact sans base, qui ne reçoit jamais de premier message ; les biens sont rangés comme biens de l'agent, jamais publiés ; un compte rendu dit les nombres et les lignes illisibles.
@@ -1217,7 +1219,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien (vrais exports plus tard, hors du dépôt).
 
 ### J06 · Académie : parcours, modules et compteur des heures obligatoires
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : normale · Dépend de : J04
 - Cahier : M14, « Académie », « Formation en salle », « Communauté ».
 - Objectif : des modules courts (vidéo YouTube en accès restreint par sa référence, script, durée), rangés en parcours (entrée, puis par spécialité) ; les séances en salle, en direct, mensuelles et régionales avec la présence saisie par un humain ; le compteur des heures de formation obligatoire de chaque agent, par période, avec déontologie et non-discrimination à part ; alertes à l'agent avant l'échéance.
