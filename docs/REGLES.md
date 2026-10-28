@@ -100,7 +100,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R101 | Logement décent et annexes. Aucune annonce ni aucun bail pour un logement de moins de 9 m² habitables ou dont une annexe obligatoire manque ou est échue. | oui | W01, W06 |
 | R102 | Plafonds de la location. La part du locataire dans les honoraires ne dépasse ni le plafond par m² de la zone de la commune (12, 10 ou 8 €, plus 3 € pour l'état des lieux) ni la part du bailleur ; le dépôt de garantie ne dépasse pas un mois de loyer hors charges pour un logement vide, deux pour un meublé. | oui | W02 |
 | R103 | Annonce sans discrimination. Aucune annonce de location ne contient de critère discriminant, contrôlé par une liste écrite. | oui | W03 |
-| R104 | Pièces du candidat. Aucune pièce hors de la liste officielle n'est demandée ni acceptée, au candidat comme à sa caution ; un dossier DossierFacile est accepté tel quel. | non | W04 |
+| R104 | Pièces du candidat. Aucune pièce hors de la liste officielle n'est demandée ni acceptée, au candidat comme à sa caution ; un dossier DossierFacile est accepté tel quel. | oui | W04 |
 | R105 | Choix du propriétaire. Le propriétaire voit les seuls dossiers complets, dans leur ordre d'arrivée, sans note, rang ni tri ; son choix est enregistré avec sa date et sa preuve, jamais fait par le code ni l'IA. | non | W05 |
 | R106 | État des lieux fidèle. Un état des lieux n'est clos qu'avec chaque pièce renseignée et la signature des deux parties, qui reçoivent le même exemplaire ; l'IA n'y ajoute rien qui ne soit dicté. | non | W07 |
 | R107 | Aucun fonds pour AIMMO. AIMMO ne reçoit jamais ni loyer, ni dépôt de garantie, ni aucun fonds du locataire ou du propriétaire. | non | W08 |
