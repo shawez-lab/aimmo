@@ -129,7 +129,7 @@ export const PIECE_CREDENTIALS: Readonly<Record<string, { kind: CredentialKind; 
 export function credentialCheck(annuaire: Annuaire): PlacementCheck {
   return async ({ networkId, partnerId, trade, sort, issuedOn }) => {
     if (!(await annuaire.coveredOn(networkId, partnerId, 'assurance_rcp', null, issuedOn))) return 'insurance_not_valid_on_date';
-    const need = PIECE_CREDENTIALS[sort];
+    const need = Object.hasOwn(PIECE_CREDENTIALS, sort) ? PIECE_CREDENTIALS[sort] : undefined;
     if (!need || !need.trades.includes(trade)) return null;
     if (await annuaire.coveredOn(networkId, partnerId, need.kind, need.domain, issuedOn)) return null;
     return need.kind === 'certification_diagnostic' ? 'certification_not_valid_on_date' : 'credential_not_valid_on_date';

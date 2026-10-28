@@ -130,6 +130,12 @@ describeWithSqlite('U06 · pièce contrôlée contre le justificatif du jour où
     expect(await d.deposit('gaz', -45)).toMatchObject({ value: { destination: 'property', reason: 'rule' } });
   });
 
+  it('[R78] une sorte nommée comme une propriété héritée passe le contrôle sans erreur et va à la file', async () => {
+    const t = await setup();
+    const a = await t.request('artisan', [INSURED]);
+    for (const sort of ['constructor', '__proto__']) expect(await a.deposit(sort, -1), sort).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'unknown_sort' } });
+  });
+
   it('la décision est rejouable à l’identique et chaque sorte contrôlée a sa règle de rangement', async () => {
     const t = await setup();
     const d = await t.request('diagnostiqueur', [INSURED, ['certification_diagnostic', [-700, -100], 'electricite'], ['certification_diagnostic', [-50, 600], 'electricite']], 'electricite');
