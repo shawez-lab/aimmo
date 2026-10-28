@@ -71,7 +71,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R66 | Recommandation non rémunérée. Une recommandation arrive avec sa source, le client qui recommande ; elle n'est jamais rémunérée à un particulier : aucun champ ni texte de récompense. | non | F01 |
 | R67 | Cycle de la commission. Une commission naît prévue au compromis, devient due seulement à l'acte (ou au bail), puis facturée et payée, dans cet ordre, chaque passage une seule fois avec sa preuve ; aucun montant n'est jamais saisi. | oui | K01 |
 | R68 | Chacun ses chiffres. Un agent ne voit que ses propres chiffres et commissions, sans comparaison ni rang avec les autres agents. | oui | K04, K06 |
-| R69 | Chiffres de la base. Chaque chiffre de pilotage est calculé depuis la base par une requête écrite et se recompte ligne par ligne ; ni saisie à la main, ni IA. | oui | K01, K04, K05 |
+| R69 | Chiffres de la base. Chaque chiffre de pilotage est calculé depuis la base par une requête écrite et se recompte ligne par ligne ; ni saisie à la main, ni IA. | oui | K01, K04, K05, K08 |
 | R70 | Reversement sous 24 h ouvrées. La part de l'agent lui est due sous 24 h ouvrées après l'encaissement rapporté par le réseau ; la direction est alertée avant l'échéance. | oui | K03 |
 | R71 | Factures intouchables. Une facture a un numéro continu, chronologique, sans trou ; elle ne change ni ne s'efface, un avoir la corrige ; aucune facture réelle hors de la plateforme agréée. | oui | K02 |
 | R80 | Aucune promesse de revenus. Aucun texte de recrutement, de parrainage ou de réponse à un candidat ne promet un revenu, un gain ni un montant par mois ou par an. | oui | J01, J02 |

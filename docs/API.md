@@ -160,6 +160,18 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - Leur adresse vient de la variable `APRES_VENTE_BASE`, en https, sans chiffre, terminée par `/apres-vente/` (par exemple `https://aimmo-api.<compte>.workers.dev/apres-vente/` si le nom du compte n'a pas de chiffre). Sans elle, aucune nouvelle après la vente ne part [R65], les demandes d'avis partent sans lien de satisfaction, et aucun carnet ne se fait.
 - Au planificateur, du lundi au samedi de 10 h à 18 h : demandes d'avis le lendemain de l'acte (`apres_vente.demandes_avis`), tâches « remercier » et messages validés (`apres_vente.remerciements`), nouvelles aux anniversaires de l'acte avec le carnet (`apres_vente.relances`). Les dossiers clos sont ceux de M10 (acte signé). La valeur du carnet est calculée autour du centre de la commune (Base adresse nationale), jamais d'une adresse ; sans `DVF_BASE_URL`, aucun carnet.
 
+## Pilotage, en mode essai (K08)
+
+Sous `/v1/pilotage`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Un agent ne lit que ses chiffres, ses commissions et ses reversements [R68] ; la direction lit le réseau ; la conformité n'a pas les chiffres. Aucune route ne reçoit un montant : un corps qui en porte un est refusé (`amount_refused`, R67).
+
+- `GET /mes-chiffres?du=AAAA-MM-JJ&au=AAAA-MM-JJ` (`&agent=<id>` pour la direction) : contacts, rendez-vous tenus, mandats, ventes, honoraires à venir, chacun avec ses lignes.
+- `GET /reseau?du=&au=` : le tableau de bord du réseau (direction). `GET /rapport-matin?jour=` : le rapport du matin du lecteur. `GET /alertes`, `POST /reglages` : alertes et seuils de la direction.
+- `GET /commissions`, `POST /grille` : commissions et grille datée des parts. `GET /factures`, `GET /factures/brouillons`, `POST /factures/brouillons/<id>/valider`, `POST /factures/<id>/avoir`, `GET /factures/export?du=&au=` (CSV) : factures d'essai, jamais réelles tant que H26 n'est pas fait.
+- `POST /dossiers/<id>/encaissement`, `POST /dossiers/<id>/reversement`, `GET /reversements` : encaissement et reversement sous 24 h ouvrées, avec leur preuve.
+- `GET /export-quotidien?jour=` (CSV) : l'export du jour pour la mesure contre le comptage manuel (`docs/MESURE.md`).
+
+Au planificateur : chaque heure, `pilotage.passage` (commissions, brouillons de factures, reprise des transmissions, alertes de reversement) ; à 6 h, `pilotage.alertes`, avec les fins de validité des pièces du dossier d'agent (M14) ; du lundi au vendredi à 7 h 30, `pilotage.rapport_matin`, rangé et lu dans l'application, jamais envoyé.
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).
