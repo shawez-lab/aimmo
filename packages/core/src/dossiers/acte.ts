@@ -70,6 +70,39 @@ export function feeFrom(facts: Pick<DocumentFacts, 'feeEur'> | null): number | n
   return facts && typeof facts.feeEur === 'number' && Number.isInteger(facts.feeEur) && facts.feeEur >= 0 ? facts.feeEur : null;
 }
 
+/**
+ * Les honoraires du mandat en vigueur le jour du compromis, tels qu'au document signé [R63], partagés par l'acte (N06)
+ * et la commission prévue (K01). Un mandat encore dans son délai de rétractation sans demande écrite du vendeur n'est
+ * pas en vigueur ; un mandat signé après le compromis non plus (loi Hoguet : le mandat écrit précède la négociation).
+ */
+export async function mandateFeeAt(
+  db: SqlDatabase,
+  diffusion: Diffusion,
+  networkId: string,
+  propertyId: string,
+  compromis: string,
+): Promise<{ ok: true; mandateId: string; feeEur: number; feeCharge: 'vendeur' | 'acquereur' | null } | { ok: false; code: 'no_mandate_in_force' | 'fee_unknown' }> {
+  const decision = await diffusion.canDiffuse(networkId, propertyId, new Date(`${compromis}T11:00:00.000Z`));
+  if (!decision.mandateId || !['allowed', 'allowed_early_start'].includes(decision.reason)) return { ok: false, code: 'no_mandate_in_force' };
+  const mandate = await db.first<{ signed_at: string }>('SELECT signed_at FROM mandates WHERE id = ?', [decision.mandateId]);
+  if (!mandate || localTime(new Date(mandate.signed_at), TIME_ZONE).date > compromis) return { ok: false, code: 'no_mandate_in_force' };
+  // Un début avant la fin de la rétractation ne compte que si la demande écrite du vendeur était reçue au compromis.
+  if (decision.reason === 'allowed_early_start') {
+    const early = await db.first<{ received_at: string }>('SELECT received_at FROM mandate_early_starts WHERE mandate_id = ?', [decision.mandateId]);
+    if (!early || localTime(new Date(early.received_at), TIME_ZONE).date > compromis) return { ok: false, code: 'no_mandate_in_force' };
+  }
+  const doc = await db.first<{ facts: string | null }>('SELECT d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL', [decision.mandateId]);
+  let facts: DocumentFacts | null = null;
+  try {
+    facts = doc?.facts ? (JSON.parse(doc.facts) as DocumentFacts) : null;
+  } catch {
+    facts = null;
+  }
+  const fee = feeFrom(facts);
+  if (fee === null) return { ok: false, code: 'fee_unknown' };
+  return { ok: true, mandateId: decision.mandateId, feeEur: fee, feeCharge: facts?.feeCharge ?? null };
+}
+
 export interface Closing {
   fileId: string;
   signedOn: string;
@@ -169,24 +202,10 @@ export class ActeVente {
     // La commission : les honoraires du mandat en vigueur le jour du compromis, tels qu'au document signé [R63]. Un
     // mandat encore dans son délai de rétractation sans demande écrite du vendeur n'est pas en vigueur ; un mandat
     // signé après le compromis non plus (loi Hoguet : le mandat écrit précède la négociation).
-    const decision = await this.diffusion.canDiffuse(g.file.network_id, g.file.property_id, new Date(`${compromis}T11:00:00.000Z`));
-    if (!decision.mandateId || !['allowed', 'allowed_early_start'].includes(decision.reason)) return blocked({ ok: false, rule: 'R63', code: 'no_mandate_in_force' });
-    const mandate = await this.db.first<{ signed_at: string }>('SELECT signed_at FROM mandates WHERE id = ?', [decision.mandateId]);
-    if (!mandate || localTime(new Date(mandate.signed_at), TIME_ZONE).date > compromis) return blocked({ ok: false, rule: 'R63', code: 'no_mandate_in_force' });
-    // Un début avant la fin de la rétractation ne compte que si la demande écrite du vendeur était reçue au compromis.
-    if (decision.reason === 'allowed_early_start') {
-      const early = await this.db.first<{ received_at: string }>('SELECT received_at FROM mandate_early_starts WHERE mandate_id = ?', [decision.mandateId]);
-      if (!early || localTime(new Date(early.received_at), TIME_ZONE).date > compromis) return blocked({ ok: false, rule: 'R63', code: 'no_mandate_in_force' });
-    }
-    const doc = await this.db.first<{ facts: string | null }>('SELECT d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL', [decision.mandateId]);
-    let facts: DocumentFacts | null = null;
-    try {
-      facts = doc?.facts ? (JSON.parse(doc.facts) as DocumentFacts) : null;
-    } catch {
-      facts = null;
-    }
-    const fee = feeFrom(facts);
-    if (fee === null) return blocked({ ok: false, rule: 'R63', code: 'fee_unknown' });
+    const fee = await mandateFeeAt(this.db, this.diffusion, g.file.network_id, g.file.property_id, compromis);
+    if (!fee.ok) return blocked({ ok: false, rule: 'R63', code: fee.code });
+    const decision = { mandateId: fee.mandateId };
+    const facts = { feeCharge: fee.feeCharge };
     const iso = this.now().toISOString();
     // Des écritures reprenables : après une coupure, un nouvel essai complète ce qui manque, sans rien doubler. La
     // clôture déjà rangée garde son jour ; la commission en dépend.
@@ -194,7 +213,7 @@ export class ActeVente {
     const closed = (await this.db.first<{ signed_on: string }>('SELECT signed_on FROM sale_file_closings WHERE file_id = ?', [fileId]))!;
     const { changes } = await this.db.run(
       "INSERT INTO sale_commissions (file_id, network_id, mandate_id, agent_id, fee_eur, fee_charge, due_on, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'due', ?) ON CONFLICT (file_id) DO NOTHING",
-      [fileId, g.file.network_id, decision.mandateId, property.agent_id, fee, facts?.feeCharge ?? null, closed.signed_on, iso],
+      [fileId, g.file.network_id, decision.mandateId, property.agent_id, fee.feeEur, facts.feeCharge, closed.signed_on, iso],
     );
     if (changes !== 1) return { ok: false, rule: null, code: 'already_closed' };
     await appendEvent(this.journal, { type: 'dossier.acte_signe', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R63', mandate: `mandate:${decision.mandateId}` } }, this.now);

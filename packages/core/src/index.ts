@@ -27,6 +27,8 @@ export * as offres from './offres/index.ts';
 // M10 sous son propre nom, comme M07 et M09.
 export * as dossiers from './dossiers/index.ts';
 export * from './apres-vente/index.ts';
+// M13 sous son propre nom, comme M07, M09 et M10.
+export * as pilotage from './pilotage/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
