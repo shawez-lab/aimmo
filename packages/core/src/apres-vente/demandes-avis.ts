@@ -61,9 +61,12 @@ export interface ClosedSale {
   clients: readonly ClosedSaleClient[];
 }
 
-/** Les dossiers clos d'un réseau, signés entre deux jours inclus. */
+/** Les dossiers clos d'un réseau, rapportés par M10 (N06). */
 export interface DossiersClos {
+  /** Les dossiers signés entre deux jours inclus. */
   closedBetween(networkId: string, fromDay: string, toDay: string): Promise<readonly ClosedSale[]>;
+  /** Un dossier clos du réseau, ou `null` s'il n'est pas clos ou pas de ce réseau. */
+  byId(networkId: string, fileId: string): Promise<ClosedSale | null>;
 }
 
 export type AfterSaleTaskKind = 'lien_avis' | 'avis_non_parti';

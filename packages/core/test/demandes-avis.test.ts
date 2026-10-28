@@ -8,12 +8,12 @@ import {
   reviewRequestJob,
   reviewText,
   type ClosedSale,
-  type DossiersClos,
 } from '../src/apres-vente/index.ts';
 import { DecisionEnvoi } from '../src/envoi/service.ts';
 import { FicheClient } from '../src/db/fiche-client.ts';
 import { FicheUnique } from '../src/fiche/fusion.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
+import { FakeDossiersClos } from './apres-vente-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
 // Les heures sont données à Paris : mars 2027, avant le passage à l'heure d'été (UTC+1).
@@ -65,20 +65,12 @@ it('seul un lien https de fiche Google est accepté', () => {
 });
 
 it('le passage tourne du lundi au samedi, à partir de 10 h, dans les heures des demandes d’avis [R01] [R11]', () => {
-  const job = reviewRequestJob(undefined as never, undefined as never, { closedBetween: async () => [] });
+  const job = reviewRequestJob(undefined as never, undefined as never, { closedBetween: async () => [], byId: async () => null });
   expect(job.name).toBe(REVIEW_REQUEST_JOB);
   expect(Math.min(...job.hours)).toBe(10);
   expect(Math.max(...job.hours)).toBeLessThan(19);
   expect(job.weekdays).toEqual([1, 2, 3, 4, 5, 6]);
 });
-
-/** Un faux M10 : les dossiers clos qu'on lui donne. */
-class FakeDossiersClos implements DossiersClos {
-  readonly sales: ClosedSale[] = [];
-  async closedBetween(_networkId: string, fromDay: string, toDay: string): Promise<readonly ClosedSale[]> {
-    return this.sales.filter((s) => s.closedOn >= fromDay && s.closedOn <= toDay);
-  }
-}
 
 describeWithSqlite('F02 · demande d’avis le lendemain de l’acte, à tous, en mode essai', () => {
   let n = 0;
