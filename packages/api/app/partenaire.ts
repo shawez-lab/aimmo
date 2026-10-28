@@ -232,8 +232,9 @@ export const PARTNER_JS = `'use strict';
   function progress(state) {
     if (!current) return null;
     var id = current.referralId;
+    var ticket = opening;
     return api('/v1/partenaires/espace/' + encodeURIComponent(id) + '/etat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state: state }) }).then(function (res) {
-      if (!res) return;
+      if (!res || ticket !== opening) return;
       if (res.status !== 200) { say('etat', refusal(res.body)); return; }
       return open(id).then(function () { say('etat', state === 'terminee' ? 'Merci, l’agent est prévenu que c’est terminé.' : 'C’est noté : l’agent voit que vous avez commencé.'); });
     });
@@ -246,8 +247,10 @@ export const PARTNER_JS = `'use strict';
     if (!file) { say('depot', 'Choisissez un fichier.'); return null; }
     var path = '/v1/partenaires/espace/' + encodeURIComponent(current.referralId) + '/pieces?sorte=' + encodeURIComponent(el('sorte').value) + '&faite_le=' + encodeURIComponent(el('faite').value);
     say('depot', 'Envoi en cours…');
+    var ticket = opening;
     return api(path, { method: 'POST', headers: { 'content-type': file.type }, body: file }).then(function (res) {
-      if (!res) return;
+      // La réponse d'un dépôt ne touche que la demande pour laquelle il a été fait.
+      if (!res || ticket !== opening) return;
       if (res.status !== 200) { say('depot', refusal(res.body)); return; }
       say('depot', 'Pièce reçue. ' + (PLACES[res.body.data.destination] || ''));
       el('fichier').value = '';

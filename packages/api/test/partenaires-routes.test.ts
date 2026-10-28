@@ -427,6 +427,10 @@ describe('U10 · page de l’espace partenaire', () => {
         status: 200,
         body: { ok: true, data: { referralId: 'r1', trade: 'diagnostiqueur', tradeLabel: 'Diagnostiqueur certifié', state: 'confiee', file: { domain: 'amiante', postcode: '21000', surfaceM2: 64 }, sorts: [{ sort: 'amiante', label: 'Constat amiante' }] } },
       }),
+      'GET /v1/partenaires/espace/r2': () => ({
+        status: 200,
+        body: { ok: true, data: { referralId: 'r2', trade: 'notaire', tradeLabel: 'Notaire', state: 'confiee', file: { postcode: '21000' }, sorts: [{ sort: 'titre_propriete', label: 'Titre de propriété' }] } },
+      }),
       'POST /v1/partenaires/espace/r1/etat': () => ({ status: 200, body: { ok: true, data: 'en_cours' } }),
       'POST /v1/partenaires/espace/r1/pieces?sorte=amiante&faite_le=2027-07-11': () => ({ status: 200, body: { ok: true, data: { destination: 'property' } } }),
     };
@@ -484,6 +488,23 @@ describe('U10 · page de l’espace partenaire', () => {
     expect(dep.headers['content-type']).toBe('application/pdf');
     expect(dep.body).toBe(file);
     expect(els.depot!.textContent).toBe('Pièce reçue. Rangée dans la fiche du bien.');
+    // La réponse d'un dépôt fait pour r1 n'écrit rien sur r2 ouverte entre-temps.
+    let releaseUp: () => void = () => undefined;
+    pending = new Promise<void>((r) => (releaseUp = r));
+    els['form-piece']!.listeners.submit!({ preventDefault: () => undefined });
+    pending = null;
+    runOpen('r2');
+    await flush();
+    await flush();
+    els.fichier!.value = 'C:\\fakepath\\b.pdf';
+    releaseUp();
+    await flush();
+    await flush();
+    expect(els.depot!.textContent).toBe('');
+    expect(els.fichier!.value).toBe('C:\\fakepath\\b.pdf');
+    button.listeners.click!({});
+    await flush();
+    await flush();
     // Un fichier choisi pour une demande ne suit jamais vers une autre : le formulaire est vidé à chaque ouverture.
     els.fichier!.value = 'C:\\fakepath\\autre.pdf';
     els.faite!.value = '2027-01-01';
@@ -497,10 +518,6 @@ describe('U10 · page de l’espace partenaire', () => {
     await flush();
     await flush();
     // Deux demandes ouvertes l'une après l'autre : la réponse dépassée de la première ne remplace jamais la seconde.
-    answers['GET /v1/partenaires/espace/r2'] = () => ({
-      status: 200,
-      body: { ok: true, data: { referralId: 'r2', trade: 'notaire', tradeLabel: 'Notaire', state: 'confiee', file: { postcode: '21000' }, sorts: [{ sort: 'titre_propriete', label: 'Titre de propriété' }] } },
-    });
     let releaseA: () => void = () => undefined;
     pending = new Promise<void>((r) => (releaseA = r));
     button.listeners.click!({});
