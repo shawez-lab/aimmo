@@ -39,7 +39,7 @@ const ALL_VALID = [
 
 describe('W01 · règles écrites du contrôle du logement', () => {
   it('[R100] chaque classe est jugée à la veille et au jour de sa date d’interdiction', () => {
-    const at = (energyClass: RentalFacts['energyClass'], leaseStart: string) => checkDwelling({ ...FACTS, energyClass, leaseStart }, ALL_VALID, '2027-07-12').map((r) => r.code).filter((c) => !c.startsWith('annex'));
+    const at = (energyClass: RentalFacts['energyClass'], leaseStart: string) => checkDwelling({ ...FACTS, energyClass, leaseStart }, ALL_VALID, '2020-01-01').map((r) => r.code).filter((c) => !c.startsWith('annex'));
     expect(at('G', '2024-12-31')).toEqual([]);
     expect(at('G', '2025-01-01')).toEqual(['energy_class']);
     expect(at('F', '2027-12-31')).toEqual([]);
@@ -52,10 +52,18 @@ describe('W01 · règles écrites du contrôle du logement', () => {
   });
 
   it('[R100] au-delà de 450 kWh/m²/an en énergie finale, interdit pour un bail à partir du 1er janvier 2023', () => {
-    const at = (finalEnergyKwh: number, leaseStart: string) => checkDwelling({ ...FACTS, energyClass: 'F', finalEnergyKwh, leaseStart }, ALL_VALID, '2027-07-12').map((r) => r.code).filter((c) => !c.startsWith('annex'));
+    const at = (finalEnergyKwh: number, leaseStart: string) => checkDwelling({ ...FACTS, energyClass: 'F', finalEnergyKwh, leaseStart }, ALL_VALID, '2020-01-01').map((r) => r.code).filter((c) => !c.startsWith('annex'));
     expect(at(450, '2023-01-01')).toEqual([]);
     expect(at(451, '2022-12-31')).toEqual([]);
     expect(at(451, '2023-01-01')).toEqual(['final_energy']);
+  });
+
+  it('[R100] une date de bail passée ne rouvre rien : la classe est jugée au plus tard du bail et du jour', () => {
+    const codes = (energyClass: RentalFacts['energyClass'], leaseStart: string, today: string) =>
+      checkDwelling({ ...FACTS, energyClass, leaseStart }, ALL_VALID, today).map((r) => r.code).filter((c) => !c.startsWith('annex'));
+    expect(codes('G', '2024-12-31', '2027-07-12')).toEqual(['energy_class']);
+    expect(codes('F', '2027-12-31', '2028-01-01')).toEqual(['energy_class']);
+    expect(checkDwelling({ ...FACTS, energyClass: 'F', finalEnergyKwh: 460, leaseStart: '2022-06-01' }, ALL_VALID, '2027-07-12').map((r) => r.code)).toContain('final_energy');
   });
 
   it('[R101] moins de 9 m² habitables, ou une annexe manquante, échue ou datée du futur, bloque avec sa raison', () => {
@@ -186,6 +194,20 @@ describeWithSqlite('W01 · mise en location contrôlée avant toute annonce', ()
     expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'bloque', factsVersion: 2 } });
   });
 
+  it('[R100] un logement classé F louable fin 2027 cesse d’être annonçable le 1er janvier 2028 ; un bail ne commence pas dans le passé', async () => {
+    const t = await setup();
+    const id = await t.open({ energyClass: 'F', finalEnergyKwh: 330, leaseStart: '2027-12-31' });
+    // L'état des risques fait le jour même vaut jusqu'au 11 janvier 2028 : seule la classe joue ici.
+    await t.annexes(id, ['dpe', 'erp', 'surface_habitable'], '2027-07-12');
+    expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'louable' } });
+    clock = Date.parse('2027-12-31T22:00:00.000Z');
+    expect(await t.location.advertisable(t.network.id, id)).toBe(true);
+    clock = Date.parse('2027-12-31T23:30:00.000Z');
+    expect(await t.location.advertisable(t.network.id, id)).toBe(false);
+    clock = Date.parse('2027-07-12T08:00:00.000Z');
+    expect(await t.location.recordFacts(t.agent, id, { ...FACTS, energyClass: 'G', leaseStart: '2024-12-31' })).toEqual({ ok: false, rule: 'R100', code: 'invalid', field: 'leaseStart' });
+  });
+
   it('[R101] [R17] une annexe manquante bloque ; une nouvelle version la corrige, l’ancienne reste ; un contrôle ancien ne vaut plus', async () => {
     const t = await setup();
     const id = await t.open({ buildYear: 1930 });
@@ -238,6 +260,9 @@ describeWithSqlite('W01 · mise en location contrôlée avant toute annonce', ()
     expect(await t.location.check(t.partner, id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.location.recordFacts(t.compliance, id, FACTS)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect((await t.location.status(t.compliance, id)).ok).toBe(true);
+    expect((await t.location.notices(t.compliance, id)).ok).toBe(true);
+    // Chaque lecture est au journal avant d'être rendue [R16].
+    expect((await t.events('location.lue')).map((e) => JSON.parse(e.data).what)).toEqual(['status', 'notices']);
     expect((await t.location.check(t.dir, id)).ok).toBe(true);
     expect(await t.location.create(t.other, { propertyId: t.home.id, ownerPersonId: t.owner.id })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.location.create(t.agent, { propertyId: t.shop.id, ownerPersonId: t.owner.id })).toEqual({ ok: false, rule: null, code: 'not_a_home' });

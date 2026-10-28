@@ -164,9 +164,11 @@ export function banDate(energyClass: RentalEnergyClass): string | null {
  */
 export function checkDwelling(facts: RentalFacts, annexes: readonly { kind: AnnexKind; diagnosedOn: string; validUntil: string | null }[], today: string): CheckReason[] {
   const reasons: CheckReason[] = [];
+  // La classe est jugée au plus tard du début du bail et du jour du contrôle : une date de bail passée ne rouvre rien.
+  const on = facts.leaseStart > today ? facts.leaseStart : today;
   const ban = banDate(facts.energyClass);
-  if (ban !== null && facts.leaseStart >= ban) reasons.push({ code: 'energy_class', energyClass: facts.energyClass, bannedFrom: ban });
-  if (facts.finalEnergyKwh > MAX_FINAL_ENERGY_KWH && facts.leaseStart >= FINAL_ENERGY_BAN_FROM) reasons.push({ code: 'final_energy', finalEnergyKwh: facts.finalEnergyKwh, bannedFrom: FINAL_ENERGY_BAN_FROM });
+  if (ban !== null && on >= ban) reasons.push({ code: 'energy_class', energyClass: facts.energyClass, bannedFrom: ban });
+  if (facts.finalEnergyKwh > MAX_FINAL_ENERGY_KWH && on >= FINAL_ENERGY_BAN_FROM) reasons.push({ code: 'final_energy', finalEnergyKwh: facts.finalEnergyKwh, bannedFrom: FINAL_ENERGY_BAN_FROM });
   if (facts.livingAreaHundredths < MIN_LIVING_AREA_HUNDREDTHS) reasons.push({ code: 'living_area', livingAreaHundredths: facts.livingAreaHundredths });
   for (const kind of requiredAnnexes(facts)) {
     const a = annexes.find((x) => x.kind === kind);
@@ -317,6 +319,11 @@ export class MisesEnLocation {
     return denied ?? row;
   }
 
+  /** Chaque lecture est écrite au journal avant que la donnée soit rendue [R16, R13]. */
+  private async logRead(viewer: Viewer, listingId: string, what: 'status' | 'notices'): Promise<void> {
+    await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental:${listingId}`, data: { rule: 'R16', what } }, this.now);
+  }
+
   /** Ouvre la mise en location d'un logement de la fiche, pour son propriétaire, personne de la fiche client. */
   async create(viewer: Viewer, input: { propertyId: unknown; ownerPersonId: unknown }): Promise<LocationResult<{ listingId: string }>> {
     const denied = await this.gateProperty(viewer, input.propertyId, true, `property:${String(input.propertyId)}`);
@@ -346,6 +353,8 @@ export class MisesEnLocation {
     const parsed = parseFacts(input);
     if (!parsed.ok) return { ok: false, rule: null, code: 'invalid', field: parsed.field };
     const f = parsed.value;
+    // Un bail ne commence pas dans le passé : la date du bail ne sert jamais à juger un logement d'hier [R100].
+    if (f.leaseStart < this.today()) return { ok: false, rule: 'R100', code: 'invalid', field: 'leaseStart' };
     const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM rental_facts WHERE listing_id = ?', [row.id]);
     const version = Number(last?.v ?? 0) + 1;
     try {
@@ -472,6 +481,7 @@ export class MisesEnLocation {
   async status(viewer: Viewer, listingId: unknown): Promise<LocationResult<{ check: RentalCheck | null; stale: boolean; required: AnnexKind[] }>> {
     const row = await this.load(viewer, listingId, false);
     if ('ok' in row) return row;
+    await this.logRead(viewer, row.id, 'status');
     const c = await this.lastCheck(row.id);
     const facts = await this.latestFacts(row.id);
     const required = facts ? requiredAnnexes(facts) : ['dpe', 'erp', 'surface_habitable'] as AnnexKind[];
@@ -515,6 +525,7 @@ export class MisesEnLocation {
   async notices(viewer: Viewer, listingId: unknown): Promise<LocationResult<OwnerNotice[]>> {
     const row = await this.load(viewer, listingId, false);
     if ('ok' in row) return row;
+    await this.logRead(viewer, row.id, 'notices');
     const rows = await this.db.all<{ energy_class: 'E' | 'F' | 'G'; banned_from: string; text: string }>('SELECT energy_class, banned_from, text FROM rental_owner_notices WHERE listing_id = ? ORDER BY prepared_at', [row.id]);
     return { ok: true, value: rows.map((r) => ({ listingId: row.id, energyClass: r.energy_class, bannedFrom: r.banned_from, text: r.text })) };
   }
