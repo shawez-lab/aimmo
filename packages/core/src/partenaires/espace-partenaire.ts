@@ -110,11 +110,11 @@ export class EspacePartenaire {
   }
 
   /** Seul un partenaire connu du réseau, aux justificatifs valides ce jour-là, entre dans son espace [R16, R73]. */
-  private async gate(viewer: Viewer, subject: string): Promise<SpaceRefusal | null> {
+  private async gate(viewer: Viewer, subject: string, credentialsToday = true): Promise<SpaceRefusal | null> {
     if (viewer.role !== 'partner') return this.refuse(viewer, subject, 'role');
     const p = await this.db.first('SELECT 1 FROM partners WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
     if (!p) return this.refuse(viewer, subject, 'unknown');
-    if (!(await this.annuaire.proposableOn(viewer.networkId, viewer.userId, this.now()))) return this.refuse(viewer, subject, 'credentials', 'R73');
+    if (credentialsToday && !(await this.annuaire.proposableOn(viewer.networkId, viewer.userId, this.now()))) return this.refuse(viewer, subject, 'credentials', 'R73');
     return null;
   }
 
@@ -122,7 +122,7 @@ export class EspacePartenaire {
    * La mise en relation est-elle confiée à ce partenaire, et encore lisible aujourd'hui ? Pour un domaine de diagnostic,
    * la certification de ce domaine doit aussi être valide ce jour-là : sinon `credentials` [R77, R73].
    */
-  private async held(viewer: Viewer, referralId: string): Promise<ReferralState | 'credentials' | null> {
+  private async held(viewer: Viewer, referralId: string, credentialsToday = true): Promise<ReferralState | 'credentials' | null> {
     const held = await this.relations.entrusted(viewer.networkId, referralId);
     if (!held || held.partnerId !== viewer.userId) return null;
     if (held.state === 'terminee' || held.state === 'abandonnee') {
@@ -130,7 +130,7 @@ export class EspacePartenaire {
       if (!closed || this.now().getTime() - Date.parse(closed) > CLOSED_ACCESS_DAYS * 86_400_000) return null;
     }
     const r = (await this.db.first<{ domain: string }>('SELECT domain FROM partner_referrals WHERE id = ?', [referralId]))!;
-    if (r.domain !== '' && !(await this.annuaire.proposableOn(viewer.networkId, viewer.userId, this.now(), r.domain as DiagnosticDomain))) return 'credentials';
+    if (credentialsToday && r.domain !== '' && !(await this.annuaire.proposableOn(viewer.networkId, viewer.userId, this.now(), r.domain as DiagnosticDomain))) return 'credentials';
     return held.state;
   }
 
@@ -169,13 +169,16 @@ export class EspacePartenaire {
 
   /**
    * Le partenaire peut-il agir sur cette mise en relation (déposer une pièce, U05) ? Seulement si elle lui est confiée et
-   * encore ouverte, ses justificatifs valides ; tout refus est écrit au journal [R77, R73, R16].
+   * encore ouverte ; tout refus est écrit au journal [R77, R73, R16]. Par défaut, ses justificatifs doivent être valides
+   * aujourd'hui. Pour déposer une pièce déjà faite, `credentialsToday: false` : la pièce est alors jugée sur les
+   * justificatifs du jour où elle a été faite (U06), ce qui distingue une pièce passée d'un nouveau travail [R73].
    */
-  async access(viewer: Viewer, referralId: unknown): Promise<SpaceResult<ReferralState>> {
+  async access(viewer: Viewer, referralId: unknown, options: { credentialsToday?: boolean } = {}): Promise<SpaceResult<ReferralState>> {
     const subject = `referral:${String(referralId)}`;
-    const denied = await this.gate(viewer, subject);
+    const today = options.credentialsToday ?? true;
+    const denied = await this.gate(viewer, subject, today);
     if (denied) return denied;
-    const held = typeof referralId === 'string' ? await this.held(viewer, referralId) : null;
+    const held = typeof referralId === 'string' ? await this.held(viewer, referralId, today) : null;
     if (!held) return this.refuse(viewer, subject, 'not_assigned');
     if (held === 'credentials') return this.refuse(viewer, subject, 'credentials', 'R73');
     if (held !== 'confiee' && held !== 'en_cours') return this.refuse(viewer, subject, 'closed');

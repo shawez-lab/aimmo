@@ -22,7 +22,7 @@ import { FORBIDDEN_PIECES } from '../dossiers/pieces.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import type { PartnerTrade } from './annuaire.ts';
+import type { Annuaire, CertifiedDomain, CredentialKind, PartnerTrade } from './annuaire.ts';
 import type { EspacePartenaire } from './espace-partenaire.ts';
 import type { MiseEnRelation } from './mise-en-relation.ts';
 
@@ -102,10 +102,44 @@ interface ReferralSource {
 /** Un contrôle supplémentaire avant le rangement (U06) : rend la raison d'envoyer la pièce à la file, ou `null`. */
 export type PlacementCheck = (input: { networkId: string; partnerId: string; trade: PartnerTrade; sort: string; issuedOn: string }) => Promise<string | null>;
 
+/**
+ * Le justificatif qui devait couvrir chaque sorte de pièce le jour où elle a été faite (U06) : la certification du
+ * domaine pour un diagnostic, l'immatriculation ORIAS pour un accord de prêt, la carte G pour une pièce de gestion,
+ * l'inscription à l'ordre pour un bornage. Règle écrite [R73, R78].
+ */
+export const PIECE_CREDENTIALS: Readonly<Record<string, { kind: CredentialKind; domain: CertifiedDomain | null; trades: readonly PartnerTrade[] }>> = Object.freeze({
+  dpe: { kind: 'certification_diagnostic', domain: 'dpe', trades: ['diagnostiqueur'] },
+  amiante: { kind: 'certification_diagnostic', domain: 'amiante', trades: ['diagnostiqueur'] },
+  plomb: { kind: 'certification_diagnostic', domain: 'plomb', trades: ['diagnostiqueur'] },
+  electricite: { kind: 'certification_diagnostic', domain: 'electricite', trades: ['diagnostiqueur'] },
+  gaz: { kind: 'certification_diagnostic', domain: 'gaz', trades: ['diagnostiqueur'] },
+  termites: { kind: 'certification_diagnostic', domain: 'termites', trades: ['diagnostiqueur'] },
+  accord_principe: { kind: 'immatriculation_orias', domain: null, trades: ['courtier'] },
+  offre_pret: { kind: 'immatriculation_orias', domain: null, trades: ['courtier'] },
+  pre_etat_date: { kind: 'carte_g', domain: null, trades: ['gestionnaire'] },
+  bornage: { kind: 'inscription_ordre', domain: null, trades: ['geometre'] },
+});
+
+/**
+ * Jamais vu (U06) : chaque pièce est jugée contre les justificatifs de son auteur le jour où elle a été faite, et non
+ * le jour du dépôt. Un diagnostic fait pendant que la certification de son domaine était échue, ou d'un domaine que le
+ * diagnostiqueur ne couvrait pas, n'entre dans aucun dossier : il va à la file de l'agent avec la raison. L'assurance
+ * du jour où la pièce a été faite est aussi exigée. Décision par règles écrites, rejouable, jamais par l'IA [R73, R78].
+ */
+export function credentialCheck(annuaire: Annuaire): PlacementCheck {
+  return async ({ networkId, partnerId, trade, sort, issuedOn }) => {
+    if (!(await annuaire.coveredOn(networkId, partnerId, 'assurance_rcp', null, issuedOn))) return 'insurance_not_valid_on_date';
+    const need = Object.hasOwn(PIECE_CREDENTIALS, sort) ? PIECE_CREDENTIALS[sort] : undefined;
+    if (!need || !need.trades.includes(trade)) return null;
+    if (await annuaire.coveredOn(networkId, partnerId, need.kind, need.domain, issuedOn)) return null;
+    return need.kind === 'certification_diagnostic' ? 'certification_not_valid_on_date' : 'credential_not_valid_on_date';
+  };
+}
+
 export interface PiecesPartenairesOptions {
   now?: () => Date;
   newId?: () => string;
-  /** Contrôles ajoutés avant le rangement, dans l'ordre ; le premier qui rend une raison envoie la pièce à la file. */
+  /** Contrôles ajoutés après celui des justificatifs, dans l'ordre ; le premier qui rend une raison envoie la pièce à la file. */
   checks?: readonly PlacementCheck[];
 }
 
@@ -118,13 +152,15 @@ export class PiecesPartenaires {
     private readonly db: SqlDatabase,
     private readonly space: EspacePartenaire,
     private readonly relations: MiseEnRelation,
+    annuaire: Annuaire,
     private readonly store: PartnerDocumentStore,
     private readonly journal: JournalStore,
     options: PiecesPartenairesOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
-    this.checks = options.checks ?? [];
+    // Le contrôle des justificatifs au jour de la pièce passe toujours, avant tout autre (U06).
+    this.checks = [credentialCheck(annuaire), ...(options.checks ?? [])];
   }
 
   private actor(viewer: Viewer): string {
@@ -133,7 +169,9 @@ export class PiecesPartenaires {
 
   /** Le partenaire confié dépose une pièce ; elle est rangée aussitôt par la règle écrite, ou va à la file de l'agent [R78]. */
   async deposit(viewer: Viewer, referralId: unknown, input: { sort: unknown; ref: unknown; sha256: unknown; issuedOn: unknown }): Promise<DepositResult<DepositedPiece>> {
-    const access = await this.space.access(viewer, referralId);
+    // Une pièce déjà faite se dépose même si un justificatif a expiré depuis : elle est jugée sur ceux du jour où elle a
+    // été faite, contrôle toujours appliqué ci-dessous (U06) [R73, R78].
+    const access = await this.space.access(viewer, referralId, { credentialsToday: false });
     if (!access.ok) return access;
     const id = referralId as string;
     const subject = `referral:${id}`;
