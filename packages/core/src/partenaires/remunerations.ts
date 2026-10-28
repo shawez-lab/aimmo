@@ -132,10 +132,16 @@ export class Remunerations {
     if ((shown.trade === 'courtier' || input.payer === 'banque') && !this.settings.brokerStatusValidated) return this.refused(viewer, r.referralId, 'broker_status');
     if (r.state !== 'proposee') return this.refused(viewer, r.referralId, 'new_consent_required');
     const id = this.newId();
-    await this.db.run(
-      'INSERT INTO partner_referral_fees (id, referral_id, partner_id, kind, amount_cents, rate_bp, payer, payee, declared_by, declared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, r.referralId, shown.partnerId, input.kind, amount as number | null, rate as number | null, input.payer, input.payee, this.actor(viewer), this.now().toISOString()],
-    );
+    try {
+      await this.db.run(
+        'INSERT INTO partner_referral_fees (id, referral_id, partner_id, kind, amount_cents, rate_bp, payer, payee, declared_by, declared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, r.referralId, shown.partnerId, input.kind, amount as number | null, rate as number | null, input.payer, input.payee, this.actor(viewer), this.now().toISOString()],
+      );
+    } catch (error) {
+      // L'accord a été rangé entre-temps : la base refuse, il faut un nouvel accord [R76].
+      if (/accord du client déjà rangé/.test(String(error))) return this.refused(viewer, r.referralId, 'new_consent_required');
+      throw error;
+    }
     await appendEvent(
       this.journal,
       { type: 'remuneration.declaree', actor: this.actor(viewer), subject: `referral:${r.referralId}`, data: { rule: 'R76', partner: `partner:${shown.partnerId}`, kind: input.kind, payer: input.payer, payee: input.payee } },
