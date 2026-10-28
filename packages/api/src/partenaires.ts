@@ -37,6 +37,13 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const SORT = /^[a-z_]{2,40}$/;
 const TIME_ZONE = 'Europe/Paris';
 
+/** Une date du calendrier qui existe : « 2027-02-30 » est refusée. */
+function realDay(v: string): boolean {
+  if (!DAY.test(v)) return false;
+  const d = new Date(`${v}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
 /** Le stockage des preuves et des pièces : seule l'existence d'une référence est lue, jamais son contenu. */
 export interface PartnerFileStore {
   has(ref: string): Promise<boolean>;
@@ -215,7 +222,7 @@ async function deposit(s: PartenairesServices, viewer: Viewer, [id]: string[], r
   if (!SORT.test(sort)) return reply({ ok: false, rule: null, code: 'bad_sort' });
   const precheck = await c.pieces.deposit(viewer, id, { sort, ref: '', sha256: '', issuedOn });
   if (precheck.ok || precheck.code !== 'bad_ref') return reply(precheck);
-  if (!DAY.test(issuedOn) || issuedOn > localTime(s.now(), TIME_ZONE).date) return reply({ ok: false, rule: null, code: 'bad_date' });
+  if (!realDay(issuedOn) || issuedOn > localTime(s.now(), TIME_ZONE).date) return reply({ ok: false, rule: null, code: 'bad_date' });
   const kind = UPLOAD_TYPES.find((t) => t.type === type);
   if (!kind) return json(415, { ok: false, rule: null, code: 'bad_type' });
   if (!s.uploads) return json(503, { ok: false, rule: null, code: 'storage_unavailable' });
@@ -225,7 +232,12 @@ async function deposit(s: PartenairesServices, viewer: Viewer, [id]: string[], r
   const ref = `partenaires/${viewer.userId}/relations/${id}/${crypto.randomUUID()}.${kind.ext}`;
   const sha256 = await sha256Hex(bytes);
   await s.uploads.put(ref, bytes, kind.type);
-  return reply(await c.pieces.deposit(viewer, id, { sort, ref, sha256, issuedOn }));
+  const done = await c.pieces.deposit(viewer, id, { sort, ref, sha256, issuedOn });
+  if (!done.ok) {
+    // Le fichier est déjà au stockage : le refus est gardé au journal, sans sa référence ni son contenu [R13].
+    await appendEvent(s.journal, { type: 'piece_partenaire.fichier_non_range', actor: `partner:${viewer.userId}`, subject: `referral:${id}`, data: { rule: done.rule, code: done.code, sort } }, s.now);
+  }
+  return reply(done);
 }
 
 /** Les sortes qu'un partenaire peut déposer pour cette demande, avec leur nom en français. */

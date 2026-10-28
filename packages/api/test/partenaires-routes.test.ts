@@ -265,6 +265,7 @@ describeWithSqlite('U10 · routes de M18', () => {
     expect(await t.upload(notaire, 'Titre!')).toMatchObject({ status: 400, body: { code: 'bad_sort' } });
     expect(await t.upload(notaire, 'titre_propriete', PDF, 'application/pdf', t.day(2))).toMatchObject({ status: 400, body: { code: 'bad_date' } });
     expect(await t.upload(notaire, 'titre_propriete', PDF, 'application/pdf', 'hier')).toMatchObject({ status: 400, body: { code: 'bad_date' } });
+    expect(await t.upload(notaire, 'titre_propriete', PDF, 'application/pdf', '2027-02-30')).toMatchObject({ status: 400, body: { code: 'bad_date' } });
     expect(await t.upload(notaire, 'titre_propriete', PDF, 'text/html')).toMatchObject({ status: 415, body: { code: 'bad_type' } });
     // Un fichier qui se dit PDF sans en être un.
     expect(await t.upload(notaire, 'titre_propriete', PNG, 'application/pdf')).toMatchObject({ status: 415, body: { code: 'bad_type' } });
@@ -288,6 +289,18 @@ describeWithSqlite('U10 · routes de M18', () => {
       status: 200,
       body: { data: { destination: 'sale_file' } },
     });
+  });
+
+  it('[R13] un fichier stocké puis refusé au rangement laisse une trace au journal, sans sa référence', async () => {
+    const t = await setup();
+    const artisan = await t.request('artisan');
+    // Un stockage qui perd le fichier : la couche métier ne le trouve pas et refuse de le ranger.
+    t.s.uploads = { put: async () => undefined };
+    expect(await t.upload(artisan, 'devis')).toMatchObject({ status: 400, body: { code: 'not_stored' } });
+    const trace = await t.events('piece_partenaire.fichier_non_range');
+    expect(trace).toHaveLength(1);
+    expect(JSON.parse(trace[0]!.data)).toEqual({ rule: null, code: 'not_stored', sort: 'devis' });
+    expect(trace[0]!.data).not.toContain('partenaires/');
   });
 
   it('sans stockage des fichiers, le dépôt est refusé et rien n’est rangé', async () => {
