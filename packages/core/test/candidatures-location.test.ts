@@ -26,7 +26,7 @@ const FACTS: RentalFacts = {
 const FORBIDDEN = [
   'releve_compte', 'attestation_bonne_tenue_compte', 'photo_identite', 'carte_vitale', 'dossier_medical', 'extrait_casier_judiciaire', 'cheque_reservation',
   'contrat_mariage', 'certificat_concubinage', 'jugement_divorce', 'attestation_absence_credit', 'autorisation_prelevement', 'rib', 'releve_bancaire',
-  'attestation_ancien_bailleur_a_jour', 'carte_assure_social', 'remise_compte_bloque', 'avis_imposition_parents', 'constructor', '__proto__', 'tostring',
+  'justificatif_situation_familiale', 'carte_assure_social', 'remise_compte_bloque', 'avis_imposition_parents', 'constructor', '__proto__', 'tostring',
 ];
 
 describe('W04 · liste officielle', () => {
@@ -37,6 +37,18 @@ describe('W04 · liste officielle', () => {
     }
     for (const sort of FORBIDDEN) expect(Object.prototype.hasOwnProperty.call(OFFICIAL_PIECES, sort), sort).toBe(false);
     expect(JSON.stringify(OFFICIAL_PIECES)).not.toMatch(/identit|passeport|compte|bancaire|vitale|m[ée]dical|casier/i);
+    // Annexe II : la caution ne fournit ni attestation d'hébergement, ni certificat de scolarité, ni bourse, ni simulation
+    // d'aides ; elle peut fournir une facture d'eau ou d'énergie et une attestation d'assurance du logement.
+    const forCaution = (sort: string) => OFFICIAL_PIECES[sort]!.holders.includes('caution');
+    for (const sort of ['attestation_hebergement', 'attestation_election_domicile', 'attestation_precedent_bailleur', 'certificat_scolarite', 'avis_bourse', 'simulation_aides_logement', 'quittances_loyer']) {
+      expect(forCaution(sort), sort).toBe(false);
+    }
+    for (const sort of ['derniere_quittance', 'facture_eau_energie', 'attestation_assurance_logement', 'avis_taxe_fonciere', 'contrat_travail', 'avis_imposition', 'titre_propriete_ressource']) {
+      expect(forCaution(sort), sort).toBe(true);
+    }
+    // Le titre de propriété ou l'avis de taxe foncière vaut aussi ressource ; un autre professionnel justifie son activité.
+    expect(OFFICIAL_PIECES.titre_propriete_ressource!.category).toBe('ressources');
+    expect(OFFICIAL_PIECES.piece_activite_autre!.category).toBe('activite');
   });
 });
 
@@ -76,7 +88,7 @@ async function setup() {
   /** Un dossier complet pour le candidat : identité au coffre, un domicile, une activité, des ressources. */
   const full = async (applicationId: string, holder: string, personId: string) => {
     verified.add(personId);
-    for (const sort of ['quittances_loyer', 'contrat_travail', 'bulletins_salaire', 'avis_imposition']) expect((await piece(applicationId, holder, sort)).ok, sort).toBe(true);
+    for (const sort of [holder === 'candidat' ? 'quittances_loyer' : 'derniere_quittance', 'contrat_travail', 'bulletins_salaire', 'avis_imposition']) expect((await piece(applicationId, holder, sort)).ok, sort).toBe(true);
   };
   const events = (type: string) => db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? ORDER BY seq', [type]);
   return { db, apps, listings, agent, other, dir, compliance, listingId, person, piece, full, verified, ref, events };
@@ -166,6 +178,27 @@ describeWithSqlite('W04 · candidatures limitées à la liste officielle', () =>
     expect(await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId: pid })).toEqual({ ok: false, rule: null, code: 'unknown_person' });
     expect(await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId: gid })).toEqual({ ok: false, rule: null, code: 'already_added' });
     expect(await t.piece(id, 'garant-inconnu', 'contrat_travail')).toEqual({ ok: false, rule: null, code: 'unknown_holder' });
+  });
+
+  it('[R104] la caution ne fournit que les pièces de l’annexe II : refusées sinon, au journal ; toute pièce interdite aussi', async () => {
+    const t = await setup();
+    const pid = await t.person(1);
+    const gid = await t.person(2);
+    const a = await t.apps.apply(t.agent, t.listingId, { personId: pid });
+    const id = a.ok ? a.value.applicationId : '';
+    const g = await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId: gid });
+    const guarantor = g.ok ? g.value.guarantorId : '';
+    for (const sort of ['attestation_hebergement', 'attestation_election_domicile', 'attestation_precedent_bailleur', 'certificat_scolarite', 'avis_bourse', 'simulation_aides_logement', 'quittances_loyer']) {
+      expect(await t.piece(id, guarantor, sort), sort).toEqual({ ok: false, rule: 'R104', code: 'not_for_holder' });
+    }
+    for (const sort of FORBIDDEN) expect(await t.piece(id, guarantor, sort), sort).toEqual({ ok: false, rule: 'R104', code: 'not_allowed' });
+    // Une facture d'énergie suffit comme domicile ; la candidature devient complète avec le reste de l'annexe II.
+    t.verified.add(gid);
+    t.verified.add(pid);
+    for (const sort of ['facture_eau_energie', 'piece_activite_autre', 'titre_propriete_ressource']) expect((await t.piece(id, guarantor, sort)).ok, sort).toBe(true);
+    for (const sort of ['avis_taxe_fonciere', 'piece_activite_autre', 'titre_propriete_ressource']) expect((await t.piece(id, 'candidat', sort)).ok, sort).toBe(true);
+    expect((await t.apps.read(t.agent, id) as { value: { complete: boolean } }).value.complete).toBe(true);
+    expect(await t.db.all("SELECT 1 FROM rental_application_pieces WHERE holder = ? AND sort NOT IN ('facture_eau_energie', 'piece_activite_autre', 'titre_propriete_ressource')", [guarantor])).toHaveLength(0);
   });
 
   it('[R104] un lien DossierFacile vaut dossier sans autre pièce ; un lien d’ailleurs est refusé', async () => {

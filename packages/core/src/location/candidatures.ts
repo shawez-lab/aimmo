@@ -1,8 +1,8 @@
 /**
  * Candidatures limitées aux pièces de la liste officielle (M15, W04) [R104, R14, R15].
  *
- * Décret n° 2015-1437 du 5 novembre 2015 : le bailleur, ou l'agent qui le représente, ne peut demander au candidat et à
- * sa caution que les pièces de la liste, une par catégorie pour l'identité et le domicile, une ou plusieurs pour
+ * Décret n° 2015-1437 du 5 novembre 2015 : le bailleur, ou l'agent qui le représente, ne peut demander au candidat
+ * (annexe I) et à sa caution personne physique (annexe II) que les pièces de leur liste, une par catégorie pour l'identité et le domicile, une ou plusieurs pour
  * l'activité et les ressources. Toute autre pièce est refusée à l'enregistrement, nommée, écrite au journal [R104] :
  * relevé ou attestation de compte, photo, carte Vitale, dossier médical, extrait de casier, chèque de réservation,
  * contrat de mariage, jugement de divorce, attestation d'absence de crédit, autorisation de prélèvement, RIB…
@@ -26,28 +26,42 @@ import type { LocationRefusal, MisesEnLocation, RentalFileStore } from './logeme
 export const PIECE_CATEGORIES = ['domicile', 'activite', 'ressources', 'garantie'] as const;
 export type PieceCategory = (typeof PIECE_CATEGORIES)[number];
 
-/** La liste officielle, sorte par sorte, hors identité (au coffre). Rien d'autre n'est accepté [R104]. */
-export const OFFICIAL_PIECES: Readonly<Record<string, { category: PieceCategory; label: string }>> = Object.freeze({
-  quittances_loyer: { category: 'domicile', label: 'Trois dernières quittances de loyer' },
-  attestation_precedent_bailleur: { category: 'domicile', label: 'Attestation du précédent bailleur' },
-  attestation_hebergement: { category: 'domicile', label: 'Attestation d’hébergement' },
-  attestation_election_domicile: { category: 'domicile', label: 'Attestation d’élection de domicile' },
-  avis_taxe_fonciere: { category: 'domicile', label: 'Dernier avis de taxe foncière ou titre de propriété de la résidence principale' },
-  contrat_travail: { category: 'activite', label: 'Contrat de travail ou de stage, ou attestation de l’employeur' },
-  extrait_k_kbis: { category: 'activite', label: 'Extrait K ou K bis de moins de 3 mois' },
-  inscription_repertoire_metiers: { category: 'activite', label: 'Extrait D1 du répertoire des métiers' },
-  certificat_insee: { category: 'activite', label: 'Certificat d’identification de l’INSEE' },
-  carte_professionnelle: { category: 'activite', label: 'Carte professionnelle (profession libérale)' },
-  certificat_scolarite: { category: 'activite', label: 'Carte d’étudiant ou certificat de scolarité' },
-  avis_imposition: { category: 'ressources', label: 'Dernier ou avant-dernier avis d’imposition' },
-  bulletins_salaire: { category: 'ressources', label: 'Trois derniers bulletins de salaire' },
-  indemnites_stage: { category: 'ressources', label: 'Justificatif de versement des indemnités de stage' },
-  bilans_comptables: { category: 'ressources', label: 'Deux derniers bilans ou attestation du comptable' },
-  pensions_prestations: { category: 'ressources', label: 'Justificatif de pensions, retraites, prestations sociales ou allocations' },
-  simulation_aides_logement: { category: 'ressources', label: 'Attestation de simulation des aides au logement' },
-  avis_bourse: { category: 'ressources', label: 'Avis d’attribution de bourse' },
-  revenus_fonciers: { category: 'ressources', label: 'Justificatif de revenus fonciers, de rentes viagères ou de valeurs mobilières' },
-  visa_visale: { category: 'garantie', label: 'Visa de la garantie Visale' },
+export type Holder = 'candidat' | 'caution';
+
+/**
+ * La liste officielle, sorte par sorte, hors identité (au coffre) : annexe I pour le candidat, annexe II pour la caution
+ * personne physique. Rien d'autre n'est accepté, et chaque sorte seulement pour qui l'annexe la permet [R104].
+ */
+export const OFFICIAL_PIECES: Readonly<Record<string, { category: PieceCategory; label: string; holders: readonly Holder[] }>> = Object.freeze({
+  // Domicile.
+  quittances_loyer: { category: 'domicile', label: 'Trois dernières quittances de loyer', holders: ['candidat'] },
+  attestation_precedent_bailleur: { category: 'domicile', label: 'Attestation du précédent bailleur', holders: ['candidat'] },
+  attestation_hebergement: { category: 'domicile', label: 'Attestation d’hébergement', holders: ['candidat'] },
+  attestation_election_domicile: { category: 'domicile', label: 'Attestation d’élection de domicile', holders: ['candidat'] },
+  derniere_quittance: { category: 'domicile', label: 'Dernière quittance de loyer', holders: ['caution'] },
+  facture_eau_energie: { category: 'domicile', label: 'Facture d’eau, de gaz ou d’électricité de moins de 3 mois', holders: ['caution'] },
+  attestation_assurance_logement: { category: 'domicile', label: 'Attestation d’assurance du logement de moins de 3 mois', holders: ['caution'] },
+  avis_taxe_fonciere: { category: 'domicile', label: 'Dernier avis de taxe foncière ou titre de propriété de la résidence principale', holders: ['candidat', 'caution'] },
+  // Activité.
+  contrat_travail: { category: 'activite', label: 'Contrat de travail ou de stage, ou attestation de l’employeur', holders: ['candidat', 'caution'] },
+  extrait_k_kbis: { category: 'activite', label: 'Extrait K ou K bis de moins de 3 mois', holders: ['candidat', 'caution'] },
+  inscription_repertoire_metiers: { category: 'activite', label: 'Extrait D1 du répertoire des métiers', holders: ['candidat', 'caution'] },
+  certificat_insee: { category: 'activite', label: 'Certificat d’identification de l’INSEE', holders: ['candidat', 'caution'] },
+  carte_professionnelle: { category: 'activite', label: 'Carte professionnelle (profession libérale)', holders: ['candidat', 'caution'] },
+  piece_activite_autre: { category: 'activite', label: 'Pièce récente attestant de l’activité, pour les autres professionnels', holders: ['candidat', 'caution'] },
+  certificat_scolarite: { category: 'activite', label: 'Carte d’étudiant ou certificat de scolarité', holders: ['candidat'] },
+  // Ressources.
+  avis_imposition: { category: 'ressources', label: 'Dernier ou avant-dernier avis d’imposition', holders: ['candidat', 'caution'] },
+  titre_propriete_ressource: { category: 'ressources', label: 'Titre de propriété d’un bien immobilier ou dernier avis de taxe foncière', holders: ['candidat', 'caution'] },
+  bulletins_salaire: { category: 'ressources', label: 'Trois derniers bulletins de salaire', holders: ['candidat', 'caution'] },
+  indemnites_stage: { category: 'ressources', label: 'Justificatif de versement des indemnités de stage', holders: ['candidat', 'caution'] },
+  bilans_comptables: { category: 'ressources', label: 'Deux derniers bilans ou attestation du comptable', holders: ['candidat', 'caution'] },
+  pensions_prestations: { category: 'ressources', label: 'Justificatif de pensions, retraites, prestations sociales ou allocations', holders: ['candidat', 'caution'] },
+  revenus_fonciers: { category: 'ressources', label: 'Justificatif de revenus fonciers, de rentes viagères ou de valeurs mobilières', holders: ['candidat', 'caution'] },
+  simulation_aides_logement: { category: 'ressources', label: 'Attestation de simulation des aides au logement', holders: ['candidat'] },
+  avis_bourse: { category: 'ressources', label: 'Avis d’attribution de bourse', holders: ['candidat'] },
+  // Garantie Visale : son visa seul.
+  visa_visale: { category: 'garantie', label: 'Visa de la garantie Visale', holders: [] },
 });
 
 /** Les pièces demandées à chacun, par catégorie : la liste écrite de la complétude [R104]. */
@@ -202,8 +216,9 @@ export class Candidatures {
       if (!g) return { ok: false, rule: null, code: 'unknown_holder' };
       holderKind = g.kind;
     }
-    // Visale : son visa seul ; une personne n'a pas de visa Visale [R104].
-    if ((holderKind === 'visale') !== (official.category === 'garantie')) {
+    // Visale : son visa seul ; une personne n'a pas de visa Visale ; chaque sorte pour qui l'annexe la permet [R104].
+    const allowed = holderKind === 'visale' ? official.category === 'garantie' : official.holders.includes(holderKind === 'candidat' ? 'candidat' : 'caution');
+    if (!allowed) {
       await appendEvent(this.journal, { type: 'location.piece_refusee', actor: this.actor(viewer), subject, data: { rule: 'R104', sort: input.sort } }, this.now);
       return { ok: false, rule: 'R104', code: 'not_for_holder' };
     }
