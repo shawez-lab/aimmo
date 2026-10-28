@@ -1107,7 +1107,9 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : H26 pour le réel seulement.
 
 ### K03 · Encaissement et reversement sous 24 h ouvrées
-- Statut : en cours
+- Statut : fait (2026-10-28)
+- Décidé (2026-10-28) : 24 h comptées heure par heure sur les seuls jours ouvrés à Paris ; alerte à 4 h de l'échéance (réglage), puis une fois passée ; la prime de parrainage due après l'encaissement (R83) sera facturée par M14.
+- Reste : relecture de Codex impossible (limite d'usage, H03), fusion sur les vérifications du dépôt (#117) ; passage des alertes au planificateur avec K08.
 - Qui : Claude · Relecture : normale · Dépend de : K02
 - Cahier : M13, règle du versement sous 24 h ouvrées.
 - Objectif : la direction rapporte l'encaissement des honoraires avec sa preuve ; le reversement de l'agent devient exigible sous 24 h ouvrées (jours ouvrés, fériés compris) ; une tâche pour la direction, une alerte avant l'échéance, puis le versement rapporté avec sa preuve passe la commission à « payée ».
