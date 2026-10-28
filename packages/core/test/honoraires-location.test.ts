@@ -35,11 +35,13 @@ describe('W02 · plafonds écrits', () => {
 
   it('[R102] chaque dépassement est nommé, testé à un centime près', () => {
     const c = feeCeilings(4_250, 'tendue', 65_000, false);
-    const ok = { tenantCents: 42_500, tenantInventoryCents: 12_750, landlordCents: 55_250, depositCents: 65_000 };
+    const ok = { tenantCents: 42_500, tenantInventoryCents: 12_750, landlordCents: 42_500, landlordInventoryCents: 12_750, depositCents: 65_000 };
     expect(feeProblems(ok, c)).toEqual([]);
     expect(feeProblems({ ...ok, tenantCents: 42_501, landlordCents: 60_000 }, c)).toEqual(['tenant_ceiling']);
-    expect(feeProblems({ ...ok, tenantInventoryCents: 12_751, landlordCents: 60_000 }, c)).toEqual(['inventory_ceiling']);
-    expect(feeProblems({ ...ok, landlordCents: 55_249 }, c)).toEqual(['over_landlord']);
+    expect(feeProblems({ ...ok, tenantInventoryCents: 12_751, landlordInventoryCents: 20_000 }, c)).toEqual(['inventory_ceiling']);
+    expect(feeProblems({ ...ok, landlordCents: 42_499 }, c)).toEqual(['over_landlord']);
+    // Chaque part est comparée à la sienne : un bailleur qui paie plus pour le bail ne couvre pas l'état des lieux.
+    expect(feeProblems({ ...ok, landlordCents: 55_250, landlordInventoryCents: 0 }, c)).toEqual(['inventory_over_landlord']);
     expect(feeProblems({ ...ok, depositCents: 65_001 }, c)).toEqual(['deposit_ceiling']);
   });
 });
@@ -66,58 +68,78 @@ async function setup() {
     const c = await listings.create(agent, { propertyId: home.id, ownerPersonId: owner.id });
     if (!c.ok) throw new Error(c.code);
     expect((await listings.recordFacts(agent, c.value.listingId, { ...FACTS, ...facts })).ok).toBe(true);
+    expect(await fees.setCommune(agent, c.value.listingId, '21999')).toEqual({ ok: true, value: { inseeCode: '21999' } });
     return c.value.listingId;
   };
   const events = (type: string) => db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? ORDER BY seq', [type]);
   return { db, listings, fees, agent, other, dir, compliance, open, events };
 }
 
-const OK = { inseeCode: '99001', tenantCents: 42_500, tenantInventoryCents: 12_750, landlordCents: 55_250, depositCents: 65_000 };
+const OK = { tenantCents: 42_500, tenantInventoryCents: 12_750, landlordCents: 42_500, landlordInventoryCents: 12_750, depositCents: 65_000 };
 
 describeWithSqlite('W02 · honoraires et dépôt de garantie', () => {
   it('[R102] la zone vient de la base, avec sa source et sa date d’effet ; sans zone, 8 € par m²', async () => {
     const t = await setup();
     const id = await t.open();
-    expect(await t.fees.ceilings(t.agent, id, '99001')).toMatchObject({ ok: true, value: { zone: 'inconnue', tenantCeilingCents: 34_000 } });
-    expect(await t.fees.recordZone(t.dir, { inseeCode: '99001', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste officielle inventée pour le test' })).toEqual({ ok: true, value: true });
-    expect(await t.fees.ceilings(t.agent, id, '99001')).toMatchObject({ ok: true, value: { zone: 'tendue', tenantCeilingCents: 42_500 } });
+    expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'inconnue', tenantCeilingCents: 34_000 } });
+    expect(await t.fees.recordZone(t.dir, { inseeCode: '21999', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste officielle inventée pour le test' })).toEqual({ ok: true, value: true });
+    expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'tendue', tenantCeilingCents: 42_500 } });
     // Une nouvelle date d'effet s'ajoute ; elle ne vaut qu'à partir de sa date (bail du 1er septembre 2027).
-    expect((await t.fees.recordZone(t.dir, { inseeCode: '99001', zone: 'tres_tendue', effectiveFrom: '2027-10-01', source: 'Arrêté inventé' })).ok).toBe(true);
-    expect(await t.fees.ceilings(t.agent, id, '99001')).toMatchObject({ ok: true, value: { zone: 'tendue' } });
-    expect(await t.fees.recordZone(t.dir, { inseeCode: '99001', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Doublon' })).toEqual({ ok: false, rule: null, code: 'already_recorded' });
-    expect(await t.fees.recordZone(t.agent, { inseeCode: '99002', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect((await t.fees.recordZone(t.dir, { inseeCode: '21999', zone: 'tres_tendue', effectiveFrom: '2027-10-01', source: 'Arrêté inventé' })).ok).toBe(true);
+    expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'tendue' } });
+    expect(await t.fees.recordZone(t.dir, { inseeCode: '21999', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Doublon' })).toEqual({ ok: false, rule: null, code: 'already_recorded' });
+    expect(await t.fees.recordZone(t.agent, { inseeCode: '21998', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.fees.recordZone(t.dir, { inseeCode: '9900', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste' })).toMatchObject({ code: 'bad_insee' });
     expect(await t.fees.recordZone(t.dir, { inseeCode: '2A004', zone: 'zone_a', effectiveFrom: '2023-08-26', source: 'Liste' })).toMatchObject({ code: 'bad_zone' });
     await expect(t.db.run("UPDATE rental_zones SET zone = 'autre'")).rejects.toThrow(/ne change plus/);
     await expect(t.db.run('DELETE FROM rental_zones')).rejects.toThrow(/rien ne s'efface/);
   });
 
+  it('[R102] la commune du logement est fixée une fois, contrôlée contre son code postal ; le barème n’en reçoit pas d’autre', async () => {
+    const t = await setup();
+    await t.fees.recordZone(t.dir, { inseeCode: '75999', zone: 'tres_tendue', effectiveFrom: '2023-08-26', source: 'Liste inventée' });
+    const c = await t.listings.create(t.agent, { propertyId: (await t.db.first<{ id: string }>('SELECT id FROM properties'))!.id, ownerPersonId: (await t.db.first<{ id: string }>('SELECT id FROM persons'))!.id });
+    const id = c.ok ? c.value.listingId : '';
+    await t.listings.recordFacts(t.agent, id, FACTS);
+    expect(await t.fees.ceilings(t.agent, id)).toEqual({ ok: false, rule: null, code: 'no_commune' });
+    // Une commune d'un autre département que le bien (code postal 21000) est refusée.
+    expect(await t.fees.setCommune(t.agent, id, '75999')).toEqual({ ok: false, rule: 'R102', code: 'commune_mismatch' });
+    expect((await t.fees.setCommune(t.agent, id, '21999')).ok).toBe(true);
+    expect(await t.fees.setCommune(t.agent, id, '21998')).toEqual({ ok: false, rule: 'R102', code: 'commune_set' });
+    // Une commune glissée dans le barème est refusée, jamais lue.
+    expect(await t.fees.record(t.agent, id, { ...OK, inseeCode: '75999' } as never)).toEqual({ ok: false, rule: null, code: 'invalid', field: 'inseeCode' });
+    expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'inconnue', inseeCode: '21999', tenantCeilingCents: 34_000 } });
+    await expect(t.db.run("UPDATE rental_listing_communes SET insee_code = '75999'")).rejects.toThrow(/ne change plus/);
+  });
+
   it('[R102] un barème au plafond est rangé ; un centime de trop est refusé avec sa raison, au journal', async () => {
     const t = await setup();
-    await t.fees.recordZone(t.dir, { inseeCode: '99001', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste officielle inventée' });
+    await t.fees.recordZone(t.dir, { inseeCode: '21999', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste officielle inventée' });
     const id = await t.open();
     expect(await t.fees.record(t.agent, id, { ...OK, tenantCents: 42_501, landlordCents: 60_000 })).toEqual({ ok: false, rule: 'R102', code: 'tenant_ceiling' });
     expect(await t.fees.record(t.agent, id, { ...OK, tenantInventoryCents: 12_751, landlordCents: 60_000 })).toEqual({ ok: false, rule: 'R102', code: 'inventory_ceiling' });
-    expect(await t.fees.record(t.agent, id, { ...OK, landlordCents: 55_249 })).toEqual({ ok: false, rule: 'R102', code: 'over_landlord' });
+    expect(await t.fees.record(t.agent, id, { ...OK, landlordCents: 42_499 })).toEqual({ ok: false, rule: 'R102', code: 'over_landlord' });
+    expect(await t.fees.record(t.agent, id, { ...OK, landlordCents: 55_250, landlordInventoryCents: 0 })).toEqual({ ok: false, rule: 'R102', code: 'inventory_over_landlord' });
     expect(await t.fees.record(t.agent, id, { ...OK, depositCents: 65_001 })).toEqual({ ok: false, rule: 'R102', code: 'deposit_ceiling' });
     expect(await t.db.all('SELECT 1 FROM rental_fees')).toHaveLength(0);
-    expect((await t.events('location.bareme_refuse')).map((e) => JSON.parse(e.data))).toHaveLength(4);
+    expect((await t.events('location.bareme_refuse')).map((e) => JSON.parse(e.data))).toHaveLength(5);
     const r = await t.fees.record(t.agent, id, OK);
     expect(r).toMatchObject({ ok: true, value: { version: 1, zone: 'tendue', tenantCents: 42_500, tenantCeilingCents: 42_500 } });
     expect(await t.fees.current(t.agent.networkId, id)).toMatchObject({ version: 1, depositCents: 65_000 });
     // Le journal ne garde aucun montant.
-    for (const e of await t.db.all<{ data: string }>('SELECT data FROM journal')) expect(e.data).not.toMatch(/42500|65000|55250/);
+    for (const e of await t.db.all<{ data: string }>('SELECT data FROM journal')) expect(e.data).not.toMatch(/42500|65000|12750/);
   });
 
   it('[R102] la base refuse elle-même un dépassement, même écrit sans le code', async () => {
     const t = await setup();
     const id = await t.open();
-    const insert = (tenant: number) =>
+    const insert = (tenant: number, inventory = 0, landlordInventory = 0) =>
       t.db.run(
-        "INSERT INTO rental_fees (listing_id, version, facts_version, insee_code, zone, tenant_cents, tenant_inventory_cents, landlord_cents, deposit_cents, tenant_ceiling_cents, inventory_ceiling_cents, deposit_ceiling_cents, recorded_by, recorded_at) VALUES (?, 1, 1, '99001', 'autre', ?, 0, 100000, 0, 34000, 12750, 65000, 'x', 'y')",
-        [id, tenant],
+        "INSERT INTO rental_fees (listing_id, version, facts_version, insee_code, zone, tenant_cents, tenant_inventory_cents, landlord_cents, landlord_inventory_cents, deposit_cents, tenant_ceiling_cents, inventory_ceiling_cents, deposit_ceiling_cents, recorded_by, recorded_at) VALUES (?, 1, 1, '21999', 'autre', ?, ?, 100000, ?, 0, 34000, 12750, 65000, 'x', 'y')",
+        [id, tenant, inventory, landlordInventory],
       );
     await expect(insert(34_001)).rejects.toThrow(/CHECK/);
+    await expect(insert(34_000, 100, 99)).rejects.toThrow(/CHECK/);
     await insert(34_000);
     await expect(t.db.run('UPDATE rental_fees SET tenant_cents = 1')).rejects.toThrow(/ne change plus/);
   });
@@ -125,14 +147,14 @@ describeWithSqlite('W02 · honoraires et dépôt de garantie', () => {
   it('[R102] meublé : deux mois de loyer ; un changement de faits rend le barème caduc', async () => {
     const t = await setup();
     const id = await t.open({ furnished: true });
-    expect((await t.fees.record(t.agent, id, { ...OK, landlordCents: 50_000, tenantCents: 34_000, tenantInventoryCents: 12_750, depositCents: 130_000 })).ok).toBe(true);
-    expect(await t.fees.record(t.agent, id, { ...OK, landlordCents: 50_000, tenantCents: 34_000, tenantInventoryCents: 12_750, depositCents: 130_001 })).toEqual({ ok: false, rule: 'R102', code: 'deposit_ceiling' });
+    expect((await t.fees.record(t.agent, id, { ...OK, landlordCents: 50_000, tenantCents: 34_000, depositCents: 130_000 })).ok).toBe(true);
+    expect(await t.fees.record(t.agent, id, { ...OK, landlordCents: 50_000, tenantCents: 34_000, depositCents: 130_001 })).toEqual({ ok: false, rule: 'R102', code: 'deposit_ceiling' });
     expect(await t.fees.current(t.agent.networkId, id)).not.toBeNull();
     // La surface corrigée à la baisse : le barème rangé ne vaut plus, il faut en ranger un nouveau.
     await t.listings.recordFacts(t.agent, id, { ...FACTS, furnished: true, livingAreaHundredths: 3_000 });
     expect(await t.fees.current(t.agent.networkId, id)).toBeNull();
-    expect(await t.fees.record(t.agent, id, { ...OK, landlordCents: 50_000, tenantCents: 34_000, tenantInventoryCents: 9_000, depositCents: 130_000 })).toEqual({ ok: false, rule: 'R102', code: 'tenant_ceiling' });
-    expect((await t.fees.record(t.agent, id, { ...OK, landlordCents: 50_000, tenantCents: 24_000, tenantInventoryCents: 9_000, depositCents: 130_000 })).ok).toBe(true);
+    expect(await t.fees.record(t.agent, id, { ...OK, landlordCents: 50_000, tenantCents: 34_000, tenantInventoryCents: 9_000, landlordInventoryCents: 9_000, depositCents: 130_000 })).toEqual({ ok: false, rule: 'R102', code: 'tenant_ceiling' });
+    expect((await t.fees.record(t.agent, id, { ...OK, landlordCents: 50_000, tenantCents: 24_000, tenantInventoryCents: 9_000, landlordInventoryCents: 9_000, depositCents: 130_000 })).ok).toBe(true);
     expect(await t.fees.current(t.agent.networkId, id)).toMatchObject({ version: 2, factsVersion: 2 });
   });
 
@@ -143,7 +165,7 @@ describeWithSqlite('W02 · honoraires et dépôt de garantie', () => {
     expect(await t.fees.record(t.agent, id, { ...OK, depositCents: -1 })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'depositCents' });
     expect(await t.fees.record(t.other, id, OK)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.fees.record(t.compliance, id, OK)).toEqual({ ok: false, rule: 'R16', code: 'role' });
-    expect((await t.fees.ceilings(t.compliance, id, '99001')).ok).toBe(true);
+    expect((await t.fees.ceilings(t.compliance, id)).ok).toBe(true);
     expect((await t.fees.record(t.dir, id, { ...OK, tenantCents: 34_000, landlordCents: 50_000 })).ok).toBe(true);
     expect(await t.fees.current('autre-reseau', id)).toBeNull();
   });

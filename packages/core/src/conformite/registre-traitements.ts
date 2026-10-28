@@ -422,7 +422,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       rental_checks: ['facts_version', 'checked_by'],
       rental_owner_notices: ['owner_person_id', 'text'],
       rental_zones: ['zone', 'recorded_by'],
-      rental_fees: ['facts_version', 'zone', 'tenant_cents', 'tenant_inventory_cents', 'landlord_cents', 'deposit_cents', 'recorded_by'],
+      rental_listing_communes: ['recorded_by'],
+      rental_fees: ['facts_version', 'zone', 'tenant_cents', 'tenant_inventory_cents', 'landlord_cents', 'landlord_inventory_cents', 'deposit_cents', 'recorded_by'],
     },
   },
 ];
@@ -658,6 +659,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   rental_checks: ['id', 'listing_id', 'annexes_key', 'decision', 'reasons', 'checked_at'],
   rental_owner_notices: ['id', 'listing_id', 'energy_class', 'banned_from', 'prepared_at'],
   rental_zones: ['insee_code', 'effective_from', 'source', 'recorded_at'],
+  rental_listing_communes: ['listing_id', 'insee_code', 'recorded_at'],
   rental_fees: ['listing_id', 'version', 'insee_code', 'tenant_ceiling_cents', 'inventory_ceiling_cents', 'deposit_ceiling_cents', 'recorded_at'],
 };
 

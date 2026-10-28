@@ -3,13 +3,14 @@
  *
  * Loi du 6 juillet 1989, article 5, et son décret d'application : la part du locataire pour la visite, la constitution
  * du dossier et la rédaction du bail ne dépasse pas 12 € par m² habitable en zone très tendue, 10 € en zone tendue et
- * 8 € ailleurs ; celle de l'état des lieux d'entrée, 3 € par m². Le total du locataire ne dépasse jamais la part du
- * bailleur. Article 22 et 25-6 : le dépôt de garantie d'un logement vide ne dépasse pas un mois de loyer hors charges,
+ * 8 € ailleurs ; celle de l'état des lieux d'entrée, 3 € par m². Chacune ne dépasse jamais la part du bailleur pour
+ * les mêmes prestations. Article 22 et 25-6 : le dépôt de garantie d'un logement vide ne dépasse pas un mois de loyer hors charges,
  * celui d'un meublé deux mois.
  *
  * Les montants sont en centimes, calculés par le code, jamais par l'IA. La zone d'une commune est une donnée publique
  * rangée avec sa source et sa date d'effet (`rental_zones`), jamais écrite dans le code ; une commune sans zone connue
- * prend le plafond le plus bas. Un barème au-delà d'un plafond est refusé à l'enregistrement, et la base le refuse aussi.
+ * prend le plafond le plus bas. La commune du logement est fixée une fois pour sa mise en location, contrôlée contre le
+ * département du code postal du bien ; le barème n'en reçoit jamais d'autre. Un barème au-delà d'un plafond est refusé à l'enregistrement, et la base le refuse aussi.
  * Chaque barème est une version rangée avec ses plafonds ; la précédente reste [R17].
  */
 import type { Viewer } from '../acces/droits.ts';
@@ -55,18 +56,22 @@ export function feeCeilings(livingAreaHundredths: number, zone: RentalZone | 'in
 export interface FeeInput {
   tenantCents: number;
   tenantInventoryCents: number;
+  /** La part du bailleur pour visite, dossier et bail. */
   landlordCents: number;
+  /** La part du bailleur pour l'état des lieux d'entrée. */
+  landlordInventoryCents: number;
   depositCents: number;
 }
 
-export type FeeProblem = 'tenant_ceiling' | 'inventory_ceiling' | 'over_landlord' | 'deposit_ceiling';
+export type FeeProblem = 'tenant_ceiling' | 'inventory_ceiling' | 'over_landlord' | 'inventory_over_landlord' | 'deposit_ceiling';
 
 /** Les dépassements d'un barème, dans l'ordre de la loi ; une liste vide : le barème est permis [R102]. */
 export function feeProblems(input: FeeInput, c: FeeCeilings): FeeProblem[] {
   const out: FeeProblem[] = [];
   if (input.tenantCents > c.tenantCeilingCents) out.push('tenant_ceiling');
   if (input.tenantInventoryCents > c.inventoryCeilingCents) out.push('inventory_ceiling');
-  if (input.tenantCents + input.tenantInventoryCents > input.landlordCents) out.push('over_landlord');
+  if (input.tenantCents > input.landlordCents) out.push('over_landlord');
+  if (input.tenantInventoryCents > input.landlordInventoryCents) out.push('inventory_over_landlord');
   if (input.depositCents > c.depositCeilingCents) out.push('deposit_ceiling');
   return out;
 }
@@ -78,6 +83,7 @@ export interface RentalFees extends FeeInput, FeeCeilings {
   inseeCode: string;
 }
 
+const FEE_KEYS: readonly (keyof FeeInput)[] = ['tenantCents', 'tenantInventoryCents', 'landlordCents', 'landlordInventoryCents', 'depositCents'];
 const cents = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= 100_000_000;
 
 export interface HonorairesOptions {
@@ -136,15 +142,41 @@ export class HonorairesLocation {
     return r?.zone ?? 'inconnue';
   }
 
-  /** Les plafonds de cette mise en location, sur ses derniers faits et la zone de la commune au début du bail. */
-  async ceilings(viewer: Viewer, listingId: unknown, inseeCode: unknown): Promise<LocationResult<FeeCeilings & { factsVersion: number }>> {
-    const listing = await this.listings.listing(viewer, listingId, false);
+  /**
+   * Fixe la commune du logement, une seule fois : son département doit être celui du code postal du bien (20 pour la
+   * Corse, 2A ou 2B) [R102].
+   */
+  async setCommune(viewer: Viewer, listingId: unknown, inseeCode: unknown): Promise<LocationResult<{ inseeCode: string }>> {
+    const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
     if (typeof inseeCode !== 'string' || !INSEE.test(inseeCode)) return { ok: false, rule: null, code: 'bad_insee' };
+    const p = await this.db.first<{ postal_code: string | null }>('SELECT postal_code FROM properties WHERE id = ?', [listing.propertyId]);
+    const dept = (code: string) => (/^2[AB]/.test(code) ? '20' : code.slice(0, 2));
+    if (!p?.postal_code || !/^\d{5}$/.test(p.postal_code) || dept(p.postal_code) !== dept(inseeCode)) return { ok: false, rule: 'R102', code: 'commune_mismatch' };
+    try {
+      await this.db.run('INSERT INTO rental_listing_communes (listing_id, insee_code, recorded_by, recorded_at) VALUES (?, ?, ?, ?)', [listing.id, inseeCode, this.actor(viewer), this.now().toISOString()]);
+    } catch (error) {
+      if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: 'R102', code: 'commune_set' };
+      throw error;
+    }
+    await appendEvent(this.journal, { type: 'location.commune', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { inseeCode } }, this.now);
+    return { ok: true, value: { inseeCode } };
+  }
+
+  private async communeOf(listingId: string): Promise<string | null> {
+    return (await this.db.first<{ insee_code: string }>('SELECT insee_code FROM rental_listing_communes WHERE listing_id = ?', [listingId]))?.insee_code ?? null;
+  }
+
+  /** Les plafonds de cette mise en location, sur ses derniers faits et la zone de sa commune au début du bail. */
+  async ceilings(viewer: Viewer, listingId: unknown): Promise<LocationResult<FeeCeilings & { factsVersion: number; inseeCode: string }>> {
+    const listing = await this.listings.listing(viewer, listingId, false);
+    if ('ok' in listing) return listing;
+    const inseeCode = await this.communeOf(listing.id);
+    if (!inseeCode) return { ok: false, rule: null, code: 'no_commune' };
     const facts = await this.listings.currentFacts(listing.id);
     if (!facts) return { ok: false, rule: null, code: 'no_facts' };
     const zone = await this.zoneOn(inseeCode, this.judgedOn(facts.leaseStart));
-    return { ok: true, value: { ...feeCeilings(facts.livingAreaHundredths, zone, facts.rentCents, facts.furnished), factsVersion: facts.version } };
+    return { ok: true, value: { ...feeCeilings(facts.livingAreaHundredths, zone, facts.rentCents, facts.furnished), factsVersion: facts.version, inseeCode } };
   }
 
   /** La zone est lue au plus tard du début du bail et du jour : jamais une zone d'avant pour un bail d'aujourd'hui. */
@@ -154,15 +186,22 @@ export class HonorairesLocation {
   }
 
   /** Range le barème, refusé au-delà d'un plafond, avec la raison [R102]. */
-  async record(viewer: Viewer, listingId: unknown, input: { inseeCode: unknown } & Record<keyof FeeInput, unknown>): Promise<LocationResult<RentalFees>> {
+  async record(viewer: Viewer, listingId: unknown, input: Record<keyof FeeInput, unknown>): Promise<LocationResult<RentalFees>> {
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
-    for (const k of ['tenantCents', 'tenantInventoryCents', 'landlordCents', 'depositCents'] as const) {
+    for (const k of Object.keys(input)) if (!FEE_KEYS.includes(k as keyof FeeInput)) return { ok: false, rule: null, code: 'invalid', field: k };
+    for (const k of FEE_KEYS) {
       if (!cents(input[k])) return { ok: false, rule: null, code: 'invalid', field: k };
     }
-    const c = await this.ceilings(viewer, listing.id, input.inseeCode);
+    const c = await this.ceilings(viewer, listing.id);
     if (!c.ok) return c;
-    const fees: FeeInput = { tenantCents: input.tenantCents as number, tenantInventoryCents: input.tenantInventoryCents as number, landlordCents: input.landlordCents as number, depositCents: input.depositCents as number };
+    const fees: FeeInput = {
+      tenantCents: input.tenantCents as number,
+      tenantInventoryCents: input.tenantInventoryCents as number,
+      landlordCents: input.landlordCents as number,
+      landlordInventoryCents: input.landlordInventoryCents as number,
+      depositCents: input.depositCents as number,
+    };
     const problems = feeProblems(fees, c.value);
     if (problems.length > 0) {
       await appendEvent(this.journal, { type: 'location.bareme_refuse', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R102', problems } }, this.now);
@@ -172,17 +211,18 @@ export class HonorairesLocation {
     const version = Number(last?.v ?? 0) + 1;
     try {
       await this.db.run(
-        `INSERT INTO rental_fees (listing_id, version, facts_version, insee_code, zone, tenant_cents, tenant_inventory_cents, landlord_cents, deposit_cents, tenant_ceiling_cents, inventory_ceiling_cents, deposit_ceiling_cents, recorded_by, recorded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO rental_fees (listing_id, version, facts_version, insee_code, zone, tenant_cents, tenant_inventory_cents, landlord_cents, landlord_inventory_cents, deposit_cents, tenant_ceiling_cents, inventory_ceiling_cents, deposit_ceiling_cents, recorded_by, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           listing.id,
           version,
           c.value.factsVersion,
-          input.inseeCode as string,
+          c.value.inseeCode,
           c.value.zone,
           fees.tenantCents,
           fees.tenantInventoryCents,
           fees.landlordCents,
+          fees.landlordInventoryCents,
           fees.depositCents,
           c.value.tenantCeilingCents,
           c.value.inventoryCeilingCents,
@@ -196,8 +236,8 @@ export class HonorairesLocation {
       throw error;
     }
     await appendEvent(this.journal, { type: 'location.bareme', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R102', version, zone: c.value.zone } }, this.now);
-    const { factsVersion, ...ceil } = c.value;
-    return { ok: true, value: { listingId: listing.id, version, factsVersion, inseeCode: input.inseeCode as string, ...fees, ...ceil } };
+    const { factsVersion, inseeCode, ...ceil } = c.value;
+    return { ok: true, value: { listingId: listing.id, version, factsVersion, inseeCode, ...fees, ...ceil } };
   }
 
   /**
@@ -212,9 +252,10 @@ export class HonorairesLocation {
       tenant_cents: number;
       tenant_inventory_cents: number;
       landlord_cents: number;
+      landlord_inventory_cents: number;
       deposit_cents: number;
     }>(
-      `SELECT f.version, f.facts_version, f.insee_code, f.tenant_cents, f.tenant_inventory_cents, f.landlord_cents, f.deposit_cents
+      `SELECT f.version, f.facts_version, f.insee_code, f.tenant_cents, f.tenant_inventory_cents, f.landlord_cents, f.landlord_inventory_cents, f.deposit_cents
        FROM rental_fees f JOIN rental_listings l ON l.id = f.listing_id WHERE f.listing_id = ? AND l.network_id = ? ORDER BY f.version DESC LIMIT 1`,
       [listingId, networkId],
     );
@@ -223,7 +264,13 @@ export class HonorairesLocation {
     if (!facts || facts.version !== Number(r.facts_version)) return null;
     const zone = await this.zoneOn(r.insee_code, this.judgedOn(facts.leaseStart));
     const c = feeCeilings(facts.livingAreaHundredths, zone, facts.rentCents, facts.furnished);
-    const fees: FeeInput = { tenantCents: Number(r.tenant_cents), tenantInventoryCents: Number(r.tenant_inventory_cents), landlordCents: Number(r.landlord_cents), depositCents: Number(r.deposit_cents) };
+    const fees: FeeInput = {
+      tenantCents: Number(r.tenant_cents),
+      tenantInventoryCents: Number(r.tenant_inventory_cents),
+      landlordCents: Number(r.landlord_cents),
+      landlordInventoryCents: Number(r.landlord_inventory_cents),
+      depositCents: Number(r.deposit_cents),
+    };
     if (feeProblems(fees, c).length > 0) return null;
     return { listingId, version: Number(r.version), factsVersion: Number(r.facts_version), inseeCode: r.insee_code, ...fees, ...c };
   }
