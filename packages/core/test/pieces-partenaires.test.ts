@@ -132,6 +132,9 @@ describeWithSqlite('U05 · pièces des partenaires', () => {
     const t = await setup();
     const diag = await t.request('diagnostiqueur', 'amiante');
     expect(await t.deposit(diag, 'facture_mysterieuse')).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'unknown_sort', piece: null } });
+    for (const sort of ['constructor', '__proto__', 'tostring', 'hasownproperty']) {
+      expect(await t.deposit(diag, sort), sort).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'unknown_sort' } });
+    }
     expect(await t.deposit(diag, 'titre_propriete')).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'sort_not_for_trade' } });
     expect(await t.deposit(diag, 'plomb')).toMatchObject({ ok: true, value: { destination: 'agent_queue', reason: 'other_domain' } });
     const artisan = await t.request('artisan');

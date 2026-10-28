@@ -174,7 +174,8 @@ export class PiecesPartenaires {
   /** La règle écrite du rangement, sans rien écrire : rejouable [R78]. */
   private async route(src: ReferralSource, partnerId: string, sort: string, issuedOn: string): Promise<Omit<DepositedPiece, 'documentId' | 'sort' | 'version'>> {
     const queue = (reason: string) => ({ destination: 'agent_queue' as const, targetId: src.project_id, piece: null, reason });
-    const rule = PIECE_RULES[sort];
+    // Une sorte inconnue, même nommée comme une propriété héritée (`constructor`, `__proto__`), va à la file [R78].
+    const rule = Object.hasOwn(PIECE_RULES, sort) ? PIECE_RULES[sort] : undefined;
     if (!rule) return queue('unknown_sort');
     if (!rule.trades.includes(src.trade)) return queue('sort_not_for_trade');
     if (rule.domain !== undefined && rule.domain !== src.domain) return queue('other_domain');
