@@ -82,8 +82,9 @@ async function setup() {
     return { id, pid };
   };
   const proof = () => put(`location/${listingId}/choix`);
+  const ref = (applicationId: string) => put(`location/${listingId}/candidatures/${applicationId}`);
   const events = (type: string) => db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? ORDER BY seq', [type]);
-  return { db, choix, apps, agent, other, compliance, listingId, owner, candidate, proof, events, journal };
+  return { db, choix, apps, agent, other, compliance, listingId, owner, candidate, proof, ref, events, journal };
 }
 
 describeWithSqlite('W05 · présentation au propriétaire et choix', () => {
@@ -109,14 +110,19 @@ describeWithSqlite('W05 · présentation au propriétaire et choix', () => {
     const p = await t.choix.present(t.agent, t.listingId);
     const pid = p.ok ? p.value.presentationId : '';
     const r = await t.choix.receipts(t.agent, t.listingId, pid);
-    expect(r.ok && r.value.map((x) => x.recipient)).toEqual(['candidat', 'candidat', 'proprietaire']);
+    expect(r.ok && r.value.map((x) => x.recipient)).toEqual(['candidat', 'candidat', 'candidat', 'proprietaire']);
     expect(r.ok && r.value[1]!.text).toContain('en position 3');
     expect(r.ok && r.value[1]!.text).toContain('Les seules pièces qui vous ont été demandées : Trois dernières quittances de loyer ; Contrat de travail');
-    expect(r.ok && r.value[2]!.text).toContain('les 2 dossiers complets reçus vous sont présentés');
-    expect(r.ok && r.value[2]!.text).toContain(p.ok ? p.value.sha256.slice(0, 16) : 'x');
-    // Le dossier incomplet ne reçoit pas de reçu de présentation ; rien ne part : aucun message.
+    // Le candidat encore incomplet reçoit aussi son reçu : ses pièces, ce qui manque, la règle.
+    expect(r.ok && r.value[2]!.text).toContain('en position 2');
+    expect(r.ok && r.value[2]!.text).toContain('Il manque encore : un justificatif d’activité ; un justificatif de ressources');
+    expect(r.ok && r.value[3]!.text).toContain('les 2 dossiers complets reçus vous sont présentés');
+    expect(r.ok && r.value[3]!.text).toContain(p.ok ? p.value.sha256.slice(0, 16) : 'x');
+    // Rien ne part : aucun message.
     expect(await t.db.all('SELECT 1 FROM messages')).toHaveLength(0);
-    expect((await t.events('location.recu_prepare')).length).toBe(3);
+    const prepared = await t.events('location.recu_prepare');
+    expect(prepared.length).toBe(4);
+    for (const e of prepared) expect(JSON.parse(e.data).sha256).toMatch(/^[0-9a-f]{64}$/);
     await expect(t.db.run("UPDATE rental_fairness_receipts SET text = 'x'")).rejects.toThrow(/ne change plus/);
   });
 
@@ -130,11 +136,28 @@ describeWithSqlite('W05 · présentation au propriétaire et choix', () => {
     expect(await t.choix.replay('autre-reseau', pid)).toBe(false);
     // Une présentation glissée sans passer par le code (ordre inversé, empreinte recalculée) n'a pas sa trace au journal.
     const row = (await t.db.first<{ snapshot: string }>('SELECT snapshot FROM rental_presentations WHERE id = ?', [pid]))!;
-    const files = JSON.parse(row.snapshot) as unknown[];
-    const forged = JSON.stringify([...files].reverse());
+    const snap = JSON.parse(row.snapshot) as { files: unknown[] };
+    const forged = JSON.stringify({ ...snap, files: [...snap.files].reverse() });
     const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(forged)))].map((b) => b.toString(16).padStart(2, '0')).join('');
     await t.db.run("INSERT INTO rental_presentations (id, listing_id, network_id, version, snapshot, snapshot_sha256, created_by, created_at) VALUES ('faux', ?, ?, 9, ?, ?, 'x', 'y')", [t.listingId, t.agent.networkId, forged, digest]);
     expect(await t.choix.replay(t.agent.networkId, 'faux')).toBe(false);
+    // Un reçu glissé sans passer par le code fait échouer le rejeu de la vraie présentation.
+    await t.db.run("INSERT INTO rental_fairness_receipts (id, presentation_id, recipient, application_id, person_id, text, prepared_at) VALUES ('r-faux', ?, 'candidat', 'autre', 'p', 'Texte inventé', 'y')", [pid]);
+    expect(await t.choix.replay(t.agent.networkId, pid)).toBe(false);
+  });
+
+  it('[R104] [R105] le reçu du candidat ne cite que ses pièces, jamais celles de son garant', async () => {
+    const t = await setup();
+    const a = await t.candidate(1);
+    const g = await t.apps.addGuarantor(t.agent, a.id, { kind: 'visale' });
+    const gid = g.ok ? g.value.guarantorId : '';
+    expect((await t.apps.addPiece(t.agent, a.id, { holder: gid, sort: 'visa_visale', ref: t.ref(a.id), sha256: 'b'.repeat(64) })).ok).toBe(true);
+    const p = await t.choix.present(t.agent, t.listingId);
+    expect(p.ok && p.value.files[0]!.pieces).not.toContain('Visa de la garantie Visale');
+    expect(p.ok && p.value.files[0]!.guarantors).toEqual(['visale']);
+    const r = await t.choix.receipts(t.agent, t.listingId, p.ok ? p.value.presentationId : '');
+    expect(r.ok && r.value[0]!.text).not.toContain('Visale');
+    expect(await t.choix.replay(t.agent.networkId, p.ok ? p.value.presentationId : '')).toBe(true);
   });
 
   it('[R105] le choix est celui du propriétaire : un dossier présenté, sa date, son canal et sa preuve ; un seul', async () => {

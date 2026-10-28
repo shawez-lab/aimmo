@@ -5,11 +5,11 @@
  * lui seul, sans nom, sans note, sans rang, sans tri ni filtre sur un revenu ou une autre donnée. Le propriétaire choisit ;
  * l'agent range son choix avec sa date, son canal et sa preuve. Aucune fonction du code ni de l'IA ne choisit [R105, R14].
  *
- * « Jamais vu » : le reçu d'équité. Chaque candidat d'une présentation reçoit, préparé une seule fois et jamais envoyé
+ * « Jamais vu » : le reçu d'équité. Chaque candidat, présenté ou encore incomplet, reçoit, préparé une seule fois et jamais envoyé
  * d'ici, la liste des seules pièces qui lui ont été demandées, son jour d'arrivée, son rang d'arrivée et la règle de
  * présentation. Le propriétaire reçoit la preuve que l'ordre montré est celui des arrivées. L'empreinte de chaque
- * présentation est écrite au journal : `replay` la recalcule et vérifie, à l'identique, qu'elle n'a pas changé et que
- * son ordre est bien celui des arrivées rangées [R105].
+ * présentation et de chaque reçu est écrite au journal : `replay` recalcule l'une et refait les autres, et vérifie, à
+ * l'identique, que rien n'a changé et que l'ordre est bien celui des arrivées rangées [R105].
  *
  * Décidé, lecture prudente : le propriétaire voit chaque dossier par son rang d'arrivée, ses pièces et ses garants, sans le
  * nom du candidat, pour que le choix porte sur le dossier ; l'agent lui transmet les pièces elles-mêmes. Un seul choix par
@@ -55,8 +55,47 @@ async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Un dossier encore incomplet : non présenté, mais son candidat reçoit aussi son reçu, avec ce qui manque. */
+export interface WaitingFile {
+  arrival: number;
+  arrivedOn: string;
+  applicationId: string;
+  pieces: string[];
+  missing: string[];
+}
+
+type FileTuple = [number, string, string, boolean, string[], string[]];
+type WaitingTuple = [number, string, string, string[], string[]];
+interface Snapshot {
+  presentedOn: string;
+  files: FileTuple[];
+  waiting: WaitingTuple[];
+}
+
 /** L'instantané, écrit d'une seule façon : la même présentation donne toujours la même empreinte. */
-export const snapshotText = (files: readonly PresentedFile[]): string => JSON.stringify(files.map((f) => [f.arrival, f.arrivedOn, f.applicationId, f.dossierFacile, f.pieces, f.guarantors]));
+export const snapshotText = (presentedOn: string, files: readonly PresentedFile[], waiting: readonly WaitingFile[]): string =>
+  JSON.stringify({
+    presentedOn,
+    files: files.map((f): FileTuple => [f.arrival, f.arrivedOn, f.applicationId, f.dossierFacile, f.pieces, f.guarantors]),
+    waiting: waiting.map((w): WaitingTuple => [w.arrival, w.arrivedOn, w.applicationId, w.pieces, w.missing]),
+  } satisfies Snapshot);
+
+const MISSING_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  identite: 'la pièce d’identité, à montrer à votre agent immobilier',
+  domicile: 'un justificatif de domicile',
+  activite: 'un justificatif d’activité',
+  ressources: 'un justificatif de ressources',
+  visa_visale: 'le visa de la garantie Visale',
+});
+
+/** Le reçu d'un dossier encore incomplet : ses pièces, ce qui manque, et la même règle [R105, R104]. */
+export function waitingReceiptText(arrivedOn: string, arrival: number, pieces: readonly string[], missing: readonly string[]): string {
+  return (
+    `Bonjour, votre dossier de candidature est arrivé le ${dayInFrench(arrivedOn)}, en position ${arrival} dans l'ordre d'arrivée. ` +
+    `Les seules pièces qui vous ont été demandées et que vous avez données : ${pieces.length > 0 ? pieces.join(' ; ') : 'aucune pour l’instant'}. ` +
+    `Il manque encore : ${missing.join(' ; ')}. Seuls les dossiers complets sont montrés au propriétaire, dans leur ordre d'arrivée, sans note ni classement, et c'est lui qui choisit.`
+  );
+}
 
 /** Le reçu d'équité du candidat, écrit par le code : ses pièces, son arrivée, la règle. Rien d'autre [R105]. */
 export function candidateReceiptText(arrivedOn: string, arrival: number, pieces: readonly string[], dossierFacile: boolean): string {
@@ -119,10 +158,23 @@ export class ChoixProprietaire {
       [listing.id],
     );
     const files: PresentedFile[] = [];
+    const waiting: WaitingFile[] = [];
     const people = new Map<string, string>();
     for (const r of rows) {
-      if (!(await this.applications.completeness(r)).complete) continue;
-      const pieces = await this.db.all<{ sort: string }>('SELECT sort FROM rental_application_pieces WHERE application_id = ? ORDER BY added_at, id', [r.id]);
+      people.set(r.id, r.person_id);
+      // Les seules pièces du candidat : celles de ses garants ne lui ont pas été demandées.
+      const pieces = await this.db.all<{ sort: string }>("SELECT sort FROM rental_application_pieces WHERE application_id = ? AND holder = 'candidat' ORDER BY added_at, id", [r.id]);
+      const completeness = await this.applications.completeness(r);
+      if (!completeness.complete) {
+        waiting.push({
+          arrival: Number(r.arrival),
+          arrivedOn: this.arrivedOn(r.arrived_at),
+          applicationId: r.id,
+          pieces: pieces.map((p) => OFFICIAL_PIECES[p.sort]?.label ?? p.sort),
+          missing: completeness.missing.map((m) => `${MISSING_LABELS[m.what] ?? m.what}${m.holder === 'candidat' ? '' : ' de votre garant'}`),
+        });
+        continue;
+      }
       const guarantors = await this.db.all<{ kind: 'personne' | 'visale' }>('SELECT kind FROM rental_guarantors WHERE application_id = ? ORDER BY added_at, id', [r.id]);
       files.push({
         arrival: Number(r.arrival),
@@ -132,10 +184,10 @@ export class ChoixProprietaire {
         pieces: pieces.map((p) => OFFICIAL_PIECES[p.sort]?.label ?? p.sort),
         guarantors: guarantors.map((g) => g.kind),
       });
-      people.set(r.id, r.person_id);
     }
     if (files.length === 0) return { ok: false, rule: null, code: 'no_complete_file' };
-    const text = snapshotText(files);
+    const presentedOn = this.today();
+    const text = snapshotText(presentedOn, files, waiting);
     const fingerprint = await sha256(text);
     const id = this.newId();
     const at = this.now().toISOString();
@@ -157,7 +209,8 @@ export class ChoixProprietaire {
       this.now,
     );
     for (const f of files) await this.prepare(id, 'candidat', f.applicationId, people.get(f.applicationId)!, candidateReceiptText(f.arrivedOn, f.arrival, f.pieces, f.dossierFacile));
-    await this.prepare(id, 'proprietaire', null, listing.ownerPersonId, ownerReceiptText(files.length, this.today(), fingerprint));
+    for (const w of waiting) await this.prepare(id, 'candidat', w.applicationId, people.get(w.applicationId)!, waitingReceiptText(w.arrivedOn, w.arrival, w.pieces, w.missing));
+    await this.prepare(id, 'proprietaire', null, listing.ownerPersonId, ownerReceiptText(files.length, presentedOn, fingerprint));
     return { ok: true, value: { presentationId: id, listingId: listing.id, version, files, sha256: fingerprint, createdAt: at } };
   }
 
@@ -172,7 +225,14 @@ export class ChoixProprietaire {
       'INSERT INTO rental_fairness_receipts (id, presentation_id, recipient, application_id, person_id, text, prepared_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
       [this.newId(), presentationId, recipient, applicationId, personId, text, this.now().toISOString()],
     );
-    if (r.changes > 0) await appendEvent(this.journal, { type: 'location.recu_prepare', actor: 'system:location', subject: `rental_presentation:${presentationId}`, data: { rule: 'R105', mode: 'essai', recipient } }, this.now);
+    // L'empreinte du texte, au journal, pour rejouer le reçu à l'identique ; jamais le texte ni le nom [R13].
+    if (r.changes > 0) {
+      await appendEvent(
+        this.journal,
+        { type: 'location.recu_prepare', actor: 'system:location', subject: `rental_presentation:${presentationId}`, data: { rule: 'R105', mode: 'essai', recipient, application: applicationId, sha256: await sha256(text) } },
+        this.now,
+      );
+    }
   }
 
   /**
@@ -186,13 +246,27 @@ export class ChoixProprietaire {
     if (!event) return false;
     const logged = JSON.parse(event.data) as { sha256: string; order: string[] };
     if ((await sha256(p.snapshot)) !== p.snapshot_sha256 || logged.sha256 !== p.snapshot_sha256) return false;
-    const files = JSON.parse(p.snapshot) as [number, string, string, boolean, string[], string[]][];
+    const snap = JSON.parse(p.snapshot) as Snapshot;
+    const files = snap.files;
     if (JSON.stringify(files.map((f) => f[2])) !== JSON.stringify(logged.order)) return false;
     let last = 0;
     for (const [arrival, , applicationId] of files) {
       const row = await this.db.first<{ arrival: number }>('SELECT arrival FROM rental_applications WHERE id = ? AND listing_id = ?', [applicationId, p.listing_id]);
       if (!row || Number(row.arrival) !== arrival || arrival <= last) return false;
       last = arrival;
+    }
+    // Chaque reçu : son texte refait depuis l'instantané, identique à celui rangé, et son empreinte au journal.
+    const expected = new Map<string, string>();
+    for (const [arrival, arrivedOn, applicationId, dossierFacile, pieces] of files) expected.set(`candidat:${applicationId}`, candidateReceiptText(arrivedOn, arrival, pieces, dossierFacile));
+    for (const [arrival, arrivedOn, applicationId, pieces, missing] of snap.waiting) expected.set(`candidat:${applicationId}`, waitingReceiptText(arrivedOn, arrival, pieces, missing));
+    expected.set('proprietaire:', ownerReceiptText(files.length, snap.presentedOn, p.snapshot_sha256));
+    const stored = await this.db.all<{ recipient: string; application_id: string | null; text: string }>('SELECT recipient, application_id, text FROM rental_fairness_receipts WHERE presentation_id = ?', [p.id]);
+    const events = await this.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'location.recu_prepare' AND subject = ?", [`rental_presentation:${p.id}`]);
+    const loggedHashes = new Map<string, string>(events.map((e) => JSON.parse(e.data) as { recipient: string; application: string | null; sha256: string }).map((e): [string, string] => [`${e.recipient}:${e.application ?? ''}`, e.sha256]));
+    if (stored.length !== expected.size) return false;
+    for (const r of stored) {
+      const key = `${r.recipient}:${r.application_id ?? ''}`;
+      if (expected.get(key) !== r.text || loggedHashes.get(key) !== (await sha256(r.text))) return false;
     }
     return true;
   }
@@ -203,7 +277,7 @@ export class ChoixProprietaire {
     if ('ok' in listing) return listing;
     const last = await this.db.first<{ id: string; snapshot: string }>('SELECT id, snapshot FROM rental_presentations WHERE listing_id = ? ORDER BY version DESC LIMIT 1', [listing.id]);
     if (!last || last.id !== input.presentationId) return { ok: false, rule: 'R105', code: 'not_latest_presentation' };
-    const presented = (JSON.parse(last.snapshot) as [number, string, string][]).map((f) => f[2]);
+    const presented = (JSON.parse(last.snapshot) as Snapshot).files.map((f) => f[2]);
     if (typeof input.applicationId !== 'string' || !presented.includes(input.applicationId)) return { ok: false, rule: 'R105', code: 'not_presented' };
     if (typeof input.decidedAt !== 'string' || Number.isNaN(Date.parse(input.decidedAt)) || Date.parse(input.decidedAt) > this.now().getTime()) return { ok: false, rule: 'R105', code: 'bad_date' };
     const presentedAt = (await this.db.first<{ created_at: string }>('SELECT created_at FROM rental_presentations WHERE id = ?', [last.id]))!.created_at;
