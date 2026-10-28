@@ -423,7 +423,8 @@ export class EtatsDesLieux {
     const chosen = await this.choices.chosen(listing.networkId, listing.id);
     if (!chosen) return { ok: false, rule: 'R105', code: 'no_choice' };
     const last = await this.latestRow(listing.networkId, listing.id);
-    if (last && (await this.closed(last.id))) return { ok: false, rule: 'R106', code: 'closed' };
+    // Un état des lieux clos l'est pour son bail : un nouveau bail en vigueur demande le sien [R106].
+    if (last && last.lease_id === lease.leaseId && (await this.closed(last.id))) return { ok: false, rule: 'R106', code: 'closed' };
 
     // La saisie, contrôlée champ par champ ; rien n'est inventé.
     const address = input.address === undefined || input.address === null ? null : text(input.address, ADDRESS);
@@ -555,7 +556,7 @@ export class EtatsDesLieux {
         const { changes } = await this.db.run(
           `INSERT INTO rental_inventories (id, listing_id, network_id, version, lease_id, lease_sha256, mode, status, missing, rooms, meters, keys_given, furniture, content, content_sha256, created_by, created_at)
            SELECT ?, ?, ?, m.v, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM (SELECT COALESCE(MAX(version), 0) + 1 AS v FROM rental_inventories WHERE listing_id = ?) m
-           WHERE NOT EXISTS (SELECT 1 FROM rental_inventory_copies c JOIN rental_inventories i ON i.id = c.inventory_id WHERE i.listing_id = ?)`,
+           WHERE NOT EXISTS (SELECT 1 FROM rental_inventory_copies c JOIN rental_inventories i ON i.id = c.inventory_id WHERE i.listing_id = ? AND i.lease_id = ?)`,
           [
             id,
             listing.id,
@@ -575,6 +576,7 @@ export class EtatsDesLieux {
             this.now().toISOString(),
             listing.id,
             listing.id,
+            lease.leaseId,
           ],
         );
         inserted = changes;
@@ -678,9 +680,9 @@ export class EtatsDesLieux {
   }
 
   /** L'état des lieux clos d'une mise en location, s'il existe : pour la remise des clés (W08). */
-  async closedInventory(networkId: string, listingId: string): Promise<{ inventoryId: string; contentSha256: string; mode: 'essai' | 'reel' } | null> {
+  async closedInventory(networkId: string, listingId: string): Promise<{ inventoryId: string; leaseId: string; contentSha256: string; mode: 'essai' | 'reel' } | null> {
     const last = await this.latestRow(networkId, listingId);
     if (!last || !(await this.closed(last.id))) return null;
-    return { inventoryId: last.id, contentSha256: last.content_sha256, mode: last.mode };
+    return { inventoryId: last.id, leaseId: last.lease_id, contentSha256: last.content_sha256, mode: last.mode };
   }
 }
