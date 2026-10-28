@@ -219,15 +219,21 @@ async function closedFiles(s: ApresVenteServices, viewer: Viewer): Promise<Respo
     c.thankYou = { draft: t.draft, calledAt: t.calledAt, decision: t.decision, sendStatus: t.sendStatus };
   }
   for (const r of reviews.value) client(r.fileId, r.personId, r.side).review = { status: r.status, dueDay: r.dueDay };
+  // Une relance ou une note d'un dossier sans remerciement ni demande d'avis (passage arrivé après leur délai) : le
+  // côté du client est lu dans le dossier clos, jamais deviné ; un client inconnu du dossier n'est pas montré.
+  const sideOf = async (fileId: string, personId: string): Promise<'vendeur' | 'acquereur' | null> => {
+    const known = files.get(fileId)?.clients.find((x) => x.personId === personId);
+    if (known) return known.side;
+    const sale = await sv.dossiers.byId(viewer.networkId, fileId);
+    return sale?.clients.find((x) => x.personId === personId)?.side ?? null;
+  };
   for (const r of reminders.value) {
-    const f = files.get(r.fileId);
-    const c = f?.clients.find((x) => x.personId === r.personId);
-    if (c) c.reminders.push({ year: r.year, dueDay: r.dueDay, status: r.status });
+    const side = await sideOf(r.fileId, r.personId);
+    if (side) client(r.fileId, r.personId, side).reminders.push({ year: r.year, dueDay: r.dueDay, status: r.status });
   }
   for (const n of notes.value) {
-    const f = files.get(n.fileId);
-    const c = f?.clients.find((x) => x.personId === n.personId);
-    if (c) c.satisfaction = { score: n.score, comment: n.comment, answeredAt: n.answeredAt };
+    const side = await sideOf(n.fileId, n.personId);
+    if (side) client(n.fileId, n.personId, side).satisfaction = { score: n.score, comment: n.comment, answeredAt: n.answeredAt };
   }
   for (const f of files.values()) {
     const sale = await sv.dossiers.byId(viewer.networkId, f.fileId);

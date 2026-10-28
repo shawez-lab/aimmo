@@ -151,6 +151,18 @@ describeWithSqlite('F07 · routes et branchement de M11', () => {
     expect((await t.outbox(t.buyerId)).filter((m) => m.includes('/apres-vente/desinscription/'))).toHaveLength(1);
   });
 
+  it('un dossier dont seules les relances existent (passage arrivé après le délai des demandes d’avis) reste à l’écran', async () => {
+    const t = await setup();
+    await t.close();
+    expect((await t.call(t.agent, 'POST', `/apres-vente/dossiers/${t.fileId}/clients/${t.buyerId}/relances`, { choice: 'oui', proof: 'dit à l’acte' })).status).toBe(200);
+    // Aucun passage avant l'anniversaire : ni remerciement ni demande d'avis.
+    t.setClock(at('2028-06-10T08:05:00.000Z'));
+    await t.runAll();
+    const files = (await t.call(t.agent, 'GET', '/apres-vente/dossiers')).body.data;
+    expect(files).toHaveLength(1);
+    expect(files[0].clients.map((c: { side: string; reminders: { year: number }[] }) => [c.side, c.reminders.map((r) => r.year)])).toEqual([['vendeur', [1]], ['acquereur', [1]]]);
+  });
+
   it('le bien vendu pour le carnet : type lu dans la fiche, centre de la commune, jamais d’adresse', async () => {
     const t = await setup();
     await t.close();
