@@ -274,6 +274,7 @@ export class Echeancier {
     const files = await this.db.all<{ id: string; offer_id: string; property_id: string; agent_id: string | null }>(
       `SELECT f.id, f.offer_id, f.property_id, p.agent_id FROM sale_files f JOIN properties p ON p.id = f.property_id
        WHERE f.network_id = ? AND EXISTS (SELECT 1 FROM sale_file_dates d WHERE d.file_id = f.id AND d.kind = 'compromis_signe')
+       AND NOT EXISTS (SELECT 1 FROM sale_file_closings c WHERE c.file_id = f.id)
        ORDER BY f.opened_at, f.id`,
       [networkId],
     );
@@ -313,7 +314,7 @@ export class Echeancier {
     const rows = await this.db.all<{ file_id: string; property_id: string; offer_id: string; deadline: Deadline; due_day: string; created_at: string }>(
       `SELECT k.file_id, f.property_id, f.offer_id, k.deadline, k.due_day, k.created_at FROM sale_file_tasks k JOIN sale_files f ON f.id = k.file_id
        JOIN properties p ON p.id = f.property_id
-       WHERE k.network_id = ? AND k.agent_id = ? AND p.agent_id = k.agent_id ORDER BY k.created_at, k.deadline`,
+       WHERE k.network_id = ? AND k.agent_id = ? AND p.agent_id = k.agent_id AND NOT EXISTS (SELECT 1 FROM sale_file_closings c WHERE c.file_id = k.file_id) ORDER BY k.created_at, k.deadline`,
       [viewer.networkId, viewer.userId],
     );
     const today = this.today();

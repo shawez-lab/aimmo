@@ -171,7 +171,7 @@ export interface PieceStore {
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
 export type PieceProblem =
-  | { ok: false; rule: null; code: 'unknown_file' | 'unknown_piece' | 'not_expected' | 'bad_ref' | 'not_stored' | 'ref_used' | 'business' | 'busy' | 'bad_date' }
+  | { ok: false; rule: null; code: 'unknown_file' | 'unknown_piece' | 'not_expected' | 'bad_ref' | 'not_stored' | 'ref_used' | 'business' | 'busy' | 'bad_date' | 'closed' }
   | { ok: false; rule: 'R15'; code: 'forbidden_piece' };
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -258,6 +258,8 @@ export class PiecesDossier {
       return { ok: false, rule: 'R15', code: 'forbidden_piece' };
     }
     if (!(PIECES as readonly string[]).includes(input.piece)) return { ok: false, rule: null, code: 'unknown_piece' };
+    // Un dossier clos par l'acte ne reçoit plus de pièce.
+    if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
     const piece = input.piece as Piece;
     const list = await this.expected(g.file.property_id, g.kind);
     if (!list) return { ok: false, rule: null, code: 'business' };

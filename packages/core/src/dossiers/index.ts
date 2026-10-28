@@ -4,3 +4,4 @@ export * from './echeancier.ts';
 export * from './relances.ts';
 export * from './financement.ts';
 export * from './bouclier.ts';
+export * from './acte.ts';
