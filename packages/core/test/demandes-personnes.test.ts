@@ -186,6 +186,17 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     const types = (await assembleAccess(db, [A])).sections.find((s) => s.table === 'journal')!.rows.map((r) => r.type);
     expect(types).toContain('location.faits');
     expect(types).not.toContain('location.candidature');
+    // Le journal d'une visite, sous `visit:` comme sous `appointment:`.
+    await insert('journal', { seq: 7003, at: 't', type: 'visite.confirmee', actor: 'ag', subject: `visit:${seeded.get('appointments')![A]!.id}`, data: '{}', prev_hash: 'p', hash: 'h7003' });
+    expect((await assembleAccess(db, [A])).sections.find((s) => s.table === 'journal')!.rows.map((r) => r.type)).toContain('visite.confirmee');
+    // L'avis de valeur du bien mis en vente, même pas encore remis ; pas celui d'un bien qu'elle regarde seulement.
+    const sold = seeded.get('mandates')![A]!.property_id!;
+    await insert('valuation_reports', { id: 'avis-brouillon', network_id: 'n', property_id: sold, agent_id: 'ag', status: 'draft', computed: '{}', computed_low: 1, computed_high: 2, agent_low: null, agent_high: null, text: 'brouillon', text_by: 'ag', created_at: 't', updated_at: 't', validated_by: null, validated_at: null });
+    await insert('project_properties', { project_id: seeded.get('projects')![A]!.id!, property_id: 'bien-regarde', network_id: 'n', agent_id: 'ag', role: 'interested', created_at: 't' });
+    await insert('valuation_reports', { id: 'avis-autre', network_id: 'n', property_id: 'bien-regarde', agent_id: 'ag', status: 'draft', computed: '{}', computed_low: 1, computed_high: 2, agent_low: null, agent_high: null, text: 'autre', text_by: 'ag', created_at: 't', updated_at: 't', validated_by: null, validated_at: null });
+    const reports = (await assembleAccess(db, [A])).sections.find((s) => s.table === 'valuation_reports')!.rows.map((r) => r.id);
+    expect(reports).toContain('avis-brouillon');
+    expect(reports).not.toContain('avis-autre');
   });
 
   it('[R96] la lutte contre le blanchiment ne change rien à la réponse : rien ne trahit un signalement', async () => {

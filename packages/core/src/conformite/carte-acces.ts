@@ -43,6 +43,8 @@ export interface ViaLocator {
   onlyMatchedBy?: string;
   /** D'autres colonnes qui doivent aussi valoir celles de la même ligne de `from` (colonne ici → colonne là-bas). */
   alsoMatch?: Readonly<Record<string, string>>;
+  /** Seulement les lignes de `from` qui ont ces valeurs. */
+  parentWhere?: Readonly<Record<string, string>>;
 }
 
 /** Un tableau JSON dont chaque élément nomme sa personne : seuls ses éléments sortent. */
@@ -141,8 +143,15 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   assistant_sessions: out('non_rattachable', 'Empreinte de session d\'un visiteur du site, sans nom ni coordonnée.'),
   // estimation
   valuation_deliveries: { locate: by('person_id') },
-  valuation_reports: { locate: [via('id', 'valuation_deliveries', 'report_id')] },
-  valuation_follow_ups: { locate: [via('report_id', 'valuation_deliveries', 'report_id')] },
+  // L'avis de valeur : remis à la personne, ou fait sur le bien qu'elle a mis en vente ou qu'elle possède, même pas encore remis.
+  valuation_reports: {
+    locate: [
+      via('id', 'valuation_deliveries', 'report_id'),
+      via('property_id', 'mandates', 'property_id'),
+      via('property_id', 'project_properties', 'property_id', { parentWhere: { role: 'owned' } }),
+    ],
+  },
+  valuation_follow_ups: { locate: [via('report_id', 'valuation_reports')] },
   value_tracking: { locate: by('person_id') },
   value_tracking_sends: { locate: [via('tracking_id', 'value_tracking')] },
   value_tracking_alerts: { locate: by('person_id') },
@@ -320,6 +329,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       // Le dossier de vente au journal porte le financement et les alertes de fonds de l'acquéreur : à lui seul.
       via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id' }),
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
+      via('subject', 'appointments', 'id', { prefix: 'visit:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
       via('subject', 'rental_listings', 'id', { prefix: 'rental:' }),
       via('subject', 'person_requests', 'id', { prefix: 'person_request:' }),
@@ -430,6 +440,7 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
         const parent = carte[l.from];
         if (!parent || 'excluded' in parent) gaps.push({ kind: 'source_inconnue', table, from: l.from });
         else if (!schema.get(l.from)?.columns.includes(l.key)) gaps.push({ kind: 'colonne_inconnue', table: l.from, column: l.key });
+        for (const there of Object.keys(l.parentWhere ?? {})) if (!schema.get(l.from)?.columns.includes(there)) gaps.push({ kind: 'colonne_inconnue', table: l.from, column: there });
         for (const [here, there] of Object.entries(l.alsoMatch ?? {})) {
           named.add(here);
           if (!schema.get(l.from)?.columns.includes(there)) gaps.push({ kind: 'colonne_inconnue', table: l.from, column: there });

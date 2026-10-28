@@ -159,7 +159,8 @@ export async function assembleAccessDetail(
         continue;
       }
       if ('from' in l) {
-        const parents = [...(found.get(l.from)?.entries() ?? [])].filter(([, p]) => !l.onlyMatchedBy || p.matched.has(l.onlyMatchedBy));
+        const parents = [...(found.get(l.from)?.entries() ?? [])].filter(([, p]) => !l.onlyMatchedBy || p.matched.has(l.onlyMatchedBy))
+          .filter(([, p]) => Object.entries(l.parentWhere ?? {}).every(([c, v]) => p.row[c] === v));
         const owned = exclusive.get(l.from) ?? new Set<string>();
         // Une ligne enfant vaut la clé d'une ligne trouvée, et ses autres colonnes liées valent celles de la même ligne.
         const pairs = Object.entries(l.alsoMatch ?? {}).sort();
