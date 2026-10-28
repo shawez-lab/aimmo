@@ -1352,7 +1352,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien.
 
 ### L04 · Vigilance renforcée et origine des fonds
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L02
 - Cahier : Conformité, « Vigilance renforcée : montant inhabituel, prix sans lien avec la valeur, personne politiquement exposée ».
 - Objectif : des alertes au responsable par des règles écrites et réglables : prix d'une offre ou d'un mandat écarté de la fourchette d'estimation de M04 au-delà d'un seuil, montant au-dessus d'un seuil, personne politiquement exposée déclarée, paiement comptant déclaré ; la demande d'origine des fonds est préparée pour l'agent, la décision reste au responsable.
