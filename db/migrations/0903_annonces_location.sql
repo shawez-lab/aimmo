@@ -32,3 +32,7 @@ CREATE TABLE IF NOT EXISTS rental_ad_validations (
 );
 CREATE TRIGGER IF NOT EXISTS rental_ad_validations_garde BEFORE DELETE ON rental_ad_validations BEGIN SELECT RAISE(ABORT, 'rental_ad_validations : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS rental_ad_validations_fige BEFORE UPDATE ON rental_ad_validations BEGIN SELECT RAISE(ABORT, 'rental_ad_validations : une validation ne change plus'); END;
+
+-- Comment les charges sont réglées, dit dans l'annonce : provision avec régularisation annuelle, ou forfait (meublé
+-- seulement). Absent des faits rangés avant W03 : aucune annonce sans lui.
+ALTER TABLE rental_facts ADD COLUMN charges_mode TEXT CHECK (charges_mode IS NULL OR charges_mode IN ('provision', 'forfait'));

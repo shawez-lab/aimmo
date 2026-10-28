@@ -66,7 +66,12 @@ export interface RentalFacts {
   gas: GasState;
   /** `AAAA-MM-JJ` : début du bail envisagé. */
   leaseStart: string;
+  /** Provision avec régularisation annuelle, ou forfait (meublé seulement) ; absent des faits rangés avant W03. */
+  chargesMode?: ChargesMode | null;
 }
+
+export const CHARGES_MODES = ['provision', 'forfait'] as const;
+export type ChargesMode = (typeof CHARGES_MODES)[number];
 
 export type CheckReason =
   | { code: 'energy_class'; energyClass: RentalEnergyClass; bannedFrom: string }
@@ -208,6 +213,7 @@ interface FactsRow {
   electricity_over_15: number;
   gas: GasState;
   lease_start: string;
+  charges_mode: ChargesMode | null;
 }
 
 const toFacts = (r: FactsRow): RentalFacts => ({
@@ -221,6 +227,7 @@ const toFacts = (r: FactsRow): RentalFacts => ({
   electricityOver15: Number(r.electricity_over_15) === 1,
   gas: r.gas,
   leaseStart: r.lease_start,
+  chargesMode: r.charges_mode ?? null,
 });
 
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
@@ -229,7 +236,7 @@ const isInt = (v: unknown, min: number, max: number): v is number => typeof v ==
 export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | { ok: false; field: string } {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return { ok: false, field: '' };
   const v = input as Record<string, unknown>;
-  const keys = ['furnished', 'rentCents', 'chargesCents', 'livingAreaHundredths', 'energyClass', 'finalEnergyKwh', 'buildYear', 'electricityOver15', 'gas', 'leaseStart'];
+  const keys = ['furnished', 'rentCents', 'chargesCents', 'livingAreaHundredths', 'energyClass', 'finalEnergyKwh', 'buildYear', 'electricityOver15', 'gas', 'leaseStart', 'chargesMode'];
   for (const k of Object.keys(v)) if (!keys.includes(k)) return { ok: false, field: k };
   if (typeof v.furnished !== 'boolean') return { ok: false, field: 'furnished' };
   if (!isInt(v.rentCents, 1, 100_000_000)) return { ok: false, field: 'rentCents' };
@@ -241,6 +248,10 @@ export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | {
   if (typeof v.electricityOver15 !== 'boolean') return { ok: false, field: 'electricityOver15' };
   if (typeof v.gas !== 'string' || !(GAS_STATES as readonly string[]).includes(v.gas)) return { ok: false, field: 'gas' };
   if (!validDay(v.leaseStart)) return { ok: false, field: 'leaseStart' };
+  const mode = v.chargesMode ?? null;
+  if (mode !== null && (typeof mode !== 'string' || !(CHARGES_MODES as readonly string[]).includes(mode))) return { ok: false, field: 'chargesMode' };
+  // Un logement vide se loue avec une provision régularisée chaque année, jamais au forfait (loi de 1989, art. 23).
+  if (mode === 'forfait' && v.furnished === false) return { ok: false, field: 'chargesMode' };
   return {
     ok: true,
     value: {
@@ -254,6 +265,7 @@ export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | {
       electricityOver15: v.electricityOver15,
       gas: v.gas as GasState,
       leaseStart: v.leaseStart,
+      ...(mode !== null ? { chargesMode: mode as ChargesMode } : {}),
     },
   };
 }
@@ -359,9 +371,9 @@ export class MisesEnLocation {
     const version = Number(last?.v ?? 0) + 1;
     try {
       await this.db.run(
-        `INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, recorded_by, recorded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [row.id, version, f.furnished ? 1 : 0, f.rentCents, f.chargesCents, f.livingAreaHundredths, f.energyClass, f.finalEnergyKwh, f.buildYear, f.electricityOver15 ? 1 : 0, f.gas, f.leaseStart, this.actor(viewer), this.now().toISOString()],
+        `INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, recorded_by, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, version, f.furnished ? 1 : 0, f.rentCents, f.chargesCents, f.livingAreaHundredths, f.energyClass, f.finalEnergyKwh, f.buildYear, f.electricityOver15 ? 1 : 0, f.gas, f.leaseStart, f.chargesMode ?? null, this.actor(viewer), this.now().toISOString()],
       );
     } catch (error) {
       if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: 'busy' };
@@ -419,7 +431,7 @@ export class MisesEnLocation {
 
   private async latestFacts(listingId: string): Promise<(RentalFacts & { version: number }) | null> {
     const r = await this.db.first<FactsRow>(
-      'SELECT version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start FROM rental_facts WHERE listing_id = ? ORDER BY version DESC LIMIT 1',
+      'SELECT version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode FROM rental_facts WHERE listing_id = ? ORDER BY version DESC LIMIT 1',
       [listingId],
     );
     return r ? { ...toFacts(r), version: Number(r.version) } : null;

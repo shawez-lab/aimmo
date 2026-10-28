@@ -31,9 +31,10 @@ const FACTS: RentalFacts = {
   electricityOver15: false,
   gas: 'aucune',
   leaseStart: '2027-09-01',
+  chargesMode: 'provision',
 };
 const FEES = { tenantCents: 34_000, tenantInventoryCents: 12_750, landlordCents: 34_000, landlordInventoryCents: 12_750, depositCents: 65_000 };
-const ENERGY = { annualCostMinEur: 640, annualCostMaxEur: 900, costReferenceYear: 2025 };
+const ENERGY = { climateClass: 'C', annualCostMinEur: 640, annualCostMaxEur: 900, costReferenceYear: 2025 };
 const AD_FACTS: RentalAdFacts = {
   kind: 'home', city: CITY, postalCode: '21000', surfaceM2: 42.5, rooms: 2, bedrooms: 1, floor: 2, floorsTotal: 4, buildYear: 1985, heating: 'collectif',
   outdoor: ['balcon'], landM2: null, parkingSpaces: null, elevator: true, energyClass: 'D', climateClass: 'C', furnished: false,
@@ -47,6 +48,11 @@ describe('W03 · texte et mentions de l’annonce', () => {
     expect(rentalCriteria('Revenus égaux à trois fois le loyer')).toEqual(['revenus', 'trois fois le loyer']);
     expect(rentalCriteria('Pas d’APL')).toEqual(["pas d'apl"]);
     expect(rentalCriteria('Deux pièces avec balcon, au calme.')).toEqual([]);
+    // Santé, situation de famille, ressources, sexe, et le garant lié à la France sous toutes ses tournures.
+    for (const text of ['Locataire en bonne santé.', 'Pas de malade.', 'Personne valide.', 'Marié uniquement.', 'Personne seule.', 'Pas de chômeurs.', 'Pas de RSA.', 'Pour monsieur.',
+      'Garant obligatoire en France.', 'Garant résidant en France.', 'Caution domiciliée en France.', 'Garants français exigés.', 'En France, un garant est demandé.']) {
+      expect(rentalCriteria(text), text).not.toEqual([]);
+    }
     // La liste de M07 vaut aussi : origine, famille, âge, sexe, religion…
     const fam = checkRentalAd('Deux pièces', 'Réservé à un couple sans enfants.', AD_FACTS);
     expect(fam.ok).toBe(false);
@@ -59,16 +65,17 @@ describe('W03 · texte et mentions de l’annonce', () => {
   it('[R102] [R103] chaque mention obligatoire vient des données, écrite par le code', () => {
     const m = rentalMentions(FACTS, FEES, CITY, ENERGY);
     expect(m).toContain('Location vide.');
-    expect(m).toContain('Loyer : 700 € par mois charges comprises, dont 50 € de charges.');
+    expect(m).toContain('Loyer : 700 € par mois charges comprises, dont 50 € de charges en provision, avec régularisation annuelle.');
     expect(m).toContain("Honoraires à la charge du locataire : 467,50 € TTC, dont 127,50 € pour l'état des lieux.");
     expect(m).toContain('Dépôt de garantie : 650 €.');
     expect(m).toContain('Surface habitable : 42,50 m².');
     expect(m).toContain(`Commune : ${CITY}.`);
-    expect(m).toContain('Classe énergie D.');
-    expect(m).toContain('entre 640 € et 900 € par an, prix de l’énergie de 2025.'.replace('’', "'"));
+    expect(m).toContain('Classe énergie D, classe climat C.');
+    expect(m).toContain('entre 640 € et 900 € par an. Prix moyens des énergies indexés au 1er janvier 2025 (abonnements compris).');
     expect(m).not.toContain('excessive');
     const f = rentalMentions({ ...FACTS, energyClass: 'F', furnished: true }, FEES, CITY, ENERGY);
     expect(f).toContain('Location meublée.');
+    expect(rentalMentions({ ...FACTS, furnished: true, chargesMode: 'forfait' }, FEES, CITY, ENERGY)).toContain('dont 50 € de charges forfaitaires.');
     expect(f).toContain('Logement à consommation énergétique excessive.');
     expect(euros(5)).toBe('0,05');
     expect(euros(100_000)).toBe('1000');
@@ -114,7 +121,7 @@ async function setup(options: { writer?: (f: RentalAdFacts) => Promise<{ title: 
       new Date(clock).toISOString(),
     ]);
   /** Un logement contrôlé louable, sa commune fixée, son barème rangé, sa fiche du bien faite. */
-  const ready = async (facts: Partial<RentalFacts> = {}, withSheet = true) => {
+  const ready = async (facts: Partial<RentalFacts> = {}, withSheet = true, erpOn = '2027-07-01') => {
     const c = await listings.create(agent, { propertyId: home.id, ownerPersonId: owner.id });
     if (!c.ok) throw new Error(c.code);
     const id = c.value.listingId;
@@ -122,7 +129,7 @@ async function setup(options: { writer?: (f: RentalAdFacts) => Promise<{ title: 
     for (const kind of ['dpe', 'erp', 'surface_habitable']) {
       const ref = `location/${id}/${uuid()}.pdf`;
       refs.add(ref);
-      expect((await listings.addAnnex(agent, id, { kind, ref, diagnosedOn: '2027-07-01' })).ok).toBe(true);
+      expect((await listings.addAnnex(agent, id, { kind, ref, diagnosedOn: kind === 'erp' ? erpOn : '2027-07-01' })).ok).toBe(true);
     }
     await listings.check(agent, id);
     expect((await fees.setCommune(agent, id, '21999')).ok).toBe(true);
@@ -148,7 +155,7 @@ describeWithSqlite('W03 · annonce de location conforme', () => {
     expect((await t.ads.validate(t.agent, r.ok ? r.value.adId : '')).ok).toBe(true);
     const pub = await t.ads.publishable(t.agent.networkId, id);
     expect(pub?.title).toBe(`Deux pièces avec balcon à ${CITY}`);
-    expect(pub?.mentions).toContain('Classe énergie D.');
+    expect(pub?.mentions).toContain('Classe énergie D, classe climat C.');
   });
 
   it('[R103] un texte de l’IA discriminant, inventé, trop lent ou absent laisse place au secours, qui passe le contrôle', async () => {
@@ -215,15 +222,29 @@ describeWithSqlite('W03 · annonce de location conforme', () => {
     expect(await t3.ads.publishable(t3.agent.networkId, id)).toBeNull();
   });
 
-  it('[R100] une annonce validée cesse d’être publiable quand le logement ne l’est plus', async () => {
+  it('[R100] [R101] une annonce validée cesse d’être publiable quand le logement ne l’est plus, ou que sa fiche change', async () => {
     const t = await setup();
-    const id = await t.ready({ leaseStart: '2027-07-14' });
+    // L'état des risques du 15 janvier vaut jusqu'au 14 juillet, jour du début du bail.
+    const id = await t.ready({ leaseStart: '2027-07-14' }, true, '2027-01-15');
     const r = await t.ads.draft(t.agent, id);
     expect((await t.ads.validate(t.agent, r.ok ? r.value.adId : '')).ok).toBe(true);
     expect(await t.ads.publishable(t.agent.networkId, id)).not.toBeNull();
-    // L'état des risques du 1er juillet vaut jusqu'au 31 décembre ; la fiche du bien changée rend l'annonce caduque.
-    await t.sheet('D', 2);
+    clock = Date.parse('2027-07-15T08:00:00.000Z');
     expect(await t.ads.publishable(t.agent.networkId, id)).toBeNull();
+    const t2 = await setup();
+    const id2 = await t2.ready();
+    const r2 = await t2.ads.draft(t2.agent, id2);
+    expect((await t2.ads.validate(t2.agent, r2.ok ? r2.value.adId : '')).ok).toBe(true);
+    await t2.sheet('D', 2);
+    expect(await t2.ads.publishable(t2.agent.networkId, id2)).toBeNull();
+  });
+
+  it('[R103] le mode des charges est dit : aucune annonce sans lui ; un logement vide n’est jamais au forfait', async () => {
+    const t = await setup();
+    const id = await t.ready({ chargesMode: null });
+    expect(await t.ads.draft(t.agent, id)).toEqual({ ok: false, rule: null, code: 'missing_charges_mode' });
+    expect(await t.listings.recordFacts(t.agent, id, { ...FACTS, chargesMode: 'forfait' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'chargesMode' });
+    expect((await t.listings.recordFacts(t.agent, id, { ...FACTS, furnished: true, chargesMode: 'forfait' })).ok).toBe(true);
   });
 
   it('[R16] l’agent du logement et la direction proposent ; seul l’agent du logement valide ; un autre agent est refusé', async () => {

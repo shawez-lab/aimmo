@@ -9,8 +9,8 @@
  * texte, contrôlé de la même façon.
  *
  * Les mentions obligatoires sont calculées par le code, jamais par l'IA, et ajoutées au texte : vide ou meublé, loyer
- * charges comprises et charges, honoraires du locataire dont l'état des lieux, dépôt de garantie, surface habitable,
- * commune, classe énergie, consommation excessive pour F et G, dépenses annuelles d'énergie estimées par le diagnostic.
+ * charges comprises et charges avec leur mode (provision régularisée ou forfait), honoraires du locataire dont l'état des lieux, dépôt de garantie, surface habitable,
+ * commune, classes énergie et climat, consommation excessive pour F et G, dépenses annuelles d'énergie estimées par le diagnostic.
  *
  * Une annonce n'existe que pour un logement passé au contrôle de W01 et sous un barème en vigueur de W02 ; elle n'est
  * publiable qu'une fois validée par l'agent du logement, et tant que les faits, le barème et la fiche qu'elle a vus sont
@@ -50,6 +50,15 @@ export const RENTAL_DISCRIMINATORY_TERMS: readonly string[] = [
   'étudiant', 'étudiante', 'étudiants', 'étudiantes', 'salarié', 'salariée', 'salariés', 'profession', 'professionnel uniquement', 'revenu', 'revenus', 'salaire',
   'salaires', 'fiche de paie', 'fiches de paie', 'bulletin de salaire', 'trois fois le loyer', '3 fois le loyer', 'non-fumeur', 'non fumeur', 'sans animaux',
   'pas d’animaux', "pas d'animaux", 'visale refusé', 'pas de visale', 'apl refusées', 'pas d’apl', "pas d'apl", 'caf', 'aides au logement',
+  'santé', 'bonne santé', 'malade', 'maladie', 'personne valide', 'valide uniquement', 'invalide', 'marié', 'mariée', 'mariés', 'mariage', 'pacsé', 'pacsée',
+  'personne seule', 'seul', 'seule', 'chômeur', 'chômeuse', 'chômage', 'demandeur d’emploi', "demandeur d'emploi", 'rsa', 'allocataire', 'allocataires', 'monsieur',
+  'madame', 'mademoiselle', 'locataire sérieux', 'locataire sérieuse', 'bonne moralité', 'résident', 'résidente', 'nationaux',
+];
+
+/** Des tournures, et non des mots : un garant ou une caution liés à la France, dans un sens ou dans l'autre [R103]. */
+const RENTAL_DISCRIMINATORY_PATTERNS: readonly RegExp[] = [
+  /(?<![\p{L}])(?:garants?|garantes?|cautions?|cautionnaires?|garanties?)(?![\p{L}])[^.!?\n]*(?<![\p{L}])(?:france|francais|francaise|metropole|ue|union europeenne|europe)(?![\p{L}])/u,
+  /(?<![\p{L}])(?:france|francais|francaise|metropole)(?![\p{L}])[^.!?\n]*(?<![\p{L}])(?:garants?|garantes?|cautions?)(?![\p{L}])/u,
 ];
 
 const norm = (s: string): string =>
@@ -67,6 +76,10 @@ export function rentalCriteria(text: string): string[] {
   const found: string[] = [];
   for (const term of RENTAL_DISCRIMINATORY_TERMS) {
     const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(norm(term))}(?:e|s|es|x)?(?![\\p{L}\\p{N}])`, 'iu');
+    const m = re.exec(lower);
+    if (m && !found.includes(m[0])) found.push(m[0]);
+  }
+  for (const re of RENTAL_DISCRIMINATORY_PATTERNS) {
     const m = re.exec(lower);
     if (m && !found.includes(m[0])) found.push(m[0]);
   }
@@ -93,6 +106,7 @@ export function euros(cents: number): string {
 const surface = (hundredths: number): string => euros(hundredths);
 
 export interface EnergyCost {
+  climateClass: string;
   annualCostMinEur: number;
   annualCostMaxEur: number;
   costReferenceYear: number;
@@ -102,15 +116,17 @@ export interface EnergyCost {
 export function rentalMentions(facts: RentalFacts, fees: Pick<RentalFees, 'tenantCents' | 'tenantInventoryCents' | 'depositCents'>, city: string, energy: EnergyCost): string {
   const lines = [
     `Location ${facts.furnished ? 'meublée' : 'vide'}.`,
-    `Loyer : ${euros(facts.rentCents + facts.chargesCents)} € par mois charges comprises, dont ${euros(facts.chargesCents)} € de charges.`,
+    `Loyer : ${euros(facts.rentCents + facts.chargesCents)} € par mois charges comprises, dont ${euros(facts.chargesCents)} € de charges ${facts.chargesMode === 'forfait' ? 'forfaitaires' : 'en provision, avec régularisation annuelle'}.`,
     `Honoraires à la charge du locataire : ${euros(fees.tenantCents + fees.tenantInventoryCents)} € TTC, dont ${euros(fees.tenantInventoryCents)} € pour l'état des lieux.`,
     `Dépôt de garantie : ${euros(fees.depositCents)} €.`,
     `Surface habitable : ${surface(facts.livingAreaHundredths)} m².`,
     `Commune : ${city}.`,
-    `Classe énergie ${facts.energyClass}.`,
+    `Classe énergie ${facts.energyClass}, classe climat ${energy.climateClass}.`,
   ];
   if (facts.energyClass === 'F' || facts.energyClass === 'G') lines.push('Logement à consommation énergétique excessive.');
-  lines.push(`Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${energy.annualCostMinEur} € et ${energy.annualCostMaxEur} € par an, prix de l'énergie de ${energy.costReferenceYear}.`);
+  lines.push(
+    `Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${energy.annualCostMinEur} € et ${energy.annualCostMaxEur} € par an. Prix moyens des énergies indexés au 1er janvier ${energy.costReferenceYear} (abonnements compris).`,
+  );
   return lines.join('\n');
 }
 
@@ -215,6 +231,7 @@ export class AnnoncesLocation {
     const sheet = sheetRow ? (JSON.parse(sheetRow.data) as PropertySheet) : null;
     if (!sheet?.energy) return { ok: false, rule: null, code: 'missing_energy_cost' };
     if (sheet.energy.energyClass !== facts.energyClass) return { ok: false, rule: 'R100', code: 'energy_mismatch' };
+    if (!facts.chargesMode) return { ok: false, rule: null, code: 'missing_charges_mode' };
     const c = sheet.characteristics;
     const adFacts: RentalAdFacts = {
       kind: p.kind,
