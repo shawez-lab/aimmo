@@ -17,7 +17,8 @@
  * - redéclarer « personne » une fiche qui porte un signe de société est réservé au responsable de la conformité :
  *   l'agent ne peut pas se passer ainsi des bénéficiaires effectifs ;
  * - un mandat signé sur papier se juge au jour de sa signature : la pièce doit avoir été vérifiée ce jour-là au plus
- *   tard et valide ce jour-là, même si elle a été déposée au coffre ensuite, avant l'enregistrement ;
+ *   tard et valide ce jour-là, même si elle a été déposée au coffre ensuite, avant l'enregistrement ; ses bénéficiaires
+ *   effectifs sont ceux déclarés au plus tard ce jour-là, jamais une déclaration faite après ;
  * - la fiche de risque (L02) ne sert jamais à savoir si un client est une société : aucun contrôle ne la lit [R91] ;
  * - le cas d'une société dont personne n'atteint 25 % (représentant légal retenu à défaut) attend la procédure validée
  *   par l'avocat (H29) : elle ne se déclare pas ici et reste bloquée ;
@@ -137,7 +138,7 @@ export class Identification {
       const root = await this.unique.rootOf(owner.value.person.id);
       // Un bénéficiaire effectif est une personne physique : ni la société elle-même, ni une fiche qui porte un signe de
       // société [R92].
-      if (root === companyRoot || (await this.isCompany(viewer.networkId, owner.value.person.id, this.now()))) return { ok: false, rule: null, code: 'owner_is_company' };
+      if (root === companyRoot || (await this.isCompany(viewer.networkId, owner.value.person.id, this.now(), this.now()))) return { ok: false, rule: null, code: 'owner_is_company' };
       if (roots.has(root)) return { ok: false, rule: null, code: 'duplicate_owner' };
       roots.add(root);
       total += share;
@@ -175,13 +176,14 @@ export class Identification {
 
   /**
    * Société ou personne, la même règle partout (client et bénéficiaires effectifs) : « personne » ne vaut que déclarée
-   * par le responsable, ou pour une fiche sans aucun signe de société [R92].
+   * par le responsable, ou pour une fiche sans aucun signe de société [R92]. La déclaration est celle en vigueur à
+   * `declaredBy` (le jour de la signature) ; les signes de société comptent jusqu'à `signsBy` (l'enregistrement).
    */
-  private async isCompany(networkId: string, personId: string, before: Date, known?: Awaited<ReturnType<Identification['declaration']>>): Promise<boolean> {
-    const declared = known !== undefined ? known : await this.declaration(networkId, personId, before);
+  private async isCompany(networkId: string, personId: string, declaredBy: Date, signsBy: Date, known?: Awaited<ReturnType<Identification['declaration']>>): Promise<boolean> {
+    const declared = known !== undefined ? known : await this.declaration(networkId, personId, declaredBy);
     if (declared?.entity === 'societe') return true;
     if (declared?.entity === 'personne' && declared.declared_by.startsWith('compliance:')) return false;
-    return this.companySigns(networkId, personId, before);
+    return this.companySigns(networkId, personId, signsBy);
   }
 
   /** Un signe de société : un Kbis ou un registre des bénéficiaires au coffre, ou une déclaration « société » passée. */
@@ -204,11 +206,14 @@ export class Identification {
   /**
    * L'état d'identification d'un client à l'instant `at` : vérifié (avec la plus ancienne des dates qui le fondent), ou
    * la raison du blocage, en un code [R92]. Lecture seule ; les droits sont ceux de l'appelant. `depositedBy` : jusqu'à
-   * quand une pièce ou une déclaration a pu être déposée (`at` par défaut ; l'enregistrement d'un mandat papier).
+   * quand une pièce a pu être déposée (`at` par défaut ; l'enregistrement d'un mandat papier). Les déclarations, elles,
+   * comptent telles qu'à l'instant `at`.
    */
   async status(networkId: string, personId: string, at: Date = this.now(), depositedBy: Date = at): Promise<IdentificationStatus> {
-    const declared = await this.declaration(networkId, personId, depositedBy);
-    if (!(await this.isCompany(networkId, personId, depositedBy, declared))) {
+    // Les bénéficiaires effectifs sont ceux déclarés au plus tard à l'instant `at` (le jour de la signature) : une
+    // déclaration enregistrée ensuite ne s'applique jamais en arrière [R92].
+    const declared = await this.declaration(networkId, personId, at);
+    if (!(await this.isCompany(networkId, personId, at, depositedBy, declared))) {
       const r = await this.personIdentity(networkId, personId, at, depositedBy);
       return r.ok ? { ok: true, entity: 'personne', verifiedOn: r.verifiedOn } : { ok: false, entity: 'personne', code: r.code };
     }
@@ -223,7 +228,7 @@ export class Identification {
     let oldest = kbis.verifiedOn;
     for (const o of counted) {
       // Un bénéficiaire effectif devenu société (Kbis déposé ensuite) ne compte pas comme personne identifiée [R92].
-      if (await this.isCompany(networkId, o.owner_person_id, depositedBy)) return { ok: false, entity: 'societe', code: 'beneficial_owner_unidentified' };
+      if (await this.isCompany(networkId, o.owner_person_id, at, depositedBy)) return { ok: false, entity: 'societe', code: 'beneficial_owner_unidentified' };
       const r = await this.personIdentity(networkId, o.owner_person_id, at, depositedBy);
       if (!r.ok) return { ok: false, entity: 'societe', code: 'beneficial_owner_unidentified' };
       if (r.verifiedOn < oldest) oldest = r.verifiedOn;

@@ -238,6 +238,26 @@ describeWithSqlite('L03 · identification et bénéficiaire effectif, étape blo
     await expect(t.db.run("INSERT INTO client_identifications (id, network_id, person_id, entity, owners_count, declared_by, declared_at) VALUES ('decl-2', ?, ?, 'personne', 1, 'x', ?)", [t.network.id, company.personId, NOW.toISOString()])).rejects.toThrow();
   });
 
+  it('[R92] mandat papier d’une société : les bénéficiaires effectifs sont ceux déclarés au jour de la signature, jamais une déclaration faite après', async () => {
+    const t = await setup();
+    const papier = new SignaturePapier(t.db, t.acces, t.journal, { now: () => new Date('2027-03-10T10:00:00.000Z') });
+    await new RegistreMandats(t.db, t.journal, { now: () => NOW }).configure(t.direction, { prefix: 'T-', firstNumber: 1, width: 4 });
+    const company = await t.seller('SCI Exemple');
+    const [alice, bob] = [await t.person('Alice'), await t.person('Bob')];
+    t.setClock(new Date('2027-03-01T08:00:00.000Z'));
+    await t.deposit(company.personId, { piece: 'extrait_kbis', seenAt: new Date('2027-03-01T08:00:00.000Z') });
+    await t.deposit(alice, { piece: 'carte_identite', seenAt: new Date('2027-03-01T08:00:00.000Z') });
+    await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: [{ personId: alice, sharePercent: 50 }, { personId: bob, sharePercent: 50 }] });
+    // Signé le 1er mars à 10 h, Bob non identifié ; le 5 mars, Alice rachète les parts de Bob.
+    t.setClock(new Date('2027-03-05T10:00:00.000Z'));
+    await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: [{ personId: alice, sharePercent: 100 }] });
+    t.setClock(NOW);
+    expect(await t.identityLine(company.documentId)).toEqual({ passed: true, code: 'identity_verified' });
+    const r = await papier.register(t.agent, company.documentId, { signedAt: new Date('2027-03-01T10:00:00.000Z'), place: 'hors_agence', scanRef: 'scans/2027/03/test-3.pdf', source: 'referral' });
+    expect(r).toEqual({ ok: false, rule: 'R92', code: 'identity_not_verified_at_signature' });
+    expect(await t.identification.status(t.network.id, company.personId, new Date('2027-03-01T10:00:00.000Z'), NOW)).toMatchObject({ ok: false, code: 'beneficial_owner_unidentified' });
+  });
+
   it('[R16] [R17] [R13] seuls l’agent de la fiche et le responsable déclarent ; rien ne s’efface ; le journal ne porte que des codes', async () => {
     const t = await setup();
     const company = await t.seller('SCI Exemple');
