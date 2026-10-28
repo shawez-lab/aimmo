@@ -151,7 +151,7 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     const refused = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse' && e.data.kind === 'commission_grid').length;
     expect(await c.setGrid(t.agent, { validFrom: '2027-01-01', defaultRateBp: 9000 })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await refused()).toBe(1);
-    expect(await c.setGrid(t.direction, { validFrom: '2027-02-30', defaultRateBp: 7000 })).toMatchObject({ code: 'bad_day' });
+    for (const day of ['2027-02-30', '2027-13-01', '2027-00-10', '2027-01-32']) expect(await c.setGrid(t.direction, { validFrom: day, defaultRateBp: 7000 })).toMatchObject({ code: 'bad_day' });
     expect(await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 10_001 })).toMatchObject({ code: 'bad_rate' });
     expect(await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, agents: [{ agentId: 'inconnu', rateBp: 5000 }] })).toMatchObject({ code: 'unknown_agent' });
     // Sans grille au jour du compromis, aucune commission n'est inventée.
@@ -161,6 +161,8 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     await c.sync(t.network.id);
     // Dit une fois au journal, sans montant.
     expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'commission.attente').map((e) => e.data.code)).toEqual(['no_grid']);
+    // La conformité n'a pas les chiffres, comme le veut le socle [R16].
+    expect(await c.list({ role: 'compliance', networkId: t.network.id, userId: 'c-1' })).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
     // Un rôle partenaire ne lit rien.
     expect(await c.list({ role: 'partner', networkId: t.network.id, userId: 'p-1' })).toMatchObject({ ok: false, rule: 'R16' });
   });

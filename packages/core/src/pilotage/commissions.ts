@@ -20,7 +20,7 @@
  * calculé (sans agent, sans mandat en vigueur, sans grille, partage faux) est dit une fois au journal, sans montant.
  */
 import type { Acces } from '../acces/acces.ts';
-import { ROLES, type Viewer } from '../acces/droits.ts';
+import { ROLES, decideAccess, type Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { mandateFeeAt } from '../dossiers/acte.ts';
@@ -94,7 +94,7 @@ export interface GridInput {
 
 export interface CommissionView {
   fileId: string;
-  /** L'agent de la vente, les honoraires et qui les paie : pour la direction, la conformité et l'agent de la vente ;
+  /** L'agent de la vente, les honoraires et qui les paie : pour la direction et l'agent de la vente ;
    * `null` pour un agent qui n'a qu'une part de partage ou de parrainage [R68]. */
   agentId: string | null;
   compromisOn: string;
@@ -102,7 +102,7 @@ export interface CommissionView {
   feeCharge: 'vendeur' | 'acquereur' | null;
   status: CommissionStatus;
   steps: { status: CommissionStatus; at: string }[];
-  /** Pour un agent : ses seules parts [R68] ; pour la direction et la conformité : toutes. */
+  /** Pour un agent : ses seules parts [R68] ; pour la direction : toutes. */
   shares: CommissionShare[];
 }
 
@@ -110,7 +110,11 @@ export type CommissionRefusal = { ok: false; rule: 'R16'; code: string };
 type GridProblem = { ok: false; rule: null; code: 'bad_day' | 'past_day' | 'bad_rate' | 'unknown_agent' | 'duplicate_agent' };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const validDay = (v: unknown): v is string => typeof v === 'string' && DAY.test(v) && new Date(`${v}T12:00:00Z`).toISOString().slice(0, 10) === v;
+const validDay = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !DAY.test(v)) return false;
+  const d = new Date(`${v}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};
 const validRate = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10_000;
 const PROOF = /^[A-Za-z0-9_:./-]{1,200}$/;
 
@@ -145,8 +149,12 @@ export class Commissions {
 
   /** Un rôle connu ; pour un agent, un agent actif de ce réseau. */
   private async readerRefusal(viewer: Viewer): Promise<string | null> {
-    if (!(ROLES as readonly string[]).includes(viewer.role) || viewer.role === 'partner') return 'role';
-    if (viewer.role !== 'agent') return null;
+    if (!(ROLES as readonly string[]).includes(viewer.role)) return 'role';
+    // Les chiffres, selon les droits du socle : la direction ; ni la conformité ni un partenaire [R16].
+    if (viewer.role !== 'agent') {
+      const d = decideAccess(viewer, { kind: 'figures', networkId: viewer.networkId, agentId: viewer.userId });
+      return d.allowed ? null : d.code;
+    }
     const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [viewer.userId]);
     return !agent || agent.network_id !== viewer.networkId || agent.status !== 'active' ? 'agent_inactive' : null;
   }
@@ -331,8 +339,8 @@ export class Commissions {
   }
 
   /**
-   * Les commissions : un agent voit celles où il a une part, et seulement ses parts [R68] ; la direction et la
-   * conformité voient tout le réseau [R16].
+   * Les commissions : un agent voit celles où il a une part, et seulement ses parts [R68] ; la direction voit tout le
+   * réseau ; la conformité n'a pas les chiffres [R16].
    */
   async list(viewer: Viewer): Promise<{ ok: true; value: CommissionView[] } | CommissionRefusal> {
     const refusal = await this.readerRefusal(viewer);
