@@ -1167,7 +1167,7 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Attend : H27 pour la mesure réelle seulement.
 
 ### K09 · Écran « Le réseau » pour la direction
-- Statut : en cours
+- Statut : fait (2026-10-28)
 - Reste : proposition #129 ouverte, tests verts en local, en attente des vérifications GitHub (H28).
 - Décidé (2026-10-28) : la direction arrive sur « Le réseau » à la connexion, la conformité et les partenaires restent refusés ; chaque total refait la somme de ses lignes à l’écran et dit un écart ; une facture s’émet en deux gestes ; l’export se télécharge avec la clé dans l’en-tête ; relecture forte : 1 P1 corrigé (clé refusée pendant l’export). Codex : aucune remarque.
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : K08
