@@ -57,7 +57,17 @@ function subjectPrefixesInCode(): Map<string, string> {
       if (statSync(path).isDirectory()) walk(path);
       else if (/\.ts$/.test(name)) {
         const text = readFileSync(path, 'utf8');
-        for (const m of text.matchAll(/subject[A-Za-z]*\s*(?::|=)\s*[`'"]([a-z_]+):/g)) if (!found.has(m[1]!)) found.set(m[1]!, path.slice(root.length));
+        const at = (prefix: string) => {
+          if (!found.has(prefix)) found.set(prefix, path.slice(root.length));
+        };
+        // Un sujet écrit en littéral : `subject: \`<préfixe>:…`, `const subject = '<préfixe>:…'`.
+        for (const m of text.matchAll(/subject[A-Za-z]*\s*(?::|=)\s*[`'"]([a-z_]+):/g)) at(m[1]!);
+        // Un sujet passé à une fonction d'aide (refus, alerte, attente…) : `this.refuse(viewer, \`<préfixe>:${…}\`…`.
+        for (const m of text.matchAll(/this\.[A-Za-z]+\(\s*[A-Za-z.]+\s*,\s*`([a-z_]+):\$\{/g)) at(m[1]!);
+        // Un sujet à préfixe construit (`rdv_rappel_${kind}:`) : relevé par sa partie fixe.
+        for (const m of text.matchAll(/subject[A-Za-z]*\s*(?::|=)[^\n]*`([a-z_]+_)\$\{[^}]+\}:/g)) at(m[1]!);
+        // Un sujet tout construit (`${kind}:${id}`) : il doit être décrit dans DYNAMIC_SUBJECTS.
+        for (const m of text.matchAll(/subject[A-Za-z]*\s*(?::|=)\s*`\$\{([^}]+)\}:/g)) at(`\${${m[1]}}@${path.slice(root.length)}`);
       }
     }
   };
@@ -66,19 +76,36 @@ function subjectPrefixesInCode(): Map<string, string> {
   return found;
 }
 
+/**
+ * Les sujets tout construits du code, et les préfixes qu'ils peuvent prendre (relus à la main) : un nouveau sujet
+ * construit fait échouer le test tant qu'il n'est pas décrit ici.
+ */
+const DYNAMIC_SUBJECTS: Readonly<Record<string, readonly string[]>> = {
+  // Reprise d'un agent parti : `kind` vaut person, project ou property (`agent_departure_reassignments`).
+  '${kind}@core/src/reseau/depart.ts': ['person', 'project', 'property'],
+  // Sujet d'un envoi du contrôle central (bascule des automatisations), jamais écrit au journal.
+  '${req.automation}@core/src/bascule/automatisations.ts': [],
+};
+
 describe('L07 · chaque sujet du journal écrit dans le code est lu ou écarté', () => {
   it('[R96] un préfixe de sujet du code absent de JOURNAL_SUBJECTS fait échouer la vérification', () => {
     const inCode = subjectPrefixesInCode();
     // Le relevé trouve bien les sujets connus, sinon le test ne prouverait rien.
     for (const known of ['person', 'property', 'referral', 'mandate', 'agent']) expect(inCode.has(known), known).toBe(true);
-    const missing = [...inCode].filter(([prefix]) => !(prefix in JOURNAL_SUBJECTS)).map(([prefix, file]) => `${prefix}: (${file})`);
+    const dynamic = [...inCode.keys()].filter((p) => p.startsWith('${'));
+    expect(dynamic.sort()).toEqual(Object.keys(DYNAMIC_SUBJECTS).sort());
+    const prefixes = [...inCode].filter(([p]) => !p.startsWith('${'));
+    for (const produced of Object.values(DYNAMIC_SUBJECTS)) for (const p of produced) prefixes.push([p, 'sujet construit']);
+    const missing = prefixes.filter(([prefix]) => !(prefix in JOURNAL_SUBJECTS)).map(([prefix, file]) => `${prefix}: (${file})`);
     expect(missing).toEqual([]);
+    // Les sujets passés à une fonction d'aide et les préfixes construits sont bien relevés.
+    for (const known of ['vault_piece', 'risk_sheet', 'rdv_rappel_']) expect(inCode.has(known), known).toBe(true);
   });
 
   it('[R96] un préfixe dit « lu » l’est par la carte du journal, et la carte ne lit aucun préfixe non déclaré', () => {
     const journal = CARTE_ACCES.journal!;
     if (!('locate' in journal)) throw new Error('journal');
-    const read = new Set(journal.locate.map((l) => ('prefix' in l ? l.prefix ?? '' : '')).filter(Boolean).map((p) => p.replace(/:$/, '')));
+    const read = new Set(journal.locate.map((l) => ('prefix' in l ? l.prefix ?? '' : 'startsWith' in l ? l.startsWith?.subject ?? '' : '')).filter(Boolean).map((p) => p.replace(/:$/, '')));
     const declared = Object.entries(JOURNAL_SUBJECTS).filter(([, use]) => use === 'journal').map(([p]) => p);
     expect([...read].sort()).toEqual([...declared].sort());
     // Chaque écart dit pourquoi.
@@ -122,7 +149,10 @@ async function seedEveryTable() {
           continue;
         }
         for (const [c, v] of Object.entries(l.where ?? {})) row[c] = v;
-        if ('from' in l) {
+        if ('from' in l && l.jsonPath) {
+          row[l.column] = JSON.stringify({ [l.jsonPath]: `${l.prefix ?? ''}${seeded.get(l.from)![p]![l.key]}` });
+          for (const [c, start] of Object.entries(l.startsWith ?? {})) row[c] = `${start}${p}`;
+        } else if ('from' in l) {
           row[l.column] = `${l.prefix ?? ''}${seeded.get(l.from)![p]![l.key]}`;
           for (const [here, there] of Object.entries(l.alsoMatch ?? {})) row[here] = seeded.get(l.from)![p]![there]!;
         }
@@ -231,6 +261,18 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     // Une ligne qui nommait une autre personne n'est plus à la seule personne (le journal, lui, est gardé par la loi).
     expect(detail.exclusiveRows.journal).toBe(rows.length - 1);
     expect(conformite.erasurePlan(detail).lines.filter((l) => l.table === 'journal').map((l) => l.action)).toEqual(['garder']);
+    // Une présentation au propriétaire A : le reçu du candidat C est à C, retrouvé par sa candidature ; A n'a que le sien.
+    const C = 'pc-0003';
+    const presentation = seeded.get('rental_presentations')![A]!.id!;
+    await insert('rental_applications', { ...seeded.get('rental_applications')![B]!, id: 'cand-c', person_id: C, arrival: 99 });
+    await insert('journal', { seq: 9005, at: 't', type: 'location.recu_prepare', actor: 'system:location', subject: `rental_presentation:${presentation}`, data: JSON.stringify({ rule: 'R105', recipient: 'candidat', application: 'cand-c', sha256: 'recu-de-c' }), prev_hash: 'p', hash: 'h9005' });
+    await insert('journal', { seq: 9006, at: 't', type: 'location.recu_prepare', actor: 'system:location', subject: `rental_presentation:${presentation}`, data: JSON.stringify({ rule: 'R105', recipient: 'proprietaire', application: null, sha256: 'recu-de-a' }), prev_hash: 'p', hash: 'h9006' });
+    const ofA = JSON.stringify(await assembleAccess(db, [A]));
+    expect(ofA).toContain('recu-de-a');
+    expect(ofA).not.toContain('recu-de-c');
+    expect(ofA).not.toContain('cand-c');
+    const ofC = (await assembleAccess(db, [C])).sections.find((s) => s.table === 'journal')!.rows.map((r) => r.seq);
+    expect(ofC).toEqual([9005]);
     // B, lui, voit l'événement de sa recommandation sous sa propre fiche seulement s'il y est sujet : ici il ne l'est pas.
     expect((await assembleAccess(db, [B])).sections.find((s) => s.table === 'journal')!.rows.some((r) => r.seq === 9003)).toBe(false);
   });

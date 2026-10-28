@@ -24,7 +24,7 @@ import { localTime } from '../envoi/horaires.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { accessOrder, CARTE_ACCES, EXCLUSION_LABELS, LCB_FT_TRAITEMENT, type AccessMapEntry, type ExclusionReason } from './carte-acces.ts';
+import { accessOrder, CARTE_ACCES, EXCLUSION_LABELS, LCB_FT_TRAITEMENT, type AccessMapEntry, type ExclusionReason, type ViaLocator } from './carte-acces.ts';
 import { addCalendarMonths } from './registre-relecture.ts';
 import { LEGAL_BASIS_LABELS, type LegalBasis, type Traitement } from './registre.ts';
 import { REGISTRE_TRAITEMENTS } from './registre-traitements.ts';
@@ -141,6 +141,28 @@ export async function assembleAccessDetail(
     return rows;
   };
 
+  // Un champ d'une colonne JSON, ou des débuts de colonnes : les lignes valables (JSON lisible) dont le champ vaut l'une
+  // des valeurs. Le filtre exact est refait sur chaque ligne.
+  const selectJson = async (table: string, l: ViaLocator, values: readonly string[]): Promise<Row[]> => {
+    const rows: Row[] = [];
+    const starts = Object.keys(l.startsWith ?? {}).sort();
+    const where = Object.keys(l.where ?? {}).sort();
+    const target = l.jsonPath ? `CASE WHEN json_valid("${l.column}") THEN json_extract("${l.column}", ?) END` : `"${l.column}"`;
+    for (let i = 0; i < values.length; i += CHUNK) {
+      const part = values.slice(i, i + CHUNK);
+      const condition = [...starts.map((c) => ` AND substr("${c}", 1, ?) = ?`), ...where.map((c) => ` AND "${c}" = ?`)].join('');
+      rows.push(
+        ...(await db.all<Row>(`SELECT * FROM "${table}" WHERE ${target} IN (${placeholders(part.length)})${condition}`, [
+          ...(l.jsonPath ? [`$.${l.jsonPath}`] : []),
+          ...part,
+          ...starts.flatMap((c) => [l.startsWith![c]!.length, l.startsWith![c]!]),
+          ...where.map((c) => l.where![c]!),
+        ])),
+      );
+    }
+    return rows;
+  };
+
   for (const table of accessOrder(carte)) {
     const entry = carte[table]!;
     if ('excluded' in entry) continue;
@@ -175,8 +197,27 @@ export async function assembleAccessDetail(
           parentExclusive.set(t, (parentExclusive.get(t) ?? false) || owned.has(key));
         }
         const values = [...new Set([...parentExclusive.keys()].map((t) => (JSON.parse(t) as string[])[0]!))].sort();
-        for (const row of await select(table, l.column, values, l.where ?? {})) {
-          const t = tuple(String(row[l.column]), (c) => row[c], 0);
+        const childValue = (row: Row): string => {
+          if (!l.jsonPath) return String(row[l.column]);
+          try {
+            const v = (JSON.parse(String(row[l.column])) as Record<string, unknown>)[l.jsonPath];
+            return typeof v === 'string' ? v : '';
+          } catch {
+            return '';
+          }
+        };
+        const jsonField = (row: Row, field: string): unknown => {
+          try {
+            return (JSON.parse(String(row.data)) as Record<string, unknown>)[field];
+          } catch {
+            return undefined;
+          }
+        };
+        const children = l.jsonPath || l.startsWith ? await selectJson(table, l, values) : await select(table, l.column, values, l.where ?? {});
+        for (const row of children) {
+          if (Object.entries(l.startsWith ?? {}).some(([c, start]) => !String(row[c] ?? '').startsWith(start))) continue;
+          if (Object.entries(l.jsonNot ?? {}).some(([field, v]) => jsonField(row, field) === v)) continue;
+          const t = tuple(childValue(row), (c) => row[c], 0);
           if (parentExclusive.has(t)) add(row, null, parentExclusive.get(t)!);
         }
         continue;

@@ -38,6 +38,12 @@ export interface ViaLocator {
   from: string;
   key: string;
   prefix?: string;
+  /** La valeur n'est pas la colonne entière mais ce champ de son JSON (`column` est alors une colonne JSON). */
+  jsonPath?: string;
+  /** Les lignes ne comptent que si ces colonnes commencent par ces textes. */
+  startsWith?: Readonly<Record<string, string>>;
+  /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur (champ → valeur). */
+  jsonNot?: Readonly<Record<string, string>>;
   where?: Readonly<Record<string, string>>;
   /** Seulement les lignes de `from` trouvées par cette colonne directe : pas celles de l'autre partie. */
   onlyMatchedBy?: string;
@@ -116,7 +122,7 @@ export const JOURNAL_LCB_MARKERS = ['compliance_vault', 'risk_sheet', 'identific
  * laquelle il ne l'est pas. Un test relève chaque préfixe du code et exige qu'il soit ici : un nouveau sujet ne peut
  * pas manquer à la réponse sans qu'on l'ait décidé.
  */
-export type JournalSubjectUse = 'journal' | { excluded: ExclusionReason | 'envoi'; why: string };
+export type JournalSubjectUse = 'journal' | { excluded: ExclusionReason | 'envoi' | 'pas_un_sujet'; why: string };
 
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
 
@@ -173,7 +179,13 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   commune: { excluded: 'sans_client', why: 'Zone d\'une commune.' },
   page: { excluded: 'sans_client', why: 'Page publique.' },
   registry: { excluded: 'sans_client', why: 'Relecture du registre des traitements.' },
+  rdv_rappel_: ENVOI('rappel de rendez-vous, `rdv_rappel_<sorte>:`'),
   vigilance_alert: { excluded: 'lcb_ft', why: 'Alerte de vigilance.' },
+  vault_piece: { excluded: 'lcb_ft', why: 'Pièce du coffre de la conformité.' },
+  risk_sheet: { excluded: 'lcb_ft', why: 'Fiche de risque.' },
+  baisse: { excluded: 'pas_un_sujet', why: 'Clé d\'une alerte du pilotage (pilotage_alerts), jamais un sujet du journal.' },
+  budget_ia: { excluded: 'pas_un_sujet', why: 'Clé d\'une alerte du pilotage (pilotage_alerts), jamais un sujet du journal.' },
+  remplace: { excluded: 'pas_un_sujet', why: 'Code d\'attente d\'une facture, rangé dans les données d\'un événement du dossier de vente.' },
   suspicion_report: { excluded: 'lcb_ft', why: 'Signalement au responsable.' },
 };
 
@@ -413,7 +425,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'projects', 'id', { prefix: 'project:' }),
       via('subject', 'partner_referrals', 'id', { prefix: 'referral:' }),
       via('subject', 'signature_sessions', 'id', { prefix: 'signature:' }),
-      via('subject', 'rental_presentations', 'id', { prefix: 'rental_presentation:' }),
+      // Le reçu d'équité d'un candidat, au journal de la présentation, est au candidat, retrouvé par sa candidature ;
+      // le propriétaire n'a que le sien.
+      via('subject', 'rental_presentations', 'id', { prefix: 'rental_presentation:', jsonNot: { recipient: 'candidat' } }),
+      via('data', 'rental_applications', 'id', { jsonPath: 'application', startsWith: { subject: 'rental_presentation:' } }),
       via('subject', 'listing_drafts', 'id', { prefix: 'listing:' }),
       via('subject', 'inbound_messages', 'id', { prefix: 'inbound:' }),
       via('subject', 'messages', 'id', { prefix: 'message:' }),
@@ -524,6 +539,10 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
       else {
         named.add(l.column);
         for (const c of Object.keys(l.where ?? {})) named.add(c);
+        if (isVia(l)) {
+          for (const c of Object.keys(l.startsWith ?? {})) named.add(c);
+          if (l.jsonNot) named.add('data');
+        }
       }
       if (isVia(l)) {
         const parent = carte[l.from];
