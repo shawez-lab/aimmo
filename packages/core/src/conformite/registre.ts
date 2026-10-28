@@ -105,18 +105,18 @@ function stripComments(sql: string): string {
 const NAME = '["`\\[]?([A-Za-z_][A-Za-z_0-9]*)["`\\]]?';
 const QUALIFIED = `(?:["\`\\[]?[A-Za-z_][A-Za-z_0-9]*["\`\\]]?\\.)?${NAME}`;
 // Toute instruction qui crée ou modifie une table, quelle que soit sa forme : chacune doit être lue.
-const ANY_TABLE_STATEMENT = /\b(?:CREATE|ALTER)(?:\s+[A-Za-z_]+)*?\s+TABLE\b/gi;
+const ANY_TABLE_STATEMENT = /\b(?:CREATE|ALTER|DROP)(?:\s+[A-Za-z_]+)*?\s+TABLE\b/gi;
 
 /**
  * Lit chaque `CREATE TABLE` (temporaire ou virtuelle, avec ou sans schéma) et chaque `ALTER TABLE` des migrations, dans
- * l'ordre : colonne ajoutée, renommée ou retirée, table renommée. Une forme que la lecture ne comprend pas arrête la
+ * l'ordre : colonne ajoutée, renommée ou retirée, table renommée, retirée ou recréée. Une forme que la lecture ne comprend pas arrête la
  * vérification au lieu de passer en silence.
  */
 export function readSchema(migrations: readonly Migration[]): Schema {
   const schema: Schema = new Map();
   for (const migration of [...migrations].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     const sql = stripComments(migration.sql);
-    const statements = new RegExp(`\\b(CREATE\\s+(?:TEMP(?:ORARY)?\\s+)?(?:VIRTUAL\\s+)?TABLE|ALTER\\s+TABLE)\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${QUALIFIED}`, 'gi');
+    const statements = new RegExp(`\\b(CREATE\\s+(?:TEMP(?:ORARY)?\\s+)?(?:VIRTUAL\\s+)?TABLE|ALTER\\s+TABLE|DROP\\s+TABLE)\\s+(?:IF\\s+(?:NOT\\s+)?EXISTS\\s+)?${QUALIFIED}`, 'gi');
     const read = new Set([...sql.matchAll(statements)].map((m) => m.index));
     for (const m of sql.matchAll(ANY_TABLE_STATEMENT)) {
       if (!read.has(m.index)) {
@@ -130,6 +130,11 @@ export function readSchema(migrations: readonly Migration[]): Schema {
       const fail = (what: string): never => {
         throw new Error(`migration ${migration.id} : ${what} (table ${table}), forme que le registre ne sait pas lire`);
       };
+      // Une table retirée puis recréée est relue avec ses nouvelles colonnes.
+      if (/^DROP/i.test(m[1]!)) {
+        schema.delete(table);
+        continue;
+      }
       if (/^CREATE/i.test(m[1]!)) {
         if (/^\s*USING\b/i.test(rest)) fail('table virtuelle');
         if (!/^\s*\(/.test(rest)) fail('table créée sans liste de colonnes');
