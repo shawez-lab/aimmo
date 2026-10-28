@@ -213,12 +213,12 @@ describeWithSqlite('L03 · identification et bénéficiaire effectif, étape blo
     expect(await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: [{ personId: a, sharePercent: 50.01 }, { personId: b, sharePercent: 50 }] })).toMatchObject({ ok: false, code: 'shares_above_100' });
     // Un Kbis déposé par erreur sur la fiche de Chloé : refusée comme bénéficiaire, jusqu'à la correction du responsable.
     await t.deposit(c, { piece: 'extrait_kbis', seenAt: new Date('2027-03-01T10:00:00.000Z') });
-    const owners = [{ personId: a, sharePercent: 33.33 }, { personId: b, sharePercent: 33.33 }, { personId: c, sharePercent: 33.33 }];
+    const owners = [{ personId: a, sharePercent: 32.3 }, { personId: b, sharePercent: 33.34 }, { personId: c, sharePercent: 34.36 }];
     expect(await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: owners })).toMatchObject({ ok: false, code: 'owner_is_company' });
     expect(await t.identification.declare(t.compliance, c, { entity: 'personne' })).toMatchObject({ ok: true });
     expect(await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: owners })).toMatchObject({ ok: true });
     expect(await t.identityLine(company.documentId)).toEqual({ passed: true, code: 'identity_verified' });
-    expect((await t.db.all<{ share_percent: number }>('SELECT share_percent FROM beneficial_owners')).map((r) => r.share_percent)).toEqual([33.33, 33.33, 33.33]);
+    expect((await t.db.all<{ share_hundredths: number }>('SELECT share_hundredths FROM beneficial_owners')).map((r) => r.share_hundredths).sort()).toEqual([3230, 3334, 3436]);
   });
 
   it('[R92] une déclaration à moitié écrite (panne entre deux bénéficiaires) ne compte pas', async () => {
@@ -230,7 +230,7 @@ describeWithSqlite('L03 · identification et bénéficiaire effectif, étape blo
     await t.deposit(anna, { piece: 'carte_identite', seenAt: new Date('2027-03-01T10:00:00.000Z') });
     // La panne : la déclaration annonce deux bénéficiaires, un seul est écrit.
     await t.db.run("INSERT INTO client_identifications (id, network_id, person_id, entity, owners_count, declared_by, declared_at) VALUES ('decl-1', ?, ?, 'societe', 2, ?, ?)", [t.network.id, company.personId, `agent:${t.agent.userId}`, NOW.toISOString()]);
-    await t.db.run("INSERT INTO beneficial_owners (declaration_id, network_id, owner_person_id, share_percent) VALUES ('decl-1', ?, ?, 50)", [t.network.id, anna]);
+    await t.db.run("INSERT INTO beneficial_owners (declaration_id, network_id, owner_person_id, share_hundredths) VALUES ('decl-1', ?, ?, 5000)", [t.network.id, anna]);
     expect(await t.identityLine(company.documentId)).toEqual({ passed: false, code: 'beneficial_owners_missing' });
     // Reprise complète : les deux bénéficiaires effectifs comptent, et Bruno doit être identifié.
     expect(await t.identification.declare(t.agent, company.personId, { entity: 'societe', beneficialOwners: [{ personId: anna, sharePercent: 50 }, { personId: bruno, sharePercent: 50 }] })).toMatchObject({ ok: true });
@@ -252,7 +252,7 @@ describeWithSqlite('L03 · identification et bénéficiaire effectif, étape blo
     expect(await t.identification.declare(t.compliance, company.personId, { entity: 'societe', beneficialOwners: owners })).toMatchObject({ ok: true });
     await expect(t.db.run('DELETE FROM client_identifications')).rejects.toThrow();
     await expect(t.db.run('DELETE FROM beneficial_owners')).rejects.toThrow();
-    await expect(t.db.run('UPDATE beneficial_owners SET share_percent = 30')).rejects.toThrow();
+    await expect(t.db.run('UPDATE beneficial_owners SET share_hundredths = 3000')).rejects.toThrow();
     await expect(t.db.run("UPDATE client_identifications SET entity = 'personne'")).rejects.toThrow();
     const text = JSON.stringify(await t.journal.all());
     expect(text).toContain('identification.declaree');

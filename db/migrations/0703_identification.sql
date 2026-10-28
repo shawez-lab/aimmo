@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS beneficial_owners (
   declaration_id TEXT NOT NULL REFERENCES client_identifications (id) ON DELETE RESTRICT,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   owner_person_id TEXT NOT NULL,
-  -- En pour cent, au centième près (33,33 %).
-  share_percent REAL NOT NULL CHECK (share_percent BETWEEN 25 AND 100 AND round(share_percent * 100) = share_percent * 100),
+  -- En centièmes de pour cent, en entier : 33,33 % s'écrit 3333.
+  share_hundredths INTEGER NOT NULL CHECK (share_hundredths BETWEEN 2500 AND 10000),
   PRIMARY KEY (declaration_id, owner_person_id),
   FOREIGN KEY (owner_person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT
 );

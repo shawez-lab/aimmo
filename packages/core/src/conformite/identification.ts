@@ -121,7 +121,7 @@ export class Identification {
       return { ok: false, rule: 'R92', code: 'company_downgrade' };
     }
 
-    const owners: { personId: string; sharePercent: number }[] = [];
+    const owners: { personId: string; shareHundredths: number }[] = [];
     const roots = new Set<string>();
     let total = 0;
     for (const o of raw as unknown[]) {
@@ -129,8 +129,8 @@ export class Identification {
       const { personId: ownerId, sharePercent } = o as Record<string, unknown>;
       // Au centième près : 33,33 % s'écrit 33.33.
       if (typeof ownerId !== 'string' || typeof sharePercent !== 'number' || !Number.isFinite(sharePercent) || Math.abs(Math.round(sharePercent * 100) - sharePercent * 100) > 1e-6) return { ok: false, rule: null, code: 'bad_owner' };
-      const share = Math.round(sharePercent * 100) / 100;
-      if (share < BENEFICIAL_OWNER_THRESHOLD_PERCENT || share > 100) return { ok: false, rule: 'R92', code: 'share_below_threshold' };
+      const share = Math.round(sharePercent * 100);
+      if (share < BENEFICIAL_OWNER_THRESHOLD_PERCENT * 100 || share > 10_000) return { ok: false, rule: 'R92', code: 'share_below_threshold' };
       const owner = await this.acces.readFiche(viewer, ownerId);
       if (!owner.ok) return { ok: false, rule: 'R16', code: owner.code };
       if (owner.view !== 'full') return this.refuse(viewer, ownerId, 'not_assigned');
@@ -140,8 +140,8 @@ export class Identification {
       if (root === companyRoot || (await this.isCompany(viewer.networkId, owner.value.person.id, this.now()))) return { ok: false, rule: null, code: 'owner_is_company' };
       if (roots.has(root)) return { ok: false, rule: null, code: 'duplicate_owner' };
       roots.add(root);
-      total += Math.round(share * 100);
-      owners.push({ personId: owner.value.person.id, sharePercent: share });
+      total += share;
+      owners.push({ personId: owner.value.person.id, shareHundredths: share });
     }
     if (total > 10_000) return { ok: false, rule: null, code: 'shares_above_100' };
 
@@ -151,7 +151,7 @@ export class Identification {
       id, viewer.networkId, company, input.entity, owners.length, this.actor(viewer), this.now().toISOString(),
     ]);
     for (const o of owners) {
-      await this.db.run('INSERT INTO beneficial_owners (declaration_id, network_id, owner_person_id, share_percent) VALUES (?, ?, ?, ?)', [id, viewer.networkId, o.personId, o.sharePercent]);
+      await this.db.run('INSERT INTO beneficial_owners (declaration_id, network_id, owner_person_id, share_hundredths) VALUES (?, ?, ?, ?)', [id, viewer.networkId, o.personId, o.shareHundredths]);
     }
     await appendEvent(
       this.journal,
@@ -216,9 +216,9 @@ export class Identification {
     if (!kbis.verifiedOn) return { ok: false, entity: 'societe', code: kbis.expired ? 'kbis_expired' : 'kbis_missing' };
     // Une société sans déclaration « société » n'a aucun bénéficiaire effectif déclaré : refusée.
     const owners = declared?.entity === 'societe'
-      ? await this.db.all<{ owner_person_id: string; share_percent: number }>('SELECT owner_person_id, share_percent FROM beneficial_owners WHERE declaration_id = ? ORDER BY owner_person_id', [declared.id])
+      ? await this.db.all<{ owner_person_id: string; share_hundredths: number }>('SELECT owner_person_id, share_hundredths FROM beneficial_owners WHERE declaration_id = ? ORDER BY owner_person_id', [declared.id])
       : [];
-    const counted = owners.filter((o) => Number(o.share_percent) >= BENEFICIAL_OWNER_THRESHOLD_PERCENT);
+    const counted = owners.filter((o) => Number(o.share_hundredths) >= BENEFICIAL_OWNER_THRESHOLD_PERCENT * 100);
     if (counted.length === 0) return { ok: false, entity: 'societe', code: 'beneficial_owners_missing' };
     let oldest = kbis.verifiedOn;
     for (const o of counted) {
