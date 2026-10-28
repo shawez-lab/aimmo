@@ -50,6 +50,7 @@ export type PathReason =
   | 'etat_date_attendu'
   | 'reflexion_offre_pret'
   | 'offre_pret_attendue'
+  | 'acceptation_offre_attendue'
   | 'refus_de_pret'
   | 'piece_manquante'
   | 'piece_perimee'
@@ -118,7 +119,9 @@ export function criticalPath(fileId: string, input: PathInput): CriticalPath {
     if (last?.step === 'refus') lines.push({ reason: 'refus_de_pret', item: 'pret', who: 'acquereur', notBefore: null });
     else if (accepted) {
       // Rien : la condition de prêt est levée.
-    } else if (offer) lines.push({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: acceptable });
+    } else if (offer && acceptable! > input.today) lines.push({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: acceptable });
+    // La réflexion est finie et l'acceptation n'est pas déclarée : elle reste à faire, sans date.
+    else if (offer) lines.push({ reason: 'acceptation_offre_attendue', item: 'pret', who: 'acquereur', notBefore: null });
     else lines.push({ reason: 'offre_pret_attendue', item: 'pret', who: 'banque', notBefore: addDays(input.today, LOAN_REFLECTION_DAYS + 1) });
   }
   const e = at('etat_date');
@@ -171,7 +174,7 @@ export interface PartyView {
   yourActions: { reason: PathReason; item: string | null }[];
 }
 
-const ACTIONS: readonly PathReason[] = ['piece_manquante', 'piece_perimee', 'identite_a_verifier', 'refus_de_pret'];
+const ACTIONS: readonly PathReason[] = ['piece_manquante', 'piece_perimee', 'identite_a_verifier', 'refus_de_pret', 'acceptation_offre_attendue'];
 
 /**
  * La vue d'une partie. Pour le vendeur, `path` est le chemin calculé sans le prêt (`criticalPath` avec
@@ -182,7 +185,7 @@ export function partyView(path: CriticalPath, side: 'vendeur' | 'acquereur', loa
   const remaining: PartyView['remaining'] = [];
   let otherPieces = 0;
   for (const l of path.lines) {
-    if (side === 'vendeur' && ['reflexion_offre_pret', 'offre_pret_attendue', 'refus_de_pret'].includes(l.reason)) {
+    if (side === 'vendeur' && ['reflexion_offre_pret', 'offre_pret_attendue', 'refus_de_pret', 'acceptation_offre_attendue'].includes(l.reason)) {
       // Le vendeur sait que la condition de prêt n'est pas levée, rien de plus sur le financement de l'acquéreur.
       if (!remaining.some((x) => x.reason === 'pret_en_cours')) remaining.push({ reason: 'pret_en_cours', item: 'pret', who: 'autre_partie', notBefore: null });
       continue;

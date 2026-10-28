@@ -38,6 +38,10 @@ it('[R61] le chemin critique suit des règles écrites : même calcul pour les m
   expect(criticalPath('d', base({ financing: [{ step: 'offre_pret_emise', day: '2027-05-15' }, { step: 'offre_pret_acceptee', day: '2027-05-20' }] })).holder).toEqual({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: '2027-05-26' });
   // Un refus déclaré après une acceptation bloque de nouveau.
   expect(criticalPath('d', base({ financing: [{ step: 'offre_pret_emise', day: '2027-04-05' }, { step: 'offre_pret_acceptee', day: '2027-04-20' }, { step: 'refus', day: '2027-04-25' }] })).holder).toMatchObject({ reason: 'refus_de_pret', notBefore: null });
+  // La réflexion finie, l'acceptation non déclarée reste à faire par l'acquéreur, sans date.
+  const waiting = criticalPath('d', base({ today: '2027-05-27', financing: [{ step: 'offre_pret_emise', day: '2027-05-15' }] }));
+  expect(waiting).toMatchObject({ conditional: true, holder: { reason: 'acceptation_offre_attendue', who: 'acquereur', notBefore: null } });
+  expect(partyView(waiting, 'acquereur').yourActions).toContainEqual({ reason: 'acceptation_offre_attendue', item: 'pret' });
   // Acceptation, refus, nouvelle demande : l'ancienne acceptation ne compte plus, l'offre est attendue.
   expect(criticalPath('d', base({ today: '2027-05-15', financing: [{ step: 'offre_pret_emise', day: '2027-04-01' }, { step: 'offre_pret_acceptee', day: '2027-04-15' }, { step: 'refus', day: '2027-05-01' }, { step: 'demande_deposee', day: '2027-05-10' }] })).holder).toEqual({ reason: 'offre_pret_attendue', item: 'pret', who: 'banque', notBefore: '2027-05-26' });
   // Un refus suivi d'une nouvelle demande ne bloque plus : l'offre est attendue.
