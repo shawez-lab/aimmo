@@ -33,6 +33,8 @@ export * as pilotage from './pilotage/index.ts';
 export * as conformite from './conformite/index.ts';
 // M14 sous son propre nom, comme M12 et M13 (J13).
 export * as reseau from './reseau/index.ts';
+// M15 sous son propre nom, comme M14 (W10).
+export * as location from './location/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
