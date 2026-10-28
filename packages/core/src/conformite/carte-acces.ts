@@ -42,6 +42,8 @@ export interface ViaLocator {
   jsonPath?: string;
   /** Les lignes ne comptent que si ces colonnes commencent par ces textes. */
   startsWith?: Readonly<Record<string, string>>;
+  /** Les lignes ne comptent que si ces champs du JSON de `data` ont ces valeurs (champ → valeur). */
+  jsonIs?: Readonly<Record<string, string>>;
   /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur (champ → valeur). */
   jsonNot?: Readonly<Record<string, string>>;
   /** Les lignes ne comptent pas si ces colonnes ont l'une de ces valeurs. */
@@ -313,7 +315,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   proposal_transmissions: { locate: [via('proposal_id', 'offer_proposals')] },
   proposal_responses: { locate: [via('proposal_id', 'offer_proposals')] },
   proposal_tasks: { locate: [via('proposal_id', 'offer_proposals')] },
-  sale_files: { locate: [...by('buyer_person_id'), via('property_id', 'mandates', 'property_id')], own: { buyer_person_id: ['offer_id'] } },
+  sale_files: { locate: [...by('buyer_person_id'), via('property_id', 'mandates', 'property_id', { tag: 'vendeur' })], own: { buyer_person_id: ['offer_id'] } },
   sale_file_steps: { locate: [via('file_id', 'sale_files')] },
   sale_file_pieces: { locate: [via('file_id', 'sale_files')] },
   sale_file_dates: { locate: [via('file_id', 'sale_files')] },
@@ -424,7 +426,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'documents', 'id', { prefix: 'document:' }),
       via('subject', 'offer_register', 'id', { prefix: 'offer:' }),
       // Le dossier de vente au journal porte le financement et les alertes de fonds de l'acquéreur : à lui seul.
-      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id' }),
+      // Ce qui est écrit pour le vendeur (`side: 'vendeur'` : ses alertes de fonds, ses demandes d'avis) est au vendeur.
+      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id', jsonNot: { side: 'vendeur' } }),
+      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'vendeur', jsonIs: { side: 'vendeur' } }),
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
       via('subject', 'appointments', 'id', { prefix: 'visit:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
@@ -573,7 +577,7 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
         for (const c of Object.keys(l.where ?? {})) named.add(c);
         if (isVia(l)) {
           for (const c of [...Object.keys(l.startsWith ?? {}), ...Object.keys(l.except ?? {})]) named.add(c);
-          if (l.jsonNot) named.add('data');
+          if (l.jsonNot || l.jsonIs) named.add('data');
         }
       }
       if (isVia(l)) {

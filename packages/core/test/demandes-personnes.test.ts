@@ -156,6 +156,7 @@ async function seedEveryTable() {
         } else if ('from' in l) {
           row[l.column] = `${l.prefix ?? ''}${seeded.get(l.from)![p]![l.key]}`;
           for (const [here, there] of Object.entries(l.alsoMatch ?? {})) row[here] = seeded.get(l.from)![p]![there]!;
+          if (l.jsonIs) row.data = JSON.stringify(l.jsonIs);
         }
         else row[l.column] = `${l.prefix ?? ''}${p}`;
       }
@@ -229,6 +230,11 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(sellerAfter).not.toContain(C);
     const buyerJournal = (await assembleAccess(db, [C])).sections.find((s) => s.table === 'journal')!.rows.map((r) => r.type);
     expect(buyerJournal.sort()).toEqual(['dossier.alerte_fonds', 'dossier.financement']);
+    // L'alerte de fonds du vendeur, sur le même dossier : au vendeur seul.
+    await insert('journal', { seq: 8003, at: 't', type: 'dossier.alerte_fonds', actor: 'system:dossiers', subject: 'sale_file:f-c', data: '{"side":"vendeur","message":"message:mess-de-a","signals":["rib_vendeur"]}', prev_hash: 'p', hash: 'h8003' });
+    const sellerJournal = (await assembleAccess(db, [A])).sections.find((s) => s.table === 'journal')!.rows;
+    expect(sellerJournal.filter((r) => String(r.subject) === 'sale_file:f-c').map((r) => r.seq)).toEqual([8003]);
+    expect(JSON.stringify(await assembleAccess(db, [C]))).not.toContain('rib_vendeur');
     // Le plan d'effacement de A n'efface jamais d'office une ligne partagée : son dossier de vente avec C, la
     // recommandation qui le nomme, sont « à examiner ».
     const plan = conformite.erasurePlan(await conformite.assembleAccessDetail(db, [A]));
