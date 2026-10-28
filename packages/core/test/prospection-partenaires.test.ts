@@ -125,6 +125,21 @@ describeWithSqlite('U08 · prospection de nouveaux partenaires', () => {
     ).rejects.toThrow();
   });
 
+  it('[R79] un plafond réglé plus bas tient aussi quand deux passages tournent ensemble', async () => {
+    const t = await setup();
+    for (let i = 1; i <= 6; i++) await t.add(i);
+    const low = new Prospection(t.db, t.journal, { now: () => new Date((clock += 1000)), newId: uuid, optOutBase: BASE, perWorkingDay: 2 });
+    const [a, b] = await Promise.all([low.run(t.network.id), low.run(t.network.id)]);
+    expect(a + b).toBe(2);
+  });
+
+  it('[R10] un nom de réseau avec des chiffres ne bloque pas le mail', async () => {
+    const t = await setup();
+    await t.db.run("UPDATE networks SET name = 'Réseau 21 Essai' WHERE id = ?", [t.network.id]);
+    await t.add(1);
+    expect(await t.prospection.run(t.network.id)).toBe(1);
+  });
+
   it('[R01] hors des heures d’envoi, rien n’est préparé ; le passage suivant reprend', async () => {
     const t = await setup();
     await t.add(1);

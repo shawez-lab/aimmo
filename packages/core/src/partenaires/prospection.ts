@@ -258,7 +258,9 @@ export class Prospection {
         break;
       }
       const body = prospectText(network.name, c.trade);
-      const problems = checkText(body, { audience: 'client', channel: 'email', figures: [] }).filter((p) => p.rule !== 'R08');
+      // Les seuls chiffres permis sont ceux du nom du réseau, tel qu'il est rangé [R10].
+      const figures = (network.name.match(/\d+/g) ?? []).map(Number);
+      const problems = checkText(body, { audience: 'client', channel: 'email', figures }).filter((p) => p.rule !== 'R08');
       if (problems.length > 0 || PROMISE_WORDS.test(body)) {
         await appendEvent(this.journal, { type: 'prospection.texte_refuse', actor: 'system:partenaires', subject: `partner_prospect:${c.id}`, data: { rules: problems.map((p) => p.rule) } }, this.now);
         continue;
@@ -266,10 +268,13 @@ export class Prospection {
       const token = newAlertToken();
       const text = `${body}\n\nNe plus recevoir de message de notre part : ${this.optOutBase}${token}`;
       try {
-        await this.db.run(
-          'INSERT INTO partner_prospect_mails (id, network_id, prospect_id, day, text, optout_token_sha256, decision_rule, decision_reason, prepared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [this.newId(), networkId, c.id, local.date, text, await sha256(token), decision.rule, decision.reason, now.toISOString()],
+        // Le plafond réglé est relu dans la même instruction que l'écriture : deux passages ensemble ne le dépassent pas.
+        const written = await this.db.run(
+          `INSERT INTO partner_prospect_mails (id, network_id, prospect_id, day, text, optout_token_sha256, decision_rule, decision_reason, prepared_at)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM partner_prospect_mails WHERE network_id = ? AND day = ?) < ?`,
+          [this.newId(), networkId, c.id, local.date, text, await sha256(token), decision.rule, decision.reason, now.toISOString(), networkId, local.date, this.perDay],
         );
+        if (written.changes === 0) break;
       } catch (error) {
         // Un autre passage a atteint le plafond du jour : on s'arrête [R79].
         if (/plafond du jour/.test(String(error))) break;
