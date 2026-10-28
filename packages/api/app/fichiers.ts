@@ -1338,6 +1338,15 @@ export const APP_JS = `'use strict';
     state.textContent = 'Préparation…';
     return api('/v1/pilotage/export-quotidien?jour=' + day, currentKey).then(function (r) {
       if (mine !== session) return false;
+      // Une clé refusée efface tout, comme partout ailleurs dans l'application.
+      if (r.status === 401 || r.status === 403) {
+        return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
+          if (mine !== session) return false;
+          if (r.status === 401 || (b && b.code === 'agent_inactive')) { forgetKey(); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
+          state.textContent = 'Export indisponible pour ce jour. Réessayez plus tard.';
+          return false;
+        });
+      }
       if (!r.ok) { state.textContent = 'Export indisponible pour ce jour. Réessayez plus tard.'; return false; }
       return r.blob().then(function (blob) {
         if (mine !== session) return false;

@@ -83,7 +83,7 @@ async function run(answers: Record<string, Answer> = {}, base: Record<string, An
     b.listeners.click!({});
     await settle();
   };
-  return { els, calls, table, byText, click, blobs, body, links };
+  return { els, calls, table, byText, click, blobs, body, links, storage };
 }
 
 const figures = (root: FakeElement) => root.all().filter((e) => e.tagName === 'details');
@@ -194,6 +194,17 @@ describe('K09 · écran « Le réseau » pour la direction', () => {
     await t.click(t.els['reseau-mois']);
     expect(t.els['reseau-etat']!.textContent).toBe('Pas de réseau. Réessayez dans un moment.');
     expect(t.els['reseau-corps']!.children).toHaveLength(0);
+  });
+
+  it('une clé refusée au téléchargement de l’export efface la clé et tout l’écran [R16]', async () => {
+    const t = await run({ 'GET /v1/pilotage/export-quotidien': no(401, { ok: false, code: 'unauthorized' }) });
+    expect(t.els['reseau-corps']!.children.length).toBeGreaterThan(0);
+    await t.click(t.els['reseau-export']);
+    expect(t.els.connexion!.hidden).toBe(false);
+    expect(t.els.reseau!.hidden).toBe(true);
+    expect(t.storage.has('aimmo.cle')).toBe(false);
+    expect(t.els['reseau-corps']!.children).toHaveLength(0);
+    expect(t.blobs).toHaveLength(0);
   });
 
   it('se déconnecter efface tout l’écran du réseau', async () => {
