@@ -378,6 +378,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       partner_referrals: ['postcode', 'created_by'],
       partner_referral_options: [],
       partner_referral_steps: ['consent_proof_ref', 'actor'],
+      partner_referral_fees: ['amount_cents', 'declared_by'],
+      partner_referral_disclosures: ['text_sha256', 'shown_by'],
     },
   },
   {
@@ -611,6 +613,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   partner_referrals: ['id', 'network_id', 'project_id', 'property_id', 'trade', 'domain', 'seed', 'created_at'],
   partner_referral_options: ['referral_id', 'position', 'partner_id'],
   partner_referral_steps: ['referral_id', 'seq', 'state', 'partner_id', 'consent_at', 'consent_channel', 'at'],
+  partner_referral_fees: ['id', 'referral_id', 'partner_id', 'kind', 'rate_bp', 'payer', 'payee', 'declared_at'],
+  partner_referral_disclosures: ['id', 'referral_id', 'fees_count', 'shown_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */

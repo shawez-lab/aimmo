@@ -96,6 +96,9 @@ describe('L06 · registre des traitements vérifié contre la base', () => {
     expect(gapsOf('CREATE TABLE [unregistered_contacts] (email TEXT);')).toMatchObject([{ kind: 'table_absente', table: 'unregistered_contacts' }]);
     expect(gapsOf('CREATE TABLE /* contact table */ unregistered_contacts (email TEXT);')).toMatchObject([{ kind: 'table_absente', table: 'unregistered_contacts' }]);
     expect(() => readSchema([{ id: '0001', sql: 'CREATE TABLE "avec espace" (email TEXT);' }])).toThrow('forme que le registre ne sait pas lire');
+    for (const sql of ['ALTER TABLE listing_views ADD COLUMN "day email" TEXT;', 'ALTER TABLE listing_views ADD COLUMN [day email] TEXT;', 'ALTER TABLE listing_views ADD `day-email` TEXT;']) {
+      expect(() => readSchema(extra(sql)), sql).toThrow('forme que le registre ne sait pas lire');
+    }
     // Une table retirée puis recréée avec une donnée personnelle de plus est vue.
     expect(gapsOf('DROP TABLE IF EXISTS listing_views; CREATE TABLE listing_views (id TEXT PRIMARY KEY, property_id TEXT, network_id TEXT, channel TEXT, day TEXT, views INTEGER, recorded_at TEXT, email TEXT);')).toEqual([
       { kind: 'technique_avec_donnee', table: 'listing_views', columns: ['email'] },

@@ -116,6 +116,11 @@ export function readSchema(migrations: readonly Migration[]): Schema {
   const schema: Schema = new Map();
   for (const migration of [...migrations].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     const sql = stripComments(migration.sql);
+    // Un nom entre guillemets, accents graves ou crochets doit être un nom simple : sinon la lecture n'en verrait
+    // qu'une partie.
+    for (const q of sql.matchAll(/"[^"]*"|`[^`]*`|\[[^\]]*\]/g)) {
+      if (!/^.[A-Za-z_][A-Za-z_0-9]*.$/.test(q[0])) throw new Error(`migration ${migration.id} : nom ${q[0]}, forme que le registre ne sait pas lire`);
+    }
     const statements = new RegExp(`\\b(CREATE\\s+(?:TEMP(?:ORARY)?\\s+)?(?:VIRTUAL\\s+)?TABLE|ALTER\\s+TABLE|DROP\\s+TABLE)\\s+(?:IF\\s+(?:NOT\\s+)?EXISTS\\s+)?${QUALIFIED}`, 'gi');
     const read = new Set([...sql.matchAll(statements)].map((m) => m.index));
     for (const m of sql.matchAll(ANY_TABLE_STATEMENT)) {
