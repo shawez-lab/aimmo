@@ -389,11 +389,16 @@ describeWithSqlite('U11 · routes de l’écran « Partenaires »', () => {
     expect(p.status).toBe(200);
     const mine = await t.call(t.agent, 'GET', '/partenaires/projets');
     expect(mine.status).toBe(200);
-    expect(mine.body.data.map((x: { projectId: string }) => x.projectId)).toEqual([t.project.id, t.buyProject.id]);
-    const first = mine.body.data[0];
+    expect(mine.body.data.projects.map((x: { projectId: string }) => x.projectId)).toEqual([t.project.id, t.buyProject.id]);
+    expect(mine.body.data).toMatchObject({ page: 0, more: false });
+    const first = mine.body.data.projects[0];
     expect(first).toMatchObject({ kind: 'sell', firstName: 'Vendeur', properties: [{ propertyId: t.property.id, reference: 'T-1', postcode: '21000' }] });
     // Du client, le prénom seul : ni nom, ni coordonnée.
     expect(JSON.stringify(mine.body.data)).not.toContain('Inventé');
+    // Le bien suivi par Alex est rendu à l'acquéreur d'Alex ; une page impossible est refusée.
+    expect(mine.body.data.projects[1].properties).toHaveLength(1);
+    expect(await t.call(t.agent, 'GET', '/partenaires/projets', { query: '?page=-1' })).toMatchObject({ status: 400, body: { code: 'bad_page' } });
+    expect(await t.call(t.agent, 'GET', '/partenaires/projets', { query: '?page=1' })).toMatchObject({ status: 200, body: { data: { projects: [], page: 1, more: false } } });
     // Les partenaires montrés gardent l'ordre du tirage rangé, sans note ni rang [R75, R14].
     expect(first.referrals).toHaveLength(1);
     const shown = first.referrals[0].shown.map((x: { partnerId: string }) => x.partnerId);
@@ -403,10 +408,10 @@ describeWithSqlite('U11 · routes de l’écran « Partenaires »', () => {
     expect(JSON.stringify(first.referrals)).not.toMatch(/"(?:note|score|rank|rating)"/);
     // Un autre agent ne voit rien des projets d'Alex.
     const other = await t.call(t.other, 'GET', '/partenaires/projets');
-    expect(other).toMatchObject({ status: 200, body: { data: [] } });
+    expect(other).toMatchObject({ status: 200, body: { data: { projects: [] } } });
     // La direction voit le seul projet qui a une demande.
     const dir = await t.call(t.dir, 'GET', '/partenaires/projets');
-    expect(dir.body.data.map((x: { projectId: string }) => x.projectId)).toEqual([t.project.id]);
+    expect(dir.body.data.projects.map((x: { projectId: string }) => x.projectId)).toEqual([t.project.id]);
     // La conformité et un partenaire sont refusés, au journal.
     expect(await t.call(t.compliance, 'GET', '/partenaires/projets')).toMatchObject({ status: 403, body: { rule: 'R16', code: 'role' } });
     expect(await t.call(t.partnerViewer(ids[0]!), 'GET', '/partenaires/projets')).toMatchObject({ status: 403, body: { rule: 'R16' } });
@@ -418,15 +423,38 @@ describeWithSqlite('U11 · routes de l’écran « Partenaires »', () => {
     const buyer = (await t.db.first<{ person_id: string }>('SELECT person_id FROM projects WHERE id = ?', [t.buyProject.id]))!.person_id;
     await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.other.userId, seller]);
     const mine = await t.call(t.agent, 'GET', '/partenaires/projets');
-    expect(mine.body.data.map((x: { firstName: string | null }) => x.firstName)).toEqual([null, 'Acheteur']);
+    expect(mine.body.data.projects.map((x: { firstName: string | null }) => x.firstName)).toEqual([null, 'Acheteur']);
     const reads = await t.events('fiche.lue');
     expect(reads.map((e) => e.subject)).toEqual([`person:${buyer}`]);
     expect(JSON.parse(reads[0]!.data)).toMatchObject({ rule: 'R16', via: 'partenaires.projets', project: `project:${t.buyProject.id}` });
     const refused = (await t.events('acces.refuse')).filter((e) => JSON.parse(e.data).via === 'partenaires.projets');
     expect(refused.map((e) => e.subject)).toEqual([`person:${seller}`]);
     const listed = await t.events('partenaires.projets.lu');
-    expect(JSON.parse(listed[0]!.data)).toEqual({ rule: 'R16', projects: 2, names: 1 });
+    expect(JSON.parse(listed[0]!.data)).toEqual({ rule: 'R16', page: 0, projects: 2, names: 1 });
     for (const e of [...reads, ...refused, ...listed]) expect(e.data).not.toMatch(/Vendeur|Acheteur|Inventé/);
+  });
+
+  it('[R16] un bien d’un autre agent, vendu, n’est plus rendu avec le projet de l’acquéreur', async () => {
+    const t = await setup();
+    await t.db.run("UPDATE properties SET agent_id = ?, status = 'sold' WHERE id = ?", [t.other.userId, t.property.id]);
+    const mine = await t.call(t.agent, 'GET', '/partenaires/projets');
+    for (const p of mine.body.data.projects) expect(p.properties).toEqual([]);
+    expect(JSON.stringify(mine.body.data)).not.toContain('T-1');
+  });
+
+  it('par pages de 50 : un 51e projet passe à la page suivante, jamais perdu', async () => {
+    const t = await setup();
+    const store = new FicheClient(t.db, { now: () => new Date(clock) });
+    for (let i = 0; i < 49; i++) {
+      const person = await store.createPerson({ networkId: t.network.id, agentId: t.agent.userId, firstName: `Client${i}`, lastName: 'Inventé' });
+      await store.createProject({ networkId: t.network.id, agentId: t.agent.userId, personId: person.id, kind: 'buy' });
+    }
+    const first = await t.call(t.agent, 'GET', '/partenaires/projets');
+    expect(first.body.data.projects).toHaveLength(50);
+    expect(first.body.data.more).toBe(true);
+    const second = await t.call(t.agent, 'GET', '/partenaires/projets', { query: '?page=1' });
+    expect(second.body.data.projects).toHaveLength(1);
+    expect(second.body.data.more).toBe(false);
   });
 
   it('[R16] un agent inactif ne lit plus ses projets', async () => {

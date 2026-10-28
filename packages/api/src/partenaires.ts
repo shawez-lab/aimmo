@@ -400,7 +400,7 @@ const ROUTES: PartenairesRoute[] = [
     pattern: /^\/partenaires\/projets$/,
     name: 'partenaires.projets',
     roles: STAFF,
-    handle: async (s, v) => reply(await core(s).relations.projects(v)),
+    handle: async (s, v, _p, r) => reply(await core(s).relations.projects(v, new URL(r.url).searchParams.get('page') ?? 0)),
   },
   {
     method: 'POST',

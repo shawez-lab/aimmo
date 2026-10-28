@@ -65,8 +65,15 @@ export interface Referral {
   steps: number;
 }
 
-/** Au plus tant de projets rendus à l'écran « Partenaires ». */
-export const MAX_PROJECTS = 100;
+/** Au plus tant de projets par page de l'écran « Partenaires ». */
+export const MAX_PROJECTS = 50;
+
+/** Une page de projets, dans leur ordre de création ; `more` dit qu'une page suit. */
+export interface ProjectPage {
+  projects: ProjectReferrals[];
+  page: number;
+  more: boolean;
+}
 
 /** Un projet et ses mises en relation, pour l'écran « Partenaires » (U11). */
 export interface ProjectReferrals {
@@ -331,21 +338,26 @@ export class MiseEnRelation {
    * [R16]. Projets et demandes dans leur ordre de création, partenaires dans l'ordre du tirage : aucun tri par une note
    * [R75, R14]. Du client, seul le prénom.
    */
-  async projects(viewer: Viewer): Promise<ReferralResult<ProjectReferrals[]>> {
+  async projects(viewer: Viewer, page: unknown = 0): Promise<ReferralResult<ProjectPage>> {
+    const n = typeof page === 'number' ? page : typeof page === 'string' && /^\d{1,6}$/.test(page) ? Number(page) : NaN;
+    if (!Number.isInteger(n) || n < 0) return { ok: false, rule: null, code: 'bad_page' };
+    const offset = n * MAX_PROJECTS;
     let rows: { id: string; kind: string; stage: string; person_id: string }[];
     if (viewer.role === 'agent') {
       const agent = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
       if (agent?.status !== 'active') return this.refuse(viewer, `agent:${viewer.userId}`, 'agent_inactive');
       rows = await this.db.all(
-        'SELECT pr.id, pr.kind, pr.stage, pr.person_id FROM projects pr WHERE pr.network_id = ? AND pr.agent_id = ? ORDER BY pr.created_at, pr.id LIMIT ?',
-        [viewer.networkId, viewer.userId, MAX_PROJECTS],
+        'SELECT pr.id, pr.kind, pr.stage, pr.person_id FROM projects pr WHERE pr.network_id = ? AND pr.agent_id = ? ORDER BY pr.created_at, pr.id LIMIT ? OFFSET ?',
+        [viewer.networkId, viewer.userId, MAX_PROJECTS + 1, offset],
       );
     } else if (viewer.role === 'direction') {
       rows = await this.db.all(
-        'SELECT pr.id, pr.kind, pr.stage, pr.person_id FROM projects pr WHERE pr.network_id = ? AND EXISTS (SELECT 1 FROM partner_referrals r WHERE r.project_id = pr.id) ORDER BY pr.created_at, pr.id LIMIT ?',
-        [viewer.networkId, MAX_PROJECTS],
+        'SELECT pr.id, pr.kind, pr.stage, pr.person_id FROM projects pr WHERE pr.network_id = ? AND EXISTS (SELECT 1 FROM partner_referrals r WHERE r.project_id = pr.id) ORDER BY pr.created_at, pr.id LIMIT ? OFFSET ?',
+        [viewer.networkId, MAX_PROJECTS + 1, offset],
       );
     } else return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
+    const more = rows.length > MAX_PROJECTS;
+    rows = rows.slice(0, MAX_PROJECTS);
     const out: ProjectReferrals[] = [];
     const actor = this.actor(viewer);
     const unique = new FicheUnique(this.db, new FicheClient(this.db, { now: this.now }), { now: this.now });
@@ -371,10 +383,12 @@ export class MiseEnRelation {
           this.now,
         );
       }
-      const properties = await this.db.all<{ id: string; reference: string; postal_code: string | null; city: string | null }>(
-        'SELECT pp.property_id AS id, p.reference, p.postal_code, p.city FROM project_properties pp JOIN properties p ON p.id = pp.property_id WHERE pp.project_id = ? AND p.network_id = ? ORDER BY p.created_at, p.id',
+      const linked = await this.db.all<{ id: string; reference: string; postal_code: string | null; city: string | null; agent_id: string | null; status: string }>(
+        'SELECT pp.property_id AS id, p.reference, p.postal_code, p.city, p.agent_id, p.status FROM project_properties pp JOIN properties p ON p.id = pp.property_id WHERE pp.project_id = ? AND p.network_id = ? ORDER BY p.created_at, p.id',
         [p.id, viewer.networkId],
       );
+      // Un bien n'est rendu que s'il est dans les droits : un bien d'un autre agent, vendu ou retiré, reste caché [R16].
+      const properties = linked.filter((x) => decideAccess(viewer, { kind: 'property', networkId: viewer.networkId, agentId: x.agent_id, status: x.status as never }).allowed);
       const referrals = await this.db.all<ReferralRow>(
         'SELECT id, network_id, project_id, property_id, trade, domain, postcode, seed, created_at FROM partner_referrals WHERE project_id = ? AND network_id = ? ORDER BY created_at, id',
         [p.id, viewer.networkId],
@@ -397,8 +411,8 @@ export class MiseEnRelation {
         this.now,
       );
     }
-    await appendEvent(this.journal, { type: 'partenaires.projets.lu', actor, subject: `${String(viewer.role)}:${viewer.userId}`, data: { rule: 'R16', projects: out.length, names: reads.length } }, this.now);
-    return { ok: true, value: out };
+    await appendEvent(this.journal, { type: 'partenaires.projets.lu', actor, subject: `${String(viewer.role)}:${viewer.userId}`, data: { rule: 'R16', page: n, projects: out.length, names: reads.length } }, this.now);
+    return { ok: true, value: { projects: out, page: n, more } };
   }
 
   /** L'état d'une mise en relation et son partenaire confié, sans contrôle d'accès : pour l'espace partenaire (U04). */

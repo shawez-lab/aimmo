@@ -1166,16 +1166,19 @@ export const APP_JS = `'use strict';
     $('partenaires-etat').textContent = '';
   }
   function partenairesState(text) { $('partenaires-etat').textContent = text; }
-  function openPartenaires(message) {
+  var partenairesPage = 0;
+  function openPartenaires(message, page) {
     if (!currentKey) return Promise.resolve(false);
+    if (typeof page === 'number') partenairesPage = page;
     session += 1;
     wipePartenaires();
     show('partenaires');
     partenairesState('Chargement…');
-    return send('/v1/partenaires/projets', 'GET').then(function (res) {
+    return send('/v1/partenaires/projets' + (partenairesPage ? '?page=' + partenairesPage : ''), 'GET').then(function (res) {
       if (res.gone) return false;
       if (!res.ok) { partenairesState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.status === 403 ? 'Ces demandes ne sont pas dans vos droits.' : 'Indisponible pour le moment. Réessayez plus tard.'); return false; }
-      renderPartenaires(Array.isArray(res.body.data) ? res.body.data : []);
+      var d = res.body.data || {};
+      renderPartenaires(Array.isArray(d.projects) ? d.projects : [], partenairesPage, d.more === true);
       partenairesState(message || '');
       return true;
     });
@@ -1193,10 +1196,12 @@ export const APP_JS = `'use strict';
       return openPartenaires(done);
     });
   }
-  function renderPartenaires(projects) {
+  function renderPartenaires(projects, page, more) {
     var body = $('partenaires-corps');
     clear(body);
-    if (!projects.length) { body.appendChild(el('p', 'Aucun projet suivi pour le moment.', 'doux')); return; }
+    if (!projects.length && !page) { body.appendChild(el('p', 'Aucun projet suivi pour le moment.', 'doux')); return; }
+    // Les projets dans leur ordre de création, par pages : aucun n'est jamais perdu au-delà de la première.
+    if (page) body.appendChild(button('Projets précédents', function () { openPartenaires('', page - 1); }));
     projects.forEach(function (p) {
       if (!ID.test(p.projectId)) return;
       var box = el('section', null, 'vente');
@@ -1206,6 +1211,7 @@ export const APP_JS = `'use strict';
       box.appendChild(proposeForm(p));
       body.appendChild(box);
     });
+    if (more) body.appendChild(button('Projets suivants', function () { openPartenaires('', page + 1); }));
   }
   function referralBlock(r) {
     var box = el('div', null, 'client');
@@ -1349,8 +1355,9 @@ export const APP_JS = `'use strict';
       ((all[0].body.data && all[0].body.data.followUps) || []).forEach(function (f) {
         box.appendChild(el('p', (f.kind === 'relance' ? 'Relance préparée pour le ' : 'Alerte pour vous le ') + date(f.dueAt) + ' (mode essai, rien ne part).', 'doux'));
       });
-      var pieces = all[1].ok && Array.isArray(all[1].body.data) ? all[1].body.data : [];
-      box.appendChild(el('h4', pieces.length ? 'Pièces déposées' : 'Aucune pièce déposée pour le moment'));
+      var piecesRead = all[1].ok && Array.isArray(all[1].body.data);
+      var pieces = piecesRead ? all[1].body.data : [];
+      box.appendChild(el('h4', !piecesRead ? 'Pièces indisponibles pour le moment : réessayez plus tard' : pieces.length ? 'Pièces déposées' : 'Aucune pièce déposée pour le moment'));
       var ul = el('ul', null, 'liste');
       pieces.forEach(function (x) { ul.appendChild(line((SORTS[x.sort] || 'Pièce') + (x.version > 1 ? ', version ' + x.version : ''), DESTINATIONS[x.destination] || 'rangée')); });
       box.appendChild(ul);
@@ -1794,7 +1801,7 @@ export const APP_JS = `'use strict';
     $('apres-ouvrir').addEventListener('click', function () { openApres(); });
     $('chiffres-retour').addEventListener('click', home);
     $('partenaires-retour').addEventListener('click', home);
-    $('partenaires-ouvrir').addEventListener('click', function () { openPartenaires(); });
+    $('partenaires-ouvrir').addEventListener('click', function () { openPartenaires('', 0); });
     $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', home);

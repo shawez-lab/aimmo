@@ -46,7 +46,7 @@ const BASE: Record<string, Answer> = {
   'GET /v1/usage/matin': ok(null),
   'GET /v1/annonces': ok([]),
   'GET /v1/apres-vente/journee': ok({ remercier: [], recommandations: [], taches: [] }),
-  'GET /v1/partenaires/projets': ok(PROJECTS),
+  'GET /v1/partenaires/projets': ok({ projects: PROJECTS, page: 0, more: false }),
 };
 const settle = async () => {
   for (let i = 0; i < 16; i++) await new Promise((r) => setTimeout(r, 0));
@@ -147,7 +147,7 @@ describe('U11 · écran « Partenaires » de l’application', () => {
     select.value = 'sms';
     t.table['POST /v1/partenaires/relations/r1/preuve-accord'] = ok({ proofRef: 'relations/r1/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.txt', sha256: 'e'.repeat(64), at: '2027-07-12T08:05:00.000Z', channel: 'sms' });
     t.table['POST /v1/partenaires/relations/r1/accord'] = ok(referral({ state: 'accord_client', chosenPartnerId: 'pa' }));
-    t.table['GET /v1/partenaires/projets'] = ok([{ ...PROJECTS[0], referrals: [referral({ state: 'accord_client', chosenPartnerId: 'pa', consent: { at: '2027-07-12T08:05:00.000Z', channel: 'sms' } })] }]);
+    t.table['GET /v1/partenaires/projets'] = ok({ projects: [{ ...PROJECTS[0], referrals: [referral({ state: 'accord_client', chosenPartnerId: 'pa', consent: { at: '2027-07-12T08:05:00.000Z', channel: 'sms' } })] }], page: 0, more: false });
     await t.click(t.byText(body, 'Enregistrer son accord'));
     const posts = t.calls.filter((c) => c.method === 'POST');
     expect(posts[0]).toMatchObject({ url: '/v1/partenaires/relations/r1/preuve-accord', body: JSON.stringify({ channel: 'sms', note: 'Choisi au téléphone ce matin, après lecture du texte.' }) });
@@ -210,7 +210,7 @@ describe('U11 · écran « Partenaires » de l’application', () => {
 
   it('suivre une demande confiée : délai, relance en essai, pièces rangées ; terminer ; abandonner en deux gestes', async () => {
     const t = await run({
-      'GET /v1/partenaires/projets': ok([{ ...PROJECTS[0], referrals: [referral({ state: 'confiee', chosenPartnerId: 'pz' })] }]),
+      'GET /v1/partenaires/projets': ok({ projects: [{ ...PROJECTS[0], referrals: [referral({ state: 'confiee', chosenPartnerId: 'pz' })] }], page: 0, more: false }),
       'GET /v1/partenaires/relations/r1/suivi': ok({ measure: { referralId: 'r1', state: 'confiee', entrustedAt: '2027-07-12T08:00:00.000Z', firstResponseAt: null, delayMinutes: 3000, answered: false }, followUps: [{ kind: 'relance', recipient: 'partner:pz', text: 'x', dueAt: '2027-07-14T08:00:00.000Z', preparedAt: '2027-07-14T08:00:00.000Z' }] }),
       'GET /v1/partenaires/relations/r1/pieces': ok([{ documentId: 'd1', sort: 'titre_propriete', version: 2, destination: 'sale_file', targetId: 's1', piece: null, reason: 'rule' }]),
       'GET /v1/partenaires/relations/r1/resume': ok({ summary: { headline: `Pas encore de réponse ${INJECTED}`, points: ['Confiée le 12 juillet.'] }, source: 'secours' }),
@@ -260,8 +260,37 @@ describe('U11 · écran « Partenaires » de l’application', () => {
     await gone.click(gone.els['partenaires-ouvrir']);
     expect(gone.storage.get('aimmo.cle')).toBeUndefined();
     expect(gone.els.connexion!.hidden).toBe(false);
-    const empty = await run({ 'GET /v1/partenaires/projets': ok([]) });
+    const empty = await run({ 'GET /v1/partenaires/projets': ok({ projects: [], page: 0, more: false }) });
     await empty.click(empty.els['partenaires-ouvrir']);
     expect(empty.els['partenaires-corps']!.textContent).toBe('Aucun projet suivi pour le moment.');
+  });
+
+  it('par pages : les projets au-delà de la première page restent atteignables, dans leur ordre', async () => {
+    const t = await run({
+      'GET /v1/partenaires/projets': ok({ projects: [PROJECTS[0]], page: 0, more: true }),
+      'GET /v1/partenaires/projets?page=1': ok({ projects: [PROJECTS[1]], page: 1, more: false }),
+    });
+    await t.open();
+    await t.click(t.byText(t.els['partenaires-corps']!, 'Projets suivants'));
+    expect(t.calls.at(-1)).toMatchObject({ method: 'GET', url: '/v1/partenaires/projets?page=1' });
+    expect(t.els['partenaires-corps']!.textContent).toContain(`Acheter · ${INJECTED}`);
+    expect(t.byText(t.els['partenaires-corps']!, 'Projets suivants')).toBeUndefined();
+    await t.click(t.byText(t.els['partenaires-corps']!, 'Projets précédents'));
+    expect(t.calls.at(-1)).toMatchObject({ method: 'GET', url: '/v1/partenaires/projets' });
+  });
+
+  it('des pièces illisibles ne sont jamais dites absentes', async () => {
+    const t = await run({
+      'GET /v1/partenaires/projets': ok({ projects: [{ ...PROJECTS[0], referrals: [referral({ state: 'confiee', chosenPartnerId: 'pz' })] }], page: 0, more: false }),
+      'GET /v1/partenaires/relations/r1/suivi': ok({ measure: { answered: true, delayMinutes: 90, entrustedAt: '2027-07-12T08:00:00.000Z' }, followUps: [] }),
+      'GET /v1/partenaires/relations/r1/pieces': no(500, { ok: false }),
+      'GET /v1/partenaires/relations/r1/resume': no(500, { ok: false }),
+    });
+    await t.open();
+    await t.click(t.byText(t.els['partenaires-corps']!, 'Voir ses réponses et ses pièces'));
+    const text = t.els['partenaires-corps']!.textContent;
+    expect(text).toContain('Première réponse en 2 h.');
+    expect(text).toContain('Pièces indisponibles pour le moment');
+    expect(text).not.toContain('Aucune pièce déposée');
   });
 });
