@@ -59,6 +59,7 @@ import { m08Routes } from './acquereurs.ts';
 import { annonceRoutes } from './annonces.ts';
 import { offreRoutes } from './offres.ts';
 import { dossierRoutes, type DossierRoute, type PieceStore } from './dossiers.ts';
+import { pilotageRoutes } from './pilotage.ts';
 import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresVentePublic } from './apres-vente.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
 
@@ -934,8 +935,9 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // Une même adresse peut servir à lire (GET) et à écrire (POST) : la route est choisie par l'adresse et la méthode.
   // Les routes de M08 (T08) suivent celles du socle ; elles portent le lien de désinscription du réseau.
   // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication ; puis celles de M09 (O09) : les offres ; puis
-  // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07).
-  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }), ...annonceRoutes(), ...offreRoutes(), ...m10Routes(config.pieces ?? null), ...apresVenteRoutes()];
+  // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07) ; puis
+  // celles de M13 (K08) : le pilotage.
+  const routes: RouteDef[] = [...ROUTES, ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }), ...annonceRoutes(), ...offreRoutes(), ...m10Routes(config.pieces ?? null), ...apresVenteRoutes(), ...pilotageRoutes()];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
   const route = matching.find((candidate) => candidate.method === request.method);

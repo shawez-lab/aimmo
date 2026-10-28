@@ -57,6 +57,11 @@ export const INDEX_HTML = `<!doctype html>
 <ul id="apres-jour" class="liste"></ul>
 <button id="apres-ouvrir" type="button" class="secondaire">Mes ventes conclues</button>
 </section>
+<section class="bloc" aria-labelledby="titre-chiffres-accueil">
+<h3 id="titre-chiffres-accueil">Mes chiffres</h3>
+<p class="etat">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
+<button id="chiffres-ouvrir" type="button" class="secondaire">Voir mes chiffres</button>
+</section>
 <section class="bloc" aria-labelledby="titre-semaine">
 <h3 id="titre-semaine">Ma semaine</h3>
 <p id="semaine-etat" class="etat"></p>
@@ -94,6 +99,17 @@ export const INDEX_HTML = `<!doctype html>
 <h2 id="apres-titre">Mes ventes conclues</h2>
 <p id="apres-etat" class="etat" role="status"></p>
 <div id="apres-corps"></div>
+</section>
+<section id="chiffres" hidden>
+<button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
+<h2 id="chiffres-titre">Mes chiffres</h2>
+<div class="periodes" role="group" aria-label="Période">
+<button id="chiffres-mois" type="button" class="secondaire" aria-pressed="true">Ce mois-ci</button>
+<button id="chiffres-precedent" type="button" class="secondaire" aria-pressed="false">Mois dernier</button>
+<button id="chiffres-annee" type="button" class="secondaire" aria-pressed="false">12 derniers mois</button>
+</div>
+<p id="chiffres-etat" class="etat" role="status"></p>
+<div id="chiffres-corps"></div>
 </section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
@@ -148,6 +164,14 @@ label + input, label + textarea, label + select { margin-bottom: 12px; }
 .client h4 { margin-top: 0; }
 .brouillon { margin: 8px 0; padding: 8px 12px; border-left: 4px solid var(--accent); white-space: pre-wrap; }
 .note { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+.periodes { display: flex; flex-wrap: wrap; gap: 8px; }
+.periodes button { margin-top: 0; flex: 1 1 auto; }
+.periodes button[aria-pressed="true"] { background: var(--accent); color: var(--fond); }
+.chiffre { border-top: 1px solid var(--doux); }
+.chiffre summary { justify-content: space-between; gap: 12px; color: var(--texte); }
+.chiffre .valeur { font-size: 1.6rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.chiffre ul { margin: 0 0 12px; padding-left: 18px; }
+.chiffre li { padding: 4px 0; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 `;
 
@@ -430,6 +454,7 @@ export const APP_JS = `'use strict';
     wipeFiche();
     wipeM08();
     wipeApres();
+    wipeChiffres();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
   function button(text, onClick) {
@@ -1026,6 +1051,78 @@ export const APP_JS = `'use strict';
     });
     reviewLinkBlock(body);
   }
+  /* ---------- M13 : mes chiffres (K08). Chaque chiffre s'ouvre sur ses lignes ; rien n'est comparé à un autre agent. ---------- */
+  var APPOINTMENT_KINDS = { estimation: 'Rendez-vous d’estimation', visite: 'Visite', signature: 'Signature', appel: 'Appel' };
+  var FEE_STATUS = { prevue: 'prévue, compromis signé', due: 'due, acte signé', facturee: 'facturée, en attente du versement' };
+  var chiffresRange = 'mois';
+  function parisToday() {
+    try { return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' }); } catch (e) { return new Date().toISOString().slice(0, 10); }
+  }
+  function shiftDay(day, n) { return new Date(Date.parse(day + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10); }
+  function periodOf(range) {
+    var today = parisToday();
+    var first = today.slice(0, 8) + '01';
+    if (range === 'precedent') { var last = shiftDay(first, -1); return { from: last.slice(0, 8) + '01', to: last }; }
+    if (range === 'annee') return { from: shiftDay(today, -364), to: today };
+    return { from: first, to: today };
+  }
+  function euros(cents) {
+    var n = Number(cents) / 100;
+    try { return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/[\u202f\u00a0]/g, ' ') + ' €'; } catch (e) { return n.toFixed(2) + ' €'; }
+  }
+  function figure(body, label, value, lines, line) {
+    var d = el('details', null, 'chiffre');
+    var s = el('summary');
+    s.appendChild(el('span', label));
+    s.appendChild(el('span', value, 'valeur'));
+    d.appendChild(s);
+    var list = el('ul');
+    (lines || []).forEach(function (l) { list.appendChild(line(l)); });
+    if (!list.firstChild) d.appendChild(el('p', 'Aucune ligne sur la période.', 'doux'));
+    else d.appendChild(list);
+    body.appendChild(d);
+  }
+  function plural(n, one, many) { return n > 1 ? many : one; }
+  function renderChiffres(data) {
+    var body = $('chiffres-corps');
+    clear(body);
+    var c = data.contacts || { value: 0, lines: [] };
+    figure(body, plural(c.value, 'Contact reçu', 'Contacts reçus'), c.value, c.lines, function (l) {
+      var li = el('li', 'Reçu le ' + date(l.at));
+      if (ID.test(l.personId)) li.appendChild(ficheButton(l.personId));
+      return li;
+    });
+    var a = data.appointments || { value: 0, lines: [] };
+    figure(body, plural(a.value, 'Rendez-vous tenu', 'Rendez-vous tenus'), a.value, a.lines, function (l) { return el('li', (APPOINTMENT_KINDS[l.kind] || 'Rendez-vous') + ', le ' + date(l.at)); });
+    var m = data.mandates || { value: 0, lines: [] };
+    figure(body, plural(m.value, 'Mandat signé', 'Mandats signés'), m.value, m.lines, function (l) { return el('li', 'Signé le ' + date(l.at)); });
+    var v = data.sales || { value: 0, lines: [] };
+    figure(body, plural(v.value, 'Vente', 'Ventes'), v.value, v.lines, function (l) { return el('li', 'Acte signé le ' + date(l.signedOn + 'T12:00:00Z')); });
+    var f = data.upcomingFees || { value: 0, lines: [] };
+    figure(body, 'Honoraires à venir', euros(f.value), f.lines, function (l) { return el('li', euros(l.amountCents) + ' · ' + (FEE_STATUS[l.status] || 'en cours')); });
+    body.appendChild(el('p', 'Les honoraires à venir sont vos parts pas encore versées, quelle que soit la période. Ces chiffres sont calculés depuis vos dossiers, jamais saisis ni estimés.', 'doux'));
+  }
+  function wipeChiffres() {
+    clear($('chiffres-corps'));
+    $('chiffres-etat').textContent = '';
+  }
+  function openChiffres(range) {
+    if (!currentKey) return Promise.resolve(false);
+    chiffresRange = range || chiffresRange;
+    session += 1;
+    wipeChiffres();
+    show('chiffres');
+    ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).setAttribute('aria-pressed', r === chiffresRange ? 'true' : 'false'); });
+    var p = periodOf(chiffresRange);
+    $('chiffres-etat').textContent = 'Chargement…';
+    return send('/v1/pilotage/mes-chiffres?du=' + p.from + '&au=' + p.to, 'GET').then(function (res) {
+      if (res.gone) return false;
+      if (!res.ok) { $('chiffres-etat').textContent = res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      $('chiffres-etat').textContent = 'Du ' + date(p.from + 'T12:00:00Z') + ' au ' + date(p.to + 'T12:00:00Z') + '.';
+      renderChiffres(res.body.data || {});
+      return true;
+    });
+  }
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
     ['visite-titre', 'visite-etat', 'bien-titre', 'bien-etat', 'alerte-etat', 'vente-titre', 'vente-etat'].forEach(function (id) { $(id).textContent = ''; });
@@ -1041,7 +1138,7 @@ export const APP_JS = `'use strict';
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1111,12 +1208,16 @@ export const APP_JS = `'use strict';
       wipeFiche();
       wipeM08();
       wipeApres();
+      wipeChiffres();
       show('accueil');
       day(currentKey, session);
     }
     $('visite-retour').addEventListener('click', home);
     $('apres-retour').addEventListener('click', home);
     $('apres-ouvrir').addEventListener('click', function () { openApres(); });
+    $('chiffres-retour').addEventListener('click', home);
+    $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
+    ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', home);
     $('bien-retour').addEventListener('click', function () { if (visitId) openVisit(visitId); else home(); });
     $('alerte').addEventListener('click', function () { raiseAlert(false); });

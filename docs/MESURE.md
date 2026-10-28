@@ -92,3 +92,26 @@ Pour la mesure réelle avec Shawez, sur un vrai rendez-vous d'estimation, une fo
 1. Avant le rendez-vous : le modèle de mandat est validé, le barème et le registre sont réglés.
 2. Au rendez-vous : l'agent valide l'avis de valeur, voit la pièce d'identité du vendeur et l'enregistre (`POST /v1/fiches/<id>/identite`, sans numéro ni copie), génère le mandat (`POST /v1/documents`), le contrôle (`POST /v1/documents/<id>/controle`), le fait signer sur papier, puis l'enregistre avec la référence du scan (`POST /v1/documents/<id>/signature-papier`).
 3. Après : la direction lit la chronologie (`GET /v1/mandats/<id>/chronologie`). `totalSeconds` est le temps de la validation de l'avis au numéro ; `underTarget` dit s'il est sous 10 minutes. La chronologie ne porte que des instants et des durées, aucune donnée personnelle.
+
+# Chiffres identiques au comptage manuel (M13, K08)
+
+Le critère de la Feuille de route pour juin 2027 : pendant 2 semaines, les chiffres d'AIMMO sont identiques au comptage manuel (H27).
+
+## Chaque jour ouvré
+
+1. Shawez tient à la main, hors du dépôt, pour la veille : contacts reçus, rendez-vous tenus, mandats signés, ventes (actes signés) et honoraires de ces ventes, par agent.
+2. La direction télécharge l'export du même jour :
+
+```
+curl -H "Authorization: Bearer <clé de la direction>" "https://<adresse du Worker>/v1/pilotage/export-quotidien?jour=AAAA-MM-JJ" -o chiffres-AAAA-MM-JJ.csv
+```
+
+3. Le fichier, séparé par des points-virgules, a une ligne par agent (`direction` pour les contacts qu'elle garde) et une ligne `total` :
+
+```
+jour;agent;contacts;rendez_vous_tenus;mandats_signes;ventes;honoraires_eur
+```
+
+Ses quatre premiers chiffres sont ceux du tableau de bord du réseau pour ce jour (`/v1/pilotage/reseau?du=AAAA-MM-JJ&au=AAAA-MM-JJ`), lus par lui : les tests vérifient que l'export du jour égale le tableau de bord. Les honoraires sont ceux, en euros, des ventes du jour, tels qu'au mandat signé.
+
+4. Chaque écart se note avec sa cause (contact saisi hors d'AIMMO, rendez-vous non marqué « tenu », acte non rapporté…). Le critère est rempli après 10 jours ouvrés de suite sans écart. Le comptage manuel ne vient jamais dans le dépôt.
