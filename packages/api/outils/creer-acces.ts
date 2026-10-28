@@ -215,6 +215,18 @@ export function sendFailureDetail(status: number, body: unknown): string {
   return `HTTP ${status}${codes.length ? `, codes ${codes.join(', ')}` : ''}`;
 }
 
+/** Ajoute le texte au seul fichier du résumé du travail GitHub ; n'écrit rien d'autre, nulle part. */
+export function writeSummary(markdown: string, env: Record<string, string | undefined>): { ok: boolean } {
+  const file = env.GITHUB_STEP_SUMMARY ?? '';
+  if (!file) return { ok: false };
+  try {
+    appendFileSync(file, markdown, { mode: 0o600 });
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
 async function main(): Promise<void> {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID ?? '';
   const apiToken = process.env.CLOUDFLARE_API_TOKEN ?? '';
@@ -239,16 +251,7 @@ async function main(): Promise<void> {
       const success = response.ok && body !== null && typeof body === 'object' && (body as { success?: unknown }).success === true;
       return { ok: success, detail: sendFailureDetail(response.status, body) };
     },
-    summary(markdown) {
-      const file = process.env.GITHUB_STEP_SUMMARY ?? '';
-      if (!file) return { ok: false };
-      try {
-        appendFileSync(file, markdown, { mode: 0o600 });
-        return { ok: true };
-      } catch {
-        return { ok: false };
-      }
-    },
+    summary: (markdown) => writeSummary(markdown, process.env),
     log: (line) => console.log(line),
     now: () => new Date(),
   });

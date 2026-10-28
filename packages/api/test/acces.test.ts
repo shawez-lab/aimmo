@@ -6,8 +6,11 @@ import { handleRequest, sha256Hex } from '../src/index.ts';
 import { fromD1 } from '../src/d1.ts';
 import { exchangeInvitation, mergeKeys, parseGrants, randomToken } from '../src/acces.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { createAccess, invitationLink, invitationMail, invitationSql, invitationSummary, readRequest, sendFailureDetail, sha256, type Runner } from '../outils/creer-acces.ts';
+import { createAccess, invitationLink, invitationMail, invitationSql, invitationSummary, readRequest, sendFailureDetail, sha256, writeSummary, type Runner } from '../outils/creer-acces.ts';
 import { vi } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase, type SqliteDatabase } from '../../core/test/sqlite.ts';
 import { fakeD1 } from './fake-d1.ts';
@@ -267,11 +270,15 @@ describeWithSqlite('Z04 · lien remis dans le résumé du travail, sans mail', (
         out.sent += 1;
         return { ok: true, detail: '' };
       },
+      // Le vrai écrivain du résumé, celui du travail, sur un fichier temporaire.
       summary(markdown) {
-        if (summaryOk) out.summaries.push(markdown);
-        return { ok: summaryOk };
+        if (!summaryOk) return { ok: false };
+        const file = join(mkdtempSync(join(tmpdir(), 'aimmo-resume-')), 'summary.md');
+        const result = writeSummary(markdown, { GITHUB_STEP_SUMMARY: file });
+        out.summaries.push(readFileSync(file, 'utf8'));
+        return result;
       },
-      log: (l) => out.logs.push(l),
+      log: (l) => console.log(l),
       now: () => T0,
     };
   }
@@ -296,10 +303,11 @@ describeWithSqlite('Z04 · lien remis dans le résumé du travail, sans mail', (
     expect(out.summaries[0]).toContain(invitationLink('https://aimmo-api.shawez.workers.dev/app/', token));
     // Ni prénom ni nom dans le résumé : les données saisies y seraient masquées et n'y servent à rien.
     expect(out.summaries[0]).not.toMatch(/Camille|Exemple/);
-    const output = [...out.logs, ...printed].join('\n');
+    // La sortie du travail : tout ce que le programme a écrit sur la console, journal compris.
+    const output = printed.join('\n');
+    expect(output).toContain('résumé');
     expect(output).not.toContain(token);
     expect(output).not.toMatch(/invitation=|[A-Za-z0-9_-]{43}/);
-    expect(out.logs.join('\n')).toContain('résumé');
     expect(out.sql).not.toContain(token);
     expect(out.sql).toContain(sha256(token));
     // Usage unique et échéance de 24 heures, comme en Z02.
@@ -307,7 +315,12 @@ describeWithSqlite('Z04 · lien remis dans le résumé du travail, sans mail', (
     expect((await exchange(w.db, token)).status).not.toBe(200);
     const late = await world();
     const out2 = { logs: [] as string[], summaries: [] as string[], sent: 0, sql: '' };
-    expect(await createAccess(RESUME, runnerFor(late, out2))).toBe(true);
+    const quiet = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      expect(await createAccess(RESUME, runnerFor(late, out2))).toBe(true);
+    } finally {
+      quiet.mockRestore();
+    }
     const token2 = /#invitation=([A-Za-z0-9_-]{43})\)/.exec(out2.summaries[0]!)![1]!;
     expect((await exchange(late.db, token2, new Date(T0.getTime() + 24 * 3600 * 1000))).status).not.toBe(200);
     expect((await exchange(late.db, token2, new Date(T0.getTime() + 24 * 3600 * 1000 - 1000))).status).toBe(200);
@@ -316,12 +329,19 @@ describeWithSqlite('Z04 · lien remis dans le résumé du travail, sans mail', (
   it('sans résumé où écrire, rien n’est créé ; un résumé refusé laisse une invitation que personne ne connaît', async () => {
     const w = await world();
     const out = { logs: [] as string[], summaries: [] as string[], sent: 0, sql: '' };
-    const { summary: _omit, ...withoutSummary } = runnerFor(w, out);
-    expect(await createAccess(RESUME, withoutSummary)).toBe(false);
-    expect(out.sql).toBe('');
-    expect(await createAccess(RESUME, runnerFor(w, out, false))).toBe(false);
+    const printed: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void printed.push(a.join(' ')));
+    try {
+      const { summary: _omit, ...withoutSummary } = runnerFor(w, out);
+      expect(await createAccess(RESUME, withoutSummary)).toBe(false);
+      expect(out.sql).toBe('');
+      expect(await createAccess(RESUME, runnerFor(w, out, false))).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
     expect(out.sent).toBe(0);
-    expect(out.logs.join('\n')).not.toMatch(/invitation=|[A-Za-z0-9_-]{43}/);
+    expect(printed.join('\n')).not.toMatch(/invitation=|[A-Za-z0-9_-]{43}/);
+    expect(writeSummary('x', {})).toEqual({ ok: false });
   });
 });
 
@@ -345,6 +365,8 @@ describe('Z04 · le mail reste le défaut', () => {
     expect(block).toContain('default: mail');
     expect(block).toMatch(/options:\n\s+- mail\n\s+- resume/);
     expect(yml).toContain('ACCES_REMISE: ${{ inputs.remise }}');
+    // En remise resume, le prénom et le nom ne sont pas masqués : le masque de GitHub casserait le lien du résumé.
+    expect(yml).toContain('inputs.remise === "resume" ? ["mail", "expediteur"] : ["prenom", "nom", "mail", "expediteur"]');
     // Le programme n'écrit le résumé que dans le fichier GITHUB_STEP_SUMMARY.
     const tool = readFileSync(new URL('../outils/creer-acces.ts', import.meta.url), 'utf8');
     expect(tool).toContain('GITHUB_STEP_SUMMARY');
@@ -380,7 +402,7 @@ describe('Z02 · règles sans base', () => {
     const mask = yml.indexOf('::add-mask::');
     expect(mask).toBeGreaterThan(-1);
     expect(mask).toBeLessThan(yml.indexOf('ACCES_MAIL'));
-    const uses = yml.split('\n').filter((l) => l.includes('inputs.'));
+    const uses = yml.split('\n').filter((l) => l.includes('${{ inputs.'));
     expect(uses.length).toBe(7);
     for (const l of uses) expect(l).toMatch(/^\s+ACCES_[A-Z]+: \$\{\{ inputs\.[a-z]+ \}\}$/);
   });

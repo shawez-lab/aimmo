@@ -74,10 +74,13 @@ jobs:
           fi
       - name: Masquer les données saisies
         # Lues dans l'événement, jamais posées dans le texte de la commande : le journal du travail ne les montre pas.
+        # En remise « resume » (Z04), le prénom et le nom ne sont pas masqués : GitHub masque aussi le résumé, et un
+        # prénom court ou présent dans l'adresse de l'application y casserait le lien (remplacé par ***).
         run: |
           node -e '
             const inputs = JSON.parse(require("fs").readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")).inputs || {};
-            for (const name of ["prenom", "nom", "mail", "expediteur"]) {
+            const names = inputs.remise === "resume" ? ["mail", "expediteur"] : ["prenom", "nom", "mail", "expediteur"];
+            for (const name of names) {
               const value = String(inputs[name] || "").trim();
               if (value) console.log("::add-mask::" + value);
             }'
