@@ -1634,7 +1634,9 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W09 · Routes de M15 et parcours de 3 mises en location tests
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#162). Routes dans `packages/api/src/location.ts`, à brancher dans `app.ts` par W10 (voie 1) avec ses services (`identity` = coffre de conformité, `files` = stockage, IA facultatives). Relecture forte 1 P1 corrigé (R16 essayé sur chaque route et chaque rôle) ; Codex resté en cours 20 min, fusion sans lui.
+- Décidé (2026-10-28, voie 2) : la remise des clés des routes lit `signedAt` (signature réelle), jamais `trialState()` ; aucun partenaire n'est admis sur `/v1/location`.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W01 à W08
 - Cahier : M15 ; Feuille de route, août 2027.
 - Objectif : les routes `/v1/location` dans `packages/api/src/location.ts` ; le parcours de 3 mises en location tests de bout en bout.
