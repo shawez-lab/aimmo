@@ -127,11 +127,11 @@ describeWithSqlite('B02 · planificateur du socle', () => {
     const w = await world();
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     expect(SITE_JOBS_TRIAL.map((j) => j.name)).toEqual(['site.rappels_visite', 'site.courriers_vendeur']);
-    expect(await runScheduler({ db: w.db, mode: 'essai', now: w.now })).toMatchObject({ ran: ['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels', 'rdv.briefs', 'mandats.suivi_valeur', 'acquereurs.alertes', 'visites.comptes_rendus', 'visites.point_semaine', 'apres_vente.demandes_avis', 'apres_vente.remerciements', 'apres_vente.relances', 'pilotage.passage', 'reseau.passage'] });
+    expect(await runScheduler({ db: w.db, mode: 'essai', now: w.now })).toMatchObject({ ran: ['reseau.passage', 'site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels', 'rdv.briefs', 'mandats.suivi_valeur', 'acquereurs.alertes', 'visites.comptes_rendus', 'visites.point_semaine', 'apres_vente.demandes_avis', 'apres_vente.remerciements', 'apres_vente.relances', 'pilotage.passage'] });
     w.setClock(WINTER_07H);
-    expect((await runScheduler({ db: w.db, mode: 'essai', now: w.now }))?.ran).toEqual(['rdv.briefs', 'pilotage.passage', 'reseau.passage']);
+    expect((await runScheduler({ db: w.db, mode: 'essai', now: w.now }))?.ran).toEqual(['reseau.passage', 'rdv.briefs', 'pilotage.passage']);
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect((await w.passages()).map((e) => e.data.job)).toEqual(['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels', 'rdv.briefs', 'mandats.suivi_valeur', 'acquereurs.alertes', 'visites.comptes_rendus', 'visites.point_semaine', 'apres_vente.demandes_avis', 'apres_vente.remerciements', 'apres_vente.relances', 'pilotage.passage', 'reseau.passage', 'rdv.briefs', 'pilotage.passage', 'reseau.passage']);
+    expect((await w.passages()).map((e) => e.data.job)).toEqual(['reseau.passage', 'site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels', 'rdv.briefs', 'mandats.suivi_valeur', 'acquereurs.alertes', 'visites.comptes_rendus', 'visites.point_semaine', 'apres_vente.demandes_avis', 'apres_vente.remerciements', 'apres_vente.relances', 'pilotage.passage', 'reseau.passage', 'rdv.briefs', 'pilotage.passage']);
   });
 
   it('G02 · le plan du jour passe au déclencheur de 7 h 30 de Paris, pas à celui de 7 h 07', async () => {
@@ -157,7 +157,7 @@ describeWithSqlite('B02 · planificateur du socle', () => {
     } finally {
       vi.useRealTimers();
     }
-    expect((await w.passages()).map((e) => e.data.job)).toEqual(['site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels', 'rdv.briefs', 'mandats.suivi_valeur', 'acquereurs.alertes', 'visites.comptes_rendus', 'visites.point_semaine', 'apres_vente.demandes_avis', 'apres_vente.remerciements', 'apres_vente.relances', 'pilotage.passage', 'reseau.passage']);
+    expect((await w.passages()).map((e) => e.data.job)).toEqual(['reseau.passage', 'site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels', 'rdv.briefs', 'mandats.suivi_valeur', 'acquereurs.alertes', 'visites.comptes_rendus', 'visites.point_semaine', 'apres_vente.demandes_avis', 'apres_vente.remerciements', 'apres_vente.relances', 'pilotage.passage']);
   });
 
   it('un seul déclencheur, tous les quarts d’heure : tâches horaires une fois par heure, plan du jour à 7 h 30, publication une fois par quart d’heure (P10)', async () => {

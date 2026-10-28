@@ -39,6 +39,10 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
     // Tâches du site notées sans appel ; relance des vendeurs (E06) et rappels des rendez-vous (V04), par les canaux
     // du mode essai ; briefs des rendez-vous (V05), rangés pour l'agent, sans aucun envoi.
     const jobs = config.jobs ?? [
+      // Réseau (J13), en premier à chaque passage : les départs du jour passent clients, biens et projets à leur
+      // successeur ou à la direction avant qu'un rappel ou une relance ne soit tenté au nom de l'agent parti [R86] ;
+      // puis les alertes de l'assistance.
+      reseau.reseauHourlyJob(config.db, journal, { now }),
       ...SITE_JOBS_TRIAL,
       vendorFollowUpJob(config.db, journal, { now }),
       appointmentReminderJob(config.db, journal, { now, linkBase: config.appointmentLinkBase || null }),
@@ -74,9 +78,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Pilotage (K08) : commissions, factures d'essai et reversements chaque heure ; alertes à 6 h, avec les pièces du
       // dossier d'agent ; rapport du matin du lundi au vendredi à 7 h 30, rangé, jamais envoyé.
       ...pilotageJobs(config.db, journal, { now }),
-      // Réseau (J13) : départs du jour et alertes de l'assistance chaque heure ; à 6 h, échéances des pièces du dossier
-      // d'agent et du compteur de formation. Alertes rangées pour les écrans, jamais envoyées.
-      ...reseau.reseauJobs(config.db, journal, { now }),
+      // Réseau (J13), à 6 h : échéances des pièces du dossier d'agent et du compteur de formation, rangées pour les
+      // écrans, jamais envoyées.
+      reseau.reseauDailyJob(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
