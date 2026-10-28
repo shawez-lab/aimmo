@@ -272,3 +272,6 @@ export class SignatureEnLigne {
     return { signed: true, intact: !!doc && (await sha256(doc.content)) === proof.contentHash };
   }
 }
+
+/** Le code à usage unique et sa comparaison, repris par la signature en ligne du bail (M15, W12). */
+export { newCode as newSignatureCode, sameHash as sameSignatureHash };
