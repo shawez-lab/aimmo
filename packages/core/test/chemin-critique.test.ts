@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { CheminCritique, Echeancier, FinancementDossier, criticalPath, partyView, scheduleLines, type PathInput } from '../src/dossiers/index.ts';
+import { CheminCritique, Echeancier, FinancementDossier, criticalPath, partyView, scheduleLines, viewsOf, type PathInput } from '../src/dossiers/index.ts';
 import { PROOF, setupDossier, type DossierKind } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -36,6 +36,8 @@ it('[R61] le chemin critique suit des règles écrites : même calcul pour les m
   expect(criticalPath('d', base({ financing: [{ step: 'offre_pret_emise', day: '2027-04-01' }, { step: 'refus', day: '2027-04-02' }] })).holder).toMatchObject({ reason: 'refus_de_pret', notBefore: null });
   // Une acceptation déclarée avant le onzième jour ne compte pas : la réflexion tient encore.
   expect(criticalPath('d', base({ financing: [{ step: 'offre_pret_emise', day: '2027-05-15' }, { step: 'offre_pret_acceptee', day: '2027-05-20' }] })).holder).toEqual({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: '2027-05-26' });
+  // Un refus déclaré après une acceptation bloque de nouveau.
+  expect(criticalPath('d', base({ financing: [{ step: 'offre_pret_emise', day: '2027-04-05' }, { step: 'offre_pret_acceptee', day: '2027-04-20' }, { step: 'refus', day: '2027-04-25' }] })).holder).toMatchObject({ reason: 'refus_de_pret', notBefore: null });
   // Un refus suivi d'une nouvelle demande ne bloque plus : l'offre est attendue.
   expect(criticalPath('d', base({ today: '2027-05-15', financing: [{ step: 'refus', day: '2027-04-02' }, { step: 'demande_deposee', day: '2027-04-10' }] })).holder).toEqual({ reason: 'offre_pret_attendue', item: 'pret', who: 'banque', notBefore: '2027-05-26' });
   // Un refus après une offre : la nouvelle offre est attendue seulement après une nouvelle demande.
@@ -75,17 +77,22 @@ it('[R52] [R19] chaque vue tait l’autre partie : le vendeur ne voit du prêt q
     financing: [{ step: 'demande_deposee', day: '2027-03-12' }, { step: 'refus', day: '2027-03-20' }],
     pieces: { lines: [{ piece: 'titre_propriete', side: 'vendeur', reason: 'toujours', received: null }, { piece: 'fiche_renseignements_vendeur', side: 'vendeur', reason: 'toujours', received: null }, { piece: 'fiche_renseignements_acquereur', side: 'acquereur', reason: 'toujours', received: null }], missing: ['titre_propriete', 'fiche_renseignements_vendeur', 'fiche_renseignements_acquereur'], unknown: [], identity: 'verifiee' },
   }));
-  const seller = partyView(p, 'vendeur');
+  const sellerFull = viewsOf('d', base({
+    financing: [{ step: 'demande_deposee', day: '2027-03-12' }, { step: 'refus', day: '2027-03-20' }],
+    pieces: { lines: [{ piece: 'titre_propriete', side: 'vendeur', reason: 'toujours', received: null }, { piece: 'fiche_renseignements_vendeur', side: 'vendeur', reason: 'toujours', received: null }, { piece: 'fiche_renseignements_acquereur', side: 'acquereur', reason: 'toujours', received: null }], missing: ['titre_propriete', 'fiche_renseignements_vendeur', 'fiche_renseignements_acquereur'], unknown: [], identity: 'verifiee' },
+  })).seller;
   // La vue du vendeur est la même quel que soit l'état du prêt, tant qu'il n'est pas obtenu : rien ne s'en devine.
+  // Une pièce du vendeur valable au jour au plus tôt sans le prêt, mais périmée au jour que le prêt imposerait.
+  const pieces = { ...allPieces, lines: [{ piece: 'etat_risques' as const, side: 'vendeur' as const, reason: 'toujours' as const, received: { piece: 'etat_risques' as const, version: 1, ref: 'x', issuedOn: '2026-11-25', receivedAt: 'x' } }] };
   const views = [[], [{ step: 'offre_pret_emise', day: '2027-05-20' }], [{ step: 'demande_deposee', day: '2027-03-12' }, { step: 'refus', day: '2027-03-20' }]].map((financing) =>
-    partyView(criticalPath('d', base({ today: '2027-04-25', financing: financing as PathInput['financing'] })), 'vendeur'),
+    viewsOf('d', base({ today: '2027-04-25', plannedActDay: null, pieces, financing: financing as PathInput['financing'] })).seller,
   );
   expect(views[1]).toEqual(views[0]);
   expect(views[2]).toEqual(views[0]);
   expect(views[0]).toMatchObject({ earliestActDay: '2027-05-20', conditional: true });
-  expect(JSON.stringify(seller)).not.toMatch(/refus|demande_deposee|offre_pret/);
-  expect(seller.remaining.filter((r) => r.item === 'pret')).toEqual([{ reason: 'pret_en_cours', item: 'pret', who: 'autre_partie', notBefore: null }]);
-  expect(seller.yourActions).toEqual([{ reason: 'piece_manquante', item: 'titre_propriete' }, { reason: 'piece_manquante', item: 'fiche_renseignements_vendeur' }]);
+  expect(JSON.stringify(sellerFull)).not.toMatch(/refus|demande_deposee|offre_pret/);
+  expect(sellerFull.remaining.filter((r) => r.item === 'pret')).toEqual([{ reason: 'pret_en_cours', item: 'pret', who: 'autre_partie', notBefore: null }]);
+  expect(sellerFull.yourActions).toEqual([{ reason: 'piece_manquante', item: 'titre_propriete' }, { reason: 'piece_manquante', item: 'fiche_renseignements_vendeur' }]);
   const buyer = partyView(p, 'acquereur');
   expect(JSON.stringify(buyer)).not.toMatch(/titre_propriete|fiche_renseignements_vendeur/);
   expect(buyer.remaining.find((r) => r.reason === 'pieces_de_l_autre_partie')).toEqual({ reason: 'pieces_de_l_autre_partie', item: null, who: 'autre_partie', notBefore: null, count: 2 });

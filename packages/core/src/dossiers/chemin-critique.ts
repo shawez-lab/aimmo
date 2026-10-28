@@ -112,10 +112,11 @@ export function criticalPath(fileId: string, input: PathInput): CriticalPath {
     const acceptable = offer ? addDays(offer.day, LOAN_REFLECTION_DAYS + 1) : null;
     // Une acceptation ne compte qu'au onzième jour après la réception de l'offre, au plus tôt.
     const accepted = steps.some((s) => s.step === 'offre_pret_acceptee' && acceptable !== null && s.day >= acceptable);
-    if (accepted) {
+    // Un refus déclaré en dernier bloque, même après une acceptation : la banque s'est retirée.
+    if (last?.step === 'refus') lines.push({ reason: 'refus_de_pret', item: 'pret', who: 'acquereur', notBefore: null });
+    else if (accepted) {
       // Rien : la condition de prêt est levée.
-    } else if (last?.step === 'refus') lines.push({ reason: 'refus_de_pret', item: 'pret', who: 'acquereur', notBefore: null });
-    else if (offer && steps.lastIndexOf(offer) > steps.map((s) => s.step).lastIndexOf('refus')) lines.push({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: acceptable });
+    } else if (offer && steps.lastIndexOf(offer) > steps.map((s) => s.step).lastIndexOf('refus')) lines.push({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: acceptable });
     else lines.push({ reason: 'offre_pret_attendue', item: 'pret', who: 'banque', notBefore: addDays(input.today, LOAN_REFLECTION_DAYS + 1) });
   }
   const e = at('etat_date');
@@ -170,7 +171,11 @@ export interface PartyView {
 
 const ACTIONS: readonly PathReason[] = ['piece_manquante', 'piece_perimee', 'identite_a_verifier', 'refus_de_pret'];
 
-export function partyView(path: CriticalPath, side: 'vendeur' | 'acquereur'): PartyView {
+/**
+ * La vue d'une partie. Pour le vendeur, `path` est le chemin calculé sans le prêt (`criticalPath` avec
+ * `hasLoanCondition: false`) et `loanOpen` dit seulement si la condition de prêt est encore à lever.
+ */
+export function partyView(path: CriticalPath, side: 'vendeur' | 'acquereur', loanOpen = false): PartyView {
   const other = side === 'vendeur' ? 'acquereur' : 'vendeur';
   const remaining: PartyView['remaining'] = [];
   let otherPieces = 0;
@@ -191,7 +196,7 @@ export function partyView(path: CriticalPath, side: 'vendeur' | 'acquereur'): Pa
     // Le jour au plus tôt du vendeur se calcule sans le prêt : rien ne laisse deviner l'étape du financement de
     // l'acquéreur ; tant que le prêt n'est pas obtenu, ce jour suppose qu'il le soit.
     const visible = path.lines.filter((l) => l.item !== 'pret');
-    const loanOpen = path.lines.some((l) => l.item === 'pret');
+    if (loanOpen && !remaining.some((x) => x.reason === 'pret_en_cours')) remaining.push({ reason: 'pret_en_cours', item: 'pret', who: 'autre_partie', notBefore: null });
     const legalUnknown = visible.some((l) => (l.item === 'fin_retractation' || l.item === 'reponse_preemption') && l.notBefore === null);
     const earliest = legalUnknown || path.earliestActDay === null ? null : visible.filter((l) => l.notBefore !== null).reduce((d, l) => max(d, l.notBefore!), path.today);
     return {
@@ -206,6 +211,13 @@ export function partyView(path: CriticalPath, side: 'vendeur' | 'acquereur'): Pa
   // Ce que la partie a à faire, pas les délais qui courent pour elle (rétractation, réflexion sur l'offre de prêt).
   const yourActions = path.lines.filter((l) => l.who === side && ACTIONS.includes(l.reason)).map((l) => ({ reason: l.reason, item: l.item }));
   return { fileId: path.fileId, earliestActDay: path.earliestActDay, conditional: path.conditional, plannedActDay: path.plannedActDay, remaining, yourActions };
+}
+
+/** Le chemin complet et les vues des deux parties ; celle du vendeur calculée sans le prêt, pièces comprises. */
+export function viewsOf(fileId: string, input: PathInput): { path: CriticalPath; seller: PartyView; buyer: PartyView } {
+  const path = criticalPath(fileId, input);
+  const withoutLoan = criticalPath(fileId, { ...input, hasLoanCondition: false });
+  return { path, seller: partyView(withoutLoan, 'vendeur', path.lines.some((l) => l.item === 'pret')), buyer: partyView(path, 'acquereur') };
 }
 
 export class CheminCritique {
@@ -236,15 +248,17 @@ export class CheminCritique {
     const fin = await this.financement.financing(viewer, fileId);
     if (!fin.ok) return fin;
     const schedule = await this.echeancier.scheduleOf(g.file);
-    const path = criticalPath(fileId, {
-      today: localTime(this.now(), TIME_ZONE).date,
-      schedule: schedule.lines,
-      plannedActDay: schedule.dates.acte_prevu?.day ?? null,
-      pieces: status.value,
-      hasLoanCondition: fin.value.hasLoanCondition,
-      financing: fin.value.steps,
-    });
-    return { ok: true, value: { path, seller: partyView(path, 'vendeur'), buyer: partyView(path, 'acquereur') } };
+    return {
+      ok: true,
+      value: viewsOf(fileId, {
+        today: localTime(this.now(), TIME_ZONE).date,
+        schedule: schedule.lines,
+        plannedActDay: schedule.dates.acte_prevu?.day ?? null,
+        pieces: status.value,
+        hasLoanCondition: fin.value.hasLoanCondition,
+        financing: fin.value.steps,
+      }),
+    };
   }
 }
 
