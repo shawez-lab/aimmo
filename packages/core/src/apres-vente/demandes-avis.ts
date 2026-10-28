@@ -35,6 +35,8 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { SELLER_UPDATE_PURPOSE, nameWords } from '../visites/compte-rendu.ts';
+import { viewerRefusal } from './lecteur.ts';
+import { checkSatisfactionBase, newSatisfactionLink } from './satisfaction.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const REVIEW_PURPOSE = SELLER_UPDATE_PURPOSE;
@@ -121,11 +123,11 @@ export function isReviewLink(url: string): boolean {
  * Le texte d'une demande d'avis, écrit par le code : vouvoiement avec le prénom, aucune parenthèse [R08], aucun chiffre
  * hors de la référence du bien et du lien [R10], aucune promesse ni contrepartie, un avis bienvenu quel qu'il soit [R64].
  */
-export function reviewText(firstName: string | null, side: 'vendeur' | 'acquereur', property: { city: string | null; reference: string }, url: string): string {
+export function reviewText(firstName: string | null, side: 'vendeur' | 'acquereur', property: { city: string | null; reference: string }, url: string, satisfactionLink: string | null = null): string {
   const hello = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
   const where = `${property.city ? ` à ${property.city}` : ''}, référence ${property.reference}`;
   const thanks = side === 'vendeur' ? `merci encore de nous avoir confié la vente de votre bien${where}.` : `merci encore de votre confiance pour l'achat de votre bien${where}.`;
-  return `${hello} ${thanks} Si vous le voulez bien, vous pouvez donner votre avis sur votre agent immobilier, sur sa fiche Google, que l'expérience vous ait plu ou non : ${url} Votre avis, quel qu'il soit, aide d'autres personnes à choisir. Merci !`;
+  return `${hello} ${thanks} Si vous le voulez bien, vous pouvez donner votre avis sur votre agent immobilier, sur sa fiche Google, que l'expérience vous ait plu ou non : ${url} Votre avis, quel qu'il soit, aide d'autres personnes à choisir.${satisfactionLink ? ` Pour dire à votre agent immobilier seulement ce que vous en avez pensé, sans rien publier : ${satisfactionLink}` : ''} Merci !`;
 }
 
 export class DemandesAvis {
@@ -133,14 +135,17 @@ export class DemandesAvis {
   private readonly newId: () => string;
   private readonly controle: ControleEnvois;
   private readonly unique: FicheUnique;
+  private readonly satisfactionBase: string | null;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
     private readonly dossiers: DossiersClos,
-    options: { now?: () => Date; newId?: () => string } = {},
+    options: { now?: () => Date; newId?: () => string; satisfactionBase?: string | null } = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    // L'adresse du lien de satisfaction (F05) ; absente, la demande d'avis part sans lui.
+    this.satisfactionBase = checkSatisfactionBase(options.satisfactionBase ?? null);
     this.newId = options.newId ?? (() => crypto.randomUUID());
     const fiches = new FicheClient(db, { now: this.now });
     this.unique = new FicheUnique(db, fiches, { now: this.now });
@@ -164,6 +169,8 @@ export class DemandesAvis {
       await this.refuse(viewer, subject, 'review_link', 'unknown');
       return { ok: false, rule: null, code: 'unknown_agent' };
     }
+    const inactive = await viewerRefusal(this.db, viewer);
+    if (inactive) return this.refuse(viewer, subject, 'review_link', inactive);
     const allowed = (viewer.role === 'agent' && viewer.userId === agentId) || viewer.role === 'direction';
     if (!allowed) return this.refuse(viewer, subject, 'review_link', 'role');
     if (agent.status !== 'active') return { ok: false, rule: null, code: 'agent_left' };
@@ -266,7 +273,9 @@ export class DemandesAvis {
           kind: 'review_request',
           purpose: REVIEW_PURPOSE,
           subject: `avis:${sale.fileId}`,
-          fallbackTexts: [reviewText(firstName, c.side, sale, url)],
+          fallbackTexts: [
+            reviewText(firstName, c.side, sale, url, this.satisfactionBase ? await newSatisfactionLink(this.db, this.satisfactionBase, { networkId, fileId: sale.fileId, personId: c.personId, agentId: sale.agentId }, this.now()) : null),
+          ],
           // Les chiffres de la référence du bien et ceux du lien, lus dans la base [R10].
           figures: [...(sale.reference.match(/\d+/g) ?? []).map(Number), url],
           // Le nom d'un client de l'autre côté n'apparaît jamais [R19].
@@ -331,7 +340,8 @@ export class DemandesAvis {
 
   /** Les demandes d'avis : un agent voit celles de ses dossiers, la direction et la conformité celles du réseau [R16]. */
   async list(viewer: Viewer): Promise<{ ok: true; value: ReviewRequest[] } | ReviewRefusal> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, `network:${viewer.networkId}`, 'review_requests', 'role');
+    const refusal = (await viewerRefusal(this.db, viewer)) ?? (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance' ? 'role' : null);
+    if (refusal) return this.refuse(viewer, `network:${viewer.networkId}`, 'review_requests', refusal);
     const own = viewer.role === 'agent';
     const rows = await this.db.all<{ file_id: string; person_id: string; side: 'vendeur' | 'acquereur'; due_day: string; status: ReviewStatus; rule: string | null; updated_at: string }>(
       `SELECT file_id, person_id, side, due_day, status, rule, updated_at FROM review_requests WHERE network_id = ?${own ? ' AND agent_id = ?' : ''} ORDER BY due_day, file_id, side, person_id`,
@@ -346,7 +356,8 @@ export class DemandesAvis {
    * le délai, à faire moi-même » (`avis_non_parti`). L'agent ne voit que les siennes [R16].
    */
   async openTasks(viewer: Viewer): Promise<{ ok: true; value: { fileId: string; agentId: string; kind: AfterSaleTaskKind; createdAt: string }[] } | ReviewRefusal> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'after_sale_tasks', 'role');
+    const refusal = (await viewerRefusal(this.db, viewer)) ?? (viewer.role !== 'agent' && viewer.role !== 'direction' ? 'role' : null);
+    if (refusal) return this.refuse(viewer, `network:${viewer.networkId}`, 'after_sale_tasks', refusal);
     const own = viewer.role === 'agent';
     const rows = await this.db.all<{ file_id: string; agent_id: string; kind: AfterSaleTaskKind; created_at: string }>(
       `SELECT file_id, agent_id, kind, created_at FROM after_sale_tasks WHERE network_id = ? AND done_at IS NULL${own ? ' AND agent_id = ?' : ''} ORDER BY created_at, file_id, kind`,
@@ -359,7 +370,7 @@ export class DemandesAvis {
 export const REVIEW_REQUEST_JOB = 'apres_vente.demandes_avis';
 
 /** Du lundi au samedi, d'heure en heure de 10 h à 18 h : les demandes du jour, et celles qui attendaient [R01, R11]. */
-export function reviewRequestJob(db: SqlDatabase, journal: JournalStore, dossiers: DossiersClos, options: { now?: () => Date } = {}): ScheduledJob {
+export function reviewRequestJob(db: SqlDatabase, journal: JournalStore, dossiers: DossiersClos, options: { now?: () => Date; satisfactionBase?: string | null } = {}): ScheduledJob {
   return {
     name: REVIEW_REQUEST_JOB,
     hours: [10, 11, 12, 13, 14, 15, 16, 17, 18],
