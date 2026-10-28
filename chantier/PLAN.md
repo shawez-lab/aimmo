@@ -1277,8 +1277,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien (H13 pour la vraie IA).
 
 ### J09 · Référent des 90 jours, binôme d'absence et assistance suivie
-- Statut : en cours (voie 2)
-- Reste : proposition #127 prête, tests verts en local ; la vérification GitHub ne démarre plus (facturation de GitHub Actions, H28) : à fusionner dès qu'elle passe.
+- Statut : fait (2026-10-28)
 - Qui : Claude · Relecture : normale · Dépend de : J04
 - Cahier : M14, « Référent », « Assistance », « Binôme ».
 - Objectif : la direction attribue un référent à chaque nouvel agent pour 90 jours ; deux agents forment un binôme avec un partage des honoraires écrit d'avance ; pendant une absence déclarée, le binôme lit les dossiers en cours de l'absent ; une demande d'assistance est suivie avec son délai (2 h ouvrées pour un humain, 48 h ouvrées pour l'avocat) et alerte la direction avant l'échéance.
@@ -1286,9 +1285,8 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J10 · Parrainage dans les règles
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : le parrain est celui déclaré à la création de l'agent, sinon celui rangé par la direction, jamais deux différents ; un seul niveau, imposé jusque dans la base ; sans taux réglé, aucune prime ; un parrain parti ne garde que les primes déjà reversées.
-- Reste : proposition #128 prête, tests verts en local, en attente des vérifications GitHub (H28) ; pour J13 (voie 1) : passer `primes: new Parrainage(...)` aux `Commissions` de `pilotageHourlyJob` et garder au réseau les parts de `Parrainage.withheld()`.
 - Qui : Claude · Relecture : forte · Dépend de : J04
 - Cahier : Offre aux agents, « Le parrainage, dans les règles » ; M14, « Règles ».
 - Objectif : le parrain d'un agent est rangé à l'entrée ; une prime de parrainage est calculée sur chaque commission réellement encaissée par le filleul, au taux réglé, sur le nombre de niveaux réglé ; elle est montrée au parrain, jamais promise d'avance.
@@ -1296,19 +1294,17 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien (taux et niveaux réels avec l'avocat, H09).
 
 ### J11 · Départ d'un agent
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : préavis légal L134-11 compté depuis le premier contrat signé du dossier ou la date saisie par la direction (la plus ancienne), prolongé jusqu'à la fin du mois civil ; plus court seulement pour faute grave ou accord commun, signalé ; l'indemnité de fin de contrat n'est jamais chiffrée, seulement dite « à examiner par l'avocat » (démission comprise, L134-13 2°) ; le jour du départ, clients, biens et projets passent au successeur accepté, sinon à la file de la direction ; un successeur est un agent du réseau déjà en activité.
 - Qui : Claude · Relecture : forte · Dépend de : J04
 - Cahier : M14, « Départ d'un agent ».
 - Objectif : la direction range un départ (date, préavis, motif) ; le jour venu, l'agent passe à « parti », son accès est coupé, ses clients et biens vont à la direction pour être réattribués, ses commissions en cours sont listées pour être soldées, ses contenus personnels sont listés pour lui être rendus ; un successeur présenté est rangé, avec l'accord du réseau.
 - Critères : à la date du départ, plus aucune lecture ni écriture de l'agent n'est permise [R86, R16] ; aucun client ni dossier n'est effacé [R17] ; aucun client ne reste sans agent ni sans file de la direction [R86] ; les relances et envois préparés par l'agent parti ne partent plus [R86].
 - Attend : rien.
-- Reste : proposition #130 prête, tests verts en local (1226), relecture forte 4 P1 corrigés ; la vérification GitHub ne démarre pas (H28) : à fusionner dès qu'elle passe.
 
 ### J12 · Routes de M14 et page de candidature
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : la branche part de J09, J10 et J11 réunis (#127, #128, #130, non fusionnés tant que H28 bloque) ; les écrans de l'application sortent en J14, parce qu'ils vivent dans `packages/api/app/fichiers.ts`, que modifie aussi #129 (voie 1) ; le rôle est contrôlé par la route avant tout corps, la couche métier refait son contrôle derrière ; la page `/rejoindre` se ferme d'elle-même si un de ses textes échoue au contrôle de R80 (Jamais vu).
-- Reste : proposition #133 prête, tests verts en local, relecture forte 2 P1 corrigés ; la vérification GitHub ne démarre pas (H28) : à fusionner après #127, #128 et #130.
 - Qui : Claude · Relecture : forte · Dépend de : J01 à J11
 - Cahier : M14 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/reseau` (candidatures, entretiens, dossier d'agent, import, académie, binôme, parrainage, départ) dans `packages/api/src/reseau.ts` ; la page publique de candidature ; dans l'application, les écrans « Mon intégration », « Académie » et, pour la direction, « Candidatures ».
