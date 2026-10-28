@@ -348,6 +348,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   rental_lease_templates: out('sans_client', 'Modèle de bail du réseau.'),
   rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications')] },
   rental_fees: { locate: [via('listing_id', 'rental_listings')] },
+  // L'état des lieux et la remise des clés : au propriétaire par son logement, au locataire par son bail.
+  rental_inventories: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases')] },
+  rental_inventory_signatures: { locate: [via('inventory_id', 'rental_inventories')] },
+  rental_inventory_copies: { locate: [via('inventory_id', 'rental_inventories')] },
+  rental_handovers: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases')] },
+  rental_management_links: { locate: [via('listing_id', 'rental_listings')] },
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
