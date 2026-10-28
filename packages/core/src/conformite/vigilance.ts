@@ -353,7 +353,7 @@ export class VigilanceRenforcee {
       );
     }
     const rows = await this.db.all<AlertRow>('SELECT * FROM vigilance_alerts WHERE network_id = ? AND case_ref = ? ORDER BY raised_at, rowid', [viewer.networkId, caseRef]);
-    for (const row of rows) await this.ensureRaisedEvent(row);
+    for (const row of rows) await this.ensureEvents(row);
     // La demande n'est préparée qu'une fois le responsable décidé à la faire : une alerte classée n'en donne aucune.
     const asked = await this.db.first(
       `SELECT d.alert_id FROM vigilance_decisions d JOIN vigilance_alerts a ON a.id = d.alert_id
@@ -373,7 +373,7 @@ export class VigilanceRenforcee {
     const rows = await this.db.all<AlertRow>('SELECT * FROM vigilance_alerts WHERE network_id = ? ORDER BY raised_at, rowid', [viewer.networkId]);
     const out: VigilanceAlert[] = [];
     for (const row of rows) {
-      await this.ensureRaisedEvent(row);
+      await this.ensureEvents(row);
       out.push(await this.toAlert(row));
     }
     return { ok: true, value: out };
@@ -391,7 +391,8 @@ export class VigilanceRenforcee {
     if (typeof input.decision !== 'string' || !(VIGILANCE_DECISIONS as readonly string[]).includes(input.decision)) return { ok: false, rule: null, code: 'bad_decision' };
     if (typeof input.reason !== 'string' || input.reason.trim() === '' || input.reason.length > 1000) return { ok: false, rule: null, code: 'missing_reason' };
     if (typeof input.validatorName !== 'string' || input.validatorName.trim() === '' || input.validatorName.length > 120) return { ok: false, rule: null, code: 'missing_name' };
-    if (await this.db.first('SELECT alert_id FROM vigilance_decisions WHERE alert_id = ?', [row.id])) return { ok: false, rule: null, code: 'already_decided' };
+    await this.ensureRaisedEvent(row);
+    if (await this.db.first('SELECT alert_id FROM vigilance_decisions WHERE alert_id = ?', [row.id])) return this.alreadyDecided(row);
     try {
       await this.db.run(
         'INSERT INTO vigilance_decisions (id, network_id, alert_id, decision, reason, validator_name, decided_by, decided_on, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -399,15 +400,35 @@ export class VigilanceRenforcee {
       );
     } catch (error) {
       // Deux décisions en même temps : une seule passe.
-      if (await this.db.first('SELECT alert_id FROM vigilance_decisions WHERE alert_id = ?', [row.id])) return { ok: false, rule: null, code: 'already_decided' };
+      if (await this.db.first('SELECT alert_id FROM vigilance_decisions WHERE alert_id = ?', [row.id])) return this.alreadyDecided(row);
       throw error;
     }
+    await this.ensureDecisionEvent(row);
+    return { ok: true, alert: await this.toAlert(row) };
+  }
+
+  /** Une décision déjà rangée : son événement au journal est repris s'il manque, puis le refus. */
+  private async alreadyDecided(row: AlertRow): Promise<VigilanceRefusal> {
+    await this.ensureDecisionEvent(row);
+    return { ok: false, rule: null, code: 'already_decided' };
+  }
+
+  private async ensureEvents(row: AlertRow): Promise<void> {
+    await this.ensureRaisedEvent(row);
+    await this.ensureDecisionEvent(row);
+  }
+
+  /** L'événement d'une décision, écrit une fois d'après la décision rangée ; repris s'il a manqué. */
+  private async ensureDecisionEvent(row: AlertRow): Promise<void> {
+    const d = await this.db.first<{ decision: VigilanceDecisionKind; decided_by: string }>('SELECT decision, decided_by FROM vigilance_decisions WHERE alert_id = ?', [row.id]);
+    if (!d) return;
+    const seen = await this.db.first(`SELECT seq FROM journal WHERE type = 'vigilance.decision' AND json_extract(data, '$.alert') = ? LIMIT 1`, [`vigilance_alert:${row.id}`]);
+    if (seen) return;
     await appendEvent(
       this.journal,
-      { type: 'vigilance.decision', actor: this.actor(viewer), subject: `vigilance_alert:${row.id}`, data: { rule: 'R93', alert: `vigilance_alert:${row.id}`, decision: input.decision } },
+      { type: 'vigilance.decision', actor: d.decided_by, subject: `vigilance_alert:${row.id}`, data: { rule: 'R93', alert: `vigilance_alert:${row.id}`, decision: d.decision } },
       this.now,
     );
-    return { ok: true, alert: await this.toAlert(row) };
   }
 
   /** L'événement d'une alerte levée, écrit une fois ; repris s'il a manqué (journal en panne après l'écriture). */

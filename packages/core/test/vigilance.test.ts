@@ -218,6 +218,37 @@ describeWithSqlite('L04 · vigilance renforcée et origine des fonds', () => {
     expect(await verifyChain(await t.journal.all())).toMatchObject({ ok: true });
   });
 
+  it('[R93] un journal en panne ne perd ni une alerte ni une décision : l’événement manquant est repris, une seule fois', async () => {
+    const t = await setup();
+    await t.valuation();
+    const ref = await t.offer(400000);
+    let failing = false;
+    const flaky = {
+      append: (e: Parameters<typeof t.journal.append>[0]) => (failing ? Promise.reject(new Error('journal en panne')) : t.journal.append(e)),
+      last: () => t.journal.last(), all: () => t.journal.all(), bySubject: (s: string) => t.journal.bySubject(s), byPeriod: (a: string, b: string) => t.journal.byPeriod(a, b),
+    };
+    const vigilance = new conformite.VigilanceRenforcee(t.db, t.acces, flaky, { now: t.now });
+    failing = true;
+    await expect(vigilance.examine(t.conformite, ref)).rejects.toThrow('journal en panne');
+    failing = false;
+    const id = (await t.db.first<{ id: string }>('SELECT id FROM vigilance_alerts'))!.id;
+    // La relecture des alertes reprend l'événement de l'alerte manquant.
+    await vigilance.list(t.conformite);
+    failing = true;
+    await expect(vigilance.decide(t.conformite, id, { decision: 'origine_des_fonds_demandee', reason: 'apport à justifier', validatorName: 'Camille Conforme' })).rejects.toThrow('journal en panne');
+    failing = false;
+    // La décision est rangée ; la relance la dit déjà prise et écrit enfin les deux événements.
+    expect(await vigilance.decide(t.conformite, id, { decision: 'classee', reason: 'x', validatorName: 'Camille Conforme' })).toEqual({ ok: false, rule: null, code: 'already_decided' });
+    await vigilance.list(t.conformite);
+    await vigilance.examine(t.conformite, ref);
+    const events = (await t.journal.all()).filter((e) => e.type.startsWith('vigilance.'));
+    expect(events.map((e) => [e.type, e.data])).toEqual([
+      ['vigilance.alerte', { rule: 'R93', alert: `vigilance_alert:${id}` }],
+      ['vigilance.decision', { rule: 'R93', alert: `vigilance_alert:${id}`, decision: 'origine_des_fonds_demandee' }],
+    ]);
+    expect(await verifyChain(await t.journal.all())).toMatchObject({ ok: true });
+  });
+
   it('[R93] le responsable règle les seuils ; les nouvelles alertes portent le nouveau réglage, les anciennes gardent le leur', async () => {
     const t = await setup();
     await t.valuation();
