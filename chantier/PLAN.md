@@ -1313,6 +1313,8 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 
 ### L01 · Coffre de la conformité, réservé au responsable
 - Statut : en cours
+- Reste : proposition #131 ouverte, tests verts en local (1224), en attente des vérifications GitHub (H28).
+- Décidé (2026-10-28) : le coffre lit toutes les fiches réunies (S04) ; une pièce d'identité déposée range aussi l'identité vérifiée de D03 ; un test refuse que tout autre fichier du code lise la table du coffre ; relecture forte : 1 P1 corrigé (fiches fusionnées).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : S08
 - Cahier : M12, « Anti-blanchiment » et « Règles » ; Conformité, « Conservation des documents ».
 - Objectif : un coffre séparé, dans ses propres tables, où l'agent dépose la référence d'une pièce d'identité ou d'un document anti-blanchiment vérifiée (sorte, personne, dossier, date de vérification, qui l'a vérifiée, empreinte), jamais son contenu ; seul le responsable de la conformité lit le coffre ; la fiche client et les autres modules n'en voient qu'un état : « identité vérifiée le <date> ».
