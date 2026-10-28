@@ -13,6 +13,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { viewerRefusal } from './lecteur.ts';
 import { checkAfterSaleUnsubscribeBase, newAfterSaleToken } from './relances-apres-vente.ts';
 
 export const SATISFACTION_LINK_DAYS = 30;
@@ -94,9 +95,10 @@ export class Satisfaction {
 
   /** Les réponses : un agent voit celles de ses dossiers, la direction et la conformité celles du réseau [R16]. */
   async list(viewer: Viewer): Promise<{ ok: true; value: SatisfactionAnswer[] } | { ok: false; rule: 'R16'; code: string }> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') {
-      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'satisfaction', code: 'role' } }, this.now);
-      return { ok: false, rule: 'R16', code: 'role' };
+    const refusal = (await viewerRefusal(this.db, viewer)) ?? (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance' ? 'role' : null);
+    if (refusal) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'satisfaction', code: refusal } }, this.now);
+      return { ok: false, rule: 'R16', code: refusal };
     }
     const own = viewer.role === 'agent';
     const rows = await this.db.all<{ file_id: string; person_id: string; score: number; comment: string | null; answered_at: string }>(

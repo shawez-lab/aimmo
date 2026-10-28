@@ -35,6 +35,7 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { SELLER_UPDATE_PURPOSE, nameWords } from '../visites/compte-rendu.ts';
+import { viewerRefusal } from './lecteur.ts';
 import { checkSatisfactionBase, newSatisfactionLink } from './satisfaction.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -168,6 +169,8 @@ export class DemandesAvis {
       await this.refuse(viewer, subject, 'review_link', 'unknown');
       return { ok: false, rule: null, code: 'unknown_agent' };
     }
+    const inactive = await viewerRefusal(this.db, viewer);
+    if (inactive) return this.refuse(viewer, subject, 'review_link', inactive);
     const allowed = (viewer.role === 'agent' && viewer.userId === agentId) || viewer.role === 'direction';
     if (!allowed) return this.refuse(viewer, subject, 'review_link', 'role');
     if (agent.status !== 'active') return { ok: false, rule: null, code: 'agent_left' };
@@ -337,7 +340,8 @@ export class DemandesAvis {
 
   /** Les demandes d'avis : un agent voit celles de ses dossiers, la direction et la conformité celles du réseau [R16]. */
   async list(viewer: Viewer): Promise<{ ok: true; value: ReviewRequest[] } | ReviewRefusal> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, `network:${viewer.networkId}`, 'review_requests', 'role');
+    const refusal = (await viewerRefusal(this.db, viewer)) ?? (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance' ? 'role' : null);
+    if (refusal) return this.refuse(viewer, `network:${viewer.networkId}`, 'review_requests', refusal);
     const own = viewer.role === 'agent';
     const rows = await this.db.all<{ file_id: string; person_id: string; side: 'vendeur' | 'acquereur'; due_day: string; status: ReviewStatus; rule: string | null; updated_at: string }>(
       `SELECT file_id, person_id, side, due_day, status, rule, updated_at FROM review_requests WHERE network_id = ?${own ? ' AND agent_id = ?' : ''} ORDER BY due_day, file_id, side, person_id`,
@@ -352,7 +356,8 @@ export class DemandesAvis {
    * le délai, à faire moi-même » (`avis_non_parti`). L'agent ne voit que les siennes [R16].
    */
   async openTasks(viewer: Viewer): Promise<{ ok: true; value: { fileId: string; agentId: string; kind: AfterSaleTaskKind; createdAt: string }[] } | ReviewRefusal> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'after_sale_tasks', 'role');
+    const refusal = (await viewerRefusal(this.db, viewer)) ?? (viewer.role !== 'agent' && viewer.role !== 'direction' ? 'role' : null);
+    if (refusal) return this.refuse(viewer, `network:${viewer.networkId}`, 'after_sale_tasks', refusal);
     const own = viewer.role === 'agent';
     const rows = await this.db.all<{ file_id: string; agent_id: string; kind: AfterSaleTaskKind; created_at: string }>(
       `SELECT file_id, agent_id, kind, created_at FROM after_sale_tasks WHERE network_id = ? AND done_at IS NULL${own ? ' AND agent_id = ?' : ''} ORDER BY created_at, file_id, kind`,

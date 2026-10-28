@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { DemandesAvis, REVIEW_PURPOSE, Satisfaction, reviewText, type ClosedSale } from '../src/apres-vente/index.ts';
+import { DemandesAvis, REVIEW_PURPOSE, RelancesApresVente, Satisfaction, reviewText, type ClosedSale } from '../src/apres-vente/index.ts';
 import { checkText } from '../src/envoi/texte.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { FakeDossiersClos } from './apres-vente-jeu.ts';
@@ -135,5 +135,29 @@ describeWithSqlite('F05 · satisfaction : note et commentaire rangés pour M13',
     const direction = await t.satisfaction.list(t.direction);
     expect(direction.ok && direction.value.map((r) => [r.score, r.comment])).toEqual([[5, null]]);
     expect(await t.satisfaction.list({ role: 'partner', networkId: t.network.id, userId: 'p-1' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
+  });
+
+  it('[R16] un agent parti du réseau n’ouvre plus rien après la vente : réponses, demandes, tâches, relances, choix', async () => {
+    const t = await setup();
+    const a = await t.client('Ana');
+    t.close('f1', '2027-03-08', [{ personId: a, side: 'vendeur' }]);
+    t.setClock(paris('2027-03-09', 10, 5));
+    await t.avis.run(t.network.id);
+    await t.satisfaction.submit(await t.tokenOf(a), { score: 5, comment: 'Parfait.' });
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alexId]);
+    const refused = { ok: false, rule: 'R16', code: 'agent_inactive' };
+    const relances = new RelancesApresVente(t.db, t.journal, t.dossiers, { now: t.now });
+    expect(await t.satisfaction.list(t.agent)).toEqual(refused);
+    expect(await t.avis.list(t.agent)).toEqual(refused);
+    expect(await t.avis.openTasks(t.agent)).toEqual(refused);
+    expect(await t.avis.setReviewLink(t.agent, t.alexId, LINK)).toEqual(refused);
+    expect(await relances.list(t.agent)).toEqual(refused);
+    expect(await relances.recordChoice(t.agent, 'f1', a, { choice: 'non', proof: 'appel, test' })).toEqual(refused);
+    // Chaque refus est au journal.
+    const refusals = (await t.journal.all()).filter((e) => e.type === 'acces.refuse' && JSON.stringify(e.data).includes('agent_inactive'));
+    expect(refusals).toHaveLength(6);
+    // La direction lit toujours les réponses du réseau.
+    const direction = await t.satisfaction.list(t.direction);
+    expect(direction.ok && direction.value).toHaveLength(1);
   });
 });

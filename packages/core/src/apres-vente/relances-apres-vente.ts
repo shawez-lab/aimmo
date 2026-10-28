@@ -36,6 +36,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { nameWords } from '../visites/compte-rendu.ts';
 import type { ClosedSale, DossiersClos } from './demandes-avis.ts';
+import { viewerRefusal } from './lecteur.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const AFTER_SALE_PURPOSE = 'relances_apres_vente';
@@ -160,6 +161,8 @@ export class RelancesApresVente {
       await this.refuse(viewer, subject, 'after_sale_choice', 'unknown');
       return { ok: false, rule: null, code: 'unknown_file' };
     }
+    const inactive = await viewerRefusal(this.db, viewer);
+    if (inactive) return this.refuse(viewer, subject, 'after_sale_choice', inactive);
     if (viewer.role !== 'agent' || viewer.userId !== sale.agentId) return this.refuse(viewer, subject, 'after_sale_choice', 'role');
     if (!(AFTER_SALE_CHOICES as readonly string[]).includes(input.choice)) return { ok: false, rule: null, code: 'invalid_choice' };
     const proof = typeof input.proof === 'string' ? input.proof.trim() : '';
@@ -358,7 +361,8 @@ export class RelancesApresVente {
 
   /** Les relances après la vente : un agent voit celles de ses dossiers, la direction et la conformité le réseau [R16]. */
   async list(viewer: Viewer): Promise<{ ok: true; value: AfterSaleReminder[] } | AfterSaleRefusal> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, `network:${viewer.networkId}`, 'after_sale_reminders', 'role');
+    const refusal = (await viewerRefusal(this.db, viewer)) ?? (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance' ? 'role' : null);
+    if (refusal) return this.refuse(viewer, `network:${viewer.networkId}`, 'after_sale_reminders', refusal);
     const own = viewer.role === 'agent';
     const rows = await this.db.all<{ file_id: string; person_id: string; year: number; due_day: string; status: AfterSaleReminder['status']; rule: string | null; updated_at: string }>(
       `SELECT file_id, person_id, year, due_day, status, rule, updated_at FROM after_sale_reminders WHERE network_id = ?${own ? ' AND agent_id = ?' : ''} ORDER BY due_day, file_id, person_id, year`,
