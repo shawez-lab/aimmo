@@ -424,6 +424,16 @@ export class MisesEnLocation {
     return { id: row.id, networkId: row.network_id, propertyId: row.property_id, ownerPersonId: row.owner_person_id };
   }
 
+  /** La dernière version de chaque annexe, par sa sorte et sa référence : pour les joindre au bail (W06). */
+  async annexRefs(listingId: string): Promise<{ kind: AnnexKind; ref: string }[]> {
+    return this.db.all<{ kind: AnnexKind; ref: string }>(
+      `SELECT a.kind, a.ref FROM rental_annexes a
+       WHERE a.listing_id = ? AND a.version = (SELECT MAX(b.version) FROM rental_annexes b WHERE b.listing_id = a.listing_id AND b.kind = a.kind)
+       ORDER BY a.kind`,
+      [listingId],
+    );
+  }
+
   /** Les derniers faits rangés, ou `null`. */
   async currentFacts(listingId: string): Promise<(RentalFacts & { version: number }) | null> {
     return this.latestFacts(listingId);

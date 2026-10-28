@@ -413,7 +413,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     finalite: 'Mettre un logement en location sans le gérer : contrôle du logement avant toute annonce, annexes du bail, échéance du propriétaire d\'un logement énergivore, candidatures limitées aux pièces de la liste officielle.',
     baseLegale: 'contrat',
     personnes: ['Propriétaires bailleurs', 'Candidats locataires et leurs garants'],
-    donnees: ['Propriétaire du logement', 'Loyer, charges, surface, classe énergie, date du bail', 'Annexes du bail par leur référence de stockage', 'Échéance préparée pour le propriétaire', 'Candidatures : ordre d\'arrivée, lien DossierFacile, garants, pièces de la liste officielle par leur référence (jamais d\'identité, rangée au coffre)', 'Présentations au propriétaire, son choix et sa preuve, reçus d\'équité préparés'],
+    donnees: ['Propriétaire du logement', 'Loyer, charges, surface, classe énergie, date du bail', 'Annexes du bail par leur référence de stockage', 'Échéance préparée pour le propriétaire', 'Candidatures : ordre d\'arrivée, lien DossierFacile, garants, pièces de la liste officielle par leur référence (jamais d\'identité, rangée au coffre)', 'Présentations au propriétaire, son choix et sa preuve, reçus d\'équité préparés', 'Baux faits depuis les modèles : noms du bailleur et du locataire, adresse du logement, montants'],
     duree: 'La durée du mandat de location, puis 5 ans ; une mise en location sans suite, 3 ans après le dernier contact du propriétaire.',
     destinataires: ['L\'agent du logement', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
@@ -433,6 +433,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       rental_presentations: ['snapshot', 'snapshot_sha256', 'created_by'],
       rental_choices: ['proof_ref', 'recorded_by'],
       rental_fairness_receipts: ['recipient', 'person_id', 'text'],
+      rental_lease_templates: ['body', 'created_by', 'validated_by'],
+      rental_leases: ['facts_version', 'content', 'content_sha256', 'created_by'],
       rental_fees: ['facts_version', 'zone', 'tenant_cents', 'tenant_inventory_cents', 'landlord_cents', 'landlord_inventory_cents', 'deposit_cents', 'recorded_by'],
     },
   },
@@ -680,6 +682,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   rental_presentations: ['id', 'listing_id', 'network_id', 'version', 'created_at'],
   rental_choices: ['listing_id', 'presentation_id', 'application_id', 'decided_at', 'channel', 'recorded_at'],
   rental_fairness_receipts: ['id', 'presentation_id', 'application_id', 'prepared_at'],
+  rental_lease_templates: ['id', 'network_id', 'kind', 'version', 'status', 'fields', 'hash', 'created_at', 'validated_at'],
+  rental_leases: ['id', 'listing_id', 'network_id', 'version', 'application_id', 'template_id', 'template_version', 'template_hash', 'fees_version', 'mode', 'status', 'missing', 'annexes', 'created_at'],
   rental_fees: ['listing_id', 'version', 'insee_code', 'tenant_ceiling_cents', 'inventory_ceiling_cents', 'deposit_ceiling_cents', 'recorded_at'],
 };
 
