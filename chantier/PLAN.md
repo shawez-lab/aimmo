@@ -1477,7 +1477,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U07 · Suivi des demandes, relances et avis lus par un humain
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#144) ; relecture forte 2 P1 corrigés (jours ouvrés en dates de Paris, alerte au journal) ; Codex 2 P0 (sorte de pièce inconnue rendue neutre avant l'IA, délai borné de l'IA) et 1 P2 corrigés ; test instable de J05 rendu stable ; tables inscrites au registre de L06 [R95]. Relances préparées seulement, passage par le contrôle central en U09.
 - Décidé (2026-10-28, voie 2) : un partenaire n'est pas une personne de la fiche client, et le contrôle central des envois (`ControleEnvois.send`) n'écrit qu'à une personne de la fiche : U07 range seulement les relances préparées dans une boîte de M18 (texte du code, date due dans les heures d'envoi, jamais deux fois la même), sans rien envoyer ; leur passage par le contrôle central (partenaire relié à une fiche de rôle partenaire, type d'envoi `partner`, plafond de R11) revient à U09, voie 1.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U05
 - Cahier : M18, « Suivi » ; L'IA et l'humain.
@@ -1486,7 +1487,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U08 · Prospection de nouveaux partenaires entre professionnels
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Décidé (2026-10-28, voie 2) : tel qu'écrit, R03 exige un accord préalable pour tout premier mail d'initiative, prospection entre professionnels comprise ; tant que H32 n'est pas tranché, U08 prépare la liste et les mails en mode essai, et le contrôle les refuse sous R03. Rien ne part.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01
 - Cahier : M18, « Nouveaux partenaires » et « État ».
