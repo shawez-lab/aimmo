@@ -1543,7 +1543,9 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W02 · Honoraires du locataire et dépôt de garantie sous le plafond
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#150) ; R102 en service ; relecture forte 1 P0 (commune libre au barème) et 1 P1 (parts du bailleur en total) corrigés, Codex 1 P0 (lecture des plafonds au journal) corrigé. La liste officielle des zones tendues et très tendues reste à ranger dans `rental_zones` (par W09 depuis une source publique, ou par la direction) ; d'ici là, chaque commune prend 8 € par m².
+- Décidé (2026-10-28, voie 2) : la commune du logement est fixée une fois par mise en location, contrôlée contre le département du code postal du bien ; la part du locataire est comparée à celle du bailleur séparément pour visite-dossier-bail et pour l'état des lieux.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W01
 - Cahier : M15, « Mandat de location » ; Conformité, « Honoraires de location ».
 - Objectif : les zones des communes (migration `0902`, donnée de la base avec source et date) ; le calcul des honoraires du locataire et du bailleur ; le dépôt de garantie.
@@ -1551,7 +1553,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W03 · Annonce de location conforme
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W02, P03
 - Cahier : M15, « Annonce » ; L'IA et l'humain.
 - Objectif : l'annonce de location rédigée par l'IA derrière une interface, avec secours sans IA de même forme, validée par l'agent ; ses mentions calculées par le code.
