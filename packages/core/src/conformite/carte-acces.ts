@@ -22,6 +22,7 @@
  * sont masquées aussi.
  */
 import type { Schema, Traitement } from './registre.ts';
+import { REGISTRE_TRAITEMENTS } from './registre-traitements.ts';
 
 /** Une colonne qui porte l'identifiant de la personne, avec son préfixe éventuel. */
 export interface DirectLocator {
@@ -78,7 +79,12 @@ const by = (...columns: string[]): DirectLocator[] => columns.map((column) => ({
 const via = (column: string, from: string, key = 'id', extra: Partial<ViaLocator> = {}): ViaLocator => ({ column, from, key, ...extra });
 const out = (excluded: ExclusionReason, why: string): AccessMapEntry => ({ excluded, why });
 
-const LCB = (why: string): AccessMapEntry => out('lcb_ft', why);
+/** Le traitement dont le droit d'accès s'exerce auprès de la CNIL. */
+export const LCB_FT_TRAITEMENT = 'conformite-lcb-ft';
+
+const LCB_FT_EXCLUSIONS: Readonly<Record<string, AccessMapEntry>> = Object.fromEntries(
+  Object.keys(REGISTRE_TRAITEMENTS.find((t) => t.id === LCB_FT_TRAITEMENT)?.tables ?? {}).map((table) => [table, out('lcb_ft', 'Lutte contre le blanchiment.')]),
+);
 
 /** Les sortes d'événements du journal qui relèvent de la lutte contre le blanchiment : jamais dans la réponse. */
 export const JOURNAL_LCB_PREFIXES = ['coffre.', 'risque.', 'identification.', 'vigilance.', 'conformite.'] as const;
@@ -269,17 +275,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agent_departures: out('agent', 'Départ de l\'agent.'),
   agent_departure_handovers: { locate: [{ column: 'subject_id', where: { kind: 'person' } }, via('subject_id', 'projects', 'id', { where: { kind: 'project' } }), via('subject_id', 'properties', 'id', { where: { kind: 'property' } })] },
   agent_departure_reassignments: { locate: [{ column: 'subject_id', where: { kind: 'person' } }, via('subject_id', 'projects', 'id', { where: { kind: 'project' } }), via('subject_id', 'properties', 'id', { where: { kind: 'property' } })] },
-  // conformite-lcb-ft
-  compliance_vault_pieces: LCB('Pièces d\'identité et documents anti-blanchiment du coffre.'),
-  risk_sheets: LCB('Fiches de risque.'),
-  risk_validations: LCB('Validations des fiches de risque.'),
-  client_identifications: LCB('Identification et bénéficiaires effectifs.'),
-  beneficial_owners: LCB('Bénéficiaires effectifs.'),
-  vigilance_settings: LCB('Réglage de la vigilance.'),
-  vigilance_alerts: LCB('Alertes de vigilance.'),
-  vigilance_decisions: LCB('Décisions de vigilance.'),
-  suspicion_reports: LCB('Signalements au responsable.'),
-  suspicion_decisions: LCB('Décisions sur les signalements.'),
+  // conformite-lcb-ft : ses tables sont écartées toutes ensemble, depuis le registre (`LCB_FT_EXCLUSIONS`), sans être
+  // nommées ici : seul le code de la conformité lit le coffre, la vigilance et les signalements.
+  ...LCB_FT_EXCLUSIONS,
   // partenaires : les mises en relation du client, par son projet.
   partners: out('partenaire', 'Fiche du partenaire.'),
   partner_zones: out('partenaire', 'Zones du partenaire.'),
@@ -390,9 +388,9 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
     const pointers = columns.filter(isPersonPointer);
     if ('excluded' in entry) {
       // Seule la lutte contre le blanchiment peut écarter une table qui désigne un client.
-      const lcb = entry.excluded === 'lcb_ft' && registered.get(table) === 'conformite-lcb-ft';
+      const lcb = entry.excluded === 'lcb_ft' && registered.get(table) === LCB_FT_TRAITEMENT;
       if (!lcb) for (const column of pointers) gaps.push({ kind: 'exclusion_mal_fondee', table, column });
-      if (entry.excluded === 'lcb_ft' && registered.get(table) !== 'conformite-lcb-ft') gaps.push({ kind: 'exclusion_mal_fondee', table, column: '*' });
+      if (entry.excluded === 'lcb_ft' && registered.get(table) !== LCB_FT_TRAITEMENT) gaps.push({ kind: 'exclusion_mal_fondee', table, column: '*' });
       continue;
     }
     const named = new Set<string>();

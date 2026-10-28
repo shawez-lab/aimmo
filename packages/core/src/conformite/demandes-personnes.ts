@@ -24,7 +24,7 @@ import { localTime } from '../envoi/horaires.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { accessOrder, CARTE_ACCES, EXCLUSION_LABELS, type AccessMapEntry, type ExclusionReason } from './carte-acces.ts';
+import { accessOrder, CARTE_ACCES, EXCLUSION_LABELS, LCB_FT_TRAITEMENT, type AccessMapEntry, type ExclusionReason } from './carte-acces.ts';
 import { addCalendarMonths } from './registre-relecture.ts';
 import { LEGAL_BASIS_LABELS, type LegalBasis, type Traitement } from './registre.ts';
 import { REGISTRE_TRAITEMENTS } from './registre-traitements.ts';
@@ -248,7 +248,7 @@ export function erasurePlan(access: AccessResponse, registre: readonly Traitemen
       const keep = basisOf.get(s.traitement) === 'obligation_legale';
       return { table: s.table, traitement: s.traitement, rows: s.rows.length, action: keep ? 'garder' : 'effacer', why: keep ? LEGAL_BASIS_LABELS.obligation_legale : null };
     }),
-    alwaysKept: [EXCLUSION_LABELS.lcb_ft, registre.find((t) => t.id === 'conformite-lcb-ft')?.duree ?? ''].filter((s) => s !== ''),
+    alwaysKept: [EXCLUSION_LABELS.lcb_ft, registre.find((t) => t.id === LCB_FT_TRAITEMENT)?.duree ?? ''].filter((s) => s !== ''),
   };
 }
 
@@ -481,7 +481,7 @@ export class DemandesPersonnes {
   /** Les demandes du réseau, la plus proche de son échéance d'abord : le responsable de la conformité seul. */
   async list(viewer: Viewer): Promise<Result<PersonRequest[]>> {
     if (viewer.role !== 'compliance') return this.refuse(viewer, 'role');
-    const rows = await this.db.all<RequestRow>('SELECT * FROM person_requests WHERE network_id = ? ORDER BY due_on, received_on, id', [viewer.networkId]);
+    const rows = await this.db.all<RequestRow>('SELECT * FROM person_requests WHERE network_id = ? ORDER BY due_on, received_on, recorded_at, id', [viewer.networkId]);
     const out: PersonRequest[] = [];
     for (const r of rows) out.push(await this.view(r));
     return { ok: true, value: out };
