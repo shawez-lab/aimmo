@@ -119,8 +119,8 @@ export function checkText(text: string, context: TextContext, settings: TextSett
       problems.push({ rule: 'R08', reason: 'Le premier message s’adresse à la personne par son prénom.' });
     }
   }
-  if (context.audience === 'client' && fundsInOutgoing(text)) {
-    problems.push({ rule: 'R62', reason: 'AIMMO ne demande jamais de paiement et ne donne jamais de coordonnée bancaire.' });
+  if (context.audience === 'client' && bankDetailsIn(text)) {
+    problems.push({ rule: 'R62', reason: 'AIMMO ne donne jamais de coordonnée bancaire.' });
   }
   if (/[()]/.test(text)) problems.push({ rule: 'R08', reason: 'Pas de parenthèses.' });
   if (settings.administrativePhrases.some((phrase) => p.includes(phrase))) {
@@ -152,19 +152,37 @@ export function checkText(text: string, context: TextContext, settings: TextSett
   return problems;
 }
 
-/** Un IBAN, avec ou sans espaces tous les 4 caractères : deux lettres, deux chiffres, puis 12 à 30 caractères. */
-export const IBAN = /\b[a-z]{2}\d{2}(?: ?[a-z0-9]{4}){3,7}(?: ?[a-z0-9]{1,4})?\b/i;
-const IBAN_ALL = new RegExp(IBAN.source, 'gi');
-/** Ce qui remplace un IBAN dans un message reçu rangé : le bouclier (N05) le lit comme un IBAN [R15]. */
+/**
+ * Un IBAN, tel qu'on l'écrit : deux lettres, deux chiffres, puis des groupes de lettres et de chiffres séparés ou non
+ * par des espaces, des retours à la ligne, des points ou des tirets ; chaque groupe porte au moins un chiffre, pour ne
+ * jamais avaler les mots qui suivent. 14 à 34 caractères utiles.
+ */
+const IBAN_SOURCE = String.raw`\b[a-z]{2}\d{2}(?:[\s.\-]{0,3}(?=[a-z0-9]*\d)[a-z0-9]{1,11}){1,10}\b`;
+/** Un RIB français écrit seul : banque 5 chiffres, guichet 5, compte 11, clé 2. */
+const RIB_SOURCE = String.raw`\b\d{5}[\s.\-]{0,3}\d{5}[\s.\-]{0,3}[a-z0-9]{11}[\s.\-]{0,3}\d{2}\b`;
+const usefulLength = (m: string): number => m.replace(/[\s.\-]/g, '').length;
+export const IBAN = { test: (text: string): boolean => bankNumbers(text).length > 0 };
+/** Ce qui remplace un IBAN ou un RIB dans un message reçu rangé : le bouclier (N05) le lit comme un IBAN [R15]. */
 export const IBAN_MASK = '[IBAN masqué]';
 
-/** Le texte, chaque IBAN remplacé par `IBAN_MASK`, avant de le ranger [R15]. Les espaces sont gardés ailleurs. */
+function bankNumbers(text: string): string[] {
+  const found = [...text.matchAll(new RegExp(IBAN_SOURCE, 'gi'))].map((m) => m[0]).filter((m) => usefulLength(m) >= 14 && usefulLength(m) <= 34);
+  return [...found, ...[...text.matchAll(new RegExp(RIB_SOURCE, 'gi'))].map((m) => m[0])];
+}
+
+/** Le texte, chaque IBAN ou RIB remplacé en entier par `IBAN_MASK`, avant de le ranger [R15]. Le reste ne change pas. */
 export function maskIban(text: string): string {
-  // Un IBAN peut être coupé par plusieurs espaces ou un retour à la ligne : on cherche sur le texte aux blancs réduits
-  // seulement si le texte brut n'en montre aucun, pour ne rien changer d'autre.
-  const masked = text.replace(IBAN_ALL, IBAN_MASK);
-  if (masked !== text || !IBAN.test(text.replace(/\s+/g, ' '))) return masked;
-  return text.replace(/\s+/g, ' ').replace(IBAN_ALL, IBAN_MASK);
+  const masked = text.replace(new RegExp(IBAN_SOURCE, 'gi'), (m) => (usefulLength(m) >= 14 && usefulLength(m) <= 34 ? IBAN_MASK : m));
+  return masked.replace(new RegExp(RIB_SOURCE, 'gi'), IBAN_MASK);
+}
+
+/**
+ * Ce que tout texte à un client refuse [R62] : un IBAN, un RIB, ou le nom même de coordonnées bancaires. Les tournures
+ * qui demandent de payer sont refusées par `fundsInOutgoing` dans les textes écrits par le code de M10 seulement : dans
+ * une dictée, « il faut régler la question du parking » ne demande rien.
+ */
+export function bankDetailsIn(text: string): boolean {
+  return IBAN.test(text) || text.includes(IBAN_MASK) || /\b(?:rib|bic|swift|iban)\b/.test(plain(text)) || /\bcoordonnees bancaires\b/.test(plain(text));
 }
 
 const OUTGOING_FUNDS: RegExp[] = [
@@ -179,7 +197,7 @@ const OUTGOING_FUNDS: RegExp[] = [
 
 /** Un texte d'AIMMO qui donne des coordonnées bancaires ou demande un paiement : jamais [R62]. */
 export function fundsInOutgoing(text: string): boolean {
-  if (IBAN.test(text.replace(/\s+/g, ' ')) || text.includes(IBAN_MASK)) return true;
+  if (bankDetailsIn(text)) return true;
   const p = plain(text);
   return OUTGOING_FUNDS.some((re) => re.test(p));
 }

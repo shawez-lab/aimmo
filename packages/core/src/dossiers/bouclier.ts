@@ -50,7 +50,7 @@ const INBOUND: [FundSignal, RegExp][] = [
 export function fundSignals(text: string): FundSignal[] {
   const p = plain(text);
   const found: FundSignal[] = [];
-  if (IBAN.test(text.replace(/\s+/g, ' ')) || text.includes(IBAN_MASK)) found.push('iban');
+  if (IBAN.test(text) || text.includes(IBAN_MASK)) found.push('iban');
   for (const [signal, re] of INBOUND) if (re.test(p)) found.push(signal);
   return found;
 }

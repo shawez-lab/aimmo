@@ -34,7 +34,18 @@ async function setup(withPieces = true) {
 it('[R62] le contrôle du texte refuse tout message à un client qui porte un IBAN ou demande de payer', () => {
   const ctx = { audience: 'client' as const, channel: 'email' as const };
   expect(checkText(`Bonjour Léa, voici notre IBAN ${IBAN}.`, ctx).map((p) => p.rule)).toContain('R62');
-  expect(checkText('Bonjour Léa, merci de régler la somme convenue sur le compte indiqué.', ctx).map((p) => p.rule)).toContain('R62');
+  expect(checkText('Bonjour Léa, notre RIB est en pièce jointe.', ctx).map((p) => p.rule)).toContain('R62');
+  // Une dictée ou un avis de visiteur ne demande rien : il passe [R62 ne bloque que les coordonnées bancaires].
+  for (const text of [
+    'Bonjour Léa, réserves : il faut effectuer des travaux dans la salle de bain.',
+    'Bonjour Léa, avis du visiteur : il faut régler la question du parking.',
+    'Bonjour Léa, réserves : le paiement des charges de copropriété semble élevé.',
+    'Bonjour Léa, retrouvez le bien sur le compte Instagram de l’agence.',
+  ]) {
+    expect([text, checkText(text, ctx).map((p) => p.rule)]).not.toEqual([text, expect.arrayContaining(['R62'])]);
+  }
+  // Les textes écrits par le code de M10 gardent la liste complète.
+  expect(m10.fundsInOutgoing('Bonjour Léa, merci de régler la somme convenue sur le compte indiqué.')).toBe(true);
   expect(checkText('Bonjour Léa, votre dossier avance, le notaire vous écrira.', ctx).map((p) => p.rule)).not.toContain('R62');
   expect(checkText('[IBAN masqué]', ctx).map((p) => p.rule)).toContain('R62');
 });
@@ -42,6 +53,11 @@ it('[R62] le contrôle du texte refuse tout message à un client qui porte un IB
 it('[R15] un IBAN reçu est masqué, même coupé par des espaces ; le bouclier lit encore le masque', () => {
   expect(maskIban(`Mon RIB : ${IBAN}, merci.`)).toBe('Mon RIB : [IBAN masqué], merci.');
   expect(maskIban('Rien de bancaire ici.')).toBe('Rien de bancaire ici.');
+  for (const written of ['FR76 3000 6000 0112 3456\n7890 189', 'FR76 3000 6000 0112  3456 7890 189', 'FR76-3000-6000-0112-3456-7890-189', 'FR76 30006 00001 12345678901 89', 'FR7630006000011234567890189', '30006 00001 12345678901 89']) {
+    expect([written, maskIban(`Voici : ${written} merci beaucoup`)]).toEqual([written, 'Voici : [IBAN masqué] merci beaucoup']);
+  }
+  // Rien d'autre n'est masqué : téléphone, code postal, référence, surface.
+  for (const plainText of ['Appelez-moi au 06 12 34 56 78.', 'Dijon 21000, bien REF-T-1, T3 de 62 m², 210 000 €.']) expect(maskIban(plainText)).toBe(plainText);
   expect(m10.fundSignals(maskIban(`virement sur ${IBAN}`))).toContain('iban');
 });
 

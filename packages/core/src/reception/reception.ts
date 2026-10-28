@@ -158,7 +158,7 @@ export class Reception {
       `INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, raw_payload, status, received_at, created_at)
        VALUES (?, ?, ?, ?, 'unreadable', ?, 'unreadable', ?, ?)
        ON CONFLICT (network_id, dedup_key) DO NOTHING`,
-      [id, networkId, key, item.channel, item.raw, at, at],
+      [id, networkId, key, item.channel, maskIban(item.raw), at, at],
     );
     if (changes === 1) {
       await this.log(networkId, id, item.channel, 'unreadable', 'unreadable', `illisible, signalé à l'agent : ${item.reason}`);
