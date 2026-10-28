@@ -1,13 +1,22 @@
 name: Créer l'accès de Shawez
 
 # Z02 · Lancé à la main, depuis main seulement. Range une invitation à usage unique, valable 24 heures (empreinte
-# seule), puis envoie le lien par mail à l'adresse donnée ici. Le lien ouvre l'application déjà connectée : le Worker
+# seule), puis envoie le lien par mail à l'adresse donnée ici ; en remise « resume » (Z04), sans mail, le lien est
+# écrit seulement dans le résumé du travail (Summary), jamais dans sa sortie. Le lien ouvre l'application déjà connectée : le Worker
 # tire alors les clés et n'en garde que l'empreinte. Le secret API_KEYS n'est ni lu ni réécrit.
 # Le prénom, le nom et les adresses sont donnés au lancement : ils ne sont jamais écrits dans le dépôt.
 
 on:
   workflow_dispatch:
     inputs:
+      remise:
+        description: Remise du lien (mail, ou resume pour l'écrire seulement dans le résumé du travail)
+        required: true
+        default: mail
+        type: choice
+        options:
+          - mail
+          - resume
       prenom:
         description: Prénom
         required: true
@@ -17,12 +26,12 @@ on:
         required: true
         type: string
       mail:
-        description: Adresse qui reçoit le lien
-        required: true
+        description: Adresse qui reçoit le lien (remise mail)
+        required: false
         type: string
       expediteur:
-        description: Adresse d'expédition, sur un domaine du compte Cloudflare
-        required: true
+        description: Adresse d'expédition, sur un domaine du compte Cloudflare (remise mail)
+        required: false
         type: string
       reseau:
         description: Identifiant du réseau
@@ -65,10 +74,14 @@ jobs:
           fi
       - name: Masquer les données saisies
         # Lues dans l'événement, jamais posées dans le texte de la commande : le journal du travail ne les montre pas.
+        # En remise « resume » (Z04), le prénom et le nom ne sont pas masqués : GitHub masque aussi le résumé, et un
+        # prénom court ou présent dans l'adresse de l'application y casserait le lien (remplacé par ***). Ils ne
+        # s'affichent nulle part : aucune étape ne les reçoit dans son environnement ni ne les écrit.
         run: |
           node -e '
             const inputs = JSON.parse(require("fs").readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")).inputs || {};
-            for (const name of ["prenom", "nom", "mail", "expediteur"]) {
+            const names = inputs.remise === "resume" ? ["mail", "expediteur"] : ["prenom", "nom", "mail", "expediteur"];
+            for (const name of names) {
               const value = String(inputs[name] || "").trim();
               if (value) console.log("::add-mask::" + value);
             }'
@@ -90,12 +103,11 @@ jobs:
           fi
           sed -i "s/$D1_PLACEHOLDER/$id/" wrangler.toml
           npx -y "$WRANGLER" d1 migrations apply aimmo --remote
-      - name: Invitation et mail
+      - name: Invitation et remise du lien
+        # Le prénom, le nom et les adresses ne passent pas par l'environnement de l'étape, que GitHub affiche en tête
+        # de son journal : le programme les lit lui-même dans l'événement du lancement (GITHUB_EVENT_PATH).
         env:
-          ACCES_PRENOM: ${{ inputs.prenom }}
-          ACCES_NOM: ${{ inputs.nom }}
-          ACCES_MAIL: ${{ inputs.mail }}
-          ACCES_EXPEDITEUR: ${{ inputs.expediteur }}
+          ACCES_REMISE: ${{ inputs.remise }}
           ACCES_RESEAU: ${{ inputs.reseau }}
           ACCES_AGENT: ${{ inputs.agent }}
         run: node --experimental-strip-types packages/api/outils/creer-acces.ts
