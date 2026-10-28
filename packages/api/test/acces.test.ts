@@ -80,7 +80,7 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
     expect(await direction.json()).toMatchObject({ data: { role: 'direction' } });
   });
 
-  it('un lien ne sert qu’une fois, même pour deux échanges simultanés [R98]', async () => {
+  it('un lien ne sert qu’une fois, même pour deux échanges simultanés [R200]', async () => {
     const w = await world();
     const token = await invite(w);
     const [a, b] = await Promise.all([exchange(w.db, token), exchange(w.db, token)]);
@@ -91,7 +91,7 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
     expect((w.raw.prepare('SELECT COUNT(*) AS n FROM access_keys WHERE revoked_at IS NULL').get() as { n: number }).n).toBe(2);
   });
 
-  it('une panne pendant l’échange ne brûle pas le lien, et ses clés n’ouvrent rien [R98]', async () => {
+  it('une panne pendant l’échange ne brûle pas le lien, et ses clés n’ouvrent rien [R200]', async () => {
     const w = await world();
     const token = await invite(w);
     // La seconde clé échoue à s'écrire.
@@ -116,7 +116,7 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
     expect((await call(w.db, '/v1/moi', { headers: { authorization: `Bearer ${cles[0]!.cle}` } })).status).toBe(200);
   });
 
-  it('un lien expiré est refusé à la 24e heure, accepté juste avant [R98]', async () => {
+  it('un lien expiré est refusé à la 24e heure, accepté juste avant [R200]', async () => {
     const w = await world();
     const late = await invite(w);
     const res = await exchange(w.db, late, new Date(T0.getTime() + 24 * 3600_000));
@@ -138,7 +138,7 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
     expect((w.raw.prepare('SELECT COUNT(*) AS n FROM access_keys').get() as { n: number }).n).toBe(0);
   });
 
-  it('le journal garde l’usage et les refus, sans jeton, clé ni empreinte de clé [R13] [R98]', async () => {
+  it('le journal garde l’usage et les refus, sans jeton, clé ni empreinte de clé [R13] [R200]', async () => {
     const w = await world();
     const token = await invite(w);
     const res = await exchange(w.db, token);
@@ -267,7 +267,7 @@ describe('Z02 · règles sans base', () => {
     expect(parseGrants('oups')).toBeNull();
   });
 
-  it('le travail GitHub ne lit ni ne réécrit API_KEYS, ne tourne que depuis main et masque les données saisies [R98]', () => {
+  it('le travail GitHub ne lit ni ne réécrit API_KEYS, ne tourne que depuis main et masque les données saisies [R200]', () => {
     const yml = readFileSync(new URL('../../../.github/workflows/creer-acces.yml', import.meta.url), 'utf8');
     const tool = readFileSync(new URL('../outils/creer-acces.ts', import.meta.url), 'utf8');
     for (const text of [yml, tool]) expect(text).not.toMatch(/secret\s+(?:put|bulk)|'secret'/);
