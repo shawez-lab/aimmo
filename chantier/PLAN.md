@@ -1487,7 +1487,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U08 · Prospection de nouveaux partenaires entre professionnels
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
+- Reste : fusionnée (#146) ; aucun accord fabriqué : chaque brouillon porte le refus du contrôle central (R03 tant que H32 n'est pas tranché) ; plafond tenu par la base, même pour deux passages ensemble ; relecture forte 2 P1 corrigés, Codex 2 P2 corrigés. R79 entre en service avec U09.
 - Décidé (2026-10-28, voie 2) : tel qu'écrit, R03 exige un accord préalable pour tout premier mail d'initiative, prospection entre professionnels comprise ; tant que H32 n'est pas tranché, U08 prépare la liste et les mails en mode essai, et le contrôle les refuse sous R03. Rien ne part.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01
 - Cahier : M18, « Nouveaux partenaires » et « État ».
@@ -1500,11 +1501,11 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`, contrôle central des envois) · Relecture : forte · Dépend de : U10
 - Cahier : M18 ; Branchements.
 - Objectif : exporter `partenaires` depuis `@aimmo/core` ; dans les droits d'accès, le rôle `partner` lit seulement ses mises en relation confiées (U04) et rien d'autre ; ajouter les routes de M18 à `app.ts` ; lancer au planificateur les relances, les alertes d'échéance des justificatifs et la prospection du jour.
-- Critères : un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
+- Critères : chaque brouillon de prospection (U08) et chaque relance préparée (U07) passe par `envoi/controle.ts` en mode essai, qui redécide au moment de l'envoi, et le refus sous R03 tient tant que H32 n'a pas écrit son exception dans R03 et dans `decideSend` ; un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
 - Attend : rien.
 
 ### U10 · Routes de M18 et espace partenaire en ligne
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : U01 à U08
 - Cahier : M18 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/partenaires` (annuaire, mises en relation, accord du client, rémunérations, espace partenaire, dépôt de pièces, suivi, prospection) dans `packages/api/src/partenaires.ts` ; la page de l'espace partenaire, belle sur téléphone d'abord.

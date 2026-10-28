@@ -368,7 +368,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     finalite: 'Tenir l\'annuaire des partenaires (notaires, courtiers, diagnostiqueurs, artisans) et les mettre en relation avec un client qui l\'a accepté.',
     baseLegale: 'interet_legitime',
     personnes: ['Partenaires et leurs contacts', 'Clients mis en relation'],
-    donnees: ['Identité et coordonnées professionnelles', 'Justificatifs datés', 'Accord du client et mise en relation', 'Relances préparées et avis du client sur le service rendu, lus par un humain'],
+    donnees: ['Identité et coordonnées professionnelles', 'Justificatifs datés', 'Accord du client et mise en relation', 'Relances préparées et avis du client sur le service rendu, lus par un humain', 'Futurs partenaires : adresse professionnelle, entreprise, source publique, opposition'],
     duree: 'La durée du partenariat, puis 5 ans ; une mise en relation, 3 ans après le dernier contact du client.',
     destinataires: ['L\'agent du client', 'La direction du réseau', 'Le partenaire choisi par le client, pour sa mise en relation'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)', 'Meta (WhatsApp, Messenger, Instagram)', 'Google (agenda, messagerie)'],
@@ -386,6 +386,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       partner_followups: ['recipient', 'text'],
       partner_reviews: ['text', 'recorded_by'],
       partner_review_reads: ['reader'],
+      partner_prospects: ['email', 'address_kind', 'business_name', 'added_by'],
+      partner_prospect_mails: ['text', 'optout_token_sha256', 'decision_reason'],
+      partner_prospect_optouts: ['email'],
     },
   },
   {
@@ -627,6 +630,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   partner_followups: ['id', 'network_id', 'referral_id', 'kind', 'due_at', 'prepared_at'],
   partner_reviews: ['id', 'network_id', 'referral_id', 'channel', 'recorded_at'],
   partner_review_reads: ['review_id', 'read_at'],
+  partner_prospects: ['id', 'network_id', 'trade', 'source', 'added_at'],
+  partner_prospect_mails: ['id', 'network_id', 'prospect_id', 'day', 'decision_rule', 'prepared_at'],
+  partner_prospect_optouts: ['network_id', 'via', 'at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
