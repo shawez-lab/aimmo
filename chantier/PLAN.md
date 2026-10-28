@@ -1314,7 +1314,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J13 · Branchement de M14 dans le socle
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : J12
 - Cahier : M14 ; critère « aucun accès aux clients avant un dossier d'agent complet ».
 - Objectif : exporter `reseau` depuis `@aimmo/core` ; ajouter les routes de M14 à `app.ts` ; dans les droits d'accès, refuser toute fiche client et tout bien non partagé à un agent dont `DossierAgent.complete` est faux ce jour-là, et à un agent parti ; dans les droits d'accès, lire `Departs.isGone` (vrai dès minuit le jour du départ, avant le passage du planificateur) ; dans le contrôle central des envois, refuser tout envoi dont `Departs.sendAllowed` est faux (agent du message ou agent qui l'a préparé) ; lancer `Departs.runDue` au planificateur ; lancer au planificateur les alertes d'échéances des pièces, du compteur de formation, de l'assistance et les départs du jour ; ajouter `reseauRoutes({ pieces, coach, sandbox })` de `packages/api/src/reseau.ts` aux routes de `app.ts`, et servir `/rejoindre` par `handleCandidature` avec la variable `CANDIDATURE_NETWORK_ID`, comme les autres pages publiques (mode essai, erreur au journal).
