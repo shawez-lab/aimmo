@@ -1516,9 +1516,105 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U11 · Écrans de M18 dans l'application
-- Statut : en cours (voie 2)
-- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U10 ; après la fusion de #129 (même fichier `packages/api/app/fichiers.ts`)
+- Statut : à faire
+- Reste (2026-10-28, voie 2) : remise à plus tard : la voie 1 modifie `packages/api/app/fichiers.ts` dans Z02 (proposition en cours), puis le refait en entier dans Z03 (passe de design). Les deux voies ne touchent jamais le même fichier en même temps : U11 se fait après la fusion de Z03, dans le nouveau système de design.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : U10, Z03 (même fichier `packages/api/app/fichiers.ts`)
 - Cahier : M18 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : dans l'application de l'agent, l'écran « Partenaires » : proposer au client (ordre tiré au sort), enregistrer son accord, suivre les demandes et les pièces.
 - Critères : l'écran lit seulement par les routes `/v1/partenaires` [R16] ; aucune liste n'est triée par une note [R75] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
+- Attend : rien.
+
+**M15 · Louer, août 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-28 par la voie 2 : M18 n'a plus de tâche faisable par la voie 2 (U09 est à la voie 1, U11 attend Z03), et M15 est le module d'août 2027 qu'aucune voie n'a commencé ; ses dépendances (M05, M06, M18) sont faites. Ids `W..` (bail). Cahier : M15 Louer ; Conformité, « Location » ; Feuille de route, août 2027 : « 3 mises en location tests : annonce conforme, honoraires sous le plafond, bail et état des lieux signés en ligne » ; critères « aucune pièce interdite demandée sur 20 candidatures tests », « un logement classé G est bloqué avant toute annonce », « le propriétaire voit les dossiers complets dans leur ordre d'arrivée, sans note ».
+Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamais la gestion locative ; il ne reçoit jamais ni loyer, ni dépôt de garantie, ni aucun fonds du locataire ou du propriétaire, et aucun champ ne le permet [R107]. Un logement n'est proposé à la location qu'après un contrôle écrit dans le code : classe énergie et date du bail (interdits : consommation au-delà de 450 kWh/m²/an en énergie finale depuis 2023, classe G depuis le 1er janvier 2025, F à partir du 1er janvier 2028, E à partir du 1er janvier 2034, pour tout nouveau bail ou reconduction), surface habitable d'au moins 9 m², annexes obligatoires présentes et valides ; un logement refusé reste bloqué, et le propriétaire reçoit, préparée en mode essai, l'échéance qui le concerne [R100, R101]. Les honoraires à la charge du locataire sont calculés par le code depuis la surface habitable et la zone de la commune (12 € par m² en zone très tendue, 10 € en zone tendue, 8 € ailleurs, plus 3 € par m² pour l'état des lieux d'entrée), jamais au-dessus du plafond ni de la part du bailleur ; la zone de chaque commune est une donnée de la base, rangée avec sa source et sa date, jamais écrite dans le code ; une commune sans zone connue prend le plafond le plus bas [R102]. L'annonce est rédigée par l'IA derrière une interface, avec secours sans IA ; ses mentions (loyer charges comprises, charges, honoraires du locataire, dépôt de garantie, surface, commune, classe énergie, complément de loyer s'il y en a) sont calculées par le code ; aucun critère discriminant dans le texte, contrôlé par une liste écrite [R103]. Le dépôt de garantie d'un logement vide ne dépasse pas un mois de loyer hors charges, celui d'un meublé deux mois [R102]. Le candidat et sa caution ne fournissent que les pièces de la liste officielle (décret du 5 novembre 2015), chacune une référence de stockage, jamais son contenu ; un lien DossierFacile est accepté tel quel ; l'IA vérifie seulement qu'un dossier est complet, par une liste écrite, jamais sa solvabilité [R104, R14]. Le propriétaire voit les seuls dossiers complets, dans leur ordre d'arrivée, sans note, sans rang, sans tri ni filtre sur un revenu ; son choix est le sien, enregistré avec sa date et sa preuve [R105]. Le bail (vide ou meublé) et ses annexes sont faits depuis les modèles datés de M06 et signés par la signature en ligne de D08, en mode essai tant que H08 et H24 ne sont pas faits. L'état des lieux se fait dans l'application : pièce par pièce, photos (références), relevés des compteurs, clés remises, signature des deux parties, un exemplaire chacun ; l'IA ne fait que mettre en forme le texte dicté, sans rien ajouter [R106]. La gestion locative est proposée par un partenaire de M18 titulaire de la carte G, par la mise en relation de M18 avec l'accord du propriétaire. Les numéros de règles R100 à R109 et de migrations à partir de `0901` sont réservés à M15 ; les vérifications (`scripts/garde-fous.mjs`) lisent les règles à trois chiffres dès W01. Le code vit dans `packages/core/src/location/`, ses routes dans `packages/api/src/location.ts` ; les fichiers du socle (droits d'accès, `index.ts`, `app.ts`, planificateur, Worker, contrôle central des envois, application de l'agent) ne changent que par W10, confiée à la voie 1.
+
+### W01 · Logement contrôlé avant toute annonce, échéance du propriétaire
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : D02, P01
+- Cahier : M15, « Contrôle du logement » ; Conformité, « Logements énergivores ».
+- Objectif : la mise en location (migration `0901`) : logement, propriétaire (fiche de M01), vide ou meublé, loyer hors charges, charges, surface habitable, classe énergie et consommation, date de bail envisagée ; le contrôle du logement par des règles écrites ; l'échéance du propriétaire préparée en mode essai. Les vérifications lisent les règles à trois chiffres (`R100`).
+- Critères : un logement classé G, ou au-delà de 450 kWh/m²/an, est bloqué avant toute annonce pour un bail commençant après le 1er janvier 2025 ; F bloqué pour un bail commençant à partir du 1er janvier 2028 ; E à partir du 1er janvier 2034, testé à la veille et au jour de chaque date [R100] ; une surface habitable sous 9 m² ou une annexe obligatoire manquante ou échue bloque, avec la raison dite à l'agent [R101] ; le propriétaire reçoit, préparée et jamais envoyée hors du contrôle central, la date à partir de laquelle son logement ne pourra plus être loué selon sa classe ; rien ne s'efface, chaque contrôle au journal [R17, R13] ; `npm run garde-fous` refuse une règle à trois chiffres en service sans test.
+- Attend : rien.
+
+### W02 · Honoraires du locataire et dépôt de garantie sous le plafond
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W01
+- Cahier : M15, « Mandat de location » ; Conformité, « Honoraires de location ».
+- Objectif : les zones des communes (migration `0902`, donnée de la base avec source et date) ; le calcul des honoraires du locataire et du bailleur ; le dépôt de garantie.
+- Critères : la part du locataire (visite, dossier, bail) ne dépasse jamais 12, 10 ou 8 € par m² habitable selon la zone, ni l'état des lieux 3 € par m², ni la part du bailleur, testé aux bornes [R102] ; une commune sans zone connue prend 8 € [R102] ; le dépôt de garantie ne dépasse pas un mois de loyer hors charges pour un logement vide, deux pour un meublé [R102] ; les montants sont calculés en centimes par le code, jamais par l'IA ; un barème au-delà du plafond est refusé à l'enregistrement.
+- Attend : rien.
+
+### W03 · Annonce de location conforme
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W02, P03
+- Cahier : M15, « Annonce » ; L'IA et l'humain.
+- Objectif : l'annonce de location rédigée par l'IA derrière une interface, avec secours sans IA de même forme, validée par l'agent ; ses mentions calculées par le code.
+- Critères : l'annonce n'existe que pour un logement passé au contrôle de W01 [R100] ; chaque mention obligatoire (loyer charges comprises, charges, honoraires du locataire, dépôt de garantie, surface habitable, commune, classe énergie) vient des données et figure dans le texte publié, testé mention par mention ; aucun critère discriminant (liste écrite : origine, nationalité, situation de famille, âge, sexe, handicap, état de santé, religion, garant obligatoirement en France, « CDI exigé », etc.) dans le texte de l'IA ni de l'agent [R103] ; aucune mention de l'IA [R06] ; rien n'est publié sans validation de l'agent.
+- Attend : rien.
+
+### W04 · Candidatures limitées aux pièces de la liste officielle
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W01
+- Cahier : M15, « Candidatures » ; Conformité, « Pièces du candidat ».
+- Objectif : la candidature (migration `0903`) : candidat (fiche de M01), cautions, pièces rangées par sorte (liste officielle, une pièce d'identité, un justificatif de domicile, d'activité, de ressources, pour le candidat et chaque caution), lien DossierFacile, date d'arrivée, complétude vérifiée par une liste écrite.
+- Critères : aucune pièce hors de la liste officielle n'est demandée ni acceptée, sur 20 candidatures tests, testé sorte par sorte (relevé de compte, attestation de bonne tenue de compte, photo, carte vitale, dossier médical, extrait de casier, chèque de réservation, etc. refusés) [R104] ; un lien DossierFacile vaut dossier sans autre pièce [R104] ; la complétude est dite par la liste écrite ; l'IA éventuelle ne reçoit aucune pièce et ne rend que « complet » ou les sortes manquantes, jamais un avis sur la solvabilité [R14, R15] ; une pièce n'est jamais son contenu, seulement sa référence.
+- Attend : rien.
+
+### W05 · Dossiers montrés au propriétaire dans leur ordre d'arrivée, reçu d'équité (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W04
+- Cahier : M15, « Présentation au propriétaire » ; Conformité, « Non-discrimination ».
+- Objectif : la présentation des dossiers complets au propriétaire et l'enregistrement de son choix ; le reçu d'équité.
+- Critères : le propriétaire ne voit que les dossiers complets, dans leur ordre d'arrivée, sans note, rang, tri ni filtre sur un revenu ou une autre donnée [R105, R14] ; son choix est enregistré avec sa date et sa preuve, jamais fait par le code ni l'IA [R105] ; Jamais vu : chaque candidat reçoit, préparé en mode essai, un reçu d'équité qui liste les seules pièces qui lui ont été demandées, sa date d'arrivée et la règle de présentation, rejouable à l'identique depuis le journal ; le propriétaire reçoit la même preuve que l'ordre montré est celui des arrivées [R105, R104].
+- Attend : rien.
+
+### W06 · Bail et annexes depuis les modèles, signés en ligne
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W05, D08
+- Cahier : M15, « Bail et annexes » ; Conformité, « Bail et état des lieux ».
+- Objectif : le bail vide ou meublé et ses annexes faits depuis les modèles datés de M06 (D02) avec les données de la mise en location, signés par la signature en ligne de D08, en mode essai.
+- Critères : le bail ne se fait que pour le candidat choisi par le propriétaire [R105] ; chaque annexe obligatoire est jointe ou le bail est refusé [R101] ; loyer, charges, dépôt et honoraires viennent des données contrôlées par W02 [R102] ; le modèle utilisé est celui en vigueur à la date du bail ; signature en mode essai tant que H08 et H24 ne sont pas faits.
+- Attend : H08 et H24 pour un usage réel ; en mode essai d'ici là.
+
+### W07 · État des lieux dans l'application, signé par les deux parties
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W06
+- Cahier : M15, « État des lieux » ; L'IA et l'humain.
+- Objectif : l'état des lieux d'entrée (migration `0904`) : pièce par pièce, éléments et état, photos (références), relevés des compteurs, clés remises, texte dicté mis en forme par l'IA derrière une interface avec secours, signature des deux parties, un exemplaire chacun.
+- Critères : l'état des lieux n'est clos qu'avec la signature des deux parties et chaque pièce renseignée [R106] ; l'IA ne fait que mettre en forme : le texte rendu ne contient aucun élément, état ni chiffre absent du dicté, sinon le secours est pris [R106] ; chaque partie reçoit le même exemplaire, de même empreinte [R106] ; rien ne s'efface, une correction est une nouvelle version avant signature [R17].
+- Attend : rien.
+
+### W08 · Remise des clés sans argent pour AIMMO, gestion par un partenaire carte G
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W07, U02
+- Cahier : M15, « Remise des clés » ; Conformité, « Argent du locataire ».
+- Objectif : la remise des clés : dépôt de garantie et premier loyer déclarés versés directement au propriétaire ; honoraires dus à la signature du bail ; proposition de gestion locative par un partenaire de M18 titulaire de la carte G.
+- Critères : aucune table, aucune route et aucun texte ne fait recevoir par AIMMO un loyer ou un dépôt de garantie ; un compte bancaire d'AIMMO n'est jamais proposé au locataire [R107] ; la gestion locative passe par la mise en relation de M18, avec l'accord du propriétaire, à un partenaire dont la carte G est valide ce jour [R74, R73] ; les honoraires ne sont dus qu'une fois le bail signé.
+- Attend : rien.
+
+### W09 · Routes de M15 et parcours de 3 mises en location tests
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W01 à W08
+- Cahier : M15 ; Feuille de route, août 2027.
+- Objectif : les routes `/v1/location` dans `packages/api/src/location.ts` ; le parcours de 3 mises en location tests de bout en bout.
+- Critères : chaque route sous R16, rôle contrôlé avant le corps, refus au journal ; 3 mises en location inventées (vide en zone tendue, meublé hors zone, logement classé F dont le bail commence avant 2028) menées jusqu'à l'état des lieux signé, annonce conforme, honoraires sous le plafond ; un logement classé G bloqué avant toute annonce ; 20 candidatures inventées sans aucune pièce interdite.
+- Attend : rien.
+
+### W10 · Branchement de M15 dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : W09
+- Cahier : M15 ; Branchements.
+- Objectif : exporter `location` depuis `@aimmo/core` ; ajouter ses routes à `app.ts` ; lancer au planificateur les échéances des propriétaires ; passer les textes préparés par le contrôle central des envois, en mode essai.
+- Critères : chaque texte préparé (échéance, reçu d'équité) passe par `envoi/controle.ts`, qui redécide au moment de l'envoi ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
+- Attend : rien.
+
+### W11 · Écrans de M15 dans l'application
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W09, Z03 (même fichier `packages/api/app/fichiers.ts`)
+- Cahier : M15 ; exigence de design (protocole, section 9).
+- Objectif : dans l'application de l'agent, l'écran « Louer » : contrôle du logement, annonce, candidatures dans leur ordre d'arrivée, bail, état des lieux pièce par pièce sur téléphone.
+- Critères : l'écran lit seulement par les routes `/v1/location` [R16] ; aucune liste de candidats n'est triée ni notée [R105] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
 - Attend : rien.
