@@ -154,6 +154,32 @@ describeWithSqlite('F03 · remerciement : l’agent appelle, le message est pré
     expect(after.ok && after.value.map((r) => [r.sendStatus, r.rule])).toEqual([['sent', null]]);
   });
 
+  it('[R05] un passage interrompu après l’envoi, avant d’en ranger l’issue : la reprise range l’envoi, pas un refus', async () => {
+    const t = await setup();
+    const s = await t.client('Sara');
+    t.close('f1', '2027-03-08', [{ personId: s, side: 'vendeur' }]);
+    t.setClock(paris('2027-03-08', 18));
+    await t.merci.run(t.network.id);
+    t.setClock(paris('2027-03-09', 21));
+    await t.merci.decide(t.agent, 'f1', s, 'send');
+    // Une panne juste avant de ranger l'issue : l'envoi est fait, la tâche reste prise.
+    const update = t.db.run.bind(t.db);
+    t.db.run = async (sql: string, params?: readonly unknown[]) => {
+      if (sql.startsWith('UPDATE thank_you_tasks SET send_status = ?, rule = ?')) throw new Error('panne simulée');
+      return update(sql, params as never);
+    };
+    t.setClock(paris('2027-03-10', 10));
+    await expect(t.merci.run(t.network.id)).rejects.toThrow('panne simulée');
+    t.db.run = update;
+    expect(await t.outbox()).toBe(1);
+    // Vingt minutes plus tard, la reprise.
+    t.setClock(paris('2027-03-10', 10, 20));
+    await t.merci.run(t.network.id);
+    expect(await t.outbox()).toBe(1);
+    const list = await t.merci.list(t.agent);
+    expect(list.ok && list.value.map((r) => [r.sendStatus, r.rule])).toEqual([['sent', null]]);
+  });
+
   it('[R16] seul l’agent du dossier, encore actif, voit et décide', async () => {
     const t = await setup();
     const s = await t.client('Sara');

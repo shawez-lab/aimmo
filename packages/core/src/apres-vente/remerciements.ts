@@ -166,11 +166,26 @@ export class Remerciements {
       // Le nom d'un client de l'autre côté n'apparaît jamais [R19].
       sellerNames: await this.forbiddenNames(others, await this.firstName(personId)),
     });
-    const status: ThankYouSendStatus = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' ? 'waiting' : 'refused';
-    const rule = result.status === 'sent' ? null : result.rule;
+    let status: ThankYouSendStatus = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' ? 'waiting' : 'refused';
+    let rule = result.status === 'sent' ? null : result.rule;
+    let messageId = result.messageId;
+    if (result.rule === 'R05') {
+      // Le contrôle central dit que ce remerciement est déjà parti : un passage interrompu après l'envoi, avant d'en
+      // ranger l'issue. L'issue rangée est alors celle de cet envoi.
+      const members = await this.unique.membersOf(personId);
+      const already = await this.db.first<{ message_id: string }>(
+        `SELECT message_id FROM send_reservations WHERE key = ? AND message_id IS NOT NULL AND person_id IN (${members.map(() => '?').join(', ')}) LIMIT 1`,
+        [`sujet:merci:${fileId}`, ...members],
+      );
+      if (already) {
+        status = 'sent';
+        rule = null;
+        messageId = already.message_id;
+      }
+    }
     await this.db.run(
       "UPDATE thank_you_tasks SET send_status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE file_id = ? AND person_id = ? AND send_status = 'sending'",
-      [status, rule, result.messageId, this.now().toISOString(), fileId, personId],
+      [status, rule, messageId, this.now().toISOString(), fileId, personId],
     );
     await appendEvent(this.journal, { type: 'apres_vente.remerciement', actor: 'system:apres-vente', subject: `sale_file:${fileId}`, data: { mode: 'essai', status, rule } }, this.now);
     return status;
