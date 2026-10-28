@@ -1,0 +1,665 @@
+/**
+ * Import des contacts et des biens d'un agent, triés selon la loi (M14, J05) [R84].
+ *
+ * L'agent (ou la direction pour lui) dépose un export Hektor, Apimo, Excel ou Google en CSV. Chaque contact devient ou
+ * complète sa fiche, à cet agent, avec la source « import » (par la reprise : une seule fiche par personne, relançable
+ * sans rien doubler [R18]). Chaque contact est trié par ce que l'export prouve, et par rien d'autre :
+ * - `client` : un mandat ou une vente figure dans l'export pour ce contact ;
+ * - `consent` : un accord figure avec sa date (passée), sa preuve et sa finalité ; il est rangé tel quel [R03] ;
+ * - `none` : rien de cela. Aucun accord n'est créé : le contrôle central refusera tout premier message [R03, R84].
+ * Un accord sans date, sans preuve, sans finalité reconnue ou daté dans le futur ne vaut rien : la ligne est signalée.
+ * Une désinscription dans l'export vaut arrêt sur tous les canaux [R04].
+ *
+ * Une fiche déjà suivie par un autre agent, ou par personne, n'est jamais reprise ni complétée : le contact va à la
+ * direction, qui attribue [R16]. Les biens sont rangés comme biens de l'agent, en brouillon : l'import ne publie rien.
+ * Aucune adresse exacte n'est lue. Rien n'est envoyé. Au journal, des nombres et des identifiants internes [R13].
+ */
+import type { Viewer } from '../acces/droits.ts';
+import type { FicheClient } from '../db/fiche-client.ts';
+import type { SqlDatabase } from '../db/sql.ts';
+import type { Channel, Person, PropertyKind } from '../db/types.ts';
+import type { DecisionEnvoi } from '../envoi/service.ts';
+import type { FicheUnique } from '../fiche/fusion.ts';
+import { matchKey } from '../fiche/normalize.ts';
+import { appendEvent } from '../journal/journal.ts';
+import type { JournalStore } from '../journal/types.ts';
+import { parseCsv } from '../reprise/csv.ts';
+import { RepriseSite, contactIdentifiers, type ImportReport, type ImportedContact } from '../reprise/reprise.ts';
+
+export const AGENT_EXPORT_FORMATS = ['hektor', 'apimo', 'excel', 'google'] as const;
+export type AgentExportFormat = (typeof AGENT_EXPORT_FORMATS)[number];
+
+const FORMAT_LABEL: Record<AgentExportFormat, string> = { hektor: 'Hektor', apimo: 'Apimo', excel: 'Excel', google: 'Google' };
+
+export type LegalBasis = 'client' | 'consent' | 'none';
+
+/** Finalités d'un accord reconnues dans un export, en liste fermée ; toute autre ne vaut pas accord. */
+const PURPOSES: Readonly<Record<string, string>> = Object.freeze({
+  prospection: 'prospecting',
+  prospecting: 'prospecting',
+  commercial: 'prospecting',
+  communicationcommerciale: 'prospecting',
+  newsletter: 'prospecting',
+  alerte: 'alert',
+  alertes: 'alert',
+  alert: 'alert',
+  alerts: 'alert',
+  alertesbiens: 'alert',
+  suivi: 'follow_up',
+  followup: 'follow_up',
+  relance: 'follow_up',
+  relances: 'follow_up',
+});
+
+/** Canaux d'un accord reconnus ; à défaut de colonne, l'accord vaut pour le mail et le téléphone de la ligne. */
+const CHANNELS: Readonly<Record<string, Channel>> = Object.freeze({
+  email: 'email',
+  mail: 'email',
+  courriel: 'email',
+  telephone: 'phone',
+  tel: 'phone',
+  phone: 'phone',
+  appel: 'phone',
+  sms: 'sms',
+  whatsapp: 'whatsapp',
+});
+
+const PROPERTY_KINDS: Readonly<Record<string, PropertyKind>> = Object.freeze({
+  maison: 'home',
+  appartement: 'home',
+  appart: 'home',
+  studio: 'home',
+  duplex: 'home',
+  loft: 'home',
+  villa: 'home',
+  house: 'home',
+  apartment: 'home',
+  flat: 'home',
+  terrain: 'land',
+  land: 'land',
+  immeuble: 'building',
+  building: 'building',
+  local: 'commercial',
+  localcommercial: 'commercial',
+  bureau: 'commercial',
+  bureaux: 'commercial',
+  commerce: 'commercial',
+  commercial: 'commercial',
+  murs: 'business_walls',
+  murscommerciaux: 'business_walls',
+  fondsdecommerce: 'business',
+  fonds: 'business',
+});
+
+type ContactField =
+  | 'id'
+  | 'email'
+  | 'phone'
+  | 'firstName'
+  | 'lastName'
+  | 'mandate'
+  | 'sale'
+  | 'consentAt'
+  | 'consentProof'
+  | 'consentPurpose'
+  | 'consentChannel'
+  | 'optOut';
+
+/** En-têtes reconnus (Hektor, Apimo, Excel, Google Contacts), comparés sans accents, casse, espaces ni ponctuation. */
+const CONTACT_HEADERS: Record<ContactField, string[]> = {
+  id: ['id', 'identifiant', 'idcontact', 'contactid', 'numerocontact', 'ncontact', 'reference', 'ref', 'refcontact'],
+  email: ['email', 'mail', 'courriel', 'adressemail', 'adresseemail', 'email1', 'email2', 'email1value', 'email2value', 'emailaddress', 'e-mail'],
+  phone: [
+    'telephone',
+    'tel',
+    'portable',
+    'mobile',
+    'telephoneportable',
+    'telportable',
+    'telephonemobile',
+    'telephonefixe',
+    'telfixe',
+    'fixe',
+    'phone',
+    'phonenumber',
+    'phone1value',
+    'phone2value',
+    'telephone1',
+    'telephone2',
+  ],
+  firstName: ['prenom', 'firstname', 'givenname'],
+  lastName: ['nom', 'nomdefamille', 'lastname', 'familyname'],
+  mandate: ['mandat', 'nmandat', 'numeromandat', 'numerodemandat', 'mandats', 'refmandat', 'mandatsigne', 'mandatnumero'],
+  sale: ['vente', 'ventes', 'venteconclue', 'achat', 'acquisition', 'dateacte', 'datedevente', 'acte'],
+  consentAt: ['dateaccord', 'accordle', 'dateconsentement', 'consentementle', 'consentdate', 'optindate', 'dateoptin', 'datedaccord', 'accorddonnele'],
+  consentProof: ['preuveaccord', 'preuveconsentement', 'preuvedaccord', 'consentproof', 'preuve', 'sourceaccord', 'sourceconsentement'],
+  consentPurpose: ['finalite', 'finaliteaccord', 'finaliteconsentement', 'consentpurpose', 'purpose', 'objetaccord'],
+  consentChannel: ['canalaccord', 'canalconsentement', 'consentchannel', 'canaldaccord'],
+  optOut: ['desinscrit', 'desabonne', 'optout', 'unsubscribed', 'stop', 'nepascontacter', 'nepasderanger', 'opposition', 'bloctel', 'donotcontact', 'dnd'],
+};
+
+type PropertyField = 'reference' | 'kind' | 'postalCode' | 'city' | 'surface' | 'rooms' | 'price';
+
+const PROPERTY_HEADERS: Record<PropertyField, string[]> = {
+  reference: ['reference', 'ref', 'refbien', 'referencebien', 'nmandat', 'numeromandat', 'mandat', 'id', 'identifiant'],
+  kind: ['type', 'typedebien', 'typebien', 'nature', 'categorie', 'propertytype'],
+  postalCode: ['codepostal', 'cp', 'postalcode', 'zipcode', 'zip'],
+  city: ['ville', 'commune', 'localite', 'city'],
+  surface: ['surface', 'surfacehabitable', 'surfacem2', 'surfacecarrez', 'm2', 'livingarea'],
+  rooms: ['pieces', 'nbpieces', 'nombredepieces', 'rooms'],
+  price: ['prix', 'prixdevente', 'prixfai', 'prixhonorairesinclus', 'price'],
+};
+
+/** Une case qui dit « non » : rien. Toute autre valeur non vide dit « oui ». */
+const NO = new Set(['0', 'false', 'faux', 'no', 'non', 'n', 'off', 'aucun', 'aucune', 'sans', '-', 'na', 'nonrenseigne']);
+
+const key = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const clean = (value: string | undefined): string | null => {
+  const trimmed = (value ?? '').trim();
+  return trimmed === '' ? null : trimmed;
+};
+
+const many = (value: string): string[] => value.split(/[,;|]/).map((v) => v.trim()).filter((v) => v !== '');
+
+const yes = (value: string | null): boolean => value !== null && !NO.has(key(value));
+
+async function digest(text: string): Promise<string> {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(bytes)].slice(0, 12).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Une date d'export : `AAAA-MM-JJ` ou `JJ/MM/AAAA`, avec une heure peut-être, réelle. Rend `AAAA-MM-JJ` ou null. */
+export function exportDay(raw: string | null): string | null {
+  if (raw === null) return null;
+  const value = raw.trim();
+  let y: number;
+  let m: number;
+  let d: number;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[ T][\d:.]+(?:z|[+-]\d{2}:?\d{2})?)?$/i.exec(value);
+  const fr = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?: [\d:]+)?$/.exec(value);
+  if (iso) [y, m, d] = [Number(iso[1]), Number(iso[2]), Number(iso[3])];
+  else if (fr) [d, m, y] = [Number(fr[1]), Number(fr[2]), Number(fr[3])];
+  else return null;
+  const date = new Date(Date.UTC(y, m - 1, d, 12));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+export interface ProvedConsent {
+  /** `AAAA-MM-JJ`. */
+  givenOn: string;
+  proof: string;
+  purpose: string;
+  /** Canaux dits dans l'export ; vide : le mail et le téléphone de la ligne. */
+  channels: Channel[];
+}
+
+export interface AgentContactLine {
+  line: number;
+  contact: ImportedContact;
+  basis: LegalBasis;
+  consent: ProvedConsent | null;
+}
+
+export interface AgentContactsReading {
+  lines: AgentContactLine[];
+  /** Aucune coordonnée lisible : signalée, jamais reprise. */
+  unreadableLines: number[];
+  /** Une coordonnée illisible à côté d'une lisible : reprise, à compléter. */
+  partialLines: number[];
+  /** Un accord incomplet (date, preuve, finalité) ou daté dans le futur : il ne vaut rien, la ligne le dit. */
+  incompleteConsentLines: number[];
+}
+
+function columnsOf<F extends string>(header: readonly string[], names: Record<F, string[]>): Map<F, number[]> {
+  const columns = new Map<F, number[]>();
+  for (const [index, name] of header.entries()) {
+    const k = key(name);
+    const field = (Object.entries(names) as [F, string[]][]).find(([, list]) => list.map(key).includes(k))?.[0];
+    if (field) columns.set(field, [...(columns.get(field) ?? []), index]);
+  }
+  return columns;
+}
+
+/** Lit un export de contacts d'agent. La clé d'origine est propre à l'agent et stable d'un export à l'autre. */
+export async function readAgentContacts(text: string, format: AgentExportFormat, agentId: string, importedAt: Date): Promise<AgentContactsReading> {
+  const [header, ...rows] = parseCsv(text);
+  const columns = columnsOf(header ?? [], CONTACT_HEADERS);
+  if (!columns.has('email') && !columns.has('phone')) {
+    throw new Error("Export sans colonne de mail ni de téléphone : voir docs/REPRISE.md, section « Import d'un agent ».");
+  }
+  const cells = (row: string[], field: ContactField): string[] =>
+    (columns.get(field) ?? []).map((i) => clean(row[i])).filter((v): v is string => v !== null);
+  const today = importedAt.toISOString().slice(0, 10);
+  const reading: AgentContactsReading = { lines: [], unreadableLines: [], partialLines: [], incompleteConsentLines: [] };
+  for (const [index, row] of rows.entries()) {
+    const line = index + 2;
+    if (row.every((cell) => cell.trim() === '')) continue;
+    const emails = cells(row, 'email').flatMap(many);
+    const phones = cells(row, 'phone').flatMap(many);
+    const valid = contactIdentifiers({ emails, phones });
+    if (valid.length === 0) {
+      reading.unreadableLines.push(line);
+      continue;
+    }
+    const readable = (kind: 'email' | 'phone', raw: string): boolean =>
+      contactIdentifiers({ emails: kind === 'email' ? [raw] : [], phones: kind === 'phone' ? [raw] : [] }).length > 0;
+    const partial = emails.some((v) => !readable('email', v)) || phones.some((v) => !readable('phone', v));
+    if (partial) reading.partialLines.push(line);
+
+    const id = cells(row, 'id')[0] ?? null;
+    const origin = `import:${agentId}:${format}:${id === null ? `h${await digest(valid.map((v) => `${v.kind}:${v.value}`).sort().join('|'))}` : `id${await digest(id)}`}`;
+
+    // Accord : seulement daté (pas dans le futur), prouvé, et pour une finalité de la liste fermée.
+    const consentCells = [cells(row, 'consentAt')[0] ?? null, cells(row, 'consentProof')[0] ?? null, cells(row, 'consentPurpose')[0] ?? null] as const;
+    let consent: ProvedConsent | null = null;
+    if (consentCells.some((v) => v !== null && yes(v))) {
+      const givenOn = exportDay(consentCells[0]);
+      const proof = consentCells[1];
+      const purpose = consentCells[2] === null ? undefined : PURPOSES[key(consentCells[2])];
+      const channelCells = cells(row, 'consentChannel').flatMap(many);
+      const channels = channelCells.map((c) => CHANNELS[key(c)]).filter((c): c is Channel => c !== undefined);
+      const channelsOk = channelCells.length === channels.length;
+      if (givenOn !== null && givenOn <= today && proof !== null && proof.length <= 200 && purpose !== undefined && channelsOk) {
+        consent = { givenOn, proof, purpose, channels: [...new Set(channels)] };
+      } else {
+        reading.incompleteConsentLines.push(line);
+      }
+    }
+    const client = cells(row, 'mandate').some(yes) || cells(row, 'sale').some(yes);
+    const basis: LegalBasis = client ? 'client' : consent ? 'consent' : 'none';
+    const contact: ImportedContact = {
+      origin,
+      emails,
+      phones,
+      civility: null,
+      firstName: cells(row, 'firstName')[0]?.slice(0, 60) ?? null,
+      lastName: cells(row, 'lastName')[0]?.slice(0, 60) ?? null,
+      createdAt: importedAt.toISOString(),
+      // Jamais d'accord du site : les accords de l'import sont rangés à part, avec leur preuve.
+      consentAt: null,
+      verified: false,
+      requests: [],
+      problems: partial ? ['contact_illisible'] : [],
+      source: { channel: 'import', detail: `import ${FORMAT_LABEL[format]}` },
+      exclusion: cells(row, 'optOut').some(yes) ? 'stop' : null,
+    };
+    reading.lines.push({ line, contact, basis, consent });
+  }
+  return reading;
+}
+
+export interface AgentPropertyLine {
+  line: number;
+  origin: string;
+  reference: string;
+  kind: PropertyKind;
+  postalCode: string | null;
+  city: string | null;
+  surfaceM2: number | null;
+  rooms: number | null;
+  priceEur: number | null;
+}
+
+export interface AgentPropertiesReading {
+  lines: AgentPropertyLine[];
+  /** Sans référence, ou d'un type inconnu : signalée, jamais devinée. */
+  unreadableLines: number[];
+}
+
+const number = (raw: string | null, integer: boolean): number | null => {
+  if (raw === null) return null;
+  const compact = raw.replace(/[\s  €]/g, '').replace(/m2|m²/gi, '');
+  if (!/^\d+(?:[.,]\d+)?$/.test(compact)) return null;
+  const value = Number(compact.replace(',', '.'));
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return integer ? (Number.isInteger(value) ? value : null) : value;
+};
+
+/** Lit un export de biens d'agent. Aucune adresse n'est lue : seulement la commune et le code postal. */
+export async function readAgentProperties(text: string, format: AgentExportFormat, agentId: string): Promise<AgentPropertiesReading> {
+  const [header, ...rows] = parseCsv(text);
+  const columns = columnsOf(header ?? [], PROPERTY_HEADERS);
+  if (!columns.has('reference') || !columns.has('kind')) {
+    throw new Error("Export de biens sans colonne de référence ni de type : voir docs/REPRISE.md, section « Import d'un agent ».");
+  }
+  const cell = (row: string[], field: PropertyField): string | null => (columns.get(field) ?? []).map((i) => clean(row[i])).find((v) => v !== null) ?? null;
+  const reading: AgentPropertiesReading = { lines: [], unreadableLines: [] };
+  for (const [index, row] of rows.entries()) {
+    const line = index + 2;
+    if (row.every((c) => c.trim() === '')) continue;
+    const reference = cell(row, 'reference');
+    const rawKind = cell(row, 'kind');
+    const kind = rawKind === null ? undefined : PROPERTY_KINDS[key(rawKind)] ?? PROPERTY_KINDS[key(rawKind.split(/\s+/)[0] ?? '')];
+    if (reference === null || reference.length > 60 || kind === undefined) {
+      reading.unreadableLines.push(line);
+      continue;
+    }
+    const postal = cell(row, 'postalCode');
+    reading.lines.push({
+      line,
+      origin: `import:${agentId}:${format}:bien:${await digest(reference)}`,
+      reference,
+      kind,
+      postalCode: postal !== null && /^\d{5}$/.test(postal) ? postal : null,
+      city: cell(row, 'city')?.slice(0, 80) ?? null,
+      surfaceM2: number(cell(row, 'surface'), false),
+      rooms: number(cell(row, 'rooms'), true),
+      priceEur: number(cell(row, 'price'), true),
+    });
+  }
+  return reading;
+}
+
+export interface AgentImportReport {
+  format: AgentExportFormat;
+  contacts: {
+    read: number;
+    created: number;
+    matched: number;
+    merged: number;
+    /** Déjà suivis par un autre agent ou par personne : passés à la direction, fiche intacte. */
+    toDirection: number;
+    basis: Record<LegalBasis, number>;
+    consents: number;
+    exclusions: number;
+    unreadableLines: number[];
+    partialLines: number[];
+    incompleteConsentLines: number[];
+  };
+  properties: { read: number; created: number; known: number; unreadableLines: number[] };
+  /** Ce que l'agent peut faire maintenant, en une phrase par base. */
+  summary: string[];
+}
+
+export type AgentImportRefusal = { ok: false; rule: 'R16' | null; code: string };
+
+export interface ImportAgentOptions {
+  now?: () => Date;
+}
+
+const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
+
+/** Le compte rendu d'un import, en français, sans aucune donnée personnelle. */
+export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'properties'>): string[] {
+  const c = report.contacts;
+  const plural = (n: number, one: string, many: string): string => `${n} ${n > 1 ? many : one}`;
+  const lines = [
+    `${plural(c.basis.client, 'client', 'clients')} avec un mandat ou une vente : vous pouvez les suivre pour ce dossier.`,
+    `${plural(c.basis.consent, 'contact', 'contacts')} avec un accord prouvé : seulement pour ce qu'ils ont accepté.`,
+    `${plural(c.basis.none, 'contact', 'contacts')} sans accord prouvé : aucun premier message, jamais. Ils peuvent vous écrire, vous leur répondrez.`,
+  ];
+  if (c.toDirection > 0) lines.push(`${plural(c.toDirection, 'contact déjà suivi', 'contacts déjà suivis')} par un autre agent : la direction décide.`);
+  const signaled = c.unreadableLines.length + c.partialLines.length + c.incompleteConsentLines.length + report.properties.unreadableLines.length;
+  if (signaled > 0) lines.push(`${plural(signaled, 'ligne à regarder', 'lignes à regarder')}, listées par leur numéro.`);
+  lines.push(`${plural(report.properties.created + report.properties.known, 'bien rangé', 'biens rangés')} en brouillon : rien n'est publié.`);
+  return lines;
+}
+
+export class ImportAgent {
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly db: SqlDatabase,
+    private readonly store: FicheClient,
+    private readonly fiche: FicheUnique,
+    private readonly decisions: DecisionEnvoi,
+    private readonly journal: JournalStore,
+    options: ImportAgentOptions = {},
+  ) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  private actor(viewer: Viewer): string {
+    return `${String(viewer.role)}:${viewer.userId}`;
+  }
+
+  /** L'agent importe pour lui-même ; la direction pour un agent du réseau. Personne d'autre [R16]. */
+  private async gate(viewer: Viewer, agentId: string): Promise<AgentImportRefusal | null> {
+    const agent = await this.store.getAgent(agentId);
+    let code: string | null = null;
+    if (!agent || agent.network_id !== viewer.networkId) code = 'unknown';
+    else if (agent.status !== 'active') code = 'agent_inactive';
+    else if (viewer.role === 'direction') return null;
+    else if (viewer.role === 'agent') code = viewer.userId === agentId ? null : 'not_assigned';
+    else code = 'role';
+    if (code === null) return null;
+    await appendEvent(
+      this.journal,
+      { type: 'acces.refuse', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'agent_import', code } },
+      this.now,
+    );
+    return { ok: false, rule: code === 'unknown' || code === 'agent_inactive' ? null : 'R16', code };
+  }
+
+  async run(
+    viewer: Viewer,
+    agentId: string,
+    input: { format: unknown; contacts?: string; properties?: string },
+  ): Promise<{ ok: true; report: AgentImportReport } | AgentImportRefusal> {
+    const denied = await this.gate(viewer, agentId);
+    if (denied) return denied;
+    if (typeof input.format !== 'string' || !(AGENT_EXPORT_FORMATS as readonly string[]).includes(input.format)) return { ok: false, rule: null, code: 'unknown_format' };
+    const format = input.format as AgentExportFormat;
+    const networkId = viewer.networkId;
+    const at = this.now();
+    let contacts: AgentContactsReading;
+    let properties: AgentPropertiesReading;
+    try {
+      contacts = input.contacts === undefined ? { lines: [], unreadableLines: [], partialLines: [], incompleteConsentLines: [] } : await readAgentContacts(input.contacts, format, agentId, at);
+      properties = input.properties === undefined ? { lines: [], unreadableLines: [] } : await readAgentProperties(input.properties, format, agentId);
+    } catch (error) {
+      await appendEvent(this.journal, { type: 'reseau.import_refuse', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { format, code: 'unreadable_file' } }, this.now);
+      return { ok: false, rule: null, code: error instanceof Error && error.message.includes('guillemets') ? 'malformed_file' : 'missing_columns' };
+    }
+
+    const report: AgentImportReport = {
+      format,
+      contacts: {
+        read: contacts.lines.length,
+        created: 0,
+        matched: 0,
+        merged: 0,
+        toDirection: 0,
+        basis: { client: 0, consent: 0, none: 0 },
+        consents: 0,
+        exclusions: 0,
+        unreadableLines: contacts.unreadableLines,
+        partialLines: contacts.partialLines,
+        incompleteConsentLines: contacts.incompleteConsentLines,
+      },
+      properties: { read: properties.lines.length, created: 0, known: 0, unreadableLines: properties.unreadableLines },
+      summary: [],
+    };
+    let changed = false;
+
+    // 1. Écarter ce qui est suivi par un autre agent : la direction décide, la fiche n'est pas touchée [R16].
+    // Deux lignes du même export pour la même personne : la première décide, la seconde suit son sort.
+    const mine: AgentContactLine[] = [];
+    const referredKeys = new Set<string>();
+    for (const line of contacts.lines) {
+      const keys = contactIdentifiers(line.contact).map((id) => matchKey(id.kind, id.value));
+      const others = (await this.owners(networkId, line.contact)).filter((p) => p.agent_id !== agentId);
+      if (others.length > 0 || keys.some((k) => referredKeys.has(k))) {
+        for (const k of keys) referredKeys.add(k);
+        for (const person of others) {
+          const { changes } = await this.db.run(
+            `INSERT INTO agent_import_referrals (network_id, origin_key, importing_agent_id, person_id, created_at) VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT DO NOTHING`,
+            [networkId, line.contact.origin, agentId, person.id, at.toISOString()],
+          );
+          if (changes === 1) changed = true;
+        }
+        report.contacts.toDirection += 1;
+        continue;
+      }
+      mine.push(line);
+    }
+
+    // 2. Les autres passent par la reprise : une seule fiche par personne, source « import », arrêts repris [R18, R04].
+    if (mine.length > 0) {
+      const reprise = new RepriseSite(this.db, this.store, this.fiche, this.decisions, this.journal, { networkId, agentId, actor: this.actor(viewer), now: this.now });
+      const done: ImportReport = await reprise.run(
+        { contacts: mine.map((l) => l.contact), skipped: { suspect: 0, test: 0 }, flagged: 0 },
+        `import_${format}`,
+      );
+      report.contacts.created = done.created;
+      report.contacts.matched = done.matched;
+      report.contacts.merged = done.merged;
+      report.contacts.exclusions = done.exclusions;
+      // Une fiche retrouvée entre-temps chez un autre agent reste à part : comptée pour la direction.
+      report.contacts.toDirection += done.apart;
+      if (done.created + done.merged + done.exclusions > 0) changed = true;
+    }
+
+    // 3. Le tri de chaque contact, et ses accords prouvés, tels quels [R84, R03].
+    for (const line of mine) {
+      const target = await this.db.first<{ target_id: string }>('SELECT target_id FROM import_keys WHERE network_id = ? AND key = ?', [networkId, line.contact.origin]);
+      if (!target) continue;
+      const personId = await this.fiche.rootOf(target.target_id);
+      const person = await this.store.getPerson(personId);
+      if (!person || person.agent_id !== agentId) continue;
+      report.contacts.basis[line.basis] += 1;
+      const { changes } = await this.db.run(
+        'INSERT INTO agent_import_contacts (network_id, agent_id, origin_key, person_id, basis, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+        [networkId, agentId, line.contact.origin, personId, line.basis, at.toISOString()],
+      );
+      if (changes === 1) changed = true;
+      if (line.consent) {
+        const added = await this.addConsents(person, line, format);
+        report.contacts.consents += added;
+        if (added > 0) changed = true;
+      }
+    }
+
+    // 4. Les biens : à l'agent, en brouillon, une seule fois par référence d'export.
+    for (const line of properties.lines) {
+      const known = await this.db.first<{ property_id: string }>('SELECT property_id FROM agent_import_properties WHERE network_id = ? AND origin_key = ?', [networkId, line.origin]);
+      if (known) {
+        report.properties.known += 1;
+        continue;
+      }
+      const property = await this.store.createProperty({
+        networkId,
+        agentId,
+        reference: `IMP-${line.origin.slice(-12).toUpperCase()}-${agentId.slice(0, 8)}`,
+        kind: line.kind,
+        postalCode: line.postalCode,
+        city: line.city,
+        surfaceM2: line.surfaceM2,
+        rooms: line.rooms,
+        priceEur: line.priceEur,
+        status: 'draft',
+      });
+      await this.db.run(
+        'INSERT INTO agent_import_properties (network_id, origin_key, agent_id, property_id, export_reference, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [networkId, line.origin, agentId, property.id, line.reference, at.toISOString()],
+      );
+      report.properties.created += 1;
+      changed = true;
+    }
+
+    report.summary = importSummary(report);
+    const signaled = report.contacts.unreadableLines.length + report.contacts.partialLines.length + report.contacts.incompleteConsentLines.length + report.properties.unreadableLines.length;
+    if (changed || signaled > 0) {
+      await appendEvent(
+        this.journal,
+        {
+          type: 'reseau.import',
+          actor: this.actor(viewer),
+          subject: `agent:${agentId}`,
+          data: {
+            format,
+            read: report.contacts.read,
+            created: report.contacts.created,
+            toDirection: report.contacts.toDirection,
+            client: report.contacts.basis.client,
+            consent: report.contacts.basis.consent,
+            none: report.contacts.basis.none,
+            consents: report.contacts.consents,
+            properties: report.properties.created,
+            signaledLines: signaled,
+          },
+        },
+        this.now,
+      );
+    }
+    return { ok: true, report };
+  }
+
+  /** Les contacts importés à passer à la direction, dans l'ordre d'arrivée. Direction seule [R16]. */
+  async referrals(viewer: Viewer): Promise<{ ok: true; value: { personId: string; importingAgentId: string; createdAt: string }[] } | AgentImportRefusal> {
+    if (viewer.role !== 'direction') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'agent_import_referrals', code: 'role' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
+    const rows = await this.db.all<{ person_id: string; importing_agent_id: string; created_at: string }>(
+      'SELECT person_id, importing_agent_id, created_at FROM agent_import_referrals WHERE network_id = ? AND resolved_at IS NULL ORDER BY created_at, origin_key',
+      [viewer.networkId],
+    );
+    return { ok: true, value: rows.map((r) => ({ personId: r.person_id, importingAgentId: r.importing_agent_id, createdAt: r.created_at })) };
+  }
+
+  /** La base la plus forte prouvée pour une fiche, toutes fiches réunies : `client`, puis `consent`, puis `none`. */
+  async basisOf(personId: string): Promise<LegalBasis | null> {
+    const members = await this.fiche.membersOf(personId);
+    const rows = await this.db.all<{ basis: LegalBasis }>(`SELECT DISTINCT basis FROM agent_import_contacts WHERE person_id IN (${placeholders(members.length)})`, members);
+    const set = new Set(rows.map((r) => r.basis));
+    return set.has('client') ? 'client' : set.has('consent') ? 'consent' : set.has('none') ? 'none' : null;
+  }
+
+  /** Les fiches qui portent déjà une coordonnée de la ligne, ou ses clés de contact, ou son origine. */
+  private async owners(networkId: string, contact: ImportedContact): Promise<Person[]> {
+    const ids = contactIdentifiers(contact);
+    const found: Person[] = [];
+    for (const id of ids) found.push(...(await this.fiche.findByIdentifier(networkId, id.kind, id.value)));
+    const keys = ids.map((id) => matchKey(id.kind, id.value));
+    const rows = keys.length === 0 ? [] : await this.db.all<{ person_id: string }>(
+      `SELECT DISTINCT person_id FROM contact_keys WHERE network_id = ? AND key IN (${placeholders(keys.length)})`,
+      [networkId, ...keys],
+    );
+    const origin = await this.db.first<{ target_id: string }>('SELECT target_id FROM import_keys WHERE network_id = ? AND key = ?', [networkId, contact.origin]);
+    const more = [...rows.map((r) => r.person_id), ...(origin ? [origin.target_id] : [])];
+    const roots = new Set<string>([...found.map((p) => p.id)]);
+    for (const id of more) roots.add(await this.fiche.rootOf(id));
+    const persons = await Promise.all([...roots].map((id) => this.store.getPerson(id)));
+    return persons.filter((p): p is Person => p !== null);
+  }
+
+  private async addConsents(person: Person, line: AgentContactLine, format: AgentExportFormat): Promise<number> {
+    const consent = line.consent!;
+    const ids = contactIdentifiers(line.contact);
+    const hasEmail = ids.some((i) => i.kind === 'email');
+    const hasPhone = ids.some((i) => i.kind === 'phone');
+    const wanted: Channel[] = consent.channels.length > 0 ? consent.channels : [...(hasEmail ? (['email'] as const) : []), ...(hasPhone ? (['phone'] as const) : [])];
+    // Un accord ne vaut que sur une coordonnée de la ligne.
+    const channels = wanted.filter((c) => (c === 'email' ? hasEmail : hasPhone));
+    const proof = `import ${FORMAT_LABEL[format]} · ${consent.proof}`;
+    const members = await this.fiche.membersOf(person.id);
+    let added = 0;
+    for (const channel of channels) {
+      const known = await this.db.first<{ n: number }>(
+        `SELECT count(*) AS n FROM consents WHERE person_id IN (${placeholders(members.length)}) AND purpose = ? AND channel = ? AND proof = ?`,
+        [...members, consent.purpose, channel, proof],
+      );
+      if (Number(known?.n ?? 0) > 0) continue;
+      await this.store.addConsent({
+        networkId: person.network_id,
+        agentId: person.agent_id,
+        personId: person.id,
+        purpose: consent.purpose,
+        channel,
+        proof,
+        givenAt: new Date(`${consent.givenOn}T12:00:00.000Z`),
+      });
+      added += 1;
+    }
+    return added;
+  }
+}
