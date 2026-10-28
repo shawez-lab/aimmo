@@ -969,7 +969,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N07 · Chemin critique de la vente (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : le jour déclaré d'une offre de prêt est celui de sa réception par l'acquéreur, d'où part le délai de réflexion de 10 jours ; une acceptation plus tôt ne compte pas ; un refus ne bloque que s'il est la dernière étape ; sans rétractation ni réponse de la commune datées, pas de jour au plus tôt ; la vue du vendeur se calcule sans le prêt
 - Qui : Claude · Relecture : forte · Dépend de : N02, N04, N06
 - Cahier : M10, « Suivi en direct » ; L'IA et l'humain, « suit les échéances, informe les clients ».
@@ -978,7 +978,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N08 · Routes de M10
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude · Relecture : forte · Dépend de : N01 à N07
 - Cahier : M10 ; Feuille de route, mai 2027.
 - Objectif : les routes `/v1/dossiers` (pièces, échéancier, financement, acte, chemin critique, alertes) dans `packages/api/src/dossiers.ts`, de la même forme que celles de `app.ts`, et `syncDossiers`, le passage quotidien (échéances, relances, financement), sans toucher au socle.
