@@ -7,3 +7,5 @@ export * from './registre.ts';
 export * from './registre-traitements.ts';
 export * from './registre-relecture.ts';
 export * from './signalement.ts';
+export * from './carte-acces.ts';
+export * from './demandes-personnes.ts';
