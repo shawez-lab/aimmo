@@ -30,6 +30,8 @@ export const TRIAL_NOTICE = 'Facture d’essai, sans valeur comptable.';
 export const DEFAULT_VAT_BP = { honoraires: 2000, reversement: 0 } as const;
 
 export type InvoiceKind = 'honoraires' | 'reversement' | 'avoir';
+export const CREDIT_REASONS = ['erreur_montant', 'erreur_destinataire', 'vente_annulee', 'autre'] as const;
+const REASONS = CREDIT_REASONS;
 
 export interface InvoiceContent {
   label: string;
@@ -44,6 +46,10 @@ export interface InvoiceContent {
   ttcCents: number;
   mentions: string[];
   corrects: string | null;
+  /** Le jour de l'acte de la vente facturée. */
+  saleDay: string | null;
+  /** La raison d'un avoir. */
+  reason: (typeof REASONS)[number] | null;
 }
 
 export interface InvoiceView {
@@ -76,7 +82,7 @@ export class PlateformeEssai implements PlateformeFacturation {
   readonly received: string[] = [];
   async transmit(invoice: { id: string; content: InvoiceContent }): Promise<{ ref: string }> {
     this.received.push(invoice.content.label);
-    return { ref: `essai:${invoice.content.label}` };
+    return { ref: `essai:${invoice.id}` };
   }
 }
 
@@ -96,7 +102,6 @@ const euros = (cents: number): string => {
 };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const REASONS = ['erreur_montant', 'erreur_destinataire', 'vente_annulee', 'autre'] as const;
 
 export class Factures {
   private readonly now: () => Date;
@@ -151,6 +156,9 @@ export class Factures {
     );
     const issued = await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM invoices WHERE file_id = ? AND issuer = ? AND kind = ?', [fileId, issuer, kind]);
     if ((issued?.n ?? 0) > 0 && (net?.n ?? 0) !== 0) return null;
+    // Une vente annulée ne se refacture jamais d'elle-même.
+    const cancelled = await this.db.first("SELECT 1 FROM invoices WHERE file_id = ? AND kind = 'avoir' AND json_extract(content, '$.reason') = 'vente_annulee'", [fileId]);
+    if (cancelled) return null;
     const last = await this.db.first<{ r: number | null }>('SELECT MAX(round) AS r FROM invoice_drafts WHERE file_id = ? AND kind = ? AND issuer = ?', [fileId, kind, issuer]);
     return (last?.r ?? 0) + 1;
   }
@@ -160,6 +168,7 @@ export class Factures {
    * seule fois [R18]. Rend le nombre de brouillons préparés.
    */
   async prepare(networkId: string): Promise<number> {
+    await this.reconcile(networkId);
     let made = 0;
     const files = await this.db.all<{ file_id: string; fee_cents: number; fee_charge: 'vendeur' | 'acquereur' | null; mandate_id: string }>(
       `SELECT c.file_id, c.fee_cents, c.fee_charge, c.mandate_id FROM commissions c
@@ -218,44 +227,84 @@ export class Factures {
     return [p?.first_name, p?.last_name].filter((x) => x).join(' ') || 'Client';
   }
 
+  /** Le code d'un émetteur dans le numéro : rien pour le réseau, l'agent sinon, pour qu'un numéro soit unique. */
+  private issuerCode(issuer: string): string {
+    return issuer === 'reseau' ? '' : `${issuer.slice(6, 14).toUpperCase().replace(/[^A-Z0-9]/g, '')}-`;
+  }
+
+  private label(kind: InvoiceKind, issuer: string, year: number, number: number): string {
+    const prefix = kind === 'honoraires' ? 'F' : kind === 'reversement' ? 'RV' : 'AV';
+    return `${prefix}-${this.issuerCode(issuer)}${year}-${String(number).padStart(5, '0')}`;
+  }
+
   /**
    * Numérote et range une facture en une seule écriture : le numéro est le suivant de l'émetteur pour l'année, calculé
-   * dans l'écriture même ; deux validations simultanées ne prennent jamais le même numéro, la seconde reprend le suivant.
+   * dans l'écriture même, atomique ; le numéro n'est pas dans le contenu figé, il se lit dans la ligne. Deux validations
+   * simultanées prennent deux numéros qui se suivent. Rend l'identifiant, `null` si le brouillon ou la facture corrigée
+   * l'ont déjà été, `busy` si l'ordre des jours n'a pas pu être tenu (passage de minuit).
    */
-  private async insert(networkId: string, issuer: string, kind: InvoiceKind, fileId: string, draftId: string | null, corrects: { id: string; label: string } | null, build: (number: number, year: number, issuedOn: string) => InvoiceContent, by: string): Promise<string | null> {
-    const issuedOn = localTime(this.now(), TIME_ZONE).date;
-    const year = Number(issuedOn.slice(0, 4));
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const last = await this.db.first<{ n: number | null }>('SELECT MAX(number) AS n FROM invoices WHERE network_id = ? AND issuer = ? AND year = ?', [networkId, issuer, year]);
-      const number = (last?.n ?? 0) + 1;
-      const content = build(number, year, issuedOn);
+  private async insert(networkId: string, issuer: string, kind: InvoiceKind, fileId: string, draftId: string | null, correctsId: string | null, content: Omit<InvoiceContent, 'label' | 'issuedOn'>, by: string): Promise<string | null | 'busy'> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const issuedOn = localTime(this.now(), TIME_ZONE).date;
+      const year = Number(issuedOn.slice(0, 4));
       const id = this.newId();
       try {
         const { changes } = await this.db.run(
           `INSERT INTO invoices (id, network_id, issuer, year, number, kind, file_id, draft_id, corrects_invoice_id, content, amount_cents, issued_on, validated_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (draft_id) DO NOTHING`,
-          [id, networkId, issuer, year, number, kind, fileId, draftId, corrects?.id ?? null, JSON.stringify(content), content.ttcCents, issuedOn, by, this.now().toISOString()],
+           SELECT ?, ?, ?, ?, COALESCE(MAX(number), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM invoices WHERE network_id = ? AND issuer = ? AND year = ?
+           ON CONFLICT (draft_id) DO NOTHING`,
+          [id, networkId, issuer, year, kind, fileId, draftId, correctsId, JSON.stringify({ ...content, issuedOn }), content.ttcCents, issuedOn, by, this.now().toISOString(), networkId, issuer, year],
         );
         return changes === 1 ? id : null;
       } catch (error) {
-        // Un numéro pris entre-temps, ou un avoir déjà fait : on relit et on reprend, jamais un trou ni un doublon.
-        if (corrects && (await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [corrects.id]))) return null;
+        if (correctsId && (await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [correctsId]))) return null;
         if (draftId && (await this.db.first('SELECT 1 FROM invoices WHERE draft_id = ?', [draftId]))) return null;
-        if (attempt === 4) throw error;
+        if (attempt === 2) return 'busy';
       }
     }
-    return null;
+    return 'busy';
   }
 
-  private async transmit(invoiceId: string): Promise<void> {
-    if (await this.db.first('SELECT 1 FROM invoice_transmissions WHERE invoice_id = ?', [invoiceId])) return;
-    const row = (await this.db.first<{ content: string }>('SELECT content FROM invoices WHERE id = ?', [invoiceId]))!;
-    const r = await this.plateforme.transmit({ id: invoiceId, content: JSON.parse(row.content) as InvoiceContent });
-    await this.db.run("INSERT INTO invoice_transmissions (invoice_id, mode, platform_ref, at) VALUES (?, 'essai', ?, ?) ON CONFLICT DO NOTHING", [invoiceId, r.ref, this.now().toISOString()]);
+  /**
+   * Ce qui suit une facture rangée, repris tant qu'il manque : l'envoi à la plateforme d'essai, la ligne du journal, et
+   * pour une facture d'honoraires non annulée, la commission « facturée » [R67]. Une panne de la plateforme laisse la
+   * facture rangée, sans envoi, reprise au passage suivant ; elle va au journal, sans donnée [R13].
+   */
+  private async follow(invoiceId: string, actor: string): Promise<void> {
+    const v = (await this.byId(invoiceId))!;
+    const row = (await this.db.first<{ network_id: string; kind: InvoiceKind }>('SELECT network_id, kind FROM invoices WHERE id = ?', [invoiceId]))!;
+    if (!v.transmitted) {
+      try {
+        const r = await this.plateforme.transmit({ id: invoiceId, content: v.content });
+        await this.db.run("INSERT INTO invoice_transmissions (invoice_id, mode, platform_ref, at) VALUES (?, 'essai', ?, ?) ON CONFLICT DO NOTHING", [invoiceId, r.ref, this.now().toISOString()]);
+      } catch (error) {
+        await appendEvent(this.journal, { type: 'facture.envoi_en_panne', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { label: v.content.label, error: error instanceof Error ? error.name : 'unknown' } }, this.now);
+      }
+    }
+    const type = row.kind === 'avoir' ? 'facture.avoir' : 'facture.emise';
+    if (!(await this.journal.bySubject(`sale_file:${v.fileId}`)).some((e) => e.type === type && e.data.label === v.content.label)) {
+      // Au journal : la sorte et le numéro, jamais un montant ni un nom [R13].
+      await appendEvent(this.journal, { type, actor, subject: `sale_file:${v.fileId}`, data: { rule: 'R71', kind: row.kind, label: v.content.label, mode: 'essai', ...(v.content.corrects ? { corrects: v.content.corrects } : {}) } }, this.now);
+    }
+    if (row.kind === 'honoraires' && !(await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [invoiceId]))) {
+      const step = await this.commissions.recordStep(row.network_id, v.fileId, 'facturee', `facture:${v.content.label}`, actor);
+      if (!step.ok && step.code !== 'already') {
+        await this.waiting(v.fileId, `etape_${step.code}`);
+      } else if (!step.ok) {
+        // Déjà facturée par une facture depuis annulée par un avoir : la nouvelle facture le dit au journal, une fois.
+        const proof = await this.db.first<{ proof_ref: string }>("SELECT proof_ref FROM commission_steps WHERE file_id = ? AND status = 'facturee'", [v.fileId]);
+        if (proof && proof.proof_ref !== `facture:${v.content.label}`) await this.waiting(v.fileId, `remplace:${v.content.label}`);
+      }
+    }
   }
 
   private mentions(vatBp: number): string[] {
-    return [TRIAL_NOTICE, ...(vatBp === 0 ? ['TVA non appliquée en mode essai, en attente de la validation de l’expert-comptable.'] : [])];
+    return [
+      TRIAL_NOTICE,
+      ...(vatBp === 0 ? ['TVA non appliquée en mode essai, en attente de la validation de l’expert-comptable.'] : []),
+      // Aucune mention inventée : les identifiants de l'émetteur viennent de la société et de la plateforme réelles.
+      'Identifiants de l’émetteur, adresse du destinataire et conditions de paiement : à compléter à la création de la société (H09) et à la mise en service de la plateforme agréée (H26).',
+    ];
   }
 
   /** La direction valide un brouillon : la facture est numérotée, figée, transmise en mode essai [R71, R26]. */
@@ -267,12 +316,15 @@ export class Factures {
       [draftId],
     );
     if (!d || d.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown' };
-    if (await this.db.first('SELECT 1 FROM invoices WHERE draft_id = ?', [draftId])) return { ok: false, rule: null, code: 'already' };
+    const done = await this.db.first<{ id: string }>('SELECT id FROM invoices WHERE draft_id = ?', [draftId]);
+    if (done) {
+      // Déjà numérotée : ce qui aurait manqué après une coupure est repris.
+      await this.follow(done.id, this.actor(viewer));
+      return { ok: false, rule: null, code: 'already' };
+    }
     const reference = (await this.db.first<{ reference: string }>('SELECT p.reference FROM sale_files f JOIN properties p ON p.id = f.property_id WHERE f.id = ?', [d.file_id]))?.reference ?? '';
-    const issuerName = await this.nameOf(d.network_id, d.issuer);
-    const recipientName = d.kind === 'honoraires' ? await this.nameOf(d.network_id, `person:${d.recipient_person_id}`) : await this.nameOf(d.network_id, 'reseau');
+    const saleDay = (await this.db.first<{ signed_on: string }>('SELECT signed_on FROM sale_file_closings WHERE file_id = ?', [d.file_id]))?.signed_on ?? null;
     const { htCents, vatCents } = splitVat(d.amount_cents, d.vat_bp);
-    const prefix = d.kind === 'honoraires' ? 'F' : 'RV';
     const id = await this.insert(
       d.network_id,
       d.issuer,
@@ -280,29 +332,26 @@ export class Factures {
       d.file_id,
       d.id,
       null,
-      (number, year, issuedOn) => ({
-        label: `${prefix}-${year}-${String(number).padStart(5, '0')}`,
+      {
         kind: d.kind,
-        issuedOn,
-        issuer: issuerName,
-        recipient: recipientName,
+        issuer: await this.nameOf(d.network_id, d.issuer),
+        recipient: d.kind === 'honoraires' ? await this.nameOf(d.network_id, `person:${d.recipient_person_id}`) : await this.nameOf(d.network_id, 'reseau'),
         designation: d.kind === 'honoraires' ? `Honoraires de transaction, bien ${reference}` : `Reversement de commission, vente du bien ${reference}`,
+        saleDay,
         htCents,
         vatBp: d.vat_bp,
         vatCents,
         ttcCents: d.amount_cents,
         mentions: this.mentions(d.vat_bp),
         corrects: null,
-      }),
+        reason: null,
+      },
       this.actor(viewer),
     );
+    if (id === 'busy') return { ok: false, rule: null, code: 'busy' };
     if (!id) return { ok: false, rule: null, code: 'already' };
-    await this.transmit(id);
-    const view = (await this.byId(id))!;
-    // Au journal : la sorte et le numéro, jamais un montant ni un nom [R13].
-    await appendEvent(this.journal, { type: 'facture.emise', actor: this.actor(viewer), subject: `sale_file:${d.file_id}`, data: { rule: 'R71', kind: d.kind, label: view.content.label, mode: 'essai' } }, this.now);
-    if (d.kind === 'honoraires') await this.commissions.recordStep(d.network_id, d.file_id, 'facturee', `facture:${view.content.label}`, this.actor(viewer));
-    return { ok: true, value: view };
+    await this.follow(id, this.actor(viewer));
+    return { ok: true, value: (await this.byId(id))! };
   }
 
   /** Un avoir corrige une facture émise, une seule fois, dans la même suite de numéros [R71, R17]. */
@@ -314,7 +363,11 @@ export class Factures {
     const row = await this.db.first<{ network_id: string; file_id: string; issuer: string; kind: InvoiceKind }>('SELECT network_id, file_id, issuer, kind FROM invoices WHERE id = ?', [invoiceId]);
     if (!original || !row || row.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown' };
     if (row.kind === 'avoir') return { ok: false, rule: 'R71', code: 'not_creditable' };
-    if (await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [invoiceId])) return { ok: false, rule: null, code: 'already' };
+    const done = await this.db.first<{ id: string }>('SELECT id FROM invoices WHERE corrects_invoice_id = ?', [invoiceId]);
+    if (done) {
+      await this.follow(done.id, this.actor(viewer));
+      return { ok: false, rule: null, code: 'already' };
+    }
     const o = original.content;
     const id = await this.insert(
       row.network_id,
@@ -322,44 +375,45 @@ export class Factures {
       'avoir',
       row.file_id,
       null,
-      { id: invoiceId, label: o.label },
-      (number, year, issuedOn) => ({
-        label: `AV-${year}-${String(number).padStart(5, '0')}`,
+      invoiceId,
+      {
         kind: 'avoir',
-        issuedOn,
         issuer: o.issuer,
         recipient: o.recipient,
         designation: `Avoir sur la facture ${o.label}`,
+        saleDay: o.saleDay,
         htCents: -o.htCents,
         vatBp: o.vatBp,
         vatCents: -o.vatCents,
         ttcCents: -o.ttcCents,
         mentions: [...this.mentions(o.vatBp), `Annule la facture ${o.label}.`],
         corrects: o.label,
-      }),
+        reason: reason as (typeof REASONS)[number],
+      },
       this.actor(viewer),
     );
+    if (id === 'busy') return { ok: false, rule: null, code: 'busy' };
     if (!id) return { ok: false, rule: null, code: 'already' };
-    await this.transmit(id);
-    const view = (await this.byId(id))!;
-    await appendEvent(this.journal, { type: 'facture.avoir', actor: this.actor(viewer), subject: `sale_file:${row.file_id}`, data: { rule: 'R71', label: view.content.label, corrects: o.label, reason } }, this.now);
-    return { ok: true, value: view };
+    await this.follow(id, this.actor(viewer));
+    if (reason === 'vente_annulee') await this.waiting(row.file_id, 'vente_annulee');
+    return { ok: true, value: (await this.byId(id))! };
   }
 
-  /** Reprend l'envoi à la plateforme des factures numérotées restées sans transmission (coupure). */
-  async retryTransmissions(networkId: string): Promise<number> {
-    const rows = await this.db.all<{ id: string }>('SELECT i.id FROM invoices i WHERE i.network_id = ? AND NOT EXISTS (SELECT 1 FROM invoice_transmissions t WHERE t.invoice_id = i.id) ORDER BY i.created_at', [networkId]);
-    for (const r of rows) await this.transmit(r.id);
+  /** Reprend, pour chaque facture du réseau, ce qui aurait manqué après une coupure ou une panne de la plateforme. */
+  async reconcile(networkId: string): Promise<number> {
+    const rows = await this.db.all<{ id: string; validated_by: string }>('SELECT id, validated_by FROM invoices WHERE network_id = ? ORDER BY created_at, id', [networkId]);
+    for (const r of rows) await this.follow(r.id, r.validated_by);
     return rows.length;
   }
 
   private async byId(id: string): Promise<InvoiceView | null> {
-    const r = await this.db.first<{ id: string; file_id: string; issuer: string; content: string; platform_ref: string | null }>(
-      'SELECT i.id, i.file_id, i.issuer, i.content, t.platform_ref FROM invoices i LEFT JOIN invoice_transmissions t ON t.invoice_id = i.id WHERE i.id = ?',
+    const r = await this.db.first<{ id: string; file_id: string; issuer: string; kind: InvoiceKind; year: number; number: number; content: string; platform_ref: string | null }>(
+      'SELECT i.id, i.file_id, i.issuer, i.kind, i.year, i.number, i.content, t.platform_ref FROM invoices i LEFT JOIN invoice_transmissions t ON t.invoice_id = i.id WHERE i.id = ?',
       [id],
     );
     if (!r) return null;
-    return { id: r.id, fileId: r.file_id, issuer: r.issuer, content: JSON.parse(r.content) as InvoiceContent, transmitted: r.platform_ref ? { mode: 'essai', platformRef: r.platform_ref } : null };
+    const content = { ...(JSON.parse(r.content) as Omit<InvoiceContent, 'label'>), label: this.label(r.kind, r.issuer, r.year, r.number) };
+    return { id: r.id, fileId: r.file_id, issuer: r.issuer, content, transmitted: r.platform_ref ? { mode: 'essai', platformRef: r.platform_ref } : null };
   }
 
   /** Les factures : la direction voit le réseau ; un agent, seulement les reversements émis à son nom [R16, R68]. */
@@ -390,21 +444,23 @@ export class Factures {
     const refusal = await this.directionRefusal(viewer, 'invoice_export');
     if (refusal) return refusal;
     if (!DAY.test(fromDay) || !DAY.test(toDay) || fromDay > toDay) return { ok: false, rule: null, code: 'bad_day' };
-    const rows = await this.db.all<{ content: string; file_id: string }>(
-      "SELECT content, file_id FROM invoices WHERE network_id = ? AND issued_on >= ? AND issued_on <= ? ORDER BY CASE issuer WHEN 'reseau' THEN 0 ELSE 1 END, issuer, year, number",
+    const rows = await this.db.all<{ id: string }>(
+      "SELECT id FROM invoices WHERE network_id = ? AND issued_on >= ? AND issued_on <= ? ORDER BY CASE issuer WHEN 'reseau' THEN 0 ELSE 1 END, issuer, year, number",
       [viewer.networkId, fromDay, toDay],
     );
+    // Un texte qui commence comme une formule de tableur est neutralisé ; les montants ne passent pas par là.
+    const text = (v: string) => (/^[=+\-@\t\r]/.test(v) ? `'${v}` : v);
     const cell = (v: string) => (/[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     const lines = ['numero;date;sorte;emetteur;destinataire;designation;ht;tva;ttc;facture_corrigee'];
     let ht = 0;
     let vat = 0;
     let ttc = 0;
     for (const r of rows) {
-      const c = JSON.parse(r.content) as InvoiceContent;
+      const c = (await this.byId(r.id))!.content;
       ht += c.htCents;
       vat += c.vatCents;
       ttc += c.ttcCents;
-      lines.push([c.label, c.issuedOn, c.kind, c.issuer, c.recipient, c.designation, euros(c.htCents), euros(c.vatCents), euros(c.ttcCents), c.corrects ?? ''].map(cell).join(';'));
+      lines.push([text(c.label), c.issuedOn, c.kind, text(c.issuer), text(c.recipient), text(c.designation), euros(c.htCents), euros(c.vatCents), euros(c.ttcCents), text(c.corrects ?? '')].map(cell).join(';'));
     }
     lines.push(['total', '', '', '', '', '', euros(ht), euros(vat), euros(ttc), ''].join(';'));
     await appendEvent(this.journal, { type: 'facture.export', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { from: fromDay, to: toDay, count: rows.length } }, this.now);
