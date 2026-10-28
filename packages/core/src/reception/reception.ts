@@ -82,6 +82,20 @@ async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Le contenu illisible, rangé sans IBAN [R15] : un JSON est relu et chaque texte qu'il porte est masqué avant d'être
+ * réécrit, pour que les retours à la ligne échappés ne cachent pas un IBAN ; sinon le texte brut est masqué.
+ */
+export function maskPayload(raw: string): string {
+  const walk = (v: unknown): unknown =>
+    typeof v === 'string' ? maskIban(v) : Array.isArray(v) ? v.map(walk) : v !== null && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [maskIban(k), walk(x)])) : v;
+  try {
+    return JSON.stringify(walk(JSON.parse(raw)));
+  } catch {
+    return maskIban(raw);
+  }
+}
+
 export class Reception {
   constructor(
     private readonly db: SqlDatabase,
@@ -158,7 +172,7 @@ export class Reception {
       `INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, raw_payload, status, received_at, created_at)
        VALUES (?, ?, ?, ?, 'unreadable', ?, 'unreadable', ?, ?)
        ON CONFLICT (network_id, dedup_key) DO NOTHING`,
-      [id, networkId, key, item.channel, maskIban(item.raw), at, at],
+      [id, networkId, key, item.channel, maskPayload(item.raw), at, at],
     );
     if (changes === 1) {
       await this.log(networkId, id, item.channel, 'unreadable', 'unreadable', `illisible, signalé à l'agent : ${item.reason}`);

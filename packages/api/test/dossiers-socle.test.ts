@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { checkText, createCaptation, dossiers as m10, maskIban } from '@aimmo/core';
+import { checkText, createCaptation, dossiers as m10, maskIban, maskPayload } from '@aimmo/core';
 import { handleRequest } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { runScheduler } from '../src/planificateur.ts';
@@ -63,6 +63,10 @@ it('[R15] un IBAN reçu est masqué, même coupé par des espaces ; le bouclier 
   }
   // Rien d'autre n'est masqué : téléphone, code postal, référence, surface.
   expect(m10.fundSignals('GB82 WEST 1234 5698 7654 32')).toContain('iban');
+  // Un contenu illisible en JSON : les textes sont masqués avant d'être réécrits, retours à la ligne compris.
+  const payload = maskPayload(JSON.stringify({ text: 'FR76\n3000\n6000\n0112\n3456\n7890\n189', id: 7 }));
+  expect(payload).toBe(JSON.stringify({ text: '[IBAN masqué]', id: 7 }));
+  expect(maskPayload(`brut ${IBAN} fin`)).toBe('brut [IBAN masqué] fin');
   // Un texte reçu piégé ne fait pas s'emballer la recherche.
   const started = Date.now();
   const trap = `FR76${'1'.repeat(30)}abcdefghijklmnop ${'FR76 1 '.repeat(2000)}`;
