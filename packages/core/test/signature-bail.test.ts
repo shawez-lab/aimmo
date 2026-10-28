@@ -267,6 +267,7 @@ describeWithSqlite('W12 · signature en ligne du bail, en mode essai', () => {
     expect(await t.signatures.sign(t.other, s.value.sessionId, { code: await t.lastCode() })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.signatures.sign({ ...t.agent, networkId: 'autre-reseau' }, s.value.sessionId, { code: await t.lastCode() })).toEqual({ ok: false, rule: null, code: 'unknown_session' });
     expect(await t.signatures.copy(t.other, id, leaseId)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.signatures.copy({ role: 'compliance', userId: 'c-1', networkId: t.agent.networkId }, id, leaseId)).toMatchObject({ ok: false, rule: 'R16' });
     const refused = (await t.journal.all()).filter((e) => e.type === 'acces.refuse');
     expect(refused.length).toBeGreaterThanOrEqual(2);
     // La session est restée ouverte : l'agent du bien signe encore.
@@ -288,6 +289,23 @@ describeWithSqlite('W12 · signature en ligne du bail, en mode essai', () => {
     expect(before.copySha256).not.toBeNull();
     t.at(Date.parse('2027-07-13T07:00:00.000Z'));
     expect(await t.signatures.sendCopies(t.agent, id)).toEqual({ ok: true, value: { copySha256: before.copySha256, sent: ['bailleur', 'locataire'] } });
+    expect(await t.copies()).toHaveLength(2);
+  });
+
+  it('[R108] un bail signé par les deux parties est remis même s’il n’est plus en vigueur à la reprise', async () => {
+    const t = await setup();
+    const { id, leaseId } = await t.leased();
+    await t.signParty(id, 'bailleur');
+    t.at(Date.parse('2027-07-12T17:59:00.000Z'));
+    const s = await t.signatures.start(t.agent, id, { party: 'locataire', ...CONSENT });
+    if (!s.ok) throw new Error(s.code);
+    t.at(Date.parse('2027-07-12T18:05:00.000Z'));
+    expect(await t.signatures.sign(t.agent, s.value.sessionId, { code: await t.lastCode() })).toMatchObject({ ok: true, value: { bothSigned: true } });
+    t.at(Date.parse('2027-07-13T07:00:00.000Z'));
+    // Les faits changent avant la reprise : le bail n'est plus en vigueur, il est quand même remis.
+    expect((await t.listings.recordFacts(t.agent, id, { ...FACTS, rentCents: 64_000 })).ok).toBe(true);
+    expect(await t.signatures.sendCopies(t.agent, id)).toMatchObject({ ok: true, value: { sent: ['bailleur', 'locataire'] } });
+    expect((await t.signatures.status(t.agent.networkId, leaseId))!.copiesSent).toEqual(['bailleur', 'locataire']);
     expect(await t.copies()).toHaveLength(2);
   });
 });

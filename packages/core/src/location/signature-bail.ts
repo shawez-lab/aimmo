@@ -299,7 +299,10 @@ export class SignaturesBail implements LeaseSignatureState {
     return (await this.status(networkId, leaseId))?.signedAt ?? null;
   }
 
-  /** Pour le seul parcours d'essai : la signature d'essai lue comme une signature, sans jamais rien rendre réel. */
+  /**
+   * Pour le seul parcours d'essai (tests et W09) : la signature d'essai lue comme une signature. Jamais branchée sur la
+   * remise des clés réelle (W10) : seul `signedAt` l'est.
+   */
   trialState(): LeaseSignatureState {
     return { signedAt: async (networkId, leaseId) => (await this.status(networkId, leaseId))?.signedAt ?? null };
   }
@@ -312,11 +315,20 @@ export class SignaturesBail implements LeaseSignatureState {
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, `rental:${listing.id}`, 'role');
+    // Toute remise en attente est reprise, même si le bail signé n'est plus en vigueur depuis : un bail signé par les
+    // deux parties est toujours remis à chacune [R108].
+    const pending = await this.db.all<{ lease_id: string }>(
+      `SELECT c.lease_id FROM rental_lease_copies c WHERE c.listing_id = ? AND c.network_id = ?
+       AND (SELECT COUNT(*) FROM rental_lease_copy_deliveries d WHERE d.lease_id = c.lease_id) < 2 ORDER BY c.created_at`,
+      [listing.id, listing.networkId],
+    );
+    for (const p of pending) await this.deliverCopies(viewer, listing.networkId, listing.id, listing.propertyId, p.lease_id);
     const lease = await this.leases.current(listing.networkId, listing.id);
-    if (!lease) return { ok: false, rule: 'R108', code: 'no_current_lease' };
-    const status = await this.status(listing.networkId, lease.leaseId);
+    const target = lease ? lease.leaseId : (await this.db.first<{ lease_id: string }>('SELECT lease_id FROM rental_lease_copies WHERE listing_id = ? ORDER BY created_at DESC LIMIT 1', [listing.id]))?.lease_id;
+    if (!target) return { ok: false, rule: 'R108', code: 'no_current_lease' };
+    const status = await this.status(listing.networkId, target);
     if (!status?.signedAt) return { ok: false, rule: 'R108', code: 'not_signed' };
-    return this.deliverCopies(viewer, listing.networkId, listing.id, listing.propertyId, lease.leaseId);
+    return this.deliverCopies(viewer, listing.networkId, listing.id, listing.propertyId, target);
   }
 
   private async deliverCopies(viewer: Viewer, networkId: string, listingId: string, propertyId: string, leaseId: string): Promise<LeaseSignatureResult<{ copySha256: string; sent: LeaseParty[] }>> {
@@ -370,7 +382,8 @@ export class SignaturesBail implements LeaseSignatureState {
 
   /** L'exemplaire du bail signé, pour qui voit la mise en location [R16]. */
   async copy(viewer: Viewer, listingId: unknown, leaseId: unknown): Promise<LeaseSignatureResult<{ content: string; contentSha256: string }>> {
-    const listing = await this.listings.listing(viewer, listingId, false);
+    // Comme l'état des lieux (W07) : l'agent du bien ou la direction seuls, jamais la conformité [R16].
+    const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
     const row = typeof leaseId === 'string' ? await this.db.first<{ content: string; content_sha256: string }>('SELECT content, content_sha256 FROM rental_lease_copies WHERE lease_id = ? AND listing_id = ?', [leaseId, listing.id]) : null;
     if (!row) return { ok: false, rule: null, code: 'not_signed' };
