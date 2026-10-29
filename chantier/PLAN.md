@@ -1685,6 +1685,101 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Critères : l'écran lit seulement par les routes `/v1/location` [R16] ; aucune liste de candidats n'est triée ni notée [R105] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
 - Attend : rien.
 
+**M16 · Commerces et entreprises, septembre 2027.**
+
+Voie : 1
+
+Découpé le 2026-10-29 par la voie 1 : toutes les tâches prêtes de la voie 1 attendent la fusion de leurs propositions (GitHub Actions arrêté, H35) ou un humain ; M16 est le seul module de la Feuille de route encore non découpé, laissé à la voie 1 par la voie 2 ; ses dépendances (M04, M06, M15) sont faites. Ids `CE..` pour Commerces et entreprises. Cahier : M16 Commerces et entreprises ; Conformité, « cession de fonds » ; Feuille de route, septembre 2027 : « Aucun dossier confidentiel envoyé sans engagement signé » ; critères « aucun dossier confidentiel envoyé sans engagement signé, sur 10 demandes tests », « chaque ouverture d'un document est journalisée avec son lecteur », « les délais de la cession sont justes sur 3 dossiers tests ».
+Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds de commerce ou droit au bail), `business_walls` (murs) ou `commercial` (local professionnel), déjà prévues par la fiche client. Sa fiche est versionnée, chaque champ classé par le code dans une liste fermée « public » (activité en liste fermée, commune, fourchette de prix, surface, sorte) ou « confidentiel » (nom de l'enseigne, adresse, chiffres d'affaires et résultats, loyer et clauses du bail, salariés, matériel, autorisations) ; tout champ non listé est confidentiel par défaut [R110]. Rien de confidentiel ne sort en public ni ne part à une IA ; les bilans et les comptes ne sont jamais envoyés à l'IA, même résumés [R112, R15]. L'estimation est une fourchette calculée par le code seul, depuis les comptes saisis par l'agent et des barèmes par activité rangés par la direction avec leur source citée, jamais écrits dans le code ; l'agent la valide [R111, R10]. Aucun chiffre ni document confidentiel ne part sans engagement de confidentialité signé en ligne (signature de D08, en essai tant que H24 n'est pas fait) et pièce d'identité vérifiée par l'agent (état `identityVerifiedOn` du coffre de M12, jamais la pièce elle-même) : une seule porte `canSendConfidential`, utilisée par tout envoi [R113]. Un dossier envoyé l'est par un lien qui expire, chaque document porte un filigrane au nom du lecteur, et chaque ouverture, et chaque refus, est écrite au journal avec son lecteur [R114]. Le profil d'un repreneur (projet, expérience, apport et financement déclarés) ne porte aucune évaluation de solvabilité [R115, R14]. Les étapes de la cession (information des salariés au plus tard 2 mois avant sous 250 salariés, préemption de la commune en 2 mois dans un périmètre de sauvegarde, avis au journal d'annonces légales et au BODACC dans les 15 jours, 10 jours d'opposition, séquestre) sont calculées par le code, une étape bloquante non faite empêche de déclarer la cession prête [R116]. AIMMO ne reçoit jamais le prix : le séquestre est un tiers nommé, avocat, notaire ou banque, jamais le réseau [R117]. Une cession de fonds demande, avant le compromis, les bénéficiaires effectifs et l'origine des fonds déclarés ; leur absence lève une alerte au responsable de la conformité, sans rien décider à sa place [R118, R14]. Les documents protégés vivent derrière une interface de stockage (faux dans les tests, R2 réel plus tard, H38) ; rien n'est envoyé réellement, tout passe par le contrôle central des envois en mode essai [R26]. Règles R110 à R118, migrations à partir de `1001`. Le code vit dans `packages/core/src/commerces/`, ses routes dans `packages/api/src/commerces.ts` ; les fichiers du socle ne changent que par CE10.
+
+### CE01 · Fiche du commerce, chaque champ public ou confidentiel
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : rien (M02, M07 faits)
+- Cahier : M16, « Fiche du commerce », « Règles », « Données ».
+- Objectif : la fiche d'un bien `business`, `business_walls` ou `commercial` (migration `1001`) : activité (liste fermée), enseigne, chiffre d'affaires et résultat des 3 derniers exercices en centimes avec leur année, bail commercial (début, durée, loyer annuel, destination, clause de cession), nombre de salariés, matériel, autorisations propres à l'activité ; chaque version rangée, rien effacé ; chaque champ classé public ou confidentiel par une seule table du code ; une vue publique qui ne rend que les champs publics.
+- Critères : un champ non classé est confidentiel (test qui énumère les colonnes et la table de classement) [R110] ; la vue publique ne contient aucun chiffre d'exercice, loyer, nom ni adresse, même si la fiche les porte [R110, R09] ; un champ hors liste ou une valeur hors liste est refusé, jamais ignoré ; une version ne change plus [R17] ; un autre agent est refusé, au journal [R16] ; un bien d'une autre sorte est refusé.
+- Attend : rien.
+
+### CE02 · Estimation en fourchette par le code, références citées
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : CE01
+- Cahier : M16, « Estimation ».
+- Objectif : des barèmes par activité (migration) rangés par la direction : méthode (pourcentage du chiffre d'affaires ou multiple de l'excédent brut), bornes basse et haute, source et date ; la fourchette d'un fonds calculée par le code depuis la moyenne des exercices saisis ; pour des murs ou un local, depuis le loyer et un taux de rendement réglé ; chaque nombre rendu avec sa source et son hypothèse ; validée par l'agent, versionnée.
+- Critères : sur 5 commerces inventés, la fourchette est égale au centime à un calcul fait à la main écrit dans le test [R111] ; un barème sans source est refusé ; sans barème ou sans exercice, la réponse est « incomplet » avec ce qui manque, jamais un chiffre [R10] ; aucun appel à l'IA [R112] ; une estimation non validée n'est montrée à personne d'autre que l'agent.
+- Attend : rien.
+
+### CE03 · Présentation anonyme, rédigée par l'IA depuis les seuls champs publics
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : CE01, CE02
+- Cahier : M16, « Présentation anonyme », « L'IA et l'humain ».
+- Objectif : l'IA, derrière une interface (fausse dans les tests), rédige la présentation à partir de la seule vue publique (activité, secteur, fourchette validée) ; texte de secours sans IA ; contrôle du texte avant validation : aucun nombre absent de la vue publique, aucun mot de l'enseigne, de l'adresse ni d'un champ confidentiel ; l'agent valide, la présentation validée est publiable par la porte de M07.
+- Critères : l'entrée de l'IA ne contient que des champs publics (test qui inspecte l'appel) [R112, R110] ; un texte qui cite un chiffre d'exercice, le loyer, l'enseigne ou la rue est refusé [R110, R09] ; « agent immobilier », jamais « mandataire » [R07] ; sans IA, le secours est rendu [R12] ; rien n'est publié sans validation de l'agent.
+- Attend : rien (H13 pour la vraie IA).
+
+### CE04 · Engagement de confidentialité signé et pièce vérifiée avant tout chiffre
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : CE01
+- Cahier : M16, « Accès aux chiffres » ; Conformité, « Confidentialité ».
+- Objectif : une demande d'accès d'un repreneur reçoit tout de suite la vue publique ; l'engagement de confidentialité (modèle de M06) lui est ouvert à la signature en ligne de D08 ; une seule porte `canSendConfidential(bien, personne)` : engagement signé pour ce bien, empreinte intacte, et pièce d'identité vérifiée par l'agent (état du coffre, jamais la pièce).
+- Critères : sur 10 demandes tests (signé ou non, pièce vérifiée ou non, engagement d'un autre bien, document modifié après signature, engagement révoqué), aucun dossier confidentiel n'est ouvert sans engagement signé et pièce vérifiée [R113] ; la réponse immédiate ne contient que la vue publique [R110] ; aucune pièce d'identité ni numéro de pièce n'est lu ni rangé hors du coffre [R15] ; chaque refus est au journal sans donnée personnelle [R13].
+- Attend : rien (H24 pour une signature réelle).
+
+### CE05 · Dossier protégé : lien qui expire, filigrane au lecteur, chaque ouverture journalisée (Jamais vu)
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : CE04
+- Cahier : M16, « Accès aux chiffres » ; Conformité, « Confidentialité » ; Architecture technique, stockage des documents.
+- Objectif : dès que la porte de CE04 s'ouvre, le dossier part (boîte d'essai) : un lien à usage limité qui expire (réglage), chaque page servie avec un filigrane au nom du lecteur et la date ; chaque ouverture et chaque refus (lien expiré, révoqué, autre lecteur) écrit au journal avec son lecteur. **Jamais vu** : chaque copie servie porte en plus une marque propre au lecteur et à l'ouverture, invisible à la lecture et retrouvable dans le texte : sur une copie qui a fuité, l'agent retrouve quel lecteur et quelle ouverture l'ont laissée sortir.
+- Critères : chaque ouverture d'un document est journalisée avec son lecteur, une fois par ouverture [R114] ; un lien expiré, révoqué ou ouvert par un autre lecteur est refusé et journalisé [R114, R113] ; deux lecteurs reçoivent deux copies aux marques différentes, et le traçage retrouve le bon lecteur sur 20 copies tests, même recopiées sans mise en forme ; aucun document ne part sans la porte de CE04 [R113] ; rien ne part réellement [R26].
+- Attend : rien (H38 pour le stockage réel).
+
+### CE06 · Repreneurs, sans évaluation de solvabilité
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : rien
+- Cahier : M16, « Repreneurs ».
+- Objectif : le profil d'un repreneur (projet `buy` sur un commerce) : activités recherchées, secteurs, budget, expérience déclarée (liste fermée), apport et financement déclarés tels que dits ; versionné, chaque champ avec sa source ; rapprochement par le code avec les présentations publiées, sans note de la personne.
+- Critères : aucun champ de revenus, de patrimoine, de crédit ni de solvabilité dans la table ni dans l'entrée (test qui énumère les colonnes) [R115, R14] ; le rapprochement ne trie ni ne note les repreneurs, seulement les biens, par des règles écrites [R14] ; un autre agent est refusé [R16] ; rien n'est inventé [R10].
+- Attend : rien.
+
+### CE07 · Étapes de la cession, délais calculés, étapes bloquantes
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : CE01
+- Cahier : M16, « Étapes de la cession » ; Conformité, « cession de fonds ».
+- Objectif : le dossier de cession d'un fonds : information des salariés (moins de 250 salariés : au plus tard 2 mois avant la cession, lettre préparée, date de réception suivie, étape bloquante) ; préemption de la commune (périmètre de sauvegarde rangé par la direction avec sa source : déclaration, 2 mois pour répondre) ; avis au journal d'annonces légales et au BODACC dans les 15 jours après la cession, puis 10 jours d'opposition des créanciers ; séquestre nommé ; liste de contrôle des activités réglementées ; une tâche à l'agent avant chaque échéance, une seule.
+- Critères : sur 3 dossiers tests (avec et sans salariés, dans et hors périmètre, fin de délai un dimanche), chaque date est égale à un calcul fait à la main écrit dans le test [R116] ; la cession ne peut être déclarée prête tant qu'une étape bloquante manque [R116] ; le séquestre ne peut être le réseau ni un agent, seulement un avocat, un notaire ou une banque nommés [R117] ; aucune date inventée : sans sa preuve, l'étape est « à saisir » [R10] ; rien n'est envoyé aux clients.
+- Attend : rien.
+
+### CE08 · Vigilance renforcée de la cession : bénéficiaires effectifs, origine des fonds
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : CE07
+- Cahier : M16, « Règles » ; M12 Conformité.
+- Objectif : sur un dossier de cession, les bénéficiaires effectifs de l'acquéreur personne morale et l'origine des fonds déclarés, rangés au coffre de M12 (jamais dans la fiche) ; leur absence avant le compromis lève une alerte au responsable de la conformité, par le registre de vigilance de L04.
+- Critères : une cession sans bénéficiaires ou sans origine des fonds déclarés lève une alerte, une seule [R118] ; l'alerte ne bloque ni ne décide rien, la décision reste au responsable [R14] ; aucune pièce ni donnée de fonds dans la fiche client ni à l'IA [R15] ; l'agent ne voit pas l'alerte, seulement la demande neutre si le responsable la fait.
+- Attend : rien (H29 pour le responsable réel).
+
+### CE09 · Routes de M16 et parcours de 10 demandes tests
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : CE01 à CE08
+- Cahier : M16, « Critères d'acceptation ».
+- Objectif : les routes `/v1/commerces` (fiche, estimation, présentation, demande d'accès, engagement, dossier, ouverture, repreneurs, cession) dans `packages/api/src/commerces.ts`, rôle refusé avant le corps ; un parcours de bout en bout sur 10 demandes tests et 3 dossiers de cession.
+- Critères : aucun dossier confidentiel envoyé sans engagement signé sur les 10 demandes [R113] ; chaque ouverture journalisée avec son lecteur [R114] ; les délais justes sur les 3 dossiers [R116] ; aucune route publique ne rend un champ confidentiel [R110].
+- Attend : rien.
+
+### CE10 · Branchement de M16 dans le socle
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : CE09
+- Cahier : M16, « Branchements ».
+- Objectif : droits d'accès, `index.ts`, `app.ts`, migrations, planificateur (tâches de la cession), contrôle central des envois pour l'envoi du dossier.
+- Critères : routes servies par le Worker ; la tâche quotidienne de la cession passe une fois par créneau ; tout envoi passe par le contrôle central en essai [R26].
+- Attend : rien.
+
+### CE11 · Écran « Commerces » dans l'application
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : CE10
+- Cahier : M16 ; système de design de Z03.
+- Objectif : sur téléphone d'abord, la fiche, l'estimation, la présentation à valider, les demandes d'accès et leur état, les ouvertures du dossier, les étapes de la cession.
+- Critères : axe-core sans violation, clair et sombre ; dans le budget et le système de design [R201] ; aucun chiffre confidentiel affiché à qui n'a pas le droit [R110, R16].
+- Attend : rien.
+
 **M17 · Investir, septembre 2027.**
 
 Voie : 2
