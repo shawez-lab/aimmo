@@ -44,8 +44,14 @@ async function seedHandovers(db: SqlDatabase, insee: string, items: { rent: numb
     );
     await db.run(
       `INSERT INTO rental_handovers (id, listing_id, network_id, lease_id, inventory_id, handed_on, deposit_payee, first_rent_payee, deposit_cents,
-         first_rent_cents, text, text_sha256, recorded_by, recorded_at) VALUES (?, ?, 'net-1', 'b', 'e', ?, 'proprietaire', 'proprietaire', 0, 0, 't', ?, 'agent:a', '2026-01-01')`,
-      [`h-${n}`, id, it.on, 'a'.repeat(64)],
+         first_rent_cents, text, text_sha256, recorded_by, recorded_at) VALUES (?, ?, 'net-1', ?, 'e', ?, 'proprietaire', 'proprietaire', 0, 0, 't', ?, 'agent:a', '2026-01-01')`,
+      [`h-${n}`, id, `b-${n}`, it.on, 'a'.repeat(64)],
+    );
+    await db.run(
+      `INSERT INTO rental_leases (id, listing_id, network_id, version, application_id, template_id, template_version, template_hash, facts_version, fees_version,
+         mode, status, missing, annexes, content, content_sha256, created_by, created_at)
+       VALUES (?, ?, 'net-1', 1, 'app', 'tpl', 1, ?, 1, 1, 'essai', 'complet', '[]', '[]', 'bail', ?, 'agent:a', '2026-01-01')`,
+      [`b-${n}`, id, 'b'.repeat(64), 'c'.repeat(64)],
     );
   }
   await db.exec('PRAGMA foreign_keys = ON');
@@ -266,6 +272,12 @@ describeWithSqlite('Y02 · loyers de marché', () => {
       reasons: ['observations'],
     });
     expect(r.status === 'connu' && r.citation).toBe('Locations du réseau AIMMO : 5 logements remis aux locataires dans la commune sur 24 mois');
+    // Des faits corrigés après la remise des clés ne changent pas la location passée : le bail garde sa version.
+    await t.db.run(
+      `INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year,
+         electricity_over_15, gas, lease_start, recorded_by, recorded_at) VALUES ('l-1', 2, 0, 900000, 0, 5000, 'C', 120, 1990, 0, 'aucune', '2027-09-01', 'agent:a', '2027-09-01')`,
+    );
+    expect(await t.loyers.marketRent('net-1', '99005', 'apartment')).toMatchObject({ rentM2Cents: 1250, upperM2Cents: 1311 });
     // L'ANIL, quand elle existe pour la commune, passe avant le réseau.
     await t.loyers.importAnil(t.direction, { kind: 'apartment', vintage: 2026, csv: `${HEADER}\n9;99005;X;1;99;99;14;12;16;commune;80;300;0,7` });
     expect(await t.loyers.marketRent('net-1', '99005', 'apartment')).toMatchObject({ source: 'anil', rentM2Cents: 1400 });
