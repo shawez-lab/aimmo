@@ -215,6 +215,26 @@ const LINE_WORDS: { re: RegExp; keys: string[] }[] = [
   { re: /\bvacance\b/, keys: ['vacancyMonths'] },
 ];
 
+/**
+ * La place d'un nombre dans une fourchette écrite « de X <unité> à Y <unité> » : `low` pour X, `high` pour Y ; ailleurs
+ * `null`, et le nombre ne peut être qu'un chiffre central.
+ */
+function boundAt(text: string, start: number, length: number): 'low' | 'high' | null {
+  const before = plain(text.slice(Math.max(0, start - 40), start));
+  const after = plain(text.slice(start + length, start + length + 40));
+  const unit = '\\s?(?:%|€\\s?\\/\\s?m²|€\\/m2|€)';
+  if (/\bde\s$/.test(before) && new RegExp(`^${unit}\\s+a\\s+(?:[-−]\\s?)?\\d`).test(after)) return 'low';
+  if (/\sa\s$/.test(before) && new RegExp(`\\bde\\s+(?:[-−]\\s?)?[\\d\\s,]+${unit}\\s+a\\s$`).test(before)) return 'high';
+  return null;
+}
+const isLow = (key: string): boolean => key.endsWith('Low');
+const isHigh = (key: string): boolean => key.endsWith('High');
+function boundOk(key: string, bound: 'low' | 'high' | null): boolean {
+  if (bound === 'low') return isLow(key);
+  if (bound === 'high') return isHigh(key);
+  return !isLow(key) && !isHigh(key);
+}
+
 /** Les montants d'une ligne du calcul qui valent par mois, et ceux qui valent par an. */
 const MONTHLY: readonly string[] = ['monthlyRent'];
 const YEARLY: readonly string[] = ['annualRent', 'collectedRent', 'netIncome', 'nonRecoverableCharges', 'propertyTax'];
@@ -263,6 +283,7 @@ export function traceParagraph(text: string, lines: readonly YieldLine[]): { pro
     const clause = clauseAround(text, m.index ?? 0, m[0].length);
     const allowed = linesNamedBy(clause);
     const period = periodOf(clause);
+    const bound = boundAt(text, m.index ?? 0, m[0].length);
     const line =
       h === null
         ? undefined
@@ -270,8 +291,12 @@ export function traceParagraph(text: string, lines: readonly YieldLine[]): { pro
             (l) =>
               units.includes(l.unit) &&
               writtenValues(l).includes(h) &&
-              (allowed === null ? l.unit !== 'bp' : allowed.has(l.key)) &&
-              (period === null || !(period === 'mois' ? YEARLY : MONTHLY).includes(l.key)),
+              // Un montant ou un rendement dit toujours ce qu'il est ; une surface, un loyer au m² ou une vacance se
+              // reconnaissent à leur unité.
+              (allowed === null ? l.unit === 'm2_hundredths' || l.unit === 'cents_per_m2' || l.unit === 'months' : allowed.has(l.key)) &&
+              (period === null || !(period === 'mois' ? YEARLY : MONTHLY).includes(l.key)) &&
+              // Une borne basse ou haute n'est prouvée que dans une fourchette « de X à Y » ; ailleurs, le chiffre central.
+              boundOk(l.key, bound),
           );
     if (!line) problems.push({ code: 'nombre_sans_source', value: m[0] });
     else proofs.push({ text: m[0], line: line.key, value: line.value, unit: line.unit, source: line.source, asOf: line.asOf, hypothesis: line.hypothesis });
@@ -352,7 +377,7 @@ export function fallbackParagraphs(facts: NoteFacts): string[] {
   const l = (k: string) => formatLine(lineOf(facts.lines, k));
   return [
     `Le bien coûte ${l('totalCost')} au total : ${l('price')} de prix, ${l('acquisitionFees')} de frais d’acquisition et ${l('works')} de travaux estimés.`,
-    `Pour ${l('livingArea')}, le loyer de marché de ${l('marketRentM2')} donne ${l('monthlyRent')} par mois, soit ${l('annualRent')} par an. Avec ${l('vacancyMonths')} de vacance par an, ${l('nonRecoverableCharges')} de charges non récupérables et ${l('propertyTax')} de taxe foncière, le revenu net avant impôt est de ${l('netIncome')} par an.`,
+    `Pour ${l('livingArea')}, le loyer de marché de ${l('marketRentM2')} donne ${l('monthlyRent')} par mois, soit un loyer de ${l('annualRent')} par an. Avec ${l('vacancyMonths')} de vacance par an, ${l('nonRecoverableCharges')} de charges non récupérables et ${l('propertyTax')} de taxe foncière, le revenu net avant impôt est de ${l('netIncome')} par an.`,
   ];
 }
 
