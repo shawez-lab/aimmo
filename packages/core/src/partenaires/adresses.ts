@@ -15,7 +15,7 @@ import type { JournalStore } from '../journal/types.ts';
 
 const EMAIL = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/;
 
-export type AdresseRefusal = { ok: false; rule: 'R16' | null; code: string };
+export type AdresseRefusal = { ok: false; rule: 'R16' | 'R04' | null; code: string };
 export type AdresseResult<T> = { ok: true; value: T } | AdresseRefusal;
 
 export interface PartnerAddress {
@@ -51,6 +51,12 @@ export class AdressesPartenaires {
     if (!EMAIL.test(email) || email.length > 254) return { ok: false, rule: null, code: 'bad_email' };
     const proof = typeof input.consentProof === 'string' ? input.consentProof.trim() : '';
     if (proof.length < 3 || proof.length > 500) return { ok: false, rule: null, code: 'bad_proof' };
+    // Un partenaire qui a demandé l'arrêt ne reçoit plus rien : une nouvelle adresse ne le rouvre pas [R04].
+    const opposed = await this.db.first(
+      'SELECT 1 FROM partner_prospect_optouts o WHERE o.network_id = ? AND (o.email = ? OR o.email IN (SELECT a.email FROM partner_addresses a WHERE a.network_id = ? AND a.partner_id = ?))',
+      [viewer.networkId, email, viewer.networkId, partnerId],
+    );
+    if (opposed) return { ok: false, rule: 'R04', code: 'opposed' };
     const at = this.now().toISOString();
     for (let attempt = 0; attempt < 3; attempt++) {
       const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM partner_addresses WHERE partner_id = ?', [partnerId]);

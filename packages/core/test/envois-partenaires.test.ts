@@ -127,6 +127,23 @@ describeWithSqlite('U12 · relances aux partenaires par le contrôle central', (
     expect(await t.envois.run(t.network.id)).toEqual({ sent: 0, refused: 0, waiting: 0, failed: 0 });
   });
 
+  it('[R04] l’opposition d’un partenaire vaut pour toutes ses adresses : une nouvelle adresse ne le rouvre pas', async () => {
+    const t = await setup();
+    const { partnerId, referralId } = await t.request('2027-07-12T08:00:00.000Z');
+    expect((await t.adresses.oppose(t.dir, partnerId)).ok).toBe(true);
+    expect(await t.adresses.record(t.dir, partnerId, { email: 'accueil@zephyr-autre.example', consentProof: 'Accord écrit.' })).toEqual({ ok: false, rule: 'R04', code: 'opposed' });
+    // Même rangée directement en base, une nouvelle adresse reste fermée.
+    await t.db.run(
+      "INSERT INTO partner_addresses (id, network_id, partner_id, version, email, consent_proof, recorded_by, recorded_at) VALUES ('adr-x', ?, ?, 9, 'accueil@zephyr-autre.example', 'Accord écrit.', 'direction:dir-1', ?)",
+      [t.network.id, partnerId, new Date(clock).toISOString()],
+    );
+    set('2027-07-15T08:00:00.000Z');
+    await t.suivi.run(t.network.id);
+    expect((await t.envois.run(t.network.id)).refused).toBe(1);
+    expect(await t.decisions(followUpSubject(referralId))).toEqual([{ outcome: 'refused', rule: 'R04' }]);
+    expect(await t.outbox()).toBe(0);
+  });
+
   it('[R03] sans adresse et sans accord rangés, la relance attend ; elle part dès qu’ils le sont', async () => {
     const t = await setup();
     const { partnerId } = await t.request('2027-07-12T08:00:00.000Z', false);

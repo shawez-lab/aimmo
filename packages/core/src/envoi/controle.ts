@@ -579,7 +579,16 @@ export class ControleEnvois {
       );
     const decide = async (when: Date) => {
       // Une opposition, par le lien ou rangée par la direction, arrête tout pour cette adresse [R04, R02].
-      const optOut = await this.db.first<{ at: string }>('SELECT at FROM partner_prospect_optouts WHERE network_id = ? AND email = ?', [order.networkId, email]);
+      // Pour un partenaire, l'opposition d'une seule de ses adresses rangées, d'hier ou d'aujourd'hui, vaut pour lui.
+      const optOut =
+        'partnerId' in order.recipient
+          ? await this.db.first<{ at: string }>(
+              `SELECT MIN(o.at) AS at FROM partner_prospect_optouts o
+               WHERE o.network_id = ? AND (o.email = ? OR o.email IN (SELECT a.email FROM partner_addresses a WHERE a.network_id = ? AND a.partner_id = ?))
+               HAVING COUNT(*) > 0`,
+              [order.networkId, email, order.networkId, order.recipient.partnerId],
+            )
+          : await this.db.first<{ at: string }>('SELECT at FROM partner_prospect_optouts WHERE network_id = ? AND email = ?', [order.networkId, email]);
       return decideSend(
         { channel: 'email', kind: order.kind, purpose: order.kind === 'partner' ? PARTNER_FOLLOW_UP_PURPOSE : PRO_PROSPECTING_PURPOSE, at: when },
         {
