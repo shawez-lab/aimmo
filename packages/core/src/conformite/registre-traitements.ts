@@ -505,10 +505,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
   },
   {
     id: 'studio',
-    finalite: 'Aider l\'agent à photographier, filmer et présenter un bien avec des images honnêtes : guide de prise de vue, photos retenues, validation par la direction, certificat de chaque photo corrigée, plan simple du logement, montage des vidéos, bibliothèque de musiques et d\'images sous licence.',
+    finalite: 'Aider l\'agent à photographier, filmer et présenter un bien avec des images honnêtes : guide de prise de vue, photos retenues, validation par la direction, certificat de chaque photo corrigée, plan simple du logement, montage des vidéos, bibliothèque de musiques et d\'images sous licence, publications sur les réseaux.',
     baseLegale: 'interet_legitime',
     personnes: ['Agents du réseau'],
-    donnees: ['Photos retenues pour chaque vue, par leur référence de stockage, et leur auteur', 'Validation d\'un bien photographié avec le guide', 'Corrections d\'ensemble de chaque photo, références et empreintes de l\'original et du résultat, et leur auteur', 'Pièces et cotes du plan du logement, et leur auteur', 'Référence et empreinte de chaque vidéo montée, sa durée, sa musique, et leur auteur', 'Entrées de la bibliothèque sous licence et leurs retraits, et leur auteur'],
+    donnees: ['Photos retenues pour chaque vue, par leur référence de stockage, et leur auteur', 'Validation d\'un bien photographié avec le guide', 'Corrections d\'ensemble de chaque photo, références et empreintes de l\'original et du résultat, et leur auteur', 'Pièces et cotes du plan du logement, et leur auteur', 'Référence et empreinte de chaque vidéo montée, sa durée, sa musique, et leur auteur', 'Entrées de la bibliothèque sous licence et leurs retraits, et leur auteur', 'Publications, listes de contrôle des visuels avec la référence de l\'accord d\'une personne photographiée, validations et envois, et leur auteur'],
     duree: 'La durée du mandat du bien, puis 5 ans.',
     destinataires: ['L\'agent du bien', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
@@ -520,6 +520,11 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       video_montages: ['video_ref', 'video_sha256', 'template_sha256', 'recorded_by'],
       licensed_assets: ['proof_ref', 'recorded_by'],
       licensed_asset_withdrawals: ['reason', 'withdrawn_by'],
+      social_posts: ['text', 'created_by'],
+      social_visual_checks: ['address_visible', 'person_visible', 'consent_ref', 'checked_by'],
+      social_post_validations: ['validated_by'],
+      social_post_attempts: ['account', 'claimed_by'],
+      social_post_sends: [],
     },
   },
 ];
@@ -807,6 +812,11 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   video_montages: ['id', 'property_id', 'network_id', 'clips_count', 'duration_s', 'music_id', 'processed_on', 'recorded_at'],
   licensed_assets: ['id', 'network_id', 'kind', 'title', 'source', 'licence', 'attribution', 'valid_until', 'recorded_at'],
   licensed_asset_withdrawals: ['id', 'asset_id', 'withdrawn_at'],
+  social_posts: ['id', 'property_id', 'network_id', 'event', 'origin', 'visuals', 'created_at'],
+  social_visual_checks: ['id', 'post_id', 'media_ref', 'staging_label_visible', 'outcome', 'checked_at'],
+  social_post_validations: ['post_id', 'validated_at'],
+  social_post_attempts: ['id', 'post_id', 'channel', 'attempt', 'mode', 'claimed_at'],
+  social_post_sends: ['attempt_id', 'outcome', 'done_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
