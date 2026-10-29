@@ -10,11 +10,13 @@
  *   et plus : hors de ce régime, sans objet ici (lecture prudente : l'agent est alerté par la liste de contrôle).
  * - Préemption de la commune : si la commune du bien est rangée par la direction comme dotée d'un périmètre de
  *   sauvegarde (lecture prudente : toute la commune), la déclaration est faite et la commune a 2 mois pour répondre ;
- *   son silence vaut renonciation. Fin reportée au jour ouvrable suivant.
+ *   son silence vaut renonciation. Fin reportée au jour ouvrable suivant. Une commune que la direction n'a pas encore
+ *   rangée laisse l'étape « à saisir », bloquante. Une préemption exercée bloque la cession pour de bon.
  * - Autorisations propres à l'activité (licences, débit de tabac, officine…) : leur transfert vérifié, avec sa preuve.
  * - Séquestre : un tiers nommé, avocat, notaire ou banque ; jamais le réseau ni un agent [R117].
- * - Après la cession signée : avis au journal d'annonces légales et au BODACC dans les 15 jours, puis 10 jours
- *   d'opposition des créanciers après le BODACC ; fins reportées au jour ouvrable suivant.
+ * - Après la cession signée : avis au journal d'annonces légales et au BODACC dans les 15 jours (dernier jour avancé au
+ *   jour ouvrable précédent), puis 10 jours d'opposition des créanciers après le BODACC (fin reportée au jour ouvrable
+ *   suivant : le prix n'est jamais libéré trop tôt).
  *
  * Aucune date inventée : sans sa date et sa preuve, l'étape est « à saisir » [R10]. Une tâche à l'agent du bien avant
  * chaque échéance, une seule par étape et par date ; rien n'est envoyé aux clients. Le journal ne porte ni nom ni
@@ -40,7 +42,8 @@ export const TRANSFER_DATE_KINDS = [
   'cession_prevue',
   'information_salaries',
   'declaration_preemption',
-  'reponse_commune',
+  'renonciation_commune',
+  'preemption_exercee',
   'autorisations_verifiees',
   'cession_signee',
   'publication_jal',
@@ -69,7 +72,7 @@ export type TransferStep = (typeof TRANSFER_STEPS)[number];
 /** Les étapes à faire avant la cession : non faites, elles empêchent de la déclarer prête [R116]. */
 export const BLOCKING_STEPS: readonly TransferStep[] = ['cession_prevue', 'sequestre', 'information_salaries', 'preemption', 'autorisations'];
 
-export type StepStatus = 'fait' | 'a_faire' | 'a_saisir' | 'en_retard' | 'sans_objet' | 'apres_cession';
+export type StepStatus = 'fait' | 'a_faire' | 'a_saisir' | 'en_retard' | 'sans_objet' | 'apres_cession' | 'preemptee';
 
 export interface TransferStepLine {
   step: TransferStep;
@@ -82,7 +85,8 @@ export interface TransferStepLine {
 export interface TransferFacts {
   employees: number | null;
   licenses: readonly License[];
-  inPerimeter: boolean;
+  /** `null` : la direction n'a pas rangé la commune ; l'étape est à saisir, par prudence. */
+  inPerimeter: boolean | null;
   escrow: { kind: EscrowKind; name: string } | null;
   dates: Partial<Record<TransferDateKind, string>>;
   today: string;
@@ -138,11 +142,13 @@ export function transferSteps(f: TransferFacts): { lines: TransferStepLine[]; re
   }
 
   // Préemption de la commune, dans un périmètre de sauvegarde : 2 mois pour répondre, le silence vaut renonciation.
-  if (!f.inPerimeter) lines.push(line('preemption', 'sans_objet', null));
-  else if (!d.declaration_preemption) lines.push(line('preemption', 'a_saisir', null));
+  if (f.inPerimeter === false) lines.push(line('preemption', 'sans_objet', null));
+  else if (f.inPerimeter === null || !d.declaration_preemption) lines.push(line('preemption', 'a_saisir', null));
   else {
     const due = nextWorkingDay(addMonths(d.declaration_preemption, TRANSFER_PREEMPTION_MONTHS));
-    lines.push(line('preemption', d.reponse_commune || f.today > due ? 'fait' : 'a_faire', due));
+    // La commune qui préempte achète à la place du repreneur : la cession ne sera jamais prête.
+    const status: StepStatus = d.preemption_exercee ? 'preemptee' : d.renonciation_commune || f.today > due ? 'fait' : 'a_faire';
+    lines.push(line('preemption', status, due));
   }
 
   // Autorisations propres à l'activité.
@@ -154,7 +160,8 @@ export function transferSteps(f: TransferFacts): { lines: TransferStepLine[]; re
   if (!signed) {
     for (const s of ['publication_jal', 'publication_bodacc', 'fin_oppositions'] as const) lines.push(line(s, 'apres_cession', null));
   } else {
-    const pubDue = nextWorkingDay(addDays(signed, PUBLICATION_DAYS));
+    // Une obligation de l'acquéreur : son dernier jour est avancé au jour ouvrable précédent, jamais annoncé trop tard.
+    const pubDue = previousWorkingDay(addDays(signed, PUBLICATION_DAYS));
     for (const [s, k] of [['publication_jal', 'publication_jal'], ['publication_bodacc', 'publication_bodacc']] as const) {
       const done = d[k];
       lines.push(line(s, done ? (done <= pubDue ? 'fait' : 'en_retard') : f.today > pubDue ? 'en_retard' : 'a_faire', pubDue));
@@ -189,7 +196,7 @@ export interface TransferView {
   propertyId: string;
   dates: Partial<Record<TransferDateKind, { day: string; version: number }>>;
   escrow: { kind: EscrowKind; name: string; version: number } | null;
-  inPerimeter: boolean;
+  inPerimeter: boolean | null;
   lines: TransferStepLine[];
   ready: boolean;
   missing: TransferStep[];
@@ -262,7 +269,11 @@ export class CessionCommerce {
     }
     if (typeof source !== 'string' || source.trim().length < 3 || source.trim().length > 300 || !validDay(sourceDate)) return { ok: false, rule: null, code: 'bad_source' };
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM business_safeguard_communes WHERE network_id = ? AND postal_code = ? AND city = ?', [viewer.networkId, postalCode, city.trim()]);
+      // Les versions se comptent sur le nom normalisé : « Dijon » et « DIJON » sont la même commune.
+      const same = (await this.db.all<{ city: string; version: number }>('SELECT city, version FROM business_safeguard_communes WHERE network_id = ? AND postal_code = ?', [viewer.networkId, postalCode])).filter(
+        (r) => norm(r.city) === norm(city),
+      );
+      const last = { v: same.reduce((m, r) => Math.max(m, Number(r.version)), 0) };
       const version = Number(last?.v ?? 0) + 1;
       const { changes } = await this.db.run(
         `INSERT INTO business_safeguard_communes (id, network_id, postal_code, city, in_perimeter, source, source_date, version, recorded_by, recorded_at)
@@ -308,10 +319,10 @@ export class CessionCommerce {
       return { ok: false, rule: 'R117', code: 'sequestre_interdit' };
     }
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM business_transfer_escrows WHERE file_id = ?', [file.id]);
+      const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM business_transfer_third_parties WHERE file_id = ?', [file.id]);
       const version = Number(last?.v ?? 0) + 1;
       const { changes } = await this.db.run(
-        'INSERT INTO business_transfer_escrows (id, file_id, network_id, kind, name, version, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+        'INSERT INTO business_transfer_third_parties (id, file_id, network_id, kind, name, version, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
         [this.newId(), file.id, file.network_id, kind, name.trim(), version, this.actor(viewer), this.now().toISOString()],
       );
       if (changes !== 1) continue;
@@ -423,7 +434,7 @@ export class CessionCommerce {
     );
     const dates: TransferView['dates'] = {};
     for (const r of rows) dates[r.kind] = { day: r.day, version: Number(r.version) };
-    const escrow = await this.db.first<{ kind: EscrowKind; name: string; version: number }>('SELECT kind, name, version FROM business_transfer_escrows WHERE file_id = ? ORDER BY version DESC LIMIT 1', [file.id]);
+    const escrow = await this.db.first<{ kind: EscrowKind; name: string; version: number }>('SELECT kind, name, version FROM business_transfer_third_parties WHERE file_id = ? ORDER BY version DESC LIMIT 1', [file.id]);
     const sheet = await this.fiches.current(file.property_id);
     const property = await this.db.first<{ postal_code: string | null; city: string | null }>('SELECT postal_code, city FROM properties WHERE id = ?', [file.property_id]);
     const inPerimeter = await this.inPerimeter(file.network_id, property?.postal_code ?? null, property?.city ?? null);
@@ -447,15 +458,15 @@ export class CessionCommerce {
     };
   }
 
-  /** La commune du bien est-elle, à sa dernière version, rangée dans un périmètre de sauvegarde ? */
-  private async inPerimeter(networkId: string, postalCode: string | null, city: string | null): Promise<boolean> {
-    if (!postalCode || !city) return false;
+  /** La commune du bien, à sa dernière version : dans un périmètre de sauvegarde, hors, ou pas encore rangée (`null`). */
+  private async inPerimeter(networkId: string, postalCode: string | null, city: string | null): Promise<boolean | null> {
+    if (!postalCode || !city) return null;
     const rows = await this.db.all<{ city: string; in_perimeter: number; version: number }>(
       'SELECT city, in_perimeter, version FROM business_safeguard_communes WHERE network_id = ? AND postal_code = ? ORDER BY version DESC',
       [networkId, postalCode],
     );
-    const match = rows.find((r) => norm(r.city) === norm(city));
-    return Number(match?.in_perimeter ?? 0) === 1;
+    const match = rows.filter((r) => norm(r.city) === norm(city)).sort((a, b) => Number(b.version) - Number(a.version))[0];
+    return match ? Number(match.in_perimeter) === 1 : null;
   }
 
   /** Le nom donné désigne-t-il le réseau, AIMMO ou un agent du réseau ? */

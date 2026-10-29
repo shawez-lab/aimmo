@@ -32,8 +32,10 @@ async function setup() {
   };
   let n = 0;
   const date = (fileId: string, kind: string, day: string) => cessions.record(acces, alex, fileId, { kind, day, proofRef: proof((n += 1)) });
+  /** La direction range Dijon hors de tout périmètre de sauvegarde. */
+  const outside = () => cessions.recordCommune(direction, { postalCode: '21000', city: 'Dijon', inPerimeter: false, source: 'Liste inventée des périmètres', sourceDate: '2026-06-30' });
   const setDay = (day: string) => (clock = Date.parse(`${day}T08:00:00.000Z`));
-  return { db, journal, acces, cessions, alex, sam: as('agent', samAgent.id), direction, compliance: as('compliance', 'conf-1'), shop, date, setDay };
+  return { outside, db, journal, acces, cessions, alex, sam: as('agent', samAgent.id), direction, compliance: as('compliance', 'conf-1'), shop, date, setDay };
 }
 
 const lineOf = (v: { lines: { step: string; status: string; due: string | null }[] }, step: string) => v.lines.find((l) => l.step === step)!;
@@ -41,6 +43,7 @@ const lineOf = (v: { lines: { step: string; status: string; due: string | null }
 describeWithSqlite('CE07 · étapes de la cession d’un fonds', () => {
   it('[R116] dossier A : 4 salariés, licence IV, hors périmètre ; chaque date égale au calcul fait à la main', async () => {
     const t = await setup();
+    await t.outside();
     const a = await t.shop({ employees: 4, licenses: ['licence_4'] });
     await t.date(a.fileId, 'cession_prevue', '2027-10-27');
     // Information des salariés : 27 octobre − 2 mois = 27 août 2027, un vendredi ouvré.
@@ -54,14 +57,14 @@ describeWithSqlite('CE07 · étapes de la cession d’un fonds', () => {
     expect(lineOf(ready.value, 'information_salaries')).toMatchObject({ status: 'fait', due: '2027-08-27' });
     expect(lineOf(ready.value, 'preemption')).toMatchObject({ status: 'sans_objet' });
     expect(lineOf(ready.value, 'publication_jal')).toMatchObject({ status: 'apres_cession' });
-    // Après la cession : 27 octobre + 15 jours = 11 novembre, férié, reporté au vendredi 12 novembre.
+    // Après la cession : 27 octobre + 15 jours = 11 novembre, férié, avancé au mercredi 10 novembre.
     t.setDay('2027-11-16');
     await t.date(a.fileId, 'cession_signee', '2027-10-27');
     await t.date(a.fileId, 'publication_jal', '2027-11-02');
     const v = await t.date(a.fileId, 'publication_bodacc', '2027-11-04');
     if (!v.ok) throw new Error('date');
-    expect(lineOf(v.value, 'publication_jal')).toMatchObject({ status: 'fait', due: '2027-11-12' });
-    expect(lineOf(v.value, 'publication_bodacc')).toMatchObject({ status: 'fait', due: '2027-11-12' });
+    expect(lineOf(v.value, 'publication_jal')).toMatchObject({ status: 'fait', due: '2027-11-10' });
+    expect(lineOf(v.value, 'publication_bodacc')).toMatchObject({ status: 'fait', due: '2027-11-10' });
     // Oppositions : 4 novembre + 10 jours = dimanche 14 novembre, reporté au lundi 15 novembre.
     expect(lineOf(v.value, 'fin_oppositions')).toMatchObject({ status: 'fait', due: '2027-11-15' });
   });
@@ -88,10 +91,19 @@ describeWithSqlite('CE07 · étapes de la cession d’un fonds', () => {
     await t.cessions.recordCommune(t.direction, { postalCode: '21000', city: 'DIJON', inPerimeter: false, source: 'Délibération inventée de levée', sourceDate: '2027-09-01' });
     const after = await t.cessions.read(t.acces, t.alex, b.fileId);
     expect(after.ok && lineOf(after.value, 'preemption')).toMatchObject({ status: 'sans_objet' });
+    // Remise dans le périmètre, autrement écrite : la dernière version de la même commune fait foi.
+    expect(await t.cessions.recordCommune(t.direction, { postalCode: '21000', city: 'DIJON', inPerimeter: true, source: 'Délibération inventée de rétablissement', sourceDate: '2027-10-01' })).toMatchObject({ ok: true, value: { version: 3 } });
+    const again = await t.cessions.read(t.acces, t.alex, b.fileId);
+    expect(again.ok && again.value.inPerimeter).toBe(true);
+    // Une préemption exercée bloque la cession pour de bon.
+    const pre = await t.date(b.fileId, 'preemption_exercee', '2027-10-05');
+    expect(pre.ok && lineOf(pre.value, 'preemption')).toMatchObject({ status: 'preemptee' });
+    expect(await t.cessions.declareReady(t.acces, t.alex, b.fileId)).toMatchObject({ ok: false, rule: 'R116', missing: ['preemption'] });
   });
 
   it('[R116] dossier C : 12 salariés, fin de délai un dimanche ; une information tardive bloque', async () => {
     const t = await setup();
+    await t.outside();
     const c = await t.shop({ employees: 12 });
     await t.cessions.setEscrow(t.acces, t.alex, c.fileId, { kind: 'avocat', name: 'Cabinet Inventé, avocats' });
     await t.date(c.fileId, 'cession_prevue', '2027-12-17');
@@ -112,7 +124,9 @@ describeWithSqlite('CE07 · étapes de la cession d’un fonds', () => {
     const v = await t.cessions.read(t.acces, t.alex, d.fileId);
     if (!v.ok) throw new Error('lecture');
     // Le nombre de salariés inconnu : à saisir, et bloquant.
-    expect(v.value.lines.filter((l) => l.status === 'a_saisir').map((l) => l.step)).toEqual(['cession_prevue', 'sequestre', 'information_salaries']);
+    // La commune que la direction n'a pas rangée : la préemption est à saisir, par prudence.
+    expect(v.value.lines.filter((l) => l.status === 'a_saisir').map((l) => l.step)).toEqual(['cession_prevue', 'sequestre', 'information_salaries', 'preemption']);
+    expect(v.value.inPerimeter).toBeNull();
     expect(v.value.lines.every((l) => l.status === 'a_saisir' ? l.due === null : true)).toBe(true);
     expect(await t.cessions.record(t.acces, t.alex, d.fileId, { kind: 'cession_prevue', day: '2027-12-01' })).toMatchObject({ ok: false, code: 'bad_proof' });
     expect(await t.cessions.record(t.acces, t.alex, d.fileId, { kind: 'cession_signee', day: '2027-12-01', proofRef: proof(99) })).toMatchObject({ ok: false, code: 'future_day' });

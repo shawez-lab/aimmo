@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS business_transfer_files (
 );
 
 -- Le séquestre du prix : un tiers nommé, versionné ; AIMMO ne reçoit jamais le prix [R117].
-CREATE TABLE IF NOT EXISTS business_transfer_escrows (
+CREATE TABLE IF NOT EXISTS business_transfer_third_parties (
   id TEXT PRIMARY KEY,
   file_id TEXT NOT NULL REFERENCES business_transfer_files (id) ON DELETE RESTRICT,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS business_transfer_dates (
   id TEXT PRIMARY KEY,
   file_id TEXT NOT NULL REFERENCES business_transfer_files (id) ON DELETE RESTRICT,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  kind TEXT NOT NULL CHECK (kind IN ('cession_prevue', 'information_salaries', 'declaration_preemption', 'reponse_commune', 'autorisations_verifiees', 'cession_signee', 'publication_jal', 'publication_bodacc')),
+  kind TEXT NOT NULL CHECK (kind IN ('cession_prevue', 'information_salaries', 'declaration_preemption', 'renonciation_commune', 'preemption_exercee', 'autorisations_verifiees', 'cession_signee', 'publication_jal', 'publication_bodacc')),
   day TEXT NOT NULL CHECK (day GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
   proof_ref TEXT NOT NULL,
   version INTEGER NOT NULL CHECK (version >= 1),
@@ -74,8 +74,8 @@ CREATE TRIGGER IF NOT EXISTS business_safeguard_communes_fige BEFORE UPDATE ON b
 CREATE TRIGGER IF NOT EXISTS business_safeguard_communes_garde BEFORE DELETE ON business_safeguard_communes BEGIN SELECT RAISE(ABORT, 'business_safeguard_communes : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS business_transfer_files_fige BEFORE UPDATE ON business_transfer_files BEGIN SELECT RAISE(ABORT, 'business_transfer_files : rien ne se réécrit'); END;
 CREATE TRIGGER IF NOT EXISTS business_transfer_files_garde BEFORE DELETE ON business_transfer_files BEGIN SELECT RAISE(ABORT, 'business_transfer_files : rien ne s''efface'); END;
-CREATE TRIGGER IF NOT EXISTS business_transfer_escrows_fige BEFORE UPDATE ON business_transfer_escrows BEGIN SELECT RAISE(ABORT, 'business_transfer_escrows : rien ne se réécrit'); END;
-CREATE TRIGGER IF NOT EXISTS business_transfer_escrows_garde BEFORE DELETE ON business_transfer_escrows BEGIN SELECT RAISE(ABORT, 'business_transfer_escrows : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS business_transfer_third_parties_fige BEFORE UPDATE ON business_transfer_third_parties BEGIN SELECT RAISE(ABORT, 'business_transfer_third_parties : rien ne se réécrit'); END;
+CREATE TRIGGER IF NOT EXISTS business_transfer_third_parties_garde BEFORE DELETE ON business_transfer_third_parties BEGIN SELECT RAISE(ABORT, 'business_transfer_third_parties : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS business_transfer_dates_fige BEFORE UPDATE ON business_transfer_dates BEGIN SELECT RAISE(ABORT, 'business_transfer_dates : rien ne se réécrit'); END;
 CREATE TRIGGER IF NOT EXISTS business_transfer_dates_garde BEFORE DELETE ON business_transfer_dates BEGIN SELECT RAISE(ABORT, 'business_transfer_dates : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS business_transfer_ready_fige BEFORE UPDATE ON business_transfer_ready BEGIN SELECT RAISE(ABORT, 'business_transfer_ready : rien ne se réécrit'); END;

@@ -615,7 +615,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   business_buyer_profiles: { locate: [via('project_id', 'projects')] },
   business_safeguard_communes: out('sans_client', 'Communes dotées d\'un périmètre de sauvegarde, rangées par la direction : aucune personne.'),
   business_transfer_files: { locate: [via('property_id', 'properties')] },
-  business_transfer_escrows: { locate: [via('file_id', 'business_transfer_files')] },
+  business_transfer_third_parties: { locate: [via('file_id', 'business_transfer_files')] },
   business_transfer_dates: { locate: [via('file_id', 'business_transfer_files')] },
   business_transfer_ready: { locate: [via('file_id', 'business_transfer_files')] },
   business_transfer_tasks: { locate: [via('file_id', 'business_transfer_files')] },
