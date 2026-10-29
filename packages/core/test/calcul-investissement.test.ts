@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { CalculInvestissement, INPUT_KEYS, checkYieldInputs, computeYield, roundDiv, type YieldInputs } from '../src/investir/index.ts';
+import { CalculInvestissement, LoyersMarche, INPUT_KEYS, checkYieldInputs, computeYield, roundDiv, type YieldInputs } from '../src/investir/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -194,7 +194,7 @@ it('une entrée sans source, sans date, sans hypothèse, hors bornes ou inconnue
 it('[R121] aucun appel à l’IA dans le calcul ; [R125] aucun impôt ni régime fiscal calculé', () => {
   const code = readFileSync(fileURLToPath(new URL('../src/investir/calcul.ts', import.meta.url)), 'utf8');
   const imports = [...code.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]);
-  expect(imports.sort()).toEqual(['../acces/acces.ts', '../acces/droits.ts', '../db/sql.ts', '../journal/journal.ts', '../journal/types.ts']);
+  expect(imports.sort()).toEqual(['../acces/acces.ts', '../acces/droits.ts', '../db/sql.ts', '../journal/journal.ts', '../journal/types.ts', './loyers.ts']);
   const body = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   expect(body).not.toMatch(/\bfetch\s*\(|\bia\b|\bai\b|redige|prompt|\bmodel/i);
   const r = computeYield(inputsOf(CASES[0]!.inputs), AT);
@@ -211,19 +211,27 @@ async function setup() {
   const journal = new SqlJournalStore(db);
   const { chaine, store, fiche, attribution } = createCaptation(db, journal, { now, withQualification: true });
   const acces = new Acces(db, store, fiche, journal, { now });
-  const calculs = new CalculInvestissement(db, journal, { now });
+  const loyers = new LoyersMarche(db, journal, { now });
+  const calculs = new CalculInvestissement(db, journal, { now, loyers });
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
   const sam = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Agent' });
   await attribution.addZone(network.id, alex.id, 'Talant');
   await chaine.receive(network.id, 'site_form', { submissionId: 'f-1', firstName: 'Inès', email: 'ines@example.test', message: 'Je souhaite investir dans un appartement à Talant, budget 150 000 €.' });
   const project = (await db.first<{ id: string }>("SELECT id FROM projects WHERE kind = 'invest'"))!;
+  // La fiche suivie par Alex, quel que soit le tirage de l'attribution.
+  await db.run("UPDATE persons SET agent_id = ? WHERE id = (SELECT person_id FROM projects WHERE id = ?)", [alex.id, project.id]);
   await db.run(
     "INSERT INTO properties (id, network_id, agent_id, reference, kind, status, created_at, updated_at) VALUES ('p-1', ?, ?, 'REF-1', 'home', 'available', ?, ?)",
     [network.id, alex.id, AT, AT],
   );
+  // Un bien d'Alex pas encore en vente : hors du fichier commun.
+  await db.run(
+    "INSERT INTO properties (id, network_id, agent_id, reference, kind, status, price_eur, surface_m2, created_at, updated_at) VALUES ('p-2', ?, ?, 'REF-2', 'home', 'draft', 150000, 45, ?, ?)",
+    [network.id, alex.id, AT, AT],
+  );
   const as = (role: 'agent' | 'direction' | 'compliance', userId: string) => ({ role, userId, networkId: network.id });
-  return { db, journal, acces, calculs, network, alex, sam, project, as };
+  return { db, journal, acces, calculs, loyers, network, alex, sam, project, as };
 }
 
 describeWithSqlite('Y03 · calcul d’investissement rangé', () => {
@@ -249,10 +257,12 @@ describeWithSqlite('Y03 · calcul d’investissement rangé', () => {
     expect(await t.calculs.compute(t.acces, t.as('agent', t.sam.id), { propertyId: 'p-1', projectId: t.project.id, inputs })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.calculs.compute(t.acces, t.as('compliance', 'c-1'), { propertyId: 'p-1', inputs })).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-autre', inputs })).toMatchObject({ ok: false, rule: 'R16', code: 'unknown' });
-    expect(await t.calculs.compute(t.acces, { role: 'agent', userId: t.alex.id, networkId: 'autre' }, { propertyId: 'p-1', inputs })).toMatchObject({ ok: false, code: 'unknown' });
+    expect(await t.calculs.compute(t.acces, { role: 'agent', userId: t.alex.id, networkId: 'autre' }, { propertyId: 'p-1', inputs })).toMatchObject({ ok: false, rule: 'R16' });
+    // Un bien d'Alex hors du fichier commun : Sam est refusé, sans rien ranger.
+    expect(await t.calculs.compute(t.acces, t.as('agent', t.sam.id), { propertyId: 'p-2', inputs })).toMatchObject({ ok: false, rule: 'R16' });
     expect(Number((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM investment_calculations'))!.n)).toBe(0);
     const events = await t.journal.all();
-    expect(events.filter((e) => e.type === 'acces.refuse').length).toBeGreaterThanOrEqual(3);
+    expect(events.filter((e) => e.type === 'acces.refuse').length).toBeGreaterThanOrEqual(4);
     expect(JSON.stringify(events)).not.toContain('15000000');
     // Une entrée fausse est refusée au journal, sans valeur.
     expect(await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-1', inputs: { ...inputs, vacancyMonths: src(40) } })).toMatchObject({
@@ -260,5 +270,37 @@ describeWithSqlite('Y03 · calcul d’investissement rangé', () => {
       rule: 'R120',
       field: 'vacancyMonths',
     });
+  });
+
+  it('[R121] le prix et la surface viennent du bien, le loyer de la base ; une saisie porte le nom de l’agent, jamais « bien » ni « ANIL »', async () => {
+    const t = await setup();
+    const csv = 'INSEE_C;loypredm2;lwr.IPm2;upr.IPm2;nbobs_com\n99001;12,35;10,10;15,01;120';
+    await t.loyers.importAnil(t.as('direction', 'dir-1'), { kind: 'apartment', vintage: 2026, csv });
+    const c = inputsOf(CASES[0]!.inputs);
+    const r = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), {
+      propertyId: 'p-2',
+      marketRentQuery: { inseeCode: '99001', kind: 'apartment' },
+      inputs: { acquisitionFeesRateBp: c.acquisitionFeesRateBp, works: c.works, nonRecoverableCharges: c.nonRecoverableCharges, propertyTax: c.propertyTax, vacancyMonths: c.vacancyMonths },
+    });
+    if (!r.ok) throw new Error(r.code);
+    // Le même bien 1 qu'à la main : 150 000 €, 45 m², 12,35 €/m² → 389 pb brut, 269 pb net.
+    expect(r.value.result).toMatchObject({ status: 'complet', grossYieldBp: { low: 318, central: 389, high: 473 }, netYieldBp: { central: 269 } });
+    expect(r.value.inputs.price).toMatchObject({ value: 15_000_000, source: 'bien:p-2' });
+    expect(r.value.inputs.livingArea).toMatchObject({ value: 4500, source: 'bien:p-2' });
+    expect(r.value.inputs.marketRent!.source).toBe('Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin, millésime 2026');
+    expect(r.value.inputs.works!.source).toBe(`saisi:agent:${t.alex.id}`);
+    // Chaque chiffre de la fourchette a sa ligne, avec source et hypothèse.
+    if (r.value.result.status !== 'complet') return;
+    expect(r.value.result.lines.find((l) => l.key === 'grossYieldBpLow')).toMatchObject({ value: 318, source: 'calcul' });
+    expect(r.value.result.lines.find((l) => l.key === 'netYieldBpHigh')).toMatchObject({ value: 346, source: 'calcul' });
+
+    // Un agent qui écrit « bien » ou « ANIL » comme source d'un chiffre saisi : la source rangée reste la sienne.
+    const forged = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', inputs: { ...c, price: src(5_000_000, 'bien:p-2', 'prix affiché') } });
+    if (!forged.ok) throw new Error(forged.code);
+    expect(forged.value.inputs.price!.source).toBe(`saisi:agent:${t.alex.id}`);
+    expect(forged.value.inputs.marketRent!.source).toBe(`saisi:agent:${t.alex.id}`);
+    // Sans loyer dans la base pour la commune : incomplet, jamais un chiffre inventé.
+    const none = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', marketRentQuery: { inseeCode: '99009', kind: 'apartment' }, inputs: { ...c, marketRent: null } });
+    expect(none.ok && none.value.result).toMatchObject({ status: 'incomplet', missing: ['marketRent'] });
   });
 });
