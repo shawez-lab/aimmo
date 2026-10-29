@@ -482,6 +482,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   partner_prospects: out('partenaire', 'Futur partenaire, adresse professionnelle.'),
   partner_prospect_mails: out('partenaire', 'Mails préparés pour un futur partenaire.'),
   partner_prospect_optouts: out('partenaire', 'Opposition d\'un futur partenaire.'),
+  partner_addresses: out('partenaire', 'Adresse professionnelle et accord du partenaire.'),
+  pro_sends: out('partenaire', 'Envois aux partenaires et futurs partenaires.'),
+  pro_send_log: out('partenaire', 'Décisions des envois aux professionnels, sans adresse.'),
+  pro_trial_outbox: out('partenaire', 'Boîte d\'essai des envois aux professionnels.'),
   // preuves-et-registre : le journal de la personne et de ses dossiers, sans la lutte contre le blanchiment.
   journal: {
     locate: [
