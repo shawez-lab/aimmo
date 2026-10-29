@@ -162,6 +162,9 @@ describeWithSqlite('L08 · prospects à 3 ans', () => {
     t.setClock(new Date('2030-03-02T10:00:00.000Z'));
     await t.durees.run(t.network.id);
     expect((await t.listed())[0]!.request.blockedBy).toBe('R04');
+    // La lecture réussie est au journal, avec les fiches lues [R16].
+    const read = (await t.journal.all()).filter((e) => e.type === 'rgpd.prospects_lus').at(-1)!;
+    expect(read.data).toMatchObject({ rule: 'R16', role: 'compliance', count: 1, persons: [`person:${p}`] });
     for (const viewer of [t.agent, t.direction, t.as('partner', 'partenaire-1')]) {
       expect(await t.durees.list(viewer)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     }
@@ -254,10 +257,12 @@ describeWithSqlite('L08 · procédure de fuite', () => {
     expect(await t.fuites.concerned(t.responsable, b.value.id)).toMatchObject({ ok: true, value: { version: 2 } });
     const again = await t.fuites.evaluate(t.responsable, b.value.id, { risk: 'eleve', nature: ['confidentialite'], categories: ['coordonnees'], scope: { kind: 'personnes', personIds: [p] } });
     expect(again).toMatchObject({ ok: true, value: { evaluation: { version: 4, risk: 'eleve', personsCount: 1 } } });
-    // Au journal : des nombres, jamais une fiche.
+    // Au journal : la lecture de la liste nomme les fiches lues [R16] ; les autres gestes, des nombres seulement.
     const events = (await t.journal.all()).filter((e) => e.subject === `breach:${b.value.id}`);
-    expect(JSON.stringify(events)).not.toContain(p);
-    expect(JSON.stringify(events)).not.toContain(t.buyerId);
+    const reads = events.filter((e) => e.type === 'rgpd.fuite_liste_lue');
+    expect(reads.at(-1)!.data).toMatchObject({ rule: 'R16', version: 2, persons: [`person:${p}`, `person:${t.buyerId}`].sort() });
+    expect(JSON.stringify(events.filter((e) => e.type !== 'rgpd.fuite_liste_lue'))).not.toContain(p);
+    expect(JSON.stringify(events.filter((e) => e.type !== 'rgpd.fuite_liste_lue'))).not.toContain(t.buyerId);
   });
 
   it('[R97] [R16] les accès coupés d’un geste, sauf le responsable ; rétablis une fois ; personne d’autre ne lit la fuite', async () => {

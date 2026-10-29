@@ -312,7 +312,7 @@ export class Fuites {
     const evaluation = await this.latestEvaluation(row.id);
     if (!evaluation) return { ok: false, rule: null, code: 'not_evaluated' };
     const ids = (await this.db.all<{ person_id: string }>('SELECT person_id FROM data_breach_persons WHERE breach_id = ? AND version = ? ORDER BY person_id', [row.id, evaluation.version])).map((r) => r.person_id);
-    await appendEvent(this.journal, { type: 'rgpd.fuite_liste_lue', actor: this.actor(viewer), subject: `breach:${row.id}`, data: { rule: 'R97', version: evaluation.version, persons: ids.length } }, this.now);
+    await appendEvent(this.journal, { type: 'rgpd.fuite_liste_lue', actor: this.actor(viewer), subject: `breach:${row.id}`, data: { rule: 'R16', version: evaluation.version, count: ids.length, persons: ids.map((id) => `person:${id}`) } }, this.now);
     return { ok: true, value: { version: evaluation.version, personIds: ids, sha256: evaluation.personsSha256 } };
   }
 

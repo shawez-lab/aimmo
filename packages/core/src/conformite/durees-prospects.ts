@@ -317,6 +317,12 @@ export class DureesProspects {
         planSha256: r.plan_sha256,
       });
     }
+    // Chaque lecture réussie est écrite au journal avant de rendre les fiches, comme `Acces.listPersons` [R16].
+    await appendEvent(
+      this.journal,
+      { type: 'rgpd.prospects_lus', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), count: out.length, persons: [...new Set(out.map((c) => `person:${c.personId}`))] } },
+      this.now,
+    );
     return { ok: true, value: out };
   }
 }
