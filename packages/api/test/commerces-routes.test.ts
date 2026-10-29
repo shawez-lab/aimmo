@@ -124,6 +124,30 @@ describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () 
     expect(body.aiRefused?.flatMap((x) => x.problems.map((p) => p.code))).toContain('chiffre_confidentiel');
   });
 
+  it('[R16] [R110] les lectures de l’écran : la liste, l’état des demandes, la cession du bien, sans chiffre confidentiel', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
+    const id = await t.shop();
+    const list = await t.ok(t.alex, 'GET', '/commerces');
+    expect(list).toEqual([expect.objectContaining({ propertyId: id, kind: 'business', city: 'Dijon' })]);
+    expect(await t.ok(t.bea, 'GET', '/commerces')).toEqual([]);
+    expect(await t.ok(t.dir, 'GET', '/commerces')).toHaveLength(1);
+    const r = await t.buyer('A');
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    const before = (await t.journal.all()).filter((e) => e.type === 'commerces.confidentiel.refuse').length;
+    const requests = await t.ok(t.alex, 'GET', `/commerces/${id}/demandes`);
+    expect(requests).toEqual([expect.objectContaining({ personId: r.id, firstName: 'RepreneurA', open: false, codes: ['engagement_non_signe', 'identite_non_verifiee'] })]);
+    for (const secret of SECRETS) expect(JSON.stringify(requests), secret).not.toContain(secret);
+    // Lire l'état n'est pas tenter un envoi : rien de plus au journal des refus.
+    expect((await t.journal.all()).filter((e) => e.type === 'commerces.confidentiel.refuse')).toHaveLength(before);
+    expect((await t.call(t.bea, 'GET', `/commerces/${id}/demandes`)).status).toBe(403);
+    expect((await t.call(t.compliance, 'GET', `/commerces/${id}/demandes`)).status).toBe(403);
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/cession`)).toBeNull();
+    await t.ok(t.alex, 'POST', `/commerces/${id}/cession`);
+    expect((await t.ok(t.compliance, 'GET', `/commerces/${id}/cession`)).lines.length).toBeGreaterThan(5);
+  });
+
   it('[R113] [R114] [R110] sur 10 demandes tests, aucun dossier confidentiel n’est envoyé sans engagement signé ; chaque ouverture est journalisée avec son lecteur', async () => {
     const t = await setup();
     await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé pour les tests', sourceDate: '2027-01-15' });

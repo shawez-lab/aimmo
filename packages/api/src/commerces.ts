@@ -163,6 +163,10 @@ async function publicOf(s: CommercesServices, v: Viewer, id: string): Promise<Ou
 }
 
 const ROUTES: CommercesRoute[] = [
+  /* La liste de l'écran « Commerces » (CE11) : référence, sorte, commune, rien de confidentiel [R16, R110]. */
+  { method: 'GET', pattern: /^\/commerces$/, name: 'commerces.liste', roles: READERS, handle: async (s, v) => reply(await core(s).fiches.list(v)) },
+  { method: 'GET', pattern: new RegExp(`^/commerces/${ID}/demandes$`), name: 'commerces.demandes', roles: WRITERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.confidentialite.requests(c.acces, v, id!)); } },
+  { method: 'GET', pattern: new RegExp(`^/commerces/${ID}/cession$`), name: 'commerces.cession.du_bien', roles: READERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.cessions.forProperty(c.acces, v, id!)); } },
   /* La fiche du commerce (CE01) [R110]. */
   { method: 'GET', pattern: new RegExp(`^/commerces/${ID}/fiche$`), name: 'commerces.fiche', roles: READERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.fiches.read(c.acces, v, id!)); } },
   { method: 'POST', pattern: new RegExp(`^/commerces/${ID}/fiche$`), name: 'commerces.fiche.modifiee', roles: WRITERS, handle: withBody(async (s, v, [id], b) => { const c = core(s); return reply(await c.fiches.update(c.acces, v, id!, b)); }) },

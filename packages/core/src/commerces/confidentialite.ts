@@ -333,7 +333,7 @@ export class ConfidentialiteCommerce {
    * non révoqué, signé sur l'empreinte du texte rangé, ce texte intact ; et l'identité vérifiée, lue au coffre comme un
    * état [R15]. Un refus va au journal avec ses seuls codes [R13].
    */
-  async canSendConfidential(networkId: string, propertyId: string, personId: string, actor = 'systeme'): Promise<ConfidentialGate> {
+  async canSendConfidential(networkId: string, propertyId: string, personId: string, actor = 'systeme', quiet = false): Promise<ConfidentialGate> {
     const ndas = await this.db.all<NdaRow & { revoked: number; signed_sha: string | null; signed_at: string | null }>(
       `SELECT n.*, EXISTS (SELECT 1 FROM business_nda_revocations r WHERE r.nda_id = n.id) AS revoked, s.content_sha256 AS signed_sha, s.signed_at
        FROM business_ndas n LEFT JOIN business_nda_signatures s ON s.nda_id = n.id AND s.status = 'signee'
@@ -365,7 +365,8 @@ export class ConfidentialiteCommerce {
     if (passed && identityVerifiedOn) return { ok: true, ndaId: passed.id, signedAt: passed.signedAt, identityVerifiedOn, mode: 'essai' };
     if (passed) for (const c of ['engagement_absent', 'engagement_revoque', 'engagement_non_signe', 'engagement_modifie'] as const) codes.delete(c);
     const list = [...codes].sort();
-    await appendEvent(this.journal, { type: 'commerces.confidentiel.refuse', actor, subject: `property:${propertyId}`, data: { rule: 'R113', codes: list } }, this.now);
+    // Une lecture de l'état pour l'écran n'est pas une tentative d'envoi : rien au journal.
+    if (!quiet) await appendEvent(this.journal, { type: 'commerces.confidentiel.refuse', actor, subject: `property:${propertyId}`, data: { rule: 'R113', codes: list } }, this.now);
     return { ok: false, rule: 'R113', codes: list };
   }
 
@@ -381,6 +382,33 @@ export class ConfidentialiteCommerce {
     const sheet = await this.fiches.current(propertyId);
     if (!sheet) return { ok: false, rule: null, code: 'sorte' };
     return { ok: true, value: sheet };
+  }
+
+  /**
+   * Les demandes d'accès d'un commerce, une ligne par repreneur, avec l'état de la porte, pour l'écran de l'agent du
+   * bien ou de la direction : jamais un chiffre de la fiche [R110, R16]. Le prénom seul, pour que l'agent s'y retrouve.
+   */
+  async requests(
+    acces: Acces,
+    viewer: Viewer,
+    propertyId: string,
+  ): Promise<ConfidentialResult<{ personId: string; firstName: string | null; requestedAt: string; open: boolean; codes: ConfidentialRefusalCode[] }[]>> {
+    const read = await acces.readProperty(viewer, propertyId);
+    if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+    if (read.view !== 'full') return this.refuse(viewer, `property:${propertyId}`, 'not_assigned');
+    if (!((viewer.role === 'agent' && read.value.agent_id === viewer.userId) || viewer.role === 'direction')) return this.refuse(viewer, `property:${propertyId}`, 'role');
+    if (!(await this.fiches.publicView(propertyId))) return { ok: false, rule: null, code: 'sorte' };
+    const rows = await this.db.all<{ person_id: string; first_name: string | null; at: string }>(
+      `SELECT r.person_id, p.first_name, MAX(r.created_at) AS at FROM business_access_requests r JOIN persons p ON p.id = r.person_id
+       WHERE r.network_id = ? AND r.property_id = ? GROUP BY r.person_id, p.first_name ORDER BY at`,
+      [viewer.networkId, propertyId],
+    );
+    const out = [];
+    for (const r of rows) {
+      const gate = await this.canSendConfidential(viewer.networkId, propertyId, r.person_id, this.actor(viewer), true);
+      out.push({ personId: r.person_id, firstName: r.first_name, requestedAt: r.at, open: gate.ok, codes: gate.ok ? [] : gate.codes });
+    }
+    return { ok: true, value: out };
   }
 
   private actor(viewer: Viewer): string {
