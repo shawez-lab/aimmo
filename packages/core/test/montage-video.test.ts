@@ -127,6 +127,9 @@ describeWithSqlite('X03 · montage vidéo sur l’appareil', () => {
       expect(await t.montages.record(alex, t.p.id, t.input({ musicId })), String(musicId)).toEqual({ ok: false, rule: 'R133', code: 'musique_sans_licence' });
     }
     expect(await t.db.all('SELECT id FROM video_montages')).toEqual([]);
+    // Après ce refus, un contrôle de texte fait à part ne rend pas la vidéo publiable : il lui faut son montage.
+    expect(await t.medias.checkVideoText(alex, t.p.id, VIDEO(t.p.id), { subtitles: ['2 chambres'], caption: 'Visite' })).toEqual({ ok: true });
+    expect((await t.medias.publishable(t.p.id, 1)).map((m) => m.kind)).toEqual(['photo']);
     expect(await t.montages.record(alex, t.p.id, t.input({ musicId: null }))).toMatchObject({ ok: true, value: { musicId: null } });
     expect(t.library.asked).toEqual(['musique-expiree', 'piste-du-commerce', '']);
   });
