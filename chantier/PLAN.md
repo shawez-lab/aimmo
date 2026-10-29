@@ -1896,7 +1896,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G08 · Recommandations des clients et des partenaires, avec leur source
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien (M11, M18 faits)
 - Cahier : M20, point 5 « Recommandations » ; M11 ; M18.
 - Objectif : une recommandation venue d'un client (M11) ou d'un partenaire (espace partenaire de M18) arrive dans la fiche (M02) avec sa source et la preuve de l'accord de la personne recommandée (migration `1302`) ; l'agent est alerté ; le mandat qui en naît garde la source « recommandation » (G03).
