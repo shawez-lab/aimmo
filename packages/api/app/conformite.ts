@@ -78,6 +78,8 @@ export const CONFORMITE_CSS = `
 .compte { font: 600 var(--t-l)/1.1 var(--police-titre); font-variant-numeric: tabular-nums; }
 .compte.urgent { color: var(--danger); }
 .coffre { margin-top: var(--e-4); padding: var(--e-3) var(--e-4); border: 1.5px dashed var(--trait); border-radius: var(--r-m); }
+.criteres { margin: var(--e-2) 0; padding-left: var(--e-5); }
+.criteres li { padding: var(--e-1) 0; }
 .cases { display: flex; flex-wrap: wrap; gap: var(--e-1) var(--e-3); margin: var(--e-1) 0 var(--e-2); }
 `;
 
@@ -376,7 +378,7 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     sheets.forEach(function (s) {
       var li = el('li');
       li.appendChild(el('p', cRef(s.personId) + ' · ' + (C_RELATIONS[s.relation] || 'Dossier') + ', préparée le ' + date(s.preparedAt)));
-      var crit = el('ul', null, 'notes');
+      var crit = el('ul', null, 'criteres');
       (s.criteria || []).forEach(function (c) { crit.appendChild(el('li', c.label + ' : ' + c.observed + ' (' + (C_LEVELS[c.level] || c.level) + ')')); });
       li.appendChild(crit);
       li.appendChild(el('p', 'Niveau proposé par la grille : ' + (C_LEVELS[s.computedLevel] || s.computedLevel), 'compte'));
