@@ -77,17 +77,17 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     await t.valued(noe.id, 100);
     await t.anciens.noteLeaseEnd(t.agent(), noe.id, '2028-06-01');
     await t.bought(noe.id, '2025-03-02');
-    expect(await t.anciens.prepareMonth(t.network.id)).toBe(3);
+    // Bruno a acheté avec l'agence : il n'est relancé que par les relances après la vente, avec leur règle [R65].
+    expect(await t.anciens.prepareMonth(t.network.id)).toBe(2);
     const list = await t.anciens.toValidate(t.agent());
     expect(list.ok && list.value.map((i) => [i.firstName, i.reason, i.reasonLabel, i.reasonDay, i.draftBy])).toEqual([
       ['Lise', 'fin_de_bail', 'Fin de bail prochaine', '2027-12-01', 'ia'],
-      ['Bruno', 'anniversaire_achat', 'Anniversaire de l’achat', '2027-10-20', 'ia'],
       ['Inès', 'estimation_ancienne', 'Avis de valeur de plus d’un an', '2026-09-07', 'ia'],
     ]);
     expect(list.ok && list.value[0]!.draft).toBe('Bonjour Lise, je pensais à vous et à votre projet. Je reste à votre écoute si vous le souhaitez.');
     // L'IA ne reçoit que la raison, jamais la personne, et ne décide pas de l'ordre [R35, R13].
-    expect(seen).toHaveLength(3);
-    expect(seen).toEqual(expect.arrayContaining([{ reason: 'fin_de_bail' }, { reason: 'anniversaire_achat' }, { reason: 'estimation_ancienne' }]));
+    expect(seen).toHaveLength(2);
+    expect(seen).toEqual(expect.arrayContaining([{ reason: 'fin_de_bail' }, { reason: 'estimation_ancienne' }]));
     expect(seen.every((s) => Object.keys(s as object).join() === 'reason')).toBe(true);
     // Le même passage relancé ne prépare rien de plus.
     expect(await t.anciens.prepareMonth(t.network.id)).toBe(0);
@@ -194,6 +194,39 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     expect((await t.journal.all()).filter((e) => e.type === 'anciens_contacts.liste_lue').map((e) => e.data)).toEqual([{ rule: 'R16', count: 2 }]);
   });
 
+  it('[R08] [R12] [R05] la salutation de l’IA prend le prénom ; un texte de l’IA refusé au contrôle central laisse partir celui du code ; deux validations n’en font qu’une', async () => {
+    const t = await setup({ draft: async () => 'Bonjour, tu peux me rappeler quand tu veux pour ton projet.' });
+    const ines = await t.contact('Inès');
+    await t.valued(ines.id, 400);
+    const ugo = await t.contact('Ugo');
+    await t.valued(ugo.id, 400);
+    await t.anciens.prepareMonth(t.network.id);
+    const list = await t.anciens.toValidate(t.agent());
+    if (!list.ok) throw new Error(list.code);
+    const a = list.value.find((i) => i.firstName === 'Inès')!;
+    const b = list.value.find((i) => i.firstName === 'Ugo')!;
+    expect(a.draft).toBe('Bonjour Inès, tu peux me rappeler quand tu veux pour ton projet.');
+    // Le contrôle central refuse le tutoiement [R08] : le texte du code part à sa place, en mode essai.
+    expect(await t.anciens.validate(t.agent(), a.followupId)).toEqual({ ok: true, value: { status: 'essai', rule: null, delivered: false } });
+    expect((await t.outbox()).map((m) => m.body)).toEqual([expect.stringContaining(oldContactFallback('estimation_ancienne', 'Inès'))]);
+    // Deux validations en même temps : une seule passe, l'autre est refusée sans rien changer.
+    const both = await Promise.all([t.anciens.validate(t.agent(), b.followupId), t.anciens.validate(t.agent(), b.followupId)]);
+    expect(both.filter((x) => x.ok)).toHaveLength(1);
+    expect(both.filter((x) => !x.ok)).toEqual([{ ok: false, rule: null, code: 'already_decided' }]);
+    expect(await t.outbox()).toHaveLength(2);
+    const rows = await t.db.all<{ status: string; message_id: string | null }>("SELECT status, message_id FROM old_contact_followups WHERE person_id = ?", [ugo.id]);
+    expect(rows).toEqual([{ status: 'essai', message_id: expect.any(String) }]);
+  });
+
+  it('[R65] un client d’une vente faite avec l’agence n’est jamais relancé ici : seules les relances après la vente le font', async () => {
+    const t = await setup();
+    const bruno = await t.contact('Bruno');
+    await t.valued(bruno.id, 400);
+    await t.bought(bruno.id, '2024-03-02');
+    expect(await t.anciens.prepareMonth(t.network.id)).toBe(0);
+    expect(await t.followups()).toEqual([]);
+  });
+
   it('[R02] [R04] une personne exclue ou arrêtée après la préparation sort de la liste, et sa relance est close', async () => {
     const t = await setup();
     const ines = await t.contact('Inès');
@@ -228,7 +261,7 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     expect((await t.followups()).map((f) => f.draft_by)).toEqual(['secours']);
     expect((await t.journal.all()).filter((e) => e.type === 'anciens_contacts.ia_en_panne')).toHaveLength(1);
     // Les textes de secours passent leurs propres contrôles.
-    for (const reason of ['fin_de_bail', 'anniversaire_achat', 'estimation_ancienne'] as const) expect(checkOldContactText(oldContactFallback(reason, null))).toBeNull();
+    for (const reason of ['fin_de_bail', 'estimation_ancienne'] as const) expect(checkOldContactText(oldContactFallback(reason, null))).toBeNull();
     // Le texte de l'agent est contrôlé de même.
     const list = await t.anciens.toValidate(t.agent());
     if (!list.ok) throw new Error(list.code);
