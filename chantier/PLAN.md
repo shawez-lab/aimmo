@@ -2113,7 +2113,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT08 · Simulateur de prêt, sans rien garder
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M01, point 1 « simulateur de prêt ».
 - Objectif : un simulateur de mensualité (montant, durée, taux, assurance) calculé par le code, rendu sur la page publique ; mention « simulation indicative, ce n'est pas une offre de prêt » ; aucune donnée saisie gardée ni envoyée.
