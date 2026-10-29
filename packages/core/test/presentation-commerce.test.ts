@@ -172,6 +172,8 @@ describeWithSqlite('CE03 · présentation anonyme d’un commerce', () => {
     expect(checkPresentation('Le Fournil de Gaspard', 'Boulangerie à Dijon.', FACTS, MARKS).ok).toBe(false);
     // Les nombres publics passent, écrits avec ou sans espaces.
     expect(checkPresentation('Boulangerie à Dijon', 'Dijon (21000). 85 m². 85 m2, 85 mètres carrés. Entre 249358 € et 374 036 euros.', FACTS, MARKS).ok).toBe(true);
+    // Une fourchette écrite avec un tiret n'est pas un montant négatif.
+    for (const range of ['Prix : 249 358 € – 374 036 €.', 'Prix : 249 358 - 374 036 €.', 'Prix : 249 358 €-374 036 €.']) expect(checkPresentation('Boulangerie à Dijon', range, FACTS, MARKS).ok, range).toBe(true);
   });
 
   it('[R07] « agent immobilier », jamais « mandataire » ; ni « gratuit » ni mention de l’IA', () => {
