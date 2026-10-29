@@ -27,6 +27,7 @@ import { normalizeIdentifier } from '../../fiche/normalize.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
 import type { Annuaire } from '../../partenaires/annuaire.ts';
+import { agentGone } from '../../reseau/depart.ts';
 import { agentBlocked } from './etat-agent.ts';
 
 /** Les seuls champs d'une recommandation de partenaire : aucun ne parle de récompense [R66]. */
@@ -318,6 +319,16 @@ export class RecommandationsGagner {
     return { ok: true, value: rows.map((r) => ({ createdAt: r.submitted_at })) };
   }
 
+  /** L'agent qui a aujourd'hui la tâche : celui de la recommandation s'il est en activité, sinon celui qui suit la personne. */
+  private async currentOwner(row: PartnerRecommendationRow, at: Date): Promise<string | null> {
+    const active = async (agentId: string | null): Promise<boolean> => agentId !== null && !(await agentGone(this.db, row.network_id, agentId, at));
+    if (await active(row.agent_id)) return row.agent_id;
+    const members = await this.fiche.membersOf(await this.fiche.rootOf(row.referred_id));
+    const owners = await this.db.all<{ agent_id: string | null }>(`SELECT agent_id FROM persons WHERE id IN (${members.map(() => '?').join(', ')}) AND agent_id IS NOT NULL ORDER BY id`, members);
+    for (const o of owners) if (await active(o.agent_id)) return o.agent_id;
+    return null;
+  }
+
   /**
    * La file « à contacter », chacune par le seul canal accepté : pour un agent, ses recommandations de clients (F01) et de partenaires ; pour la direction,
    * les recommandations de partenaires sans agent, à attribuer. Seulement avec un accord en cours, jamais une personne
@@ -347,10 +358,16 @@ export class RecommandationsGagner {
     }
     const partners = await this.db.all<PartnerRecommendationRow & { business_name: string }>(
       `SELECT r.*, p.business_name AS business_name FROM partner_recommendations r JOIN partners p ON p.id = r.partner_id
-        WHERE r.network_id = ? AND r.call_due_at IS NOT NULL AND r.call_done_at IS NULL AND ${viewer.role === 'agent' ? 'r.agent_id = ?' : 'r.agent_id IS NULL'}`,
-      viewer.role === 'agent' ? [viewer.networkId, viewer.userId] : [viewer.networkId],
+        WHERE r.network_id = ? AND r.call_due_at IS NOT NULL AND r.call_done_at IS NULL`,
+      [viewer.networkId],
     );
-    for (const r of partners) await push('partner', r.id, r.referred_id, r.first_name, r.call_due_at!, `Recommandé par ${r.business_name}`, r.consent_channel);
+    for (const r of partners) {
+      // La tâche suit son agent tant qu'il est en activité ; après son départ, l'agent qui suit aujourd'hui la personne,
+      // ou la direction si personne ne la suit [R86].
+      const owner = await this.currentOwner(r, at);
+      if (viewer.role === 'agent' ? owner !== viewer.userId : owner !== null) continue;
+      await push('partner', r.id, r.referred_id, r.first_name, r.call_due_at!, `Recommandé par ${r.business_name}`, r.consent_channel);
+    }
     out.sort((a, b) => (a.dueAt < b.dueAt ? -1 : a.dueAt > b.dueAt ? 1 : a.recommendationId < b.recommendationId ? -1 : a.recommendationId > b.recommendationId ? 1 : 0));
     await appendEvent(this.journal, { type: 'recommandations.file_lue', actor: this.actor(viewer), subject: null, data: { rule: 'R16', count: out.length } }, this.now);
     return { ok: true, value: out };
@@ -361,18 +378,23 @@ export class RecommandationsGagner {
     if (viewer.role !== 'direction') return this.refused(viewer, null, 'role');
     const row = await this.db.first<PartnerRecommendationRow>('SELECT * FROM partner_recommendations WHERE id = ? AND network_id = ?', [recommendationId, viewer.networkId]);
     if (!row || row.call_due_at === null) return this.refused(viewer, null, 'unknown');
-    if (row.agent_id !== null) return { ok: false, rule: null, code: 'already_assigned' };
+    if ((await this.currentOwner(row, this.now())) !== null) return { ok: false, rule: null, code: 'already_assigned' };
     const agent = await this.db.first('SELECT 1 FROM agents WHERE id = ? AND network_id = ? AND status = ?', [agentId, viewer.networkId, 'active']);
     if (!agent) return { ok: false, rule: null, code: 'bad_agent' };
     const members = await this.fiche.membersOf(await this.fiche.rootOf(row.referred_id));
     // La personne a pu être donnée à un agent entre-temps (par une autre recommandation) : la tâche va à lui seul, sinon
     // personne ne pourrait la voir ni la clore [R16].
     const owners = (await this.db.all<{ agent_id: string | null }>(`SELECT agent_id FROM persons WHERE id IN (${members.map(() => '?').join(', ')})`, members)).map((p) => p.agent_id).filter((a): a is string => a !== null);
-    if (owners.some((o) => o !== agentId)) return { ok: false, rule: null, code: 'followed_by_other' };
+    if (owners.some((o) => o !== agentId)) {
+      // Suivie par un agent parti dont la passation n'est pas encore faite : elle passera par le départ (M14), pas ici.
+      for (const o of owners) if (await agentGone(this.db, viewer.networkId, o, this.now())) return { ok: false, rule: null, code: 'awaiting_handover' };
+      return { ok: false, rule: null, code: 'followed_by_other' };
+    }
     const at = this.now().toISOString();
     await this.db.run(`UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${members.map(() => '?').join(', ')}) AND agent_id IS NULL`, [agentId, at, ...members]);
     // Le projet né de la recommandation passe avec la personne : sans lui, l'agent ne pourrait pas y travailler.
     if (row.project_id) await this.db.run('UPDATE projects SET agent_id = ?, updated_at = ? WHERE id = ? AND agent_id IS NULL', [agentId, at, row.project_id]);
+    // La ligne garde l'agent d'origine une fois donné (rien ne se réécrit) ; sans agent, elle reçoit celui-ci.
     await this.db.run('UPDATE partner_recommendations SET agent_id = ? WHERE id = ? AND agent_id IS NULL', [agentId, recommendationId]);
     await appendEvent(this.journal, { type: 'recommandation.alerte', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R142', recommendation: recommendationId, origin: 'partner' } }, this.now);
     return { ok: true, value: { assigned: true } };
@@ -384,7 +406,7 @@ export class RecommandationsGagner {
     if (blocked) return this.refused(viewer, null, blocked);
     const row = await this.db.first<PartnerRecommendationRow>('SELECT * FROM partner_recommendations WHERE id = ? AND network_id = ?', [recommendationId, viewer.networkId]);
     if (!row || row.call_due_at === null) return this.refused(viewer, null, 'unknown');
-    if (viewer.role !== 'agent' || viewer.userId !== row.agent_id) return this.refused(viewer, null, 'not_assigned');
+    if (viewer.role !== 'agent' || viewer.userId !== (await this.currentOwner(row, this.now()))) return this.refused(viewer, null, 'not_assigned');
     const read = await this.acces.readFiche(viewer, await this.fiche.rootOf(row.referred_id));
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.view !== 'full') return this.refused(viewer, null, 'not_assigned');
