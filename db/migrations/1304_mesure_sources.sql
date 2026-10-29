@@ -22,10 +22,13 @@ CREATE TABLE IF NOT EXISTS mandate_source_decisions (
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   month TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'),
   source TEXT NOT NULL,
+  -- L'ordre des décisions sur une source : la plus haute fait foi, même à la même milliseconde.
+  seq INTEGER NOT NULL CHECK (seq >= 1),
   decision TEXT NOT NULL CHECK (decision IN ('garder', 'arreter')),
   reason TEXT NOT NULL CHECK (length(reason) BETWEEN 3 AND 200),
   decided_by TEXT NOT NULL CHECK (decided_by LIKE 'direction:%'),
-  decided_at TEXT NOT NULL
+  decided_at TEXT NOT NULL,
+  UNIQUE (network_id, source, seq)
 );
 CREATE INDEX IF NOT EXISTS mandate_source_decisions_month ON mandate_source_decisions (network_id, month, source, decided_at);
 CREATE TRIGGER IF NOT EXISTS mandate_source_decisions_garde BEFORE DELETE ON mandate_source_decisions BEGIN SELECT RAISE(ABORT, 'mandate_source_decisions : rien ne s''efface'); END;
