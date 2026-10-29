@@ -1526,6 +1526,15 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Critères : chaque brouillon de prospection (U08) et chaque relance préparée (U07) passe par `envoi/controle.ts` en mode essai, qui redécide au moment de l'envoi, et le refus sous R03 tient tant que H32 n'a pas écrit son exception dans R03 et dans `decideSend` ; un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
 - Attend : rien.
 
+### U12 · Relances et prospection de M18 par le contrôle central des envois
+- Statut : à faire
+- Qui : Claude, voie 1 (contrôle central des envois) · Relecture : forte · Dépend de : U09
+- Cahier : M18 ; Branchements ; Conformité (prospection entre professionnels).
+- Découpée de U09 le 2026-10-29 : le contrôle central (`envoi/controle.ts`) n'écrit qu'à une personne de la fiche client ; un partenaire et un futur partenaire n'en sont pas. Il faut lui ouvrir un destinataire professionnel (partenaire de l'annuaire, adresse de prospection), avec ses propres règles (heures [R01], opposition [R04, R02], plafond du jour [R11], une seule fois [R05], texte sans mention de l'IA [R06]), sans jamais créer de fiche client.
+- Objectif : chaque relance préparée (U07) et chaque brouillon de prospection (U08) passe par le contrôle central en mode essai, qui redécide au moment de l'envoi ; boîte d'essai seulement.
+- Critères : un brouillon de prospection refusé sous R03 reste refusé tant que H32 n'a pas écrit son exception dans R03 et dans `decideSend` (test) ; une opposition posée entre la préparation et l'envoi arrête l'envoi (test) ; une relance hors des heures attend le créneau permis (test) ; rien ne part réellement tant que le plan ne l'a pas mis en service.
+- Attend : H32 pour la prospection réelle.
+
 ### U10 · Routes de M18 et espace partenaire en ligne
 - Statut : fait (2026-10-28)
 - Reste : fusionnée (#147) ; relecture forte 1 P1 corrigé (date impossible stockée sans trace) ; Codex 2 P0 et 2 P2 corrigés dans la page (réponses dépassées ou d'une autre session ignorées, formulaire de dépôt vidé à chaque demande). Branchement des routes, de la page `/partenaire/`, de l'opposition `/partenaires/opposition/` et du stockage R2 des fichiers des partenaires revient à U09 (voie 1).
