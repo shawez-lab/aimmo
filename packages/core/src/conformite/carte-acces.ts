@@ -46,6 +46,8 @@ export interface ViaLocator {
   jsonIs?: Readonly<Record<string, string>>;
   /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur (champ → valeur). */
   jsonNot?: Readonly<Record<string, string>>;
+  /** Les lignes ne comptent que si ces colonnes ont l'une de ces valeurs. */
+  only?: Readonly<Record<string, readonly string[]>>;
   /** Les lignes ne comptent pas si ces colonnes ont l'une de ces valeurs. */
   except?: Readonly<Record<string, readonly string[]>>;
   where?: Readonly<Record<string, string>>;
@@ -136,6 +138,63 @@ export const JOURNAL_LCB_MARKERS = ['compliance_vault', 'risk_sheet', 'identific
  * pas manquer à la réponse sans qu'on l'ait décidé.
  */
 export type JournalSubjectUse = 'journal' | { excluded: ExclusionReason | 'envoi' | 'pas_un_sujet'; why: string };
+
+/**
+ * Chaque sorte d'événement écrit au journal d'un dossier de vente (`sale_file:<id>`), et à qui elle revient. Un dossier
+ * a deux parties : l'acquéreur (`buyer_person_id`) et le vendeur (par son mandat). Aucune sorte n'est attribuée par
+ * défaut : un test relève chaque événement écrit sous ce sujet dans le code et exige qu'il soit ici.
+ *
+ * - `partage` : l'avancée du dossier, que ses deux parties suivent (dates, pièces reçues, acte) : aux deux ;
+ * - `acquereur` : ce qui n'est qu'à l'acquéreur (son financement, son carnet de propriétaire) ;
+ * - `cote` : ce qui est fait pour un seul client, qui porte son côté (`side` : `vendeur` ou `acquereur`) : à ce côté
+ *   seul ; sans `side`, à personne ;
+ * - `destinataire` : la facture d'honoraires, au client qui la paie (`invoice_drafts.recipient_person_id`) ;
+ * - sinon, la raison pour laquelle l'événement n'entre pas dans la réponse.
+ */
+export type SaleFileEventUse = 'partage' | 'acquereur' | 'cote' | 'destinataire' | { excluded: ExclusionReason; why: string };
+
+const INTERNE = (why: string): SaleFileEventUse => ({ excluded: 'agent', why });
+
+export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
+  'dossier.compromis_en_preparation': 'partage',
+  'dossier.date': 'partage',
+  'dossier.date_a_saisir': 'partage',
+  'dossier.echeance': 'partage',
+  'dossier.piece_recue': 'partage',
+  'dossier.piece_refusee': 'partage',
+  'dossier.acte_signe': 'partage',
+  'dossier.acte_refuse': 'partage',
+  'dossier.bloque': 'partage',
+  'dossier.financement': 'acquereur',
+  'dossier.alerte_financement': 'acquereur',
+  'apres_vente.carnet': 'acquereur',
+  'dossier.alerte_fonds': 'cote',
+  'dossier.rappel_fonds': 'cote',
+  'dossier.relance': 'cote',
+  'apres_vente.remerciement_tache': 'cote',
+  'apres_vente.remerciement': 'cote',
+  'apres_vente.remerciement_decision': 'cote',
+  'apres_vente.remerciement_appel': 'cote',
+  'apres_vente.demande_avis': 'cote',
+  'apres_vente.satisfaction': 'cote',
+  'apres_vente.choix_relances': 'cote',
+  'apres_vente.relance': 'cote',
+  'facture.emise': 'destinataire',
+  'facture.avoir': 'destinataire',
+  'facture.attente': INTERNE('Facturation en attente : fonctionnement du réseau, sans donnée du client.'),
+  'facture.erreur': INTERNE('Erreur de facturation : fonctionnement du réseau, sans donnée du client.'),
+  'facture.envoi_en_panne': INTERNE('Plateforme de facturation en panne : fonctionnement du réseau.'),
+  'commission.attente': INTERNE('Rémunération de l\'agent.'),
+  'commission.ecart': INTERNE('Rémunération de l\'agent.'),
+  'commission.etape': INTERNE('Rémunération de l\'agent.'),
+  'commission.encaissement': INTERNE('Encaissement des honoraires par le réseau.'),
+  'commission.reversement': INTERNE('Reversement à l\'agent.'),
+  'commission.alerte_reversement': INTERNE('Alerte de reversement à l\'agent.'),
+  'acces.refuse': INTERNE('Accès refusé à un membre du réseau.'),
+  'apres_vente.lien_avis_manquant': INTERNE('Lien d\'avis manquant de l\'agent.'),
+};
+
+const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(SALE_FILE_EVENTS).filter(([, u]) => uses.includes(u)).map(([t]) => t).sort();
 
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
 
@@ -425,10 +484,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'mandates', 'id', { prefix: 'mandate:' }),
       via('subject', 'documents', 'id', { prefix: 'document:' }),
       via('subject', 'offer_register', 'id', { prefix: 'offer:' }),
-      // Le dossier de vente au journal porte le financement et les alertes de fonds de l'acquéreur : à lui seul.
-      // Ce qui est écrit pour le vendeur (`side: 'vendeur'` : ses alertes de fonds, ses demandes d'avis) est au vendeur.
-      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id', jsonNot: { side: 'vendeur' } }),
-      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'vendeur', jsonIs: { side: 'vendeur' } }),
+      // Le dossier de vente : chaque sorte d'événement à la partie que dit SALE_FILE_EVENTS, jamais par défaut.
+      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id', only: { type: saleFileTypes('partage', 'acquereur') } }),
+      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'vendeur', only: { type: saleFileTypes('partage') } }),
+      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id', only: { type: saleFileTypes('cote') }, jsonIs: { side: 'acquereur' } }),
+      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'vendeur', only: { type: saleFileTypes('cote') }, jsonIs: { side: 'vendeur' } }),
+      via('subject', 'invoice_drafts', 'file_id', { prefix: 'sale_file:', parentWhere: { kind: 'honoraires' }, only: { type: saleFileTypes('destinataire') }, jsonIs: { kind: 'honoraires' } }),
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
       via('subject', 'appointments', 'id', { prefix: 'visit:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
@@ -514,6 +575,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   rental_inventory_copies: { locate: [via('inventory_id', 'rental_inventories', 'id', { onlyMatchedBy: 'bailleur', where: { party: 'bailleur' } }), via('inventory_id', 'rental_inventories', 'id', { onlyMatchedBy: 'locataire', where: { party: 'locataire' } })] },
   rental_handovers: { locate: [via('listing_id', 'rental_listings'), via('lease_id', 'rental_leases')] },
   rental_management_links: { locate: [via('listing_id', 'rental_listings')] },
+  // L'issue de l'envoi d'une échéance au propriétaire ou d'un reçu d'équité au candidat : à qui l'a reçu.
+  rental_sends: { locate: [via('ref_id', 'rental_owner_notices', 'id', { where: { kind: 'echeance' } }), via('ref_id', 'rental_fairness_receipts', 'id', { where: { kind: 'recu' } })] },
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
@@ -577,7 +640,7 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
         named.add(l.column);
         for (const c of Object.keys(l.where ?? {})) named.add(c);
         if (isVia(l)) {
-          for (const c of [...Object.keys(l.startsWith ?? {}), ...Object.keys(l.except ?? {})]) named.add(c);
+          for (const c of [...Object.keys(l.startsWith ?? {}), ...Object.keys(l.except ?? {}), ...Object.keys(l.only ?? {})]) named.add(c);
           if (l.jsonNot || l.jsonIs) named.add('data');
         }
       }

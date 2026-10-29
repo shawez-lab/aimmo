@@ -6,7 +6,7 @@ import { setupAnnonce } from './annonces-jeu.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
-const { CARTE_ACCES, JOURNAL_SUBJECTS, REGISTRE_TRAITEMENTS, MASKED, accessOrder, assembleAccess, checkAccessMap, describeAccessGap, readSchema, erasurePlan } = conformite;
+const { CARTE_ACCES, JOURNAL_SUBJECTS, SALE_FILE_EVENTS, REGISTRE_TRAITEMENTS, MASKED, accessOrder, assembleAccess, checkAccessMap, describeAccessGap, readSchema, erasurePlan } = conformite;
 
 // Deux personnes inventées : chaque valeur rangée pour l'une porte son identifiant, pour voir d'où vient chaque donnée.
 const A = 'pa-0001';
@@ -85,6 +85,8 @@ const DYNAMIC_SUBJECTS: Readonly<Record<string, readonly string[]>> = {
   '${kind}@core/src/reseau/depart.ts': ['person', 'project', 'property'],
   // Sujet d'un envoi du contrôle central (bascule des automatisations), jamais écrit au journal.
   '${req.automation}@core/src/bascule/automatisations.ts': [],
+  // La lecture des projets confiés, au journal de qui lit (un partenaire ou un membre du réseau), jamais d'un client.
+  '${String(viewer.role)}@core/src/partenaires/mise-en-relation.ts': [],
 };
 
 describe('L07 · chaque sujet du journal écrit dans le code est lu ou écarté', () => {
@@ -110,6 +112,67 @@ describe('L07 · chaque sujet du journal écrit dans le code est lu ou écarté'
     expect([...read].sort()).toEqual([...declared].sort());
     // Chaque écart dit pourquoi.
     for (const [prefix, use] of Object.entries(JOURNAL_SUBJECTS)) if (use !== 'journal') expect(use.why.length, prefix).toBeGreaterThan(5);
+  });
+});
+
+/**
+ * Chaque événement écrit au journal sous `sale_file:<id>` dans le code : sa sorte, ses fichiers, et s'il porte `side`.
+ * Un appel dont la sorte n'est pas un littéral doit être décrit dans DYNAMIC_SALE_FILE_TYPES.
+ */
+function saleFileEventsInCode(): Map<string, { files: string[]; sided: boolean[] }> {
+  const found = new Map<string, { files: string[]; sided: boolean[] }>();
+  const root = new URL('../../', import.meta.url).pathname;
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.ts$/.test(name)) {
+        const text = readFileSync(path, 'utf8');
+        if (!text.includes('sale_file:')) continue;
+        const file = path.slice(root.length);
+        // Un sujet rangé dans une variable (`const subject = \`sale_file:…`) : ses appels `subject` comptent aussi.
+        const subjectVar = /const subject = `sale_file:/.test(text);
+        for (const m of text.matchAll(/appendEvent\(([\s\S]*?)\}, this\.now\)/g)) {
+          const call = m[0];
+          if (!/subject: `sale_file:/.test(call) && !(subjectVar && /\bsubject(,| \}|: subject\b)/.test(call))) continue;
+          const literal = call.match(/\btype: '([^']+)'/);
+          const types = literal ? [literal[1]!] : DYNAMIC_SALE_FILE_TYPES[file] ?? [`<construit>${call.slice(0, 60)}@${file}`];
+          for (const type of types) {
+            const known = found.get(type) ?? { files: [], sided: [] };
+            known.files.push(file);
+            known.sided.push(/\bside\b/.test(call));
+            found.set(type, known);
+          }
+        }
+      }
+    }
+  };
+  walk(join(root, 'core/src'));
+  walk(join(root, 'api/src'));
+  return found;
+}
+
+/**
+ * Les fichiers où un appel écrit une sorte construite (relue à la main), et les sortes qu'il peut écrire. Un appel à
+ * sorte construite dans un autre fichier fait échouer le test tant qu'il n'est pas décrit ici.
+ */
+const DYNAMIC_SALE_FILE_TYPES: Readonly<Record<string, readonly string[]>> = {
+  'core/src/dossiers/echeancier.ts': ['dossier.date_a_saisir', 'dossier.echeance'],
+  'core/src/pilotage/commissions.ts': ['commission.attente', 'commission.ecart'],
+  'core/src/pilotage/factures.ts': ['facture.emise', 'facture.avoir'],
+};
+
+describe('L07 · chaque événement du dossier de vente revient à sa partie, jamais par défaut', () => {
+  it('[R96] une sorte d’événement écrite sous sale_file: absente de SALE_FILE_EVENTS fait échouer la vérification', () => {
+    const inCode = saleFileEventsInCode();
+    // Le relevé trouve bien les sortes connues, y compris celles des variables et des sortes construites.
+    for (const known of ['dossier.financement', 'apres_vente.satisfaction', 'apres_vente.choix_relances', 'acces.refuse', 'dossier.echeance', 'facture.emise', 'commission.ecart']) expect(inCode.has(known), known).toBe(true);
+    const missing = [...inCode].filter(([type]) => !(type in SALE_FILE_EVENTS)).map(([type, f]) => `${type} (${f.files.join(', ')})`);
+    expect(missing).toEqual([]);
+    // Ce qui revient à un seul côté porte ce côté à chaque écriture : sinon il n'irait à personne.
+    const unsided = [...inCode].filter(([type, f]) => SALE_FILE_EVENTS[type] === 'cote' && f.sided.includes(false)).map(([type, f]) => `${type} (${f.files.join(', ')})`);
+    expect(unsided).toEqual([]);
+    for (const [type, use] of Object.entries(SALE_FILE_EVENTS)) if (typeof use === 'object') expect(use.why.length, type).toBeGreaterThan(5);
   });
 });
 
@@ -243,6 +306,34 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(lines('sale_file_steps')).toEqual([['effacer', 1], ['examiner', 1]]);
     expect(lines('referrals')).toEqual([['effacer', 1], ['examiner', 1]]);
     expect(lines('daily_plans')).toEqual([['examiner', 1]]);
+  });
+
+  it('[R96] au journal du dossier de vente, chaque sorte va à sa partie : partagée, d’un côté, au destinataire, ou à personne', async () => {
+    const { db, insert } = await seedEveryTable();
+    const C = 'pc-0003';
+    await insert('mandates', { id: 'm-2', network_id: 'n', agent_id: 'ag', person_id: A, project_id: null, property_id: 'bien-2', signed_at: 't', source_kind: 'x', source_detail: null, source_id: null, recorded_by: 'ag', created_at: 't' });
+    await insert('sale_files', { id: 'f-c', network_id: 'n', property_id: 'bien-2', offer_id: 'offre-de-c', buyer_person_id: C, amount_eur: 250000, opened_at: 't', opened_by: 'ag' });
+    await insert('invoice_drafts', { id: 'fac-a', network_id: 'n', file_id: 'f-c', kind: 'honoraires', issuer: 'reseau', recipient_person_id: A, amount_cents: 1000, vat_bp: 2000, round: 1, created_at: 't' });
+    const events: [number, string, Record<string, unknown>][] = [
+      [8101, 'dossier.date', { rule: 'R61', kind: 'acte' }],
+      [8102, 'apres_vente.satisfaction', { side: 'vendeur', score: 2, comment: false }],
+      [8103, 'apres_vente.satisfaction', { score: 5, comment: false }],
+      [8104, 'apres_vente.remerciement', { side: 'acquereur', mode: 'essai', status: 'sent', rule: null }],
+      [8105, 'dossier.sorte_inconnue', { rule: 'R00' }],
+      [8106, 'commission.etape', { rule: 'R67', status: 'prevue' }],
+      [8107, 'facture.emise', { rule: 'R71', kind: 'honoraires', label: 'essai-1' }],
+      [8108, 'apres_vente.choix_relances', { side: 'vendeur', choice: 'oui' }],
+      [8109, 'dossier.financement', { step: 'pret_accorde' }],
+    ];
+    for (const [seq, type, data] of events) await insert('journal', { seq, at: 't', type, actor: 'system:essai', subject: 'sale_file:f-c', data: JSON.stringify(data), prev_hash: 'p', hash: `h${seq}` });
+    const seqs = async (who: string) => (await assembleAccess(db, [who])).sections.find((s) => s.table === 'journal')!.rows.filter((r) => String(r.subject) === 'sale_file:f-c').map((r) => Number(r.seq)).sort();
+    // Le vendeur : l'avancée du dossier, sa note de satisfaction, son choix, sa facture ; jamais ce qui est à l'acquéreur.
+    expect(await seqs(A)).toEqual([8101, 8102, 8107, 8108]);
+    // L'acquéreur : l'avancée du dossier, son remerciement, son financement ; ni la note du vendeur, ni sa facture.
+    expect(await seqs(C)).toEqual([8101, 8104, 8109]);
+    // Une note sans côté, une sorte inconnue, la rémunération de l'agent : à personne.
+    for (const who of [A, C]) expect(await seqs(who)).not.toEqual(expect.arrayContaining([8103]));
+    for (const who of [A, B, C]) expect((await seqs(who)).some((n) => n === 8105 || n === 8106)).toBe(false);
   });
 
   it('[R96] le journal d’un bien possédé est à son propriétaire, et une autre personne nommée dans un événement est masquée', async () => {

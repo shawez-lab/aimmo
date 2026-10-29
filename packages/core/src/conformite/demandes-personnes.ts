@@ -226,6 +226,7 @@ export async function assembleAccessDetail(
           if (Object.entries(l.jsonNot ?? {}).some(([field, v]) => jsonField(row, field) === v)) continue;
           if (Object.entries(l.jsonIs ?? {}).some(([field, v]) => jsonField(row, field) !== v)) continue;
           if (Object.entries(l.except ?? {}).some(([c, values]) => values.includes(String(row[c])))) continue;
+          if (Object.entries(l.only ?? {}).some(([c, values]) => !values.includes(String(row[c])))) continue;
           const t = tuple(childValue(row), (c) => row[c], 0);
           if (parentExclusive.has(t)) add(row, null, parentExclusive.get(t)!, l.tag);
         }
