@@ -1683,7 +1683,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y02 · Loyers de marché importés, avec source, date et fiabilité
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-29)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y01
 - Cahier : M17, « Rendement calculé par le code », « Règles », « Branchements ».
 - Objectif : la table des loyers de marché (migration `1102`) : commune, type (appartement, maison, par nombre de pièces quand le millésime le donne), loyer au m² charges comprises, bornes de l'intervalle de prévision, nombre d'observations, millésime, source ; import par la direction d'un fichier CSV au format de la Carte des loyers de l'ANIL (jeu de test inventé), versionné, rien effacé ; repli sur les loyers des mises en location du réseau (au moins 5 dans la commune sur 24 mois, réglage) ; la réponse dit toujours sa source et sa fiabilité (« peu d'observations » sous 30 observations ou intervalle plus large que 40 % du loyer, réglages).
@@ -1691,7 +1691,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : H34 pour la mise en service (fichier réel de la Carte des loyers) ; les tests n’en ont pas besoin.
 
 ### Y03 · Rendement brut et net calculé par le code, chaque chiffre avec son hypothèse
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y02
 - Cahier : M17, « Rendement calculé par le code » ; Feuille de route, septembre 2027.
 - Objectif : le calcul d'un bien pour un profil : prix (du bien ou saisi), frais d'acquisition (barème réglé, ancien ou neuf), travaux estimés (saisis avec leur source, ou issus de M04), loyer de marché (Y02) × surface, charges non récupérables et taxe foncière déclarées, vacance réglée (en mois par an) ; rendement brut et net avant impôt en points de base, arrondis par une règle écrite ; chaque ligne du résultat porte `value`, `source`, `asOf`, `hypothesis` ; le calcul est rangé, rejouable à l'identique depuis ses entrées [R120, R121].
