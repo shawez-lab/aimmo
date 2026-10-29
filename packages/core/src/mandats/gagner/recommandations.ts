@@ -255,7 +255,7 @@ export class RecommandationsGagner {
       if (!referredId) referredId = (await this.store.createPerson({ networkId, agentId, firstName: typedName })).id;
       else if (followedBy === null && agentId !== null) {
         const members = await this.fiche.membersOf(referredId);
-        await this.db.run(`UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${members.map(() => '?').join(', ')}) AND agent_id IS NULL`, [agentId, at.toISOString(), ...members]);
+        await this.handOver(members, agentId, at.toISOString());
       }
       for (const id of ids) {
         if ((await this.fiche.findByIdentifier(networkId, id.kind, id.value)).length === 0) await this.fiche.addIdentifier({ networkId, agentId, personId: referredId, kind: id.kind, value: id.value });
@@ -317,6 +317,16 @@ export class RecommandationsGagner {
     if (!p) return this.refused(viewer, `partner:${viewer.userId}`, 'unknown');
     const rows = await this.db.all<{ submitted_at: string }>('SELECT submitted_at FROM partner_recommendation_submissions WHERE network_id = ? AND partner_id = ? ORDER BY submitted_at, id', [viewer.networkId, viewer.userId]);
     return { ok: true, value: rows.map((r) => ({ createdAt: r.submitted_at })) };
+  }
+
+  /**
+   * Une personne sans agent passe à un agent : ses fiches réunies et tous ses projets encore sans agent passent avec
+   * elle, sinon l'agent verrait la personne sans pouvoir travailler sur ses projets (mise en relation, mandat) [R16].
+   */
+  private async handOver(members: readonly string[], agentId: string, at: string): Promise<void> {
+    const marks = members.map(() => '?').join(', ');
+    await this.db.run(`UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${marks}) AND agent_id IS NULL`, [agentId, at, ...members]);
+    await this.db.run(`UPDATE projects SET agent_id = ?, updated_at = ? WHERE person_id IN (${marks}) AND agent_id IS NULL`, [agentId, at, ...members]);
   }
 
   /** L'agent qui a aujourd'hui la tâche : celui de la recommandation s'il est en activité, sinon celui qui suit la personne. */
@@ -391,13 +401,7 @@ export class RecommandationsGagner {
       return { ok: false, rule: null, code: 'followed_by_other' };
     }
     const at = this.now().toISOString();
-    await this.db.run(`UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${members.map(() => '?').join(', ')}) AND agent_id IS NULL`, [agentId, at, ...members]);
-    // Le projet né de la recommandation passe avec la personne : sans lui, l'agent ne pourrait pas y travailler.
-    // Ainsi que ceux des autres recommandations de la même personne, qui suivent désormais cet agent.
-    await this.db.run(
-      `UPDATE projects SET agent_id = ?, updated_at = ? WHERE agent_id IS NULL AND id IN (SELECT project_id FROM partner_recommendations WHERE project_id IS NOT NULL AND (id = ? OR referred_id IN (${members.map(() => '?').join(', ')})))`,
-      [agentId, at, recommendationId, ...members],
-    );
+    await this.handOver(members, agentId, at);
     // La ligne garde l'agent d'origine une fois donné (rien ne se réécrit) ; sans agent, elle reçoit celui-ci.
     await this.db.run('UPDATE partner_recommendations SET agent_id = ? WHERE id = ? AND agent_id IS NULL', [agentId, recommendationId]);
     await appendEvent(this.journal, { type: 'recommandation.alerte', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R142', recommendation: recommendationId, origin: 'partner' } }, this.now);
