@@ -56,7 +56,10 @@ async function setup() {
   const store = new FicheClient(db, { now });
   const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
   let t = 0;
-  const certs = new CertificatsPhotos(db, acces, journal, { now, newToken: () => (++t).toString(16).padStart(32, 'c') });
+  // Le stockage des photos, inventé : seules les références rangées existent ; `down` simule une panne.
+  const stored = new Set<string>();
+  const storage = { down: false, has: async (r: string) => { if (storage.down) throw new Error('panne'); return stored.has(r); } };
+  const certs = new CertificatsPhotos(db, acces, journal, storage, { now, newToken: () => (++t).toString(16).padStart(32, 'c') });
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alexandrine', lastName: 'Fictive' });
   const sam = await store.createAgent({ networkId: network.id, firstName: 'Samuel', lastName: 'Inventé' });
@@ -76,6 +79,7 @@ async function setup() {
       JSON.stringify({ characteristics: { bedrooms: 1, outdoor: [], parkingSpaces: 0 }, energy: null, coownership: null, risks: null, media: m }),
     ]);
   await sheet(1, media);
+  for (let n = 1; n <= 4; n += 1) stored.add(ref(p.id, n)).add(orig(p.id, n));
   const as = (role: 'agent' | 'direction' | 'compliance' | 'assistant', userId: string) => ({ role, userId, networkId: network.id }) as never;
   const input = (n: number, over: Record<string, unknown> = {}) => ({
     resultRef: ref(p.id, n),
@@ -86,7 +90,7 @@ async function setup() {
     processedOn: 'appareil',
     ...over,
   });
-  return { db, journal, certs, network, alex, sam, p, media, sheet, as, input };
+  return { db, journal, certs, network, alex, sam, p, media, sheet, as, input, stored, storage };
 }
 
 describeWithSqlite('X02 · photos corrigées honnêtement, avec leur certificat', () => {
@@ -166,6 +170,40 @@ describeWithSqlite('X02 · photos corrigées honnêtement, avec leur certificat'
     });
     // Une photo qui n'est pas dans la fiche n'est jamais publiable.
     expect(await t.certs.checkPublishable(t.p.id, ref(t.p.id, 9))).toEqual({ ok: false, rule: 'R10', code: 'photo_inconnue' });
+  });
+
+  it('[R130] un original absent du stockage ne se certifie pas ; un stockage en panne ferme tout', async () => {
+    const t = await setup();
+    const alex = t.as('agent', t.alex.id);
+    t.stored.delete(orig(t.p.id, 1));
+    expect(await t.certs.record(alex, t.p.id, t.input(1))).toEqual({ ok: false, rule: 'R130', code: 'original_absent' });
+    t.stored.delete(ref(t.p.id, 4));
+    expect(await t.certs.record(alex, t.p.id, t.input(4))).toEqual({ ok: false, rule: 'R10', code: 'photo_absente' });
+    t.storage.down = true;
+    expect(await t.certs.record(alex, t.p.id, t.input(3, { operations: [] }))).toEqual({ ok: false, rule: 'R130', code: 'stockage_indisponible' });
+    t.storage.down = false;
+    const ok = await t.certs.record(alex, t.p.id, t.input(3, { operations: [] }));
+    expect(ok.ok).toBe(true);
+    expect((await t.certs.publishable(t.p.id)).map((p) => p.ref)).toEqual([ref(t.p.id, 3)]);
+    // L'original disparaît du stockage, ou le stockage tombe : la photo ne part plus.
+    t.storage.down = true;
+    expect(await t.certs.publishable(t.p.id)).toEqual([]);
+    expect(await t.certs.checkPublishable(t.p.id, ref(t.p.id, 3))).toEqual({ ok: false, rule: 'R130', code: 'sans_certificat' });
+    t.storage.down = false;
+    t.stored.delete(orig(t.p.id, 3));
+    expect(await t.certs.publishable(t.p.id)).toEqual([]);
+    const ev = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'studio.photo.stockage_indisponible'");
+    expect(ev.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.parse(ev[0]!.data)).toEqual({ rule: 'R130', error: 'Error' });
+  });
+
+  it('[R10] une fiche aux médias illisibles est dite au journal, jamais prise pour une fiche vide', async () => {
+    const t = await setup();
+    await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('s-9', ?, ?, 9, ?, 'agent:a', '2027-10-02')", [t.p.id, t.network.id, JSON.stringify({ media: 'x' })]);
+    expect(await t.certs.record(t.as('agent', t.alex.id), t.p.id, t.input(1))).toEqual({ ok: false, rule: 'R10', code: 'fiche_illisible' });
+    expect(await t.certs.publishable(t.p.id)).toEqual([]);
+    const ev = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'studio.photo.fiche_illisible'");
+    expect(ev.map((e) => JSON.parse(e.data))).toEqual([{ rule: 'R10', version: 9 }, { rule: 'R10', version: 9 }]);
   });
 
   it('[R48] un aménagement virtuel garde sa mention, sur le certificat comme à la publication', async () => {
