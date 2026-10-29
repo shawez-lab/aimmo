@@ -1811,6 +1811,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X05 · Publications prêtes pour chaque bien, visite, offre, vente
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #184 prête, empilée sur X07 (#182), migration `1206` ; événement vérifié contre l'état du bien à la préparation et à l'envoi ; suite complète verte en local (1775), relecture forte 1 P1 corrigé ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
 - Cahier : M19, « Réseaux sociaux », « L'IA et l'humain » ; M07.
 - Objectif : à chaque événement (nouveau bien diffusable, visite, offre, vente), une publication préparée : texte par l'IA derrière une interface avec secours, visuels choisis parmi les photos certifiées, liste de contrôle des visuels (adresse visible, personne reconnaissable et son accord, aménagement virtuel) validée par l'agent ; publication en un geste vers les comptes de l'agent et du réseau, en mode essai, derrière une interface par réseau (migration `1206`).
@@ -1818,7 +1819,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : H06 et H07 pour les accès réels ; les tests n'en ont pas besoin.
 
 ### X06 · Supports imprimés à sa marque
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X02
 - Cahier : M19, « Supports imprimés ».
 - Objectif : fiche du bien, panneau, flyer, carte de visite et lettre de quartier, rendus par le code en pages imprimables (A4, A5, carte) sur le système de design, depuis la version publiée du bien et la fiche de l'agent, avec les mentions obligatoires de M07.
@@ -1827,7 +1828,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X07 · Bibliothèque de musiques et d'images sous licence
 - Statut : en cours (voie 2)
-- Avancement (2026-10-29) : proposition #182 prête, empilée sur X03 (#181), migration `1205` ; suite complète verte en local (1765) ; en attente des vérifications GitHub (H35). `MusicLibrary.licensedMusic` reçoit désormais le réseau.
+- Avancement (2026-10-29) : proposition #182 prête, empilée sur X03 (#181), migration `1205` ; suite complète verte en local (1765) ; en attente des vérifications GitHub (H35). `MusicLibrary.licensedMusic` reçoit désormais le réseau. Codex : 1 P0 (retrait refusé au journal) corrigé, nouvelle relecture demandée.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M19, « Règles ».
 - Objectif : la bibliothèque du réseau (migration `1205`) : chaque musique ou image avec sa source, sa licence, sa date et la preuve rangée par la direction ; X03 et X05 n'utilisent qu'elle.
