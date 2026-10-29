@@ -193,9 +193,13 @@ export function presentationSentenceProblems(sentence: string, facts: Presentati
     // Un nombre public ne vaut que pour son champ, reconnu à son unité : un prix en euros, une surface en m², un
     // code postal sans unité. « Prix de 85 € » avec 85 m² de surface n'a pas de source.
     const after = counted.slice((m.index ?? 0) + m[0].length);
-    const role = /^\s*(?:€|eur\b|euros?\b)/u.test(after) ? 'prix' : /^\s*(?:mcarre|metres? carres?\b)/u.test(after) ? 'surface' : 'nu';
+    // La première borne d'une fourchette (« 249 358 – 374 036 € ») prend l'unité de la seconde.
+    const role = /^\s*(?:€|eur\b|euros?\b)/u.test(after) || /^\s*[-–]\s*\d[\d \u00a0\u202f.]*(?:,\d+)?\s*(?:€|eur\b|euros?\b)/u.test(after) ? 'prix' : /^\s*(?:mcarre|metres? carres?\b)/u.test(after) ? 'surface' : 'nu';
     // Un signe moins devant le nombre en fait une autre valeur : jamais une valeur publique.
-    const negative = /[-−–]\s?$/u.test(counted.slice(0, m.index ?? 0));
+    // Un tiret entre deux nombres sépare les bornes d'une fourchette (« 249 358 € – 374 036 € ») ; le vrai signe moins
+    // (−) ou un tiret qui ne suit pas un nombre en fait une valeur négative.
+    const before = counted.slice(0, m.index ?? 0);
+    const negative = /−\s?$/u.test(before) || (/[-–]\s?$/u.test(before) && !/\d\s*(?:€|eur|euros?)?\s*[-–]\s?$/u.test(before));
     const fits =
       !negative &&
       (role === 'prix'
