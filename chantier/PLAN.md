@@ -1839,6 +1839,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X08 · Options payantes par les partenaires, et mesure des 20 visuels
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #187 prête, empilée sur X06 (#186), migration `1207` ; suite complète verte en local (1784) ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X05
 - Cahier : M19, « Options payantes » ; M18 ; critère « aucune adresse visible sur 20 visuels publiés ».
 - Objectif : la demande d'une option (photographe, drone, visite virtuelle, aménagement virtuel) passe par la mise en relation de M18, rien de neuf ; la mesure des 20 derniers visuels publiés : chacun avec sa liste de contrôle validée, le compte rendu montré à la direction.
@@ -1846,7 +1847,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X09 · Routes de M19
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X08
 - Cahier : M19 ; Architecture technique, API.
 - Objectif : `packages/api/src/studio.ts` : routes `/v1/studio` (guide, corrections et certificat, montage, plan, publications et validation, supports, bibliothèque), rôle contrôlé avant le corps, refus au journal ; certificat public sans donnée personnelle.
