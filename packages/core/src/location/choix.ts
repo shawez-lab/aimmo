@@ -318,6 +318,32 @@ export class ChoixProprietaire {
     return { ok: true, value: { applicationId: input.applicationId } };
   }
 
+  /**
+   * La dernière présentation telle qu'elle a été faite (dossiers complets, dans leur ordre d'arrivée, tirés de
+   * l'instantané rangé) et le dossier choisi, pour l'écran « Louer » (W11). La lecture est au journal [R16, R105].
+   */
+  async last(viewer: Viewer, listingId: unknown): Promise<ChoiceResult<{ presentation: Presentation | null; chosenApplicationId: string | null }>> {
+    const listing = await this.listings.listing(viewer, listingId, false);
+    if ('ok' in listing) return listing;
+    await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', what: 'presentation' } }, this.now);
+    const r = await this.db.first<{ id: string; version: number; snapshot: string; snapshot_sha256: string; created_at: string }>(
+      'SELECT id, version, snapshot, snapshot_sha256, created_at FROM rental_presentations WHERE listing_id = ? ORDER BY version DESC LIMIT 1',
+      [listing.id],
+    );
+    const chosen = await this.chosen(listing.networkId, listing.id);
+    const presentation: Presentation | null = r
+      ? {
+          presentationId: r.id,
+          listingId: listing.id,
+          version: Number(r.version),
+          files: (JSON.parse(r.snapshot) as Snapshot).files.map(([arrival, arrivedOn, applicationId, dossierFacile, pieces, guarantors]) => ({ arrival, arrivedOn, applicationId, dossierFacile, pieces, guarantors: guarantors as PresentedFile['guarantors'] })),
+          sha256: r.snapshot_sha256,
+          createdAt: r.created_at,
+        }
+      : null;
+    return { ok: true, value: { presentation, chosenApplicationId: chosen?.applicationId ?? null } };
+  }
+
   /** Le candidat choisi par le propriétaire, ou `null` : pour le bail de W06 [R105]. */
   async chosen(networkId: string, listingId: string): Promise<{ applicationId: string; personId: string } | null> {
     const r = await this.db.first<{ application_id: string; person_id: string }>(

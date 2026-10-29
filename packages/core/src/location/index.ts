@@ -7,3 +7,4 @@ export * from './bail.ts';
 export * from './etat-des-lieux.ts';
 export * from './remise-cles.ts';
 export * from './signature-bail.ts';
+export * from './branchement.ts';

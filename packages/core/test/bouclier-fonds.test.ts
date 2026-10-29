@@ -80,7 +80,9 @@ describeWithSqlite('N05 · aucun fonds, bouclier contre le faux RIB', () => {
     // Ni l'IBAN ni le texte dans l'alerte ni au journal.
     const stored = JSON.stringify(await t.db.all('SELECT * FROM sale_file_fund_alerts'));
     const journal = JSON.stringify(await t.journal.bySubject(`sale_file:${t.fileId}`));
-    for (const s of [stored, journal, JSON.stringify(a)]) {
+    // Identifiants et empreintes, tirés au hasard, peuvent contenir ces chiffres : ils sont retirés avant de chercher.
+    const random = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{64}/g;
+    for (const s of [stored, journal, JSON.stringify(a)].map((x) => x.replace(random, ''))) {
       expect(s).not.toContain('3000');
       expect(s).not.toMatch(/FR76|nouveau RIB/);
     }

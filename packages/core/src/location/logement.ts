@@ -358,6 +358,40 @@ export class MisesEnLocation {
     return { ok: true, value: { listingId: id } };
   }
 
+  /**
+   * Les mises en location qu'une personne peut lire, par pages de 50, dans leur ordre d'ouverture et lui seul (W11) :
+   * pour un agent actif, celles des biens dont il est l'agent ; pour la direction et la conformité, celles du réseau.
+   * Seuls la référence du bien, sa commune et la dernière décision du contrôle sont rendus ; la lecture est au journal [R16].
+   */
+  async mine(viewer: Viewer, page: unknown = 0): Promise<LocationResult<{ listings: { listingId: string; reference: string; city: string | null; openedAt: string; decision: 'louable' | 'bloque' | null }[]; page: number; more: boolean }>> {
+    const subject = `network:${viewer.networkId}`;
+    const p = typeof page === 'number' ? page : typeof page === 'string' && /^\d{1,4}$/.test(page) ? Number(page) : NaN;
+    if (!Number.isSafeInteger(p) || p < 0 || p > 9999) return { ok: false, rule: null, code: 'bad_page' };
+    if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, subject, 'role');
+    if (viewer.role === 'agent') {
+      const agent = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
+      if (agent?.status !== 'active') return this.refuse(viewer, subject, 'agent_inactive');
+    }
+    const mineOnly = viewer.role === 'agent';
+    const rows = await this.db.all<{ id: string; reference: string; city: string | null; created_at: string; decision: 'louable' | 'bloque' | null }>(
+      `SELECT l.id, p.reference, p.city, l.created_at,
+        (SELECT c.decision FROM rental_checks c WHERE c.listing_id = l.id ORDER BY c.checked_at DESC, c.rowid DESC LIMIT 1) AS decision
+       FROM rental_listings l JOIN properties p ON p.id = l.property_id AND p.network_id = l.network_id
+       WHERE l.network_id = ?${mineOnly ? ' AND p.agent_id = ?' : ''}
+       ORDER BY l.created_at, l.rowid LIMIT 51 OFFSET ?`,
+      mineOnly ? [viewer.networkId, viewer.userId, p * 50] : [viewer.networkId, p * 50],
+    );
+    await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject, data: { rule: 'R16', what: 'listings', count: Math.min(rows.length, 50) } }, this.now);
+    return {
+      ok: true,
+      value: {
+        listings: rows.slice(0, 50).map((r) => ({ listingId: r.id, reference: r.reference, city: r.city, openedAt: r.created_at, decision: r.decision ?? null })),
+        page: p,
+        more: rows.length > 50,
+      },
+    };
+  }
+
   /** Range une nouvelle version des faits du logement ; la précédente reste [R17]. */
   async recordFacts(viewer: Viewer, listingId: unknown, input: unknown): Promise<LocationResult<{ version: number }>> {
     const row = await this.load(viewer, listingId, true);

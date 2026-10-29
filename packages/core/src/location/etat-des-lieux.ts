@@ -680,6 +680,40 @@ export class EtatsDesLieux {
   }
 
   /** L'état des lieux clos d'une mise en location, s'il existe : pour la remise des clés (W08). */
+  /**
+   * Le dernier état des lieux rangé et pas encore clos, avec les parties qui l'ont déjà signé, pour que l'écran « Louer »
+   * (W11) le fasse signer après un rechargement sans le refaire. Son contenu porte l'identité des deux parties : il n'est
+   * rendu qu'à l'agent du bien ou à la direction qui voient chacune de leurs fiches en entier, comme pour l'enregistrer ;
+   * sinon `null`, et le refus est au journal [R16, R106].
+   */
+  async pending(viewer: Viewer, listingId: string): Promise<{ inventoryId: string; leaseId: string; version: number; status: 'complet' | 'incomplet'; missing: string[]; content: string; contentSha256: string; signed: Party[] } | null> {
+    const listing = await this.listings.listing(viewer, listingId, true);
+    if ('ok' in listing) return null;
+    const last = await this.latestRow(listing.networkId, listing.id);
+    if (!last || (await this.closed(last.id))) return null;
+    const chosen = await this.choices.chosen(listing.networkId, listing.id);
+    if (!chosen) return null;
+    for (const personId of [listing.ownerPersonId, chosen.personId]) {
+      const read = await this.persons.readFiche(viewer, personId);
+      if (!read.ok) return null;
+      if (read.view !== 'full') {
+        await this.refuse(viewer, `person:${personId}`, 'not_assigned');
+        return null;
+      }
+    }
+    const rows = await this.db.all<{ party: Party }>('SELECT party FROM rental_inventory_signatures WHERE inventory_id = ? AND content_sha256 = ? ORDER BY party', [last.id, last.content_sha256]);
+    return {
+      inventoryId: last.id,
+      leaseId: last.lease_id,
+      version: Number(last.version),
+      status: last.status,
+      missing: JSON.parse(last.missing) as string[],
+      content: last.content,
+      contentSha256: last.content_sha256,
+      signed: [...new Set(rows.map((r) => r.party))],
+    };
+  }
+
   async closedInventory(networkId: string, listingId: string): Promise<{ inventoryId: string; leaseId: string; contentSha256: string; mode: 'essai' | 'reel' } | null> {
     const last = await this.latestRow(networkId, listingId);
     if (!last || !(await this.closed(last.id))) return null;

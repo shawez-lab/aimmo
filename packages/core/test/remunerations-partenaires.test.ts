@@ -212,7 +212,9 @@ describeWithSqlite('U03 · rémunérations des partenaires', () => {
     await expect(t.db.run('DELETE FROM partner_referral_fees')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run('UPDATE partner_referral_fees SET amount_cents = 1')).rejects.toThrow(/ne change plus/);
     await expect(t.db.run('DELETE FROM partner_referral_disclosures')).rejects.toThrow(/rien ne s'efface/);
-    const all = JSON.stringify(await t.db.all('SELECT * FROM journal'));
+    // Ce qui porte un contenu : le type, l'acteur, le sujet, les données. Les empreintes, tirées au hasard, peuvent
+    // contenir n'importe quelle suite de chiffres.
+    const all = JSON.stringify(await t.db.all('SELECT type, actor, subject, data FROM journal'));
     expect(all).not.toContain('Plomberie');
     expect(all).not.toContain('98765');
     expect(all).not.toContain('987,65');
