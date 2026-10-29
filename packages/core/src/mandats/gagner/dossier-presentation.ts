@@ -147,10 +147,11 @@ export class DossierPresentation {
     // Un cas ne compte que quand son délai est écoulé : avant, il n'est ni tenu ni manqué.
     const due = (at: string): boolean => Date.parse(at) + delay <= now.getTime();
     if (measure === 'compte_rendu_visite') {
-      // Toute visite terminée et non annulée compte, que l'agent l'ait marquée tenue ou non : le taux ne dépend pas
-      // de ce que l'agent choisit de marquer.
+      // Toute visite terminée et non annulée compte, que l'agent l'ait marquée tenue ou non, et qu'elle ait été ouverte
+      // ou non (un rendez-vous décalé n'a sa ligne de visite qu'à sa première ouverture) : le taux ne dépend pas de ce
+      // que l'agent choisit de marquer ou d'ouvrir.
       const rows = await this.db.all<{ end_at: string; validated_at: string | null; status: string | null }>(
-        `SELECT a.end_at, r.validated_at, r.status FROM appointments a JOIN visits v ON v.appointment_id = a.id
+        `SELECT a.end_at, r.validated_at, r.status FROM appointments a
          LEFT JOIN visit_reports r ON r.appointment_id = a.id
          WHERE a.network_id = ? AND a.agent_id = ? AND a.kind = 'visite' AND a.status IN ('booked', 'honored') AND a.end_at >= ? AND a.end_at < ? ORDER BY a.end_at, a.id`,
         [networkId, agentId, from.toISOString(), to.toISOString()],

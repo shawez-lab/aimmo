@@ -66,13 +66,14 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
     expect(await before.setCommitment(t.dir, { code: 'compte_rendu', label: 'Un compte rendu après chaque visite', measure: 'compte_rendu_visite', delayHours: 24, active: true })).toEqual({ ok: true, value: { version: 1 } });
     expect(await before.setCommitment(t.dir, { code: 'point_semaine', label: 'Un point chaque semaine au vendeur', measure: 'point_semaine', delayHours: 48, active: true })).toMatchObject({ ok: true });
     // Visites d'Alex sous la version 1 (24 h) : tenue (10 h), en retard (30 h), brouillon, sans compte rendu,
-    // restée « réservée » sans compte rendu (elle compte quand même), tenue (23 h) : 2 sur 6.
+    // restée « réservée » et jamais ouverte, sans compte rendu (elle compte quand même), tenue (23 h) : 2 sur 6.
     await t.visit(NOW - 200 * DAY, 'valide', 10);
     await t.visit(NOW - 150 * DAY, 'valide', 30);
     await t.visit(NOW - 100 * DAY, 'brouillon', null);
     await t.visit(NOW - 50 * DAY, null, null);
     const booked = await t.appointment('visite', NOW - 30 * DAY, t.alex.id, 'booked');
-    await t.db.run("INSERT INTO visits (appointment_id, network_id, property_id, project_id, person_id, agent_id, created_by, created_at) SELECT ?, network_id, property_id, (SELECT id FROM projects LIMIT 1), person_id, agent_id, 'agent:test', created_at FROM appointments WHERE id = ?", [booked, booked]);
+    // Elle n'a jamais été ouverte (rendez-vous décalé) : pas de ligne de visite, elle compte quand même.
+    expect(booked).toEqual(expect.any(String));
     await t.visit(NOW - 10 * DAY, 'valide', 23);
     // Hors du compte : plus d'un an, une visite de Sam, une visite finie il y a 2 h dont le délai court encore.
     await t.visit(NOW - 400 * DAY, 'valide', 1);
