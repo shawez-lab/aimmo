@@ -173,7 +173,8 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : heures de Paris été comme hiver ; une tâche, un passage par créneau même si le déclencheur passe deux fois ; une erreur est écrite au journal ; aucun appel sortant en mode essai.
 
 ### B03 · Le site demande au socle, en ombre
-- Statut : à faire
+- Statut : bloquée : proposition prête sur shawez-immo (#16), attend sa fusion par Shawez (H37), puis H14
+- Décidé (2026-10-29) : seul un envoi réel du site est soumis au socle (en essai, un « would_send » y est rangé comme un envoi : sujet gardé, pression commerciale) ; ce que le site n'envoie pas est compté à part (`site_seul`), hors écarts. Ainsi un message du site compte une seule fois [R11]. La mention de l'assistant [R06] du message rangé chez le socle reste celle du socle : à aligner sur le texte réel du site dans B04, avant que le socle décide. Référence d'une visite datée (`visite-<id>-<minute>`), pour qu'une visite déplacée ne soit pas prise pour un doublon [R05]. Relecture forte : 2 P1 corrigés.
 - Qui : Claude · Relecture : forte · Dépend de : B01, B02
 - Cahier : Feuille de route, novembre 2026.
 - Objectif : sur une branche de `shawez-immo` et une proposition à fusionner par Shawez, le site appelle `POST /v1/automatisations/envoi` avant chaque rappel de visite et chaque courrier gardé, garde son propre envoi inchangé, et note les deux décisions ; un rapport compte les écarts, sans donnée personnelle.
@@ -1421,24 +1422,14 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Critères : un prospect contacté il y a 3 ans moins un jour n'est pas listé, à 3 ans il l'est [R97] ; un client sous mandat ou une vente close n'est jamais listé ; l'échéance de 72 heures et ses alertes vérifiées heure par heure ; rien n'est envoyé ni effacé réellement tant que le plan ne l'a pas mis en service [R26, R17].
 - Attend : H29.
 
-### L09 · Routes de M12 et branchement dans le socle
+### L09 · Routes de M12, écran « Conformité » et branchement dans le socle
 - Statut : en cours
+- Où : proposition #175 ouverte, sans P0 ni P1 à la relecture forte ; fusion en attente des vérifications GitHub (H35). L'écran passe en L10 (défini sur la branche de #175) : en cours, proposition #178 empilée sur #175, fusion en attente de H35
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : L01 à L08
 - Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
-- Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts`, dont le dépôt d'une pièce au coffre (`CoffreConformite.deposit`) et la déclaration personne ou société avec ses bénéficiaires effectifs (`Identification.declare`), seules portes de l'identification depuis L03 ; les passages au planificateur ; l'export depuis `@aimmo/core`.
+- Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts`, dont le dépôt d'une pièce au coffre (`CoffreConformite.deposit`) et la déclaration personne ou société avec ses bénéficiaires effectifs (`Identification.declare`), seules portes de l'identification depuis L03 ; AIMMO ne se met pas en service entre L03 et L09 ; dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes, signalements, demandes et échéances, relecture du registre) et le dépôt d'une pièce par l'agent ; les passages au planificateur ; l'export depuis `@aimmo/core`.
 - Ajouté par L08 : lire `Fuites.accessCut(networkId, role, userId)` avant toute route (refus au journal, le responsable jamais coupé) ; passages `DureesProspects.run` une fois par jour et `Fuites.run` à chaque créneau ; routes de `DureesProspects.list` et de `Fuites` (déclarer, couper, rétablir, évaluer, personnes concernées, notifications, alertes).
-- Critères : chaque route sous R16, refus au journal ; les passages tournent une fois par créneau.
-- Décidé (2026-10-29), découpage : la tâche était trop grosse pour une séance, l'écran « Conformité » passe en L10. Une pièce entre au coffre par le corps brut de la requête (PDF, JPEG, PNG, 10 Mo au plus), ses données par l'adresse (`sorte`, `verifie`, `valide`, `dossier`, `remplace`) ; le coffre a son propre stockage R2, `COFFRE`, distinct de `PIECES` ; sans lui, dépôt et ouverture répondent 503. Passages : `conformite.fuites` chaque heure, `conformite.echeances` à 6 h (durées des prospects, demandes des personnes, relecture du registre). La coupure est lue avant toute route de `/v1`, après la clé, refus au journal (`access_cut`).
-- Attend : rien. Le compartiment R2 `COFFRE` (H36) ne bloque pas la tâche.
-
-### L10 · Écran « Conformité » dans l'application
-- Statut : en cours
-- Où : proposition ouverte, empilée sur #175 (L09) ; fusion en attente des vérifications GitHub (H35)
-- Décidé (2026-10-29) : l'écran du responsable est un script à part, `/app/conformite.js`, chargé à la demande pour la seule clé `compliance` : un agent ne reçoit jamais son code, et l'application garde son budget de 48 Ko (46,9 Ko) ; le script tient celui d'une page (7 Ko). Nouvelle lecture `GET /v1/conformite/risque` (`FicheRisque.pending`) : fiches en attente dans l'ordre de leur préparation, jamais par niveau [R91]. Un client est nommé par la fin de l'identifiant de sa fiche, sans nom. Sur la fiche, le dépôt part en corps brut avec son type ; l'agent lit ses preuves (sorte, jour, empreinte), jamais la pièce. axe-core sans violation, clair et sombre (captures `app-conformite-*`, `app-coffre-*`). Relecture forte : 2 P1 corrigés (dépôt refusé pour agent inactif, tests d'accessibilité, de clé refusée et de session).
-- Qui : Claude, voie 1 · Relecture : forte · Dépend de : L09
-- Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
-- Objectif : dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes de vigilance, signalements, demandes des personnes et échéances, prospects à 3 ans, fuites et coupures, relecture du registre), sur les routes de L09 ; le dépôt d'une pièce au coffre par l'agent depuis la fiche de son client, avec la preuve de dépôt.
-- Critères : un agent ne voit jamais l'écran du responsable (test) ; l'agent dépose une pièce et lit sa preuve, jamais la pièce (test) ; écran accessible (axe-core sans violation), beau sur téléphone d'abord, dans le système de design (test du système), sans texte générique ; aucune donnée personnelle dans les journaux du navigateur.
+- Critères : chaque route sous R16, refus au journal ; un agent ne voit jamais l'écran du responsable ; écran accessible, beau sur téléphone d'abord, sans texte générique ; les passages tournent une fois par créneau.
 - Attend : rien.
 
 **M18 · Partenaires, juillet 2027.**
@@ -1529,13 +1520,24 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 
 ### U09 · Branchement de M18 dans le socle
 - Statut : en cours
-- Où : branche chantier/U09, empilée sur #178 tant que H35 bloque les fusions
-- Décidé (2026-10-29) : la tâche est coupée en deux ; U09 branche les routes, les pages publiques et les passages, sans rien envoyer ; le passage des relances et des brouillons de prospection par le contrôle central (qui n'écrit qu'à une personne de la fiche) devient U12. Fichiers des partenaires dans `PIECES`, sous `partenaires/` (R2PartnerFiles) ; sans eux, les routes de M18 répondent 503 ; variable `PARTENAIRES_OPPOSITION_BASE` pour le lien d'opposition. Passages : relances et alertes de 9 h à 19 h, prospection à 10 h les jours ouvrés, échéances des justificatifs à 6 h, rangées au journal pour la direction (`partenaire.justificatif_echeance`). Le rôle `partner` n'a toujours accès à aucune fiche ni aucun bien dans `Acces` ; il ne lit que par l'espace partenaire [R77].
+- Où : proposition #180, empilée sur #178 ; fusion en attente des vérifications GitHub (H35)
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`, contrôle central des envois) · Relecture : forte · Dépend de : U10
 - Cahier : M18 ; Branchements.
 - Objectif : exporter `partenaires` depuis `@aimmo/core` ; dans les droits d'accès, le rôle `partner` lit seulement ses mises en relation confiées (U04) et rien d'autre ; ajouter les routes de M18 à `app.ts` ; lancer au planificateur les relances, les alertes d'échéance des justificatifs et la prospection du jour.
-- Critères : un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] (test) ; les passages tournent une fois par créneau (test) ; rien ne part réellement tant que le plan ne l'a pas mis en service (test). Le passage de chaque brouillon de prospection (U08) et de chaque relance (U07) par `envoi/controle.ts`, qui redécide au moment de l'envoi, revient à U12.
+- Critères : chaque brouillon de prospection (U08) et chaque relance préparée (U07) passe par `envoi/controle.ts` en mode essai, qui redécide au moment de l'envoi, et le refus sous R03 tient tant que H32 n'a pas écrit son exception dans R03 et dans `decideSend` ; un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
 - Attend : rien.
+
+### U12 · Relances et prospection de M18 par le contrôle central des envois
+- Statut : en cours
+- Où : proposition #183, empilée sur #180 (U09) ; relecture forte 1 P1 corrigé (opposition d'un partenaire tenue pour toutes ses adresses) ; Codex 1 P0 corrigé (opposition gardée sur le partenaire même sans adresse, `partner_optouts`), dernière version validée (ef84d00) ; fusion en attente des vérifications GitHub (H35)
+- Décidé (2026-10-29) : `ControleEnvois.sendToProfessional`, seul port la boîte d'essai `ProTrialMailbox` ; accord du partenaire [R03] rangé avec son adresse professionnelle par la direction (`partner_addresses`, migration `0807`, preuve en note) ; opposition par adresse dans `partner_prospect_optouts`, valable pour partenaires et futurs partenaires ; plafond R11 partagé par `send_quota_slots` ; passage `partenaires.envois` de 8 h à 19 h ; les alertes à l'agent restent dans l'application.
+- Reste : à H32, une tâche reprendra les brouillons refusés sous R03.
+- Qui : Claude, voie 1 (contrôle central des envois) · Relecture : forte · Dépend de : U09
+- Cahier : M18 ; Branchements ; Conformité (prospection entre professionnels).
+- Découpée de U09 le 2026-10-29 : le contrôle central (`envoi/controle.ts`) n'écrit qu'à une personne de la fiche client ; un partenaire et un futur partenaire n'en sont pas. Il faut lui ouvrir un destinataire professionnel (partenaire de l'annuaire, adresse de prospection), avec ses propres règles (heures [R01], opposition [R04, R02], plafond du jour [R11], une seule fois [R05], texte sans mention de l'IA [R06]), sans jamais créer de fiche client.
+- Objectif : chaque relance préparée (U07) et chaque brouillon de prospection (U08) passe par le contrôle central en mode essai, qui redécide au moment de l'envoi ; boîte d'essai seulement.
+- Critères : un brouillon de prospection refusé sous R03 reste refusé tant que H32 n'a pas écrit son exception dans R03 et dans `decideSend` (test) ; une opposition posée entre la préparation et l'envoi arrête l'envoi (test) ; une relance hors des heures attend le créneau permis (test) ; rien ne part réellement tant que le plan ne l'a pas mis en service.
+- Attend : H32 pour la prospection réelle.
 
 ### U10 · Routes de M18 et espace partenaire en ligne
 - Statut : fait (2026-10-28)
@@ -1700,6 +1702,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 
 ### Y02 · Loyers de marché importés, avec source, date et fiabilité
 - Statut : fait (2026-10-29)
+- Reste : suite des remarques P2 de Codex (guillemets du CSV, reprises simultanées) en #176, en attente de GitHub Actions (H35)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y01
 - Cahier : M17, « Rendement calculé par le code », « Règles », « Branchements ».
 - Objectif : la table des loyers de marché (migration `1102`) : commune, type (appartement, maison, par nombre de pièces quand le millésime le donne), loyer au m² charges comprises, bornes de l'intervalle de prévision, nombre d'observations, millésime, source ; import par la direction d'un fichier CSV au format de la Carte des loyers de l'ANIL (jeu de test inventé), versionné, rien effacé ; repli sur les loyers des mises en location du réseau (au moins 5 dans la commune sur 24 mois, réglage) ; la réponse dit toujours sa source et sa fiabilité (« peu d'observations » sous 30 observations ou intervalle plus large que 40 % du loyer, réglages).
@@ -1748,7 +1751,8 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y08 · Branchement de M17 dans le socle
-- Statut : à faire
+- Statut : en cours
+- Avancement (2026-10-29) : proposition #185 prête, empilée sur #183 avec Y07 reprise ; tests verts en local ; relecture forte 1 P1 corrigé (barème des frais lu de la variable `INVESTIR_FRAIS_BAREME`, `750@AAAA-MM-JJ`) ; Codex sans remarque. À fusionner après #173 et #183, dès que GitHub Actions repart (H35).
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : Y07
 - Cahier : M17 ; Branchements.
 - Objectif : exporter `investir` depuis `@aimmo/core` ; ajouter ses routes à `app.ts` ; lancer au planificateur le passage des alertes aux investisseurs ; passer leurs textes par `envoi/controle.ts`, en mode essai.
@@ -1773,6 +1777,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X01 · Guide de prise de vue pièce par pièce
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #174 prête, suite complète verte en local, relecture forte 2 P1 corrigés ; en attente des vérifications GitHub (H35). Migration `1201` prise par X01 : X02 à X07 prennent `1202` et suivantes.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien (M07 fait)
 - Cahier : M19, « Guide de prise de vue » ; critère « 10 biens photographiés avec le guide ».
 - Objectif : à partir de la fiche du bien de M07 (type, pièces, extérieurs), la liste des vues à faire, pièce par pièce, chacune avec sa consigne (où se placer, hauteur, lumière) écrite dans le code en liste fermée, et les vues à ne pas oublier ; l'avancement du bien : vues rangées (références de stockage de M07), vues manquantes, bien « prêt » quand toutes les vues obligatoires sont là ; la validation par Shawez (direction) d'un bien photographié avec le guide est rangée.
@@ -1780,7 +1785,8 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X02 · Photos corrigées honnêtement, avec leur certificat (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #177 prête, empilée sur X01 (#174), migration `1202` ; suite complète verte en local (1746), relecture forte 2 P1 corrigés ; en attente des vérifications GitHub (H35). Branchement dans la publication par X05 et X10. X03 prend `1203`, X04 `1204`, X05 `1206`, X07 `1205`. Codex : 1 P0 (original vérifié dans le stockage par une interface, seule l'existence lue) et 1 P1 (fiche illisible au journal) corrigés, nouvelle relecture demandée.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X01
 - Cahier : M19, « Photos corrigées sur le téléphone », « Règles ».
 - Objectif : la description des corrections faites sur l'appareil, rangée avec l'empreinte de l'original et celle du résultat (migration `1201`) ; **Jamais vu** : chaque photo publiée porte un certificat d'honnêteté lisible par le client (original gardé, liste des corrections globales, aucune retouche locale), vérifiable par un lien sans donnée personnelle.
@@ -1788,31 +1794,35 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X03 · Montage vidéo sur l'appareil à partir d'un modèle
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #181 prête, empilée sur X04 (#179), migration `1203` ; une vidéo ne part plus qu'avec son montage rangé (musique contrôlée, `annonces/medias.ts`) ; suite complète verte en local (1761), relecture forte 1 P1 corrigé ; en attente des vérifications GitHub (H35). La bibliothèque est l'interface `MusicLibrary`, fournie par X07.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
 - Cahier : M19, « Vidéo du bien » ; M07 (plan de tournage, P06) ; critère « montée seule en moins de 10 minutes ».
-- Objectif : le modèle de montage décrit par le code depuis le plan de tournage de P06 (ordre des plans, durées, sous-titres tirés de la fiche, musique de la bibliothèque, fin à la marque de l'agent) ; le montage se fait sur l'appareil ; le serveur range la description du montage fini et contrôle ses textes et sa musique (migration `1202`).
+- Objectif : le modèle de montage décrit par le code depuis le plan de tournage de P06 (ordre des plans, durées, sous-titres tirés de la fiche, musique de la bibliothèque, fin à la marque de l'agent) ; le montage se fait sur l'appareil ; le serveur range la description du montage fini et contrôle ses textes et sa musique (migration `1203`).
 - Critères : une musique sans licence rangée est refusée [R133] ; un sous-titre qui porte une adresse est refusé [R46, R132] ; aucun fichier vidéo ne passe par le serveur, seule sa référence [R130] ; le modèle tient en 10 minutes de montage (test sur la durée prévue et le nombre de gestes).
 - Attend : rien.
 
 ### X04 · Plan simple du logement depuis les mesures
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #179 prête, empilée sur X02 (#177), migration `1204` ; suite complète verte en local, plan rendu vérifié à 390 px ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X01
 - Cahier : M19, « Plan simple du logement ».
-- Objectif : des pièces rectangulaires saisies avec leurs cotes en centimètres et leur position, versionnées (migration `1203`) ; un plan SVG dessiné par le code, surfaces calculées par le code, mention « plan indicatif, non contractuel ».
+- Objectif : des pièces rectangulaires saisies avec leurs cotes en centimètres et leur position, versionnées (migration `1204`) ; un plan SVG dessiné par le code, surfaces calculées par le code, mention « plan indicatif, non contractuel ».
 - Critères : surfaces au cm² près d'un calcul fait à la main sur 5 plans tests [R135] ; une cote absente ou impossible est refusée [R10] ; le SVG ne porte ni adresse ni nom [R46] ; la mention est toujours là [R135].
 - Attend : rien.
 
 ### X05 · Publications prêtes pour chaque bien, visite, offre, vente
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #184 prête, empilée sur X07 (#182), migration `1206` ; événement vérifié contre l'état du bien à la préparation et à l'envoi ; suite complète verte en local (1775), relecture forte 1 P1 corrigé ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
 - Cahier : M19, « Réseaux sociaux », « L'IA et l'humain » ; M07.
-- Objectif : à chaque événement (nouveau bien diffusable, visite, offre, vente), une publication préparée : texte par l'IA derrière une interface avec secours, visuels choisis parmi les photos certifiées, liste de contrôle des visuels (adresse visible, personne reconnaissable et son accord, aménagement virtuel) validée par l'agent ; publication en un geste vers les comptes de l'agent et du réseau, en mode essai, derrière une interface par réseau (migration `1204`).
+- Objectif : à chaque événement (nouveau bien diffusable, visite, offre, vente), une publication préparée : texte par l'IA derrière une interface avec secours, visuels choisis parmi les photos certifiées, liste de contrôle des visuels (adresse visible, personne reconnaissable et son accord, aménagement virtuel) validée par l'agent ; publication en un geste vers les comptes de l'agent et du réseau, en mode essai, derrière une interface par réseau (migration `1206`).
 - Critères : rien ne part sans la validation de l'agent [R134] ; un visuel sans liste de contrôle validée, ou avec une personne reconnaissable sans accord rangé, est refusé [R132] ; le texte passe le contrôle de M07 (adresse, mots interdits) [R46] ; un bien qui ne peut plus être diffusé ne part pas [R42] ; rien ne part réellement [R26].
 - Attend : H06 et H07 pour les accès réels ; les tests n'en ont pas besoin.
 
 ### X06 · Supports imprimés à sa marque
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #186 prête, empilée sur X05 (#184) ; impression vérifiée sous Chromium (une page par support, deux pour la fiche, rien hors de la feuille) ; suite complète verte en local (1780) ; en attente des vérifications GitHub (H35). Codex : 1 P0 (mentions sur le panneau) et 1 P1 (impression testée sous Chromium, `supports-chromium.test.ts`, sauté là où Playwright manque, donc sur GitHub) corrigés.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X02
 - Cahier : M19, « Supports imprimés ».
 - Objectif : fiche du bien, panneau, flyer, carte de visite et lettre de quartier, rendus par le code en pages imprimables (A4, A5, carte) sur le système de design, depuis la version publiée du bien et la fiche de l'agent, avec les mentions obligatoires de M07.
@@ -1820,7 +1830,8 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X07 · Bibliothèque de musiques et d'images sous licence
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #182 prête, empilée sur X03 (#181), migration `1205` ; suite complète verte en local (1765) ; en attente des vérifications GitHub (H35). `MusicLibrary.licensedMusic` reçoit désormais le réseau. Codex : 1 P0 (retrait refusé au journal) corrigé, nouvelle relecture demandée.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M19, « Règles ».
 - Objectif : la bibliothèque du réseau (migration `1205`) : chaque musique ou image avec sa source, sa licence, sa date et la preuve rangée par la direction ; X03 et X05 n'utilisent qu'elle.
@@ -1828,7 +1839,8 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : la liste réelle des musiques retenues par Shawez pour la mise en service ; les tests n'en ont pas besoin.
 
 ### X08 · Options payantes par les partenaires, et mesure des 20 visuels
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #187 prête, empilée sur X06 (#186), migration `1207` ; suite complète verte en local (1784) ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X05
 - Cahier : M19, « Options payantes » ; M18 ; critère « aucune adresse visible sur 20 visuels publiés ».
 - Objectif : la demande d'une option (photographe, drone, visite virtuelle, aménagement virtuel) passe par la mise en relation de M18, rien de neuf ; la mesure des 20 derniers visuels publiés : chacun avec sa liste de contrôle validée, le compte rendu montré à la direction.
@@ -1836,7 +1848,8 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X09 · Routes de M19
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #188 prête, empilée sur X08 (#187) ; 21 routes, rôle contrôlé avant le corps, parcours de 10 biens du guide à la publication en essai ; relecture forte sans P0 ni P1 ; suite complète verte en local ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X08
 - Cahier : M19 ; Architecture technique, API.
 - Objectif : `packages/api/src/studio.ts` : routes `/v1/studio` (guide, corrections et certificat, montage, plan, publications et validation, supports, bibliothèque), rôle contrôlé avant le corps, refus au journal ; certificat public sans donnée personnelle.
@@ -1844,7 +1857,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X10 · Branchement de M19 dans le socle
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : X09
 - Cahier : M19 ; Branchements.
 - Objectif : exporter `studio` depuis `@aimmo/core` ; ajouter ses routes à `app.ts` ; la page publique du certificat sur le Worker ; publications par le contrôle central, en mode essai.
@@ -1853,8 +1866,80 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X11 · Écran « Studio » dans l'application
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : forte · Dépend de : X09
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : X09, Y09 (même fichier `packages/api/app/fichiers.ts` et même budget de 48 Ko de l'application, presque plein après Y09 ; décidé le 2026-10-29 par la voie 2 pour ne pas croiser deux écrans non fusionnés)
 - Cahier : M19 ; exigence de design (protocole, section 9).
 - Objectif : dans l'application de l'agent, l'écran « Studio » : guide pièce par pièce avec l'appareil photo, corrections globales sur l'appareil, montage depuis le modèle, plan, publications à valider ; tout traitement sur l'appareil.
 - Critères : l'écran lit seulement par les routes `/v1/studio` [R16] ; aucune image ni vidéo n'est envoyée à un serveur pour traitement [R130] ; écran accessible, beau sur téléphone d'abord, dans le budget de l'application (qui est presque plein : une passe d'allègement peut être nécessaire), testé comme les autres (`fake-dom`).
 - Attend : rien.
+
+**M20 · Gagner des mandats, module complet, octobre 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-29 par la voie 2 : M19 est fini côté voie 2 jusqu'à X09 (X10 attend la voie 1, X11 attend la fusion de Y09) ; octobre 2027 compte M19 et M20 complet ; M16 reste à la voie 1 ; la première version de M20 (G01 à G05) est faite. Ids `G06` et suivants. Cahier : M20 Gagner des mandats, points 3 à 7, « Règles », « Branchements » ; dépendances faites ou prêtes : M04, M11, M18, M19 (X06 pour les supports imprimés).
+Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au propriétaire » ou « Aux habitants » d'une adresse saisie par l'agent dans le rayon réglé autour d'un bien dont le mandat est signé ou la vente rapportée ; jamais à un nom, jamais à partir des ventes publiques (DVF) ni d'une liste achetée [R140, R37]. Le dossier de présentation ne montre que des chiffres de la base, chacun avec sa source (ventes du quartier de M04, résultats de l'agent de M13, avis réels de M11 avec leur lien, jamais choisis ni réécrits), aucune promesse de prix ni de délai ; l'IA met en forme derrière une interface, avec secours sans IA [R141]. Une recommandation arrive avec sa source et la preuve de l'accord de la personne recommandée avant tout contact, jamais rémunérée à un particulier [R142, R66]. Un ancien contact n'est relancé qu'avec une base légale au jour de l'envoi (prospect à 3 ans de R97, client après la vente selon R65, accord en cours), au plus une fois par période réglée, par le contrôle central, en mode essai [R143, R03, R26]. La mesure mensuelle par source vient de la base ; les coûts sont saisis par la direction avec leur preuve ; garder ou arrêter une source reste une décision de la direction, jamais automatique [R144]. Aucun texte d'AIMMO ne promet des mandats à un agent [R145]. Les règles R140 à R149 et les migrations à partir de `1301` sont réservées à M20 complet. Le code vit dans `packages/core/src/mandats/gagner/`, ses routes dans `packages/api/src/gagner.ts` ; le plan du jour (`mandats/plan-du-jour.ts`, fonction du socle) et les fichiers du socle ne changent que par G12, confiée à la voie 1.
+
+### G06 · Lettres de quartier, adressées sans nom
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : X06
+- Cahier : M20, point 3 « Lettres de quartier », « Règles ».
+- Objectif : après un mandat signé ou une vente rapportée, une campagne de lettres (migration `1301`) : adresses saisies par l'agent (numéro, voie, commune), contrôlées dans le rayon réglé autour du bien, sans aucun nom ; destinataire « Au propriétaire » ou « Aux habitants » ; texte par l'IA derrière une interface avec secours, contrôlé (adresse du bien vendu jamais citée, mots interdits) ; lettre imprimable par le système de design (X06), une par adresse ; dépôt noté par l'agent.
+- Critères : un nom de personne dans une adresse ou un destinataire est refusé [R140] ; une source « ventes publiques » ou « liste achetée » est refusée [R37] ; sans mandat signé ou vente rapportée, aucune campagne [R140] ; l'adresse du bien n'apparaît jamais dans la lettre [R46] ; chaque lettre passe le contrôle du système de design [R201].
+- Attend : rien.
+
+### G07 · Dossier de présentation pour chaque rendez-vous de mandat (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : G06
+- Cahier : M20, point 4 « Dossier de présentation ».
+- Objectif : pour un rendez-vous de mandat (M05), un dossier imprimable et lisible sur téléphone : ventes du quartier (M04, avec source et date), plan de vente (canaux de M07, Studio de M19), engagements de service rangés par la direction (versionnés), avis réels de M11 (lien et date, tous ceux de la période, jamais choisis), résultats de l'agent (M13, calculés) ; **Jamais vu** : chaque engagement de service affiché avec le taux réellement tenu par l'agent sur les 12 derniers mois, recalculé depuis le journal, et le détail qui le prouve.
+- Critères : chaque nombre du dossier vient de la base avec sa source [R141] ; aucun avis choisi, réécrit ni inventé [R141] ; aucune promesse de prix ni de délai (liste fermée de tournures) [R141] ; le taux tenu de chaque engagement égale un calcul fait à la main sur un journal inventé ; rien qui situe un autre client [R46, R13].
+- Attend : rien.
+
+### G08 · Recommandations des clients et des partenaires, avec leur source
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien (M11, M18 faits)
+- Cahier : M20, point 5 « Recommandations » ; M11 ; M18.
+- Objectif : une recommandation venue d'un client (M11) ou d'un partenaire (espace partenaire de M18) arrive dans la fiche (M02) avec sa source et la preuve de l'accord de la personne recommandée (migration `1302`) ; l'agent est alerté ; le mandat qui en naît garde la source « recommandation » (G03).
+- Critères : sans preuve d'accord de la personne recommandée, aucun contact possible [R142, R03] ; aucun champ de récompense pour un particulier [R66] ; la source suit jusqu'au mandat [R38] ; un partenaire ne voit rien de la suite [R77].
+- Attend : rien.
+
+### G09 · Anciens contacts relancés quand la loi le permet
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M20, point 6 « Anciens contacts », « Règles ».
+- Objectif : chaque mois, la liste des anciens contacts relançables (prospects encore dans les 3 ans de R97, anciens clients selon R65, accords en cours), au bon moment par des règles écrites (anniversaire d'achat réglé, estimation de plus d'un an, fin de bail connue) ; la relance préparée par l'IA derrière une interface avec secours, validée par l'agent, puis par le contrôle central en mode essai (migration `1303`).
+- Critères : jamais sans base légale au jour de l'envoi [R143, R03, R36] ; une relance par période réglée au plus [R143, R05] ; exclus et arrêts jamais relancés [R02, R04] ; ordre par règles écrites, jamais une note de l'IA [R35] ; rien ne part réellement [R26].
+- Attend : rien.
+
+### G10 · Mesure mensuelle : garder ce qui rapporte des mandats
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : G08
+- Cahier : M20, point 7 « Mesure ».
+- Objectif : chaque mois, par source : mandats signés (G03), rendez-vous, coût saisi par la direction avec sa preuve (migration `1304`), coût par mandat ; le compte rendu à la direction, qui décide de garder ou d'arrêter chaque source, sa décision rangée.
+- Critères : chaque nombre recalculable depuis la base sur un jeu inventé [R144] ; aucune décision automatique [R144] ; aucune donnée personnelle dans le compte rendu [R13] ; seule la direction lit et décide [R16].
+- Attend : rien.
+
+### G11 · Routes de M20 complet
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : G10
+- Cahier : M20 ; Architecture technique, API.
+- Objectif : `packages/api/src/gagner.ts` : routes `/v1/gagner` (lettres, dossier de présentation, recommandations, relances, mesure), rôle contrôlé avant le corps, refus au journal.
+- Critères : chaque route refuse tout rôle non admis avant de lire le corps [R16] ; parcours d'un mandat test, de la lettre de quartier au mandat signé avec sa source [R38, R140].
+- Attend : rien.
+
+### G12 · Branchement de M20 complet dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : G11
+- Cahier : M20 ; Branchements.
+- Objectif : ajouter au plan du jour les lettres à déposer, les recommandations à rappeler et les relances validées, sous leurs raisons écrites ; routes dans `app.ts` ; passage mensuel des relances et de la mesure au planificateur ; relances par le contrôle central, en mode essai.
+- Critères : le plan reste le même pour les mêmes données [R35] ; aucune ligne sans base légale [R36] ; rien ne part réellement tant que le plan ne l'a pas mis en service [R26].
+- Attend : rien.
+
+### G13 · Écran « Gagner des mandats » dans l'application
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : G11, X11
+- Cahier : M20 ; exigence de design (protocole, section 9).
+- Objectif : lettres à préparer et à noter déposées, dossier de présentation à ouvrir avant un rendez-vous, recommandations, relances à valider, depuis l'application de l'agent.
+- Critères : l'écran lit seulement par les routes `/v1/gagner` [R16] ; aucun texte ne promet de mandats [R145] ; écran accessible, beau sur téléphone d'abord, dans le budget de l'application, testé comme les autres (`fake-dom`).
+- Attend : rien.
+
