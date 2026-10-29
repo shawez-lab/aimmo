@@ -1699,7 +1699,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y04 · Contraintes signalées : énergie, copropriété, règles de la commune
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-29)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y03
 - Cahier : M17, « Contraintes signalées » ; M15 (règles d'énergie).
 - Objectif : sur chaque calcul, les contraintes : classe énergie et date d'interdiction de louer, par le code de M15 (`banDate`, seuil de 450 kWh/m²/an), copropriété (lue dans la fiche du bien de M07), règle de la commune (autorisation préalable de mise en location, permis de louer, encadrement des loyers, changement d'usage) rangée par la direction avec sa source et sa date (migration `1104`, `1103` prise par les calculs de Y03), jamais écrite dans le code.
@@ -1707,7 +1707,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y05 · Note d'investissement par l'IA, validée par l'agent (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y04
 - Cahier : M17, « Note d'investissement », « L'IA et l'humain », « Règles ».
 - Objectif : la note rédigée par l'IA derrière une interface, avec secours sans IA, à partir du seul calcul et de ses contraintes ; **Jamais vu** : chaque nombre et chaque affirmation de la note est relié à une ligne du calcul (valeur, source, date, hypothèse), et la note rend, sous chaque paragraphe, la preuve de ses chiffres ; changer une hypothèse (vacance, travaux, loyer bas ou haut de l'intervalle) recalcule la note entière, et la fourchette basse/haute du rendement est toujours montrée à côté du chiffre central ; validation par l'agent seul avant tout envoi.
