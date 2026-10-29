@@ -78,6 +78,9 @@ describe('X06 · supports imprimés', () => {
     expect(renderFlyer({ ...INPUT, payload: { ...INPUT.payload, mentions: null } })).toBeNull();
     expect(renderFlyer({ ...INPUT, payload: { ...INPUT.payload, priceEur: null } })).toBeNull();
     expect(renderNeighbourhoodLetter({ ...INPUT, payload: { ...INPUT.payload, state: 'retiree' } })).toBeNull();
+    // La lettre annonce une mise en vente : jamais pour un bien vendu ou sous offre.
+    expect(renderNeighbourhoodLetter({ ...INPUT, payload: { ...INPUT.payload, state: 'vendu' } })).toBeNull();
+    expect(renderNeighbourhoodLetter({ ...INPUT, payload: { ...INPUT.payload, state: 'sous_offre' } })).toBeNull();
     expect(renderPanel({ ...INPUT, payload: { ...INPUT.payload, state: 'retiree' } })).toBeNull();
   });
 
@@ -131,6 +134,14 @@ describeWithSqlite('X06 · supports depuis la version publiée', () => {
     expect(card.ok && card.html).toContain('03 00 00 00 01');
     expect(await supports.businessCard(t.sam, t.alexId)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await supports.businessCard(t.direction, t.alexId)).toMatchObject({ ok: true });
+    // [R86] Le jour de son départ, dès minuit à Paris, même avant le planificateur : plus de carte.
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(t.now());
+    await t.db.run(
+      "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-1', ?, ?, ?, ?, 'demission_agent', 1, 'direction:d', ?)",
+      [t.network.id, t.alexId, today, today, t.now().toISOString()],
+    );
+    expect(await supports.businessCard(t.direction, t.alexId)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    await t.db.run("UPDATE agent_departures SET cancelled_at = ?, cancelled_by = 'direction:d' WHERE id = 'dep-1'", [t.now().toISOString()]);
     // Retirée : plus rien ne s'imprime.
     await t.db.run("UPDATE properties SET status = 'withdrawn' WHERE id = ?", [t.propertyId]);
     await t.publication.sync(t.network.id, t.propertyId);
