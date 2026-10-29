@@ -344,6 +344,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_register_settings: out('sans_client', 'Réglage de la numérotation du registre des mandats.'),
   neighbourhood_campaigns: out('sans_client', 'Campagne de lettres d\'un agent : aucune personne nommée, seulement le centre du rayon.'),
   neighbourhood_letters: out('non_rattachable', 'Lettre adressée « Au propriétaire » ou « Aux habitants » d\'une adresse : rattachée à aucune fiche.'),
+  service_commitments: out('sans_client', 'Engagement de service du réseau, rangé par la direction.'),
   mandate_source_costs: out('sans_client', 'Coût d\'une source de mandats saisi par la direction, sans client.'),
   mandate_source_decisions: out('sans_client', 'Décision de la direction sur une source de mandats, sans client.'),
   mandate_register: { locate: [via('mandate_id', 'mandates')] },
