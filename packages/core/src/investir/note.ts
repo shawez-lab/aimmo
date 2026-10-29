@@ -177,6 +177,48 @@ function writtenValues(line: YieldLine): number[] {
   }
 }
 
+/** Le membre de phrase qui porte un nombre : coupé aux fins de phrase, points-virgules et virgules suivies d'un espace. */
+function clauseAround(text: string, start: number, length: number): string {
+  const cut = /[.;!?](?=\s|$)|,(?=\s)|\n/g;
+  let from = 0;
+  let to = text.length;
+  for (const c of text.matchAll(cut)) {
+    const i = c.index ?? 0;
+    if (i < start) from = i + 1;
+    else if (i >= start + length) {
+      to = i;
+      break;
+    }
+  }
+  return text.slice(from, to);
+}
+
+/** Les mots qui nomment les lignes du calcul, lus sans accents. */
+const LINE_WORDS: { re: RegExp; keys: string[] }[] = [
+  { re: /\bbruts?\b/, keys: ['grossYieldBp', 'grossYieldBpLow', 'grossYieldBpHigh'] },
+  { re: /\bnets?\b/, keys: ['netYieldBp', 'netYieldBpLow', 'netYieldBpHigh', 'netIncome'] },
+  { re: /\bfrais\b/, keys: ['acquisitionFees', 'acquisitionFeesRateBp'] },
+  { re: /\bprix\b/, keys: ['price'] },
+  { re: /\btravaux\b/, keys: ['works'] },
+  { re: /\b(?:total|cout|coute|coutera)\b/, keys: ['totalCost'] },
+  { re: /\b(?:loyers?|loue|louer|location)\b/, keys: ['monthlyRent', 'annualRent', 'collectedRent', 'marketRentM2', 'marketRentM2Low', 'marketRentM2High'] },
+  { re: /\bpercus?\b/, keys: ['collectedRent'] },
+  { re: /\bcharges\b/, keys: ['nonRecoverableCharges'] },
+  { re: /\b(?:taxe|fonciere)\b/, keys: ['propertyTax'] },
+  { re: /\brevenus?\b/, keys: ['netIncome'] },
+  { re: /\b(?:surface|m2|m²)\b/, keys: ['livingArea'] },
+  { re: /\bvacance\b/, keys: ['vacancyMonths'] },
+];
+
+/** Les lignes que nomme un membre de phrase ; aucun mot reconnu : `null`. */
+function linesNamedBy(clause: string): Set<string> | null {
+  const p = plain(clause);
+  const keys = LINE_WORDS.filter((w) => w.re.test(p)).flatMap((w) => w.keys);
+  if (keys.length === 0) return null;
+  // Une surface, une vacance et un loyer au m² se reconnaissent à leur unité même au milieu d'autres mots.
+  return new Set([...keys, 'livingArea', 'vacancyMonths', 'marketRentM2', 'marketRentM2Low', 'marketRentM2High']);
+}
+
 /** Les sortes de lignes qu'un nombre peut être, d'après l'unité qui le suit. */
 function unitsAfter(after: string): YieldLine['unit'][] {
   const u = after.replace(/^[ \u00a0\u202f]+/, '');
@@ -198,7 +240,13 @@ export function traceParagraph(text: string, lines: readonly YieldLine[]): { pro
     // montant, « €/m² » un loyer au m², « m² » une surface, « mois » une vacance. Sans unité, aucune source.
     const after = text.slice((m.index ?? 0) + m[0].length);
     const units = unitsAfter(after);
-    const line = h === null ? undefined : lines.find((l) => units.includes(l.unit) && writtenValues(l).includes(h));
+    // Les mots du membre de phrase disent de quelle ligne il s'agit : « net » n'est jamais le rendement brut, « loyer »
+    // jamais les travaux. Un rendement sans « brut » ni « net » n'a pas de source.
+    const allowed = linesNamedBy(clauseAround(text, m.index ?? 0, m[0].length));
+    const line =
+      h === null
+        ? undefined
+        : lines.find((l) => units.includes(l.unit) && writtenValues(l).includes(h) && (allowed === null ? l.unit !== 'bp' : allowed.has(l.key)));
     if (!line) problems.push({ code: 'nombre_sans_source', value: m[0] });
     else proofs.push({ text: m[0], line: line.key, value: line.value, unit: line.unit, source: line.source, asOf: line.asOf, hypothesis: line.hypothesis });
   }
@@ -332,6 +380,17 @@ export function renderNote(note: InvestmentNote): string {
 
 export type NoteCheck = { ok: true } | { ok: false; rule: 'R124' | 'R125' | 'R126' | 'R122'; code: string };
 
+/** Une ligne dont l'hypothèse est un texte écrit par une personne, pas par le code. */
+const isWrittenByHand = (l: YieldLine): boolean => l.source.startsWith('saisi:') || l.source.startsWith('hypothese:');
+
+/**
+ * Ce que l'IA reçoit : les lignes du calcul, sans les textes écrits à la main (ils peuvent porter un nom), et les
+ * textes des contraintes écrits par le code.
+ */
+export function factsForWriter(facts: NoteFacts): NoteFacts {
+  return { ...facts, lines: facts.lines.map((l) => (isWrittenByHand(l) ? { ...l, source: 'saisi par l’agent', hypothesis: 'saisi par l’agent' } : l)) };
+}
+
 /** Le contrôle de la note entière avant de la ranger, puis avant de la montrer [R122, R124, R125, R126]. */
 export function checkNote(note: InvestmentNote, text: string, facts: NoteFacts, constraints: ConstraintSet): NoteCheck {
   const gate = energyAlertGate(constraints, text);
@@ -343,6 +402,13 @@ export function checkNote(note: InvestmentNote, text: string, facts: NoteFacts, 
     if (problems.length > 0) return { ok: false, rule: 'R126', code: 'nombre_sans_source' };
   }
   if (note.sources.length === 0 || note.sources.some((s) => !/Source : .+Hypothèse : .+/.test(s.text))) return { ok: false, rule: 'R126', code: 'sans_sources' };
+  // Tout le texte, alertes, sources, hypothèses et mentions compris, passe la liste des tournures interdites.
+  if (forbiddenPhrases(text).length > 0) return { ok: false, rule: 'R125', code: 'tournure_interdite' };
+  // Une hypothèse écrite par l'agent ne porte que des nombres du calcul.
+  for (const l of facts.lines) {
+    if (!isWrittenByHand(l)) continue;
+    if (traceParagraph(l.hypothesis, facts.lines).problems.some((x) => x.code === 'nombre_sans_source')) return { ok: false, rule: 'R126', code: 'hypothese' };
+  }
   if (!text.includes(PROFESSIONAL_REFERRAL)) return { ok: false, rule: 'R125', code: 'sans_renvoi' };
   const rent = facts.lines.find((l) => l.key === 'marketRentM2');
   if (rent?.source.startsWith(ANIL_CITATION) && !text.includes(ANIL_CITATION)) return { ok: false, rule: 'R122', code: 'sans_mention_anil' };
@@ -497,7 +563,7 @@ export class NotesInvestissement {
     let refusal: string | null = null;
     if (this.writer) {
       try {
-        const written = await this.withTimeout(this.writer.write(facts));
+        const written = await this.withTimeout(this.writer.write(factsForWriter(facts)));
         const ps = Array.isArray(written?.paragraphs) ? written.paragraphs.filter((p): p is string => typeof p === 'string' && p.trim() !== '') : [];
         if (ps.length === 0 || ps.length > 8 || ps.some((p) => p.length > 1500)) refusal = 'forme';
         else {

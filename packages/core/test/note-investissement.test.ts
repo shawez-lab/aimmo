@@ -116,6 +116,10 @@ describeWithSqlite('Y05 · note d’investissement', () => {
       'Un rendement garanti de 3,89 % brut.',
       'Vous devriez acheter ce bien de 45 m².',
       'Idéal pour défiscaliser en Pinel.',
+      // Un vrai chiffre du calcul, attribué à la mauvaise ligne : 3,89 % est le brut, 10 000 € les travaux.
+      'Le rendement net avant impôt est de 3,89 %.',
+      'Il rapporte 10 000 € de loyer annuel.',
+      'Ce bien rapporte 3,89 % par an.',
     ]) {
       const t = await setup({ writer: writerOf([bad]) });
       const r = await t.notes.draft(t.acces, t.as('agent', t.alex.id), { calculationId: t.calcId, projectId: t.project.id });
@@ -225,5 +229,33 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     expect(await t.notes.draft(t.acces, t.as('agent', t.sam.id), { calculationId: t.calcId, projectId: t.project.id })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.notes.draft(t.acces, t.as('compliance', 'c-1'), { calculationId: t.calcId, projectId: t.project.id })).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
     expect(Number((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM investment_notes'))!.n)).toBe(0);
+  });
+
+  it('[R125] [R126] une hypothèse écrite par l’agent passe les mêmes contrôles, et n’est jamais envoyée à l’IA', async () => {
+    let seen: NoteFacts | null = null;
+    const spy: NoteWriter = { write: async (facts) => ((seen = facts), { paragraphs: ['Ce bien de 45 m² coûte 171 250 € au total.'] }) };
+    const t = await setup({ writer: spy });
+    const make = async (hypothesis: string) => {
+      const c = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), {
+        propertyId: 'p-1',
+        projectId: t.project.id,
+        marketRentQuery: { inseeCode: '99001', kind: 'apartment' },
+        inputs: {
+          acquisitionFeesRateBp: src(750, 'barème de l’ancien'),
+          works: src(1_000_000, hypothesis),
+          nonRecoverableCharges: src(60_000),
+          propertyTax: src(90_000),
+          vacancyMonths: src(1),
+        },
+      });
+      if (!c.ok) throw new Error(c.code);
+      return t.notes.draft(t.acces, t.as('agent', t.alex.id), { calculationId: c.value.id, projectId: t.project.id });
+    };
+    expect(await make('devis de M. Martin, rentabilité assurée')).toMatchObject({ ok: false, rule: 'R125', code: 'tournure_interdite' });
+    expect(await make('avec 9 % de rendement en plus')).toMatchObject({ ok: false, rule: 'R126', code: 'hypothese' });
+    const ok = await make('devis du couvreur de M. Martin');
+    expect(ok.ok).toBe(true);
+    expect(JSON.stringify(seen)).not.toContain('Martin');
+    expect(JSON.stringify(seen)).not.toContain('saisi:agent');
   });
 });
