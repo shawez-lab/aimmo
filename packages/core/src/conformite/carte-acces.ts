@@ -598,6 +598,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   investment_calculations: { locate: [via('project_id', 'projects')] },
   commune_rental_rules: out('sans_client', 'Règles de location des communes rangées par la direction : aucune personne.'),
   investment_notes: { locate: [via('project_id', 'projects')] },
+  investor_alerts: { locate: by('person_id') },
+  property_communes: out('sans_client', 'Commune et type de logement d\'un bien en vente : aucune personne.'),
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */

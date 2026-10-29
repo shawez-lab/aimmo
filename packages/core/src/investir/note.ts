@@ -31,7 +31,7 @@ export const MAX_NOTE_LENGTH = 20_000;
 
 /** Le renvoi aux professionnels habilités, écrit par le code dans chaque note [R125]. */
 export const PROFESSIONAL_REFERRAL =
-  'Cette note n’est ni un conseil fiscal ni un conseil financier : pour la fiscalité, consultez un expert-comptable ; pour le financement, un courtier en crédit immobilier.';
+  'Ces chiffres ne sont ni un conseil fiscal ni un conseil financier : pour la fiscalité, consultez un expert-comptable ; pour le financement, un courtier en crédit immobilier.';
 
 /** La mention de faible fiabilité du loyer de marché [R122]. */
 export const FEW_OBSERVATIONS = 'Peu d’observations : le loyer de marché de cette commune est moins sûr.';
