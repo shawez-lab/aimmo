@@ -1,0 +1,349 @@
+import { expect, it } from 'vitest';
+import { SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import {
+  FicheGoogle,
+  checkGbpText,
+  fallbackReply,
+  listingPostText,
+  nameTokenHashes,
+  type GbpClient,
+  type GbpReview,
+  type ReviewReplyWriter,
+  type TextContext,
+} from '../src/attirer/fiche-google.ts';
+import { loadMigrations } from './migrations.ts';
+import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+
+// Tout est inventé : réseau, agents, clients, avis, biens.
+const direction = { role: 'direction' as const, userId: 'dir-1', networkId: 'net-1' };
+const agent = { role: 'agent' as const, userId: 'ag-1', networkId: 'net-1' };
+const otherAgent = { role: 'agent' as const, userId: 'ag-3', networkId: 'net-1' };
+const AUTHOR = 'Gaspard Quenouille';
+
+class FakeGbp implements GbpClient {
+  calls: string[] = [];
+  reviewsToGive: GbpReview[] = [];
+  fail = false;
+  async listReviews(): Promise<GbpReview[]> {
+    this.calls.push('listReviews');
+    return this.reviewsToGive;
+  }
+  async replyToReview(_l: string, reviewRef: string, text: string): Promise<void> {
+    this.calls.push(`reply:${reviewRef}:${text.length}`);
+    if (this.fail) throw new Error('panne inventée');
+  }
+  async createPost(_l: string, post: { text: string; linkUri: string }): Promise<void> {
+    this.calls.push(`post:${post.linkUri}`);
+    if (this.fail) throw new Error('panne inventée');
+  }
+  async updateInfo(): Promise<void> {
+    this.calls.push('info');
+    if (this.fail) throw new Error('panne inventée');
+  }
+  writes(): string[] {
+    return this.calls.filter((c) => c !== 'listReviews');
+  }
+}
+
+const fixedWriter = (text: string): ReviewReplyWriter & { seen: unknown[] } => {
+  const seen: unknown[] = [];
+  return {
+    seen,
+    async write(input) {
+      seen.push(input);
+      return text;
+    },
+  };
+};
+
+async function setup(options: { writer?: ReviewReplyWriter; mode?: 'essai' | 'reel' } = {}) {
+  const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+  await applyMigrations(db, loadMigrations());
+  const journal = new SqlJournalStore(db);
+  let clock = Date.parse('2026-10-29T08:00:00.000Z');
+  const now = (): Date => new Date((clock += 1000));
+  const advanceDays = (d: number) => (clock += d * 86_400_000);
+  await db.run("INSERT INTO networks (id, name, created_at) VALUES ('net-1', 'Réseau test', 'x')");
+  await db.run("INSERT INTO networks (id, name, created_at) VALUES ('net-2', 'Autre réseau', 'x')");
+  await db.run("INSERT INTO agents (id, network_id, first_name, last_name, created_at, updated_at) VALUES ('ag-1', 'net-1', 'Camille', 'Exemple', 'x', 'x')");
+  await db.run("INSERT INTO agents (id, network_id, first_name, last_name, status, created_at, updated_at) VALUES ('ag-2', 'net-1', 'Paul', 'Parti', 'left', 'x', 'x')");
+  await db.run("INSERT INTO agents (id, network_id, first_name, last_name, created_at, updated_at) VALUES ('ag-3', 'net-1', 'Rémi', 'Voisin', 'x', 'x')");
+  await db.run("INSERT INTO agent_public_cards (id, agent_id, network_id, phone, email, set_by, set_at) VALUES ('c1', 'ag-1', 'net-1', '06 00 00 00 00', 'camille@exemple.test', 'direction:dir-1', 'x')");
+  // Un client de la base, qui n'a pas écrit l'avis.
+  await db.run("INSERT INTO persons (id, network_id, agent_id, first_name, last_name, created_at, updated_at) VALUES ('p-1', 'net-1', 'ag-1', 'Hortense', 'Bérangère-Lunel', 'x', 'x')");
+  const client = new FakeGbp();
+  const fiche = new FicheGoogle(db, journal, { now, client, writer: options.writer, mode: options.mode ?? 'essai', timeoutMs: 50 });
+  expect(await fiche.setLocation(direction, 'ag-1', { locationRef: 'locations/123', title: 'Camille Exemple, agent immobilier', websiteUri: 'https://camille.exemple.test' })).toEqual({ ok: true });
+  return { db, journal, fiche, client, advanceDays, now };
+}
+
+async function withReview(s: Awaited<ReturnType<typeof setup>>, rating = 5, comment: string | null = 'Très bon suivi, réactive et à l’écoute.') {
+  s.client.reviewsToGive = [{ reviewRef: 'accounts/1/locations/123/reviews/r1', rating, comment, authorName: AUTHOR, reviewedAt: '2026-10-28T10:00:00.000Z' }];
+  expect(await s.fiche.importReviews('net-1', 'ag-1')).toEqual({ ok: true, added: 1 });
+  return (await s.db.first<{ id: string }>('SELECT id FROM gbp_reviews'))!.id;
+}
+
+async function listing(db: SqlDatabase, id: string, seq: number, state: string, title: string) {
+  await db.exec('PRAGMA foreign_keys = OFF');
+  await db.run("INSERT OR IGNORE INTO properties (id, network_id, agent_id, reference, kind, city, created_at, updated_at) VALUES (?, 'net-1', 'ag-1', ?, 'home', 'Ville inventée', 'x', 'x')", [id, `REF-${id}`]);
+  await db.run(
+    "INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES (?, ?, 'net-1', ?, ?, ?, ?, ?, 'h', 'test', 'x')",
+    [`${id}-${seq}`, id, seq, state, state === 'retiree' ? null : `d-${id}-${seq}`, state === 'retiree' ? null : 250000, JSON.stringify({ reference: `REF-${id}`, state, title, body: 'Texte', mentions: 'Classe énergie D.', priceEur: 250000, media: [] })],
+  );
+  await db.exec('PRAGMA foreign_keys = ON');
+}
+
+/** Tout ce que la base et le journal gardent, en un seul texte. */
+async function everything(db: SqlDatabase): Promise<string> {
+  const tables = ['gbp_locations', 'gbp_reviews', 'gbp_drafts', 'gbp_validations', 'gbp_sends', 'journal'];
+  const out: unknown[] = [];
+  for (const t of tables) out.push(await db.all(`SELECT * FROM ${t}`));
+  return JSON.stringify(out);
+}
+
+const ctx = (over: Partial<TextContext> = {}): TextContext => ({ kind: 'reponse', authorTokenHashes: [], clientNames: new Set(), agentNames: new Set(['camille']), ...over });
+
+it('[R154] le contrôle refuse nom, adresse, montant, détail du dossier et coordonnée, et laisse passer une réponse simple', async () => {
+  const hashes = await nameTokenHashes(AUTHOR, 'net-1');
+  const c = ctx({ authorTokenHashes: hashes, clientNames: new Set(['hortense', 'berangere', 'lunel']) });
+  expect(await checkGbpText('Merci pour votre avis, au plaisir.\nCamille', c, 'net-1')).toEqual([]);
+  expect(await checkGbpText('Merci Gaspard pour votre avis.', c, 'net-1')).toEqual(['nom']);
+  expect(await checkGbpText('merci gaspard pour votre avis.', c, 'net-1')).toEqual(['nom']);
+  expect(await checkGbpText('Merci Monsieur QUENOUILLE.', c, 'net-1')).toEqual(['nom']);
+  expect(await checkGbpText('Merci à Hortense, rencontrée hier.', c, 'net-1')).toEqual(['nom']);
+  expect(await checkGbpText('Merci à Bérangère.', c, 'net-1')).toEqual(['nom']);
+  expect(await checkGbpText('Ravie pour votre maison rue Monge.', c, 'net-1')).toEqual(['adresse']);
+  expect(await checkGbpText('Au 12 avenue des Tilleuls, tout s’est bien passé.', c, 'net-1')).toEqual(['adresse']);
+  expect(await checkGbpText('Vendue 245 000 € en trois semaines !', c, 'net-1')).toEqual(['montant']);
+  expect(await checkGbpText('Vendue 245000 euros.', c, 'net-1')).toEqual(['montant']);
+  expect(await checkGbpText('Le compromis a été signé chez le notaire.', c, 'net-1')).toEqual(['dossier']);
+  expect(await checkGbpText('Votre prêt a enfin été accordé.', c, 'net-1')).toEqual(['dossier']);
+  expect(await checkGbpText('Appelez-moi au 06 12 34 56 78.', c, 'net-1')).toEqual(['coordonnee']);
+  expect(await checkGbpText('Écrivez à quelquun@exemple.test.', c, 'net-1')).toEqual(['coordonnee']);
+  expect(await checkGbpText('', c, 'net-1')).toEqual(['vide']);
+  expect(await checkGbpText('a'.repeat(1501), c, 'net-1')).toEqual(['longueur']);
+});
+
+it('[R64] [R07] [R06] le contrôle refuse contrepartie, « mandataire », « gratuit », toute mention de l’IA, et un faux témoignage dans une publication', async () => {
+  const c = ctx();
+  expect(await checkGbpText('Merci ! Une remise vous attend.', c, 'net-1')).toEqual(['contrepartie']);
+  expect(await checkGbpText('Un cadeau pour votre prochain avis.', c, 'net-1')).toEqual(['contrepartie']);
+  expect(await checkGbpText('Nous vous offrons votre prochaine estimation.', c, 'net-1')).toEqual(['contrepartie']);
+  expect(await checkGbpText('Votre mandataire vous remercie.', c, 'net-1')).toEqual(['vocabulaire']);
+  expect(await checkGbpText('Estimation gratuite.', c, 'net-1')).toEqual(['vocabulaire']);
+  expect(await checkGbpText('Réponse rédigée par notre IA.', c, 'net-1')).toEqual(['ia']);
+  expect(await checkGbpText('Notre intelligence artificielle vous remercie.', c, 'net-1')).toEqual(['ia']);
+  expect(await checkGbpText('« Une agence parfaite » disent nos clients.', ctx({ kind: 'publication' }), 'net-1')).toEqual(['temoignage']);
+  expect(await checkGbpText('Nos clients recommandent Camille.', ctx({ kind: 'publication' }), 'net-1')).toEqual(['temoignage']);
+  expect(await checkGbpText('Estimation offerte, sur rendez-vous.', ctx({ kind: 'publication' }), 'net-1')).toEqual([]);
+});
+
+it('[R154] le secours du code passe toujours le contrôle, pour chaque note, et la publication d’un bien ne porte jamais son prix', async () => {
+  const c = ctx({ authorTokenHashes: await nameTokenHashes(AUTHOR, 'net-1'), clientNames: new Set(['hortense']) });
+  for (const rating of [1, 2, 3, 4, 5]) {
+    const t = fallbackReply(rating, 'Camille');
+    expect(await checkGbpText(t, c, 'net-1'), String(rating)).toEqual([]);
+    expect(t).toContain('Camille, votre agent immobilier');
+  }
+  const post = listingPostText('Maison 5 pièces avec jardin à Talant', 'Camille');
+  expect(await checkGbpText(post, ctx({ kind: 'publication' }), 'net-1')).toEqual([]);
+  expect(post).not.toMatch(/€|\d{3}/);
+});
+
+describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis préparées, validées', () => {
+  it('[R154] Jamais vu : le nom de l’auteur n’est jamais gardé ni donné à l’IA, et pourtant une réponse de l’IA qui le cite est refusée', async () => {
+    const writer = fixedWriter('Merci Gaspard pour ce bel avis !');
+    const s = await setup({ writer });
+    const reviewId = await withReview(s);
+    const r = await s.fiche.draftReply(agent, reviewId);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.origin).toBe('secours');
+    expect(r.value.body).not.toMatch(/gaspard|quenouille/i);
+    // L'IA a reçu la note, le texte de l'avis et le prénom de l'agent, rien d'autre.
+    expect(writer.seen).toEqual([{ rating: 5, comment: 'Très bon suivi, réactive et à l’écoute.', agentFirstName: 'Camille' }]);
+    const all = await everything(s.db);
+    expect(all).not.toMatch(/gaspard|quenouille/i);
+    // Le texte refusé n'est jamais rangé : seuls les codes de ses problèmes vont au journal.
+    expect(all).not.toContain('bel avis');
+    expect(all).toContain('attirer.google.ia_refusee');
+  });
+
+  it('[R154] une réponse de l’IA qui cite un autre client de la base, une adresse, un prix ou un détail du dossier laisse place au secours', async () => {
+    for (const bad of ['Merci, et bonjour à Hortense !', 'Ravie pour la maison rue Monge.', 'Vendue 245 000 € : bravo.', 'Le compromis est signé, merci.', 'Appelez-moi au 06 12 34 56 78.']) {
+      const s = await setup({ writer: fixedWriter(bad) });
+      const r = await s.fiche.draftReply(agent, await withReview(s));
+      expect(r.ok && r.value.origin, bad).toBe('secours');
+    }
+    const s = await setup({ writer: fixedWriter('Merci pour votre confiance, au plaisir de vous revoir.\nCamille') });
+    const r = await s.fiche.draftReply(agent, await withReview(s));
+    expect(r.ok && r.value.origin).toBe('ia');
+  });
+
+  it('[R154] une IA absente, en panne ou trop lente laisse place au secours', async () => {
+    const slow: ReviewReplyWriter = { write: () => new Promise((res) => setTimeout(() => res('Merci !'), 500)) };
+    const broken: ReviewReplyWriter = { write: async () => Promise.reject(new Error('panne inventée')) };
+    for (const writer of [undefined, slow, broken]) {
+      const s = await setup(writer ? { writer } : {});
+      const r = await s.fiche.draftReply(agent, await withReview(s, 2, 'Déçu, commentaire inventé.'));
+      expect(r.ok && r.value.origin).toBe('secours');
+      expect(r.ok && r.value.body).toContain('désolé');
+    }
+  });
+
+  it('[R154] aucune réponse ni publication ne part sans la validation nommée d’un humain sur son texte exact', async () => {
+    const s = await setup({ mode: 'reel' });
+    const reviewId = await withReview(s);
+    const d = await s.fiche.draftReply(agent, reviewId);
+    if (!d.ok) throw new Error('refusé');
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'non_valide' });
+    // Un autre agent ne valide pas la fiche d'un collègue.
+    expect(await s.fiche.validate(otherAgent, d.value.draftId)).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    const v = await s.fiche.validate(agent, d.value.draftId);
+    expect(v.ok && v.value.validatedBy).toBe('agent:ag-1');
+    expect(await s.fiche.validate(agent, d.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'deja_valide' });
+    expect(s.client.writes()).toEqual([]);
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect(s.client.writes()).toEqual([`reply:accounts/1/locations/123/reviews/r1:${d.value.body.length}`]);
+    // Un texte ne part qu'une fois, et un avis ne reçoit qu'une réponse.
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'deja_parti' });
+    const again = await s.fiche.writeReply(agent, reviewId, 'Merci encore pour votre confiance.');
+    if (!again.ok) throw new Error('refusé');
+    await s.fiche.validate(agent, again.value.draftId);
+    expect(await s.fiche.publish(agent, again.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'deja_parti' });
+    expect(s.client.writes()).toHaveLength(1);
+  });
+
+  it('[R154] un texte validé puis remplacé par un nouveau texte ne part plus ; un texte rangé ne se réécrit pas', async () => {
+    const s = await setup({ mode: 'reel' });
+    const reviewId = await withReview(s);
+    const d1 = await s.fiche.draftReply(agent, reviewId);
+    if (!d1.ok) throw new Error('refusé');
+    await s.fiche.validate(agent, d1.value.draftId);
+    const d2 = await s.fiche.writeReply(agent, reviewId, 'Merci pour votre avis, à bientôt.');
+    expect(d2.ok).toBe(true);
+    expect(await s.fiche.publish(agent, d1.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'texte_change' });
+    await expect(s.db.run("UPDATE gbp_drafts SET body = 'Autre texte' WHERE id = ?", [d1.value.draftId])).rejects.toThrow(/rien ne se réécrit/);
+    await expect(s.db.run('DELETE FROM gbp_validations')).rejects.toThrow(/rien ne s'efface/);
+    expect(s.client.writes()).toEqual([]);
+  });
+
+  it('[R154] le texte est recontrôlé au départ : un client entré dans la base après la validation bloque l’envoi', async () => {
+    const s = await setup({ mode: 'reel' });
+    const reviewId = await withReview(s);
+    const d = await s.fiche.writeReply(agent, reviewId, 'Merci Octave, au plaisir.\nCamille');
+    if (!d.ok) throw new Error('refusé');
+    await s.fiche.validate(agent, d.value.draftId);
+    await s.db.run("INSERT INTO persons (id, network_id, agent_id, first_name, last_name, created_at, updated_at) VALUES ('p-2', 'net-1', 'ag-1', 'Octave', 'Inventé', 'x', 'x')");
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'texte_refuse', problems: ['nom'] });
+    expect(s.client.writes()).toEqual([]);
+  });
+
+  it('[R64] aucune contrepartie dans la réponse de l’agent, et l’interface ne sait pas écrire un avis à la place d’un client', async () => {
+    const s = await setup();
+    const reviewId = await withReview(s);
+    expect(await s.fiche.writeReply(agent, reviewId, 'Merci ! Un bon d’achat vous attend.')).toEqual({ ok: false, rule: 'R154', code: 'texte_refuse', problems: ['contrepartie'] });
+    // Ce que l'interface sait faire, et rien d'autre : lire les avis, y répondre, publier, tenir la fiche à jour.
+    const methods: Record<keyof GbpClient, true> = { listReviews: true, replyToReview: true, createPost: true, updateInfo: true };
+    expect(Object.keys(methods).sort()).toEqual(['createPost', 'listReviews', 'replyToReview', 'updateInfo']);
+    expect(Object.getOwnPropertyNames(FicheGoogle.prototype).filter((m) => /(?:create|write|post|add|new)Reviews?\b|avis/i.test(m))).toEqual([]);
+  });
+
+  it('[R26] en mode essai, rien ne part : l’interface n’est jamais appelée pour écrire, l’envoi est seulement noté', async () => {
+    const s = await setup({ mode: 'essai' });
+    const reviewId = await withReview(s);
+    const d = await s.fiche.draftReply(agent, reviewId);
+    if (!d.ok) throw new Error('refusé');
+    await s.fiche.validate(direction, d.value.draftId);
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: true, mode: 'essai' });
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison 5 pièces avec jardin à Talant');
+    const post = await s.fiche.duePost('net-1', 'ag-1');
+    if (!post.ok || !post.value) throw new Error('pas de publication');
+    await s.fiche.validate(agent, post.value.draftId);
+    expect(await s.fiche.publish(agent, post.value.draftId)).toEqual({ ok: true, mode: 'essai' });
+    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: true, changed: true, mode: 'essai' });
+    expect(s.client.writes()).toEqual([]);
+    const sends = await s.db.all<{ mode: string; outcome: string }>('SELECT mode, outcome FROM gbp_sends ORDER BY rowid');
+    expect(sends).toEqual([{ mode: 'essai', outcome: 'essai' }, { mode: 'essai', outcome: 'essai' }, { mode: 'essai', outcome: 'essai' }]);
+  });
+
+  it('publications régulières : un bien en vente publié, au plus une par période, jamais deux fois le même bien, jamais un bien retiré', async () => {
+    const s = await setup({ mode: 'reel' });
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison 5 pièces avec jardin à Talant');
+    await listing(s.db, 'b2', 1, 'en_vente', 'Appartement 3 pièces lumineux à Chenôve');
+    await listing(s.db, 'b3', 1, 'vendu', 'Studio à Quetigny');
+    const p1 = await s.fiche.duePost('net-1', 'ag-1');
+    if (!p1.ok || !p1.value) throw new Error('pas de publication');
+    expect(p1.value.propertyId).toBe('b1');
+    expect(p1.value.body).toBe(listingPostText('Maison 5 pièces avec jardin à Talant', 'Camille'));
+    expect(p1.value.linkUri).toBe('https://camille.exemple.test/biens/b1');
+    expect(p1.value.body).not.toMatch(/250|€/);
+    // Pas une seconde dans la même période.
+    expect(await s.fiche.duePost('net-1', 'ag-1')).toEqual({ ok: true, value: null });
+    s.advanceDays(8);
+    const p2 = await s.fiche.duePost('net-1', 'ag-1');
+    expect(p2.ok && p2.value?.propertyId).toBe('b2');
+    s.advanceDays(8);
+    expect(await s.fiche.duePost('net-1', 'ag-1')).toEqual({ ok: true, value: null });
+    // Un bien retiré après la préparation ne se valide ni ne part.
+    await listing(s.db, 'b2', 2, 'retiree', 'Appartement 3 pièces lumineux à Chenôve');
+    if (!p2.ok || !p2.value) throw new Error('pas de publication');
+    expect(await s.fiche.validate(agent, p2.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'bien_retire' });
+    await s.fiche.validate(agent, p1.value.draftId);
+    expect(await s.fiche.publish(agent, p1.value.draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect(s.client.writes()).toEqual(['post:https://camille.exemple.test/biens/b1']);
+  });
+
+  it('un titre d’annonce qui ne passe pas le contrôle n’est pas publié, et c’est noté sans le texte', async () => {
+    const s = await setup();
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison rue Monge à 245 000 €');
+    expect(await s.fiche.duePost('net-1', 'ag-1')).toEqual({ ok: true, value: null });
+    const all = await everything(s.db);
+    expect(all).toContain('attirer.google.texte_refuse');
+    expect(all).not.toContain('Monge');
+  });
+
+  it('informations de la fiche : depuis les réglages, envoyées seulement quand elles changent ; une panne est notée', async () => {
+    const s = await setup({ mode: 'reel' });
+    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: true, changed: true, mode: 'reel' });
+    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: true, changed: false, mode: 'reel' });
+    expect(await s.fiche.setLocation(direction, 'ag-1', { locationRef: 'locations/123', title: 'Camille Exemple, agent immobilier à Dijon', websiteUri: 'https://camille.exemple.test' })).toEqual({ ok: true });
+    s.client.fail = true;
+    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: false, rule: null, code: 'echec' });
+    s.client.fail = false;
+    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: true, changed: true, mode: 'reel' });
+    expect(s.client.writes()).toEqual(['info', 'info', 'info']);
+    expect(await s.fiche.syncInfo('net-1', 'ag-2')).toEqual({ ok: false, rule: null, code: 'sans_fiche' });
+  });
+
+  it('[R07] la fiche réglée par la direction seulement, avec un nom qui passe le contrôle', async () => {
+    const s = await setup();
+    expect(await s.fiche.setLocation(agent, 'ag-1', { locationRef: 'locations/9', title: 'Camille', websiteUri: 'https://x.exemple.test' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await s.fiche.setLocation(direction, 'ag-1', { locationRef: 'locations/9', title: 'Camille, mandataire', websiteUri: 'https://x.exemple.test' })).toEqual({ ok: false, rule: null, code: 'invalide' });
+    expect(await s.fiche.setLocation(direction, 'ag-1', { locationRef: 'pas une fiche', title: 'Camille', websiteUri: 'https://x.exemple.test' })).toEqual({ ok: false, rule: null, code: 'invalide' });
+    expect(await s.fiche.setLocation(direction, 'ag-2', { locationRef: 'locations/9', title: 'Paul', websiteUri: 'https://x.exemple.test' })).toMatchObject({ ok: false, rule: 'R16', code: 'agent_parti' });
+  });
+
+  it('[R16] avis et textes lus seulement par l’agent de la fiche ou la direction de son réseau ; un avis déjà lu n’est pas repris', async () => {
+    const s = await setup();
+    const reviewId = await withReview(s);
+    expect(await s.fiche.importReviews('net-1', 'ag-1')).toEqual({ ok: true, added: 0 });
+    expect(await s.fiche.reviews(otherAgent, 'ag-1')).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await s.fiche.draftReply({ ...agent, networkId: 'net-2' }, reviewId)).toMatchObject({ ok: false, rule: 'R16', code: 'inconnu' });
+    const r = await s.fiche.reviews(direction, 'ag-1');
+    expect(r.ok && r.value.map((x) => [x.rating, x.comment])).toEqual([[5, 'Très bon suivi, réactive et à l’écoute.']]);
+    expect(JSON.stringify(r)).not.toMatch(/gaspard/i);
+  });
+
+  it('une panne en mode réel est notée, et le texte peut repartir ensuite', async () => {
+    const s = await setup({ mode: 'reel' });
+    const d = await s.fiche.draftReply(agent, await withReview(s));
+    if (!d.ok) throw new Error('refusé');
+    await s.fiche.validate(agent, d.value.draftId);
+    s.client.fail = true;
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: false, rule: null, code: 'echec' });
+    s.client.fail = false;
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect(await s.db.all('SELECT outcome FROM gbp_sends ORDER BY rowid')).toEqual([{ outcome: 'echec' }, { outcome: 'envoye' }]);
+  });
+});
