@@ -10,7 +10,7 @@
  * Aucune route ne rend de note, de rang ni d'avis transformé en tri [R14, R75]. Une pièce n'est jamais lue : seules
  * sa référence et son empreinte circulent ; le fichier déposé par un partenaire va au stockage, jamais au journal.
  */
-import { appendEvent, localTime, renderPublicPage, SqlJournalStore, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { appendEvent, localTime, renderPublicPage, SqlJournalStore, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 import {
   Annuaire,
   EspacePartenaire,
@@ -624,4 +624,64 @@ export function handleEspacePartenaire(request: Request): Response | null {
   const file = SPACE_FILES[url.pathname];
   if (!file) return new Response('Page inconnue.', { status: 404, headers: { ...headers, 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
   return new Response(request.method === 'HEAD' ? null : file.body, { status: 200, headers: { ...headers, 'content-type': file.type, 'cache-control': 'no-cache' } });
+}
+
+/* ---------- Les passages de M18 au planificateur (U09) ---------- */
+
+export const PARTENAIRES_FOLLOW_UP_JOB = 'partenaires.suivi';
+export const PARTENAIRES_PROSPECTING_JOB = 'partenaires.prospection';
+export const PARTENAIRES_CREDENTIALS_JOB = 'partenaires.justificatifs';
+
+/** Le planificateur ne lit aucune preuve : il ne contrôle ni accord ni justificatif déposé. */
+const NO_PROOFS: PartnerFileStore = { has: () => Promise.resolve(false) };
+
+const partnerNetworks = (db: SqlDatabase): Promise<{ id: string }[]> => db.all<{ id: string }>('SELECT id FROM networks ORDER BY id');
+
+/**
+ * Les passages de M18 : de 9 h à 19 h, les relances aux partenaires et les alertes aux agents (U07), préparées et
+ * rangées une seule fois chacune [R05, R01] ; à 10 h, la prospection du jour ouvré (U08), au plafond du jour, en
+ * brouillons [R79] ; à 6 h, les justificatifs qui arrivent à échéance dans les 30 jours, une alerte par justificatif,
+ * rangée au journal pour la direction [R73]. Rien n'est envoyé d'ici. Le planificateur ne passe une tâche qu'une fois
+ * par créneau [R18].
+ */
+export function partenairesJobs(db: SqlDatabase, journal: JournalStore, options: { now?: () => Date; optOutBase?: string | null } = {}): ScheduledJob[] {
+  const now = options.now ?? (() => new Date());
+  const relations = () => {
+    const annuaire = new Annuaire(db, NO_PROOFS, journal, { now });
+    return { annuaire, relations: new MiseEnRelation(db, annuaire, NO_PROOFS, journal, { now }) };
+  };
+  return [
+    {
+      name: PARTENAIRES_FOLLOW_UP_JOB,
+      hours: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+      run: async () => {
+        const suivi = new SuiviPartenaires(db, relations().relations, journal, { now });
+        for (const n of await partnerNetworks(db)) await suivi.run(n.id);
+      },
+    },
+    {
+      name: PARTENAIRES_PROSPECTING_JOB,
+      hours: [10],
+      run: async () => {
+        const prospection = new Prospection(db, journal, { now, optOutBase: options.optOutBase ?? null });
+        for (const n of await partnerNetworks(db)) await prospection.run(n.id);
+      },
+    },
+    {
+      name: PARTENAIRES_CREDENTIALS_JOB,
+      hours: [6],
+      run: async () => {
+        const { annuaire } = relations();
+        for (const n of await partnerNetworks(db)) {
+          for (const a of await annuaire.dueAlerts(n.id)) {
+            await appendEvent(
+              journal,
+              { type: 'partenaire.justificatif_echeance', actor: 'system:partenaires', subject: `partner:${a.partnerId}`, data: { rule: 'R73', kind: a.kind, domain: a.domain, validUntil: a.validUntil } },
+              now,
+            );
+          }
+        }
+      },
+    },
+  ];
 }
