@@ -9,6 +9,7 @@ import { AGENT_APP_FILES } from '../src/agent-app.ts';
 import { handleUnsubscribe } from '../src/alertes.ts';
 import { handleApresVentePublic } from '../src/apres-vente.ts';
 import { handleCandidature } from '../src/candidature.ts';
+import { renderCertificatePage } from '../src/certificat-photo.ts';
 import { handleEspacePartenaire, handlePartenairesPublic, PARTNER_SPACE_FILES } from '../src/partenaires.ts';
 
 // Tout est inventé : jeton, bien, agent.
@@ -55,6 +56,11 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
     { name: 'désinscription des alertes', html: await text(await handleUnsubscribe(get(`/alertes/desinscription/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
     { name: 'opposition à la prospection', html: await text(await handlePartenairesPublic(get(`/partenaires/opposition/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
     { name: 'lien inconnu', html: await text(await handlePartenairesPublic(get('/partenaires/opposition/court'), { db: NO_DB })), budget: BUDGETS.page },
+    {
+      name: 'certificat de photo',
+      html: renderCertificatePage({ token: TOKEN, issuedOn: '2027-10-14', resultSha256: 'b'.repeat(64), originalSha256: 'a'.repeat(64), originalKept: true, localEdits: 'aucune', corrections: [{ op: 'exposition', label: 'Exposition', detail: 'Exposition : +0,5 IL' }], virtualStaging: false, mention: null, statement: 'Corrigée sur toute l’image : exposition.', path: `/certificat-photo/${TOKEN}` }),
+      budget: BUDGETS.page,
+    },
     { name: 'désinscription après la vente', html: await text(await handleApresVentePublic(get(`/apres-vente/desinscription/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
   ];
 }
