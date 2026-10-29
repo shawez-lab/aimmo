@@ -5,6 +5,7 @@ import { runScheduler } from './planificateur.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
 import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
+import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 
 /**
@@ -42,6 +43,8 @@ export interface Env {
   CANDIDATURE_NETWORK_ID?: string;
   /** Les médias des biens (R2), lus par la vitrine ; absent, aucune photo n'est servie. */
   MEDIA?: MediaStore;
+  /** Le coffre de la conformité (R2), séparé de tout autre stockage (L09) ; absent, dépôt et ouverture fermés. */
+  COFFRE?: R2VaultBucket;
 }
 
 /**
@@ -68,6 +71,7 @@ export default {
       // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites ; le bac à sable reste fermé.
       reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null },
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
+      coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,
       ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,
