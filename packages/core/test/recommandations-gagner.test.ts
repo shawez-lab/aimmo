@@ -274,6 +274,9 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(await t.gagner.assign(t.dir, first!.id, t.alex.id)).toEqual({ ok: true, value: { assigned: true } });
     // La seconde suit la personne : elle va d'elle-même à Alex, et ne peut plus être donnée à Sam.
     expect(await t.gagner.assign(t.dir, second!.id, t.sam.id)).toEqual({ ok: false, rule: null, code: 'already_assigned' });
+    // Les projets des deux recommandations passent à Alex.
+    const projects = await t.db.all<{ agent_id: string | null }>('SELECT p.agent_id FROM projects p JOIN partner_recommendations r ON r.project_id = p.id');
+    expect(projects.map((p) => p.agent_id)).toEqual([t.alex.id, t.alex.id]);
     const list = await t.gagner.toCall(t.agent());
     expect(list.ok && list.value.map((r) => r.recommendationId).sort()).toEqual([first!.id, second!.id].sort());
   });
