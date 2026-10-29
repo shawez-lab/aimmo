@@ -76,6 +76,7 @@ it('[R110] un champ inconnu est refusé, jamais ignoré ; une valeur hors liste 
   expect(checkSheetChanges({ employees: 2.5 })).toMatchObject({ ok: false, code: 'valeur', field: 'employees' });
   expect(checkSheetChanges({ leaseAnnualRentCents: '1000' })).toMatchObject({ ok: false, code: 'valeur', field: 'leaseAnnualRentCents' });
   expect(checkSheetChanges({ leaseStart: '2021-02-30' })).toMatchObject({ ok: false, code: 'valeur', field: 'leaseStart' });
+  for (const d of ['2021-13-01', '2021-01-32', '2021-00-10']) expect(checkSheetChanges({ leaseStart: d }), d).toMatchObject({ ok: false, code: 'valeur', field: 'leaseStart' });
   expect(checkSheetChanges({ signName: '   ' })).toMatchObject({ ok: false, code: 'valeur', field: 'signName' });
   expect(checkSheetChanges({ equipment: ['x'.repeat(81)] })).toMatchObject({ ok: false, code: 'valeur', field: 'equipment' });
   // Exercices : 3 au plus, une année une fois, trois clés exactement, résultat négatif permis.
@@ -190,6 +191,21 @@ describeWithSqlite('CE01 · fiche du commerce', () => {
     const read = await t.fiches.read(t.acces, t.as('agent', t.alex.id), p.id);
     expect(read.ok && read.value.current!.sources.employees).toBe('direction:dir-1');
     expect((await verifyChain(await t.journal.all())).ok).toBe(true);
+  });
+
+  it('[R17] une colonne JSON illisible n’est jamais lue comme vide : rien n’est écrit par-dessus', async () => {
+    const t = await setup();
+    const p = await t.property();
+    const alex = t.as('agent', t.alex.id);
+    await t.fiches.update(t.acces, alex, p.id, FULL);
+    // Une ligne abîmée, rangée hors du module (les versions ne se réécrivent pas : on en ajoute une).
+    await t.db.run(
+      `INSERT INTO business_sheets (id, network_id, property_id, version, fiscal_years, equipment, licenses, sources, author, created_at)
+       VALUES ('abimee', ?, ?, 2, '[{"year":', '[]', '[]', '{}', 'agent:x', '2027-09-07T09:00:00.000Z')`,
+      [t.network.id, p.id],
+    );
+    await expect(t.fiches.update(t.acces, alex, p.id, { employees: 2 })).rejects.toThrow(/fiscal_years illisible/);
+    expect(await t.count('SELECT count(*) AS n FROM business_sheets')).toBe(2);
   });
 
   it('un bien qui n’est pas un commerce est refusé', async () => {

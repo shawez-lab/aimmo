@@ -178,7 +178,11 @@ const LISTS: Partial<Record<SheetField, readonly string[]>> = {
 };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
-const isDay = (v: unknown): v is string => typeof v === 'string' && DAY.test(v) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+const isDay = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !DAY.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v;
+};
 
 function checkFiscalYears(value: unknown): FiscalYear[] | null {
   if (!Array.isArray(value) || value.length > 3) return null;
@@ -307,13 +311,19 @@ export const EMPTY_SHEET: Readonly<BusinessSheet> = Object.freeze({
   licenses: [],
 });
 
-function parseJson<T>(json: string, fallback: T, keep: (v: unknown) => boolean): T {
+/**
+ * Une colonne JSON rangée par ce module. Illisible, elle n'est jamais remplacée par une liste vide : la version
+ * suivante l'écraserait et la donnée serait perdue [R17]. L'erreur remonte.
+ */
+function parseJson<T>(json: string, column: string, keep: (v: unknown) => boolean): T {
+  let value: unknown;
   try {
-    const value: unknown = JSON.parse(json);
-    return keep(value) ? (value as T) : fallback;
+    value = JSON.parse(json);
   } catch {
-    return fallback;
+    throw new Error(`fiche du commerce : colonne ${column} illisible`);
   }
+  if (!keep(value)) throw new Error(`fiche du commerce : colonne ${column} illisible`);
+  return value as T;
 }
 
 export function toSheetVersion(row: BusinessSheetRow): BusinessSheetVersion {
@@ -324,17 +334,17 @@ export function toSheetVersion(row: BusinessSheetRow): BusinessSheetVersion {
     sheet: {
       activity: row.activity,
       signName: row.sign_name,
-      fiscalYears: parseJson<FiscalYear[]>(row.fiscal_years, [], Array.isArray),
+      fiscalYears: parseJson<FiscalYear[]>(row.fiscal_years, 'fiscal_years', Array.isArray),
       leaseStart: row.lease_start,
       leaseYears: row.lease_years,
       leaseAnnualRentCents: row.lease_annual_rent_cents,
       leaseUse: row.lease_use,
       leaseAssignment: row.lease_assignment,
       employees: row.employees,
-      equipment: parseJson<string[]>(row.equipment, [], Array.isArray),
-      licenses: parseJson<License[]>(row.licenses, [], Array.isArray),
+      equipment: parseJson<string[]>(row.equipment, 'equipment', Array.isArray),
+      licenses: parseJson<License[]>(row.licenses, 'licenses', Array.isArray),
     },
-    sources: parseJson<Partial<Record<SheetField, string>>>(row.sources, {}, (v) => typeof v === 'object' && v !== null && !Array.isArray(v)),
+    sources: parseJson<Partial<Record<SheetField, string>>>(row.sources, 'sources', (v) => typeof v === 'object' && v !== null && !Array.isArray(v)),
     author: row.author,
     createdAt: row.created_at,
   };
