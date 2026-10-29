@@ -1412,7 +1412,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : H29 pour l'effacement réel.
 
 ### L08 · Prospects à 3 ans et procédure de fuite
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L07
 - Cahier : Conformité, « Durées » et « Fuite de données ».
 - Objectif : chaque jour, la liste des prospects arrivés à 3 ans après leur dernier contact sans consentement : demande de consentement préparée en mode essai, puis effacement par la procédure de L07 sans réponse ; une procédure de fuite : accès coupés d'un geste, évaluation saisie par le responsable, échéance de 72 heures pour la CNIL calculée par le code, liste des personnes concernées.
