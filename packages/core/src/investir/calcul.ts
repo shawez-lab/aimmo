@@ -22,6 +22,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { MARKET_RENT_KINDS, type LoyersMarche, type MarketRentKind } from './loyers.ts';
 
 export const FORMULA_VERSION = 1;
 
@@ -196,6 +197,10 @@ export function computeYield(inputs: YieldInputs, computedAt: string): YieldResu
     calc('netIncome', netIncome(m.centralM2Cents), 'cents', 'loyer perçu − charges non récupérables − taxe foncière, avant impôt'),
     calc('grossYieldBp', gross(m.centralM2Cents), 'bp', 'loyer annuel × 10 000 / coût total'),
     calc('netYieldBp', net(m.centralM2Cents), 'bp', 'revenu net avant impôt × 10 000 / coût total'),
+    calc('grossYieldBpLow', gross(m.lowerM2Cents), 'bp', 'rendement brut avec la borne basse du loyer de marché'),
+    calc('grossYieldBpHigh', gross(m.upperM2Cents), 'bp', 'rendement brut avec la borne haute du loyer de marché'),
+    calc('netYieldBpLow', net(m.lowerM2Cents), 'bp', 'rendement net avant impôt avec la borne basse du loyer de marché'),
+    calc('netYieldBpHigh', net(m.upperM2Cents), 'bp', 'rendement net avant impôt avec la borne haute du loyer de marché'),
   ];
   return {
     status: 'complet',
@@ -219,6 +224,8 @@ export interface StoredCalculation {
 export type CalculationResult = { ok: true; value: StoredCalculation } | { ok: false; rule: 'R16' | 'R120'; code: string; field?: InputKey };
 
 export interface CalculInvestissementOptions {
+  /** Les loyers de marché de Y02 : le calcul y lit le loyer d'une commune. */
+  loyers?: LoyersMarche;
   now?: () => Date;
   newId?: () => string;
 }
@@ -249,6 +256,7 @@ const toStored = (row: CalculationRow): StoredCalculation => ({
 export class CalculInvestissement {
   private readonly now: () => Date;
   private readonly newId: () => string;
+  private readonly loyers: LoyersMarche | undefined;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -257,13 +265,20 @@ export class CalculInvestissement {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.loyers = options.loyers;
   }
 
   /**
-   * L'agent ou la direction calcule un bien, pour un projet d'investissement de sa fiche ou sans projet. Le calcul
-   * est rangé, complet ou incomplet ; un refus va au journal sans aucun chiffre [R13, R16].
+   * L'agent ou la direction calcule un bien qu'il voit (le sien ou le fichier commun), pour un projet d'investissement
+   * de sa fiche ou sans projet. Le prix et la surface viennent du bien, le loyer de marché de la base (Y02) ; ce que
+   * l'agent saisit en plus ou à la place porte son nom comme source. Le calcul est rangé, complet ou incomplet ; un
+   * refus va au journal sans aucun chiffre [R13, R16].
    */
-  async compute(acces: Acces, viewer: Viewer, input: { propertyId?: unknown; projectId?: unknown; inputs: unknown }): Promise<CalculationResult> {
+  async compute(
+    acces: Acces,
+    viewer: Viewer,
+    input: { propertyId?: unknown; projectId?: unknown; inputs: unknown; marketRentQuery?: unknown },
+  ): Promise<CalculationResult> {
     const actor = `${String(viewer.role)}:${viewer.userId}`;
     const refused = async (code: string, rule: 'R16' | 'R120' = 'R16', field?: InputKey): Promise<CalculationResult> => {
       await appendEvent(
@@ -283,9 +298,13 @@ export class CalculInvestissement {
     const projectId = input.projectId ?? null;
     if (propertyId !== null && typeof propertyId !== 'string') return refused('unknown');
     if (projectId !== null && typeof projectId !== 'string') return refused('unknown');
+    let property: { price_eur: number | null; surface_m2: number | null } | null = null;
     if (propertyId !== null) {
-      const p = await this.db.first<{ id: string }>('SELECT id FROM properties WHERE id = ? AND network_id = ?', [propertyId, viewer.networkId]);
-      if (!p) return refused('unknown');
+      // Le bien sous R16 : celui de l'agent, ou du fichier commun du réseau ; la lecture et le refus vont au journal.
+      const read = await acces.readProperty(viewer, propertyId);
+      if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+      if (read.value.network_id !== viewer.networkId) return refused('unknown');
+      property = { price_eur: read.value.price_eur, surface_m2: read.value.surface_m2 };
     }
     if (projectId !== null) {
       const project = await this.db.first<{ person_id: string }>("SELECT person_id FROM projects WHERE id = ? AND network_id = ? AND kind = 'invest'", [
@@ -300,12 +319,47 @@ export class CalculInvestissement {
     const checked = checkYieldInputs(input.inputs);
     if (!checked.ok) return refused(checked.code, 'R120', checked.field);
     const createdAt = this.now().toISOString();
-    const result = computeYield(checked.value, createdAt);
+    // Ce que l'agent saisit porte son nom comme source, quoi qu'il écrive : seul le code dit « bien » ou « ANIL ».
+    const inputs: YieldInputs = { ...checked.value };
+    for (const key of INPUT_KEYS) {
+      const v = inputs[key];
+      if (v !== null) (inputs as unknown as Record<string, unknown>)[key] = { ...v, source: `saisi:${actor}`, asOf: createdAt.slice(0, 10) };
+    }
+    // Le prix et la surface du bien viennent de sa fiche quand elle les porte.
+    if (property !== null) {
+      if (property.price_eur !== null && property.price_eur > 0 && inputs.price === null) {
+        inputs.price = { value: property.price_eur * 100, source: `bien:${String(propertyId)}`, asOf: createdAt.slice(0, 10), hypothesis: 'prix affiché du bien' };
+      }
+      if (property.surface_m2 !== null && property.surface_m2 > 0 && inputs.livingArea === null) {
+        inputs.livingArea = { value: Math.round(property.surface_m2 * 100), source: `bien:${String(propertyId)}`, asOf: createdAt.slice(0, 10), hypothesis: 'surface du bien' };
+      }
+    }
+    // Le loyer de marché vient de la base (Y02), jamais d'un chiffre saisi présenté comme celui de l'ANIL.
+    const query = input.marketRentQuery;
+    if (inputs.marketRent === null && query !== undefined && query !== null) {
+      const q = query as { inseeCode?: unknown; kind?: unknown };
+      if (!this.loyers || typeof q.inseeCode !== 'string' || typeof q.kind !== 'string' || !(MARKET_RENT_KINDS as readonly string[]).includes(q.kind)) {
+        return refused('valeur', 'R120', 'marketRent');
+      }
+      const rent = await this.loyers.marketRent(viewer.networkId, q.inseeCode, q.kind as MarketRentKind);
+      if (rent.status === 'connu') {
+        inputs.marketRent = {
+          value: { centralM2Cents: rent.rentM2Cents, lowerM2Cents: rent.lowerM2Cents, upperM2Cents: rent.upperM2Cents },
+          source: rent.citation,
+          asOf: rent.asOf.slice(0, 10),
+          hypothesis:
+            rent.reliability === 'fiable'
+              ? `loyer central, ${rent.observations} observations`
+              : `loyer central, peu d’observations (${rent.observations})`,
+        };
+      }
+    }
+    const result = computeYield(inputs, createdAt);
     const id = this.newId();
     await this.db.run(
       `INSERT INTO investment_calculations (id, network_id, property_id, project_id, inputs, status, result, formula_version, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, viewer.networkId, propertyId, projectId, JSON.stringify(checked.value), result.status, JSON.stringify(result), FORMULA_VERSION, actor, createdAt],
+      [id, viewer.networkId, propertyId, projectId, JSON.stringify(inputs), result.status, JSON.stringify(result), FORMULA_VERSION, actor, createdAt],
     );
     await appendEvent(
       this.journal,
@@ -317,7 +371,7 @@ export class CalculInvestissement {
       },
       this.now,
     );
-    return { ok: true, value: { id, propertyId, projectId, inputs: checked.value, result, createdBy: actor, createdAt } };
+    return { ok: true, value: { id, propertyId, projectId, inputs, result, createdBy: actor, createdAt } };
   }
 
   /** Un calcul rangé, sans contrôle d'accès : pour le code du système (note, alertes, routes qui contrôlent avant). */
