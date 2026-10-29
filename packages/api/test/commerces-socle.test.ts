@@ -75,6 +75,32 @@ describeWithSqlite('CE10 · M16 branché dans le socle', () => {
     // Sans début de lien configuré, aucun dossier ne part.
     expect(await t.call('alex', 'POST', `/commerces/${t.shop}/dossiers`, { personId: t.buyer, consentProof: 'accord' }, false)).toMatchObject({ status: 503, body: { code: 'dossier_link_not_configured' } });
     expect(await t.db.all('SELECT 1 FROM trial_outbox o JOIN messages m ON m.id = o.message_id WHERE m.body LIKE ?', ['%dossier confidentiel%'])).toHaveLength(0);
+    // Un second repreneur, à la pièce vérifiée au coffre réel : il signe, le dossier part par le contrôle central en
+    // essai, et le lecteur sans clé reçoit son code dans la boîte d'essai, puis ouvre [R26, R113, R114].
+    const store = new FicheClient(t.db, { now: t.now });
+    const ready = (await store.createPerson({ networkId: t.network, agentId: t.alex, firstName: 'Dominique', lastName: 'Exemple' })).id;
+    await store.addIdentifier({ networkId: t.network, personId: ready, kind: 'email', value: 'dominique.exemple@example.test' });
+    await t.db.run(
+      `INSERT INTO compliance_vault_pieces (id, network_id, person_id, kind, storage_ref, sha256, content_type, size_bytes, verified_on, deposited_by, deposited_at)
+       VALUES ('piece-1', ?, ?, 'carte_identite', 'coffre/piece-1.pdf', ?, 'application/pdf', 1000, '2027-09-01', ?, '2027-09-01T08:00:00.000Z')`,
+      [t.network, ready, 'c'.repeat(64), `agent:${t.alex}`],
+    );
+    const lastCode = async (like: string): Promise<string> => {
+      const row = await t.db.first<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? AND m.body LIKE ? ORDER BY m.rowid DESC LIMIT 1', [ready, like]);
+      return /(\d{6})/.exec(row?.body ?? '')?.[1] ?? '';
+    };
+    const nda = (await t.call('alex', 'POST', `/commerces/${t.shop}/demandes`, { personId: ready })).body.data.ndaId as string;
+    const session = (await t.call('alex', 'POST', `/commerces/engagements/${nda}/signature`, { consentProof: 'accord au rendez-vous' })).body.data.sessionId as string;
+    expect((await t.call('alex', 'POST', `/commerces/signatures/${session}`, { code: await lastCode('%engagement de confidentialité%') })).status).toBe(200);
+    expect((await t.call('alex', 'POST', `/commerces/${t.shop}/dossiers`, { personId: ready, consentProof: 'accord au rendez-vous' })).status).toBe(200);
+    const link = await t.db.first<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? AND m.body LIKE ?', [ready, '%dossier confidentiel du commerce%']);
+    const token = /dossier\/([a-z]{40})/.exec(link?.body ?? '')?.[1] ?? '';
+    expect(link?.body).toContain('https://app.example.test/dossier/');
+    expect((await t.anonymous('POST', `/dossier/${token}/code`, { email: 'dominique.exemple@example.test' })).status).toBe(200);
+    const opened = await t.anonymous('POST', `/dossier/${token}`, { email: 'dominique.exemple@example.test', code: await lastCode('%code pour ouvrir%') });
+    expect(opened.status).toBe(200);
+    // Tout est passé par la boîte d'essai, rien n'est parti réellement.
+    expect(await t.db.all('SELECT 1 FROM messages m WHERE m.person_id = ? AND m.id NOT IN (SELECT message_id FROM trial_outbox)', [ready])).toHaveLength(0);
   });
 
   it('[R114] les routes du lecteur sont servies sans clé ; un jeton inconnu est refusé et journalisé', async () => {
@@ -99,8 +125,10 @@ describeWithSqlite('CE10 · M16 branché dans le socle', () => {
     const before = (await t.journal.all()).length;
     // 6 h à Paris : le créneau de la tâche quotidienne ; deux passages dans la même heure, une seule fois.
     t.setTime('2027-09-08T04:00:00.000Z');
-    await runScheduler({ db: t.db, mode: 'essai', now: t.now });
-    await runScheduler({ db: t.db, mode: 'essai', now: t.now });
+    const first = await runScheduler({ db: t.db, mode: 'essai', now: t.now });
+    const second = await runScheduler({ db: t.db, mode: 'essai', now: t.now });
+    expect(first?.ran).toContain('commerces.cession_quotidienne');
+    expect(second?.ran ?? []).not.toContain('commerces.cession_quotidienne');
     const tasks = await t.call('alex', 'GET', '/commerces/taches-cession');
     expect(tasks.body.data.map((x: { step: string; due: string | null }) => [x.step, x.due])).toEqual([
       ['sequestre', null],
