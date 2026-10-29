@@ -305,5 +305,10 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     expect(await t.anciens.validate(t.agent(t.sam.id), id)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.anciens.validate(dir, id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     await expect(t.db.run('DELETE FROM old_contact_followups')).rejects.toThrow(/rien ne s'efface/);
+    // Un agent parti ne lit ni ne valide plus rien [R86].
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    expect(await t.anciens.toValidate(t.agent())).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect(await t.anciens.validate(t.agent(), id)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect(await t.anciens.noteLeaseEnd(t.agent(), ines.id, '2027-12-01')).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
   });
 });
