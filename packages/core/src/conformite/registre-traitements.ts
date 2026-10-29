@@ -793,7 +793,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   investment_notes: ['id', 'network_id', 'calculation_id', 'project_id', 'origin', 'status', 'created_at', 'validated_at'],
   investor_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'gross_yield_bp', 'created_at', 'updated_at'],
   property_communes: ['property_id', 'network_id', 'insee_code', 'rent_kind', 'recorded_at'],
-  market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],  business_sheets: ['id', 'network_id', 'property_id', 'version', 'activity', 'sources', 'created_at'],
+  market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
+  business_sheets: ['id', 'network_id', 'property_id', 'version', 'activity', 'sources', 'created_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
