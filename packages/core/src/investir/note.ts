@@ -26,6 +26,9 @@ import { energyAlertGate, type ConstraintSet, type Contraintes } from './contrai
 import { ANIL_CITATION } from './loyers.ts';
 import type { ProfilInvestisseur } from './profil.ts';
 
+/** La longueur permise d'une note rendue, celle de la base. */
+export const MAX_NOTE_LENGTH = 20_000;
+
 /** Le renvoi aux professionnels habilités, écrit par le code dans chaque note [R125]. */
 export const PROFESSIONAL_REFERRAL =
   'Ces chiffres ne sont ni un conseil fiscal ni un conseil financier : pour la fiscalité, consultez un expert-comptable ; pour le financement, un courtier en crédit immobilier.';
@@ -183,22 +186,21 @@ function writtenValues(line: YieldLine): number[] {
 }
 
 /** Le membre de phrase qui porte un nombre : coupé aux fins de phrase, points-virgules et virgules suivies d'un espace. */
-function clauseAround(text: string, start: number, length: number): string {
-  const cut = /[.;!?](?=\s|$)|,(?=\s)|\n/g;
+function clauseAround(text: string, start: number, length: number): { text: string; offset: number } {
+  // Coupé aussi aux « et », « ou », « mais », « puis » : chaque montant garde son propre libellé.
+  const cut = /[.;!?](?=\s|$)|,(?=\s)|\n|\s(?:et|ou|mais|puis)\s/g;
   let from = 0;
   let to = text.length;
   for (const c of text.matchAll(cut)) {
     const i = c.index ?? 0;
-    if (i < start) from = i + 1;
+    if (i + c[0].length <= start) from = i + c[0].length;
     else if (i >= start + length) {
       to = i;
       break;
     }
   }
-  return text.slice(from, to);
+  return { text: text.slice(from, to), offset: from };
 }
-
-/** Les mots qui nomment les lignes du calcul, lus sans accents. */
 const LINE_WORDS: { re: RegExp; keys: string[] }[] = [
   { re: /\bbruts?\b/, keys: ['grossYieldBp', 'grossYieldBpLow', 'grossYieldBpHigh'] },
   { re: /\bnets?\b/, keys: ['netYieldBp', 'netYieldBpLow', 'netYieldBpHigh', 'netIncome'] },
@@ -249,12 +251,23 @@ function periodOf(clause: string): 'mois' | 'an' | null {
 }
 
 /** Les lignes que nomme un membre de phrase ; aucun mot reconnu : `null`. */
-function linesNamedBy(clause: string): Set<string> | null {
+function linesNamedBy(clause: string, start: number, length: number, lines: readonly YieldLine[], units: readonly YieldLine['unit'][]): Set<string> | null {
   const p = plain(clause);
-  const keys = LINE_WORDS.filter((w) => w.re.test(p)).flatMap((w) => w.keys);
-  if (keys.length === 0) return null;
+  // Le mot le plus proche du nombre, parmi ceux qui nomment une ligne de son unité : « le prix est de 10 000 € » dit le prix.
+  const fits = (keys: readonly string[]): boolean => lines.some((l) => keys.includes(l.key) && units.includes(l.unit));
+  let best: { d: number; keys: string[] } | null = null;
+  for (const w of LINE_WORDS) {
+    if (!fits(w.keys)) continue;
+    for (const m of p.matchAll(new RegExp(w.re.source, 'g'))) {
+      const a = m.index ?? 0;
+      const b = a + m[0].length;
+      const d = b <= start ? start - b : a >= start + length ? a - (start + length) : 0;
+      if (best === null || d < best.d) best = { d, keys: w.keys };
+    }
+  }
+  if (best === null) return null;
   // Une surface, une vacance et un loyer au m² se reconnaissent à leur unité même au milieu d'autres mots.
-  return new Set([...keys, 'livingArea', 'vacancyMonths', 'marketRentM2', 'marketRentM2Low', 'marketRentM2High']);
+  return new Set([...best.keys, 'livingArea', 'vacancyMonths', 'marketRentM2', 'marketRentM2Low', 'marketRentM2High']);
 }
 
 /** Les sortes de lignes qu'un nombre peut être, d'après l'unité qui le suit. */
@@ -280,8 +293,9 @@ export function traceParagraph(text: string, lines: readonly YieldLine[]): { pro
     const units = unitsAfter(after);
     // Les mots du membre de phrase disent de quelle ligne il s'agit : « net » n'est jamais le rendement brut, « loyer »
     // jamais les travaux. Un rendement sans « brut » ni « net » n'a pas de source.
-    const clause = clauseAround(text, m.index ?? 0, m[0].length);
-    const allowed = linesNamedBy(clause);
+    const around = clauseAround(text, m.index ?? 0, m[0].length);
+    const clause = around.text;
+    const allowed = linesNamedBy(clause, (m.index ?? 0) - around.offset, m[0].length, lines, units);
     const period = periodOf(clause);
     const bound = boundAt(text, m.index ?? 0, m[0].length);
     const line =
@@ -376,7 +390,7 @@ const lineOf = (lines: readonly YieldLine[], k: string): YieldLine => {
 export function fallbackParagraphs(facts: NoteFacts): string[] {
   const l = (k: string) => formatLine(lineOf(facts.lines, k));
   return [
-    `Le bien coûte ${l('totalCost')} au total : ${l('price')} de prix, ${l('acquisitionFees')} de frais d’acquisition et ${l('works')} de travaux estimés.`,
+    `Le bien coûte ${l('totalCost')} au total. Le prix est de ${l('price')}, les frais d’acquisition de ${l('acquisitionFees')} et les travaux estimés de ${l('works')}.`,
     `Pour ${l('livingArea')}, le loyer de marché de ${l('marketRentM2')} donne ${l('monthlyRent')} par mois, soit un loyer de ${l('annualRent')} par an. Avec ${l('vacancyMonths')} de vacance par an, ${l('nonRecoverableCharges')} de charges non récupérables et ${l('propertyTax')} de taxe foncière, le revenu net avant impôt est de ${l('netIncome')} par an.`,
   ];
 }
@@ -651,15 +665,20 @@ export class NotesInvestissement {
         );
       }
     }
-    const note: InvestmentNote = {
-      ...buildNote(paragraphs, facts, constraints),
-      context: {
-        inseeCode: input.inseeCode ?? null,
-        energyClass: typeof input.energy?.energyClass === 'string' ? input.energy.energyClass : null,
-        finalEnergyKwh: typeof input.energy?.finalEnergyKwh === 'number' ? input.energy.finalEnergyKwh : null,
-      },
+    const context = {
+      inseeCode: input.inseeCode ?? null,
+      energyClass: typeof input.energy?.energyClass === 'string' ? input.energy.energyClass : null,
+      finalEnergyKwh: typeof input.energy?.finalEnergyKwh === 'number' ? input.energy.finalEnergyKwh : null,
     };
-    const text = renderNote(note);
+    let note: InvestmentNote = { ...buildNote(paragraphs, facts, constraints), context };
+    let text = renderNote(note);
+    // Une note rendue trop longue pour être rangée : le secours prend le relais, jamais une erreur.
+    if (origin === 'ia' && text.length > MAX_NOTE_LENGTH) {
+      await appendEvent(this.journal, { type: 'investir.note.secours', actor, subject: `project:${input.projectId}`, data: { calculation: calc.id, code: 'longueur' } }, this.now);
+      origin = 'secours';
+      note = { ...buildNote(fallbackParagraphs(facts), facts, constraints), context };
+      text = renderNote(note);
+    }
     const check = checkNote(note, text, facts, constraints);
     if (!check.ok) {
       await appendEvent(this.journal, { type: 'investir.note.refuse', actor, subject: `project:${input.projectId}`, data: { rule: check.rule, code: check.code } }, this.now);

@@ -151,7 +151,7 @@ describeWithSqlite('Y05 · note d’investissement', () => {
       expect(traceParagraph(p.text, calc.result.lines).problems, p.text).toEqual([]);
       expect(p.proofs.length, p.text).toBeGreaterThan(0);
     }
-    expect(r.value.note.paragraphs[0]!.text).toBe('Le bien coûte 171 250 € au total : 150 000 € de prix, 11 250 € de frais d’acquisition et 10 000 € de travaux estimés.');
+    expect(r.value.note.paragraphs[0]!.text).toBe('Le bien coûte 171 250 € au total. Le prix est de 150 000 €, les frais d’acquisition de 11 250 € et les travaux estimés de 10 000 €.');
   });
 
   it('changer une hypothèse recalcule la note entière ; le calcul nouveau est rangé et rejouable', async () => {
@@ -308,6 +308,11 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     expect(traceParagraph('Le loyer est de 555,75 € par mois.', lines).problems).toEqual([]);
     // Un montant dit toujours ce qu'il est : un apport n'est pas une ligne du calcul.
     expect(traceParagraph('Votre apport personnel est de 150 000 €.', lines).problems).toHaveLength(1);
+    // Chaque montant garde son libellé : deux chiffres permutés sont refusés.
+    expect(traceParagraph('Le prix est de 10 000 € et les travaux de 150 000 €.', lines).problems).toHaveLength(2);
+    expect(traceParagraph('Le prix est de 150 000 € et les travaux de 10 000 €.', lines).problems).toEqual([]);
+    expect(traceParagraph('150 000 € de prix, 10 000 € de travaux.', lines).problems).toEqual([]);
+    expect(traceParagraph('10 000 € de prix, 150 000 € de travaux.', lines).problems).toHaveLength(2);
     expect(traceParagraph('Le prix est de 150 000 €.', lines).problems).toEqual([]);
     // Une borne n'est jamais présentée comme le chiffre central : seulement dans une fourchette « de X à Y ».
     expect(traceParagraph('Le rendement net avant impôt central est de 3,46 %.', lines).problems).toHaveLength(1);
@@ -327,5 +332,15 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     const project = await store.createProject({ networkId: t.network.id, agentId: t.sam.id, personId: person.id, kind: 'invest' });
     expect(await t.notes.draft(t.acces, t.as('agent', t.sam.id), { calculationId: c.value.id, projectId: project.id })).toMatchObject({ ok: false, rule: 'R16' });
     expect(Number((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM investment_notes'))!.n)).toBe(0);
+  });
+
+  it('une note de l’IA trop longue une fois rendue passe au secours, sans erreur', async () => {
+    const long = Array.from({ length: 8 }, () => Array.from({ length: 40 }, () => 'Le prix est de 150 000 €.').join(' ').slice(0, 1400));
+    const t = await setup({ writer: writerOf(long) });
+    const r = await t.notes.draft(t.acces, t.as('agent', t.alex.id), { calculationId: t.calcId, projectId: t.project.id });
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.origin).toBe('secours');
+    expect(r.value.text.length).toBeLessThanOrEqual(20_000);
+    expect((await t.journal.all()).some((e) => e.type === 'investir.note.secours' && (e.data as { code: string }).code === 'longueur')).toBe(true);
   });
 });
