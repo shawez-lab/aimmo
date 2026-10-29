@@ -30,6 +30,8 @@ export const LETTER_ORIGIN = 'saisie_agent';
 /** Le rayon autour du bien, en mètres. Réglage. */
 export const DEFAULT_LETTER_RADIUS_M = 500;
 export const LETTER_MAX_ADDRESSES = 200;
+/** La confiance minimale du géocodage, de 0 à 1 : en dessous, la position n'est pas sûre. Réglage. */
+export const LETTER_MIN_GEOCODE_SCORE = 0.8;
 
 export const CAMPAIGN_FIELDS = ['propertyId', 'trigger', 'propertyAddress', 'recipient', 'origin', 'addresses'] as const;
 export const ADDRESS_FIELDS = ['number', 'street', 'postcode', 'city'] as const;
@@ -187,22 +189,29 @@ export class LettresQuartier {
     }
 
     // Le bien : suivi par cet agent, avec un mandat signé ou une vente rapportée [R16, R140].
-    const property = await this.db.first<{ agent_id: string | null; city: string | null }>('SELECT agent_id, city FROM properties WHERE id = ? AND network_id = ?', [propertyId, viewer.networkId]);
+    const property = await this.db.first<{ agent_id: string | null; city: string | null; postal_code: string | null }>('SELECT agent_id, city, postal_code FROM properties WHERE id = ? AND network_id = ?', [propertyId, viewer.networkId]);
     if (!property || property.agent_id !== viewer.userId) return this.refusedAccess(viewer, 'not_assigned');
     const happened =
       trigger === 'mandat'
-        ? await this.db.first('SELECT 1 FROM mandates WHERE property_id = ? AND network_id = ? LIMIT 1', [propertyId, viewer.networkId])
+        ? // Un mandat annulé au registre (erreur, rétractation, résiliation) n'ouvre rien.
+          await this.db.first("SELECT 1 FROM mandates m WHERE m.property_id = ? AND m.network_id = ? AND NOT EXISTS (SELECT 1 FROM mandate_register r WHERE r.mandate_id = m.id AND r.kind = 'annulation') LIMIT 1", [propertyId, viewer.networkId])
         : await this.db.first('SELECT 1 FROM sale_files f JOIN sale_file_closings c ON c.file_id = f.id WHERE f.property_id = ? AND f.network_id = ? LIMIT 1', [propertyId, viewer.networkId]);
     if (!happened) return stop('R140', 'no_trigger');
 
     // Le rayon, vérifié adresse par adresse ; sans géocodage, rien ne peut être vérifié : refus [R140].
     if (!this.geocoder) return stop('R140', 'no_geocoder');
     const center = await this.geocoder.geocode(propertyAddress.trim());
-    if (!center) return stop(null, 'property_address_unknown');
+    if (!center || center.score < LETTER_MIN_GEOCODE_SCORE) return stop(null, 'property_address_unknown');
+    // Le centre est bien celui du bien : même code postal et même commune que sa fiche [R140].
+    if (center.postalCode !== property.postal_code || words(center.town) !== words(property.city ?? '')) return stop('R140', 'center_not_property');
     const placed: { distance: number }[] = [];
     for (const [i, a] of list.entries()) {
-      const g = await this.geocoder.geocode(`${a.number} ${a.street} ${a.postcode} ${a.city}`);
-      if (!g) return stop(null, 'address_unknown', i);
+      const typed = `${a.number} ${a.street} ${a.postcode} ${a.city}`;
+      const g = await this.geocoder.geocode(typed);
+      if (!g || g.score < LETTER_MIN_GEOCODE_SCORE) return stop(null, 'address_unknown', i);
+      // L'adresse est rangée et imprimée seulement si elle est, mot pour mot, celle de la Base adresse nationale : un nom
+      // glissé dans la voie ou à la place de la commune ne correspond à aucune adresse [R140].
+      if (words(g.label) !== words(typed) || g.postalCode !== a.postcode || words(g.town) !== words(a.city)) return stop('R140', 'not_an_address', i);
       if (g.label === center.label || (g.banId !== null && g.banId === center.banId)) return stop('R46', 'property_itself', i);
       const d = distanceM(center, g);
       if (d > this.radiusM) return stop('R140', 'out_of_radius', i);

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { Acces, FicheClient, FicheUnique, LETTER_CSS, LettresQuartier, Mandats, SqlJournalStore, applyMigrations, checkLetterText, distanceM, fromSyncSqlite, letterFallback, type Geocoder, type LetterDrafter, type SqlDatabase } from '../src/index.ts';
+import { Acces, FicheClient, FicheUnique, LETTER_CSS, LettresQuartier, Mandats, RegistreMandats, SqlJournalStore, applyMigrations, checkLetterText, distanceM, fromSyncSqlite, letterFallback, type Geocoder, type LetterDrafter, type SqlDatabase } from '../src/index.ts';
 import { htmlProblems, screenCssProblems } from '../src/design/audit.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -7,7 +7,12 @@ import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 // Un quartier inventé de Dijon : positions de test, aucune vraie personne.
 const NOW = Date.parse('2027-10-12T08:00:00.000Z');
 const CENTER = { lat: 47.322, lon: 5.0415 };
-const PLACES: Record<string, { lat: number; lon: number }> = {
+const PLACES: Record<string, { lat: number; lon: number; label?: string; score?: number; postalCode?: string; town?: string }> = {
+  // La Base adresse nationale rend l'adresse la plus proche, sans le nom glissé, ou une commune approximative.
+  '10 rue des Tilleuls Essai Jean Dupont 21000 Dijon': { lat: 47.3222, lon: 5.0415, label: '10 rue des Tilleuls Essai 21000 Dijon' },
+  '10 rue des Tilleuls Essai 21000 Dupont': { lat: 47.3222, lon: 5.0415, label: '10 rue des Tilleuls Essai 21000 Dijon', town: 'Dijon' },
+  '1 place Ailleurs, 21200 Beaune': { lat: 47.02, lon: 4.84, postalCode: '21200', town: 'Beaune' },
+  '8 rue des Tilleuls Essai, 21000 Dijon flou': { lat: 47.322, lon: 5.0415, score: 0.3 },
   '8 rue des Tilleuls Essai, 21000 Dijon': CENTER,
   '10 rue des Tilleuls Essai 21000 Dijon': { lat: 47.3222, lon: 5.0415 },
   '3 avenue du Parc Essai 21000 Dijon': { lat: 47.3245, lon: 5.0415 },
@@ -18,7 +23,7 @@ const PLACES: Record<string, { lat: number; lon: number }> = {
 const geocoder: Geocoder = {
   geocode: async (address) => {
     const p = PLACES[address];
-    return p ? { label: address.replace(',', ''), lat: p.lat, lon: p.lon, postalCode: '21000', inseeCode: '21231', town: 'Dijon', banId: null, score: 0.9 } : null;
+    return p ? { label: p.label ?? address.replace(',', ''), lat: p.lat, lon: p.lon, postalCode: p.postalCode ?? '21000', inseeCode: '21231', town: p.town ?? 'Dijon', banId: null, score: p.score ?? 0.9 } : null;
   },
 };
 
@@ -41,6 +46,7 @@ async function setup(options: { drafter?: LetterDrafter | null; geocoder?: Geoco
     await store.addSource({ networkId: network.id, agentId: alex.id, personId: owner.id, channel: 'site', detail: null, occurredAt: new Date(NOW - 86_400_000) });
     const r = await new Mandats(db, fiche, journal, { now }).record(acces, agent(), { personId: owner.id, propertyId: property.id, signedAt: new Date(NOW) });
     if (!r.ok) throw new Error(r.code);
+    return r.id;
   };
   const input = (over: Record<string, unknown> = {}) => ({
     propertyId: property.id,
@@ -56,7 +62,7 @@ async function setup(options: { drafter?: LetterDrafter | null; geocoder?: Geoco
     ...over,
   });
   const refusals = async () => (await journal.all()).filter((e) => e.type === 'lettres_quartier.refusee').map((e) => e.data.code);
-  return { db, journal, store, lettres, network, alex, sam, agent, property, signMandate, input, refusals };
+  return { db, journal, store, lettres, network, alex, sam, agent, property, signMandate, input, refusals, now };
 }
 
 describeWithSqlite('G06 · lettres de quartier, adressées sans nom', () => {
@@ -102,6 +108,12 @@ describeWithSqlite('G06 · lettres de quartier, adressées sans nom', () => {
     for (const a of named) expect(await t.lettres.createCampaign(t.agent(), t.input({ addresses: [a] })), JSON.stringify(a)).toMatchObject({ ok: false, rule: 'R140', index: 0 });
     expect(await t.lettres.createCampaign(t.agent(), t.input({ recipient: 'M. Dupont' }))).toEqual({ ok: false, rule: 'R140', code: 'bad_recipient' });
     expect(await t.lettres.createCampaign(t.agent(), t.input({ recipientName: 'Dupont' }))).toEqual({ ok: false, rule: 'R140', code: 'unknown_field' });
+    // Un nom collé à la voie ou mis à la place de la commune ne correspond à aucune adresse de la Base adresse nationale.
+    expect(await t.lettres.createCampaign(t.agent(), t.input({ addresses: [{ number: '10', street: 'rue des Tilleuls Essai Jean Dupont', postcode: '21000', city: 'Dijon' }] }))).toEqual({ ok: false, rule: 'R140', code: 'not_an_address', index: 0 });
+    expect(await t.lettres.createCampaign(t.agent(), t.input({ addresses: [{ number: '10', street: 'rue des Tilleuls Essai', postcode: '21000', city: 'Dupont' }] }))).toEqual({ ok: false, rule: 'R140', code: 'not_an_address', index: 0 });
+    // Le centre doit être le bien : même code postal et commune que sa fiche, et une position sûre.
+    expect(await t.lettres.createCampaign(t.agent(), t.input({ propertyAddress: '1 place Ailleurs, 21200 Beaune' }))).toEqual({ ok: false, rule: 'R140', code: 'center_not_property' });
+    expect(await t.lettres.createCampaign(t.agent(), t.input({ propertyAddress: '8 rue des Tilleuls Essai, 21000 Dijon flou' }))).toEqual({ ok: false, rule: null, code: 'property_address_unknown' });
     // Une adresse hors du rayon de 500 m est refusée, et la campagne entière avec elle.
     expect(await t.lettres.createCampaign(t.agent(), t.input({ addresses: [{ number: '40', street: 'rue Lointaine Essai', postcode: '21000', city: 'Dijon' }] }))).toEqual({ ok: false, rule: 'R140', code: 'out_of_radius', index: 0 });
     // Sans géocodage, le rayon ne peut pas être vérifié : refus.
@@ -132,6 +144,17 @@ describeWithSqlite('G06 · lettres de quartier, adressées sans nom', () => {
     await t.db.exec('PRAGMA foreign_keys = ON');
     expect(await t.lettres.createCampaign(t.agent(), t.input({ trigger: 'vente', recipient: 'aux_habitants' }))).toMatchObject({ ok: true, value: { letters: 3 } });
     expect(await t.lettres.createCampaign(t.agent(), t.input({ trigger: 'mandat' }))).toEqual({ ok: false, rule: 'R140', code: 'no_trigger' });
+  });
+
+  it('[R140] un mandat annulé au registre n’ouvre aucune campagne', async () => {
+    const t = await setup();
+    const id = await t.signMandate();
+    const registre = new RegistreMandats(t.db, t.journal, { now: t.now });
+    const dir = { role: 'direction' as const, userId: 'dir-1', networkId: t.network.id };
+    expect(await registre.configure(dir, { prefix: 'T-', firstNumber: 1, width: 4 })).toEqual({ ok: true });
+    expect(await registre.inscribe(t.agent(), id)).toMatchObject({ ok: true });
+    expect(await registre.cancel(dir, id, 'error')).toMatchObject({ ok: true });
+    expect(await t.lettres.createCampaign(t.agent(), t.input())).toEqual({ ok: false, rule: 'R140', code: 'no_trigger' });
   });
 
   it('[R46] l’adresse du bien n’apparaît jamais : ni rangée, ni dans le texte, ni comme destinataire', async () => {
