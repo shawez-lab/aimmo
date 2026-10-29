@@ -44,11 +44,11 @@ const addDays = (day: string, days: number): string => new Date(Date.parse(`${da
 const fr = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`;
 
 /** Le texte de la demande de consentement : sans nom, sans bien, sans rien de la personne. */
-export function consentRequestText(answerBy: string): string {
+export function consentRequestText(answerDueOn: string): string {
   return (
     'Bonjour, vous avez été en contact avec notre réseau d\'agents immobiliers il y a trois ans. ' +
     'Souhaitez-vous que nous gardions vos coordonnées pour vous tenir informé de votre projet ? ' +
-    `Répondez simplement oui à ce message. Sans réponse de votre part d'ici le ${fr(answerBy)}, vos coordonnées seront effacées.`
+    `Répondez simplement oui à ce message. Sans réponse de votre part d'ici le ${fr(answerDueOn)}, vos coordonnées seront effacées.`
   );
 }
 
@@ -60,7 +60,7 @@ export interface RetentionCycle {
   lastContactAt: string;
   reachedOn: string;
   listedOn: string;
-  answerBy: string;
+  answerDueOn: string;
   request: { mode: 'essai' | 'reel'; text: string; blockedBy: 'R02' | 'R04' | null };
   outcome: RetentionOutcome | null;
   decidedOn: string | null;
@@ -258,17 +258,17 @@ export class DureesProspects {
       // Déjà listé pour ce contact (ou effacement préparé, ou pour un contact plus récent d'une fiche réunie) : rien.
       if (known) continue;
       const id = this.newId();
-      const answerBy = addDays(today, PROSPECT_ANSWER_DAYS);
+      const answerDueOn = addDays(today, PROSPECT_ANSWER_DAYS);
       const { changes } = await this.db.run(
         `INSERT INTO prospect_retention_cycles (id, network_id, person_id, last_contact_at, reached_on, listed_on, answer_due_on, request_mode, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-        [id, networkId, s.root, s.lastContactAt, reachedOn, today, answerBy, CONSENT_REQUEST_MODE, this.now().toISOString()],
+        [id, networkId, s.root, s.lastContactAt, reachedOn, today, answerDueOn, CONSENT_REQUEST_MODE, this.now().toISOString()],
       );
       if (changes === 0) continue;
       result.listed += 1;
       await appendEvent(
         this.journal,
-        { type: 'rgpd.prospect_3_ans', actor: 'system:durees', subject: `prospect_retention:${id}`, data: { rule: 'R97', reachedOn, answerBy, mode: CONSENT_REQUEST_MODE } },
+        { type: 'rgpd.prospect_3_ans', actor: 'system:durees', subject: `prospect_retention:${id}`, data: { rule: 'R97', reachedOn, answerDueOn, mode: CONSENT_REQUEST_MODE } },
         this.now,
       );
     }
@@ -305,7 +305,7 @@ export class DureesProspects {
         lastContactAt: r.last_contact_at,
         reachedOn: r.reached_on,
         listedOn: r.listed_on,
-        answerBy: r.answer_due_on,
+        answerDueOn: r.answer_due_on,
         request: { mode: r.request_mode, text: consentRequestText(r.answer_due_on), blockedBy: blocks.some((b) => b.reason === 'stop') ? 'R04' : blocks.length > 0 ? 'R02' : null },
         outcome: r.outcome,
         decidedOn: r.decided_on,

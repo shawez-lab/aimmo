@@ -43,8 +43,8 @@ export const BREACH_NATURES = ['confidentialite', 'integrite', 'disponibilite'] 
 export type BreachNature = (typeof BREACH_NATURES)[number];
 export const BREACH_CATEGORIES = ['identite', 'coordonnees', 'projet_et_budget', 'messages', 'pieces_identite', 'donnees_financieres', 'documents_signes', 'acces_et_cles'] as const;
 export type BreachCategory = (typeof BREACH_CATEGORIES)[number];
-export const BREACH_LATE_REASONS = ['evaluation_en_cours', 'information_du_sous_traitant', 'autre'] as const;
-export type BreachLateReason = (typeof BREACH_LATE_REASONS)[number];
+export const BREACH_LATE_CAUSES = ['evaluation_en_cours', 'information_du_sous_traitant', 'autre'] as const;
+export type BreachLateCause = (typeof BREACH_LATE_CAUSES)[number];
 
 export type BreachScope = { kind: 'reseau' } | { kind: 'agent'; agentId: string } | { kind: 'personnes'; personIds: readonly string[] };
 export type CutScope = { kind: 'tous' } | { kind: 'utilisateur'; userId: string };
@@ -316,7 +316,7 @@ export class Fuites {
    * Le responsable note une notification faite, une fois par destinataire. Rien n'est envoyé par le code. Une
    * notification à la CNIL après l'échéance porte sa raison (article 33.1).
    */
-  async notified(viewer: Viewer, breachId: string, input: { target: 'cnil' | 'personnes'; notifiedAt: string; lateReason?: BreachLateReason }): Promise<Result<Breach>> {
+  async notified(viewer: Viewer, breachId: string, input: { target: 'cnil' | 'personnes'; notifiedAt: string; lateCause?: BreachLateCause }): Promise<Result<Breach>> {
     if (viewer.role !== 'compliance') return this.refuse(viewer, 'role');
     const row = await this.breachOf(viewer, breachId);
     if (!row) return { ok: false, rule: null, code: 'unknown' };
@@ -326,12 +326,12 @@ export class Fuites {
     if (Date.parse(notifiedAt) > this.now().getTime()) return { ok: false, rule: null, code: 'future_date' };
     if (Date.parse(notifiedAt) < Date.parse(row.aware_at)) return { ok: false, rule: null, code: 'before_breach' };
     const late = Date.parse(notifiedAt) > Date.parse(row.deadline_at);
-    const lateReason = input.lateReason ?? null;
-    if (lateReason !== null && !BREACH_LATE_REASONS.includes(lateReason)) return { ok: false, rule: null, code: 'bad_late_cause' };
-    if (late && input.target === 'cnil' && lateReason === null) return { ok: false, rule: null, code: 'late_cause_required' };
+    const lateCause = input.lateCause ?? null;
+    if (lateCause !== null && !BREACH_LATE_CAUSES.includes(lateCause)) return { ok: false, rule: null, code: 'bad_late_cause' };
+    if (late && input.target === 'cnil' && lateCause === null) return { ok: false, rule: null, code: 'late_cause_required' };
     const { changes } = await this.db.run(
       'INSERT INTO data_breach_notifications (breach_id, target, notified_at, late, late_cause, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
-      [row.id, input.target, notifiedAt, late ? 1 : 0, late ? lateReason : null, this.actor(viewer), this.now().toISOString()],
+      [row.id, input.target, notifiedAt, late ? 1 : 0, late ? lateCause : null, this.actor(viewer), this.now().toISOString()],
     );
     if (changes === 0) return { ok: false, rule: null, code: 'already_notified' };
     await appendEvent(this.journal, { type: 'rgpd.fuite_notifiee', actor: this.actor(viewer), subject: `breach:${row.id}`, data: { rule: 'R97', target: input.target, late } }, this.now);
