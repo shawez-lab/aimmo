@@ -5,9 +5,9 @@ CREATE TABLE IF NOT EXISTS business_valuation_scales (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   activity TEXT NOT NULL,
-  -- `revenue_pct` : bornes en points de base du chiffre d'affaires moyen ; `result_multiple` : bornes en centièmes
-  -- du résultat moyen ; `rent_yield` : bornes en points de base du taux de rendement du loyer annuel (murs, local).
-  method TEXT NOT NULL CHECK (method IN ('revenue_pct', 'result_multiple', 'rent_yield')),
+  -- `revenue_pct` : bornes en points de base du chiffre d'affaires moyen ; `ebitda_multiple` : bornes en centièmes
+  -- de l'excédent brut d'exploitation moyen ; `rent_yield` : bornes en points de base du taux de rendement du loyer annuel (murs, local).
+  method TEXT NOT NULL CHECK (method IN ('revenue_pct', 'ebitda_multiple', 'rent_yield')),
   low INTEGER NOT NULL CHECK (low >= 1),
   high INTEGER NOT NULL CHECK (high >= low),
   source TEXT NOT NULL CHECK (length(source) BETWEEN 3 AND 300),
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS business_valuations (
   property_id TEXT NOT NULL,
   sheet_version INTEGER NOT NULL,
   scale_id TEXT NOT NULL REFERENCES business_valuation_scales (id) ON DELETE RESTRICT,
-  method TEXT NOT NULL CHECK (method IN ('revenue_pct', 'result_multiple', 'rent_yield')),
+  method TEXT NOT NULL CHECK (method IN ('revenue_pct', 'ebitda_multiple', 'rent_yield')),
   low_cents INTEGER NOT NULL CHECK (low_cents >= 0),
   high_cents INTEGER NOT NULL CHECK (high_cents >= low_cents),
   -- Liste JSON des lignes du calcul : `{label, value, source, hypothesis}`.

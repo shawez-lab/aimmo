@@ -7,8 +7,8 @@
  * zéro, calcul exact sur des entiers) :
  * - fonds, `revenue_pct` : base = moyenne des chiffres d'affaires des exercices saisis ; basse = base × borne basse
  *   (points de base) / 10 000 ; haute = base × borne haute / 10 000 ;
- * - fonds, `result_multiple` : base = moyenne des résultats ; elle doit être positive ; basse = base × borne basse
- *   (centièmes) / 100 ; haute = base × borne haute / 100 ;
+ * - fonds, `ebitda_multiple` : base = moyenne des excédents bruts d'exploitation, saisis pour chaque exercice ; elle
+ *   doit être positive ; basse = base × borne basse (centièmes) / 100 ; haute = base × borne haute / 100 ;
  * - murs ou local, `rent_yield` : base = loyer annuel du bail ; basse = base × 10 000 / taux haut (points de base) ;
  *   haute = base × 10 000 / taux bas.
  *
@@ -27,12 +27,12 @@ import { ACTIVITIES, BUSINESS_KINDS, type Activity, type BusinessSheetVersion, t
 
 export const VALUATION_FORMULA_VERSION = 1;
 
-export const VALUATION_METHODS = ['revenue_pct', 'result_multiple', 'rent_yield'] as const;
+export const VALUATION_METHODS = ['revenue_pct', 'ebitda_multiple', 'rent_yield'] as const;
 export type ValuationMethod = (typeof VALUATION_METHODS)[number];
 
 /** Les méthodes permises pour chaque sorte de bien. */
 export const METHODS_BY_KIND: Readonly<Partial<Record<PropertyKind, readonly ValuationMethod[]>>> = Object.freeze({
-  business: ['revenue_pct', 'result_multiple'],
+  business: ['revenue_pct', 'ebitda_multiple'],
   business_walls: ['rent_yield'],
   commercial: ['rent_yield'],
 });
@@ -40,7 +40,7 @@ export const METHODS_BY_KIND: Readonly<Partial<Record<PropertyKind, readonly Val
 /** Les bornes permises d'un barème, selon sa méthode. */
 export const SCALE_LIMITS: Readonly<Record<ValuationMethod, [number, number]>> = Object.freeze({
   revenue_pct: [1, 50_000],
-  result_multiple: [1, 10_000],
+  ebitda_multiple: [1, 10_000],
   rent_yield: [1, 5_000],
 });
 
@@ -80,7 +80,7 @@ export function mulDiv(a: number, b: number, d: number): number {
 
 const METHOD_WORDS: Record<ValuationMethod, string> = {
   revenue_pct: 'pourcentage du chiffre d’affaires moyen',
-  result_multiple: 'multiple du résultat moyen',
+  ebitda_multiple: 'multiple de l’excédent brut d’exploitation moyen',
   rent_yield: 'loyer annuel divisé par un taux de rendement',
 };
 
@@ -118,13 +118,15 @@ export function computeBusinessValuation(
     lines.push({ label: 'fourchette_basse', value: low, source: 'calcul', hypothesis: 'loyer annuel × 10 000 / taux haut' });
     lines.push({ label: 'fourchette_haute', value: high, source: 'calcul', hypothesis: 'loyer annuel × 10 000 / taux bas' });
   } else {
-    const field = method === 'revenue_pct' ? 'revenueCents' : 'resultCents';
-    const sum = years.reduce((s, y) => s + y[field], 0);
+    const revenue = method === 'revenue_pct';
+    // Chaque exercice doit porter l'excédent brut : un exercice sans lui ne compte pas pour zéro [R10].
+    if (!revenue && years.some((y) => y.ebitdaCents === undefined)) return { status: 'incomplet', formulaVersion: VALUATION_FORMULA_VERSION, missing: ['excedent_brut'] };
+    const sum = years.reduce((s, y) => s + (revenue ? y.revenueCents : y.ebitdaCents!), 0);
     const base = mulDiv(sum, 1, years.length);
     const yearsText = years.map((y) => y.year).join(', ');
-    const what = method === 'revenue_pct' ? 'chiffre d’affaires' : 'résultat';
-    if (base <= 0) return { status: 'incomplet', formulaVersion: VALUATION_FORMULA_VERSION, missing: ['resultat_positif'] };
-    lines.push({ label: method === 'revenue_pct' ? 'chiffre_affaires_moyen' : 'resultat_moyen', value: base, source: from, hypothesis: `moyenne du ${what} des exercices ${yearsText} saisis par l’agent` });
+    const what = revenue ? 'chiffre d’affaires' : 'excédent brut d’exploitation';
+    if (base <= 0) return { status: 'incomplet', formulaVersion: VALUATION_FORMULA_VERSION, missing: [revenue ? 'chiffre_affaires_positif' : 'excedent_brut_positif'] };
+    lines.push({ label: revenue ? 'chiffre_affaires_moyen' : 'excedent_brut_moyen', value: base, source: from, hypothesis: `moyenne du ${what} des exercices ${yearsText} saisis par l’agent` });
     const unit = method === 'revenue_pct' ? 10_000 : 100;
     const unitWord = method === 'revenue_pct' ? 'points de base' : 'centièmes';
     lines.push({ label: 'bareme_bas', value: scale.low, source: scaleSource, hypothesis: `${METHOD_WORDS[method]}, en ${unitWord}` });
@@ -353,6 +355,7 @@ export class EstimationCommerce {
     if (latest?.id !== row.id) return { ok: false, rule: 'R111', code: 'estimation_remplacee' };
     const sheet = await this.fiches.current(row.property_id);
     if (sheet?.version !== row.sheet_version) return { ok: false, rule: 'R111', code: 'fiche_changee' };
+    if (!(await this.scaleStillCurrent(row))) return { ok: false, rule: 'R111', code: 'bareme_change' };
     const actor = `agent:${viewer.userId}`;
     const { changes } = await this.db.run(
       'INSERT INTO business_valuation_validations (valuation_id, network_id, validated_by, validated_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING',
@@ -394,7 +397,16 @@ export class EstimationCommerce {
     if (!row) return null;
     const sheet = await this.fiches.current(propertyId);
     if (sheet?.version !== row.sheet_version) return null;
+    if (!(await this.scaleStillCurrent(row))) return null;
     return { lowCents: row.low_cents, highCents: row.high_cents, valuationId: row.id };
+  }
+
+  /** Le barème qui a fait l'estimation est-il toujours la dernière version de son activité et de sa méthode ? */
+  private async scaleStillCurrent(row: ValuationRow): Promise<boolean> {
+    const used = await this.db.first<ScaleRow>('SELECT * FROM business_valuation_scales WHERE id = ?', [row.scale_id]);
+    if (!used) return false;
+    const current = await this.currentScale(used.network_id, used.activity, used.method);
+    return current?.id === used.id;
   }
 
   /** Le bien, s'il est un commerce et que le lecteur en est l'agent ; sinon le refus, au journal [R16]. */

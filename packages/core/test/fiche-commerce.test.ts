@@ -84,6 +84,9 @@ it('[R110] un champ inconnu est refusé, jamais ignoré ; une valeur hors liste 
   expect(checkSheetChanges({ fiscalYears: [y(2025), y(2025)] })).toMatchObject({ ok: false, code: 'valeur', field: 'fiscalYears' });
   expect(checkSheetChanges({ fiscalYears: [{ ...y(2025), ownerSalaryCents: 1 }] })).toMatchObject({ ok: false, code: 'valeur', field: 'fiscalYears' });
   expect(checkSheetChanges({ fiscalYears: [{ year: 2025, revenueCents: -1, resultCents: 0 }] })).toMatchObject({ ok: false, code: 'valeur', field: 'fiscalYears' });
+  // L'excédent brut d'exploitation est facultatif, entier, et peut être négatif.
+  expect(checkSheetChanges({ fiscalYears: [{ ...y(2025), ebitdaCents: -7 }] })).toMatchObject({ ok: true, value: { fiscalYears: [{ year: 2025, ebitdaCents: -7 }] } });
+  expect(checkSheetChanges({ fiscalYears: [{ ...y(2025), ebitdaCents: 1.5 }] })).toMatchObject({ ok: false, code: 'valeur', field: 'fiscalYears' });
   expect(checkSheetChanges({})).toMatchObject({ ok: false, code: 'valeur' });
   expect(checkSheetChanges(null)).toMatchObject({ ok: false, code: 'valeur' });
   expect(checkSheetChanges(['activity'])).toMatchObject({ ok: false, code: 'valeur' });

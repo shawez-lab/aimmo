@@ -59,18 +59,18 @@ const CASES = [
     high: 37_403_640,
   },
   {
-    name: 'restaurant, 2,5 à 4 fois le résultat moyen',
+    name: 'restaurant, 2,5 à 4 fois l’excédent brut d’exploitation moyen',
     kind: 'business' as const,
-    method: 'result_multiple' as const,
+    method: 'ebitda_multiple' as const,
     sheet: {
       activity: 'restaurant' as const,
       fiscalYears: [
-        { year: 2026, revenueCents: 60_000_000, resultCents: 5_000_001 },
-        { year: 2025, revenueCents: 58_000_000, resultCents: 4_000_000 },
+        { year: 2026, revenueCents: 60_000_000, resultCents: 2_100_000, ebitdaCents: 5_000_001 },
+        { year: 2025, revenueCents: 58_000_000, resultCents: 1_900_000, ebitdaCents: 4_000_000 },
       ],
     },
     scale: [250, 400],
-    // 5 000 001 + 4 000 000 = 9 000 001 ; / 2 = 4 500 000,5 → 4 500 001
+    // excédents bruts : 5 000 001 + 4 000 000 = 9 000 001 ; / 2 = 4 500 000,5 → 4 500 001
     base: 4_500_001,
     // 4 500 001 × 250 / 100 = 11 250 002,5 → 11 250 003 ; × 400 / 100 = 18 000 004
     low: 11_250_003,
@@ -135,9 +135,14 @@ it('[R10] sans fiche, activité, barème, exercice ou loyer : « incomplet » av
   expect(computeBusinessValuation('business', sheetOf({}), 'revenue_pct', null)).toMatchObject({ status: 'incomplet', missing: ['activite', 'bareme', 'exercices'] });
   expect(computeBusinessValuation('business', sheetOf({ activity: 'restaurant' }), 'revenue_pct', scale)).toMatchObject({ status: 'incomplet', missing: ['exercices'] });
   expect(computeBusinessValuation('commercial', sheetOf({ activity: 'bureaux' }), 'rent_yield', scaleOf('bureaux', 'rent_yield', 700, 900))).toMatchObject({ status: 'incomplet', missing: ['loyer'] });
-  // Un résultat moyen nul ou négatif ne donne aucun multiple.
-  const losses = sheetOf({ activity: 'restaurant', fiscalYears: [{ year: 2026, revenueCents: 100, resultCents: -50 }, { year: 2025, revenueCents: 100, resultCents: 50 }] });
-  expect(computeBusinessValuation('business', losses, 'result_multiple', scaleOf('restaurant', 'result_multiple', 200, 300))).toMatchObject({ status: 'incomplet', missing: ['resultat_positif'] });
+  // Un excédent brut moyen nul ou négatif ne donne aucun multiple ; un exercice sans excédent brut ne compte pas pour zéro.
+  const multiple = scaleOf('restaurant', 'ebitda_multiple', 200, 300);
+  const losses = sheetOf({ activity: 'restaurant', fiscalYears: [{ year: 2026, revenueCents: 100, resultCents: 9, ebitdaCents: -50 }, { year: 2025, revenueCents: 100, resultCents: 9, ebitdaCents: 50 }] });
+  expect(computeBusinessValuation('business', losses, 'ebitda_multiple', multiple)).toMatchObject({ status: 'incomplet', missing: ['excedent_brut_positif'] });
+  const partial = sheetOf({ activity: 'restaurant', fiscalYears: [{ year: 2026, revenueCents: 100, resultCents: 9, ebitdaCents: 50 }, { year: 2025, revenueCents: 100, resultCents: 9 }] });
+  expect(computeBusinessValuation('business', partial, 'ebitda_multiple', multiple)).toMatchObject({ status: 'incomplet', missing: ['excedent_brut'] });
+  const nothingSold = sheetOf({ activity: 'restaurant', fiscalYears: [{ year: 2026, revenueCents: 0, resultCents: 0 }] });
+  expect(computeBusinessValuation('business', nothingSold, 'revenue_pct', scale)).toMatchObject({ status: 'incomplet', missing: ['chiffre_affaires_positif'] });
   for (const r of [computeBusinessValuation('business', null, 'revenue_pct', null)]) expect(JSON.stringify(r)).not.toMatch(/Cents/);
 });
 
@@ -254,6 +259,16 @@ describeWithSqlite('CE02 · estimation d’un commerce', () => {
     expect(await t.estimations.validatedRange(p.id)).toMatchObject({ lowCents: 25_000_000, highCents: 35_000_000 });
     // La fiche change encore : plus aucune fourchette publiable tant qu'une nouvelle n'est pas validée.
     await t.fiches.update(t.acces, alex, p.id, { employees: 4 });
+    expect(await t.estimations.validatedRange(p.id)).toBeNull();
+    // Une estimation faite avec un barème corrigé depuis ne se valide pas, et ne se publie plus.
+    const fourth = await t.estimations.estimate(t.acces, alex, p.id, 'revenue_pct');
+    if (!fourth.ok || fourth.status !== 'ok') throw new Error('estimation attendue');
+    await t.estimations.validate(t.acces, alex, fourth.value.id);
+    expect(await t.estimations.validatedRange(p.id)).not.toBeNull();
+    const fifth = await t.estimations.estimate(t.acces, alex, p.id, 'revenue_pct');
+    if (!fifth.ok || fifth.status !== 'ok') throw new Error('estimation attendue');
+    await t.estimations.recordScale(t.as('direction', 'dir-1'), { activity: 'bar_cafe', method: 'revenue_pct', low: 7_000, high: 10_000, source: 'Barème inventé pour les tests, corrigé', sourceDate: '2027-03-01' });
+    expect(await t.estimations.validate(t.acces, alex, fifth.value.id)).toEqual({ ok: false, rule: 'R111', code: 'bareme_change' });
     expect(await t.estimations.validatedRange(p.id)).toBeNull();
   });
 
