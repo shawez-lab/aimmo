@@ -73,7 +73,12 @@ async function run(answers: Record<string, Answer>) {
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   const calls: { method: string; url: string; body?: unknown; type?: string | undefined; auth: string | undefined }[] = [];
   const table: Record<string, Answer> = { ...answers };
+  const saved: { name: string; text: Promise<string> }[] = [];
+  let lastBlob: Blob | null = null;
   const context: Record<string, unknown> = {
+    Blob,
+    URL: { createObjectURL: (b: Blob) => ((lastBlob = b), 'blob:essai'), revokeObjectURL: () => undefined },
+    setTimeout,
     document,
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
     fetch: (url: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => {
@@ -104,7 +109,16 @@ async function run(answers: Record<string, Answer>) {
     b.listeners.click!({});
     await settle();
   };
-  return { els, calls, table, context, storage, scripts, loadScript, body, byText, click };
+  // Le lien de téléchargement posé puis cliqué par le script : son nom et le contenu du fichier.
+  const watchSaves = () => {
+    const parent = els.conformite!;
+    const append = parent.appendChild.bind(parent);
+    parent.appendChild = (child: FakeElement) => {
+      if (child.tagName === 'a') child.click = () => saved.push({ name: String((child as unknown as { download: string }).download), text: lastBlob!.text() });
+      return append(child);
+    };
+  };
+  return { els, calls, table, context, storage, scripts, loadScript, body, byText, click, saved, watchSaves };
 }
 
 describe('L10 · écran « Conformité » de l’application', () => {
@@ -203,9 +217,20 @@ describe('L10 · écran « Conformité » de l’application', () => {
   it('[R96] une demande d’accès : réponse assemblée par le code, puis réponse notée ; une demande reçue s’enregistre', async () => {
     const t = await run(COMPLIANCE);
     await t.loadScript();
-    t.table['GET /v1/conformite/demandes/d1/acces'] = ok({ response: {}, sha256: 'e'.repeat(64) });
+    t.watchSaves();
+    const response = { persons: [{ table: 'persons', rows: [{ first_name: 'Prénom inventé' }] }] };
+    t.table['GET /v1/conformite/demandes/d1/acces'] = ok({ response, sha256: 'e'.repeat(64) });
+    const answer = () => t.byText(t.body(), 'Noter la réponse envoyée aujourd’hui')!;
+    // Pas de réponse notée avant que la réponse complète ne soit enregistrée.
+    expect(answer().hidden).toBe(true);
     await t.click(t.byText(t.body(), 'Assembler la réponse d’accès'));
     expect(t.body().textContent).toContain(`Réponse assemblée depuis chaque table du registre. Empreinte : ${'e'.repeat(64)}`);
+    expect(answer().hidden).toBe(true);
+    await t.click(t.byText(t.body(), 'Enregistrer la réponse complète'));
+    expect(t.saved.map((s) => s.name)).toEqual(['reponse-acces-d1.json']);
+    expect(JSON.parse(await t.saved[0]!.text)).toEqual({ demande: 'd1', sorte: 'acces', empreinte: 'e'.repeat(64), contenu: response });
+    expect(answer().hidden).toBe(false);
+    expect(t.calls.some((c) => c.url.endsWith('/repondre'))).toBe(false);
     t.table['POST /v1/conformite/demandes'] = no(400, { ok: false, rule: null, code: 'unknown_person' });
     await t.click(t.byText(t.body(), 'Enregistrer la demande'));
     const post = t.calls.find((c) => c.method === 'POST' && c.url === '/v1/conformite/demandes')!;
@@ -268,6 +293,15 @@ describe('L10 · écran « Conformité » de l’application', () => {
     expect(s.body().children).toEqual([]);
     expect(s.els['conformite-resume']!.children).toEqual([]);
     expect(s.els.connexion!.hidden).toBe(false);
+  });
+
+  it('une lecture qui échoue ne compte jamais pour zéro dans le résumé', async () => {
+    const t = await run({ ...COMPLIANCE, 'GET /v1/conformite/signalements': no(500, { ok: false }) });
+    await t.loadScript();
+    const summary = t.els['conformite-resume']!.children.map((li) => li.textContent);
+    expect(summary).toContain('?signalements à décider : non lu');
+    expect(summary.some((s) => s.startsWith('0signalement'))).toBe(false);
+    expect(t.els['conformite-etat']!.textContent).toBe('Une partie de l’écran n’a pas pu être lue : actualisez dans un moment.');
   });
 
   it('un écran qui ne répond pas le dit, sans rien montrer ; le script qui ne se charge pas aussi', async () => {
