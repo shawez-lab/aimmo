@@ -605,6 +605,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   gbp_drafts: out('agent', 'Texte de la fiche Google de l\'agent, sans nom de client par règle [R154].'),
   gbp_validations: out('agent', 'Validation d\'un texte de la fiche Google.'),
   gbp_sends: out('agent', 'Envoi à la fiche Google de l\'agent.'),
+  gbp_claims: out('agent', 'Réservation d\'un envoi à la fiche Google de l\'agent.'),
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */

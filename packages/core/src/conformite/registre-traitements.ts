@@ -518,6 +518,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       gbp_drafts: ['agent_id', 'body', 'created_by'],
       gbp_validations: ['draft_id', 'text_sha256', 'validated_by'],
       gbp_sends: ['agent_id', 'draft_id', 'info_sha256', 'sent_by'],
+      gbp_claims: ['draft_id', 'claimed_by'],
     },
   },
 ];
@@ -803,6 +804,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   gbp_drafts: ['id', 'network_id', 'kind', 'review_id', 'property_id', 'listing_seq', 'link_uri', 'origin', 'created_at'],
   gbp_validations: ['validated_at'],
   gbp_sends: ['id', 'network_id', 'kind', 'mode', 'outcome', 'sent_at'],
+  gbp_claims: ['id', 'network_id', 'target', 'mode', 'attempt', 'claimed_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */

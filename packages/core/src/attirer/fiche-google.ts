@@ -84,7 +84,10 @@ const AI_TIMEOUT_MS = 20_000;
 export const foldWord = (w: string): string => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const words = (text: string): string[] => text.split(/[^\p{L}]+/u).filter((w) => w.length >= 2);
 
-const STREET = /\b(?:rue|avenue|av\.|boulevard|bd|chemin|all[ée]e|impasse|place|quai|route|square|cours|passage|faubourg|lotissement|r[ée]sidence)\s+(?:(?:de\s+la|de\s+l['’]|du|des|de|d['’])\s*)?[A-ZÀÂÉÈÊÎÔÛÇ]/u;
+// Une voie sans ambiguïté, suivie de n'importe quel nom, en majuscules ou non (« rue de la paix », « Rue Monge »).
+const STREET = /\b(?:rue|avenue|av\.|boulevard|bd|impasse|all[ée]e(?!\s+(?:priv|centrale|de\s+(?:garage|jardin)))|faubourg)\s+(?:(?:de\s+la|de\s+l['’]|du|des|de|d['’])\s*)?\p{L}{2,}/iu;
+// Un mot qui est aussi un mot courant (« mise en place », « en cours ») : voie seulement devant un nom propre.
+const STREET_PROPER_NAME = /\b(?:[Cc]hemin|[Pp]lace|[Qq]uai|[Rr]oute|[Ss]quare|[Cc]ours|[Pp]assage|[Ll]otissement|[Rr][ée]sidence)\s+(?:(?:de\s+la|de\s+l['’]|du|des|de|d['’])\s*)?\p{Lu}/u;
 const NUMBERED_STREET = /\b\d{1,4}\s*(?:bis|ter)?\s*,?\s*(?:rue|avenue|boulevard|chemin|all[ée]e|impasse|place|quai|route|square|cours|passage|faubourg)\b/iu;
 const AMOUNT = /\d[\d\s.  ]*(?:,\d+)?\s*(?:€|euros?\b|k€|keur\b)|\b\d{1,3}(?:[\s.  ]\d{3})+\b|\b\d{4,}\b/iu;
 const FILE_WORDS = /\b(?:compromis|acte|notaires?|offres?\s+d['’]achat|pr[êe]t|financement|banques?|cr[ée]dit|dossier|signature|r[ée]tractation|succession|h[ée]ritage|divorce|s[ée]paration|d[ée]c[èe]s|mutation|licenciement|apport|diagnostics?)\b/iu;
@@ -99,10 +102,11 @@ export interface TextContext {
   kind: 'reponse' | 'publication';
   /** Les empreintes des mots du nom de l'auteur de l'avis. */
   authorTokenHashes: readonly string[];
-  /** Les noms de clients de la base, sans accent ni majuscule. */
-  clientNames: ReadonlySet<string>;
-  /** Les noms des agents du réseau, permis (une réponse est signée). */
-  agentNames: ReadonlySet<string>;
+  /** Les prénoms et les noms de famille des clients de la base, sans accent ni majuscule. */
+  clientFirstNames: ReadonlySet<string>;
+  clientLastNames: ReadonlySet<string>;
+  /** La signature ajoutée par le code (« Camille, votre agent immobilier »), seule exception aux noms : elle n'est pas lue. */
+  signature?: string | null;
 }
 
 async function sha256Hex(text: string): Promise<string> {
@@ -124,7 +128,7 @@ export async function checkGbpText(text: string, ctx: TextContext, networkId: st
   const t = text.trim();
   if (t === '') problems.add('vide');
   if (t.length > MAX_TEXT) problems.add('longueur');
-  if (STREET.test(t) || NUMBERED_STREET.test(t)) problems.add('adresse');
+  if (STREET.test(t) || STREET_PROPER_NAME.test(t) || NUMBERED_STREET.test(t)) problems.add('adresse');
   if (AMOUNT.test(t)) problems.add('montant');
   if (FILE_WORDS.test(t)) problems.add('dossier');
   if (CONTACT.test(t)) problems.add('coordonnee');
@@ -132,19 +136,28 @@ export async function checkGbpText(text: string, ctx: TextContext, networkId: st
   if (VOCABULARY.test(t)) problems.add('vocabulaire');
   if (AI.test(t) || AI_CI.test(t)) problems.add('ia');
   if (ctx.kind === 'publication' && TESTIMONIAL.test(t)) problems.add('temoignage');
+  // La signature du code, seulement si elle est la dernière ligne exacte du texte ; tout le reste est lu.
+  const sig = ctx.signature ? `\n${ctx.signature}` : null;
+  const body = sig && t.endsWith(sig) ? t.slice(0, -sig.length) : t;
   const authors = new Set(ctx.authorTokenHashes);
-  for (const w of words(t)) {
+  const list = words(body);
+  for (let i = 0; i < list.length; i++) {
+    const w = list[i]!;
     const folded = foldWord(w);
-    // Le nom de l'auteur, écrit de n'importe quelle façon ; un nom de client de la base, écrit comme un nom.
-    if (authors.size > 0 && authors.has(await sha256Hex(`gbp-auteur:${networkId}:${folded}`)) && !ctx.agentNames.has(folded)) problems.add('nom');
-    if (/^\p{Lu}/u.test(w) && ctx.clientNames.has(folded) && !ctx.agentNames.has(folded)) problems.add('nom');
+    // Le nom de l'auteur, écrit de n'importe quelle façon, même s'il est aussi celui d'un agent.
+    if (authors.size > 0 && authors.has(await sha256Hex(`gbp-auteur:${networkId}:${folded}`))) problems.add('nom');
+    // Un nom de famille d'un client de la base, de n'importe quelle façon ; un prénom écrit comme un nom, ou suivi d'un nom.
+    if (ctx.clientLastNames.has(folded)) problems.add('nom');
+    if (ctx.clientFirstNames.has(folded) && (/^\p{Lu}/u.test(w) || (i + 1 < list.length && ctx.clientLastNames.has(foldWord(list[i + 1]!))))) problems.add('nom');
   }
   return [...problems].sort();
 }
 
 /** La réponse faite par le code quand l'IA manque : sans nom, sans détail, signée du prénom de l'agent. */
+export const signatureOf = (agentFirstName: string): string => `${agentFirstName}, votre agent immobilier`;
+
 export function fallbackReply(rating: number, agentFirstName: string): string {
-  const sign = `\n${agentFirstName}, votre agent immobilier`;
+  const sign = `\n${signatureOf(agentFirstName)}`;
   if (rating >= 4) return `Merci pour votre avis et pour votre confiance. C’est une vraie joie de vous avoir accompagné dans votre projet, et je reste à votre écoute pour la suite.${sign}`;
   if (rating === 3) return `Merci d’avoir pris le temps de partager votre avis. Vos remarques comptent : elles m’aident à mieux faire. Je reste à votre écoute si vous souhaitez en parler.${sign}`;
   return `Merci d’avoir pris le temps de nous écrire. Je suis désolé que votre expérience n’ait pas été à la hauteur de vos attentes. Je vous propose d’en parler de vive voix, pour comprendre ce qui n’a pas été.${sign}`;
@@ -152,7 +165,7 @@ export function fallbackReply(rating: number, agentFirstName: string): string {
 
 /** La publication d'un bien publié, écrite par le code : le titre de l'annonce et le lien, jamais le prix [R154]. */
 export function listingPostText(title: string, agentFirstName: string): string {
-  return `${title.trim()}. À découvrir dès maintenant avec ${agentFirstName}, votre agent immobilier : photos, visite et toutes les informations sur la page du bien.`;
+  return `${title.trim()}. À découvrir dès maintenant : photos, visite et toutes les informations sur la page du bien.\n${signatureOf(agentFirstName)}`;
 }
 
 /* ---------- Le service ---------- */
@@ -258,16 +271,14 @@ export class FicheGoogle {
     return r ? { locationRef: r.location_ref, title: r.title, websiteUri: r.website_uri } : null;
   }
 
-  private async context(networkId: string, kind: 'reponse' | 'publication', authorTokenHashes: readonly string[]): Promise<TextContext> {
-    const clientNames = new Set<string>();
+  private async context(networkId: string, kind: 'reponse' | 'publication', authorTokenHashes: readonly string[], signature: string | null): Promise<TextContext> {
+    const clientFirstNames = new Set<string>();
+    const clientLastNames = new Set<string>();
     for (const p of await this.db.all<{ first_name: string | null; last_name: string | null }>('SELECT DISTINCT first_name, last_name FROM persons WHERE network_id = ?', [networkId])) {
-      for (const n of [p.first_name, p.last_name]) if (n) for (const w of words(n)) clientNames.add(foldWord(w));
+      if (p.first_name) for (const w of words(p.first_name)) clientFirstNames.add(foldWord(w));
+      if (p.last_name) for (const w of words(p.last_name)) clientLastNames.add(foldWord(w));
     }
-    const agentNames = new Set<string>();
-    for (const a of await this.db.all<{ first_name: string; last_name: string }>("SELECT first_name, last_name FROM agents WHERE network_id = ? AND status = 'active'", [networkId])) {
-      for (const n of [a.first_name, a.last_name]) for (const w of words(n)) agentNames.add(foldWord(w));
-    }
-    return { kind, authorTokenHashes, clientNames, agentNames };
+    return { kind, authorTokenHashes, clientFirstNames, clientLastNames, signature };
   }
 
   /** La fiche Google d'un agent, réglée par la direction. Chaque réglage s'ajoute. */
@@ -279,7 +290,7 @@ export class FicheGoogle {
     const title = typeof input.title === 'string' ? input.title.trim() : '';
     const site = typeof input.websiteUri === 'string' ? input.websiteUri.trim() : '';
     if (!/^locations\/[A-Za-z0-9_-]{1,190}$/.test(ref) || title.length < 2 || title.length > 100 || /[<>]/.test(title) || !/^https:\/\/[^\s"'<>]{4,290}$/.test(site)) return { ok: false, rule: null, code: 'invalide' };
-    if ((await checkGbpText(title, await this.context(viewer.networkId, 'publication', []), viewer.networkId)).length > 0) return { ok: false, rule: null, code: 'invalide' };
+    if ((await checkGbpText(title, { kind: 'publication', authorTokenHashes: [], clientFirstNames: new Set(), clientLastNames: new Set() }, viewer.networkId)).length > 0) return { ok: false, rule: null, code: 'invalide' };
     await this.db.run('INSERT INTO gbp_locations (id, network_id, agent_id, location_ref, title, website_uri, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
       this.newId(), viewer.networkId, agentId, ref, title, site, this.actor(viewer), this.now().toISOString(),
     ]);
@@ -302,7 +313,7 @@ export class FicheGoogle {
       [networkId, agentId, this.mode],
     );
     if (last?.info_sha256 === hash) return { ok: true, changed: false, mode: this.mode };
-    const outcome = await this.deliver(() => this.client!.updateInfo(loc.locationRef, info));
+    const outcome = await this.callGoogle(() => this.client!.updateInfo(loc.locationRef, info));
     if (outcome === 'sans_service') return { ok: false, rule: null, code: 'sans_service' };
     await this.db.run("INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, NULL, 'informations', ?, ?, ?, 'system:fiche_google', ?)", [
       this.newId(), networkId, agentId, hash, this.mode, outcome, this.now().toISOString(),
@@ -313,7 +324,7 @@ export class FicheGoogle {
   }
 
   /** En mode essai, l'interface n'est jamais appelée pour écrire [R26]. Une panne est notée, jamais avalée. */
-  private async deliver(call: () => Promise<void>): Promise<'essai' | 'envoye' | 'echec' | 'sans_service'> {
+  private async callGoogle(call: () => Promise<void>): Promise<'essai' | 'envoye' | 'echec' | 'sans_service'> {
     if (this.mode === 'essai') return 'essai';
     if (!this.client) return 'sans_service';
     try {
@@ -390,10 +401,10 @@ export class FicheGoogle {
   /** Prépare la réponse à un avis : le texte de l'IA s'il passe le contrôle, sinon le secours du code [R154]. */
   async draftReply(viewer: Viewer, reviewId: unknown): Promise<{ ok: true; value: GbpDraft } | GbpRefusal> {
     const review = await this.review(viewer.networkId, reviewId);
-    if (!review) return this.refuse(viewer, `gbp_review:${String(reviewId)}`, 'inconnu');
+    if (!review) return this.refuse(viewer, `network:${viewer.networkId}`, 'inconnu');
     const allowed = await this.allowed(viewer, review.agent_id);
     if (!allowed.ok) return allowed;
-    const ctx = await this.context(viewer.networkId, 'reponse', JSON.parse(review.author_token_hashes) as string[]);
+    const ctx = await this.context(viewer.networkId, 'reponse', JSON.parse(review.author_token_hashes) as string[], signatureOf(allowed.firstName));
     const rating = Number(review.rating);
     const proposed = await this.askWriter({ rating, comment: review.comment, agentFirstName: allowed.firstName });
     if (proposed) {
@@ -411,12 +422,12 @@ export class FicheGoogle {
   /** La réponse écrite par l'agent, contrôlée comme celle de l'IA. */
   async writeReply(viewer: Viewer, reviewId: unknown, body: unknown): Promise<{ ok: true; value: GbpDraft } | GbpRefusal> {
     const review = await this.review(viewer.networkId, reviewId);
-    if (!review) return this.refuse(viewer, `gbp_review:${String(reviewId)}`, 'inconnu');
+    if (!review) return this.refuse(viewer, `network:${viewer.networkId}`, 'inconnu');
     const allowed = await this.allowed(viewer, review.agent_id);
     if (!allowed.ok) return allowed;
     if (typeof body !== 'string') return { ok: false, rule: null, code: 'invalide' };
     const text = body.trim();
-    const problems = await checkGbpText(text, await this.context(viewer.networkId, 'reponse', JSON.parse(review.author_token_hashes) as string[]), viewer.networkId);
+    const problems = await checkGbpText(text, await this.context(viewer.networkId, 'reponse', JSON.parse(review.author_token_hashes) as string[], signatureOf(allowed.firstName)), viewer.networkId);
     if (problems.length > 0) {
       await appendEvent(this.journal, { type: 'attirer.google.texte_refuse', actor: this.actor(viewer), subject: `agent:${review.agent_id}`, data: { rule: 'R154', problems } }, this.now);
       return { ok: false, rule: 'R154', code: 'texte_refuse', problems };
@@ -460,7 +471,7 @@ export class FicheGoogle {
         ORDER BY p.id`,
       [agentId, networkId],
     );
-    const ctx = await this.context(networkId, 'publication', []);
+    const ctx = await this.context(networkId, 'publication', [], signatureOf(agent.first_name));
     for (const c of candidates) {
       const listing = await this.publishedListing(networkId, agentId, c.id);
       if (!listing) continue;
@@ -499,7 +510,8 @@ export class FicheGoogle {
       const listing = await this.publishedListing(row.network_id, row.agent_id, row.property_id!);
       if (!listing || listing.seq !== Number(row.listing_seq)) return { ok: false, rule: 'R154', code: 'bien_retire' };
     }
-    const problems = await checkGbpText(row.body, await this.context(row.network_id, row.kind, hashes), row.network_id);
+    const agent = await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ? AND network_id = ?', [row.agent_id, row.network_id]);
+    const problems = await checkGbpText(row.body, await this.context(row.network_id, row.kind, hashes, agent ? signatureOf(agent.first_name) : null), row.network_id);
     if (problems.length > 0) return { ok: false, rule: 'R154', code: 'texte_refuse', problems };
     return null;
   }
@@ -507,7 +519,7 @@ export class FicheGoogle {
   /** La validation nommée du texte exact, par l'agent de la fiche ou la direction [R154]. */
   async validate(viewer: Viewer, draftId: unknown): Promise<{ ok: true; value: GbpDraft } | GbpRefusal> {
     const row = await this.draftRow(viewer.networkId, draftId);
-    if (!row) return this.refuse(viewer, `gbp_draft:${String(draftId)}`, 'inconnu');
+    if (!row) return this.refuse(viewer, `network:${viewer.networkId}`, 'inconnu');
     const allowed = await this.allowed(viewer, row.agent_id);
     if (!allowed.ok) return allowed;
     if (row.validated_at) return { ok: false, rule: 'R154', code: 'deja_valide' };
@@ -529,7 +541,7 @@ export class FicheGoogle {
    */
   async publish(viewer: Viewer, draftId: unknown): Promise<{ ok: true; mode: 'essai' | 'reel' } | GbpRefusal> {
     const row = await this.draftRow(viewer.networkId, draftId);
-    if (!row) return this.refuse(viewer, `gbp_draft:${String(draftId)}`, 'inconnu');
+    if (!row) return this.refuse(viewer, `network:${viewer.networkId}`, 'inconnu');
     const allowed = await this.allowed(viewer, row.agent_id);
     if (!allowed.ok) return allowed;
     if (!row.validated_at || !row.validated_by) return { ok: false, rule: 'R154', code: 'non_valide' };
@@ -547,9 +559,26 @@ export class FicheGoogle {
     }
     const loc = await this.location(row.network_id, row.agent_id);
     if (!loc) return { ok: false, rule: null, code: 'sans_fiche' };
+    if (this.mode === 'reel' && !this.client) return { ok: false, rule: null, code: 'sans_service' };
+    // La réservation, avant d'appeler Google : une seule demande passe pour ce texte, et pour un avis, une seule réponse.
+    const target = row.kind === 'reponse' ? `review:${row.review_id}` : `draft:${row.id}`;
+    const failed = await this.db.first<{ n: number }>(
+      row.kind === 'reponse'
+        ? "SELECT count(*) AS n FROM gbp_sends s JOIN gbp_drafts d ON d.id = s.draft_id WHERE d.review_id = ? AND s.mode = ? AND s.outcome = 'echec'"
+        : "SELECT count(*) AS n FROM gbp_sends WHERE draft_id = ? AND mode = ? AND outcome = 'echec'",
+      [row.kind === 'reponse' ? row.review_id : row.id, this.mode],
+    );
+    try {
+      await this.db.run('INSERT INTO gbp_claims (id, network_id, draft_id, target, mode, attempt, claimed_by, claimed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+        this.newId(), row.network_id, row.id, target, this.mode, Number(failed?.n ?? 0) + 1, this.actor(viewer), this.now().toISOString(),
+      ]);
+    } catch (error) {
+      if (/UNIQUE/i.test(String(error))) return { ok: false, rule: 'R154', code: 'deja_parti' };
+      throw error;
+    }
     const reviewRef =
       row.kind === 'reponse' ? (await this.db.first<{ review_ref: string }>('SELECT review_ref FROM gbp_reviews WHERE id = ?', [row.review_id]))!.review_ref : null;
-    const outcome = await this.deliver(() =>
+    const outcome = await this.callGoogle(() =>
       row.kind === 'reponse' ? this.client!.replyToReview(loc.locationRef, reviewRef!, row.body) : this.client!.createPost(loc.locationRef, { text: row.body, linkUri: row.link_uri! }),
     );
     if (outcome === 'sans_service') return { ok: false, rule: null, code: 'sans_service' };

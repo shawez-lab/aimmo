@@ -101,11 +101,11 @@ async function everything(db: SqlDatabase): Promise<string> {
   return JSON.stringify(out);
 }
 
-const ctx = (over: Partial<TextContext> = {}): TextContext => ({ kind: 'reponse', authorTokenHashes: [], clientNames: new Set(), agentNames: new Set(['camille']), ...over });
+const ctx = (over: Partial<TextContext> = {}): TextContext => ({ kind: 'reponse', authorTokenHashes: [], clientFirstNames: new Set(), clientLastNames: new Set(), signature: 'Camille, votre agent immobilier', ...over });
 
 it('[R154] le contrôle refuse nom, adresse, montant, détail du dossier et coordonnée, et laisse passer une réponse simple', async () => {
   const hashes = await nameTokenHashes(AUTHOR, 'net-1');
-  const c = ctx({ authorTokenHashes: hashes, clientNames: new Set(['hortense', 'berangere', 'lunel']) });
+  const c = ctx({ authorTokenHashes: hashes, clientFirstNames: new Set(['hortense']), clientLastNames: new Set(['berangere', 'lunel']) });
   expect(await checkGbpText('Merci pour votre avis, au plaisir.\nCamille', c, 'net-1')).toEqual([]);
   expect(await checkGbpText('Merci Gaspard pour votre avis.', c, 'net-1')).toEqual(['nom']);
   expect(await checkGbpText('merci gaspard pour votre avis.', c, 'net-1')).toEqual(['nom']);
@@ -113,6 +113,19 @@ it('[R154] le contrôle refuse nom, adresse, montant, détail du dossier et coor
   expect(await checkGbpText('Merci à Hortense, rencontrée hier.', c, 'net-1')).toEqual(['nom']);
   expect(await checkGbpText('Merci à Bérangère.', c, 'net-1')).toEqual(['nom']);
   expect(await checkGbpText('Ravie pour votre maison rue Monge.', c, 'net-1')).toEqual(['adresse']);
+  expect(await checkGbpText('Votre maison Rue Monge a trouvé preneur.', c, 'net-1')).toEqual(['adresse']);
+  expect(await checkGbpText('Ravie pour la maison rue de la paix.', c, 'net-1')).toEqual(['adresse']);
+  expect(await checkGbpText('Bravo pour la maison Place Darcy.', c, 'net-1')).toEqual(['adresse']);
+  // Des mots courants qui ne sont pas des voies.
+  expect(await checkGbpText('Merci pour la mise en place du suivi, et sur place tout était en ordre.', c, 'net-1')).toEqual([]);
+  expect(await checkGbpText('Maison avec place de parking, en cours de rénovation.', ctx({ kind: 'publication' }), 'net-1')).toEqual([]);
+  // Un nom de client écrit en minuscules : son nom de famille, ou son prénom suivi d'un nom.
+  expect(await checkGbpText('Merci hortense lunel !', c, 'net-1')).toEqual(['nom']);
+  expect(await checkGbpText('merci madame lunel.', c, 'net-1')).toEqual(['nom']);
+  // La signature du code n'est pas lue, mais le même prénom ailleurs dans le texte l'est.
+  const camille = ctx({ authorTokenHashes: await nameTokenHashes('Camille Rivière', 'net-1') });
+  expect(await checkGbpText('Merci pour votre avis.\nCamille, votre agent immobilier', camille, 'net-1')).toEqual([]);
+  expect(await checkGbpText('Merci Camille pour votre avis.\nCamille, votre agent immobilier', camille, 'net-1')).toEqual(['nom']);
   expect(await checkGbpText('Au 12 avenue des Tilleuls, tout s’est bien passé.', c, 'net-1')).toEqual(['adresse']);
   expect(await checkGbpText('Vendue 245 000 € en trois semaines !', c, 'net-1')).toEqual(['montant']);
   expect(await checkGbpText('Vendue 245000 euros.', c, 'net-1')).toEqual(['montant']);
@@ -139,7 +152,7 @@ it('[R64] [R07] [R06] le contrôle refuse contrepartie, « mandataire », « gra
 });
 
 it('[R154] le secours du code passe toujours le contrôle, pour chaque note, et la publication d’un bien ne porte jamais son prix', async () => {
-  const c = ctx({ authorTokenHashes: await nameTokenHashes(AUTHOR, 'net-1'), clientNames: new Set(['hortense']) });
+  const c = ctx({ authorTokenHashes: await nameTokenHashes(AUTHOR, 'net-1'), clientFirstNames: new Set(['hortense']) });
   for (const rating of [1, 2, 3, 4, 5]) {
     const t = fallbackReply(rating, 'Camille');
     expect(await checkGbpText(t, c, 'net-1'), String(rating)).toEqual([]);
@@ -147,6 +160,7 @@ it('[R154] le secours du code passe toujours le contrôle, pour chaque note, et 
   }
   const post = listingPostText('Maison 5 pièces avec jardin à Talant', 'Camille');
   expect(await checkGbpText(post, ctx({ kind: 'publication' }), 'net-1')).toEqual([]);
+  expect(post.endsWith('\nCamille, votre agent immobilier')).toBe(true);
   expect(post).not.toMatch(/€|\d{3}/);
 });
 
@@ -333,6 +347,34 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     const r = await s.fiche.reviews(direction, 'ag-1');
     expect(r.ok && r.value.map((x) => [x.rating, x.comment])).toEqual([[5, 'Très bon suivi, réactive et à l’écoute.']]);
     expect(JSON.stringify(r)).not.toMatch(/gaspard/i);
+  });
+
+  it('[R154] deux demandes simultanées ne font partir qu’un texte, et un avis ne reçoit qu’une réponse', async () => {
+    const s = await setup({ mode: 'reel' });
+    const reviewId = await withReview(s);
+    const a = await s.fiche.draftReply(agent, reviewId);
+    if (!a.ok) throw new Error('refusé');
+    await s.fiche.validate(agent, a.value.draftId);
+    const results = await Promise.all([s.fiche.publish(agent, a.value.draftId), s.fiche.publish(agent, a.value.draftId), s.fiche.publish(direction, a.value.draftId)]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(s.client.writes()).toHaveLength(1);
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison 5 pièces avec jardin à Talant');
+    const p = await s.fiche.duePost('net-1', 'ag-1');
+    if (!p.ok || !p.value) throw new Error('pas de publication');
+    await s.fiche.validate(agent, p.value.draftId);
+    const posts = await Promise.all([s.fiche.publish(agent, p.value.draftId), s.fiche.publish(agent, p.value.draftId)]);
+    expect(posts.filter((r) => r.ok)).toHaveLength(1);
+    expect(s.client.writes()).toHaveLength(2);
+  });
+
+  it('[R154] le nom de l’auteur est refusé même s’il est aussi le prénom d’un agent du réseau', async () => {
+    const s = await setup({ writer: fixedWriter('Merci Rémi pour votre confiance.') });
+    s.client.reviewsToGive = [{ reviewRef: 'accounts/1/locations/123/reviews/r9', rating: 5, comment: null, authorName: 'Rémi Inventé', reviewedAt: '2026-10-28T10:00:00.000Z' }];
+    await s.fiche.importReviews('net-1', 'ag-1');
+    const id = (await s.db.first<{ id: string }>('SELECT id FROM gbp_reviews'))!.id;
+    const r = await s.fiche.draftReply(agent, id);
+    expect(r.ok && r.value.origin).toBe('secours');
+    expect(await s.fiche.writeReply(agent, id, 'Merci rémi !')).toMatchObject({ ok: false, problems: ['nom'] });
   });
 
   it('une panne en mode réel est notée, et le texte peut repartir ensuite', async () => {

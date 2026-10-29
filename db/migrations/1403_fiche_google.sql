@@ -79,6 +79,22 @@ CREATE TABLE IF NOT EXISTS gbp_sends (
 CREATE UNIQUE INDEX IF NOT EXISTS gbp_sends_draft_ok ON gbp_sends (draft_id) WHERE outcome IN ('essai', 'envoye');
 CREATE INDEX IF NOT EXISTS gbp_sends_agent ON gbp_sends (network_id, agent_id, kind, sent_at);
 
+-- La réservation d'un envoi, prise avant d'appeler Google : deux demandes simultanées ne font partir qu'un texte, et un
+-- avis ne reçoit qu'une réponse. Après une panne, l'essai suivant prend une nouvelle réservation.
+CREATE TABLE IF NOT EXISTS gbp_claims (
+  id TEXT PRIMARY KEY,
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  draft_id TEXT NOT NULL REFERENCES gbp_drafts (id) ON DELETE RESTRICT,
+  target TEXT NOT NULL CHECK (length(target) BETWEEN 3 AND 120),
+  mode TEXT NOT NULL CHECK (mode IN ('essai', 'reel')),
+  attempt INTEGER NOT NULL CHECK (attempt >= 1),
+  claimed_by TEXT NOT NULL,
+  claimed_at TEXT NOT NULL,
+  UNIQUE (target, mode, attempt)
+);
+
+CREATE TRIGGER IF NOT EXISTS gbp_claims_garde BEFORE DELETE ON gbp_claims BEGIN SELECT RAISE(ABORT, 'gbp_claims : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS gbp_claims_fige BEFORE UPDATE ON gbp_claims BEGIN SELECT RAISE(ABORT, 'gbp_claims : rien ne se réécrit'); END;
 CREATE TRIGGER IF NOT EXISTS gbp_locations_garde BEFORE DELETE ON gbp_locations BEGIN SELECT RAISE(ABORT, 'gbp_locations : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS gbp_locations_fige BEFORE UPDATE ON gbp_locations BEGIN SELECT RAISE(ABORT, 'gbp_locations : rien ne se réécrit'); END;
 CREATE TRIGGER IF NOT EXISTS gbp_reviews_garde BEFORE DELETE ON gbp_reviews BEGIN SELECT RAISE(ABORT, 'gbp_reviews : rien ne s''efface'); END;
