@@ -1727,6 +1727,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 
 ### Y07 · Routes de M17 et parcours de 10 biens tests
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #173 prête (relecture forte sans P0 ni P1, 1 P0 de Codex corrigé), en attente de ses vérifications : GitHub Actions ne démarre plus (facturation, H35). À fusionner dès que « Vérifier » passe et que Codex ne relève plus rien.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y06
 - Cahier : M17 ; Architecture technique, API.
 - Objectif : `packages/api/src/investir.ts` : routes `/v1/investir` (profil, import des loyers par la direction, calcul, contraintes, note, validation, alertes), rôle contrôlé avant le corps, refus au journal ; parcours de bout en bout de 10 biens tests ; après l'achat, ouverture de la mise en location de M15 et proposition de partenaires de M18 par leurs routes existantes.
@@ -1742,7 +1743,8 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y09 · Écran « Investir » dans l'application
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : fait sur la branche `chantier/Y09` (bâtie sur Y07), suite complète verte en local, relecture forte : 1 P1 corrigé (biens relus un par un par la couche d'accès, R82). Reste : ouvrir la proposition après la fusion de Y07. Le budget de l'application (48 Ko compressés) est presque plein : l'écran a été allégé pour tenir.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y07
 - Cahier : M17 ; exigence de design (protocole, section 9).
 - Objectif : dans l'application de l'agent, l'écran « Investir » : profil, calcul d'un bien avec ses lignes et leurs sources, curseurs d'hypothèses (vacance, travaux, loyer bas ou haut), contraintes, note à relire et valider.
