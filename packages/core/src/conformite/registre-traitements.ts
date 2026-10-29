@@ -746,10 +746,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   investor_profiles: ['id', 'network_id', 'project_id', 'version', 'rental_target', 'deadline', 'sources', 'origin', 'created_at'],
   market_rents: ['import_id', 'insee_code', 'rent_m2_cents', 'lower_m2_cents', 'upper_m2_cents', 'observations'],
   investment_calculations: ['id', 'network_id', 'property_id', 'project_id', 'status', 'formula_version', 'created_at'],
+  commune_rental_rules: ['id', 'network_id', 'insee_code', 'rule', 'effective_from', 'effective_until', 'source', 'source_date', 'recorded_at'],
+  investment_notes: ['id', 'network_id', 'calculation_id', 'project_id', 'origin', 'status', 'created_at', 'validated_at'],
   investor_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'gross_yield_bp', 'created_at', 'updated_at'],
   property_communes: ['property_id', 'network_id', 'insee_code', 'rent_kind', 'recorded_at'],
-  investment_notes: ['id', 'network_id', 'calculation_id', 'project_id', 'origin', 'status', 'created_at', 'validated_at'],
-  commune_rental_rules: ['id', 'network_id', 'insee_code', 'rule', 'effective_from', 'effective_until', 'source', 'source_date', 'recorded_at'],
   market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
 };
 
