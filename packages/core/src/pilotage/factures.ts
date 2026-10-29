@@ -291,8 +291,13 @@ export class Factures {
     }
     const type = row.kind === 'avoir' ? 'facture.avoir' : 'facture.emise';
     if (!(await this.journal.bySubject(`sale_file:${v.fileId}`)).some((e) => e.type === type && e.data.label === v.content.label)) {
-      // Au journal : la sorte et le numéro, jamais un montant ni un nom [R13].
-      await appendEvent(this.journal, { type, actor, subject: `sale_file:${v.fileId}`, data: { rule: 'R71', kind: row.kind, label: v.content.label, mode: 'essai', ...(v.content.corrects ? { corrects: v.content.corrects } : {}) } }, this.now);
+      // Au journal : la sorte, le numéro et le client qui paie (sa fiche, pour sa demande d'accès), jamais un montant
+      // ni un nom [R13]. Un reversement n'a pas de client.
+      const recipient = (await this.db.first<{ person_id: string | null }>(
+        'SELECT d.recipient_person_id AS person_id FROM invoices i LEFT JOIN invoices o ON o.id = i.corrects_invoice_id JOIN invoice_drafts d ON d.id = COALESCE(i.draft_id, o.draft_id) WHERE i.id = ?',
+        [invoiceId],
+      ))?.person_id ?? null;
+      await appendEvent(this.journal, { type, actor, subject: `sale_file:${v.fileId}`, data: { rule: 'R71', kind: row.kind, label: v.content.label, mode: 'essai', ...(v.content.corrects ? { corrects: v.content.corrects } : {}), ...(recipient ? { client: `person:${recipient}` } : {}) } }, this.now);
     }
     if (row.kind === 'honoraires' && !(await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [invoiceId]))) {
       const step = await this.commissions.recordStep(row.network_id, v.fileId, 'facturee', `facture:${v.content.label}`, actor);
