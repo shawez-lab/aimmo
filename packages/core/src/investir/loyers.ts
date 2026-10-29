@@ -189,13 +189,23 @@ export interface KnownMarketRent {
 export type MarketRent = KnownMarketRent | { status: 'inconnu'; inseeCode: string; kind: MarketRentKind };
 
 export type ImportResult =
-  | { ok: true; importId: string; rows: number; created: boolean }
+  | {
+      ok: true;
+      importId: string;
+      rows: number;
+      /** Les lignes rangées à ce jour ; `en_cours` : rappeler avec le même fichier pour la suite. */
+      stored: number;
+      status: 'en_cours' | 'complet';
+      /** L'import vient d'être ouvert par cet appel. */
+      created: boolean;
+    }
   | { ok: false; rule: 'R16' | 'R122'; code: string; errors?: RowError[] };
 
 export interface LoyersMarcheOptions {
   now?: () => Date;
   newId?: () => string;
   settings?: Partial<MarketRentSettings>;
+  maxChunksPerCall?: number;
 }
 
 async function sha256Hex(text: string): Promise<string> {
@@ -221,13 +231,19 @@ function monthsBefore(at: Date, months: number): string {
   return target.toISOString().slice(0, 10);
 }
 
-/** Les rangs d'un même fichier, par paquets : 12 lignes de 6 valeurs restent sous la limite de D1. */
-const CHUNK = 12;
+/** Les lignes d'un même fichier, par paquets : 16 lignes de 6 valeurs, 96 paramètres, restent sous la limite de D1 (100). */
+const CHUNK = 16;
+/**
+ * Au plus ce nombre de paquets par appel : avec les quelques lectures et écritures autour, un appel reste sous la
+ * limite de requêtes d'un Worker sur D1. Un fichier national se range en quelques appels.
+ */
+export const DEFAULT_MAX_CHUNKS_PER_CALL = 400;
 
 export class LoyersMarche {
   private readonly now: () => Date;
   private readonly newId: () => string;
   readonly settings: MarketRentSettings;
+  private readonly maxChunksPerCall: number;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -237,11 +253,14 @@ export class LoyersMarche {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.settings = { ...DEFAULT_MARKET_RENT_SETTINGS, ...(options.settings ?? {}) };
+    this.maxChunksPerCall = Math.max(1, options.maxChunksPerCall ?? DEFAULT_MAX_CHUNKS_PER_CALL);
   }
 
   /**
    * La direction importe un fichier de la Carte des loyers, pour un type et un millésime. Le fichier entier est
-   * contrôlé avant d'écrire quoi que ce soit ; un même fichier importé deux fois ne range rien de plus.
+   * contrôlé avant d'écrire quoi que ce soit ; un même fichier importé deux fois ne range rien de plus. Un gros
+   * fichier se range en plusieurs appels avec le même fichier, chacun repris après les lignes déjà rangées ; il n'est lu
+   * qu'une fois complet.
    */
   async importAnil(viewer: Viewer, input: { kind: unknown; vintage: unknown; csv: unknown }): Promise<ImportResult> {
     const actor = `${String(viewer.role)}:${viewer.userId}`;
@@ -279,7 +298,9 @@ export class LoyersMarche {
       'SELECT id, status FROM market_rent_imports WHERE network_id = ? AND kind = ? AND file_sha256 = ?',
       [viewer.networkId, kind, hash],
     );
-    if (existing && existing.status === 'complet') return { ok: true, importId: existing.id, rows: parsed.rows.length, created: false };
+    if (existing && existing.status === 'complet') {
+      return { ok: true, importId: existing.id, rows: parsed.rows.length, stored: parsed.rows.length, status: 'complet', created: false };
+    }
     // Un import resté en cours (coupure) est repris : ses lignes déjà rangées ne sont pas récrites.
     const importId = existing?.id ?? this.newId();
     if (!existing) {
@@ -295,11 +316,15 @@ export class LoyersMarche {
           kind,
           hash,
         ]);
-        return { ok: true, importId: other?.id ?? importId, rows: parsed.rows.length, created: false };
+        return { ok: true, importId: other?.id ?? importId, rows: parsed.rows.length, stored: 0, status: 'en_cours', created: false };
       }
     }
-    for (let i = 0; i < parsed.rows.length; i += CHUNK) {
-      const chunk = parsed.rows.slice(i, i + CHUNK);
+    // Reprise après les lignes déjà rangées : chaque paquet est une seule requête, rangé en entier ou pas du tout, dans
+    // l'ordre du fichier ; les lignes rangées sont donc toujours le début du fichier.
+    const already = Number((await this.db.first<{ n: number }>('SELECT count(*) AS n FROM market_rents WHERE import_id = ?', [importId]))?.n ?? 0);
+    const end = Math.min(parsed.rows.length, already + this.maxChunksPerCall * CHUNK);
+    for (let i = already; i < end; i += CHUNK) {
+      const chunk = parsed.rows.slice(i, Math.min(i + CHUNK, end));
       await this.db.run(
         `INSERT INTO market_rents (import_id, insee_code, rent_m2_cents, lower_m2_cents, upper_m2_cents, observations) VALUES ${chunk
           .map(() => '(?, ?, ?, ?, ?, ?)')
@@ -307,18 +332,27 @@ export class LoyersMarche {
         chunk.flatMap((r) => [importId, r.inseeCode, r.rentM2Cents, r.lowerM2Cents, r.upperM2Cents, r.observations]),
       );
     }
-    const stored = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM market_rents WHERE import_id = ?', [importId]);
-    if (Number(stored?.n ?? 0) !== parsed.rows.length) throw new Error('loyers de marché : import incomplet');
+    const stored = Number((await this.db.first<{ n: number }>('SELECT count(*) AS n FROM market_rents WHERE import_id = ?', [importId]))?.n ?? 0);
+    if (stored < parsed.rows.length) {
+      // Le reste au prochain appel, avec le même fichier : un appel du Worker ne passe pas la limite de requêtes de D1.
+      await appendEvent(
+        this.journal,
+        { type: 'investir.loyers.import', actor, subject: `network:${viewer.networkId}`, data: { import: importId, kind, vintage: input.vintage, stored, rows: parsed.rows.length } },
+        this.now,
+      );
+      return { ok: true, importId, rows: parsed.rows.length, stored, status: 'en_cours', created: !existing };
+    }
+    if (stored !== parsed.rows.length) throw new Error('loyers de marché : import incohérent');
     await this.db.run("UPDATE market_rent_imports SET status = 'complet', completed_at = ? WHERE id = ? AND status = 'en_cours'", [
       this.now().toISOString(),
       importId,
     ]);
     await appendEvent(
       this.journal,
-      { type: 'investir.loyers.import', actor, subject: `network:${viewer.networkId}`, data: { import: importId, kind, vintage: input.vintage, rows: parsed.rows.length } },
+      { type: 'investir.loyers.import', actor, subject: `network:${viewer.networkId}`, data: { import: importId, kind, vintage: input.vintage, stored, rows: parsed.rows.length } },
       this.now,
     );
-    return { ok: true, importId, rows: parsed.rows.length, created: true };
+    return { ok: true, importId, rows: parsed.rows.length, stored, status: 'complet', created: !existing };
   }
 
   /**

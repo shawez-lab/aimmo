@@ -122,7 +122,7 @@ describeWithSqlite('Y02 · loyers de marché', () => {
   it('[R122] l’import de la direction est rangé avec source, millésime et empreinte ; la réponse cite l’ANIL et dit sa fiabilité', async () => {
     const t = await setup();
     const r = await t.loyers.importAnil(t.direction, { kind: 'apartment', vintage: 2026, csv: CSV });
-    expect(r).toMatchObject({ ok: true, rows: 3, created: true });
+    expect(r).toMatchObject({ ok: true, rows: 3, stored: 3, status: 'complet', created: true });
     const one = await t.loyers.marketRent('net-1', '99001', 'apartment');
     expect(one).toMatchObject({
       status: 'connu',
@@ -169,6 +169,49 @@ describeWithSqlite('Y02 · loyers de marché', () => {
     await expect(
       t.db.run("INSERT INTO market_rents (import_id, insee_code, rent_m2_cents, lower_m2_cents, upper_m2_cents, observations) VALUES (?, '99009', 1000, 900, 1100, 50)", [id]),
     ).rejects.toThrow(/import fermé/);
+  });
+
+  it('un gros fichier se range en plusieurs appels, chacun sous la limite de requêtes, repris après les lignes rangées', async () => {
+    const t = await setup();
+    const rows = Array.from({ length: 100 }, (_, i) => `${i};${String(98000 + i)};C;1;99;99;10,5;9;12;commune;50;100;0,7`);
+    const csv = [HEADER, ...rows].join('\n');
+    let queries = 0;
+    const counted: SqlDatabase = {
+      exec: (sql) => t.db.exec(sql),
+      run: (sql, params) => ((queries += 1), t.db.run(sql, params)),
+      all: (sql, params) => ((queries += 1), t.db.all(sql, params)),
+      first: (sql, params) => ((queries += 1), t.db.first(sql, params)),
+    };
+    const loyers = new LoyersMarche(counted, t.journal, { now: () => new Date(NOW), maxChunksPerCall: 2 });
+    const calls: { status: string; stored: number }[] = [];
+    let maxQueries = 0;
+    for (let n = 0; n < 10; n += 1) {
+      queries = 0;
+      const r = await loyers.importAnil(t.direction, { kind: 'house', vintage: 2026, csv });
+      maxQueries = Math.max(maxQueries, queries);
+      if (!r.ok) throw new Error(r.code);
+      calls.push({ status: r.status, stored: r.stored });
+      if (r.status === 'complet') break;
+    }
+    // 16 lignes par paquet, 2 paquets par appel : 32, 64, 96, puis 100.
+    expect(calls).toEqual([
+      { status: 'en_cours', stored: 32 },
+      { status: 'en_cours', stored: 64 },
+      { status: 'en_cours', stored: 96 },
+      { status: 'complet', stored: 100 },
+    ]);
+    // Les paquets plus les lectures et le journal : bien sous les 1 000 requêtes d'un appel sur D1.
+    expect(maxQueries).toBeLessThan(20);
+    // Complet, il est lu.
+    expect(await t.loyers.marketRent('net-1', '98099', 'house')).toMatchObject({ status: 'connu', rentM2Cents: 1050 });
+  });
+
+  it('un import resté en cours n’est jamais lu', async () => {
+    const t = await setup();
+    const loyers = new LoyersMarche(t.db, t.journal, { now: () => new Date(NOW), maxChunksPerCall: 1 });
+    const rows = Array.from({ length: 20 }, (_, i) => `${i};${String(97000 + i)};C;1;99;99;10,5;9;12;commune;50;100;0,7`);
+    expect(await loyers.importAnil(t.direction, { kind: 'house', vintage: 2026, csv: [HEADER, ...rows].join('\n') })).toMatchObject({ ok: true, status: 'en_cours', stored: 16 });
+    expect(await t.loyers.marketRent('net-1', '97000', 'house')).toMatchObject({ status: 'inconnu' });
   });
 
   it('un fichier mal formé ne range rien, et le refus va au journal sans aucun chiffre du fichier', async () => {
