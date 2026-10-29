@@ -65,7 +65,7 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
           period: { from: '2026-10-12', to: '2027-10-12' },
           welcome: DEFAULT_WELCOME,
           welcomeBy: 'code',
-          sales: { source: 'DVF test', latestUsedSale: '2027-03', validatedOn: '2027-10-07', items: [{ month: '2027-03', surfaceM2: 85, pricePerM2: 2900, distanceM: 200 }] },
+          sales: { source: 'DVF test', latestUsedSale: '2027-03', recentMissing: true, dvfNotCovered: false, validatedOn: '2027-10-07', items: [{ month: '2027-03', surfaceM2: 85, pricePerM2: 2900, distanceM: 200 }] },
           plan: SALE_PLAN,
           commitments: [{ code: 'cr', version: 1, label: 'Un compte rendu après chaque visite', rule: 'Règle de test.', delayHours: 24, kept: 3, total: 4, rate: 0.75, proof: [{ day: '2027-09-01', kept: true }] }],
           reviews: { link: 'https://g.page/r/exemple/review', source: 'Réponses de test', count: 1, average: 5, answers: [{ day: '2027-09-02', score: 5 }] },

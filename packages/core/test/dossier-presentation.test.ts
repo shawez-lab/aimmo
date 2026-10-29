@@ -61,18 +61,24 @@ async function setup() {
 describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de mandat (Jamais vu)', () => {
   it('[R141] Jamais vu : chaque engagement avec le taux réellement tenu, égal au calcul fait à la main, et sa preuve', async () => {
     const t = await setup();
-    expect(await t.dossier.setCommitment(t.dir, { code: 'compte_rendu', label: 'Un compte rendu après chaque visite', measure: 'compte_rendu_visite', delayHours: 24, active: true })).toEqual({ ok: true, value: { version: 1 } });
-    expect(await t.dossier.setCommitment(t.dir, { code: 'point_semaine', label: 'Un point chaque semaine au vendeur', measure: 'point_semaine', delayHours: 48, active: true })).toMatchObject({ ok: true });
-    // Visites d'Alex sur les 12 derniers mois : tenue (10 h), en retard (30 h), brouillon, sans compte rendu, tenue (23 h).
+    // La direction a rangé ses engagements il y a plus d'un an.
+    const before = new DossierPresentation(t.db, t.journal, { now: () => new Date(NOW - 400 * DAY) });
+    expect(await before.setCommitment(t.dir, { code: 'compte_rendu', label: 'Un compte rendu après chaque visite', measure: 'compte_rendu_visite', delayHours: 24, active: true })).toEqual({ ok: true, value: { version: 1 } });
+    expect(await before.setCommitment(t.dir, { code: 'point_semaine', label: 'Un point chaque semaine au vendeur', measure: 'point_semaine', delayHours: 48, active: true })).toMatchObject({ ok: true });
+    // Visites d'Alex sous la version 1 (24 h) : tenue (10 h), en retard (30 h), brouillon, sans compte rendu,
+    // restée « réservée » sans compte rendu (elle compte quand même), tenue (23 h) : 2 sur 6.
     await t.visit(NOW - 200 * DAY, 'valide', 10);
     await t.visit(NOW - 150 * DAY, 'valide', 30);
     await t.visit(NOW - 100 * DAY, 'brouillon', null);
     await t.visit(NOW - 50 * DAY, null, null);
+    const booked = await t.appointment('visite', NOW - 30 * DAY, t.alex.id, 'booked');
+    await t.db.run("INSERT INTO visits (appointment_id, network_id, property_id, project_id, person_id, agent_id, created_by, created_at) SELECT ?, network_id, property_id, (SELECT id FROM projects LIMIT 1), person_id, agent_id, 'agent:test', created_at FROM appointments WHERE id = ?", [booked, booked]);
     await t.visit(NOW - 10 * DAY, 'valide', 23);
-    // Hors du compte : plus d'un an, et une visite de Sam.
+    // Hors du compte : plus d'un an, une visite de Sam, une visite finie il y a 2 h dont le délai court encore.
     await t.visit(NOW - 400 * DAY, 'valide', 1);
     await t.visit(NOW - 20 * DAY, null, null, t.sam.id);
-    // Points de la semaine : validé en 1 h, en 50 h, jamais validé.
+    await t.visit(NOW - 2 * H, null, null);
+    // Points de la semaine : validé en 1 h, en 50 h, jamais validé : 1 sur 3.
     await t.point('2027-W30', NOW - 80 * DAY, 'valide', 1);
     await t.point('2027-W31', NOW - 73 * DAY, 'valide', 50);
     await t.point('2027-W32', NOW - 66 * DAY, 'prepare', null);
@@ -80,18 +86,22 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
     const d = await t.dossier.build(t.agent(), rdv);
     if (!d.ok) throw new Error(d.code);
     const cr = d.value.commitments.find((c) => c.code === 'compte_rendu')!;
-    // À la main : 2 tenues sur 5.
-    expect([cr.kept, cr.total, cr.rate]).toEqual([2, 5, 2 / 5]);
-    expect(cr.proof.map((p) => p.kept)).toEqual([true, false, false, false, true]);
+    expect([cr.kept, cr.total, cr.rate]).toEqual([2, 6, 2 / 6]);
+    expect(cr.proof.map((p) => p.kept)).toEqual([true, false, false, false, false, true]);
     const ps = d.value.commitments.find((c) => c.code === 'point_semaine')!;
     expect([ps.kept, ps.total, ps.rate]).toEqual([1, 3, 1 / 3]);
-    // Une nouvelle version fait foi ; un engagement retiré n'est plus montré.
-    expect(await t.dossier.setCommitment(t.dir, { code: 'compte_rendu', label: 'Un compte rendu après chaque visite', measure: 'compte_rendu_visite', delayHours: 36, active: true })).toEqual({ ok: true, value: { version: 2 } });
+    // Une version 2 à 36 h, il y a 5 jours : elle ne juge que les cas d'après elle ; le passé garde la version 1.
+    const recent = new DossierPresentation(t.db, t.journal, { now: () => new Date(NOW - 5 * DAY) });
+    expect(await recent.setCommitment(t.dir, { code: 'compte_rendu', label: 'Un compte rendu après chaque visite', measure: 'compte_rendu_visite', delayHours: 36, active: true })).toEqual({ ok: true, value: { version: 2 } });
+    await t.visit(NOW - 3 * DAY, 'valide', 30);
     await t.dossier.setCommitment(t.dir, { code: 'point_semaine', label: 'Un point chaque semaine au vendeur', measure: 'point_semaine', delayHours: 48, active: false });
     const again = await t.dossier.build(t.agent(), rdv);
-    expect(again.ok && again.value.commitments.map((c) => [c.code, c.version, c.kept, c.total])).toEqual([['compte_rendu', 2, 3, 5]]);
+    expect(again.ok && again.value.commitments.map((c) => [c.code, c.version, c.kept, c.total])).toEqual([['compte_rendu', 2, 3, 7]]);
     const html = renderDossier(again.ok ? again.value : d.value, 'Alex Essai');
-    expect(html).toContain('Tenu 3 fois sur 5, soit 60 %');
+    expect(html).toContain('Tenu 3 fois sur 7, soit 43 %');
+    // La preuve est visible à l'écran comme à l'impression.
+    expect(html).not.toContain('<details');
+    expect(html.match(/<ul class="preuve">/g)).toHaveLength(1);
     expect(htmlProblems(html)).toEqual([]);
   });
 
@@ -103,7 +113,7 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
         t.network.id,
         t.property.id,
         t.alex.id,
-        JSON.stringify({ cited: [{ month: '2027-03', surface: 85, pricePerM2: 2900, distance: 212, street: 'rue des Voisins Essai', town: 'Dijon' }], latestUsedSale: '2027-03', data: { source: 'DVF test' } }),
+        JSON.stringify({ cited: [{ month: '2027-03', surface: 85, pricePerM2: 2900, distance: 212, street: 'rue des Voisins Essai', town: 'Dijon' }], latestUsedSale: '2027-03', data: { source: 'DVF test', recentMissing: true } }),
         iso(NOW - 5 * DAY),
         iso(NOW - 5 * DAY),
         iso(NOW - 5 * DAY),
@@ -115,7 +125,9 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
     const rdv = await t.appointment('estimation', NOW + DAY, t.alex.id, 'booked');
     const d = await t.dossier.build(t.agent(), rdv);
     if (!d.ok) throw new Error(d.code);
-    expect(d.value.sales).toEqual({ source: 'DVF test', latestUsedSale: '2027-03', validatedOn: '2027-10-07', items: [{ month: '2027-03', surfaceM2: 85, pricePerM2: 2900, distanceM: 200 }] });
+    expect(d.value.sales).toEqual({ source: 'DVF test', latestUsedSale: '2027-03', recentMissing: true, dvfNotCovered: false, validatedOn: '2027-10-07', items: [{ month: '2027-03', surfaceM2: 85, pricePerM2: 2900, distanceM: 200 }] });
+    // La date des données est dite entière : les ventes récentes manquent encore [R28].
+    expect(renderDossier(d.value, 'Alex Essai')).toContain('Les ventes les plus récentes ne sont pas encore publiées.');
     // Tous les avis des 12 derniers mois, la mauvaise note comprise, dans l'ordre des dates ; jamais le commentaire.
     expect(d.value.reviews).toMatchObject({ count: 3, average: 3.7, answers: [{ score: 5 }, { score: 2 }, { score: 4 }] });
     expect(d.value.results).toMatchObject({ mandates: 1, sales: 0, estimationsHonored: 0 });
@@ -127,7 +139,7 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
 
   it('[R141] aucune promesse de prix ni de délai : liste fermée de tournures, refusées dans les engagements et dans le texte de l’IA', async () => {
     const t = await setup();
-    for (const label of ['Vente garantie en moins de trois mois', 'Nous vendrons au meilleur prix', 'Votre bien vendu en un mois', 'Compte rendu sous 24 h', 'Prix assuré']) {
+    for (const label of ['Vente garantie en moins de trois mois', 'Nous vendrons au meilleur prix', 'Votre bien vendu en un mois', 'Compte rendu sous 24 h', 'Prix assuré', 'Votre bien vendu dans le mois', 'Une vente en quelques semaines', 'Votre bien trouvera preneur sous un mois', 'Le prix le plus haut du quartier', 'Vendre vite et bien']) {
       expect(await t.dossier.setCommitment(t.dir, { code: 'essai', label, measure: 'point_semaine', delayHours: 24, active: true }), label).toEqual({ ok: false, rule: 'R141', code: 'promise' });
     }
     expect(promisesSomething('Un compte rendu après chaque visite')).toBe(false);

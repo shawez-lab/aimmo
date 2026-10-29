@@ -44,7 +44,7 @@ const DAY = 86_400_000;
  * relue sur le texte sans accents.
  */
 const PROMISES =
-  /\bgaranti\w*|\bassur(e|es|ee|ees|ons|ez|ont|ance)\b|\bpromet\w*|\bpromis\w*|\bcertain\w*|\ben moins de\b|\bsous (quinze|trente|huit) jours\b|\bvendu en\b|\bvendre en\b|\bnous vendrons\b|\bje vendrai\b|\bau prix (de|fort|demande)\b|\bmeilleur prix\b|\bprix (garanti|assure|record)\b|\bplus cher\b|\brapidement vendu\b|\bvente rapide\b|\bvente assuree\b|\bsans faute\b/;
+  /\bgaranti\w*|\bassur(e|es|ee|ees|ons|ez|ont|ance)\b|\bpromet\w*|\bpromis\w*|\bcertain\w*|\ben moins de\b|\bsous (quinze|trente|huit) jours\b|\bvendu en\b|\bvendre en\b|\bnous vendrons\b|\bje vendrai\b|\bau prix (de|fort|demande)\b|\bmeilleur prix\b|\bprix (garanti|assure|record)\b|\bplus cher\b|\brapidement vendu\b|\bvente rapide\b|\bvente assuree\b|\bsans faute\b|\bdans (le|la|les) (mois|semaine|semaines|jours)\b|\bsous (un|une|deux|trois|quatre|six|quinze|trente|huit) (jours?|semaines?|mois)\b|\bd ici\b|\ben quelques (jours|semaines|mois)\b|\bvite\b|\brapidement\b|\ble plus (haut|cher|eleve)\b|\bprix le plus\b|\btrouvera (preneur|acquereur)\b|\bvente en\b|\bvendu sous\b|\bau dessus du marche\b/;
 
 export function promisesSomething(text: string): boolean {
   return /\d/.test(text) || PROMISES.test(plain(text));
@@ -76,7 +76,7 @@ export interface Dossier {
   period: { from: string; to: string };
   welcome: string;
   welcomeBy: 'ia' | 'code';
-  sales: { source: string | null; latestUsedSale: string | null; validatedOn: string; items: { month: string; surfaceM2: number; pricePerM2: number; distanceM: number }[] } | null;
+  sales: { source: string | null; latestUsedSale: string | null; recentMissing: boolean; dvfNotCovered: boolean; validatedOn: string; items: { month: string; surfaceM2: number; pricePerM2: number; distanceM: number }[] } | null;
   plan: readonly string[];
   commitments: CommitmentView[];
   reviews: { link: string | null; source: string; count: number; average: number | null; answers: { day: string; score: number }[] };
@@ -140,26 +140,52 @@ export class DossierPresentation {
     return { ok: true, value: { version } };
   }
 
-  /** Le taux tenu d'un engagement par un agent sur la période, et chaque cas qui le prouve. */
-  async rate(networkId: string, agentId: string, measure: CommitmentMeasure, delayHours: number, from: Date, to: Date): Promise<{ kept: number; total: number; proof: { day: string; kept: boolean }[] }> {
+  /** Les cas d'une mesure pour un agent sur un intervalle, et si chacun a été tenu dans ce délai. */
+  private async cases(networkId: string, agentId: string, measure: CommitmentMeasure, delayHours: number, from: Date, to: Date, now: Date): Promise<{ at: string; kept: boolean }[]> {
     const delay = delayHours * 3_600_000;
-    const cases: { at: string; kept: boolean }[] = [];
+    const out: { at: string; kept: boolean }[] = [];
+    // Un cas ne compte que quand son délai est écoulé : avant, il n'est ni tenu ni manqué.
+    const due = (at: string): boolean => Date.parse(at) + delay <= now.getTime();
     if (measure === 'compte_rendu_visite') {
+      // Toute visite terminée et non annulée compte, que l'agent l'ait marquée tenue ou non : le taux ne dépend pas
+      // de ce que l'agent choisit de marquer.
       const rows = await this.db.all<{ end_at: string; validated_at: string | null; status: string | null }>(
         `SELECT a.end_at, r.validated_at, r.status FROM appointments a JOIN visits v ON v.appointment_id = a.id
          LEFT JOIN visit_reports r ON r.appointment_id = a.id
-         WHERE a.network_id = ? AND a.agent_id = ? AND a.kind = 'visite' AND a.status = 'honored' AND a.end_at >= ? AND a.end_at <= ? ORDER BY a.end_at, a.id`,
+         WHERE a.network_id = ? AND a.agent_id = ? AND a.kind = 'visite' AND a.status IN ('booked', 'honored') AND a.end_at >= ? AND a.end_at < ? ORDER BY a.end_at, a.id`,
         [networkId, agentId, from.toISOString(), to.toISOString()],
       );
-      for (const r of rows) cases.push({ at: r.end_at, kept: r.status === 'valide' && r.validated_at !== null && Date.parse(r.validated_at) <= Date.parse(r.end_at) + delay });
+      for (const r of rows) if (due(r.end_at)) out.push({ at: r.end_at, kept: r.status === 'valide' && r.validated_at !== null && Date.parse(r.validated_at) <= Date.parse(r.end_at) + delay });
     } else {
       const rows = await this.db.all<{ created_at: string; validated_at: string | null; status: string }>(
-        'SELECT created_at, validated_at, status FROM weekly_points WHERE network_id = ? AND agent_id = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at, mandate_id, week',
+        'SELECT created_at, validated_at, status FROM weekly_points WHERE network_id = ? AND agent_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at, mandate_id, week',
         [networkId, agentId, from.toISOString(), to.toISOString()],
       );
-      for (const r of rows) cases.push({ at: r.created_at, kept: r.status === 'valide' && r.validated_at !== null && Date.parse(r.validated_at) <= Date.parse(r.created_at) + delay });
+      for (const r of rows) if (due(r.created_at)) out.push({ at: r.created_at, kept: r.status === 'valide' && r.validated_at !== null && Date.parse(r.validated_at) <= Date.parse(r.created_at) + delay });
     }
-    return { kept: cases.filter((c) => c.kept).length, total: cases.length, proof: cases.map((c) => ({ day: day(c.at), kept: c.kept })) };
+    return out;
+  }
+
+  /**
+   * Le taux tenu d'un engagement par un agent sur la période : chaque cas est jugé par la version de l'engagement en
+   * vigueur à sa date (sa mesure, son délai) ; un cas d'avant la première version, ou d'une version retirée, ne compte
+   * pas. Rend aussi chaque cas qui le prouve.
+   */
+  async rate(networkId: string, agentId: string, code: string, from: Date, to: Date): Promise<{ kept: number; total: number; proof: { day: string; kept: boolean }[] }> {
+    const versions = await this.db.all<{ measure: CommitmentMeasure; delay_hours: number; active: number; set_at: string }>(
+      'SELECT measure, delay_hours, active, set_at FROM service_commitments WHERE network_id = ? AND code = ? ORDER BY version',
+      [networkId, code],
+    );
+    const all: { at: string; kept: boolean }[] = [];
+    for (const [i, v] of versions.entries()) {
+      if (v.active !== 1) continue;
+      const start = new Date(Math.max(Date.parse(v.set_at), from.getTime()));
+      const end = new Date(Math.min(i + 1 < versions.length ? Date.parse(versions[i + 1]!.set_at) : Infinity, to.getTime() + 1));
+      if (start.getTime() >= end.getTime()) continue;
+      all.push(...(await this.cases(networkId, agentId, v.measure, Number(v.delay_hours), start, end, to)));
+    }
+    all.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+    return { kept: all.filter((c) => c.kept).length, total: all.length, proof: all.map((c) => ({ day: day(c.at), kept: c.kept })) };
   }
 
   /** Le dossier d'un rendez-vous d'estimation de l'agent ; la lecture est au journal, sans donnée [R16, R13]. */
@@ -180,10 +206,13 @@ export class DossierPresentation {
         [appt.property_id, viewer.networkId],
       );
       if (report) {
-        const c = JSON.parse(report.computed) as { cited?: { month: string; surface: number; pricePerM2: number; distance: number }[]; latestUsedSale?: string; data?: { source?: string | null } };
+        const c = JSON.parse(report.computed) as { cited?: { month: string; surface: number; pricePerM2: number; distance: number }[]; latestUsedSale?: string; data?: { source?: string | null; recentMissing?: boolean; dvfNotCovered?: boolean } };
         sales = {
           source: c.data?.source ?? null,
           latestUsedSale: c.latestUsedSale ?? null,
+          // Les ventes les plus récentes ne sont pas encore publiées, ou le département n'est pas couvert : dit tel quel [R28].
+          recentMissing: c.data?.recentMissing === true,
+          dvfNotCovered: c.data?.dvfNotCovered === true,
           validatedOn: day(report.validated_at),
           // Ni rue ni commune : rien qui situe la vente d'un autre [R46].
           items: (c.cited ?? []).map((s) => ({ month: s.month, surfaceM2: s.surface, pricePerM2: s.pricePerM2, distanceM: Math.round(s.distance / 50) * 50 })),
@@ -200,7 +229,7 @@ export class DossierPresentation {
     const commitments: CommitmentView[] = [];
     for (const v of versions) {
       if (v.active !== 1) continue;
-      const r = await this.rate(viewer.networkId, viewer.userId, v.measure, Number(v.delay_hours), from, at);
+      const r = await this.rate(viewer.networkId, viewer.userId, v.code, from, at);
       commitments.push({ code: v.code, version: Number(v.version), label: v.label, rule: COMMITMENT_MEASURE_RULES[v.measure], delayHours: Number(v.delay_hours), kept: r.kept, total: r.total, rate: r.total === 0 ? null : r.kept / r.total, proof: r.proof });
     }
 
@@ -260,7 +289,7 @@ const euros = (n: number): string => `${new Intl.NumberFormat('fr-FR').format(n)
 /** Le dossier, lisible sur téléphone et imprimable : la base du système de design, puis des règles de jetons [R201]. */
 export function renderDossier(d: Dossier, agentName: string): string {
   const sales = d.sales
-    ? `<section><h2>Les ventes du quartier</h2><p class="doux">Source : ${escape(d.sales.source ?? 'non précisée')}, vente la plus récente : ${escape(d.sales.latestUsedSale ?? 'non précisée')}, avis validé le ${escape(d.sales.validatedOn)}.</p><table><caption>Ventes comparables</caption><thead><tr><th scope="col">Mois</th><th scope="col">Surface</th><th scope="col">Prix au m²</th><th scope="col">Distance</th></tr></thead><tbody>${d.sales.items
+    ? `<section><h2>Les ventes du quartier</h2><p class="doux">Source : ${escape(d.sales.source ?? 'non précisée')}, vente la plus récente : ${escape(d.sales.latestUsedSale ?? 'non précisée')}, avis validé le ${escape(d.sales.validatedOn)}.${d.sales.recentMissing ? ' Les ventes les plus récentes ne sont pas encore publiées.' : ''}${d.sales.dvfNotCovered ? ' Le département n’est pas couvert par les ventes publiques : ce sont les ventes connues de l’agence.' : ''}</p><table><caption>Ventes comparables</caption><thead><tr><th scope="col">Mois</th><th scope="col">Surface</th><th scope="col">Prix au m²</th><th scope="col">Distance</th></tr></thead><tbody>${d.sales.items
         .map((s) => `<tr><td>${escape(s.month)}</td><td>${s.surfaceM2} m²</td><td>${euros(s.pricePerM2)}</td><td>${s.distanceM} m</td></tr>`)
         .join('')}</tbody></table></section>`
     : '<section><h2>Les ventes du quartier</h2><p>Pas encore d’avis de valeur validé pour ce bien.</p></section>';
@@ -268,7 +297,7 @@ export function renderDossier(d: Dossier, agentName: string): string {
     .map(
       (c) =>
         `<li><h3>${escape(c.label)}</h3><p class="taux">${c.rate === null ? 'Aucun cas sur la période' : `Tenu ${c.kept} fois sur ${c.total}, soit ${pct(c.rate)}`}</p><p class="doux">${escape(c.rule)} Délai : ${c.delayHours} h. Version ${c.version}.</p>` +
-        `<details><summary>Le détail, cas par cas</summary><ul>${c.proof.map((p) => `<li>${escape(p.day)} : ${p.kept ? 'tenu' : 'non tenu'}</li>`).join('')}</ul></details></li>`,
+        `<p class="doux">Le détail, cas par cas :</p><ul class="preuve">${c.proof.map((p) => `<li>${escape(p.day)} : ${p.kept ? 'tenu' : 'non tenu'}</li>`).join('')}</ul></li>`,
     )
     .join('');
   const reviews = d.reviews.count === 0 ? '<p>Aucun avis sur la période.</p>' : `<p>${d.reviews.count} avis, note moyenne ${String(d.reviews.average).replace('.', ',')} sur 5.</p><ul class="avis">${d.reviews.answers.map((a) => `<li>${escape(a.day)} : ${a.score} sur 5</li>`).join('')}</ul>`;
@@ -301,4 +330,4 @@ section{margin-top:var(--e-6)}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:var(--e-2);border-bottom:1px solid var(--trait)}
 .engagements{list-style:none;padding:0}.engagements>li{border-top:1px solid var(--trait);padding:var(--e-4) 0}
 .taux{font-size:var(--t-l);font-weight:700;color:var(--accent)}
-@media print{.tete{padding:0}main{max-width:none;padding:0}details{display:block}}`;
+@media print{.tete{padding:0}main{max-width:none;padding:0}}`;
