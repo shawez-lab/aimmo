@@ -273,7 +273,7 @@ export const INVESTIR_JS = `
     });
     box.appendChild(ul);
     (constraints && Array.isArray(constraints.constraints) ? constraints.constraints : []).forEach(function (c) {
-      if (constraints.alertsFirst.indexOf(c.text) === -1) box.appendChild(el('p', c.text + ' Source : ' + c.source + '.', 'doux'));
+      if (!Array.isArray(constraints.alertsFirst) || constraints.alertsFirst.indexOf(c.text) === -1) box.appendChild(el('p', c.text + ' Source : ' + c.source + '.', 'doux'));
     });
 
     var h = details(box, 'Changer une hypothèse et rédiger la note');

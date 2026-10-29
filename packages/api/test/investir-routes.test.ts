@@ -217,7 +217,13 @@ describeWithSqlite('Y09 · listes de l’écran « Investir »', () => {
     expect(biens.map((b: { propertyId: string }) => b.propertyId).sort()).toEqual([own.id, shared.id].sort());
     expect(biens.find((b: { propertyId: string }) => b.propertyId === own.id)).toMatchObject({ priceCents: 10_000_000, surfaceHundredths: 4000, inseeCode: '99001', rentKind: 'apartment' });
     expect(biens.some((b: { propertyId: string }) => b.propertyId === bare.id)).toBe(false);
-    expect((await t.journal.all()).some((e) => e.type === 'investir.biens.lus')).toBe(true);
+    expect((await t.journal.all()).filter((e) => e.type === 'bien.lu').length).toBeGreaterThanOrEqual(2);
+    // Un agent au dossier incomplet ne voit que le fichier commun [R82].
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, 'cand-1', 'direction:dir-1', '2027-09-01')", [t.alex.id, t.network.id]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    const restricted = await t.ok(t.agent, 'GET', '/investir/biens');
+    expect(restricted.map((b: { propertyId: string }) => b.propertyId)).toEqual([shared.id]);
   });
 });
 
