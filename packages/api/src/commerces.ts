@@ -84,11 +84,15 @@ const json = (status: number, body: unknown): Response =>
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
   });
 
-type Outcome = { ok: true; value?: unknown } | { ok: false; rule: string | null; code: string };
+type Outcome = { ok: true; value?: unknown; [extra: string]: unknown } | { ok: false; rule: string | null; code: string };
 
 /** 200 ; 403 pour un refus de droits ; 404 inconnu ; 409 pour une règle ; 400 sinon. */
 function reply(result: Outcome): Response {
-  if (result.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: result.value ?? null });
+  if (result.ok) {
+    // Ce qui accompagne un succès suit (les phrases de l'IA refusées d'une présentation, par exemple).
+    const { ok: _ok, value, ...rest } = result;
+    return json(200, { ok: true, mode: TRIAL_MODE, data: value ?? null, ...rest });
+  }
   const { rule, code } = result;
   // Les détails d'un refus (phrases refusées, étapes manquantes, codes de la porte) suivent, sans donnée personnelle.
   const extra = Object.fromEntries(Object.entries(result).filter(([k]) => !['ok', 'rule', 'code'].includes(k)));
@@ -244,7 +248,9 @@ export function dossierReaderRoutes(): DossierReaderRoute[] {
       name: 'commerces.dossier.ouverture',
       handle: async (s, [token], r) => {
         const b = await body(r);
-        return reply(await core(s).dossier.open(token, b.email, b.code));
+        const opened = await core(s).dossier.open(token, b.email, b.code);
+        // Le lecteur sans compte ne lit jamais pourquoi la porte est fermée : seulement qu'elle l'est.
+        return reply(opened.ok ? opened : { ok: false, rule: opened.rule, code: opened.code });
       },
     },
   ];

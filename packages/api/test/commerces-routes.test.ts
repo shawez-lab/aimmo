@@ -28,7 +28,7 @@ const SHEET = {
 const SECRETS = ['Table Inventée', '61234500', '612 345', '612345', '2400000', '24 000', 'piano', 'chambre froide', 'licence_4', 'signName', 'fiscalYears', 'leaseAnnualRentCents'];
 const CONSENT = { consentProof: 'accord donné au rendez-vous du 7 septembre' };
 
-async function setup() {
+async function setup(writer?: CommercesServices['presentationWriter']) {
   n = 0;
   let clock = Date.parse('2027-09-07T08:00:00.000Z'); // 10 h à Paris
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
@@ -49,6 +49,7 @@ async function setup() {
     storage: { read: async (ref) => files.get(ref) ?? null },
     vault: { everDeposited: async (_n, p, kinds) => kinds.some((k) => deposited.has(`${p}:${k}`)) },
     diffusion: { canDiffuse: async () => ({ allowed: true, reason: 'ok' }) },
+    ...(writer ? { presentationWriter: writer } : {}),
     newId: uuid,
     newCode: () => (lastCode = String((code += 1))),
   };
@@ -92,7 +93,7 @@ async function setup() {
     const e = await ok(alex, 'POST', `/commerces/${p.id}/estimations`, { method: 'revenue_pct' });
     await ok(alex, 'POST', `/commerces/estimations/${e.id}/validation`);
     const pr = await ok(alex, 'POST', `/commerces/${p.id}/presentations`);
-    await ok(alex, 'POST', `/commerces/presentations/${pr.value?.id ?? pr.id}/validation`);
+    await ok(alex, 'POST', `/commerces/presentations/${pr.id}/validation`);
     await ok(alex, 'POST', `/commerces/${p.id}/documents`, { kind: 'bilan', title: 'Bilan 2026', storageRef: 'r2://essai/bilan.txt' });
     return p.id;
   };
@@ -232,6 +233,17 @@ describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () 
     // Un corps illisible, pour un rôle admis : refusé sans rien écrire.
     expect((await t.call(t.alex, 'POST', `/commerces/${id}/fiche`, undefined)).body).toMatchObject({ ok: false, code: 'invalid_body' });
   });
+});
+
+it('[R110] [R12] les phrases de l’IA refusées suivent la présentation de secours dans la réponse', async () => {
+  const t = await setup({ write: async () => ({ title: 'Restaurant à Dijon', body: 'Loyer de 2 000 € par mois. Belle salle.' }) });
+  await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+  const id = await t.shop();
+  const again = await t.call(t.alex, 'POST', `/commerces/${id}/presentations`);
+  expect(again.status).toBe(200);
+  const body = again.body as unknown as { data: { origin: string }; aiRefused: { problems: { code: string }[] }[] | null };
+  expect(body.data.origin).toBe('secours');
+  expect(body.aiRefused?.flatMap((x) => x.problems.map((p) => p.code))).toContain('chiffre_confidentiel');
 });
 
 it('chaque route admet des rôles et porte un nom de journal sans identifiant', () => {
