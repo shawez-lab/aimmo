@@ -89,6 +89,8 @@ function reply(result: Outcome): Response {
     return json(200, { ok: true, mode: TRIAL_MODE, data: value ?? null, ...rest });
   }
   const { ok: _ok, ...rest } = result;
+  // Un refus de droits reste un refus de droits, quelle que soit la règle que la couche métier y attache (R90, R92).
+  if (result.code === 'role' || result.code === 'not_assigned') return json(403, { ok: false, ...rest });
   if (result.rule === 'R16') return json(result.code === 'unknown' ? 404 : 403, { ok: false, ...rest });
   if (/^unknown/.test(result.code)) return json(404, { ok: false, ...rest });
   return json(result.rule ? 409 : 400, { ok: false, ...rest });
