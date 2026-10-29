@@ -124,7 +124,8 @@ export interface PhotoCertificate {
   resultSha256: string;
   originalSha256: string;
   originalKept: true;
-  localEdits: 'aucune';
+  /** « aucune », ou l'aménagement virtuel, seule modification par endroit admise, toujours dite sur l'image [R48]. */
+  localEdits: 'aucune' | 'amenagement_virtuel';
   corrections: { op: PhotoOperationKind; label: string; detail: string }[];
   virtualStaging: boolean;
   /** La mention posée sur l'image, ou null [R48]. */
@@ -172,14 +173,22 @@ function randomToken(): string {
 }
 
 function statementOf(ops: PhotoOperation[], virtualStaging: boolean): string {
-  const parts = [
-    ops.length === 0 ? 'Cette photo n’a reçu aucune correction.' : `Cette photo n’a reçu que des corrections d’ensemble : ${ops.map((o) => OPERATION_LABELS[o.op].toLowerCase()).join(', ')}.`,
+  const list = ops.map((o) => OPERATION_LABELS[o.op].toLowerCase()).join(', ');
+  if (virtualStaging) {
+    // Un aménagement virtuel ajoute du mobilier ou simule des travaux à un endroit précis : on le dit tel quel.
+    return [
+      'Aménagement virtuel : cette image n’est pas une photo telle quelle. Le mobilier ou les travaux montrés sont simulés, la mention est posée sur l’image.',
+      ops.length === 0 ? 'Aucune autre correction.' : `Autres corrections, d’ensemble : ${list}.`,
+      'Rien n’a été effacé ni caché.',
+      'La photo d’origine, sans aménagement, est gardée telle qu’elle a été prise.',
+    ].join(' ');
+  }
+  return [
+    ops.length === 0 ? 'Cette photo n’a reçu aucune correction.' : `Cette photo n’a reçu que des corrections d’ensemble : ${list}.`,
     'Aucune retouche locale : rien n’a été effacé, caché ni ajouté par endroit.',
     'L’original est gardé, tel qu’il a été pris.',
     'Les corrections ont été faites sur le téléphone de l’agent.',
-  ];
-  if (virtualStaging) parts.push('Aménagement virtuel : le mobilier ou les travaux montrés sont simulés, la mention est posée sur l’image.');
-  return parts.join(' ');
+  ].join(' ');
 }
 
 export interface CertificatsPhotosOptions {
@@ -228,10 +237,11 @@ export class CertificatsPhotos {
     if (typeof input.originalRef !== 'string' || !originalPattern.test(input.originalRef)) return bad('R130', 'sans_original');
     if (typeof input.originalSha256 !== 'string' || !SHA.test(input.originalSha256)) return bad('R130', 'sans_original');
     if (typeof input.resultSha256 !== 'string' || !SHA.test(input.resultSha256)) return bad('R10', 'empreinte_invalide');
-    // Aucune correction : l'image publiée est l'original, à l'octet près. Des corrections : elle en diffère.
-    if ((ops.value.length === 0) !== (input.resultSha256 === input.originalSha256)) return bad('R10', 'empreinte_incoherente');
     const media = await this.photoOf(propertyId, input.resultRef);
     if (!media) return bad('R10', 'photo_inconnue');
+    // Aucune correction ni aménagement : l'image publiée est l'original, à l'octet près. Sinon : elle en diffère.
+    const unchanged = ops.value.length === 0 && media.edit !== 'amenagement_virtuel';
+    if (unchanged !== (input.resultSha256 === input.originalSha256)) return bad('R10', 'empreinte_incoherente');
     // La fiche dit « aucune retouche » : une photo corrigée la contredirait.
     if (media.edit === 'aucune' && ops.value.length > 0) return bad('R10', 'fiche_dit_aucune');
     const existing = await this.db.first<CertRow>('SELECT * FROM photo_certificates WHERE property_id = ? AND result_ref = ?', [propertyId, media.ref]);
@@ -285,9 +295,10 @@ export class CertificatsPhotos {
     for (const m of media) {
       const c = byRef.get(m.ref);
       if (!c) continue;
-      // La fiche a pu changer d'avis sur l'aménagement virtuel : la mention suit ce qui est le plus prudent.
-      const staged = m.edit === 'amenagement_virtuel' || c.virtual_staging === 1;
-      out.push({ ref: m.ref, overlay: staged ? 'Aménagement virtuel' : null, certificateToken: c.token, certificatePath: CERTIFICATE_PATH + c.token });
+      // La fiche dit désormais « aménagement virtuel » d'une photo certifiée sans : le certificat ne dit plus vrai,
+      // la photo ne part pas tant qu'une nouvelle photo n'a pas son certificat [R130, R48]. L'inverse garde la mention.
+      if (m.edit === 'amenagement_virtuel' && c.virtual_staging !== 1) continue;
+      out.push({ ref: m.ref, overlay: c.virtual_staging === 1 ? 'Aménagement virtuel' : null, certificateToken: c.token, certificatePath: CERTIFICATE_PATH + c.token });
     }
     return out;
   }
@@ -308,7 +319,7 @@ export class CertificatsPhotos {
       resultSha256: row.result_sha256,
       originalSha256: row.original_sha256,
       originalKept: true,
-      localEdits: 'aucune',
+      localEdits: staged ? 'amenagement_virtuel' : 'aucune',
       corrections: ops.map((o) => ({ op: o.op, label: OPERATION_LABELS[o.op], detail: describeOperation(o) })),
       virtualStaging: staged,
       mention: staged ? 'Aménagement virtuel' : null,

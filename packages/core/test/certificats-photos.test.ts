@@ -172,12 +172,31 @@ describeWithSqlite('X02 · photos corrigées honnêtement, avec leur certificat'
     const t = await setup();
     const r = await t.certs.record(t.as('agent', t.alex.id), t.p.id, t.input(3, { operations: [{ op: 'exposition', ev: 0.3 }] }));
     if (!r.ok) throw new Error(r.code);
-    expect(r.value).toMatchObject({ virtualStaging: true, mention: 'Aménagement virtuel' });
-    expect(r.value.statement).toMatch(/Aménagement virtuel : le mobilier ou les travaux montrés sont simulés/);
+    expect(r.value).toMatchObject({ virtualStaging: true, mention: 'Aménagement virtuel', localEdits: 'amenagement_virtuel' });
+    expect(r.value.statement).toMatch(/^Aménagement virtuel : cette image n’est pas une photo telle quelle\. Le mobilier ou les travaux montrés sont simulés/);
+    expect(r.value.statement).toMatch(/Autres corrections, d’ensemble : exposition\./);
+    // Le certificat d'une image aménagée ne dit jamais « que des corrections d'ensemble » ni « rien ajouté ».
+    expect(r.value.statement).not.toMatch(/que des corrections d’ensemble|ajouté par endroit|Aucune retouche locale/);
     expect(await t.certs.publishable(t.p.id)).toEqual([{ ref: ref(t.p.id, 3), overlay: 'Aménagement virtuel', certificateToken: r.value.token, certificatePath: r.value.path }]);
     // La fiche ne dit plus « aménagement virtuel » : la mention reste, par prudence.
     await t.sheet(2, t.media.map((m) => ({ ...m, edit: m.edit === 'amenagement_virtuel' ? 'lumiere_cadrage' : m.edit })));
     expect((await t.certs.publishable(t.p.id))[0]!.overlay).toBe('Aménagement virtuel');
+  });
+
+  it('[R48] [R130] une photo aménagée sans autre correction se certifie ; une photo certifiée sans aménagement que la fiche dit aménagée ne part plus', async () => {
+    const t = await setup();
+    const alex = t.as('agent', t.alex.id);
+    // L'image aménagée diffère forcément de l'original : même empreinte refusée, empreinte différente admise.
+    expect(await t.certs.record(alex, t.p.id, t.input(3, { operations: [], resultSha256: sha('a') }))).toEqual({ ok: false, rule: 'R10', code: 'empreinte_incoherente' });
+    const staged = await t.certs.record(alex, t.p.id, t.input(3, { operations: [] }));
+    expect(staged).toMatchObject({ ok: true, value: { corrections: [], localEdits: 'amenagement_virtuel', statement: expect.stringMatching(/Aucune autre correction\./) } });
+    // La photo 1, certifiée sans aménagement, passe en aménagement virtuel dans la fiche : elle ne part plus.
+    const plain = await t.certs.record(alex, t.p.id, t.input(1));
+    if (!plain.ok) throw new Error(plain.code);
+    expect(await t.certs.checkPublishable(t.p.id, ref(t.p.id, 1))).toMatchObject({ ok: true });
+    await t.sheet(2, t.media.map((m, i) => (i === 0 ? { ...m, edit: 'amenagement_virtuel' } : m)));
+    expect(await t.certs.checkPublishable(t.p.id, ref(t.p.id, 1))).toEqual({ ok: false, rule: 'R130', code: 'sans_certificat' });
+    expect((await t.certs.publishable(t.p.id)).map((p) => p.ref)).toEqual([ref(t.p.id, 3)]);
   });
 
   it('[R10] les empreintes et la fiche doivent dire la même chose que la description', async () => {
