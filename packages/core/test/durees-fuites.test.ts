@@ -174,6 +174,26 @@ describeWithSqlite('L08 · prospects à 3 ans', () => {
     expect((await t.listed()).map((x) => x.lastContactAt)).toEqual(['2027-03-02T10:00:00.000Z', '2030-03-05T10:00:00.000Z']);
   });
 
+  it('[R97] une fusion défaite rend la personne à la procédure', async () => {
+    const t = await setup();
+    const p = await t.prospect('2027-03-02T10:00:00.000Z');
+    t.setClock(new Date('2030-03-02T10:00:00.000Z'));
+    await t.durees.run(t.network.id);
+    // Réunie par erreur à une personne qui vient d'écrire : le cycle se clôt.
+    const other = await t.prospect('2030-03-03T10:00:00.000Z', 'Autre');
+    await t.message(other, '2030-03-03T10:00:00.000Z', 'in');
+    const merge = await t.fiche.merge({ survivorId: p, mergedId: other, reason: 'erreur' });
+    t.setClock(new Date('2030-03-04T10:00:00.000Z'));
+    expect(await t.durees.run(t.network.id)).toMatchObject({ closed: 1 });
+    // La fusion est défaite : le lendemain, un nouveau cycle, puis l'effacement préparé à son échéance.
+    await t.fiche.undoMerge(merge.id);
+    t.setClock(new Date('2030-03-05T10:00:00.000Z'));
+    expect((await t.durees.run(t.network.id)).listed).toBe(1);
+    t.setClock(new Date('2030-04-04T10:00:00.000Z'));
+    expect((await t.durees.run(t.network.id)).erasures).toBe(1);
+    expect((await t.listed()).filter((x) => x.personId === p).map((x) => x.outcome)).toEqual(['contact_repris', 'effacement']);
+  });
+
   it('[R97] [R04] [R16] une personne arrêtée est signalée sur sa demande ; seul le responsable lit la liste', async () => {
     const t = await setup();
     const p = await t.prospect('2027-03-02T10:00:00.000Z');

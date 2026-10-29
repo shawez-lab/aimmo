@@ -1,8 +1,7 @@
 -- L08 · Prospects à 3 ans et procédure de fuite [R17, R26, R97].
 
 -- Un prospect arrivé à 3 ans après son dernier contact : la demande de consentement préparée (mode essai), le jour
--- où la réponse est attendue. Un cycle par dernier contact : si la personne revient puis se tait 3 ans de plus, un
--- nouveau cycle s'ouvre. En ajout seul.
+-- où la réponse est attendue. Si la personne revient puis se tait 3 ans de plus, un nouveau cycle s'ouvre. En ajout seul.
 CREATE TABLE IF NOT EXISTS prospect_retention_cycles (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
@@ -13,7 +12,9 @@ CREATE TABLE IF NOT EXISTS prospect_retention_cycles (
   answer_due_on TEXT NOT NULL CHECK (length(answer_due_on) = 10 AND answer_due_on > listed_on),
   request_mode TEXT NOT NULL CHECK (request_mode IN ('essai', 'reel')),
   created_at TEXT NOT NULL,
-  UNIQUE (person_id, last_contact_at)
+  -- Un cycle par jour au plus pour un même contact : un cycle clos à tort (fusion défaite, client qui ne l'est plus)
+  -- laisse la personne revenir dans la procédure un autre jour.
+  UNIQUE (person_id, last_contact_at, listed_on)
 );
 CREATE INDEX IF NOT EXISTS prospect_retention_cycles_network ON prospect_retention_cycles (network_id, answer_due_on);
 

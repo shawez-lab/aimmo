@@ -260,10 +260,12 @@ export class DureesProspects {
       if (today < reachedOn) continue;
       const known = await this.db.first<{ id: string; outcome: RetentionOutcome | null }>(
         `SELECT c.id, o.outcome FROM prospect_retention_cycles c LEFT JOIN prospect_retention_outcomes o ON o.cycle_id = c.id
-         WHERE c.network_id = ? AND c.person_id IN (${s.members.map(() => '?').join(', ')}) AND c.last_contact_at >= ? ORDER BY c.listed_on DESC LIMIT 1`,
+         WHERE c.network_id = ? AND c.person_id IN (${s.members.map(() => '?').join(', ')}) AND c.last_contact_at >= ?
+         AND (o.outcome IS NULL OR o.outcome = 'effacement') ORDER BY c.listed_on DESC LIMIT 1`,
         [networkId, ...s.members, s.lastContactAt],
       );
-      // Déjà listé pour ce contact (ou effacement préparé, ou pour un contact plus récent d'une fiche réunie) : rien.
+      // Déjà listé et ouvert, ou effacement préparé, pour ce contact ou un plus récent : rien. Un cycle clos parce que la
+      // personne semblait revenue ou cliente ne la retient pas, si ce n'est plus vrai (fusion défaite, contact retiré).
       if (known) continue;
       const id = this.newId();
       const answerDueOn = addDays(today, PROSPECT_ANSWER_DAYS);
