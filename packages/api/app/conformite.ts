@@ -280,6 +280,22 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     return (b && C_REFUSALS[b.code]) || fallback;
   }
   // Un client nommé sans rien de lui : la fin de l'identifiant de sa fiche.
+  // Un fichier enregistré sur l'appareil, sans passer par le stockage du navigateur.
+  function cSave(name, content) {
+    try {
+      var url = URL.createObjectURL(new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' }));
+      var a = el('a', 'Enregistrer');
+      a.href = url;
+      a.download = name;
+      $('conformite').appendChild(a);
+      a.click();
+      $('conformite').removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
   function cRef(id) { return 'Client …' + String(id || '').slice(-6); }
   function cChecks(box, prefix, legend, labels) {
     // Un groupe de cases nommé par sa légende, pour les lecteurs d'écran.
@@ -347,12 +363,22 @@ globalThis.AIMMO_CONFORMITE = function (t) {
       li.appendChild(el('span', n === 1 ? one : many));
       list.appendChild(li);
     }
-    function open(rows, test) { return (rows || []).filter(test).length; }
-    count(open(data.risque, function () { return true; }), 'fiche à valider', 'fiches à valider', false);
-    count(open(data.vigilance, function (a) { return !a.decision; }), 'alerte de vigilance', 'alertes de vigilance', false);
-    count(open(data.signalements, function (s) { return !s.decision; }), 'signalement à décider', 'signalements à décider', true);
-    count(open(data.demandes, function (d) { return !d.answeredOn; }), 'demande en cours', 'demandes en cours', false);
-    count(open(data.fuites, function (f) { return !f.notified.cnil && f.due.cnil; }), 'fuite à notifier', 'fuites à notifier', true);
+    // Une lecture qui n'a pas abouti ne compte jamais pour zéro : son compteur dit qu'il n'est pas connu.
+    function open(rows, test, one, many, urgent) {
+      if (!Array.isArray(rows)) {
+        var li = el('li', null, 'urgent');
+        li.appendChild(el('b', '?'));
+        li.appendChild(el('span', many + ' : non lu'));
+        list.appendChild(li);
+        return;
+      }
+      count(rows.filter(test).length, one, many, urgent);
+    }
+    open(data.risque, function () { return true; }, 'fiche à valider', 'fiches à valider', false);
+    open(data.vigilance, function (a) { return !a.decision; }, 'alerte de vigilance', 'alertes de vigilance', false);
+    open(data.signalements, function (s) { return !s.decision; }, 'signalement à décider', 'signalements à décider', true);
+    open(data.demandes, function (d) { return !d.answeredOn; }, 'demande en cours', 'demandes en cours', false);
+    open(data.fuites, function (f) { return !f.notified.cnil && f.due.cnil; }, 'fuite à notifier', 'fuites à notifier', true);
   }
   function renderConformite(data) {
     cSummary(data);
@@ -492,11 +518,25 @@ globalThis.AIMMO_CONFORMITE = function (t) {
             send(path + (d.kind === 'acces' ? '/acces' : '/effacement'), 'GET').then(function (res) {
               if (res.gone) return;
               if (!res.ok) { state.textContent = cRefusal(res, 'Indisponible pour le moment.'); return; }
-              state.textContent = (d.kind === 'acces' ? 'Réponse assemblée depuis chaque table du registre. Empreinte : ' : 'Plan prêt, rien n’est effacé. Empreinte : ') + res.body.data.sha256;
+              var data = res.body.data;
+              state.textContent = (d.kind === 'acces' ? 'Réponse assemblée depuis chaque table du registre. Empreinte : ' : 'Plan prêt, rien n’est effacé. Empreinte : ') + data.sha256;
+              // La réponse complète, à remettre à la personne : un fichier sur l'appareil du responsable, jamais gardé
+              // par l'application ; la réponse ne se note qu'une fois ce fichier enregistré.
+              var file = d.kind === 'acces' ? 'reponse-acces-' : 'plan-effacement-essai-';
+              var save = button(d.kind === 'acces' ? 'Enregistrer la réponse complète' : 'Enregistrer le plan d’effacement', function () {
+                if (cSave(file + d.id + '.json', { demande: d.id, sorte: d.kind, empreinte: data.sha256, contenu: d.kind === 'acces' ? data.response : data.plan })) {
+                  state.textContent = 'Fichier enregistré. Empreinte : ' + data.sha256;
+                  answer.hidden = false;
+                } else state.textContent = 'Cet appareil ne peut pas enregistrer le fichier.';
+              });
+              li.insertBefore ? li.insertBefore(save, answer) : li.appendChild(save);
             });
           }));
         }
-        li.appendChild(button('Noter la réponse envoyée aujourd’hui', function () { cAct(state, path + '/repondre', { answeredOn: cToday() }, 'Réponse notée.'); }));
+        var answer = button('Noter la réponse envoyée aujourd’hui', function () { cAct(state, path + '/repondre', { answeredOn: cToday() }, 'Réponse notée.'); });
+        // Une demande d'accès ou d'effacement ne se note répondue qu'après l'enregistrement de sa réponse complète.
+        answer.hidden = d.kind === 'acces' || d.kind === 'effacement';
+        li.appendChild(answer);
         li.appendChild(state);
       }
       ul.appendChild(li);
