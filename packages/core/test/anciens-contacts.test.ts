@@ -276,6 +276,13 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     expect(await t.anciens.prepareMonth(t.network.id)).toBe(1);
     expect((await t.followups()).map((f) => f.draft_by)).toEqual(['secours']);
     expect((await t.journal.all()).filter((e) => e.type === 'anciens_contacts.ia_en_panne')).toHaveLength(1);
+    // Une IA qui ne répond jamais : le délai écoulé, le texte du code, et le passage continue.
+    const stuck = await setup({ draft: () => new Promise<string>(() => undefined) });
+    const slow = new AnciensContacts(stuck.db, stuck.journal, { now: () => new Date(TUE_10H), drafter: { draft: () => new Promise<string>(() => undefined) }, draftTimeoutMs: 20 });
+    for (const who of ['Ana', 'Ben']) await stuck.valued((await stuck.contact(who)).id, 400);
+    expect(await slow.prepareMonth(stuck.network.id)).toBe(2);
+    expect((await stuck.followups()).map((f) => f.draft_by)).toEqual(['secours', 'secours']);
+    expect((await stuck.journal.all()).filter((e) => e.type === 'anciens_contacts.ia_en_panne').map((e) => e.data.error)).toEqual(['TimeoutError', 'TimeoutError']);
     // Les textes de secours passent leurs propres contrôles.
     for (const reason of ['fin_de_bail', 'estimation_ancienne'] as const) expect(checkOldContactText(oldContactFallback(reason, null))).toBeNull();
     // Le texte de l'agent est contrôlé de même.
