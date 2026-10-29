@@ -1694,6 +1694,8 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE01 · Fiche du commerce, chaque champ public ou confidentiel
 - Statut : en cours
+- Reste : prête (#197), à fusionner dès que GitHub Actions repart (H35) ; relecture forte sans P0 ni P1 ; Codex : 1 P1 (JSON illisible lu comme vide) et 1 P2 (date impossible) corrigés, relecture redemandée.
+- Décidé (2026-10-29) : l'excédent brut d'exploitation est un champ facultatif de chaque exercice (`ebitdaCents`), ajouté par CE02 ; une colonne JSON illisible fait échouer la lecture plutôt que d'être lue vide [R17].
 - Qui : Claude · Relecture : forte · Dépend de : rien (M02, M07 faits)
 - Cahier : M16, « Fiche du commerce », « Règles », « Données ».
 - Objectif : la fiche d'un bien `business`, `business_walls` ou `commercial` (migration `1001`) : activité (liste fermée), enseigne, chiffre d'affaires et résultat des 3 derniers exercices en centimes avec leur année, bail commercial (début, durée, loyer annuel, destination, clause de cession), nombre de salariés, matériel, autorisations propres à l'activité ; chaque version rangée, rien effacé ; chaque champ classé public ou confidentiel par une seule table du code ; une vue publique qui ne rend que les champs publics.
@@ -1701,7 +1703,9 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE02 · Estimation en fourchette par le code, références citées
-- Statut : à faire
+- Statut : en cours
+- Reste : prête (#198, empilée sur #197), à fusionner après CE01 dès H35 ; relecture forte 2 P1 corrigés.
+- Décidé (2026-10-29) : méthodes `revenue_pct`, `ebitda_multiple` (excédent brut, jamais le résultat net) et `rent_yield` ; seule la plus récente estimation se valide, et seulement si la fiche et le barème n'ont pas changé depuis ; la fourchette publiable (`validatedRange`) suit la même règle.
 - Qui : Claude · Relecture : forte · Dépend de : CE01
 - Cahier : M16, « Estimation ».
 - Objectif : des barèmes par activité (migration) rangés par la direction : méthode (pourcentage du chiffre d'affaires ou multiple de l'excédent brut), bornes basse et haute, source et date ; la fourchette d'un fonds calculée par le code depuis la moyenne des exercices saisis ; pour des murs ou un local, depuis le loyer et un taux de rendement réglé ; chaque nombre rendu avec sa source et son hypothèse ; validée par l'agent, versionnée.
