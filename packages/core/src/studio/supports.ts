@@ -18,6 +18,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { PRINT_DESIGN_CSS } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import { appendEvent } from '../journal/journal.ts';
+import { agentGone } from '../reseau/depart.ts';
 import type { JournalStore } from '../journal/types.ts';
 
 export const PRINT_SUPPORTS = ['fiche', 'panneau', 'flyer', 'lettre_quartier'] as const;
@@ -122,7 +123,8 @@ export function renderFlyer(input: PageInput): string | null {
 
 /** La lettre de quartier, A4 : un texte écrit ici, sans adresse ; le bien, son prix et ses mentions ; l'agent. */
 export function renderNeighbourhoodLetter(input: PageInput): string | null {
-  if (!printable(input) || !input.agent) return null;
+  // La lettre annonce une mise en vente : seulement pour un bien en vente. Les lettres après une vente viennent avec M20.
+  if (!printable(input) || !input.agent || input.payload.state !== 'en_vente') return null;
   const p = input.payload;
   const style = css(
     SUPPORT_SIZES.lettre_quartier,
@@ -196,7 +198,7 @@ export class Supports {
     if (!input) return { ok: false, rule: 'R10', code: 'pas_publie' };
     const html =
       kind === 'fiche' ? renderListingPrint(input) : kind === 'panneau' ? renderPanel(input) : kind === 'flyer' ? renderFlyer(input) : renderNeighbourhoodLetter(input);
-    if (!html) return { ok: false, rule: 'R10', code: input.payload.state === 'retiree' ? 'annonce_retiree' : input.agent ? 'pas_publie' : 'agent_parti' };
+    if (!html) return { ok: false, rule: 'R10', code: input.payload.state === 'retiree' ? 'annonce_retiree' : !input.agent ? 'agent_parti' : kind === 'lettre_quartier' && input.payload.state !== 'en_vente' ? 'bien_plus_en_vente' : 'pas_publie' };
     await appendEvent(this.journal, { type: 'studio.support.imprime', actor: `${viewer.role}:${viewer.userId}`, subject: `property:${propertyId}`, data: { kind: kind as string } }, this.now);
     return { ok: true, html };
   }
@@ -206,7 +208,8 @@ export class Supports {
     if (!((viewer.role === 'agent' && viewer.userId === agentId) || viewer.role === 'direction')) return this.refused(viewer, `agent:${agentId}`, 'role');
     const a = await this.db.first<{ network_id: string; status: string; first_name: string; last_name: string }>('SELECT network_id, status, first_name, last_name FROM agents WHERE id = ?', [agentId]);
     if (!a || a.network_id !== viewer.networkId) return { ok: false, rule: 'R10', code: 'agent_inconnu' };
-    if (a.status !== 'active') return this.refused(viewer, `agent:${agentId}`, 'agent_inactive');
+    // Parti, ou jour de départ venu à Paris dès minuit, même avant le passage du planificateur [R86].
+    if (a.status !== 'active' || (await agentGone(this.db, viewer.networkId, agentId, this.now()))) return this.refused(viewer, `agent:${agentId}`, 'agent_inactive');
     const card = await this.db.first<{ phone: string; email: string }>('SELECT phone, email FROM agent_public_cards WHERE agent_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [agentId]);
     return { ok: true, html: renderBusinessCard({ firstName: a.first_name, lastName: a.last_name, phone: card?.phone ?? null, email: card?.email ?? null }) };
   }
