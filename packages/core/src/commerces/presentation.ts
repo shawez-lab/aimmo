@@ -147,14 +147,6 @@ const parseNumber = (raw: string): number => Number(raw.replace(/[   .]/g, ''
 /** Un montant en centimes, arrondi à l'euro le plus proche. */
 export const toEuros = (cents: number): number => mulDiv(cents, 1, 100);
 
-/** Les nombres permis : ceux de la vue publique, et eux seuls. */
-function allowedNumbers(f: PresentationFacts): number[] {
-  const out = [f.priceLowEuros, f.priceHighEuros];
-  if (f.surfaceM2 !== null) out.push(f.surfaceM2);
-  if (f.postalCode !== null && /^\d{5}$/.test(f.postalCode)) out.push(Number(f.postalCode));
-  return out;
-}
-
 /** Les mots qui désignent l'enseigne : ses mots d'au moins 3 lettres, hors mots courants et mots de la commune. */
 function signWords(signName: string | null, city: string | null): string[] {
   if (!signName) return [];
@@ -174,14 +166,25 @@ export function presentationSentenceProblems(sentence: string, facts: Presentati
   const add = (code: PresentationProblemCode, value: string) => {
     if (!problems.some((p) => p.code === code && p.value === value)) problems.push({ code, value });
   };
-  const allowed = allowedNumbers(facts);
   // Les nombres se cherchent sur un texte où chaque chiffre est ramené à 0-9 (NFKC : pleine chasse, exposants) et où
   // le nom de la commune, public, est retiré : « Six-Fours-les-Plages » n'est pas un nombre.
-  const counted = withoutCity(norm(sentence.replace(/[²³]/g, ' ').normalize('NFKC')), facts.city);
+  // Seuls « m² » et « m2 » d'une surface sont lus comme une unité ; tout autre exposant est un chiffre.
+  const units = sentence.replace(/(?<![\p{L}])m\s?[²2](?![\p{L}\p{N}])/gu, ' mcarre ');
+  const counted = withoutCity(norm(units.normalize('NFKC')), facts.city);
   for (const m of counted.matchAll(/(?![0-9])\p{Nd}+/gu)) add('nombre_hors_vue_publique', m[0]);
   for (const m of counted.matchAll(NUMBER)) {
     const n = parseNumber(m[0]);
-    if (allowed.includes(n)) continue;
+    // Un nombre public ne vaut que pour son champ, reconnu à son unité : un prix en euros, une surface en m², un
+    // code postal sans unité. « Prix de 85 € » avec 85 m² de surface n'a pas de source.
+    const after = counted.slice((m.index ?? 0) + m[0].length);
+    const role = /^\s*(?:€|eur\b|euros?\b)/u.test(after) ? 'prix' : /^\s*(?:mcarre|metres? carres?\b)/u.test(after) ? 'surface' : 'nu';
+    const fits =
+      role === 'prix'
+        ? n === facts.priceLowEuros || n === facts.priceHighEuros
+        : role === 'surface'
+          ? facts.surfaceM2 !== null && n === facts.surfaceM2
+          : facts.postalCode !== null && /^\d{5}$/.test(facts.postalCode) && m[0] === facts.postalCode;
+    if (fits) continue;
     add(marks.numbers.includes(n) ? 'chiffre_confidentiel' : 'nombre_hors_vue_publique', m[0]);
   }
   const lower = norm(sentence);
@@ -191,7 +194,8 @@ export function presentationSentenceProblems(sentence: string, facts: Presentati
   }
   if (marks.signName) {
     const whole = norm(marks.signName).trim();
-    if (whole.length > 0 && wordRe(whole).test(lower)) add('enseigne', marks.signName);
+    // Une enseigne faite des seuls mots courants (« Boulangerie ») ne désigne personne : l'activité reste dicible.
+    if (whole.length > 0 && signWords(marks.signName, facts.city).length > 0 && wordRe(whole).test(lower)) add('enseigne', marks.signName);
   }
   for (const w of signWords(marks.signName, facts.city)) {
     const m = wordRe(w).exec(lower);
@@ -199,7 +203,7 @@ export function presentationSentenceProblems(sentence: string, facts: Presentati
   }
   for (const item of marks.equipment) {
     const t = norm(item).trim();
-    if (t.length >= 3 && wordRe(t).test(lower)) add('champ_confidentiel', item);
+    if (t.length > 0 && wordRe(t).test(lower)) add('champ_confidentiel', item);
   }
   for (const t of CONFIDENTIAL_TOPICS) {
     const m = wordRe(norm(t)).exec(lower);
