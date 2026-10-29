@@ -98,8 +98,11 @@ describeWithSqlite('G10 · mesure mensuelle des sources de mandats', () => {
     expect(await t.mesure.decide(t.dir, { month: '2027-10', source: 'social', decision: 'arreter', reason: 'Aucun mandat en trois mois' })).toMatchObject({ ok: true });
     expect(line(await t.mesure.report(t.dir, '2027-10'), 'social')!.decision).toEqual({ decision: 'arreter', month: '2027-10', decidedAt: new Date(NOW).toISOString() });
     expect(await t.mesure.decide(t.dir, { month: '2027-10', source: 'social', decision: 'supprimer', reason: 'x y z' })).toEqual({ ok: false, rule: null, code: 'bad_decision' });
+    // Corrigée à la même milliseconde : la dernière décision rangée fait foi, quel que soit son identifiant.
+    expect(await t.mesure.decide(t.dir, { month: '2027-10', source: 'social', decision: 'garder', reason: 'Correction de la direction' })).toMatchObject({ ok: true });
+    expect(line(await t.mesure.report(t.dir, '2027-10'), 'social')!.decision).toMatchObject({ decision: 'garder' });
     // Le code seul ne peut pas écrire une décision : la base exige la direction.
-    await expect(t.db.run("INSERT INTO mandate_source_decisions (id, network_id, month, source, decision, reason, decided_by, decided_at) VALUES ('d', ?, '2027-10', 'site', 'arreter', 'auto', 'system:planificateur', '2027-11-01')", [t.network.id])).rejects.toThrow();
+    await expect(t.db.run("INSERT INTO mandate_source_decisions (id, network_id, month, source, seq, decision, reason, decided_by, decided_at) VALUES ('d', ?, '2027-10', 'site', 1, 'arreter', 'auto', 'system:planificateur', '2027-11-01')", [t.network.id])).rejects.toThrow();
     await expect(t.db.run('DELETE FROM mandate_source_decisions')).rejects.toThrow(/rien ne s'efface/);
     // Un coût sans preuve déposée n'est pas un chiffre de la base.
     expect(await t.mesure.enterCost(t.dir, { month: '2027-10', source: 'site', amountCents: 100, proofRef: 'preuves/inconnue.pdf' })).toEqual({ ok: false, rule: 'R144', code: 'no_proof' });
