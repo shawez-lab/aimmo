@@ -186,7 +186,7 @@ export class RelancesPieces {
         // Jamais de coordonnée bancaire ni de demande de paiement dans un texte d'AIMMO [R62].
         if (fundsInOutgoing(text)) {
           await this.db.run("UPDATE sale_file_reminders SET status = 'refused', rule = 'R62', updated_at = ? WHERE file_id = ? AND piece = ? AND day = ? AND status IN ('waiting', 'failed')", [this.now().toISOString(), f.id, piece, today]);
-          await appendEvent(this.journal, { type: 'dossier.relance', actor: 'system:dossiers', subject: `sale_file:${f.id}`, data: { mode: 'essai', piece, status: 'refused', rule: 'R62' } }, this.now);
+          await appendEvent(this.journal, { type: 'dossier.relance', actor: 'system:dossiers', subject: `sale_file:${f.id}`, data: { mode: 'essai', side, client: `person:${personId}`, piece, status: 'refused', rule: 'R62' } }, this.now);
           continue;
         }
         const result = await this.controle.send({
@@ -209,7 +209,7 @@ export class RelancesPieces {
           "UPDATE sale_file_reminders SET status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE file_id = ? AND piece = ? AND day = ? AND status IN ('waiting', 'failed')",
           [outcome, rule, result.messageId, this.now().toISOString(), f.id, piece, today],
         );
-        await appendEvent(this.journal, { type: 'dossier.relance', actor: 'system:dossiers', subject: `sale_file:${f.id}`, data: { mode: 'essai', piece, status: outcome, rule } }, this.now);
+        await appendEvent(this.journal, { type: 'dossier.relance', actor: 'system:dossiers', subject: `sale_file:${f.id}`, data: { mode: 'essai', side, client: `person:${personId}`, piece, status: outcome, rule } }, this.now);
         if (outcome === 'sent') sent += 1;
       }
     }
