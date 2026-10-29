@@ -1714,7 +1714,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE03 · Présentation anonyme, rédigée par l'IA depuis les seuls champs publics
 - Statut : en cours
-- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex 2 P0, 1 P1 et 1 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante), relecture redemandée.
+- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex, deux tours : 3 P0, 2 P1 et 1 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante, enseigne courte distinctive, nombre négatif), relecture redemandée.
 - Décidé (2026-10-29) : sans fourchette validée en vigueur, pas de présentation (« incomplet ») ; le nom de la commune est retiré avant le contrôle des nombres ; `publishable` est la porte, branchée à la publication de M07 par CE10.
 - Qui : Claude · Relecture : forte · Dépend de : CE01, CE02
 - Cahier : M16, « Présentation anonyme », « L'IA et l'humain ».
@@ -1724,7 +1724,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE04 · Engagement de confidentialité signé et pièce vérifiée avant tout chiffre
 - Statut : en cours
-- Reste : prête (#201, empilée sur #200), à fusionner après CE03 dès H35 ; relecture forte sans P0 ni P1.
+- Reste : prête (#201, empilée sur #200), à fusionner après CE03 dès H35 ; relecture forte sans P0 ni P1 ; Codex rien à signaler.
 - Décidé (2026-10-29) : modèle d'engagement versionné rangé par la direction (`business_nda_templates`), engagement au nom de la personne pour un bien ; signature par code comme D08 et W12, d'essai tant que H24 n'est pas fait ; la porte lit l'identité par l'interface `IdentityState` (état du coffre) ; `confidentialSheet` est le seul accès à la fiche complète pour un envoi (CE05).
 - Qui : Claude · Relecture : forte · Dépend de : CE01
 - Cahier : M16, « Accès aux chiffres » ; Conformité, « Confidentialité ».
@@ -1734,6 +1734,8 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE05 · Dossier protégé : lien qui expire, filigrane au lecteur, chaque ouverture journalisée (Jamais vu)
 - Statut : en cours
+- Reste : prête (#203, empilée sur #201), à fusionner après CE04 dès H35 ; relecture forte 3 P1 corrigés.
+- Décidé (2026-10-29) : documents du dossier en texte, par référence de stockage et empreinte (PDF et images avec le stockage réel, H38) ; ouverture = adresse du lecteur et code à usage unique reçu à cette adresse ; marque de 48 bits en caractères sans largeur après chaque phrase et chaque ligne, doublée d'une référence de copie visible dans le filigrane.
 - Qui : Claude · Relecture : forte · Dépend de : CE04
 - Cahier : M16, « Accès aux chiffres » ; Conformité, « Confidentialité » ; Architecture technique, stockage des documents.
 - Objectif : dès que la porte de CE04 s'ouvre, le dossier part (boîte d'essai) : un lien à usage limité qui expire (réglage), chaque page servie avec un filigrane au nom du lecteur et la date ; chaque ouverture et chaque refus (lien expiré, révoqué, autre lecteur) écrit au journal avec son lecteur. **Jamais vu** : chaque copie servie porte en plus une marque propre au lecteur et à l'ouverture, invisible à la lecture et retrouvable dans le texte : sur une copie qui a fuité, l'agent retrouve quel lecteur et quelle ouverture l'ont laissée sortir.
@@ -1741,7 +1743,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien (H38 pour le stockage réel).
 
 ### CE06 · Repreneurs, sans évaluation de solvabilité
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : rien
 - Cahier : M16, « Repreneurs ».
 - Objectif : le profil d'un repreneur (projet `buy` sur un commerce) : activités recherchées, secteurs, budget, expérience déclarée (liste fermée), apport et financement déclarés tels que dits ; versionné, chaque champ avec sa source ; rapprochement par le code avec les présentations publiées, sans note de la personne.
