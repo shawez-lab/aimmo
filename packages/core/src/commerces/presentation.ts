@@ -138,9 +138,19 @@ const norm = (s: string): string =>
     .replace(/\s+/g, ' ');
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const wordRe = (t: string, flags = 'iu'): RegExp => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(t)}(?![\\p{L}\\p{N}])`, flags);
-/** Une expression, chaque mot au singulier ou au pluriel : « four à sole » lit aussi « fours à sole ». */
+/**
+ * Une expression, chaque mot au singulier ou au pluriel, dans les deux sens : « four à sole » lit aussi « fours à
+ * sole », et « fours à sole » lit aussi « four à sole ». Le mot est ramené à sa racine (sans « s » ni « x » final),
+ * puis lu avec ou sans marque du pluriel.
+ */
 const formsRe = (t: string): RegExp =>
-  new RegExp(`(?<![\\p{L}\\p{N}])${t.split(/\s+/).map((w) => `${escapeRe(w)}(?:s|x|es)?`).join('\\s+')}(?![\\p{L}\\p{N}])`, 'iu');
+  new RegExp(
+    `(?<![\\p{L}\\p{N}])${t
+      .split(/\s+/)
+      .map((w) => `${escapeRe(w.length > 3 ? w.replace(/[sx]$/u, '') : w)}(?:s|x|es)?`)
+      .join('\\s+')}(?![\\p{L}\\p{N}])`,
+    'iu',
+  );
 const words = (s: string): string[] => norm(s).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 0);
 
 /** Les nombres écrits en chiffres, séparateurs de milliers compris (« 249 000 », « 249.000 », « 85,5 »). */
