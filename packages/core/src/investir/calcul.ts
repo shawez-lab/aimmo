@@ -420,10 +420,12 @@ export class CalculInvestissement {
       const read = await acces.readFiche(viewer, project.person_id);
       if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
       if (read.view !== 'full') return refused('not_assigned');
-    } else if (calc.propertyId !== null) {
+    }
+    // Le bien du calcul se recontrôle toujours, projet ou non : un bien sorti du fichier commun ne se relit plus [R16].
+    if (calc.propertyId !== null) {
       const read = await acces.readProperty(viewer, calc.propertyId);
       if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
-    } else if (viewer.role !== 'direction' && calc.createdBy !== `${String(viewer.role)}:${viewer.userId}`) return refused('not_assigned');
+    } else if (calc.projectId === null && viewer.role !== 'direction' && calc.createdBy !== `${String(viewer.role)}:${viewer.userId}`) return refused('not_assigned');
     return { ok: true, value: calc };
   }
 
