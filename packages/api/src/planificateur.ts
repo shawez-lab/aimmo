@@ -127,3 +127,17 @@ export function investorAlertsJob(db: SqlDatabase, journal: SqlJournalStore, opt
     },
   };
 }
+
+/**
+ * Le barème des frais d'acquisition réglé par la direction (variable `INVESTIR_FRAIS_BAREME`, `750@2027-09-01`) : un
+ * entier de points de base du prix, de 0 à 2 000, et la date du réglage. Lecture prudente : absent ou mal formé, rien,
+ * et aucune alerte qui demande un rendement ne part.
+ */
+export function investorFeesRate(raw: string | undefined): investir.Sourced<number> | null {
+  const m = /^(\d{1,4})@(\d{4}-\d{2}-\d{2})$/.exec((raw ?? '').trim());
+  if (!m) return null;
+  const value = Number(m[1]);
+  const asOf = m[2]!;
+  if (value > 2_000 || Number.isNaN(Date.parse(`${asOf}T00:00:00Z`)) || new Date(`${asOf}T00:00:00Z`).toISOString().slice(0, 10) !== asOf) return null;
+  return { value, source: 'direction:INVESTIR_FRAIS_BAREME', asOf, hypothesis: 'barème des frais d’acquisition réglé par la direction' };
+}

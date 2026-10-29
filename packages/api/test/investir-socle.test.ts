@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { ALERT_PURPOSE, Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, RegistreMandats, SignaturePapier, SqlJournalStore, applyMigrations, fromSyncSqlite, investir, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
-import { INVESTOR_ALERTS_JOB, runScheduler } from '../src/planificateur.ts';
+import { INVESTOR_ALERTS_JOB, investorFeesRate, runScheduler } from '../src/planificateur.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { identiteAuCoffre } from '../../core/test/identite-coffre.ts';
@@ -167,5 +167,11 @@ describeWithSqlite('Y08 · M17 branché dans le socle', () => {
     t.setClock(TUESDAY_10H + DAY + HOUR);
     await t.tick();
     expect(await t.sent(ines)).toHaveLength(1);
+  });
+
+  it('le barème de la direction est lu de sa variable, et rien n’est inventé s’il est absent ou mal formé', () => {
+    expect(investorFeesRate('750@2027-09-01')).toMatchObject({ value: 750, asOf: '2027-09-01', source: 'direction:INVESTIR_FRAIS_BAREME' });
+    expect(investorFeesRate(' 0@2027-01-31 ')).toMatchObject({ value: 0 });
+    for (const bad of [undefined, '', '750', '7,5@2027-09-01', '2001@2027-09-01', '750@2027-02-30', '-1@2027-09-01', '750@27-09-01']) expect(investorFeesRate(bad), String(bad)).toBeNull();
   });
 });

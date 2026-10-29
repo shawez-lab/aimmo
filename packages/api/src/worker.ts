@@ -1,7 +1,7 @@
 import { TRIAL_MODE, handleRequest } from './app.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
-import { runScheduler } from './planificateur.ts';
+import { investorFeesRate, runScheduler } from './planificateur.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
 import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
@@ -33,6 +33,11 @@ export interface Env {
   RDV_LINK_BASE?: string;
   /** Début du lien de désinscription des alertes (T03), en https, sans chiffre, terminé par `/alertes/desinscription/`. */
   ALERT_UNSUBSCRIBE_BASE?: string;
+  /**
+   * Le barème des frais d'acquisition réglé par la direction (M17), en points de base du prix, entier de 0 à 2 000, suivi
+   * de la date du réglage : `750@2027-09-01`. Absent ou mal formé, aucune alerte qui demande un rendement.
+   */
+  INVESTIR_FRAIS_BAREME?: string;
   /** Début des liens publics de l'après-vente (F07), en https, sans chiffre, terminé par `/apres-vente/`. */
   APRES_VENTE_BASE?: string;
   /**
@@ -77,6 +82,8 @@ export default {
       coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,
       // M18 (U09) : preuves et pièces des partenaires dans `PIECES`, sous `partenaires/` ; absent, routes fermées.
       partenaires: { files: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, optOutBase: env.PARTENAIRES_OPPOSITION_BASE ?? null },
+      // M17 (Y08) : sans IA branchée (H13), la note suit le secours sans IA ; le barème vient du réglage de la direction.
+      investir: { feesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME) },
       ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,
@@ -101,6 +108,7 @@ export default {
       geocoder: estimation?.geocoder ?? null,
       pieces: env.PIECES ? new R2PieceStore(env.PIECES) : null,
       partnerOptOutBase: env.PARTENAIRES_OPPOSITION_BASE,
+      investorFeesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME),
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));
