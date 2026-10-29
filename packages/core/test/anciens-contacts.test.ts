@@ -227,6 +227,22 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     expect(await t.followups()).toEqual([]);
   });
 
+  it('[R01] validée la nuit, la relance reste à valider et part au créneau suivant', async () => {
+    const t = await setup();
+    const ines = await t.contact('Inès');
+    await t.valued(ines.id, 400);
+    await t.anciens.prepareMonth(t.network.id);
+    const list = await t.anciens.toValidate(t.agent());
+    if (!list.ok) throw new Error(list.code);
+    const id = list.value[0]!.followupId;
+    t.setClock(Date.parse('2027-10-12T20:30:00.000Z'));
+    expect(await t.anciens.validate(t.agent(), id)).toEqual({ ok: true, value: { status: 'attente', rule: 'R01', delivered: false } });
+    expect((await t.followups()).map((f) => f.status)).toEqual(['a_valider']);
+    t.setClock(Date.parse('2027-10-13T08:00:00.000Z'));
+    expect(await t.anciens.validate(t.agent(), id)).toEqual({ ok: true, value: { status: 'essai', rule: null, delivered: false } });
+    expect(await t.outbox()).toHaveLength(1);
+  });
+
   it('[R02] [R04] une personne exclue ou arrêtée après la préparation sort de la liste, et sa relance est close', async () => {
     const t = await setup();
     const ines = await t.contact('Inès');
