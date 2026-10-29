@@ -107,6 +107,7 @@ describe('Z03 · système de design d’AIMMO', () => {
     // Les seuls fichiers qui posent une feuille dans une page, et le nom de la feuille qu'ils posent.
     const STYLED: Record<string, RegExp> = {
       'core/src/design/systeme.ts': /^<style>\$\{DESIGN_CSS\}\$\{PUBLIC_PAGE_CSS\}<\/style>$/,
+      'core/src/attirer/page-prix.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/annonces/page-bien.ts': /^<style>\$\{(?:CSS|PRINT_CSS)\}<\/style>$/,
       'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,
       'api/src/candidature.ts': /^<style>\$\{STYLE\}<\/style>$/,
