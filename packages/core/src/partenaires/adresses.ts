@@ -70,4 +70,27 @@ export class AdressesPartenaires {
     }
     return { ok: false, rule: null, code: 'busy' };
   }
+
+  /**
+   * La direction range l'opposition d'un partenaire (réponse, appel) : son adresse ne reçoit plus rien, sur aucun canal,
+   * prospection comprise, pour toujours [R04, R02]. Toutes ses adresses rangées sont opposées.
+   */
+  async oppose(viewer: Viewer, partnerId: unknown): Promise<AdresseResult<number>> {
+    const actor = `${String(viewer.role)}:${viewer.userId}`;
+    if (viewer.role !== 'direction') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor, subject: `partner:${String(partnerId)}`, data: { rule: 'R16', role: String(viewer.role), kind: 'partner_address' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
+    if (typeof partnerId !== 'string') return { ok: false, rule: null, code: 'unknown' };
+    const rows = await this.db.all<{ email: string }>('SELECT DISTINCT email FROM partner_addresses WHERE network_id = ? AND partner_id = ?', [viewer.networkId, partnerId]);
+    if (rows.length === 0) return { ok: false, rule: null, code: 'unknown' };
+    const at = this.now().toISOString();
+    let added = 0;
+    for (const r of rows) {
+      const w = await this.db.run("INSERT INTO partner_prospect_optouts (network_id, email, via, at) VALUES (?, ?, 'agent', ?) ON CONFLICT DO NOTHING", [viewer.networkId, r.email, at]);
+      added += w.changes;
+    }
+    await appendEvent(this.journal, { type: 'partenaire.opposition', actor, subject: `partner:${partnerId}`, data: { rule: 'R04', added } }, this.now);
+    return { ok: true, value: added };
+  }
 }

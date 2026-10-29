@@ -335,6 +335,13 @@ const ROUTES: PartenairesRoute[] = [
   },
   {
     method: 'POST',
+    pattern: new RegExp(`^/partenaires/annuaire/${ID}/opposition$`),
+    name: 'partenaires.annuaire.opposition',
+    roles: DIRECTION,
+    handle: async (s, v, [id]) => reply(await core(s).adresses.oppose(v, id!)),
+  },
+  {
+    method: 'POST',
     pattern: new RegExp(`^/partenaires/annuaire/${ID}/justificatifs$`),
     name: 'partenaires.annuaire.justificatif',
     roles: STAFF,
