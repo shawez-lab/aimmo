@@ -19,6 +19,7 @@ import type { Geocoder } from '../../estimation/collecte.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
 import { FORBIDDEN_SOURCES, isForbiddenSource } from '../source.ts';
+import { agentBlocked } from './etat-agent.ts';
 
 export const LETTER_TRIGGERS = ['mandat', 'vente'] as const;
 export type LetterTrigger = (typeof LETTER_TRIGGERS)[number];
@@ -163,6 +164,8 @@ export class LettresQuartier {
    */
   async createCampaign(viewer: Viewer, input: unknown): Promise<LetterResult<{ campaignId: string; letters: number; textBy: 'ia' | 'secours' }>> {
     if (viewer.role !== 'agent') return this.refusedAccess(viewer, 'role');
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refusedAccess(viewer, blocked);
     const stop = async (rule: LetterRefusal['rule'], code: string, index?: number): Promise<LetterRefusal> => {
       await appendEvent(this.journal, { type: 'lettres_quartier.refusee', actor: this.actor(viewer), subject: null, data: { rule, code, ...(index === undefined ? {} : { index }) } }, this.now);
       return { ok: false, rule, code, ...(index === undefined ? {} : { index }) };
@@ -268,6 +271,8 @@ export class LettresQuartier {
 
   private async ownCampaign(viewer: Viewer, campaignId: string): Promise<CampaignRow | LetterRefusal> {
     if (viewer.role !== 'agent') return this.refusedAccess(viewer, 'role');
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refusedAccess(viewer, blocked);
     const c = await this.db.first<CampaignRow>('SELECT * FROM neighbourhood_campaigns WHERE id = ? AND network_id = ?', [campaignId, viewer.networkId]);
     if (!c) return this.refusedAccess(viewer, 'unknown');
     if (c.agent_id !== viewer.userId) return this.refusedAccess(viewer, 'not_assigned');
@@ -302,6 +307,8 @@ export class LettresQuartier {
   /** L'agent note qu'il a déposé une lettre ; une fois. */
   async deposited(viewer: Viewer, letterId: string): Promise<LetterResult<{ depositedAt: string }>> {
     if (viewer.role !== 'agent') return this.refusedAccess(viewer, 'role');
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refusedAccess(viewer, blocked);
     const l = await this.db.first<{ campaign_id: string; deposited_at: string | null }>('SELECT campaign_id, deposited_at FROM neighbourhood_letters WHERE id = ? AND network_id = ?', [letterId, viewer.networkId]);
     if (!l) return this.refusedAccess(viewer, 'unknown');
     const c = await this.ownCampaign(viewer, l.campaign_id);

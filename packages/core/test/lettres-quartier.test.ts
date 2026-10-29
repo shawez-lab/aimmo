@@ -201,5 +201,9 @@ describeWithSqlite('G06 · lettres de quartier, adressées sans nom', () => {
     expect(await t.lettres.printable(t.agent(t.sam.id), r.value.campaignId)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.lettres.letters(t.agent(t.sam.id), r.value.campaignId)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.lettres.printable(t.agent(), 'inconnue')).toEqual({ ok: false, rule: 'R16', code: 'unknown' });
+    // Un agent parti ne prépare ni n'imprime plus rien [R86].
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    expect(await t.lettres.printable(t.agent(), r.value.campaignId)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect(await t.lettres.createCampaign(t.agent(), t.input())).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
   });
 });
