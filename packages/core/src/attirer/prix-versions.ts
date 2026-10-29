@@ -379,10 +379,10 @@ export class PrixRegroupes {
    * des cases montrables, chacune avec sa source et sa date [R150, R151]. `null` si la commune ou la version manque.
    */
   async communePrices(networkId: string, communeSlug: string, versionId?: string): Promise<CommunePrices | null> {
-    const version = await this.db.first<{ id: string; completed_at: string }>(
+    const version = await this.db.first<{ id: string; completed_at: string; min_sales: number }>(
       versionId === undefined
-        ? "SELECT id, completed_at FROM price_versions WHERE network_id = ? AND status = 'complet' ORDER BY completed_at DESC, id DESC LIMIT 1"
-        : "SELECT id, completed_at FROM price_versions WHERE network_id = ? AND status = 'complet' AND id = ?",
+        ? "SELECT id, completed_at, min_sales FROM price_versions WHERE network_id = ? AND status = 'complet' ORDER BY completed_at DESC, id DESC LIMIT 1"
+        : "SELECT id, completed_at, min_sales FROM price_versions WHERE network_id = ? AND status = 'complet' AND id = ?",
       versionId === undefined ? [networkId] : [networkId, versionId],
     );
     if (!version) return null;
@@ -426,8 +426,9 @@ export class PrixRegroupes {
         held.push({ zone, kind: r.kind, reason: r.reason! });
         continue;
       }
-      // Une case montrée a toujours au moins le seuil de sa version : contrôlé encore ici, au cas où [R150].
-      if (r.sales_count === null || r.sales_count < this.settings.minSales || r.source === null) {
+      // Une case montrée a toujours au moins le seuil rangé avec sa version, jamais celui du lecteur : contrôlé encore
+      // ici, au cas où [R150]. Une version passée se lit donc toujours de la même façon.
+      if (r.sales_count === null || r.sales_count < Number(version.min_sales) || r.source === null) {
         held.push({ zone, kind: r.kind, reason: 'seuil' });
         continue;
       }

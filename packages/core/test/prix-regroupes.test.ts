@@ -426,6 +426,10 @@ describeWithSqlite('AT01 · versions des prix dans la base', () => {
     const other = new PrixRegroupes(db, journal, source, { settings: { roundTo: 100 } });
     expect(await other.recompute('net-1')).toMatchObject({ ran: true });
     expect((await other.communePrices('net-1', 'commune-test'))!.cells[0]!.median % 100).toBe(0);
+    // Une version passée se lit pareil, quel que soit le seuil du lecteur.
+    const strict = new PrixRegroupes(db, journal, source, { settings: { minSales: 10 } });
+    const first = (await prix.versions('net-1')).at(-1)!.id;
+    expect((await strict.communePrices('net-1', 'commune-test', first))!.cells.find((c) => c.zone.slug === 'commune-test')).toMatchObject({ sales: 6 });
     const longer = new PrixRegroupes(db, journal, source, { settings: { windowMonths: 36 } });
     expect(await longer.recompute('net-1')).toMatchObject({ ran: true });
     expect((await longer.communePrices('net-1', 'commune-test'))!.cells[0]!.period.from).toBe('2023-07');
