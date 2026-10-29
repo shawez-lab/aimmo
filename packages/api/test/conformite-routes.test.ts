@@ -84,6 +84,7 @@ describeWithSqlite('L09 · routes de M12', () => {
       '/fuites',
       '/fuites/alertes',
       '/fuites/f-1/personnes',
+      '/risque',
     ];
     for (const path of reads) {
       for (const v of [t.agent, t.direction]) expect([path, v.role, (await t.call(v, 'GET', path)).status]).toEqual([path, v.role, 403]);
@@ -169,7 +170,11 @@ describeWithSqlite('L09 · routes de M12', () => {
     const prepared = await t.call(t.agent, 'POST', `/personnes/${t.buyerId}/risque`, { relation: 'offre', caseRef: `offer:${t.offerId}`, declarations });
     expect([prepared.status, prepared.body]).toEqual([200, expect.anything()]);
     const sheetId = (prepared.body as unknown as { sheet: { sheetId: string } }).sheet.sheetId;
+    // L10 : la fiche attend sa validation dans la liste du responsable, puis la quitte une fois validée [R91].
+    const waiting = await t.call(t.compliance, 'GET', '/risque');
+    expect([waiting.status, waiting.body?.data.map((s: { sheetId: string; status: string }) => [s.sheetId, s.status])]).toEqual([200, [[sheetId, 'non_validee']]]);
     expect((await t.call(t.compliance, 'POST', `/risque/${sheetId}/valider`, { validatorName: 'Responsable Test' })).status).toBe(200);
+    expect((await t.call(t.compliance, 'GET', '/risque')).body?.data).toEqual([]);
     expect((await t.call(t.compliance, 'GET', `/risque/${sheetId}/rejouer`)).body).toMatchObject({ ok: true, same: true });
   });
 

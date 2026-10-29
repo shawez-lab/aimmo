@@ -208,7 +208,8 @@ export function conformiteRoutes(): ConformiteRoute[] {
 
     // La fiche de risque (L02) : préparée par l'agent, validée par le responsable, rejouée à l'identique.
     route('POST', `${P}/risque`, 'risque_preparer', write(['relation', 'caseRef', 'declarations'], async (s, v, [personId], b) => reply(await services(s).risque.prepare(v, personId!, { relation: b.relation, caseRef: b.caseRef, declarations: b.declarations })))),
-    route('GET', `${P}/risque`, 'risque_liste', async (s, v, [personId]) => reply(await services(s).risque.list(v, personId!))),
+    route('GET', '/risque', 'risque_attente', async (s, v) => reply(await services(s).risque.pending(v))),
+    route('GET', `${P}/risque`, 'risque_liste',async (s, v, [personId]) => reply(await services(s).risque.list(v, personId!))),
     route('POST', `/risque/${ID}/valider`, 'risque_valider', write(['validatorName', 'level', 'reason'], async (s, v, [id], b) => reply(await services(s).risque.validate(v, id!, { validatorName: b.validatorName, level: b.level, reason: b.reason })))),
     route('GET', `/risque/${ID}/rejouer`, 'risque_rejouer', async (s, v, [id]) => reply(await services(s).risque.replay(v, id!))),
 
