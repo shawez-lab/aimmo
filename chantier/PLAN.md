@@ -1781,7 +1781,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X02 · Photos corrigées honnêtement, avec leur certificat (Jamais vu)
 - Statut : en cours (voie 2)
-- Avancement (2026-10-29) : proposition #177 prête, empilée sur X01 (#174), migration `1202` ; suite complète verte en local (1746), relecture forte 2 P1 corrigés ; en attente des vérifications GitHub (H35). Branchement dans la publication par X05 et X10. X03 prend `1203`, X04 `1204`, X05 `1205`.
+- Avancement (2026-10-29) : proposition #177 prête, empilée sur X01 (#174), migration `1202` ; suite complète verte en local (1746), relecture forte 2 P1 corrigés ; en attente des vérifications GitHub (H35). Branchement dans la publication par X05 et X10. X03 prend `1203`, X04 `1204`, X05 `1205`. Codex : 1 P0 (original vérifié dans le stockage par une interface, seule l'existence lue) et 1 P1 (fiche illisible au journal) corrigés, nouvelle relecture demandée.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X01
 - Cahier : M19, « Photos corrigées sur le téléphone », « Règles ».
 - Objectif : la description des corrections faites sur l'appareil, rangée avec l'empreinte de l'original et celle du résultat (migration `1201`) ; **Jamais vu** : chaque photo publiée porte un certificat d'honnêteté lisible par le client (original gardé, liste des corrections globales, aucune retouche locale), vérifiable par un lien sans donnée personnelle.
@@ -1789,7 +1789,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X03 · Montage vidéo sur l'appareil à partir d'un modèle
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
 - Cahier : M19, « Vidéo du bien » ; M07 (plan de tournage, P06) ; critère « montée seule en moins de 10 minutes ».
 - Objectif : le modèle de montage décrit par le code depuis le plan de tournage de P06 (ordre des plans, durées, sous-titres tirés de la fiche, musique de la bibliothèque, fin à la marque de l'agent) ; le montage se fait sur l'appareil ; le serveur range la description du montage fini et contrôle ses textes et sa musique (migration `1203`).
@@ -1798,6 +1798,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X04 · Plan simple du logement depuis les mesures
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #179 prête, empilée sur X02 (#177), migration `1204` ; suite complète verte en local, plan rendu vérifié à 390 px ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X01
 - Cahier : M19, « Plan simple du logement ».
 - Objectif : des pièces rectangulaires saisies avec leurs cotes en centimètres et leur position, versionnées (migration `1204`) ; un plan SVG dessiné par le code, surfaces calculées par le code, mention « plan indicatif, non contractuel ».
