@@ -367,6 +367,25 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     expect(s.client.writes()).toHaveLength(2);
   });
 
+  it('[R154] un client « Le Goff », « Da Silva » ou « Du Pont » ne bloque ni le secours ni les publications, mais son nom reste refusé', async () => {
+    const s = await setup();
+    for (const [id, first, last] of [['p-3', 'Yann', 'Le Goff'], ['p-4', 'Ana', 'Da Silva'], ['p-5', 'Luc', 'Du Pont'], ['p-6', 'Rui', 'De Oliveira']] as const) {
+      await s.db.run("INSERT INTO persons (id, network_id, agent_id, first_name, last_name, created_at, updated_at) VALUES (?, 'net-1', 'ag-1', ?, ?, 'x', 'x')", [id, first, last]);
+    }
+    s.client.reviewsToGive = [1, 2, 3, 4, 5].map((rating) => ({ reviewRef: `accounts/1/locations/123/reviews/n${rating}`, rating, comment: null, authorName: null, reviewedAt: '2026-10-28T10:00:00.000Z' }));
+    expect(await s.fiche.importReviews('net-1', 'ag-1')).toEqual({ ok: true, added: 5 });
+    for (const row of await s.db.all<{ id: string; rating: number }>('SELECT id, rating FROM gbp_reviews')) {
+      const r = await s.fiche.draftReply(agent, row.id);
+      expect(r.ok && r.value.origin, String(row.rating)).toBe('secours');
+    }
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison 5 pièces avec jardin à Talant');
+    const p = await s.fiche.duePost('net-1', 'ag-1');
+    expect(p.ok && p.value?.propertyId).toBe('b1');
+    const review = (await s.db.first<{ id: string }>('SELECT id FROM gbp_reviews'))!.id;
+    expect(await s.fiche.writeReply(agent, review, 'Merci monsieur le goff.')).toMatchObject({ ok: false, problems: ['nom'] });
+    expect(await s.fiche.writeReply(agent, review, 'Merci Madame Oliveira.')).toMatchObject({ ok: false, problems: ['nom'] });
+  });
+
   it('[R154] le nom de l’auteur est refusé même s’il est aussi le prénom d’un agent du réseau', async () => {
     const s = await setup({ writer: fixedWriter('Merci Rémi pour votre confiance.') });
     s.client.reviewsToGive = [{ reviewRef: 'accounts/1/locations/123/reviews/r9', rating: 5, comment: null, authorName: 'Rémi Inventé', reviewedAt: '2026-10-28T10:00:00.000Z' }];

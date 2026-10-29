@@ -168,6 +168,9 @@ export function listingPostText(title: string, agentFirstName: string): string {
   return `${title.trim()}. À découvrir dès maintenant : photos, visite et toutes les informations sur la page du bien.\n${signatureOf(agentFirstName)}`;
 }
 
+/** Les particules des noms de famille, qui sont aussi des mots courants. */
+const PARTICLES = new Set(['de', 'du', 'des', 'le', 'la', 'les', 'da', 'das', 'do', 'dos', 'di', 'del', 'della', 'van', 'von', 'der', 'den', 'el', 'al', 'ben', 'bin', 'mac', 'mc', 'st', 'saint', 'sainte', 'et', 'y', 'ou', 'au', 'aux', 'en']);
+
 /* ---------- Le service ---------- */
 
 export interface FicheGoogleOptions {
@@ -275,8 +278,13 @@ export class FicheGoogle {
     const clientFirstNames = new Set<string>();
     const clientLastNames = new Set<string>();
     for (const p of await this.db.all<{ first_name: string | null; last_name: string | null }>('SELECT DISTINCT first_name, last_name FROM persons WHERE network_id = ?', [networkId])) {
-      if (p.first_name) for (const w of words(p.first_name)) clientFirstNames.add(foldWord(w));
-      if (p.last_name) for (const w of words(p.last_name)) clientLastNames.add(foldWord(w));
+      for (const w of words(p.first_name ?? '')) if (!PARTICLES.has(foldWord(w))) clientFirstNames.add(foldWord(w));
+      // Une particule (« Le Goff », « Da Silva ») n'est pas un nom ; un nom de deux lettres n'est lu que comme un nom propre.
+      for (const w of words(p.last_name ?? '')) {
+        const f = foldWord(w);
+        if (PARTICLES.has(f)) continue;
+        (f.length >= 3 ? clientLastNames : clientFirstNames).add(f);
+      }
     }
     return { kind, authorTokenHashes, clientFirstNames, clientLastNames, signature };
   }
@@ -415,7 +423,11 @@ export class FicheGoogle {
     }
     const fallback = fallbackReply(rating, allowed.firstName);
     const problems = await checkGbpText(fallback, ctx, viewer.networkId);
-    if (problems.length > 0) return { ok: false, rule: 'R154', code: 'texte_refuse', problems };
+    if (problems.length > 0) {
+      // Le secours lui-même refusé (un client porte un mot du modèle) : noté, sans le texte ; l'agent écrit sa réponse.
+      await appendEvent(this.journal, { type: 'attirer.google.secours_refuse', actor: 'system:fiche_google', subject: `agent:${review.agent_id}`, data: { rule: 'R154', problems } }, this.now);
+      return { ok: false, rule: 'R154', code: 'texte_refuse', problems };
+    }
     return { ok: true, value: await this.store(viewer.networkId, review.agent_id, { kind: 'reponse', reviewId: review.id, propertyId: null, listingSeq: null, body: fallback, linkUri: null, origin: 'secours' }, this.actor(viewer)) };
   }
 
