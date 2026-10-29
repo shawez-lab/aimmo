@@ -1718,7 +1718,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien (IA derrière une interface, faux dans les tests ; H13 pour l'IA réelle).
 
 ### Y06 · Alertes aux investisseurs qui les ont demandées
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-29)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y05
 - Cahier : M17, « Alertes » ; M08 (alertes aux acquéreurs).
 - Objectif : quand un bien diffusable du fichier commun correspond au profil (secteur, budget, location visée, rendement brut attendu calculé par Y03), un texte d'alerte est préparé pour les seuls investisseurs dont l'accord aux alertes est rangé, avec le calcul et ses contraintes ; il passe par le contrôle central des envois, en mode essai.
@@ -1726,7 +1726,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y07 · Routes de M17 et parcours de 10 biens tests
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y06
 - Cahier : M17 ; Architecture technique, API.
 - Objectif : `packages/api/src/investir.ts` : routes `/v1/investir` (profil, import des loyers par la direction, calcul, contraintes, note, validation, alertes), rôle contrôlé avant le corps, refus au journal ; parcours de bout en bout de 10 biens tests ; après l'achat, ouverture de la mise en location de M15 et proposition de partenaires de M18 par leurs routes existantes.
