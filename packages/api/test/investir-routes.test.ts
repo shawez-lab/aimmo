@@ -191,3 +191,18 @@ describeWithSqlite('Y07 · routes de M17', () => {
 it('les routes de M17 vivent sous /investir et ne rendent jamais un chiffre calculé ailleurs que dans le code du serveur', () => {
   for (const r of investirRoutes()) expect(r.pattern.source.startsWith('^\\/investir')).toBe(true);
 });
+
+describeWithSqlite('Y07 · relecture d’un calcul', () => {
+  it('[R16] un calcul ne se relit plus quand son bien sort du fichier commun, même pour le projet de l’agent', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/investir/loyers', { kind: 'apartment', vintage: 2026, csv: 'INSEE_C;loypredm2;lwr.IPm2;upr.IPm2;nbobs_com\n99001;12,35;10,10;15,01;120' });
+    const person = await t.store.createPerson({ networkId: t.network.id, agentId: t.other.userId, firstName: 'Noé' });
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.other.userId, personId: person.id, kind: 'invest' });
+    const property = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'S-1', kind: 'home', city: 'X', priceEur: 150_000, surfaceM2: 45, rooms: 2, status: 'available' });
+    const calc = await t.ok(t.other, 'POST', '/investir/calculs', { propertyId: property.id, projectId: project.id, marketRentQuery: { inseeCode: '99001', kind: 'apartment' } });
+    expect((await t.call(t.other, 'GET', `/investir/calculs/${calc.id}`)).status).toBe(200);
+    await t.db.run("UPDATE properties SET status = 'sold' WHERE id = ?", [property.id]);
+    expect((await t.call(t.other, 'GET', `/investir/calculs/${calc.id}`)).status).toBe(403);
+  });
+});
+
