@@ -29,6 +29,7 @@ const SHEET = {
   equipment: ['piano de cuisson', 'chambre froide'],
 };
 const BILAN = 'Bilan inventé de l’exercice 2026. Total du bilan : 812 300 €. Capitaux propres : 210 000 €. Dettes fournisseurs : 64 500 €. Trésorerie : 38 900 €.';
+const OPEN_CODE = '987654';
 const CONSENT = { consentProof: 'accord donné au rendez-vous du 7 septembre' };
 
 async function setup(options: { maxOpens?: number } = {}) {
@@ -48,7 +49,7 @@ async function setup(options: { maxOpens?: number } = {}) {
   const conf = new ConfidentialiteCommerce(db, journal, fiches, presentations, identity, { now, newCode: () => code });
   const files = new Map<string, string>([['r2://essai/bilan-2026.txt', BILAN]]);
   const storage: DossierStorage = { read: async (ref) => files.get(ref) ?? null };
-  const dossier = new DossierCommerce(db, journal, fiches, conf, storage, { now, ...(options.maxOpens ? { maxOpens: options.maxOpens } : {}) });
+  const dossier = new DossierCommerce(db, journal, fiches, conf, storage, { now, newCode: () => OPEN_CODE, ...(options.maxOpens ? { maxOpens: options.maxOpens } : {}) });
   const network = await store.createNetwork('Réseau test');
   const alexAgent = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
   const samAgent = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Agent' });
@@ -88,7 +89,12 @@ async function setup(options: { maxOpens?: number } = {}) {
     if (!m) throw new Error('jeton');
     return m[1]!;
   };
-  return { db, journal, acces, conf, dossier, alex, sam: as('agent', samAgent.id), direction, compliance: as('compliance', 'conf-1'), shop, buyer, tokenFor, advance: (ms: number) => (clock += ms), files };
+  /** Le lecteur demande son code, le reçoit dans la boîte d'essai, et ouvre. */
+  const openAs = async (token: string, email: string) => {
+    await dossier.requestCode(token, email);
+    return dossier.open(token, email, OPEN_CODE);
+  };
+  return { openAs, db, journal, acces, conf, dossier, alex, sam: as('agent', samAgent.id), direction, compliance: as('compliance', 'conf-1'), shop, buyer, tokenFor, advance: (ms: number) => (clock += ms), files };
 }
 
 describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
@@ -102,7 +108,7 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
     expect(JSON.stringify(await t.db.all('SELECT * FROM business_dossier_links'))).not.toContain(token);
     expect(await t.db.all("SELECT 1 FROM messages m WHERE m.body LIKE '%dossier confidentiel%' AND m.id NOT IN (SELECT message_id FROM trial_outbox)")).toHaveLength(0);
     for (let i = 0; i < 3; i += 1) {
-      const r = await t.dossier.open(token, b.email.toUpperCase());
+      const r = await t.openAs(token, b.email.toUpperCase());
       expect(r, `ouverture ${i}`).toMatchObject({ ok: true });
       if (r.ok) {
         expect(r.value.pages.map((p) => p.title)).toEqual(['Fiche du commerce', 'Bilan 2026']);
@@ -111,6 +117,9 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
         for (const p of r.value.pages) expect(p.text).toContain('copie personnelle de RepreneurB Inventé');
       }
     }
+    // Le code d'ouverture part aussi en essai seulement, à la personne du lien ; il n'est rangé qu'en empreinte.
+    expect(await t.db.all("SELECT 1 FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%code pour ouvrir%'", [b.id])).toHaveLength(3);
+    expect(JSON.stringify(await t.db.all('SELECT * FROM business_dossier_open_codes'))).not.toContain(OPEN_CODE);
     const log = await t.dossier.accesses(t.acces, t.alex, t.shop.id);
     expect(log.ok && log.value.map((a) => [a.outcome, a.personId])).toEqual([
       ['ouvert', b.id],
@@ -127,14 +136,24 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
   it('[R114] [R113] un lien expiré, révoqué, épuisé, ouvert par un autre lecteur ou dont l’engagement est révoqué est refusé et journalisé', async () => {
     const t = await setup({ maxOpens: 2 });
     const cases: { name: string; act: (b: { id: string; email: string; ndaId: string }, token: string) => Promise<unknown>; code: string }[] = [
-      { name: 'autre lecteur', act: (_b, token) => t.dossier.open(token, 'quelquun.dautre@example.test'), code: 'autre_lecteur' },
-      { name: 'sans adresse', act: (_b, token) => t.dossier.open(token, undefined), code: 'autre_lecteur' },
+      { name: 'autre lecteur', act: (_b, token) => t.dossier.open(token, 'quelquun.dautre@example.test', OPEN_CODE), code: 'autre_lecteur' },
+      { name: 'sans adresse', act: (_b, token) => t.dossier.open(token, undefined, OPEN_CODE), code: 'autre_lecteur' },
+      // Connaître l'adresse ne suffit pas : sans le code reçu à cette adresse, c'est un autre lecteur.
+      { name: 'bonne adresse sans code', act: (b, token) => t.dossier.open(token, b.email, OPEN_CODE), code: 'autre_lecteur' },
+      {
+        name: 'code déjà servi',
+        act: async (b, token) => {
+          await t.openAs(token, b.email);
+          return t.dossier.open(token, b.email, OPEN_CODE);
+        },
+        code: 'autre_lecteur',
+      },
       {
         name: 'épuisé',
         act: async (b, token) => {
-          await t.dossier.open(token, b.email);
-          await t.dossier.open(token, b.email);
-          return t.dossier.open(token, b.email);
+          await t.openAs(token, b.email);
+          await t.openAs(token, b.email);
+          return t.openAs(token, b.email);
         },
         code: 'epuise',
       },
@@ -143,7 +162,7 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
         act: async (b, token) => {
           const link = await t.db.first<{ id: string }>('SELECT id FROM business_dossier_links WHERE person_id = ?', [b.id]);
           await t.dossier.revokeLink(t.acces, t.alex, link!.id);
-          return t.dossier.open(token, b.email);
+          return t.dossier.open(token, b.email, OPEN_CODE);
         },
         code: 'revoque',
       },
@@ -151,7 +170,7 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
         name: 'engagement révoqué après l’envoi',
         act: async (b, token) => {
           await t.conf.revoke(t.acces, t.alex, b.ndaId, 'manquement');
-          return t.dossier.open(token, b.email);
+          return t.openAs(token, b.email);
         },
         code: 'porte_fermee',
       },
@@ -159,7 +178,7 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
         name: 'expiré',
         act: async (b, token) => {
           t.advance(8 * 86_400_000);
-          return t.dossier.open(token, b.email);
+          return t.dossier.open(token, b.email, OPEN_CODE);
         },
         code: 'expire',
       },
@@ -175,7 +194,7 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
     const refusals = (await t.journal.all()).filter((e) => e.type === 'commerces.dossier.refuse').map((e) => (e.data as { code: string }).code);
     expect(refusals).toEqual(cases.map((c) => c.code));
     // Un jeton inconnu : refusé et journalisé, sans lecteur connu.
-    expect(await t.dossier.open('a'.repeat(40), 'x@example.test')).toMatchObject({ ok: false, code: 'inconnu' });
+    expect(await t.dossier.open('a'.repeat(40), 'x@example.test', OPEN_CODE)).toMatchObject({ ok: false, code: 'inconnu' });
     expect((await t.journal.all()).filter((e) => e.type === 'commerces.dossier.refuse')).toHaveLength(cases.length + 1);
   });
 
@@ -199,7 +218,7 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
       await t.dossier.send(t.acces, t.alex, t.shop.id, r.id, CONSENT);
       const token = await t.tokenFor(r.id);
       for (let i = 0; i < 5; i += 1) {
-        const o = await t.dossier.open(token, r.email);
+        const o = await t.openAs(token, r.email);
         if (!o.ok) throw new Error('ouverture');
         copies.push({ text: o.value.pages.map((p) => p.text).join('\n\n'), accessId: o.value.accessId, personId: r.id });
       }
@@ -207,9 +226,18 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
     expect(new Set(copies.map((c) => readMarks(c.text)?.mark)).size).toBe(10);
     // Vingt copies tests : chaque ouverture, recopiée sans mise en forme, et un extrait.
     const strip = (s: string) => s.replace(/[​-‍⁠-⁤]/g, '');
+    // Une partie des invisibles seulement retirée, un extrait de liste sans ponctuation, tout retiré.
+    const listLines = (s: string) => s.split('\n').filter((l) => l.startsWith('Matériel') || l.startsWith('Salariés')).join('\n').replace(/[.]/g, '');
+    const kinds = [
+      (s: string) => s.split('\n\n')[3]!,
+      (s: string) => strip(s).replace(/\s+/g, ' '),
+      (s: string) => s.replace(/\u200b/g, ''),
+      (s: string) => s.replace(/[\u2063\u2064]/g, ''),
+      listLines,
+    ];
     const variants = copies.flatMap((c, i) => [
       { ...c, leaked: c.text.replace(/\s+/g, ' ') },
-      { ...c, leaked: i % 2 === 0 ? c.text.split('\n\n')[3]! : strip(c.text).replace(/\s+/g, ' ') },
+      { ...c, leaked: kinds[i % kinds.length]!(c.text) },
     ]);
     expect(variants).toHaveLength(20);
     for (const v of variants) {
@@ -233,7 +261,7 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
     const b = await t.buyer(true);
     await t.dossier.send(t.acces, t.alex, t.shop.id, b.id, CONSENT);
     t.files.set('r2://essai/bilan-2026.txt', `${BILAN} Ligne ajoutée.`);
-    const o = await t.dossier.open(await t.tokenFor(b.id), b.email);
+    const o = await t.openAs(await t.tokenFor(b.id), b.email);
     expect(o.ok && o.value.pages[1]!.text).toContain('Document indisponible');
     expect(o.ok && o.value.pages[1]!.text).not.toContain('Ligne ajoutée');
     await expect(t.db.run('DELETE FROM business_dossier_accesses')).rejects.toThrow(/rien ne s'efface/);

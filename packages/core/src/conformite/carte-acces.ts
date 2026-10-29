@@ -611,6 +611,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   business_dossier_links: { locate: by('person_id'), secrets: ['token_hash'] },
   business_dossier_link_revocations: { locate: [via('link_id', 'business_dossier_links')] },
   business_dossier_accesses: { locate: by('person_id') },
+  business_dossier_open_codes: { locate: [via('link_id', 'business_dossier_links')], secrets: ['code_hash'] },
   business_valuation_scales: out('sans_client', 'Barèmes d\'estimation par activité, rangés par la direction : aucune personne.'),
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
   investment_calculations: { locate: [via('project_id', 'projects')] },

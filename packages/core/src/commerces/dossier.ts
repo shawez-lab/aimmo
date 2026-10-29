@@ -24,6 +24,7 @@ import { trialChannels } from '../captation/essai.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { sha256 } from '../documents/modeles.ts';
+import { CODE_TTL_MINUTES, MAX_CODE_ATTEMPTS, newSignatureCode, sameSignatureHash } from '../documents/signature-en-ligne.ts';
 import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
@@ -103,7 +104,8 @@ export function readMarks(text: string): { mark: string; via: 'marque' | 'refere
   }
   const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
   if (best) return { mark: best[0], via: 'marque' };
-  const r = REF.exec(text);
+  // Les invisibles retirés : un outil qui n'en ôte qu'une partie ne cache pas la référence visible.
+  const r = REF.exec(text.replace(/\p{Cf}/gu, ''));
   if (!r) return null;
   let n = 0n;
   for (const c of `${r[1]}${r[2]}`) {
@@ -115,10 +117,16 @@ export function readMarks(text: string): { mark: string; via: 'marque' | 'refere
   return { mark: n.toString(16).padStart(12, '0'), via: 'reference' };
 }
 
-/** Le texte marqué : la marque cachée après le filigrane et après chaque phrase. */
+/**
+ * Le texte marqué : la marque cachée après chaque phrase et au bout de chaque ligne, pour qu'un extrait de liste ou de
+ * tableau la porte aussi.
+ */
 function marked(text: string, mark: string): string {
   const hidden = hiddenMark(mark);
-  return text.replace(/([.!?:])(\s|$)/gu, `$1${hidden}$2`);
+  return text
+    .split('\n')
+    .map((line) => (line.trim() === '' ? line : `${line.replace(/([.!?:])(\s)/gu, `$1${hidden}$2`)}${hidden}`))
+    .join('\n');
 }
 
 const euros = (cents: number): string => {
@@ -187,6 +195,7 @@ export interface DossierCommerceOptions {
   newId?: () => string;
   newToken?: () => string;
   newMark?: () => string;
+  newCode?: () => string;
   /** Durée de validité d'un lien, en jours. */
   linkDays?: number;
   /** Nombre d'ouvertures permises d'un lien. */
@@ -200,6 +209,7 @@ export class DossierCommerce {
   private readonly newId: () => string;
   private readonly newToken: () => string;
   private readonly newMark: () => string;
+  private readonly newCode: () => string;
   private readonly linkDays: number;
   private readonly maxOpens: number;
   private readonly baseUrl: string;
@@ -218,6 +228,7 @@ export class DossierCommerce {
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.newToken = options.newToken ?? newToken;
     this.newMark = options.newMark ?? newMark;
+    this.newCode = options.newCode ?? newSignatureCode;
     this.linkDays = options.linkDays ?? 7;
     this.maxOpens = options.maxOpens ?? 5;
     if (!Number.isInteger(this.linkDays) || this.linkDays < 1 || this.linkDays > 30) throw new Error('durée du lien invalide');
@@ -323,30 +334,62 @@ export class DossierCommerce {
     return { ok: true, value: { revokedAt } };
   }
 
-  /**
-   * Le lecteur ouvre le lien : il confirme son adresse mail. Chaque ouverture et chaque refus est rangé avec son lecteur
-   * et journalisé [R114] ; la porte de CE04 est revérifiée [R113]. Chaque page porte le filigrane et la marque.
-   */
-  async open(token: unknown, readerEmail: unknown): Promise<DossierResult<{ accessId: string; pages: DossierPage[] }>> {
+  /** Le lien d'un jeton, s'il existe, n'est ni révoqué ni expiré, et si l'adresse donnée est celle de sa personne. */
+  private async readerLink(token: unknown, readerEmail: unknown): Promise<{ link: LinkRow } | Problem> {
     const link = typeof token === 'string' && /^[a-z]{20,80}$/.test(token) ? await this.db.first<LinkRow>('SELECT * FROM business_dossier_links WHERE token_hash = ?', [await sha256(token)]) : null;
     if (!link) {
       await appendEvent(this.journal, { type: 'commerces.dossier.refuse', actor: 'lecteur', subject: null, data: { rule: 'R114', code: 'inconnu' } }, this.now);
       return { ok: false, rule: 'R114', code: 'inconnu' };
     }
+    if (await this.db.first('SELECT 1 FROM business_dossier_link_revocations WHERE link_id = ?', [link.id])) return this.refusal(link, 'revoque');
+    if (this.now().getTime() > Date.parse(link.expires_at)) return this.refusal(link, 'expire');
+    if (!(await this.isReader(link, readerEmail))) return this.refusal(link, 'autre_lecteur');
+    return { link };
+  }
+
+  /**
+   * Avant chaque ouverture, le lecteur reçoit un code à usage unique à l'adresse de la personne du lien, par le contrôle
+   * central (en essai : boîte d'essai) : connaître l'adresse ne suffit pas, il faut la recevoir.
+   */
+  async requestCode(token: unknown, readerEmail: unknown): Promise<DossierResult<{ expiresAt: string }>> {
+    const r = await this.readerLink(token, readerEmail);
+    if (!('link' in r)) return r;
+    const { link } = r;
+    const id = this.newId();
+    const code = this.newCode();
+    const expiresAt = new Date(this.now().getTime() + CODE_TTL_MINUTES * 60_000).toISOString();
+    await this.db.run(
+      "INSERT INTO business_dossier_open_codes (id, network_id, link_id, code_hash, expires_at, attempts, status, created_at) VALUES (?, ?, ?, ?, ?, 0, 'ouvert', ?)",
+      [id, link.network_id, link.id, await sha256(`${id}:${code}`), expiresAt, this.now().toISOString()],
+    );
+    const agent = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ?', [link.property_id]);
+    const sent = await this.envois.send({
+      networkId: link.network_id,
+      agentId: agent?.agent_id ?? null,
+      personId: link.person_id,
+      channel: 'email',
+      kind: 'alert',
+      purpose: DOSSIER_PURPOSE,
+      subject: `dossier_commerce:${link.id}`,
+      fallbackTexts: [`Bonjour,\n\nVotre code pour ouvrir le dossier confidentiel : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne.`],
+      figures: [code, CODE_TTL_MINUTES],
+    });
+    if (sent.status !== 'sent') return { ok: false, rule: sent.rule, code: 'send_refused' };
+    return { ok: true, value: { expiresAt } };
+  }
+
+  /**
+   * Le lecteur ouvre le lien avec son adresse et le code reçu. Chaque ouverture et chaque refus est rangé avec son
+   * lecteur et journalisé [R114] ; la porte de CE04 est revérifiée [R113]. Chaque page porte le filigrane et la marque.
+   */
+  async open(token: unknown, readerEmail: unknown, code: unknown): Promise<DossierResult<{ accessId: string; pages: DossierPage[] }>> {
+    const r = await this.readerLink(token, readerEmail);
+    if (!('link' in r)) return r;
+    const { link } = r;
+    if (!(await this.useCode(link, code))) return this.refusal(link, 'autre_lecteur');
+    const gate = await this.confidentialite.canSendConfidential(link.network_id, link.property_id, link.person_id, 'lecteur');
+    if (!gate.ok) return this.refusal(link, 'porte_fermee', gate.codes);
     const at = this.now();
-    let outcome: DossierOutcome | null = null;
-    let codes: string[] | undefined;
-    if (await this.db.first('SELECT 1 FROM business_dossier_link_revocations WHERE link_id = ?', [link.id])) outcome = 'revoque';
-    else if (at.getTime() > Date.parse(link.expires_at)) outcome = 'expire';
-    else if (!(await this.isReader(link, readerEmail))) outcome = 'autre_lecteur';
-    else {
-      const gate = await this.confidentialite.canSendConfidential(link.network_id, link.property_id, link.person_id, 'lecteur');
-      if (!gate.ok) {
-        outcome = 'porte_fermee';
-        codes = gate.codes;
-      }
-    }
-    if (outcome) return this.refusal(link, outcome, codes);
     const accessId = this.newId();
     const mark = this.newMark();
     if (!/^[0-9a-f]{12}$/.test(mark)) throw new Error('marque invalide');
@@ -359,6 +402,25 @@ export class DossierCommerce {
     if (changes !== 1) return this.refusal(link, 'epuise');
     await appendEvent(this.journal, { type: 'commerces.dossier.ouvert', actor: 'lecteur', subject: `property:${link.property_id}`, data: { rule: 'R114', access: accessId, link: link.id } }, this.now);
     return { ok: true, value: { accessId, pages: await this.pages(link, mark, at) } };
+  }
+
+  /** Le dernier code du lien, encore ouvert et valable, égal au code donné : il est consommé. Un essai faux est compté. */
+  private async useCode(link: LinkRow, code: unknown): Promise<boolean> {
+    const row = await this.db.first<{ id: string; code_hash: string; expires_at: string }>(
+      "SELECT id, code_hash, expires_at FROM business_dossier_open_codes WHERE link_id = ? AND status = 'ouvert' ORDER BY created_at DESC, rowid DESC LIMIT 1",
+      [link.id],
+    );
+    if (!row || this.now().getTime() > Date.parse(row.expires_at)) return false;
+    const given = typeof code === 'string' && /^\d{6}$/.test(code) ? await sha256(`${row.id}:${code}`) : '';
+    if (!given || !sameSignatureHash(given, row.code_hash)) {
+      await this.db.run(
+        "UPDATE business_dossier_open_codes SET attempts = attempts + 1, status = CASE WHEN attempts + 1 >= ? THEN 'bloque' ELSE status END WHERE id = ? AND status = 'ouvert'",
+        [MAX_CODE_ATTEMPTS, row.id],
+      );
+      return false;
+    }
+    const { changes } = await this.db.run("UPDATE business_dossier_open_codes SET status = 'utilise' WHERE id = ? AND status = 'ouvert'", [row.id]);
+    return changes === 1;
   }
 
   /** Les ouvertures et les refus d'un bien, pour qui le voit en entier [R16]. */
@@ -428,10 +490,12 @@ export class DossierCommerce {
     const name = [person?.first_name, person?.last_name].filter((x): x is string => !!x).join(' ') || 'lecteur identifié';
     const when = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' }).format(at);
     const watermark = `Confidentiel : copie personnelle de ${name}, ouverte le ${when}. Réf. de copie : ${visibleRef(mark)}.`;
+    // Le filigrane n'est marqué qu'à sa fin : sa référence visible reste d'un bloc.
+    const page = (body: string): string => `${watermark}${hiddenMark(mark)}\n\n${marked(body, mark)}`;
     const out: DossierPage[] = [];
     const sheet = await this.fiches.current(link.property_id);
     const property = await this.db.first<{ reference: string }>('SELECT reference FROM properties WHERE id = ?', [link.property_id]);
-    if (sheet) out.push({ title: 'Fiche du commerce', text: marked(`${watermark}\n\n${sheetText(sheet.sheet, property?.reference ?? '')}`, mark) });
+    if (sheet) out.push({ title: 'Fiche du commerce', text: page(sheetText(sheet.sheet, property?.reference ?? '')) });
     const docs = await this.db.all<{ title: string; storage_ref: string; content_sha256: string }>(
       'SELECT title, storage_ref, content_sha256 FROM business_dossier_documents WHERE network_id = ? AND property_id = ? ORDER BY added_at, rowid',
       [link.network_id, link.property_id],
@@ -440,10 +504,10 @@ export class DossierCommerce {
       const content = await this.storage.read(d.storage_ref);
       // Un document changé depuis qu'il a été rangé n'est pas servi : ce n'est plus celui que l'agent a mis au dossier.
       if (content === null || (await sha256(content)) !== d.content_sha256) {
-        out.push({ title: d.title, text: marked(`${watermark}\n\nDocument indisponible : votre agent immobilier vous le renverra.`, mark) });
+        out.push({ title: d.title, text: page('Document indisponible : votre agent immobilier vous le renverra.') });
         continue;
       }
-      out.push({ title: d.title, text: marked(`${watermark}\n\n${content}`, mark) });
+      out.push({ title: d.title, text: page(content) });
     }
     return out;
   }

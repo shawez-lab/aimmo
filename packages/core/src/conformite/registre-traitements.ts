@@ -528,6 +528,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       business_dossier_links: ['person_id', 'token_hash', 'created_by'],
       business_dossier_link_revocations: ['revoked_by'],
       business_dossier_accesses: ['person_id', 'mark'],
+      business_dossier_open_codes: ['code_hash'],
     },
   },
 ];
@@ -823,6 +824,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   business_dossier_links: ['id', 'network_id', 'property_id', 'nda_id', 'expires_at', 'max_opens', 'created_at'],
   business_dossier_link_revocations: ['link_id', 'network_id', 'revoked_at'],
   business_dossier_accesses: ['id', 'network_id', 'property_id', 'link_id', 'outcome', 'at'],
+  business_dossier_open_codes: ['id', 'network_id', 'link_id', 'expires_at', 'attempts', 'status', 'created_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */

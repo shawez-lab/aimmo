@@ -72,3 +72,23 @@ CREATE TRIGGER IF NOT EXISTS business_dossier_accesses_fige BEFORE UPDATE ON bus
 BEGIN SELECT RAISE(ABORT, 'business_dossier_accesses : une ouverture ne se réécrit pas'); END;
 CREATE TRIGGER IF NOT EXISTS business_dossier_accesses_garde BEFORE DELETE ON business_dossier_accesses
 BEGIN SELECT RAISE(ABORT, 'business_dossier_accesses : rien ne s''efface'); END;
+
+-- Le code à usage unique qui prouve, à chaque ouverture, que le lecteur reçoit le mail de la personne du lien : seule
+-- son empreinte est gardée ; il expire, ne sert qu'une fois, et cinq essais faux le bloquent.
+CREATE TABLE IF NOT EXISTS business_dossier_open_codes (
+  id TEXT PRIMARY KEY,
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  link_id TEXT NOT NULL REFERENCES business_dossier_links (id) ON DELETE RESTRICT,
+  code_hash TEXT NOT NULL CHECK (length(code_hash) = 64),
+  expires_at TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  status TEXT NOT NULL CHECK (status IN ('ouvert', 'utilise', 'bloque')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS business_dossier_open_codes_link ON business_dossier_open_codes (link_id, created_at);
+CREATE TRIGGER IF NOT EXISTS business_dossier_open_codes_garde BEFORE DELETE ON business_dossier_open_codes
+BEGIN SELECT RAISE(ABORT, 'business_dossier_open_codes : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS business_dossier_open_codes_fige BEFORE UPDATE ON business_dossier_open_codes
+WHEN OLD.status <> 'ouvert' OR NEW.id IS NOT OLD.id OR NEW.network_id IS NOT OLD.network_id OR NEW.link_id IS NOT OLD.link_id
+  OR NEW.code_hash IS NOT OLD.code_hash OR NEW.expires_at IS NOT OLD.expires_at OR NEW.created_at IS NOT OLD.created_at
+BEGIN SELECT RAISE(ABORT, 'business_dossier_open_codes : un code utilisé ou bloqué ne change plus'); END;
