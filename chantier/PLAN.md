@@ -1714,7 +1714,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE03 · Présentation anonyme, rédigée par l'IA depuis les seuls champs publics
 - Statut : en cours
-- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex, cinq tours : 6 P0, 2 P1 et 1 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante, enseigne courte distinctive, nombre négatif, pluriel et singulier, mots porteurs du matériel), relecture redemandée.
+- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex, six tours : 6 P0, 2 P1 et 2 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante, enseigne courte distinctive, nombre négatif, pluriel et singulier, mots porteurs du matériel, fourchette à tiret), relecture redemandée.
 - Décidé (2026-10-29) : sans fourchette validée en vigueur, pas de présentation (« incomplet ») ; le nom de la commune est retiré avant le contrôle des nombres ; `publishable` est la porte, branchée à la publication de M07 par CE10.
 - Qui : Claude · Relecture : forte · Dépend de : CE01, CE02
 - Cahier : M16, « Présentation anonyme », « L'IA et l'humain ».
@@ -1764,7 +1764,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE08 · Vigilance renforcée de la cession : bénéficiaires effectifs, origine des fonds
 - Statut : en cours
-- Reste : prête (#208, empilée sur #207), à fusionner après CE07 dès H35 ; relecture forte 2 P1 corrigés ; Codex 1 P2 corrigé (demande liée à l'acquéreur en vigueur), relecture redemandée.
+- Reste : prête (#208, empilée sur #207), à fusionner après CE07 dès H35 ; relecture forte 2 P1 corrigés ; Codex 1 P0 et 1 P2 corrigés (déclaration « société » sur les fiches réunies, demande liée à l'acquéreur en vigueur), relecture redemandée.
 - Décidé (2026-10-29) : alertes dans leurs tables (`business_transfer_watch*`, hors du registre de L04 que seul L04 lit), une par dossier et par acquéreur, décisions de L04 ; personne morale rangée telle ou au moindre signe de société ; la liste du responsable de L04 les montrera au branchement (CE10).
 - Qui : Claude · Relecture : forte · Dépend de : CE07
 - Cahier : M16, « Règles » ; M12 Conformité.
@@ -1774,7 +1774,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE09 · Routes de M16 et parcours de 10 demandes tests
 - Statut : en cours
-- Reste : prête (#209, empilée sur #208), à fusionner après CE08 dès H35 ; relecture forte 1 P1 corrigé (phrases refusées de l'IA rendues).
+- Reste : prête (#209, empilée sur #208), à fusionner après CE08 dès H35 ; relecture forte 1 P1 corrigé (phrases refusées de l'IA rendues) ; Codex 1 P1 corrigé (test gardé par SQLite), relecture redemandée.
 - Décidé (2026-10-29) : `commercesRoutes()` pour les rôles du réseau et `dossierReaderRoutes()` pour le lecteur sans compte (jeton, adresse, code) ; le lecteur ne lit jamais pourquoi la porte est fermée.
 - Qui : Claude · Relecture : forte · Dépend de : CE01 à CE08
 - Cahier : M16, « Critères d'acceptation ».
@@ -1784,6 +1784,8 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE10 · Branchement de M16 dans le socle
 - Statut : en cours
+- Reste : prête (#210, empilée sur #209), à fusionner après CE09 dès H35 ; relecture forte 2 P1 de tests corrigés ; pour un usage réel : H38 (stockage des documents) et H39 (`DOSSIER_LINK_BASE`).
+- Décidé (2026-10-29) : sans `DOSSIER_LINK_BASE`, l'envoi du dossier répond 503 ; sans stockage, le dossier ne sert que la fiche ; les routes du lecteur passent avant le contrôle des clés, POST seulement ; tâche quotidienne `commerces.cession_quotidienne` à 6 h.
 - Qui : Claude · Relecture : forte · Dépend de : CE09
 - Cahier : M16, « Branchements ».
 - Objectif : droits d'accès, `index.ts`, `app.ts`, migrations, planificateur (tâches de la cession), contrôle central des envois pour l'envoi du dossier.
@@ -1791,7 +1793,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE11 · Écran « Commerces » dans l'application
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : CE10
 - Cahier : M16 ; système de design de Z03.
 - Objectif : sur téléphone d'abord, la fiche, l'estimation, la présentation à valider, les demandes d'accès et leur état, les ouvertures du dossier, les étapes de la cession.
