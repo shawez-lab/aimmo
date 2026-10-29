@@ -1914,7 +1914,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G10 · Mesure mensuelle : garder ce qui rapporte des mandats
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : G08
 - Cahier : M20, point 7 « Mesure ».
 - Objectif : chaque mois, par source : mandats signés (G03), rendez-vous, coût saisi par la direction avec sa preuve (migration `1304`), coût par mandat ; le compte rendu à la direction, qui décide de garder ou d'arrêter chaque source, sa décision rangée.
@@ -1934,7 +1934,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : G11
 - Cahier : M20 ; Branchements.
 - Objectif : ajouter au plan du jour les lettres à déposer, les recommandations à rappeler et les relances validées, sous leurs raisons écrites ; routes dans `app.ts` ; passage mensuel des relances et de la mesure au planificateur ; relances par le contrôle central, en mode essai.
-- Critères : le plan reste le même pour les mêmes données [R35] ; aucune ligne sans base légale [R36] ; rien ne part réellement tant que le plan ne l'a pas mis en service [R26].
+- Critères : le plan reste le même pour les mêmes données [R35] ; aucune ligne sans base légale [R36] ; rien ne part réellement tant que le plan ne l'a pas mis en service [R26]. Les relances après la vente (F04, `apres-vente/relances-apres-vente.ts`) ne partent pas dans la période réglée de G09 après une relance d'ancien contact passée (`old_contact_followups` en `essai`), testé [R143].
 - Attend : rien.
 
 ### G13 · Écran « Gagner des mandats » dans l'application
