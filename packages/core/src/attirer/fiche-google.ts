@@ -21,7 +21,12 @@
  * AIMMO n'écrit jamais d'avis à la place d'un client [R64] : l'interface ne sait que lire les avis et y répondre. En mode
  * essai, rien ne part : l'interface n'est jamais appelée pour écrire, l'envoi est seulement noté [R26].
  */
+import { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
+import type { DiffusionGate } from '../acquereurs/rapprochement.ts';
+import { FicheClient } from '../db/fiche-client.ts';
+import { Diffusion } from '../documents/retractation.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -88,7 +93,7 @@ const words = (text: string): string[] => text.split(/[^\p{L}]+/u).filter((w) =>
 const STREET = /\b(?:rue|avenue|av\.|boulevard|bd|impasse|all[ée]e(?!\s+(?:priv|centrale|de\s+(?:garage|jardin)))|faubourg)\s+(?:(?:de\s+la|de\s+l['’]|du|des|de|d['’])\s*)?\p{L}{2,}/iu;
 // Un mot qui est aussi un mot courant (« mise en place », « en cours ») : voie seulement devant un nom propre.
 const STREET_PROPER_NAME = /\b(?:[Cc]hemin|[Pp]lace|[Qq]uai|[Rr]oute|[Ss]quare|[Cc]ours|[Pp]assage|[Ll]otissement|[Rr][ée]sidence)\s+(?:(?:de\s+la|de\s+l['’]|du|des|de|d['’])\s*)?\p{Lu}/u;
-const NUMBERED_STREET = /\b\d{1,4}\s*(?:bis|ter)?\s*,?\s*(?:rue|avenue|boulevard|chemin|all[ée]e|impasse|place|quai|route|square|cours|passage|faubourg)\b/iu;
+const NUMBERED_STREET = /\b\d{1,4}\s*(?:bis|ter)?\s*,?\s*(?:rue|avenue|av\.|boulevard|bd|chemin|all[ée]e|impasse|place|quai|route|square|cours|passage|faubourg|lotissement|r[ée]sidence|hameau|lieu-dit|cit[ée])(?![\p{L}])/iu;
 const AMOUNT = /\d[\d\s.  ]*(?:,\d+)?\s*(?:€|euros?\b|k€|keur\b)|\b\d{1,3}(?:[\s.  ]\d{3})+\b|\b\d{4,}\b/iu;
 const FILE_WORDS = /\b(?:compromis|acte|notaires?|offres?\s+d['’]achat|pr[êe]t|financement|banques?|cr[ée]dit|dossier|signature|r[ée]tractation|succession|h[ée]ritage|divorce|s[ée]paration|d[ée]c[èe]s|mutation|licenciement|apport|diagnostics?)\b/iu;
 const CONTACT = /[^\s@]+@[^\s@]+\.[a-z]{2,}|(?:\+33|\b0)\s*[1-9](?:[\s.-]*\d{2}){4}/iu;
@@ -105,6 +110,8 @@ export interface TextContext {
   /** Les prénoms et les noms de famille des clients de la base, sans accent ni majuscule. */
   clientFirstNames: ReadonlySet<string>;
   clientLastNames: ReadonlySet<string>;
+  /** Les noms de famille de deux lettres, refusés seulement écrits comme un nom propre. */
+  clientShortNames?: ReadonlySet<string>;
   /** La signature ajoutée par le code (« Camille, votre agent immobilier »), seule exception aux noms : elle n'est pas lue. */
   signature?: string | null;
 }
@@ -140,15 +147,14 @@ export async function checkGbpText(text: string, ctx: TextContext, networkId: st
   const sig = ctx.signature ? `\n${ctx.signature}` : null;
   const body = sig && t.endsWith(sig) ? t.slice(0, -sig.length) : t;
   const authors = new Set(ctx.authorTokenHashes);
-  const list = words(body);
-  for (let i = 0; i < list.length; i++) {
-    const w = list[i]!;
+  for (const w of words(body)) {
     const folded = foldWord(w);
     // Le nom de l'auteur, écrit de n'importe quelle façon, même s'il est aussi celui d'un agent.
     if (authors.size > 0 && authors.has(await sha256Hex(`gbp-auteur:${networkId}:${folded}`))) problems.add('nom');
-    // Un nom de famille d'un client de la base, de n'importe quelle façon ; un prénom écrit comme un nom, ou suivi d'un nom.
-    if (ctx.clientLastNames.has(folded)) problems.add('nom');
-    if (ctx.clientFirstNames.has(folded) && (/^\p{Lu}/u.test(w) || (i + 1 < list.length && ctx.clientLastNames.has(foldWord(list[i + 1]!))))) problems.add('nom');
+    // Un prénom ou un nom de famille d'un client de la base, écrit de n'importe quelle façon.
+    if (ctx.clientLastNames.has(folded) || ctx.clientFirstNames.has(folded)) problems.add('nom');
+    // Un nom de deux lettres, seulement écrit comme un nom propre.
+    if (ctx.clientShortNames?.has(folded) && /^\p{Lu}/u.test(w)) problems.add('nom');
   }
   return [...problems].sort();
 }
@@ -183,6 +189,8 @@ export interface FicheGoogleOptions {
   timeoutMs?: number;
   /** Une publication de bien au plus par agent et par période, en jours. */
   postEveryDays?: number;
+  /** La porte de toute diffusion d'un bien : mandat en vigueur, hors délai de rétractation [R42]. */
+  diffusion?: DiffusionGate;
 }
 
 interface DraftRow {
@@ -233,6 +241,7 @@ export class FicheGoogle {
   private readonly mode: 'essai' | 'reel';
   private readonly timeoutMs: number;
   private readonly postEveryDays: number;
+  private readonly gate: DiffusionGate;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -246,6 +255,11 @@ export class FicheGoogle {
     this.mode = options.mode ?? 'essai';
     this.timeoutMs = options.timeoutMs ?? AI_TIMEOUT_MS;
     this.postEveryDays = options.postEveryDays ?? 7;
+    if (options.diffusion) this.gate = options.diffusion;
+    else {
+      const store = new FicheClient(db, { now: this.now });
+      this.gate = new Diffusion(db, new Acces(db, store, new FicheUnique(db, store, { now: this.now }), journal, { now: this.now }), journal, { now: this.now });
+    }
   }
 
   private actor(viewer: Viewer): string {
@@ -277,16 +291,17 @@ export class FicheGoogle {
   private async context(networkId: string, kind: 'reponse' | 'publication', authorTokenHashes: readonly string[], signature: string | null): Promise<TextContext> {
     const clientFirstNames = new Set<string>();
     const clientLastNames = new Set<string>();
+    const clientShortNames = new Set<string>();
     for (const p of await this.db.all<{ first_name: string | null; last_name: string | null }>('SELECT DISTINCT first_name, last_name FROM persons WHERE network_id = ?', [networkId])) {
       for (const w of words(p.first_name ?? '')) clientFirstNames.add(foldWord(w));
       // Une particule (« Le Goff », « Da Silva ») n'est pas un nom ; un nom de deux lettres n'est lu que comme un nom propre.
       for (const w of words(p.last_name ?? '')) {
         const f = foldWord(w);
         if (PARTICLES.has(f)) continue;
-        (f.length >= 3 ? clientLastNames : clientFirstNames).add(f);
+        (f.length >= 3 ? clientLastNames : clientShortNames).add(f);
       }
     }
-    return { kind, authorTokenHashes, clientFirstNames, clientLastNames, signature };
+    return { kind, authorTokenHashes, clientFirstNames, clientLastNames, clientShortNames, signature };
   }
 
   /** La fiche Google d'un agent, réglée par la direction. Chaque réglage s'ajoute. */
@@ -456,6 +471,8 @@ export class FicheGoogle {
       [propertyId, agentId, networkId],
     );
     if (!v || v.state !== 'en_vente') return null;
+    // La version publiée ne suffit pas : le mandat doit permettre la diffusion maintenant [R42].
+    if (!(await this.gate.canDiffuse(networkId, propertyId, this.now())).allowed) return null;
     try {
       const payload = JSON.parse(v.payload) as { title?: unknown; body?: unknown; mentions?: unknown };
       if (typeof payload.title !== 'string' || payload.title.trim() === '' || typeof payload.mentions !== 'string' || payload.mentions === '' || typeof payload.body !== 'string' || payload.body === '') return null;
@@ -477,16 +494,19 @@ export class FicheGoogle {
     const since = new Date(this.now().getTime() - this.postEveryDays * 86_400_000).toISOString();
     const recent = await this.db.first<{ n: number }>("SELECT count(*) AS n FROM gbp_drafts WHERE network_id = ? AND agent_id = ? AND kind = 'publication' AND created_at > ?", [networkId, agentId, since]);
     if (Number(recent?.n) > 0) return { ok: true, value: null };
-    const candidates = await this.db.all<{ id: string }>(
-      `SELECT p.id FROM properties p WHERE p.agent_id = ? AND p.network_id = ?
-          AND NOT EXISTS (SELECT 1 FROM gbp_drafts d WHERE d.property_id = p.id AND d.kind = 'publication')
+    // Jamais un bien déjà publié sur la fiche ; un texte en attente pour la version en cours n'est pas doublé, un texte
+    // périmé (le bien a une nouvelle version) jamais parti est remplacé.
+    const candidates = await this.db.all<{ id: string; pending_seq: number | null }>(
+      `SELECT p.id, (SELECT d.listing_seq FROM gbp_drafts d WHERE d.property_id = p.id AND d.kind = 'publication' ORDER BY d.created_at DESC, d.rowid DESC LIMIT 1) AS pending_seq
+         FROM properties p WHERE p.agent_id = ? AND p.network_id = ?
+          AND NOT EXISTS (SELECT 1 FROM gbp_sends s JOIN gbp_drafts d ON d.id = s.draft_id WHERE d.property_id = p.id AND s.kind = 'publication' AND s.outcome IN ('essai', 'envoye'))
         ORDER BY p.id`,
       [agentId, networkId],
     );
     const ctx = await this.context(networkId, 'publication', [], signatureOf(agent.first_name));
     for (const c of candidates) {
       const listing = await this.publishedListing(networkId, agentId, c.id);
-      if (!listing) continue;
+      if (!listing || (c.pending_seq !== null && Number(c.pending_seq) === listing.seq)) continue;
       const body = listingPostText(listing.title, agent.first_name);
       // Un titre qui ne passe pas le contrôle n'est pas publié ; c'est noté, sans le texte.
       const problems = await checkGbpText(body, ctx, networkId);

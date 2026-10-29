@@ -72,9 +72,12 @@ async function setup(options: { writer?: ReviewReplyWriter; mode?: 'essai' | 're
   // Un client de la base, qui n'a pas écrit l'avis.
   await db.run("INSERT INTO persons (id, network_id, agent_id, first_name, last_name, created_at, updated_at) VALUES ('p-1', 'net-1', 'ag-1', 'Hortense', 'Bérangère-Lunel', 'x', 'x')");
   const client = new FakeGbp();
-  const fiche = new FicheGoogle(db, journal, { now, client, writer: options.writer, mode: options.mode ?? 'essai', timeoutMs: 50 });
+  // La porte de diffusion inventée : un bien sans mandat en vigueur est dans `noMandate`.
+  const noMandate = new Set<string>();
+  const diffusion = { canDiffuse: async (_n: string, propertyId: string) => ({ allowed: !noMandate.has(propertyId), reason: noMandate.has(propertyId) ? 'expired' : 'allowed' }) };
+  const fiche = new FicheGoogle(db, journal, { now, client, writer: options.writer, mode: options.mode ?? 'essai', timeoutMs: 50, diffusion });
   expect(await fiche.setLocation(direction, 'ag-1', { locationRef: 'locations/123', title: 'Camille Exemple, agent immobilier', websiteUri: 'https://camille.exemple.test' })).toEqual({ ok: true });
-  return { db, journal, fiche, client, advanceDays, now };
+  return { db, journal, fiche, client, advanceDays, now, noMandate };
 }
 
 async function withReview(s: Awaited<ReturnType<typeof setup>>, rating = 5, comment: string | null = 'Très bon suivi, réactive et à l’écoute.') {
@@ -121,6 +124,9 @@ it('[R154] le contrôle refuse nom, adresse, montant, détail du dossier et coor
   expect(await checkGbpText('Maison avec place de parking, en cours de rénovation.', ctx({ kind: 'publication' }), 'net-1')).toEqual([]);
   // Un nom de client écrit en minuscules : son nom de famille, ou son prénom suivi d'un nom.
   expect(await checkGbpText('Merci hortense lunel !', c, 'net-1')).toEqual(['nom']);
+  expect(await checkGbpText('Merci hortense, au plaisir !', c, 'net-1')).toEqual(['nom']);
+  expect(await checkGbpText('Votre maison au 12 lotissement des lilas est magnifique.', c, 'net-1')).toEqual(['adresse']);
+  expect(await checkGbpText('Au 3 résidence du parc, tout est prêt à visiter.', ctx({ kind: 'reponse' }), 'net-1')).toContain('adresse');
   expect(await checkGbpText('merci madame lunel.', c, 'net-1')).toEqual(['nom']);
   // La signature du code n'est pas lue, mais le même prénom ailleurs dans le texte l'est.
   const camille = ctx({ authorTokenHashes: await nameTokenHashes('Camille Rivière', 'net-1') });
@@ -306,6 +312,40 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     await s.fiche.validate(agent, p1.value.draftId);
     expect(await s.fiche.publish(agent, p1.value.draftId)).toEqual({ ok: true, mode: 'reel' });
     expect(s.client.writes()).toEqual(['post:https://camille.exemple.test/biens/b1']);
+  });
+
+  it('[R42] un bien dont le mandat ne permet plus la diffusion n’est ni préparé, ni validé, ni publié', async () => {
+    const s = await setup({ mode: 'reel' });
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison 5 pièces avec jardin à Talant');
+    await listing(s.db, 'b2', 1, 'en_vente', 'Appartement 3 pièces lumineux à Chenôve');
+    s.noMandate.add('b1');
+    const p = await s.fiche.duePost('net-1', 'ag-1');
+    expect(p.ok && p.value?.propertyId).toBe('b2');
+    s.noMandate.add('b2');
+    if (!p.ok || !p.value) throw new Error('pas de publication');
+    expect(await s.fiche.validate(agent, p.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'bien_retire' });
+    s.noMandate.delete('b2');
+    await s.fiche.validate(agent, p.value.draftId);
+    s.noMandate.add('b2');
+    expect(await s.fiche.publish(agent, p.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'bien_retire' });
+    expect(s.client.writes()).toEqual([]);
+  });
+
+  it('un texte périmé jamais parti (nouvelle version du bien) est remplacé ; un bien publié ne l’est plus jamais', async () => {
+    const s = await setup({ mode: 'reel' });
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison 5 pièces avec jardin à Talant');
+    const p1 = await s.fiche.duePost('net-1', 'ag-1');
+    if (!p1.ok || !p1.value) throw new Error('pas de publication');
+    await listing(s.db, 'b1', 2, 'en_vente', 'Maison 5 pièces avec grand jardin à Talant');
+    s.advanceDays(8);
+    const p2 = await s.fiche.duePost('net-1', 'ag-1');
+    if (!p2.ok || !p2.value) throw new Error('pas de remplacement');
+    expect(p2.value.body).toContain('grand jardin');
+    await s.fiche.validate(agent, p2.value.draftId);
+    expect(await s.fiche.publish(agent, p2.value.draftId)).toEqual({ ok: true, mode: 'reel' });
+    await listing(s.db, 'b1', 3, 'en_vente', 'Maison 5 pièces rénovée à Talant');
+    s.advanceDays(8);
+    expect(await s.fiche.duePost('net-1', 'ag-1')).toEqual({ ok: true, value: null });
   });
 
   it('un titre d’annonce qui ne passe pas le contrôle n’est pas publié, et c’est noté sans le texte', async () => {
