@@ -508,7 +508,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     finalite: 'Vendre un fonds de commerce, un droit au bail, des murs ou un local professionnel dans la discrétion : la fiche du commerce, dont les chiffres et le bail restent confidentiels.',
     baseLegale: 'mesures_precontractuelles',
     personnes: ['Vendeurs de commerces et d\'entreprises'],
-    donnees: ['Fiche du commerce : enseigne, chiffres d\'affaires et résultats des 3 derniers exercices, bail commercial, salariés (nombre), matériel, autorisations, chaque champ avec son auteur', 'Estimations du commerce en fourchette, avec leurs lignes de calcul et leur validation par l\'agent', 'Auteur de chaque barème d\'estimation par activité', 'Présentation anonyme du commerce, son auteur et sa validation par l\'agent', 'Demandes d\'accès des repreneurs, engagements de confidentialité à leur nom, leurs signatures en ligne (empreintes du code et du tracé) et leurs révocations'],
+    donnees: ['Fiche du commerce : enseigne, chiffres d\'affaires et résultats des 3 derniers exercices, bail commercial, salariés (nombre), matériel, autorisations, chaque champ avec son auteur', 'Estimations du commerce en fourchette, avec leurs lignes de calcul et leur validation par l\'agent', 'Auteur de chaque barème d\'estimation par activité', 'Présentation anonyme du commerce, son auteur et sa validation par l\'agent', 'Demandes d\'accès des repreneurs, engagements de confidentialité à leur nom, leurs signatures en ligne (empreintes du code et du tracé) et leurs révocations', 'Documents du dossier protégé, liens personnels envoyés aux repreneurs (empreinte du jeton), chaque ouverture et chaque refus avec son lecteur et la marque de la copie'],
     duree: 'La durée du mandat puis 5 ans.',
     destinataires: ['L\'agent du bien', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
@@ -524,6 +524,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       business_ndas: ['person_id', 'content', 'content_sha256', 'created_by'],
       business_nda_signatures: ['person_id', 'content_sha256', 'code_hash', 'drawing_hash', 'proof', 'created_by'],
       business_nda_revocations: ['reason', 'revoked_by'],
+      business_dossier_documents: ['title', 'storage_ref', 'content_sha256', 'added_by'],
+      business_dossier_links: ['person_id', 'token_hash', 'created_by'],
+      business_dossier_link_revocations: ['revoked_by'],
+      business_dossier_accesses: ['person_id', 'mark'],
     },
   },
 ];
@@ -815,6 +819,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   business_ndas: ['id', 'network_id', 'property_id', 'template_id', 'created_at'],
   business_nda_signatures: ['id', 'network_id', 'nda_id', 'expires_at', 'attempts', 'status', 'created_at', 'signed_at'],
   business_nda_revocations: ['nda_id', 'network_id', 'revoked_at'],
+  business_dossier_documents: ['id', 'network_id', 'property_id', 'kind', 'added_at'],
+  business_dossier_links: ['id', 'network_id', 'property_id', 'nda_id', 'expires_at', 'max_opens', 'created_at'],
+  business_dossier_link_revocations: ['link_id', 'network_id', 'revoked_at'],
+  business_dossier_accesses: ['id', 'network_id', 'property_id', 'link_id', 'outcome', 'at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
