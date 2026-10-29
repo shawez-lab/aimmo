@@ -2071,6 +2071,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 
 ### AT03 · Page de chaque agent, avec ses mentions
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition prête (#199) ; relecture forte : 1 P1 corrigé. Décidé : les avis sont montrés par le lien vers ceux que les clients publient eux-mêmes (celui de la demande d'avis de M11, envoyée à tous) ; les réponses de satisfaction de F05 ne sont jamais publiées, ni une à une ni en moyenne, car une moyenne qui bouge à chaque réponse laisserait lire la note d'un client ; le contact passe par les coordonnées publiques de l'agent, la captation viendra avec AT09. Attend GitHub Actions (H35).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M01, point 1 et « Règles » (vocabulaire, mentions de l'agent).
 - Objectif : la page publique d'un agent : nom, zone, biens en vente (fichier diffusable seulement), avis réels de M11 tous montrés avec leur date, contact par la captation ; à côté du nom, statut d'agent commercial, numéro d'immatriculation, carte du titulaire.
