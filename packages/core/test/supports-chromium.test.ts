@@ -64,10 +64,12 @@ describe.skipIf(browser === null)('X06 · impression sous Chromium', () => {
         const pdf: Buffer = await page.pdf({ preferCSSPageSize: true, printBackground: true });
         expect((pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length, kind).toBe(pages);
         const problems: string[] = await page.evaluate(() => {
+          // Exécuté dans la page : le document y existe.
+          const doc = (globalThis as any).document;
           const out: string[] = [];
-          for (const sheet of Array.from(document.querySelectorAll('.page'))) {
+          for (const sheet of Array.from(doc.querySelectorAll('.page')) as any[]) {
             const box = sheet.getBoundingClientRect();
-            const all = Array.from(sheet.querySelectorAll('*')) as HTMLElement[];
+            const all = Array.from(sheet.querySelectorAll('*')) as any[];
             for (const el of all) {
               const r = el.getBoundingClientRect();
               if (r.width === 0 && r.height === 0) continue;
@@ -89,7 +91,7 @@ describe.skipIf(browser === null)('X06 · impression sous Chromium', () => {
         // La taille de la feuille rendue est celle annoncée.
         const size = SUPPORT_SIZES[kind as keyof typeof SUPPORT_SIZES];
         const mm = await page.evaluate(() => {
-          const r = document.querySelector('.page')!.getBoundingClientRect();
+          const r = (globalThis as any).document.querySelector('.page').getBoundingClientRect();
           return [Math.round((r.width * 25.4) / 96), Math.round((r.height * 25.4) / 96)];
         });
         expect(mm, kind).toEqual([size.widthMm, size.heightMm]);
