@@ -91,6 +91,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       value_tracking: ['agent_id', 'person_id', 'postal_code', 'town', 'created_by'],
       value_tracking_sends: [],
       value_tracking_alerts: ['person_id'],
+      old_contact_moments: ['person_id', 'noted_by'],
+      old_contact_followups: ['agent_id', 'person_id', 'reason', 'reason_day', 'draft', 'draft_by', 'decided_by'],
     },
   },
   {
@@ -591,6 +593,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   value_tracking: ['id', 'network_id', 'kind', 'channel', 'created_at'],
   value_tracking_sends: ['tracking_id', 'period', 'status', 'rule', 'message_id', 'mode', 'sent_at', 'updated_at'],
   value_tracking_alerts: ['id', 'tracking_id', 'network_id', 'message_id', 'created_at', 'seen_at'],
+  old_contact_moments: ['id', 'network_id', 'kind', 'on_day', 'created_at'],
+  old_contact_followups: ['id', 'network_id', 'month', 'status', 'channel', 'rule', 'message_id', 'created_at', 'decided_at'],
   legal_basis_checks: ['id', 'network_id', 'ran_at', 'from_day', 'to_day', 'plans', 'gaps', 'seen_at'],
   mandate_register_settings: ['network_id', 'prefix', 'first_number', 'width', 'set_at'],
   mandate_register: ['network_id', 'seq', 'kind', 'mandate_id', 'number', 'property_id', 'signed_at', 'cancels_seq', 'at', 'prev_hash', 'hash'],
