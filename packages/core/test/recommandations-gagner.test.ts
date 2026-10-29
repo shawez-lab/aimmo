@@ -1,0 +1,207 @@
+import { expect, it } from 'vitest';
+import { Acces, FicheClient, FicheUnique, Mandats, REFERRAL_PURPOSE, Recommandations, RecommandationsGagner, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase } from '../src/index.ts';
+import { Annuaire, MiseEnRelation, type ConsentProofStore } from '../src/partenaires/index.ts';
+import { loadMigrations } from './migrations.ts';
+import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+
+// Réseau, agents, clients, partenaires et personnes recommandées inventés.
+let clock = Date.parse('2027-10-12T08:00:00.000Z');
+const DAY = 86_400_000;
+let n = 0;
+const uuid = (): string => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
+
+class FakeStore implements ConsentProofStore {
+  readonly refs = new Set<string>();
+  put(prefix: string): string {
+    const ref = `${prefix}/${uuid()}.pdf`;
+    this.refs.add(ref);
+    return ref;
+  }
+  async has(ref: string): Promise<boolean> {
+    return this.refs.has(ref);
+  }
+}
+
+async function setup() {
+  const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+  await applyMigrations(db, loadMigrations());
+  const now = (): Date => new Date((clock += 1000));
+  const journal = new SqlJournalStore(db);
+  const store = new FicheClient(db, { now });
+  const fiche = new FicheUnique(db, store, { now });
+  const acces = new Acces(db, store, fiche, journal, { now });
+  const files = new FakeStore();
+  const annuaire = new Annuaire(db, files, journal, { now, newId: uuid });
+  const relations = new MiseEnRelation(db, annuaire, files, journal, { now, newId: uuid, newSeed: () => 1 });
+  const gagner = new RecommandationsGagner(db, store, fiche, acces, annuaire, journal, { now, newId: uuid });
+  const clients = new Recommandations(db, store, fiche, acces, journal, { now, newId: uuid });
+  const mandats = new Mandats(db, fiche, journal, { now, newId: uuid });
+  const network = await store.createNetwork('Réseau test');
+  const other = await store.createNetwork('Autre réseau');
+  const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Essai' });
+  const sam = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Essai' });
+  const dir = { role: 'direction' as const, userId: 'dir-1', networkId: network.id };
+  const agent = (id = alex.id) => ({ role: 'agent' as const, userId: id, networkId: network.id });
+  const as = (partnerId: string, networkId = network.id) => ({ role: 'partner' as const, userId: partnerId, networkId });
+  const day = (d = 0): string => new Date(clock + d * DAY).toISOString().slice(0, 10);
+  const partner = async (name: string, until = 300): Promise<string> => {
+    const r = await annuaire.addPartner(dir, { trade: 'notaire', businessName: name, postcodes: ['21000'] });
+    if (!r.ok) throw new Error(r.code);
+    await annuaire.addCredential(dir, r.value.partnerId, { kind: 'assurance_rcp', number: 'N-1', validFrom: day(-30), validUntil: day(until), proofRef: files.put(`partenaires/${r.value.partnerId}`) });
+    return r.value.partnerId;
+  };
+  /** Une mise en relation d'un client d'Alex, acceptée et confiée à ce partenaire. */
+  const entrust = async (partnerId: string, agentId = alex.id): Promise<void> => {
+    const client = await store.createPerson({ networkId: network.id, agentId, firstName: 'Client', lastName: 'Essai' });
+    const project = await store.createProject({ networkId: network.id, agentId, personId: client.id, kind: 'sell' });
+    const r = await relations.propose(agent(agentId), { projectId: project.id, trade: 'notaire', postcode: '21000' });
+    if (!r.ok) throw new Error(r.code);
+    const c = await relations.recordConsent(agent(agentId), r.value.referralId, { partnerId, consentAt: new Date(clock - 500).toISOString(), channel: 'ecrit', proofRef: files.put(`relations/${r.value.referralId}`) });
+    if (!c.ok) throw new Error(c.code);
+    const e = await relations.entrust(agent(agentId), r.value.referralId);
+    if (!e.ok) throw new Error(e.code);
+  };
+  const consent = (over: Record<string, unknown> = {}) => ({ kind: 'message_ecrit', channel: 'phone', givenAt: new Date(clock - 2 * DAY).toISOString(), reference: 'SMS de la personne du 10 octobre, gardé par l’étude', ...over });
+  const input = (over: Record<string, unknown> = {}) => ({ firstName: 'Hugo', phone: '06 11 22 33 44', email: 'hugo@example.test', projectKind: 'sell', consent: consent(), ...over });
+  const rows = () => db.all<{ id: string; referred_id: string; agent_id: string | null; call_due_at: string | null }>('SELECT id, referred_id, agent_id, call_due_at FROM partner_recommendations ORDER BY created_at, id');
+  const persons = async () => (await db.first<{ n: number }>('SELECT COUNT(*) AS n FROM persons'))!.n;
+  return { db, journal, store, fiche, acces, gagner, clients, mandats, network, other, alex, sam, dir, agent, as, partner, entrust, consent, input, rows, persons };
+}
+
+describeWithSqlite('G08 · recommandations des clients et des partenaires', () => {
+  it('[R142] [R38] une recommandation de partenaire arrive avec sa source et la preuve de l’accord ; l’agent est alerté ; le mandat garde la source', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    await t.entrust(p);
+    expect(await t.gagner.recommend(t.as(p), t.input())).toEqual({ ok: true, value: { recorded: true } });
+    const [row] = await t.rows();
+    expect(row).toMatchObject({ agent_id: t.alex.id, call_due_at: expect.any(String) });
+    const view = await t.fiche.view(row!.referred_id);
+    expect(view.person).toMatchObject({ first_name: 'Hugo', agent_id: t.alex.id });
+    expect(view.sources).toEqual([expect.objectContaining({ channel: 'recommandation', detail: 'recommandé par un partenaire' })]);
+    expect(view.consents).toEqual([expect.objectContaining({ purpose: REFERRAL_PURPOSE, channel: 'phone', proof: expect.stringMatching(/^message écrit de la personne : SMS .* \(transmis par un partenaire\)$/) })]);
+    // L'agent est alerté : la tâche est dans sa file, avec le nom du partenaire.
+    const list = await t.gagner.toCall(t.agent());
+    expect(list).toEqual({ ok: true, value: [{ origin: 'partner', recommendationId: row!.id, personId: row!.referred_id, firstName: 'Hugo', sourceLabel: 'Recommandé par Étude Essai', dueAt: row!.call_due_at }] });
+    const entries = await t.journal.all();
+    expect(entries.filter((e) => e.type === 'recommandation.alerte')).toEqual([expect.objectContaining({ subject: `agent:${t.alex.id}` })]);
+    // La source suit jusqu'au mandat, reprise de la fiche [R38].
+    expect(await t.mandats.record(t.acces, t.agent(), { personId: row!.referred_id, signedAt: new Date(clock) })).toMatchObject({ ok: true, source: 'referral', fromFiche: true });
+    // Aucune coordonnée ni prénom au journal [R13].
+    expect(JSON.stringify(await t.journal.all())).not.toMatch(/hugo@|example\.test|Hugo|06 11/);
+    expect((await verifyChain(await t.journal.all())).ok).toBe(true);
+  });
+
+  it('[R142] sans preuve d’accord de la personne recommandée, rien n’est rangé et aucun contact n’est possible', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    const before = await t.persons();
+    const cases: [Record<string, unknown>, string][] = [
+      [t.input({ consent: undefined }), 'no_consent'],
+      [t.input({ consent: null }), 'no_consent'],
+      [t.input({ consent: 'il est d’accord' }), 'bad_consent'],
+      [t.input({ consent: t.consent({ kind: 'parole_du_partenaire' }) }), 'bad_consent_kind'],
+      [t.input({ consent: t.consent({ channel: 'instagram' }) }), 'bad_consent_channel'],
+      [t.input({ consent: t.consent({ givenAt: 'hier' }) }), 'bad_consent_date'],
+      [t.input({ consent: t.consent({ givenAt: new Date(clock + DAY).toISOString() }) }), 'consent_in_future'],
+      [t.input({ consent: t.consent({ givenAt: new Date(clock - 31 * DAY).toISOString() }) }), 'consent_too_old'],
+      [t.input({ consent: t.consent({ reference: '  ' }) }), 'bad_consent_reference'],
+      [t.input({ consent: t.consent({ channel: 'email' }), email: undefined }), 'consent_channel_without_contact'],
+    ];
+    for (const [body, code] of cases) expect(await t.gagner.recommend(t.as(p), body), code).toEqual({ ok: false, rule: 'R142', code });
+    expect(await t.persons()).toBe(before);
+    expect(await t.rows()).toEqual([]);
+    expect((await t.journal.all()).filter((e) => e.type === 'recommandation.refusee').map((e) => e.data.code)).toEqual(cases.map(([, c]) => c));
+  });
+
+  it('[R142] une recommandation de client sans accord n’entre jamais dans la file ; un accord retiré l’en sort', async () => {
+    const t = await setup();
+    const lea = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Léa', lastName: 'Cliente' });
+    const without = await t.clients.recommend(t.agent(), lea.id, { firstName: 'Nina', phone: '06 99 88 77 66', projectKind: 'buy', callable: false });
+    expect(without).toMatchObject({ ok: true });
+    const withProof = await t.clients.recommend(t.agent(), lea.id, { firstName: 'Paul', email: 'paul@example.test', projectKind: 'sell', callable: true, proof: 'Paul a écrit à Léa qu’il accepte d’être appelé' });
+    if (!withProof.ok) throw new Error(withProof.code);
+    const list = await t.gagner.toCall(t.agent());
+    expect(list.ok && list.value.map((r) => [r.origin, r.firstName, r.sourceLabel])).toEqual([['client', 'Paul', 'Recommandé par un client']]);
+    const referred = (await t.db.first<{ referred_id: string }>('SELECT referred_id FROM referrals WHERE id = ?', [withProof.value.id]))!.referred_id;
+    const c = (await t.fiche.view(referred)).consents[0]!;
+    await t.store.withdrawConsent(c.id, new Date(clock));
+    expect(await t.gagner.toCall(t.agent())).toEqual({ ok: true, value: [] });
+  });
+
+  it('[R66] aucun champ ni texte de récompense, même dans la preuve', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    expect(await t.gagner.recommend(t.as(p), t.input({ reward: 100 }))).toEqual({ ok: false, rule: 'R66', code: 'unknown_field' });
+    expect(await t.gagner.recommend(t.as(p), t.input({ consent: { ...t.consent(), prime: 50 } }))).toEqual({ ok: false, rule: 'R66', code: 'unknown_field' });
+    for (const reference of ['accord contre un cadeau', 'commission de 2 %', 'bon d’achat promis']) {
+      expect(await t.gagner.recommend(t.as(p), t.input({ consent: t.consent({ reference }) })), reference).toEqual({ ok: false, rule: 'R66', code: 'reward' });
+    }
+    expect(await t.rows()).toEqual([]);
+    const cols = (await t.db.all<{ name: string }>('PRAGMA table_info(partner_recommendations)')).map((c) => c.name).join(' ');
+    expect(cols).not.toMatch(/reward|prime|commission|bonus|amount|fee/);
+  });
+
+  it('[R77] le partenaire ne voit rien de la suite : même réponse que la personne soit nouvelle, suivie ailleurs ou exclue', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    await t.entrust(p);
+    // Une personne déjà suivie par Sam, une autre exclue.
+    const known = await t.store.createPerson({ networkId: t.network.id, agentId: t.sam.id, firstName: 'Iris' });
+    await t.store.addIdentifier({ networkId: t.network.id, agentId: t.sam.id, personId: known.id, kind: 'phone', value: '06 22 33 44 55' });
+    const excluded = await t.store.createPerson({ networkId: t.network.id, agentId: t.sam.id, firstName: 'Omar' });
+    await t.store.addIdentifier({ networkId: t.network.id, agentId: t.sam.id, personId: excluded.id, kind: 'phone', value: '06 33 44 55 66' });
+    await t.store.addExclusion({ networkId: t.network.id, agentId: t.sam.id, personId: excluded.id, reason: 'stop', notedAt: new Date(clock - DAY) });
+    const answers = [
+      await t.gagner.recommend(t.as(p), t.input()),
+      await t.gagner.recommend(t.as(p), t.input({ firstName: 'Iris', phone: '06 22 33 44 55', email: undefined })),
+      await t.gagner.recommend(t.as(p), t.input({ firstName: 'Omar', phone: '06 33 44 55 66', email: undefined })),
+    ];
+    expect(answers).toEqual(Array(3).fill({ ok: true, value: { recorded: true } }));
+    // Le partenaire relit la date de ses recommandations, rien d'autre.
+    const mine = await t.gagner.mine(t.as(p));
+    expect(mine.ok && mine.value.map((r) => Object.keys(r))).toEqual([['createdAt'], ['createdAt'], ['createdAt']]);
+    // La personne suivie par Sam reste à Sam ; la personne exclue n'est jamais rappelée et sa fiche ne change pas [R02, R04].
+    const rows = await t.rows();
+    expect(rows.map((r) => [r.agent_id, r.call_due_at === null])).toEqual([[t.alex.id, false], [t.sam.id, false], [null, true]]);
+    const omar = await t.fiche.view(excluded.id);
+    expect([omar.projects.length, omar.sources.length, omar.consents.length, omar.identifiers.length]).toEqual([0, 0, 0, 1]);
+    const samList = await t.gagner.toCall(t.agent(t.sam.id));
+    expect(samList.ok && samList.value.map((r) => r.firstName)).toEqual(['Iris']);
+    // Alex ne voit pas la recommandation suivie par Sam [R16].
+    const alexList = await t.gagner.toCall(t.agent());
+    expect(alexList.ok && alexList.value.map((r) => r.firstName)).toEqual(['Hugo']);
+    // Une seconde fois la même personne par le même partenaire : refusée, rien de plus.
+    expect(await t.gagner.recommend(t.as(p), t.input())).toEqual({ ok: false, rule: null, code: 'already_recommended' });
+  });
+
+  it('[R16] [R73] seul un partenaire du réseau, aux justificatifs valides, recommande ; la direction attribue ce qui n’a pas d’agent', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    const lapsed = await t.partner('Étude Échue', -1);
+    expect(await t.gagner.recommend(t.agent(), t.input())).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.gagner.recommend(t.dir, t.input())).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.gagner.recommend(t.as(p, t.other.id), t.input())).toEqual({ ok: false, rule: 'R16', code: 'unknown' });
+    expect(await t.gagner.recommend(t.as(lapsed), t.input())).toEqual({ ok: false, rule: 'R73', code: 'credentials' });
+    expect(await t.gagner.mine(t.agent())).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.gagner.toCall(t.as(p))).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    // Aucune mise en relation confiée : pas d'agent, la direction est alertée et attribue.
+    expect(await t.gagner.recommend(t.as(p), t.input())).toMatchObject({ ok: true });
+    const [row] = await t.rows();
+    expect(row!.agent_id).toBeNull();
+    expect((await t.journal.all()).filter((e) => e.type === 'recommandation.alerte').map((e) => [e.subject, e.data.to])).toEqual([[null, 'direction']]);
+    expect(await t.gagner.toCall(t.agent())).toEqual({ ok: true, value: [] });
+    const dirList = await t.gagner.toCall(t.dir);
+    expect(dirList.ok && dirList.value.map((r) => r.recommendationId)).toEqual([row!.id]);
+    expect(await t.gagner.assign(t.agent(), row!.id, t.alex.id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.gagner.assign(t.dir, row!.id, 'inconnu')).toEqual({ ok: false, rule: null, code: 'bad_agent' });
+    expect(await t.gagner.assign(t.dir, row!.id, t.alex.id)).toEqual({ ok: true, value: { assigned: true } });
+    expect(await t.gagner.assign(t.dir, row!.id, t.sam.id)).toEqual({ ok: false, rule: null, code: 'already_assigned' });
+    expect(await t.gagner.callDone(t.agent(t.sam.id), row!.id)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+    expect(await t.gagner.callDone(t.agent(), row!.id)).toEqual({ ok: true, value: { done: true } });
+    expect(await t.gagner.toCall(t.agent())).toEqual({ ok: true, value: [] });
+    // La ligne reste, et ne change plus [R17].
+    await expect(t.db.run('DELETE FROM partner_recommendations')).rejects.toThrow(/rien ne s'efface/);
+    await expect(t.db.run('UPDATE partner_recommendations SET call_done_at = NULL')).rejects.toThrow(/ne change plus/);
+  });
+});
