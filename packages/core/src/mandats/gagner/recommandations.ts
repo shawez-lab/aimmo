@@ -209,12 +209,24 @@ export class RecommandationsGagner {
     let opposed = roots.length > 1 || heldBack !== null;
     for (const root of roots) if (!opposed && (await this.opposed(root, at))) opposed = true;
     let referredId: string | null = roots[0] ?? null;
+    // Chaque envoi accepté est rangé à part : l'historique du partenaire ne dépend jamais de ce que l'agence en fait [R77].
+    const accepted = async (): Promise<{ ok: true; value: { recorded: true } }> => {
+      await this.db.run('INSERT INTO partner_recommendation_submissions (id, network_id, partner_id, submitted_at) VALUES (?, ?, ?, ?)', [this.newId(), networkId, viewer.userId, at.toISOString()]);
+      return { ok: true, value: { recorded: true } };
+    };
     const silent = async (code: string): Promise<{ ok: true; value: { recorded: true } }> => {
       // Le refus est au journal ; le partenaire reçoit la même réponse qu'une recommandation rangée [R77].
       await appendEvent(this.journal, { type: 'recommandation.refusee', actor: this.actor(viewer), subject: `partner:${viewer.userId}`, data: { rule: null, code, origin: 'partner' } }, this.now);
-      return { ok: true, value: { recorded: true } };
+      return accepted();
     };
-    if (!opposed && referredId && (await this.db.first('SELECT 1 FROM partner_recommendations WHERE partner_id = ? AND referred_id = ?', [viewer.userId, referredId]))) return silent('already_recommended');
+    if (!opposed && referredId && (await this.db.first('SELECT 1 FROM partner_recommendations WHERE partner_id = ? AND referred_id = ?', [viewer.userId, referredId]))) {
+      // Déjà recommandée par ce partenaire : une coordonnée nouvelle rejoint sa fiche, rien d'autre ne change.
+      const followed = (await this.fiche.view(referredId)).members.map((m) => m.agent_id).find((a) => a !== null) ?? null;
+      for (const id of ids) {
+        if ((await this.fiche.findByIdentifier(networkId, id.kind, id.value)).length === 0) await this.fiche.addIdentifier({ networkId, agentId: followed, personId: referredId, kind: id.kind, value: id.value });
+      }
+      return silent('already_recommended');
+    }
     if (opposed) referredId = roots.length === 1 ? roots[0]! : null;
     const followedBy = referredId ? ((await this.fiche.view(referredId)).members.map((m) => m.agent_id).find((a) => a !== null) ?? null) : null;
     // L'agent qui suit la personne ; sinon celui qui a confié en dernier une mise en relation à ce partenaire et est
@@ -262,12 +274,18 @@ export class RecommandationsGagner {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT (partner_id, referred_id) DO NOTHING`,
       [id, networkId, viewer.userId, referredId, projectId, typedName, opposed ? null : agentId, kind, channel, givenAt.toISOString(), due, this.actor(viewer), at.toISOString()],
     );
-    if (changes !== 1) return silent('already_recommended');
+    // Tenue à l'écart, chaque coordonnée donnée garde son empreinte, même quand la ligne existait déjà : une coordonnée
+    // nouvelle ne peut pas ensuite rouvrir une fiche neuve pour la même personne [R02, R04].
+    let withheldId = id;
+    if (changes !== 1 && opposed && referredId !== null) {
+      withheldId = (await this.db.first<{ id: string }>('SELECT id FROM partner_recommendations WHERE partner_id = ? AND referred_id = ?', [viewer.userId, referredId]))!.id;
+    }
     if (opposed) {
       for (const print of [...new Set(prints)]) {
-        await this.db.run('INSERT INTO partner_recommendation_withheld (recommendation_id, network_id, identifier_sha256, created_at) VALUES (?, ?, ?, ?)', [id, networkId, print, at.toISOString()]);
+        await this.db.run('INSERT INTO partner_recommendation_withheld (recommendation_id, network_id, identifier_sha256, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [withheldId, networkId, print, at.toISOString()]);
       }
     }
+    if (changes !== 1) return silent('already_recommended');
     await appendEvent(
       this.journal,
       { type: 'recommandation.rangee', actor: this.actor(viewer), subject: referredId === null ? null : `person:${referredId}`, data: { rule: 'R142', origin: 'partner', call: !opposed } },
@@ -280,16 +298,19 @@ export class RecommandationsGagner {
         this.now,
       );
     }
-    return { ok: true, value: { recorded: true } };
+    return accepted();
   }
 
-  /** Le partenaire relit ses recommandations : leur date seulement, jamais ce qu'il en est advenu [R77]. */
+  /**
+   * Le partenaire relit ses envois acceptés : leur date seulement, un par envoi, qu'ils aient été rangés, réunis à une
+   * recommandation déjà faite ou tenus à l'écart ; jamais ce qu'il en est advenu [R77].
+   */
   async mine(viewer: Viewer): Promise<RecommendationResult<{ createdAt: string }[]>> {
     if (viewer.role !== 'partner') return this.refused(viewer, null, 'role');
     const p = await this.db.first('SELECT 1 FROM partners WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
     if (!p) return this.refused(viewer, `partner:${viewer.userId}`, 'unknown');
-    const rows = await this.db.all<{ created_at: string }>('SELECT created_at FROM partner_recommendations WHERE network_id = ? AND partner_id = ? ORDER BY created_at, id', [viewer.networkId, viewer.userId]);
-    return { ok: true, value: rows.map((r) => ({ createdAt: r.created_at })) };
+    const rows = await this.db.all<{ submitted_at: string }>('SELECT submitted_at FROM partner_recommendation_submissions WHERE network_id = ? AND partner_id = ? ORDER BY submitted_at, id', [viewer.networkId, viewer.userId]);
+    return { ok: true, value: rows.map((r) => ({ createdAt: r.submitted_at })) };
   }
 
   /**
