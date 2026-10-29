@@ -8,7 +8,8 @@
  *   (zone, masque, pinceau, effacement, clonage…) ou toute autre opération est refusée ;
  * - l'original est gardé : sa référence de stockage (`biens/<bien>/originaux/<uuid>.<ext>`, jamais publiée) et son
  *   empreinte sont rangées avec celles du résultat ;
- * - le résultat est une photo de la fiche du bien (M07).
+ * - le résultat est une photo de la fiche du bien (M07) ;
+ * - l'original et le résultat sont bien dans le stockage (seule leur existence est lue) ; une panne ferme tout.
  *
  * Lecture prudente : un recadrage garde au moins 60 % de la largeur et de la hauteur, pour qu'il ne serve pas à sortir
  * un défaut du cadre (« aucune correction ne cache un défaut »).
@@ -150,6 +151,7 @@ interface CertRow {
   property_id: string;
   result_ref: string;
   result_sha256: string;
+  original_ref: string;
   original_sha256: string;
   operations: string;
   virtual_staging: number;
@@ -191,6 +193,11 @@ function statementOf(ops: PhotoOperation[], virtualStaging: boolean): string {
   ].join(' ');
 }
 
+/** Le stockage des photos : seule l'existence d'une référence est lue, jamais son contenu. */
+export interface PhotoFileStore {
+  has(ref: string): Promise<boolean>;
+}
+
 export interface CertificatsPhotosOptions {
   now?: () => Date;
   newId?: () => string;
@@ -206,6 +213,7 @@ export class CertificatsPhotos {
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
+    private readonly files: PhotoFileStore,
     options: CertificatsPhotosOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
@@ -237,8 +245,15 @@ export class CertificatsPhotos {
     if (typeof input.originalRef !== 'string' || !originalPattern.test(input.originalRef)) return bad('R130', 'sans_original');
     if (typeof input.originalSha256 !== 'string' || !SHA.test(input.originalSha256)) return bad('R130', 'sans_original');
     if (typeof input.resultSha256 !== 'string' || !SHA.test(input.resultSha256)) return bad('R10', 'empreinte_invalide');
-    const media = await this.photoOf(propertyId, input.resultRef);
+    const sheet = await this.sheetPhotos(propertyId, actor);
+    if (sheet === 'illisible') return { ok: false, rule: 'R10', code: 'fiche_illisible' };
+    const media = typeof input.resultRef === 'string' ? (sheet.find((m) => m.ref === input.resultRef) ?? null) : null;
     if (!media) return bad('R10', 'photo_inconnue');
+    // L'original et le résultat doivent être dans le stockage : on ne certifie pas ce qui n'est pas gardé [R130].
+    const stored = await this.stored([input.originalRef, media.ref]);
+    if (stored === 'indisponible') return bad('R130', 'stockage_indisponible');
+    if (!stored[0]) return bad('R130', 'original_absent');
+    if (!stored[1]) return bad('R10', 'photo_absente');
     // Aucune correction ni aménagement : l'image publiée est l'original, à l'octet près. Sinon : elle en diffère.
     const unchanged = ops.value.length === 0 && media.edit !== 'amenagement_virtuel';
     if (unchanged !== (input.resultSha256 === input.originalSha256)) return bad('R10', 'empreinte_incoherente');
@@ -256,6 +271,7 @@ export class CertificatsPhotos {
       property_id: propertyId,
       result_ref: media.ref,
       result_sha256: input.resultSha256,
+      original_ref: input.originalRef,
       original_sha256: input.originalSha256,
       operations: JSON.stringify(ops.value),
       virtual_staging: media.edit === 'amenagement_virtuel' ? 1 : 0,
@@ -285,10 +301,12 @@ export class CertificatsPhotos {
 
   /**
    * Les photos du bien que le Studio peut publier : celles de la dernière version de la fiche qui ont leur certificat,
-   * avec la mention d'aménagement virtuel quand il y en a une [R130, R48]. Une photo sans certificat n'y est pas.
+   * avec la mention d'aménagement virtuel quand il y en a une [R130, R48]. Une photo sans certificat n'y est pas, ni
+   * une photo dont l'original n'est plus dans le stockage : rien ne part tant que le stockage ne répond pas.
    */
   async publishable(propertyId: string): Promise<CertifiedPhoto[]> {
-    const media = await this.sheetPhotos(propertyId);
+    const media = await this.sheetPhotos(propertyId, 'systeme:studio');
+    if (media === 'illisible') return [];
     const rows = await this.db.all<CertRow>('SELECT * FROM photo_certificates WHERE property_id = ?', [propertyId]);
     const byRef = new Map(rows.map((r) => [r.result_ref, r]));
     const out: CertifiedPhoto[] = [];
@@ -298,6 +316,9 @@ export class CertificatsPhotos {
       // La fiche dit désormais « aménagement virtuel » d'une photo certifiée sans : le certificat ne dit plus vrai,
       // la photo ne part pas tant qu'une nouvelle photo n'a pas son certificat [R130, R48]. L'inverse garde la mention.
       if (m.edit === 'amenagement_virtuel' && c.virtual_staging !== 1) continue;
+      const stored = await this.stored([c.original_ref, m.ref]);
+      if (stored === 'indisponible') return [];
+      if (!stored[0] || !stored[1]) continue;
       out.push({ ref: m.ref, overlay: c.virtual_staging === 1 ? 'Aménagement virtuel' : null, certificateToken: c.token, certificatePath: CERTIFICATE_PATH + c.token });
     }
     return out;
@@ -305,7 +326,8 @@ export class CertificatsPhotos {
 
   /** Une photo peut-elle partir ? Seulement de la fiche et avec son certificat [R130]. */
   async checkPublishable(propertyId: string, ref: unknown): Promise<{ ok: true; value: CertifiedPhoto } | { ok: false; rule: 'R130' | 'R10'; code: 'sans_certificat' | 'photo_inconnue' }> {
-    if (!(await this.photoOf(propertyId, ref))) return { ok: false, rule: 'R10', code: 'photo_inconnue' };
+    const sheet = await this.sheetPhotos(propertyId, 'systeme:studio');
+    if (sheet === 'illisible' || typeof ref !== 'string' || !sheet.some((m) => m.ref === ref)) return { ok: false, rule: 'R10', code: 'photo_inconnue' };
     const found = (await this.publishable(propertyId)).find((p) => p.ref === ref);
     return found ? { ok: true, value: found } : { ok: false, rule: 'R130', code: 'sans_certificat' };
   }
@@ -328,22 +350,34 @@ export class CertificatsPhotos {
     };
   }
 
-  private async sheetPhotos(propertyId: string): Promise<{ ref: string; edit: string }[]> {
-    const row = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
+  /** Les photos de la dernière fiche ; une fiche illisible est dite au journal, jamais prise pour une fiche vide. */
+  private async sheetPhotos(propertyId: string, actor: string): Promise<{ ref: string; edit: string }[] | 'illisible'> {
+    const row = await this.db.first<{ data: string; version: number }>('SELECT data, version FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
     if (!row) return [];
-    let media: SheetMedia[] = [];
+    let media: unknown;
     try {
-      const data = JSON.parse(row.data) as { media?: unknown };
-      media = Array.isArray(data.media) ? (data.media as SheetMedia[]) : [];
+      const data = JSON.parse(row.data) as unknown;
+      media = isRecord(data) ? (data.media ?? []) : null;
     } catch {
-      return [];
+      media = null;
     }
-    return media.filter((m) => isRecord(m) && m.kind === 'photo' && typeof m.ref === 'string' && typeof m.edit === 'string').map((m) => ({ ref: m.ref as string, edit: m.edit as string }));
+    if (!Array.isArray(media)) {
+      await appendEvent(this.journal, { type: 'studio.photo.fiche_illisible', actor, subject: `property:${propertyId}`, data: { rule: 'R10', version: row.version } }, this.now);
+      return 'illisible';
+    }
+    return (media as SheetMedia[])
+      .filter((m) => isRecord(m) && m.kind === 'photo' && typeof m.ref === 'string' && typeof m.edit === 'string')
+      .map((m) => ({ ref: m.ref as string, edit: m.edit as string }));
   }
 
-  private async photoOf(propertyId: string, ref: unknown): Promise<{ ref: string; edit: string } | null> {
-    if (typeof ref !== 'string') return null;
-    return (await this.sheetPhotos(propertyId)).find((m) => m.ref === ref) ?? null;
+  /** L'existence de chaque référence dans le stockage ; une panne du stockage ferme tout [R130]. */
+  private async stored(refs: string[]): Promise<boolean[] | 'indisponible'> {
+    try {
+      return await Promise.all(refs.map((r) => this.files.has(r)));
+    } catch (error) {
+      await appendEvent(this.journal, { type: 'studio.photo.stockage_indisponible', actor: 'systeme:studio', subject: null, data: { rule: 'R130', error: error instanceof Error ? error.name : 'inconnue' } }, this.now);
+      return 'indisponible';
+    }
   }
 
   private async full(viewer: Viewer, propertyId: string): Promise<CertResult<{ network_id: string }>> {
