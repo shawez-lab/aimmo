@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { Acces, FicheUnique, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { CessionCommerce, FicheCommerce, VigilanceCession, type VaultDeposits } from '../src/commerces/index.ts';
 import { FUNDS_REQUEST_TEXT } from '../src/conformite/vigilance.ts';
 import { loadMigrations } from './migrations.ts';
@@ -40,7 +40,8 @@ async function setup() {
     return f.value.fileId;
   };
   const buyer = async (first: string) => (await store.createPerson({ networkId: network.id, agentId: alexAgent.id, firstName: first, lastName: 'Inventé' })).id;
-  return { db, journal, acces, cessions, vigilance, deposited, alex, sam: as('agent', 'sam'), direction, compliance: as('compliance', 'conf-1'), readyFile, buyer, networkId: network.id, record: (fileId: string, kind: string, day: string) => cessions.record(acces, alex, fileId, { kind, day, proofRef: proof((n += 1)) }) };
+  const merge = (survivorId: string, mergedId: string) => new FicheUnique(db, store, { now }).merge({ survivorId, mergedId, reason: 'même société' });
+  return { merge, db, journal, acces, cessions, vigilance, deposited, alex, sam: as('agent', 'sam'), direction, compliance: as('compliance', 'conf-1'), readyFile, buyer, networkId: network.id, record: (fileId: string, kind: string, day: string) => cessions.record(acces, alex, fileId, { kind, day, proofRef: proof((n += 1)) }) };
 }
 
 describeWithSqlite('CE08 · vigilance renforcée de la cession', () => {
@@ -69,6 +70,16 @@ describeWithSqlite('CE08 · vigilance renforcée de la cession', () => {
     await t.vigilance.setBuyer(t.acces, t.alex, disguised, { personId: kbis, legalPerson: false });
     const fourth = await t.vigilance.list(t.compliance);
     expect(fourth.ok && fourth.value.at(-1)!.missing).toEqual(['beneficiaires_effectifs', 'origine_des_fonds']);
+    // Une déclaration « société » rangée sur une fiche réunie depuis : les bénéficiaires effectifs sont exigés.
+    const merged = await t.readyFile();
+    const survivor = await t.buyer('Société ter');
+    const old = await t.buyer('Société ter bis');
+    await t.db.run("INSERT INTO client_identifications (id, network_id, person_id, entity, owners_count, declared_by, declared_at) VALUES ('ident-1', ?, ?, 'societe', 0, 'compliance:conf-1', '2027-09-01T08:00:00.000Z')", [t.networkId, old]);
+    await t.merge(survivor, old);
+    t.deposited.add(`${survivor}:origine_fonds`);
+    await t.vigilance.setBuyer(t.acces, t.alex, merged, { personId: survivor, legalPerson: false });
+    const fifth = await t.vigilance.list(t.compliance);
+    expect(fifth.ok && fifth.value.at(-1)).toMatchObject({ fileId: merged, missing: ['beneficiaires_effectifs'] });
     // L'alerte ne bloque rien : la cession se déclare prête.
     expect(await t.cessions.declareReady(t.acces, t.alex, fileId)).toMatchObject({ ok: true, value: { ready: true } });
   });
