@@ -162,6 +162,12 @@ function signWords(signName: string | null, city: string | null): string[] {
   return [...new Set(words(signName).filter((w) => w.length >= 3 && !COMMON_WORDS.has(w) && !cityWords.has(w) && !/^\d+$/.test(w)))];
 }
 
+/** Le texte, déjà comparable, sans le nom de la commune publique. */
+function withoutCity(text: string, city: string | null): string {
+  const c = city ? norm(city.normalize('NFKC')).trim() : '';
+  return c.length === 0 ? text : text.replace(wordRe(c, 'giu'), ' ');
+}
+
 /** Les problèmes d'une phrase de présentation ; une liste vide si elle est publiable. */
 export function presentationSentenceProblems(sentence: string, facts: PresentationFacts, marks: ConfidentialMarks): PresentationProblem[] {
   const problems: PresentationProblem[] = [];
@@ -169,14 +175,18 @@ export function presentationSentenceProblems(sentence: string, facts: Presentati
     if (!problems.some((p) => p.code === code && p.value === value)) problems.push({ code, value });
   };
   const allowed = allowedNumbers(facts);
-  for (const m of sentence.matchAll(NUMBER)) {
+  // Les nombres se cherchent sur un texte où chaque chiffre est ramené à 0-9 (NFKC : pleine chasse, exposants) et où
+  // le nom de la commune, public, est retiré : « Six-Fours-les-Plages » n'est pas un nombre.
+  const counted = withoutCity(norm(sentence.replace(/[²³]/g, ' ').normalize('NFKC')), facts.city);
+  for (const m of counted.matchAll(/(?![0-9])\p{Nd}+/gu)) add('nombre_hors_vue_publique', m[0]);
+  for (const m of counted.matchAll(NUMBER)) {
     const n = parseNumber(m[0]);
     if (allowed.includes(n)) continue;
     add(marks.numbers.includes(n) ? 'chiffre_confidentiel' : 'nombre_hors_vue_publique', m[0]);
   }
   const lower = norm(sentence);
   for (const w of SPELLED_NUMBERS) {
-    const m = wordRe(w).exec(lower);
+    const m = wordRe(w).exec(counted);
     if (m) add('nombre_hors_vue_publique', m[0]);
   }
   if (marks.signName) {

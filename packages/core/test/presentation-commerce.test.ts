@@ -131,6 +131,10 @@ describeWithSqlite('CE03 · présentation anonyme d’un commerce', () => {
       ['Prix 250 k€.', 'nombre_hors_vue_publique'],
       ['Affaire tenue depuis 2019.', 'chiffre_confidentiel'],
       ['Licence et terrasse.', 'champ_confidentiel'],
+      // Des chiffres d'autres écritures ne contournent pas le contrôle.
+      ['Belle affaire, ４３９ ８７６ € par an.', 'chiffre_confidentiel'],
+      ['Belle affaire, ٤٣٩٨٧٦ € par an.', 'nombre_hors_vue_publique'],
+      ['Belle affaire, ⁴ personnes.', 'chiffre_confidentiel'],
     ];
     for (const [text, code] of cases) {
       const r = checkPresentation('Boulangerie à Dijon', text, FACTS, MARKS);
@@ -154,7 +158,10 @@ describeWithSqlite('CE03 · présentation anonyme d’un commerce', () => {
   it('[R12] [R110] le texte de secours, fait des seuls faits publics, passe toujours le contrôle', () => {
     for (const kind of ['business', 'business_walls', 'commercial'] as const) {
       for (const activity of ACTIVITIES) {
-        for (const extra of [{}, { city: null, postalCode: null, surfaceM2: null }, { surfaceM2: 120.5, priceLowEuros: 1_000_000, priceHighEuros: 1_250_000 }]) {
+        for (const extra of [{}, { city: null, postalCode: null, surfaceM2: null }, { surfaceM2: 120.5, priceLowEuros: 1_000_000, priceHighEuros: 1_250_000 },
+          // Des communes dont le nom porte un nombre : le nom de la commune est public, il n'est pas un nombre.
+          { city: 'Six-Fours-les-Plages', postalCode: '83140' }, { city: 'Neuf-Brisach', postalCode: '68600' }, { city: 'Saint-Paul-Trois-Châteaux', postalCode: '26130' },
+          { city: 'Lyon 3e Arrondissement', postalCode: '69003' }]) {
           const f = { ...FACTS, kind, activity, ...extra };
           const fb = fallbackPresentation(f);
           const r = checkPresentation(fb.title, fb.body, f, MARKS);
