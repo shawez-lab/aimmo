@@ -44,7 +44,7 @@ const DAY = 86_400_000;
  * relue sur le texte sans accents.
  */
 const PROMISES =
-  /\bgaranti\w*|\bassur(e|es|ee|ees|ons|ez|ont|ance)\b|\bpromet\w*|\bpromis\w*|\bcertain\w*|\ben moins de\b|\bsous (quinze|trente|huit) jours\b|\bvendu en\b|\bvendre en\b|\bnous vendrons\b|\bje vendrai\b|\bau prix (de|fort|demande)\b|\bmeilleur prix\b|\bprix (garanti|assure|record)\b|\bplus cher\b|\brapidement vendu\b|\bvente rapide\b|\bvente assuree\b|\bsans faute\b|\bdans (le|la|les) (mois|semaine|semaines|jours)\b|\bsous (un|une|deux|trois|quatre|six|quinze|trente|huit) (jours?|semaines?|mois)\b|\bd ici\b|\ben quelques (jours|semaines|mois)\b|\bvite\b|\brapidement\b|\ble plus (haut|cher|eleve)\b|\bprix le plus\b|\btrouvera (preneur|acquereur)\b|\bvente en\b|\bvendu sous\b|\bau dessus du marche\b/;
+  /\bgaranti\w*|\bassur(e|es|ee|ees|ons|ez|ont|ance)\b|\bpromet\w*|\bpromis\w*|\bcertain\w*|\ben moins de\b|\bsous (quinze|trente|huit) jours\b|\bvendu en\b|\bvendre en\b|\bnous vendrons\b|\bje vendrai\b|\bau prix (de|fort|demande)\b|\bmeilleur prix\b|\bprix (garanti|assure|record)\b|\bplus cher\b|\brapidement vendu\b|\bvente rapide\b|\bvente assuree\b|\bsans faute\b|\bdans (le|la|les) (mois|semaine|semaines|jours)\b|\bsous (un|une|deux|trois|quatre|six|quinze|trente|huit) (jours?|semaines?|mois)\b|\bd ici\b|\ben quelques (jours|semaines|mois)\b|\bvite\b|\brapidement\b|\ble plus (haut|cher|eleve)\b|\bprix le plus\b|\btrouvera (preneur|acquereur)\b|\bvente en\b|\bvendu sous\b|\bau dessus du marche\b|\b(dans|sous|en|d ici) (un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze|quinze|vingt|trente|quarante|soixante|quatre vingt|cent|quelques|peu de) (heures?|jours?|semaines?|mois|ans?)\b|\bsera (vendu|vendue|loue|louee)\b|\bvendu(e|s|es)? (dans|sous|avant)\b/;
 
 export function promisesSomething(text: string): boolean {
   return /\d/.test(text) || PROMISES.test(plain(text));
@@ -254,7 +254,8 @@ export class DossierPresentation {
     const results = {
       source: 'Base AIMMO : mandats rangés, actes signés, rendez-vous tenus des 12 derniers mois',
       mandates: await count('SELECT count(*) AS n FROM mandates WHERE network_id = ? AND agent_id = ? AND signed_at >= ? AND signed_at <= ?', [viewer.networkId, viewer.userId, from.toISOString(), at.toISOString()]),
-      sales: await count('SELECT count(*) AS n FROM sale_file_closings c JOIN sale_commissions s ON s.file_id = c.file_id WHERE c.network_id = ? AND s.agent_id = ? AND c.at >= ? AND c.at <= ?', [viewer.networkId, viewer.userId, from.toISOString(), at.toISOString()]),
+      // Une vente compte au jour de l'acte (comme le tableau de M13), pas au jour où elle a été rangée.
+      sales: await count('SELECT count(*) AS n FROM sale_file_closings c JOIN sale_commissions s ON s.file_id = c.file_id WHERE c.network_id = ? AND s.agent_id = ? AND c.signed_on >= ? AND c.signed_on <= ?', [viewer.networkId, viewer.userId, day(from.toISOString()), day(at.toISOString())]),
       estimationsHonored: await count("SELECT count(*) AS n FROM appointments WHERE network_id = ? AND agent_id = ? AND kind = 'estimation' AND status = 'honored' AND start_at >= ? AND start_at <= ?", [
         viewer.networkId,
         viewer.userId,

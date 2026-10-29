@@ -123,6 +123,14 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
     for (const [file, score, ago, comment] of [['f1', 5, 300, 'Merci à Alex pour la vente rue des Voisins'], ['f2', 2, 100, null], ['f3', 4, 10, 'Très bien'], ['f4', 5, 500, null]] as const) {
       await t.db.run('INSERT INTO satisfaction_answers (file_id, person_id, network_id, agent_id, score, comment, answered_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [file, `p-${file}`, t.network.id, t.alex.id, score, comment, iso(NOW - ago * DAY)]);
     }
+    // Deux actes rangés aujourd'hui : l'un signé il y a 100 jours (compté), l'autre il y a 400 jours (hors période).
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    for (const [file, ago] of [['s1', 100], ['s2', 400]] as const) {
+      const signed = new Date(NOW - ago * DAY).toISOString().slice(0, 10);
+      await t.db.run("INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, ?, 'preuves/test.pdf', 'a_demarrer', ?, 'agent:test')", [file, t.network.id, signed, iso(NOW - DAY)]);
+      await t.db.run("INSERT INTO sale_commissions (file_id, network_id, mandate_id, agent_id, fee_eur, fee_charge, due_on, status, created_at) VALUES (?, ?, 'm', ?, 1000, 'vendeur', ?, 'due', ?)", [file, t.network.id, t.alex.id, signed, iso(NOW - DAY)]);
+    }
+    await t.db.exec('PRAGMA foreign_keys = ON');
     const rdv = await t.appointment('estimation', NOW + DAY, t.alex.id, 'booked');
     const d = await t.dossier.build(t.agent(), rdv);
     if (!d.ok) throw new Error(d.code);
@@ -131,7 +139,7 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
     expect(renderDossier(d.value, 'Alex Essai')).toContain('Les ventes les plus récentes ne sont pas encore publiées.');
     // Tous les avis des 12 derniers mois, la mauvaise note comprise, dans l'ordre des dates ; jamais le commentaire.
     expect(d.value.reviews).toMatchObject({ count: 3, average: 3.7, answers: [{ score: 5 }, { score: 2 }, { score: 4 }] });
-    expect(d.value.results).toMatchObject({ mandates: 1, sales: 0, estimationsHonored: 0 });
+    expect(d.value.results).toMatchObject({ mandates: 1, sales: 1, estimationsHonored: 0 });
     for (const section of [d.value.sales!, d.value.reviews, d.value.results]) expect(section.source).toEqual(expect.any(String));
     // Rien qui situe un autre client : ni rue, ni commentaire, ni personne [R46, R13].
     const all = JSON.stringify(d.value) + renderDossier(d.value, 'Alex Essai');
@@ -140,7 +148,7 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
 
   it('[R141] aucune promesse de prix ni de délai : liste fermée de tournures, refusées dans les engagements et dans le texte de l’IA', async () => {
     const t = await setup();
-    for (const label of ['Vente garantie en moins de trois mois', 'Nous vendrons au meilleur prix', 'Votre bien vendu en un mois', 'Compte rendu sous 24 h', 'Prix assuré', 'Votre bien vendu dans le mois', 'Une vente en quelques semaines', 'Votre bien trouvera preneur sous un mois', 'Le prix le plus haut du quartier', 'Vendre vite et bien']) {
+    for (const label of ['Vente garantie en moins de trois mois', 'Nous vendrons au meilleur prix', 'Votre bien vendu en un mois', 'Compte rendu sous 24 h', 'Prix assuré', 'Votre bien vendu dans le mois', 'Une vente en quelques semaines', 'Votre bien trouvera preneur sous un mois', 'Le prix le plus haut du quartier', 'Vendre vite et bien', 'Votre bien sera vendu dans deux semaines', 'Une vente sous trois mois', 'Vendu en quelques jours']) {
       expect(await t.dossier.setCommitment(t.dir, { code: 'essai', label, measure: 'point_semaine', delayHours: 24, active: true }), label).toEqual({ ok: false, rule: 'R141', code: 'promise' });
     }
     expect(promisesSomething('Un compte rendu après chaque visite')).toBe(false);
