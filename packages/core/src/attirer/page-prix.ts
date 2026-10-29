@@ -141,15 +141,19 @@ function structuredData(name: string, url: string, cells: readonly PublicCell[])
 export function renderPricePage(prices: CommunePrices, options: PricePageOptions): PricePage {
   if (!SLUG.test(options.communeSlug) || (options.quarterSlug != null && !SLUG.test(options.quarterSlug))) return { ok: false, code: 'zone_inconnue' };
   if (!SITE.test(options.siteUrl) || !SAFE_HREF.test(options.estimateHref)) return { ok: false, code: 'adresse_invalide' };
-  const zones = new Map<string, { name: string; level: 'commune' | 'quartier' }>();
-  for (const c of [...prices.cells, ...prices.held]) zones.set(c.zone.slug, { name: c.zone.name, level: c.zone.level });
-  const commune = zones.get(options.communeSlug);
-  if (!commune || commune.level !== 'commune') return { ok: false, code: 'zone_inconnue' };
+  // Une commune et l'un de ses quartiers peuvent porter le même nom court : chaque zone se reconnaît à son niveau aussi.
+  type Level = 'commune' | 'quartier';
+  const key = (level: Level, slug: string) => `${level}:${slug}`;
+  const zones = new Map<string, { slug: string; name: string; level: Level }>();
+  for (const c of [...prices.cells, ...prices.held]) zones.set(key(c.zone.level, c.zone.slug), { slug: c.zone.slug, name: c.zone.name, level: c.zone.level });
+  const commune = zones.get(key('commune', options.communeSlug));
+  if (!commune) return { ok: false, code: 'zone_inconnue' };
+  const targetLevel: Level = options.quarterSlug != null ? 'quartier' : 'commune';
   const targetSlug = options.quarterSlug ?? options.communeSlug;
-  const target = zones.get(targetSlug);
-  if (!target || (options.quarterSlug != null && target.level !== 'quartier')) return { ok: false, code: 'zone_inconnue' };
-  const cellOf = (slug: string, kind: EstimatedKind) => prices.cells.find((c) => c.zone.slug === slug && c.kind === kind);
-  const heldOf = (slug: string, kind: EstimatedKind) => prices.held.find((c) => c.zone.slug === slug && c.kind === kind);
+  const target = zones.get(key(targetLevel, targetSlug));
+  if (!target) return { ok: false, code: 'zone_inconnue' };
+  const cellOf = (level: Level, slug: string, kind: EstimatedKind) => prices.cells.find((c) => c.zone.level === level && c.zone.slug === slug && c.kind === kind);
+  const heldOf = (level: Level, slug: string, kind: EstimatedKind) => prices.held.find((c) => c.zone.level === level && c.zone.slug === slug && c.kind === kind);
   const kinds: EstimatedKind[] = ['apartment', 'house'];
 
   const isQuarter = options.quarterSlug != null;
@@ -157,19 +161,19 @@ export function renderPricePage(prices: CommunePrices, options: PricePageOptions
   const url = `${options.siteUrl}${path}`;
   const place = isQuarter ? `${target.name}, ${commune.name}` : commune.name;
   const title = `Prix de l’immobilier à ${place}`;
-  const blocks = kinds.map((k) => cellBlock(k, cellOf(targetSlug, k), heldOf(targetSlug, k))).join('');
+  const blocks = kinds.map((k) => cellBlock(k, cellOf(targetLevel, targetSlug, k), heldOf(targetLevel, targetSlug, k))).join('');
 
-  const quarters = [...zones.entries()].filter(([, z]) => z.level === 'quartier').sort((a, b) => a[1].name.localeCompare(b[1].name, 'fr'));
+  const quarters = [...zones.values()].filter((z) => z.level === 'quartier').sort((a, b) => a.name.localeCompare(b.name, 'fr'));
   const quarterTable =
     !isQuarter && quarters.length > 0
       ? `<h2>Par quartier</h2><table class="quartiers"><caption class="visuellement-cache">Prix médian au mètre carré par quartier de ${escapeHtml(commune.name)}</caption><thead><tr><th scope="col">Quartier</th><th scope="col">Appartements</th><th scope="col">Maisons</th></tr></thead><tbody>` +
         quarters
-          .map(([slug, z]) => `<tr><th scope="row"><a href="/prix/${options.communeSlug}/${slug}">${escapeHtml(z.name)}</a></th>${kinds.map((k) => quarterCell(cellOf(slug, k), heldOf(slug, k))).join('')}</tr>`)
+          .map((z) => `<tr><th scope="row"><a href="/prix/${options.communeSlug}/${z.slug}">${escapeHtml(z.name)}</a></th>${kinds.map((k) => quarterCell(cellOf('quartier', z.slug, k), heldOf('quartier', z.slug, k))).join('')}</tr>`)
           .join('') +
         '</tbody></table>'
       : '';
   const crumbs = isQuarter ? `<p class="fil"><a href="/prix/${options.communeSlug}">Prix à ${escapeHtml(commune.name)}</a></p>` : '';
-  const shownForData = prices.cells.filter((c) => c.zone.slug === targetSlug);
+  const shownForData = prices.cells.filter((c) => c.zone.level === targetLevel && c.zone.slug === targetSlug);
 
   const html =
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}">` +

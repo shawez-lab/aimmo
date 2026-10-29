@@ -131,6 +131,17 @@ describe('AT02 · pages de prix publiques', () => {
     expect((html.match(/<\/script>/g) ?? []).length).toBe(1);
   });
 
+  it('une commune et un quartier du même nom court restent deux pages distinctes', () => {
+    const twin = { slug: 'commune-test', name: 'Centre', level: 'quartier' as const };
+    const prices: CommunePrices = { ...PRICES, cells: [...PRICES.cells, cell(twin, 'apartment', 9, 3900, 3500, 4200)] };
+    const c = visible(page({}, prices));
+    expect(c).toContain(`2${N}600${B}€/m²`);
+    expect(page({}, prices)).toContain('<a href="/prix/commune-test/commune-test">Centre</a>');
+    const q = visible(page({ quarterSlug: 'commune-test' }, prices));
+    expect(q).toContain(`3${N}900${B}€/m²`);
+    expect(q).not.toContain(`2${N}600${B}€/m²`);
+  });
+
   it('une zone inconnue, un quartier d’une autre commune ou une adresse douteuse ne donnent pas de page', () => {
     expect(renderPricePage(PRICES, { ...OPTS, communeSlug: 'autre' })).toEqual({ ok: false, code: 'zone_inconnue' });
     expect(renderPricePage(PRICES, { ...OPTS, communeSlug: 'ouest' })).toEqual({ ok: false, code: 'zone_inconnue' });
