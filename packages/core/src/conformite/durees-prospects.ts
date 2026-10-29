@@ -10,7 +10,8 @@
  *   fiche. Un accord ancien ne prolonge rien : il compte comme un contact de son jour ;
  * - toutes les fiches réunies d'une personne (S04) comptent ensemble, sous la fiche gardée ;
  * - un client n'est pas un prospect, et n'est jamais listé : une personne qui a signé un mandat, l'acquéreur d'un
- *   dossier de vente, le locataire ou le propriétaire d'un bail fait par AIMMO. Ses durées sont celles du contrat ;
+ *   dossier de vente, le locataire ou le propriétaire d'un bail fait par AIMMO, une personne identifiée pour la lutte
+ *   contre le blanchiment et les bénéficiaires effectifs d'une société cliente. Ses durées sont celles du contrat ;
  * - « 3 ans » se compte en jours de Paris, par le calendrier : un contact du 10 février 2024 est listé le 10 février
  *   2027, pas la veille ;
  * - la demande de consentement est préparée en mode essai, sans canal ni envoi [R26] ; quand le plan la mettra en
@@ -167,6 +168,10 @@ export class DureesProspects {
       'SELECT DISTINCT buyer_person_id AS id FROM sale_files WHERE network_id = ?',
       'SELECT DISTINCT a.person_id AS id FROM rental_leases l JOIN rental_applications a ON a.id = l.application_id WHERE l.network_id = ?',
       'SELECT DISTINCT r.owner_person_id AS id FROM rental_leases l JOIN rental_listings r ON r.id = l.listing_id WHERE l.network_id = ?',
+      // Une personne identifiée pour la lutte contre le blanchiment (L03), et les bénéficiaires effectifs d'une société
+      // cliente : parties à un mandat ou à une vente, jamais des prospects.
+      'SELECT DISTINCT person_id AS id FROM client_identifications WHERE network_id = ?',
+      'SELECT DISTINCT owner_person_id AS id FROM beneficial_owners WHERE network_id = ?',
     ];
     for (const sql of clientSources) for (const r of await this.db.all<{ id: string | null }>(sql, [networkId])) if (r.id) clients.add(r.id);
 

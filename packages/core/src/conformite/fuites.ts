@@ -203,7 +203,7 @@ export class Fuites {
     const at = this.now().toISOString();
     const { changes } = scope.kind === 'tous'
       ? await this.db.run("UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND revoked_at IS NULL AND role <> 'compliance'", [at, viewer.networkId])
-      : await this.db.run('UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND revoked_at IS NULL AND user_id = ?', [at, viewer.networkId, scope.userId]);
+      : await this.db.run("UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND revoked_at IS NULL AND user_id = ? AND role <> 'compliance'", [at, viewer.networkId, scope.userId]);
     const id = this.newId();
     await this.db.run('INSERT INTO data_breach_cuts (id, breach_id, network_id, scope, user_id, keys_revoked, cut_by, cut_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
       id,

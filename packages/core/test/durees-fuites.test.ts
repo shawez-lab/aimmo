@@ -80,6 +80,11 @@ describeWithSqlite('L08 · prospects à 3 ans', () => {
   it('[R97] un client sous mandat ou une vente close n’est jamais listé', async () => {
     const t = await setup();
     const p = await t.prospect('2027-03-02T10:00:00.000Z');
+    // Une SCI cliente et ses deux associés, déclarés pour la lutte contre le blanchiment (L03).
+    const sci = await t.prospect('2027-03-02T10:00:00.000Z', 'SCI');
+    const [x, y] = [await t.prospect('2027-03-02T10:00:00.000Z', 'Associé'), await t.prospect('2027-03-02T10:00:00.000Z', 'Associée')];
+    await t.db.run("INSERT INTO client_identifications (id, network_id, person_id, entity, owners_count, declared_by, declared_at) VALUES ('ci-1', ?, ?, 'societe', 2, 'agent:a', '2027-03-02T10:00:00.000Z')", [t.network.id, sci]);
+    for (const o of [x, y]) await t.db.run("INSERT INTO beneficial_owners (declaration_id, network_id, owner_person_id, share_hundredths) VALUES ('ci-1', ?, ?, 5000)", [t.network.id, o]);
     // Six ans plus tard : le vendeur (mandat) et l'acquéreur (dossier de vente) n'ont plus eu aucun contact.
     for (const at of ['2030-03-02T10:00:00.000Z', '2031-01-01T10:00:00.000Z', '2033-03-02T10:00:00.000Z']) {
       t.setClock(new Date(at));
@@ -89,6 +94,7 @@ describeWithSqlite('L08 · prospects à 3 ans', () => {
     expect(ids).toContain(p);
     expect(ids).not.toContain(t.personId);
     expect(ids).not.toContain(t.buyerId);
+    for (const o of [sci, x, y]) expect(ids).not.toContain(o);
   });
 
   it('[R97] [R17] sans réponse, l’effacement suit la procédure de L07 en essai : rien n’est effacé ni envoyé', async () => {
@@ -294,6 +300,9 @@ describeWithSqlite('L08 · procédure de fuite', () => {
     expect(one).toMatchObject({ ok: true });
     expect(await t.fuites.accessCut(t.network.id, 'agent', t.alexId)).toBe(true);
     expect(await t.fuites.accessCut(t.network.id, 'agent', 'autre-agent')).toBe(false);
+    // Personne, pas même la direction, ne coupe les clés du responsable.
+    expect(await t.fuites.cutAccess(t.direction, b.value.id, { kind: 'utilisateur', userId: 'conformite-1' })).toMatchObject({ ok: true });
+    expect(await t.db.first("SELECT revoked_at FROM access_keys WHERE role = 'compliance'")).toEqual({ revoked_at: null });
     // Les refus vont au journal ; rien n'est effacé.
     expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse' && (e.data as { kind?: string }).kind === 'fuites').length).toBeGreaterThanOrEqual(8);
     await expect(t.db.run('DELETE FROM data_breach_cuts')).rejects.toThrow();
