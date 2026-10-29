@@ -80,6 +80,8 @@ export interface AnciensContactsOptions {
   newId?: () => string;
   settings?: OldContactSettings;
   drafter?: OldContactDrafter | null;
+  /** Le temps laissé à l'IA pour proposer un texte ; au-delà, le texte du code. Réglage. */
+  draftTimeoutMs?: number;
 }
 
 interface FollowupRow {
@@ -146,6 +148,7 @@ export class AnciensContacts {
   private readonly newId: () => string;
   private readonly settings: OldContactSettings;
   private readonly drafter: OldContactDrafter | null;
+  private readonly draftTimeoutMs: number;
   private readonly fiche: FicheUnique;
   private readonly durees: DureesProspects;
   private readonly controle: ControleEnvois;
@@ -159,6 +162,7 @@ export class AnciensContacts {
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.settings = options.settings ?? DEFAULT_OLD_CONTACT_SETTINGS;
     this.drafter = options.drafter ?? null;
+    this.draftTimeoutMs = options.draftTimeoutMs ?? 8000;
     const store = new FicheClient(db, { now: this.now });
     this.fiche = new FicheUnique(db, store, { now: this.now });
     this.durees = new DureesProspects(db, journal, this.fiche, { now: this.now });
@@ -280,7 +284,12 @@ export class AnciensContacts {
   private async draftFor(reason: OldContactReason, firstName: string | null): Promise<{ text: string; by: 'ia' | 'secours' }> {
     if (this.drafter) {
       try {
-        const body = (await this.drafter.draft({ reason })).trim();
+        // Une IA qui ne répond pas n'arrête jamais le passage : au bout du délai, le texte du code [R12].
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(Object.assign(new Error('délai dépassé'), { name: 'TimeoutError' })), this.draftTimeoutMs);
+        });
+        const body = (await Promise.race([this.drafter.draft({ reason }), timeout]).finally(() => clearTimeout(timer))).trim();
         const hello = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
         // Le prénom est attendu dans le premier message : une salutation sans lui est remplacée par celle du code [R08].
         const text = `${hello} ${body.replace(/^bonjour\b[^,.!]*[,.!]?\s*/i, '')}`;
