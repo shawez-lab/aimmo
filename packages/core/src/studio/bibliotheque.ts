@@ -54,6 +54,7 @@ interface AssetRow {
   licence: AssetLicence;
   attribution: string | null;
   valid_until: string | null;
+  proof_ref: string;
   recorded_at: string;
   reason: string | null;
   withdrawn_at: string | null;
@@ -62,7 +63,7 @@ interface AssetRow {
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const PROOF = new RegExp(`^bibliotheque/preuves/${UUID}\\.(?:pdf|jpg|png)$`);
-const SELECT = `SELECT a.id, a.network_id, a.kind, a.title, a.source, a.licence, a.attribution, a.valid_until, a.recorded_at, w.reason, w.withdrawn_at
+const SELECT = `SELECT a.id, a.network_id, a.kind, a.title, a.source, a.licence, a.attribution, a.valid_until, a.proof_ref, a.recorded_at, w.reason, w.withdrawn_at
   FROM licensed_assets a LEFT JOIN licensed_asset_withdrawals w ON w.asset_id = a.id`;
 
 /** Le jour à Paris : une licence vaut jusqu'à la fin de son dernier jour, heure de Paris. */
@@ -206,7 +207,20 @@ export class Bibliotheque implements MusicLibrary {
     const row = await this.db.first<AssetRow>(`${SELECT} WHERE a.id = ? AND a.network_id = ? AND a.kind = ?`, [id, networkId, kind]);
     if (!row) return null;
     const a = this.view(row, at);
-    return a.usable ? a : null;
+    if (!a.usable) return null;
+    // La preuve de la licence est encore rangée au moment de l'usage ; absente ou stockage en panne, rien [R133].
+    let stored = false;
+    try {
+      stored = await this.proofs.has(row.proof_ref);
+    } catch (error) {
+      await appendEvent(this.journal, { type: 'studio.bibliotheque.stockage_indisponible', actor: 'systeme:studio', subject: `network:${networkId}`, data: { rule: 'R133', asset: id, error: error instanceof Error ? error.name : 'inconnue' } }, this.now);
+      return null;
+    }
+    if (!stored) {
+      await appendEvent(this.journal, { type: 'studio.bibliotheque.preuve_absente', actor: 'systeme:studio', subject: `network:${networkId}`, data: { rule: 'R133', asset: id } }, this.now);
+      return null;
+    }
+    return a;
   }
 
   private async get(networkId: string, id: string): Promise<LicensedAsset | null> {

@@ -95,6 +95,21 @@ describeWithSqlite('X07 · bibliothèque sous licence', () => {
     await expect(t.db.run("UPDATE licensed_assets SET valid_until = '2099-01-01'")).rejects.toThrow(/ne change plus/);
   });
 
+  it('[R133] la preuve est relue à chaque usage : absente ou stockage en panne, la musique ne sert plus', async () => {
+    const t = await setup();
+    const ok = await t.lib.add(t.direction, t.music());
+    if (!ok.ok) throw new Error(ok.code);
+    const at = new Date('2027-10-09T10:00:00Z');
+    expect(await t.lib.licensedMusic(t.network.id, ok.value.id, at)).toMatchObject({ id: ok.value.id });
+    t.proofs.down = true;
+    expect(await t.lib.licensedMusic(t.network.id, ok.value.id, at)).toBeNull();
+    t.proofs.down = false;
+    t.stored.delete(proof(1));
+    expect(await t.lib.licensedMusic(t.network.id, ok.value.id, at)).toBeNull();
+    const types = (await t.db.all<{ type: string }>("SELECT type FROM journal WHERE type LIKE 'studio.bibliotheque.%'")).map((r) => r.type);
+    expect(types).toEqual(expect.arrayContaining(['studio.bibliotheque.stockage_indisponible', 'studio.bibliotheque.preuve_absente']));
+  });
+
   it('[R16] seule la direction range ou retire ; les agents voient les choix, les autres rien', async () => {
     const t = await setup();
     expect(await t.lib.add(t.agent, t.music())).toEqual({ ok: false, rule: 'R16', code: 'role' });
