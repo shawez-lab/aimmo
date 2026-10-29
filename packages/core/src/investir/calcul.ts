@@ -221,7 +221,7 @@ export interface StoredCalculation {
   createdAt: string;
 }
 
-export type CalculationResult = { ok: true; value: StoredCalculation } | { ok: false; rule: 'R16' | 'R120'; code: string; field?: InputKey };
+export type CalculationResult = { ok: true; value: StoredCalculation } | { ok: false; rule: 'R16' | 'R120' | 'R122'; code: string; field?: InputKey };
 
 export interface CalculInvestissementOptions {
   /** Les loyers de marché de Y02 : le calcul y lit le loyer d'une commune. */
@@ -280,7 +280,7 @@ export class CalculInvestissement {
     input: { propertyId?: unknown; projectId?: unknown; inputs: unknown; marketRentQuery?: unknown },
   ): Promise<CalculationResult> {
     const actor = `${String(viewer.role)}:${viewer.userId}`;
-    const refused = async (code: string, rule: 'R16' | 'R120' = 'R16', field?: InputKey): Promise<CalculationResult> => {
+    const refused = async (code: string, rule: 'R16' | 'R120' | 'R122' = 'R16', field?: InputKey): Promise<CalculationResult> => {
       await appendEvent(
         this.journal,
         {
@@ -319,6 +319,8 @@ export class CalculInvestissement {
     const checked = checkYieldInputs(input.inputs);
     if (!checked.ok) return refused(checked.code, 'R120', checked.field);
     const createdAt = this.now().toISOString();
+    // Le loyer de marché n'est jamais saisi : il est lu dans la base (Y02), ou le calcul reste incomplet [R122].
+    if (checked.value.marketRent !== null) return refused('loyer_saisi', 'R122', 'marketRent');
     // Ce que l'agent saisit porte son nom comme source, quoi qu'il écrive : seul le code dit « bien » ou « ANIL ».
     const inputs: YieldInputs = { ...checked.value };
     for (const key of INPUT_KEYS) {
@@ -336,7 +338,7 @@ export class CalculInvestissement {
     }
     // Le loyer de marché vient de la base (Y02), jamais d'un chiffre saisi présenté comme celui de l'ANIL.
     const query = input.marketRentQuery;
-    if (inputs.marketRent === null && query !== undefined && query !== null) {
+    if (query !== undefined && query !== null) {
       const q = query as { inseeCode?: unknown; kind?: unknown };
       if (!this.loyers || typeof q.inseeCode !== 'string' || typeof q.kind !== 'string' || !(MARKET_RENT_KINDS as readonly string[]).includes(q.kind)) {
         return refused('valeur', 'R120', 'marketRent');
