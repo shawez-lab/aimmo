@@ -451,7 +451,7 @@ export class PresentationCommerce {
     if (!row || row.network_id !== viewer.networkId) {
       await appendEvent(
         this.journal,
-        { type: 'acces.refuse', actor: this.actor(viewer), subject: `business_presentation:${presentationId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'business_presentation', code: 'unknown' } },
+        { type: 'acces.refuse', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'business_presentation', code: 'unknown' } },
         this.now,
       );
       return { ok: false, rule: null, code: 'unknown_presentation' };

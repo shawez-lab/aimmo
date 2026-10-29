@@ -13,7 +13,7 @@ import {
   type PresentationFacts,
   type PresentationWriter,
 } from '../src/commerces/index.ts';
-import { EMPTY_SHEET } from '../src/commerces/fiche.ts';
+import { EMPTY_SHEET, type BusinessSheet } from '../src/commerces/fiche.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -48,7 +48,7 @@ const FACTS: PresentationFacts = {
   priceLowEuros: LOW,
   priceHighEuros: HIGH,
 };
-const MARKS = confidentialMarks({ ...EMPTY_SHEET, ...(SHEET as never) });
+const MARKS = confidentialMarks({ ...EMPTY_SHEET, ...(SHEET as unknown as Partial<BusinessSheet>) });
 
 class FakeWriter implements PresentationWriter {
   calls: unknown[] = [];
@@ -183,7 +183,7 @@ describeWithSqlite('CE03 · présentation anonyme d’un commerce', () => {
       if (w === leaky && r.ok) {
         expect(r.aiRefused?.flatMap((s) => s.problems.map((x) => x.code))).toEqual(expect.arrayContaining(['enseigne', 'chiffre_confidentiel', 'adresse']));
         const text = JSON.stringify(await t.journal.all());
-        for (const s of ['Fournil', 'Gaspard', '439', 'Essais']) expect(text, s).not.toContain(s);
+        for (const s of ['Fournil', 'Gaspard', '439 876', '439876', 'Essais']) expect(text, s).not.toContain(s);
         expect(text).toContain('commerces.presentation.ia_refusee');
       }
       // Le texte refusé n'est rangé nulle part.

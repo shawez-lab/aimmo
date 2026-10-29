@@ -508,7 +508,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     finalite: 'Vendre un fonds de commerce, un droit au bail, des murs ou un local professionnel dans la discrétion : la fiche du commerce, dont les chiffres et le bail restent confidentiels.',
     baseLegale: 'mesures_precontractuelles',
     personnes: ['Vendeurs de commerces et d\'entreprises'],
-    donnees: ['Fiche du commerce : enseigne, chiffres d\'affaires et résultats des 3 derniers exercices, bail commercial, salariés (nombre), matériel, autorisations, chaque champ avec son auteur', 'Estimations du commerce en fourchette, avec leurs lignes de calcul et leur validation par l\'agent', 'Auteur de chaque barème d\'estimation par activité'],
+    donnees: ['Fiche du commerce : enseigne, chiffres d\'affaires et résultats des 3 derniers exercices, bail commercial, salariés (nombre), matériel, autorisations, chaque champ avec son auteur', 'Estimations du commerce en fourchette, avec leurs lignes de calcul et leur validation par l\'agent', 'Auteur de chaque barème d\'estimation par activité', 'Présentation anonyme du commerce, son auteur et sa validation par l\'agent'],
     duree: 'La durée du mandat puis 5 ans.',
     destinataires: ['L\'agent du bien', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
@@ -517,6 +517,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       business_valuations: ['low_cents', 'high_cents', 'lines', 'created_by'],
       business_valuation_validations: ['validated_by'],
       business_valuation_scales: ['recorded_by'],
+      business_presentations: ['title', 'body', 'created_by'],
+      business_presentation_validations: ['validated_by'],
     },
   },
 ];
@@ -801,6 +803,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   business_valuations: ['id', 'network_id', 'property_id', 'sheet_version', 'scale_id', 'method', 'created_at'],
   business_valuation_validations: ['valuation_id', 'network_id', 'validated_at'],
   business_valuation_scales: ['id', 'network_id', 'activity', 'method', 'low', 'high', 'source', 'source_date', 'version', 'recorded_at'],
+  business_presentations: ['id', 'network_id', 'property_id', 'seq', 'origin', 'sheet_version', 'valuation_id', 'created_at'],
+  business_presentation_validations: ['presentation_id', 'network_id', 'validated_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
