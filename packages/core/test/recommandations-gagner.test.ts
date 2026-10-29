@@ -305,6 +305,10 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(await t.gagner.callDone(t.agent(t.sam.id), row!.id)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.gagner.callDone(t.agent(), row!.id)).toEqual({ ok: true, value: { done: true } });
     expect(await t.gagner.toCall(t.agent())).toEqual({ ok: true, value: [] });
+    // Un agent parti ne lit plus rien [R86].
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    expect(await t.gagner.toCall(t.agent())).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect(await t.gagner.callDone(t.agent(), row!.id)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
     // La ligne reste, et ne change plus [R17].
     await expect(t.db.run('DELETE FROM partner_recommendations')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run('UPDATE partner_recommendations SET call_done_at = NULL')).rejects.toThrow(/ne change plus/);
