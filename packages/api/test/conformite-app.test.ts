@@ -104,7 +104,7 @@ async function run(answers: Record<string, Answer>) {
     b.listeners.click!({});
     await settle();
   };
-  return { els, calls, table, context, scripts, loadScript, body, byText, click };
+  return { els, calls, table, context, storage, scripts, loadScript, body, byText, click };
 }
 
 describe('L10 · écran « Conformité » de l’application', () => {
@@ -213,6 +213,63 @@ describe('L10 · écran « Conformité » de l’application', () => {
     expect(t.body().textContent).toContain('Aucune fiche ne porte cet identifiant.');
   });
 
+  it('accessible : chaque champ a son libellé, chaque groupe de cases sa légende, chaque état est annoncé', async () => {
+    const t = await run(COMPLIANCE);
+    await t.loadScript();
+    const all = t.body().all();
+    const labels = new Set(all.filter((e) => e.tagName === 'label').map((l) => l.attributes.for));
+    const fields = all.filter((e) => ['input', 'select', 'textarea'].includes(e.tagName));
+    expect(fields.length).toBeGreaterThan(15);
+    for (const f of fields) expect(labels.has(f.attributes.id), f.attributes.id).toBe(true);
+    expect(new Set(fields.map((f) => f.attributes.id)).size).toBe(fields.length);
+    const groups = all.filter((e) => e.tagName === 'fieldset');
+    expect(groups.length).toBe(2);
+    for (const g of groups) expect(g.children[0]!.tagName).toBe('legend');
+    for (const s of all.filter((e) => e.className === 'etat' && e.tagName === 'p' && e.textContent === '')) expect(s.attributes.role).toBe('status');
+    // Les titres : h2 pour l'écran, h3 pour chaque bloc, h4 dans un bloc, sans saut.
+    expect(HTML).toMatch(/<h2 id="conformite-titre">Conformité<\/h2>/);
+    expect(all.filter((e) => /^h[1-6]$/.test(e.tagName)).every((h) => h.tagName === 'h3' || h.tagName === 'h4')).toBe(true);
+    expect(HTML).toMatch(/<p id="conformite-etat" class="etat" role="status">/);
+  });
+
+  it('[R16] une clé refusée pendant l’écran du responsable efface la clé, l’écran, et revient à la connexion', async () => {
+    for (const refusal of [no(401, { ok: false }), no(403, { ok: false, rule: 'R16', code: 'agent_inactive' })]) {
+      const t = await run(COMPLIANCE);
+      await t.loadScript();
+      t.table['POST /v1/conformite/risque/rs1/valider'] = refusal;
+      await t.click(t.byText(t.body(), 'Valider la fiche'));
+      expect(t.storage.has('aimmo.cle')).toBe(false);
+      expect(t.els.connexion!.hidden).toBe(false);
+      expect(t.els.conformite!.hidden).toBe(true);
+      expect(t.body().children).toEqual([]);
+      expect(t.els['conformite-resume']!.children).toEqual([]);
+    }
+    const read = await run({ ...COMPLIANCE, 'GET /v1/conformite/fuites': no(401, { ok: false }) });
+    await read.loadScript();
+    expect([read.storage.has('aimmo.cle'), read.els.connexion!.hidden, read.body().children.length]).toEqual([false, false, 0]);
+  });
+
+  it('une réponse d’une session finie ne touche plus l’écran : sortie pendant le chargement du script ou des lectures', async () => {
+    const t = await run(COMPLIANCE);
+    await t.click(t.els.sortir);
+    await t.loadScript();
+    expect(t.calls.filter((c) => c.url.startsWith('/v1/conformite/'))).toEqual([]);
+    expect(t.els.conformite!.hidden).toBe(true);
+    expect(t.els.connexion!.hidden).toBe(false);
+    // Lectures lentes : la sortie arrive avant leurs réponses, qui ne montrent plus rien.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const slow: Record<string, Answer> = Object.fromEntries(Object.entries(COMPLIANCE).map(([k, a]) => [k, k === 'GET /v1/moi' ? a : async (i) => { await gate; return a(i); }]));
+    const s = await run(slow);
+    await s.loadScript();
+    await s.click(s.els.sortir);
+    release();
+    await settle();
+    expect(s.body().children).toEqual([]);
+    expect(s.els['conformite-resume']!.children).toEqual([]);
+    expect(s.els.connexion!.hidden).toBe(false);
+  });
+
   it('un écran qui ne répond pas le dit, sans rien montrer ; le script qui ne se charge pas aussi', async () => {
     const down = await run({ 'GET /v1/moi': ok({ role: 'compliance', firstName: null }) });
     await down.loadScript();
@@ -271,6 +328,23 @@ describe('L10 · dépôt d’une pièce au coffre depuis la fiche', () => {
     t.table['POST /v1/conformite/personnes/p1/coffre'] = no(503, { ok: false, rule: null, code: 'vault_not_configured' });
     await t.click(t.byText(t.box, 'Déposer au coffre'));
     expect(t.box.textContent).toContain('Le coffre n’est pas encore ouvert : aucune pièce ne peut y être déposée pour le moment.');
+    t.table['POST /v1/conformite/personnes/p1/coffre'] = no(403, { ok: false, rule: 'R16', code: 'not_assigned' });
+    await t.click(t.byText(t.box, 'Déposer au coffre'));
+    expect(t.box.textContent).toContain('Ce client est suivi par un autre agent.');
+    expect(t.storage.get('aimmo.cle')).toBe(KEY);
+  });
+
+  it('[R16] un dépôt refusé pour clé refusée ou agent qui n’est plus actif efface la clé et la fiche', async () => {
+    for (const refusal of [no(401, { ok: false }), no(403, { ok: false, rule: 'R16', code: 'agent_inactive' })]) {
+      const t = await openFiche();
+      (t.box.all().filter((e) => e.tagName === 'input')[2] as unknown as { files: unknown[] }).files = [{ type: 'image/png', size: 10 }];
+      t.table['POST /v1/conformite/personnes/p1/coffre'] = refusal;
+      await t.click(t.byText(t.box, 'Déposer au coffre'));
+      expect(t.storage.has('aimmo.cle')).toBe(false);
+      expect(t.els.connexion!.hidden).toBe(false);
+      expect(t.els['fiche-corps']!.children).toEqual([]);
+      expect(t.els['fiche-nom']!.textContent).toBe('');
+    }
   });
 });
 

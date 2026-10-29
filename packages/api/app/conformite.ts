@@ -80,7 +80,8 @@ export const CONFORMITE_CSS = `
 .coffre { margin-top: var(--e-4); padding: var(--e-3) var(--e-4); border: 1.5px dashed var(--trait); border-radius: var(--r-m); }
 .criteres { margin: var(--e-2) 0; padding-left: var(--e-5); }
 .criteres li { padding: var(--e-1) 0; }
-.cases { display: flex; flex-wrap: wrap; gap: var(--e-1) var(--e-3); margin: var(--e-1) 0 var(--e-2); }
+.cases { display: flex; flex-wrap: wrap; gap: var(--e-1) var(--e-3); margin: var(--e-2) 0; padding: 0; border: 0; }
+.cases legend { width: 100%; padding: 0; color: var(--doux); font-size: var(--t-s); }
 `;
 
 /**
@@ -96,7 +97,6 @@ export const COFFRE_JS = `
   var COFFRE_REFUSALS = {
     role: 'Réservé à l’agent du client.',
     not_assigned: 'Ce client est suivi par un autre agent.',
-    agent_inactive: 'Votre accès d’agent n’est plus actif.',
     bad_date: 'Date non valable.',
     unknown_piece: 'Choisissez la sorte de pièce.',
     empty_content: 'Choisissez le fichier de la pièce.',
@@ -200,7 +200,8 @@ export const COFFRE_JS = `
         return r.json().then(function (b) { return { status: r.status, ok: r.ok && !!b && b.ok === true, body: b }; }, function () { return { status: r.status, ok: false, body: null }; });
       }, function () { return { offline: true }; }).then(function (res) {
         if (mine !== session) return;
-        if (res.status === 401) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return; }
+        // Comme pour toute demande de l'application : une clé refusée ou un agent qui n'est plus actif efface tout.
+        if (res.status === 401 || (res.status === 403 && res.body && res.body.code === 'agent_inactive')) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return; }
         if (!res.ok) { state.textContent = coffreRefusal(res, 'Pièce refusée. Vérifiez la saisie.'); return; }
         file.value = '';
         var receipt = res.body.receipt;
@@ -281,8 +282,9 @@ globalThis.AIMMO_CONFORMITE = function (t) {
   // Un client nommé sans rien de lui : la fin de l'identifiant de sa fiche.
   function cRef(id) { return 'Client …' + String(id || '').slice(-6); }
   function cChecks(box, prefix, legend, labels) {
-    box.appendChild(el('p', legend, 'doux'));
-    var wrap = el('div', null, 'cases');
+    // Un groupe de cases nommé par sa légende, pour les lecteurs d'écran.
+    var wrap = el('fieldset', null, 'cases');
+    wrap.appendChild(el('legend', legend));
     var boxes = {};
     Object.keys(labels).forEach(function (k) { boxes[k] = checkbox(wrap, prefix + '-' + k, labels[k]); });
     box.appendChild(wrap);
