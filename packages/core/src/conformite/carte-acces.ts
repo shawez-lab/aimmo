@@ -342,6 +342,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // mandats-documents
   mandates: { locate: by('person_id') },
   mandate_register_settings: out('sans_client', 'Réglage de la numérotation du registre des mandats.'),
+  mandate_source_costs: out('sans_client', 'Coût d\'une source de mandats saisi par la direction, sans client.'),
+  mandate_source_decisions: out('sans_client', 'Décision de la direction sur une source de mandats, sans client.'),
   mandate_register: { locate: [via('mandate_id', 'mandates')] },
   document_templates: out('sans_client', 'Modèle de document du réseau.'),
   documents: { locate: [...by('person_id'), via('mandate_id', 'mandates')] },
