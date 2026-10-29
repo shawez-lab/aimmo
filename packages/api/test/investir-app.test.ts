@@ -1,0 +1,225 @@
+import { runInNewContext } from 'node:vm';
+import { describe, expect, it } from 'vitest';
+import { AGENT_APP_FILES } from '../src/agent-app.ts';
+import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+
+// Tout est inventé : investisseurs, biens, communes, montants, clé de test.
+const KEY = 'k'.repeat(40);
+const HTML = AGENT_APP_FILES['/app/']!;
+const JS = AGENT_APP_FILES['/app/app.js']!;
+const INJECTED = '<img src=x onerror="alert(1)">';
+type Answer = () => Promise<Response>;
+const ok = (data: unknown): Answer => async () => Response.json({ ok: true, mode: 'essai', data });
+const no = (status: number, body: unknown): Answer => async () => Response.json(body, { status });
+
+const line = (key: string, value: number, unit: string, source = 'calcul', hypothesis = 'formule écrite') => ({ key, value, unit, source, asOf: '2027-09-14T08:00:00.000Z', hypothesis });
+// Des chiffres volontairement impossibles à retrouver par un calcul : l'écran doit montrer ceux du serveur, tels quels.
+const RESULT = {
+  status: 'complet',
+  formulaVersion: 1,
+  lines: [
+    line('price', 15_000_000, 'cents', 'bien:b1', 'prix affiché du bien'),
+    line('marketRentM2', 1235, 'cents_per_m2', 'Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin, millésime 2026', 'loyer central'),
+    line('works', 1_000_000, 'cents', 'saisi:agent:a1', `devis ${INJECTED}`),
+    line('vacancyMonths', 1, 'months', 'saisi:agent:a1', 'vacance réglée'),
+    line('grossYieldBp', 777, 'bp'),
+  ],
+  grossYieldBp: { low: 611, central: 777, high: 905 },
+  netYieldBp: { low: 302, central: 404, high: 506 },
+};
+const PROJECT = { projectId: 'p1', firstName: 'Inès', openedAt: '2027-09-01T08:00:00.000Z', profile: { budgetCents: 20_000_000, declaredDownPaymentCents: null, rentalTarget: 'furnished', sectors: ['99001'], targetGrossYieldBp: 350, deadline: null }, version: 2 };
+const BASE: Record<string, Answer> = {
+  'GET /v1/moi': ok({ role: 'agent', firstName: 'Alex' }),
+  'GET /v1/plan-du-jour': ok(null),
+  'GET /v1/contacts-chauds': ok({ contacts: [] }),
+  'GET /v1/rendez-vous/jour': ok({ appointments: [] }),
+  'GET /v1/usage/matin': ok(null),
+  'GET /v1/annonces': ok([]),
+  'GET /v1/apres-vente/journee': ok({ remercier: [], recommandations: [], taches: [] }),
+  'GET /v1/investir/projets': ok([PROJECT, { ...PROJECT, projectId: 'p2', firstName: INJECTED, profile: null }]),
+  'GET /v1/investir/projets/p1/profil': ok({ current: { profile: PROJECT.profile, version: 2 }, history: [] }),
+  'GET /v1/investir/biens': ok([{ propertyId: 'b1', reference: 'REF-I-1', city: 'Commune Une', priceCents: 15_000_000, surfaceHundredths: 4500, inseeCode: '99001', rentKind: 'apartment' }]),
+  'POST /v1/investir/calculs': ok({ id: 'c1', propertyId: 'b1', projectId: 'p1', inputs: {}, result: RESULT }),
+  'POST /v1/investir/biens/b1/contraintes': ok({
+    constraints: [{ kind: 'energie', status: 'interdit', text: 'Interdit à la location : classe énergie G, interdite à la location depuis le 01/01/2025.', source: 'fiche du bien b1, version 1' }],
+    rentalBan: true,
+    energyUnknown: false,
+    alertsFirst: ['Interdit à la location : classe énergie G, interdite à la location depuis le 01/01/2025.'],
+    computedAt: '2027-09-14T08:00:00.000Z',
+  }),
+  'POST /v1/investir/notes': ok({ id: 'n1', calculationId: 'c2', projectId: 'p1', origin: 'secours', text: `Interdit à la location : classe énergie G.\n\nLe bien coûte 171 250 € au total. ${INJECTED}`, textSha256: 'a'.repeat(64), status: 'a_valider' }),
+  'POST /v1/investir/notes/n1/validation': ok({ id: 'n1', text: 'Interdit à la location : classe énergie G.', textSha256: 'a'.repeat(64), status: 'validee' }),
+};
+const settle = async () => {
+  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+};
+
+async function run(answers: Record<string, Answer> = {}) {
+  const { els, listeners, document } = fakeDocument(pageIds(HTML));
+  const storage = new Map<string, string>([['aimmo.cle', KEY]]);
+  const calls: { method: string; url: string; body?: string; auth: string | undefined }[] = [];
+  const table: Record<string, Answer> = { ...BASE, ...answers };
+  runInNewContext(JS, {
+    document,
+    localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
+    fetch: (url: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
+      const method = init.method ?? 'GET';
+      calls.push({ method, url, ...(init.body === undefined ? {} : { body: init.body }), auth: init.headers?.authorization });
+      const a = table[`${method} ${url}`];
+      return a ? a() : Promise.reject(new TypeError('hors ligne'));
+    },
+    navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
+  });
+  listeners.DOMContentLoaded!();
+  await settle();
+  const body = () => els['investir-corps']!;
+  const state = () => els['investir-etat']!.textContent;
+  const byText = (text: string, nth = 0) => body().all().filter((e) => e.tagName === 'button' && e.textContent === text)[nth];
+  const click = async (b: FakeElement | undefined) => {
+    if (!b) throw new Error('bouton absent');
+    b.listeners.click!({});
+    await settle();
+  };
+  const input = (label: string, nth = 0) => {
+    const l = body().all().filter((e) => e.tagName === 'label' && e.textContent === label)[nth];
+    if (!l) throw new Error(`libellé absent : ${label}`);
+    return body().all().find((e) => e.attributes.id === l.attributes.for)!;
+  };
+  const posts = () => calls.filter((c) => c.method === 'POST');
+  const openP1 = async () => {
+    await click(els['investir-ouvrir']);
+    await click(byText('Ouvrir', 0));
+  };
+  const compute = async () => {
+    await openP1();
+    input('Frais d’acquisition, en % du prix').value = '7,5';
+    input('Travaux estimés, en euros').value = '10 000';
+    input('Charges non récupérables par an, en euros').value = '600';
+    input('Taxe foncière par an, en euros').value = '900';
+    input('Vacance, en mois par an').value = '1';
+    await click(byText('Calculer'));
+  };
+  return { els, calls, table, byText, click, input, body, state, posts, openP1, compute };
+}
+
+describe('Y09 · écran « Investir » de l’application', () => {
+  it('[R16] l’écran ne lit et n’écrit que par les routes /v1/investir, la clé dans l’en-tête seul', async () => {
+    const t = await run();
+    await t.compute();
+    await t.click(t.byText('Rédiger la note'));
+    await t.click(t.byText('Je l’ai relue : valider la note'));
+    const screen = t.calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|contacts-chauds|rendez-vous|usage|annonces$|apres-vente)/.test(c.url));
+    expect(screen.length).toBeGreaterThanOrEqual(7);
+    for (const c of screen) {
+      expect(c.url.startsWith('/v1/investir'), c.url).toBe(true);
+      expect(c.auth).toBe(`Bearer ${KEY}`);
+      expect(c.url).not.toContain(KEY);
+    }
+    const screenJs = JS.slice(JS.indexOf('var INVESTIR_REFUSALS'), JS.indexOf('function renderNote'));
+    const routes = [...screenJs.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
+    expect(routes.length).toBeGreaterThan(3);
+    for (const r of routes) expect(r.startsWith('/v1/investir'), r).toBe(true);
+  });
+
+  it('[R121] aucun chiffre n’est calculé sur le téléphone : l’écran montre ceux du serveur, avec leur source et leur hypothèse', async () => {
+    const t = await run();
+    await t.compute();
+    const sent = JSON.parse(t.posts().find((c) => c.url === '/v1/investir/calculs')!.body!);
+    // Les saisies, converties en centimes et en points de base, rien d'autre ; le loyer est demandé à la base.
+    expect(sent).toMatchObject({
+      propertyId: 'b1',
+      projectId: 'p1',
+      marketRentQuery: { inseeCode: '99001', kind: 'apartment' },
+      inputs: { acquisitionFeesRateBp: { value: 750 }, works: { value: 1_000_000 }, nonRecoverableCharges: { value: 60_000 }, propertyTax: { value: 90_000 }, vacancyMonths: { value: 1 } },
+    });
+    expect(sent.inputs.marketRent).toBeUndefined();
+    expect(sent.inputs.price).toBeUndefined();
+    const text = t.body().textContent;
+    // 7,77 %, 6,11 % et 9,05 % ne se calculent pas depuis les saisies : ils viennent du serveur.
+    expect(text).toContain('Brut 7,77 %');
+    expect(text).toContain('de 6,11 % à 9,05 %');
+    expect(text).toContain('Net avant impôt 4,04 %');
+    expect(text).toContain('Source : Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin, millésime 2026');
+    expect(text).toContain('Hypothèse : loyer central.');
+    // Un texte reçu reste un texte.
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    expect(text).toContain(INJECTED);
+    // Le script de l'écran ne porte aucune formule de rendement.
+    const screenJs = JS.slice(JS.indexOf('var INVESTIR_REFUSALS'), JS.indexOf('function renderNote'));
+    expect(screenJs).not.toMatch(/\*\s*12|\*\s*10000|10000\s*\//);
+  });
+
+  it('[R124] l’alerte d’un bien classé G est en tête, avant tout chiffre', async () => {
+    const t = await run();
+    await t.compute();
+    const nodes = t.body().all();
+    const alert = nodes.findIndex((e) => e.className === 'alerte-energie');
+    const firstFigure = nodes.findIndex((e) => e.className === 'rendement');
+    expect(alert).toBeGreaterThanOrEqual(0);
+    expect(alert).toBeLessThan(firstFigure);
+    expect(nodes[alert]!.attributes.role).toBe('alert');
+    expect(nodes[alert]!.textContent).toMatch(/^Interdit à la location/);
+    // Sans contraintes lues, l'écran le dit, et ne montre pas un rendement comme si de rien n'était.
+    const u = await run({ 'POST /v1/investir/biens/b1/contraintes': no(500, { ok: false }) });
+    await u.compute();
+    expect(u.body().all().find((e) => e.className === 'alerte-energie')!.textContent).toBe('Contraintes indisponibles : aucune proposition sans elles.');
+  });
+
+  it('[R126] les curseurs d’hypothèses font recalculer et réécrire la note par le serveur ; la validation renvoie l’empreinte du texte lu', async () => {
+    const t = await run();
+    await t.compute();
+    t.input('Vacance, en mois par an', 1).value = '3';
+    t.input('Travaux, en euros').value = '25 000';
+    t.input('Loyer de marché retenu').value = 'low';
+    await t.click(t.byText('Rédiger la note'));
+    const note = JSON.parse(t.posts().find((c) => c.url === '/v1/investir/notes')!.body!);
+    expect(note).toMatchObject({ calculationId: 'c1', projectId: 'p1', hypotheses: { vacancyMonths: 3, worksCents: 2_500_000, rent: 'low' } });
+    const shown = t.body().all().find((e) => e.className === 'note-texte')!;
+    expect(shown.textContent.startsWith('Interdit à la location')).toBe(true);
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    await t.click(t.byText('Je l’ai relue : valider la note'));
+    const v = t.posts().find((c) => c.url === '/v1/investir/notes/n1/validation')!;
+    expect(JSON.parse(v.body!)).toMatchObject({ textSha256: 'a'.repeat(64) });
+    expect(t.state()).toBe('Note validée : elle peut être montrée au client.');
+  });
+
+  it('[R123] le profil n’a aucun champ de revenus, d’emploi, de patrimoine ni de crédit ; une nouvelle version est rangée', async () => {
+    const t = await run({ 'POST /v1/investir/projets/p1/profil': ok({ created: true }) });
+    await t.openP1();
+    const labels = t.body().all().filter((e) => e.tagName === 'label').map((e) => e.textContent.toLowerCase());
+    for (const l of labels) expect(l, l).not.toMatch(/revenu|salaire|emploi|employeur|patrimoine|épargne|crédit|prêt|solvab|banque/);
+    t.input('Budget, en euros').value = '180 000';
+    t.input('Secteurs : codes INSEE des communes, séparés par des virgules').value = '99001, 2a004';
+    await t.click(t.byText('Ranger le profil'));
+    const sent = JSON.parse(t.posts().find((c) => c.url === '/v1/investir/projets/p1/profil')!.body!);
+    expect(sent).toEqual({
+      changes: { budgetCents: 18_000_000, declaredDownPaymentCents: null, targetGrossYieldBp: 350, rentalTarget: 'furnished', deadline: null, sectors: ['99001', '2A004'] },
+      from: 'client_dit',
+    });
+  });
+
+  it('les refus sont dits en français, sans code ; hors réseau, rien n’est enregistré', async () => {
+    const t = await run({ 'POST /v1/investir/calculs': no(409, { ok: false, rule: 'R122', code: 'loyer_saisi' }) });
+    await t.compute();
+    expect(t.state()).toBe('Le loyer de marché vient de la base, il ne se saisit pas.');
+    const u = await run();
+    await u.openP1();
+    u.input('Frais d’acquisition, en % du prix').value = 'sept';
+    await u.click(u.byText('Calculer'));
+    expect(u.state()).toBe('Un champ n’est pas valable : vérifiez la saisie.');
+    expect(u.posts()).toHaveLength(0);
+  });
+
+  it('l’accueil ouvre la liste des investisseurs ; un prénom reçu reste du texte', async () => {
+    const t = await run();
+    await t.click(t.els['investir-ouvrir']);
+    expect(t.els.investir!.hidden).toBe(false);
+    expect(t.els.accueil!.hidden).toBe(true);
+    const text = t.body().textContent;
+    expect(text).toContain('Inès');
+    expect(text).toContain('Budget 200 000,00 € · Location meublée · Rendement brut attendu 3,50 % · Secteurs 99001');
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    await t.click(t.els['investir-retour']);
+    expect(t.els.accueil!.hidden).toBe(false);
+  });
+});

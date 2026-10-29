@@ -290,7 +290,7 @@ export function formatLine(line: YieldLine): string {
   }
 }
 
-const LABELS: Record<string, string> = {
+export const LINE_LABELS: Record<string, string> = {
   price: 'Prix d’achat',
   acquisitionFeesRateBp: 'Taux des frais d’acquisition',
   acquisitionFees: 'Frais d’acquisition',
@@ -356,7 +356,7 @@ export function buildNote(paragraphs: readonly string[], facts: NoteFacts, const
     figures: figures(facts),
     sources: given.map((l) => ({
       line: l.key,
-      text: `${LABELS[l.key] ?? l.key} : ${formatLine(l)}. Source : ${l.source}, au ${day(l.asOf)}. Hypothèse : ${l.hypothesis}.`,
+      text: `${LINE_LABELS[l.key] ?? l.key} : ${formatLine(l)}. Source : ${l.source}, au ${day(l.asOf)}. Hypothèse : ${l.hypothesis}.`,
     })),
     mentions,
     referral: PROFESSIONAL_REFERRAL,
@@ -366,7 +366,7 @@ export function buildNote(paragraphs: readonly string[], facts: NoteFacts, const
 /** Le texte que le client lira, alertes en tête, la preuve de chaque chiffre sous son paragraphe. */
 export function renderNote(note: InvestmentNote): string {
   const proof = (p: NoteParagraph): string =>
-    p.proofs.length === 0 ? '' : `\n${p.proofs.map((x) => `  · ${x.text} : ${LABELS[x.line] ?? x.line}, source ${x.source}, au ${day(x.asOf)} (${x.hypothesis})`).join('\n')}`;
+    p.proofs.length === 0 ? '' : `\n${p.proofs.map((x) => `  · ${x.text} : ${LINE_LABELS[x.line] ?? x.line}, source ${x.source}, au ${day(x.asOf)} (${x.hypothesis})`).join('\n')}`;
   return [
     ...note.alerts,
     ...note.paragraphs.map((p) => p.text + proof(p)),
@@ -458,6 +458,8 @@ export interface StoredNote {
   origin: 'ia' | 'secours';
   note: InvestmentNote;
   text: string;
+  /** L'empreinte du texte, que l'agent renvoie pour valider exactement ce qu'il a lu. */
+  textSha256: string;
   status: 'a_valider' | 'validee';
   createdBy: string;
   createdAt: string;
@@ -488,6 +490,7 @@ const toStored = (r: NoteRow): StoredNote => ({
   origin: r.origin,
   note: JSON.parse(r.note) as InvestmentNote,
   text: r.text,
+  textSha256: r.text_sha256,
   status: r.status,
   createdBy: r.created_by,
   createdAt: r.created_at,
@@ -600,15 +603,16 @@ export class NotesInvestissement {
     }
     const id = this.newId();
     const createdAt = this.now().toISOString();
+    const textSha256 = await sha256Hex(text);
     await this.db.run(
       `INSERT INTO investment_notes (id, network_id, calculation_id, project_id, origin, note, text, text_sha256, status, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'a_valider', ?, ?)`,
-      [id, viewer.networkId, calculationId, input.projectId, origin, JSON.stringify(note), text, await sha256Hex(text), actor, createdAt],
+      [id, viewer.networkId, calculationId, input.projectId, origin, JSON.stringify(note), text, textSha256, actor, createdAt],
     );
     await appendEvent(this.journal, { type: 'investir.note', actor, subject: `project:${input.projectId}`, data: { note: id, calculation: calculationId, origin } }, this.now);
     return {
       ok: true,
-      value: { id, calculationId, projectId: input.projectId, origin, note, text, status: 'a_valider', createdBy: actor, createdAt, validatedBy: null, validatedAt: null },
+      value: { id, calculationId, projectId: input.projectId, origin, note, text, textSha256, status: 'a_valider', createdBy: actor, createdAt, validatedBy: null, validatedAt: null },
     };
   }
 
