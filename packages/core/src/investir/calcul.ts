@@ -39,6 +39,9 @@ export interface MarketRentValue {
   centralM2Cents: number;
   lowerM2Cents: number;
   upperM2Cents: number;
+  /** Rangés par la note quand elle retient une borne : le loyer central de la base et son hypothèse, pour y revenir. */
+  originalCentralM2Cents?: number;
+  originalHypothesis?: string;
 }
 
 export interface YieldInputs {
