@@ -597,6 +597,21 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   rental_management_links: { locate: [via('listing_id', 'rental_listings')] },
   // L'issue de l'envoi d'une échéance au propriétaire ou d'un reçu d'équité au candidat : à qui l'a reçu.
   rental_sends: { locate: [via('ref_id', 'rental_owner_notices', 'id', { where: { kind: 'echeance' } }), via('ref_id', 'rental_fairness_receipts', 'id', { where: { kind: 'recu' } })] },
+  // M19 · Studio.
+  photo_guide_shots: out('sans_client', 'Photos retenues pour le guide de prise de vue d\'un bien : aucune personne.'),
+  photo_guide_validations: out('sans_client', 'Validation d\'un bien photographié avec le guide : aucune personne.'),
+  photo_certificates: out('sans_client', 'Description des corrections d\'une photo de bien et son certificat : aucune personne.'),
+  floor_plans: out('sans_client', 'Pièces et cotes du plan d\'un logement : aucune personne.'),
+  video_montages: out('sans_client', 'Description du montage d\'une vidéo de bien : aucune personne.'),
+  licensed_assets: out('sans_client', 'Musiques et images sous licence du réseau : aucune personne.'),
+  licensed_asset_withdrawals: out('sans_client', 'Retraits d\'entrées de la bibliothèque sous licence : aucune personne.'),
+  social_posts: out('sans_client', 'Publications d\'un bien sur les réseaux, tirées de sa fiche : aucune personne.'),
+  social_visual_checks: out('sans_client', 'Listes de contrôle des visuels publiés ; l\'accord d\'une personne photographiée est une pièce du stockage, sans nom ici.'),
+  social_post_validations: out('sans_client', 'Validation d\'une publication par l\'agent : aucune personne.'),
+  social_post_attempts: out('sans_client', 'Essais d\'envoi d\'une publication, en mode essai : aucune personne.'),
+  social_post_sends: out('sans_client', 'Issues des envois d\'une publication : aucune personne.'),
+  // L'option demandée suit la mise en relation, donc le projet et son client.
+  studio_option_requests: { locate: [via('referral_id', 'partner_referrals')] },
   // M17 · Investir.
   investor_profiles: { locate: by('person_id') },
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
