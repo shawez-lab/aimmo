@@ -1750,7 +1750,8 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y08 · Branchement de M17 dans le socle
-- Statut : à faire
+- Statut : en cours
+- Avancement (2026-10-29) : proposition #185 prête, empilée sur #183 avec Y07 reprise ; tests verts en local ; relecture forte 1 P1 corrigé (barème des frais lu de la variable `INVESTIR_FRAIS_BAREME`, `750@AAAA-MM-JJ`). À fusionner après #173 et #183, dès que GitHub Actions repart (H35).
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : Y07
 - Cahier : M17 ; Branchements.
 - Objectif : exporter `investir` depuis `@aimmo/core` ; ajouter ses routes à `app.ts` ; lancer au planificateur le passage des alertes aux investisseurs ; passer leurs textes par `envoi/controle.ts`, en mode essai.
