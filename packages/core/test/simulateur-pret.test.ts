@@ -125,6 +125,19 @@ describe('AT08 · simulateur de prêt, sans rien garder', () => {
     }
   });
 
+  it('un taux presque nul donne la mensualité sans intérêt, sans perte de précision, dans le code comme dans la page', () => {
+    const { els } = runScript();
+    for (const rate of [1e-12, 1e-13, 1e-9, 0.0001]) {
+      const r = simulateLoan({ amountEur: 200000, years: 20, ratePct: rate, insurancePct: 0 });
+      if (!r.ok) throw new Error('refusé');
+      expect(Math.abs(r.creditMonthlyEur - 833.33), String(rate)).toBeLessThan(0.01);
+      expect(r.totalInterestEur, String(rate)).toBeGreaterThanOrEqual(0);
+      expect(r.totalInterestEur, String(rate)).toBeLessThan(3);
+      set(els, { montant: '200000', duree: '20', taux: rate.toFixed(15), assurance: '0' });
+      expect(Math.abs(amount(els['r-credit']!.textContent) - 833.33), String(rate)).toBeLessThan(0.01);
+    }
+  });
+
   it('la page montre d’emblée l’exemple calculé par le code, même sans script', () => {
     const r = simulateLoan({ amountEur: 200000, years: 20, ratePct: 3.5, insurancePct: 0.3 });
     if (!r.ok) throw new Error('exemple refusé');

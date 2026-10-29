@@ -52,7 +52,8 @@ const cents = (v: number): number => Math.round(v * 100) / 100;
 const within = (v: number, l: { min: number; max: number }): boolean => Number.isFinite(v) && v >= l.min && v <= l.max;
 
 /** La mensualité d'un capital remboursé en `n` mois au taux mensuel `r`. */
-const payment = (p: number, n: number, r: number): number => (r === 0 ? p / n : (p * r) / (1 - Math.pow(1 + r, -n)));
+// Le dénominateur 1 − (1 + r)^−n, calculé sans perte de précision pour un taux presque nul.
+const payment = (p: number, n: number, r: number): number => (r === 0 ? p / n : (p * r) / -Math.expm1(-n * Math.log1p(r)));
 
 /** Le calcul du simulateur. Une saisie hors des bornes ne donne aucun chiffre et nomme le champ. */
 export function simulateLoan(input: LoanInput): LoanResult {
@@ -93,7 +94,7 @@ var d=document,L=${JSON.stringify(LOAN_LIMITS)};
 var F=[['montant','amountEur','Le montant va de 1\\u202f000 à 10\\u202f000\\u202f000\\u00a0€.'],['duree','years','La durée est un nombre entier d’années, de 1 à 35.'],['taux','ratePct','Le taux va de 0 à 20\\u00a0%.'],['assurance','insurancePct','L’assurance va de 0 à 3\\u00a0%.']];
 var O=['r-total','r-credit','r-assurance','r-interets','r-cout','r-sensibilite'];
 function num(s){s=String(s).replace(/[\\s\\u00a0\\u202f€%]/g,'').replace(',','.');return /^\\d+(\\.\\d+)?$/.test(s)?Number(s):NaN}
-function pay(p,n,r){return r===0?p/n:p*r/(1-Math.pow(1+r,-n))}
+function pay(p,n,r){return r===0?p/n:p*r/-Math.expm1(-n*Math.log1p(r))}
 function eur(v){var t=(Math.round(v*100)/100).toFixed(2).split('.');return t[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g,'\\u202f')+','+t[1]+'\\u00a0€'}
 function show(){
 var v={},bad=null;
