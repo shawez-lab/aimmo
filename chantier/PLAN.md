@@ -1857,7 +1857,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X10 · Branchement de M19 dans le socle
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : X09
 - Cahier : M19 ; Branchements.
 - Objectif : exporter `studio` depuis `@aimmo/core` ; ajouter ses routes à `app.ts` ; la page publique du certificat sur le Worker ; publications par le contrôle central, en mode essai.
