@@ -37,6 +37,8 @@ export * as reseau from './reseau/index.ts';
 export * as location from './location/index.ts';
 // M18 sous son propre nom, comme M15 (U09).
 export * as partenaires from './partenaires/index.ts';
+// M17 sous son propre nom, comme M18 (Y08).
+export * as investir from './investir/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';

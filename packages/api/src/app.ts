@@ -81,6 +81,7 @@ import {
   type PartnerUploadStore,
 } from './partenaires.ts';
 import type { FeeSettings } from '../../core/src/partenaires/index.ts';
+import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -126,6 +127,8 @@ export interface ApiConfig {
   coffre?: VaultFiles | null;
   /** M18 (U09) : le stockage des preuves et des pièces des partenaires (R2, `PIECES`, sous `partenaires/`) ; absent, les routes de M18 sont fermées. */
   partenaires?: PartenairesOptions;
+  /** M17 (Y08) : l'IA de la note d'investissement (absente, le secours sans IA [R126]) et le barème des frais réglé par la direction. */
+  investir?: Pick<InvestirServices, 'noteWriter' | 'feesRateBp'>;
   now?: () => Date;
 }
 
@@ -917,6 +920,20 @@ function m18Routes(options: PartenairesOptions | null): RouteDef[] {
   }));
 }
 
+/**
+ * Les routes de M17 (Y08) : chacune contrôle son rôle avant de lire le corps et écrit le refus au journal [R16] ; aucun
+ * chiffre n'est calculé ailleurs que dans le code du serveur [R121] ; la seule route d'alertes passe par le contrôle
+ * central, en mode essai, avec le lien de désinscription du réseau [R26, R49].
+ */
+function m17Routes(options: Pick<InvestirServices, 'noteWriter' | 'feesRateBp' | 'unsubscribeBase'>): RouteDef[] {
+  return investirRoutes().map((r: InvestirRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, ...options }, viewer, params, request),
+  }));
+}
+
 function m10Routes(pieces: PieceStore | null): RouteDef[] {
   return dossierRoutes().map((r: DossierRoute) => ({
     ...r,
@@ -1090,7 +1107,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07) ; puis
   // celles de M13 (K08) : le pilotage ; puis celles de M14 (J13) : le réseau et l'académie ; puis celles de M15 (W10) :
   // la location, fermées sans le stockage des pièces ; puis celles de M12 (L09) : la conformité ; puis celles de M18
-  // (U09) : les partenaires, fermées sans le stockage de leurs fichiers.
+  // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir.
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
@@ -1103,6 +1120,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...m12Routes(config.coffre ?? null),
     ...m18Routes(config.partenaires ?? null),
+    ...m17Routes({ ...(config.investir ?? {}), unsubscribeBase: config.alertUnsubscribeBase ?? null }),
   ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
