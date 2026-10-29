@@ -81,21 +81,22 @@ function printable(input: PageInput): boolean {
   return p.state !== 'retiree' && p.priceEur !== null && !!p.title && !!p.mentions && !!p.body;
 }
 
-/** Le panneau, A4 à l'italienne : l'état en très grand, le titre, l'agent à joindre ; pas de prix, donc pas de mentions. */
+/** Le panneau, A4 à l'italienne : l'état en très grand, le titre, les mentions obligatoires de la version publiée, l'agent. */
 export function renderPanel(input: PageInput): string | null {
   if (!printable(input) || !input.agent) return null;
   const p = input.payload;
   const style = css(
     SUPPORT_SIZES.panneau,
     '.page{padding:14mm 16mm;display:flex;flex-direction:column;justify-content:space-between}' +
-      '.etat{font:700 96pt/1 var(--police-titre);color:var(--accent);margin:6mm 0 0;letter-spacing:-.03em}' +
+      '.etat{font:700 80pt/1.2 var(--police-titre);color:var(--accent);margin:2mm 0 0;letter-spacing:-.03em}' +
       'h1{font:600 22pt/1.2 var(--police-titre);margin:5mm 0 0;max-width:60ch}' +
-      '.agent{font:600 20pt/1.3 var(--police-texte);margin:0;border-top:2pt solid var(--accent);padding-top:4mm}',
+      '.mentions{margin:4mm 0 0;max-width:150mm}' +
+      '.agent{font:600 18pt/1.3 var(--police-texte);margin:0;border-top:2pt solid var(--accent);padding-top:4mm}',
   );
   return doc(
     `Panneau · ${p.title}`,
     style,
-    `<section class="page"><div><p class="marque">AIMMO · Réf. ${escapeHtml(p.reference)}</p><p class="etat">${STATE_STAMP[p.state] ?? 'À vendre'}</p><h1>${escapeHtml(p.title!)}</h1></div>${agentLines(input)}</section>`,
+    `<section class="page"><div><p class="marque">AIMMO · Réf. ${escapeHtml(p.reference)}</p><p class="etat">${STATE_STAMP[p.state] ?? 'À vendre'}</p><h1>${escapeHtml(p.title!)}</h1><p class="mentions">${escapeHtml(p.mentions!)}</p></div>${agentLines(input)}</section>`,
   );
 }
 
