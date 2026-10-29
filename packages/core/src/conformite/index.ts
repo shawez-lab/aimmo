@@ -9,3 +9,5 @@ export * from './registre-relecture.ts';
 export * from './signalement.ts';
 export * from './carte-acces.ts';
 export * from './demandes-personnes.ts';
+export * from './durees-prospects.ts';
+export * from './fuites.ts';
