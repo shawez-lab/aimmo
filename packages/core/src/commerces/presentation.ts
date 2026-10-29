@@ -121,6 +121,9 @@ const COMMON_WORDS = new Set([
   'alimentation', 'epicerie', 'brasserie', 'bistrot', 'salon', 'services', 'auto', 'automobile', 'artisan', 'artisanat', 'local', 'activite', 'entrepot', 'habillement', 'mode',
 ]);
 
+/** Petits mots d'un libellé de matériel, qui ne le désignent pas seuls. */
+const EQUIPMENT_STOP_WORDS = ['pour', 'avec', 'sans', 'par', 'sur', 'sous', 'dans', 'une', 'des', 'les', 'aux', 'neuf', 'neuve', 'occasion', 'complet', 'complete', 'grand', 'petit', 'gros'];
+
 /** Les nombres écrits en lettres, refusés : seuls « un » et « une » restent des mots ordinaires. */
 const SPELLED_NUMBERS = [
   'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'vingt', 'vingts', 'trente', 'quarante',
@@ -217,9 +220,23 @@ export function presentationSentenceProblems(sentence: string, facts: Presentati
     const m = formsRe(w).exec(lower);
     if (m) add('enseigne', m[0]);
   }
+  // Chaque article du matériel, en entier, et chacun de ses mots porteurs (« four », « pétrin ») : omettre un
+  // qualificatif ne suffit pas à le dire. Les mots courants, ceux de la commune et ceux du texte de secours, publics,
+  // ne comptent pas.
+  const stem = (w: string): string => (w.length > 3 ? w.replace(/(?:es|s|x)$/u, '') : w);
+  const spoken = new Set([...COMMON_WORDS, ...EQUIPMENT_STOP_WORDS, ...words(Object.values(fallbackPresentation(facts)).join(' '))].map(stem));
+  const withoutTown = withoutCity(lower, facts.city);
   for (const item of marks.equipment) {
     const t = norm(item).trim();
-    if (t.length > 0 && formsRe(t).test(lower)) add('champ_confidentiel', item);
+    if (t.length > 0 && formsRe(t).test(lower)) {
+      add('champ_confidentiel', item);
+      continue;
+    }
+    for (const w of words(item)) {
+      if (w.length < 3 || spoken.has(stem(w)) || /^\d+$/.test(w)) continue;
+      const m = formsRe(w).exec(withoutTown);
+      if (m) add('champ_confidentiel', m[0]);
+    }
   }
   for (const t of CONFIDENTIAL_TOPICS) {
     const m = wordRe(norm(t)).exec(lower);
