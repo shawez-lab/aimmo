@@ -60,14 +60,16 @@ describe('X06 · supports imprimés', () => {
 
   it('[R43] [R44] le prix et les mentions viennent de la version publiée ; qui montre le prix montre les mentions', () => {
     const { panneau, flyer, lettre_quartier } = ALL();
-    for (const html of [flyer, lettre_quartier]) {
+    for (const html of [flyer, lettre_quartier, panneau]) {
       expect(html).toContain(`<p class="prix">210${S}000${N}€</p>`);
       expect(html).toContain(INPUT.payload.mentions!.replace(/'/g, '&#39;'));
       expect(html.indexOf('class="prix"')).toBeLessThan(html.indexOf('class="mentions"'));
     }
-    // Le panneau porte aussi toutes les mentions de la version publiée, sans prix en grand.
+    // Le panneau porte aussi le prix honoraires inclus, plus grand, puis toutes les mentions de la version publiée.
     expect(panneau).toContain(INPUT.payload.mentions!.replace(/'/g, '&#39;'));
-    expect(panneau).not.toContain('class="prix"');
+    expect(panneau).toContain(`<p class="prix">210${S}000${N}€</p>`);
+    expect(panneau.indexOf('class="prix"')).toBeLessThan(panneau.indexOf('class="mentions"'));
+    expect(panneau).toMatch(/\.prix\{font:700 26pt/);
     expect(panneau).toContain('<p class="etat">À vendre</p>');
     expect(renderPanel({ ...INPUT, payload: { ...INPUT.payload, state: 'sous_offre' } })).toContain('<p class="etat">Sous offre</p>');
     // Un autre prix publié : partout le nouveau.
