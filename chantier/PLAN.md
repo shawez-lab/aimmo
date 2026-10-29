@@ -1750,3 +1750,98 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Objectif : dans l'application de l'agent, l'écran « Investir » : profil, calcul d'un bien avec ses lignes et leurs sources, curseurs d'hypothèses (vacance, travaux, loyer bas ou haut), contraintes, note à relire et valider.
 - Critères : l'écran lit seulement par les routes `/v1/investir` [R16] ; aucun chiffre n'est calculé sur le téléphone, tout vient du code du serveur [R121] ; l'alerte d'un bien classé G est en tête [R124] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
 - Attend : rien.
+
+**M19 · Studio, octobre 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-29 par la voie 2 : M17 est fini côté voie 2 (Y08 attend la voie 1) ; octobre 2027 compte M19 et M20 complet, M16 reste à la voie 1, M19 n'est commencé par aucune voie ; ses dépendances (M07, M18) sont faites. Ids `X..`. Cahier : M19 Studio ; critères « 10 biens photographiés avec le guide, sans photographe, validés par Shawez », « une vidéo de bien montée seule sur un téléphone en moins de 10 minutes », « aucune adresse visible sur 20 visuels publiés ».
+Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur l'appareil de l'agent, jamais sur un serveur ; le serveur ne reçoit que des références de stockage, des empreintes et des descriptions contrôlées. Une photo ne reçoit que des corrections globales prises dans une liste fermée (exposition, balance des blancs, contraste, redressement des verticales, netteté, recadrage), décrites et rangées avec l'empreinte de l'original, qui reste gardé : aucune retouche locale, aucun effacement [R130]. L'aménagement virtuel garde sa mention sur l'image (R48, M07). Aucune adresse visible ni personne reconnaissable sans son accord rangé : chaque visuel passe une liste de contrôle validée par l'agent, et les textes (sous-titres, légendes, supports) passent le contrôle d'adresse de M07 [R132, R46]. Musiques et images seulement d'une bibliothèque dont la licence est rangée par la direction [R133]. Une publication est rédigée par l'IA derrière une interface avec secours, validée par l'agent, et part en mode essai par des canaux derrière une interface ; Meta, YouTube, Google et TikTok attendent leurs accès (H06, H07) [R134, R26]. Le plan du logement est indicatif : surfaces calculées par le code depuis les cotes saisies, mention « plan indicatif, non contractuel » [R135]. Les options payantes passent par la mise en relation de M18, rien de neuf. Les règles R130 à R139 et les migrations à partir de `1201` sont réservées à M19. Le code vit dans `packages/core/src/studio/`, ses routes dans `packages/api/src/studio.ts` ; les fichiers du socle ne changent que par X10, confiée à la voie 1.
+
+### X01 · Guide de prise de vue pièce par pièce
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien (M07 fait)
+- Cahier : M19, « Guide de prise de vue » ; critère « 10 biens photographiés avec le guide ».
+- Objectif : à partir de la fiche du bien de M07 (type, pièces, extérieurs), la liste des vues à faire, pièce par pièce, chacune avec sa consigne (où se placer, hauteur, lumière) écrite dans le code en liste fermée, et les vues à ne pas oublier ; l'avancement du bien : vues rangées (références de stockage de M07), vues manquantes, bien « prêt » quand toutes les vues obligatoires sont là ; la validation par Shawez (direction) d'un bien photographié avec le guide est rangée.
+- Critères : chaque pièce de la fiche a ses vues et sa consigne (test sur les types de biens) ; une vue obligatoire manquante empêche « prêt » ; rien n'est inventé sur le bien [R10] ; sous les droits du bien [R16] ; la validation par la direction est rangée, une fois [R17].
+- Attend : rien.
+
+### X02 · Photos corrigées honnêtement, avec leur certificat (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : X01
+- Cahier : M19, « Photos corrigées sur le téléphone », « Règles ».
+- Objectif : la description des corrections faites sur l'appareil, rangée avec l'empreinte de l'original et celle du résultat (migration `1201`) ; **Jamais vu** : chaque photo publiée porte un certificat d'honnêteté lisible par le client (original gardé, liste des corrections globales, aucune retouche locale), vérifiable par un lien sans donnée personnelle.
+- Critères : une opération hors de la liste fermée, ou une retouche locale, est refusée et la photo ne peut pas être publiée [R130] ; une photo sans original rangé ne se publie pas [R130] ; un aménagement virtuel garde sa mention (R48) ; le certificat ne porte ni adresse ni nom [R46, R13].
+- Attend : rien.
+
+### X03 · Montage vidéo sur l'appareil à partir d'un modèle
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
+- Cahier : M19, « Vidéo du bien » ; M07 (plan de tournage, P06) ; critère « montée seule en moins de 10 minutes ».
+- Objectif : le modèle de montage décrit par le code depuis le plan de tournage de P06 (ordre des plans, durées, sous-titres tirés de la fiche, musique de la bibliothèque, fin à la marque de l'agent) ; le montage se fait sur l'appareil ; le serveur range la description du montage fini et contrôle ses textes et sa musique (migration `1202`).
+- Critères : une musique sans licence rangée est refusée [R133] ; un sous-titre qui porte une adresse est refusé [R46, R132] ; aucun fichier vidéo ne passe par le serveur, seule sa référence [R130] ; le modèle tient en 10 minutes de montage (test sur la durée prévue et le nombre de gestes).
+- Attend : rien.
+
+### X04 · Plan simple du logement depuis les mesures
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : X01
+- Cahier : M19, « Plan simple du logement ».
+- Objectif : des pièces rectangulaires saisies avec leurs cotes en centimètres et leur position, versionnées (migration `1203`) ; un plan SVG dessiné par le code, surfaces calculées par le code, mention « plan indicatif, non contractuel ».
+- Critères : surfaces au cm² près d'un calcul fait à la main sur 5 plans tests [R135] ; une cote absente ou impossible est refusée [R10] ; le SVG ne porte ni adresse ni nom [R46] ; la mention est toujours là [R135].
+- Attend : rien.
+
+### X05 · Publications prêtes pour chaque bien, visite, offre, vente
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
+- Cahier : M19, « Réseaux sociaux », « L'IA et l'humain » ; M07.
+- Objectif : à chaque événement (nouveau bien diffusable, visite, offre, vente), une publication préparée : texte par l'IA derrière une interface avec secours, visuels choisis parmi les photos certifiées, liste de contrôle des visuels (adresse visible, personne reconnaissable et son accord, aménagement virtuel) validée par l'agent ; publication en un geste vers les comptes de l'agent et du réseau, en mode essai, derrière une interface par réseau (migration `1204`).
+- Critères : rien ne part sans la validation de l'agent [R134] ; un visuel sans liste de contrôle validée, ou avec une personne reconnaissable sans accord rangé, est refusé [R132] ; le texte passe le contrôle de M07 (adresse, mots interdits) [R46] ; un bien qui ne peut plus être diffusé ne part pas [R42] ; rien ne part réellement [R26].
+- Attend : H06 et H07 pour les accès réels ; les tests n'en ont pas besoin.
+
+### X06 · Supports imprimés à sa marque
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : X02
+- Cahier : M19, « Supports imprimés ».
+- Objectif : fiche du bien, panneau, flyer, carte de visite et lettre de quartier, rendus par le code en pages imprimables (A4, A5, carte) sur le système de design, depuis la version publiée du bien et la fiche de l'agent, avec les mentions obligatoires de M07.
+- Critères : chaque support passe le contrôle du système de design et d'accessibilité [R201] ; aucun support ne porte d'adresse exacte [R46] ; prix et mentions viennent de la version publiée [R44, R43] ; impression vérifiée sous Chromium comme P05.
+- Attend : rien.
+
+### X07 · Bibliothèque de musiques et d'images sous licence
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M19, « Règles ».
+- Objectif : la bibliothèque du réseau (migration `1205`) : chaque musique ou image avec sa source, sa licence, sa date et la preuve rangée par la direction ; X03 et X05 n'utilisent qu'elle.
+- Critères : une entrée sans licence ni preuve est refusée [R133] ; une licence expirée ou retirée retire l'entrée des choix, sans rien effacer [R17] ; seule la direction range [R16].
+- Attend : la liste réelle des musiques retenues par Shawez pour la mise en service ; les tests n'en ont pas besoin.
+
+### X08 · Options payantes par les partenaires, et mesure des 20 visuels
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : X05
+- Cahier : M19, « Options payantes » ; M18 ; critère « aucune adresse visible sur 20 visuels publiés ».
+- Objectif : la demande d'une option (photographe, drone, visite virtuelle, aménagement virtuel) passe par la mise en relation de M18, rien de neuf ; la mesure des 20 derniers visuels publiés : chacun avec sa liste de contrôle validée, le compte rendu montré à la direction.
+- Critères : aucune option hors de M18 (accord du client, rémunération déclarée) [R74] ; la mesure compte 20 visuels et dit chacun sans adresse visible, ou le nomme [R132].
+- Attend : rien.
+
+### X09 · Routes de M19
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : X08
+- Cahier : M19 ; Architecture technique, API.
+- Objectif : `packages/api/src/studio.ts` : routes `/v1/studio` (guide, corrections et certificat, montage, plan, publications et validation, supports, bibliothèque), rôle contrôlé avant le corps, refus au journal ; certificat public sans donnée personnelle.
+- Critères : chaque route refuse tout rôle non admis avant de lire le corps [R16] ; parcours de 10 biens tests du guide à la publication en essai [R134].
+- Attend : rien.
+
+### X10 · Branchement de M19 dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : X09
+- Cahier : M19 ; Branchements.
+- Objectif : exporter `studio` depuis `@aimmo/core` ; ajouter ses routes à `app.ts` ; la page publique du certificat sur le Worker ; publications par le contrôle central, en mode essai.
+- Critères : rien ne part réellement tant que le plan ne l'a pas mis en service ; la page du certificat passe le système de design [R201].
+- Attend : rien.
+
+### X11 · Écran « Studio » dans l'application
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : X09
+- Cahier : M19 ; exigence de design (protocole, section 9).
+- Objectif : dans l'application de l'agent, l'écran « Studio » : guide pièce par pièce avec l'appareil photo, corrections globales sur l'appareil, montage depuis le modèle, plan, publications à valider ; tout traitement sur l'appareil.
+- Critères : l'écran lit seulement par les routes `/v1/studio` [R16] ; aucune image ni vidéo n'est envoyée à un serveur pour traitement [R130] ; écran accessible, beau sur téléphone d'abord, dans le budget de l'application (qui est presque plein : une passe d'allègement peut être nécessaire), testé comme les autres (`fake-dom`).
+- Attend : rien.
