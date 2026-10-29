@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, Mandats, OLD_CONTACT_PURPOSE, ROLES, SqlJournalStore, applyMigrations, fromSyncSqlite, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { Annuaire, MiseEnRelation, type ConsentProofStore } from '../../core/src/partenaires/index.ts';
 import { gagnerRoutes, type GagnerServices } from '../src/gagner.ts';
+import { htmlProblems } from '../../core/src/design/audit.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
@@ -70,6 +71,10 @@ async function setup() {
 
 /** Un exemple d'adresse pour chaque route, et un corps. */
 const SAMPLES: Record<string, string> = {
+  'gagner.lettres_campagne': '/gagner/lettres',
+  'gagner.lettres': '/gagner/lettres/c1',
+  'gagner.lettres_impression': '/gagner/lettres/c1/impression',
+  'gagner.lettre_deposee': '/gagner/lettres/lettre/l1/deposee',
   'gagner.recommandation': '/gagner/recommandations',
   'gagner.recommandations_envois': '/gagner/recommandations/mes-envois',
   'gagner.recommandations_a_appeler': '/gagner/recommandations/a-appeler',
@@ -124,6 +129,38 @@ describeWithSqlite('G11 · routes de M20 complet', () => {
     expect(report.body.data.lines.find((l: { source: string }) => l.source === 'referral')).toMatchObject({ mandates: 1 });
     // Ni coordonnée ni prénom de la personne recommandée au journal [R13].
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/06 11|Hugo|appel à trois/);
+  });
+
+  it('[R140] [R38] parcours : la lettre de quartier après un mandat signé, déposée, puis le mandat de son destinataire avec la source « lettre de quartier »', async () => {
+    const t = await setup();
+    const places: Record<string, { lat: number; lon: number }> = { '8 rue des Tilleuls Essai, 21000 Dijon': { lat: 47.322, lon: 5.0415 }, '10 rue des Tilleuls Essai 21000 Dijon': { lat: 47.3222, lon: 5.0415 } };
+    t.s.geocoder = { geocode: async (a) => (places[a] ? { label: a, ...places[a]!, postalCode: '21000', inseeCode: '21231', town: 'Dijon', banId: null, score: 0.9 } : null) };
+    const mandats = new Mandats(t.db, t.fiche, t.journal, { now: t.s.now });
+    const seller = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Vendeur' });
+    const sold = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'T-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 90, rooms: 4, priceEur: 260000 });
+    expect(await mandats.record(t.acces, t.viewers.agent, { personId: seller.id, propertyId: sold.id, signedAt: new Date(clock), source: 'site' })).toMatchObject({ ok: true });
+    const campaign = await t.call(t.viewers.agent, 'POST', '/gagner/lettres', {
+      propertyId: sold.id,
+      trigger: 'mandat',
+      propertyAddress: '8 rue des Tilleuls Essai, 21000 Dijon',
+      recipient: 'aux_habitants',
+      origin: 'saisie_agent',
+      addresses: [{ number: '10', street: 'rue des Tilleuls Essai', postcode: '21000', city: 'Dijon' }],
+    });
+    expect(campaign.body).toMatchObject({ ok: true, data: { letters: 1 } });
+    const id = campaign.body.data.campaignId;
+    const route = t.routes.find((r) => r.name === 'gagner.lettres_impression')!;
+    const printed = await route.handle(t.s, t.viewers.agent, [id], new Request(`https://api.exemple.test/v1/gagner/lettres/${id}/impression`));
+    expect(printed.headers.get('content-type')).toContain('text/html');
+    expect(htmlProblems(await printed.text(), { print: true })).toEqual([]);
+    const letters = await t.call(t.viewers.agent, 'GET', `/gagner/lettres/${id}`);
+    expect((await t.call(t.viewers.agent, 'POST', `/gagner/lettres/lettre/${letters.body.data[0].letterId}/deposee`)).status).toBe(200);
+    // Les habitants du 10 appellent : leur mandat est rangé avec la source « lettre de quartier » [R38].
+    const neighbour = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Voisin' });
+    expect(await mandats.record(t.acces, t.viewers.agent, { personId: neighbour.id, signedAt: new Date(clock), source: 'neighbourhood_letter' })).toMatchObject({ ok: true, source: 'neighbourhood_letter' });
+    const report = await t.call(t.viewers.direction, 'GET', '/gagner/mesure/2027-10');
+    expect(report.body.data.lines.find((l: { source: string }) => l.source === 'neighbourhood_letter')).toMatchObject({ mandates: 1 });
+    expect(JSON.stringify(await t.journal.all())).not.toMatch(/Tilleuls/);
   });
 
   it('[R26] [R143] relances et mesure par les routes : en mode essai, rien ne part ; un coût sans preuve est refusé', async () => {

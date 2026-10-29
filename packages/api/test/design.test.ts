@@ -5,6 +5,7 @@ import { DESIGN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, rend
 import { renderListingPage, renderListingPrint, type PageInput } from '../../core/src/annonces/page-bien.ts';
 import { BUDGETS, budgetProblems, contrastRatio, htmlProblems, localCssProblems, screenCssProblems } from '../../core/src/design/audit.ts';
 import { renderDocument } from '../../core/src/documents/modeles.ts';
+import { letterFallback, renderLetters } from '../../core/src/mandats/gagner/lettres-quartier.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
 import { handleUnsubscribe } from '../src/alertes.ts';
 import { handleApresVentePublic } from '../src/apres-vente.ts';
@@ -55,6 +56,7 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
     { name: 'désinscription des alertes', html: await text(await handleUnsubscribe(get(`/alertes/desinscription/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
     { name: 'opposition à la prospection', html: await text(await handlePartenairesPublic(get(`/partenaires/opposition/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
     { name: 'lien inconnu', html: await text(await handlePartenairesPublic(get('/partenaires/opposition/court'), { db: NO_DB })), budget: BUDGETS.page },
+    { name: 'lettres de quartier', html: renderLetters('au_proprietaire', letterFallback('mandat', 'Dijon'), 'Alex Exemple', [{ number: '10', street: 'rue des Essais', postcode: '21000', city: 'Dijon' }, { number: '12', street: 'rue des Essais', postcode: '21000', city: 'Dijon' }]), print: true, budget: BUDGETS.page },
     { name: 'désinscription après la vente', html: await text(await handleApresVentePublic(get(`/apres-vente/desinscription/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
   ];
 }
@@ -110,6 +112,7 @@ describe('Z03 · système de design d’AIMMO', () => {
       'core/src/annonces/page-bien.ts': /^<style>\$\{(?:CSS|PRINT_CSS)\}<\/style>$/,
       'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,
       'api/src/candidature.ts': /^<style>\$\{STYLE\}<\/style>$/,
+      'core/src/mandats/gagner/lettres-quartier.ts': /^<style>\$\{LETTER_CSS\}<\/style>$/,
     };
     const offenders: string[] = [];
     for (const f of files) {
