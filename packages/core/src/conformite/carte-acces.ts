@@ -212,6 +212,8 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   rental_application: 'journal',
   rental: 'journal',
   person_request: 'journal',
+  prospect_retention: 'journal',
+  breach: { excluded: 'sans_client', why: 'Fuite de données : les gestes du responsable, sans donnée d\'un client.' },
   property: 'journal',
   project: 'journal',
   referral: 'journal',
@@ -510,6 +512,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('data', 'rental_inventories', 'version', { jsonPath: 'version', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.etat_des_lieux' }, alsoMatch: { subject: 'listing_id' }, alsoMatchPrefix: { subject: 'rental:' }, jsonNot: { party: 'bailleur' } }),
       via('data', 'rental_lease_copies', 'content_sha256', { jsonPath: 'copy', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.bail_exemplaire' }, jsonNot: { party: 'bailleur' } }),
       via('subject', 'person_requests', 'id', { prefix: 'person_request:' }),
+      via('subject', 'prospect_retention_cycles', 'id', { prefix: 'prospect_retention:' }),
       // Le journal d'un bien n'est qu'à qui le possède : par son mandat, son projet (bien possédé) ou sa mise en
       // location ; jamais à l'acquéreur qui s'y intéresse.
       via('subject', 'mandates', 'property_id', { prefix: 'property:' }),
@@ -541,6 +544,16 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   person_request_outputs: { locate: [via('request_id', 'person_requests')] },
   person_request_answers: { locate: [via('request_id', 'person_requests')] },
   person_request_alerts: { locate: [via('request_id', 'person_requests')] },
+  // durees-et-fuites : le prospect par son cycle ; la personne concernée par une fuite, par la liste figée.
+  prospect_retention_cycles: { locate: by('person_id') },
+  prospect_retention_outcomes: { locate: [via('cycle_id', 'prospect_retention_cycles')] },
+  data_breaches: out('sans_client', 'Fuite de données : moment de la connaissance et échéance, sans donnée d\'un client.'),
+  data_breach_evaluations: out('sans_client', 'Évaluation d\'une fuite, en listes fermées ; les personnes concernées sont dans data_breach_persons.'),
+  data_breach_persons: { locate: by('person_id') },
+  data_breach_cuts: out('agent', 'Accès coupés pendant une fuite : les clés des agents et du réseau.'),
+  data_breach_restores: out('agent', 'Accès rétablis après une fuite.'),
+  data_breach_notifications: out('sans_client', 'Notification d\'une fuite à la CNIL ou aux personnes, notée par le responsable.'),
+  data_breach_alerts: out('sans_client', 'Alerte au responsable sur l\'échéance d\'une fuite.'),
   // location : le propriétaire par son logement, le candidat par sa candidature.
   rental_listings: { locate: by('owner_person_id') },
   rental_facts: { locate: [via('listing_id', 'rental_listings')] },
