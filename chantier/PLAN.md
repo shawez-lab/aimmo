@@ -1945,3 +1945,90 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Critères : l'écran lit seulement par les routes `/v1/gagner` [R16] ; aucun texte ne promet de mandats [R145] ; écran accessible, beau sur téléphone d'abord, dans le budget de l'application, testé comme les autres (`fake-dom`).
 - Attend : rien.
 
+
+**M01 · Attirer, en continu à chaque module.**
+
+Voie : 2
+
+Découpé le 2026-10-29 par la voie 2 : M19 et M20 complet sont prêts côté voie 2 (propositions en attente de H35) ; la Feuille de route dit « M01 et M12 avancent en continu, à chaque module » ; M12 est découpé par la voie 1, M01 n'est commencé par aucune voie ; M16 reste à la voie 1. Ids `AT..` pour Attirer (`A..` est pris par l'application). Cahier : M01 Attirer ; critères « les pages de prix sont recalculées à chaque nouvelle publication des ventes DVF », « au moins 95 % des contacts entrants ont leur contenu d'origine renseigné », « un bien test apparaît sur le site de son agent et sur celui du réseau, avec une seule page de référence pour Google ».
+Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et publication de M07, Studio et publications de M19, suivi de valeur de G04, estimation en ligne de E05) : il ajoute les pages de prix, la page de l'agent, le référencement, l'origine des contacts, la fiche Google, les pages de quartier et le simulateur. Les ventes publiques ne sont publiées qu'en chiffres regroupés, chaque case avec au moins 5 ventes (réglage), et jamais une case qui, par différence avec une autre page ou la version précédente, laisserait retrouver une vente [R150, R29]. Un prix de marché porte sa source et sa date, un prix d'annonce vient du mandat en vigueur [R151, R44]. À côté du nom de chaque agent : statut d'agent commercial, numéro d'immatriculation, carte du titulaire (réglages du réseau, H09) [R152]. Une seule page de référence par bien : celle du site de son agent s'il en a un, sinon celle du réseau [R153]. Fiche Google, signalement aux moteurs (IndexNow) et réseaux sont derrière une interface, en mode essai, avec un faux service dans les tests ; Google attend H07 [R26]. Tout texte rédigé par l'IA (réponse à un avis, publication Google, page de quartier) est relu et validé par un humain avant publication, ne porte que des faits de la base, aucun nom de client ni adresse exacte [R154, R155, R46, R07]. shawez-immo.com n'est pas touché : M01 construit le moteur commun, la bascule du site de Shawez est une tâche à part. Les règles R150 à R159 et les migrations à partir de `1401` sont réservées à M01. Le code vit dans `packages/core/src/attirer/`, ses routes dans `packages/api/src/attirer.ts` ; les fichiers du socle (et la chaîne de captation pour l'origine des contacts) ne changent que par AT10, confiée à la voie 1.
+
+### AT01 · Prix par commune et par quartier, regroupés, sans vente retrouvable (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M01, point 1 « Site public » (pages de prix), « Règles », « Données ».
+- Objectif : à partir des ventes DVF (source de E02), des cases de prix par commune et par quartier, appartement et maison : médiane du prix au mètre carré, premier et troisième quartiles, nombre de ventes, période, source et date de publication DVF ; une version par publication DVF (avril, octobre), recalculée d'elle-même. **Jamais vu** : contrôle anti-différence, aucune vente ne peut être retrouvée en soustrayant deux cases publiées (commune moins ses quartiers, version moins version précédente) : une case qui le permettrait est fusionnée ou retenue, et la raison est dite.
+- Critères : une case de moins de 5 ventes (réglage) n'est jamais publiée [R150] ; aucune case ne porte d'adresse, de numéro de voie, de date ni de prix d'une vente isolée [R29, R150] ; sur un jeu de ventes inventé, aucune paire de cases publiées (même version ou deux versions qui se suivent) ne laisse un reste de 1 à 4 ventes [R150] ; chaque case porte sa source et sa date de publication [R151] ; une nouvelle publication DVF donne une nouvelle version, la précédente reste lisible ; médiane et quartiles égaux à un calcul fait à la main.
+- Attend : rien.
+
+### AT02 · Pages de prix publiques
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : AT01
+- Cahier : M01, point 1 ; exigence de design (protocole, section 9).
+- Objectif : la page de prix d'une commune et de chacun de ses quartiers, rendue depuis la dernière version de AT01, par le système de design : chiffres regroupés, source et date, explication de la méthode, lien vers l'estimation en ligne (E05), données structurées.
+- Critères : seules des cases publiables de AT01 sont montrées [R150] ; chaque chiffre est suivi de sa source et de sa date [R151] ; « agent immobilier », « offert » [R07] ; la page passe le contrôle du système de design et tient dans 14 Ko compressés [R201].
+- Attend : rien.
+
+### AT03 · Page de chaque agent, avec ses mentions
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M01, point 1 et « Règles » (vocabulaire, mentions de l'agent).
+- Objectif : la page publique d'un agent : nom, zone, biens en vente (fichier diffusable seulement), avis réels de M11 tous montrés avec leur date, contact par la captation ; à côté du nom, statut d'agent commercial, numéro d'immatriculation, carte du titulaire.
+- Critères : sans statut, numéro et carte du titulaire, la page n'est pas publiée et la raison est dite [R152] ; aucun avis choisi, trié ni réécrit [R64] ; aucune donnée de client [R16, R46] ; « agent immobilier », jamais « mandataire » [R07] ; contrôle du système de design et 14 Ko [R201].
+- Attend : rien (le numéro de carte du réseau est un réglage, H09).
+
+### AT04 · Référencement : plan du site, données structurées, page de référence unique
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT02, AT03
+- Cahier : M01, point 2 « Référencement » et « Deux sites, un seul moteur ».
+- Objectif : plan du site de chaque site (biens publiés, agents, prix), données structurées des biens, des agents et des pages de prix ; page de référence (canonique) d'un bien : site de son agent s'il en a un, sinon site du réseau ; signalement aux moteurs (IndexNow) de chaque page modifiée, derrière une interface, en mode essai.
+- Critères : un bien test publié apparaît dans le plan des deux sites avec la même page de référence [R153] ; un bien retiré sort du plan et est signalé [R153] ; aucune page de référence vers une page non publiée ; rien n'est réellement signalé en mode essai [R26] ; aucune adresse exacte dans les données structurées [R46].
+- Attend : rien.
+
+### AT05 · Origine des contacts : le contenu précis qui a amené chaque contact
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT04
+- Cahier : M01, point 6 « Origine des contacts » ; critère « 95 % ».
+- Objectif : chaque contenu public (page de bien, page de prix, page d'agent, vidéo, publication) a un identifiant ; une fonction lit l'origine d'un contact (lien porteur, page de départ, canal) et la range en liste fermée, sans cookie de suivi ni donnée personnelle ; la mesure mensuelle donne la part des contacts avec origine renseignée. Le branchement dans la chaîne de captation est fait par AT10.
+- Critères : une origine inconnue est rangée « inconnue », jamais devinée [R156] ; aucune origine ne porte de donnée personnelle ni d'identifiant de navigateur [R156] ; sur 100 contacts inventés venus de contenus marqués, la mesure donne la bonne part, au moins 95 % ; le compte vient de la base.
+- Attend : rien.
+
+### AT06 · Fiche Google : publications et réponses aux avis préparées, validées
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M01, point 4 « Fiche Google » ; « L'IA et l'humain ».
+- Objectif : derrière une interface Google Business Profile (faux service dans les tests) : informations de la fiche à jour depuis les réglages, publications régulières tirées des biens publiés, réponses aux avis préparées par l'IA (secours sans IA) et validées par l'agent ; en mode essai, rien ne part.
+- Critères : aucune réponse ne cite le nom d'un client, une adresse, un prix de vente ni un détail du dossier [R154, R46] ; aucune réponse ni publication sans validation nommée [R154] ; aucune contrepartie proposée, aucun avis écrit à la place d'un client [R64] ; rien ne part en mode essai [R26].
+- Attend : H07 pour le service réel.
+
+### AT07 · Pages de quartier et articles, rédigés par l'IA depuis les données, relus
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT01
+- Cahier : M01, point 5 « Pages de quartier et articles ».
+- Objectif : une page de quartier rédigée par l'IA derrière une interface (secours sans IA) à partir des seules données de la base : cases de prix de AT01, biens publiés, données publiques du quartier rangées avec leur source ; chaque nombre et chaque fait relié à sa source, comme l'annonce de P03 ; relue et validée avant publication.
+- Critères : un nombre ou un fait absent des données refuse le texte [R155] ; aucune adresse exacte ni nom de client [R46] ; vocabulaire [R07] ; aucune publication sans validation nommée [R155] ; contrôle du système de design [R201].
+- Attend : rien.
+
+### AT08 · Simulateur de prêt, sans rien garder
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M01, point 1 « simulateur de prêt ».
+- Objectif : un simulateur de mensualité (montant, durée, taux, assurance) calculé par le code, rendu sur la page publique ; mention « simulation indicative, ce n'est pas une offre de prêt » ; aucune donnée saisie gardée ni envoyée.
+- Critères : mensualités égales au calcul de référence à l'euro près sur 10 cas inventés ; mention toujours visible [R157] ; aucune saisie rangée, envoyée ni écrite au journal [R157] ; aucun avis de solvabilité [R14] ; contrôle du système de design [R201].
+- Attend : rien.
+
+### AT09 · Routes de M01 et pages publiques
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT02 à AT08
+- Cahier : M01 ; Architecture technique.
+- Objectif : routes `/v1/attirer` (versions de prix, page de l'agent, validations des textes, plan du site, mesure de l'origine) et pages publiques (prix, agent, quartier, simulateur), dans `packages/api/src/attirer.ts`, prêtes à brancher.
+- Critères : chaque route vérifie le rôle et la portée [R16] ; parcours d'un bien test sur les deux sites, une seule page de référence [R153] ; aucune page publique ne sert une case non publiable [R150].
+- Attend : rien.
+
+### AT10 · Branchement de M01 dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : AT09
+- Cahier : M01 ; Architecture technique.
+- Objectif : brancher les routes de AT09 dans `app.ts`, le recalcul des prix au planificateur à chaque publication DVF, et l'origine du contact (AT05) dans la chaîne de captation.
+- Critères : un contact entrant venu d'un contenu marqué garde son origine [R156] ; les pages de prix sont recalculées à la nouvelle publication DVF, sur horloge simulée [R150] ; la suite complète reste verte.
+- Attend : rien.
