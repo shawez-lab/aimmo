@@ -1,4 +1,4 @@
-import { Acces, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Acces, FicheClient, reseau, location, commerces, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
@@ -84,6 +84,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Location (W10), de 9 h à 19 h : l'échéance du propriétaire et les reçus d'équité préparés par M15, passés par le
       // contrôle central, qui redécide au moment de l'envoi ; canaux du mode essai seulement.
       location.locationSendJob(config.db, journal, { now }),
+      // Commerces (CE10), à 6 h : tâches de la cession pour l'agent du bien et examen de vigilance de chaque dossier,
+      // rangés pour les écrans, jamais envoyés [R116, R118].
+      commerces.commercesDailyJob(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

@@ -33,6 +33,8 @@ export interface Env {
   ALERT_UNSUBSCRIBE_BASE?: string;
   /** Début des liens publics de l'après-vente (F07), en https, sans chiffre, terminé par `/apres-vente/`. */
   APRES_VENTE_BASE?: string;
+  /** Début des liens du dossier protégé d'un commerce (CE10), en https, sans chiffre, terminé par `/` ; absent, aucun dossier ne part. */
+  DOSSIER_LINK_BASE?: string;
   /**
    * Les pièces des dossiers de vente (R2) ; absent, les routes et le passage de M10 sont fermés. Les pièces des dossiers
    * d'agent (M14) y sont rangées sous `agents/<agent>/` ; absent, leurs routes répondent « indisponible ».
@@ -53,6 +55,12 @@ function estimationServices(env: Env) {
   return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;
 }
 
+/** Le début des liens du dossier : en https, sans chiffre (un chiffre passerait pour un nombre du message), fini par `/`. */
+export function dossierLinkBase(raw: string | undefined): string | null {
+  if (!raw) return null;
+  return /^https:\/\/[a-z.-]+(?:\/[a-z-]+)*\/$/i.test(raw) ? raw : null;
+}
+
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     const estimation = estimationServices(env);
@@ -68,6 +76,8 @@ export default {
       // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites ; le bac à sable reste fermé.
       reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null },
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
+      // M16 (CE10) : sans stockage réel des documents (H38), le dossier protégé ne sert que la fiche du commerce.
+      commerces: dossierLinkBase(env.DOSSIER_LINK_BASE) ? { baseUrl: dossierLinkBase(env.DOSSIER_LINK_BASE)! } : {},
       ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,
