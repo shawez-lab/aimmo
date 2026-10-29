@@ -82,7 +82,7 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(view.consents).toEqual([expect.objectContaining({ purpose: REFERRAL_PURPOSE, channel: 'phone', proof: expect.stringMatching(/^message écrit de la personne : SMS .* \(transmis par un partenaire\)$/) })]);
     // L'agent est alerté : la tâche est dans sa file, avec le nom du partenaire.
     const list = await t.gagner.toCall(t.agent());
-    expect(list).toEqual({ ok: true, value: [{ origin: 'partner', recommendationId: row!.id, personId: row!.referred_id, firstName: 'Hugo', sourceLabel: 'Recommandé par Étude Essai', dueAt: row!.call_due_at }] });
+    expect(list).toEqual({ ok: true, value: [{ origin: 'partner', recommendationId: row!.id, personId: row!.referred_id, firstName: 'Hugo', sourceLabel: 'Recommandé par Étude Essai', channel: 'phone', dueAt: row!.call_due_at }] });
     const entries = await t.journal.all();
     expect(entries.filter((e) => e.type === 'recommandation.alerte')).toEqual([expect.objectContaining({ subject: `agent:${t.alex.id}` })]);
     // La source suit jusqu'au mandat, reprise de la fiche [R38].
@@ -251,6 +251,18 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(mine.ok && mine.value).toHaveLength(6);
   });
 
+  it('[R03] [R142] un accord par mail ne permet jamais un appel : la file dit le seul canal accepté', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    await t.entrust(p);
+    expect(await t.gagner.recommend(t.as(p), t.input({ consent: t.consent({ channel: 'email' }) }))).toMatchObject({ ok: true });
+    const list = await t.gagner.toCall(t.agent());
+    expect(list.ok && list.value.map((r) => r.channel)).toEqual(['email']);
+    const [row] = await t.rows();
+    const view = await t.fiche.view(row!.referred_id!);
+    expect(view.consents.map((c) => c.channel)).toEqual(['email']);
+  });
+
   it('[R16] [R73] seul un partenaire du réseau, aux justificatifs valides, recommande ; la direction attribue ce qui n’a pas d’agent', async () => {
     const t = await setup();
     const p = await t.partner('Étude Essai');
@@ -272,6 +284,8 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(await t.gagner.assign(t.agent(), row!.id, t.alex.id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.gagner.assign(t.dir, row!.id, 'inconnu')).toEqual({ ok: false, rule: null, code: 'bad_agent' });
     expect(await t.gagner.assign(t.dir, row!.id, t.alex.id)).toEqual({ ok: true, value: { assigned: true } });
+    // Le projet de la recommandation passe à l'agent avec la personne.
+    expect((await t.db.all<{ agent_id: string | null }>('SELECT agent_id FROM projects WHERE person_id = ?', [row!.referred_id])).map((r) => r.agent_id)).toEqual([t.alex.id]);
     expect(await t.gagner.assign(t.dir, row!.id, t.sam.id)).toEqual({ ok: false, rule: null, code: 'already_assigned' });
     expect(await t.gagner.callDone(t.agent(t.sam.id), row!.id)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.gagner.callDone(t.agent(), row!.id)).toEqual({ ok: true, value: { done: true } });
