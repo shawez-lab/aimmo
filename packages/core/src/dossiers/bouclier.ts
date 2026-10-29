@@ -140,7 +140,7 @@ export class BouclierFonds {
       );
       if (changes !== 1) continue;
       // Au journal : les sortes de signaux, jamais le texte, l'IBAN ni la coordonnée [R13, R15].
-      await appendEvent(this.journal, { type: 'dossier.alerte_fonds', actor: 'system:dossiers', subject: `sale_file:${file.id}`, data: { rule: 'R62', message: `message:${m.id}`, side: file.side, signals } }, this.now);
+      await appendEvent(this.journal, { type: 'dossier.alerte_fonds', actor: 'system:dossiers', subject: `sale_file:${file.id}`, data: { rule: 'R62', message: `message:${m.id}`, side: file.side, client: `person:${m.person_id}`, signals } }, this.now);
     }
     for (const file of files) await this.remind(m.id, file.id);
     return signals;
@@ -148,8 +148,8 @@ export class BouclierFonds {
 
   /** Le rappel au client d'une alerte, par le contrôle central, en mode essai. */
   private async remind(messageId: string, fileId: string): Promise<void> {
-    const a = await this.db.first<{ file_id: string; network_id: string; agent_id: string; person_id: string; reminder_status: string | null }>(
-      'SELECT file_id, network_id, agent_id, person_id, reminder_status FROM sale_file_fund_alerts WHERE message_id = ? AND file_id = ?',
+    const a = await this.db.first<{ file_id: string; network_id: string; agent_id: string; person_id: string; side: string; reminder_status: string | null }>(
+      'SELECT file_id, network_id, agent_id, person_id, side, reminder_status FROM sale_file_fund_alerts WHERE message_id = ? AND file_id = ?',
       [messageId, fileId],
     );
     if (!a || (a.reminder_status !== null && a.reminder_status !== 'waiting' && a.reminder_status !== 'failed')) return;
@@ -171,7 +171,7 @@ export class BouclierFonds {
     });
     const status = r.status === 'sent' ? 'sent' : r.status === 'failed' ? 'failed' : r.rule === 'R01' ? 'waiting' : 'refused';
     await this.db.run('UPDATE sale_file_fund_alerts SET reminder_status = ?, reminder_rule = ? WHERE message_id = ? AND file_id = ?', [status, r.status === 'sent' ? null : r.rule, messageId, fileId]);
-    await appendEvent(this.journal, { type: 'dossier.rappel_fonds', actor: 'system:dossiers', subject: `sale_file:${a.file_id}`, data: { mode: 'essai', status, rule: r.status === 'sent' ? null : r.rule } }, this.now);
+    await appendEvent(this.journal, { type: 'dossier.rappel_fonds', actor: 'system:dossiers', subject: `sale_file:${a.file_id}`, data: { mode: 'essai', side: a.side, client: `person:${a.person_id}`, status, rule: r.status === 'sent' ? null : r.rule } }, this.now);
   }
 
   /**

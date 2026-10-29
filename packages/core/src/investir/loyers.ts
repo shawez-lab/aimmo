@@ -401,7 +401,9 @@ export class LoyersMarche {
          FROM rental_handovers h
          JOIN rental_listings l ON l.id = h.listing_id AND l.network_id = h.network_id
          JOIN rental_listing_communes c ON c.listing_id = l.id
-         JOIN rental_facts f ON f.listing_id = l.id AND f.version = (SELECT MAX(version) FROM rental_facts WHERE listing_id = l.id)
+         JOIN rental_leases b ON b.id = h.lease_id
+         -- Les faits du bail remis, tels qu'ils étaient : une correction plus tard ne change pas une location passée.
+         JOIN rental_facts f ON f.listing_id = l.id AND f.version = b.facts_version
         WHERE h.network_id = ? AND c.insee_code = ? AND h.handed_on >= ? AND h.handed_on <= ?`,
       [networkId, inseeCode, since, today],
     );
