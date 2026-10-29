@@ -83,7 +83,7 @@ export interface SocialPost {
   createdAt: string;
 }
 
-export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R46' | 'R130' | 'R132' | 'R134' | 'R26'; code: string };
+export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R46' | 'R47' | 'R130' | 'R132' | 'R134' | 'R26'; code: string };
 
 export interface PostsDeps {
   /** Les faits du bien, ceux de l'annonce de M07. */
@@ -268,6 +268,7 @@ export class Publications {
     if (current.validated) return { ok: true, value: current };
     if (current.visuals.some((v) => v.check !== 'admis')) return this.bad(actor, subject, 'R132', 'visuel_non_controle');
     if (textProblems(post.value.text).length > 0) return this.bad(actor, subject, 'R46', 'texte_refuse');
+    if (!(await this.factsHold(post.value))) return this.bad(actor, subject, 'R47', 'texte_perime');
     if (!(await this.deps.diffusion.canDiffuse(post.value.network_id, post.value.property_id, this.now())).allowed) return this.bad(actor, subject, 'R42', 'bien_non_diffusable');
     await this.db.run('INSERT INTO social_post_validations (post_id, validated_by, validated_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [postId, actor, this.now().toISOString()]);
     await appendEvent(this.journal, { type: 'studio.publication.validee', actor, subject, data: { post: postId, rule: 'R134' } }, this.now);
@@ -301,6 +302,9 @@ export class Publications {
     if (!status || !EVENT_STATUSES[post.value.event].includes(status.status)) return this.bad(actor, subject, 'R10', 'evenement_sans_fondement');
     const certified = new Set((await this.deps.certs.publishable(post.value.property_id)).map((c) => c.ref));
     if (current.visuals.some((v) => !certified.has(v.ref))) return this.bad(actor, subject, 'R130', 'visuel_sans_certificat');
+    // Le texte dit encore vrai : la fiche a pu être corrigée depuis la préparation. Sinon, rien ne part ; il faut
+    // préparer et valider une nouvelle publication [R47, R134].
+    if (!(await this.factsHold(post.value))) return this.bad(actor, subject, 'R47', 'texte_perime');
     for (const w of wanted) {
       const attempt = await this.claim(postId, w, actor);
       if (attempt === null) continue;
@@ -315,6 +319,15 @@ export class Publications {
       await appendEvent(this.journal, { type: 'studio.publication.envoi', actor, subject, data: { post: postId, channel: w.channel, account: w.account, mode: 'essai', outcome, rule: 'R26' } }, this.now);
     }
     return { ok: true, value: (await this.view(postId))! };
+  }
+
+  /** Chaque nombre et chaque fait du corps rangé se relie encore à la fiche du moment [R47]. */
+  private async factsHold(row: PostRow): Promise<boolean> {
+    const f = await this.deps.facts.factsFor(row.property_id);
+    if (!f) return false;
+    const headline = `${EVENT_HEADLINES[row.event]}\n\n`;
+    if (!row.text.startsWith(headline)) return false;
+    return traceListing('', row.text.slice(headline.length), f.facts).ok;
   }
 
   /** Une publication, pour qui voit le bien en entier [R16]. */
@@ -413,7 +426,7 @@ export class Publications {
     return { ok: true, value: { networkId: read.value.network_id, status: read.value.status } };
   }
 
-  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R46' | 'R130' | 'R132' | 'R134' | 'R26', code: string): Promise<PostResult<T>> {
+  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R46' | 'R47' | 'R130' | 'R132' | 'R134' | 'R26', code: string): Promise<PostResult<T>> {
     await appendEvent(this.journal, { type: 'studio.publication.refuse', actor, subject, data: { rule, code } }, this.now);
     return { ok: false, rule, code };
   }

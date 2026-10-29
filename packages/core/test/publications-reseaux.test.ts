@@ -54,7 +54,7 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[] } 
     { ref: photo(p.id, 1), overlay: null, certificateToken: 'a'.repeat(32), certificatePath: `/certificat-photo/${'a'.repeat(32)}` },
     { ref: photo(p.id, 2), overlay: 'Aménagement virtuel', certificateToken: 'b'.repeat(32), certificatePath: `/certificat-photo/${'b'.repeat(32)}` },
   ];
-  const state = { diffusable: true, certified, consents: new Set([consent(p.id, 1)]) };
+  const state = { diffusable: true, certified, consents: new Set([consent(p.id, 1)]), facts: structuredClone(FACTS) };
   const received: (SocialPayload & { channel: string })[] = [];
   const failing = new Set(opts.failing ?? []);
   const channels = (['instagram', 'facebook', 'linkedin'] as const).map((c) => ({
@@ -69,7 +69,7 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[] } 
     acces,
     journal,
     {
-      facts: { factsFor: async (id: string) => (id === p.id ? { facts: structuredClone(FACTS) } : null) },
+      facts: { factsFor: async (id: string) => (id === p.id ? { facts: structuredClone(state.facts) } : null) },
       certs: { publishable: async () => state.certified },
       diffusion: { canDiffuse: async () => ({ allowed: state.diffusable }) },
       consents: { has: async (r: string) => state.consents.has(r) },
@@ -212,6 +212,30 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
     t.state.certified = t.state.certified.slice(0, 1);
     expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R130', code: 'visuel_sans_certificat' });
     expect(t.received).toEqual([]);
+  });
+
+  it('[R47] une fiche corrigée après la préparation : le texte rangé ne part plus, ni à la validation ni à l’envoi', async () => {
+    const t = await setup();
+    const id = await t.ready();
+    expect((await t.pubs.read(t.alexV, id)).ok && JSON.stringify(await t.pubs.read(t.alexV, id))).toContain('72');
+    // La surface est corrigée après la validation : le texte qui dit 72 m² ne part pas.
+    t.state.facts = { ...t.state.facts, surfaceM2: 60 };
+    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R47', code: 'texte_perime' });
+    expect(t.received).toEqual([]);
+    // Une publication préparée avant la correction ne se valide plus non plus ; une nouvelle, préparée après, part.
+    t.state.facts = { ...t.state.facts, surfaceM2: 72 };
+    const prep = await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
+    if (!prep.ok) throw new Error(prep.code);
+    await t.pubs.checkVisual(t.alexV, prep.value.id, { ref: photo(t.p.id, 1), addressVisible: false, personVisible: false });
+    t.state.facts = { ...t.state.facts, surfaceM2: 60 };
+    expect(await t.pubs.validate(t.alexV, prep.value.id)).toEqual({ ok: false, rule: 'R47', code: 'texte_perime' });
+    const fresh = await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
+    if (!fresh.ok) throw new Error(fresh.code);
+    expect(fresh.value.text).toContain('60');
+    await t.pubs.checkVisual(t.alexV, fresh.value.id, { ref: photo(t.p.id, 1), addressVisible: false, personVisible: false });
+    expect((await t.pubs.validate(t.alexV, fresh.value.id)).ok).toBe(true);
+    expect((await t.pubs.publish(t.alexV, fresh.value.id, [{ channel: 'instagram', account: 'agent' }])).ok).toBe(true);
+    expect(t.received.map((r) => r.postId)).toEqual([fresh.value.id]);
   });
 
   it('un réseau en panne n’empêche pas les autres ; son envoi se retente au geste suivant, une fois réussi il ne se refait plus', async () => {
