@@ -28,7 +28,7 @@ const DEADLINE_LABELS: Record<(typeof DEADLINES)[number], string> = {
 
 export const INVESTIR_HOME_HTML = `<section class="bloc" aria-labelledby="titre-investir-accueil">
 <h3 id="titre-investir-accueil">Mes investisseurs</h3>
-<p class="etat">Le rendement d’un bien, chaque chiffre avec sa source et son hypothèse, et une note à relire avant tout envoi.</p>
+<p class="etat">Le rendement d’un bien, chaque chiffre prouvé, et une note à valider.</p>
 <button id="investir-ouvrir" type="button" class="secondaire">Ouvrir mes investisseurs</button>
 </section>
 `;
@@ -36,7 +36,7 @@ export const INVESTIR_HOME_HTML = `<section class="bloc" aria-labelledby="titre-
 export const INVESTIR_HTML = `<section id="investir" hidden>
 <button id="investir-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="investir-titre">Investir</h2>
-<p class="doux">Chaque chiffre est calculé par le serveur et porte sa source, sa date et son hypothèse. Rien ne part sans votre validation.</p>
+<p class="doux">Chaque chiffre vient du serveur avec sa source, sa date et son hypothèse.</p>
 <p id="investir-etat" class="etat" role="status"></p>
 <div id="investir-corps"></div>
 </section>
@@ -55,7 +55,6 @@ export const INVESTIR_CSS = `
 .lignes .preuve { grid-column: 1 / -1; color: var(--doux); font-size: var(--t-s); }
 .note-texte { white-space: pre-wrap; margin: var(--e-2) 0; padding: var(--e-3) var(--e-4); border: 1.5px solid var(--trait); border-radius: var(--r-m); background: var(--papier); font-size: var(--t-s); line-height: 1.55; }
 .curseur { width: 100%; accent-color: var(--accent); min-height: 44px; }
-.choix-loyer { display: flex; flex-wrap: wrap; gap: var(--e-2); margin: var(--e-2) 0; }
 `;
 
 /** Le script de l'écran : posé dans le script de l'application, il en reprend les outils (`el`, `send`, `field`, `select`, `toCents`…). */
@@ -122,7 +121,7 @@ export const INVESTIR_JS = `
       if (!res.ok) { investirState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : investirRefusal(res.body, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
       var list = Array.isArray(res.body.data) ? res.body.data : [];
       var body = $('investir-corps');
-      if (!list.length) body.appendChild(el('p', 'Aucun investisseur pour le moment. Un projet « Investir » s’ouvre depuis la fiche du client.', 'doux'));
+      if (!list.length) body.appendChild(el('p', 'Aucun investisseur pour le moment.', 'doux'));
       var ul = el('ul', null, 'liste');
       list.forEach(function (x) {
         if (!ID.test(x.projectId)) return;
@@ -197,7 +196,7 @@ export const INVESTIR_JS = `
 
     var calc = el('section', null, 'bloc');
     calc.appendChild(el('h3', 'Calculer un bien'));
-    if (!biens.length) calc.appendChild(el('p', 'Aucun bien calculable : la commune d’un bien se range depuis le bien.', 'doux'));
+    if (!biens.length) calc.appendChild(el('p', 'Aucun bien calculable.', 'doux'));
     var options = {};
     biens.forEach(function (b) { if (ID.test(b.propertyId)) options[b.propertyId] = 'Bien ' + b.reference + (b.city ? ', ' + b.city : '') + (typeof b.priceCents === 'number' ? ' · ' + euros(b.priceCents) : ''); });
     var bien = select(calc, 'inv-bien', 'Bien', options, Object.keys(options)[0] || '');
