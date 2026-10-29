@@ -156,7 +156,14 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
     const rdv = await t.appointment('estimation', NOW + DAY, t.alex.id, 'booked');
     const d = await withAi.build(t.agent(), rdv);
     expect(d.ok && [d.value.welcomeBy, d.value.welcome]).toEqual(['code', 'Voici, pour notre rendez-vous, ce que je vous propose et ce que j’ai réellement tenu pour mes clients.']);
-    expect((await t.journal.all()).filter((e) => e.type === 'dossier_presentation.ia_refusee')).toHaveLength(1);
+    // Les règles d'écriture de tout message au client : ni « mandataire », ni « gratuit », ni l'IA [R06, R07].
+    for (const bad of ['En tant que mandataire, je vous présente mon accompagnement.', 'Un accompagnement gratuit pour votre projet.', 'Notre intelligence artificielle a préparé ce dossier pour vous.']) {
+      const ai = new DossierPresentation(t.db, t.journal, { now: () => new Date(NOW), drafter: { welcome: async () => bad } });
+      const r = await ai.build(t.agent(), rdv);
+      expect(r.ok && r.value.welcomeBy, bad).toBe('code');
+    }
+    expect(await t.dossier.setCommitment(t.dir, { code: 'essai', label: 'Un suivi gratuit chaque semaine', measure: 'point_semaine', delayHours: 24, active: true })).toEqual({ ok: false, rule: null, code: 'wording' });
+    expect((await t.journal.all()).filter((e) => e.type === 'dossier_presentation.ia_refusee')).toHaveLength(4);
   });
 
   it('[R16] seul l’agent du rendez-vous ouvre son dossier ; seule la direction range les engagements', async () => {

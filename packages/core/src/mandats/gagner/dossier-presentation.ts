@@ -17,7 +17,7 @@
 import type { Viewer } from '../../acces/droits.ts';
 import type { SqlDatabase, SqlValue } from '../../db/sql.ts';
 import { DESIGN_CSS } from '../../design/systeme.ts';
-import { plain } from '../../envoi/texte.ts';
+import { checkText, plain } from '../../envoi/texte.ts';
 import { localTime } from '../../envoi/horaires.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
@@ -49,6 +49,15 @@ const PROMISES =
 
 export function promisesSomething(text: string): boolean {
   return /\d/.test(text) || PROMISES.test(plain(text));
+}
+
+/**
+ * Un texte du dossier, lu par le client : aucune promesse ni chiffre [R141], et les règles d'écriture de tout message
+ * au client (« agent immobilier », jamais « mandataire » ; « offert », jamais « gratuit » ; aucune mention de l'IA ;
+ * vouvoiement ; ni parenthèses ni formules administratives) [R06, R07, R08]. Rend vrai s'il peut paraître.
+ */
+export function dossierTextOk(text: string): boolean {
+  return !promisesSomething(text) && checkText(text, { audience: 'client', channel: 'email', firstOfConversation: false }).length === 0;
 }
 
 /** La phrase d'accueil par l'IA : elle ne reçoit rien de la personne ni du bien. */
@@ -129,6 +138,7 @@ export class DossierPresentation {
     if (typeof delayHours !== 'number' || !Number.isInteger(delayHours) || delayHours < 1 || delayHours > 336) return { ok: false, rule: null, code: 'bad_delay' };
     if (typeof label !== 'string' || label.trim().length < 5 || label.trim().length > 120) return { ok: false, rule: null, code: 'bad_label' };
     if (promisesSomething(label)) return { ok: false, rule: 'R141', code: 'promise' };
+    if (!dossierTextOk(label)) return { ok: false, rule: null, code: 'wording' };
     if (typeof active !== 'boolean') return { ok: false, rule: null, code: 'bad_active' };
     const last = await this.db.first<{ v: number | null }>('SELECT max(version) AS v FROM service_commitments WHERE network_id = ? AND code = ?', [viewer.networkId, code]);
     const version = Number(last?.v ?? 0) + 1;
@@ -273,7 +283,7 @@ export class DossierPresentation {
     if (this.drafter) {
       try {
         const w = (await this.drafter.welcome()).trim();
-        if (w.length >= 10 && w.length <= 300 && !promisesSomething(w)) {
+        if (w.length >= 10 && w.length <= 300 && dossierTextOk(w)) {
           welcome = w;
           welcomeBy = 'ia';
         } else {
