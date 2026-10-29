@@ -221,6 +221,36 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/omar@|lina@|06 /);
   });
 
+  it('[R77] [R04] une coordonnée ajoutée à une personne exclue déjà recommandée est tenue à l’écart ; l’historique du partenaire ne dit rien', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    await t.entrust(p);
+    const omar = await t.store.createPerson({ networkId: t.network.id, agentId: t.sam.id, firstName: 'Omar' });
+    await t.store.addIdentifier({ networkId: t.network.id, agentId: t.sam.id, personId: omar.id, kind: 'phone', value: '06 33 44 55 66' });
+    await t.store.addExclusion({ networkId: t.network.id, agentId: t.sam.id, personId: omar.id, reason: 'stop', notedAt: new Date(clock - DAY) });
+    const lina = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Lina' });
+    await t.store.addIdentifier({ networkId: t.network.id, agentId: t.alex.id, personId: lina.id, kind: 'phone', value: '06 12 12 12 12' });
+    const before = await t.persons();
+    const sequence = async (phone: string, email: string, other: string) => [
+      await t.gagner.recommend(t.as(p), t.input({ phone, email: undefined })),
+      await t.gagner.recommend(t.as(p), t.input({ phone, email })),
+      await t.gagner.recommend(t.as(p), t.input({ phone: other, email })),
+    ];
+    const excluded = await sequence('06 33 44 55 66', 'omar@example.test', '06 77 88 99 00');
+    const mineAfterExcluded = await t.gagner.mine(t.as(p));
+    const free = await sequence('06 12 12 12 12', 'lina@example.test', '06 34 34 34 34');
+    expect(excluded).toEqual(free);
+    // Aucune fiche neuve pour Omar, rien dans aucune file d'appel.
+    expect(await t.persons()).toBe(before);
+    expect(await t.gagner.toCall(t.agent(t.sam.id))).toEqual({ ok: true, value: [] });
+    const omarView = await t.fiche.view(omar.id);
+    expect([omarView.identifiers.length, omarView.consents.length]).toEqual([1, 0]);
+    // Le partenaire voit une date par envoi accepté, quoi qu'il en soit advenu.
+    const mine = await t.gagner.mine(t.as(p));
+    expect(mineAfterExcluded.ok && mineAfterExcluded.value).toHaveLength(3);
+    expect(mine.ok && mine.value).toHaveLength(6);
+  });
+
   it('[R16] [R73] seul un partenaire du réseau, aux justificatifs valides, recommande ; la direction attribue ce qui n’a pas d’agent', async () => {
     const t = await setup();
     const p = await t.partner('Étude Essai');

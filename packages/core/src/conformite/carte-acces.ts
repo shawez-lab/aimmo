@@ -400,6 +400,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   },
   // Recommandations des partenaires (G08) : à la personne recommandée.
   partner_recommendations: { locate: by('referred_id') },
+  partner_recommendation_submissions: out('partenaire', 'Date d\'un envoi d\'un partenaire, sans personne.'),
   partner_recommendation_withheld: { locate: [via('recommendation_id', 'partner_recommendations')], secrets: ['identifier_sha256'] },
   review_requests: { locate: by('person_id') },
   after_sale_tasks: { locate: [via('file_id', 'sale_files')] },
