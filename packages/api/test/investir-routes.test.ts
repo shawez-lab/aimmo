@@ -234,10 +234,21 @@ describeWithSqlite('Y07 · relecture d’un calcul', () => {
     const person = await t.store.createPerson({ networkId: t.network.id, agentId: t.other.userId, firstName: 'Noé' });
     const project = await t.store.createProject({ networkId: t.network.id, agentId: t.other.userId, personId: person.id, kind: 'invest' });
     const property = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'S-1', kind: 'home', city: 'X', priceEur: 150_000, surfaceM2: 45, rooms: 2, status: 'available' });
-    const calc = await t.ok(t.other, 'POST', '/investir/calculs', { propertyId: property.id, projectId: project.id, marketRentQuery: { inseeCode: '99001', kind: 'apartment' } });
+    const said = (value: number) => ({ value, source: 'agent', asOf: '2027-09-01', hypothesis: 'saisi' });
+    const calc = await t.ok(t.other, 'POST', '/investir/calculs', {
+      propertyId: property.id,
+      projectId: project.id,
+      marketRentQuery: { inseeCode: '99001', kind: 'apartment' },
+      inputs: { acquisitionFeesRateBp: said(750), works: said(0), nonRecoverableCharges: said(60_000), propertyTax: said(90_000), vacancyMonths: said(1) },
+    });
     expect((await t.call(t.other, 'GET', `/investir/calculs/${calc.id}`)).status).toBe(200);
+    const note = await t.ok(t.other, 'POST', '/investir/notes', { calculationId: calc.id, projectId: project.id, energy: { energyClass: 'C' } });
+    expect((await t.call(t.other, 'GET', `/investir/notes/${note.id}`)).status).toBe(200);
     await t.db.run("UPDATE properties SET status = 'sold' WHERE id = ?", [property.id]);
     expect((await t.call(t.other, 'GET', `/investir/calculs/${calc.id}`)).status).toBe(403);
+    // La note du calcul non plus, ni sa validation.
+    expect((await t.call(t.other, 'GET', `/investir/notes/${note.id}`)).status).toBe(403);
+    expect((await t.call(t.other, 'POST', `/investir/notes/${note.id}/validation`, { textSha256: note.textSha256 })).status).toBe(403);
   });
 });
 

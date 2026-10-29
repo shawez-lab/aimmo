@@ -720,6 +720,8 @@ export class NotesInvestissement {
     if (viewer.role !== 'agent') return this.refused(viewer, row.project_id, 'role');
     const access = await this.fiche(acces, viewer, row.project_id);
     if (!access.ok) return access;
+    const seen = await this.propertySeen(acces, viewer, row.calculation_id);
+    if (!seen.ok) return seen;
     if (row.status === 'validee') return { ok: true, value: toStored(row) };
     // L'agent valide ce qu'il a lu : le texte exact, par son empreinte.
     if (input.textSha256 !== row.text_sha256) return { ok: false, rule: 'R126', code: 'texte_change' };
@@ -750,7 +752,19 @@ export class NotesInvestissement {
     if (!row) return this.refused(viewer, noteId, 'unknown');
     const access = await this.fiche(acces, viewer, row.project_id);
     if (!access.ok) return access;
+    // Le bien du calcul se recontrôle aussi : un bien sorti du fichier commun ne se relit plus par sa note [R16].
+    const seen = await this.propertySeen(acces, viewer, row.calculation_id);
+    if (!seen.ok) return seen;
     return { ok: true, value: toStored(row) };
+  }
+
+  private async propertySeen(acces: Acces, viewer: Viewer, calculationId: string): Promise<{ ok: true } | NoteResult> {
+    const calc = await this.calculs.get(viewer.networkId, calculationId);
+    if (calc?.propertyId) {
+      const read = await acces.readProperty(viewer, calc.propertyId);
+      if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+    }
+    return { ok: true };
   }
 
   /**
