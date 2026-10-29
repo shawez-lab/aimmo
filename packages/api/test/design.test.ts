@@ -110,6 +110,7 @@ describe('Z03 · système de design d’AIMMO', () => {
       'core/src/annonces/page-bien.ts': /^<style>\$\{(?:CSS|PRINT_CSS)\}<\/style>$/,
       'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,
       'api/src/candidature.ts': /^<style>\$\{STYLE\}<\/style>$/,
+      'core/src/attirer/simulateur-pret.ts': /^<style>\$\{CSS\}<\/style>$/,
     };
     const offenders: string[] = [];
     for (const f of files) {
