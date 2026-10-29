@@ -115,6 +115,11 @@ describeWithSqlite('CE08 · vigilance renforcée de la cession', () => {
     // La demande ne dit ni l'alerte, ni sa raison, ni ce qui manque.
     expect(JSON.stringify(request)).not.toMatch(/alerte|origine_des_fonds|Apport important|vigilance/i);
     expect(await t.vigilance.fundsRequest(t.acces, t.sam, fileId)).toMatchObject({ ok: false, rule: 'R16' });
+    // Un acquéreur substitué, dont les pièces sont au coffre : la demande faite pour l'ancien ne le suit pas.
+    const next = await t.buyer('Dominique');
+    t.deposited.add(`${next}:origine_fonds`);
+    await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: next, legalPerson: false });
+    expect(await t.vigilance.fundsRequest(t.acces, t.alex, fileId)).toEqual({ ok: true, value: null });
   });
 
   it('[R15] [R13] aucune pièce ni donnée de fonds lue ou rangée ; l’alerte est au journal sous sa propre référence', async () => {
