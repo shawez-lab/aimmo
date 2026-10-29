@@ -1760,6 +1760,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X01 · Guide de prise de vue pièce par pièce
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #174 prête, suite complète verte en local, relecture forte 2 P1 corrigés ; en attente des vérifications GitHub (H35). Migration `1201` prise par X01 : X02 à X07 prennent `1202` et suivantes.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien (M07 fait)
 - Cahier : M19, « Guide de prise de vue » ; critère « 10 biens photographiés avec le guide ».
 - Objectif : à partir de la fiche du bien de M07 (type, pièces, extérieurs), la liste des vues à faire, pièce par pièce, chacune avec sa consigne (où se placer, hauteur, lumière) écrite dans le code en liste fermée, et les vues à ne pas oublier ; l'avancement du bien : vues rangées (références de stockage de M07), vues manquantes, bien « prêt » quand toutes les vues obligatoires sont là ; la validation par Shawez (direction) d'un bien photographié avec le guide est rangée.
