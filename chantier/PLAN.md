@@ -1713,7 +1713,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE03 · Présentation anonyme, rédigée par l'IA depuis les seuls champs publics
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : CE01, CE02
 - Cahier : M16, « Présentation anonyme », « L'IA et l'humain ».
 - Objectif : l'IA, derrière une interface (fausse dans les tests), rédige la présentation à partir de la seule vue publique (activité, secteur, fourchette validée) ; texte de secours sans IA ; contrôle du texte avant validation : aucun nombre absent de la vue publique, aucun mot de l'enseigne, de l'adresse ni d'un champ confidentiel ; l'agent valide, la présentation validée est publiable par la porte de M07.
