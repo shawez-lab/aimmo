@@ -1707,7 +1707,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y05 · Note d'investissement par l'IA, validée par l'agent (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-29)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y04
 - Cahier : M17, « Note d'investissement », « L'IA et l'humain », « Règles ».
 - Objectif : la note rédigée par l'IA derrière une interface, avec secours sans IA, à partir du seul calcul et de ses contraintes ; **Jamais vu** : chaque nombre et chaque affirmation de la note est relié à une ligne du calcul (valeur, source, date, hypothèse), et la note rend, sous chaque paragraphe, la preuve de ses chiffres ; changer une hypothèse (vacance, travaux, loyer bas ou haut de l'intervalle) recalcule la note entière, et la fourchette basse/haute du rendement est toujours montrée à côté du chiffre central ; validation par l'agent seul avant tout envoi.
@@ -1715,7 +1715,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien (IA derrière une interface, faux dans les tests ; H13 pour l'IA réelle).
 
 ### Y06 · Alertes aux investisseurs qui les ont demandées
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y05
 - Cahier : M17, « Alertes » ; M08 (alertes aux acquéreurs).
 - Objectif : quand un bien diffusable du fichier commun correspond au profil (secteur, budget, location visée, rendement brut attendu calculé par Y03), un texte d'alerte est préparé pour les seuls investisseurs dont l'accord aux alertes est rangé, avec le calcul et ses contraintes ; il passe par le contrôle central des envois, en mode essai.
