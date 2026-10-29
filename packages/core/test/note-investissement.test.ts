@@ -306,6 +306,14 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     expect(traceParagraph('Le loyer annuel est de 6 669 €.', lines).problems).toEqual([]);
     expect(traceParagraph('Le loyer annuel est de 555,75 €.', lines).problems).toHaveLength(1);
     expect(traceParagraph('Le loyer est de 555,75 € par mois.', lines).problems).toEqual([]);
+    // Un montant dit toujours ce qu'il est : un apport n'est pas une ligne du calcul.
+    expect(traceParagraph('Votre apport personnel est de 150 000 €.', lines).problems).toHaveLength(1);
+    expect(traceParagraph('Le prix est de 150 000 €.', lines).problems).toEqual([]);
+    // Une borne n'est jamais présentée comme le chiffre central : seulement dans une fourchette « de X à Y ».
+    expect(traceParagraph('Le rendement net avant impôt central est de 3,46 %.', lines).problems).toHaveLength(1);
+    expect(traceParagraph('Le rendement net avant impôt est de 2,69 % (de 2,04 % à 3,46 % selon le loyer).', lines).problems).toEqual([]);
+    expect(traceParagraph('Le rendement net avant impôt va de 3,46 % à 2,04 %.', lines).problems).toHaveLength(2);
+    expect(traceParagraph('Au loyer de marché de 15,01 €/m², le bien se loue mieux.', lines).problems).toHaveLength(1);
   });
 
   it('[R16] une note ne se rédige pas depuis le calcul d’un bien qu’on ne voit pas', async () => {
