@@ -1714,7 +1714,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE03 · Présentation anonyme, rédigée par l'IA depuis les seuls champs publics
 - Statut : en cours
-- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex, deux tours : 3 P0, 2 P1 et 1 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante, enseigne courte distinctive, nombre négatif), relecture redemandée.
+- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex, trois tours : 4 P0, 2 P1 et 1 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante, enseigne courte distinctive, nombre négatif, pluriels du matériel), relecture redemandée.
 - Décidé (2026-10-29) : sans fourchette validée en vigueur, pas de présentation (« incomplet ») ; le nom de la commune est retiré avant le contrôle des nombres ; `publishable` est la porte, branchée à la publication de M07 par CE10.
 - Qui : Claude · Relecture : forte · Dépend de : CE01, CE02
 - Cahier : M16, « Présentation anonyme », « L'IA et l'humain ».
@@ -1734,7 +1734,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE05 · Dossier protégé : lien qui expire, filigrane au lecteur, chaque ouverture journalisée (Jamais vu)
 - Statut : en cours
-- Reste : prête (#203, empilée sur #201), à fusionner après CE04 dès H35 ; relecture forte 3 P1 corrigés ; Codex 1 P2 corrigé (code envoyé à l'adresse donnée), relecture redemandée.
+- Reste : prête (#203, empilée sur #201), à fusionner après CE04 dès H35 ; relecture forte 3 P1 corrigés ; Codex 1 P2 corrigé (code envoyé à l'adresse donnée), dernière version validée par Codex.
 - Décidé (2026-10-29) : documents du dossier en texte, par référence de stockage et empreinte (PDF et images avec le stockage réel, H38) ; ouverture = adresse du lecteur et code à usage unique reçu à cette adresse ; marque de 48 bits en caractères sans largeur après chaque phrase et chaque ligne, doublée d'une référence de copie visible dans le filigrane.
 - Qui : Claude · Relecture : forte · Dépend de : CE04
 - Cahier : M16, « Accès aux chiffres » ; Conformité, « Confidentialité » ; Architecture technique, stockage des documents.
@@ -1744,7 +1744,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE06 · Repreneurs, sans évaluation de solvabilité
 - Statut : en cours
-- Reste : prête (#205, empilée sur #203), à fusionner après CE05 dès H35 ; relecture forte 1 P1 corrigé (biens vendus, retirés ou sans mandat écartés).
+- Reste : prête (#205, empilée sur #203), à fusionner après CE05 dès H35 ; relecture forte 1 P1 corrigé (biens vendus, retirés ou sans mandat écartés) ; Codex rien à signaler.
 - Décidé (2026-10-29) : profil sur un projet `buy_business` ; secteurs en codes postaux ; le rapprochement passe par la porte de diffusion de D05 (injectée, branchée par CE10) et les biens en vente ou sous offre.
 - Qui : Claude · Relecture : forte · Dépend de : rien
 - Cahier : M16, « Repreneurs ».
@@ -1754,6 +1754,8 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE07 · Étapes de la cession, délais calculés, étapes bloquantes
 - Statut : en cours
+- Reste : prête (#207, empilée sur #205), à fusionner après CE06 dès H35 ; relecture forte 1 P0 et 3 P1 corrigés.
+- Décidé (2026-10-29) : périmètre de sauvegarde rangé par commune (lecture prudente : toute la commune), commune non rangée = préemption à saisir, bloquante ; préemption exercée = cession jamais prête ; dernier jour avancé au jour ouvrable précédent pour les obligations (salariés, publications), reporté au suivant pour les délais subis (commune, oppositions) ; table du séquestre nommée `business_transfer_third_parties` (R107 interdit toute table de fonds) ; 250 salariés et plus : hors du régime, sans objet.
 - Qui : Claude · Relecture : forte · Dépend de : CE01
 - Cahier : M16, « Étapes de la cession » ; Conformité, « cession de fonds ».
 - Objectif : le dossier de cession d'un fonds : information des salariés (moins de 250 salariés : au plus tard 2 mois avant la cession, lettre préparée, date de réception suivie, étape bloquante) ; préemption de la commune (périmètre de sauvegarde rangé par la direction avec sa source : déclaration, 2 mois pour répondre) ; avis au journal d'annonces légales et au BODACC dans les 15 jours après la cession, puis 10 jours d'opposition des créanciers ; séquestre nommé ; liste de contrôle des activités réglementées ; une tâche à l'agent avant chaque échéance, une seule.
@@ -1761,7 +1763,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE08 · Vigilance renforcée de la cession : bénéficiaires effectifs, origine des fonds
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : CE07
 - Cahier : M16, « Règles » ; M12 Conformité.
 - Objectif : sur un dossier de cession, les bénéficiaires effectifs de l'acquéreur personne morale et l'origine des fonds déclarés, rangés au coffre de M12 (jamais dans la fiche) ; leur absence avant le compromis lève une alerte au responsable de la conformité, par le registre de vigilance de L04.
