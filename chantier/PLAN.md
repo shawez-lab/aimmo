@@ -1782,7 +1782,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X02 · Photos corrigées honnêtement, avec leur certificat (Jamais vu)
 - Statut : en cours (voie 2)
-- Avancement (2026-10-29) : proposition #177 prête, empilée sur X01 (#174), migration `1202` ; suite complète verte en local (1746), relecture forte 2 P1 corrigés ; en attente des vérifications GitHub (H35). Branchement dans la publication par X05 et X10. X03 prend `1203`, X04 `1204`, X05 `1205`. Codex : 1 P0 (original vérifié dans le stockage par une interface, seule l'existence lue) et 1 P1 (fiche illisible au journal) corrigés, nouvelle relecture demandée.
+- Avancement (2026-10-29) : proposition #177 prête, empilée sur X01 (#174), migration `1202` ; suite complète verte en local (1746), relecture forte 2 P1 corrigés ; en attente des vérifications GitHub (H35). Branchement dans la publication par X05 et X10. X03 prend `1203`, X04 `1204`, X05 `1206`, X07 `1205`. Codex : 1 P0 (original vérifié dans le stockage par une interface, seule l'existence lue) et 1 P1 (fiche illisible au journal) corrigés, nouvelle relecture demandée.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X01
 - Cahier : M19, « Photos corrigées sur le téléphone », « Règles ».
 - Objectif : la description des corrections faites sur l'appareil, rangée avec l'empreinte de l'original et celle du résultat (migration `1201`) ; **Jamais vu** : chaque photo publiée porte un certificat d'honnêteté lisible par le client (original gardé, liste des corrections globales, aucune retouche locale), vérifiable par un lien sans donnée personnelle.
@@ -1791,6 +1791,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X03 · Montage vidéo sur l'appareil à partir d'un modèle
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #181 prête, empilée sur X04 (#179), migration `1203` ; une vidéo ne part plus qu'avec son montage rangé (musique contrôlée, `annonces/medias.ts`) ; suite complète verte en local (1761), relecture forte 1 P1 corrigé ; en attente des vérifications GitHub (H35). La bibliothèque est l'interface `MusicLibrary`, fournie par X07.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
 - Cahier : M19, « Vidéo du bien » ; M07 (plan de tournage, P06) ; critère « montée seule en moins de 10 minutes ».
 - Objectif : le modèle de montage décrit par le code depuis le plan de tournage de P06 (ordre des plans, durées, sous-titres tirés de la fiche, musique de la bibliothèque, fin à la marque de l'agent) ; le montage se fait sur l'appareil ; le serveur range la description du montage fini et contrôle ses textes et sa musique (migration `1203`).
@@ -1810,7 +1811,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Statut : à faire
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
 - Cahier : M19, « Réseaux sociaux », « L'IA et l'humain » ; M07.
-- Objectif : à chaque événement (nouveau bien diffusable, visite, offre, vente), une publication préparée : texte par l'IA derrière une interface avec secours, visuels choisis parmi les photos certifiées, liste de contrôle des visuels (adresse visible, personne reconnaissable et son accord, aménagement virtuel) validée par l'agent ; publication en un geste vers les comptes de l'agent et du réseau, en mode essai, derrière une interface par réseau (migration `1205`).
+- Objectif : à chaque événement (nouveau bien diffusable, visite, offre, vente), une publication préparée : texte par l'IA derrière une interface avec secours, visuels choisis parmi les photos certifiées, liste de contrôle des visuels (adresse visible, personne reconnaissable et son accord, aménagement virtuel) validée par l'agent ; publication en un geste vers les comptes de l'agent et du réseau, en mode essai, derrière une interface par réseau (migration `1206`).
 - Critères : rien ne part sans la validation de l'agent [R134] ; un visuel sans liste de contrôle validée, ou avec une personne reconnaissable sans accord rangé, est refusé [R132] ; le texte passe le contrôle de M07 (adresse, mots interdits) [R46] ; un bien qui ne peut plus être diffusé ne part pas [R42] ; rien ne part réellement [R26].
 - Attend : H06 et H07 pour les accès réels ; les tests n'en ont pas besoin.
 
@@ -1823,7 +1824,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X07 · Bibliothèque de musiques et d'images sous licence
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M19, « Règles ».
 - Objectif : la bibliothèque du réseau (migration `1205`) : chaque musique ou image avec sa source, sa licence, sa date et la preuve rangée par la direction ; X03 et X05 n'utilisent qu'elle.
