@@ -596,6 +596,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   investor_profiles: { locate: by('person_id') },
   // M16 · Commerces et entreprises : la fiche suit son bien, comme la fiche de commercialisation.
   business_sheets: { locate: [via('property_id', 'properties')] },
+  business_valuations: { locate: [via('property_id', 'properties')] },
+  business_valuation_validations: { locate: [via('valuation_id', 'business_valuations')] },
+  business_valuation_scales: out('sans_client', 'Barèmes d\'estimation par activité, rangés par la direction : aucune personne.'),
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
   investment_calculations: { locate: [via('project_id', 'projects')] },
   commune_rental_rules: out('sans_client', 'Règles de location des communes rangées par la direction : aucune personne.'),
