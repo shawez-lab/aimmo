@@ -798,7 +798,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   investor_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'gross_yield_bp', 'created_at', 'updated_at'],
   property_communes: ['property_id', 'network_id', 'insee_code', 'rent_kind', 'recorded_at'],
   market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
-  price_versions: ['id', 'network_id', 'source', 'dvf_last_sale', 'window_from', 'window_to', 'areas_digest', 'sales_digest', 'min_sales', 'status', 'computed_at', 'completed_at'],
+  price_versions: ['id', 'network_id', 'source', 'dvf_last_sale', 'window_from', 'window_to', 'areas_digest', 'sales_digest', 'min_sales', 'round_to', 'status', 'computed_at', 'completed_at'],
   price_cells: ['version_id', 'area_id', 'kind', 'status', 'hold_code', 'sales_count', 'median_m2', 'q1_m2', 'q3_m2', 'from_version_id'],
   price_cell_sales: ['version_id', 'area_id', 'kind', 'fingerprint', 'n'],
   price_zone_retirements: ['area_id', 'retired_at'],

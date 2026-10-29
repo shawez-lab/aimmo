@@ -136,6 +136,8 @@ export class PrixRegroupes {
     this.now = options.now ?? (() => new Date());
     this.settings = { ...DEFAULT_PRICE_SETTINGS, ...options.settings };
     if (!Number.isInteger(this.settings.minSales) || this.settings.minSales < 2) throw new Error('minSales : 2 au moins');
+    if (!Number.isInteger(this.settings.roundTo) || this.settings.roundTo < 1) throw new Error('roundTo : 1 au moins');
+    if (!Number.isInteger(this.settings.windowMonths) || this.settings.windowMonths < 1) throw new Error('windowMonths : 1 au moins');
   }
 
   /** Une zone tracée par la direction, avec la source de son contour. Rien ne se réécrit : une erreur se corrige par une nouvelle zone. */
@@ -232,13 +234,14 @@ export class PrixRegroupes {
     const communes = zones.filter((z) => z.level === 'commune');
     if (communes.length === 0) return { ran: false, reason: 'aucune_zone' };
     const zonesHash = await sha256Hex(JSON.stringify(zones.map((z) => [z.id, z.parent_id, z.ring_json])));
+    const window = windowOf(coverage.lastSale, this.settings.windowMonths);
+    // Tout réglage qui change les chiffres fait partie de l'identité d'une version : période, seuil, arrondi.
     const done = await this.db.first<{ id: string }>(
-      "SELECT id FROM price_versions WHERE network_id = ? AND source = ? AND dvf_last_sale = ? AND areas_digest = ? AND min_sales = ? AND status = 'complet' ORDER BY completed_at DESC LIMIT 1",
-      [networkId, coverage.source, coverage.lastSale, zonesHash, this.settings.minSales],
+      "SELECT id FROM price_versions WHERE network_id = ? AND source = ? AND dvf_last_sale = ? AND areas_digest = ? AND window_from = ? AND min_sales = ? AND round_to = ? AND status = 'complet' ORDER BY completed_at DESC LIMIT 1",
+      [networkId, coverage.source, coverage.lastSale, zonesHash, window.from, this.settings.minSales, this.settings.roundTo],
     );
     if (done) return { ran: false, reason: 'deja_fait', versionId: done.id };
 
-    const window = windowOf(coverage.lastSale, this.settings.windowMonths);
     // 1. Lire toutes les ventes, chacune dans une seule commune (la première qui la contient) et un seul quartier.
     const blocks: { communeId: string; kind: EstimatedKind; communeSales: CellSale[]; quarters: { zoneId: string; sales: CellSale[] }[] }[] = [];
     let issues = 0;
@@ -279,7 +282,10 @@ export class PrixRegroupes {
       return { ran: false, reason: 'source_incomplete' };
     }
     const salesDigest = await sha256Hex(fingerprints.sort().join('\n'));
-    const versionId = (await sha256Hex(['price', networkId, coverage.source, coverage.lastSale, zonesHash, salesDigest, this.settings.minSales].join('|'))).slice(0, 32);
+    // En lettres seulement : une suite de chiffres dans un identifiant passerait pour un numéro au journal.
+    const versionId = (await sha256Hex(['price', networkId, coverage.source, coverage.lastSale, zonesHash, salesDigest, window.from, this.settings.minSales, this.settings.roundTo].join('|')))
+      .slice(0, 32)
+      .replace(/[0-9]/g, (d) => 'ghijklmnop'[Number(d)]!);
 
     // 2. Décider, contre toutes les cases montrées par la version précédente.
     const previousId = (
@@ -305,8 +311,8 @@ export class PrixRegroupes {
     const existing = await this.db.first<{ status: string }>('SELECT status FROM price_versions WHERE id = ?', [versionId]);
     if (!existing) {
       await this.db.run(
-        "INSERT INTO price_versions (id, network_id, source, dvf_last_sale, window_from, window_to, areas_digest, sales_digest, min_sales, status, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'en_cours', ?)",
-        [versionId, networkId, coverage.source, coverage.lastSale, window.from, window.to, zonesHash, salesDigest, this.settings.minSales, this.now().toISOString()],
+        "INSERT INTO price_versions (id, network_id, source, dvf_last_sale, window_from, window_to, areas_digest, sales_digest, min_sales, round_to, status, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'en_cours', ?)",
+        [versionId, networkId, coverage.source, coverage.lastSale, window.from, window.to, zonesHash, salesDigest, this.settings.minSales, this.settings.roundTo, this.now().toISOString()],
       );
     }
     let published = 0;

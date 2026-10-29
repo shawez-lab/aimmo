@@ -121,12 +121,39 @@ export function insideRing(point: LatLon, ring: readonly LatLon[]): boolean {
   return inside;
 }
 
-function sameVertex(p: LatLon, ring: readonly LatLon[]): boolean {
-  return ring.some((q) => q[0] === p[0] && q[1] === p[1]);
+/** Vrai si le point est sur un bord du contour, sommets compris. */
+function onBoundary(p: LatLon, ring: readonly LatLon[]): boolean {
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!;
+    const b = ring[(i + 1) % ring.length]!;
+    const cross = (b[1] - a[1]) * (p[0] - a[0]) - (b[0] - a[0]) * (p[1] - a[1]);
+    const scale = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), 1e-12);
+    if (Math.abs(cross) > 1e-12 * scale) continue;
+    if (p[0] >= Math.min(a[0], b[0]) && p[0] <= Math.max(a[0], b[0]) && p[1] >= Math.min(a[1], b[1]) && p[1] <= Math.max(a[1], b[1])) return true;
+  }
+  return false;
 }
 
-function centroid(ring: readonly LatLon[]): LatLon {
-  return [ring.reduce((s, p) => s + p[0], 0) / ring.length, ring.reduce((s, p) => s + p[1], 0) / ring.length];
+/**
+ * Des points tout près de l'intérieur du contour : le milieu de chaque bord, poussé d'un rien vers l'intérieur. Ils
+ * trouvent un recouvrement que les sommets ne montrent pas (deux contours identiques, par exemple), même concave.
+ */
+function innerPoints(ring: readonly LatLon[]): LatLon[] {
+  const out: LatLon[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!;
+    const b = ring[(i + 1) % ring.length]!;
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len === 0) continue;
+    const eps = len * 1e-6;
+    const mid: LatLon = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const n: LatLon = [(-(b[1] - a[1]) / len) * eps, ((b[0] - a[0]) / len) * eps];
+    const left: LatLon = [mid[0] + n[0], mid[1] + n[1]];
+    const right: LatLon = [mid[0] - n[0], mid[1] - n[1]];
+    if (insideRing(left, ring)) out.push(left);
+    else if (insideRing(right, ring)) out.push(right);
+  }
+  return out;
 }
 
 function properCross(a: LatLon, b: LatLon, c: LatLon, d: LatLon): boolean {
@@ -136,13 +163,13 @@ function properCross(a: LatLon, b: LatLon, c: LatLon, d: LatLon): boolean {
 }
 
 /**
- * Vrai si deux contours se recouvrent. Deux zones voisines qui partagent un bord, sommets compris, ne se recouvrent
- * pas ; un sommet de l'une à l'intérieur de l'autre, un centre dans l'autre, ou deux bords qui se croisent, si.
+ * Vrai si deux contours se recouvrent. Deux zones voisines qui partagent un bord ne se recouvrent pas, même quand
+ * l'une y a des sommets que l'autre n'a pas ; un sommet de l'une à l'intérieur de l'autre, un point juste à l'intérieur de l'une dans l'autre, ou deux bords qui se croisent, si.
  */
 export function ringsOverlap(a: readonly LatLon[], b: readonly LatLon[]): boolean {
-  if (a.some((p) => !sameVertex(p, b) && insideRing(p, b))) return true;
-  if (b.some((p) => !sameVertex(p, a) && insideRing(p, a))) return true;
-  if (insideRing(centroid(a), b) || insideRing(centroid(b), a)) return true;
+  if (a.some((p) => !onBoundary(p, b) && insideRing(p, b))) return true;
+  if (b.some((p) => !onBoundary(p, a) && insideRing(p, a))) return true;
+  if (innerPoints(a).some((p) => insideRing(p, b)) || innerPoints(b).some((p) => insideRing(p, a))) return true;
   for (let i = 0; i < a.length; i++) {
     for (let j = 0; j < b.length; j++) {
       if (properCross(a[i]!, a[(i + 1) % a.length]!, b[j]!, b[(j + 1) % b.length]!)) return true;

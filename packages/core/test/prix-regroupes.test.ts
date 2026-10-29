@@ -7,6 +7,7 @@ import {
   figuresOf,
   insideRing,
   minus,
+  ringsOverlap,
   roundPrice,
   saleSet,
   subsetRevealing,
@@ -79,6 +80,19 @@ describe('AT01 · calcul des cases de prix', () => {
   it("la période d'une version est la même pour toutes ses cases, jamais la date d'une vente", () => {
     expect(windowOf('2026-06-30', 24)).toEqual({ from: '2024-07', to: '2026-06' });
     expect(windowOf('2026-01-15', 12)).toEqual({ from: '2025-02', to: '2026-01' });
+  });
+
+  it('deux zones voisines qui partagent un bord ne se recouvrent pas, même avec un sommet de plus sur ce bord', () => {
+    expect(ringsOverlap([[0, 0], [0, 1], [0.5, 1], [1, 1], [1, 0]], [[0, 1], [0, 2], [1, 2], [1, 1]])).toBe(false);
+    expect(ringsOverlap([[0, 0], [0, 1], [1, 1], [1, 0]], [[0, 1], [0, 2], [1, 2], [1, 1]])).toBe(false);
+    expect(ringsOverlap([[0, 0], [0, 1], [1, 1], [1, 0]], [[0.2, 0.2], [0.2, 0.8], [0.8, 0.8], [0.8, 0.2]])).toBe(true);
+    expect(ringsOverlap([[0, 0], [0, 2], [2, 2], [2, 0]], [[1, 1], [1, 3], [3, 3], [3, 1]])).toBe(true);
+    // Un contour concave : le second carré est dans le creux, sans le toucher.
+    const u: LatLon[] = [[0, 0], [0, 3], [3, 3], [3, 0], [2, 0], [2, 2], [1, 2], [1, 0]];
+    expect(ringsOverlap(u, [[1.2, 0.2], [1.2, 1.8], [1.8, 1.8], [1.8, 0.2]])).toBe(false);
+    expect(ringsOverlap(u, [[0.5, 2.5], [0.5, 2.8], [2.5, 2.8], [2.5, 2.5]])).toBe(true);
+    // Deux contours identiques se recouvrent.
+    expect(ringsOverlap(u, [...u])).toBe(true);
   });
 
   it('point dans un contour', () => {
@@ -403,6 +417,18 @@ describeWithSqlite('AT01 · versions des prix dans la base', () => {
     const p = (await prix.communePrices('net-1', 'commune-test'))!;
     expect(p.versionId).toBe(r.versionId);
     expect(p.cells.find((c) => c.zone.slug === 'commune-test')).toMatchObject({ sales: 7 });
+  });
+
+  it('[R150] changer la période ou l\'arrondi donne une nouvelle version', async () => {
+    const list = [2001, 2102, 2203, 2304, 2405, 2506].map((p) => sale('apartment', 5.02, p));
+    const { prix, db, journal, source } = await setup(list);
+    await prix.recompute('net-1');
+    const other = new PrixRegroupes(db, journal, source, { settings: { roundTo: 100 } });
+    expect(await other.recompute('net-1')).toMatchObject({ ran: true });
+    expect((await other.communePrices('net-1', 'commune-test'))!.cells[0]!.median % 100).toBe(0);
+    const longer = new PrixRegroupes(db, journal, source, { settings: { windowMonths: 36 } });
+    expect(await longer.recompute('net-1')).toMatchObject({ ran: true });
+    expect((await longer.communePrices('net-1', 'commune-test'))!.cells[0]!.period.from).toBe('2023-07');
   });
 
   it('sans publication DVF ou sans zone, aucune version', async () => {

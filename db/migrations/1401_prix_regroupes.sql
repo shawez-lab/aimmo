@@ -40,11 +40,12 @@ CREATE TABLE IF NOT EXISTS price_versions (
   -- Empreinte de toutes les ventes lues : une reprise après coupure ne mélange jamais deux lectures différentes.
   sales_digest TEXT NOT NULL CHECK (length(sales_digest) = 64),
   min_sales INTEGER NOT NULL CHECK (min_sales >= 2),
+  round_to INTEGER NOT NULL CHECK (round_to >= 1),
   -- Une version n'est lue qu'une fois complète ; une version coupée en route est refaite à l'identique.
   status TEXT NOT NULL CHECK (status IN ('en_cours', 'complet')),
   computed_at TEXT NOT NULL,
   completed_at TEXT,
-  UNIQUE (network_id, source, dvf_last_sale, areas_digest, sales_digest, min_sales)
+  UNIQUE (network_id, source, dvf_last_sale, areas_digest, sales_digest, window_from, min_sales, round_to)
 );
 CREATE INDEX IF NOT EXISTS price_versions_latest ON price_versions (network_id, status, completed_at);
 
@@ -88,7 +89,7 @@ CREATE TRIGGER IF NOT EXISTS price_versions_fige BEFORE UPDATE ON price_versions
 WHEN NOT (OLD.status = 'en_cours' AND NEW.status = 'complet' AND OLD.completed_at IS NULL AND NEW.completed_at IS NOT NULL
   AND NEW.id = OLD.id AND NEW.network_id = OLD.network_id AND NEW.source = OLD.source AND NEW.dvf_last_sale = OLD.dvf_last_sale
   AND NEW.sales_digest = OLD.sales_digest AND NEW.window_from = OLD.window_from AND NEW.window_to = OLD.window_to AND NEW.areas_digest = OLD.areas_digest
-  AND NEW.min_sales = OLD.min_sales AND NEW.computed_at = OLD.computed_at)
+  AND NEW.min_sales = OLD.min_sales AND NEW.round_to = OLD.round_to AND NEW.computed_at = OLD.computed_at)
 BEGIN SELECT RAISE(ABORT, 'price_versions : rien ne se réécrit'); END;
 -- Une version complète ne reçoit plus de case.
 CREATE TRIGGER IF NOT EXISTS price_cells_close BEFORE INSERT ON price_cells
