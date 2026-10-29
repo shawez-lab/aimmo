@@ -4,7 +4,9 @@
  * L'agent du bien range l'acquéreur du dossier de cession (une personne de la base, physique ou morale). Avant le
  * compromis, le code regarde au coffre de la conformité (M12), par son seul état, si les bénéficiaires effectifs (pour
  * une personne morale : le registre des bénéficiaires) et l'origine des fonds y ont été déposés. S'il en manque, une
- * alerte est levée au responsable de la conformité, une seule par dossier. Elle ne bloque ni ne décide rien : ni la
+ * alerte est levée au responsable de la conformité, une seule par dossier et par acquéreur (un acquéreur substitué
+ * est examiné à son tour). Une personne morale l'est si l'agent la range telle ou au moindre signe de société (Kbis au
+ * coffre, déclaration « société » de L03). Elle ne bloque ni ne décide rien : ni la
  * cession prête (CE07), ni l'envoi du dossier ne la lisent ; la décision reste au responsable, avec son nom, sa date et
  * sa raison [R14], selon les décisions du registre de vigilance de L04.
  *
@@ -64,8 +66,8 @@ interface AlertRow {
   decided_at: string | null;
 }
 
-const ALERT_SELECT = `SELECT a.*, d.decision, d.reason, d.validator_name, d.decided_at FROM business_transfer_vigilance a
-  LEFT JOIN business_transfer_vigilance_decisions d ON d.alert_id = a.id`;
+const ALERT_SELECT = `SELECT a.*, d.decision, d.reason, d.validator_name, d.decided_at FROM business_transfer_watch a
+  LEFT JOIN business_transfer_watch_decisions d ON d.alert_id = a.id`;
 
 const toAlert = (r: AlertRow): TransferVigilanceAlert => ({
   id: r.id,
@@ -128,7 +130,6 @@ export class VigilanceCession {
    * Rend `true` si une alerte vient d'être levée.
    */
   async examine(networkId: string, fileId: string): Promise<boolean> {
-    if (await this.db.first('SELECT 1 FROM business_transfer_vigilance WHERE file_id = ?', [fileId])) return false;
     if (await this.db.first("SELECT 1 FROM business_transfer_dates WHERE file_id = ? AND kind = 'cession_signee'", [fileId])) return false;
     const buyer = await this.db.first<{ person_id: string; legal_person: number }>('SELECT person_id, legal_person FROM business_transfer_buyers WHERE file_id = ? AND network_id = ? ORDER BY version DESC LIMIT 1', [
       fileId,
@@ -136,14 +137,21 @@ export class VigilanceCession {
     ]);
     if (!buyer) return false;
     const at = this.now();
+    // Personne morale si l'agent l'a rangée telle, ou au moindre signe de société : un Kbis au coffre, ou une
+    // déclaration « société » à l'identification (L03). L'agent ne peut pas écarter seul les bénéficiaires effectifs.
+    const legal =
+      Number(buyer.legal_person) === 1 ||
+      (await this.vault.everDeposited(networkId, buyer.person_id, ['extrait_kbis', 'registre_beneficiaires'], at)) ||
+      !!(await this.db.first("SELECT 1 FROM client_identifications WHERE network_id = ? AND person_id = ? AND entity = 'societe' LIMIT 1", [networkId, buyer.person_id]));
+    if (await this.db.first('SELECT 1 FROM business_transfer_watch WHERE file_id = ? AND person_id = ? AND legal_person = ?', [fileId, buyer.person_id, legal ? 1 : 0])) return false;
     const missing: TransferVigilanceMissing[] = [];
-    if (Number(buyer.legal_person) === 1 && !(await this.vault.everDeposited(networkId, buyer.person_id, ['registre_beneficiaires'], at))) missing.push('beneficiaires_effectifs');
+    if (legal && !(await this.vault.everDeposited(networkId, buyer.person_id, ['registre_beneficiaires'], at))) missing.push('beneficiaires_effectifs');
     if (!(await this.vault.everDeposited(networkId, buyer.person_id, ['origine_fonds'], at))) missing.push('origine_des_fonds');
     if (missing.length === 0) return false;
     const id = this.newId();
     const { changes } = await this.db.run(
-      'INSERT INTO business_transfer_vigilance (id, network_id, file_id, person_id, missing, raised_by, raised_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
-      [id, networkId, fileId, buyer.person_id, JSON.stringify(missing), 'system:commerces', at.toISOString()],
+      'INSERT INTO business_transfer_watch (id, network_id, file_id, person_id, legal_person, missing, raised_by, raised_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+      [id, networkId, fileId, buyer.person_id, legal ? 1 : 0, JSON.stringify(missing), 'system:commerces', at.toISOString()],
     );
     if (changes !== 1) return false;
     // Sous la référence de l'alerte, jamais sous le bien ni la personne : l'agent ne la voit pas [R13].
@@ -175,7 +183,7 @@ export class VigilanceCession {
     if (typeof input.reason !== 'string' || input.reason.trim() === '' || input.reason.length > 1000) return { ok: false, rule: null, code: 'missing_reason' };
     if (typeof input.validatorName !== 'string' || input.validatorName.trim() === '' || input.validatorName.length > 120) return { ok: false, rule: null, code: 'missing_name' };
     const { changes } = await this.db.run(
-      'INSERT INTO business_transfer_vigilance_decisions (alert_id, network_id, decision, reason, validator_name, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+      'INSERT INTO business_transfer_watch_decisions (alert_id, network_id, decision, reason, validator_name, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
       [row.id, row.network_id, input.decision, input.reason.trim(), input.validatorName.trim(), this.actor(viewer), this.now().toISOString()],
     );
     if (changes !== 1) return { ok: false, rule: null, code: 'already_decided' };
@@ -192,7 +200,7 @@ export class VigilanceCession {
     const file = await this.fileFor(acces, viewer, fileId);
     if (!('id' in file)) return file;
     const asked = await this.db.first(
-      `SELECT 1 FROM business_transfer_vigilance a JOIN business_transfer_vigilance_decisions d ON d.alert_id = a.id
+      `SELECT 1 FROM business_transfer_watch a JOIN business_transfer_watch_decisions d ON d.alert_id = a.id
        WHERE a.file_id = ? AND d.decision = 'origine_des_fonds_demandee'`,
       [file.id],
     );

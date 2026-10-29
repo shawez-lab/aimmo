@@ -51,12 +51,24 @@ describeWithSqlite('CE08 · vigilance renforcée de la cession', () => {
     expect(await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: company, legalPerson: true })).toMatchObject({ ok: true, value: { version: 1 } });
     const list = await t.vigilance.list(t.compliance);
     expect(list.ok && list.value.map((a) => [a.fileId, a.missing])).toEqual([[fileId, ['beneficiaires_effectifs', 'origine_des_fonds']]]);
-    // Une seule : ni un nouvel examen, ni la tâche quotidienne, ni une nouvelle version de l'acquéreur n'en ajoutent.
+    // Une seule : ni un nouvel examen, ni la tâche quotidienne, ni une nouvelle version du même acquéreur n'en ajoutent.
     expect(await t.vigilance.examine(t.networkId, fileId)).toBe(false);
     expect(await t.vigilance.run(t.networkId)).toBe(0);
     await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: company, legalPerson: true });
     const again = await t.vigilance.list(t.compliance);
     expect(again.ok && again.value).toHaveLength(1);
+    // Un acquéreur substitué est examiné à son tour : une alerte de plus.
+    const other = await t.buyer('Personne');
+    await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: other, legalPerson: false });
+    const third = await t.vigilance.list(t.compliance);
+    expect(third.ok && third.value.map((a) => a.missing)).toEqual([['beneficiaires_effectifs', 'origine_des_fonds'], ['origine_des_fonds']]);
+    // Rangée « personne » alors qu'un Kbis est au coffre : les bénéficiaires effectifs sont exigés quand même.
+    const disguised = await t.readyFile();
+    const kbis = await t.buyer('Société bis');
+    t.deposited.add(`${kbis}:extrait_kbis`);
+    await t.vigilance.setBuyer(t.acces, t.alex, disguised, { personId: kbis, legalPerson: false });
+    const fourth = await t.vigilance.list(t.compliance);
+    expect(fourth.ok && fourth.value.at(-1)!.missing).toEqual(['beneficiaires_effectifs', 'origine_des_fonds']);
     // L'alerte ne bloque rien : la cession se déclare prête.
     expect(await t.cessions.declareReady(t.acces, t.alex, fileId)).toMatchObject({ ok: true, value: { ready: true } });
   });
@@ -115,10 +127,10 @@ describeWithSqlite('CE08 · vigilance renforcée de la cession', () => {
     expect(JSON.stringify(events)).not.toMatch(/Camille|property:|person:/);
     const source = readFileSync(new URL('../src/commerces/vigilance-cession.ts', import.meta.url), 'utf8');
     expect(source).not.toMatch(/compliance_vault_pieces|storage_ref|fetch\(|amount|montant_eur|_eur\b/);
-    for (const table of ['business_transfer_buyers', 'business_transfer_vigilance', 'business_transfer_vigilance_decisions']) {
+    for (const table of ['business_transfer_buyers', 'business_transfer_watch', 'business_transfer_watch_decisions']) {
       const cols = await t.db.all<{ name: string }>(`SELECT name FROM pragma_table_info('${table}')`);
       for (const c of cols) expect(c.name, `${table}.${c.name}`).not.toMatch(/amount|eur|iban|piece|storage|sha256/);
     }
-    await expect(t.db.run('DELETE FROM business_transfer_vigilance')).rejects.toThrow(/rien ne s'efface/);
+    await expect(t.db.run('DELETE FROM business_transfer_watch')).rejects.toThrow(/rien ne s'efface/);
   });
 });
