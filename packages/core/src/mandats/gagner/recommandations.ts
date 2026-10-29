@@ -59,6 +59,8 @@ export interface RecommendationToCall {
   firstName: string | null;
   /** « Recommandé par un client », ou le nom du partenaire. */
   sourceLabel: string;
+  /** Le seul canal par lequel la personne a accepté d'être contactée : `phone` pour un appel. */
+  channel: RecommendationConsentChannel;
   dueAt: string;
 }
 
@@ -69,6 +71,8 @@ interface PartnerRecommendationRow {
   referred_id: string;
   first_name: string | null;
   agent_id: string | null;
+  project_id: string | null;
+  consent_channel: RecommendationConsentChannel;
   call_due_at: string | null;
   call_done_at: string | null;
   created_at: string;
@@ -124,10 +128,10 @@ export class RecommandationsGagner {
     );
   }
 
-  /** Un accord « recommandation » en cours sur la fiche [R142, R03]. */
-  private async hasConsent(personId: string, at: Date): Promise<boolean> {
+  /** Un accord « recommandation » en cours sur la fiche, pour ce canal : on ne contacte que par le canal accepté [R142, R03]. */
+  private async hasConsent(personId: string, at: Date, channel: string): Promise<boolean> {
     const view = await this.fiche.view(personId);
-    return view.consents.some((c) => c.purpose === REFERRAL_PURPOSE && Date.parse(c.given_at) <= at.getTime() && (c.withdrawn_at === null || Date.parse(c.withdrawn_at) > at.getTime()));
+    return view.consents.some((c) => c.purpose === REFERRAL_PURPOSE && c.channel === channel && Date.parse(c.given_at) <= at.getTime() && (c.withdrawn_at === null || Date.parse(c.withdrawn_at) > at.getTime()));
   }
 
   /** Seul un partenaire du réseau, aux justificatifs valides ce jour-là, recommande [R16, R73]. */
@@ -314,7 +318,7 @@ export class RecommandationsGagner {
   }
 
   /**
-   * La file « à appeler » : pour un agent, ses recommandations de clients (F01) et de partenaires ; pour la direction,
+   * La file « à contacter », chacune par le seul canal accepté : pour un agent, ses recommandations de clients (F01) et de partenaires ; pour la direction,
    * les recommandations de partenaires sans agent, à attribuer. Seulement avec un accord en cours, jamais une personne
    * opposée [R142, R02, R04], et seulement les fiches que le lecteur voit aujourd'hui [R16]. Ordre écrit : échéance,
    * puis identifiant [R35].
@@ -323,27 +327,27 @@ export class RecommandationsGagner {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refused(viewer, null, 'role');
     const at = this.now();
     const out: RecommendationToCall[] = [];
-    const push = async (origin: 'client' | 'partner', id: string, referred: string, typed: string | null, dueAt: string, sourceLabel: string): Promise<void> => {
+    const push = async (origin: 'client' | 'partner', id: string, referred: string, typed: string | null, dueAt: string, sourceLabel: string, channel: RecommendationConsentChannel): Promise<void> => {
       const root = await this.fiche.rootOf(referred);
       if (await this.opposed(root, at)) return;
-      if (!(await this.hasConsent(root, at))) return;
+      if (!(await this.hasConsent(root, at, channel))) return;
       const read = await this.acces.readFiche(viewer, root);
       if (!read.ok || read.view !== 'full') return;
-      out.push({ origin, recommendationId: id, personId: root, firstName: read.value.members.map((m) => m.first_name).find((n) => n) ?? typed, sourceLabel, dueAt });
+      out.push({ origin, recommendationId: id, personId: root, firstName: read.value.members.map((m) => m.first_name).find((n) => n) ?? typed, sourceLabel, channel, dueAt });
     };
     if (viewer.role === 'agent') {
       const clients = await this.db.all<{ id: string; referred_id: string; first_name: string | null; call_due_at: string }>(
         'SELECT id, referred_id, first_name, call_due_at FROM referrals WHERE network_id = ? AND agent_id = ? AND call_due_at IS NOT NULL AND call_done_at IS NULL',
         [viewer.networkId, viewer.userId],
       );
-      for (const r of clients) await push('client', r.id, r.referred_id, r.first_name, r.call_due_at, 'Recommandé par un client');
+      for (const r of clients) await push('client', r.id, r.referred_id, r.first_name, r.call_due_at, 'Recommandé par un client', 'phone');
     }
     const partners = await this.db.all<PartnerRecommendationRow & { business_name: string }>(
       `SELECT r.*, p.business_name AS business_name FROM partner_recommendations r JOIN partners p ON p.id = r.partner_id
         WHERE r.network_id = ? AND r.call_due_at IS NOT NULL AND r.call_done_at IS NULL AND ${viewer.role === 'agent' ? 'r.agent_id = ?' : 'r.agent_id IS NULL'}`,
       viewer.role === 'agent' ? [viewer.networkId, viewer.userId] : [viewer.networkId],
     );
-    for (const r of partners) await push('partner', r.id, r.referred_id, r.first_name, r.call_due_at!, `Recommandé par ${r.business_name}`);
+    for (const r of partners) await push('partner', r.id, r.referred_id, r.first_name, r.call_due_at!, `Recommandé par ${r.business_name}`, r.consent_channel);
     out.sort((a, b) => (a.dueAt < b.dueAt ? -1 : a.dueAt > b.dueAt ? 1 : a.recommendationId < b.recommendationId ? -1 : a.recommendationId > b.recommendationId ? 1 : 0));
     await appendEvent(this.journal, { type: 'recommandations.file_lue', actor: this.actor(viewer), subject: null, data: { rule: 'R16', count: out.length } }, this.now);
     return { ok: true, value: out };
@@ -360,6 +364,8 @@ export class RecommandationsGagner {
     const members = await this.fiche.membersOf(await this.fiche.rootOf(row.referred_id));
     const at = this.now().toISOString();
     await this.db.run(`UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${members.map(() => '?').join(', ')}) AND agent_id IS NULL`, [agentId, at, ...members]);
+    // Le projet né de la recommandation passe avec la personne : sans lui, l'agent ne pourrait pas y travailler.
+    if (row.project_id) await this.db.run('UPDATE projects SET agent_id = ?, updated_at = ? WHERE id = ? AND agent_id IS NULL', [agentId, at, row.project_id]);
     await this.db.run('UPDATE partner_recommendations SET agent_id = ? WHERE id = ? AND agent_id IS NULL', [agentId, recommendationId]);
     await appendEvent(this.journal, { type: 'recommandation.alerte', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R142', recommendation: recommendationId, origin: 'partner' } }, this.now);
     return { ok: true, value: { assigned: true } };
