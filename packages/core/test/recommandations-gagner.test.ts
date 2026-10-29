@@ -263,7 +263,7 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(view.consents.map((c) => c.channel)).toEqual(['email']);
   });
 
-  it('[R16] deux recommandations de la même personne sans agent : la seconde ne peut aller qu’à l’agent qui a reçu la première', async () => {
+  it('[R16] deux recommandations de la même personne sans agent : la seconde va d’elle-même à l’agent qui a reçu la première', async () => {
     const t = await setup();
     const p = await t.partner('Étude Essai');
     const q = await t.partner('Étude Seconde');
@@ -272,10 +272,29 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     const [first, second] = await t.rows();
     expect([first!.agent_id, second!.agent_id]).toEqual([null, null]);
     expect(await t.gagner.assign(t.dir, first!.id, t.alex.id)).toEqual({ ok: true, value: { assigned: true } });
-    expect(await t.gagner.assign(t.dir, second!.id, t.sam.id)).toEqual({ ok: false, rule: null, code: 'followed_by_other' });
-    expect(await t.gagner.assign(t.dir, second!.id, t.alex.id)).toEqual({ ok: true, value: { assigned: true } });
+    // La seconde suit la personne : elle va d'elle-même à Alex, et ne peut plus être donnée à Sam.
+    expect(await t.gagner.assign(t.dir, second!.id, t.sam.id)).toEqual({ ok: false, rule: null, code: 'already_assigned' });
     const list = await t.gagner.toCall(t.agent());
     expect(list.ok && list.value.map((r) => r.recommendationId).sort()).toEqual([first!.id, second!.id].sort());
+  });
+
+  it('[R86] après le départ de l’agent, la tâche suit la personne : la direction ou le successeur la voit, l’agent parti non', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    await t.entrust(p);
+    await t.gagner.recommend(t.as(p), t.input());
+    const [row] = await t.rows();
+    expect(row!.agent_id).toBe(t.alex.id);
+    // Alex part ; la passation rend ses fiches à la direction (sans agent).
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    await t.db.run('UPDATE persons SET agent_id = NULL WHERE agent_id = ?', [t.alex.id]);
+    await t.db.run('UPDATE projects SET agent_id = NULL WHERE agent_id = ?', [t.alex.id]);
+    const dirList = await t.gagner.toCall(t.dir);
+    expect(dirList.ok && dirList.value.map((r) => r.recommendationId)).toEqual([row!.id]);
+    expect(await t.gagner.assign(t.dir, row!.id, t.sam.id)).toEqual({ ok: true, value: { assigned: true } });
+    const samList = await t.gagner.toCall(t.agent(t.sam.id));
+    expect(samList.ok && samList.value.map((r) => r.recommendationId)).toEqual([row!.id]);
+    expect(await t.gagner.callDone(t.agent(t.sam.id), row!.id)).toEqual({ ok: true, value: { done: true } });
   });
 
   it('[R16] [R73] seul un partenaire du réseau, aux justificatifs valides, recommande ; la direction attribue ce qui n’a pas d’agent', async () => {
