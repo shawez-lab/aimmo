@@ -583,10 +583,13 @@ export class ControleEnvois {
       const optOut =
         'partnerId' in order.recipient
           ? await this.db.first<{ at: string }>(
-              `SELECT MIN(o.at) AS at FROM partner_prospect_optouts o
-               WHERE o.network_id = ? AND (o.email = ? OR o.email IN (SELECT a.email FROM partner_addresses a WHERE a.network_id = ? AND a.partner_id = ?))
-               HAVING COUNT(*) > 0`,
-              [order.networkId, email, order.networkId, order.recipient.partnerId],
+              `SELECT MIN(at) AS at FROM (
+                 SELECT at FROM partner_optouts WHERE network_id = ? AND partner_id = ?
+                 UNION ALL
+                 SELECT o.at FROM partner_prospect_optouts o
+                 WHERE o.network_id = ? AND (o.email = ? OR o.email IN (SELECT a.email FROM partner_addresses a WHERE a.network_id = ? AND a.partner_id = ?))
+               ) HAVING COUNT(*) > 0`,
+              [order.networkId, order.recipient.partnerId, order.networkId, email, order.networkId, order.recipient.partnerId],
             )
           : await this.db.first<{ at: string }>('SELECT at FROM partner_prospect_optouts WHERE network_id = ? AND email = ?', [order.networkId, email]);
       return decideSend(

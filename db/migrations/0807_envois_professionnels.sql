@@ -20,6 +20,19 @@ CREATE TABLE IF NOT EXISTS partner_addresses (
 CREATE TRIGGER IF NOT EXISTS partner_addresses_garde BEFORE DELETE ON partner_addresses BEGIN SELECT RAISE(ABORT, 'partner_addresses : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS partner_addresses_fige BEFORE UPDATE ON partner_addresses BEGIN SELECT RAISE(ABORT, 'partner_addresses : une adresse rangée ne change plus'); END;
 
+-- L'opposition d'un partenaire de l'annuaire, rangée par la direction, même sans aucune adresse rangée : plus rien ne
+-- lui part, sur aucun canal, pour toujours [R04, R02].
+CREATE TABLE IF NOT EXISTS partner_optouts (
+  network_id TEXT NOT NULL,
+  partner_id TEXT NOT NULL,
+  via TEXT NOT NULL CHECK (via IN ('agent')),
+  at TEXT NOT NULL,
+  PRIMARY KEY (network_id, partner_id),
+  FOREIGN KEY (partner_id, network_id) REFERENCES partners (id, network_id) ON DELETE RESTRICT
+);
+CREATE TRIGGER IF NOT EXISTS partner_optouts_garde BEFORE DELETE ON partner_optouts BEGIN SELECT RAISE(ABORT, 'partner_optouts : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS partner_optouts_fige BEFORE UPDATE ON partner_optouts BEGIN SELECT RAISE(ABORT, 'partner_optouts : une opposition ne change plus'); END;
+
 -- Chaque envoi parti à un professionnel, une seule fois par sujet [R05]. Après une panne du canal, le sujet est
 -- libéré (renommé), jamais effacé : un nouvel essai reste possible.
 CREATE TABLE IF NOT EXISTS pro_sends (

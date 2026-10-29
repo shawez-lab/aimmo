@@ -119,7 +119,7 @@ describeWithSqlite('U12 · relances aux partenaires par le contrôle central', (
     set('2027-07-15T08:00:00.000Z');
     expect(await t.suivi.run(t.network.id)).toBe(1);
     const o = await t.adresses.oppose(t.dir, partnerId);
-    expect(o).toEqual({ ok: true, value: 1 });
+    expect(o).toEqual({ ok: true, value: 2 });
     expect((await t.envois.run(t.network.id)).refused).toBe(1);
     expect(await t.decisions(followUpSubject(referralId))).toEqual([{ outcome: 'refused', rule: 'R04' }]);
     expect(await t.outbox()).toBe(0);
@@ -140,6 +140,22 @@ describeWithSqlite('U12 · relances aux partenaires par le contrôle central', (
     set('2027-07-15T08:00:00.000Z');
     await t.suivi.run(t.network.id);
     expect((await t.envois.run(t.network.id)).refused).toBe(1);
+    expect(await t.decisions(followUpSubject(referralId))).toEqual([{ outcome: 'refused', rule: 'R04' }]);
+    expect(await t.outbox()).toBe(0);
+  });
+
+  it('[R04] l’opposition d’un partenaire sans adresse rangée est gardée : aucune adresse ni relance ensuite', async () => {
+    const t = await setup();
+    const { partnerId, referralId } = await t.request('2027-07-12T08:00:00.000Z', false);
+    expect(await t.adresses.oppose(t.dir, partnerId)).toEqual({ ok: true, value: 1 });
+    expect(await t.adresses.record(t.dir, partnerId, { email: 'contact@zephyr-tardif.example', consentProof: 'Accord écrit plus ancien.' })).toEqual({ ok: false, rule: 'R04', code: 'opposed' });
+    await t.db.run(
+      "INSERT INTO partner_addresses (id, network_id, partner_id, version, email, consent_proof, recorded_by, recorded_at) VALUES ('adr-y', ?, ?, 1, 'contact@zephyr-tardif.example', 'Accord écrit.', 'direction:dir-1', ?)",
+      [t.network.id, partnerId, new Date(clock).toISOString()],
+    );
+    set('2027-07-15T08:00:00.000Z');
+    await t.suivi.run(t.network.id);
+    await t.envois.run(t.network.id);
     expect(await t.decisions(followUpSubject(referralId))).toEqual([{ outcome: 'refused', rule: 'R04' }]);
     expect(await t.outbox()).toBe(0);
   });

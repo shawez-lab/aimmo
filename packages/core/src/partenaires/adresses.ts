@@ -53,8 +53,10 @@ export class AdressesPartenaires {
     if (proof.length < 3 || proof.length > 500) return { ok: false, rule: null, code: 'bad_proof' };
     // Un partenaire qui a demandé l'arrêt ne reçoit plus rien : une nouvelle adresse ne le rouvre pas [R04].
     const opposed = await this.db.first(
-      'SELECT 1 FROM partner_prospect_optouts o WHERE o.network_id = ? AND (o.email = ? OR o.email IN (SELECT a.email FROM partner_addresses a WHERE a.network_id = ? AND a.partner_id = ?))',
-      [viewer.networkId, email, viewer.networkId, partnerId],
+      `SELECT 1 FROM partner_optouts WHERE network_id = ? AND partner_id = ?
+       UNION ALL
+       SELECT 1 FROM partner_prospect_optouts o WHERE o.network_id = ? AND (o.email = ? OR o.email IN (SELECT a.email FROM partner_addresses a WHERE a.network_id = ? AND a.partner_id = ?))`,
+      [viewer.networkId, partnerId, viewer.networkId, email, viewer.networkId, partnerId],
     );
     if (opposed) return { ok: false, rule: 'R04', code: 'opposed' };
     const at = this.now().toISOString();
@@ -79,7 +81,8 @@ export class AdressesPartenaires {
 
   /**
    * La direction range l'opposition d'un partenaire (réponse, appel) : son adresse ne reçoit plus rien, sur aucun canal,
-   * prospection comprise, pour toujours [R04, R02]. Toutes ses adresses rangées sont opposées.
+   * prospection comprise, pour toujours [R04, R02]. Le partenaire lui-même est opposé, même sans adresse rangée, et
+   * toutes ses adresses rangées le sont aussi.
    */
   async oppose(viewer: Viewer, partnerId: unknown): Promise<AdresseResult<number>> {
     const actor = `${String(viewer.role)}:${viewer.userId}`;
@@ -88,10 +91,12 @@ export class AdressesPartenaires {
       return { ok: false, rule: 'R16', code: 'role' };
     }
     if (typeof partnerId !== 'string') return { ok: false, rule: null, code: 'unknown' };
-    const rows = await this.db.all<{ email: string }>('SELECT DISTINCT email FROM partner_addresses WHERE network_id = ? AND partner_id = ?', [viewer.networkId, partnerId]);
-    if (rows.length === 0) return { ok: false, rule: null, code: 'unknown' };
+    const partner = await this.db.first('SELECT 1 FROM partners WHERE id = ? AND network_id = ?', [partnerId, viewer.networkId]);
+    if (!partner) return { ok: false, rule: null, code: 'unknown' };
     const at = this.now().toISOString();
-    let added = 0;
+    // L'opposition tient au partenaire lui-même, même sans aucune adresse rangée [R04].
+    let added = (await this.db.run("INSERT INTO partner_optouts (network_id, partner_id, via, at) VALUES (?, ?, 'agent', ?) ON CONFLICT DO NOTHING", [viewer.networkId, partnerId, at])).changes;
+    const rows = await this.db.all<{ email: string }>('SELECT DISTINCT email FROM partner_addresses WHERE network_id = ? AND partner_id = ?', [viewer.networkId, partnerId]);
     for (const r of rows) {
       const w = await this.db.run("INSERT INTO partner_prospect_optouts (network_id, email, via, at) VALUES (?, ?, 'agent', ?) ON CONFLICT DO NOTHING", [viewer.networkId, r.email, at]);
       added += w.changes;
