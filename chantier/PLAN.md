@@ -1528,7 +1528,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 
 ### U12 · Relances et prospection de M18 par le contrôle central des envois
 - Statut : en cours
-- Où : proposition #183, empilée sur #180 (U09) ; relecture forte 1 P1 corrigé (opposition d'un partenaire tenue pour toutes ses adresses) ; fusion en attente des vérifications GitHub (H35)
+- Où : proposition #183, empilée sur #180 (U09) ; relecture forte 1 P1 corrigé (opposition d'un partenaire tenue pour toutes ses adresses) ; Codex 1 P0 corrigé (opposition gardée sur le partenaire même sans adresse, `partner_optouts`), dernière version validée (ef84d00) ; fusion en attente des vérifications GitHub (H35)
 - Décidé (2026-10-29) : `ControleEnvois.sendToProfessional`, seul port la boîte d'essai `ProTrialMailbox` ; accord du partenaire [R03] rangé avec son adresse professionnelle par la direction (`partner_addresses`, migration `0807`, preuve en note) ; opposition par adresse dans `partner_prospect_optouts`, valable pour partenaires et futurs partenaires ; plafond R11 partagé par `send_quota_slots` ; passage `partenaires.envois` de 8 h à 19 h ; les alertes à l'agent restent dans l'application.
 - Reste : à H32, une tâche reprendra les brouillons refusés sous R03.
 - Qui : Claude, voie 1 (contrôle central des envois) · Relecture : forte · Dépend de : U09
