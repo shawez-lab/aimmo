@@ -173,7 +173,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : heures de Paris été comme hiver ; une tâche, un passage par créneau même si le déclencheur passe deux fois ; une erreur est écrite au journal ; aucun appel sortant en mode essai.
 
 ### B03 · Le site demande au socle, en ombre
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : B01, B02
 - Cahier : Feuille de route, novembre 2026.
 - Objectif : sur une branche de `shawez-immo` et une proposition à fusionner par Shawez, le site appelle `POST /v1/automatisations/envoi` avant chaque rappel de visite et chaque courrier gardé, garde son propre envoi inchangé, et note les deux décisions ; un rapport compte les écarts, sans donnée personnelle.
