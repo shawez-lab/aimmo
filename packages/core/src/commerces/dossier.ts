@@ -335,7 +335,7 @@ export class DossierCommerce {
   }
 
   /** Le lien d'un jeton, s'il existe, n'est ni révoqué ni expiré, et si l'adresse donnée est celle de sa personne. */
-  private async readerLink(token: unknown, readerEmail: unknown): Promise<{ link: LinkRow } | Problem> {
+  private async readerLink(token: unknown, readerEmail: unknown): Promise<{ link: LinkRow; email: string } | Problem> {
     const link = typeof token === 'string' && /^[a-z]{20,80}$/.test(token) ? await this.db.first<LinkRow>('SELECT * FROM business_dossier_links WHERE token_hash = ?', [await sha256(token)]) : null;
     if (!link) {
       await appendEvent(this.journal, { type: 'commerces.dossier.refuse', actor: 'lecteur', subject: null, data: { rule: 'R114', code: 'inconnu' } }, this.now);
@@ -343,8 +343,9 @@ export class DossierCommerce {
     }
     if (await this.db.first('SELECT 1 FROM business_dossier_link_revocations WHERE link_id = ?', [link.id])) return this.refusal(link, 'revoque');
     if (this.now().getTime() > Date.parse(link.expires_at)) return this.refusal(link, 'expire');
-    if (!(await this.isReader(link, readerEmail))) return this.refusal(link, 'autre_lecteur');
-    return { link };
+    const email = await this.isReader(link, readerEmail);
+    if (!email) return this.refusal(link, 'autre_lecteur');
+    return { link, email };
   }
 
   /**
@@ -354,7 +355,7 @@ export class DossierCommerce {
   async requestCode(token: unknown, readerEmail: unknown): Promise<DossierResult<{ expiresAt: string }>> {
     const r = await this.readerLink(token, readerEmail);
     if (!('link' in r)) return r;
-    const { link } = r;
+    const { link, email } = r;
     const id = this.newId();
     const code = this.newCode();
     const expiresAt = new Date(this.now().getTime() + CODE_TTL_MINUTES * 60_000).toISOString();
@@ -370,6 +371,8 @@ export class DossierCommerce {
       channel: 'email',
       kind: 'alert',
       purpose: DOSSIER_PURPOSE,
+      // Le code part à l'adresse que le lecteur a donnée, une des adresses de la personne du lien.
+      to: email,
       subject: `dossier_commerce:${id}`,
       fallbackTexts: [`Bonjour,\n\nVotre code pour ouvrir le dossier confidentiel : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne.`],
       figures: [code, CODE_TTL_MINUTES],
@@ -480,12 +483,12 @@ export class DossierCommerce {
     return { ok: false, rule: outcome === 'porte_fermee' ? 'R113' : 'R114', code: outcome, ...(codes ? { codes } : {}) };
   }
 
-  /** L'adresse donnée est-elle une adresse mail de la personne du lien ? */
-  private async isReader(link: LinkRow, email: unknown): Promise<boolean> {
-    if (typeof email !== 'string' || email.length > 320) return false;
+  /** L'adresse donnée, normalisée, si c'est une adresse mail de la personne du lien ; sinon `null`. */
+  private async isReader(link: LinkRow, email: unknown): Promise<string | null> {
+    if (typeof email !== 'string' || email.length > 320) return null;
     const value = normalizeIdentifier('email', email);
-    if (!value) return false;
-    return !!(await this.db.first("SELECT 1 FROM person_identifiers WHERE person_id = ? AND kind = 'email' AND value = ?", [link.person_id, value]));
+    if (!value) return null;
+    return (await this.db.first("SELECT 1 FROM person_identifiers WHERE person_id = ? AND kind = 'email' AND value = ?", [link.person_id, value])) ? value : null;
   }
 
   /** Les pages du dossier, chacune avec le filigrane du lecteur et la marque de l'ouverture. */

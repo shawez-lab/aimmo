@@ -97,7 +97,7 @@ async function setup(options: { maxOpens?: number } = {}) {
     if (!asked.ok) return asked;
     return dossier.open(token, email, lastCode);
   };
-  return { lastCode: () => lastCode, openAs, db, journal, acces, conf, dossier, alex, sam: as('agent', samAgent.id), direction, compliance: as('compliance', 'conf-1'), shop, buyer, tokenFor, advance: (ms: number) => (clock += ms), files };
+  return { store, networkId: network.id, lastCode: () => lastCode, openAs, db, journal, acces, conf, dossier, alex, sam: as('agent', samAgent.id), direction, compliance: as('compliance', 'conf-1'), shop, buyer, tokenFor, advance: (ms: number) => (clock += ms), files };
 }
 
 describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
@@ -123,6 +123,18 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
     // Le code d'ouverture part aussi en essai seulement, à la personne du lien ; il n'est rangé qu'en empreinte.
     expect(await t.db.all("SELECT 1 FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%code pour ouvrir%'", [b.id])).toHaveLength(3);
     expect(JSON.stringify(await t.db.all('SELECT * FROM business_dossier_open_codes'))).not.toContain(t.lastCode());
+    // Une seconde adresse de la personne : le code part à celle que le lecteur a donnée.
+    await t.store.addIdentifier({ networkId: t.networkId, personId: b.id, kind: 'email', value: 'seconde.boite@example.test' });
+    const envois = (t.dossier as unknown as { envois: { send: (o: { to?: string | null }) => Promise<unknown> } }).envois;
+    const send = envois.send.bind(envois);
+    const targets: (string | null | undefined)[] = [];
+    envois.send = async (o) => {
+      targets.push(o.to);
+      return send(o);
+    };
+    expect(await t.dossier.requestCode(token, 'Seconde.Boite@example.test')).toMatchObject({ ok: true });
+    expect(await t.dossier.requestCode(token, b.email)).toMatchObject({ ok: true });
+    expect(targets).toEqual(['seconde.boite@example.test', b.email]);
     const log = await t.dossier.accesses(t.acces, t.alex, t.shop.id);
     expect(log.ok && log.value.map((a) => [a.outcome, a.personId])).toEqual([
       ['ouvert', b.id],
