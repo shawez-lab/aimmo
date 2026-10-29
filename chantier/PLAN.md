@@ -1432,7 +1432,8 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien. Le compartiment R2 `COFFRE` (H36) ne bloque pas la tâche.
 
 ### L10 · Écran « Conformité » dans l'application
-- Statut : en cours : proposition ouverte, empilée sur #175 (L09) ; fusion en attente des vérifications GitHub (H35)
+- Statut : en cours
+- Où : proposition ouverte, empilée sur #175 (L09) ; fusion en attente des vérifications GitHub (H35)
 - Décidé (2026-10-29) : l'écran du responsable est un script à part, `/app/conformite.js`, chargé à la demande pour la seule clé `compliance` : un agent ne reçoit jamais son code, et l'application garde son budget de 48 Ko (46,9 Ko) ; le script tient celui d'une page (7 Ko). Nouvelle lecture `GET /v1/conformite/risque` (`FicheRisque.pending`) : fiches en attente dans l'ordre de leur préparation, jamais par niveau [R91]. Un client est nommé par la fin de l'identifiant de sa fiche, sans nom. Sur la fiche, le dépôt part en corps brut avec son type ; l'agent lit ses preuves (sorte, jour, empreinte), jamais la pièce. axe-core sans violation, clair et sombre (captures `app-conformite-*`, `app-coffre-*`). Relecture forte : 2 P1 corrigés (dépôt refusé pour agent inactif, tests d'accessibilité, de clé refusée et de session).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L09
 - Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
@@ -1527,7 +1528,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U09 · Branchement de M18 dans le socle
-- Statut : à faire
+- Statut : en cours
+- Où : branche chantier/U09, empilée sur #178 tant que H35 bloque les fusions
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`, contrôle central des envois) · Relecture : forte · Dépend de : U10
 - Cahier : M18 ; Branchements.
 - Objectif : exporter `partenaires` depuis `@aimmo/core` ; dans les droits d'accès, le rôle `partner` lit seulement ses mises en relation confiées (U04) et rien d'autre ; ajouter les routes de M18 à `app.ts` ; lancer au planificateur les relances, les alertes d'échéance des justificatifs et la prospection du jour.
