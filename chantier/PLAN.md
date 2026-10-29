@@ -2101,7 +2101,8 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT06 · Fiche Google : publications et réponses aux avis préparées, validées
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition prête (#204) ; relecture forte : 5 P1 corrigés, troisième relecture sans P0 ni P1 ; attend GitHub Actions (H35). Décidé : le nom de l'auteur d'un avis n'est jamais gardé (empreintes de ses mots seulement) ; une publication de bien ne porte jamais le prix, seulement le lien vers sa page ; une réservation sous index unique précède tout appel à Google.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M01, point 4 « Fiche Google » ; « L'IA et l'humain ».
 - Objectif : derrière une interface Google Business Profile (faux service dans les tests) : informations de la fiche à jour depuis les réglages, publications régulières tirées des biens publiés, réponses aux avis préparées par l'IA (secours sans IA) et validées par l'agent ; en mode essai, rien ne part.
@@ -2118,6 +2119,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 
 ### AT08 · Simulateur de prêt, sans rien garder
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition prête (#202) ; Codex : 1 P2 (taux presque nul) corrigé, relecture redemandée ; attend GitHub Actions (H35). Décidé : le calcul tourne dans le navigateur, la page ne prend aucune saisie, ses champs n'ont pas de nom, et ses en-têtes interdisent toute connexion et tout envoi de formulaire.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M01, point 1 « simulateur de prêt ».
 - Objectif : un simulateur de mensualité (montant, durée, taux, assurance) calculé par le code, rendu sur la page publique ; mention « simulation indicative, ce n'est pas une offre de prêt » ; aucune donnée saisie gardée ni envoyée.
