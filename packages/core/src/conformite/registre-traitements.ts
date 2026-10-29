@@ -613,7 +613,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   neighbourhood_campaigns: ['id', 'network_id', 'property_id', 'trigger', 'radius_m', 'center_lon', 'created_at'],
   neighbourhood_letters: ['id', 'campaign_id', 'network_id', 'distance_m', 'position', 'deposited_at', 'created_at'],
   mandate_source_costs: ['id', 'network_id', 'month', 'source', 'version', 'entered_at'],
-  mandate_source_decisions: ['id', 'network_id', 'month', 'source', 'decision', 'decided_at'],
+  mandate_source_decisions: ['id', 'network_id', 'month', 'source', 'seq', 'decision', 'decided_at'],
   old_contact_moments: ['id', 'network_id', 'kind', 'on_day', 'created_at'],
   old_contact_followups: ['id', 'network_id', 'month', 'status', 'channel', 'rule', 'message_id', 'created_at', 'decided_at'],
   legal_basis_checks: ['id', 'network_id', 'ran_at', 'from_day', 'to_day', 'plans', 'gaps', 'seen_at'],

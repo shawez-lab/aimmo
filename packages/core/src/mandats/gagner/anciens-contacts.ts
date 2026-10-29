@@ -16,7 +16,7 @@
  * puis elle passe par le contrôle central, en mode essai : rien ne part [R26]. Rien ne s'efface [R17].
  */
 import type { Viewer } from '../../acces/droits.ts';
-import { anniversary, mentionsReward } from '../../apres-vente/index.ts';
+import { mentionsReward } from '../../apres-vente/index.ts';
 import { trialChannels } from '../../captation/essai.ts';
 import { DureesProspects } from '../../conformite/durees-prospects.ts';
 import { FicheClient } from '../../db/fiche-client.ts';
@@ -32,11 +32,10 @@ import type { JournalStore } from '../../journal/types.ts';
 
 /** Finalité de l'accord d'une relance d'ancien contact [R03]. */
 export const OLD_CONTACT_PURPOSE = 'relance_ancien_contact';
-export const OLD_CONTACT_REASONS = ['fin_de_bail', 'anniversaire_achat', 'estimation_ancienne'] as const;
+export const OLD_CONTACT_REASONS = ['fin_de_bail', 'estimation_ancienne'] as const;
 export type OldContactReason = (typeof OLD_CONTACT_REASONS)[number];
 export const OLD_CONTACT_REASON_LABELS: Readonly<Record<OldContactReason, string>> = Object.freeze({
   fin_de_bail: 'Fin de bail prochaine',
-  anniversaire_achat: 'Anniversaire de l’achat',
   estimation_ancienne: 'Avis de valeur de plus d’un an',
 });
 export type OldContactChannel = 'email' | 'sms' | 'whatsapp';
@@ -100,7 +99,7 @@ interface FollowupRow {
 const TIME_ZONE = 'Europe/Paris';
 const DAY = 86_400_000;
 const DRAFT_MAX = 600;
-const RANK: Readonly<Record<OldContactReason, number>> = Object.freeze({ fin_de_bail: 0, anniversaire_achat: 1, estimation_ancienne: 2 });
+const RANK: Readonly<Record<OldContactReason, number>> = Object.freeze({ fin_de_bail: 0, estimation_ancienne: 1 });
 const marks = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
 /** Le jour de Paris, `AAAA-MM-JJ`. */
@@ -122,7 +121,6 @@ export function oldContactFallback(reason: OldContactReason, firstName: string |
   const hello = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
   const body: Record<OldContactReason, string> = {
     fin_de_bail: 'vous m’aviez parlé de la fin prochaine de votre bail. Si vous pensez à acheter ou à louer ensuite, je peux vous aider à préparer la suite.',
-    anniversaire_achat: 'une année de plus dans votre logement : j’espère que tout va bien. Si vous avez un projet ou une question sur votre bien, je reste à votre écoute.',
     estimation_ancienne: 'l’avis de valeur que je vous avais remis date de plus d’un an. Si vous le souhaitez, je peux le mettre à jour avec les ventes récentes.',
   };
   return `${hello} ${body[reason]} Il vous suffit de répondre à ce message.`;
@@ -224,6 +222,16 @@ export class AnciensContacts {
     // Une opposition aux relances après la vente est définitive : elle vaut aussi ici [R65].
     const opposed = await this.db.first(`SELECT 1 FROM after_sale_choices WHERE person_id IN (${marks(members.length)}) AND choice = 'non' AND recorded_at <= ? LIMIT 1`, [...members, iso]);
     if (opposed) return 'R65';
+    // Un client d'une vente faite avec l'agence (acquéreur, vendeur ou choix rangé à l'acte) n'est relancé que par les
+    // relances après la vente de M11, avec leur accord donné à l'acte et leur désinscription : jamais ici [R65].
+    const afterSale = await this.db.first(
+      `SELECT 1 FROM sale_files f JOIN sale_file_closings c ON c.file_id = f.id WHERE f.buyer_person_id IN (${marks(members.length)})
+       UNION SELECT 1 FROM after_sale_choices WHERE person_id IN (${marks(members.length)})
+       UNION SELECT 1 FROM mandates m JOIN sale_files f ON f.property_id = m.property_id JOIN sale_file_closings c ON c.file_id = f.id WHERE m.person_id IN (${marks(members.length)})
+       LIMIT 1`,
+      [...members, ...members, ...members],
+    );
+    if (afterSale) return 'R65';
     if (!state || (!state.client && (state.lastContactAt === '' || addMonths(parisDay(new Date(state.lastContactAt)), this.settings.prospectMonths) <= parisDay(at)))) return 'R97';
     return null;
   }
@@ -236,7 +244,7 @@ export class AnciensContacts {
     const since = new Date(at.getTime() - this.settings.periodDays * DAY).toISOString();
     const m = marks(members.length);
     const mine = await this.db.first(
-      `SELECT 1 FROM old_contact_followups WHERE person_id IN (${m}) AND id IS NOT ? AND (created_at > ? OR status = 'a_valider' OR (status = 'essai' AND decided_at > ?)) LIMIT 1`,
+      `SELECT 1 FROM old_contact_followups WHERE person_id IN (${m}) AND id IS NOT ? AND (created_at > ? OR status IN ('a_valider', 'en_envoi') OR (status = 'essai' AND decided_at > ?)) LIMIT 1`,
       [...members, except, since, since],
     );
     if (mine) return true;
@@ -259,12 +267,6 @@ export class AnciensContacts {
       addDays(today, this.settings.leaseEndLeadDays),
     ]);
     if (lease) return { reason: 'fin_de_bail', day: lease.on_day };
-    const month = today.slice(0, 7);
-    const buys = await this.db.all<{ signed_on: string }>(`SELECT c.signed_on FROM sale_file_closings c JOIN sale_files f ON f.id = c.file_id WHERE f.buyer_person_id IN (${m}) ORDER BY c.signed_on, c.file_id`, members);
-    for (const b of buys) {
-      const years = Number(month.slice(0, 4)) - Number(b.signed_on.slice(0, 4));
-      if (years >= 1 && anniversary(b.signed_on, years).slice(0, 7) === month) return { reason: 'anniversaire_achat', day: anniversary(b.signed_on, years) };
-    }
     // Le dernier avis de valeur validé d'un bien que la personne possède, s'il a plus d'un an et aucun plus récent.
     const valuation = await this.db.first<{ at: string }>(
       `SELECT max(v.validated_at) AS at FROM valuation_reports v JOIN project_properties pp ON pp.property_id = v.property_id AND pp.role = 'owned'
@@ -280,7 +282,8 @@ export class AnciensContacts {
       try {
         const body = (await this.drafter.draft({ reason })).trim();
         const hello = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
-        const text = /^bonjour\b/i.test(body) ? body : `${hello} ${body}`;
+        // Le prénom est attendu dans le premier message : une salutation sans lui est remplacée par celle du code [R08].
+        const text = `${hello} ${body.replace(/^bonjour\b[^,.!]*[,.!]?\s*/i, '')}`;
         const problem = checkOldContactText(text);
         if (problem === null) return { text, by: 'ia' };
         // Le texte refusé n'est jamais gardé ; le refus est au journal, avec son code [R12].
@@ -395,7 +398,16 @@ export class AnciensContacts {
     const channels = await this.consentedChannels(members, at);
     const channel = input.channel === undefined ? channels[0]! : (input.channel as OldContactChannel);
     if (!channels.includes(channel)) return { ok: false, rule: 'R03', code: 'no_consent_on_channel' };
-    const result = await this.controle.send({
+    // Réserver la relance avant l'envoi : deux validations en même temps n'en font qu'une [R05].
+    const claimed = await this.db.run("UPDATE old_contact_followups SET status = 'en_envoi' WHERE id = ? AND status = 'a_valider'", [r.id]);
+    if (claimed.changes !== 1) return { ok: false, rule: null, code: 'already_decided' };
+    const names = await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${marks(members.length)}) ORDER BY id = ? DESC, id`, [...members, root]);
+    const firstName = names.map((n) => n.first_name).find((n) => n) ?? null;
+    // Le texte de l'agent part tel quel ou pas du tout ; celui de l'IA a le texte du code en secours [R12].
+    const texts = input.text === undefined && r.draft_by === 'ia' ? [text, oldContactFallback(r.reason, firstName)] : [text];
+    let result: Awaited<ReturnType<ControleEnvois['send']>>;
+    try {
+      result = await this.controle.send({
       networkId: viewer.networkId,
       agentId: viewer.userId,
       personId: root,
@@ -403,9 +415,14 @@ export class AnciensContacts {
       kind: 'follow_up',
       purpose: OLD_CONTACT_PURPOSE,
       subject: `ancien_contact:${r.id}`,
-      fallbackTexts: [text],
+      fallbackTexts: texts,
       figures: [],
-    });
+      });
+    } catch (error) {
+      // Une panne rend la relance à valider ; l'erreur remonte, jamais avalée.
+      await this.db.run("UPDATE old_contact_followups SET status = 'a_valider' WHERE id = ? AND status = 'en_envoi'", [r.id]);
+      throw error;
+    }
     const status = result.status === 'sent' ? 'essai' : 'refusee';
     const rule = result.status === 'sent' ? null : result.rule;
     await this.db.run('UPDATE old_contact_followups SET status = ?, channel = ?, rule = ?, message_id = ?, decided_at = ?, decided_by = ? WHERE id = ? AND status = ?', [
@@ -416,7 +433,7 @@ export class AnciensContacts {
       this.now().toISOString(),
       this.actor(viewer),
       r.id,
-      'a_valider',
+      'en_envoi',
     ]);
     await appendEvent(this.journal, { type: 'anciens_contacts.essai', actor: this.actor(viewer), subject: `person:${root}`, data: { mode: 'essai', sent: false, followup: r.id, status, rule } }, this.now);
     return { ok: true, value: { status, rule, delivered: false } };

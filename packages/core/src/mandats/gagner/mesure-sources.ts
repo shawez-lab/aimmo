@@ -157,7 +157,7 @@ export class MesureSources {
     );
     const cost = new Map(costs.map((c) => [c.source, Number(c.amount_cents)]));
     const decisions = await this.db.all<{ source: string; decision: SourceDecision; month: string; decided_at: string }>(
-      'SELECT source, decision, month, decided_at FROM mandate_source_decisions WHERE network_id = ? ORDER BY decided_at, id',
+      'SELECT source, decision, month, decided_at FROM mandate_source_decisions WHERE network_id = ? ORDER BY source, seq',
       [viewer.networkId],
     );
     const lastDecision = new Map<string, SourceLine['decision']>();
@@ -190,16 +190,20 @@ export class MesureSources {
     if (typeof decision !== 'string' || !(SOURCE_DECISIONS as readonly string[]).includes(decision)) return { ok: false, rule: null, code: 'bad_decision' };
     if (typeof reason !== 'string' || reason.trim().length < 3 || reason.trim().length > 200) return { ok: false, rule: null, code: 'bad_reason' };
     const id = this.newId();
-    await this.db.run('INSERT INTO mandate_source_decisions (id, network_id, month, source, decision, reason, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+    const last = await this.db.first<{ s: number | null }>('SELECT max(seq) AS s FROM mandate_source_decisions WHERE network_id = ? AND source = ?', [viewer.networkId, source]);
+    const { changes } = await this.db.run('INSERT INTO mandate_source_decisions (id, network_id, month, source, seq, decision, reason, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
       id,
       viewer.networkId,
       month,
       source,
+      Number(last?.s ?? 0) + 1,
       decision,
       reason.trim(),
       this.actor(viewer),
       this.now().toISOString(),
     ]);
+    // Deux décisions au même instant : la seconde est refusée, à refaire, plutôt que d'en perdre l'ordre.
+    if (changes !== 1) return { ok: false, rule: null, code: 'conflict' };
     await appendEvent(this.journal, { type: 'mesure_sources.decision', actor: this.actor(viewer), subject: null, data: { rule: 'R144', month, source, decision } }, this.now);
     return { ok: true, value: { id } };
   }
