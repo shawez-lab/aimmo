@@ -7,7 +7,8 @@
  * Aucun champ de revenus, de patrimoine, de crédit, de note ni de score : un champ inconnu est refusé, jamais ignoré.
  * Chaque champ rempli porte sa source (l'agent ou la direction qui l'a écrit) ; rien n'est déduit ni inventé [R10].
  *
- * Le rapprochement, par le code, ne range que des biens : les présentations publiables (CE03) dont la vue publique
+ * Le rapprochement, par le code, ne range que des biens en vente ou sous offre, que la porte de diffusion de D05
+ * laisse passer, et dont la présentation est publiable (CE03), si leur vue publique
  * répond à chaque critère rempli (activité, sorte, code postal, fourchette basse dans le budget), triées par une règle
  * écrite (fourchette basse croissante, puis commune, puis identifiant). Il ne trie ni ne note jamais les repreneurs ; il
  * ne lit jamais l'apport, le financement ni l'expérience [R14]. Lecture et écriture sous R16, journal sans valeur [R13].
@@ -167,6 +168,11 @@ const toVersion = (r: ProfileRow): BuyerProfileVersion => {
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
+/** La porte de toute diffusion, `Diffusion.canDiffuse` de D05 : mandat signé, hors rétractation [R42]. */
+export interface BusinessDiffusionGate {
+  canDiffuse(networkId: string, propertyId: string, at?: Date): Promise<{ allowed: boolean; reason: string }>;
+}
+
 export interface RepreneursCommerceOptions {
   now?: () => Date;
   newId?: () => string;
@@ -182,6 +188,7 @@ export class RepreneursCommerce {
     private readonly fiches: FicheCommerce,
     private readonly estimations: EstimationCommerce,
     private readonly presentations: PresentationCommerce,
+    private readonly diffusion: BusinessDiffusionGate,
     options: RepreneursCommerceOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
@@ -265,11 +272,14 @@ export class RepreneursCommerce {
     if (!row) return { ok: true, value: [] };
     const p = toVersion(row).profile;
     const candidates = await this.db.all<{ id: string }>(
-      `SELECT id FROM properties WHERE network_id = ? AND kind IN (${BUSINESS_KINDS.map(() => '?').join(', ')}) ORDER BY id`,
+      // Seuls les biens en vente ou sous offre : jamais un bien vendu, loué, retiré ou en brouillon.
+      `SELECT id FROM properties WHERE network_id = ? AND status IN ('available', 'under_offer') AND kind IN (${BUSINESS_KINDS.map(() => '?').join(', ')}) ORDER BY id`,
       [g.networkId, ...BUSINESS_KINDS],
     );
     const out: BusinessMatch[] = [];
     for (const c of candidates) {
+      // La porte de la diffusion de D05 : sans mandat signé, ou pendant la rétractation, le bien n'est montré à personne.
+      if (!(await this.diffusion.canDiffuse(g.networkId, c.id, this.now())).allowed) continue;
       const shown = await this.presentations.publishable(g.networkId, c.id);
       if (!shown) continue;
       const view = await this.fiches.publicView(c.id);

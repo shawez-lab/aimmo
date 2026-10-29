@@ -17,7 +17,9 @@ async function setup() {
   const fiches = new FicheCommerce(db, journal, { now });
   const estimations = new EstimationCommerce(db, journal, fiches, { now });
   const presentations = new PresentationCommerce(db, journal, fiches, estimations, { now });
-  const repreneurs = new RepreneursCommerce(db, journal, fiches, estimations, presentations, { now });
+  const noMandate = new Set<string>();
+  const diffusion = { canDiffuse: async (_n: string, id: string) => ({ allowed: !noMandate.has(id), reason: noMandate.has(id) ? 'no_signed_mandate' : 'ok' }) };
+  const repreneurs = new RepreneursCommerce(db, journal, fiches, estimations, presentations, diffusion, { now });
   const network = await store.createNetwork('Réseau test');
   const alexAgent = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
   const samAgent = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Agent' });
@@ -45,7 +47,7 @@ async function setup() {
     const person = await store.createPerson({ networkId: network.id, agentId: alexAgent.id, firstName: first, lastName: 'Inventé' });
     return store.createProject({ networkId: network.id, agentId: alexAgent.id, personId: person.id, kind: 'buy_business' });
   };
-  return { db, journal, acces, repreneurs, alex, sam, direction, compliance: as('compliance', 'conf-1'), shop, buyer, store, network, alexAgent };
+  return { noMandate, db, journal, acces, repreneurs, alex, sam, direction, compliance: as('compliance', 'conf-1'), shop, buyer, store, network, alexAgent };
 }
 
 describeWithSqlite('CE06 · repreneurs, sans évaluation de solvabilité', () => {
@@ -101,6 +103,13 @@ describeWithSqlite('CE06 · repreneurs, sans évaluation de solvabilité', () =>
     const dear = await t.shop('restaurant', '21000', 9_000_000);
     await t.shop('restaurant', '21200', 4_000_000);
     await t.shop('restaurant', '21000', 3_000_000, false);
+    // Publiés, mais vendu, retiré, ou sans mandat signé : jamais montrés.
+    const sold = await t.shop('restaurant', '21000', 3_100_000);
+    await t.db.run("UPDATE properties SET status = 'sold' WHERE id = ?", [sold.id]);
+    const withdrawn = await t.shop('restaurant', '21000', 3_200_000);
+    await t.db.run("UPDATE properties SET status = 'withdrawn' WHERE id = ?", [withdrawn.id]);
+    const unsigned = await t.shop('restaurant', '21000', 3_300_000);
+    t.noMandate.add(unsigned.id);
     const a = await t.buyer('Camille');
     const b = await t.buyer('Dominique');
     const criteria = { activities: ['restaurant', 'boulangerie_patisserie'], postalCodes: ['21000'], budgetMaxEur: 40_000 };
