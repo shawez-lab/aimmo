@@ -1793,7 +1793,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE11 · Écran « Commerces » dans l'application
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : CE10
 - Cahier : M16 ; système de design de Z03.
 - Objectif : sur téléphone d'abord, la fiche, l'estimation, la présentation à valider, les demandes d'accès et leur état, les ouvertures du dossier, les étapes de la cession.
