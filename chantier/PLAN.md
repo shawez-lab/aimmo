@@ -1890,7 +1890,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G07 · Dossier de présentation pour chaque rendez-vous de mandat (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : G06
 - Cahier : M20, point 4 « Dossier de présentation ».
 - Objectif : pour un rendez-vous de mandat (M05), un dossier imprimable et lisible sur téléphone : ventes du quartier (M04, avec source et date), plan de vente (canaux de M07, Studio de M19), engagements de service rangés par la direction (versionnés), avis réels de M11 (lien et date, tous ceux de la période, jamais choisis), résultats de l'agent (M13, calculés) ; **Jamais vu** : chaque engagement de service affiché avec le taux réellement tenu par l'agent sur les 12 derniers mois, recalculé depuis le journal, et le détail qui le prouve.
@@ -1909,7 +1909,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M20, point 6 « Anciens contacts », « Règles ».
-- Objectif : chaque mois, la liste des anciens contacts relançables (prospects encore dans les 3 ans de R97, anciens clients selon R65, accords en cours), au bon moment par des règles écrites (anniversaire d'achat réglé, estimation de plus d'un an, fin de bail connue) ; la relance préparée par l'IA derrière une interface avec secours, validée par l'agent, puis par le contrôle central en mode essai (migration `1303`).
+- Objectif : chaque mois, la liste des anciens contacts relançables (prospects encore dans les 3 ans de R97, anciens clients selon R65, accords en cours), au bon moment par des règles écrites (anniversaire d'achat réglé, estimation de plus d'un an, fin de bail connue) ; décidé le 2026-10-29 sur la relecture de Codex : un client d'une vente faite avec l'agence n'est relancé que par les relances après la vente de M11 (accord à l'acte et désinscription, R65), l'anniversaire d'achat y reste et sort de G09 ; la relance préparée par l'IA derrière une interface avec secours, validée par l'agent, puis par le contrôle central en mode essai (migration `1303`).
 - Critères : jamais sans base légale au jour de l'envoi [R143, R03, R36] ; une relance par période réglée au plus [R143, R05] ; exclus et arrêts jamais relancés [R02, R04] ; ordre par règles écrites, jamais une note de l'IA [R35] ; rien ne part réellement [R26].
 - Attend : rien.
 
