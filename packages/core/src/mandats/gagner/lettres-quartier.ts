@@ -95,9 +95,14 @@ export function checkLetterText(text: string, propertyStreet: string | null): st
   if (LETTER_WORDING.test(plain(t))) return 'wording';
   if (propertyStreet) {
     // La voie du bien, sans son type (« rue », « avenue ») : son nom propre ne doit pas paraître dans la lettre [R46].
-    const name = words(propertyStreet).replace(STREET_TYPES, '').trim().split(' ').filter((w) => w.length > 2 && !/\d/.test(w) && !['des', 'les', 'aux', 'du', 'de', 'la', 'le'].includes(w));
+    const rest = words(propertyStreet).replace(STREET_TYPES, '').trim();
+    const tokens = rest.split(' ').filter((w) => w !== '' && !/\d/.test(w));
+    const strong = tokens.filter((w) => w.length > 2 && !['des', 'les', 'aux', 'du', 'de', 'la', 'le'].includes(w));
+    // Une voie faite de mots courts (« rue de l’If ») garde tous ses mots : jamais aucun contrôle vide.
+    const name = strong.length > 0 ? strong : tokens;
     const body = ` ${words(t)} `;
     if (name.length > 0 && name.every((w) => body.includes(` ${w} `))) return 'property_street';
+    if (tokens.length > 0 && body.includes(` ${tokens.join(' ')} `)) return 'property_street';
   }
   return null;
 }
