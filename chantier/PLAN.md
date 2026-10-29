@@ -1922,7 +1922,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G11 · Routes de M20 complet
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : G10
 - Cahier : M20 ; Architecture technique, API.
 - Objectif : `packages/api/src/gagner.ts` : routes `/v1/gagner` (lettres, dossier de présentation, recommandations, relances, mesure), rôle contrôlé avant le corps, refus au journal.
