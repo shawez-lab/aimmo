@@ -300,6 +300,20 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(await t.gagner.callDone(t.agent(t.sam.id), row!.id)).toEqual({ ok: true, value: { done: true } });
   });
 
+  it('[R16] quand une recommandation donne un agent à la personne, ses projets plus anciens passent avec elle', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    const q = await t.partner('Étude Seconde');
+    // Le premier partenaire n'a confié aucune mise en relation : pas d'agent. Le second, si.
+    await t.gagner.recommend(t.as(p), t.input());
+    await t.entrust(q);
+    await t.gagner.recommend(t.as(q), t.input());
+    const projects = await t.db.all<{ agent_id: string | null }>('SELECT p.agent_id FROM projects p JOIN partner_recommendations r ON r.project_id = p.id ORDER BY r.created_at');
+    expect(projects.map((x) => x.agent_id)).toEqual([t.alex.id, t.alex.id]);
+    const list = await t.gagner.toCall(t.agent());
+    expect(list.ok && list.value).toHaveLength(2);
+  });
+
   it('[R16] [R73] seul un partenaire du réseau, aux justificatifs valides, recommande ; la direction attribue ce qui n’a pas d’agent', async () => {
     const t = await setup();
     const p = await t.partner('Étude Essai');
