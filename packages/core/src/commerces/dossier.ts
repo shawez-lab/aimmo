@@ -370,11 +370,15 @@ export class DossierCommerce {
       channel: 'email',
       kind: 'alert',
       purpose: DOSSIER_PURPOSE,
-      subject: `dossier_commerce:${link.id}`,
+      subject: `dossier_commerce:${id}`,
       fallbackTexts: [`Bonjour,\n\nVotre code pour ouvrir le dossier confidentiel : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne.`],
       figures: [code, CODE_TTL_MINUTES],
     });
-    if (sent.status !== 'sent') return { ok: false, rule: sent.rule, code: 'send_refused' };
+    if (sent.status !== 'sent') {
+      // Un code qui n'est pas parti ne sert jamais.
+      await this.db.run("UPDATE business_dossier_open_codes SET status = 'bloque' WHERE id = ? AND status = 'ouvert'", [id]);
+      return { ok: false, rule: sent.rule, code: 'send_refused' };
+    }
     return { ok: true, value: { expiresAt } };
   }
 

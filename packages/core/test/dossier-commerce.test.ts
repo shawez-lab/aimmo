@@ -47,9 +47,11 @@ async function setup(options: { maxOpens?: number } = {}) {
   const identity: IdentityState = { state: async (_n, personId) => ({ identityVerifiedOn: verified.get(personId) ?? null }) };
   let code = '123456';
   const conf = new ConfidentialiteCommerce(db, journal, fiches, presentations, identity, { now, newCode: () => code });
+  let codes = 0;
+  let lastCode = '';
   const files = new Map<string, string>([['r2://essai/bilan-2026.txt', BILAN]]);
   const storage: DossierStorage = { read: async (ref) => files.get(ref) ?? null };
-  const dossier = new DossierCommerce(db, journal, fiches, conf, storage, { now, newCode: () => OPEN_CODE, ...(options.maxOpens ? { maxOpens: options.maxOpens } : {}) });
+  const dossier = new DossierCommerce(db, journal, fiches, conf, storage, { now, newCode: () => (lastCode = String(900_000 + (codes += 1))), ...(options.maxOpens ? { maxOpens: options.maxOpens } : {}) });
   const network = await store.createNetwork('Réseau test');
   const alexAgent = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
   const samAgent = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Agent' });
@@ -91,10 +93,11 @@ async function setup(options: { maxOpens?: number } = {}) {
   };
   /** Le lecteur demande son code, le reçoit dans la boîte d'essai, et ouvre. */
   const openAs = async (token: string, email: string) => {
-    await dossier.requestCode(token, email);
-    return dossier.open(token, email, OPEN_CODE);
+    const asked = await dossier.requestCode(token, email);
+    if (!asked.ok) return asked;
+    return dossier.open(token, email, lastCode);
   };
-  return { openAs, db, journal, acces, conf, dossier, alex, sam: as('agent', samAgent.id), direction, compliance: as('compliance', 'conf-1'), shop, buyer, tokenFor, advance: (ms: number) => (clock += ms), files };
+  return { lastCode: () => lastCode, openAs, db, journal, acces, conf, dossier, alex, sam: as('agent', samAgent.id), direction, compliance: as('compliance', 'conf-1'), shop, buyer, tokenFor, advance: (ms: number) => (clock += ms), files };
 }
 
 describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
@@ -119,7 +122,7 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
     }
     // Le code d'ouverture part aussi en essai seulement, à la personne du lien ; il n'est rangé qu'en empreinte.
     expect(await t.db.all("SELECT 1 FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%code pour ouvrir%'", [b.id])).toHaveLength(3);
-    expect(JSON.stringify(await t.db.all('SELECT * FROM business_dossier_open_codes'))).not.toContain(OPEN_CODE);
+    expect(JSON.stringify(await t.db.all('SELECT * FROM business_dossier_open_codes'))).not.toContain(t.lastCode());
     const log = await t.dossier.accesses(t.acces, t.alex, t.shop.id);
     expect(log.ok && log.value.map((a) => [a.outcome, a.personId])).toEqual([
       ['ouvert', b.id],
@@ -144,7 +147,7 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
         name: 'code déjà servi',
         act: async (b, token) => {
           await t.openAs(token, b.email);
-          return t.dossier.open(token, b.email, OPEN_CODE);
+          return t.dossier.open(token, b.email, t.lastCode());
         },
         code: 'autre_lecteur',
       },
