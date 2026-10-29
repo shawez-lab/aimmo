@@ -258,4 +258,41 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     expect(JSON.stringify(seen)).not.toContain('Martin');
     expect(JSON.stringify(seen)).not.toContain('saisi:agent');
   });
+
+  it('[R126] une perte n’est jamais écrite comme un gain : le signe d’un nombre compte', () => {
+    const net = { key: 'netYieldBp', value: -269, unit: 'bp' as const, source: 'calcul', asOf: AT, hypothesis: 'h' };
+    expect(traceParagraph('Le rendement net avant impôt est de 2,69 %.', [net]).problems).toEqual([{ code: 'nombre_sans_source', value: '2,69' }]);
+    expect(traceParagraph('Le rendement net avant impôt est de −2,69 %.', [net]).problems).toEqual([]);
+    expect(traceParagraph('Le rendement net avant impôt est de -2,69 %.', [net]).problems).toEqual([]);
+    const income = { key: 'netIncome', value: -123_400, unit: 'cents' as const, source: 'calcul', asOf: AT, hypothesis: 'h' };
+    expect(traceParagraph('Le revenu net est de 1 234 € par an.', [income]).problems).toHaveLength(1);
+    expect(traceParagraph('Le revenu net est de −1 234 € par an.', [income]).problems).toEqual([]);
+  });
+
+  it('[R124] une note validée n’est plus remise au client si une interdiction de louer apparaît après la validation', async () => {
+    const t = await setup({ energyClass: 'C' });
+    const r = await t.notes.draft(t.acces, t.as('agent', t.alex.id), { calculationId: t.calcId, projectId: t.project.id });
+    if (!r.ok) throw new Error(r.code);
+    const v = await t.notes.validate(t.acces, t.as('agent', t.alex.id), r.value.id, { textSha256: r.value.textSha256 });
+    expect(v).toMatchObject({ ok: true });
+    expect(await t.notes.forClient(t.network.id, r.value.id)).toMatchObject({ text: r.value.text });
+    await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('s-3', 'p-1', ?, 2, ?, 'agent:a', ?)", [
+      t.network.id,
+      JSON.stringify({ energy: { energyClass: 'G' }, coownership: { isCoownership: false } }),
+      AT,
+    ]);
+    expect(await t.notes.forClient(t.network.id, r.value.id)).toBeNull();
+    expect((await t.journal.all()).some((e) => e.type === 'investir.note.retenue')).toBe(true);
+  });
+
+  it('revenir au loyer central après une borne rend le loyer central de la base et son hypothèse', async () => {
+    const t = await setup();
+    const low = await t.notes.draft(t.acces, t.as('agent', t.alex.id), { calculationId: t.calcId, projectId: t.project.id, hypotheses: { rent: 'low' } });
+    if (!low.ok) throw new Error(low.code);
+    const back = await t.notes.draft(t.acces, t.as('agent', t.alex.id), { calculationId: low.value.calculationId, projectId: t.project.id, hypotheses: { rent: 'central' } });
+    if (!back.ok) throw new Error(back.code);
+    expect(back.value.text).toContain('Rendement brut : 3,89 %');
+    expect(back.value.text).toContain('Loyer de marché au m² : 12,35 €/m²');
+    expect(back.value.text).not.toContain('borne basse de l’intervalle retenue');
+  });
 });

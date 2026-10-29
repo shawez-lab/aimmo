@@ -149,15 +149,20 @@ export interface InvestmentNote {
   /** Les mentions obligatoires : ANIL, peu d'observations, contraintes. */
   mentions: string[];
   referral: string;
+  /** Ce qui a servi à lire les contraintes, pour les relire à chaque remise au client [R124]. */
+  context?: { inseeCode: string | null; energyClass: string | null; finalEnergyKwh: number | null };
 }
 
-const NUMBER = /\d{1,3}(?:[   ]\d{3})+(?:,\d+)?|\d+(?:,\d+)?/g;
+const NUMBER = /(?:[-−]\s?)?(?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:,\d+)?|\d+(?:,\d+)?)/g;
 
 /** Un nombre écrit en français, en centièmes (« 3,89 » → 389, « 150 000 » → 15 000 000) ; plus de deux décimales : null. */
 function hundredths(text: string): number | null {
-  const [whole, frac = ''] = text.replace(/[   ]/g, '').split(',');
+  const t = text.replace(/[\s\u00a0\u202f]/g, '');
+  const neg = /^[-−]/.test(t);
+  const [whole, frac = ''] = t.replace(/^[-−]/, '').split(',');
   if (frac.length > 2) return null;
-  return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
+  const v = Number(whole) * 100 + Number(frac.padEnd(2, '0'));
+  return neg ? -v : v;
 }
 
 /** Les valeurs, en centièmes, sous lesquelles une ligne du calcul peut être écrite dans un texte. */
@@ -165,11 +170,11 @@ function writtenValues(line: YieldLine): number[] {
   switch (line.unit) {
     case 'cents':
     case 'cents_per_m2':
-      // En euros au centime, ou arrondi à l'euro.
-      return [Math.abs(line.value), Math.round(Math.abs(line.value) / 100) * 100];
+      // En euros au centime, ou arrondi à l'euro ; le signe compte : une perte n'est jamais écrite comme un gain.
+      return [line.value, Math.sign(line.value) * Math.round(Math.abs(line.value) / 100) * 100];
     case 'bp':
-      // En pourcentage à deux décimales, ou à une décimale.
-      return [Math.abs(line.value), Math.round(Math.abs(line.value) / 10) * 10];
+      // En pourcentage à deux décimales, ou à une décimale, signe compris.
+      return [line.value, Math.sign(line.value) * Math.round(Math.abs(line.value) / 10) * 10];
     case 'm2_hundredths':
       return [line.value, Math.round(line.value / 100) * 100];
     case 'months':
@@ -437,16 +442,23 @@ export function withHypotheses(inputs: YieldInputs, h: NoteHypotheses, actor: st
     out.works = said(h.worksCents, 'travaux choisis pour la note');
   }
   if (h.rent !== undefined && h.rent !== 'central' && h.rent !== 'low' && h.rent !== 'high') return null;
-  if (h.rent === 'low' || h.rent === 'high') {
+  if (h.rent !== undefined) {
     const r = inputs.marketRent;
     if (!r) return null;
-    const v = h.rent === 'low' ? r.value.lowerM2Cents : r.value.upperM2Cents;
-    out.marketRent = {
-      value: { centralM2Cents: v, lowerM2Cents: r.value.lowerM2Cents, upperM2Cents: r.value.upperM2Cents },
-      source: r.source,
-      asOf: r.asOf,
-      hypothesis: `${h.rent === 'low' ? 'borne basse' : 'borne haute'} de l’intervalle retenue pour la note${/peu d.observations/i.test(r.hypothesis) ? ', peu d’observations' : ''}`,
-    };
+    // Le loyer central de la base et son hypothèse restent rangés à part : « central » les rend, même après une borne.
+    const central = r.value.originalCentralM2Cents ?? r.value.centralM2Cents;
+    const hypothesis = r.value.originalHypothesis ?? r.hypothesis;
+    if (h.rent === 'central') {
+      out.marketRent = { value: { centralM2Cents: central, lowerM2Cents: r.value.lowerM2Cents, upperM2Cents: r.value.upperM2Cents }, source: r.source, asOf: r.asOf, hypothesis };
+    } else {
+      const v = h.rent === 'low' ? r.value.lowerM2Cents : r.value.upperM2Cents;
+      out.marketRent = {
+        value: { centralM2Cents: v, lowerM2Cents: r.value.lowerM2Cents, upperM2Cents: r.value.upperM2Cents, originalCentralM2Cents: central, originalHypothesis: hypothesis },
+        source: r.source,
+        asOf: r.asOf,
+        hypothesis: `${h.rent === 'low' ? 'borne basse' : 'borne haute'} de l’intervalle retenue pour la note${/peu d.observations/i.test(hypothesis) ? ', peu d’observations' : ''}`,
+      };
+    }
   }
   return out;
 }
@@ -458,6 +470,8 @@ export interface StoredNote {
   origin: 'ia' | 'secours';
   note: InvestmentNote;
   text: string;
+  /** L'empreinte du texte, que l'agent renvoie pour valider exactement ce qu'il a lu. */
+  textSha256: string;
   status: 'a_valider' | 'validee';
   createdBy: string;
   createdAt: string;
@@ -488,6 +502,7 @@ const toStored = (r: NoteRow): StoredNote => ({
   origin: r.origin,
   note: JSON.parse(r.note) as InvestmentNote,
   text: r.text,
+  textSha256: r.text_sha256,
   status: r.status,
   createdBy: r.created_by,
   createdAt: r.created_at,
@@ -585,7 +600,14 @@ export class NotesInvestissement {
         );
       }
     }
-    const note = buildNote(paragraphs, facts, constraints);
+    const note: InvestmentNote = {
+      ...buildNote(paragraphs, facts, constraints),
+      context: {
+        inseeCode: input.inseeCode ?? null,
+        energyClass: typeof input.energy?.energyClass === 'string' ? input.energy.energyClass : null,
+        finalEnergyKwh: typeof input.energy?.finalEnergyKwh === 'number' ? input.energy.finalEnergyKwh : null,
+      },
+    };
     const text = renderNote(note);
     const check = checkNote(note, text, facts, constraints);
     if (!check.ok) {
@@ -600,15 +622,16 @@ export class NotesInvestissement {
     }
     const id = this.newId();
     const createdAt = this.now().toISOString();
+    const textSha256 = await sha256Hex(text);
     await this.db.run(
       `INSERT INTO investment_notes (id, network_id, calculation_id, project_id, origin, note, text, text_sha256, status, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'a_valider', ?, ?)`,
-      [id, viewer.networkId, calculationId, input.projectId, origin, JSON.stringify(note), text, await sha256Hex(text), actor, createdAt],
+      [id, viewer.networkId, calculationId, input.projectId, origin, JSON.stringify(note), text, textSha256, actor, createdAt],
     );
     await appendEvent(this.journal, { type: 'investir.note', actor, subject: `project:${input.projectId}`, data: { note: id, calculation: calculationId, origin } }, this.now);
     return {
       ok: true,
-      value: { id, calculationId, projectId: input.projectId, origin, note, text, status: 'a_valider', createdBy: actor, createdAt, validatedBy: null, validatedAt: null },
+      value: { id, calculationId, projectId: input.projectId, origin, note, text, textSha256, status: 'a_valider', createdBy: actor, createdAt, validatedBy: null, validatedAt: null },
     };
   }
 
@@ -651,10 +674,26 @@ export class NotesInvestissement {
     return { ok: true, value: toStored(after!) };
   }
 
-  /** Ce que le client peut lire : seulement une note validée par l'agent, sinon rien [R126]. */
+  /**
+   * Ce que le client peut lire : seulement une note validée par l'agent [R126], et seulement si ses alertes tiennent
+   * encore : contraintes et profil relus à chaque remise, une interdiction de louer apparue depuis retient la note [R124].
+   */
   async forClient(networkId: string, noteId: string): Promise<{ text: string; validatedAt: string } | null> {
     const row = await this.db.first<NoteRow>("SELECT * FROM investment_notes WHERE id = ? AND network_id = ? AND status = 'validee'", [noteId, networkId]);
-    return row && row.validated_at ? { text: row.text, validatedAt: row.validated_at } : null;
+    if (!row || !row.validated_at) return null;
+    const calc = await this.calculs.get(networkId, row.calculation_id);
+    const note = JSON.parse(row.note) as InvestmentNote;
+    const ctx = note.context ?? { inseeCode: null, energyClass: null, finalEnergyKwh: null };
+    const held = async (code: string): Promise<null> => {
+      await appendEvent(this.journal, { type: 'investir.note.retenue', actor: 'system:investir', subject: `project:${row.project_id}`, data: { rule: 'R124', code, note: noteId } }, this.now);
+      return null;
+    };
+    if (!calc || calc.result.status !== 'complet') return held('calcul');
+    const constraints = await this.constraintsFor(networkId, calc.propertyId, row.project_id, ctx.inseeCode, { energyClass: ctx.energyClass, finalEnergyKwh: ctx.finalEnergyKwh });
+    const facts: NoteFacts = { lines: calc.result.lines, grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] };
+    const check = checkNote(note, row.text, facts, constraints);
+    if (!check.ok) return held(check.code);
+    return { text: row.text, validatedAt: row.validated_at };
   }
 
   /** Les contraintes du bien, avec la location visée du dernier profil de l'investisseur ; inconnue : il veut louer. */
