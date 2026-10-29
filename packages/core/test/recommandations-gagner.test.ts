@@ -263,6 +263,21 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(view.consents.map((c) => c.channel)).toEqual(['email']);
   });
 
+  it('[R16] deux recommandations de la même personne sans agent : la seconde ne peut aller qu’à l’agent qui a reçu la première', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    const q = await t.partner('Étude Seconde');
+    await t.gagner.recommend(t.as(p), t.input());
+    await t.gagner.recommend(t.as(q), t.input());
+    const [first, second] = await t.rows();
+    expect([first!.agent_id, second!.agent_id]).toEqual([null, null]);
+    expect(await t.gagner.assign(t.dir, first!.id, t.alex.id)).toEqual({ ok: true, value: { assigned: true } });
+    expect(await t.gagner.assign(t.dir, second!.id, t.sam.id)).toEqual({ ok: false, rule: null, code: 'followed_by_other' });
+    expect(await t.gagner.assign(t.dir, second!.id, t.alex.id)).toEqual({ ok: true, value: { assigned: true } });
+    const list = await t.gagner.toCall(t.agent());
+    expect(list.ok && list.value.map((r) => r.recommendationId).sort()).toEqual([first!.id, second!.id].sort());
+  });
+
   it('[R16] [R73] seul un partenaire du réseau, aux justificatifs valides, recommande ; la direction attribue ce qui n’a pas d’agent', async () => {
     const t = await setup();
     const p = await t.partner('Étude Essai');
