@@ -22,7 +22,9 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { VaultPieceKind } from '../conformite/coffre.ts';
+import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { FUNDS_REQUEST_DOCUMENTS, FUNDS_REQUEST_TEXT, VIGILANCE_DECISIONS, type VigilanceDecisionKind } from '../conformite/vigilance.ts';
@@ -95,7 +97,10 @@ export class VigilanceCession {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.unique = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
   }
+
+  private readonly unique: FicheUnique;
 
   private actor(viewer: Viewer): string {
     return `${String(viewer.role)}:${viewer.userId}`;
@@ -142,7 +147,7 @@ export class VigilanceCession {
     const legal =
       Number(buyer.legal_person) === 1 ||
       (await this.vault.everDeposited(networkId, buyer.person_id, ['extrait_kbis', 'registre_beneficiaires'], at)) ||
-      !!(await this.db.first("SELECT 1 FROM client_identifications WHERE network_id = ? AND person_id = ? AND entity = 'societe' LIMIT 1", [networkId, buyer.person_id]));
+      (await this.declaredCompany(networkId, buyer.person_id));
     if (await this.db.first('SELECT 1 FROM business_transfer_watch WHERE file_id = ? AND person_id = ? AND legal_person = ?', [fileId, buyer.person_id, legal ? 1 : 0])) return false;
     const missing: TransferVigilanceMissing[] = [];
     if (legal && !(await this.vault.everDeposited(networkId, buyer.person_id, ['registre_beneficiaires'], at))) missing.push('beneficiaires_effectifs');
@@ -157,6 +162,16 @@ export class VigilanceCession {
     // Sous la référence de l'alerte, jamais sous le bien ni la personne : l'agent ne la voit pas [R13].
     await appendEvent(this.journal, { type: 'commerces.cession.vigilance', actor: 'system:commerces', subject: `business_vigilance:${id}`, data: { rule: 'R118', missing } }, this.now);
     return true;
+  }
+
+  /** Une déclaration « société » à l'identification (L03), sur la fiche ou sur une fiche réunie avec elle. */
+  private async declaredCompany(networkId: string, personId: string): Promise<boolean> {
+    const ids = await this.unique.membersOf(personId);
+    const row = await this.db.first(
+      `SELECT 1 FROM client_identifications WHERE network_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND entity = 'societe' LIMIT 1`,
+      [networkId, ...ids],
+    );
+    return !!row;
   }
 
   /** La tâche quotidienne : examine chaque dossier de cession ouvert du réseau. Rend le nombre d'alertes levées. */
