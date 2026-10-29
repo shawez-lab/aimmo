@@ -58,15 +58,15 @@ async function setup(opts: { files?: boolean; extra?: Record<string, unknown> } 
   };
   const ids: Record<Who, { role: string; userId: string }> = { alex: { role: 'agent', userId: alex }, direction: { role: 'direction', userId: 'd1' }, partenaire: { role: 'partner', userId: 'p-1' } };
   const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), networkId: network, ...ids[w] }))));
-  const config = (): ApiConfig => ({ db, apiKeys, mode: 'essai', now, ...(opts.files === false ? {} : { studio: { files: { has: async (r: string) => stored.has(r) }, ...(opts.extra ?? {}) } as never }) });
+  const config = (files = opts.files !== false): ApiConfig => ({ db, apiKeys, mode: 'essai', now, ...(!files ? {} : { studio: { files: { has: async (r: string) => stored.has(r) }, ...(opts.extra ?? {}) } as never }) });
   const call = async (who: Who, method: string, path: string, body?: unknown) => {
     const init: RequestInit = { method, headers: { authorization: `Bearer ${KEYS[who]}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) };
     const r = await handleRequest(new Request(`${BASE}/v1${path}`, init), config());
     const type = r.headers.get('content-type') ?? '';
     return { status: r.status, body: type.startsWith('application/json') ? ((await r.json()) as any) : null, text: type.startsWith('text/html') ? await r.text() : null };
   };
-  const page = async (method: string, path: string) => {
-    const r = await handleRequest(new Request(`${BASE}${path}`, { method }), config());
+  const page = async (method: string, path: string, files = true) => {
+    const r = await handleRequest(new Request(`${BASE}${path}`, { method }), config(files && opts.files !== false));
     return { status: r.status, html: await r.text(), csp: r.headers.get('content-security-policy') ?? '' };
   };
   return { db, journal, network, alex, call, page, property };
@@ -134,7 +134,7 @@ describeWithSqlite('X10 · branchement de M19 dans le socle', () => {
     expect((await t.page('GET', `/certificat-photo/${'A'.repeat(32)}`)).status).toBe(404);
     expect((await t.page('POST', path)).status).toBe(405);
     // La page sert sans le stockage des fichiers : elle ne lit que le certificat.
-    expect((await (await setup({ files: false })).page('GET', path)).status).toBe(404);
+    expect((await t.page('GET', path, false)).status).toBe(200);
   });
 
   it('[R16] le rôle est refusé par le socle et écrit au journal ; sans stockage des fichiers, le Studio est fermé', async () => {
