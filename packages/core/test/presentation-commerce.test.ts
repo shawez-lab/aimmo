@@ -142,11 +142,17 @@ describeWithSqlite('CE03 · présentation anonyme d’un commerce', () => {
       ['Surface de 249358 m².', 'nombre_hors_vue_publique'],
       ['Surface de 21000 m2.', 'nombre_hors_vue_publique'],
       ['Code 249 358.', 'nombre_hors_vue_publique'],
+      ['Prix de -249358 €.', 'nombre_hors_vue_publique'],
+      ['Surface de −85 m².', 'nombre_hors_vue_publique'],
     ];
     for (const [text, code] of cases) {
       const r = checkPresentation('Boulangerie à Dijon', text, FACTS, MARKS);
       expect(r.ok, text).toBe(false);
       expect(r.sentences.flatMap((s) => s.problems.map((p) => p.code)), text).toContain(code);
+    }
+    // Une enseigne courte et distinctive est reconnue, seule ou dans son nom complet.
+    for (const signName of ['AX', 'Au QG']) {
+      expect(checkPresentation('Boulangerie à Dijon', `${signName} est à reprendre.`, FACTS, { ...MARKS, signName }).sentences.flatMap((x) => x.problems.map((p) => p.code)), signName).toContain('enseigne');
     }
     // Un article du matériel, même court, est confidentiel.
     expect(checkPresentation('Boulangerie à Dijon', 'TV disponible.', FACTS, { ...MARKS, equipment: ['TV'] }).ok).toBe(false);
