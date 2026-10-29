@@ -177,7 +177,7 @@ export class PrixRegroupes {
     if (clash) return refuse('slug_pris');
     const id = crypto.randomUUID();
     await this.db.run(
-      'INSERT INTO price_zones (id, network_id, level, parent_id, slug, name, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [id, viewer.networkId, input.level, parentId, input.slug, input.name.trim(), insee, JSON.stringify(ring), input.ringSource.trim(), actor, this.now().toISOString()],
     );
     await appendEvent(this.journal, { type: 'attirer.zone.tracee', actor, subject: `price_zone:${id}`, data: { level: input.level } }, this.now);
@@ -192,7 +192,7 @@ export class PrixRegroupes {
     const coverage = await this.sales.coverage();
     if (!coverage || !/^\d{4}-\d{2}-\d{2}$/.test(coverage.lastSale)) return { ran: false, reason: 'dvf_non_couvert' };
     const zones = await this.db.all<ZoneRow>(
-      'SELECT id, level, parent_id, slug, name, ring_json FROM price_zones WHERE network_id = ? ORDER BY id',
+      'SELECT id, level, parent_id, slug, label AS name, ring_json FROM price_zones WHERE network_id = ? ORDER BY id',
       [networkId],
     );
     const communes = zones.filter((z) => z.level === 'commune');
@@ -212,7 +212,7 @@ export class PrixRegroupes {
     const nowIso = this.now().toISOString();
     if (!existing) {
       await this.db.run(
-        "INSERT INTO price_versions (id, network_id, source, dvf_last_sale, window_from, window_to, zones_sha256, min_sales, status, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'en_cours', ?)",
+        "INSERT INTO price_versions (id, network_id, source, dvf_last_sale, window_from, window_to, areas_digest, min_sales, status, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'en_cours', ?)",
         [versionId, networkId, coverage.source, coverage.lastSale, window.from, window.to, zonesHash, this.settings.minSales, nowIso],
       );
     }
@@ -242,13 +242,13 @@ export class PrixRegroupes {
         for (const d of decisions) {
           const f = d.figures;
           await this.db.run(
-            'INSERT OR IGNORE INTO price_cells (version_id, zone_id, kind, status, reason, sales_count, median_m2, q1_m2, q3_m2, from_version_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT OR IGNORE INTO price_cells (version_id, area_id, kind, status, hold_code, sales_count, median_m2, q1_m2, q3_m2, from_version_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [versionId, d.zoneId, kind, d.status, d.reason, f?.sales ?? null, f?.median ?? null, f?.q1 ?? null, f?.q3 ?? null, d.fromVersion],
           );
           if (d.status === 'publiee' && d.set) {
             for (const [fp, n] of d.set) {
               await this.db.run(
-                'INSERT OR IGNORE INTO price_cell_sales (version_id, zone_id, kind, fingerprint, n) VALUES (?, ?, ?, ?, ?)',
+                'INSERT OR IGNORE INTO price_cell_sales (version_id, area_id, kind, fingerprint, n) VALUES (?, ?, ?, ?, ?)',
                 [versionId, d.zoneId, kind, fp, n],
               );
             }
@@ -278,12 +278,12 @@ export class PrixRegroupes {
     const out: ShownCell[] = [];
     for (const zoneId of zoneIds) {
       const c = await this.db.first<{ status: string; sales_count: number; median_m2: number; q1_m2: number; q3_m2: number; from_version_id: string }>(
-        "SELECT status, sales_count, median_m2, q1_m2, q3_m2, from_version_id FROM price_cells WHERE version_id = ? AND zone_id = ? AND kind = ? AND status <> 'retenue'",
+        "SELECT status, sales_count, median_m2, q1_m2, q3_m2, from_version_id FROM price_cells WHERE version_id = ? AND area_id = ? AND kind = ? AND status <> 'retenue'",
         [versionId, zoneId, kind],
       );
       if (!c) continue;
       const rows = await this.db.all<{ fingerprint: string; n: number }>(
-        'SELECT fingerprint, n FROM price_cell_sales WHERE version_id = ? AND zone_id = ? AND kind = ?',
+        'SELECT fingerprint, n FROM price_cell_sales WHERE version_id = ? AND area_id = ? AND kind = ?',
         [c.from_version_id, zoneId, kind],
       );
       const figures: CellFigures = { sales: c.sales_count, median: c.median_m2, q1: c.q1_m2, q3: c.q3_m2 };
@@ -334,10 +334,10 @@ export class PrixRegroupes {
       window_from: string | null;
       window_to: string | null;
     }>(
-      `SELECT z.slug, z.name, z.level, c.kind, c.status, c.reason, c.sales_count, c.median_m2, c.q1_m2, c.q3_m2,
+      `SELECT z.slug, z.label AS name, z.level, c.kind, c.status, c.hold_code AS reason, c.sales_count, c.median_m2, c.q1_m2, c.q3_m2,
               o.source, o.dvf_last_sale, o.window_from, o.window_to
          FROM price_cells c
-         JOIN price_zones z ON z.id = c.zone_id
+         JOIN price_zones z ON z.id = c.area_id
          LEFT JOIN price_versions o ON o.id = c.from_version_id
         WHERE c.version_id = ? AND (z.id = ? OR z.parent_id = ?)
         ORDER BY z.level, z.slug, c.kind`,
