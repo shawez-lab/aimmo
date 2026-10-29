@@ -6,9 +6,10 @@
  * Sans l'une de ces mentions, la page n'est pas publiée et la raison est dite [R152]. Un agent parti n'a plus de page.
  *
  * La page montre les biens de l'agent dont la dernière version publiée est en vente ou sous offre (le fichier
- * diffusable, jamais un brouillon ni une donnée de client) [R16, R46], et la satisfaction de ses clients après la vente
- * (M11, F05) : la moyenne de toutes les réponses, sans tri ni choix, montrée seulement à partir de 5 réponses (réglage)
- * pour ne situer personne ; aucun commentaire n'est recopié, faute d'accord de publication [R64].
+ * diffusable, jamais un brouillon ni une donnée de client) [R16, R46], et le lien vers les avis publiés par ses clients
+ * eux-mêmes, celui que la demande d'avis de M11 envoie à chaque client sans tri (F02) [R64]. Les réponses de satisfaction
+ * (F05) ne sont jamais publiées, ni une à une ni en moyenne : une moyenne qui bouge à chaque réponse laisserait lire la
+ * note d'un client par différence entre deux visites.
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -17,8 +18,6 @@ import { escapeHtml } from '../documents/modeles.ts';
 import { euros } from '../annonces/mentions.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-
-export const DEFAULT_MIN_ANSWERS = 5;
 
 export interface AgentMentions {
   rsacNumber: string;
@@ -43,8 +42,8 @@ export interface AgentPageInput {
   email: string | null;
   mentions: AgentMentions;
   listings: AgentListing[];
-  /** Toutes les réponses comptées ; la moyenne n'est montrée qu'à partir du seuil. */
-  satisfaction: { answers: number; average: number | null };
+  /** Le lien vers les avis publiés par les clients eux-mêmes (fiche Google de l'agent), s'il est réglé. */
+  reviewsUrl: string | null;
 }
 
 export type MissingMention = 'agent_inconnu' | 'agent_parti' | 'statut_manquant' | 'carte_manquante' | 'titulaire_manquant';
@@ -55,6 +54,7 @@ type Refusal = { ok: false; rule: 'R16'; code: 'role' | 'agent_inconnu' | 'agent
 
 const PHONE = /^\+?[0-9 .]{6,20}$/;
 const EMAIL = /^[^\s@<>"']{1,64}@[A-Za-z0-9.-]{1,60}\.[A-Za-z]{2,}$/;
+const REVIEWS_URL = /^https:\/\/[^\s"'<>]{4,290}$/;
 const STATE_LABEL = { en_vente: 'En vente', sous_offre: 'Sous offre' } as const;
 
 /** Un numéro d'immatriculation : les 9 chiffres du SIREN, écrits « 123 456 789 ». `null` s'il n'en a pas 9. */
@@ -77,7 +77,6 @@ main{max-width:46rem;margin:0 auto;padding:0 var(--e-4) var(--e-8)}
 .biens a{display:block;padding:var(--e-4);background:var(--surface);border-radius:var(--r-m);text-decoration:none;color:var(--encre)}
 .biens strong{display:block;font-size:var(--t-l)}.biens .prix{font:600 var(--t-l) var(--police-titre);color:var(--accent)}
 .etat{font-size:var(--t-xs);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--doux)}
-.note{font:600 clamp(2rem,8vw,2.6rem)/1 var(--police-titre);color:var(--accent);margin:var(--e-2) 0}
 .doux{color:var(--doux)}`;
 
 /** La phrase des mentions, à côté du nom : jamais « mandataire » [R07, R152]. */
@@ -86,7 +85,7 @@ export function mentionsLine(m: AgentMentions): string {
 }
 
 /** La page de l'agent : la base du système de design d'AIMMO, puis sa mise en page, en jetons [R201]. */
-export function renderAgentPage(input: AgentPageInput, minAnswers: number = DEFAULT_MIN_ANSWERS): string {
+export function renderAgentPage(input: AgentPageInput): string {
   const name = `${input.firstName} ${input.lastName}`;
   const title = `${name}, agent immobilier`;
   const head = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>`;
@@ -103,18 +102,17 @@ export function renderAgentPage(input: AgentPageInput, minAnswers: number = DEFA
           )
           .join('')}</ul>`
       : `<p class="doux">Aucun bien en vente en ce moment.</p>`;
-  const s = input.satisfaction;
-  const satisfaction =
-    s.average !== null && s.answers >= minAnswers
-      ? `<p class="note">${escapeHtml(s.average.toFixed(1).replace('.', ','))} / 5</p><p>Moyenne de toutes les réponses de ses clients après la vente, sans tri : ${s.answers} réponses.</p>`
-      : `<p class="doux">Pas encore assez de réponses de clients après la vente pour en montrer la moyenne.</p>`;
+  const reviews =
+    input.reviewsUrl && REVIEWS_URL.test(input.reviewsUrl)
+      ? `<p><a href="${escapeHtml(input.reviewsUrl)}" rel="noopener noreferrer">Lire les avis de ses clients</a>, publiés par eux-mêmes. Chaque client est invité à en laisser un après la vente, sans tri ni contrepartie.</p>`
+      : `<p class="doux">Les avis de ses clients seront bientôt en ligne.</p>`;
   return (
     `${head}<body>${brand}<main>` +
     `<section class="qui" aria-labelledby="nom"><p class="metier">Agent immobilier${input.zone ? ` · ${escapeHtml(input.zone)}` : ''}</p><h1 id="nom">${escapeHtml(name)}</h1>` +
     `<p class="statut">${escapeHtml(mentionsLine(input.mentions))}</p></section>` +
     (contact.length > 0 ? `<nav class="contact" aria-label="Contacter ${escapeHtml(input.firstName)}">${contact.join('')}</nav>` : '') +
     `<h2>Ses biens</h2>${listings}` +
-    `<h2>Satisfaction de ses clients</h2>${satisfaction}` +
+    `<h2>Avis de ses clients</h2>${reviews}` +
     `</main></body></html>`
   );
 }
@@ -122,16 +120,14 @@ export function renderAgentPage(input: AgentPageInput, minAnswers: number = DEFA
 export class PageAgent {
   private readonly now: () => Date;
   private readonly newId: () => string;
-  private readonly minAnswers: number;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
-    options: { now?: () => Date; newId?: () => string; minAnswers?: number } = {},
+    options: { now?: () => Date; newId?: () => string } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
-    this.minAnswers = options.minAnswers ?? DEFAULT_MIN_ANSWERS;
   }
 
   private async refuse(viewer: Viewer, subject: string, code: 'role' | 'agent_inconnu' | 'agent_parti'): Promise<Refusal> {
@@ -206,23 +202,21 @@ export class PageAgent {
     const listings: AgentListing[] = [];
     for (const v of versions) {
       if (v.state !== 'en_vente' && v.state !== 'sous_offre') continue;
-      let payload: { title?: unknown; priceEur?: unknown };
+      let payload: { title?: unknown; priceEur?: unknown; body?: unknown; mentions?: unknown };
       try {
         payload = JSON.parse(v.payload) as typeof payload;
       } catch {
         continue;
       }
-      if (typeof payload.title === 'string' && payload.title !== '' && typeof payload.priceEur === 'number' && payload.priceEur > 0) {
+      // Les mêmes conditions que la page du bien : sans texte ni mentions, elle dirait « plus proposé » [R43].
+      if (typeof payload.body === 'string' && payload.body !== '' && typeof payload.mentions === 'string' && payload.mentions !== '' && typeof payload.title === 'string' && payload.title !== '' && typeof payload.priceEur === 'number' && payload.priceEur > 0) {
         listings.push({ propertyId: v.property_id, title: payload.title, priceEur: payload.priceEur, state: v.state });
       }
     }
-    // Toutes les réponses de satisfaction de l'agent, sans tri ni choix [R64].
-    const sat = await this.db.first<{ n: number; total: number | null }>(
-      'SELECT count(*) AS n, sum(score) AS total FROM satisfaction_answers WHERE agent_id = ? AND network_id = ?',
+    const reviews = await this.db.first<{ url: string }>(
+      'SELECT url FROM agent_review_links WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
       [agentId, networkId],
     );
-    const answers = Number(sat?.n ?? 0);
-    const average = answers >= this.minAnswers && sat?.total != null ? Math.round((Number(sat.total) / answers) * 10) / 10 : null;
     return {
       ok: true,
       input: {
@@ -234,13 +228,13 @@ export class PageAgent {
         email: contact?.email ?? null,
         mentions: { rsacNumber: legal.rsac_number, rsacRegistry: legal.rsac_registry, cardNumber: card.card_number.trim(), cardHolder: holder.holder_name },
         listings,
-        satisfaction: { answers, average },
+        reviewsUrl: reviews?.url ?? null,
       },
     };
   }
 
   async page(networkId: string, agentId: string): Promise<AgentPage> {
     const r = await this.inputFor(networkId, agentId);
-    return r.ok ? { ok: true, html: renderAgentPage(r.input, this.minAnswers), input: r.input } : r;
+    return r.ok ? { ok: true, html: renderAgentPage(r.input), input: r.input } : r;
   }
 }

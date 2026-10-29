@@ -37,7 +37,7 @@ async function listing(db: SqlDatabase, id: string, agent: string, seq: number, 
   );
   await db.run(
     "INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES (?, ?, 'net-1', ?, ?, ?, ?, ?, 'h', 'test', 'x')",
-    [`${id}-${seq}`, id, seq, state, state === 'retiree' ? null : `d-${id}-${seq}`, price, JSON.stringify({ reference: `REF-${id}`, state, title, body: 'Texte', mentions: 'Mentions', priceEur: price, media: [] })],
+    [`${id}-${seq}`, id, seq, state, state === 'retiree' ? null : `d-${id}-${seq}`, state === 'retiree' ? null : price, JSON.stringify({ reference: `REF-${id}`, state, title, body: 'Texte', mentions: 'Mentions', priceEur: price, media: [] })],
   );
   await db.exec('PRAGMA foreign_keys = ON');
 }
@@ -103,27 +103,28 @@ describeWithSqlite('AT03 · page de chaque agent', () => {
     await listing(db, 'b2', 'ag-1', 2, 'vendu', 'Maison ancienne', 300000);
     await listing(db, 'b3', 'ag-1', 1, 'sous_offre', 'Studio', 90000);
     await listing(db, 'b4', 'ag-2', 1, 'en_vente', 'Bien d\'un autre agent', 150000);
+    // Mandat rétracté ou mentions manquantes : la dernière version est un retrait.
+    await listing(db, 'b5', 'ag-1', 1, 'en_vente', 'Duplex retiré', 250000);
+    await listing(db, 'b5', 'ag-1', 2, 'retiree', 'Duplex retiré', 250000);
     const page = (await pages.page('net-1', 'ag-1')) as { ok: true; html: string; input: AgentPageInput };
     expect(page.input.listings.map((l) => [l.propertyId, l.state])).toEqual([['b1', 'en_vente'], ['b3', 'sous_offre']]);
     expect(page.html).toContain('href="/biens/b1"');
     expect(page.html).toMatch(/210\s000/u);
-    expect(page.html).not.toMatch(/Maison ancienne|autre agent|REF-|Ville inventée/);
+    expect(page.html).not.toMatch(/Maison ancienne|autre agent|Duplex|REF-|Ville inventée/);
   });
 
-  it('[R64] la satisfaction compte toutes les réponses, sans tri, et ne recopie aucun commentaire ; rien sous 5 réponses', async () => {
+  it('[R64] le lien vers les avis publiés par les clients eux-mêmes ; aucune réponse de satisfaction publiée, ni une à une ni en moyenne', async () => {
     const { db, pages } = await setup();
     await complete(db, pages);
-    await answers(db, [5, 5, 1, 2]);
+    await answers(db, [5, 5, 1, 2, 4, 3]);
     let page = (await pages.page('net-1', 'ag-1')) as { ok: true; html: string; input: AgentPageInput };
-    expect(page.input.satisfaction).toEqual({ answers: 4, average: null });
-    expect(page.html).toContain('Pas encore assez de réponses');
-    await answers(db, [2, 4]); // deux de plus, la mauvaise comprise
+    expect(page.input.reviewsUrl).toBeNull();
+    expect(page.html).toContain('Les avis de ses clients seront bientôt en ligne.');
+    await db.run("INSERT INTO agent_review_links (id, network_id, agent_id, url, set_by, set_at) VALUES ('r1', 'net-1', 'ag-1', 'https://avis.exemple.test/camille', 'direction:dir-1', 'x')");
     page = (await pages.page('net-1', 'ag-1')) as { ok: true; html: string; input: AgentPageInput };
-    // (5 + 5 + 1 + 2 + 2 + 4) / 6 = 3,166… → 3,2 : les notes basses comptent autant que les autres.
-    expect(page.input.satisfaction).toEqual({ answers: 6, average: 3.2 });
-    expect(page.html).toContain('3,2 / 5');
-    expect(page.html).toContain('6 réponses');
-    expect(page.html).not.toContain('Déçu');
+    expect(page.html).toContain('<a href="https://avis.exemple.test/camille" rel="noopener noreferrer">Lire les avis de ses clients</a>');
+    // Ni note, ni moyenne, ni nombre de réponses, ni commentaire : rien qui se lise par différence.
+    expect(page.html).not.toMatch(/\/ 5|Déçu|réponses|moyenne/i);
   });
 
   it('[R201] [R07] la page passe le contrôle du système de design et tient dans 14 Ko compressés', async () => {
@@ -150,9 +151,10 @@ describeWithSqlite('AT03 · page de chaque agent', () => {
       email: null,
       mentions: { rsacNumber: '1', rsacRegistry: 'D', cardNumber: 'C', cardHolder: 'H' },
       listings: [{ propertyId: 'x"y', title: '<i>', priceEur: 1, state: 'en_vente' }],
-      satisfaction: { answers: 0, average: null },
+      reviewsUrl: 'https://x.test/"><b>',
     });
     expect(html).not.toMatch(/<script>|<b>|<i>/);
+    expect(html).not.toContain('x.test');
     expect(html).toContain('href="/biens/x%22y"');
   });
 });
