@@ -25,7 +25,7 @@ import type { JournalStore } from '../journal/types.ts';
 
 /** La bibliothèque de musiques sous licence (X07) : null pour une musique inconnue, sans preuve ou expirée [R133]. */
 export interface MusicLibrary {
-  licensedMusic(id: string, at: Date): Promise<{ id: string } | null>;
+  licensedMusic(networkId: string, id: string, at: Date): Promise<{ id: string } | null>;
 }
 
 export interface TemplateClip {
@@ -188,7 +188,7 @@ export class Montages {
     let musicId: string | null = null;
     if (input.musicId !== null && input.musicId !== undefined) {
       if (typeof input.musicId !== 'string' || input.musicId.length > 80) return bad('R133', 'musique_sans_licence');
-      const licensed = await this.music.licensedMusic(input.musicId, this.now());
+      const licensed = await this.music.licensedMusic(seen.value.networkId, input.musicId, this.now());
       if (!licensed || licensed.id !== input.musicId) return bad('R133', 'musique_sans_licence');
       musicId = input.musicId;
     }

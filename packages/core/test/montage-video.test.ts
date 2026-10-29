@@ -74,8 +74,9 @@ async function setup() {
   // La bibliothèque inventée : une musique sous licence en cours, une expirée (null), une inconnue (null).
   const library: MusicLibrary & { asked: string[] } = {
     asked: [],
-    licensedMusic: async (id: string) => {
+    licensedMusic: async (networkId: string, id: string) => {
       library.asked.push(id);
+      if (networkId !== network.id) return null;
       return id === 'musique-sous-licence' ? { id } : null;
     },
   };
