@@ -369,7 +369,7 @@ export class AnciensContacts {
    * L'agent valide la relance, avec le texte proposé ou le sien, sur un canal où l'accord est en cours. La base légale
    * est relue à cet instant ; la relance passe par le contrôle central, en mode essai : rien ne part [R143, R03, R26].
    */
-  async validate(viewer: Viewer, followupId: string, input: { channel?: unknown; text?: unknown } = {}): Promise<OldContactResult<{ status: 'essai' | 'refusee'; rule: string | null; delivered: false }>> {
+  async validate(viewer: Viewer, followupId: string, input: { channel?: unknown; text?: unknown } = {}): Promise<OldContactResult<{ status: 'essai' | 'refusee' | 'attente'; rule: string | null; delivered: false }>> {
     if (viewer.role !== 'agent') return this.refused(viewer, 'role');
     const r = await this.db.first<FollowupRow>('SELECT * FROM old_contact_followups WHERE id = ? AND network_id = ?', [followupId, viewer.networkId]);
     if (!r || r.agent_id !== viewer.userId) return this.refused(viewer, 'not_assigned');
@@ -423,8 +423,14 @@ export class AnciensContacts {
       await this.db.run("UPDATE old_contact_followups SET status = 'a_valider' WHERE id = ? AND status = 'en_envoi'", [r.id]);
       throw error;
     }
-    const status = result.status === 'sent' ? 'essai' : 'refusee';
     const rule = result.status === 'sent' ? null : result.rule;
+    // Refusée pour l'heure seulement (nuit, dimanche) [R01] : la relance reste à valider, rien n'est perdu.
+    if (result.status !== 'sent' && rule === 'R01') {
+      await this.db.run("UPDATE old_contact_followups SET status = 'a_valider' WHERE id = ? AND status = 'en_envoi'", [r.id]);
+      await appendEvent(this.journal, { type: 'anciens_contacts.essai', actor: this.actor(viewer), subject: `person:${root}`, data: { mode: 'essai', sent: false, followup: r.id, status: 'attente', rule } }, this.now);
+      return { ok: true, value: { status: 'attente', rule, delivered: false } };
+    }
+    const status = result.status === 'sent' ? 'essai' : 'refusee';
     await this.db.run('UPDATE old_contact_followups SET status = ?, channel = ?, rule = ?, message_id = ?, decided_at = ?, decided_by = ? WHERE id = ? AND status = ?', [
       status,
       channel,
