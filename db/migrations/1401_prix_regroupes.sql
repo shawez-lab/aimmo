@@ -14,10 +14,19 @@ CREATE TABLE IF NOT EXISTS price_zones (
   ring_source TEXT NOT NULL CHECK (length(ring_source) BETWEEN 1 AND 200),
   recorded_by TEXT NOT NULL,
   recorded_at TEXT NOT NULL,
-  CHECK ((level = 'commune' AND parent_id IS NULL AND insee_code IS NOT NULL) OR (level = 'quartier' AND parent_id IS NOT NULL AND insee_code IS NULL)),
-  UNIQUE (network_id, parent_id, slug)
+  -- Un nom n'est unique que parmi les zones en service : contrôlé par le code, une zone retirée gardant le sien.
+  CHECK ((level = 'commune' AND parent_id IS NULL AND insee_code IS NOT NULL) OR (level = 'quartier' AND parent_id IS NOT NULL AND insee_code IS NULL))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS price_zones_commune_slug ON price_zones (network_id, slug) WHERE level = 'commune';
+CREATE INDEX IF NOT EXISTS price_zones_slug ON price_zones (network_id, level, slug);
+
+-- Une zone retirée ne sert plus aux versions suivantes ; elle reste, avec les versions qui l'ont publiée.
+CREATE TABLE IF NOT EXISTS price_zone_retirements (
+  area_id TEXT PRIMARY KEY REFERENCES price_zones (id) ON DELETE RESTRICT,
+  retired_by TEXT NOT NULL,
+  retired_at TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS price_zone_retirements_garde BEFORE DELETE ON price_zone_retirements BEGIN SELECT RAISE(ABORT, 'price_zone_retirements : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS price_zone_retirements_fige BEFORE UPDATE ON price_zone_retirements BEGIN SELECT RAISE(ABORT, 'price_zone_retirements : rien ne se réécrit'); END;
 
 -- Une version par publication DVF (et par jeu de zones) : la précédente reste lisible.
 CREATE TABLE IF NOT EXISTS price_versions (
@@ -28,12 +37,14 @@ CREATE TABLE IF NOT EXISTS price_versions (
   window_from TEXT NOT NULL,
   window_to TEXT NOT NULL,
   areas_digest TEXT NOT NULL CHECK (length(areas_digest) = 64),
+  -- Empreinte de toutes les ventes lues : une reprise après coupure ne mélange jamais deux lectures différentes.
+  sales_digest TEXT NOT NULL CHECK (length(sales_digest) = 64),
   min_sales INTEGER NOT NULL CHECK (min_sales >= 2),
   -- Une version n'est lue qu'une fois complète ; une version coupée en route est refaite à l'identique.
   status TEXT NOT NULL CHECK (status IN ('en_cours', 'complet')),
   computed_at TEXT NOT NULL,
   completed_at TEXT,
-  UNIQUE (network_id, source, dvf_last_sale, areas_digest)
+  UNIQUE (network_id, source, dvf_last_sale, areas_digest, sales_digest, min_sales)
 );
 CREATE INDEX IF NOT EXISTS price_versions_latest ON price_versions (network_id, status, completed_at);
 
@@ -76,7 +87,7 @@ CREATE TRIGGER IF NOT EXISTS price_versions_garde BEFORE DELETE ON price_version
 CREATE TRIGGER IF NOT EXISTS price_versions_fige BEFORE UPDATE ON price_versions
 WHEN NOT (OLD.status = 'en_cours' AND NEW.status = 'complet' AND OLD.completed_at IS NULL AND NEW.completed_at IS NOT NULL
   AND NEW.id = OLD.id AND NEW.network_id = OLD.network_id AND NEW.source = OLD.source AND NEW.dvf_last_sale = OLD.dvf_last_sale
-  AND NEW.window_from = OLD.window_from AND NEW.window_to = OLD.window_to AND NEW.areas_digest = OLD.areas_digest
+  AND NEW.sales_digest = OLD.sales_digest AND NEW.window_from = OLD.window_from AND NEW.window_to = OLD.window_to AND NEW.areas_digest = OLD.areas_digest
   AND NEW.min_sales = OLD.min_sales AND NEW.computed_at = OLD.computed_at)
 BEGIN SELECT RAISE(ABORT, 'price_versions : rien ne se réécrit'); END;
 -- Une version complète ne reçoit plus de case.

@@ -121,6 +121,36 @@ export function insideRing(point: LatLon, ring: readonly LatLon[]): boolean {
   return inside;
 }
 
+function sameVertex(p: LatLon, ring: readonly LatLon[]): boolean {
+  return ring.some((q) => q[0] === p[0] && q[1] === p[1]);
+}
+
+function centroid(ring: readonly LatLon[]): LatLon {
+  return [ring.reduce((s, p) => s + p[0], 0) / ring.length, ring.reduce((s, p) => s + p[1], 0) / ring.length];
+}
+
+function properCross(a: LatLon, b: LatLon, c: LatLon, d: LatLon): boolean {
+  const o = (p: LatLon, q: LatLon, r: LatLon) => Math.sign((q[1] - p[1]) * (r[0] - p[0]) - (q[0] - p[0]) * (r[1] - p[1]));
+  const o1 = o(a, b, c), o2 = o(a, b, d), o3 = o(c, d, a), o4 = o(c, d, b);
+  return o1 * o2 < 0 && o3 * o4 < 0;
+}
+
+/**
+ * Vrai si deux contours se recouvrent. Deux zones voisines qui partagent un bord, sommets compris, ne se recouvrent
+ * pas ; un sommet de l'une à l'intérieur de l'autre, un centre dans l'autre, ou deux bords qui se croisent, si.
+ */
+export function ringsOverlap(a: readonly LatLon[], b: readonly LatLon[]): boolean {
+  if (a.some((p) => !sameVertex(p, b) && insideRing(p, b))) return true;
+  if (b.some((p) => !sameVertex(p, a) && insideRing(p, a))) return true;
+  if (insideRing(centroid(a), b) || insideRing(centroid(b), a)) return true;
+  for (let i = 0; i < a.length; i++) {
+    for (let j = 0; j < b.length; j++) {
+      if (properCross(a[i]!, a[(i + 1) % a.length]!, b[j]!, b[(j + 1) % b.length]!)) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Vrai si un groupe de quartiers (pris parmi `sizes`) laisse, retiré de la commune de `total` ventes, un reste de 1 à
  * `minSales - 1` ventes. Les quartiers d'une commune ne se recouvrent pas : la somme des tailles est exacte.
@@ -155,6 +185,22 @@ export interface BlockInput {
   quarters: readonly QuarterInput[];
   /** Les cases de cette commune et de ce type montrées par la version précédente (publiées ou reprises). */
   previous: readonly ShownCell[];
+  /**
+   * Les autres cases montrées par la version précédente, ailleurs dans le réseau, qui partagent au moins une vente avec
+   * ce bloc (une zone retirée puis retracée, par exemple) : comparées aussi, jamais reprises.
+   */
+  related?: readonly ShownCell[];
+}
+
+/**
+ * Vrai si deux ensembles de ventes, l'un ancien et l'autre nouveau, laisseraient lire de 1 à `k - 1` ventes par
+ * différence. Prudent : une vente dont l'empreinte a changé d'une publication à l'autre (position corrigée) compte des
+ * deux côtés ; tant qu'un côté est révélateur et l'autre plus petit que `k`, la différence est tenue pour lisible.
+ */
+export function pairRevealing(a: SaleSet, b: SaleSet, k: number): boolean {
+  const ab = minus(a, b);
+  const ba = minus(b, a);
+  return (revealing(ab, k) && ba < k) || (revealing(ba, k) && ab < k);
 }
 
 export interface CellDecision {
@@ -174,8 +220,8 @@ export interface CellDecision {
  * 1. Une case de moins de `minSales` ventes est retenue (`seuil`).
  * 2. Tant qu'un groupe de quartiers publiés laisse un reste révélateur dans la commune, le plus petit quartier publié
  *    est retenu (`difference`).
- * 3. Contre la version précédente, deux cases dont l'une contient l'autre ne doivent pas différer d'un reste
- *    révélateur ; un quartier fautif est retenu (`version`) ; si la commune elle-même l'est, toute la commune garde les
+ * 3. Contre la version précédente, partout dans le réseau, deux cases presque emboîtées ne doivent pas différer d'un
+ *    reste révélateur (`pairRevealing`) ; un quartier fautif est retenu (`version`) ; si la commune elle-même l'est, toute la commune garde les
  *    chiffres de la version précédente (`reprise`).
  */
 export function decideBlock(input: BlockInput, versionId: string, settings: PriceSettings = DEFAULT_PRICE_SETTINGS): CellDecision[] {
@@ -213,16 +259,14 @@ export function decideBlock(input: BlockInput, versionId: string, settings: Pric
   }
 
   // 3. Différences avec la version précédente.
-  if (input.previous.length > 0) {
+  const against = [...input.previous, ...(input.related ?? [])];
+  if (against.length > 0) {
     for (;;) {
       const shown = [...(held.has(commune.zoneId) ? [] : [commune]), ...shownQuarters()];
       let fault: string | null = null;
       for (const cell of shown) {
-        for (const p of input.previous) {
-          const ab = minus(cell.set, p.set);
-          const ba = minus(p.set, cell.set);
-          // Une case contient l'autre quand l'un des restes est nul : l'autre reste est alors exact.
-          if ((ba === 0 && revealing(ab, k)) || (ab === 0 && revealing(ba, k))) {
+        for (const p of against) {
+          if (pairRevealing(cell.set, p.set, k)) {
             fault = cell.zoneId;
             break;
           }

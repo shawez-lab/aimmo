@@ -312,9 +312,13 @@ describeWithSqlite('AT01 · versions des prix dans la base', () => {
     expect(r).toMatchObject({ ran: true });
     const p = (await prix.communePrices('net-1', 'commune-test'))!;
     expect(p.cells.find((c) => c.zone.slug === 'commune-test')).toMatchObject({ sales: 6 });
+    const vid = (r as { versionId: string }).versionId;
+    const zone = (await db.first<{ id: string }>("SELECT id FROM price_zones WHERE slug = 'ouest'"))!.id;
+    await db.exec('PRAGMA foreign_keys = OFF');
     await expect(
-      db.run("INSERT INTO price_cells (version_id, zone_id, kind, status, reason) VALUES (?, (SELECT id FROM price_zones LIMIT 1), 'house', 'retenue', 'seuil')", [(r as { versionId: string }).versionId]),
-    ).rejects.toThrow();
+      db.run("INSERT INTO price_cells (version_id, area_id, kind, status, hold_code) VALUES (?, ?, 'house', 'retenue', 'version')", [vid, 'zone-inconnue']),
+    ).rejects.toThrow('version complète');
+    await expect(db.run("INSERT INTO price_cell_sales (version_id, area_id, kind, fingerprint, n) VALUES (?, ?, 'apartment', ?, 1)", [vid, zone, 'f'.repeat(64)])).rejects.toThrow('version complète');
   });
 
   it('[R16] seule la direction trace une zone ; un contour ou un code mal formés sont refusés', async () => {
@@ -328,6 +332,77 @@ describeWithSqlite('AT01 · versions des prix dans la base', () => {
     expect(await prix.defineZone(direction, { level: 'quartier', parentId: 'inconnue', slug: 'q', name: 'Q', ring: WEST, ringSource: 's' })).toMatchObject({ code: 'parent' });
     expect(await prix.defineZone(direction, { level: 'quartier', parentId: communeId, slug: 'q', name: 'Q', inseeCode: '99001', ring: WEST, ringSource: 's' })).toMatchObject({ code: 'insee' });
     expect(await prix.defineZone(direction, { level: 'commune', slug: 'y', name: 'Y', inseeCode: '99003', ring: COMMUNE, ringSource: '' })).toMatchObject({ code: 'source' });
+  });
+
+  it('[R150] une commune qui en recouvre une autre est refusée ; retirée puis retracée, elle ne laisse rien lire par différence', async () => {
+    const list = [2000, 2100, 2200, 2300, 2400, 2500].map((p) => sale('apartment', 5.02, p));
+    const { prix, source, direction, communeId } = await setup(list);
+    // Même commune décalée, emboîtée : refusée, avec sa raison.
+    const inner: LatLon[] = [[47.01, 5.01], [47.01, 5.09], [47.09, 5.09], [47.09, 5.01]];
+    expect(await prix.defineZone(direction, { level: 'commune', slug: 'autre', name: 'Autre', inseeCode: '99002', ring: inner, ringSource: 's' })).toMatchObject({ code: 'chevauchement' });
+    // Une voisine qui partage un bord est acceptée.
+    const east: LatLon[] = [[47.0, 5.1], [47.0, 5.2], [47.1, 5.2], [47.1, 5.1]];
+    expect(await prix.defineZone(direction, { level: 'commune', slug: 'voisine', name: 'Voisine', inseeCode: '99003', ring: east, ringSource: 's' })).toMatchObject({ ok: true });
+    // Deux quartiers qui se recouvrent : refusé.
+    expect(await prix.defineZone(direction, { level: 'quartier', parentId: communeId, slug: 'centre', name: 'Centre', ring: inner, ringSource: 's' })).toMatchObject({ code: 'chevauchement' });
+    await prix.recompute('net-1');
+    // La commune est retirée, puis retracée plus grande avec deux ventes de plus : la différence se lirait.
+    expect(await prix.retireZone({ role: 'agent', userId: 'a', networkId: 'net-1' }, communeId)).toMatchObject({ code: 'role' });
+    expect(await prix.retireZone(direction, communeId)).toMatchObject({ ok: true });
+    const big: LatLon[] = [[46.95, 4.95], [46.95, 5.1], [47.15, 5.1], [47.15, 4.95]];
+    expect(await prix.defineZone(direction, { level: 'commune', slug: 'commune-test', name: 'Commune Test', inseeCode: '99001', ring: big, ringSource: 's' })).toMatchObject({ ok: true });
+    source.list = [...list, { id: 'n1', kind: 'apartment', lat: 46.97, lon: 4.97, surface: 50, pricePerM2: 9000, month: '2026-04' }, { id: 'n2', kind: 'apartment', lat: 46.97, lon: 4.98, surface: 50, pricePerM2: 9100, month: '2026-04' }];
+    expect(await prix.recompute('net-1')).toMatchObject({ ran: true });
+    const p = (await prix.communePrices('net-1', 'commune-test'))!;
+    expect(p.cells.filter((c) => c.zone.slug === 'commune-test')).toEqual([]);
+    expect(p.held.find((h) => h.zone.slug === 'commune-test' && h.kind === 'apartment')).toMatchObject({ reason: 'version' });
+    // L'ancienne version reste lisible sous son nom.
+    const versions = await prix.versions('net-1');
+    expect((await prix.communePrices('net-1', 'commune-test', versions[1]!.id))!.cells.find((c) => c.zone.slug === 'commune-test')).toMatchObject({ sales: 6 });
+  });
+
+  it('[R150] une vente dont la position a été corrigée ne cache pas deux ventes nouvelles', async () => {
+    const list = Array.from({ length: 10 }, (_, i) => sale('apartment', 5.02, 2000 + i * 10));
+    const { prix, source } = await setup(list);
+    await prix.recompute('net-1');
+    const moved = { ...list[0]!, lat: list[0]!.lat + 0.00001 };
+    source.cov = { ...source.cov!, lastSale: '2026-09-30' };
+    source.list = [moved, ...list.slice(1), sale('apartment', 5.02, 9000, '2026-08'), sale('apartment', 5.02, 9100, '2026-09')];
+    expect(await prix.recompute('net-1')).toMatchObject({ ran: true });
+    const p = (await prix.communePrices('net-1', 'commune-test'))!;
+    expect(p.cells.find((c) => c.zone.slug === 'commune-test' && c.kind === 'apartment')).toMatchObject({ status: 'reprise', sales: 10 });
+  });
+
+  it('[R150] une lecture incomplète des ventes n\'écrit rien et le dit au journal ; refaite complète, la version est calculée', async () => {
+    const list = [2000, 2100, 2200, 2300, 2400, 2500].map((p) => sale('apartment', 5.02, p));
+    const { prix, source, db } = await setup(list);
+    let broken = true;
+    (source as FakeSales & { scan?: unknown }).scan = async (kind: EstimatedKind) => ({ sales: await source.within(kind), issues: broken ? 1 : 0 });
+    expect(await prix.recompute('net-1')).toEqual({ ran: false, reason: 'source_incomplete' });
+    expect((await db.first<{ n: number }>('SELECT count(*) AS n FROM price_versions'))!.n).toBe(0);
+    expect((await db.first<{ n: number }>("SELECT count(*) AS n FROM journal WHERE type = 'attirer.prix.incomplet'"))!.n).toBe(1);
+    broken = false;
+    expect(await prix.recompute('net-1')).toMatchObject({ ran: true });
+  });
+
+  it('[R150] une reprise après coupure avec une autre lecture des ventes ne mélange jamais les deux', async () => {
+    const list = [2000, 2100, 2200, 2300, 2400, 2500].map((p) => sale('apartment', 5.02, p));
+    const { prix, source, db } = await setup(list);
+    const realRun = db.run.bind(db);
+    let cells = 0;
+    db.run = async (sql, params) => {
+      if (sql.startsWith('INSERT OR IGNORE INTO price_cells') && ++cells === 2) throw new Error('coupure');
+      return realRun(sql, params);
+    };
+    await expect(prix.recompute('net-1')).rejects.toThrow('coupure');
+    db.run = realRun;
+    source.list = [...list, sale('apartment', 5.08, 3000)];
+    const r = (await prix.recompute('net-1')) as { ran: true; versionId: string };
+    const cellsOf = await db.all<{ version_id: string }>('SELECT DISTINCT version_id FROM price_cells');
+    expect(cellsOf.length).toBe(2);
+    const p = (await prix.communePrices('net-1', 'commune-test'))!;
+    expect(p.versionId).toBe(r.versionId);
+    expect(p.cells.find((c) => c.zone.slug === 'commune-test')).toMatchObject({ sales: 7 });
   });
 
   it('sans publication DVF ou sans zone, aucune version', async () => {

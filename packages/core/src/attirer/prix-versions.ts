@@ -10,6 +10,11 @@
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { EstimatedKind, Sale, SalesSource } from '../estimation/fourchette.ts';
+
+/** La source des ventes ; `scan` (celle de E02 l'a) dit aussi les tuiles ou lignes illisibles. */
+export type PriceSalesSource = SalesSource & {
+  scan?(kind: EstimatedKind, lat: number, lon: number, radius: number): Promise<{ sales: Sale[]; issues: number }>;
+};
 import { distance } from '../estimation/fourchette.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -18,7 +23,9 @@ import {
   PRICE_KINDS,
   decideBlock,
   insideRing,
+  ringsOverlap,
   windowOf,
+  type CellDecision,
   type CellFigures,
   type CellSale,
   type CellStatus,
@@ -44,7 +51,7 @@ export interface ZoneInput {
 export type ZoneResult = { ok: true; id: string } | { ok: false; rule: 'R16' | 'R150'; code: string };
 
 export type RecomputeResult =
-  | { ran: false; reason: 'dvf_non_couvert' | 'aucune_zone' | 'deja_fait'; versionId?: string }
+  | { ran: false; reason: 'dvf_non_couvert' | 'aucune_zone' | 'deja_fait' | 'source_incomplete'; versionId?: string }
   | { ran: true; versionId: string; published: number; carried: number; held: number };
 
 /** Une case montrée au public : chiffres regroupés, source et date [R150, R151]. Rien d'autre. */
@@ -123,7 +130,7 @@ export class PrixRegroupes {
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
-    private readonly sales: SalesSource,
+    private readonly sales: PriceSalesSource,
     options: PrixRegroupesOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
@@ -168,13 +175,11 @@ export class PrixRegroupes {
       if (!parent) return refuse('parent');
       parentId = parent.id;
     }
-    const clash = await this.db.first<{ id: string }>(
-      parentId === null
-        ? "SELECT id FROM price_zones WHERE network_id = ? AND level = 'commune' AND slug = ?"
-        : 'SELECT id FROM price_zones WHERE network_id = ? AND parent_id = ? AND slug = ?',
-      parentId === null ? [viewer.networkId, input.slug] : [viewer.networkId, parentId, input.slug],
-    );
-    if (clash) return refuse('slug_pris');
+    // Parmi les zones en service : une commune contre les autres communes, un quartier contre ceux de sa commune.
+    const siblings = (await this.activeZones(viewer.networkId)).filter((z) => (parentId === null ? z.level === 'commune' : z.parent_id === parentId));
+    if (siblings.some((z) => z.slug === input.slug)) return refuse('slug_pris');
+    // Deux zones qui se recouvrent compteraient deux fois les mêmes ventes, sans le dire [R150].
+    if (siblings.some((z) => ringsOverlap(ring, JSON.parse(z.ring_json) as LatLon[]))) return refuse('chevauchement');
     const id = crypto.randomUUID();
     await this.db.run(
       'INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -184,80 +189,143 @@ export class PrixRegroupes {
     return { ok: true, id };
   }
 
+  /** Retire une zone (et, pour une commune, ses quartiers) des versions suivantes ; rien ne s'efface. */
+  async retireZone(viewer: Viewer, zoneId: unknown): Promise<ZoneResult> {
+    const actor = `${String(viewer.role)}:${viewer.userId}`;
+    if (viewer.role !== 'direction') {
+      await appendEvent(
+        this.journal,
+        { type: 'acces.refuse', actor, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'price_zones', code: 'role' } },
+        this.now,
+      );
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
+    const zone = typeof zoneId === 'string' ? await this.db.first<{ id: string }>('SELECT id FROM price_zones WHERE id = ? AND network_id = ?', [zoneId, viewer.networkId]) : null;
+    if (!zone) return { ok: false, rule: 'R150', code: 'zone' };
+    await this.db.run('INSERT OR IGNORE INTO price_zone_retirements (area_id, retired_by, retired_at) VALUES (?, ?, ?)', [zone.id, actor, this.now().toISOString()]);
+    await appendEvent(this.journal, { type: 'attirer.zone.retiree', actor, subject: `price_zone:${zone.id}`, data: { rule: 'R150' } }, this.now);
+    return { ok: true, id: zone.id };
+  }
+
+  /** Les zones en service : ni retirées, ni quartiers d'une commune retirée. */
+  private async activeZones(networkId: string): Promise<ZoneRow[]> {
+    return this.db.all<ZoneRow>(
+      `SELECT z.id, z.level, z.parent_id, z.slug, z.label AS name, z.ring_json FROM price_zones z
+        WHERE z.network_id = ?
+          AND z.id NOT IN (SELECT area_id FROM price_zone_retirements)
+          AND (z.parent_id IS NULL OR z.parent_id NOT IN (SELECT area_id FROM price_zone_retirements))
+        ORDER BY z.id`,
+      [networkId],
+    );
+  }
+
   /**
    * Calcule la version de la publication DVF en cours, si elle n'existe pas encore : à lancer par le planificateur,
-   * autant de fois qu'on veut. Une version coupée en route est refaite à l'identique, puis close.
+   * autant de fois qu'on veut. Tout est lu et décidé avant d'écrire : une lecture incomplète de la source n'écrit rien
+   * et le dit au journal ; une version coupée en route est refaite à l'identique (même lecture, même identifiant),
+   * une lecture différente donne une autre version.
    */
   async recompute(networkId: string): Promise<RecomputeResult> {
     const coverage = await this.sales.coverage();
     if (!coverage || !/^\d{4}-\d{2}-\d{2}$/.test(coverage.lastSale)) return { ran: false, reason: 'dvf_non_couvert' };
-    const zones = await this.db.all<ZoneRow>(
-      'SELECT id, level, parent_id, slug, label AS name, ring_json FROM price_zones WHERE network_id = ? ORDER BY id',
-      [networkId],
-    );
+    const zones = await this.activeZones(networkId);
     const communes = zones.filter((z) => z.level === 'commune');
     if (communes.length === 0) return { ran: false, reason: 'aucune_zone' };
     const zonesHash = await sha256Hex(JSON.stringify(zones.map((z) => [z.id, z.parent_id, z.ring_json])));
-    const versionId = (await sha256Hex(['price', networkId, coverage.source, coverage.lastSale, zonesHash, this.settings.minSales].join('|'))).slice(0, 32);
-    const existing = await this.db.first<{ status: string }>('SELECT status FROM price_versions WHERE id = ?', [versionId]);
-    if (existing?.status === 'complet') return { ran: false, reason: 'deja_fait', versionId };
+    const done = await this.db.first<{ id: string }>(
+      "SELECT id FROM price_versions WHERE network_id = ? AND source = ? AND dvf_last_sale = ? AND areas_digest = ? AND min_sales = ? AND status = 'complet' ORDER BY completed_at DESC LIMIT 1",
+      [networkId, coverage.source, coverage.lastSale, zonesHash, this.settings.minSales],
+    );
+    if (done) return { ran: false, reason: 'deja_fait', versionId: done.id };
 
+    const window = windowOf(coverage.lastSale, this.settings.windowMonths);
+    // 1. Lire toutes les ventes, chacune dans une seule commune (la première qui la contient) et un seul quartier.
+    const blocks: { communeId: string; kind: EstimatedKind; communeSales: CellSale[]; quarters: { zoneId: string; sales: CellSale[] }[] }[] = [];
+    let issues = 0;
+    const fingerprints: string[] = [];
+    for (const kind of PRICE_KINDS) {
+      const taken = new Set<string>();
+      for (const commune of communes) {
+        const ring = JSON.parse(commune.ring_json) as LatLon[];
+        const quarterZones = zones.filter((z) => z.parent_id === commune.id).map((z) => ({ id: z.id, ring: JSON.parse(z.ring_json) as LatLon[] }));
+        const lat = ring.reduce((sum, p) => sum + p[0], 0) / ring.length;
+        const lon = ring.reduce((sum, p) => sum + p[1], 0) / ring.length;
+        const radius = Math.max(...ring.map((p) => distance(lat, lon, p[0], p[1]))) + 1;
+        const read = this.sales.scan ? await this.sales.scan(kind, lat, lon, radius) : { sales: await this.sales.within(kind, lat, lon, radius), issues: 0 };
+        issues += read.issues;
+        const found = read.sales.filter(
+          (x) => x.kind === kind && !taken.has(x.id) && x.month >= window.from && x.month <= window.to && insideRing([x.lat, x.lon], ring),
+        );
+        const communeSales: CellSale[] = [];
+        const quarters = quarterZones.map((q) => ({ zoneId: q.id, sales: [] as CellSale[] }));
+        for (const x of found) {
+          taken.add(x.id);
+          const sale = { fingerprint: await saleFingerprint(x), pricePerM2: x.pricePerM2 };
+          fingerprints.push(`${kind}:${commune.id}:${sale.fingerprint}`);
+          communeSales.push(sale);
+          // Une vente va au premier quartier qui la contient : les quartiers publiés ne se recouvrent jamais.
+          const at = quarterZones.findIndex((z) => insideRing([x.lat, x.lon], z.ring));
+          if (at >= 0) quarters[at]!.sales.push(sale);
+        }
+        blocks.push({ communeId: commune.id, kind, communeSales, quarters });
+      }
+    }
+    if (issues > 0) {
+      await appendEvent(
+        this.journal,
+        { type: 'attirer.prix.incomplet', actor: 'system:prix', subject: `network:${networkId}`, data: { rule: 'R150', dvfLastSale: coverage.lastSale, issues } },
+        this.now,
+      );
+      return { ran: false, reason: 'source_incomplete' };
+    }
+    const salesDigest = await sha256Hex(fingerprints.sort().join('\n'));
+    const versionId = (await sha256Hex(['price', networkId, coverage.source, coverage.lastSale, zonesHash, salesDigest, this.settings.minSales].join('|'))).slice(0, 32);
+
+    // 2. Décider, contre toutes les cases montrées par la version précédente.
     const previousId = (
       await this.db.first<{ id: string }>(
         "SELECT id FROM price_versions WHERE network_id = ? AND status = 'complet' AND id <> ? ORDER BY completed_at DESC, id DESC LIMIT 1",
         [networkId, versionId],
       )
     )?.id ?? null;
-    const window = windowOf(coverage.lastSale, this.settings.windowMonths);
-    const nowIso = this.now().toISOString();
-    if (!existing) {
-      await this.db.run(
-        "INSERT INTO price_versions (id, network_id, source, dvf_last_sale, window_from, window_to, areas_digest, min_sales, status, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'en_cours', ?)",
-        [versionId, networkId, coverage.source, coverage.lastSale, window.from, window.to, zonesHash, this.settings.minSales, nowIso],
-      );
+    const previousCells = previousId ? await this.shownCells(previousId) : [];
+    const decided: { kind: EstimatedKind; d: CellDecision }[] = [];
+    for (const block of blocks) {
+      const ids = new Set([block.communeId, ...block.quarters.map((q) => q.zoneId)]);
+      const sameKind = previousCells.filter((p) => p.kind === block.kind);
+      const prints = new Set(block.communeSales.map((x) => x.fingerprint));
+      const previous = sameKind.filter((p) => ids.has(p.cell.zoneId)).map((p) => p.cell);
+      const related = sameKind.filter((p) => !ids.has(p.cell.zoneId) && [...p.cell.set.keys()].some((f) => prints.has(f))).map((p) => p.cell);
+      for (const d of decideBlock({ communeId: block.communeId, communeSales: block.communeSales, quarters: block.quarters, previous, related }, versionId, this.settings)) {
+        decided.push({ kind: block.kind, d });
+      }
     }
 
+    // 3. Écrire ; une reprise après coupure réécrit exactement les mêmes lignes.
+    const existing = await this.db.first<{ status: string }>('SELECT status FROM price_versions WHERE id = ?', [versionId]);
+    if (!existing) {
+      await this.db.run(
+        "INSERT INTO price_versions (id, network_id, source, dvf_last_sale, window_from, window_to, areas_digest, sales_digest, min_sales, status, computed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'en_cours', ?)",
+        [versionId, networkId, coverage.source, coverage.lastSale, window.from, window.to, zonesHash, salesDigest, this.settings.minSales, this.now().toISOString()],
+      );
+    }
     let published = 0;
     let carried = 0;
     let held = 0;
-    for (const commune of communes) {
-      const ring = JSON.parse(commune.ring_json) as LatLon[];
-      const quarterZones = zones.filter((z) => z.parent_id === commune.id).map((z) => ({ id: z.id, ring: JSON.parse(z.ring_json) as LatLon[] }));
-      const lat = ring.reduce((s, p) => s + p[0], 0) / ring.length;
-      const lon = ring.reduce((s, p) => s + p[1], 0) / ring.length;
-      const radius = Math.max(...ring.map((p) => distance(lat, lon, p[0], p[1]))) + 1;
-      for (const kind of PRICE_KINDS) {
-        const found = (await this.sales.within(kind, lat, lon, radius)).filter(
-          (s) => s.kind === kind && s.month >= window.from && s.month <= window.to && insideRing([s.lat, s.lon], ring),
-        );
-        const placed: { sale: CellSale; at: LatLon }[] = [];
-        for (const s of found) placed.push({ sale: { fingerprint: await saleFingerprint(s), pricePerM2: s.pricePerM2 }, at: [s.lat, s.lon] });
-        const quarters = quarterZones.map((q) => ({
-          zoneId: q.id,
-          // Les quartiers d'une commune ne se recouvrent pas : une vente va au premier qui la contient.
-          sales: placed.filter((p) => quarterZones.find((z) => insideRing(p.at, z.ring))?.id === q.id).map((p) => p.sale),
-        }));
-        const previous = previousId ? await this.shownCells(previousId, [commune.id, ...quarterZones.map((q) => q.id)], kind) : [];
-        const decisions = decideBlock({ communeId: commune.id, communeSales: placed.map((p) => p.sale), quarters, previous }, versionId, this.settings);
-        for (const d of decisions) {
-          const f = d.figures;
-          await this.db.run(
-            'INSERT OR IGNORE INTO price_cells (version_id, area_id, kind, status, hold_code, sales_count, median_m2, q1_m2, q3_m2, from_version_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [versionId, d.zoneId, kind, d.status, d.reason, f?.sales ?? null, f?.median ?? null, f?.q1 ?? null, f?.q3 ?? null, d.fromVersion],
-          );
-          if (d.status === 'publiee' && d.set) {
-            for (const [fp, n] of d.set) {
-              await this.db.run(
-                'INSERT OR IGNORE INTO price_cell_sales (version_id, area_id, kind, fingerprint, n) VALUES (?, ?, ?, ?, ?)',
-                [versionId, d.zoneId, kind, fp, n],
-              );
-            }
-          }
-          if (d.status === 'publiee') published++;
-          else if (d.status === 'reprise') carried++;
-          else held++;
+    for (const { kind, d } of decided) {
+      const f = d.figures;
+      await this.db.run(
+        'INSERT OR IGNORE INTO price_cells (version_id, area_id, kind, status, hold_code, sales_count, median_m2, q1_m2, q3_m2, from_version_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [versionId, d.zoneId, kind, d.status, d.reason, f?.sales ?? null, f?.median ?? null, f?.q1 ?? null, f?.q3 ?? null, d.fromVersion],
+      );
+      if (d.status === 'publiee' && d.set) {
+        for (const [fp, n] of d.set) {
+          await this.db.run('INSERT OR IGNORE INTO price_cell_sales (version_id, area_id, kind, fingerprint, n) VALUES (?, ?, ?, ?, ?)', [versionId, d.zoneId, kind, fp, n]);
         }
       }
+      if (d.status === 'publiee') published++;
+      else if (d.status === 'reprise') carried++;
+      else held++;
     }
     await this.db.run("UPDATE price_versions SET status = 'complet', completed_at = ? WHERE id = ? AND status = 'en_cours'", [this.now().toISOString(), versionId]);
     await appendEvent(
@@ -274,20 +342,19 @@ export class PrixRegroupes {
   }
 
   /** Les cases montrées par une version, avec leur ensemble de ventes (celui de la version d'origine pour une reprise). */
-  private async shownCells(versionId: string, zoneIds: string[], kind: EstimatedKind): Promise<ShownCell[]> {
-    const out: ShownCell[] = [];
-    for (const zoneId of zoneIds) {
-      const c = await this.db.first<{ status: string; sales_count: number; median_m2: number; q1_m2: number; q3_m2: number; from_version_id: string }>(
-        "SELECT status, sales_count, median_m2, q1_m2, q3_m2, from_version_id FROM price_cells WHERE version_id = ? AND area_id = ? AND kind = ? AND status <> 'retenue'",
-        [versionId, zoneId, kind],
-      );
-      if (!c) continue;
+  private async shownCells(versionId: string): Promise<{ kind: EstimatedKind; cell: ShownCell }[]> {
+    const cells = await this.db.all<{ area_id: string; kind: EstimatedKind; sales_count: number; median_m2: number; q1_m2: number; q3_m2: number; from_version_id: string }>(
+      "SELECT area_id, kind, sales_count, median_m2, q1_m2, q3_m2, from_version_id FROM price_cells WHERE version_id = ? AND status <> 'retenue' ORDER BY area_id, kind",
+      [versionId],
+    );
+    const out: { kind: EstimatedKind; cell: ShownCell }[] = [];
+    for (const c of cells) {
       const rows = await this.db.all<{ fingerprint: string; n: number }>(
         'SELECT fingerprint, n FROM price_cell_sales WHERE version_id = ? AND area_id = ? AND kind = ?',
-        [c.from_version_id, zoneId, kind],
+        [c.from_version_id, c.area_id, c.kind],
       );
       const figures: CellFigures = { sales: c.sales_count, median: c.median_m2, q1: c.q1_m2, q3: c.q3_m2 };
-      out.push({ zoneId, set: new Map(rows.map((r) => [r.fingerprint, r.n])), figures, fromVersion: c.from_version_id });
+      out.push({ kind: c.kind, cell: { zoneId: c.area_id, set: new Map(rows.map((r) => [r.fingerprint, r.n])), figures, fromVersion: c.from_version_id } });
     }
     return out;
   }
@@ -306,11 +373,6 @@ export class PrixRegroupes {
    * des cases montrables, chacune avec sa source et sa date [R150, R151]. `null` si la commune ou la version manque.
    */
   async communePrices(networkId: string, communeSlug: string, versionId?: string): Promise<CommunePrices | null> {
-    const commune = await this.db.first<{ id: string }>(
-      "SELECT id FROM price_zones WHERE network_id = ? AND level = 'commune' AND slug = ?",
-      [networkId, communeSlug],
-    );
-    if (!commune) return null;
     const version = await this.db.first<{ id: string; completed_at: string }>(
       versionId === undefined
         ? "SELECT id, completed_at FROM price_versions WHERE network_id = ? AND status = 'complet' ORDER BY completed_at DESC, id DESC LIMIT 1"
@@ -318,6 +380,13 @@ export class PrixRegroupes {
       versionId === undefined ? [networkId] : [networkId, versionId],
     );
     if (!version) return null;
+    // La commune de ce nom calculée par cette version (une commune retirée garde ses versions passées).
+    const commune = await this.db.first<{ id: string }>(
+      `SELECT z.id FROM price_zones z JOIN price_cells c ON c.area_id = z.id AND c.version_id = ?
+        WHERE z.network_id = ? AND z.level = 'commune' AND z.slug = ? LIMIT 1`,
+      [version.id, networkId, communeSlug],
+    );
+    if (!commune) return null;
     const rows = await this.db.all<{
       slug: string;
       name: string;
