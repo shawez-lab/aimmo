@@ -1517,7 +1517,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U09 · Branchement de M18 dans le socle
-- Statut : à faire
+- Statut : en cours (branche chantier/U09, empilée sur #178 tant que H35 bloque les fusions)
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`, contrôle central des envois) · Relecture : forte · Dépend de : U10
 - Cahier : M18 ; Branchements.
 - Objectif : exporter `partenaires` depuis `@aimmo/core` ; dans les droits d'accès, le rôle `partner` lit seulement ses mises en relation confiées (U04) et rien d'autre ; ajouter les routes de M18 à `app.ts` ; lancer au planificateur les relances, les alertes d'échéance des justificatifs et la prospection du jour.
