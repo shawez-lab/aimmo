@@ -579,6 +579,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   rental_management_links: { locate: [via('listing_id', 'rental_listings')] },
   // L'issue de l'envoi d'une échéance au propriétaire ou d'un reçu d'équité au candidat : à qui l'a reçu.
   rental_sends: { locate: [via('ref_id', 'rental_owner_notices', 'id', { where: { kind: 'echeance' } }), via('ref_id', 'rental_fairness_receipts', 'id', { where: { kind: 'recu' } })] },
+  // M17 · Investir.
+  investor_profiles: { locate: by('person_id') },
+  market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
+  investment_calculations: { locate: [via('project_id', 'projects')] },
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
