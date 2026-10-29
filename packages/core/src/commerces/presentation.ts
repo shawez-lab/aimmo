@@ -138,6 +138,9 @@ const norm = (s: string): string =>
     .replace(/\s+/g, ' ');
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const wordRe = (t: string, flags = 'iu'): RegExp => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(t)}(?![\\p{L}\\p{N}])`, flags);
+/** Une expression, chaque mot au singulier ou au pluriel : « four à sole » lit aussi « fours à sole ». */
+const formsRe = (t: string): RegExp =>
+  new RegExp(`(?<![\\p{L}\\p{N}])${t.split(/\s+/).map((w) => `${escapeRe(w)}(?:s|x|es)?`).join('\\s+')}(?![\\p{L}\\p{N}])`, 'iu');
 const words = (s: string): string[] => norm(s).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 0);
 
 /** Les nombres écrits en chiffres, séparateurs de milliers compris (« 249 000 », « 249.000 », « 85,5 »). */
@@ -201,12 +204,12 @@ export function presentationSentenceProblems(sentence: string, facts: Presentati
     if (whole.length > 0 && signWords(marks.signName, facts.city).length > 0 && wordRe(whole).test(lower)) add('enseigne', marks.signName);
   }
   for (const w of signWords(marks.signName, facts.city)) {
-    const m = wordRe(w).exec(lower);
+    const m = formsRe(w).exec(lower);
     if (m) add('enseigne', m[0]);
   }
   for (const item of marks.equipment) {
     const t = norm(item).trim();
-    if (t.length > 0 && wordRe(t).test(lower)) add('champ_confidentiel', item);
+    if (t.length > 0 && formsRe(t).test(lower)) add('champ_confidentiel', item);
   }
   for (const t of CONFIDENTIAL_TOPICS) {
     const m = wordRe(norm(t)).exec(lower);
