@@ -2070,7 +2070,8 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT02 · Pages de prix publiques
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition prête (#206, empilée sur #196) ; attend AT01 et GitHub Actions (H35). Décidé : la page de référence (canonique) vient avec AT04 pour les deux sites ; une case retenue ne montre que sa raison, jamais un chiffre ; la page revérifie elle-même chaque case.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AT01
 - Cahier : M01, point 1 ; exigence de design (protocole, section 9).
 - Objectif : la page de prix d'une commune et de chacun de ses quartiers, rendue depuis la dernière version de AT01, par le système de design : chiffres regroupés, source et date, explication de la méthode, lien vers l'estimation en ligne (E05), données structurées.
@@ -2104,7 +2105,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 
 ### AT06 · Fiche Google : publications et réponses aux avis préparées, validées
 - Statut : en cours (voie 2)
-- Avancement (2026-10-29) : proposition prête (#204) ; relecture forte : 5 P1 corrigés, troisième relecture sans P0 ni P1 ; attend GitHub Actions (H35). Décidé : le nom de l'auteur d'un avis n'est jamais gardé (empreintes de ses mots seulement) ; une publication de bien ne porte jamais le prix, seulement le lien vers sa page ; une réservation sous index unique précède tout appel à Google.
+- Avancement (2026-10-29) : proposition prête (#204) ; relecture forte : 5 P1 corrigés, troisième relecture sans P0 ni P1 ; Codex : 3 P0 et 1 P2 corrigés (prénoms en toute casse, adresses numérotées, mandat revérifié avant publication [R42], texte périmé remplacé), relecture redemandée ; attend GitHub Actions (H35). Décidé : le nom de l'auteur d'un avis n'est jamais gardé (empreintes de ses mots seulement) ; une publication de bien ne porte jamais le prix, seulement le lien vers sa page ; une réservation sous index unique précède tout appel à Google.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M01, point 4 « Fiche Google » ; « L'IA et l'humain ».
 - Objectif : derrière une interface Google Business Profile (faux service dans les tests) : informations de la fiche à jour depuis les réglages, publications régulières tirées des biens publiés, réponses aux avis préparées par l'IA (secours sans IA) et validées par l'agent ; en mode essai, rien ne part.
