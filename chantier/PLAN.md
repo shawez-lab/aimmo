@@ -1769,6 +1769,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X02 · Photos corrigées honnêtement, avec leur certificat (Jamais vu)
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #177 prête, empilée sur X01 (#174), migration `1202` ; suite complète verte en local (1746), relecture forte 2 P1 corrigés ; en attente des vérifications GitHub (H35). Branchement dans la publication par X05 et X10. X03 prend `1203`, X04 `1204`, X05 `1205`.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X01
 - Cahier : M19, « Photos corrigées sur le téléphone », « Règles ».
 - Objectif : la description des corrections faites sur l'appareil, rangée avec l'empreinte de l'original et celle du résultat (migration `1201`) ; **Jamais vu** : chaque photo publiée porte un certificat d'honnêteté lisible par le client (original gardé, liste des corrections globales, aucune retouche locale), vérifiable par un lien sans donnée personnelle.
@@ -1779,15 +1780,15 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Statut : à faire
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
 - Cahier : M19, « Vidéo du bien » ; M07 (plan de tournage, P06) ; critère « montée seule en moins de 10 minutes ».
-- Objectif : le modèle de montage décrit par le code depuis le plan de tournage de P06 (ordre des plans, durées, sous-titres tirés de la fiche, musique de la bibliothèque, fin à la marque de l'agent) ; le montage se fait sur l'appareil ; le serveur range la description du montage fini et contrôle ses textes et sa musique (migration `1202`).
+- Objectif : le modèle de montage décrit par le code depuis le plan de tournage de P06 (ordre des plans, durées, sous-titres tirés de la fiche, musique de la bibliothèque, fin à la marque de l'agent) ; le montage se fait sur l'appareil ; le serveur range la description du montage fini et contrôle ses textes et sa musique (migration `1203`).
 - Critères : une musique sans licence rangée est refusée [R133] ; un sous-titre qui porte une adresse est refusé [R46, R132] ; aucun fichier vidéo ne passe par le serveur, seule sa référence [R130] ; le modèle tient en 10 minutes de montage (test sur la durée prévue et le nombre de gestes).
 - Attend : rien.
 
 ### X04 · Plan simple du logement depuis les mesures
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X01
 - Cahier : M19, « Plan simple du logement ».
-- Objectif : des pièces rectangulaires saisies avec leurs cotes en centimètres et leur position, versionnées (migration `1203`) ; un plan SVG dessiné par le code, surfaces calculées par le code, mention « plan indicatif, non contractuel ».
+- Objectif : des pièces rectangulaires saisies avec leurs cotes en centimètres et leur position, versionnées (migration `1204`) ; un plan SVG dessiné par le code, surfaces calculées par le code, mention « plan indicatif, non contractuel ».
 - Critères : surfaces au cm² près d'un calcul fait à la main sur 5 plans tests [R135] ; une cote absente ou impossible est refusée [R10] ; le SVG ne porte ni adresse ni nom [R46] ; la mention est toujours là [R135].
 - Attend : rien.
 
@@ -1795,7 +1796,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Statut : à faire
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
 - Cahier : M19, « Réseaux sociaux », « L'IA et l'humain » ; M07.
-- Objectif : à chaque événement (nouveau bien diffusable, visite, offre, vente), une publication préparée : texte par l'IA derrière une interface avec secours, visuels choisis parmi les photos certifiées, liste de contrôle des visuels (adresse visible, personne reconnaissable et son accord, aménagement virtuel) validée par l'agent ; publication en un geste vers les comptes de l'agent et du réseau, en mode essai, derrière une interface par réseau (migration `1204`).
+- Objectif : à chaque événement (nouveau bien diffusable, visite, offre, vente), une publication préparée : texte par l'IA derrière une interface avec secours, visuels choisis parmi les photos certifiées, liste de contrôle des visuels (adresse visible, personne reconnaissable et son accord, aménagement virtuel) validée par l'agent ; publication en un geste vers les comptes de l'agent et du réseau, en mode essai, derrière une interface par réseau (migration `1205`).
 - Critères : rien ne part sans la validation de l'agent [R134] ; un visuel sans liste de contrôle validée, ou avec une personne reconnaissable sans accord rangé, est refusé [R132] ; le texte passe le contrôle de M07 (adresse, mots interdits) [R46] ; un bien qui ne peut plus être diffusé ne part pas [R42] ; rien ne part réellement [R26].
 - Attend : H06 et H07 pour les accès réels ; les tests n'en ont pas besoin.
 
