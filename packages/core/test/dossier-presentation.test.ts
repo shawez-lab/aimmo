@@ -167,6 +167,10 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
     expect(await t.dossier.setCommitment(t.agent(), { code: 'x', label: 'Un point chaque semaine', measure: 'point_semaine', delayHours: 24, active: true })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     const visite = await t.appointment('visite', NOW + DAY, t.alex.id, 'booked');
     expect(await t.dossier.build(t.agent(), visite)).toEqual({ ok: false, rule: null, code: 'not_a_mandate_appointment' });
+    // Le jour de son départ, dès minuit, même avant le passage du planificateur : plus aucun dossier [R86].
+    await t.db.run("INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep1', ?, ?, '2027-09-12', '2027-10-12', 'demission_agent', 1, 'direction:dir-1', '2027-09-12T08:00:00.000Z')", [t.network.id, t.alex.id]);
+    expect((await t.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ?', [t.alex.id]))!.status).toBe('active');
+    expect(await t.dossier.build(t.agent(), rdv)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
     await expect(t.db.run("INSERT INTO service_commitments (id, network_id, code, version, label, measure, delay_hours, active, set_by, set_at) VALUES ('c', ?, 'auto', 1, 'Engagement automatique', 'point_semaine', 24, 1, 'system:x', '2027-10-01')", [t.network.id])).rejects.toThrow();
   });
 });

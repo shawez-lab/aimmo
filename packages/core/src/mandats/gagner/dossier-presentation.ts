@@ -21,6 +21,7 @@ import { plain } from '../../envoi/texte.ts';
 import { localTime } from '../../envoi/horaires.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
+import { agentBlocked } from './etat-agent.ts';
 
 export const COMMITMENT_MEASURES = ['compte_rendu_visite', 'point_semaine'] as const;
 export type CommitmentMeasure = (typeof COMMITMENT_MEASURES)[number];
@@ -192,6 +193,9 @@ export class DossierPresentation {
   /** Le dossier d'un rendez-vous d'estimation de l'agent ; la lecture est au journal, sans donnée [R16, R13]. */
   async build(viewer: Viewer, appointmentId: string): Promise<DossierResult<Dossier>> {
     if (viewer.role !== 'agent') return this.refused(viewer, 'role');
+    // Un agent parti, même le jour de son départ, ou au dossier incomplet, n'ouvre aucun dossier [R86, R82].
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refused(viewer, blocked);
     const appt = await this.db.first<{ agent_id: string; kind: string; property_id: string | null }>('SELECT agent_id, kind, property_id FROM appointments WHERE id = ? AND network_id = ?', [appointmentId, viewer.networkId]);
     if (!appt) return this.refused(viewer, 'unknown');
     if (appt.agent_id !== viewer.userId) return this.refused(viewer, 'not_assigned');
