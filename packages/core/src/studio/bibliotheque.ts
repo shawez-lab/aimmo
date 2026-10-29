@@ -144,26 +144,41 @@ export class Bibliotheque implements MusicLibrary {
   /** La direction retire une entrée : elle sort des choix, rien ne s'efface [R17]. */
   async withdraw(viewer: Viewer, id: unknown, reason: unknown): Promise<LibraryResult<LicensedAsset>> {
     if (viewer.role !== 'direction') return this.refused(viewer, 'role');
-    if (typeof id !== 'string') return { ok: false, rule: 'R10', code: 'entree_inconnue' };
-    const asset = await this.get(viewer.networkId, id);
-    if (!asset) return { ok: false, rule: 'R10', code: 'entree_inconnue' };
-    if (typeof reason !== 'string' || !(WITHDRAWAL_REASONS as readonly string[]).includes(reason)) return { ok: false, rule: 'R10', code: 'motif_inconnu' };
+    const bad = async (code: string): Promise<LibraryResult<LicensedAsset>> => {
+      // Un retrait refusé est au journal, sans l'identifiant demandé : une entrée d'un autre réseau ne se devine pas.
+      await appendEvent(this.journal, { type: 'studio.bibliotheque.refuse', actor: `direction:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R10', code } }, this.now);
+      return { ok: false, rule: 'R10', code };
+    };
+    const asset = typeof id === 'string' ? await this.get(viewer.networkId, id) : null;
+    if (!asset) {
+      // Inconnue ici, ou d'un autre réseau : un refus d'accès au journal [R16], la même réponse dans les deux cas.
+      await appendEvent(
+        this.journal,
+        { type: 'acces.refuse', actor: `direction:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: 'direction', kind: 'licensed_assets', code: 'unknown' } },
+        this.now,
+      );
+      return { ok: false, rule: 'R10', code: 'entree_inconnue' };
+    }
+    if (typeof reason !== 'string' || !(WITHDRAWAL_REASONS as readonly string[]).includes(reason)) return bad('motif_inconnu');
     if (asset.withdrawn) return { ok: true, value: asset };
     const { changes } = await this.db.run('INSERT INTO licensed_asset_withdrawals (id, asset_id, reason, withdrawn_by, withdrawn_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
       this.newId(),
-      id,
+      asset.id,
       reason,
       `direction:${viewer.userId}`,
       this.now().toISOString(),
     ]);
-    if (changes === 1) await appendEvent(this.journal, { type: 'studio.bibliotheque.retrait', actor: `direction:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { id, reason } }, this.now);
-    return { ok: true, value: (await this.get(viewer.networkId, id))! };
+    if (changes === 1) await appendEvent(this.journal, { type: 'studio.bibliotheque.retrait', actor: `direction:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { id: asset.id, reason } }, this.now);
+    return { ok: true, value: (await this.get(viewer.networkId, asset.id))! };
   }
 
   /** Les choix offerts aux agents et à la direction du réseau : seulement les entrées utilisables ce jour [R133]. */
   async choices(viewer: Viewer, kind: unknown): Promise<LibraryResult<LicensedAsset[]>> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refused(viewer, 'role');
-    if (typeof kind !== 'string' || !(ASSET_KINDS as readonly string[]).includes(kind)) return { ok: false, rule: 'R10', code: 'sorte_inconnue' };
+    if (typeof kind !== 'string' || !(ASSET_KINDS as readonly string[]).includes(kind)) {
+      await appendEvent(this.journal, { type: 'studio.bibliotheque.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R10', code: 'sorte_inconnue' } }, this.now);
+      return { ok: false, rule: 'R10', code: 'sorte_inconnue' };
+    }
     const rows = await this.db.all<AssetRow>(`${SELECT} WHERE a.network_id = ? AND a.kind = ? ORDER BY a.title, a.id`, [viewer.networkId, kind]);
     return { ok: true, value: rows.map((r) => this.view(r)).filter((a) => a.usable) };
   }

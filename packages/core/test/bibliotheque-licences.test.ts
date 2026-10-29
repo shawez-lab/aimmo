@@ -103,9 +103,15 @@ describeWithSqlite('X07 · bibliothèque sous licence', () => {
     if (!a.ok) throw new Error(a.code);
     expect(await t.lib.withdraw(t.agent, a.value.id, 'licence_retiree')).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.lib.withdraw({ ...t.direction, networkId: t.other.id }, a.value.id, 'licence_retiree')).toEqual({ ok: false, rule: 'R10', code: 'entree_inconnue' });
+    // Le retrait refusé est au journal, sans l'identifiant demandé, et l'entrée reste en service.
+    const ev = await t.db.all<{ subject: string; data: string }>("SELECT subject, data FROM journal WHERE type = 'acces.refuse' AND subject = ?", [`network:${t.other.id}`]);
+    expect(ev.map((e) => JSON.parse(e.data))).toEqual([{ rule: 'R16', role: 'direction', kind: 'licensed_assets', code: 'unknown' }]);
+    expect(ev.map((e) => e.data).join('')).not.toContain(a.value.id);
+    expect(await t.lib.choices(t.agent, 'musique')).toMatchObject({ ok: true, value: [{ id: a.value.id }] });
+    expect(await t.lib.choices(t.agent, 'sons')).toEqual({ ok: false, rule: 'R10', code: 'sorte_inconnue' });
     expect(await t.lib.all(t.agent)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.lib.choices({ role: 'partner', userId: 'p', networkId: t.network.id }, 'musique')).toEqual({ ok: false, rule: 'R16', code: 'role' });
     const refused = await t.db.all("SELECT seq FROM journal WHERE type = 'acces.refuse'");
-    expect(refused).toHaveLength(5);
+    expect(refused).toHaveLength(6);
   });
 });
