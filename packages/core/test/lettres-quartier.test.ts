@@ -177,6 +177,11 @@ describeWithSqlite('G06 · lettres de quartier, adressées sans nom', () => {
     expect(JSON.stringify(campaign)).not.toMatch(/Tilleuls|8 rue/);
     expect(campaign.text).toBe(letterFallback('mandat', 'Dijon'));
     expect(checkLetterText('Au numéro 8 de votre rue, une maison est en vente.', null)).toBe('figure');
+    // Sans virgule dans l'adresse du bien, la voie est reconnue de même, même avec le numéro écrit en lettres.
+    const spelled = await setup({ drafter: { draft: async () => 'La maison située huit rue des Tilleuls Essai à Dijon vient de nous être confiée. Je reste à votre disposition pour en parler.' } });
+    await spelled.signMandate();
+    expect(await spelled.lettres.createCampaign(spelled.agent(), spelled.input({ propertyAddress: '8 rue des Tilleuls Essai 21000 Dijon' }))).toMatchObject({ ok: true, value: { textBy: 'secours' } });
+    expect(checkLetterText('La maison située huit rue des Tilleuls Essai à Dijon vient de nous être confiée.', 'rue des Tilleuls Essai')).toBe('property_street');
     // Le bien lui-même n'est jamais un destinataire.
     expect(await t.lettres.createCampaign(t.agent(), t.input({ addresses: [{ number: '8', street: 'rue des Tilleuls Essai', postcode: '21000', city: 'Dijon' }] }))).toEqual({ ok: false, rule: 'R46', code: 'property_itself', index: 0 });
   });

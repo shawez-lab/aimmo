@@ -94,7 +94,7 @@ export function checkLetterText(text: string, propertyStreet: string | null): st
   if (LETTER_WORDING.test(plain(t))) return 'wording';
   if (propertyStreet) {
     // La voie du bien, sans son type (« rue », « avenue ») : son nom propre ne doit pas paraître dans la lettre [R46].
-    const name = words(propertyStreet).replace(STREET_TYPES, '').trim().split(' ').filter((w) => w.length > 2 && !['des', 'les', 'aux', 'du', 'de', 'la', 'le'].includes(w));
+    const name = words(propertyStreet).replace(STREET_TYPES, '').trim().split(' ').filter((w) => w.length > 2 && !/\d/.test(w) && !['des', 'les', 'aux', 'du', 'de', 'la', 'le'].includes(w));
     const body = ` ${words(t)} `;
     if (name.length > 0 && name.every((w) => body.includes(` ${w} `))) return 'property_street';
   }
@@ -219,7 +219,8 @@ export class LettresQuartier {
     }
 
     // Le texte : l'IA ne voit que la sorte de campagne et la commune ; contrôlé, sinon le texte du code.
-    const propertyStreet = propertyAddress.replace(/^\s*\d+\s*(?:bis|ter|quater|[a-d])?\s*,?\s*/i, '').split(',')[0] ?? null;
+    // La voie du bien, sans son numéro ni, avec ou sans virgule, son code postal et sa commune.
+    const propertyStreet = propertyAddress.replace(/^\s*\d+\s*(?:bis|ter|quater|[a-d])?\b\s*,?\s*/i, '').split(/,|\s\d{5}\b/)[0]?.trim() || null;
     let text = letterFallback(trigger as LetterTrigger, property.city);
     let textBy: 'ia' | 'secours' = 'secours';
     if (this.drafter) {
