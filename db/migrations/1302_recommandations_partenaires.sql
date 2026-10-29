@@ -53,3 +53,14 @@ CREATE TABLE IF NOT EXISTS partner_recommendation_withheld (
 CREATE INDEX IF NOT EXISTS partner_recommendation_withheld_print ON partner_recommendation_withheld (network_id, identifier_sha256);
 CREATE TRIGGER IF NOT EXISTS partner_recommendation_withheld_garde BEFORE DELETE ON partner_recommendation_withheld BEGIN SELECT RAISE(ABORT, 'partner_recommendation_withheld : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS partner_recommendation_withheld_fige BEFORE UPDATE ON partner_recommendation_withheld BEGIN SELECT RAISE(ABORT, 'partner_recommendation_withheld : une empreinte rangée ne change plus'); END;
+
+-- Chaque envoi accepté d'un partenaire, par sa seule date : son historique ne dit rien de ce que l'agence en a fait [R77].
+CREATE TABLE IF NOT EXISTS partner_recommendation_submissions (
+  id TEXT PRIMARY KEY,
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  partner_id TEXT NOT NULL REFERENCES partners (id) ON DELETE RESTRICT,
+  submitted_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS partner_recommendation_submissions_partner ON partner_recommendation_submissions (network_id, partner_id, submitted_at);
+CREATE TRIGGER IF NOT EXISTS partner_recommendation_submissions_garde BEFORE DELETE ON partner_recommendation_submissions BEGIN SELECT RAISE(ABORT, 'partner_recommendation_submissions : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS partner_recommendation_submissions_fige BEFORE UPDATE ON partner_recommendation_submissions BEGIN SELECT RAISE(ABORT, 'partner_recommendation_submissions : un envoi rangé ne change plus'); END;
