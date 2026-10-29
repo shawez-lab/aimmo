@@ -1422,7 +1422,8 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : H29.
 
 ### L09 · Routes de M12, écran « Conformité » et branchement dans le socle
-- Statut : en cours : proposition #175 ouverte, sans P0 ni P1 à la relecture forte ; fusion en attente des vérifications GitHub (H35). L'écran passe en L10 (défini sur la branche de #175) : en cours, proposition #178 empilée sur #175, fusion en attente de H35
+- Statut : en cours
+- Où : proposition #175 ouverte, sans P0 ni P1 à la relecture forte ; fusion en attente des vérifications GitHub (H35). L'écran passe en L10 (défini sur la branche de #175) : en cours, proposition #178 empilée sur #175, fusion en attente de H35
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : L01 à L08
 - Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts`, dont le dépôt d'une pièce au coffre (`CoffreConformite.deposit`) et la déclaration personne ou société avec ses bénéficiaires effectifs (`Identification.declare`), seules portes de l'identification depuis L03 ; AIMMO ne se met pas en service entre L03 et L09 ; dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes, signalements, demandes et échéances, relecture du registre) et le dépôt d'une pièce par l'agent ; les passages au planificateur ; l'export depuis `@aimmo/core`.
@@ -1517,7 +1518,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U09 · Branchement de M18 dans le socle
-- Statut : en cours (branche chantier/U09, empilée sur #178 tant que H35 bloque les fusions)
+- Statut : en cours
+- Où : branche chantier/U09, empilée sur #178 tant que H35 bloque les fusions
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`, contrôle central des envois) · Relecture : forte · Dépend de : U10
 - Cahier : M18 ; Branchements.
 - Objectif : exporter `partenaires` depuis `@aimmo/core` ; dans les droits d'accès, le rôle `partner` lit seulement ses mises en relation confiées (U04) et rien d'autre ; ajouter les routes de M18 à `app.ts` ; lancer au planificateur les relances, les alertes d'échéance des justificatifs et la prospection du jour.
@@ -1686,7 +1688,8 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y02 · Loyers de marché importés, avec source, date et fiabilité
-- Statut : fait (2026-10-29) ; suite des remarques P2 de Codex (guillemets du CSV, reprises simultanées) en #176, en attente de GitHub Actions (H35)
+- Statut : fait (2026-10-29)
+- Reste : suite des remarques P2 de Codex (guillemets du CSV, reprises simultanées) en #176, en attente de GitHub Actions (H35)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y01
 - Cahier : M17, « Rendement calculé par le code », « Règles », « Branchements ».
 - Objectif : la table des loyers de marché (migration `1102`) : commune, type (appartement, maison, par nombre de pièces quand le millésime le donne), loyer au m² charges comprises, bornes de l'intervalle de prévision, nombre d'observations, millésime, source ; import par la direction d'un fichier CSV au format de la Carte des loyers de l'ANIL (jeu de test inventé), versionné, rien effacé ; repli sur les loyers des mises en location du réseau (au moins 5 dans la commune sur 24 mois, réglage) ; la réponse dit toujours sa source et sa fiabilité (« peu d'observations » sous 30 observations ou intervalle plus large que 40 % du loyer, réglages).
