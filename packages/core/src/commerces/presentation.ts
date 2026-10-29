@@ -147,11 +147,11 @@ const parseNumber = (raw: string): number => Number(raw.replace(/[   .]/g, ''
 /** Un montant en centimes, arrondi à l'euro le plus proche. */
 export const toEuros = (cents: number): number => mulDiv(cents, 1, 100);
 
-/** Les mots qui désignent l'enseigne : ses mots d'au moins 3 lettres, hors mots courants et mots de la commune. */
+/** Les mots qui désignent l'enseigne : tous ses mots, même courts (« QG », « AX »), hors mots courants et mots de la commune. */
 function signWords(signName: string | null, city: string | null): string[] {
   if (!signName) return [];
   const cityWords = new Set(city ? words(city) : []);
-  return [...new Set(words(signName).filter((w) => w.length >= 3 && !COMMON_WORDS.has(w) && !cityWords.has(w) && !/^\d+$/.test(w)))];
+  return [...new Set(words(signName).filter((w) => !COMMON_WORDS.has(w) && !cityWords.has(w) && !/^\d+$/.test(w)))];
 }
 
 /** Le texte, déjà comparable, sans le nom de la commune publique. */
@@ -178,12 +178,15 @@ export function presentationSentenceProblems(sentence: string, facts: Presentati
     // code postal sans unité. « Prix de 85 € » avec 85 m² de surface n'a pas de source.
     const after = counted.slice((m.index ?? 0) + m[0].length);
     const role = /^\s*(?:€|eur\b|euros?\b)/u.test(after) ? 'prix' : /^\s*(?:mcarre|metres? carres?\b)/u.test(after) ? 'surface' : 'nu';
+    // Un signe moins devant le nombre en fait une autre valeur : jamais une valeur publique.
+    const negative = /[-−–]\s?$/u.test(counted.slice(0, m.index ?? 0));
     const fits =
-      role === 'prix'
+      !negative &&
+      (role === 'prix'
         ? n === facts.priceLowEuros || n === facts.priceHighEuros
         : role === 'surface'
           ? facts.surfaceM2 !== null && n === facts.surfaceM2
-          : facts.postalCode !== null && /^\d{5}$/.test(facts.postalCode) && m[0] === facts.postalCode;
+          : facts.postalCode !== null && /^\d{5}$/.test(facts.postalCode) && m[0] === facts.postalCode);
     if (fits) continue;
     add(marks.numbers.includes(n) ? 'chiffre_confidentiel' : 'nombre_hors_vue_publique', m[0]);
   }
