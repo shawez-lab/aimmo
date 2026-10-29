@@ -31,6 +31,8 @@ export interface AgentListing {
   title: string;
   priceEur: number;
   state: 'en_vente' | 'sous_offre';
+  /** Les mentions obligatoires de la version publiée, montrées avec le prix comme sur toute annonce [R43]. */
+  mentions: string;
 }
 
 export interface AgentPageInput {
@@ -76,6 +78,7 @@ main{max-width:46rem;margin:0 auto;padding:0 var(--e-4) var(--e-8)}
 .biens{list-style:none;margin:0;padding:0;display:grid;gap:var(--e-3)}
 .biens a{display:block;padding:var(--e-4);background:var(--surface);border-radius:var(--r-m);text-decoration:none;color:var(--encre)}
 .biens strong{display:block;font-size:var(--t-l)}.biens .prix{font:600 var(--t-l) var(--police-titre);color:var(--accent)}
+.mentions{margin:var(--e-2) var(--e-4) 0;font-size:var(--t-xs);white-space:pre-line;color:var(--encre)}
 .etat{font-size:var(--t-xs);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--doux)}
 .doux{color:var(--doux)}`;
 
@@ -98,7 +101,7 @@ export function renderAgentPage(input: AgentPageInput): string {
       ? `<ul class="biens">${input.listings
           .map(
             (l) =>
-              `<li><a href="/biens/${encodeURIComponent(l.propertyId)}"><span class="etat">${STATE_LABEL[l.state]}</span><strong>${escapeHtml(l.title)}</strong><span class="prix">${escapeHtml(euros(l.priceEur))}</span></a></li>`,
+              `<li><a href="/biens/${encodeURIComponent(l.propertyId)}"><span class="etat">${STATE_LABEL[l.state]}</span><strong>${escapeHtml(l.title)}</strong><span class="prix">${escapeHtml(euros(l.priceEur))}</span></a><p class="mentions">${escapeHtml(l.mentions)}</p></li>`,
           )
           .join('')}</ul>`
       : `<p class="doux">Aucun bien en vente en ce moment.</p>`;
@@ -204,13 +207,21 @@ export class PageAgent {
       if (v.state !== 'en_vente' && v.state !== 'sous_offre') continue;
       let payload: { title?: unknown; priceEur?: unknown; body?: unknown; mentions?: unknown };
       try {
-        payload = JSON.parse(v.payload) as typeof payload;
+        const parsed: unknown = JSON.parse(v.payload);
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('version illisible');
+        payload = parsed as typeof payload;
       } catch {
+        // Une version illisible n'est pas montrée, et c'est écrit au journal pour être corrigé.
+        await appendEvent(
+          this.journal,
+          { type: 'attirer.page_agent.annonce_illisible', actor: 'system:page_agent', subject: `property:${v.property_id}`, data: { rule: 'R43', agent: agentId } },
+          this.now,
+        );
         continue;
       }
       // Les mêmes conditions que la page du bien : sans texte ni mentions, elle dirait « plus proposé » [R43].
       if (typeof payload.body === 'string' && payload.body !== '' && typeof payload.mentions === 'string' && payload.mentions !== '' && typeof payload.title === 'string' && payload.title !== '' && typeof payload.priceEur === 'number' && payload.priceEur > 0) {
-        listings.push({ propertyId: v.property_id, title: payload.title, priceEur: payload.priceEur, state: v.state });
+        listings.push({ propertyId: v.property_id, title: payload.title, priceEur: payload.priceEur, state: v.state, mentions: payload.mentions });
       }
     }
     const reviews = await this.db.first<{ url: string }>(

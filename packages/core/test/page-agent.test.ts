@@ -37,7 +37,7 @@ async function listing(db: SqlDatabase, id: string, agent: string, seq: number, 
   );
   await db.run(
     "INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES (?, ?, 'net-1', ?, ?, ?, ?, ?, 'h', 'test', 'x')",
-    [`${id}-${seq}`, id, seq, state, state === 'retiree' ? null : `d-${id}-${seq}`, state === 'retiree' ? null : price, JSON.stringify({ reference: `REF-${id}`, state, title, body: 'Texte', mentions: 'Mentions', priceEur: price, media: [] })],
+    [`${id}-${seq}`, id, seq, state, state === 'retiree' ? null : `d-${id}-${seq}`, state === 'retiree' ? null : price, JSON.stringify({ reference: `REF-${id}`, state, title, body: 'Texte', mentions: `Classe énergie D, classe climat C. Honoraires à la charge du vendeur (${id}).`, priceEur: price, media: [] })],
   );
   await db.exec('PRAGMA foreign_keys = ON');
 }
@@ -110,6 +110,9 @@ describeWithSqlite('AT03 · page de chaque agent', () => {
     expect(page.input.listings.map((l) => [l.propertyId, l.state])).toEqual([['b1', 'en_vente'], ['b3', 'sous_offre']]);
     expect(page.html).toContain('href="/biens/b1"');
     expect(page.html).toMatch(/210\s000/u);
+    // Chaque bien montré porte ses mentions obligatoires, comme toute annonce [R43].
+    expect(page.html).toContain('<p class="mentions">Classe énergie D, classe climat C. Honoraires à la charge du vendeur (b1).</p>');
+    expect(page.html).toContain('Honoraires à la charge du vendeur (b3).');
     expect(page.html).not.toMatch(/Maison ancienne|autre agent|Duplex|REF-|Ville inventée/);
   });
 
@@ -141,6 +144,18 @@ describeWithSqlite('AT03 · page de chaque agent', () => {
     expect(page.html).not.toMatch(/mandataire|gratuit/i);
   });
 
+  it('[R43] une version publiée illisible n\'est pas montrée et c\'est écrit au journal', async () => {
+    const { db, pages } = await setup();
+    await complete(db, pages);
+    await listing(db, 'b1', 'ag-1', 1, 'en_vente', 'Appartement', 210000);
+    await db.exec('PRAGMA foreign_keys = OFF');
+    await db.run("INSERT INTO properties (id, network_id, agent_id, reference, kind, created_at, updated_at) VALUES ('b9', 'net-1', 'ag-1', 'REF-b9', 'home', 'x', 'x')");
+    await db.run("INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES ('b9-1', 'b9', 'net-1', 1, 'en_vente', 'd', 1000, 'null', 'h', 'test', 'x')");
+    const page = (await pages.page('net-1', 'ag-1')) as { ok: true; input: AgentPageInput };
+    expect(page.input.listings.map((l) => l.propertyId)).toEqual(['b1']);
+    expect((await db.first<{ n: number }>("SELECT count(*) AS n FROM journal WHERE type = 'attirer.page_agent.annonce_illisible' AND subject = 'property:b9'"))!.n).toBe(1);
+  });
+
   it('tout texte est échappé', () => {
     const html = renderAgentPage({
       agentId: 'a',
@@ -150,10 +165,10 @@ describeWithSqlite('AT03 · page de chaque agent', () => {
       phone: null,
       email: null,
       mentions: { rsacNumber: '1', rsacRegistry: 'D', cardNumber: 'C', cardHolder: 'H' },
-      listings: [{ propertyId: 'x"y', title: '<i>', priceEur: 1, state: 'en_vente' }],
+      listings: [{ propertyId: 'x"y', title: '<i>', priceEur: 1, state: 'en_vente', mentions: '<u>' }],
       reviewsUrl: 'https://x.test/"><b>',
     });
-    expect(html).not.toMatch(/<script>|<b>|<i>/);
+    expect(html).not.toMatch(/<script>|<b>|<i>|<u>/);
     expect(html).not.toContain('x.test');
     expect(html).toContain('href="/biens/x%22y"');
   });
