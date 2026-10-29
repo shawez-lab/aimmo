@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { Acces, FicheClient, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import {
   ANIL_CITATION,
   CalculInvestissement,
@@ -294,5 +294,30 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     expect(back.value.text).toContain('Rendement brut : 3,89 %');
     expect(back.value.text).toContain('Loyer de marché au m² : 12,35 €/m²');
     expect(back.value.text).not.toContain('borne basse de l’intervalle retenue');
+  });
+
+  it('[R126] un montant mensuel n’est jamais prouvé par une ligne annuelle, ni l’inverse', async () => {
+    const t = await setup();
+    const calc = await t.calculs.get(t.network.id, t.calcId);
+    if (calc?.result.status !== 'complet') throw new Error('incomplet');
+    const lines = calc.result.lines;
+    expect(traceParagraph('Le loyer mensuel est de 6 669 €.', lines).problems).toHaveLength(1);
+    expect(traceParagraph('Le loyer est de 6 669 € par mois.', lines).problems).toHaveLength(1);
+    expect(traceParagraph('Le loyer annuel est de 6 669 €.', lines).problems).toEqual([]);
+    expect(traceParagraph('Le loyer annuel est de 555,75 €.', lines).problems).toHaveLength(1);
+    expect(traceParagraph('Le loyer est de 555,75 € par mois.', lines).problems).toEqual([]);
+  });
+
+  it('[R16] une note ne se rédige pas depuis le calcul d’un bien qu’on ne voit pas', async () => {
+    const t = await setup();
+    // Un calcul d'Alex, sans projet, sur un bien qui sort du fichier commun.
+    const c = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-1', marketRentQuery: { inseeCode: '99001', kind: 'apartment' }, inputs: { acquisitionFeesRateBp: src(750), works: src(0), nonRecoverableCharges: src(0), propertyTax: src(0), vacancyMonths: src(1) } });
+    if (!c.ok) throw new Error(c.code);
+    await t.db.run("UPDATE properties SET status = 'draft' WHERE id = 'p-1'");
+    const store = new FicheClient(t.db, {});
+    const person = await store.createPerson({ networkId: t.network.id, agentId: t.sam.id, firstName: 'Noé' });
+    const project = await store.createProject({ networkId: t.network.id, agentId: t.sam.id, personId: person.id, kind: 'invest' });
+    expect(await t.notes.draft(t.acces, t.as('agent', t.sam.id), { calculationId: c.value.id, projectId: project.id })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(Number((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM investment_notes'))!.n)).toBe(0);
   });
 });
