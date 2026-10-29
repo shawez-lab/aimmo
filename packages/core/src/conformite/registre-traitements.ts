@@ -503,6 +503,19 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       property_communes: ['recorded_by'],
     },
   },
+  {
+    id: 'commerces',
+    finalite: 'Vendre un fonds de commerce, un droit au bail, des murs ou un local professionnel dans la discrétion : la fiche du commerce, dont les chiffres et le bail restent confidentiels.',
+    baseLegale: 'mesures_precontractuelles',
+    personnes: ['Vendeurs de commerces et d\'entreprises'],
+    donnees: ['Fiche du commerce : enseigne, chiffres d\'affaires et résultats des 3 derniers exercices, bail commercial, salariés (nombre), matériel, autorisations, chaque champ avec son auteur'],
+    duree: 'La durée du mandat puis 5 ans.',
+    destinataires: ['L\'agent du bien', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
+    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
+    tables: {
+      business_sheets: ['sign_name', 'fiscal_years', 'lease_start', 'lease_years', 'lease_annual_rent_cents', 'lease_use', 'lease_assignment', 'employees', 'equipment', 'licenses', 'author'],
+    },
+  },
 ];
 
 /** Les tables sans aucune donnée personnelle, chacune avec sa raison. */
@@ -780,7 +793,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   investment_notes: ['id', 'network_id', 'calculation_id', 'project_id', 'origin', 'status', 'created_at', 'validated_at'],
   investor_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'gross_yield_bp', 'created_at', 'updated_at'],
   property_communes: ['property_id', 'network_id', 'insee_code', 'rent_kind', 'recorded_at'],
-  market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
+  market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],  business_sheets: ['id', 'network_id', 'property_id', 'version', 'activity', 'sources', 'created_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
