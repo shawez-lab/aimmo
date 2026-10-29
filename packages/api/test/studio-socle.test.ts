@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, RegistreMandats, SignaturePapier, SqlJournalStore, applyMigrations, fromSyncSqlite, studio, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { renderCertificatePage } from '../src/certificat-photo.ts';
+import { MentionsAnnonce } from '../../core/src/annonces/mentions.ts';
 import { sha256Hex } from '../src/index.ts';
 import { mediaFiles } from '../src/worker.ts';
 import { BUDGETS, budgetProblems, htmlProblems } from '../../core/src/design/audit.ts';
@@ -37,11 +38,13 @@ async function setup(opts: { files?: boolean; extra?: Record<string, unknown> } 
   await modeles.validate({ role: 'compliance', userId: 'c-1', networkId: network } as Viewer, template.ok ? template.template.id : '');
   await new ControlesSignature(db, acces, journal, { now }).setFeeSchedule(direction, { maxRatePercent: 5, minEur: 0 });
   await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+  // La carte professionnelle du réseau, inventée : les mentions obligatoires sont complètes [R43].
+  await new MentionsAnnonce(db, acces, journal, { now }).setCardNumber(direction, 'CPI 0000 2027 000 000 001');
   const property = async (i: number, withMandate = true) => {
     const p = (await store.createProperty({ networkId: network, agentId: alex, reference: `STU-${i}`, kind: 'home', city: 'Villebrune', priceEur: 150_000 + i * 1000, surfaceM2: 45, rooms: 2, status: 'available' })).id;
     const photos = VIEWS.map((_, k) => `biens/${p}/${uuid(i * 10 + k)}.jpg`);
     for (const [k, ref] of photos.entries()) stored.add(ref).add(`biens/${p}/originaux/${uuid(i * 10 + k, '00000000000a')}.jpg`);
-    const sheet = { characteristics: { bedrooms: 1, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], landM2: null, parkingSpaces: 0, elevator: null }, energy: null, coownership: null, risks: null, media: photos.map((ref) => ({ ref, kind: 'photo', edit: 'lumiere_cadrage' })) };
+    const sheet = { characteristics: { bedrooms: 1, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], landM2: null, parkingSpaces: 0, elevator: null }, energy: { energyClass: 'C', climateClass: 'C', annualCostMinEur: 800, annualCostMaxEur: 1100, costReferenceYear: 2025 }, coownership: { isCoownership: false }, risks: { inRiskZone: false }, media: photos.map((ref) => ({ ref, kind: 'photo', edit: 'lumiere_cadrage' })) };
     await db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, 'agent:a', '2027-10-01')", [`s-${i}`, p, network, JSON.stringify(sheet)]);
     if (withMandate) {
       const seller = (await store.createPerson({ networkId: network, agentId: alex, firstName: 'Léa', lastName: `Vendeuse${i}` })).id;
@@ -91,6 +94,9 @@ describeWithSqlite('X10 · branchement de M19 dans le socle', () => {
     expect(cert.status).toBe(200);
     const prep = await t.call('alex', 'POST', `/studio/biens/${b.id}/publications`, { event: 'nouveau_bien', visuals: [b.photos[0]] });
     expect(prep.body).toMatchObject({ ok: true, mode: 'essai' });
+    // [R43] Les mentions obligatoires, calculées par M07, sont sous le texte.
+    expect(prep.body.data.text).toMatch(/Prix : 151\s000\s€, honoraires à la charge du vendeur\./u);
+    expect(prep.body.data.text).toContain('Carte professionnelle n° CPI 0000 2027 000 000 001.');
     const postId = prep.body.data.id as string;
     expect((await t.call('alex', 'POST', `/studio/publications/${postId}/visuels`, { ref: b.photos[0], addressVisible: false, personVisible: false })).status).toBe(200);
     expect((await t.call('alex', 'POST', `/studio/publications/${postId}/validation`)).status).toBe(200);
