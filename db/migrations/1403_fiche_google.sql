@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS gbp_sends (
   CHECK ((kind = 'informations') = (draft_id IS NULL)),
   FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS gbp_sends_draft_ok ON gbp_sends (draft_id) WHERE outcome IN ('essai', 'envoye');
+-- Un texte ne part qu'une fois par mode : un essai ne consomme pas l'envoi réel.
+CREATE UNIQUE INDEX IF NOT EXISTS gbp_sends_draft_ok ON gbp_sends (draft_id, mode) WHERE outcome IN ('essai', 'envoye');
 CREATE INDEX IF NOT EXISTS gbp_sends_agent ON gbp_sends (network_id, agent_id, kind, sent_at);
 
 -- La réservation d'un envoi, prise avant d'appeler Google : deux demandes simultanées ne font partir qu'un texte, et un

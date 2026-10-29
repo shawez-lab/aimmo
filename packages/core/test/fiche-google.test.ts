@@ -438,6 +438,48 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     expect(await s.fiche.writeReply(agent, id, 'Merci rémi !')).toMatchObject({ ok: false, problems: ['nom'] });
   });
 
+  it('[R46] l’IA reçoit le texte de l’avis sans nom, adresse, téléphone, mail ni montant', async () => {
+    const writer = fixedWriter('Merci pour votre confiance.');
+    const s = await setup({ writer });
+    const id = await withReview(s, 5, 'Gaspard Quenouille ici, 12 rue des Lilas, joignable au 06 12 34 56 78 ou gq@exemple.test. Vendu 245 000 €, merci à Hortense pour la visite !');
+    await s.fiche.draftReply(agent, id);
+    const sent = (writer.seen[0] as { comment: string }).comment;
+    expect(sent).not.toMatch(/gaspard|quenouille|lilas|06 12|gq@|245|hortense/i);
+    expect(sent).toContain('pour la visite');
+    // Ce que la base garde de l'avis n'est pas changé : seule la copie pour l'IA l'est.
+    expect((await s.db.first<{ comment: string }>('SELECT comment FROM gbp_reviews'))!.comment).toContain('pour la visite');
+  });
+
+  it('au plus une publication par période, comptée aussi au départ : des textes validés en retard ne partent pas ensemble', async () => {
+    const s = await setup({ mode: 'reel' });
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison 5 pièces avec jardin à Talant');
+    await listing(s.db, 'b2', 1, 'en_vente', 'Appartement 3 pièces lumineux à Chenôve');
+    const p1 = await s.fiche.duePost('net-1', 'ag-1');
+    s.advanceDays(8);
+    const p2 = await s.fiche.duePost('net-1', 'ag-1');
+    if (!p1.ok || !p1.value || !p2.ok || !p2.value) throw new Error('pas de publication');
+    await s.fiche.validate(agent, p1.value.draftId);
+    await s.fiche.validate(agent, p2.value.draftId);
+    expect(await s.fiche.publish(agent, p1.value.draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect(await s.fiche.publish(agent, p2.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'trop_tot' });
+    s.advanceDays(8);
+    expect(await s.fiche.publish(agent, p2.value.draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect(s.client.writes()).toHaveLength(2);
+  });
+
+  it('[R26] un essai ne consomme pas l’envoi réel : après la mise en service, le texte et le bien peuvent partir pour de bon', async () => {
+    const s = await setup({ mode: 'essai' });
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison 5 pièces avec jardin à Talant');
+    const p = await s.fiche.duePost('net-1', 'ag-1');
+    if (!p.ok || !p.value) throw new Error('pas de publication');
+    await s.fiche.validate(agent, p.value.draftId);
+    expect(await s.fiche.publish(agent, p.value.draftId)).toEqual({ ok: true, mode: 'essai' });
+    const reel = new FicheGoogle(s.db, s.journal, { now: s.now, client: s.client, mode: 'reel', diffusion: { canDiffuse: async () => ({ allowed: true, reason: 'allowed' }) } });
+    expect(await reel.publish(agent, p.value.draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect(s.client.writes()).toEqual(['post:https://camille.exemple.test/biens/b1']);
+    expect(await reel.publish(agent, p.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'deja_parti' });
+  });
+
   it('une panne en mode réel est notée, et le texte peut repartir ensuite', async () => {
     const s = await setup({ mode: 'reel' });
     const d = await s.fiche.draftReply(agent, await withReview(s));

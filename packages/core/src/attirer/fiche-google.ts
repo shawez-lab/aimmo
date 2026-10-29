@@ -64,7 +64,7 @@ export type GbpProblem = 'nom' | 'adresse' | 'montant' | 'dossier' | 'coordonnee
 export type GbpRefusal =
   | { ok: false; rule: 'R16'; code: 'role' | 'agent_inconnu' | 'agent_parti' | 'inconnu' }
   | { ok: false; rule: 'R154'; code: 'texte_refuse'; problems: GbpProblem[] }
-  | { ok: false; rule: 'R154'; code: 'non_valide' | 'texte_change' | 'deja_valide' | 'deja_parti' | 'bien_retire' | 'deja_publie' }
+  | { ok: false; rule: 'R154'; code: 'non_valide' | 'texte_change' | 'deja_valide' | 'deja_parti' | 'bien_retire' | 'deja_publie' | 'trop_tot' }
   | { ok: false; rule: null; code: 'sans_fiche' | 'invalide' | 'occupe' | 'echec' | 'sans_service' };
 
 export interface GbpDraft {
@@ -157,6 +157,30 @@ export async function checkGbpText(text: string, ctx: TextContext, networkId: st
     if (ctx.clientShortNames?.has(folded) && /^\p{Lu}/u.test(w)) problems.add('nom');
   }
   return [...problems].sort();
+}
+
+const REDACT_STREETS = [STREET, STREET_PROPER_NAME, NUMBERED_STREET];
+const REDACT_OTHERS = [CONTACT, AMOUNT];
+const global = (re: RegExp, tail = ''): RegExp => new RegExp(`${re.source}${tail}`, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+
+/**
+ * Le texte d'un avis tel que l'IA le reçoit : sans le nom de son auteur ni d'un client de la base, sans adresse, sans
+ * coordonnée ni montant, remplacés par « … ». L'IA n'en a pas besoin pour proposer une réponse [R46].
+ */
+export async function redactForAi(comment: string, ctx: TextContext, networkId: string): Promise<string> {
+  let out = comment;
+  // Une voie, et les mots qui suivent jusqu'à la ponctuation (son nom) ; une coordonnée ou un montant seuls.
+  for (const re of REDACT_STREETS) out = out.replace(global(re, "[\\p{L}'’-]*(?:\\s+[\\p{L}'’-]+){0,3}"), '…');
+  for (const re of REDACT_OTHERS) out = out.replace(global(re), '…');
+  const authors = new Set(ctx.authorTokenHashes);
+  const parts = out.split(/([^\p{L}]+)/u);
+  for (let i = 0; i < parts.length; i++) {
+    const w = parts[i]!;
+    if (w.length < 2 || !/^\p{L}+$/u.test(w)) continue;
+    const f = foldWord(w);
+    if (authors.has(await sha256Hex(`gbp-auteur:${networkId}:${f}`)) || ctx.clientFirstNames.has(f) || ctx.clientLastNames.has(f) || (ctx.clientShortNames?.has(f) && /^\p{Lu}/u.test(w))) parts[i] = '…';
+  }
+  return parts.join('');
 }
 
 /** La réponse faite par le code quand l'IA manque : sans nom, sans détail, signée du prénom de l'agent. */
@@ -429,7 +453,7 @@ export class FicheGoogle {
     if (!allowed.ok) return allowed;
     const ctx = await this.context(viewer.networkId, 'reponse', JSON.parse(review.author_token_hashes) as string[], signatureOf(allowed.firstName));
     const rating = Number(review.rating);
-    const proposed = await this.askWriter({ rating, comment: review.comment, agentFirstName: allowed.firstName });
+    const proposed = await this.askWriter({ rating, comment: review.comment === null ? null : await redactForAi(review.comment, ctx, viewer.networkId), agentFirstName: allowed.firstName });
     if (proposed) {
       const problems = await checkGbpText(proposed, ctx, viewer.networkId);
       if (problems.length === 0) return { ok: true, value: await this.store(viewer.networkId, review.agent_id, { kind: 'reponse', reviewId: review.id, propertyId: null, listingSeq: null, body: proposed, linkUri: null, origin: 'ia' }, this.actor(viewer)) };
@@ -499,9 +523,9 @@ export class FicheGoogle {
     const candidates = await this.db.all<{ id: string; pending_seq: number | null }>(
       `SELECT p.id, (SELECT d.listing_seq FROM gbp_drafts d WHERE d.property_id = p.id AND d.kind = 'publication' ORDER BY d.created_at DESC, d.rowid DESC LIMIT 1) AS pending_seq
          FROM properties p WHERE p.agent_id = ? AND p.network_id = ?
-          AND NOT EXISTS (SELECT 1 FROM gbp_sends s JOIN gbp_drafts d ON d.id = s.draft_id WHERE d.property_id = p.id AND s.kind = 'publication' AND s.outcome IN ('essai', 'envoye'))
+          AND NOT EXISTS (SELECT 1 FROM gbp_sends s JOIN gbp_drafts d ON d.id = s.draft_id WHERE d.property_id = p.id AND s.kind = 'publication' AND s.mode = ? AND s.outcome IN ('essai', 'envoye'))
         ORDER BY p.id`,
-      [agentId, networkId],
+      [agentId, networkId, this.mode],
     );
     const ctx = await this.context(networkId, 'publication', [], signatureOf(agent.first_name));
     for (const c of candidates) {
@@ -578,7 +602,7 @@ export class FicheGoogle {
     if (!allowed.ok) return allowed;
     if (!row.validated_at || !row.validated_by) return { ok: false, rule: 'R154', code: 'non_valide' };
     if (row.text_sha256 !== (await textHash(row))) return { ok: false, rule: 'R154', code: 'texte_change' };
-    const sent = await this.db.first<{ id: string }>("SELECT id FROM gbp_sends WHERE draft_id = ? AND outcome IN ('essai', 'envoye')", [row.id]);
+    const sent = await this.db.first<{ id: string }>("SELECT id FROM gbp_sends WHERE draft_id = ? AND mode = ? AND outcome IN ('essai', 'envoye')", [row.id, this.mode]);
     if (sent) return { ok: false, rule: 'R154', code: 'deja_parti' };
     const invalid = await this.stillValid(row);
     if (invalid) return invalid;
@@ -588,6 +612,15 @@ export class FicheGoogle {
         [row.review_id, this.mode],
       );
       if (answered) return { ok: false, rule: 'R154', code: 'deja_parti' };
+    } else {
+      // Au plus une publication de bien par agent et par période, comptée au départ aussi : valider d'un coup des textes
+      // en retard ne les fait pas partir ensemble.
+      const since = new Date(this.now().getTime() - this.postEveryDays * 86_400_000).toISOString();
+      const recent = await this.db.first<{ id: string }>(
+        "SELECT id FROM gbp_sends WHERE network_id = ? AND agent_id = ? AND kind = 'publication' AND mode = ? AND outcome IN ('essai', 'envoye') AND sent_at > ? LIMIT 1",
+        [row.network_id, row.agent_id, this.mode, since],
+      );
+      if (recent) return { ok: false, rule: 'R154', code: 'trop_tot' };
     }
     const loc = await this.location(row.network_id, row.agent_id);
     if (!loc) return { ok: false, rule: null, code: 'sans_fiche' };
