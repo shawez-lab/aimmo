@@ -90,10 +90,7 @@ const dayFr = (iso: string): string => {
  */
 export function energyConstraint(energyClass: InvestEnergyClass | null, finalEnergyKwh: number | null, today: string, source: string): EnergyConstraint {
   const base = { kind: 'energie' as const, energyClass, finalEnergyKwh, source };
-  if (energyClass === null) {
-    return { ...base, status: 'inconnue', bannedFrom: null, text: 'Classe énergie inconnue : à vérifier avant toute proposition de location.' };
-  }
-  const ban = banDate(energyClass);
+  // Le seuil de consommation passe avant tout : il interdit même quand la classe manque.
   if (finalEnergyKwh !== null && finalEnergyKwh > MAX_FINAL_ENERGY_KWH && FINAL_ENERGY_BAN_FROM <= today) {
     return {
       ...base,
@@ -102,6 +99,10 @@ export function energyConstraint(energyClass: InvestEnergyClass | null, finalEne
       text: `${RENTAL_BAN_ALERT} : consommation de ${finalEnergyKwh} kWh/m²/an, au-delà de ${MAX_FINAL_ENERGY_KWH} kWh/m²/an, interdite pour un bail depuis le ${dayFr(FINAL_ENERGY_BAN_FROM)}.`,
     };
   }
+  if (energyClass === null) {
+    return { ...base, status: 'inconnue', bannedFrom: null, text: 'Classe énergie inconnue : à vérifier avant toute proposition de location.' };
+  }
+  const ban = banDate(energyClass);
   if (ban !== null && ban <= today) {
     return { ...base, status: 'interdit', bannedFrom: ban, text: `${RENTAL_BAN_ALERT} : classe énergie ${energyClass}, interdite à la location depuis le ${dayFr(ban)}.` };
   }
@@ -244,18 +245,20 @@ export class Contraintes {
     return { ok: true, value };
   }
 
-  /** Les règles de la commune en vigueur ce jour-là ; la plus récemment rangée de chaque sorte compte. */
+  /** Les règles de la commune en vigueur ce jour-là. */
   async communeRules(networkId: string, inseeCode: string, today: string): Promise<CommuneRule[]> {
     const rows = await this.db.all<CommuneRuleRow>(
       `SELECT * FROM commune_rental_rules WHERE network_id = ? AND insee_code = ? ORDER BY recorded_at DESC, id DESC`,
       [networkId, inseeCode],
     );
+    // Par sorte, la règle rangée le plus récemment qui a déjà commencé décide : en vigueur, ou finie. Une règle rangée
+    // pour plus tard (un renouvellement) ne cache jamais celle qui s'applique aujourd'hui.
     const seen = new Set<string>();
     const out: CommuneRule[] = [];
     for (const r of rows) {
-      if (seen.has(r.rule)) continue;
+      if (seen.has(r.rule) || r.effective_from > today) continue;
       seen.add(r.rule);
-      if (r.effective_from > today || (r.effective_until !== null && r.effective_until < today)) continue;
+      if (r.effective_until !== null && r.effective_until < today) continue;
       out.push({
         id: r.id,
         inseeCode: r.insee_code,
@@ -298,7 +301,13 @@ export class Contraintes {
     const sheetClass = sheet?.energy?.energyClass;
     const fromSheet = typeof sheetClass === 'string' && (ENERGY_CLASSES as readonly string[]).includes(sheetClass) ? (sheetClass as InvestEnergyClass) : null;
     const energyClass = fromSheet ?? input.energyClass ?? null;
-    const kwh = input.finalEnergyKwh !== undefined && input.finalEnergyKwh !== null && Number.isSafeInteger(input.finalEnergyKwh) && input.finalEnergyKwh >= 0 ? input.finalEnergyKwh : null;
+    // Une consommation non entière est arrondie vers le haut : « au-delà de 450 » reste vrai pour 450,2. Une valeur
+    // impossible n'est jamais ignorée en silence.
+    const rawKwh = input.finalEnergyKwh ?? null;
+    if (rawKwh !== null && (typeof rawKwh !== 'number' || !Number.isFinite(rawKwh) || rawKwh < 0 || rawKwh > 100_000)) {
+      throw new Error('contraintes : consommation d’énergie impossible');
+    }
+    const kwh = rawKwh === null ? null : Math.ceil(rawKwh);
     const energySource =
       fromSheet !== null ? `fiche du bien ${input.propertyId}, version ${sheetVersion}` : energyClass !== null ? (input.energySource ?? 'dit par l’agent') : 'aucune';
     const energy = energyConstraint(energyClass, kwh, today, energySource);

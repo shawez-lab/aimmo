@@ -19,6 +19,9 @@ it('[R124] [R100] une classe G, ou au-delà de 450 kWh/m²/an, est « interdit �
   expect(energyConstraint('E', null, TODAY, 'fiche')).toMatchObject({ status: 'echeance', bannedFrom: '2034-01-01' });
   expect(energyConstraint('D', null, TODAY, 'fiche')).toMatchObject({ status: 'aucune', bannedFrom: null });
   expect(energyConstraint(null, null, TODAY, 'aucune')).toMatchObject({ status: 'inconnue' });
+  // Le seuil interdit même sans classe.
+  expect(energyConstraint(null, 520, TODAY, 'agent')).toMatchObject({ status: 'interdit', bannedFrom: '2023-01-01' });
+  expect(energyConstraint(null, 450, TODAY, 'agent')).toMatchObject({ status: 'inconnue' });
   // F devient interdit le jour venu, par la même règle.
   expect(energyConstraint('F', null, '2028-01-01', 'fiche')).toMatchObject({ status: 'interdit' });
 });
@@ -95,6 +98,13 @@ describeWithSqlite('Y04 · contraintes signalées', () => {
     const told = await t.contraintes.forProperty({ networkId: 'net-1', propertyId: 'p-x', inseeCode: null, energyClass: 'E', energySource: 'agent:a-1, DPE vu', rentalTarget: 'unfurnished' });
     expect(told.constraints[0]).toMatchObject({ status: 'echeance', bannedFrom: '2034-01-01', source: 'agent:a-1, DPE vu' });
     expect(told.alertsFirst).toEqual([]);
+    // Sans classe, au-delà du seuil : interdit, alerte en tête ; une consommation non entière n'est jamais jetée.
+    const over = await t.contraintes.forProperty({ networkId: 'net-1', propertyId: 'p-x', inseeCode: null, finalEnergyKwh: 520, energySource: 'agent:a-1', rentalTarget: 'furnished' });
+    expect(over.rentalBan).toBe(true);
+    expect(over.alertsFirst[0]!.startsWith('Interdit à la location')).toBe(true);
+    const half = await t.contraintes.forProperty({ networkId: 'net-1', propertyId: 'p-x', inseeCode: null, energyClass: 'F', finalEnergyKwh: 450.5, rentalTarget: 'furnished' });
+    expect(half.constraints[0]).toMatchObject({ status: 'interdit', finalEnergyKwh: 451 });
+    await expect(t.contraintes.forProperty({ networkId: 'net-1', propertyId: 'p-x', inseeCode: null, energyClass: 'F', finalEnergyKwh: -3, rentalTarget: 'furnished' })).rejects.toThrow(/impossible/);
   });
 
   it('une règle de commune est rangée par la direction avec sa source et sa date ; sans source, refusée', async () => {
@@ -129,7 +139,12 @@ describeWithSqlite('Y04 · contraintes signalées', () => {
     expect(await t.contraintes.recordCommuneRule(t.direction, { ...base, effectiveUntil: '2027-06-30' })).toMatchObject({ ok: true });
     const later = await t.contraintes.forProperty({ networkId: 'net-1', propertyId: null, inseeCode: '99001', energyClass: 'C', rentalTarget: 'furnished' });
     expect(later.constraints.filter((c) => c.kind === 'commune')).toEqual([]);
-    expect(Number((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM commune_rental_rules'))!.n)).toBe(3);
+    // Un renouvellement rangé pour plus tard ne cache pas la règle d'aujourd'hui.
+    expect(await t.contraintes.recordCommuneRule(t.direction, { ...base, inseeCode: '99002', effectiveFrom: '2026-01-01' })).toMatchObject({ ok: true });
+    expect(await t.contraintes.recordCommuneRule(t.direction, { ...base, inseeCode: '99002', effectiveFrom: '2029-01-01' })).toMatchObject({ ok: true });
+    const renewed = await t.contraintes.forProperty({ networkId: 'net-1', propertyId: null, inseeCode: '99002', energyClass: 'C', rentalTarget: 'furnished' });
+    expect(renewed.constraints.filter((c) => c.kind === 'commune')).toMatchObject([{ rule: 'autorisation_prealable', effectiveFrom: '2026-01-01' }]);
+    expect(Number((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM commune_rental_rules'))!.n)).toBe(5);
     await expect(t.db.run('DELETE FROM commune_rental_rules')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE commune_rental_rules SET source = 'x'")).rejects.toThrow(/ne change plus/);
     const refused = (await t.journal.all()).filter((e) => e.type === 'investir.regle.refuse');
