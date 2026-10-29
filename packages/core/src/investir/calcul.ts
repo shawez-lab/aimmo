@@ -39,6 +39,9 @@ export interface MarketRentValue {
   centralM2Cents: number;
   lowerM2Cents: number;
   upperM2Cents: number;
+  /** Rangés par la note quand elle retient une borne : le loyer central de la base et son hypothèse, pour y revenir. */
+  originalCentralM2Cents?: number;
+  originalHypothesis?: string;
 }
 
 export interface YieldInputs {
@@ -374,6 +377,29 @@ export class CalculInvestissement {
       this.now,
     );
     return { ok: true, value: { id, propertyId, projectId, inputs, result, createdBy: actor, createdAt } };
+  }
+
+  /**
+   * Range un calcul déjà fait par le code (la note qui change une hypothèse) : pour le code du système, après le
+   * contrôle d'accès de l'appelant. Rend son identifiant.
+   */
+  async store(viewer: Viewer, c: { propertyId: string | null; projectId: string | null; inputs: YieldInputs; result: YieldResult }): Promise<string> {
+    const actor = `${String(viewer.role)}:${viewer.userId}`;
+    const id = this.newId();
+    const createdAt = this.now().toISOString();
+    // Le résultat rangé est celui que donne le code depuis les entrées, à la date du rangement : rejouable à l'identique.
+    const result = computeYield(c.inputs, createdAt);
+    await this.db.run(
+      `INSERT INTO investment_calculations (id, network_id, property_id, project_id, inputs, status, result, formula_version, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, viewer.networkId, c.propertyId, c.projectId, JSON.stringify(c.inputs), result.status, JSON.stringify(result), FORMULA_VERSION, actor, createdAt],
+    );
+    await appendEvent(
+      this.journal,
+      { type: 'investir.calcul', actor, subject: c.projectId ? `project:${c.projectId}` : `network:${viewer.networkId}`, data: { calculation: id, status: result.status } },
+      this.now,
+    );
+    return id;
   }
 
   /** Un calcul rangé, sans contrôle d'accès : pour le code du système (note, alertes, routes qui contrôlent avant). */
