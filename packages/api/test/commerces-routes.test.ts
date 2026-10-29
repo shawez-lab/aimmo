@@ -1,0 +1,244 @@
+import { expect, it } from 'vitest';
+import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { commercesRoutes, dossierReaderRoutes, type CommercesServices } from '../src/commerces.ts';
+import { loadMigrations } from '../../core/test/migrations.ts';
+import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
+
+// Réseau, agents, commerces, repreneurs, enseignes et chiffres inventés. Le 7 septembre 2027 est un mardi.
+let n = 0;
+const uuid = (): string => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
+const proof = (): string => `preuves/${uuid()}.pdf`;
+const NDA =
+  'Engagement de confidentialité (modèle inventé pour les tests). Le signataire garde secrets les chiffres et documents du commerce qui lui sont communiqués, et ne les utilise que pour étudier sa reprise.';
+const SHEET = {
+  activity: 'restaurant',
+  signName: 'La Table Inventée',
+  fiscalYears: [
+    { year: 2026, revenueCents: 61_234_500, resultCents: 2_345_600, ebitdaCents: 5_432_100 },
+    { year: 2025, revenueCents: 58_765_400, resultCents: 1_987_600, ebitdaCents: 4_987_600 },
+  ],
+  leaseStart: '2020-01-01',
+  leaseYears: 9,
+  leaseAnnualRentCents: 2_400_000,
+  employees: 6,
+  equipment: ['piano de cuisson', 'chambre froide'],
+  licenses: ['licence_4'],
+};
+/** Ce qui ne doit jamais sortir d'une route publique : enseigne, chiffres d'exercice, loyer, matériel [R110]. */
+const SECRETS = ['Table Inventée', '61234500', '612 345', '612345', '2400000', '24 000', 'piano', 'chambre froide', 'licence_4', 'signName', 'fiscalYears', 'leaseAnnualRentCents'];
+const CONSENT = { consentProof: 'accord donné au rendez-vous du 7 septembre' };
+
+async function setup() {
+  n = 0;
+  let clock = Date.parse('2027-09-07T08:00:00.000Z'); // 10 h à Paris
+  const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+  await applyMigrations(db, loadMigrations());
+  const now = (): Date => new Date((clock += 1000));
+  const journal = new SqlJournalStore(db);
+  const store = new FicheClient(db, { now });
+  const verified = new Set<string>();
+  const deposited = new Set<string>();
+  let code = 100_000;
+  let lastCode = '';
+  const files = new Map<string, string>([['r2://essai/bilan.txt', 'Bilan inventé. Total du bilan : 812 300 €.']]);
+  const s: CommercesServices = {
+    db,
+    journal,
+    now,
+    identity: { state: async (_n, p) => ({ identityVerifiedOn: verified.has(p) ? '2027-09-01' : null }) },
+    storage: { read: async (ref) => files.get(ref) ?? null },
+    vault: { everDeposited: async (_n, p, kinds) => kinds.some((k) => deposited.has(`${p}:${k}`)) },
+    diffusion: { canDiffuse: async () => ({ allowed: true, reason: 'ok' }) },
+    newId: uuid,
+    newCode: () => (lastCode = String((code += 1))),
+  };
+  const network = await store.createNetwork('Réseau Essai');
+  const alexA = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Essai' });
+  const beaA = await store.createAgent({ networkId: network.id, firstName: 'Béa', lastName: 'Essai' });
+  const alex: Viewer = { role: 'agent', userId: alexA.id, networkId: network.id };
+  const bea: Viewer = { role: 'agent', userId: beaA.id, networkId: network.id };
+  const dir: Viewer = { role: 'direction', userId: 'dir-1', networkId: network.id };
+  const compliance: Viewer = { role: 'compliance', userId: 'conf-1', networkId: network.id };
+  const partner: Viewer = { role: 'partner', userId: 'part-1', networkId: network.id };
+  const routes = commercesRoutes();
+  const reader = dossierReaderRoutes();
+  const call = async (viewer: Viewer, method: 'GET' | 'POST', path: string, body?: unknown) => {
+    const route = routes.find((r) => r.method === method && r.pattern.test(path));
+    if (!route) throw new Error(`route inconnue ${method} ${path}`);
+    const params = (route.pattern.exec(path) ?? []).slice(1);
+    const init: RequestInit = { method };
+    if (body !== undefined) {
+      init.headers = { 'content-type': 'application/json' };
+      init.body = JSON.stringify(body);
+    }
+    const response = await route.handle(s, viewer, params, new Request(`https://api.exemple.test/v1${path}`, init));
+    return { status: response.status, body: (await response.json()) as { ok: boolean; data?: any; code?: string; rule?: string | null; codes?: string[]; missing?: string[] } };
+  };
+  const ok = async (viewer: Viewer, method: 'GET' | 'POST', path: string, body?: unknown) => {
+    const r = await call(viewer, method, path, body);
+    expect(r.status, `${method} ${path} ${JSON.stringify(r.body)}`).toBe(200);
+    return r.body.data;
+  };
+  const read = async (path: string, body: unknown) => {
+    const route = reader.find((r) => r.pattern.test(path))!;
+    const params = (route.pattern.exec(path) ?? []).slice(1);
+    const response = await route.handle(s, params, new Request(`https://api.exemple.test/v1${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
+    return { status: response.status, body: (await response.json()) as { ok: boolean; data?: any; code?: string } };
+  };
+  /** Un restaurant d'Alex, estimé, présenté, validé. */
+  const shop = async () => {
+    const p = await store.createProperty({ networkId: network.id, agentId: alexA.id, reference: `CE-${uuid().slice(-4)}`, kind: 'business', status: 'available', city: 'Dijon', postalCode: '21000', surfaceM2: 120 });
+    await ok(alex, 'POST', `/commerces/${p.id}/fiche`, SHEET);
+    const e = await ok(alex, 'POST', `/commerces/${p.id}/estimations`, { method: 'revenue_pct' });
+    await ok(alex, 'POST', `/commerces/estimations/${e.id}/validation`);
+    const pr = await ok(alex, 'POST', `/commerces/${p.id}/presentations`);
+    await ok(alex, 'POST', `/commerces/presentations/${pr.value?.id ?? pr.id}/validation`);
+    await ok(alex, 'POST', `/commerces/${p.id}/documents`, { kind: 'bilan', title: 'Bilan 2026', storageRef: 'r2://essai/bilan.txt' });
+    return p.id;
+  };
+  const buyer = async (letter: string) => {
+    const p = await store.createPerson({ networkId: network.id, agentId: alexA.id, firstName: `Repreneur${letter}`, lastName: 'Essai' });
+    await store.addIdentifier({ networkId: network.id, personId: p.id, kind: 'email', value: `repreneur.${letter.toLowerCase()}@exemple.test` });
+    return { id: p.id, email: `repreneur.${letter.toLowerCase()}@exemple.test` };
+  };
+  const tokenFor = async (personId: string): Promise<string | null> => {
+    const row = await db.first<{ body: string }>(
+      `SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%dossier confidentiel du commerce%' ORDER BY m.rowid DESC LIMIT 1`,
+      [personId],
+    );
+    return /dossier\/([a-z]{40})/.exec(row?.body ?? '')?.[1] ?? null;
+  };
+  return { db, journal, call, ok, read, shop, buyer, tokenFor, alex, bea, dir, compliance, partner, verified, deposited, lastCode: () => lastCode, setDay: (d: string) => (clock = Date.parse(`${d}T08:00:00.000Z`)) };
+}
+
+describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () => {
+  it('[R113] [R114] [R110] sur 10 demandes tests, aucun dossier confidentiel n’est envoyé sans engagement signé ; chaque ouverture est journalisée avec son lecteur', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé pour les tests', sourceDate: '2027-01-15' });
+    await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
+    const a = await t.shop();
+    const b = await t.shop();
+    // Chaque demande : signer ou non, pièce vérifiée ou non, engagement d'un autre bien, révoqué.
+    const plans: { sign: boolean; verified: boolean; otherShop?: boolean; revoke?: boolean; expect: boolean }[] = [
+      { sign: false, verified: false, expect: false },
+      { sign: false, verified: true, expect: false },
+      { sign: true, verified: false, expect: false },
+      { sign: true, verified: true, expect: true },
+      { sign: true, verified: true, otherShop: true, expect: false },
+      { sign: true, verified: true, revoke: true, expect: false },
+      { sign: true, verified: true, expect: true },
+      { sign: false, verified: true, otherShop: true, expect: false },
+      { sign: true, verified: true, expect: true },
+      { sign: true, verified: false, revoke: true, expect: false },
+    ];
+    let sent = 0;
+    for (const [i, plan] of plans.entries()) {
+      const letter = 'ABCDEFGHIJ'[i]!;
+      const r = await t.buyer(letter);
+      if (plan.verified) t.verified.add(r.id);
+      const where = plan.otherShop ? b : a;
+      const answer = await t.ok(t.alex, 'POST', `/commerces/${where}/demandes`, { personId: r.id });
+      // La réponse immédiate : la vue publique et la présentation, rien de confidentiel [R110].
+      expect(answer.publicView).toMatchObject({ kind: 'business', activity: 'restaurant', city: 'Dijon' });
+      for (const secret of SECRETS) expect(JSON.stringify(answer), secret).not.toContain(secret);
+      if (plan.sign) {
+        const open = await t.ok(t.alex, 'POST', `/commerces/engagements/${answer.ndaId}/signature`, CONSENT);
+        await t.ok(t.alex, 'POST', `/commerces/signatures/${open.sessionId}`, { code: t.lastCode() });
+      }
+      if (plan.revoke) await t.ok(t.alex, 'POST', `/commerces/engagements/${answer.ndaId}/revocation`, { reason: 'demande_repreneur' });
+      const send = await t.call(t.alex, 'POST', `/commerces/${a}/dossiers`, { personId: r.id, ...CONSENT });
+      expect(send.status === 200, `demande ${i + 1}`).toBe(plan.expect);
+      if (!plan.expect) {
+        expect(send.body).toMatchObject({ ok: false, rule: 'R113' });
+        expect(await t.tokenFor(r.id), `demande ${i + 1}`).toBeNull();
+        continue;
+      }
+      sent += 1;
+      // Le lecteur ouvre deux fois : chaque ouverture journalisée avec son lecteur, une fois.
+      const token = (await t.tokenFor(r.id))!;
+      for (let k = 0; k < 2; k += 1) {
+        expect((await t.read(`/dossier/${token}/code`, { email: r.email })).status).toBe(200);
+        const opened = await t.read(`/dossier/${token}`, { email: r.email, code: t.lastCode() });
+        expect(opened.status).toBe(200);
+        expect(opened.body.data.pages[0].text).toContain('La Table Inventée');
+      }
+      // Un autre lecteur, avec la bonne adresse mais sans le code : refusé, journalisé.
+      expect((await t.read(`/dossier/${token}`, { email: r.email, code: '000000' })).body).toMatchObject({ ok: false, code: 'autre_lecteur' });
+    }
+    expect(sent).toBe(3);
+    const log = await t.ok(t.alex, 'GET', `/commerces/${a}/ouvertures`);
+    const opened = log.filter((x: { outcome: string }) => x.outcome === 'ouvert');
+    expect(opened).toHaveLength(6);
+    expect(new Set(opened.map((x: { personId: string }) => x.personId)).size).toBe(3);
+    expect(log.filter((x: { outcome: string }) => x.outcome === 'autre_lecteur')).toHaveLength(3);
+    const events = (await t.journal.all()).filter((e) => e.type === 'commerces.dossier.ouvert');
+    expect(events).toHaveLength(6);
+  });
+
+  it('[R116] [R117] les délais sont justes sur 3 dossiers de cession, par les routes', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/perimetres', { postalCode: '21000', city: 'Dijon', inPerimeter: false, source: 'Liste inventée des périmètres', sourceDate: '2026-06-30' });
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    const cases = [
+      // 4 salariés : 27 octobre − 2 mois = vendredi 27 août.
+      { employees: 4, prevue: '2027-10-27', due: '2027-08-27' },
+      // 12 salariés : 17 décembre − 2 mois = dimanche 17 octobre, avancé au vendredi 15 octobre.
+      { employees: 12, prevue: '2027-12-17', due: '2027-10-15' },
+      // Sans salarié : sans objet.
+      { employees: 0, prevue: '2027-11-30', due: null },
+    ];
+    for (const c of cases) {
+      const id = await t.shop();
+      await t.ok(t.alex, 'POST', `/commerces/${id}/fiche`, { employees: c.employees });
+      const file = await t.ok(t.alex, 'POST', `/commerces/${id}/cession`);
+      await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind: 'cession_prevue', day: c.prevue, proofRef: proof() });
+      const refused = await t.call(t.alex, 'POST', `/commerces/cessions/${file.fileId}/sequestre`, { kind: 'banque', name: 'Compte du Réseau Essai' });
+      expect(refused.body).toMatchObject({ ok: false, rule: 'R117' });
+      const v = await t.ok(t.alex, 'GET', `/commerces/cessions/${file.fileId}`);
+      const line = v.lines.find((l: { step: string }) => l.step === 'information_salaries');
+      expect(line.due, `${c.employees} salariés`).toBe(c.due);
+      const ready = await t.call(t.alex, 'POST', `/commerces/cessions/${file.fileId}/prete`);
+      expect(ready.body).toMatchObject({ ok: false, rule: 'R116' });
+      expect(ready.body.missing).toContain('sequestre');
+    }
+    // Après la cession : 27 octobre + 15 jours = 11 novembre, férié, avancé au 10 ; oppositions : 4 novembre + 10 = dimanche 14, reporté au 15.
+    const id = await t.shop();
+    const file = await t.ok(t.alex, 'POST', `/commerces/${id}/cession`);
+    t.setDay('2027-11-16');
+    for (const [kind, day] of [['cession_signee', '2027-10-27'], ['publication_jal', '2027-11-02'], ['publication_bodacc', '2027-11-04']]) {
+      await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind, day, proofRef: proof() });
+    }
+    const v = await t.ok(t.alex, 'GET', `/commerces/cessions/${file.fileId}`);
+    expect(v.lines.filter((l: { step: string }) => ['publication_jal', 'fin_oppositions'].includes(l.step)).map((l: { due: string }) => l.due)).toEqual(['2027-11-10', '2027-11-15']);
+  });
+
+  it('[R16] [R110] un rôle non admis est refusé avant le corps ; aucune route publique ne rend un champ confidentiel', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    const id = await t.shop();
+    // Le partenaire est refusé avant tout, même avec un corps illisible, et le refus est au journal.
+    const refused = await t.call(t.partner, 'POST', `/commerces/${id}/fiche`, undefined);
+    expect(refused).toMatchObject({ status: 403, body: { ok: false, rule: 'R16', code: 'role' } });
+    expect((await t.call(t.alex, 'POST', '/commerces/baremes', { activity: 'restaurant' })).status).toBe(403);
+    expect((await t.call(t.alex, 'GET', '/commerces/vigilance')).status).toBe(403);
+    expect((await t.call(t.bea, 'GET', `/commerces/${id}/fiche`)).status).toBe(403);
+    const kinds = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').map((e) => (e.data as { kind: string }).kind);
+    expect(kinds).toEqual(expect.arrayContaining(['commerces.fiche.modifiee', 'commerces.bareme', 'commerces.vigilance']));
+    // La vue publique et la présentation : rien de confidentiel.
+    const pub = await t.ok(t.alex, 'GET', `/commerces/${id}/public`);
+    expect(pub.publicView).toMatchObject({ kind: 'business', activity: 'restaurant' });
+    expect(pub.presentation).not.toBeNull();
+    for (const secret of SECRETS) expect(JSON.stringify(pub), secret).not.toContain(secret);
+    // Un corps illisible, pour un rôle admis : refusé sans rien écrire.
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/fiche`, undefined)).body).toMatchObject({ ok: false, code: 'invalid_body' });
+  });
+});
+
+it('chaque route admet des rôles et porte un nom de journal sans identifiant', () => {
+  for (const r of commercesRoutes()) {
+    expect(r.roles.length, r.name).toBeGreaterThan(0);
+    expect(r.name).toMatch(/^commerces\.[a-z_.]+$/);
+  }
+  const names = commercesRoutes().map((r) => r.name);
+  expect(new Set(names).size).toBe(names.length);
+});
