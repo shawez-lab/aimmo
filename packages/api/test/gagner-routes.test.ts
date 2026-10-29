@@ -122,6 +122,8 @@ describeWithSqlite('G11 · routes de M20 complet', () => {
     expect(mandat).toMatchObject({ ok: true, source: 'referral', fromFiche: true });
     const report = await t.call(t.viewers.direction, 'GET', '/gagner/mesure/2027-10');
     expect(report.body.data.lines.find((l: { source: string }) => l.source === 'referral')).toMatchObject({ mandates: 1 });
+    // Ni coordonnée ni prénom de la personne recommandée au journal [R13].
+    expect(JSON.stringify(await t.journal.all())).not.toMatch(/06 11|Hugo|appel à trois/);
   });
 
   it('[R26] [R143] relances et mesure par les routes : en mode essai, rien ne part ; un coût sans preuve est refusé', async () => {
@@ -139,6 +141,6 @@ describeWithSqlite('G11 · routes de M20 complet', () => {
     expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/couts', { month: '2027-10', source: 'social', amountCents: 1000, proofRef: 'preuves/absente.pdf' })).body).toEqual({ ok: false, rule: 'R144', code: 'no_proof' });
     expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/couts', { month: '2027-10', source: 'social', amountCents: 1000, proofRef: 'preuves/facture-reseaux.pdf' })).status).toBe(200);
     expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/decisions', { month: '2027-10', source: 'social', decision: 'garder', reason: 'À revoir le mois prochain' })).status).toBe(200);
-    expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/decisions', 'pas un objet')).body).toEqual({ ok: false, rule: null, code: 'invalid_body' });
+    expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/decisions', 'pas un objet')).body).toEqual({ ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
   });
 });

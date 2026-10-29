@@ -77,7 +77,7 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
-const badBody = (): Response => json(400, { ok: false, rule: null, code: 'invalid_body' });
+const badBody = (): Response => json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
 
 /** Aucun fichier n'est jamais lu : le stockage absent refuse toute preuve. */
 const NO_PROOFS: CostProofStore = { has: async () => false };
