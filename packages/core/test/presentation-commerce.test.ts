@@ -127,6 +127,8 @@ describeWithSqlite('CE03 · présentation anonyme d’un commerce', () => {
       ['Équipe de 4 personnes.', 'chiffre_confidentiel'],
       ['Quatre personnes en boutique.', 'nombre_hors_vue_publique'],
       ['Four à sole de qualité.', 'champ_confidentiel'],
+      ['Fours à sole et pétrins spirales disponibles.', 'champ_confidentiel'],
+      ['Les Fournils de la ville.', 'enseigne'],
       ['Résultat en hausse de 12 %.', 'nombre_hors_vue_publique'],
       ['Prix 250 k€.', 'nombre_hors_vue_publique'],
       ['Affaire tenue depuis 2019.', 'chiffre_confidentiel'],
