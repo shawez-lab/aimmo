@@ -2050,6 +2050,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 
 ### AT01 · Prix par commune et par quartier, regroupés, sans vente retrouvable (Jamais vu)
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition prête (#196) ; relecture forte : 1 P0 (deux zones différentes qui se soustraient, corrigé par un contrôle sur tout le réseau et des zones sans recouvrement) et 4 P1 corrigés, seconde relecture sans P0 ni P1 ; attend GitHub Actions (H35) pour fusionner. Décidé : une vente est reconnue d'une publication à l'autre par son empreinte (type, position, surface, prix au m², mois), avec une règle prudente pour une position corrigée ; une zone se corrige en la retirant, sans rien effacer ; une lecture DVF incomplète n'écrit aucune version.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M01, point 1 « Site public » (pages de prix), « Règles », « Données ».
 - Objectif : à partir des ventes DVF (source de E02), des cases de prix par commune et par quartier, appartement et maison : médiane du prix au mètre carré, premier et troisième quartiles, nombre de ventes, période, source et date de publication DVF ; une version par publication DVF (avril, octobre), recalculée d'elle-même. **Jamais vu** : contrôle anti-différence, aucune vente ne peut être retrouvée en soustrayant deux cases publiées (commune moins ses quartiers, version moins version précédente) : une case qui le permettrait est fusionnée ou retenue, et la raison est dite.
@@ -2065,7 +2066,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT03 · Page de chaque agent, avec ses mentions
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M01, point 1 et « Règles » (vocabulaire, mentions de l'agent).
 - Objectif : la page publique d'un agent : nom, zone, biens en vente (fichier diffusable seulement), avis réels de M11 tous montrés avec leur date, contact par la captation ; à côté du nom, statut d'agent commercial, numéro d'immatriculation, carte du titulaire.
