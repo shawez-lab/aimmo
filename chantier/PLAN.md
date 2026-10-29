@@ -1534,7 +1534,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`, contrôle central des envois) · Relecture : forte · Dépend de : U10
 - Cahier : M18 ; Branchements.
 - Objectif : exporter `partenaires` depuis `@aimmo/core` ; dans les droits d'accès, le rôle `partner` lit seulement ses mises en relation confiées (U04) et rien d'autre ; ajouter les routes de M18 à `app.ts` ; lancer au planificateur les relances, les alertes d'échéance des justificatifs et la prospection du jour.
-- Critères : chaque brouillon de prospection (U08) et chaque relance préparée (U07) passe par `envoi/controle.ts` en mode essai, qui redécide au moment de l'envoi, et le refus sous R03 tient tant que H32 n'a pas écrit son exception dans R03 et dans `decideSend` ; un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
+- Critères : un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] (test) ; les passages tournent une fois par créneau (test) ; rien ne part réellement tant que le plan ne l'a pas mis en service (test). Le passage de chaque brouillon de prospection (U08) et de chaque relance (U07) par `envoi/controle.ts`, qui redécide au moment de l'envoi, revient à U12.
 - Attend : rien.
 
 ### U10 · Routes de M18 et espace partenaire en ligne

@@ -626,6 +626,16 @@ export function handleEspacePartenaire(request: Request): Response | null {
   return new Response(request.method === 'HEAD' ? null : file.body, { status: 200, headers: { ...headers, 'content-type': file.type, 'cache-control': 'no-cache' } });
 }
 
+/**
+ * Le début du lien d'opposition, tel que le socle l'accepte : en https, sans chiffre, terminé par
+ * `/partenaires/opposition/`, la seule page qui sait lire le jeton. Toute autre valeur vaut absence : aucun mail de
+ * prospection n'est préparé, et les routes de M18 restent ouvertes [R79, R04].
+ */
+export function partnerOptOutBase(value: string | null | undefined): string | null {
+  if (typeof value !== 'string' || !/^https:\/\/[^\s\d/]+\/partenaires\/opposition\/$/.test(value)) return null;
+  return value;
+}
+
 /* ---------- Les passages de M18 au planificateur (U09) ---------- */
 
 export const PARTENAIRES_FOLLOW_UP_JOB = 'partenaires.suivi';
@@ -663,7 +673,7 @@ export function partenairesJobs(db: SqlDatabase, journal: JournalStore, options:
       name: PARTENAIRES_PROSPECTING_JOB,
       hours: [10],
       run: async () => {
-        const prospection = new Prospection(db, journal, { now, optOutBase: options.optOutBase ?? null });
+        const prospection = new Prospection(db, journal, { now, optOutBase: partnerOptOutBase(options.optOutBase) });
         for (const n of await partnerNetworks(db)) await prospection.run(n.id);
       },
     },
@@ -673,13 +683,14 @@ export function partenairesJobs(db: SqlDatabase, journal: JournalStore, options:
       run: async () => {
         const { annuaire } = relations();
         for (const n of await partnerNetworks(db)) {
-          for (const a of await annuaire.dueAlerts(n.id)) {
+          // L'alerte est écrite au journal avant d'être marquée : une écriture qui échoue la laisse au passage suivant.
+          await annuaire.dueAlerts(n.id, async (a) => {
             await appendEvent(
               journal,
               { type: 'partenaire.justificatif_echeance', actor: 'system:partenaires', subject: `partner:${a.partnerId}`, data: { rule: 'R73', kind: a.kind, domain: a.domain, validUntil: a.validUntil } },
               now,
             );
-          }
+          });
         }
       },
     },

@@ -1,9 +1,9 @@
 import { expect, it, vi } from 'vitest';
 import * as core from '@aimmo/core';
-import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '@aimmo/core';
+import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type JournalEntry, type JournalStore, type SqlDatabase } from '@aimmo/core';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
-import { PARTENAIRES_CREDENTIALS_JOB, PARTENAIRES_FOLLOW_UP_JOB, PARTENAIRES_PROSPECTING_JOB } from '../src/partenaires.ts';
+import { PARTENAIRES_CREDENTIALS_JOB, PARTENAIRES_FOLLOW_UP_JOB, PARTENAIRES_PROSPECTING_JOB, partenairesJobs, partnerOptOutBase } from '../src/partenaires.ts';
 import { runScheduler } from '../src/planificateur.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -43,7 +43,7 @@ async function setup() {
     ['conf', { role: 'compliance', userId: 'conf-1' }],
   ]);
   const apiKeys = async () => JSON.stringify(await Promise.all([...ids].map(async ([w, v]) => ({ sha256: await sha256Hex(KEY(w)), networkId: network, ...v }))));
-  const config = async (over: Partial<ApiConfig> = {}): Promise<ApiConfig> => ({ db, apiKeys: await apiKeys(), mode: 'essai', now, partenaires: { files, optOutBase: OPT_OUT }, ...over });
+  const config = async (over: Partial<ApiConfig> = {}): Promise<ApiConfig> => ({ db, apiKeys: await apiKeys(), mode: 'essai', now, pieces: { has: files.has }, partenaires: { files, optOutBase: OPT_OUT }, ...over });
   const call = async (who: string, method: string, path: string, body?: unknown, over: Partial<ApiConfig> = {}) => {
     const headers: Record<string, string> = { authorization: `Bearer ${KEY(who)}` };
     if (body !== undefined) headers['content-type'] = 'application/json';
@@ -91,12 +91,16 @@ describeWithSqlite('U09 · M18 branché dans le socle', () => {
 
     // Aucune fiche client, aucun bien, aucun dossier, aucune route d'agent pour un partenaire [R16, R77].
     const statuses: Record<string, number> = {};
-    for (const path of ['/fiches', `/fiches/${t.seller}`, `/fiches/${t.seller}/resume`, '/partenaires/projets', `/partenaires/relations/${referral}`, '/conformite/risque']) {
+    const paths = ['/fiches', `/fiches/${t.seller}`, `/fiches/${t.seller}/resume`, `/biens/${t.property}`, `/mandats/${t.property}/conditions`, '/dossiers/dossier-test/pieces', '/partenaires/projets', `/partenaires/relations/${referral}`, '/conformite/risque'];
+    for (const path of paths) {
       const r = await t.call('zoe', 'GET', path);
       statuses[path] = r.status;
       expect(JSON.stringify(r.body), path).not.toContain('Exemple');
     }
-    expect(Object.values(statuses)).toEqual([403, 403, 403, 403, 403, 403]);
+    // Fiche, bien, mandat, dossier de vente, routes de l'agent et de la conformité : tout est refusé au partenaire.
+    // (un mandat ou un dossier inconnu répond 404 : rien n'en est rendu non plus).
+    for (const path of paths) expect([path, statuses[path]! >= 403 && statuses[path]! <= 404]).toEqual([path, true]);
+    for (const path of paths.filter((p) => !/^\/(mandats|dossiers)\//.test(p))) expect([path, statuses[path]]).toEqual([path, 403]);
     // Un rôle non admis est refusé avant la lecture du corps, au journal.
     expect(await t.call('alex', 'POST', '/partenaires/prospection', 'pas du json')).toMatchObject({ status: 403, body: { rule: 'R16', code: 'role' } });
     expect((await t.events('acces.refuse')).filter((e) => String(JSON.parse(e.data).kind).startsWith('partenaires.prospection')).length).toBe(1);
@@ -160,4 +164,36 @@ describeWithSqlite('U09 · M18 branché dans le socle', () => {
     expect((await t.events('prospection.sans_opposition')).length).toBe(1);
     fetchSpy.mockRestore();
   });
+
+  it('[R73] une alerte de justificatif dont l’écriture au journal échoue n’est pas perdue : elle revient au passage suivant', async () => {
+    const t = await setup();
+    await t.partner('zoe');
+    await t.partner('yves');
+    let failOn = 2;
+    let seen = 0;
+    const flaky: JournalStore = {
+      append: async (e: JournalEntry) => {
+        if (e.type === 'partenaire.justificatif_echeance' && ++seen === failOn) throw new Error('journal indisponible');
+        return t.journal.append(e);
+      },
+      last: () => t.journal.last(),
+      all: () => t.journal.all(),
+      bySubject: (s: string) => t.journal.bySubject(s),
+      byPeriod: (a: string, b: string) => t.journal.byPeriod(a, b),
+    };
+    const job = partenairesJobs(t.db, flaky, { now: t.now }).find((j) => j.name === PARTENAIRES_CREDENTIALS_JOB)!;
+    await expect(job.run({ job: PARTENAIRES_CREDENTIALS_JOB, slot: 'test', at: new Date() })).rejects.toThrow('journal indisponible');
+    expect((await t.events('partenaire.justificatif_echeance')).length).toBe(1);
+    failOn = 0;
+    await job.run({ job: PARTENAIRES_CREDENTIALS_JOB, slot: 'test', at: new Date() });
+    await job.run({ job: PARTENAIRES_CREDENTIALS_JOB, slot: 'test', at: new Date() });
+    expect((await t.events('partenaire.justificatif_echeance')).length).toBe(2);
+  });
+});
+
+it('[R79] [R04] le lien d’opposition n’est accepté que vers la page d’opposition, en https et sans chiffre', () => {
+  expect(partnerOptOutBase(OPT_OUT)).toBe(OPT_OUT);
+  for (const bad of ['https://aimmo-api.example.test/alertes/desinscription/', 'http://aimmo-api.example.test/partenaires/opposition/', 'https://aimmo2.example.test/partenaires/opposition/', 'https://aimmo-api.example.test/partenaires/opposition', '', null, undefined]) {
+    expect(partnerOptOutBase(bad)).toBeNull();
+  }
 });

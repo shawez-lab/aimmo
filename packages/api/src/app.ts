@@ -74,6 +74,7 @@ import {
   handlePartenairesPublic,
   partenairesPublicError,
   partenairesRoutes,
+  partnerOptOutBase,
   PARTENAIRES_OPPOSITION_PATH,
   type PartenairesRoute,
   type PartnerFileStore,
@@ -907,7 +908,7 @@ function m18Routes(options: PartenairesOptions | null): RouteDef[] {
     handle: (s, viewer, params, request) => {
       if (!options?.files) return Promise.resolve(failure(503, 'partner_files_not_configured', 'Partenaires fermés : aucun stockage des fichiers.'));
       return r.handle(
-        { db: s.db, journal: s.journal, now: s.now, files: options.files, uploads: options.files, optOutBase: options.optOutBase ?? null, ...(options.fees ? { fees: options.fees } : {}) },
+        { db: s.db, journal: s.journal, now: s.now, files: options.files, uploads: options.files, optOutBase: partnerOptOutBase(options.optOutBase), ...(options.fees ? { fees: options.fees } : {}) },
         viewer,
         params,
         request,
