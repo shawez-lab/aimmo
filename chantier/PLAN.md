@@ -1528,7 +1528,9 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 
 ### U12 · Relances et prospection de M18 par le contrôle central des envois
 - Statut : en cours
-- Où : branche `chantier/U12`, empilée sur `chantier/U09` (#180), fusion en attente de H35
+- Où : proposition #183, empilée sur #180 (U09) ; relecture forte 1 P1 corrigé (opposition d'un partenaire tenue pour toutes ses adresses) ; fusion en attente des vérifications GitHub (H35)
+- Décidé (2026-10-29) : `ControleEnvois.sendToProfessional`, seul port la boîte d'essai `ProTrialMailbox` ; accord du partenaire [R03] rangé avec son adresse professionnelle par la direction (`partner_addresses`, migration `0807`, preuve en note) ; opposition par adresse dans `partner_prospect_optouts`, valable pour partenaires et futurs partenaires ; plafond R11 partagé par `send_quota_slots` ; passage `partenaires.envois` de 8 h à 19 h ; les alertes à l'agent restent dans l'application.
+- Reste : à H32, une tâche reprendra les brouillons refusés sous R03.
 - Qui : Claude, voie 1 (contrôle central des envois) · Relecture : forte · Dépend de : U09
 - Cahier : M18 ; Branchements ; Conformité (prospection entre professionnels).
 - Découpée de U09 le 2026-10-29 : le contrôle central (`envoi/controle.ts`) n'écrit qu'à une personne de la fiche client ; un partenaire et un futur partenaire n'en sont pas. Il faut lui ouvrir un destinataire professionnel (partenaire de l'annuaire, adresse de prospection), avec ses propres règles (heures [R01], opposition [R04, R02], plafond du jour [R11], une seule fois [R05], texte sans mention de l'IA [R06]), sans jamais créer de fiche client.
