@@ -1714,7 +1714,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE03 · Présentation anonyme, rédigée par l'IA depuis les seuls champs publics
 - Statut : en cours
-- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex, trois tours : 4 P0, 2 P1 et 1 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante, enseigne courte distinctive, nombre négatif, pluriels du matériel), relecture redemandée.
+- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex, quatre tours : 5 P0, 2 P1 et 1 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante, enseigne courte distinctive, nombre négatif, pluriel et singulier du matériel et de l'enseigne), relecture redemandée.
 - Décidé (2026-10-29) : sans fourchette validée en vigueur, pas de présentation (« incomplet ») ; le nom de la commune est retiré avant le contrôle des nombres ; `publishable` est la porte, branchée à la publication de M07 par CE10.
 - Qui : Claude · Relecture : forte · Dépend de : CE01, CE02
 - Cahier : M16, « Présentation anonyme », « L'IA et l'humain ».
@@ -1764,6 +1764,8 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE08 · Vigilance renforcée de la cession : bénéficiaires effectifs, origine des fonds
 - Statut : en cours
+- Reste : prête (#208, empilée sur #207), à fusionner après CE07 dès H35 ; relecture forte 2 P1 corrigés.
+- Décidé (2026-10-29) : alertes dans leurs tables (`business_transfer_watch*`, hors du registre de L04 que seul L04 lit), une par dossier et par acquéreur, décisions de L04 ; personne morale rangée telle ou au moindre signe de société ; la liste du responsable de L04 les montrera au branchement (CE10).
 - Qui : Claude · Relecture : forte · Dépend de : CE07
 - Cahier : M16, « Règles » ; M12 Conformité.
 - Objectif : sur un dossier de cession, les bénéficiaires effectifs de l'acquéreur personne morale et l'origine des fonds déclarés, rangés au coffre de M12 (jamais dans la fiche) ; leur absence avant le compromis lève une alerte au responsable de la conformité, par le registre de vigilance de L04.
@@ -1771,7 +1773,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien (H29 pour le responsable réel).
 
 ### CE09 · Routes de M16 et parcours de 10 demandes tests
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : CE01 à CE08
 - Cahier : M16, « Critères d'acceptation ».
 - Objectif : les routes `/v1/commerces` (fiche, estimation, présentation, demande d'accès, engagement, dossier, ouverture, repreneurs, cession) dans `packages/api/src/commerces.ts`, rôle refusé avant le corps ; un parcours de bout en bout sur 10 demandes tests et 3 dossiers de cession.
