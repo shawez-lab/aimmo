@@ -1734,7 +1734,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE05 · Dossier protégé : lien qui expire, filigrane au lecteur, chaque ouverture journalisée (Jamais vu)
 - Statut : en cours
-- Reste : prête (#203, empilée sur #201), à fusionner après CE04 dès H35 ; relecture forte 3 P1 corrigés.
+- Reste : prête (#203, empilée sur #201), à fusionner après CE04 dès H35 ; relecture forte 3 P1 corrigés ; Codex 1 P2 corrigé (code envoyé à l'adresse donnée), relecture redemandée.
 - Décidé (2026-10-29) : documents du dossier en texte, par référence de stockage et empreinte (PDF et images avec le stockage réel, H38) ; ouverture = adresse du lecteur et code à usage unique reçu à cette adresse ; marque de 48 bits en caractères sans largeur après chaque phrase et chaque ligne, doublée d'une référence de copie visible dans le filigrane.
 - Qui : Claude · Relecture : forte · Dépend de : CE04
 - Cahier : M16, « Accès aux chiffres » ; Conformité, « Confidentialité » ; Architecture technique, stockage des documents.
@@ -1744,6 +1744,8 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE06 · Repreneurs, sans évaluation de solvabilité
 - Statut : en cours
+- Reste : prête (#205, empilée sur #203), à fusionner après CE05 dès H35 ; relecture forte 1 P1 corrigé (biens vendus, retirés ou sans mandat écartés).
+- Décidé (2026-10-29) : profil sur un projet `buy_business` ; secteurs en codes postaux ; le rapprochement passe par la porte de diffusion de D05 (injectée, branchée par CE10) et les biens en vente ou sous offre.
 - Qui : Claude · Relecture : forte · Dépend de : rien
 - Cahier : M16, « Repreneurs ».
 - Objectif : le profil d'un repreneur (projet `buy` sur un commerce) : activités recherchées, secteurs, budget, expérience déclarée (liste fermée), apport et financement déclarés tels que dits ; versionné, chaque champ avec sa source ; rapprochement par le code avec les présentations publiées, sans note de la personne.
@@ -1751,7 +1753,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE07 · Étapes de la cession, délais calculés, étapes bloquantes
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : CE01
 - Cahier : M16, « Étapes de la cession » ; Conformité, « cession de fonds ».
 - Objectif : le dossier de cession d'un fonds : information des salariés (moins de 250 salariés : au plus tard 2 mois avant la cession, lettre préparée, date de réception suivie, étape bloquante) ; préemption de la commune (périmètre de sauvegarde rangé par la direction avec sa source : déclaration, 2 mois pour répondre) ; avis au journal d'annonces légales et au BODACC dans les 15 jours après la cession, puis 10 jours d'opposition des créanciers ; séquestre nommé ; liste de contrôle des activités réglementées ; une tâche à l'agent avant chaque échéance, une seule.
@@ -2068,7 +2070,8 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT02 · Pages de prix publiques
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition prête (#206, empilée sur #196) ; attend AT01 et GitHub Actions (H35). Décidé : la page de référence (canonique) vient avec AT04 pour les deux sites ; une case retenue ne montre que sa raison, jamais un chiffre ; la page revérifie elle-même chaque case.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AT01
 - Cahier : M01, point 1 ; exigence de design (protocole, section 9).
 - Objectif : la page de prix d'une commune et de chacun de ses quartiers, rendue depuis la dernière version de AT01, par le système de design : chiffres regroupés, source et date, explication de la méthode, lien vers l'estimation en ligne (E05), données structurées.
@@ -2102,7 +2105,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 
 ### AT06 · Fiche Google : publications et réponses aux avis préparées, validées
 - Statut : en cours (voie 2)
-- Avancement (2026-10-29) : proposition prête (#204) ; relecture forte : 5 P1 corrigés, troisième relecture sans P0 ni P1 ; attend GitHub Actions (H35). Décidé : le nom de l'auteur d'un avis n'est jamais gardé (empreintes de ses mots seulement) ; une publication de bien ne porte jamais le prix, seulement le lien vers sa page ; une réservation sous index unique précède tout appel à Google.
+- Avancement (2026-10-29) : proposition prête (#204) ; relecture forte : 5 P1 corrigés, troisième relecture sans P0 ni P1 ; Codex : 3 P0 et 1 P2 corrigés (prénoms en toute casse, adresses numérotées, mandat revérifié avant publication [R42], texte périmé remplacé), relecture redemandée ; attend GitHub Actions (H35). Décidé : le nom de l'auteur d'un avis n'est jamais gardé (empreintes de ses mots seulement) ; une publication de bien ne porte jamais le prix, seulement le lien vers sa page ; une réservation sous index unique précède tout appel à Google.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M01, point 4 « Fiche Google » ; « L'IA et l'humain ».
 - Objectif : derrière une interface Google Business Profile (faux service dans les tests) : informations de la fiche à jour depuis les réglages, publications régulières tirées des biens publiés, réponses aux avis préparées par l'IA (secours sans IA) et validées par l'agent ; en mode essai, rien ne part.
