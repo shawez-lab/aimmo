@@ -176,6 +176,9 @@ describeWithSqlite('L02 · fiche de risque de chaque client', () => {
     const byPreparation = [...rows].sort((x, y) => x.preparedAt.localeCompare(y.preparedAt) || x.sheetId.localeCompare(y.sheetId));
     expect(rows.map((s) => s.sheetId)).toEqual(byPreparation.map((s) => s.sheetId));
     for (const v of [t.agent, t.direction, t.partner]) expect(await t.risque.pending(v)).toEqual({ ok: false, rule: 'R91', code: 'role' });
+    // Chaque lecture de la liste est au journal, client par client, au nom du responsable.
+    const reads = (await t.journal.all()).filter((e) => e.type === 'risque.lu');
+    expect(reads.map((e) => [e.actor, e.subject, e.data['count']])).toEqual([['compliance:conformite-1', `person:${t.buyerId}`, 2]]);
     const source = readFileSync(fileURLToPath(new URL('../src/conformite/risque.ts', import.meta.url)), 'utf8');
     expect(source).not.toMatch(/ORDER BY[^`'"]*level/i);
   });

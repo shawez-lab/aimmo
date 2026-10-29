@@ -341,9 +341,15 @@ export class FicheRisque {
       [viewer.networkId, viewer.networkId],
     );
     const out: RiskSheet[] = [];
+    const perPerson = new Map<string, number>();
     for (const row of rows) {
       await this.ensurePreparedEvent(row);
       out.push(this.toSheet(row, null));
+      perPerson.set(row.person_id, (perPerson.get(row.person_id) ?? 0) + 1);
+    }
+    // Chaque lecture au journal, client par client, comme les lectures du coffre : qui a lu, combien de fiches [R91].
+    for (const [personId, count] of perPerson) {
+      await appendEvent(this.journal, { type: 'risque.lu', actor: this.actor(viewer), subject: `person:${personId}`, data: { rule: 'R91', count, via: 'attente' } }, this.now);
     }
     return { ok: true, value: out };
   }
