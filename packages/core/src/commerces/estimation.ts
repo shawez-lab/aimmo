@@ -142,7 +142,11 @@ export function computeBusinessValuation(
 export type ValuationRefusal = { ok: false; rule: 'R16' | 'R111' | null; code: string };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const isDay = (v: unknown): v is string => typeof v === 'string' && DAY.test(v) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+const isDay = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !DAY.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v;
+};
 
 /** Contrôle d'un barème saisi par la direction : une source est exigée [R111]. */
 export function checkScale(
@@ -216,12 +220,14 @@ export interface BusinessValuation {
 }
 
 const toValuation = (r: ValuationRow): BusinessValuation => {
-  let lines: ValuationLine[] = [];
+  // Des lignes illisibles ne sont jamais montrées comme vides : une estimation sans ses sources n'existe pas [R111].
+  let lines: ValuationLine[];
   try {
     const parsed: unknown = JSON.parse(r.lines);
-    if (Array.isArray(parsed)) lines = parsed as ValuationLine[];
+    if (!Array.isArray(parsed)) throw new Error('lignes');
+    lines = parsed as ValuationLine[];
   } catch {
-    lines = [];
+    throw new Error('estimation du commerce : lignes illisibles');
   }
   return {
     id: r.id,

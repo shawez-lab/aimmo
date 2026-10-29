@@ -152,6 +152,7 @@ it('[R111] un barème sans source, sans date ou aux bornes fausses est refusé',
   expect(checkScale({ ...good, source: '' })).toEqual({ ok: false, rule: 'R111', code: 'source' });
   expect(checkScale({ ...good, source: undefined })).toEqual({ ok: false, rule: 'R111', code: 'source' });
   expect(checkScale({ ...good, sourceDate: '2027-02-30' })).toEqual({ ok: false, rule: 'R111', code: 'date_source' });
+  expect(checkScale({ ...good, sourceDate: '2027-13-01' })).toEqual({ ok: false, rule: 'R111', code: 'date_source' });
   expect(checkScale({ ...good, low: 9_000 })).toMatchObject({ ok: false, code: 'bornes' });
   expect(checkScale({ ...good, method: 'rent_yield', high: 5_001 })).toMatchObject({ ok: false, code: 'bornes' });
   expect(checkScale({ ...good, activity: 'casino' })).toMatchObject({ ok: false, code: 'activite' });
