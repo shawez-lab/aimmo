@@ -65,8 +65,9 @@ describe('X06 · supports imprimés', () => {
       expect(html).toContain(INPUT.payload.mentions!.replace(/'/g, '&#39;'));
       expect(html.indexOf('class="prix"')).toBeLessThan(html.indexOf('class="mentions"'));
     }
-    // Le panneau ne montre pas de prix : il n'a pas besoin des mentions.
-    expect(panneau).not.toMatch(/€|class="prix"/);
+    // Le panneau porte aussi toutes les mentions de la version publiée, sans prix en grand.
+    expect(panneau).toContain(INPUT.payload.mentions!.replace(/'/g, '&#39;'));
+    expect(panneau).not.toContain('class="prix"');
     expect(panneau).toContain('<p class="etat">À vendre</p>');
     expect(renderPanel({ ...INPUT, payload: { ...INPUT.payload, state: 'sous_offre' } })).toContain('<p class="etat">Sous offre</p>');
     // Un autre prix publié : partout le nouveau.
