@@ -499,6 +499,35 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     expect(s.client.writes()).toEqual(['info', 'info']);
   });
 
+  it('[R96] l’avis est gardé nettoyé : rien qui désigne son auteur ni un client', async () => {
+    const s = await setup();
+    await withReview(s, 4, 'Gaspard Quenouille, 12 rue des Lilas, gq@exemple.test, 06 12 34 56 78 : merci à Hortense, super suivi.');
+    const stored = (await s.db.first<{ comment: string }>('SELECT comment FROM gbp_reviews'))!.comment;
+    expect(stored).not.toMatch(/gaspard|quenouille|lilas|gq@|06 12|hortense/i);
+    expect(stored).toContain('super suivi');
+  });
+
+  it('une réservation restée sans résultat peut être close par la direction après une heure, puis l’envoi repart', async () => {
+    const s = await setup({ mode: 'reel' });
+    const d = await s.fiche.draftReply(agent, await withReview(s));
+    if (!d.ok) throw new Error('refusé');
+    await s.fiche.validate(agent, d.value.draftId);
+    // Un envoi coupé après la réservation : la réservation existe, sans résultat.
+    await s.db.run("INSERT INTO gbp_claims (id, network_id, draft_id, target, mode, attempt, claimed_by, claimed_at) VALUES ('c-x', 'net-1', ?, ?, 'reel', 1, 'agent:ag-1', ?)", [
+      d.value.draftId, `review:${d.value.reviewId}`, s.now().toISOString(),
+    ]);
+    expect(await s.fiche.publish(agent, d.value.draftId)).toMatchObject({ code: 'deja_parti' });
+    expect(await s.fiche.releaseClaim(agent, d.value.draftId)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await s.fiche.releaseClaim(direction, d.value.draftId)).toEqual({ ok: false, rule: null, code: 'occupe' });
+    s.advanceDays(1);
+    expect(await s.fiche.releaseClaim(direction, d.value.draftId)).toEqual({ ok: true });
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect(s.client.writes()).toHaveLength(1);
+    // Une réservation qui a son résultat ne se clôt pas.
+    s.advanceDays(1);
+    expect(await s.fiche.releaseClaim(direction, d.value.draftId)).toEqual({ ok: false, rule: null, code: 'invalide' });
+  });
+
   it('une panne en mode réel est notée, et le texte peut repartir ensuite', async () => {
     const s = await setup({ mode: 'reel' });
     const d = await s.fiche.draftReply(agent, await withReview(s));

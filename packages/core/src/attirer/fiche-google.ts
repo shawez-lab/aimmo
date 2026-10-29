@@ -396,11 +396,15 @@ export class FicheGoogle {
       return { ok: false, rule: null, code: 'echec' };
     }
     let added = 0;
+    const base = await this.context(networkId, 'reponse', [], null);
     for (const r of reviews) {
       const rating = Number(r.rating);
       if (typeof r.reviewRef !== 'string' || r.reviewRef.length < 3 || r.reviewRef.length > 300 || !Number.isInteger(rating) || rating < 1 || rating > 5 || typeof r.reviewedAt !== 'string' || Number.isNaN(Date.parse(r.reviewedAt))) continue;
-      const comment = typeof r.comment === 'string' && r.comment.trim() !== '' ? r.comment.trim().slice(0, 4096) : null;
       const hashes = await nameTokenHashes(typeof r.authorName === 'string' ? r.authorName : null, networkId);
+      // L'avis est gardé nettoyé : sans le nom de son auteur ni d'un client, sans adresse, coordonnée ni montant. Il ne
+      // désigne plus personne, ce qui le tient hors des demandes d'accès à bon droit [R96, R46].
+      const raw = typeof r.comment === 'string' && r.comment.trim() !== '' ? r.comment.trim().slice(0, 4096) : null;
+      const comment = raw === null ? null : (await redactForAi(raw, { ...base, authorTokenHashes: hashes }, networkId)).slice(0, 4096);
       const res = await this.db.run(
         'INSERT INTO gbp_reviews (id, network_id, agent_id, review_ref, rating, comment, author_token_hashes, reviewed_at, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (network_id, review_ref) DO NOTHING',
         [this.newId(), networkId, agentId, r.reviewRef, rating, comment, JSON.stringify(hashes), new Date(r.reviewedAt).toISOString(), this.now().toISOString()],
@@ -672,6 +676,31 @@ export class FicheGoogle {
     await appendEvent(this.journal, { type: 'attirer.google.envoi', actor: this.actor(viewer), subject: `agent:${row.agent_id}`, data: { rule: 'R154', kind: row.kind, mode: this.mode, outcome, validatedBy: row.validated_by } }, this.now);
     if (outcome === 'echec') return { ok: false, rule: null, code: 'echec' };
     return { ok: true, mode: this.mode };
+  }
+
+  /**
+   * Une réservation restée sans résultat (l'envoi a été coupé entre la réservation et la réponse de Google) bloque le
+   * texte pour toujours. La direction, après avoir regardé la fiche Google, la clôt comme un échec : l'essai suivant
+   * prend une nouvelle réservation. Jamais avant une heure, jamais sur une réservation qui a son résultat.
+   */
+  async releaseClaim(viewer: Viewer, draftId: unknown): Promise<{ ok: true } | GbpRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
+    const row = await this.draftRow(viewer.networkId, draftId);
+    if (!row) return this.refuse(viewer, `network:${viewer.networkId}`, 'inconnu');
+    const target = row.kind === 'reponse' ? `review:${row.review_id}` : `draft:${row.id}`;
+    const claim = await this.db.first<{ draft_id: string; attempt: number; claimed_at: string }>(
+      'SELECT draft_id, attempt, claimed_at FROM gbp_claims WHERE target = ? AND mode = ? ORDER BY attempt DESC LIMIT 1',
+      [target, this.mode],
+    );
+    if (!claim) return { ok: false, rule: null, code: 'invalide' };
+    const results = await this.db.first<{ n: number }>("SELECT count(*) AS n FROM gbp_sends WHERE draft_id = ? AND mode = ? AND sent_at >= ?", [claim.draft_id, this.mode, claim.claimed_at]);
+    if (Number(results?.n) > 0) return { ok: false, rule: null, code: 'invalide' };
+    if (this.now().getTime() - Date.parse(claim.claimed_at) < 3_600_000) return { ok: false, rule: null, code: 'occupe' };
+    await this.db.run("INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, ?, ?, NULL, ?, 'echec', ?, ?)", [
+      this.newId(), row.network_id, row.agent_id, claim.draft_id, row.kind, this.mode, this.actor(viewer), this.now().toISOString(),
+    ]);
+    await appendEvent(this.journal, { type: 'attirer.google.reservation_close', actor: this.actor(viewer), subject: `agent:${row.agent_id}`, data: { rule: 'R154', kind: row.kind, mode: this.mode, attempt: Number(claim.attempt) } }, this.now);
+    return { ok: true };
   }
 
   /** Les avis de la fiche et leurs textes préparés, pour l'agent ou la direction. Jamais le nom de l'auteur : il n'est pas gardé. */
