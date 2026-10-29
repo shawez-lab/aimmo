@@ -12,6 +12,7 @@ const PLACES: Record<string, { lat: number; lon: number; label?: string; score?:
   '10 rue des Tilleuls Essai Jean Dupont 21000 Dijon': { lat: 47.3222, lon: 5.0415, label: '10 rue des Tilleuls Essai 21000 Dijon' },
   '10 rue des Tilleuls Essai 21000 Dupont': { lat: 47.3222, lon: 5.0415, label: '10 rue des Tilleuls Essai 21000 Dijon', town: 'Dijon' },
   '1 place Ailleurs, 21200 Beaune': { lat: 47.02, lon: 4.84, postalCode: '21200', town: 'Beaune' },
+  '8 rue des Tillleuls Essai, 21000 Dijon': { lat: 47.322, lon: 5.0415, label: '8 rue des Tilleuls Essai 21000 Dijon' },
   '8 rue des Tilleuls Essai, 21000 Dijon flou': { lat: 47.322, lon: 5.0415, score: 0.3 },
   '8 rue des Tilleuls Essai, 21000 Dijon': CENTER,
   '10 rue des Tilleuls Essai 21000 Dijon': { lat: 47.3222, lon: 5.0415 },
@@ -182,6 +183,10 @@ describeWithSqlite('G06 · lettres de quartier, adressées sans nom', () => {
     await spelled.signMandate();
     expect(await spelled.lettres.createCampaign(spelled.agent(), spelled.input({ propertyAddress: '8 rue des Tilleuls Essai 21000 Dijon' }))).toMatchObject({ ok: true, value: { textBy: 'secours' } });
     expect(checkLetterText('La maison située huit rue des Tilleuls Essai à Dijon vient de nous être confiée.', 'rue des Tilleuls Essai')).toBe('property_street');
+    // Une faute de frappe corrigée par la Base adresse nationale : la voie corrigée est protégée elle aussi.
+    const typo = await setup({ drafter: { draft: async () => 'La maison située huit rue des Tilleuls Essai à Dijon vient de nous être confiée. Je reste à votre disposition pour en parler.' } });
+    await typo.signMandate();
+    expect(await typo.lettres.createCampaign(typo.agent(), typo.input({ propertyAddress: '8 rue des Tillleuls Essai, 21000 Dijon' }))).toMatchObject({ ok: true, value: { textBy: 'secours' } });
     // Le bien lui-même n'est jamais un destinataire.
     expect(await t.lettres.createCampaign(t.agent(), t.input({ addresses: [{ number: '8', street: 'rue des Tilleuls Essai', postcode: '21000', city: 'Dijon' }] }))).toEqual({ ok: false, rule: 'R46', code: 'property_itself', index: 0 });
   });

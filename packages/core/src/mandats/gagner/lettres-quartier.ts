@@ -220,13 +220,22 @@ export class LettresQuartier {
 
     // Le texte : l'IA ne voit que la sorte de campagne et la commune ; contrôlé, sinon le texte du code.
     // La voie du bien, sans son numéro ni, avec ou sans virgule, son code postal et sa commune.
-    const propertyStreet = propertyAddress.replace(/^\s*\d+\s*(?:bis|ter|quater|[a-d])?\b\s*,?\s*/i, '').split(/,|\s\d{5}\b/)[0]?.trim() || null;
+    const streetOf = (address: string): string | null => address.replace(/^\s*\d+\s*(?:bis|ter|quater|[a-d])?\b\s*,?\s*/i, '').split(/,|\s\d{5}\b/)[0]?.trim() || null;
+    // La voie telle que saisie et telle que la Base adresse nationale l'a corrigée : aucune des deux ne paraît [R46].
+    const streets = [streetOf(propertyAddress), streetOf(center.label)].filter((x): x is string => x !== null);
+    const checkText = (t: string): string | null => {
+      for (const street of streets.length > 0 ? streets : [null]) {
+        const problem = checkLetterText(t, street);
+        if (problem !== null) return problem;
+      }
+      return null;
+    };
     let text = letterFallback(trigger as LetterTrigger, property.city);
     let textBy: 'ia' | 'secours' = 'secours';
     if (this.drafter) {
       try {
         const proposed = (await this.drafter.draft({ trigger: trigger as LetterTrigger, city: property.city })).trim();
-        const problem = checkLetterText(proposed, propertyStreet);
+        const problem = checkText(proposed);
         if (problem === null) {
           text = proposed;
           textBy = 'ia';
@@ -237,7 +246,7 @@ export class LettresQuartier {
         await appendEvent(this.journal, { type: 'lettres_quartier.ia_en_panne', actor: 'system:lettres', subject: null, data: { error: error instanceof Error ? error.name : 'erreur' } }, this.now);
       }
     }
-    if (checkLetterText(text, propertyStreet) !== null) return stop('R46', 'text_names_property');
+    if (checkText(text) !== null) return stop('R46', 'text_names_property');
 
     const id = this.newId();
     const at = this.now().toISOString();
