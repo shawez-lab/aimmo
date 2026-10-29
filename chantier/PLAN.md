@@ -1858,7 +1858,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X10 · Branchement de M19 dans le socle
 - Statut : en cours
-- Où : proposition #190, empilée sur #185 et #188 ; relecture forte sans P0 ni P1 ; fusion en attente des vérifications GitHub (H35)
+- Où : proposition #190, empilée sur #185 et #188 ; relecture forte sans P0 ni P1 ; Codex : 8 P0 corrigés, 1 réfuté, dernière version (84738f3) sans remarque ; fusion en attente des vérifications GitHub (H35)
 - Décidé (2026-10-29) : stockage du Studio = `MEDIA`, lu par l'existence seule (`head`) ; le socle ne transmet aucun canal de réseau, seuls ceux du mode essai existent ; page `/certificat-photo/<jeton>` dans `packages/api/src/certificat-photo.ts`, sans droits ni stockage ; une publication sur un réseau n'a pas de destinataire : elle ne passe pas par `ControleEnvois` (S06, qui décide d'un message à une personne) mais par ses propres contrôles revérifiés juste avant l'envoi (mode essai, validation, D05, mentions R43, textes R46 et R47, certificats R130, accords R132, auteurs partis R86), réponse à Codex dans #190
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : X09
 - Cahier : M19 ; Branchements.

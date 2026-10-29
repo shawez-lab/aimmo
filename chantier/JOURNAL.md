@@ -237,3 +237,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-10-29 11:50 · X10 · Codex 4e et 5e P0 corrigés sur #190 (fec011c) : accords des personnes relus et auteurs partis refusés avant l'envoi d'une publication [R132, R86] ; GitHub Actions toujours arrêté (H35) · prochaine : fusions dès H35
 - 2026-10-29 12:00 · X10 · Codex 6e P0 corrigé sur #190 (81cef4a) : mention de l'auteur exigée pour une musique CC BY [R133] ; 7e P0 (publications par `ControleEnvois`) réfuté dans #190 : une publication n'a pas de destinataire, ses contrôles propres sont revérifiés avant l'envoi · prochaine : fusions dès H35
 - 2026-10-29 12:10 · X10 · Codex 8e P0 corrigé sur #190 (84738f3) : preuve de licence relue à chaque usage [R133] · prochaine : fusions dès H35
+- 2026-10-29 12:05 · X10 · Codex valide #190 (84738f3) sans remarque ; reste à fusionner après #185 et #188, dès que GitHub Actions repart (H35) · prochaine : fusions dès H35
