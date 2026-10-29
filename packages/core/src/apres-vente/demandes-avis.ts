@@ -299,7 +299,7 @@ export class DemandesAvis {
           "UPDATE review_requests SET status = ?, rule = ?, next_try_day = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE file_id = ? AND person_id = ? AND status IN ('waiting', 'failed')",
           [status, rule, nextTry, result.messageId, this.now().toISOString(), sale.fileId, c.personId],
         );
-        await appendEvent(this.journal, { type: 'apres_vente.demande_avis', actor: 'system:apres-vente', subject: `sale_file:${sale.fileId}`, data: { mode: 'essai', side: c.side, status, rule } }, this.now);
+        await appendEvent(this.journal, { type: 'apres_vente.demande_avis', actor: 'system:apres-vente', subject: `sale_file:${sale.fileId}`, data: { mode: 'essai', side: c.side, client: `person:${c.personId}`, status, rule } }, this.now);
         if (status === 'sent') sent += 1;
       }
     }
@@ -329,7 +329,7 @@ export class DemandesAvis {
       const reason = merged ? 'fiche_reunie' : clients && !clients.has(root) ? 'plus_client' : 'delai_depasse';
       const { changes } = await this.db.run("UPDATE review_requests SET status = 'closed', rule = ?, updated_at = ? WHERE file_id = ? AND person_id = ? AND status IN ('waiting', 'failed')", [reason, at, fileId, r.person_id]);
       if (changes !== 1) continue;
-      await appendEvent(this.journal, { type: 'apres_vente.demande_avis', actor: 'system:apres-vente', subject: `sale_file:${fileId}`, data: { mode: 'essai', side: r.side, status: 'closed', rule: reason } }, this.now);
+      await appendEvent(this.journal, { type: 'apres_vente.demande_avis', actor: 'system:apres-vente', subject: `sale_file:${fileId}`, data: { mode: 'essai', side: r.side, client: `person:${r.person_id}`, status: 'closed', rule: reason } }, this.now);
       if (reason !== 'delai_depasse') continue;
       await this.db.run(
         "INSERT INTO after_sale_tasks (id, network_id, agent_id, file_id, kind, created_at, done_at) VALUES (?, ?, ?, ?, 'avis_non_parti', ?, NULL) ON CONFLICT DO NOTHING",
