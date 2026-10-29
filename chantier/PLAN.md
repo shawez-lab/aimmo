@@ -1714,6 +1714,8 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE03 · Présentation anonyme, rédigée par l'IA depuis les seuls champs publics
 - Statut : en cours
+- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures).
+- Décidé (2026-10-29) : sans fourchette validée en vigueur, pas de présentation (« incomplet ») ; le nom de la commune est retiré avant le contrôle des nombres ; `publishable` est la porte, branchée à la publication de M07 par CE10.
 - Qui : Claude · Relecture : forte · Dépend de : CE01, CE02
 - Cahier : M16, « Présentation anonyme », « L'IA et l'humain ».
 - Objectif : l'IA, derrière une interface (fausse dans les tests), rédige la présentation à partir de la seule vue publique (activité, secteur, fourchette validée) ; texte de secours sans IA ; contrôle du texte avant validation : aucun nombre absent de la vue publique, aucun mot de l'enseigne, de l'adresse ni d'un champ confidentiel ; l'agent valide, la présentation validée est publiable par la porte de M07.
@@ -1721,7 +1723,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien (H13 pour la vraie IA).
 
 ### CE04 · Engagement de confidentialité signé et pièce vérifiée avant tout chiffre
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : CE01
 - Cahier : M16, « Accès aux chiffres » ; Conformité, « Confidentialité ».
 - Objectif : une demande d'accès d'un repreneur reçoit tout de suite la vue publique ; l'engagement de confidentialité (modèle de M06) lui est ouvert à la signature en ligne de D08 ; une seule porte `canSendConfidential(bien, personne)` : engagement signé pour ce bien, empreinte intacte, et pièce d'identité vérifiée par l'agent (état du coffre, jamais la pièce).
