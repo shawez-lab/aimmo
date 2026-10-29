@@ -154,6 +154,36 @@ describeWithSqlite('L09 · routes de M12', () => {
     expect(await count()).toBe(before);
   });
 
+  it('[R90] une pièce envoyée sans longueur annoncée est lue par morceaux et arrêtée dès la taille admise dépassée', async () => {
+    const t = await setup();
+    const route = t.routes.find((r) => r.name === 'conformite.coffre_depot')!;
+    const chunk = new Uint8Array(1024 * 1024);
+    let pulled = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > 30) controller.close();
+        else controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const request = new Request(`https://api.exemple.test/v1/conformite/personnes/${t.buyerId}/coffre?sorte=passeport&verifie=2027-03-01`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/pdf' },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    expect(request.headers.get('content-length')).toBeNull();
+    const response = await route.handle({ db: t.db, journal: t.journal, acces: t.acces, stop: t.stop, vault: t.vault, now: t.now }, t.agent, [t.buyerId], request);
+    expect(response.status).toBe(413);
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThan(15);
+    expect(t.bucket.objects.size).toBe(0);
+  });
+
   it('[R92] l’identification passe par sa route : une société sans bénéficiaire effectif est refusée', async () => {
     const t = await setup();
     expect(await t.call(t.agent, 'POST', `/personnes/${t.buyerId}/identification`, { entity: 'societe', beneficialOwners: [] })).toMatchObject({ status: 409, body: { rule: 'R92', code: 'beneficial_owners_missing' } });
