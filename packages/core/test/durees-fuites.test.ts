@@ -249,6 +249,11 @@ describeWithSqlite('L08 · procédure de fuite', () => {
     await t.fuites.evaluate(t.responsable, b.value.id, { risk: 'risque', nature: ['confidentialite'], categories: ['coordonnees'], scope: { kind: 'personnes', personIds: [twin, t.buyerId] } });
     expect(await t.fuites.concerned(t.responsable, b.value.id)).toMatchObject({ ok: true, value: { version: 2, personIds: [p, t.buyerId].sort() } });
     expect((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM data_breach_persons WHERE version = 1'))!.n).toBe(alexPersons.length);
+    // Une évaluation dont la liste n'a pas été écrite en entier (coupure) n'est jamais lue ; la suivante prend la version d'après.
+    await t.db.run("INSERT INTO data_breach_evaluations (breach_id, version, risk, nature, categories, scope, agent_id, concerned_count, persons_sha256, evaluated_by, evaluated_at) VALUES (?, 3, 'aucun', '[]', '[]', 'reseau', NULL, 5, ?, 'compliance:c', 't')", [b.value.id, 'f'.repeat(64)]);
+    expect(await t.fuites.concerned(t.responsable, b.value.id)).toMatchObject({ ok: true, value: { version: 2 } });
+    const again = await t.fuites.evaluate(t.responsable, b.value.id, { risk: 'eleve', nature: ['confidentialite'], categories: ['coordonnees'], scope: { kind: 'personnes', personIds: [p] } });
+    expect(again).toMatchObject({ ok: true, value: { evaluation: { version: 4, risk: 'eleve', personsCount: 1 } } });
     // Au journal : des nombres, jamais une fiche.
     const events = (await t.journal.all()).filter((e) => e.subject === `breach:${b.value.id}`);
     expect(JSON.stringify(events)).not.toContain(p);

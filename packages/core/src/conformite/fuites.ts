@@ -141,7 +141,10 @@ export class Fuites {
 
   private async latestEvaluation(breachId: string): Promise<BreachEvaluation | null> {
     const r = await this.db.first<{ version: number; risk: BreachRisk; nature: string; categories: string; scope: BreachScope['kind']; agent_id: string | null; concerned_count: number; persons_sha256: string }>(
-      'SELECT * FROM data_breach_evaluations WHERE breach_id = ? ORDER BY version DESC LIMIT 1',
+      // Une évaluation ne compte qu'une fois sa liste écrite en entier : une écriture interrompue reste invisible.
+      `SELECT e.* FROM data_breach_evaluations e WHERE e.breach_id = ?
+       AND e.concerned_count = (SELECT count(*) FROM data_breach_persons p WHERE p.breach_id = e.breach_id AND p.version = e.version)
+       ORDER BY e.version DESC LIMIT 1`,
       [breachId],
     );
     if (!r) return null;
@@ -282,8 +285,9 @@ export class Fuites {
     if (!input.scope || !['reseau', 'agent', 'personnes'].includes(input.scope.kind)) return { ok: false, rule: null, code: 'bad_scope' };
     const persons = await this.scopePersons(viewer.networkId, input.scope);
     if (!persons) return { ok: false, rule: null, code: 'bad_scope' };
-    const previous = await this.latestEvaluation(row.id);
-    const version = (previous?.version ?? 0) + 1;
+    // La version suit aussi une évaluation restée incomplète, qui ne sera jamais lue.
+    const last = await this.db.first<{ v: number | null }>('SELECT max(version) AS v FROM data_breach_evaluations WHERE breach_id = ?', [row.id]);
+    const version = (last?.v ?? 0) + 1;
     const personsSha256 = await sha256Of(persons);
     await this.db.run(
       `INSERT INTO data_breach_evaluations (breach_id, version, risk, nature, categories, scope, agent_id, concerned_count, persons_sha256, evaluated_by, evaluated_at)
