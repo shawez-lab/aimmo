@@ -384,6 +384,8 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     const review = (await s.db.first<{ id: string }>('SELECT id FROM gbp_reviews'))!.id;
     expect(await s.fiche.writeReply(agent, review, 'Merci monsieur le goff.')).toMatchObject({ ok: false, problems: ['nom'] });
     expect(await s.fiche.writeReply(agent, review, 'Merci Madame Oliveira.')).toMatchObject({ ok: false, problems: ['nom'] });
+    await s.db.run("INSERT INTO persons (id, network_id, agent_id, first_name, last_name, created_at, updated_at) VALUES ('p-7', 'net-1', 'ag-1', 'Ben', 'Inventé', 'x', 'x')");
+    expect(await s.fiche.writeReply(agent, review, 'Merci Ben !')).toMatchObject({ ok: false, problems: ['nom'] });
   });
 
   it('[R154] le nom de l’auteur est refusé même s’il est aussi le prénom d’un agent du réseau', async () => {

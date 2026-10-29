@@ -278,7 +278,7 @@ export class FicheGoogle {
     const clientFirstNames = new Set<string>();
     const clientLastNames = new Set<string>();
     for (const p of await this.db.all<{ first_name: string | null; last_name: string | null }>('SELECT DISTINCT first_name, last_name FROM persons WHERE network_id = ?', [networkId])) {
-      for (const w of words(p.first_name ?? '')) if (!PARTICLES.has(foldWord(w))) clientFirstNames.add(foldWord(w));
+      for (const w of words(p.first_name ?? '')) clientFirstNames.add(foldWord(w));
       // Une particule (« Le Goff », « Da Silva ») n'est pas un nom ; un nom de deux lettres n'est lu que comme un nom propre.
       for (const w of words(p.last_name ?? '')) {
         const f = foldWord(w);
