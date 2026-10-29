@@ -135,16 +135,29 @@ describeWithSqlite('CE03 · présentation anonyme d’un commerce', () => {
       ['Belle affaire, ４３９ ８７６ € par an.', 'chiffre_confidentiel'],
       ['Belle affaire, ٤٣٩٨٧٦ € par an.', 'nombre_hors_vue_publique'],
       ['Belle affaire, ⁴ personnes.', 'chiffre_confidentiel'],
+      ['Affaire exploitée par ³ personnes.', 'nombre_hors_vue_publique'],
+      ['Affaire exploitée par ² personnes.', 'nombre_hors_vue_publique'],
+      // Un nombre public n'a de source que pour son champ.
+      ['Prix de 85 €.', 'nombre_hors_vue_publique'],
+      ['Surface de 249358 m².', 'nombre_hors_vue_publique'],
+      ['Surface de 21000 m2.', 'nombre_hors_vue_publique'],
+      ['Code 249 358.', 'nombre_hors_vue_publique'],
     ];
     for (const [text, code] of cases) {
       const r = checkPresentation('Boulangerie à Dijon', text, FACTS, MARKS);
       expect(r.ok, text).toBe(false);
       expect(r.sentences.flatMap((s) => s.problems.map((p) => p.code)), text).toContain(code);
     }
+    // Un article du matériel, même court, est confidentiel.
+    expect(checkPresentation('Boulangerie à Dijon', 'TV disponible.', FACTS, { ...MARKS, equipment: ['TV'] }).ok).toBe(false);
+    // Une enseigne faite des seuls mots courants ne rend pas l'activité indicible ; le secours passe.
+    const generic = { ...MARKS, signName: 'Boulangerie' };
+    const fb = fallbackPresentation(FACTS);
+    expect(checkPresentation(fb.title, fb.body, FACTS, generic).ok).toBe(true);
     // Le titre est contrôlé comme le texte.
     expect(checkPresentation('Le Fournil de Gaspard', 'Boulangerie à Dijon.', FACTS, MARKS).ok).toBe(false);
     // Les nombres publics passent, écrits avec ou sans espaces.
-    expect(checkPresentation('Boulangerie à Dijon', 'Dijon (21000). 85 m². Entre 249358 € et 374 036 €.', FACTS, MARKS).ok).toBe(true);
+    expect(checkPresentation('Boulangerie à Dijon', 'Dijon (21000). 85 m². 85 m2, 85 mètres carrés. Entre 249358 € et 374 036 euros.', FACTS, MARKS).ok).toBe(true);
   });
 
   it('[R07] « agent immobilier », jamais « mandataire » ; ni « gratuit » ni mention de l’IA', () => {
