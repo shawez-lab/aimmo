@@ -182,9 +182,9 @@ export class AnciensContacts {
   async noteLeaseEnd(viewer: Viewer, personId: string, onDay: unknown): Promise<OldContactResult<{ id: string }>> {
     if (viewer.role !== 'agent') return this.refused(viewer, 'role');
     if (typeof onDay !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(onDay) || Number.isNaN(Date.parse(`${onDay}T12:00:00Z`))) return { ok: false, rule: null, code: 'bad_day' };
-    const root = await this.fiche.rootOf(personId).catch(() => null);
-    const owner = root ? await this.agentOf(viewer.networkId, root) : null;
-    if (!root || owner !== viewer.userId) return this.refused(viewer, 'not_assigned');
+    // Une personne inconnue n'a pas d'agent : refusée comme une fiche d'un autre [R16].
+    const root = await this.fiche.rootOf(personId);
+    if ((await this.agentOf(viewer.networkId, root)) !== viewer.userId) return this.refused(viewer, 'not_assigned');
     const id = this.newId();
     await this.db.run('INSERT INTO old_contact_moments (id, network_id, person_id, kind, on_day, noted_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, viewer.networkId, root, 'fin_de_bail', onDay, this.actor(viewer), this.now().toISOString()]);
     return { ok: true, value: { id } };
@@ -228,13 +228,26 @@ export class AnciensContacts {
     return null;
   }
 
-  /** Une relance (de cette tâche ou après la vente) dans la période réglée : pas de nouvelle relance [R143, R05]. */
-  private async recentlyFollowed(members: readonly string[], at: Date): Promise<boolean> {
+  /**
+   * Une relance de cette tâche préparée dans la période réglée, ou validée dans la période, ou encore à valider ; ou une
+   * relance après la vente envoyée dans la période : pas de nouvelle relance [R143, R05]. `except` : la relance que l'on valide.
+   */
+  private async recentlyFollowed(members: readonly string[], at: Date, except: string | null = null): Promise<boolean> {
     const since = new Date(at.getTime() - this.settings.periodDays * DAY).toISOString();
-    const mine = await this.db.first(`SELECT 1 FROM old_contact_followups WHERE person_id IN (${marks(members.length)}) AND created_at > ? LIMIT 1`, [...members, since]);
+    const m = marks(members.length);
+    const mine = await this.db.first(
+      `SELECT 1 FROM old_contact_followups WHERE person_id IN (${m}) AND id IS NOT ? AND (created_at > ? OR status = 'a_valider' OR (status = 'essai' AND decided_at > ?)) LIMIT 1`,
+      [...members, except, since, since],
+    );
     if (mine) return true;
-    const afterSale = await this.db.first(`SELECT 1 FROM after_sale_reminders WHERE person_id IN (${marks(members.length)}) AND status = 'sent' AND updated_at > ? LIMIT 1`, [...members, since]);
+    const afterSale = await this.db.first(`SELECT 1 FROM after_sale_reminders WHERE person_id IN (${m}) AND status = 'sent' AND updated_at > ? LIMIT 1`, [...members, since]);
     return afterSale !== null;
+  }
+
+  /** Les relances d'un mois passé jamais validées expirent : une relance ne se garde pas d'un mois à l'autre [R143]. */
+  private async expireOld(networkId: string, month: string): Promise<void> {
+    const rows = await this.db.all<FollowupRow>("SELECT * FROM old_contact_followups WHERE network_id = ? AND status = 'a_valider' AND month < ?", [networkId, month]);
+    for (const r of rows) await this.close(r, 'R143', 'system:planificateur', 'expiree');
   }
 
   /** Le moment de la relance, par la première règle qui s'applique ; aucun moment, aucune relance [R35]. */
@@ -268,7 +281,10 @@ export class AnciensContacts {
         const body = (await this.drafter.draft({ reason })).trim();
         const hello = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
         const text = /^bonjour\b/i.test(body) ? body : `${hello} ${body}`;
-        if (checkOldContactText(text) === null) return { text, by: 'ia' };
+        const problem = checkOldContactText(text);
+        if (problem === null) return { text, by: 'ia' };
+        // Le texte refusé n'est jamais gardé ; le refus est au journal, avec son code [R12].
+        await appendEvent(this.journal, { type: 'anciens_contacts.ia_refusee', actor: 'system:planificateur', subject: null, data: { reason, code: problem } }, this.now);
       } catch (error) {
         // Une panne de l'IA n'arrête rien : le texte de secours la remplace, et la panne est au journal [R12].
         await appendEvent(this.journal, { type: 'anciens_contacts.ia_en_panne', actor: 'system:planificateur', subject: null, data: { reason, error: error instanceof Error ? error.name : 'erreur' } }, this.now);
@@ -285,6 +301,7 @@ export class AnciensContacts {
     const at = this.now();
     const today = parisDay(at);
     const month = today.slice(0, 7);
+    await this.expireOld(networkId, month);
     const states = await this.durees.states(networkId);
     const candidates = await this.db.all<{ person_id: string }>('SELECT DISTINCT person_id FROM consents WHERE network_id = ? AND purpose = ? ORDER BY person_id', [networkId, OLD_CONTACT_PURPOSE]);
     const roots = [...new Set(await Promise.all(candidates.map((c) => this.fiche.rootOf(c.person_id))))].sort();
@@ -319,6 +336,7 @@ export class AnciensContacts {
   async toValidate(viewer: Viewer): Promise<OldContactResult<OldContactItem[]>> {
     if (viewer.role !== 'agent') return this.refused(viewer, 'role');
     const at = this.now();
+    await this.expireOld(viewer.networkId, parisDay(at).slice(0, 7));
     const rows = await this.db.all<FollowupRow>("SELECT * FROM old_contact_followups WHERE network_id = ? AND agent_id = ? AND status = 'a_valider'", [viewer.networkId, viewer.userId]);
     const states = rows.length > 0 ? await this.durees.states(viewer.networkId) : new Map();
     const items: OldContactItem[] = [];
@@ -334,12 +352,14 @@ export class AnciensContacts {
       items.push({ followupId: r.id, personId: root, firstName: names.map((n) => n.first_name).find((n) => n) ?? null, reason: r.reason, reasonLabel: OLD_CONTACT_REASON_LABELS[r.reason], reasonDay: r.reason_day, draft: r.draft, draftBy: r.draft_by });
     }
     items.sort((a, b) => RANK[a.reason] - RANK[b.reason] || (a.reasonDay < b.reasonDay ? -1 : a.reasonDay > b.reasonDay ? 1 : 0) || (a.followupId < b.followupId ? -1 : 1));
+    // La lecture est au journal avant que la liste soit rendue, sans donnée personnelle [R16, R13].
+    await appendEvent(this.journal, { type: 'anciens_contacts.liste_lue', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R16', count: items.length } }, this.now);
     return { ok: true, value: items };
   }
 
-  private async close(r: FollowupRow, rule: string, by: string): Promise<void> {
-    await this.db.run("UPDATE old_contact_followups SET status = 'sans_base', rule = ?, decided_at = ?, decided_by = ? WHERE id = ? AND status = 'a_valider'", [rule, this.now().toISOString(), by, r.id]);
-    await appendEvent(this.journal, { type: 'anciens_contacts.close', actor: by, subject: `person:${r.person_id}`, data: { rule, followup: r.id } }, this.now);
+  private async close(r: FollowupRow, rule: string, by: string, status: 'sans_base' | 'expiree' = 'sans_base'): Promise<void> {
+    await this.db.run('UPDATE old_contact_followups SET status = ?, rule = ?, decided_at = ?, decided_by = ? WHERE id = ? AND status = ?', [status, rule, this.now().toISOString(), by, r.id, 'a_valider']);
+    await appendEvent(this.journal, { type: 'anciens_contacts.close', actor: by, subject: `person:${r.person_id}`, data: { rule, followup: r.id, status } }, this.now);
   }
 
   /**
@@ -367,6 +387,11 @@ export class AnciensContacts {
       return { ok: false, rule: 'R143', code: `no_basis_${lost}` };
     }
     const members = await this.fiche.membersOf(root);
+    // Une relance d'un mois passé, ou une autre relance passée dans la période entre-temps : rien ne part [R143, R05].
+    if (r.month !== parisDay(at).slice(0, 7) || (await this.recentlyFollowed(members, at, r.id))) {
+      await this.close(r, 'R143', this.actor(viewer), 'expiree');
+      return { ok: false, rule: 'R143', code: 'period' };
+    }
     const channels = await this.consentedChannels(members, at);
     const channel = input.channel === undefined ? channels[0]! : (input.channel as OldContactChannel);
     if (!channels.includes(channel)) return { ok: false, rule: 'R03', code: 'no_consent_on_channel' };

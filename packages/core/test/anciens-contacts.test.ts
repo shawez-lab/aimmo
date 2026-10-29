@@ -167,6 +167,33 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     expect(entries.map((e) => e.data)).toEqual([{ mode: 'essai', sent: false, followup: a!.followupId, status: 'essai', rule: null }]);
   });
 
+  it('[R143] [R05] une relance non validée expire avec son mois ; une relance après la vente partie entre-temps l’arrête', async () => {
+    const t = await setup();
+    const ines = await t.contact('Inès');
+    await t.valued(ines.id, 400);
+    const ugo = await t.contact('Ugo');
+    await t.valued(ugo.id, 400);
+    await t.anciens.prepareMonth(t.network.id);
+    const list = await t.anciens.toValidate(t.agent());
+    if (!list.ok) throw new Error(list.code);
+    const a = list.value.find((i) => i.firstName === 'Inès')!;
+    const b = list.value.find((i) => i.firstName === 'Ugo')!;
+    // Le lendemain, Ugo reçoit sa relance après la vente : la relance d'ancien contact ne part plus.
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO after_sale_reminders (file_id, person_id, year, network_id, agent_id, due_day, status, rule, message_id, updated_at) VALUES ('f1', ?, 1, ?, ?, '2027-10-13', 'sent', NULL, NULL, ?)", [ugo.id, t.network.id, t.alex.id, new Date(TUE_10H + DAY).toISOString()]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    t.setClock(TUE_10H + 2 * DAY);
+    expect(await t.anciens.validate(t.agent(), b.followupId)).toEqual({ ok: false, rule: 'R143', code: 'period' });
+    // Six mois plus tard, la relance d'Inès jamais validée a expiré : elle ne peut plus partir, une nouvelle est préparée.
+    t.setClock(TUE_10H + 183 * DAY);
+    expect(await t.anciens.prepareMonth(t.network.id)).toBe(2);
+    expect(await t.anciens.validate(t.agent(), a.followupId)).toEqual({ ok: false, rule: null, code: 'already_decided' });
+    expect(await t.outbox()).toEqual([]);
+    expect((await t.followups()).map((f) => `${f.person_id} ${f.status}`).sort()).toEqual([`${ines.id} expiree`, `${ines.id} a_valider`, `${ugo.id} expiree`, `${ugo.id} a_valider`].sort());
+    // La lecture de la liste est au journal, sans donnée [R16, R13].
+    expect((await t.journal.all()).filter((e) => e.type === 'anciens_contacts.liste_lue').map((e) => e.data)).toEqual([{ rule: 'R16', count: 2 }]);
+  });
+
   it('[R02] [R04] une personne exclue ou arrêtée après la préparation sort de la liste, et sa relance est close', async () => {
     const t = await setup();
     const ines = await t.contact('Inès');
@@ -185,6 +212,10 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
       await t.anciens.prepareMonth(t.network.id);
       const list = await t.anciens.toValidate(t.agent());
       expect(list.ok && list.value.map((i) => [i.draftBy, i.draft]), bad).toEqual([['secours', oldContactFallback('estimation_ancienne', 'Inès')]]);
+      // Le refus est au journal, avec son code, jamais le texte [R12, R13].
+      const refusals = (await t.journal.all()).filter((e) => e.type === 'anciens_contacts.ia_refusee');
+      expect(refusals.map((e) => e.data.reason)).toEqual(['estimation_ancienne']);
+      expect(JSON.stringify(refusals)).not.toContain(bad);
     }
     const t = await setup({
       draft: async () => {

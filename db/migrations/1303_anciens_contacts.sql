@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS old_contact_followups (
   reason_day TEXT NOT NULL,
   draft TEXT NOT NULL CHECK (length(draft) BETWEEN 1 AND 600),
   draft_by TEXT NOT NULL CHECK (draft_by IN ('ia', 'secours')),
-  status TEXT NOT NULL CHECK (status IN ('a_valider', 'essai', 'refusee', 'sans_base')),
+  status TEXT NOT NULL CHECK (status IN ('a_valider', 'essai', 'refusee', 'sans_base', 'expiree')),
   channel TEXT CHECK (channel IS NULL OR channel IN ('email', 'sms', 'whatsapp')),
   rule TEXT,
   message_id TEXT,
