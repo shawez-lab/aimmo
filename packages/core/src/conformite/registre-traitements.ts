@@ -476,6 +476,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       investor_profiles: ['person_id', 'budget_cents', 'declared_down_payment_cents', 'sectors', 'target_gross_yield_bp'],
       market_rent_imports: ['file_sha256', 'imported_by'],
       investment_calculations: ['inputs', 'result', 'created_by'],
+      commune_rental_rules: ['recorded_by'],
     },
   },
 ];
@@ -742,6 +743,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   investor_profiles: ['id', 'network_id', 'project_id', 'version', 'rental_target', 'deadline', 'sources', 'origin', 'created_at'],
   market_rents: ['import_id', 'insee_code', 'rent_m2_cents', 'lower_m2_cents', 'upper_m2_cents', 'observations'],
   investment_calculations: ['id', 'network_id', 'property_id', 'project_id', 'status', 'formula_version', 'created_at'],
+  commune_rental_rules: ['id', 'network_id', 'insee_code', 'rule', 'effective_from', 'effective_until', 'source', 'source_date', 'recorded_at'],
   market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
 };
 
