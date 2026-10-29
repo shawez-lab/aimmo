@@ -1865,9 +1865,81 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X11 · Écran « Studio » dans l'application
-- Statut : à faire
+- Statut : à faire, après la fusion de Y09 (même fichier `packages/api/app/fichiers.ts` et même budget de 48 Ko de l'application, presque plein après Y09) ; décidé le 2026-10-29 par la voie 2 pour ne pas croiser deux écrans non fusionnés
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X09
 - Cahier : M19 ; exigence de design (protocole, section 9).
 - Objectif : dans l'application de l'agent, l'écran « Studio » : guide pièce par pièce avec l'appareil photo, corrections globales sur l'appareil, montage depuis le modèle, plan, publications à valider ; tout traitement sur l'appareil.
 - Critères : l'écran lit seulement par les routes `/v1/studio` [R16] ; aucune image ni vidéo n'est envoyée à un serveur pour traitement [R130] ; écran accessible, beau sur téléphone d'abord, dans le budget de l'application (qui est presque plein : une passe d'allègement peut être nécessaire), testé comme les autres (`fake-dom`).
 - Attend : rien.
+
+**M20 · Gagner des mandats, module complet, octobre 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-29 par la voie 2 : M19 est fini côté voie 2 jusqu'à X09 (X10 attend la voie 1, X11 attend la fusion de Y09) ; octobre 2027 compte M19 et M20 complet ; M16 reste à la voie 1 ; la première version de M20 (G01 à G05) est faite. Ids `G06` et suivants. Cahier : M20 Gagner des mandats, points 3 à 7, « Règles », « Branchements » ; dépendances faites ou prêtes : M04, M11, M18, M19 (X06 pour les supports imprimés).
+Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au propriétaire » ou « Aux habitants » d'une adresse saisie par l'agent dans le rayon réglé autour d'un bien dont le mandat est signé ou la vente rapportée ; jamais à un nom, jamais à partir des ventes publiques (DVF) ni d'une liste achetée [R140, R37]. Le dossier de présentation ne montre que des chiffres de la base, chacun avec sa source (ventes du quartier de M04, résultats de l'agent de M13, avis réels de M11 avec leur lien, jamais choisis ni réécrits), aucune promesse de prix ni de délai ; l'IA met en forme derrière une interface, avec secours sans IA [R141]. Une recommandation arrive avec sa source et la preuve de l'accord de la personne recommandée avant tout contact, jamais rémunérée à un particulier [R142, R66]. Un ancien contact n'est relancé qu'avec une base légale au jour de l'envoi (prospect à 3 ans de R97, client après la vente selon R65, accord en cours), au plus une fois par période réglée, par le contrôle central, en mode essai [R143, R03, R26]. La mesure mensuelle par source vient de la base ; les coûts sont saisis par la direction avec leur preuve ; garder ou arrêter une source reste une décision de la direction, jamais automatique [R144]. Aucun texte d'AIMMO ne promet des mandats à un agent [R145]. Les règles R140 à R149 et les migrations à partir de `1301` sont réservées à M20 complet. Le code vit dans `packages/core/src/mandats/gagner/`, ses routes dans `packages/api/src/gagner.ts` ; le plan du jour (`mandats/plan-du-jour.ts`, fonction du socle) et les fichiers du socle ne changent que par G12, confiée à la voie 1.
+
+### G06 · Lettres de quartier, adressées sans nom
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : X06
+- Cahier : M20, point 3 « Lettres de quartier », « Règles ».
+- Objectif : après un mandat signé ou une vente rapportée, une campagne de lettres (migration `1301`) : adresses saisies par l'agent (numéro, voie, commune), contrôlées dans le rayon réglé autour du bien, sans aucun nom ; destinataire « Au propriétaire » ou « Aux habitants » ; texte par l'IA derrière une interface avec secours, contrôlé (adresse du bien vendu jamais citée, mots interdits) ; lettre imprimable par le système de design (X06), une par adresse ; dépôt noté par l'agent.
+- Critères : un nom de personne dans une adresse ou un destinataire est refusé [R140] ; une source « ventes publiques » ou « liste achetée » est refusée [R37] ; sans mandat signé ou vente rapportée, aucune campagne [R140] ; l'adresse du bien n'apparaît jamais dans la lettre [R46] ; chaque lettre passe le contrôle du système de design [R201].
+- Attend : rien.
+
+### G07 · Dossier de présentation pour chaque rendez-vous de mandat (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : G06
+- Cahier : M20, point 4 « Dossier de présentation ».
+- Objectif : pour un rendez-vous de mandat (M05), un dossier imprimable et lisible sur téléphone : ventes du quartier (M04, avec source et date), plan de vente (canaux de M07, Studio de M19), engagements de service rangés par la direction (versionnés), avis réels de M11 (lien et date, tous ceux de la période, jamais choisis), résultats de l'agent (M13, calculés) ; **Jamais vu** : chaque engagement de service affiché avec le taux réellement tenu par l'agent sur les 12 derniers mois, recalculé depuis le journal, et le détail qui le prouve.
+- Critères : chaque nombre du dossier vient de la base avec sa source [R141] ; aucun avis choisi, réécrit ni inventé [R141] ; aucune promesse de prix ni de délai (liste fermée de tournures) [R141] ; le taux tenu de chaque engagement égale un calcul fait à la main sur un journal inventé ; rien qui situe un autre client [R46, R13].
+- Attend : rien.
+
+### G08 · Recommandations des clients et des partenaires, avec leur source
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien (M11, M18 faits)
+- Cahier : M20, point 5 « Recommandations » ; M11 ; M18.
+- Objectif : une recommandation venue d'un client (M11) ou d'un partenaire (espace partenaire de M18) arrive dans la fiche (M02) avec sa source et la preuve de l'accord de la personne recommandée (migration `1302`) ; l'agent est alerté ; le mandat qui en naît garde la source « recommandation » (G03).
+- Critères : sans preuve d'accord de la personne recommandée, aucun contact possible [R142, R03] ; aucun champ de récompense pour un particulier [R66] ; la source suit jusqu'au mandat [R38] ; un partenaire ne voit rien de la suite [R77].
+- Attend : rien.
+
+### G09 · Anciens contacts relancés quand la loi le permet
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M20, point 6 « Anciens contacts », « Règles ».
+- Objectif : chaque mois, la liste des anciens contacts relançables (prospects encore dans les 3 ans de R97, anciens clients selon R65, accords en cours), au bon moment par des règles écrites (anniversaire d'achat réglé, estimation de plus d'un an, fin de bail connue) ; la relance préparée par l'IA derrière une interface avec secours, validée par l'agent, puis par le contrôle central en mode essai (migration `1303`).
+- Critères : jamais sans base légale au jour de l'envoi [R143, R03, R36] ; une relance par période réglée au plus [R143, R05] ; exclus et arrêts jamais relancés [R02, R04] ; ordre par règles écrites, jamais une note de l'IA [R35] ; rien ne part réellement [R26].
+- Attend : rien.
+
+### G10 · Mesure mensuelle : garder ce qui rapporte des mandats
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : G08
+- Cahier : M20, point 7 « Mesure ».
+- Objectif : chaque mois, par source : mandats signés (G03), rendez-vous, coût saisi par la direction avec sa preuve (migration `1304`), coût par mandat ; le compte rendu à la direction, qui décide de garder ou d'arrêter chaque source, sa décision rangée.
+- Critères : chaque nombre recalculable depuis la base sur un jeu inventé [R144] ; aucune décision automatique [R144] ; aucune donnée personnelle dans le compte rendu [R13] ; seule la direction lit et décide [R16].
+- Attend : rien.
+
+### G11 · Routes de M20 complet
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : G10
+- Cahier : M20 ; Architecture technique, API.
+- Objectif : `packages/api/src/gagner.ts` : routes `/v1/gagner` (lettres, dossier de présentation, recommandations, relances, mesure), rôle contrôlé avant le corps, refus au journal.
+- Critères : chaque route refuse tout rôle non admis avant de lire le corps [R16] ; parcours d'un mandat test, de la lettre de quartier au mandat signé avec sa source [R38, R140].
+- Attend : rien.
+
+### G12 · Branchement de M20 complet dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : G11
+- Cahier : M20 ; Branchements.
+- Objectif : ajouter au plan du jour les lettres à déposer, les recommandations à rappeler et les relances validées, sous leurs raisons écrites ; routes dans `app.ts` ; passage mensuel des relances et de la mesure au planificateur ; relances par le contrôle central, en mode essai.
+- Critères : le plan reste le même pour les mêmes données [R35] ; aucune ligne sans base légale [R36] ; rien ne part réellement tant que le plan ne l'a pas mis en service [R26].
+- Attend : rien.
+
+### G13 · Écran « Gagner des mandats » dans l'application
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : G11, X11
+- Cahier : M20 ; exigence de design (protocole, section 9).
+- Objectif : lettres à préparer et à noter déposées, dossier de présentation à ouvrir avant un rendez-vous, recommandations, relances à valider, depuis l'application de l'agent.
+- Critères : l'écran lit seulement par les routes `/v1/gagner` [R16] ; aucun texte ne promet de mandats [R145] ; écran accessible, beau sur téléphone d'abord, dans le budget de l'application, testé comme les autres (`fake-dom`).
+- Attend : rien.
+
