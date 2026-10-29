@@ -597,6 +597,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   photo_guide_validations: out('sans_client', 'Validation d\'un bien photographié avec le guide : aucune personne.'),
   photo_certificates: out('sans_client', 'Description des corrections d\'une photo de bien et son certificat : aucune personne.'),
   floor_plans: out('sans_client', 'Pièces et cotes du plan d\'un logement : aucune personne.'),
+  video_montages: out('sans_client', 'Description du montage d\'une vidéo de bien : aucune personne.'),
   // M17 · Investir.
   investor_profiles: { locate: by('person_id') },
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
