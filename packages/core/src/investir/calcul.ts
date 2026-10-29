@@ -399,6 +399,31 @@ export class CalculInvestissement {
     return id;
   }
 
+  /** Un calcul rangé, pour qui voit sa fiche en entier, ou son bien quand il n'a pas de projet [R16]. */
+  async read(acces: Acces, viewer: Viewer, id: string): Promise<CalculationResult> {
+    const refused = async (code: string): Promise<CalculationResult> => {
+      await appendEvent(
+        this.journal,
+        { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', code, kind: 'investment_calculation', role: String(viewer.role) } },
+        this.now,
+      );
+      return { ok: false, rule: 'R16', code };
+    };
+    const calc = await this.get(viewer.networkId, id);
+    if (!calc) return refused('unknown');
+    if (calc.projectId !== null) {
+      const project = await this.db.first<{ person_id: string }>('SELECT person_id FROM projects WHERE id = ? AND network_id = ?', [calc.projectId, viewer.networkId]);
+      if (!project) return refused('unknown');
+      const read = await acces.readFiche(viewer, project.person_id);
+      if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+      if (read.view !== 'full') return refused('not_assigned');
+    } else if (calc.propertyId !== null) {
+      const read = await acces.readProperty(viewer, calc.propertyId);
+      if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+    } else if (viewer.role !== 'direction' && calc.createdBy !== `${String(viewer.role)}:${viewer.userId}`) return refused('not_assigned');
+    return { ok: true, value: calc };
+  }
+
   /** Un calcul rangé, sans contrôle d'accès : pour le code du système (note, alertes, routes qui contrôlent avant). */
   async get(networkId: string, id: string): Promise<StoredCalculation | null> {
     const row = await this.db.first<CalculationRow>('SELECT * FROM investment_calculations WHERE id = ? AND network_id = ?', [id, networkId]);

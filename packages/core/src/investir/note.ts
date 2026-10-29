@@ -651,6 +651,15 @@ export class NotesInvestissement {
     return { ok: true, value: toStored(after!) };
   }
 
+  /** Une note et son état, pour l'agent de la fiche ou la direction [R16]. */
+  async read(acces: Acces, viewer: Viewer, noteId: string): Promise<NoteResult> {
+    const row = await this.db.first<NoteRow>('SELECT * FROM investment_notes WHERE id = ? AND network_id = ?', [noteId, viewer.networkId]);
+    if (!row) return this.refused(viewer, noteId, 'unknown');
+    const access = await this.fiche(acces, viewer, row.project_id);
+    if (!access.ok) return access;
+    return { ok: true, value: toStored(row) };
+  }
+
   /** Ce que le client peut lire : seulement une note validée par l'agent, sinon rien [R126]. */
   async forClient(networkId: string, noteId: string): Promise<{ text: string; validatedAt: string } | null> {
     const row = await this.db.first<NoteRow>("SELECT * FROM investment_notes WHERE id = ? AND network_id = ? AND status = 'validee'", [noteId, networkId]);
