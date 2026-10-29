@@ -224,6 +224,8 @@ describeWithSqlite('Y09 · listes de l’écran « Investir »', () => {
     await t.db.exec('PRAGMA foreign_keys = ON');
     const restricted = await t.ok(t.agent, 'GET', '/investir/biens');
     expect(restricted.map((b: { propertyId: string }) => b.propertyId)).toEqual([shared.id]);
+  });
+});
 
 describeWithSqlite('Y07 · relecture d’un calcul', () => {
   it('[R16] un calcul ne se relit plus quand son bien sort du fichier commun, même pour le projet de l’agent', async () => {
