@@ -584,6 +584,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
   investment_calculations: { locate: [via('project_id', 'projects')] },
   commune_rental_rules: out('sans_client', 'Règles de location des communes rangées par la direction : aucune personne.'),
+  investment_notes: { locate: [via('project_id', 'projects')] },
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
