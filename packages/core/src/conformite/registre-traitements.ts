@@ -452,7 +452,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     finalite: 'Accompagner un investisseur locatif : son profil de projet, sans aucune évaluation de sa solvabilité, pour lui proposer des biens avec un rendement calculé par le code.',
     baseLegale: 'mesures_precontractuelles',
     personnes: ['Investisseurs'],
-    donnees: ['Auteur de chaque import des loyers de marché', 'Calculs de rendement d\'un bien avec leurs entrées sourcées', 'Profil du projet : budget, apport déclaré, location visée, secteurs, rendement brut attendu, délai, chaque champ avec sa source (jamais de revenus, d\'emploi, de patrimoine ni de crédit)'],
+    donnees: ['Auteur de chaque import des loyers de marché', 'Calculs de rendement d\'un bien avec leurs entrées sourcées', 'Notes d\'investissement et leur validation par l\'agent', 'Profil du projet : budget, apport déclaré, location visée, secteurs, rendement brut attendu, délai, chaque champ avec sa source (jamais de revenus, d\'emploi, de patrimoine ni de crédit)'],
     duree: '3 ans après le dernier contact du prospect ; la durée du mandat puis 5 ans pour un client.',
     destinataires: ['L\'agent de la fiche', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
@@ -461,6 +461,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       market_rent_imports: ['file_sha256', 'imported_by'],
       investment_calculations: ['inputs', 'result', 'created_by'],
       commune_rental_rules: ['recorded_by'],
+      investment_notes: ['note', 'text', 'text_sha256', 'created_by', 'validated_by'],
     },
   },
 ];
@@ -723,6 +724,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   investor_profiles: ['id', 'network_id', 'project_id', 'version', 'rental_target', 'deadline', 'sources', 'origin', 'created_at'],
   market_rents: ['import_id', 'insee_code', 'rent_m2_cents', 'lower_m2_cents', 'upper_m2_cents', 'observations'],
   investment_calculations: ['id', 'network_id', 'property_id', 'project_id', 'status', 'formula_version', 'created_at'],
+  investment_notes: ['id', 'network_id', 'calculation_id', 'project_id', 'origin', 'status', 'created_at', 'validated_at'],
   commune_rental_rules: ['id', 'network_id', 'insee_code', 'rule', 'effective_from', 'effective_until', 'source', 'source_date', 'recorded_at'],
   market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
 };

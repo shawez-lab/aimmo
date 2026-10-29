@@ -1,0 +1,643 @@
+/**
+ * La note d'investissement (M17, Y05), rédigée par l'IA derrière une interface, avec un secours écrit par le code, à
+ * partir du seul calcul (Y03) et de ses contraintes (Y04) [R126].
+ *
+ * « Jamais vu » : chaque nombre de la note est relié à une ligne du calcul (valeur, source, date, hypothèse), et la note
+ * rend, sous chaque paragraphe, la preuve de ses chiffres. Changer une hypothèse (vacance, travaux, loyer bas, central
+ * ou haut de l'intervalle) recalcule tout et réécrit la note entière ; la fourchette basse et haute du rendement est
+ * toujours montrée à côté du chiffre central. Aucun réseau, logiciel ni outil d'IA grand public ne rend une note
+ * d'investissement dont chaque chiffre porte sa preuve.
+ *
+ * Le code, pas l'IA, écrit ce qui doit y être : l'alerte d'un bien interdit à la location en tête [R124], les chiffres
+ * et leur fourchette, la liste des sources et des hypothèses, la mention exacte de l'ANIL et « peu d'observations »
+ * quand c'est le cas [R122], et le renvoi à un expert-comptable et à un courtier [R125]. Un paragraphe de l'IA qui porte
+ * un nombre absent du calcul, une promesse, un conseil fiscal ou financier personnalisé ou un mot interdit est refusé,
+ * et le secours prend le relais. La note n'est montrée au client qu'après validation par l'agent de la fiche [R126].
+ */
+import type { Acces } from '../acces/acces.ts';
+import type { Viewer } from '../acces/droits.ts';
+import { FORBIDDEN_TERMS } from '../annonces/annonce-sourcee.ts';
+import type { SqlDatabase } from '../db/sql.ts';
+import { plain } from '../envoi/texte.ts';
+import { appendEvent } from '../journal/journal.ts';
+import type { JournalStore } from '../journal/types.ts';
+import { computeYield, type CalculInvestissement, type Sourced, type YieldInputs, type YieldLine, type YieldResult } from './calcul.ts';
+import { energyAlertGate, type ConstraintSet, type Contraintes } from './contraintes.ts';
+import { ANIL_CITATION } from './loyers.ts';
+import type { ProfilInvestisseur } from './profil.ts';
+
+/** Le renvoi aux professionnels habilités, écrit par le code dans chaque note [R125]. */
+export const PROFESSIONAL_REFERRAL =
+  'Cette note n’est ni un conseil fiscal ni un conseil financier : pour la fiscalité, consultez un expert-comptable ; pour le financement, un courtier en crédit immobilier.';
+
+/** La mention de faible fiabilité du loyer de marché [R122]. */
+export const FEW_OBSERVATIONS = 'Peu d’observations : le loyer de marché de cette commune est moins sûr.';
+
+/**
+ * Les tournures refusées dans un texte d'investissement : promesses et conseils fiscaux ou financiers personnalisés,
+ * liste fermée et volontairement large [R125].
+ */
+export const FORBIDDEN_INVEST_PHRASES: readonly string[] = [
+  'garanti',
+  'garantie',
+  'garantis',
+  'garanties',
+  'sans risque',
+  'aucun risque',
+  'zero risque',
+  'assure',
+  'assuree',
+  'assures',
+  'certain',
+  'certaine',
+  'certitude',
+  'sur et certain',
+  'placement sur',
+  'valeur sure',
+  'defiscalisation',
+  'defiscaliser',
+  'defiscalise',
+  'reduction d impot',
+  'reductions d impot',
+  'avantage fiscal',
+  'avantages fiscaux',
+  'optimisation fiscale',
+  'optimiser vos impots',
+  'niche fiscale',
+  'credit d impot',
+  'pinel',
+  'denormandie',
+  'lmnp',
+  'lmp',
+  'deficit foncier',
+  'micro foncier',
+  'micro bic',
+  'vous devriez',
+  'vous devez acheter',
+  'il faut acheter',
+  'achetez',
+  'n hesitez pas a acheter',
+  'je vous conseille',
+  'nous vous conseillons',
+  'nous vous recommandons',
+  'je vous recommande',
+  'a ne pas manquer',
+  'affaire en or',
+  'enrichir',
+  'enrichissement',
+  'rentabilite assuree',
+  'revenu assure',
+  'revenus assures',
+  'plus value assuree',
+  'votre taux d endettement',
+  'votre capacite d emprunt',
+  'empruntez',
+];
+
+const key = (text: string): string => ` ${plain(text).replace(/[^a-z0-9]+/g, ' ').trim()} `;
+const PHRASE_KEYS = FORBIDDEN_INVEST_PHRASES.map((p) => key(p));
+const WORD_KEYS = FORBIDDEN_TERMS.map((p) => key(p));
+
+/** Les tournures interdites que porte un texte, dans l'ordre de la liste. */
+export function forbiddenPhrases(text: string): string[] {
+  const k = key(text);
+  return [
+    ...FORBIDDEN_INVEST_PHRASES.filter((_, i) => k.includes(PHRASE_KEYS[i]!)),
+    ...FORBIDDEN_TERMS.filter((_, i) => k.includes(WORD_KEYS[i]!)),
+  ];
+}
+
+/** Ce que l'IA reçoit : les lignes du calcul et les textes des contraintes, rien sur la personne. */
+export interface NoteFacts {
+  lines: YieldLine[];
+  grossYieldBp: { low: number; central: number; high: number };
+  netYieldBp: { low: number; central: number; high: number };
+  constraints: string[];
+}
+
+/** L'IA qui rédige. Absente, en panne ou refusée par le contrôle : la note de secours du code. */
+export interface NoteWriter {
+  write(facts: NoteFacts): Promise<{ paragraphs: string[] }>;
+}
+
+/** La preuve d'un nombre : la ligne du calcul d'où il vient. */
+export interface NumberProof {
+  text: string;
+  line: string;
+  value: number;
+  unit: YieldLine['unit'];
+  source: string;
+  asOf: string;
+  hypothesis: string;
+}
+
+export interface NoteParagraph {
+  text: string;
+  proofs: NumberProof[];
+}
+
+export type ParagraphProblem = { code: 'nombre_sans_source'; value: string } | { code: 'tournure_interdite'; value: string };
+
+export interface InvestmentNote {
+  /** Les alertes à lire avant tout, dans l'ordre [R124]. */
+  alerts: string[];
+  paragraphs: NoteParagraph[];
+  /** Les chiffres clés et leur fourchette, écrits par le code. */
+  figures: NoteParagraph[];
+  /** Chaque chiffre donné au calcul, avec sa source, sa date et son hypothèse [R126]. */
+  sources: { line: string; text: string }[];
+  /** Les mentions obligatoires : ANIL, peu d'observations, contraintes. */
+  mentions: string[];
+  referral: string;
+}
+
+const NUMBER = /\d{1,3}(?:[   ]\d{3})+(?:,\d+)?|\d+(?:,\d+)?/g;
+
+/** Un nombre écrit en français, en centièmes (« 3,89 » → 389, « 150 000 » → 15 000 000) ; plus de deux décimales : null. */
+function hundredths(text: string): number | null {
+  const [whole, frac = ''] = text.replace(/[   ]/g, '').split(',');
+  if (frac.length > 2) return null;
+  return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
+}
+
+/** Les valeurs, en centièmes, sous lesquelles une ligne du calcul peut être écrite dans un texte. */
+function writtenValues(line: YieldLine): number[] {
+  switch (line.unit) {
+    case 'cents':
+    case 'cents_per_m2':
+      // En euros au centime, ou arrondi à l'euro.
+      return [Math.abs(line.value), Math.round(Math.abs(line.value) / 100) * 100];
+    case 'bp':
+      // En pourcentage à deux décimales, ou à une décimale.
+      return [Math.abs(line.value), Math.round(Math.abs(line.value) / 10) * 10];
+    case 'm2_hundredths':
+      return [line.value, Math.round(line.value / 100) * 100];
+    case 'months':
+      return [line.value * 100];
+  }
+}
+
+/** Les sortes de lignes qu'un nombre peut être, d'après l'unité qui le suit. */
+function unitsAfter(after: string): YieldLine['unit'][] {
+  const u = after.replace(/^[ \u00a0\u202f]+/, '');
+  if (/^€\s*(?:\/|par)\s*m(?:²|2)/u.test(u)) return ['cents_per_m2'];
+  if (/^(?:€|euros?\b)/u.test(u)) return ['cents'];
+  if (/^(?:%|pour ?cent\b)/u.test(u)) return ['bp'];
+  if (/^(?:m²|m2\b|mètres? carrés?)/u.test(u)) return ['m2_hundredths'];
+  if (/^mois\b/u.test(u)) return ['months'];
+  return [];
+}
+
+/** Relie chaque nombre d'un paragraphe à une ligne du calcul ; un nombre sans ligne, ou une tournure interdite, est un problème. */
+export function traceParagraph(text: string, lines: readonly YieldLine[]): { proofs: NumberProof[]; problems: ParagraphProblem[] } {
+  const proofs: NumberProof[] = [];
+  const problems: ParagraphProblem[] = [];
+  for (const m of text.matchAll(NUMBER)) {
+    const h = hundredths(m[0]);
+    // L'unité écrite après le nombre dit quelle sorte de ligne il peut être : « % » un rendement ou un taux, « € » un
+    // montant, « €/m² » un loyer au m², « m² » une surface, « mois » une vacance. Sans unité, aucune source.
+    const after = text.slice((m.index ?? 0) + m[0].length);
+    const units = unitsAfter(after);
+    const line = h === null ? undefined : lines.find((l) => units.includes(l.unit) && writtenValues(l).includes(h));
+    if (!line) problems.push({ code: 'nombre_sans_source', value: m[0] });
+    else proofs.push({ text: m[0], line: line.key, value: line.value, unit: line.unit, source: line.source, asOf: line.asOf, hypothesis: line.hypothesis });
+  }
+  for (const p of forbiddenPhrases(text)) problems.push({ code: 'tournure_interdite', value: p });
+  return { proofs, problems };
+}
+
+const euros = (cents: number): string => {
+  const neg = cents < 0;
+  const abs = Math.abs(cents);
+  const whole = Math.floor(abs / 100)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const c = abs % 100;
+  return `${neg ? '−' : ''}${whole}${c === 0 ? '' : `,${String(c).padStart(2, '0')}`} €`;
+};
+const percent = (bp: number): string => {
+  const neg = bp < 0;
+  const abs = Math.abs(bp);
+  return `${neg ? '−' : ''}${Math.floor(abs / 100)},${String(abs % 100).padStart(2, '0')} %`;
+};
+const m2 = (h: number): string => `${Math.floor(h / 100)}${h % 100 === 0 ? '' : `,${String(h % 100).padStart(2, '0')}`} m²`;
+const day = (iso: string): string => {
+  const [y, mo, d] = iso.slice(0, 10).split('-');
+  return `${d}/${mo}/${y}`;
+};
+
+/** Une ligne du calcul écrite pour un lecteur. */
+export function formatLine(line: YieldLine): string {
+  switch (line.unit) {
+    case 'cents':
+      return euros(line.value);
+    case 'cents_per_m2':
+      return `${euros(line.value)}/m²`;
+    case 'bp':
+      return percent(line.value);
+    case 'm2_hundredths':
+      return m2(line.value);
+    case 'months':
+      return `${line.value} mois`;
+  }
+}
+
+const LABELS: Record<string, string> = {
+  price: 'Prix d’achat',
+  acquisitionFeesRateBp: 'Taux des frais d’acquisition',
+  acquisitionFees: 'Frais d’acquisition',
+  works: 'Travaux estimés',
+  totalCost: 'Coût total',
+  livingArea: 'Surface habitable',
+  marketRentM2: 'Loyer de marché au m²',
+  marketRentM2Low: 'Loyer de marché au m², bas',
+  marketRentM2High: 'Loyer de marché au m², haut',
+  monthlyRent: 'Loyer mensuel',
+  annualRent: 'Loyer annuel',
+  vacancyMonths: 'Vacance',
+  collectedRent: 'Loyer perçu sur l’année',
+  nonRecoverableCharges: 'Charges non récupérables par an',
+  propertyTax: 'Taxe foncière par an',
+  netIncome: 'Revenu net avant impôt',
+  grossYieldBp: 'Rendement brut',
+  netYieldBp: 'Rendement net avant impôt',
+  grossYieldBpLow: 'Rendement brut, bas',
+  grossYieldBpHigh: 'Rendement brut, haut',
+  netYieldBpLow: 'Rendement net avant impôt, bas',
+  netYieldBpHigh: 'Rendement net avant impôt, haut',
+};
+
+const lineOf = (lines: readonly YieldLine[], k: string): YieldLine => {
+  const l = lines.find((x) => x.key === k);
+  if (!l) throw new Error(`note : ligne ${k} absente du calcul`);
+  return l;
+};
+
+/** La note de secours, écrite par le code à partir du calcul seul. */
+export function fallbackParagraphs(facts: NoteFacts): string[] {
+  const l = (k: string) => formatLine(lineOf(facts.lines, k));
+  return [
+    `Le bien coûte ${l('totalCost')} au total : ${l('price')} de prix, ${l('acquisitionFees')} de frais d’acquisition et ${l('works')} de travaux estimés.`,
+    `Pour ${l('livingArea')}, le loyer de marché de ${l('marketRentM2')} donne ${l('monthlyRent')} par mois, soit ${l('annualRent')} par an. Avec ${l('vacancyMonths')} de vacance par an, ${l('nonRecoverableCharges')} de charges non récupérables et ${l('propertyTax')} de taxe foncière, le revenu net avant impôt est de ${l('netIncome')} par an.`,
+  ];
+}
+
+/** Les chiffres clés, toujours avec leur fourchette, écrits par le code. */
+function figures(facts: NoteFacts): NoteParagraph[] {
+  const lines = facts.lines;
+  const g = `Rendement brut : ${formatLine(lineOf(lines, 'grossYieldBp'))} (de ${formatLine(lineOf(lines, 'grossYieldBpLow'))} à ${formatLine(lineOf(lines, 'grossYieldBpHigh'))} selon le loyer de marché bas ou haut).`;
+  const n = `Rendement net avant impôt : ${formatLine(lineOf(lines, 'netYieldBp'))} (de ${formatLine(lineOf(lines, 'netYieldBpLow'))} à ${formatLine(lineOf(lines, 'netYieldBpHigh'))}).`;
+  return [g, n].map((text) => ({ text, proofs: traceParagraph(text, lines).proofs }));
+}
+
+/**
+ * La note entière, à partir des paragraphes de l'IA (ou du secours) et du calcul : alertes en tête, paragraphes avec
+ * leurs preuves, chiffres et fourchette, sources et hypothèses, mentions et renvoi.
+ */
+export function buildNote(paragraphs: readonly string[], facts: NoteFacts, constraints: ConstraintSet): InvestmentNote {
+  const traced = paragraphs.map((text) => ({ text, ...traceParagraph(text, facts.lines) }));
+  const given = facts.lines.filter((l) => l.source !== 'calcul');
+  const rent = facts.lines.find((l) => l.key === 'marketRentM2');
+  const mentions: string[] = [];
+  if (rent && rent.source.startsWith(ANIL_CITATION)) mentions.push(ANIL_CITATION + '.');
+  if (rent && /peu d.observations/i.test(rent.hypothesis)) mentions.push(FEW_OBSERVATIONS);
+  for (const c of constraints.constraints) if (!constraints.alertsFirst.includes(c.text)) mentions.push(c.text);
+  return {
+    alerts: [...constraints.alertsFirst],
+    paragraphs: traced.map(({ text, proofs }) => ({ text, proofs })),
+    figures: figures(facts),
+    sources: given.map((l) => ({
+      line: l.key,
+      text: `${LABELS[l.key] ?? l.key} : ${formatLine(l)}. Source : ${l.source}, au ${day(l.asOf)}. Hypothèse : ${l.hypothesis}.`,
+    })),
+    mentions,
+    referral: PROFESSIONAL_REFERRAL,
+  };
+}
+
+/** Le texte que le client lira, alertes en tête, la preuve de chaque chiffre sous son paragraphe. */
+export function renderNote(note: InvestmentNote): string {
+  const proof = (p: NoteParagraph): string =>
+    p.proofs.length === 0 ? '' : `\n${p.proofs.map((x) => `  · ${x.text} : ${LABELS[x.line] ?? x.line}, source ${x.source}, au ${day(x.asOf)} (${x.hypothesis})`).join('\n')}`;
+  return [
+    ...note.alerts,
+    ...note.paragraphs.map((p) => p.text + proof(p)),
+    ...note.figures.map((p) => p.text + proof(p)),
+    'Sources et hypothèses :',
+    ...note.sources.map((s) => `- ${s.text}`),
+    ...note.mentions,
+    note.referral,
+  ].join('\n\n');
+}
+
+export type NoteCheck = { ok: true } | { ok: false; rule: 'R124' | 'R125' | 'R126' | 'R122'; code: string };
+
+/** Le contrôle de la note entière avant de la ranger, puis avant de la montrer [R122, R124, R125, R126]. */
+export function checkNote(note: InvestmentNote, text: string, facts: NoteFacts, constraints: ConstraintSet): NoteCheck {
+  const gate = energyAlertGate(constraints, text);
+  if (!gate.ok) return { ok: false, rule: 'R124', code: gate.code };
+  for (const p of [...note.paragraphs, ...note.figures]) {
+    const { problems } = traceParagraph(p.text, facts.lines);
+    const bad = problems.find((x) => x.code === 'tournure_interdite');
+    if (bad) return { ok: false, rule: 'R125', code: 'tournure_interdite' };
+    if (problems.length > 0) return { ok: false, rule: 'R126', code: 'nombre_sans_source' };
+  }
+  if (note.sources.length === 0 || note.sources.some((s) => !/Source : .+Hypothèse : .+/.test(s.text))) return { ok: false, rule: 'R126', code: 'sans_sources' };
+  if (!text.includes(PROFESSIONAL_REFERRAL)) return { ok: false, rule: 'R125', code: 'sans_renvoi' };
+  const rent = facts.lines.find((l) => l.key === 'marketRentM2');
+  if (rent?.source.startsWith(ANIL_CITATION) && !text.includes(ANIL_CITATION)) return { ok: false, rule: 'R122', code: 'sans_mention_anil' };
+  if (rent && /peu d.observations/i.test(rent.hypothesis) && !text.includes(FEW_OBSERVATIONS)) return { ok: false, rule: 'R122', code: 'sans_peu_observations' };
+  return { ok: true };
+}
+
+/** Les hypothèses qu'on peut changer pour recalculer la note entière. */
+export interface NoteHypotheses {
+  vacancyMonths?: number;
+  worksCents?: number;
+  /** Le loyer de marché retenu : bas, central ou haut de l'intervalle. */
+  rent?: 'low' | 'central' | 'high';
+}
+
+/** Les entrées du calcul avec les hypothèses changées ; chaque changement dit son auteur et son hypothèse. */
+export function withHypotheses(inputs: YieldInputs, h: NoteHypotheses, actor: string, today: string): YieldInputs | null {
+  const out: YieldInputs = { ...inputs };
+  const said = (value: number, hypothesis: string): Sourced<number> => ({ value, source: `hypothese:${actor}`, asOf: today, hypothesis });
+  if (h.vacancyMonths !== undefined) {
+    if (!Number.isInteger(h.vacancyMonths) || h.vacancyMonths < 0 || h.vacancyMonths > 12) return null;
+    out.vacancyMonths = said(h.vacancyMonths, `vacance de ${h.vacancyMonths} mois par an, choisie pour la note`);
+  }
+  if (h.worksCents !== undefined) {
+    if (!Number.isSafeInteger(h.worksCents) || h.worksCents < 0 || h.worksCents > 100_000_000_000) return null;
+    out.works = said(h.worksCents, 'travaux choisis pour la note');
+  }
+  if (h.rent !== undefined && h.rent !== 'central' && h.rent !== 'low' && h.rent !== 'high') return null;
+  if (h.rent === 'low' || h.rent === 'high') {
+    const r = inputs.marketRent;
+    if (!r) return null;
+    const v = h.rent === 'low' ? r.value.lowerM2Cents : r.value.upperM2Cents;
+    out.marketRent = {
+      value: { centralM2Cents: v, lowerM2Cents: r.value.lowerM2Cents, upperM2Cents: r.value.upperM2Cents },
+      source: r.source,
+      asOf: r.asOf,
+      hypothesis: `${h.rent === 'low' ? 'borne basse' : 'borne haute'} de l’intervalle retenue pour la note${/peu d.observations/i.test(r.hypothesis) ? ', peu d’observations' : ''}`,
+    };
+  }
+  return out;
+}
+
+export interface StoredNote {
+  id: string;
+  calculationId: string;
+  projectId: string;
+  origin: 'ia' | 'secours';
+  note: InvestmentNote;
+  text: string;
+  status: 'a_valider' | 'validee';
+  createdBy: string;
+  createdAt: string;
+  validatedBy: string | null;
+  validatedAt: string | null;
+}
+
+interface NoteRow {
+  id: string;
+  network_id: string;
+  calculation_id: string;
+  project_id: string;
+  origin: 'ia' | 'secours';
+  note: string;
+  text: string;
+  text_sha256: string;
+  status: 'a_valider' | 'validee';
+  created_by: string;
+  created_at: string;
+  validated_by: string | null;
+  validated_at: string | null;
+}
+
+const toStored = (r: NoteRow): StoredNote => ({
+  id: r.id,
+  calculationId: r.calculation_id,
+  projectId: r.project_id,
+  origin: r.origin,
+  note: JSON.parse(r.note) as InvestmentNote,
+  text: r.text,
+  status: r.status,
+  createdBy: r.created_by,
+  createdAt: r.created_at,
+  validatedBy: r.validated_by,
+  validatedAt: r.validated_at,
+});
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export type NoteResult = { ok: true; value: StoredNote } | { ok: false; rule: 'R16' | 'R120' | 'R122' | 'R124' | 'R125' | 'R126'; code: string };
+
+export interface NotesInvestissementOptions {
+  writer?: NoteWriter;
+  /** Au-delà, l'IA est tenue pour absente et le secours prend le relais. */
+  writerTimeoutMs?: number;
+  now?: () => Date;
+  newId?: () => string;
+}
+
+export class NotesInvestissement {
+  private readonly writer: NoteWriter | undefined;
+  private readonly timeoutMs: number;
+  private readonly now: () => Date;
+  private readonly newId: () => string;
+
+  constructor(
+    private readonly db: SqlDatabase,
+    private readonly journal: JournalStore,
+    private readonly calculs: CalculInvestissement,
+    private readonly contraintes: Contraintes,
+    private readonly profils: ProfilInvestisseur,
+    options: NotesInvestissementOptions = {},
+  ) {
+    this.writer = options.writer;
+    this.timeoutMs = options.writerTimeoutMs ?? 20_000;
+    this.now = options.now ?? (() => new Date());
+    this.newId = options.newId ?? (() => crypto.randomUUID());
+  }
+
+  /**
+   * L'agent de la fiche fait rédiger la note d'un calcul complet pour un projet d'investissement, avec des
+   * hypothèses changées s'il le veut : tout est recalculé, la note entière réécrite. Rangée « à valider ».
+   */
+  async draft(
+    acces: Acces,
+    viewer: Viewer,
+    input: { calculationId: string; projectId: string; hypotheses?: NoteHypotheses; inseeCode?: string | null; energy?: { energyClass?: unknown; finalEnergyKwh?: unknown } },
+  ): Promise<NoteResult> {
+    const actor = `${String(viewer.role)}:${viewer.userId}`;
+    const access = await this.fiche(acces, viewer, input.projectId);
+    if (!access.ok) return access;
+    const calc = await this.calculs.get(viewer.networkId, input.calculationId);
+    if (!calc) return this.refused(viewer, input.projectId, 'unknown');
+    if (calc.projectId !== null && calc.projectId !== input.projectId) return this.refused(viewer, input.projectId, 'unknown');
+    const today = this.now().toISOString().slice(0, 10);
+    const inputs = input.hypotheses ? withHypotheses(calc.inputs, input.hypotheses, actor, today) : calc.inputs;
+    if (!inputs) return { ok: false, rule: 'R120', code: 'hypothese' };
+    const result: YieldResult = input.hypotheses ? computeYield(inputs, this.now().toISOString()) : calc.result;
+    if (result.status !== 'complet') return { ok: false, rule: 'R120', code: 'incomplet' };
+    const constraints = await this.constraintsFor(viewer.networkId, calc.propertyId, input.projectId, input.inseeCode ?? null, input.energy);
+    const facts: NoteFacts = {
+      lines: result.lines,
+      grossYieldBp: result.grossYieldBp,
+      netYieldBp: result.netYieldBp,
+      constraints: constraints.constraints.map((c) => c.text),
+    };
+
+    let origin: 'ia' | 'secours' = 'secours';
+    let paragraphs = fallbackParagraphs(facts);
+    let refusal: string | null = null;
+    if (this.writer) {
+      try {
+        const written = await this.withTimeout(this.writer.write(facts));
+        const ps = Array.isArray(written?.paragraphs) ? written.paragraphs.filter((p): p is string => typeof p === 'string' && p.trim() !== '') : [];
+        if (ps.length === 0 || ps.length > 8 || ps.some((p) => p.length > 1500)) refusal = 'forme';
+        else {
+          const problems = ps.flatMap((p) => traceParagraph(p, facts.lines).problems);
+          if (problems.length > 0) refusal = problems[0]!.code;
+          else {
+            paragraphs = ps.map((p) => p.trim());
+            origin = 'ia';
+          }
+        }
+      } catch {
+        refusal = 'panne';
+      }
+      if (refusal) {
+        await appendEvent(
+          this.journal,
+          { type: 'investir.note.secours', actor, subject: `project:${input.projectId}`, data: { calculation: calc.id, code: refusal } },
+          this.now,
+        );
+      }
+    }
+    const note = buildNote(paragraphs, facts, constraints);
+    const text = renderNote(note);
+    const check = checkNote(note, text, facts, constraints);
+    if (!check.ok) {
+      await appendEvent(this.journal, { type: 'investir.note.refuse', actor, subject: `project:${input.projectId}`, data: { rule: check.rule, code: check.code } }, this.now);
+      return check;
+    }
+    // Le calcul de la note, s'il a changé d'hypothèses, est rangé comme tout calcul : rejouable.
+    let calculationId = calc.id;
+    if (input.hypotheses) {
+      const again = await this.calculs.store(viewer, { propertyId: calc.propertyId, projectId: input.projectId, inputs, result });
+      calculationId = again;
+    }
+    const id = this.newId();
+    const createdAt = this.now().toISOString();
+    await this.db.run(
+      `INSERT INTO investment_notes (id, network_id, calculation_id, project_id, origin, note, text, text_sha256, status, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'a_valider', ?, ?)`,
+      [id, viewer.networkId, calculationId, input.projectId, origin, JSON.stringify(note), text, await sha256Hex(text), actor, createdAt],
+    );
+    await appendEvent(this.journal, { type: 'investir.note', actor, subject: `project:${input.projectId}`, data: { note: id, calculation: calculationId, origin } }, this.now);
+    return {
+      ok: true,
+      value: { id, calculationId, projectId: input.projectId, origin, note, text, status: 'a_valider', createdBy: actor, createdAt, validatedBy: null, validatedAt: null },
+    };
+  }
+
+  /**
+   * L'agent de la fiche, et lui seul, valide la note après l'avoir relue. Les contraintes sont recalculées à ce moment :
+   * une alerte apparue depuis la rédaction (fiche du bien changée) refuse la validation [R124, R126].
+   */
+  async validate(
+    acces: Acces,
+    viewer: Viewer,
+    noteId: string,
+    input: { textSha256: string; inseeCode?: string | null; energy?: { energyClass?: unknown; finalEnergyKwh?: unknown } },
+  ): Promise<NoteResult> {
+    const row = await this.db.first<NoteRow>('SELECT * FROM investment_notes WHERE id = ? AND network_id = ?', [noteId, viewer.networkId]);
+    if (!row) return this.refused(viewer, noteId, 'unknown');
+    if (viewer.role !== 'agent') return this.refused(viewer, row.project_id, 'role');
+    const access = await this.fiche(acces, viewer, row.project_id);
+    if (!access.ok) return access;
+    if (row.status === 'validee') return { ok: true, value: toStored(row) };
+    // L'agent valide ce qu'il a lu : le texte exact, par son empreinte.
+    if (input.textSha256 !== row.text_sha256) return { ok: false, rule: 'R126', code: 'texte_change' };
+    const calc = await this.calculs.get(viewer.networkId, row.calculation_id);
+    if (!calc || calc.result.status !== 'complet') return { ok: false, rule: 'R126', code: 'calcul' };
+    const constraints = await this.constraintsFor(viewer.networkId, calc.propertyId, row.project_id, input.inseeCode ?? null, input.energy);
+    const note = JSON.parse(row.note) as InvestmentNote;
+    const facts: NoteFacts = { lines: calc.result.lines, grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] };
+    const check = checkNote(note, row.text, facts, constraints);
+    if (!check.ok) {
+      await appendEvent(this.journal, { type: 'investir.note.refuse', actor: `agent:${viewer.userId}`, subject: `project:${row.project_id}`, data: { rule: check.rule, code: check.code, note: noteId } }, this.now);
+      return check;
+    }
+    const at = this.now().toISOString();
+    await this.db.run("UPDATE investment_notes SET status = 'validee', validated_by = ?, validated_at = ? WHERE id = ? AND status = 'a_valider'", [
+      `agent:${viewer.userId}`,
+      at,
+      noteId,
+    ]);
+    await appendEvent(this.journal, { type: 'investir.note.validee', actor: `agent:${viewer.userId}`, subject: `project:${row.project_id}`, data: { note: noteId } }, this.now);
+    const after = await this.db.first<NoteRow>('SELECT * FROM investment_notes WHERE id = ?', [noteId]);
+    return { ok: true, value: toStored(after!) };
+  }
+
+  /** Ce que le client peut lire : seulement une note validée par l'agent, sinon rien [R126]. */
+  async forClient(networkId: string, noteId: string): Promise<{ text: string; validatedAt: string } | null> {
+    const row = await this.db.first<NoteRow>("SELECT * FROM investment_notes WHERE id = ? AND network_id = ? AND status = 'validee'", [noteId, networkId]);
+    return row && row.validated_at ? { text: row.text, validatedAt: row.validated_at } : null;
+  }
+
+  /** Les contraintes du bien, avec la location visée du dernier profil de l'investisseur ; inconnue : il veut louer. */
+  private async constraintsFor(
+    networkId: string,
+    propertyId: string | null,
+    projectId: string,
+    inseeCode: string | null,
+    energy: { energyClass?: unknown; finalEnergyKwh?: unknown } | undefined,
+  ): Promise<ConstraintSet> {
+    const profile = await this.profils.current(projectId);
+    const cls = energy?.energyClass;
+    const kwh = energy?.finalEnergyKwh;
+    return this.contraintes.forProperty({
+      networkId,
+      propertyId,
+      inseeCode,
+      energyClass: typeof cls === 'string' && ['A', 'B', 'C', 'D', 'E', 'F', 'G'].includes(cls) ? (cls as 'A') : null,
+      finalEnergyKwh: typeof kwh === 'number' ? kwh : null,
+      energySource: 'dit par l’agent',
+      rentalTarget: profile?.profile.rentalTarget ?? null,
+    });
+  }
+
+  private async fiche(acces: Acces, viewer: Viewer, projectId: string): Promise<{ ok: true } | NoteResult> {
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refused(viewer, projectId, 'role');
+    const project = await this.db.first<{ person_id: string }>("SELECT person_id FROM projects WHERE id = ? AND network_id = ? AND kind = 'invest'", [projectId, viewer.networkId]);
+    if (!project) return this.refused(viewer, projectId, 'unknown');
+    const read = await acces.readFiche(viewer, project.person_id);
+    if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+    if (read.view !== 'full') return this.refused(viewer, projectId, 'not_assigned');
+    return { ok: true };
+  }
+
+  private async withTimeout<T>(p: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([p, new Promise<T>((_, reject) => (timer = setTimeout(() => reject(new Error('délai')), this.timeoutMs)))]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private async refused(viewer: Viewer, projectId: string, code: string): Promise<NoteResult> {
+    await appendEvent(
+      this.journal,
+      { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `project:${projectId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'investment_note', code } },
+      this.now,
+    );
+    return { ok: false, rule: 'R16', code };
+  }
+}
