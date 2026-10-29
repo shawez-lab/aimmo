@@ -5,8 +5,9 @@ CREATE TABLE IF NOT EXISTS partner_recommendations (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   partner_id TEXT NOT NULL REFERENCES partners (id) ON DELETE RESTRICT,
-  -- La fiche gardée de la personne recommandée au moment de la recommandation.
-  referred_id TEXT NOT NULL,
+  -- La fiche gardée de la personne recommandée au moment de la recommandation ; vide quand la recommandation est
+  -- tenue à l'écart sans fiche sûre (coordonnées de personnes différentes, ou déjà données avec une personne opposée).
+  referred_id TEXT,
   project_id TEXT,
   -- Le prénom tel que le partenaire l'a saisi.
   first_name TEXT CHECK (first_name IS NULL OR length(first_name) BETWEEN 1 AND 60),
@@ -22,7 +23,8 @@ CREATE TABLE IF NOT EXISTS partner_recommendations (
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
   UNIQUE (partner_id, referred_id),
-  CHECK (call_done_at IS NULL OR call_due_at IS NOT NULL)
+  CHECK (call_done_at IS NULL OR call_due_at IS NOT NULL),
+  CHECK (referred_id IS NOT NULL OR call_due_at IS NULL)
 );
 CREATE INDEX IF NOT EXISTS partner_recommendations_agent ON partner_recommendations (network_id, agent_id, call_due_at);
 CREATE INDEX IF NOT EXISTS partner_recommendations_referred ON partner_recommendations (referred_id);
@@ -38,3 +40,16 @@ WHEN NEW.id IS NOT OLD.id OR NEW.network_id IS NOT OLD.network_id OR NEW.partner
 BEGIN
   SELECT RAISE(ABORT, 'partner_recommendations : une recommandation rangée ne change plus');
 END;
+
+-- Les coordonnées d'une recommandation tenue à l'écart (personne opposée, ou coordonnées de fiches différentes), par
+-- leur seule empreinte : une recommandation suivante qui en reprend une est tenue à l'écart elle aussi [R02, R04, R77].
+CREATE TABLE IF NOT EXISTS partner_recommendation_withheld (
+  recommendation_id TEXT NOT NULL REFERENCES partner_recommendations (id) ON DELETE RESTRICT,
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  identifier_sha256 TEXT NOT NULL CHECK (length(identifier_sha256) = 64),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (recommendation_id, identifier_sha256)
+);
+CREATE INDEX IF NOT EXISTS partner_recommendation_withheld_print ON partner_recommendation_withheld (network_id, identifier_sha256);
+CREATE TRIGGER IF NOT EXISTS partner_recommendation_withheld_garde BEFORE DELETE ON partner_recommendation_withheld BEGIN SELECT RAISE(ABORT, 'partner_recommendation_withheld : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS partner_recommendation_withheld_fige BEFORE UPDATE ON partner_recommendation_withheld BEGIN SELECT RAISE(ABORT, 'partner_recommendation_withheld : une empreinte rangée ne change plus'); END;

@@ -231,6 +231,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     tables: {
       referrals: ['referrer_id', 'referred_id', 'first_name', 'agent_id', 'created_by'],
       partner_recommendations: ['referred_id', 'first_name', 'agent_id', 'created_by'],
+      partner_recommendation_withheld: ['identifier_sha256'],
       review_requests: ['person_id', 'agent_id'],
       after_sale_tasks: ['agent_id'],
       after_sale_choices: ['person_id', 'proof', 'recorded_by'],
@@ -649,6 +650,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   sale_commissions: ['file_id', 'network_id', 'mandate_id', 'due_on', 'status', 'created_at'],
   referrals: ['id', 'network_id', 'project_id', 'callable', 'call_due_at', 'call_done_at', 'created_at'],
   partner_recommendations: ['id', 'network_id', 'partner_id', 'project_id', 'consent_kind', 'consent_channel', 'consent_given_at', 'call_due_at', 'call_done_at', 'created_at'],
+  partner_recommendation_withheld: ['recommendation_id', 'network_id', 'created_at'],
   agent_review_links: ['id', 'network_id', 'set_at'],
   review_requests: ['file_id', 'network_id', 'side', 'due_day', 'status', 'rule', 'next_try_day', 'message_id', 'updated_at'],
   after_sale_tasks: ['id', 'network_id', 'file_id', 'kind', 'created_at', 'done_at'],

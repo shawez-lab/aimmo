@@ -63,7 +63,7 @@ async function setup() {
   };
   const consent = (over: Record<string, unknown> = {}) => ({ kind: 'message_ecrit', channel: 'phone', givenAt: new Date(clock - 2 * DAY).toISOString(), reference: 'SMS de la personne du 10 octobre, gardé par l’étude', ...over });
   const input = (over: Record<string, unknown> = {}) => ({ firstName: 'Hugo', phone: '06 11 22 33 44', email: 'hugo@example.test', projectKind: 'sell', consent: consent(), ...over });
-  const rows = () => db.all<{ id: string; referred_id: string; agent_id: string | null; call_due_at: string | null }>('SELECT id, referred_id, agent_id, call_due_at FROM partner_recommendations ORDER BY created_at, id');
+  const rows = () => db.all<{ id: string; referred_id: string | null; agent_id: string | null; call_due_at: string | null }>('SELECT id, referred_id, agent_id, call_due_at FROM partner_recommendations ORDER BY created_at, id');
   const persons = async () => (await db.first<{ n: number }>('SELECT COUNT(*) AS n FROM persons'))!.n;
   return { db, journal, store, fiche, acces, gagner, clients, mandats, network, other, alex, sam, dir, agent, as, partner, entrust, consent, input, rows, persons };
 }
@@ -76,7 +76,7 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(await t.gagner.recommend(t.as(p), t.input())).toEqual({ ok: true, value: { recorded: true } });
     const [row] = await t.rows();
     expect(row).toMatchObject({ agent_id: t.alex.id, call_due_at: expect.any(String) });
-    const view = await t.fiche.view(row!.referred_id);
+    const view = await t.fiche.view(row!.referred_id!);
     expect(view.person).toMatchObject({ first_name: 'Hugo', agent_id: t.alex.id });
     expect(view.sources).toEqual([expect.objectContaining({ channel: 'recommandation', detail: 'recommandé par un partenaire' })]);
     expect(view.consents).toEqual([expect.objectContaining({ purpose: REFERRAL_PURPOSE, channel: 'phone', proof: expect.stringMatching(/^message écrit de la personne : SMS .* \(transmis par un partenaire\)$/) })]);
@@ -86,7 +86,7 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     const entries = await t.journal.all();
     expect(entries.filter((e) => e.type === 'recommandation.alerte')).toEqual([expect.objectContaining({ subject: `agent:${t.alex.id}` })]);
     // La source suit jusqu'au mandat, reprise de la fiche [R38].
-    expect(await t.mandats.record(t.acces, t.agent(), { personId: row!.referred_id, signedAt: new Date(clock) })).toMatchObject({ ok: true, source: 'referral', fromFiche: true });
+    expect(await t.mandats.record(t.acces, t.agent(), { personId: row!.referred_id!, signedAt: new Date(clock) })).toMatchObject({ ok: true, source: 'referral', fromFiche: true });
     // Aucune coordonnée ni prénom au journal [R13].
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/hugo@|example\.test|Hugo|06 11/);
     expect((await verifyChain(await t.journal.all())).ok).toBe(true);
@@ -171,8 +171,54 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     // Alex ne voit pas la recommandation suivie par Sam [R16].
     const alexList = await t.gagner.toCall(t.agent());
     expect(alexList.ok && alexList.value.map((r) => r.firstName)).toEqual(['Hugo']);
-    // Une seconde fois la même personne par le même partenaire : refusée, rien de plus.
-    expect(await t.gagner.recommend(t.as(p), t.input())).toEqual({ ok: false, rule: null, code: 'already_recommended' });
+    // Une seconde fois la même personne par le même partenaire : même réponse, rien de plus.
+    expect(await t.gagner.recommend(t.as(p), t.input())).toEqual({ ok: true, value: { recorded: true } });
+    expect(await t.rows()).toHaveLength(3);
+  });
+
+  it('[R142] [R02] des coordonnées de deux personnes différentes : aucun accord, aucune tâche, sur aucune fiche', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    await t.entrust(p);
+    const x = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Xavier' });
+    await t.store.addIdentifier({ networkId: t.network.id, agentId: t.alex.id, personId: x.id, kind: 'email', value: 'x@example.test' });
+    const y = await t.store.createPerson({ networkId: t.network.id, agentId: t.sam.id, firstName: 'Yann' });
+    await t.store.addIdentifier({ networkId: t.network.id, agentId: t.sam.id, personId: y.id, kind: 'phone', value: '06 33 44 55 66' });
+    await t.store.addExclusion({ networkId: t.network.id, agentId: t.sam.id, personId: y.id, reason: 'stop', notedAt: new Date(clock - DAY) });
+    // Le mail de X, le numéro de Y, un accord par téléphone : la preuve ne se rattache à personne.
+    expect(await t.gagner.recommend(t.as(p), t.input({ email: 'x@example.test', phone: '06 33 44 55 66' }))).toEqual({ ok: true, value: { recorded: true } });
+    for (const who of [x.id, y.id]) {
+      const v = await t.fiche.view(who);
+      expect([v.projects.length, v.sources.length, v.consents.length], who).toEqual([0, 0, 0]);
+    }
+    expect((await t.rows()).map((r) => [r.referred_id, r.agent_id, r.call_due_at])).toEqual([[null, null, null]]);
+    expect(await t.gagner.toCall(t.agent())).toEqual({ ok: true, value: [] });
+    expect(await t.gagner.toCall(t.agent(t.sam.id))).toEqual({ ok: true, value: [] });
+  });
+
+  it('[R77] [R04] une coordonnée donnée avec une personne exclue tient à l’écart la recommandation suivante, avec la même réponse', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    await t.entrust(p);
+    const omar = await t.store.createPerson({ networkId: t.network.id, agentId: t.sam.id, firstName: 'Omar' });
+    await t.store.addIdentifier({ networkId: t.network.id, agentId: t.sam.id, personId: omar.id, kind: 'phone', value: '06 33 44 55 66' });
+    await t.store.addExclusion({ networkId: t.network.id, agentId: t.sam.id, personId: omar.id, reason: 'stop', notedAt: new Date(clock - DAY) });
+    const before = await t.persons();
+    const first = await t.gagner.recommend(t.as(p), t.input({ firstName: 'Omar', phone: '06 33 44 55 66', email: 'omar@example.test' }));
+    // Le même mail avec un autre numéro : sans l'empreinte, une fiche neuve serait créée et appelée.
+    const second = await t.gagner.recommend(t.as(p), t.input({ firstName: 'Omar', phone: '06 77 88 99 00', email: 'omar@example.test' }));
+    // Les mêmes envois pour une personne libre : mêmes réponses, le partenaire n'apprend rien [R77].
+    const free1 = await t.gagner.recommend(t.as(p), t.input({ firstName: 'Lina', phone: '06 12 12 12 12', email: 'lina@example.test' }));
+    const free2 = await t.gagner.recommend(t.as(p), t.input({ firstName: 'Lina', phone: '06 34 34 34 34', email: 'lina@example.test' }));
+    expect([first, second]).toEqual([free1, free2]);
+    expect(await t.persons()).toBe(before + 1);
+    const list = await t.gagner.toCall(t.agent());
+    expect(list.ok && list.value.map((r) => r.firstName)).toEqual(['Lina']);
+    const omarView = await t.fiche.view(omar.id);
+    expect([omarView.identifiers.length, omarView.consents.length]).toEqual([1, 0]);
+    // Aucune coordonnée en clair dans la table des empreintes ni au journal [R13].
+    expect(JSON.stringify(await t.db.all('SELECT * FROM partner_recommendation_withheld'))).not.toMatch(/omar|06 /);
+    expect(JSON.stringify(await t.journal.all())).not.toMatch(/omar@|lina@|06 /);
   });
 
   it('[R16] [R73] seul un partenaire du réseau, aux justificatifs valides, recommande ; la direction attribue ce qui n’a pas d’agent', async () => {

@@ -79,6 +79,16 @@ export interface RecommandationsGagnerOptions {
   newId?: () => string;
 }
 
+/**
+ * L'empreinte d'une coordonnée, propre au réseau : elle retrouve une coordonnée déjà donnée avec une personne opposée,
+ * sans la garder en clair [R13].
+ */
+export async function identifierPrint(networkId: string, kind: IdentifierKind, value: string): Promise<string> {
+  const data = new TextEncoder().encode(`${networkId}|${kind}|${normalizeIdentifier(kind, value) ?? value}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+  return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export class RecommandationsGagner {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -183,16 +193,29 @@ export class RecommandationsGagner {
 
     const networkId = viewer.networkId;
     const typedName = typeof firstName === 'string' ? firstName.trim() : null;
-    let referredId: string | null = null;
+    // Chaque coordonnée donnée est cherchée : si elles mènent à des fiches différentes, ou si l'une mène à une personne
+    // opposée, la preuve ne peut pas être rattachée sûrement à une seule personne. Rien n'est alors ajouté à aucune
+    // fiche, aucune tâche n'est créée, et la réponse reste la même [R142, R02, R04, R77].
+    const roots: string[] = [];
     for (const id of ids) {
-      const found = await this.fiche.findByIdentifier(networkId, id.kind, id.value);
-      if (found.length > 0) {
-        referredId = await this.fiche.rootOf(found[0]!.id);
-        break;
+      for (const found of await this.fiche.findByIdentifier(networkId, id.kind, id.value)) {
+        const root = await this.fiche.rootOf(found.id);
+        if (!roots.includes(root)) roots.push(root);
       }
     }
-    if (referredId && (await this.db.first('SELECT 1 FROM partner_recommendations WHERE partner_id = ? AND referred_id = ?', [viewer.userId, referredId]))) return stop(null, 'already_recommended');
-    const opposed = referredId !== null && (await this.opposed(referredId, at));
+    const prints = await Promise.all(ids.map((i) => identifierPrint(networkId, i.kind, i.value)));
+    // Une coordonnée déjà donnée avec une personne opposée garde la recommandation à l'écart, même sur une fiche neuve.
+    const heldBack = await this.db.first(`SELECT 1 FROM partner_recommendation_withheld WHERE network_id = ? AND identifier_sha256 IN (${prints.map(() => '?').join(', ')}) LIMIT 1`, [networkId, ...prints]);
+    let opposed = roots.length > 1 || heldBack !== null;
+    for (const root of roots) if (!opposed && (await this.opposed(root, at))) opposed = true;
+    let referredId: string | null = roots[0] ?? null;
+    const silent = async (code: string): Promise<{ ok: true; value: { recorded: true } }> => {
+      // Le refus est au journal ; le partenaire reçoit la même réponse qu'une recommandation rangée [R77].
+      await appendEvent(this.journal, { type: 'recommandation.refusee', actor: this.actor(viewer), subject: `partner:${viewer.userId}`, data: { rule: null, code, origin: 'partner' } }, this.now);
+      return { ok: true, value: { recorded: true } };
+    };
+    if (!opposed && referredId && (await this.db.first('SELECT 1 FROM partner_recommendations WHERE partner_id = ? AND referred_id = ?', [viewer.userId, referredId]))) return silent('already_recommended');
+    if (opposed) referredId = roots.length === 1 ? roots[0]! : null;
     const followedBy = referredId ? ((await this.fiche.view(referredId)).members.map((m) => m.agent_id).find((a) => a !== null) ?? null) : null;
     // L'agent qui suit la personne ; sinon celui qui a confié en dernier une mise en relation à ce partenaire et est
     // toujours en activité ; sinon personne, et la direction attribue.
@@ -237,12 +260,17 @@ export class RecommandationsGagner {
     const { changes } = await this.db.run(
       `INSERT INTO partner_recommendations (id, network_id, partner_id, referred_id, project_id, first_name, agent_id, consent_kind, consent_channel, consent_given_at, call_due_at, call_done_at, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT (partner_id, referred_id) DO NOTHING`,
-      [id, networkId, viewer.userId, referredId!, projectId, typedName, opposed ? null : agentId, kind, channel, givenAt.toISOString(), due, this.actor(viewer), at.toISOString()],
+      [id, networkId, viewer.userId, referredId, projectId, typedName, opposed ? null : agentId, kind, channel, givenAt.toISOString(), due, this.actor(viewer), at.toISOString()],
     );
-    if (changes !== 1) return stop(null, 'already_recommended');
+    if (changes !== 1) return silent('already_recommended');
+    if (opposed) {
+      for (const print of [...new Set(prints)]) {
+        await this.db.run('INSERT INTO partner_recommendation_withheld (recommendation_id, network_id, identifier_sha256, created_at) VALUES (?, ?, ?, ?)', [id, networkId, print, at.toISOString()]);
+      }
+    }
     await appendEvent(
       this.journal,
-      { type: 'recommandation.rangee', actor: this.actor(viewer), subject: `person:${referredId}`, data: { rule: 'R142', origin: 'partner', call: !opposed } },
+      { type: 'recommandation.rangee', actor: this.actor(viewer), subject: referredId === null ? null : `person:${referredId}`, data: { rule: 'R142', origin: 'partner', call: !opposed } },
       this.now,
     );
     if (!opposed) {
