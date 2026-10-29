@@ -447,6 +447,19 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       rental_fees: ['facts_version', 'zone', 'tenant_cents', 'tenant_inventory_cents', 'landlord_cents', 'landlord_inventory_cents', 'deposit_cents', 'recorded_by'],
     },
   },
+  {
+    id: 'investir',
+    finalite: 'Accompagner un investisseur locatif : son profil de projet, sans aucune évaluation de sa solvabilité, pour lui proposer des biens avec un rendement calculé par le code.',
+    baseLegale: 'mesures_precontractuelles',
+    personnes: ['Investisseurs'],
+    donnees: ['Profil du projet : budget, apport déclaré, location visée, secteurs, rendement brut attendu, délai, chaque champ avec sa source (jamais de revenus, d\'emploi, de patrimoine ni de crédit)'],
+    duree: '3 ans après le dernier contact du prospect ; la durée du mandat puis 5 ans pour un client.',
+    destinataires: ['L\'agent de la fiche', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
+    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
+    tables: {
+      investor_profiles: ['person_id', 'budget_cents', 'declared_down_payment_cents', 'sectors', 'target_gross_yield_bp'],
+    },
+  },
 ];
 
 /** Les tables sans aucune donnée personnelle, chacune avec sa raison. */
@@ -703,6 +716,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   rental_lease_copy_deliveries: ['lease_id', 'party', 'sent_at'],
   rental_management_links: ['id', 'listing_id', 'network_id', 'referral_id', 'partner_id', 'linked_at'],
   rental_fees: ['listing_id', 'version', 'insee_code', 'tenant_ceiling_cents', 'inventory_ceiling_cents', 'deposit_ceiling_cents', 'recorded_at'],
+  investor_profiles: ['id', 'network_id', 'project_id', 'version', 'rental_target', 'deadline', 'sources', 'origin', 'created_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
