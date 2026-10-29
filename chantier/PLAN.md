@@ -1664,3 +1664,82 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Objectif : dans l'application de l'agent, l'écran « Louer » : contrôle du logement, annonce, candidatures dans leur ordre d'arrivée, bail, état des lieux pièce par pièce sur téléphone.
 - Critères : l'écran lit seulement par les routes `/v1/location` [R16] ; aucune liste de candidats n'est triée ni notée [R105] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
 - Attend : rien.
+
+**M17 · Investir, septembre 2027.**
+
+Voie : 2
+
+Découpé le 2026-10-29 par la voie 2 : M15 est fini (W11 fusionnée) ; septembre 2027 compte M16 et M17, M16 est laissé à la voie 1 qui suit le plan dans l'ordre, M17 n'est commencé par aucune voie ; ses dépendances (M04, M06, M15) sont faites. Ids `Y..`. Cahier : M17 Investir ; Feuille de route, septembre 2027 : « Rendement de 10 biens identique au calcul manuel » ; critères « chaque note affiche ses sources et ses hypothèses », « un bien classé G porte l'alerte avant toute proposition à un investisseur qui veut louer ».
+Décidé, lecture prudente : un investisseur est une personne de la fiche client avec un projet de type `invest` ; son profil (budget, apport déclaré, location visée vide, meublée ou colocation, secteurs, rendement attendu, délai) est rangé en listes fermées et en nombres, versionné, chaque champ avec sa source, jamais inventé ; aucune évaluation de sa solvabilité, aucun champ de revenus, de patrimoine ni de crédit [R123, R14]. Le rendement est calculé par le code seul, en centimes et en points de base, par des formules écrites (brut = loyer annuel de marché / coût total ; net avant impôt = loyer annuel moins charges non récupérables, taxe foncière déclarée, provision pour vacance réglée / coût total ; coût total = prix + frais d'acquisition + travaux estimés), jamais par l'IA ; chaque chiffre rendu porte sa source, sa date et l'hypothèse qui l'a fait [R120, R121]. Le loyer de marché est une estimation lue dans une table de la base : la Carte des loyers de l'ANIL (indicateur par commune, intervalle de prévision, nombre d'observations, millésime), importée par la direction avec sa source et sa date, ou, à défaut, les loyers des mises en location du réseau (M15) quand il y en a au moins 5 dans la commune sur 24 mois ; jamais écrit dans le code ni appelé en direct ; une commune à peu d'observations ou dont l'intervalle est large le dit dans la note ; la source est citée telle que l'ANIL la demande, « Estimations ANIL, à partir des données du Groupe SeLoger et de leboncoin » [R122]. Les contraintes (classe énergie et date d'interdiction de louer de M15, copropriété, règle de la commune rangée par la direction avec sa source) sont signalées sur chaque calcul ; un bien classé G (ou au-delà du seuil de consommation) porte l'alerte avant toute proposition à un investisseur qui veut louer, et aucune alerte ni note ne le propose sans elle [R124, R100]. Aucun texte n'est un conseil fiscal ni financier personnalisé ni une promesse de rendement : une liste fermée de tournures (« garanti », « sans risque », « assuré », « défiscalisation », « vous devriez », etc.) est refusée, et chaque note renvoie à un professionnel habilité pour la fiscalité et le financement [R125]. La note d'investissement est rédigée par l'IA derrière une interface, à partir du calcul seul, chaque nombre de la note relié à un champ du calcul, avec secours sans IA ; elle n'est montrée au client qu'après validation par l'agent [R126]. Les alertes de biens du fichier commun ne partent qu'aux investisseurs qui les ont demandées (accord rangé), par le contrôle central des envois, en mode essai [R03, R26]. Après l'achat : mise en location par M15 et partenaires de M18 par leur mise en relation, rien de neuf. Les numéros de règles R120 à R129 et de migrations à partir de `1101` sont réservés à M17 (R110 à R119 et `1001` restent pour M16). Le code vit dans `packages/core/src/investir/`, ses routes dans `packages/api/src/investir.ts` ; les fichiers du socle (droits d'accès, `index.ts`, `app.ts`, planificateur, Worker, contrôle central des envois) ne changent que par Y08, confiée à la voie 1.
+
+### Y01 · Profil investisseur, sans solvabilité
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien (M02, M03 faits)
+- Cahier : M17, « Profil investisseur », « Règles ».
+- Objectif : le profil d'un projet `invest` (migration `1101`) : budget en centimes, apport déclaré, location visée (vide, meublée, colocation), secteurs (codes INSEE), rendement brut attendu en points de base, délai (liste fermée) ; chaque version rangée avec sa source par champ (`agent`, `client_dit`, `qualification`) ; sous les droits de la fiche [R16].
+- Critères : un champ inconnu ou hors liste est refusé, jamais ignoré ; aucun champ de revenus, d'emploi, de patrimoine, de crédit ni de solvabilité n'existe dans la table ni dans l'entrée (test qui énumère les colonnes) [R123] ; une version ne change plus, la suivante la remplace [R17] ; un autre agent est refusé, au journal [R16].
+- Attend : rien.
+
+### Y02 · Loyers de marché importés, avec source, date et fiabilité
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y01
+- Cahier : M17, « Rendement calculé par le code », « Règles », « Branchements ».
+- Objectif : la table des loyers de marché (migration `1102`) : commune, type (appartement, maison, par nombre de pièces quand le millésime le donne), loyer au m² charges comprises, bornes de l'intervalle de prévision, nombre d'observations, millésime, source ; import par la direction d'un fichier CSV au format de la Carte des loyers de l'ANIL (jeu de test inventé), versionné, rien effacé ; repli sur les loyers des mises en location du réseau (au moins 5 dans la commune sur 24 mois, réglage) ; la réponse dit toujours sa source et sa fiabilité (« peu d'observations » sous 30 observations ou intervalle plus large que 40 % du loyer, réglages).
+- Critères : un loyer n'est jamais écrit dans le code ni lu en direct sur Internet [R122] ; un fichier mal formé est refusé ligne à ligne sans rien ranger ; la mention de source ANIL est exactement celle demandée [R122] ; sans donnée, la réponse est « inconnu », jamais une valeur inventée [R10].
+- Attend : H34 pour la mise en service (fichier réel de la Carte des loyers) ; les tests n’en ont pas besoin.
+
+### Y03 · Rendement brut et net calculé par le code, chaque chiffre avec son hypothèse
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y02
+- Cahier : M17, « Rendement calculé par le code » ; Feuille de route, septembre 2027.
+- Objectif : le calcul d'un bien pour un profil : prix (du bien ou saisi), frais d'acquisition (barème réglé, ancien ou neuf), travaux estimés (saisis avec leur source, ou issus de M04), loyer de marché (Y02) × surface, charges non récupérables et taxe foncière déclarées, vacance réglée (en mois par an) ; rendement brut et net avant impôt en points de base, arrondis par une règle écrite ; chaque ligne du résultat porte `value`, `source`, `asOf`, `hypothesis` ; le calcul est rangé, rejouable à l'identique depuis ses entrées [R120, R121].
+- Critères : 10 biens tests inventés donnent au centime et au point de base près les rendements d'un calcul fait à la main, écrit dans le test ligne par ligne [R120] ; une entrée manquante rend « incomplet » avec la liste de ce qui manque, jamais un rendement [R10] ; aucun appel à l'IA dans le calcul [R121] ; aucun impôt ni régime fiscal n'est calculé [R125].
+- Attend : rien.
+
+### Y04 · Contraintes signalées : énergie, copropriété, règles de la commune
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y03
+- Cahier : M17, « Contraintes signalées » ; M15 (règles d'énergie).
+- Objectif : sur chaque calcul, les contraintes : classe énergie et date d'interdiction de louer, par le code de M15 (`banDate`, seuil de 450 kWh/m²/an), copropriété (lue dans la fiche du bien de M07), règle de la commune (autorisation préalable de mise en location, permis de louer, encadrement des loyers, changement d'usage) rangée par la direction avec sa source et sa date (migration `1103`), jamais écrite dans le code.
+- Critères : un bien classé G, ou au-delà du seuil, porte l'alerte « interdit à la location » avant toute proposition à un investisseur dont la location visée n'est pas « aucune » ; aucune note, aucune alerte, aucune proposition ne peut être faite sans cette alerte (test sur chaque chemin) [R124, R100] ; F et E portent leur date à venir ; une règle de commune sans source est refusée.
+- Attend : rien.
+
+### Y05 · Note d'investissement par l'IA, validée par l'agent (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y04
+- Cahier : M17, « Note d'investissement », « L'IA et l'humain », « Règles ».
+- Objectif : la note rédigée par l'IA derrière une interface, avec secours sans IA, à partir du seul calcul et de ses contraintes ; **Jamais vu** : chaque nombre et chaque affirmation de la note est relié à une ligne du calcul (valeur, source, date, hypothèse), et la note rend, sous chaque paragraphe, la preuve de ses chiffres ; changer une hypothèse (vacance, travaux, loyer bas ou haut de l'intervalle) recalcule la note entière, et la fourchette basse/haute du rendement est toujours montrée à côté du chiffre central ; validation par l'agent seul avant tout envoi.
+- Critères : un nombre absent du calcul, une tournure de la liste fermée (promesse, conseil fiscal ou financier personnalisé) ou une note sans sources ni hypothèses est refusée, et le secours prend le relais [R125, R126] ; la note cite la mention ANIL exacte quand le loyer vient de l'ANIL, et dit « peu d'observations » quand c'est le cas [R122] ; la note renvoie à un expert-comptable pour la fiscalité et à un courtier pour le financement [R125] ; la note d'un bien classé G porte l'alerte en tête [R124].
+- Attend : rien (IA derrière une interface, faux dans les tests ; H13 pour l'IA réelle).
+
+### Y06 · Alertes aux investisseurs qui les ont demandées
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y05
+- Cahier : M17, « Alertes » ; M08 (alertes aux acquéreurs).
+- Objectif : quand un bien diffusable du fichier commun correspond au profil (secteur, budget, location visée, rendement brut attendu calculé par Y03), un texte d'alerte est préparé pour les seuls investisseurs dont l'accord aux alertes est rangé, avec le calcul et ses contraintes ; il passe par le contrôle central des envois, en mode essai.
+- Critères : aucune alerte sans accord rangé [R03] ; un bien classé G n'est jamais proposé sans l'alerte, et jamais à un investisseur qui veut louer sans elle [R124] ; jamais deux fois le même bien à la même personne [R05] ; le texte passe le contrôle des tournures [R125] ; rien ne part réellement [R26].
+- Attend : rien.
+
+### Y07 · Routes de M17 et parcours de 10 biens tests
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y06
+- Cahier : M17 ; Architecture technique, API.
+- Objectif : `packages/api/src/investir.ts` : routes `/v1/investir` (profil, import des loyers par la direction, calcul, contraintes, note, validation, alertes), rôle contrôlé avant le corps, refus au journal ; parcours de bout en bout de 10 biens tests ; après l'achat, ouverture de la mise en location de M15 et proposition de partenaires de M18 par leurs routes existantes.
+- Critères : chaque route refuse tout rôle non admis avant de lire le corps [R16] ; les 10 biens tests rendent les rendements du calcul manuel [R120] ; chaque note rendue affiche sources et hypothèses [R126].
+- Attend : rien.
+
+### Y08 · Branchement de M17 dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : Y07
+- Cahier : M17 ; Branchements.
+- Objectif : exporter `investir` depuis `@aimmo/core` ; ajouter ses routes à `app.ts` ; lancer au planificateur le passage des alertes aux investisseurs ; passer leurs textes par `envoi/controle.ts`, en mode essai.
+- Critères : chaque alerte redécidée au moment de l'envoi par le contrôle central ; un passage par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
+- Attend : rien.
+
+### Y09 · Écran « Investir » dans l'application
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y07
+- Cahier : M17 ; exigence de design (protocole, section 9).
+- Objectif : dans l'application de l'agent, l'écran « Investir » : profil, calcul d'un bien avec ses lignes et leurs sources, curseurs d'hypothèses (vacance, travaux, loyer bas ou haut), contraintes, note à relire et valider.
+- Critères : l'écran lit seulement par les routes `/v1/investir` [R16] ; aucun chiffre n'est calculé sur le téléphone, tout vient du code du serveur [R121] ; l'alerte d'un bien classé G est en tête [R124] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
+- Attend : rien.
