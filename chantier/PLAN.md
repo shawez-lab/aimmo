@@ -1822,7 +1822,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X06 · Supports imprimés à sa marque
 - Statut : en cours (voie 2)
-- Avancement (2026-10-29) : proposition #186 prête, empilée sur X05 (#184) ; impression vérifiée sous Chromium (une page par support, deux pour la fiche, rien hors de la feuille) ; suite complète verte en local (1780) ; en attente des vérifications GitHub (H35).
+- Avancement (2026-10-29) : proposition #186 prête, empilée sur X05 (#184) ; impression vérifiée sous Chromium (une page par support, deux pour la fiche, rien hors de la feuille) ; suite complète verte en local (1780) ; en attente des vérifications GitHub (H35). Codex : 1 P0 (mentions sur le panneau) et 1 P1 (impression testée sous Chromium, `supports-chromium.test.ts`, sauté là où Playwright manque, donc sur GitHub) corrigés.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X02
 - Cahier : M19, « Supports imprimés ».
 - Objectif : fiche du bien, panneau, flyer, carte de visite et lettre de quartier, rendus par le code en pages imprimables (A4, A5, carte) sur le système de design, depuis la version publiée du bien et la fiche de l'agent, avec les mentions obligatoires de M07.
@@ -1849,6 +1849,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X09 · Routes de M19
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #188 prête, empilée sur X08 (#187) ; 21 routes, rôle contrôlé avant le corps, parcours de 10 biens du guide à la publication en essai ; relecture forte sans P0 ni P1 ; suite complète verte en local ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X08
 - Cahier : M19 ; Architecture technique, API.
 - Objectif : `packages/api/src/studio.ts` : routes `/v1/studio` (guide, corrections et certificat, montage, plan, publications et validation, supports, bibliothèque), rôle contrôlé avant le corps, refus au journal ; certificat public sans donnée personnelle.
