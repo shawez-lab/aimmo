@@ -362,6 +362,10 @@ export class RecommandationsGagner {
     const agent = await this.db.first('SELECT 1 FROM agents WHERE id = ? AND network_id = ? AND status = ?', [agentId, viewer.networkId, 'active']);
     if (!agent) return { ok: false, rule: null, code: 'bad_agent' };
     const members = await this.fiche.membersOf(await this.fiche.rootOf(row.referred_id));
+    // La personne a pu être donnée à un agent entre-temps (par une autre recommandation) : la tâche va à lui seul, sinon
+    // personne ne pourrait la voir ni la clore [R16].
+    const owners = (await this.db.all<{ agent_id: string | null }>(`SELECT agent_id FROM persons WHERE id IN (${members.map(() => '?').join(', ')})`, members)).map((p) => p.agent_id).filter((a): a is string => a !== null);
+    if (owners.some((o) => o !== agentId)) return { ok: false, rule: null, code: 'followed_by_other' };
     const at = this.now().toISOString();
     await this.db.run(`UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${members.map(() => '?').join(', ')}) AND agent_id IS NULL`, [agentId, at, ...members]);
     // Le projet né de la recommandation passe avec la personne : sans lui, l'agent ne pourrait pas y travailler.
