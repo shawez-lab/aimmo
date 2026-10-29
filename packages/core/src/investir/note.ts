@@ -215,6 +215,19 @@ const LINE_WORDS: { re: RegExp; keys: string[] }[] = [
   { re: /\bvacance\b/, keys: ['vacancyMonths'] },
 ];
 
+/** Les montants d'une ligne du calcul qui valent par mois, et ceux qui valent par an. */
+const MONTHLY: readonly string[] = ['monthlyRent'];
+const YEARLY: readonly string[] = ['annualRent', 'collectedRent', 'netIncome', 'nonRecoverableCharges', 'propertyTax'];
+
+/** La période que dit un membre de phrase : « par mois », « mensuel » ; « par an », « annuel » ; sinon `null`. */
+function periodOf(clause: string): 'mois' | 'an' | null {
+  const p = plain(clause);
+  const month = /\b(?:mensuels?|mensuelles?|par mois|chaque mois|\/\s?mois)\b/.test(p);
+  const year = /\b(?:annuels?|annuelles?|par an|chaque annee|sur l.annee|\/\s?an)\b/.test(p);
+  if (month && year) return null;
+  return month ? 'mois' : year ? 'an' : null;
+}
+
 /** Les lignes que nomme un membre de phrase ; aucun mot reconnu : `null`. */
 function linesNamedBy(clause: string): Set<string> | null {
   const p = plain(clause);
@@ -247,11 +260,19 @@ export function traceParagraph(text: string, lines: readonly YieldLine[]): { pro
     const units = unitsAfter(after);
     // Les mots du membre de phrase disent de quelle ligne il s'agit : « net » n'est jamais le rendement brut, « loyer »
     // jamais les travaux. Un rendement sans « brut » ni « net » n'a pas de source.
-    const allowed = linesNamedBy(clauseAround(text, m.index ?? 0, m[0].length));
+    const clause = clauseAround(text, m.index ?? 0, m[0].length);
+    const allowed = linesNamedBy(clause);
+    const period = periodOf(clause);
     const line =
       h === null
         ? undefined
-        : lines.find((l) => units.includes(l.unit) && writtenValues(l).includes(h) && (allowed === null ? l.unit !== 'bp' : allowed.has(l.key)));
+        : lines.find(
+            (l) =>
+              units.includes(l.unit) &&
+              writtenValues(l).includes(h) &&
+              (allowed === null ? l.unit !== 'bp' : allowed.has(l.key)) &&
+              (period === null || !(period === 'mois' ? YEARLY : MONTHLY).includes(l.key)),
+          );
     if (!line) problems.push({ code: 'nombre_sans_source', value: m[0] });
     else proofs.push({ text: m[0], line: line.key, value: line.value, unit: line.unit, source: line.source, asOf: line.asOf, hypothesis: line.hypothesis });
   }
@@ -560,6 +581,11 @@ export class NotesInvestissement {
     const calc = await this.calculs.get(viewer.networkId, input.calculationId);
     if (!calc) return this.refused(viewer, input.projectId, 'unknown');
     if (calc.projectId !== null && calc.projectId !== input.projectId) return this.refused(viewer, input.projectId, 'unknown');
+    // Le bien du calcul sous R16, comme au calcul : le sien ou le fichier commun ; un calcul sans bien ni projet, à son auteur.
+    if (calc.propertyId !== null) {
+      const seen = await acces.readProperty(viewer, calc.propertyId);
+      if (!seen.ok) return { ok: false, rule: 'R16', code: seen.code };
+    } else if (calc.projectId === null && viewer.role !== 'direction' && calc.createdBy !== actor) return this.refused(viewer, input.projectId, 'not_assigned');
     const today = this.now().toISOString().slice(0, 10);
     const inputs = input.hypotheses ? withHypotheses(calc.inputs, input.hypotheses, actor, today) : calc.inputs;
     if (!inputs) return { ok: false, rule: 'R120', code: 'hypothese' };
