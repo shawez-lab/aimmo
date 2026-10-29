@@ -84,6 +84,11 @@ async function setup() {
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alexandrine', lastName: 'Fictive' });
   const sam = await store.createAgent({ networkId: network.id, firstName: 'Samuel', lastName: 'Inventé' });
+  // La même musique, rangée dans la bibliothèque du réseau : relue au moment de publier [R133].
+  await db.run(
+    "INSERT INTO licensed_assets (id, network_id, kind, title, source, licence, attribution, valid_until, proof_ref, recorded_by, recorded_at) VALUES ('musique-sous-licence', ?, 'musique', 'Air inventé', 'achat_unitaire', 'licence_achetee', NULL, '2027-12-31', 'bibliotheque/preuve.pdf', 'direction:d1', '2027-10-01')",
+    [network.id],
+  );
   const p = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'VID-3', kind: 'home', city: 'Villebrune', priceEur: 230_000, surfaceM2: 72, rooms: 3, status: 'available' });
   const sheet = sheetOf({ bedrooms: 2, outdoor: ['balcon'] }, [
     { ref: VIDEO(p.id), kind: 'video', edit: 'aucune' },
@@ -101,7 +106,7 @@ async function setup() {
     processedOn: 'appareil',
     ...over,
   });
-  return { db, medias, montages, library, network, alex, sam, p, as, input };
+  return { db, medias, montages, library, network, alex, sam, p, as, input, setClock: (iso: string) => (clock = Date.parse(iso)) };
 }
 
 describeWithSqlite('X03 · montage vidéo sur l’appareil', () => {
@@ -133,6 +138,24 @@ describeWithSqlite('X03 · montage vidéo sur l’appareil', () => {
     expect((await t.medias.publishable(t.p.id, 1)).map((m) => m.kind)).toEqual(['photo']);
     expect(await t.montages.record(alex, t.p.id, t.input({ musicId: null }))).toMatchObject({ ok: true, value: { musicId: null } });
     expect(t.library.asked).toEqual(['musique-expiree', 'piste-du-commerce', '']);
+  });
+
+  it('[R133] une musique retirée ou expirée après le montage retire la vidéo des médias à publier', async () => {
+    const t = await setup();
+    const alex = t.as('agent', t.alex.id);
+    expect((await t.montages.record(alex, t.p.id, t.input())).ok).toBe(true);
+    await t.medias.checkVideoText(alex, t.p.id, VIDEO(t.p.id), { subtitles: t.input().subtitles, caption: t.input().caption });
+    expect((await t.medias.publishable(t.p.id, 1)).map((m) => m.kind)).toEqual(['video', 'photo']);
+    // La licence expire : le lendemain de son dernier jour, à Paris, la vidéo ne part plus.
+    t.setClock('2027-12-31T22:30:00.000Z');
+    expect((await t.medias.publishable(t.p.id, 1)).map((m) => m.kind)).toEqual(['video', 'photo']);
+    t.setClock('2027-12-31T23:30:00.000Z');
+    expect((await t.medias.publishable(t.p.id, 1)).map((m) => m.kind)).toEqual(['photo']);
+    t.setClock('2027-10-09T08:00:00.000Z');
+    expect((await t.medias.publishable(t.p.id, 1)).map((m) => m.kind)).toEqual(['video', 'photo']);
+    // La direction la retire : la vidéo sort aussitôt.
+    await t.db.run("INSERT INTO licensed_asset_withdrawals (id, asset_id, reason, withdrawn_by, withdrawn_at) VALUES ('w-1', 'musique-sous-licence', 'licence_retiree', 'direction:d1', '2027-10-09')");
+    expect((await t.medias.publishable(t.p.id, 1)).map((m) => m.kind)).toEqual(['photo']);
   });
 
   it('[R46] [R132] un sous-titre ou une légende qui porte une adresse est refusé, et la vidéo ne peut pas être publiée', async () => {

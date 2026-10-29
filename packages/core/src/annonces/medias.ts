@@ -19,6 +19,7 @@ import { sha256 } from '../documents/modeles.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { publicTextProblems, sentences, type SentenceProblem } from './annonce-sourcee.ts';
+import { parisDay } from '../studio/bibliotheque.ts';
 import type { PropertySheet } from './fiche-bien.ts';
 
 export const VIRTUAL_STAGING_LABEL = 'Aménagement virtuel';
@@ -137,9 +138,24 @@ export class MediasBien {
       if (last?.outcome !== 'ok') continue;
       // Une vidéo ne part qu'une fois son montage rangé par le Studio (M19, X03) : sa musique y a été contrôlée contre
       // la bibliothèque sous licence [R133]. Une vidéo venue d'ailleurs, à la musique inconnue, ne part pas.
-      if (m.kind === 'video' && !(await this.db.first('SELECT id FROM video_montages WHERE property_id = ? AND video_ref = ?', [propertyId, m.ref]))) continue;
+      // Sa musique est relue au moment de publier : une licence retirée ou expirée depuis le montage retire la vidéo.
+      if (m.kind === 'video' && !(await this.montageStillLicensed(propertyId, m.ref))) continue;
       out.push({ ref: m.ref, kind: m.kind, overlay: null });
     }
     return out;
+  }
+
+  /** Le montage de la vidéo existe, et sa musique, s'il en a une, a encore sa licence à cet instant [R133]. */
+  private async montageStillLicensed(propertyId: string, videoRef: string): Promise<boolean> {
+    const montage = await this.db.first<{ network_id: string; music_id: string | null }>('SELECT network_id, music_id FROM video_montages WHERE property_id = ? AND video_ref = ? LIMIT 1', [propertyId, videoRef]);
+    if (!montage) return false;
+    if (montage.music_id === null) return true;
+    const asset = await this.db.first<{ valid_until: string | null; withdrawn: string | null }>(
+      `SELECT a.valid_until, w.asset_id AS withdrawn FROM licensed_assets a LEFT JOIN licensed_asset_withdrawals w ON w.asset_id = a.id
+       WHERE a.id = ? AND a.network_id = ? AND a.kind = 'musique'`,
+      [montage.music_id, montage.network_id],
+    );
+    if (!asset || asset.withdrawn !== null) return false;
+    return asset.valid_until === null || asset.valid_until >= parisDay(this.now());
   }
 }
