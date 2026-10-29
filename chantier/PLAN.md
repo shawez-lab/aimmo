@@ -1412,7 +1412,9 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : H29 pour l'effacement réel.
 
 ### L08 · Prospects à 3 ans et procédure de fuite
-- Statut : en cours
+- Statut : fait (2026-10-29)
+- Décidé (2026-10-29), lecture prudente : le dernier contact est celui qui vient de la personne (message reçu, accord, projet, rendez-vous pris même annulé ou tenu, visite ; à défaut la création de la fiche), jamais un message envoyé ; un accord ancien compte comme un contact de son jour ; fiches réunies comptées ensemble ; 3 ans en jours de Paris par le calendrier ; jamais listés : mandat, acquéreur d'un dossier de vente, parties d'un bail, personne identifiée en L03 et bénéficiaires effectifs ; demande de consentement préparée sans canal ni envoi (signalée R04/R02 si arrêt ou exclusion), réponse attendue 30 jours, puis plan d'effacement de L07 en essai ; un cycle clos à tort (fusion défaite) ne retient pas la personne. Fuite : échéance en heures exactes, alertes à la connaissance, 24 h, 6 h et à l'échéance tant que la CNIL n'est pas prévenue et que l'évaluation n'est pas « aucun » ; évaluation en listes fermées, sans texte libre ; accès coupés par la direction ou le responsable, jamais les clés du responsable ; raison exigée pour une notification tardive.
+- Reste : fusionnée (#168) ; relecture forte 2 P1, Codex 2 P1 et 3 P0 corrigés, dernière version sans relecture au bout de 15 min. Branchement en L09 ; effacement réel et envoi de la demande : H29.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L07
 - Cahier : Conformité, « Durées » et « Fuite de données ».
 - Objectif : chaque jour, la liste des prospects arrivés à 3 ans après leur dernier contact sans consentement : demande de consentement préparée en mode essai, puis effacement par la procédure de L07 sans réponse ; une procédure de fuite : accès coupés d'un geste, évaluation saisie par le responsable, échéance de 72 heures pour la CNIL calculée par le code, liste des personnes concernées.
@@ -1424,6 +1426,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : L01 à L08
 - Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts`, dont le dépôt d'une pièce au coffre (`CoffreConformite.deposit`) et la déclaration personne ou société avec ses bénéficiaires effectifs (`Identification.declare`), seules portes de l'identification depuis L03 ; AIMMO ne se met pas en service entre L03 et L09 ; dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes, signalements, demandes et échéances, relecture du registre) et le dépôt d'une pièce par l'agent ; les passages au planificateur ; l'export depuis `@aimmo/core`.
+- Ajouté par L08 : lire `Fuites.accessCut(networkId, role, userId)` avant toute route (refus au journal, le responsable jamais coupé) ; passages `DureesProspects.run` une fois par jour et `Fuites.run` à chaque créneau ; routes de `DureesProspects.list` et de `Fuites` (déclarer, couper, rétablir, évaluer, personnes concernées, notifications, alertes).
 - Critères : chaque route sous R16, refus au journal ; un agent ne voit jamais l'écran du responsable ; écran accessible, beau sur téléphone d'abord, sans texte générique ; les passages tournent une fois par créneau.
 - Attend : rien.
 
