@@ -6,7 +6,7 @@
  *
  * Lecture prudente :
  * - le dernier contact est celui qui vient de la personne, jamais un message qu'on lui a écrit : son dernier message
- *   reçu, un accord donné, un projet ouvert, un rendez-vous pris ou tenu, une visite ; à défaut, la création de sa
+ *   reçu, un accord donné, un projet ouvert, un rendez-vous pris (même annulé ensuite) ou tenu, une visite ; à défaut, la création de sa
  *   fiche. Un accord ancien ne prolonge rien : il compte comme un contact de son jour ;
  * - toutes les fiches réunies d'une personne (S04) comptent ensemble, sous la fiche gardée ;
  * - un client n'est pas un prospect, et n'est jamais listé : une personne qui a signé un mandat, l'acquéreur d'un
@@ -155,7 +155,10 @@ export class DureesProspects {
       ["SELECT person_id, max(occurred_at) AS at FROM messages WHERE network_id = ? AND direction = 'in' AND author_kind = 'person' GROUP BY person_id", [networkId]],
       ['SELECT person_id, max(given_at) AS at FROM consents WHERE network_id = ? GROUP BY person_id', [networkId]],
       ['SELECT person_id, max(created_at) AS at FROM projects WHERE network_id = ? GROUP BY person_id', [networkId]],
-      ["SELECT person_id, max(start_at) AS at FROM appointments WHERE network_id = ? AND status IN ('booked', 'honored') GROUP BY person_id", [networkId]],
+      // Un rendez-vous compte le jour où il est pris, quel que soit son sort, et le jour où il est tenu : une annulation
+      // ne fait jamais reculer le dernier contact (un cycle clos ne doit pas bloquer la personne hors de la procédure).
+      ['SELECT person_id, max(created_at) AS at FROM appointments WHERE network_id = ? GROUP BY person_id', [networkId]],
+      ["SELECT person_id, max(start_at) AS at FROM appointments WHERE network_id = ? AND status = 'honored' GROUP BY person_id", [networkId]],
       ['SELECT person_id, max(created_at) AS at FROM visits WHERE network_id = ? GROUP BY person_id', [networkId]],
     ];
     for (const [sql, params] of sources) {

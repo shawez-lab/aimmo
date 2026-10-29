@@ -155,6 +155,25 @@ describeWithSqlite('L08 · prospects à 3 ans', () => {
     expect((await t.listed()).map((x) => [x.personId, x.lastContactAt])).toEqual([[p, '2027-03-02T10:00:00.000Z'], [p, '2030-03-10T10:00:00.000Z']]);
   });
 
+  it('[R97] un rendez-vous pris puis annulé compte du jour où il est pris : la personne ne sort jamais de la procédure', async () => {
+    const t = await setup();
+    const p = await t.prospect('2027-03-02T10:00:00.000Z');
+    t.setClock(new Date('2030-03-02T10:00:00.000Z'));
+    await t.durees.run(t.network.id);
+    // Elle prend un appel pour le mois suivant : le cycle est clos ; puis elle l'annule.
+    await t.db.run(
+      "INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at) VALUES ('rdv-1', ?, ?, ?, NULL, 'appel', '2030-04-10T08:00:00.000Z', '2030-04-10T08:30:00.000Z', 'booked', 'h', 'agent', '2030-03-05T10:00:00.000Z', '2030-03-05T10:00:00.000Z')",
+      [t.network.id, t.alexId, p],
+    );
+    t.setClock(new Date('2030-03-06T10:00:00.000Z'));
+    expect(await t.durees.run(t.network.id)).toMatchObject({ closed: 1 });
+    await t.db.run("UPDATE appointments SET status = 'cancelled' WHERE id = 'rdv-1'");
+    // Trois ans après la prise du rendez-vous, elle est listée de nouveau.
+    t.setClock(new Date('2033-03-05T10:00:00.000Z'));
+    expect((await t.durees.run(t.network.id)).listed).toBe(1);
+    expect((await t.listed()).map((x) => x.lastContactAt)).toEqual(['2027-03-02T10:00:00.000Z', '2030-03-05T10:00:00.000Z']);
+  });
+
   it('[R97] [R04] [R16] une personne arrêtée est signalée sur sa demande ; seul le responsable lit la liste', async () => {
     const t = await setup();
     const p = await t.prospect('2027-03-02T10:00:00.000Z');
