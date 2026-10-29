@@ -546,6 +546,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   person_request_alerts: { locate: [via('request_id', 'person_requests')] },
   // investir : le profil d'un projet `invest`, à la personne du projet.
   investor_profiles: { locate: by('person_id') },
+  market_rent_imports: out('sans_client', 'Import des loyers de marché de l\'ANIL, par qui l\'a lancé : aucune donnée d\'un client.'),
   // durees-et-fuites : le prospect par son cycle ; la personne concernée par une fuite, par la liste figée.
   prospect_retention_cycles: { locate: by('person_id') },
   prospect_retention_outcomes: { locate: [via('cycle_id', 'prospect_retention_cycles')] },
