@@ -183,6 +183,9 @@ describeWithSqlite('G06 · lettres de quartier, adressées sans nom', () => {
     await spelled.signMandate();
     expect(await spelled.lettres.createCampaign(spelled.agent(), spelled.input({ propertyAddress: '8 rue des Tilleuls Essai 21000 Dijon' }))).toMatchObject({ ok: true, value: { textBy: 'secours' } });
     expect(checkLetterText('La maison située huit rue des Tilleuls Essai à Dijon vient de nous être confiée.', 'rue des Tilleuls Essai')).toBe('property_street');
+    // Une voie faite de mots courts reste protégée.
+    expect(checkLetterText('La maison située huit rue de l’If à Dijon vient de nous être confiée.', 'rue de l’If')).toBe('property_street');
+    expect(checkLetterText('Une maison de votre quartier vient de nous être confiée, je reste à votre disposition.', 'rue de l’If')).toBeNull();
     // Une faute de frappe corrigée par la Base adresse nationale : la voie corrigée est protégée elle aussi.
     const typo = await setup({ drafter: { draft: async () => 'La maison située huit rue des Tilleuls Essai à Dijon vient de nous être confiée. Je reste à votre disposition pour en parler.' } });
     await typo.signMandate();
