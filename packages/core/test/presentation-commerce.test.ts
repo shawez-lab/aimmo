@@ -156,6 +156,11 @@ describeWithSqlite('CE03 · présentation anonyme d’un commerce', () => {
     for (const signName of ['AX', 'Au QG']) {
       expect(checkPresentation('Boulangerie à Dijon', `${signName} est à reprendre.`, FACTS, { ...MARKS, signName }).sentences.flatMap((x) => x.problems.map((p) => p.code)), signName).toContain('enseigne');
     }
+    // Rangés au pluriel, lus au singulier : toujours confidentiels.
+    const plural = { ...MARKS, signName: 'Les Fournils', equipment: ['fours à sole', 'pétrins spirales'] };
+    for (const [text, code] of [['Four à sole et pétrin spirale disponibles.', 'champ_confidentiel'], ['Le Fournil est à reprendre.', 'enseigne']] as const) {
+      expect(checkPresentation('Boulangerie à Dijon', text, FACTS, plural).sentences.flatMap((x) => x.problems.map((p) => p.code)), text).toContain(code);
+    }
     // Un article du matériel, même court, est confidentiel.
     expect(checkPresentation('Boulangerie à Dijon', 'TV disponible.', FACTS, { ...MARKS, equipment: ['TV'] }).ok).toBe(false);
     // Une enseigne faite des seuls mots courants ne rend pas l'activité indicible ; le secours passe.
