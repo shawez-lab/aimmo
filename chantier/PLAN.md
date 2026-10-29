@@ -1527,7 +1527,8 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U12 · Relances et prospection de M18 par le contrôle central des envois
-- Statut : à faire
+- Statut : en cours
+- Où : branche `chantier/U12`, empilée sur `chantier/U09` (#180), fusion en attente de H35
 - Qui : Claude, voie 1 (contrôle central des envois) · Relecture : forte · Dépend de : U09
 - Cahier : M18 ; Branchements ; Conformité (prospection entre professionnels).
 - Découpée de U09 le 2026-10-29 : le contrôle central (`envoi/controle.ts`) n'écrit qu'à une personne de la fiche client ; un partenaire et un futur partenaire n'en sont pas. Il faut lui ouvrir un destinataire professionnel (partenaire de l'annuaire, adresse de prospection), avec ses propres règles (heures [R01], opposition [R04, R02], plafond du jour [R11], une seule fois [R05], texte sans mention de l'IA [R06]), sans jamais créer de fiche client.
