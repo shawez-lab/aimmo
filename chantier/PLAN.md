@@ -1714,7 +1714,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE03 · Présentation anonyme, rédigée par l'IA depuis les seuls champs publics
 - Statut : en cours
-- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex, quatre tours : 5 P0, 2 P1 et 1 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante, enseigne courte distinctive, nombre négatif, pluriel et singulier du matériel et de l'enseigne), relecture redemandée.
+- Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex, cinq tours : 6 P0, 2 P1 et 1 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante, enseigne courte distinctive, nombre négatif, pluriel et singulier, mots porteurs du matériel), relecture redemandée.
 - Décidé (2026-10-29) : sans fourchette validée en vigueur, pas de présentation (« incomplet ») ; le nom de la commune est retiré avant le contrôle des nombres ; `publishable` est la porte, branchée à la publication de M07 par CE10.
 - Qui : Claude · Relecture : forte · Dépend de : CE01, CE02
 - Cahier : M16, « Présentation anonyme », « L'IA et l'humain ».
@@ -1764,7 +1764,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE08 · Vigilance renforcée de la cession : bénéficiaires effectifs, origine des fonds
 - Statut : en cours
-- Reste : prête (#208, empilée sur #207), à fusionner après CE07 dès H35 ; relecture forte 2 P1 corrigés.
+- Reste : prête (#208, empilée sur #207), à fusionner après CE07 dès H35 ; relecture forte 2 P1 corrigés ; Codex 1 P2 corrigé (demande liée à l'acquéreur en vigueur), relecture redemandée.
 - Décidé (2026-10-29) : alertes dans leurs tables (`business_transfer_watch*`, hors du registre de L04 que seul L04 lit), une par dossier et par acquéreur, décisions de L04 ; personne morale rangée telle ou au moindre signe de société ; la liste du responsable de L04 les montrera au branchement (CE10).
 - Qui : Claude · Relecture : forte · Dépend de : CE07
 - Cahier : M16, « Règles » ; M12 Conformité.
@@ -1774,6 +1774,8 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE09 · Routes de M16 et parcours de 10 demandes tests
 - Statut : en cours
+- Reste : prête (#209, empilée sur #208), à fusionner après CE08 dès H35 ; relecture forte 1 P1 corrigé (phrases refusées de l'IA rendues).
+- Décidé (2026-10-29) : `commercesRoutes()` pour les rôles du réseau et `dossierReaderRoutes()` pour le lecteur sans compte (jeton, adresse, code) ; le lecteur ne lit jamais pourquoi la porte est fermée.
 - Qui : Claude · Relecture : forte · Dépend de : CE01 à CE08
 - Cahier : M16, « Critères d'acceptation ».
 - Objectif : les routes `/v1/commerces` (fiche, estimation, présentation, demande d'accès, engagement, dossier, ouverture, repreneurs, cession) dans `packages/api/src/commerces.ts`, rôle refusé avant le corps ; un parcours de bout en bout sur 10 demandes tests et 3 dossiers de cession.
@@ -1781,7 +1783,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE10 · Branchement de M16 dans le socle
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : CE09
 - Cahier : M16, « Branchements ».
 - Objectif : droits d'accès, `index.ts`, `app.ts`, migrations, planificateur (tâches de la cession), contrôle central des envois pour l'envoi du dossier.
