@@ -57,7 +57,7 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[] } 
     { ref: photo(p.id, 1), overlay: null, certificateToken: 'a'.repeat(32), certificatePath: `/certificat-photo/${'a'.repeat(32)}` },
     { ref: photo(p.id, 2), overlay: 'Aménagement virtuel', certificateToken: 'b'.repeat(32), certificatePath: `/certificat-photo/${'b'.repeat(32)}` },
   ];
-  const state = { diffusable: true, certified, consents: new Set([consent(p.id, 1)]), facts: structuredClone(FACTS), mentions: { complete: true, text: MENTIONS, publishedPriceEur: 230_000 } as { complete: boolean; text: string; publishedPriceEur: number | null } };
+  const state = { diffusable: true, certified, consents: new Set([consent(p.id, 1)]), consentsDown: false, facts: structuredClone(FACTS), mentions: { complete: true, text: MENTIONS, publishedPriceEur: 230_000 } as { complete: boolean; text: string; publishedPriceEur: number | null } };
   const received: (SocialPayload & { channel: string })[] = [];
   const failing = new Set(opts.failing ?? []);
   const channels = (['instagram', 'facebook', 'linkedin'] as const).map((c) => ({
@@ -76,7 +76,12 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[] } 
       certs: { publishable: async () => state.certified },
       diffusion: { canDiffuse: async () => ({ allowed: state.diffusable }) },
       mentions: { checklist: async () => state.mentions },
-      consents: { has: async (r: string) => state.consents.has(r) },
+      consents: {
+        has: async (r: string) => {
+          if (state.consentsDown) throw new Error('panne');
+          return state.consents.has(r);
+        },
+      },
       channels,
     },
     { now, writer: opts.writer === undefined ? null : opts.writer, timeoutMs: 50 },
@@ -263,6 +268,38 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
     await t.db.run("UPDATE properties SET status = 'sold' WHERE id = ?", [t.p.id]);
     const sold = await t.pubs.prepare(t.alexV, t.p.id, { event: 'vente', visuals: [photo(t.p.id, 1)] });
     expect(sold.ok && sold.value.text.includes('Carte professionnelle')).toBe(false);
+  });
+
+  it('[R132] l’accord d’une personne reconnaissable est relu à l’envoi : absent ou stockage en panne, rien ne part', async () => {
+    const t = await setup();
+    const prep = await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
+    if (!prep.ok) throw new Error(prep.code);
+    expect((await t.pubs.checkVisual(t.alexV, prep.value.id, { ref: photo(t.p.id, 1), addressVisible: false, personVisible: true, consentRef: consent(t.p.id, 1) })).ok).toBe(true);
+    expect((await t.pubs.validate(t.alexV, prep.value.id)).ok).toBe(true);
+    t.state.consents.delete(consent(t.p.id, 1));
+    expect(await t.pubs.publish(t.alexV, prep.value.id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R132', code: 'accord_absent' });
+    t.state.consents.add(consent(t.p.id, 1));
+    t.state.consentsDown = true;
+    expect(await t.pubs.publish(t.alexV, prep.value.id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R132', code: 'stockage_indisponible' });
+    expect(t.received).toEqual([]);
+    t.state.consentsDown = false;
+    expect((await t.pubs.publish(t.alexV, prep.value.id, [{ channel: 'instagram', account: 'agent' }])).ok).toBe(true);
+  });
+
+  it('[R86] une publication préparée ou validée par un agent parti ne part pas, même par son successeur', async () => {
+    const t = await setup();
+    const id = await t.ready();
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.id, t.p.id]);
+    const samV = t.as('agent', t.sam.id);
+    expect(await t.pubs.publish(samV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R86', code: 'auteur_parti' });
+    expect(t.received).toEqual([]);
+    // Le successeur prépare et valide la sienne : elle part.
+    const prep = await t.pubs.prepare(samV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
+    if (!prep.ok) throw new Error(prep.code);
+    await t.pubs.checkVisual(samV, prep.value.id, { ref: photo(t.p.id, 1), addressVisible: false, personVisible: false });
+    expect((await t.pubs.validate(samV, prep.value.id)).ok).toBe(true);
+    expect((await t.pubs.publish(samV, prep.value.id, [{ channel: 'instagram', account: 'agent' }])).ok).toBe(true);
   });
 
   it('un réseau en panne n’empêche pas les autres ; son envoi se retente au geste suivant, une fois réussi il ne se refait plus', async () => {

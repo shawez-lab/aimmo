@@ -24,6 +24,7 @@ import type { PropertyStatus } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { CertifiedPhoto } from './certificats.ts';
+import { agentGone } from '../reseau/depart.ts';
 
 export const SOCIAL_EVENTS = ['nouveau_bien', 'visite', 'offre', 'vente'] as const;
 export type SocialEvent = (typeof SOCIAL_EVENTS)[number];
@@ -92,7 +93,7 @@ export interface SocialPost {
   createdAt: string;
 }
 
-export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R130' | 'R132' | 'R134' | 'R26'; code: string };
+export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26'; code: string };
 
 export interface PostsDeps {
   /** Les faits du bien, ceux de l'annonce de M07. */
@@ -120,6 +121,7 @@ export interface PublicationsOptions {
 
 interface PostRow {
   id: string;
+  created_by: string;
   property_id: string;
   network_id: string;
   event: SocialEvent;
@@ -325,6 +327,21 @@ export class Publications {
     // préparer et valider une nouvelle publication [R47, R134].
     const stale = await this.stale(post.value);
     if (stale) return this.bad(actor, subject, stale.rule, stale.code);
+    // Rien de ce qu'a préparé ou validé un agent parti ne part ; il faut une nouvelle publication [R86].
+    const authors = [post.value.created_by, current.validated?.by ?? null].filter((a): a is string => a !== null && a.startsWith('agent:'));
+    for (const a of authors) if (await agentGone(this.db, post.value.network_id, a.slice('agent:'.length), this.now())) return this.bad(actor, subject, 'R86', 'auteur_parti');
+    // L'accord de chaque personne reconnaissable est encore rangé ; un stockage en panne ferme tout [R132].
+    const consents = await this.db.all<{ consent_ref: string }>('SELECT consent_ref FROM social_visual_checks WHERE post_id = ? AND consent_ref IS NOT NULL', [postId]);
+    for (const c of consents) {
+      let stored = false;
+      try {
+        stored = await this.deps.consents.has(c.consent_ref);
+      } catch (error) {
+        await appendEvent(this.journal, { type: 'studio.publication.stockage_indisponible', actor, subject, data: { rule: 'R132', error: error instanceof Error ? error.name : 'inconnue' } }, this.now);
+        return { ok: false, rule: 'R132', code: 'stockage_indisponible' };
+      }
+      if (!stored) return this.bad(actor, subject, 'R132', 'accord_absent');
+    }
     for (const w of wanted) {
       const attempt = await this.claim(postId, w, actor);
       if (attempt === null) continue;
@@ -462,7 +479,7 @@ export class Publications {
     return { ok: true, value: { networkId: read.value.network_id, status: read.value.status } };
   }
 
-  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R130' | 'R132' | 'R134' | 'R26', code: string): Promise<PostResult<T>> {
+  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26', code: string): Promise<PostResult<T>> {
     await appendEvent(this.journal, { type: 'studio.publication.refuse', actor, subject, data: { rule, code } }, this.now);
     return { ok: false, rule, code };
   }
