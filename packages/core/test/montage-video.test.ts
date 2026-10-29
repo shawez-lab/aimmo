@@ -72,12 +72,14 @@ async function setup() {
   const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
   const medias = new MediasBien(db, acces, journal, { now });
   // La bibliothèque inventée : une musique sous licence en cours, une expirée (null), une inconnue (null).
-  const library: MusicLibrary & { asked: string[] } = {
+  const library: MusicLibrary & { asked: string[]; ccBy: boolean } = {
     asked: [],
+    ccBy: false,
     licensedMusic: async (networkId: string, id: string) => {
       library.asked.push(id);
       if (networkId !== network.id) return null;
-      return id === 'musique-sous-licence' ? { id } : null;
+      if (id !== 'musique-sous-licence') return null;
+      return library.ccBy ? { id, licence: 'cc_by', attribution: 'Musique : Camille Inventée, CC BY 4.0' } : { id };
     },
   };
   const montages = new Montages(db, acces, journal, medias, library, { now });
@@ -138,6 +140,15 @@ describeWithSqlite('X03 · montage vidéo sur l’appareil', () => {
     expect((await t.medias.publishable(t.p.id, 1)).map((m) => m.kind)).toEqual(['photo']);
     expect(await t.montages.record(alex, t.p.id, t.input({ musicId: null }))).toMatchObject({ ok: true, value: { musicId: null } });
     expect(t.library.asked).toEqual(['musique-expiree', 'piste-du-commerce', '']);
+  });
+
+  it('[R133] une musique CC BY exige la mention de son auteur dans la légende', async () => {
+    const t = await setup();
+    const alex = t.as('agent', t.alex.id);
+    t.library.ccBy = true;
+    expect(await t.montages.record(alex, t.p.id, t.input())).toEqual({ ok: false, rule: 'R133', code: 'mention_auteur_absente' });
+    expect((await t.medias.publishable(t.p.id, 1)).map((m) => m.kind)).toEqual(['photo']);
+    expect((await t.montages.record(alex, t.p.id, t.input({ caption: 'Trois pièces lumineux avec balcon. Musique : Camille Inventée, CC BY 4.0' }))).ok).toBe(true);
   });
 
   it('[R133] une musique retirée ou expirée après le montage retire la vidéo des médias à publier', async () => {

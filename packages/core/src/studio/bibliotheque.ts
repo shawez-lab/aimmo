@@ -191,8 +191,9 @@ export class Bibliotheque implements MusicLibrary {
   }
 
   /** Pour le montage (X03) : une musique du réseau, utilisable à cet instant, ou null [R133]. */
-  async licensedMusic(networkId: string, id: string, at: Date): Promise<{ id: string } | null> {
-    return this.licensed(networkId, 'musique', id, at);
+  async licensedMusic(networkId: string, id: string, at: Date): Promise<{ id: string; licence: AssetLicence; attribution: string | null } | null> {
+    const a = await this.licensed(networkId, 'musique', id, at);
+    return a ? { id: a.id, licence: a.licence, attribution: a.attribution } : null;
   }
 
   /** Pour les publications (X05) : une image du réseau, utilisable à cet instant, ou null [R133]. */

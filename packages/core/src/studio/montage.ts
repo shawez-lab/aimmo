@@ -25,7 +25,8 @@ import type { JournalStore } from '../journal/types.ts';
 
 /** La bibliothèque de musiques sous licence (X07) : null pour une musique inconnue, sans preuve ou expirée [R133]. */
 export interface MusicLibrary {
-  licensedMusic(networkId: string, id: string, at: Date): Promise<{ id: string } | null>;
+  /** La musique utilisable à cet instant ; `attribution` est la mention d'auteur exigée à chaque usage (CC BY) [R133]. */
+  licensedMusic(networkId: string, id: string, at: Date): Promise<{ id: string; licence?: string; attribution?: string | null } | null>;
 }
 
 export interface TemplateClip {
@@ -190,6 +191,11 @@ export class Montages {
       if (typeof input.musicId !== 'string' || input.musicId.length > 80) return bad('R133', 'musique_sans_licence');
       const licensed = await this.music.licensedMusic(seen.value.networkId, input.musicId, this.now());
       if (!licensed || licensed.id !== input.musicId) return bad('R133', 'musique_sans_licence');
+      // Une licence CC BY exige la mention de l'auteur à chaque usage : elle est dans la légende de la vidéo [R133].
+      if (licensed.licence === 'cc_by') {
+        const credit = (licensed.attribution ?? '').trim();
+        if (credit === '' || typeof input.caption !== 'string' || !input.caption.includes(credit)) return bad('R133', 'mention_auteur_absente');
+      }
       musicId = input.musicId;
     }
     if (await this.db.first('SELECT id FROM video_montages WHERE property_id = ? AND video_ref = ?', [propertyId, video.ref])) return bad('R10', 'deja_rangee');
