@@ -146,12 +146,11 @@ export type JournalSubjectUse = 'journal' | { excluded: ExclusionReason | 'envoi
  *
  * - `partage` : l'avancée du dossier, que ses deux parties suivent (dates, pièces reçues, acte) : aux deux ;
  * - `acquereur` : ce qui n'est qu'à l'acquéreur (son financement, son carnet de propriétaire) ;
- * - `cote` : ce qui est fait pour un seul client, qui porte son côté (`side` : `vendeur` ou `acquereur`) : à ce côté
- *   seul ; sans `side`, à personne ;
- * - `destinataire` : la facture d'honoraires, au client qui la paie (`invoice_drafts.recipient_person_id`) ;
+ * - `client` : ce qui est fait pour un seul client (sa relance, sa note, son remerciement, sa facture), qui porte sa
+ *   fiche (`client: 'person:<id>'`) : à ce client seul, retrouvé par ses fiches réunies ; sans `client`, à personne ;
  * - sinon, la raison pour laquelle l'événement n'entre pas dans la réponse.
  */
-export type SaleFileEventUse = 'partage' | 'acquereur' | 'cote' | 'destinataire' | { excluded: ExclusionReason; why: string };
+export type SaleFileEventUse = 'partage' | 'acquereur' | 'client' | { excluded: ExclusionReason; why: string };
 
 const INTERNE = (why: string): SaleFileEventUse => ({ excluded: 'agent', why });
 
@@ -168,19 +167,19 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'dossier.financement': 'acquereur',
   'dossier.alerte_financement': 'acquereur',
   'apres_vente.carnet': 'acquereur',
-  'dossier.alerte_fonds': 'cote',
-  'dossier.rappel_fonds': 'cote',
-  'dossier.relance': 'cote',
-  'apres_vente.remerciement_tache': 'cote',
-  'apres_vente.remerciement': 'cote',
-  'apres_vente.remerciement_decision': 'cote',
-  'apres_vente.remerciement_appel': 'cote',
-  'apres_vente.demande_avis': 'cote',
-  'apres_vente.satisfaction': 'cote',
-  'apres_vente.choix_relances': 'cote',
-  'apres_vente.relance': 'cote',
-  'facture.emise': 'destinataire',
-  'facture.avoir': 'destinataire',
+  'dossier.alerte_fonds': 'client',
+  'dossier.rappel_fonds': 'client',
+  'dossier.relance': 'client',
+  'apres_vente.remerciement_tache': 'client',
+  'apres_vente.remerciement': 'client',
+  'apres_vente.remerciement_decision': 'client',
+  'apres_vente.remerciement_appel': 'client',
+  'apres_vente.demande_avis': 'client',
+  'apres_vente.satisfaction': 'client',
+  'apres_vente.choix_relances': 'client',
+  'apres_vente.relance': 'client',
+  'facture.emise': 'client',
+  'facture.avoir': 'client',
   'facture.attente': INTERNE('Facturation en attente : fonctionnement du réseau, sans donnée du client.'),
   'facture.erreur': INTERNE('Erreur de facturation : fonctionnement du réseau, sans donnée du client.'),
   'facture.envoi_en_panne': INTERNE('Plateforme de facturation en panne : fonctionnement du réseau.'),
@@ -192,6 +191,10 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'commission.alerte_reversement': INTERNE('Alerte de reversement à l\'agent.'),
   'acces.refuse': INTERNE('Accès refusé à un membre du réseau.'),
   'apres_vente.lien_avis_manquant': INTERNE('Lien d\'avis manquant de l\'agent.'),
+  'apres_vente.lien_avis': INTERNE('Lien d\'avis réglé pour l\'agent.'),
+  // Le signalement au responsable d'un dossier de vente : jamais dans la réponse (lutte contre le blanchiment).
+  'conformite.signalement': { excluded: 'lcb_ft', why: 'Signalement au responsable de la conformité.' },
+  'conformite.signalement_decision': { excluded: 'lcb_ft', why: 'Décision du responsable sur un signalement.' },
 };
 
 const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(SALE_FILE_EVENTS).filter(([, u]) => uses.includes(u)).map(([t]) => t).sort();
@@ -487,9 +490,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       // Le dossier de vente : chaque sorte d'événement à la partie que dit SALE_FILE_EVENTS, jamais par défaut.
       via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id', only: { type: saleFileTypes('partage', 'acquereur') } }),
       via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'vendeur', only: { type: saleFileTypes('partage') } }),
-      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id', only: { type: saleFileTypes('cote') }, jsonIs: { side: 'acquereur' } }),
-      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'vendeur', only: { type: saleFileTypes('cote') }, jsonIs: { side: 'vendeur' } }),
-      via('subject', 'invoice_drafts', 'file_id', { prefix: 'sale_file:', parentWhere: { kind: 'honoraires' }, only: { type: saleFileTypes('destinataire') }, jsonIs: { kind: 'honoraires' } }),
+      // Ce qui est fait pour un seul client du dossier porte sa fiche : à lui seul, même si le bien a eu d'autres mandants.
+      via('data', 'persons', 'id', { prefix: 'person:', jsonPath: 'client', startsWith: { subject: 'sale_file:' }, only: { type: saleFileTypes('client') } }),
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
       via('subject', 'appointments', 'id', { prefix: 'visit:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),

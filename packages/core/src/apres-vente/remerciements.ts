@@ -117,7 +117,7 @@ export class Remerciements {
         );
         if (changes === 1) {
           created += 1;
-          await appendEvent(this.journal, { type: 'apres_vente.remerciement_tache', actor: 'system:apres-vente', subject: `sale_file:${sale.fileId}`, data: { side: c.side } }, this.now);
+          await appendEvent(this.journal, { type: 'apres_vente.remerciement_tache', actor: 'system:apres-vente', subject: `sale_file:${sale.fileId}`, data: { side: c.side, client: `person:${root}` } }, this.now);
         }
       }
     }
@@ -129,7 +129,7 @@ export class Remerciements {
       [networkId, new Date(this.now().getTime() - THANK_YOU_WINDOW_DAYS * 86_400_000).toISOString()],
     )) {
       const { changes } = await this.db.run("UPDATE thank_you_tasks SET send_status = 'closed', rule = 'delai_depasse', updated_at = ? WHERE file_id = ? AND person_id = ? AND send_status IN ('waiting', 'failed')", [at, r.file_id, r.person_id]);
-      if (changes === 1) await appendEvent(this.journal, { type: 'apres_vente.remerciement', actor: 'system:apres-vente', subject: `sale_file:${r.file_id}`, data: { mode: 'essai', side: r.side, status: 'closed', rule: 'delai_depasse' } }, this.now);
+      if (changes === 1) await appendEvent(this.journal, { type: 'apres_vente.remerciement', actor: 'system:apres-vente', subject: `sale_file:${r.file_id}`, data: { mode: 'essai', side: r.side, client: `person:${r.person_id}`, status: 'closed', rule: 'delai_depasse' } }, this.now);
     }
     for (const r of await this.db.all<{ file_id: string; person_id: string }>(
       "SELECT file_id, person_id FROM thank_you_tasks WHERE network_id = ? AND decision = 'send' AND send_status IN ('waiting', 'failed') ORDER BY decided_at, file_id, person_id",
@@ -193,7 +193,7 @@ export class Remerciements {
       "UPDATE thank_you_tasks SET send_status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE file_id = ? AND person_id = ? AND send_status = 'sending'",
       [status, rule, messageId, this.now().toISOString(), fileId, personId],
     );
-    await appendEvent(this.journal, { type: 'apres_vente.remerciement', actor: 'system:apres-vente', subject: `sale_file:${fileId}`, data: { mode: 'essai', side: t.side, status, rule } }, this.now);
+    await appendEvent(this.journal, { type: 'apres_vente.remerciement', actor: 'system:apres-vente', subject: `sale_file:${fileId}`, data: { mode: 'essai', side: t.side, client: `person:${personId}`, status, rule } }, this.now);
     return status;
   }
 
@@ -238,7 +238,7 @@ export class Remerciements {
       [decision, at, decision === 'send' ? 'waiting' : null, at, fileId, personId],
     );
     if (changes !== 1) return { ok: false, rule: null, code: 'already_decided' };
-    await appendEvent(this.journal, { type: 'apres_vente.remerciement_decision', actor: `agent:${viewer.userId}`, subject: `sale_file:${fileId}`, data: { side: own.side, decision } }, this.now);
+    await appendEvent(this.journal, { type: 'apres_vente.remerciement_decision', actor: `agent:${viewer.userId}`, subject: `sale_file:${fileId}`, data: { side: own.side, client: `person:${personId}`, decision } }, this.now);
     if (decision === 'decline') return { ok: true, status: null };
     return { ok: true, status: await this.send(fileId, personId) };
   }
@@ -249,7 +249,7 @@ export class Remerciements {
     if (!own.ok) return own;
     if (own.calledAt === null) {
       await this.db.run('UPDATE thank_you_tasks SET called_at = ?, updated_at = ? WHERE file_id = ? AND person_id = ? AND called_at IS NULL', [this.now().toISOString(), this.now().toISOString(), fileId, personId]);
-      await appendEvent(this.journal, { type: 'apres_vente.remerciement_appel', actor: `agent:${viewer.userId}`, subject: `sale_file:${fileId}`, data: { side: own.side } }, this.now);
+      await appendEvent(this.journal, { type: 'apres_vente.remerciement_appel', actor: `agent:${viewer.userId}`, subject: `sale_file:${fileId}`, data: { side: own.side, client: `person:${personId}` } }, this.now);
     }
     return { ok: true };
   }

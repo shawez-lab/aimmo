@@ -115,12 +115,37 @@ describe('L07 · chaque sujet du journal écrit dans le code est lu ou écarté'
   });
 });
 
+/** Chaque appel `appendEvent(…)` d'un texte, parenthèses équilibrées, chaînes et gabarits sautés. */
+function appendEventCalls(text: string): string[] {
+  const calls: string[] = [];
+  for (const m of text.matchAll(/\bappendEvent\(/g)) {
+    let depth = 0;
+    let i = m.index! + 'appendEvent'.length;
+    let quote: string | null = null;
+    for (; i < text.length; i++) {
+      const c = text[i]!;
+      if (quote) {
+        if (c === '\\') i++;
+        else if (c === quote) quote = null;
+        continue;
+      }
+      if (c === "'" || c === '"' || c === '`') quote = c;
+      else if (c === '(') depth++;
+      else if (c === ')' && --depth === 0) break;
+    }
+    calls.push(text.slice(m.index!, i + 1));
+  }
+  return calls;
+}
+
 /**
- * Chaque événement écrit au journal sous `sale_file:<id>` dans le code : sa sorte, ses fichiers, et s'il porte `side`.
- * Un appel dont la sorte n'est pas un littéral doit être décrit dans DYNAMIC_SALE_FILE_TYPES.
+ * Chaque événement écrit au journal sous `sale_file:<id>` dans le code : sa sorte, ses fichiers, et s'il nomme son client.
+ * Un appel dont le sujet n'est pas un littéral, dans un fichier qui écrit sous `sale_file:`, compte aussi (il peut recevoir
+ * ce sujet d'une fonction d'aide). Un appel dont la sorte n'est pas un littéral doit être décrit dans DYNAMIC_SALE_FILE_TYPES.
  */
-function saleFileEventsInCode(): Map<string, { files: string[]; sided: boolean[] }> {
-  const found = new Map<string, { files: string[]; sided: boolean[] }>();
+function saleFileEventsInCode(): { found: Map<string, { files: string[]; client: boolean[] }>; dynamic: Map<string, number> } {
+  const found = new Map<string, { files: string[]; client: boolean[] }>();
+  const dynamic = new Map<string, number>();
   const root = new URL('../../', import.meta.url).pathname;
   const walk = (dir: string): void => {
     for (const name of readdirSync(dir)) {
@@ -130,18 +155,23 @@ function saleFileEventsInCode(): Map<string, { files: string[]; sided: boolean[]
         const text = readFileSync(path, 'utf8');
         if (!text.includes('sale_file:')) continue;
         const file = path.slice(root.length);
-        // Un sujet rangé dans une variable (`const subject = \`sale_file:…`) : ses appels `subject` comptent aussi.
-        const subjectVar = /const subject = `sale_file:/.test(text);
-        for (const m of text.matchAll(/appendEvent\(([\s\S]*?)\}, this\.now\)/g)) {
-          const call = m[0];
-          if (!/subject: `sale_file:/.test(call) && !(subjectVar && /\bsubject(,| \}|: subject\b)/.test(call))) continue;
-          const literal = call.match(/\btype: '([^']+)'/);
-          const types = literal ? [literal[1]!] : DYNAMIC_SALE_FILE_TYPES[file] ?? [`<construit>${call.slice(0, 60)}@${file}`];
-          for (const type of types) {
-            const known = found.get(type) ?? { files: [], sided: [] };
+        for (const call of appendEventCalls(text)) {
+          const literal = /\bsubject: `sale_file:/.test(call);
+          // Un sujet littéral d'une autre sorte (`person:`, `network:`…) ou nul n'est pas du dossier de vente.
+          const otherLiteral = /\bsubject: (`(?!sale_file:)|'|"|null|[a-zA-Z]+\()/.test(call);
+          if (!literal && otherLiteral) continue;
+          const type = call.match(/\btype: '([^']+)'/);
+          let types: readonly string[];
+          if (type) types = [type[1]!];
+          else {
+            dynamic.set(file, (dynamic.get(file) ?? 0) + 1);
+            types = DYNAMIC_SALE_FILE_TYPES[file]?.types ?? [`<construit>@${file}`];
+          }
+          for (const t of types) {
+            const known = found.get(t) ?? { files: [], client: [] };
             known.files.push(file);
-            known.sided.push(/\bside\b/.test(call));
-            found.set(type, known);
+            known.client.push(/\bclient: `person:\$\{/.test(call));
+            found.set(t, known);
           }
         }
       }
@@ -149,30 +179,36 @@ function saleFileEventsInCode(): Map<string, { files: string[]; sided: boolean[]
   };
   walk(join(root, 'core/src'));
   walk(join(root, 'api/src'));
-  return found;
+  return { found, dynamic };
 }
 
 /**
- * Les fichiers où un appel écrit une sorte construite (relue à la main), et les sortes qu'il peut écrire. Un appel à
- * sorte construite dans un autre fichier fait échouer le test tant qu'il n'est pas décrit ici.
+ * Les fichiers où des appels écrivent une sorte construite (relue à la main) : combien d'appels, et les sortes qu'ils
+ * peuvent écrire. Un appel à sorte construite de plus, ou dans un autre fichier, fait échouer le test.
  */
-const DYNAMIC_SALE_FILE_TYPES: Readonly<Record<string, readonly string[]>> = {
-  'core/src/dossiers/echeancier.ts': ['dossier.date_a_saisir', 'dossier.echeance'],
-  'core/src/pilotage/commissions.ts': ['commission.attente', 'commission.ecart'],
-  'core/src/pilotage/factures.ts': ['facture.emise', 'facture.avoir'],
+const DYNAMIC_SALE_FILE_TYPES: Readonly<Record<string, { calls: number; types: readonly string[] }>> = {
+  'core/src/dossiers/echeancier.ts': { calls: 1, types: ['dossier.date_a_saisir', 'dossier.echeance'] },
+  'core/src/pilotage/commissions.ts': { calls: 1, types: ['commission.attente', 'commission.ecart'] },
+  'core/src/pilotage/factures.ts': { calls: 1, types: ['facture.emise', 'facture.avoir'] },
 };
 
 describe('L07 · chaque événement du dossier de vente revient à sa partie, jamais par défaut', () => {
   it('[R96] une sorte d’événement écrite sous sale_file: absente de SALE_FILE_EVENTS fait échouer la vérification', () => {
-    const inCode = saleFileEventsInCode();
-    // Le relevé trouve bien les sortes connues, y compris celles des variables et des sortes construites.
+    const { found: inCode, dynamic } = saleFileEventsInCode();
+    // Le relevé trouve bien les sortes connues, y compris celles des variables, des fonctions d'aide et des sortes construites.
     for (const known of ['dossier.financement', 'apres_vente.satisfaction', 'apres_vente.choix_relances', 'acces.refuse', 'dossier.echeance', 'facture.emise', 'commission.ecart']) expect(inCode.has(known), known).toBe(true);
+    expect(Object.fromEntries(dynamic)).toEqual(Object.fromEntries(Object.entries(DYNAMIC_SALE_FILE_TYPES).map(([f, d]) => [f, d.calls])));
     const missing = [...inCode].filter(([type]) => !(type in SALE_FILE_EVENTS)).map(([type, f]) => `${type} (${f.files.join(', ')})`);
     expect(missing).toEqual([]);
-    // Ce qui revient à un seul côté porte ce côté à chaque écriture : sinon il n'irait à personne.
-    const unsided = [...inCode].filter(([type, f]) => SALE_FILE_EVENTS[type] === 'cote' && f.sided.includes(false)).map(([type, f]) => `${type} (${f.files.join(', ')})`);
-    expect(unsided).toEqual([]);
+    // Ce qui revient à un seul client nomme sa fiche à chaque écriture : sinon il n'irait à personne.
+    const unnamed = [...inCode].filter(([type, f]) => SALE_FILE_EVENTS[type] === 'client' && f.client.includes(false)).map(([type, f]) => `${type} (${f.files.join(', ')})`);
+    expect(unnamed).toEqual([]);
     for (const [type, use] of Object.entries(SALE_FILE_EVENTS)) if (typeof use === 'object') expect(use.why.length, type).toBeGreaterThan(5);
+  });
+
+  it('[R96] le relevé lit un appel écrit sur plusieurs lignes ou avec `now` passé en paramètre', () => {
+    const text = "await appendEvent(\n  journal,\n  { type: 'a.un', subject: `sale_file:${id}`, data: { t: ')' } },\n  now,\n);\nawait appendEvent(this.journal, { type: 'a.deux', subject, data: {} }, this.now);";
+    expect(appendEventCalls(text).map((c) => c.match(/type: '([^']+)'/)?.[1])).toEqual(['a.un', 'a.deux']);
   });
 });
 
@@ -275,6 +311,7 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     // Le vendeur voit le dossier de vente de son bien sans l'acquéreur, ni son offre, ni son financement.
     await insert('mandates', { id: 'm-2', network_id: 'n', agent_id: 'ag', person_id: A, project_id: null, property_id: 'bien-2', signed_at: 't', source_kind: 'x', source_detail: null, source_id: null, recorded_by: 'ag', created_at: 't' });
     await insert('sale_files', { id: 'f-c', network_id: 'n', property_id: 'bien-2', offer_id: 'offre-de-c', buyer_person_id: C, amount_eur: 250000, opened_at: 't', opened_by: 'ag' });
+    await insert('persons', { id: C, network_id: 'n', created_at: 't', updated_at: 't' });
     await insert('sale_file_financing', { file_id: 'f-c', seq: 1, network_id: 'n', step: 'pret_accorde', day: 'd', declared_by: 'ag', at: 't', by: 'ag' });
     await insert('sale_file_steps', { file_id: 'f-c', step: 'compromis', at: 't', by: 'ag' });
     const seller = await assembleAccess(db, [A]);
@@ -286,7 +323,7 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(buyer.sections.find((s) => s.table === 'sale_file_financing')!.rows).toEqual([expect.objectContaining({ file_id: 'f-c', step: 'pret_accorde' })]);
     // Au journal aussi : le financement et les alertes de fonds du dossier sont à l'acquéreur seul.
     await insert('journal', { seq: 8001, at: 't', type: 'dossier.financement', actor: 'ag', subject: 'sale_file:f-c', data: '{"step":"pret_refuse"}', prev_hash: 'p', hash: 'h8001' });
-    await insert('journal', { seq: 8002, at: 't', type: 'dossier.alerte_fonds', actor: 'ag', subject: 'sale_file:f-c', data: '{"side":"acquereur","signals":["iban_change"]}', prev_hash: 'p', hash: 'h8002' });
+    await insert('journal', { seq: 8002, at: 't', type: 'dossier.alerte_fonds', actor: 'ag', subject: 'sale_file:f-c', data: `{"side":"acquereur","client":"person:${C}","signals":["iban_change"]}`, prev_hash: 'p', hash: 'h8002' });
     const sellerAfter = JSON.stringify(await assembleAccess(db, [A]));
     expect(sellerAfter).not.toContain('pret_refuse');
     expect(sellerAfter).not.toContain('iban_change');
@@ -294,7 +331,7 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     const buyerJournal = (await assembleAccess(db, [C])).sections.find((s) => s.table === 'journal')!.rows.map((r) => r.type);
     expect(buyerJournal.sort()).toEqual(['dossier.alerte_fonds', 'dossier.financement']);
     // L'alerte de fonds du vendeur, sur le même dossier : au vendeur seul.
-    await insert('journal', { seq: 8003, at: 't', type: 'dossier.alerte_fonds', actor: 'system:dossiers', subject: 'sale_file:f-c', data: '{"side":"vendeur","message":"message:mess-de-a","signals":["rib_vendeur"]}', prev_hash: 'p', hash: 'h8003' });
+    await insert('journal', { seq: 8003, at: 't', type: 'dossier.alerte_fonds', actor: 'system:dossiers', subject: 'sale_file:f-c', data: `{"side":"vendeur","client":"person:${A}","message":"message:mess-de-a","signals":["rib_vendeur"]}`, prev_hash: 'p', hash: 'h8003' });
     const sellerJournal = (await assembleAccess(db, [A])).sections.find((s) => s.table === 'journal')!.rows;
     expect(sellerJournal.filter((r) => String(r.subject) === 'sale_file:f-c').map((r) => r.seq)).toEqual([8003]);
     expect(JSON.stringify(await assembleAccess(db, [C]))).not.toContain('rib_vendeur');
@@ -308,29 +345,37 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(lines('daily_plans')).toEqual([['examiner', 1]]);
   });
 
-  it('[R96] au journal du dossier de vente, chaque sorte va à sa partie : partagée, d’un côté, au destinataire, ou à personne', async () => {
+  it('[R96] au journal du dossier de vente, chaque sorte va à sa partie : partagée, à l’acquéreur, au seul client qu’elle nomme, ou à personne', async () => {
     const { db, insert } = await seedEveryTable();
     const C = 'pc-0003';
     await insert('mandates', { id: 'm-2', network_id: 'n', agent_id: 'ag', person_id: A, project_id: null, property_id: 'bien-2', signed_at: 't', source_kind: 'x', source_detail: null, source_id: null, recorded_by: 'ag', created_at: 't' });
     await insert('sale_files', { id: 'f-c', network_id: 'n', property_id: 'bien-2', offer_id: 'offre-de-c', buyer_person_id: C, amount_eur: 250000, opened_at: 't', opened_by: 'ag' });
-    await insert('invoice_drafts', { id: 'fac-a', network_id: 'n', file_id: 'f-c', kind: 'honoraires', issuer: 'reseau', recipient_person_id: A, amount_cents: 1000, vat_bp: 2000, round: 1, created_at: 't' });
+    await insert('persons', { id: C, network_id: 'n', created_at: 't', updated_at: 't' });
+    // D a eu un mandat sur le même bien, avant A : sa note n'est qu'à lui, jamais à A ni à C.
+    const D = 'pd-0004';
+    await insert('persons', { id: D, network_id: 'n', created_at: 't', updated_at: 't' });
+    await insert('mandates', { id: 'm-d', network_id: 'n', agent_id: 'ag', person_id: D, project_id: null, property_id: 'bien-2', signed_at: 't', source_kind: 'x', source_detail: null, source_id: null, recorded_by: 'ag', created_at: 't' });
     const events: [number, string, Record<string, unknown>][] = [
       [8101, 'dossier.date', { rule: 'R61', kind: 'acte' }],
-      [8102, 'apres_vente.satisfaction', { side: 'vendeur', score: 2, comment: false }],
+      [8102, 'apres_vente.satisfaction', { side: 'vendeur', client: `person:${A}`, score: 2, comment: false }],
       [8103, 'apres_vente.satisfaction', { score: 5, comment: false }],
-      [8104, 'apres_vente.remerciement', { side: 'acquereur', mode: 'essai', status: 'sent', rule: null }],
+      [8104, 'apres_vente.remerciement', { side: 'acquereur', client: `person:${C}`, mode: 'essai', status: 'sent', rule: null }],
       [8105, 'dossier.sorte_inconnue', { rule: 'R00' }],
       [8106, 'commission.etape', { rule: 'R67', status: 'prevue' }],
-      [8107, 'facture.emise', { rule: 'R71', kind: 'honoraires', label: 'essai-1' }],
-      [8108, 'apres_vente.choix_relances', { side: 'vendeur', choice: 'oui' }],
+      [8107, 'facture.emise', { rule: 'R71', kind: 'honoraires', label: 'essai-1', client: `person:${A}` }],
+      [8110, 'facture.avoir', { rule: 'R71', kind: 'avoir', label: 'essai-2', client: `person:${C}` }],
+      [8111, 'apres_vente.satisfaction', { side: 'vendeur', client: `person:${D}`, score: 1, comment: false }],
+      [8108, 'apres_vente.choix_relances', { side: 'vendeur', client: `person:${A}`, choice: 'oui' }],
       [8109, 'dossier.financement', { step: 'pret_accorde' }],
     ];
     for (const [seq, type, data] of events) await insert('journal', { seq, at: 't', type, actor: 'system:essai', subject: 'sale_file:f-c', data: JSON.stringify(data), prev_hash: 'p', hash: `h${seq}` });
     const seqs = async (who: string) => (await assembleAccess(db, [who])).sections.find((s) => s.table === 'journal')!.rows.filter((r) => String(r.subject) === 'sale_file:f-c').map((r) => Number(r.seq)).sort();
     // Le vendeur : l'avancée du dossier, sa note de satisfaction, son choix, sa facture ; jamais ce qui est à l'acquéreur.
     expect(await seqs(A)).toEqual([8101, 8102, 8107, 8108]);
-    // L'acquéreur : l'avancée du dossier, son remerciement, son financement ; ni la note du vendeur, ni sa facture.
-    expect(await seqs(C)).toEqual([8101, 8104, 8109]);
+    // L'acquéreur : l'avancée du dossier, son remerciement, son financement, son avoir ; ni la note du vendeur, ni sa facture.
+    expect(await seqs(C)).toEqual([8101, 8104, 8109, 8110]);
+    // L'autre mandant du bien : sa seule note parmi ce qui est fait pour un client.
+    expect((await seqs(D)).filter((n) => [8102, 8104, 8107, 8108, 8110, 8111].includes(n))).toEqual([8111]);
     // Une note sans côté, une sorte inconnue, la rémunération de l'agent : à personne.
     for (const who of [A, C]) expect(await seqs(who)).not.toEqual(expect.arrayContaining([8103]));
     for (const who of [A, B, C]) expect((await seqs(who)).some((n) => n === 8105 || n === 8106)).toBe(false);

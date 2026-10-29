@@ -97,9 +97,9 @@ export class Satisfaction {
     );
     await this.db.run('UPDATE satisfaction_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL', [at.toISOString(), row.token_hash]);
     if (inserted.changes !== 1) return { ok: false, code: 'used' };
-    // Au journal : le dossier, le côté de qui répond (sa demande d'avis) et la note, jamais le commentaire [R13].
+    // Au journal : le dossier, qui répond et son côté (sa demande d'avis) et la note, jamais le commentaire [R13].
     const side = (await this.db.first<{ side: string }>('SELECT side FROM review_requests WHERE file_id = ? AND person_id = ?', [row.file_id, row.person_id]))?.side ?? null;
-    await appendEvent(this.journal, { type: 'apres_vente.satisfaction', actor: 'client:lien', subject: `sale_file:${row.file_id}`, data: { side, score: input.score, comment: comment !== null } }, this.now);
+    await appendEvent(this.journal, { type: 'apres_vente.satisfaction', actor: 'client:lien', subject: `sale_file:${row.file_id}`, data: { side, client: `person:${row.person_id}`, score: input.score, comment: comment !== null } }, this.now);
     return { ok: true };
   }
 

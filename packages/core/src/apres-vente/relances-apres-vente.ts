@@ -206,7 +206,7 @@ export class RelancesApresVente {
       );
       if (!active) await this.store.addConsent({ networkId: viewer.networkId, personId: root, purpose: AFTER_SALE_PURPOSE, channel: 'email', proof, givenAt: at });
     }
-    await appendEvent(this.journal, { type: 'apres_vente.choix_relances', actor: `agent:${viewer.userId}`, subject, data: { side: sale.clients[roots.indexOf(root)]!.side, choice: input.choice } }, this.now);
+    await appendEvent(this.journal, { type: 'apres_vente.choix_relances', actor: `agent:${viewer.userId}`, subject, data: { side: sale.clients[roots.indexOf(root)]!.side, client: `person:${root}`, choice: input.choice } }, this.now);
     return { ok: true };
   }
 
@@ -294,7 +294,7 @@ export class RelancesApresVente {
       "UPDATE after_sale_reminders SET status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE file_id = ? AND person_id = ? AND year = ? AND status IN ('waiting', 'failed')",
       [status, rule, messageId, this.now().toISOString(), sale.fileId, personId, year],
     );
-    await appendEvent(this.journal, { type: 'apres_vente.relance', actor: 'system:apres-vente', subject: `sale_file:${sale.fileId}`, data: { mode: 'essai', side: await this.sideOf(sale, personId), year, status, rule } }, this.now);
+    await appendEvent(this.journal, { type: 'apres_vente.relance', actor: 'system:apres-vente', subject: `sale_file:${sale.fileId}`, data: { mode: 'essai', side: await this.sideOf(sale, personId), client: `person:${personId}`, year, status, rule } }, this.now);
   }
 
   /**
@@ -320,7 +320,7 @@ export class RelancesApresVente {
       if (changes !== 1) continue;
       const sale = await this.dossiers.byId(networkId, r.file_id);
       const side = sale ? await this.sideOf(sale, r.person_id) : null;
-      await appendEvent(this.journal, { type: 'apres_vente.relance', actor: 'system:apres-vente', subject: `sale_file:${r.file_id}`, data: { mode: 'essai', side, year: r.year, status: 'closed', rule: 'delai_depasse' } }, this.now);
+      await appendEvent(this.journal, { type: 'apres_vente.relance', actor: 'system:apres-vente', subject: `sale_file:${r.file_id}`, data: { mode: 'essai', side, client: `person:${r.person_id}`, year: r.year, status: 'closed', rule: 'delai_depasse' } }, this.now);
     }
     let sent = 0;
     for (const year of KEY_YEARS) {
