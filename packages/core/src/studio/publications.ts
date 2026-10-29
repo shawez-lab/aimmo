@@ -20,6 +20,7 @@ import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { fallbackListing, publicTextProblems, sentences, traceListing, type ListingFacts } from '../annonces/annonce-sourcee.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import type { PropertyStatus } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { CertifiedPhoto } from './certificats.ts';
@@ -37,6 +38,14 @@ export const EVENT_HEADLINES: Readonly<Record<SocialEvent, string>> = Object.fre
   visite: 'Visites en cours pour ce bien.',
   offre: 'Une offre a été reçue pour ce bien.',
   vente: 'Ce bien a trouvé preneur.',
+});
+
+/** L'état du bien que chaque événement exige : on n'annonce pas une offre ou une vente qui n'existe pas [R10]. */
+export const EVENT_STATUSES: Readonly<Record<SocialEvent, readonly PropertyStatus[]>> = Object.freeze({
+  nouveau_bien: ['available'],
+  visite: ['available', 'under_offer'],
+  offre: ['under_offer'],
+  vente: ['sold'],
 });
 
 /** L'IA qui rédige le corps. Elle ne reçoit que les faits du bien et l'événement [R15]. */
@@ -155,6 +164,7 @@ export class Publications {
     const bad = (rule: 'R10' | 'R42' | 'R46' | 'R130', code: string) => this.bad<SocialPost>(actor, `property:${propertyId}`, rule, code);
     if (!(SOCIAL_EVENTS as readonly unknown[]).includes(input.event)) return bad('R10', 'evenement_inconnu');
     const event = input.event as SocialEvent;
+    if (!EVENT_STATUSES[event].includes(seen.value.status)) return bad('R10', 'evenement_sans_fondement');
     if (!Array.isArray(input.visuals) || input.visuals.length === 0 || input.visuals.length > MAX_VISUALS || input.visuals.some((v) => typeof v !== 'string')) return bad('R10', 'visuels_invalides');
     const refs = [...new Set(input.visuals as string[])];
     if (refs.length !== input.visuals.length) return bad('R10', 'visuels_invalides');
@@ -286,6 +296,9 @@ export class Publications {
     if (!current.validated) return this.bad(actor, subject, 'R134', 'non_validee');
     if (wanted.some((w) => !this.channels.has(w.channel))) return this.bad(actor, subject, 'R26', 'canal_hors_service');
     if (!(await this.deps.diffusion.canDiffuse(post.value.network_id, post.value.property_id, this.now())).allowed) return this.bad(actor, subject, 'R42', 'bien_non_diffusable');
+    // L'événement est encore vrai au moment d'envoyer : une offre retirée ne s'annonce plus [R10].
+    const status = await this.db.first<{ status: PropertyStatus }>('SELECT status FROM properties WHERE id = ?', [post.value.property_id]);
+    if (!status || !EVENT_STATUSES[post.value.event].includes(status.status)) return this.bad(actor, subject, 'R10', 'evenement_sans_fondement');
     const certified = new Set((await this.deps.certs.publishable(post.value.property_id)).map((c) => c.ref));
     if (current.visuals.some((v) => !certified.has(v.ref))) return this.bad(actor, subject, 'R130', 'visuel_sans_certificat');
     for (const w of wanted) {
@@ -393,11 +406,11 @@ export class Publications {
     return { ok: true, value: row };
   }
 
-  private async full(viewer: Viewer, propertyId: string): Promise<PostResult<{ networkId: string }>> {
+  private async full(viewer: Viewer, propertyId: string): Promise<PostResult<{ networkId: string; status: PropertyStatus }>> {
     const read = await this.acces.readProperty(viewer, propertyId);
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.view !== 'full') return this.refused(viewer, `property:${propertyId}`, 'not_assigned');
-    return { ok: true, value: { networkId: read.value.network_id } };
+    return { ok: true, value: { networkId: read.value.network_id, status: read.value.status } };
   }
 
   private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R46' | 'R130' | 'R132' | 'R134' | 'R26', code: string): Promise<PostResult<T>> {

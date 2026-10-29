@@ -111,6 +111,7 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
       { write: async () => ({ body: 'Logement au 12 rue des Essais, très lumineux et calme.' }) },
       { write: async () => ({ body: 'Logement de 95 m² avec balcon, à visiter vite.' }) },
       { write: async () => ({ body: 'Idéal pour un couple sans enfants, au calme.' }) },
+      { write: async () => ({ body: 'Logement de 72 m² proposé par votre mandataire, visite gratuite.' }) },
       { write: async () => { throw new Error('panne'); } },
       { write: () => new Promise<{ body: string }>((resolve) => setTimeout(() => resolve({ body: 'trop tard, trop tard' }), 500)) },
     ] as SocialWriter[]) {
@@ -119,7 +120,7 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
       expect(r).toMatchObject({ ok: true, value: { origin: 'secours' } });
       if (!r.ok) return;
       expect(r.value.text).toBe(`Nouveau bien à découvrir.\n\n${fallbackListing(FACTS).body}`);
-      expect(r.value.text).not.toMatch(/rue des Essais|95 m²|enfants/);
+      expect(r.value.text).not.toMatch(/rue des Essais|95 m²|enfants|mandataire|gratuit/);
     }
   });
 
@@ -128,9 +129,16 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
     expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 3)] })).toEqual({ ok: false, rule: 'R130', code: 'visuel_sans_certificat' });
     expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [] })).toEqual({ ok: false, rule: 'R10', code: 'visuels_invalides' });
     expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'soldes', visuals: [photo(t.p.id, 1)] })).toEqual({ ok: false, rule: 'R10', code: 'evenement_inconnu' });
+    // [R10] On n'annonce ni une offre ni une vente que les données ne disent pas.
+    expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'offre', visuals: [photo(t.p.id, 1)] })).toEqual({ ok: false, rule: 'R10', code: 'evenement_sans_fondement' });
+    expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'vente', visuals: [photo(t.p.id, 1)] })).toEqual({ ok: false, rule: 'R10', code: 'evenement_sans_fondement' });
+    await t.db.run("UPDATE properties SET status = 'under_offer' WHERE id = ?", [t.p.id]);
+    expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'offre', visuals: [photo(t.p.id, 1)] })).toMatchObject({ ok: true, value: { text: expect.stringMatching(/^Une offre a été reçue pour ce bien\./) } });
+    expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] })).toEqual({ ok: false, rule: 'R10', code: 'evenement_sans_fondement' });
+    await t.db.run("UPDATE properties SET status = 'available' WHERE id = ?", [t.p.id]);
     t.state.diffusable = false;
     expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] })).toEqual({ ok: false, rule: 'R42', code: 'bien_non_diffusable' });
-    expect(await t.db.all('SELECT id FROM social_posts')).toEqual([]);
+    expect(await t.db.all('SELECT id FROM social_posts')).toHaveLength(1);
   });
 
   it('[R132] un visuel avec une adresse lisible, ou une personne reconnaissable sans accord rangé, est refusé ; l’aménagement virtuel exige sa mention', async () => {
@@ -162,7 +170,7 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
 
   it('[R134] rien ne part sans la validation de l’agent du bien ; ensuite, en un geste, vers chaque compte, en mode essai', async () => {
     const t = await setup();
-    const prep = await t.pubs.prepare(t.alexV, t.p.id, { event: 'offre', visuals: [photo(t.p.id, 1)] });
+    const prep = await t.pubs.prepare(t.alexV, t.p.id, { event: 'visite', visuals: [photo(t.p.id, 1)] });
     if (!prep.ok) throw new Error(prep.code);
     const targets = [
       { channel: 'instagram', account: 'agent' },
@@ -197,6 +205,10 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
     t.state.diffusable = false;
     expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R42', code: 'bien_non_diffusable' });
     t.state.diffusable = true;
+    // [R10] Le bien est passé sous offre depuis : « nouveau bien » ne part plus.
+    await t.db.run("UPDATE properties SET status = 'under_offer' WHERE id = ?", [t.p.id]);
+    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R10', code: 'evenement_sans_fondement' });
+    await t.db.run("UPDATE properties SET status = 'available' WHERE id = ?", [t.p.id]);
     t.state.certified = t.state.certified.slice(0, 1);
     expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R130', code: 'visuel_sans_certificat' });
     expect(t.received).toEqual([]);
@@ -225,8 +237,8 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
     const t = await setup();
     expect(await t.pubs.prepare(t.as('agent', t.sam.id), t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.pubs.prepare(t.as('compliance', 'c1'), t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] })).toEqual({ ok: false, rule: 'R16', code: 'role' });
-    const d = await t.pubs.prepare(t.as('direction', 'd1'), t.p.id, { event: 'vente', visuals: [photo(t.p.id, 1)] });
-    expect(d).toMatchObject({ ok: true, value: { event: 'vente' } });
+    const d = await t.pubs.prepare(t.as('direction', 'd1'), t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
+    expect(d).toMatchObject({ ok: true, value: { event: 'nouveau_bien' } });
     if (!d.ok) return;
     expect(await t.pubs.read(t.as('agent', t.sam.id), d.value.id)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.pubs.read(t.alexV, d.value.id)).toMatchObject({ ok: true });
