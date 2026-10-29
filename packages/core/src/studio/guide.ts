@@ -102,6 +102,8 @@ export interface GuideProgress {
   ready: boolean;
   validated: { by: string; at: string } | null;
   doNotForget: readonly string[];
+  /** L'empreinte des vues et des photos retenues, à laquelle une validation est attachée. */
+  shotsSha256: string;
 }
 
 export type GuideResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | null; code: string };
@@ -115,7 +117,7 @@ interface PropertyRow {
 
 interface SheetData {
   characteristics?: { bedrooms?: unknown; outdoor?: unknown; parkingSpaces?: unknown };
-  media?: { ref?: unknown; kind?: unknown }[];
+  media?: { ref?: unknown; kind?: unknown; edit?: unknown }[];
 }
 
 async function sha256Hex(text: string): Promise<string> {
@@ -185,11 +187,10 @@ export class GuidePriseDeVue {
     const state = await this.state(seen.value);
     if (state.validated) return { ok: true, value: state };
     if (!state.ready) return { ok: false, rule: 'R10', code: 'pas_pret' };
-    const shots = state.views.filter((v) => v.mediaRef !== null).map((v) => `${v.key}=${v.mediaRef}`).join('\n');
     const at = this.now().toISOString();
     const { changes } = await this.db.run(
-      'INSERT INTO photo_guide_validations (property_id, network_id, shots_sha256, validated_by, validated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
-      [propertyId, seen.value.network_id, await sha256Hex(shots), `direction:${viewer.userId}`, at],
+      'INSERT INTO photo_guide_validations (id, property_id, network_id, shots_sha256, validated_by, validated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+      [this.newId(), propertyId, seen.value.network_id, state.shotsSha256, `direction:${viewer.userId}`, at],
     );
     if (changes === 1) await appendEvent(this.journal, { type: 'studio.guide.valide', actor: `direction:${viewer.userId}`, subject: `property:${propertyId}`, data: {} }, this.now);
     return { ok: true, value: await this.state(seen.value) };
@@ -216,8 +217,13 @@ export class GuidePriseDeVue {
       return { ...v, mediaRef: ref !== null && photos.has(ref) ? ref : null };
     });
     const missing = withShots.filter((v) => v.mandatory && v.mediaRef === null).map((v) => v.key);
-    const val = await this.db.first<{ validated_by: string; validated_at: string }>('SELECT validated_by, validated_at FROM photo_guide_validations WHERE property_id = ?', [p.id]);
-    return { propertyId: p.id, views: withShots, missing, ready: missing.length === 0, validated: val ? { by: val.validated_by, at: val.validated_at } : null, doNotForget: DO_NOT_FORGET };
+    // La validation vaut pour ces vues et ces photos-là : la fiche ou une photo changée depuis la rend caduque.
+    const shotsSha256 = await sha256Hex(withShots.map((v) => `${v.key}${v.mandatory ? '!' : ''}=${v.mediaRef ?? ''}`).join('\n'));
+    const ready = missing.length === 0;
+    const val = ready
+      ? await this.db.first<{ validated_by: string; validated_at: string }>('SELECT validated_by, validated_at FROM photo_guide_validations WHERE property_id = ? AND shots_sha256 = ?', [p.id, shotsSha256])
+      : null;
+    return { propertyId: p.id, views: withShots, missing, ready, validated: val ? { by: val.validated_by, at: val.validated_at } : null, doNotForget: DO_NOT_FORGET, shotsSha256 };
   }
 
   private async sheet(propertyId: string): Promise<SheetData | null> {
@@ -231,7 +237,8 @@ export class GuidePriseDeVue {
   }
 
   private refsOf(sheet: SheetData | null): string[] {
-    return (sheet?.media ?? []).filter((m) => m && m.kind === 'photo' && typeof m.ref === 'string').map((m) => m.ref as string);
+    // Une image d'aménagement virtuel ne remplit jamais une vue : le guide compte des prises de vue réelles [R10].
+    return (sheet?.media ?? []).filter((m) => m && m.kind === 'photo' && m.edit !== 'amenagement_virtuel' && typeof m.ref === 'string').map((m) => m.ref as string);
   }
 
   private async photoRefs(propertyId: string): Promise<string[]> {

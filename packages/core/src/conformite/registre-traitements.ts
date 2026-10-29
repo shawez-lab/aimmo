@@ -796,7 +796,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_communes: ['property_id', 'network_id', 'insee_code', 'rent_kind', 'recorded_at'],
   market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
   photo_guide_shots: ['id', 'property_id', 'network_id', 'view_key', 'recorded_at'],
-  photo_guide_validations: ['property_id', 'network_id', 'validated_at'],
+  photo_guide_validations: ['id', 'property_id', 'network_id', 'validated_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */

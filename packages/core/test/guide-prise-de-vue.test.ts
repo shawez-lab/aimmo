@@ -111,4 +111,31 @@ describeWithSqlite('X01 · guide de prise de vue', () => {
     expect(await t.guide.recordShot(t.as('compliance', 'c1'), t.p.id, { viewKey: 'entree', mediaRef: t.photos[0]!.ref })).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
     expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse').length).toBeGreaterThanOrEqual(2);
   });
+
+  it('[R17] une fiche ou une photo changée après la validation la rend caduque : le guide se complète et se valide de nouveau', async () => {
+    const t = await setup();
+    const alex = t.as('agent', t.alex.id);
+    const keys = ['entree', 'sejour', 'cuisine', 'chambre_1', 'salle_d_eau', 'exterieur_jardin'];
+    for (const [i, k] of keys.entries()) await t.guide.recordShot(alex, t.p.id, { viewKey: k, mediaRef: t.photos[i]!.ref });
+    await t.guide.validate(t.as('direction', 'd1'), t.p.id);
+    // La fiche passe à 2 chambres : une vue de plus, la validation ne tient plus.
+    await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('s-9', ?, ?, 2, ?, 'agent:a', '2027-10-02')", [
+      t.p.id,
+      t.network.id,
+      JSON.stringify({ characteristics: { bedrooms: 2, outdoor: ['jardin'], parkingSpaces: 0 }, energy: null, coownership: null, risks: null, media: t.photos }),
+    ]);
+    const stale = await t.guide.progress(alex, t.p.id);
+    expect(stale.ok && [stale.value.ready, stale.value.validated]).toEqual([false, null]);
+    expect(await t.guide.recordShot(alex, t.p.id, { viewKey: 'chambre_2', mediaRef: t.photos[6]!.ref })).toMatchObject({ ok: true, value: { ready: true, validated: null } });
+    const again = await t.guide.validate(t.as('direction', 'd2'), t.p.id);
+    expect(again.ok && again.value.validated).toMatchObject({ by: 'direction:d2' });
+    expect(Number((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM photo_guide_validations'))!.n)).toBe(2);
+  });
+
+  it('[R10] une image d’aménagement virtuel ne remplit jamais une vue', async () => {
+    const t = await setup();
+    const virtual = { ref: ref(t.p.id, 8), kind: 'photo', edit: 'amenagement_virtuel' };
+    await t.sheet(2, [...t.photos, virtual]);
+    expect(await t.guide.recordShot(t.as('agent', t.alex.id), t.p.id, { viewKey: 'sejour', mediaRef: virtual.ref })).toMatchObject({ ok: false, code: 'photo_inconnue' });
+  });
 });

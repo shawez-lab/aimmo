@@ -15,13 +15,16 @@ CREATE INDEX IF NOT EXISTS photo_guide_shots_property ON photo_guide_shots (prop
 CREATE TRIGGER IF NOT EXISTS photo_guide_shots_garde BEFORE DELETE ON photo_guide_shots BEGIN SELECT RAISE(ABORT, 'photo_guide_shots : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS photo_guide_shots_fige BEFORE UPDATE ON photo_guide_shots BEGIN SELECT RAISE(ABORT, 'photo_guide_shots : un choix rangé ne change plus'); END;
 
--- La validation par la direction d'un bien photographié avec le guide : une fois par bien, avec la liste des photos vue.
+-- La validation par la direction d'un bien photographié avec le guide, attachée à l'empreinte des photos retenues : une
+-- photo changée ou une vue ajoutée depuis la rend caduque, et une nouvelle validation s'ajoute, rien ne s'efface.
 CREATE TABLE IF NOT EXISTS photo_guide_validations (
-  property_id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY,
+  property_id TEXT NOT NULL,
   network_id TEXT NOT NULL,
   shots_sha256 TEXT NOT NULL CHECK (length(shots_sha256) = 64),
   validated_by TEXT NOT NULL,
   validated_at TEXT NOT NULL,
+  UNIQUE (property_id, shots_sha256),
   FOREIGN KEY (property_id, network_id) REFERENCES properties (id, network_id) ON DELETE RESTRICT
 );
 CREATE TRIGGER IF NOT EXISTS photo_guide_validations_garde BEFORE DELETE ON photo_guide_validations BEGIN SELECT RAISE(ABORT, 'photo_guide_validations : rien ne s''efface'); END;
