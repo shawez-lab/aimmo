@@ -508,7 +508,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     finalite: 'Vendre un fonds de commerce, un droit au bail, des murs ou un local professionnel dans la discrétion : la fiche du commerce, dont les chiffres et le bail restent confidentiels.',
     baseLegale: 'mesures_precontractuelles',
     personnes: ['Vendeurs de commerces et d\'entreprises'],
-    donnees: ['Fiche du commerce : enseigne, chiffres d\'affaires et résultats des 3 derniers exercices, bail commercial, salariés (nombre), matériel, autorisations, chaque champ avec son auteur', 'Estimations du commerce en fourchette, avec leurs lignes de calcul et leur validation par l\'agent', 'Auteur de chaque barème d\'estimation par activité', 'Présentation anonyme du commerce, son auteur et sa validation par l\'agent'],
+    donnees: ['Fiche du commerce : enseigne, chiffres d\'affaires et résultats des 3 derniers exercices, bail commercial, salariés (nombre), matériel, autorisations, chaque champ avec son auteur', 'Estimations du commerce en fourchette, avec leurs lignes de calcul et leur validation par l\'agent', 'Auteur de chaque barème d\'estimation par activité', 'Présentation anonyme du commerce, son auteur et sa validation par l\'agent', 'Demandes d\'accès des repreneurs, engagements de confidentialité à leur nom, leurs signatures en ligne (empreintes du code et du tracé) et leurs révocations'],
     duree: 'La durée du mandat puis 5 ans.',
     destinataires: ['L\'agent du bien', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
@@ -519,6 +519,11 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       business_valuation_scales: ['recorded_by'],
       business_presentations: ['title', 'body', 'created_by'],
       business_presentation_validations: ['validated_by'],
+      business_nda_templates: ['body', 'body_sha256', 'created_by'],
+      business_access_requests: ['person_id', 'created_by'],
+      business_ndas: ['person_id', 'content', 'content_sha256', 'created_by'],
+      business_nda_signatures: ['person_id', 'content_sha256', 'code_hash', 'drawing_hash', 'proof', 'created_by'],
+      business_nda_revocations: ['reason', 'revoked_by'],
     },
   },
 ];
@@ -805,6 +810,11 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   business_valuation_scales: ['id', 'network_id', 'activity', 'method', 'low', 'high', 'source', 'source_date', 'version', 'recorded_at'],
   business_presentations: ['id', 'network_id', 'property_id', 'seq', 'origin', 'sheet_version', 'valuation_id', 'created_at'],
   business_presentation_validations: ['presentation_id', 'network_id', 'validated_at'],
+  business_nda_templates: ['id', 'network_id', 'version', 'created_at'],
+  business_access_requests: ['id', 'network_id', 'property_id', 'nda_id', 'created_at'],
+  business_ndas: ['id', 'network_id', 'property_id', 'template_id', 'created_at'],
+  business_nda_signatures: ['id', 'network_id', 'nda_id', 'expires_at', 'attempts', 'status', 'created_at', 'signed_at'],
+  business_nda_revocations: ['nda_id', 'network_id', 'revoked_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
