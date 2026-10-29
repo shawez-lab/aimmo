@@ -237,7 +237,14 @@ async function setup() {
 describeWithSqlite('Y03 · calcul d’investissement rangé', () => {
   it('[R120] le calcul est rangé avec ses entrées et se rejoue à l’identique ; il ne change plus [R17]', async () => {
     const t = await setup();
-    const r = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-1', projectId: t.project.id, inputs: inputsOf(CASES[3]!.inputs) });
+    // Le loyer du bien 4 rangé dans la base, comme l'ANIL le publie : le calcul le lit, il n'est jamais saisi [R122].
+    await t.loyers.importAnil(t.as('direction', 'dir-1'), { kind: 'apartment', vintage: 2026, csv: 'INSEE_C;loypredm2;lwr.IPm2;upr.IPm2;nbobs_com\n99004;10,20;8,80;11,90;80' });
+    const r = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), {
+      propertyId: 'p-1',
+      projectId: t.project.id,
+      marketRentQuery: { inseeCode: '99004', kind: 'apartment' },
+      inputs: { ...inputsOf(CASES[3]!.inputs), marketRent: null },
+    });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.result).toMatchObject({ status: 'complet', grossYieldBp: { central: 316 }, netYieldBp: { central: 200 } });
@@ -295,10 +302,13 @@ describeWithSqlite('Y03 · calcul d’investissement rangé', () => {
     expect(r.value.result.lines.find((l) => l.key === 'netYieldBpHigh')).toMatchObject({ value: 346, source: 'calcul' });
 
     // Un agent qui écrit « bien » ou « ANIL » comme source d'un chiffre saisi : la source rangée reste la sienne.
-    const forged = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', inputs: { ...c, price: src(5_000_000, 'bien:p-2', 'prix affiché') } });
+    const forged = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', inputs: { ...c, marketRent: null, price: src(5_000_000, 'bien:p-2', 'prix affiché') } });
     if (!forged.ok) throw new Error(forged.code);
     expect(forged.value.inputs.price!.source).toBe(`saisi:agent:${t.alex.id}`);
-    expect(forged.value.inputs.marketRent!.source).toBe(`saisi:agent:${t.alex.id}`);
+    // Un loyer de marché saisi est refusé, même avec une source « ANIL » ou une commune connue : seule la base le donne.
+    for (const marketRentQuery of [undefined, { inseeCode: '99001', kind: 'apartment' }]) {
+      expect(await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', marketRentQuery, inputs: c })).toMatchObject({ ok: false, rule: 'R122', code: 'loyer_saisi', field: 'marketRent' });
+    }
     // Sans loyer dans la base pour la commune : incomplet, jamais un chiffre inventé.
     const none = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', marketRentQuery: { inseeCode: '99009', kind: 'apartment' }, inputs: { ...c, marketRent: null } });
     expect(none.ok && none.value.result).toMatchObject({ status: 'incomplet', missing: ['marketRent'] });
