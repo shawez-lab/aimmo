@@ -29,6 +29,7 @@ import { plain } from '../../envoi/texte.ts';
 import { FicheUnique } from '../../fiche/fusion.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
+import { agentBlocked } from './etat-agent.ts';
 
 /** Finalité de l'accord d'une relance d'ancien contact [R03]. */
 export const OLD_CONTACT_PURPOSE = 'relance_ancien_contact';
@@ -183,6 +184,8 @@ export class AnciensContacts {
   /** L'agent note la fin connue d'un bail d'une personne qu'il suit. */
   async noteLeaseEnd(viewer: Viewer, personId: string, onDay: unknown): Promise<OldContactResult<{ id: string }>> {
     if (viewer.role !== 'agent') return this.refused(viewer, 'role');
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refused(viewer, blocked);
     if (typeof onDay !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(onDay) || Number.isNaN(Date.parse(`${onDay}T12:00:00Z`))) return { ok: false, rule: null, code: 'bad_day' };
     // Une personne inconnue n'a pas d'agent : refusée comme une fiche d'un autre [R16].
     const root = await this.fiche.rootOf(personId);
@@ -347,6 +350,8 @@ export class AnciensContacts {
    */
   async toValidate(viewer: Viewer): Promise<OldContactResult<OldContactItem[]>> {
     if (viewer.role !== 'agent') return this.refused(viewer, 'role');
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refused(viewer, blocked);
     const at = this.now();
     await this.expireOld(viewer.networkId, parisDay(at).slice(0, 7));
     const rows = await this.db.all<FollowupRow>("SELECT * FROM old_contact_followups WHERE network_id = ? AND agent_id = ? AND status = 'a_valider'", [viewer.networkId, viewer.userId]);
@@ -380,6 +385,8 @@ export class AnciensContacts {
    */
   async validate(viewer: Viewer, followupId: string, input: { channel?: unknown; text?: unknown } = {}): Promise<OldContactResult<{ status: 'essai' | 'refusee' | 'attente'; rule: string | null; delivered: false }>> {
     if (viewer.role !== 'agent') return this.refused(viewer, 'role');
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refused(viewer, blocked);
     const r = await this.db.first<FollowupRow>('SELECT * FROM old_contact_followups WHERE id = ? AND network_id = ?', [followupId, viewer.networkId]);
     if (!r || r.agent_id !== viewer.userId) return this.refused(viewer, 'not_assigned');
     if (r.status !== 'a_valider') return { ok: false, rule: null, code: 'already_decided' };

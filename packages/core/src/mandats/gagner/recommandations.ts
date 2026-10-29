@@ -27,6 +27,7 @@ import { normalizeIdentifier } from '../../fiche/normalize.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
 import type { Annuaire } from '../../partenaires/annuaire.ts';
+import { agentBlocked } from './etat-agent.ts';
 
 /** Les seuls champs d'une recommandation de partenaire : aucun ne parle de récompense [R66]. */
 export const PARTNER_RECOMMENDATION_FIELDS = ['firstName', 'email', 'phone', 'projectKind', 'consent'] as const;
@@ -325,6 +326,8 @@ export class RecommandationsGagner {
    */
   async toCall(viewer: Viewer): Promise<RecommendationResult<RecommendationToCall[]>> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refused(viewer, null, 'role');
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refused(viewer, null, blocked);
     const at = this.now();
     const out: RecommendationToCall[] = [];
     const push = async (origin: 'client' | 'partner', id: string, referred: string, typed: string | null, dueAt: string, sourceLabel: string, channel: RecommendationConsentChannel): Promise<void> => {
@@ -377,6 +380,8 @@ export class RecommandationsGagner {
 
   /** « Appel fait » pour une recommandation de partenaire : l'agent qui a la tâche, avec ses droits d'aujourd'hui [R16]. */
   async callDone(viewer: Viewer, recommendationId: string): Promise<RecommendationResult<{ done: true }>> {
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refused(viewer, null, blocked);
     const row = await this.db.first<PartnerRecommendationRow>('SELECT * FROM partner_recommendations WHERE id = ? AND network_id = ?', [recommendationId, viewer.networkId]);
     if (!row || row.call_due_at === null) return this.refused(viewer, null, 'unknown');
     if (viewer.role !== 'agent' || viewer.userId !== row.agent_id) return this.refused(viewer, null, 'not_assigned');
