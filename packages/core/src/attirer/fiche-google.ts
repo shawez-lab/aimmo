@@ -354,7 +354,8 @@ export class FicheGoogle {
     if (!loc) return { ok: false, rule: null, code: 'sans_fiche' };
     const card = await this.db.first<{ phone: string }>('SELECT phone FROM agent_public_cards WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [agentId, networkId]);
     const info: GbpInfo = { title: loc.title, phone: card?.phone ?? null, websiteUri: loc.websiteUri };
-    const hash = await sha256Hex(JSON.stringify(info));
+    // Le lieu de destination compte aussi : une fiche nouvellement réglée reçoit ses informations même inchangées.
+    const hash = await sha256Hex(JSON.stringify({ to: loc.locationRef, info }));
     const last = await this.db.first<{ info_sha256: string }>(
       "SELECT info_sha256 FROM gbp_sends WHERE network_id = ? AND agent_id = ? AND kind = 'informations' AND outcome IN ('essai', 'envoye') AND mode = ? ORDER BY sent_at DESC, rowid DESC LIMIT 1",
       [networkId, agentId, this.mode],
@@ -596,6 +597,19 @@ export class FicheGoogle {
    * essai, rien ne part, l'envoi est seulement noté [R26, R154].
    */
   async publish(viewer: Viewer, draftId: unknown): Promise<{ ok: true; mode: 'essai' | 'reel' } | GbpRefusal> {
+    const r = await this.tryPublish(viewer, draftId);
+    // Chaque refus d'envoi est écrit au journal avec sa règle, sans le texte [R13] ; un refus d'accès l'est déjà.
+    if (!r.ok && r.rule !== 'R16') {
+      await appendEvent(
+        this.journal,
+        { type: 'attirer.google.envoi_refuse', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { rule: r.rule ?? 'R154', code: r.code, mode: this.mode, ...('problems' in r ? { problems: r.problems } : {}) } },
+        this.now,
+      );
+    }
+    return r;
+  }
+
+  private async tryPublish(viewer: Viewer, draftId: unknown): Promise<{ ok: true; mode: 'essai' | 'reel' } | GbpRefusal> {
     const row = await this.draftRow(viewer.networkId, draftId);
     if (!row) return this.refuse(viewer, `network:${viewer.networkId}`, 'inconnu');
     const allowed = await this.allowed(viewer, row.agent_id);

@@ -480,6 +480,25 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     expect(await reel.publish(agent, p.value.draftId)).toEqual({ ok: false, rule: 'R154', code: 'deja_parti' });
   });
 
+  it('[R13] chaque refus d’envoi est écrit au journal avec sa règle, sans le texte', async () => {
+    const s = await setup({ mode: 'reel' });
+    const d = await s.fiche.writeReply(agent, await withReview(s), 'Merci pour votre avis, texte inventé unique.');
+    if (!d.ok) throw new Error('refusé');
+    expect(await s.fiche.publish(agent, d.value.draftId)).toMatchObject({ code: 'non_valide' });
+    const rows = await s.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type = 'attirer.google.envoi_refuse'");
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]!.data)).toMatchObject({ rule: 'R154', code: 'non_valide', mode: 'reel' });
+    expect(JSON.stringify(await s.db.all('SELECT * FROM journal'))).not.toContain('texte inventé unique');
+  });
+
+  it('une fiche réglée sur un autre lieu Google reçoit ses informations, même inchangées', async () => {
+    const s = await setup({ mode: 'reel' });
+    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toMatchObject({ changed: true });
+    await s.fiche.setLocation(direction, 'ag-1', { locationRef: 'locations/456', title: 'Camille Exemple, agent immobilier', websiteUri: 'https://camille.exemple.test' });
+    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toMatchObject({ changed: true });
+    expect(s.client.writes()).toEqual(['info', 'info']);
+  });
+
   it('une panne en mode réel est notée, et le texte peut repartir ensuite', async () => {
     const s = await setup({ mode: 'reel' });
     const d = await s.fiche.draftReply(agent, await withReview(s));
