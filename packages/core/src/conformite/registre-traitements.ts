@@ -468,12 +468,13 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     finalite: 'Accompagner un investisseur locatif : son profil de projet, sans aucune évaluation de sa solvabilité, pour lui proposer des biens avec un rendement calculé par le code.',
     baseLegale: 'mesures_precontractuelles',
     personnes: ['Investisseurs'],
-    donnees: ['Profil du projet : budget, apport déclaré, location visée, secteurs, rendement brut attendu, délai, chaque champ avec sa source (jamais de revenus, d\'emploi, de patrimoine ni de crédit)'],
+    donnees: ['Auteur de chaque import des loyers de marché', 'Profil du projet : budget, apport déclaré, location visée, secteurs, rendement brut attendu, délai, chaque champ avec sa source (jamais de revenus, d\'emploi, de patrimoine ni de crédit)'],
     duree: '3 ans après le dernier contact du prospect ; la durée du mandat puis 5 ans pour un client.',
     destinataires: ['L\'agent de la fiche', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
     tables: {
       investor_profiles: ['person_id', 'budget_cents', 'declared_down_payment_cents', 'sectors', 'target_gross_yield_bp'],
+      market_rent_imports: ['file_sha256', 'imported_by'],
     },
   },
 ];
@@ -491,6 +492,7 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   assistant_calls: 'Compteur d\'appels de l\'assistant du site, par seau de temps.',
   trial_outbox: 'File d\'essai des envois : un identifiant de message et un canal.',
   human_replies: 'Clés d\'idempotence des réponses écrites par un agent.',
+  market_rents: 'Loyers de marché par commune importés de la Carte des loyers de l\'ANIL : aucune personne.',
 };
 
 /**
@@ -737,6 +739,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   rental_management_links: ['id', 'listing_id', 'network_id', 'referral_id', 'partner_id', 'linked_at'],
   rental_fees: ['listing_id', 'version', 'insee_code', 'tenant_ceiling_cents', 'inventory_ceiling_cents', 'deposit_ceiling_cents', 'recorded_at'],
   investor_profiles: ['id', 'network_id', 'project_id', 'version', 'rental_target', 'deadline', 'sources', 'origin', 'created_at'],
+  market_rents: ['import_id', 'insee_code', 'rent_m2_cents', 'lower_m2_cents', 'upper_m2_cents', 'observations'],
+  market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
