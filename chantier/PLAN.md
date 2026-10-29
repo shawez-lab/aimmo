@@ -1821,6 +1821,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 
 ### X06 · Supports imprimés à sa marque
 - Statut : en cours (voie 2)
+- Avancement (2026-10-29) : proposition #186 prête, empilée sur X05 (#184) ; impression vérifiée sous Chromium (une page par support, deux pour la fiche, rien hors de la feuille) ; suite complète verte en local (1780) ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X02
 - Cahier : M19, « Supports imprimés ».
 - Objectif : fiche du bien, panneau, flyer, carte de visite et lettre de quartier, rendus par le code en pages imprimables (A4, A5, carte) sur le système de design, depuis la version publiée du bien et la fiche de l'agent, avec les mentions obligatoires de M07.
@@ -1837,7 +1838,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : la liste réelle des musiques retenues par Shawez pour la mise en service ; les tests n'en ont pas besoin.
 
 ### X08 · Options payantes par les partenaires, et mesure des 20 visuels
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X05
 - Cahier : M19, « Options payantes » ; M18 ; critère « aucune adresse visible sur 20 visuels publiés ».
 - Objectif : la demande d'une option (photographe, drone, visite virtuelle, aménagement virtuel) passe par la mise en relation de M18, rien de neuf ; la mesure des 20 derniers visuels publiés : chacun avec sa liste de contrôle validée, le compte rendu montré à la direction.
