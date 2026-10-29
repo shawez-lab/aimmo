@@ -193,7 +193,8 @@ export class VigilanceCession {
   }
 
   /**
-   * Pour l'agent du bien : la seule demande neutre d'origine des fonds, si le responsable l'a décidée ; jamais l'alerte,
+   * Pour l'agent du bien : la seule demande neutre d'origine des fonds, si le responsable l'a décidée pour l'acquéreur
+   * en vigueur ; jamais l'alerte,
    * ni sa raison, ni ce qui manque.
    */
   async fundsRequest(acces: Acces, viewer: Viewer, fileId: string): Promise<VigilanceCessionResult<{ text: string; documents: readonly string[]; sent: false } | null>> {
@@ -201,7 +202,8 @@ export class VigilanceCession {
     if (!('id' in file)) return file;
     const asked = await this.db.first(
       `SELECT 1 FROM business_transfer_watch a JOIN business_transfer_watch_decisions d ON d.alert_id = a.id
-       WHERE a.file_id = ? AND d.decision = 'origine_des_fonds_demandee'`,
+       WHERE a.file_id = ? AND d.decision = 'origine_des_fonds_demandee'
+         AND a.person_id = (SELECT b.person_id FROM business_transfer_buyers b WHERE b.file_id = a.file_id ORDER BY b.version DESC LIMIT 1)`,
       [file.id],
     );
     return { ok: true, value: asked ? { text: FUNDS_REQUEST_TEXT, documents: FUNDS_REQUEST_DOCUMENTS, sent: false } : null };
