@@ -6,3 +6,4 @@ export * from './bibliotheque.ts';
 export * from './publications.ts';
 export * from './supports.ts';
 export * from './options.ts';
+export * from './atelier.ts';
