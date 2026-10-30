@@ -625,6 +625,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   business_sheets: { locate: [via('property_id', 'properties')] },
   business_valuations: { locate: [via('property_id', 'properties')] },
   business_valuation_validations: { locate: [via('valuation_id', 'business_valuations')] },
+  business_presentations: { locate: [via('property_id', 'properties')] },
+  business_presentation_validations: { locate: [via('presentation_id', 'business_presentations')] },
   business_valuation_scales: out('sans_client', 'Barèmes d\'estimation par activité, rangés par la direction : aucune personne.'),
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
   investment_calculations: { locate: [via('project_id', 'projects')] },
