@@ -1325,7 +1325,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 ### J13 · Branchement de M14 dans le socle
 - Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : l'état de l'agent (`parti`, `dossier_incomplet`, `actif`) est lu par `app.ts` avant toute route et par `Acces` ; un agent sans aucun dossier (ni entrée par M14, ni pièce rangée), créé hors de M14, garde ses droits pendant la preuve à Dijon, la règle vaut pour toujours dès l'entrée ou la première pièce ; hors dossier complet, seules les routes d'intégration (`OPEN_WITHOUT_AGENT_FILE`) ; le contrôle des envois refuse ce qu'un agent parti a préparé ou validé (`preparedBy` : compte rendu, point de la semaine, remerciement) et, après la reprise, fait partir un suivi du système au nom de qui suit la fiche ; `reseau.passage` est la première tâche de chaque passage ; relecture forte 2 P1, Codex 3 P0 corrigés.
-- Reste : `DossierAgent.admit` range l'agent puis son entrée en deux requêtes ; si la seconde échouait, l'agent garderait ses droits jusqu'à une nouvelle entrée (à regrouper dans un même lot).
+- Reste : réglé par J15 (#221) : l'agent et son entrée sont rangés dans un même lot.
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : J12
 - Cahier : M14 ; critère « aucun accès aux clients avant un dossier d'agent complet ».
 - Objectif : exporter `reseau` depuis `@aimmo/core` ; ajouter les routes de M14 à `app.ts` ; dans les droits d'accès, refuser toute fiche client et tout bien non partagé à un agent dont `DossierAgent.complete` est faux ce jour-là, et à un agent parti ; dans les droits d'accès, lire `Departs.isGone` (vrai dès minuit le jour du départ, avant le passage du planificateur) ; dans le contrôle central des envois, refuser tout envoi dont `Departs.sendAllowed` est faux (agent du message ou agent qui l'a préparé) ; lancer `Departs.runDue` au planificateur ; lancer au planificateur les alertes d'échéances des pièces, du compteur de formation, de l'assistance et les départs du jour ; ajouter `reseauRoutes({ pieces, coach, sandbox })` de `packages/api/src/reseau.ts` aux routes de `app.ts`, et servir `/rejoindre` par `handleCandidature` avec la variable `CANDIDATURE_NETWORK_ID`, comme les autres pages publiques (mode essai, erreur au journal).
@@ -1341,7 +1341,8 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Critères : chaque écran lit seulement par les routes `/v1/reseau`, refus montré sans rien garder [R16] ; la liste des candidatures n'a ni tri, ni filtre, ni note [R81] ; écrans accessibles (libellés, focus, lecteurs d'écran), beaux sur téléphone d'abord, sans texte générique ; testés comme les autres écrans (`fake-dom`).
 - Attend : rien.
 ### J15 · Entrée d'un agent en un seul lot
-- Statut : en cours
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#221). Le lot (`runBatch`) sert désormais à toute écriture en plusieurs requêtes qui doit être tout ou rien ; relecture forte : 1 P1 (test sous la fausse D1) et 1 P2 corrigés ; Codex à sa limite (H03), fusion sans lui ; vérification locale verte (2173 tests).
 - Décidé (2026-10-30) : la voie 1 n'a plus aucune tâche prête (AT10 attend AT09 de la voie 2) ; elle prend le « Reste » de J13. Le socle reçoit une écriture en lot, tout ou rien (`SqlDatabase.batch`, facultative pour les bases de test faites à la main) : transaction sous node:sqlite, `batch` de D1 sous Cloudflare.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : J13
 - Cahier : M14 ; Architecture technique.
