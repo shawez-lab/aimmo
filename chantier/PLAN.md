@@ -1340,6 +1340,15 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Objectif : dans l'application, les écrans « Mon intégration » (dossier d'agent pièce par pièce, référent, premier parcours), « Académie » (parcours, modules faits, compteur des heures) et, pour la direction, « Candidatures » (ordre d'arrivée, fiche d'entretien, décision nommée), lus par les routes de J12.
 - Critères : chaque écran lit seulement par les routes `/v1/reseau`, refus montré sans rien garder [R16] ; la liste des candidatures n'a ni tri, ni filtre, ni note [R81] ; écrans accessibles (libellés, focus, lecteurs d'écran), beaux sur téléphone d'abord, sans texte générique ; testés comme les autres écrans (`fake-dom`).
 - Attend : rien.
+### J15 · Entrée d'un agent en un seul lot
+- Statut : en cours
+- Décidé (2026-10-30) : la voie 1 n'a plus aucune tâche prête (AT10 attend AT09 de la voie 2) ; elle prend le « Reste » de J13. Le socle reçoit une écriture en lot, tout ou rien (`SqlDatabase.batch`, facultative pour les bases de test faites à la main) : transaction sous node:sqlite, `batch` de D1 sous Cloudflare.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : J13
+- Cahier : M14 ; Architecture technique.
+- Objectif : `DossierAgent.admit` range l'agent et son entrée dans le même lot : si l'une des deux écritures échoue, aucune n'est gardée, et l'agent n'a aucun droit sans son entrée.
+- Critères : une entrée qui échoue ne laisse pas d'agent (test sous node:sqlite et sous la fausse D1) ; une écriture en lot qui échoue en route ne garde rien (test) ; deux entrées simultanées ne créent qu'un agent [R18] ; la suite complète reste verte.
+- Attend : rien.
+
 **M12 · Conformité, avant juillet 2027.**
 
 Voie : 1
