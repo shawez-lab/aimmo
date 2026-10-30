@@ -146,10 +146,44 @@ export const JUDGEMENT_TERMS: readonly string[] = [
   'investissement', 'proche', 'proximité', 'à deux pas', 'à quelques pas', 'facilement', 'rapidement', 'bien desservi', 'bien desservie', 'idéalement', 'tous les commerces',
 ];
 
+/**
+ * Racines des jugements et tendances, lues avec leurs accents : toute forme du mot est refusée (« tranquillité »,
+ * « grimpent »). Liste fermée, volontairement large.
+ */
+export const JUDGEMENT_STEMS: readonly string[] = [
+  'tranquill', 'sécur', 'idéal', 'attracti', 'essor', 'grimp', 'envol', 'flamb', 'chut', 'recul', 'progress', 'stabil', 'apprécié', 'demandé', 'bruy', 'danger', 'délinqu',
+  'crimin', 'nocturn', 'populair', 'prisé', 'recherché', 'dynami', 'anim', 'charm', 'agréabl', 'paisib', 'cossu', 'huppé', 'bourgeois', 'hauss', 'baiss', 'augment', 'diminu',
+  'record', 'meilleur', 'pire', 'cherté', 'abordabl', 'rentab', 'invest', 'proche', 'proximit', 'facile', 'rapide', 'convivi', 'résidenti', 'sensibl', 'défavoris', 'vivant',
+  'séduis', 'séduit', 'plébisc', 'convoit', 'tendu', 'dynamis', 'renouv', 'transform', 'rénov', 'mutation', 'gentrif', 'boom', 'explos', 'incontourn', 'exceptionn', 'unique',
+  'rare', 'paradis', 'calme', 'doubl', 'tripl', 'quadrupl', 'moitié',
+];
+/** Mots exacts de tendance ou de jugement trop courts pour une racine. */
+const JUDGEMENT_WORDS = new Set(['sûr', 'sûre', 'sûrs', 'sûres', 'chic', 'cher', 'chère', 'chers', 'chères', 'monte', 'montent', 'montée', 'monté', 'montés', 'top']);
+
+/** Ce dont aucune donnée de la base ne parle : loyers, impôts, fréquentation, nuisances, lieux sans genre de donnée. */
+const UNSOURCED_TERMS: readonly string[] = [
+  'loyer', 'loyers', 'location', 'locations', 'louer', 'locataire', 'locataires', 'mensuel', 'mensuelle', 'par mois', 'rendement', 'taxe', 'taxes', 'impôt', 'impôts', 'charges',
+  'visiteur', 'visiteurs', 'touriste', 'touristes', 'tourisme', 'nuisance', 'nuisances', 'pollution', 'inondation', 'inondations', 'chômage', 'revenu', 'revenus', 'salaire',
+  'salaires', 'aéroport', 'église', 'églises', 'cathédrale', 'mairie', 'port', 'plage', 'magasin', 'magasins', 'poste', 'banque', 'banques', 'usine', 'usines', 'zone industrielle',
+  'zoo', 'prison', 'caserne', 'commissariat', 'gendarmerie', 'vignes', 'vignoble', 'château', 'monument', 'monuments', 'patrimoine', 'histoire', 'historique', 'vue',
+];
+
+/** Les mots qui peuvent ouvrir une phrase avec une majuscule sans être un nom propre. */
+const STARTERS = new Set([
+  'le', 'la', 'les', 'l', 'un', 'une', 'des', 'du', 'de', 'd', 'pour', 'a', 'aux', 'au', 'selon', 'depuis', 'dans', 'avec', 'sur', 'en', 'ce', 'cet', 'cette', 'ces', 'ici',
+  'il', 'elle', 'ils', 'elles', 'on', 'chaque', 'plusieurs', 'pas', 'son', 'sa', 'ses', 'leur', 'leurs', 'entre', 'et', 'mais', 'ou', 'donc', 'par', 'parmi', 'côté', 'cote',
+]);
+
+/** Les mots permis dans un titre, en plus des noms de la zone et de la commune. */
+const TITLE_WORDS = new Set([
+  'le', 'la', 'les', 'l', 'un', 'une', 'quartier', 'quartiers', 'prix', 'a', 'aux', 'au', 'des', 'du', 'de', 'd', 'en', 'et', 'services', 'equipements', 'vivre', 'immobilier',
+  'chiffres', 'ventes', 'vente', 'logement', 'logements', 'donnees', 'appartements', 'maisons', 'marche',
+]);
+
 const SPELLED: Record<string, number> = {
   deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16, vingt: 20, trente: 30,
   quarante: 40, cinquante: 50, soixante: 60, cent: 100, mille: 1000, dizaine: 10, dizaines: 10, douzaine: 12, vingtaine: 20, trentaine: 30, centaine: 100, centaines: 100, milliers: 1000,
-  moitie: 50, quart: 25, tiers: 33,
+  moitie: 50, quart: 25, tiers: 33, million: 1_000_000, millions: 1_000_000, millier: 1000, milliard: 1e9, milliards: 1e9,
 };
 
 const NUMBER = /\d{1,3}(?:[   ]\d{3})+(?:,\d+)?|\d+(?:,\d+)?/g;
@@ -174,6 +208,10 @@ interface Numbered {
   value: number;
   use: NumberUse[];
   source: FactSource;
+  /** Pour un prix : le type de logement et le niveau de la case, que la phrase doit nommer. */
+  cell?: { kind: EstimatedKind; level: 'commune' | 'quartier' };
+  /** Pour une donnée : son genre et sa clé. */
+  fact?: { kind: FactKind; key: string };
 }
 
 const yearOf = (iso: string): number | null => {
@@ -188,19 +226,20 @@ function numbersOf(data: NeighbourhoodData): Numbered[] {
   const out: Numbered[] = [];
   for (const c of data.cells) {
     const src = (what: string): FactSource => ({ ref: `prix:${c.zone.level}:${c.zone.slug}:${c.kind}:${what}`, source: c.source, date: c.dvfLastSale });
-    out.push({ value: c.median, use: ['prix'], source: src('mediane') });
-    out.push({ value: c.q1, use: ['prix'], source: src('q1') });
-    out.push({ value: c.q3, use: ['prix'], source: src('q3') });
-    out.push({ value: c.sales, use: ['ventes', 'libre'], source: src('ventes') });
+    const meta = { kind: c.kind, level: c.zone.level };
+    out.push({ value: c.median, use: ['prix'], source: src('mediane'), cell: meta });
+    out.push({ value: c.q1, use: ['prix'], source: src('q1'), cell: meta });
+    out.push({ value: c.q3, use: ['prix'], source: src('q3'), cell: meta });
+    out.push({ value: c.sales, use: ['ventes'], source: src('ventes'), cell: meta });
     for (const iso of [c.dvfLastSale, c.period.from, c.period.to]) {
       const y = yearOf(iso);
-      if (y !== null) out.push({ value: y, use: ['annee'], source: src('periode') });
+      if (y !== null) out.push({ value: y, use: ['annee'], source: src('periode'), cell: meta });
     }
   }
   out.push({ value: data.listings, use: ['biens'], source: { ref: 'biens:commune', source: 'Biens publiés du réseau', date: null } });
   for (const f of data.facts) {
     const src: FactSource = { ref: `fait:${f.key}`, source: f.source, date: f.sourceDate };
-    if (f.value !== null && f.unit !== null) out.push({ value: f.value, use: f.unit === 'nombre' ? ['nombre', 'libre'] : [f.unit], source: src });
+    if (f.value !== null && f.unit !== null) out.push({ value: f.value, use: f.unit === 'nombre' ? ['nombre', 'libre'] : [f.unit], source: src, fact: { kind: f.kind, key: f.key } });
     const y = yearOf(f.sourceDate);
     if (y !== null) out.push({ value: y, use: ['annee'], source: src });
   }
@@ -210,8 +249,8 @@ function numbersOf(data: NeighbourhoodData): Numbered[] {
 /** Les noms permis : la zone, la commune, chaque donnée et chaque source, sans accent ni majuscule. */
 function namedOf(data: NeighbourhoodData): { text: string; source: FactSource }[] {
   const out: { text: string; source: FactSource }[] = [];
-  const zone: FactSource = { ref: 'zone', source: 'Zones du réseau', date: null };
-  for (const name of [data.zone.name, data.zone.communeName]) {
+  for (const [name, level] of [[data.zone.name, 'quartier'], [data.zone.communeName, 'commune']] as const) {
+    const zone: FactSource = { ref: `zone:${level}`, source: 'Zones du réseau', date: null };
     out.push({ text: name, source: zone });
     // « Les Tilleuls » s'écrit aussi « aux Tilleuls », « des Tilleuls » : le nom sans son article.
     const bare = /^(?:les|le|la)\s+(.+)$/iu.exec(name)?.[1] ?? /^l['’](.+)$/iu.exec(name)?.[1];
@@ -226,7 +265,7 @@ function namedOf(data: NeighbourhoodData): { text: string; source: FactSource }[
 const sameNumber = (a: number, b: number): boolean => Math.abs(a - b) < 1e-9;
 
 /** Contrôle une phrase sur les données : ses sources et ses problèmes [R155]. */
-export function traceNeighbourhoodSentence(sentence: string, data: NeighbourhoodData, clients: ClientNames = NO_CLIENTS): TracedSentence {
+export function traceNeighbourhoodSentence(sentence: string, data: NeighbourhoodData, clients: ClientNames = NO_CLIENTS, role: 'titre' | 'texte' = 'texte'): TracedSentence {
   const sources: FactSource[] = [];
   const problems: NeighbourhoodProblem[] = [];
   const add = (s: FactSource) => {
@@ -258,6 +297,25 @@ export function traceNeighbourhoodSentence(sentence: string, data: Neighbourhood
   // Lus avec leurs accents : « sûr » n'est pas « sur ».
   const restLower = restCase.toLowerCase().replace(/[’`]/g, "'");
   for (const t of JUDGEMENT_TERMS) for (const m of restLower.matchAll(termFormsRe(t.toLowerCase()))) problems.push({ code: 'jugement', value: m[0] });
+  for (const m of restLower.matchAll(/[\p{L}]+(?:-[\p{L}]+)*/gu)) {
+    const w = m[0];
+    if (JUDGEMENT_WORDS.has(w) || JUDGEMENT_STEMS.some((st) => w.startsWith(st))) problems.push({ code: 'jugement', value: w });
+  }
+  // Ce dont aucune donnée ne parle.
+  for (const t of UNSOURCED_TERMS) for (const m of rest.matchAll(termFormsRe(norm(t)))) problems.push({ code: 'fait_sans_source', value: m[0] });
+
+  // Ce que la phrase nomme : le quartier, la commune, le type de logement. Un prix doit correspondre aux trois.
+  const full = norm(sentence);
+  const namesQuarter = sources.some((x) => x.ref === 'zone:quartier');
+  const namesCommune = sources.some((x) => x.ref === 'zone:commune');
+  const kindsNamed = new Set<EstimatedKind>();
+  if (/(?<![\p{L}])appartements?(?![\p{L}])/u.test(full)) kindsNamed.add('apartment');
+  if (/(?<![\p{L}])maisons?(?![\p{L}])/u.test(full)) kindsNamed.add('house');
+  const featureAfter = (after: string): FactKind | null => {
+    const head = after.slice(0, 40);
+    for (const f of FEATURES) for (const t of f.terms) if (new RegExp(`^\\s*(?:\\p{L}+\\s+){0,2}${escapeRe(norm(t))}(?![\\p{L}])`, 'u').test(head)) return f.kind;
+    return null;
+  };
 
   // Nombres en chiffres.
   const numbers = numbersOf(data);
@@ -267,7 +325,24 @@ export function traceNeighbourhoodSentence(sentence: string, data: Neighbourhood
     if (unit) uses = [unit.use];
     else if (Number.isInteger(value) && value >= 1900 && value <= 2100) uses = ['annee', 'libre'];
     else uses = ['libre'];
-    const src = numbers.find((n) => sameNumber(n.value, value) && n.use.some((u) => uses.includes(u)));
+    const near = featureAfter(after);
+    const src = numbers.find((n) => {
+      if (!sameNumber(n.value, value) || !n.use.some((u) => uses.includes(u))) return false;
+      const use = n.use.find((u) => uses.includes(u))!;
+      // Un prix ou un nombre de ventes : le type de logement et le lieu de sa case doivent être nommés.
+      if ((use === 'prix' || use === 'ventes') && n.cell) {
+        if (!kindsNamed.has(n.cell.kind)) return false;
+        if (n.cell.level === 'quartier' ? !namesQuarter : !namesCommune) return false;
+      }
+      // Une année : seulement avec sa source nommée, ou le mot « ventes » pour une période de prix.
+      if (use === 'annee') return n.cell ? /(?<![\p{L}])ventes?(?![\p{L}])/u.test(full) || full.includes(norm(n.source.source)) : full.includes(norm(n.source.source));
+      // Un nombre sans unité : la donnée de l'équipement qui le suit, ou une donnée nommée dans la phrase.
+      if (use === 'libre' || use === 'nombre') {
+        if (!n.fact) return false;
+        return near !== null ? n.fact.kind === near : sources.some((x) => x.ref === `fait:${n.fact!.key}`);
+      }
+      return true;
+    });
     if (src) add(src.source);
     else problems.push({ code: 'nombre_sans_source', value: raw });
   };
@@ -285,7 +360,8 @@ export function traceNeighbourhoodSentence(sentence: string, data: Neighbourhood
       problems.push({ code: 'nombre_sans_source', value: m[0] });
       continue;
     }
-    const src = numbers.find((n) => sameNumber(n.value, values[0]!) && n.use.some((u) => u === 'libre' || u === 'nombre'));
+    const near = featureAfter(rest.slice((m.index ?? 0) + m[0].length));
+    const src = numbers.find((n) => sameNumber(n.value, values[0]!) && n.use.some((u) => u === 'libre' || u === 'nombre') && n.fact !== undefined && (near !== null ? n.fact.kind === near : sources.some((x) => x.ref === `fait:${n.fact!.key}`)));
     if (src && !['dizaine', 'dizaines', 'douzaine', 'vingtaine', 'trentaine', 'centaine', 'centaines', 'milliers', 'moitie', 'quart', 'tiers'].includes(parts[0]!)) add(src.source);
     else problems.push({ code: 'nombre_sans_source', value: m[0] });
   }
@@ -311,9 +387,18 @@ export function traceNeighbourhoodSentence(sentence: string, data: Neighbourhood
     const folded = foldWord(word);
     if (ALLOWED_PROPER.has(folded)) return;
     const before = restCase.slice(0, w.index ?? 0).trimEnd();
-    if (i === 0 && before.replace(/[«"(\s]/gu, '') === '') return;
+    // En début de phrase, seulement un mot courant : un nom propre inventé n'y passe pas.
+    if (i === 0 && before.replace(/[«"(\s]/gu, '') === '' && STARTERS.has(folded)) return;
     problems.push({ code: 'fait_sans_source', value: word });
   });
+
+  if (role === 'titre') {
+    // Un titre ne dit rien d'autre que le lieu et le sujet : liste fermée de mots.
+    for (const w of rest.matchAll(/[\p{L}]+/gu)) if (!TITLE_WORDS.has(w[0])) problems.push({ code: 'fait_sans_source', value: w[0] });
+  } else if (!sources.some((x) => !x.ref.startsWith('zone:'))) {
+    // Une phrase du texte porte au moins un chiffre ou une donnée de la base ; sinon elle n'affirme rien de sourcé.
+    problems.push({ code: 'fait_sans_source', value: 'phrase sans donnée' });
+  }
 
   // Le nom d'un client de la base, de n'importe quelle façon pour un nom de famille, en majuscule pour un prénom.
   for (const w of sentence.matchAll(/[\p{L}]+/gu)) {
@@ -330,7 +415,7 @@ export function traceNeighbourhoodSentence(sentence: string, data: Neighbourhood
 
 /** Contrôle tout un texte, titre compris [R155]. */
 export function traceNeighbourhood(title: string, body: string, data: NeighbourhoodData, clients: ClientNames = NO_CLIENTS): NeighbourhoodTrace {
-  const all = [...sentences(title), ...sentences(body)].map((s) => traceNeighbourhoodSentence(s, data, clients));
+  const all = [...sentences(title).map((s) => traceNeighbourhoodSentence(s, data, clients, 'titre')), ...sentences(body).map((s) => traceNeighbourhoodSentence(s, data, clients))];
   return { ok: all.length > 0 && all.every((s) => s.problems.length === 0), sentences: all };
 }
 
@@ -353,12 +438,10 @@ export function fallbackNeighbourhood(kind: TextKind, topic: Topic, data: Neighb
   const own = data.cells.filter((c) => c.zone.level === 'quartier' && c.zone.slug === data.zone.slug);
   if (topic !== 'equipements') {
     const lines = own.map((c) => `Pour les ${CELL_KIND[c.kind]} de ${place}, le prix médian est de ${euros(c.median)} le mètre carré, sur ${c.sales} ventes, entre ${euros(c.q1)} et ${euros(c.q3)} du premier au troisième quartile.`);
-    if (lines.length === 0) lines.push(`Pas encore assez de ventes à ${place} pour publier un prix fiable.`);
-    paragraphs.push(lines.join(' '));
+    if (lines.length > 0) paragraphs.push(lines.join(' '));
     if (data.listings > 0) paragraphs.push(`${data.listings} ${data.listings > 1 ? 'biens sont' : 'bien est'} en vente avec le réseau à ${data.zone.communeName}.`);
   }
   if (topic !== 'prix' && data.facts.length > 0) paragraphs.push(data.facts.map(factLine).join(' '));
-  if (paragraphs.length === 0) paragraphs.push(`Les données de ${place} seront publiées dès qu’elles seront disponibles.`);
   void kind;
   return { title, body: paragraphs.join('\n\n') };
 }
@@ -368,7 +451,7 @@ export function fallbackNeighbourhood(kind: TextKind, topic: Topic, data: Neighb
 export type NeighbourhoodRefusal =
   | { ok: false; rule: 'R16'; code: 'role' }
   | { ok: false; rule: 'R155'; code: 'texte_refuse'; problems: NeighbourhoodProblem[] }
-  | { ok: false; rule: 'R155'; code: 'deja_valide' | 'donnees_changees' }
+  | { ok: false; rule: 'R155'; code: 'deja_valide' | 'donnees_changees' | 'sans_donnees' }
   | { ok: false; rule: null; code: 'zone_inconnue' | 'inconnu' | 'invalide' };
 
 export interface NeighbourhoodDraft {
@@ -606,6 +689,7 @@ export class PagesQuartier {
       aiRefused = true;
     } else if (proposed) aiRefused = true;
     const fb = fallbackNeighbourhood(k.kind, k.topic, data);
+    if (fb.body === '') return { ok: false, rule: 'R155', code: 'sans_donnees' };
     const trace = traceNeighbourhood(fb.title, fb.body, data, clients);
     if (!trace.ok) return { ok: false, rule: 'R155', code: 'texte_refuse', problems: trace.sentences.flatMap((s) => s.problems) };
     return { ok: true, value: await this.store(viewer, zone, { ...k, ...fb, origin: 'secours' }, data, trace), aiRefused };

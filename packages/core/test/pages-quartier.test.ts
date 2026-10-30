@@ -51,7 +51,7 @@ describe('le contrôle des textes de quartier [R155]', () => {
   it('[R155] un texte fait des seules données passe, chaque phrase reliée à ses sources', () => {
     const t = traceNeighbourhood(
       'Le quartier des Tilleuls',
-      'Aux Tilleuls, le prix médian des appartements est de 2 450 € le mètre carré, sur 9 ventes. À Villetest, il est de 2 600 €. La Ligne T9 du tramway inventé dessert le quartier. Le quartier compte 3 écoles et 8 200 habitants, selon le recensement de 2025.',
+      'Aux Tilleuls, le prix médian des appartements est de 2 450 € le mètre carré, sur 9 ventes. À Villetest, celui des appartements est de 2 600 €. La Ligne T9 du tramway inventé dessert le quartier. Le quartier compte 3 écoles et 8 200 habitants, selon le Recensement inventé de 2025.',
       { ...DATA, zone: { ...DATA.zone, name: 'Tilleuls' } },
       CLIENTS,
     );
@@ -96,6 +96,36 @@ describe('le contrôle des textes de quartier [R155]', () => {
     }
   });
 
+  it('[R155] relecture forte : jugements sous toutes leurs formes, lieux sans donnée, phrases sans aucune donnée', () => {
+    for (const body of [
+      'Les prix des appartements grimpent aux Tilleuls.',
+      'Un quartier idéal, en plein essor, très attractif.',
+      'La tranquillité du quartier séduit.',
+      'Le quartier a une vie nocturne bruyante et des problèmes de délinquance.',
+      'Le quartier compte un million de visiteurs.',
+    ]) {
+      expect(problemsOf('Les Tilleuls', body), body).not.toEqual([]);
+    }
+    expect(problemsOf('Les Tilleuls', 'Un aéroport, une église et une mairie sont dans le quartier.')).toContain('fait_sans_source');
+    expect(problemsOf('Les Tilleuls', 'Il fait bon vivre ici.')).toContain('fait_sans_source');
+    // Un titre ne dit que le lieu et le sujet.
+    expect(problemsOf('Les Tilleuls, quartier en pleine mutation', 'Le prix médian des appartements aux Tilleuls est de 2 450 €.')).not.toEqual([]);
+    expect(problemsOf('Le quartier Les Tilleuls', 'Le prix médian des appartements aux Tilleuls est de 2 450 €.')).toEqual([]);
+  });
+
+  it('[R155] relecture forte : une année seulement avec sa source, un prix seulement pour sa case, un nombre pour son équipement', () => {
+    expect(problemsOf('Les Tilleuls', 'La rénovation complète du quartier s’achève en 2026.')).not.toEqual([]);
+    expect(problemsOf('Les Tilleuls', 'Le chantier de la Ligne T9 du tramway inventé finit en 2026.')).toContain('nombre_sans_source');
+    expect(problemsOf('Les Tilleuls', 'Aux Tilleuls, les appartements vendus de 2024 à 2026 : 9 ventes.')).toEqual([]);
+    expect(problemsOf('Les Tilleuls', 'Les maisons se vendent 2 450 € le mètre carré aux Tilleuls.')).toContain('nombre_sans_source');
+    expect(problemsOf('Les Tilleuls', 'À Villetest, les appartements se vendent 2 450 € le mètre carré.')).toContain('nombre_sans_source');
+    expect(problemsOf('Les Tilleuls', 'Le loyer moyen des appartements de Villetest est de 2 600 € par mois.')).toContain('fait_sans_source');
+    expect(problemsOf('Les Tilleuls', 'Le quartier compte 9 écoles.')).toContain('nombre_sans_source');
+    expect(problemsOf('Les Tilleuls', 'Le quartier compte 3 médecins.', { ...DATA, facts: [...DATA.facts, { key: 'med', kind: 'sante', label: 'Cabinet médical inventé', value: null, unit: null, source: 'Annuaire santé inventé', sourceDate: '2026-01-01' }] })).toContain('nombre_sans_source');
+    expect(problemsOf('Les Tilleuls', 'Lidl ouvre près de la Ligne T9 du tramway inventé.')).toContain('fait_sans_source');
+    expect(problemsOf('Les Tilleuls', 'Chenôve borde Les Tilleuls, avec ses 3 écoles.')).toContain('fait_sans_source');
+  });
+
   it('[R46] aucune adresse exacte ni nom de client', () => {
     expect(problemsOf('Les Tilleuls', 'Un bien vendu au 12 rue des Essais.')).toContain('adresse');
     expect(problemsOf('Les Tilleuls', 'Les Tilleuls longent l’avenue Inventée.')).toContain('adresse');
@@ -115,6 +145,8 @@ describe('le contrôle des textes de quartier [R155]', () => {
     for (const data of cases) {
       for (const [kind, topic] of [['page', 'quartier'], ['article', 'prix'], ['article', 'equipements']] as const) {
         const fb = fallbackNeighbourhood(kind, topic, data);
+        // Sans aucune donnée pour ce sujet, il n'y a pas de texte : le service refuse (« sans_donnees »).
+        if (fb.body === '') continue;
         const t = traceNeighbourhood(fb.title, fb.body, data, CLIENTS);
         expect(t.sentences.flatMap((s) => s.problems), `${topic} ${fb.body}`).toEqual([]);
       }
@@ -193,6 +225,8 @@ describeWithSqlite('les pages de quartier, rédigées, validées, servies [R155]
 
   it('les biens publiés sont comptés à la commune, sans regarder la casse', async () => {
     const s = await setup();
+    // Aucune donnée pour ce sujet : aucun texte, plutôt qu'un texte vide de faits.
+    expect(await s.pages.draft(direction, 'z-q', 'article', 'equipements')).toEqual({ ok: false, rule: 'R155', code: 'sans_donnees' });
     const d = await s.pages.draft(direction, 'z-q', 'article', 'prix');
     if (!d.ok) throw new Error(d.code);
     expect(d.value.body).toContain('2 biens sont en vente avec le réseau à Villetest');
@@ -234,7 +268,7 @@ describeWithSqlite('les pages de quartier, rédigées, validées, servies [R155]
     const r = await s.pages.write(direction, 'z-q', 'article', 'prix', 'Les prix aux Tilleuls', 'Le prix médian est de 2 900 € le mètre carré.');
     expect(r).toMatchObject({ ok: false, rule: 'R155', code: 'texte_refuse' });
     expect(await s.pages.write(direction, 'z-q', 'article', 'inconnu', 'Titre', 'Texte.')).toMatchObject({ ok: false, code: 'invalide' });
-    expect(await s.pages.write(direction, 'z-q', 'article', 'prix', 'Les prix aux Tilleuls', 'Le prix médian des appartements est de 2 450 € le mètre carré.')).toMatchObject({ ok: true, value: { origin: 'redaction' } });
+    expect(await s.pages.write(direction, 'z-q', 'article', 'prix', 'Les prix aux Tilleuls', 'Le prix médian des appartements aux Tilleuls est de 2 450 € le mètre carré.')).toMatchObject({ ok: true, value: { origin: 'redaction' } });
   });
 
   it('[R155] aucune publication sans validation nommée ; validée, la page est servie avec ses sources', async () => {
