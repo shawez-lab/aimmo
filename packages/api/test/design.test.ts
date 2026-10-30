@@ -5,6 +5,8 @@ import { DESIGN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, rend
 import { renderListingPage, renderListingPrint, type PageInput } from '../../core/src/annonces/page-bien.ts';
 import { BUDGETS, budgetProblems, contrastRatio, htmlProblems, localCssProblems, screenCssProblems } from '../../core/src/design/audit.ts';
 import { renderDocument } from '../../core/src/documents/modeles.ts';
+import { letterFallback, renderLetters } from '../../core/src/mandats/gagner/lettres-quartier.ts';
+import { DEFAULT_WELCOME, SALE_PLAN, renderDossier } from '../../core/src/mandats/gagner/dossier-presentation.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
 import { handleUnsubscribe } from '../src/alertes.ts';
 import { handleApresVentePublic } from '../src/apres-vente.ts';
@@ -55,6 +57,25 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
     { name: 'désinscription des alertes', html: await text(await handleUnsubscribe(get(`/alertes/desinscription/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
     { name: 'opposition à la prospection', html: await text(await handlePartenairesPublic(get(`/partenaires/opposition/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
     { name: 'lien inconnu', html: await text(await handlePartenairesPublic(get('/partenaires/opposition/court'), { db: NO_DB })), budget: BUDGETS.page },
+    {
+      name: 'dossier de présentation',
+      html: renderDossier(
+        {
+          generatedAt: '2027-10-12T08:00:00.000Z',
+          period: { from: '2026-10-12', to: '2027-10-12' },
+          welcome: DEFAULT_WELCOME,
+          welcomeBy: 'code',
+          sales: { source: 'DVF test', latestUsedSale: '2027-03', recentMissing: true, dvfNotCovered: false, validatedOn: '2027-10-07', items: [{ month: '2027-03', surfaceM2: 85, pricePerM2: 2900, distanceM: 200 }] },
+          plan: SALE_PLAN,
+          commitments: [{ code: 'cr', version: 1, label: 'Un compte rendu après chaque visite', rule: 'Règle de test.', delayHours: 24, kept: 3, total: 4, rate: 0.75, proof: [{ day: '2027-09-01', kept: true }] }],
+          reviews: { link: 'https://g.page/r/exemple/review', source: 'Réponses de test', count: 1, average: 5, answers: [{ day: '2027-09-02', score: 5 }] },
+          results: { source: 'Base de test', mandates: 2, sales: 1, estimationsHonored: 4 },
+        },
+        'Alex Exemple',
+      ),
+      budget: BUDGETS.page,
+    },
+    { name: 'lettres de quartier', html: renderLetters('au_proprietaire', letterFallback('mandat', 'Dijon'), 'Alex Exemple', [{ number: '10', street: 'rue des Essais', postcode: '21000', city: 'Dijon' }, { number: '12', street: 'rue des Essais', postcode: '21000', city: 'Dijon' }]), print: true, budget: BUDGETS.page },
     { name: 'désinscription après la vente', html: await text(await handleApresVentePublic(get(`/apres-vente/desinscription/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
   ];
 }
@@ -107,9 +128,12 @@ describe('Z03 · système de design d’AIMMO', () => {
     // Les seuls fichiers qui posent une feuille dans une page, et le nom de la feuille qu'ils posent.
     const STYLED: Record<string, RegExp> = {
       'core/src/design/systeme.ts': /^<style>\$\{DESIGN_CSS\}\$\{PUBLIC_PAGE_CSS\}<\/style>$/,
+      'core/src/attirer/page-prix.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/annonces/page-bien.ts': /^<style>\$\{(?:CSS|PRINT_CSS)\}<\/style>$/,
       'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,
       'api/src/candidature.ts': /^<style>\$\{STYLE\}<\/style>$/,
+      'core/src/mandats/gagner/lettres-quartier.ts': /^<style>\$\{LETTER_CSS\}<\/style>$/,
+      'core/src/mandats/gagner/dossier-presentation.ts': /^<style>\$\{DOSSIER_CSS\}<\/style>$/,
     };
     const offenders: string[] = [];
     for (const f of files) {
