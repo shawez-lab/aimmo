@@ -26,6 +26,7 @@ import { Qualification, type Qualifier } from '../qualification/qualification.ts
 import { Rappels } from '../qualification/rappel.ts';
 import { FicheAcquereur } from '../acquereurs/fiche-acquereur.ts';
 import { BouclierFonds } from '../dossiers/bouclier.ts';
+import { OrigineContacts, type OriginSignals } from '../attirer/origine-contacts.ts';
 
 export type ChainStatus =
   /** Le même message, déjà reçu : rien de plus [R18]. */
@@ -50,6 +51,16 @@ export interface ChainResult {
 export interface ChainHooks {
   /** Appelé après le rattachement de chaque message, avant sa réponse. */
   beforeReply?: () => Promise<void>;
+  /**
+   * Le lien d'arrivée et la page de départ transmis par la page de captation (AT10) : lus pour l'origine du contact,
+   * jamais gardés [R156]. Absents (mail, Meta) : l'origine se lit dans le message lui-même (publication, portail).
+   */
+  origin?: OriginSignals;
+}
+
+/** Range l'origine d'un message reçu (AT05, AT10). Ne lève jamais d'erreur, ne retarde aucune réponse. */
+export interface OriginRecorder {
+  (networkId: string, inboundId: string, signals: OriginSignals): Promise<void>;
 }
 
 /** Ce qui suit la réponse : qualifier, noter, attribuer, créer la tâche (M03). Ne doit jamais retarder la réponse. */
@@ -64,6 +75,7 @@ export class ChaineCaptation {
     private readonly relais: ConversationRelais,
     private readonly now: () => Date = () => new Date(),
     private readonly afterReply: AfterReply | null = null,
+    private readonly recordOrigin: OriginRecorder | null = null,
   ) {}
 
   async receive(
@@ -139,8 +151,12 @@ export class ChaineCaptation {
       results.push(done(relayed.status, messageId));
       toQualify.push(item.inboundId);
     }
-    // Toutes les réponses du lot sont prêtes : la qualification suit, et ne retarde aucune d'elles. Elle ne lève
-    // jamais d'erreur (voir createCaptation).
+    // Toutes les réponses du lot sont prêtes : l'origine de chaque message lisible est rangée, une seule fois (la
+    // première lecture compte), même pour un doublon dont la première lecture avait échoué [R156] ; puis la
+    // qualification suit. Ni l'une ni l'autre ne retarde une réponse ni ne lève d'erreur (voir createCaptation).
+    if (this.recordOrigin) {
+      for (const item of ingested.received) if (item.outcome !== 'unreadable') await this.recordOrigin(networkId, item.inboundId, hooks.origin ?? {});
+    }
     if (this.afterReply) for (const inboundId of toQualify) await this.afterReply(inboundId);
     return results;
   }
@@ -156,6 +172,8 @@ export interface CaptationOptions {
   qualifier?: Qualifier;
   /** Faux : la chaîne s'arrête à la réponse, sans qualifier (pour éprouver chaque étape à part). Vrai par défaut. */
   withQualification?: boolean;
+  /** Faux : l'origine des contacts n'est pas rangée (pour éprouver chaque étape à part). Vrai par défaut. */
+  withOrigin?: boolean;
 }
 
 /** Assemble toute la chaîne sur une base. Sans canaux fournis, elle tourne en mode essai. */
@@ -221,8 +239,23 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
       }
     }
   };
+  // L'origine du contact (AT05, AT10) : une panne va au journal, sans texte ni adresse [R13, R156] ; le prochain envoi
+  // du même message la relit, et la première lecture rangée reste la seule.
+  const origine = new OrigineContacts(db, journal, { now });
+  const recordOrigin: OriginRecorder = async (networkId, inboundId, signals) => {
+    try {
+      await origine.record(networkId, inboundId, signals);
+    } catch (error) {
+      try {
+        await appendEvent(journal, { type: 'attirer.origine_erreur', actor: 'system:attirer', subject: `inbound:${inboundId}`, data: { rule: 'R156', error: error instanceof Error ? error.name : 'unknown' } }, now);
+      } catch {
+        console.error('aimmo : origine non rangée, journal indisponible');
+      }
+    }
+  };
   return {
-    chaine: new ChaineCaptation(reception, rattachement, relais, now, options.withQualification === false ? null : afterReply),
+    chaine: new ChaineCaptation(reception, rattachement, relais, now, options.withQualification === false ? null : afterReply, options.withOrigin === false ? null : recordOrigin),
+    origine,
     store,
     fiche,
     reception,

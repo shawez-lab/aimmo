@@ -839,7 +839,10 @@ async function intakeForm(request: Request, config: ApiConfig, now: () => Date):
   const journal = new SqlJournalStore(config.db);
   try {
     const { chaine } = createCaptation(config.db, journal, { now });
-    await chaine.receive(intake.networkId, 'site_form', body);
+    // Le lien d'arrivée et la page de départ ne servent qu'à lire l'origine du contact (AT10) : ils ne sont jamais
+    // rangés, même dans un formulaire illisible gardé tel quel pour l'agent [R156].
+    const { link, landingPage, ...form } = body;
+    await chaine.receive(intake.networkId, 'site_form', form, {}, { origin: { link, landingPage } });
     // Rien de plus : le sort du formulaire (personne exclue, déjà connue…) ne regarde pas le déposant [R02, R16].
     return json(200, { ok: true, mode: TRIAL_MODE, sent: false, received: true });
   } catch (error) {

@@ -7,7 +7,8 @@ import { conformiteJobs } from './conformite.ts';
 import { partenairesJobs } from './partenaires.ts';
 import { gagnerJobs } from './gagner.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
-import type { Geocoder, SalesSource } from '@aimmo/core';
+import type { Geocoder, JournalStore, SalesSource } from '@aimmo/core';
+import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 
 export interface SchedulerConfig {
   db: SqlDatabase;
@@ -109,6 +110,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Gagner des mandats (G12) : à 6 h, la liste du mois des relances d'anciens contacts, rangées à valider pour leur
       // agent, rien n'est envoyé [R143, R26] ; le 1er du mois à 8 h, l'avis que la mesure du mois passé se lit [R144].
       ...gagnerJobs(config.db, journal, { now }),
+      // Attirer (AT10), à 5 h : les pages de prix recalculées dès qu'une nouvelle publication DVF est lue ; la même
+      // publication ne donne jamais deux versions [R150, R151]. Seulement avec les ventes publiques de l'estimation.
+      ...(config.soldSales ? [pricesJob(config.db, journal, config.soldSales, { now })] : []),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
@@ -147,4 +151,33 @@ export function investorFeesRate(raw: string | undefined): investir.Sourced<numb
   const asOf = m[2]!;
   if (value > 2_000 || Number.isNaN(Date.parse(`${asOf}T00:00:00Z`)) || new Date(`${asOf}T00:00:00Z`).toISOString().slice(0, 10) !== asOf) return null;
   return { value, source: 'direction:INVESTIR_FRAIS_BAREME', asOf, hypothesis: 'barème des frais d’acquisition réglé par la direction' };
+}
+
+/** Le nom du passage des prix publics, sans donnée. */
+export const PRICES_JOB = 'attirer.prix';
+
+/**
+ * Le recalcul des prix publics (AT01), au planificateur (AT10) : chaque jour à 5 h, pour chaque réseau qui a tracé des
+ * zones. `recompute` ne calcule une version que pour une publication DVF (ou un jeu de zones) qu'il n'a pas encore :
+ * une nouvelle publication donne une nouvelle version, la précédente reste lisible ; une lecture incomplète n'écrit
+ * rien et sera reprise le lendemain [R150, R151, R17]. Un réseau en panne n'empêche pas les autres ; la première
+ * erreur remonte au planificateur, qui l'écrit au journal [R13].
+ */
+export function pricesJob(db: SqlDatabase, journal: JournalStore, sales: PriceSalesSource, options: { now: () => Date }): ScheduledJob {
+  return {
+    name: PRICES_JOB,
+    hours: [5],
+    run: async () => {
+      const prix = new PrixRegroupes(db, journal, sales, { now: options.now });
+      let failure: unknown = null;
+      for (const n of await db.all<{ network_id: string }>('SELECT DISTINCT network_id FROM price_zones ORDER BY network_id')) {
+        try {
+          await prix.recompute(n.network_id);
+        } catch (error) {
+          failure ??= error;
+        }
+      }
+      if (failure !== null) throw failure;
+    },
+  };
 }

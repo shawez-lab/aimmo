@@ -176,6 +176,9 @@ export async function handleAssistant(request: Request, path: string, config: As
     sentAt: at.toISOString(),
     page,
     propertyRef,
+  }, {}, {
+    // Lus pour l'origine du contact seulement, jamais rangés [R156] (AT10).
+    origin: { link: body.link, landingPage: body.landingPage },
   });
   const status = results.map((r) => STATUS_FOR[r.status]).find((s) => s !== undefined) ?? 'none';
   // En mode essai, rien ne part : la réponse prête n'est pas rendue au visiteur.
