@@ -2189,7 +2189,8 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT10 · Branchement de M01 dans le socle
-- Statut : en cours
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#223). Origine rangée après les réponses pour chaque message lisible, une seule fois ; `link` et `landingPage` du formulaire et de l'assistant lus, jamais rangés ; tâche `attirer.prix` à 5 h ; relecture forte 1 P1 corrigé ; Codex à sa limite (H03) ; vérification locale verte (2193 tests). Les routes de AT09 viennent avec AT11.
 - Décidé (2026-10-30, voie 1) : la voie 1 n'a aucune autre tâche prête et AT09 (voie 2) n'est pas commencée ; AT10 est scindée : AT10 branche maintenant ce qui ne dépend pas des routes de AT09 (origine du contact dans la chaîne de captation, recalcul des prix au planificateur à chaque publication DVF) ; le branchement des routes de AT09 dans `app.ts` passe en AT11.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AT09
 - Cahier : M01 ; Architecture technique.
