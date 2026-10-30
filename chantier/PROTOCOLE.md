@@ -81,3 +81,12 @@ AIMMO doit faire ce que personne d'autre ne fait. Chaque module découpé contie
 ## 10. Exploiter Codex au maximum
 
 Codex relit chaque proposition. En plus, quand il laisse des remarques P2, commenter `@codex corrige tes remarques sur cette branche`. S'il pousse un commit, noter dans `HUMAIN.md` que H12 est réglé : les tâches marquées « Qui : Codex » peuvent alors lui être confiées de nouveau, en parallèle des deux voies.
+
+## 11. Quand GitHub Actions ne démarre plus (facturation)
+
+Décision de Shawez (2026-10-29) : aucune dépense GitHub en plus. Si les vérifications GitHub ne démarrent pas parce que le quota ou le paiement est bloqué :
+
+1. Lancer soi-même, dans la séance, sur le dernier commit de la branche et sous Node 22 : `npm ci`, `npm run check`, `npm test`, `npm run garde-fous`, et `wrangler deploy --dry-run` quand le Worker change. Avec `GITHUB_ACTIONS=true` pour que les tests SQLite soient obligatoires.
+2. Tout vert : commenter la proposition avec « Vérification locale : vert », le commit et le nombre de tests passés. Un seul échec : corriger, ne jamais fusionner.
+3. Fusionner ensuite comme d'habitude, avec la relecture de Codex sans P0 ni P1 restant.
+4. Ne pas relancer les vérifications GitHub en boucle : elles reprennent seules au renouvellement du quota.

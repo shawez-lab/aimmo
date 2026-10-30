@@ -5,3 +5,4 @@ export * from './texte.ts';
 export * from './canaux.ts';
 export * from './journal-envois.ts';
 export * from './controle.ts';
+export * from './professionnels.ts';

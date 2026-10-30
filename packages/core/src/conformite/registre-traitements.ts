@@ -398,6 +398,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       partner_prospects: ['email', 'address_kind', 'business_name', 'added_by'],
       partner_prospect_mails: ['text', 'optout_token_sha256', 'decision_reason'],
       partner_prospect_optouts: ['email'],
+      partner_addresses: ['email', 'consent_proof', 'recorded_by'],
+      partner_optouts: [],
+      pro_sends: ['subject', 'recipient'],
+      pro_send_log: ['subject', 'reason'],
     },
   },
   {
@@ -510,6 +514,25 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       property_communes: ['recorded_by'],
     },
   },
+  {
+    id: 'studio',
+    finalite: 'Aider l\'agent à photographier, filmer et présenter un bien avec des images honnêtes : guide de prise de vue, photos retenues, validation par la direction, certificat de chaque photo corrigée, plan simple du logement, montage des vidéos, bibliothèque de musiques et d\'images sous licence.',
+    baseLegale: 'interet_legitime',
+    personnes: ['Agents du réseau'],
+    donnees: ['Photos retenues pour chaque vue, par leur référence de stockage, et leur auteur', 'Validation d\'un bien photographié avec le guide', 'Corrections d\'ensemble de chaque photo, références et empreintes de l\'original et du résultat, et leur auteur', 'Pièces et cotes du plan du logement, et leur auteur', 'Référence et empreinte de chaque vidéo montée, sa durée, sa musique, et leur auteur', 'Entrées de la bibliothèque sous licence et leurs retraits, et leur auteur'],
+    duree: 'La durée du mandat du bien, puis 5 ans.',
+    destinataires: ['L\'agent du bien', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
+    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
+    tables: {
+      photo_guide_shots: ['media_ref', 'recorded_by'],
+      photo_guide_validations: ['shots_sha256', 'validated_by'],
+      photo_certificates: ['result_ref', 'result_sha256', 'original_ref', 'original_sha256', 'recorded_by'],
+      floor_plans: ['created_by'],
+      video_montages: ['video_ref', 'video_sha256', 'template_sha256', 'recorded_by'],
+      licensed_assets: ['proof_ref', 'recorded_by'],
+      licensed_asset_withdrawals: ['reason', 'withdrawn_by'],
+    },
+  },
 ];
 
 /** Les tables sans aucune donnée personnelle, chacune avec sa raison. */
@@ -524,6 +547,7 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   listing_views: 'Nombre de vues d\'une annonce par portail et par jour.',
   assistant_calls: 'Compteur d\'appels de l\'assistant du site, par seau de temps.',
   trial_outbox: 'File d\'essai des envois : un identifiant de message et un canal.',
+  pro_trial_outbox: 'Boîte d\'essai des envois aux professionnels : un identifiant d\'envoi et sa date.',
   human_replies: 'Clés d\'idempotence des réponses écrites par un agent.',
   market_rents: 'Loyers de marché par commune importés de la Carte des loyers de l\'ANIL : aucune personne.',
 };
@@ -760,6 +784,11 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   partner_prospects: ['id', 'network_id', 'trade', 'source', 'added_at'],
   partner_prospect_mails: ['id', 'network_id', 'prospect_id', 'day', 'decision_rule', 'prepared_at'],
   partner_prospect_optouts: ['network_id', 'via', 'at'],
+  partner_addresses: ['id', 'network_id', 'partner_id', 'version', 'recorded_at'],
+  partner_optouts: ['network_id', 'partner_id', 'via', 'at'],
+  pro_sends: ['id', 'network_id', 'kind', 'day', 'sent_at'],
+  pro_send_log: ['id', 'network_id', 'kind', 'outcome', 'rule', 'mode', 'at'],
+  pro_trial_outbox: ['send_id', 'created_at'],
   rental_listings: ['id', 'network_id', 'property_id', 'created_at'],
   rental_facts: ['listing_id', 'version', 'furnished', 'living_area_hundredths', 'energy_class', 'final_energy_kwh', 'build_year', 'electricity_over_15', 'gas', 'lease_start', 'charges_mode', 'recorded_at'],
   rental_annexes: ['id', 'listing_id', 'kind', 'version', 'diagnosed_on', 'valid_until', 'recorded_at'],
@@ -795,6 +824,13 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   investor_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'gross_yield_bp', 'created_at', 'updated_at'],
   property_communes: ['property_id', 'network_id', 'insee_code', 'rent_kind', 'recorded_at'],
   market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
+  photo_guide_shots: ['id', 'property_id', 'network_id', 'view_key', 'recorded_at'],
+  photo_guide_validations: ['id', 'property_id', 'network_id', 'validated_at'],
+  photo_certificates: ['id', 'token', 'property_id', 'network_id', 'operations', 'virtual_staging', 'processed_on', 'recorded_at'],
+  floor_plans: ['id', 'property_id', 'network_id', 'version', 'rooms', 'created_at'],
+  video_montages: ['id', 'property_id', 'network_id', 'clips_count', 'duration_s', 'music_id', 'processed_on', 'recorded_at'],
+  licensed_assets: ['id', 'network_id', 'kind', 'title', 'source', 'licence', 'attribution', 'valid_until', 'recorded_at'],
+  licensed_asset_withdrawals: ['id', 'asset_id', 'withdrawn_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
