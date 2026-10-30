@@ -666,6 +666,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   investment_notes: { locate: [via('project_id', 'projects')] },
   investor_alerts: { locate: by('person_id') },
   property_communes: out('sans_client', 'Commune et type de logement d\'un bien en vente : aucune personne.'),
+  gbp_locations: out('agent', 'Fiche Google de l\'agent.'),
+  gbp_reviews: out('non_rattachable', 'Avis publié sur Google, gardé nettoyé : sans le nom de son auteur ni d\'un client, sans adresse, coordonnée ni montant ; il ne peut être relié à aucune fiche.'),
+  gbp_drafts: out('agent', 'Texte de la fiche Google de l\'agent, sans nom de client par règle [R154].'),
+  gbp_validations: out('agent', 'Validation d\'un texte de la fiche Google.'),
+  gbp_sends: out('agent', 'Envoi à la fiche Google de l\'agent.'),
+  gbp_claims: out('agent', 'Réservation d\'un envoi à la fiche Google de l\'agent.'),
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
