@@ -104,6 +104,7 @@ describeWithSqlite('X09 · routes de M19', () => {
     const compliance: Viewer = { role: 'compliance', userId: 'c-1', networkId: t.network.id };
     const refusals = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
     const paths: Record<string, string> = {
+      'studio.atelier': `/studio/biens/${b.id}`,
       'studio.guide': `/studio/biens/${b.id}/guide`,
       'studio.guide.vue': `/studio/biens/${b.id}/guide/vues`,
       'studio.guide.validation': `/studio/biens/${b.id}/guide/validation`,
@@ -166,6 +167,23 @@ describeWithSqlite('X09 · routes de M19', () => {
     expect(plan.body).toMatchObject({ ok: true, data: { inside: '20,00 m²', mention: 'Plan indicatif, non contractuel' } });
     // Un certificat inconnu : 404, sans rien dire.
     expect((await studioCertificate(t.s, 'f'.repeat(32))).status).toBe(404);
+  });
+
+  it('[R16] X11 · l’atelier du bien : photos de la fiche, certificat de chacune, publications ; un autre agent ne lit rien', async () => {
+    const t = await setup();
+    const b = await t.property(1);
+    await t.call(t.agent, 'POST', `/studio/biens/${b.id}/photos`, { resultRef: b.photos[0], resultSha256: 'c'.repeat(64), originalRef: b.original(0), originalSha256: 'd'.repeat(64), operations: [{ op: 'contraste', amount: 10 }], processedOn: 'appareil' });
+    const prep = await t.call(t.agent, 'POST', `/studio/biens/${b.id}/publications`, { event: 'nouveau_bien', visuals: [b.photos[0]] });
+    expect(prep.status).toBe(200);
+    const a = await t.call(t.agent, 'GET', `/studio/biens/${b.id}`);
+    expect(a.status).toBe(200);
+    expect(a.body!.data.photos).toHaveLength(5);
+    expect(a.body!.data.photos[0]).toMatchObject({ ref: b.photos[0], certificatePath: expect.stringMatching(/^\/certificat-photo\/[0-9a-f]{32}$/) });
+    expect(a.body!.data.photos[1]).toMatchObject({ ref: b.photos[1], certificatePath: null });
+    expect(a.body!.data.posts).toEqual([{ id: prep.body!.data.id, event: 'nouveau_bien', validated: false, createdAt: expect.any(String) }]);
+    const sam: Viewer = { role: 'agent', userId: t.sam.id, networkId: t.network.id };
+    expect((await t.call(sam, 'GET', `/studio/biens/${b.id}`)).status).toBe(403);
+    expect((await t.call({ role: 'compliance', userId: 'c1', networkId: t.network.id } as Viewer, 'GET', `/studio/biens/${b.id}`)).status).toBe(403);
   });
 });
 

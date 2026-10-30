@@ -82,7 +82,7 @@ async function run(answers: Record<string, Answer> = {}) {
 describe('P10 · écran « Mettre en vente »', () => {
   it('depuis la journée : la liste de contrôle, l’annonce phrase par phrase avec la source de chaque nombre, et la validation', async () => {
     const t = await run();
-    expect(t.els.biens!.children.map((li) => li.textContent)).toEqual(['REF-T-1 · DijonPas encore publiée.Mettre en vente']);
+    expect(t.els.biens!.children.map((li) => li.textContent)).toEqual(['REF-T-1 · DijonPas encore publiée.Mettre en venteStudio']);
     await t.click(t.byText(t.els.biens!, 'Mettre en vente'));
     expect(t.els.vente!.hidden).toBe(false);
     expect(t.els['vente-titre']!.textContent).toBe('Mettre en vente · REF-T-1');
