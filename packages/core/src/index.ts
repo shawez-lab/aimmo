@@ -41,6 +41,8 @@ export * as partenaires from './partenaires/index.ts';
 export * as investir from './investir/index.ts';
 // M16 sous son propre nom, comme M15 (CE10).
 export * as commerces from './commerces/index.ts';
+// M19 sous son propre nom, comme M17 (X10).
+export * as studio from './studio/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';

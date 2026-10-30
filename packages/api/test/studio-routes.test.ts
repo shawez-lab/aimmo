@@ -21,7 +21,7 @@ async function setup(opts: { realDiffusion?: boolean } = {}) {
     journal,
     now,
     files: { has: async (r: string) => stored.has(r) },
-    ...(opts.realDiffusion ? {} : { diffusion: { canDiffuse: async () => ({ allowed: true }) } }),
+    ...(opts.realDiffusion ? {} : { diffusion: { canDiffuse: async () => ({ allowed: true }) }, mentions: { checklist: async () => ({ complete: true, text: 'Prix : 150 000 €, honoraires à la charge du vendeur.\nCarte professionnelle n° CPI 0000.', publishedPriceEur: 150_000 }) } }),
   };
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alexandrine', lastName: 'Fictive' });

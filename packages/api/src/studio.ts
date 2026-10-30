@@ -14,6 +14,7 @@
 import { Acces, FicheClient, FicheUnique, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { Annonces } from '../../core/src/annonces/annonces.ts';
 import { MediasBien } from '../../core/src/annonces/medias.ts';
+import { computeMentions, MentionsAnnonce } from '../../core/src/annonces/mentions.ts';
 import { PageBien } from '../../core/src/annonces/page-bien.ts';
 import { Diffusion } from '../../core/src/documents/retractation.ts';
 import { Annuaire } from '../../core/src/partenaires/annuaire.ts';
@@ -49,6 +50,8 @@ export interface StudioServices {
   channels?: readonly SocialChannel[];
   /** La porte de diffusion ; par défaut celle de D05 [R42]. */
   diffusion?: { canDiffuse(networkId: string, propertyId: string, at?: Date): Promise<{ allowed: boolean }> };
+  /** Les mentions obligatoires ; par défaut celles de M07, calculées par `computeMentions` [R43]. */
+  mentions?: { checklist(networkId: string, propertyId: string): Promise<{ complete: boolean; text: string; publishedPriceEur: number | null } | null> };
   newId?: () => string;
 }
 
@@ -145,6 +148,12 @@ export function studioCore(s: StudioServices) {
         facts: new Annonces(s.db, acces, s.journal, { now: s.now }),
         certs,
         diffusion: s.diffusion ?? new Diffusion(s.db, acces, s.journal, { now: s.now }),
+        mentions: s.mentions ?? {
+          checklist: async (networkId: string, propertyId: string) => {
+            const input = await new MentionsAnnonce(s.db, acces, s.journal, { now: s.now }).inputFor(networkId, propertyId);
+            return input ? computeMentions(input) : null;
+          },
+        },
         consents: s.files,
         channels: s.channels ?? SOCIAL_CHANNELS.map((c) => trialSocialChannel(c)),
       },
