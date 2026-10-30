@@ -4,3 +4,4 @@ export * from './prix-versions.ts';
 export * from './page-prix.ts';
 export * from './referencement.ts';
 export * from './quartier.ts';
+export * from './origine-contacts.ts';

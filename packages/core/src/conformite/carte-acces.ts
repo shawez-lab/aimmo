@@ -677,6 +677,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   gbp_claims: out('agent', 'Réservation d\'un envoi à la fiche Google de l\'agent.'),
   public_sites: out('agent', 'Site public d\'un agent, ou du réseau : aucune personne cliente.'),
   seo_signals: out('sans_client', 'Adresses de pages publiques signalées aux moteurs : aucune personne.'),
+  public_contents: out('agent', 'Identifiant d\'un contenu public du réseau : un bien, un prix, une page d\'agent, une publication ; aucune personne cliente.'),
+  public_content_posts: out('sans_client', 'Référence d\'une publication du réseau chez un réseau social : aucune personne.'),
+  contact_origins: { locate: [via('inbound_id', 'inbound_messages')] },
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
