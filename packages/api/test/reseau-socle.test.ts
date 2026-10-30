@@ -105,6 +105,10 @@ describeWithSqlite('J13 · branchement de M14 dans le socle (API et Worker)', ()
     expect(file.body).toMatchObject({ ok: true, data: { complete: false } });
     expect((await t.call('alex', 'GET', '/reseau/ma-formation')).status).toBe(200);
     expect((await t.call('alex', 'GET', '/reseau/entrainement/cas')).status).toBe(200);
+    // Les écrans « Mon intégration » et « Académie » (J14) restent lisibles : référent, modules, premier parcours.
+    expect((await t.call('alex', 'GET', '/reseau/mon-referent')).body).toMatchObject({ ok: true, data: null });
+    expect((await t.call('alex', 'GET', '/reseau/academie')).status).toBe(200);
+    expect((await t.call('alex', 'GET', '/reseau/mon-bac-a-sable')).body).not.toMatchObject({ code: 'agent_file_incomplete' });
 
     // Les autres pièces rangées : le dossier est complet, les fiches s'ouvrent.
     expect((await t.deposit('alex', t.alex, 'attestation_habilitation', '2026-12-01', '2028-12-31')).status).toBe(200);

@@ -199,20 +199,28 @@ export class Academie {
     return { ok: true, moduleId: id };
   }
 
-  /** Les parcours : l'entrée d'abord, puis chaque spécialité, dans l'ordre des positions. Tout agent du réseau les lit. */
+  /**
+   * Les parcours : l'entrée d'abord, puis chaque spécialité, dans l'ordre des positions. Tout agent du réseau les lit.
+   * Pour un agent, chaque module dit s'il l'a déjà fait (J14) : ses seuls modules, jamais ceux d'un autre [R16].
+   * Aucun rang ni aucune note : fait ou pas, rien d'autre [R14].
+   */
   async tracks(
     viewer: Viewer,
-  ): Promise<{ ok: true; value: { track: AcademyTrack; modules: { id: string; title: string; position: number; videoId: string; durationMinutes: number; topic: AcademyTopic; mandatory: boolean }[] }[] } | AcademyRefusal> {
+  ): Promise<{ ok: true; value: { track: AcademyTrack; modules: { id: string; title: string; position: number; videoId: string; durationMinutes: number; topic: AcademyTopic; mandatory: boolean; done: boolean }[] }[] } | AcademyRefusal> {
     if (viewer.role === 'partner') return this.refuse(viewer, null, 'academy_tracks', 'role');
     const rows = await this.db.all<{ id: string; title: string; track: AcademyTrack; position: number; video_id: string; duration_minutes: number; topic: AcademyTopic; mandatory: number }>(
       'SELECT id, title, track, position, video_id, duration_minutes, topic, mandatory FROM academy_modules WHERE network_id = ? ORDER BY position, id',
       [viewer.networkId],
     );
+    const done =
+      viewer.role === 'agent'
+        ? new Set((await this.db.all<{ module_id: string }>('SELECT module_id FROM academy_completions WHERE agent_id = ? AND network_id = ?', [viewer.userId, viewer.networkId])).map((r) => r.module_id))
+        : new Set<string>();
     const value = ACADEMY_TRACKS.map((track) => ({
       track,
       modules: rows
         .filter((r) => r.track === track)
-        .map((r) => ({ id: r.id, title: r.title, position: r.position, videoId: r.video_id, durationMinutes: r.duration_minutes, topic: r.topic, mandatory: r.mandatory === 1 })),
+        .map((r) => ({ id: r.id, title: r.title, position: r.position, videoId: r.video_id, durationMinutes: r.duration_minutes, topic: r.topic, mandatory: r.mandatory === 1, done: done.has(r.id) })),
     })).filter((t) => t.modules.length > 0);
     return { ok: true, value };
   }

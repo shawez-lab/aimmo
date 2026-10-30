@@ -304,6 +304,8 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
     route('POST', `${P}/academie/seances/${ID}/presence`, 'presence', write(['agentId', 'recorderName'], async (m, v, [id], b) => reply(await m.academie.recordAttendance(v, id!, { agentId: b.agentId, recorderName: b.recorderName })))),
     route('GET', `${P}/ma-formation`, 'ma_formation', read(async (m, v) => reply(await m.academie.counter(v, v.userId)))),
     route('GET', `${A}/formation`, 'formation', read(async (m, v, [id]) => reply(await m.academie.counter(v, id!)))),
+    // Le parcours d'essai de l'agent lui-même, sans son identifiant dans l'adresse (J14).
+    route('GET', `${P}/mon-bac-a-sable`, 'mon_bac_a_sable', read(async (m, v) => (m.sandbox ? reply(await m.sandbox.progress(v, v.userId)) : unavailable('Le bac à sable')))),
     route('GET', `${A}/bac-a-sable`, 'bac_a_sable', read(async (m, v, [id]) => (m.sandbox ? reply(await m.sandbox.progress(v, id!)) : unavailable('Le bac à sable')))),
 
     /* ---------- Entraînement aux objections, sur des cas inventés. ---------- */
@@ -313,6 +315,8 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
     route('POST', `${P}/entrainement/${ID}/fin`, 'entrainement_fin', read(async (m, v, [id]) => reply(await m.entrainement.end(v, id!)))),
 
     /* ---------- Référent, binôme, absences, assistance. ---------- */
+    // L'agent lit son référent en cours : un prénom et une date, rien d'autre (J14) [R16].
+    route('GET', `${P}/mon-referent`, 'mon_referent', read(async (m, v) => reply(await m.accompagnement.myReferent(v)))),
     route('POST', `${A}/referent`, 'referent', write(['referentId'], async (m, v, [id], b) => reply(await m.accompagnement.assignReferent(v, id!, b.referentId)))),
     route('POST', `${P}/binomes`, 'binome', write(['agentA', 'agentB', 'coverSharePct'], async (m, v, _p, b) => reply(await m.accompagnement.writePair(v, { agentA: b.agentA, agentB: b.agentB, coverSharePct: b.coverSharePct })))),
     route('POST', `${A}/absence`, 'absence', write(['from', 'until', 'coverAgentId'], async (m, v, [id], b) => reply(await m.accompagnement.declareAbsence(v, id!, { from: b.from, until: b.until, coverAgentId: b.coverAgentId })))),

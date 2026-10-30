@@ -11,6 +11,7 @@ import { CONFORMITE_SCRIPT } from '../app/conformite.ts';
 import { INVESTIR_SCRIPT } from '../app/investir.ts';
 import { STUDIO_SCRIPT } from '../app/studio.ts';
 import { GAGNER_SCRIPT } from '../app/gagner.ts';
+import { INTEGRATION_SCRIPT } from '../app/integration.ts';
 import { APP_CSS, APP_JS, ICON_SVG, INDEX_HTML, MANIFEST, swJs } from '../app/fichiers.ts';
 
 export const AGENT_APP_PATH = '/app';
@@ -25,10 +26,22 @@ export const AGENT_APP_CSP =
 
 const SW_JS = swJs(AGENT_APP_CACHE, AGENT_APP_SHELL);
 
+/**
+ * Le script servi sans ses lignes de commentaire (J14) : une ligne qui n'est qu'un commentaire, de ligne ou de bloc,
+ * ne change rien à ce que le script fait ; la retirer garde l'application dans son budget [R201]. Rien d'autre n'est
+ * touché : ni chaîne, ni code, ni commentaire en bout de ligne.
+ */
+export function stripCommentLines(js: string): string {
+  return js
+    .split('\n')
+    .filter((line) => !/^\s*\/\/.*$/.test(line) && !/^\s*\/\*.*\*\/\s*$/.test(line))
+    .join('\n');
+}
+
 const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.freeze({
   '/app/': { body: INDEX_HTML, type: 'text/html; charset=utf-8' },
   '/app/app.css': { body: APP_CSS, type: 'text/css; charset=utf-8' },
-  '/app/app.js': { body: APP_JS, type: 'text/javascript; charset=utf-8' },
+  '/app/app.js': { body: stripCommentLines(APP_JS), type: 'text/javascript; charset=utf-8' },
   // L'écran du responsable de la conformité (L10), chargé à la demande pour sa seule clé, jamais gardé sur l'appareil.
   '/app/conformite.js': { body: CONFORMITE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Investir » (Y09), chargé à sa première ouverture pour garder le budget de l'application.
@@ -39,6 +52,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/studio.js': { body: STUDIO_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Gagner des mandats » (G13), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/gagner.js': { body: GAGNER_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Les écrans de M14, « Mon intégration », « Académie » et « Candidatures » (J14), chargés à leur première ouverture [R201].
+  '/app/integration.js': { body: INTEGRATION_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/sw.js': { body: SW_JS, type: 'text/javascript; charset=utf-8' },
   '/app/manifest.webmanifest': { body: MANIFEST, type: 'application/manifest+json; charset=utf-8' },
   '/app/icon.svg': { body: ICON_SVG, type: 'image/svg+xml' },
