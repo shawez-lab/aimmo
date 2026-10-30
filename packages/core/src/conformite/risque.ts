@@ -331,6 +331,30 @@ export class FicheRisque {
   }
 
   /**
+   * Les fiches de risque du réseau qui attendent leur validation, de la plus ancienne à la plus récente, pour le
+   * responsable seul (écran « Conformité », L10). Une fiche ne vaut rien tant qu'elle n'est pas validée [R91].
+   */
+  async pending(viewer: Viewer): Promise<{ ok: true; value: RiskSheet[] } | RiskRefusal> {
+    if (viewer.role !== 'compliance') return this.refuse(viewer, 'risk_sheet:pending', 'role');
+    const rows = await this.db.all<SheetRow>(
+      'SELECT * FROM risk_sheets WHERE network_id = ? AND id NOT IN (SELECT sheet_id FROM risk_validations WHERE network_id = ?) ORDER BY prepared_at, id',
+      [viewer.networkId, viewer.networkId],
+    );
+    const out: RiskSheet[] = [];
+    const perPerson = new Map<string, number>();
+    for (const row of rows) {
+      await this.ensurePreparedEvent(row);
+      out.push(this.toSheet(row, null));
+      perPerson.set(row.person_id, (perPerson.get(row.person_id) ?? 0) + 1);
+    }
+    // Chaque lecture au journal, client par client, comme les lectures du coffre : qui a lu, combien de fiches [R91].
+    for (const [personId, count] of perPerson) {
+      await appendEvent(this.journal, { type: 'risque.lu', actor: this.actor(viewer), subject: `person:${personId}`, data: { rule: 'R91', count, via: 'attente' } }, this.now);
+    }
+    return { ok: true, value: out };
+  }
+
+  /**
    * Jamais vu : rejoue la fiche avec sa grille datée et ses sources figées. `same` dit si le calcul et l'empreinte
    * sont identiques ; sinon, les critères qui diffèrent. Pour le responsable seul.
    */
