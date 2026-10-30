@@ -519,7 +519,7 @@ export class PagesQuartier {
     zoneId: unknown,
     input: { key: unknown; kind: unknown; label: unknown; value?: unknown; unit?: unknown; source: unknown; sourceDate: unknown; retired?: unknown },
   ): Promise<{ ok: true } | NeighbourhoodRefusal> {
-    if (viewer.role !== 'direction') return this.refuseRole(viewer, `zone:${String(zoneId)}`);
+    if (viewer.role !== 'direction') return this.refuseRole(viewer, `price_zone:${String(zoneId)}`);
     const zone = await this.zone(viewer.networkId, { id: zoneId });
     if (!zone) return { ok: false, rule: null, code: 'zone_inconnue' };
     const key = typeof input.key === 'string' ? input.key.trim() : '';
@@ -547,7 +547,7 @@ export class PagesQuartier {
       'INSERT INTO neighbourhood_facts (id, network_id, zone_id, fact_key, kind, label, value, unit, source, source_date, retired, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [this.newId(), viewer.networkId, zone.id, key, input.kind as string, label, value as number | null, unit as string | null, source, date, input.retired === true ? 1 : 0, this.actor(viewer), this.now().toISOString()],
     );
-    await appendEvent(this.journal, { type: 'attirer.quartier.donnee', actor: this.actor(viewer), subject: `zone:${zone.id}`, data: { rule: 'R155', key, retired: input.retired === true } }, this.now);
+    await appendEvent(this.journal, { type: 'attirer.quartier.donnee', actor: this.actor(viewer), subject: `price_zone:${zone.id}`, data: { rule: 'R155', key, retired: input.retired === true } }, this.now);
     return { ok: true };
   }
 
@@ -582,7 +582,7 @@ export class PagesQuartier {
       'INSERT INTO neighbourhood_drafts (id, network_id, zone_id, kind, topic, title, body, origin, data_digest, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [id, viewer.networkId, zone.id, d.kind, d.topic, d.title, d.body, d.origin, await dataDigest(data), this.actor(viewer), this.now().toISOString()],
     );
-    await appendEvent(this.journal, { type: 'attirer.quartier.texte', actor: this.actor(viewer), subject: `zone:${zone.id}`, data: { rule: 'R155', kind: d.kind, topic: d.topic, origin: d.origin } }, this.now);
+    await appendEvent(this.journal, { type: 'attirer.quartier.texte', actor: this.actor(viewer), subject: `price_zone:${zone.id}`, data: { rule: 'R155', kind: d.kind, topic: d.topic, origin: d.origin } }, this.now);
     return { draftId: id, zoneSlug: zone.slug, kind: d.kind, topic: d.topic, title: d.title, body: d.body, origin: d.origin, trace, validatedBy: null, validatedAt: null };
   }
 
@@ -591,7 +591,7 @@ export class PagesQuartier {
    * refusé de l'IA n'est jamais gardé.
    */
   async draft(viewer: Viewer, zoneId: unknown, kind: unknown, topic?: unknown): Promise<{ ok: true; value: NeighbourhoodDraft; aiRefused: boolean } | NeighbourhoodRefusal> {
-    if (viewer.role !== 'direction') return this.refuseRole(viewer, `zone:${String(zoneId)}`);
+    if (viewer.role !== 'direction') return this.refuseRole(viewer, `price_zone:${String(zoneId)}`);
     const k = this.parseKind(kind, topic);
     if (!k) return { ok: false, rule: null, code: 'invalide' };
     const zone = await this.zone(viewer.networkId, { id: zoneId });
@@ -613,7 +613,7 @@ export class PagesQuartier {
 
   /** Un texte écrit ou corrigé par la direction : contrôlé de la même façon, refusé s'il ne passe pas [R155]. */
   async write(viewer: Viewer, zoneId: unknown, kind: unknown, topic: unknown, title: unknown, body: unknown): Promise<{ ok: true; value: NeighbourhoodDraft } | NeighbourhoodRefusal> {
-    if (viewer.role !== 'direction') return this.refuseRole(viewer, `zone:${String(zoneId)}`);
+    if (viewer.role !== 'direction') return this.refuseRole(viewer, `price_zone:${String(zoneId)}`);
     const k = this.parseKind(kind, topic);
     if (!k || typeof title !== 'string' || typeof body !== 'string') return { ok: false, rule: null, code: 'invalide' };
     const t = title.trim();
@@ -641,7 +641,7 @@ export class PagesQuartier {
    * le texte, il faut un nouveau texte [R155].
    */
   async validate(viewer: Viewer, draftId: unknown): Promise<{ ok: true; value: NeighbourhoodDraft } | NeighbourhoodRefusal> {
-    if (viewer.role !== 'direction') return this.refuseRole(viewer, `texte_quartier:${String(draftId)}`);
+    if (viewer.role !== 'direction') return this.refuseRole(viewer, `price_zone:texte`);
     const row = await this.draftRow(viewer.networkId, draftId);
     if (!row) return { ok: false, rule: null, code: 'inconnu' };
     if (row.validated_at) return { ok: false, rule: 'R155', code: 'deja_valide' };
@@ -655,13 +655,13 @@ export class PagesQuartier {
     const at = this.now().toISOString();
     const changed = await this.db.run('INSERT OR IGNORE INTO neighbourhood_validations (draft_id, text_sha256, data_digest, validated_by, validated_at) VALUES (?, ?, ?, ?, ?)', [row.id, await textHash(row), digest, this.actor(viewer), at]);
     if (changed.changes === 0) return { ok: false, rule: 'R155', code: 'deja_valide' };
-    await appendEvent(this.journal, { type: 'attirer.quartier.valide', actor: this.actor(viewer), subject: `zone:${row.zone_id}`, data: { rule: 'R155', kind: row.kind, topic: row.topic } }, this.now);
+    await appendEvent(this.journal, { type: 'attirer.quartier.valide', actor: this.actor(viewer), subject: `price_zone:${row.zone_id}`, data: { rule: 'R155', kind: row.kind, topic: row.topic } }, this.now);
     return { ok: true, value: { draftId: row.id, zoneSlug: zone.slug, kind: row.kind, topic: row.topic, title: row.title, body: row.body, origin: row.origin, trace, validatedBy: this.actor(viewer), validatedAt: at } };
   }
 
   /** Les textes d'un quartier, pour la direction : chacun avec son contrôle sur les données du jour. */
   async drafts(viewer: Viewer, zoneId: unknown): Promise<{ ok: true; value: NeighbourhoodDraft[] } | NeighbourhoodRefusal> {
-    if (viewer.role !== 'direction') return this.refuseRole(viewer, `zone:${String(zoneId)}`);
+    if (viewer.role !== 'direction') return this.refuseRole(viewer, `price_zone:${String(zoneId)}`);
     const zone = await this.zone(viewer.networkId, { id: zoneId });
     if (!zone) return { ok: false, rule: null, code: 'zone_inconnue' };
     const data = await this.data(viewer.networkId, zone);
