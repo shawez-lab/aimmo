@@ -2188,9 +2188,18 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT10 · Branchement de M01 dans le socle
-- Statut : à faire
+- Statut : en cours
+- Décidé (2026-10-30, voie 1) : la voie 1 n'a aucune autre tâche prête et AT09 (voie 2) n'est pas commencée ; AT10 est scindée : AT10 branche maintenant ce qui ne dépend pas des routes de AT09 (origine du contact dans la chaîne de captation, recalcul des prix au planificateur à chaque publication DVF) ; le branchement des routes de AT09 dans `app.ts` passe en AT11.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AT09
 - Cahier : M01 ; Architecture technique.
 - Objectif : brancher les routes de AT09 dans `app.ts`, le recalcul des prix au planificateur à chaque publication DVF, et l'origine du contact (AT05) dans la chaîne de captation.
 - Critères : un contact entrant venu d'un contenu marqué garde son origine [R156] ; les pages de prix sont recalculées à la nouvelle publication DVF, sur horloge simulée [R150] ; la suite complète reste verte.
+- Attend : rien.
+
+### AT11 · Branchement des routes de M01 dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : AT09, AT10
+- Cahier : M01 ; Architecture technique.
+- Objectif : brancher les routes et pages publiques de AT09 dans `app.ts`, avec le `robots.txt` du site de l'agent qui déclare son plan (AT04).
+- Critères : chaque route branchée répond sous son rôle et sa portée [R16] ; parcours d'un bien test sur les deux sites, une seule page de référence [R153] ; la suite complète reste verte.
 - Attend : rien.
