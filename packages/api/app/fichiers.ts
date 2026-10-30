@@ -1,6 +1,7 @@
 import { DESIGN_CSS, DESIGN_ICON_SVG, PALETTE, THEME_COLOR } from '@aimmo/core';
 import { CERTIFIED_DOMAINS, PARTNER_TRADES } from '../../core/src/partenaires/annuaire.ts';
 import { SORT_LABELS } from '../src/partenaires-sortes.ts';
+import { COFFRE_JS, CONFORMITE_CSS, CONFORMITE_HTML } from './conformite.ts';
 import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS } from './louer.ts';
 import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.ts';
 
@@ -124,7 +125,7 @@ ${LOUER_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="t
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
-${LOUER_HTML}${COMMERCES_HTML}<section id="chiffres" hidden>
+${LOUER_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}<section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
 <div class="periodes" role="group" aria-label="Période">
@@ -235,7 +236,7 @@ legend { font-weight: 600; margin-bottom: var(--e-2); }
 .chiffre ul { margin: 0 0 var(--e-3); padding-left: var(--e-5); }
 .chiffre li { padding: var(--e-1) 0; }
 #reseau-export-jour { margin-bottom: var(--e-2); }
-` + LOUER_CSS;
+` + LOUER_CSS + CONFORMITE_CSS;
 
 /**
  * Le script de la page. Tout texte venu de l'API est posé avec `textContent`, jamais comme du code. La clé ne passe
@@ -424,6 +425,8 @@ export const APP_JS = `'use strict';
     body.appendChild(block('Derniers messages', (f.messages || []).map(function (m) {
       return line(m.body, (m.direction === 'in' ? 'Reçu' : 'Envoyé') + ' par ' + channel(m.channel) + ', le ' + date(m.occurredAt) + ' à ' + hour(m.occurredAt));
     })));
+    // Le dépôt d'une pièce au coffre par l'agent de la fiche (L10) [R90].
+    body.appendChild(coffreBlock(personId));
   }
   // La réponse d'une demande de fiche : clé refusée, fiche hors des droits, panne, ou la fiche.
   function ficheAnswer(r) {
@@ -532,6 +535,7 @@ export const APP_JS = `'use strict';
     wipePartenaires();
     wipeLouer();
     forgetLouer();
+    wipeConformite();
     wipeCommerces();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
@@ -1659,7 +1663,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COMMERCES_JS}
+${COFFRE_JS}${COMMERCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1676,7 +1680,7 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'commerces'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'conformite', 'commerces'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1749,8 +1753,9 @@ ${LOUER_JS}
       // Une réponse d'une session finie (sortie, autre clé) ne touche plus à rien.
       if (mine !== session) return false;
       var me = res.body && res.body.data;
-      // L'agent a sa journée ; la direction a l'écran du réseau (K09) ; tout autre rôle est refusé ici.
-      if (res.refused || (res.body && (!me || (me.role !== 'agent' && me.role !== 'direction')))) {
+      // L'agent a sa journée ; la direction a l'écran du réseau (K09) ; le responsable de la conformité a le sien (L10) ;
+      // tout autre rôle est refusé ici.
+      if (res.refused || (res.body && (!me || (me.role !== 'agent' && me.role !== 'direction' && me.role !== 'compliance')))) {
         forgetKey(key);
         // L'autre clé de l'appareil, si elle reste, garde son accès.
         // Celle de la direction, seule restante, devient la clé de l'appareil.
@@ -1760,6 +1765,11 @@ ${LOUER_JS}
         return refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.');
       }
       if (!res.body) return refuse('Le service ne répond pas. Réessayez dans un moment.');
+      if (me.role === 'compliance') {
+        $('erreur').hidden = true;
+        currentKey = key;
+        return openConformite();
+      }
       if (me.role === 'direction') {
         $('erreur').hidden = true;
         currentKey = key;
@@ -1835,6 +1845,7 @@ ${LOUER_JS}
     });
     $('vers-reseau').addEventListener('click', function () { var k = readDirectionKey(); if (k) enter(k); });
     $('vers-journee').addEventListener('click', function () { var k = readKey(); if (k) enter(k); });
+    $('conformite-actualiser').addEventListener('click', function () { if (currentKey) { session += 1; openConformite(); } });
     var hash = typeof location !== 'undefined' ? String(location.hash || '') : '';
     var invited = INVITATION.exec(hash);
     if (hash.indexOf('#invitation=') === 0) {

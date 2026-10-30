@@ -47,7 +47,7 @@ describeWithSqlite('P06 · publication des photos et vidéos', () => {
     }
   });
 
-  it('[R46] une vidéo n’est publiée qu’après un contrôle réussi de ses sous-titres et de sa légende : jamais d’adresse', async () => {
+  it('[R46] [R133] une vidéo n’est publiée qu’après un contrôle réussi de ses sous-titres et de sa légende, et son montage rangé : jamais d’adresse', async () => {
     const t = await setupAnnonce();
     const medias = new MediasBien(t.db, t.acces, t.journal, { now: t.now });
     const video = `biens/${t.propertyId}/0b6f1d2e-3333-4a2b-8c3d-000000000003.mp4`;
@@ -74,6 +74,12 @@ describeWithSqlite('P06 · publication des photos et vidéos', () => {
     expect(t.channels[0]!.received.at(-1)!.media.some((m) => m.kind === 'video')).toBe(false);
     // Un texte propre : la vidéo part au passage suivant, partout.
     expect(await medias.checkVideoText(t.agent, t.propertyId, video, { subtitles: ['Le séjour, lumineux.', 'Au 3e étage avec ascenseur.'], caption: 'Visite du logement' })).toEqual({ ok: true });
+    // [R133] Le texte seul ne suffit pas : sans montage rangé par le Studio, la musique de la vidéo est inconnue.
+    expect((await medias.publishable(t.propertyId, 1)).some((m) => m.ref === video)).toBe(false);
+    await t.db.run(
+      "INSERT INTO video_montages (id, property_id, network_id, video_ref, video_sha256, template_sha256, clips_count, duration_s, music_id, processed_on, recorded_by, recorded_at) VALUES ('m-1', ?, ?, ?, ?, ?, 5, 20, NULL, 'appareil', 'agent:a', '2027-01-01')",
+      [t.propertyId, t.network.id, video, 'e'.repeat(64), 'f'.repeat(64)],
+    );
     expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ created: true, pushed: ['site', 'reseaux', 'google', 'portails'] });
     expect(t.channels.every((c) => c.received.at(-1)!.media.some((m) => m.ref === video && m.kind === 'video'))).toBe(true);
     // Un nouveau contrôle refusé retire la vidéo au passage suivant : seul le dernier compte.

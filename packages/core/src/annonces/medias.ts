@@ -4,7 +4,8 @@
  * - Une photo d'aménagement virtuel n'est publiée qu'avec la mention « Aménagement virtuel » à poser sur l'image :
  *   chaque canal la reçoit avec la photo, la page et la fiche la posent elles-mêmes (P05) [R48]. Une retouche
  *   au-delà de la lumière et du cadrage n'a pas de case dans la fiche : elle est refusée à la saisie (P01).
- * - Une vidéo n'est publiée qu'une fois ses sous-titres et sa légende contrôlés : ni adresse, ni voie nommée, ni
+ * - Une vidéo n'est publiée qu'une fois son montage rangé par le Studio (M19, musique sous licence [R133]) et ses
+ *   sous-titres et sa légende contrôlés : ni adresse, ni voie nommée, ni
  *   critère discriminant, ni mot interdit [R46]. Le contrôle porte sur le texte ; l'image elle-même suit le plan de
  *   tournage, qui dit ce qu'il ne faut jamais filmer.
  * - Le plan de tournage est tiré de la fiche seule : il ne demande de filmer que ce que la fiche dit exister.
@@ -18,6 +19,7 @@ import { sha256 } from '../documents/modeles.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { publicTextProblems, sentences, type SentenceProblem } from './annonce-sourcee.ts';
+import { parisDay } from '../studio/bibliotheque.ts';
 import type { PropertySheet } from './fiche-bien.ts';
 
 export const VIRTUAL_STAGING_LABEL = 'Aménagement virtuel';
@@ -133,8 +135,27 @@ export class MediasBien {
         continue;
       }
       const last = await this.db.first<{ outcome: string }>('SELECT outcome FROM video_text_checks WHERE property_id = ? AND media_ref = ? ORDER BY checked_at DESC, rowid DESC LIMIT 1', [propertyId, m.ref]);
-      if (last?.outcome === 'ok') out.push({ ref: m.ref, kind: m.kind, overlay: null });
+      if (last?.outcome !== 'ok') continue;
+      // Une vidéo ne part qu'une fois son montage rangé par le Studio (M19, X03) : sa musique y a été contrôlée contre
+      // la bibliothèque sous licence [R133]. Une vidéo venue d'ailleurs, à la musique inconnue, ne part pas.
+      // Sa musique est relue au moment de publier : une licence retirée ou expirée depuis le montage retire la vidéo.
+      if (m.kind === 'video' && !(await this.montageStillLicensed(propertyId, m.ref))) continue;
+      out.push({ ref: m.ref, kind: m.kind, overlay: null });
     }
     return out;
+  }
+
+  /** Le montage de la vidéo existe, et sa musique, s'il en a une, a encore sa licence à cet instant [R133]. */
+  private async montageStillLicensed(propertyId: string, videoRef: string): Promise<boolean> {
+    const montage = await this.db.first<{ network_id: string; music_id: string | null }>('SELECT network_id, music_id FROM video_montages WHERE property_id = ? AND video_ref = ? LIMIT 1', [propertyId, videoRef]);
+    if (!montage) return false;
+    if (montage.music_id === null) return true;
+    const asset = await this.db.first<{ valid_until: string | null; withdrawn: string | null }>(
+      `SELECT a.valid_until, w.asset_id AS withdrawn FROM licensed_assets a LEFT JOIN licensed_asset_withdrawals w ON w.asset_id = a.id
+       WHERE a.id = ? AND a.network_id = ? AND a.kind = 'musique'`,
+      [montage.music_id, montage.network_id],
+    );
+    if (!asset || asset.withdrawn !== null) return false;
+    return asset.valid_until === null || asset.valid_until >= parisDay(this.now());
   }
 }
