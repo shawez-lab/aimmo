@@ -2151,7 +2151,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : H07 pour le service réel.
 
 ### AT07 · Pages de quartier et articles, rédigés par l'IA depuis les données, relus
-- Statut : en cours (voie 1)
+- Statut : en cours
 - Décidé (2026-10-30) : la voie 1 n'a plus aucune tâche prête (AT10 attend AT09, le reste attend un humain) ; elle prend AT07, qui ne dépend que de AT01, dans ses propres fichiers (`packages/core/src/attirer/quartier.ts`, migration `1470`), sans toucher ceux de AT05 (voie 2).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT01
 - Cahier : M01, point 5 « Pages de quartier et articles ».
