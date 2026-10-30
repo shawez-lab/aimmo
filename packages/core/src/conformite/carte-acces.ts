@@ -621,6 +621,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   licensed_asset_withdrawals: out('sans_client', 'Retraits d\'entrées de la bibliothèque sous licence : aucune personne.'),
   // M17 · Investir.
   investor_profiles: { locate: by('person_id') },
+  // M16 · Commerces et entreprises : la fiche suit son bien, comme la fiche de commercialisation.
+  business_sheets: { locate: [via('property_id', 'properties')] },
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
   investment_calculations: { locate: [via('project_id', 'projects')] },
   commune_rental_rules: out('sans_client', 'Règles de location des communes rangées par la direction : aucune personne.'),

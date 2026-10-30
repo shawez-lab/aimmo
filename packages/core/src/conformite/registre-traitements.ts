@@ -530,6 +530,19 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     },
   },
   {
+    id: 'commerces',
+    finalite: 'Vendre un fonds de commerce, un droit au bail, des murs ou un local professionnel dans la discrétion : la fiche du commerce, dont les chiffres et le bail restent confidentiels.',
+    baseLegale: 'mesures_precontractuelles',
+    personnes: ['Vendeurs de commerces et d\'entreprises'],
+    donnees: ['Fiche du commerce : enseigne, chiffres d\'affaires et résultats des 3 derniers exercices, bail commercial, salariés (nombre), matériel, autorisations, chaque champ avec son auteur'],
+    duree: 'La durée du mandat puis 5 ans.',
+    destinataires: ['L\'agent du bien', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
+    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
+    tables: {
+      business_sheets: ['sign_name', 'fiscal_years', 'lease_start', 'lease_years', 'lease_annual_rent_cents', 'lease_use', 'lease_assignment', 'employees', 'equipment', 'licenses', 'author'],
+    },
+  },
+  {
     id: 'attirer',
     finalite: 'Publier les prix de marché par commune et par quartier, en chiffres regroupés des ventes publiques, sans aucune vente retrouvable.',
     baseLegale: 'interet_legitime',
@@ -859,6 +872,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   investor_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'gross_yield_bp', 'created_at', 'updated_at'],
   property_communes: ['property_id', 'network_id', 'insee_code', 'rent_kind', 'recorded_at'],
   market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
+  business_sheets: ['id', 'network_id', 'property_id', 'version', 'activity', 'sources', 'created_at'],
   price_versions: ['id', 'network_id', 'source', 'dvf_last_sale', 'window_from', 'window_to', 'areas_digest', 'sales_digest', 'min_sales', 'round_to', 'status', 'computed_at', 'completed_at'],
   price_cells: ['version_id', 'area_id', 'kind', 'status', 'hold_code', 'sales_count', 'median_m2', 'q1_m2', 'q3_m2', 'from_version_id'],
   price_cell_sales: ['version_id', 'area_id', 'kind', 'fingerprint', 'n'],
