@@ -252,6 +252,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   candidate: { excluded: 'candidat', why: 'Un candidat au réseau.' },
   partner: { excluded: 'partenaire', why: 'Un partenaire professionnel.' },
   partner_prospect: { excluded: 'partenaire', why: 'Un futur partenaire.' },
+  pro_send: { excluded: 'partenaire', why: 'Un envoi à un professionnel, rangé dans la boîte d\'essai.' },
   network: { excluded: 'sans_client', why: 'Le réseau lui-même.' },
   template: { excluded: 'sans_client', why: 'Modèle de document.' },
   lease_template: { excluded: 'sans_client', why: 'Modèle de bail.' },
@@ -494,6 +495,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   partner_prospects: out('partenaire', 'Futur partenaire, adresse professionnelle.'),
   partner_prospect_mails: out('partenaire', 'Mails préparés pour un futur partenaire.'),
   partner_prospect_optouts: out('partenaire', 'Opposition d\'un futur partenaire.'),
+  partner_addresses: out('partenaire', 'Adresse professionnelle et accord du partenaire.'),
+  partner_optouts: out('partenaire', 'Opposition d\'un partenaire.'),
+  pro_sends: out('partenaire', 'Envois aux partenaires et futurs partenaires.'),
+  pro_send_log: out('partenaire', 'Décisions des envois aux professionnels, sans adresse.'),
   // preuves-et-registre : le journal de la personne et de ses dossiers, sans la lutte contre le blanchiment.
   journal: {
     locate: [
@@ -604,6 +609,14 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   rental_management_links: { locate: [via('listing_id', 'rental_listings')] },
   // L'issue de l'envoi d'une échéance au propriétaire ou d'un reçu d'équité au candidat : à qui l'a reçu.
   rental_sends: { locate: [via('ref_id', 'rental_owner_notices', 'id', { where: { kind: 'echeance' } }), via('ref_id', 'rental_fairness_receipts', 'id', { where: { kind: 'recu' } })] },
+  // M19 · Studio.
+  photo_guide_shots: out('sans_client', 'Photos retenues pour le guide de prise de vue d\'un bien : aucune personne.'),
+  photo_guide_validations: out('sans_client', 'Validation d\'un bien photographié avec le guide : aucune personne.'),
+  photo_certificates: out('sans_client', 'Description des corrections d\'une photo de bien et son certificat : aucune personne.'),
+  floor_plans: out('sans_client', 'Pièces et cotes du plan d\'un logement : aucune personne.'),
+  video_montages: out('sans_client', 'Description du montage d\'une vidéo de bien : aucune personne.'),
+  licensed_assets: out('sans_client', 'Musiques et images sous licence du réseau : aucune personne.'),
+  licensed_asset_withdrawals: out('sans_client', 'Retraits d\'entrées de la bibliothèque sous licence : aucune personne.'),
   // M17 · Investir.
   investor_profiles: { locate: by('person_id') },
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
