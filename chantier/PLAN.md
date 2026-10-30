@@ -1794,6 +1794,8 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 
 ### CE11 · Écran « Commerces » dans l'application
 - Statut : en cours
+- Reste : prête (#211, empilée sur #210), à fusionner après CE10 dès H35 ; relecture forte sans P0 ni P1 ; M16 complet côté voie 1 (CE01 à CE11 en onze propositions empilées).
+- Décidé (2026-10-30) : trois lectures ajoutées pour l'écran (`GET /commerces`, `/commerces/:id/demandes`, `/commerces/:id/cession`) ; la lecture de l'état des demandes n'écrit pas de refus au journal ; script posé avant celui de « Louer ».
 - Qui : Claude · Relecture : forte · Dépend de : CE10
 - Cahier : M16 ; système de design de Z03.
 - Objectif : sur téléphone d'abord, la fiche, l'estimation, la présentation à valider, les demandes d'accès et leur état, les ouvertures du dossier, les étapes de la cession.
