@@ -230,6 +230,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   offre: ENVOI('transmission d\'une offre'),
   rappel_fonds: ENVOI('rappel des fonds'),
   suivi_valeur: ENVOI('suivi de valeur'),
+  ancien_contact: ENVOI('relance d\'un ancien contact'),
   merci: ENVOI('remerciement'),
   avis: ENVOI('demande d\'avis'),
   apres_vente: ENVOI('relance après la vente'),
@@ -251,6 +252,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   candidate: { excluded: 'candidat', why: 'Un candidat au réseau.' },
   partner: { excluded: 'partenaire', why: 'Un partenaire professionnel.' },
   partner_prospect: { excluded: 'partenaire', why: 'Un futur partenaire.' },
+  pro_send: { excluded: 'partenaire', why: 'Un envoi à un professionnel, rangé dans la boîte d\'essai.' },
   network: { excluded: 'sans_client', why: 'Le réseau lui-même.' },
   template: { excluded: 'sans_client', why: 'Modèle de document.' },
   lease_template: { excluded: 'sans_client', why: 'Modèle de bail.' },
@@ -320,6 +322,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   value_tracking: { locate: by('person_id') },
   value_tracking_sends: { locate: [via('tracking_id', 'value_tracking')] },
   value_tracking_alerts: { locate: by('person_id') },
+  old_contact_moments: { locate: by('person_id') },
+  old_contact_followups: { locate: by('person_id') },
   // rendez-vous-visites
   appointments: { locate: by('person_id'), secrets: ['token_hash'] },
   appointment_holds: { locate: [via('appointment_id', 'appointments')] },
@@ -341,6 +345,11 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // mandats-documents
   mandates: { locate: by('person_id') },
   mandate_register_settings: out('sans_client', 'Réglage de la numérotation du registre des mandats.'),
+  neighbourhood_campaigns: out('sans_client', 'Campagne de lettres d\'un agent : aucune personne nommée, seulement le centre du rayon.'),
+  neighbourhood_letters: out('non_rattachable', 'Lettre adressée « Au propriétaire » ou « Aux habitants » d\'une adresse : rattachée à aucune fiche.'),
+  service_commitments: out('sans_client', 'Engagement de service du réseau, rangé par la direction.'),
+  mandate_source_costs: out('sans_client', 'Coût d\'une source de mandats saisi par la direction, sans client.'),
+  mandate_source_decisions: out('sans_client', 'Décision de la direction sur une source de mandats, sans client.'),
   mandate_register: { locate: [via('mandate_id', 'mandates')] },
   document_templates: out('sans_client', 'Modèle de document du réseau.'),
   documents: { locate: [...by('person_id'), via('mandate_id', 'mandates')] },
@@ -397,6 +406,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
     locate: by('referrer_id', 'referred_id'),
     own: { referrer_id: [], referred_id: ['first_name', 'project_id', 'callable', 'call_due_at', 'call_done_at'] },
   },
+  // Recommandations des partenaires (G08) : à la personne recommandée.
+  partner_recommendations: { locate: by('referred_id') },
+  partner_recommendation_submissions: out('partenaire', 'Date d\'un envoi d\'un partenaire, sans personne.'),
+  partner_recommendation_withheld: { locate: [via('recommendation_id', 'partner_recommendations')], secrets: ['identifier_sha256'] },
   review_requests: { locate: by('person_id') },
   after_sale_tasks: { locate: [via('file_id', 'sale_files')] },
   after_sale_choices: { locate: by('person_id') },
@@ -484,6 +497,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   partner_prospects: out('partenaire', 'Futur partenaire, adresse professionnelle.'),
   partner_prospect_mails: out('partenaire', 'Mails préparés pour un futur partenaire.'),
   partner_prospect_optouts: out('partenaire', 'Opposition d\'un futur partenaire.'),
+  partner_addresses: out('partenaire', 'Adresse professionnelle et accord du partenaire.'),
+  partner_optouts: out('partenaire', 'Opposition d\'un partenaire.'),
+  pro_sends: out('partenaire', 'Envois aux partenaires et futurs partenaires.'),
+  pro_send_log: out('partenaire', 'Décisions des envois aux professionnels, sans adresse.'),
   // preuves-et-registre : le journal de la personne et de ses dossiers, sans la lutte contre le blanchiment.
   journal: {
     locate: [
@@ -594,6 +611,14 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   rental_management_links: { locate: [via('listing_id', 'rental_listings')] },
   // L'issue de l'envoi d'une échéance au propriétaire ou d'un reçu d'équité au candidat : à qui l'a reçu.
   rental_sends: { locate: [via('ref_id', 'rental_owner_notices', 'id', { where: { kind: 'echeance' } }), via('ref_id', 'rental_fairness_receipts', 'id', { where: { kind: 'recu' } })] },
+  // M19 · Studio.
+  photo_guide_shots: out('sans_client', 'Photos retenues pour le guide de prise de vue d\'un bien : aucune personne.'),
+  photo_guide_validations: out('sans_client', 'Validation d\'un bien photographié avec le guide : aucune personne.'),
+  photo_certificates: out('sans_client', 'Description des corrections d\'une photo de bien et son certificat : aucune personne.'),
+  floor_plans: out('sans_client', 'Pièces et cotes du plan d\'un logement : aucune personne.'),
+  video_montages: out('sans_client', 'Description du montage d\'une vidéo de bien : aucune personne.'),
+  licensed_assets: out('sans_client', 'Musiques et images sous licence du réseau : aucune personne.'),
+  licensed_asset_withdrawals: out('sans_client', 'Retraits d\'entrées de la bibliothèque sous licence : aucune personne.'),
   // M17 · Investir.
   investor_profiles: { locate: by('person_id') },
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
