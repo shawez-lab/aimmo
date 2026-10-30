@@ -8,6 +8,7 @@ import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
 import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
+import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
@@ -50,7 +51,7 @@ export interface Env {
   /** Le réseau qui reçoit les candidatures de la page `/rejoindre` (J13) ; absent, la page dit « bientôt ». */
   CANDIDATURE_NETWORK_ID?: string;
   /** Les médias des biens (R2), lus par la vitrine ; absent, aucune photo n'est servie. */
-  MEDIA?: MediaStore & { head?(key: string): Promise<unknown> };
+  MEDIA?: MediaStore & { head?(key: string): Promise<unknown>; put?(key: string, value: Uint8Array, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown> };
   /** Le coffre de la conformité (R2), séparé de tout autre stockage (L09) ; absent, dépôt et ouverture fermés. */
   COFFRE?: R2VaultBucket;
   /** Début du lien d'opposition à la prospection des partenaires (U09), en https, sans chiffre, terminé par `/partenaires/opposition/`. */
@@ -85,6 +86,20 @@ export function mediaFiles(bucket: MediaStore & { head?(key: string): Promise<un
   };
 }
 
+/**
+ * Le dépôt des fichiers finis du Studio dans `MEDIA` (X12) : les octets reçus, rangés tels quels avec leur type ; sans
+ * `put`, le dépôt reste fermé. Une panne remonte : la couche métier la dit au journal et ne range rien [R130].
+ */
+export function mediaUploads(bucket: { put?(key: string, value: Uint8Array, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown> }): StudioUploadStore | null {
+  const put = bucket.put?.bind(bucket);
+  if (!put) return null;
+  return {
+    put: async (key: string, bytes: Uint8Array, contentType: string) => {
+      await put(key, bytes, { httpMetadata: { contentType } });
+    },
+  };
+}
+
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     const estimation = estimationServices(env);
@@ -108,7 +123,8 @@ export default {
       // M16 (CE10) : sans stockage réel des documents (H38), le dossier protégé ne sert que la fiche du commerce.
       commerces: dossierLinkBase(env.DOSSIER_LINK_BASE) ? { baseUrl: dossierLinkBase(env.DOSSIER_LINK_BASE)! } : {},
       // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
-      studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null },
+      // X12 : les fichiers finis rangés tels quels dans `MEDIA` ; sans lui (H25), le dépôt est fermé.
+      studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null },
       // M20 complet (G12) : preuves de coût dans `PIECES` ; géocodeur des lettres seulement avec les données publiques
       // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
       gagner: { proofs: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, geocoder: estimation?.geocoder ?? null },

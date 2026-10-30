@@ -6,7 +6,7 @@
  * Chaque route dit les rôles qu'elle admet ; un autre rôle est refusé et écrit au journal avant que le corps de la
  * requête soit lu [R16]. Les droits fins (bien confié, agent du bien) restent ceux de la couche métier, qui écrit
  * aussi ses refus au journal. Aucune image ni vidéo ne passe par ces routes : seulement des références, des empreintes
- * et des descriptions [R130]. Rien ne part réellement : les réseaux sont en mode essai [R26, R134].
+ * et des descriptions [R130], sauf le dépôt d'un fichier fini (X12), rangé tel quel, sans aucun traitement. Rien ne part réellement : les réseaux sont en mode essai [R26, R134].
  *
  * Le certificat d'une photo est public : `studioCertificate` le rend sans aucune donnée personnelle ; sa page publique
  * et le branchement de ces routes au routeur viennent avec X10 (voie 1, fichiers du socle).
@@ -22,6 +22,7 @@ import { MiseEnRelation } from '../../core/src/partenaires/mise-en-relation.ts';
 import {
   AtelierStudio,
   Bibliotheque,
+  DepotsStudio,
   CertificatsPhotos,
   GuidePriseDeVue,
   Montages,
@@ -33,6 +34,7 @@ import {
   trialSocialChannel,
   type SocialChannel,
   type SocialWriter,
+  type StudioUploadStore,
 } from '../../core/src/studio/index.ts';
 
 export const TRIAL_MODE = 'essai';
@@ -45,6 +47,8 @@ export interface StudioServices {
   now: () => Date;
   /** Le stockage des fichiers (photos, originaux, preuves, accords) : seule l'existence d'une référence est lue. */
   files: { has(ref: string): Promise<boolean> };
+  /** Le stockage où les fichiers finis sont rangés tels quels (X12) ; absent, le dépôt est fermé. */
+  uploads?: StudioUploadStore | null;
   /** L'IA qui rédige le corps d'une publication ; absente, le texte de secours. */
   writer?: SocialWriter | null;
   /** Les réseaux, chacun derrière son interface ; par défaut, tous en essai. Aucun canal réel n'est accepté [R26]. */
@@ -169,6 +173,55 @@ export function studioCore(s: StudioServices) {
 
 const core = studioCore;
 
+/** Lit le corps d'une requête, au plus `max` octets, sans rien transformer ; null au-delà [R130]. */
+export async function readCapped(request: Request, max: number): Promise<Uint8Array | null> {
+  if (!request.body) return new Uint8Array(0);
+  const reader = request.body.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.byteLength;
+  }
+  return out;
+}
+
+/** Le statut d'un refus de dépôt : trop lourd, type refusé et stockage en panne ont le leur. */
+const DEPOSIT_STATUS: Record<string, number> = { trop_lourd: 413, type_refuse: 415, stockage_indisponible: 503 };
+
+/**
+ * Le dépôt d'un fichier fini (X12) : le corps est le fichier, tel quel ; son type dans `content-type`, son empreinte
+ * dite par l'appareil dans `x-aimmo-sha256`, la retouche d'une photo dans `?retouche=`. Le serveur ne le transforme
+ * jamais : il le range et l'ajoute à la fiche s'il est une photo ou une vidéo [R130].
+ */
+async function depositRoute(s: StudioServices, v: Viewer, [id, kind]: string[], r: Request): Promise<Response> {
+  if (!s.uploads) return json(503, { ok: false, rule: null, code: 'depot_ferme' });
+  const length = r.headers.get('content-length');
+  const declaredSize = length === null || length.trim() === '' ? null : /^\d{1,12}$/.test(length.trim()) ? Number(length.trim()) : Number.NaN;
+  const result = await new DepotsStudio(s.db, core(s).acces, s.journal, s.uploads, { now: s.now, ...(s.newId ? { newId: s.newId } : {}) }).deposit(v, id!, {
+    kind,
+    edit: new URL(r.url).searchParams.get('retouche') ?? undefined,
+    contentType: r.headers.get('content-type'),
+    sha256: r.headers.get('x-aimmo-sha256'),
+    declaredSize,
+    read: (max) => readCapped(r, max),
+  });
+  if (!result.ok && DEPOSIT_STATUS[result.code]) return json(DEPOSIT_STATUS[result.code]!, { ok: false, rule: result.rule, code: result.code });
+  return reply(result);
+}
+
 const ROUTES: StudioRoute[] = [
   // L'atelier du bien (X11) : photos de la fiche, celles qui ont leur certificat, publications préparées.
   { method: 'GET', pattern: new RegExp(`^/studio/biens/${ID}$`), name: 'studio.atelier', roles: WORK, handle: async (s, v, [id]) => reply(await core(s).atelier.read(v, id!)) },
@@ -201,6 +254,8 @@ const ROUTES: StudioRoute[] = [
       ),
     ),
   },
+  // Dépôt des fichiers finis, rangés tels quels (X12).
+  { method: 'POST', pattern: new RegExp(`^/studio/biens/${ID}/fichiers/(photo|original|video)$`), name: 'studio.depot', roles: WORK, handle: depositRoute },
   // Montage (X03).
   { method: 'GET', pattern: new RegExp(`^/studio/biens/${ID}/montage$`), name: 'studio.montage.modele', roles: WORK, handle: async (s, v, [id]) => reply(await core(s).montages.template(v, id!)) },
   { method: 'POST', pattern: new RegExp(`^/studio/biens/${ID}/montage$`), name: 'studio.montage', roles: WORK, handle: withBody(async (s, v, [id], b) => reply(await core(s).montages.record(v, id!, b))) },
