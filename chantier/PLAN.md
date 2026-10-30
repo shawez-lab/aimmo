@@ -1531,11 +1531,13 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 
 ### U09 · Branchement de M18 dans le socle
 - Statut : en cours
+- Où : branche chantier/U09, empilée sur #178 tant que H35 bloque les fusions
+- Décidé (2026-10-29) : la tâche est coupée en deux ; U09 branche les routes, les pages publiques et les passages, sans rien envoyer ; le passage des relances et des brouillons de prospection par le contrôle central (qui n'écrit qu'à une personne de la fiche) devient U12. Fichiers des partenaires dans `PIECES`, sous `partenaires/` (R2PartnerFiles) ; sans eux, les routes de M18 répondent 503 ; variable `PARTENAIRES_OPPOSITION_BASE` pour le lien d'opposition. Passages : relances et alertes de 9 h à 19 h, prospection à 10 h les jours ouvrés, échéances des justificatifs à 6 h, rangées au journal pour la direction (`partenaire.justificatif_echeance`). Le rôle `partner` n'a toujours accès à aucune fiche ni aucun bien dans `Acces` ; il ne lit que par l'espace partenaire [R77].
 - Où : proposition #180, empilée sur #178 ; fusion en attente des vérifications GitHub (H35)
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/core/src/acces/`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`, contrôle central des envois) · Relecture : forte · Dépend de : U10
 - Cahier : M18 ; Branchements.
 - Objectif : exporter `partenaires` depuis `@aimmo/core` ; dans les droits d'accès, le rôle `partner` lit seulement ses mises en relation confiées (U04) et rien d'autre ; ajouter les routes de M18 à `app.ts` ; lancer au planificateur les relances, les alertes d'échéance des justificatifs et la prospection du jour.
-- Critères : chaque brouillon de prospection (U08) et chaque relance préparée (U07) passe par `envoi/controle.ts` en mode essai, qui redécide au moment de l'envoi, et le refus sous R03 tient tant que H32 n'a pas écrit son exception dans R03 et dans `decideSend` ; un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] ; les passages tournent une fois par créneau ; rien ne part réellement tant que le plan ne l'a pas mis en service.
+- Critères : un partenaire ne lit aucune fiche client, aucun bien et aucun dossier hors de ses mises en relation confiées [R77, R16] (test) ; les passages tournent une fois par créneau (test) ; rien ne part réellement tant que le plan ne l'a pas mis en service (test). Le passage de chaque brouillon de prospection (U08) et de chaque relance (U07) par `envoi/controle.ts`, qui redécide au moment de l'envoi, revient à U12.
 - Attend : rien.
 
 ### U12 · Relances et prospection de M18 par le contrôle central des envois

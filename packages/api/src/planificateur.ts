@@ -4,6 +4,7 @@ import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
 import { pilotageJobs } from './pilotage.ts';
 import { conformiteJobs } from './conformite.ts';
+import { partenairesJobs } from './partenaires.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
 import type { Geocoder, SalesSource } from '@aimmo/core';
 
@@ -25,6 +26,8 @@ export interface SchedulerConfig {
   geocoder?: Geocoder | null;
   /** Le stockage des pièces des dossiers (R2, `PIECES`) ; absent, le passage des dossiers ne tourne pas. */
   pieces?: PieceStore | null;
+  /** Variable `PARTENAIRES_OPPOSITION_BASE` (`https://…/partenaires/opposition/`) : sans elle, la prospection ne prépare rien [R79]. */
+  partnerOptOutBase?: string | undefined;
   now?: () => Date;
 }
 
@@ -91,6 +94,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
         const store = new FicheClient(config.db, { now });
         return new DecisionEnvoi(config.db, store, new FicheUnique(config.db, store, { now }), { now });
       })(), { now }),
+      // Partenaires (U09) : relances et alertes de 9 h à 19 h, prospection du jour ouvré à 10 h, échéances des
+      // justificatifs à 6 h. Tout est préparé et rangé, rien n'est envoyé.
+      ...partenairesJobs(config.db, journal, { now, optOutBase: config.partnerOptOutBase || null }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

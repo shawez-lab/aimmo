@@ -6,6 +6,7 @@ import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
 import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
 import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
+import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 
 /**
@@ -38,13 +39,15 @@ export interface Env {
    * Les pièces des dossiers de vente (R2) ; absent, les routes et le passage de M10 sont fermés. Les pièces des dossiers
    * d'agent (M14) y sont rangées sous `agents/<agent>/` ; absent, leurs routes répondent « indisponible ».
    */
-  PIECES?: R2Like & R2AgentBucket;
+  PIECES?: R2Like & R2AgentBucket & R2PartnerBucket;
   /** Le réseau qui reçoit les candidatures de la page `/rejoindre` (J13) ; absent, la page dit « bientôt ». */
   CANDIDATURE_NETWORK_ID?: string;
   /** Les médias des biens (R2), lus par la vitrine ; absent, aucune photo n'est servie. */
   MEDIA?: MediaStore;
   /** Le coffre de la conformité (R2), séparé de tout autre stockage (L09) ; absent, dépôt et ouverture fermés. */
   COFFRE?: R2VaultBucket;
+  /** Début du lien d'opposition à la prospection des partenaires (U09), en https, sans chiffre, terminé par `/partenaires/opposition/`. */
+  PARTENAIRES_OPPOSITION_BASE?: string;
 }
 
 /**
@@ -72,6 +75,8 @@ export default {
       reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null },
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
       coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,
+      // M18 (U09) : preuves et pièces des partenaires dans `PIECES`, sous `partenaires/` ; absent, routes fermées.
+      partenaires: { files: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, optOutBase: env.PARTENAIRES_OPPOSITION_BASE ?? null },
       ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,
@@ -95,6 +100,7 @@ export default {
       soldSales: estimation?.sales ?? null,
       geocoder: estimation?.geocoder ?? null,
       pieces: env.PIECES ? new R2PieceStore(env.PIECES) : null,
+      partnerOptOutBase: env.PARTENAIRES_OPPOSITION_BASE,
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));
