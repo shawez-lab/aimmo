@@ -350,17 +350,17 @@ export class Referencement {
   }
 
   /**
-   * Le passage du signalement : chaque page publiée, modifiée ou retirée depuis le dernier signalement réussi (ou en
-   * essai) est signalée, une fois, groupée par hôte. En mode essai, le service n'est jamais appelé [R26]. Une panne du
+   * Le passage du signalement : chaque page publiée, modifiée ou retirée depuis le dernier signalement réussi du même
+   * mode est signalée (au passage en mode réel, toutes les pages publiées pendant l'essai partent donc une fois), une fois, groupée par hôte. En mode essai, le service n'est jamais appelé [R26]. Une panne du
    * service est rangée « echec » et au journal, sans données, puis la page est signalée de nouveau au passage suivant.
    */
   async signalChanges(networkId: string): Promise<{ mode: SeoMode; signalled: number; failed: number }> {
     const current = await this.currentPages(networkId);
     const last = await this.db.all<{ url: string; change: SeoChange; fingerprint: string }>(
       `SELECT s.url, s.change, s.fingerprint FROM seo_signals s
-        WHERE s.network_id = ? AND s.outcome IN ('essai', 'ok')
-          AND s.rowid = (SELECT t.rowid FROM seo_signals t WHERE t.network_id = s.network_id AND t.url = s.url AND t.outcome IN ('essai', 'ok') ORDER BY t.at DESC, t.rowid DESC LIMIT 1)`,
-      [networkId],
+        WHERE s.network_id = ? AND s.mode = ? AND s.outcome IN ('essai', 'ok')
+          AND s.rowid = (SELECT t.rowid FROM seo_signals t WHERE t.network_id = s.network_id AND t.url = s.url AND t.mode = s.mode AND t.outcome IN ('essai', 'ok') ORDER BY t.at DESC, t.rowid DESC LIMIT 1)`,
+      [networkId, this.mode],
     );
     const known = new Map(last.map((l) => [l.url, l]));
     const todo: { url: string; change: SeoChange; fingerprint: string }[] = [];

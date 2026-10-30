@@ -126,6 +126,12 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
     await sites(u);
     await listing(u.db, 'b1', 'ag-1', 1, 'en_vente');
     expect((await u.ref.signalChanges('net-1')).mode).toBe('essai');
+    // Au passage en mode réel, les pages connues pendant l'essai partent une fois.
+    const sent: string[] = [];
+    const real = new Referencement(t.db, t.journal, { mode: 'reel', indexNow: { submit: async (_h, urls) => void sent.push(...urls) } });
+    expect(await real.signalChanges('net-1')).toEqual({ mode: 'reel', signalled: 1, failed: 0 });
+    expect(sent).toEqual([`${CAMILLE}/biens/b1`]);
+    expect(await real.signalChanges('net-1')).toEqual({ mode: 'reel', signalled: 0, failed: 0 });
   });
 
   it('en mode réel, un appel par hôte ; une panne est rangée et la page signalée de nouveau au passage suivant', async () => {
