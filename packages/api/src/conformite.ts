@@ -121,8 +121,27 @@ async function readPiece(request: Request): Promise<{ content: Uint8Array; conte
   if (!(conformite.VAULT_CONTENT_TYPES as readonly string[]).includes(contentType)) return { code: 'bad_content_type' };
   const announced = Number(request.headers.get('content-length') ?? '0');
   if (Number.isFinite(announced) && announced > conformite.VAULT_MAX_BYTES) return { code: 'too_large' };
-  const content = new Uint8Array(await request.arrayBuffer());
-  if (content.byteLength > conformite.VAULT_MAX_BYTES) return { code: 'too_large' };
+  // Lu par morceaux : sans longueur annoncée, la lecture s'arrête dès que la taille admise est dépassée.
+  if (!request.body) return { content: new Uint8Array(0), contentType };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > conformite.VAULT_MAX_BYTES) {
+      await reader.cancel();
+      return { code: 'too_large' };
+    }
+    chunks.push(value);
+  }
+  const content = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    content.set(c, at);
+    at += c.byteLength;
+  }
   return { content, contentType };
 }
 
