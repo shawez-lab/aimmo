@@ -91,7 +91,7 @@ const settle = async () => {
 async function run(answers: Record<string, Answer> = {}) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
-  const calls: { method: string; url: string; body?: string; auth: string | undefined }[] = [];
+  const calls: { method: string; url: string; body?: string; auth: string | undefined; type?: string | undefined; sha?: string | undefined; raw?: unknown }[] = [];
   const table: Record<string, Answer> = { ...BASE, ...answers };
   // La toile du téléphone, inventée : elle compte ce qu'on y dessine et rend une image corrigée.
   const drawn: { rotate: number[]; images: number } = { rotate: [], images: 0 };
@@ -116,7 +116,7 @@ async function run(answers: Record<string, Answer> = {}) {
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
     fetch: (url: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
       const method = init.method ?? 'GET';
-      calls.push({ method, url, ...(init.body === undefined ? {} : { body: init.body }), auth: init.headers?.authorization });
+      calls.push({ method, url, ...(init.body === undefined ? {} : { body: init.body, raw: init.body }), auth: init.headers?.authorization, type: init.headers?.['content-type'], sha: init.headers?.['x-aimmo-sha256'] });
       const a = table[`${method} ${url}`];
       return a ? a() : Promise.reject(new TypeError('hors ligne'));
     },
@@ -163,6 +163,97 @@ async function run(answers: Record<string, Answer> = {}) {
 }
 
 const screenCalls = <T extends { url: string }>(calls: T[]): T[] => calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|contacts-chauds|rendez-vous|usage|annonces$|apres-vente)/.test(c.url));
+
+const hex = async (bytes: number[]) => Buffer.from(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes))).toString('hex');
+const ORIGINAL_REF = 'biens/b1/originaux/00000009-0000-4000-8000-000000000000.jpg';
+const PHOTO_REF = 'biens/b1/00000010-0000-4000-8000-000000000000.jpg';
+const VIDEO_REF = 'biens/b1/00000011-0000-4000-8000-000000000000.mp4';
+
+describe('X12 · dépôt des fichiers finis depuis l’écran « Studio »', () => {
+  const prepared = async (t: Awaited<ReturnType<typeof run>>, type: string, correct: boolean) => {
+    await t.openB1();
+    await t.click(t.byText('Photo'));
+    const pick = t.input('Prendre ou choisir une photo');
+    pick.files = [{ name: 'IMG 1.jpg', type, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }];
+    pick.listeners.change!({});
+    await new Promise((r) => setTimeout(r, 20));
+    if (correct) t.input('Contraste (sur 100)').value = '12';
+    await t.click(t.byText('Préparer la photo corrigée'));
+    await new Promise((r) => setTimeout(r, 20));
+  };
+
+  it('[R130] l’original puis la photo corrigée partent tels quels, avec l’empreinte du téléphone, puis le certificat est rangé', async () => {
+    const t = await run();
+    const original = await hex([1, 2, 3]);
+    const corrected = await hex([9, 9, 9]);
+    t.table['POST /v1/studio/biens/b1/fichiers/original'] = ok({ kind: 'original', ref: ORIGINAL_REF, sha256: original, size: 3, sheetVersion: null });
+    t.table['POST /v1/studio/biens/b1/fichiers/photo?retouche=lumiere_cadrage'] = ok({ kind: 'photo', ref: PHOTO_REF, sha256: corrected, size: 3, sheetVersion: 2 });
+    t.table['POST /v1/studio/biens/b1/photos'] = ok({});
+    await prepared(t, 'image/jpeg', true);
+    const before = t.calls.length;
+    await t.click(t.byText('Ranger la photo, son original et son certificat'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(t.state()).toBe('Photo rangée dans la fiche, avec son original et son certificat.');
+    const sent = t.calls.slice(before).filter((c) => c.method === 'POST');
+    expect(sent.map((c) => c.url)).toEqual(['/v1/studio/biens/b1/fichiers/original', '/v1/studio/biens/b1/fichiers/photo?retouche=lumiere_cadrage', '/v1/studio/biens/b1/photos']);
+    // Les fichiers partent tels quels : le fichier choisi, puis l'image préparée par la toile, chacun avec son empreinte.
+    expect(sent[0]).toMatchObject({ type: 'image/jpeg', sha: original, auth: `Bearer ${KEY}` });
+    expect((sent[0]!.raw as { name: string }).name).toBe('IMG 1.jpg');
+    expect(sent[1]).toMatchObject({ type: 'image/jpeg', sha: corrected, auth: `Bearer ${KEY}` });
+    expect(Buffer.from(await (sent[1]!.raw as { arrayBuffer: () => Promise<ArrayBuffer> }).arrayBuffer()).toString('hex')).toBe('090909');
+    expect(JSON.parse(sent[2]!.body!)).toEqual({ resultRef: PHOTO_REF, resultSha256: corrected, originalRef: ORIGINAL_REF, originalSha256: original, operations: [{ op: 'contraste', amount: 12 }], processedOn: 'appareil' });
+    for (const c of sent) expect(c.url).not.toContain(KEY);
+  });
+
+  it('[R130] sans correction, l’original est aussi la photo publiée ; un refus arrête tout, sans certificat', async () => {
+    const t = await run();
+    const original = await hex([1, 2, 3]);
+    t.table['POST /v1/studio/biens/b1/fichiers/original'] = ok({ kind: 'original', ref: ORIGINAL_REF, sha256: original, size: 3, sheetVersion: null });
+    t.table['POST /v1/studio/biens/b1/fichiers/photo?retouche=aucune'] = no(409, { ok: false, rule: 'R130', code: 'empreinte_differente' });
+    await prepared(t, 'image/png', false);
+    const before = t.calls.length;
+    await t.click(t.byText('Ranger la photo, son original et son certificat'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(t.state()).toBe('Le fichier reçu n’est pas celui préparé sur ce téléphone : rien n’est rangé. Réessayez.');
+    const sent = t.calls.slice(before);
+    expect(sent.map((c) => c.url)).toEqual(['/v1/studio/biens/b1/fichiers/original', '/v1/studio/biens/b1/fichiers/photo?retouche=aucune']);
+    expect(sent[1]).toMatchObject({ type: 'image/png', sha: original });
+    expect((sent[1]!.raw as { name: string }).name).toBe('IMG 1.jpg');
+  });
+
+  it('X12 · un type que la fiche n’admet pas est dit sur le téléphone, sans rien envoyer', async () => {
+    const t = await run();
+    await prepared(t, 'image/heic', false);
+    const before = t.calls.length;
+    await t.click(t.byText('Ranger la photo, son original et son certificat'));
+    expect(t.state()).toBe('Sans correction, la photo doit être en JPEG, PNG ou WebP : appliquez une correction ou choisissez une autre photo.');
+    expect(t.calls.length).toBe(before);
+  });
+
+  it('[R130] la vidéo montée est rangée, puis son montage et ses textes', async () => {
+    const t = await run();
+    const sha = await hex([5, 5, 5]);
+    t.table['POST /v1/studio/biens/b1/fichiers/video'] = ok({ kind: 'video', ref: VIDEO_REF, sha256: sha, size: 3, sheetVersion: 3 });
+    t.table['POST /v1/studio/biens/b1/montage'] = ok({});
+    await t.openB1();
+    await t.click(t.byText('Montage'));
+    await t.click(t.byText('Ranger la vidéo dans la fiche'));
+    expect(t.state()).toBe('Choisissez d’abord la vidéo montée.');
+    const pick = t.input('Vidéo montée (MP4)');
+    expect(pick.attributes).toMatchObject({ type: 'file', accept: 'video/mp4' });
+    expect(t.input('Durée (secondes)').value).toBe('7');
+    pick.files = [{ name: 'montage.mp4', type: 'video/mp4', arrayBuffer: async () => new Uint8Array([5, 5, 5]).buffer }];
+    t.input('Légende').value = 'Appartement lumineux.';
+    const before = t.calls.length;
+    await t.click(t.byText('Ranger la vidéo dans la fiche'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(t.state()).toBe('Vidéo rangée dans la fiche, avec son montage.');
+    const sent = t.calls.slice(before).filter((c) => c.method === 'POST');
+    expect(sent.map((c) => c.url)).toEqual(['/v1/studio/biens/b1/fichiers/video', '/v1/studio/biens/b1/montage']);
+    expect(sent[0]).toMatchObject({ type: 'video/mp4', sha });
+    expect(JSON.parse(sent[1]!.body!)).toEqual({ videoRef: VIDEO_REF, videoSha256: sha, durationSeconds: 7, subtitles: ['3 pièces'], caption: 'Appartement lumineux.', musicId: null, processedOn: 'appareil' });
+  });
+});
 
 describe('X11 · écran « Studio » de l’application', () => {
   it('[R16] l’écran ne lit et n’écrit que par les routes /v1/studio, la clé dans l’en-tête seul', async () => {
