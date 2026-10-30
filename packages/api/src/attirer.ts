@@ -284,10 +284,13 @@ export async function listingPresence(s: AttirerServices, requestUrl: string, pr
   // Le site d'un réseau ne sert jamais le bien d'un autre réseau [R16].
   if (propertyNetworkId !== undefined && propertyNetworkId !== found.networkId) return { kind: 'masque' };
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(propertyId)) return { kind: 'aucune' };
+  // Le site d'un agent ne montre que les biens de son agent, quel que soit leur état (vendu, retiré, incomplet).
+  if (found.site.kind === 'agent') {
+    const owner = await s.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ? AND network_id = ?', [propertyId, found.networkId]);
+    if (!owner || owner.agent_id !== found.site.agentId) return { kind: 'masque' };
+  }
   const listing = (await referencement.published(found.networkId)).find((l) => l.propertyId === propertyId);
   if (!listing) return { kind: 'aucune' };
-  // Le site d'un agent ne montre que les biens de son agent.
-  if (found.site.kind === 'agent' && listing.agentId !== found.site.agentId) return { kind: 'masque' };
   const seo = await referencement.listingSeo(found.networkId, propertyId);
   if (!seo) return { kind: 'aucune' };
   return { kind: 'reference', canonical: seo.canonical, link: `<${seo.canonical}>; rel="canonical"`, structuredData: seo.structuredData };

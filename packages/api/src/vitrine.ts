@@ -12,7 +12,7 @@
  *
  * Servie sur un site du réseau (M01, AT11), la page du bien porte sa page de référence unique : en-tête `Link`, lien
  * canonique et données structurées sans adresse. Le site d'un agent ne sert ni la page ni la fiche du bien d'un autre
- * agent [R153].
+ * agent, ni ses photos [R153].
  */
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, annonces as m07, type SqlDatabase } from '@aimmo/core';
 import { journalError } from './app.ts';
@@ -66,9 +66,10 @@ export async function handleVitrine(request: Request, db: SqlDatabase, media: Me
   const network = await publishedNetwork(db, propertyId);
   if (!network) return notFound();
   const pages = pageBien(db, now);
+  // Ni la page, ni la fiche, ni les photos d'un bien sur un site qui ne doit pas le montrer [R153, R16].
+  const presence = await listingPresence({ db, journal: new SqlJournalStore(db), now }, request.url, propertyId, network);
+  if (presence.kind === 'masque') return notFound();
   if (page) {
-    const presence = await listingPresence({ db, journal: new SqlJournalStore(db), now }, request.url, propertyId, network);
-    if (presence.kind === 'masque') return notFound();
     const html = page[2] ? await pages.print(network, propertyId) : await pages.page(network, propertyId);
     if (html === null) return notFound();
     // La fiche imprimable ne porte pas la référence : seule la page du bien en est une.

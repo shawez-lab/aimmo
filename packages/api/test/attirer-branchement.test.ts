@@ -158,6 +158,40 @@ describeWithSqlite('AT11 · branchement des routes de M01 dans le socle', () => 
     expect((await t.page(`${ALEX_SITE}/robots.txt`)).status).toBe(404);
   });
 
+  it('[R153] [R16] le site d’un autre agent ne sert jamais le bien, même vendu ou retiré, ni ses photos', async () => {
+    const t = await setup();
+    const stored = new Map<string, string>();
+    const config: ApiConfig = { ...t.config, media: { get: async (key) => (stored.has(key) ? { body: stored.get(key)! } : null) } };
+    for (const site of [
+      { kind: 'agent', agentId: t.alexId, baseUrl: ALEX_SITE, active: true },
+      { kind: 'agent', agentId: t.sam.userId, baseUrl: SAM_SITE, active: true },
+    ]) {
+      expect((await t.call('direction', 'POST', '/attirer/sites', site)).status).toBe(200);
+    }
+    const photo = `biens/${t.propertyId}/0b6f1d2e-1111-4a2b-8c3d-000000000001.jpg`;
+    stored.set(photo, 'photo-1');
+    await t.publish();
+    expect((await t.page(`${ALEX_SITE}/medias/${photo}`, 'GET', config)).status).toBe(200);
+    expect((await t.page(`${SAM_SITE}/medias/${photo}`, 'GET', config)).status).toBe(404);
+    // Une nouvelle version, vendue puis retirée : le site de Sam ne sert toujours rien de ce bien.
+    for (const [seq, state] of [
+      [2, 'vendu'],
+      [3, 'retiree'],
+    ] as const) {
+      await t.db.run(
+        `INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at)
+         SELECT ?, property_id, network_id, ?, ?, ${state === 'retiree' ? 'NULL' : 'draft_id'}, ${state === 'retiree' ? 'NULL' : 'price_eur'}, json_set(payload, '$.state', ?), payload_hash, 'test', created_at
+           FROM listing_versions WHERE property_id = ? AND seq = 1`,
+        [`v-at11-${seq}`, seq, state, state, t.propertyId],
+      );
+      for (const path of [`/biens/${t.propertyId}`, `/biens/${t.propertyId}/fiche`]) {
+        expect((await t.page(`${SAM_SITE}${path}`)).status, `${state} ${path}`).toBe(404);
+      }
+      // Sur le site d'Alex, la vitrine décide seule, sans page de référence : un bien vendu ou retiré n'en a pas.
+      expect((await t.page(`${ALEX_SITE}/biens/${t.propertyId}`)).headers.get('link')).toBeNull();
+    }
+  });
+
   it('les pages publiques de M01 passent par le socle : sites reconnus seulement, mode essai seulement, rien d’autre n’est touché', async () => {
     const t = await setup();
     expect((await t.call('direction', 'POST', '/attirer/sites', { kind: 'reseau', baseUrl: NET, active: true })).status).toBe(200);
