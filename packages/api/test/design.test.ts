@@ -130,6 +130,7 @@ describe('Z03 · système de design d’AIMMO', () => {
       'core/src/design/systeme.ts': /^<style>\$\{DESIGN_CSS\}\$\{PUBLIC_PAGE_CSS\}<\/style>$/,
       'core/src/attirer/page-prix.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/annonces/page-bien.ts': /^<style>\$\{(?:CSS|PRINT_CSS)\}<\/style>$/,
+      'core/src/attirer/page-agent.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,
       'api/src/candidature.ts': /^<style>\$\{STYLE\}<\/style>$/,
       'core/src/mandats/gagner/lettres-quartier.ts': /^<style>\$\{LETTER_CSS\}<\/style>$/,
