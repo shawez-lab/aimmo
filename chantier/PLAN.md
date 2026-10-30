@@ -1333,7 +1333,7 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J14 · Écrans de M14 dans l'application
-- Statut : à faire
+- Statut : en cours (voie 1, prise le 2026-10-30 : voie 2 sur M01, J14 restée sans preneur)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : J12 ; après la fusion de #129 (K09, voie 1), qui modifie le même fichier `packages/api/app/fichiers.ts`
 - Cahier : M14 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : dans l'application, les écrans « Mon intégration » (dossier d'agent pièce par pièce, référent, premier parcours), « Académie » (parcours, modules faits, compteur des heures) et, pour la direction, « Candidatures » (ordre d'arrivée, fiche d'entretien, décision nommée), lus par les routes de J12.
