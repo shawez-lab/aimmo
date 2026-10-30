@@ -147,7 +147,8 @@ export class PlansDuJour {
       // Les fiches réunies ont changé depuis 7 h 30 (fusion ou défusion) : la ligne peut porter des données d'une
       // fiche qui n'est plus celle-ci. Dans le doute, elle n'est pas rendue [R16].
       if (memberIds === undefined || [...ids].sort().join('|') !== memberIds.join('|')) continue;
-      if (!(await this.plan.eligibility(ids, at)).ok) continue;
+      // Chaque ligne sous sa propre base légale : une recommandation rappelée ou une relance décidée depuis n'y est plus.
+      if (!(await this.plan.eligibility(ids, at, item)).ok) continue;
       items.push(item);
     }
     return {
@@ -158,6 +159,8 @@ export class PlansDuJour {
         computedAt: row.computed_at,
         items,
         removed: JSON.parse(row.removed) as DailyPlan['removed'],
+        // Les lettres à déposer se lisent maintenant : une lettre déposée depuis 7 h 30 n'y est plus. Aucun nom [R140].
+        letters: await this.plan.lettersOf(viewer),
         hiddenSinceFrozen: stored.length - items.length,
       },
     };

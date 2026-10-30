@@ -109,6 +109,9 @@ export default {
       commerces: dossierLinkBase(env.DOSSIER_LINK_BASE) ? { baseUrl: dossierLinkBase(env.DOSSIER_LINK_BASE)! } : {},
       // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
       studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null },
+      // M20 complet (G12) : preuves de coût dans `PIECES` ; géocodeur des lettres seulement avec les données publiques
+      // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
+      gagner: { proofs: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, geocoder: estimation?.geocoder ?? null },
       ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,

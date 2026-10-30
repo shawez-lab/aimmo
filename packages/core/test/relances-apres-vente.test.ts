@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import {
   AFTER_SALE_REMINDER_JOB,
+  OLD_CONTACT_QUIET_DAYS,
   RelancesApresVente,
   afterSaleReminderJob,
   afterSaleText,
@@ -11,6 +12,7 @@ import {
   type ClosedSale,
 } from '../src/apres-vente/index.ts';
 import { FicheClient } from '../src/db/fiche-client.ts';
+import { DEFAULT_OLD_CONTACT_SETTINGS } from '../src/mandats/gagner/anciens-contacts.ts';
 import { FicheUnique } from '../src/fiche/fusion.ts';
 import { checkText } from '../src/envoi/texte.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
@@ -227,6 +229,35 @@ describeWithSqlite('F04 · relance un an après la vente, sans jamais relancer u
     expect(await t.outboxCount()).toBe(0);
     const list = await t.relances.list(t.direction);
     expect(list.ok && list.value.map((r) => r.status)).toEqual(['refused', 'refused']);
+  });
+
+  it('[R143] [R05] une relance d’ancien contact passée dans la période réglée de G09 retient la relance après la vente ; au-delà, elle part', async () => {
+    const t = await setup();
+    const a = await t.client('Ana');
+    const b = await t.client('Bea');
+    t.close('f1', '2027-03-08', [{ personId: a, side: 'vendeur' }, { personId: b, side: 'acquereur' }]);
+    await t.choose('f1', a, 'oui');
+    await t.choose('f1', b, 'oui');
+    // Une relance d'ancien contact passée en essai pour Ana, 100 jours avant la date clé ; une autre pour Bea, 200 jours avant.
+    const followup = async (id: string, personId: string, decidedAt: string) =>
+      t.db.run(
+        `INSERT INTO old_contact_followups (id, network_id, agent_id, person_id, month, reason, reason_day, draft, draft_by, status, channel, created_at, decided_at, decided_by)
+         VALUES (?, ?, ?, ?, ?, 'fin_de_bail', ?, 'Bonjour, texte de test.', 'secours', 'essai', 'email', ?, ?, ?)`,
+        [id, t.network.id, t.alexId, personId, decidedAt.slice(0, 7), decidedAt.slice(0, 10), decidedAt, decidedAt, `agent:${t.alexId}`],
+      );
+    await followup('oc-a', a, new Date(Date.parse('2028-03-08T09:00:00.000Z') - 100 * 86_400_000).toISOString());
+    await followup('oc-b', b, new Date(Date.parse('2028-03-08T09:00:00.000Z') - 200 * 86_400_000).toISOString());
+    await t.passes('2028-03-08', '2028-03-10');
+    expect(await t.inbox(a)).toEqual([]);
+    expect(await t.inbox(b)).toHaveLength(1);
+    const list = await t.relances.list(t.direction);
+    const byPerson = new Map(list.ok ? list.value.map((r) => [r.personId, r]) : []);
+    expect(byPerson.get(a)).toMatchObject({ status: 'refused', rule: 'R143' });
+    expect(byPerson.get(b)).toMatchObject({ status: 'sent' });
+  });
+
+  it('[R143] la période qui retient la relance après la vente est celle de G09', () => {
+    expect(OLD_CONTACT_QUIET_DAYS).toBe(DEFAULT_OLD_CONTACT_SETTINGS.periodDays);
   });
 
   it('sans lien de désinscription réglé, aucune relance ne part, et le passage le dit au journal', async () => {

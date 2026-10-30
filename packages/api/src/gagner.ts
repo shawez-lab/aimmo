@@ -5,7 +5,8 @@
  *
  * Chaque route dit les rôles qu'elle admet : un autre rôle est refusé avant que le corps soit lu, et le refus est écrit
  * au journal [R16]. La couche métier refait ses propres contrôles de droits. Rien n'est envoyé réellement : les
- * relances passent par le contrôle central, en mode essai [R26]. Les routes sont branchées dans `app.ts` par G12.
+ * relances passent par le contrôle central, en mode essai [R26]. Les routes sont branchées dans `app.ts` par G12, avec
+ * les passages du planificateur (`gagnerJobs`) : la liste des relances d'anciens contacts et l'avis de la mesure du mois.
  */
 import {
   Acces,
@@ -24,6 +25,7 @@ import {
   type JournalStore,
   type OldContactDrafter,
   type Role,
+  type ScheduledJob,
   type SqlDatabase,
   type Viewer,
 } from '@aimmo/core';
@@ -188,4 +190,71 @@ export function gagnerRoutes(): GagnerRoute[] {
     { method: 'POST', pattern: new RegExp(`${P}/mesure/decisions$`), name: 'gagner.mesure_decision', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).mesure.decide(v, b))) },
   ];
   return routes.map((r) => ({ ...r, handle: guarded(r) }));
+}
+
+export const OLD_CONTACTS_JOB = 'gagner.relances_anciens_contacts';
+export const SOURCE_MEASURE_JOB = 'gagner.mesure_mensuelle';
+const TIME_ZONE = 'Europe/Paris';
+
+/** Le jour de Paris, `AAAA-MM-JJ`. */
+function parisDay(at: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(at);
+  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+/** Le mois qui précède `AAAA-MM`. */
+function previousMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number) as [number, number];
+  return m === 1 ? `${String(y - 1).padStart(4, '0')}-12` : `${String(y).padStart(4, '0')}-${String(m - 1).padStart(2, '0')}`;
+}
+
+/**
+ * Les passages de M20 complet au planificateur (G12) :
+ * - chaque jour à 6 h, la liste du mois des relances d'anciens contacts (G09) : une relance au plus par personne et par
+ *   mois, et par période réglée, rangée à valider pour son agent ; passer chaque jour ne fait aucun doublon et prend
+ *   le moment dès qu'il arrive (fin de bail dans les 90 jours). Rien n'est envoyé : la relance part seulement quand
+ *   l'agent la valide, par le contrôle central, en mode essai [R143, R26] ;
+ * - le 1er du mois à 8 h, l'avis à la direction que la mesure du mois passé (G10) se lit : une ligne au journal, sans
+ *   aucun nombre ni donnée personnelle ; le compte rendu reste calculé à la lecture, et la décision à la direction [R144].
+ * Une panne sur un réseau n'arrête pas les autres ; elle remonte ensuite au planificateur, jamais avalée [R13].
+ */
+export function gagnerJobs(db: SqlDatabase, journal: JournalStore, options: { now?: () => Date; drafter?: OldContactDrafter | null } = {}): ScheduledJob[] {
+  const now = options.now ?? (() => new Date());
+  const eachNetwork = async (fn: (networkId: string) => Promise<void>): Promise<void> => {
+    let failure: unknown = null;
+    for (const n of await db.all<{ id: string }>('SELECT id FROM networks ORDER BY id')) {
+      try {
+        await fn(n.id);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    if (failure !== null) throw failure;
+  };
+  return [
+    {
+      name: OLD_CONTACTS_JOB,
+      hours: [6],
+      run: async () => {
+        const anciens = new AnciensContacts(db, journal, { now, drafter: options.drafter ?? null });
+        await eachNetwork(async (id) => {
+          const prepared = await anciens.prepareMonth(id);
+          await appendEvent(journal, { type: 'anciens_contacts.passage', actor: 'system:planificateur', subject: `network:${id}`, data: { mode: TRIAL_MODE, prepared } }, now);
+        });
+      },
+    },
+    {
+      name: SOURCE_MEASURE_JOB,
+      hours: [8],
+      run: async () => {
+        const today = parisDay(now());
+        if (!today.endsWith('-01')) return;
+        const month = previousMonth(today.slice(0, 7));
+        await eachNetwork(async (id) => {
+          await appendEvent(journal, { type: 'gagner.mesure_a_lire', actor: 'system:planificateur', subject: `network:${id}`, data: { rule: 'R144', month } }, now);
+        });
+      },
+    },
+  ];
 }

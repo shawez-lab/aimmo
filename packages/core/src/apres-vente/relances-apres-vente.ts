@@ -40,6 +40,12 @@ import { viewerRefusal } from './lecteur.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const AFTER_SALE_PURPOSE = 'relances_apres_vente';
+/**
+ * Jours sans relance après la vente qui suivent une relance d'ancien contact passée (G09, `old_contact_followups` en
+ * `essai`) : la période réglée de G09, `DEFAULT_OLD_CONTACT_SETTINGS.periodDays`, une relance par période au plus,
+ * toutes relances confondues [R143, R05]. Écrite ici pour ne pas lier M11 à M20 ; un test garde les deux égales.
+ */
+export const OLD_CONTACT_QUIET_DAYS = 182;
 export const AFTER_SALE_CHOICES = ['oui', 'un_an', 'non'] as const;
 export type AfterSaleChoice = (typeof AFTER_SALE_CHOICES)[number];
 /** Les dates clés : de un à cinq ans après l'acte. */
@@ -124,13 +130,15 @@ export class RelancesApresVente {
   private readonly controle: ControleEnvois;
   private readonly unsubscribeBase: string | null;
   private readonly carnets: CarnetMaker | null;
+  private readonly oldContactQuietDays: number;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
     private readonly dossiers: DossiersClos,
-    options: { now?: () => Date; newId?: () => string; unsubscribeBase?: string | null; carnets?: CarnetMaker | null } = {},
+    options: { now?: () => Date; newId?: () => string; unsubscribeBase?: string | null; carnets?: CarnetMaker | null; oldContactQuietDays?: number } = {},
   ) {
+    this.oldContactQuietDays = options.oldContactQuietDays ?? OLD_CONTACT_QUIET_DAYS;
     this.carnets = options.carnets ?? null;
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
@@ -264,6 +272,17 @@ export class RelancesApresVente {
     return `${this.unsubscribeBase ?? ''}${token}`;
   }
 
+  /** Une relance d'ancien contact décidée (passée par le contrôle, en essai) dans la période, sur l'une des fiches réunies. */
+  private async oldContactFollowedUp(personId: string, at: Date): Promise<boolean> {
+    const members = await this.unique.membersOf(await this.unique.rootOf(personId));
+    const since = new Date(at.getTime() - this.oldContactQuietDays * 86_400_000).toISOString();
+    const row = await this.db.first(
+      `SELECT 1 FROM old_contact_followups WHERE person_id IN (${members.map(() => '?').join(', ')}) AND status = 'essai' AND decided_at > ? AND decided_at <= ? LIMIT 1`,
+      [...members, since, at.toISOString()],
+    );
+    return row !== null;
+  }
+
   private async firstName(personId: string): Promise<string | null> {
     return (await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [personId]))?.first_name ?? null;
   }
@@ -352,6 +371,11 @@ export class RelancesApresVente {
           const choice = await this.choiceOf(sale.fileId, c.personId);
           if (choice !== 'oui' && !(choice === 'un_an' && year === 1)) {
             await this.settle(sale, c.personId, year, 'refused', 'R65', null);
+            continue;
+          }
+          // Une relance d'ancien contact passée dans la période réglée de G09 : pas de relance après la vente [R143, R05].
+          if (await this.oldContactFollowedUp(c.personId, now)) {
+            await this.settle(sale, c.personId, year, 'refused', 'R143', null);
             continue;
           }
           const firstName = await this.firstName(c.personId);

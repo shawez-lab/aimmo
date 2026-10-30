@@ -84,6 +84,7 @@ import {
 import type { FeeSettings } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
 import { studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
+import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
 import { CERTIFICATE_PAGE_PATH, certificatePageError, handleCertificatePage } from './certificat-photo.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
@@ -143,6 +144,12 @@ export interface ApiConfig {
    * Aucun réseau réel n'est accepté ici : les publications partent vers les canaux du mode essai seulement [R26, R134].
    */
   studio?: StudioOptions;
+  /**
+   * M20 complet (G12) : le stockage des preuves de coût (sans lui, aucun coût ne se saisit [R144]), le géocodeur des
+   * adresses des lettres (sans lui, aucune campagne ne vérifie son rayon [R140]) et les IA de rédaction (absentes, les
+   * textes du code). Les relances passent par le contrôle central, en mode essai seulement [R26].
+   */
+  gagner?: Pick<GagnerServices, 'proofs' | 'geocoder' | 'drafter' | 'letterDrafter' | 'dossierDrafter'>;
   now?: () => Date;
 }
 
@@ -1005,6 +1012,20 @@ function m19Routes(options: StudioOptions | null): RouteDef[] {
   }));
 }
 
+/**
+ * Les routes de M20 complet (G12) : chacune contrôle son rôle avant de lire le corps et écrit le refus au journal
+ * [R16] ; la couche métier refait ses contrôles de droits. Rien ne part : les relances passent par le contrôle central,
+ * avec les canaux du mode essai seulement [R26, R143].
+ */
+function m20Routes(options: ApiConfig['gagner']): RouteDef[] {
+  return gagnerRoutes().map((r: GagnerRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now, ...(options ?? {}) }, viewer, params, request),
+  }));
+}
+
 function m10Routes(pieces: PieceStore | null): RouteDef[] {
   return dossierRoutes().map((r: DossierRoute) => ({
     ...r,
@@ -1207,7 +1228,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // la location, fermées sans le stockage des pièces ; puis celles de M12 (L09) : la conformité ; puis celles de M18
   // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir ; puis
   // celles de M16 (CE10) : les commerces ; puis celles de M19
-  // (X10) : le Studio, fermées sans le stockage des fichiers.
+  // (X10) : le Studio, fermées sans le stockage des fichiers ; puis celles de M20 complet (G12) : gagner des mandats.
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
@@ -1223,6 +1244,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m17Routes({ ...(config.investir ?? {}), unsubscribeBase: config.alertUnsubscribeBase ?? null }),
     ...m16Routes(config.commerces),
     ...m19Routes(config.studio ?? null),
+    ...m20Routes(config.gagner),
   ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
