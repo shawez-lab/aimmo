@@ -453,8 +453,13 @@ export class Annuaire {
    * Les justificatifs qui font foi aujourd'hui et arrivent à échéance dans les 30 jours, sans qu'aucune autre version
    * ne couvre le lendemain de leur échéance : une alerte par justificatif, une seule fois. Un renouvellement qui laisse
    * un trou garde donc l'alerte. Rendues au planificateur (U09), qui préviendra la direction ; rien n'est envoyé ici [R73].
+   * Avec `notify`, chaque alerte est d'abord remise, puis seulement marquée : une remise qui échoue laisse l'alerte au
+   * passage suivant, jamais perdue (U09).
    */
-  async dueAlerts(networkId: string): Promise<{ partnerId: string; kind: CredentialKind; domain: CertifiedDomain | null; validUntil: string }[]> {
+  async dueAlerts(
+    networkId: string,
+    notify?: (alert: { partnerId: string; kind: CredentialKind; domain: CertifiedDomain | null; validUntil: string }) => Promise<void>,
+  ): Promise<{ partnerId: string; kind: CredentialKind; domain: CertifiedDomain | null; validUntil: string }[]> {
     const day = this.today();
     const limit = addDays(day, PARTNER_CREDENTIAL_ALERT_DAYS);
     const all = await this.db.all<CredentialRow & { partner_id: string }>(
@@ -478,8 +483,13 @@ export class Annuaire {
     rows.sort((a, b) => (a.valid_until < b.valid_until ? -1 : a.valid_until > b.valid_until ? 1 : a.partner_id < b.partner_id ? -1 : 1));
     const out: { partnerId: string; kind: CredentialKind; domain: CertifiedDomain | null; validUntil: string }[] = [];
     for (const r of rows) {
+      const alert = { partnerId: r.partner_id, kind: r.kind, domain: r.domain === '' ? null : (r.domain as CertifiedDomain), validUntil: r.valid_until };
+      if (notify) {
+        if (await this.db.first("SELECT 1 FROM partner_credential_alerts WHERE credential_id = ? AND alert = 'j30'", [r.id])) continue;
+        await notify(alert);
+      }
       const { changes } = await this.db.run("INSERT INTO partner_credential_alerts (credential_id, alert, network_id, created_at) VALUES (?, 'j30', ?, ?) ON CONFLICT DO NOTHING", [r.id, networkId, this.now().toISOString()]);
-      if (changes === 1) out.push({ partnerId: r.partner_id, kind: r.kind, domain: r.domain === '' ? null : (r.domain as CertifiedDomain), validUntil: r.valid_until });
+      if (changes === 1) out.push(alert);
     }
     return out;
   }

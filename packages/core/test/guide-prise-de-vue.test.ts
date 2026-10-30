@@ -36,6 +36,12 @@ it('[R10] chaque pièce que la fiche dit a ses vues et sa consigne ; rien n’es
   expect(DO_NOT_FORGET.some((d) => /Aucune personne/.test(d))).toBe(true);
 });
 
+it('chaque chambre acceptée par la fiche a sa vue, jusqu’à la cinquantième', () => {
+  const keys = guideViews({ kind: 'home', rooms: 52, bedrooms: 50, outdoor: [], parkingSpaces: null }).map((v) => v.key);
+  expect(keys.filter((k) => k.startsWith('chambre_'))).toHaveLength(50);
+  expect(keys).toContain('chambre_50');
+});
+
 async function setup() {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
@@ -60,7 +66,7 @@ async function setup() {
     ]);
   await sheet(1, photos);
   const as = (role: 'agent' | 'direction' | 'compliance', userId: string) => ({ role, userId, networkId: network.id });
-  return { db, journal, guide, network, alex, sam, p, photos, sheet, as };
+  return { db, journal, acces, guide, network, alex, sam, p, photos, sheet, as };
 }
 
 describeWithSqlite('X01 · guide de prise de vue', () => {
@@ -86,6 +92,19 @@ describeWithSqlite('X01 · guide de prise de vue', () => {
     await t.sheet(2, t.photos.filter((_, i) => i !== 5));
     const back = await t.guide.progress(alex, t.p.id);
     expect(back.ok && back.value.missing).toEqual(['exterieur_jardin']);
+  });
+
+  it('deux choix à la même milliseconde : le dernier rangé l’emporte', async () => {
+    const t = await setup();
+    const alex = t.as('agent', t.alex.id);
+    const still = new GuidePriseDeVue(t.db, t.acces, t.journal, { now: () => new Date(AT) });
+    let last = '';
+    for (let n = 0; n < 8; n += 1) {
+      last = t.photos[n % 2]!.ref;
+      expect(await still.recordShot(alex, t.p.id, { viewKey: 'entree', mediaRef: last })).toMatchObject({ ok: true });
+      const g = await still.progress(alex, t.p.id);
+      expect(g.ok && g.value.views.find((v) => v.key === 'entree')?.mediaRef).toBe(last);
+    }
   });
 
   it('[R17] la direction valide un bien prêt, une seule fois ; ensuite plus rien ne change', async () => {
