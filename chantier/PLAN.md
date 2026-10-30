@@ -2079,7 +2079,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G13 · Écran « Gagner des mandats » dans l'application
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : G11, X11
 - Cahier : M20 ; exigence de design (protocole, section 9).
 - Objectif : lettres à préparer et à noter déposées, dossier de présentation à ouvrir avant un rendez-vous, recommandations, relances à valider, depuis l'application de l'agent.
