@@ -1,0 +1,335 @@
+/**
+ * Les routes de M01, Attirer (AT09), et ses pages publiques, prêtes à brancher dans `app.ts` par AT10 (voie 1).
+ *
+ * Routes de l'application, sous `/v1/attirer` (le préfixe `/v1` est retiré par `app.ts`) :
+ *   prix regroupés (AT01) : versions, zones, recalcul ; page de l'agent (AT03) : mentions, titulaire, aperçu ;
+ *   référencement (AT04) : sites et plans ; origine des contacts (AT05) : mesure du mois ; fiche Google (AT06) :
+ *   avis, réponses, validations, publications ; pages de quartier (AT07) : données, textes, validations.
+ * Chaque route dit les rôles qu'elle admet : un autre rôle est refusé avant que le corps soit lu, et le refus est écrit
+ * au journal [R16]. La couche métier refait ses propres contrôles. Rien ne part réellement : fiche Google et IndexNow
+ * restent en mode essai [R26].
+ *
+ * Pages publiques, servies sur le site du réseau et sur le site de chaque agent, reconnus par leur adresse (`public_sites`) :
+ *   GET /prix/:commune[/:quartier]                 la page de prix, seulement sur le site du réseau [R150, R151]
+ *   GET /agents/:agent                             la page de l'agent, sur le site du réseau et sur le sien [R152]
+ *   GET /quartiers/:commune/:quartier[/prix|/equipements]  la page de quartier ou son article validé [R155]
+ *   GET /simulateur                                le simulateur de prêt, qui ne garde rien [R157]
+ *   GET /sitemap.xml, /robots.txt                  le plan du site et ses consignes aux moteurs [R153]
+ * Une adresse inconnue, un site hors service, une page non publiable : 404, sans rien dire de plus. Tant que le
+ * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
+ */
+import { appendEvent, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, renderNeighbourhoodPage, renderPricePage, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
+import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
+import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
+
+export const TRIAL_MODE = 'essai';
+const MAX_BODY_BYTES = 16_000;
+const ID = '([A-Za-z0-9_-]{1,64})';
+const SLUG = '([a-z0-9]+(?:-[a-z0-9]+)*)';
+/** L'estimation en ligne de chaque site (E05). */
+export const ESTIMATE_HREF = '/estimation';
+
+export interface AttirerServices {
+  db: SqlDatabase;
+  journal: JournalStore;
+  now: () => Date;
+  /** `essai` tant que le plan ne l'a pas mis en service : rien ne part, aucune page n'est indexée [R26]. */
+  mode?: 'essai' | 'reel';
+  /** La lecture des ventes DVF ; absente, le recalcul des prix est refusé. */
+  priceSales?: PriceSalesSource | null;
+  /** IndexNow, Google Business Profile, rédactions par l'IA : absents, rien ne part et le texte de secours sert. */
+  indexNow?: IndexNowClient | null;
+  gbp?: GbpClient | null;
+  gbpWriter?: ReviewReplyWriter | null;
+  neighbourhoodWriter?: NeighbourhoodWriter | null;
+  diffusion?: DiffusionGate | null;
+}
+
+export interface AttirerRoute {
+  method: 'GET' | 'POST';
+  pattern: RegExp;
+  /** Nom de la route pour le journal : jamais l'identifiant demandé. */
+  name: string;
+  /** Les rôles admis : tout autre est refusé avant la lecture du corps [R16]. */
+  roles: readonly Role[];
+  handle: (s: AttirerServices, viewer: Viewer, params: string[], request: Request) => Promise<Response>;
+}
+
+const json = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
+  });
+
+type Outcome = { ok: true; value?: unknown } | { ok: false; rule?: string | null; code?: string; reason?: string };
+
+/** 200 ; 403 pour un refus de droits ; 404 inconnu ; 409 pour une règle ; 400 sinon. */
+function reply(result: Outcome): Response {
+  if (result.ok) {
+    // Une réponse métier sans `value` porte ses champs à côté de `ok` (`siteId`, `id`, `mode`…) : ils deviennent `data`.
+    const { ok: _ok, ...fields } = result as Record<string, unknown>;
+    const data = 'value' in fields ? fields.value : Object.keys(fields).length > 0 ? fields : null;
+    return json(200, { ok: true, mode: TRIAL_MODE, data: data ?? null });
+  }
+  const { ok: _ok, ...rest } = result;
+  const rule = result.rule ?? null;
+  if (rule === 'R16') return json(result.code === 'unknown' || result.code === 'agent_inconnu' ? 404 : 403, { ok: false, ...rest, rule });
+  return json(rule ? 409 : 400, { ok: false, ...rest, rule });
+}
+
+const value = <T>(v: T): Outcome => ({ ok: true, value: v });
+
+async function readJson(request: Request): Promise<Record<string, unknown> | null> {
+  if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) return null;
+  const text = await request.text();
+  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+const badBody = (): Response => json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
+
+const services = (s: AttirerServices) => {
+  const referencement = new Referencement(s.db, s.journal, { now: s.now, indexNow: s.indexNow ?? null, mode: s.mode ?? 'essai' });
+  const prices = s.priceSales ? new PrixRegroupes(s.db, s.journal, s.priceSales, { now: s.now }) : null;
+  // La lecture des prix publiés n'utilise jamais la source des ventes.
+  const readPrices = new PrixRegroupes(s.db, s.journal, NO_SALES, { now: s.now });
+  return {
+    referencement,
+    prices,
+    readPrices,
+    pageAgent: new PageAgent(s.db, s.journal, { now: s.now }),
+    origine: new OrigineContacts(s.db, s.journal, { now: s.now }),
+    quartiers: new PagesQuartier(s.db, s.journal, { now: s.now, writer: s.neighbourhoodWriter ?? undefined, prices: readPrices, listings: referencement }),
+    google: new FicheGoogle(s.db, s.journal, {
+      now: s.now,
+      client: s.gbp ?? undefined,
+      writer: s.gbpWriter ?? undefined,
+      mode: s.mode ?? 'essai',
+      ...(s.diffusion ? { diffusion: s.diffusion } : {}),
+    }),
+  };
+};
+
+/** Aucune vente n'est lue hors du recalcul : la lecture des prix publiés et les zones n'en ont pas besoin. */
+const NO_SALES: PriceSalesSource = {
+  coverage: async () => null,
+  within: async () => [],
+};
+
+/** Le rôle d'abord : un rôle non admis est refusé, au journal, sans que le corps soit lu [R16, R13]. */
+export function guarded(route: AttirerRoute): AttirerRoute['handle'] {
+  return async (s, viewer, params, request) => {
+    if (!route.roles.includes(viewer.role)) {
+      await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: String(viewer.role), kind: `route.${route.name}`, code: 'role' } }, s.now);
+      return json(403, { ok: false, rule: 'R16', code: 'role' });
+    }
+    return route.handle(s, viewer, params, request);
+  };
+}
+
+export function attirerRoutes(): AttirerRoute[] {
+  const withBody =
+    (fn: (s: AttirerServices, v: Viewer, params: string[], body: Record<string, unknown>) => Promise<Response>): AttirerRoute['handle'] =>
+    async (s, v, params, request) => {
+      const body = await readJson(request);
+      return body ? fn(s, v, params, body) : badBody();
+    };
+  const P = '^/attirer';
+  const DIRECTION: readonly Role[] = ['direction'];
+  const STAFF: readonly Role[] = ['agent', 'direction'];
+  const routes: AttirerRoute[] = [
+    // AT01 · prix regroupés
+    { method: 'GET', pattern: new RegExp(`${P}/prix/versions$`), name: 'attirer.prix_versions', roles: DIRECTION, handle: async (s, v) => reply(value(await services(s).readPrices.versions(v.networkId))) },
+    { method: 'POST', pattern: new RegExp(`${P}/prix/zones$`), name: 'attirer.prix_zone', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).readPrices.defineZone(v, b as never))) },
+    { method: 'POST', pattern: new RegExp(`${P}/prix/zones/${ID}/retrait$`), name: 'attirer.prix_zone_retrait', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).readPrices.retireZone(v, id)) },
+    {
+      method: 'POST',
+      pattern: new RegExp(`${P}/prix/recalcul$`),
+      name: 'attirer.prix_recalcul',
+      roles: DIRECTION,
+      handle: async (s, v) => {
+        const prices = services(s).prices;
+        if (!prices) return reply({ ok: false, rule: null, code: 'source_absente' });
+        return reply(value(await prices.recompute(v.networkId)));
+      },
+    },
+    // AT03 · page de l'agent
+    { method: 'POST', pattern: new RegExp(`${P}/agents/${ID}/mentions$`), name: 'attirer.agent_mentions', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).pageAgent.setLegalMentions(v, id!, { rsacNumber: b.rsacNumber, rsacRegistry: b.rsacRegistry }))) },
+    { method: 'POST', pattern: new RegExp(`${P}/titulaire$`), name: 'attirer.titulaire', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).pageAgent.setCardHolder(v, b.holder))) },
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/agents/${ID}/page$`),
+      name: 'attirer.agent_page',
+      roles: STAFF,
+      handle: async (s, v, [id]) => {
+        // Un agent ne voit que l'aperçu de sa propre page ; la direction, celle de chaque agent du réseau [R16].
+        if (v.role === 'agent' && v.userId !== id) {
+          await appendEvent(s.journal, { type: 'acces.refuse', actor: `agent:${v.userId}`, subject: null, data: { rule: 'R16', role: 'agent', kind: 'route.attirer.agent_page', code: 'not_assigned' } }, s.now);
+          return json(403, { ok: false, rule: 'R16', code: 'not_assigned' });
+        }
+        const r = await services(s).pageAgent.inputFor(v.networkId, id!);
+        if (r.ok) return reply(value({ publishable: true, missing: null }));
+        if (r.rule === 'R16') return json(404, { ok: false, rule: 'R16', code: 'unknown' });
+        return reply(value({ publishable: false, missing: r.reason }));
+      },
+    },
+    // AT04 · référencement
+    { method: 'GET', pattern: new RegExp(`${P}/sites$`), name: 'attirer.sites', roles: DIRECTION, handle: async (s, v) => reply(value(await services(s).referencement.sites(v.networkId))) },
+    { method: 'POST', pattern: new RegExp(`${P}/sites$`), name: 'attirer.site', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).referencement.setSite(v, b))) },
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/sites/${ID}/plan$`),
+      name: 'attirer.site_plan',
+      roles: DIRECTION,
+      handle: async (s, v, [id]) => {
+        const r = await services(s).referencement.sitemap(v.networkId, id!);
+        return r.ok ? reply(value(r.entries)) : json(404, { ok: false, rule: null, code: r.code });
+      },
+    },
+    // AT05 · origine des contacts
+    { method: 'GET', pattern: new RegExp(`${P}/origine/(\\d{4}-\\d{2})$`), name: 'attirer.origine_mesure', roles: DIRECTION, handle: async (s, v, [month]) => {
+      const r = await services(s).origine.measure(v, month);
+      return reply(r.ok ? value(r.measure) : r);
+    } },
+    // AT06 · fiche Google
+    { method: 'POST', pattern: new RegExp(`${P}/google/agents/${ID}/fiche$`), name: 'attirer.google_fiche', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).google.setLocation(v, id!, { locationRef: b.locationRef, title: b.title, websiteUri: b.websiteUri }))) },
+    { method: 'GET', pattern: new RegExp(`${P}/google/agents/${ID}/avis$`), name: 'attirer.google_avis', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.reviews(v, id!)) },
+    { method: 'POST', pattern: new RegExp(`${P}/google/avis/${ID}/brouillon$`), name: 'attirer.google_brouillon', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.draftReply(v, id)) },
+    { method: 'POST', pattern: new RegExp(`${P}/google/avis/${ID}/reponse$`), name: 'attirer.google_reponse', roles: STAFF, handle: withBody(async (s, v, [id], b) => reply(await services(s).google.writeReply(v, id, b.body))) },
+    { method: 'POST', pattern: new RegExp(`${P}/google/textes/${ID}/valider$`), name: 'attirer.google_valider', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.validate(v, id)) },
+    { method: 'POST', pattern: new RegExp(`${P}/google/textes/${ID}/publier$`), name: 'attirer.google_publier', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.publish(v, id)) },
+    { method: 'POST', pattern: new RegExp(`${P}/google/textes/${ID}/liberer$`), name: 'attirer.google_liberer', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).google.releaseClaim(v, id)) },
+    // AT07 · pages de quartier
+    { method: 'POST', pattern: new RegExp(`${P}/quartiers/${ID}/faits$`), name: 'attirer.quartier_fait', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).quartiers.recordFact(v, id, b as never))) },
+    { method: 'POST', pattern: new RegExp(`${P}/quartiers/${ID}/brouillon$`), name: 'attirer.quartier_brouillon', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).quartiers.draft(v, id, b.kind, b.topic))) },
+    { method: 'POST', pattern: new RegExp(`${P}/quartiers/${ID}/texte$`), name: 'attirer.quartier_texte', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).quartiers.write(v, id, b.kind, b.topic, b.title, b.body))) },
+    { method: 'GET', pattern: new RegExp(`${P}/quartiers/${ID}/textes$`), name: 'attirer.quartier_textes', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).quartiers.drafts(v, id)) },
+    { method: 'POST', pattern: new RegExp(`${P}/quartiers/textes/${ID}/valider$`), name: 'attirer.quartier_valider', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).quartiers.validate(v, id)) },
+  ];
+  return routes.map((r) => ({ ...r, handle: guarded(r) }));
+}
+
+/* ---------------------------------------------------------------- pages publiques */
+
+const PAGE_CSP = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+function pageHeaders(type: string, mode: 'essai' | 'reel'): Record<string, string> {
+  return {
+    'content-type': type,
+    'content-security-policy': PAGE_CSP,
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'cache-control': 'public, max-age=300',
+    ...(mode === 'essai' ? { 'x-robots-tag': 'noindex, nofollow' } : {}),
+  };
+}
+
+const notFound = (): Response => new Response('Page inconnue.', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
+
+export const PUBLIC_PATHS = {
+  prix: new RegExp(`^/prix/${SLUG}(?:/${SLUG})?$`),
+  agent: new RegExp(`^/agents/${ID}$`),
+  quartier: new RegExp(`^/quartiers/${SLUG}/${SLUG}(?:/(prix|equipements))?$`),
+  simulateur: /^\/simulateur$/,
+  plan: /^\/sitemap\.xml$/,
+  robots: /^\/robots\.txt$/,
+};
+
+/** Le site en service qui sert cette adresse, et son réseau ; `null` pour toute autre adresse. */
+async function siteOf(s: AttirerServices, referencement: Referencement, origin: string) {
+  const rows = await s.db.all<{ network_id: string }>('SELECT DISTINCT network_id FROM public_sites WHERE base_url = ?', [origin]);
+  for (const r of rows) {
+    const site = (await referencement.sites(r.network_id)).find((x) => x.baseUrl === origin);
+    if (site) return { networkId: r.network_id, site };
+  }
+  return null;
+}
+
+/**
+ * La page de référence d'un bien publié, pour la page du bien servie par la vitrine (P10) sur n'importe quel site du
+ * réseau : son adresse unique (site de son agent s'il en a un en service, sinon celui du réseau), l'en-tête `Link` à
+ * poser sur la réponse et les données structurées, sans adresse [R153, R46]. `null` quand l'adresse demandée n'est pas
+ * un site en service, ou que le bien n'y est pas publié : la vitrine ne pose alors aucune page de référence. Branché
+ * dans la vitrine par AT10.
+ */
+export async function listingReference(s: AttirerServices, requestUrl: string, propertyId: string): Promise<{ canonical: string; link: string; structuredData: string } | null> {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(propertyId)) return null;
+  let origin: string;
+  try {
+    origin = new URL(requestUrl).origin;
+  } catch {
+    return null;
+  }
+  const referencement = new Referencement(s.db, s.journal, { now: s.now, indexNow: null, mode: s.mode ?? 'essai' });
+  const found = await siteOf(s, referencement, origin);
+  if (!found) return null;
+  const listing = (await referencement.published(found.networkId)).find((l) => l.propertyId === propertyId);
+  // Le site d'un agent ne montre que les biens de son agent.
+  if (!listing || (found.site.kind === 'agent' && listing.agentId !== found.site.agentId)) return null;
+  const seo = await referencement.listingSeo(found.networkId, propertyId);
+  if (!seo) return null;
+  return { canonical: seo.canonical, link: `<${seo.canonical}>; rel="canonical"`, structuredData: seo.structuredData };
+}
+
+/**
+ * Une page publique de M01, ou `null` quand le chemin n'en est pas une (la suite du Worker la cherche ailleurs).
+ * Seules les méthodes GET et HEAD sont servies ; une page non publiable répond 404 [R150, R152, R155].
+ */
+export async function handleAttirerPublic(s: AttirerServices, request: Request): Promise<Response | null> {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const kind = (Object.keys(PUBLIC_PATHS) as (keyof typeof PUBLIC_PATHS)[]).find((k) => PUBLIC_PATHS[k].test(path));
+  if (!kind) return null;
+  if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Méthode non permise.', { status: 405, headers: { allow: 'GET, HEAD', 'cache-control': 'no-store' } });
+  const mode = s.mode ?? 'essai';
+  const svc = services(s);
+  const found = await siteOf(s, svc.referencement, url.origin);
+  if (!found) return notFound();
+  const { networkId, site } = found;
+  const html = (body: string): Response => new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: pageHeaders('text/html; charset=utf-8', mode) });
+  const m = PUBLIC_PATHS[kind].exec(path)!;
+  switch (kind) {
+    case 'prix': {
+      // Les pages de prix vivent sur le site du réseau seulement : une seule page de référence [R153].
+      if (site.kind !== 'reseau') return notFound();
+      const prices = await svc.readPrices.communePrices(networkId, m[1]!);
+      if (!prices) return notFound();
+      const page = renderPricePage(prices, { communeSlug: m[1]!, quarterSlug: m[2] ?? null, estimateHref: ESTIMATE_HREF, siteUrl: site.baseUrl });
+      return page.ok ? html(page.html) : notFound();
+    }
+    case 'agent': {
+      // Le site d'un agent ne montre que la page de son agent.
+      if (site.kind === 'agent' && site.agentId !== m[1]) return notFound();
+      const page = await svc.pageAgent.page(networkId, m[1]!);
+      return page.ok ? html(page.html) : notFound();
+    }
+    case 'quartier': {
+      if (site.kind !== 'reseau') return notFound();
+      const published = await svc.quartiers.published(networkId, m[1], m[2], m[3] ?? 'quartier');
+      if (!published) return notFound();
+      const page = renderNeighbourhoodPage(published, { siteUrl: site.baseUrl, estimateHref: ESTIMATE_HREF });
+      return page.ok ? html(page.html) : notFound();
+    }
+    case 'simulateur': {
+      const headers = await loanSimulatorHeaders();
+      return new Response(request.method === 'HEAD' ? null : renderLoanSimulatorPage(), { status: 200, headers: { ...headers, ...(mode === 'essai' ? { 'x-robots-tag': 'noindex, nofollow' } : {}) } });
+    }
+    case 'plan': {
+      const plan = await svc.referencement.sitemap(networkId, site.siteId);
+      if (!plan.ok) return notFound();
+      return new Response(request.method === 'HEAD' ? null : plan.xml, { status: 200, headers: { ...pageHeaders('application/xml; charset=utf-8', mode), 'cache-control': 'public, max-age=3600' } });
+    }
+    case 'robots': {
+      // En essai, rien n'est indexé ; le plan est toujours déclaré, celui du site lui-même [R153].
+      const lines = ['User-agent: *', mode === 'essai' ? 'Disallow: /' : 'Allow: /', `Sitemap: ${site.baseUrl}/sitemap.xml`, ''];
+      return new Response(request.method === 'HEAD' ? null : lines.join('\n'), { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'x-content-type-options': 'nosniff', 'cache-control': 'public, max-age=3600' } });
+    }
+  }
+}
