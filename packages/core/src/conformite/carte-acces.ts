@@ -623,6 +623,11 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   video_montages: out('sans_client', 'Description du montage d\'une vidéo de bien : aucune personne.'),
   licensed_assets: out('sans_client', 'Musiques et images sous licence du réseau : aucune personne.'),
   licensed_asset_withdrawals: out('sans_client', 'Retraits d\'entrées de la bibliothèque sous licence : aucune personne.'),
+  social_posts: out('sans_client', 'Publications d\'un bien sur les réseaux, tirées de sa fiche : aucune personne.'),
+  social_visual_checks: out('sans_client', 'Listes de contrôle des visuels publiés ; l\'accord d\'une personne photographiée est une pièce du stockage, sans nom ici.'),
+  social_post_validations: out('sans_client', 'Validation d\'une publication par l\'agent : aucune personne.'),
+  social_post_attempts: out('sans_client', 'Essais d\'envoi d\'une publication, en mode essai : aucune personne.'),
+  social_post_sends: out('sans_client', 'Issues des envois d\'une publication : aucune personne.'),
   // M17 · Investir.
   investor_profiles: { locate: by('person_id') },
   // M16 · Commerces et entreprises : la fiche suit son bien, comme la fiche de commercialisation.
