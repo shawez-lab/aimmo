@@ -5,3 +5,4 @@ export * from './montage.ts';
 export * from './bibliotheque.ts';
 export * from './publications.ts';
 export * from './supports.ts';
+export * from './options.ts';

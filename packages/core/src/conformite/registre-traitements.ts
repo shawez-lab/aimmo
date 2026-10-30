@@ -596,6 +596,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       social_post_validations: ['validated_by'],
       social_post_attempts: ['account', 'claimed_by'],
       social_post_sends: [],
+      studio_option_requests: ['referral_id', 'requested_by'],
     },
   },
 ];
@@ -931,6 +932,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   social_post_validations: ['post_id', 'validated_at'],
   social_post_attempts: ['id', 'post_id', 'channel', 'attempt', 'mode', 'claimed_at'],
   social_post_sends: ['attempt_id', 'outcome', 'done_at'],
+  studio_option_requests: ['id', 'network_id', 'option', 'requested_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
