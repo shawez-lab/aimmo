@@ -2006,7 +2006,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X12 · Dépôt de la photo corrigée et de son original, certificat rangé depuis l'écran
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (route de dépôt et stockage `MEDIA` du socle) · Relecture : forte · Dépend de : X11 ; H25 pour le stockage réel
 - Cahier : M19 ; Architecture technique.
 - Objectif : une route de dépôt qui range sans le traiter le fichier fini (photo corrigée, original sous `biens/<bien>/originaux/`, vidéo montée) dans `MEDIA` et l'ajoute à la fiche ; puis, dans l'écran « Studio », ranger le certificat (`POST /v1/studio/biens/:id/photos`) et le montage après dépôt.
