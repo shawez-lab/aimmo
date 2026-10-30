@@ -1997,12 +1997,21 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X11 · Écran « Studio » dans l'application
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#214) ; écran chargé à part (`/app/studio.js`), ouvert par le bouton « Studio » de chaque bien ; nouvelle route `GET /v1/studio/biens/:id` (atelier) ; relecture forte 3 P1 corrigés (original toujours proposé, empreinte du fichier réellement enregistré, réponse tardive testée) ; Codex à sa limite d'usage, fusion sans lui ; vérification locale verte (2095 tests). Décidé : sans route de dépôt de fichiers, l'écran ne range ni certificat ni vidéo ; la photo corrigée et l'original s'enregistrent sur le téléphone ; dépôt laissé à X12.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X09, Y09 (même fichier `packages/api/app/fichiers.ts` et même budget de 48 Ko de l'application, presque plein après Y09 ; décidé le 2026-10-29 par la voie 2 pour ne pas croiser deux écrans non fusionnés)
 - Cahier : M19 ; exigence de design (protocole, section 9).
 - Objectif : dans l'application de l'agent, l'écran « Studio » : guide pièce par pièce avec l'appareil photo, corrections globales sur l'appareil, montage depuis le modèle, plan, publications à valider ; tout traitement sur l'appareil.
 - Critères : l'écran lit seulement par les routes `/v1/studio` [R16] ; aucune image ni vidéo n'est envoyée à un serveur pour traitement [R130] ; écran accessible, beau sur téléphone d'abord, dans le budget de l'application (qui est presque plein : une passe d'allègement peut être nécessaire), testé comme les autres (`fake-dom`).
 - Attend : rien.
+
+### X12 · Dépôt de la photo corrigée et de son original, certificat rangé depuis l'écran
+- Statut : à faire
+- Qui : Claude, voie 1 (route de dépôt et stockage `MEDIA` du socle) · Relecture : forte · Dépend de : X11 ; H25 pour le stockage réel
+- Cahier : M19 ; Architecture technique.
+- Objectif : une route de dépôt qui range sans le traiter le fichier fini (photo corrigée, original sous `biens/<bien>/originaux/`, vidéo montée) dans `MEDIA` et l'ajoute à la fiche ; puis, dans l'écran « Studio », ranger le certificat (`POST /v1/studio/biens/:id/photos`) et le montage après dépôt.
+- Critères : le serveur ne transforme jamais le fichier reçu, son empreinte est recalculée et doit égaler celle dite par l'appareil [R130] ; un original n'est jamais publié ; rôle et portée vérifiés [R16] ; taille et type bornés.
+- Attend : H25 pour le stockage réel.
 
 **M20 · Gagner des mandats, module complet, octobre 2027.**
 
