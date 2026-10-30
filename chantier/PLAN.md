@@ -1997,7 +1997,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X11 · Écran « Studio » dans l'application
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X09, Y09 (même fichier `packages/api/app/fichiers.ts` et même budget de 48 Ko de l'application, presque plein après Y09 ; décidé le 2026-10-29 par la voie 2 pour ne pas croiser deux écrans non fusionnés)
 - Cahier : M19 ; exigence de design (protocole, section 9).
 - Objectif : dans l'application de l'agent, l'écran « Studio » : guide pièce par pièce avec l'appareil photo, corrections globales sur l'appareil, montage depuis le modèle, plan, publications à valider ; tout traitement sur l'appareil.
