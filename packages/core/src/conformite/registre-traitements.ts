@@ -530,6 +530,20 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     },
   },
   {
+    id: 'attirer',
+    finalite: 'Publier les prix de marché par commune et par quartier, en chiffres regroupés des ventes publiques, sans aucune vente retrouvable.',
+    baseLegale: 'interet_legitime',
+    personnes: ['Membres de la direction qui tracent les zones'],
+    donnees: ['Auteur de chaque zone de prix'],
+    duree: 'La durée du réseau : une zone ne s\'efface pas, elle sert de preuve des chiffres publiés.',
+    destinataires: ['La direction du réseau', 'Le responsable de la conformité, en lecture'],
+    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
+    tables: {
+      price_zones: ['recorded_by'],
+      price_zone_retirements: ['retired_by'],
+    },
+  },
+  {
     id: 'studio',
     finalite: 'Aider l\'agent à photographier, filmer et présenter un bien avec des images honnêtes : guide de prise de vue, photos retenues, validation par la direction, certificat de chaque photo corrigée, plan simple du logement, montage des vidéos, bibliothèque de musiques et d\'images sous licence.',
     baseLegale: 'interet_legitime',
@@ -565,6 +579,9 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   pro_trial_outbox: 'Boîte d\'essai des envois aux professionnels : un identifiant d\'envoi et sa date.',
   human_replies: 'Clés d\'idempotence des réponses écrites par un agent.',
   market_rents: 'Loyers de marché par commune importés de la Carte des loyers de l\'ANIL : aucune personne.',
+  price_versions: 'Versions des prix publics, une par publication des ventes publiques : aucune personne.',
+  price_cells: 'Cases de prix regroupés par zone : nombre de ventes, médiane et quartiles, aucune personne.',
+  price_cell_sales: 'Empreintes des ventes publiques d\'une case, pour le contrôle anti-différence : aucune personne.',
 };
 
 /**
@@ -842,6 +859,11 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   investor_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'gross_yield_bp', 'created_at', 'updated_at'],
   property_communes: ['property_id', 'network_id', 'insee_code', 'rent_kind', 'recorded_at'],
   market_rent_imports: ['id', 'network_id', 'source', 'kind', 'vintage', 'rows_count', 'status', 'imported_at', 'completed_at'],
+  price_versions: ['id', 'network_id', 'source', 'dvf_last_sale', 'window_from', 'window_to', 'areas_digest', 'sales_digest', 'min_sales', 'round_to', 'status', 'computed_at', 'completed_at'],
+  price_cells: ['version_id', 'area_id', 'kind', 'status', 'hold_code', 'sales_count', 'median_m2', 'q1_m2', 'q3_m2', 'from_version_id'],
+  price_cell_sales: ['version_id', 'area_id', 'kind', 'fingerprint', 'n'],
+  price_zone_retirements: ['area_id', 'retired_at'],
+  price_zones: ['id', 'network_id', 'level', 'parent_id', 'slug', 'label', 'insee_code', 'ring_json', 'ring_source', 'recorded_at'],
   photo_guide_shots: ['id', 'property_id', 'network_id', 'view_key', 'recorded_at'],
   photo_guide_validations: ['id', 'property_id', 'network_id', 'validated_at'],
   photo_certificates: ['id', 'token', 'property_id', 'network_id', 'operations', 'virtual_staging', 'processed_on', 'recorded_at'],
