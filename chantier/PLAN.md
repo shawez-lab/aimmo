@@ -2006,7 +2006,8 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X12 · Dépôt de la photo corrigée et de son original, certificat rangé depuis l'écran
-- Statut : en cours
+- Statut : fait (2026-10-30)
+- Décidé (2026-10-30) : route `POST /v1/studio/biens/:id/fichiers/(photo|original|video)`, corps brut, empreinte dans `x-aimmo-sha256` ; type contrôlé par liste fermée et premiers octets ; bornes 20, 60 et 95 Mo ; ajout à la fiche protégé par `ifVersion` (aucune photo perdue entre deux dépôts) ; un fichier rangé mais refusé par la fiche reste dans le stockage, au journal ; relecture forte sans P0 ni P1 ; Codex à sa limite (H03), fusion sans lui (#215).
 - Qui : Claude, voie 1 (route de dépôt et stockage `MEDIA` du socle) · Relecture : forte · Dépend de : X11 ; H25 pour le stockage réel
 - Cahier : M19 ; Architecture technique.
 - Objectif : une route de dépôt qui range sans le traiter le fichier fini (photo corrigée, original sous `biens/<bien>/originaux/`, vidéo montée) dans `MEDIA` et l'ajoute à la fiche ; puis, dans l'écran « Studio », ranger le certificat (`POST /v1/studio/biens/:id/photos`) et le montage après dépôt.
