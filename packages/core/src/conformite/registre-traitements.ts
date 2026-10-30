@@ -283,6 +283,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     tables: {
       morning_reports: ['reader', 'content', 'text'],
       pilotage_settings: ['ai_monthly_budget_cents', 'ai_alert_bp', 'created_by'],
+      mandate_source_costs: ['amount_cents', 'proof_ref', 'entered_by'],
+      mandate_source_decisions: ['reason', 'decided_by'],
       pilotage_alerts: ['data'],
     },
   },
@@ -618,6 +620,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   value_tracking: ['id', 'network_id', 'kind', 'channel', 'created_at'],
   value_tracking_sends: ['tracking_id', 'period', 'status', 'rule', 'message_id', 'mode', 'sent_at', 'updated_at'],
   value_tracking_alerts: ['id', 'tracking_id', 'network_id', 'message_id', 'created_at', 'seen_at'],
+  mandate_source_costs: ['id', 'network_id', 'month', 'source', 'version', 'entered_at'],
+  mandate_source_decisions: ['id', 'network_id', 'month', 'source', 'seq', 'decision', 'decided_at'],
   old_contact_moments: ['id', 'network_id', 'kind', 'on_day', 'created_at'],
   old_contact_followups: ['id', 'network_id', 'month', 'status', 'channel', 'rule', 'message_id', 'created_at', 'decided_at'],
   legal_basis_checks: ['id', 'network_id', 'ran_at', 'from_day', 'to_day', 'plans', 'gaps', 'seen_at'],
