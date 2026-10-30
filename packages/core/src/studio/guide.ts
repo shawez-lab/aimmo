@@ -71,6 +71,9 @@ const view = (kind: string, key: string, mandatory: boolean, suffix = ''): Guide
  * par chambre que la fiche compte, une par extérieur qu'elle porte, le stationnement quand il y en a ; la façade et la
  * vue sont facultatives. Un terrain, un local ou un immeuble ont leurs vues propres.
  */
+/** Autant de chambres que la fiche du bien en accepte (M07) : aucune n'est laissée sans sa vue. */
+const MAX_BEDROOMS = 50;
+
 export function guideViews(f: GuideFacts): GuideView[] {
   const out: GuideView[] = [];
   if (f.kind === 'land') {
@@ -85,7 +88,7 @@ export function guideViews(f: GuideFacts): GuideView[] {
   if (f.kind === 'building') out.push(view('facade', 'facade', true));
   out.push(view('entree', 'entree', true), view('sejour', 'sejour', true), view('cuisine', 'cuisine', true));
   const bedrooms = f.bedrooms ?? 0;
-  for (let i = 1; i <= Math.min(bedrooms, 20); i += 1) out.push(view('chambre', `chambre_${i}`, true, bedrooms > 1 ? ` ${i}` : ''));
+  for (let i = 1; i <= Math.min(bedrooms, MAX_BEDROOMS); i += 1) out.push(view('chambre', `chambre_${i}`, true, bedrooms > 1 ? ` ${i}` : ''));
   out.push(view('salle_d_eau', 'salle_d_eau', true));
   const outdoor = [...new Set(f.outdoor)].filter((o) => ['balcon', 'terrasse', 'jardin', 'cour'].includes(o));
   for (const o of outdoor) out.push(view('exterieur', `exterieur_${o}`, true, ` : ${o}`));
@@ -208,7 +211,7 @@ export class GuidePriseDeVue {
     };
     const views = guideViews(facts);
     const photos = new Set(this.refsOf(sheet));
-    const rows = await this.db.all<{ view_key: string; media_ref: string }>('SELECT view_key, media_ref FROM photo_guide_shots WHERE property_id = ? ORDER BY recorded_at, id', [p.id]);
+    const rows = await this.db.all<{ view_key: string; media_ref: string }>('SELECT view_key, media_ref FROM photo_guide_shots WHERE property_id = ? ORDER BY recorded_at, rowid', [p.id]);
     const chosen = new Map<string, string>();
     for (const r of rows) chosen.set(r.view_key, r.media_ref);
     // Une photo retirée de la fiche depuis ne compte plus : la vue redevient à faire.
