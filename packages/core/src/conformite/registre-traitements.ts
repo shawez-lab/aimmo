@@ -509,10 +509,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
   },
   {
     id: 'studio',
-    finalite: 'Aider l\'agent à photographier, filmer et présenter un bien avec des images honnêtes : guide de prise de vue, photos retenues, validation par la direction, certificat de chaque photo corrigée, plan simple du logement, montage des vidéos.',
+    finalite: 'Aider l\'agent à photographier, filmer et présenter un bien avec des images honnêtes : guide de prise de vue, photos retenues, validation par la direction, certificat de chaque photo corrigée, plan simple du logement, montage des vidéos, bibliothèque de musiques et d\'images sous licence.',
     baseLegale: 'interet_legitime',
     personnes: ['Agents du réseau'],
-    donnees: ['Photos retenues pour chaque vue, par leur référence de stockage, et leur auteur', 'Validation d\'un bien photographié avec le guide', 'Corrections d\'ensemble de chaque photo, références et empreintes de l\'original et du résultat, et leur auteur', 'Pièces et cotes du plan du logement, et leur auteur', 'Référence et empreinte de chaque vidéo montée, sa durée, sa musique, et leur auteur'],
+    donnees: ['Photos retenues pour chaque vue, par leur référence de stockage, et leur auteur', 'Validation d\'un bien photographié avec le guide', 'Corrections d\'ensemble de chaque photo, références et empreintes de l\'original et du résultat, et leur auteur', 'Pièces et cotes du plan du logement, et leur auteur', 'Référence et empreinte de chaque vidéo montée, sa durée, sa musique, et leur auteur', 'Entrées de la bibliothèque sous licence et leurs retraits, et leur auteur'],
     duree: 'La durée du mandat du bien, puis 5 ans.',
     destinataires: ['L\'agent du bien', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
@@ -522,6 +522,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       photo_certificates: ['result_ref', 'result_sha256', 'original_ref', 'original_sha256', 'recorded_by'],
       floor_plans: ['created_by'],
       video_montages: ['video_ref', 'video_sha256', 'template_sha256', 'recorded_by'],
+      licensed_assets: ['proof_ref', 'recorded_by'],
+      licensed_asset_withdrawals: ['reason', 'withdrawn_by'],
     },
   },
 ];
@@ -813,6 +815,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   photo_certificates: ['id', 'token', 'property_id', 'network_id', 'operations', 'virtual_staging', 'processed_on', 'recorded_at'],
   floor_plans: ['id', 'property_id', 'network_id', 'version', 'rooms', 'created_at'],
   video_montages: ['id', 'property_id', 'network_id', 'clips_count', 'duration_s', 'music_id', 'processed_on', 'recorded_at'],
+  licensed_assets: ['id', 'network_id', 'kind', 'title', 'source', 'licence', 'attribution', 'valid_until', 'recorded_at'],
+  licensed_asset_withdrawals: ['id', 'asset_id', 'withdrawn_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
