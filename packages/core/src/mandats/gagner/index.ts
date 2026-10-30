@@ -4,3 +4,4 @@ export * from './anciens-contacts.ts';
 export * from './mesure-sources.ts';
 export * from './lettres-quartier.ts';
 export * from './dossier-presentation.ts';
+export * from './promesse.ts';

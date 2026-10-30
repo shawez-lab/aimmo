@@ -1,7 +1,8 @@
 /**
  * Les routes de M20 complet, Gagner des mandats (G11), sous `/v1/gagner` : lettres de quartier (G06),
  * recommandations des partenaires et file « à appeler » (G08), relances des anciens contacts (G09), mesure mensuelle
- * des sources (G10), dossier de présentation des rendez-vous de mandat et engagements de service (G07).
+ * des sources (G10), dossier de présentation des rendez-vous de mandat et engagements de service (G07) ; et les deux
+ * listes que lit l'écran « Gagner des mandats » de l'application (G13) : campagnes et biens permis, rendez-vous à venir.
  *
  * Chaque route dit les rôles qu'elle admet : un autre rôle est refusé avant que le corps soit lu, et le refus est écrit
  * au journal [R16]. La couche métier refait ses propres contrôles de droits. Rien n'est envoyé réellement : les
@@ -133,6 +134,7 @@ export function gagnerRoutes(): GagnerRoute[] {
   const PARTNER: readonly Role[] = ['partner'];
   const routes: GagnerRoute[] = [
     // G06 · lettres de quartier
+    { method: 'GET', pattern: new RegExp(`${P}/lettres$`), name: 'gagner.lettres_liste', roles: AGENT, handle: async (s, v) => reply(await services(s).lettres.overview(v)) },
     { method: 'POST', pattern: new RegExp(`${P}/lettres$`), name: 'gagner.lettres_campagne', roles: AGENT, handle: withBody(async (s, v, _p, b) => reply(await services(s).lettres.createCampaign(v, b))) },
     { method: 'GET', pattern: new RegExp(`${P}/lettres/${ID}$`), name: 'gagner.lettres', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).lettres.letters(v, id!)) },
     {
@@ -148,6 +150,7 @@ export function gagnerRoutes(): GagnerRoute[] {
     },
     { method: 'POST', pattern: new RegExp(`${P}/lettres/lettre/${ID}/deposee$`), name: 'gagner.lettre_deposee', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).lettres.deposited(v, id!)) },
     // G07 · dossier de présentation et engagements de service
+    { method: 'GET', pattern: new RegExp(`${P}/rendez-vous$`), name: 'gagner.rendez_vous', roles: AGENT, handle: async (s, v) => reply(await services(s).dossier.upcoming(v)) },
     { method: 'GET', pattern: new RegExp(`${P}/rendez-vous/${ID}/dossier$`), name: 'gagner.dossier', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).dossier.build(v, id!)) },
     {
       method: 'GET',
