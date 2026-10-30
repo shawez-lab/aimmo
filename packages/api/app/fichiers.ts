@@ -3,6 +3,7 @@ import { CERTIFIED_DOMAINS, PARTNER_TRADES } from '../../core/src/partenaires/an
 import { SORT_LABELS } from '../src/partenaires-sortes.ts';
 import { COFFRE_JS, CONFORMITE_CSS, CONFORMITE_HTML } from './conformite.ts';
 import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS } from './louer.ts';
+import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.ts';
 
 /** Les métiers et domaines de M18, tels que l'écran « Partenaires » les nomme (U11). */
 const TRADE_NAMES = PARTNER_TRADES.map((t) => ({ trade: t.trade, label: t.label }));
@@ -74,7 +75,7 @@ export const INDEX_HTML = `<!doctype html>
 <p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
 <button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
 </section>
-${LOUER_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
+${LOUER_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
 <h3 id="titre-chiffres-accueil">Mes chiffres</h3>
 <p class="etat">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
 <button id="chiffres-ouvrir" type="button" class="secondaire">Voir mes chiffres</button>
@@ -124,7 +125,7 @@ ${LOUER_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil"
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
-${LOUER_HTML}${CONFORMITE_HTML}<section id="chiffres" hidden>
+${LOUER_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}<section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
 <div class="periodes" role="group" aria-label="Période">
@@ -535,6 +536,7 @@ export const APP_JS = `'use strict';
     wipeLouer();
     forgetLouer();
     wipeConformite();
+    wipeCommerces();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
   function button(text, onClick) {
@@ -1661,7 +1663,8 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${LOUER_JS}
+${COFFRE_JS}${COMMERCES_JS}
+${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
     ['visite-titre', 'visite-etat', 'bien-titre', 'bien-etat', 'alerte-etat', 'vente-titre', 'vente-etat'].forEach(function (id) { $(id).textContent = ''; });
@@ -1677,7 +1680,7 @@ ${COFFRE_JS}${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'conformite'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'conformite', 'commerces'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1811,6 +1814,7 @@ ${COFFRE_JS}${LOUER_JS}
       wipeChiffres();
       wipePartenaires();
       wipeLouer();
+      wipeCommerces();
       show('accueil');
       day(currentKey, session);
     }
@@ -1822,6 +1826,8 @@ ${COFFRE_JS}${LOUER_JS}
     $('partenaires-ouvrir').addEventListener('click', function () { openPartenaires('', 0); });
     $('louer-retour').addEventListener('click', function () { if (louerId) openLouer(''); else home(); });
     $('louer-ouvrir').addEventListener('click', function () { openLouer('', 0); });
+    $('commerces-retour').addEventListener('click', function () { if (commercesInside()) openCommerces(''); else home(); });
+    $('commerces-ouvrir').addEventListener('click', function () { openCommerces(''); });
     $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', home);

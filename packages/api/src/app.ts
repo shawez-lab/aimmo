@@ -66,6 +66,7 @@ import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresV
 import { handleVitrine, type MediaStore } from './vitrine.ts';
 import { reseauRoutes, type ReseauOptions } from './reseau.ts';
 import { locationRoutes, type LocationRoute, type LocationServices } from './location.ts';
+import { commercesRoutes, dossierReaderRoutes, type CommercesRoute, type CommercesServices } from './commerces.ts';
 import { conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
 import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
@@ -123,6 +124,11 @@ export interface ApiConfig {
   reseau?: ReseauOptions;
   /** M15 (W10) : les IA de l'annonce et de l'état des lieux ; absentes, les secours sans IA [R103, R106]. */
   location?: Pick<LocationServices, 'adWriter' | 'inventoryFormatter'>;
+  /**
+   * M16 (CE10) : les documents du dossier protégé (stockage réel après H38 ; absent, seule la fiche est servie), l'IA de
+   * la présentation (absente, le secours sans IA [R12]) et le début des liens du dossier (`DOSSIER_LINK_BASE`).
+   */
+  commerces?: Partial<Pick<CommercesServices, 'storage' | 'presentationWriter' | 'baseUrl'>>;
   /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, page « bientôt ». */
   candidatureNetworkId?: string | undefined;
   /** M12 (L09) : le stockage du coffre de la conformité (R2, `COFFRE`) ; absent, le dépôt et l'ouverture d'une pièce sont fermés. */
@@ -947,6 +953,41 @@ function m17Routes(options: Pick<InvestirServices, 'noteWriter' | 'feesRateBp' |
   }));
 }
 
+/** Sans stockage réel des documents (H38), le dossier protégé ne sert que la fiche du commerce. */
+const NO_DOSSIER_DOCUMENTS = { read: async () => null };
+
+/** Les services de M16 sur ceux du socle : l'identité et les pièces du coffre par leur seul état [R15]. */
+function m16Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, options: ApiConfig['commerces']): CommercesServices {
+  const coffre = new conformite.CoffreConformite(db, acces, NO_VAULT_STORAGE, journal, { now });
+  const etat = new conformite.EtatCoffre(db, { now });
+  const diffusion = new Diffusion(db, acces, journal, { now });
+  return {
+    db,
+    journal,
+    now,
+    identity: { state: (networkId, personId) => coffre.state(networkId, personId) },
+    vault: { everDeposited: (networkId, personId, kinds, before) => etat.everDeposited(networkId, personId, kinds, before) },
+    diffusion: { canDiffuse: (networkId, propertyId, at) => diffusion.canDiffuse(networkId, propertyId, at) },
+    storage: options?.storage ?? NO_DOSSIER_DOCUMENTS,
+    ...(options?.presentationWriter ? { presentationWriter: options.presentationWriter } : {}),
+    ...(options?.baseUrl ? { baseUrl: options.baseUrl } : {}),
+  };
+}
+
+/** Les routes de M16 (CE10) : chacune contrôle son rôle, puis la couche métier ses droits fins [R16]. */
+function m16Routes(options: ApiConfig['commerces']): RouteDef[] {
+  return commercesRoutes().map((r: CommercesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) =>
+      // Sans début de lien configuré (`DOSSIER_LINK_BASE`), aucun dossier ne part : le lien mènerait nulle part.
+      r.name === 'commerces.dossier.envoi' && !options?.baseUrl
+        ? Promise.resolve(failure(503, 'dossier_link_not_configured', 'Dossier protégé fermé : aucun début de lien configuré.'))
+        : r.handle(m16Services(s.db, s.journal, s.acces, s.now, options), viewer, params, request),
+  }));
+}
+
 /**
  * Les routes de M19 (X10) : chacune contrôle son rôle avant de lire le corps et écrit le refus au journal [R16] ; sans
  * stockage des fichiers, elles sont fermées. Les réseaux ne sont jamais passés d'ici : la couche métier ne reçoit que
@@ -1123,6 +1164,22 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     return handleMeta(request, { ...meta, db: config.db, now });
   }
 
+  // Le lecteur d'un dossier protégé de commerce (CE10), sans compte : le jeton du lien, son adresse et le code reçu à
+  // cette adresse font foi ; la porte de CE04 est revérifiée à chaque ouverture, chaque refus journalisé [R113, R114].
+  const reader = dossierReaderRoutes().find((r) => r.pattern.test(path));
+  if (reader) {
+    if (request.method !== reader.method) return failure(405, 'method_not_allowed', 'Méthode non admise.');
+    const journal = new SqlJournalStore(config.db);
+    try {
+      const store = new FicheClient(config.db, { now });
+      const acces = new Acces(config.db, store, new FicheUnique(config.db, store, { now }), journal, { now });
+      return await reader.handle(m16Services(config.db, journal, acces, now, config.commerces), (reader.pattern.exec(path) ?? []).slice(1), request);
+    } catch (error) {
+      await journalError(journal, 'public:dossier', reader.name, error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+
   // L'accès en un clic (Z02) : un jeton d'invitation, à usage unique, échangé contre des clés neuves.
   if (`/v1${path}` === INVITATION_PATH) {
     try {
@@ -1149,7 +1206,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // celles de M13 (K08) : le pilotage ; puis celles de M14 (J13) : le réseau et l'académie ; puis celles de M15 (W10) :
   // la location, fermées sans le stockage des pièces ; puis celles de M12 (L09) : la conformité ; puis celles de M18
   // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir ; puis
-  // celles de M19 (X10) : le Studio, fermées sans le stockage des fichiers.
+  // celles de M16 (CE10) : les commerces ; puis celles de M19
+  // (X10) : le Studio, fermées sans le stockage des fichiers.
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
@@ -1163,6 +1221,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m12Routes(config.coffre ?? null),
     ...m18Routes(config.partenaires ?? null),
     ...m17Routes({ ...(config.investir ?? {}), unsubscribeBase: config.alertUnsubscribeBase ?? null }),
+    ...m16Routes(config.commerces),
     ...m19Routes(config.studio ?? null),
   ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
