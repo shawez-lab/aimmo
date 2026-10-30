@@ -8,7 +8,10 @@ const plain = <T>(row: unknown): T => ({ ...(row as object) }) as T;
 
 export function fakeD1(db: SqliteDatabase): D1Database {
   db.exec('PRAGMA foreign_keys = ON');
-  const statement = (sql: string, params: Value[]): D1PreparedStatement => ({
+  type Statement = D1PreparedStatement & { sql: string; params: Value[] };
+  const statement = (sql: string, params: Value[]): Statement => ({
+    sql,
+    params,
     bind: (...values) => statement(sql, values),
     async run(): Promise<D1Result<unknown>> {
       const result = db.prepare(sql).run(...params) as { changes?: number | bigint };
@@ -27,6 +30,27 @@ export function fakeD1(db: SqliteDatabase): D1Database {
     async exec(sql) {
       db.exec(sql);
       return { count: 1 };
+    },
+    // Comme D1 : un lot est une transaction, tout ou rien.
+    async batch(statements) {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const out = statements.map((s) => {
+          const { sql, params } = s as Statement;
+          const result = db.prepare(sql).run(...params) as { changes?: number | bigint };
+          return { results: [], meta: { changes: Number(result.changes ?? 0) } };
+        });
+        db.exec('COMMIT');
+        return out;
+      } catch (error) {
+        // SQLite a pu annuler la transaction lui-même : l'erreur d'origine reste celle qui remonte.
+        try {
+          db.exec('ROLLBACK');
+        } catch {
+          /* déjà annulée */
+        }
+        throw error;
+      }
     },
   };
 }

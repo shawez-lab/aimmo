@@ -231,4 +231,19 @@ describeWithSqlite('J04 · dossier d’agent', () => {
     expect(seen.sort()).toEqual([...ids].sort());
     expect(await t.db.all('SELECT piece_id FROM agent_file_alerts')).toHaveLength(10);
   });
+
+  it('[R18] J15 : l’agent et son entrée sont rangés dans le même lot ; une entrée qui échoue ne laisse aucun agent', async () => {
+    const t = await setup();
+    const cand = await t.accepted('lot@example.test');
+    const before = (await t.db.first<{ n: number }>('SELECT count(*) AS n FROM agents'))!.n;
+    await t.db.exec("CREATE TRIGGER panne_entree BEFORE INSERT ON agent_onboardings BEGIN SELECT RAISE(ABORT, 'panne inventée'); END");
+    await expect(t.dossier.admit(t.dir, cand)).rejects.toThrow(/panne/);
+    expect((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM agents'))!.n).toBe(before);
+    await t.db.exec('DROP TRIGGER panne_entree');
+    // Deux entrées en même temps : un seul agent, une seule entrée.
+    const [a, b] = await Promise.all([t.dossier.admit(t.dir, cand), t.dossier.admit(t.dir, cand)]);
+    expect(a.ok && b.ok && a.agentId === b.agentId).toBe(true);
+    expect((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM agents'))!.n).toBe(before + 1);
+    expect((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM agent_onboardings WHERE candidate_id = ?', [cand]))!.n).toBe(1);
+  });
 });
