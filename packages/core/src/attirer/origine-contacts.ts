@@ -231,6 +231,36 @@ export class OrigineContacts {
     return (await this.db.first<{ id: string; kind: ContentKind }>('SELECT id, kind FROM public_contents WHERE id = ? AND network_id = ?', [code, networkId])) ?? null;
   }
 
+  private async lookup(networkId: string, kind: ContentKind, ref: string): Promise<ContentResult> {
+    const row = await this.db.first<{ id: string }>('SELECT id FROM public_contents WHERE network_id = ? AND kind = ? AND ref = ?', [networkId, kind, ref]);
+    return row ? { ok: true, contentId: row.id } : { ok: false, code: 'unknown_ref' };
+  }
+
+  /**
+   * La page est-elle publiée aujourd'hui sur ce site en service du réseau ? Un bien publié montré par ce site, une page
+   * d'agent ou de prix de son plan, le simulateur ; une page de quartier seulement si elle a déjà son identifiant (AT07).
+   */
+  private async isPublishedPage(networkId: string, origin: string, target: { kind: ContentKind; ref: string }): Promise<boolean> {
+    const site = (await this.referencement.sites(networkId)).find((s) => s.baseUrl === origin);
+    if (!site) return false;
+    switch (target.kind) {
+      case 'simulateur':
+      case 'quartier':
+        return true;
+      case 'bien':
+        return (await this.referencement.published(networkId)).some((l) => l.propertyId === target.ref && (site.kind === 'reseau' || l.agentId === site.agentId));
+      case 'agent':
+      case 'prix': {
+        const plan = await this.referencement.sitemap(networkId, site.siteId);
+        if (!plan.ok) return false;
+        const path = target.kind === 'agent' ? `/agents/${encodeURIComponent(target.ref)}` : `/prix/${target.ref}`;
+        return plan.entries.some((e) => e.kind === target.kind && e.loc === `${site.baseUrl}${path}`);
+      }
+      default:
+        return false;
+    }
+  }
+
   /** Lit l'origine d'un message reçu, sans rien écrire. */
   async read(row: InboundOriginRow, signals: OriginSignals): Promise<Origin> {
     const networkId = row.network_id;
@@ -244,15 +274,13 @@ export class OrigineContacts {
       const content = await this.knownContent(networkId, codes[0]!);
       if (content) return { contentId: content.id, kind: content.kind, method: 'lien' };
     }
-    // 2. La page de départ, seulement sur un site en service du réseau.
+    // 2. La page de départ, seulement sur un site en service du réseau, et seulement si elle y est publiée aujourd'hui :
+    //    un chemin venu de l'extérieur n'écrit jamais rien qui ne soit pas déjà une page du réseau [R156].
     if (landing) {
-      const sites = await this.referencement.sites(networkId);
-      if (sites.some((s) => s.baseUrl === landing.origin)) {
-        const target = contentOfPath(landing.pathname);
-        if (target) {
-          const content = await this.contentFor(networkId, target.kind, target.ref);
-          if (content.ok) return { contentId: content.contentId, kind: target.kind, method: 'page' };
-        }
+      const target = contentOfPath(landing.pathname);
+      if (target && (await this.isPublishedPage(networkId, landing.origin, target))) {
+        const content = target.kind === 'quartier' ? await this.lookup(networkId, target.kind, target.ref) : await this.contentFor(networkId, target.kind, target.ref);
+        if (content.ok) return { contentId: content.contentId, kind: target.kind, method: 'page' };
       }
     }
     // 3. La publication commentée ou citée sur un réseau social, quand elle est connue.
@@ -263,7 +291,7 @@ export class OrigineContacts {
       );
       if (post) return { contentId: post.id, kind: post.kind, method: 'publication' };
     }
-    // 4. Le portail qui a transmis la demande.
+    // 4. Le portail qui a transmis la demande : un nom de la liste fermée de la réception, jamais un texte libre.
     if (row.kind === 'portal_email' && row.portal) {
       const content = await this.contentFor(networkId, 'portail', row.portal.toLowerCase());
       if (content.ok) return { contentId: content.contentId, kind: 'portail', method: 'portail' };

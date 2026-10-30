@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { OrigineContacts, Referencement, contentOfPath, taggedLink } from '../src/attirer/index.ts';
+import { OrigineContacts, PageAgent, Referencement, contentOfPath, taggedLink } from '../src/attirer/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -8,6 +8,46 @@ import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 const direction = { role: 'direction' as const, userId: 'dir-1', networkId: 'net-1' };
 const NET = 'https://reseau.exemple.test';
 const CAMILLE = 'https://camille.exemple.test';
+
+/** Publie le bien inventé `bien-1`, la page de Camille (mentions complètes), et les prix de « dijon » et « dijon/montchapet ». */
+async function publishPages(db: SqlDatabase, journal: SqlJournalStore, now: () => Date) {
+  await db.run(
+    "INSERT INTO agents (id, network_id, first_name, last_name, zone, created_at, updated_at) VALUES ('ag-2', 'net-1', 'Lou', 'SansMentions', 'Chenôve', 'x', 'x')",
+  );
+  await db.exec('PRAGMA foreign_keys = OFF');
+  await db.run(
+    "INSERT INTO properties (id, network_id, agent_id, reference, kind, postal_code, city, created_at, updated_at) VALUES ('brouillon-1', 'net-1', 'ag-1', 'REF-B', 'home', '99000', 'Ville inventée', 'x', 'x')",
+  );
+  await db.run(
+    "INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES ('bien-1-1', 'bien-1', 'net-1', 1, 'en_vente', 'd-1', 250000, ?, 'h', 'test', '2026-10-11T09:00:00.000Z')",
+    [JSON.stringify({ reference: 'REF-1', state: 'en_vente', title: 'Maison inventée', body: 'Texte', mentions: 'Classe énergie D, classe climat C.', priceEur: 250000, media: [] })],
+  );
+  const zone = (id: string, level: string, parent: string | null, slug: string) =>
+    db.run("INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES (?, 'net-1', ?, ?, ?, ?, ?, '[]', 'test', 'x', 'x')", [id, level, parent, slug, slug, level === 'commune' ? '99001' : null]);
+  await zone('z1', 'commune', null, 'dijon');
+  await zone('z2', 'quartier', 'z1', 'montchapet');
+  await zone('z3', 'quartier', 'z1', 'gare');
+  await db.run(
+    "INSERT INTO price_versions (id, network_id, source, dvf_last_sale, window_from, window_to, areas_digest, sales_digest, min_sales, round_to, status, computed_at, completed_at) VALUES ('v1', 'net-1', 'DVF', '2026-06-30', '2024-07-01', '2026-06-30', ?, ?, 5, 10, 'en_cours', 'x', NULL)",
+    ['a'.repeat(64), 'b'.repeat(64)],
+  );
+  const cols = (await db.all<{ name: string }>("SELECT name FROM pragma_table_info('price_cells')")).map((c) => c.name);
+  for (const [area, status, hold] of [
+    ['z1', 'publiee', null],
+    ['z2', 'publiee', null],
+    ['z3', 'retenue', 'seuil'],
+  ] as const) {
+    const values: Record<string, string | null> = { version_id: 'v1', area_id: area, kind: 'apartment', status, hold_code: hold };
+    const names = cols.filter((c) => c in values);
+    await db.run(`INSERT INTO price_cells (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})`, names.map((c) => values[c]!));
+  }
+  await db.run("UPDATE price_versions SET status = 'complet', completed_at = '2026-10-20T08:00:00.000Z' WHERE id = 'v1'");
+  await db.exec('PRAGMA foreign_keys = ON');
+  const pages = new PageAgent(db, journal, { now });
+  expect(await pages.setLegalMentions(direction, 'ag-1', { rsacNumber: 'RSAC 123456789', rsacRegistry: 'Dijon' })).toEqual({ ok: true });
+  await db.run("INSERT INTO listing_settings (id, network_id, card_number, set_by, set_at) VALUES ('s1', 'net-1', 'CPI 9999 0000 000 000 001', 'direction:dir-1', 'x')");
+  expect(await pages.setCardHolder(direction, 'Société Exemple')).toEqual({ ok: true });
+}
 
 async function setup() {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
@@ -32,6 +72,7 @@ async function setup() {
   const ref = new Referencement(db, journal, { now, newId });
   expect(await ref.setSite(direction, { kind: 'reseau', baseUrl: NET, active: true })).toMatchObject({ ok: true });
   expect(await ref.setSite(direction, { kind: 'agent', agentId: 'ag-1', baseUrl: CAMILLE, active: true })).toMatchObject({ ok: true });
+  await publishPages(db, journal, now);
   const origine = new OrigineContacts(db, journal, { now, newId, newCode });
   let m = 0;
   const inbound = async (o: { channel?: string; kind?: string; conv?: string | null; postRef?: string | null; portal?: string | null; at?: string; status?: string; network?: string } = {}) => {
@@ -117,19 +158,46 @@ describeWithSqlite('origine des contacts', () => {
     expect(await origine.record('net-2', i1, {})).toEqual({ ok: false, code: 'unknown_inbound' });
   });
 
-  it('[R156] lit la page de départ seulement sur un site en service du réseau', async () => {
-    const { origine, inbound } = await setup();
+  it('[R156] lit la page de départ seulement si elle est publiée aujourd’hui sur un site en service du réseau', async () => {
+    const { db, origine, inbound } = await setup();
     const i1 = await inbound();
     expect(await origine.record('net-1', i1, { landingPage: `${CAMILLE}/biens/bien-1` })).toMatchObject({ origin: { kind: 'bien', method: 'page' } });
     const i2 = await inbound();
     expect(await origine.record('net-1', i2, { landingPage: `${NET}/prix/dijon/montchapet` })).toMatchObject({ origin: { kind: 'prix', method: 'page' } });
     const bien = await origine.contentFor('net-1', 'bien', 'bien-1');
     expect(bien.ok && (await origine.stored(i1))?.contentId === bien.contentId).toBe(true);
-    for (const page of [`https://imitation.exemple.test/biens/bien-1`, `${NET}/biens/bien-9`, `${NET}/contact`, 'http://reseau.exemple.test/biens/bien-1', 'pas une adresse', 42]) {
+    const i4 = await inbound();
+    expect(await origine.record('net-1', i4, { landingPage: `${CAMILLE}/agents/ag-1` })).toMatchObject({ origin: { kind: 'agent', method: 'page' } });
+    const contents = async () => Number((await db.first<{ n: number }>('SELECT count(*) AS n FROM public_contents'))!.n);
+    const before = await contents();
+    // Rien qui ne soit pas une page publiée aujourd'hui sur ce site : inconnue, et aucun contenu n'est créé.
+    for (const page of [
+      `https://imitation.exemple.test/biens/bien-1`,
+      `${NET}/biens/bien-9`,
+      `${NET}/biens/brouillon-1`,
+      `${CAMILLE}/biens/bien-absent`,
+      `${NET}/agents/ag-2`,
+      `${NET}/agents/ag-9`,
+      `${NET}/prix/inexistant`,
+      `${NET}/prix/jean-dupont-0600000000`,
+      `${NET}/prix/dijon/gare`,
+      `${CAMILLE}/prix/dijon`,
+      `${NET}/quartiers/dijon/montchapet`,
+      `${NET}/contact`,
+      'http://reseau.exemple.test/biens/bien-1',
+      'pas une adresse',
+      42,
+    ]) {
       const id = await inbound();
       await origine.record('net-1', id, { landingPage: page });
-      expect(await origine.stored(id)).toEqual({ contentId: null, kind: 'inconnue', method: 'inconnue' });
+      expect(await origine.stored(id), String(page)).toEqual({ contentId: null, kind: 'inconnue', method: 'inconnue' });
     }
+    expect(await contents()).toBe(before);
+    expect(JSON.stringify(await db.all('SELECT * FROM public_contents'))).not.toContain('jean');
+    // Une page de quartier ne compte qu'une fois son identifiant donné par sa publication (AT07).
+    const q = await origine.contentFor('net-1', 'quartier', 'dijon/montchapet');
+    const i5 = await inbound();
+    expect(q.ok && (await origine.record('net-1', i5, { landingPage: `${NET}/quartiers/dijon/montchapet` }))).toMatchObject({ origin: { kind: 'quartier', method: 'page' } });
     // Le code porteur passe avant la page de départ.
     const pub = await origine.contentFor('net-1', 'publication', 'studio-pub-2');
     if (!pub.ok) throw new Error('contenu');
