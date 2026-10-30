@@ -16,6 +16,8 @@ import {
   type CellSale,
   type LatLon,
   type ShownCell,
+  renderPricePage,
+  sourceLine,
 } from '../src/attirer/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -442,5 +444,26 @@ describeWithSqlite('AT01 · versions des prix dans la base', () => {
     source.cov = { department: '99', lastSale: '2026-06-30', years: [2026], source: 's' };
     expect(await prix.recompute('net-2')).toEqual({ ran: false, reason: 'aucune_zone' });
     expect(await prix.communePrices('net-1', 'inconnue')).toBeNull();
+  });
+});
+
+describeWithSqlite('AT02 · la page de prix rendue depuis la dernière version', () => {
+  it('[R150] [R151] la page ne montre que les cases publiables de la version, chacune avec sa source et sa date', async () => {
+    const list = [
+      ...[2000, 2100, 2200, 2300, 2400, 2500, 2600].map((p) => sale('apartment', 5.02, p)),
+      ...[3000, 3100, 3200, 3300, 3400, 3500].map((p) => sale('apartment', 5.08, p)),
+      ...[1800, 1900].map((p) => sale('house', 5.02, p)),
+    ];
+    const { prix } = await setup(list);
+    await prix.recompute('net-1');
+    const prices = (await prix.communePrices('net-1', 'commune-test'))!;
+    const r = renderPricePage(prices, { communeSlug: 'commune-test', estimateHref: '/estimer', siteUrl: 'https://reseau.exemple.test' });
+    if (!r.ok) throw new Error(r.code);
+    const text = r.html.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '');
+    for (const c of prices.cells.filter((x) => x.zone.slug === 'commune-test')) expect(text).toContain(sourceLine(c));
+    // Deux maisons seulement : aucune case de maison, et aucun de leurs prix.
+    expect(prices.cells.some((c) => c.kind === 'house')).toBe(false);
+    expect(text).not.toMatch(/1 8\d0|1 9\d0/);
+    expect(text).toContain('Pas assez de ventes pour publier un chiffre fiable.');
   });
 });
