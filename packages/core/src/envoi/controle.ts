@@ -16,9 +16,19 @@ import type { IdentifierKind, Message, OutboundChannelName } from '../db/types.t
 import type { SqlDatabase } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { AgentWhatsAppLink, type OutboundChannel } from './canaux.ts';
-import type { SendKind } from './decision.ts';
+import { decideSend, type SendKind } from './decision.ts';
 import type { DecisionEnvoi } from './service.ts';
-import { localTime } from './horaires.ts';
+import { isWorkingDay, localTime } from './horaires.ts';
+import {
+  PARTNER_FOLLOW_UP_PURPOSE,
+  PRO_OPT_OUT_PATH,
+  PRO_PROSPECTING_PER_WORKING_DAY,
+  PRO_PROSPECTING_PURPOSE,
+  ProTrialMailbox,
+  type ProSendOrder,
+  type ProSendResult,
+  type ProSendStatus,
+} from './professionnels.ts';
 import type { SendJournal } from './journal-envois.ts';
 import { DEFAULT_TEXT_SETTINGS, checkText, plain, type TextSettings } from './texte.ts';
 import { agentGone } from '../reseau/depart.ts';
@@ -113,6 +123,8 @@ export interface ControleEnvoisOptions {
   budget?: AiBudget;
   settings?: ControleSettings;
   now?: () => Date;
+  /** La boîte d'essai des envois aux professionnels (U12) ; absente, rien ne leur part. */
+  proMailbox?: ProTrialMailbox;
 }
 
 const IDENTIFIER_FOR: Record<OutboundChannelName, readonly IdentifierKind[]> = {
@@ -494,6 +506,174 @@ export class ControleEnvois {
       );
     }
     return sent;
+  }
+
+  /**
+   * Un envoi à un professionnel (U12) : un partenaire de l'annuaire ou un futur partenaire, jamais une fiche client.
+   * Même chemin, mêmes règles, redécidées maintenant : opposition [R04, R02], heures [R01], jour ouvré et plafond
+   * [R11, R79], accord [R03], une seule fois [R05], texte sans l'IA [R06]. Seule la boîte d'essai reçoit l'envoi.
+   * Chaque décision va au journal des envois aux professionnels, sans adresse ni texte [R13] ; une attente n'y est
+   * écrite qu'une fois tant que sa raison ne change pas.
+   */
+  async sendToProfessional(order: ProSendOrder): Promise<ProSendResult> {
+    const at = this.now();
+    const settings = this.decisions.settings;
+    const log = async (status: ProSendStatus, rule: string | null, reason: string, sendId: string | null = null): Promise<ProSendResult> => {
+      const last = await this.db.first<{ outcome: string; rule: string | null; reason: string }>(
+        'SELECT outcome, rule, reason FROM pro_send_log WHERE network_id = ? AND subject = ? ORDER BY id DESC LIMIT 1',
+        [order.networkId, order.subject],
+      );
+      if (!(status === 'waiting' && last && last.outcome === 'waiting' && last.rule === rule && last.reason === reason)) {
+        await this.db.run('INSERT INTO pro_send_log (network_id, subject, kind, outcome, rule, reason, mode, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+          order.networkId,
+          order.subject,
+          order.kind,
+          status,
+          rule,
+          reason,
+          'essai',
+          at.toISOString(),
+        ]);
+      }
+      return { status, rule, reason, sendId };
+    };
+    if (!order.subject) throw new Error('Un envoi à un professionnel cite son sujet [R05].');
+    const mailbox = this.options.proMailbox;
+    // Mode essai : aucun vrai canal n'est admis pour les professionnels.
+    if (!(mailbox instanceof ProTrialMailbox)) return log('refused', null, 'Aucun envoi réel aux professionnels tant que le plan ne l’a pas mis en service.');
+
+    // L'adresse et l'accord, lus ici : l'appelant ne les donne jamais.
+    let email: string | null = null;
+    let recipient: string;
+    const consents: { purpose: string; channel: 'email'; given_at: string; withdrawn_at: null }[] = [];
+    if ('partnerId' in order.recipient) {
+      if (order.kind !== 'partner') throw new Error('Un partenaire de l’annuaire reçoit un message de partenaire.');
+      recipient = `partner:${order.recipient.partnerId}`;
+      const address = await this.db.first<{ email: string; recorded_at: string }>(
+        'SELECT email, recorded_at FROM partner_addresses WHERE network_id = ? AND partner_id = ? AND recorded_at <= ? ORDER BY version DESC LIMIT 1',
+        [order.networkId, order.recipient.partnerId, at.toISOString()],
+      );
+      if (address) {
+        email = address.email;
+        // L'accord rangé avec l'adresse, avec sa date et sa preuve [R03].
+        consents.push({ purpose: PARTNER_FOLLOW_UP_PURPOSE, channel: 'email', given_at: address.recorded_at, withdrawn_at: null });
+      }
+    } else {
+      if (order.kind !== 'prospecting') throw new Error('Un futur partenaire ne reçoit qu’un mail de prospection.');
+      recipient = `prospect:${order.recipient.prospectId}`;
+      email = (await this.db.first<{ email: string }>('SELECT email FROM partner_prospects WHERE network_id = ? AND id = ?', [order.networkId, order.recipient.prospectId]))?.email ?? null;
+      // Aucun accord n'est fabriqué pour la prospection : sans l'exception écrite dans R03 (H32), R03 refuse.
+    }
+    if (!email) return log('waiting', null, 'Aucune adresse professionnelle rangée pour ce destinataire.');
+
+    const local = localTime(at, settings.timeZone);
+    const used = async (): Promise<number> =>
+      Number(
+        (
+          await this.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM send_quota_slots WHERE network_id = ? AND kind = ? AND day = ? AND slot NOT LIKE '%#%'", [
+            order.networkId,
+            order.kind,
+            local.date,
+          ])
+        )?.n ?? 0,
+      );
+    const decide = async (when: Date) => {
+      // Une opposition, par le lien ou rangée par la direction, arrête tout pour cette adresse [R04, R02].
+      // Pour un partenaire, l'opposition d'une seule de ses adresses rangées, d'hier ou d'aujourd'hui, vaut pour lui.
+      const optOut =
+        'partnerId' in order.recipient
+          ? await this.db.first<{ at: string }>(
+              `SELECT MIN(at) AS at FROM (
+                 SELECT at FROM partner_optouts WHERE network_id = ? AND partner_id = ?
+                 UNION ALL
+                 SELECT o.at FROM partner_prospect_optouts o
+                 WHERE o.network_id = ? AND (o.email = ? OR o.email IN (SELECT a.email FROM partner_addresses a WHERE a.network_id = ? AND a.partner_id = ?))
+               ) HAVING COUNT(*) > 0`,
+              [order.networkId, order.recipient.partnerId, order.networkId, email, order.networkId, order.recipient.partnerId],
+            )
+          : await this.db.first<{ at: string }>('SELECT at FROM partner_prospect_optouts WHERE network_id = ? AND email = ?', [order.networkId, email]);
+      return decideSend(
+        { channel: 'email', kind: order.kind, purpose: order.kind === 'partner' ? PARTNER_FOLLOW_UP_PURPOSE : PRO_PROSPECTING_PURPOSE, at: when },
+        {
+          exclusions: optOut ? [{ reason: 'stop', channel: null, noted_at: optOut.at, lifted_at: null }] : [],
+          consents,
+          messages: [],
+          relations: [],
+          sentToday: { review_request: 0, partner: order.kind === 'partner' ? await used() : 0 },
+        },
+        settings,
+      );
+    };
+    const WAIT = new Set(['R01', 'R11']);
+    const decision = await decide(at);
+    if (!decision.allowed) return log(WAIT.has(decision.rule ?? '') ? 'waiting' : 'refused', decision.rule, decision.reason);
+    if (order.kind === 'prospecting') {
+      if (!isWorkingDay(local)) return log('waiting', 'R79', 'Prospection seulement les jours ouvrés.');
+      if ((await used()) >= PRO_PROSPECTING_PER_WORKING_DAY) return log('waiting', 'R79', `Déjà ${PRO_PROSPECTING_PER_WORKING_DAY} mails de prospection aujourd’hui.`);
+      if (!order.text.includes(PRO_OPT_OUT_PATH)) return log('refused', 'R79', 'Un mail de prospection porte son lien d’opposition.');
+    }
+
+    // Le texte, contrôlé comme un texte à une personne : aucune mention de l'IA [R06], chiffres permis [R10]. R08
+    // (vouvoiement avec le prénom) ne s'applique pas : un professionnel n'a pas de prénom rangé.
+    const problems = checkText(order.text, { audience: 'client', channel: 'email', figures: order.figures ?? [] }, this.settings.text).filter((p) => p.rule !== 'R08');
+    const problem = problems[0];
+    if (problem) return log('refused', problem.rule, `Texte refusé : ${problem.reason}`);
+    if (order.text.length > this.settings.text.maxLength.email) return log('refused', 'length', `Texte trop long : ${this.settings.text.maxLength.email} caractères au plus.`);
+
+    // Une opposition arrivée entre la préparation et maintenant l'emporte ; puis la condition propre à l'envoi [R04].
+    const last = await decide(this.now());
+    if (!last.allowed) return log(WAIT.has(last.rule ?? '') ? 'waiting' : 'refused', last.rule, last.reason);
+    if (order.stillAllowed) {
+      const still = await order.stillAllowed();
+      if (!still.allowed) return log('refused', still.rule, still.reason);
+    }
+
+    // Une seule fois par sujet, réservé dans la base : de deux passages simultanés, un seul envoie [R05].
+    const sendId = crypto.randomUUID();
+    try {
+      await this.db.run('INSERT INTO pro_sends (id, network_id, subject, kind, recipient, day, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+        sendId,
+        order.networkId,
+        order.subject,
+        order.kind,
+        recipient,
+        local.date,
+        at.toISOString(),
+      ]);
+    } catch (error) {
+      if (!/UNIQUE/i.test(String(error))) throw error;
+      return log('refused', 'R05', 'Ce sujet est déjà parti à ce destinataire.');
+    }
+    const release = async (reason: string): Promise<void> => {
+      await this.db.run(`UPDATE pro_sends SET subject = subject || '#panne:' || id WHERE id = ?`, [sendId]);
+      await this.db.run(`UPDATE send_quota_slots SET slot = slot || '#${reason}:' || reservation_id WHERE reservation_id = ?`, [sendId]);
+    };
+    // Place dans le plafond du jour, prise une à une [R11, R79].
+    const cap = order.kind === 'partner' ? settings.partnerMessagesPerWorkingDay : PRO_PROSPECTING_PER_WORKING_DAY;
+    let placed = false;
+    for (let slot = 1; slot <= cap && !placed; slot++) {
+      const { changes } = await this.db.run('INSERT OR IGNORE INTO send_quota_slots (network_id, kind, day, slot, reservation_id, created_at) VALUES (?, ?, ?, ?, ?, ?)', [
+        order.networkId,
+        order.kind,
+        local.date,
+        String(slot),
+        sendId,
+        at.toISOString(),
+      ]);
+      placed = changes === 1;
+    }
+    if (!placed) {
+      await release('plafond');
+      return log('waiting', order.kind === 'partner' ? 'R11' : 'R79', `Plafond du jour atteint : ${cap} au plus.`);
+    }
+    try {
+      await mailbox.deliver({ channel: 'email', to: email, body: order.text, messageId: sendId });
+    } catch {
+      // Le détail peut contenir l'adresse : il ne va pas au journal.
+      await release('panne');
+      return log('failed', null, 'La boîte d’essai n’a pas rangé l’envoi.');
+    }
+    return log('sent', null, 'Rangé dans la boîte d’essai : rien n’est parti réellement.', sendId);
   }
 
   /** La session de l'assistant du site où répondre, si un message de la personne y est rangé. */

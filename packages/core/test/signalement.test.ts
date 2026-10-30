@@ -218,7 +218,9 @@ describe('L05 · rien ne lit le signalement hors de son code', () => {
     };
     roots.forEach(walk);
     const readers = files.filter((f) => /suspicion_(reports|decisions)|SignalementSoupcon|signalement\.ts/.test(readFileSync(f, 'utf8'))).map((f) => f.split(/[\\/]/).slice(-2).join('/'));
-    // Le registre des traitements (L06) nomme les tables sans les lire ; l'index de la conformité exporte le module.
-    expect(readers.sort()).toEqual(['conformite/index.ts', 'conformite/registre-traitements.ts', 'conformite/signalement.ts']);
+    // Le registre des traitements (L06) nomme les tables sans les lire ; l'index de la conformité exporte le module ; les
+    // routes de M12 (L09) appellent le module, qui garde seul ses tables et ne les ouvre qu'au responsable.
+    expect(readers.sort()).toEqual(['conformite/index.ts', 'conformite/registre-traitements.ts', 'conformite/signalement.ts', 'src/conformite.ts']);
+    expect(readFileSync(fileURLToPath(new URL('../../api/src/conformite.ts', import.meta.url)), 'utf8')).not.toMatch(/suspicion_(reports|decisions)/);
   });
 });
