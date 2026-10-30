@@ -628,6 +628,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   social_post_validations: out('sans_client', 'Validation d\'une publication par l\'agent : aucune personne.'),
   social_post_attempts: out('sans_client', 'Essais d\'envoi d\'une publication, en mode essai : aucune personne.'),
   social_post_sends: out('sans_client', 'Issues des envois d\'une publication : aucune personne.'),
+  // L'option demandée suit la mise en relation, donc le projet et son client.
+  studio_option_requests: { locate: [via('referral_id', 'partner_referrals')] },
   // M17 · Investir.
   investor_profiles: { locate: by('person_id') },
   // M16 · Commerces et entreprises : la fiche suit son bien, comme la fiche de commercialisation.
