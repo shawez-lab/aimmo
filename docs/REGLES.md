@@ -136,7 +136,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R151 | Prix sourcé. Un prix de marché publié porte sa source et sa date de publication ; un prix d'annonce vient du mandat en vigueur. | oui | AT01, AT02 |
 | R152 | Mentions de l'agent. Une page publique d'agent n'est publiée qu'avec, à côté de son nom, son statut d'agent commercial, son numéro d'immatriculation et la carte du titulaire qui l'habilite. | oui | AT03 |
 | R153 | Page de référence unique. Un bien publié a une seule page de référence pour les moteurs : celle du site de son agent s'il en a un, sinon celle du réseau. | non | AT04 |
-| R154 | Réponse aux avis. Une réponse à un avis ou une publication de la fiche Google ne part qu'après la validation nommée d'un humain, sans nom de client, adresse, prix de vente ni détail du dossier. | oui | AT06 |
+| R154 | Réponse aux avis. Une réponse à un avis ou une publication de la fiche Google ne part qu'après la validation nommée d'un humain, sans nom de client, adresse, prix de vente ni détail du dossier. | non | AT06 |
 | R155 | Page de quartier sans invention. Une page de quartier ou un article ne porte que des faits et des nombres de la base, chacun avec sa source, et n'est publié qu'après validation nommée. | non | AT07 |
 | R156 | Origine sans pistage. L'origine d'un contact est rangée en liste fermée, « inconnue » quand elle n'est pas lue, sans donnée personnelle ni identifiant de navigateur. | non | AT05 |
 | R157 | Simulateur sans collecte. Le simulateur de prêt dit qu'il n'est pas une offre de prêt et ne garde, n'envoie ni n'écrit au journal aucune saisie. | oui | AT08 |
