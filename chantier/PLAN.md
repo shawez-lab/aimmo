@@ -2124,7 +2124,8 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien (le numéro de carte du réseau est un réglage, H09).
 
 ### AT04 · Référencement : plan du site, données structurées, page de référence unique
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#217). Décidé : sites réglés par la direction (`public_sites`, une adresse pour un seul site en service) ; le plan de chaque site liste chaque bien par sa page de référence, donc le plan du réseau porte des adresses du site de l'agent : AT09/AT10 devront servir un `robots.txt` du site de l'agent qui déclare ce plan (`Sitemap:`) ; données structurées sans voie ni code postal ; signalement IndexNow en essai, une fois par état, les pages de l'essai repartent une fois au passage en réel. Relecture forte sans P0 ni P1 ; Codex à sa limite, fusion sans lui ; vérification locale verte (2133 tests).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT02, AT03
 - Cahier : M01, point 2 « Référencement » et « Deux sites, un seul moteur ».
 - Objectif : plan du site de chaque site (biens publiés, agents, prix), données structurées des biens, des agents et des pages de prix ; page de référence (canonique) d'un bien : site de son agent s'il en a un, sinon site du réseau ; signalement aux moteurs (IndexNow) de chaque page modifiée, derrière une interface, en mode essai.
