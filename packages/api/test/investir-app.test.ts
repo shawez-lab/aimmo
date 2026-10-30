@@ -1,6 +1,8 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { AGENT_APP_FILES } from '../src/agent-app.ts';
+import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
+import { INVESTIR_SCRIPT } from '../app/investir.ts';
+import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
 // Tout est inventé : investisseurs, biens, communes, montants, clé de test.
@@ -59,7 +61,7 @@ async function run(answers: Record<string, Answer> = {}) {
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   const calls: { method: string; url: string; body?: string; auth: string | undefined }[] = [];
   const table: Record<string, Answer> = { ...BASE, ...answers };
-  runInNewContext(JS, {
+  const context: Record<string, unknown> = {
     document,
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
     fetch: (url: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
@@ -69,7 +71,8 @@ async function run(answers: Record<string, Answer> = {}) {
       return a ? a() : Promise.reject(new TypeError('hors ligne'));
     },
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
-  });
+  };
+  runInNewContext(JS, context);
   listeners.DOMContentLoaded!();
   await settle();
   const body = () => els['investir-corps']!;
@@ -86,8 +89,21 @@ async function run(answers: Record<string, Answer> = {}) {
     return body().all().find((e) => e.attributes.id === l.attributes.for)!;
   };
   const posts = () => calls.filter((c) => c.method === 'POST');
-  const openP1 = async () => {
+  const scripts = () => els.investir!.children.filter((e) => e.tagName === 'script');
+  // L'écran est chargé à sa première ouverture : le test pose le script servi, puis signale son chargement.
+  const loadScript = async () => {
+    const s = scripts();
+    expect(s.map((e) => e.attributes.src)).toEqual(['/app/investir.js']);
+    runInNewContext(INVESTIR_SCRIPT, context);
+    s[0]!.listeners.load!({});
+    await settle();
+  };
+  const ouvrir = async () => {
     await click(els['investir-ouvrir']);
+    if (scripts().length === 1 && !body().children.length) await loadScript();
+  };
+  const openP1 = async () => {
+    await ouvrir();
     await click(byText('Ouvrir', 0));
   };
   const compute = async () => {
@@ -99,7 +115,7 @@ async function run(answers: Record<string, Answer> = {}) {
     input('Vacance, en mois par an').value = '1';
     await click(byText('Calculer'));
   };
-  return { els, calls, table, byText, click, input, body, state, posts, openP1, compute };
+  return { els, calls, table, context, byText, click, input, body, state, posts, scripts, loadScript, ouvrir, openP1, compute };
 }
 
 describe('Y09 · écran « Investir » de l’application', () => {
@@ -115,7 +131,7 @@ describe('Y09 · écran « Investir » de l’application', () => {
       expect(c.auth).toBe(`Bearer ${KEY}`);
       expect(c.url).not.toContain(KEY);
     }
-    const screenJs = JS.slice(JS.indexOf('var INVESTIR_REFUSALS'), JS.indexOf('function renderNote'));
+    const screenJs = INVESTIR_SCRIPT.slice(INVESTIR_SCRIPT.indexOf('var INVESTIR_REFUSALS'), INVESTIR_SCRIPT.indexOf('function renderNote'));
     const routes = [...screenJs.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
     expect(routes.length).toBeGreaterThan(3);
     for (const r of routes) expect(r.startsWith('/v1/investir'), r).toBe(true);
@@ -145,7 +161,7 @@ describe('Y09 · écran « Investir » de l’application', () => {
     expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
     expect(text).toContain(INJECTED);
     // Le script de l'écran ne porte aucune formule de rendement.
-    const screenJs = JS.slice(JS.indexOf('var INVESTIR_REFUSALS'), JS.indexOf('function renderNote'));
+    const screenJs = INVESTIR_SCRIPT.slice(INVESTIR_SCRIPT.indexOf('var INVESTIR_REFUSALS'), INVESTIR_SCRIPT.indexOf('function renderNote'));
     expect(screenJs).not.toMatch(/\*\s*12|\*\s*10000|10000\s*\//);
   });
 
@@ -212,7 +228,7 @@ describe('Y09 · écran « Investir » de l’application', () => {
 
   it('l’accueil ouvre la liste des investisseurs ; un prénom reçu reste du texte', async () => {
     const t = await run();
-    await t.click(t.els['investir-ouvrir']);
+    await t.ouvrir();
     expect(t.els.investir!.hidden).toBe(false);
     expect(t.els.accueil!.hidden).toBe(true);
     const text = t.body().textContent;
@@ -221,5 +237,44 @@ describe('Y09 · écran « Investir » de l’application', () => {
     expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
     await t.click(t.els['investir-retour']);
     expect(t.els.accueil!.hidden).toBe(false);
+  });
+
+  it('[R201] l’écran est un script à part, chargé une seule fois à sa première ouverture, jamais gardé sur l’appareil', async () => {
+    expect(JS).not.toContain('var INVESTIR_REFUSALS');
+    expect(JS).not.toContain('/v1/investir');
+    expect(AGENT_APP_SHELL).not.toContain('/app/investir.js');
+    // Le script tient le budget d'une page, et l'application le sien.
+    expect(budgetProblems({ html: '', js: INVESTIR_SCRIPT }, BUDGETS.page)).toEqual([]);
+    const served = handleAgentApp(new Request('https://aimmo.example.test/app/investir.js'))!;
+    expect(served.status).toBe(200);
+    expect(served.headers.get('content-type')).toContain('text/javascript');
+    expect(await served.text()).toBe(INVESTIR_SCRIPT);
+    const t = await run();
+    await t.click(t.els['investir-ouvrir']);
+    expect(t.state()).toBe('Chargement…');
+    expect(t.calls.some((c) => c.url.startsWith('/v1/investir'))).toBe(false);
+    await t.loadScript();
+    expect(t.body().textContent).toContain('Inès');
+    // Seconde ouverture : le script déjà chargé sert, rien n'est demandé de nouveau.
+    await t.click(t.els['investir-retour']);
+    await t.click(t.els['investir-ouvrir']);
+    expect(t.scripts()).toHaveLength(1);
+    expect(t.body().textContent).toContain('Inès');
+  });
+
+  it('sans réseau, le chargement le dit ; un script arrivé après un changement d’écran ne montre rien', async () => {
+    const t = await run();
+    await t.click(t.els['investir-ouvrir']);
+    t.scripts()[0]!.listeners.error!({});
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    const u = await run();
+    await u.click(u.els['investir-ouvrir']);
+    await u.click(u.els['investir-retour']);
+    runInNewContext(INVESTIR_SCRIPT, u.context);
+    u.scripts()[0]!.listeners.load!({});
+    await new Promise((r) => setTimeout(r, 0));
+    expect(u.calls.some((c) => c.url.startsWith('/v1/investir'))).toBe(false);
+    expect(u.els.accueil!.hidden).toBe(false);
   });
 });

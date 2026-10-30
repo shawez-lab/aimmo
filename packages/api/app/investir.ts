@@ -57,8 +57,53 @@ export const INVESTIR_CSS = `
 .curseur { width: 100%; accent-color: var(--accent); min-height: 44px; }
 `;
 
-/** Le script de l'écran : posé dans le script de l'application, il en reprend les outils (`el`, `send`, `field`, `select`, `toCents`…). */
+/**
+ * Ce que l'application garde de l'écran : son chargement à la première ouverture. Une réponse d'une autre session,
+ * ou un script en retard, est ignorée ; sans réseau, l'écran le dit.
+ */
 export const INVESTIR_JS = `
+  var investirScreen = null;
+  function wipeInvestir() {
+    if (investirScreen) return investirScreen.wipe();
+    clear($('investir-corps'));
+    $('investir-etat').textContent = '';
+  }
+  function openInvestir(message) {
+    if (!currentKey) return Promise.resolve(false);
+    if (investirScreen) return investirScreen.open(message);
+    session += 1;
+    var mine = session;
+    wipeInvestir();
+    show('investir');
+    $('investir-etat').textContent = 'Chargement…';
+    return new Promise(function (resolve) {
+      var script = document.createElement('script');
+      script.setAttribute('src', '/app/investir.js');
+      script.addEventListener('load', function () {
+        var make = globalThis.AIMMO_INVESTIR;
+        try { delete globalThis.AIMMO_INVESTIR; } catch (e) { /* rien à retirer */ }
+        if (mine !== session || typeof make !== 'function') { resolve(false); return; }
+        investirScreen = make({ $: $, el: el, clear: clear, send: send, show: show, button: button, field: field, select: select, details: details, centsText: centsText, euros: euros, toCents: toCents, whole: whole, date: date, ID: ID, key: function () { return currentKey; }, session: function () { return session; }, next: function () { session += 1; return session; } });
+        resolve(investirScreen.open(message));
+      });
+      script.addEventListener('error', function () {
+        if (mine === session) $('investir-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
+        resolve(false);
+      });
+      $('investir').appendChild(script);
+    });
+  }
+`;
+
+/**
+ * Le script de l'écran, servi à part (`/app/investir.js`) et chargé à sa première ouverture : l'application garde
+ * son budget. Il reçoit les outils de l'application (`el`, `send`, `field`, `select`, `toCents`…), ne lit et n'écrit
+ * que par les routes `/v1/investir` [R16], et ne garde aucune donnée.
+ */
+export const INVESTIR_SCRIPT = `'use strict';
+globalThis.AIMMO_INVESTIR = function (t) {
+  var $ = t.$, el = t.el, clear = t.clear, send = t.send, show = t.show, button = t.button, field = t.field, select = t.select, details = t.details;
+  var centsText = t.centsText, euros = t.euros, toCents = t.toCents, whole = t.whole, date = t.date, ID = t.ID;
   var LINE_LABELS = ${JSON.stringify(LINE_LABELS)};
   var TARGETS = ${JSON.stringify(TARGET_LABELS)};
   var DEADLINE_LABELS = ${JSON.stringify(DEADLINE_LABELS)};
@@ -72,13 +117,13 @@ export const INVESTIR_JS = `
   };
   function investirRefusal(body, fallback) { return (body && INVESTIR_REFUSALS[body.code]) || fallback; }
   function investirState(text) { $('investir-etat').textContent = text; }
+  var investirProject = null;
   function wipeInvestir() {
     clear($('investir-corps'));
     $('investir-etat').textContent = '';
     $('investir-titre').textContent = 'Investir';
     investirProject = null;
   }
-  var investirProject = null;
   function bpText(bp) {
     if (typeof bp !== 'number' || !isFinite(bp)) return '';
     var neg = bp < 0;
@@ -96,9 +141,9 @@ export const INVESTIR_JS = `
     return String(l.value);
   }
   function toBp(text) {
-    var t = String(text || '').replace(/[\\s%]/g, '').replace(',', '.');
-    if (!/^\\d{1,3}(\\.\\d{1,2})?$/.test(t)) return null;
-    return Math.round(Number(t) * 100);
+    var v = String(text || '').replace(/[\\s%]/g, '').replace(',', '.');
+    if (!/^\\d{1,3}(\\.\\d{1,2})?$/.test(v)) return null;
+    return Math.round(Number(v) * 100);
   }
   function profileSummary(p) {
     if (!p) return 'Profil à remplir.';
@@ -110,14 +155,13 @@ export const INVESTIR_JS = `
     return parts.length ? parts.join(' · ') : 'Profil à remplir.';
   }
   function openInvestir(message) {
-    if (!currentKey) return Promise.resolve(false);
-    session += 1;
-    var mine = session;
+    if (!t.key()) return Promise.resolve(false);
+    var mine = t.next();
     wipeInvestir();
     show('investir');
     investirState('Chargement…');
     return send('/v1/investir/projets', 'GET').then(function (res) {
-      if (res.gone || mine !== session) return false;
+      if (res.gone || mine !== t.session()) return false;
       if (!res.ok) { investirState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : investirRefusal(res.body, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
       var list = Array.isArray(res.body.data) ? res.body.data : [];
       var body = $('investir-corps');
@@ -137,9 +181,8 @@ export const INVESTIR_JS = `
     });
   }
   function openInvestor(x, message) {
-    if (!currentKey || !ID.test(x.projectId)) return Promise.resolve(false);
-    session += 1;
-    var mine = session;
+    if (!t.key() || !ID.test(x.projectId)) return Promise.resolve(false);
+    var mine = t.next();
     clear($('investir-corps'));
     investirProject = x.projectId;
     $('investir-titre').textContent = x.firstName || 'Investisseur';
@@ -147,7 +190,7 @@ export const INVESTIR_JS = `
     investirState('Chargement…');
     var base = '/v1/investir/projets/' + encodeURIComponent(x.projectId);
     return Promise.all([send(base + '/profil', 'GET'), send('/v1/investir/biens', 'GET')]).then(function (all) {
-      if (mine !== session || all.some(function (r) { return r.gone; })) return false;
+      if (mine !== t.session() || all.some(function (r) { return r.gone; })) return false;
       if (!all[0].ok) { investirState(all[0].offline ? 'Pas de réseau. Réessayez dans un moment.' : investirRefusal(all[0].body, 'Cette fiche n’est pas dans vos droits.')); return false; }
       var current = (all[0].body.data && all[0].body.data.current) || null;
       var biens = all[1].ok && Array.isArray(all[1].body.data) ? all[1].body.data : [];
@@ -217,8 +260,8 @@ export const INVESTIR_JS = `
     calc.appendChild(button('Calculer', function () {
       var chosen = biens.filter(function (b) { return b.propertyId === bien.value; })[0];
       if (!chosen) { investirState('Choisissez un bien.'); return; }
-      var r = toBp(fees.value.value), w = toCents(works.value.value), c = toCents(charges.value.value), t = toCents(tax.value.value), m = whole(vacancy.value.value, 12);
-      if (r === null || w === null || c === null || t === null || m === null) { investirState('Un champ n’est pas valable : vérifiez la saisie.'); return; }
+      var r = toBp(fees.value.value), w = toCents(works.value.value), c = toCents(charges.value.value), tx = toCents(tax.value.value), m = whole(vacancy.value.value, 12);
+      if (r === null || w === null || c === null || tx === null || m === null) { investirState('Un champ n’est pas valable : vérifiez la saisie.'); return; }
       var day = new Date().toISOString().slice(0, 10);
       function entry(value, h) { return { value: value, source: 'agent', asOf: day, hypothesis: h.value || 'saisi par l’agent' }; }
       var energyBody = energy.value ? { energyClass: energy.value } : undefined;
@@ -227,7 +270,7 @@ export const INVESTIR_JS = `
         propertyId: chosen.propertyId,
         projectId: x.projectId,
         marketRentQuery: { inseeCode: chosen.inseeCode, kind: chosen.rentKind },
-        inputs: { acquisitionFeesRateBp: entry(r, fees.hypothesis), works: entry(w, works.hypothesis), nonRecoverableCharges: entry(c, charges.hypothesis), propertyTax: entry(t, tax.hypothesis), vacancyMonths: entry(m, vacancy.hypothesis) },
+        inputs: { acquisitionFeesRateBp: entry(r, fees.hypothesis), works: entry(w, works.hypothesis), nonRecoverableCharges: entry(c, charges.hypothesis), propertyTax: entry(tx, tax.hypothesis), vacancyMonths: entry(m, vacancy.hypothesis) },
       }).then(function (res) {
         if (res.gone) return;
         if (!res.ok) { investirState(res.offline ? 'Pas de réseau : rien n’est calculé.' : investirRefusal(res.body, 'Le calcul n’a pas abouti.')); return; }
@@ -322,4 +365,6 @@ export const INVESTIR_JS = `
       });
     }));
   }
+  return { open: openInvestir, wipe: wipeInvestir, inside: function () { return investirProject !== null; } };
+};
 `;

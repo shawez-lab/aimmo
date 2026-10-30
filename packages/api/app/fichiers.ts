@@ -1826,7 +1826,7 @@ ${LOUER_JS}
     $('partenaires-ouvrir').addEventListener('click', function () { openPartenaires('', 0); });
     $('louer-retour').addEventListener('click', function () { if (louerId) openLouer(''); else home(); });
     $('louer-ouvrir').addEventListener('click', function () { openLouer('', 0); });
-    $('investir-retour').addEventListener('click', function () { if (investirProject) openInvestir(''); else home(); });
+    $('investir-retour').addEventListener('click', function () { if (investirScreen && investirScreen.inside()) openInvestir(''); else home(); });
     $('investir-ouvrir').addEventListener('click', function () { openInvestir(''); });
     $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
