@@ -252,7 +252,8 @@ describe('K09 · un agent garde son écran, sans rien du réseau [R68]', () => {
   });
 
   it('les autres rôles restent refusés par l’application', async () => {
-    for (const role of ['compliance', 'partner']) {
+    // Le responsable de la conformité a son écran depuis L10 (conformite-app.test.ts).
+    for (const role of ['partner']) {
       const t = await run({ 'GET /v1/moi': ok({ role, firstName: null }) });
       expect(t.els.connexion!.hidden).toBe(false);
       expect(t.els.erreur!.textContent).toBe('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.');

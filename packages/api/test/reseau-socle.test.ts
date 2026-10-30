@@ -18,11 +18,11 @@ const uuid = (): string => `00000000-0000-4000-8000-${String(++n).padStart(12, '
 
 /** Un faux compartiment R2 : des clés, et le texte rangé. */
 class FakeBucket {
-  readonly objects = new Map<string, string>();
+  readonly objects = new Map<string, string | Uint8Array>();
   async head(key: string): Promise<unknown | null> {
     return this.objects.has(key) ? { key } : null;
   }
-  async put(key: string, value: string): Promise<unknown> {
+  async put(key: string, value: string | Uint8Array): Promise<unknown> {
     this.objects.set(key, value);
     return { key };
   }
