@@ -5,3 +5,5 @@ export * from './espace-partenaire.ts';
 export * from './pieces-partenaires.ts';
 export * from './suivi-partenaires.ts';
 export * from './prospection.ts';
+export * from './adresses.ts';
+export * from './envois.ts';
