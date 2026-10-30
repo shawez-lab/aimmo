@@ -1,7 +1,7 @@
 /**
- * Les routes de M20 complet, Gagner des mandats (G11), sous `/v1/gagner` : recommandations des partenaires et file
- * « à appeler » (G08), relances des anciens contacts (G09), mesure mensuelle des sources (G10). Les lettres de
- * quartier (G06) et le dossier de présentation (G07) y viendront avec leurs tâches.
+ * Les routes de M20 complet, Gagner des mandats (G11), sous `/v1/gagner` : lettres de quartier (G06),
+ * recommandations des partenaires et file « à appeler » (G08), relances des anciens contacts (G09), mesure mensuelle
+ * des sources (G10). Le dossier de présentation (G07) y viendra avec sa tâche.
  *
  * Chaque route dit les rôles qu'elle admet : un autre rôle est refusé avant que le corps soit lu, et le refus est écrit
  * au journal [R16]. La couche métier refait ses propres contrôles de droits. Rien n'est envoyé réellement : les
@@ -12,10 +12,13 @@ import {
   AnciensContacts,
   FicheClient,
   FicheUnique,
+  LettresQuartier,
   MesureSources,
   RecommandationsGagner,
   appendEvent,
   type CostProofStore,
+  type Geocoder,
+  type LetterDrafter,
   type JournalStore,
   type OldContactDrafter,
   type Role,
@@ -37,6 +40,10 @@ export interface GagnerServices {
   proofs?: CostProofStore | null;
   /** La rédaction des relances par l'IA ; absente, le texte de secours du code. */
   drafter?: OldContactDrafter | null;
+  /** Le géocodage des adresses des lettres ; absent, aucune campagne ne peut vérifier son rayon. */
+  geocoder?: Geocoder | null;
+  /** La rédaction des lettres par l'IA ; absente, le texte du code. */
+  letterDrafter?: LetterDrafter | null;
 }
 
 export interface GagnerRoute {
@@ -90,6 +97,7 @@ const services = (s: GagnerServices) => {
     recommandations: new RecommandationsGagner(s.db, store, fiche, s.acces, new Annuaire(s.db, proofs, s.journal, { now: s.now }), s.journal, { now: s.now }),
     anciens: new AnciensContacts(s.db, s.journal, { now: s.now, drafter: s.drafter ?? null }),
     mesure: new MesureSources(s.db, proofs, s.journal, { now: s.now }),
+    lettres: new LettresQuartier(s.db, s.journal, { now: s.now, geocoder: s.geocoder ?? null, drafter: s.letterDrafter ?? null }),
   };
 };
 
@@ -116,6 +124,21 @@ export function gagnerRoutes(): GagnerRoute[] {
   const DIRECTION: readonly Role[] = ['direction'];
   const PARTNER: readonly Role[] = ['partner'];
   const routes: GagnerRoute[] = [
+    // G06 · lettres de quartier
+    { method: 'POST', pattern: new RegExp(`${P}/lettres$`), name: 'gagner.lettres_campagne', roles: AGENT, handle: withBody(async (s, v, _p, b) => reply(await services(s).lettres.createCampaign(v, b))) },
+    { method: 'GET', pattern: new RegExp(`${P}/lettres/${ID}$`), name: 'gagner.lettres', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).lettres.letters(v, id!)) },
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/lettres/${ID}/impression$`),
+      name: 'gagner.lettres_impression',
+      roles: AGENT,
+      handle: async (s, v, [id]) => {
+        const r = await services(s).lettres.printable(v, id!);
+        if (!r.ok) return reply(r);
+        return new Response(r.value.html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'", 'x-content-type-options': 'nosniff' } });
+      },
+    },
+    { method: 'POST', pattern: new RegExp(`${P}/lettres/lettre/${ID}/deposee$`), name: 'gagner.lettre_deposee', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).lettres.deposited(v, id!)) },
     // G08 · recommandations
     { method: 'POST', pattern: new RegExp(`${P}/recommandations$`), name: 'gagner.recommandation', roles: PARTNER, handle: withBody(async (s, v, _p, b) => reply(await services(s).recommandations.recommend(v, b))) },
     { method: 'GET', pattern: new RegExp(`${P}/recommandations/mes-envois$`), name: 'gagner.recommandations_envois', roles: PARTNER, handle: async (s, v) => reply(await services(s).recommandations.mine(v)) },
