@@ -156,7 +156,8 @@ describeWithSqlite('AT10 · origine du contact dans la chaîne de captation', ()
     } as SqlDatabase;
     const content = await t.origine.contentFor(t.network, 'simulateur', 'simulateur');
     if (!content.ok) throw new Error(content.code);
-    const res = await t.call('/v1/captation/formulaire', form({ link: `${SITE}/simulateur?o=${content.contentId}` }), KEY_FORM, broken);
+    const body = form({ link: `${SITE}/simulateur?o=${content.contentId}` });
+    const res = await t.call('/v1/captation/formulaire', body, KEY_FORM, broken);
     expect(res.status).toBe(200);
     expect(await t.db.first<{ n: number }>('SELECT count(*) AS n FROM trial_outbox')).toEqual({ n: 1 });
     expect(await t.origins()).toHaveLength(0);
@@ -164,8 +165,12 @@ describeWithSqlite('AT10 · origine du contact dans la chaîne de captation', ()
     expect(errors.map((e) => e.data)).toEqual([{ rule: 'R156', error: 'TypeError' }]);
     expect(JSON.stringify(errors)).not.toContain('site-reseau');
     // Le même formulaire reçu de nouveau, base réparée : l'origine est rangée, une fois.
-    await t.call('/v1/captation/formulaire', { ...form(), submissionId: `envoi-at10-${seq}`, link: `${SITE}/simulateur?o=${content.contentId}` }, KEY_FORM);
-    expect(await t.origins()).toEqual([expect.objectContaining({ content_id: content.contentId })]);
+    await t.call('/v1/captation/formulaire', body, KEY_FORM);
+    const inbound = await t.db.all<{ id: string }>('SELECT id FROM inbound_messages');
+    expect(inbound).toHaveLength(1);
+    expect(await t.origins()).toEqual([expect.objectContaining({ inbound_id: inbound[0]!.id, content_id: content.contentId })]);
+    // Aucune seconde réponse [R18].
+    expect(await t.db.first<{ n: number }>('SELECT count(*) AS n FROM trial_outbox')).toEqual({ n: 1 });
   });
 
   it('[R156] un commentaire sous une publication connue, rangé par la chaîne, prend son origine sans signal de page', async () => {
@@ -261,5 +266,19 @@ describeWithSqlite('AT10 · pages de prix recalculées à chaque publication DVF
     await expect(job.run({ slot: 'essai' } as never)).rejects.toThrow('source en panne');
     const done = await t.db.all<{ network_id: string }>("SELECT network_id FROM price_versions WHERE status = 'complet'");
     expect(done.map((d) => d.network_id)).toEqual([[t.network, other].sort()[1]]);
+  });
+});
+
+describeWithSqlite('AT10 · un illisible n’a jamais d’origine', () => {
+  it('[R156] le même formulaire illisible reçu deux fois : aucune origine rangée', async () => {
+    const t = await world();
+    const content = await t.origine.contentFor(t.network, 'simulateur', 'simulateur');
+    if (!content.ok) throw new Error(content.code);
+    // Sans identifiant d'envoi : illisible, gardé pour l'agent.
+    const body = { firstName: 'Alix', email: 'illisible.at10@example.test', message: 'Rappel', link: `${SITE}/simulateur?o=${content.contentId}` };
+    await t.call('/v1/captation/formulaire', body, KEY_FORM);
+    await t.call('/v1/captation/formulaire', body, KEY_FORM);
+    expect((await t.db.all<{ kind: string }>('SELECT kind FROM inbound_messages')).map((r) => r.kind)).toEqual(['unreadable']);
+    expect(await t.origins()).toHaveLength(0);
   });
 });

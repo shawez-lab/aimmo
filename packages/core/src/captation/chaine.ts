@@ -155,7 +155,12 @@ export class ChaineCaptation {
     // première lecture compte), même pour un doublon dont la première lecture avait échoué [R156] ; puis la
     // qualification suit. Ni l'une ni l'autre ne retarde une réponse ni ne lève d'erreur (voir createCaptation).
     if (this.recordOrigin) {
-      for (const item of ingested.received) if (item.outcome !== 'unreadable') await this.recordOrigin(networkId, item.inboundId, hooks.origin ?? {});
+      for (const item of ingested.received) {
+        if (item.outcome === 'unreadable') continue;
+        // Un illisible reçu une seconde fois revient en doublon : sa ligne dit qu'il est illisible, il n'a pas d'origine.
+        if (item.outcome === 'duplicate' && (await this.reception.get(item.inboundId))?.kind === 'unreadable') continue;
+        await this.recordOrigin(networkId, item.inboundId, hooks.origin ?? {});
+      }
     }
     if (this.afterReply) for (const inboundId of toQualify) await this.afterReply(inboundId);
     return results;
