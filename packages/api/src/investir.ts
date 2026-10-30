@@ -156,12 +156,15 @@ async function myInvestors(s: InvestirServices, v: Viewer): Promise<Outcome> {
   const c = core(s);
   const persons = await c.acces.listPersons(v);
   if (!persons.ok) return { ok: false, rule: 'R16', code: persons.code };
-  const ids = persons.value.map((p) => p.id);
-  if (ids.length === 0) return { ok: true, value: [] };
-  const projects = await s.db.all<{ id: string; person_id: string; created_at: string }>(
-    `SELECT id, person_id, created_at FROM projects WHERE network_id = ? AND kind = 'invest' AND person_id IN (${ids.map(() => '?').join(', ')}) ORDER BY created_at DESC, id LIMIT 100`,
-    [v.networkId, ...ids],
+  // Les fiches visibles filtrent en mémoire : une liste d'identifiants liée à la requête dépasserait la limite de
+  // paramètres de la base (100) dès qu'un agent suit beaucoup de fiches.
+  const visible = new Set(persons.value.map((p) => p.id));
+  if (visible.size === 0) return { ok: true, value: [] };
+  const all = await s.db.all<{ id: string; person_id: string; created_at: string }>(
+    "SELECT id, person_id, created_at FROM projects WHERE network_id = ? AND kind = 'invest' ORDER BY created_at DESC, id",
+    [v.networkId],
   );
+  const projects = all.filter((p) => visible.has(p.person_id)).slice(0, 100);
   const names = new Map(persons.value.map((p) => [p.id, p.first_name]));
   const out = [];
   for (const p of projects) {
@@ -173,22 +176,24 @@ async function myInvestors(s: InvestirServices, v: Viewer): Promise<Outcome> {
 
 /** Les biens qu'on peut calculer : ceux du lecteur et ceux du fichier commun, dont la commune est rangée [R16]. */
 async function calculableProperties(s: InvestirServices, v: Viewer): Promise<Outcome> {
-  const rows =
-    v.role === 'agent'
-      ? await s.db.all<{ id: string; reference: string; city: string | null; price_eur: number | null; surface_m2: number | null; insee_code: string; rent_kind: string }>(
-          `SELECT p.id, p.reference, p.city, p.price_eur, p.surface_m2, c.insee_code, c.rent_kind FROM properties p JOIN property_communes c ON c.property_id = p.id
-            WHERE p.network_id = ? AND (p.agent_id = ? OR p.status IN ('available', 'under_offer')) ORDER BY p.updated_at DESC, p.id LIMIT 100`,
-          [v.networkId, v.userId],
-        )
-      : await s.db.all<{ id: string; reference: string; city: string | null; price_eur: number | null; surface_m2: number | null; insee_code: string; rent_kind: string }>(
-          `SELECT p.id, p.reference, p.city, p.price_eur, p.surface_m2, c.insee_code, c.rent_kind FROM properties p JOIN property_communes c ON c.property_id = p.id
-            WHERE p.network_id = ? ORDER BY p.updated_at DESC, p.id LIMIT 100`,
-          [v.networkId],
-        );
+  type Row = { id: string; reference: string; city: string | null; price_eur: number | null; surface_m2: number | null; insee_code: string; rent_kind: string };
+  const SELECT = 'SELECT p.id, p.reference, p.city, p.price_eur, p.surface_m2, c.insee_code, c.rent_kind FROM properties p JOIN property_communes c ON c.property_id = p.id';
+  let rows: Row[];
+  if (v.role === 'agent') {
+    // Les biens de l'agent sont lus à part : le fichier commun, même plein, ne les pousse jamais hors de la liste.
+    const own = await s.db.all<Row>(`${SELECT} WHERE p.network_id = ? AND p.agent_id = ? ORDER BY p.updated_at DESC, p.id LIMIT 200`, [v.networkId, v.userId]);
+    const shared = await s.db.all<Row>(
+      `${SELECT} WHERE p.network_id = ? AND (p.agent_id IS NULL OR p.agent_id <> ?) AND p.status IN ('available', 'under_offer') ORDER BY p.updated_at DESC, p.id LIMIT 100`,
+      [v.networkId, v.userId],
+    );
+    rows = [...own, ...shared];
+  } else {
+    rows = await s.db.all<Row>(`${SELECT} WHERE p.network_id = ? ORDER BY p.updated_at DESC, p.id LIMIT 100`, [v.networkId]);
+  }
   // Chaque bien repasse par la couche d'accès : lecteur actif, dossier d'agent valide (sinon le fichier commun seul,
   // R82), lecture ou refus écrits au journal bien par bien [R16].
   const c = core(s);
-  const seen: typeof rows = [];
+  const seen: Row[] = [];
   for (const r of rows) if ((await c.acces.readProperty(v, r.id)).ok) seen.push(r);
   return {
     ok: true,

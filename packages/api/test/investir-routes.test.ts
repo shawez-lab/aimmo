@@ -252,3 +252,25 @@ describeWithSqlite('Y09 · listes de l’écran « Investir »', () => {
   });
 });
 
+describeWithSqlite('Y09 · listes longues de l’écran « Investir »', () => {
+  it('[R16] un agent qui suit plus de 100 fiches lit ses investisseurs, et ses biens restent dans la liste malgré un fichier commun plein', async () => {
+    const t = await setup();
+    let last = '';
+    for (let i = 0; i < 120; i++) {
+      const person = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: `Fiche${i}` });
+      if (i === 119) last = (await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: person.id, kind: 'invest' })).id;
+    }
+    const list = await t.ok(t.agent, 'GET', '/investir/projets');
+    expect(list.map((x: { projectId: string }) => x.projectId)).toEqual([last]);
+    const own = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'MIEN', kind: 'home', city: 'X', priceEur: 100_000, surfaceM2: 40, rooms: 2, status: 'draft' });
+    await t.ok(t.agent, 'POST', `/investir/biens/${own.id}/commune`, { inseeCode: '99001', rentKind: 'apartment' });
+    for (let i = 0; i < 105; i++) {
+      const p = await t.store.createProperty({ networkId: t.network.id, agentId: t.other.userId, reference: `C${i}`, kind: 'home', city: 'X', priceEur: 120_000, surfaceM2: 50, rooms: 2, status: 'available' });
+      await t.ok(t.dir, 'POST', `/investir/biens/${p.id}/commune`, { inseeCode: '99002', rentKind: 'house' });
+    }
+    await t.db.run("UPDATE properties SET updated_at = '2000-01-01T00:00:00.000Z' WHERE id = ?", [own.id]);
+    const biens = await t.ok(t.agent, 'GET', '/investir/biens');
+    expect(biens.some((b: { propertyId: string }) => b.propertyId === own.id)).toBe(true);
+    expect(biens.length).toBe(101);
+  });
+});
