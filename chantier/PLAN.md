@@ -1766,7 +1766,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE07 · Étapes de la cession, délais calculés, étapes bloquantes
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#207, empilée sur #205), à fusionner après CE06 dès H35 ; relecture forte 1 P0 et 3 P1 corrigés.
 - Décidé (2026-10-29) : périmètre de sauvegarde rangé par commune (lecture prudente : toute la commune), commune non rangée = préemption à saisir, bloquante ; préemption exercée = cession jamais prête ; dernier jour avancé au jour ouvrable précédent pour les obligations (salariés, publications), reporté au suivant pour les délais subis (commune, oppositions) ; table du séquestre nommée `business_transfer_third_parties` (R107 interdit toute table de fonds) ; 250 salariés et plus : hors du régime, sans objet.
 - Qui : Claude · Relecture : forte · Dépend de : CE01
@@ -1776,7 +1776,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE08 · Vigilance renforcée de la cession : bénéficiaires effectifs, origine des fonds
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#208, empilée sur #207), à fusionner après CE07 dès H35 ; relecture forte 2 P1 corrigés ; Codex 1 P0 et 1 P2 corrigés (déclaration « société » sur les fiches réunies, demande liée à l'acquéreur en vigueur), relecture redemandée.
 - Décidé (2026-10-29) : alertes dans leurs tables (`business_transfer_watch*`, hors du registre de L04 que seul L04 lit), une par dossier et par acquéreur, décisions de L04 ; personne morale rangée telle ou au moindre signe de société ; la liste du responsable de L04 les montrera au branchement (CE10).
 - Qui : Claude · Relecture : forte · Dépend de : CE07
@@ -1786,7 +1786,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien (H29 pour le responsable réel).
 
 ### CE09 · Routes de M16 et parcours de 10 demandes tests
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#209, empilée sur #208), à fusionner après CE08 dès H35 ; relecture forte 1 P1 corrigé (phrases refusées de l'IA rendues) ; Codex 1 P1 corrigé (test gardé par SQLite), relecture redemandée.
 - Décidé (2026-10-29) : `commercesRoutes()` pour les rôles du réseau et `dossierReaderRoutes()` pour le lecteur sans compte (jeton, adresse, code) ; le lecteur ne lit jamais pourquoi la porte est fermée.
 - Qui : Claude · Relecture : forte · Dépend de : CE01 à CE08
@@ -1796,7 +1796,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE10 · Branchement de M16 dans le socle
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#210, empilée sur #209), à fusionner après CE09 dès H35 ; relecture forte 2 P1 de tests corrigés ; pour un usage réel : H38 (stockage des documents) et H39 (`DOSSIER_LINK_BASE`).
 - Décidé (2026-10-29) : sans `DOSSIER_LINK_BASE`, l'envoi du dossier répond 503 ; sans stockage, le dossier ne sert que la fiche ; les routes du lecteur passent avant le contrôle des clés, POST seulement ; tâche quotidienne `commerces.cession_quotidienne` à 6 h.
 - Qui : Claude · Relecture : forte · Dépend de : CE09
@@ -1806,7 +1806,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE11 · Écran « Commerces » dans l'application
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#211, empilée sur #210), à fusionner après CE10 dès H35 ; relecture forte sans P0 ni P1 ; M16 complet côté voie 1 (CE01 à CE11 en onze propositions empilées).
 - Décidé (2026-10-30) : trois lectures ajoutées pour l'écran (`GET /commerces`, `/commerces/:id/demandes`, `/commerces/:id/cession`) ; la lecture de l'état des demandes n'écrit pas de refus au journal ; script posé avant celui de « Louer ».
 - Qui : Claude · Relecture : forte · Dépend de : CE10
