@@ -35,6 +35,10 @@ export * as conformite from './conformite/index.ts';
 export * as reseau from './reseau/index.ts';
 // M15 sous son propre nom, comme M14 (W10).
 export * as location from './location/index.ts';
+// M18 sous son propre nom, comme M15 (U09).
+export * as partenaires from './partenaires/index.ts';
+// M17 sous son propre nom, comme M18 (Y08).
+export * as investir from './investir/index.ts';
 // M16 sous son propre nom, comme M15 (CE10).
 export * as commerces from './commerces/index.ts';
 export { hashEntry } from './journal/hash.ts';
