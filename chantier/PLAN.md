@@ -1333,8 +1333,8 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J14 · Écrans de M14 dans l'application
-- Statut : en cours
-- Prise par la voie 1 le 2026-10-30 : la voie 2 est sur M01, J14 restait sans preneur.
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#218), prise par la voie 1 (voie 2 sur M01). Décidé : routes `mon-referent` et `mon-bac-a-sable` pour l'agent lui-même, ouvertes avec un dossier incomplet ; `academie` dit les modules faits de l'agent ; un 403 R82 sur la journée n'efface plus la clé (P1 de la relecture forte) ; `app.js` servi sans ses lignes de commentaire pour tenir les 48 Ko. Pour ajouter une pièce depuis l'écran, il faudra un dépôt de fichier comme X12 (non fait).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : J12 ; après la fusion de #129 (K09, voie 1), qui modifie le même fichier `packages/api/app/fichiers.ts`
 - Cahier : M14 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : dans l'application, les écrans « Mon intégration » (dossier d'agent pièce par pièce, référent, premier parcours), « Académie » (parcours, modules faits, compteur des heures) et, pour la direction, « Candidatures » (ordre d'arrivée, fiche d'entretien, décision nommée), lus par les routes de J12.
