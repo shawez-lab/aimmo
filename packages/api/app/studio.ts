@@ -118,7 +118,8 @@ globalThis.AIMMO_STUDIO = function (t) {
     if (res.status === 403 || res.status === 404) return 'Ce bien n’est pas dans vos droits.';
     return (res.body && NO[res.body.code]) || fallback;
   }
-  function forget() { if (photo && photo.url) { try { URL.revokeObjectURL(photo.url); } catch (e) { /* rien */ } } photo = null; }
+  function forget() { if (photo) [photo.url, photo.originalUrl].forEach(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) { /* rien */ } } }); photo = null; }
+  function safe(n) { return String(n).replace(/[^A-Za-z0-9._-]/g, '_'); }
   function wipe() { forget(); clear(body()); state(''); $('studio-titre').textContent = 'Studio'; cur = null; }
   function base() { return '/v1/studio/biens/' + encodeURIComponent(cur.id); }
   function open(id, reference) {
@@ -291,7 +292,7 @@ globalThis.AIMMO_STUDIO = function (t) {
   }
   function photoPart() {
     var b = block('Corriger une photo sur ce téléphone');
-    b.appendChild(el('p', 'Seulement des corrections d’ensemble : exposition, balance des blancs, contraste, verticales, netteté, recadrage. Aucune retouche locale, aucun défaut effacé ; l’original reste sur ce téléphone.', 'doux'));
+    b.appendChild(el('p', 'Seulement des corrections d’ensemble : exposition, balance des blancs, contraste, verticales, netteté, recadrage. Aucune retouche locale, aucun défaut effacé ; enregistrez toujours l’original avec la photo corrigée.', 'doux'));
     var pick = field(b, 'studio-photo-fichier', 'Prendre ou choisir une photo');
     pick.setAttribute('type', 'file');
     pick.setAttribute('accept', 'image/*');
@@ -327,7 +328,7 @@ globalThis.AIMMO_STUDIO = function (t) {
         return Promise.all([digest(buf), createImageBitmap(file)]);
       }).then(function (both) {
         if (mine !== seq) return;
-        photo = { name: file.name || 'photo.jpg', originalSha256: both[0], bitmap: both[1], url: null };
+        photo = { name: file.name || 'photo.jpg', originalSha256: both[0], bitmap: both[1], url: null, originalUrl: URL.createObjectURL(file) };
         draw(canvas, photo.bitmap, []);
         local.textContent = 'Photo prête : réglez, puis préparez la photo corrigée.';
       }, function () { if (mine === seq) local.textContent = 'Cette photo ne se lit pas sur ce téléphone.'; });
@@ -349,17 +350,25 @@ globalThis.AIMMO_STUDIO = function (t) {
           clear(out);
           out.appendChild(el('h4', 'Ce que dira le certificat'));
           var ul = el('ul', null, 'liste');
-          if (!ops.length) ul.appendChild(el('li', 'Aucune correction : la photo est l’original.'));
+          if (!ops.length) ul.appendChild(el('li', 'Aucune correction : la photo publiée sera l’original, tel quel.'));
           ops.forEach(function (o) { ul.appendChild(el('li', say(o) + ', sur toute l’image')); });
           out.appendChild(ul);
           out.appendChild(el('p', 'Empreinte de l’original : ' + held.originalSha256, 'doux'));
-          out.appendChild(el('p', 'Empreinte de la photo corrigée : ' + (ops.length ? sha : held.originalSha256), 'doux'));
-          held.url = URL.createObjectURL(blob);
-          var a = el('a', 'Enregistrer la photo corrigée sur ce téléphone');
-          a.setAttribute('href', held.url);
-          a.setAttribute('download', 'corrigee-' + held.name.replace(/[^A-Za-z0-9._-]/g, '_'));
-          out.appendChild(a);
-          local.textContent = 'Photo corrigée prête. Rien n’a quitté ce téléphone.';
+          // L'original, tel qu'il a été pris : toujours proposé, pour qu'il reste gardé [R130].
+          var o = el('a', 'Enregistrer l’original sur ce téléphone');
+          o.setAttribute('href', held.originalUrl);
+          o.setAttribute('download', 'original-' + safe(held.name));
+          out.appendChild(o);
+          if (ops.length) {
+            // L'empreinte dite est celle du fichier enregistré, à l'octet près.
+            out.appendChild(el('p', 'Empreinte de la photo corrigée : ' + sha, 'doux'));
+            held.url = URL.createObjectURL(blob);
+            var a = el('a', 'Enregistrer la photo corrigée sur ce téléphone');
+            a.setAttribute('href', held.url);
+            a.setAttribute('download', 'corrigee-' + safe(held.name));
+            out.appendChild(a);
+          }
+          local.textContent = (ops.length ? 'Photo corrigée prête' : 'Aucune correction') + '. Rien n’a quitté ce téléphone.';
         });
       }, 'image/jpeg', 0.92);
     }));

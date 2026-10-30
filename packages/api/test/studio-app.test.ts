@@ -123,7 +123,7 @@ async function run(answers: Record<string, Answer> = {}) {
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
     crypto: globalThis.crypto,
     createImageBitmap: async () => ({ width: 40, height: 30 }),
-    URL: { createObjectURL: () => 'blob:aimmo/photo', revokeObjectURL: () => {} },
+    URL: { createObjectURL: (x: { arrayBuffer: unknown; name?: string }) => (x.name ? 'blob:aimmo/file' : 'blob:aimmo/blob'), revokeObjectURL: () => {} },
   };
   runInNewContext(JS, context);
   listeners.DOMContentLoaded!();
@@ -219,8 +219,25 @@ describe('X11 · écran « Studio » de l’application', () => {
     // L'empreinte de l'original, calculée sur le téléphone (SHA-256 des octets 1, 2, 3).
     expect(text).toContain('Empreinte de l’original : 039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81');
     expect(text).toContain('Rien n’a quitté ce téléphone.');
-    const link = t.body().all().find((e) => e.tagName === 'a')!;
-    expect(link.attributes).toEqual({ href: 'blob:aimmo/photo', download: 'corrigee-IMG_1.jpg' });
+    // L'original et la photo corrigée, chacun avec son lien ; l'empreinte dite est celle du fichier corrigé (9, 9, 9).
+    const links = t.body().all().filter((e) => e.tagName === 'a');
+    expect(links.map((l) => [l.textContent, l.attributes.download])).toEqual([
+      ['Enregistrer l’original sur ce téléphone', 'original-IMG_1.jpg'],
+      ['Enregistrer la photo corrigée sur ce téléphone', 'corrigee-IMG_1.jpg'],
+    ]);
+    expect(links[0]!.attributes.href).toBe('blob:aimmo/file');
+    expect(links[1]!.attributes.href).toBe('blob:aimmo/blob');
+    const corrected = Buffer.from(await crypto.subtle.digest('SHA-256', new Uint8Array([9, 9, 9]))).toString('hex');
+    expect(text).toContain('Empreinte de la photo corrigée : ' + corrected);
+    // Sans correction : seul l'original est proposé, aucune copie réencodée annoncée comme l'original.
+    for (const k of ['Exposition (IL)', 'Verticales redressées (°)']) t.input(k).value = k.startsWith('Exp') ? '0' : '0';
+    t.input('Recadrage (% gardés)').value = '100';
+    await t.click(t.byText('Préparer la photo corrigée'));
+    await new Promise((r) => setTimeout(r, 20));
+    const plain = t.body().all().filter((e) => e.tagName === 'a');
+    expect(plain.map((l) => l.attributes.download)).toEqual(['original-IMG_1.jpg']);
+    expect(t.body().textContent).not.toContain('Empreinte de la photo corrigée');
+    expect(t.body().textContent).toContain('Aucune correction : la photo publiée sera l’original, tel quel.');
     expect(t.drawn.images).toBeGreaterThan(1);
     expect(t.drawn.rotate[t.drawn.rotate.length - 1]).toBeCloseTo((-1.5 * Math.PI) / 180);
     // Aucune demande au serveur pendant toute la correction.
@@ -307,11 +324,26 @@ describe('X11 · écran « Studio » de l’application', () => {
     expect(JSON.parse(sent[0]!.body!)).toEqual({ targets: [{ channel: 'instagram', account: 'reseau' }] });
   });
 
-  it('[R16] un bien hors des droits : rien n’est montré ; une réponse arrivée après un autre choix est ignorée', async () => {
+  it('[R16] un bien hors des droits : rien n’est montré', async () => {
     const t = await run({ 'GET /v1/studio/biens/b1': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
     await t.openB1();
     expect(t.state()).toBe('Ce bien n’est pas dans vos droits.');
     expect(t.body().textContent).not.toContain('Guide de prise de vue');
+  });
+
+  it('une réponse arrivée après un autre choix est ignorée', async () => {
+    const t = await run();
+    await t.openB1();
+    let release: () => void = () => {};
+    const late = STUDIO['GET /v1/studio/biens/b1/guide']!;
+    t.table['GET /v1/studio/biens/b1/guide'] = () => new Promise<void>((r) => (release = r)).then(late);
+    await t.click(t.byText('Guide'));
+    await t.click(t.byText('Plan'));
+    expect(t.body().textContent).toContain('Plan indicatif, non contractuel');
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(t.body().textContent).not.toContain('Guide de prise de vue');
+    expect(t.body().textContent).toContain('Plan indicatif, non contractuel');
   });
 
   it('[R201] l’écran est chargé à la demande, une seule fois, jamais gardé sur l’appareil ; la page reste accessible', async () => {
