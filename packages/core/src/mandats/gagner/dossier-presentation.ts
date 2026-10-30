@@ -39,6 +39,9 @@ export const SALE_PLAN = Object.freeze([
 ]);
 const WINDOW_DAYS = 365;
 const DAY = 86_400_000;
+/** Les rendez-vous montrés à l'écran : de trois heures avant maintenant à quinze jours après. */
+export const UPCOMING_DAYS = 15;
+const UPCOMING_BEFORE_MS = 3 * 3_600_000;
 
 /**
  * Une promesse de prix ou de délai, ou un chiffre : jamais dans un texte du dossier [R141]. Liste fermée de tournures,
@@ -198,6 +201,26 @@ export class DossierPresentation {
     }
     all.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
     return { kept: all.filter((c) => c.kept).length, total: all.length, proof: all.map((c) => ({ day: day(c.at), kept: c.kept })) };
+  }
+
+  /**
+   * Les rendez-vous d'estimation à venir de l'agent, pour ouvrir leur dossier depuis l'application (G13) : prévus, de
+   * trois heures avant maintenant à quinze jours après, dans l'ordre des heures. Seuls l'heure, la référence et la
+   * commune du bien : aucune donnée du client [R16, R46]. La lecture est au journal, sans donnée [R13].
+   */
+  async upcoming(viewer: Viewer): Promise<DossierResult<{ appointmentId: string; startAt: string; endAt: string; reference: string | null; city: string | null }[]>> {
+    if (viewer.role !== 'agent') return this.refused(viewer, 'role');
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refused(viewer, blocked);
+    const at = this.now().getTime();
+    const rows = await this.db.all<{ id: string; start_at: string; end_at: string; reference: string | null; city: string | null }>(
+      `SELECT a.id, a.start_at, a.end_at, p.reference, p.city FROM appointments a LEFT JOIN properties p ON p.id = a.property_id AND p.network_id = a.network_id
+        WHERE a.network_id = ? AND a.agent_id = ? AND a.kind = 'estimation' AND a.status = 'booked' AND a.start_at >= ? AND a.start_at <= ?
+        ORDER BY a.start_at, a.id`,
+      [viewer.networkId, viewer.userId, new Date(at - UPCOMING_BEFORE_MS).toISOString(), new Date(at + UPCOMING_DAYS * DAY).toISOString()],
+    );
+    await appendEvent(this.journal, { type: 'dossier_presentation.rendez_vous_lus', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R16', count: rows.length } }, this.now);
+    return { ok: true, value: rows.map((r) => ({ appointmentId: r.id, startAt: r.start_at, endAt: r.end_at, reference: r.reference, city: r.city })) };
   }
 
   /** Le dossier d'un rendez-vous d'estimation de l'agent ; la lecture est au journal, sans donnée [R16, R13]. */

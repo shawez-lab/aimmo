@@ -75,6 +75,8 @@ const SAMPLES: Record<string, string> = {
   'gagner.dossier_page': '/gagner/rendez-vous/r1/dossier/page',
   'gagner.engagement': '/gagner/engagements',
   'gagner.lettres_campagne': '/gagner/lettres',
+  'gagner.lettres_liste': '/gagner/lettres',
+  'gagner.rendez_vous': '/gagner/rendez-vous',
   'gagner.lettres': '/gagner/lettres/c1',
   'gagner.lettres_impression': '/gagner/lettres/c1/impression',
   'gagner.lettre_deposee': '/gagner/lettres/lettre/l1/deposee',

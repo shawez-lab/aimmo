@@ -6,6 +6,7 @@ import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS } from './louer.ts';
 import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './investir.ts';
 import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
+import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
 
 /** Les métiers et domaines de M18, tels que l'écran « Partenaires » les nomme (U11). */
 const TRADE_NAMES = PARTNER_TRADES.map((t) => ({ trade: t.trade, label: t.label }));
@@ -77,7 +78,7 @@ export const INDEX_HTML = `<!doctype html>
 <p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
 <button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
 </section>
-${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
+${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
 <h3 id="titre-chiffres-accueil">Mes chiffres</h3>
 <p class="etat">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
 <button id="chiffres-ouvrir" type="button" class="secondaire">Voir mes chiffres</button>
@@ -127,7 +128,7 @@ ${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="blo
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
-${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}<section id="chiffres" hidden>
+${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}${GAGNER_HTML}<section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
 <div class="periodes" role="group" aria-label="Période">
@@ -240,7 +241,7 @@ legend { font-weight: 600; margin-bottom: var(--e-2); }
 #reseau-export-jour { margin-bottom: var(--e-2); }
 #studio .periodes { flex-wrap: wrap; }
 #studio canvas { max-width: 100%; height: auto; }
-` + LOUER_CSS + INVESTIR_CSS + CONFORMITE_CSS;
+` + LOUER_CSS + INVESTIR_CSS + CONFORMITE_CSS + GAGNER_CSS;
 
 /**
  * Le script de la page. Tout texte venu de l'API est posé avec `textContent`, jamais comme du code. La clé ne passe
@@ -543,6 +544,7 @@ export const APP_JS = `'use strict';
     wipeConformite();
     wipeCommerces();
     wipeStudio();
+    wipeGagner();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
   function button(text, onClick) {
@@ -1670,7 +1672,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}
+${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}${GAGNER_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1687,7 +1689,7 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'studio'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'studio', 'gagner'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1823,6 +1825,7 @@ ${LOUER_JS}
       wipeLouer();
       wipeInvestir();
       wipeCommerces();
+      wipeGagner();
       show('accueil');
       day(currentKey, session);
     }
@@ -1839,6 +1842,8 @@ ${LOUER_JS}
     $('commerces-retour').addEventListener('click', function () { if (commercesInside()) openCommerces(''); else home(); });
     $('commerces-ouvrir').addEventListener('click', function () { openCommerces(''); });
     $('studio-retour').addEventListener('click', function () { wipeStudio(); home(); });
+    $('gagner-retour').addEventListener('click', function () { if (gagnerScreen && gagnerScreen.inside()) openGagner(); else { wipeGagner(); home(); } });
+    $('gagner-ouvrir').addEventListener('click', function () { openGagner(); });
     $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', home);

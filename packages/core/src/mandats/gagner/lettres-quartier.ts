@@ -309,6 +309,49 @@ export class LettresQuartier {
     return { ok: true, value: rows.map((r) => ({ letterId: r.id, number: r.street_number, street: r.street, postcode: r.postcode, city: r.city, distanceM: Number(r.distance_m), depositedAt: r.deposited_at })) };
   }
 
+  /**
+   * Ce que l'écran « Gagner des mandats » montre à l'agent (G13) : ses campagnes, chacune avec le compte de ses lettres
+   * et de celles déjà déposées, et les biens qu'il suit qui peuvent en ouvrir une, avec les seuls événements permis : un
+   * mandat signé et jamais annulé au registre, ou une vente rapportée [R140]. Aucune adresse de lettre n'est rendue ici ;
+   * la lecture est au journal, sans donnée [R16, R13].
+   */
+  async overview(viewer: Viewer): Promise<
+    LetterResult<{
+      campaigns: { campaignId: string; propertyId: string; reference: string; trigger: LetterTrigger; recipient: LetterRecipient; createdAt: string; letters: number; deposited: number }[];
+      properties: { propertyId: string; reference: string; city: string | null; triggers: LetterTrigger[] }[];
+    }>
+  > {
+    if (viewer.role !== 'agent') return this.refusedAccess(viewer, 'role');
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refusedAccess(viewer, blocked);
+    const campaigns = await this.db.all<{ id: string; property_id: string; reference: string; trigger: LetterTrigger; recipient: LetterRecipient; created_at: string; letters: number; deposited: number }>(
+      `SELECT c.id, c.property_id, p.reference, c.trigger, c.recipient, c.created_at,
+              (SELECT count(*) FROM neighbourhood_letters l WHERE l.campaign_id = c.id) AS letters,
+              (SELECT count(*) FROM neighbourhood_letters l WHERE l.campaign_id = c.id AND l.deposited_at IS NOT NULL) AS deposited
+         FROM neighbourhood_campaigns c JOIN properties p ON p.id = c.property_id AND p.network_id = c.network_id
+        WHERE c.network_id = ? AND c.agent_id = ? ORDER BY c.created_at DESC, c.id`,
+      [viewer.networkId, viewer.userId],
+    );
+    const properties = await this.db.all<{ id: string; reference: string; city: string | null; mandat: number; vente: number }>(
+      `SELECT p.id, p.reference, p.city,
+              EXISTS (SELECT 1 FROM mandates m WHERE m.property_id = p.id AND m.network_id = p.network_id
+                        AND NOT EXISTS (SELECT 1 FROM mandate_register r WHERE r.mandate_id = m.id AND r.kind = 'annulation')) AS mandat,
+              EXISTS (SELECT 1 FROM sale_files f JOIN sale_file_closings c ON c.file_id = f.id WHERE f.property_id = p.id AND f.network_id = p.network_id) AS vente
+         FROM properties p WHERE p.network_id = ? AND p.agent_id = ? ORDER BY p.reference, p.id`,
+      [viewer.networkId, viewer.userId],
+    );
+    await appendEvent(this.journal, { type: 'lettres_quartier.liste_lue', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R16', campaigns: campaigns.length } }, this.now);
+    return {
+      ok: true,
+      value: {
+        campaigns: campaigns.map((c) => ({ campaignId: c.id, propertyId: c.property_id, reference: c.reference, trigger: c.trigger, recipient: c.recipient, createdAt: c.created_at, letters: Number(c.letters), deposited: Number(c.deposited) })),
+        properties: properties
+          .map((p) => ({ propertyId: p.id, reference: p.reference, city: p.city, triggers: LETTER_TRIGGERS.filter((t) => Number(t === 'mandat' ? p.mandat : p.vente) === 1) }))
+          .filter((p) => p.triggers.length > 0),
+      },
+    };
+  }
+
   /** L'agent note qu'il a déposé une lettre ; une fois. */
   async deposited(viewer: Viewer, letterId: string): Promise<LetterResult<{ depositedAt: string }>> {
     if (viewer.role !== 'agent') return this.refusedAccess(viewer, 'role');
