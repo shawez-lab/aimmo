@@ -2200,7 +2200,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT11 · Branchement des routes de M01 dans le socle
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AT09, AT10
 - Cahier : M01 ; Architecture technique.
 - Objectif : brancher les routes et pages publiques de AT09 dans `app.ts`, avec le `robots.txt` du site de l'agent qui déclare son plan (AT04).
