@@ -84,6 +84,8 @@ const CHANNEL_SOURCES: Readonly<Record<string, { kind: MandateSource; detail: st
   facebook: { kind: 'social', detail: null },
   whatsapp: { kind: 'other', detail: 'WhatsApp' },
   email: { kind: 'other', detail: 'mail reçu' },
+  // Une recommandation d'un client (F01) ou d'un partenaire (G08) : la source suit jusqu'au mandat [R38].
+  recommandation: { kind: 'referral', detail: null },
 });
 
 const DETAIL_MAX = 80;
