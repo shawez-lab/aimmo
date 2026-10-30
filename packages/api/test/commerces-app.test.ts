@@ -1,7 +1,8 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { htmlProblems } from '../../core/src/design/audit.ts';
-import { AGENT_APP_FILES } from '../src/agent-app.ts';
+import { COMMERCES_SCRIPT } from '../app/commerces.ts';
+import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
 // Tout est inventé : commerces, repreneurs, montants, clé de test.
@@ -65,7 +66,7 @@ async function run(answers: Record<string, Answer> = {}) {
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   const calls: { method: string; url: string; body?: string; auth: string | undefined }[] = [];
   const table: Record<string, Answer> = { ...BASE, ...answers };
-  runInNewContext(JS, {
+  const context: Record<string, unknown> = {
     document,
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
     fetch: (url: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
@@ -75,7 +76,8 @@ async function run(answers: Record<string, Answer> = {}) {
       return a ? a() : Promise.reject(new TypeError('hors ligne'));
     },
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
-  });
+  };
+  runInNewContext(JS, context);
   listeners.DOMContentLoaded!();
   await settle();
   const body = () => els['commerces-corps']!;
@@ -91,11 +93,21 @@ async function run(answers: Record<string, Answer> = {}) {
     if (!l) throw new Error(`libellé absent : ${label}`);
     return body().all().find((e) => e.attributes.id === l.attributes.for)!;
   };
+  // Le script chargé à la demande : celui que le navigateur ferait tourner, dans la même page.
+  const scripts = () => els.commerces!.children.filter((e) => e.tagName === 'script');
+  const loadScript = async () => {
+    const s = scripts();
+    expect(s.map((e) => e.attributes.src)).toEqual(['/app/commerces.js']);
+    runInNewContext(COMMERCES_SCRIPT, context);
+    s[0]!.listeners.load!({});
+    await settle();
+  };
   const openB1 = async () => {
     await click(els['commerces-ouvrir']);
+    await loadScript();
     await click(byText('Ouvrir', 0));
   };
-  return { els, calls, table, byText, click, input, body, state, openB1 };
+  return { els, calls, table, byText, click, input, body, state, openB1, scripts, loadScript };
 }
 
 describe('CE11 · écran « Commerces » de l’application', () => {
@@ -117,8 +129,7 @@ describe('CE11 · écran « Commerces » de l’application', () => {
       expect(c.auth).toBe(`Bearer ${KEY}`);
       expect(c.url).not.toContain(KEY);
     }
-    const screenJs = JS.slice(JS.indexOf('M16 : l'), JS.indexOf('M15 : l'));
-    const routes = [...screenJs.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
+    const routes = [...COMMERCES_SCRIPT.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
     expect(routes.length).toBeGreaterThan(3);
     for (const r of routes) expect(r.startsWith('/v1/commerces'), r).toBe(true);
   });
@@ -165,6 +176,32 @@ describe('CE11 · écran « Commerces » de l’application', () => {
     const u = await run({ 'GET /v1/commerces/b1/public': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
     await u.openB1();
     expect(u.state()).toBe('Ce commerce n’est pas dans vos droits.');
+    expect(u.body().textContent).toBe('');
+  });
+
+  it('[R201] l’écran est chargé à la demande, une seule fois, et jamais gardé sur l’appareil', async () => {
+    const t = await run();
+    expect(t.scripts()).toHaveLength(0);
+    // Le code de l'écran n'est pas dans le script de l'application que reçoit chaque agent.
+    expect(JS).not.toContain('Demandes des repreneurs');
+    expect(AGENT_APP_SHELL).not.toContain('/app/commerces.js');
+    const r = handleAgentApp(new Request('https://aimmo.example.test/app/commerces.js'))!;
+    expect(r.status).toBe(200);
+    expect(await r.text()).toBe(COMMERCES_SCRIPT);
+    await t.openB1();
+    expect(t.body().textContent).toContain('Demandes des repreneurs');
+    // Retour à la liste puis nouvelle ouverture : le script n'est pas chargé une deuxième fois.
+    await t.click(t.els['commerces-retour']);
+    await t.click(t.els['commerces-retour']);
+    await t.click(t.els['commerces-ouvrir']);
+    expect(t.scripts()).toHaveLength(1);
+    expect(t.body().textContent).toContain('CE-1');
+    // Hors réseau au chargement : l'écran le dit, rien n'est montré.
+    const u = await run();
+    await u.click(u.els['commerces-ouvrir']);
+    u.scripts()[0]!.listeners.error!({});
+    await new Promise((r) => setTimeout(r, 0));
+    expect(u.state()).toBe('Pas de réseau. Réessayez dans un moment.');
     expect(u.body().textContent).toBe('');
   });
 

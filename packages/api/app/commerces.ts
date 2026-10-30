@@ -47,9 +47,55 @@ export const COMMERCES_HTML = `<section id="commerces" hidden>
 </section>
 `;
 
-/** Le script de l'écran : posé dans le script de l'application, il en reprend les outils (`el`, `send`, `field`…). */
+/**
+ * Le chargeur posé dans le script de l'application : l'écran lui-même est servi à part (`/app/commerces.js`), chargé une
+ * seule fois et seulement quand l'agent l'ouvre, pour que l'application tienne son budget [R201]. Il n'est jamais gardé
+ * sur l'appareil.
+ */
 export const COMMERCES_JS = `
-  /* ---------- M16 : l'écran « Commerces » (CE11). Rien que ce que l'API rend à ce lecteur [R110, R16]. ---------- */
+  /* ---------- M16 : l'écran « Commerces » (CE11), chargé à la demande [R110, R16, R201]. ---------- */
+  var commercesScreen = null;
+  function commercesInside() { return commercesScreen ? commercesScreen.inside() : false; }
+  function wipeCommerces() {
+    if (commercesScreen) { commercesScreen.wipe(); return; }
+    clear($('commerces-corps'));
+    $('commerces-etat').textContent = '';
+    $('commerces-titre').textContent = 'Commerces';
+  }
+  function openCommerces(message) {
+    if (!currentKey) return Promise.resolve(false);
+    if (commercesScreen) return commercesScreen.open(message);
+    session += 1;
+    var mine = session;
+    wipeCommerces();
+    show('commerces');
+    $('commerces-etat').textContent = 'Chargement…';
+    return new Promise(function (resolve) {
+      var script = document.createElement('script');
+      script.setAttribute('src', '/app/commerces.js');
+      script.addEventListener('load', function () {
+        var make = globalThis.AIMMO_COMMERCES;
+        try { delete globalThis.AIMMO_COMMERCES; } catch (e) { /* rien à retirer */ }
+        if (mine !== session || typeof make !== 'function') { resolve(false); return; }
+        commercesScreen = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, show: show, ID: ID, key: function () { return currentKey; }, session: function () { return session; }, bump: function () { session += 1; return session; } });
+        resolve(commercesScreen.open(message));
+      });
+      script.addEventListener('error', function () {
+        if (mine === session) $('commerces-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
+        resolve(false);
+      });
+      $('commerces').appendChild(script);
+    });
+  }
+`;
+
+/**
+ * Le script de l'écran, servi à part (`/app/commerces.js`) : il reçoit les outils de l'application (`el`, `send`,
+ * `field`…) et ne garde aucune donnée. Il ne lit et n'écrit que par les routes `/v1/commerces` [R16].
+ */
+export const COMMERCES_SCRIPT = `'use strict';
+globalThis.AIMMO_COMMERCES = function (t) {
+  var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
   var CE_ACT = ${JSON.stringify(ACTIVITY_LABEL)};
   var CE_STEPS = ${JSON.stringify(STEP_LABELS)};
   var CE_STATUS = ${JSON.stringify(STATUS_LABELS)};
@@ -69,8 +115,8 @@ export const COMMERCES_JS = `
     return b;
   }
   function openCommerces(message) {
-    if (!currentKey) return Promise.resolve(false);
-    session += 1;
+    if (!t.key()) return Promise.resolve(false);
+    t.bump();
     wipeCommerces();
     show('commerces');
     ceState('Chargement…');
@@ -106,9 +152,8 @@ export const COMMERCES_JS = `
   }
   var ceKind = null;
   function openCommerce(id, title, kind, message) {
-    if (!currentKey || !ID.test(id)) return Promise.resolve(false);
-    session += 1;
-    var mine = session;
+    if (!t.key() || !ID.test(id)) return Promise.resolve(false);
+    var mine = t.bump();
     clear($('commerces-corps'));
     ceId = id;
     ceKind = kind;
@@ -118,7 +163,7 @@ export const COMMERCES_JS = `
     var base = '/v1/commerces/' + encodeURIComponent(id);
     var reads = ['/public', '/estimations', '/presentation', '/demandes', '/ouvertures', '/cession'].map(function (p) { return send(base + p, 'GET'); });
     return Promise.all(reads).then(function (all) {
-      if (mine !== session || all.some(function (x) { return x.gone; })) return false;
+      if (mine !== t.session() || all.some(function (x) { return x.gone; })) return false;
       if (all[0].offline) { ceState('Pas de réseau. Réessayez dans un moment.'); return false; }
       if (!all[0].ok) { ceState(all[0].status === 403 ? 'Ce commerce n’est pas dans vos droits.' : 'Indisponible pour le moment. Réessayez plus tard.'); return false; }
       var d = all.map(function (x) { return x.ok ? x.body.data : null; });
@@ -183,9 +228,9 @@ export const COMMERCES_JS = `
       if (r.open && ID.test(r.personId)) {
         var proof = field(li, 'ce-accord-' + i, 'Accord pour recevoir le lien par mail (où, quand)', 'input');
         li.appendChild(button('Envoyer le dossier', function () {
-          var t = String(proof.value || '').trim();
-          if (!t) { ceState('Notez d’abord l’accord du repreneur.'); return; }
-          ceAct(base + '/dossiers', { personId: r.personId, consentProof: t }, 'Le dossier n’est pas parti.', 'Dossier envoyé par le contrôle central, en mode essai.');
+          var said = String(proof.value || '').trim();
+          if (!said) { ceState('Notez d’abord l’accord du repreneur.'); return; }
+          ceAct(base + '/dossiers', { personId: r.personId, consentProof: said }, 'Le dossier n’est pas parti.', 'Dossier envoyé par le contrôle central, en mode essai.');
         }));
       }
       ul.appendChild(li);
@@ -212,4 +257,6 @@ export const COMMERCES_JS = `
     b.appendChild(ol);
     b.appendChild(el('p', v.ready ? 'Cession prête.' : 'Étapes bloquantes à finir avant la cession.', v.ready ? 'fait' : 'doux'));
   }
+  return { open: openCommerces, wipe: wipeCommerces, inside: function () { return ceId !== null; } };
+};
 `;
