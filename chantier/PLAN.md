@@ -2080,7 +2080,8 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G13 · Écran « Gagner des mandats » dans l'application
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#216). Décidé : deux lectures ajoutées pour l'écran, `GET /v1/gagner/lettres` (campagnes avec leurs comptes, biens qui peuvent en ouvrir une) et `GET /v1/gagner/rendez-vous` (estimations prévues de 3 h avant à 15 jours après, sans donnée du client) ; contrôle `promisesMandates` (R145) passé sur tous les textes de l'application ; lettres et dossier téléchargés avec la clé dans l'en-tête. Relecture forte sans P0 ni P1 ; Codex à sa limite d'usage, fusion sans lui ; vérification locale verte (2108 tests).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : G11, X11
 - Cahier : M20 ; exigence de design (protocole, section 9).
 - Objectif : lettres à préparer et à noter déposées, dossier de présentation à ouvrir avant un rendez-vous, recommandations, relances à valider, depuis l'application de l'agent.
