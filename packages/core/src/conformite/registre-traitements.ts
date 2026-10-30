@@ -605,6 +605,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       social_post_validations: ['validated_by'],
       social_post_attempts: ['account', 'claimed_by'],
       social_post_sends: [],
+      studio_option_requests: ['referral_id', 'requested_by'],
     },
   },
 ];
@@ -942,6 +943,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   social_post_validations: ['post_id', 'validated_at'],
   social_post_attempts: ['id', 'post_id', 'channel', 'attempt', 'mode', 'claimed_at'],
   social_post_sends: ['attempt_id', 'outcome', 'done_at'],
+  studio_option_requests: ['id', 'network_id', 'option', 'requested_at'],
   business_safeguard_communes: ['id', 'network_id', 'in_perimeter', 'source', 'source_date', 'version', 'recorded_at'],
   business_transfer_files: ['id', 'network_id', 'property_id', 'created_at'],
   business_transfer_third_parties: ['id', 'file_id', 'network_id', 'kind', 'version', 'recorded_at'],
