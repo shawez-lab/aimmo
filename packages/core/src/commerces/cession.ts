@@ -362,6 +362,14 @@ export class CessionCommerce {
     return { ok: true, value: await this.view(file) };
   }
 
+  /** Le dossier de cession d'un bien, s'il y en a un, pour qui voit le bien en entier [R16]. */
+  async forProperty(acces: Acces, viewer: Viewer, propertyId: string): Promise<TransferResult<TransferView | null>> {
+    const g = await this.gate(acces, viewer, propertyId, 'read');
+    if (!g.ok) return g;
+    const file = await this.db.first<FileRow>('SELECT id, network_id, property_id FROM business_transfer_files WHERE property_id = ? AND network_id = ?', [propertyId, viewer.networkId]);
+    return { ok: true, value: file ? await this.view(file) : null };
+  }
+
   /** L'agent du bien déclare la cession prête : refusé tant qu'une étape bloquante manque [R116]. */
   async declareReady(acces: Acces, viewer: Viewer, fileId: string): Promise<TransferResult<TransferView>> {
     const file = await this.fileFor(acces, viewer, fileId, 'write');
