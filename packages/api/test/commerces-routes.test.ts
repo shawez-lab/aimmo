@@ -144,6 +144,7 @@ describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () 
     expect((await t.call(t.bea, 'GET', `/commerces/${id}/demandes`)).status).toBe(403);
     expect((await t.call(t.compliance, 'GET', `/commerces/${id}/demandes`)).status).toBe(403);
     expect(await t.ok(t.alex, 'GET', `/commerces/${id}/cession`)).toBeNull();
+    expect((await t.call(t.bea, 'GET', `/commerces/${id}/cession`)).status).toBe(403);
     await t.ok(t.alex, 'POST', `/commerces/${id}/cession`);
     expect((await t.ok(t.compliance, 'GET', `/commerces/${id}/cession`)).lines.length).toBeGreaterThan(5);
   });
