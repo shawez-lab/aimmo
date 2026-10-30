@@ -7,7 +7,7 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | --- | --- | --- | --- | --- |
 | H01 | Créer le dépôt privé `shawez-lab/aimmo` sur github.com/new | Shawez | tout | fait (2026-10-25) |
 | H02 | Ouvrir ce dépôt à l'application Claude sur GitHub, si elle n'a pas accès à tous les dépôts | Shawez | tout | fait (2026-10-25) : l'application a déjà accès à tous les dépôts |
-| H03 | Dans Codex : connecter le dépôt, activer Code review et Automatic review ; ajouter des crédits de relecture dans les réglages de Codex quand la limite d'usage est atteinte | Shawez | relecture et tâches de Codex | à finir : Codex a relu #131 à 07:43 (1 P1 et 1 P2, corrigés), puis a de nouveau atteint sa limite d'usage sur #132 à 07:45. Avant : à sa limite d'usage sur #130 à 07:18 |
+| H03 | Dans Codex : connecter le dépôt, activer Code review et Automatic review ; ajouter des crédits de relecture dans les réglages de Codex quand la limite d'usage est atteinte | Shawez | relecture et tâches de Codex | à finir : Codex a atteint sa limite d'usage sur #204 le 2026-10-30 à 04:33 (relecture de `a67630b` non faite). Avant : Codex a relu #131 à 07:43 (1 P1 et 1 P2, corrigés), puis a de nouveau atteint sa limite d'usage sur #132 à 07:45. Avant : à sa limite d'usage sur #130 à 07:18 |
 | H04 | Ajouter au dépôt les secrets `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID`, comme pour `shawez-immo` | Shawez | S09, mise en ligne | signalé le 2026-10-26 |
 | H05 | Accorder l'accès à Gmail par API sur l'écran d'accord de Google | Shawez | S11 | signalé le 2026-10-26 |
 | H06 | Vérification de l'entreprise et validation de l'application AIMMO chez Meta | Shawez | M02 | signalé le 2026-10-26 |
