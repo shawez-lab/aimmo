@@ -2060,8 +2060,9 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G12 · Branchement de M20 complet dans le socle
-- Statut : en cours
-- Reste (2026-10-30) : rien d'écrit encore ; la séance du matin a fusionné 31 propositions et s'est arrêtée avant G12 pour la laisser à une séance neuve. Points d'entrée : `packages/core/src/mandats/plan-du-jour.ts` (`PlanItemKind`, ordre écrit, plans figés de `plans-figes.ts`), `packages/api/src/gagner.ts` à brancher dans `app.ts` comme `m18Routes`, passages mensuels au planificateur comme `partenairesJobs`.
+- Statut : fait (2026-10-30)
+- Décidé (2026-10-30) : le plan montre les relances « à valider » (une relance validée est déjà dans la boîte d'essai) ; la recommandation à rappeler est classée à la règle 1 avec les rappels demandés ; les lettres à déposer sont à part des personnes (`letters`), un compte par campagne, relu en direct ; la liste des relances passe chaque jour à 6 h (une par personne et par mois au plus) ; le 1er du mois à 8 h, l'avis de la mesure au journal, sans nombre ; une relance après la vente est refusée (R143) dans les 182 jours d'une relance d'ancien contact passée.
+- Reste : fusionnée (#213) ; relecture forte 2 P1 corrigés (base entière de G09 relue au plan, cas sans base testés) ; Codex à sa limite d'usage, fusion sans lui ; vérification locale verte (2072 tests), GitHub Actions arrêté (H35).
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : G11
 - Cahier : M20 ; Branchements.
 - Objectif : ajouter au plan du jour les lettres à déposer, les recommandations à rappeler et les relances validées, sous leurs raisons écrites ; routes dans `app.ts` ; passage mensuel des relances et de la mesure au planificateur ; relances par le contrôle central, en mode essai.
