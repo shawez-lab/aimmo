@@ -50,7 +50,7 @@ export interface Env {
   /** Le réseau qui reçoit les candidatures de la page `/rejoindre` (J13) ; absent, la page dit « bientôt ». */
   CANDIDATURE_NETWORK_ID?: string;
   /** Les médias des biens (R2), lus par la vitrine ; absent, aucune photo n'est servie. */
-  MEDIA?: MediaStore & { head?(key: string): Promise<unknown> };
+  MEDIA?: MediaStore;
   /** Le coffre de la conformité (R2), séparé de tout autre stockage (L09) ; absent, dépôt et ouverture fermés. */
   COFFRE?: R2VaultBucket;
   /** Début du lien d'opposition à la prospection des partenaires (U09), en https, sans chiffre, terminé par `/partenaires/opposition/`. */
@@ -64,19 +64,6 @@ export interface Env {
 function estimationServices(env: Env) {
   const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;
   return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;
-}
-
-/**
- * L'existence d'une référence dans `MEDIA`, pour le Studio (X10) : par `head`, sans lire le fichier ; à défaut, par
- * `get`. Une panne du stockage remonte telle quelle : la couche métier la dit au journal et ferme tout [R130].
- */
-export function mediaFiles(bucket: MediaStore & { head?(key: string): Promise<unknown> }): { has(ref: string): Promise<boolean> } {
-  return {
-    has: async (ref: string) => {
-      const found = bucket.head ? await bucket.head(ref) : await bucket.get(ref);
-      return found !== null && found !== undefined;
-    },
-  };
 }
 
 /** Le début des liens du dossier : en https, sans chiffre (un chiffre passerait pour un nombre du message), fini par `/`. */
@@ -105,8 +92,6 @@ export default {
       partenaires: { files: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, optOutBase: env.PARTENAIRES_OPPOSITION_BASE ?? null },
       // M17 (Y08) : sans IA branchée (H13), la note suit le secours sans IA ; le barème vient du réglage de la direction.
       investir: { feesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME) },
-      // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
-      studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null },
       // M16 (CE10) : sans stockage réel des documents (H38), le dossier protégé ne sert que la fiche du commerce.
       commerces: dossierLinkBase(env.DOSSIER_LINK_BASE) ? { baseUrl: dossierLinkBase(env.DOSSIER_LINK_BASE)! } : {},
       ...(estimation ? { estimation } : {}),
