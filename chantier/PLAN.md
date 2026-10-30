@@ -2061,6 +2061,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 
 ### G12 · Branchement de M20 complet dans le socle
 - Statut : en cours
+- Reste (2026-10-30) : rien d'écrit encore ; la séance du matin a fusionné 31 propositions et s'est arrêtée avant G12 pour la laisser à une séance neuve. Points d'entrée : `packages/core/src/mandats/plan-du-jour.ts` (`PlanItemKind`, ordre écrit, plans figés de `plans-figes.ts`), `packages/api/src/gagner.ts` à brancher dans `app.ts` comme `m18Routes`, passages mensuels au planificateur comme `partenairesJobs`.
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : G11
 - Cahier : M20 ; Branchements.
 - Objectif : ajouter au plan du jour les lettres à déposer, les recommandations à rappeler et les relances validées, sous leurs raisons écrites ; routes dans `app.ts` ; passage mensuel des relances et de la mesure au planificateur ; relances par le contrôle central, en mode essai.
