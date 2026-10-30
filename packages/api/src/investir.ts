@@ -185,10 +185,14 @@ async function calculableProperties(s: InvestirServices, v: Viewer): Promise<Out
             WHERE p.network_id = ? ORDER BY p.updated_at DESC, p.id LIMIT 100`,
           [v.networkId],
         );
-  await appendEvent(s.journal, { type: 'investir.biens.lus', actor: `${String(v.role)}:${v.userId}`, subject: `network:${v.networkId}`, data: { rule: 'R16', count: rows.length } }, s.now);
+  // Chaque bien repasse par la couche d'accès : lecteur actif, dossier d'agent valide (sinon le fichier commun seul,
+  // R82), lecture ou refus écrits au journal bien par bien [R16].
+  const c = core(s);
+  const seen: typeof rows = [];
+  for (const r of rows) if ((await c.acces.readProperty(v, r.id)).ok) seen.push(r);
   return {
     ok: true,
-    value: rows.map((r) => ({ propertyId: r.id, reference: r.reference, city: r.city, priceCents: r.price_eur === null ? null : r.price_eur * 100, surfaceHundredths: r.surface_m2 === null ? null : Math.round(r.surface_m2 * 100), inseeCode: r.insee_code, rentKind: r.rent_kind })),
+    value: seen.map((r) => ({ propertyId: r.id, reference: r.reference, city: r.city, priceCents: r.price_eur === null ? null : r.price_eur * 100, surfaceHundredths: r.surface_m2 === null ? null : Math.round(r.surface_m2 * 100), inseeCode: r.insee_code, rentKind: r.rent_kind })),
   };
 }
 
