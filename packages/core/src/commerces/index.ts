@@ -3,3 +3,4 @@ export * from './estimation.ts';
 export * from './presentation.ts';
 export * from './confidentialite.ts';
 export * from './dossier.ts';
+export * from './repreneurs.ts';
