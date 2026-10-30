@@ -112,7 +112,27 @@ export const INTEGRATION_JS = `
     if (!currentKey) return Promise.resolve(false);
     integrationMode = mode;
     if (integrationScreen) return integrationScreen.open(mode);
-    return loadScreen('integration', 'AIMMO_INTEGRATION', {}, function (screen) { integrationScreen = screen; return screen.open(integrationMode); });
+    session += 1;
+    var mine = session;
+    wipeIntegration();
+    show('integration');
+    $('integration-etat').textContent = 'Chargement…';
+    return new Promise(function (resolve) {
+      var s = document.createElement('script');
+      s.setAttribute('src', '/app/integration.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_INTEGRATION;
+        try { delete globalThis.AIMMO_INTEGRATION; } catch (e) { /* rien */ }
+        if (mine !== session || typeof make !== 'function') { resolve(false); return; }
+        integrationScreen = make({ $: $, el: el, clear: clear, send: send, show: show, button: button, field: field, select: select, details: details, date: date, hour: hour, ID: ID, key: function () { return currentKey; }, session: function () { return session; }, next: function () { session += 1; return session; } });
+        resolve(integrationScreen.open(integrationMode));
+      });
+      s.addEventListener('error', function () {
+        if (mine === session) $('integration-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
+        resolve(false);
+      });
+      $('integration').appendChild(s);
+    });
   }
 `;
 
