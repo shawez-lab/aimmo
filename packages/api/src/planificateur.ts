@@ -5,6 +5,7 @@ import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
 import { pilotageJobs } from './pilotage.ts';
 import { conformiteJobs } from './conformite.ts';
 import { partenairesJobs } from './partenaires.ts';
+import { gagnerJobs } from './gagner.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
 import type { Geocoder, SalesSource } from '@aimmo/core';
 
@@ -105,6 +106,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Commerces (CE10), à 6 h : tâches de la cession pour l'agent du bien et examen de vigilance de chaque dossier,
       // rangés pour les écrans, jamais envoyés [R116, R118].
       commerces.commercesDailyJob(config.db, journal, { now }),
+      // Gagner des mandats (G12) : à 6 h, la liste du mois des relances d'anciens contacts, rangées à valider pour leur
+      // agent, rien n'est envoyé [R143, R26] ; le 1er du mois à 8 h, l'avis que la mesure du mois passé se lit [R144].
+      ...gagnerJobs(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
