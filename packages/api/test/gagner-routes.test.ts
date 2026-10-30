@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { Acces, FicheClient, FicheUnique, Mandats, OLD_CONTACT_PURPOSE, ROLES, SqlJournalStore, applyMigrations, fromSyncSqlite, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { Acces, FicheClient, FicheUnique, Mandats, OLD_CONTACT_PURPOSE, ROLES, RegistreMandats, SqlJournalStore, applyMigrations, fromSyncSqlite, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { Annuaire, MiseEnRelation, type ConsentProofStore } from '../../core/src/partenaires/index.ts';
 import { gagnerRoutes, type GagnerServices } from '../src/gagner.ts';
 import { htmlProblems } from '../../core/src/design/audit.ts';
@@ -166,6 +166,82 @@ describeWithSqlite('G11 · routes de M20 complet', () => {
     const report = await t.call(t.viewers.direction, 'GET', '/gagner/mesure/2027-10');
     expect(report.body.data.lines.find((l: { source: string }) => l.source === 'neighbourhood_letter')).toMatchObject({ mandates: 1 });
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/Tilleuls/);
+  });
+
+  it('[R16] [R140] G13 : les listes de l’écran, campagnes et biens permis, estimations à venir, pour le seul agent qui les suit, sans donnée du client', async () => {
+    const t = await setup();
+    const places: Record<string, { lat: number; lon: number }> = { '8 rue des Tilleuls Essai, 21000 Dijon': { lat: 47.322, lon: 5.0415 }, '10 rue des Tilleuls Essai 21000 Dijon': { lat: 47.3222, lon: 5.0415 } };
+    t.s.geocoder = { geocode: async (a) => (places[a] ? { label: a, ...places[a]!, postalCode: '21000', inseeCode: '21231', town: 'Dijon', banId: null, score: 0.9 } : null) };
+    const mandats = new Mandats(t.db, t.fiche, t.journal, { now: t.s.now });
+    const bea = await t.store.createAgent({ networkId: t.network.id, firstName: 'Bea', lastName: 'Essai' });
+    const beaViewer: Viewer = { role: 'agent', userId: bea.id, networkId: t.network.id };
+    const seller = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Vendeuse Secrète' });
+    const withMandate = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'T-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 90, rooms: 4, priceEur: 260000 });
+    await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'T-2', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 50, rooms: 2, priceEur: 150000 });
+    const cancelled = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'T-3', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60, rooms: 3, priceEur: 170000 });
+    const beas = await t.store.createProperty({ networkId: t.network.id, agentId: bea.id, reference: 'B-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 70, rooms: 3, priceEur: 190000 });
+    expect(await mandats.record(t.acces, t.viewers.agent, { personId: seller.id, propertyId: withMandate.id, signedAt: new Date(clock), source: 'site' })).toMatchObject({ ok: true });
+    const c = await mandats.record(t.acces, t.viewers.agent, { personId: seller.id, propertyId: cancelled.id, signedAt: new Date(clock), source: 'site' });
+    if (!c.ok) throw new Error('mandat');
+    const registre = new RegistreMandats(t.db, t.journal, { now: t.s.now });
+    expect(await registre.configure(t.viewers.direction, { prefix: 'T-', firstNumber: 1, width: 4 })).toEqual({ ok: true });
+    expect(await registre.inscribe(t.viewers.agent, c.id)).toMatchObject({ ok: true });
+    expect(await registre.cancel(t.viewers.direction, c.id, 'error')).toMatchObject({ ok: true });
+    const bSeller = await t.store.createPerson({ networkId: t.network.id, agentId: bea.id, firstName: 'Autre' });
+    expect(await mandats.record(t.acces, beaViewer, { personId: bSeller.id, propertyId: beas.id, signedAt: new Date(clock), source: 'site' })).toMatchObject({ ok: true });
+
+    // Seul le bien au mandat signé et jamais annulé, de cet agent, peut ouvrir une campagne [R140, R16].
+    const empty = await t.call(t.viewers.agent, 'GET', '/gagner/lettres');
+    expect(empty.body).toEqual({ ok: true, mode: 'essai', data: { campaigns: [], properties: [{ propertyId: withMandate.id, reference: 'T-1', city: 'Dijon', triggers: ['mandat'] }] } });
+    const made = await t.call(t.viewers.agent, 'POST', '/gagner/lettres', {
+      propertyId: withMandate.id,
+      trigger: 'mandat',
+      propertyAddress: '8 rue des Tilleuls Essai, 21000 Dijon',
+      recipient: 'aux_habitants',
+      origin: 'saisie_agent',
+      addresses: [{ number: '10', street: 'rue des Tilleuls Essai', postcode: '21000', city: 'Dijon' }],
+    });
+    expect(made.body).toMatchObject({ ok: true, data: { letters: 1 } });
+    const after = await t.call(t.viewers.agent, 'GET', '/gagner/lettres');
+    expect(after.body.data.campaigns).toEqual([{ campaignId: made.body.data.campaignId, propertyId: withMandate.id, reference: 'T-1', trigger: 'mandat', recipient: 'aux_habitants', createdAt: expect.any(String), letters: 1, deposited: 0 }]);
+    // Aucune adresse dans la liste : seulement des comptes.
+    expect(JSON.stringify(after.body)).not.toMatch(/Tilleuls|Vendeuse/);
+    const letters = await t.call(t.viewers.agent, 'GET', `/gagner/lettres/${made.body.data.campaignId}`);
+    await t.call(t.viewers.agent, 'POST', `/gagner/lettres/lettre/${letters.body.data[0].letterId}/deposee`);
+    expect((await t.call(t.viewers.agent, 'GET', '/gagner/lettres')).body.data.campaigns[0]).toMatchObject({ letters: 1, deposited: 1 });
+    // Une autre agente ne voit ni la campagne ni les biens d'Alex.
+    expect((await t.call(beaViewer, 'GET', '/gagner/lettres')).body.data).toEqual({ campaigns: [], properties: [{ propertyId: beas.id, reference: 'B-1', city: 'Dijon', triggers: ['mandat'] }] });
+
+    // Les estimations à venir : prévues, de trois heures avant à quinze jours après, dans l'ordre des heures.
+    const H = 3_600_000;
+    let k = 0;
+    const appointment = async (kind: string, startAt: number, agentId = t.alex.id, status = 'booked') => {
+      const id = `rdv-${++k}`;
+      const at = new Date(clock).toISOString();
+      await t.db.run(
+        `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'agent', NULL, ?, ?)`,
+        [id, t.network.id, agentId, seller.id, withMandate.id, kind, new Date(startAt).toISOString(), new Date(startAt + H).toISOString(), status, `h-${k}`, at, at],
+      );
+      return id;
+    };
+    const base = clock + 10 * 60_000;
+    const inTwoDays = await appointment('estimation', base + 2 * DAY);
+    const oneHourAgo = await appointment('estimation', base - H);
+    await appointment('estimation', base - 4 * H);
+    await appointment('estimation', base + 16 * DAY);
+    await appointment('visite', base + DAY);
+    await appointment('estimation', base + DAY, t.alex.id, 'cancelled');
+    await appointment('estimation', base + DAY, bea.id);
+    const upcoming = await t.call(t.viewers.agent, 'GET', '/gagner/rendez-vous');
+    expect(upcoming.body.data.map((a: { appointmentId: string }) => a.appointmentId)).toEqual([oneHourAgo, inTwoDays]);
+    expect(upcoming.body.data[1]).toEqual({ appointmentId: inTwoDays, startAt: new Date(base + 2 * DAY).toISOString(), endAt: new Date(base + 2 * DAY + H).toISOString(), reference: 'T-1', city: 'Dijon' });
+    expect(JSON.stringify(upcoming.body)).not.toMatch(/Vendeuse|person/);
+    expect((await t.call(beaViewer, 'GET', '/gagner/rendez-vous')).body.data).toHaveLength(1);
+    // Les lectures sont au journal, sans adresse ni nom.
+    const types = (await t.journal.all()).map((e) => e.type);
+    expect(types).toContain('lettres_quartier.liste_lue');
+    expect(types).toContain('dossier_presentation.rendez_vous_lus');
+    expect(JSON.stringify(await t.journal.all())).not.toMatch(/Tilleuls|Vendeuse/);
   });
 
   it('[R26] [R143] relances et mesure par les routes : en mode essai, rien ne part ; un coût sans preuve est refusé', async () => {
