@@ -54,6 +54,8 @@ async function setup() {
 }
 
 const SAMPLE_PATHS: Record<string, string> = {
+  'investir.projets': '/investir/projets',
+  'investir.biens': '/investir/biens',
   'investir.profil.lu': '/investir/projets/p1/profil',
   'investir.profil': '/investir/projets/p1/profil',
   'investir.loyers.import': '/investir/loyers',
@@ -217,3 +219,58 @@ describeWithSqlite('Y07 · relecture d’un calcul', () => {
   });
 });
 
+describeWithSqlite('Y09 · listes de l’écran « Investir »', () => {
+  it('[R16] les investisseurs suivis et les biens calculables, sous les droits de l’agent, lectures au journal', async () => {
+    const t = await setup();
+    const mine = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Inès' });
+    const theirs = await t.store.createPerson({ networkId: t.network.id, agentId: t.other.userId, firstName: 'Noé' });
+    const p1 = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: mine.id, kind: 'invest' });
+    await t.store.createProject({ networkId: t.network.id, agentId: t.other.userId, personId: theirs.id, kind: 'invest' });
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: mine.id, kind: 'buy' });
+    const list = await t.ok(t.agent, 'GET', '/investir/projets');
+    expect(list.map((x: { projectId: string }) => x.projectId)).toEqual([p1.id]);
+    expect(list[0]).toMatchObject({ firstName: 'Inès', profile: null });
+    // Biens : le sien, celui du fichier commun ; pas le brouillon d'un autre ; jamais sans commune rangée.
+    const own = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'A', kind: 'home', city: 'X', priceEur: 100_000, surfaceM2: 40, rooms: 2, status: 'draft' });
+    const shared = await t.store.createProperty({ networkId: t.network.id, agentId: t.other.userId, reference: 'B', kind: 'home', city: 'X', priceEur: 120_000, surfaceM2: 50, rooms: 2, status: 'available' });
+    const hidden = await t.store.createProperty({ networkId: t.network.id, agentId: t.other.userId, reference: 'C', kind: 'home', city: 'X', priceEur: 130_000, surfaceM2: 60, rooms: 3, status: 'draft' });
+    const bare = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'D', kind: 'home', city: 'X', priceEur: 90_000, surfaceM2: 30, rooms: 1, status: 'draft' });
+    await t.ok(t.agent, 'POST', `/investir/biens/${own.id}/commune`, { inseeCode: '99001', rentKind: 'apartment' });
+    await t.ok(t.dir, 'POST', `/investir/biens/${shared.id}/commune`, { inseeCode: '99002', rentKind: 'house' });
+    await t.ok(t.dir, 'POST', `/investir/biens/${hidden.id}/commune`, { inseeCode: '99003', rentKind: 'house' });
+    const biens = await t.ok(t.agent, 'GET', '/investir/biens');
+    expect(biens.map((b: { propertyId: string }) => b.propertyId).sort()).toEqual([own.id, shared.id].sort());
+    expect(biens.find((b: { propertyId: string }) => b.propertyId === own.id)).toMatchObject({ priceCents: 10_000_000, surfaceHundredths: 4000, inseeCode: '99001', rentKind: 'apartment' });
+    expect(biens.some((b: { propertyId: string }) => b.propertyId === bare.id)).toBe(false);
+    expect((await t.journal.all()).filter((e) => e.type === 'bien.lu').length).toBeGreaterThanOrEqual(2);
+    // Un agent au dossier incomplet ne voit que le fichier commun [R82].
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, 'cand-1', 'direction:dir-1', '2027-09-01')", [t.alex.id, t.network.id]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    const restricted = await t.ok(t.agent, 'GET', '/investir/biens');
+    expect(restricted.map((b: { propertyId: string }) => b.propertyId)).toEqual([shared.id]);
+  });
+});
+
+describeWithSqlite('Y09 · listes longues de l’écran « Investir »', () => {
+  it('[R16] un agent qui suit plus de 100 fiches lit ses investisseurs, et ses biens restent dans la liste malgré un fichier commun plein', async () => {
+    const t = await setup();
+    let last = '';
+    for (let i = 0; i < 120; i++) {
+      const person = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: `Fiche${i}` });
+      if (i === 119) last = (await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: person.id, kind: 'invest' })).id;
+    }
+    const list = await t.ok(t.agent, 'GET', '/investir/projets');
+    expect(list.map((x: { projectId: string }) => x.projectId)).toEqual([last]);
+    const own = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'MIEN', kind: 'home', city: 'X', priceEur: 100_000, surfaceM2: 40, rooms: 2, status: 'draft' });
+    await t.ok(t.agent, 'POST', `/investir/biens/${own.id}/commune`, { inseeCode: '99001', rentKind: 'apartment' });
+    for (let i = 0; i < 105; i++) {
+      const p = await t.store.createProperty({ networkId: t.network.id, agentId: t.other.userId, reference: `C${i}`, kind: 'home', city: 'X', priceEur: 120_000, surfaceM2: 50, rooms: 2, status: 'available' });
+      await t.ok(t.dir, 'POST', `/investir/biens/${p.id}/commune`, { inseeCode: '99002', rentKind: 'house' });
+    }
+    await t.db.run("UPDATE properties SET updated_at = '2000-01-01T00:00:00.000Z' WHERE id = ?", [own.id]);
+    const biens = await t.ok(t.agent, 'GET', '/investir/biens');
+    expect(biens.some((b: { propertyId: string }) => b.propertyId === own.id)).toBe(true);
+    expect(biens.length).toBe(101);
+  });
+});
