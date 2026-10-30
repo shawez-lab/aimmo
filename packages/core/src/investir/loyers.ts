@@ -79,24 +79,35 @@ export function decimalToCents(text: string): number | null {
 }
 
 /** Découpe une ligne CSV : séparateur donné, champs éventuellement entre guillemets doubles. */
-function splitLine(line: string, sep: string): string[] {
+function splitLine(line: string, sep: string): string[] | null {
+  // Un guillemet mal placé ou non refermé rend la ligne mal formée : jamais corrigée en silence.
   const out: string[] = [];
   let cur = '';
   let quoted = false;
+  let closed = false;
   for (let i = 0; i < line.length; i += 1) {
     const c = line[i]!;
     if (quoted) {
       if (c === '"' && line[i + 1] === '"') {
         cur += '"';
         i += 1;
-      } else if (c === '"') quoted = false;
-      else cur += c;
-    } else if (c === '"' && cur === '') quoted = true;
-    else if (c === sep) {
+      } else if (c === '"') {
+        quoted = false;
+        closed = true;
+      } else cur += c;
+    } else if (c === sep) {
       out.push(cur);
       cur = '';
+      closed = false;
+    } else if (c === '"') {
+      if (cur.trim() !== '' || closed) return null;
+      cur = '';
+      quoted = true;
+    } else if (closed) {
+      if (c.trim() !== '') return null;
     } else cur += c;
   }
+  if (quoted) return null;
   out.push(cur);
   return out.map((v) => v.trim());
 }
@@ -116,7 +127,9 @@ export function parseAnilCsv(text: string): ParseResult {
   if (lines.length - 1 > MAX_IMPORT_ROWS) return { ok: false, code: 'trop_long', errors: [] };
   const head = lines[0]!;
   const sep = head.includes(';') ? ';' : ',';
-  const names = splitLine(head, sep).map((h) => h.toLowerCase());
+  const headCells = splitLine(head, sep);
+  if (headCells === null) return { ok: false, code: 'entete', errors: [] };
+  const names = headCells.map((h) => h.toLowerCase());
   const index = Object.fromEntries(Object.entries(COLUMNS).map(([k, name]) => [k, names.indexOf(name)])) as Record<keyof typeof COLUMNS, number>;
   if (Object.values(index).some((i) => i < 0)) return { ok: false, code: 'entete', errors: [] };
   const rows: MarketRentRow[] = [];
@@ -125,6 +138,10 @@ export function parseAnilCsv(text: string): ParseResult {
   for (let n = 1; n < lines.length; n += 1) {
     const line = n + 1;
     const cells = splitLine(lines[n]!, sep);
+    if (cells === null) {
+      errors.push({ line, code: 'guillemets' });
+      continue;
+    }
     if (cells.length !== names.length) {
       errors.push({ line, code: 'colonnes' });
       continue;
@@ -325,12 +342,19 @@ export class LoyersMarche {
     const end = Math.min(parsed.rows.length, already + this.maxChunksPerCall * CHUNK);
     for (let i = already; i < end; i += CHUNK) {
       const chunk = parsed.rows.slice(i, Math.min(i + CHUNK, end));
-      await this.db.run(
-        `INSERT INTO market_rents (import_id, insee_code, rent_m2_cents, lower_m2_cents, upper_m2_cents, observations) VALUES ${chunk
-          .map(() => '(?, ?, ?, ?, ?, ?)')
-          .join(', ')} ON CONFLICT DO NOTHING`,
-        chunk.flatMap((r) => [importId, r.inseeCode, r.rentM2Cents, r.lowerM2Cents, r.upperM2Cents, r.observations]),
-      );
+      try {
+        await this.db.run(
+          `INSERT INTO market_rents (import_id, insee_code, rent_m2_cents, lower_m2_cents, upper_m2_cents, observations) VALUES ${chunk
+            .map(() => '(?, ?, ?, ?, ?, ?)')
+            .join(', ')} ON CONFLICT DO NOTHING`,
+          chunk.flatMap((r) => [importId, r.inseeCode, r.rentM2Cents, r.lowerM2Cents, r.upperM2Cents, r.observations]),
+        );
+      } catch (error) {
+        // Une reprise simultanée a fini l'import entre-temps : il est complet, rien à refaire.
+        const done = await this.db.first<{ status: string }>('SELECT status FROM market_rent_imports WHERE id = ?', [importId]);
+        if (done?.status === 'complet') return { ok: true, importId, rows: parsed.rows.length, stored: parsed.rows.length, status: 'complet', created: false };
+        throw error;
+      }
     }
     const stored = Number((await this.db.first<{ n: number }>('SELECT count(*) AS n FROM market_rents WHERE import_id = ?', [importId]))?.n ?? 0);
     if (stored < parsed.rows.length) {
