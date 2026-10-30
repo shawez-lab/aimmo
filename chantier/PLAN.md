@@ -1423,7 +1423,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : H29.
 
 ### L09 · Routes de M12 et branchement dans le socle
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Où : proposition #175 ouverte, sans P0 ni P1 à la relecture forte ; fusion en attente des vérifications GitHub (H35). L'écran passe en L10 (défini sur la branche de #175) : en cours, proposition #178 empilée sur #175, fusion en attente de H35
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : L01 à L08
 - Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
@@ -1434,7 +1434,7 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Attend : rien. Le compartiment R2 `COFFRE` (H36) ne bloque pas la tâche.
 
 ### L10 · Écran « Conformité » dans l'application
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Où : proposition ouverte, empilée sur #175 (L09) ; fusion en attente des vérifications GitHub (H35)
 - Décidé (2026-10-29) : l'écran du responsable est un script à part, `/app/conformite.js`, chargé à la demande pour la seule clé `compliance` : un agent ne reçoit jamais son code, et l'application garde son budget de 48 Ko (46,9 Ko) ; le script tient celui d'une page (7 Ko). Nouvelle lecture `GET /v1/conformite/risque` (`FicheRisque.pending`) : fiches en attente dans l'ordre de leur préparation, jamais par niveau [R91]. Un client est nommé par la fin de l'identifiant de sa fiche, sans nom. Sur la fiche, le dépôt part en corps brut avec son type ; l'agent lit ses preuves (sorte, jour, empreinte), jamais la pièce. axe-core sans violation, clair et sombre (captures `app-conformite-*`, `app-coffre-*`). Relecture forte : 2 P1 corrigés (dépôt refusé pour agent inactif, tests d'accessibilité, de clé refusée et de session).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : L09
@@ -1530,7 +1530,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U09 · Branchement de M18 dans le socle
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Où : branche chantier/U09, empilée sur #178 tant que H35 bloque les fusions
 - Décidé (2026-10-29) : la tâche est coupée en deux ; U09 branche les routes, les pages publiques et les passages, sans rien envoyer ; le passage des relances et des brouillons de prospection par le contrôle central (qui n'écrit qu'à une personne de la fiche) devient U12. Fichiers des partenaires dans `PIECES`, sous `partenaires/` (R2PartnerFiles) ; sans eux, les routes de M18 répondent 503 ; variable `PARTENAIRES_OPPOSITION_BASE` pour le lien d'opposition. Passages : relances et alertes de 9 h à 19 h, prospection à 10 h les jours ouvrés, échéances des justificatifs à 6 h, rangées au journal pour la direction (`partenaire.justificatif_echeance`). Le rôle `partner` n'a toujours accès à aucune fiche ni aucun bien dans `Acces` ; il ne lit que par l'espace partenaire [R77].
 - Où : proposition #180, empilée sur #178 ; fusion en attente des vérifications GitHub (H35)
@@ -1541,7 +1541,7 @@ Décidé, lecture prudente : un partenaire est une personne de rôle `partner`, 
 - Attend : rien.
 
 ### U12 · Relances et prospection de M18 par le contrôle central des envois
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Où : proposition #183, empilée sur #180 (U09) ; relecture forte 1 P1 corrigé (opposition d'un partenaire tenue pour toutes ses adresses) ; Codex 1 P0 corrigé (opposition gardée sur le partenaire même sans adresse, `partner_optouts`), dernière version validée (ef84d00) ; fusion en attente des vérifications GitHub (H35)
 - Décidé (2026-10-29) : `ControleEnvois.sendToProfessional`, seul port la boîte d'essai `ProTrialMailbox` ; accord du partenaire [R03] rangé avec son adresse professionnelle par la direction (`partner_addresses`, migration `0807`, preuve en note) ; opposition par adresse dans `partner_prospect_optouts`, valable pour partenaires et futurs partenaires ; plafond R11 partagé par `send_quota_slots` ; passage `partenaires.envois` de 8 h à 19 h ; les alertes à l'agent restent dans l'application.
 - Reste : à H32, une tâche reprendra les brouillons refusés sous R03.
@@ -1706,7 +1706,7 @@ Découpé le 2026-10-29 par la voie 1 : toutes les tâches prêtes de la voie 1 
 Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds de commerce ou droit au bail), `business_walls` (murs) ou `commercial` (local professionnel), déjà prévues par la fiche client. Sa fiche est versionnée, chaque champ classé par le code dans une liste fermée « public » (activité en liste fermée, commune, fourchette de prix, surface, sorte) ou « confidentiel » (nom de l'enseigne, adresse, chiffres d'affaires et résultats, loyer et clauses du bail, salariés, matériel, autorisations) ; tout champ non listé est confidentiel par défaut [R110]. Rien de confidentiel ne sort en public ni ne part à une IA ; les bilans et les comptes ne sont jamais envoyés à l'IA, même résumés [R112, R15]. L'estimation est une fourchette calculée par le code seul, depuis les comptes saisis par l'agent et des barèmes par activité rangés par la direction avec leur source citée, jamais écrits dans le code ; l'agent la valide [R111, R10]. Aucun chiffre ni document confidentiel ne part sans engagement de confidentialité signé en ligne (signature de D08, en essai tant que H24 n'est pas fait) et pièce d'identité vérifiée par l'agent (état `identityVerifiedOn` du coffre de M12, jamais la pièce elle-même) : une seule porte `canSendConfidential`, utilisée par tout envoi [R113]. Un dossier envoyé l'est par un lien qui expire, chaque document porte un filigrane au nom du lecteur, et chaque ouverture, et chaque refus, est écrite au journal avec son lecteur [R114]. Le profil d'un repreneur (projet, expérience, apport et financement déclarés) ne porte aucune évaluation de solvabilité [R115, R14]. Les étapes de la cession (information des salariés au plus tard 2 mois avant sous 250 salariés, préemption de la commune en 2 mois dans un périmètre de sauvegarde, avis au journal d'annonces légales et au BODACC dans les 15 jours, 10 jours d'opposition, séquestre) sont calculées par le code, une étape bloquante non faite empêche de déclarer la cession prête [R116]. AIMMO ne reçoit jamais le prix : le séquestre est un tiers nommé, avocat, notaire ou banque, jamais le réseau [R117]. Une cession de fonds demande, avant le compromis, les bénéficiaires effectifs et l'origine des fonds déclarés ; leur absence lève une alerte au responsable de la conformité, sans rien décider à sa place [R118, R14]. Les documents protégés vivent derrière une interface de stockage (faux dans les tests, R2 réel plus tard, H38) ; rien n'est envoyé réellement, tout passe par le contrôle central des envois en mode essai [R26]. Règles R110 à R118, migrations à partir de `1001`. Le code vit dans `packages/core/src/commerces/`, ses routes dans `packages/api/src/commerces.ts` ; les fichiers du socle ne changent que par CE10.
 
 ### CE01 · Fiche du commerce, chaque champ public ou confidentiel
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#197), à fusionner dès que GitHub Actions repart (H35) ; relecture forte sans P0 ni P1 ; Codex : 1 P1 (JSON illisible lu comme vide) et 1 P2 (date impossible) corrigés, relecture redemandée.
 - Décidé (2026-10-29) : l'excédent brut d'exploitation est un champ facultatif de chaque exercice (`ebitdaCents`), ajouté par CE02 ; une colonne JSON illisible fait échouer la lecture plutôt que d'être lue vide [R17].
 - Qui : Claude · Relecture : forte · Dépend de : rien (M02, M07 faits)
@@ -1716,7 +1716,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE02 · Estimation en fourchette par le code, références citées
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#198, empilée sur #197), à fusionner après CE01 dès H35 ; relecture forte 2 P1 corrigés.
 - Décidé (2026-10-29) : méthodes `revenue_pct`, `ebitda_multiple` (excédent brut, jamais le résultat net) et `rent_yield` ; seule la plus récente estimation se valide, et seulement si la fiche et le barème n'ont pas changé depuis ; la fourchette publiable (`validatedRange`) suit la même règle.
 - Qui : Claude · Relecture : forte · Dépend de : CE01
@@ -1726,7 +1726,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien.
 
 ### CE03 · Présentation anonyme, rédigée par l'IA depuis les seuls champs publics
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#200, empilée sur #198), à fusionner après CE02 dès H35 ; relecture forte 2 P1 corrigés (communes au nom chiffré, chiffres d'autres écritures) ; Codex, six tours : 6 P0, 2 P1 et 2 P2 corrigés (exposants, matériel court, nombre lié à son unité, enseigne courante, enseigne courte distinctive, nombre négatif, pluriel et singulier, mots porteurs du matériel, fourchette à tiret), relecture redemandée.
 - Décidé (2026-10-29) : sans fourchette validée en vigueur, pas de présentation (« incomplet ») ; le nom de la commune est retiré avant le contrôle des nombres ; `publishable` est la porte, branchée à la publication de M07 par CE10.
 - Qui : Claude · Relecture : forte · Dépend de : CE01, CE02
@@ -1736,7 +1736,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien (H13 pour la vraie IA).
 
 ### CE04 · Engagement de confidentialité signé et pièce vérifiée avant tout chiffre
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#201, empilée sur #200), à fusionner après CE03 dès H35 ; relecture forte sans P0 ni P1 ; Codex rien à signaler.
 - Décidé (2026-10-29) : modèle d'engagement versionné rangé par la direction (`business_nda_templates`), engagement au nom de la personne pour un bien ; signature par code comme D08 et W12, d'essai tant que H24 n'est pas fait ; la porte lit l'identité par l'interface `IdentityState` (état du coffre) ; `confidentialSheet` est le seul accès à la fiche complète pour un envoi (CE05).
 - Qui : Claude · Relecture : forte · Dépend de : CE01
@@ -1746,7 +1746,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien (H24 pour une signature réelle).
 
 ### CE05 · Dossier protégé : lien qui expire, filigrane au lecteur, chaque ouverture journalisée (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#203, empilée sur #201), à fusionner après CE04 dès H35 ; relecture forte 3 P1 corrigés ; Codex 1 P2 corrigé (code envoyé à l'adresse donnée), dernière version validée par Codex.
 - Décidé (2026-10-29) : documents du dossier en texte, par référence de stockage et empreinte (PDF et images avec le stockage réel, H38) ; ouverture = adresse du lecteur et code à usage unique reçu à cette adresse ; marque de 48 bits en caractères sans largeur après chaque phrase et chaque ligne, doublée d'une référence de copie visible dans le filigrane.
 - Qui : Claude · Relecture : forte · Dépend de : CE04
@@ -1756,7 +1756,7 @@ Décidé, lecture prudente : un commerce est un bien de sorte `business` (fonds 
 - Attend : rien (H38 pour le stockage réel).
 
 ### CE06 · Repreneurs, sans évaluation de solvabilité
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Reste : prête (#205, empilée sur #203), à fusionner après CE05 dès H35 ; relecture forte 1 P1 corrigé (biens vendus, retirés ou sans mandat écartés) ; Codex rien à signaler.
 - Décidé (2026-10-29) : profil sur un projet `buy_business` ; secteurs en codes postaux ; le rapprochement passe par la porte de diffusion de D05 (injectée, branchée par CE10) et les biens en vente ou sous offre.
 - Qui : Claude · Relecture : forte · Dépend de : rien
@@ -1872,7 +1872,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y07 · Routes de M17 et parcours de 10 biens tests
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #173 prête (relecture forte sans P0 ni P1, 1 P0 de Codex corrigé), en attente de ses vérifications : GitHub Actions ne démarre plus (facturation, H35). À fusionner dès que « Vérifier » passe et que Codex ne relève plus rien.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y06
 - Cahier : M17 ; Architecture technique, API.
@@ -1881,7 +1881,7 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y08 · Branchement de M17 dans le socle
-- Statut : en cours
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #185 prête, empilée sur #183 avec Y07 reprise ; tests verts en local ; relecture forte 1 P1 corrigé (barème des frais lu de la variable `INVESTIR_FRAIS_BAREME`, `750@AAAA-MM-JJ`) ; Codex sans remarque. À fusionner après #173 et #183, dès que GitHub Actions repart (H35).
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : Y07
 - Cahier : M17 ; Branchements.
@@ -1924,7 +1924,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X03 · Montage vidéo sur l'appareil à partir d'un modèle
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #181 prête, empilée sur X04 (#179), migration `1203` ; une vidéo ne part plus qu'avec son montage rangé (musique contrôlée, `annonces/medias.ts`) ; suite complète verte en local (1761), relecture forte 1 P1 corrigé ; en attente des vérifications GitHub (H35). La bibliothèque est l'interface `MusicLibrary`, fournie par X07.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
 - Cahier : M19, « Vidéo du bien » ; M07 (plan de tournage, P06) ; critère « montée seule en moins de 10 minutes ».
@@ -1960,7 +1960,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X07 · Bibliothèque de musiques et d'images sous licence
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #182 prête, empilée sur X03 (#181), migration `1205` ; suite complète verte en local (1765) ; en attente des vérifications GitHub (H35). `MusicLibrary.licensedMusic` reçoit désormais le réseau. Codex : 1 P0 (retrait refusé au journal) corrigé, nouvelle relecture demandée.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M19, « Règles ».
@@ -2012,7 +2012,7 @@ Découpé le 2026-10-29 par la voie 2 : M19 est fini côté voie 2 jusqu'à X09 
 Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au propriétaire » ou « Aux habitants » d'une adresse saisie par l'agent dans le rayon réglé autour d'un bien dont le mandat est signé ou la vente rapportée ; jamais à un nom, jamais à partir des ventes publiques (DVF) ni d'une liste achetée [R140, R37]. Le dossier de présentation ne montre que des chiffres de la base, chacun avec sa source (ventes du quartier de M04, résultats de l'agent de M13, avis réels de M11 avec leur lien, jamais choisis ni réécrits), aucune promesse de prix ni de délai ; l'IA met en forme derrière une interface, avec secours sans IA [R141]. Une recommandation arrive avec sa source et la preuve de l'accord de la personne recommandée avant tout contact, jamais rémunérée à un particulier [R142, R66]. Un ancien contact n'est relancé qu'avec une base légale au jour de l'envoi (prospect à 3 ans de R97, client après la vente selon R65, accord en cours), au plus une fois par période réglée, par le contrôle central, en mode essai [R143, R03, R26]. La mesure mensuelle par source vient de la base ; les coûts sont saisis par la direction avec leur preuve ; garder ou arrêter une source reste une décision de la direction, jamais automatique [R144]. Aucun texte d'AIMMO ne promet des mandats à un agent [R145]. Les règles R140 à R149 et les migrations à partir de `1301` sont réservées à M20 complet. Le code vit dans `packages/core/src/mandats/gagner/`, ses routes dans `packages/api/src/gagner.ts` ; le plan du jour (`mandats/plan-du-jour.ts`, fonction du socle) et les fichiers du socle ne changent que par G12, confiée à la voie 1.
 
 ### G06 · Lettres de quartier, adressées sans nom
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien (décidé le 2026-10-29 par la voie 2 : la lettre imprimable est faite avec le système de design de Z03, `design/systeme.ts` et `design/audit.ts`, déjà sur main, sans attendre la fusion de X06 ; ses routes rejoignent `gagner.ts` et le parcours de G11 part de la lettre)
 - Cahier : M20, point 3 « Lettres de quartier », « Règles ».
 - Objectif : après un mandat signé ou une vente rapportée, une campagne de lettres (migration `1301`) : adresses saisies par l'agent (numéro, voie, commune), contrôlées dans le rayon réglé autour du bien, sans aucun nom ; destinataire « Au propriétaire » ou « Aux habitants » ; texte par l'IA derrière une interface avec secours, contrôlé (adresse du bien vendu jamais citée, mots interdits) ; lettre imprimable par le système de design (X06), une par adresse ; dépôt noté par l'agent.
@@ -2020,7 +2020,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G07 · Dossier de présentation pour chaque rendez-vous de mandat (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : G06
 - Cahier : M20, point 4 « Dossier de présentation ».
 - Objectif : pour un rendez-vous de mandat (M05), un dossier imprimable et lisible sur téléphone : ventes du quartier (M04, avec source et date), plan de vente (canaux de M07, Studio de M19), engagements de service rangés par la direction (versionnés), avis réels de M11 (lien et date, tous ceux de la période, jamais choisis), résultats de l'agent (M13, calculés) ; **Jamais vu** : chaque engagement de service affiché avec le taux réellement tenu par l'agent sur les 12 derniers mois, recalculé depuis le journal, et le détail qui le prouve.
@@ -2028,7 +2028,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G08 · Recommandations des clients et des partenaires, avec leur source
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien (M11, M18 faits)
 - Cahier : M20, point 5 « Recommandations » ; M11 ; M18.
 - Objectif : une recommandation venue d'un client (M11) ou d'un partenaire (espace partenaire de M18) arrive dans la fiche (M02) avec sa source et la preuve de l'accord de la personne recommandée (migration `1302`) ; l'agent est alerté ; le mandat qui en naît garde la source « recommandation » (G03).
@@ -2036,7 +2036,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G09 · Anciens contacts relancés quand la loi le permet
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M20, point 6 « Anciens contacts », « Règles ».
 - Objectif : chaque mois, la liste des anciens contacts relançables (prospects encore dans les 3 ans de R97, anciens clients selon R65, accords en cours), au bon moment par des règles écrites (anniversaire d'achat réglé, estimation de plus d'un an, fin de bail connue) ; décidé le 2026-10-29 sur la relecture de Codex : un client d'une vente faite avec l'agence n'est relancé que par les relances après la vente de M11 (accord à l'acte et désinscription, R65), l'anniversaire d'achat y reste et sort de G09 ; la relance préparée par l'IA derrière une interface avec secours, validée par l'agent, puis par le contrôle central en mode essai (migration `1303`).
@@ -2044,7 +2044,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G10 · Mesure mensuelle : garder ce qui rapporte des mandats
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : G08
 - Cahier : M20, point 7 « Mesure ».
 - Objectif : chaque mois, par source : mandats signés (G03), rendez-vous, coût saisi par la direction avec sa preuve (migration `1304`), coût par mandat ; le compte rendu à la direction, qui décide de garder ou d'arrêter chaque source, sa décision rangée.
@@ -2052,7 +2052,7 @@ Décidé, lecture prudente : une lettre de quartier n'est adressée qu'« Au pro
 - Attend : rien.
 
 ### G11 · Routes de M20 complet
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : G10
 - Cahier : M20 ; Architecture technique, API.
 - Objectif : `packages/api/src/gagner.ts` : routes `/v1/gagner` (lettres, dossier de présentation, recommandations, relances, mesure), rôle contrôlé avant le corps, refus au journal.
@@ -2084,7 +2084,7 @@ Découpé le 2026-10-29 par la voie 2 : M19 et M20 complet sont prêts côté vo
 Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et publication de M07, Studio et publications de M19, suivi de valeur de G04, estimation en ligne de E05) : il ajoute les pages de prix, la page de l'agent, le référencement, l'origine des contacts, la fiche Google, les pages de quartier et le simulateur. Les ventes publiques ne sont publiées qu'en chiffres regroupés, chaque case avec au moins 5 ventes (réglage), et jamais une case qui, par différence avec une autre page ou la version précédente, laisserait retrouver une vente [R150, R29]. Un prix de marché porte sa source et sa date, un prix d'annonce vient du mandat en vigueur [R151, R44]. À côté du nom de chaque agent : statut d'agent commercial, numéro d'immatriculation, carte du titulaire (réglages du réseau, H09) [R152]. Une seule page de référence par bien : celle du site de son agent s'il en a un, sinon celle du réseau [R153]. Fiche Google, signalement aux moteurs (IndexNow) et réseaux sont derrière une interface, en mode essai, avec un faux service dans les tests ; Google attend H07 [R26]. Tout texte rédigé par l'IA (réponse à un avis, publication Google, page de quartier) est relu et validé par un humain avant publication, ne porte que des faits de la base, aucun nom de client ni adresse exacte [R154, R155, R46, R07]. shawez-immo.com n'est pas touché : M01 construit le moteur commun, la bascule du site de Shawez est une tâche à part. Les règles R150 à R159 et les migrations à partir de `1401` sont réservées à M01. Le code vit dans `packages/core/src/attirer/`, ses routes dans `packages/api/src/attirer.ts` ; les fichiers du socle (et la chaîne de captation pour l'origine des contacts) ne changent que par AT10, confiée à la voie 1.
 
 ### AT01 · Prix par commune et par quartier, regroupés, sans vente retrouvable (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition prête (#196) ; relecture forte : 1 P0 (deux zones différentes qui se soustraient, corrigé par un contrôle sur tout le réseau et des zones sans recouvrement) et 4 P1 corrigés, seconde relecture sans P0 ni P1 ; attend GitHub Actions (H35) pour fusionner. Décidé : une vente est reconnue d'une publication à l'autre par son empreinte (type, position, surface, prix au m², mois), avec une règle prudente pour une position corrigée ; une zone se corrige en la retirant, sans rien effacer ; une lecture DVF incomplète n'écrit aucune version.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M01, point 1 « Site public » (pages de prix), « Règles », « Données ».
@@ -2093,7 +2093,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT02 · Pages de prix publiques
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition prête (#206, empilée sur #196) ; attend AT01 et GitHub Actions (H35). Décidé : la page de référence (canonique) vient avec AT04 pour les deux sites ; une case retenue ne montre que sa raison, jamais un chiffre ; la page revérifie elle-même chaque case.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AT01
 - Cahier : M01, point 1 ; exigence de design (protocole, section 9).
@@ -2102,7 +2102,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT03 · Page de chaque agent, avec ses mentions
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition prête (#199) ; relecture forte : 1 P1 corrigé. Décidé : les avis sont montrés par le lien vers ceux que les clients publient eux-mêmes (celui de la demande d'avis de M11, envoyée à tous) ; les réponses de satisfaction de F05 ne sont jamais publiées, ni une à une ni en moyenne, car une moyenne qui bouge à chaque réponse laisserait lire la note d'un client ; le contact passe par les coordonnées publiques de l'agent, la captation viendra avec AT09. Attend GitHub Actions (H35).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M01, point 1 et « Règles » (vocabulaire, mentions de l'agent).
@@ -2144,7 +2144,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT08 · Simulateur de prêt, sans rien garder
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition prête (#202) ; Codex : 1 P2 (taux presque nul) corrigé, relecture redemandée ; attend GitHub Actions (H35). Décidé : le calcul tourne dans le navigateur, la page ne prend aucune saisie, ses champs n'ont pas de nom, et ses en-têtes interdisent toute connexion et tout envoi de formulaire.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M01, point 1 « simulateur de prêt ».
