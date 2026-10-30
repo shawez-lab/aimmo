@@ -2144,7 +2144,8 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT05 · Origine des contacts : le contenu précis qui a amené chaque contact
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#219), migration `1405`. Décidé : un code porteur de 12 caractères tiré au hasard (`?o=`) par contenu ; une page de départ ne compte que si elle est publiée aujourd'hui sur un site en service du réseau, et ne crée jamais de contenu (un chemin venu de l'extérieur n'est jamais gardé) ; un contact est une conversation, comptée le mois de son premier message, heure de Paris. Pour AT10 : appeler `OrigineContacts.record(networkId, inboundId, { link, landingPage })` après la réception, enregistrer chaque contenu à sa publication par `contentFor` (vidéos et publications du Studio avec `linkPost`), mettre `taggedLink` sur leurs liens ; pages de quartier attendues sous `/quartiers/<commune>/<quartier>`. Relecture forte 1 P0 et 1 P1 corrigés ; Codex à sa limite ; vérification locale verte (2177 tests).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT04
 - Cahier : M01, point 6 « Origine des contacts » ; critère « 95 % ».
 - Objectif : chaque contenu public (page de bien, page de prix, page d'agent, vidéo, publication) a un identifiant ; une fonction lit l'origine d'un contact (lien porteur, page de départ, canal) et la range en liste fermée, sans cookie de suivi ni donnée personnelle ; la mesure mensuelle donne la part des contacts avec origine renseignée. Le branchement dans la chaîne de captation est fait par AT10.
@@ -2180,7 +2181,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT09 · Routes de M01 et pages publiques
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT02 à AT08
 - Cahier : M01 ; Architecture technique.
 - Objectif : routes `/v1/attirer` (versions de prix, page de l'agent, validations des textes, plan du site, mesure de l'origine) et pages publiques (prix, agent, quartier, simulateur), dans `packages/api/src/attirer.ts`, prêtes à brancher.
