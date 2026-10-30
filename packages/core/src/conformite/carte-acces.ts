@@ -672,6 +672,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   gbp_validations: out('agent', 'Validation d\'un texte de la fiche Google.'),
   gbp_sends: out('agent', 'Envoi à la fiche Google de l\'agent.'),
   gbp_claims: out('agent', 'Réservation d\'un envoi à la fiche Google de l\'agent.'),
+  public_sites: out('agent', 'Site public d\'un agent, ou du réseau : aucune personne cliente.'),
+  seo_signals: out('sans_client', 'Adresses de pages publiques signalées aux moteurs : aucune personne.'),
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
