@@ -135,6 +135,7 @@ describe('Z03 · système de design d’AIMMO', () => {
     const STYLED: Record<string, RegExp> = {
       'core/src/design/systeme.ts': /^<style>\$\{DESIGN_CSS\}\$\{PUBLIC_PAGE_CSS\}<\/style>$/,
       'core/src/attirer/page-prix.ts': /^<style>\$\{CSS\}<\/style>$/,
+      'core/src/attirer/quartier.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/annonces/page-bien.ts': /^<style>\$\{(?:CSS|PRINT_CSS)\}<\/style>$/,
       'core/src/attirer/page-agent.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,

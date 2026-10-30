@@ -1333,13 +1333,22 @@ Décidé, lecture prudente : un candidat n'est pas un client : il vit dans ses p
 - Attend : rien.
 
 ### J14 · Écrans de M14 dans l'application
-- Statut : en cours
-- Prise par la voie 1 le 2026-10-30 : la voie 2 est sur M01, J14 restait sans preneur.
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#218), prise par la voie 1 (voie 2 sur M01). Décidé : routes `mon-referent` et `mon-bac-a-sable` pour l'agent lui-même, ouvertes avec un dossier incomplet ; `academie` dit les modules faits de l'agent ; un 403 R82 sur la journée n'efface plus la clé (P1 de la relecture forte) ; `app.js` servi sans ses lignes de commentaire pour tenir les 48 Ko. Pour ajouter une pièce depuis l'écran, il faudra un dépôt de fichier comme X12 (non fait).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : J12 ; après la fusion de #129 (K09, voie 1), qui modifie le même fichier `packages/api/app/fichiers.ts`
 - Cahier : M14 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : dans l'application, les écrans « Mon intégration » (dossier d'agent pièce par pièce, référent, premier parcours), « Académie » (parcours, modules faits, compteur des heures) et, pour la direction, « Candidatures » (ordre d'arrivée, fiche d'entretien, décision nommée), lus par les routes de J12.
 - Critères : chaque écran lit seulement par les routes `/v1/reseau`, refus montré sans rien garder [R16] ; la liste des candidatures n'a ni tri, ni filtre, ni note [R81] ; écrans accessibles (libellés, focus, lecteurs d'écran), beaux sur téléphone d'abord, sans texte générique ; testés comme les autres écrans (`fake-dom`).
 - Attend : rien.
+### J15 · Entrée d'un agent en un seul lot
+- Statut : en cours
+- Décidé (2026-10-30) : la voie 1 n'a plus aucune tâche prête (AT10 attend AT09 de la voie 2) ; elle prend le « Reste » de J13. Le socle reçoit une écriture en lot, tout ou rien (`SqlDatabase.batch`, facultative pour les bases de test faites à la main) : transaction sous node:sqlite, `batch` de D1 sous Cloudflare.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : J13
+- Cahier : M14 ; Architecture technique.
+- Objectif : `DossierAgent.admit` range l'agent et son entrée dans le même lot : si l'une des deux écritures échoue, aucune n'est gardée, et l'agent n'a aucun droit sans son entrée.
+- Critères : une entrée qui échoue ne laisse pas d'agent (test sous node:sqlite et sous la fausse D1) ; une écriture en lot qui échoue en route ne garde rien (test) ; deux entrées simultanées ne créent qu'un agent [R18] ; la suite complète reste verte.
+- Attend : rien.
+
 **M12 · Conformité, avant juillet 2027.**
 
 Voie : 1
@@ -2151,7 +2160,9 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : H07 pour le service réel.
 
 ### AT07 · Pages de quartier et articles, rédigés par l'IA depuis les données, relus
-- Statut : à faire
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#220). Décidé : textes de quartier en liste fermée de mots (titre et corps), chaque phrase porte une donnée de la base ; un prix exige le type de logement et le lieu de sa case, une année sa source nommée ; les biens publiés sont comptés à la commune (le bien n'a pas de position) ; validation par la direction seule, sur le texte exact et les données du moment ; page retirée dès qu'elle ne repasse plus le contrôle sur les données du jour ; aucun texte quand un sujet n'a aucune donnée (`sans_donnees`). AT09 servira `/quartiers/<commune>/<quartier>` et ses articles `/prix`, `/equipements`. Relecture forte : 3 P1 puis 1 P1 corrigés ; Codex à sa limite (H03), fusion sans lui ; vérification locale verte (2167 tests).
+- Décidé (2026-10-30) : la voie 1 n'a plus aucune tâche prête (AT10 attend AT09, le reste attend un humain) ; elle prend AT07, qui ne dépend que de AT01, dans ses propres fichiers (`packages/core/src/attirer/quartier.ts`, migration `1470`), sans toucher ceux de AT05 (voie 2).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT01
 - Cahier : M01, point 5 « Pages de quartier et articles ».
 - Objectif : une page de quartier rédigée par l'IA derrière une interface (secours sans IA) à partir des seules données de la base : cases de prix de AT01, biens publiés, données publiques du quartier rangées avec leur source ; chaque nombre et chaque fait relié à sa source, comme l'annonce de P03 ; relue et validée avant publication.
