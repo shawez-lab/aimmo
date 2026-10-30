@@ -10,9 +10,11 @@
  * Aucune route ne rend de note, de rang ni d'avis transformé en tri [R14, R75]. Une pièce n'est jamais lue : seules
  * sa référence et son empreinte circulent ; le fichier déposé par un partenaire va au stockage, jamais au journal.
  */
-import { appendEvent, localTime, renderPublicPage, SqlJournalStore, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { appendEvent, localTime, renderPublicPage, SqlJournalStore, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 import {
+  AdressesPartenaires,
   Annuaire,
+  EnvoisPartenaires,
   EspacePartenaire,
   MiseEnRelation,
   PARTNER_TRADES,
@@ -154,6 +156,7 @@ export function partenairesCore(s: PartenairesServices) {
     pieces: new PiecesPartenaires(s.db, espace, relations, annuaire, s.files, s.journal, opts),
     suivi: new SuiviPartenaires(s.db, relations, s.journal, { ...opts, writer: s.summaryWriter }),
     prospection: new Prospection(s.db, s.journal, { ...opts, optOutBase: s.optOutBase ?? null }),
+    adresses: new AdressesPartenaires(s.db, s.journal, opts),
   };
 }
 
@@ -321,6 +324,21 @@ const ROUTES: PartenairesRoute[] = [
     name: 'partenaires.annuaire.zones',
     roles: STAFF,
     handle: withBody(async (s, v, [id], b) => reply(await core(s).annuaire.addZones(v, id!, b.postcodes))),
+  },
+  {
+    // L'adresse professionnelle et l'accord du partenaire pour le suivi par mail (U12) : la direction seule [R03, R16].
+    method: 'POST',
+    pattern: new RegExp(`^/partenaires/annuaire/${ID}/adresse$`),
+    name: 'partenaires.annuaire.adresse',
+    roles: DIRECTION,
+    handle: withBody(async (s, v, [id], b) => reply(await core(s).adresses.record(v, id!, { email: b.email, consentProof: b.consentProof }))),
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/partenaires/annuaire/${ID}/opposition$`),
+    name: 'partenaires.annuaire.opposition',
+    roles: DIRECTION,
+    handle: async (s, v, [id]) => reply(await core(s).adresses.oppose(v, id!)),
   },
   {
     method: 'POST',
@@ -624,4 +642,87 @@ export function handleEspacePartenaire(request: Request): Response | null {
   const file = SPACE_FILES[url.pathname];
   if (!file) return new Response('Page inconnue.', { status: 404, headers: { ...headers, 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
   return new Response(request.method === 'HEAD' ? null : file.body, { status: 200, headers: { ...headers, 'content-type': file.type, 'cache-control': 'no-cache' } });
+}
+
+/**
+ * Le début du lien d'opposition, tel que le socle l'accepte : en https, sans chiffre, terminé par
+ * `/partenaires/opposition/`, la seule page qui sait lire le jeton. Toute autre valeur vaut absence : aucun mail de
+ * prospection n'est préparé, et les routes de M18 restent ouvertes [R79, R04].
+ */
+export function partnerOptOutBase(value: string | null | undefined): string | null {
+  if (typeof value !== 'string' || !/^https:\/\/[^\s\d/]+\/partenaires\/opposition\/$/.test(value)) return null;
+  return value;
+}
+
+/* ---------- Les passages de M18 au planificateur (U09) ---------- */
+
+export const PARTENAIRES_FOLLOW_UP_JOB = 'partenaires.suivi';
+export const PARTENAIRES_PROSPECTING_JOB = 'partenaires.prospection';
+export const PARTENAIRES_CREDENTIALS_JOB = 'partenaires.justificatifs';
+export const PARTENAIRES_SENDS_JOB = 'partenaires.envois';
+
+/** Le planificateur ne lit aucune preuve : il ne contrôle ni accord ni justificatif déposé. */
+const NO_PROOFS: PartnerFileStore = { has: () => Promise.resolve(false) };
+
+const partnerNetworks = (db: SqlDatabase): Promise<{ id: string }[]> => db.all<{ id: string }>('SELECT id FROM networks ORDER BY id');
+
+/**
+ * Les passages de M18 : de 9 h à 19 h, les relances aux partenaires et les alertes aux agents (U07), préparées et
+ * rangées une seule fois chacune [R05, R01] ; à 10 h, la prospection du jour ouvré (U08), au plafond du jour, en
+ * brouillons [R79] ; à 6 h, les justificatifs qui arrivent à échéance dans les 30 jours, une alerte par justificatif,
+ * rangée au journal pour la direction [R73]. Rien n'est envoyé d'ici. Le planificateur ne passe une tâche qu'une fois
+ * par créneau [R18].
+ */
+export function partenairesJobs(db: SqlDatabase, journal: JournalStore, options: { now?: () => Date; optOutBase?: string | null } = {}): ScheduledJob[] {
+  const now = options.now ?? (() => new Date());
+  const relations = () => {
+    const annuaire = new Annuaire(db, NO_PROOFS, journal, { now });
+    return { annuaire, relations: new MiseEnRelation(db, annuaire, NO_PROOFS, journal, { now }) };
+  };
+  return [
+    {
+      name: PARTENAIRES_FOLLOW_UP_JOB,
+      hours: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+      run: async () => {
+        const suivi = new SuiviPartenaires(db, relations().relations, journal, { now });
+        for (const n of await partnerNetworks(db)) await suivi.run(n.id);
+      },
+    },
+    {
+      name: PARTENAIRES_PROSPECTING_JOB,
+      hours: [10],
+      run: async () => {
+        const prospection = new Prospection(db, journal, { now, optOutBase: partnerOptOutBase(options.optOutBase) });
+        for (const n of await partnerNetworks(db)) await prospection.run(n.id);
+      },
+    },
+    {
+      // U12 : relances dues et brouillons de prospection, par le contrôle central des envois, en mode essai, de 8 h à
+      // 19 h ; le contrôle redécide heures, plafonds, opposition et accord au moment même [R01, R03, R04, R11, R79].
+      name: PARTENAIRES_SENDS_JOB,
+      hours: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+      run: async () => {
+        const { relations: rel } = relations();
+        const envois = new EnvoisPartenaires(db, rel, new SuiviPartenaires(db, rel, journal, { now }), journal, { now });
+        for (const n of await partnerNetworks(db)) await envois.run(n.id);
+      },
+    },
+    {
+      name: PARTENAIRES_CREDENTIALS_JOB,
+      hours: [6],
+      run: async () => {
+        const { annuaire } = relations();
+        for (const n of await partnerNetworks(db)) {
+          // L'alerte est écrite au journal avant d'être marquée : une écriture qui échoue la laisse au passage suivant.
+          await annuaire.dueAlerts(n.id, async (a) => {
+            await appendEvent(
+              journal,
+              { type: 'partenaire.justificatif_echeance', actor: 'system:partenaires', subject: `partner:${a.partnerId}`, data: { rule: 'R73', kind: a.kind, domain: a.domain, validUntil: a.validUntil } },
+              now,
+            );
+          });
+        }
+      },
+    },
+  ];
 }

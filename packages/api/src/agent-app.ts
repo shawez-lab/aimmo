@@ -6,6 +6,7 @@
  * `Authorization`, jamais dans une adresse ni au journal [R13].
  */
 
+import { CONFORMITE_SCRIPT } from '../app/conformite.ts';
 import { APP_CSS, APP_JS, ICON_SVG, INDEX_HTML, MANIFEST, swJs } from '../app/fichiers.ts';
 
 export const AGENT_APP_PATH = '/app';
@@ -24,6 +25,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/': { body: INDEX_HTML, type: 'text/html; charset=utf-8' },
   '/app/app.css': { body: APP_CSS, type: 'text/css; charset=utf-8' },
   '/app/app.js': { body: APP_JS, type: 'text/javascript; charset=utf-8' },
+  // L'écran du responsable de la conformité (L10), chargé à la demande pour sa seule clé, jamais gardé sur l'appareil.
+  '/app/conformite.js': { body: CONFORMITE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/sw.js': { body: SW_JS, type: 'text/javascript; charset=utf-8' },
   '/app/manifest.webmanifest': { body: MANIFEST, type: 'application/manifest+json; charset=utf-8' },
   '/app/icon.svg': { body: ICON_SVG, type: 'image/svg+xml' },

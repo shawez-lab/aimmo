@@ -76,7 +76,7 @@ export function isForbiddenSource(text: string): boolean {
  * La source d'une fiche, par le canal de sa première source connue. Un canal d'import d'outil (GoHighLevel, ManyChat)
  * ne dit pas d'où vient la personne : pas de reprise, l'agent doit la donner.
  */
-const CHANNEL_SOURCES: Readonly<Record<string, { kind: MandateSource; detail: string | null }>> = Object.freeze({
+export const CHANNEL_SOURCES: Readonly<Record<string, { kind: MandateSource; detail: string | null }>> = Object.freeze({
   site: { kind: 'site', detail: null },
   site_form: { kind: 'site', detail: null },
   assistant: { kind: 'site', detail: null },
@@ -84,6 +84,8 @@ const CHANNEL_SOURCES: Readonly<Record<string, { kind: MandateSource; detail: st
   facebook: { kind: 'social', detail: null },
   whatsapp: { kind: 'other', detail: 'WhatsApp' },
   email: { kind: 'other', detail: 'mail reçu' },
+  // Une recommandation d'un client (F01) ou d'un partenaire (G08) : la source suit jusqu'au mandat [R38].
+  recommandation: { kind: 'referral', detail: null },
 });
 
 const DETAIL_MAX = 80;
