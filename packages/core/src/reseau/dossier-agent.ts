@@ -18,7 +18,7 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { FORBIDDEN_PIECES } from '../dossiers/pieces.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -141,17 +141,18 @@ export class DossierAgent {
     // L'identifiant de l'agent est tiré de la candidature : deux entrées en même temps n'en créent qu'un [R18].
     const agentId = await agentIdFor(candidateId);
     const at = this.now().toISOString();
-    await this.db.run(
-      "INSERT INTO agents (id, network_id, first_name, last_name, zone, status, sponsor_agent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', NULL, ?, ?) ON CONFLICT (id) DO NOTHING",
-      [agentId, viewer.networkId, c.first_name, c.last_name ?? '', zone, at, at],
-    );
-    const { changes } = await this.db.run('INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
-      agentId,
-      viewer.networkId,
-      candidateId,
-      this.actor(viewer),
-      at,
+    // L'agent et son entrée dans un même lot : si l'un échoue, rien n'est gardé, et l'agent n'a aucun droit sans son entrée.
+    const [, entry] = await runBatch(this.db, [
+      {
+        sql: "INSERT INTO agents (id, network_id, first_name, last_name, zone, status, sponsor_agent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', NULL, ?, ?) ON CONFLICT (id) DO NOTHING",
+        params: [agentId, viewer.networkId, c.first_name, c.last_name ?? '', zone, at, at],
+      },
+      {
+        sql: 'INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+        params: [agentId, viewer.networkId, candidateId, this.actor(viewer), at],
+      },
     ]);
+    const changes = entry!.changes;
     if (changes !== 1) return { ok: true, agentId };
     await appendEvent(this.journal, { type: 'agent.entre', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { candidate: `candidate:${candidateId}` } }, this.now);
     return { ok: true, agentId };

@@ -19,6 +19,8 @@ export interface D1PreparedStatement {
 export interface D1Database {
   prepare(sql: string): D1PreparedStatement;
   exec(sql: string): Promise<unknown>;
+  /** Les instructions d'un lot sont exécutées dans une même transaction : si l'une échoue, rien n'est gardé. */
+  batch(statements: D1PreparedStatement[]): Promise<D1Result<unknown>[]>;
 }
 
 /**
@@ -41,6 +43,10 @@ export function fromD1(d1: D1Database): SqlDatabase {
     },
     async first<T>(sql: string, params: readonly SqlValue[] = []) {
       return statement(sql, params).first<T>();
+    },
+    async batch(statements) {
+      const results = await d1.batch(statements.map((s) => statement(s.sql, s.params ?? [])));
+      return results.map((r) => ({ changes: Number(r.meta?.changes ?? 0) }));
     },
   };
 }
