@@ -71,6 +71,9 @@ async function setup() {
 
 /** Un exemple d'adresse pour chaque route, et un corps. */
 const SAMPLES: Record<string, string> = {
+  'gagner.dossier': '/gagner/rendez-vous/r1/dossier',
+  'gagner.dossier_page': '/gagner/rendez-vous/r1/dossier/page',
+  'gagner.engagement': '/gagner/engagements',
   'gagner.lettres_campagne': '/gagner/lettres',
   'gagner.lettres': '/gagner/lettres/c1',
   'gagner.lettres_impression': '/gagner/lettres/c1/impression',

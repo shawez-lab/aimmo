@@ -1,7 +1,7 @@
 /**
  * Les routes de M20 complet, Gagner des mandats (G11), sous `/v1/gagner` : lettres de quartier (G06),
  * recommandations des partenaires et file « à appeler » (G08), relances des anciens contacts (G09), mesure mensuelle
- * des sources (G10). Le dossier de présentation (G07) y viendra avec sa tâche.
+ * des sources (G10), dossier de présentation des rendez-vous de mandat et engagements de service (G07).
  *
  * Chaque route dit les rôles qu'elle admet : un autre rôle est refusé avant que le corps soit lu, et le refus est écrit
  * au journal [R16]. La couche métier refait ses propres contrôles de droits. Rien n'est envoyé réellement : les
@@ -11,12 +11,14 @@ import {
   Acces,
   AnciensContacts,
   FicheClient,
+  DossierPresentation,
   FicheUnique,
   LettresQuartier,
   MesureSources,
   RecommandationsGagner,
   appendEvent,
   type CostProofStore,
+  type DossierDrafter,
   type Geocoder,
   type LetterDrafter,
   type JournalStore,
@@ -26,6 +28,7 @@ import {
   type Viewer,
 } from '@aimmo/core';
 import { Annuaire } from '../../core/src/partenaires/index.ts';
+import { renderDossier } from '../../core/src/mandats/gagner/dossier-presentation.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 8_000;
@@ -44,6 +47,8 @@ export interface GagnerServices {
   geocoder?: Geocoder | null;
   /** La rédaction des lettres par l'IA ; absente, le texte du code. */
   letterDrafter?: LetterDrafter | null;
+  /** La phrase d'accueil du dossier par l'IA ; absente, celle du code. */
+  dossierDrafter?: DossierDrafter | null;
 }
 
 export interface GagnerRoute {
@@ -97,6 +102,7 @@ const services = (s: GagnerServices) => {
     recommandations: new RecommandationsGagner(s.db, store, fiche, s.acces, new Annuaire(s.db, proofs, s.journal, { now: s.now }), s.journal, { now: s.now }),
     anciens: new AnciensContacts(s.db, s.journal, { now: s.now, drafter: s.drafter ?? null }),
     mesure: new MesureSources(s.db, proofs, s.journal, { now: s.now }),
+    dossier: new DossierPresentation(s.db, s.journal, { now: s.now, drafter: s.dossierDrafter ?? null }),
     lettres: new LettresQuartier(s.db, s.journal, { now: s.now, geocoder: s.geocoder ?? null, drafter: s.letterDrafter ?? null }),
   };
 };
@@ -139,6 +145,21 @@ export function gagnerRoutes(): GagnerRoute[] {
       },
     },
     { method: 'POST', pattern: new RegExp(`${P}/lettres/lettre/${ID}/deposee$`), name: 'gagner.lettre_deposee', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).lettres.deposited(v, id!)) },
+    // G07 · dossier de présentation et engagements de service
+    { method: 'GET', pattern: new RegExp(`${P}/rendez-vous/${ID}/dossier$`), name: 'gagner.dossier', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).dossier.build(v, id!)) },
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/rendez-vous/${ID}/dossier/page$`),
+      name: 'gagner.dossier_page',
+      roles: AGENT,
+      handle: async (s, v, [id]) => {
+        const r = await services(s).dossier.build(v, id!);
+        if (!r.ok) return reply(r);
+        const agent = await s.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ?', [v.userId]);
+        return new Response(renderDossier(r.value, agent ? `${agent.first_name} ${agent.last_name}` : ''), { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'", 'x-content-type-options': 'nosniff' } });
+      },
+    },
+    { method: 'POST', pattern: new RegExp(`${P}/engagements$`), name: 'gagner.engagement', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).dossier.setCommitment(v, b))) },
     // G08 · recommandations
     { method: 'POST', pattern: new RegExp(`${P}/recommandations$`), name: 'gagner.recommandation', roles: PARTNER, handle: withBody(async (s, v, _p, b) => reply(await services(s).recommandations.recommend(v, b))) },
     { method: 'GET', pattern: new RegExp(`${P}/recommandations/mes-envois$`), name: 'gagner.recommandations_envois', roles: PARTNER, handle: async (s, v) => reply(await services(s).recommandations.mine(v)) },
