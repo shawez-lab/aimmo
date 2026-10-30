@@ -626,6 +626,20 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       gbp_claims: ['draft_id', 'claimed_by'],
     },
   },
+  {
+    id: 'referencement',
+    finalite: 'Faire trouver les pages publiques par les moteurs : site du réseau et site d\'un agent, page de référence unique de chaque bien, plan des sites, signalement des pages publiées, modifiées ou retirées.',
+    baseLegale: 'interet_legitime',
+    personnes: ['Agents du réseau qui ont un site à leur nom', 'Membres de la direction qui règlent les sites'],
+    donnees: ['Adresse du site d\'un agent et l\'agent qu\'il présente, et l\'auteur du réglage', 'Adresses des pages publiques signalées aux moteurs, avec leur date (pages de biens, d\'agents et de prix, jamais une donnée de client)'],
+    duree: 'La durée du réseau : un réglage ou un signalement ne s\'efface pas, il sert de preuve de ce qui a été publié.',
+    destinataires: ['La direction du réseau', 'Les moteurs de recherche (IndexNow), seulement en mode réel', 'Le responsable de la conformité, en lecture'],
+    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
+    tables: {
+      public_sites: ['agent_id', 'base_url', 'set_by'],
+      seo_signals: ['url'],
+    },
+  },
 ];
 
 /** Les tables sans aucune donnée personnelle, chacune avec sa raison. */
@@ -968,6 +982,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   gbp_validations: ['validated_at'],
   gbp_sends: ['id', 'network_id', 'kind', 'mode', 'outcome', 'sent_at'],
   gbp_claims: ['id', 'network_id', 'target', 'mode', 'attempt', 'claimed_at'],
+  public_sites: ['id', 'network_id', 'kind', 'active', 'set_at'],
+  seo_signals: ['id', 'network_id', 'change', 'fingerprint', 'mode', 'outcome', 'at'],
   business_safeguard_communes: ['id', 'network_id', 'in_perimeter', 'source', 'source_date', 'version', 'recorded_at'],
   business_transfer_files: ['id', 'network_id', 'property_id', 'created_at'],
   business_transfer_third_parties: ['id', 'file_id', 'network_id', 'kind', 'version', 'recorded_at'],
