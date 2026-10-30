@@ -1,8 +1,10 @@
-import { Acces, FicheClient, reseau, location, commerces, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Acces, DecisionEnvoi, investir, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult, commerces } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
 import { pilotageJobs } from './pilotage.ts';
+import { conformiteJobs } from './conformite.ts';
+import { partenairesJobs } from './partenaires.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
 import type { Geocoder, SalesSource } from '@aimmo/core';
 
@@ -24,6 +26,10 @@ export interface SchedulerConfig {
   geocoder?: Geocoder | null;
   /** Le stockage des pièces des dossiers (R2, `PIECES`) ; absent, le passage des dossiers ne tourne pas. */
   pieces?: PieceStore | null;
+  /** Variable `PARTENAIRES_OPPOSITION_BASE` (`https://…/partenaires/opposition/`) : sans elle, la prospection ne prépare rien [R79]. */
+  partnerOptOutBase?: string | undefined;
+  /** Le barème des frais d'acquisition réglé par la direction (M17) ; absent, aucune alerte qui demande un rendement. */
+  investorFeesRateBp?: investir.Sourced<number> | null;
   now?: () => Date;
 }
 
@@ -84,6 +90,18 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Location (W10), de 9 h à 19 h : l'échéance du propriétaire et les reçus d'équité préparés par M15, passés par le
       // contrôle central, qui redécide au moment de l'envoi ; canaux du mode essai seulement.
       location.locationSendJob(config.db, journal, { now }),
+      // Conformité (L09) : alertes de fuite chaque heure ; à 6 h, prospects à 3 ans, échéances des demandes des
+      // personnes et relecture du registre. Tout est rangé pour l'écran du responsable, rien n'est envoyé.
+      ...conformiteJobs(config.db, journal, (() => {
+        const store = new FicheClient(config.db, { now });
+        return new DecisionEnvoi(config.db, store, new FicheUnique(config.db, store, { now }), { now });
+      })(), { now }),
+      // Partenaires (U09) : relances et alertes de 9 h à 19 h, prospection du jour ouvré à 10 h, échéances des
+      // justificatifs à 6 h. Tout est préparé et rangé, rien n'est envoyé.
+      ...partenairesJobs(config.db, journal, { now, optOutBase: config.partnerOptOutBase || null }),
+      // Investir (Y08), de 9 h à 19 h : les alertes aux investisseurs qui les ont demandées, chacune décidée par le
+      // contrôle central au moment de l'envoi ; canaux du mode essai seulement, rien ne part [R03, R26, R124].
+      investorAlertsJob(config.db, journal, { now, unsubscribeBase: config.alertUnsubscribeBase || null, feesRateBp: config.investorFeesRateBp ?? null }),
       // Commerces (CE10), à 6 h : tâches de la cession pour l'agent du bien et examen de vigilance de chaque dossier,
       // rangés pour les écrans, jamais envoyés [R116, R118].
       commerces.commercesDailyJob(config.db, journal, { now }),
@@ -93,4 +111,36 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
     await journalError(journal, 'system:planificateur', 'planificateur', error, now);
     return null;
   }
+}
+
+/** Le nom du passage des alertes aux investisseurs, sans donnée. */
+export const INVESTOR_ALERTS_JOB = 'investir.alertes';
+
+/**
+ * Les alertes aux investisseurs (Y06), au planificateur (Y08) : aux mêmes heures que celles des acquéreurs, une fois
+ * par créneau. Les canaux sont ceux du mode essai : `AlertesInvestisseurs` n'en reçoit pas d'autres d'ici [R26].
+ */
+export function investorAlertsJob(db: SqlDatabase, journal: SqlJournalStore, options: { now: () => Date; unsubscribeBase: string | null; feesRateBp: investir.Sourced<number> | null }): ScheduledJob {
+  return {
+    name: INVESTOR_ALERTS_JOB,
+    hours: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+    weekdays: [1, 2, 3, 4, 5, 6],
+    run: async () => {
+      await new investir.AlertesInvestisseurs(db, journal, { now: options.now, unsubscribeBase: options.unsubscribeBase, feesRateBp: options.feesRateBp }).run();
+    },
+  };
+}
+
+/**
+ * Le barème des frais d'acquisition réglé par la direction (variable `INVESTIR_FRAIS_BAREME`, `750@2027-09-01`) : un
+ * entier de points de base du prix, de 0 à 2 000, et la date du réglage. Lecture prudente : absent ou mal formé, rien,
+ * et aucune alerte qui demande un rendement ne part.
+ */
+export function investorFeesRate(raw: string | undefined): investir.Sourced<number> | null {
+  const m = /^(\d{1,4})@(\d{4}-\d{2}-\d{2})$/.exec((raw ?? '').trim());
+  if (!m) return null;
+  const value = Number(m[1]);
+  const asOf = m[2]!;
+  if (value > 2_000 || Number.isNaN(Date.parse(`${asOf}T00:00:00Z`)) || new Date(`${asOf}T00:00:00Z`).toISOString().slice(0, 10) !== asOf) return null;
+  return { value, source: 'direction:INVESTIR_FRAIS_BAREME', asOf, hypothesis: 'barème des frais d’acquisition réglé par la direction' };
 }
