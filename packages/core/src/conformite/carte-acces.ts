@@ -230,6 +230,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   offre: ENVOI('transmission d\'une offre'),
   rappel_fonds: ENVOI('rappel des fonds'),
   suivi_valeur: ENVOI('suivi de valeur'),
+  ancien_contact: ENVOI('relance d\'un ancien contact'),
   merci: ENVOI('remerciement'),
   avis: ENVOI('demande d\'avis'),
   apres_vente: ENVOI('relance après la vente'),
@@ -319,6 +320,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   value_tracking: { locate: by('person_id') },
   value_tracking_sends: { locate: [via('tracking_id', 'value_tracking')] },
   value_tracking_alerts: { locate: by('person_id') },
+  old_contact_moments: { locate: by('person_id') },
+  old_contact_followups: { locate: by('person_id') },
   // rendez-vous-visites
   appointments: { locate: by('person_id'), secrets: ['token_hash'] },
   appointment_holds: { locate: [via('appointment_id', 'appointments')] },
