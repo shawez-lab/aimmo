@@ -168,7 +168,17 @@ describeWithSqlite('L02 · fiche de risque de chaque client', () => {
     expect(await t.offer(210000)).toMatch(/^offer:/);
     expect((await t.risque.prepare(t.agent, t.buyerId, { relation: 'mandat', declarations: NO })).ok).toBe(true);
     const methods = Object.getOwnPropertyNames(conformite.FicheRisque.prototype).filter((m) => m !== 'constructor');
-    expect(methods.sort()).toEqual(['actor', 'alreadyValidated', 'ensurePreparedEvent', 'ensureValidatedEvent', 'hasEvent', 'list', 'prepare', 'readable', 'refuse', 'replay', 'toSheet', 'validate', 'validationOf'].sort());
+    expect(methods.sort()).toEqual(['actor', 'alreadyValidated', 'ensurePreparedEvent', 'ensureValidatedEvent', 'hasEvent', 'list', 'pending', 'prepare', 'readable', 'refuse', 'replay', 'toSheet', 'validate', 'validationOf'].sort());
+    // L10 : les fiches en attente se lisent dans l'ordre de leur préparation, jamais par niveau, et pour le responsable seul.
+    const waiting = await t.risque.pending(t.conformite);
+    const rows = waiting.ok ? waiting.value : [];
+    expect(rows.map((s) => s.computedLevel).sort()).toEqual(['eleve', 'moyen']);
+    const byPreparation = [...rows].sort((x, y) => x.preparedAt.localeCompare(y.preparedAt) || x.sheetId.localeCompare(y.sheetId));
+    expect(rows.map((s) => s.sheetId)).toEqual(byPreparation.map((s) => s.sheetId));
+    for (const v of [t.agent, t.direction, t.partner]) expect(await t.risque.pending(v)).toEqual({ ok: false, rule: 'R91', code: 'role' });
+    // Chaque lecture de la liste est au journal, client par client, au nom du responsable.
+    const reads = (await t.journal.all()).filter((e) => e.type === 'risque.lu');
+    expect(reads.map((e) => [e.actor, e.subject, e.data['count']])).toEqual([['compliance:conformite-1', `person:${t.buyerId}`, 2]]);
     const source = readFileSync(fileURLToPath(new URL('../src/conformite/risque.ts', import.meta.url)), 'utf8');
     expect(source).not.toMatch(/ORDER BY[^`'"]*level/i);
   });
