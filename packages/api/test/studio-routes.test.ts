@@ -109,6 +109,7 @@ describeWithSqlite('X09 · routes de M19', () => {
       'studio.guide.vue': `/studio/biens/${b.id}/guide/vues`,
       'studio.guide.validation': `/studio/biens/${b.id}/guide/validation`,
       'studio.photo': `/studio/biens/${b.id}/photos`,
+      'studio.depot': `/studio/biens/${b.id}/fichiers/photo`,
       'studio.montage.modele': `/studio/biens/${b.id}/montage`,
       'studio.montage': `/studio/biens/${b.id}/montage`,
       'studio.plan': `/studio/biens/${b.id}/plan`,

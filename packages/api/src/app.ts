@@ -156,6 +156,8 @@ export interface ApiConfig {
 export interface StudioOptions {
   files: StudioServices['files'] | null;
   writer?: StudioServices['writer'];
+  /** X12 : le stockage où les fichiers finis sont rangés tels quels (R2, `MEDIA`) ; absent, le dépôt est fermé. */
+  uploads?: StudioServices['uploads'];
 }
 
 export interface PartenairesOptions {
@@ -1007,7 +1009,7 @@ function m19Routes(options: StudioOptions | null): RouteDef[] {
     name: r.name,
     handle: (s, viewer, params, request) => {
       if (!options?.files) return Promise.resolve(failure(503, 'studio_files_not_configured', 'Studio fermé : aucun stockage des fichiers.'));
-      return r.handle({ db: s.db, journal: s.journal, now: s.now, files: options.files, writer: options.writer ?? null }, viewer, params, request);
+      return r.handle({ db: s.db, journal: s.journal, now: s.now, files: options.files, writer: options.writer ?? null, uploads: options.uploads ?? null }, viewer, params, request);
     },
   }));
 }

@@ -90,7 +90,7 @@ export interface SheetVersion {
   createdAt: string;
 }
 
-export type SheetProblem = { ok: false; rule: null; code: 'invalid'; field: string } | { ok: false; rule: null; code: 'unknown_property' | 'no_sheet' | 'unknown_version' | 'busy' };
+export type SheetProblem = { ok: false; rule: null; code: 'invalid'; field: string } | { ok: false; rule: null; code: 'unknown_property' | 'no_sheet' | 'unknown_version' | 'busy' | 'stale' };
 type Refusal = { ok: false; rule: 'R16'; code: string };
 
 const MAX_MEDIA = 80;
@@ -295,8 +295,11 @@ export class FicheBien {
   /**
    * Enregistre une nouvelle version complète de la fiche. Seuls l'agent du bien et la direction écrivent [R16].
    * Une saisie fautive est refusée avec le champ en cause, sans rien ranger.
+   *
+   * Avec `ifVersion`, la version n'est écrite que si la dernière version rangée est encore celle-là (0 : aucune) ;
+   * sinon `stale`, sans rien ranger : un ajout calculé sur une version lue ne perd jamais un ajout fait entre-temps (X12).
    */
-  async save(viewer: Viewer, propertyId: string, input: unknown): Promise<{ ok: true; value: SheetVersion } | Refusal | SheetProblem> {
+  async save(viewer: Viewer, propertyId: string, input: unknown, options: { ifVersion?: number } = {}): Promise<{ ok: true; value: SheetVersion } | Refusal | SheetProblem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') {
       // Le rôle d'abord : la conformité lit, mais n'écrit pas la fiche d'un bien.
       const read = await this.canRead(viewer, propertyId);
@@ -314,11 +317,13 @@ export class FicheBien {
     for (let attempt = 0; attempt < 5; attempt++) {
       const id = this.newId();
       try {
-        await this.db.run(
+        const guarded = options.ifVersion !== undefined;
+        const { changes } = await this.db.run(
           `INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at)
-           SELECT ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ? FROM property_sheets WHERE property_id = ?`,
-          [id, propertyId, read.networkId, data, this.actor(viewer), createdAt, propertyId],
+           SELECT ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ? FROM property_sheets WHERE property_id = ?${guarded ? ' HAVING COALESCE(MAX(version), 0) = ?' : ''}`,
+          [id, propertyId, read.networkId, data, this.actor(viewer), createdAt, propertyId, ...(guarded ? [options.ifVersion as number] : [])],
         );
+        if (guarded && changes === 0) return { ok: false, rule: null, code: 'stale' };
       } catch (error) {
         if (/UNIQUE/i.test(String(error))) continue;
         throw error;

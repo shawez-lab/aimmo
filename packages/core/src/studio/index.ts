@@ -7,3 +7,4 @@ export * from './publications.ts';
 export * from './supports.ts';
 export * from './options.ts';
 export * from './atelier.ts';
+export * from './depot.ts';

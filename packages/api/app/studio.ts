@@ -8,7 +8,8 @@ import { ROOM_KINDS } from '../../core/src/studio/plan.ts';
  *
  * L'écran ne lit et n'écrit que par les routes `/v1/studio` [R16]. Les corrections de photo se font sur le téléphone,
  * dans une toile, avec la seule liste fermée des corrections d'ensemble ; aucune image ni vidéo n'est envoyée à un
- * serveur pour traitement [R130] : l'écran n'envoie que des références, des choix et des cotes. Tout texte reçu est posé
+ * serveur pour traitement [R130] : l'écran envoie des références, des choix et des cotes, et dépose les fichiers finis
+ * (original, photo corrigée, vidéo montée), rangés tels quels, avec l'empreinte calculée sur le téléphone (X12). Tout texte reçu est posé
  * avec `textContent` ; l'écran ne calcule ni surface, ni texte, ni droit : il montre ce que le code a décidé.
  */
 
@@ -48,6 +49,20 @@ const REFUSALS = {
   deja_validee: 'Cette publication est déjà validée.',
   texte_perime: 'La fiche a changé depuis : préparez une nouvelle publication.',
   agent_parti: 'L’agent qui l’a préparée a quitté le réseau : préparez une nouvelle publication.',
+  empreinte_differente: 'Le fichier reçu n’est pas celui préparé sur ce téléphone : rien n’est rangé. Réessayez.',
+  type_refuse: 'Ce type de fichier n’est pas admis.',
+  trop_lourd: 'Fichier trop lourd pour la fiche.',
+  fichier_vide: 'Le fichier est vide.',
+  fiche_absente: 'Remplissez d’abord la fiche du bien.',
+  fiche_pleine: 'La fiche compte déjà 80 photos et vidéos.',
+  fiche_occupee: 'La fiche n’a pas reçu le fichier : réessayez.',
+  fiche_refusee: 'La fiche n’a pas reçu le fichier : réessayez.',
+  depot_ferme: 'Le rangement des fichiers n’est pas encore ouvert.',
+  original_absent: 'L’original n’est pas rangé : réessayez.',
+  empreinte_incoherente: 'Les empreintes ne correspondent pas aux corrections : préparez de nouveau la photo.',
+  video_inconnue: 'Cette vidéo n’est pas dans la fiche du bien.',
+  duree_invalide: 'La durée ne correspond pas au modèle.',
+  deja_rangee: 'Cette vidéo est déjà rangée.',
 };
 
 export const STUDIO_HTML = `<section id="studio" hidden>
@@ -68,6 +83,18 @@ export const STUDIO_JS = `
     clear($('studio-corps'));
     $('studio-etat').textContent = '';
   }
+  // Le dépôt d'un fichier fini, tel quel, sous la session en cours, comme send (X12) : le serveur le range, sans le traiter [R130].
+  function studioUpload(path, file, type, sha) {
+    if (!currentKey) return Promise.resolve({ gone: true });
+    var mine = session;
+    return fetch(path, { method: 'POST', headers: { authorization: 'Bearer ' + currentKey, 'content-type': type, 'x-aimmo-sha256': sha }, body: file, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
+      return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
+        if (mine !== session) return { gone: true };
+        if (r.status === 401 || (r.status === 403 && b && b.code === 'agent_inactive')) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return { gone: true }; }
+        return { status: r.status, ok: r.ok && !!b && b.ok === true, body: b };
+      });
+    }, function () { return mine !== session ? { gone: true } : { offline: true }; });
+  }
   function openStudio(id, reference) {
     if (!currentKey || !ID.test(id)) return Promise.resolve(false);
     if (studioScreen) return studioScreen.open(id, reference);
@@ -83,7 +110,7 @@ export const STUDIO_JS = `
         var make = globalThis.AIMMO_STUDIO;
         try { delete globalThis.AIMMO_STUDIO; } catch (e) { /* rien */ }
         if (mine !== session || typeof make !== 'function') { resolve(false); return; }
-        studioScreen = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, checkbox: checkbox, show: show, ID: ID, key: function () { return currentKey; }, session: function () { return session; }, bump: function () { session += 1; return session; } });
+        studioScreen = make({ $: $, el: el, clear: clear, send: send, upload: studioUpload, button: button, field: field, checkbox: checkbox, show: show, ID: ID, key: function () { return currentKey; }, session: function () { return session; }, bump: function () { session += 1; return session; } });
         resolve(studioScreen.open(id, reference));
       });
       s.addEventListener('error', function () {
@@ -101,7 +128,7 @@ export const STUDIO_JS = `
  */
 export const STUDIO_SCRIPT = `'use strict';
 globalThis.AIMMO_STUDIO = function (t) {
-  var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox, show = t.show, ID = t.ID;
+  var $ = t.$, el = t.el, clear = t.clear, send = t.send, upload = t.upload, button = t.button, field = t.field, checkbox = t.checkbox, show = t.show, ID = t.ID;
   var OPS = ${JSON.stringify(OPERATION_LABELS)};
   var EVENTS = ${JSON.stringify(EVENT_LABELS)};
   var CHANNELS = ${JSON.stringify(CHANNEL_LABELS)};
@@ -328,7 +355,7 @@ globalThis.AIMMO_STUDIO = function (t) {
         return Promise.all([digest(buf), createImageBitmap(file)]);
       }).then(function (both) {
         if (mine !== seq) return;
-        photo = { name: file.name || 'photo.jpg', originalSha256: both[0], bitmap: both[1], url: null, originalUrl: URL.createObjectURL(file) };
+        photo = { name: file.name || 'photo.jpg', file: file, type: String(file.type || '').toLowerCase(), originalSha256: both[0], bitmap: both[1], url: null, originalUrl: URL.createObjectURL(file) };
         draw(canvas, photo.bitmap, []);
         local.textContent = 'Photo prête : réglez, puis préparez la photo corrigée.';
       }, function () { if (mine === seq) local.textContent = 'Cette photo ne se lit pas sur ce téléphone.'; });
@@ -368,10 +395,39 @@ globalThis.AIMMO_STUDIO = function (t) {
             a.setAttribute('download', 'corrigee-' + safe(held.name));
             out.appendChild(a);
           }
+          out.appendChild(button('Ranger la photo, son original et son certificat', function () { keep(held, ops, ops.length ? blob : null, sha); }));
           local.textContent = (ops.length ? 'Photo corrigée prête' : 'Aucune correction') + '. Rien n’a quitté ce téléphone.';
         });
       }, 'image/jpeg', 0.92);
     }));
+  }
+
+  /* ---------- Dépôt (X12) : l'original, puis la photo, rangés tels quels ; enfin le certificat [R130]. ---------- */
+  var ORIGINAL_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/x-adobe-dng'];
+  var PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  // Un dépôt, puis la suite ; un refus est dit, une réponse arrivée après un autre choix est ignorée.
+  function put(kind, file, type, sha, query, fallback) {
+    var mine = seq;
+    return upload(base() + '/fichiers/' + kind + (query || ''), file, type, sha).then(function (res) {
+      if (res.gone || mine !== seq) return null;
+      if (!res.ok) { state(why(res, fallback)); return null; }
+      return res.body.data;
+    });
+  }
+  function keep(held, ops, blob, sha) {
+    if (held !== photo) return;
+    if (ORIGINAL_TYPES.indexOf(held.type) < 0) { state('Cette photo n’est pas en JPEG, PNG, WebP, HEIC ou DNG : elle ne peut pas être rangée.'); return; }
+    // Sans correction, la photo publiée est l'original lui-même : il doit être d'un type que la fiche admet.
+    if (!blob && PHOTO_TYPES.indexOf(held.type) < 0) { state('Sans correction, la photo doit être en JPEG, PNG ou WebP : appliquez une correction ou choisissez une autre photo.'); return; }
+    state('Envoi de l’original…');
+    put('original', held.file, held.type, held.originalSha256, '', 'L’original n’est pas rangé.').then(function (o) {
+      if (!o) return null;
+      state('Envoi de la photo…');
+      return put('photo', blob || held.file, blob ? 'image/jpeg' : held.type, blob ? sha : held.originalSha256, '?retouche=' + (blob ? 'lumiere_cadrage' : 'aucune'), 'La photo n’est pas rangée.').then(function (p) {
+        if (!p) return null;
+        return act(base() + '/photos', { resultRef: p.ref, resultSha256: p.sha256, originalRef: o.ref, originalSha256: o.sha256, operations: ops, processedOn: 'appareil' }, 'Le certificat n’est pas rangé.', 'Photo rangée dans la fiche, avec son original et son certificat.');
+      });
+    });
   }
 
   /* ---------- Montage (X03) : le plan de tournage du modèle, monté sur le téléphone. ---------- */
@@ -390,6 +446,32 @@ globalThis.AIMMO_STUDIO = function (t) {
     var ul = el('ul', null, 'liste');
     (m.neverFilm || []).forEach(function (x) { ul.appendChild(el('li', x)); });
     n.appendChild(ul);
+    // La vidéo montée sur le téléphone : rangée telle quelle, puis son montage et ses textes contrôlés (X12).
+    var v = block('Ranger la vidéo montée');
+    var pick = field(v, 'studio-video-fichier', 'Vidéo montée (MP4)');
+    pick.setAttribute('type', 'file');
+    pick.setAttribute('accept', 'video/mp4');
+    var len = field(v, 'studio-video-duree', 'Durée (secondes)');
+    len.setAttribute('type', 'number');
+    len.setAttribute('min', '1');
+    len.value = String(m.totalSeconds || '');
+    var cap = field(v, 'studio-video-legende', 'Légende', 'textarea');
+    var subs = (m.clips || []).map(function (c) { return c.subtitle; }).filter(function (x) { return typeof x === 'string' && x; });
+    v.appendChild(button('Ranger la vidéo dans la fiche', function () {
+      var file = pick.files && pick.files[0];
+      if (!file) { state('Choisissez d’abord la vidéo montée.'); return; }
+      if (String(file.type || '').toLowerCase() !== 'video/mp4') { state('La vidéo doit être en MP4.'); return; }
+      var mine = seq;
+      state('Lecture de la vidéo sur ce téléphone…');
+      file.arrayBuffer().then(digest).then(function (sha) {
+        if (mine !== seq) return null;
+        state('Envoi de la vidéo…');
+        return put('video', file, 'video/mp4', sha, '', 'La vidéo n’est pas rangée.').then(function (d) {
+          if (!d) return null;
+          return act(base() + '/montage', { videoRef: d.ref, videoSha256: d.sha256, durationSeconds: Math.round(Number(len.value)), subtitles: subs, caption: cap.value, musicId: null, processedOn: 'appareil' }, 'Le montage n’est pas rangé.', 'Vidéo rangée dans la fiche, avec son montage.');
+        });
+      }, function () { if (mine === seq) state('Cette vidéo ne se lit pas sur ce téléphone.'); });
+    }));
   }
 
   /* ---------- Plan du logement (X04) : cotes saisies, surfaces calculées par le code [R135]. ---------- */

@@ -62,9 +62,11 @@ describe('A01 · fichiers de l’application', () => {
     const sends = js.match(/\bsend\(([^,)]+)/g) ?? [];
     expect(sends.length).toBeGreaterThan(5);
     for (const call of sends) expect(call).toMatch(/^send\((?:path|base|'\/v1\/)/);
+    // Le dépôt du Studio (X12) : son adresse est faite par l'écran, sous `/v1/studio/biens/`, jamais avec la clé.
+    expect(js).toContain("'x-aimmo-sha256': sha");
     // `base` est toujours une adresse fixe de l'API.
     for (const b of js.match(/var base = [^;]+;/g) ?? []) expect(b).toMatch(/^var base = '\/v1\//);
-    expect(js.match(/(?:api|fetch)\(([^,)]+)/g)?.sort()).toEqual(['api(path', 'api(path', 'fetch(path', "fetch('/v1/acces/invitation'", "api('/v1/plan-du-jour'", "api('/v1/contacts-chauds'", "api('/v1/annonces'", "api('/v1/rendez-vous/jour'", "api('/v1/usage/matin'", "api('/v1/apres-vente/journee'", "api('/v1/moi'", "api('/v1/fiches/' + encodeURIComponent(personId", "api('/v1/rappels/' + encodeURIComponent(taskId", "api('/v1/pilotage/export-quotidien?jour=' + day", 'fetch(base + q'].sort());
+    expect(js.match(/(?:api|fetch)\(([^,)]+)/g)?.sort()).toEqual(['api(path', 'api(path', 'fetch(path', 'fetch(path', "fetch('/v1/acces/invitation'", "api('/v1/plan-du-jour'", "api('/v1/contacts-chauds'", "api('/v1/annonces'", "api('/v1/rendez-vous/jour'", "api('/v1/usage/matin'", "api('/v1/apres-vente/journee'", "api('/v1/moi'", "api('/v1/fiches/' + encodeURIComponent(personId", "api('/v1/rappels/' + encodeURIComponent(taskId", "api('/v1/pilotage/export-quotidien?jour=' + day", 'fetch(base + q'].sort());
   });
 
   it('[R16] une clé refusée ne montre rien et est effacée ; une panne ne l’efface pas ; la déconnexion l’efface', async () => {
