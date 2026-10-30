@@ -131,7 +131,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R142 | Recommandation avec accord. Une recommandation arrive avec sa source et la preuve de l'accord de la personne recommandée ; sans cette preuve, aucun contact. | oui | G08 |
 | R143 | Relance des anciens contacts. Un ancien contact n'est relancé qu'avec une base légale au jour de l'envoi, au plus une fois par période réglée, par le contrôle central. | oui | G09 |
 | R144 | Mesure des sources. Le compte mensuel des mandats par source vient de la base ; garder ou arrêter une source est une décision de la direction, jamais automatique. | oui | G10 |
-| R145 | Aucune promesse de mandats. Aucun texte d'AIMMO ne promet des mandats à un agent. | non | G13 |
+| R145 | Aucune promesse de mandats. Aucun texte d'AIMMO ne promet des mandats à un agent. | oui | G13 |
 | R150 | Prix regroupés. Une case de prix publiée porte au moins 5 ventes (réglage), sans adresse, numéro de voie, date ni prix d'une vente isolée ; aucune paire de cases publiées, dans une version ou entre deux versions qui se suivent, ne laisse par différence un reste de 1 à 4 ventes. | oui | AT01 |
 | R151 | Prix sourcé. Un prix de marché publié porte sa source et sa date de publication ; un prix d'annonce vient du mandat en vigueur. | oui | AT01, AT02 |
 | R152 | Mentions de l'agent. Une page publique d'agent n'est publiée qu'avec, à côté de son nom, son statut d'agent commercial, son numéro d'immatriculation et la carte du titulaire qui l'habilite. | oui | AT03 |
