@@ -20,6 +20,8 @@ import type { SqlDatabase } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { DEADLINES, type Deadline } from '../qualification/regles.ts';
 import { INBOUND_CHANNELS } from '../reception/entrant.ts';
+import { SqlJournalStore } from '../journal/sql-store.ts';
+import { AnciensContacts } from './gagner/anciens-contacts.ts';
 
 /** Finalité de l'accord d'une personne recommandée (M11, F01 ; G08), écrite ici pour ne pas lier le socle à M11. */
 export const PLAN_REFERRAL_PURPOSE = 'recommandation';
@@ -326,6 +328,13 @@ export class PlanDuJour {
       if (live && !open) return null;
       const opposed = await this.db.first(`SELECT 1 FROM after_sale_choices WHERE person_id IN (${inIds}) AND choice = 'non' AND recorded_at <= ? LIMIT 1`, [...ids, stamp]);
       if (opposed) return null;
+      // La base entière de G09, relue maintenant : client d'une vente de l'agence, prospect au-delà de 3 ans, accord sur
+      // un canal de relance [R143, R65, R97, R03]. Le contrôle à l'heure du plan s'en tient aux accords datés : une vente
+      // signée depuis n'est pas un écart du plan d'alors.
+      if (live) {
+        const row = await this.db.first<{ network_id: string; person_id: string }>(`SELECT network_id, person_id FROM old_contact_followups WHERE id = ? AND person_id IN (${inIds})`, [item.followupId, ...ids]);
+        if (!row || (await this.oldContactBasisLost(row.network_id, row.person_id, at)) !== null) return null;
+      }
       const consent = await this.db.first<{ given_at: string }>(
         `SELECT given_at FROM consents WHERE person_id IN (${inIds}) AND purpose = ? AND given_at <= ? AND (withdrawn_at IS NULL OR withdrawn_at > ?) ORDER BY given_at DESC, id LIMIT 1`,
         [...ids, PLAN_OLD_CONTACT_PURPOSE, stamp, stamp],
@@ -333,6 +342,18 @@ export class PlanDuJour {
       return consent ? { kind: 'consent', since: consent.given_at, purpose: PLAN_OLD_CONTACT_PURPOSE } : null;
     }
     return this.basisOf(ids, at);
+  }
+
+  private oldContacts: { key: string; anciens: AnciensContacts; states: Promise<Map<string, { lastContactAt: string; client: boolean }>> } | null = null;
+
+  /** La règle de G09 qui manque à la personne, les états de L08 lus une fois par réseau et par instant. */
+  private async oldContactBasisLost(networkId: string, personId: string, at: Date): Promise<string | null> {
+    const key = `${networkId}|${at.toISOString()}`;
+    if (this.oldContacts?.key !== key) {
+      const anciens = this.oldContacts?.anciens ?? new AnciensContacts(this.db, new SqlJournalStore(this.db), { now: this.now });
+      this.oldContacts = { key, anciens, states: anciens.contactStates(networkId) };
+    }
+    return this.oldContacts.anciens.basisLost(networkId, personId, at, await this.oldContacts.states);
   }
 
   /** Les campagnes de lettres de l'agent qui ont encore des lettres à déposer, de la plus ancienne à la plus récente. */

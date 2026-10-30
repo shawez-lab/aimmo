@@ -246,4 +246,61 @@ describeWithSqlite('G12 · branchement de M20 complet dans le socle', () => {
     await t.db.run('UPDATE consents SET withdrawn_at = ? WHERE person_id IN (' + members.map(() => '?').join(', ') + ') AND purpose = ?', [new Date(t.clock - 10).toISOString(), ...members, 'recommandation']);
     expect(await plan.eligibility(members, new Date(t.clock), target, { asOfPlan: true })).toEqual({ ok: false, reason: 'noBasis' });
   });
+
+  it('[R36] [R142] [R65] [R143] chaque nouvelle raison tombe sans sa base : exclue, accord retiré, autre canal, opposition, client d’une vente', async () => {
+    const t = await setup();
+    const plan = new PlanDuJour(t.db, t.fiche, { now: t.now });
+    /** Une recommandation d'un client d'Alex pour cette personne, à rappeler, avec l'accord sur ce canal. */
+    const referred = async (firstName: string, channel: 'phone' | 'email') => {
+      const p = await t.person(firstName);
+      const referrer = await t.person(`Parrain${firstName}`);
+      const at = new Date(t.clock).toISOString();
+      await t.db.run(
+        'INSERT INTO referrals (id, network_id, referrer_id, referred_id, project_id, first_name, agent_id, callable, call_due_at, call_done_at, created_by, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?, 1, ?, NULL, ?, ?)',
+        [`ref-${firstName}`, t.network, referrer, p, firstName, t.alex, at, `agent:${t.alex}`, at],
+      );
+      await t.store.addConsent({ networkId: t.network, personId: p, purpose: 'recommandation', channel, proof: 'accord noté (test)', givenAt: new Date(t.clock - DAY) });
+      return p;
+    };
+    const lea = await referred('Léa', 'phone');
+    const mia = await referred('Mia', 'email');
+    const exclue = await referred('Exclue', 'phone');
+    await t.store.addExclusion({ networkId: t.network, personId: exclue, reason: 'stop', notedAt: new Date(t.clock - 1000) });
+    // Trois anciens contacts aux relances préparées : Inès garde sa base, Oscar s'oppose aux relances après la vente,
+    // Paul est client d'une vente faite avec l'agence (choix rangé à l'acte), Rita a retiré son accord de recontact.
+    const ines = await t.person('Inès', { oldContact: true });
+    const oscar = await t.person('Oscar', { oldContact: true });
+    const paul = await t.person('Paul', { oldContact: true });
+    const rita = await t.person('Rita', { oldContact: true });
+    for (const p of [ines, oscar, paul, rita]) await t.call('alex', 'POST', `/gagner/fiches/${p}/fin-de-bail`, { onDay: '2027-11-20' });
+    expect(await new AnciensContacts(t.db, t.journal, { now: t.now }).prepareMonth(t.network)).toBe(4);
+    const choice = (id: string, person: string, c: string) =>
+      t.db.run("INSERT INTO after_sale_choices (id, network_id, file_id, person_id, choice, proof, recorded_by, recorded_at) VALUES (?, ?, 'f-1', ?, ?, 'case cochée (test)', 'agent:a', ?)", [id, t.network, person, c, new Date(t.clock).toISOString()]);
+    await choice('c-oscar', oscar, 'non');
+    await choice('c-paul', paul, 'oui');
+    await t.store.addConsent({ networkId: t.network, personId: rita, purpose: 'prospecting', channel: 'email', proof: 'accord (test)', givenAt: new Date(t.clock - 2 * DAY) });
+    await t.db.run("UPDATE consents SET withdrawn_at = ? WHERE person_id = ? AND purpose = 'prospecting'", [new Date(t.clock - 500).toISOString(), rita]);
+
+    const result = await plan.compute(t.acces, t.agent);
+    if (!result.ok) throw new Error('plan');
+    // Léa (recommandation d'un client, accord par téléphone) et Inès seulement ; Mia n'a accepté que le mail [R142, R03].
+    expect(result.value.items.map((i) => [i.kind, i.firstName])).toEqual([
+      ['recommendation', 'Léa'],
+      ['old_contact', 'Inès'],
+    ]);
+    expect(result.value.items[0]).toMatchObject({ personId: lea, reason: 'Recommandé par un client, accord donné : à appeler.', recommendation: { origin: 'client', id: 'ref-Léa', channel: 'phone' } });
+    // Comptées sans donnée personnelle : l'exclue, l'accord retiré de Rita, et sans base Mia, Oscar, Paul et le client
+    // de la mise en relation (projet de vente sans demande ni accord) [R36].
+    expect(result.value.removed).toEqual({ excluded: 1, withdrawn: 1, noBasis: 4 });
+    expect(mia).toBeTruthy();
+
+    // Figé, puis Inès devient cliente d'une vente de l'agence : la ligne sort du plan figé, base de G09 relue [R65, R143].
+    t.setClock(Date.parse('2027-10-13T05:30:00.000Z'));
+    await new PlansDuJour(t.db, t.journal, { now: t.now }).freezeAll();
+    await choice('c-ines', ines, 'oui');
+    t.setClock(Date.parse('2027-10-13T07:00:00.000Z'));
+    const read = await t.call('alex', 'GET', '/plan-du-jour');
+    expect(read.body.data.items.map((i: { firstName: string }) => i.firstName)).toEqual(['Léa']);
+    expect(read.body.data.hiddenSinceFrozen).toBe(1);
+  });
 });

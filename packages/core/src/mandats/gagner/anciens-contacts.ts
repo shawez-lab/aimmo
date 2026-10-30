@@ -244,6 +244,21 @@ export class AnciensContacts {
   }
 
   /**
+   * La règle qui manque aujourd'hui à une personne pour être relancée, ou `null` si sa base est entière : la même
+   * vérification que la liste et l'envoi [R143, R65, R97, R03, R02]. Sert au plan du jour (G12). `states` : ceux de
+   * L08 pour le réseau, quand l'appelant les a déjà lus.
+   */
+  async basisLost(networkId: string, personId: string, at: Date, states?: Map<string, { lastContactAt: string; client: boolean }>): Promise<string | null> {
+    const root = await this.fiche.rootOf(personId);
+    return this.basis(root, at, (states ?? (await this.durees.states(networkId))).get(root));
+  }
+
+  /** Les états de L08 d'un réseau : dernier contact venu de la personne, et si elle est cliente. */
+  async contactStates(networkId: string): Promise<Map<string, { lastContactAt: string; client: boolean }>> {
+    return this.durees.states(networkId);
+  }
+
+  /**
    * Une relance de cette tâche préparée dans la période réglée, ou validée dans la période, ou encore à valider ; ou une
    * relance après la vente envoyée dans la période : pas de nouvelle relance [R143, R05]. `except` : la relance que l'on valide.
    */
