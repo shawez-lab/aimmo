@@ -2124,7 +2124,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien (le numéro de carte du réseau est un réglage, H09).
 
 ### AT04 · Référencement : plan du site, données structurées, page de référence unique
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT02, AT03
 - Cahier : M01, point 2 « Référencement » et « Deux sites, un seul moteur ».
 - Objectif : plan du site de chaque site (biens publiés, agents, prix), données structurées des biens, des agents et des pages de prix ; page de référence (canonique) d'un bien : site de son agent s'il en a un, sinon site du réseau ; signalement aux moteurs (IndexNow) de chaque page modifiée, derrière une interface, en mode essai.
