@@ -11,7 +11,6 @@ import { AGENT_APP_FILES } from '../src/agent-app.ts';
 import { handleUnsubscribe } from '../src/alertes.ts';
 import { handleApresVentePublic } from '../src/apres-vente.ts';
 import { handleCandidature } from '../src/candidature.ts';
-import { renderCertificatePage } from '../src/certificat-photo.ts';
 import { handleEspacePartenaire, handlePartenairesPublic, PARTNER_SPACE_FILES } from '../src/partenaires.ts';
 
 // Tout est inventé : jeton, bien, agent.
@@ -77,11 +76,6 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
       budget: BUDGETS.page,
     },
     { name: 'lettres de quartier', html: renderLetters('au_proprietaire', letterFallback('mandat', 'Dijon'), 'Alex Exemple', [{ number: '10', street: 'rue des Essais', postcode: '21000', city: 'Dijon' }, { number: '12', street: 'rue des Essais', postcode: '21000', city: 'Dijon' }]), print: true, budget: BUDGETS.page },
-    {
-      name: 'certificat de photo',
-      html: renderCertificatePage({ token: TOKEN, issuedOn: '2027-10-14', resultSha256: 'b'.repeat(64), originalSha256: 'a'.repeat(64), originalKept: true, localEdits: 'aucune', corrections: [{ op: 'exposition', label: 'Exposition', detail: 'Exposition : +0,5 IL' }], virtualStaging: false, mention: null, statement: 'Corrigée sur toute l’image : exposition.', path: `/certificat-photo/${TOKEN}` }),
-      budget: BUDGETS.page,
-    },
     { name: 'désinscription après la vente', html: await text(await handleApresVentePublic(get(`/apres-vente/desinscription/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
   ];
 }
@@ -139,10 +133,10 @@ describe('Z03 · système de design d’AIMMO', () => {
       'core/src/attirer/page-agent.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,
       'api/src/candidature.ts': /^<style>\$\{STYLE\}<\/style>$/,
-      'core/src/studio/supports.ts': /^<style>\$\{style\}<\/style>$/,
       'core/src/attirer/simulateur-pret.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/mandats/gagner/lettres-quartier.ts': /^<style>\$\{LETTER_CSS\}<\/style>$/,
       'core/src/mandats/gagner/dossier-presentation.ts': /^<style>\$\{DOSSIER_CSS\}<\/style>$/,
+      'core/src/studio/supports.ts': /^<style>\$\{style\}<\/style>$/,
     };
     const offenders: string[] = [];
     for (const f of files) {
