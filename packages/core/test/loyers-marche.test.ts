@@ -212,6 +212,51 @@ describeWithSqlite('Y02 · loyers de marché', () => {
     expect(await t.loyers.marketRent('net-1', '98099', 'house')).toMatchObject({ status: 'connu', rentM2Cents: 1050 });
   });
 
+  it('un guillemet non refermé ou suivi de caractères rend la ligne mal formée', () => {
+    const bad = [
+      HEADER,
+      '1;99001;"Commune Une;200000001;99;99;12,3;10;15;commune;120;800;0,7',
+      '2;99002;"Commune" Deux;200000001;99;99;12,3;10;15;commune;120;800;0,7',
+      '3;99003;Comm"une;200000001;99;99;12,3;10;15;commune;120;800;0,7',
+      '4;99004;"Commune Quatre" ;200000001;99;99;12,3;10;15;commune;120;800;0,7',
+    ].join('\n');
+    expect(parseAnilCsv(bad)).toEqual({
+      ok: false,
+      code: 'lignes',
+      errors: [
+        { line: 2, code: 'guillemets' },
+        { line: 3, code: 'guillemets' },
+        { line: 4, code: 'guillemets' },
+      ],
+    });
+    expect(parseAnilCsv('"id_zone;INSEE_C\n1;99001')).toMatchObject({ ok: false, code: 'entete' });
+  });
+
+  it('deux reprises simultanées : celle qui arrive après la fin rend l’import complet', async () => {
+    const t = await setup();
+    const a = new LoyersMarche(t.db, t.journal, { now: () => new Date(NOW), maxChunksPerCall: 1 });
+    const rows = Array.from({ length: 20 }, (_, i) => `${i};${String(96000 + i)};C;1;99;99;10,5;9;12;commune;50;100;0,7`);
+    const csv = [HEADER, ...rows].join('\n');
+    expect(await a.importAnil(t.direction, { kind: 'house', vintage: 2026, csv })).toMatchObject({ ok: true, status: 'en_cours', stored: 16 });
+    // La reprise B lit l'état « en cours », puis A finit l'import avant que B range sa tranche.
+    let finished = false;
+    const racing: SqlDatabase = {
+      exec: (sql) => t.db.exec(sql),
+      first: (sql, params) => t.db.first(sql, params),
+      all: (sql, params) => t.db.all(sql, params),
+      run: async (sql, params) => {
+        if (!finished && sql.startsWith('INSERT INTO market_rents ')) {
+          finished = true;
+          await a.importAnil(t.direction, { kind: 'house', vintage: 2026, csv });
+        }
+        return t.db.run(sql, params);
+      },
+    };
+    const b = new LoyersMarche(racing, t.journal, { now: () => new Date(NOW), maxChunksPerCall: 1 });
+    expect(await b.importAnil(t.direction, { kind: 'house', vintage: 2026, csv })).toMatchObject({ ok: true, status: 'complet', stored: 20 });
+    expect(await t.loyers.marketRent('net-1', '96019', 'house')).toMatchObject({ status: 'connu' });
+  });
+
   it('un import resté en cours n’est jamais lu', async () => {
     const t = await setup();
     const loyers = new LoyersMarche(t.db, t.journal, { now: () => new Date(NOW), maxChunksPerCall: 1 });
