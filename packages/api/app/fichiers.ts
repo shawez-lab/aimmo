@@ -7,6 +7,7 @@ import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './
 import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
+import { CANDIDATURES_ENTRY_HTML, INTEGRATION_CSS, INTEGRATION_HOME_HTML, INTEGRATION_HTML, INTEGRATION_JS } from './integration.ts';
 
 /** Les métiers et domaines de M18, tels que l'écran « Partenaires » les nomme (U11). */
 const TRADE_NAMES = PARTNER_TRADES.map((t) => ({ trade: t.trade, label: t.label }));
@@ -78,7 +79,7 @@ export const INDEX_HTML = `<!doctype html>
 <p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
 <button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
 </section>
-${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
+${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
 <h3 id="titre-chiffres-accueil">Mes chiffres</h3>
 <p class="etat">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
 <button id="chiffres-ouvrir" type="button" class="secondaire">Voir mes chiffres</button>
@@ -128,7 +129,7 @@ ${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
-${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}${GAGNER_HTML}<section id="chiffres" hidden>
+${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}${GAGNER_HTML}${INTEGRATION_HTML}<section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
 <div class="periodes" role="group" aria-label="Période">
@@ -173,7 +174,7 @@ ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}${
 <button id="reseau-export" type="button" class="secondaire">Télécharger l’export</button>
 <p id="reseau-export-etat" class="etat" role="status"></p>
 </section>
-</section>
+${CANDIDATURES_ENTRY_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -241,7 +242,7 @@ legend { font-weight: 600; margin-bottom: var(--e-2); }
 #reseau-export-jour { margin-bottom: var(--e-2); }
 #studio .periodes { flex-wrap: wrap; }
 #studio canvas { max-width: 100%; height: auto; }
-` + LOUER_CSS + INVESTIR_CSS + CONFORMITE_CSS + GAGNER_CSS;
+` + LOUER_CSS + INVESTIR_CSS + CONFORMITE_CSS + GAGNER_CSS + INTEGRATION_CSS;
 
 /**
  * Le script de la page. Tout texte venu de l'API est posé avec `textContent`, jamais comme du code. La clé ne passe
@@ -496,12 +497,15 @@ export const APP_JS = `'use strict';
     clear(list);
     state.textContent = 'Chargement…';
     return request.then(function (r) {
-      if (r.status === 401 || r.status === 403) return { refused: true };
+      // Un dossier d'agent incomplet n'est pas une clé refusée (J14) : la clé reste, « Mon dossier » reste ouvert [R82].
+      if (r.status === 403) return r.json().then(function (b) { return b && b.code === 'agent_file_incomplete' ? { incomplete: true } : { refused: true }; }, function () { return { refused: true }; });
+      if (r.status === 401) return { refused: true };
       if (!r.ok) return { failed: true };
       return r.json().then(function (body) { return { body: body }; });
     }).then(function (res) {
       if (mine !== session) return true;
       if (res.refused) return false;
+      if (res.incomplete) { state.textContent = 'Fermé tant que votre dossier d’agent est incomplet : ouvrez « Mon dossier ».'; return true; }
       if (res.failed || !res.body || res.body.ok !== true) { state.textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return true; }
       var empty = render(list, res.body.data);
       state.textContent = empty || '';
@@ -545,6 +549,7 @@ export const APP_JS = `'use strict';
     wipeCommerces();
     wipeStudio();
     wipeGagner();
+    wipeIntegration();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
   function button(text, onClick) {
@@ -1672,7 +1677,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}${GAGNER_JS}
+${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}${GAGNER_JS}${INTEGRATION_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1689,7 +1694,7 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'studio', 'gagner'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'studio', 'gagner', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1826,6 +1831,7 @@ ${LOUER_JS}
       wipeInvestir();
       wipeCommerces();
       wipeGagner();
+      wipeIntegration();
       show('accueil');
       day(currentKey, session);
     }
@@ -1844,6 +1850,16 @@ ${LOUER_JS}
     $('studio-retour').addEventListener('click', function () { wipeStudio(); home(); });
     $('gagner-retour').addEventListener('click', function () { if (gagnerScreen && gagnerScreen.inside()) openGagner(); else { wipeGagner(); home(); } });
     $('gagner-ouvrir').addEventListener('click', function () { openGagner(); });
+    $('integration-ouvrir').addEventListener('click', function () { openIntegration('integration'); });
+    $('academie-ouvrir').addEventListener('click', function () { openIntegration('academie'); });
+    $('candidatures-ouvrir').addEventListener('click', function () { openIntegration('candidatures'); });
+    // Dans une fiche d'entretien : retour à la liste ; sinon, la direction revient au réseau, l'agent à sa journée.
+    $('integration-retour').addEventListener('click', function () {
+      if (integrationScreen && integrationScreen.inside()) { openIntegration(integrationMode); return; }
+      var back = integrationMode;
+      wipeIntegration();
+      if (back === 'candidatures') openReseau(reseauRange); else home();
+    });
     $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', home);

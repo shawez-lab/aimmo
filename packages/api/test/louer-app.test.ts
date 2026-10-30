@@ -1,6 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { LEASE_FIELDS } from '../../core/src/location/index.ts';
+import { LOUER_JS } from '../app/louer.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
@@ -128,7 +129,9 @@ describe('W11 · écran « Louer » de l’application', () => {
       expect(c.url).not.toContain(KEY);
     }
     // Chaque adresse écrite dans le script est une route de M15.
-    const screenJs = JS.slice(JS.indexOf('M15 : l'), JS.indexOf('function wipeM08'));
+    // Le script de l'écran tel que posé dans l'application (l'application le sert sans ses lignes de commentaire).
+    const screenJs = LOUER_JS;
+    expect(JS).toContain(LOUER_JS.split('\n').find((l) => l.includes('/v1/location'))!);
     const routes = [...screenJs.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
     expect(routes.length).toBeGreaterThan(3);
     for (const r of routes) expect(r.startsWith('/v1/location'), r).toBe(true);

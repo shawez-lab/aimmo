@@ -78,7 +78,7 @@ describeWithSqlite('J12 · routes de M14', () => {
   /** L'adresse d'une route, ses identifiants remplacés par `id`. */
   const pathOf = (pattern: RegExp, id: string): string => pattern.source.replace(/\(\[A-Za-z0-9_-\]\{1,64\}\)/g, id).replace(/^\^/, '').replace(/\$$/, '');
   /** Les routes où l'appelant agit seulement sur ce qui est à lui : le rôle d'agent suffit, la couche métier fait le reste. */
-  const OWN = ['reseau.mon_dossier', 'reseau.import', 'reseau.academie', 'reseau.module_fait', 'reseau.ma_formation', 'reseau.entrainement_cas', 'reseau.entrainement', 'reseau.assistance', 'reseau.mes_primes'];
+  const OWN = ['reseau.mon_dossier', 'reseau.import', 'reseau.academie', 'reseau.module_fait', 'reseau.ma_formation', 'reseau.entrainement_cas', 'reseau.entrainement', 'reseau.assistance', 'reseau.mes_primes', 'reseau.mon_referent', 'reseau.mon_bac_a_sable'];
   /** Les routes d'agent sur la chose d'un autre : la couche métier refuse un agent tiers. */
   const OTHERS = ['reseau.dossiers_couverts', 'reseau.entrainement_tour', 'reseau.entrainement_fin'];
   const refusals = async (t: Awaited<ReturnType<typeof setup>>) => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
@@ -307,5 +307,33 @@ describeWithSqlite('J12 · routes de M14', () => {
     expect(r.body.data.format).toBe('excel');
     // Un format inconnu est refusé.
     expect((await t.call(me, 'POST', '/reseau/import', { format: 'minitel', contacts: csv })).status).toBe(400);
+  });
+
+  it('[R16] [R85] J14 : l’agent lit son référent, ses modules faits et son premier parcours, sans l’identifiant d’un autre', async () => {
+    const t = await setup();
+    const a = await t.admitted('Aline', 'aline@exemple.test');
+    const b = await t.admitted('Bérénice', 'berenice@exemple.test');
+    const meA: Viewer = { role: 'agent', userId: a, networkId: t.network.id };
+    const meB: Viewer = { role: 'agent', userId: b, networkId: t.network.id };
+    // Aucun référent : null, jamais une erreur.
+    expect((await t.call(meA, 'GET', '/reseau/mon-referent')).body).toMatchObject({ ok: true, data: null });
+    expect((await t.call(t.direction, 'POST', `/reseau/agents/${a}/referent`, { referentId: b })).status).toBe(200);
+    const ref = await t.call(meA, 'GET', '/reseau/mon-referent');
+    expect(ref.body.data).toEqual({ firstName: 'Bérénice', until: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    // Le référent lui-même n'a pas de référent ; la direction n'a pas de « mon référent » [R16].
+    expect((await t.call(meB, 'GET', '/reseau/mon-referent')).body.data).toBeNull();
+    const dir = await t.call(t.direction, 'GET', '/reseau/mon-referent');
+    expect([dir.status, dir.body.rule]).toEqual([403, 'R16']);
+    // Chaque agent voit ses seuls modules faits [R85, R16].
+    const mod = await t.call(t.direction, 'POST', '/reseau/academie/modules', { title: 'Déontologie du mandat', track: 'entree', position: 1, videoId: 'abcdefghijk', durationMinutes: 120, topic: 'deontologie' });
+    await t.call(t.direction, 'POST', '/reseau/academie/modules', { title: 'Premier rendez-vous', track: 'entree', position: 2, videoId: 'abcdefghijk', durationMinutes: 30 });
+    await t.call(meA, 'POST', `/reseau/academie/modules/${mod.body.moduleId}/fait`);
+    const doneOf = async (v: Viewer) => (await t.call(v, 'GET', '/reseau/academie')).body.data[0].modules.map((m: { title: string; done: boolean }) => [m.title, m.done]);
+    expect(await doneOf(meA)).toEqual([['Déontologie du mandat', true], ['Premier rendez-vous', false]]);
+    expect(await doneOf(meB)).toEqual([['Déontologie du mandat', false], ['Premier rendez-vous', false]]);
+    expect(await doneOf(t.direction)).toEqual([['Déontologie du mandat', false], ['Premier rendez-vous', false]]);
+    // Sans bac à sable en service, le premier parcours le dit, sans rien inventer.
+    const run = await t.call(meA, 'GET', '/reseau/mon-bac-a-sable');
+    expect([run.status, run.body.code]).toEqual([503, 'unavailable']);
   });
 });
