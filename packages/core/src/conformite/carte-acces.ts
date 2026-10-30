@@ -628,8 +628,6 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   social_post_validations: out('sans_client', 'Validation d\'une publication par l\'agent : aucune personne.'),
   social_post_attempts: out('sans_client', 'Essais d\'envoi d\'une publication, en mode essai : aucune personne.'),
   social_post_sends: out('sans_client', 'Issues des envois d\'une publication : aucune personne.'),
-  // L'option demandée suit la mise en relation, donc le projet et son client.
-  studio_option_requests: { locate: [via('referral_id', 'partner_referrals')] },
   // M17 · Investir.
   investor_profiles: { locate: by('person_id') },
   // M16 · Commerces et entreprises : la fiche suit son bien, comme la fiche de commercialisation.
@@ -664,12 +662,6 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   investment_notes: { locate: [via('project_id', 'projects')] },
   investor_alerts: { locate: by('person_id') },
   property_communes: out('sans_client', 'Commune et type de logement d\'un bien en vente : aucune personne.'),
-  gbp_locations: out('agent', 'Fiche Google de l\'agent.'),
-  gbp_reviews: out('non_rattachable', 'Avis publié sur Google, gardé nettoyé : sans le nom de son auteur ni d\'un client, sans adresse, coordonnée ni montant ; il ne peut être relié à aucune fiche.'),
-  gbp_drafts: out('agent', 'Texte de la fiche Google de l\'agent, sans nom de client par règle [R154].'),
-  gbp_validations: out('agent', 'Validation d\'un texte de la fiche Google.'),
-  gbp_sends: out('agent', 'Envoi à la fiche Google de l\'agent.'),
-  gbp_claims: out('agent', 'Réservation d\'un envoi à la fiche Google de l\'agent.'),
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
