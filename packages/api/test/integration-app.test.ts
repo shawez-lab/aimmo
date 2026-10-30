@@ -230,6 +230,24 @@ describe('J14 · écrans de M14 dans l’application', () => {
     expect(w.state()).toBe('Pas de réseau. Réessayez dans un moment.');
   });
 
+  it('[R82] [R16] un agent au dossier incomplet garde sa clé : sa journée dit pourquoi elle est fermée, « Mon dossier » s’ouvre', async () => {
+    const closed = no(403, { ok: false, rule: 'R82', code: 'agent_file_incomplete' });
+    const t = await run({ 'GET /v1/plan-du-jour': closed, 'GET /v1/contacts-chauds': closed, 'GET /v1/rendez-vous/jour': closed, 'GET /v1/annonces': closed, 'GET /v1/apres-vente/journee': closed });
+    expect(t.els.accueil!.hidden).toBe(false);
+    expect(t.els.connexion!.hidden).toBe(true);
+    expect(t.storage.get('aimmo.cle')).toBe(KEY);
+    expect(t.els['plan-etat']!.textContent).toBe('Fermé tant que votre dossier d’agent est incomplet : ouvrez « Mon dossier ».');
+    await t.ouvrir('integration-ouvrir');
+    expect(t.body().textContent).toContain('Mon dossier d’agent');
+    await t.click(t.els['integration-retour']);
+    expect(t.els.accueil!.hidden).toBe(false);
+    expect(t.storage.get('aimmo.cle')).toBe(KEY);
+    // Un autre refus 403 reste une clé refusée : tout est effacé.
+    const u = await run({ 'GET /v1/plan-du-jour': no(403, { ok: false, rule: 'R16', code: 'role' }) });
+    expect(u.els.connexion!.hidden).toBe(false);
+    expect(u.storage.has('aimmo.cle')).toBe(false);
+  });
+
   it('[R85] « Académie » : les heures du serveur, les modules faits, aucun horaire ; un module fini est noté puis recompté', async () => {
     const t = await run();
     await t.ouvrir('academie-ouvrir');

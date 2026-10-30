@@ -497,12 +497,15 @@ export const APP_JS = `'use strict';
     clear(list);
     state.textContent = 'Chargement…';
     return request.then(function (r) {
-      if (r.status === 401 || r.status === 403) return { refused: true };
+      // Un dossier d'agent incomplet n'est pas une clé refusée (J14) : la clé reste, « Mon dossier » reste ouvert [R82].
+      if (r.status === 403) return r.json().then(function (b) { return b && b.code === 'agent_file_incomplete' ? { incomplete: true } : { refused: true }; }, function () { return { refused: true }; });
+      if (r.status === 401) return { refused: true };
       if (!r.ok) return { failed: true };
       return r.json().then(function (body) { return { body: body }; });
     }).then(function (res) {
       if (mine !== session) return true;
       if (res.refused) return false;
+      if (res.incomplete) { state.textContent = 'Fermé tant que votre dossier d’agent est incomplet : ouvrez « Mon dossier ».'; return true; }
       if (res.failed || !res.body || res.body.ok !== true) { state.textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return true; }
       var empty = render(list, res.body.data);
       state.textContent = empty || '';
