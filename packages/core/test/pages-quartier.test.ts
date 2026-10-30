@@ -126,6 +126,22 @@ describe('le contrôle des textes de quartier [R155]', () => {
     expect(problemsOf('Les Tilleuls', 'Chenôve borde Les Tilleuls, avec ses 3 écoles.')).toContain('fait_sans_source');
   });
 
+  it('[R155] seconde relecture : une phrase vraie ne fait passer aucune affirmation ajoutée à côté', () => {
+    for (const body of [
+      'Aux Tilleuls, les appartements se vendent 2 450 €, contre 2 200 € il y a un an.',
+      'Aux Tilleuls, le prix des appartements est passé de 2 200 € à 2 700 €.',
+      'Aux Tilleuls, 9 ventes d’appartements en 2026, toutes au-dessus de 2 700 €.',
+      'Population du quartier : 8 200 habitants, la plus forte de Villetest.',
+      'Le tramway sera prolongé jusqu’à la gare.',
+      'Le tramway arrivera aux Tilleuls en 2026, selon le Réseau de transport inventé.',
+      'Le tramway dessert le quartier, où un écoquartier sort de terre.',
+      'Les 3 écoles des Tilleuls ferment.',
+      'Le tramway dessert le quartier, où les cambriolages sont fréquents.',
+    ]) {
+      expect(problemsOf('Les Tilleuls', body), body).not.toEqual([]);
+    }
+  });
+
   it('[R46] aucune adresse exacte ni nom de client', () => {
     expect(problemsOf('Les Tilleuls', 'Un bien vendu au 12 rue des Essais.')).toContain('adresse');
     expect(problemsOf('Les Tilleuls', 'Les Tilleuls longent l’avenue Inventée.')).toContain('adresse');

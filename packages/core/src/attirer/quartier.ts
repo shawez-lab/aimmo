@@ -180,6 +180,22 @@ const TITLE_WORDS = new Set([
   'chiffres', 'ventes', 'vente', 'logement', 'logements', 'donnees', 'appartements', 'maisons', 'marche',
 ]);
 
+/**
+ * Les mots permis dans le texte, sans accents, en plus des noms et libellés de la base, des équipements sourcés et des
+ * nombres : mots outils et verbes neutres seulement. Tout autre mot est refusé, ce qui ferme la porte aux tendances
+ * (« contre », « passé de »), aux projets (« sera prolongé »), aux classements (« la plus forte »), aux quantificateurs
+ * (« toutes ») et à tout fait ajouté à côté d'une donnée vraie. Mieux vaut un refus de trop.
+ */
+const BODY_WORDS = new Set([
+  'le', 'la', 'les', 'l', 'un', 'une', 'des', 'du', 'de', 'd', 'au', 'aux', 'a', 'en', 'et', 'ou', 'sur', 'pour', 'par', 'avec', 'dans', 'entre', 'selon', 'chez', 'jusqu',
+  'est', 'sont', 'compte', 'comptent', 'dessert', 'desservent', 'se', 'vend', 'vendent', 'vendu', 'vendus', 'vendue', 'vendues', 'situe', 'situee', 'situes', 'situees',
+  'prix', 'median', 'mediane', 'medians', 'metre', 'metres', 'carre', 'carres', 'quartile', 'quartiles', 'premier', 'troisieme', 'vente', 'ventes', 'appartement', 'appartements',
+  'maison', 'maisons', 'bien', 'biens', 'logement', 'logements', 'reseau', 'quartier', 'commune', 'population', 'habitants', 'habitant', 'nombre', 'il', 'elle', 'ils', 'elles',
+  'ce', 'cet', 'cette', 'ces', 'son', 'sa', 'ses', 'leur', 'leurs', 'y', 'qui', 'que', 'qu', 'dont', 'celui', 'celle', 'ceux', 'celles', 'ici', 'on', 'publie', 'publies',
+  'publiee', 'publiees', 'donnee', 'donnees', 'source', 'sources', 'periode', 'eur', 'euro', 'euros', 'm', 'km', 'kilometre', 'kilometres', 'minute', 'minutes', 'min',
+  'pour', 'cent', 'enregistre', 'enregistrees', 'enregistres', 'recensees', 'recenses', 'compter', 'disponible', 'disponibles',
+]);
+
 const SPELLED: Record<string, number> = {
   deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16, vingt: 20, trente: 30,
   quarante: 40, cinquante: 50, soixante: 60, cent: 100, mille: 1000, dizaine: 10, dizaines: 10, douzaine: 12, vingtaine: 20, trentaine: 30, centaine: 100, centaines: 100, milliers: 1000,
@@ -392,6 +408,10 @@ export function traceNeighbourhoodSentence(sentence: string, data: Neighbourhood
     problems.push({ code: 'fait_sans_source', value: word });
   });
 
+  if (role === 'texte') {
+    // Les mots restants, hors noms, équipements et nombres : seulement ceux de la liste fermée.
+    for (const w of rest.matchAll(/[\p{L}]+/gu)) if (!BODY_WORDS.has(w[0]) && SPELLED[w[0]] === undefined && !problems.some((p) => norm(p.value) === w[0])) problems.push({ code: 'fait_sans_source', value: w[0] });
+  }
   if (role === 'titre') {
     // Un titre ne dit rien d'autre que le lieu et le sujet : liste fermée de mots.
     for (const w of rest.matchAll(/[\p{L}]+/gu)) if (!TITLE_WORDS.has(w[0])) problems.push({ code: 'fait_sans_source', value: w[0] });
