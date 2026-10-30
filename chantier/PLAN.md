@@ -2181,7 +2181,8 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT09 · Routes de M01 et pages publiques
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#222). `attirerRoutes()` (24 routes sous `/attirer`, rôles avant le corps, refus au journal), `handleAttirerPublic()` (prix et quartiers sur le site du réseau seulement, agent sur le réseau et son site, simulateur, `sitemap.xml`, `robots.txt` qui déclare le plan du site lui-même ; noindex en essai ; 404 sans détail) et `listingReference()` (page de référence unique d'un bien, en-tête `Link` et données structurées). Relecture forte 1 P1 corrigé (page de référence absente de la page du bien) ; Codex à sa limite ; vérification locale verte (2199 tests).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT02 à AT08
 - Cahier : M01 ; Architecture technique.
 - Objectif : routes `/v1/attirer` (versions de prix, page de l'agent, validations des textes, plan du site, mesure de l'origine) et pages publiques (prix, agent, quartier, simulateur), dans `packages/api/src/attirer.ts`, prêtes à brancher.
@@ -2204,4 +2205,5 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Cahier : M01 ; Architecture technique.
 - Objectif : brancher les routes et pages publiques de AT09 dans `app.ts`, avec le `robots.txt` du site de l'agent qui déclare son plan (AT04).
 - Critères : chaque route branchée répond sous son rôle et sa portée [R16] ; parcours d'un bien test sur les deux sites, une seule page de référence [R153] ; la suite complète reste verte.
+- Ajouté (2026-10-30, voie 2, relecture forte de AT09) : poser `listingReference(s, request.url, bien)` sur la page du bien de `vitrine.ts` (en-tête `Link` canonique et données structurées), avec un test qui charge `/biens/b1` sur les deux sites et y trouve la même page de référence [R153].
 - Attend : rien.
