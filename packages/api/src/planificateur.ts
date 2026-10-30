@@ -1,8 +1,9 @@
-import { Acces, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Acces, DecisionEnvoi, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
 import { pilotageJobs } from './pilotage.ts';
+import { conformiteJobs } from './conformite.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
 import type { Geocoder, SalesSource } from '@aimmo/core';
 
@@ -84,6 +85,12 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Location (W10), de 9 h à 19 h : l'échéance du propriétaire et les reçus d'équité préparés par M15, passés par le
       // contrôle central, qui redécide au moment de l'envoi ; canaux du mode essai seulement.
       location.locationSendJob(config.db, journal, { now }),
+      // Conformité (L09) : alertes de fuite chaque heure ; à 6 h, prospects à 3 ans, échéances des demandes des
+      // personnes et relecture du registre. Tout est rangé pour l'écran du responsable, rien n'est envoyé.
+      ...conformiteJobs(config.db, journal, (() => {
+        const store = new FicheClient(config.db, { now });
+        return new DecisionEnvoi(config.db, store, new FicheUnique(config.db, store, { now }), { now });
+      })(), { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

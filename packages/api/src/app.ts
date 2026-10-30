@@ -68,6 +68,7 @@ import { reseauRoutes, type ReseauOptions } from './reseau.ts';
 import { locationRoutes, type LocationRoute, type LocationServices } from './location.ts';
 import { conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
+import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -109,6 +110,8 @@ export interface ApiConfig {
   location?: Pick<LocationServices, 'adWriter' | 'inventoryFormatter'>;
   /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, page « bientôt ». */
   candidatureNetworkId?: string | undefined;
+  /** M12 (L09) : le stockage du coffre de la conformité (R2, `COFFRE`) ; absent, le dépôt et l'ouverture d'une pièce sont fermés. */
+  coffre?: VaultFiles | null;
   now?: () => Date;
 }
 
@@ -861,6 +864,16 @@ function m15Routes(pieces: PieceStore | null, options: Pick<LocationServices, 'a
   }));
 }
 
+/** Les routes de M12 (L09) : l'arrêt après une opposition passe par le contrôle central des envois [R04]. */
+function m12Routes(coffre: VaultFiles | null): RouteDef[] {
+  return conformiteRoutes().map((r: ConformiteRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, stop: s.decision, vault: coffre, now: s.now }, viewer, params, request),
+  }));
+}
+
 function m10Routes(pieces: PieceStore | null): RouteDef[] {
   return dossierRoutes().map((r: DossierRoute) => ({
     ...r,
@@ -1019,7 +1032,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication ; puis celles de M09 (O09) : les offres ; puis
   // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07) ; puis
   // celles de M13 (K08) : le pilotage ; puis celles de M14 (J13) : le réseau et l'académie ; puis celles de M15 (W10) :
-  // la location, fermées sans le stockage des pièces.
+  // la location, fermées sans le stockage des pièces ; puis celles de M12 (L09) : la conformité.
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
@@ -1030,6 +1043,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...pilotageRoutes(),
     ...reseauRoutes(config.reseau ?? {}),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
+    ...m12Routes(config.coffre ?? null),
   ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
@@ -1039,6 +1053,12 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
 
   const s = services(config.db, now);
   try {
+    // Une fuite de données peut couper les accès (L08) : tout le réseau sauf le responsable de la conformité, ou une
+    // seule personne. Les clés du secret ne se réécrivent pas : elles sont refusées ici, avant toute lecture [R97, R16].
+    if (await accessCut(s.db, s.journal, viewer, now)) {
+      await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: viewer.role, kind: `route.${route.name}`, code: 'access_cut' } }, now);
+      return json(403, { ok: false, rule: 'R16', code: 'access_cut' });
+    }
     // Un agent parti ne lit ni n'écrit plus rien, dès minuit le jour de son départ [R86, R16] ; un agent au dossier
     // incomplet n'a que les routes de son intégration [R82]. Le refus est écrit au journal avant toute lecture.
     if (viewer.role === 'agent') {

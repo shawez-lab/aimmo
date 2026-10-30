@@ -1422,14 +1422,23 @@ Décidé, lecture prudente : M12 ne refait pas ce qui existe déjà (contrôle c
 - Critères : un prospect contacté il y a 3 ans moins un jour n'est pas listé, à 3 ans il l'est [R97] ; un client sous mandat ou une vente close n'est jamais listé ; l'échéance de 72 heures et ses alertes vérifiées heure par heure ; rien n'est envoyé ni effacé réellement tant que le plan ne l'a pas mis en service [R26, R17].
 - Attend : H29.
 
-### L09 · Routes de M12, écran « Conformité » et branchement dans le socle
+### L09 · Routes de M12 et branchement dans le socle
 - Statut : en cours
 - Où : proposition #175 ouverte, sans P0 ni P1 à la relecture forte ; fusion en attente des vérifications GitHub (H35). L'écran passe en L10 (défini sur la branche de #175) : en cours, proposition #178 empilée sur #175, fusion en attente de H35
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : L01 à L08
 - Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
-- Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts`, dont le dépôt d'une pièce au coffre (`CoffreConformite.deposit`) et la déclaration personne ou société avec ses bénéficiaires effectifs (`Identification.declare`), seules portes de l'identification depuis L03 ; AIMMO ne se met pas en service entre L03 et L09 ; dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes, signalements, demandes et échéances, relecture du registre) et le dépôt d'une pièce par l'agent ; les passages au planificateur ; l'export depuis `@aimmo/core`.
+- Objectif : les routes `/v1/conformite` dans `packages/api/src/conformite.ts`, dont le dépôt d'une pièce au coffre (`CoffreConformite.deposit`) et la déclaration personne ou société avec ses bénéficiaires effectifs (`Identification.declare`), seules portes de l'identification depuis L03 ; les passages au planificateur ; l'export depuis `@aimmo/core`.
 - Ajouté par L08 : lire `Fuites.accessCut(networkId, role, userId)` avant toute route (refus au journal, le responsable jamais coupé) ; passages `DureesProspects.run` une fois par jour et `Fuites.run` à chaque créneau ; routes de `DureesProspects.list` et de `Fuites` (déclarer, couper, rétablir, évaluer, personnes concernées, notifications, alertes).
-- Critères : chaque route sous R16, refus au journal ; un agent ne voit jamais l'écran du responsable ; écran accessible, beau sur téléphone d'abord, sans texte générique ; les passages tournent une fois par créneau.
+- Critères : chaque route sous R16, refus au journal ; les passages tournent une fois par créneau.
+- Décidé (2026-10-29), découpage : la tâche était trop grosse pour une séance, l'écran « Conformité » passe en L10. Une pièce entre au coffre par le corps brut de la requête (PDF, JPEG, PNG, 10 Mo au plus), ses données par l'adresse (`sorte`, `verifie`, `valide`, `dossier`, `remplace`) ; le coffre a son propre stockage R2, `COFFRE`, distinct de `PIECES` ; sans lui, dépôt et ouverture répondent 503. Passages : `conformite.fuites` chaque heure, `conformite.echeances` à 6 h (durées des prospects, demandes des personnes, relecture du registre). La coupure est lue avant toute route de `/v1`, après la clé, refus au journal (`access_cut`).
+- Attend : rien. Le compartiment R2 `COFFRE` (H36) ne bloque pas la tâche.
+
+### L10 · Écran « Conformité » dans l'application
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : L09
+- Cahier : M12 ; Organisation, exigence de design (protocole, section 9).
+- Objectif : dans l'application, l'écran « Conformité » du responsable (fiches à valider, alertes de vigilance, signalements, demandes des personnes et échéances, prospects à 3 ans, fuites et coupures, relecture du registre), sur les routes de L09 ; le dépôt d'une pièce au coffre par l'agent depuis la fiche de son client, avec la preuve de dépôt.
+- Critères : un agent ne voit jamais l'écran du responsable (test) ; l'agent dépose une pièce et lit sa preuve, jamais la pièce (test) ; écran accessible (axe-core sans violation), beau sur téléphone d'abord, dans le système de design (test du système), sans texte générique ; aucune donnée personnelle dans les journaux du navigateur.
 - Attend : rien.
 
 **M18 · Partenaires, juillet 2027.**
