@@ -403,6 +403,23 @@ export class FicheCommerce {
     };
   }
 
+  /**
+   * Les commerces de l'écran : pour un agent, les siens ; pour la direction et la conformité, ceux du réseau. Rien de
+   * confidentiel : la référence, la sorte, la commune [R16, R110].
+   */
+  async list(viewer: Viewer): Promise<{ ok: true; value: { propertyId: string; reference: string; kind: PropertyKind; city: string | null }[] } | SheetRefusal> {
+    if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'business_sheet', code: 'role' } }, this.now);
+      return refuse('role', undefined, 'R16');
+    }
+    const own = viewer.role === 'agent';
+    const rows = await this.db.all<{ id: string; reference: string; kind: PropertyKind; city: string | null }>(
+      `SELECT id, reference, kind, city FROM properties WHERE network_id = ? AND kind IN (${BUSINESS_KINDS.map(() => '?').join(', ')}) ${own ? 'AND agent_id = ?' : ''} ORDER BY reference, id LIMIT 200`,
+      [viewer.networkId, ...BUSINESS_KINDS, ...(own ? [viewer.userId] : [])],
+    );
+    return { ok: true, value: rows.map((r) => ({ propertyId: r.id, reference: r.reference, kind: r.kind, city: r.city })) };
+  }
+
   /** La fiche et toutes ses versions, pour qui voit le bien en entier [R16]. */
   async read(
     acces: Acces,

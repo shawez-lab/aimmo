@@ -6,6 +6,7 @@
  * `Authorization`, jamais dans une adresse ni au journal [R13].
  */
 
+import { COMMERCES_SCRIPT } from '../app/commerces.ts';
 import { CONFORMITE_SCRIPT } from '../app/conformite.ts';
 import { INVESTIR_SCRIPT } from '../app/investir.ts';
 import { APP_CSS, APP_JS, ICON_SVG, INDEX_HTML, MANIFEST, swJs } from '../app/fichiers.ts';
@@ -30,6 +31,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/conformite.js': { body: CONFORMITE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Investir » (Y09), chargé à sa première ouverture pour garder le budget de l'application.
   '/app/investir.js': { body: INVESTIR_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // L'écran « Commerces » (CE11), chargé à la demande quand l'agent l'ouvre, jamais gardé sur l'appareil [R201].
+  '/app/commerces.js': { body: COMMERCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/sw.js': { body: SW_JS, type: 'text/javascript; charset=utf-8' },
   '/app/manifest.webmanifest': { body: MANIFEST, type: 'application/manifest+json; charset=utf-8' },
   '/app/icon.svg': { body: ICON_SVG, type: 'image/svg+xml' },

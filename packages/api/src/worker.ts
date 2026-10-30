@@ -40,6 +40,8 @@ export interface Env {
   INVESTIR_FRAIS_BAREME?: string;
   /** Début des liens publics de l'après-vente (F07), en https, sans chiffre, terminé par `/apres-vente/`. */
   APRES_VENTE_BASE?: string;
+  /** Début des liens du dossier protégé d'un commerce (CE10), en https, sans chiffre, terminé par `/` ; absent, aucun dossier ne part. */
+  DOSSIER_LINK_BASE?: string;
   /**
    * Les pièces des dossiers de vente (R2) ; absent, les routes et le passage de M10 sont fermés. Les pièces des dossiers
    * d'agent (M14) y sont rangées sous `agents/<agent>/` ; absent, leurs routes répondent « indisponible ».
@@ -64,6 +66,12 @@ function estimationServices(env: Env) {
   return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;
 }
 
+/** Le début des liens du dossier : en https, sans chiffre (un chiffre passerait pour un nombre du message), fini par `/`. */
+export function dossierLinkBase(raw: string | undefined): string | null {
+  if (!raw) return null;
+  return /^https:\/\/[a-z.-]+(?:\/[a-z-]+)*\/$/i.test(raw) ? raw : null;
+}
+
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     const estimation = estimationServices(env);
@@ -84,6 +92,8 @@ export default {
       partenaires: { files: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, optOutBase: env.PARTENAIRES_OPPOSITION_BASE ?? null },
       // M17 (Y08) : sans IA branchée (H13), la note suit le secours sans IA ; le barème vient du réglage de la direction.
       investir: { feesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME) },
+      // M16 (CE10) : sans stockage réel des documents (H38), le dossier protégé ne sert que la fiche du commerce.
+      commerces: dossierLinkBase(env.DOSSIER_LINK_BASE) ? { baseUrl: dossierLinkBase(env.DOSSIER_LINK_BASE)! } : {},
       ...(estimation ? { estimation } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,
