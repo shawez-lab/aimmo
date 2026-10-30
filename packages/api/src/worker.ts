@@ -1,10 +1,12 @@
 import { TRIAL_MODE, handleRequest } from './app.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
-import { runScheduler } from './planificateur.ts';
+import { investorFeesRate, runScheduler } from './planificateur.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
 import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
+import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
+import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 
 /**
@@ -31,6 +33,11 @@ export interface Env {
   RDV_LINK_BASE?: string;
   /** Début du lien de désinscription des alertes (T03), en https, sans chiffre, terminé par `/alertes/desinscription/`. */
   ALERT_UNSUBSCRIBE_BASE?: string;
+  /**
+   * Le barème des frais d'acquisition réglé par la direction (M17), en points de base du prix, entier de 0 à 2 000, suivi
+   * de la date du réglage : `750@2027-09-01`. Absent ou mal formé, aucune alerte qui demande un rendement.
+   */
+  INVESTIR_FRAIS_BAREME?: string;
   /** Début des liens publics de l'après-vente (F07), en https, sans chiffre, terminé par `/apres-vente/`. */
   APRES_VENTE_BASE?: string;
   /** Début des liens du dossier protégé d'un commerce (CE10), en https, sans chiffre, terminé par `/` ; absent, aucun dossier ne part. */
@@ -39,11 +46,15 @@ export interface Env {
    * Les pièces des dossiers de vente (R2) ; absent, les routes et le passage de M10 sont fermés. Les pièces des dossiers
    * d'agent (M14) y sont rangées sous `agents/<agent>/` ; absent, leurs routes répondent « indisponible ».
    */
-  PIECES?: R2Like & R2AgentBucket;
+  PIECES?: R2Like & R2AgentBucket & R2PartnerBucket;
   /** Le réseau qui reçoit les candidatures de la page `/rejoindre` (J13) ; absent, la page dit « bientôt ». */
   CANDIDATURE_NETWORK_ID?: string;
   /** Les médias des biens (R2), lus par la vitrine ; absent, aucune photo n'est servie. */
-  MEDIA?: MediaStore;
+  MEDIA?: MediaStore & { head?(key: string): Promise<unknown> };
+  /** Le coffre de la conformité (R2), séparé de tout autre stockage (L09) ; absent, dépôt et ouverture fermés. */
+  COFFRE?: R2VaultBucket;
+  /** Début du lien d'opposition à la prospection des partenaires (U09), en https, sans chiffre, terminé par `/partenaires/opposition/`. */
+  PARTENAIRES_OPPOSITION_BASE?: string;
 }
 
 /**
@@ -53,6 +64,19 @@ export interface Env {
 function estimationServices(env: Env) {
   const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;
   return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;
+}
+
+/**
+ * L'existence d'une référence dans `MEDIA`, pour le Studio (X10) : par `head`, sans lire le fichier ; à défaut, par
+ * `get`. Une panne du stockage remonte telle quelle : la couche métier la dit au journal et ferme tout [R130].
+ */
+export function mediaFiles(bucket: MediaStore & { head?(key: string): Promise<unknown> }): { has(ref: string): Promise<boolean> } {
+  return {
+    has: async (ref: string) => {
+      const found = bucket.head ? await bucket.head(ref) : await bucket.get(ref);
+      return found !== null && found !== undefined;
+    },
+  };
 }
 
 /** Le début des liens du dossier : en https, sans chiffre (un chiffre passerait pour un nombre du message), fini par `/`. */
@@ -76,6 +100,13 @@ export default {
       // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites ; le bac à sable reste fermé.
       reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null },
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
+      coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,
+      // M18 (U09) : preuves et pièces des partenaires dans `PIECES`, sous `partenaires/` ; absent, routes fermées.
+      partenaires: { files: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, optOutBase: env.PARTENAIRES_OPPOSITION_BASE ?? null },
+      // M17 (Y08) : sans IA branchée (H13), la note suit le secours sans IA ; le barème vient du réglage de la direction.
+      investir: { feesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME) },
+      // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
+      studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null },
       // M16 (CE10) : sans stockage réel des documents (H38), le dossier protégé ne sert que la fiche du commerce.
       commerces: dossierLinkBase(env.DOSSIER_LINK_BASE) ? { baseUrl: dossierLinkBase(env.DOSSIER_LINK_BASE)! } : {},
       ...(estimation ? { estimation } : {}),
@@ -101,6 +132,8 @@ export default {
       soldSales: estimation?.sales ?? null,
       geocoder: estimation?.geocoder ?? null,
       pieces: env.PIECES ? new R2PieceStore(env.PIECES) : null,
+      partnerOptOutBase: env.PARTENAIRES_OPPOSITION_BASE,
+      investorFeesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME),
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));
