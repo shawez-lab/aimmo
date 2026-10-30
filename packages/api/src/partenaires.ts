@@ -12,7 +12,9 @@
  */
 import { appendEvent, localTime, renderPublicPage, SqlJournalStore, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 import {
+  AdressesPartenaires,
   Annuaire,
+  EnvoisPartenaires,
   EspacePartenaire,
   MiseEnRelation,
   PARTNER_TRADES,
@@ -154,6 +156,7 @@ export function partenairesCore(s: PartenairesServices) {
     pieces: new PiecesPartenaires(s.db, espace, relations, annuaire, s.files, s.journal, opts),
     suivi: new SuiviPartenaires(s.db, relations, s.journal, { ...opts, writer: s.summaryWriter }),
     prospection: new Prospection(s.db, s.journal, { ...opts, optOutBase: s.optOutBase ?? null }),
+    adresses: new AdressesPartenaires(s.db, s.journal, opts),
   };
 }
 
@@ -321,6 +324,21 @@ const ROUTES: PartenairesRoute[] = [
     name: 'partenaires.annuaire.zones',
     roles: STAFF,
     handle: withBody(async (s, v, [id], b) => reply(await core(s).annuaire.addZones(v, id!, b.postcodes))),
+  },
+  {
+    // L'adresse professionnelle et l'accord du partenaire pour le suivi par mail (U12) : la direction seule [R03, R16].
+    method: 'POST',
+    pattern: new RegExp(`^/partenaires/annuaire/${ID}/adresse$`),
+    name: 'partenaires.annuaire.adresse',
+    roles: DIRECTION,
+    handle: withBody(async (s, v, [id], b) => reply(await core(s).adresses.record(v, id!, { email: b.email, consentProof: b.consentProof }))),
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/partenaires/annuaire/${ID}/opposition$`),
+    name: 'partenaires.annuaire.opposition',
+    roles: DIRECTION,
+    handle: async (s, v, [id]) => reply(await core(s).adresses.oppose(v, id!)),
   },
   {
     method: 'POST',
@@ -641,6 +659,7 @@ export function partnerOptOutBase(value: string | null | undefined): string | nu
 export const PARTENAIRES_FOLLOW_UP_JOB = 'partenaires.suivi';
 export const PARTENAIRES_PROSPECTING_JOB = 'partenaires.prospection';
 export const PARTENAIRES_CREDENTIALS_JOB = 'partenaires.justificatifs';
+export const PARTENAIRES_SENDS_JOB = 'partenaires.envois';
 
 /** Le planificateur ne lit aucune preuve : il ne contrôle ni accord ni justificatif déposé. */
 const NO_PROOFS: PartnerFileStore = { has: () => Promise.resolve(false) };
@@ -675,6 +694,17 @@ export function partenairesJobs(db: SqlDatabase, journal: JournalStore, options:
       run: async () => {
         const prospection = new Prospection(db, journal, { now, optOutBase: partnerOptOutBase(options.optOutBase) });
         for (const n of await partnerNetworks(db)) await prospection.run(n.id);
+      },
+    },
+    {
+      // U12 : relances dues et brouillons de prospection, par le contrôle central des envois, en mode essai, de 8 h à
+      // 19 h ; le contrôle redécide heures, plafonds, opposition et accord au moment même [R01, R03, R04, R11, R79].
+      name: PARTENAIRES_SENDS_JOB,
+      hours: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+      run: async () => {
+        const { relations: rel } = relations();
+        const envois = new EnvoisPartenaires(db, rel, new SuiviPartenaires(db, rel, journal, { now }), journal, { now });
+        for (const n of await partnerNetworks(db)) await envois.run(n.id);
       },
     },
     {

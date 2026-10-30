@@ -197,3 +197,27 @@ it('[R79] [R04] le lien d’opposition n’est accepté que vers la page d’opp
     expect(partnerOptOutBase(bad)).toBeNull();
   }
 });
+
+describeWithSqlite('U12 · adresse des partenaires et envois de M18 au planificateur', () => {
+  it('[R16] [R03] seule la direction range l’adresse et l’accord d’un partenaire, ou son opposition', async () => {
+    const t = await setup();
+    const zoe = await t.partner('zoe');
+    const body = { email: 'etude@notaires-zoe.example', consentProof: 'Accord écrit dans la convention de partenariat.' };
+    expect((await t.call('alex', 'POST', `/partenaires/annuaire/${zoe}/adresse`, body)).status).toBe(403);
+    expect((await t.call('zoe', 'POST', `/partenaires/annuaire/${zoe}/adresse`, body)).status).toBe(403);
+    const ok = await t.call('dir', 'POST', `/partenaires/annuaire/${zoe}/adresse`, body);
+    expect([ok.status, ok.body.data.version]).toEqual([200, 1]);
+    expect((await t.call('alex', 'POST', `/partenaires/annuaire/${zoe}/opposition`)).status).toBe(403);
+    expect((await t.call('dir', 'POST', `/partenaires/annuaire/${zoe}/opposition`)).status).toBe(200);
+    // L'adresse n'est jamais écrite au journal [R13].
+    expect(JSON.stringify(await t.db.all('SELECT * FROM journal'))).not.toContain('notaires-zoe.example');
+  });
+
+  it('le passage des envois tourne de 8 h à 19 h, une fois par créneau, sans rien envoyer réellement', async () => {
+    const t = await setup();
+    const job = partenairesJobs(t.db, t.journal, { now: t.now }).find((j) => j.name === 'partenaires.envois');
+    expect(job?.hours).toEqual([8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+    await job!.run({ job: 'partenaires.envois', slot: '2027-07-12T10', at: t.now() });
+    expect(Number((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM pro_trial_outbox'))?.n)).toBe(0);
+  });
+});
