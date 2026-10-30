@@ -2151,7 +2151,8 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : H07 pour le service réel.
 
 ### AT07 · Pages de quartier et articles, rédigés par l'IA depuis les données, relus
-- Statut : en cours
+- Statut : fait (2026-10-30)
+- Reste : fusionnée (#220). Décidé : textes de quartier en liste fermée de mots (titre et corps), chaque phrase porte une donnée de la base ; un prix exige le type de logement et le lieu de sa case, une année sa source nommée ; les biens publiés sont comptés à la commune (le bien n'a pas de position) ; validation par la direction seule, sur le texte exact et les données du moment ; page retirée dès qu'elle ne repasse plus le contrôle sur les données du jour ; aucun texte quand un sujet n'a aucune donnée (`sans_donnees`). AT09 servira `/quartiers/<commune>/<quartier>` et ses articles `/prix`, `/equipements`. Relecture forte : 3 P1 puis 1 P1 corrigés ; Codex à sa limite (H03), fusion sans lui ; vérification locale verte (2167 tests).
 - Décidé (2026-10-30) : la voie 1 n'a plus aucune tâche prête (AT10 attend AT09, le reste attend un humain) ; elle prend AT07, qui ne dépend que de AT01, dans ses propres fichiers (`packages/core/src/attirer/quartier.ts`, migration `1470`), sans toucher ceux de AT05 (voie 2).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT01
 - Cahier : M01, point 5 « Pages de quartier et articles ».
