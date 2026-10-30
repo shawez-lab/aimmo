@@ -1890,8 +1890,8 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y09 · Écran « Investir » dans l'application
-- Statut : en cours (voie 2)
-- Avancement (2026-10-29) : fait sur la branche `chantier/Y09` (bâtie sur Y07), suite complète verte en local, relecture forte : 1 P1 corrigé (biens relus un par un par la couche d'accès, R82). Reste : ouvrir la proposition après la fusion de Y07. Le budget de l'application (48 Ko compressés) est presque plein : l'écran a été allégé pour tenir.
+- Statut : fait (2026-10-30)
+- Avancement (2026-10-29) : fait sur la branche `chantier/Y09` (bâtie sur Y07), suite complète verte en local, relecture forte : 1 P1 corrigé (biens relus un par un par la couche d'accès, R82). Fusionnée le 2026-10-30 (#212), reprise sur main (branche `chantier/Y09-v2`). Décidé : le budget de 48 Ko était dépassé (51,5 Ko) ; le code de l'écran est un script à part, `/app/investir.js`, chargé à sa première ouverture comme `/app/conformite.js` et `/app/commerces.js` ; la même voie servira à X11 et aux écrans suivants. Relecture forte de cette version : 2 P1 corrigés (pas de liste d'identifiants liée à la requête, biens de l'agent lus à part).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y07
 - Cahier : M17 ; exigence de design (protocole, section 9).
 - Objectif : dans l'application de l'agent, l'écran « Investir » : profil, calcul d'un bien avec ses lignes et leurs sources, curseurs d'hypothèses (vacance, travaux, loyer bas ou haut), contraintes, note à relire et valider.
