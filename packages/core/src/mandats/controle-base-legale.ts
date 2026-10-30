@@ -12,7 +12,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { localDay, PlanDuJour, type PlanSettings } from './plan-du-jour.ts';
+import { localDay, PlanDuJour, type PlanBasisTarget, type PlanSettings } from './plan-du-jour.ts';
 
 export const LEGAL_BASIS_JOB = 'mandats.controle_base_legale';
 /** Chaque jour à 8 h, heure de Paris, après le plan de 7 h 30. */
@@ -44,6 +44,20 @@ export interface LegalBasisOptions {
 interface StoredItem {
   personId?: unknown;
   memberIds?: unknown;
+  kind?: unknown;
+  recommendation?: unknown;
+  followupId?: unknown;
+}
+
+/** La raison d'une ligne rangée et ce qu'elle désigne, si elle est lisible ; sinon la base commune du plan. */
+function basisTarget(item: StoredItem): PlanBasisTarget | undefined {
+  if (item.kind === 'recommendation') {
+    const r = item.recommendation as { origin?: unknown; id?: unknown; channel?: unknown } | null | undefined;
+    if (!r || (r.origin !== 'client' && r.origin !== 'partner') || typeof r.id !== 'string' || typeof r.channel !== 'string') return { kind: 'recommendation' };
+    return { kind: 'recommendation', recommendation: { origin: r.origin, id: r.id, channel: r.channel } };
+  }
+  if (item.kind === 'old_contact') return typeof item.followupId === 'string' ? { kind: 'old_contact', followupId: item.followupId } : { kind: 'old_contact' };
+  return undefined;
 }
 
 export class ControleBaseLegale {
@@ -119,7 +133,8 @@ export class ControleBaseLegale {
           gap(row.day, 'unreadable');
           continue;
         }
-        const verdict = await this.plan.eligibility(members, at);
+        // La base de la raison de la ligne, à l'heure du plan ; ce qui a été fait depuis (appel, relance) ne compte pas.
+        const verdict = await this.plan.eligibility(members, at, basisTarget(item), { asOfPlan: true });
         if (!verdict.ok) gap(row.day, verdict.reason);
       }
     }

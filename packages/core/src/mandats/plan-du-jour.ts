@@ -7,6 +7,12 @@
  * les personnes [R35]. Le plan ne porte que les clients de l'agent [R16], et seulement des personnes qui ont une base
  * légale, une demande récente ou un accord en cours ; jamais une personne exclue ou qui a demandé l'arrêt [R36].
  * Les personnes écartées sont comptées, sans donnée personnelle. Rien n'est envoyé ici.
+ *
+ * M20 complet (G12) y ajoute deux raisons, chacune sous sa propre base légale : une recommandation à rappeler (G08),
+ * seulement avec l'accord « recommandation » en cours de la personne, sur le canal qu'elle a accepté [R142, R03] ; une
+ * relance d'ancien contact préparée par le passage du mois et encore à valider (G09), seulement avec l'accord de
+ * relance en cours et sans opposition aux relances après la vente [R143, R65]. Et, à part des lignes de personnes,
+ * les lettres de quartier encore à déposer (G06), qui ne portent aucun nom [R140].
  */
 import type { Acces } from '../acces/acces.ts';
 import type { RefusalCode, Viewer } from '../acces/droits.ts';
@@ -14,6 +20,11 @@ import type { SqlDatabase } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { DEADLINES, type Deadline } from '../qualification/regles.ts';
 import { INBOUND_CHANNELS } from '../reception/entrant.ts';
+
+/** Finalité de l'accord d'une personne recommandée (M11, F01 ; G08), écrite ici pour ne pas lier le socle à M11. */
+export const PLAN_REFERRAL_PURPOSE = 'recommandation';
+/** Finalité de l'accord de relance d'un ancien contact (G09), la même que `OLD_CONTACT_PURPOSE`. */
+export const PLAN_OLD_CONTACT_PURPOSE = 'relance_ancien_contact';
 
 export interface PlanSettings {
   /** Jours pendant lesquels une demande de la personne vaut base légale. Réglage de départ : 13 mois. */
@@ -36,7 +47,7 @@ export const REQUEST_SOURCE_CHANNELS: readonly string[] = Object.freeze([...INBO
 
 export const OPEN_STAGES: readonly string[] = Object.freeze(['new', 'recue', 'appele']);
 
-export type PlanItemKind = 'callback' | 'appointment' | 'valuation';
+export type PlanItemKind = 'callback' | 'recommendation' | 'appointment' | 'valuation' | 'old_contact';
 
 /** La base légale d'une ligne : une demande de la personne, ou un accord en cours. */
 export interface LegalBasis {
@@ -60,6 +71,20 @@ export interface PlanItem {
   projectId: string | null;
   taskId: string | null;
   reportId: string | null;
+  /** Une ligne « recommandation » : la recommandation (de client ou de partenaire) et le seul canal accepté. */
+  recommendation?: { origin: 'client' | 'partner'; id: string; channel: string };
+  /** Une ligne « ancien contact » : la relance préparée, à valider. */
+  followupId?: string;
+}
+
+/** Une campagne de lettres de quartier de l'agent, avec des lettres encore à déposer : aucun nom, aucune adresse. */
+export interface PlanLetters {
+  campaignId: string;
+  recipient: 'au_proprietaire' | 'aux_habitants';
+  toDeposit: number;
+  total: number;
+  /** Jour de la campagne, `AAAA-MM-JJ`. */
+  since: string;
 }
 
 export interface DailyPlan {
@@ -70,7 +95,12 @@ export interface DailyPlan {
   items: PlanItem[];
   /** Personnes qui avaient une raison d'y être mais n'y sont pas, comptées sans donnée personnelle [R36]. */
   removed: { excluded: number; withdrawn: number; noBasis: number };
+  /** Les lettres de quartier à déposer, à part des lignes de personnes, dans l'ordre des campagnes [R35, R140]. */
+  letters?: PlanLetters[];
 }
+
+/** Ce qu'une ligne dit d'elle-même pour que sa base légale soit relue : sa raison et ce qu'elle désigne. */
+export type PlanBasisTarget = Pick<PlanItem, 'kind'> & Partial<Pick<PlanItem, 'recommendation' | 'followupId'>>;
 
 export type PlanResult = { ok: true; value: DailyPlan } | { ok: false; rule: 'R16'; code: RefusalCode | 'not_agent' };
 
@@ -98,9 +128,13 @@ const DEADLINE_LABEL: Readonly<Record<Deadline, string>> = Object.freeze({
   within_1_year: 'sous un an',
   later: 'plus tard',
 });
-const KIND_STRENGTH: Readonly<Record<PlanItemKind, number>> = Object.freeze({ callback: 0, appointment: 1, valuation: 2 });
+const KIND_STRENGTH: Readonly<Record<PlanItemKind, number>> = Object.freeze({ callback: 0, recommendation: 1, appointment: 2, valuation: 3, old_contact: 4 });
+/** Une demande d'être appelé : rappel demandé, ou recommandation que la personne a acceptée [R35]. */
+const asksCall = (kind: PlanItemKind): boolean => kind === 'callback' || kind === 'recommendation';
 
 const day = (iso: string): string => iso.slice(0, 10);
+const CHANNEL_LABEL: Readonly<Record<string, string>> = Object.freeze({ phone: 'téléphone', email: 'mail', sms: 'SMS', whatsapp: 'WhatsApp' });
+const OLD_CONTACT_LABEL: Readonly<Record<string, string>> = Object.freeze({ fin_de_bail: 'Fin de bail prochaine', estimation_ancienne: 'Avis de valeur de plus d’un an' });
 
 interface Candidate {
   personId: string;
@@ -111,6 +145,8 @@ interface Candidate {
   projectId: string | null;
   taskId: string | null;
   reportId: string | null;
+  recommendation?: { origin: 'client' | 'partner'; id: string; channel: string };
+  followupId?: string;
   /** Échéance annoncée par le propriétaire, ISO ; null si inconnue. */
   horizon: string | null;
   horizonLabel: string | null;
@@ -123,13 +159,13 @@ interface Candidate {
 }
 
 /**
- * L'ordre écrit du plan [R35] : 1. demande de rappel d'abord ; 2. puis le propriétaire qui a répondu au suivi de valeur
+ * L'ordre écrit du plan [R35] : 1. demande de rappel, ou recommandation à rappeler, d'abord ; 2. puis le propriétaire qui a répondu au suivi de valeur
  * qu'il pense à vendre ; 3. délai annoncé par le propriétaire le plus proche ; 4. avis de valeur le plus ancien ;
  * 5. demande la plus ancienne ; enfin l'identifiant de la fiche, pour que le même jeu de données donne toujours le
  * même plan.
  */
 function comparePlanCandidates(a: Candidate, b: Candidate): number {
-  const callback = Number(b.kind === 'callback') - Number(a.kind === 'callback');
+  const callback = Number(asksCall(b.kind)) - Number(asksCall(a.kind));
   if (callback !== 0) return callback;
   const selling = Number(b.sellingIntent) - Number(a.sellingIntent);
   if (selling !== 0) return selling;
@@ -143,7 +179,7 @@ function comparePlanCandidates(a: Candidate, b: Candidate): number {
 }
 
 function explain(c: Candidate): string {
-  const parts = [c.kind === 'callback' ? '1. rappel demandé' : '1. pas de rappel demandé'];
+  const parts = [c.kind === 'callback' ? '1. rappel demandé' : c.kind === 'recommendation' ? '1. recommandation à rappeler' : '1. pas de rappel demandé'];
   parts.push(c.sellingIntent ? '2. pense à vendre, réponse au suivi de valeur' : '2. pas de réponse « pense à vendre »');
   parts.push(c.horizonLabel ? `3. délai annoncé : ${c.horizonLabel}` : '3. délai non annoncé');
   parts.push(c.valuationSentAt ? `4. avis de valeur envoyé le ${day(c.valuationSentAt)}` : '4. pas d’avis de valeur envoyé');
@@ -182,19 +218,28 @@ export class PlanDuJour {
       if (seen.has(root)) continue;
       seen.add(root);
       const ids = view.members.map((m) => m.id);
-      const candidates = await this.candidatesOf(root, ids, at);
+      const candidates = await this.candidatesOf(root, ids, at, viewer);
       if (candidates.length === 0) continue;
-      const eligibility = await this.eligibility(ids, at);
-      if (!eligibility.ok) {
-        removed[eligibility.reason] += 1;
+      const gate = await this.gate(ids, at);
+      if (gate !== null) {
+        removed[gate] += 1;
         continue;
       }
-      const basis = eligibility.basis;
+      // Chaque raison sous sa propre base légale : sans elle, la raison tombe [R36, R142, R143].
+      const based: Candidate[] = [];
+      for (const c of candidates) {
+        const basis = await this.basisFor(ids, at, c);
+        if (basis !== null) based.push({ ...c, basis });
+      }
+      if (based.length === 0) {
+        removed.noBasis += 1;
+        continue;
+      }
       // Une ligne par personne, sous sa raison la plus forte.
-      candidates.sort((a, b) => KIND_STRENGTH[a.kind] - KIND_STRENGTH[b.kind] || comparePlanCandidates(a, b));
-      const best = candidates[0] as Candidate;
+      based.sort((a, b) => KIND_STRENGTH[a.kind] - KIND_STRENGTH[b.kind] || comparePlanCandidates(a, b));
+      const best = based[0] as Candidate;
       const firstName = view.members.map((m) => m.first_name).find((n) => n) ?? null;
-      items.push({ ...best, firstName, basis });
+      items.push({ ...best, firstName });
     }
     items.sort(comparePlanCandidates);
     return {
@@ -204,6 +249,7 @@ export class PlanDuJour {
         day: localDay(at, this.timeZone),
         computedAt: stamp,
         removed,
+        letters: await this.lettersOf(viewer),
         items: items.map((c, i) => ({
           rank: i + 1,
           personId: c.personId,
@@ -215,6 +261,8 @@ export class PlanDuJour {
           projectId: c.projectId,
           taskId: c.taskId,
           reportId: c.reportId,
+          ...(c.recommendation ? { recommendation: c.recommendation } : {}),
+          ...(c.followupId ? { followupId: c.followupId } : {}),
         })),
       },
     };
@@ -225,16 +273,84 @@ export class PlanDuJour {
    * jamais [R36] ; un accord de recontact retiré l'emporte sur toute demande, la personne a dit non [R03, R36] ;
    * sinon il faut une base légale. Sert au calcul et à chaque lecture d'un plan figé.
    */
-  async eligibility(ids: readonly string[], at: Date): Promise<{ ok: true; basis: LegalBasis } | { ok: false; reason: 'excluded' | 'withdrawn' | 'noBasis' }> {
-    const stamp = at.toISOString();
-    if (await this.excluded(ids, stamp)) return { ok: false, reason: 'excluded' };
-    if (await this.withdrawn(ids, stamp)) return { ok: false, reason: 'withdrawn' };
-    const basis = await this.basisOf(ids, at);
+  async eligibility(
+    ids: readonly string[],
+    at: Date,
+    item?: PlanBasisTarget,
+    options: { asOfPlan?: boolean } = {},
+  ): Promise<{ ok: true; basis: LegalBasis } | { ok: false; reason: 'excluded' | 'withdrawn' | 'noBasis' }> {
+    const gate = await this.gate(ids, at);
+    if (gate !== null) return { ok: false, reason: gate };
+    const basis = await this.basisFor(ids, at, item ?? { kind: 'appointment' }, options.asOfPlan !== true);
     return basis === null ? { ok: false, reason: 'noBasis' } : { ok: true, basis };
   }
 
+  /** Exclue, ou accord de recontact retiré : jamais au plan, quelle que soit la raison [R36]. */
+  private async gate(ids: readonly string[], at: Date): Promise<'excluded' | 'withdrawn' | null> {
+    const stamp = at.toISOString();
+    if (await this.excluded(ids, stamp)) return 'excluded';
+    if (await this.withdrawn(ids, stamp)) return 'withdrawn';
+    return null;
+  }
+
+  /**
+   * La base légale d'une raison [R36] : une recommandation, l'accord « recommandation » en cours sur son canal, jamais
+   * retiré, et la recommandation pas encore rappelée [R142, R03] ; une relance d'ancien contact, l'accord de relance en
+   * cours, aucune opposition aux relances après la vente, et la relance encore à valider [R143, R65] ; les autres
+   * raisons, la base commune du plan. Sert au calcul, à la lecture d'un plan figé et au contrôle (G05) ; le contrôle,
+   * qui relit la base à l'heure du plan (`live` faux), ne demande pas que la recommandation ou la relance soit encore
+   * ouverte aujourd'hui : l'avoir faite depuis n'est pas un écart.
+   */
+  private async basisFor(ids: readonly string[], at: Date, item: PlanBasisTarget, live = true): Promise<LegalBasis | null> {
+    const inIds = placeholders(ids.length);
+    const stamp = at.toISOString();
+    if (item.kind === 'recommendation') {
+      const r = item.recommendation;
+      if (!r) return null;
+      const open =
+        r.origin === 'client'
+          ? await this.db.first(`SELECT 1 FROM referrals WHERE id = ? AND referred_id IN (${inIds}) AND call_due_at IS NOT NULL AND call_done_at IS NULL`, [r.id, ...ids])
+          : await this.db.first(`SELECT 1 FROM partner_recommendations WHERE id = ? AND referred_id IN (${inIds}) AND call_due_at IS NOT NULL AND call_done_at IS NULL`, [r.id, ...ids]);
+      if (live && !open) return null;
+      const refused = await this.db.first(`SELECT 1 FROM consents WHERE person_id IN (${inIds}) AND purpose = ? AND withdrawn_at IS NOT NULL AND withdrawn_at <= ? LIMIT 1`, [...ids, PLAN_REFERRAL_PURPOSE, stamp]);
+      if (refused) return null;
+      const consent = await this.db.first<{ given_at: string }>(
+        `SELECT given_at FROM consents WHERE person_id IN (${inIds}) AND purpose = ? AND channel = ? AND given_at <= ? AND (withdrawn_at IS NULL OR withdrawn_at > ?) ORDER BY given_at DESC, id LIMIT 1`,
+        [...ids, PLAN_REFERRAL_PURPOSE, r.channel, stamp, stamp],
+      );
+      return consent ? { kind: 'consent', since: consent.given_at, purpose: PLAN_REFERRAL_PURPOSE } : null;
+    }
+    if (item.kind === 'old_contact') {
+      if (!item.followupId) return null;
+      const open = await this.db.first(`SELECT 1 FROM old_contact_followups WHERE id = ? AND person_id IN (${inIds}) AND status = 'a_valider'`, [item.followupId, ...ids]);
+      if (live && !open) return null;
+      const opposed = await this.db.first(`SELECT 1 FROM after_sale_choices WHERE person_id IN (${inIds}) AND choice = 'non' AND recorded_at <= ? LIMIT 1`, [...ids, stamp]);
+      if (opposed) return null;
+      const consent = await this.db.first<{ given_at: string }>(
+        `SELECT given_at FROM consents WHERE person_id IN (${inIds}) AND purpose = ? AND given_at <= ? AND (withdrawn_at IS NULL OR withdrawn_at > ?) ORDER BY given_at DESC, id LIMIT 1`,
+        [...ids, PLAN_OLD_CONTACT_PURPOSE, stamp, stamp],
+      );
+      return consent ? { kind: 'consent', since: consent.given_at, purpose: PLAN_OLD_CONTACT_PURPOSE } : null;
+    }
+    return this.basisOf(ids, at);
+  }
+
+  /** Les campagnes de lettres de l'agent qui ont encore des lettres à déposer, de la plus ancienne à la plus récente. */
+  async lettersOf(viewer: Viewer): Promise<PlanLetters[]> {
+    if (viewer.role !== 'agent') return [];
+    const rows = await this.db.all<{ id: string; recipient: PlanLetters['recipient']; created_at: string; total: number; open: number }>(
+      `SELECT c.id, c.recipient, c.created_at, count(l.id) AS total, sum(CASE WHEN l.deposited_at IS NULL THEN 1 ELSE 0 END) AS open
+         FROM neighbourhood_campaigns c JOIN neighbourhood_letters l ON l.campaign_id = c.id
+        WHERE c.network_id = ? AND c.agent_id = ? GROUP BY c.id, c.recipient, c.created_at ORDER BY c.created_at, c.id`,
+      [viewer.networkId, viewer.userId],
+    );
+    return rows
+      .filter((r) => Number(r.open) > 0)
+      .map((r) => ({ campaignId: r.id, recipient: r.recipient, toDeposit: Number(r.open), total: Number(r.total), since: localDay(new Date(r.created_at), this.timeZone) }));
+  }
+
   /** Les raisons d'une personne de figurer au plan, avant la base légale et les exclusions. */
-  private async candidatesOf(root: string, ids: readonly string[], at: Date): Promise<Candidate[]> {
+  private async candidatesOf(root: string, ids: readonly string[], at: Date, viewer: Viewer): Promise<Candidate[]> {
     const inIds = placeholders(ids.length);
     const stamp = at.toISOString();
     const deadline = await this.deadlineOf(ids);
@@ -322,6 +438,31 @@ export class PlanDuJour {
         requestedAt: alert.created_at,
         sellingIntent: true,
       });
+    }
+    // 5. Recommandation à rappeler (G08) : d'un client de l'agent, ou d'un partenaire dont la tâche revient à l'agent
+    // (la sienne, ou sans agent en activité, la personne étant la sienne) ; par le seul canal accepté.
+    const referrals = await this.db.all<{ id: string; created_at: string }>(
+      `SELECT id, created_at FROM referrals WHERE referred_id IN (${inIds}) AND network_id = ? AND agent_id = ? AND call_due_at IS NOT NULL AND call_done_at IS NULL ORDER BY created_at, id`,
+      [...ids, viewer.networkId, viewer.userId],
+    );
+    for (const r of referrals) {
+      out.push({ ...base, kind: 'recommendation', reason: 'Recommandé par un client, accord donné : à appeler.', projectId: null, taskId: null, reportId: null, valuationSentAt: null, requestedAt: r.created_at, recommendation: { origin: 'client', id: r.id, channel: 'phone' } });
+    }
+    const partners = await this.db.all<{ id: string; agent_id: string | null; consent_channel: string; created_at: string }>(
+      `SELECT r.id, r.agent_id, r.consent_channel, r.created_at FROM partner_recommendations r WHERE r.referred_id IN (${inIds}) AND r.network_id = ? AND r.call_due_at IS NOT NULL AND r.call_done_at IS NULL
+         AND (r.agent_id = ? OR r.agent_id IS NULL OR NOT EXISTS (SELECT 1 FROM agents a WHERE a.id = r.agent_id AND a.status = 'active')) ORDER BY r.created_at, r.id`,
+      [...ids, viewer.networkId, viewer.userId],
+    );
+    for (const r of partners) {
+      out.push({ ...base, kind: 'recommendation', reason: `Recommandé par un partenaire, accord donné : à contacter par ${CHANNEL_LABEL[r.consent_channel] ?? r.consent_channel}.`, projectId: null, taskId: null, reportId: null, valuationSentAt: null, requestedAt: r.created_at, recommendation: { origin: 'partner', id: r.id, channel: r.consent_channel } });
+    }
+    // 6. Relance d'ancien contact préparée par le passage du mois, encore à valider par l'agent (G09).
+    const followups = await this.db.all<{ id: string; reason: string; created_at: string }>(
+      `SELECT id, reason, created_at FROM old_contact_followups WHERE person_id IN (${inIds}) AND network_id = ? AND agent_id = ? AND status = 'a_valider' ORDER BY created_at, id`,
+      [...ids, viewer.networkId, viewer.userId],
+    );
+    for (const f of followups) {
+      out.push({ ...base, kind: 'old_contact', reason: `${OLD_CONTACT_LABEL[f.reason] ?? 'Ancien contact'} : relance préparée, à valider.`, projectId: null, taskId: null, reportId: null, valuationSentAt: null, requestedAt: f.created_at, followupId: f.id });
     }
     // L'avis le plus ancien et la réponse « pense à vendre » servent à l'ordre de toutes les lignes de la personne.
     const oldest = out.find((c) => c.kind === 'valuation')?.valuationSentAt ?? null;
