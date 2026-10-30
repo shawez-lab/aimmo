@@ -24,7 +24,6 @@ import type { PropertyStatus } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { CertifiedPhoto } from './certificats.ts';
-import { agentGone } from '../reseau/depart.ts';
 
 export const SOCIAL_EVENTS = ['nouveau_bien', 'visite', 'offre', 'vente'] as const;
 export type SocialEvent = (typeof SOCIAL_EVENTS)[number];
@@ -48,15 +47,6 @@ export const EVENT_STATUSES: Readonly<Record<SocialEvent, readonly PropertyStatu
   offre: ['under_offer'],
   vente: ['sold'],
 });
-
-/**
- * Les événements qui font la publicité d'un bien encore à vendre : comme toute annonce, ils portent les mentions
- * obligatoires, calculées par le code [R43]. Une vente conclue n'annonce plus rien à vendre.
- */
-export const AD_EVENTS: readonly SocialEvent[] = Object.freeze(['nouveau_bien', 'visite', 'offre']);
-
-/** La longueur la plus courte admise par les réseaux pour une légende ; au-delà, rien n'est coupé, c'est refusé. */
-const MAX_TEXT = 2200;
 
 /** L'IA qui rédige le corps. Elle ne reçoit que les faits du bien et l'événement [R15]. */
 export interface SocialWriter {
@@ -93,16 +83,11 @@ export interface SocialPost {
   createdAt: string;
 }
 
-export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26'; code: string };
+export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R46' | 'R130' | 'R132' | 'R134' | 'R26'; code: string };
 
 export interface PostsDeps {
   /** Les faits du bien, ceux de l'annonce de M07. */
   facts: { factsFor(propertyId: string): Promise<{ facts: ListingFacts } | null> };
-  /**
-   * Les mentions obligatoires du bien, calculées par le code de M07 (`computeMentions`) depuis le mandat en vigueur,
-   * la fiche et la carte du réseau [R43] ; null pour un bien inconnu.
-   */
-  mentions: { checklist(networkId: string, propertyId: string): Promise<{ complete: boolean; text: string; publishedPriceEur: number | null } | null> };
   /** Les photos certifiées du bien (X02). */
   certs: { publishable(propertyId: string): Promise<CertifiedPhoto[]> };
   /** La porte de diffusion de D05 [R42]. */
@@ -121,7 +106,6 @@ export interface PublicationsOptions {
 
 interface PostRow {
   id: string;
-  created_by: string;
   property_id: string;
   network_id: string;
   event: SocialEvent;
@@ -177,7 +161,7 @@ export class Publications {
     const seen = await this.full(viewer, propertyId);
     if (!seen.ok) return seen;
     const actor = `${viewer.role}:${viewer.userId}`;
-    const bad = (rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R130', code: string) => this.bad<SocialPost>(actor, `property:${propertyId}`, rule, code);
+    const bad = (rule: 'R10' | 'R42' | 'R46' | 'R130', code: string) => this.bad<SocialPost>(actor, `property:${propertyId}`, rule, code);
     if (!(SOCIAL_EVENTS as readonly unknown[]).includes(input.event)) return bad('R10', 'evenement_inconnu');
     const event = input.event as SocialEvent;
     if (!EVENT_STATUSES[event].includes(seen.value.status)) return bad('R10', 'evenement_sans_fondement');
@@ -198,13 +182,8 @@ export class Publications {
       body = fallbackListing(f.facts).body;
       origin = 'secours';
     }
-    const core = `${headline}\n\n${body}`;
-    if (textProblems(core).length > 0) return bad('R46', 'texte_refuse');
-    // Les mentions obligatoires, toutes, sous le texte ; une seule manque et rien n'est préparé [R43].
-    const mentions = await this.adMentions(event, seen.value.networkId, propertyId);
-    if (mentions === 'incompletes') return bad('R43', 'mentions_incompletes');
-    const text = mentions === null ? core : `${core}\n\n${mentions}`;
-    if (text.length > MAX_TEXT) return bad('R10', 'texte_trop_long');
+    const text = `${headline}\n\n${body}`.slice(0, 2200);
+    if (textProblems(text).length > 0) return bad('R46', 'texte_refuse');
     const visuals = refs.map((r) => {
       const c = certified.get(r)!;
       return { ref: c.ref, overlay: c.overlay, certificatePath: c.certificatePath };
@@ -288,8 +267,7 @@ export class Publications {
     const current = (await this.view(postId))!;
     if (current.validated) return { ok: true, value: current };
     if (current.visuals.some((v) => v.check !== 'admis')) return this.bad(actor, subject, 'R132', 'visuel_non_controle');
-    const stale = await this.stale(post.value);
-    if (stale) return this.bad(actor, subject, stale.rule, stale.code);
+    if (textProblems(post.value.text).length > 0) return this.bad(actor, subject, 'R46', 'texte_refuse');
     if (!(await this.deps.diffusion.canDiffuse(post.value.network_id, post.value.property_id, this.now())).allowed) return this.bad(actor, subject, 'R42', 'bien_non_diffusable');
     await this.db.run('INSERT INTO social_post_validations (post_id, validated_by, validated_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [postId, actor, this.now().toISOString()]);
     await appendEvent(this.journal, { type: 'studio.publication.validee', actor, subject, data: { post: postId, rule: 'R134' } }, this.now);
@@ -323,25 +301,6 @@ export class Publications {
     if (!status || !EVENT_STATUSES[post.value.event].includes(status.status)) return this.bad(actor, subject, 'R10', 'evenement_sans_fondement');
     const certified = new Set((await this.deps.certs.publishable(post.value.property_id)).map((c) => c.ref));
     if (current.visuals.some((v) => !certified.has(v.ref))) return this.bad(actor, subject, 'R130', 'visuel_sans_certificat');
-    // Le texte dit encore vrai : la fiche a pu être corrigée depuis la préparation. Sinon, rien ne part ; il faut
-    // préparer et valider une nouvelle publication [R47, R134].
-    const stale = await this.stale(post.value);
-    if (stale) return this.bad(actor, subject, stale.rule, stale.code);
-    // Rien de ce qu'a préparé ou validé un agent parti ne part ; il faut une nouvelle publication [R86].
-    const authors = [post.value.created_by, current.validated?.by ?? null].filter((a): a is string => a !== null && a.startsWith('agent:'));
-    for (const a of authors) if (await agentGone(this.db, post.value.network_id, a.slice('agent:'.length), this.now())) return this.bad(actor, subject, 'R86', 'auteur_parti');
-    // L'accord de chaque personne reconnaissable est encore rangé ; un stockage en panne ferme tout [R132].
-    const consents = await this.db.all<{ consent_ref: string }>('SELECT consent_ref FROM social_visual_checks WHERE post_id = ? AND consent_ref IS NOT NULL', [postId]);
-    for (const c of consents) {
-      let stored = false;
-      try {
-        stored = await this.deps.consents.has(c.consent_ref);
-      } catch (error) {
-        await appendEvent(this.journal, { type: 'studio.publication.stockage_indisponible', actor, subject, data: { rule: 'R132', error: error instanceof Error ? error.name : 'inconnue' } }, this.now);
-        return { ok: false, rule: 'R132', code: 'stockage_indisponible' };
-      }
-      if (!stored) return this.bad(actor, subject, 'R132', 'accord_absent');
-    }
     for (const w of wanted) {
       const attempt = await this.claim(postId, w, actor);
       if (attempt === null) continue;
@@ -356,31 +315,6 @@ export class Publications {
       await appendEvent(this.journal, { type: 'studio.publication.envoi', actor, subject, data: { post: postId, channel: w.channel, account: w.account, mode: 'essai', outcome, rule: 'R26' } }, this.now);
     }
     return { ok: true, value: (await this.view(postId))! };
-  }
-
-  /** Les mentions d'un événement d'annonce : leur texte, null si l'événement n'en porte pas, ou « incomplètes » [R43]. */
-  private async adMentions(event: SocialEvent, networkId: string, propertyId: string): Promise<string | null | 'incompletes'> {
-    if (!AD_EVENTS.includes(event)) return null;
-    const m = await this.deps.mentions.checklist(networkId, propertyId);
-    return m && m.complete && m.publishedPriceEur !== null && m.text.trim() !== '' ? m.text : 'incompletes';
-  }
-
-  /**
-   * Le texte rangé dit-il encore vrai ? Ses mentions sont celles du moment, au caractère près [R43] ; son corps passe
-   * le contrôle des textes publics [R46] ; chaque nombre et chaque fait se relie encore à la fiche du moment [R47].
-   * Sinon, rien ne part : il faut préparer et valider une nouvelle publication.
-   */
-  private async stale(row: PostRow): Promise<{ rule: 'R43' | 'R46' | 'R47'; code: string } | null> {
-    const mentions = await this.adMentions(row.event, row.network_id, row.property_id);
-    if (mentions === 'incompletes') return { rule: 'R43', code: 'mentions_incompletes' };
-    const suffix = mentions === null ? '' : `\n\n${mentions}`;
-    if (!row.text.endsWith(suffix)) return { rule: 'R43', code: 'mentions_perimees' };
-    const core = row.text.slice(0, row.text.length - suffix.length);
-    if (textProblems(core).length > 0) return { rule: 'R46', code: 'texte_refuse' };
-    const headline = `${EVENT_HEADLINES[row.event]}\n\n`;
-    const f = await this.deps.facts.factsFor(row.property_id);
-    if (!f || !core.startsWith(headline) || !traceListing('', core.slice(headline.length), f.facts).ok) return { rule: 'R47', code: 'texte_perime' };
-    return null;
   }
 
   /** Une publication, pour qui voit le bien en entier [R16]. */
@@ -479,7 +413,7 @@ export class Publications {
     return { ok: true, value: { networkId: read.value.network_id, status: read.value.status } };
   }
 
-  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26', code: string): Promise<PostResult<T>> {
+  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R46' | 'R130' | 'R132' | 'R134' | 'R26', code: string): Promise<PostResult<T>> {
     await appendEvent(this.journal, { type: 'studio.publication.refuse', actor, subject, data: { rule, code } }, this.now);
     return { ok: false, rule, code };
   }

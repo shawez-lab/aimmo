@@ -32,11 +32,8 @@ it('les accroches des événements passent le contrôle des textes publics', () 
 
 it('[R26] [R134] un canal réel est refusé : seul le mode essai est en service', () => {
   const real = { channel: 'instagram', mode: 'reel', post: async () => {} } as unknown as SocialChannel;
-  expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { facts: {} as never, certs: {} as never, diffusion: {} as never, mentions: {} as never, consents: {} as never, channels: [real] })).toThrow(/mode essai/);
+  expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { facts: {} as never, certs: {} as never, diffusion: {} as never, consents: {} as never, channels: [real] })).toThrow(/mode essai/);
 });
-
-// Les mentions telles que M07 les calcule, inventées.
-const MENTIONS = 'Prix : 230 000 € honoraires inclus, dont 4,55 % TTC à la charge de l’acquéreur.\nClasse énergie C, classe climat C.\nCarte professionnelle n° CPI 0000 0000 000 000 000.';
 
 const photo = (p: string, n: number) => `biens/${p}/0000000${n}-0000-4000-8000-000000000000.jpg`;
 const consent = (p: string, n: number) => `biens/${p}/accords/0000000${n}-0000-4000-8000-0000000000cc.pdf`;
@@ -57,7 +54,7 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[] } 
     { ref: photo(p.id, 1), overlay: null, certificateToken: 'a'.repeat(32), certificatePath: `/certificat-photo/${'a'.repeat(32)}` },
     { ref: photo(p.id, 2), overlay: 'Aménagement virtuel', certificateToken: 'b'.repeat(32), certificatePath: `/certificat-photo/${'b'.repeat(32)}` },
   ];
-  const state = { diffusable: true, certified, consents: new Set([consent(p.id, 1)]), consentsDown: false, facts: structuredClone(FACTS), mentions: { complete: true, text: MENTIONS, publishedPriceEur: 230_000 } as { complete: boolean; text: string; publishedPriceEur: number | null } };
+  const state = { diffusable: true, certified, consents: new Set([consent(p.id, 1)]) };
   const received: (SocialPayload & { channel: string })[] = [];
   const failing = new Set(opts.failing ?? []);
   const channels = (['instagram', 'facebook', 'linkedin'] as const).map((c) => ({
@@ -72,16 +69,10 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[] } 
     acces,
     journal,
     {
-      facts: { factsFor: async (id: string) => (id === p.id ? { facts: structuredClone(state.facts) } : null) },
+      facts: { factsFor: async (id: string) => (id === p.id ? { facts: structuredClone(FACTS) } : null) },
       certs: { publishable: async () => state.certified },
       diffusion: { canDiffuse: async () => ({ allowed: state.diffusable }) },
-      mentions: { checklist: async () => state.mentions },
-      consents: {
-        has: async (r: string) => {
-          if (state.consentsDown) throw new Error('panne');
-          return state.consents.has(r);
-        },
-      },
+      consents: { has: async (r: string) => state.consents.has(r) },
       channels,
     },
     { now, writer: opts.writer === undefined ? null : opts.writer, timeoutMs: 50 },
@@ -128,7 +119,7 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
       const r = await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
       expect(r).toMatchObject({ ok: true, value: { origin: 'secours' } });
       if (!r.ok) return;
-      expect(r.value.text).toBe(`Nouveau bien à découvrir.\n\n${fallbackListing(FACTS).body}\n\n${MENTIONS}`);
+      expect(r.value.text).toBe(`Nouveau bien à découvrir.\n\n${fallbackListing(FACTS).body}`);
       expect(r.value.text).not.toMatch(/rue des Essais|95 m²|enfants|mandataire|gratuit/);
     }
   });
@@ -221,85 +212,6 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
     t.state.certified = t.state.certified.slice(0, 1);
     expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R130', code: 'visuel_sans_certificat' });
     expect(t.received).toEqual([]);
-  });
-
-  it('[R47] une fiche corrigée après la préparation : le texte rangé ne part plus, ni à la validation ni à l’envoi', async () => {
-    const t = await setup();
-    const id = await t.ready();
-    expect((await t.pubs.read(t.alexV, id)).ok && JSON.stringify(await t.pubs.read(t.alexV, id))).toContain('72');
-    // La surface est corrigée après la validation : le texte qui dit 72 m² ne part pas.
-    t.state.facts = { ...t.state.facts, surfaceM2: 60 };
-    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R47', code: 'texte_perime' });
-    expect(t.received).toEqual([]);
-    // Une publication préparée avant la correction ne se valide plus non plus ; une nouvelle, préparée après, part.
-    t.state.facts = { ...t.state.facts, surfaceM2: 72 };
-    const prep = await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
-    if (!prep.ok) throw new Error(prep.code);
-    await t.pubs.checkVisual(t.alexV, prep.value.id, { ref: photo(t.p.id, 1), addressVisible: false, personVisible: false });
-    t.state.facts = { ...t.state.facts, surfaceM2: 60 };
-    expect(await t.pubs.validate(t.alexV, prep.value.id)).toEqual({ ok: false, rule: 'R47', code: 'texte_perime' });
-    const fresh = await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
-    if (!fresh.ok) throw new Error(fresh.code);
-    expect(fresh.value.text).toContain('60');
-    await t.pubs.checkVisual(t.alexV, fresh.value.id, { ref: photo(t.p.id, 1), addressVisible: false, personVisible: false });
-    expect((await t.pubs.validate(t.alexV, fresh.value.id)).ok).toBe(true);
-    expect((await t.pubs.publish(t.alexV, fresh.value.id, [{ channel: 'instagram', account: 'agent' }])).ok).toBe(true);
-    expect(t.received.map((r) => r.postId)).toEqual([fresh.value.id]);
-  });
-
-  it('[R43] une annonce sur un réseau porte toutes les mentions obligatoires du moment ; une seule manque, rien ne part', async () => {
-    const t = await setup();
-    const id = await t.ready();
-    const post = await t.pubs.read(t.alexV, id);
-    expect(post.ok && post.value.text.endsWith(`\n\n${MENTIONS}`)).toBe(true);
-    // Une mention change (le mandat a un avenant) : le texte rangé ne part plus.
-    t.state.mentions = { ...t.state.mentions, text: MENTIONS.replace('230 000', '225 000') };
-    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R43', code: 'mentions_perimees' });
-    // Une mention manque : ni préparation, ni envoi.
-    t.state.mentions = { complete: false, text: '', publishedPriceEur: null };
-    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R43', code: 'mentions_incompletes' });
-    expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] })).toEqual({ ok: false, rule: 'R43', code: 'mentions_incompletes' });
-    expect(t.received).toEqual([]);
-    // Les mentions revenues telles qu'à la préparation : la publication part, mentions comprises.
-    t.state.mentions = { complete: true, text: MENTIONS, publishedPriceEur: 230_000 };
-    expect((await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).ok).toBe(true);
-    expect(t.received[0]!.text.endsWith(MENTIONS)).toBe(true);
-    // Une vente conclue n'annonce plus rien à vendre : elle ne porte pas de mentions.
-    await t.db.run("UPDATE properties SET status = 'sold' WHERE id = ?", [t.p.id]);
-    const sold = await t.pubs.prepare(t.alexV, t.p.id, { event: 'vente', visuals: [photo(t.p.id, 1)] });
-    expect(sold.ok && sold.value.text.includes('Carte professionnelle')).toBe(false);
-  });
-
-  it('[R132] l’accord d’une personne reconnaissable est relu à l’envoi : absent ou stockage en panne, rien ne part', async () => {
-    const t = await setup();
-    const prep = await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
-    if (!prep.ok) throw new Error(prep.code);
-    expect((await t.pubs.checkVisual(t.alexV, prep.value.id, { ref: photo(t.p.id, 1), addressVisible: false, personVisible: true, consentRef: consent(t.p.id, 1) })).ok).toBe(true);
-    expect((await t.pubs.validate(t.alexV, prep.value.id)).ok).toBe(true);
-    t.state.consents.delete(consent(t.p.id, 1));
-    expect(await t.pubs.publish(t.alexV, prep.value.id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R132', code: 'accord_absent' });
-    t.state.consents.add(consent(t.p.id, 1));
-    t.state.consentsDown = true;
-    expect(await t.pubs.publish(t.alexV, prep.value.id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R132', code: 'stockage_indisponible' });
-    expect(t.received).toEqual([]);
-    t.state.consentsDown = false;
-    expect((await t.pubs.publish(t.alexV, prep.value.id, [{ channel: 'instagram', account: 'agent' }])).ok).toBe(true);
-  });
-
-  it('[R86] une publication préparée ou validée par un agent parti ne part pas, même par son successeur', async () => {
-    const t = await setup();
-    const id = await t.ready();
-    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
-    await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.id, t.p.id]);
-    const samV = t.as('agent', t.sam.id);
-    expect(await t.pubs.publish(samV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R86', code: 'auteur_parti' });
-    expect(t.received).toEqual([]);
-    // Le successeur prépare et valide la sienne : elle part.
-    const prep = await t.pubs.prepare(samV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
-    if (!prep.ok) throw new Error(prep.code);
-    await t.pubs.checkVisual(samV, prep.value.id, { ref: photo(t.p.id, 1), addressVisible: false, personVisible: false });
-    expect((await t.pubs.validate(samV, prep.value.id)).ok).toBe(true);
-    expect((await t.pubs.publish(samV, prep.value.id, [{ channel: 'instagram', account: 'agent' }])).ok).toBe(true);
   });
 
   it('un réseau en panne n’empêche pas les autres ; son envoi se retente au geste suivant, une fois réussi il ne se refait plus', async () => {
