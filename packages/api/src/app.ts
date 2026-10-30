@@ -68,6 +68,20 @@ import { reseauRoutes, type ReseauOptions } from './reseau.ts';
 import { locationRoutes, type LocationRoute, type LocationServices } from './location.ts';
 import { conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
+import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
+import {
+  handleEspacePartenaire,
+  handlePartenairesPublic,
+  partenairesPublicError,
+  partenairesRoutes,
+  partnerOptOutBase,
+  PARTENAIRES_OPPOSITION_PATH,
+  type PartenairesRoute,
+  type PartnerFileStore,
+  type PartnerUploadStore,
+} from './partenaires.ts';
+import type { FeeSettings } from '../../core/src/partenaires/index.ts';
+import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -109,7 +123,21 @@ export interface ApiConfig {
   location?: Pick<LocationServices, 'adWriter' | 'inventoryFormatter'>;
   /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, page « bientôt ». */
   candidatureNetworkId?: string | undefined;
+  /** M12 (L09) : le stockage du coffre de la conformité (R2, `COFFRE`) ; absent, le dépôt et l'ouverture d'une pièce sont fermés. */
+  coffre?: VaultFiles | null;
+  /** M18 (U09) : le stockage des preuves et des pièces des partenaires (R2, `PIECES`, sous `partenaires/`) ; absent, les routes de M18 sont fermées. */
+  partenaires?: PartenairesOptions;
+  /** M17 (Y08) : l'IA de la note d'investissement (absente, le secours sans IA [R126]) et le barème des frais réglé par la direction. */
+  investir?: Pick<InvestirServices, 'noteWriter' | 'feesRateBp'>;
   now?: () => Date;
+}
+
+export interface PartenairesOptions {
+  files: (PartnerFileStore & PartnerUploadStore) | null;
+  /** Variable `PARTENAIRES_OPPOSITION_BASE` (`https://…/partenaires/opposition/`) : sans elle, aucun mail de prospection [R79]. */
+  optOutBase?: string | null;
+  /** Le statut du courtier et de la banque, validé par l'avocat (H31) ; absent, faux [R76]. */
+  fees?: FeeSettings;
 }
 
 /**
@@ -861,6 +889,51 @@ function m15Routes(pieces: PieceStore | null, options: Pick<LocationServices, 'a
   }));
 }
 
+/** Les routes de M12 (L09) : l'arrêt après une opposition passe par le contrôle central des envois [R04]. */
+function m12Routes(coffre: VaultFiles | null): RouteDef[] {
+  return conformiteRoutes().map((r: ConformiteRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, stop: s.decision, vault: coffre, now: s.now }, viewer, params, request),
+  }));
+}
+
+/**
+ * Les routes de M18 (U09) : chacune contrôle son rôle avant tout et écrit le refus au journal [R16] ; un partenaire ne
+ * lit que ses mises en relation confiées, par la couche métier [R77]. Sans stockage des fichiers, elles sont fermées.
+ */
+function m18Routes(options: PartenairesOptions | null): RouteDef[] {
+  return partenairesRoutes().map((r: PartenairesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => {
+      if (!options?.files) return Promise.resolve(failure(503, 'partner_files_not_configured', 'Partenaires fermés : aucun stockage des fichiers.'));
+      return r.handle(
+        { db: s.db, journal: s.journal, now: s.now, files: options.files, uploads: options.files, optOutBase: partnerOptOutBase(options.optOutBase), ...(options.fees ? { fees: options.fees } : {}) },
+        viewer,
+        params,
+        request,
+      );
+    },
+  }));
+}
+
+/**
+ * Les routes de M17 (Y08) : chacune contrôle son rôle avant de lire le corps et écrit le refus au journal [R16] ; aucun
+ * chiffre n'est calculé ailleurs que dans le code du serveur [R121] ; la seule route d'alertes passe par le contrôle
+ * central, en mode essai, avec le lien de désinscription du réseau [R26, R49].
+ */
+function m17Routes(options: Pick<InvestirServices, 'noteWriter' | 'feesRateBp' | 'unsubscribeBase'>): RouteDef[] {
+  return investirRoutes().map((r: InvestirRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, ...options }, viewer, params, request),
+  }));
+}
+
 function m10Routes(pieces: PieceStore | null): RouteDef[] {
   return dossierRoutes().map((r: DossierRoute) => ({
     ...r,
@@ -920,6 +993,20 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
+  // La page d'opposition à la prospection des partenaires (U08), sans clé, servie par le socle (U09) [R04, R79].
+  if (url.pathname.startsWith(PARTENAIRES_OPPOSITION_PATH)) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    try {
+      const page = await handlePartenairesPublic(request, { db: config.db, now });
+      if (page) return page;
+    } catch (error) {
+      await partenairesPublicError(config.db, error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+  // L'espace partenaire en ligne (U10) : une coquille sans donnée, qui ne lit que par /v1/partenaires.
+  const space = handleEspacePartenaire(request);
+  if (space) return config.mode === TRIAL_MODE ? space : failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
   // La vitrine des biens (P10) : la page publique, la fiche imprimable et les photos de la version publiée.
   if (url.pathname.startsWith('/biens/') || url.pathname.startsWith('/medias/')) {
     if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
@@ -1019,7 +1106,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication ; puis celles de M09 (O09) : les offres ; puis
   // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07) ; puis
   // celles de M13 (K08) : le pilotage ; puis celles de M14 (J13) : le réseau et l'académie ; puis celles de M15 (W10) :
-  // la location, fermées sans le stockage des pièces.
+  // la location, fermées sans le stockage des pièces ; puis celles de M12 (L09) : la conformité ; puis celles de M18
+  // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir.
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
@@ -1030,6 +1118,9 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...pilotageRoutes(),
     ...reseauRoutes(config.reseau ?? {}),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
+    ...m12Routes(config.coffre ?? null),
+    ...m18Routes(config.partenaires ?? null),
+    ...m17Routes({ ...(config.investir ?? {}), unsubscribeBase: config.alertUnsubscribeBase ?? null }),
   ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
@@ -1039,6 +1130,12 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
 
   const s = services(config.db, now);
   try {
+    // Une fuite de données peut couper les accès (L08) : tout le réseau sauf le responsable de la conformité, ou une
+    // seule personne. Les clés du secret ne se réécrivent pas : elles sont refusées ici, avant toute lecture [R97, R16].
+    if (await accessCut(s.db, s.journal, viewer, now)) {
+      await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: viewer.role, kind: `route.${route.name}`, code: 'access_cut' } }, now);
+      return json(403, { ok: false, rule: 'R16', code: 'access_cut' });
+    }
     // Un agent parti ne lit ni n'écrit plus rien, dès minuit le jour de son départ [R86, R16] ; un agent au dossier
     // incomplet n'a que les routes de son intégration [R82]. Le refus est écrit au journal avant toute lecture.
     if (viewer.role === 'agent') {

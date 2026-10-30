@@ -251,6 +251,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   candidate: { excluded: 'candidat', why: 'Un candidat au réseau.' },
   partner: { excluded: 'partenaire', why: 'Un partenaire professionnel.' },
   partner_prospect: { excluded: 'partenaire', why: 'Un futur partenaire.' },
+  pro_send: { excluded: 'partenaire', why: 'Un envoi à un professionnel, rangé dans la boîte d\'essai.' },
   network: { excluded: 'sans_client', why: 'Le réseau lui-même.' },
   template: { excluded: 'sans_client', why: 'Modèle de document.' },
   lease_template: { excluded: 'sans_client', why: 'Modèle de bail.' },
@@ -482,6 +483,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   partner_prospects: out('partenaire', 'Futur partenaire, adresse professionnelle.'),
   partner_prospect_mails: out('partenaire', 'Mails préparés pour un futur partenaire.'),
   partner_prospect_optouts: out('partenaire', 'Opposition d\'un futur partenaire.'),
+  partner_addresses: out('partenaire', 'Adresse professionnelle et accord du partenaire.'),
+  partner_optouts: out('partenaire', 'Opposition d\'un partenaire.'),
+  pro_sends: out('partenaire', 'Envois aux partenaires et futurs partenaires.'),
+  pro_send_log: out('partenaire', 'Décisions des envois aux professionnels, sans adresse.'),
   // preuves-et-registre : le journal de la personne et de ses dossiers, sans la lutte contre le blanchiment.
   journal: {
     locate: [
