@@ -1906,7 +1906,7 @@ Découpé le 2026-10-29 par la voie 2 : M17 est fini côté voie 2 (Y08 attend l
 Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur l'appareil de l'agent, jamais sur un serveur ; le serveur ne reçoit que des références de stockage, des empreintes et des descriptions contrôlées. Une photo ne reçoit que des corrections globales prises dans une liste fermée (exposition, balance des blancs, contraste, redressement des verticales, netteté, recadrage), décrites et rangées avec l'empreinte de l'original, qui reste gardé : aucune retouche locale, aucun effacement [R130]. L'aménagement virtuel garde sa mention sur l'image (R48, M07). Aucune adresse visible ni personne reconnaissable sans son accord rangé : chaque visuel passe une liste de contrôle validée par l'agent, et les textes (sous-titres, légendes, supports) passent le contrôle d'adresse de M07 [R132, R46]. Musiques et images seulement d'une bibliothèque dont la licence est rangée par la direction [R133]. Une publication est rédigée par l'IA derrière une interface avec secours, validée par l'agent, et part en mode essai par des canaux derrière une interface ; Meta, YouTube, Google et TikTok attendent leurs accès (H06, H07) [R134, R26]. Le plan du logement est indicatif : surfaces calculées par le code depuis les cotes saisies, mention « plan indicatif, non contractuel » [R135]. Les options payantes passent par la mise en relation de M18, rien de neuf. Les règles R130 à R139 et les migrations à partir de `1201` sont réservées à M19. Le code vit dans `packages/core/src/studio/`, ses routes dans `packages/api/src/studio.ts` ; les fichiers du socle ne changent que par X10, confiée à la voie 1.
 
 ### X01 · Guide de prise de vue pièce par pièce
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #174 prête, suite complète verte en local, relecture forte 2 P1 corrigés ; en attente des vérifications GitHub (H35). Migration `1201` prise par X01 : X02 à X07 prennent `1202` et suivantes.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien (M07 fait)
 - Cahier : M19, « Guide de prise de vue » ; critère « 10 biens photographiés avec le guide ».
@@ -1915,7 +1915,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X02 · Photos corrigées honnêtement, avec leur certificat (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #177 prête, empilée sur X01 (#174), migration `1202` ; suite complète verte en local (1746), relecture forte 2 P1 corrigés ; en attente des vérifications GitHub (H35). Branchement dans la publication par X05 et X10. X03 prend `1203`, X04 `1204`, X05 `1206`, X07 `1205`. Codex : 1 P0 (original vérifié dans le stockage par une interface, seule l'existence lue) et 1 P1 (fiche illisible au journal) corrigés, nouvelle relecture demandée.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X01
 - Cahier : M19, « Photos corrigées sur le téléphone », « Règles ».
@@ -1933,7 +1933,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X04 · Plan simple du logement depuis les mesures
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #179 prête, empilée sur X02 (#177), migration `1204` ; suite complète verte en local, plan rendu vérifié à 390 px ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X01
 - Cahier : M19, « Plan simple du logement ».
@@ -1942,7 +1942,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X05 · Publications prêtes pour chaque bien, visite, offre, vente
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #184 prête, empilée sur X07 (#182), migration `1206` ; événement vérifié contre l'état du bien à la préparation et à l'envoi ; suite complète verte en local (1775), relecture forte 1 P1 corrigé ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X02
 - Cahier : M19, « Réseaux sociaux », « L'IA et l'humain » ; M07.
@@ -1951,7 +1951,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : H06 et H07 pour les accès réels ; les tests n'en ont pas besoin.
 
 ### X06 · Supports imprimés à sa marque
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #186 prête, empilée sur X05 (#184) ; impression vérifiée sous Chromium (une page par support, deux pour la fiche, rien hors de la feuille) ; suite complète verte en local (1780) ; en attente des vérifications GitHub (H35). Codex : 1 P0 (mentions sur le panneau) et 1 P1 (impression testée sous Chromium, `supports-chromium.test.ts`, sauté là où Playwright manque, donc sur GitHub) corrigés.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X02
 - Cahier : M19, « Supports imprimés ».
@@ -1969,7 +1969,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : la liste réelle des musiques retenues par Shawez pour la mise en service ; les tests n'en ont pas besoin.
 
 ### X08 · Options payantes par les partenaires, et mesure des 20 visuels
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #187 prête, empilée sur X06 (#186), migration `1207` ; suite complète verte en local (1784) ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : X05
 - Cahier : M19, « Options payantes » ; M18 ; critère « aucune adresse visible sur 20 visuels publiés ».
@@ -1978,7 +1978,7 @@ Décidé, lecture prudente : tout traitement d'image et tout montage se fait sur
 - Attend : rien.
 
 ### X09 · Routes de M19
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition #188 prête, empilée sur X08 (#187) ; 21 routes, rôle contrôlé avant le corps, parcours de 10 biens du guide à la publication en essai ; relecture forte sans P0 ni P1 ; suite complète verte en local ; en attente des vérifications GitHub (H35).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : X08
 - Cahier : M19 ; Architecture technique, API.
@@ -2127,7 +2127,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT06 · Fiche Google : publications et réponses aux avis préparées, validées
-- Statut : en cours (voie 2)
+- Statut : fait (2026-10-30)
 - Avancement (2026-10-29) : proposition prête (#204) ; relecture forte : 5 P1 corrigés, troisième relecture sans P0 ni P1 ; Codex : 3 P0 et 1 P2 corrigés (prénoms en toute casse, adresses numérotées, mandat revérifié avant publication [R42], texte périmé remplacé), relecture redemandée ; attend GitHub Actions (H35). Décidé : le nom de l'auteur d'un avis n'est jamais gardé (empreintes de ses mots seulement) ; une publication de bien ne porte jamais le prix, seulement le lien vers sa page ; une réservation sous index unique précède tout appel à Google.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M01, point 4 « Fiche Google » ; « L'IA et l'humain ».
