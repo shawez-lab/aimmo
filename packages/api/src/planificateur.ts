@@ -1,4 +1,4 @@
-import { Acces, DecisionEnvoi, investir, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult } from '@aimmo/core';
+import { Acces, DecisionEnvoi, investir, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult, commerces } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
@@ -102,6 +102,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Investir (Y08), de 9 h à 19 h : les alertes aux investisseurs qui les ont demandées, chacune décidée par le
       // contrôle central au moment de l'envoi ; canaux du mode essai seulement, rien ne part [R03, R26, R124].
       investorAlertsJob(config.db, journal, { now, unsubscribeBase: config.alertUnsubscribeBase || null, feesRateBp: config.investorFeesRateBp ?? null }),
+      // Commerces (CE10), à 6 h : tâches de la cession pour l'agent du bien et examen de vigilance de chaque dossier,
+      // rangés pour les écrans, jamais envoyés [R116, R118].
+      commerces.commercesDailyJob(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
