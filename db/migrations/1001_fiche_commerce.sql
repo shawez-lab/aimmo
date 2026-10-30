@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS business_sheets (
   activity TEXT,
   -- Confidentiel : le nom de l'enseigne.
   sign_name TEXT CHECK (sign_name IS NULL OR length(sign_name) BETWEEN 1 AND 120),
-  -- Confidentiel : liste JSON des 3 derniers exercices au plus, `{year, revenueCents, resultCents}`.
+  -- Confidentiel : liste JSON des 3 derniers exercices au plus, `{year, revenueCents, resultCents, ebitdaCents?}`.
   fiscal_years TEXT NOT NULL DEFAULT '[]',
   -- Confidentiel : le bail commercial.
   lease_start TEXT CHECK (lease_start IS NULL OR lease_start GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),

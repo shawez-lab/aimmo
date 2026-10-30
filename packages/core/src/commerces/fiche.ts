@@ -70,11 +70,12 @@ export const LICENSES = [
 ] as const;
 export type License = (typeof LICENSES)[number];
 
-/** Un exercice : année de clôture, chiffre d'affaires et résultat, en centimes. */
+/** Un exercice : année de clôture, chiffre d'affaires, résultat et, s'il est saisi, excédent brut d'exploitation, en centimes. */
 export interface FiscalYear {
   year: number;
   revenueCents: number;
   resultCents: number;
+  ebitdaCents?: number;
 }
 
 /** La fiche, et seulement ces champs. */
@@ -189,11 +190,13 @@ function checkFiscalYears(value: unknown): FiscalYear[] | null {
   for (const item of value) {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) return null;
     const keys = Object.keys(item);
-    if (keys.length !== 3 || !['year', 'revenueCents', 'resultCents'].every((k) => keys.includes(k))) return null;
-    const { year, revenueCents, resultCents } = item as Record<string, unknown>;
+    if (!['year', 'revenueCents', 'resultCents'].every((k) => keys.includes(k))) return null;
+    if (keys.some((k) => !['year', 'revenueCents', 'resultCents', 'ebitdaCents'].includes(k))) return null;
+    const { year, revenueCents, resultCents, ebitdaCents } = item as Record<string, unknown>;
     if (!isInt(year, 2000, 2100) || !isInt(revenueCents, 0, MAX_CENTS) || !isInt(resultCents, -MAX_CENTS, MAX_CENTS)) return null;
+    if (ebitdaCents !== undefined && !isInt(ebitdaCents, -MAX_CENTS, MAX_CENTS)) return null;
     if (out.some((y) => y.year === year)) return null;
-    out.push({ year, revenueCents, resultCents });
+    out.push(ebitdaCents === undefined ? { year, revenueCents, resultCents } : { year, revenueCents, resultCents, ebitdaCents });
   }
   return out.sort((a, b) => b.year - a.year);
 }
