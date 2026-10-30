@@ -253,6 +253,32 @@ async function siteOf(s: AttirerServices, referencement: Referencement, origin: 
 }
 
 /**
+ * La page de référence d'un bien publié, pour la page du bien servie par la vitrine (P10) sur n'importe quel site du
+ * réseau : son adresse unique (site de son agent s'il en a un en service, sinon celui du réseau), l'en-tête `Link` à
+ * poser sur la réponse et les données structurées, sans adresse [R153, R46]. `null` quand l'adresse demandée n'est pas
+ * un site en service, ou que le bien n'y est pas publié : la vitrine ne pose alors aucune page de référence. Branché
+ * dans la vitrine par AT10.
+ */
+export async function listingReference(s: AttirerServices, requestUrl: string, propertyId: string): Promise<{ canonical: string; link: string; structuredData: string } | null> {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(propertyId)) return null;
+  let origin: string;
+  try {
+    origin = new URL(requestUrl).origin;
+  } catch {
+    return null;
+  }
+  const referencement = new Referencement(s.db, s.journal, { now: s.now, indexNow: null, mode: s.mode ?? 'essai' });
+  const found = await siteOf(s, referencement, origin);
+  if (!found) return null;
+  const listing = (await referencement.published(found.networkId)).find((l) => l.propertyId === propertyId);
+  // Le site d'un agent ne montre que les biens de son agent.
+  if (!listing || (found.site.kind === 'agent' && listing.agentId !== found.site.agentId)) return null;
+  const seo = await referencement.listingSeo(found.networkId, propertyId);
+  if (!seo) return null;
+  return { canonical: seo.canonical, link: `<${seo.canonical}>; rel="canonical"`, structuredData: seo.structuredData };
+}
+
+/**
  * Une page publique de M01, ou `null` quand le chemin n'en est pas une (la suite du Worker la cherche ailleurs).
  * Seules les méthodes GET et HEAD sont servies ; une page non publiable répond 404 [R150, R152, R155].
  */

@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { ROLES, SqlJournalStore, applyMigrations, fromSyncSqlite, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
 import type { PriceSalesSource } from '../../core/src/attirer/index.ts';
 import type { EstimatedKind, Sale } from '../../core/src/estimation/fourchette.ts';
-import { attirerRoutes, handleAttirerPublic, type AttirerServices } from '../src/attirer.ts';
+import { attirerRoutes, handleAttirerPublic, listingReference, type AttirerServices } from '../src/attirer.ts';
 import { htmlProblems } from '../../core/src/design/audit.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -152,12 +152,28 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
       expect(xml).toContain(`<loc>${CAMILLE}/biens/b1</loc>`);
       expect(xml).not.toContain(`${NET}/biens/b1`);
     }
+    // La page du bien, sur l'un ou l'autre site, désigne la même page de référence.
+    for (const host of [NET, CAMILLE]) {
+      expect(await listingReference(t.s, `${host}/biens/b1`, 'b1')).toMatchObject({ canonical: `${CAMILLE}/biens/b1`, link: `<${CAMILLE}/biens/b1>; rel="canonical"` });
+    }
+    const seo = await listingReference(t.s, `${NET}/biens/b1`, 'b1');
+    expect(JSON.parse(seo!.structuredData)).toMatchObject({ url: `${CAMILLE}/biens/b1` });
+    expect(seo!.structuredData).not.toContain('99000');
+    // Un bien d'un autre agent n'est pas montré par le site de Camille ; un bien non publié ou un site inconnu n'ont rien.
+    await publishListing(t.db, 'b2', 'ag-2');
+    expect(await listingReference(t.s, `${CAMILLE}/biens/b2`, 'b2')).toBeNull();
+    expect(await listingReference(t.s, `${NET}/biens/b2`, 'b2')).toMatchObject({ canonical: `${NET}/biens/b2` });
+    expect(await listingReference(t.s, `${NET}/biens/absent`, 'absent')).toBeNull();
+    expect(await listingReference(t.s, 'https://imitation.exemple.test/biens/b1', 'b1')).toBeNull();
     // Le plan du réseau porte aussi ses pages de prix ; celui de l'agent, sa seule page d'agent.
     expect(plans[0]).toContain(`${NET}/prix/ville-test`);
     expect(plans[1]).not.toContain('/prix/');
     expect(plans[1]).toContain(`${CAMILLE}/agents/ag-1`);
     // La même chose par la route de la direction.
-    expect((await t.call(direction, 'GET', `/attirer/sites/${sites.net}/plan`)).body.data.filter((e: { kind: string }) => e.kind === 'bien')).toEqual([{ loc: `${CAMILLE}/biens/b1`, lastmod: '2026-10-11', kind: 'bien' }]);
+    expect((await t.call(direction, 'GET', `/attirer/sites/${sites.net}/plan`)).body.data.filter((e: { kind: string }) => e.kind === 'bien')).toEqual([
+      { loc: `${CAMILLE}/biens/b1`, lastmod: '2026-10-11', kind: 'bien' },
+      { loc: `${NET}/biens/b2`, lastmod: '2026-10-11', kind: 'bien' },
+    ]);
     // robots.txt déclare le plan du site lui-même ; en essai, rien n'est indexé.
     for (const host of [NET, CAMILLE]) {
       const robots = await (await t.get(`${host}/robots.txt`))!.text();
@@ -171,6 +187,8 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     await t.call(direction, 'POST', '/attirer/sites', { kind: 'agent', agentId: 'ag-1', baseUrl: CAMILLE, active: false });
     expect((await t.get(`${CAMILLE}/sitemap.xml`))!.status).toBe(404);
     expect(await (await t.get(`${NET}/sitemap.xml`))!.text()).toContain(`<loc>${NET}/biens/b1</loc>`);
+    expect(await listingReference(t.s, `${NET}/biens/b1`, 'b1')).toMatchObject({ canonical: `${NET}/biens/b1` });
+    expect(await listingReference(t.s, `${CAMILLE}/biens/b1`, 'b1')).toBeNull();
   });
 
   it('[R150] [R151] aucune page publique ne sert une case non publiable ; les prix vivent sur le site du réseau', async () => {
