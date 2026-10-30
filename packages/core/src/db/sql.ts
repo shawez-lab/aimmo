@@ -73,7 +73,12 @@ export function fromSyncSqlite(db: SyncSqlite): SqlDatabase {
         db.exec('COMMIT');
         return out;
       } catch (error) {
-        db.exec('ROLLBACK');
+        // SQLite a pu annuler la transaction lui-même : l'erreur d'origine reste celle qui remonte.
+        try {
+          db.exec('ROLLBACK');
+        } catch {
+          /* déjà annulée */
+        }
         throw error;
       }
     },
