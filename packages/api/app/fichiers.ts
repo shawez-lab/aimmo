@@ -5,6 +5,7 @@ import { COFFRE_JS, CONFORMITE_CSS, CONFORMITE_HTML } from './conformite.ts';
 import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS } from './louer.ts';
 import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './investir.ts';
 import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.ts';
+import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 
 /** Les métiers et domaines de M18, tels que l'écran « Partenaires » les nomme (U11). */
 const TRADE_NAMES = PARTNER_TRADES.map((t) => ({ trade: t.trade, label: t.label }));
@@ -126,7 +127,7 @@ ${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="blo
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
-${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}<section id="chiffres" hidden>
+${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}<section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
 <div class="periodes" role="group" aria-label="Période">
@@ -237,6 +238,8 @@ legend { font-weight: 600; margin-bottom: var(--e-2); }
 .chiffre ul { margin: 0 0 var(--e-3); padding-left: var(--e-5); }
 .chiffre li { padding: var(--e-1) 0; }
 #reseau-export-jour { margin-bottom: var(--e-2); }
+#studio .periodes { flex-wrap: wrap; }
+#studio canvas { max-width: 100%; height: auto; }
 ` + LOUER_CSS + INVESTIR_CSS + CONFORMITE_CSS;
 
 /**
@@ -539,6 +542,7 @@ export const APP_JS = `'use strict';
     forgetLouer();
     wipeConformite();
     wipeCommerces();
+    wipeStudio();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
   function button(text, onClick) {
@@ -907,6 +911,7 @@ export const APP_JS = `'use strict';
       li.appendChild(el('strong', b.reference + (b.city ? ' · ' + b.city : '')));
       li.appendChild(el('p', b.state ? 'Annonce ' + (LISTING_STATES[b.state] || 'publiée') + '.' : 'Pas encore publiée.', 'doux'));
       li.appendChild(button(b.state ? 'Voir l’annonce' : 'Mettre en vente', function () { openVente(b.id, b.reference); }));
+      li.appendChild(button('Studio', function () { openStudio(b.id, b.reference); }));
       list.appendChild(li);
     });
     return items.length === 0 ? 'Aucun bien à mettre en vente.' : null;
@@ -1665,7 +1670,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}
+${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1682,7 +1687,7 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'studio'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1833,6 +1838,7 @@ ${LOUER_JS}
     $('investir-ouvrir').addEventListener('click', function () { openInvestir(''); });
     $('commerces-retour').addEventListener('click', function () { if (commercesInside()) openCommerces(''); else home(); });
     $('commerces-ouvrir').addEventListener('click', function () { openCommerces(''); });
+    $('studio-retour').addEventListener('click', function () { wipeStudio(); home(); });
     $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', home);
