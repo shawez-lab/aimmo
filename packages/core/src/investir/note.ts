@@ -355,7 +355,7 @@ export function formatLine(line: YieldLine): string {
   }
 }
 
-const LABELS: Record<string, string> = {
+export const LINE_LABELS: Record<string, string> = {
   price: 'Prix d’achat',
   acquisitionFeesRateBp: 'Taux des frais d’acquisition',
   acquisitionFees: 'Frais d’acquisition',
@@ -421,7 +421,7 @@ export function buildNote(paragraphs: readonly string[], facts: NoteFacts, const
     figures: figures(facts),
     sources: given.map((l) => ({
       line: l.key,
-      text: `${LABELS[l.key] ?? l.key} : ${formatLine(l)}. Source : ${l.source}, au ${day(l.asOf)}. Hypothèse : ${l.hypothesis}.`,
+      text: `${LINE_LABELS[l.key] ?? l.key} : ${formatLine(l)}. Source : ${l.source}, au ${day(l.asOf)}. Hypothèse : ${l.hypothesis}.`,
     })),
     mentions,
     referral: PROFESSIONAL_REFERRAL,
@@ -431,7 +431,7 @@ export function buildNote(paragraphs: readonly string[], facts: NoteFacts, const
 /** Le texte que le client lira, alertes en tête, la preuve de chaque chiffre sous son paragraphe. */
 export function renderNote(note: InvestmentNote): string {
   const proof = (p: NoteParagraph): string =>
-    p.proofs.length === 0 ? '' : `\n${p.proofs.map((x) => `  · ${x.text} : ${LABELS[x.line] ?? x.line}, source ${x.source}, au ${day(x.asOf)} (${x.hypothesis})`).join('\n')}`;
+    p.proofs.length === 0 ? '' : `\n${p.proofs.map((x) => `  · ${x.text} : ${LINE_LABELS[x.line] ?? x.line}, source ${x.source}, au ${day(x.asOf)} (${x.hypothesis})`).join('\n')}`;
   return [
     ...note.alerts,
     ...note.paragraphs.map((p) => p.text + proof(p)),

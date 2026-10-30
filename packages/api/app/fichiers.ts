@@ -3,6 +3,7 @@ import { CERTIFIED_DOMAINS, PARTNER_TRADES } from '../../core/src/partenaires/an
 import { SORT_LABELS } from '../src/partenaires-sortes.ts';
 import { COFFRE_JS, CONFORMITE_CSS, CONFORMITE_HTML } from './conformite.ts';
 import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS } from './louer.ts';
+import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './investir.ts';
 
 /** Les métiers et domaines de M18, tels que l'écran « Partenaires » les nomme (U11). */
 const TRADE_NAMES = PARTNER_TRADES.map((t) => ({ trade: t.trade, label: t.label }));
@@ -74,7 +75,7 @@ export const INDEX_HTML = `<!doctype html>
 <p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
 <button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
 </section>
-${LOUER_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
+${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
 <h3 id="titre-chiffres-accueil">Mes chiffres</h3>
 <p class="etat">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
 <button id="chiffres-ouvrir" type="button" class="secondaire">Voir mes chiffres</button>
@@ -124,7 +125,7 @@ ${LOUER_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil"
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
-${LOUER_HTML}${CONFORMITE_HTML}<section id="chiffres" hidden>
+${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}<section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
 <div class="periodes" role="group" aria-label="Période">
@@ -235,7 +236,7 @@ legend { font-weight: 600; margin-bottom: var(--e-2); }
 .chiffre ul { margin: 0 0 var(--e-3); padding-left: var(--e-5); }
 .chiffre li { padding: var(--e-1) 0; }
 #reseau-export-jour { margin-bottom: var(--e-2); }
-` + LOUER_CSS + CONFORMITE_CSS;
+` + LOUER_CSS + INVESTIR_CSS + CONFORMITE_CSS;
 
 /**
  * Le script de la page. Tout texte venu de l'API est posé avec `textContent`, jamais comme du code. La clé ne passe
@@ -533,6 +534,7 @@ export const APP_JS = `'use strict';
     wipeReseau();
     wipePartenaires();
     wipeLouer();
+    wipeInvestir();
     forgetLouer();
     wipeConformite();
   }
@@ -1661,7 +1663,8 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${LOUER_JS}
+${COFFRE_JS}${INVESTIR_JS}
+${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
     ['visite-titre', 'visite-etat', 'bien-titre', 'bien-etat', 'alerte-etat', 'vente-titre', 'vente-etat'].forEach(function (id) { $(id).textContent = ''; });
@@ -1677,7 +1680,7 @@ ${COFFRE_JS}${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'conformite'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1811,6 +1814,7 @@ ${COFFRE_JS}${LOUER_JS}
       wipeChiffres();
       wipePartenaires();
       wipeLouer();
+      wipeInvestir();
       show('accueil');
       day(currentKey, session);
     }
@@ -1822,6 +1826,8 @@ ${COFFRE_JS}${LOUER_JS}
     $('partenaires-ouvrir').addEventListener('click', function () { openPartenaires('', 0); });
     $('louer-retour').addEventListener('click', function () { if (louerId) openLouer(''); else home(); });
     $('louer-ouvrir').addEventListener('click', function () { openLouer('', 0); });
+    $('investir-retour').addEventListener('click', function () { if (investirProject) openInvestir(''); else home(); });
+    $('investir-ouvrir').addEventListener('click', function () { openInvestir(''); });
     $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', home);
