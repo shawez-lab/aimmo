@@ -82,8 +82,6 @@ import {
 } from './partenaires.ts';
 import type { FeeSettings } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
-import { studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
-import { CERTIFICATE_PAGE_PATH, certificatePageError, handleCertificatePage } from './certificat-photo.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -131,18 +129,7 @@ export interface ApiConfig {
   partenaires?: PartenairesOptions;
   /** M17 (Y08) : l'IA de la note d'investissement (absente, le secours sans IA [R126]) et le barème des frais réglé par la direction. */
   investir?: Pick<InvestirServices, 'noteWriter' | 'feesRateBp'>;
-  /**
-   * M19 (X10) : le stockage des photos, originaux, preuves et accords (R2, `MEDIA`), dont seule l'existence d'une
-   * référence est lue ; absent, les routes de M19 sont fermées. L'IA du corps des publications ; absente, le secours.
-   * Aucun réseau réel n'est accepté ici : les publications partent vers les canaux du mode essai seulement [R26, R134].
-   */
-  studio?: StudioOptions;
   now?: () => Date;
-}
-
-export interface StudioOptions {
-  files: StudioServices['files'] | null;
-  writer?: StudioServices['writer'];
 }
 
 export interface PartenairesOptions {
@@ -947,23 +934,6 @@ function m17Routes(options: Pick<InvestirServices, 'noteWriter' | 'feesRateBp' |
   }));
 }
 
-/**
- * Les routes de M19 (X10) : chacune contrôle son rôle avant de lire le corps et écrit le refus au journal [R16] ; sans
- * stockage des fichiers, elles sont fermées. Les réseaux ne sont jamais passés d'ici : la couche métier ne reçoit que
- * ses canaux du mode essai, et la porte de diffusion de D05 [R26, R42, R134].
- */
-function m19Routes(options: StudioOptions | null): RouteDef[] {
-  return studioRoutes().map((r: StudioRoute) => ({
-    method: r.method,
-    pattern: r.pattern,
-    name: r.name,
-    handle: (s, viewer, params, request) => {
-      if (!options?.files) return Promise.resolve(failure(503, 'studio_files_not_configured', 'Studio fermé : aucun stockage des fichiers.'));
-      return r.handle({ db: s.db, journal: s.journal, now: s.now, files: options.files, writer: options.writer ?? null }, viewer, params, request);
-    },
-  }));
-}
-
 function m10Routes(pieces: PieceStore | null): RouteDef[] {
   return dossierRoutes().map((r: DossierRoute) => ({
     ...r,
@@ -1031,17 +1001,6 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       if (page) return page;
     } catch (error) {
       await partenairesPublicError(config.db, error, now);
-      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
-    }
-  }
-  // Le certificat public d'une photo (X10) : sans clé, sans aucune donnée personnelle [R46, R13].
-  if (url.pathname.startsWith(CERTIFICATE_PAGE_PATH)) {
-    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
-    try {
-      const page = await handleCertificatePage(request, { db: config.db, now });
-      if (page) return page;
-    } catch (error) {
-      await certificatePageError(config.db, error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
@@ -1148,8 +1107,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07) ; puis
   // celles de M13 (K08) : le pilotage ; puis celles de M14 (J13) : le réseau et l'académie ; puis celles de M15 (W10) :
   // la location, fermées sans le stockage des pièces ; puis celles de M12 (L09) : la conformité ; puis celles de M18
-  // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir ; puis
-  // celles de M19 (X10) : le Studio, fermées sans le stockage des fichiers.
+  // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir.
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
@@ -1163,7 +1121,6 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m12Routes(config.coffre ?? null),
     ...m18Routes(config.partenaires ?? null),
     ...m17Routes({ ...(config.investir ?? {}), unsubscribeBase: config.alertUnsubscribeBase ?? null }),
-    ...m19Routes(config.studio ?? null),
   ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');
