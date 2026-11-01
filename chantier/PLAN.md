@@ -2307,7 +2307,8 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC10 · Gestes du client branchés sur les modules
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01, voie 2) : `GestesModules` appelle chaque module sous `system:espace`, jamais au nom d'un agent ; la visite passe par `Visites.schedule` avec la source `espace` et l'auteur `client:<séance>`, sans canal de confirmation ; l'offre passe par le registre de M09 avec l'acquéreur et l'heure fixés par le serveur, sur un document signé présent dans le stockage, et un renvoi avec la même clé rend l'offre déjà enregistrée ; le financement passe par la nouvelle `FinancementDossier.declareByBuyer` (déclarant « acquéreur », dossier clos refusé) ; demander les alertes range l'accord `alertes_biens` par mail, case cochée, et M08 envoie seul par le contrôle central. Relecture forte : 3 P1 corrigés ; Codex en échec, fusion sans lui (#236).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC11
 - Cahier : Le produit, « Espace acquéreur » ; Architecture technique.
 - Objectif : le port `GestesAcquereur` branché sur les routes métier de M05 (visite), M09 (offre), M10 (pièce du financement) et M08 (alertes), dans `packages/core/src/espaces/`.
