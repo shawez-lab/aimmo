@@ -125,6 +125,32 @@ describeWithSqlite('EC07 · branchement des espaces dans le socle', () => {
     expect(row).toEqual({ buyer_person_id: bruno, actor: 'direction:system:espace' });
   });
 
+  it('[R160] [R161] par le socle, chaque route à séance refuse sans cookie et avec une séance fermée', async () => {
+    const t = await setup();
+    const closed = await t.enter(t.buyerId);
+    await t.pub('POST', `${ESPACE_PATH}sortie`, { cookie: closed });
+    for (const cookie of [undefined, closed, 'a'.repeat(40)]) {
+      const releve = await t.pub('GET', `${ESPACE_PATH}releve`, cookie ? { cookie } : {});
+      expect(releve.status).toBe(303);
+      expect(releve.headers.get('location')).toBe(ESPACE_PATH);
+      const favori = await t.pub('POST', `${ESPACE_PATH}favori`, { ...(cookie ? { cookie } : {}), form: { bien: t.propertyId } });
+      expect(favori.status).toBe(303);
+      for (const geste of ['visite', 'offre', 'piece', 'alertes']) {
+        const r = await handleRequest(
+          new Request(`${ORIGIN}${ESPACE_PATH}api/${geste}`, {
+            method: 'POST',
+            headers: { ...(cookie ? { cookie: `${SESSION_COOKIE}=${cookie}` } : {}), origin: ORIGIN, 'x-aimmo-espace': '1', 'content-type': 'application/json' },
+            body: JSON.stringify({ propertyId: t.propertyId, fileId: t.fileId, input: {} }),
+          }),
+          t.config(),
+        );
+        expect(r.status, geste).toBe(401);
+        expect(await r.json()).toEqual({ ok: false, rule: 'R160', code: 'session' });
+      }
+    }
+    expect(await t.db.all('SELECT id FROM client_space_favorites')).toHaveLength(0);
+  });
+
   it('[R164] avec sa clé, le relevé se télécharge et se vérifie par le socle ; un caractère changé, il est dit modifié ; la clé n’est jamais au journal', async () => {
     const t = await setup();
     const seller = await t.enter(t.personId);
