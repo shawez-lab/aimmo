@@ -41,7 +41,11 @@ export interface SellerVisit {
   state: 'prevue' | 'faite' | 'annulee';
   /** Le compte rendu validé par l'agent (T06), déjà rédigé pour le vendeur. */
   report: { text: string; interest: string | null; validatedAt: string } | null;
-  /** Ce qui identifie le visiteur : lu seulement pour être retenu, jamais montré. */
+  /**
+   * Ce qui identifie le visiteur : lu seulement pour être retenu, jamais montré. Contrat des sources (EC06) : toujours
+   * rattaché quand la visite a un visiteur connu ; la retenue ne connaît que les personnes rattachées, le reste repose sur
+   * la validation du compte rendu par l'agent (T06, R52).
+   */
   visitor: SourcePerson | null;
 }
 
@@ -147,7 +151,7 @@ export interface VueRendezVous {
 }
 
 export interface VuePoint {
-  weekOf: string;
+  weekOf: Fait<string>;
   text: Fait<string>;
 }
 
@@ -178,12 +182,20 @@ const SOURCES = {
   echeancier: 'échéancier du dossier',
 } as const;
 
+/** Le libellé qui remplace un intitulé retenu. */
+const LIBELLES: Record<string, string> = { title: 'Document', kind: 'Rendez-vous', reference: 'Bien', city: 'non communiquée' };
+
 const absent = <T>(): Fait<T> => ({ value: null, label: NON_COMMUNIQUE });
 const fait = <T>(value: T | null | undefined, source: string, at: string | null | undefined): Fait<T> =>
   value === null || value === undefined || !at ? absent<T>() : { value, source, at };
 
 /** Les mots qui parlent de l'IA à un client : interdits dans l'espace [R06]. */
-const IA = /\b(ia|i\.a\.|intelligence artificielle|chatgpt|gpt|robot|algorithme|automatiquement|assistant virtuel)\b/iu;
+const IA = /(?:\bi\.\s?a\.|\b(?:ia|intelligences? artificielles?|chatgpt|gpt|robots?|algorithmes?|automatiques?|automatiquement|assistants? virtuels?)\b)/iu;
+
+/** Vrai si le texte parle de l'IA à un client [R06]. */
+export function speaksOfAi(text: string): boolean {
+  return IA.test(text);
+}
 
 const fold = (text: string): string =>
   text
@@ -289,7 +301,7 @@ export class EspaceVendeur {
         at: fait(v.at, SOURCES.agenda, v.at),
         state: fait(v.state, SOURCES.agenda, v.at),
         report: v.report ? safeText(v.report.text, SOURCES.compteRendu, v.report.validatedAt) : absent(),
-        interest: v.report ? fait(v.report.interest, SOURCES.compteRendu, v.report.validatedAt) : absent(),
+        interest: v.report ? safeText(v.report.interest, SOURCES.compteRendu, v.report.validatedAt) : absent(),
       })),
       // Dans l'ordre d'arrivée, sans tri ni note [R14, R57].
       offers: byDate(offers, (o) => o.receivedAt).map((o) => ({
@@ -310,35 +322,37 @@ export class EspaceVendeur {
       weeklyPoints: byDate(points, (w) => w.weekOf)
         .reverse()
         .slice(0, 4)
-        .map((w) => ({ weekOf: w.weekOf, text: w.validatedAt ? safeText(w.text, SOURCES.point, w.validatedAt) : absent() })),
+        .map((w) => ({ weekOf: fait(w.weekOf, SOURCES.point, w.validatedAt), text: w.validatedAt ? safeText(w.text, SOURCES.point, w.validatedAt) : absent() })),
       deed: deed
         ? { date: fait(deed.date, SOURCES.echeancier, deed.computedAt), holds: fait(deed.holds.map((h) => h.label), SOURCES.echeancier, deed.computedAt) }
         : { date: absent(), holds: absent() },
     };
-    // Les intitulés de documents et de rendez-vous et les conditions passent la même retenue.
-    for (const d of view.documents) {
-      if (citesPerson(d.title, persons) || IA.test(d.title)) {
-        d.title = 'Document';
-        retained += 1;
+    // Tout ce qui reste de texte dans la vue passe la même retenue, champ par champ : un texte qui cite une personne
+    // venue pour le bien ou parle de l'IA est retenu [R161, R06].
+    const bad = (t: string): boolean => citesPerson(t, persons) || IA.test(t);
+    const scrub = (x: unknown): unknown => {
+      if (Array.isArray(x)) return x.map(scrub);
+      if (!x || typeof x !== 'object') return x;
+      const o = x as Record<string, unknown>;
+      if ('value' in o && ('source' in o || 'label' in o)) {
+        const v = o.value;
+        if ((typeof v === 'string' && bad(v)) || (Array.isArray(v) && v.some((e) => typeof e === 'string' && bad(e)))) {
+          retained += 1;
+          return absent();
+        }
+        return o;
       }
-    }
-    for (const o of view.offers) {
-      if (o.conditions.value && o.conditions.value.some((c) => citesPerson(c, persons) || IA.test(c))) {
-        o.conditions = absent();
-        retained += 1;
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(o)) {
+        if (typeof v === 'string' && k !== 'propertyId' && bad(v)) {
+          retained += 1;
+          out[k] = LIBELLES[k] ?? 'non communiqué';
+        } else out[k] = scrub(v);
       }
-    }
-    for (const a of view.appointments) {
-      if (citesPerson(a.kind, persons) || IA.test(a.kind)) {
-        a.kind = 'Rendez-vous';
-        retained += 1;
-      }
-    }
-    if (view.deed.holds.value && view.deed.holds.value.some((h) => citesPerson(h, persons) || IA.test(h))) {
-      view.deed.holds = absent();
-      retained += 1;
-    }
-    return { view, retained };
+      return out;
+    };
+    const clean = scrub(view) as VueBienVendeur;
+    return { view: clean, retained };
   }
 
   private async refuse(viewer: ClientViewer, code: 'side' | 'not_party'): Promise<{ ok: false; rule: 'R161'; code: 'side' | 'not_party' }> {

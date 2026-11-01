@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryJournalStore } from '../src/index.ts';
-import { CHAMPS_VENDEUR, EspaceVendeur, NON_COMMUNIQUE, citesPerson, type ClientViewer, type SellerOffer, type SellerProperty, type SellerVisit, type SourcesVendeur } from '../src/espaces/index.ts';
+import { CHAMPS_VENDEUR, EspaceVendeur, NON_COMMUNIQUE, citesPerson, speaksOfAi, type ClientViewer, type SellerOffer, type SellerProperty, type SellerVisit, type SourcesVendeur } from '../src/espaces/index.ts';
 
 const NOW = new Date('2027-06-08T08:00:00.000Z');
 
@@ -152,6 +152,36 @@ describe('EC02 · espace du vendeur', () => {
       ['espaces.vue', 'person:p-vendeur', { rule: 'R161', side: 'vendeur', properties: 1, retained: 0 }],
       ['espaces.vue', 'person:p-vendeur', { rule: 'R161', side: 'vendeur', status: 'refuse', code: 'not_party' }],
     ]);
+  });
+
+  it('[R161] [R06] l’intérêt, les états, les sortes et les statuts passent aussi la retenue', async () => {
+    const base = sources();
+    const espace = new EspaceVendeur(
+      {
+        ...base,
+        sellerPropertiesOf: async () => [property('b1', { status: 'réservé par Octave' })],
+        visitsOf: async () => [{ id: 'v1', at: '2027-06-01T10:00:00.000Z', state: 'faite', report: { text: 'Bonne visite.', interest: 'Bérénice très intéressée', validatedAt: '2027-06-01T18:00:00.000Z' }, visitor: VISITEUR }],
+        offersOf: async () => [{ id: 'o1', receivedAt: '2027-06-06T11:00:00.000Z', amountEur: 238_000, netSellerEur: null, conditions: [], validUntil: null, state: 'refusée par M. Fictif', stateAt: '2027-06-06T11:00:00.000Z', buyer: ACQUEREUR }],
+        documentsOf: async () => [{ id: 'd1', title: 'Pièce', kind: 'piece_identite_octave_fictif', addedAt: '2027-05-01T10:00:00.000Z', signature: 'sans', signedAt: null }],
+        appointmentsOf: async () => [{ id: 'r1', at: '2027-06-09T16:00:00.000Z', kind: 'point', state: 'proposé par l’I.A.' }],
+      },
+      new MemoryJournalStore(),
+      { now: () => NOW },
+    );
+    const r = await espace.bien(viewer(), 'b1');
+    if (!r.ok) throw new Error('vue');
+    expect(r.value.status).toEqual({ value: null, label: NON_COMMUNIQUE });
+    expect(r.value.visits[0]!.interest).toEqual({ value: null, label: NON_COMMUNIQUE });
+    expect(r.value.offers[0]!.state).toEqual({ value: null, label: NON_COMMUNIQUE });
+    expect(r.value.documents[0]!.kind).not.toMatch(/octave|fictif/i);
+    expect(r.value.appointments[0]!.state).toEqual({ value: null, label: NON_COMMUNIQUE });
+    expect(JSON.stringify(r.value)).not.toMatch(/octave|fictif|berenice|bérénice|I\.A\./i);
+    expect(r.value.weeklyPoints[0]!.weekOf).toEqual({ value: '2027-06-07', source: 'point de la semaine validé par l’agent', at: '2027-06-07T07:30:00.000Z' });
+  });
+
+  it('[R06] reconnaît l’IA sous ses formes écrites', () => {
+    for (const t of ['Rédigé par l’I.A. hier', 'Rédigé par l’I.A.', 'des intelligences artificielles', 'estimation automatique', 'selon l’IA', 'un assistant virtuel']) expect(speaksOfAi(t), t).toBe(true);
+    for (const t of ['Visite lumineuse via le jardin', 'Mia a visité', 'Idéal pour une famille']) expect(speaksOfAi(t), t).toBe(false);
   });
 
   it('reconnaît un nom sans accents ni majuscules, un mail ou un téléphone écrit autrement', () => {
