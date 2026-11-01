@@ -149,7 +149,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : `shawez-immo` et sa base ne sont pas modifiés ; le rapport ne contient aucune donnée personnelle ; contrôle sur 50 fiches sans doublon ni exclusion manquante.
 
 ### I05 · Lancer la reprise sur les vraies bases
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : I04
 - Cahier : Feuille de route, novembre 2026.
 - Objectif : faire tourner `RepriseReelle` sur la base `espace-estimation` (lecture seule) et la base `aimmo` en production, avec les trois fichiers de H15, puis rapporter le contrôle sans donnée personnelle. À choisir d'abord, par la lecture la plus prudente : où Shawez dépose ses fichiers sans geste technique (écran de la direction dans l'application, rangés dans la base `aimmo`, jamais dans le dépôt) ; comment la reprise atteint la base en production (workflow GitHub lancé à la main avec l'API REST de D1, par morceaux relançables si le travail est coupé) ; pas une requête du Worker (limite de requêtes D1 par appel).
