@@ -2270,7 +2270,8 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien pour le construire ; la clé réelle de signature à ranger dans les secrets du Worker (signalée à EC07).
 
 ### EC06 · Routes et page de l'espace, parcours de 5 vendeurs et 5 acquéreurs tests
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-01)
+- Avancement (2026-11-01) : fusionnée (#232) ; pages sans script, lien ouvert par un bouton (un affichage ne le brûle pas), cookie `__Host-` SameSite=Strict, `Origin` exigé sur toute écriture. Relecture forte : 1 P1 corrigé ; Codex en échec, fusion sans lui.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01 à EC05
 - Cahier : Le produit, tableau des espaces ; Architecture technique.
 - Objectif : `packages/api/src/espaces.ts` (routes de l'agent pour ouvrir un espace, routes du client par sa séance, page publique de vérification du relevé) et la page de l'espace, téléphone d'abord, dans le système de design.
@@ -2279,7 +2280,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC08 · Lecteurs SQL des sources et gestes branchés sur les modules
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC06
 - Cahier : Le produit, tableau des espaces ; Architecture technique.
 - Objectif : les lecteurs SQL de `ClientParties`, `SourcesVendeur`, `SourcesProprietaire`, `SourcesAcquereur` sur les tables de M05, M06, M08, M09, M10, M15, M17 et G04, et le port `GestesAcquereur` branché sur les routes métier de M05, M09, M10 et M08, dans `packages/core/src/espaces/` et `packages/api/src/espaces.ts`.

@@ -375,3 +375,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-01 10:22 · I05 · dépôt des fichiers dans l'application et reprise par morceaux relançables par le travail GitHub (API D1) fusionnés (#229), relecture forte 4 P1 corrigés, Codex à sa limite (H03) · prochaine : vrai passage de la reprise dès H15 déposé ; sinon rien de faisable pour la voie 1
 - 2026-11-01 10:34 · EC04 · vue de l'acquéreur et gestes par leur module fusionnés (#230), relecture forte 1 P0 et 1 P1 corrigés, Codex en échec · prochaine : EC05
 - 2026-11-01 10:51 · EC05 · relevé prouvé de l'espace (Jamais vu) fusionné (#231), relecture forte 1 P1 corrigé, Codex en échec · prochaine : EC06
+- 2026-11-01 11:21 · EC06 · routes et page de l'espace client fusionnées (#232), relecture forte 1 P1 corrigé, Codex en échec ; lecteurs SQL découpés en EC08 · prochaine : EC08
