@@ -194,6 +194,12 @@ Branchement dans le socle (J13) :
 
 La page publique de candidature est servie à `/rejoindre`, sans clé ni script (`packages/api/src/candidature.ts`). Elle reçoit le réseau par la variable du Worker `CANDIDATURE_NETWORK_ID` ; elle n'est servie qu'en mode essai ; sans lui, elle dit que les candidatures ne sont pas ouvertes. Chacun de ses textes passe le contrôle des promesses de revenus à chaque service : un texte qui échoue ferme la page (503, `candidature.page_fermee` au journal) [R80]. Le lien d'un parrain est `/rejoindre?parrain=<identifiant de l'agent>`.
 
+## Reprise des contacts (I05)
+
+- `POST /v1/reprise/fichiers` : la direction seule [R16] dépose un des trois exports de H15, en JSON `{ "tool": "exclusion_list" | "gohighlevel" | "manychat", "csv": "<texte>" }` (20 Mo au plus ; `agentId` facultatif, par défaut la fiche d'agent de la personne qui dépose). Un fichier que la reprise ne saurait pas lire est refusé (`unreadable_file`), rien n'est rangé. Le texte est rangé dans la base `aimmo` (`reprise_depots`, `reprise_depot_morceaux`), en ajout seul ; la réponse et le journal ne portent que des nombres [R13].
+- `GET /v1/reprise/etat` : la direction seule ; le dernier dépôt de chaque sorte (lignes, date) et l'avancement du lancement.
+- Le lancement n'est pas une route : c'est le travail GitHub « Reprise des contacts » (`.github/workflows/reprise.yml`), lancé à la main depuis main, qui passe par l'API REST de D1 (voir `docs/REPRISE.md`).
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).

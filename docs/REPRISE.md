@@ -33,7 +33,7 @@ Trois fichiers :
 - `gohighlevel.csv` : l'export de tous les contacts de GoHighLevel, avec la colonne « DND » ;
 - `manychat.csv` : l'export des abonnés de ManyChat, avec leur statut d'abonnement.
 
-Ces fichiers contiennent des données personnelles : **jamais dans le dépôt**. Ils seront déposés là où la tâche I04 l'indiquera, hors du dépôt.
+Ces fichiers contiennent des données personnelles : **jamais dans le dépôt**. La direction les dépose dans l'application, écran du réseau, bloc « Reprise des contacts existants » (I05) : ils sont rangés dans la base `aimmo`, nulle part ailleurs.
 
 ## Ce qui est signalé
 
@@ -55,7 +55,14 @@ Puis 50 contacts repris sont tirés au hasard (tous s'il y en a moins). Pour cha
 
 Le contrôle est vert sans doublon, sans exclusion manquante et sans contact introuvable. Son résultat, seulement des nombres, est écrit au journal (`reprise.controle`).
 
-Le lancement sur les vraies bases (où Shawez dépose ses fichiers, comment la reprise atteint la base `aimmo` en production) est la tâche I05.
+## Lancement sur les vraies bases (I05)
+
+1. **Dépôt.** La direction choisit les trois fichiers dans l'application (écran du réseau) et les dépose. Chacun est vérifié au dépôt : un fichier illisible est refusé, rien n'est rangé. Un nouveau dépôt s'ajoute au précédent, le dernier compte. « Où en est la reprise » montre ce qui est déposé et l'avancement.
+2. **Lancement.** Le travail GitHub « Reprise des contacts » est lancé à la main, depuis main (la séance de Claude le lance par l'API REST de GitHub quand les trois fichiers sont là). Il trouve les bases `aimmo` et `espace-estimation` par leur nom dans le compte Cloudflare, applique les migrations de `aimmo`, puis lance `packages/api/outils/reprise.ts`.
+3. **Déroulé.** Rien ne tourne sans les trois fichiers, déposés pour un seul réseau et un seul agent. Tout est lu avant la première écriture ; la base du site est lue par des `SELECT` seulement. Puis la reprise passe source par source, par morceaux de 100 contacts ; après chaque morceau, l'avancement est rangé (`reprise_avancement`). Avant la fin de son temps (300 minutes par défaut), le travail s'arrête proprement : relancé, il reprend au morceau suivant. Un morceau coupé net est refait, ce qui ne double rien ; si les fichiers ou les contacts du site ont changé entre deux lancements, la reprise repart du début, sans rien doubler non plus. Une fois fini, relancé sur les mêmes données, il n'écrit plus rien.
+4. **Compte rendu.** Le résumé du travail donne, par source, les nombres lus, créés, retrouvés, réunis, mis à part, les exclusions, les numéros des lignes illisibles ou à compléter, et le contrôle sur 50 personnes. Aucune donnée personnelle [R13]. Code de sortie : 0 fait (ou à suivre), 1 contrôle rouge ou erreur, 2 rien n'a tourné.
+
+Une seule lecture est refaite après une panne passagère de l'API D1 ; une écriture ne l'est jamais (elle pourrait doubler) : le travail échoue et se relance. Une coupure entre la création d'une fiche et sa clé de reprise peut laisser une fiche vide, sans identifiant ni clé : elle ne double aucune personne.
 
 ## Import d'un agent (J05)
 

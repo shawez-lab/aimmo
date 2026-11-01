@@ -62,6 +62,7 @@ import { annonceRoutes } from './annonces.ts';
 import { offreRoutes } from './offres.ts';
 import { dossierRoutes, type DossierRoute, type PieceStore } from './dossiers.ts';
 import { pilotageRoutes } from './pilotage.ts';
+import { repriseRoutes } from './reprise.ts';
 import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresVentePublic } from './apres-vente.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
 import { reseauRoutes, type ReseauOptions } from './reseau.ts';
@@ -1288,7 +1289,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir ; puis
   // celles de M16 (CE10) : les commerces ; puis celles de M19
   // (X10) : le Studio, fermées sans le stockage des fichiers ; puis celles de M20 complet (G12) : gagner des mandats ;
-  // puis celles de M01 (AT11) : attirer.
+  // puis celles de M01 (AT11) : attirer ; puis celles de la reprise des contacts (I05).
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
@@ -1306,6 +1307,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m19Routes(config.studio ?? null),
     ...m20Routes(config.gagner),
     ...m01Routes(config),
+    ...repriseRoutes(),
   ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');

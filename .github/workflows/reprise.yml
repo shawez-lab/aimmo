@@ -1,0 +1,85 @@
+name: Reprise des contacts
+
+# I05 · Lancé à la main, depuis main seulement, une fois les trois fichiers déposés par la direction dans l'application
+# (écran du réseau). Fait la reprise par morceaux, par l'API REST de D1 : la base `espace-estimation` du site est lue en
+# lecture seule, rien n'y est écrit ; la base `aimmo` reçoit les fiches. Un travail coupé se relance : il reprend où il
+# en était, sans rien doubler. La sortie et le résumé ne portent que des nombres [R13]. Rien n'est envoyé à personne.
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Temps de travail avant un arrêt propre, à relancer ensuite (300 au plus)
+        required: true
+        default: '300'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reprise-contacts
+  cancel-in-progress: false
+
+env:
+  WRANGLER: wrangler@4.149.0
+  WRANGLER_SEND_METRICS: 'false'
+
+jobs:
+  reprise:
+    name: Reprendre
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Secrets Cloudflare présents (H04)
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Secrets Cloudflare absents (H04) : rien n'est repris."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Bases D1 trouvées par leur nom
+        id: bases
+        run: |
+          find_id() {
+            npx -y "$WRANGLER" d1 list --json | NAME="$1" node -e '
+              let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => {
+                const all = JSON.parse(s);
+                const d = all.find((d) => d.name === process.env.NAME);
+                process.stdout.write(d ? d.uuid : "");
+              });'
+          }
+          aimmo="$(find_id aimmo)"
+          site="$(find_id espace-estimation)"
+          if ! printf '%s' "$aimmo" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "::error::Base D1 aimmo introuvable : lancer d'abord « Déployer l'API »."
+            exit 1
+          fi
+          if ! printf '%s' "$site" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "::error::Base D1 espace-estimation introuvable dans ce compte Cloudflare."
+            exit 1
+          fi
+          echo "aimmo=$aimmo" >> "$GITHUB_OUTPUT"
+          echo "site=$site" >> "$GITHUB_OUTPUT"
+      - name: Migrations de la base aimmo
+        working-directory: packages/api
+        env:
+          AIMMO_ID: ${{ steps.bases.outputs.aimmo }}
+        run: |
+          sed -i "s/00000000-0000-0000-0000-000000000000/$AIMMO_ID/" wrangler.toml
+          npx -y "$WRANGLER" d1 migrations apply aimmo --remote
+      - name: Reprise par morceaux
+        env:
+          REPRISE_BASE_AIMMO: ${{ steps.bases.outputs.aimmo }}
+          REPRISE_BASE_SITE: ${{ steps.bases.outputs.site }}
+          REPRISE_MINUTES: ${{ inputs.minutes }}
+        run: node --experimental-transform-types --no-warnings packages/api/outils/reprise.ts
