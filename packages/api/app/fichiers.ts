@@ -7,6 +7,7 @@ import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './
 import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
+import { REPRISE_ENTRY_HTML, REPRISE_JS } from './reprise.ts';
 import { CANDIDATURES_ENTRY_HTML, INTEGRATION_CSS, INTEGRATION_HOME_HTML, INTEGRATION_HTML, INTEGRATION_JS } from './integration.ts';
 
 /** Les métiers et domaines de M18, tels que l'écran « Partenaires » les nomme (U11). */
@@ -174,7 +175,7 @@ ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}${
 <button id="reseau-export" type="button" class="secondaire">Télécharger l’export</button>
 <p id="reseau-export-etat" class="etat" role="status"></p>
 </section>
-${CANDIDATURES_ENTRY_HTML}</section>
+${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -1607,6 +1608,7 @@ export const APP_JS = `'use strict';
   function wipeReseau() {
     ['reseau-corps', 'reseau-alertes', 'reseau-reversements', 'reseau-brouillons'].forEach(function (id) { clear($(id)); });
     ['reseau-etat', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat'].forEach(function (id) { $(id).textContent = ''; });
+    wipeReprise();
   }
   function reseauPart(stateId, request, render, mine) {
     $(stateId).textContent = 'Chargement…';
@@ -1677,7 +1679,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}${GAGNER_JS}${INTEGRATION_JS}
+${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}${GAGNER_JS}${INTEGRATION_JS}${REPRISE_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1853,6 +1855,8 @@ ${LOUER_JS}
     $('integration-ouvrir').addEventListener('click', function () { openIntegration('integration'); });
     $('academie-ouvrir').addEventListener('click', function () { openIntegration('academie'); });
     $('candidatures-ouvrir').addEventListener('click', function () { openIntegration('candidatures'); });
+    $('reprise-deposer').addEventListener('click', function () { depositReprise(); });
+    $('reprise-voir').addEventListener('click', function () { showReprise(); });
     // Dans une fiche d'entretien : retour à la liste ; sinon, la direction revient au réseau, l'agent à sa journée.
     $('integration-retour').addEventListener('click', function () {
       if (integrationScreen && integrationScreen.inside()) { openIntegration(integrationMode); return; }
