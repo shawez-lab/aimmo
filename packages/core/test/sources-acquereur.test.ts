@@ -211,6 +211,16 @@ describeWithSqlite('EC11 · lecteurs SQL de l’espace de l’acquéreur', () =>
     await new FicheUnique(t.db, t.store, { now: t.now }).merge({ survivorId: kept, mergedId: t.buyerId, reason: 'identifiant commun' });
     expect(await t.parties.sidesOf(t.network.id, kept)).toEqual(['acquereur']);
     expect((await t.sources.offersOf(t.network.id, kept)).map((o) => o.id)).toEqual([t.offerId]);
+    // Le dossier porte la fiche absorbée : elle est rendue sous la fiche gardée, que la vue écarte du lecteur.
+    const sellers = await t.sources.sellersOf(t.network.id, [t.propertyId]);
+    expect(sellers.map((s) => s.personId)).toContain(kept);
+    expect(sellers.map((s) => s.personId)).not.toContain(t.buyerId);
+  });
+
+  it('[R163] une visite manquée est dite « manquée », jamais « annulée »', async () => {
+    const t = await setup();
+    await t.visit(t.buyerId, '2027-03-04T10:00:00.000Z', 'absent');
+    expect((await t.sources.visitsOf(t.network.id, t.buyerId)).map((v) => v.state)).toEqual(['manquée']);
   });
 
   it('[R161] parcours de 5 acquéreurs sur une vraie base : chacun voit ses visites et ses biens, rien d’un autre client', async () => {

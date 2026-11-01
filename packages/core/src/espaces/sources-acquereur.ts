@@ -125,7 +125,7 @@ const LOAN_STEPS: Record<string, string> = {
   refus: 'refus de prêt déclaré',
 };
 
-const VISIT_STATES: Record<string, string> = { booked: 'prévue', honored: 'faite', cancelled: 'annulée', absent: 'annulée' };
+const VISIT_STATES: Record<string, string> = { booked: 'prévue', honored: 'faite', cancelled: 'annulée', absent: 'manquée' };
 
 const TENANT_STATES = {
   incomplete: 'incomplète : pièces à compléter',
@@ -341,8 +341,10 @@ export class SqlSourcesAcquereur implements SourcesAcquereur {
        ) WHERE person_id IS NOT NULL ORDER BY person_id`,
       [networkId, ...propertyIds, networkId, ...propertyIds, networkId, ...propertyIds],
     );
+    // Chaque personne par sa fiche gardée : une fiche absorbée ne fait pas retenir le lecteur de sa propre vue.
+    const roots = [...new Set(await Promise.all(rows.map((r) => this.fiche.rootOf(r.person_id))))].sort();
     const out: SourcePerson[] = [];
-    for (const r of rows) out.push(await sourcePerson(this.db, this.fiche, r.person_id));
+    for (const root of roots) out.push(await sourcePerson(this.db, this.fiche, root));
     return out;
   }
 
