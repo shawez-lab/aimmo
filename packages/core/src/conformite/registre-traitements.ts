@@ -666,13 +666,14 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     finalite: 'Ouvrir à un client, sans mot de passe, son espace où il suit ses propres dossiers : lien personnel à usage unique et séance.',
     baseLegale: 'contrat',
     personnes: ['Clients du réseau parties à un dossier (vendeurs, propriétaires, acquéreurs, investisseurs, candidats locataires)'],
-    donnees: ['Empreinte du lien personnel de l\'espace, son origine, sa date et son expiration (jamais le lien)', 'Empreinte de la séance du client et ses dates (jamais la séance)', 'Auteur de l\'ouverture de l\'espace'],
+    donnees: ['Empreinte du lien personnel de l\'espace, son origine, sa date et son expiration (jamais le lien)', 'Empreinte de la séance du client et ses dates (jamais la séance)', 'Auteur de l\'ouverture de l\'espace', 'Biens mis en favoris par l\'acquéreur, et leurs retraits'],
     duree: 'La durée de la fiche du client.',
     destinataires: ['Le client lui-même', 'L\'agent de la fiche', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
     tables: {
       client_space_links: ['person_id', 'created_by'],
       client_space_sessions: ['person_id'],
+      client_space_favorites: ['person_id', 'property_id'],
     },
   },
 ];
@@ -699,6 +700,7 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   client_space_link_uses: 'Ouverture d\'un lien de l\'espace client : un identifiant de lien et une date.',
   client_space_link_revocations: 'Révocation d\'un lien de l\'espace client non remis : un identifiant de lien, un code et une date.',
   client_space_session_closures: 'Fermeture d\'une séance de l\'espace client : un identifiant de séance et une date.',
+  client_space_favorite_removals: 'Retrait d\'un favori de l\'espace client : un identifiant de favori et une date.',
 };
 
 /**
@@ -1044,6 +1046,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   client_space_link_uses: ['link_id', 'used_at'],
   client_space_link_revocations: ['link_id', 'code', 'revoked_at'],
   client_space_session_closures: ['session_id', 'closed_at'],
+  client_space_favorites: ['id', 'network_id', 'added_at'],
+  client_space_favorite_removals: ['favorite_id', 'ended_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */

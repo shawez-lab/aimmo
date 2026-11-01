@@ -247,7 +247,7 @@ export class EspaceProprietaire {
 const LIBELLES: Record<string, string> = { title: 'Document', kind: 'Document', reference: 'Bien', city: 'non communiquée' };
 
 /** La retenue, champ par champ, sur tout texte de la vue [R161, R06]. */
-function retain<T>(view: T, persons: readonly SourcePerson[]): { view: T; retained: number } {
+export function retain<T>(view: T, persons: readonly SourcePerson[]): { view: T; retained: number } {
   let retained = 0;
   const bad = (t: string): boolean => citesPerson(t, persons) || speaksOfAi(t);
   const scrub = (x: unknown): unknown => {
