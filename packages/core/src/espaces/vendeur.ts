@@ -185,8 +185,8 @@ const SOURCES = {
 /** Le libellé qui remplace un intitulé retenu. */
 const LIBELLES: Record<string, string> = { title: 'Document', kind: 'Rendez-vous', reference: 'Bien', city: 'non communiquée' };
 
-const absent = <T>(): Fait<T> => ({ value: null, label: NON_COMMUNIQUE });
-const fait = <T>(value: T | null | undefined, source: string, at: string | null | undefined): Fait<T> =>
+export const absent = <T>(): Fait<T> => ({ value: null, label: NON_COMMUNIQUE });
+export const fait = <T>(value: T | null | undefined, source: string, at: string | null | undefined): Fait<T> =>
   value === null || value === undefined || !at ? absent<T>() : { value, source, at };
 
 /** Les mots qui parlent de l'IA à un client : interdits dans l'espace [R06]. */
