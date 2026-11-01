@@ -2273,13 +2273,22 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01 à EC05
 - Cahier : Le produit, tableau des espaces ; Architecture technique.
-- Objectif : `packages/api/src/espaces.ts` (routes de l'agent pour ouvrir un espace, routes du client par sa séance, page publique de vérification du relevé) et la page de l'espace, téléphone d'abord, dans le système de design ; lecteurs SQL des interfaces sur les tables des modules.
+- Objectif : `packages/api/src/espaces.ts` (routes de l'agent pour ouvrir un espace, routes du client par sa séance, page publique de vérification du relevé) et la page de l'espace, téléphone d'abord, dans le système de design.
+- Décidé (2026-11-01, voie 2) : les lecteurs SQL des sources et le branchement des gestes sur les modules passent en EC08, pour garder une tâche d'une journée ; EC06 se teste avec des sources fausses et une vraie base pour l'entrée.
 - Critères : chaque route sous son rôle ou sa séance [R16, R161] ; parcours de 5 vendeurs et 5 acquéreurs tests de bout en bout sans fuite d'un client à l'autre ; contrôle du système de design et budget de 14 Ko [R201] ; aucun envoi réel [R26].
+- Attend : rien.
+
+### EC08 · Lecteurs SQL des sources et gestes branchés sur les modules
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC06
+- Cahier : Le produit, tableau des espaces ; Architecture technique.
+- Objectif : les lecteurs SQL de `ClientParties`, `SourcesVendeur`, `SourcesProprietaire`, `SourcesAcquereur` sur les tables de M05, M06, M08, M09, M10, M15, M17 et G04, et le port `GestesAcquereur` branché sur les routes métier de M05, M09, M10 et M08, dans `packages/core/src/espaces/` et `packages/api/src/espaces.ts`.
+- Critères : sur les jeux de test des modules, un vendeur, un bailleur et un acquéreur voient leurs vrais dossiers et rien d'autre [R161] ; chaque geste rend le refus du module [R165] ; un visiteur ou acquéreur connu est toujours rattaché pour la retenue [R161] ; parcours de 5 vendeurs et 5 acquéreurs sur une vraie base.
 - Attend : rien.
 
 ### EC07 · Branchement des espaces dans le socle
 - Statut : à faire
-- Qui : Claude, voie 1 · Relecture : forte · Dépend de : EC06
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : EC06, EC08
 - Cahier : Architecture technique.
 - Objectif : brancher les routes et la page de EC06 dans `app.ts`, la séance du client à côté des clés d'API, et le secret de signature du relevé.
 - Critères : chaque route branchée répond sous son rôle ou sa séance [R16, R161] ; sans secret de signature, le relevé répond « indisponible » ; la suite complète reste verte.
