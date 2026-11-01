@@ -2261,7 +2261,8 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC05 · Relevé prouvé de l'espace (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01) : relevé texte rendu de façon déterministe depuis la vue, signé HMAC-SHA-256, vérifiable sans base ; rotation de clés ; caractères de contrôle et sauts cachés neutralisés, refusés à la vérification. Relecture forte : 1 P1 corrigé ; Codex en échec, fusion sans lui (#231).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC02
 - Cahier : Le produit, « Espace propriétaire » ; Conformité (preuve).
 - Objectif : **Jamais vu** : le client télécharge à tout moment un relevé daté de ce que son espace lui montre (chaque visite, avis, offre, document, chiffre avec sa source), signé par le réseau ; n'importe qui, avec le relevé seul, vérifie sur une page publique qu'il est intact et quand il a été fait, sans rien apprendre d'autre. Aucun réseau ni logiciel ne remet au vendeur une preuve vérifiable de ce qui lui a été dit et quand.
@@ -2269,7 +2270,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien pour le construire ; la clé réelle de signature à ranger dans les secrets du Worker (signalée à EC07).
 
 ### EC06 · Routes et page de l'espace, parcours de 5 vendeurs et 5 acquéreurs tests
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01 à EC05
 - Cahier : Le produit, tableau des espaces ; Architecture technique.
 - Objectif : `packages/api/src/espaces.ts` (routes de l'agent pour ouvrir un espace, routes du client par sa séance, page publique de vérification du relevé) et la page de l'espace, téléphone d'abord, dans le système de design ; lecteurs SQL des interfaces sur les tables des modules.
