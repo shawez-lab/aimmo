@@ -2298,7 +2298,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC11 · Lecteurs SQL de l'espace de l'acquéreur, de l'investisseur et du candidat locataire
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC09
 - Cahier : Le produit, « Espace acquéreur » ; Architecture technique.
 - Objectif : les côtés acquéreur, investisseur et candidat locataire de `SqlClientParties`, et `SqlSourcesAcquereur` sur les tables de M08 (biens proposés, alertes), M05 (visites), M09 (offres), M10 (dossier, pièces du financement, date d'acte), M17 (rendement) et M15 (candidature), dans `packages/core/src/espaces/sources-acquereur.ts`.
