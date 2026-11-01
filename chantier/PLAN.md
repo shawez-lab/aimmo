@@ -2214,3 +2214,66 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Critères : chaque route branchée répond sous son rôle et sa portée [R16] ; parcours d'un bien test sur les deux sites, une seule page de référence [R153] ; la suite complète reste verte.
 - Ajouté (2026-10-30, voie 2, relecture forte de AT09) : poser `listingReference(s, request.url, bien)` sur la page du bien de `vitrine.ts` (en-tête `Link` canonique et données structurées), avec un test qui charge `/biens/b1` sur les deux sites et y trouve la même page de référence [R153].
 - Attend : rien.
+
+**Espaces propriétaire et acquéreur, juin 2027.**
+
+Voie : 2
+
+Découpé le 2026-11-01 par la voie 2 : M01 à M20 sont découpés et faits ; la Feuille de route livre en juin 2027 les « espaces propriétaire et acquéreur », qu'aucune tâche ne couvre encore (M10 prépare seulement leurs vues). Ids `EC..` pour Espaces des clients. Cahier : Le produit, tableau des espaces (« Espace propriétaire », « Espace acquéreur ») ; Feuille de route, juin 2027.
+Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il lit, par des interfaces, ce que les modules ont déjà rangé (visites et avis de M05 et M08, offres de M09, dossier de M10, point de la semaine de M08, candidatures, bail et état des lieux de M15, suivi de valeur de G04, rendement de M17), avec des faux dans les tests ; chaque geste du client (réserver une visite, écrire une offre, déposer une pièce) passe par la route du module qui le tient, avec ses contrôles [R165]. Le client entre sans mot de passe, par un lien personnel à usage unique que son agent lui ouvre une première fois avec son accord, puis qu'il redemande par son adresse mail ; le lien part par le contrôle central, en mode essai [R160, R26]. Un client ne voit que les dossiers où il est partie, champ par champ selon son côté [R161, R16]. Rien n'est inventé : chaque chiffre a sa source et sa date [R163, R10]. L'espace ne parle jamais de l'IA [R06]. Les règles R160 à R169 et les migrations à partir de `1501` sont réservées aux espaces. Le code vit dans `packages/core/src/espaces/`, ses routes dans `packages/api/src/espaces.ts` ; les fichiers du socle ne changent que par EC07, confiée à la voie 1.
+
+### EC01 · Entrée du client dans son espace, sans mot de passe
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : Le produit, tableau des espaces ; Conformité (accord, journal).
+- Objectif : l'agent du client (ou la direction) ouvre l'espace d'une personne partie à au moins un dossier, avec la preuve de son accord pour recevoir son lien par mail ; un lien personnel, valable 30 minutes (réglage) et une seule fois, part par le contrôle central en essai ; ouvert, il donne une séance de 12 heures (réglage) ; le client redemande un lien par son adresse mail, avec une réponse identique que l'adresse soit connue ou non, et au plus 3 liens par 24 heures (réglage).
+- Critères : seule l'empreinte du lien et de la séance est rangée [R160] ; un lien expiré, déjà ouvert ou inconnu est refusé, deux ouvertures en même temps n'en font qu'une [R160, R18] ; la demande par mail répond pareil pour une adresse inconnue, sans espace ou au plafond [R160] ; sans accord ou après son retrait, aucun lien ne part et la séance ne vaut plus [R03, R160] ; un client exclu ou arrêté ne reçoit rien [R02, R04] ; le journal ne porte ni adresse ni jeton [R13].
+- Attend : rien.
+
+### EC02 · Espace du vendeur : le suivi de la vente en direct
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01
+- Cahier : Le produit, « Espace propriétaire » : visites, avis des visiteurs, offres, documents, signature en ligne, rendez-vous, point de la semaine.
+- Objectif : la vue du vendeur, par bien : visites passées et à venir, avis des visiteurs, offres reçues et leur état, documents du dossier et ceux à signer, rendez-vous, derniers points de la semaine, date d'acte au plus tôt et ce qui la tient, lus par des interfaces.
+- Critères : le vendeur ne voit que ses biens [R161, R16] ; ni nom ni coordonnée d'un visiteur ou d'un acquéreur, champ par champ selon une liste écrite [R161] ; chaque chiffre et chaque date avec sa source et sa date, une donnée absente dite « non communiquée » [R163, R10] ; aucun mot sur l'IA [R06].
+- Attend : rien.
+
+### EC03 · Espace du propriétaire : location, valeur suivie et documents rangés
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01
+- Cahier : Le produit, « Espace propriétaire » : candidatures complètes sans classement, bail, état des lieux ; pour tous : la valeur estimée mise à jour s'il l'a demandé, ses documents au même endroit.
+- Objectif : la vue du bailleur (candidatures complètes, bail, état des lieux) et, pour tout propriétaire, la valeur suivie s'il l'a demandée (G04) et ses documents rangés.
+- Critères : candidatures dans leur ordre d'arrivée, sans note, tri ni avis de l'IA, sans pièce que la loi interdit de demander [R162, R14] ; valeur montrée seulement si le suivi est demandé et actif, en fourchette avec sa date et ses sources [R163] ; le propriétaire ne voit que ses biens [R161].
+- Attend : rien.
+
+### EC04 · Espace de l'acquéreur, de l'investisseur et du candidat locataire
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01
+- Cahier : Le produit, « Espace acquéreur ».
+- Objectif : alertes et biens proposés, favoris, réservation de visite, offre écrite, pièces du financement, suivi jusqu'à l'acte ; pour l'investisseur, rendement et contraintes (M17) ; pour le candidat locataire, ses visites et l'état de sa candidature.
+- Critères : l'acquéreur ne voit du vendeur rien d'autre que le bien publié [R161] ; un favori ou une alerte ne part que s'il l'a demandé, par le contrôle central [R49, R03] ; une réservation, une offre ou une pièce passent par la route du module qui la tient, avec ses refus [R165] ; rendement avec ses hypothèses, jamais une promesse [R163].
+- Attend : rien.
+
+### EC05 · Relevé prouvé de l'espace (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC02
+- Cahier : Le produit, « Espace propriétaire » ; Conformité (preuve).
+- Objectif : **Jamais vu** : le client télécharge à tout moment un relevé daté de ce que son espace lui montre (chaque visite, avis, offre, document, chiffre avec sa source), signé par le réseau ; n'importe qui, avec le relevé seul, vérifie sur une page publique qu'il est intact et quand il a été fait, sans rien apprendre d'autre. Aucun réseau ni logiciel ne remet au vendeur une preuve vérifiable de ce qui lui a été dit et quand.
+- Critères : un relevé modifié d'un seul caractère est refusé à la vérification [R164] ; la vérification ne rend que « intact, fait le … » ou « modifié » [R164, R16] ; le relevé ne porte rien d'un autre client [R161] ; la clé de signature n'est jamais dans le dépôt ni le journal ; deux relevés identiques à la même date ont la même empreinte.
+- Attend : rien pour le construire ; la clé réelle de signature à ranger dans les secrets du Worker (signalée à EC07).
+
+### EC06 · Routes et page de l'espace, parcours de 5 vendeurs et 5 acquéreurs tests
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01 à EC05
+- Cahier : Le produit, tableau des espaces ; Architecture technique.
+- Objectif : `packages/api/src/espaces.ts` (routes de l'agent pour ouvrir un espace, routes du client par sa séance, page publique de vérification du relevé) et la page de l'espace, téléphone d'abord, dans le système de design ; lecteurs SQL des interfaces sur les tables des modules.
+- Critères : chaque route sous son rôle ou sa séance [R16, R161] ; parcours de 5 vendeurs et 5 acquéreurs tests de bout en bout sans fuite d'un client à l'autre ; contrôle du système de design et budget de 14 Ko [R201] ; aucun envoi réel [R26].
+- Attend : rien.
+
+### EC07 · Branchement des espaces dans le socle
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : EC06
+- Cahier : Architecture technique.
+- Objectif : brancher les routes et la page de EC06 dans `app.ts`, la séance du client à côté des clés d'API, et le secret de signature du relevé.
+- Critères : chaque route branchée répond sous son rôle ou sa séance [R16, R161] ; sans secret de signature, le relevé répond « indisponible » ; la suite complète reste verte.
+- Attend : une ligne de `HUMAIN.md` pour le secret de signature du relevé, à écrire par EC07.
