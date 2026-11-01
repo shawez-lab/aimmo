@@ -2223,7 +2223,8 @@ Découpé le 2026-11-01 par la voie 2 : M01 à M20 sont découpés et faits ; la
 Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il lit, par des interfaces, ce que les modules ont déjà rangé (visites et avis de M05 et M08, offres de M09, dossier de M10, point de la semaine de M08, candidatures, bail et état des lieux de M15, suivi de valeur de G04, rendement de M17), avec des faux dans les tests ; chaque geste du client (réserver une visite, écrire une offre, déposer une pièce) passe par la route du module qui le tient, avec ses contrôles [R165]. Le client entre sans mot de passe, par un lien personnel à usage unique que son agent lui ouvre une première fois avec son accord, puis qu'il redemande par son adresse mail ; le lien part par le contrôle central, en mode essai [R160, R26]. Un client ne voit que les dossiers où il est partie, champ par champ selon son côté [R161, R16]. Rien n'est inventé : chaque chiffre a sa source et sa date [R163, R10]. L'espace ne parle jamais de l'IA [R06]. Les règles R160 à R169 et les migrations à partir de `1501` sont réservées aux espaces. Le code vit dans `packages/core/src/espaces/`, ses routes dans `packages/api/src/espaces.ts` ; les fichiers du socle ne changent que par EC07, confiée à la voie 1.
 
 ### EC01 · Entrée du client dans son espace, sans mot de passe
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01) : le lien part en `alert` par le contrôle central, donc dans les heures d'envoi [R01] ; la nuit, il est révoqué et le client redemande. Accord et plafond suivent les fiches réunies ; le plafond est pris dans la même écriture que le lien. Relecture forte : 2 P1 corrigés ; Codex en échec, fusion sans lui (#226).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Le produit, tableau des espaces ; Conformité (accord, journal).
 - Objectif : l'agent du client (ou la direction) ouvre l'espace d'une personne partie à au moins un dossier, avec la preuve de son accord pour recevoir son lien par mail ; un lien personnel, valable 30 minutes (réglage) et une seule fois, part par le contrôle central en essai ; ouvert, il donne une séance de 12 heures (réglage) ; le client redemande un lien par son adresse mail, avec une réponse identique que l'adresse soit connue ou non, et au plus 3 liens par 24 heures (réglage).
@@ -2231,7 +2232,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC02 · Espace du vendeur : le suivi de la vente en direct
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01
 - Cahier : Le produit, « Espace propriétaire » : visites, avis des visiteurs, offres, documents, signature en ligne, rendez-vous, point de la semaine.
 - Objectif : la vue du vendeur, par bien : visites passées et à venir, avis des visiteurs, offres reçues et leur état, documents du dossier et ceux à signer, rendez-vous, derniers points de la semaine, date d'acte au plus tôt et ce qui la tient, lus par des interfaces.
