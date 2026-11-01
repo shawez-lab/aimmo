@@ -137,7 +137,7 @@ describeWithSqlite('reprise réelle et contrôle sur 50 fiches (I04)', () => {
     // recoupent des comptes par le mail ou le téléphone : aucune fiche de plus.
     expect(await count(w.db, 'persons')).toBe(60 + 7 + 1);
     expect(report.batches.site.read).toBe(70);
-    expect(report.control).toEqual({ population: 70 + 6 + 12 + 8, drawn: CONTROL_SAMPLE, duplicates: 0, missingExclusions: 0, toAssign: 0, missing: 0, ok: true });
+    expect(report.control).toEqual({ population: 68, drawn: CONTROL_SAMPLE, duplicates: 0, missingExclusions: 0, toAssign: 0, missing: 0, ok: true });
     // Chaque personne exclue à la source a son exclusion : liste [R02], désabonnés [R04], « Perdu » [R02].
     for (const i of [1, 2, 3, 4, 5, 10, 20, 30, 11, 12, 13, 14, 31, 32, 33]) {
       const [person] = await w.unique.findByIdentifier(w.net, 'email', mail(i));
@@ -165,6 +165,7 @@ describeWithSqlite('reprise réelle et contrôle sur 50 fiches (I04)', () => {
     await w.db.run('UPDATE exclusions SET lifted_at = ?', [NOW.toISOString()]);
     const control = await w.reelle.control(contacts);
     expect(control.missingExclusions).toBe(contacts.length);
+    expect(control.drawn).toBe(contacts.length);
     expect(control.ok).toBe(false);
   });
 
@@ -179,10 +180,29 @@ describeWithSqlite('reprise réelle et contrôle sur 50 fiches (I04)', () => {
     expect(control).toMatchObject({ drawn: 2, duplicates: 1, toAssign: 1, ok: false });
   });
 
+  it('[R02] une exclusion portée par une autre source que la ligne tirée est exigée, et chaque personne compte une fois', async () => {
+    await w.reelle.run(w.siteDb, files());
+    const site = (await readSiteContacts(w.siteDb)).contacts.filter((c) => c.origin === 'site:compte:1');
+    const { contacts: list } = await readToolCsv(files().exclusion_list, 'exclusion_list', NOW);
+    // La ligne du site ne porte aucune exclusion ; celle de la liste, si. Les deux mènent à la même fiche.
+    const both = [...site, list[0]!];
+    await w.db.run('UPDATE exclusions SET lifted_at = ?', [NOW.toISOString()]);
+    const control = await w.reelle.control(both);
+    expect(control).toMatchObject({ population: 1, drawn: 1, missingExclusions: 1, ok: false });
+  });
+
+  it('le tirage porte sur 50 personnes distinctes, même quand chacune a plusieurs lignes', async () => {
+    await w.reelle.run(w.siteDb, files());
+    const site = (await readSiteContacts(w.siteDb)).contacts;
+    const twice = [...site, ...site.map((c) => ({ ...c }))];
+    const control = await w.reelle.control(twice);
+    expect(control).toMatchObject({ population: 67, drawn: CONTROL_SAMPLE, duplicates: 0, ok: true });
+  });
+
   it('le contrôle voit un contact introuvable', async () => {
     const ghost: ImportedContact = { origin: 'site:compte:999', emails: ['absent@example.org'], phones: [], civility: null, firstName: null, lastName: null, createdAt: T, consentAt: null, verified: false, requests: [], problems: [] };
     const control = await w.reelle.control([ghost]);
-    expect(control).toMatchObject({ drawn: 1, missing: 1, ok: false });
+    expect(control).toMatchObject({ drawn: 0, missing: 1, ok: false });
   });
 
   it('[R13] le journal du contrôle ne porte que des nombres, et sa chaîne tient', async () => {

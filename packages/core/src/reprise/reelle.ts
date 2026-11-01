@@ -22,17 +22,17 @@ export const CONTROL_SAMPLE = 50;
 export type ToolFiles = Record<ToolFile, string>;
 
 export interface RepriseControl {
-  /** Contacts repris, parmi lesquels le tirage est fait. */
+  /** Personnes reprises (lignes regroupées par fiche), parmi lesquelles le tirage est fait. */
   population: number;
-  /** Contacts tirés : 50, ou tous s'il y en a moins. */
+  /** Personnes tirées : 50, ou toutes s'il y en a moins. */
   drawn: number;
-  /** Contacts dont l'identifiant mène à plusieurs fiches d'un même agent : une fusion manquée. */
+  /** Personnes tirées qui ont plusieurs fiches d'un même agent : une fusion manquée. */
   duplicates: number;
-  /** Contacts exclus à la source (liste, désabonnement, « Perdu ») dont une fiche n'a aucune exclusion en cours. */
+  /** Personnes tirées exclues par une de leurs sources (liste, désabonnement, « Perdu ») dont une fiche n'a aucune exclusion en cours. */
   missingExclusions: number;
-  /** Contacts dont les fiches sont suivies par plusieurs agents : laissées à part, à attribuer par la direction. */
+  /** Personnes tirées dont les fiches sont suivies par plusieurs agents : laissées à part, à attribuer par la direction. */
   toAssign: number;
-  /** Contacts introuvables après la reprise. */
+  /** Lignes source sans aucune fiche après la reprise, toutes comptées, tirées ou non. */
   missing: number;
   ok: boolean;
 }
@@ -113,16 +113,51 @@ export class RepriseReelle {
     return { batches, control };
   }
 
-  /** Contrôle sur 50 contacts tirés au hasard parmi ceux repris. */
+  /**
+   * Contrôle sur 50 fiches tirées au hasard parmi celles de la reprise. Une personne présente dans plusieurs sources ne
+   * compte qu'une fois : ses lignes sont regroupées par les fiches où elles mènent, et le tirage porte sur ces groupes.
+   * Chaque fiche tirée est contrôlée avec toutes ses lignes : une exclusion portée par une seule d'entre elles suffit
+   * à l'exiger [R02, R04]. Un contact sans aucune fiche est compté introuvable, qu'il soit tiré ou non.
+   */
   async control(contacts: readonly ImportedContact[]): Promise<RepriseControl> {
-    const sample = draw(contacts, CONTROL_SAMPLE, this.random);
-    const control: RepriseControl = { population: contacts.length, drawn: sample.length, duplicates: 0, missingExclusions: 0, toAssign: 0, missing: 0, ok: false };
-    for (const contact of sample) {
+    const control: RepriseControl = { population: 0, drawn: 0, duplicates: 0, missingExclusions: 0, toAssign: 0, missing: 0, ok: false };
+    // Regroupement : deux lignes qui mènent à une même fiche décrivent la même personne (union des fiches liées).
+    const parent = new Map<string, string>();
+    const find = (x: string): string => {
+      let r = x;
+      while (parent.get(r) !== r) r = parent.get(r) as string;
+      parent.set(x, r);
+      return r;
+    };
+    const lines: { contact: ImportedContact; roots: string[] }[] = [];
+    for (const contact of contacts) {
       const roots = await this.rootsOf(contact);
       if (roots.length === 0) {
         control.missing += 1;
         continue;
       }
+      for (const root of roots) if (!parent.has(root)) parent.set(root, root);
+      for (const root of roots.slice(1)) {
+        const a = find(roots[0] as string);
+        const b = find(root);
+        if (a !== b) parent.set(b, a);
+      }
+      lines.push({ contact, roots });
+    }
+    const groups = new Map<string, { roots: Set<string>; excluded: boolean }>();
+    for (const line of lines) {
+      const key = find(line.roots[0] as string);
+      const group = groups.get(key) ?? { roots: new Set<string>(), excluded: false };
+      for (const root of line.roots) group.roots.add(root);
+      if (excludedAtSource(line.contact)) group.excluded = true;
+      groups.set(key, group);
+    }
+    const all = [...groups.keys()].sort().map((key) => groups.get(key) as { roots: Set<string>; excluded: boolean });
+    control.population = all.length;
+    const sample = draw(all, CONTROL_SAMPLE, this.random);
+    control.drawn = sample.length;
+    for (const group of sample) {
+      const roots = [...group.roots];
       if (roots.length > 1) {
         const agents = new Set<string | null>();
         for (const root of roots) agents.add(await this.agentOf(root));
@@ -130,7 +165,7 @@ export class RepriseReelle {
         if (agents.size < roots.length) control.duplicates += 1;
         else control.toAssign += 1;
       }
-      if (excludedAtSource(contact)) {
+      if (group.excluded) {
         for (const root of roots) {
           if (!(await this.hasActiveExclusion(root))) {
             control.missingExclusions += 1;
