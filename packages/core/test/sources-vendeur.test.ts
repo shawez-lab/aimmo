@@ -49,10 +49,11 @@ async function setup() {
 }
 
 describeWithSqlite('EC08 · lecteurs SQL de l’espace du vendeur', () => {
-  it('[R161] le mandant d’un mandat inscrit est vendeur ; l’acquéreur, un visiteur ou un inconnu ne le sont pas', async () => {
+  it('[R161] le mandant d’un mandat inscrit est vendeur ; l’acquéreur est acquéreur ; une fiche sans dossier ou un inconnu, rien', async () => {
     const t = await setup();
     expect(await t.parties.sidesOf(t.network.id, t.personId)).toEqual(['vendeur']);
-    expect(await t.parties.sidesOf(t.network.id, t.buyerId)).toEqual([]);
+    expect(await t.parties.sidesOf(t.network.id, t.buyerId)).toEqual(['acquereur']);
+    // Une fiche sans visite, offre, recherche ni alerte n'a aucun côté.
     expect(await t.parties.sidesOf(t.network.id, t.visitor.id)).toEqual([]);
     expect(await t.parties.sidesOf(t.network.id, 'p-inconnue')).toEqual([]);
     // D'un autre réseau, la même personne n'a aucun côté.

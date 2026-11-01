@@ -33,13 +33,16 @@ import { sellerReportText, type VisitReport } from '../visites/compte-rendu.ts';
 import { weeklyPointText, type WeeklyFigures } from '../visites/point-semaine.ts';
 import type { ClientParties, ClientSide } from './entree.ts';
 import { DOCUMENT_TITLES, LIVE_MANDATES, placeholders, sourcePerson } from './lecture.ts';
+import { buyerSides } from './sources-acquereur.ts';
 import { ownerWindows } from './sources-proprietaire.ts';
 import type { SellerAppointment, SellerDeedDate, SellerDocument, SellerOffer, SellerProperty, SellerVisit, SellerWeeklyPoint, SourcePerson, SourcesVendeur } from './vendeur.ts';
 
 /** Le lecteur que reçoivent les modules appelés par l'espace : jamais une personne. */
 export const ESPACE_READER = 'system:espace';
 
-const systemViewer = (networkId: string): Viewer => ({ role: 'direction', networkId, userId: ESPACE_READER });
+/** La direction du réseau, sous le nom `system:espace` : jamais appelée avant le contrôle de l'espace [R161, R16]. */
+export const espaceViewer = (networkId: string): Viewer => ({ role: 'direction', networkId, userId: ESPACE_READER });
+const systemViewer = espaceViewer;
 
 /** La période d'un vendeur sur un bien : depuis le début de sa suite de mandats, avec ses mandats. */
 export interface SellerWindow {
@@ -69,7 +72,7 @@ export async function sellerWindows(db: SqlDatabase, fiche: FicheUnique, network
 }
 
 /** Le titre court d'un document du dossier, sans article : « Titre de propriété ». */
-const pieceTitle = (piece: Piece): string => {
+export const pieceTitle = (piece: Piece): string => {
   const label = PIECE_LABELS[piece].replace(/^(?:le |la |les |l')/u, '');
   return label.charAt(0).toUpperCase() + label.slice(1);
 };
@@ -120,8 +123,8 @@ const SELLER_PIECES: ReadonlySet<Piece> = (() => {
 /**
  * Les côtés d'une personne dans ses dossiers. EC08 : le vendeur ; EC09 : le propriétaire (dernier à avoir pris le bien,
  * par mandat, mise en location ou acte, quand il n'est ni vendeur ni bailleur) et le bailleur (une mise en location à
- * lui dans sa période) ; les côtés de
- * l'acquéreur viennent avec leurs lecteurs (EC11).
+ * lui dans sa période) ; EC11 : l'acquéreur (recherche, visite, offre, dossier de vente ou alerte partie),
+ * l'investisseur (profil ou alerte partie) et le candidat locataire (une candidature).
  */
 export class SqlClientParties implements ClientParties {
   private readonly fiche: FicheUnique;
@@ -137,6 +140,8 @@ export class SqlClientParties implements ClientParties {
     if (owned.some((w) => w.listingIds.length > 0)) sides.push('bailleur');
     // Un vendeur ou un bailleur est déjà propriétaire pour l'espace ; le côté seul sert à l'acquéreur devenu propriétaire.
     if (owned.length > 0 && sides.length === 0) sides.push('proprietaire');
+    // EC11 : les côtés d'acheteur, chacun par ce que son module a rangé.
+    sides.push(...(await buyerSides(this.db, this.fiche, networkId, personId)));
     return sides;
   }
 }
