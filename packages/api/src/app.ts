@@ -86,6 +86,7 @@ import { investirRoutes, type InvestirRoute, type InvestirServices } from './inv
 import { studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
 import { CERTIFICATE_PAGE_PATH, certificatePageError, handleCertificatePage } from './certificat-photo.ts';
+import { PUBLIC_PATHS as ATTIRER_PUBLIC_PATHS, attirerRoutes, handleAttirerPublic, type AttirerRoute, type AttirerServices } from './attirer.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
 export const API_PREFIX = '/v1';
@@ -150,6 +151,12 @@ export interface ApiConfig {
    * textes du code). Les relances passent par le contrôle central, en mode essai seulement [R26].
    */
   gagner?: Pick<GagnerServices, 'proofs' | 'geocoder' | 'drafter' | 'letterDrafter' | 'dossierDrafter'>;
+  /**
+   * M01 (AT11) : les IA des réponses aux avis et des pages de quartier (absentes, les textes de secours contrôlés). Les
+   * ventes DVF du recalcul des prix sont celles de l'estimation en ligne ; IndexNow et la fiche Google réelle ne sont
+   * jamais passés d'ici : rien ne part, aucune page n'est indexée en mode essai [R26].
+   */
+  attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter'>;
   now?: () => Date;
 }
 
@@ -1033,6 +1040,39 @@ function m20Routes(options: ApiConfig['gagner']): RouteDef[] {
   }));
 }
 
+/** Les services de M01 sur ceux du socle, toujours en mode essai : ni IndexNow ni fiche Google réels [R26]. */
+function m01Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'estimation' | 'attirer'>): AttirerServices {
+  const diffusion = new Diffusion(db, acces, journal, { now });
+  return {
+    db,
+    journal,
+    now,
+    mode: 'essai',
+    priceSales: config.estimation?.sales ?? null,
+    indexNow: null,
+    gbp: null,
+    gbpWriter: config.attirer?.gbpWriter ?? null,
+    neighbourhoodWriter: config.attirer?.neighbourhoodWriter ?? null,
+    diffusion: { canDiffuse: (networkId, propertyId, at) => diffusion.canDiffuse(networkId, propertyId, at) },
+  };
+}
+
+/**
+ * Les routes de M01 (AT11) : chacune contrôle son rôle avant de lire le corps et écrit le refus au journal [R16] ; la
+ * couche métier refait ses contrôles de portée.
+ */
+function m01Routes(config: Pick<ApiConfig, 'estimation' | 'attirer'>): RouteDef[] {
+  return attirerRoutes().map((r: AttirerRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle(m01Services(s.db, s.journal, s.acces, s.now, config), viewer, params, request),
+  }));
+}
+
+/** Une page publique de M01 : prix, agent, quartier, simulateur, plan du site, consignes aux moteurs. */
+const isAttirerPublic = (path: string): boolean => Object.values(ATTIRER_PUBLIC_PATHS).some((p) => p.test(path));
+
 function m10Routes(pieces: PieceStore | null): RouteDef[] {
   return dossierRoutes().map((r: DossierRoute) => ({
     ...r,
@@ -1125,6 +1165,18 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       if (page) return page;
     } catch (error) {
       await journalError(new SqlJournalStore(config.db), 'public:vitrine', 'vitrine', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+  // Les pages publiques de M01 (AT11), servies sur le site du réseau et celui de chaque agent, reconnus par leur adresse.
+  if (isAttirerPublic(url.pathname)) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    const s = services(config.db, now);
+    try {
+      const page = await handleAttirerPublic(m01Services(s.db, s.journal, s.acces, now, config), request);
+      if (page) return page;
+    } catch (error) {
+      await journalError(s.journal, 'public:attirer', 'attirer.public', error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
@@ -1235,7 +1287,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // la location, fermées sans le stockage des pièces ; puis celles de M12 (L09) : la conformité ; puis celles de M18
   // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir ; puis
   // celles de M16 (CE10) : les commerces ; puis celles de M19
-  // (X10) : le Studio, fermées sans le stockage des fichiers ; puis celles de M20 complet (G12) : gagner des mandats.
+  // (X10) : le Studio, fermées sans le stockage des fichiers ; puis celles de M20 complet (G12) : gagner des mandats ;
+  // puis celles de M01 (AT11) : attirer.
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
@@ -1252,6 +1305,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m16Routes(config.commerces),
     ...m19Routes(config.studio ?? null),
     ...m20Routes(config.gagner),
+    ...m01Routes(config),
   ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');

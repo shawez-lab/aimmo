@@ -9,10 +9,15 @@
  * publication écrit, après la porte de diffusion, la liste de contrôle et la validation de l'agent [R42, R43, R47].
  * Aucune adresse, aucun nom du vendeur : la version publiée n'en porte pas [R46]. Les pages ne sont pas indexées tant
  * que le chantier est en mode essai.
+ *
+ * Servie sur un site du réseau (M01, AT11), la page du bien porte sa page de référence unique : en-tête `Link`, lien
+ * canonique et données structurées sans adresse. Le site d'un agent ne sert ni la page ni la fiche du bien d'un autre
+ * agent, ni ses photos [R153].
  */
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, annonces as m07, type SqlDatabase } from '@aimmo/core';
 import { journalError } from './app.ts';
 import { syncAnnonces } from './annonces.ts';
+import { listingPresence, type ListingReference } from './attirer.ts';
 
 export const PAGE_PATH = /^\/biens\/([A-Za-z0-9_-]{1,64})(\/fiche)?$/;
 /** Les médias rangés par la fiche du bien : `biens/<bien>/<uuid>.<ext>`. */
@@ -61,10 +66,16 @@ export async function handleVitrine(request: Request, db: SqlDatabase, media: Me
   const network = await publishedNetwork(db, propertyId);
   if (!network) return notFound();
   const pages = pageBien(db, now);
+  // Ni la page, ni la fiche, ni les photos d'un bien sur un site qui ne doit pas le montrer [R153, R16].
+  const presence = await listingPresence({ db, journal: new SqlJournalStore(db), now }, request.url, propertyId, network);
+  if (presence.kind === 'masque') return notFound();
   if (page) {
     const html = page[2] ? await pages.print(network, propertyId) : await pages.page(network, propertyId);
     if (html === null) return notFound();
-    return new Response(request.method === 'HEAD' ? null : html, { status: 200, headers: headers('text/html; charset=utf-8') });
+    // La fiche imprimable ne porte pas la référence : seule la page du bien en est une.
+    const ref = presence.kind === 'reference' && !page[2] ? presence : null;
+    const body = ref ? withReference(html, ref) : html;
+    return new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: { ...headers('text/html; charset=utf-8'), ...(ref ? { link: ref.link } : {}) } });
   }
   // Une photo n'est servie que si la dernière version publiée la porte, et tant que l'annonce n'est pas retirée.
   const input = await pages.inputFor(network, propertyId);
@@ -74,6 +85,15 @@ export async function handleVitrine(request: Request, db: SqlDatabase, media: Me
   const object = await media.get(ref);
   if (!object) return notFound();
   return new Response(request.method === 'HEAD' ? null : object.body, { status: 200, headers: headers(MEDIA_TYPES[file![3]!]!) });
+}
+
+const attr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** Le lien canonique et les données structurées, posés en fin d'en-tête ; une page sans en-tête reste telle quelle. */
+function withReference(html: string, ref: ListingReference): string {
+  const at = html.indexOf('</head>');
+  if (at < 0) return html;
+  return `${html.slice(0, at)}<link rel="canonical" href="${attr(ref.canonical)}"><script type="application/ld+json">${ref.structuredData}</script>${html.slice(at)}`;
 }
 
 /**

@@ -1,5 +1,5 @@
 /**
- * Les routes de M01, Attirer (AT09), et ses pages publiques, prêtes à brancher dans `app.ts` par AT10 (voie 1).
+ * Les routes de M01, Attirer (AT09), et ses pages publiques, branchées dans `app.ts` par AT11.
  *
  * Routes de l'application, sous `/v1/attirer` (le préfixe `/v1` est retiré par `app.ts`) :
  *   prix regroupés (AT01) : versions, zones, recalcul ; page de l'agent (AT03) : mentions, titulaire, aperçu ;
@@ -252,30 +252,59 @@ async function siteOf(s: AttirerServices, referencement: Referencement, origin: 
   return null;
 }
 
+/** La page de référence d'un bien publié, telle que la vitrine la pose sur la page du bien [R153, R46]. */
+export interface ListingReference {
+  canonical: string;
+  /** L'en-tête `Link` à poser sur la réponse. */
+  link: string;
+  /** Les données structurées, déjà échappées pour un `<script type="application/ld+json">`. */
+  structuredData: string;
+}
+
 /**
- * La page de référence d'un bien publié, pour la page du bien servie par la vitrine (P10) sur n'importe quel site du
- * réseau : son adresse unique (site de son agent s'il en a un en service, sinon celui du réseau), l'en-tête `Link` à
- * poser sur la réponse et les données structurées, sans adresse [R153, R46]. `null` quand l'adresse demandée n'est pas
- * un site en service, ou que le bien n'y est pas publié : la vitrine ne pose alors aucune page de référence. Branché
- * dans la vitrine par AT10.
+ * Ce qu'un site du réseau fait de la page d'un bien (AT11) :
+ *   `hors_site`  l'adresse demandée n'est pas un site en service (l'adresse de l'API) : la vitrine sert la page sans référence ;
+ *   `masque`     le site d'un agent et le bien publié d'un autre agent, ou le site d'un autre réseau : la page n'y est pas
+ *                servie, une seule page de référence [R153, R16] ;
+ *   `reference`  la page de référence du bien, à poser sur la page ;
+ *   `aucune`     un site en service, mais le bien n'y est pas publié : la vitrine décide seule (retiré, inconnu).
  */
-export async function listingReference(s: AttirerServices, requestUrl: string, propertyId: string): Promise<{ canonical: string; link: string; structuredData: string } | null> {
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(propertyId)) return null;
+export type ListingPresence = { kind: 'hors_site' } | { kind: 'masque' } | { kind: 'aucune' } | ({ kind: 'reference' } & ListingReference);
+
+export async function listingPresence(s: AttirerServices, requestUrl: string, propertyId: string, propertyNetworkId?: string): Promise<ListingPresence> {
   let origin: string;
   try {
     origin = new URL(requestUrl).origin;
   } catch {
-    return null;
+    return { kind: 'hors_site' };
   }
   const referencement = new Referencement(s.db, s.journal, { now: s.now, indexNow: null, mode: s.mode ?? 'essai' });
   const found = await siteOf(s, referencement, origin);
-  if (!found) return null;
+  if (!found) return { kind: 'hors_site' };
+  // Le site d'un réseau ne sert jamais le bien d'un autre réseau [R16].
+  if (propertyNetworkId !== undefined && propertyNetworkId !== found.networkId) return { kind: 'masque' };
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(propertyId)) return { kind: 'aucune' };
+  // Le site d'un agent ne montre que les biens de son agent, quel que soit leur état (vendu, retiré, incomplet).
+  if (found.site.kind === 'agent') {
+    const owner = await s.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ? AND network_id = ?', [propertyId, found.networkId]);
+    if (!owner || owner.agent_id !== found.site.agentId) return { kind: 'masque' };
+  }
   const listing = (await referencement.published(found.networkId)).find((l) => l.propertyId === propertyId);
-  // Le site d'un agent ne montre que les biens de son agent.
-  if (!listing || (found.site.kind === 'agent' && listing.agentId !== found.site.agentId)) return null;
+  if (!listing) return { kind: 'aucune' };
   const seo = await referencement.listingSeo(found.networkId, propertyId);
-  if (!seo) return null;
-  return { canonical: seo.canonical, link: `<${seo.canonical}>; rel="canonical"`, structuredData: seo.structuredData };
+  if (!seo) return { kind: 'aucune' };
+  return { kind: 'reference', canonical: seo.canonical, link: `<${seo.canonical}>; rel="canonical"`, structuredData: seo.structuredData };
+}
+
+/**
+ * La page de référence d'un bien publié, pour la page du bien servie par la vitrine (P10) sur n'importe quel site du
+ * réseau : son adresse unique (site de son agent s'il en a un en service, sinon celui du réseau), l'en-tête `Link` à
+ * poser sur la réponse et les données structurées, sans adresse [R153, R46]. `null` quand l'adresse demandée n'est pas
+ * un site en service, ou que le bien n'y est pas publié : la vitrine ne pose alors aucune page de référence.
+ */
+export async function listingReference(s: AttirerServices, requestUrl: string, propertyId: string): Promise<ListingReference | null> {
+  const p = await listingPresence(s, requestUrl, propertyId);
+  return p.kind === 'reference' ? { canonical: p.canonical, link: p.link, structuredData: p.structuredData } : null;
 }
 
 /**
