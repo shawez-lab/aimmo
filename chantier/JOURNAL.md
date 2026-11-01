@@ -371,3 +371,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-01 08:51 · I04 · moteur de reprise réelle et contrôle sur 50 personnes fusionnés (#225), relecture forte 1 P1 corrigé, Codex à sa limite (H03) ; H04 constaté fait ; lancement réel découpé en I05 · prochaine : I05
 - 2026-11-01 09:34 · EC01 · voie 2 découpe les espaces propriétaire et acquéreur (EC01 à EC07, R160 à R165) ; entrée sans mot de passe fusionnée (#226), relecture forte 2 P1 corrigés, Codex en échec · prochaine : EC02
 - 2026-11-01 09:51 · EC02 · vue du vendeur fusionnée (#227), relecture forte 1 P0 et 3 P1 corrigés, Codex en échec · prochaine : EC03
+- 2026-11-01 10:08 · EC03 · vue du propriétaire fusionnée (#228), relecture forte 4 P1 corrigés, Codex en échec · prochaine : EC04

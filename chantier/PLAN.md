@@ -2241,7 +2241,8 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC03 · Espace du propriétaire : location, valeur suivie et documents rangés
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01) : comme W05, seuls les dossiers complets sont présentés, rangés par arrivée, avec les seules pièces du candidat ; les incomplets ne sont qu'un nombre ; la valeur n'est montrée que pour la commune du bien, avec au moins une source. Relecture forte : 4 P1 corrigés ; Codex en échec, fusion sans lui (#228).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01
 - Cahier : Le produit, « Espace propriétaire » : candidatures complètes sans classement, bail, état des lieux ; pour tous : la valeur estimée mise à jour s'il l'a demandé, ses documents au même endroit.
 - Objectif : la vue du bailleur (candidatures complètes, bail, état des lieux) et, pour tout propriétaire, la valeur suivie s'il l'a demandée (G04) et ses documents rangés.
@@ -2249,7 +2250,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC04 · Espace de l'acquéreur, de l'investisseur et du candidat locataire
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01
 - Cahier : Le produit, « Espace acquéreur ».
 - Objectif : alertes et biens proposés, favoris, réservation de visite, offre écrite, pièces du financement, suivi jusqu'à l'acte ; pour l'investisseur, rendement et contraintes (M17) ; pour le candidat locataire, ses visites et l'état de sa candidature.
