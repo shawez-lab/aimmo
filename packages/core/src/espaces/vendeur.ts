@@ -99,15 +99,19 @@ export interface SourcePerson {
   phones?: readonly string[];
 }
 
-/** Les sources de l'espace du vendeur. Fausses dans les tests ; lecteurs SQL en EC06. */
+/**
+ * Les sources de l'espace du vendeur. Fausses dans les tests ; lecteurs SQL dans `sources-vendeur.ts` (EC08). Chaque
+ * lecture d'un bien reçoit le vendeur qui lit : rien de ce qui précède son premier mandat sur le bien ne lui est rendu
+ * [R161].
+ */
 export interface SourcesVendeur {
   sellerPropertiesOf(networkId: string, personId: string): Promise<readonly SellerProperty[]>;
-  visitsOf(networkId: string, propertyId: string): Promise<readonly SellerVisit[]>;
-  offersOf(networkId: string, propertyId: string): Promise<readonly SellerOffer[]>;
-  documentsOf(networkId: string, propertyId: string): Promise<readonly SellerDocument[]>;
+  visitsOf(networkId: string, propertyId: string, personId: string): Promise<readonly SellerVisit[]>;
+  offersOf(networkId: string, propertyId: string, personId: string): Promise<readonly SellerOffer[]>;
+  documentsOf(networkId: string, propertyId: string, personId: string): Promise<readonly SellerDocument[]>;
   appointmentsOf(networkId: string, propertyId: string, personId: string): Promise<readonly SellerAppointment[]>;
-  weeklyPointsOf(networkId: string, propertyId: string): Promise<readonly SellerWeeklyPoint[]>;
-  earliestDeedOf(networkId: string, propertyId: string): Promise<SellerDeedDate | null>;
+  weeklyPointsOf(networkId: string, propertyId: string, personId: string): Promise<readonly SellerWeeklyPoint[]>;
+  earliestDeedOf(networkId: string, propertyId: string, personId: string): Promise<SellerDeedDate | null>;
 }
 
 /** La liste écrite des champs que le vendeur voit, par rubrique : rien d'autre ne sort [R161]. */
@@ -272,12 +276,12 @@ export class EspaceVendeur {
   private async build(viewer: ClientViewer, p: SellerProperty): Promise<{ view: VueBienVendeur; retained: number }> {
     const n = viewer.networkId;
     const [visits, offers, documents, appointments, points, deed] = await Promise.all([
-      this.sources.visitsOf(n, p.propertyId),
-      this.sources.offersOf(n, p.propertyId),
-      this.sources.documentsOf(n, p.propertyId),
+      this.sources.visitsOf(n, p.propertyId, viewer.personId),
+      this.sources.offersOf(n, p.propertyId, viewer.personId),
+      this.sources.documentsOf(n, p.propertyId, viewer.personId),
       this.sources.appointmentsOf(n, p.propertyId, viewer.personId),
-      this.sources.weeklyPointsOf(n, p.propertyId),
-      this.sources.earliestDeedOf(n, p.propertyId),
+      this.sources.weeklyPointsOf(n, p.propertyId, viewer.personId),
+      this.sources.earliestDeedOf(n, p.propertyId, viewer.personId),
     ]);
     // Toutes les personnes venues pour le bien : aucun texte montré ne doit les citer [R161].
     const persons = [...visits.map((v) => v.visitor), ...offers.map((o) => o.buyer)].filter((x): x is SourcePerson => x !== null && x.personId !== viewer.personId);
