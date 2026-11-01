@@ -110,7 +110,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Reste : la première clé d'API (H14) quand un appelant viendra ; écriture du message et du journal en un seul lot D1 (C01, C02) ; une base `aimmo` déjà existante n'est pas contrôlée sur sa juridiction.
 
 ### S10 · Reprise des contacts existants
-- Statut : en cours
+- Statut : fait (2026-11-01) : I04 et I05 faits, le vrai passage attend H15
 - Qui : Claude · Relecture : forte · Dépend de : S02, S09
 - Cahier : Feuille de route, novembre 2026 : import et fusion des contacts existants, exclusions et accords repris.
 - Objectif : à découper en tâches d'après `docs/EXISTANT.md`, au début de la tâche : sources, ordre de reprise, contrôle sur 50 fiches.
