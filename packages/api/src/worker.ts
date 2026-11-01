@@ -56,6 +56,12 @@ export interface Env {
   COFFRE?: R2VaultBucket;
   /** Début du lien d'opposition à la prospection des partenaires (U09), en https, sans chiffre, terminé par `/partenaires/opposition/`. */
   PARTENAIRES_OPPOSITION_BASE?: string;
+  /** Le réseau des espaces des clients (EC07) ; absent, l'espace est fermé. */
+  ESPACE_NETWORK_ID?: string;
+  /** L'adresse de l'espace des clients (EC07), en https, sans chiffre, terminée par `/espace/` ; absente, l'espace est fermé. */
+  ESPACE_BASE?: string;
+  /** Secret : les clés du relevé prouvé de l'espace, `nom:secret` séparées par des virgules ; absent, relevé indisponible [R164]. */
+  ESPACE_RELEVE_KEYS?: string;
 }
 
 /**
@@ -117,6 +123,7 @@ export default {
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
       coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,
       // M18 (U09) : preuves et pièces des partenaires dans `PIECES`, sous `partenaires/` ; absent, routes fermées.
+      espaces: { networkId: env.ESPACE_NETWORK_ID, baseUrl: env.ESPACE_BASE, releveKeys: env.ESPACE_RELEVE_KEYS },
       partenaires: { files: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, optOutBase: env.PARTENAIRES_OPPOSITION_BASE ?? null },
       // M17 (Y08) : sans IA branchée (H13), la note suit le secours sans IA ; le barème vient du réglage de la direction.
       investir: { feesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME) },
