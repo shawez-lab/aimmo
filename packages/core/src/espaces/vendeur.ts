@@ -331,7 +331,15 @@ export class EspaceVendeur {
     // venue pour le bien ou parle de l'IA est retenu [R161, R06].
     const bad = (t: string): boolean => citesPerson(t, persons) || IA.test(t);
     const scrub = (x: unknown): unknown => {
-      if (Array.isArray(x)) return x.map(scrub);
+      if (Array.isArray(x)) {
+        return x.map((e) => {
+          if (typeof e === 'string' && bad(e)) {
+            retained += 1;
+            return NON_COMMUNIQUE;
+          }
+          return scrub(e);
+        });
+      }
       if (!x || typeof x !== 'object') return x;
       const o = x as Record<string, unknown>;
       if ('value' in o && ('source' in o || 'label' in o)) {
