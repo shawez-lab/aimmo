@@ -142,12 +142,19 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Attend : rien pour la construire ; H15 pour les vrais fichiers.
 
 ### I04 · Reprise réelle et contrôle sur 50 fiches
-- Statut : en cours
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01) : I04 livre le moteur (`RepriseReelle`, #225) : les trois fichiers de H15 exigés et tous lus avant la première écriture ; contrôle sur 50 personnes (lignes regroupées par fiche) tirées au hasard, vert sans doublon, sans exclusion manquante ni contact introuvable ; des fiches de deux agents sont « à attribuer », pas un échec. Le lancement sur les vraies bases passe en I05 : une requête du Worker ne peut pas faire des milliers de requêtes D1. Relecture forte : 1 P1 corrigé ; Codex à sa limite (H03), fusion sans lui.
 - Qui : Claude · Relecture : forte · Dépend de : I02, I03
 - Cahier : Feuille de route, novembre 2026.
-- Objectif : un workflow GitHub lancé à la main qui exporte en lecture seule la base `espace-estimation`, y ajoute les fichiers de H15, et reprend le tout dans la base `aimmo` ; puis un contrôle tiré au hasard sur 50 fiches, rapporté sans donnée personnelle.
 - Critères : `shawez-immo` et sa base ne sont pas modifiés ; le rapport ne contient aucune donnée personnelle ; contrôle sur 50 fiches sans doublon ni exclusion manquante.
-- Attend : H04, H15.
+
+### I05 · Lancer la reprise sur les vraies bases
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : I04
+- Cahier : Feuille de route, novembre 2026.
+- Objectif : faire tourner `RepriseReelle` sur la base `espace-estimation` (lecture seule) et la base `aimmo` en production, avec les trois fichiers de H15, puis rapporter le contrôle sans donnée personnelle. À choisir d'abord, par la lecture la plus prudente : où Shawez dépose ses fichiers sans geste technique (écran de la direction dans l'application, rangés dans la base `aimmo`, jamais dans le dépôt) ; comment la reprise atteint la base en production (workflow GitHub lancé à la main avec l'API REST de D1, par morceaux relançables si le travail est coupé) ; pas une requête du Worker (limite de requêtes D1 par appel).
+- Critères : `shawez-immo` et sa base ne sont pas modifiés (lecture seule testée) ; rien ne tourne sans les trois fichiers ; une coupure en cours se relance sans rien doubler ; rapport et journaux du travail sans donnée personnelle [R13].
+- Attend : H15 pour le vrai passage seulement.
 
 ### S11 · Bascule des automatisations existantes sur l'API
 - Statut : en cours
