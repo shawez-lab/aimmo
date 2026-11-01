@@ -32,22 +32,14 @@ import { ComparatifOffres } from '../offres/comparatif.ts';
 import { sellerReportText, type VisitReport } from '../visites/compte-rendu.ts';
 import { weeklyPointText, type WeeklyFigures } from '../visites/point-semaine.ts';
 import type { ClientParties, ClientSide } from './entree.ts';
+import { DOCUMENT_TITLES, LIVE_MANDATES, placeholders, sourcePerson } from './lecture.ts';
+import { ownerWindows } from './sources-proprietaire.ts';
 import type { SellerAppointment, SellerDeedDate, SellerDocument, SellerOffer, SellerProperty, SellerVisit, SellerWeeklyPoint, SourcePerson, SourcesVendeur } from './vendeur.ts';
 
 /** Le lecteur que reçoivent les modules appelés par l'espace : jamais une personne. */
 export const ESPACE_READER = 'system:espace';
 
 const systemViewer = (networkId: string): Viewer => ({ role: 'direction', networkId, userId: ESPACE_READER });
-
-/** Les mandats qui font d'une personne le mandant d'un bien : inscrits, ni annulés ni rétractés. */
-const LIVE_MANDATES = `
-  SELECT m.id, m.property_id, m.person_id, m.signed_at FROM mandates m
-  WHERE m.network_id = ? AND m.property_id IS NOT NULL
-    AND EXISTS (SELECT 1 FROM mandate_register r WHERE r.network_id = m.network_id AND r.mandate_id = m.id AND r.kind = 'inscription'
-                AND NOT EXISTS (SELECT 1 FROM mandate_register c WHERE c.network_id = r.network_id AND c.kind = 'annulation' AND c.cancels_seq = r.seq))
-    AND NOT EXISTS (SELECT 1 FROM mandate_withdrawals w WHERE w.mandate_id = m.id)`;
-
-const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
 /** La période d'un vendeur sur un bien : depuis le début de sa suite de mandats, avec ses mandats. */
 export interface SellerWindow {
@@ -80,12 +72,6 @@ export async function sellerWindows(db: SqlDatabase, fiche: FicheUnique, network
 const pieceTitle = (piece: Piece): string => {
   const label = PIECE_LABELS[piece].replace(/^(?:le |la |les |l')/u, '');
   return label.charAt(0).toUpperCase() + label.slice(1);
-};
-
-const DOCUMENT_TITLES: Record<string, string> = {
-  mandat_vente_simple: 'Mandat de vente simple',
-  mandat_vente_exclusif: 'Mandat de vente exclusif',
-  avenant_mandat: 'Avenant au mandat',
 };
 
 /** Ce qui tient la date d'acte, dit au vendeur, sans rien sur le financement de l'acquéreur [R161]. */
@@ -131,7 +117,12 @@ const SELLER_PIECES: ReadonlySet<Piece> = (() => {
   return all;
 })();
 
-/** Les côtés d'une personne dans ses dossiers. EC08 : le vendeur ; les autres côtés viennent avec leurs lecteurs. */
+/**
+ * Les côtés d'une personne dans ses dossiers. EC08 : le vendeur ; EC09 : le propriétaire (dernier à avoir pris le bien,
+ * par mandat, mise en location ou acte, quand il n'est ni vendeur ni bailleur) et le bailleur (une mise en location à
+ * lui dans sa période) ; les côtés de
+ * l'acquéreur viennent avec leurs lecteurs (EC11).
+ */
 export class SqlClientParties implements ClientParties {
   private readonly fiche: FicheUnique;
 
@@ -142,6 +133,10 @@ export class SqlClientParties implements ClientParties {
   async sidesOf(networkId: string, personId: string): Promise<readonly ClientSide[]> {
     const sides: ClientSide[] = [];
     if ((await sellerWindows(this.db, this.fiche, networkId, personId)).length > 0) sides.push('vendeur');
+    const owned = await ownerWindows(this.db, this.fiche, networkId, personId);
+    if (owned.some((w) => w.listingIds.length > 0)) sides.push('bailleur');
+    // Un vendeur ou un bailleur est déjà propriétaire pour l'espace ; le côté seul sert à l'acquéreur devenu propriétaire.
+    if (owned.length > 0 && sides.length === 0) sides.push('proprietaire');
     return sides;
   }
 }
@@ -182,19 +177,8 @@ export class SqlSourcesVendeur implements SourcesVendeur {
     return (await this.window(networkId, propertyId, personId))?.since ?? null;
   }
 
-  /** Ce qui identifie une personne, dans toutes ses fiches réunies, pour la retenir de tout texte [R161]. */
-  private async person(personId: string): Promise<SourcePerson> {
-    const members = await this.fiche.membersOf(personId);
-    const q = placeholders(members.length);
-    const names = await this.db.all<{ first_name: string | null; last_name: string | null }>(`SELECT first_name, last_name FROM persons WHERE id IN (${q})`, members);
-    const ids = await this.db.all<{ kind: string; value: string }>(`SELECT kind, value FROM person_identifiers WHERE person_id IN (${q})`, members);
-    return {
-      personId,
-      firstName: names.map((n) => n.first_name).filter(Boolean).join(' ') || null,
-      lastName: names.map((n) => n.last_name).filter(Boolean).join(' ') || null,
-      emails: ids.filter((i) => i.kind === 'email').map((i) => i.value),
-      phones: ids.filter((i) => i.kind === 'phone' || i.kind === 'whatsapp').map((i) => i.value),
-    };
+  private person(personId: string): Promise<SourcePerson> {
+    return sourcePerson(this.db, this.fiche, personId);
   }
 
   async sellerPropertiesOf(networkId: string, personId: string): Promise<readonly SellerProperty[]> {

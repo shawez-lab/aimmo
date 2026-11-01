@@ -80,7 +80,8 @@ export interface OwnerDocument {
 /** Les sources de l'espace du propriétaire. Fausses dans les tests ; lecteurs SQL en EC06. */
 export interface SourcesProprietaire {
   ownerPropertiesOf(networkId: string, personId: string): Promise<readonly OwnerProperty[]>;
-  rentalsOf(networkId: string, propertyId: string): Promise<readonly OwnerRental[]>;
+  /** Les mises en location du bien qui sont à la personne, dans sa période de propriétaire [R161]. */
+  rentalsOf(networkId: string, propertyId: string, personId: string): Promise<readonly OwnerRental[]>;
   applicationsOf(networkId: string, rentalId: string): Promise<readonly OwnerApplication[]>;
   leaseOf(networkId: string, rentalId: string): Promise<OwnerLease | null>;
   inspectionsOf(networkId: string, rentalId: string): Promise<readonly OwnerInspection[]>;
@@ -184,7 +185,7 @@ export class EspaceProprietaire {
     const n = viewer.networkId;
     const persons: SourcePerson[] = [];
     const rentals: VueLocation[] = [];
-    const rentalRows = [...(await this.sources.rentalsOf(n, p.propertyId))].filter((r) => r.propertyId === p.propertyId).sort((a, b) => a.openedAt.localeCompare(b.openedAt));
+    const rentalRows = [...(await this.sources.rentalsOf(n, p.propertyId, viewer.personId))].filter((r) => r.propertyId === p.propertyId).sort((a, b) => a.openedAt.localeCompare(b.openedAt));
     for (const r of rentalRows) {
       const [apps, lease, inspections] = await Promise.all([this.sources.applicationsOf(n, r.rentalId), this.sources.leaseOf(n, r.rentalId), this.sources.inspectionsOf(n, r.rentalId)]);
       for (const a of apps) persons.push(...a.persons.filter((x) => x.personId !== viewer.personId));
