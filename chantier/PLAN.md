@@ -2280,7 +2280,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC08 · Lecteurs SQL des sources et gestes branchés sur les modules
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Piste (2026-11-01) : réutiliser ce que les modules calculent déjà plutôt que refaire leurs requêtes : `partyView` de `dossiers/chemin-critique.ts` (vue vendeur ou acquéreur de la date d'acte), `ComparatifOffres` (net vendeur, ordre d'arrivée), `weekly_points` validés (T07), `visit_reports` validés (T06), `SuiviDeValeur` (G04), le choix du propriétaire de W05 ; mandant = `mandates.person_id` du mandat inscrit au registre et non annulé. Si la tâche dépasse une journée, la couper : côté vendeur d'abord, propriétaire et acquéreur ensuite.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC06
 - Cahier : Le produit, tableau des espaces ; Architecture technique.
