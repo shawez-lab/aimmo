@@ -5,8 +5,9 @@ import type { SqlDatabase, SqlStatement, SqlValue } from '@aimmo/core';
  * contacts. Voir https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/query/
  *
  * Lecture prudente :
- * - seule une lecture est refaite après une panne passagère (429, 5xx, réseau) : une écriture refaite pourrait
- *   doubler ; elle échoue, et le travail relancé reprend où il en était ;
+ * - une requête refusée par la limite de l'API (429, jamais exécutée) est refaite après l'attente demandée ;
+ * - après une panne (5xx, réseau), seule une lecture est refaite : une écriture refaite pourrait doubler ; elle
+ *   échoue, et le travail relancé reprend où il en était ;
  * - un lot est envoyé en une seule requête (`batch`), tout ou rien comme dans le Worker ;
  * - aucun message d'erreur ne cite les paramètres, qui peuvent porter une donnée personnelle [R13].
  */
@@ -48,7 +49,7 @@ export class D1RestError extends Error {
 export function d1Rest(config: D1RestConfig): SqlDatabase {
   const doFetch = config.fetch ?? fetch;
   const wait = config.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const retries = config.retries ?? 4;
+  const retries = config.retries ?? 10;
   const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(config.accountId)}/d1/database/${encodeURIComponent(config.databaseId)}/query`;
 
   async function post(body: unknown, retryable: boolean): Promise<D1RestResult[]> {
@@ -63,9 +64,13 @@ export function d1Rest(config: D1RestConfig): SqlDatabase {
       } catch {
         response = null;
       }
-      const passing = response === null || response.status === 429 || response.status >= 500;
-      if (passing && retryable && attempt < retries) {
-        await wait(500 * 2 ** attempt);
+      // Un 429 est refusé avant d'être exécuté : le refaire ne double rien, même pour une écriture. Une panne (5xx,
+      // réseau) peut suivre une écriture faite : seule une lecture est alors refaite.
+      const limited = response !== null && response.status === 429;
+      const passing = response === null || response.status >= 500;
+      if ((limited || (passing && retryable)) && attempt < retries) {
+        const after = limited ? Number(response?.headers.get('retry-after') ?? '') : NaN;
+        await wait(Number.isFinite(after) && after > 0 ? Math.min(after, 300) * 1000 : Math.min(500 * 2 ** attempt, 60_000));
         continue;
       }
       if (response === null) throw new D1RestError(0, []);

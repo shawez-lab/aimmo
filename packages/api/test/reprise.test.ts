@@ -25,9 +25,10 @@ const FILES = {
 };
 
 /** Un faux service D1 de Cloudflare, sur des bases node:sqlite : il répond comme l'API REST `/query`. */
-function fakeCloudflare(bases: Record<string, SqliteDatabase>, opts: { noBatch?: boolean; failFirst?: number } = {}) {
+function fakeCloudflare(bases: Record<string, SqliteDatabase>, opts: { noBatch?: boolean; failFirst?: number; limitFirst?: number } = {}) {
   const calls: { db: string; body: string }[] = [];
   let failures = opts.failFirst ?? 0;
+  let limited = opts.limitFirst ?? 0;
   const runOne = (raw: SqliteDatabase, sql: string, params: SqlValue[]) => {
     const st = raw.prepare(sql);
     if (/^\s*(SELECT|WITH)\b/i.test(sql)) return { results: st.all(...params).map((r) => ({ ...(r as object) })), meta: { changes: 0 }, success: true };
@@ -41,6 +42,10 @@ function fakeCloudflare(bases: Record<string, SqliteDatabase>, opts: { noBatch?:
     calls.push({ db: m?.[1] ?? '?', body });
     if ((init?.headers as Record<string, string>)?.authorization !== 'Bearer jeton-de-test') return new Response(JSON.stringify({ success: false, errors: [{ code: 10000 }] }), { status: 401 });
     if (!raw) return new Response(JSON.stringify({ success: false, errors: [{ code: 7404 }] }), { status: 404 });
+    if (limited > 0) {
+      limited -= 1;
+      return new Response('{}', { status: 429, headers: { 'retry-after': '7' } });
+    }
     if (failures > 0) {
       failures -= 1;
       return new Response('{}', { status: 503 });
@@ -164,7 +169,7 @@ describeWithSqlite('reprise lancée sur les vraies bases : travail, API D1 et d�
     expect(await count(w.db, 'persons')).toBe(0);
   });
 
-  it('une lecture est refaite après une panne passagère ; une écriture jamais', async () => {
+  it('une lecture est refaite après une panne passagère ; une écriture seulement après un refus de la limite', async () => {
     const w = await world();
     const waits: number[] = [];
     const read = fakeCloudflare({ [AIMMO]: w.raw }, { failFirst: 2 });
@@ -176,6 +181,13 @@ describeWithSqlite('reprise lancée sur les vraies bases : travail, API D1 et d�
     await expect(db2.run("INSERT INTO networks (id, name, created_at) VALUES ('n2', 'Autre', ?)", [T])).rejects.toThrow(/HTTP 503/);
     expect(write.calls).toHaveLength(1);
     expect(await count(w.db, 'networks')).toBe(1);
+    // Un refus de la limite de l'API n'a rien exécuté : l'écriture est refaite après l'attente demandée.
+    const limitedWaits: number[] = [];
+    const lim = fakeCloudflare({ [AIMMO]: w.raw }, { limitFirst: 2 });
+    const db3 = d1Rest({ accountId: 'acc', databaseId: AIMMO, token: 'jeton-de-test', fetch: lim.fetcher, wait: async (ms) => void limitedWaits.push(ms) });
+    expect(await db3.run("INSERT INTO networks (id, name, created_at) VALUES ('n3', 'Autre', ?)", [T])).toEqual({ changes: 1 });
+    expect(limitedWaits).toEqual([7000, 7000]);
+    expect(await count(w.db, 'networks')).toBe(2);
   });
 
   it('[R13] une erreur de D1 ne cite ni la requête ni ses valeurs', async () => {

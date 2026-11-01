@@ -293,6 +293,11 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   callback_tasks: { locate: by('person_id') },
   agent_import_contacts: { locate: by('person_id') },
   agent_import_referrals: { locate: by('person_id') },
+  // I05 : les exports bruts de H15, déposés par la direction pour la reprise ; le texte n'est rattaché à aucune fiche
+  // (les fiches reprises, elles, sont lues par la carte). Gardés pour relancer la reprise, puis purgés par la procédure
+  // d'effacement de la conformité : leurs morceaux s'effacent, la reprise refuse alors un dépôt incomplet.
+  reprise_depots: out('non_rattachable', 'Dépôt d\'un export pour la reprise : sorte, taille, empreinte et date, aucun nom.'),
+  reprise_depot_morceaux: out('non_rattachable', 'Texte brut d\'un export déposé pour la reprise, lu en entier par la reprise seule ; à purger une fois la reprise faite.'),
   // messages
   messages: { locate: by('person_id') },
   message_kinds: { locate: [via('message_id', 'messages')] },

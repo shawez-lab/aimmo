@@ -28,6 +28,9 @@ export const LANCEMENT_CHUNK = 100;
 
 export const LANCEMENT_SOURCES = ['site', ...TOOL_FILES] as const;
 export type LancementSource = (typeof LANCEMENT_SOURCES)[number];
+/** Les étapes : les sources, puis la source « site » refaite si le site a reçu de nouveaux contacts entre-temps. */
+const STEPS = [...LANCEMENT_SOURCES, 'site_again'] as const;
+export type LancementStep = (typeof STEPS)[number];
 
 /** Les nombres d'un lot, additionnés morceau par morceau. */
 export interface LancementTotals {
@@ -50,8 +53,8 @@ export interface LancementTotals {
 
 export type LancementReport =
   | { state: 'stopped'; code: 'no_files' | 'missing_files' | 'several_networks' | 'several_agents' }
-  | { state: 'to_continue'; networkId: string; source: LancementSource; position: number; totals: Partial<Record<LancementSource, LancementTotals>> }
-  | { state: 'done'; networkId: string; totals: Partial<Record<LancementSource, LancementTotals>>; control: RepriseControl; already: boolean };
+  | { state: 'to_continue'; networkId: string; source: LancementStep; position: number; totals: Partial<Record<LancementStep, LancementTotals>> }
+  | { state: 'done'; networkId: string; totals: Partial<Record<LancementStep, LancementTotals>>; control: RepriseControl; already: boolean };
 
 export interface LancementOptions {
   actor?: string;
@@ -63,10 +66,12 @@ export interface LancementOptions {
 }
 
 interface Progress {
-  fingerprint: string;
-  source: LancementSource;
+  /** Empreinte des dépôts, et de la lecture du site sur laquelle la source « site » a été faite. */
+  depotsFp: string;
+  siteFp: string;
+  source: LancementStep;
   position: number;
-  totals: Partial<Record<LancementSource, LancementTotals>>;
+  totals: Partial<Record<LancementStep, LancementTotals>>;
   doneAt: string | null;
 }
 
@@ -149,10 +154,11 @@ export class LancementReprise {
     const siteReading = await readSiteContacts(readOnly(this.site));
     batches.site = { contacts: siteReading.contacts, skipped: siteReading.skipped, flagged: siteReading.flagged };
 
-    // 3. L'avancement ne vaut que pour ces fichiers et cette lecture du site : sinon on repart du début.
-    const fingerprint = await sha256Hex(
-      JSON.stringify({ depots: depots.map((d) => d.id), site: siteReading.contacts.map((c) => c.origin) }),
-    );
+    // 3. L'avancement vaut pour ces dépôts : de nouveaux fichiers font repartir du début. La lecture du site, base en
+    //    service, change entre deux lancements (nouvelles demandes) : la position dans les fichiers est gardée, et la
+    //    source « site » est refaite en entier à la fin (`site_again`), ce qui ne double rien (I02).
+    const depotsFp = await sha256Hex(JSON.stringify(depots.map((d) => d.id)));
+    const siteFp = await sha256Hex(JSON.stringify(siteReading.contacts.map((c) => c.origin)));
     const saved = await this.progress(networkId);
     const fiches = new FicheClient(this.db, { now: this.now });
     const unique = new FicheUnique(this.db, fiches, { now: this.now });
@@ -164,20 +170,34 @@ export class LancementReprise {
       ...(this.options.random ? { random: this.options.random } : {}),
     });
     const all: ImportedContact[] = LANCEMENT_SOURCES.flatMap((s) => batches[s].contacts);
-    if (saved && saved.fingerprint === fingerprint && saved.doneAt !== null) {
+    const same = saved !== null && saved.depotsFp === depotsFp;
+    if (same && saved.doneAt !== null && saved.siteFp === siteFp) {
       // Déjà fini sur ces mêmes données : le contrôle est refait, rien n'est écrit.
       return { state: 'done', networkId, totals: saved.totals, control: await reelle.control(all), already: true };
     }
-    let progress: Progress =
-      saved && saved.fingerprint === fingerprint ? saved : { fingerprint, source: 'site', position: 0, totals: {}, doneAt: null };
-    if (!saved || saved.fingerprint !== fingerprint) {
+    let progress: Progress;
+    if (!same) {
+      progress = { depotsFp, siteFp, source: 'site', position: 0, totals: {}, doneAt: null };
       await appendEvent(this.journal, { type: 'reprise.lancement', actor: this.actor, subject: `network:${networkId}`, data: { start: true, ...this.counts(batches) } }, this.now);
+    } else if (saved.doneAt !== null) {
+      // Fini, mais le site a reçu de nouveaux contacts : seule la source « site » est refaite.
+      progress = { ...saved, source: 'site_again', position: 0, siteFp, doneAt: null };
+    } else if (saved.siteFp !== siteFp && (saved.source === 'site' || saved.source === 'site_again')) {
+      // En pleine source « site » sur une lecture qui a changé : cette source repart de zéro, sur la nouvelle lecture.
+      progress = { ...saved, siteFp, position: 0 };
+    } else {
+      progress = saved;
     }
 
     // 4. Les sources dans l'ordre, morceau par morceau, l'avancement rangé après chacun.
-    for (let s = LANCEMENT_SOURCES.indexOf(progress.source); s < LANCEMENT_SOURCES.length; s++) {
-      const source = LANCEMENT_SOURCES[s] as LancementSource;
-      const batch = batches[source];
+    for (let s = STEPS.indexOf(progress.source); s < STEPS.length; s++) {
+      const source = STEPS[s] as LancementStep;
+      // La source « site » n'est refaite que si sa lecture a changé depuis qu'elle a été faite.
+      if (source === 'site_again' && progress.source !== 'site_again') {
+        if (progress.siteFp === siteFp) break;
+        progress = { ...progress, source, position: 0, siteFp };
+      }
+      const batch = batches[source === 'site_again' ? 'site' : source];
       let position = source === progress.source ? progress.position : 0;
       while (position < batch.contacts.length || (position === 0 && batch.contacts.length === 0)) {
         if (!this.timeLeft()) {
@@ -193,14 +213,15 @@ export class LancementReprise {
           unreadableLines: first ? (batch.unreadableLines ?? []) : [],
           partialLines: first ? (batch.partialLines ?? []) : [],
         };
-        const report = await reprise.run(slice, source);
+        const report = await reprise.run(slice, source === 'site_again' ? 'site' : source);
         position = Math.min(batch.contacts.length, position + this.chunk);
-        progress = { ...progress, source, position, totals: { ...progress.totals, [source]: add(progress.totals[source] ?? zero(), report) } };
+        const before = source === 'site_again' && first ? zero() : (progress.totals[source] ?? zero());
+        progress = { ...progress, source, position, totals: { ...progress.totals, [source]: add(before, report) } };
         await this.save(networkId, progress);
         if (batch.contacts.length === 0) break;
       }
-      const next = LANCEMENT_SOURCES[s + 1];
-      if (next) {
+      const next = STEPS[s + 1];
+      if (next && next !== 'site_again') {
         progress = { ...progress, source: next, position: 0 };
         await this.save(networkId, progress);
       }
@@ -229,8 +250,9 @@ export class LancementReprise {
       'SELECT fingerprint, source, position, totals, done_at FROM reprise_avancement WHERE network_id = ?',
       [networkId],
     );
-    if (!row || !(LANCEMENT_SOURCES as readonly string[]).includes(row.source)) return null;
-    return { fingerprint: row.fingerprint, source: row.source as LancementSource, position: Number(row.position), totals: JSON.parse(row.totals) as Progress['totals'], doneAt: row.done_at };
+    if (!row || !(STEPS as readonly string[]).includes(row.source)) return null;
+    const [depotsFp = '', siteFp = ''] = row.fingerprint.split(':');
+    return { depotsFp, siteFp, source: row.source as LancementStep, position: Number(row.position), totals: JSON.parse(row.totals) as Progress['totals'], doneAt: row.done_at };
   }
 
   private async save(networkId: string, p: Progress): Promise<void> {
@@ -238,7 +260,7 @@ export class LancementReprise {
       `INSERT INTO reprise_avancement (network_id, fingerprint, source, position, totals, updated_at, done_at) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (network_id) DO UPDATE SET fingerprint = excluded.fingerprint, source = excluded.source, position = excluded.position,
          totals = excluded.totals, updated_at = excluded.updated_at, done_at = excluded.done_at`,
-      [networkId, p.fingerprint, p.source, p.position, JSON.stringify(p.totals), this.now().toISOString(), p.doneAt],
+      [networkId, `${p.depotsFp}:${p.siteFp}`, p.source, p.position, JSON.stringify(p.totals), this.now().toISOString(), p.doneAt],
     );
   }
 }

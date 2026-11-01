@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS reprise_depots (
 );
 CREATE INDEX IF NOT EXISTS reprise_depots_dernier ON reprise_depots (network_id, tool, deposited_at);
 
--- Le texte d'un dépôt, en morceaux : une ligne de D1 a une taille limitée.
+-- Le texte d'un dépôt, en morceaux : une ligne de D1 a une taille limitée. Jamais modifié ; seule la procédure
+-- d'effacement de la conformité peut le purger une fois la reprise faite (rien ne l'efface dans le code de la reprise).
 CREATE TABLE IF NOT EXISTS reprise_depot_morceaux (
   depot_id TEXT NOT NULL REFERENCES reprise_depots (id) ON DELETE RESTRICT,
   rank INTEGER NOT NULL,
@@ -31,8 +32,6 @@ BEGIN SELECT RAISE(ABORT, 'reprise_depots en ajout seul'); END;
 CREATE TRIGGER IF NOT EXISTS reprise_depots_sans_effacement BEFORE DELETE ON reprise_depots
 BEGIN SELECT RAISE(ABORT, 'reprise_depots en ajout seul'); END;
 CREATE TRIGGER IF NOT EXISTS reprise_depot_morceaux_sans_modification BEFORE UPDATE ON reprise_depot_morceaux
-BEGIN SELECT RAISE(ABORT, 'reprise_depot_morceaux en ajout seul'); END;
-CREATE TRIGGER IF NOT EXISTS reprise_depot_morceaux_sans_effacement BEFORE DELETE ON reprise_depot_morceaux
 BEGIN SELECT RAISE(ABORT, 'reprise_depot_morceaux en ajout seul'); END;
 
 -- Où en est le lancement, par réseau : la source et la position du prochain morceau, et les totaux déjà faits

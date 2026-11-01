@@ -306,13 +306,46 @@ describeWithSqlite('lancer la reprise sur les vraies bases (I05)', () => {
     expect(report.totals.site?.created).toBe(0);
   });
 
+  const addCompte = (site: SqliteDatabase, i: number): void => {
+    site.prepare(`INSERT INTO comptes (id, email, mdp, civilite, prenom, nom, telephone, verifie, source, consentement_le, cree_le) VALUES (?, ?, '', 'Mme', 'Prénom', 'Nom', ?, 1, 'site', ?, ?)`).run(i, mail(i), phone(i), T, T);
+  };
+
+  it('un nouveau contact du site entre deux lancements ne fait pas repartir les fichiers : seule la source « site » est refaite', async () => {
+    await depositAll(w);
+    // Coupé en pleine liste de GoHighLevel.
+    let left = 9;
+    const first = await launch(w, w.db, () => left-- > 0).run();
+    expect(first).toMatchObject({ state: 'to_continue', source: 'gohighlevel' });
+    addCompte(w.site, 500);
+    const done = await launch(w).run();
+    if (done.state !== 'done') throw new Error(done.state);
+    expect(done.control.ok).toBe(true);
+    expect(await count(w.db, 'persons')).toBe(69);
+    expect(done.totals.gohighlevel?.read).toBe(12);
+    expect(done.totals.site_again?.read).toBe(71);
+    expect(await launch(w).run()).toMatchObject({ state: 'done', already: true });
+  });
+
+  it('une fois finie, un nouveau contact du site est repris au lancement suivant, sans refaire les fichiers', async () => {
+    await depositAll(w);
+    await launch(w).run();
+    addCompte(w.site, 501);
+    const again = await launch(w).run();
+    if (again.state !== 'done') throw new Error(again.state);
+    expect(again.already).toBe(false);
+    expect(await count(w.db, 'persons')).toBe(69);
+    expect(again.totals.site_again).toMatchObject({ read: 71, created: 1 });
+    expect(again.totals.manychat?.read).toBe(8);
+    expect(await launch(w).run()).toMatchObject({ state: 'done', already: true });
+  });
+
   it('[R13] l\'avancement, l\'état et le journal ne portent aucune donnée personnelle', async () => {
     await depositAll(w);
     await launch(w, w.db, (() => { let n = 4; return () => n-- > 0; })()).run();
     await launch(w).run();
     const status = await w.depots.status(w.direction);
     const dump = JSON.stringify([await w.db.all('SELECT * FROM reprise_avancement'), await w.db.all('SELECT * FROM journal'), status]);
-    expect(dump).not.toMatch(/example\.org|06 10 00|0610|insta\.exemple|Alix|Prénom/);
+    expect(dump).not.toMatch(/example\.org|06 10 00|insta\.exemple|Alix|Prénom/);
     expect(status).toMatchObject({ ok: true, value: { progress: { source: 'manychat', doneAt: NOW.toISOString() } } });
   });
 });
