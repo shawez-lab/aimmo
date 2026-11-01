@@ -2316,7 +2316,8 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC07 · Branchement des espaces dans le socle
-- Statut : en cours
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01, voie 1) : pages `/espace/` servies par le socle avant `/v1`, sans clé, mode essai seul ; route de l'agent dans le routeur commun ; variables `ESPACE_NETWORK_ID` et `ESPACE_BASE` (sans elles : 503 `espace_not_configured`), secret `ESPACE_RELEVE_KEYS` (`nom:secret`, rotation, mal formé : relevé indisponible) ; offres signées lues dans `PIECES`, absent : refusées ; rendement par `forClient` de M17. Relecture forte : aucun P0, 1 P1 (routes à séance sans séance) corrigé par un test ; Codex non sollicité (H03), fusion (#237). Secret et variables : H40.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : EC06, EC08, EC09, EC10, EC11
 - Cahier : Architecture technique.
 - Objectif : brancher les routes et la page de EC06 dans `app.ts`, la séance du client à côté des clés d'API, et le secret de signature du relevé.
