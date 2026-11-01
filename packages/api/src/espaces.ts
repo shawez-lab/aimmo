@@ -14,7 +14,7 @@
  *     tout le monde, qui ne dit que « intact, fait le … » ou « modifié » [R164] ;
  *   - `POST /espace/api/visite|offre|piece|alertes` : les gestes du client en JSON, chacun passé au module qui le tient
  *     [R165].
- * - Toute écriture du client vérifie que la requête vient de la page elle-même (`Origin`, `Sec-Fetch-Site`) ; les
+ * - Toute écriture du client vérifie que la requête vient de la page elle-même (`Origin` présent et égal) ; les
  *   gestes en JSON exigent en plus l'en-tête `x-aimmo-espace: 1`.
  * - La page suit le système de design, sans script, sans ressource extérieure, sous 14 Ko compressés [R201].
  *
@@ -174,13 +174,13 @@ function sessionToken(request: Request): string | null {
   return null;
 }
 
-/** Une écriture vient-elle de la page elle-même ? `Origin` égal, ou absent, et jamais d'un autre site. */
+/**
+ * Une écriture vient-elle de la page elle-même ? Les navigateurs envoient `Origin` avec chaque POST : il doit être
+ * présent et égal à celui de l'espace ; absent, `null` ou d'un autre site, l'écriture est refusée.
+ */
 function sameOrigin(request: Request): boolean {
-  const site = request.headers.get('sec-fetch-site');
-  if (site && site !== 'same-origin' && site !== 'none') return false;
   const origin = request.headers.get('origin');
-  if (origin === null) return true;
-  return origin === new URL(request.url).origin;
+  return origin !== null && origin === new URL(request.url).origin;
 }
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];

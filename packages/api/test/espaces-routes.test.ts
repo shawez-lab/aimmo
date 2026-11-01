@@ -194,7 +194,10 @@ describeWithSqlite('EC06 · routes et page de l’espace', () => {
     const c = await t.client('acquereur');
     const cookie = await t.enter(c.token);
     expect((await t.pub('POST', `${ESPACE_PATH}sortie`, { cookie, headers: { origin: 'https://autre.example' } })).status).toBe(403);
-    expect((await t.pub('POST', `${ESPACE_PATH}favori`, { cookie, form: { bien: `bien-${c.ref}` }, headers: { 'sec-fetch-site': 'cross-site' } })).status).toBe(403);
+    expect((await t.pub('POST', `${ESPACE_PATH}favori`, { cookie, form: { bien: `bien-${c.ref}` }, headers: { origin: 'null' } })).status).toBe(403);
+    // Sans Origin, aucune écriture.
+    const bare = await handleEspacePublic(new Request(`${ORIGIN}${ESPACE_PATH}sortie`, { method: 'POST', headers: { cookie: `${SESSION_COOKIE}=${cookie}` } }), t.s);
+    expect(bare!.status).toBe(403);
     const json = (h: Record<string, string>, ck?: string) => t.pub('POST', `${ESPACE_PATH}api/visite`, { ...(ck ? { cookie: ck } : {}), json: { propertyId: `bien-${c.ref}`, input: { slot: 'x' } }, headers: h });
     expect((await json({}, cookie)).status).toBe(403);
     expect((await json({ 'x-aimmo-espace': '1' })).status).toBe(401);
