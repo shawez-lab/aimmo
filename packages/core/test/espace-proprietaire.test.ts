@@ -56,17 +56,14 @@ describe('EC03 · espace du propriétaire', () => {
     const r = await espace.bien(viewer(), 'b1');
     if (!r.ok) throw new Error('vue');
     const list = r.value.rentals[0]!.applications;
-    expect(list.map((a) => [a.rank, a.receivedAt.value, a.complete.value, a.guarantors])).toEqual([
-      [1, '2027-08-02T09:00:00.000Z', true, 1],
-      [2, '2027-08-03T09:00:00.000Z', false, 0],
-    ]);
-    expect(list[0]!.pieces).toEqual([
-      { holder: 'candidat', label: 'Contrat de travail ou de stage, ou attestation de l’employeur' },
-      { holder: 'caution', label: 'Dernier ou avant-dernier avis d’imposition' },
-    ]);
+    // Seul le dossier complet est présenté ; l'incomplet n'est qu'un nombre, et ne prend pas de rang [R105].
+    expect(list.map((a) => [a.rank, a.receivedAt.value, a.complete.value, a.guarantors])).toEqual([[1, '2027-08-02T09:00:00.000Z', true, 1]]);
+    expect(r.value.rentals[0]!.waiting).toBe(1);
+    // Les pièces du candidat seulement, de la liste officielle ; celles du garant ne sont pas présentées.
+    expect(list[0]!.pieces).toEqual([{ holder: 'candidat', label: 'Contrat de travail ou de stage, ou attestation de l’employeur' }]);
     expect(Object.keys(list[0]!).sort()).toEqual([...CHAMPS_PROPRIETAIRE.candidature].sort());
     const text = JSON.stringify(r.value);
-    for (const secret of ['score', '92', '"40"', 'releve', 'photo', 'Anatole', 'Inventé', 'Philomène', 'Zélie', 'example.test', '0611', 'p-cand', 'p-garant']) expect(text).not.toContain(secret);
+    for (const secret of ['score', '92', '"40"', 'releve', 'photo', 'caution', 'imposition', 'bulletins', '2027-08-03T09', 'Anatole', 'Inventé', 'Philomène', 'Zélie', 'example.test', '0611', 'p-cand', 'p-garant']) expect(text).not.toContain(secret);
   });
 
   it('[R161] [R16] le propriétaire ne voit que ses biens et leurs documents, au même endroit, dans l’ordre des dates', async () => {
@@ -86,7 +83,11 @@ describe('EC03 · espace du propriétaire', () => {
       range: { value: { lowEur: 2_900, highEur: 3_400 }, source: 'suivi de valeur de la commune', at: '2027-07-01T06:00:00.000Z' },
       sources: ['ventes publiques DVF, publication d’avril 2027'],
     });
-    for (const value of [null, { tracking: false, city: 'Dijon', lowEur: 2_900, highEur: 3_400, computedAt: '2027-07-01T06:00:00.000Z', sources: [] }, { tracking: true, city: 'Dijon', lowEur: 3_500, highEur: 3_400, computedAt: '2027-07-01T06:00:00.000Z', sources: [] }]) {
+    for (const value of [null, { tracking: false, city: 'Dijon', lowEur: 2_900, highEur: 3_400, computedAt: '2027-07-01T06:00:00.000Z', sources: [] }, { tracking: true, city: 'Dijon', lowEur: 3_500, highEur: 3_400, computedAt: '2027-07-01T06:00:00.000Z', sources: ['DVF'] },
+      // Une autre commune que celle du bien, ou sans aucune source : rien n'est montré.
+      { tracking: true, city: 'Chenôve', lowEur: 2_900, highEur: 3_400, computedAt: '2027-07-01T06:00:00.000Z', sources: ['DVF'] },
+      { tracking: true, city: 'Dijon', lowEur: 2_900, highEur: 3_400, computedAt: '2027-07-01T06:00:00.000Z', sources: [] },
+    ]) {
       const r = await new EspaceProprietaire(sources({ value }), new MemoryJournalStore(), { now: () => NOW }).bien(viewer(), 'b1');
       expect(r.ok && r.value.value).toBeNull();
     }
@@ -116,5 +117,11 @@ describe('EC03 · espace du propriétaire', () => {
       { rule: 'R161', side: 'proprietaire', property: 'b1', retained: 1 },
     ]);
     expect(JSON.stringify(entries)).not.toMatch(/Philomène|IA/);
+  });
+
+  it('[R06] [R161] une source de la valeur qui parle de l’IA ou cite un candidat est retenue', async () => {
+    const value = { tracking: true, city: 'Dijon', lowEur: 2_900, highEur: 3_400, computedAt: '2027-07-01T06:00:00.000Z', sources: ['ventes publiques DVF', 'estimation affinée par l’IA', 'vente Zélie Fictive'] };
+    const r = await new EspaceProprietaire(sources({ value }), new MemoryJournalStore(), { now: () => NOW }).bien(viewer(), 'b1');
+    expect(r.ok && r.value.value?.sources).toEqual(['ventes publiques DVF', NON_COMMUNIQUE, NON_COMMUNIQUE]);
   });
 });

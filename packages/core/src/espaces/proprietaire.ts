@@ -91,7 +91,7 @@ export interface SourcesProprietaire {
 /** La liste écrite des champs que le propriétaire voit, par rubrique [R161, R162]. */
 export const CHAMPS_PROPRIETAIRE = {
   candidature: ['rank', 'receivedAt', 'complete', 'pieces', 'guarantors'],
-  location: ['openedAt', 'state', 'applications', 'lease', 'inspections'],
+  location: ['openedAt', 'state', 'waiting', 'applications', 'lease', 'inspections'],
   bail: ['signedAt', 'startsOn', 'rent', 'charges'],
   valeur: ['city', 'range', 'sources'],
   document: ['title', 'kind', 'addedAt'],
@@ -102,13 +102,15 @@ export interface VueCandidature {
   rank: number;
   receivedAt: Fait<string>;
   complete: Fait<boolean>;
-  pieces: { holder: 'candidat' | 'caution'; label: string }[];
+  pieces: { holder: 'candidat'; label: string }[];
   guarantors: number;
 }
 
 export interface VueLocation {
   openedAt: Fait<string>;
   state: Fait<string>;
+  /** Le nombre de dossiers encore incomplets, sans rien d'eux [R162]. */
+  waiting: number;
   applications: VueCandidature[];
   lease: { signedAt: Fait<string>; startsOn: Fait<string>; rent: Fait<number>; charges: Fait<number> };
   inspections: { kind: 'entree' | 'sortie'; signedAt: Fait<string> }[];
@@ -190,16 +192,20 @@ export class EspaceProprietaire {
         openedAt: fait(r.openedAt, SOURCES.location, r.openedAt),
         state: fait(r.state, SOURCES.location, r.stateAt),
         // L'ordre d'arrivée, et le rang qui en vient : jamais l'ordre des sources ni une note [R162].
-        applications: [...apps]
+        // Seuls les dossiers complets sont présentés, comme en W05 ; les autres ne sont qu'un nombre [R162, R105].
+        waiting: apps.filter((a) => a.complete !== true).length,
+        applications: apps
+          .filter((a) => a.complete === true)
           .sort((a, b) => a.receivedAt.localeCompare(b.receivedAt) || a.id.localeCompare(b.id))
           .map((a, i) => ({
             rank: i + 1,
             receivedAt: fait(a.receivedAt, SOURCES.candidature, a.receivedAt),
             complete: fait(a.complete, SOURCES.candidature, a.receivedAt),
-            // Seules les pièces de la liste officielle, chacune pour qui l'annexe la permet [R162, R104].
+            // Seules les pièces du candidat de la liste officielle, comme en W05 : celles des garants ne sont pas
+            // présentées au propriétaire [R162, R104].
             pieces: a.pieces.flatMap((x) => {
-              const official = Object.hasOwn(OFFICIAL_PIECES, x.kind) ? OFFICIAL_PIECES[x.kind] : undefined;
-              return official && official.holders.includes(x.holder) ? [{ holder: x.holder, label: official.label }] : [];
+              const official = x.holder === 'candidat' && Object.hasOwn(OFFICIAL_PIECES, x.kind) ? OFFICIAL_PIECES[x.kind] : undefined;
+              return official && official.holders.includes('candidat') ? [{ holder: 'candidat' as const, label: official.label }] : [];
             }),
             guarantors: Number.isInteger(a.guarantors) && a.guarantors >= 0 ? a.guarantors : 0,
           })),
@@ -216,7 +222,8 @@ export class EspaceProprietaire {
     }
     const value = await this.sources.valueOf(n, viewer.personId, p.propertyId);
     const shownValue =
-      value && value.tracking && Number.isFinite(value.lowEur) && Number.isFinite(value.highEur) && value.lowEur > 0 && value.lowEur <= value.highEur && value.computedAt
+      // La fourchette de la commune du bien, et elle seule, avec au moins une source [R31, R163].
+      value && value.tracking && value.city === p.city && value.sources.length > 0 && value.sources.every((x) => typeof x === 'string' && x.trim() !== '') && Number.isFinite(value.lowEur) && Number.isFinite(value.highEur) && value.lowEur > 0 && value.lowEur <= value.highEur && value.computedAt
         ? { city: value.city, range: { value: { lowEur: value.lowEur, highEur: value.highEur }, source: SOURCES.valeur, at: value.computedAt }, sources: [...value.sources] }
         : null;
     const documents = [...(await this.sources.documentsOf(n, viewer.personId, p.propertyId))]
@@ -244,7 +251,15 @@ function retain<T>(view: T, persons: readonly SourcePerson[]): { view: T; retain
   let retained = 0;
   const bad = (t: string): boolean => citesPerson(t, persons) || speaksOfAi(t);
   const scrub = (x: unknown): unknown => {
-    if (Array.isArray(x)) return x.map(scrub);
+    if (Array.isArray(x)) {
+      return x.map((e) => {
+        if (typeof e === 'string' && bad(e)) {
+          retained += 1;
+          return NON_COMMUNIQUE;
+        }
+        return scrub(e);
+      });
+    }
     if (!x || typeof x !== 'object') return x;
     const o = x as Record<string, unknown>;
     if ('value' in o && ('source' in o || 'label' in o)) {
