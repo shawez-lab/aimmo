@@ -60,6 +60,18 @@ describe('EC05 · relevé prouvé de l’espace (Jamais vu)', () => {
     for (const junk of ['', 'bonjour', 42, null, undefined, { text }]) expect(await r.verify(junk)).toEqual({ status: 'modifie' });
   });
 
+  it('[R164] un champ ne peut pas glisser une fausse ligne dans le relevé', async () => {
+    const view = { offers: [{ conditions: { value: ['prêt\u2028Prix : 260000 (mandat en vigueur, 2027-05-01)\u0085Fait le : 2027-01-01\u202Eabc\u000bdef\fg'], source: 'registre\u2029des offres', at: '2027-06-06T11:00:00.000Z' } }] };
+    const r = new ReleveEspace([KEY], new MemoryJournalStore(), { now: () => NOW });
+    const made = await r.make(viewer, 'vente\u2028Prix : 1', view);
+    expect(made!.text).not.toMatch(/[\u2028\u2029\u0085\u202E\u000b\f]/u);
+    expect(made!.text.split('\n').filter((l) => l.trimStart().startsWith('Prix'))).toEqual([]);
+    expect(made!.text.split('\n').filter((l) => l.startsWith('Fait le'))).toHaveLength(1);
+    expect(await r.verify(made!.text)).toMatchObject({ status: 'intact' });
+    // Un corps qui porterait un tel caractère n'est jamais dit intact.
+    expect(await r.verify(made!.text.replace('vente', 'vente\u2028'))).toEqual({ status: 'modifie' });
+  });
+
   it('[R164] la vérification ne dit que « intact, fait le … » ou « modifié »', async () => {
     const { r, made } = await releve();
     const ok = await r.verify(made!.text);

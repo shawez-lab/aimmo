@@ -111,6 +111,10 @@ const LABELS: Record<string, string> = {
 /** Les champs techniques qui ne vont pas au relevé : des identifiants internes, sans sens pour le client. */
 const SKIPPED = new Set(['propertyId']);
 
+const CONTROLS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu;
+/** Ce qu'aucun corps de relevé ne porte, hors le saut de ligne qui sépare ses lignes. */
+const FORBIDDEN = /[^\P{Cc}\n]|[\p{Cf}\p{Zl}\p{Zp}]/u;
+
 const isFait = (x: unknown): x is { value: unknown; source?: string; at?: string; label?: string } =>
   !!x && typeof x === 'object' && !Array.isArray(x) && 'value' in x && ('source' in x || 'label' in x);
 
@@ -118,7 +122,9 @@ const scalar = (v: unknown): string => {
   if (v === true) return 'oui';
   if (v === false) return 'non';
   if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'non communiquée';
-  if (typeof v === 'string') return v.replace(/[\r\n]+/g, ' ').trim();
+  // Tout caractère de contrôle, de mise en forme invisible ou de saut de ligne (U+2028, U+0085, sens d'écriture…)
+  // devient une espace : un champ ne peut pas glisser une fausse ligne dans un relevé prouvé [R164].
+  if (typeof v === 'string') return v.replace(CONTROLS, ' ').replace(/ {2,}/g, ' ').trim();
   return 'non communiquée';
 };
 
@@ -130,9 +136,9 @@ export function renderView(view: unknown): string {
     if (isFait(x)) {
       if (x.value === null) lines.push(`${pad}${label} : non communiquée`);
       else if (typeof x.value === 'object') {
-        lines.push(`${pad}${label} (${x.source}, ${x.at}) :`);
+        lines.push(`${pad}${label} (${scalar(x.source)}, ${scalar(x.at)}) :`);
         walk(x.value, '', depth + 1);
-      } else lines.push(`${pad}${label} : ${scalar(x.value)} (${x.source}, ${x.at})`);
+      } else lines.push(`${pad}${label} : ${scalar(x.value)} (${scalar(x.source)}, ${scalar(x.at)})`);
       return;
     }
     if (Array.isArray(x)) {
@@ -144,7 +150,7 @@ export function renderView(view: unknown): string {
       if (label) lines.push(`${pad}${label}`);
       for (const [k, v] of Object.entries(x)) {
         if (SKIPPED.has(k) || v === undefined) continue;
-        walk(v, LABELS[k] ?? k, depth + (label ? 1 : 0));
+        walk(v, LABELS[k] ?? scalar(k), depth + (label ? 1 : 0));
       }
       return;
     }
@@ -226,7 +232,7 @@ export class ReleveEspace {
     const m = /^([\s\S]*)\n— — —\nFait le : (\S+)\nClé : (\S+)\nSignature : ([0-9a-f]{64})\n$/u.exec(text);
     if (!m) return modified;
     const [, body, madeAt, keyId, signature] = m as unknown as [string, string, string, string, string];
-    if (!body.startsWith(`${HEADER} · `) || !ISO.test(madeAt) || Number.isNaN(Date.parse(madeAt))) return modified;
+    if (!body.startsWith(`${HEADER} · `) || FORBIDDEN.test(body) || !ISO.test(madeAt) || Number.isNaN(Date.parse(madeAt))) return modified;
     const secret = this.keys.get(keyId);
     if (!secret) return modified;
     const expected = await hmac(secret, signed(body, madeAt, keyId));
