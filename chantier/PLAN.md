@@ -2307,7 +2307,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC10 · Gestes du client branchés sur les modules
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC11
 - Cahier : Le produit, « Espace acquéreur » ; Architecture technique.
 - Objectif : le port `GestesAcquereur` branché sur les routes métier de M05 (visite), M09 (offre), M10 (pièce du financement) et M08 (alertes), dans `packages/core/src/espaces/`.
