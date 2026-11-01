@@ -2298,7 +2298,8 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC11 · Lecteurs SQL de l'espace de l'acquéreur, de l'investisseur et du candidat locataire
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01, voie 2) : un bien proposé est un bien dont l'alerte de M08 ou M17 est partie (`sent`) ; montré seulement si sa dernière annonce est en vente ou sous offre et que la porte de D05 l'accepte ; champs : type, commune, surface, pièces, prix publié, classe énergie, date de publication. Offres par le tableau O06 ; pièces du seul côté acquéreur ; financement tel que déclaré ; date d'acte par la vue acquéreur du chemin critique. Rendement seulement d'une note validée remise par `forClient` de M17 (porte `InvestorNoteGate`, à brancher en EC07). Candidature : incomplète, complète en attente, retenue, non retenue. Personnes retenues par leur fiche gardée. Relecture forte : aucun P0 ni P1, 2 points limites corrigés ; Codex à sa limite, fusion sans lui (#235).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC09
 - Cahier : Le produit, « Espace acquéreur » ; Architecture technique.
 - Objectif : les côtés acquéreur, investisseur et candidat locataire de `SqlClientParties`, et `SqlSourcesAcquereur` sur les tables de M08 (biens proposés, alertes), M05 (visites), M09 (offres), M10 (dossier, pièces du financement, date d'acte), M17 (rendement) et M15 (candidature), dans `packages/core/src/espaces/sources-acquereur.ts`.
