@@ -116,7 +116,7 @@ async function setup(options: { keys?: boolean } = {}) {
     expect(set).toMatch(/HttpOnly; Secure; SameSite=Strict/);
     return /=([a-z]{40});/.exec(set)![1]!;
   };
-  return { db, journal, s, agent, store, network, callAgent, pub, client, enter, gestes, advance: (ms: number) => (clock += ms) };
+  return { db, journal, s, agent, store, network, sides, refs, callAgent, pub, client, enter, gestes, advance: (ms: number) => (clock += ms) };
 }
 
 describeWithSqlite('EC06 · routes et page de l’espace', () => {
@@ -167,6 +167,26 @@ describeWithSqlite('EC06 · routes et page de l’espace', () => {
     expect((await t.callAgent(t.agent, `/espaces/personnes/${p.id}/ouvrir`, {})).status).toBe(409);
     const refused = (await t.journal.all()).filter((e) => e.type === 'acces.refuse');
     expect(refused.map((e) => (e.data as { kind: string }).kind)).toEqual(['espaces.ouvrir']);
+    // Un agent du même réseau qui n'est pas celui du client : refusé, aucun lien rangé ni envoyé.
+    const bea = await t.store.createAgent({ networkId: t.network.id, firstName: 'Bea', lastName: 'Essai' });
+    const other = await t.callAgent({ role: 'agent', userId: bea.id, networkId: t.network.id }, `/espaces/personnes/${p.id}/ouvrir`, CONSENT);
+    expect(other.body).toMatchObject({ ok: false, rule: 'R16' });
+    expect([403, 404]).toContain(other.status);
+    expect(await t.db.all('SELECT id FROM client_space_links WHERE person_id = ?', [p.id])).toHaveLength(0);
+    // La direction l'ouvre, pour une personne partie à un dossier.
+    t.sides.set(p.id, ['vendeur']);
+    await t.store.addIdentifier({ networkId: t.network.id, personId: p.id, kind: 'email', value: 'client.direction@example.test' });
+    expect((await t.callAgent({ role: 'direction', userId: 'dir-1', networkId: t.network.id }, `/espaces/personnes/${p.id}/ouvrir`, CONSENT)).body).toMatchObject({ ok: true });
+  });
+
+  it('[R161] une donnée des sources est toujours échappée dans la page', async () => {
+    const t = await setup();
+    const c = await t.client('vendeur');
+    t.refs.set(c.id, '<script>alert(1)</script>"x');
+    const cookie = await t.enter(c.token);
+    const home = await t.pub('GET', ESPACE_PATH, { cookie });
+    expect(home.text).not.toContain('<script>');
+    expect(home.text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;&quot;x');
   });
 
   it('une écriture d’un autre site est refusée ; les gestes en JSON exigent leur en-tête et une séance [R165]', async () => {

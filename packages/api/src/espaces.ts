@@ -392,9 +392,11 @@ export async function handleEspacePublic(request: Request, s: EspacesServices): 
     if (!viewer) return json(401, { ok: false, rule: 'R160', code: 'session' });
     const body = await readJson(request);
     if (!body) return json(400, { ok: false, rule: null, code: 'invalid_body' });
-    const target = typeof body.propertyId === 'string' ? body.propertyId : typeof body.fileId === 'string' ? body.fileId : '';
-    const input = typeof body.input === 'object' && body.input !== null && !Array.isArray(body.input) ? (body.input as Record<string, unknown>) : {};
     const kind = geste[1]!;
+    // Une pièce vise un dossier, une visite ou une offre un bien : chacun son seul champ.
+    const field = kind === 'piece' ? body.fileId : body.propertyId;
+    const target = typeof field === 'string' ? field : '';
+    const input = typeof body.input === 'object' && body.input !== null && !Array.isArray(body.input) ? (body.input as Record<string, unknown>) : {};
     const r =
       kind === 'visite'
         ? await c.acquereur.bookVisit(viewer, target, input)
