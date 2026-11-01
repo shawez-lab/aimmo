@@ -142,7 +142,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Attend : rien pour la construire ; H15 pour les vrais fichiers.
 
 ### I04 · Reprise réelle et contrôle sur 50 fiches
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : I02, I03
 - Cahier : Feuille de route, novembre 2026.
 - Objectif : un workflow GitHub lancé à la main qui exporte en lecture seule la base `espace-estimation`, y ajoute les fichiers de H15, et reprend le tout dans la base `aimmo` ; puis un contrôle tiré au hasard sur 50 fiches, rapporté sans donnée personnelle.
