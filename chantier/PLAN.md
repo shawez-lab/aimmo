@@ -2289,16 +2289,25 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC09 · Lecteurs SQL de l'espace du propriétaire et de l'acquéreur
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01, voie 2) : tâche coupée, pour tenir une journée : EC09 le propriétaire et le bailleur, EC11 l'acquéreur, l'investisseur et le candidat locataire. Un bien est au dernier qui l'a pris (mandat vivant, mise en location à son nom, acte) ; l'acte le fait passer du vendeur à l'acquéreur ; un seul propriétaire par bien (deux fiches d'un couple ne le partagent pas : aucune fuite, l'agent réunit les fiches). Le côté `proprietaire` seul sert à l'acquéreur devenu propriétaire. Bail montré seulement réel, complet, et signé par une signature réelle (`REAL_LEASE_SIGNATURE`) ; valeur suivie seulement pour le seul logement du propriétaire dans la commune suivie, accord en cours. `rentalsOf` prend la personne. Relecture forte : 1 P1 corrigé (valeur non rattachée au bien), 1 P1 tranché par écrit ; Codex en échec, fusion sans lui (#234).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC08
 - Cahier : Le produit, tableau des espaces ; Architecture technique.
 - Objectif : les côtés bailleur, propriétaire, acquéreur, investisseur et candidat locataire de `SqlClientParties`, et les lecteurs SQL de `SourcesProprietaire` et `SourcesAcquereur` sur les tables de M08, M09, M10, M15, M17 et G04, dans `packages/core/src/espaces/`.
 - Critères : un bailleur et un acquéreur voient leurs vrais dossiers et rien d'autre [R161] ; candidatures complètes seulement, dans l'ordre d'arrivée, sans pièce interdite [R162] ; un vendeur de bien touché toujours rattaché pour la retenue [R161] ; parcours de 5 acquéreurs sur une vraie base [R161].
 - Attend : rien.
 
-### EC10 · Gestes du client branchés sur les modules
+### EC11 · Lecteurs SQL de l'espace de l'acquéreur, de l'investisseur et du candidat locataire
 - Statut : à faire
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC09
+- Cahier : Le produit, « Espace acquéreur » ; Architecture technique.
+- Objectif : les côtés acquéreur, investisseur et candidat locataire de `SqlClientParties`, et `SqlSourcesAcquereur` sur les tables de M08 (biens proposés, alertes), M05 (visites), M09 (offres), M10 (dossier, pièces du financement, date d'acte), M17 (rendement) et M15 (candidature), dans `packages/core/src/espaces/sources-acquereur.ts`.
+- Critères : un acquéreur voit ses vrais dossiers et rien d'autre [R161] ; un bien proposé n'est montré que diffusable, par les seuls champs de l'annonce [R161, R42] ; un vendeur ou bailleur de bien touché toujours rattaché pour la retenue (`sellersOf`) [R161] ; le candidat locataire ne voit que sa candidature, jamais un rang [R162] ; rendement avec ses hypothèses, jamais une promesse [R163] ; parcours de 5 acquéreurs sur une vraie base sans fuite [R161].
+- Attend : rien.
+
+### EC10 · Gestes du client branchés sur les modules
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC11
 - Cahier : Le produit, « Espace acquéreur » ; Architecture technique.
 - Objectif : le port `GestesAcquereur` branché sur les routes métier de M05 (visite), M09 (offre), M10 (pièce du financement) et M08 (alertes), dans `packages/core/src/espaces/`.
 - Critères : chaque geste rend le refus du module, sans le contourner [R165] ; une alerte ne part que demandée, par le contrôle central [R49, R03] ; aucun envoi réel [R26].
@@ -2306,7 +2315,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 
 ### EC07 · Branchement des espaces dans le socle
 - Statut : à faire
-- Qui : Claude, voie 1 · Relecture : forte · Dépend de : EC06, EC08, EC09, EC10
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : EC06, EC08, EC09, EC10, EC11
 - Cahier : Architecture technique.
 - Objectif : brancher les routes et la page de EC06 dans `app.ts`, la séance du client à côté des clés d'API, et le secret de signature du relevé.
 - Critères : chaque route branchée répond sous son rôle ou sa séance [R16, R161] ; sans secret de signature, le relevé répond « indisponible » ; la suite complète reste verte.
