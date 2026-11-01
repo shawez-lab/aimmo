@@ -87,6 +87,10 @@ import { investirRoutes, type InvestirRoute, type InvestirServices } from './inv
 import { studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
 import { CERTIFICATE_PAGE_PATH, certificatePageError, handleCertificatePage } from './certificat-photo.ts';
+import { ESPACE_PATH, espacesRoutes, handleEspacePublic, type EspacesRoute, type EspacesServices } from './espaces.ts';
+import { investirCore } from './investir.ts';
+import { EstimationEnLigne, Visites, dossiers as m10core, offres as m09core } from '@aimmo/core';
+import { GestesModules, SqlClientParties, SqlSourcesAcquereur, SqlSourcesProprietaire, SqlSourcesVendeur, checkSpaceBase, type ReleveKey } from '../../core/src/espaces/index.ts';
 import { PUBLIC_PATHS as ATTIRER_PUBLIC_PATHS, attirerRoutes, handleAttirerPublic, type AttirerRoute, type AttirerServices } from './attirer.ts';
 
 /** Préfixe de version : une API versionnée unique (cahier, Architecture technique). */
@@ -158,7 +162,20 @@ export interface ApiConfig {
    * jamais passés d'ici : rien ne part, aucune page n'est indexée en mode essai [R26].
    */
   attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter'>;
+  /**
+   * Les espaces des clients (EC07) : le réseau de la page publique (`ESPACE_NETWORK_ID`), l'adresse de l'espace
+   * (`ESPACE_BASE`, en https, sans chiffre, terminée par `/espace/`) et les clés du relevé prouvé (secret
+   * `ESPACE_RELEVE_KEYS`). Sans réseau ni adresse, l'espace est fermé ; sans clé valable, le relevé est indisponible
+   * et l'espace reste lisible [R164]. Le lien part par le contrôle central, en mode essai seulement [R26].
+   */
+  espaces?: EspacesOptions;
   now?: () => Date;
+}
+
+export interface EspacesOptions {
+  networkId?: string | undefined;
+  baseUrl?: string | undefined;
+  releveKeys?: string | undefined;
 }
 
 export interface StudioOptions {
@@ -1074,6 +1091,96 @@ function m01Routes(config: Pick<ApiConfig, 'estimation' | 'attirer'>): RouteDef[
 /** Une page publique de M01 : prix, agent, quartier, simulateur, plan du site, consignes aux moteurs. */
 const isAttirerPublic = (path: string): boolean => Object.values(ATTIRER_PUBLIC_PATHS).some((p) => p.test(path));
 
+/** Le nom d'une clé du relevé, comme le veut `ReleveEspace`. */
+const RELEVE_KEY_ID = /^[a-z][a-z-]{0,30}$/;
+
+/**
+ * Les clés du relevé prouvé, lues dans le secret `ESPACE_RELEVE_KEYS` : `nom:secret`, séparées par des virgules, la
+ * première signe, les suivantes vérifient seulement (rotation). Un secret mal formé (nom invalide, secret de moins de
+ * 32 caractères, nom en double) ne donne aucune clé : le relevé est indisponible plutôt que mal signé [R164].
+ */
+export function releveKeys(raw: string | undefined): ReleveKey[] {
+  if (raw === undefined || raw.trim() === '') return [];
+  const keys: ReleveKey[] = [];
+  for (const part of raw.split(',')) {
+    const at = part.indexOf(':');
+    if (at < 0) return [];
+    const id = part.slice(0, at).trim();
+    const secret = part.slice(at + 1).trim();
+    if (!RELEVE_KEY_ID.test(id) || secret.length < 32 || keys.some((k) => k.id === id)) return [];
+    keys.push({ id, secret });
+  }
+  return keys;
+}
+
+/** L'adresse de l'espace : en https, sans chiffre, terminée par `/espace/` ; sinon `null`, et l'espace est fermé. */
+export function espaceBase(raw: string | undefined): string | null {
+  const base = raw ? checkSpaceBase(raw.trim()) : null;
+  return base && new URL(base).pathname === ESPACE_PATH ? base : null;
+}
+
+/** Sans stockage des pièces, aucune offre signée n'est reconnue : l'offre écrite depuis l'espace est refusée. */
+const NO_SIGNED_OFFERS = { has: async (): Promise<boolean> => false };
+
+/**
+ * Les services des espaces sur ceux du socle (EC07) : les lecteurs SQL de EC08, EC09 et EC11, les gestes de EC10
+ * passés aux modules qui les tiennent [R165], l'identité lue au coffre par son seul état, le rendement par la seule
+ * porte des notes validées de M17 [R163]. `null` si l'espace n'est pas configuré.
+ */
+function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'espaces' | 'estimation' | 'pieces'>): EspacesServices | null {
+  const networkId = config.espaces?.networkId?.trim();
+  const baseUrl = espaceBase(config.espaces?.baseUrl);
+  if (!networkId || !baseUrl) return null;
+  const coffre = new conformite.CoffreConformite(db, acces, NO_VAULT_STORAGE, journal, { now });
+  const identity = { state: (n: string, personId: string) => coffre.state(n, personId) };
+  const store = new FicheClient(db, { now });
+  const fiche = new FicheUnique(db, store, { now });
+  const { notes } = investirCore({ db, journal, now });
+  return {
+    db,
+    journal,
+    now,
+    acces,
+    networkId,
+    baseUrl,
+    parties: new SqlClientParties(db),
+    vendeur: new SqlSourcesVendeur(db, acces, journal, { now }),
+    proprietaire: new SqlSourcesProprietaire(db, identity, journal, { now, ranges: config.estimation ? new EstimationEnLigne(config.estimation.geocoder, config.estimation.sales, undefined, now) : null }),
+    acquereur: new SqlSourcesAcquereur(db, acces, identity, journal, { now, notes }),
+    gestes: new GestesModules(
+      {
+        db,
+        journal,
+        fiche,
+        consents: store,
+        visites: new Visites(db, journal, acces, { now }),
+        offres: new m09core.RegistreOffres(db, acces, journal, { now }),
+        financement: new m10core.FinancementDossier(db, acces, journal, { now }),
+        signedOffers: config.pieces ?? NO_SIGNED_OFFERS,
+      },
+      { now },
+    ),
+    releveKeys: releveKeys(config.espaces?.releveKeys),
+  };
+}
+
+/**
+ * La route de l'agent qui ouvre l'espace d'un client (EC07) : son rôle d'abord, son refus au journal [R16] ; sans
+ * espace configuré, fermée.
+ */
+function espacesAgentRoutes(config: Pick<ApiConfig, 'espaces' | 'estimation' | 'pieces'>): RouteDef[] {
+  return espacesRoutes().map((r: EspacesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => {
+      const services = espacesServices(s.db, s.journal, s.acces, s.now, config);
+      if (!services) return Promise.resolve(failure(503, 'espace_not_configured', 'Espace des clients fermé : ni réseau ni adresse configurés.'));
+      return r.handle(services, viewer, params, request);
+    },
+  }));
+}
+
 function m10Routes(pieces: PieceStore | null): RouteDef[] {
   return dossierRoutes().map((r: DossierRoute) => ({
     ...r,
@@ -1178,6 +1285,20 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       if (page) return page;
     } catch (error) {
       await journalError(s.journal, 'public:attirer', 'attirer.public', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+  // L'espace des clients (EC07), sans clé d'API : la séance du client est son cookie, à côté des clés [R160, R161].
+  if (url.pathname === ESPACE_PATH.slice(0, -1) || url.pathname.startsWith(ESPACE_PATH)) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    const s = services(config.db, now);
+    const espace = espacesServices(s.db, s.journal, s.acces, now, config);
+    if (!espace) return failure(503, 'espace_not_configured', 'Espace des clients fermé : ni réseau ni adresse configurés.');
+    try {
+      const page = await handleEspacePublic(request, espace);
+      if (page) return page;
+    } catch (error) {
+      await journalError(s.journal, 'public:espace', 'espaces.public', error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
@@ -1289,7 +1410,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir ; puis
   // celles de M16 (CE10) : les commerces ; puis celles de M19
   // (X10) : le Studio, fermées sans le stockage des fichiers ; puis celles de M20 complet (G12) : gagner des mandats ;
-  // puis celles de M01 (AT11) : attirer ; puis celles de la reprise des contacts (I05).
+  // puis celles de M01 (AT11) : attirer ; puis celles de la reprise des contacts (I05) ; puis celle des espaces des
+  // clients (EC07), fermée sans espace configuré.
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
@@ -1308,6 +1430,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m20Routes(config.gagner),
     ...m01Routes(config),
     ...repriseRoutes(),
+    ...espacesAgentRoutes(config),
   ];
   const matching = routes.filter((candidate) => candidate.pattern.test(path));
   if (matching.length === 0) return failure(404, 'not_found', 'Adresse inconnue.');

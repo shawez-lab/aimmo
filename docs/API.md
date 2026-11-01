@@ -200,6 +200,13 @@ La page publique de candidature est servie à `/rejoindre`, sans clé ni script 
 - `GET /v1/reprise/etat` : la direction seule ; le dernier dépôt de chaque sorte (lignes, date) et l'avancement du lancement.
 - Le lancement n'est pas une route : c'est le travail GitHub « Reprise des contacts » (`.github/workflows/reprise.yml`), lancé à la main depuis main, qui passe par l'API REST de D1 (voir `docs/REPRISE.md`).
 
+## Espaces des clients, en mode essai (EC07)
+
+- `POST /v1/espaces/personnes/<id>/ouvrir` : l'agent du client ou la direction [R16] ouvre l'espace d'une personne partie à un dossier, avec `{ "consentProof": "<preuve de son accord>" }` ; le lien personnel part par le contrôle central, en mode essai seulement [R160, R26].
+- Pages du client sous `/espace/`, sans clé d'API : la séance est un cookie `__Host-` donné à l'ouverture du lien, à côté des clés ; la vérification d'un relevé (`/espace/verifier`) est ouverte à tous et ne dit que « intact, fait le … » ou « modifié » [R164].
+- Variables du Worker : `ESPACE_NETWORK_ID` (le réseau des espaces) et `ESPACE_BASE` (l'adresse publique du Worker suivie de `/espace/`, en https, sans chiffre). Sans elles, l'espace et la route de l'agent répondent 503 `espace_not_configured`.
+- Secret `ESPACE_RELEVE_KEYS` : `nom:secret`, séparés par des virgules ; le nom en minuscules et tirets, le secret de 32 caractères ou plus, tiré au hasard et gardé dans un coffre, jamais dans le dépôt. La première clé signe, les suivantes vérifient seulement (rotation). Absent ou mal formé : le relevé répond « indisponible », l'espace reste lisible.
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).
