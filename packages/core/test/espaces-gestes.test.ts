@@ -96,7 +96,14 @@ describeWithSqlite('EC10 · gestes du client branchés sur les modules', () => {
     // Une clé déjà prise pour une autre offre : le refus de M09 [R56].
     const key = 'cle-espace-0000000001';
     expect((await t.gestes.writeOffer(v, t.propertyId, { ...OFFER, requestKey: key })).ok).toBe(true);
+    // Le même envoi, renvoyé plus tard (réponse perdue) : la même offre rendue, rien de plus au registre.
+    const first = await t.db.first<{ seq: number }>('SELECT seq FROM offer_register WHERE request_key = ?', [key]);
+    t.setClock(new Date(t.now().getTime() + 600_000));
+    expect(await t.gestes.writeOffer(v, t.propertyId, { ...OFFER, requestKey: key })).toMatchObject({ ok: true, value: { seq: first!.seq } });
     expect(await t.gestes.writeOffer(v, t.propertyId, { ...OFFER, amountEur: 215000, requestKey: key })).toEqual({ ok: false, rule: 'R56', code: 'request_key_reused' });
+    // La clé d'un autre acquéreur ne lui rend jamais son offre.
+    const autre = await t.buyer('Chloé');
+    expect(await t.gestes.writeOffer(await t.viewer(autre), t.propertyId, { ...OFFER, requestKey: key })).toEqual({ ok: false, rule: 'R56', code: 'request_key_reused' });
     expect(await t.count('SELECT 1 FROM offer_register')).toBe(before + 1);
   });
 
@@ -116,7 +123,11 @@ describeWithSqlite('EC10 · gestes du client branchés sur les modules', () => {
     expect(Object.keys(r.value).sort()).toEqual(['appointmentId', 'end', 'start']);
     expect(r.value.start).toBe(WEDNESDAY_10H);
     const visit = await t.db.first<{ person_id: string; agent_id: string; created_by: string }>('SELECT person_id, agent_id, created_by FROM visits WHERE appointment_id = ?', [r.value.appointmentId as string]);
-    expect(visit).toEqual({ person_id: b, agent_id: t.alexId, created_by: 'direction:system:espace' });
+    const v = await t.viewer(b);
+    // Écrite au nom du client qui l'a demandée, jamais d'un agent : source « espace », auteur sa séance.
+    expect(visit).toEqual({ person_id: b, agent_id: t.alexId, created_by: `client:${v.sessionId}` });
+    expect(await t.db.first('SELECT source FROM appointments WHERE id = ?', [r.value.appointmentId as string])).toEqual({ source: 'espace' });
+    expect((await t.db.all<{ actor: string }>("SELECT actor FROM journal WHERE type = 'visite.fixee'")).map((e) => e.actor)).toEqual([`client:${v.sessionId}`]);
     expect(await t.count('SELECT 1 FROM visit_slips WHERE appointment_id = ?', [r.value.appointmentId as string])).toBe(1);
     expect(await t.sends()).toBe(0);
     // Le même créneau, demandé une seconde fois : le refus de l'agenda [R32].

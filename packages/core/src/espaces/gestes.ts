@@ -12,7 +12,8 @@
  * - une offre se fait sur le document signé déposé dans le stockage des offres : une référence absente du stockage est
  *   refusée avant M09 ;
  * - la visite est fixée par M05 (bon de visite R40, bien diffusable R42, créneau libre de l'agent qui suit le client)
- *   sans canal de confirmation : rien ne part [R26] ; l'espace la montre ;
+ *   sans canal de confirmation : rien ne part [R26] ; l'espace la montre ; le rendez-vous porte la source `espace` et la
+ *   visite son auteur `client:<séance>` ;
  * - demander les alertes range l'accord « alertes de biens » du client, par mail (l'adresse par laquelle il entre),
  *   avec sa preuve ; rien ne part ici : M08 enverra plus tard par le contrôle central, avec la désinscription [R49, R03] ;
  * - la réponse ne rend que ce que le client doit voir de son geste : jamais le bon de visite d'un autre, l'agent, ni
@@ -92,7 +93,7 @@ export class GestesModules implements GestesAcquereur {
         projectId = input.projectId;
       } else if (projects.length === 1) projectId = projects[0]!.id;
       else return refus(null, projects.length === 0 ? 'no_project' : 'project_required', 'projectId');
-      const r = await this.deps.visites.schedule(espaceViewer(client.networkId), { propertyId, projectId, start: new Date(input.start), channel: null });
+      const r = await this.deps.visites.schedule(espaceViewer(client.networkId), { propertyId, projectId, start: new Date(input.start), channel: null, byClient: `client:${client.sessionId}` });
       if (!r.ok) return refus(r.rule, r.code);
       return { ok: true, value: { appointmentId: r.visit.appointment.id, start: r.visit.appointment.start_at, end: r.visit.appointment.end_at } };
     });
@@ -104,15 +105,23 @@ export class GestesModules implements GestesAcquereur {
       const extra = only(input, OFFER_FIELDS);
       if (extra) return refus(null, 'invalid', extra);
       if (typeof input.signedRef !== 'string' || !(await this.deps.signedOffers.has(input.signedRef))) return refus(null, 'not_stored', 'signedRef');
+      const buyerPersonId = await this.deps.fiche.rootOf(client.personId);
+      // Un renvoi de la même offre avec sa clé (réponse perdue) garde l'heure de réception de la première : M09 la
+      // reconnaît et la rend telle qu'enregistrée, au lieu de la refuser comme une clé réutilisée [R56].
+      let receivedAt = this.now().toISOString();
+      if (typeof input.requestKey === 'string') {
+        const known = await this.deps.db.first<{ received_at: string; buyer_person_id: string }>('SELECT received_at, buyer_person_id FROM offer_register WHERE property_id = ? AND request_key = ?', [propertyId, input.requestKey]);
+        if (known && known.buyer_person_id === buyerPersonId) receivedAt = known.received_at;
+      }
       const r = await this.deps.offres.record(espaceViewer(client.networkId), propertyId, {
-        buyerPersonId: await this.deps.fiche.rootOf(client.personId),
+        buyerPersonId,
         amountEur: input.amountEur,
         conditions: input.conditions,
         validUntil: input.validUntil,
         downPaymentEur: input.downPaymentEur,
         loanEur: input.loanEur,
         signedRef: input.signedRef,
-        receivedAt: this.now().toISOString(),
+        receivedAt,
         ...(input.requestKey !== undefined ? { requestKey: input.requestKey } : {}),
       });
       if (!r.ok) return refus(r.rule, r.code, 'field' in r && typeof r.field === 'string' ? r.field : undefined);
