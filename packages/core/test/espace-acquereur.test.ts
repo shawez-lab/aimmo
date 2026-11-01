@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { MemoryJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { CHAMPS_BIEN_PROPOSE, EspaceAcquereur, NON_COMMUNIQUE, type ClientViewer, type GestesAcquereur, type GesteResult, type ProposedProperty, type SourcesAcquereur } from '../src/espaces/index.ts';
+import { CHAMPS_BIEN_PROPOSE, EspaceAcquereur, NON_COMMUNIQUE, promises, type ClientViewer, type GestesAcquereur, type GesteResult, type ProposedProperty, type SourcesAcquereur } from '../src/espaces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -12,7 +12,7 @@ function proposed(id: string, over: Partial<ProposedProperty> = {}): ProposedPro
   return { propertyId: id, reference: `B-${id}`, city: 'Dijon', kind: 'appartement', surfaceM2: 64, rooms: 3, priceEur: 210_000, energyClass: 'C', publishedAt: '2027-05-20T08:00:00.000Z', proposedAt: '2027-06-01T08:00:00.000Z', diffusable: true, sellers: [VENDEUSE], ...over };
 }
 
-async function setup(over: Partial<{ proposed: ProposedProperty[]; investor: boolean; hypotheses: string[] }> = {}) {
+async function setup(over: Partial<{ proposed: ProposedProperty[]; investor: boolean; hypotheses: string[]; offerState: string; holds: string[] }> = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   await db.run("INSERT INTO networks (id, name, created_at) VALUES ('n1', 'Réseau test', '2027-01-01T00:00:00.000Z')");
@@ -22,10 +22,11 @@ async function setup(over: Partial<{ proposed: ProposedProperty[]; investor: boo
   const sources: SourcesAcquereur = {
     proposedOf: async (_n, personId) => (personId === 'p-acq' ? (over.proposed ?? [proposed('b1'), proposed('b2', { diffusable: false }), proposed('b3', { priceEur: null, publishedAt: '2027-05-25T08:00:00.000Z' })]) : []),
     visitsOf: async () => [{ id: 'v1', propertyId: 'b1', at: '2027-06-10T09:00:00.000Z', state: 'prevue' }],
-    offersOf: async () => [{ id: 'o1', propertyId: 'b1', receivedAt: '2027-06-06T11:00:00.000Z', amountEur: 205_000, state: 'transmise au vendeur', stateAt: '2027-06-06T11:05:00.000Z' }],
-    filesOf: async (_n, personId) => (personId === 'p-acq' ? [{ fileId: 'f1', propertyId: 'b1', pieces: [{ kind: 'offre de prêt', state: 'manquante', at: '2027-06-07T08:00:00.000Z' }], loan: { state: 'demandé', at: '2027-06-07T08:00:00.000Z' }, deed: { date: '2027-09-15', holds: ['offre de prêt'], computedAt: '2027-06-08T06:00:00.000Z' } }] : []),
+    offersOf: async () => [{ id: 'o1', propertyId: 'b4', receivedAt: '2027-06-06T11:00:00.000Z', amountEur: 205_000, state: over.offerState ?? 'transmise au vendeur', stateAt: '2027-06-06T11:05:00.000Z' }],
+    filesOf: async (_n, personId) => (personId === 'p-acq' ? [{ fileId: 'f1', propertyId: 'b2', pieces: [{ kind: 'offre de prêt', state: 'manquante', at: '2027-06-07T08:00:00.000Z' }], loan: { state: 'demandé', at: '2027-06-07T08:00:00.000Z' }, deed: { date: '2027-09-15', holds: over.holds ?? ['offre de prêt'], computedAt: '2027-06-08T06:00:00.000Z' } }] : []),
     investorOf: async (_n, _p, propertyId) => ({ propertyId, grossYieldBp: 512, netYieldBp: 398, hypotheses: over.hypotheses ?? ['loyer de marché de la commune, Carte des loyers 2026', 'vacance d’un mois par an'], constraints: ['classe énergie C : location permise'], computedAt: '2027-06-02T08:00:00.000Z' }),
-    tenantApplicationsOf: async () => [{ rentalId: 'r1', reference: 'L-9', city: 'Dijon', receivedAt: '2027-06-03T08:00:00.000Z', complete: true, state: 'présenté au propriétaire', stateAt: '2027-06-04T08:00:00.000Z' }],
+    sellersOf: async (_n, ids) => (calls.push(`vendeurs:${ids.join(',')}`), ids.includes('b4') || ids.includes('b2') ? [{ personId: 'p-vendeur-b4', firstName: 'Gaspard', lastName: 'Ancienvendeur', emails: [], phones: [] }] : []),
+    tenantApplicationsOf: async () => [{ rentalId: 'r1', propertyId: 'b9', reference: 'L-9', city: 'Dijon', receivedAt: '2027-06-03T08:00:00.000Z', complete: true, state: 'présenté au propriétaire', stateAt: '2027-06-04T08:00:00.000Z' }],
     alertsRequested: async () => false,
   };
   const answer: GesteResult = { ok: true, value: { id: 'x' } };
@@ -69,13 +70,29 @@ describeWithSqlite('EC04 · espace de l’acquéreur', () => {
     expect(r.ok && JSON.stringify(r.value)).not.toMatch(/Vendinvent/);
   });
 
+  it('[R161] un texte d’offre ou de dossier qui cite le vendeur d’un bien qui n’est plus diffusable est retenu', async () => {
+    const t = await setup({ offerState: 'acceptée par M. Ancienvendeur', holds: ['accord de Gaspard sur la date'] });
+    const r = await t.espace.vue(viewer());
+    if (!r.ok) throw new Error('vue');
+    expect(r.value.offers[0]!.state).toEqual({ value: null, label: NON_COMMUNIQUE });
+    expect(r.value.files[0]!.deedHolds).toEqual({ value: null, label: NON_COMMUNIQUE });
+    expect(JSON.stringify(r.value)).not.toMatch(/Ancienvendeur|Gaspard/);
+    // Tous les biens touchés par la vue sont lus pour la retenue, diffusables ou non.
+    expect(t.calls).toContain('vendeurs:b1,b2,b3,b4,b9');
+  });
+
+  it('[R163] reconnaît les tournures de promesse, accents compris', () => {
+    for (const x of ['rendement assuré', 'à coup sûr', 'loyer garanti', 'sans risque', 'Rentabilité CERTAINE']) expect(promises(x), x).toBe(true);
+    for (const x of ['assurance habitation comprise', 'loyer de marché', 'certificat énergétique']) expect(promises(x), x).toBe(false);
+  });
+
   it('[R49] un favori ne déclenche aucun envoi ; seul un bien proposé peut l’être ; il se retire sans rien effacer', async () => {
     const t = await setup();
     expect(await t.espace.addFavorite(viewer(), 'b1')).toEqual({ ok: true, value: { favorite: true } });
     expect(await t.espace.addFavorite(viewer(), 'b1')).toEqual({ ok: true, value: { favorite: true } });
     expect(await t.espace.addFavorite(viewer(), 'b2')).toEqual({ ok: false, rule: 'R161', code: 'not_proposed' });
     expect(await t.espace.addFavorite(viewer(), 'b-inconnu')).toEqual({ ok: false, rule: 'R161', code: 'not_proposed' });
-    expect(t.calls).toEqual([]);
+    expect(t.calls.filter((c) => !c.startsWith('vendeurs:'))).toEqual([]);
     expect(await t.db.all('SELECT 1 FROM messages')).toHaveLength(0);
     const r = await t.espace.vue(viewer());
     expect(r.ok && r.value.properties.map((p) => [p.reference, p.favorite])).toEqual([['B-b1', true], ['B-b3', false]]);

@@ -76,6 +76,7 @@ export interface InvestorFigures {
 
 export interface TenantApplication {
   rentalId: string;
+  propertyId: string;
   reference: string;
   city: string;
   receivedAt: string;
@@ -92,6 +93,11 @@ export interface SourcesAcquereur {
   filesOf(networkId: string, personId: string): Promise<readonly BuyerFile[]>;
   investorOf(networkId: string, personId: string, propertyId: string): Promise<InvestorFigures | null>;
   tenantApplicationsOf(networkId: string, personId: string): Promise<readonly TenantApplication[]>;
+  /**
+   * Ce qui identifie les vendeurs et bailleurs de ces biens, diffusables ou non : lu seulement pour retenir tout texte
+   * qui les cite [R161].
+   */
+  sellersOf(networkId: string, propertyIds: readonly string[]): Promise<readonly SourcePerson[]>;
   /** L'accord en cours pour les alertes de biens (M08) [R49]. */
   alertsRequested(networkId: string, personId: string): Promise<boolean>;
 }
@@ -149,7 +155,12 @@ const SOURCES = {
 } as const;
 
 /** Les tournures qui feraient d'un rendement une promesse : retenues [R163]. */
-const PROMESSE = /\b(garanti(?:e|es|s)?|assur[ée](?:e|es|s)?|sans risques?|certaine?s?|à coup sûr|promis(?:e|es)?|infaillible)\b/iu;
+const PROMESSE = /(?<![\p{L}\p{N}])(garanti(?:e|es|s)?|assur[ée](?:e|es|s)?|sans risques?|certaine?s?|à coup sûr|promis(?:e|es)?|infaillibles?)(?![\p{L}\p{N}])/iu;
+
+/** Vrai si le texte promet un résultat [R163]. */
+export function promises(text: string): boolean {
+  return PROMESSE.test(text);
+}
 
 export class EspaceAcquereur {
   private readonly now: () => Date;
@@ -178,7 +189,9 @@ export class EspaceAcquereur {
       this.sources.alertsRequested(n, viewer.personId),
       this.favorites(viewer),
     ]);
-    const sellers = proposed.flatMap((p) => p.sellers).filter((s) => s.personId !== viewer.personId);
+    // Les vendeurs et bailleurs de tous les biens que la vue touche, diffusables ou non : aucun texte ne doit les citer.
+    const touched = [...new Set([...(await this.sources.proposedOf(n, viewer.personId)).map((p) => p.propertyId), ...visits.map((v) => v.propertyId), ...offers.map((o) => o.propertyId), ...files.map((f) => f.propertyId), ...rentals.map((r) => r.propertyId)])].sort();
+    const sellers = [...proposed.flatMap((p) => p.sellers), ...(touched.length > 0 ? await this.sources.sellersOf(n, touched) : [])].filter((s) => s.personId !== viewer.personId);
     const investor = viewer.sides.includes('investisseur');
     const properties: VueBienPropose[] = [];
     for (const p of proposed) {
