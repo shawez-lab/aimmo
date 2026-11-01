@@ -2232,7 +2232,8 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC02 · Espace du vendeur : le suivi de la vente en direct
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01) : vue construite depuis la liste `CHAMPS_VENDEUR`, chaque texte restant retenu s'il cite une personne rattachée à une visite ou une offre, ou parle de l'IA ; 4 derniers points validés ; contrat écrit : les sources rattachent toujours le visiteur connu. Relecture forte : 1 P0 et 3 P1 corrigés ; Codex en échec, fusion sans lui (#227).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01
 - Cahier : Le produit, « Espace propriétaire » : visites, avis des visiteurs, offres, documents, signature en ligne, rendez-vous, point de la semaine.
 - Objectif : la vue du vendeur, par bien : visites passées et à venir, avis des visiteurs, offres reçues et leur état, documents du dossier et ceux à signer, rendez-vous, derniers points de la semaine, date d'acte au plus tôt et ce qui la tient, lus par des interfaces.
@@ -2240,7 +2241,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC03 · Espace du propriétaire : location, valeur suivie et documents rangés
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01
 - Cahier : Le produit, « Espace propriétaire » : candidatures complètes sans classement, bail, état des lieux ; pour tous : la valeur estimée mise à jour s'il l'a demandé, ses documents au même endroit.
 - Objectif : la vue du bailleur (candidatures complètes, bail, état des lieux) et, pour tout propriétaire, la valeur suivie s'il l'a demandée (G04) et ses documents rangés.
