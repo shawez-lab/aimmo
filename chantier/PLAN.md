@@ -2279,18 +2279,34 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Critères : chaque route sous son rôle ou sa séance [R16, R161] ; parcours de 5 vendeurs et 5 acquéreurs tests de bout en bout sans fuite d'un client à l'autre ; contrôle du système de design et budget de 14 Ko [R201] ; aucun envoi réel [R26].
 - Attend : rien.
 
-### EC08 · Lecteurs SQL des sources et gestes branchés sur les modules
-- Statut : en cours (voie 2)
-- Piste (2026-11-01) : réutiliser ce que les modules calculent déjà plutôt que refaire leurs requêtes : `partyView` de `dossiers/chemin-critique.ts` (vue vendeur ou acquéreur de la date d'acte), `ComparatifOffres` (net vendeur, ordre d'arrivée), `weekly_points` validés (T07), `visit_reports` validés (T06), `SuiviDeValeur` (G04), le choix du propriétaire de W05 ; mandant = `mandates.person_id` du mandat inscrit au registre et non annulé. Si la tâche dépasse une journée, la couper : côté vendeur d'abord, propriétaire et acquéreur ensuite.
+### EC08 · Lecteurs SQL de l'espace du vendeur
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01, voie 2) : tâche coupée en trois, pour tenir une journée : EC08 le côté vendeur, EC09 le propriétaire et l'acquéreur, EC10 les gestes. Les lecteurs reprennent les calculs des modules (`mandateTerms`, `ComparatifOffres`, `CheminCritique`, `sellerReportText`, `weeklyPointText`) sous le lecteur interne `system:espace` (direction), appelé seulement après le contrôle de l'espace. Un bien n'est au vendeur que si le dernier mandat vivant du bien (inscrit, ni annulé ni rétracté) est le sien ; tout part du premier mandat de sa dernière suite. Sans tableau des offres, aucun chiffre recomposé, l'échec au journal. Relecture forte : 1 P0 (vente suivante visible de l'ancien propriétaire) et 1 P1 (chiffres recomposés) corrigés ; Codex à sa limite d'usage, fusion sans lui (#233).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC06
 - Cahier : Le produit, tableau des espaces ; Architecture technique.
-- Objectif : les lecteurs SQL de `ClientParties`, `SourcesVendeur`, `SourcesProprietaire`, `SourcesAcquereur` sur les tables de M05, M06, M08, M09, M10, M15, M17 et G04, et le port `GestesAcquereur` branché sur les routes métier de M05, M09, M10 et M08, dans `packages/core/src/espaces/` et `packages/api/src/espaces.ts`.
-- Critères : sur les jeux de test des modules, un vendeur, un bailleur et un acquéreur voient leurs vrais dossiers et rien d'autre [R161] ; chaque geste rend le refus du module [R165] ; un visiteur ou acquéreur connu est toujours rattaché pour la retenue [R161] ; parcours de 5 vendeurs et 5 acquéreurs sur une vraie base.
+- Objectif : `SqlClientParties` (côté vendeur) et `SqlSourcesVendeur`, dans `packages/core/src/espaces/sources-vendeur.ts`.
+- Critères : sur le jeu de test de M10, le vendeur voit son vrai dossier et rien d'autre [R161] ; un visiteur ou acquéreur connu est toujours rattaché pour la retenue [R161] ; parcours de 5 vendeurs sur une vraie base sans fuite [R161] ; chaque chiffre avec sa source, absent « non communiqué » [R163].
+- Attend : rien.
+
+### EC09 · Lecteurs SQL de l'espace du propriétaire et de l'acquéreur
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC08
+- Cahier : Le produit, tableau des espaces ; Architecture technique.
+- Objectif : les côtés bailleur, propriétaire, acquéreur, investisseur et candidat locataire de `SqlClientParties`, et les lecteurs SQL de `SourcesProprietaire` et `SourcesAcquereur` sur les tables de M08, M09, M10, M15, M17 et G04, dans `packages/core/src/espaces/`.
+- Critères : un bailleur et un acquéreur voient leurs vrais dossiers et rien d'autre [R161] ; candidatures complètes seulement, dans l'ordre d'arrivée, sans pièce interdite [R162] ; un vendeur de bien touché toujours rattaché pour la retenue [R161] ; parcours de 5 acquéreurs sur une vraie base [R161].
+- Attend : rien.
+
+### EC10 · Gestes du client branchés sur les modules
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC09
+- Cahier : Le produit, « Espace acquéreur » ; Architecture technique.
+- Objectif : le port `GestesAcquereur` branché sur les routes métier de M05 (visite), M09 (offre), M10 (pièce du financement) et M08 (alertes), dans `packages/core/src/espaces/`.
+- Critères : chaque geste rend le refus du module, sans le contourner [R165] ; une alerte ne part que demandée, par le contrôle central [R49, R03] ; aucun envoi réel [R26].
 - Attend : rien.
 
 ### EC07 · Branchement des espaces dans le socle
 - Statut : à faire
-- Qui : Claude, voie 1 · Relecture : forte · Dépend de : EC06, EC08
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : EC06, EC08, EC09, EC10
 - Cahier : Architecture technique.
 - Objectif : brancher les routes et la page de EC06 dans `app.ts`, la séance du client à côté des clés d'API, et le secret de signature du relevé.
 - Critères : chaque route branchée répond sous son rôle ou sa séance [R16, R161] ; sans secret de signature, le relevé répond « indisponible » ; la suite complète reste verte.
