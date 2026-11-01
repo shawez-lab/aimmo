@@ -189,12 +189,10 @@ export class EntreeEspace {
     const subject = `person:${root}`;
     if (!(await this.consentOf(root))) return silent('sans_accord', subject);
     if ((await this.parties.sidesOf(networkId, root)).length === 0) return silent('sans_dossier', subject);
-    const since = new Date(this.now().getTime() - 86_400_000).toISOString();
-    const count = await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM client_space_links WHERE network_id = ? AND person_id = ? AND created_at > ?', [networkId, root, since]);
-    if ((count?.n ?? 0) >= this.settings.linksPerDay) return silent('plafond', subject);
-    // Le lien part à l'adresse donnée, qui est une adresse de la fiche, pas à une autre de ses adresses.
-    const sent = await this.issue(networkId, root, 'demande', 'client', normalizeIdentifier('email', email));
-    return silent(sent.ok ? 'envoye' : 'refuse', subject);
+    // Le lien part à l'adresse donnée, qui est une adresse de la fiche, pas à une autre de ses adresses. Le plafond est
+    // pris dans la même écriture que le lien : des demandes en même temps ne le dépassent pas.
+    const sent = await this.issue(networkId, root, 'demande', 'client', normalizeIdentifier('email', email), this.settings.linksPerDay);
+    return silent(sent.ok ? 'envoye' : sent.code === 'plafond' ? 'plafond' : 'refuse', subject);
   }
 
   /** Le client ouvre son lien : une seule fois, avant son expiration ; il reçoit une séance. */
@@ -202,12 +200,14 @@ export class EntreeEspace {
     if (typeof token !== 'string' || !TOKEN.test(token)) return this.openRefused('inconnu');
     const link = await this.db.first<LinkRow>('SELECT id, network_id, person_id, expires_at FROM client_space_links WHERE token_hash = ?', [await sha256(token)]);
     if (!link) return this.openRefused('inconnu');
-    const subject = `person:${link.person_id}`;
+    // La fiche gardée au bout des fusions : un lien donné avant une fusion ouvre la fiche réunie.
+    const root = await this.fiche.rootOf(link.person_id);
+    const subject = `person:${root}`;
     if (await this.db.first('SELECT link_id FROM client_space_link_revocations WHERE link_id = ?', [link.id])) return this.openRefused('revoque', subject, link.id);
     const at = this.now();
     if (at.toISOString() >= link.expires_at) return this.openRefused('expire', subject, link.id);
-    if (!(await this.consentOf(link.person_id))) return this.openRefused('sans_accord', subject, link.id);
-    const sides = await this.parties.sidesOf(link.network_id, link.person_id);
+    if (!(await this.consentOf(root))) return this.openRefused('sans_accord', subject, link.id);
+    const sides = await this.parties.sidesOf(link.network_id, root);
     if (sides.length === 0) return this.openRefused('sans_dossier', subject, link.id);
     // La clé primaire tranche : de deux ouvertures en même temps, une seule passe [R18].
     const { changes } = await this.db.run('INSERT INTO client_space_link_uses (link_id, used_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [link.id, at.toISOString()]);
@@ -217,7 +217,7 @@ export class EntreeEspace {
     const expiresAt = new Date(at.getTime() + this.settings.sessionHours * 3_600_000).toISOString();
     await this.db.run(
       'INSERT INTO client_space_sessions (id, network_id, person_id, link_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, link.network_id, link.person_id, link.id, await sha256(sessionToken), expiresAt, at.toISOString()],
+      [id, link.network_id, root, link.id, await sha256(sessionToken), expiresAt, at.toISOString()],
     );
     await this.event('espaces.ouverture', subject, { status: 'ouvert', link: link.id, session: id }, 'client');
     return { ok: true, value: { sessionToken, expiresAt, sides } };
@@ -230,10 +230,12 @@ export class EntreeEspace {
     if (!row) return null;
     if (this.now().toISOString() >= row.expires_at) return null;
     if (await this.db.first('SELECT session_id FROM client_space_session_closures WHERE session_id = ?', [row.id])) return null;
-    if (!(await this.consentOf(row.person_id))) return null;
-    const sides = await this.parties.sidesOf(row.network_id, row.person_id);
+    // Une fusion faite pendant la séance : le client lit la fiche gardée.
+    const root = await this.fiche.rootOf(row.person_id);
+    if (!(await this.consentOf(root))) return null;
+    const sides = await this.parties.sidesOf(row.network_id, root);
     if (sides.length === 0) return null;
-    return { kind: 'client', networkId: row.network_id, personId: row.person_id, sessionId: row.id, sides };
+    return { kind: 'client', networkId: row.network_id, personId: root, sessionId: row.id, sides };
   }
 
   /** Le client ferme sa séance ; une séance inconnue ou déjà fermée ne fait rien. */
@@ -246,15 +248,27 @@ export class EntreeEspace {
   }
 
   /** Range un lien, puis le fait partir par le contrôle central ; refusé, il est révoqué aussitôt. */
-  private async issue(networkId: string, personId: string, origin: 'invitation' | 'demande', by: string, to: string | null = null): Promise<EntreeResult<{ linkId: string; expiresAt: string; mode: 'essai' }>> {
+  private async issue(networkId: string, personId: string, origin: 'invitation' | 'demande', by: string, to: string | null = null, cap: number | null = null): Promise<EntreeResult<{ linkId: string; expiresAt: string; mode: 'essai' }>> {
     const id = this.newId();
     const token = this.newToken();
     const at = this.now();
     const expiresAt = new Date(at.getTime() + this.settings.linkMinutes * 60_000).toISOString();
-    await this.db.run(
-      'INSERT INTO client_space_links (id, network_id, person_id, token_hash, expires_at, origin, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, networkId, personId, await sha256(token), expiresAt, origin, by, at.toISOString()],
-    );
+    const values = [id, networkId, personId, await sha256(token), expiresAt, origin, by, at.toISOString()];
+    if (cap === null) {
+      await this.db.run('INSERT INTO client_space_links (id, network_id, person_id, token_hash, expires_at, origin, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', values);
+    } else {
+      // Une seule instruction : le compte des liens des 24 dernières heures (fiches réunies comprises) et l'écriture
+      // se font ensemble ; au plafond, rien n'est écrit [R160].
+      const members = await this.fiche.membersOf(personId);
+      const since = new Date(at.getTime() - 86_400_000).toISOString();
+      const { changes } = await this.db.run(
+        `INSERT INTO client_space_links (id, network_id, person_id, token_hash, expires_at, origin, created_by, created_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE (SELECT COUNT(*) FROM client_space_links WHERE network_id = ? AND person_id IN (${members.map(() => '?').join(', ')}) AND created_at > ?) < ?`,
+        [...values, networkId, ...members, since, cap],
+      );
+      if (changes !== 1) return { ok: false, rule: 'R160', code: 'plafond' };
+    }
     const person = await this.db.first<{ first_name: string | null; agent_id: string | null }>('SELECT first_name, agent_id FROM persons WHERE id = ?', [personId]);
     const minutes = this.settings.linkMinutes;
     const sent = await this.envois.send({
@@ -287,11 +301,13 @@ export class EntreeEspace {
     return { ok: true, value: read.value.person.id };
   }
 
-  /** Un accord du client pour recevoir le lien de son espace par mail, non retiré [R03]. */
+  /** Un accord du client pour recevoir le lien de son espace par mail, non retiré, sur une de ses fiches réunies [R03]. */
   private async consentOf(personId: string): Promise<boolean> {
+    // Comme le contrôle central : l'accord d'une des fiches réunies vaut pour la fiche gardée.
+    const members = await this.fiche.membersOf(personId);
     const row = await this.db.first(
-      'SELECT id FROM consents WHERE person_id = ? AND purpose = ? AND channel = ? AND withdrawn_at IS NULL',
-      [personId, CLIENT_SPACE_PURPOSE, 'email'],
+      `SELECT id FROM consents WHERE person_id IN (${members.map(() => '?').join(', ')}) AND purpose = ? AND channel = ? AND withdrawn_at IS NULL`,
+      [...members, CLIENT_SPACE_PURPOSE, 'email'],
     );
     return row !== null;
   }

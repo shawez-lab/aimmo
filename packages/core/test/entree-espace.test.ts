@@ -45,6 +45,7 @@ async function setup() {
     db,
     journal,
     store,
+    fiche,
     acces,
     entree,
     sides,
@@ -178,6 +179,45 @@ describeWithSqlite('EC01 · entrée du client dans son espace', () => {
     expect(await t.entree.open(unused)).toEqual({ ok: false, rule: 'R160', code: 'sans_accord' });
     expect(await t.entree.requestLink(t.network.id, c.email)).toEqual(LINK_REQUEST_ANSWER);
     expect(await t.tokens(c.id)).toHaveLength(2);
+  });
+
+  it('[R160] des demandes en même temps ne dépassent pas le plafond de 3 liens', async () => {
+    const t = await setup();
+    const c = await t.client();
+    await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
+    const answers = await Promise.all(Array.from({ length: 6 }, () => t.entree.requestLink(t.network.id, c.email)));
+    for (const a of answers) expect(a).toEqual(LINK_REQUEST_ANSWER);
+    expect(await t.db.all('SELECT id FROM client_space_links WHERE person_id = ?', [c.id])).toHaveLength(3);
+    expect(await t.tokens(c.id)).toHaveLength(3);
+  });
+
+  it('[R160] [R03] après une fusion, l’accord et les liens d’une fiche réunie valent pour la fiche gardée', async () => {
+    const t = await setup();
+    const a = await t.client();
+    await t.entree.invite(t.acces, t.alex, a.id, CONSENT);
+    const [before] = await t.tokens(a.id);
+    const opened = await t.entree.open(before);
+    if (!opened.ok) throw new Error('ouverture');
+    await t.entree.requestLink(t.network.id, a.email);
+    const [pending] = await t.tokens(a.id);
+    // A est réunie dans B, gardée ; B porte le dossier.
+    const b = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.userId, firstName: 'ClientGardé', lastName: 'Inventé' });
+    t.sides.set(b.id, ['vendeur']);
+    t.sides.set(a.id, []);
+    await t.fiche.merge({ survivorId: b.id, mergedId: a.id, reason: 'même mail' });
+    // La séance ouverte avant la fusion lit la fiche gardée.
+    expect(await t.entree.session(opened.value.sessionToken)).toMatchObject({ personId: b.id, sides: ['vendeur'] });
+    // Un lien donné avant la fusion ouvre la fiche gardée.
+    const late = await t.entree.open(pending);
+    expect(late).toMatchObject({ ok: true, value: { sides: ['vendeur'] } });
+    if (late.ok) expect(await t.entree.session(late.value.sessionToken)).toMatchObject({ personId: b.id });
+    // L'adresse mène à B : l'accord rangé sur A vaut, un lien part, et le plafond compte aussi les liens de A.
+    await t.entree.requestLink(t.network.id, a.email);
+    expect(await t.db.all('SELECT id FROM client_space_links WHERE person_id = ?', [b.id])).toHaveLength(1);
+    await t.entree.requestLink(t.network.id, a.email);
+    expect(await t.db.all('SELECT id FROM client_space_links WHERE person_id = ?', [b.id])).toHaveLength(1);
+    const statuses = (await t.journal.all()).filter((e) => e.type === 'espaces.demande').map((e) => (e.data as { status: string }).status);
+    expect(statuses).toEqual(['envoye', 'envoye', 'plafond']);
   });
 
   it('[R160] une personne qui n’a plus aucun dossier perd sa séance', async () => {
