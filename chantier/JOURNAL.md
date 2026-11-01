@@ -376,3 +376,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-01 10:34 · EC04 · vue de l'acquéreur et gestes par leur module fusionnés (#230), relecture forte 1 P0 et 1 P1 corrigés, Codex en échec · prochaine : EC05
 - 2026-11-01 10:51 · EC05 · relevé prouvé de l'espace (Jamais vu) fusionné (#231), relecture forte 1 P1 corrigé, Codex en échec · prochaine : EC06
 - 2026-11-01 11:21 · EC06 · routes et page de l'espace client fusionnées (#232), relecture forte 1 P1 corrigé, Codex en échec ; lecteurs SQL découpés en EC08 · prochaine : EC08
+- 2026-11-01 11:22 · voie 2 · fin de séance : EC01 à EC06 fusionnés (#226 à #232) ; EC08 (lecteurs SQL) laissé à la séance suivante, contexte frais ; verrou libéré, voie 2 relancée · prochaine : EC08
