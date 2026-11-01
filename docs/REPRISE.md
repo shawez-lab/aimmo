@@ -42,6 +42,21 @@ Ces fichiers contiennent des données personnelles : **jamais dans le dépôt**.
 - Une fiche retrouvée mais suivie par un autre agent n'est pas réunie : la direction attribue la personne ; les exclusions valent pour toutes ses fiches.
 - Le rapport et le journal ne contiennent que des nombres et des identifiants internes [R13].
 
+## Reprise réelle et contrôle sur 50 fiches (I04)
+
+`RepriseReelle.run(base du site, fichiers)` enchaîne la base du site, lue en lecture seule, puis `liste-exclusion.csv`, `gohighlevel.csv` et `manychat.csv`. Les trois fichiers sont exigés et tous lus avant la première écriture : un fichier manquant, vide ou illisible arrête tout, rien n'est écrit, car des exclusions seraient perdues.
+
+Puis 50 contacts repris sont tirés au hasard (tous s'il y en a moins). Pour chacun, le contrôle cherche ses fiches par son origine et par chacun de ses identifiants :
+
+- **doublon** : plusieurs fiches du même agent, que la reprise aurait dû réunir ;
+- **à attribuer** : des fiches suivies par des agents différents, laissées à part pour la direction (ce n'est pas un échec) ;
+- **exclusion manquante** : la personne est exclue à la source (liste d'exclusion, désabonnement, demande « Perdu ») mais une de ses fiches n'a aucune exclusion en cours ;
+- **introuvable** : aucune fiche après la reprise.
+
+Le contrôle est vert sans doublon, sans exclusion manquante et sans contact introuvable. Son résultat, seulement des nombres, est écrit au journal (`reprise.controle`).
+
+Le lancement sur les vraies bases (où Shawez dépose ses fichiers, comment la reprise atteint la base `aimmo` en production) est la tâche I05.
+
 ## Import d'un agent (J05)
 
 Un agent qui rejoint le réseau dépose un export CSV de Hektor, Apimo, Excel ou Google Contacts (`ImportAgent.run`). Les vrais exports ne vont jamais dans le dépôt.
