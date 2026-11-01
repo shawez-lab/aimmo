@@ -2289,7 +2289,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC09 · Lecteurs SQL de l'espace du propriétaire et de l'acquéreur
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC08
 - Cahier : Le produit, tableau des espaces ; Architecture technique.
 - Objectif : les côtés bailleur, propriétaire, acquéreur, investisseur et candidat locataire de `SqlClientParties`, et les lecteurs SQL de `SourcesProprietaire` et `SourcesAcquereur` sur les tables de M08, M09, M10, M15, M17 et G04, dans `packages/core/src/espaces/`.
