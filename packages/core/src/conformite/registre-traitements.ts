@@ -34,6 +34,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       callback_tasks: ['person_id', 'reason'],
       agent_import_contacts: ['agent_id', 'person_id'],
       agent_import_referrals: ['importing_agent_id', 'person_id', 'resolved_by'],
+      // I05 : les exports de H15 déposés par la direction, gardés pour relancer la reprise.
+      reprise_depots: ['agent_id', 'deposited_by', 'sha256', 'lines'],
+      reprise_depot_morceaux: ['content'],
     },
   },
   {
@@ -667,6 +670,7 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   attach_claims: 'Verrou de traitement d\'un message reçu, le temps du rattachement.',
   first_reply_claims: 'Verrou de la première réponse à un message reçu.',
   import_keys: 'Clés d\'idempotence des reprises de données : une empreinte et une cible.',
+  reprise_avancement: 'Avancement du lancement de la reprise : une source, une position et des totaux en nombres.',
   listing_sync_leases: 'Verrou de synchronisation d\'une annonce.',
   listing_pushes: 'Résultat technique de chaque envoi d\'annonce à un portail.',
   listing_views: 'Nombre de vues d\'une annonce par portail et par jour.',
@@ -712,6 +716,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   attach_log: ['id', 'network_id', 'inbound_id', 'message_id', 'outcome', 'exclusion', 'silenced', 'occurred_at', 'created_at'],
   attach_claims: ['inbound_id', 'claimed_at'],
   import_keys: ['network_id', 'key', 'target_kind', 'target_id', 'created_at'],
+  reprise_depots: ['id', 'network_id', 'tool', 'bytes', 'parts', 'deposited_at'],
+  reprise_depot_morceaux: ['depot_id', 'rank'],
+  reprise_avancement: ['network_id', 'fingerprint', 'source', 'position', 'totals', 'updated_at', 'done_at'],
   property_links: ['id', 'network_id', 'property_id', 'kind', 'created_at', 'retired_at'],
   property_details: ['property_id', 'network_id', 'neighborhood', 'highlight', 'updated_at'],
   first_reply_claims: ['claim_key', 'inbound_id', 'claim_id', 'outcome', 'created_at'],
