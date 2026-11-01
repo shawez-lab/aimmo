@@ -658,6 +658,20 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       contact_origins: ['content_id', 'content_kind'],
     },
   },
+  {
+    id: 'espaces_clients',
+    finalite: 'Ouvrir à un client, sans mot de passe, son espace où il suit ses propres dossiers : lien personnel à usage unique et séance.',
+    baseLegale: 'contrat',
+    personnes: ['Clients du réseau parties à un dossier (vendeurs, propriétaires, acquéreurs, investisseurs, candidats locataires)'],
+    donnees: ['Empreinte du lien personnel de l\'espace, son origine, sa date et son expiration (jamais le lien)', 'Empreinte de la séance du client et ses dates (jamais la séance)', 'Auteur de l\'ouverture de l\'espace'],
+    duree: 'La durée de la fiche du client.',
+    destinataires: ['Le client lui-même', 'L\'agent de la fiche', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
+    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
+    tables: {
+      client_space_links: ['person_id', 'created_by'],
+      client_space_sessions: ['person_id'],
+    },
+  },
 ];
 
 /** Les tables sans aucune donnée personnelle, chacune avec sa raison. */
@@ -678,6 +692,9 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   price_versions: 'Versions des prix publics, une par publication des ventes publiques : aucune personne.',
   price_cells: 'Cases de prix regroupés par zone : nombre de ventes, médiane et quartiles, aucune personne.',
   price_cell_sales: 'Empreintes des ventes publiques d\'une case, pour le contrôle anti-différence : aucune personne.',
+  client_space_link_uses: 'Ouverture d\'un lien de l\'espace client : un identifiant de lien et une date.',
+  client_space_link_revocations: 'Révocation d\'un lien de l\'espace client non remis : un identifiant de lien, un code et une date.',
+  client_space_session_closures: 'Fermeture d\'une séance de l\'espace client : un identifiant de séance et une date.',
 };
 
 /**
@@ -1015,6 +1032,11 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   business_transfer_ready: ['id', 'file_id', 'network_id', 'declared_at'],
   business_transfer_tasks: ['file_id', 'network_id', 'step', 'due_day', 'created_at'],
   business_transfer_buyers: ['id', 'file_id', 'network_id', 'version', 'recorded_at'],
+  client_space_links: ['id', 'network_id', 'token_hash', 'expires_at', 'origin', 'created_at'],
+  client_space_sessions: ['id', 'network_id', 'link_id', 'token_hash', 'expires_at', 'created_at'],
+  client_space_link_uses: ['link_id', 'used_at'],
+  client_space_link_revocations: ['link_id', 'code', 'revoked_at'],
+  client_space_session_closures: ['session_id', 'closed_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
