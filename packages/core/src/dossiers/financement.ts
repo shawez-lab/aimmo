@@ -52,7 +52,7 @@ export interface FinancingAlert {
   createdAt: string;
 }
 
-export type FinancingProblem = { ok: false; rule: null; code: 'bad_input' | 'unknown_step' | 'bad_day' | 'future_day' | 'no_loan_condition' | 'busy' };
+export type FinancingProblem = { ok: false; rule: null; code: 'bad_input' | 'unknown_step' | 'bad_day' | 'future_day' | 'no_loan_condition' | 'busy' | 'closed' };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 function validDay(v: unknown): v is string {
@@ -103,26 +103,61 @@ export class FinancementDossier {
   async declare(viewer: Viewer, fileId: string, input: unknown): Promise<{ ok: true; value: Financing } | FileRefusal | FileUnknown | FinancingProblem> {
     const g = await this.gate(viewer, fileId, true);
     if (!g.ok) return g;
+    return this.write(g.file, input, ['step', 'day', 'declaredBy'], null, actorOf(viewer));
+  }
+
+  /**
+   * L'acquéreur range lui-même une étape de son financement, depuis son espace (EC10) [R165] : les mêmes contrôles que
+   * pour l'agent, l'étape dite « déclarée par l'acquéreur », et l'auteur écrit tel qu'il est (`client:<séance>`), jamais
+   * l'agent. Seul l'acquéreur du dossier (une de ses fiches réunies) le peut ; un dossier clos par l'acte ne reçoit plus
+   * rien. `declaredBy` n'est pas un champ permis : il est fixé, jamais choisi par le client.
+   */
+  async declareByBuyer(
+    networkId: string,
+    buyerPersonIds: readonly string[],
+    fileId: string,
+    input: unknown,
+    actor: string,
+  ): Promise<{ ok: true; value: Financing } | FileRefusal | FileUnknown | FinancingProblem> {
+    const file = await this.db.first<{ id: string; network_id: string; offer_id: string; buyer_person_id: string }>('SELECT id, network_id, offer_id, buyer_person_id FROM sale_files WHERE id = ?', [fileId]);
+    if (!file || file.network_id !== networkId) return { ok: false, rule: null, code: 'unknown_file' };
+    if (!buyerPersonIds.includes(file.buyer_person_id)) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor, subject: `sale_file:${fileId}`, data: { rule: 'R16', role: 'client', kind: 'sale_file_financing', code: 'not_buyer' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_buyer' };
+    }
+    if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
+    return this.write(file, input, ['step', 'day'], 'acquereur', actor);
+  }
+
+  private async write(
+    file: { id: string; network_id: string; offer_id: string },
+    input: unknown,
+    allowed: readonly string[],
+    fixedBy: DeclaredBy | null,
+    actor: string,
+  ): Promise<{ ok: true; value: Financing } | FinancingProblem> {
+    const fileId = file.id;
     if (typeof input !== 'object' || input === null || Array.isArray(input)) return { ok: false, rule: null, code: 'bad_input' };
     const i = input as Record<string, unknown>;
-    if (Object.keys(i).some((k) => !['step', 'day', 'declaredBy'].includes(k))) return { ok: false, rule: null, code: 'bad_input' };
+    if (Object.keys(i).some((k) => !allowed.includes(k))) return { ok: false, rule: null, code: 'bad_input' };
+    const declaredBy = fixedBy ?? i.declaredBy;
     if (typeof i.step !== 'string' || !(FINANCING_STEPS as readonly string[]).includes(i.step)) return { ok: false, rule: null, code: 'unknown_step' };
-    if (typeof i.declaredBy !== 'string' || !(DECLARED_BY as readonly string[]).includes(i.declaredBy)) return { ok: false, rule: null, code: 'bad_input' };
+    if (typeof declaredBy !== 'string' || !(DECLARED_BY as readonly string[]).includes(declaredBy)) return { ok: false, rule: null, code: 'bad_input' };
     if (!validDay(i.day)) return { ok: false, rule: null, code: 'bad_day' };
     if (i.day > localTime(this.now(), TIME_ZONE).date) return { ok: false, rule: null, code: 'future_day' };
-    if (!(await this.hasLoanCondition(g.file.offer_id))) return { ok: false, rule: null, code: 'no_loan_condition' };
+    if (!(await this.hasLoanCondition(file.offer_id))) return { ok: false, rule: null, code: 'no_loan_condition' };
     const last = await this.db.first<{ n: number | null }>('SELECT MAX(seq) AS n FROM sale_file_financing WHERE file_id = ?', [fileId]);
     try {
       await this.db.run(
         'INSERT INTO sale_file_financing (file_id, seq, network_id, step, day, declared_by, at, by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [fileId, Number(last?.n ?? 0) + 1, g.file.network_id, i.step, i.day, i.declaredBy, this.now().toISOString(), actorOf(viewer)],
+        [fileId, Number(last?.n ?? 0) + 1, file.network_id, i.step, i.day, declaredBy, this.now().toISOString(), actor],
       );
     } catch (error) {
       if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: 'busy' };
       throw error;
     }
-    await appendEvent(this.journal, { type: 'dossier.financement', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { step: i.step, declaredBy: i.declaredBy } }, this.now);
-    return { ok: true, value: await this.read(fileId, g.file.offer_id) };
+    await appendEvent(this.journal, { type: 'dossier.financement', actor, subject: `sale_file:${fileId}`, data: { step: i.step, declaredBy } }, this.now);
+    return { ok: true, value: await this.read(fileId, file.offer_id) };
   }
 
   /** Le passage du jour : les alertes de l'agent du bien. Rend le nombre d'alertes créées. */

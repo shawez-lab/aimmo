@@ -104,9 +104,9 @@ export interface SourcesAcquereur {
 }
 
 /** Une réponse d'un module à un geste : rendue telle quelle [R165]. */
-export type GesteResult = { ok: true; value: Record<string, unknown> } | { ok: false; rule: string | null; code: string };
+export type GesteResult = { ok: true; value: Record<string, unknown> } | { ok: false; rule: string | null; code: string; field?: string };
 
-/** Les gestes du client, chacun tenu par son module, avec ses contrôles [R165]. Faux dans les tests ; branchés en EC06. */
+/** Les gestes du client, chacun tenu par son module, avec ses contrôles [R165]. Branchés sur les modules par `GestesModules` (EC10). */
 export interface GestesAcquereur {
   bookVisit(client: ClientViewer, propertyId: string, input: Record<string, unknown>): Promise<GesteResult>;
   writeOffer(client: ClientViewer, propertyId: string, input: Record<string, unknown>): Promise<GesteResult>;

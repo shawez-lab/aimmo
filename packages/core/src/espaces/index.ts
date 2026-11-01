@@ -6,3 +6,4 @@ export * from './releve.ts';
 export * from './sources-vendeur.ts';
 export * from './sources-proprietaire.ts';
 export * from './sources-acquereur.ts';
+export * from './gestes.ts';
