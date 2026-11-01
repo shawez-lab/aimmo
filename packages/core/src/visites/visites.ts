@@ -191,7 +191,17 @@ export class Visites {
    */
   async schedule(
     viewer: Viewer,
-    request: { propertyId: string; projectId: string; start: Date; channel?: OutboundChannelName | null },
+    request: {
+      propertyId: string;
+      projectId: string;
+      start: Date;
+      channel?: OutboundChannelName | null;
+      /**
+       * Le client qui réserve lui-même depuis son espace (EC10) : `client:<séance>`, fixé par le serveur. Le rendez-vous
+       * porte alors la source `espace`, et la visite cet auteur ; les contrôles restent ceux du lecteur [R165].
+       */
+      byClient?: string;
+    },
   ): Promise<{ ok: true; visit: ScheduledVisit } | VisitRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'visit', 'role');
     const project = await this.db.first<Project>("SELECT * FROM projects WHERE id = ? AND network_id = ? AND kind = 'buy'", [request.projectId, viewer.networkId]);
@@ -220,7 +230,7 @@ export class Visites {
       propertyId: property.id,
       kind: 'visite',
       start: request.start,
-      source: 'agent',
+      source: request.byClient ? 'espace' : 'agent',
       channel: request.channel ?? null,
     });
     if (!booking.ok) return { ok: false, rule: booking.rule, code: booking.code satisfies BookingRefusal };
@@ -228,11 +238,11 @@ export class Visites {
     const at = this.now().toISOString();
     await this.db.run(
       'INSERT INTO visits (appointment_id, network_id, property_id, project_id, person_id, agent_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [appointment.id, viewer.networkId, property.id, project.id, root.id, agentId, this.actor(viewer), at],
+      [appointment.id, viewer.networkId, property.id, project.id, root.id, agentId, request.byClient ?? this.actor(viewer), at],
     );
     await appendEvent(
       this.journal,
-      { type: 'visite.fixee', actor: this.actor(viewer), subject: `person:${root.id}`, data: { appointment: appointment.id, property: property.id } },
+      { type: 'visite.fixee', actor: request.byClient ?? this.actor(viewer), subject: `person:${root.id}`, data: { appointment: appointment.id, property: property.id } },
       this.now,
     );
     const slip = await this.makeSlip(viewer.networkId, appointment, agentId, property, fiche.value.members);
