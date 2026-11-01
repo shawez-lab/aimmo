@@ -155,6 +155,55 @@ describeWithSqlite('EC08 · lecteurs SQL de l’espace du vendeur', () => {
     expect(await t.sources.earliestDeedOf(t.network.id, t.propertyId, t.buyerId)).toBeNull();
   });
 
+  it('[R161] un ancien propriétaire ne voit rien de la vente suivante du même bien, ni le nouveau de l’ancienne', async () => {
+    const t = await setup();
+    // Le bien est revendu : un nouveau propriétaire signe à son tour un mandat, plus tard, sur le même bien.
+    t.setClock(new Date('2027-09-01T12:00:00.000Z'));
+    const next = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Nouveau', lastName: 'Propriétaire' });
+    // Le mandat suivant, rangé comme le font M06 et le registre (D04) : les contrôles de signature sont testés ailleurs.
+    await t.db.run(
+      `INSERT INTO mandates (id, network_id, agent_id, person_id, project_id, property_id, signed_at, source_kind, source_detail, source_id, recorded_by, created_at) VALUES ('m-suivant', ?, ?, ?, NULL, ?, ?, 'referral', NULL, NULL, 'agent:test', ?)`,
+      [t.network.id, t.alexId, next.id, t.propertyId, t.now().toISOString(), t.now().toISOString()],
+    );
+    const seq = Number((await t.db.first<{ n: number }>('SELECT MAX(seq) AS n FROM mandate_register WHERE network_id = ?', [t.network.id]))!.n) + 1;
+    await t.db.run(
+      `INSERT INTO mandate_register (network_id, seq, kind, mandate_id, number_value, number, agent_id, property_id, signed_at, cancels_seq, reason, at, actor, prev_hash, hash) VALUES (?, ?, 'inscription', 'm-suivant', 99, 'T-099', ?, ?, ?, NULL, NULL, ?, 'agent:test', 'x', 'h-suivant')`,
+      [t.network.id, seq, t.alexId, t.propertyId, t.now().toISOString(), t.now().toISOString()],
+    );
+    t.setClock(new Date('2027-09-03T12:00:00.000Z'));
+    await t.visit('2027-09-02T14:00:00.000Z', 'Visite de la revente.');
+    const o = await t.offres.record(t.agent, t.propertyId, t.input({ amountEur: 260000, receivedAt: '2027-09-03T09:00:00.000Z', validUntil: '2027-09-12' }));
+    if (!o.ok) throw new Error(o.code);
+    // L'ancien propriétaire n'a plus de côté vendeur, ni le bien, ni rien de ses lecteurs.
+    expect(await t.parties.sidesOf(t.network.id, t.personId)).toEqual([]);
+    expect(await t.sources.sellerPropertiesOf(t.network.id, t.personId)).toEqual([]);
+    expect(await t.sources.visitsOf(t.network.id, t.propertyId, t.personId)).toEqual([]);
+    expect(await t.sources.offersOf(t.network.id, t.propertyId, t.personId)).toEqual([]);
+    expect(await t.sources.earliestDeedOf(t.network.id, t.propertyId, t.personId)).toBeNull();
+    // Le nouveau voit sa vente : la visite et l'offre d'après son mandat, rien de la vente d'avant.
+    const v = await t.espace.vue(await t.viewer(next.id));
+    if (!v.ok) throw new Error(v.code);
+    expect(v.value[0]!.visits).toHaveLength(1);
+    expect(v.value[0]!.offers.map((x) => x.amount.value)).toEqual([260000]);
+    expect(v.value[0]!.documents).toEqual([]);
+    expect(v.value[0]!.deed.date).toEqual({ value: null, label: 'non communiquée' });
+  });
+
+  it('[R163] [R13] sans le tableau des offres, aucun chiffre n’est recomposé et l’échec va au journal', async () => {
+    const t = await setup();
+    // Un bien sans agent : le registre des offres refuse sa lecture.
+    await t.db.run('UPDATE properties SET agent_id = NULL WHERE id = ?', [t.propertyId]);
+    const offers = await t.sources.offersOf(t.network.id, t.propertyId, t.personId);
+    expect(offers).toHaveLength(1);
+    expect(offers[0]).toMatchObject({ amountEur: null, netSellerEur: null, validUntil: null, state: null, conditions: [] });
+    const v = await t.espace.vue(await t.viewer(t.personId));
+    if (!v.ok) throw new Error(v.code);
+    expect(v.value[0]!.offers[0]!.amount).toEqual({ value: null, label: 'non communiquée' });
+    const events = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type = 'espaces.source_indisponible'");
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0]!.data).toContain('offres');
+  });
+
   it('[R161] [R163] documents : le mandat signé, les pièces du vendeur ; jamais une pièce de l’acquéreur', async () => {
     const t = await setup();
     const titre = await t.pieces.add(t.agent, t.fileId, { piece: 'titre_propriete', ref: t.upload(), issuedOn: '2027-02-01' });

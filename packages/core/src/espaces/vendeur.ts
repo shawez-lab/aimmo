@@ -52,12 +52,13 @@ export interface SellerVisit {
 export interface SellerOffer {
   id: string;
   receivedAt: string;
-  amountEur: number;
+  /** Le montant en vigueur (O06) ; absent quand le tableau des offres n'a pu être lu : non communiqué. */
+  amountEur: number | null;
   /** Net vendeur après les honoraires du mandat (O06) ; absent : non communiqué. */
   netSellerEur: number | null;
   conditions: readonly string[];
   validUntil: string | null;
-  state: string;
+  state: string | null;
   stateAt: string;
   buyer: SourcePerson | null;
 }

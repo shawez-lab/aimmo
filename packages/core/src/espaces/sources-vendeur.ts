@@ -8,8 +8,9 @@
  *   validés et leur texte (`weeklyPointText`, T07), la vue du vendeur du chemin critique (`CheminCritique`, N09) ;
  * - le mandant est la personne d'un mandat inscrit au registre, ni annulé ni rétracté ; une fiche fusionnée compte pour
  *   la fiche gardée [R161] ;
- * - tout ce qu'un bien montre au vendeur date de son premier mandat sur ce bien : un ancien propriétaire du même bien
- *   ne lui laisse ni visite, ni offre, ni document, ni point [R161] ;
+ * - un bien n'est au vendeur que si le dernier mandat vivant du bien est le sien ; tout ce qu'il montre date du premier
+ *   mandat de sa dernière suite : un ancien propriétaire ne voit rien de la vente suivante, et le nouveau rien de
+ *   l'ancienne [R161] ;
  * - les modules qui demandent un lecteur reçoivent la direction du réseau, sous le nom `system:espace` ; ils ne sont
  *   appelés qu'après le contrôle de l'espace, qui a vérifié que le bien est un bien du vendeur [R161, R16] ;
  * - chaque visiteur et chaque acquéreur est toujours rattaché, avec ce qui l'identifie dans toutes ses fiches réunies,
@@ -25,6 +26,7 @@ import { PIECE_LABELS } from '../dossiers/relances.ts';
 import { expectedPieces, type Piece } from '../dossiers/pieces.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { ComparatifOffres } from '../offres/comparatif.ts';
 import { sellerReportText, type VisitReport } from '../visites/compte-rendu.ts';
@@ -46,6 +48,33 @@ const LIVE_MANDATES = `
     AND NOT EXISTS (SELECT 1 FROM mandate_withdrawals w WHERE w.mandate_id = m.id)`;
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
+
+/** La période d'un vendeur sur un bien : depuis le début de sa suite de mandats, avec ses mandats. */
+export interface SellerWindow {
+  propertyId: string;
+  since: string;
+  mandateIds: string[];
+  latest: { id: string; signed_at: string };
+}
+
+/**
+ * Les biens dont la personne est le mandant aujourd'hui : le dernier mandat vivant du bien est le sien. La période
+ * commence au premier mandat de sa dernière suite : un mandat d'une autre personne, signé plus tard sur le même bien,
+ * lui retire le bien en entier, et rien de ce qui précède sa suite ne lui est montré [R161].
+ */
+export async function sellerWindows(db: SqlDatabase, fiche: FicheUnique, networkId: string, personId: string): Promise<SellerWindow[]> {
+  const members = new Set(await fiche.membersOf(personId));
+  const own = await db.all<{ property_id: string }>(`SELECT DISTINCT property_id FROM (${LIVE_MANDATES}) WHERE person_id IN (${placeholders(members.size)})`, [networkId, ...members]);
+  const out: SellerWindow[] = [];
+  for (const { property_id } of own) {
+    const all = await db.all<{ id: string; person_id: string; signed_at: string }>(`SELECT id, person_id, signed_at FROM (${LIVE_MANDATES}) WHERE property_id = ? ORDER BY signed_at, id`, [networkId, property_id]);
+    const run: { id: string; signed_at: string }[] = [];
+    for (let i = all.length - 1; i >= 0 && members.has(all[i]!.person_id); i--) run.unshift(all[i]!);
+    if (run.length === 0) continue;
+    out.push({ propertyId: property_id, since: run[0]!.signed_at, mandateIds: run.map((m) => m.id), latest: run.at(-1)! });
+  }
+  return out.sort((a, b) => a.since.localeCompare(b.since) || a.propertyId.localeCompare(b.propertyId));
+}
 
 /** Le titre court d'un document du dossier, sans article : « Titre de propriété ». */
 const pieceTitle = (piece: Piece): string => {
@@ -111,10 +140,8 @@ export class SqlClientParties implements ClientParties {
   }
 
   async sidesOf(networkId: string, personId: string): Promise<readonly ClientSide[]> {
-    const members = await this.fiche.membersOf(personId);
     const sides: ClientSide[] = [];
-    const seller = await this.db.first(`SELECT 1 AS x FROM (${LIVE_MANDATES}) WHERE person_id IN (${placeholders(members.length)}) LIMIT 1`, [networkId, ...members]);
-    if (seller) sides.push('vendeur');
+    if ((await sellerWindows(this.db, this.fiche, networkId, personId)).length > 0) sides.push('vendeur');
     return sides;
   }
 }
@@ -136,7 +163,7 @@ export class SqlSourcesVendeur implements SourcesVendeur {
   constructor(
     private readonly db: SqlDatabase,
     acces: Acces,
-    journal: JournalStore,
+    private readonly journal: JournalStore,
     options: { now?: () => Date } = {},
   ) {
     this.now = options.now ?? (() => new Date());
@@ -146,16 +173,13 @@ export class SqlSourcesVendeur implements SourcesVendeur {
     this.chemin = new CheminCritique(db, acces, journal, { has: async () => false }, { now: this.now });
   }
 
-  /** Les mandats vivants de la personne, toutes fiches réunies. */
-  private async mandatesOf(networkId: string, personId: string): Promise<{ id: string; property_id: string; signed_at: string }[]> {
-    const members = await this.fiche.membersOf(personId);
-    return this.db.all(`SELECT id, property_id, signed_at FROM (${LIVE_MANDATES}) WHERE person_id IN (${placeholders(members.length)}) ORDER BY signed_at, id`, [networkId, ...members]);
+  /** La période de la personne sur ce bien, ou null : ce n'est pas son bien aujourd'hui [R161]. */
+  private async window(networkId: string, propertyId: string, personId: string): Promise<SellerWindow | null> {
+    return (await sellerWindows(this.db, this.fiche, networkId, personId)).find((w) => w.propertyId === propertyId) ?? null;
   }
 
-  /** Le jour du premier mandat vivant de la personne sur ce bien : rien d'avant ne lui est montré ; null : pas son bien. */
   private async since(networkId: string, propertyId: string, personId: string): Promise<string | null> {
-    const own = (await this.mandatesOf(networkId, personId)).filter((m) => m.property_id === propertyId);
-    return own[0]?.signed_at ?? null;
+    return (await this.window(networkId, propertyId, personId))?.since ?? null;
   }
 
   /** Ce qui identifie une personne, dans toutes ses fiches réunies, pour la retenir de tout texte [R161]. */
@@ -174,13 +198,12 @@ export class SqlSourcesVendeur implements SourcesVendeur {
   }
 
   async sellerPropertiesOf(networkId: string, personId: string): Promise<readonly SellerProperty[]> {
-    const mandates = await this.mandatesOf(networkId, personId);
     const out: SellerProperty[] = [];
-    for (const propertyId of [...new Set(mandates.map((m) => m.property_id))]) {
-      const p = await this.db.first<PropertyRow>('SELECT id, reference, city, status, updated_at FROM properties WHERE id = ? AND network_id = ?', [propertyId, networkId]);
+    for (const w of await sellerWindows(this.db, this.fiche, networkId, personId)) {
+      const p = await this.db.first<PropertyRow>('SELECT id, reference, city, status, updated_at FROM properties WHERE id = ? AND network_id = ?', [w.propertyId, networkId]);
       if (!p) continue;
       // Le prix du dernier mandat signé sur le bien, après ses avenants signés (D07) ; sa date : celle du dernier écrit.
-      const latest = mandates.filter((m) => m.property_id === propertyId).at(-1)!;
+      const latest = w.latest;
       const terms = await mandateTerms(this.db, latest.id);
       const lastAmendment = terms?.amendments.filter((a) => a.priceEur !== null).at(-1);
       out.push({
@@ -225,27 +248,32 @@ export class SqlSourcesVendeur implements SourcesVendeur {
   async offersOf(networkId: string, propertyId: string, personId: string): Promise<readonly SellerOffer[]> {
     const since = await this.since(networkId, propertyId, personId);
     if (!since) return [];
-    const rows = await this.db.all<{ id: string; seq: number; buyer_person_id: string; amount_eur: number; valid_until: string; received_at: string; responded_at: string | null }>(
-      `SELECT o.id, o.seq, o.buyer_person_id, o.amount_eur, o.valid_until, o.received_at, s.responded_at
+    const rows = await this.db.all<{ id: string; seq: number; buyer_person_id: string; valid_until: string; received_at: string; responded_at: string | null }>(
+      `SELECT o.id, o.seq, o.buyer_person_id, o.valid_until, o.received_at, s.responded_at
        FROM offer_register o LEFT JOIN offer_responses s ON s.offer_id = o.id
        WHERE o.network_id = ? AND o.property_id = ? ORDER BY o.seq`,
       [networkId, propertyId],
     );
     const table = await this.comparatif.table(systemViewer(networkId), propertyId);
+    if (!table.ok) {
+      // Sans le tableau des offres, aucun chiffre n'est recomposé : montant, net, validité et état sont « non
+      // communiqués », et l'échec va au journal, avec des identifiants seulement [R163, R13].
+      await appendEvent(this.journal, { type: 'espaces.source_indisponible', actor: ESPACE_READER, subject: `property:${propertyId}`, data: { source: 'offres', code: table.code } }, this.now);
+    }
     const bySeq = new Map(table.ok ? table.value.rows.map((r) => [r.seq, r]) : []);
     const out: SellerOffer[] = [];
     for (const o of rows) {
       if (o.received_at < since) continue;
       const row = bySeq.get(Number(o.seq));
-      const lastProposal = await this.db.first<{ valid_until: string }>('SELECT valid_until FROM offer_proposals WHERE offer_id = ? ORDER BY seq DESC LIMIT 1', [o.id]);
+      const lastProposal = row ? await this.db.first<{ valid_until: string }>('SELECT valid_until FROM offer_proposals WHERE offer_id = ? ORDER BY seq DESC LIMIT 1', [o.id]) : null;
       out.push({
         id: o.id,
         receivedAt: o.received_at,
-        amountEur: row?.amountEur ?? Number(o.amount_eur),
+        amountEur: row?.amountEur ?? null,
         netSellerEur: row?.netSellerEur ?? null,
         conditions: row?.conditions ?? [],
-        validUntil: lastProposal?.valid_until ?? o.valid_until,
-        state: row?.state ?? 'non_communique',
+        validUntil: row ? (lastProposal?.valid_until ?? o.valid_until) : null,
+        state: row?.state ?? null,
         stateAt: o.responded_at ?? o.received_at,
         buyer: await this.person(o.buyer_person_id),
       });
@@ -297,7 +325,7 @@ export class SqlSourcesVendeur implements SourcesVendeur {
   }
 
   async weeklyPointsOf(networkId: string, propertyId: string, personId: string): Promise<readonly SellerWeeklyPoint[]> {
-    const own = (await this.mandatesOf(networkId, personId)).filter((m) => m.property_id === propertyId).map((m) => m.id);
+    const own = (await this.window(networkId, propertyId, personId))?.mandateIds ?? [];
     if (own.length === 0) return [];
     const rows = await this.db.all<{ week: string; figures: string; next_actions: string | null; validated_at: string | null }>(
       `SELECT week, figures, next_actions, validated_at FROM weekly_points WHERE network_id = ? AND property_id = ? AND status = 'valide' AND mandate_id IN (${placeholders(own.length)}) ORDER BY week`,
