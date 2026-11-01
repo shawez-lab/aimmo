@@ -2252,7 +2252,8 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC04 · Espace de l'acquéreur, de l'investisseur et du candidat locataire
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01) : les gestes passent par le port `GestesAcquereur` (un par module), branché en EC06 ; la retenue lit les vendeurs de tous les biens touchés (`sellersOf`), diffusables ou non ; favoris rangés ici (migration `1502`), sans aucun envoi. Relecture forte : 1 P0 et 1 P1 corrigés ; Codex en échec, fusion sans lui (#230).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC01
 - Cahier : Le produit, « Espace acquéreur ».
 - Objectif : alertes et biens proposés, favoris, réservation de visite, offre écrite, pièces du financement, suivi jusqu'à l'acte ; pour l'investisseur, rendement et contraintes (M17) ; pour le candidat locataire, ses visites et l'état de sa candidature.
@@ -2260,7 +2261,7 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Attend : rien.
 
 ### EC05 · Relevé prouvé de l'espace (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC02
 - Cahier : Le produit, « Espace propriétaire » ; Conformité (preuve).
 - Objectif : **Jamais vu** : le client télécharge à tout moment un relevé daté de ce que son espace lui montre (chaque visite, avis, offre, document, chiffre avec sa source), signé par le réseau ; n'importe qui, avec le relevé seul, vérifie sur une page publique qu'il est intact et quand il a été fait, sans rien apprendre d'autre. Aucun réseau ni logiciel ne remet au vendeur une preuve vérifiable de ce qui lui a été dit et quand.
