@@ -149,7 +149,9 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : `shawez-immo` et sa base ne sont pas modifiés ; le rapport ne contient aucune donnée personnelle ; contrôle sur 50 fiches sans doublon ni exclusion manquante.
 
 ### I05 · Lancer la reprise sur les vraies bases
-- Statut : en cours
+- Statut : fait (2026-11-01)
+- Décidé (2026-11-01), lecture prudente : dépôt des trois fichiers par la direction dans l'application (écran du réseau), rangés dans la base `aimmo` en ajout seul, vérifiés au dépôt ; lancement par le travail GitHub « Reprise des contacts » (lancé à la main, API REST de D1), par morceaux de 100 avec l'avancement rangé ; un nouveau contact du site ne refait que la source « site ». Relecture forte : 4 P1 corrigés ; Codex à sa limite (H03), fusion sans lui (#229).
+- Reste : vrai passage dès que H15 est déposé (la séance lance le travail par l'API REST de GitHub) ; purge des textes déposés à brancher sur la procédure d'effacement (L07) ; base `espace-estimation` supposée dans le même compte Cloudflare.
 - Qui : Claude · Relecture : forte · Dépend de : I04
 - Cahier : Feuille de route, novembre 2026.
 - Objectif : faire tourner `RepriseReelle` sur la base `espace-estimation` (lecture seule) et la base `aimmo` en production, avec les trois fichiers de H15, puis rapporter le contrôle sans donnée personnelle. À choisir d'abord, par la lecture la plus prudente : où Shawez dépose ses fichiers sans geste technique (écran de la direction dans l'application, rangés dans la base `aimmo`, jamais dans le dépôt) ; comment la reprise atteint la base en production (workflow GitHub lancé à la main avec l'API REST de D1, par morceaux relançables si le travail est coupé) ; pas une requête du Worker (limite de requêtes D1 par appel).

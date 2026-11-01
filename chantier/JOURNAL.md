@@ -372,3 +372,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-01 09:34 · EC01 · voie 2 découpe les espaces propriétaire et acquéreur (EC01 à EC07, R160 à R165) ; entrée sans mot de passe fusionnée (#226), relecture forte 2 P1 corrigés, Codex en échec · prochaine : EC02
 - 2026-11-01 09:51 · EC02 · vue du vendeur fusionnée (#227), relecture forte 1 P0 et 3 P1 corrigés, Codex en échec · prochaine : EC03
 - 2026-11-01 10:08 · EC03 · vue du propriétaire fusionnée (#228), relecture forte 4 P1 corrigés, Codex en échec · prochaine : EC04
+- 2026-11-01 10:22 · I05 · dépôt des fichiers dans l'application et reprise par morceaux relançables par le travail GitHub (API D1) fusionnés (#229), relecture forte 4 P1 corrigés, Codex à sa limite (H03) · prochaine : vrai passage de la reprise dès H15 déposé ; sinon rien de faisable pour la voie 1
