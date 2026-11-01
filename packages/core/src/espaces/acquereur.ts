@@ -52,8 +52,9 @@ export interface BuyerOffer {
   id: string;
   propertyId: string;
   receivedAt: string;
-  amountEur: number;
-  state: string;
+  /** Le montant après les contre-propositions, lu dans le tableau des offres (O06) ; null : non communiqué [R163]. */
+  amountEur: number | null;
+  state: string | null;
   stateAt: string;
 }
 
@@ -85,7 +86,7 @@ export interface TenantApplication {
   stateAt: string;
 }
 
-/** Les sources de l'espace de l'acquéreur. Fausses dans les tests ; lecteurs SQL en EC06. */
+/** Les sources de l'espace de l'acquéreur. Fausses dans les tests ; lecteurs SQL : `SqlSourcesAcquereur` (EC11). */
 export interface SourcesAcquereur {
   proposedOf(networkId: string, personId: string): Promise<readonly ProposedProperty[]>;
   visitsOf(networkId: string, personId: string): Promise<readonly BuyerVisit[]>;

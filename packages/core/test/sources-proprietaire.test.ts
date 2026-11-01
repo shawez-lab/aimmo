@@ -130,12 +130,12 @@ async function setup(options: { real?: boolean; ranges?: CommuneRanges | null } 
 }
 
 describeWithSqlite('EC09 · lecteurs SQL de l’espace du propriétaire', () => {
-  it('[R161] le bailleur d’une mise en location est bailleur ; un candidat ou un inconnu ne le sont pas', async () => {
+  it('[R161] le bailleur d’une mise en location est bailleur ; un candidat est candidat locataire, un inconnu rien', async () => {
     const t = await setup();
     const id = await t.listing();
     const c = await t.candidate(id, 'Camille', true);
     expect(await t.parties.sidesOf(t.network.id, t.owner.id)).toEqual(['bailleur']);
-    expect(await t.parties.sidesOf(t.network.id, c.personId)).toEqual([]);
+    expect(await t.parties.sidesOf(t.network.id, c.personId)).toEqual(['candidat_locataire']);
     expect(await t.parties.sidesOf(t.network.id, 'p-inconnue')).toEqual([]);
     expect(await t.parties.sidesOf('autre-reseau', t.owner.id)).toEqual([]);
     expect(await t.sources.ownerPropertiesOf(t.network.id, t.owner.id)).toEqual([{ propertyId: t.home.id, reference: 'L-1', city: 'Villeneuve-Essai' }]);
@@ -280,7 +280,7 @@ describeWithSqlite('EC09 · l’acte fait passer le bien du vendeur à l’acqu�
     const identity = { state: async () => ({ identityVerifiedOn: null }) };
     const sources = new SqlSourcesProprietaire(t.db, identity, t.journal, { now: t.now });
     expect(await parties.sidesOf(t.network.id, t.personId)).toEqual(['vendeur']);
-    expect(await parties.sidesOf(t.network.id, t.buyerId)).toEqual([]);
+    expect(await parties.sidesOf(t.network.id, t.buyerId)).toEqual(['acquereur']);
     expect((await sources.ownerPropertiesOf(t.network.id, t.personId)).map((p) => p.propertyId)).toEqual([t.propertyId]);
     const docs = await sources.documentsOf(t.network.id, t.personId, t.propertyId);
     expect(docs.map((d) => d.title)).toContain('Mandat de vente simple');
@@ -288,7 +288,7 @@ describeWithSqlite('EC09 · l’acte fait passer le bien du vendeur à l’acqu�
     expect(await sources.documentsOf(t.network.id, t.buyerId, t.propertyId)).toEqual([]);
     await t.db.run("INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, '2099-10-01', 'preuves/test.pdf', 'a_demarrer', '2099-10-01T08:00:00.000Z', 'agent:test')", [t.fileId, t.network.id]);
     expect(await parties.sidesOf(t.network.id, t.personId)).toEqual(['vendeur']);
-    expect(await parties.sidesOf(t.network.id, t.buyerId)).toEqual(['proprietaire']);
+    expect(await parties.sidesOf(t.network.id, t.buyerId)).toEqual(['proprietaire', 'acquereur']);
     expect((await sources.ownerPropertiesOf(t.network.id, t.buyerId)).map((p) => p.propertyId)).toEqual([t.propertyId]);
     expect(await sources.ownerPropertiesOf(t.network.id, t.personId)).toEqual([]);
     expect(await sources.documentsOf(t.network.id, t.buyerId, t.propertyId)).toEqual([]);
