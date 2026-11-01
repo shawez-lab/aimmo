@@ -253,8 +253,23 @@ describeWithSqlite('EC09 · lecteurs SQL de l’espace du propriétaire', () => 
     expect(await t.sources.valueOf(t.network.id, t.owner.id, 'autre-bien')).toBeNull();
     await t.store.withdrawConsent(consent.id, new Date('2027-07-12T07:00:00.000Z'));
     expect(await t.sources.valueOf(t.network.id, t.owner.id, t.home.id)).toBeNull();
+    // Un second logement du propriétaire dans la même commune : le suivi ne dit pas lequel, rien n'est montré.
+    const other = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'L-2', kind: 'home', postalCode: '21000', city: 'Villeneuve-Essai', rooms: 3 });
+    await t.db.run("INSERT INTO rental_listings (id, network_id, property_id, owner_person_id, created_by, created_at) VALUES ('rl-2', ?, ?, ?, 'agent:test', '2027-07-12T09:30:00.000Z')", [t.network.id, other.id, t.owner.id]);
+    const again = await t.store.addConsent({ networkId: t.network.id, agentId: t.alex.id, personId: t.owner.id, purpose: 'value_tracking', channel: 'email', proof: 'formulaire de test', givenAt: new Date('2027-07-12T07:30:00.000Z') });
+    expect(again.id).toBeTruthy();
+    expect(await t.sources.valueOf(t.network.id, t.owner.id, t.home.id)).toBeNull();
+    expect(await t.sources.valueOf(t.network.id, t.owner.id, other.id)).toBeNull();
     const none = await setup({ ranges: null });
     expect(await none.sources.valueOf(none.network.id, none.owner.id, none.home.id)).toBeNull();
+  });
+
+  it('[R31] un suivi d’une autre commune que celle du bien ne montre rien', async () => {
+    const t = await setup();
+    await t.listing();
+    await t.db.run("INSERT INTO value_tracking (id, network_id, agent_id, person_id, postal_code, town, kind, channel, created_by, created_at) VALUES ('vt-1', ?, ?, ?, '21999', 'Ailleurs-Essai', 'house', 'email', 'agent:test', '2027-07-01T08:00:00.000Z')", [t.network.id, t.alex.id, t.owner.id]);
+    await t.store.addConsent({ networkId: t.network.id, agentId: t.alex.id, personId: t.owner.id, purpose: 'value_tracking', channel: 'email', proof: 'formulaire de test', givenAt: new Date('2027-07-01T08:00:00.000Z') });
+    expect(await t.sources.valueOf(t.network.id, t.owner.id, t.home.id)).toBeNull();
   });
 });
 

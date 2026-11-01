@@ -8,11 +8,14 @@
  * - un bien est au propriétaire si c'est lui qui l'a pris en dernier : par un mandat inscrit, ni annulé ni rétracté,
  *   par une mise en location à son nom, ou par l'acte qui le lui a vendu ; sa période commence au premier de ces faits
  *   de sa dernière suite. Un vendeur dont l'acte est passé n'est plus propriétaire du bien, l'acquéreur le devient ; un
- *   ancien bailleur ne voit rien de la location du suivant [R161] ;
+ *   ancien bailleur ne voit rien de la location du suivant [R161]. Un seul propriétaire par bien pour l'espace : deux
+ *   personnes de fiches distinctes (un couple) ne le partagent pas, le dernier fait l'emporte ; l'oubli d'un bien est
+ *   préféré à une fuite, et l'agent peut réunir les fiches ;
  * - le bail n'est dit signé que par une signature réelle : tant que la signature en ligne du bail reste d'essai
  *   (`REAL_LEASE_SIGNATURE`), sa date, son loyer et ses charges sont « non communiqués » ; un bail ou un état des lieux
  *   d'essai, ou incomplet, n'est jamais montré [R163] ;
- * - la valeur suivie n'est lue que si le suivi est inscrit et que son accord est en cours [R03, R31] ; c'est la
+ * - la valeur suivie n'est lue que si le suivi est inscrit, que son accord est en cours, et pour le seul logement du
+ *   propriétaire dans la commune suivie [R03, R31] ; c'est la
  *   fourchette au m² de la commune, datée des dernières ventes publiées, avec la source ; jamais un prix du bien ;
  * - chaque candidat et chaque garant personne est rattaché, avec ce qui l'identifie, pour la retenue [R161] ;
  * - les pièces sont rendues par leur sorte, sans référence ni empreinte ; l'espace ne garde que celles de la liste
@@ -217,7 +220,9 @@ export class SqlSourcesProprietaire implements SourcesProprietaire {
   }
 
   async valueOf(networkId: string, personId: string, propertyId: string): Promise<OwnerValue | null> {
-    if (!this.ranges || !(await this.window(networkId, propertyId, personId))) return null;
+    if (!this.ranges) return null;
+    const windows = await ownerWindows(this.db, this.fiche, networkId, personId);
+    if (!windows.some((w) => w.propertyId === propertyId)) return null;
     const members = await this.fiche.membersOf(personId);
     const q = placeholders(members.length);
     const tracking = await this.db.first<{ postal_code: string; town: string; kind: 'apartment' | 'house'; channel: string }>(
@@ -225,6 +230,14 @@ export class SqlSourcesProprietaire implements SourcesProprietaire {
       [networkId, ...members],
     );
     if (!tracking) return null;
+    // Le suivi ne porte pas le bien : il n'est rattaché qu'au seul logement du propriétaire dans la commune suivie.
+    // Un autre bien, ou deux logements dans la même commune, et rien n'est montré : jamais la fourchette d'un autre type
+    // de bien présentée comme la sienne [R163, R31].
+    const owned = await this.db.all<{ id: string }>(
+      `SELECT id FROM properties WHERE network_id = ? AND kind = 'home' AND postal_code = ? AND lower(city) = lower(?) AND id IN (${placeholders(windows.length)})`,
+      [networkId, tracking.postal_code, tracking.town, ...windows.map((w) => w.propertyId)],
+    );
+    if (owned.length !== 1 || owned[0]!.id !== propertyId) return null;
     const at = this.now().toISOString();
     const consent = await this.db.first<{ n: number }>(
       `SELECT count(*) AS n FROM consents WHERE person_id IN (${q}) AND purpose = ? AND channel = ? AND given_at <= ? AND (withdrawn_at IS NULL OR withdrawn_at > ?)`,
