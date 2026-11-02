@@ -1632,6 +1632,31 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 - Critères : une étape bloquante empêche l'étape suivante, dite en français [R110] (test) ; seul l'agent du bien ou la direction agit [R16] (test) ; réponse perdue dite telle, succès gardé si la relecture échoue (tests) ; script à part, budget tenu [R201] (test).
 - Attend : rien pour l'écran ; H38 pour les pièces réelles.
 
+### CE13 · La fiche du commerce à l'écran et le barème de la direction
+- Statut : en cours (voie 2)
+- Trouvé le 2026-11-02 par la voie 2 : sans écran pour la fiche et le barème, aucune estimation ne se calcule et l'activité reste « à saisir » : tout M16 attend ces deux saisies.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
+- Cahier : M16, « Fiche du commerce » ; R16, R110, R111, R17, R201.
+- Objectif : l'agent du bien ou la direction complète la fiche (activité, enseigne, exercices, bail, salariés, matériel, autorisations) par une lecture faite à la demande ; la direction range le barème par activité et lit celui en vigueur. Un geste CE11 dont la réponse se perd ne dit plus que rien n'est enregistré.
+- Critères : seuls les champs changés partent, une nouvelle version s'ajoute [R17] (test) ; la conformité n'a pas le formulaire, aucun chiffre n'est lu avant le geste [R110, R16] (tests) ; montants saisis en euros, jamais en centimes, valeur illisible dite sans rien envoyer (tests) ; barème réservé à la direction, source et date exigées [R111, R16] (tests) ; réponse perdue dite telle [R10] (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### CE14 · Demandes et engagement de confidentialité à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE13
+- Cahier : M16, « Engagement de confidentialité » ; R110, R113, R16, R26, R201.
+- Objectif : l'agent range la demande d'un contact, ouvre la signature avec l'accord noté, recueille le code et le tracé, révoque un engagement ; la direction range le modèle.
+- Critères : un engagement modifié ou révoqué ferme la porte, dit en français [R113] (test) ; le code part par le contrôle central, en mode essai [R26] (test) ; budget tenu [R201] (test).
+- Attend : rien pour l'écran.
+
+### CE15 · Repreneurs et rapprochement à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE14
+- Cahier : M16, repreneurs ; R115, R14, R16, R201.
+- Objectif : l'agent complète le profil de repreneur d'un projet d'achat et lit les commerces rapprochés, sans score ni classement.
+- Critères : seuls les commerces diffusables, sans chiffre confidentiel [R110, R115] (test) ; aucun classement [R14] (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 **M14 · Réseau et académie, juillet 2027.**
 
 Voie : 2
