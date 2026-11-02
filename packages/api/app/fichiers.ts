@@ -9,6 +9,7 @@ import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.t
 import { AVIS_HTML, AVIS_JS } from './avis.ts';
 import { OFFRES_HTML, OFFRES_JS } from './offres.ts';
 import { DOSSIER_HTML, DOSSIER_JS } from './dossier.ts';
+import { MANDAT_HTML, MANDAT_JS } from './mandat.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { ATTIRER_ENTRY_HTML, ATTIRER_HTML, ATTIRER_JS } from './attirer.ts';
 import { BASCULE_ENTRY_HTML, BASCULE_JS } from './bascule.ts';
@@ -143,7 +144,7 @@ ${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${FICHE_GOOGLE_HOME_HTML}${LOUER_HOME
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
-${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OFFRES_HTML}${DOSSIER_HTML}${STUDIO_HTML}${GAGNER_HTML}${ATTIRER_HTML}${FICHE_GOOGLE_HTML}${INTEGRATION_HTML}<section id="chiffres" hidden>
+${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OFFRES_HTML}${DOSSIER_HTML}${MANDAT_HTML}${STUDIO_HTML}${GAGNER_HTML}${ATTIRER_HTML}${FICHE_GOOGLE_HTML}${INTEGRATION_HTML}<section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
 <div class="periodes" role="group" aria-label="Période">
@@ -232,7 +233,7 @@ summary { min-height: var(--cible); display: flex; align-items: center; cursor: 
 h4 { margin: var(--e-4) 0 var(--e-1); }
 .brief ul { margin: 0; padding-left: var(--e-5); }
 .brief li { padding: var(--e-1) 0; }
-#fiche, #visite, #bien, #avis, #offres, #dossier, #vente, #apres, #chiffres, #reseau, #partenaires { padding-top: var(--e-2); }
+#fiche, #visite, #bien, #avis, #offres, #dossier, #mandat, #vente, #apres, #chiffres, #reseau, #partenaires { padding-top: var(--e-2); }
 .tirage { margin: var(--e-2) 0; padding-left: var(--e-6); }
 .tirage li { padding: var(--e-2) 0; font-family: var(--police-titre); font-size: var(--t-l); }
 .tirage li::marker { color: var(--moutarde); font-weight: 600; }
@@ -636,6 +637,7 @@ export const APP_JS = `'use strict';
     wipeAvis();
     wipeOffres();
     wipeDossier();
+    wipeMandat();
     wipeStudio();
     wipeGagner();
     wipeAttirer();
@@ -1009,6 +1011,7 @@ export const APP_JS = `'use strict';
       li.appendChild(el('strong', b.reference + (b.city ? ' · ' + b.city : '')));
       li.appendChild(el('p', b.state ? 'Annonce ' + (LISTING_STATES[b.state] || 'publiée') + '.' : 'Pas encore publiée.', 'doux'));
       li.appendChild(button(b.state ? 'Voir l’annonce' : 'Mettre en vente', function () { openVente(b.id, b.reference); }));
+      li.appendChild(button('Mandat', function () { openMandat(b.id, b.reference); }));
       li.appendChild(button('Offres', function () { openOffres(b.id, b.reference); }));
       li.appendChild(button('Avis de valeur', function () { openAvis(b.id, b.reference); }));
       li.appendChild(button('Studio', function () { openStudio(b.id, b.reference); }));
@@ -1778,7 +1781,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${FINANCES_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1795,7 +1798,7 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1953,6 +1956,7 @@ ${LOUER_JS}
     $('avis-retour').addEventListener('click', function () { wipeAvis(); home(); });
     $('offres-retour').addEventListener('click', function () { wipeOffres(); home(); });
     $('dossier-retour').addEventListener('click', function () { wipeDossier(); home(); });
+    $('mandat-retour').addEventListener('click', function () { wipeMandat(); home(); });
     $('studio-retour').addEventListener('click', function () { wipeStudio(); home(); });
     $('gagner-retour').addEventListener('click', function () { if (gagnerScreen && gagnerScreen.inside()) openGagner(); else { wipeGagner(); home(); } });
     $('gagner-ouvrir').addEventListener('click', function () { openGagner(); });
