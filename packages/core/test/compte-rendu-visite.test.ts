@@ -54,6 +54,10 @@ async function setup(writer?: ReportWriter) {
     "INSERT INTO mandates (id, network_id, agent_id, person_id, property_id, signed_at, source_kind, recorded_by, created_at) VALUES ('m1', ?, ?, ?, ?, ?, 'site', 'test', ?)",
     [network.id, sam.id, seller.id, property.id, new Date(MONDAY_9H - 20 * 24 * HOUR).toISOString(), new Date(MONDAY_9H).toISOString()],
   );
+  await db.run(
+    "INSERT INTO mandate_register (network_id, seq, kind, mandate_id, number_value, number, agent_id, property_id, signed_at, at, actor, prev_hash, hash) VALUES (?, 1, 'inscription', 'm1', 1, 'T-1', ?, ?, ?, ?, 'test', 'p', 'h-m1')",
+    [network.id, sam.id, property.id, new Date(MONDAY_9H - 20 * 24 * HOUR).toISOString(), new Date(MONDAY_9H).toISOString()],
+  );
   let n = 0;
   /** Une visite d'un acquéreur inventé d'Alex, le lendemain ou plus tard. */
   const visit = async (firstName = 'Inès', lastName = 'Durand') => {
@@ -100,6 +104,15 @@ describeWithSqlite('T06 · compte rendu de visite dicté', () => {
     expect(await t.toSeller()).toEqual([]);
     // L'agent écrit lui-même : il part.
     expect(await t.comptes.validate(t.as('agent', t.alex.id), v.id, GOOD)).toMatchObject({ ok: true, delivery: 'sent' });
+  });
+
+  it('le compte rendu ne part pas au mandant d’un mandat rétracté', async () => {
+    const t = await setup({ write: async () => GOOD });
+    const v = await t.visit();
+    await t.db.run("INSERT INTO mandate_withdrawals (mandate_id, network_id, proof, received_at, recorded_by, created_at) VALUES ('m1', ?, 'Lettre reçue', ?, 'test', ?)", [t.network.id, new Date(MONDAY_9H).toISOString(), new Date(MONDAY_9H).toISOString()]);
+    await t.comptes.dictate(t.as('agent', t.alex.id), v.id, 'a aimé le séjour');
+    expect(await t.comptes.validate(t.as('agent', t.alex.id), v.id)).toMatchObject({ ok: true, delivery: 'refused' });
+    expect(await t.toSeller()).toEqual([]);
   });
 
   it('le compte rendu ne porte que ce que la dictée dit : un chiffre ou une offre inventés sont refusés, l’agent écrit alors lui-même [R10]', async () => {

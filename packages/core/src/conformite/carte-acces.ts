@@ -141,7 +141,7 @@ export type JournalSubjectUse = 'journal' | { excluded: ExclusionReason | 'envoi
 
 /**
  * Chaque sorte d'événement écrit au journal d'un dossier de vente (`sale_file:<id>`), et à qui elle revient. Un dossier
- * a deux parties : l'acquéreur (`buyer_person_id`) et le vendeur (par son mandat). Aucune sorte n'est attribuée par
+ * a deux parties : l'acquéreur (`buyer_person_id`) et le vendeur (`sale_file_sellers`). Aucune sorte n'est attribuée par
  * défaut : un test relève chaque événement écrit sous ce sujet dans le code et exige qu'il soit ici.
  *
  * - `partage` : l'avancée du dossier, que ses deux parties suivent (dates, pièces reçues, acte) : aux deux ;
@@ -197,6 +197,8 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'conformite.signalement_decision': { excluded: 'lcb_ft', why: 'Décision du responsable sur un signalement.' },
 };
 
+/** Les événements écrits sous le bien qui portent une offre : ceux d'un acquéreur, jamais de qui possède ou a possédé le bien [R96]. */
+const PROPERTY_OFFER_EVENTS = ['offre.enregistree', 'offre.cle_reutilisee', 'dossier.ouvert'] as const;
 const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(SALE_FILE_EVENTS).filter(([, u]) => uses.includes(u)).map(([t]) => t).sort();
 
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
@@ -401,7 +403,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   proposal_transmissions: { locate: [via('proposal_id', 'offer_proposals')] },
   proposal_responses: { locate: [via('proposal_id', 'offer_proposals')] },
   proposal_tasks: { locate: [via('proposal_id', 'offer_proposals')] },
-  sale_files: { locate: [...by('buyer_person_id'), via('property_id', 'mandates', 'property_id', { tag: 'vendeur' })], own: { buyer_person_id: ['offer_id'] } },
+  // Le vendeur d'un dossier est celui rangé à son ouverture, jamais tout mandant passé ou futur du bien.
+  sale_file_sellers: { locate: by('person_id') },
+  sale_files: { locate: [...by('buyer_person_id'), via('id', 'sale_file_sellers', 'file_id', { tag: 'vendeur' })], own: { buyer_person_id: ['offer_id'] } },
   sale_file_steps: { locate: [via('file_id', 'sale_files')] },
   sale_file_pieces: { locate: [via('file_id', 'sale_files')] },
   sale_file_dates: { locate: [via('file_id', 'sale_files')] },
@@ -546,9 +550,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'prospect_retention_cycles', 'id', { prefix: 'prospect_retention:' }),
       // Le journal d'un bien n'est qu'à qui le possède : par son mandat, son projet (bien possédé) ou sa mise en
       // location ; jamais à l'acquéreur qui s'y intéresse.
-      via('subject', 'mandates', 'property_id', { prefix: 'property:' }),
-      via('subject', 'project_properties', 'property_id', { prefix: 'property:', parentWhere: { role: 'owned' } }),
-      via('subject', 'rental_listings', 'property_id', { prefix: 'property:' }),
+      // Les offres et l'ouverture du dossier nomment l'offre de l'acquéreur : elles ne sont pas au journal du possesseur.
+      via('subject', 'mandates', 'property_id', { prefix: 'property:', except: { type: PROPERTY_OFFER_EVENTS } }),
+      via('subject', 'project_properties', 'property_id', { prefix: 'property:', parentWhere: { role: 'owned' }, except: { type: PROPERTY_OFFER_EVENTS } }),
+      via('subject', 'rental_listings', 'property_id', { prefix: 'property:', except: { type: PROPERTY_OFFER_EVENTS } }),
       via('subject', 'projects', 'id', { prefix: 'project:' }),
       via('subject', 'partner_referrals', 'id', { prefix: 'referral:' }),
       via('subject', 'signature_sessions', 'id', { prefix: 'signature:' }),

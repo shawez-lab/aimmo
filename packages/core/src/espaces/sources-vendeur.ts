@@ -285,7 +285,7 @@ export class SqlSourcesVendeur implements SourcesVendeur {
       const signedAt = d.mandate_signed ?? d.amendment_signed;
       return { id: d.id, title: DOCUMENT_TITLES[d.kind] ?? 'Document', kind: d.kind, addedAt: d.created_at, signature: signedAt ? 'signe' : 'a_signer', signedAt };
     });
-    const file = await this.db.first<{ id: string }>('SELECT id FROM sale_files WHERE network_id = ? AND property_id = ? AND opened_at >= ?', [networkId, propertyId, since]);
+    const file = await this.ownFile(networkId, propertyId, personId, since);
     if (file) {
       const pieces = await this.db.all<{ id: string; piece: Piece; received_at: string }>(
         `SELECT id, piece, received_at FROM sale_file_pieces p WHERE file_id = ?
@@ -334,10 +334,20 @@ export class SqlSourcesVendeur implements SourcesVendeur {
     return out;
   }
 
+  /** Le dossier de la période dont la personne est le vendeur rangé à l'ouverture : jamais celui d'un autre mandant du bien. */
+  private async ownFile(networkId: string, propertyId: string, personId: string, since: string): Promise<{ id: string } | null> {
+    const members = await this.fiche.membersOf(personId);
+    return this.db.first<{ id: string }>(
+      `SELECT f.id FROM sale_files f JOIN sale_file_sellers v ON v.file_id = f.id
+       WHERE f.network_id = ? AND f.property_id = ? AND f.opened_at >= ? AND v.person_id IN (${placeholders(members.length)})`,
+      [networkId, propertyId, since, ...members],
+    );
+  }
+
   async earliestDeedOf(networkId: string, propertyId: string, personId: string): Promise<SellerDeedDate | null> {
     const since = await this.since(networkId, propertyId, personId);
     if (!since) return null;
-    const file = await this.db.first<{ id: string }>('SELECT id FROM sale_files WHERE network_id = ? AND property_id = ? AND opened_at >= ?', [networkId, propertyId, since]);
+    const file = await this.ownFile(networkId, propertyId, personId, since);
     if (!file) return null;
     const r = await this.chemin.of(systemViewer(networkId), file.id);
     if (!r.ok) return null;
