@@ -1939,6 +1939,15 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Critères : l'écran lit seulement par les routes `/v1/location` [R16] ; aucune liste de candidats n'est triée ni notée [R105] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
 - Attend : rien.
 
+### W13 · Ajouter une candidature depuis l'écran « Louer »
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11
+- Cahier : M15 ; R104, R105, R16.
+- Objectif : reste écrit de W11. L'agent ne peut pas ranger une candidature depuis l'écran : la route existe, l'écran ne la propose pas. Il choisit la fiche de la personne parmi ses contacts, sans saisir d'identifiant ; la candidature arrive en dernière place de l'ordre d'arrivée, sans note ni tri.
+- Critères : l'écran n'écrit que par `POST /v1/location/:id/candidatures` [R16] ; la liste reste dans l'ordre d'arrivée, sans note ni tri [R105] ; un refus de la route est dit en français, sans identifiant ni donnée [R104] ; un double appui ne range pas deux candidatures ; testé au clavier et sur téléphone comme les autres écrans (`fake-dom`) ; le budget de poids de l'application est tenu [R201].
+- Attend : rien.
+
 **M16 · Commerces et entreprises, septembre 2027.**
 
 Voie : 1
