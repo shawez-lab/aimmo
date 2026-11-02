@@ -112,6 +112,12 @@ describe('A03 · fiche du client dans l’application', () => {
     await a.tick();
     expect(tels(a.els['fiche-corps']!)).toEqual([]);
     expect(a.els['fiche-corps']!.textContent).toContain('Appel fermé : aucun accord ni demande de rappel enregistrés pour cette personne.');
+    const h = await app({ ...base(), '/v1/fiches/p-1/resume': ok({ ...FICHE, call: null, callRefusal: 'outside_hours' }) });
+    buttons(h.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
+    await h.tick();
+    expect(tels(h.els['fiche-corps']!)).toEqual([]);
+    // [R203] L'écran dit quand l'appel est permis.
+    expect(h.els['fiche-corps']!.textContent).toContain('du lundi au vendredi, de 10 h à 13 h et de 14 h à 20 h');
     const b = await app({ ...base(), '/v1/fiches/p-1/resume': ok({ ...FICHE, call: null, callRefusal: 'no_phone' }) });
     buttons(b.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
     await b.tick();

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { Acces, CALL_REQUEST_DAYS, FicheAgent, FicheClient, FicheUnique, Rappels, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
+import { Acces, CALL_REQUEST_DAYS, FicheAgent, inProspectingHours, FicheClient, FicheUnique, Rappels, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -144,6 +144,43 @@ describeWithSqlite('A03 · fiche du client dans l’application', () => {
     await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'reply', channel: 'phone', proof: 'message reçu', givenAt: new Date('2026-10-02T10:00:00Z') });
     const r = await w.fiche.read(w.asPaul, w.lea.id);
     expect(r.ok && r.value.call).toBe('tel:+33600000099');
+  });
+
+  it('[R203] les heures de la prospection, à l’heure de Paris, été comme hiver', () => {
+    const cases: [string, boolean][] = [
+      ['2026-11-10T08:59:00Z', false], // mardi 9 h 59, hiver
+      ['2026-11-10T09:00:00Z', true],
+      ['2026-11-10T11:59:00Z', true],
+      ['2026-11-10T12:00:00Z', false], // 13 h
+      ['2026-11-10T12:59:00Z', false],
+      ['2026-11-10T13:00:00Z', true], // 14 h
+      ['2026-11-10T18:59:00Z', true],
+      ['2026-11-10T19:00:00Z', false], // 20 h
+      ['2026-11-14T10:00:00Z', false], // samedi
+      ['2026-11-15T10:00:00Z', false], // dimanche
+      ['2026-11-11T10:00:00Z', false], // mercredi 11 novembre, férié
+      ['2027-05-17T10:00:00Z', false], // lundi de Pentecôte
+      ['2027-06-08T08:00:00Z', true], // mardi 10 h, été
+      ['2027-06-08T07:59:00Z', false],
+      ['2027-06-08T17:59:00Z', true], // 19 h 59, été
+      ['2027-06-08T18:00:00Z', false],
+    ];
+    for (const [at, expected] of cases) expect(inProspectingHours(new Date(at)), at).toBe(expected);
+  });
+
+  it('[R203] hors des heures, la prospection acceptée ferme l’appel ; une demande de la personne reste ouverte', async () => {
+    const saturday = new Date('2026-11-14T10:00:00.000Z');
+    const read = async (purposes: string[]) => {
+      const w = await world();
+      for (const purpose of purposes) await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose, channel: 'phone', proof: 'accord test', givenAt: new Date('2026-10-02T10:00:00Z') });
+      const r = await new FicheAgent(w.db, w.acces, { now: () => saturday }).read(w.asPaul, w.lea.id);
+      return r.ok ? { call: r.value.call, callRefusal: r.value.callRefusal } : null;
+    };
+    expect(await read(['prospecting'])).toEqual({ call: null, callRefusal: 'outside_hours' });
+    expect(await read(['reply'])).toEqual({ call: 'tel:+33600000001', callRefusal: null });
+    expect(await read(['rappel_demande'])).toEqual({ call: 'tel:+33600000001', callRefusal: null });
+    expect(await read(['prospecting', 'reply'])).toEqual({ call: 'tel:+33600000001', callRefusal: null });
+    expect(await read([])).toEqual({ call: null, callRefusal: 'no_consent' });
   });
 
   it('[R03] un accord daté du futur n’ouvre pas l’appel', async () => {
