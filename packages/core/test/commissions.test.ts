@@ -90,6 +90,7 @@ describeWithSqlite('K01 · cycle de la commission', () => {
           { kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 700_000 },
         ],
         payment: null,
+        signedOn: null,
         cancelled: false,
       },
     ]);

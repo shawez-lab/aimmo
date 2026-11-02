@@ -348,8 +348,9 @@ globalThis.AIMMO_FINANCES = function (t) {
     }
     var pay = c.payment;
     var way = [
-      ['Compromis signé', stepAt(c, 'prevue')],
-      ['Acte signé', stepAt(c, 'due')],
+      /* Les jours signés, et non l'heure où le passage les a vus. */
+      ['Compromis signé', c.compromisOn ? c.compromisOn + 'T12:00:00Z' : null],
+      ['Acte signé', c.signedOn ? c.signedOn + 'T12:00:00Z' : null],
       ['Facture émise', stepAt(c, 'facturee')],
       ['Honoraires encaissés par le réseau', pay ? pay.receivedAt : null],
       ['Versée sur mon compte', pay && pay.paidAt ? pay.paidAt : stepAt(c, 'payee')],

@@ -106,6 +106,8 @@ export interface CommissionView {
   shares: CommissionShare[];
   /** L'encaissement rapporté, l'échéance des 24 h ouvrées et le versement, sans preuve ni montant [R70]. */
   payment: { receivedAt: string; payoutDueAt: string; paidAt: string | null; late: boolean | null } | null;
+  /** Le jour où l'acte a été signé, tel que rapporté ; `null` avant l'acte. */
+  signedOn: string | null;
   /** Vente annulée par un avoir : plus rien ne s'encaisse ni ne se verse [R71]. */
   cancelled: boolean;
 }
@@ -408,6 +410,7 @@ export class Commissions {
       const receipt = await this.db.first<{ received_at: string; payout_due_at: string }>('SELECT received_at, payout_due_at FROM commission_receipts WHERE file_id = ?', [r.file_id]);
       const payout = await this.db.first<{ paid_at: string }>('SELECT paid_at FROM commission_payouts WHERE file_id = ?', [r.file_id]);
       const cancelled = await this.db.first("SELECT 1 FROM invoices WHERE file_id = ? AND kind = 'avoir' AND json_extract(content, '$.reason') = 'vente_annulee'", [r.file_id]);
+      const closing = await this.db.first<{ signed_on: string }>('SELECT signed_on FROM sale_file_closings WHERE file_id = ?', [r.file_id]);
       value.push({
         fileId: r.file_id,
         agentId: whole ? r.agent_id : null,
@@ -425,6 +428,7 @@ export class Commissions {
               late: payout ? Date.parse(payout.paid_at) > Date.parse(receipt.payout_due_at) : null,
             }
           : null,
+        signedOn: closing?.signed_on ?? null,
         cancelled: !!cancelled,
       });
     }

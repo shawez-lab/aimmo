@@ -99,6 +99,8 @@ describeWithSqlite('K03 · encaissement et reversement sous 24 h ouvrées', () =
     const own = await t.c.list(t.agent);
     expect(own.ok && own.value[0]!.payment).toMatchObject({ payoutDueAt: '2027-06-21T16:00:00.000Z', paidAt: null });
     expect(own.ok && own.value[0]!.shares.map((s) => s.kind)).toEqual(['agent']);
+    // Les jours signés, et non l'heure où le passage les a vus.
+    expect(own.ok && [own.value[0]!.compromisOn, own.value[0]!.signedOn]).toEqual(['2027-03-10', '2027-06-10']);
     const other = await t.c.list(t.sam);
     expect(other.ok && other.value).toEqual([]);
   });

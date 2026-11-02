@@ -542,7 +542,7 @@ describe('K13 · le chemin de chaque euro (Jamais vu)', () => {
   // Du point de vue d'un agent : ses seules parts, comme les rend le serveur [R68].
   const own = [{ kind: 'agent', beneficiaryId: 'alex', reason: null, amountCents: 500000 }];
   const steps = (...list: string[]) => list.map((status, i) => ({ status, at: `2026-1${i % 2}-0${i + 1}T10:00:00.000Z` }));
-  const view = (fileId: string, extra: object) => ({ fileId, agentId: 'alex', compromisOn: '2026-09-01', feeCents: 1000000, feeCharge: 'vendeur', status: 'prevue', steps: steps('prevue'), shares: own, payment: null, cancelled: false, ...extra });
+  const view = (fileId: string, extra: object) => ({ fileId, agentId: 'alex', compromisOn: '2026-09-01', feeCents: 1000000, feeCharge: 'vendeur', status: 'prevue', steps: steps('prevue'), shares: own, payment: null, signedOn: null, cancelled: false, ...extra });
   const receipt = { receivedAt: '2026-10-28T09:00:00.000Z', payoutDueAt: '2026-10-29T09:00:00.000Z', paidAt: null, late: null };
 
   async function agent(data: unknown[] | Answer) {
@@ -572,7 +572,18 @@ describe('K13 · le chemin de chaque euro (Jamais vu)', () => {
     const way = t.body().all().filter((e) => e.tagName === 'ol')[0]!.children;
     expect(way.map((e) => e.textContent.split(' : ')[0])).toEqual(['Compromis signé', 'Acte signé', 'Facture émise', 'Honoraires encaissés par le réseau', 'Versée sur mon compte']);
     expect(way[3]!.textContent).toContain(' : le ');
+    // Les jours signés, pas l'heure où le passage les a vus.
+    expect(way[0]!.textContent).toContain('01/09/2026');
+    expect(way[1]!.textContent).toContain('pas encore');
+    expect(t.texts()).not.toContain('Acte signé : le');
     expect(way[4]!.textContent).toContain('pas encore');
+  });
+
+  it('le jour de l’acte vient de l’acte rapporté', async () => {
+    const t = await agent([view('d-1', { status: 'due', steps: steps('prevue', 'due'), signedOn: '2026-10-15' })]);
+    await t.voir();
+    const way = t.body().all().filter((e) => e.tagName === 'ol')[0]!.children;
+    expect(way[1]!.textContent).toContain('15/10/2026');
   });
 
   it('[R70] l’heure limite vient du serveur : avant elle, promesse ; après, dépassement dit', async () => {
