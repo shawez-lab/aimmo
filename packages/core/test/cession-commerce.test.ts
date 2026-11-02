@@ -191,3 +191,22 @@ describeWithSqlite('CE07 · étapes de la cession d’un fonds', () => {
 it('aucune avance de tâche hors des bornes', () => {
   expect(() => new CessionCommerce({} as SqlDatabase, {} as never, {} as never, { notice: { preemption: -1 } })).toThrow();
 });
+
+describeWithSqlite('CE12 · la signature suit la cession déclarée prête', () => {
+  it('[R116] pas de signature avant la cession déclarée prête ; une signature rangée se corrige même si une étape manque ensuite', async () => {
+    const t = await setup();
+    await t.outside();
+    const a = await t.shop({ employees: 0 });
+    expect(await t.date(a.fileId, 'cession_signee', '2027-01-15')).toMatchObject({ ok: false, rule: 'R116', code: 'etapes_bloquantes', missing: ['cession_prevue', 'sequestre'] });
+    await t.date(a.fileId, 'cession_prevue', '2027-10-27');
+    await t.cessions.setEscrow(t.acces, t.alex, a.fileId, { kind: 'notaire', name: 'Office notarial inventé' });
+    expect(await t.date(a.fileId, 'cession_signee', '2027-01-15')).toMatchObject({ ok: false, rule: 'R116', code: 'cession_non_declaree' });
+    expect((await t.journal.bySubject(`property:${a.property.id}`)).filter((e) => e.type === 'commerces.cession.pas_prete')).toHaveLength(2);
+    await t.cessions.declareReady(t.acces, t.alex, a.fileId);
+    expect(await t.date(a.fileId, 'cession_signee', '2027-01-15')).toMatchObject({ ok: true });
+    // La commune rangée ensuite dans un périmètre : la cession n'est plus prête ; la signature qui a eu lieu se corrige quand même.
+    await t.cessions.recordCommune(t.direction, { postalCode: '21000', city: 'Dijon', inPerimeter: true, source: 'Liste inventée corrigée', sourceDate: '2026-07-30' });
+    expect(await t.cessions.read(t.acces, t.alex, a.fileId)).toMatchObject({ ok: true, value: { ready: false, missing: ['preemption'] } });
+    expect(await t.date(a.fileId, 'cession_signee', '2027-01-16')).toMatchObject({ ok: true, value: { dates: { cession_signee: { day: '2027-01-16', version: 2 } } } });
+  });
+});

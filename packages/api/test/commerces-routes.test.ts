@@ -212,6 +212,20 @@ describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () 
     expect(events).toHaveLength(6);
   });
 
+  it('[R16] [R118] la lecture de l’acquéreur : l’agent du bien, jamais un autre agent ni la conformité, et le refus au journal', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    const id = await t.shop();
+    const file = await t.ok(t.alex, 'POST', `/commerces/${id}/cession`);
+    expect(await t.ok(t.alex, 'GET', `/commerces/cessions/${file.fileId}/acquereur`)).toBeNull();
+    expect((await t.call(t.bea, 'GET', `/commerces/cessions/${file.fileId}/acquereur`)).status).toBe(403);
+    const refused = await t.call(t.compliance, 'GET', `/commerces/cessions/${file.fileId}/acquereur`);
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    const logged = (await t.journal.all()).filter((e) => e.type === 'acces.refuse');
+    expect(logged.some((e) => (e.data as { kind?: string }).kind === 'commerces.cession.acquereur_lu')).toBe(true);
+  });
+
   it('[R116] [R117] les délais sont justes sur 3 dossiers de cession, par les routes', async () => {
     const t = await setup();
     await t.ok(t.dir, 'POST', '/commerces/perimetres', { postalCode: '21000', city: 'Dijon', inPerimeter: false, source: 'Liste inventée des périmètres', sourceDate: '2026-06-30' });
@@ -241,6 +255,15 @@ describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () 
     // Après la cession : 27 octobre + 15 jours = 11 novembre, férié, avancé au 10 ; oppositions : 4 novembre + 10 = dimanche 14, reporté au 15.
     const id = await t.shop();
     const file = await t.ok(t.alex, 'POST', `/commerces/${id}/cession`);
+    await t.ok(t.alex, 'POST', `/commerces/${id}/fiche`, { employees: 0 });
+    await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind: 'cession_prevue', day: '2027-10-27', proofRef: proof() });
+    await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/sequestre`, { kind: 'notaire', name: 'Office notarial inventé' });
+    const blocked = await t.call(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind: 'cession_signee', day: '2027-01-15', proofRef: proof() });
+    expect(blocked.body).toMatchObject({ ok: false, rule: 'R116', code: 'etapes_bloquantes', missing: ['autorisations'] });
+    await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind: 'autorisations_verifiees', day: '2027-01-15', proofRef: proof() });
+    const undeclared = await t.call(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind: 'cession_signee', day: '2027-01-15', proofRef: proof() });
+    expect(undeclared.body).toMatchObject({ ok: false, rule: 'R116', code: 'cession_non_declaree' });
+    await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/prete`);
     t.setDay('2027-11-16');
     for (const [kind, day] of [['cession_signee', '2027-10-27'], ['publication_jal', '2027-11-02'], ['publication_bodacc', '2027-11-04']]) {
       await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind, day, proofRef: proof() });
