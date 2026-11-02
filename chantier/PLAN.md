@@ -827,7 +827,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : le parcours de test passe ; le temps passé par le système est mesuré et sous la cible ; la marche à suivre est écrite dans `docs/MESURE.md`.
 
 ### D10 · Conditions d'un mandat à une date passée
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02, voie 2), lecture prudente : le jour compte à Paris, un avenant du jour du compromis compte ; un retrait ou une annulation au registre, même notés après le compromis, refusent encore la commission, la direction tranche (N06) ; les signatures futures étant refusées, rien ne change à la date d'aujourd'hui. Relecture forte : 2 P1 corrigés (demande écrite non datée, rallongement sans test de bout en bout) ; Codex à sa limite, fusion sans lui (#256).
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : D05, D07, N06
 - Cahier : M06, « Rétractation » ; M10, commission à l'acte ; reste écrit de N06.
@@ -1177,7 +1178,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 
 ### N06 · Acte signé : vente close, commission due
 - Statut : fait (2026-10-28)
-- Reste : un avenant de durée signé après le compromis est lu par `mandateTerms` (M06) sans filtre de date : refus prudent de la commission, à corriger dans M06 ; relecture de Codex de la dernière correction sans réponse 30 min, fusion sans elle (#102).
+- Reste : l'avenant de durée signé après le compromis, réglé par D10 (#256) ; relecture de Codex de la dernière correction sans réponse 30 min, fusion sans elle (#102).
 - Décidé (2026-10-28) : le mandat qui compte est celui en vigueur au compromis, signé au plus tard ce jour-là et hors délai de rétractation (sauf demande écrite) ; sinon pas de commission, la direction tranche ; DPE d'avant juillet 2021 périmé depuis 2025 ; plomb compté un an faute de résultat connu ; écritures reprenables après une coupure
 - Qui : Claude · Relecture : forte · Dépend de : N02
 - Cahier : M10, « Acte signé » ; M13 et M11 pour la suite.
@@ -1205,12 +1206,21 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 ### N09 · Branchement de M10 dans le socle
 - Statut : fait (2026-10-28)
 - Décidé (2026-10-28) : routes de M10 fermées (503) sans le compartiment R2 `PIECES` (H25), passage `dossiers.passage` seulement avec lui ; `dossiersJob` fait déjà les relances des pièces, `pieceReminderJob` n'est pas branché à part ; IBAN et RIB masqués à la réception (corps, objet, contenu illisible texte par texte) par un parcours linéaire borné par la clé modulo 97 ; au contrôle central, R62 refuse pour tout texte à un client les coordonnées bancaires et les demandes de payer qui nomment ce qui se paie, la liste complète restant aux textes du code de M10.
-- Reste : les messages reçus rangés avant N09 gardent leur IBAN en clair (mode essai) ; les échos des réponses de l'agent par Meta ne sont pas masqués ; relecture de Codex de la dernière correction restée en cours, fusion sans elle (#111).
+- Reste : les messages reçus rangés avant N09 gardent leur IBAN en clair (mode essai) ; les échos des réponses de l'agent par Meta, réglés par N10 ; relecture de Codex de la dernière correction restée en cours, fusion sans elle (#111).
 - Décidé (2026-10-28) : `packages/api/src/dossiers.ts` expose `dossierRoutes()`, `syncDossiers`, `dossiersJob` (tous les jours de 9 h à 19 h, relances jamais le dimanche) et `R2PieceStore` ; il importe M10 par un chemin relatif, à remplacer par `dossiers` de `@aimmo/core` ; la tâche `pieceReminderJob` du cœur n'est plus à lancer, `dossiersJob` la contient ; le bucket R2 des pièces est à déclarer dans le Worker ; tant que `scan` n'est pas branché à la réception, le filet du bouclier ne relit que 48 h de messages
 - Qui : Claude, voie 1 (fichiers du socle : `packages/core/src/index.ts`, `packages/api/src/app.ts`, `packages/api/src/planificateur.ts`, `packages/api/src/worker.ts`) · Relecture : forte · Dépend de : N08
 - Cahier : M10.
 - Objectif : exporter `dossiers` depuis `@aimmo/core` ; ajouter les routes de M10 à `app.ts` ; lancer `syncDossiers` chaque jour depuis le planificateur, une fois par créneau ; brancher `BouclierFonds.scan` (N05) à la réception des messages, dès qu'un message est rattaché à sa fiche, et masquer l'IBAN dans le message rangé [R15] ; appliquer `fundsInOutgoing` dans le contrôle central à tout texte destiné à un client [R62] ; lancer `dossiersJob` (N08), qui contient les relances (N03).
 - Critères : les routes répondent derrière la clé d'API [R16] ; le passage tourne une fois par jour ; rien ne part réellement tant que le plan n'a pas mis d'envoi en service.
+- Attend : rien.
+
+### N10 · Réponses de l'agent par Meta : IBAN masqué
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : N09
+- Cahier : M10, règle « AIMMO ne reçoit jamais de fonds » ; R15.
+- Objectif : reste écrit de N09. La réponse qu'un agent écrit dans l'application du canal revient en écho et se range telle quelle : un IBAN ou un RIB y reste en clair, dans la fiche et dans l'écho gardé pour la reprise.
+- Critères : l'IBAN d'un écho n'est rangé en clair ni dans `messages`, ni dans `pending_human_replies`, écho appliqué tout de suite ou gardé pour la reprise (tests [R15]) ; le reste du texte ne change pas ; un écho de notre propre message reste reconnu [R21].
 - Attend : rien.
 
 **M11 · Après la vente, juin 2027.**
