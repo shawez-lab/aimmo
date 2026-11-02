@@ -35,6 +35,22 @@ export interface FileDepositInput {
 
 export type FileDepositResult = { ok: true; value: { ref: string; sha256: string; size: number } } | { ok: false; rule: string | null; code: string };
 
+/** Les contrôles d'un fichier reçu, communs aux dépôts : type admis et confirmé par les premiers octets, poids, empreinte recalculée. */
+export async function checkDepositedFile(input: Pick<FileDepositInput, 'contentType' | 'sha256' | 'declaredSize' | 'read'>): Promise<{ ok: true; type: string; ext: string; bytes: Uint8Array; sha: string } | { ok: false; code: string }> {
+  const type = typeof input.contentType === 'string' ? input.contentType.split(';')[0]!.trim().toLowerCase() : '';
+  const ext = Object.prototype.hasOwnProperty.call(FILE_DEPOSIT_TYPES, type) ? FILE_DEPOSIT_TYPES[type] : undefined;
+  if (!ext) return { ok: false, code: 'type_refuse' };
+  if (typeof input.sha256 !== 'string' || !SHA.test(input.sha256)) return { ok: false, code: 'empreinte_absente' };
+  if (input.declaredSize !== null && (!Number.isSafeInteger(input.declaredSize) || input.declaredSize > FILE_DEPOSIT_MAX_BYTES)) return { ok: false, code: 'trop_lourd' };
+  const bytes = await input.read(FILE_DEPOSIT_MAX_BYTES);
+  if (bytes === null) return { ok: false, code: 'trop_lourd' };
+  if (bytes.length === 0) return { ok: false, code: 'fichier_vide' };
+  if (!matchesType(type, bytes)) return { ok: false, code: 'type_refuse' };
+  const sha = await sha256Hex(bytes);
+  if (sha !== input.sha256) return { ok: false, code: 'empreinte_differente' };
+  return { ok: true, type, ext, bytes, sha };
+}
+
 export class DepotsDossier {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -64,17 +80,9 @@ export class DepotsDossier {
       await appendEvent(this.journal, { type: 'dossier.depot.refuse', actor, subject, data: { code } }, this.now);
       return { ok: false, rule: null, code };
     };
-    const type = typeof input.contentType === 'string' ? input.contentType.split(';')[0]!.trim().toLowerCase() : '';
-    const ext = Object.prototype.hasOwnProperty.call(FILE_DEPOSIT_TYPES, type) ? FILE_DEPOSIT_TYPES[type] : undefined;
-    if (!ext) return bad('type_refuse');
-    if (typeof input.sha256 !== 'string' || !SHA.test(input.sha256)) return bad('empreinte_absente');
-    if (input.declaredSize !== null && (!Number.isSafeInteger(input.declaredSize) || input.declaredSize > FILE_DEPOSIT_MAX_BYTES)) return bad('trop_lourd');
-    const bytes = await input.read(FILE_DEPOSIT_MAX_BYTES);
-    if (bytes === null) return bad('trop_lourd');
-    if (bytes.length === 0) return bad('fichier_vide');
-    if (!matchesType(type, bytes)) return bad('type_refuse');
-    const sha = await sha256Hex(bytes);
-    if (sha !== input.sha256) return bad('empreinte_differente');
+    const file = await checkDepositedFile(input);
+    if (!file.ok) return bad(file.code);
+    const { type, ext, bytes, sha } = file;
     const id = this.newId();
     if (!UUID.test(id)) throw new Error('identifiant de fichier invalide');
     const ref = input.kind === 'preuve' ? `preuves/${id}.${ext}` : `dossiers/${fileId}/${id}.${ext}`;
