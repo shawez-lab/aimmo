@@ -283,6 +283,35 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect((await t.call(direction, 'GET', '/attirer/prix/zones')).body.data).toEqual([]);
   });
 
+  it('[R152] [R153] AT16 : la lecture des agents dit comme la page ce qui manque ; un site hors service reste lisible et se rétablit', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    expect((await t.call(camille, 'GET', '/attirer/agents')).status).toBe(403);
+    const other = (await t.call({ ...direction, networkId: 'net-2' }, 'GET', '/attirer/agents')).body.data as { holder: unknown; cardNumber: unknown; agents: { agentId: string }[] };
+    expect(other).toMatchObject({ holder: null, cardNumber: null });
+    expect(other.agents.map((a) => a.agentId)).not.toContain('ag-1');
+    const read = async () => (await t.call(direction, 'GET', '/attirer/agents')).body.data as { holder: string; agents: { agentId: string; missing: string | null; rsacRegistry: string | null; site: { baseUrl: string; active: boolean } | null }[] };
+    const first = await read();
+    expect(first.holder).toBe('Société Exemple');
+    // Ce que dit la liste est ce que dit la page de chaque agent, sur les mêmes données.
+    for (const a of first.agents) {
+      const page = (await t.call(direction, 'GET', `/attirer/agents/${a.agentId}/page`)).body.data as { publishable: boolean; missing: string | null };
+      expect(a.missing).toBe(page.missing);
+    }
+    const cam = first.agents.find((a) => a.agentId === 'ag-1')!;
+    expect(cam).toMatchObject({ missing: null, rsacRegistry: 'Dijon', site: { baseUrl: CAMILLE, active: true } });
+    expect(first.agents.find((a) => a.agentId === 'ag-2')).toMatchObject({ missing: 'statut_manquant', site: null });
+    // Hors service : le site disparaît des sites en service, reste lisible ici, et se rétablit avec le même corps.
+    expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'agent', agentId: 'ag-1', baseUrl: CAMILLE, active: false })).status).toBe(200);
+    expect(((await read()).agents.find((a) => a.agentId === 'ag-1'))!.site).toEqual({ baseUrl: CAMILLE, active: false });
+    expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'agent', agentId: 'ag-1', baseUrl: CAMILLE, active: true })).status).toBe(200);
+    expect(((await read()).agents.find((a) => a.agentId === 'ag-1'))!.site).toEqual({ baseUrl: CAMILLE, active: true });
+    // Un agent parti : la route le dit sans le code qui ferait passer la clé de la direction pour refusée.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = 'ag-1'");
+    expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'agent', agentId: 'ag-1', baseUrl: CAMILLE, active: true })).body).toMatchObject({ code: 'agent_parti' });
+    expect((await read()).agents.map((a) => a.agentId)).not.toContain('ag-1');
+  });
+
   it('[R150] AT15 : une zone retirée quitte le site aussitôt, sans recalcul, même la dernière commune', async () => {
     const t = await setup();
     expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'reseau', baseUrl: NET, active: true })).status).toBe(200);

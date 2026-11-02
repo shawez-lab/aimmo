@@ -160,6 +160,36 @@ export class PageAgent {
     return { ok: true };
   }
 
+  /**
+   * Les agents en activité et leurs mentions, pour la direction : en quelques lectures, quel que soit le nombre d'agents.
+   * `missing` dit ce qui manque, dans le même ordre que `inputFor` [R152].
+   */
+  async network(viewer: Viewer): Promise<
+    | { ok: true; value: { holder: string | null; cardNumber: string | null; agents: { agentId: string; name: string; rsacNumber: string | null; rsacRegistry: string | null; missing: MissingMention | null }[] } }
+    | Refusal
+  > {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
+    const n = viewer.networkId;
+    const agents = await this.db.all<{ id: string; first_name: string; last_name: string }>("SELECT id, first_name, last_name FROM agents WHERE network_id = ? AND status = 'active' ORDER BY last_name, first_name, id", [n]);
+    const legal = new Map<string, { rsac_number: string; rsac_registry: string }>();
+    for (const m of await this.db.all<{ agent_id: string; rsac_number: string; rsac_registry: string }>('SELECT agent_id, rsac_number, rsac_registry FROM agent_legal_mentions WHERE network_id = ? ORDER BY set_at, rowid', [n])) legal.set(m.agent_id, m);
+    const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [n]);
+    const holder = await this.db.first<{ holder_name: string }>('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [n]);
+    const cardNumber = card && card.card_number.trim() !== '' ? card.card_number : null;
+    return {
+      ok: true,
+      value: {
+        holder: holder?.holder_name ?? null,
+        cardNumber,
+        agents: agents.map((a) => {
+          const m = legal.get(a.id);
+          const missing: MissingMention | null = !m ? 'statut_manquant' : !cardNumber ? 'carte_manquante' : !holder ? 'titulaire_manquant' : null;
+          return { agentId: a.id, name: `${a.first_name} ${a.last_name}`, rsacNumber: m?.rsac_number ?? null, rsacRegistry: m?.rsac_registry ?? null, missing };
+        }),
+      },
+    };
+  }
+
   /** Le titulaire de la carte professionnelle du réseau (la société, H09), réglé par la direction. */
   async setCardHolder(viewer: Viewer, holder: unknown): Promise<{ ok: true } | Refusal> {
     if (viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'role');

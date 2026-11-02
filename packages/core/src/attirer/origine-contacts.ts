@@ -82,7 +82,7 @@ export interface OriginMeasure {
   meetsTarget: boolean;
   byKind: { kind: OriginKind; contacts: number }[];
   /** Les contenus précis qui ont amené des contacts, du plus au moins fourni. */
-  byContent: { contentId: string; kind: ContentKind; ref: string; contacts: number }[];
+  byContent: { contentId: string; kind: ContentKind; ref: string; title: string; contacts: number }[];
 }
 
 export type MeasureResult = { ok: true; measure: OriginMeasure } | { ok: false; rule: 'R16' | null; code: string };
@@ -188,6 +188,16 @@ export class OrigineContacts {
       if (row) return { ok: true, contentId: row.id };
     }
     throw new Error('Code de contenu introuvable après trois essais.');
+  }
+
+  /** Ce que la direction lit : la référence d'un bien, le nom d'un agent, jamais leur identifiant. */
+  private async contentTitle(networkId: string, kind: ContentKind, ref: string): Promise<string> {
+    if (kind === 'bien') return (await this.db.first<{ reference: string }>('SELECT reference FROM properties WHERE id = ? AND network_id = ?', [ref, networkId]))?.reference ?? 'retiré';
+    if (kind === 'agent') {
+      const a = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ? AND network_id = ?', [ref, networkId]);
+      return a ? `${a.first_name} ${a.last_name}` : 'parti';
+    }
+    return ref;
   }
 
   private validRef(kind: ContentKind, ref: string): boolean {
@@ -370,7 +380,7 @@ export class OrigineContacts {
     const byContent: OriginMeasure['byContent'] = [];
     for (const [contentId, n] of counts) {
       const c = await this.db.first<{ kind: ContentKind; ref: string }>('SELECT kind, ref FROM public_contents WHERE id = ? AND network_id = ?', [contentId, viewer.networkId]);
-      if (c) byContent.push({ contentId, kind: c.kind, ref: c.ref, contacts: n });
+      if (c) byContent.push({ contentId, kind: c.kind, ref: c.ref, title: await this.contentTitle(viewer.networkId, c.kind, c.ref), contacts: n });
     }
     byContent.sort((a, b) => b.contacts - a.contacts || a.kind.localeCompare(b.kind) || a.ref.localeCompare(b.ref));
     const kinds = new Map<OriginKind, number>();

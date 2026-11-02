@@ -310,6 +310,9 @@ describeWithSqlite('origine des contacts', () => {
       { kind: 'simulateur', contacts: 2 },
     ]);
     expect(r.measure.byContent[0]).toMatchObject({ kind: 'bien', ref: 'bien-1', contacts: 40 });
+    // La direction lit la référence du bien, jamais son identifiant.
+    expect(r.measure.byContent[0]!.title).not.toBe('bien-1');
+    expect(r.measure.byContent[0]!.title).not.toBe('');
     // Le même compte, refait directement dans la base.
     const direct = await db.first<{ n: number }>("SELECT count(*) AS n FROM contact_origins o JOIN inbound_messages m ON m.id = o.inbound_id WHERE m.network_id = 'net-1' AND o.content_id IS NOT NULL AND m.received_at >= '2026-09-30T22:00:00.000Z'");
     expect(Number(direct!.n)).toBe(98);

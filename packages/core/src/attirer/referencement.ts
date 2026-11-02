@@ -174,7 +174,7 @@ export class Referencement {
       if (typeof agentId !== 'string' || !ID.test(agentId)) return refuse(null, 'bad_agent');
       const a = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [agentId, viewer.networkId]);
       if (!a) return refuse('R16', 'unknown_agent');
-      if (active && a.status !== 'active') return refuse('R16', 'agent_inactive');
+      if (active && a.status !== 'active') return refuse('R16', 'agent_parti');
       agent = agentId;
     } else if (agentId !== undefined && agentId !== null) return refuse(null, 'bad_agent');
     if (active) {
@@ -206,6 +206,17 @@ export class Referencement {
         ORDER BY s.network_id, s.kind DESC, s.agent_id`,
     );
     return rows.filter((r) => Number(r.active) === 1).map((r) => ({ siteId: r.id, networkId: r.network_id, kind: r.kind, agentId: r.agent_id, baseUrl: r.base_url }));
+  }
+
+  /** Le dernier réglage du site de chaque agent du réseau, en service ou non : pour le remettre en service [R16]. */
+  async agentSiteSettings(networkId: string): Promise<{ agentId: string; baseUrl: string; active: boolean }[]> {
+    const rows = await this.db.all<{ agent_id: string; base_url: string; active: number }>(
+      `SELECT s.agent_id, s.base_url, s.active FROM public_sites s
+        WHERE s.network_id = ? AND s.kind = 'agent'
+          AND s.rowid = (SELECT t.rowid FROM public_sites t WHERE t.network_id = s.network_id AND t.kind = s.kind AND t.agent_id IS s.agent_id ORDER BY t.set_at DESC, t.rowid DESC LIMIT 1)`,
+      [networkId],
+    );
+    return rows.map((r) => ({ agentId: r.agent_id, baseUrl: r.base_url, active: Number(r.active) === 1 }));
   }
 
   /**

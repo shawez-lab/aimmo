@@ -6,7 +6,7 @@ import type { FACT_KINDS, FACT_UNITS, NeighbourhoodProblem } from '../../core/sr
  * sa section de page, son chargeur, et son script servi à part (`/app/attirer.js`), chargé à la première ouverture pour
  * tenir le budget de l'application [R201].
  *
- * Cinq parties : les communes et quartiers qui portent les prix (AT15), la part des contacts dont l'origine est connue, mois par mois (AT05), les versions des prix publics
+ * Six parties : les agents, leurs mentions et leur site (AT16), les communes et quartiers qui portent les prix (AT15), la part des contacts dont l'origine est connue, mois par mois (AT05), les versions des prix publics
  * et leur recalcul (AT01), les pages de quartier, du fait sourcé au texte validé (AT07, AT13), les sites en service et
  * leur plan (AT04). L'écran ne lit et n'écrit que par `/v1/attirer`
  * [R16] ; il ne calcule ni ne trie aucun chiffre, il montre ceux du serveur dans l'ordre reçu. Tout texte reçu est posé
@@ -20,6 +20,13 @@ const REFUSALS: Record<string, string> = {
   bad_url: 'Saisissez l’adresse complète du site, sans chemin, par exemple https://www.exemple.fr.',
   url_taken: 'Cette adresse sert déjà un autre site : une seule page de référence par bien.',
   bad_month: 'Choisissez un mois dans la liste.',
+  rsac: 'Le numéro d’immatriculation n’est pas lisible : neuf chiffres, avec RSAC devant ou non.',
+  greffe: 'Saisissez le greffe, 80 caractères au plus.',
+  titulaire: 'Saisissez le nom du titulaire de la carte, 120 caractères au plus.',
+  agent_parti: 'Cet agent n’est plus en activité : la liste a changé.',
+  agent_inconnu: 'Cet agent n’est pas dans le réseau.',
+  bad_agent: 'Cet agent n’est pas dans le réseau.',
+  unknown_agent: 'Cet agent n’est pas dans le réseau.',
   slug: 'Ce nom ne donne pas d’adresse de page : saisissez-le en lettres latines.',
   nom: 'Saisissez le nom, 120 caractères au plus.',
   source: 'Saisissez la source du contour.',
@@ -87,6 +94,13 @@ const PROBLEM_LABELS: Record<NeighbourhoodProblem['code'], string> = {
 };
 /** Ce que la direction peut faire préparer : les seuls couples admis par le métier. */
 const TEXT_CHOICES = { 'page/quartier': 'La page du quartier', 'article/prix': 'L’article sur les prix', 'article/equipements': 'L’article sur les équipements' };
+
+/** Pourquoi la page d'un agent n'est pas publiée [R152]. */
+const MISSING_LABELS: Record<string, string> = {
+  statut_manquant: 'Page non publiée : son immatriculation manque.',
+  carte_manquante: 'Page non publiée : le numéro de carte professionnelle du réseau manque.',
+  titulaire_manquant: 'Page non publiée : le titulaire de la carte manque.',
+};
 
 const SITEMAP_LABELS: Record<string, string> = { bien: 'Bien', agent: 'Agent', prix: 'Prix' };
 
@@ -158,6 +172,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
   var TEXT_ORIGINS = ${JSON.stringify(ORIGIN_TEXT_LABELS)};
   var PROBLEMS = ${JSON.stringify(PROBLEM_LABELS)};
   var TEXT_CHOICES = ${JSON.stringify(TEXT_CHOICES)};
+  var MISSING = ${JSON.stringify(MISSING_LABELS)};
   var FRANCE = ${JSON.stringify(FRANCE_BOXES)};
   var MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
   var chosenMonth = null, busy = false, inside = false;
@@ -207,7 +222,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     chosenMonth = month;
     show('attirer');
     state('Chargement…');
-    return Promise.all([send('/v1/attirer/prix/versions', 'GET'), send('/v1/attirer/sites', 'GET'), send('/v1/attirer/origine/' + month, 'GET'), send('/v1/attirer/quartiers', 'GET'), send('/v1/attirer/prix/zones', 'GET')]).then(function (all) {
+    return Promise.all([send('/v1/attirer/prix/versions', 'GET'), send('/v1/attirer/sites', 'GET'), send('/v1/attirer/origine/' + month, 'GET'), send('/v1/attirer/quartiers', 'GET'), send('/v1/attirer/prix/zones', 'GET'), send('/v1/attirer/agents', 'GET')]).then(function (all) {
       if (mine !== t.session() || all.some(function (r) { return r.gone; })) return false;
       if (all.every(function (r) { return r.offline; })) { state('Pas de réseau. Réessayez dans un moment.'); return false; }
       var body = $('attirer-corps');
@@ -216,6 +231,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       body.appendChild(renderQuarters(all[3]));
       body.appendChild(renderZones(all[4]));
       body.appendChild(renderSites(all[1]));
+      body.appendChild(renderAgents(all[5]));
       state(message || '');
       return true;
     });
@@ -244,7 +260,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     if ((m.byContent || []).length) {
       box.appendChild(el('h4', 'Les contenus qui ont amené des contacts'));
       var contents = el('ul', null, 'liste');
-      m.byContent.forEach(function (c) { contents.appendChild(el('li', (ORIGINS[c.kind] || 'Contenu') + ' ' + c.ref + ' : ' + c.contacts)); });
+      m.byContent.forEach(function (c) { contents.appendChild(el('li', (ORIGINS[c.kind] || 'Contenu') + ' ' + c.title + ' : ' + c.contacts)); });
       box.appendChild(contents);
     }
     return box;
@@ -397,6 +413,61 @@ globalThis.AIMMO_ATTIRER = function (t) {
     box.appendChild(ul);
     zoneForm(box, 'attirer-zc', 'Ajouter une commune', true, communes);
     if (communes.length) zoneForm(box, 'attirer-zq', 'Ajouter un quartier', false, communes);
+    return box;
+  }
+
+  /* AT16 · une écriture sur les agents : un geste à la fois, puis l'écran relu. */
+  function agentWrite(path, payload, okText, failText) {
+    return once(function () {
+      state('Envoi…');
+      return send(path, 'POST', payload).then(function (x) {
+        if (x.gone) return false;
+        if (!x.ok) { state(refusal(x, failText)); return false; }
+        return open(okText);
+      });
+    });
+  }
+  function agentLine(a, i) {
+    var li = el('li');
+    li.appendChild(el('strong', a.name));
+    li.appendChild(el('p', a.missing ? (MISSING[a.missing] || 'Page non publiée.') : 'Page publiée.', a.missing ? 'etat' : 'doux'));
+    var marks = details(li, 'Immatriculation');
+    var rsac = field(marks, 'attirer-a-rsac-' + i, 'Numéro RSAC');
+    rsac.value = a.rsacNumber || '';
+    var registry = field(marks, 'attirer-a-greffe-' + i, 'Greffe');
+    registry.value = a.rsacRegistry || '';
+    marks.appendChild(button('Enregistrer l’immatriculation', function () {
+      agentWrite('/v1/attirer/agents/' + encodeURIComponent(a.agentId) + '/mentions', { rsacNumber: rsac.value, rsacRegistry: registry.value }, 'Immatriculation enregistrée.', 'L’immatriculation n’est pas enregistrée.');
+    }));
+    var site = a.site;
+    li.appendChild(el('p', !site ? 'Pas de site : ses biens sont sur le site du réseau.' : site.active ? 'Site en service : ' + site.baseUrl : 'Site hors service : ' + site.baseUrl, 'doux'));
+    function setSite(baseUrl, active, okText) {
+      agentWrite('/v1/attirer/sites', { kind: 'agent', agentId: a.agentId, baseUrl: baseUrl, active: active }, okText, 'Le site n’est pas enregistré.');
+    }
+    if (site && site.active) li.appendChild(confirmed('Mettre hors service', SITE_WARNING, function () { setSite(site.baseUrl, false, 'Site mis hors service.'); }));
+    if (site && !site.active) li.appendChild(button('Remettre en service', function () { setSite(site.baseUrl, true, 'Site remis en service.'); }));
+    var form = details(li, site ? 'Changer l’adresse du site' : 'Ajouter un site');
+    var url = field(form, 'attirer-a-site-' + i, 'Adresse du site');
+    url.setAttribute('type', 'url');
+    url.setAttribute('inputmode', 'url');
+    function putOn() { setSite(url.value.trim(), true, 'Site mis en service.'); }
+    form.appendChild(site && site.active ? confirmed('Changer l’adresse', SITE_WARNING, putOn) : button('Mettre en service', putOn));
+    return li;
+  }
+  function renderAgents(res) {
+    var box = part('Agents, mentions et sites');
+    var data = res.ok ? res.body.data : null;
+    if (!data) return missing(box, res);
+    var holder = field(box, 'attirer-titulaire', 'Titulaire de la carte professionnelle');
+    holder.value = data.holder || '';
+    box.appendChild(button('Enregistrer le titulaire', function () {
+      agentWrite('/v1/attirer/titulaire', { holder: holder.value }, 'Titulaire enregistré.', 'Le titulaire n’est pas enregistré.');
+    }));
+    box.appendChild(el('p', data.cardNumber ? 'Carte professionnelle : ' + data.cardNumber : 'Numéro de carte professionnelle du réseau : pas encore réglé.', 'doux'));
+    if (!data.agents.length) box.appendChild(el('p', 'Aucun agent en activité.', 'doux'));
+    var ul = el('ul', null, 'liste');
+    data.agents.forEach(function (a, i) { ul.appendChild(agentLine(a, i)); });
+    box.appendChild(ul);
     return box;
   }
 
