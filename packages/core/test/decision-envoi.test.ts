@@ -160,7 +160,11 @@ describe('S05 · décision d’envoi', () => {
   });
 
   it('[R02] une exclusion levée, ou notée plus tard, ne bloque pas', () => {
-    const lifted = facts({ exclusions: [{ reason: 'sold', channel: null, noted_at: LONG_AGO, lifted_at: '2026-06-01T00:00:00.000Z' }] });
+    // L'accord est redonné après la levée : un accord plus ancien qu'elle ne compterait plus (AC05).
+    const lifted = facts({
+      exclusions: [{ reason: 'sold', channel: null, noted_at: LONG_AGO, lifted_at: '2026-06-01T00:00:00.000Z' }],
+      consents: facts().consents.map((c) => ({ ...c, given_at: '2026-06-02T00:00:00.000Z' })),
+    });
     expect(decideSend(req(TUE_1000), lifted).allowed).toBe(true);
     const later = facts({ exclusions: [{ reason: 'sold', channel: null, noted_at: '2026-12-01T00:00:00.000Z', lifted_at: null }] });
     expect(decideSend(req(TUE_1000), later).allowed).toBe(true);
@@ -187,6 +191,38 @@ describe('S05 · décision d’envoi', () => {
     for (const channel of ['phone', 'sms', 'whatsapp'] as Channel[]) {
       expect(decideSend(req(TUE_1000, { channel, kind: 'prospecting' }), facts({ consents: [] })).rule, channel).toBe('R03');
     }
+  });
+
+  describe('un accord plus ancien que le refus de la personne ne compte plus', () => {
+    const consent = (given_at: string, withdrawn_at: string | null = null) => ({ channel: 'email' as Channel, purpose: 'follow_up', given_at, withdrawn_at });
+    const ask = (over: Partial<Facts>) => decideSend(req(TUE_1000, { channel: 'email', kind: 'follow_up' }), facts(over));
+
+    it('[R03] [R202] un accord ouvert sur une fiche réunie, donné avant le retrait du même accord sur l’autre, ne rouvre pas l’envoi', () => {
+      const decision = ask({ consents: [consent('2026-03-01T10:00:00.000Z'), consent('2026-02-01T10:00:00.000Z', '2026-04-01T10:00:00.000Z')] });
+      expect(decision).toMatchObject({ allowed: false, rule: 'R03' });
+    });
+
+    it('[R03] un accord redonné après le retrait compte ; à la même date, le retrait l’emporte', () => {
+      const withdrawn = consent('2026-02-01T10:00:00.000Z', '2026-04-01T10:00:00.000Z');
+      expect(ask({ consents: [withdrawn, consent('2026-04-02T10:00:00.000Z')] }).allowed).toBe(true);
+      expect(ask({ consents: [withdrawn, consent('2026-04-01T10:00:00.000Z')] }).rule).toBe('R03');
+    });
+
+    it('[R03] un retrait d’une autre finalité ou d’un autre canal ne ferme rien, un retrait à venir non plus', () => {
+      const open = consent('2026-03-01T10:00:00.000Z');
+      expect(ask({ consents: [open, { ...consent('2026-02-01T10:00:00.000Z', '2026-04-01T10:00:00.000Z'), purpose: 'alert' }] }).allowed).toBe(true);
+      expect(ask({ consents: [open, { ...consent('2026-02-01T10:00:00.000Z', '2026-04-01T10:00:00.000Z'), channel: 'sms' }] }).allowed).toBe(true);
+      expect(ask({ consents: [open, consent('2026-02-01T10:00:00.000Z', '2026-12-01T10:00:00.000Z')] }).allowed).toBe(true);
+    });
+
+    it('[R02] [R04] [R202] une exclusion levée ne rouvre pas un accord plus ancien qu’elle, un accord plus récent compte', () => {
+      for (const reason of ['stop', 'refused'] as const) {
+        const exclusions = [{ reason, channel: null, noted_at: '2026-04-01T10:00:00.000Z', lifted_at: '2026-05-01T10:00:00.000Z' }];
+        expect(ask({ exclusions, consents: [consent('2026-03-01T10:00:00.000Z')] })).toMatchObject({ allowed: false, rule: 'R03' });
+        expect(ask({ exclusions, consents: [consent('2026-04-15T10:00:00.000Z')] })).toMatchObject({ allowed: false, rule: 'R03' });
+        expect(ask({ exclusions, consents: [consent('2026-05-02T10:00:00.000Z')] }).allowed).toBe(true);
+      }
+    });
   });
 
   it('[R03] Instagram et Facebook ne demandent pas d’accord préalable enregistré', () => {

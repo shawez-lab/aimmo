@@ -1,5 +1,5 @@
 import type { FicheClient, NewIdentifier } from '../db/fiche-client.ts';
-import type { SqlDatabase, SqlValue } from '../db/sql.ts';
+import { runBatch, type SqlDatabase, type SqlValue } from '../db/sql.ts';
 import type {
   Consent,
   Exclusion,
@@ -11,6 +11,8 @@ import type {
   Project,
   Source,
 } from '../db/types.ts';
+import { appendEvent } from '../journal/journal.ts';
+import type { JournalStore } from '../journal/types.ts';
 import { matchKey, normalizeIdentifier } from './normalize.ts';
 
 export interface FicheComplete {
@@ -33,6 +35,12 @@ export interface MergeRequest {
   /** Pourquoi : identifiant commun, décision de l'agent… */
   reason: string;
   agentId?: string | null;
+}
+
+/** Où et au nom de qui défaire une fusion : le geste ferme des accords, il va au journal. */
+export interface UndoMergeTrace {
+  journal: JournalStore;
+  actor: string;
 }
 
 export interface FicheUniqueOptions {
@@ -228,20 +236,51 @@ export class FicheUnique {
     return row as unknown as PersonMerge;
   }
 
-  /** Défait une fusion : les deux fiches redeviennent séparées, avec chacune exactement son historique. */
-  async undoMerge(mergeId: string): Promise<string> {
-    const at = this.now().toISOString();
-    const { changes } = await this.db.run(
-      'UPDATE person_merges SET undone_at = ? WHERE id = ? AND undone_at IS NULL',
-      [at, mergeId],
-    );
-    if (changes === 1) return at;
-    const row = await this.db.first<{ undone_at: string | null }>(
-      'SELECT undone_at FROM person_merges WHERE id = ?',
-      [mergeId],
-    );
-    if (!row?.undone_at) throw new Error(`Fusion inconnue : ${mergeId}`);
-    return row.undone_at;
+  /**
+   * Défait une fusion : les deux fiches redeviennent séparées, avec chacune son historique.
+   * Un accord créé pendant la fusion est fermé, jamais effacé [R03, R17] : on ne sait plus laquelle des deux personnes
+   * l'a donné. Fusion et accords changent dans un seul lot. Rappeler une fusion déjà défaite écrit la ligne du journal
+   * si une coupure l'avait empêchée, sans rien fermer de plus.
+   */
+  async undoMerge(mergeId: string, trace: UndoMergeTrace): Promise<string> {
+    const merge = await this.db.first<PersonMerge>('SELECT * FROM person_merges WHERE id = ?', [mergeId]);
+    if (!merge) throw new Error(`Fusion inconnue : ${mergeId}`);
+    let undoneAt = merge.undone_at;
+    if (undoneAt === null) {
+      const at = this.now().toISOString();
+      const ids = await this.membersOf(merge.survivor_id);
+      const [undo] = await runBatch(this.db, [
+        { sql: 'UPDATE person_merges SET undone_at = ? WHERE id = ? AND undone_at IS NULL', params: [at, mergeId] },
+        {
+          // Fermés seulement si cette fusion est bien défaite par ce lot : le premier geste compte, comme pour la fusion.
+          sql: `UPDATE consents SET withdrawn_at = ?
+                WHERE person_id IN (${placeholders(ids.length)}) AND created_at >= ? AND withdrawn_at IS NULL
+                  AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)`,
+          params: [at, ...ids, merge.merged_at, mergeId, at],
+        },
+      ]);
+      if (undo?.changes === 1) undoneAt = at;
+      else {
+        const row = await this.db.first<{ undone_at: string | null }>('SELECT undone_at FROM person_merges WHERE id = ?', [mergeId]);
+        undoneAt = row?.undone_at ?? null;
+        if (undoneAt === null) throw new Error(`Fusion inconnue : ${mergeId}`);
+      }
+    }
+    const subject = `person:${merge.survivor_id}`;
+    const logged = await trace.journal.bySubject(subject);
+    if (!logged.some((e) => e.type === 'fiche.fusion_defaite' && e.data.merge === mergeId)) {
+      const ids = [...new Set([...(await this.membersOf(merge.survivor_id)), ...(await this.membersOf(merge.merged_id))])];
+      const closed = await this.db.all<{ id: string }>(
+        `SELECT id FROM consents WHERE person_id IN (${placeholders(ids.length)}) AND created_at >= ? AND withdrawn_at = ? ORDER BY id`,
+        [...ids, merge.merged_at, undoneAt],
+      );
+      await appendEvent(
+        trace.journal,
+        { type: 'fiche.fusion_defaite', actor: trace.actor, subject, data: { rule: 'R03', merge: mergeId, consents: closed.map((c) => c.id) } },
+        this.now,
+      );
+    }
+    return undoneAt;
   }
 
   /** Toute la fiche de la personne : ses lignes et celles de chaque fiche qui y est fusionnée. */

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Acces, AGENT_CONSENT_CHANNELS, AGENT_CONSENT_PURPOSES, AccordsFiche, DecisionEnvoi, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { ALERT_PURPOSE } from '../src/acquereurs/alertes.ts';
 import { RENTAL_UPDATE_PURPOSE } from '../src/location/branchement.ts';
@@ -257,5 +257,134 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
     expect(note.actor).toBe(`agent:${t.alexAgent.id}`);
     expect(note.subject).toBe(`person:${t.person.id}`);
     expect(JSON.parse(note.data)).toMatchObject({ rule: 'R03', purpose: 'suivi_vente', channel: 'email' });
+  });
+
+  describe('AC05 · un accord retiré ne se rouvre jamais', () => {
+    const trace = (t: Awaited<ReturnType<typeof setup>>) => ({ journal: new SqlJournalStore(t.db), actor: 'direction:dir-1' });
+    const doublon = async (t: Awaited<ReturnType<typeof setup>>) => {
+      const other = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexAgent.id, firstName: 'Client', lastName: 'Inventé' });
+      return other.id;
+    };
+    const older = (t: Awaited<ReturnType<typeof setup>>, days: number) => new Date(t.nowMs() - days * DAY);
+
+    it('[R03] [R202] un retrait sur une fiche, un accord ouvert et plus ancien sur son doublon : la fusion ne rouvre pas l’envoi', async () => {
+      const t = await setup();
+      const b = await doublon(t);
+      await t.store.addConsent({ networkId: t.network.id, personId: b, purpose: 'suivi_vente', channel: 'email', proof: 'preuve inventée', givenAt: older(t, 3) });
+      const noted = await t.accords.record(t.alex, t.person.id, t.input());
+      if (!noted.ok) throw new Error(noted.code);
+      await t.store.withdrawConsent(noted.value.consentId, new Date(t.nowMs()));
+      t.advance(60_000);
+      await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+      expect((await t.canSend()).rule).toBe('R03');
+    });
+
+    it('[R03] [R202] le même accord noté après le retrait rouvre l’envoi ; le doublon ancien ne le fait pas prendre pour déjà en cours', async () => {
+      const t = await setup();
+      const b = await doublon(t);
+      const stale = await t.store.addConsent({ networkId: t.network.id, personId: b, purpose: 'suivi_vente', channel: 'email', proof: 'preuve inventée', givenAt: older(t, 3) });
+      const noted = await t.accords.record(t.alex, t.person.id, t.input());
+      if (!noted.ok) throw new Error(noted.code);
+      await t.store.withdrawConsent(noted.value.consentId, new Date(t.nowMs()));
+      t.advance(60_000);
+      await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+
+      const again = await t.accords.record(t.alex, t.person.id, t.input({ givenAt: new Date(t.nowMs()).toISOString() }));
+      expect(again).toMatchObject({ ok: true, value: { already: false } });
+      if (again.ok) expect(again.value.consentId).not.toBe(stale.id);
+      t.advance(60_000);
+      expect((await t.canSend()).allowed).toBe(true);
+    });
+
+    it('[R02] [R202] une exclusion levée ne rouvre pas un accord plus ancien qu’elle', async () => {
+      const t = await setup();
+      const noted = await t.accords.record(t.alex, t.person.id, t.input());
+      expect(noted.ok).toBe(true);
+      expect((await t.canSend()).allowed).toBe(true);
+      const exclusion = await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'refused', notedAt: new Date(t.nowMs()) });
+      t.advance(60_000);
+      await t.store.liftExclusion(exclusion.id, new Date(t.nowMs()));
+      t.advance(60_000);
+      expect((await t.canSend()).rule).toBe('R03');
+    });
+
+    it('[R04] [R202] un arrêt levé non plus', async () => {
+      const t = await setup();
+      await t.accords.record(t.alex, t.person.id, t.input());
+      const stop = await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(t.nowMs()) });
+      t.advance(60_000);
+      await t.store.liftExclusion(stop.id, new Date(t.nowMs()));
+      t.advance(60_000);
+      expect((await t.canSend()).rule).toBe('R03');
+    });
+
+    it('[R03] [R17] défaire une fusion ferme sans effacer les accords créés pendant, et le journal le dit sans preuve', async () => {
+      const t = await setup();
+      const b = await doublon(t);
+      const before = await t.store.addConsent({ networkId: t.network.id, personId: b, purpose: 'alertes_biens', channel: 'email', proof: 'preuve inventée', givenAt: older(t, 3) });
+      t.advance(60_000);
+      const merge = await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+      t.advance(60_000);
+      const during = await t.accords.record(t.alex, t.person.id, t.input());
+      if (!during.ok) throw new Error(during.code);
+      expect((await t.canSend()).allowed).toBe(true);
+      t.advance(60_000);
+      const count = await t.db.first<{ n: number }>('SELECT count(*) AS n FROM consents');
+
+      const undoneAt = await t.fiche.undoMerge(merge.id, trace(t));
+
+      expect(await t.db.first<{ n: number }>('SELECT count(*) AS n FROM consents')).toEqual(count);
+      const rows = await t.rows();
+      expect(rows.find((r) => r.id === during.value.consentId)?.withdrawn_at).toBe(undoneAt);
+      expect((await t.rows(b)).find((r) => r.id === before.id)?.withdrawn_at).toBeNull();
+      t.advance(60_000);
+      expect((await t.canSend()).rule).toBe('R03');
+      expect((await t.canSend(b)).rule).toBe('R03');
+
+      const lines = (await t.events()).filter((e) => e.type === 'fiche.fusion_defaite');
+      expect(lines).toHaveLength(1);
+      expect(lines[0]!.data).toContain(during.value.consentId);
+      expect(lines[0]!.data).not.toContain('Accord donné');
+      expect(lines[0]!.subject).toBe(`person:${t.person.id}`);
+      expect(lines[0]!.data).toContain(merge.id);
+    });
+
+    it('[R03] défaire deux fois garde la première date, ne ferme rien de plus et n’écrit qu’une ligne ; une ligne perdue revient', async () => {
+      const t = await setup();
+      const b = await doublon(t);
+      const merge = await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+      t.advance(60_000);
+      const during = await t.accords.record(t.alex, t.person.id, t.input());
+      if (!during.ok) throw new Error(during.code);
+      const cut = new SqlJournalStore(t.db);
+      cut.append = async () => { throw new Error('coupure'); };
+      await expect(t.fiche.undoMerge(merge.id, { journal: cut, actor: 'direction:dir-1' })).rejects.toThrow('coupure');
+      const closedAt = (await t.rows()).find((r) => r.id === during.value.consentId)?.withdrawn_at;
+      expect(closedAt).not.toBeNull();
+
+      t.advance(60_000);
+      const after = await t.accords.record(t.alex, t.person.id, t.input({ givenAt: new Date(t.nowMs()).toISOString() }));
+      if (!after.ok) throw new Error(after.code);
+      expect(await t.fiche.undoMerge(merge.id, trace(t))).toBe(closedAt);
+      expect(await t.fiche.undoMerge(merge.id, trace(t))).toBe(closedAt);
+      expect((await t.rows()).find((r) => r.id === after.value.consentId)?.withdrawn_at).toBeNull();
+      const lines = (await t.events()).filter((e) => e.type === 'fiche.fusion_defaite');
+      expect(lines).toHaveLength(1);
+      expect(lines[0]!.data).toContain(during.value.consentId);
+      expect(lines[0]!.data).not.toContain(after.value.consentId);
+    });
+
+    it('[R03] un accord noté pendant une fusion imbriquée est fermé quand la fusion intérieure est défaite', async () => {
+      const t = await setup();
+      const b = await doublon(t);
+      const c = await doublon(t);
+      const inner = await t.fiche.merge({ survivorId: b, mergedId: c, reason: 'identifiant commun' });
+      await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+      t.advance(60_000);
+      const during = await t.accords.record(t.alex, t.person.id, t.input());
+      if (!during.ok) throw new Error(during.code);
+      await t.fiche.undoMerge(inner.id, trace(t));
+      expect((await t.rows()).find((r) => r.id === during.value.consentId)?.withdrawn_at).not.toBeNull();
+    });
   });
 });

@@ -368,7 +368,7 @@ describeWithSqlite('F02 · demande d’avis le lendemain de l’acte, à tous, e
     const unique = new FicheUnique(t.db, new FicheClient(t.db, { now: t.now }), { now: t.now });
     const m = await unique.merge({ survivorId: a, mergedId: b, reason: 'erreur de test' });
     await t.passes('2027-03-10', '2027-03-10');
-    await unique.undoMerge(m.id);
+    await unique.undoMerge(m.id, { journal: t.journal, actor: 'direction:test' });
     t.setClock(paris('2027-03-11', 9));
     await t.avis.setReviewLink(t.agent, t.alexId, LINK);
     await t.passes('2027-03-11', '2027-03-20');

@@ -176,12 +176,13 @@ export class ReservationEnLigne {
         to: ambiguous ? null : given[0]!.value,
       });
     } catch (error) {
-      await this.store.withdrawConsent(consent.id, this.now());
+      await this.store.withdrawConsent(consent.id, at);
       throw error;
     }
     if (!booked.ok) {
-      // Pas de rendez-vous : l'accord donné pour lui est retiré aussitôt, la ligne reste.
-      await this.store.withdrawConsent(consent.id, this.now());
+      // Pas de rendez-vous : l'accord donné pour lui est annulé, la ligne reste. Fermé à sa propre date, il n'a jamais valu :
+      // ce n'est pas un refus de la personne, et un rendez-vous déjà pris garde ses rappels [R03].
+      await this.store.withdrawConsent(consent.id, at);
       await this.log(input, created, false, booked.code, ambiguous);
       return { ok: false, code: booked.code, rule: booked.rule };
     }
