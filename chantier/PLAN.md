@@ -1951,6 +1951,14 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Critères : l'écran ne lit et n'écrit que par `/v1/location`, et ne lit les contacts de l'agent qu'au geste d'ajouter (`GET /v1/location/:id/contacts`, ses fiches gardées) [R16] ; une personne réunie à une autre fiche n'a jamais deux candidatures sur un logement [R105] ; la liste reste dans l'ordre d'arrivée, sans note ni tri [R105] ; un refus de la route est dit en français, sans identifiant ni donnée [R104] ; un double appui ne range pas deux candidatures ; testé au clavier et sur téléphone comme les autres écrans (`fake-dom`) ; le budget de poids de l'application est tenu [R201].
 - Attend : rien.
 
+### W14 · Déposer depuis le téléphone une annexe, une preuve ou la notice du bail
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11, W13
+- Cahier : M15 ; R104, R16.
+- Objectif : reste écrit de W11. L'écran « Louer » demande aujourd'hui de saisir la référence d'un fichier déjà rangé. L'agent doit pouvoir prendre la pièce sur son téléphone et la déposer, sans saisir de référence.
+- Attend : rien (le stockage réel se branche par `HUMAIN.md` s'il manque).
+
 **M16 · Commerces et entreprises, septembre 2027.**
 
 Voie : 1
