@@ -197,6 +197,8 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'conformite.signalement_decision': { excluded: 'lcb_ft', why: 'Décision du responsable sur un signalement.' },
 };
 
+/** Les événements écrits sous le bien qui portent une offre : ceux d'un acquéreur, jamais de qui possède ou a possédé le bien [R96]. */
+const PROPERTY_OFFER_EVENTS = ['offre.enregistree', 'offre.cle_reutilisee', 'dossier.ouvert'] as const;
 const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(SALE_FILE_EVENTS).filter(([, u]) => uses.includes(u)).map(([t]) => t).sort();
 
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
@@ -548,9 +550,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'prospect_retention_cycles', 'id', { prefix: 'prospect_retention:' }),
       // Le journal d'un bien n'est qu'à qui le possède : par son mandat, son projet (bien possédé) ou sa mise en
       // location ; jamais à l'acquéreur qui s'y intéresse.
-      via('subject', 'mandates', 'property_id', { prefix: 'property:' }),
-      via('subject', 'project_properties', 'property_id', { prefix: 'property:', parentWhere: { role: 'owned' } }),
-      via('subject', 'rental_listings', 'property_id', { prefix: 'property:' }),
+      // Les offres et l'ouverture du dossier nomment l'offre de l'acquéreur : elles ne sont pas au journal du possesseur.
+      via('subject', 'mandates', 'property_id', { prefix: 'property:', except: { type: PROPERTY_OFFER_EVENTS } }),
+      via('subject', 'project_properties', 'property_id', { prefix: 'property:', parentWhere: { role: 'owned' }, except: { type: PROPERTY_OFFER_EVENTS } }),
+      via('subject', 'rental_listings', 'property_id', { prefix: 'property:', except: { type: PROPERTY_OFFER_EVENTS } }),
       via('subject', 'projects', 'id', { prefix: 'project:' }),
       via('subject', 'partner_referrals', 'id', { prefix: 'referral:' }),
       via('subject', 'signature_sessions', 'id', { prefix: 'signature:' }),

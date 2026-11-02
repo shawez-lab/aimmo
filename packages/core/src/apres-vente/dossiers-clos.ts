@@ -29,12 +29,12 @@ interface ClosedRow {
   seller_person_id: string | null;
 }
 
-const CLOSED_SQL = `SELECT c.file_id, c.signed_on, COALESCE(k.agent_id, p.agent_id) AS agent_id, p.city, p.reference, f.buyer_person_id, m.person_id AS seller_person_id
+const CLOSED_SQL = `SELECT c.file_id, c.signed_on, COALESCE(k.agent_id, p.agent_id) AS agent_id, p.city, p.reference, f.buyer_person_id, v.person_id AS seller_person_id
   FROM sale_file_closings c
   JOIN sale_files f ON f.id = c.file_id
   JOIN properties p ON p.id = f.property_id
   LEFT JOIN sale_commissions k ON k.file_id = c.file_id
-  LEFT JOIN mandates m ON m.id = k.mandate_id`;
+  LEFT JOIN sale_file_sellers v ON v.file_id = c.file_id`;
 
 function toSale(r: ClosedRow): ClosedSale | null {
   if (!r.agent_id) return null;

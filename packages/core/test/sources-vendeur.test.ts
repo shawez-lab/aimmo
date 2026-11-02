@@ -190,6 +190,25 @@ describeWithSqlite('EC08 · lecteurs SQL de l’espace du vendeur', () => {
     expect(v.value[0]!.deed.date).toEqual({ value: null, label: 'non communiquée' });
   });
 
+  it('[R161] [R96] un mandat rétracté après l’ouverture ne donne pas le dossier au mandant plus ancien', async () => {
+    const t = await setup();
+    const older = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Ancienne', lastName: 'Propriétaire' });
+    const at = '2026-06-01T09:00:00.000Z';
+    await t.db.run(
+      `INSERT INTO mandates (id, network_id, agent_id, person_id, project_id, property_id, signed_at, source_kind, source_detail, source_id, recorded_by, created_at) VALUES ('m-ancien', ?, ?, ?, NULL, ?, ?, 'referral', NULL, NULL, 'agent:test', ?)`,
+      [t.network.id, t.alexId, older.id, t.propertyId, at, at],
+    );
+    const seq = Number((await t.db.first<{ n: number }>('SELECT MAX(seq) AS n FROM mandate_register WHERE network_id = ?', [t.network.id]))!.n) + 1;
+    await t.db.run(
+      `INSERT INTO mandate_register (network_id, seq, kind, mandate_id, number_value, number, agent_id, property_id, signed_at, cancels_seq, reason, at, actor, prev_hash, hash) VALUES (?, ?, 'inscription', 'm-ancien', 98, 'T-098', ?, ?, ?, NULL, NULL, ?, 'agent:test', 'x', 'h-ancien')`,
+      [t.network.id, seq, t.alexId, t.propertyId, at, at],
+    );
+    const later = t.now().toISOString();
+    await t.db.run("INSERT INTO mandate_withdrawals (mandate_id, network_id, proof, received_at, recorded_by, created_at) VALUES (?, ?, 'Lettre reçue', ?, 'test', ?)", [t.mandateId, t.network.id, later, later]);
+    expect(await t.sources.earliestDeedOf(t.network.id, t.propertyId, older.id)).toBeNull();
+    expect((await t.sources.documentsOf(t.network.id, t.propertyId, older.id)).map((d) => d.kind)).toEqual([]);
+  });
+
   it('[R163] [R13] sans le tableau des offres, aucun chiffre n’est recomposé et l’échec va au journal', async () => {
     const t = await setup();
     // Un bien sans agent : le registre des offres refuse sa lecture.

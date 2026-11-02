@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
+import { SqlDossiersClos } from '../src/apres-vente/dossiers-clos.ts';
 import { conformite } from '../src/index.ts';
 import { DossiersVente, TransmissionOffres } from '../src/offres/index.ts';
 import { PROOF, setupDossier } from './dossiers-jeu.ts';
@@ -57,6 +58,7 @@ describeWithSqlite('N11 · le vendeur d’un dossier', () => {
     t.setClock(new Date('2027-03-02T10:00:00.000Z'));
     const later = await otherMandate(t, 'Suivante', '2027-03-02T09:00:00.000Z');
 
+    const { offer_id: offerId } = (await t.db.first<{ offer_id: string }>('SELECT offer_id FROM sale_files WHERE id = ?', [fileId]))!;
     expect(await sellerOf(t, fileId)).toMatchObject({ person_id: t.personId, mandate_id: t.mandateId });
     expect(await filesSeenBy(t, former.personId)).toEqual([]);
     expect(await filesSeenBy(t, later.personId)).toEqual([]);
@@ -64,10 +66,15 @@ describeWithSqlite('N11 · le vendeur d’un dossier', () => {
       const answer = JSON.stringify(await conformite.assembleAccess(t.db, [other.personId]));
       expect(answer).not.toContain(fileId);
       expect(answer).not.toContain(t.buyerId);
+      // Ni au journal du bien : ni l'offre de l'acquéreur, ni l'ouverture du dossier.
+      expect(answer).not.toContain(offerId);
+      expect(answer).not.toContain('dossier.ouvert');
+      expect(answer).not.toContain('offre.enregistree');
     }
     const seller = await conformite.assembleAccess(t.db, [t.personId]);
     expect(seller.sections.find((s) => s.table === 'sale_files')!.rows).toEqual([expect.objectContaining({ id: fileId, buyer_person_id: conformite.MASKED, offer_id: conformite.MASKED })]);
     expect(JSON.stringify(seller)).not.toContain(t.buyerId);
+    expect(JSON.stringify(seller)).not.toContain(offerId);
     expect(await filesSeenBy(t, t.buyerId)).toEqual([fileId]);
   });
 
@@ -96,6 +103,24 @@ describeWithSqlite('N11 · le vendeur d’un dossier', () => {
     await expect(t.db.run('DELETE FROM sale_file_sellers')).rejects.toThrow(/rien ne s'efface/);
   });
 
+  it('le dossier et son vendeur partent en un seul lot : si le vendeur ne peut être rangé, aucun dossier n’est ouvert', async () => {
+    const t = await setupOffre();
+    await t.db.run("CREATE TRIGGER test_vendeur_refuse BEFORE INSERT ON sale_file_sellers BEGIN SELECT RAISE(ABORT, 'refus de test'); END");
+    await expect(openFile(t)).rejects.toThrow(/refus de test/);
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM sale_files'))!.n).toBe(0);
+  });
+
+  it('[R96] la demande d’avis après la vente lit le vendeur du dossier, pas le mandat retenu pour la commission', async () => {
+    const t = await setupOffre();
+    const fileId = await openFile(t);
+    t.setClock(new Date('2027-03-02T10:00:00.000Z'));
+    const later = await otherMandate(t, 'Suivante', '2027-03-02T09:00:00.000Z');
+    await t.db.run("INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, '2027-04-01', 'r', 'a_demarrer', '2027-04-01T09:00:00.000Z', 'test')", [fileId, t.network.id]);
+    await t.db.run("INSERT INTO sale_commissions (file_id, network_id, mandate_id, agent_id, fee_eur, fee_charge, due_on, status, created_at) VALUES (?, ?, ?, ?, 10000, 'acquereur', '2027-04-01', 'due', '2027-04-01T09:00:00.000Z')", [fileId, t.network.id, later.mandateId, t.alexId]);
+    const closed = await new SqlDossiersClos(t.db).closedBetween(t.network.id, '2027-04-01', '2027-04-02');
+    expect(closed.find((c) => c.fileId === fileId)!.clients).toEqual([{ personId: t.personId, side: 'vendeur' }, { personId: t.buyerId, side: 'acquereur' }]);
+  });
+
   it('les dossiers déjà ouverts reçoivent leur vendeur par la migration, sans toucher à ceux qui en ont un', async () => {
     const t = await setupDossier();
     const seller = await t.db.first<{ file_id: string; person_id: string }>('SELECT file_id, person_id FROM sale_file_sellers');
@@ -108,6 +133,12 @@ describeWithSqlite('N11 · le vendeur d’un dossier', () => {
     await t.db.run("INSERT INTO mandate_register (network_id, seq, kind, mandate_id, number_value, number, agent_id, property_id, signed_at, at, actor, prev_hash, hash) VALUES (?, ?, 'inscription', 'inscrit', ?, 'T-M', ?, ?, '2027-02-11T09:00:00.000Z', '2027-02-11T09:00:00.000Z', 'test', 'p', 'h-m')", [t.network.id, seq, 7000 + seq, t.alexId, b2.id]);
     await t.db.run("INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash) VALUES ('offre-m', ?, ?, 1, ?, 90000, '[]', '2027-03-10', 0, 90000, 'r', '2027-03-01T09:00:00.000Z', ?, '2027-03-01T09:00:00.000Z', 'test', 'p', 'h-offre-m')", [t.network.id, b2.id, t.buyerId, t.alexId]);
     await t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('dossier-m', ?, ?, 'offre-m', ?, 90000, '2027-03-01T13:00:00.000Z', 'test')", [t.network.id, b2.id, t.buyerId]);
+
+    // Annulé et rétracté après l'ouverture : il était bien le vendeur ce jour-là. Annulé avant : il ne l'est pas.
+    await t.db.run("INSERT INTO mandate_withdrawals (mandate_id, network_id, proof, received_at, recorded_by, created_at) VALUES ('inscrit', ?, 'Lettre reçue', '2027-03-03T09:00:00.000Z', 'test', '2027-03-03T09:00:00.000Z')", [t.network.id]);
+    await t.db.run("INSERT INTO mandates (id, network_id, agent_id, person_id, property_id, signed_at, source_kind, recorded_by, created_at) VALUES ('retire-avant', ?, ?, ?, ?, '2027-02-15T09:00:00.000Z', 'site', 'test', '2027-02-15T09:00:00.000Z')", [t.network.id, t.alexId, t.buyerId, b2.id]);
+    await t.db.run("INSERT INTO mandate_register (network_id, seq, kind, mandate_id, number_value, number, agent_id, property_id, signed_at, at, actor, prev_hash, hash) VALUES (?, ?, 'inscription', 'retire-avant', ?, 'T-R', ?, ?, '2027-02-15T09:00:00.000Z', '2027-02-15T09:00:00.000Z', 'test', 'p', 'h-r')", [t.network.id, seq + 1, 7001 + seq, t.alexId, b2.id]);
+    await t.db.run("INSERT INTO mandate_withdrawals (mandate_id, network_id, proof, received_at, recorded_by, created_at) VALUES ('retire-avant', ?, 'Lettre reçue', '2027-02-20T09:00:00.000Z', 'test', '2027-02-20T09:00:00.000Z')", [t.network.id]);
 
     const sql = readFileSync(new URL('../../../db/migrations/1550_vendeur_dossier.sql', import.meta.url), 'utf8');
     await t.db.run(sql.slice(sql.indexOf('INSERT OR IGNORE')));

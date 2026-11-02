@@ -102,7 +102,7 @@ export class DossiersVente {
     }
     // Le bien passe « sous offre » : la publication le montre ainsi au passage suivant (M07).
     await this.db.run("UPDATE properties SET status = 'under_offer', updated_at = ? WHERE id = ? AND status IN ('draft', 'available')", [this.now().toISOString(), offer.propertyId]);
-    await appendEvent(this.journal, { type: 'dossier.ouvert', actor: this.actor(viewer), subject: `property:${offer.propertyId}`, data: { rule: 'R57', offer: `offer:${offerId}` } }, this.now);
+    await appendEvent(this.journal, { type: 'dossier.ouvert', actor: this.actor(viewer), subject: `property:${offer.propertyId}`, data: { rule: 'R57', offer: `offer:${offerId}`, ...(seller ? {} : { noSeller: true }) } }, this.now);
     return { ok: true, value: (await this.read(id))! };
   }
 

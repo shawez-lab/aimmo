@@ -1235,6 +1235,7 @@ Décidé, lecture prudente : M11 part de l'acte signé rapporté par M10 (N06), 
 
 ### N11 · Le vendeur d'un dossier : le mandant du jour de l'ouverture, pas tout ancien mandant
 - Statut : en cours (voie 2)
+- Décidé (2026-11-02, voie 2) : le vendeur est figé à l'ouverture, un mandat signé ensuite n'en change pas ; un dossier ouvert sans mandat vivant reste sans vendeur, écrit au journal (`noSeller`) ; offres et ouverture sous `property:` ne sont plus au journal de qui possède ou a possédé le bien. Reste : la fiche `properties` d'un ancien mandant montre l'état et le prix d'aujourd'hui (fiche du bien, sans donnée d'une autre personne).
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : N09, L07
 - Cahier : M10, relances des pièces et bouclier ; M12, droit d'accès ; R96.
