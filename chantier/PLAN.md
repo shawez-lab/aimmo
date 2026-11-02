@@ -450,7 +450,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : C09d.
 
 ### C09d · Alertes vues de personne : la direction les compte
-- Statut : à faire
+- Statut : en cours
 - Voie : 1
 - Qui : Claude · Relecture : forte · Dépend de : C09c
 - Cahier : M02, relais à l'agent ; R12, R16.
