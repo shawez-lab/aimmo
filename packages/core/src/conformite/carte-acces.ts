@@ -198,7 +198,7 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
 };
 
 /** Les événements écrits sous le bien qui portent une offre : ceux d'un acquéreur, jamais de qui possède ou a possédé le bien [R96]. */
-const PROPERTY_OFFER_EVENTS = ['offre.enregistree', 'offre.cle_reutilisee', 'dossier.ouvert'] as const;
+const PROPERTY_OFFER_EVENTS = ['offre.enregistree', 'offre.cle_reutilisee', 'offre.depot', 'offre.depot.refuse', 'dossier.ouvert'] as const;
 const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(SALE_FILE_EVENTS).filter(([, u]) => uses.includes(u)).map(([t]) => t).sort();
 
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });

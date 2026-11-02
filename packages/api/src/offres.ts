@@ -9,9 +9,10 @@
  * n'accepte, ne refuse ni ne négocie : seule une réponse rapportée avec preuve change l'état d'une offre [R57].
  */
 import { journalError } from './app.ts';
+import { readCapped } from './studio.ts';
 import { Acces, FicheClient, FicheUnique, offres as m09, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 
-const { ComparatifOffres, ContreOffres, ControlesOffre, DossiersVente, EcheancesOffres, RegistreOffres, TransmissionOffres } = m09;
+const { ComparatifOffres, ContreOffres, ControlesOffre, DepotsOffres, DossiersVente, EcheancesOffres, RegistreOffres, SuiviOffres, TransmissionOffres } = m09;
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 16_000;
@@ -66,8 +67,16 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
 
 const badBody = (): Response => json(400, { ok: false, code: 'invalid_body', message: 'Corps JSON attendu.' });
 
+/** Le stockage où une offre signée ou une preuve est rangée (O10) ; sans lui, le dépôt est fermé. */
+export interface OfferUploadStore {
+  has(ref: string): Promise<boolean>;
+  upload?(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
+}
+
+const DEPOSIT_STATUS: Readonly<Record<string, number>> = { trop_lourd: 413, type_refuse: 415, stockage_indisponible: 503 };
+
 /** Les routes de M09, à ajouter à celles de `app.ts`. */
-export function offreRoutes(): OffreRoute[] {
+export function offreRoutes(pieces: OfferUploadStore | null = null): OffreRoute[] {
   const o = (s: OffreServices) => ({
     registre: new RegistreOffres(s.db, s.acces, s.journal, { now: s.now }),
     controles: new ControlesOffre(s.db, s.acces, s.journal, { now: s.now }),
@@ -92,14 +101,37 @@ export function offreRoutes(): OffreRoute[] {
         downPaymentEur: b.downPaymentEur, loanEur: b.loanEur, signedRef: b.signedRef, receivedAt: b.receivedAt, requestKey: b.requestKey,
       }))),
     },
-    { method: 'GET', pattern: new RegExp(`^/offres/biens/${ID}$`), name: 'offres.liste', handle: async (s, v, [id]) => reply(await o(s).registre.list(v, id!)) },
+    { method: 'GET', pattern: new RegExp(`^/offres/biens/${ID}$`), name: 'offres.liste', handle: async (s, v, [id]) => reply(await new SuiviOffres(s.db, s.acces, s.journal, { now: s.now }).listFor(v, id!)) },
+    // L'écran de l'agent (O10) : le suivi, les contacts qui peuvent être l'acquéreur, le dépôt d'une pièce.
+    { method: 'GET', pattern: new RegExp(`^/offres/biens/${ID}/suivi$`), name: 'offres.suivi', handle: async (s, v, [id]) => reply(await new SuiviOffres(s.db, s.acces, s.journal, { now: s.now }).board(v, id!)) },
+    { method: 'GET', pattern: new RegExp(`^/offres/biens/${ID}/contacts$`), name: 'offres.contacts', handle: async (s, v, [id]) => reply(await new SuiviOffres(s.db, s.acces, s.journal, { now: s.now }).buyers(v, id!)) },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/offres/biens/${ID}/fichiers/(signee|preuve)$`),
+      name: 'offres.depot',
+      handle: async (s, v, [id, kind], r) => {
+        const upload = pieces?.upload?.bind(pieces);
+        if (!upload) return json(503, { ok: false, rule: null, code: 'depot_ferme' });
+        const length = r.headers.get('content-length');
+        const declaredSize = length === null || length.trim() === '' ? null : /^\d{1,12}$/.test(length.trim()) ? Number(length.trim()) : Number.NaN;
+        const result = await new DepotsOffres(o(s).registre, { put: (key, bytes, type) => upload(key, bytes, type) }, s.journal, { now: s.now }).deposit(v, id!, {
+          kind,
+          contentType: r.headers.get('content-type'),
+          sha256: r.headers.get('x-aimmo-sha256'),
+          declaredSize,
+          read: (max) => readCapped(r, max),
+        });
+        if (!result.ok && DEPOSIT_STATUS[result.code]) return json(DEPOSIT_STATUS[result.code]!, { ok: false, rule: result.rule, code: result.code });
+        return reply(result as Outcome);
+      },
+    },
     { method: 'GET', pattern: new RegExp(`^/offres/biens/${ID}/comparatif$`), name: 'offres.comparatif', handle: async (s, v, [id]) => reply(await o(s).comparatif.table(v, id!)) },
     { method: 'GET', pattern: new RegExp(`^/offres/${ID}/historique$`), name: 'offres.historique', handle: async (s, v, [id]) => reply(await o(s).contre.history(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/offres/${ID}/controle$`), name: 'offres.controle', handle: async (s, v, [id]) => reply(await o(s).controles.check(v, id!)) },
-    { method: 'POST', pattern: new RegExp(`^/offres/${ID}/transmission$`), name: 'offres.transmission', handle: withBody(async (s, v, [id], b) => reply(await o(s).transmission.transmit(v, id!, { via: b.via, channel: b.channel }))) },
+    { method: 'POST', pattern: new RegExp(`^/offres/${ID}/transmission$`), name: 'offres.transmission', handle: withBody(async (s, v, [id], b) => reply(await o(s).transmission.transmit(v, id!, { via: b.via, channel: b.channel, at: b.at }))) },
     { method: 'POST', pattern: new RegExp(`^/offres/${ID}/reponse$`), name: 'offres.reponse', handle: withBody(async (s, v, [id], b) => reply(await o(s).transmission.respond(v, id!, { outcome: b.outcome, proofRef: b.proofRef, respondedAt: b.respondedAt }))) },
     { method: 'POST', pattern: new RegExp(`^/offres/${ID}/propositions$`), name: 'offres.proposition', handle: withBody(async (s, v, [id], b) => reply(await o(s).contre.propose(v, id!, { amountEur: b.amountEur, validUntil: b.validUntil, proofRef: b.proofRef }))) },
-    { method: 'POST', pattern: new RegExp(`^/offres/propositions/${ID}/transmission$`), name: 'offres.proposition.transmission', handle: withBody(async (s, v, [id], b) => reply(await o(s).contre.transmit(v, id!, { via: b.via }))) },
+    { method: 'POST', pattern: new RegExp(`^/offres/propositions/${ID}/transmission$`), name: 'offres.proposition.transmission', handle: withBody(async (s, v, [id], b) => reply(await o(s).contre.transmit(v, id!, { via: b.via, at: b.at }))) },
     { method: 'POST', pattern: new RegExp(`^/offres/propositions/${ID}/reponse$`), name: 'offres.proposition.reponse', handle: withBody(async (s, v, [id], b) => reply(await o(s).contre.respond(v, id!, { outcome: b.outcome, proofRef: b.proofRef, respondedAt: b.respondedAt }))) },
     { method: 'POST', pattern: new RegExp(`^/offres/${ID}/dossier$`), name: 'offres.dossier', handle: async (s, v, [id]) => reply(await o(s).dossiers.open(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/offres/dossiers/${ID}/compromis$`), name: 'offres.compromis', handle: async (s, v, [id]) => reply(await o(s).dossiers.startCompromis(v, id!)) },

@@ -1644,7 +1644,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
     ...annonceRoutes(),
-    ...offreRoutes(),
+    ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),
     ...apresVenteRoutes(),
     ...pilotageRoutes(),

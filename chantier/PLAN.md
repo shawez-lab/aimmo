@@ -1173,13 +1173,23 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O10 · Écran des offres dans l'application
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Reste : fusionnée (#272) ; relecture forte 3 P0 et 6 P1 corrigés ; Codex à sa limite (H03) ; vérification GitHub verte ; suite complète non finie en local (coupée à 10 min). Dépôt réel avec H25 ; suite en O11.
 - Trouvé le 2026-11-02 : M09 a ses routes (O08, O09), aucun écran de l'application ne les appelle ; l'agent ne peut donc ni enregistrer ni transmettre une offre sans outil technique.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : O09
 - Cahier : M09 ; R14, R16, R56, R57, R58, R59, R201.
 - Objectif : depuis « Mes biens », l'agent ouvre « Offres » : registre du bien et tableau comparatif dans l'ordre d'arrivée ; il enregistre une offre, lit son contrôle, atteste la transmission, rapporte la réponse du vendeur avec sa preuve, suit la chaîne des contre-offres, ouvre le dossier ; écran chargé à part (`/app/offres.js`), sur le système de design.
 - Jamais vu : **le pas à faire de chaque offre, dit par le registre** : chaque offre porte une seule prochaine action tirée de son état réel (à transmettre, réponse attendue, échue, dossier à ouvrir), et l'écran montre aux yeux de l'agent la preuve que le registre du bien est intact.
 - Critères : aucun tri, note ni recommandation, ordre d'arrivée seul [R14, R57] ; aucun bouton n'accepte ni ne refuse sans réponse rapportée avec preuve [R57] ; l'acquéreur se choisit parmi les contacts, aucun identifiant à saisir [R16] ; refus dits en français ; budget et accessibilité tenus [R201].
+- Attend : rien.
+
+### O11 · Transmission par message qui ne dit pas faux, mandant refusé comme acquéreur
+- Statut : en cours
+- Trouvé le 2026-11-02 (relecture de O10) : `POST /offres/:id/transmission` avec `via: message` marque l'offre transmise alors qu'en essai rien ne part, ce qui coupe l'alerte R56 ; `record` accepte le mandant du bien comme acquéreur par la route.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : O10
+- Cahier : M09 ; R26, R56.
+- Objectif : tant que les envois réels ne sont pas en service, un message d'essai ne compte pas comme une transmission au vendeur ; l'enregistrement d'une offre refuse le mandant, sous toutes ses fiches.
+- Critères : en essai, l'offre reste à transmettre et l'alerte R56 part toujours [R56, R26] ; mandant et fiches réunies refusés, avec le champ nommé ; suite verte, dont les tests de O03 à adapter sans affaiblir la règle.
 - Attend : rien.
 
 **M10 · Compromis et acte, mai 2027.**
@@ -1283,6 +1293,15 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Objectif : reste écrit de N09. La réponse qu'un agent écrit dans l'application du canal revient en écho et se range telle quelle : un IBAN ou un RIB y reste en clair, dans la fiche et dans l'écho gardé pour la reprise.
 - Critères : l'IBAN d'un écho n'est rangé en clair ni dans `messages`, ni dans `pending_human_replies`, écho appliqué tout de suite ou gardé pour la reprise (tests [R15]) ; le reste du texte ne change pas ; un écho de notre propre message reste reconnu [R21].
 - Attend : rien.
+
+### N12 · Écran du dossier de vente dans l'application
+- Statut : à faire
+- Trouvé le 2026-11-02 : M10 a ses routes (`/v1/dossiers`) et aucun écran ne les appelle ; O10 ouvre le dossier, puis l'agent ne peut plus le suivre.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : O10
+- Cahier : M10 ; R15, R16, R19, R52, R201.
+- Objectif : depuis l'offre acceptée, l'agent lit les pièces attendues et reçues, les échéances et le chemin critique du dossier, et dépose une pièce ; écran chargé à part, sur le système de design.
+- Critères : aucune pièce d'identité dans le dossier [R15] ; élément bloquant dit, rien d'inventé [R10] ; aucun identifiant à saisir [R16] ; budget et accessibilité tenus [R201].
+- Attend : H25 pour le dépôt réel.
 
 **M11 · Après la vente, juin 2027.**
 
