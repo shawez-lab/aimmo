@@ -362,7 +362,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste, à trancher dans C09 : une réponse privée à un commentaire peut partir alors qu'un humain a répondu en message privé (conversations distinctes, déjà le cas avant C09a) ; un écho `unfinished` renvoyé avant 2 minutes attend le prochain message du réseau pour être rangé (rien de perdu, l'assistant reste muet).
 
 ### C09b · Palier de la captation par canal, derrière le contrôle central
-- Statut : en cours
+- Statut : fait (2026-11-02)
 - Voie : 1
 - Qui : Claude · Relecture : forte · Dépend de : C09a, B04a
 - Cahier : M02, « État » ; Feuille de route, décembre 2026. Partie de C09 qui n'attend personne : les vrais canaux restent de faux canaux dans les tests.
