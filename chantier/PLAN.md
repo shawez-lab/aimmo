@@ -432,7 +432,9 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Critères : confirmation, rappel et remerciement sur une fiche réunie portent le prénom de la fiche gardée (test [R08]).
 
 ### AC12 · Appels notés : branchement, écran, fusion défaite
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02), lecture prudente : les gestes sont servis à part (`/app/appels.js`), il restait 370 octets au budget de l'application ; ils restent ouverts bouton fermé, un fait se note ; pas de confirmation, une erreur de geste ferme l'appel, jamais ne l'ouvre, et une nouvelle demande rouvre ; une note et sa copie gardent la même heure et comptent pour un seul appel si les fiches sont réunies de nouveau ; `refused_request` dit le refus sur une fiche qui n'a qu'une demande, sans date. Téléphone et axe-core vérifiés une fois à la main (Chromium 390 × 844, clair et sombre, aucune violation). Relecture forte : 1 P1 corrigé ; Codex à sa limite, fusion sans lui (#258).
+- Reste : une note écrite juste après le lot d'`undoMerge` n'est pas recopiée, même fenêtre que les exclusions (AC08).
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC09
 - Cahier : Conformité, démarchage téléphonique ; R204.
