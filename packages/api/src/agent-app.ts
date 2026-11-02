@@ -9,6 +9,7 @@
 import { ALERTES_SCRIPT } from '../app/alertes.ts';
 import { APPELS_SCRIPT } from '../app/appels.ts';
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
+import { LOUER_SCRIPT } from '../app/louer.ts';
 import { REPRISE_SCRIPT } from '../app/reprise.ts';
 import { CONFORMITE_SCRIPT } from '../app/conformite.ts';
 import { INVESTIR_SCRIPT } from '../app/investir.ts';
@@ -57,6 +58,7 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/investir.js': { body: INVESTIR_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Commerces » (CE11), chargé à la demande quand l'agent l'ouvre, jamais gardé sur l'appareil [R201].
   '/app/commerces.js': { body: COMMERCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  '/app/louer.js': { body: LOUER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Studio » (X11), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/studio.js': { body: STUDIO_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Gagner des mandats » (G13), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].

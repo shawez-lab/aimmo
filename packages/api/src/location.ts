@@ -237,6 +237,7 @@ const ROUTES: LocationRoute[] = [
     roles: WRITERS,
     handle: withBody(async (s, v, [id], b) => reply(await core(s).applications.apply(v, id, { personId: b.personId, dossierFacileUrl: b.dossierFacileUrl }))),
   },
+  { method: 'GET', pattern: new RegExp(`^/location/${ID}/contacts$`), name: 'location.contacts', roles: WRITERS, handle: async (s, v, [id]) => reply(await core(s).applications.addableContacts(v, id)) },
   { method: 'GET', pattern: new RegExp(`^/location/${ID}/candidatures$`), name: 'location.candidatures', roles: READERS, handle: async (s, v, [id]) => reply(await core(s).applications.list(v, id)) },
   { method: 'GET', pattern: new RegExp(`^/location/candidatures/${ID}$`), name: 'location.candidature.lue', roles: READERS, handle: async (s, v, [id]) => reply(await core(s).applications.read(v, id)) },
   {

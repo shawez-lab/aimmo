@@ -4,8 +4,8 @@ import { ANNEX_KINDS, CHOICE_CHANNELS, ELEMENT_STATES, HABITATS, LEASE_FIELDS, M
  * L'écran « Louer » de l'application de l'agent (W11), en morceaux posés dans `fichiers.ts` : sa section de page, son
  * entrée sur l'accueil, sa mise en page et son script.
  *
- * L'écran ne lit et n'écrit que par les routes `/v1/location` [R16], sauf la liste des contacts de l'agent, lue par
- * `/v1/fiches` au seul geste d'ajouter une candidature (W13) : ces noms ne rejoignent jamais un dossier. Les candidatures sont montrées dans l'ordre
+ * L'écran ne lit et n'écrit que par les routes `/v1/location` [R16]. Les contacts proposés pour une candidature (W13)
+ * ne sont lus qu'au geste d'ajouter, et leurs noms ne rejoignent jamais un dossier. Les candidatures sont montrées dans l'ordre
  * d'arrivée reçu de l'API, jamais retriées, jamais notées ni filtrées sur un revenu [R105] ; aucun nom de candidat n'est
  * montré, seulement le numéro d'arrivée. Aucun champ ne fait passer d'argent par AIMMO [R107]. Tout texte reçu est posé
  * avec `textContent`. Les montants et les plafonds sont ceux que le code calcule [R102] : l'écran les montre, il ne les
@@ -57,6 +57,77 @@ export const LOUER_CSS = `
 
 /** Le script de l'écran : posé dans le script de l'application, il en reprend les outils (`el`, `send`, `field`…). */
 export const LOUER_JS = `
+  /* ---------- M15 : l'écran « Louer » (W11), chargé à la demande [R105, R16, R201]. ---------- */
+  // Des euros saisis (« 650 » ou « 650,50 ») en centimes ; rien d'autre n'est admis.
+  function toCents(text) {
+    var t = String(text || '').replace(/[\\s\\u00a0\\u202f€]/g, '').replace(',', '.');
+    if (!/^\\d{1,7}(\\.\\d{1,2})?$/.test(t)) return null;
+    return Math.round(Number(t) * 100);
+  }
+  function centsText(c) { return typeof c === 'number' ? (c / 100).toFixed(2).replace('.', ',').replace(/,00$/, '') : ''; }
+  function whole(text, max) {
+    var t = String(text || '').trim();
+    if (!/^\\d{1,6}$/.test(t)) return null;
+    var n = Number(t);
+    return n <= max ? n : null;
+  }
+  function select(box, id, label, options, value) {
+    var s = field(box, id, label, 'select');
+    Object.keys(options).forEach(function (k) { var o = el('option', options[k]); o.value = k; s.appendChild(o); });
+    s.value = value;
+    return s;
+  }
+  function details(box, title) {
+    var d = el('details');
+    d.appendChild(el('summary', title));
+    box.appendChild(d);
+    return d;
+  }
+  var louerScreen = null;
+  var louerId = null;
+  function forgetLouer() { if (louerScreen) louerScreen.forget(); }
+  function wipeLouer() {
+    if (louerScreen) { louerScreen.wipe(); return; }
+    clear($('louer-corps'));
+    $('louer-etat').textContent = '';
+    $('louer-titre').textContent = 'Louer';
+    louerId = null;
+  }
+  function openLouer(message, page) {
+    if (!currentKey) return Promise.resolve(false);
+    if (louerScreen) return louerScreen.open(message, page);
+    session += 1;
+    var mine = session;
+    wipeLouer();
+    show('louer');
+    $('louer-etat').textContent = 'Chargement…';
+    return new Promise(function (resolve) {
+      var script = document.createElement('script');
+      script.setAttribute('src', '/app/louer.js');
+      script.addEventListener('load', function () {
+        var make = globalThis.AIMMO_LOUER;
+        try { delete globalThis.AIMMO_LOUER; } catch (e) { /* rien à retirer */ }
+        if (mine !== session || typeof make !== 'function') { resolve(false); return; }
+        louerScreen = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, checkbox: checkbox, show: show, ID: ID, date: date, euros: euros, hour: hour, line: line, section: section, toCents: toCents, centsText: centsText, whole: whole, select: select, details: details, setId: function (id) { louerId = id; }, key: function () { return currentKey; }, session: function () { return session; }, bump: function () { session += 1; return session; } });
+        resolve(louerScreen.open(message, page));
+      });
+      script.addEventListener('error', function () {
+        if (mine === session) $('louer-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
+        resolve(false);
+      });
+      $('louer').appendChild(script);
+    });
+  }
+`;
+
+/**
+ * Le script de l'écran, servi à part (`/app/louer.js`) et chargé à la première ouverture, pour que l'application tienne
+ * son budget [R201]. Il reçoit les outils de l'application et ne garde rien sur l'appareil.
+ */
+export const LOUER_SCRIPT = `'use strict';
+globalThis.AIMMO_LOUER = function (t) {
+  var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox, show = t.show, ID = t.ID, date = t.date, euros = t.euros, hour = t.hour, line = t.line, section = t.section, toCents = t.toCents, centsText = t.centsText, whole = t.whole, select = t.select, details = t.details;
+
   /* ---------- M15 : l'écran « Louer » (W11). Les dossiers dans l'ordre d'arrivée reçu, jamais retriés ni notés [R105]. ---------- */
   var ANNEXES = ${JSON.stringify(ANNEXES)};
   var LEASE_LABELS = ${JSON.stringify(LEASE_LABELS)};
@@ -75,7 +146,6 @@ export const LOUER_JS = `
     unknown_person: 'Cette fiche n’est pas dans ce réseau.',
     already_applied: 'Cette personne a déjà une candidature sur ce logement.',
     bad_dossierfacile: 'Ce lien n’est pas un lien DossierFacile.',
-    busy: 'Trop de demandes en même temps : réessayez.',
     agent_inactive: 'Votre accès d’agent n’est plus actif.',
     no_facts: 'Saisissez d’abord les faits du logement.',
     invalid: 'Un champ n’est pas valable : vérifiez la saisie.',
@@ -146,40 +216,16 @@ export const LOUER_JS = `
     $('louer-etat').textContent = '';
     $('louer-titre').textContent = 'Louer';
     louerId = null;
-  }
-  // Des euros saisis (« 650 » ou « 650,50 ») en centimes ; rien d'autre n'est admis.
-  function toCents(text) {
-    var t = String(text || '').replace(/[\\s\\u00a0\\u202f€]/g, '').replace(',', '.');
-    if (!/^\\d{1,7}(\\.\\d{1,2})?$/.test(t)) return null;
-    return Math.round(Number(t) * 100);
-  }
-  function centsText(c) { return typeof c === 'number' ? (c / 100).toFixed(2).replace('.', ',').replace(/,00$/, '') : ''; }
-  function whole(text, max) {
-    var t = String(text || '').trim();
-    if (!/^\\d{1,6}$/.test(t)) return null;
-    var n = Number(t);
-    return n <= max ? n : null;
-  }
-  function select(box, id, label, options, value) {
-    var s = field(box, id, label, 'select');
-    Object.keys(options).forEach(function (k) { var o = el('option', options[k]); o.value = k; s.appendChild(o); });
-    s.value = value;
-    return s;
-  }
-  function details(box, title) {
-    var d = el('details');
-    d.appendChild(el('summary', title));
-    box.appendChild(d);
-    return d;
+    t.setId(null);
   }
   var louerPage = 0;
   // Le code du dernier refus, pour qu'un geste sache par exemple qu'un code de signature est à renvoyer.
   var louerLastCode = null;
   var louerId = null;
   function openLouer(message, page) {
-    if (!currentKey) return Promise.resolve(false);
+    if (!t.key()) return Promise.resolve(false);
     if (typeof page === 'number') louerPage = page;
-    session += 1;
+    t.bump();
     wipeLouer();
     show('louer');
     louerState('Chargement…');
@@ -237,18 +283,18 @@ export const LOUER_JS = `
   // Le texte du bail préparé depuis cet appareil, par version : à relire avec les parties avant de signer.
   var leaseTexts = {};
   function openLocation(id, title, message) {
-    if (!currentKey || !ID.test(id)) return Promise.resolve(false);
-    session += 1;
-    var mine = session;
+    if (!t.key() || !ID.test(id)) return Promise.resolve(false);
+    var mine = t.bump();
     clear($('louer-corps'));
     louerId = id;
+    t.setId(id);
     $('louer-titre').textContent = title || 'Logement';
     show('louer');
     louerState('Chargement…');
     var base = '/v1/location/' + encodeURIComponent(id);
     var reads = [base, base + '/suivi', base + '/plafonds', base + '/annonces', base + '/candidatures', base + '/presentation', base + '/echeances'];
     return Promise.all(reads.map(function (path) { return send(path, 'GET'); })).then(function (all) {
-      if (mine !== session || all.some(function (x) { return x.gone; })) return false;
+      if (mine !== t.session() || all.some(function (x) { return x.gone; })) return false;
       if (all[0].offline) { louerState('Pas de réseau. Réessayez dans un moment.'); return false; }
       if (!all[0].ok || !all[1].ok) { louerState(all[0].status === 403 ? 'Ce logement n’est pas dans vos droits.' : 'Indisponible pour le moment. Réessayez plus tard.'); return false; }
       var data = all.map(function (x) { return x.ok ? x.body.data : null; });
@@ -441,7 +487,7 @@ export const LOUER_JS = `
   }
   function missingText(m) { return (PIECES_MISSING[m.what] || 'pièce') + (m.holder === 'candidat' ? '' : ' du garant'); }
   // L'agent choisit parmi ses contacts, sans saisir d'identifiant ; la candidature prend la dernière place d'arrivée.
-  function applyBlock(base, apps) {
+  function applyBlock(base) {
     var d = el('details');
     d.appendChild(el('summary', 'Ajouter une candidature'));
     var loaded = false;
@@ -449,15 +495,15 @@ export const LOUER_JS = `
       if (loaded) return;
       loaded = true;
       louerState('Chargement…');
-      send('/v1/fiches', 'GET').then(function (res) {
+      send(base + '/contacts', 'GET').then(function (res) {
         if (res.gone) return;
         if (!res.ok) { loaded = false; louerState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Vos contacts sont indisponibles pour le moment.'); return; }
-        louerState('');
-        var taken = {};
-        apps.forEach(function (a) { taken[a.personId] = true; });
+        var list = res.body.data.contacts || [];
+        louerState(list.length ? (res.body.data.more ? 'Seuls les 500 premiers contacts sont proposés.' : '') : 'Aucun autre contact à proposer sur ce logement.');
+        if (!list.length) { loaded = false; return; }
         var options = { '': 'Choisir une personne' };
-        (res.body.data || []).filter(function (p) { return !taken[p.id]; }).forEach(function (p) {
-          options[p.id] = [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Contact sans nom';
+        list.forEach(function (p) {
+          options[p.personId] = [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Contact sans nom';
         });
         var who = select(d, 'louer-candidat', 'La personne', options, '');
         var link = field(d, 'louer-candidat-lien', 'Lien DossierFacile (facultatif)');
@@ -477,7 +523,7 @@ export const LOUER_JS = `
   function applicationsBlock(base, apps, pres, chosen) {
     var box = section('Les candidatures');
     box.appendChild(el('p', 'Dans leur ordre d’arrivée, et lui seul. Seules les pièces de la liste officielle sont demandées ; l’IA ne regarde que la complétude.', 'doux'));
-    if (!chosen) box.appendChild(applyBlock(base, apps));
+    if (!chosen) box.appendChild(applyBlock(base));
     if (!apps.length) { box.appendChild(el('p', 'Aucune candidature pour le moment.', 'doux')); return box; }
     var ol = el('ol', null, 'dossiers');
     // L'ordre reçu de l'API est celui des arrivées : il n'est jamais retrié ici [R105].
@@ -849,4 +895,6 @@ export const LOUER_JS = `
     });
     return box;
   }
+  return { open: openLouer, wipe: wipeLouer, forget: forgetLouer };
+};
 `;

@@ -1942,10 +1942,11 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 ### W13 · Ajouter une candidature depuis l'écran « Louer »
 - Statut : en cours (voie 2)
 - Voie : 2
+- Décidé (2026-11-02, voie 2) : l'application n'avait plus que 55 octets de marge : tout l'écran « Louer » est sorti en `/app/louer.js`, chargé à la première ouverture ; seule une ligne change dans `agent-app.ts`, `fichiers.ts` n'est pas touché ; 500 contacts proposés au plus, d'une seule requête, pour ne pas dépasser les lectures d'une invocation.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11
 - Cahier : M15 ; R104, R105, R16.
 - Objectif : reste écrit de W11. L'agent ne peut pas ranger une candidature depuis l'écran : la route existe, l'écran ne la propose pas. Il choisit la fiche de la personne parmi ses contacts, sans saisir d'identifiant ; la candidature arrive en dernière place de l'ordre d'arrivée, sans note ni tri.
-- Critères : l'écran n'écrit que par `POST /v1/location/:id/candidatures` et ne lit les contacts de l'agent (`/v1/fiches`, sous R16) qu'au geste d'ajouter [R16] ; la liste reste dans l'ordre d'arrivée, sans note ni tri [R105] ; un refus de la route est dit en français, sans identifiant ni donnée [R104] ; un double appui ne range pas deux candidatures ; testé au clavier et sur téléphone comme les autres écrans (`fake-dom`) ; le budget de poids de l'application est tenu [R201].
+- Critères : l'écran ne lit et n'écrit que par `/v1/location`, et ne lit les contacts de l'agent qu'au geste d'ajouter (`GET /v1/location/:id/contacts`, ses fiches gardées) [R16] ; une personne réunie à une autre fiche n'a jamais deux candidatures sur un logement [R105] ; la liste reste dans l'ordre d'arrivée, sans note ni tri [R105] ; un refus de la route est dit en français, sans identifiant ni donnée [R104] ; un double appui ne range pas deux candidatures ; testé au clavier et sur téléphone comme les autres écrans (`fake-dom`) ; le budget de poids de l'application est tenu [R201].
 - Attend : rien.
 
 **M16 · Commerces et entreprises, septembre 2027.**
