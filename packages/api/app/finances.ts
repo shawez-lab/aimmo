@@ -70,7 +70,8 @@ const SETTING_REFUSALS: Record<string, string> = {
   unknown_agent: 'Un agent de la liste n’est plus du réseau : relisez la page.',
   duplicate_agent: 'Un agent apparaît deux fois.',
   bad_budget: 'Le budget doit être un montant positif, ou vide pour ne rien plafonner.',
-  bad_threshold: 'Un seuil va de 0 à 100 %.',
+  bad_threshold: 'Un seuil va de 0,01 à 100 %.',
+  stale_grid: 'Une autre version vient d’être rangée : relisez la grille, puis recommencez.',
   bad_notice: 'Le préavis va de 1 à 365 jours.',
   not_creditable: 'Un avoir ne se corrige pas par un avoir.',
   already: 'Cette facture a déjà son avoir.',
@@ -369,9 +370,9 @@ globalThis.AIMMO_FINANCES = function (t) {
       /* Sans toutes les réponses, on ne sait pas ce qui attend : aucun geste n'est proposé. */
       if (!a.ok || !b.ok || !k.ok || !Array.isArray(a.body.data) || !Array.isArray(b.body.data) || !Array.isArray(k.body.data)) {
         var bad = !a.ok ? a : !b.ok ? b : k;
-        if (bad.offline) state.textContent = 'Pas de réseau. Réessayez dans un moment.';
-        else if (bad.body && bad.body.rule === 'R16') state.textContent = PAY_REFUSALS.role;
-        else state.textContent = 'Indisponible pour le moment. Réessayez plus tard.';
+        var why = bad.offline ? 'Pas de réseau. Réessayez dans un moment.' : bad.body && bad.body.rule === 'R16' ? PAY_REFUSALS.role : 'Indisponible pour le moment. Réessayez plus tard.';
+        /* Un geste réussi reste dit, même si la relecture échoue. */
+        state.textContent = (message ? message + ' ' : '') + why;
         return false;
       }
       var tasks = {};
@@ -480,7 +481,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     return bp <= 10000 ? bp : null;
   }
   function refusalOf(res, fallback) {
-    if (res.offline) return 'Pas de réseau : rien n’est rangé. Réessayez dans un moment.';
+    /* Une réponse perdue ne dit pas que rien n'est rangé : le serveur a pu écrire avant de se taire. */
     return (res.body && SETTING_REFUSALS[res.body.code]) || fallback;
   }
   function saveButton(box, text, state, act) {
@@ -502,10 +503,13 @@ globalThis.AIMMO_FINANCES = function (t) {
   function gridForm(g) {
     var box = el('div');
     box.appendChild(el('h4', 'Nouvelle version de la grille'));
-    box.appendChild(el('p', g.version ? 'Version ' + g.version + ', depuis le ' + date(g.validFrom + 'T12:00:00Z') + ' : ' + percent(g.defaultRateBp) + ' % pour l’agent.' : 'Aucune grille pour le moment : aucune commission ne peut naître.', g.version ? 'doux' : 'retard'));
+    var line = function (x) { return 'Version ' + x.version + ', ' + percent(x.defaultRateBp) + ' % pour l’agent'; };
+    var force = g.inForce;
+    box.appendChild(el('p', force ? 'En vigueur : ' + line(force) + ', depuis le ' + date(force.validFrom + 'T12:00:00Z') + '.' : 'Aucune grille en vigueur aujourd’hui : aucune commission ne peut naître sur un compromis signé ce jour.', force ? 'doux' : 'retard'));
+    (g.upcoming || []).forEach(function (x) { box.appendChild(el('p', 'Déjà programmée : ' + line(x) + ', à partir du ' + date(x.validFrom + 'T12:00:00Z') + '.')); });
     var from = field(box, 'À partir du', 'date');
     var rate = field(box, 'Part de l’agent, en %', 'text');
-    rate.value = percent(g.defaultRateBp);
+    rate.value = force ? percent(force.defaultRateBp) : '';
     var rows = (g.agents || []).map(function (a) {
       var i = field(box, 'Taux propre à l’agent ' + a.agentId + ', en % (vide : le taux commun)', 'text');
       i.value = percent(a.rateBp);
@@ -526,9 +530,9 @@ globalThis.AIMMO_FINANCES = function (t) {
         else agents.push({ agentId: r.agentId, rateBp: v });
       });
       if (wrong) { state.textContent = SETTING_REFUSALS.bad_rate; return null; }
-      return send('/v1/pilotage/grille', 'POST', { validFrom: from.value, defaultRateBp: bp, agents: agents }).then(function (res) {
+      return send('/v1/pilotage/grille', 'POST', { validFrom: from.value, defaultRateBp: bp, agents: agents, expectedVersion: g.version === undefined ? null : g.version }).then(function (res) {
         if (res.gone || mine !== t.session()) return false;
-        if (!res.ok) { state.textContent = refusalOf(res, 'Rien n’est rangé. Réessayez plus tard.'); return false; }
+        if (!res.ok) { state.textContent = refusalOf(res, 'Réponse perdue : cette version est peut-être rangée. Relisez la grille avant de recommencer.'); return false; }
         return settings('Nouvelle version de la grille rangée. Les ventes passées gardent la leur.');
       });
     });
@@ -557,12 +561,12 @@ globalThis.AIMMO_FINANCES = function (t) {
         cents = Math.round(Number(raw) * 100);
       }
       var a = toBp(ai.value), d = toBp(drop.value);
-      if (a === null || d === null) { state.textContent = SETTING_REFUSALS.bad_threshold; return null; }
+      if (a === null || d === null || a < 1 || d < 1) { state.textContent = SETTING_REFUSALS.bad_threshold; return null; }
       var days = Number(notice.value);
       if (!Number.isInteger(days) || days < 1 || days > 365) { state.textContent = SETTING_REFUSALS.bad_notice; return null; }
       return send('/v1/pilotage/reglages', 'POST', { aiMonthlyBudgetCents: cents, aiAlertBp: a, dropAlertBp: d, documentNoticeDays: days }).then(function (res) {
         if (res.gone || mine !== t.session()) return false;
-        if (!res.ok) { state.textContent = refusalOf(res, 'Rien n’est rangé. Réessayez plus tard.'); return false; }
+        if (!res.ok) { state.textContent = refusalOf(res, 'Réponse perdue : ces alertes sont peut-être rangées. Relisez-les avant de recommencer.'); return false; }
         state.textContent = 'Alertes rangées.';
         return true;
       });
@@ -583,7 +587,7 @@ globalThis.AIMMO_FINANCES = function (t) {
       /* Sans la dernière version, ranger une grille pourrait perdre des taux : aucun formulaire. */
       if (!g.ok || !s.ok || !g.body.data || !s.body.data) {
         var bad = !g.ok ? g : s;
-        state.textContent = bad.offline ? 'Pas de réseau. Réessayez dans un moment.' : bad.body && bad.body.rule === 'R16' ? SETTING_REFUSALS.role : 'Indisponible pour le moment. Réessayez plus tard.';
+        state.textContent = (message ? message + ' ' : '') + (bad.offline ? 'Pas de réseau. Réessayez dans un moment.' : bad.body && bad.body.rule === 'R16' ? SETTING_REFUSALS.role : 'Indisponible pour le moment. Réessayez plus tard.');
         return false;
       }
       body.appendChild(gridForm(g.body.data));
@@ -653,7 +657,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     return send('/v1/pilotage/factures', 'GET').then(function (res) {
       if (res.gone || mine !== t.session() || turn !== invoicing) return false;
       if (!res.ok || !Array.isArray(res.body.data)) {
-        state.textContent = res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.body && res.body.rule === 'R16' ? SETTING_REFUSALS.role : 'Indisponible pour le moment. Réessayez plus tard.';
+        state.textContent = (message ? message + ' ' : '') + (res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.body && res.body.rule === 'R16' ? SETTING_REFUSALS.role : 'Indisponible pour le moment. Réessayez plus tard.');
         return false;
       }
       var items = res.body.data;

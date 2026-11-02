@@ -143,7 +143,7 @@ export function pilotageRoutes(): PilotageRoute[] {
       pattern: new RegExp(`${P}/grille$`),
       name: 'pilotage.grille',
       handle: withBody(async (s, v, _p, b) => {
-        if (typeof b.validFrom !== 'string' || typeof b.defaultRateBp !== 'number' || (b.agents !== undefined && !Array.isArray(b.agents))) return badBody();
+        if (typeof b.validFrom !== 'string' || typeof b.defaultRateBp !== 'number' || (b.agents !== undefined && !Array.isArray(b.agents)) || (b.expectedVersion !== undefined && b.expectedVersion !== null && typeof b.expectedVersion !== 'number')) return badBody();
         return reply((await services(s).commissions.setGrid(v, b as unknown as pilotage.GridInput)) as Outcome);
       }),
     },

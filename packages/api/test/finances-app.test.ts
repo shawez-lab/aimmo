@@ -515,6 +515,19 @@ describe('K11 · commissions, encaissement et reversement pour la direction', ()
     expect(t.body().children).toEqual([]);
   });
 
+  it('un geste réussi reste dit quand la relecture de la liste échoue', async () => {
+    const t = await direction({ 'POST /v1/pilotage/dossiers/d-enc/encaissement': ok({ payoutDueAt: '2026-11-03T15:00:00.000Z' }) });
+    await t.voir();
+    const b = t.buttons('Rapporter l’encaissement')[0]!;
+    t.fill(b, '2026-11-02T10:00', 'virement-77');
+    await t.click(b);
+    clock += 2000;
+    t.table[COMMISSIONS] = no(500, { ok: false });
+    await t.click(b);
+    expect(t.state()).toContain('Encaissement rangé pour le dossier d-enc');
+    expect(t.state()).toContain('Indisponible');
+  });
+
   it('[R16] [R68] un agent ne demande jamais les commissions du réseau en se connectant', async () => {
     const t = await run('agent');
     await settle();
@@ -658,7 +671,7 @@ describe('K12 · grille, alertes, factures et avoirs', () => {
   const GRID = 'GET /v1/pilotage/grille';
   const SETTINGS = 'GET /v1/pilotage/reglages';
   const INVOICES = 'GET /v1/pilotage/factures';
-  const grid = { version: 2, validFrom: '2026-09-01', defaultRateBp: 7000, agents: [{ agentId: 'alex', rateBp: 7500 }, { agentId: 'sam', rateBp: null }] };
+  const grid = { version: 2, inForce: { version: 2, validFrom: '2026-09-01', defaultRateBp: 7000 }, upcoming: [] as object[], agents: [{ agentId: 'alex', rateBp: 7500 }, { agentId: 'sam', rateBp: null }] };
   const set = { aiMonthlyBudgetCents: 10000, aiAlertBp: 7000, dropAlertBp: 3000, documentNoticeDays: 30 };
   const invoice = (id: string, label: string, kind: string, corrects: string | null = null) => ({
     id,
@@ -697,7 +710,7 @@ describe('K12 · grille, alertes, factures et avoirs', () => {
     expect(sam!.value).toBe('');
     from!.value = '2027-01-01';
     await t.press('grille-corps', 'Ranger cette version');
-    expect(JSON.parse(t.bodies().at(-1)!)).toEqual({ validFrom: '2027-01-01', defaultRateBp: 7000, agents: [{ agentId: 'alex', rateBp: 7500 }] });
+    expect(JSON.parse(t.bodies().at(-1)!)).toEqual({ validFrom: '2027-01-01', defaultRateBp: 7000, agents: [{ agentId: 'alex', rateBp: 7500 }], expectedVersion: 2 });
     expect(t.els['grille-etat']!.textContent).toContain('Nouvelle version de la grille rangée');
   });
 
@@ -728,8 +741,50 @@ describe('K12 · grille, alertes, factures et avoirs', () => {
     expect(t.said('grille-corps')).toContain('Une grille ne vaut que pour l’avenir');
   });
 
+  it('[R17] ce qui est en vigueur et ce qui est programmé sont dits ; un formulaire périmé est refusé en français', async () => {
+    const t = await direct({
+      [GRID]: ok({ ...grid, version: 4, upcoming: [{ version: 4, validFrom: '2027-01-01', defaultRateBp: 6500 }] }),
+      'POST /v1/pilotage/grille': no(400, { ok: false, rule: null, code: 'stale_grid' }),
+    });
+    await t.open('grille-voir');
+    expect(t.said('grille-corps')).toContain('En vigueur : Version 2, 70 %');
+    expect(t.said('grille-corps')).toContain('Déjà programmée : Version 4, 65 %');
+    t.inputs()[0]!.value = '2027-02-01';
+    await t.press('grille-corps', 'Ranger cette version');
+    expect(JSON.parse(t.bodies().at(-1)!).expectedVersion).toBe(4);
+    expect(t.said('grille-corps')).toContain('Une autre version vient d’être rangée');
+  });
+
+  it('une réponse perdue ne prétend jamais que rien n’est rangé', async () => {
+    const t = await direct({ 'POST /v1/pilotage/grille': async () => Promise.reject(new TypeError('hors ligne')), 'POST /v1/pilotage/reglages': no(500, { ok: false }) });
+    await t.open('grille-voir');
+    t.inputs()[0]!.value = '2027-02-01';
+    await t.press('grille-corps', 'Ranger cette version');
+    expect(t.said('grille-corps')).toContain('Réponse perdue : cette version est peut-être rangée.');
+    await t.press('grille-corps', 'Ranger ces alertes');
+    expect(t.said('grille-corps')).toContain('Réponse perdue : ces alertes sont peut-être rangées.');
+    expect(t.said('grille-corps')).not.toContain('rien n’est rangé');
+  });
+
+  it('un geste réussi reste dit quand la relecture échoue', async () => {
+    const t = await direct({ 'POST /v1/pilotage/grille': ok({ version: 3 }), 'POST /v1/pilotage/factures/f-1/avoir': ok({ content: { label: 'A-1' } }) });
+    await t.open('grille-voir');
+    t.inputs()[0]!.value = '2027-02-01';
+    t.table[GRID] = no(500, { ok: false });
+    await t.press('grille-corps', 'Ranger cette version');
+    expect(t.els['grille-etat']!.textContent).toContain('Nouvelle version de la grille rangée');
+    expect(t.els['grille-etat']!.textContent).toContain('Indisponible');
+    await t.open('factures-voir');
+    const b = await t.press('factures-corps', 'Corriger par un avoir');
+    clock += 2000;
+    t.table[INVOICES] = async () => Promise.reject(new TypeError('hors ligne'));
+    b.listeners.click!({});
+    await settle();
+    expect(t.els['factures-etat']!.textContent).toContain('Avoir émis en mode essai : A-1.');
+  });
+
   it('aucune grille : dit, car aucune commission ne peut naître', async () => {
-    const t = await direct({ [GRID]: ok({ version: null, validFrom: null, defaultRateBp: null, agents: [] }) });
+    const t = await direct({ [GRID]: ok({ version: null, inForce: null, upcoming: [], agents: [] }) });
     await t.open('grille-voir');
     expect(t.said('grille-corps')).toContain('aucune commission ne peut naître');
   });
@@ -765,7 +820,10 @@ describe('K12 · grille, alertes, factures et avoirs', () => {
     budget!.value = '';
     ai!.value = '150';
     await t.press('grille-corps', 'Ranger ces alertes');
-    expect(t.said('grille-corps')).toContain('Un seuil va de 0 à 100 %.');
+    expect(t.said('grille-corps')).toContain('Un seuil va de 0,01 à 100 %.');
+    ai!.value = '0';
+    await t.press('grille-corps', 'Ranger ces alertes');
+    expect(t.said('grille-corps')).toContain('Un seuil va de 0,01 à 100 %.');
     ai!.value = '70';
     notice!.value = '500';
     await t.press('grille-corps', 'Ranger ces alertes');
