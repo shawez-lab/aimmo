@@ -484,3 +484,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-02 23:40 · D12 · depuis « Mes biens », l'agent prépare, contrôle et enregistre son mandat signé, puis lit le numéro et l'exemplaire (#288) ; relecture forte 2 P1 corrigés, D15 trouvée ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : D15
 - 2026-11-02 23:52 · CE13 · l'agent complète la fiche du commerce à l'écran, la direction lit et range les barèmes (#289) ; relecture forte sans P0/P1 ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : CE14
 - 2026-11-02 23:52 · voie 2 · fin de séance : CE12 et CE13 fusionnées ; verrou libéré · prochaine : CE14
+- 2026-11-02 23:53 · voie 2 · relance immédiate refusée par le contrôle des permissions, non retentée ; le passage horaire de la voie 2 reprendra CE14 · prochaine : CE14
