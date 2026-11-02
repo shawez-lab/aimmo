@@ -102,9 +102,13 @@ export interface OwnerNotice {
 export type LocationRefusal = { ok: false; rule: 'R16' | 'R100' | 'R101' | 'R102' | null; code: string; field?: string };
 export type LocationResult<T> = { ok: true; value: T } | LocationRefusal;
 
-/** Le stockage des annexes : seule l'existence d'une référence est lue, jamais son contenu. */
+/**
+ * Le stockage des annexes : seule l'existence d'une référence est lue, jamais son contenu. `upload`, quand le stockage le
+ * permet, range un fichier déposé depuis le téléphone (W14) ; sans lui, le dépôt est fermé.
+ */
 export interface RentalFileStore {
   has(ref: string): Promise<boolean>;
+  upload?(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;

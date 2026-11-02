@@ -1,4 +1,4 @@
-import { ANNEX_KINDS, CHOICE_CHANNELS, ELEMENT_STATES, HABITATS, LEASE_FIELDS, METER_KINDS } from '../../core/src/location/index.ts';
+import { ANNEX_KINDS, CHOICE_CHANNELS, ELEMENT_STATES, HABITATS, LEASE_FIELDS, METER_KINDS, RENTAL_DEPOSIT_MAX_BYTES, RENTAL_DEPOSIT_TYPES } from '../../core/src/location/index.ts';
 
 /**
  * L'écran « Louer » de l'application de l'agent (W11), en morceaux posés dans `fichiers.ts` : sa section de page, son
@@ -9,7 +9,8 @@ import { ANNEX_KINDS, CHOICE_CHANNELS, ELEMENT_STATES, HABITATS, LEASE_FIELDS, M
  * d'arrivée reçu de l'API, jamais retriées, jamais notées ni filtrées sur un revenu [R105] ; aucun nom de candidat n'est
  * montré, seulement le numéro d'arrivée. Aucun champ ne fait passer d'argent par AIMMO [R107]. Tout texte reçu est posé
  * avec `textContent`. Les montants et les plafonds sont ceux que le code calcule [R102] : l'écran les montre, il ne les
- * calcule pas.
+ * calcule pas. L'annexe, la preuve et la notice se déposent depuis le téléphone (W14) : le fichier part tel quel, avec
+ * son empreinte calculée sur l'appareil, et l'agent ne voit ni ne saisit jamais de référence.
  */
 
 /** Les libellés de M15, tirés du code métier pour ne jamais diverger. */
@@ -122,7 +123,7 @@ export const LOUER_JS = `
 
 /**
  * Le script de l'écran, servi à part (`/app/louer.js`) et chargé à la première ouverture, pour que l'application tienne
- * son budget [R201]. Il reçoit les outils de l'application et ne garde rien sur l'appareil.
+ * son budget [R201], et servi sans ses lignes de commentaire. Il reçoit les outils de l'application et ne garde rien sur l'appareil.
  */
 export const LOUER_SCRIPT = `'use strict';
 globalThis.AIMMO_LOUER = function (t) {
@@ -169,7 +170,7 @@ globalThis.AIMMO_LOUER = function (t) {
     bad_date: 'La date du choix n’est pas valable (pas dans le futur).',
     before_presentation: 'Le choix ne peut pas précéder la présentation.',
     bad_channel: 'Dites comment le propriétaire a fait son choix.',
-    bad_proof: 'La référence de la preuve n’est pas celle d’une preuve de ce logement.',
+    bad_proof: 'Cette preuve n’est pas rangée pour ce logement : déposez-la de nouveau.',
     not_stored: 'Ce fichier n’est pas rangé : rangez-le d’abord.',
     incomplete: 'Ce dossier n’est plus complet.',
     no_choice: 'Le propriétaire n’a pas encore choisi.',
@@ -179,7 +180,9 @@ globalThis.AIMMO_LOUER = function (t) {
     bad_owner_address: 'Le domicile du bailleur n’est pas valable.',
     bad_equipment: 'La liste des équipements n’est pas valable.',
     bad_card: 'La carte professionnelle s’écrit « CPI » puis son numéro.',
-    bad_notice_ref: 'La référence de la notice n’est pas celle d’un fichier de ce logement.',
+    bad_notice_ref: 'Cette notice n’est pas rangée pour ce logement : déposez-la de nouveau.',
+    type_refuse: 'Ce fichier n’est pas accepté : un PDF, une photo JPEG ou PNG.',
+    trop_lourd: 'Ce fichier dépasse 20 Mo.',
     bad_habitat: 'Choisissez le type d’habitat.',
     no_template: 'Aucun modèle de bail validé dans le réseau.',
     bad_party: 'Partie inconnue.',
@@ -271,6 +274,64 @@ globalThis.AIMMO_LOUER = function (t) {
       if (keep) { louerState(done); return res.body.data; }
       return openLocation(id, title, done).then(function () { return res.body.data; });
     });
+  }
+  var DEPOSIT_TYPES = ${JSON.stringify(RENTAL_DEPOSIT_TYPES)};
+  var DEPOSIT_MAX = ${RENTAL_DEPOSIT_MAX_BYTES};
+  function hex(buf) { return Array.from(new Uint8Array(buf), function (b) { return (b + 256).toString(16).slice(1); }).join(''); }
+  // Le dépôt part tel quel, sous la clé en cours ; une clé refusée passe par send, qui sait la retirer et le dire.
+  function louerUpload(path, file, type, sha) {
+    var key = t.key();
+    if (!key) return Promise.resolve({ gone: true });
+    var mine = t.session();
+    return fetch(path, { method: 'POST', headers: { authorization: 'Bearer ' + key, 'content-type': type, 'x-aimmo-sha256': sha }, body: file, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
+      return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
+        if (mine !== t.session()) return { gone: true };
+        if (r.status === 401 || (r.status === 403 && b && b.code === 'agent_inactive')) return send('/v1/location', 'GET').then(function () { return { gone: true }; });
+        return { status: r.status, ok: r.ok && !!b && b.ok === true, body: b };
+      });
+    }, function () { return mine !== t.session() ? { gone: true } : { offline: true }; });
+  }
+  // Une pièce prise sur le téléphone. Déposée une seule fois : si le geste qui suit est refusé, le même fichier n'est pas renvoyé.
+  function piece(box, id, label, kind) {
+    var types = DEPOSIT_TYPES[kind];
+    var pick = field(box, id, label);
+    pick.setAttribute('type', 'file');
+    pick.setAttribute('accept', Object.keys(types).join(','));
+    var kept = null;
+    return {
+      picked: function () { return !!(pick.files && pick.files[0]); },
+      // La référence du fichier choisi, après l'avoir déposé ; null si rien n'est rangé, la raison étant dite.
+      ref: function (base) {
+        var file = pick.files && pick.files[0];
+        if (!file) return Promise.resolve(null);
+        if (kept && kept.file === file) return Promise.resolve(kept.ref);
+        var type = String(file.type || '').toLowerCase();
+        if (!Object.prototype.hasOwnProperty.call(types, type)) { louerState(LOUER_REFUSALS.type_refuse); return Promise.resolve(null); }
+        if (file.size > DEPOSIT_MAX) { louerState(LOUER_REFUSALS.trop_lourd); return Promise.resolve(null); }
+        var mine = t.session();
+        louerState('Lecture du fichier…');
+        return file.arrayBuffer().then(function (buf) { return crypto.subtle.digest('SHA-256', buf); }).then(function (sum) {
+          if (mine !== t.session()) return null;
+          louerState('Envoi du fichier…');
+          return louerUpload(base + '/fichiers/' + kind, file, type, hex(sum)).then(function (res) {
+            if (res.gone) return null;
+            var ref = res.ok && res.body.data && res.body.data.ref;
+            if (typeof ref !== 'string') { louerState(res.offline ? 'Pas de réseau : le fichier n’est pas rangé.' : louerRefusal(res.body, 'Le fichier n’est pas rangé. Réessayez.')); return null; }
+            kept = { file: file, ref: ref };
+            return ref;
+          });
+        }, function () { if (mine === t.session()) louerState('Ce fichier ne se lit pas sur ce téléphone.'); return null; });
+      },
+    };
+  }
+  // Un geste à la fois : un double appui ne dépose pas deux fichiers.
+  function once(fn) {
+    var busy = false;
+    return function () {
+      if (busy) return;
+      busy = true;
+      Promise.resolve(fn()).finally(function () { busy = false; });
+    };
   }
   function problemText(p) {
     if (p && p.code === 'critere_location') return 'Critère interdit : « ' + p.value + ' ».';
@@ -416,14 +477,17 @@ globalThis.AIMMO_LOUER = function (t) {
     var kinds = {};
     Object.keys(ANNEXES).forEach(function (k) { kinds[k] = ANNEXES[k]; });
     var kind = select(d, 'annexe-' + n, 'Annexe', kinds, required[0] || 'dpe');
-    var ref = field(d, 'annexe-ref-' + n, 'Référence du fichier rangé');
-    ref.setAttribute('autocomplete', 'off');
-    ref.setAttribute('spellcheck', 'false');
+    var file = piece(d, 'annexe-fichier-' + n, 'Le document, en PDF ou en photo', 'annexe');
     var on = field(d, 'annexe-date-' + n, 'Date du diagnostic');
     on.setAttribute('type', 'date');
-    d.appendChild(button('Joindre l’annexe', function () {
-      louerAct(base + '/annexes', { kind: kind.value, ref: String(ref.value || '').trim(), diagnosedOn: on.value }, 'L’annexe n’est pas jointe : vérifiez la référence et la date.', 'Annexe jointe : contrôlez de nouveau le logement.');
-    }));
+    d.appendChild(button('Joindre l’annexe', once(function () {
+      if (!file.picked()) { louerState('Choisissez d’abord le document.'); return null; }
+      if (!on.value) { louerState('Indiquez la date du diagnostic.'); return null; }
+      return file.ref(base).then(function (ref) {
+        if (!ref) return null;
+        return louerAct(base + '/annexes', { kind: kind.value, ref: ref, diagnosedOn: on.value }, 'L’annexe n’est pas jointe : vérifiez le document et la date.', 'Annexe jointe : contrôlez de nouveau le logement.');
+      });
+    })));
     return d;
   }
   function feesBlock(base, c, ceilingsBody, fees) {
@@ -580,16 +644,18 @@ globalThis.AIMMO_LOUER = function (t) {
     var when = field(box, 'quand-' + n, 'Quand il a choisi');
     when.setAttribute('type', 'datetime-local');
     var how = select(box, 'comment-' + n, 'Comment il l’a dit', CHOICE_CHANNELS, 'oral');
-    var proof = field(box, 'preuve-' + n, 'Référence de la preuve rangée');
-    proof.setAttribute('autocomplete', 'off');
-    proof.setAttribute('spellcheck', 'false');
-    box.appendChild(button('Enregistrer son choix', function () {
+    var proof = piece(box, 'preuve-' + n, 'Sa preuve : photo, PDF ou texte écrit', 'preuve');
+    box.appendChild(button('Enregistrer son choix', once(function () {
       var picked = radios.filter(function (c) { return c.checked; })[0];
-      if (!picked) { louerState('Cochez le dossier choisi par le propriétaire.'); return; }
+      if (!picked) { louerState('Cochez le dossier choisi par le propriétaire.'); return null; }
       var at = new Date(when.value);
-      if (!when.value || isNaN(at.getTime())) { louerState('Indiquez quand le propriétaire a choisi.'); return; }
-      louerAct(base + '/choix', { presentationId: pres.presentationId, applicationId: picked.value, decidedAt: at.toISOString(), channel: how.value, proofRef: String(proof.value || '').trim() }, 'Le choix n’est pas enregistré.', 'Choix du propriétaire enregistré.');
-    }));
+      if (!when.value || isNaN(at.getTime())) { louerState('Indiquez quand le propriétaire a choisi.'); return null; }
+      if (!proof.picked()) { louerState('Choisissez d’abord la preuve de son choix.'); return null; }
+      return proof.ref(base).then(function (ref) {
+        if (!ref) return null;
+        return louerAct(base + '/choix', { presentationId: pres.presentationId, applicationId: picked.value, decidedAt: at.toISOString(), channel: how.value, proofRef: ref }, 'Le choix n’est pas enregistré.', 'Choix du propriétaire enregistré.');
+      });
+    })));
     return box;
   }
   function leaseBlock(base, lease) {
@@ -615,18 +681,23 @@ globalThis.AIMMO_LOUER = function (t) {
     equipment.setAttribute('rows', '3');
     equipment.setAttribute('maxlength', '400');
     var card = field(d, 'bail-carte-' + n, 'Carte professionnelle (CPI …)');
-    var notice = field(d, 'bail-notice-' + n, 'Référence de la notice d’information rangée');
-    [address, owner, card, notice].forEach(function (x) { x.setAttribute('autocomplete', 'off'); });
-    d.appendChild(button('Préparer le bail', function () {
+    var notice = piece(d, 'bail-notice-' + n, 'La notice d’information, en PDF', 'notice');
+    [address, owner, card].forEach(function (x) { x.setAttribute('autocomplete', 'off'); });
+    d.appendChild(button('Préparer le bail', once(function () {
       var b = { habitat: habitat.value };
-      [['address', address], ['ownerAddress', owner], ['equipment', equipment], ['professionalCard', card], ['noticeRef', notice]].forEach(function (x) { var v = String(x[1].value || '').trim(); if (v) b[x[0]] = v; });
-      louerAct(base + '/bail', b, 'Le bail n’est pas préparé.', '', true).then(function (l) {
-        if (!l) return;
-        if (ID.test(l.leaseId) && typeof l.content === 'string') leaseTexts[l.leaseId] = l.content;
-        var missing = (l.missing || []).map(function (k) { return LEASE_LABELS[String(k).split('.').map(function (x) { return x.slice(0, 4); }).join('.')] || 'un champ'; });
-        openLocation(louerId, $('louer-titre').textContent, missing.length ? 'Bail préparé, à compléter : ' + missing.join(', ') + '.' : 'Bail préparé, complet : il est à signer.');
+      [['address', address], ['ownerAddress', owner], ['equipment', equipment], ['professionalCard', card]].forEach(function (x) { var v = String(x[1].value || '').trim(); if (v) b[x[0]] = v; });
+      var joined = notice.picked() ? notice.ref(base) : Promise.resolve(undefined);
+      return joined.then(function (ref) {
+        if (ref === null) return null;
+        if (ref) b.noticeRef = ref;
+        return louerAct(base + '/bail', b, 'Le bail n’est pas préparé.', '', true).then(function (l) {
+          if (!l) return;
+          if (ID.test(l.leaseId) && typeof l.content === 'string') leaseTexts[l.leaseId] = l.content;
+          var missing = (l.missing || []).map(function (k) { return LEASE_LABELS[String(k).split('.').map(function (x) { return x.slice(0, 4); }).join('.')] || 'un champ'; });
+          return openLocation(louerId, $('louer-titre').textContent, missing.length ? 'Bail préparé, à compléter : ' + missing.join(', ') + '.' : 'Bail préparé, complet : il est à signer.');
+        });
       });
-    }));
+    })));
     return box;
   }
   // La signature d'une partie : son accord pour signer en ligne, le code reçu, et une trace facultative du doigt.
@@ -897,4 +968,4 @@ globalThis.AIMMO_LOUER = function (t) {
   }
   return { open: openLouer, wipe: wipeLouer, forget: forgetLouer };
 };
-`;
+`.replace(/^[ \t]*(?:\/\/.*|\/\*.*\*\/)[ \t]*\n/gm, '');

@@ -40,12 +40,19 @@ export interface DossierRoute {
 /** Le stockage R2 des pièces : seule l'existence d'une référence est lue, jamais son contenu. */
 export interface R2Like {
   head(key: string): Promise<unknown | null>;
+  /** Les pièces de M15 déposées depuis le téléphone (W14) ; les pièces de M10 ne font que `head`. */
+  put?(key: string, value: Uint8Array, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
 }
 
 export class R2PieceStore implements PieceStore {
   constructor(private readonly bucket: R2Like) {}
   async has(ref: string): Promise<boolean> {
     return (await this.bucket.head(ref)) !== null;
+  }
+  /** Range les octets reçus tels quels ; une panne remonte à la couche métier, qui ne rend aucune référence. */
+  async upload(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    if (!this.bucket.put) throw new Error('stockage sans écriture');
+    await this.bucket.put(key, bytes, { httpMetadata: { contentType } });
   }
 }
 
