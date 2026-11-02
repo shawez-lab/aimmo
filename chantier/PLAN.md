@@ -251,7 +251,7 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : après un retrait sur une fiche et une fusion avec un doublon ouvert, redonner l'accord le range et rouvre l'envoi, pour chacun de ces modules (test [R03]) ; un accord qui compte n'est pas doublé ; les tests des modules restent verts.
 
 ### AC08 · Une exclusion notée pendant une fusion suit les deux fiches quand on la défait
-- Statut : à faire
+- Statut : en cours
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC05
 - Cahier : Conformité ; R02, R04, R17.
