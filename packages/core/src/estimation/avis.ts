@@ -363,6 +363,15 @@ export class AvisDeValeur {
       await this.log('avis.refuse', 'system:envoi', report, { code: 'not_validated' });
       return { ok: false, rule: 'R30', code: 'not_validated' };
     }
+    // Validé par un agent qui ne suit plus le bien, ou parti : ce n'est plus la validation de l'agent qui le suit.
+    const follower = await this.db.first<{ status: string }>(
+      'SELECT a.status FROM properties p JOIN agents a ON a.id = p.agent_id WHERE p.id = ? AND p.network_id = ? AND p.agent_id = ?',
+      [report.property_id, report.network_id, report.validated_by],
+    );
+    if (follower?.status !== 'active') {
+      await this.log('avis.refuse', 'system:envoi', report, { code: 'not_following_agent' });
+      return { ok: false, rule: 'R30', code: 'not_following_agent' };
+    }
     return { ok: true, value: { report, low: report.agent_low ?? report.computed_low, high: report.agent_high ?? report.computed_high } };
   }
 

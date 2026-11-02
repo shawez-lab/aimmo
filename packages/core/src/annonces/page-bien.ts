@@ -89,7 +89,7 @@ function photoList(photos: PublishedMedia[], limit: number): string {
   return items.length > 0 ? `<ul class="photos">${items.join('')}</ul>` : '';
 }
 
-function agentBlock(agent: AgentCard | null): string {
+export function agentBlock(agent: AgentCard | null): string {
   if (!agent) return '';
   const name = escapeHtml(`${agent.firstName} ${agent.lastName}`);
   const parts = [`<p><strong>${name}</strong>, agent immobilier</p>`];

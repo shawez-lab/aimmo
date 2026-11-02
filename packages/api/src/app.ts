@@ -16,6 +16,7 @@ import {
   DecisionEnvoi,
   FicheClient,
   CATEGORIES,
+  AvisImprime,
   ChronologieMandat,
   ControlesSignature,
   SignatureEnLigne,
@@ -708,6 +709,18 @@ const ROUTES: RouteDef[] = [
       const r = await new SignatureAvenant(s.db, s.acces, s.journal, { now: s.now }).terms(viewer, id!);
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/avis/${ID}/imprimable$`),
+    name: 'avis.imprimable',
+    // L'avis validé à imprimer, à la marque de l'agent : qui voit le bien en entier [R16], jamais un brouillon [R30].
+    handle: async (s, viewer, [id]) => {
+      const r = await new AvisImprime(s.db, s.acces, s.journal, { now: s.now }).print(viewer, id!);
+      if (r.ok) return new Response(r.html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'", 'x-content-type-options': 'nosniff' } });
+      if (r.rule === null) return json(404, { ok: false, code: r.code });
+      return json(403, { ok: false, rule: r.rule, code: r.code });
     },
   },
   {
