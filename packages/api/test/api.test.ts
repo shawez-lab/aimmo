@@ -213,6 +213,23 @@ describeWithSqlite('API du socle de bout en bout, sur une base D1 locale', () =>
     expect(await w.db.all('SELECT category, route FROM qualification_corrections')).toEqual([{ category: 'buyer', route: 'M17' }]);
   });
 
+  it('[R16] Q09 · les cas corrigés : un CSV pour la direction, refusé à un agent et à un partenaire, sans coordonnée [R15]', async () => {
+    const { chaine } = createCaptation(w.db, w.journal);
+    await chaine.receive(w.net, 'site_form', { submissionId: 'cas-1', email: 'cas@example.test', message: 'Bonjour, une question, écrivez à cas@example.test.' });
+    const q = await w.db.first<{ id: string }>('SELECT id FROM qualifications ORDER BY rowid DESC LIMIT 1');
+    await call(w.env, `/v1/qualifications/${q!.id}/correction`, { key: KEY_DIRECTION, method: 'POST', body: { category: 'buyer', route: null } });
+    expect((await call(w.env, '/v1/qualifications/cas-corriges', { key: KEY_AGENT })).status).toBe(403);
+    expect((await call(w.env, '/v1/qualifications/cas-corriges', { key: KEY_PARTNER })).status).toBe(403);
+    const file = await call(w.env, '/v1/qualifications/cas-corriges', { key: KEY_DIRECTION });
+    expect(file.status).toBe(200);
+    expect(file.headers.get('content-type')).toContain('text/csv');
+    expect(file.headers.get('cache-control')).toBe('no-store');
+    const text = await file.text();
+    expect(text.split('\n')[0]).toBe('texte;categorie;suite');
+    expect(text).toContain(';buyer;');
+    expect(text).not.toContain('cas@example.test');
+  });
+
   it('la santé répond sans clé et sans rien lire', async () => {
     const response = await call(w.env, '/v1/sante');
     expect(response.status).toBe(200);

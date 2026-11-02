@@ -68,3 +68,12 @@ export function parseMeasureCases(csv: string): MeasureCase[] {
   }
   return cases;
 }
+
+/**
+ * Écrit des cas au format de `parseMeasureCases`. Un texte qui commence comme une formule de tableur est neutralisé ;
+ * catégorie et suite sont écrites en code, et une suite vide est mesurée comme telle.
+ */
+export function measureCasesCsv(cases: readonly MeasureCase[]): string {
+  const cell = (text: string): string => `"${(/^[=+\-@\t\r]/.test(text) ? `'${text}` : text).replace(/"/g, '""')}"`;
+  return ['texte;categorie;suite', ...cases.map((c) => `${cell(c.text)};${c.category};${c.route ?? ''}`)].join('\n') + '\n';
+}

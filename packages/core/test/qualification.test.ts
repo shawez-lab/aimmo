@@ -7,6 +7,9 @@ import {
   applyMigrations,
   createCaptation,
   fromSyncSqlite,
+  measure,
+  measureCasesCsv,
+  parseMeasureCases,
   verifyChain,
   type QualifyBrief,
   type Qualifier,
@@ -182,5 +185,48 @@ describeWithSqlite('Q01 · qualification d’un message rattaché', () => {
     expect(await t.qualification.correctedCases(t.network.id)).toEqual([{ inboundId: id, category: 'buyer', route: null }]);
     // La qualification d'origine reste telle quelle [R17].
     expect(await t.qualification.get(id)).toMatchObject({ category: 'curious' });
+  });
+
+  it('Q09 · les corrections sortent au format du banc, sans coordonnées ni nom, et le lecteur du banc les reprend [R15] [R16] [R13]', async () => {
+    const t = await setup();
+    const direction = { role: 'direction' as const, userId: 'dir-1', networkId: t.network.id };
+    const agent = { role: 'agent' as const, userId: t.agent.id, networkId: t.network.id };
+    expect(await t.qualification.correctedMeasureCases(direction)).toEqual({ ok: true, value: [] });
+
+    const first = await t.form('Bonjour, je suis Zoé Exemple, une question ; "merci" : zoe@example.test, 06 00 00 00 09, 12 rue Inventée à Dijon.', { lastName: 'Exemple' });
+    const q = (await t.qualification.qualify(first))!;
+    await t.qualification.correct(t.acces, direction, q.id, 'spam', null);
+    await t.qualification.correct(t.acces, direction, q.id, 'buyer', 'M17');
+    const second = (await t.qualification.qualify(await t.form('=SOMME(A1) Je veux louer mon studio.')))!;
+    await t.qualification.correct(t.acces, direction, second.id, 'rent_out', 'M15');
+    const untouched = await t.qualification.qualify(await t.form('Une question sans correction.'));
+    expect(untouched).not.toBeNull();
+
+    const refused = await t.qualification.correctedMeasureCases(agent);
+    expect(refused).toEqual({ ok: false, rule: 'R16', code: 'not_direction' });
+    const out = await t.qualification.correctedMeasureCases(direction);
+    if (!out.ok) throw new Error('refusé');
+    expect(out.value.map((c) => [c.category, c.route])).toEqual([['buyer', 'M17'], ['rent_out', 'M15']]);
+    const file = measureCasesCsv(out.value);
+    expect(file).not.toMatch(/Zoé|Exemple|zoe@|06 00|Inventée/);
+    const read = parseMeasureCases(file);
+    expect(read.map((c) => [c.category, c.route])).toEqual([['buyer', 'M17'], ['rent_out', 'M15']]);
+    expect(read[0]!.text).toContain('"merci"');
+    // Une formule de tableur est neutralisée.
+    expect(read[1]!.text.startsWith("'=")).toBe(true);
+    // La mesure tourne sur ce fichier, sans recopier les textes.
+    const measured = await measure(read, async () => ({ category: 'rent_out', route: 'M15' }));
+    expect(measured).toMatchObject({ total: 2, agreed: 1 });
+
+    // Le journal garde le nombre, jamais un texte.
+    const entries = await t.journal.all();
+    const exported = entries.filter((e) => e.type === 'qualification.cas_exportes');
+    expect(exported.at(-1)!.data).toEqual({ cases: 2 });
+    expect(entries.filter((e) => e.type === 'acces.refuse').at(-1)!.data).toMatchObject({ rule: 'R16', kind: 'cas_de_mesure' });
+
+    // Un message au texte effacé sort des cas.
+    await t.db.run("UPDATE inbound_messages SET body = '', subject = NULL WHERE id = ?", [first]);
+    const left = await t.qualification.correctedMeasureCases(direction);
+    expect(left.ok && left.value.map((c) => c.category)).toEqual(['rent_out']);
   });
 });

@@ -30,7 +30,7 @@ Sans le fichier, ce test est sauté.
 
 Aujourd'hui, ce sont les règles fixes qui sont mesurées. La mesure de la vraie IA viendra avec H13.
 
-Les corrections faites par les agents (`POST /v1/qualifications/<id>/correction`) s'ajoutent aux cas de mesure : elles se lisent avec `Qualification.correctedCases`.
+Les corrections faites par les agents depuis la fiche s'ajoutent aux cas de mesure : la direction télécharge le fichier depuis l'écran du réseau, bloc « Mesure du classement » (`GET /v1/qualifications/cas-corriges`). Il a le format ci-dessus et se passe tel quel à `AIMMO_CAS`. Coordonnées et noms connus en sont retirés, mais le repérage n'est pas parfait : le relire, et le garder hors du dépôt.
 
 # Vérification de la collecte sur 10 biens tests (M04, E03)
 

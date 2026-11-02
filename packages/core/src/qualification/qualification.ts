@@ -29,6 +29,7 @@ import {
   type Qualified,
   type Route,
 } from './regles.ts';
+import type { MeasureCase } from './mesure.ts';
 import { scoreContact, type Temperature } from './note.ts';
 
 /** Ce que l'IA reçoit : le strict nécessaire, aucune coordonnée [R15]. */
@@ -371,5 +372,34 @@ export class Qualification {
       [networkId],
     );
   }
-}
 
+  /**
+   * Les cas corrigés, prêts pour le banc de mesure (Q09) : la direction seule [R16], le texte reçu sans coordonnées ni nom
+   * connu, comme pour l'IA [R15]. Un message effacé n'a plus de texte : il sort des cas. Le journal garde le nombre, jamais un
+   * texte [R13]. Le repérage des noms est prudent, pas parfait : le fichier reste hors du dépôt (docs/MESURE.md).
+   */
+  async correctedMeasureCases(viewer: Viewer): Promise<{ ok: true; value: MeasureCase[] } | { ok: false; rule: 'R16'; code: 'not_direction' }> {
+    const actor = `${viewer.role}:${viewer.userId}`;
+    if (viewer.role !== 'direction') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor, subject: null, data: { rule: 'R16', role: viewer.role, kind: 'cas_de_mesure', code: 'not_direction' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_direction' };
+    }
+    const rows = await this.db.all<{ person_id: string; subject: string | null; body: string | null; sender_name: string | null; category: Category; route: Route | null }>(
+      `SELECT q.person_id AS person_id, i.subject AS subject, i.body AS body, i.sender_name AS sender_name, c.category AS category, c.route AS route
+       FROM qualification_corrections c
+       JOIN qualifications q ON q.id = c.qualification_id
+       JOIN inbound_messages i ON i.id = q.inbound_id
+       WHERE c.network_id = ? AND c.rowid = (SELECT max(c2.rowid) FROM qualification_corrections c2 WHERE c2.qualification_id = c.qualification_id)
+       ORDER BY c.created_at, c.rowid`,
+      [viewer.networkId],
+    );
+    const value: MeasureCase[] = [];
+    for (const row of rows) {
+      const text = [row.subject, row.body].filter((t): t is string => !!t).join('\n');
+      if (text.trim() === '') continue;
+      value.push({ text: withoutNames(withoutContactDetails(text), await this.namesOf(row.person_id, row.sender_name)), category: row.category, route: row.route });
+    }
+    await appendEvent(this.journal, { type: 'qualification.cas_exportes', actor, subject: null, data: { cases: value.length } }, this.now);
+    return { ok: true, value };
+  }
+}

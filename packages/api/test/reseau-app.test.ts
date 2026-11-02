@@ -163,6 +163,21 @@ describe('K09 · écran « Le réseau » pour la direction', () => {
     expect(box.textContent).toContain('La vente est annulée par un avoir : plus aucune facture ne s’émet.');
   });
 
+  it('Q09 · les cas corrigés se téléchargent avec la clé dans l’en-tête, sous un nom sans donnée ; un refus se dit', async () => {
+    const t = await run({ 'GET /v1/qualifications/cas-corriges': async () => new Response('texte;categorie;suite\n"Bonjour";buyer;\n', { headers: { 'content-type': 'text/csv' } }) });
+    await t.click(t.els['reseau-cas']);
+    const call = t.calls.find((c) => c.url === '/v1/qualifications/cas-corriges')!;
+    expect(call.authorization).toBe(`Bearer ${KEY}`);
+    expect(await t.blobs[0]!.text()).toContain(';buyer;');
+    expect((t.links[0] as unknown as { download: string }).download).toBe('cas-corriges.csv');
+    expect(t.els['reseau-cas-etat']!.textContent).toBe('Cas corrigés téléchargés. À garder hors du dépôt.');
+
+    const down = await run({ 'GET /v1/qualifications/cas-corriges': async () => Response.json({ ok: false, code: 'panne' }, { status: 500 }) });
+    await down.click(down.els['reseau-cas']);
+    expect(down.els['reseau-cas-etat']!.textContent).toBe('Cas corrigés indisponibles. Réessayez plus tard.');
+    expect(down.blobs).toHaveLength(0);
+  });
+
   it('l’export du jour se télécharge avec la clé dans l’en-tête, jamais dans l’adresse [R13]', async () => {
     const t = await run({ 'GET /v1/pilotage/export-quotidien': async () => new Response('jour;contacts\n2027-06-20;3\n', { headers: { 'content-type': 'text/csv' } }) });
     expect(t.els['reseau-export-jour']!.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);

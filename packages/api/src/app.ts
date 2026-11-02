@@ -16,6 +16,7 @@ import {
   DecisionEnvoi,
   FicheClient,
   CATEGORIES,
+  measureCasesCsv,
   AvisDeValeur,
   AvisImprime,
   PreparationAvis,
@@ -363,6 +364,17 @@ const ROUTES: RouteDef[] = [
     pattern: /^\/envois\/decision$/,
     name: 'envois.decision',
     handle: sendDecision,
+  },
+  {
+    method: 'GET',
+    pattern: /^\/qualifications\/cas-corriges$/,
+    name: 'qualification.cas_corriges',
+    // Les corrections au format du banc de mesure, sans coordonnées : la direction seule [R16, R15].
+    handle: async (s, viewer) => {
+      const cases = await s.qualification.correctedMeasureCases(viewer);
+      if (!cases.ok) return refusal({ rule: cases.rule, code: cases.code });
+      return new Response(measureCasesCsv(cases.value), { status: 200, headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="cas-corriges.csv"', 'cache-control': 'no-store' } });
+    },
   },
   {
     method: 'POST',
