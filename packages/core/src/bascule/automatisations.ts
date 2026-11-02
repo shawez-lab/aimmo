@@ -17,6 +17,7 @@ import { trialChannels } from '../captation/essai.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { VALUATION_PURPOSE } from '../reprise/reprise.ts';
+import { PaliersBascule, type RolloutStage } from './paliers.ts';
 
 /** Les automatisations du site qui envoient aujourd'hui (docs/EXISTANT.md), et ce qu'elles sont pour le contrôle. */
 export const AUTOMATIONS = {
@@ -51,6 +52,10 @@ export interface AutomationDecision {
   code: 'unknown_person' | 'ambiguous_person' | null;
   reason: string;
   sent: false;
+  /** Le palier en vigueur (B04a). */
+  stage: RolloutStage;
+  /** La décision vaut-elle pour le site ? Sinon il décide seul, comme avant [R26]. */
+  decides: boolean;
 }
 
 export interface AutomatisationsOptions {
@@ -64,6 +69,7 @@ export class Automatisations {
   private readonly now: () => Date;
   private readonly fiche: FicheUnique;
   private readonly controle: ControleEnvois;
+  private readonly paliers: PaliersBascule;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -73,6 +79,7 @@ export class Automatisations {
     this.now = options.now ?? (() => new Date());
     const store = new FicheClient(db, { now: this.now });
     this.fiche = new FicheUnique(db, store, { now: this.now });
+    this.paliers = new PaliersBascule(db, journal, { now: this.now });
     const decisions = new DecisionEnvoi(db, store, this.fiche, { now: this.now });
     // Seuls les canaux du mode essai sont branchés ici : aucun vrai canal ne peut être passé de l'extérieur [R26].
     this.controle = new ControleEnvois(db, this.fiche, decisions, {
@@ -87,6 +94,7 @@ export class Automatisations {
     if (!spec) throw new Error('Automatisation inconnue.');
     if (!REF_PATTERN.test(req.ref)) throw new Error('Référence mal formée.');
 
+    const palier = await this.paliers.decide(req.networkId, req.automation, req.ref);
     const persons = await this.fiche.findByIdentifier(req.networkId, 'email', req.email);
     if (persons.length !== 1) {
       const code = persons.length === 0 ? 'unknown_person' : 'ambiguous_person';
@@ -96,6 +104,11 @@ export class Automatisations {
         code,
         reason: code === 'unknown_person' ? 'Aucune fiche pour cette adresse.' : 'Plusieurs fiches pour cette adresse : à réunir avant tout envoi.',
         sent: false,
+        stage: palier.stage,
+        // Sans fiche, le socle ne sait rien de la personne : il ne décide pas à la place du site. Plusieurs fiches non
+        // réunies : l'une peut être exclue ou arrêtée, le refus vaut donc selon le palier. Rien de cela n'est compté :
+        // un palier se prouve sur de vraies décisions [R26].
+        decides: code === 'unknown_person' ? false : palier.decides,
       };
       await this.write(req, null, decision);
       return decision;
@@ -112,12 +125,19 @@ export class Automatisations {
       fallbackTexts: [req.text],
       figures: req.figures ?? [],
     });
+    // Une panne du contrôle ramène l'automatisation en ombre, avant de répondre [R26].
+    const failed = result.status === 'failed';
+    if (failed) await this.paliers.incident(req.networkId, req.automation, 'failure', null, 'system:bascule');
+    // Une demande refaite pour le même envoi ne compte pas deux fois ; à 10 %, seuls comptent les envois où le socle décide.
+    else if (result.rule !== 'R05' && (palier.stage !== 'ten_percent' || palier.decides)) await this.paliers.countRequest(req.networkId, req.automation, palier.stageSince);
     const decision: AutomationDecision = {
       status: result.status === 'sent' ? 'would_send' : result.status,
       rule: result.rule,
       code: null,
       reason: result.reason,
       sent: false,
+      stage: failed ? 'shadow' : palier.stage,
+      decides: failed ? false : palier.decides,
     };
     await this.write(req, person.id, decision);
     return decision;
@@ -131,7 +151,7 @@ export class Automatisations {
         type: AUTOMATION_JOURNAL_TYPE,
         actor: 'intake:site_auto',
         subject: personId === null ? null : `person:${personId}`,
-        data: { mode: 'essai', sent: false, automation: req.automation, status: decision.status, rule: decision.rule, code: decision.code },
+        data: { mode: 'essai', sent: false, automation: req.automation, status: decision.status, rule: decision.rule, code: decision.code, stage: decision.stage, decides: decision.decides },
       },
       this.now,
     );

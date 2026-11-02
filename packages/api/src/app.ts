@@ -6,6 +6,9 @@ import {
   AUTOMATION_NAMES,
   Acces,
   Automatisations,
+  PaliersBascule,
+  ROLLOUT_INCIDENTS,
+  type RolloutIncident,
   REF_PATTERN,
   DEFAULT_ATTRIBUTION_SETTINGS,
   CHANNELS,
@@ -109,6 +112,8 @@ export interface ApiConfig {
   mode: string | undefined;
   /** Secret `INTAKE_KEYS` : clés qui ne peuvent que déposer un formulaire du site (voir auth.ts). */
   intakeKeys?: string | undefined;
+  /** Le passage des automatisations du site à 10 % : fermé tant que B04 ne l'a pas ouvert [R26]. Le Worker ne le branche pas encore. */
+  automationRolloutOpen?: boolean;
   /** Notifications de Meta (C07) : secrets et variables `META_*`, voir meta.ts. */
   meta?: Omit<MetaConfig, 'db' | 'now'>;
   /** Limites d'appels de l'assistant du site (C08) ; absentes : les réglages par défaut. */
@@ -402,6 +407,16 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer) => {
       const alerts = await new ControleBaseLegale(s.db, s.journal, { now: s.now }).alerts(viewer);
       return alerts.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: alerts.value }) : refusal({ rule: alerts.rule, code: alerts.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/automatisations\/paliers$/,
+    name: 'automatisations.paliers',
+    // Le palier de chaque automatisation du site : des nombres et des dates ; direction et conformité [R16, R26].
+    handle: async (s, viewer) => {
+      const r = await new PaliersBascule(s.db, s.journal, { now: s.now }).list(viewer, AUTOMATION_NAMES);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : refusal({ rule: r.rule, code: r.code });
     },
   },
   {
@@ -918,9 +933,46 @@ async function automationSend(request: Request, config: ApiConfig, now: () => Da
       text,
       ...(figures === undefined ? {} : { figures: figures as (string | number)[] }),
     });
-    return json(200, { ok: true, mode: TRIAL_MODE, sent: false, data: { status: decision.status, rule: decision.rule, code: decision.code, reason: decision.reason } });
+    return json(200, { ok: true, mode: TRIAL_MODE, sent: false, data: { status: decision.status, rule: decision.rule, code: decision.code, reason: decision.reason, stage: decision.stage, decides: decision.decides } });
   } catch (error) {
     await journalError(journal, 'intake:site_auto', 'automatisations.envoi', error, now);
+    // Une panne du socle ramène l'automatisation en ombre [R26] ; si la base elle-même est tombée, le site décide seul.
+    try {
+      await new PaliersBascule(config.db, journal, { now }).incident(intake.networkId, automation, 'failure', null, 'system:bascule');
+    } catch (rollbackError) {
+      await journalError(journal, 'intake:site_auto', 'automatisations.retour_arriere', rollbackError, now);
+    }
+    return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+  }
+}
+
+const INCIDENT_RULE = /^R[0-9]{1,3}$/;
+
+/**
+ * Le site signale un écart non expliqué ou une panne de son côté (B04a) : l'automatisation revient en ombre [R26].
+ * Cette route ne peut que faire descendre. Seuls ces trois champs sont admis : aucune donnée personnelle n'y passe [R13].
+ */
+async function automationIncident(request: Request, config: ApiConfig, now: () => Date): Promise<Response> {
+  if (request.method !== 'POST') return failure(405, 'method_not_allowed', 'Méthode non admise.');
+  const keys = parseIntakeKeys(config.intakeKeys);
+  if (keys === null) return failure(503, 'keys_not_configured', 'Demandes fermées : aucune clé configurée.');
+  const intake = await intakeFromRequest(request, keys, 'site_auto');
+  if (intake === null) return failure(401, 'unauthorized', 'Clé absente ou refusée.');
+  const body = await readJson(request);
+  if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+  if (Object.keys(body).some((k) => !['automation', 'kind', 'rule'].includes(k))) return failure(400, 'unexpected_field', 'Seuls automation, kind, rule sont admis.');
+  const { automation, kind, rule } = body;
+  if (typeof automation !== 'string' || !(AUTOMATION_NAMES as readonly string[]).includes(automation)) {
+    return failure(400, 'invalid_automation', `automation attendue parmi : ${AUTOMATION_NAMES.join(', ')}.`);
+  }
+  if (typeof kind !== 'string' || !(ROLLOUT_INCIDENTS as readonly string[]).includes(kind)) return failure(400, 'invalid_kind', `kind attendu parmi : ${ROLLOUT_INCIDENTS.join(', ')}.`);
+  if (rule !== undefined && rule !== null && (typeof rule !== 'string' || !INCIDENT_RULE.test(rule))) return failure(400, 'invalid_rule', 'rule mal formée.');
+  const journal = new SqlJournalStore(config.db);
+  try {
+    const stage = await new PaliersBascule(config.db, journal, { now }).incident(intake.networkId, automation, kind as RolloutIncident, typeof rule === 'string' ? rule : null, 'intake:site_auto');
+    return json(200, { ok: true, mode: TRIAL_MODE, data: { stage } });
+  } catch (error) {
+    await journalError(journal, 'intake:site_auto', 'automatisations.incident', error, now);
     return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
   }
 }
@@ -933,6 +985,24 @@ const NO_VAULT_STORAGE: conformite.VaultStorage = { put: () => Promise.reject(ne
  * Les routes de M15 (W10) : pièces et annexes lues dans le stockage des pièces (`PIECES`), seule leur existence ;
  * l'identité vérifiée lue au coffre de conformité, seul son état [R104]. Sans stockage, elles sont fermées.
  */
+/** Le passage de l'ombre à 10 % : un geste de la direction seule, refusé si l'ombre n'a pas tenu ou si le passage est fermé [R16, R26]. */
+function rolloutRoutes(open: boolean): RouteDef[] {
+  return [
+    {
+      method: 'POST',
+      pattern: /^\/automatisations\/paliers\/([a-z_]{1,32})\/avancer$/,
+      name: 'automatisations.paliers.avancer',
+      handle: async (s, viewer, params) => {
+        const automation = params[0]!;
+        if (!(AUTOMATION_NAMES as readonly string[]).includes(automation)) return failure(404, 'not_found', 'Automatisation inconnue.');
+        const r = await new PaliersBascule(s.db, s.journal, { now: s.now, open }).advance(viewer, automation);
+        if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { stage: r.stage } });
+        return r.rule === 'R16' ? refusal({ rule: 'R16', code: r.code }) : json(409, { ok: false, rule: r.rule, code: r.code });
+      },
+    },
+  ];
+}
+
 function m15Routes(pieces: PieceStore | null, options: Pick<LocationServices, 'adWriter' | 'inventoryFormatter'>): RouteDef[] {
   return locationRoutes().map((r: LocationRoute) => ({
     method: r.method,
@@ -1315,6 +1385,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   if (path === '/captation/formulaire') return intakeForm(request, config, now);
 
   if (path === '/automatisations/envoi') return automationSend(request, config, now);
+  if (path === '/automatisations/incident') return automationIncident(request, config, now);
 
   if (path === ESTIMATION_PATH) {
     try {
@@ -1421,6 +1492,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...apresVenteRoutes(),
     ...pilotageRoutes(),
     ...reseauRoutes(config.reseau ?? {}),
+    ...rolloutRoutes(config.automationRolloutOpen === true),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...m12Routes(config.coffre ?? null),
     ...m18Routes(config.partenaires ?? null),

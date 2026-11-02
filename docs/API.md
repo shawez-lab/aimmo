@@ -64,7 +64,10 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | POST | `/v1/captation/formulaire` | dépose un formulaire « Être rappelé » ; rend seulement des statuts, la réponse est prête en mode essai, jamais envoyée | clé de dépôt `site_form` (`INTAKE_KEYS`) |
 | POST | `/v1/assistant/sessions` | ouvre une conversation de l'assistant du site, rend son jeton `sessionId` | clé de dépôt `site_chat` (`INTAKE_KEYS`) |
 | POST | `/v1/assistant/sessions/<sessionId>/messages` | un message du visiteur ; rend un statut, la réponse est prête en mode essai, jamais rendue | clé de dépôt `site_chat` (`INTAKE_KEYS`) |
-| POST | `/v1/automatisations/envoi` | une automatisation du site demande si son envoi peut partir ; rend la décision et sa règle, rien n'est envoyé | clé de dépôt `site_auto` (`INTAKE_KEYS`) |
+| POST | `/v1/automatisations/envoi` | une automatisation du site demande si son envoi peut partir ; rend la décision, sa règle, le palier et si la décision vaut pour cet envoi ; rien n'est envoyé | clé de dépôt `site_auto` (`INTAKE_KEYS`) |
+| POST | `/v1/automatisations/incident` | le site signale un écart non expliqué ou une panne : l'automatisation revient en ombre | clé de dépôt `site_auto` (`INTAKE_KEYS`) |
+| GET | `/v1/automatisations/paliers` | le palier de chaque automatisation : des nombres et des dates | direction, conformité (R16, R26) |
+| POST | `/v1/automatisations/paliers/{automation}/avancer` | de l'ombre à 10 %, refusé si l'ombre n'a pas tenu | direction (R16, R26) |
 | POST | `/v1/estimation/commune` | fourchette de prix au m² d'une commune, pour un type de logement, et proposition de rendez-vous ; jamais le prix d'un bien | clé de dépôt `site_estimate` (`INTAKE_KEYS`) |
 
 Corps de `/v1/envois/decision` : `{"personId": "...", "channel": "email", "kind": "reply", "conversationId": "...", "purpose": "...", "at": "2026-10-19T08:00:00Z"}`. Chaque lecture, chaque refus et chaque décision sont écrits au journal [R13, R16].
@@ -123,6 +126,10 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - Le socle retrouve la fiche par l'adresse, sans jamais en créer : adresse inconnue → `unknown_person`, adresse portée par plusieurs fiches non réunies → `ambiguous_person`. Puis la demande passe par le **contrôle central**, accord du suivi de l'estimation compris [R01 à R05, R06 à R10], avec les seuls canaux du mode essai : rien ne part [R26].
 - Rend `{"ok": true, "mode": "essai", "sent": false, "data": {"status": "would_send" | "refused" | "failed", "rule": "R01" | … | null, "code": null | "unknown_person" | "ambiguous_person", "reason": "..."}}`. Contrairement à l'assistant du site, la règle est rendue : l'appelant est le site de l'agence lui-même, qui tient déjà la fiche et doit comparer sa décision à celle du socle (B03).
 - Au journal : l'automatisation, la décision, sa règle ; ni l'adresse, ni le texte, ni la référence [R13].
+- **Paliers (B04a) [R26].** La réponse porte aussi `stage` (`shadow`, `ten_percent`, `everywhere`) et `decides`. Quand `decides` est faux, le site décide seul, comme avant ; quand il est vrai, il suit la décision du socle. Sans réponse du socle, le site décide seul. `decides` est toujours faux en ombre, pour une adresse inconnue du socle, et après une panne ; pour une adresse portée par plusieurs fiches, il suit le palier, et le refus vaut alors. Le tirage des 10 % est fixe : il ne dépend que de l'automatisation et de `ref`.
+- Passage de l'ombre à 10 % : geste de la direction (`POST /v1/automatisations/paliers/{automation}/avancer`), refusé tant que le passage est fermé (`not_open`, le cas tant que B04 ne l'a pas ouvert), avant 7 jours (`too_early`) ou sous 20 demandes comptées (`not_enough_requests`). De 10 % à partout : de lui-même, après 7 jours et 5 décisions prises par le socle. Ne comptent ni une demande refaite pour le même envoi (R05), ni une adresse sans fiche unique, ni à 10 % un envoi où le socle ne décide pas.
+- Retour en ombre, de lui-même : à une panne du socle, ou quand le site appelle `POST /v1/automatisations/incident` avec `{"automation": "...", "kind": "unexplained_gap" | "failure", "rule": "R05"}` (`rule` facultatif, aucun autre champ admis). Le compte des 7 jours repart. Cette route ne peut que faire descendre.
+- Le socle n'envoie jamais rien, à aucun palier : les canaux restent ceux du mode essai. Tant que le site n'est pas passé à la version qui lit `decides` (B04), les paliers ne changent rien à ses envois.
 
 ## Estimation en ligne du site (E05)
 

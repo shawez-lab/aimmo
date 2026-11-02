@@ -682,6 +682,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
 export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = {
   send_quota_slots: 'Créneaux du quota d\'envois par jour : un compteur, sans personne ni message.',
   scheduled_runs: 'Passages du planificateur : nom de la tâche et créneau.',
+  automation_rollouts: 'Palier de chaque automatisation du site : des nombres et des dates, ni personne ni envoi.',
   attach_claims: 'Verrou de traitement d\'un message reçu, le temps du rattachement.',
   first_reply_claims: 'Verrou de la première réponse à un message reçu.',
   import_keys: 'Clés d\'idempotence des reprises de données : une empreinte et une cible.',
@@ -756,6 +757,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   attributions: ['id', 'network_id', 'qualification_id', 'callback_hours', 'replaces_id', 'created_at'],
   callback_tasks: ['id', 'network_id', 'project_id', 'qualification_id', 'dedup_key', 'due_at', 'created_at', 'done_at'],
   scheduled_runs: ['job', 'slot', 'started_at', 'outcome', 'finished_at'],
+  automation_rollouts: ['network_id', 'automation', 'stage', 'stage_since', 'requests', 'last_incident_at', 'last_incident_kind'],
   valuation_reports: ['id', 'network_id', 'property_id', 'status', 'computed', 'computed_low', 'computed_high', 'created_at', 'updated_at', 'validated_at'],
   valuation_deliveries: ['network_id', 'channel', 'sent_at'],
   valuation_follow_ups: ['status', 'rule', 'message_id', 'mode', 'updated_at'],
