@@ -555,7 +555,7 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Attend : rien.
 
 ### Q09 · Les corrections des agents dans le banc de mesure
-- Statut : à faire
+- Statut : en cours
 - Trouvé le 2026-11-02 par la relecture forte de Q08 : `correctedCases` n'est appelé que par des tests, et le banc de `docs/MESURE.md` lit `AIMMO_CAS` hors du dépôt. Les corrections sont gardées, mais rien ne les fait entrer dans une mesure.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : Q08
 - Cahier : M03 ; Feuille de route, décembre 2026 ; R15, R16.

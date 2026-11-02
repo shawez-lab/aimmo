@@ -7,6 +7,10 @@ import {
   applyMigrations,
   createCaptation,
   fromSyncSqlite,
+  MEASURE_CASES_MAX,
+  measure,
+  measureCasesCsv,
+  parseMeasureCases,
   verifyChain,
   type QualifyBrief,
   type Qualifier,
@@ -182,5 +186,90 @@ describeWithSqlite('Q01 · qualification d’un message rattaché', () => {
     expect(await t.qualification.correctedCases(t.network.id)).toEqual([{ inboundId: id, category: 'buyer', route: null }]);
     // La qualification d'origine reste telle quelle [R17].
     expect(await t.qualification.get(id)).toMatchObject({ category: 'curious' });
+  });
+
+  it('Q09 · les corrections sortent au format du banc, sans coordonnées ni nom, et le lecteur du banc les reprend [R15] [R16] [R13]', async () => {
+    const t = await setup();
+    const direction = { role: 'direction' as const, userId: 'dir-1', networkId: t.network.id };
+    const agent = { role: 'agent' as const, userId: t.agent.id, networkId: t.network.id };
+    expect(await t.qualification.correctedMeasureCases(direction)).toEqual({ ok: true, value: [] });
+
+    const first = await t.form('Bonjour, je suis Zoé Exemple, une question ; "merci" : zoe@example.test, 06 00 00 00 09, 12 rue Inventée à Dijon.', { lastName: 'Exemple' });
+    const q = (await t.qualification.qualify(first))!;
+    await t.qualification.correct(t.acces, direction, q.id, 'spam', null);
+    await t.qualification.correct(t.acces, direction, q.id, 'buyer', 'M17');
+    const second = (await t.qualification.qualify(await t.form('=SOMME(A1) Je veux louer mon studio.')))!;
+    await t.qualification.correct(t.acces, direction, second.id, 'rent_out', 'M15');
+    const untouched = await t.qualification.qualify(await t.form('Une question sans correction.'));
+    expect(untouched).not.toBeNull();
+
+    const refused = await t.qualification.correctedMeasureCases(agent);
+    expect(refused).toEqual({ ok: false, rule: 'R16', code: 'not_direction' });
+    const out = await t.qualification.correctedMeasureCases(direction);
+    if (!out.ok) throw new Error('refusé');
+    expect(out.value.map((c) => [c.category, c.route])).toEqual([['buyer', 'M17'], ['rent_out', 'M15']]);
+    const file = measureCasesCsv(out.value);
+    expect(file).not.toMatch(/Zoé|Exemple|zoe@|06 00|Inventée/);
+    const read = parseMeasureCases(file);
+    expect(read.map((c) => [c.category, c.route])).toEqual([['buyer', 'M17'], ['rent_out', 'M15']]);
+    expect(read[0]!.text).toContain('"merci"');
+    // Une formule de tableur est neutralisée.
+    expect(read[1]!.text.startsWith("'=")).toBe(true);
+    // La mesure tourne sur ce fichier, sans recopier les textes.
+    const measured = await measure(read, async () => ({ category: 'rent_out', route: 'M15' }));
+    expect(measured).toMatchObject({ total: 2, agreed: 1 });
+
+    // Le journal garde le nombre, jamais un texte.
+    const entries = await t.journal.all();
+    const exported = entries.filter((e) => e.type === 'qualification.cas_exportes');
+    expect(exported.at(-1)!.data).toEqual({ cases: 2 });
+    expect(entries.filter((e) => e.type === 'acces.refuse').at(-1)!.data).toMatchObject({ rule: 'R16', kind: 'cas_de_mesure' });
+
+    // Un message au texte effacé sort des cas.
+    await t.db.run("UPDATE inbound_messages SET body = '', subject = NULL WHERE id = ?", [first]);
+    const left = await t.qualification.correctedMeasureCases(direction);
+    expect(left.ok && left.value.map((c) => c.category)).toEqual(['rent_out']);
+  });
+
+  it('Q09 · une fiche nommée par l’expéditeur seul ne laisse sortir ni prénom ni nom ; un mail accentué non plus [R15]', async () => {
+    const t = await setup();
+    const direction = { role: 'direction' as const, userId: 'dir-1', networkId: t.network.id };
+    const person = await t.store.createPerson({ networkId: t.network.id, firstName: 'Zoé Exemple' });
+    await t.db.run(`INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, body, status, person_id, sender_name, received_at, created_at) VALUES ('in-z', ?, 'kz', 'email', 'email', 'Rappelez Zoé, ou Mme Exemple : zoé@example.test.', 'processed', ?, 'Zoé Exemple', ?, ?)`, [t.network.id, person.id, TUESDAY_10H.toISOString(), TUESDAY_10H.toISOString()]);
+    await t.db.run(`INSERT INTO qualifications (id, network_id, inbound_id, person_id, category, deadline, financing, criteria, source, created_at) VALUES ('q-z', ?, 'in-z', ?, 'curious', NULL, NULL, '[]', 'rules', ?)`, [t.network.id, person.id, TUESDAY_10H.toISOString()]);
+    await t.qualification.correct(t.acces, direction, 'q-z', 'buyer', null);
+    const out = await t.qualification.correctedMeasureCases(direction);
+    expect(out.ok && out.value[0]!.text).toBe('Rappelez [nom], ou Mme [nom] : [mail].');
+  });
+
+  it('Q09 · le fichier porte les cas les plus récents et l’appel reste sous la limite de requêtes de D1', async () => {
+    const t = await setup();
+    const direction = { role: 'direction' as const, userId: 'dir-1', networkId: t.network.id };
+    const at = TUESDAY_10H.toISOString();
+    const count = MEASURE_CASES_MAX + 2;
+    for (let i = 0; i < count; i++) {
+      const person = await t.store.createPerson({ networkId: t.network.id, firstName: `Personne${i}` });
+      await t.db.run(`INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, body, status, person_id, received_at, created_at) VALUES (?, ?, ?, 'email', 'email', ?, 'processed', ?, ?, ?)`, [`in-${i}`, t.network.id, `k-${i}`, `message ${i}`, person.id, at, at]);
+      await t.db.run(`INSERT INTO qualifications (id, network_id, inbound_id, person_id, category, deadline, financing, criteria, source, created_at) VALUES (?, ?, ?, ?, 'curious', NULL, NULL, '[]', 'rules', ?)`, [`q-${i}`, t.network.id, `in-${i}`, person.id, at]);
+      await t.db.run(`INSERT INTO qualification_corrections (id, network_id, qualification_id, actor, category, route, created_at) VALUES (?, ?, ?, 'agent:x', 'buyer', NULL, ?)`, [`c-${i}`, t.network.id, `q-${i}`, at]);
+    }
+    let queries = 0;
+    const counted = new Proxy(t.db, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver) as unknown;
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          queries += 1;
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+    const { store, fiche, reception } = createCaptation(counted, t.journal, { withQualification: false });
+    const out = await new Qualification(counted, store, fiche, reception, new ReconnaissanceBien(counted), t.journal, { now: () => TUESDAY_10H }).correctedMeasureCases(direction);
+    if (!out.ok) throw new Error('refusé');
+    expect(out.value).toHaveLength(MEASURE_CASES_MAX);
+    expect(out.value[0]!.text).toBe('message 2');
+    expect(out.value.at(-1)!.text).toBe(`message ${count - 1}`);
+    expect(queries).toBeLessThan(800);
   });
 });

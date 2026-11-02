@@ -493,24 +493,53 @@ export function projectKindOf(q: Pick<Qualified, 'category' | 'route'>, text: st
   }
 }
 
-const SIGN_OFF = /\n\s*(?:cordialement|bien [aà] (?:vous|toi)|bonne (?:journ[eé]e|soir[eé]e)|merci d['’]avance|merci par avance|[aà] bient[oô]t|salutations)\b[\s\S]*$/iu;
-const SELF_NAMED = /\b([Jj]e m['’]appelle|[Jj]e me nomme|[Jj]e suis|[Mm]oi c['’]est|[Cc]['’]est|[Ii]ci)(\s+)(\p{Lu}[\p{L}'’-]*(?:\s+\p{Lu}[\p{L}'’-]*)*)/gu;
+const SIGN_OFF = /(?:\n\s*|(?<=[.!?…])\s+)(?:cordialement|bien [aà] (?:vous|toi)|bonne (?:journ[eé]e|soir[eé]e)|merci d['’]avance|merci par avance|[aà] bient[oô]t|salutations)\b[\s\S]*$/iu;
+const CAPITALIZED = String.raw`\p{Lu}[\p{L}'’-]*`;
+const SELF_NAMED = new RegExp(String.raw`\b([Jj]e m['’]appelle|[Jj]e me nomme|[Jj]e suis|[Mm]oi c['’]est|[Cc]['’]est|[Ii]ci)(\s+)((?:(?:M\.|Mme\.?|Mr\.?|Mlle\.?)\s+)?${CAPITALIZED}(?:\s+(?:(?:de la|de|du|des)\s+)?${CAPITALIZED})*)`, 'gu');
+const NAME_FIELD = /\b([Nn]om|NOM|[Pp]r[ée]nom|PR[ÉE]NOM)(\s*:\s*)[^\n]+/gu;
+const HANDLE = /(^|\s)@[\p{L}\p{N}._-]{2,}/gu;
+const LAST_LINE_NAME = new RegExp(String.raw`\n\s*(${CAPITALIZED}(?:\s+(?:(?:de la|de|du|des)\s+)?${CAPITALIZED}){0,3})\s*$`, 'u');
+/** Une voie citée sans numéro, ou « au 12 de la rue » : le motif de `withoutContactDetails` exige le numéro devant la voie. */
+const STREET_NAMED = new RegExp(String.raw`(?:\bau\s+\d{1,4}\s+(?:de\s+la\s+|de\s+l['’]|du\s+|de\s+)?)?\b(?:[Rr]ue|[Aa]venue|[Bb]oulevard|[Ii]mpasse|[Aa]ll[ée]e|[Cc]hemin|[Pp]lace|[Qq]uai|[Ss]quare)\s+(?:de\s+la\s+|de\s+l['’]|des\s+|du\s+|de\s+|d['’])?${CAPITALIZED}(?:\s+${CAPITALIZED})*`, 'gu');
+/** Civilités et particules : seules, elles ne désignent personne. */
+const NOT_A_NAME = new Set(['m', 'mr', 'mme', 'mlle', 'madame', 'monsieur', 'de', 'du', 'des', 'la', 'le', 'les', 'van', 'von', 'et']);
+const ACCENTED: Readonly<Record<string, string>> = { a: 'aàâäáã', c: 'cç', e: 'eéèêë', i: 'iîïí', n: 'nñ', o: 'oôöó', u: 'uùûü', y: 'yÿ' };
+
+/** Un nom en motif : avec ou sans accents, séparé par un espace, un tiret ou une apostrophe. */
+function namePattern(name: string): string {
+  return [...name]
+    .map((c) => {
+      if (/[\s'’-]/u.test(c)) return null;
+      const base = c.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+      const variants = ACCENTED[base];
+      return variants ? `[${variants}]` : c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    })
+    .reduce<string>((out, part) => (part === null ? (out.endsWith(String.raw`[\s'’-]+`) ? out : `${out}[\\s'’-]+`) : out + part), '');
+}
 
 /**
- * Le texte que l'IA peut lire pour qualifier : sans les noms connus de la fiche, sans le nom que la personne se
- * donne (« je suis Zoé Exemple »), sans la signature après une formule de fin [R15]. Les communes restent.
+ * Le texte que l'IA peut lire pour qualifier : sans les noms connus de la fiche, en entier ou mot par mot, avec ou sans
+ * accents (une fiche créée depuis un message porte tout le nom de l'expéditeur dans son prénom) ; sans le nom que la personne
+ * se donne (« je suis Zoé Exemple »), ni les champs « Nom : », ni un compte `@…`, ni une voie citée ; sans la signature après
+ * une formule de fin ou sur la dernière ligne [R15]. Les communes restent. Un tiers cité en texte libre ne se repère pas.
  */
 export function withoutNames(text: string, knownNames: readonly string[], communes: readonly string[] = DEFAULT_COMMUNES): string {
   let out = text.normalize('NFC');
   const cut = SIGN_OFF.exec(out);
   if (cut) out = out.slice(0, cut.index);
   const isCommune = (words: string): boolean => communes.some((c) => communeKey(c) === communeKey(words));
-  out = out.replace(SELF_NAMED, (all: string, intro: string, space: string, name: string) => (isCommune(name) ? all : `${intro}${space}[nom]`));
-  for (const name of knownNames) {
-    const n = name.normalize('NFC').trim();
-    if (n.length < 2 || isCommune(n)) continue;
-    const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    out = out.replace(new RegExp(`(^|[^\\p{L}])${escaped}(?=$|[^\\p{L}])`, 'giu'), '$1[nom]');
+  const lastLine = LAST_LINE_NAME.exec(out);
+  if (lastLine && !isCommune(lastLine[1]!)) out = out.slice(0, lastLine.index);
+  out = out
+    .replace(STREET_NAMED, '[adresse]')
+    .replace(NAME_FIELD, '$1$2[nom]')
+    .replace(HANDLE, '$1[compte]')
+    .replace(SELF_NAMED, (all: string, intro: string, space: string, name: string) => (isCommune(name) ? all : `${intro}${space}[nom]`));
+  const whole = knownNames.map((n) => n.normalize('NFC').trim()).filter((n) => n.length >= 2 && !isCommune(n));
+  const words = whole.flatMap((n) => n.split(/[\s'’-]+/u)).filter((w) => w.length >= 2 && !NOT_A_NAME.has(w.toLowerCase()) && !isCommune(w));
+  // Le plus long d'abord : « Jean-Pierre » part en une fois, avant « Jean ».
+  for (const name of [...new Set([...whole, ...words])].sort((a, b) => b.length - a.length)) {
+    out = out.replace(new RegExp(`(^|[^\\p{L}])${namePattern(name)}(?=$|[^\\p{L}])`, 'giu'), '$1[nom]');
   }
   return out.trim();
 }
