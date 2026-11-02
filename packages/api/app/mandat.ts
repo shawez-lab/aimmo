@@ -32,6 +32,7 @@ const REFUSALS = {
   register_broken: 'Le registre des mandats est abîmé : voyez avec la direction.',
   not_inscribed: 'Le mandat n’a pas reçu son numéro : réessayez.',
   no_number_on_copy: 'L’exemplaire ne porte pas son numéro : voyez avec la direction.',
+  no_agent: 'Cette fiche n’a pas d’agent : voyez avec la direction.',
   missing_source: 'Dites d’où vient ce mandat.',
   missing_detail: 'Pour « Autre », précisez d’où vient ce mandat.',
   unknown_source: 'Choisissez l’origine dans la liste.',
@@ -62,6 +63,9 @@ const CHECKS = {
   mandants_differ: 'Le mandant n’est pas le propriétaire du bien.',
   identity_verified: 'L’identité du mandant est vérifiée.',
   identity_missing: 'L’identité du mandant n’est pas vérifiée : déposez sa pièce au coffre de la conformité.',
+  identity_expired: 'La vérification d’identité du mandant a expiré : déposez une pièce à jour au coffre de la conformité.',
+  kbis_missing: 'L’extrait Kbis de la société manque : rangez-le au coffre de la conformité.',
+  kbis_expired: 'L’extrait Kbis de la société a expiré : rangez-en un à jour au coffre de la conformité.',
   beneficial_owners_missing: 'Les bénéficiaires effectifs ne sont pas renseignés.',
   beneficial_owner_unidentified: 'Un bénéficiaire effectif n’est pas identifié.',
 };
@@ -220,10 +224,12 @@ globalThis.AIMMO_MANDAT = function (t) {
     var docs = bloc('Documents du bien');
     var list = Array.isArray(data.documents) ? data.documents : [];
     if (!list.length) docs.appendChild(el('p', 'Aucun document pour ce bien.', 'doux'));
-    list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d); });
-    if (!m || m.reason === 'cancelled' || m.reason === 'withdrawn' || m.reason === 'expired') drawGenerate(Array.isArray(data.owners) ? data.owners : []);
+    // Un mandat vivant : ni second mandat à préparer, ni autre document à signer depuis cet écran.
+    var free = !m || m.reason === 'cancelled' || m.reason === 'withdrawn' || m.reason === 'expired';
+    list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d, free); });
+    if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : []);
   }
-  function drawDocument(box, d) {
+  function drawDocument(box, d, free) {
     var card = el('article');
     box.appendChild(card);
     card.appendChild(el('strong', (KINDS[d.kind] || 'Document') + ', préparé le ' + date(d.createdAt)));
@@ -237,7 +243,8 @@ globalThis.AIMMO_MANDAT = function (t) {
     var isMandate = d.kind === 'mandat_vente_simple' || d.kind === 'mandat_vente_exclusif';
     if (s && s.complete) card.appendChild(button('Voir l’exemplaire', function () { return read(zone, doc(d.id) + '/exemplaire', 'L’exemplaire ne se lit pas : réessayez.'); }));
     else if (s && isMandate) card.appendChild(button('Reprendre l’enregistrement', function () { clear(zone); drawResume(zone, d, s); }));
-    else if (isMandate) card.appendChild(button('Contrôler avant signature', act(function () { return control(zone, d); })));
+    else if (isMandate && free) card.appendChild(button('Contrôler avant signature', act(function () { return control(zone, d); })));
+    else if (isMandate) card.appendChild(el('p', 'Un mandat est déjà en cours sur ce bien : ce document ne se signe pas.', 'doux'));
     card.appendChild(zone);
   }
   // Le document est du HTML rendu par le code : on n'en garde que le texte, posé par textContent.

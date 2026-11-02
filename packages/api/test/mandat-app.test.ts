@@ -151,6 +151,27 @@ describe('D12 · écran « Mandat »', () => {
     expect(t.body().textContent).toContain('À régler : ce contrôle n’est pas passé.');
   });
 
+  it('[R41] chaque code d’identité du contrôle est dit en français, jamais par le texte de repli', async () => {
+    const codes = ['identity_missing', 'identity_expired', 'kbis_missing', 'kbis_expired', 'beneficial_owners_missing', 'beneficial_owner_unidentified'];
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'POST /v1/documents/d1/controle': ok({ ...FAILED, lines: codes.map((code) => ({ check: 'identite', ok: false, code })) }) });
+    await t.open();
+    await t.press('Contrôler avant signature');
+    expect(t.body().textContent).not.toContain('ce contrôle n’est pas passé');
+    expect(t.body().textContent).toContain('a expiré');
+    expect(t.body().textContent).toContain('Kbis');
+  });
+
+  it('[R39] un mandat vivant : un autre document préparé ne se contrôle ni ne se signe, et le mandat rétracté rouvre', async () => {
+    const live = { id: 'm1', number: 'T-001', signedAt: '2027-02-10T12:00:00.000Z', allowed: true, reason: 'allowed' };
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC], mandate: live }) });
+    await t.open();
+    expect(t.body().textContent).toContain('Un mandat est déjà en cours sur ce bien');
+    expect(t.body().all().find((e) => e.textContent === 'Contrôler avant signature')).toBeUndefined();
+    const u = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC], mandate: { ...live, allowed: false, reason: 'withdrawn' } }) });
+    await u.open();
+    expect(u.body().all().find((e) => e.textContent === 'Contrôler avant signature')).toBeDefined();
+  });
+
   it('[R40] un document d’essai est dit tel, et son contrôle le dit aussi', async () => {
     const t = await run({
       'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [{ ...DOC, mode: 'essai', status: 'incomplet', missing: ['bien.prix'] }] }),
