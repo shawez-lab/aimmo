@@ -1215,7 +1215,8 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N10 · Réponses de l'agent par Meta : IBAN masqué
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02, voie 2) : masqué au rangement, comme à la réception ; les lignes déjà rangées ne sont pas réécrites ; un IBAN écrit par l'agent ne déclenche pas d'alerte. Codex à sa limite, fusion sans lui (#257).
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : N09
 - Cahier : M10, règle « AIMMO ne reçoit jamais de fonds » ; R15.
