@@ -1184,7 +1184,7 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Attend : rien.
 
 ### O11 · Transmission par message qui ne dit pas faux, mandant refusé comme acquéreur
-- Statut : à faire
+- Statut : en cours
 - Trouvé le 2026-11-02 (relecture de O10) : `POST /offres/:id/transmission` avec `via: message` marque l'offre transmise alors qu'en essai rien ne part, ce qui coupe l'alerte R56 ; `record` accepte le mandant du bien comme acquéreur par la route.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : O10
 - Cahier : M09 ; R26, R56.
