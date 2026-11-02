@@ -140,7 +140,9 @@ describeWithSqlite('A03 · fiche du client dans l’application', () => {
 
   it('[R03] le numéro composé est le dernier donné', async () => {
     const w = await world();
-    await w.store.addIdentifier({ networkId: w.net.id, personId: w.lea.id, kind: 'phone', value: '+33600000099' });
+    const later = await w.store.addIdentifier({ networkId: w.net.id, personId: w.lea.id, kind: 'phone', value: '+33600000099' });
+    // L'horloge du jeu de test est figée : le second numéro est daté à la main, pour un ordre qui ne dépend pas du hasard.
+    await w.db.run('UPDATE person_identifiers SET created_at = ? WHERE id = ?', [new Date(NOW.getTime() + 60_000).toISOString(), later.id]);
     await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'reply', channel: 'phone', proof: 'message reçu', givenAt: new Date('2026-10-02T10:00:00Z') });
     const r = await w.fiche.read(w.asPaul, w.lea.id);
     expect(r.ok && r.value.call).toBe('tel:+33600000099');
