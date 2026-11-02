@@ -305,8 +305,8 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : intégration au site de `shawez-immo` dans une tâche à part ; texte rendu au visiteur avec le branchement réel (C09) ; relecture forte (aucun P0 ni P1), Codex : 1 P0 corrigé, dernière version validée (#22).
 
 ### C09a · Écho humain et premier message traités en même temps
-Voie : 2
 - Statut : en cours (voie 2)
+- Voie : 2
 - Qui : Claude · Relecture : forte · Dépend de : C07
 - Cahier : M02, « Branchements » ; R21. Partie de C09 détachée parce qu'elle n'attend personne (SECOURS : un service pas encore ouvert n'arrête pas le code).
 - Objectif : fermer la fenêtre signalée par Codex sur #21. Un écho humain et le premier message du client, reçus par deux notifications en même temps, ne doivent jamais laisser partir la réponse automatique quand l'écho est arrivé avant le dernier contrôle, ni laisser un écho sans effet.
