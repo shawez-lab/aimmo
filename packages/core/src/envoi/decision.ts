@@ -141,7 +141,10 @@ export function consentInForce(
     return closed <= atMs && closed >= given;
   };
   if (facts.exclusions.some((e) => closedSince(e.lifted_at))) return false;
-  return !facts.consents.some((c) => c.purpose === consent.purpose && c.channel === consent.channel && closedSince(c.withdrawn_at));
+  // Une ligne fermée à sa propre date n'a jamais valu : un geste annulé (réservation ratée), pas un refus de la personne.
+  return !facts.consents.some(
+    (c) => c.purpose === consent.purpose && c.channel === consent.channel && c.withdrawn_at !== c.given_at && closedSince(c.withdrawn_at),
+  );
 }
 
 function hhmm(minutes: number): string {
