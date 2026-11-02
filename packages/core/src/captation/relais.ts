@@ -214,20 +214,28 @@ export class ConversationRelais {
   }
 
   /**
-   * Note une réponse humaine reçue en écho ; si sa conversation n'est pas encore connue, elle est gardée et sera
+   * Note une réponse humaine reçue en écho ; si sa conversation n'est pas encore connue, elle reste gardée et sera
    * appliquée par `applyPendingHumanReplies` dès que la conversation existe, avant toute réponse automatique [R21].
+   *
+   * L'écho est écrit AVANT de chercher sa conversation, alors que le message du client est rangé AVANT de lire les
+   * échos gardés (`beforeReply`) : quand deux notifications se croisent, l'un des deux voit forcément l'autre, sans
+   * verrou. Si la recherche ne trouve rien, c'est que le message n'était pas rangé : sa lecture viendra après cette
+   * écriture. Si le message était rangé, la recherche le trouve et la conversation passe à l'agent tout de suite.
    */
   async noteOrKeepHumanReply(networkId: string, reply: HumanReply): Promise<'noted' | 'duplicate' | 'own' | 'pending'> {
-    const outcome = await this.noteHumanReply(networkId, reply);
-    if (outcome !== 'unknown_conversation') return outcome;
     await this.db.run(
       `INSERT INTO pending_human_replies (network_id, channel, external_id, conversation_ref, body, sent_at, created_at, applied_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING`,
       [networkId, reply.channel, reply.externalId, reply.conversationRef, reply.text, reply.sentAt.toISOString(), this.now().toISOString()],
     );
-    // Le premier message du client a pu être rangé pendant ce temps : l'écho est appliqué tout de suite s'il le peut.
-    await this.applyPendingHumanReplies(networkId);
-    return 'pending';
+    const outcome = await this.noteHumanReply(networkId, reply);
+    if (outcome === 'unknown_conversation') {
+      // Le premier message du client a pu être rangé pendant ce temps : l'écho est appliqué tout de suite s'il le peut.
+      await this.applyPendingHumanReplies(networkId);
+      return 'pending';
+    }
+    await this.markApplied(networkId, reply.channel, reply.externalId);
+    return outcome;
   }
 
   /** Applique les réponses humaines en attente dont la conversation est désormais connue. */
@@ -250,14 +258,17 @@ export class ConversationRelais {
       });
       if (outcome === 'unknown_conversation') continue;
       if (outcome === 'noted') applied += 1;
-      await this.db.run('UPDATE pending_human_replies SET applied_at = ? WHERE network_id = ? AND channel = ? AND external_id = ?', [
-        this.now().toISOString(),
-        networkId,
-        row.channel,
-        row.external_id,
-      ]);
+      await this.markApplied(networkId, row.channel, row.external_id);
     }
     return applied;
+  }
+
+  /** L'écho est traité : la table ne garde plus son texte, la fiche seule le garde [R13]. La première date reste. */
+  private async markApplied(networkId: string, channel: HumanReply['channel'], externalId: string): Promise<void> {
+    await this.db.run(
+      "UPDATE pending_human_replies SET applied_at = COALESCE(applied_at, ?), body = '' WHERE network_id = ? AND channel = ? AND external_id = ?",
+      [this.now().toISOString(), networkId, channel, externalId],
+    );
   }
 
   private async inFlightSameText(networkId: string, conversationId: string, reply: HumanReply): Promise<boolean> {
