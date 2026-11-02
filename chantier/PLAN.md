@@ -193,7 +193,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - À régler ici : en essai, le contrôle range le message du site comme sortant sur la fiche, avec la mention de l'assistant [R06] ; en ombre, il faut qu'un message que le site envoie lui-même compte une seule fois dans la pression commerciale [R11] et que la mention soit celle que le site met vraiment.
 
 ### B04a · Paliers de la bascule côté socle, fermés
-- Statut : en cours
+- Statut : fait (2026-11-02)
 - Qui : Claude · Relecture : forte · Dépend de : B01, B02
 - Cahier : Feuille de route, novembre 2026.
 - Objectif : détaché de B04 le 2026-11-02 pour ne pas arrêter le chantier : la partie du socle, qui n'attend personne. Chaque automatisation a son palier (ombre, 10 %, partout), son tirage fixe par envoi et son retour arrière automatique, sans rien changer aux envois.
