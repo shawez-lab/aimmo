@@ -928,7 +928,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H25 pour le dépôt réel.
 
 ### D14 · Le scan d'un avenant vérifié comme celui du mandat
-- Statut : à faire
+- Statut : en cours
 - Trouvé le 2026-11-02 par la relecture forte de D11 : `SignatureAvenant` accepte encore n'importe quelle référence de scan, alors qu'un avenant change les conditions du mandat et sa diffusion.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D11
 - Cahier : M06 ; R10, R16, R41.
