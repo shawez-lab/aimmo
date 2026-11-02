@@ -7,6 +7,7 @@ import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS } from './louer.ts';
 import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './investir.ts';
 import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
+import { ATTIRER_ENTRY_HTML, ATTIRER_HTML, ATTIRER_JS } from './attirer.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
 import { REPRISE_ENTRY_HTML, REPRISE_JS } from './reprise.ts';
 import { CANDIDATURES_ENTRY_HTML, INTEGRATION_CSS, INTEGRATION_HOME_HTML, INTEGRATION_HTML, INTEGRATION_JS } from './integration.ts';
@@ -136,7 +137,7 @@ ${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTM
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
-${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}${GAGNER_HTML}${INTEGRATION_HTML}<section id="chiffres" hidden>
+${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}${GAGNER_HTML}${ATTIRER_HTML}${INTEGRATION_HTML}<section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
 <div class="periodes" role="group" aria-label="Période">
@@ -182,7 +183,7 @@ ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}${
 <button id="reseau-export" type="button" class="secondaire">Télécharger l’export</button>
 <p id="reseau-export-etat" class="etat" role="status"></p>
 </section>
-${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}</section>
+${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -607,6 +608,7 @@ export const APP_JS = `'use strict';
     wipeCommerces();
     wipeStudio();
     wipeGagner();
+    wipeAttirer();
     wipeIntegration();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
@@ -1737,7 +1739,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}${GAGNER_JS}${INTEGRATION_JS}${REPRISE_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${INTEGRATION_JS}${REPRISE_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1754,7 +1756,7 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'studio', 'gagner', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'studio', 'gagner', 'attirer', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1891,6 +1893,7 @@ ${LOUER_JS}
       wipeInvestir();
       wipeCommerces();
       wipeGagner();
+      wipeAttirer();
       wipeIntegration();
       show('accueil');
       day(currentKey, session);
@@ -1910,6 +1913,8 @@ ${LOUER_JS}
     $('studio-retour').addEventListener('click', function () { wipeStudio(); home(); });
     $('gagner-retour').addEventListener('click', function () { if (gagnerScreen && gagnerScreen.inside()) openGagner(); else { wipeGagner(); home(); } });
     $('gagner-ouvrir').addEventListener('click', function () { openGagner(); });
+    $('attirer-retour').addEventListener('click', function () { wipeAttirer(); openReseau(reseauRange); });
+    $('attirer-ouvrir').addEventListener('click', function () { openAttirer(); });
     $('integration-ouvrir').addEventListener('click', function () { openIntegration('integration'); });
     $('academie-ouvrir').addEventListener('click', function () { openIntegration('academie'); });
     $('candidatures-ouvrir').addEventListener('click', function () { openIntegration('candidatures'); });
