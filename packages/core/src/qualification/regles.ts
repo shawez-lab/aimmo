@@ -197,8 +197,8 @@ export function classifyByRules(text: string, ctx: ClassifyContext = {}): Catego
   return 'curious';
 }
 
-// « k » seul, jamais le début de « km » ou de « kg ».
-const AMOUNT = /(\d+(?:[ \u00a0\u202f.]\d{3})*(?:,\d+)?)\s*(k€|keur|k(?![\p{L}\d])|mille\b)?\s*(€|euros?\b|eur\b)?/gu;
+// « k » seul, jamais le début de « km » ou de « kg » ; jamais le chiffre d'un « T3 » collé au montant qui suit.
+const AMOUNT = /(?<![\p{L}\d])(\d+(?:[ \u00a0\u202f.]\d{3})*(?:,\d+)?)\s*(k€|keur|k(?![\p{L}\d])|mille\b)?\s*(€|euros?\b|eur\b)?/gu;
 const MONEY_CONTEXT = /(?:budget|prix|maximum|max|jusqu.a|entre|autour de|environ|vers)\W*$/;
 
 /** Les montants du message, en euros : seulement ceux qui en sont sûrement, jamais « 3 pièces » ni « 2 ans ». */
@@ -217,9 +217,10 @@ interface MoneyMention {
 const OTHER_MONEY =
   /\b(?:apport|(?<!hors )frais(?!(?: de notaire| d.agence| d.acquisition)? (?:inclus|compris))|mensualites?|salaires?|revenus?|charges|taxe|epargne|loyer actuel|honoraires|commission)\b[^0-9]*$/;
 const LABELLED_MONEY = /\b(?:budget|prix|maximum|max|jusqu.a|plafond|vendre a|mettre a)\b[^0-9]*$/;
-const MONEY_LABEL = /\b(?:budget|prix|maximum|max|jusqu.a|plafond|vendre a|mettre a)\b/g;
+// « Apport maximum 30 000 » reste un apport : seul le nom d'un budget ou d'un prix change de sujet.
+const MONEY_LABEL = /\b(?:budget|prix|vendre a|mettre a)\b/g;
 
-/** Un montant de frais, d'apport ou de revenu : le dernier mot avant lui décide, « frais de notaire, budget 300 000 ». */
+/** Un montant de frais, d'apport ou de revenu : le dernier sujet nommé avant lui décide, « frais de notaire, budget 300 000 ». */
 function isOtherMoney(before: string): boolean {
   const labels = [...before.matchAll(MONEY_LABEL)];
   const last = labels[labels.length - 1];
@@ -326,38 +327,54 @@ const CRITERIA_WORDS: readonly [Criterion, RegExp][] = [
   ['outbuilding', /\bdependance/],
 ];
 
-/** Les mots qui nient ce qui les suit, de près et dans la même proposition. */
-const CRITERION_NEGATOR = /^(?:sans|pas|ni|aucun|aucune|jamais|eviter|evite)$/;
-/** Une tournure où « pas » ne nie rien de ce qui suit. */
-const NOT_A_NEGATION = /\bpas (?:de (?:souci|soucis|probleme|problemes)|mal|loin|trop|cher|chere)\b/g;
-/** Ce qui ferme la portée d'une négation : « pas de jardin mais un balcon », « sans ascenseur, avec garage ». */
-const CLAUSE_BREAK = /[.,;:!?\n]|\b(?:mais|plutot|avec|par contre|cependant)\b|\bet (?:un|une|des|avec|je|nous)\b/g;
-const NEGATION_REACH = 4;
+const NEGATORS = /^(?:sans|pas|ni|aucun|aucune|jamais|eviter|evite)$/;
+/** Ce qui peut séparer une négation de ce qu'elle nie : « pas besoin d'un grand jardin ». Rien d'autre. */
+const NEGATION_FILLER = /^(?:besoin|envie|forcement|vraiment|absolument|de|d'|du|des|un|une|le|la|les|l'|mon|ma|mes|grande?s?|petite?s?|gros|grosses?|beaux?|belles?)$/;
+const PROPERTY_TYPE = /^(?:maisons?|pavillons?|appart(?:ement)?s?|studios?|terrains?|immeubles?)$/;
+const CRITERION_WORD = /^(?:maisons?|pavillons?|appart(?:ement)?s?|studios?|terrains?|immeubles?|jardins?|balcons?|terrasses?|garages?|parkings?|caves?|ascenseurs?|piscines?|cheminees?|dependances?|[tf]\d{1,2}|\d{1,2}|pieces?|chambres?)$/;
+/** « Jardin pas nécessaire », « garage : non » : la négation vient après le mot. */
+const DENIED_AFTER =
+  /^[\p{L}-]*\s*(?:(?:(?:n'est|ne sont|est|sont)\s+)?(?:pas|non)\s+(?:forcement\s+|vraiment\s+|absolument\s+)?(?:necessaires?|obligatoires?|indispensables?|utiles?|souhaitee?s?|voulue?s?)\b|:\s*non\b)/u;
 
-/** Le mot trouvé à cette place est-il nié ? « Sans jardin ni garage », « je ne veux pas de grand jardin ». */
-function isDenied(p: string, index: number): boolean {
-  const before = p.slice(0, index);
-  const breaks = [...before.matchAll(CLAUSE_BREAK)];
-  const last = breaks[breaks.length - 1];
-  const scope = last ? before.slice((last.index ?? 0) + last[0].length) : before;
-  const words = scope.split(/\s+/).filter(Boolean);
-  return words.slice(-NEGATION_REACH - 1).some((w) => CRITERION_NEGATOR.test(w));
+/**
+ * Le mot trouvé à cette place est-il nié ? La portée est stricte : on remonte depuis le mot, et seuls des déterminants,
+ * « besoin de », un adjectif de taille ou d'autres critères reliés peuvent le séparer de la négation. « Je ne sais pas
+ * combien vaut ma maison » et « sans travaux, 3 chambres » ne nient rien.
+ */
+function isDenied(p: string, start: number, end: number): boolean {
+  if (DENIED_AFTER.test(p.slice(end))) return true;
+  const tokens = p.slice(0, start).match(/[\p{L}\d]+'?|[.,;:!?()\n]/gu) ?? [];
+  for (let i = tokens.length - 1; i >= 0; i -= 1) {
+    const t = tokens[i]!;
+    if (NEGATORS.test(t)) return true;
+    // « Ne… plus » nie ; « plus » seul non.
+    if (t === 'plus') return tokens.slice(Math.max(0, i - 3), i).some((w) => w === 'ne' || w.startsWith("n'"));
+    if (NEGATION_FILLER.test(t) || CRITERION_WORD.test(t)) continue;
+    // Une liste continue après une virgule : « pas de piscine, de jardin ou de cave ».
+    if (t === ',' && /^(?:de|d'|du|des)$/.test(tokens[i + 1] ?? '')) continue;
+    // « Pas de jardin et un balcon » : un nouveau groupe ; « sans cave et garage » : la même négation.
+    if ((t === 'et' || t === 'ou') && !/^(?:un|une|des)$/.test(tokens[i + 1] ?? '')) continue;
+    // « Pas de maison avec piscine » nie les deux ; « sans jardin avec garage » demande le garage.
+    if (t === 'avec' && PROPERTY_TYPE.test(tokens[i - 1] ?? '')) continue;
+    return false;
+  }
+  return false;
 }
 
 const globally = (r: RegExp): RegExp => new RegExp(r.source, 'g');
 
 /** Chaque critère que le message cite, et s'il l'affirme au moins une fois ou seulement le nie. */
-function mentionedCriteria(text: string): Map<Criterion, boolean> {
-  const p = text.replace(NOT_A_NEGATION, (m) => ' '.repeat(m.length));
+function mentionedCriteria(p: string): Map<Criterion, boolean> {
   const out = new Map<Criterion, boolean>();
-  const note = (c: Criterion, index: number): void => {
-    out.set(c, (out.get(c) ?? false) || !isDenied(p, index));
+  const note = (c: Criterion, m: RegExpMatchArray): void => {
+    const start = m.index ?? 0;
+    out.set(c, (out.get(c) ?? false) || !isDenied(p, start, start + m[0].length));
   };
-  for (const [c, r] of CRITERIA_WORDS) for (const m of p.matchAll(globally(r))) note(c, m.index ?? 0);
+  for (const [c, r] of CRITERIA_WORDS) for (const m of p.matchAll(globally(r))) note(c, m);
   const count = (kind: 'rooms' | 'bedrooms', r: RegExp): void => {
     for (const m of p.matchAll(r)) {
       const n = Number(m[1] ?? m[2]);
-      if (n >= 1 && n <= 20) note(`${kind}:${n}`, m.index ?? 0);
+      if (n >= 1 && n <= 20) note(`${kind}:${n}`, m);
     }
   };
   count('rooms', /\b(?:(\d{1,2}) pieces?|[tf](\d{1,2}))\b/g);
