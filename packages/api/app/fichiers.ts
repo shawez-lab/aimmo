@@ -400,6 +400,20 @@ export const APP_JS = `'use strict';
     if (note) li.appendChild(el('p', note, 'doux'));
     return li;
   }
+  var appelsDraw = null;
+  function appelGestes(personId, body) {
+    var box = el('div');
+    body.appendChild(box);
+    if (appelsDraw) return appelsDraw(box, personId);
+    var s = el('script');
+    s.setAttribute('src', '/app/appels.js');
+    s.addEventListener('load', function () {
+      appelsDraw = globalThis.AIMMO_APPELS({ $: $, el: el, send: send, cState: cState, accordButton: accordButton, accordFailed: accordFailed, openFiche: openFiche });
+      appelsDraw(box, personId);
+    });
+    s.addEventListener('error', function () { box.textContent = 'Pas de réseau : les gestes d’appel reviendront.'; });
+    box.appendChild(s);
+  }
   function renderFiche(f, personId) {
     var body = $('fiche-corps');
     clear(body);
@@ -429,9 +443,15 @@ export const APP_JS = `'use strict';
     } else if (f.callRefusal === 'outside_hours') {
       // Une prospection acceptée s'appelle aux heures permises [R203].
       body.appendChild(el('p', 'Appel fermé à cette heure : du lundi au vendredi, de 10 h à 13 h et de 14 h à 20 h, hors jours fériés.', 'alerte'));
+    } else if (f.callRefusal === 'refused_request') {
+      body.appendChild(el('p', 'Appel fermé : la personne a refusé. Il ne rouvre que si elle redemande à être rappelée.', 'alerte'));
+    } else if (f.callReopensAt) {
+      // L'écran dit quand l'appel rouvre [R204].
+      body.appendChild(el('p', 'Appel fermé : ' + (f.callRefusal === 'refused_recently' ? 'la personne a refusé' : 'trop d’appels récents') + '. Il rouvre le ' + date(f.callReopensAt) + ' à ' + hour(f.callReopensAt) + '.', 'alerte'));
     } else {
       body.appendChild(el('p', 'Aucun numéro sur la fiche.', 'doux'));
     }
+    if (contact.allowed && (f.call || (f.callRefusal && f.callRefusal !== 'no_phone'))) appelGestes(personId, body);
     var callbacks = (f.callbacks || []).map(function (c) {
       var li = line(c.reason, c.doneAt ? 'Fait le ' + date(c.doneAt) : 'À rappeler avant le ' + date(c.dueAt) + ' à ' + hour(c.dueAt));
       if (!c.doneAt && ID.test(c.taskId)) {

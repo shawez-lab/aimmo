@@ -7,6 +7,7 @@
  */
 
 import { ALERTES_SCRIPT } from '../app/alertes.ts';
+import { APPELS_SCRIPT } from '../app/appels.ts';
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
 import { REPRISE_SCRIPT } from '../app/reprise.ts';
 import { CONFORMITE_SCRIPT } from '../app/conformite.ts';
@@ -46,6 +47,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/app.js': { body: stripCommentLines(APP_JS), type: 'text/javascript; charset=utf-8' },
   // Les alertes de l'agent (C09c), chargées seulement s'il en a, jamais gardées sur l'appareil [R201].
   '/app/alertes.js': { body: ALERTES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Les gestes d'appel de la fiche (AC12), chargés à l'ouverture d'une fiche où ils servent [R201].
+  '/app/appels.js': { body: APPELS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le dépôt des fichiers de la reprise (I05), chargé au premier geste de la direction [R201].
   '/app/reprise.js': { body: REPRISE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran du responsable de la conformité (L10), chargé à la demande pour sa seule clé, jamais gardé sur l'appareil.

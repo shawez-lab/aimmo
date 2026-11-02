@@ -193,7 +193,7 @@ describeWithSqlite('C02 · rattacher chaque contact à sa fiche', () => {
     const personId = first.personId as string;
     await t.db.run("INSERT INTO call_notes (id, network_id, person_id, outcome, basis, noted_by, noted_at) VALUES ('n1', ?, ?, 'refused', 'request', 'agent:a', ?)", [t.network.id, personId, new Date(NOW.getTime() - 86_400_000).toISOString()]);
     const refused = await fiche.read(direction, personId);
-    expect(refused.ok && refused.value).toMatchObject({ call: null, callRefusal: 'no_consent' });
+    expect(refused.ok && refused.value).toMatchObject({ call: null, callRefusal: 'refused_request' });
     await t.rattachement.attach(await t.receive(msg('site', 'form', { name: 'Zoé', identifiers: [phone('0600000212')] }, 'Finalement, rappelez-moi')));
     const again = await fiche.read(direction, personId);
     expect(again.ok && again.value.callRefusal).toBeNull();

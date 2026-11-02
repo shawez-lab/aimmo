@@ -1,5 +1,5 @@
 /**
- * Route des appels notés par l'agent (AC09) [R204, R16]. À brancher dans le socle (AC12).
+ * Route des appels notés par l'agent (AC09), branchée dans le socle (AC12) [R204, R16].
  *
  *   POST /v1/fiches/<id>/appels   { outcome: 'called' | 'refused' } : note un appel ou le refus de la personne
  *

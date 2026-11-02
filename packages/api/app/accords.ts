@@ -26,6 +26,7 @@ export const ACCORDS_JS = `
     excluded: 'Cette personne est exclue : aucun accord possible.',
     given_before_withdrawal: 'Un accord a été retiré depuis ce jour : il faut un accord donné après le retrait.',
     given_before_lift: 'Ce jour précède la fin de son exclusion : il faut un accord donné après.',
+    given_before_refusal: 'Elle a refusé depuis ce jour : il faut une demande donnée après.',
     unknown_consent: 'Cet accord n’est plus sur cette fiche.'
   };
   function accordRefusal(res, fallback) {

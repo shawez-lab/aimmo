@@ -746,7 +746,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   first_reply_claims: ['claim_key', 'inbound_id', 'claim_id', 'outcome', 'created_at'],
   conversation_handovers: ['id', 'network_id', 'handed_at', 'created_at'],
   agent_alerts: ['id', 'network_id', 'created_at', 'seen_at'],
-  call_notes: ['id', 'network_id', 'outcome', 'basis', 'noted_at'],
+  call_notes: ['id', 'network_id', 'outcome', 'basis', 'noted_at', 'undone_merge_id'],
   human_replies: ['dedup_key', 'network_id', 'message_id', 'created_at'],
   outbound_refs: ['network_id', 'channel', 'message_id', 'created_at'],
   trial_outbox: ['message_id', 'channel', 'created_at'],

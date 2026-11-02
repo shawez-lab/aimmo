@@ -18,7 +18,7 @@ import {
 import { loadMigrations, migrationsDir } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
-const migrations = loadMigrations().filter((m) => ['0001_fiche_client', '0003_fusion', '1520_exclusions_copies'].includes(m.id));
+const migrations = loadMigrations().filter((m) => ['0001_fiche_client', '0003_fusion', '1520_exclusions_copies', '1530_appels_notes', '1540_appels_copies'].includes(m.id));
 
 function clock(start = '2026-11-02T09:00:00.000Z') {
   let t = Date.parse(start);

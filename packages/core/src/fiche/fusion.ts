@@ -245,7 +245,9 @@ export class FicheUnique {
    * Un accord créé pendant la fusion est fermé, jamais effacé [R03, R17] : on ne sait plus laquelle des deux personnes
    * l'a donné. Une exclusion ou un arrêt noté alors que deux fiches étaient réunies est recopié de l'une à l'autre
    * [R02, R04] : pour la même raison, il vaut pour les deux, avec sa date et sa levée s'il en a une, pour qu'un accord plus
-   * ancien ne compte pas de nouveau. Une exclusion d'avant leur réunion ne bouge pas. Fusion, accords et exclusions changent dans un seul lot.
+   * ancien ne compte pas de nouveau. Une exclusion d'avant leur réunion ne bouge pas. Une note d'appel rangée pendant la
+   * réunion est recopiée de même [R204], avec son heure, son résultat et sa base : le refus et le plafond valent des deux
+   * côtés, et rien n'est effacé [R17]. Fusion, accords, exclusions et notes changent dans un seul lot.
    * Rappeler une fusion déjà défaite écrit la ligne du journal si une coupure l'avait empêchée, sans rien changer de plus.
    */
   async undoMerge(mergeId: string, trace: UndoMergeTrace): Promise<string> {
@@ -255,6 +257,7 @@ export class FicheUnique {
     if (undoneAt === null) {
       const at = this.now().toISOString();
       const ids = await this.membersOf(merge.survivor_id);
+      const pairs = await this.separatedPairs(merge, ids);
       const [undo] = await runBatch(this.db, [
         { sql: 'UPDATE person_merges SET undone_at = ? WHERE id = ? AND undone_at IS NULL', params: [at, mergeId] },
         {
@@ -267,7 +270,7 @@ export class FicheUnique {
         // En SQL : un arrêt rangé pendant ce geste n'échappe pas à la copie. Les colonnes de la ligne servent de clé :
         // l'original et ses copies ne font qu'un, et rien n'est doublé. La copie garde la date de création de l'original,
         // pour qu'une fusion défaite plus tard la lise comme lui.
-        ...(await this.exclusionPairs(merge, ids)).map(({ source, target, since }) => ({
+        ...pairs.map(({ source, target, since }) => ({
           sql: `INSERT INTO exclusions (id, network_id, agent_id, person_id, reason, channel, noted_at, lifted_at, created_at, undone_merge_id)
                 SELECT ${SQL_UUID}, e.network_id, MIN(e.agent_id), ?, e.reason, e.channel, e.noted_at, e.lifted_at, MIN(e.created_at), ?
                 FROM exclusions e
@@ -276,6 +279,17 @@ export class FicheUnique {
                                     AND t.noted_at = e.noted_at AND t.lifted_at IS e.lifted_at)
                   AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)
                 GROUP BY e.network_id, e.reason, e.channel, e.noted_at, e.lifted_at`,
+          params: [target, mergeId, source, since, target, mergeId, at],
+        })),
+        // De même pour les notes d'appel : l'original et ses copies ne font qu'un, et se relisent comme un seul appel.
+        ...pairs.map(({ source, target, since }) => ({
+          sql: `INSERT INTO call_notes (id, network_id, person_id, outcome, basis, noted_by, noted_at, undone_merge_id)
+                SELECT ${SQL_UUID}, n.network_id, ?, n.outcome, n.basis, MIN(n.noted_by), n.noted_at, ?
+                FROM call_notes n
+                WHERE n.person_id = ? AND n.noted_at >= ?
+                  AND NOT EXISTS (SELECT 1 FROM call_notes t WHERE t.person_id = ? AND t.outcome = n.outcome AND t.basis = n.basis AND t.noted_at = n.noted_at)
+                  AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)
+                GROUP BY n.network_id, n.outcome, n.basis, n.noted_at`,
           params: [target, mergeId, source, since, target, mergeId, at],
         })),
       ]);
@@ -298,13 +312,14 @@ export class FicheUnique {
         'SELECT id FROM exclusions WHERE undone_merge_id = ? ORDER BY id',
         [mergeId],
       );
+      const calls = await this.db.all<{ id: string }>('SELECT id FROM call_notes WHERE undone_merge_id = ? ORDER BY id', [mergeId]);
       await appendEvent(
         trace.journal,
         {
           type: 'fiche.fusion_defaite',
           actor: trace.actor,
           subject,
-          data: { rule: 'R03', merge: mergeId, consents: closed.map((c) => c.id), exclusions: copied.map((c) => c.id) },
+          data: { rule: 'R03', merge: mergeId, consents: closed.map((c) => c.id), exclusions: copied.map((c) => c.id), calls: calls.map((c) => c.id) },
         },
         this.now,
       );
@@ -314,9 +329,9 @@ export class FicheUnique {
 
   /**
    * Les couples de fiches que la fusion défaite sépare, chacun avec la date où ils ont été réunis : la plus récente des
-   * fusions qui les relient. Une exclusion plus ancienne que cette date n'a jamais valu pour l'autre fiche et ne la suit pas.
+   * fusions qui les relient. Une exclusion ou une note plus ancienne que cette date n'a jamais valu pour l'autre fiche et ne la suit pas.
    */
-  private async exclusionPairs(merge: PersonMerge, ids: string[]): Promise<{ source: string; target: string; since: string }[]> {
+  private async separatedPairs(merge: PersonMerge, ids: string[]): Promise<{ source: string; target: string; since: string }[]> {
     const edges = await this.db.all<{ survivor_id: string; merged_id: string; merged_at: string }>(
       `SELECT survivor_id, merged_id, merged_at FROM person_merges WHERE undone_at IS NULL AND merged_id IN (${placeholders(ids.length)})`,
       ids,
