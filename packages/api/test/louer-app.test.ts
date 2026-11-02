@@ -594,7 +594,37 @@ describe('W11 · écran « Louer » de l’application', () => {
     await t.settle();
     await t.openL1();
     expect(t.body().textContent).not.toContain('BAIL D’ESSAI');
-    expect(t.body().textContent).toContain('Le texte du bail se relit sur l’appareil qui l’a préparé');
+    expect(t.byText('Relire le bail avec les parties')).toBeDefined();
+  });
+
+  it('[R16] [R14] W15 : après réouverture, le bail se relit au geste, par la seule route du bail, posé en texte ; un refus est dit en clair', async () => {
+    const t = await run({
+      'GET /v1/location/l1/suivi': ok({ facts: FACTS, fees: null, lease: LEASE, inventoryClosed: false }),
+      'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c1' }),
+      'GET /v1/location/l1/bail/texte': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }),
+    });
+    await t.openL1();
+    // Rien n'est lu avant le geste.
+    expect(t.calls.some((c) => c.url.endsWith('/bail/texte'))).toBe(false);
+    await t.click(t.byText('Relire le bail avec les parties'));
+    expect(t.state()).toBe('Ce logement est suivi par un autre agent.');
+    expect(t.state()).not.toMatch(/R16|not_assigned/);
+    expect(t.body().textContent).not.toContain('BAIL D’ESSAI');
+    delete t.table['GET /v1/location/l1/bail/texte'];
+    await t.click(t.byText('Relire le bail avec les parties'));
+    expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    t.table['GET /v1/location/l1/bail/texte'] = ok({ leaseId: 'bl1', content: `BAIL D’ESSAI ${INJECTED}`, contentSha256: 'a'.repeat(64) });
+    await t.click(t.byText('Relire le bail avec les parties'));
+    expect(t.body().textContent).toContain(`BAIL D’ESSAI ${INJECTED}`);
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    expect(t.byText('Relire le bail avec les parties')).toBeUndefined();
+    // Sortie : le texte n'est plus sur l'appareil, il faut le redemander.
+    await t.click(t.els.sortir);
+    t.els.cle!.value = 'z'.repeat(40);
+    t.els['form-connexion']!.listeners.submit!({ preventDefault: () => undefined });
+    await t.settle();
+    await t.openL1();
+    expect(t.body().textContent).not.toContain('BAIL D’ESSAI');
   });
 
   it('[R108] un code de signature expiré : dit en clair, la séance est oubliée et un nouveau code peut partir', async () => {

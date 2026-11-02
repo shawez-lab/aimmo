@@ -335,6 +335,7 @@ const ROUTES: LocationRoute[] = [
     roles: WRITERS,
     handle: withBody(async (s, v, [id], b) => reply(await core(s).signatures.sign(v, id, { code: b.code, drawing: b.drawing }))),
   },
+  { method: 'GET', pattern: new RegExp(`^/location/${ID}/bail/texte$`), name: 'location.bail.texte', roles: WRITERS, handle: async (s, v, [id]) => reply(await core(s).signatures.text(v, id)) },
   { method: 'POST', pattern: new RegExp(`^/location/${ID}/bail/exemplaires$`), name: 'location.bail.exemplaires', roles: WRITERS, handle: async (s, v, [id]) => reply(await core(s).signatures.sendCopies(v, id)) },
   {
     method: 'GET',

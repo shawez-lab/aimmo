@@ -403,6 +403,28 @@ export class SignaturesBail implements LeaseSignatureState {
     return { ok: true, value: { content: row.content, contentSha256: row.content_sha256 } };
   }
 
+  /**
+   * Le texte du bail en vigueur, à relire avec les parties après une réouverture (W15). Il porte l'identité des deux
+   * parties : l'agent du bien ou la direction seuls, voyant chaque fiche en entier ; la lecture est au journal [R16].
+   */
+  async text(viewer: Viewer, listingId: unknown): Promise<LeaseSignatureResult<{ leaseId: string; content: string; contentSha256: string }>> {
+    const listing = await this.listings.listing(viewer, listingId, true);
+    if ('ok' in listing) return listing;
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, `rental:${listing.id}`, 'role');
+    let lease: { leaseId: string; contentSha256: string } | null = null;
+    for (const party of LEASE_PARTIES) {
+      const target = await this.target(listing.networkId, listing.id, listing.ownerPersonId, party);
+      if ('ok' in target) return target;
+      const sees = await this.seesParty(viewer, target.personId);
+      if (sees !== true) return sees;
+      lease = target;
+    }
+    const row = await this.db.first<{ content: string }>('SELECT content FROM rental_leases WHERE id = ? AND listing_id = ?', [lease!.leaseId, listing.id]);
+    if (!row) return { ok: false, rule: null, code: 'no_current_lease' };
+    await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', what: 'lease_text' } }, this.now);
+    return { ok: true, value: { leaseId: lease!.leaseId, content: row.content, contentSha256: lease!.contentSha256 } };
+  }
+
   /** Le premier message s'adresse à la personne par son prénom [R08]. */
   private async greeting(personId: string): Promise<string> {
     const first = await ficheFirstName(this.db, await this.fiche.membersOf(personId));

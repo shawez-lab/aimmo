@@ -170,8 +170,6 @@ globalThis.AIMMO_LOUER = function (t) {
     bad_date: 'La date du choix n’est pas valable (pas dans le futur).',
     before_presentation: 'Le choix ne peut pas précéder la présentation.',
     bad_channel: 'Dites comment le propriétaire a fait son choix.',
-    bad_proof: 'Cette preuve n’est pas rangée pour ce logement : déposez-la de nouveau.',
-    not_stored: 'Ce fichier n’est pas rangé : rangez-le d’abord.',
     incomplete: 'Ce dossier n’est plus complet.',
     no_choice: 'Le propriétaire n’a pas encore choisi.',
     missing_charges_mode: 'Dites dans les faits si les charges sont une provision ou un forfait.',
@@ -180,7 +178,6 @@ globalThis.AIMMO_LOUER = function (t) {
     bad_owner_address: 'Le domicile du bailleur n’est pas valable.',
     bad_equipment: 'La liste des équipements n’est pas valable.',
     bad_card: 'La carte professionnelle s’écrit « CPI » puis son numéro.',
-    bad_notice_ref: 'Cette notice n’est pas rangée pour ce logement : déposez-la de nouveau.',
     type_refuse: 'Ce fichier n’est pas accepté : un PDF, une photo JPEG ou PNG.',
     trop_lourd: 'Ce fichier dépasse 20 Mo.',
     bad_habitat: 'Choisissez le type d’habitat.',
@@ -662,10 +659,23 @@ globalThis.AIMMO_LOUER = function (t) {
     var box = section('Le bail');
     if (lease) {
       box.appendChild(el('p', (lease.complete ? 'Bail en vigueur, complet' : 'Bail en vigueur, incomplet : complétez-le') + (lease.mode === 'essai' ? ' · document d’essai, sans valeur tant que les modèles ne sont pas validés.' : '.'), lease.complete ? 'fait' : 'alerte'));
-      if (leaseTexts[lease.leaseId]) {
-        var read = details(box, 'Lire le bail avec les parties');
-        read.appendChild(el('p', leaseTexts[lease.leaseId], 'brouillon'));
-      } else box.appendChild(el('p', 'Le texte du bail se relit sur l’appareil qui l’a préparé ; refaites-le ici pour le relire avant de signer.', 'doux'));
+      var reading = el('div');
+      box.appendChild(reading);
+      var showLease = function (text) {
+        clear(reading);
+        var read = details(reading, 'Lire le bail avec les parties');
+        read.setAttribute('open', '');
+        read.appendChild(el('p', text, 'brouillon'));
+      };
+      if (leaseTexts[lease.leaseId]) showLease(leaseTexts[lease.leaseId]);
+      else reading.appendChild(button('Relire le bail avec les parties', once(function () {
+        return send(base + '/bail/texte', 'GET').then(function (res) {
+          if (res.gone) return;
+          if (!res.ok) { louerState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : louerRefusal(res.body, 'Indisponible pour le moment. Réessayez plus tard.')); return; }
+          leaseTexts[res.body.data.leaseId] = res.body.data.content;
+          showLease(res.body.data.content);
+        });
+      })));
       ['bailleur', 'locataire'].forEach(function (party) { box.appendChild(signBlock(base, lease, party)); });
       if (lease.bailleur && lease.locataire) {
         if (lease.copiesSent && lease.copiesSent.length === 2) box.appendChild(el('p', 'Un exemplaire préparé pour chacun (mode essai).', 'fait'));
