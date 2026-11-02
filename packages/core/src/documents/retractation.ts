@@ -104,15 +104,17 @@ export class Diffusion {
       facts = null;
     }
     const signedAt = new Date(row.signed_at);
-    // La durée en vigueur : celle du mandat, ou du dernier avenant signé qui la change (D07).
-    const terms = await mandateTerms(this.db, row.mandate_id);
+    // La durée en vigueur à cette date : celle du mandat, ou du dernier avenant signé alors qui la change (D07, D10).
+    const terms = await mandateTerms(this.db, row.mandate_id, at);
     const duration = terms?.durationMonths ?? facts?.durationMonths ?? null;
     if (duration === null) return decision(false, 'duration_unknown');
     // La fin du mandat se compte en jours de Paris ; un 31 sans équivalent devient le dernier jour du mois [R42].
     if (localTime(at, TIME_ZONE).date >= mandateEndDay(signedAt, duration)) return decision(false, 'expired');
     const last = withdrawalLastDay(signedAt, row.place);
     if (last !== null && localTime(at, TIME_ZONE).date <= last) {
-      if (await this.db.first('SELECT mandate_id FROM mandate_early_starts WHERE mandate_id = ?', [row.mandate_id])) return decision(true, 'allowed_early_start', last);
+      // La demande écrite du vendeur ne compte qu'à partir du jour où elle est reçue (D10).
+      const early = await this.db.first<{ received_at: string }>('SELECT received_at FROM mandate_early_starts WHERE mandate_id = ?', [row.mandate_id]);
+      if (early && localTime(new Date(early.received_at), TIME_ZONE).date <= localTime(at, TIME_ZONE).date) return decision(true, 'allowed_early_start', last);
       return decision(false, 'withdrawal_period', last);
     }
     return decision(true, 'allowed', last);
@@ -131,7 +133,10 @@ export class Diffusion {
       [networkId, propertyId],
     );
     let first: DiffusionDecision | null = null;
+    const day = localTime(at, TIME_ZONE).date;
     for (const row of rows) {
+      // Un mandat signé après cette date n'existait pas encore (D10).
+      if (localTime(new Date(row.signed_at), TIME_ZONE).date > day) continue;
       const d = await this.decideMandate(row, at);
       if (d.allowed) return d;
       first ??= d;
