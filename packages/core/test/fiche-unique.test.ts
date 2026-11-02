@@ -315,6 +315,24 @@ describeWithSqlite('S04 · une seule fiche par personne', () => {
     expect(await fiches.rootOf(b)).toBe(b);
   });
 
+  it('[R03] hasConsentInForce lit les fiches réunies : une ligne ouverte plus ancienne qu’un retrait de l’autre fiche ne compte pas', async () => {
+    const a = await createFiche([]);
+    const b = await createFiche([]);
+    const consent = (personId: string, day: string) => store.addConsent({ networkId, personId, purpose: 'alertes', channel: 'email', proof: 'preuve inventée', givenAt: new Date(`2026-${day}T10:00:00.000Z`) });
+    await consent(b, '03-01');
+    expect(await fiches.hasConsentInForce(b, 'alertes', 'email')).toBe(true);
+    const old = await consent(a, '02-01');
+    await store.withdrawConsent(old.id, new Date('2026-04-01T10:00:00.000Z'));
+    expect(await fiches.hasConsentInForce(a, 'alertes', 'email')).toBe(false);
+    await fiches.merge({ survivorId: a, mergedId: b, reason: 'même personne' });
+    expect(await fiches.hasConsentInForce(a, 'alertes', 'email')).toBe(false);
+    expect(await fiches.channelsInForce(b, 'alertes')).toEqual([]);
+    await consent(a, '05-01');
+    expect(await fiches.hasConsentInForce(b, 'alertes', 'email')).toBe(true);
+    expect(await fiches.hasConsentInForce(b, 'alertes', 'sms')).toBe(false);
+    expect(await fiches.channelsInForce(a, 'alertes')).toEqual(['email']);
+  });
+
   it('un identifiant saisi est normalisé, refusé s’il n’est pas valable, pas doublé', async () => {
     const p = await createFiche([]);
     const first = await fiches.addIdentifier({ networkId, personId: p, kind: 'phone', value: '06 22 00 00 06' });

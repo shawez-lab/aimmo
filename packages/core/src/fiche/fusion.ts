@@ -291,10 +291,15 @@ export class FicheUnique {
    * fiche sait à ce jour compte, quelle que soit la date du retrait.
    */
   async hasConsentInForce(personId: string, purpose: string, channel: string): Promise<boolean> {
+    return (await this.channelsInForce(personId, purpose)).includes(channel);
+  }
+
+  /** Les canaux où un accord compte encore pour cette finalité : une seule lecture, pour un passage sur beaucoup de fiches. */
+  async channelsInForce(personId: string, purpose: string): Promise<string[]> {
     const ids = await this.membersOf(personId);
     const of = <T>(table: string): Promise<T[]> => this.db.all<T>(`SELECT * FROM ${table} WHERE person_id IN (${placeholders(ids.length)})`, ids);
     const [consents, exclusions] = await Promise.all([of<Consent>('consents'), of<Exclusion>('exclusions')]);
-    return consents.some((c) => c.purpose === purpose && c.channel === channel && consentInForce(c, { consents, exclusions }, Infinity));
+    return [...new Set(consents.filter((c) => c.purpose === purpose && consentInForce(c, { consents, exclusions }, Infinity)).map((c) => c.channel))];
   }
 
   /** Toute la fiche de la personne : ses lignes et celles de chaque fiche qui y est fusionnée. */

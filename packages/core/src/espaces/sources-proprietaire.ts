@@ -238,13 +238,8 @@ export class SqlSourcesProprietaire implements SourcesProprietaire {
       [networkId, tracking.postal_code, tracking.town, ...windows.map((w) => w.propertyId)],
     );
     if (owned.length !== 1 || owned[0]!.id !== propertyId) return null;
-    const at = this.now().toISOString();
-    const consent = await this.db.first<{ n: number }>(
-      `SELECT count(*) AS n FROM consents WHERE person_id IN (${q}) AND purpose = ? AND channel = ? AND given_at <= ? AND (withdrawn_at IS NULL OR withdrawn_at > ?)`,
-      [...members, VALUE_TRACKING_PURPOSE, tracking.channel, at, at],
-    );
-    // Sans accord en cours, le suivi n'est plus actif : rien n'est montré [R03].
-    if (Number(consent?.n ?? 0) === 0) return null;
+    // Sans accord qui compte encore, le suivi n'est plus actif : rien n'est montré [R03].
+    if (!(await this.fiche.hasConsentInForce(personId, VALUE_TRACKING_PURPOSE, tracking.channel))) return null;
     const range = await this.ranges.forTown(tracking.postal_code, tracking.town, tracking.kind);
     if (!range.ok) return null;
     return { tracking: true, city: range.value.town, lowEur: range.value.perM2.low, highEur: range.value.perM2.high, computedAt: range.value.data.lastSale, sources: [range.value.data.source] };

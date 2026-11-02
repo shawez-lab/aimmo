@@ -242,6 +242,7 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 
 ### AC07 · Un accord redonné est rangé, même si une ligne ancienne reste ouverte
 - Statut : en cours
+- Décidé (2026-11-02), lecture prudente : `FicheUnique.hasConsentInForce` et `channelsInForce`, la même règle que le contrôle central, servent aux sept gestes, au pré-contrôle des alertes (sinon le refus fermait le bien pour toujours) et aux écrans du client (« alertes demandées », suivi de valeur). Les signatures et le dossier d'un commerce lisent maintenant les fiches réunies. Reste à trancher par Shawez (H42) : la parole de l'agent peut-elle redonner un accord retiré ? La sécurité des visites dit non, ces gestes disent oui, comme le demande cette tâche.
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC05
 - Cahier : Conformité, accord préalable ; R03.

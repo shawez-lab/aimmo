@@ -61,17 +61,19 @@ describeWithSqlite('EC10 · alertes demandées depuis l’espace, envoyées par 
     const t = await setup();
     const store = new FicheClient(t.db);
     const personId = t.viewer.personId;
-    const add = (day: string) => store.addConsent({ networkId: t.network.id, personId, purpose: ALERT_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date(`2020-01-${day}T00:00:00.000Z`) });
-    await add('02');
-    const old = await add('01');
+    // Un retrait sur la fiche, un accord plus ancien resté ouvert sur son doublon, puis la fusion.
+    const twin = await store.createPerson({ networkId: t.network.id, firstName: 'Doublon' });
+    await store.addConsent({ networkId: t.network.id, personId: twin.id, purpose: ALERT_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-02T00:00:00.000Z') });
+    const old = await store.addConsent({ networkId: t.network.id, personId, purpose: ALERT_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-01T00:00:00.000Z') });
     await store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    await new FicheUnique(t.db, new FicheClient(t.db)).merge({ survivorId: personId, mergedId: twin.id, reason: 'identifiant commun' });
     const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [personId, ALERT_PURPOSE]);
     await t.alertes.forProperty(t.network.id, t.property.id);
     expect(await t.outbox()).toEqual([]);
     expect(await t.gestes.requestAlerts(t.viewer, { accepted: true })).toEqual({ ok: true, value: { requested: true } });
-    expect(await lines()).toHaveLength(3);
+    expect(await lines()).toHaveLength(2);
     await t.gestes.requestAlerts(t.viewer, { accepted: true });
-    expect(await lines()).toHaveLength(3);
+    expect(await lines()).toHaveLength(2);
     await t.alertes.forProperty(t.network.id, t.property.id);
     expect((await t.outbox()).length).toBeGreaterThan(0);
   });

@@ -399,14 +399,19 @@ describeWithSqlite('F04 · relance un an après la vente, sans jamais relancer u
     t.close('f1', '2027-03-01', [{ personId: a, side: 'vendeur' }]);
     const store = new FicheClient(t.db);
     const networkId = (await t.db.first<{ network_id: string }>('SELECT network_id FROM persons WHERE id = ?', [a]))!.network_id;
-    const add = (day: string) => store.addConsent({ networkId, personId: a, purpose: AFTER_SALE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date(`2020-01-${day}T00:00:00.000Z`) });
-    await add('02');
-    const old = await add('01');
+    // Un retrait sur la fiche, un accord plus ancien resté ouvert sur son doublon, puis la fusion.
+    const twin = await store.createPerson({ networkId, firstName: 'Doublon' });
+    await store.addConsent({ networkId, personId: twin.id, purpose: AFTER_SALE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-02T00:00:00.000Z') });
+    const old = await store.addConsent({ networkId, personId: a, purpose: AFTER_SALE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-01T00:00:00.000Z') });
     await store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const unique = new FicheUnique(t.db, new FicheClient(t.db));
+    await unique.merge({ survivorId: a, mergedId: twin.id, reason: 'identifiant commun' });
+    expect(await unique.hasConsentInForce(a, AFTER_SALE_PURPOSE, 'email')).toBe(false);
     const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [a, AFTER_SALE_PURPOSE]);
     expect(await t.relances.recordChoice(t.agent, 'f1', a, { choice: 'oui', proof: 'case cochée, test' })).toEqual({ ok: true });
-    expect(await lines()).toHaveLength(3);
+    expect(await lines()).toHaveLength(2);
     await t.relances.recordChoice(t.agent, 'f1', a, { choice: 'oui', proof: 'case cochée, test' });
-    expect(await lines()).toHaveLength(3);
+    expect(await lines()).toHaveLength(2);
+    expect(await unique.hasConsentInForce(a, AFTER_SALE_PURPOSE, 'email')).toBe(true);
   });
 });

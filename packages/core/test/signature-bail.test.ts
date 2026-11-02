@@ -323,15 +323,20 @@ describeWithSqlite('W12 · signature en ligne du bail, en mode essai', () => {
   it('[R03] un accord redonné est rangé quand la ligne ouverte est plus ancienne qu’un retrait (AC07), et un accord qui compte n’est pas doublé', async () => {
     const t = await setup();
     const { id } = await t.leased();
-    const add = (given: number) => t.store.addConsent({ networkId: t.owner.network_id, personId: t.owner.id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date(Date.parse('2020-01-01T00:00:00.000Z') + given) });
-    await add(1000);
-    const old = await add(0);
+    // Un retrait sur la fiche, un accord plus ancien resté ouvert sur son doublon, puis la fusion.
+    const twin = await t.store.createPerson({ networkId: t.owner.network_id, firstName: 'Doublon' });
+    await t.store.addConsent({ networkId: t.owner.network_id, personId: twin.id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-02T00:00:00.000Z') });
+    const old = await t.store.addConsent({ networkId: t.owner.network_id, personId: t.owner.id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-01T00:00:00.000Z') });
     await t.store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const unique = new FicheUnique(t.db, new FicheClient(t.db));
+    await unique.merge({ survivorId: t.owner.id, mergedId: twin.id, reason: 'identifiant commun' });
+    expect(await unique.hasConsentInForce(t.owner.id, ONLINE_SIGNATURE_PURPOSE, 'email')).toBe(false);
     const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [t.owner.id, ONLINE_SIGNATURE_PURPOSE]);
     const before = (await lines()).length;
     expect((await t.signatures.start(t.agent, id, { party: 'bailleur', ...CONSENT })).ok).toBe(true);
     expect(await lines()).toHaveLength(before + 1);
     await t.signatures.start(t.agent, id, { party: 'bailleur', ...CONSENT });
     expect(await lines()).toHaveLength(before + 1);
+    expect(await unique.hasConsentInForce(t.owner.id, ONLINE_SIGNATURE_PURPOSE, 'email')).toBe(true);
   });
 });

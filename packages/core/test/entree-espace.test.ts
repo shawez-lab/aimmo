@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { CLIENT_SPACE_PURPOSE, EntreeEspace, LINK_REQUEST_ANSWER, type ClientSide } from '../src/espaces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -304,14 +304,19 @@ describeWithSqlite('EC01 · entrée du client dans son espace', () => {
   it('[R03] un accord redonné est rangé quand la ligne ouverte est plus ancienne qu’un retrait (AC07), et un accord qui compte n’est pas doublé', async () => {
     const t = await setup();
     const c = await t.client();
-    const add = (day: string) => t.store.addConsent({ networkId: t.network.id, personId: c.id, purpose: CLIENT_SPACE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date(`2020-01-${day}T00:00:00.000Z`) });
-    await add('02');
-    const old = await add('01');
+    // Un retrait sur la fiche, un accord plus ancien resté ouvert sur son doublon, puis la fusion.
+    const twin = await t.store.createPerson({ networkId: t.network.id, firstName: 'Doublon' });
+    await t.store.addConsent({ networkId: t.network.id, personId: twin.id, purpose: CLIENT_SPACE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-02T00:00:00.000Z') });
+    const old = await t.store.addConsent({ networkId: t.network.id, personId: c.id, purpose: CLIENT_SPACE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-01T00:00:00.000Z') });
     await t.store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const unique = new FicheUnique(t.db, new FicheClient(t.db));
+    await unique.merge({ survivorId: c.id, mergedId: twin.id, reason: 'identifiant commun' });
+    expect(await unique.hasConsentInForce(c.id, CLIENT_SPACE_PURPOSE, 'email')).toBe(false);
     const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [c.id, CLIENT_SPACE_PURPOSE]);
     expect((await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).ok).toBe(true);
-    expect(await lines()).toHaveLength(3);
+    expect(await lines()).toHaveLength(2);
     await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
-    expect(await lines()).toHaveLength(3);
+    expect(await lines()).toHaveLength(2);
+    expect(await unique.hasConsentInForce(c.id, CLIENT_SPACE_PURPOSE, 'email')).toBe(true);
   });
 });

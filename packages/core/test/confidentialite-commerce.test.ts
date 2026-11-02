@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { ONLINE_SIGNATURE_PURPOSE } from '../src/documents/signature-en-ligne.ts';
-import { Acces, FicheClient, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { ConfidentialiteCommerce, EstimationCommerce, FicheCommerce, PresentationCommerce, type IdentityState } from '../src/commerces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -291,14 +291,19 @@ describeWithSqlite('CE04 · engagement de confidentialité et pièce vérifiée 
     const p = await t.buyer(1);
     const nda = ndaOf(await t.conf.requestAccess(t.acces, t.alex, a.id, p.id));
     const store = new FicheClient(t.db);
-    const add = (day: string) => store.addConsent({ networkId: t.network.id, personId: p.id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date(`2020-01-${day}T00:00:00.000Z`) });
-    await add('02');
-    const old = await add('01');
+    // Un retrait sur la fiche, un accord plus ancien resté ouvert sur son doublon, puis la fusion.
+    const twin = await store.createPerson({ networkId: t.network.id, firstName: 'Doublon' });
+    await store.addConsent({ networkId: t.network.id, personId: twin.id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-02T00:00:00.000Z') });
+    const old = await store.addConsent({ networkId: t.network.id, personId: p.id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-01T00:00:00.000Z') });
     await store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const unique = new FicheUnique(t.db, new FicheClient(t.db));
+    await unique.merge({ survivorId: p.id, mergedId: twin.id, reason: 'identifiant commun' });
+    expect(await unique.hasConsentInForce(p.id, ONLINE_SIGNATURE_PURPOSE, 'email')).toBe(false);
     const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [p.id, ONLINE_SIGNATURE_PURPOSE]);
     expect((await t.conf.startSignature(t.acces, t.alex, nda, { consentProof: 'accord donné au rendez-vous' })).ok).toBe(true);
-    expect(await lines()).toHaveLength(3);
+    expect(await lines()).toHaveLength(2);
     await t.conf.startSignature(t.acces, t.alex, nda, { consentProof: 'accord donné au rendez-vous' });
-    expect(await lines()).toHaveLength(3);
+    expect(await lines()).toHaveLength(2);
+    expect(await unique.hasConsentInForce(p.id, ONLINE_SIGNATURE_PURPOSE, 'email')).toBe(true);
   });
 });

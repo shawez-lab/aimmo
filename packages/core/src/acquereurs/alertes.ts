@@ -247,8 +247,8 @@ export class Alertes {
     // L'accord des alertes, en cours, sur un canal [R49] : sinon rien, et la personne sera revue au passage suivant.
     // Une ligne ouverte mais périmée (AC05) ne compte pas : sinon le refus du contrôle central fermerait ce bien pour toujours.
     const ids = await this.fiche.membersOf(personId);
-    const channels: OutboundChannelName[] = [];
-    for (const c of ALERT_CHANNELS) if (await this.fiche.hasConsentInForce(personId, ALERT_PURPOSE, c)) channels.push(c);
+    const inForce = await this.fiche.channelsInForce(personId, ALERT_PURPOSE);
+    const channels = ALERT_CHANNELS.filter((c) => inForce.includes(c));
     const channel = channels[0];
     if (!channel) return { propertyId, personId, status: 'no_consent', rule: 'R49' };
 
