@@ -3,6 +3,7 @@ import { Remerciements, THANK_YOU_JOB, THANK_YOU_PURPOSE, thankYouJob, thankYouT
 import { checkText } from '../src/envoi/texte.ts';
 import { FicheClient } from '../src/db/fiche-client.ts';
 import { FicheUnique } from '../src/fiche/fusion.ts';
+import { mergeWithDouble } from './doublon.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { FakeDossiersClos } from './apres-vente-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
@@ -218,5 +219,16 @@ describeWithSqlite('F03 · remerciement : l’agent appelle, le message est pré
     expect(await t.outbox()).toBe(0);
     await expect(t.db.run('DELETE FROM thank_you_tasks')).rejects.toThrow();
     await expect(t.db.run("UPDATE thank_you_tasks SET draft = 'autre texte, test'")).rejects.toThrow();
+  });
+
+  it('[R08] AC11 : sur une fiche réunie, le remerciement porte le prénom de la fiche gardée', async () => {
+    const t = await setup();
+    const s = await t.client('Sara', 'Vend');
+    const expected = await mergeWithDouble(t.db, new FicheClient(t.db, { now: t.now }), s, 'Inna');
+    t.close('f1', '2027-03-08', [{ personId: s, side: 'vendeur' }]);
+    t.setClock(paris('2027-03-09', 9));
+    await t.merci.run(t.network.id);
+    const list = await t.merci.list(t.agent);
+    expect(list.ok && list.value.map((x) => x.firstName)).toEqual([expected]);
   });
 });

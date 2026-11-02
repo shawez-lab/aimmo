@@ -18,6 +18,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import type { OutboundChannelName } from '../db/types.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
@@ -99,6 +100,7 @@ interface Row {
 const COLUMNS = 'id, network_id, agent_id, person_id, kind, start_at, created_at, confirmation_status, confirmation_channel, confirmation_to';
 
 export class RappelsRendezVous {
+  private readonly fiche: FicheUnique;
   private readonly now: () => Date;
   private readonly linkBase: string | null;
   private readonly batch: number;
@@ -117,6 +119,7 @@ export class RappelsRendezVous {
     if (this.linkBase && !LINK_BASE.test(this.linkBase)) throw new Error('Début de lien non valable : https, sans chiffre, terminé par /.');
     const store = new FicheClient(db, { now: this.now });
     const fiche = new FicheUnique(db, store, { now: this.now });
+    this.fiche = fiche;
     const decisions = new DecisionEnvoi(db, store, fiche, { now: this.now });
     // Seuls les canaux du mode essai : aucun vrai canal ne peut être passé de l'extérieur [R26].
     this.controle = new ControleEnvois(db, fiche, decisions, {
@@ -216,11 +219,11 @@ export class RappelsRendezVous {
     } else if (kind !== 'confirmation' && (await this.alreadyToday(row, kind, parisDate(at)))) {
       status = 'skipped';
     } else {
-      const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [row.person_id]);
+      const firstName = await ficheFirstName(this.db, await this.fiche.membersOf(row.person_id));
       const link = await this.newLink(row.id);
       const start = new Date(row.start_at);
       const { text, figures } =
-        kind === 'confirmation' ? confirmationText(row.kind, start, person?.first_name ?? null, link) : reminderText(kind, row.kind, start, person?.first_name ?? null, link);
+        kind === 'confirmation' ? confirmationText(row.kind, start, firstName, link) : reminderText(kind, row.kind, start, firstName, link);
       const result = await this.controle.send({
         networkId: row.network_id,
         agentId: row.agent_id,

@@ -26,6 +26,7 @@ import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { BusinessPublicView, BusinessSheetVersion, FicheCommerce } from './fiche.ts';
@@ -246,7 +247,7 @@ export class ConfidentialiteCommerce {
       [id, nda.network_id, nda.id, nda.person_id, nda.content_sha256, await sha256(`${id}:${code}`), expiresAt, this.actor(viewer), this.now().toISOString()],
     );
     const agent = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ?', [nda.property_id]);
-    const first = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [nda.person_id]);
+    const first = await ficheFirstName(this.db, await this.fiche.membersOf(nda.person_id));
     const sent = await this.envois.send({
       networkId: nda.network_id,
       agentId: agent?.agent_id ?? null,
@@ -256,7 +257,7 @@ export class ConfidentialiteCommerce {
       purpose: ONLINE_SIGNATURE_PURPOSE,
       subject: `signature_engagement:${id}`,
       fallbackTexts: [
-        `${first?.first_name ? `Bonjour ${first.first_name},\n\n` : 'Bonjour,\n\n'}Votre code de signature de l’engagement de confidentialité : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne, pas même à votre agent.`,
+        `${first ? `Bonjour ${first},\n\n` : 'Bonjour,\n\n'}Votre code de signature de l’engagement de confidentialité : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne, pas même à votre agent.`,
       ],
       figures: [code, CODE_TTL_MINUTES],
     });
