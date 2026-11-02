@@ -183,6 +183,19 @@ describeWithSqlite('A03 · fiche du client dans l’application', () => {
     expect(await read([])).toEqual({ call: null, callRefusal: 'no_consent' });
   });
 
+  it('[R203] la fiche donne la fin du créneau pour la prospection acceptée, rien pour une demande', async () => {
+    const read = async (purpose: string, at: string) => {
+      const w = await world();
+      await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose, channel: 'phone', proof: 'accord test', givenAt: new Date('2026-10-02T10:00:00Z') });
+      const r = await new FicheAgent(w.db, w.acces, { now: () => new Date(at) }).read(w.asPaul, w.lea.id);
+      return r.ok ? r.value.callClosesAt : 'refusé';
+    };
+    expect(await read('prospecting', '2026-11-10T09:30:42.500Z')).toBe('2026-11-10T12:00:00.000Z'); // 13 h à Paris
+    expect(await read('prospecting', '2026-11-10T13:00:00.000Z')).toBe('2026-11-10T19:00:00.000Z'); // 20 h à Paris
+    expect(await read('reply', '2026-11-10T09:30:00.000Z')).toBeNull();
+    expect(await read('prospecting', '2026-11-14T10:00:00.000Z')).toBeNull();
+  });
+
   it('[R03] un accord daté du futur n’ouvre pas l’appel', async () => {
     const w = await world();
     await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'prospecting', channel: 'phone', proof: 'accord test', givenAt: new Date(NOW.getTime() + 86_400_000) });

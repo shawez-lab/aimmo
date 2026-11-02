@@ -24,7 +24,8 @@
  * à 20 h, hors jours fériés. Décidé, lecture prudente : ils ferment l'appel qui ne repose que sur la prospection acceptée,
  * même si une source de 2022 dit que le décret ne s'applique pas à un consentement préalable : la règle de 2026 n'a pas pu
  * être lue à sa source, et l'avocat tranchera (H41). Une personne qui a demandé à être rappelée n'est pas démarchée :
- * sa demande reste ouverte à toute heure. L'heure est celle de la lecture de la fiche.
+ * sa demande reste ouverte à toute heure. L'application peut rester ouverte longtemps : `callClosesAt` donne la fin du
+ * créneau, et l'écran refuse l'appel passé cette heure.
  */
 import type { SqlDatabase } from '../db/sql.ts';
 import { isWorkingDay, localTime } from '../envoi/horaires.ts';
@@ -40,6 +41,8 @@ export interface AgentFiche {
   contact: { allowed: boolean; reasons: ExclusionReason[] };
   /** Numéro à appeler, en `tel:` ; null si la personne est exclue, a demandé l'arrêt, n'a pas d'accord ou pas de numéro. */
   call: string | null;
+  /** Fin du créneau d'appel, quand l'appel ne repose que sur la prospection acceptée [R203] ; sinon null. */
+  callClosesAt: string | null;
   /** Pourquoi il n'y a pas de numéro à appeler, pour que l'écran le dise ; null si l'appel est ouvert. */
   callRefusal: 'excluded' | 'no_phone' | 'no_consent' | 'outside_hours' | null;
   projects: { kind: string; stage: string; deadline: string | null; budgetMinEur: number | null; budgetMaxEur: number | null }[];
@@ -69,6 +72,13 @@ export function inProspectingHours(at: Date): boolean {
   const local = localTime(at, 'Europe/Paris');
   if (!isWorkingDay(local)) return false;
   return (local.minutes >= 600 && local.minutes < 780) || (local.minutes >= 840 && local.minutes < 1200);
+}
+
+/** La fin du créneau en cours : 13 h le matin, 20 h l'après-midi [R203]. */
+function prospectingSlotEnd(at: Date): Date {
+  const { minutes } = localTime(at, 'Europe/Paris');
+  const end = minutes < 780 ? 780 : 1200;
+  return new Date(at.getTime() - (at.getTime() % 60_000) + (end - minutes) * 60_000);
 }
 
 const active = (notedAt: string, liftedAt: string | null, at: number): boolean => Date.parse(notedAt) <= at && (liftedAt === null || Date.parse(liftedAt) > at);
@@ -120,6 +130,7 @@ export class FicheAgent {
             ? 'outside_hours'
             : null;
     const call = callRefusal === null ? `tel:${digits}` : null;
+    const callClosesAt = callRefusal === null && !asked ? prospectingSlotEnd(new Date(at)).toISOString() : null;
 
     const ids = fiche.members.map((m) => m.id);
     const tasks = await this.db.all<{ id: string; reason: string; due_at: string; done_at: string | null }>(
@@ -148,6 +159,7 @@ export class FicheAgent {
         contact: { allowed, reasons },
         call,
         callRefusal,
+        callClosesAt,
         projects: fiche.projects.map((p) => ({ kind: p.kind, stage: p.stage, deadline: p.deadline, budgetMinEur: p.budget_min_eur, budgetMaxEur: p.budget_max_eur })),
         sources: [...fiche.sources].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at)).map((s) => ({ channel: s.channel, detail: s.detail, occurredAt: s.occurred_at })),
         consents: fiche.consents.map((c) => ({ id: c.id, purpose: c.purpose, channel: c.channel, givenAt: c.given_at, withdrawnAt: c.withdrawn_at })),

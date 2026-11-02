@@ -406,6 +406,16 @@ export const APP_JS = `'use strict';
     } else if (typeof f.call === 'string' && TEL.test(f.call)) {
       var a = el('a', 'Appeler', 'appel');
       a.setAttribute('href', f.call);
+      // L'application peut rester ouverte : passé la fin du créneau, l'appel ne part plus [R203].
+      var closes = typeof f.callClosesAt === 'string' ? Date.parse(f.callClosesAt) : NaN;
+      if (!isNaN(closes)) {
+        a.addEventListener('click', function (event) {
+          if (Date.now() < closes) return;
+          event.preventDefault();
+          a.removeAttribute('href');
+          a.textContent = 'Appel fermé à cette heure : du lundi au vendredi, de 10 h à 13 h et de 14 h à 20 h, hors jours fériés.';
+        });
+      }
       body.appendChild(a);
     } else if (f.callRefusal === 'no_consent') {
       // Pas d'appel sans accord ni demande de la personne [R03].
