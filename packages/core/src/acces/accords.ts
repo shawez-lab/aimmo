@@ -17,7 +17,7 @@
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { Channel, Consent } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
-import type { JournalStore } from '../journal/types.ts';
+import type { JournalData, JournalStore } from '../journal/types.ts';
 import type { Acces } from './acces.ts';
 import type { Viewer } from './droits.ts';
 
@@ -100,9 +100,11 @@ export class AccordsFiche {
     if (lifted) return { ok: false, rule: lifted.reason === 'stop' ? 'R04' : 'R02', code: 'given_before_lift' };
 
     const same = fiche.consents.filter((c) => c.purpose === purpose && c.channel === channel);
-    const current = same.find((c) => !c.withdrawn_at);
+    // Un accord plus ancien qu'une levée d'exclusion ne vaut plus : la nouvelle preuve est rangée, pas perdue.
+    const lastLift = Math.max(-Infinity, ...fiche.exclusions.filter((e) => e.lifted_at).map((e) => Date.parse(e.lifted_at!)));
+    const current = same.find((c) => !c.withdrawn_at && Date.parse(c.given_at) > lastLift);
     if (current) return { ok: true, value: { consentId: current.id, givenAt: current.given_at, already: true } };
-    if (same.some((c) => Date.parse(c.withdrawn_at!) >= givenAt.getTime())) return { ok: false, rule: 'R03', code: 'given_before_withdrawal' };
+    if (same.some((c) => c.withdrawn_at && Date.parse(c.withdrawn_at) >= givenAt.getTime())) return { ok: false, rule: 'R03', code: 'given_before_withdrawal' };
 
     const consent = await this.store.addConsent({
       networkId: viewer.networkId,
@@ -134,7 +136,7 @@ export class AccordsFiche {
     return { ok: true, value: { consentId: target.id, withdrawnAt: target.withdrawn_at ?? at.toISOString() } };
   }
 
-  private async event(type: string, viewer: Viewer, personId: string, data: Record<string, unknown>): Promise<void> {
+  private async event(type: string, viewer: Viewer, personId: string, data: JournalData): Promise<void> {
     await appendEvent(this.journal, { type, actor: `${viewer.role}:${viewer.userId}`, subject: `person:${personId}`, data }, this.now);
   }
 }

@@ -136,6 +136,40 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
     const second = await t.accords.record(t.alex, t.person.id, t.input());
     expect(second).toMatchObject({ ok: true, value: { already: true, consentId: first.ok ? first.value.consentId : '' } });
     expect(await t.rows()).toHaveLength(1);
+
+    const other = await setup();
+    const merged = await other.store.createPerson({ networkId: other.network.id, agentId: other.alexAgent.id, firstName: 'Double', lastName: 'Inventé' });
+    const carried = await other.store.addConsent({ networkId: other.network.id, personId: merged.id, purpose: 'suivi_vente', channel: 'email', proof: 'preuve du doublon', givenAt: new Date(TUESDAY_10H - 2 * DAY) });
+    await other.fiche.merge({ survivorId: other.person.id, mergedId: merged.id, reason: 'test' });
+    expect(await other.accords.record(other.alex, other.person.id, other.input())).toMatchObject({ ok: true, value: { already: true, consentId: carried.id } });
+    expect(await other.rows()).toHaveLength(0);
+  });
+
+  it('[R03] [R02] antidater reste refusé quand le retrait ou la levée est sur une fiche réunie', async () => {
+    const t = await setup();
+    const merged = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexAgent.id, firstName: 'Double', lastName: 'Inventé' });
+    const old = await t.store.addConsent({ networkId: t.network.id, personId: merged.id, purpose: 'suivi_vente', channel: 'email', proof: 'preuve du doublon', givenAt: new Date(TUESDAY_10H - 3 * DAY) });
+    await t.store.withdrawConsent(old.id, new Date(TUESDAY_10H - 3600_000));
+    await t.fiche.merge({ survivorId: t.person.id, mergedId: merged.id, reason: 'test' });
+    expect(await t.accords.record(t.alex, t.person.id, t.input())).toMatchObject({ ok: false, rule: 'R03', code: 'given_before_withdrawal' });
+
+    const other = await setup();
+    const double = await other.store.createPerson({ networkId: other.network.id, agentId: other.alexAgent.id, firstName: 'Double', lastName: 'Inventé' });
+    const excluded = await other.store.addExclusion({ networkId: other.network.id, personId: double.id, reason: 'refused', notedAt: new Date(TUESDAY_10H - 3 * DAY) });
+    await other.store.liftExclusion(excluded.id, new Date(TUESDAY_10H - 3600_000));
+    await other.fiche.merge({ survivorId: other.person.id, mergedId: double.id, reason: 'test' });
+    expect(await other.accords.record(other.alex, other.person.id, other.input())).toMatchObject({ ok: false, rule: 'R02', code: 'given_before_lift' });
+  });
+
+  it('[R04] un accord plus ancien qu’une levée ne compte pas comme en cours : la nouvelle preuve est rangée', async () => {
+    const t = await setup();
+    await t.accords.record(t.alex, t.person.id, t.input());
+    const stopped = await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(TUESDAY_10H - 3600_000) });
+    await t.store.liftExclusion(stopped.id, new Date(TUESDAY_10H));
+    t.advance(60_000);
+    const again = await t.accords.record(t.alex, t.person.id, t.input({ givenAt: new Date(t.nowMs()).toISOString(), proof: 'Nouvel accord donné après la levée de son arrêt.' }));
+    expect(again).toMatchObject({ ok: true, value: { already: false } });
+    expect(await t.rows()).toHaveLength(2);
   });
 
   it('[R03] retirer ferme tous les accords de même finalité et de même canal des fiches réunies', async () => {
