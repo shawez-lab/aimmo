@@ -164,3 +164,111 @@ describe('Q01 · sortie de l’IA, bornée par les règles', () => {
     expect(checkAiQualification({ ...good, city: 'Talant', financing: null, budgetMaxEur: 65 }, t3)).toMatchObject({ rule: 'R10' });
   });
 });
+
+describe('Q07 · critères niés et montants qui n’en sont pas', () => {
+  const criteria = (text: string) => qualifyByRules(text).criteria;
+
+  it('[R23] un critère nié n’est pas rangé, un critère affirmé à côté l’est', () => {
+    expect(criteria('Je cherche une maison sans jardin.')).toEqual(['house']);
+    expect(criteria('Je cherche une maison sans jardin ni garage.')).toEqual(['house']);
+    expect(criteria('Je cherche un appartement, pas de cave, pas besoin d’ascenseur.')).toEqual(['apartment']);
+    expect(criteria('Je cherche une maison, pas de jardin mais une terrasse.')).toEqual(['house', 'terrace']);
+    expect(criteria('Je cherche une maison sans piscine avec garage.')).toEqual(['house', 'garage']);
+    expect(criteria('Je ne veux pas de maison, plutôt un appartement.')).toEqual(['apartment']);
+    expect(criteria('Je cherche un appartement sans grand balcon.')).toEqual(['apartment']);
+  });
+
+  it('[R23] pièces et chambres niées ne sont pas rangées ; le nombre affirmé l’est', () => {
+    expect(criteria('Je cherche, pas un T2 mais un T3.')).toEqual(['rooms:3']);
+    expect(criteria('Je cherche un appartement, pas 2 chambres, plutôt 3 chambres.')).toEqual(['apartment', 'bedrooms:3']);
+  });
+
+  it('une tournure où « pas » ne nie rien garde le critère', () => {
+    expect(criteria('Je cherche, pas de souci pour une maison avec jardin.')).toEqual(['house', 'garden']);
+    expect(criteria('Pas loin du centre, je cherche un jardin.')).toEqual(['garden']);
+    expect(criteria('Je cherche une maison pas trop chère avec jardin.')).toEqual(['house', 'garden']);
+  });
+
+  it('un critère nié une fois et affirmé plus loin est rangé : la personne l’a demandé', () => {
+    expect(criteria('Pas de garage pour le moment. Finalement, je voudrais un garage.')).toEqual(['garage']);
+  });
+
+  const ai = (over: Partial<Qualified>): Qualified => ({
+    category: 'buyer',
+    route: null,
+    city: null,
+    budgetMinEur: null,
+    budgetMaxEur: null,
+    priceEur: null,
+    deadline: null,
+    financing: null,
+    criteria: [],
+    ...over,
+  });
+
+  it('[R23] l’IA qui range un critère que le message nie est refusée', () => {
+    expect(checkAiQualification(ai({ criteria: ['garden'] }), 'Je cherche une maison sans jardin.')).toMatchObject({ rule: 'R23' });
+    expect(checkAiQualification(ai({ criteria: ['rooms:2'] }), 'Je cherche, pas un T2 mais un T3.')).toMatchObject({ rule: 'R23' });
+    expect(checkAiQualification(ai({ criteria: ['house'] }), 'Je cherche une maison sans jardin.')).toMatchObject({ criteria: ['house'] });
+    // L'IA peut déduire un critère que le message ne cite pas tel quel : seul un refus écrit l'en empêche.
+    expect(checkAiQualification(ai({ criteria: ['quiet'] }), 'Je cherche une maison sans jardin.')).toMatchObject({ criteria: ['quiet'] });
+  });
+
+  it('[R10] « frais inclus » n’écarte pas le budget, un montant de frais reste écarté', () => {
+    expect(qualifyByRules('Je cherche une maison, budget frais inclus de 300 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison, budget frais de notaire inclus de 300 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison à 300 000 € frais compris.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison, budget hors frais de 300 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison, frais de notaire, budget 300 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison, frais de notaire de 20 000 €.')).toMatchObject({ budgetMaxEur: null });
+    expect(qualifyByRules('Je cherche une maison, budget 300 000 € et apport de 20 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+  });
+
+  it('[R10] l’IA qui donne l’apport comme budget est refusée, sauf si ce montant est aussi cité comme budget', () => {
+    const text = 'Je cherche une maison, apport de 50 000 €, budget maximum de 300 000 €.';
+    expect(checkAiQualification(ai({ budgetMaxEur: 50_000 }), text)).toMatchObject({ rule: 'R10' });
+    expect(checkAiQualification(ai({ budgetMaxEur: 300_000 }), text)).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(checkAiQualification(ai({ budgetMaxEur: 50_000 }), 'Budget 50 000 € pour un garage, apport de 50 000 €.')).toMatchObject({ budgetMaxEur: 50_000 });
+  });
+
+  it('[R23] une négation qui porte sur autre chose ne fait pas perdre le critère', () => {
+    expect(criteria('Je ne sais pas combien vaut ma maison.')).toEqual(['house']);
+    expect(criteria('Je ne connais pas la valeur de mon appartement à Dijon.')).toEqual(['apartment']);
+    expect(criteria('Je ne suis pas pressé de vendre ma maison.')).toEqual(['house']);
+    expect(criteria('J’achète sans crédit une maison à Dijon.')).toEqual(['house']);
+    expect(criteria('Achat sans prêt appartement T3 Dijon')).toEqual(['apartment', 'rooms:3']);
+    expect(criteria('Je cherche une maison sans travaux 4 chambres jardin')).toEqual(['house', 'garden', 'bedrooms:4']);
+    expect(criteria('Je cherche une maison, pas de travaux et 3 chambres')).toEqual(['house', 'bedrooms:3']);
+    expect(criteria('Je cherche un appartement pas très cher 3 pièces')).toEqual(['apartment', 'rooms:3']);
+    expect(criteria('Je cherche une maison pas moins de 3 chambres')).toEqual(['house', 'bedrooms:3']);
+    expect(checkAiQualification(ai({ criteria: ['house'] }), 'Je ne sais pas combien vaut ma maison.')).toMatchObject({ criteria: ['house'] });
+  });
+
+  it('[R23] toutes les formes d’une négation écartent le critère, pour les règles comme pour l’IA', () => {
+    expect(criteria('Je cherche une maison (sans jardin).')).toEqual(['house']);
+    expect(criteria('Nous ne voulons plus de jardin ni de piscine, nous cherchons un appartement.')).toEqual(['apartment']);
+    expect(criteria('Je cherche une maison, jardin pas nécessaire.')).toEqual(['house']);
+    expect(criteria('Je cherche un appartement, ascenseur pas obligatoire, garage pas indispensable.')).toEqual(['apartment']);
+    expect(criteria('Je cherche une maison, garage : non.')).toEqual(['house']);
+    expect(criteria('Je ne veux pas de piscine, de jardin ou de cave.')).toEqual([]);
+    expect(criteria('Surtout pas de maison avec piscine, je cherche un appartement.')).toEqual(['apartment']);
+    expect(criteria('Pas besoin d’un grand jardin, je cherche une terrasse.')).toEqual(['terrace']);
+    expect(checkAiQualification(ai({ criteria: ['elevator'] }), 'Je cherche, ascenseur pas obligatoire.')).toMatchObject({ rule: 'R23' });
+    // « Plus » seul ne nie rien.
+    expect(criteria('Je cherche plus de jardin.')).toEqual(['garden']);
+  });
+
+  it('[R10] « max » ou « jusqu’à » après un apport ou des frais ne font pas un budget', () => {
+    expect(qualifyByRules('Je cherche une maison, mensualité max 1 200 €, budget 300 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche un appartement, apport jusqu’à 50 000 €, budget 250 000 €.')).toMatchObject({ budgetMaxEur: 250_000 });
+    expect(qualifyByRules('Je cherche un appartement, charges max 150 €, budget 200 000 €.')).toMatchObject({ budgetMaxEur: 200_000 });
+    expect(qualifyByRules('Je cherche une maison, apport maximum 30 000 €.')).toMatchObject({ budgetMaxEur: null });
+    expect(qualifyByRules('Je cherche un appartement, frais de notaire max 20 000 €.')).toMatchObject({ budgetMaxEur: null });
+    expect(checkAiQualification(ai({ budgetMaxEur: 30_000 }), 'Je cherche, apport maximum 30 000 €, budget 200 000 €.')).toMatchObject({ rule: 'R10' });
+  });
+
+  it('[R10] le chiffre d’un T3 ne se colle pas au montant qui suit', () => {
+    expect(qualifyByRules('Je cherche un T3 250 000 € à Dijon')).toMatchObject({ budgetMaxEur: 250_000, criteria: ['rooms:3'] });
+    expect(checkAiQualification(ai({ budgetMaxEur: 250_000 }), 'Je cherche un T3 250 000 € à Dijon')).toMatchObject({ budgetMaxEur: 250_000 });
+  });
+});

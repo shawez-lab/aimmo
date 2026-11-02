@@ -197,8 +197,8 @@ export function classifyByRules(text: string, ctx: ClassifyContext = {}): Catego
   return 'curious';
 }
 
-// « k » seul, jamais le début de « km » ou de « kg ».
-const AMOUNT = /(\d+(?:[ \u00a0\u202f.]\d{3})*(?:,\d+)?)\s*(k€|keur|k(?![\p{L}\d])|mille\b)?\s*(€|euros?\b|eur\b)?/gu;
+// « k » seul, jamais le début de « km » ou de « kg » ; jamais le chiffre d'un « T3 » collé au montant qui suit.
+const AMOUNT = /(?<![\p{L}\d])(\d+(?:[ \u00a0\u202f.]\d{3})*(?:,\d+)?)\s*(k€|keur|k(?![\p{L}\d])|mille\b)?\s*(€|euros?\b|eur\b)?/gu;
 const MONEY_CONTEXT = /(?:budget|prix|maximum|max|jusqu.a|entre|autour de|environ|vers)\W*$/;
 
 /** Les montants du message, en euros : seulement ceux qui en sont sûrement, jamais « 3 pièces » ni « 2 ans ». */
@@ -213,8 +213,26 @@ interface MoneyMention {
 }
 
 /** Un montant qui n'est ni un budget ni un prix : l'apport, les frais, une mensualité, un revenu. */
-const OTHER_MONEY = /\b(?:apport|frais|mensualites?|salaires?|revenus?|charges|taxe|epargne|loyer actuel|honoraires|commission)\b[^0-9]*$/;
+// « Frais inclus » ou « hors frais » dit ce que couvre le budget : ce n'est pas un montant de frais.
+const OTHER_MONEY =
+  /\b(?:apport|(?<!hors )frais(?!(?: de notaire| d.agence| d.acquisition)? (?:inclus|compris))|mensualites?|salaires?|revenus?|charges|taxe|epargne|loyer actuel|honoraires|commission)\b[^0-9]*$/;
 const LABELLED_MONEY = /\b(?:budget|prix|maximum|max|jusqu.a|plafond|vendre a|mettre a)\b[^0-9]*$/;
+// « Apport maximum 30 000 » reste un apport : seul le nom d'un budget ou d'un prix change de sujet.
+const MONEY_LABEL = /\b(?:budget|prix|vendre a|mettre a)\b/g;
+
+/** Un montant de frais, d'apport ou de revenu : le dernier sujet nommé avant lui décide, « frais de notaire, budget 300 000 ». */
+function isOtherMoney(before: string): boolean {
+  const labels = [...before.matchAll(MONEY_LABEL)];
+  const last = labels[labels.length - 1];
+  return OTHER_MONEY.test(last ? before.slice((last.index ?? 0) + last[0].length) : before);
+}
+
+/** Les montants qui peuvent être un budget ou un prix : ni l'apport, ni les frais, ni un revenu [R10]. */
+function budgetAmountsIn(text: string): number[] {
+  return moneyMentions(text)
+    .filter((m) => !isOtherMoney(m.before))
+    .map((m) => m.amount);
+}
 
 function moneyMentions(text: string): MoneyMention[] {
   const p = plain(text).replace(/[\u00a0\u202f]/g, ' ');
@@ -309,15 +327,67 @@ const CRITERIA_WORDS: readonly [Criterion, RegExp][] = [
   ['outbuilding', /\bdependance/],
 ];
 
+const NEGATORS = /^(?:sans|pas|ni|aucun|aucune|jamais|eviter|evite)$/;
+/** Ce qui peut séparer une négation de ce qu'elle nie : « pas besoin d'un grand jardin ». Rien d'autre. */
+const NEGATION_FILLER = /^(?:besoin|envie|forcement|vraiment|absolument|de|d'|du|des|un|une|le|la|les|l'|mon|ma|mes|grande?s?|petite?s?|gros|grosses?|beaux?|belles?)$/;
+const PROPERTY_TYPE = /^(?:maisons?|pavillons?|appart(?:ement)?s?|studios?|terrains?|immeubles?)$/;
+const CRITERION_WORD = /^(?:maisons?|pavillons?|appart(?:ement)?s?|studios?|terrains?|immeubles?|jardins?|balcons?|terrasses?|garages?|parkings?|caves?|ascenseurs?|piscines?|cheminees?|dependances?|[tf]\d{1,2}|\d{1,2}|pieces?|chambres?)$/;
+/** « Jardin pas nécessaire », « garage : non » : la négation vient après le mot. */
+const DENIED_AFTER =
+  /^[\p{L}-]*\s*(?:(?:(?:n'est|ne sont|est|sont)\s+)?(?:pas|non)\s+(?:forcement\s+|vraiment\s+|absolument\s+)?(?:necessaires?|obligatoires?|indispensables?|utiles?|souhaitee?s?|voulue?s?)\b|:\s*non\b)/u;
+
+/**
+ * Le mot trouvé à cette place est-il nié ? La portée est stricte : on remonte depuis le mot, et seuls des déterminants,
+ * « besoin de », un adjectif de taille ou d'autres critères reliés peuvent le séparer de la négation. « Je ne sais pas
+ * combien vaut ma maison » et « sans travaux, 3 chambres » ne nient rien.
+ */
+function isDenied(p: string, start: number, end: number): boolean {
+  if (DENIED_AFTER.test(p.slice(end))) return true;
+  const tokens = p.slice(0, start).match(/[\p{L}\d]+'?|[.,;:!?()\n]/gu) ?? [];
+  for (let i = tokens.length - 1; i >= 0; i -= 1) {
+    const t = tokens[i]!;
+    if (NEGATORS.test(t)) return true;
+    // « Ne… plus » nie ; « plus » seul non.
+    if (t === 'plus') return tokens.slice(Math.max(0, i - 3), i).some((w) => w === 'ne' || w.startsWith("n'"));
+    if (NEGATION_FILLER.test(t) || CRITERION_WORD.test(t)) continue;
+    // Une liste continue après une virgule : « pas de piscine, de jardin ou de cave ».
+    if (t === ',' && /^(?:de|d'|du|des)$/.test(tokens[i + 1] ?? '')) continue;
+    // « Pas de jardin et un balcon » : un nouveau groupe ; « sans cave et garage » : la même négation.
+    if ((t === 'et' || t === 'ou') && !/^(?:un|une|des)$/.test(tokens[i + 1] ?? '')) continue;
+    // « Pas de maison avec piscine » nie les deux ; « sans jardin avec garage » demande le garage.
+    if (t === 'avec' && PROPERTY_TYPE.test(tokens[i - 1] ?? '')) continue;
+    return false;
+  }
+  return false;
+}
+
+const globally = (r: RegExp): RegExp => new RegExp(r.source, 'g');
+
+/** Chaque critère que le message cite, et s'il l'affirme au moins une fois ou seulement le nie. */
+function mentionedCriteria(p: string): Map<Criterion, boolean> {
+  const out = new Map<Criterion, boolean>();
+  const note = (c: Criterion, m: RegExpMatchArray): void => {
+    const start = m.index ?? 0;
+    out.set(c, (out.get(c) ?? false) || !isDenied(p, start, start + m[0].length));
+  };
+  for (const [c, r] of CRITERIA_WORDS) for (const m of p.matchAll(globally(r))) note(c, m);
+  const count = (kind: 'rooms' | 'bedrooms', r: RegExp): void => {
+    for (const m of p.matchAll(r)) {
+      const n = Number(m[1] ?? m[2]);
+      if (n >= 1 && n <= 20) note(`${kind}:${n}`, m);
+    }
+  };
+  count('rooms', /\b(?:(\d{1,2}) pieces?|[tf](\d{1,2}))\b/g);
+  count('bedrooms', /\b(\d{1,2}) chambres?\b/g);
+  return out;
+}
+
 function criteriaOf(p: string): Criterion[] {
-  const found: Criterion[] = CRITERIA_WORDS.filter(([, r]) => r.test(p)).map(([c]) => c);
-  const rooms = /\b(?:(\d{1,2}) pieces?|[tf](\d{1,2}))\b/.exec(p);
-  const n = Number(rooms?.[1] ?? rooms?.[2]);
-  if (n >= 1 && n <= 20) found.push(`rooms:${n}`);
-  const bedrooms = /\b(\d{1,2}) chambres?\b/.exec(p);
-  const b = Number(bedrooms?.[1]);
-  if (b >= 1 && b <= 20) found.push(`bedrooms:${b}`);
-  return found;
+  const found = [...mentionedCriteria(p)].filter(([, affirmed]) => affirmed).map(([c]) => c);
+  // Un seul nombre de pièces et de chambres : le premier affirmé.
+  const first = (prefix: string): Criterion | undefined => found.find((c) => c.startsWith(prefix));
+  const plainOnes = found.filter((c) => !c.startsWith('rooms:') && !c.startsWith('bedrooms:'));
+  return [...plainOnes, first('rooms:'), first('bedrooms:')].filter((c): c is Criterion => c !== undefined);
 }
 
 export function isCriterion(value: unknown): value is Criterion {
@@ -336,7 +406,7 @@ export function qualifyByRules(text: string, options: QualifyRulesOptions = {}):
   const p = plain(text);
   const category = classifyByRules(text, options);
   // Le budget ou le prix : jamais l'apport, les frais ni un revenu ; un montant nommé « budget » ou « prix » d'abord.
-  const mentions = moneyMentions(text).filter((m) => !OTHER_MONEY.test(m.before));
+  const mentions = moneyMentions(text).filter((m) => !isOtherMoney(m.before));
   const labelled = mentions.filter((m) => LABELLED_MONEY.test(m.before));
   const amounts = (labelled.length > 0 && !/\bentre\b/.test(p) ? labelled : mentions).map((m) => m.amount);
   const range = /\bentre\b/.test(p) && amounts.length >= 2;
@@ -383,8 +453,12 @@ export function checkAiQualification(raw: unknown, text: string, communes: reado
   if (o.financing !== null && o.financing !== declaredFinancing(text)) {
     return { rule: 'R24', reason: 'Financement non déclaré par la personne : jamais évalué.' };
   }
-  // Seulement les montants du message : une surface ou un nombre de pièces n'en sont pas.
-  const inText = new Set(amountsIn(text));
+  // Un critère que le message nie n'est pas un critère de la personne : l'IA n'en décide pas.
+  const mentioned = mentionedCriteria(plain(text));
+  if (o.criteria.some((c: Criterion) => mentioned.get(c) === false)) return r23('Critère nié par le message.');
+  // Seulement les montants du message, et ceux qui peuvent être un budget ou un prix : une surface, un nombre de
+  // pièces, l'apport ou les frais n'en sont pas.
+  const inText = new Set(budgetAmountsIn(text));
   if ([o.budgetMinEur, o.budgetMaxEur, o.priceEur].some((v) => v !== null && !inText.has(v as number))) {
     return { rule: 'R10', reason: 'Montant absent du message.' };
   }
