@@ -123,7 +123,11 @@ export class AvisImprime {
   /** La page d'un avis : qui voit le bien en entier, et seulement si l'avis peut partir [R16, R30]. */
   async print(viewer: Viewer, reportId: string): Promise<{ ok: true; html: string } | PrintRefusal> {
     const report: ValuationReport | null = await this.avis.get(reportId);
-    if (!report || report.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown' };
+    if (!report || report.network_id !== viewer.networkId) {
+      // Le refus est tracé, sans dire si l'avis existe ailleurs [R16].
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `valuation:${reportId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'valuation_print', code: 'unknown' } }, this.now);
+      return { ok: false, rule: null, code: 'unknown' };
+    }
     const property = await this.acces.readProperty(viewer, report.property_id);
     if (!property.ok) return property.code === 'unknown' ? { ok: false, rule: null, code: 'unknown' } : { ok: false, rule: 'R16', code: property.code };
     if (property.view !== 'full') {

@@ -70,7 +70,7 @@ export interface ValuationReport {
   validated_at: string | null;
 }
 
-export type AvisRefusal = 'unknown' | 'not_following_agent' | 'already_validated' | 'not_validated' | 'invalid_range' | 'text_refused' | 'range_not_in_text' | 'changed_meanwhile';
+export type AvisRefusal = 'unknown' | 'not_following_agent' | 'already_validated' | 'not_validated' | 'invalid_range' | 'text_refused' | 'range_not_in_text' | 'other_range_in_text' | 'changed_meanwhile';
 export type AvisResult<T> = { ok: true; value: T } | { ok: false; rule: 'R30'; code: AvisRefusal };
 
 export interface DraftInput {
@@ -304,7 +304,10 @@ export class AvisDeValeur {
       // Le texte de l'agent passe le même contrôle que celui de l'IA [R06 à R10] ; le pied du code reste.
       const body = change.text.trim().replace(computed.footer, '').trim();
       text = `${body}\n\n${computed.footer}`;
-      if (body === '' || checkText(text, { audience: 'client', channel: 'email', figures: [...computed.figures, low, high] }).length > 0) {
+      // Une borne du calcul que l'agent a écartée n'est plus un chiffre permis : l'avis ne dit qu'une fourchette.
+      const dropped = [r.computed_low, r.computed_high].filter((b) => b !== low && b !== high);
+      const figures = computed.figures.filter((f) => typeof f !== 'number' || !dropped.includes(f));
+      if (body === '' || checkText(text, { audience: 'client', channel: 'email', figures: [...figures, low, high] }).length > 0) {
         return { ok: false, rule: 'R30', code: 'text_refused' };
       }
     } else {
@@ -338,6 +341,11 @@ export class AvisDeValeur {
     // L'avis validé ne porte qu'une fourchette : celle qui partira.
     if (!r.text.includes(euros(r.agent_low ?? r.computed_low)) || !r.text.includes(euros(r.agent_high ?? r.computed_high))) {
       return { ok: false, rule: 'R30', code: 'range_not_in_text' };
+    }
+    // Ni la fourchette du calcul quand l'agent l'a changée : le texte a pu être écrit avant le changement.
+    const kept = [r.agent_low ?? r.computed_low, r.agent_high ?? r.computed_high];
+    if ([r.computed_low, r.computed_high].some((b) => !kept.includes(b) && r.text.includes(euros(b)))) {
+      return { ok: false, rule: 'R30', code: 'other_range_in_text' };
     }
     const at = this.now().toISOString();
     // On valide la version vérifiée, et elle seule : une modification faite entre-temps demande une nouvelle validation.

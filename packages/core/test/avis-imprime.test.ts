@@ -94,6 +94,9 @@ describeWithSqlite('E08 · avis de valeur imprimable à la marque de l’agent',
     expect(await w.imprime.print(w.as('agent', w.lise.id), r.id)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await w.imprime.print(w.as('direction', 'd2', w.other.id), r.id)).toEqual({ ok: false, rule: null, code: 'unknown' });
     expect(await w.imprime.print(w.as('agent', w.paul.id), 'inconnu')).toEqual({ ok: false, rule: null, code: 'unknown' });
+    const refused = (await w.journal.all()).filter((e) => e.type === 'acces.refuse');
+    expect(refused.some((e) => e.subject === `property:${w.property.id}` && e.actor === `agent:${w.lise.id}`)).toBe(true);
+    expect(refused.filter((e) => e.data.code === 'unknown').map((e) => e.subject)).toEqual([`valuation:${r.id}`, 'valuation:inconnu']);
   });
 
   it('la page porte la fourchette validée, la méthode, les ventes, la mention et l’agent', async () => {
@@ -116,6 +119,23 @@ describeWithSqlite('E08 · avis de valeur imprimable à la marque de l’agent',
     expect(r.html).toContain('Ventes réelles comparables');
     expect(r.html).toContain('Ventes utilisées jusqu’à');
     expect(r.html).toContain(ADVICE_NOTICE);
+  });
+
+  it('[R30] un texte ne dit jamais la fourchette du calcul quand l’agent l’a changée', async () => {
+    const w = await world();
+    const paul = w.as('agent', w.paul.id);
+    const d = await w.draft();
+    const low = d.computed_low - 5000;
+    const high = d.computed_high + 5000;
+    const both = `Le calcul donne ${euros(d.computed_low)} à ${euros(d.computed_high)}. Nous retenons ${euros(low)} à ${euros(high)}.`;
+    // Écrit avec le changement : refusé par le contrôle du texte.
+    expect(await w.avis.adjust(paul, d.id, { low, high, text: both })).toMatchObject({ ok: false, code: 'text_refused' });
+    // Un texte qui garde une borne écartée, écrit avant le changement d'une seule borne : refusé à la validation.
+    const before = `Entre ${euros(d.computed_low)} et ${euros(d.computed_high)}, soit au plus ${euros(d.computed_high)}.`;
+    expect((await w.avis.adjust(paul, d.id, { text: before })).ok).toBe(true);
+    await w.db.run('UPDATE valuation_reports SET agent_low = ? WHERE id = ?', [low, d.id]);
+    await w.db.run('UPDATE valuation_reports SET text = ? WHERE id = ?', [`Entre ${euros(low)} et ${euros(d.computed_high)}, le calcul disait ${euros(d.computed_low)}.`, d.id]);
+    expect(await w.avis.validate(paul, d.id)).toEqual({ ok: false, rule: 'R30', code: 'other_range_in_text' });
   });
 
   it('[R28] la date des ventes utilisées reste sur la page', async () => {
