@@ -826,6 +826,15 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Objectif : un parcours de test, de l'avis de valeur au mandat numéroté, sur une horloge simulée et des données inventées, avec le temps de chaque étape ; la marche à suivre pour le mesurer avec Shawez sur un vrai rendez-vous.
 - Critères : le parcours de test passe ; le temps passé par le système est mesuré et sous la cible ; la marche à suivre est écrite dans `docs/MESURE.md`.
 
+### D10 · Conditions d'un mandat à une date passée
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : D05, D07, N06
+- Cahier : M06, « Rétractation » ; M10, commission à l'acte ; reste écrit de N06.
+- Objectif : la commission est calculée sur le mandat en vigueur le jour du compromis, mais `canDiffuse` à une date passée lit les avenants et les mandats d'aujourd'hui. Un avenant de durée signé après le compromis peut refuser à tort la commission, ou la donner sur un mandat échu ce jour-là ; un nouveau mandat signé après le compromis masque celui qui était en vigueur.
+- Critères : un avenant signé après le compromis ne change ni dans un sens ni dans l'autre le mandat en vigueur ce jour-là (tests [R63]) ; un avenant signé le jour même compte ; un mandat signé après le compromis ne masque pas le précédent (test [R63]) ; à la date d'aujourd'hui, la diffusion ne change pas (test [R42]).
+- Attend : rien.
+
 **M08 · Acquéreurs et visites, avril 2027.**
 
 Découpé le 2026-10-27 par la voie 1. Ids `T..` pour Trouver l'acquéreur. Cahier : M08 Acquéreurs et visites ; Feuille de route, avril 2027 : « sur 10 biens tests, au moins 8 des 10 premiers acquéreurs proposés respectent tous les critères obligatoires ».
