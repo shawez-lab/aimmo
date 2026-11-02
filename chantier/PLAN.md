@@ -296,7 +296,8 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : hors des horaires, le bouton est fermé et l'écran dit quand il rouvre [R03] ; une demande de la personne ne se ferme pas de la même façon si le décret ne la vise pas, décision écrite ici ; fréquence : à découper si aucune trace d'appel n'existe encore.
 
 ### AC09 · Fréquence des appels de prospection
-- Statut : à faire
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02, voie 2), lecture prudente : chiffres en réglage `CALL_FREQUENCY`, 4 appels de prospection en 30 jours et 60 jours après un refus, sans avoir pu lire le texte officiel (FAQ de la DGCCRF en erreur pour la séance) ; H41 reste ouverte. Une demande de la personne ne compte pas ; donnée après le refus elle rouvre l'appel, plus ancienne elle ne vaut plus. Un refus n'est pas un arrêt [R04]. Règle R204. Service, table et route non branchée. Relecture forte : 3 P1, 2 corrigés, le troisième (fusion défaite) reporté en AC12 ; Codex à sa limite, fusion sans lui (#253).
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC06
 - Cahier : Conformité, démarchage téléphonique.
@@ -305,7 +306,8 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Attend : H41 pour les chiffres ; deux articles de 2022 disent 4 appels en 30 jours et un refus de 60 jours ou de deux mois.
 
 ### AC10 · Le prénom de la fiche gardée partout où un texte part
-- Statut : à faire
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02, voie 2) : `ficheFirstName` suit l'ordre de `membersOf`, celui du contrôle central ; le tri par identifiant de #249 est remplacé. Codex à sa limite, fusion sans lui (#251).
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AC03
 - Cahier : R08.
@@ -419,6 +421,23 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Critères : tirage fixe par message [R26] ; sans vrai canal, rien ne part, à aucun palier [R26] ; une panne du canal ramène ce canal en essai sans toucher aux autres, et l'agent est prévenu [R26, R12] ; un message de la boîte d'essai ne compte pas comme parti : ni pour l'anti-doublon [R05], ni pour la mention de l'assistant [R06], ni pour les plafonds [R11], ni pour le silence de 24 heures [R22] ; journal sans donnée personnelle [R13].
 - Décidé (2026-11-02), lecture prudente : le palier passe par `staging` dans le contrôle central, seul à appeler `deliver` ; seule la chaîne de captation s'en sert par défaut, les autres modules et `createCaptation` avec `channels` ne changent pas. Le tirage se fait sur le message reçu ; sans référence, la boîte d'essai. Le palier « ombre » de la bascule veut dire « essai » pour un canal. Une réponse qui reste dans la boîte ne prend ni sujet, ni texte, ni mention, ni place au plafond, et n'est pas prise pour notre écho [R21] : chaque réponse d'essai porte donc la mention et peut répéter le même texte, le premier message réel restant à venir. Tests C08 de la mention et du secours : ils passent par une vraie session, puisque l'essai ne compte plus. Une alerte sur une fiche encore sans agent suit l'agent qui reçoit la fiche.
 - Reste, pour C09 : aucun vrai canal n'est branché, et aucune route ne permet encore à la direction d'avancer le palier d'un canal (`/automatisations/paliers` ne connaît que les automatisations du site). Relecture forte : 1 P0 et 2 P1 corrigés.
+
+### AC11 · Le prénom de la fiche réunie, dans les modules qui lisaient une seule ligne
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02, voie 2) : trouvé en faisant AC10, 12 modules ; un test interdit désormais cette lecture, sauf 3 fichiers expliqués. Les documents de confidentialité gardent le nom de leur ligne. Codex à sa limite, fusion sans lui (#252).
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : AC10
+- Cahier : R08.
+- Objectif : même faille que AC10 dans les lectures `WHERE id = ?`.
+- Critères : confirmation, rappel et remerciement sur une fiche réunie portent le prénom de la fiche gardée (test [R08]).
+
+### AC12 · Appels notés : branchement, écran, fusion défaite
+- Statut : à faire
+- Voie : 1
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC09
+- Cahier : Conformité, démarchage téléphonique ; R204.
+- Objectif : ajouter `appelsRoutes()` au routeur de `app.ts` et décrire la route dans `docs/API.md` ; passer `db` à `AccordsServices` dans `accordsFicheRoutes`, sans quoi une demande plus ancienne qu'un refus paraît encore en cours ; sur la fiche, les gestes « j'ai appelé » et « la personne a refusé », et les textes de `too_many_calls`, `refused_recently` (avec `callReopensAt`) et `given_before_refusal`, dans le budget de poids de l'application [R201]. Dans `undoMerge`, recopier de l'autre côté les notes rangées depuis la fusion, avec leur heure, leur résultat et leur base, sans rien effacer : à faire avant tout appelant de `undoMerge`.
+- Critères : chaque route répond sous son rôle [R16] ; refus noté, fusion défaite : le bouton reste fermé sur les deux fiches, et le plafond compte des deux côtés (test [R204]) ; aucune ligne effacée [R17] ; une demande datée d'avant un refus est refusée par la route branchée (test [R204]) ; parcours au téléphone, axe-core sans violation [R201].
 
 ### C09c · Alertes de l'agent visibles dans l'application
 - Statut : en cours
