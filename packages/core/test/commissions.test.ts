@@ -198,6 +198,34 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     expect(await c.blocked(t.direction)).toEqual({ ok: true, value: [{ fileId: t.fileId, code: 'no_grid' }] });
   });
 
+  it('[R16] la dernière grille se lit par la direction seule, avec les agents actifs et les taux propres', async () => {
+    const t = await setup();
+    t.setClock(at9('2027-02-15'));
+    const c = t.commissions();
+    expect(await c.currentGrid(t.agent)).toMatchObject({ ok: false, rule: 'R16' });
+    const none = await c.currentGrid(t.direction);
+    expect(none.ok && [none.value.version, none.value.inForce, none.value.upcoming]).toEqual([null, null, []]);
+    expect(none.ok && none.value.agents.every((a) => a.rateBp === null)).toBe(true);
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, agents: [{ agentId: t.alexId, rateBp: 7500 }] });
+    const read = await c.currentGrid(t.direction);
+    expect(read.ok && [read.value.version, read.value.inForce, read.value.upcoming]).toEqual([1, null, [{ version: 1, validFrom: '2027-03-01', defaultRateBp: 7000 }]]);
+    // Le jour venu, elle est en vigueur, et ses taux propres préremplissent la suivante.
+    t.setClock(at9('2027-03-05'));
+    const live = await c.currentGrid(t.direction);
+    expect(live.ok && live.value.inForce).toEqual({ version: 1, validFrom: '2027-03-01', defaultRateBp: 7000 });
+    // Des versions dans le désordre : c'est le jour qui décide, et le plus proche à venir vient d'abord.
+    await c.setGrid(t.direction, { validFrom: '2027-06-01', defaultRateBp: 6000 });
+    await c.setGrid(t.direction, { validFrom: '2027-04-01', defaultRateBp: 6500 });
+    const out = await c.currentGrid(t.direction);
+    expect(out.ok && out.value.version).toBe(3);
+    expect(out.ok && out.value.inForce?.version).toBe(1);
+    expect(out.ok && out.value.upcoming.map((x) => x.version)).toEqual([3, 2]);
+    // Un écran resté sur une version d'avant est refusé : aucun taux ne se perd.
+    expect(await c.setGrid(t.direction, { validFrom: '2027-07-01', defaultRateBp: 6000, expectedVersion: 2 })).toMatchObject({ code: 'stale_grid' });
+    expect(await c.setGrid(t.direction, { validFrom: '2027-07-01', defaultRateBp: 6000, expectedVersion: 3 })).toMatchObject({ ok: true, version: 4 });
+    expect(live.ok && live.value.agents.find((a) => a.agentId === t.alexId)).toEqual({ agentId: t.alexId, rateBp: 7500 });
+  });
+
   it('[R63] un écart à l’acte reste à trancher', async () => {
     const t = await setup();
     const c = t.commissions();

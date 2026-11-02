@@ -90,6 +90,14 @@ export interface GridInput {
   validFrom: string;
   defaultRateBp: number;
   agents?: { agentId: string; rateBp: number }[];
+  /** La dernière version vue par l'écran : une version rangée entre-temps refuse celle-ci, aucun taux ne se perd [R17]. */
+  expectedVersion?: number | null;
+}
+
+export interface GridLine {
+  version: number;
+  validFrom: string;
+  defaultRateBp: number;
 }
 
 export interface CommissionView {
@@ -119,7 +127,7 @@ export interface CommissionBlocked {
 }
 
 export type CommissionRefusal = { ok: false; rule: 'R16'; code: string };
-type GridProblem = { ok: false; rule: null; code: 'bad_day' | 'past_day' | 'bad_rate' | 'unknown_agent' | 'duplicate_agent' };
+type GridProblem = { ok: false; rule: null; code: 'bad_day' | 'past_day' | 'bad_rate' | 'unknown_agent' | 'duplicate_agent' | 'stale_grid' };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const validDay = (v: unknown): v is string => {
@@ -188,6 +196,7 @@ export class Commissions {
       if (!row || row.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_agent' };
     }
     const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM commission_grids WHERE network_id = ?', [viewer.networkId]);
+    if (input.expectedVersion !== undefined && input.expectedVersion !== (last?.v ?? null)) return { ok: false, rule: null, code: 'stale_grid' };
     const version = (last?.v ?? 0) + 1;
     const id = this.newId();
     // Une seule écriture : une grille n'existe jamais sans ses taux d'agents.
@@ -203,6 +212,37 @@ export class Commissions {
     ]);
     await appendEvent(this.journal, { type: 'commission.grille', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { version, validFrom: input.validFrom } }, this.now);
     return { ok: true, version };
+  }
+
+  /**
+   * La grille en vigueur aujourd'hui, celles déjà programmées, et les agents qu'elle peut nommer : la direction seule
+   * [R16]. Une nouvelle version remplace toute la liste des taux propres : l'écran part donc de celle en vigueur, et dit
+   * sa dernière version vue pour ne rien écraser à l'aveugle. Même règle que `gridAt` : le jour le plus récent l'emporte,
+   * puis la version la plus récente.
+   */
+  async currentGrid(viewer: Viewer): Promise<{ ok: true; value: { version: number | null; inForce: GridLine | null; upcoming: GridLine[]; agents: { agentId: string; rateBp: number | null }[] } } | CommissionRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'commission_grid_read', 'role');
+    const all = await this.db.all<{ version: number; valid_from: string; default_rate_bp: number; agent_rates: string }>(
+      'SELECT version, valid_from, default_rate_bp, agent_rates FROM commission_grids WHERE network_id = ? ORDER BY valid_from DESC, version DESC',
+      [viewer.networkId],
+    );
+    const today = localTime(this.now(), 'Europe/Paris').date;
+    const g = all.find((x) => x.valid_from <= today) ?? null;
+    const line = (x: { version: number; valid_from: string; default_rate_bp: number }): GridLine => ({ version: x.version, validFrom: x.valid_from, defaultRateBp: x.default_rate_bp });
+    // À venir : pour chaque jour, seule la dernière version comptera ; du plus proche au plus lointain.
+    const upcoming = all.filter((x, i) => x.valid_from > today && all.findIndex((y) => y.valid_from === x.valid_from) === i).reverse().map(line);
+    const rates = g ? (JSON.parse(g.agent_rates) as Record<string, number>) : {};
+    const active = await this.db.all<{ id: string }>("SELECT id FROM agents WHERE network_id = ? AND status = 'active' ORDER BY id", [viewer.networkId]);
+    const ids = [...new Set([...active.map((a) => a.id), ...Object.keys(rates)])].sort();
+    return {
+      ok: true,
+      value: {
+        version: all.length ? Math.max(...all.map((x) => x.version)) : null,
+        inForce: g ? line(g) : null,
+        upcoming,
+        agents: ids.map((agentId) => ({ agentId, rateBp: Object.hasOwn(rates, agentId) ? rates[agentId]! : null })),
+      },
+    };
   }
 
   /** La grille en vigueur pour un compromis de ce jour : la dernière version applicable à ce jour. */

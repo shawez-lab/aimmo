@@ -12,7 +12,7 @@ import { DOSSIER_HTML, DOSSIER_JS } from './dossier.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { ATTIRER_ENTRY_HTML, ATTIRER_HTML, ATTIRER_JS } from './attirer.ts';
 import { BASCULE_ENTRY_HTML, BASCULE_JS } from './bascule.ts';
-import { COMMISSIONS_ENTRY_HTML, EUROS_ENTRY_HTML, FINANCES_JS, RAPPORT_AGENT_HTML, RAPPORT_DIRECTION_HTML } from './finances.ts';
+import { COMMISSIONS_ENTRY_HTML, EUROS_ENTRY_HTML, FINANCES_JS, RAPPORT_AGENT_HTML, RAPPORT_DIRECTION_HTML, REGLAGES_ENTRY_HTML } from './finances.ts';
 import { FICHE_GOOGLE_HOME_HTML, FICHE_GOOGLE_HTML, FICHE_GOOGLE_JS } from './fiche-google.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
 import { REPRISE_ENTRY_HTML, REPRISE_JS } from './reprise.ts';
@@ -195,7 +195,7 @@ ${EUROS_ENTRY_HTML}${RAPPORT_AGENT_HTML}</section>
 <button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
 <p id="reseau-cas-etat" class="etat" role="status"></p>
 </section>
-${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${COMMISSIONS_ENTRY_HTML}</section>
+${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -1983,6 +1983,9 @@ ${LOUER_JS}
     $('rapport-direction-lire').addEventListener('click', function () { readReport('direction', 'reseau'); });
     $('commissions-voir').addEventListener('click', function () { readCommissions(); });
     $('euros-voir').addEventListener('click', function () { readEuros(); });
+    $('grille-voir').addEventListener('click', function () { readGrille(); });
+    $('factures-voir').addEventListener('click', function () { readFactures(); });
+    $('factures-export').addEventListener('click', function () { exportFactures(); });
     $('reseau-cas').addEventListener('click', function () { saveCsv('/v1/qualifications/cas-corriges', 'cas-corriges.csv', $('reseau-cas-etat'), 'Cas corrigés indisponibles. Réessayez plus tard.', 'Cas corrigés téléchargés. À garder hors du dépôt.'); });
     $('bien-retour').addEventListener('click', function () { if (visitId) openVisit(visitId); else home(); });
     $('alerte').addEventListener('click', function () { raiseAlert(false); });
