@@ -1172,6 +1172,16 @@ Décidé, lecture prudente : le système enregistre, contrôle, transmet et suit
 - Critères : les routes répondent derrière la clé d'API [R16] ; le passage quotidien tourne une fois par jour [R56, R59] ; rien ne part réellement tant que le plan n'a pas mis d'envoi en service.
 - Attend : rien.
 
+### O10 · Écran des offres dans l'application
+- Statut : en cours
+- Trouvé le 2026-11-02 : M09 a ses routes (O08, O09), aucun écran de l'application ne les appelle ; l'agent ne peut donc ni enregistrer ni transmettre une offre sans outil technique.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : O09
+- Cahier : M09 ; R14, R16, R56, R57, R58, R59, R201.
+- Objectif : depuis « Mes biens », l'agent ouvre « Offres » : registre du bien et tableau comparatif dans l'ordre d'arrivée ; il enregistre une offre, lit son contrôle, atteste la transmission, rapporte la réponse du vendeur avec sa preuve, suit la chaîne des contre-offres, ouvre le dossier ; écran chargé à part (`/app/offres.js`), sur le système de design.
+- Jamais vu : **le pas à faire de chaque offre, dit par le registre** : chaque offre porte une seule prochaine action tirée de son état réel (à transmettre, réponse attendue, échue, dossier à ouvrir), et l'écran montre aux yeux de l'agent la preuve que le registre du bien est intact.
+- Critères : aucun tri, note ni recommandation, ordre d'arrivée seul [R14, R57] ; aucun bouton n'accepte ni ne refuse sans réponse rapportée avec preuve [R57] ; l'acquéreur se choisit parmi les contacts, aucun identifiant à saisir [R16] ; refus dits en français ; budget et accessibilité tenus [R201].
+- Attend : rien.
+
 **M10 · Compromis et acte, mai 2027.**
 
 Voie : 2
