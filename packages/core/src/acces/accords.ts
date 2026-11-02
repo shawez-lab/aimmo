@@ -15,6 +15,7 @@
  * - la preuve reste sur la fiche, jamais au journal [R13].
  */
 import type { FicheClient } from '../db/fiche-client.ts';
+import type { SqlDatabase } from '../db/sql.ts';
 import type { Channel, Consent } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalData, JournalStore } from '../journal/types.ts';
@@ -23,7 +24,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { parisDayStart } from '../pilotage/tableau-agent.ts';
 import type { Acces } from './acces.ts';
 import type { Viewer } from './droits.ts';
-import { CALL_PURPOSES, callClosedAt, consentOpensCall } from './fiche-agent.ts';
+import { CALL_PURPOSES, callClosedAt, isCallRequest, lastCallRefusal, usableCallConsents, type CallNote } from './fiche-agent.ts';
 
 /** Les finalités qu'un agent peut noter, avec leur libellé pour l'écran. */
 export const AGENT_CONSENT_LABELS: Readonly<Record<string, string>> = Object.freeze({
@@ -67,14 +68,22 @@ function readDay(value: unknown): string | null {
 
 export class AccordsFiche {
   private readonly now: () => Date;
+  private readonly db: SqlDatabase | null;
 
   constructor(
     private readonly store: FicheClient,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
-    options: { now?: () => Date } = {},
+    options: { now?: () => Date; db?: SqlDatabase } = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.db = options.db ?? null;
+  }
+
+  /** Les appels notés sur la fiche : un refus retire sa valeur à une demande plus ancienne [R204]. */
+  private async callNotes(ids: string[]): Promise<CallNote[]> {
+    if (!this.db) return [];
+    return this.db.all<CallNote>(`SELECT outcome, basis, noted_at FROM call_notes WHERE person_id IN (${ids.map(() => '?').join(', ')})`, ids);
   }
 
   /** Note un accord. Déjà en cours pour cette finalité et ce canal : rend celui-là, sans ligne de plus. */
@@ -109,11 +118,15 @@ export class AccordsFiche {
     const opensCall = channel === 'phone' && CALL_PURPOSES.includes(purpose);
     // Un accord qui ne vaut plus ne retient pas le nouveau : la nouvelle preuve est rangée, pas perdue. Pour un appel, « vaut
     // encore » est le calcul du bouton (13 mois, retrait d'une autre finalité), sinon noter ne rouvrirait rien, sans le dire.
-    const current = same.find((c) => consentInForce(c, fiche, at.getTime()) && (!opensCall || consentOpensCall(c, fiche, at.getTime())));
+    const notes = opensCall ? await this.callNotes(fiche.members.map((m) => m.id)) : [];
+    const opening = opensCall ? usableCallConsents(fiche, notes, at.getTime()).map((c) => c.id) : [];
+    const current = same.find((c) => consentInForce(c, fiche, at.getTime()) && (!opensCall || opening.includes(c.id)));
     if (current) return { ok: true, value: { consentId: current.id, givenAt: current.given_at, already: true } };
     if (same.some((c) => c.withdrawn_at && Date.parse(c.withdrawn_at) >= givenAt.getTime())) return { ok: false, rule: 'R03', code: 'given_before_withdrawal' };
     // Par téléphone, un retrait ferme aussi les autres finalités d'appel : l'accord accepté ne rouvrirait rien [R03].
     if (opensCall && givenAt.getTime() <= callClosedAt(fiche)) return { ok: false, rule: 'R03', code: 'given_before_withdrawal' };
+    // Une demande datée d'avant le refus de la personne ne rouvre rien : autant le dire [R204].
+    if (opensCall && isCallRequest({ purpose }) && givenAt.getTime() <= lastCallRefusal(notes, at.getTime())) return { ok: false, rule: 'R204', code: 'given_before_refusal' };
 
     const consent = await this.store.addConsent({
       networkId: viewer.networkId,

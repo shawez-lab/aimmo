@@ -26,6 +26,11 @@
  * être lue à sa source, et l'avocat tranchera (H41). Une personne qui a demandé à être rappelée n'est pas démarchée :
  * sa demande reste ouverte à toute heure. L'application peut rester ouverte longtemps : `callClosesAt` donne la fin du
  * créneau, et l'écran refuse l'appel passé cette heure.
+ *
+ * Fréquence (AC09) [R204] : les appels notés par l'agent comptent. Lecture prudente, chiffres en réglage : 4 appels de
+ * prospection en 30 jours ferment le bouton, un refus le ferme 60 jours. Source officielle non lue, question à l'avocat
+ * (H41). Un appel sur demande de la personne ne compte pas ; une demande donnée après le refus rouvre l'appel, une demande
+ * plus ancienne que le refus ne vaut plus.
  */
 import type { SqlDatabase } from '../db/sql.ts';
 import { isWorkingDay, localTime } from '../envoi/horaires.ts';
@@ -45,7 +50,9 @@ export interface AgentFiche {
   /** Fin du créneau d'appel, quand l'appel ne repose que sur la prospection acceptée [R203] ; sinon null. */
   callClosesAt: string | null;
   /** Pourquoi il n'y a pas de numéro à appeler, pour que l'écran le dise ; null si l'appel est ouvert. */
-  callRefusal: 'excluded' | 'no_phone' | 'no_consent' | 'outside_hours' | null;
+  callRefusal: 'excluded' | 'no_phone' | 'no_consent' | 'refused_recently' | 'too_many_calls' | 'outside_hours' | null;
+  /** Quand l'appel rouvre, après un refus ou trop d'appels [R204] ; sinon rien. */
+  callReopensAt: string | null;
   projects: { kind: string; stage: string; deadline: string | null; budgetMinEur: number | null; budgetMaxEur: number | null }[];
   sources: { channel: string; detail: string | null; occurredAt: string }[];
   consents: { id: string; purpose: string; channel: string; givenAt: string; withdrawnAt: string | null }[];
@@ -101,6 +108,47 @@ export function consentOpensCall(c: Pick<Consent, 'purpose' | 'channel' | 'given
   return !CALL_REQUEST_PURPOSES.includes(c.purpose) || at - given <= CALL_REQUEST_DAYS * 86_400_000;
 }
 
+/** Les chiffres de la fréquence : un réglage, tant que l'avocat n'a pas confirmé (H41) [R204]. */
+export const CALL_FREQUENCY = Object.freeze({ maxCalls: 4, windowDays: 30, refusalDays: 60 });
+const DAY_MS = 86_400_000;
+
+export interface CallNote {
+  outcome: 'called' | 'refused';
+  basis: 'prospecting' | 'request';
+  noted_at: string;
+}
+
+/** Le dernier refus noté, ou rien. */
+export function lastCallRefusal(notes: readonly CallNote[], at: number): number {
+  return Math.max(-Infinity, ...notes.filter((n) => n.outcome === 'refused' && Date.parse(n.noted_at) <= at).map((n) => Date.parse(n.noted_at)));
+}
+
+/** Une demande de la personne : elle ne vaut que donnée après son dernier refus [R204]. */
+export function isCallRequest(c: Pick<Consent, 'purpose'>): boolean {
+  return CALL_REQUEST_PURPOSES.includes(c.purpose);
+}
+
+/** Ce qui ouvre l'appel à cet instant, le même calcul pour le bouton et pour noter un appel [R03, R204]. */
+export function usableCallConsents(fiche: PhoneFacts, notes: readonly CallNote[], at: number): Consent[] {
+  const refused = lastCallRefusal(notes, at);
+  return fiche.consents.filter((c) => consentOpensCall(c, fiche, at) && !(isCallRequest(c) && Date.parse(c.given_at) <= refused));
+}
+
+/** La fréquence de la prospection : fermée par un refus récent ou par trop d'appels, jusqu'à quand [R204]. */
+export function callFrequencyClosure(notes: readonly CallNote[], at: number, limits: typeof CALL_FREQUENCY = CALL_FREQUENCY): { reason: 'refused_recently' | 'too_many_calls'; until: number } | null {
+  const refused = lastCallRefusal(notes, at);
+  const refusedUntil = refused + limits.refusalDays * DAY_MS;
+  const calls = notes
+    .filter((n) => n.basis === 'prospecting' && Date.parse(n.noted_at) <= at && at - Date.parse(n.noted_at) < limits.windowDays * DAY_MS)
+    .map((n) => Date.parse(n.noted_at))
+    .sort((a, b) => b - a);
+  // Quand le nombre repasse sous le plafond : le plus ancien des appels qui le remplissent sort de la période.
+  const callsUntil = calls.length >= limits.maxCalls ? (calls[limits.maxCalls - 1] as number) + limits.windowDays * DAY_MS : -Infinity;
+  if (refusedUntil > at && refusedUntil >= callsUntil) return { reason: 'refused_recently', until: refusedUntil };
+  if (callsUntil > at) return { reason: 'too_many_calls', until: callsUntil };
+  return null;
+}
+
 const active = (notedAt: string, liftedAt: string | null, at: number): boolean => Date.parse(notedAt) <= at && (liftedAt === null || Date.parse(liftedAt) > at);
 
 export class FicheAgent {
@@ -128,21 +176,26 @@ export class FicheAgent {
     // Le numéro rangé est normalisé ; on ne garde que + et chiffres, par prudence.
     const digits = phone ? phone.value.replace(/[^+\d]/g, '') : '';
     const hasPhone = /^\+?\d{6,15}$/.test(digits);
-    const usable = fiche.consents.filter((c) => consentOpensCall(c, fiche, at));
-    const asked = usable.some((c) => CALL_REQUEST_PURPOSES.includes(c.purpose));
+    const ids = fiche.members.map((m) => m.id);
+    const notes = await this.db.all<CallNote>(`SELECT outcome, basis, noted_at FROM call_notes WHERE person_id IN (${placeholders(ids.length)})`, ids);
+    const usable = usableCallConsents(fiche, notes, at);
+    const asked = usable.some(isCallRequest);
+    const closure = asked ? null : callFrequencyClosure(notes, at);
     const callRefusal = !allowed
       ? 'excluded'
       : !hasPhone
         ? 'no_phone'
         : usable.length === 0
           ? 'no_consent'
-          : !asked && !inProspectingHours(new Date(at))
-            ? 'outside_hours'
-            : null;
+          : closure
+            ? closure.reason
+            : !asked && !inProspectingHours(new Date(at))
+              ? 'outside_hours'
+              : null;
+    const callReopensAt = (callRefusal === 'refused_recently' || callRefusal === 'too_many_calls') && closure ? new Date(closure.until).toISOString() : null;
     const call = callRefusal === null ? `tel:${digits}` : null;
     const callClosesAt = callRefusal === null && !asked ? prospectingSlotEnd(new Date(at)).toISOString() : null;
 
-    const ids = fiche.members.map((m) => m.id);
     const tasks = await this.db.all<{ id: string; reason: string; due_at: string; done_at: string | null }>(
       `SELECT id, reason, due_at, done_at FROM callback_tasks WHERE network_id = ? AND person_id IN (${placeholders(ids.length)})
        ORDER BY CASE WHEN done_at IS NULL THEN 0 ELSE 1 END, due_at, id`,
@@ -170,6 +223,7 @@ export class FicheAgent {
         call,
         callRefusal,
         callClosesAt,
+        callReopensAt,
         projects: fiche.projects.map((p) => ({ kind: p.kind, stage: p.stage, deadline: p.deadline, budgetMinEur: p.budget_min_eur, budgetMaxEur: p.budget_max_eur })),
         sources: [...fiche.sources].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at)).map((s) => ({ channel: s.channel, detail: s.detail, occurredAt: s.occurred_at })),
         consents: fiche.consents.map((c) => ({ id: c.id, purpose: c.purpose, channel: c.channel, givenAt: c.given_at, withdrawnAt: c.withdrawn_at })),
