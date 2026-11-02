@@ -1607,7 +1607,7 @@ Restes trouvés de la même façon, à découper ensuite par la voie 2, un écra
 - Attend : H26 pour une vraie facture.
 
 ### K13 · Le chemin de chaque euro (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Décidé (2026-11-02) : fait avant K12, qui en dépend moins ; les jours affichés sont ceux qui ont été signés (`compromisOn`, `signedOn`), jamais l'heure du passage.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : K11
 - Cahier : M13, « Commissions », « La commission de l'agent est versée sous 24 h ouvrées » ; R68, R69, R70.
