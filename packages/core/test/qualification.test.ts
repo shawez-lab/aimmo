@@ -7,6 +7,7 @@ import {
   applyMigrations,
   createCaptation,
   fromSyncSqlite,
+  MEASURE_CASES_MAX,
   measure,
   measureCasesCsv,
   parseMeasureCases,
@@ -228,5 +229,47 @@ describeWithSqlite('Q01 · qualification d’un message rattaché', () => {
     await t.db.run("UPDATE inbound_messages SET body = '', subject = NULL WHERE id = ?", [first]);
     const left = await t.qualification.correctedMeasureCases(direction);
     expect(left.ok && left.value.map((c) => c.category)).toEqual(['rent_out']);
+  });
+
+  it('Q09 · une fiche nommée par l’expéditeur seul ne laisse sortir ni prénom ni nom ; un mail accentué non plus [R15]', async () => {
+    const t = await setup();
+    const direction = { role: 'direction' as const, userId: 'dir-1', networkId: t.network.id };
+    const person = await t.store.createPerson({ networkId: t.network.id, firstName: 'Zoé Exemple' });
+    await t.db.run(`INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, body, status, person_id, sender_name, received_at, created_at) VALUES ('in-z', ?, 'kz', 'email', 'email', 'Rappelez Zoé, ou Mme Exemple : zoé@example.test.', 'processed', ?, 'Zoé Exemple', ?, ?)`, [t.network.id, person.id, TUESDAY_10H.toISOString(), TUESDAY_10H.toISOString()]);
+    await t.db.run(`INSERT INTO qualifications (id, network_id, inbound_id, person_id, category, deadline, financing, criteria, source, created_at) VALUES ('q-z', ?, 'in-z', ?, 'curious', NULL, NULL, '[]', 'rules', ?)`, [t.network.id, person.id, TUESDAY_10H.toISOString()]);
+    await t.qualification.correct(t.acces, direction, 'q-z', 'buyer', null);
+    const out = await t.qualification.correctedMeasureCases(direction);
+    expect(out.ok && out.value[0]!.text).toBe('Rappelez [nom], ou Mme [nom] : [mail].');
+  });
+
+  it('Q09 · le fichier porte les cas les plus récents et l’appel reste sous la limite de requêtes de D1', async () => {
+    const t = await setup();
+    const direction = { role: 'direction' as const, userId: 'dir-1', networkId: t.network.id };
+    const at = TUESDAY_10H.toISOString();
+    const count = MEASURE_CASES_MAX + 2;
+    for (let i = 0; i < count; i++) {
+      const person = await t.store.createPerson({ networkId: t.network.id, firstName: `Personne${i}` });
+      await t.db.run(`INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, body, status, person_id, received_at, created_at) VALUES (?, ?, ?, 'email', 'email', ?, 'processed', ?, ?, ?)`, [`in-${i}`, t.network.id, `k-${i}`, `message ${i}`, person.id, at, at]);
+      await t.db.run(`INSERT INTO qualifications (id, network_id, inbound_id, person_id, category, deadline, financing, criteria, source, created_at) VALUES (?, ?, ?, ?, 'curious', NULL, NULL, '[]', 'rules', ?)`, [`q-${i}`, t.network.id, `in-${i}`, person.id, at]);
+      await t.db.run(`INSERT INTO qualification_corrections (id, network_id, qualification_id, actor, category, route, created_at) VALUES (?, ?, ?, 'agent:x', 'buyer', NULL, ?)`, [`c-${i}`, t.network.id, `q-${i}`, at]);
+    }
+    let queries = 0;
+    const counted = new Proxy(t.db, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver) as unknown;
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          queries += 1;
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+    const { store, fiche, reception } = createCaptation(counted, t.journal, { withQualification: false });
+    const out = await new Qualification(counted, store, fiche, reception, new ReconnaissanceBien(counted), t.journal, { now: () => TUESDAY_10H }).correctedMeasureCases(direction);
+    if (!out.ok) throw new Error('refusé');
+    expect(out.value).toHaveLength(MEASURE_CASES_MAX);
+    expect(out.value[0]!.text).toBe('message 2');
+    expect(out.value.at(-1)!.text).toBe(`message ${count - 1}`);
+    expect(queries).toBeLessThan(800);
   });
 });

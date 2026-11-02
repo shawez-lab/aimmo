@@ -190,7 +190,7 @@ ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OF
 </section>
 <section class="bloc" aria-labelledby="titre-reseau-cas">
 <h3 id="titre-reseau-cas">Mesure du classement</h3>
-<p class="doux">Les classements corrigés par les agents, sans coordonnées, pour relancer la mesure. À relire et à garder hors du dépôt.</p>
+<p class="doux">Les 150 derniers classements corrigés par les agents, sans coordonnées, pour relancer la mesure. Un nom peut rester : à relire, et à garder hors du dépôt.</p>
 <button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
 <p id="reseau-cas-etat" class="etat" role="status"></p>
 </section>
