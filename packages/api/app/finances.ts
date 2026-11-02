@@ -6,6 +6,10 @@
  * Les commissions pour la direction (K11) : chaque commission, ses parts recomptées à l'écran [R69] et ce qu'elle attend.
  * L'encaissement puis le versement se rapportent avec la référence de leur preuve, en deux appuis ; aucun montant ne se
  * saisit [R67], l'échéance des 24 h ouvrées vient du serveur [R70].
+ *
+ * Le chemin de chaque euro (K13, Jamais vu) : l'agent suit où est son argent, dossier par dossier, avec l'heure limite
+ * promise et si elle a été tenue. Il ne voit que ses parts [R68], sans comparaison avec personne [R14] ; ses totaux se
+ * recomptent à l'écran depuis ses lignes [R69].
  */
 
 const SHARE_NAMES: Record<string, string> = {
@@ -72,6 +76,15 @@ const reportEntry = (who: 'agent' | 'direction'): string => `<section class="blo
 export const RAPPORT_AGENT_HTML = reportEntry('agent');
 export const RAPPORT_DIRECTION_HTML = reportEntry('direction');
 
+export const EUROS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-euros">
+<h3 id="titre-euros">Où est mon argent</h3>
+<p class="doux">Chaque part, de la promesse de vente à votre compte, et l’heure limite de son versement.</p>
+<button id="euros-voir" type="button" class="secondaire">Suivre mes commissions</button>
+<p id="euros-etat" class="etat" role="status"></p>
+<div id="euros-corps"></div>
+</section>
+`;
+
 export const COMMISSIONS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-commissions">
 <h3 id="titre-commissions">Commissions</h3>
 <p class="doux">Ce que chaque vente doit à chacun, et ce qui attend votre geste. Aucun montant ne se saisit : tout est calculé.</p>
@@ -93,6 +106,8 @@ export const FINANCES_JS = `
     });
     clear($('commissions-corps'));
     $('commissions-etat').textContent = '';
+    clear($('euros-corps'));
+    $('euros-etat').textContent = '';
   }
   function withFinances(stateId, hostId, act) {
     if (!currentKey) return Promise.resolve(false);
@@ -120,6 +135,9 @@ export const FINANCES_JS = `
       });
       $(hostId).appendChild(s);
     });
+  }
+  function readEuros() {
+    return withFinances('euros-etat', 'chiffres', function (f) { return f.path(); });
   }
   function readCommissions() {
     return withFinances('commissions-etat', 'reseau', function (f) { return f.commissions(''); });
@@ -315,6 +333,72 @@ globalThis.AIMMO_FINANCES = function (t) {
       return true;
     });
   }
-  return { report: report, commissions: commissions };
+  /* ---------- Le chemin de chaque euro (K13) : les étapes viennent du serveur, jamais d'un calcul de l'écran. ---------- */
+  function stepAt(c, status) {
+    var s = (c.steps || []).filter(function (x) { return x.status === status; })[0];
+    return s ? s.at : null;
+  }
+  function pathLine(c, mine) {
+    var li = el('li');
+    li.appendChild(el('strong', 'Dossier ' + c.fileId + ' : ma part ' + euros(mine)));
+    if (c.shares.length > 1) {
+      var parts = el('ul', null, 'liste');
+      c.shares.forEach(function (s) { parts.appendChild(el('li', (SHARE_NAMES[s.kind] || 'Autre part') + ' : ' + euros(s.amountCents))); });
+      li.appendChild(parts);
+    }
+    var pay = c.payment;
+    var way = [
+      /* Les jours signés, et non l'heure où le passage les a vus. */
+      ['Compromis signé', c.compromisOn ? c.compromisOn + 'T12:00:00Z' : null],
+      ['Acte signé', c.signedOn ? c.signedOn + 'T12:00:00Z' : null],
+      ['Facture émise', stepAt(c, 'facturee')],
+      ['Honoraires encaissés par le réseau', pay ? pay.receivedAt : null],
+      ['Versée sur mon compte', pay && pay.paidAt ? pay.paidAt : stepAt(c, 'payee')],
+    ];
+    var ol = el('ol');
+    way.forEach(function (w) { ol.appendChild(el('li', w[0] + (w[1] ? ' : le ' + date(w[1]) : ' : pas encore'), w[1] ? undefined : 'doux')); });
+    li.appendChild(ol);
+    if (c.cancelled) li.appendChild(el('p', 'Vente annulée par un avoir : cette part n’est pas due. La direction règle ce qui a déjà été versé.', 'retard'));
+    else if (pay && pay.paidAt) li.appendChild(el('p', pay.late ? 'Versée après l’heure limite du ' + date(pay.payoutDueAt) + ' à ' + hour(pay.payoutDueAt) + ' : la promesse n’a pas été tenue.' : 'Versée dans les 24 h ouvrées promises.', pay.late ? 'retard' : undefined));
+    else if (pay) {
+      var over = Date.now() > Date.parse(pay.payoutDueAt);
+      li.appendChild(el('p', (over ? 'Heure limite dépassée : ' : 'Promesse : versée au plus tard ') + 'le ' + date(pay.payoutDueAt) + ' à ' + hour(pay.payoutDueAt) + '.', over ? 'retard' : undefined));
+    }
+    return li;
+  }
+  var pathing = 0;
+  function path() {
+    var mine = t.session();
+    var turn = ++pathing;
+    var body = $('euros-corps'), state = $('euros-etat');
+    clear(body);
+    state.textContent = 'Chargement…';
+    return send('/v1/pilotage/commissions', 'GET').then(function (res) {
+      if (res.gone || mine !== t.session() || turn !== pathing) return false;
+      if (!res.ok || !Array.isArray(res.body.data)) {
+        if (res.offline) state.textContent = 'Pas de réseau. Réessayez dans un moment.';
+        else if (res.body && res.body.rule === 'R16') state.textContent = PAY_REFUSALS.role;
+        else state.textContent = 'Indisponible pour le moment. Réessayez plus tard.';
+        return false;
+      }
+      var items = res.body.data;
+      if (!items.length) { state.textContent = 'Aucune commission pour le moment : elles naissent au compromis signé.'; return true; }
+      var paid = 0, coming = 0, cut = 0, ul = el('ul', null, 'liste');
+      items.forEach(function (c) {
+        c.shares = c.shares || [];
+        var own = c.shares.reduce(function (a, s) { return a + Number(s.amountCents); }, 0);
+        if (c.cancelled) cut += own;
+        else if ((c.payment && c.payment.paidAt) || c.status === 'payee') paid += own;
+        else coming += own;
+        ul.appendChild(pathLine(c, own));
+      });
+      /* Les totaux refont la somme des lignes ci-dessous, au centime [R69]. */
+      body.appendChild(el('p', 'Versé : ' + euros(paid) + '. À venir : ' + euros(coming) + (cut ? '. Annulé : ' + euros(cut) : '') + '.'));
+      body.appendChild(ul);
+      state.textContent = '';
+      return true;
+    });
+  }
+  return { report: report, commissions: commissions, path: path };
 };
 `;
