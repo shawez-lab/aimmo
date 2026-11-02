@@ -239,7 +239,7 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Objectif : trouvé par la relecture forte de AC01, et déjà possible avant elle. `decideSend` (`envoi/decision.ts`) accepte n'importe quel accord ouvert. Cas reproduits : un retrait sur la fiche A, un accord ouvert ou daté d'avant sur le doublon B, puis une fusion, y compris sans geste humain (`reception/rattachement.ts`, `reprise/reprise.ts`) : l'envoi redevient permis. De même, une exclusion levée rouvre un accord plus ancien qu'elle. Laissée à la voie 1 : c'est le contrôle des envois, donc le socle. Faire avant AC02 : les routes d'accords restent fermées tant que ce n'est pas réglé. Passer R202 à « oui » ici.
 - Critères : un accord ne compte que s'il est postérieur au dernier retrait de même finalité et de même canal sur les fiches réunies (test [R03]) ; et au dernier `lifted_at` d'une exclusion (test [R02] [R04]) ; `undoMerge` ferme, sans effacer et avec une ligne au journal, les accords créés pendant la fusion, car on ne sait plus à qui ils sont (test [R03] [R17]) ; les tests de S05 et S06 restent verts.
 
-### AC06 · Un accord redonné est rangé, même si une ligne ancienne reste ouverte
+### AC07 · Un accord redonné est rangé, même si une ligne ancienne reste ouverte
 - Statut : à faire
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC05
@@ -247,7 +247,7 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Objectif : trouvé par la relecture forte de AC05. Plusieurs modules n'ajoutent l'accord que si aucune ligne n'est ouverte (`espaces/gestes.ts`, `espaces/entree.ts`, `apres-vente/relances-apres-vente.ts`, `documents/signature-en-ligne.ts`, `commerces/dossier.ts`, `commerces/confidentialite.ts`, `location/signature-bail.ts`). Or une ligne ouverte peut ne plus compter (AC05) : le client qui redemande les alertes se croit inscrit, et tout est refusé en R03. Aucun envoi indu, mais une demande perdue en silence. Ces modules passent par `consentInForce` sur la fiche réunie.
 - Critères : après un retrait sur une fiche et une fusion avec un doublon ouvert, redonner l'accord le range et rouvre l'envoi, pour chacun de ces modules (test [R03]) ; un accord qui compte n'est pas doublé ; les tests des modules restent verts.
 
-### AC07 · Une exclusion notée pendant une fusion suit les deux fiches quand on la défait
+### AC08 · Une exclusion notée pendant une fusion suit les deux fiches quand on la défait
 - Statut : à faire
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC05
@@ -272,12 +272,21 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : parcours au téléphone ; axe-core sans violation ; rien de personnel au journal [R13].
 
 ### AC04 · Bouton « appeler » fermé sans accord ni demande du client
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02), lecture prudente : ouvrent l'appel par téléphone `prospecting`, `reply` et `rappel_demande` (nouvelle finalité d'AC01) ; une demande vaut 13 mois ; un retrait par téléphone ferme tous les accords par téléphone plus anciens ; `recommandation` n'ouvre pas : la parole d'un tiers n'est pas la demande de la personne ; un accord importé sans canal ne vaut plus pour le téléphone ; le numéro composé est le dernier donné. Relecture forte : aucun P0 net, 7 P1, corrigés sauf le décret (AC06) ; Codex à sa limite, fusion sans lui (#243). `GET /v1/fiches/<id>` et les messages laissent le numéro lisible : le bouton empêche l'appel en un geste, il ne cache pas le numéro.
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC01
 - Cahier : Conformité, démarchage téléphonique.
 - Objectif : `FicheAgent` ne rend le numéro à appeler que si la personne a un accord en cours par téléphone, ou a elle-même demandé à être rappelée.
 - Critères : sans accord ni demande, pas de numéro, et l'écran dit pourquoi [R03] ; un accord retiré referme le bouton [R03].
+
+### AC06 · Horaires et fréquence des appels de prospection
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC04
+- Cahier : Conformité, démarchage téléphonique : « Horaires et fréquence fixés par le décret de 2022 respectés ».
+- Objectif : le bouton « appeler » suit les horaires et la fréquence du décret, à vérifier d'abord dans sa source officielle.
+- Critères : hors des horaires, le bouton est fermé et l'écran dit quand il rouvre [R03] ; une demande de la personne ne se ferme pas de la même façon si le décret ne la vise pas, décision écrite ici ; fréquence : à découper si aucune trace d'appel n'existe encore.
 
 ## Phase 2 : la preuve à Dijon
 

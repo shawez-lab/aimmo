@@ -154,7 +154,6 @@ describeWithSqlite("import des contacts et des biens d'un agent", () => {
     const consents = await w.db.all<{ purpose: string; channel: string; proof: string; given_at: string }>('SELECT purpose, channel, proof, given_at FROM consents WHERE person_id = ? ORDER BY channel', [consented.id]);
     expect(consents).toEqual([
       { purpose: 'prospecting', channel: 'email', proof: 'import Hektor · formulaire signé en agence', given_at: '2026-03-12T12:00:00.000Z' },
-      { purpose: 'prospecting', channel: 'phone', proof: 'import Hektor · formulaire signé en agence', given_at: '2026-03-12T12:00:00.000Z' },
     ]);
     const at = new Date('2027-07-20T08:00:00.000Z');
     expect((await w.envoi.decide(consented.id, { channel: 'email', kind: 'prospecting', at })).allowed).toBe(true);

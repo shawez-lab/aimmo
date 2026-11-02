@@ -407,6 +407,9 @@ export const APP_JS = `'use strict';
       var a = el('a', 'Appeler', 'appel');
       a.setAttribute('href', f.call);
       body.appendChild(a);
+    } else if (f.callRefusal === 'no_consent') {
+      // Pas d'appel sans accord ni demande de la personne [R03].
+      body.appendChild(el('p', 'Appel fermé : aucun accord ni demande de rappel enregistrés pour cette personne.', 'alerte'));
     } else {
       body.appendChild(el('p', 'Aucun numéro sur la fiche.', 'doux'));
     }

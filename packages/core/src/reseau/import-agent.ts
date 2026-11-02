@@ -679,7 +679,7 @@ export class ImportAgent {
     const ids = contactIdentifiers(line.contact);
     const hasEmail = ids.some((i) => i.kind === 'email');
     const hasPhone = ids.some((i) => i.kind === 'phone');
-    const wanted: Channel[] = consent.channels.length > 0 ? consent.channels : [...(hasEmail ? (['email'] as const) : []), ...(hasPhone ? (['phone'] as const) : [])];
+    const wanted: Channel[] = consent.channels.length > 0 ? consent.channels : hasEmail ? ['email'] : []; // Sans canal dit, jamais le téléphone : un appel demande un accord prouvé [R03].
     // Un accord ne vaut que sur une coordonnée de la ligne.
     const channels = wanted.filter((c) => (c === 'email' ? hasEmail : hasPhone));
     const proof = `import ${FORMAT_LABEL[format]} · ${consent.proof}`;

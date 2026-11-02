@@ -8,8 +8,8 @@
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Channel, Exclusion, IdentifierKind, Person } from '../db/types.ts';
-import { consentInForce } from '../envoi/decision.ts';
 import { classifyReceived, type DecisionEnvoi, type ReceivedExclusion } from '../envoi/service.ts';
+import { CALL_REQUEST_DAYS } from '../acces/fiche-agent.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { matchKey, normalizeIdentifier } from '../fiche/normalize.ts';
 import type { SenderIdentifier } from './entrant.ts';
@@ -403,14 +403,17 @@ export class Rattachement {
     }
   }
 
-  /**
-   * L'accord pour répondre sur ce canal, avec la preuve : le message reçu. Pas de second accord s'il y en a un qui compte
-   * encore, tout ce que la fiche sait à ce jour compris : un accord ouvert mais plus ancien qu'un retrait ou qu'une
-   * exclusion levée ne dispense pas du nouveau [R03].
-   */
+  /** L'accord pour répondre sur ce canal, avec la preuve : le message reçu. Pas de second accord s'il y en a un en cours. */
   private async addReplyConsent(target: Person, channel: Channel, inboundId: string, givenAt: Date): Promise<void> {
     const view = await this.fiche.view(target.id);
-    if (view.consents.some((c) => c.channel === channel && c.purpose === REPLY_PURPOSE && consentInForce(c, view, Infinity))) return;
+    // Un accord périmé ne retient pas la nouvelle demande : plus ancien que 13 mois, qu'un retrait sur ce canal ou qu'une
+    // levée d'exclusion, il n'ouvre plus l'appel [R03].
+    const closedAt = Math.max(
+      givenAt.getTime() - CALL_REQUEST_DAYS * 86_400_000,
+      ...view.exclusions.filter((e) => e.lifted_at !== null).map((e) => Date.parse(e.lifted_at!)),
+      ...view.consents.filter((c) => c.channel === channel && c.withdrawn_at !== null).map((c) => Date.parse(c.withdrawn_at!)),
+    );
+    if (view.consents.some((c) => c.channel === channel && c.purpose === REPLY_PURPOSE && c.withdrawn_at === null && Date.parse(c.given_at) > closedAt)) return;
     await this.store.addConsent({
       networkId: target.network_id,
       agentId: target.agent_id,
