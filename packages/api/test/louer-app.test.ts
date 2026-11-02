@@ -1,8 +1,9 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { LEASE_FIELDS } from '../../core/src/location/index.ts';
-import { LOUER_JS } from '../app/louer.ts';
-import { AGENT_APP_FILES } from '../src/agent-app.ts';
+import { LOUER_SCRIPT } from '../app/louer.ts';
+import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
+import { AGENT_APP_FILES, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
 // Tout est inventé : logements, candidats, montants, clé de test.
@@ -70,7 +71,7 @@ async function run(answers: Record<string, Answer> = {}) {
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   const calls: { method: string; url: string; body?: string; auth: string | undefined }[] = [];
   const table: Record<string, Answer> = { ...BASE, ...answers };
-  runInNewContext(JS, {
+  const context = {
     document,
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
     fetch: (url: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
@@ -80,7 +81,8 @@ async function run(answers: Record<string, Answer> = {}) {
       return a ? a() : Promise.reject(new TypeError('hors ligne'));
     },
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
-  });
+  };
+  runInNewContext(JS, context);
   listeners.DOMContentLoaded!();
   await settle();
   const body = () => els['louer-corps']!;
@@ -98,15 +100,24 @@ async function run(answers: Record<string, Answer> = {}) {
     return body().all().find((e) => e.attributes.id === l.attributes.for)!;
   };
   const posts = () => calls.filter((c) => c.method === 'POST');
+  // Le script chargé à la demande : celui que le navigateur ferait tourner, dans la même page.
+  const scripts = () => els.louer!.children.filter((e) => e.tagName === 'script');
   const openList = async () => {
     await click(els['louer-ouvrir']);
+    const s = scripts();
+    if (s.length === 1 && !s[0]!.attributes['data-lu']) {
+      s[0]!.attributes['data-lu'] = 'oui';
+      runInNewContext(LOUER_SCRIPT, context);
+      s[0]!.listeners.load!({});
+      await settle();
+    }
   };
   const openL1 = async () => {
     await openList();
     await click(byText('Ouvrir', 0));
     calls.length = 0;
   };
-  return { els, calls, table, byText, click, input, body, state, posts, openList, openL1, settle };
+  return { els, calls, table, byText, click, input, body, state, posts, openList, openL1, settle, scripts };
 }
 
 describe('W11 · écran « Louer » de l’application', () => {
@@ -130,8 +141,7 @@ describe('W11 · écran « Louer » de l’application', () => {
     }
     // Chaque adresse écrite dans le script est une route de M15.
     // Le script de l'écran tel que posé dans l'application (l'application le sert sans ses lignes de commentaire).
-    const screenJs = LOUER_JS;
-    expect(JS).toContain(LOUER_JS.split('\n').find((l) => l.includes('/v1/location'))!);
+    const screenJs = LOUER_SCRIPT;
     const routes = [...screenJs.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
     expect(routes.length).toBeGreaterThan(3);
     for (const r of routes) expect(r.startsWith('/v1/location'), r).toBe(true);
@@ -165,6 +175,82 @@ describe('W11 · écran « Louer » de l’application', () => {
     const rail = t.body().all().find((e) => e.className === 'parcours')!;
     expect(rail.children.map((li) => li.textContent)).toEqual(['Logement · fait', 'Honoraires', 'Annonce', 'Dossiers · fait', 'Choix', 'Bail', 'État des lieux']);
     expect(rail.children[1]!.attributes['aria-current']).toBe('step');
+  });
+
+  it('[R16] [R105] une candidature s’ajoute depuis l’écran : ses contacts seuls, lus au geste, à la dernière place', async () => {
+    const t = await run({
+      'GET /v1/location/l1/contacts': ok({ contacts: [{ personId: 'p-nouvelle', firstName: 'Nina', lastName: INJECTED }, { personId: 'p-sans-nom', firstName: null, lastName: null }], more: false }),
+      'POST /v1/location/l1/candidatures': ok({ applicationId: 'c4', arrival: 4 }),
+    });
+    await t.openList();
+    await t.click(t.byText('Ouvrir', 0));
+    // Rien n'est lu des contacts avant le geste, depuis l'ouverture de l'écran.
+    expect(t.calls.some((c) => c.url.endsWith('/contacts'))).toBe(false);
+    expect(t.body().textContent).not.toContain('Nina');
+    t.calls.length = 0;
+    await t.click(t.byText('Choisir parmi mes contacts'));
+    const who = t.input('La personne');
+    const options = who.children.map((o) => o.textContent);
+    expect(options).toEqual(['Choisir une personne', `Nina ${INJECTED}`, 'Contact sans nom']);
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    // Sans personne choisie, rien ne part.
+    await t.click(t.byText('Ranger la candidature'));
+    expect(t.posts()).toEqual([]);
+    expect(t.state()).toBe('Choisissez d’abord la personne.');
+    who.value = 'p-nouvelle';
+    t.input('Lien DossierFacile (facultatif)').value = ' https://www.dossierfacile.fr/file/abc ';
+    // Un double appui ne range qu'une candidature.
+    const save = t.byText('Ranger la candidature')!;
+    save.listeners.click!({});
+    save.listeners.click!({});
+    await t.settle();
+    expect(t.posts()).toHaveLength(1);
+    expect(t.posts()[0]!.url).toBe('/v1/location/l1/candidatures');
+    expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ personId: 'p-nouvelle', dossierFacileUrl: 'https://www.dossierfacile.fr/file/abc' });
+    expect(t.state()).toBe('Candidature rangée, à sa place d’arrivée.');
+  });
+
+  it('[R201] l’écran est servi à part, chargé une fois au premier geste, et tient le budget d’une page', async () => {
+    const t = await run();
+    expect(t.scripts()).toHaveLength(0);
+    expect(JS).not.toContain('/v1/location');
+    expect(budgetProblems({ html: '', js: LOUER_SCRIPT }, BUDGETS.page)).toEqual([]);
+    const served = handleAgentApp(new Request('https://aimmo.example.test/app/louer.js'))!;
+    expect(served.headers.get('content-type')).toContain('text/javascript');
+    expect(await served.text()).toBe(LOUER_SCRIPT);
+    await t.openList();
+    await t.click(t.els['louer-retour']);
+    await t.openList();
+    expect(t.scripts()).toHaveLength(1);
+  });
+
+  it('[R104] un refus de la candidature est dit en français, sans code ; la personne peut réessayer', async () => {
+    const t = await run({
+      'GET /v1/location/l1/contacts': ok({ contacts: [{ personId: 'p-nouvelle', firstName: 'Nina', lastName: 'Exemple' }], more: false }),
+      'POST /v1/location/l1/candidatures': no(409, { ok: false, code: 'already_applied' }),
+    });
+    await t.openL1();
+    await t.click(t.byText('Choisir parmi mes contacts'));
+    t.input('La personne').value = 'p-nouvelle';
+    await t.click(t.byText('Ranger la candidature'));
+    expect(t.state()).toBe('Cette personne a déjà une candidature sur ce logement.');
+    t.table['POST /v1/location/l1/candidatures'] = no(400, { ok: false, code: 'bad_dossierfacile' });
+    await t.click(t.byText('Ranger la candidature'));
+    expect(t.state()).toBe('Ce lien n’est pas un lien DossierFacile.');
+    expect(t.posts()).toHaveLength(2);
+  });
+
+  it('une candidature ne s’ajoute plus quand le propriétaire a choisi ; sans réseau, les contacts se redemandent', async () => {
+    const chosen = await run({ 'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c2' }) });
+    await chosen.openL1();
+    expect(chosen.byText('Choisir parmi mes contacts')).toBeUndefined();
+    const t = await run();
+    await t.openL1();
+    await t.click(t.byText('Choisir parmi mes contacts'));
+    expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    t.table['GET /v1/location/l1/contacts'] = ok({ contacts: [], more: false });
+    await t.click(t.byText('Choisir parmi mes contacts'));
+    expect(t.state()).toBe('Aucun autre contact à proposer sur ce logement.');
   });
 
   it('[R105] le choix du propriétaire part avec la présentation, la date, le canal et la preuve ; sans case cochée, rien ne part', async () => {

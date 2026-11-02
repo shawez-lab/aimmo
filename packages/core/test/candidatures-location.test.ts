@@ -91,7 +91,7 @@ async function setup() {
     for (const sort of [holder === 'candidat' ? 'quittances_loyer' : 'derniere_quittance', 'contrat_travail', 'bulletins_salaire', 'avis_imposition']) expect((await piece(applicationId, holder, sort)).ok, sort).toBe(true);
   };
   const events = (type: string) => db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? ORDER BY seq', [type]);
-  return { db, apps, listings, agent, other, dir, compliance, listingId, person, piece, full, verified, ref, events };
+  return { db, store, network, alex, bea, owner, apps, listings, agent, other, dir, compliance, listingId, person, piece, full, verified, ref, events };
 }
 
 describeWithSqlite('W04 · candidatures limitées à la liste officielle', () => {
@@ -208,6 +208,45 @@ describeWithSqlite('W04 · candidatures limitées à la liste officielle', () =>
     for (const url of ['http://locataire.dossierfacile.logement.gouv.fr/file/abcd-1234', 'https://dossierfacile.example.com/file/abcd-1234', 'https://locataire.dossierfacile.logement.gouv.fr/file/x']) {
       expect(await t.apps.apply(t.agent, t.listingId, { personId: await t.person(2), dossierFacileUrl: url }), url).toEqual({ ok: false, rule: null, code: 'bad_dossierfacile' });
     }
+  });
+
+  it('[R16] [R105] les contacts à ajouter : ceux de l’agent, sans le bailleur ni un candidat, même réuni ; une personne réunie n’a qu’une candidature', async () => {
+    const t = await setup();
+    const merge = (survivor: string, merged: string) =>
+      t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES (?, ?, ?, ?, ?, 'test', '2027-07-01T08:00:00.000Z', '2027-07-01T08:00:00.000Z')", [`fusion-${merged}`, t.network.id, t.alex.id, survivor, merged]);
+    const [gardee, reunie, candidate, libre, mixte] = [await t.person(1), await t.person(2), await t.person(3), await t.person(4), await t.person(5)];
+    const autre = (await t.store.createPerson({ networkId: t.network.id, agentId: t.bea.id, firstName: 'Autre', lastName: 'Agent' })).id;
+    const autreMixte = (await t.store.createPerson({ networkId: t.network.id, agentId: t.bea.id, firstName: 'Autre2', lastName: 'Agent' })).id;
+    await merge(gardee!, reunie!);
+    await merge(mixte!, autreMixte);
+    expect((await t.apps.apply(t.agent, t.listingId, { personId: candidate })).ok).toBe(true);
+
+    const seen = await t.apps.addableContacts(t.agent, t.listingId);
+    if (!seen.ok) throw new Error(seen.code);
+    expect(seen.value.contacts.map((c) => c.personId).sort()).toEqual([gardee, libre].sort());
+    expect(seen.value.contacts.map((c) => c.personId)).not.toContain(autre);
+    expect(seen.value.more).toBe(false);
+    // L'agent d'un autre logement est refusé [R16].
+    expect(await t.apps.addableContacts(t.other, t.listingId)).toMatchObject({ ok: false, rule: 'R16' });
+
+    // La fiche réunie mène à la fiche gardée : une candidature, pas deux.
+    const a = await t.apps.apply(t.agent, t.listingId, { personId: reunie });
+    if (!a.ok) throw new Error(a.code);
+    expect((await t.db.first<{ person_id: string }>('SELECT person_id FROM rental_applications WHERE id = ?', [a.value.applicationId]))!.person_id).toBe(gardee);
+    expect(await t.apps.apply(t.agent, t.listingId, { personId: gardee })).toEqual({ ok: false, rule: null, code: 'already_applied' });
+    expect(await t.apps.apply(t.agent, t.listingId, { personId: reunie })).toEqual({ ok: false, rule: null, code: 'already_applied' });
+    const after = await t.apps.addableContacts(t.agent, t.listingId);
+    expect(after.ok && after.value.contacts.map((c) => c.personId)).toEqual([libre]);
+  });
+
+  it('[R105] une candidature rangée sur une fiche réunie ensuite ferme la fiche gardée', async () => {
+    const t = await setup();
+    const [gardee, reunie] = [await t.person(1), await t.person(2)];
+    expect((await t.apps.apply(t.agent, t.listingId, { personId: reunie })).ok).toBe(true);
+    await t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES ('f1', ?, ?, ?, ?, 'test', '2027-07-20T08:00:00.000Z', '2027-07-20T08:00:00.000Z')", [t.network.id, t.alex.id, gardee, reunie]);
+    expect(await t.apps.apply(t.agent, t.listingId, { personId: gardee })).toEqual({ ok: false, rule: null, code: 'already_applied' });
+    const after = await t.apps.addableContacts(t.agent, t.listingId);
+    expect(after.ok && after.value.contacts).toEqual([]);
   });
 
   it('[R14] [R17] l’ordre d’arrivée seul ; une personne ne candidate qu’une fois ; rien ne s’efface', async () => {

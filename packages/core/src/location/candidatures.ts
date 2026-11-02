@@ -17,6 +17,8 @@
  *   aucune candidature n'a de note, de rang ni de score : l'ordre d'arrivée seul [R14].
  * Une pièce est sa référence de stockage et son empreinte, jamais son contenu. Rien ne s'efface [R17].
  */
+import { FicheClient } from '../db/fiche-client.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -99,6 +101,14 @@ export interface ApplicationView {
 export type ApplicationRefusal = Omit<LocationRefusal, 'rule'> & { rule: LocationRefusal['rule'] | 'R104' | 'R15' };
 export type ApplicationResult<T> = { ok: true; value: T } | ApplicationRefusal;
 
+export interface AddableContact {
+  personId: string;
+  firstName: string | null;
+  lastName: string | null;
+}
+
+const MAX_ADDABLE = 500;
+
 export interface CandidaturesOptions {
   now?: () => Date;
   newId?: () => string;
@@ -134,6 +144,10 @@ export class Candidatures {
     return `${String(viewer.role)}:${viewer.userId}`;
   }
 
+  private get fiche(): FicheUnique {
+    return new FicheUnique(this.db, new FicheClient(this.db));
+  }
+
   private async personIn(networkId: string, personId: unknown): Promise<boolean> {
     return typeof personId === 'string' && !!(await this.db.first('SELECT 1 FROM persons WHERE id = ? AND network_id = ?', [personId, networkId]));
   }
@@ -148,11 +162,45 @@ export class Candidatures {
     return row!;
   }
 
+  /**
+   * Les contacts qu'un agent peut ajouter comme candidats : ses fiches gardées, sans fiche réunie d'un autre agent [R16],
+   * sans personne déjà candidate ici, même par une fiche réunie. Lus d'une seule requête, 500 au plus.
+   */
+  async addableContacts(viewer: Viewer, listingId: unknown): Promise<ApplicationResult<{ contacts: AddableContact[]; more: boolean }>> {
+    const listing = await this.listings.listing(viewer, listingId, true);
+    if ('ok' in listing) return listing;
+    const agent = viewer.role === 'agent' ? viewer.userId : null;
+    const rows = await this.db.all<{ id: string; first_name: string | null; last_name: string | null }>(
+      `SELECT p.id, p.first_name, p.last_name FROM persons p
+       WHERE p.network_id = ? AND p.id <> ? AND (? IS NULL OR p.agent_id = ?)
+         AND NOT EXISTS (SELECT 1 FROM person_merges m WHERE m.merged_id = p.id AND m.undone_at IS NULL)
+         AND (? IS NULL OR NOT EXISTS (
+           SELECT 1 FROM person_merges m JOIN persons c ON c.id = m.merged_id
+           WHERE m.survivor_id = p.id AND m.undone_at IS NULL AND c.agent_id IS NOT ?))
+         AND NOT EXISTS (SELECT 1 FROM rental_applications a WHERE a.listing_id = ? AND (a.person_id = p.id OR a.person_id IN (
+           SELECT m.merged_id FROM person_merges m WHERE m.survivor_id = p.id AND m.undone_at IS NULL)))
+       ORDER BY p.last_name, p.first_name, p.id LIMIT ?`,
+      [listing.networkId, listing.ownerPersonId, agent, agent, agent, agent, listing.id, MAX_ADDABLE + 1],
+    );
+    return {
+      ok: true,
+      value: {
+        contacts: rows.slice(0, MAX_ADDABLE).map((r) => ({ personId: r.id, firstName: r.first_name, lastName: r.last_name })),
+        more: rows.length > MAX_ADDABLE,
+      },
+    };
+  }
+
   /** Range une candidature, à son rang d'arrivée ; un lien DossierFacile peut l'accompagner [R104]. */
   async apply(viewer: Viewer, listingId: unknown, input: { personId: unknown; dossierFacileUrl?: unknown }): Promise<ApplicationResult<{ applicationId: string; arrival: number }>> {
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
     if (!(await this.personIn(listing.networkId, input.personId))) return { ok: false, rule: null, code: 'unknown_person' };
+    // Une personne, une candidature : rangée sur la fiche gardée, quelle que soit la fiche réunie choisie [R105].
+    const personId = await this.fiche.rootOf(input.personId as string);
+    const members = await this.fiche.membersOf(personId);
+    const marks = members.map(() => '?').join(', ');
+    if (await this.db.first(`SELECT 1 FROM rental_applications WHERE listing_id = ? AND person_id IN (${marks})`, [listing.id, ...members])) return { ok: false, rule: null, code: 'already_applied' };
     const url = input.dossierFacileUrl === undefined || input.dossierFacileUrl === null ? null : input.dossierFacileUrl;
     if (url !== null && (typeof url !== 'string' || !DOSSIERFACILE.test(url))) return { ok: false, rule: null, code: 'bad_dossierfacile' };
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -161,7 +209,7 @@ export class Candidatures {
         await this.db.run(
           `INSERT INTO rental_applications (id, listing_id, network_id, person_id, arrival, dossierfacile_url, created_by, arrived_at)
            SELECT ?, ?, ?, ?, COALESCE(MAX(arrival), 0) + 1, ?, ?, ? FROM rental_applications WHERE listing_id = ?`,
-          [id, listing.id, listing.networkId, input.personId as string, url, this.actor(viewer), this.now().toISOString(), listing.id],
+          [id, listing.id, listing.networkId, personId, url, this.actor(viewer), this.now().toISOString(), listing.id],
         );
       } catch (error) {
         if (/person_id/.test(String(error))) return { ok: false, rule: null, code: 'already_applied' };
