@@ -947,7 +947,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H08 pour un mandat réel, H23 pour le numéro réel, H25 pour le dépôt réel.
 
 ### D15 · Un seul mandat vivant par bien, refusé aussi par le code
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : relecture forte, 3 P1 corrigés ; Codex à sa limite, fusion sans lui (#290). Les tests de D14 dépendaient de l'heure autour de minuit : corrigé ; ceux de D11 gardent une fenêtre d'une minute.
 - Trouvé le 2026-11-02 par la relecture forte de D12 : l'écran ne propose plus de second mandat, mais `SignaturePapier.register` numérote un second mandat sur un bien dont le mandat est vivant, et le registre est sans trou. Le cahier (M06) n'en dit rien : lecture prudente, refus.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12
 - Cahier : M06 ; R39, R41, R42.
