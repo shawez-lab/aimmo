@@ -111,7 +111,7 @@ export interface Closing {
 }
 
 export type ActProblem =
-  | { ok: false; rule: null; code: 'bad_day' | 'bad_proof' | 'future_day' | 'compromis_missing' | 'before_compromis' | 'already_closed' | 'not_under_offer' }
+  | { ok: false; rule: null; code: 'bad_day' | 'bad_proof' | 'not_stored' | 'future_day' | 'compromis_missing' | 'before_compromis' | 'already_closed' | 'not_under_offer' }
   | { ok: false; rule: 'R58'; code: 'compromis_not_started' }
   | { ok: false; rule: 'R60'; code: 'incomplete'; missing: Piece[]; expired: Piece[]; unknown: string[]; identity: string }
   | { ok: false; rule: 'R63'; code: 'no_mandate_in_force' | 'fee_unknown' };
@@ -130,16 +130,18 @@ export class ActeVente {
   private readonly diffusion: Diffusion;
   private readonly validity: Partial<Record<Piece, number>>;
   private readonly controles: ControlesOffre;
+  private readonly proofs: { has(ref: string): Promise<boolean> } | null;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
     store: PieceStore,
-    options: { now?: () => Date; validityMonths?: Partial<Record<Piece, number>> } = {},
+    options: { now?: () => Date; validityMonths?: Partial<Record<Piece, number>>; /** Donné par les routes (N13) : une attestation qui n'est pas rangée est refusée [R10]. */ proofs?: { has(ref: string): Promise<boolean> } } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.validity = { ...DEFAULT_VALIDITY_MONTHS, ...(options.validityMonths ?? {}) };
+    this.proofs = options.proofs ?? null;
     this.pieces = new PiecesDossier(db, acces, journal, store, { now: this.now });
     this.echeancier = new Echeancier(db, acces, journal, { now: this.now });
     this.diffusion = new Diffusion(db, acces, journal, { now: this.now });
@@ -173,6 +175,7 @@ export class ActeVente {
       await this.db.run("UPDATE properties SET status = 'sold', updated_at = ? WHERE id = ? AND status = 'under_offer'", [this.now().toISOString(), g.file.property_id]);
       return { ok: false, rule: null, code: 'already_closed' };
     }
+    if (this.proofs && !(await this.proofs.has(input.proofRef))) return { ok: false, rule: null, code: 'not_stored' };
     const property = await this.db.first<{ status: string; agent_id: string }>('SELECT status, agent_id FROM properties WHERE id = ?', [g.file.property_id]);
     if (property?.status !== 'under_offer') return { ok: false, rule: null, code: 'not_under_offer' };
     const blocked = async <T extends ActProblem>(p: T): Promise<T> => {

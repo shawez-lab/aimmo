@@ -93,13 +93,30 @@ const badBody = (): Response => json(400, { ok: false, code: 'invalid_body', mes
 
 const services = (s: DossierServices) => ({
   pieces: new PiecesDossier(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
-  echeancier: new Echeancier(s.db, s.acces, s.journal, { now: s.now }),
+  echeancier: new Echeancier(s.db, s.acces, s.journal, { now: s.now, proofs: s.pieces }),
   financement: new FinancementDossier(s.db, s.acces, s.journal, { now: s.now }),
-  acte: new ActeVente(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
+  acte: new ActeVente(s.db, s.acces, s.journal, s.pieces, { now: s.now, proofs: s.pieces }),
   chemin: new CheminCritique(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
   relances: new RelancesPieces(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
   bouclier: new BouclierFonds(s.db, s.acces, s.journal, { now: s.now }),
 });
+
+const depositAs = (kind: m10.FileDepositKind): DossierRoute['handle'] => async (s, v, [id], r) => {
+  const upload = s.pieces.upload?.bind(s.pieces);
+  if (!upload) return json(503, { ok: false, rule: null, code: 'depot_ferme' });
+  const length = r.headers.get('content-length');
+  const declaredSize = length === null || length.trim() === '' ? null : /^\d{1,12}$/.test(length.trim()) ? Number(length.trim()) : Number.NaN;
+  const result = await new DepotsDossier(s.db, s.acces, { put: (key, bytes, type) => upload(key, bytes, type) }, s.journal, { now: s.now }).deposit(v, id!, {
+    kind,
+    contentType: r.headers.get('content-type'),
+    sha256: r.headers.get('x-aimmo-sha256'),
+    declaredSize,
+    read: (max) => readCapped(r, max),
+  });
+  const status = result.ok ? null : ({ trop_lourd: 413, type_refuse: 415, stockage_indisponible: 503 } as Record<string, number>)[result.code];
+  if (status && !result.ok) return json(status, { ok: false, rule: result.rule, code: result.code });
+  return reply(result as Outcome);
+};
 
 /** Les routes de M10, à ajouter à celles de `app.ts`. */
 export function dossierRoutes(): DossierRoute[] {
@@ -115,27 +132,9 @@ export function dossierRoutes(): DossierRoute[] {
       name: 'dossiers.piece',
       handle: withBody(async (s, v, [id], b) => reply(await services(s).pieces.add(v, id!, { piece: String(b.piece ?? ''), ref: String(b.ref ?? ''), issuedOn: String(b.issuedOn ?? '') }))),
     },
-    {
-      // Le dépôt d'une pièce depuis le téléphone (N12) : le corps est le fichier ; déposer ne joint rien [R16].
-      method: 'POST',
-      pattern: new RegExp(`^/dossiers/${ID}/fichiers$`),
-      name: 'dossiers.depot',
-      handle: async (s, v, [id], r) => {
-        const upload = s.pieces.upload?.bind(s.pieces);
-        if (!upload) return json(503, { ok: false, rule: null, code: 'depot_ferme' });
-        const length = r.headers.get('content-length');
-        const declaredSize = length === null || length.trim() === '' ? null : /^\d{1,12}$/.test(length.trim()) ? Number(length.trim()) : Number.NaN;
-        const result = await new DepotsDossier(s.db, s.acces, { put: (key, bytes, type) => upload(key, bytes, type) }, s.journal, { now: s.now }).deposit(v, id!, {
-          contentType: r.headers.get('content-type'),
-          sha256: r.headers.get('x-aimmo-sha256'),
-          declaredSize,
-          read: (max) => readCapped(r, max),
-        });
-        const status = result.ok ? null : ({ trop_lourd: 413, type_refuse: 415, stockage_indisponible: 503 } as Record<string, number>)[result.code];
-        if (status && !result.ok) return json(status, { ok: false, rule: result.rule, code: result.code });
-        return reply(result as Outcome);
-      },
-    },
+    // Le dépôt d'une pièce (N12) et de la preuve d'une date ou de l'acte (N13) : le corps est le fichier ; déposer ne joint rien [R16].
+    { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/fichiers$`), name: 'dossiers.depot', handle: depositAs('piece') },
+    { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/preuves$`), name: 'dossiers.preuve', handle: depositAs('preuve') },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/echeancier$`), name: 'dossiers.echeancier', handle: async (s, v, [id]) => reply(await services(s).echeancier.schedule(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/dates$`), name: 'dossiers.date', handle: withBody(async (s, v, [id], b) => reply(await services(s).echeancier.record(v, id!, { kind: b.kind, day: b.day, proofRef: b.proofRef }))) },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/financement$`), name: 'dossiers.financement', handle: async (s, v, [id]) => reply(await services(s).financement.financing(v, id!)) },

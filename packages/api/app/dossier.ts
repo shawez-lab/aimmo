@@ -6,8 +6,13 @@
  * L'écran ne lit et n'écrit que par les routes `/v1/dossiers` [R16]. Il ne calcule rien : le chemin, les pièces attendues
  * et les échéances viennent du code [R60, R61] ; une date manquante se dit, jamais inventée [R10]. Une pièce d'identité
  * ne se range jamais ici [R15]. Tout texte reçu est posé avec `textContent`.
+ *
+ * N13 : l'agent y fait avancer le dossier. Chaque date part avec sa preuve déposée, sans référence à saisir [R10, R61] ;
+ * les étapes du prêt sont une liste fermée, sans montant ni taux [R14] ; l'acte signé se confirme à part, car il clôt.
  */
 import { FILE_DEPOSIT_MAX_BYTES, FILE_DEPOSIT_TYPES } from '../../core/src/dossiers/depot.ts';
+import { DATE_KINDS, type DateKind } from '../../core/src/dossiers/echeancier.ts';
+import { DECLARED_BY, FINANCING_STEPS, type DeclaredBy, type FinancingStep } from '../../core/src/dossiers/financement.ts';
 
 const REFUSALS = {
   business: 'Un fonds de commerce se suit dans « Commerces ».',
@@ -27,6 +32,22 @@ const REFUSALS = {
   fichier_vide: 'Ce fichier est vide.',
   empreinte_differente: 'Le fichier a mal voyagé : réessayez.',
   stockage_indisponible: 'Le stockage ne répond pas : réessayez plus tard.',
+  unknown_date: 'Choisissez la date dans la liste.',
+  bad_day: 'Ce jour n’existe pas.',
+  bad_proof: 'La preuve n’est pas rangée : choisissez de nouveau le fichier.',
+  future_day: 'Ce jour est à venir : seul ce qui a déjà eu lieu se saisit ici.',
+  before_compromis: 'Une date ne peut pas précéder le compromis signé.',
+  compromis_first: 'Saisissez d’abord la signature du compromis.',
+  out_of_order: 'Pour la commune : la suspension suit la réception, la reprise suit la suspension.',
+  compromis_not_started: 'Préparez d’abord le compromis depuis l’offre : l’identité de l’acquéreur doit être vérifiée.',
+  unknown_step: 'Choisissez l’étape dans la liste.',
+  bad_input: 'Dites l’étape, le jour et qui la déclare.',
+  no_loan_condition: 'L’offre n’a pas de condition de prêt : rien à suivre.',
+  compromis_missing: 'Saisissez d’abord la signature du compromis.',
+  already_closed: 'L’acte est déjà rangé.',
+  not_under_offer: 'Le bien n’est plus sous offre : voyez avec la direction.',
+  no_mandate_in_force: 'Aucun mandat en vigueur le jour du compromis : voyez avec la direction.',
+  fee_unknown: 'Les honoraires du mandat signé ne se lisent pas : voyez avec la direction.',
 };
 const PIECE_NAMES = {
   titre_propriete: 'Titre de propriété', fiche_renseignements_vendeur: 'Fiche de renseignements du vendeur', etat_risques: 'État des risques', dpe: 'Diagnostic énergétique',
@@ -35,6 +56,12 @@ const PIECE_NAMES = {
   carnet_entretien: 'Carnet d’entretien', mesurage_carrez: 'Mesurage Carrez', notice_information: 'Notice d’information', pppt_dtg: 'Plan de travaux ou diagnostic technique',
   dta_parties_communes: 'Amiante des parties communes', fiche_renseignements_acquereur: 'Fiche de renseignements de l’acquéreur',
 };
+const DATE_NAMES: Record<DateKind, string> = {
+  compromis_signe: 'Compromis signé', notification_acquereur: 'Notification reçue par l’acquéreur', date_limite_pret: 'Date limite du prêt', dia_recue: 'Déclaration reçue par la commune',
+  dia_suspension: 'Demande de la commune, délai suspendu', dia_reprise: 'Reprise du délai de la commune', etat_date_attendu: 'État daté attendu', acte_prevu: 'Acte prévu',
+};
+const STEP_NAMES: Record<FinancingStep, string> = { demande_deposee: 'Demande de prêt déposée', accord_principe: 'Accord de principe', offre_pret_emise: 'Offre de prêt reçue par l’acquéreur', offre_pret_acceptee: 'Offre de prêt acceptée', refus: 'Refus de prêt' };
+const BY_NAMES: Record<DeclaredBy, string> = { acquereur: 'l’acquéreur', courtier: 'le courtier' };
 const DEADLINES = { fin_retractation: 'Fin du délai de rétractation', reponse_preemption: 'Réponse de la commune', date_limite_pret: 'Date limite du prêt', etat_date: 'État daté', acte: 'Acte' };
 const ITEMS = { pret: 'le prêt', fiche_bien: 'la fiche du bien', copropriete: 'la copropriété' };
 const WHO = { acquereur: 'à l’acquéreur', vendeur: 'au vendeur', commune: 'à la commune', banque: 'à la banque', syndic: 'au syndic', agent: 'à vous' };
@@ -99,6 +126,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
   var NO = ${JSON.stringify(REFUSALS)}, PIECES = ${JSON.stringify(PIECE_NAMES)}, DEADLINES = ${JSON.stringify(DEADLINES)}, ITEMS = ${JSON.stringify(ITEMS)};
   var WHO = ${JSON.stringify(WHO)}, REASONS = ${JSON.stringify(REASONS)}, SCHEDULE = ${JSON.stringify(SCHEDULE)}, IDENTITY = ${JSON.stringify(IDENTITY)}, LAPSING = ${JSON.stringify(LAPSING)};
+  var KINDS = ${JSON.stringify(DATE_KINDS)}, DATES = ${JSON.stringify(DATE_NAMES)}, STEPS = ${JSON.stringify(FINANCING_STEPS)}, STEP = ${JSON.stringify(STEP_NAMES)}, BYS = ${JSON.stringify(DECLARED_BY)}, BY = ${JSON.stringify(BY_NAMES)};
   var TYPES = ${JSON.stringify(FILE_DEPOSIT_TYPES)}, MAX = ${FILE_DEPOSIT_MAX_BYTES};
   var cur = null, seq = 0, busy = null;
   function state(x) { $('dossier-etat').textContent = x; }
@@ -126,7 +154,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
   function load(message) {
     var mine = ++seq;
     state('Chargement…');
-    return Promise.all([send(base() + '/chemin', 'GET'), send(base() + '/pieces', 'GET'), send(base() + '/echeancier', 'GET'), send(base() + '/acte', 'GET')]).then(function (all) {
+    return Promise.all([send(base() + '/chemin', 'GET'), send(base() + '/pieces', 'GET'), send(base() + '/echeancier', 'GET'), send(base() + '/acte', 'GET'), send(base() + '/financement', 'GET')]).then(function (all) {
       if (mine !== seq || all.some(function (r) { return r.gone; })) return false;
       var failed = all.filter(function (r) { return !r.ok; })[0];
       // Le geste a réussi, seule la relecture manque : on le dit, sans laisser un formulaire périmé à l'écran.
@@ -136,9 +164,14 @@ globalThis.AIMMO_DOSSIER = function (t) {
       clear(body());
       state(message || '');
       var closing = all[3].body.data;
-      if (closing) drawClosed(closing); else drawPath(all[0].body.data.path, all[1].body.data.identity);
-      drawPieces(all[1].body.data, !closing);
-      drawSchedule(all[2].body.data);
+      var path = all[0].body.data.path;
+      if (closing) drawClosed(closing); else drawPath(path, all[1].body.data.identity);
+      // Le code a jugé les pièces pour le jour visé : celles qu'il dit périmées ne laissent pas écrire « complet ».
+      var stale = closing ? [] : (Array.isArray(path.lines) ? path.lines : []).filter(function (l) { return l.reason === 'piece_perimee'; }).map(function (l) { return l.item; });
+      drawPieces(all[1].body.data, !closing, stale);
+      drawSchedule(all[2].body.data, !closing);
+      drawFinancing(all[4].body.data, !closing);
+      if (!closing) drawAct(all[2].body.data);
       return true;
     });
   }
@@ -177,7 +210,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
     }
     body().appendChild(box);
   }
-  function drawSchedule(s) {
+  function drawSchedule(s, open) {
     var box = el('section', null, 'bloc');
     box.appendChild(el('h3', 'Échéances'));
     var ul = el('ul');
@@ -185,30 +218,176 @@ globalThis.AIMMO_DOSSIER = function (t) {
       ul.appendChild(el('li', (DEADLINES[l.deadline] || 'Échéance') + ' : ' + (l.status === 'datee' && l.day ? day(l.day) : SCHEDULE[l.status] || 'à vérifier')));
     });
     box.appendChild(ul);
+    var dates = s.dates || {};
+    var done = KINDS.filter(function (k) { return dates[k]; });
+    if (done.length) {
+      box.appendChild(el('p', 'Dates saisies, chacune avec sa preuve :', 'doux'));
+      var seen = el('ul');
+      done.forEach(function (k) { seen.appendChild(el('li', DATES[k] + ' : ' + day(dates[k].day) + (dates[k].version > 1 ? ', version ' + dates[k].version : ''))); });
+      box.appendChild(seen);
+    }
+    if (open) dateForm(box, s);
     body().appendChild(box);
   }
-  function drawPieces(f, open) {
+  // Seules les dates qui peuvent se saisir sont proposées ; le serveur garde le dernier mot sur l'ordre [R61].
+  function dateChoices(s) {
+    var dates = s.dates || {};
+    if (!dates.compromis_signe) return ['compromis_signe'];
+    var off = {};
+    (Array.isArray(s.lines) ? s.lines : []).forEach(function (l) { if (l.status === 'sans_objet') off[l.from] = true; });
+    return KINDS.filter(function (k) {
+      if (off[k]) return false;
+      if (k === 'dia_suspension') return !!dates.dia_recue;
+      if (k === 'dia_reprise') return !!dates.dia_suspension;
+      return true;
+    });
+  }
+  function choice(box, id, label, values, name) {
+    var f = field(box, id, label, 'select');
+    var first = el('option', 'À choisir');
+    first.value = '';
+    f.appendChild(first);
+    values.forEach(function (v) {
+      var o = el('option', name(v));
+      o.value = v;
+      f.appendChild(o);
+    });
+    return f;
+  }
+  function dayField(box, id, label) {
+    var f = field(box, id, label);
+    f.setAttribute('type', 'date');
+    return f;
+  }
+  function act(run) {
+    return function () {
+      if (busy) return Promise.resolve(false);
+      var me = busy = {};
+      function done(r) { if (busy === me) busy = null; return r; }
+      return Promise.resolve().then(run).then(done, function () { done(false); state('Rien n’est rangé : réessayez.'); return false; });
+    };
+  }
+  // Refusée, la saisie reste à l'écran ; say peut dire le refus plus précisément.
+  function post(path, data, done, failed, proof, say) {
+    var mine = ++seq;
+    return send(base() + path, 'POST', data).then(function (res) {
+      if (res.gone || mine !== seq) return false;
+      if (res.ok) return load(done);
+      if (proof && res.body && (res.body.code === 'not_stored' || res.body.code === 'bad_proof')) proof.forget();
+      state((say && say(res)) || why(res, failed));
+      return false;
+    });
+  }
+  function dateForm(box, s) {
+    var dates = s.dates || {};
+    var which = choice(box, 'dossier-saisie-genre', 'Date à saisir', dateChoices(s), function (k) { return DATES[k] + (dates[k] ? ' (corriger le ' + day(dates[k].day) + ')' : ''); });
+    var when = dayField(box, 'dossier-saisie-jour', 'Le jour');
+    var proof = picker(box, 'dossier-saisie-preuve', 'La preuve : compromis, accusé de réception, courrier reçu', '/preuves', 'Joignez la preuve de cette date.');
+    box.appendChild(button('Ranger la date', act(function () {
+      if (!which.value) { state('Choisissez la date à saisir.'); return false; }
+      if (!when.value) { state('Dites le jour.'); return false; }
+      return proof.get().then(function (ref) {
+        if (!ref) return false;
+        return post('/dates', { kind: which.value, day: when.value, proofRef: ref }, 'Date rangée.', 'La date n’est pas rangée : réessayez.', proof);
+      });
+    })));
+  }
+  // Des faits déclarés, rien d'autre : ni montant, ni taux, ni note [R14].
+  function drawFinancing(f, open) {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', 'Financement déclaré'));
+    if (!f.hasLoanCondition) {
+      box.appendChild(el('p', 'L’offre n’a pas de condition de prêt : rien à suivre.', 'doux'));
+      body().appendChild(box);
+      return;
+    }
+    var steps = Array.isArray(f.steps) ? f.steps : [];
+    if (!steps.length) box.appendChild(el('p', 'Aucune étape déclarée.', 'doux'));
+    else {
+      var ul = el('ul');
+      steps.forEach(function (x) { ul.appendChild(el('li', (STEP[x.step] || 'Étape') + ' : ' + day(x.day) + ', dit par ' + (BY[x.declaredBy] || 'l’acquéreur'))); });
+      box.appendChild(ul);
+    }
+    if (open) {
+      var which = choice(box, 'dossier-pret-etape', 'Étape déclarée', STEPS, function (k) { return STEP[k]; });
+      var when = dayField(box, 'dossier-pret-jour', 'Le jour');
+      box.appendChild(el('p', 'Pour une offre de prêt, le jour où l’acquéreur l’a reçue : le délai de réflexion en part.', 'doux'));
+      var who = choice(box, 'dossier-pret-qui', 'Qui la déclare', BYS, function (k) { var n = BY[k]; return n.charAt(0).toUpperCase() + n.slice(1); });
+      box.appendChild(button('Ranger l’étape', act(function () {
+        if (!which.value) { state('Choisissez l’étape.'); return false; }
+        if (!when.value) { state('Dites le jour.'); return false; }
+        if (!who.value) { state('Dites qui la déclare.'); return false; }
+        return post('/financement', { step: which.value, day: when.value, declaredBy: who.value }, 'Étape rangée.', 'L’étape n’est pas rangée : réessayez.');
+      })));
+    }
+    body().appendChild(box);
+  }
+  // Ce qui manque au jour de l'acte, dit par le code [R60].
+  function incomplete(res) {
+    var b = res.body;
+    if (!b || b.code !== 'incomplete') return null;
+    var names = function (list) { return (Array.isArray(list) ? list : []).map(function (p) { return PIECES[p] || 'une pièce'; }).join(', '); };
+    var parts = [];
+    if (names(b.missing)) parts.push('il manque : ' + names(b.missing));
+    if (names(b.expired)) parts.push('périmée au jour de l’acte : ' + names(b.expired));
+    if (Array.isArray(b.unknown) && b.unknown.length) parts.push('à compléter : ' + b.unknown.map(function (u) { return ITEMS[u] || 'une donnée'; }).join(', '));
+    if (b.identity === 'non_verifiee') parts.push('identité de l’acquéreur non vérifiée ce jour-là');
+    if (b.identity === 'non_visible') parts.push('identité de l’acquéreur hors de vos droits');
+    return 'L’acte n’est pas rangé' + (parts.length ? ' : ' + parts.join(' ; ') + '.' : '.');
+  }
+  // L'acte clôt le dossier, rend la commission due et passe le bien vendu : il se confirme, sur le jour montré.
+  function drawAct(s) {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', 'Acte signé'));
+    if (!(s.dates || {}).compromis_signe) {
+      box.appendChild(el('p', 'L’acte se range une fois la signature du compromis saisie.', 'doux'));
+      body().appendChild(box);
+      return;
+    }
+    var when = dayField(box, 'dossier-acte-jour', 'Le jour de la signature');
+    var proof = picker(box, 'dossier-acte-preuve', 'L’attestation du notaire', '/preuves', 'Joignez l’attestation du notaire.');
+    var sure = null;
+    function drop() { if (sure) { box.removeChild(sure); sure = null; } }
+    box.appendChild(button('Ranger l’acte signé', function () {
+      drop();
+      if (!when.value) { state('Dites le jour de la signature.'); return; }
+      if (!proof.input.files || !proof.input.files[0]) { state('Joignez l’attestation du notaire.'); return; }
+      var chosen = when.value;
+      state('Le dossier sera clos et le bien passera vendu : cela ne se défait pas.');
+      sure = button('Confirmer : acte signé le ' + day(chosen), act(function () {
+        if (when.value !== chosen) { drop(); state('Le jour a changé : rangez de nouveau.'); return false; }
+        return proof.get().then(function (ref) {
+          if (!ref) return false;
+          return post('/acte', { signedOn: chosen, proofRef: ref }, 'Acte rangé : le dossier est clos.', 'L’acte n’est pas rangé : réessayez.', proof, incomplete);
+        });
+      }));
+      box.appendChild(sure);
+    }));
+    body().appendChild(box);
+  }
+  function drawPieces(f, open, stale) {
     var box = el('section', null, 'bloc');
     var lines = Array.isArray(f.lines) ? f.lines : [];
     var missing = lines.filter(function (l) { return !l.received; }).length;
     box.appendChild(el('h3', 'Pièces reçues : ' + (lines.length - missing) + ' sur ' + lines.length));
-    box.appendChild(el('p', f.complete ? 'Dossier complet.' : IDENTITY[f.identity] || IDENTITY.non_visible, f.complete ? null : 'doux'));
+    if (stale.length) box.appendChild(el('p', 'À renouveler avant l’acte : ' + stale.map(function (p) { return PIECES[p] || 'une pièce'; }).join(', ') + '.', 'retard'));
+    if (!f.complete || !stale.length) box.appendChild(el('p', f.complete ? 'Dossier complet.' : IDENTITY[f.identity] || IDENTITY.non_visible, f.complete ? null : 'doux'));
     if ((f.unknown || []).length) box.appendChild(el('p', 'La liste peut encore changer : ' + f.unknown.map(function (u) { return ITEMS[u] || 'une donnée'; }).join(', ') + ' à compléter.', 'retard'));
     var ul = el('ul');
     lines.forEach(function (l) {
       var who = l.side === 'acquereur' ? 'acquéreur' : 'vendeur';
-      ul.appendChild(el('li', (PIECES[l.piece] || 'Pièce') + ' (' + who + ') : ' + (l.received ? 'reçue, datée du ' + day(l.received.issuedOn) + (l.received.version > 1 ? ', version ' + l.received.version : '') : 'à recevoir')));
+      ul.appendChild(el('li', (PIECES[l.piece] || 'Pièce') + ' (' + who + ') : ' + (l.received ? 'reçue, datée du ' + day(l.received.issuedOn) + (l.received.version > 1 ? ', version ' + l.received.version : '') + (stale.indexOf(l.piece) >= 0 ? ', à renouveler' : '') : 'à recevoir')));
     });
     box.appendChild(ul);
     if (open && lines.length) deposit(box, lines);
     body().appendChild(box);
   }
   function hex(buf) { return Array.from(new Uint8Array(buf), function (b) { return (b + 256).toString(16).slice(1); }).join(''); }
-  function upload(file, type, sha) {
+  function upload(path, file, type, sha) {
     var key = t.key();
     if (!key) return Promise.resolve({ gone: true });
     var mine = t.session();
-    return fetch(base() + '/fichiers', { method: 'POST', headers: { authorization: 'Bearer ' + key, 'content-type': type, 'x-aimmo-sha256': sha }, body: file, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
+    return fetch(base() + path, { method: 'POST', headers: { authorization: 'Bearer ' + key, 'content-type': type, 'x-aimmo-sha256': sha }, body: file, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
       return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
         if (mine !== t.session()) return { gone: true };
         // Une clé refusée passe par send, qui sait la retirer et le dire.
@@ -217,7 +396,38 @@ globalThis.AIMMO_DOSSIER = function (t) {
       });
     }, function () { return mine !== t.session() ? { gone: true } : { offline: true }; });
   }
-  // La pièce se choisit dans la liste attendue : une pièce d'identité n'y est jamais [R15]. Un fichier déjà déposé n'est pas renvoyé.
+  // Un fichier à déposer : il n'est pas renvoyé tant qu'il reste le même, et personne ne saisit de référence.
+  function picker(box, id, label, path, absent) {
+    var pick = field(box, id, label);
+    pick.setAttribute('type', 'file');
+    pick.setAttribute('accept', Object.keys(TYPES).join(','));
+    var kept = null;
+    return {
+      input: pick,
+      forget: function () { kept = null; },
+      get: function () {
+        var file = pick.files && pick.files[0];
+        if (!file) { state(absent); return Promise.resolve(null); }
+        if (kept && kept.file === file) return Promise.resolve(kept.ref);
+        var type = String(file.type || '').toLowerCase();
+        if (!Object.prototype.hasOwnProperty.call(TYPES, type)) { state(NO.type_refuse); return Promise.resolve(null); }
+        if (file.size > MAX) { state(NO.trop_lourd); return Promise.resolve(null); }
+        var mine = t.session();
+        state('Envoi du fichier…');
+        return file.arrayBuffer().then(function (buf) { return crypto.subtle.digest('SHA-256', buf); }).then(function (sum) {
+          if (mine !== t.session()) return null;
+          return upload(path, file, type, hex(sum)).then(function (res) {
+            if (res.gone) return null;
+            var ref = res.ok && res.body.data && res.body.data.ref;
+            if (typeof ref !== 'string') { state(why(res, 'Le fichier n’est pas rangé : réessayez.')); return null; }
+            kept = { file: file, ref: ref };
+            return ref;
+          });
+        }, function () { if (mine === t.session()) state('Ce fichier ne se lit pas sur ce téléphone.'); return null; });
+      },
+    };
+  }
+  // La pièce se choisit dans la liste attendue : une pièce d'identité n'y est jamais [R15].
   function deposit(box, lines) {
     box.appendChild(el('p', 'Une pièce d’identité ne se range jamais ici : elle va au coffre de la conformité.', 'doux'));
     var which = field(box, 'dossier-piece', 'Pièce à ranger', 'select');
@@ -231,43 +441,20 @@ globalThis.AIMMO_DOSSIER = function (t) {
     });
     var issued = field(box, 'dossier-date', 'Date du document');
     issued.setAttribute('type', 'date');
-    var pick = field(box, 'dossier-fichier', 'Le document, en PDF ou en photo');
-    pick.setAttribute('type', 'file');
-    pick.setAttribute('accept', Object.keys(TYPES).join(','));
-    var kept = null;
-    function stored() {
-      var file = pick.files && pick.files[0];
-      if (!file) { state('Joignez le document.'); return Promise.resolve(null); }
-      if (kept && kept.file === file) return Promise.resolve(kept.ref);
-      var type = String(file.type || '').toLowerCase();
-      if (!Object.prototype.hasOwnProperty.call(TYPES, type)) { state(NO.type_refuse); return Promise.resolve(null); }
-      if (file.size > MAX) { state(NO.trop_lourd); return Promise.resolve(null); }
-      var mine = t.session();
-      state('Envoi du fichier…');
-      return file.arrayBuffer().then(function (buf) { return crypto.subtle.digest('SHA-256', buf); }).then(function (sum) {
-        if (mine !== t.session()) return null;
-        return upload(file, type, hex(sum)).then(function (res) {
-          if (res.gone) return null;
-          var ref = res.ok && res.body.data && res.body.data.ref;
-          if (typeof ref !== 'string') { state(why(res, 'Le fichier n’est pas rangé : réessayez.')); return null; }
-          kept = { file: file, ref: ref };
-          return ref;
-        });
-      }, function () { if (mine === t.session()) state('Ce fichier ne se lit pas sur ce téléphone.'); return null; });
-    }
+    var doc = picker(box, 'dossier-fichier', 'Le document, en PDF ou en photo', '/fichiers', 'Joignez le document.');
     box.appendChild(button('Ranger la pièce', function () {
       if (busy) return Promise.resolve(false);
       if (!which.value) { state('Choisissez la pièce.'); return Promise.resolve(false); }
       if (!issued.value) { state('Dites la date du document.'); return Promise.resolve(false); }
       var me = busy = {};
       function done(r) { if (busy === me) busy = null; return r; }
-      return stored().then(function (ref) {
+      return doc.get().then(function (ref) {
         if (!ref) return false;
         var mine = ++seq;
         return send(base() + '/pieces', 'POST', { piece: which.value, ref: ref, issuedOn: issued.value }).then(function (res) {
           if (res.gone || mine !== seq) return false;
           // Refusée, la référence ne sert plus si elle est déjà prise : le fichier sera renvoyé.
-          if (!res.ok) { if (res.body && (res.body.code === 'ref_used' || res.body.code === 'not_stored' || res.body.code === 'bad_ref')) kept = null; state(why(res, 'La pièce n’est pas rangée : réessayez.')); return false; }
+          if (!res.ok) { if (res.body && (res.body.code === 'ref_used' || res.body.code === 'not_stored' || res.body.code === 'bad_ref')) doc.forget(); state(why(res, 'La pièce n’est pas rangée : réessayez.')); return false; }
           return load('Pièce rangée.');
         });
       }).then(done, function () { done(false); state('Rien n’est rangé : réessayez.'); return false; });

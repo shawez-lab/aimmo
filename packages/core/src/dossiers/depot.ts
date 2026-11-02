@@ -5,6 +5,8 @@
  * fichier, le serveur le range tel quel sous `dossiers/<dossier>/` et rend la référence. Déposer ne joint rien : la
  * pièce, sa date et ses contrôles passent ensuite par `add`. Mêmes contrôles qu'en W14 : droits avant de lire un octet,
  * type admis et confirmé par les premiers octets, empreinte recalculée. Au journal : ni contenu, ni donnée personnelle.
+ *
+ * N13 : la preuve d'une date ou de l'acte se dépose de même et se range sous `preuves/`, la forme que ces saisies attendent.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -20,7 +22,11 @@ export const FILE_DEPOSIT_TYPES: Readonly<Record<string, string>> = { 'applicati
 const SHA = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+export type FileDepositKind = 'piece' | 'preuve';
+
 export interface FileDepositInput {
+  /** `piece` par défaut : une pièce du dossier ; `preuve` : la preuve d'une date ou de l'acte (N13). */
+  kind?: FileDepositKind;
   contentType: unknown;
   sha256: unknown;
   declaredSize: number | null;
@@ -69,7 +75,7 @@ export class DepotsDossier {
     if (sha !== input.sha256) return bad('empreinte_differente');
     const id = this.newId();
     if (!UUID.test(id)) throw new Error('identifiant de fichier invalide');
-    const ref = `dossiers/${fileId}/${id}.${ext}`;
+    const ref = input.kind === 'preuve' ? `preuves/${id}.${ext}` : `dossiers/${fileId}/${id}.${ext}`;
     try {
       await this.store.put(ref, bytes, type);
     } catch {

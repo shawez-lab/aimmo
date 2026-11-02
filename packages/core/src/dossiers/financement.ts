@@ -103,6 +103,8 @@ export class FinancementDossier {
   async declare(viewer: Viewer, fileId: string, input: unknown): Promise<{ ok: true; value: Financing } | FileRefusal | FileUnknown | FinancingProblem> {
     const g = await this.gate(viewer, fileId, true);
     if (!g.ok) return g;
+    // Un dossier clos par l'acte ne reçoit plus rien, de l'agent comme de l'acquéreur (N13).
+    if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
     return this.write(g.file, input, ['step', 'day', 'declaredBy'], null, actorOf(viewer));
   }
 

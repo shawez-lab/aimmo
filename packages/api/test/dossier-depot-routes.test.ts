@@ -72,4 +72,37 @@ describeWithSqlite('N12 · dépôt d’une pièce du dossier', () => {
     expect(closed.status).toBe(503);
     expect(closed.body.code).toBe('depot_ferme');
   });
+
+  it('[R10] N13 : la preuve déposée vaut pour une date et pour l’acte ; une référence qui n’est pas rangée est refusée', async () => {
+    const t = await setup();
+    const json = (body: unknown) => ({ headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    await t.verifyBuyer();
+    await t.startCompromis();
+    const up = await t.run(t.agent, 'POST', `/dossiers/${t.fileId}/preuves`, { headers: { 'content-type': 'application/pdf', 'x-aimmo-sha256': sha(PDF) }, body: PDF });
+    expect(up.status).toBe(200);
+    const proofRef = up.body.data.ref as string;
+    expect(proofRef).toMatch(/^preuves\/[0-9a-f-]{36}\.pdf$/);
+    const lost = 'preuves/0b6f1d2e-7777-4a2b-8c3d-00000000dead.pdf';
+    const date = (ref: string) => t.run(t.agent, 'POST', `/dossiers/${t.fileId}/dates`, json({ kind: 'compromis_signe', day: '2027-03-01', proofRef: ref }));
+    expect((await date(lost)).body.code).toBe('not_stored');
+    expect((await date('preuves/inventee.pdf')).body.code).toBe('bad_proof');
+    expect((await date(proofRef)).status).toBe(200);
+    expect((await t.run(t.agent, 'POST', `/dossiers/${t.fileId}/acte`, json({ signedOn: '2027-03-01', proofRef: lost }))).body.code).toBe('not_stored');
+  });
+
+  it('[R16] N13 : seul l’agent du bien dépose une preuve ; un fichier texte n’en est pas une ici', async () => {
+    const t = await setup();
+    const proof = (viewer: Viewer, type = 'application/pdf') => t.run(viewer, 'POST', `/dossiers/${t.fileId}/preuves`, { headers: { 'content-type': type, 'x-aimmo-sha256': sha(PDF) }, body: PDF });
+    for (const viewer of [t.sam, t.direction]) expect((await proof(viewer)).status).toBe(403);
+    expect((await proof(t.agent, 'text/plain')).status).toBe(415);
+    expect(t.kept.size).toBe(0);
+  });
+
+  it('N13 : un dossier clos par l’acte ne reçoit plus ni date ni étape du prêt', async () => {
+    const t = await setup();
+    const json = (body: unknown) => ({ headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    await t.db.run('INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, ?, ?, \'a_demarrer\', ?, ?)', [t.fileId, t.network.id, '2027-03-01', 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf', '2027-03-01T12:00:00.000Z', 'test']);
+    expect((await t.run(t.agent, 'POST', `/dossiers/${t.fileId}/dates`, json({ kind: 'acte_prevu', day: '2027-04-01', proofRef: 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf' }))).body.code).toBe('closed');
+    expect((await t.run(t.agent, 'POST', `/dossiers/${t.fileId}/financement`, json({ step: 'refus', day: '2027-03-01', declaredBy: 'acquereur' }))).body.code).toBe('closed');
+  });
 });
