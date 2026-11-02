@@ -287,6 +287,15 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Décidé (2026-10-27), lecture prudente : `site` devient un canal de sortie (`OUTBOUND_CHANNELS`) sans toucher `CHANNELS`, ni les accords, ni les exclusions, qui restent par personne ; sur ce canal, seulement la réponse dans la session du visiteur et dans l'heure de son message, jamais d'initiative [R03, R01] ; la réponse va à la session d'où la personne a écrit, vérifiée comme les conversations de Meta ; même clé de dépôt `INTAKE_KEYS`, avec une source `site_chat` qui n'ouvre que l'assistant ; visiteur connu par l'empreinte d'un identifiant opaque donné par le site, jamais d'adresse IP ni de navigateur [R15] ; limites par heure prises en une seule instruction ; en essai, `reply` vaut `null`. Un visiteur garde une seule fiche d'une conversation à l'autre (empreinte de son identifiant comme référence du canal), pour qu'un arrêt vaille pour toutes [R02, R04].
 - Reste : intégration au site de `shawez-immo` dans une tâche à part ; texte rendu au visiteur avec le branchement réel (C09) ; relecture forte (aucun P0 ni P1), Codex : 1 P0 corrigé, dernière version validée (#22).
 
+### C09a · Écho humain et premier message traités en même temps
+Voie : 2
+- Statut : en cours (voie 2)
+- Qui : Claude · Relecture : forte · Dépend de : C07
+- Cahier : M02, « Branchements » ; R21. Partie de C09 détachée parce qu'elle n'attend personne (SECOURS : un service pas encore ouvert n'arrête pas le code).
+- Objectif : fermer la fenêtre signalée par Codex sur #21. Un écho humain et le premier message du client, reçus par deux notifications en même temps, ne doivent jamais laisser partir la réponse automatique quand l'écho est arrivé avant le dernier contrôle, ni laisser un écho sans effet.
+- Décidé (2026-11-02), lecture prudente : pas de verrou (D1 n'en a pas, et un Worker ne doit pas attendre) ; l'écho est écrit d'abord dans `pending_human_replies`, puis seulement la conversation est cherchée, alors que le message du client est rangé avant de lire ces écrits : l'un des deux voit forcément l'autre. Le texte gardé est effacé de cette table dès que l'écho est appliqué : il reste seulement sur la fiche.
+- Critères : écho et premier message entremêlés à chaque point de lecture : aucune réponse si l'écho était écrit avant le contrôle (test [R21]) ; écho reçu pendant la rédaction de la réponse : rien ne part (test [R21]) ; dans tous les ordres, la conversation finit chez l'agent et aucun écho ne reste en attente (test [R21]) ; l'écho de notre propre message ne fait pas taire l'assistant (test [R21]) ; aucun texte gardé après application (test [R13]).
+
 ### C09 · Mise en service de la captation
 - Statut : à faire
 - Qui : Claude · Relecture : forte · Dépend de : C06, C07, C08, S11
