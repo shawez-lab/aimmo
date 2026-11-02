@@ -164,3 +164,70 @@ describe('Q01 · sortie de l’IA, bornée par les règles', () => {
     expect(checkAiQualification({ ...good, city: 'Talant', financing: null, budgetMaxEur: 65 }, t3)).toMatchObject({ rule: 'R10' });
   });
 });
+
+describe('Q07 · critères niés et montants qui n’en sont pas', () => {
+  const criteria = (text: string) => qualifyByRules(text).criteria;
+
+  it('[R23] un critère nié n’est pas rangé, un critère affirmé à côté l’est', () => {
+    expect(criteria('Je cherche une maison sans jardin.')).toEqual(['house']);
+    expect(criteria('Je cherche une maison sans jardin ni garage.')).toEqual(['house']);
+    expect(criteria('Je cherche un appartement, pas de cave, pas besoin d’ascenseur.')).toEqual(['apartment']);
+    expect(criteria('Je cherche une maison, pas de jardin mais une terrasse.')).toEqual(['house', 'terrace']);
+    expect(criteria('Je cherche une maison sans piscine avec garage.')).toEqual(['house', 'garage']);
+    expect(criteria('Je ne veux pas de maison, plutôt un appartement.')).toEqual(['apartment']);
+    expect(criteria('Je cherche un appartement sans grand balcon.')).toEqual(['apartment']);
+  });
+
+  it('[R23] pièces et chambres niées ne sont pas rangées ; le nombre affirmé l’est', () => {
+    expect(criteria('Je cherche, pas un T2 mais un T3.')).toEqual(['rooms:3']);
+    expect(criteria('Je cherche un appartement, pas 2 chambres, plutôt 3 chambres.')).toEqual(['apartment', 'bedrooms:3']);
+  });
+
+  it('une tournure où « pas » ne nie rien garde le critère', () => {
+    expect(criteria('Je cherche, pas de souci pour une maison avec jardin.')).toEqual(['house', 'garden']);
+    expect(criteria('Pas loin du centre, je cherche un jardin.')).toEqual(['garden']);
+    expect(criteria('Je cherche une maison pas trop chère avec jardin.')).toEqual(['house', 'garden']);
+  });
+
+  it('un critère nié une fois et affirmé plus loin est rangé : la personne l’a demandé', () => {
+    expect(criteria('Pas de garage pour le moment. Finalement, je voudrais un garage.')).toEqual(['garage']);
+  });
+
+  const ai = (over: Partial<Qualified>): Qualified => ({
+    category: 'buyer',
+    route: null,
+    city: null,
+    budgetMinEur: null,
+    budgetMaxEur: null,
+    priceEur: null,
+    deadline: null,
+    financing: null,
+    criteria: [],
+    ...over,
+  });
+
+  it('[R23] l’IA qui range un critère que le message nie est refusée', () => {
+    expect(checkAiQualification(ai({ criteria: ['garden'] }), 'Je cherche une maison sans jardin.')).toMatchObject({ rule: 'R23' });
+    expect(checkAiQualification(ai({ criteria: ['rooms:2'] }), 'Je cherche, pas un T2 mais un T3.')).toMatchObject({ rule: 'R23' });
+    expect(checkAiQualification(ai({ criteria: ['house'] }), 'Je cherche une maison sans jardin.')).toMatchObject({ criteria: ['house'] });
+    // L'IA peut déduire un critère que le message ne cite pas tel quel : seul un refus écrit l'en empêche.
+    expect(checkAiQualification(ai({ criteria: ['quiet'] }), 'Je cherche une maison sans jardin.')).toMatchObject({ criteria: ['quiet'] });
+  });
+
+  it('[R10] « frais inclus » n’écarte pas le budget, un montant de frais reste écarté', () => {
+    expect(qualifyByRules('Je cherche une maison, budget frais inclus de 300 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison, budget frais de notaire inclus de 300 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison à 300 000 € frais compris.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison, budget hors frais de 300 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison, frais de notaire, budget 300 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(qualifyByRules('Je cherche une maison, frais de notaire de 20 000 €.')).toMatchObject({ budgetMaxEur: null });
+    expect(qualifyByRules('Je cherche une maison, budget 300 000 € et apport de 20 000 €.')).toMatchObject({ budgetMaxEur: 300_000 });
+  });
+
+  it('[R10] l’IA qui donne l’apport comme budget est refusée, sauf si ce montant est aussi cité comme budget', () => {
+    const text = 'Je cherche une maison, apport de 50 000 €, budget maximum de 300 000 €.';
+    expect(checkAiQualification(ai({ budgetMaxEur: 50_000 }), text)).toMatchObject({ rule: 'R10' });
+    expect(checkAiQualification(ai({ budgetMaxEur: 300_000 }), text)).toMatchObject({ budgetMaxEur: 300_000 });
+    expect(checkAiQualification(ai({ budgetMaxEur: 50_000 }), 'Budget 50 000 € pour un garage, apport de 50 000 €.')).toMatchObject({ budgetMaxEur: 50_000 });
+  });
+});

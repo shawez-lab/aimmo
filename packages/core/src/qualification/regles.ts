@@ -213,8 +213,25 @@ interface MoneyMention {
 }
 
 /** Un montant qui n'est ni un budget ni un prix : l'apport, les frais, une mensualité, un revenu. */
-const OTHER_MONEY = /\b(?:apport|frais|mensualites?|salaires?|revenus?|charges|taxe|epargne|loyer actuel|honoraires|commission)\b[^0-9]*$/;
+// « Frais inclus » ou « hors frais » dit ce que couvre le budget : ce n'est pas un montant de frais.
+const OTHER_MONEY =
+  /\b(?:apport|(?<!hors )frais(?!(?: de notaire| d.agence| d.acquisition)? (?:inclus|compris))|mensualites?|salaires?|revenus?|charges|taxe|epargne|loyer actuel|honoraires|commission)\b[^0-9]*$/;
 const LABELLED_MONEY = /\b(?:budget|prix|maximum|max|jusqu.a|plafond|vendre a|mettre a)\b[^0-9]*$/;
+const MONEY_LABEL = /\b(?:budget|prix|maximum|max|jusqu.a|plafond|vendre a|mettre a)\b/g;
+
+/** Un montant de frais, d'apport ou de revenu : le dernier mot avant lui décide, « frais de notaire, budget 300 000 ». */
+function isOtherMoney(before: string): boolean {
+  const labels = [...before.matchAll(MONEY_LABEL)];
+  const last = labels[labels.length - 1];
+  return OTHER_MONEY.test(last ? before.slice((last.index ?? 0) + last[0].length) : before);
+}
+
+/** Les montants qui peuvent être un budget ou un prix : ni l'apport, ni les frais, ni un revenu [R10]. */
+function budgetAmountsIn(text: string): number[] {
+  return moneyMentions(text)
+    .filter((m) => !isOtherMoney(m.before))
+    .map((m) => m.amount);
+}
 
 function moneyMentions(text: string): MoneyMention[] {
   const p = plain(text).replace(/[\u00a0\u202f]/g, ' ');
@@ -309,15 +326,51 @@ const CRITERIA_WORDS: readonly [Criterion, RegExp][] = [
   ['outbuilding', /\bdependance/],
 ];
 
+/** Les mots qui nient ce qui les suit, de près et dans la même proposition. */
+const CRITERION_NEGATOR = /^(?:sans|pas|ni|aucun|aucune|jamais|eviter|evite)$/;
+/** Une tournure où « pas » ne nie rien de ce qui suit. */
+const NOT_A_NEGATION = /\bpas (?:de (?:souci|soucis|probleme|problemes)|mal|loin|trop|cher|chere)\b/g;
+/** Ce qui ferme la portée d'une négation : « pas de jardin mais un balcon », « sans ascenseur, avec garage ». */
+const CLAUSE_BREAK = /[.,;:!?\n]|\b(?:mais|plutot|avec|par contre|cependant)\b|\bet (?:un|une|des|avec|je|nous)\b/g;
+const NEGATION_REACH = 4;
+
+/** Le mot trouvé à cette place est-il nié ? « Sans jardin ni garage », « je ne veux pas de grand jardin ». */
+function isDenied(p: string, index: number): boolean {
+  const before = p.slice(0, index);
+  const breaks = [...before.matchAll(CLAUSE_BREAK)];
+  const last = breaks[breaks.length - 1];
+  const scope = last ? before.slice((last.index ?? 0) + last[0].length) : before;
+  const words = scope.split(/\s+/).filter(Boolean);
+  return words.slice(-NEGATION_REACH - 1).some((w) => CRITERION_NEGATOR.test(w));
+}
+
+const globally = (r: RegExp): RegExp => new RegExp(r.source, 'g');
+
+/** Chaque critère que le message cite, et s'il l'affirme au moins une fois ou seulement le nie. */
+function mentionedCriteria(text: string): Map<Criterion, boolean> {
+  const p = text.replace(NOT_A_NEGATION, (m) => ' '.repeat(m.length));
+  const out = new Map<Criterion, boolean>();
+  const note = (c: Criterion, index: number): void => {
+    out.set(c, (out.get(c) ?? false) || !isDenied(p, index));
+  };
+  for (const [c, r] of CRITERIA_WORDS) for (const m of p.matchAll(globally(r))) note(c, m.index ?? 0);
+  const count = (kind: 'rooms' | 'bedrooms', r: RegExp): void => {
+    for (const m of p.matchAll(r)) {
+      const n = Number(m[1] ?? m[2]);
+      if (n >= 1 && n <= 20) note(`${kind}:${n}`, m.index ?? 0);
+    }
+  };
+  count('rooms', /\b(?:(\d{1,2}) pieces?|[tf](\d{1,2}))\b/g);
+  count('bedrooms', /\b(\d{1,2}) chambres?\b/g);
+  return out;
+}
+
 function criteriaOf(p: string): Criterion[] {
-  const found: Criterion[] = CRITERIA_WORDS.filter(([, r]) => r.test(p)).map(([c]) => c);
-  const rooms = /\b(?:(\d{1,2}) pieces?|[tf](\d{1,2}))\b/.exec(p);
-  const n = Number(rooms?.[1] ?? rooms?.[2]);
-  if (n >= 1 && n <= 20) found.push(`rooms:${n}`);
-  const bedrooms = /\b(\d{1,2}) chambres?\b/.exec(p);
-  const b = Number(bedrooms?.[1]);
-  if (b >= 1 && b <= 20) found.push(`bedrooms:${b}`);
-  return found;
+  const found = [...mentionedCriteria(p)].filter(([, affirmed]) => affirmed).map(([c]) => c);
+  // Un seul nombre de pièces et de chambres : le premier affirmé.
+  const first = (prefix: string): Criterion | undefined => found.find((c) => c.startsWith(prefix));
+  const plainOnes = found.filter((c) => !c.startsWith('rooms:') && !c.startsWith('bedrooms:'));
+  return [...plainOnes, first('rooms:'), first('bedrooms:')].filter((c): c is Criterion => c !== undefined);
 }
 
 export function isCriterion(value: unknown): value is Criterion {
@@ -336,7 +389,7 @@ export function qualifyByRules(text: string, options: QualifyRulesOptions = {}):
   const p = plain(text);
   const category = classifyByRules(text, options);
   // Le budget ou le prix : jamais l'apport, les frais ni un revenu ; un montant nommé « budget » ou « prix » d'abord.
-  const mentions = moneyMentions(text).filter((m) => !OTHER_MONEY.test(m.before));
+  const mentions = moneyMentions(text).filter((m) => !isOtherMoney(m.before));
   const labelled = mentions.filter((m) => LABELLED_MONEY.test(m.before));
   const amounts = (labelled.length > 0 && !/\bentre\b/.test(p) ? labelled : mentions).map((m) => m.amount);
   const range = /\bentre\b/.test(p) && amounts.length >= 2;
@@ -383,8 +436,12 @@ export function checkAiQualification(raw: unknown, text: string, communes: reado
   if (o.financing !== null && o.financing !== declaredFinancing(text)) {
     return { rule: 'R24', reason: 'Financement non déclaré par la personne : jamais évalué.' };
   }
-  // Seulement les montants du message : une surface ou un nombre de pièces n'en sont pas.
-  const inText = new Set(amountsIn(text));
+  // Un critère que le message nie n'est pas un critère de la personne : l'IA n'en décide pas.
+  const mentioned = mentionedCriteria(plain(text));
+  if (o.criteria.some((c: Criterion) => mentioned.get(c) === false)) return r23('Critère nié par le message.');
+  // Seulement les montants du message, et ceux qui peuvent être un budget ou un prix : une surface, un nombre de
+  // pièces, l'apport ou les frais n'en sont pas.
+  const inText = new Set(budgetAmountsIn(text));
   if ([o.budgetMinEur, o.budgetMaxEur, o.priceEur].some((v) => v !== null && !inText.has(v as number))) {
     return { rule: 'R10', reason: 'Montant absent du message.' };
   }
