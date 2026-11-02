@@ -63,6 +63,12 @@ export interface SendOrder {
    * prépare le lien pour l'agent) au lieu du canal du réseau. Pas d'IA : le texte est celui du code.
    */
   byAgent?: { port: AgentWhatsAppLink };
+  /**
+   * Message qu'un autre système envoie lui-même (le site, B04b) : le contrôle le range exactement tel quel, n'y ajoute
+   * aucune mention, et ne la tient pour donnée que si le texte la porte, en un paragraphe exact [R06]. Un seul texte, sans
+   * IA. Sans mention due : rangé et signalé, ou refusé avec R06 si `refuseWithoutMention` (quand la décision vaut).
+   */
+  asWritten?: { refuseWithoutMention: boolean };
   /** Sujet d'un envoi d'initiative, par exemple `relance:projet-12` [R05]. Obligatoire hors réponse, sauf biens. */
   subject?: string | undefined;
   /** Biens proposés : chacun ne part qu'une fois à la personne [R05]. */
@@ -97,6 +103,8 @@ export interface SendResult {
   withMention: boolean;
   /** Une réponse que le contrôle n'a pas pu laisser partir : l'agent doit répondre lui-même [R12]. */
   needsHuman: boolean;
+  /** Texte tel quel (`asWritten`) seulement : la mention était due et le texte ne la porte pas [R06]. */
+  mentionMissing?: boolean;
 }
 
 export interface ControleSettings {
@@ -180,6 +188,22 @@ export class ControleEnvois {
     return rest.length > 0 && this.isMention(first) ? rest.join('\n\n') : body;
   }
 
+  /** Un texte tel quel peut porter sa mention après son sujet : tout paragraphe de mention est retiré. */
+  private withoutAnyMention(body: string): string {
+    return body
+      .split('\n\n')
+      .filter((p) => !this.isMention(p))
+      .join('\n\n');
+  }
+
+  /** Le texte tel quel, sans le seul paragraphe de mention exacte qu'il peut porter ; `null` s'il n'en porte pas [R06]. */
+  private exactMentionRemoved(text: string, agentFirstName: string | null): string | null {
+    const accepted = [this.settings.mentionWithoutAgent, ...(agentFirstName ? [this.settings.mentionWithAgent.replace('{prenom}', agentFirstName)] : [])].map(sameText);
+    const paragraphs = text.split('\n\n');
+    const at = paragraphs.findIndex((p) => accepted.includes(sameText(p)));
+    return at < 0 ? null : paragraphs.filter((_, i) => i !== at).join('\n\n');
+  }
+
   async send(order: SendOrder): Promise<SendResult> {
     // L'heure est toujours celle du contrôle, jamais celle de l'appelant : l'envoi part maintenant [R01].
     const at = this.now();
@@ -192,7 +216,7 @@ export class ControleEnvois {
       outcome: SendStatus,
       rule: string | null,
       reason: string,
-      extra: Partial<Pick<SendResult, 'messageId' | 'body' | 'aiText' | 'fallbackText' | 'withMention' | 'needsHuman'>> = {},
+      extra: Partial<Pick<SendResult, 'messageId' | 'body' | 'aiText' | 'fallbackText' | 'withMention' | 'needsHuman' | 'mentionMissing'>> = {},
     ): Promise<SendResult> => {
       const result: SendResult = {
         status: outcome,
@@ -204,6 +228,7 @@ export class ControleEnvois {
         fallbackText: extra.fallbackText ?? false,
         withMention: extra.withMention ?? false,
         needsHuman: extra.needsHuman ?? false,
+        ...(extra.mentionMissing === undefined ? {} : { mentionMissing: extra.mentionMissing }),
       };
       await this.options.journal.record({
         networkId: order.networkId,
@@ -268,6 +293,10 @@ export class ControleEnvois {
     const decision = await decide(at);
     if (!decision.allowed) return log('refused', decision.rule, decision.reason);
 
+    const asWritten = order.asWritten ?? null;
+    if (asWritten && (order.compose || order.byAgent || order.fallbackTexts.length !== 1)) {
+      return log('refused', null, 'Un texte tel quel est un seul texte, sans IA et sans agent.');
+    }
     if (order.byAgent && (!(order.byAgent.port instanceof AgentWhatsAppLink) || order.byAgent.port.channel !== order.channel || !agentId || order.compose)) {
       return log('refused', null, 'Un message de l’agent cite son agent et son canal, sans IA.');
     }
@@ -312,7 +341,10 @@ export class ControleEnvois {
     const conversation = sentBefore.filter(inConversation);
     const firstOfConversation = conversation.length === 0;
     // L'agent qui écrit lui-même n'a pas de mention d'assistant à porter [R06].
-    const withMention = !order.byAgent && !conversation.some((m) => AUTOMATIC.has(m.author_kind));
+    let withMention = !order.byAgent && !asWritten && !conversation.some((m) => AUTOMATIC.has(m.author_kind));
+    // Un texte tel quel : la mention reste due tant qu'aucun message automatique ne l'a vraiment portée [R06].
+    const mentionDue = asWritten !== null && !conversation.some((m) => AUTOMATIC.has(m.author_kind) && m.body.split('\n\n').some((p) => this.isMention(p)));
+    const agentFirstName = mentionDue && agentId ? ((await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ? AND network_id = ?', [agentId, order.networkId]))?.first_name ?? null) : null;
 
     let mention = '';
     if (withMention) {
@@ -327,29 +359,31 @@ export class ControleEnvois {
     const maxLength = this.settings.text.maxLength[order.channel];
 
     let aiNote: string | null = null;
-    const candidates: { text: string; ai: boolean }[] = [];
+    // `core` : ce qui est contrôlé et comparé. Le texte lui-même, hors la mention exacte que porte un texte tel quel.
+    const candidates: { text: string; core: string; ai: boolean }[] = [];
     if (order.compose) {
       if (this.options.budget && !(await this.options.budget.allows(order.networkId, at))) {
         aiNote = 'Plafond du coût de l’IA atteint : texte de secours.';
       } else {
         try {
-          candidates.push({ text: await timeout(order.compose(), this.settings.aiTimeoutMs), ai: true });
+          const text = await timeout(order.compose(), this.settings.aiTimeoutMs);
+          candidates.push({ text, core: text, ai: true });
         } catch {
           aiNote = 'L’IA n’a pas répondu : texte de secours.';
         }
       }
     }
-    candidates.push(...order.fallbackTexts.map((text) => ({ text, ai: false })));
+    candidates.push(...order.fallbackTexts.map((text) => ({ text, core: (mentionDue ? this.exactMentionRemoved(text, agentFirstName) : null) ?? text, ai: false })));
     if (candidates.length === 0) return log('refused', 'R12', 'Aucun texte de secours fourni : rien ne peut partir.');
 
     // 4. Contrôle du texte et anti-doublon du texte [R05 à R10].
-    const already = new Set(sentBefore.map((m) => sameText(this.withoutMention(m.body))));
+    const already = new Set(sentBefore.map((m) => sameText(asWritten ? this.withoutAnyMention(m.body) : this.withoutMention(m.body))));
     const firstName = view.members.map((p) => p.first_name).find((n) => n) ?? null;
-    let chosen: { text: string; ai: boolean } | null = null;
+    let chosen: { text: string; core: string; ai: boolean } | null = null;
     const problems: { rule: string; reason: string; ai: boolean }[] = [];
     for (const candidate of candidates) {
       const found = checkText(
-        candidate.text,
+        candidate.core,
         {
           audience: 'client',
           channel: order.channel,
@@ -365,7 +399,7 @@ export class ControleEnvois {
       if (issues.length === 0 && withMentionText(candidate.text).length > maxLength) {
         issues.push({ rule: 'length', reason: `Texte trop long pour ce canal, mention comprise : ${maxLength} caractères au plus.` });
       }
-      if (issues.length === 0 && already.has(sameText(candidate.text))) {
+      if (issues.length === 0 && already.has(sameText(candidate.core))) {
         issues.push({ rule: 'R05', reason: 'Ce message a déjà été envoyé à la personne.' });
       }
       if (issues.length === 0) {
@@ -388,7 +422,14 @@ export class ControleEnvois {
     const aiRefused = problems.find((p) => p.ai);
     if (!chosen.ai && aiRefused) aiNote = `Texte de l’IA refusé, ${aiRefused.rule} : texte de secours.`;
 
-    // 5. Mention de l'assistant [R06].
+    // 5. Mention de l'assistant [R06]. Un texte tel quel la porte lui-même, ou elle lui manque.
+    const mentionMissing = mentionDue && chosen.core === chosen.text;
+    if (asWritten) {
+      withMention = mentionDue && !mentionMissing;
+      if (mentionMissing && asWritten.refuseWithoutMention) {
+        return log('refused', 'R06', 'Le premier message automatique doit porter la mention de l’assistant : ce texte ne la porte pas.', { mentionMissing });
+      }
+    }
     const body = withMentionText(chosen.text);
 
     // La rédaction a pu durer : un arrêt ou une exclusion arrivés entre-temps l'emportent [R02, R04].
@@ -405,7 +446,7 @@ export class ControleEnvois {
     const keys = [
       ...new Set([
         ...subjects.map((k) => `sujet:${k}`),
-        `texte:${sameText(chosen.text)}`,
+        `texte:${sameText(chosen.core)}`,
         ...(withMention ? [`mention:${conversationKey}`] : []),
       ]),
     ];
@@ -487,7 +528,7 @@ export class ControleEnvois {
       ]);
     }
     await this.db.run('UPDATE send_reservations SET message_id = ? WHERE reservation_id = ?', [message.id, reservationId]);
-    const flags = { messageId: message.id, body, aiText: chosen.ai, fallbackText: !chosen.ai, withMention };
+    const flags = { messageId: message.id, body, aiText: chosen.ai, fallbackText: !chosen.ai, withMention, ...(asWritten ? { mentionMissing } : {}) };
     const sent = await log('sent', aiNote ? 'R12' : decision.rule, aiNote ?? decision.reason, flags);
     let receipt: { externalId: string | null };
     try {

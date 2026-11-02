@@ -56,6 +56,8 @@ export interface AutomationDecision {
   stage: RolloutStage;
   /** La décision vaut-elle pour le site ? Sinon il décide seul, comme avant [R26]. */
   decides: boolean;
+  /** La mention était due et le texte du site ne la porte pas [R06] : refusé si le socle décide, sinon seulement signalé. */
+  mentionMissing: boolean;
 }
 
 export interface AutomatisationsOptions {
@@ -109,6 +111,7 @@ export class Automatisations {
         // réunies : l'une peut être exclue ou arrêtée, le refus vaut donc selon le palier. Rien de cela n'est compté :
         // un palier se prouve sur de vraies décisions [R26].
         decides: code === 'unknown_person' ? false : palier.decides,
+        mentionMissing: false,
       };
       await this.write(req, null, decision);
       return decision;
@@ -124,12 +127,15 @@ export class Automatisations {
       subject: `${req.automation}:${req.ref}`,
       fallbackTexts: [req.text],
       figures: req.figures ?? [],
+      // Le site envoie lui-même : son message est rangé tel quel, compté une fois, sans mention ajoutée [R06, R11].
+      asWritten: { refuseWithoutMention: palier.decides },
     });
     // Une panne du contrôle ramène l'automatisation en ombre, avant de répondre [R26].
     const failed = result.status === 'failed';
     if (failed) await this.paliers.incident(req.networkId, req.automation, 'failure', null, 'system:bascule');
     // Une demande refaite pour le même envoi ne compte pas deux fois ; à 10 %, seuls comptent les envois où le socle décide.
-    else if (result.rule !== 'R05' && (palier.stage !== 'ten_percent' || palier.decides)) await this.paliers.countRequest(req.networkId, req.automation, palier.stageSince);
+    // Un refus pour une mention que le site ne porte pas ne prouve rien : le site n'est pas encore aligné.
+    else if (result.rule !== 'R05' && !(result.status === 'refused' && result.mentionMissing) && (palier.stage !== 'ten_percent' || palier.decides)) await this.paliers.countRequest(req.networkId, req.automation, palier.stageSince);
     const decision: AutomationDecision = {
       status: result.status === 'sent' ? 'would_send' : result.status,
       rule: result.rule,
@@ -138,6 +144,7 @@ export class Automatisations {
       sent: false,
       stage: failed ? 'shadow' : palier.stage,
       decides: failed ? false : palier.decides,
+      mentionMissing: result.mentionMissing ?? false,
     };
     await this.write(req, person.id, decision);
     return decision;
@@ -151,7 +158,7 @@ export class Automatisations {
         type: AUTOMATION_JOURNAL_TYPE,
         actor: 'intake:site_auto',
         subject: personId === null ? null : `person:${personId}`,
-        data: { mode: 'essai', sent: false, automation: req.automation, status: decision.status, rule: decision.rule, code: decision.code, stage: decision.stage, decides: decision.decides },
+        data: { mode: 'essai', sent: false, automation: req.automation, status: decision.status, rule: decision.rule, code: decision.code, stage: decision.stage, decides: decision.decides, mention_missing: decision.mentionMissing },
       },
       this.now,
     );

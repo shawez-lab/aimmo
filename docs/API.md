@@ -64,7 +64,7 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | POST | `/v1/captation/formulaire` | dépose un formulaire « Être rappelé » ; rend seulement des statuts, la réponse est prête en mode essai, jamais envoyée | clé de dépôt `site_form` (`INTAKE_KEYS`) |
 | POST | `/v1/assistant/sessions` | ouvre une conversation de l'assistant du site, rend son jeton `sessionId` | clé de dépôt `site_chat` (`INTAKE_KEYS`) |
 | POST | `/v1/assistant/sessions/<sessionId>/messages` | un message du visiteur ; rend un statut, la réponse est prête en mode essai, jamais rendue | clé de dépôt `site_chat` (`INTAKE_KEYS`) |
-| POST | `/v1/automatisations/envoi` | une automatisation du site demande si son envoi peut partir ; rend la décision, sa règle, le palier et si la décision vaut pour cet envoi ; rien n'est envoyé | clé de dépôt `site_auto` (`INTAKE_KEYS`) |
+| POST | `/v1/automatisations/envoi` | une automatisation du site demande si son envoi peut partir ; rend la décision, sa règle, le palier, si la décision vaut pour cet envoi et si la mention de l'assistant manque au texte (`mentionMissing`) ; le texte est rangé tel quel ; rien n'est envoyé | clé de dépôt `site_auto` (`INTAKE_KEYS`) |
 | POST | `/v1/automatisations/incident` | le site signale un écart non expliqué ou une panne : l'automatisation revient en ombre | clé de dépôt `site_auto` (`INTAKE_KEYS`) |
 | GET | `/v1/automatisations/paliers` | le palier de chaque automatisation : des nombres et des dates | direction, conformité (R16, R26) |
 | POST | `/v1/automatisations/paliers/{automation}/avancer` | de l'ombre à 10 %, refusé si l'ombre n'a pas tenu | direction (R16, R26) |

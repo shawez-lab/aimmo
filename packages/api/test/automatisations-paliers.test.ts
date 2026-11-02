@@ -18,6 +18,8 @@ const START = Date.parse('2026-11-03T09:00:00.000Z');
 const LONG_AGO = new Date('2026-01-01T00:00:00.000Z');
 const EMAIL = 'lea.exemple@example.test';
 const TEXT = 'Bonjour Léa, je vous rappelle notre rendez-vous de demain à 14 h pour l’estimation de votre bien.';
+/** Le texte d'un site aligné : quand le socle décide, le premier message doit porter la mention [R06]. */
+const WITH_MENTION = `Réponse immédiate de l’assistant IA de Paul, qui vous recontacte personnellement.\n\n${TEXT}`;
 
 interface Answer {
   ok: boolean;
@@ -225,7 +227,7 @@ describeWithSqlite('B04a · paliers de la bascule des automatisations', () => {
     w.forward(7);
     expect((await w.send(await refIn(false))).body.data).toMatchObject({ stage: 'ten_percent' });
     // Un envoi tiré, lui, compte.
-    await w.send(await refIn(true));
+    await w.send(await refIn(true), { text: WITH_MENTION });
     expect(((await w.http('/paliers', KEY_DIRECTION)).body.data as unknown as { requests: number }[])[0]!.requests).toBe(1);
   });
 
@@ -285,7 +287,7 @@ describeWithSqlite('B04a · paliers de la bascule des automatisations', () => {
     // La table du mode essai manque : le contrôle tombe en panne au moment de ranger le message.
     await w.db.exec('ALTER TABLE trial_outbox RENAME TO trial_outbox_hors_service');
     const ref = await refIn(true);
-    const r = await w.send(ref);
+    const r = await w.send(ref, { text: WITH_MENTION });
     expect(r.body.data).toMatchObject({ status: 'failed', stage: 'shadow', decides: false });
     await w.db.exec('ALTER TABLE trial_outbox_hors_service RENAME TO trial_outbox');
     expect((await w.send(`${ref}-apres`)).body.data?.stage).toBe('shadow');
@@ -382,7 +384,8 @@ describeWithSqlite('B04a · paliers de la bascule des automatisations', () => {
     await w.toTenPercent();
     await w.count(ROLLOUT_MIN_DECISIONS);
     w.forward(7);
-    const r = await w.send(await refIn(true));
+    // Le site porte la mention : le socle qui décide la tient pour donnée [R06].
+    const r = await w.send(await refIn(true), { text: WITH_MENTION });
     expect(r.body).toMatchObject({ sent: false, data: { stage: 'everywhere', decides: true, status: 'would_send' } });
     expect(await w.outbox()).toBe(1);
     expect((await w.journal.all()).filter((e) => e.type === 'envoi.essai').at(-1)!.data).toMatchObject({ mode: 'essai', sent: false });
