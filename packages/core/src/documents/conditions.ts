@@ -35,8 +35,11 @@ const readFacts = (raw: string | null): DocumentFacts | null => {
   }
 };
 
-/** Les conditions en vigueur d'un mandat : celles du mandat signé, modifiées par ses avenants signés, dans l'ordre. */
-export async function mandateTerms(db: SqlDatabase, mandateId: string): Promise<MandateTerms | null> {
+/**
+ * Les conditions en vigueur d'un mandat : celles du mandat signé, modifiées par ses avenants signés, dans l'ordre.
+ * Avec `asOf`, celles de ce jour-là, à Paris : un avenant signé plus tard ne compte pas encore (D10).
+ */
+export async function mandateTerms(db: SqlDatabase, mandateId: string, asOf?: Date): Promise<MandateTerms | null> {
   const base = await db.first<{ facts: string | null }>(
     'SELECT d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL',
     [mandateId],
@@ -50,7 +53,9 @@ export async function mandateTerms(db: SqlDatabase, mandateId: string): Promise<
     [mandateId],
   );
   const amendments: MandateTerms['amendments'] = [];
+  const lastDay = asOf ? localTime(asOf, TIME_ZONE).date : null;
   for (const row of rows) {
+    if (lastDay !== null && localTime(new Date(row.signed_at), TIME_ZONE).date > lastDay) continue;
     const f = readFacts(row.facts);
     if (f?.priceEur !== null && f?.priceEur !== undefined) priceEur = f.priceEur;
     if (f?.durationMonths !== null && f?.durationMonths !== undefined) durationMonths = f.durationMonths;
@@ -62,7 +67,7 @@ export async function mandateTerms(db: SqlDatabase, mandateId: string): Promise<
 /** Le mandat est-il échu à cette date (jour de Paris), selon sa durée en vigueur ? Inconnue : échu, par prudence. */
 export async function mandateExpired(db: SqlDatabase, mandateId: string, at: Date): Promise<boolean> {
   const signed = await db.first<{ signed_at: string }>('SELECT signed_at FROM signed_documents WHERE mandate_id = ? AND copy_content IS NOT NULL', [mandateId]);
-  const terms = await mandateTerms(db, mandateId);
+  const terms = await mandateTerms(db, mandateId, at);
   if (!signed || !terms || terms.durationMonths === null) return true;
   return localTime(at, TIME_ZONE).date >= mandateEndDay(new Date(signed.signed_at), terms.durationMonths);
 }

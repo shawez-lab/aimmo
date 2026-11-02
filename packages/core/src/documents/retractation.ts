@@ -104,8 +104,8 @@ export class Diffusion {
       facts = null;
     }
     const signedAt = new Date(row.signed_at);
-    // La durée en vigueur : celle du mandat, ou du dernier avenant signé qui la change (D07).
-    const terms = await mandateTerms(this.db, row.mandate_id);
+    // La durée en vigueur à cette date : celle du mandat, ou du dernier avenant signé alors qui la change (D07, D10).
+    const terms = await mandateTerms(this.db, row.mandate_id, at);
     const duration = terms?.durationMonths ?? facts?.durationMonths ?? null;
     if (duration === null) return decision(false, 'duration_unknown');
     // La fin du mandat se compte en jours de Paris ; un 31 sans équivalent devient le dernier jour du mois [R42].
@@ -131,7 +131,10 @@ export class Diffusion {
       [networkId, propertyId],
     );
     let first: DiffusionDecision | null = null;
+    const day = localTime(at, TIME_ZONE).date;
     for (const row of rows) {
+      // Un mandat signé après cette date n'existait pas encore (D10).
+      if (localTime(new Date(row.signed_at), TIME_ZONE).date > day) continue;
       const d = await this.decideMandate(row, at);
       if (d.allowed) return d;
       first ??= d;

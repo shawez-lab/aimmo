@@ -98,8 +98,23 @@ export async function setupAnnonce(options: { card?: boolean } = {}) {
     const r = await new SignatureAvenant(db, acces, journal, { now }).register(agent, a.document.id, { signedAt: clock, place: 'agence', scanRef: `scans/avenant-${priceEur}.pdf` });
     if (!r.ok) throw new Error(r.code);
   };
+  /** Un avenant de durée, signé à `signedAt`. */
+  const amendDuration = async (months: number, signedAt: Date = clock) => {
+    const a = await modeles.generate(agent, { kind: 'avenant_mandat', personId: p.id, propertyId: b.id, mandateId: signed.value.mandateId, inputs: { 'avenant.duree_mois': months } });
+    if (!a.ok) throw new Error(a.code);
+    const r = await new SignatureAvenant(db, acces, journal, { now }).register(agent, a.document.id, { signedAt, place: 'agence', scanRef: `scans/avenant-duree-${months}.pdf` });
+    if (!r.ok) throw new Error(r.code);
+  };
+  /** Un nouveau mandat sur le même bien, signé à `signedAt`, à l'agence. */
+  const signNewMandate = async (feeEur: number, signedAt: Date = clock) => {
+    const n = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': feeEur, 'honoraires.charge': 'acquereur', 'mandat.duree_mois': 12 } });
+    if (!n.ok) throw new Error(n.code);
+    const r = await new SignaturePapier(db, acces, journal, { now }).register(agent, n.document.id, { signedAt, place: 'agence', scanRef: `scans/mandat-${feeEur}.pdf`, source: 'referral' });
+    if (!r.ok) throw new Error(r.code);
+    return r.value.mandateId;
+  };
   return {
-    db, journal, acces, annonces, publication, channels, agent, direction, alexId: alex.id, store, personId: p.id, sam: as('agent', sam.id), network, propertyId: b.id, draftId: draft.value.id, mandateId: signed.value.mandateId, amend,
+    db, journal, acces, annonces, publication, channels, agent, direction, alexId: alex.id, store, personId: p.id, sam: as('agent', sam.id), network, propertyId: b.id, draftId: draft.value.id, mandateId: signed.value.mandateId, amend, amendDuration, signNewMandate,
     now, setClock: (at: Date) => (clock = at),
     /** Les passages du planificateur, toutes les 15 minutes, de `from` à `to` inclus ; rend l'heure du premier passage qui publie. */
     async runEvery15(from: Date, to: Date): Promise<Date | null> {
