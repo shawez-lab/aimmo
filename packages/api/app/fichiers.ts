@@ -161,6 +161,7 @@ ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${STUDIO_HTML}${
 <h3 id="titre-reseau-alertes">Alertes</h3>
 <p id="reseau-alertes-etat" class="etat" role="status"></p>
 <ul id="reseau-alertes" class="liste"></ul>
+<p id="reseau-sans-agent" class="etat"></p>
 </section>
 <section class="bloc" aria-labelledby="titre-reseau-reversements">
 <h3 id="titre-reseau-reversements">Reversements à faire</h3>
@@ -1643,7 +1644,7 @@ export const APP_JS = `'use strict';
   }
   function wipeReseau() {
     ['reseau-corps', 'reseau-alertes', 'reseau-reversements', 'reseau-brouillons'].forEach(function (id) { clear($(id)); });
-    ['reseau-etat', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat'].forEach(function (id) { $(id).textContent = ''; });
+    ['reseau-etat', 'reseau-sans-agent', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat'].forEach(function (id) { $(id).textContent = ''; });
     wipeReprise();
   }
   function reseauPart(stateId, request, render, mine) {
@@ -1673,6 +1674,7 @@ export const APP_JS = `'use strict';
         renderReseau(data || {});
       }, mine),
       reseauPart('reseau-alertes-etat', send('/v1/pilotage/alertes', 'GET'), function (d) { renderAlertes(list(d)); }, mine),
+      reseauPart('reseau-sans-agent', send('/v1/alertes-agent/sans-agent', 'GET'), function (d) { $('reseau-sans-agent').textContent = d && (d.total || d.more) ? 'Conversations à reprendre sans agent : ' + (d.more ? 'au moins ' : '') + d.total + '. Attribuez leurs fiches.' : ''; }, mine),
       reseauPart('reseau-reversements-etat', send('/v1/pilotage/reversements', 'GET'), function (d) { renderReversements(list(d)); }, mine),
       reseauPart('reseau-brouillons-etat', send('/v1/pilotage/factures/brouillons', 'GET'), function (d, m) { renderBrouillons(list(d), m); }, mine),
     ]).then(function (done) { return done.every(function (x) { return x; }); });
