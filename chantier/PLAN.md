@@ -480,7 +480,7 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Critères : un jeu de 50 cas inventés couvre les 8 catégories, classés juste par les règles fixes à 90 % au moins ; une sortie de l'IA hors des champs prévus ou portant une donnée sensible est refusée et remplacée par les règles fixes [R23] ; le financement n'est rangé que s'il est déclaré dans le message, jamais évalué [R24] ; rien ne part chez l'IA au-delà du texte reçu, sans coordonnée [R15] ; une correction de l'agent est gardée et rejoint les cas de test.
 - Attend : H13 pour la vraie IA seulement.
 - Décidé (2026-10-27), lecture prudente : commune prise dans une liste fermée (réglage) et critères dans une liste fermée de mots sur le bien ; un financement n'est rangé que dit comme acquis ou en cours, jamais nié, espéré, au futur ni contradictoire [R24] ; l'IA ne lit ni coordonnée, ni nom, ni signature [R15] ; ses montants doivent être des montants du message ; le délai déclaré reste dans la qualification, la colonne `projects.deadline` étant une date qu'il faudrait inventer [R10].
-- Reste : branchement dans la chaîne et correction depuis l'API (Q05) ; remarques mineures de Codex laissées (#23) : critères niés (« sans jardin »), budget « frais inclus », contexte des montants dans le contrôle de l'IA, délai dans le projet ; relecture forte (1 P0 corrigé), Codex : 5 P0 et 2 P1 corrigés en 5 tours, dernière version sans P0 ni P1.
+- Reste : branchement dans la chaîne et correction depuis l'API (Q05) ; remarques mineures de Codex (#23), réglées par Q07 (#261) ; relecture forte (1 P0 corrigé), Codex : 5 P0 et 2 P1 corrigés en 5 tours, dernière version sans P0 ni P1.
 
 ### Q02 · Note et température
 - Statut : fait (2026-10-27)
@@ -500,7 +500,7 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Critères : aucun contact exclu ou qui a dit stop n'est attribué [R25] ; même contact, même agent, quel que soit l'ordre d'arrivée ; commune sans agent : à la direction, jamais au hasard ; réattribution dans le délai simulé, une seule fois par délai, écrite au journal [R13] ; un agent parti ne reçoit plus rien.
 - Attend : la liste des communes de chaque agent, plus tard, au recrutement ; les tests utilisent des zones inventées.
 - Décidé (2026-10-27), lecture prudente : tirage fixe (FNV-1a) sur l'identifiant de la fiche parmi les agents en activité de la commune ; un client suivi sur l'une de ses fiches réunies reste à cet agent ; partenaire à la direction, indésirable à personne ; délais de rappel en réglage, 8 heures si chaud, 24 sinon ; rappelé = un message sortant écrit par un humain du réseau depuis l'attribution.
-- Reste : remarques mineures de Codex (#25) : agent parti sur une fiche réunie lors d'une attribution, reprise des effets d'une attribution interrompue, délai qui repart à chaque nouveau message ; relecture forte (1 P1 corrigé), Codex sans P0 ni P1.
+- Reste : remarques mineures de Codex (#25), réglées par Q06 (#259) ; relecture forte (1 P1 corrigé), Codex sans P0 ni P1.
 
 ### Q04 · Tâche « rappeler » et liste des contacts chauds
 - Statut : fait (2026-10-27)
@@ -510,7 +510,7 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Critères : chaque contact chaud a sa tâche en moins d'une minute, sur une horloge simulée ; une seule tâche par contact et par projet [R18] ; la liste ne montre à un agent que ses contacts [R16] ; aucun contact exclu n'y figure [R25] ; aucune notification n'est envoyée (l'application viendra en janvier).
 - Attend : rien.
 - Décidé (2026-10-27) : la clé d'une tâche est son projet (une seule tâche par projet, fusion comprise) ; « matin » avant 14 h, heure de Paris, « soir » ensuite ; la liste passe par `Acces.listPersons` [R16].
-- Reste : remarque mineure de Codex (#26) : tâches portées par une fiche réunie à une fiche visible ; relecture forte (1 P1 corrigé), Codex sans P0 ni P1.
+- Reste : remarque mineure de Codex (#26), réglée par Q06 (#259) ; relecture forte (1 P1 corrigé), Codex sans P0 ni P1.
 
 ### Q05 · Qualification dans la chaîne de captation, et mesure sur cas réels
 - Statut : fait (2026-10-27)
@@ -524,7 +524,8 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Reste : mesure réelle (H13, H18) ; au branchement réel (C09), qualifier par `ctx.waitUntil` du Worker pour que la réponse HTTP n'attende pas une vraie IA ; relecture forte (2 P1 corrigés), relecture de Codex restée en cours plus de 30 min, fusion sans elle (#27).
 
 ### Q06 · Attribution : délai tenu, reprise sans trou, fiches réunies
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02), lecture prudente : le plus court des délais ouverts chez l'agent depuis le dernier rappel humain fait foi, et passe à l'agent suivant ; un agent qui a déjà eu le contact ne le reçoit plus, même à un nouveau message après la direction ; une coupure entre le lot et le journal perd la ligne du journal, pas la fiche. Relecture forte : 1 P0 et 3 P1 corrigés ; Codex à sa limite, fusion sans lui (#259).
 - Voie : 1
 - Qui : Claude · Relecture : forte · Dépend de : Q03, Q04
 - Cahier : M03, points 4 et 6 ; R16, R25.
@@ -533,7 +534,8 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Attend : rien.
 
 ### Q07 · Critères niés et montants qui n'en sont pas
-- Statut : à faire
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02), lecture prudente : portée stricte de la négation (seuls déterminants, « besoin de », adjectif de taille et critères reliés séparent la négation du mot) ; « sans cave et garage » nie les deux ; seul le nom d'un budget ou d'un prix change de sujet après un apport ou des frais. Reste : un critère rangé d'un message d'avant n'est pas retiré si la personne le nie ensuite ; le délai déclaré reste dans la qualification (décidé en Q01). Relecture forte : 3 P1 corrigés et un faux budget de main (T3 collé au montant) ; Codex à sa limite, fusion sans lui (#261).
 - Voie : 1
 - Qui : Claude · Relecture : forte · Dépend de : Q01
 - Cahier : M03, « Règles » ; R10, R23.
