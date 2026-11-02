@@ -16,6 +16,9 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { matchKey, normalizeIdentifier } from './normalize.ts';
 
+/** Un identifiant au format UUID, tiré dans la base : le journal le reconnaît et ne le prend jamais pour un numéro [R13]. */
+const SQL_UUID = `lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-' || hex(randomblob(2)) || '-' || hex(randomblob(2)) || '-' || hex(randomblob(6)))`;
+
 export interface FicheComplete {
   /** La fiche gardée. */
   person: Person;
@@ -240,8 +243,10 @@ export class FicheUnique {
   /**
    * Défait une fusion : les deux fiches redeviennent séparées, avec chacune son historique.
    * Un accord créé pendant la fusion est fermé, jamais effacé [R03, R17] : on ne sait plus laquelle des deux personnes
-   * l'a donné. Fusion et accords changent dans un seul lot. Rappeler une fusion déjà défaite écrit la ligne du journal
-   * si une coupure l'avait empêchée, sans rien fermer de plus.
+   * l'a donné. Une exclusion ou un arrêt noté alors que deux fiches étaient réunies est recopié de l'une à l'autre
+   * [R02, R04] : pour la même raison, il vaut pour les deux, avec sa date et sa levée s'il en a une, pour qu'un accord plus
+   * ancien ne compte pas de nouveau. Une exclusion d'avant leur réunion ne bouge pas. Fusion, accords et exclusions changent dans un seul lot.
+   * Rappeler une fusion déjà défaite écrit la ligne du journal si une coupure l'avait empêchée, sans rien changer de plus.
    */
   async undoMerge(mergeId: string, trace: UndoMergeTrace): Promise<string> {
     const merge = await this.db.first<PersonMerge>('SELECT * FROM person_merges WHERE id = ?', [mergeId]);
@@ -259,6 +264,20 @@ export class FicheUnique {
                   AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)`,
           params: [at, ...ids, merge.merged_at, mergeId, at],
         },
+        // En SQL : un arrêt rangé pendant ce geste n'échappe pas à la copie. Les colonnes de la ligne servent de clé :
+        // l'original et ses copies ne font qu'un, et rien n'est doublé. La copie garde la date de création de l'original,
+        // pour qu'une fusion défaite plus tard la lise comme lui.
+        ...(await this.exclusionPairs(merge, ids)).map(({ source, target, since }) => ({
+          sql: `INSERT INTO exclusions (id, network_id, agent_id, person_id, reason, channel, noted_at, lifted_at, created_at, undone_merge_id)
+                SELECT ${SQL_UUID}, e.network_id, MIN(e.agent_id), ?, e.reason, e.channel, e.noted_at, e.lifted_at, MIN(e.created_at), ?
+                FROM exclusions e
+                WHERE e.person_id = ? AND e.created_at >= ?
+                  AND NOT EXISTS (SELECT 1 FROM exclusions t WHERE t.person_id = ? AND t.reason = e.reason AND t.channel IS e.channel
+                                    AND t.noted_at = e.noted_at AND t.lifted_at IS e.lifted_at)
+                  AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)
+                GROUP BY e.network_id, e.reason, e.channel, e.noted_at, e.lifted_at`,
+          params: [target, mergeId, source, since, target, mergeId, at],
+        })),
       ]);
       if (undo?.changes === 1) undoneAt = at;
       else {
@@ -275,13 +294,60 @@ export class FicheUnique {
         `SELECT id FROM consents WHERE person_id IN (${placeholders(ids.length)}) AND created_at >= ? AND withdrawn_at = ? ORDER BY id`,
         [...ids, merge.merged_at, undoneAt],
       );
+      const copied = await this.db.all<{ id: string }>(
+        'SELECT id FROM exclusions WHERE undone_merge_id = ? ORDER BY id',
+        [mergeId],
+      );
       await appendEvent(
         trace.journal,
-        { type: 'fiche.fusion_defaite', actor: trace.actor, subject, data: { rule: 'R03', merge: mergeId, consents: closed.map((c) => c.id) } },
+        {
+          type: 'fiche.fusion_defaite',
+          actor: trace.actor,
+          subject,
+          data: { rule: 'R03', merge: mergeId, consents: closed.map((c) => c.id), exclusions: copied.map((c) => c.id) },
+        },
         this.now,
       );
     }
     return undoneAt;
+  }
+
+  /**
+   * Les couples de fiches que la fusion défaite sépare, chacun avec la date où ils ont été réunis : la plus récente des
+   * fusions qui les relient. Une exclusion plus ancienne que cette date n'a jamais valu pour l'autre fiche et ne la suit pas.
+   */
+  private async exclusionPairs(merge: PersonMerge, ids: string[]): Promise<{ source: string; target: string; since: string }[]> {
+    const edges = await this.db.all<{ survivor_id: string; merged_id: string; merged_at: string }>(
+      `SELECT survivor_id, merged_id, merged_at FROM person_merges WHERE undone_at IS NULL AND merged_id IN (${placeholders(ids.length)})`,
+      ids,
+    );
+    const parent = new Map(edges.map((e) => [e.merged_id, e]));
+    // Du haut de la fiche vers elle-même : chaque ancêtre, avec la date la plus récente du chemin jusqu'à la fiche.
+    const climb = (id: string): Map<string, string> => {
+      const seen = new Map([[id, '']]);
+      let latest = '';
+      for (let edge = parent.get(id); edge && !seen.has(edge.survivor_id); edge = parent.get(edge.survivor_id)) {
+        if (edge.merged_at > latest) latest = edge.merged_at;
+        seen.set(edge.survivor_id, latest);
+      }
+      return seen;
+    };
+    const paths = new Map(ids.map((id) => [id, climb(id)]));
+    const cut = ids.filter((id) => paths.get(id)?.has(merge.merged_id));
+    const kept = ids.filter((id) => !cut.includes(id));
+    const pairs: { source: string; target: string; since: string }[] = [];
+    for (const a of kept) {
+      for (const b of cut) {
+        const up = paths.get(a) as Map<string, string>;
+        // Le premier ancêtre commun en montant depuis la fiche séparée : c'est là que les deux chemins se rejoignent.
+        const meet = [...(paths.get(b) as Map<string, string>).entries()].find(([id]) => up.has(id));
+        if (!meet) continue;
+        const left = up.get(meet[0]) as string;
+        const since = left > meet[1] ? left : meet[1];
+        pairs.push({ source: a, target: b, since }, { source: b, target: a, since });
+      }
+    }
+    return pairs;
   }
 
   /**

@@ -411,6 +411,172 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
       expect(lines[0]!.data).not.toContain(after.value.consentId);
     });
 
+    describe('AC08 : une exclusion notée pendant une fusion, puis la fusion défaite', () => {
+      const unfold = async (t: Awaited<ReturnType<typeof setup>>, reason: 'stop' | 'refused', on: 'kept' | 'merged') => {
+        const b = await doublon(t);
+        const opened = await t.store.addConsent({ networkId: t.network.id, personId: b, purpose: 'suivi_vente', channel: 'email', proof: 'preuve inventée', givenAt: older(t, 3) });
+        const noted = await t.accords.record(t.alex, t.person.id, t.input());
+        if (!noted.ok) throw new Error(noted.code);
+        t.advance(60_000);
+        const merge = await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+        t.advance(60_000);
+        const exclusion = await t.store.addExclusion({ networkId: t.network.id, personId: on === 'kept' ? t.person.id : b, reason, notedAt: new Date(t.nowMs()) });
+        t.advance(60_000);
+        return { b, merge, opened, exclusion };
+      };
+      const count = async (t: Awaited<ReturnType<typeof setup>>) => (await t.db.first<{ n: number }>('SELECT count(*) AS n FROM exclusions'))?.n;
+
+      for (const [reason, rule] of [['stop', 'R04'], ['refused', 'R02']] as const) {
+        for (const on of ['kept', 'merged'] as const) {
+          it(`[${rule}] [R17] noté sur la fiche ${on === 'kept' ? 'gardée' : 'fusionnée'} : plus aucun envoi sur aucune des deux fiches`, async () => {
+            const t = await setup();
+            const { b, merge, exclusion } = await unfold(t, reason, on);
+            expect((await t.canSend()).allowed).toBe(false);
+
+            await t.fiche.undoMerge(merge.id, trace(t));
+
+            t.advance(60_000);
+            for (const id of [t.person.id, b]) {
+              const decision = await t.canSend(id);
+              expect(decision.allowed).toBe(false);
+              expect(decision.rule).toBe(reason === 'stop' ? 'R04' : 'R02');
+              const [line] = await t.store.listExclusions(id);
+              expect(line?.reason).toBe(reason);
+              expect(line?.noted_at).toBe(exclusion.noted_at);
+              expect(line?.lifted_at).toBeNull();
+            }
+            expect(await count(t)).toBe(2);
+          });
+        }
+      }
+
+      it('[R02] une exclusion sur un seul canal le reste sur la copie', async () => {
+        const t = await setup();
+        const b = await doublon(t);
+        const merge = await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+        t.advance(60_000);
+        await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'refused', channel: 'sms', notedAt: new Date(t.nowMs()) });
+        await t.fiche.undoMerge(merge.id, trace(t));
+        expect((await t.store.listExclusions(b)).map((e) => e.channel)).toEqual(['sms']);
+      });
+
+      it('[R02] [R04] une exclusion d’avant la fusion ne bouge pas', async () => {
+        const t = await setup();
+        const b = await doublon(t);
+        const before = await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(t.nowMs()) });
+        t.advance(60_000);
+        const merge = await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+        t.advance(60_000);
+        await t.fiche.undoMerge(merge.id, trace(t));
+        expect((await t.store.listExclusions(t.person.id)).map((e) => e.id)).toEqual([before.id]);
+        expect(await t.store.listExclusions(b)).toEqual([]);
+      });
+
+      it('[R02] [R202] levée pendant la fusion : un accord plus ancien ne compte de nouveau sur aucune des deux fiches', async () => {
+        const t = await setup();
+        const { b, merge, exclusion } = await unfold(t, 'refused', 'kept');
+        const liftedAt = await t.store.liftExclusion(exclusion.id, new Date(t.nowMs()));
+        t.advance(60_000);
+        await t.fiche.undoMerge(merge.id, trace(t));
+        t.advance(60_000);
+        expect((await t.canSend(b)).rule).toBe('R03');
+        expect((await t.canSend()).rule).toBe('R03');
+        expect((await t.store.listExclusions(b)).map((e) => e.lifted_at)).toEqual([liftedAt]);
+      });
+
+      it('[R17] défaire deux fois ne double rien ; une coupure ne perd pas la ligne du journal, qui ne dit ni motif ni preuve', async () => {
+        const t = await setup();
+        const { b, merge } = await unfold(t, 'stop', 'kept');
+        const cut = new SqlJournalStore(t.db);
+        cut.append = async () => { throw new Error('coupure'); };
+        await expect(t.fiche.undoMerge(merge.id, { journal: cut, actor: 'direction:dir-1' })).rejects.toThrow('coupure');
+        expect(await count(t)).toBe(2);
+
+        t.advance(60_000);
+        await t.fiche.undoMerge(merge.id, trace(t));
+        await t.fiche.undoMerge(merge.id, trace(t));
+        expect(await count(t)).toBe(2);
+        const [copy] = await t.store.listExclusions(b);
+        const lines = (await t.events()).filter((e) => e.type === 'fiche.fusion_defaite');
+        expect(lines).toHaveLength(1);
+        expect(lines[0]!.data).toContain(copy!.id);
+        expect(lines[0]!.data).not.toContain('stop');
+      });
+
+      it('[R04] fusions imbriquées : la copie suit chaque fiche, et défaire ensuite l’autre fusion ne double rien', async () => {
+        const t = await setup();
+        const b = await doublon(t);
+        const c = await doublon(t);
+        const inner = await t.fiche.merge({ survivorId: b, mergedId: c, reason: 'identifiant commun' });
+        t.advance(60_000);
+        const outer = await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+        t.advance(60_000);
+        await t.store.addExclusion({ networkId: t.network.id, personId: c, reason: 'stop', notedAt: new Date(t.nowMs()) });
+        t.advance(60_000);
+        await t.fiche.undoMerge(outer.id, trace(t));
+        t.advance(60_000);
+        await t.fiche.undoMerge(inner.id, trace(t));
+        for (const id of [t.person.id, b, c]) expect((await t.store.listExclusions(id)).map((e) => e.reason)).toEqual(['stop']);
+      });
+
+      it('[R04] défaire la première fusion : un arrêt noté avant que la fiche rattachée ensuite arrive ne la suit pas', async () => {
+        const t = await setup();
+        const b = await doublon(t);
+        const c = await doublon(t);
+        const first = await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+        t.advance(60_000);
+        await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(t.nowMs()) });
+        t.advance(60_000);
+        const later = await t.fiche.merge({ survivorId: t.person.id, mergedId: c, reason: 'identifiant commun' });
+        t.advance(60_000);
+        await t.fiche.undoMerge(first.id, trace(t));
+        t.advance(60_000);
+        await t.fiche.undoMerge(later.id, trace(t));
+        expect((await t.store.listExclusions(b)).map((e) => e.reason)).toEqual(['stop']);
+        expect(await t.store.listExclusions(c)).toEqual([]);
+      });
+
+      it('[R04] une fiche déjà réunie à la sienne quand l’arrêt est noté le reçoit, une fiche arrivée après non, même par une copie', async () => {
+        const t = await setup();
+        const c = await doublon(t);
+        const e = await doublon(t);
+        const inner = await t.fiche.merge({ survivorId: t.person.id, mergedId: c, reason: 'identifiant commun' });
+        t.advance(60_000);
+        await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(t.nowMs()) });
+        t.advance(60_000);
+        const later = await t.fiche.merge({ survivorId: c, mergedId: e, reason: 'identifiant commun' });
+        t.advance(60_000);
+        await t.fiche.undoMerge(inner.id, trace(t));
+        t.advance(60_000);
+        await t.fiche.undoMerge(later.id, trace(t));
+        expect((await t.store.listExclusions(c)).map((x) => x.reason)).toEqual(['stop']);
+        expect(await t.store.listExclusions(e)).toEqual([]);
+      });
+
+      it('[R13] la copie porte un identifiant au format UUID, que le journal accepte toujours, et le lien vers sa fusion', async () => {
+        const t = await setup();
+        const { b, merge } = await unfold(t, 'stop', 'kept');
+        await t.fiche.undoMerge(merge.id, trace(t));
+        const [copy] = await t.store.listExclusions(b);
+        expect(copy?.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+        expect(copy?.undone_merge_id).toBe(merge.id);
+      });
+
+      it('[R04] défaire une seule des deux fusions imbriquées laisse hors du lot ce qui est noté avant elle', async () => {
+        const t = await setup();
+        const b = await doublon(t);
+        const c = await doublon(t);
+        await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
+        t.advance(60_000);
+        await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(t.nowMs()) });
+        t.advance(60_000);
+        const inner = await t.fiche.merge({ survivorId: b, mergedId: c, reason: 'identifiant commun' });
+        t.advance(60_000);
+        await t.fiche.undoMerge(inner.id, trace(t));
+        expect(await t.store.listExclusions(c)).toEqual([]);
+      });
+    });
+
     it('[R03] un accord noté pendant une fusion imbriquée est fermé quand la fusion intérieure est défaite', async () => {
       const t = await setup();
       const b = await doublon(t);
