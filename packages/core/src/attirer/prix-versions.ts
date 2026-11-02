@@ -209,6 +209,22 @@ export class PrixRegroupes {
     return { ok: true, id: zone.id };
   }
 
+  /** Les communes et les quartiers en service, pour la direction, sans leur contour : rangés par nom [R16]. */
+  async zones(viewer: Viewer): Promise<{ ok: true; value: { id: string; level: ZoneLevel; parentId: string | null; name: string }[] } | { ok: false; rule: 'R16'; code: 'role' }> {
+    if (viewer.role !== 'direction') {
+      await appendEvent(
+        this.journal,
+        { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'price_zones', code: 'role' } },
+        this.now,
+      );
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
+    const rows = await this.activeZones(viewer.networkId);
+    const value = rows.map((z) => ({ id: z.id, level: z.level, parentId: z.parent_id, name: z.name }));
+    value.sort((a, b) => a.name.localeCompare(b.name, 'fr') || a.id.localeCompare(b.id));
+    return { ok: true, value };
+  }
+
   /** Les zones en service : ni retirées, ni quartiers d'une commune retirée. */
   private async activeZones(networkId: string): Promise<ZoneRow[]> {
     return this.db.all<ZoneRow>(

@@ -38,6 +38,12 @@ const BASE: Record<string, Answer> = {
     { siteId: 's2', kind: 'agent', agentId: 'ag-1', baseUrl: 'https://camille.exemple.test' },
   ]),
   [`GET /v1/attirer/origine/${MONTH}`]: ok(MEASURE),
+  'GET /v1/attirer/prix/zones': ok([
+    { id: 'zc', level: 'commune', parentId: null, name: 'Ville Test' },
+    { id: 'z1', level: 'quartier', parentId: 'zc', name: 'Ouest' },
+  ]),
+  'POST /v1/attirer/prix/zones': ok({ id: 'z9' }),
+  'POST /v1/attirer/prix/zones/z1/retrait': ok({ id: 'z1' }),
   'GET /v1/attirer/quartiers': ok([{ zoneId: 'z1', name: 'Ouest', communeName: 'Ville Test' }]),
   'GET /v1/attirer/quartiers/z1/faits': ok([{ key: 'tram', kind: 'transport', label: 'Arrêts de tram', value: 2, unit: 'nombre', source: 'Carte inventée', sourceDate: '2026-01-15' }]),
   'GET /v1/attirer/quartiers/z1/textes': ok([
@@ -112,8 +118,8 @@ async function run(answers: Record<string, Answer> = {}) {
     b.listeners.click!({});
     await settle();
   };
-  const input = (label: string) => {
-    const l = body().all().find((e) => e.tagName === 'label' && e.textContent === label);
+  const input = (label: string, nth = 0) => {
+    const l = body().all().filter((e) => e.tagName === 'label' && e.textContent === label)[nth];
     if (!l) throw new Error(`libellé absent : ${label}`);
     return body().all().find((e) => e.attributes.id === l.attributes.for)!;
   };
@@ -365,9 +371,120 @@ describe('AT12 · écran « Attirer » de la direction', () => {
   });
 
   it('pas de réseau : c’est dit, rien n’est inventé', async () => {
-    const t = await run({ 'GET /v1/attirer/prix/versions': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/sites': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/quartiers': async () => Promise.reject(new TypeError('x')), [`GET /v1/attirer/origine/${MONTH}`]: async () => Promise.reject(new TypeError('x')) });
+    const t = await run({ 'GET /v1/attirer/prix/versions': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/sites': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/quartiers': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/prix/zones': async () => Promise.reject(new TypeError('x')), [`GET /v1/attirer/origine/${MONTH}`]: async () => Promise.reject(new TypeError('x')) });
     await t.ouvrir();
     expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+  });
+
+  describe('AT15 · communes et quartiers', () => {
+    const SQUARE = '47.0, 5.0\n47.0; 5.1\n47.1 5.1\n47.1,5.0';
+    const POINTS = [[47, 5], [47, 5.1], [47.1, 5.1], [47.1, 5]];
+    const remplir = (t: Awaited<ReturnType<typeof run>>, ring: string) => {
+      t.input('Nom de la commune').value = 'Saint-Étienne d’Essai';
+      t.input('Code INSEE').value = ' 99001 ';
+      t.input('Contour : GeoJSON, ou une ligne « latitude, longitude » par point').value = ring;
+      t.input('Source du contour').value = 'Contours inventés';
+    };
+
+    it('[R16] chaque appel existe sous la direction, sans identifiant à saisir, et le contour n’est jamais relu', async () => {
+      const t = await run();
+      const before = t.calls.length;
+      await t.ouvrir();
+      expect(t.texts()).not.toContain('zc');
+      remplir(t, SQUARE);
+      await t.click(t.buttons('Ajouter')[0]);
+      const routes = attirerRoutes();
+      for (const c of t.calls.slice(before)) {
+        const route = routes.find((r) => r.method === c.method && r.pattern.test(c.url.slice('/v1'.length)));
+        expect(route, c.url).toBeDefined();
+        expect(route!.roles).toEqual(['direction']);
+      }
+    });
+
+    it('[R150] une commune : slug tiré du nom, lignes lues en latitude puis longitude', async () => {
+      const t = await run();
+      await t.ouvrir();
+      remplir(t, SQUARE);
+      await t.click(t.buttons('Ajouter')[0]);
+      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ level: 'commune', slug: 'saint-etienne-d-essai', name: 'Saint-Étienne d’Essai', ring: POINTS, ringSource: 'Contours inventés', inseeCode: '99001' });
+      expect(t.state()).toBe('Commune ajoutée. Les prix suivront au prochain calcul.');
+    });
+
+    it('[R150] le GeoJSON est retourné en latitude puis longitude, et son dernier point répété retiré', async () => {
+      const polygon = { type: 'Polygon', coordinates: [[[5, 47], [5.1, 47], [5.1, 47.1], [5, 47.1], [5, 47]]] };
+      for (const pasted of [polygon, { type: 'Feature', properties: {}, geometry: polygon }]) {
+        const t = await run();
+        await t.ouvrir();
+        remplir(t, JSON.stringify(pasted));
+        await t.click(t.buttons('Ajouter')[0]);
+        expect(JSON.parse(t.posts()[0]!.body!).ring).toEqual(POINTS);
+      }
+    });
+
+    it('[R150] un contour illisible, ou en plusieurs morceaux, est refusé sans envoi', async () => {
+      const multi = JSON.stringify({ type: 'MultiPolygon', coordinates: [[[[5, 47], [5.1, 47], [5.1, 47.1]]]] });
+      const holed = JSON.stringify({ type: 'Polygon', coordinates: [[[5, 47], [5.1, 47], [5.1, 47.1]], [[5.01, 47.01], [5.02, 47.01], [5.02, 47.02]]] });
+      for (const bad of ['', 'pas un contour', '47.0, 5.0\n47.1, 5.1', '{ pas du json', multi, holed, '47, 5\n47, x\n48, 6']) {
+        const t = await run();
+        await t.ouvrir();
+        remplir(t, bad);
+        await t.click(t.buttons('Ajouter')[0]);
+        expect(t.posts(), bad).toHaveLength(0);
+        expect(t.state()).toContain('Ce contour n’est pas lisible');
+      }
+    });
+
+    it('un quartier se rattache à une commune choisie dans la liste, et n’envoie pas de code INSEE', async () => {
+      const t = await run();
+      await t.ouvrir();
+      t.input('Nom du quartier').value = 'Nord';
+      t.input('Contour : GeoJSON, ou une ligne « latitude, longitude » par point', 1).value = SQUARE;
+      t.input('Source du contour', 1).value = 'Contours inventés';
+      await t.click(t.buttons('Ajouter')[1]);
+      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ level: 'quartier', slug: 'nord', name: 'Nord', ring: POINTS, ringSource: 'Contours inventés', parentId: 'zc' });
+      expect(t.state()).toBe('Quartier ajouté. Les prix suivront au prochain calcul.');
+    });
+
+    it('[R150] sans commune, seul l’ajout d’une commune est proposé, et l’écran dit ce qui manque', async () => {
+      const t = await run({ 'GET /v1/attirer/prix/zones': ok([]) });
+      await t.ouvrir();
+      expect(t.texts()).toContain('Aucune commune : aucun prix ne peut être calculé.');
+      expect(t.buttons('Ajouter')).toHaveLength(1);
+    });
+
+    it('[R150] un refus du serveur est dit en français, et la saisie reste', async () => {
+      const t = await run({ 'POST /v1/attirer/prix/zones': no(409, { ok: false, rule: 'R150', code: 'chevauchement' }) });
+      await t.ouvrir();
+      remplir(t, SQUARE);
+      await t.click(t.buttons('Ajouter')[0]);
+      expect(t.state()).toBe('Ce contour recouvre une zone déjà en service : les mêmes ventes compteraient deux fois.');
+      expect(t.input('Source du contour').value).toBe('Contours inventés');
+    });
+
+    it('retirer une zone se confirme, et un double appui ne coupe rien', async () => {
+      const t = await run();
+      await t.ouvrir();
+      const b = t.buttons('Retirer')[1]!;
+      await t.click(b);
+      await t.click(b);
+      expect(t.posts()).toHaveLength(0);
+      expect(t.state()).toBe('Ce quartier sortira des prochains calculs, et sa page ne sera plus servie. Appuyez de nouveau pour confirmer.');
+      later(2000);
+      await t.click(b);
+      expect(t.posts().map((c) => c.url)).toEqual(['/v1/attirer/prix/zones/z1/retrait']);
+      expect(t.state()).toBe('Ouest est retiré des prochains calculs.');
+    });
+
+    it('un double appui sur Ajouter n’envoie qu’une zone', async () => {
+      const t = await run();
+      await t.ouvrir();
+      remplir(t, SQUARE);
+      const b = t.buttons('Ajouter')[0]!;
+      b.listeners.click!({});
+      b.listeners.click!({});
+      await settle();
+      expect(t.posts()).toHaveLength(1);
+    });
   });
 
   describe('AT13 · pages de quartier', () => {

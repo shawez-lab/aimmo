@@ -5,7 +5,7 @@ import type { FACT_KINDS, FACT_UNITS, NeighbourhoodProblem } from '../../core/sr
  * sa section de page, son chargeur, et son script servi à part (`/app/attirer.js`), chargé à la première ouverture pour
  * tenir le budget de l'application [R201].
  *
- * Quatre parties : la part des contacts dont l'origine est connue, mois par mois (AT05), les versions des prix publics
+ * Cinq parties : les communes et quartiers qui portent les prix (AT15), la part des contacts dont l'origine est connue, mois par mois (AT05), les versions des prix publics
  * et leur recalcul (AT01), les pages de quartier, du fait sourcé au texte validé (AT07, AT13), les sites en service et
  * leur plan (AT04). L'écran ne lit et n'écrit que par `/v1/attirer`
  * [R16] ; il ne calcule ni ne trie aucun chiffre, il montre ceux du serveur dans l'ordre reçu. Tout texte reçu est posé
@@ -19,6 +19,15 @@ const REFUSALS: Record<string, string> = {
   bad_url: 'Saisissez l’adresse complète du site, sans chemin, par exemple https://www.exemple.fr.',
   url_taken: 'Cette adresse sert déjà un autre site : une seule page de référence par bien.',
   bad_month: 'Choisissez un mois dans la liste.',
+  slug: 'Ce nom ne donne pas d’adresse de page : saisissez-le en lettres latines.',
+  nom: 'Saisissez le nom, 120 caractères au plus.',
+  source: 'Saisissez la source du contour.',
+  contour: 'Ce contour n’est pas lisible : il faut de 3 points au nombre admis, chacun avec sa latitude et sa longitude.',
+  insee: 'Le code INSEE a 5 caractères, par exemple 21231.',
+  parent: 'Choisissez une commune en service.',
+  slug_pris: 'Ce nom est déjà pris dans la liste.',
+  chevauchement: 'Ce contour recouvre une zone déjà en service : les mêmes ventes compteraient deux fois.',
+  zone: 'Introuvable : la liste a changé.',
   zone_inconnue: 'Ce quartier n’est plus en service : la liste a changé.',
   inconnu: 'Introuvable : la liste a changé.',
   invalide: 'Vérifiez les champs : un titre de 2 à 160 caractères ; un libellé et une source sans adresse, nom de client ni chiffre caché ; une date qui n’est pas dans le futur.',
@@ -193,13 +202,14 @@ globalThis.AIMMO_ATTIRER = function (t) {
     chosenMonth = month;
     show('attirer');
     state('Chargement…');
-    return Promise.all([send('/v1/attirer/prix/versions', 'GET'), send('/v1/attirer/sites', 'GET'), send('/v1/attirer/origine/' + month, 'GET'), send('/v1/attirer/quartiers', 'GET')]).then(function (all) {
+    return Promise.all([send('/v1/attirer/prix/versions', 'GET'), send('/v1/attirer/sites', 'GET'), send('/v1/attirer/origine/' + month, 'GET'), send('/v1/attirer/quartiers', 'GET'), send('/v1/attirer/prix/zones', 'GET')]).then(function (all) {
       if (mine !== t.session() || all.some(function (r) { return r.gone; })) return false;
       if (all.every(function (r) { return r.offline; })) { state('Pas de réseau. Réessayez dans un moment.'); return false; }
       var body = $('attirer-corps');
       body.appendChild(renderOrigin(all[2], month));
       body.appendChild(renderPrices(all[0]));
       body.appendChild(renderQuarters(all[3]));
+      body.appendChild(renderZones(all[4]));
       body.appendChild(renderSites(all[1]));
       state(message || '');
       return true;
@@ -262,6 +272,101 @@ globalThis.AIMMO_ATTIRER = function (t) {
     });
     box.appendChild(ul);
     box.appendChild(button('Recalculer les prix', recompute));
+    return box;
+  }
+
+  /*
+   * AT15 · un contour collé : du GeoJSON (longitude puis latitude, retournées ici), ou une ligne « latitude, longitude »
+   * par point. Un contour en plusieurs morceaux est refusé : en garder un seul changerait les ventes comptées sans le dire.
+   */
+  function ringOf(text) {
+    var raw = text.trim();
+    var points = null;
+    if (raw.charAt(0) === '{' || raw.charAt(0) === '[') {
+      var g;
+      try { g = JSON.parse(raw); } catch (e) { return null; }
+      if (g && g.type === 'Feature') g = g.geometry;
+      if (!g || g.type !== 'Polygon' || !Array.isArray(g.coordinates) || g.coordinates.length !== 1 || !Array.isArray(g.coordinates[0])) return null;
+      points = [];
+      for (var i = 0; i < g.coordinates[0].length; i++) {
+        var c = g.coordinates[0][i];
+        if (!Array.isArray(c) || c.length < 2) return null;
+        points.push([c[1], c[0]]);
+      }
+    } else {
+      points = raw.split('\\n').filter(function (l) { return l.trim() !== ''; }).map(function (l) {
+        var p = l.split(/[,;\\s]+/).filter(function (x) { return x !== ''; });
+        return p.length === 2 ? [Number(p[0]), Number(p[1])] : [NaN, NaN];
+      });
+    }
+    if (points.some(function (p) { return typeof p[0] !== 'number' || typeof p[1] !== 'number' || !isFinite(p[0]) || !isFinite(p[1]); })) return null;
+    /* Un contour fermé répète son premier point : le métier le ferme lui-même. */
+    if (points.length > 1 && points[0][0] === points[points.length - 1][0] && points[0][1] === points[points.length - 1][1]) points.pop();
+    return points.length >= 3 ? points : null;
+  }
+  function saveZone(input, okText) {
+    return once(function () {
+      state('Envoi…');
+      return send('/v1/attirer/prix/zones', 'POST', input).then(function (x) {
+        if (x.gone) return false;
+        if (!x.ok) { state(refusal(x, 'La zone n’est pas enregistrée. Un contour très long doit être simplifié.')); return false; }
+        return open(okText);
+      });
+    });
+  }
+  function zoneForm(box, id, title, isCommune, communes) {
+    var form = details(box, title);
+    var parent = isCommune ? null : (function () {
+      var options = {};
+      communes.forEach(function (c) { options[c.id] = c.name; });
+      return select(form, id + '-commune', 'Commune', options, communes[0].id);
+    })();
+    var name = field(form, id + '-nom', isCommune ? 'Nom de la commune' : 'Nom du quartier');
+    var insee = isCommune ? field(form, id + '-insee', 'Code INSEE') : null;
+    var ring = field(form, id + '-contour', 'Contour : GeoJSON, ou une ligne « latitude, longitude » par point', 'textarea');
+    var source = field(form, id + '-source', 'Source du contour');
+    form.appendChild(button('Ajouter', function () {
+      var slug = factKey(name.value);
+      if (!slug) { state('Saisissez le nom, avec au moins une lettre latine ou un chiffre.'); return; }
+      var points = ringOf(ring.value);
+      if (!points) { state('Ce contour n’est pas lisible : un seul morceau, en GeoJSON ou une ligne « latitude, longitude » par point, 3 points au moins.'); return; }
+      var input = { level: isCommune ? 'commune' : 'quartier', slug: slug, name: name.value, ring: points, ringSource: source.value };
+      if (isCommune) input.inseeCode = insee.value.trim(); else input.parentId = parent.value;
+      saveZone(input, (isCommune ? 'Commune' : 'Quartier') + ' ajouté' + (isCommune ? 'e' : '') + '. Les prix suivront au prochain calcul.');
+    }));
+  }
+  function zoneLine(z, warning) {
+    var li = el('li');
+    li.appendChild(el('strong', z.name));
+    li.appendChild(confirmed('Retirer', warning, function () {
+      once(function () {
+        state('Envoi…');
+        return send('/v1/attirer/prix/zones/' + encodeURIComponent(z.id) + '/retrait', 'POST').then(function (x) {
+          if (x.gone) return false;
+          if (!x.ok) { state(refusal(x, 'La zone reste en service.')); return false; }
+          return open(z.name + ' est retiré des prochains calculs.');
+        });
+      });
+    }));
+    return li;
+  }
+  function renderZones(res) {
+    var box = part('Communes et quartiers des prix');
+    var items = list(res);
+    if (!items) return missing(box, res);
+    var communes = items.filter(function (z) { return z.level === 'commune'; });
+    if (!communes.length) box.appendChild(el('p', 'Aucune commune : aucun prix ne peut être calculé.', 'doux'));
+    var ul = el('ul', null, 'liste');
+    communes.forEach(function (c) {
+      var li = zoneLine(c, 'La commune et ses quartiers sortiront des prochains calculs, et leurs pages de quartier ne seront plus servies. Appuyez de nouveau pour confirmer.');
+      var inner = el('ul', null, 'liste');
+      items.forEach(function (q) { if (q.parentId === c.id) inner.appendChild(zoneLine(q, 'Ce quartier sortira des prochains calculs, et sa page ne sera plus servie. Appuyez de nouveau pour confirmer.')); });
+      li.appendChild(inner);
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    zoneForm(box, 'attirer-zc', 'Ajouter une commune', true, communes);
+    if (communes.length) zoneForm(box, 'attirer-zq', 'Ajouter un quartier', false, communes);
     return box;
   }
 

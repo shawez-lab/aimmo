@@ -262,6 +262,27 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect((await t.call(direction, 'GET', `/attirer/quartiers/${ouest.zoneId}/faits`)).body.data).toEqual([]);
   });
 
+  it('[R16] AT15 : les zones du réseau, sans contour, à la direction de ce réseau seule ; une zone retirée n’y est plus', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    const res = await t.call(direction, 'GET', '/attirer/prix/zones');
+    expect(res.status).toBe(200);
+    const items = res.body.data as { id: string; level: string; parentId: string | null; name: string; ring_json?: unknown }[];
+    expect(items.filter((z) => z.level === 'quartier').map((z) => z.name)).toEqual(['est', 'ouest']);
+    expect(items.filter((z) => z.level === 'commune')).toHaveLength(1);
+    expect(JSON.stringify(items)).not.toContain('47.0');
+    expect((await t.call(camille, 'GET', '/attirer/prix/zones')).status).toBe(403);
+    expect(await t.call({ ...direction, networkId: 'net-2' }, 'GET', '/attirer/prix/zones')).toMatchObject({ status: 200, body: { data: [] } });
+    const ouest = items.find((z) => z.name === 'ouest')!;
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${ouest.id}/retrait`)).status).toBe(200);
+    const after = (await t.call(direction, 'GET', '/attirer/prix/zones')).body.data as { name: string }[];
+    expect(after.map((z) => z.name)).not.toContain('ouest');
+    // Une commune retirée emporte ses quartiers.
+    const commune = items.find((z) => z.level === 'commune')!;
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${commune.id}/retrait`)).status).toBe(200);
+    expect((await t.call(direction, 'GET', '/attirer/prix/zones')).body.data).toEqual([]);
+  });
+
   it('[R155] AT13 : un fait reste retirable même devenu refusable, un fait inconnu ne se retire pas ; un texte dit s’il est encore validable', async () => {
     const t = await setup();
     await preparedNetwork(t);

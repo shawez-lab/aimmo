@@ -147,6 +147,7 @@ export function attirerRoutes(): AttirerRoute[] {
   const routes: AttirerRoute[] = [
     // AT01 · prix regroupés
     { method: 'GET', pattern: new RegExp(`${P}/prix/versions$`), name: 'attirer.prix_versions', roles: DIRECTION, handle: async (s, v) => reply(value(await services(s).readPrices.versions(v.networkId))) },
+    { method: 'GET', pattern: new RegExp(`${P}/prix/zones$`), name: 'attirer.prix_zones', roles: DIRECTION, handle: async (s, v) => reply(await services(s).readPrices.zones(v)) },
     { method: 'POST', pattern: new RegExp(`${P}/prix/zones$`), name: 'attirer.prix_zone', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).readPrices.defineZone(v, b as never))) },
     { method: 'POST', pattern: new RegExp(`${P}/prix/zones/${ID}/retrait$`), name: 'attirer.prix_zone_retrait', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).readPrices.retireZone(v, id)) },
     {
