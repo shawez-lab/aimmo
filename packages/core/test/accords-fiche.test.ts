@@ -35,7 +35,7 @@ async function setup() {
   const direction: Viewer = { role: 'direction', userId: 'dir-1', networkId: network.id };
   const person = await store.createPerson({ networkId: network.id, agentId: alexAgent.id, firstName: 'Client', lastName: 'Inventé' });
   await store.addIdentifier({ networkId: network.id, personId: person.id, kind: 'email', value: email });
-  const input = (over: Record<string, unknown> = {}) => ({ purpose: 'suivi_vente', channel: 'email', proof: NOTE, givenAt: new Date(TUESDAY_10H - DAY).toISOString(), ...over });
+  const input = (over: Record<string, unknown> = {}) => ({ purpose: 'suivi_vente', channel: 'email', proof: NOTE, givenOn: '2027-06-07', ...over });
   const canSend = async (id = person.id) => decision.decide(id, { channel: 'email', kind: 'follow_up', purpose: 'suivi_vente', at: new Date(clock) });
   const rows = (id = person.id) => db.all<{ id: string; proof: string; given_at: string; withdrawn_at: string | null; agent_id: string | null }>('SELECT * FROM consents WHERE person_id = ?', [id]);
   const events = () => db.all<{ type: string; actor: string; subject: string; data: string }>('SELECT type, actor, subject, data FROM journal ORDER BY rowid');
@@ -59,7 +59,7 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
     const [row] = await t.rows();
     expect(row!.proof).toContain(NOTE);
     expect(row!.proof).toContain(`agent:${t.alexAgent.id}`);
-    expect(row!.given_at).toBe(t.input().givenAt);
+    expect(row!.given_at).toBe('2027-06-06T22:00:00.000Z'); // minuit à Paris
     expect(row!.agent_id).toBe(t.alexAgent.id);
 
     const taken = await t.accords.withdraw(t.alex, t.person.id, noted.ok ? noted.value.consentId : '');
@@ -115,7 +115,7 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
     expect(await t.accords.record(t.alex, t.person.id, t.input())).toMatchObject({ ok: false, rule: 'R03', code: 'given_before_withdrawal' });
     expect((await t.canSend()).rule).toBe('R03');
     t.advance(DAY);
-    const again = await t.accords.record(t.alex, t.person.id, t.input({ givenAt: new Date(t.nowMs()).toISOString() }));
+    const again = await t.accords.record(t.alex, t.person.id, t.input({ givenOn: '2027-06-09' }));
     expect(again.ok).toBe(true);
     t.advance(1000);
     expect((await t.canSend()).allowed).toBe(true);
@@ -127,7 +127,7 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
     const stopped = await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(TUESDAY_10H - 3 * DAY) });
     await t.store.liftExclusion(stopped.id, new Date(TUESDAY_10H - 2 * 3600_000));
     expect(await t.accords.record(t.alex, t.person.id, t.input())).toMatchObject({ ok: false, rule: 'R04', code: 'given_before_lift' });
-    expect((await t.accords.record(t.alex, t.person.id, t.input({ givenAt: new Date(TUESDAY_10H - 3600_000).toISOString() }))).ok).toBe(true);
+    expect((await t.accords.record(t.alex, t.person.id, t.input({ givenOn: '2027-06-08' }))).ok).toBe(true);
   });
 
   it('[R03] un accord déjà en cours n’est pas doublé, même sur une fiche réunie', async () => {
@@ -167,7 +167,7 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
     const stopped = await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(TUESDAY_10H - 3600_000) });
     await t.store.liftExclusion(stopped.id, new Date(TUESDAY_10H));
     t.advance(60_000);
-    const again = await t.accords.record(t.alex, t.person.id, t.input({ givenAt: new Date(t.nowMs()).toISOString(), proof: 'Nouvel accord donné après la levée de son arrêt.' }));
+    const again = await t.accords.record(t.alex, t.person.id, t.input({ givenOn: '2027-06-08', proof: 'Nouvel accord donné après la levée de son arrêt.' }));
     expect(again).toMatchObject({ ok: true, value: { already: false } });
     expect(await t.rows()).toHaveLength(2);
   });
@@ -231,16 +231,53 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
       [{ proof: 'x'.repeat(1001) }, 'bad_proof'],
       [{ proof: 'contrôle \u0007 dans la preuve' }, 'bad_proof'],
       [{ proof: 12 }, 'bad_proof'],
-      [{ givenAt: 'hier' }, 'bad_date'],
-      [{ givenAt: '2027-06-07' }, 'bad_date'],
-      [{ givenAt: '2027-02-31T10:00:00.000Z' }, 'bad_date'],
-      [{ givenAt: 123 }, 'bad_date'],
-      [{ givenAt: new Date(TUESDAY_10H + DAY).toISOString() }, 'future_date'],
+      [{ givenOn: 'hier' }, 'bad_date'],
+      [{ givenOn: '2027-06-07T10:00:00.000Z' }, 'bad_date'],
+      [{ givenOn: '2027-02-31' }, 'bad_date'],
+      [{ givenOn: 123 }, 'bad_date'],
+      [{ givenOn: undefined }, 'bad_date'],
+      [{ givenOn: '2027-06-09' }, 'future_date'],
     ];
     for (const [over, code] of cases) {
       expect(await t.accords.record(t.alex, t.person.id, t.input(over)), code).toMatchObject({ ok: false, code });
     }
     expect(await t.rows()).toHaveLength(0);
+  });
+
+  it('[R202] aujourd’hui à Paris vaut l’heure du serveur, y compris juste après minuit', async () => {
+    const t = await setup();
+    const noted = await t.accords.record(t.alex, t.person.id, t.input({ givenOn: '2027-06-08' }));
+    expect(noted.ok).toBe(true);
+    expect(Date.parse((await t.rows())[0]!.given_at)).toBeGreaterThan(TUESDAY_10H);
+    expect((await t.canSend()).allowed).toBe(true);
+  });
+
+  it('[R03] un retrait d’aujourd’hui ferme aujourd’hui comme hier pour la date passée, pas un accord noté après', async () => {
+    const t = await setup();
+    const noted = await t.accords.record(t.alex, t.person.id, t.input({ givenOn: '2027-06-01' }));
+    await t.accords.withdraw(t.alex, t.person.id, noted.ok ? noted.value.consentId : '');
+    expect(await t.accords.record(t.alex, t.person.id, t.input({ givenOn: '2027-06-07' }))).toMatchObject({ ok: false, code: 'given_before_withdrawal' });
+    expect((await t.accords.record(t.alex, t.person.id, t.input({ givenOn: '2027-06-08' }))).ok).toBe(true);
+    expect((await t.canSend()).allowed).toBe(true);
+  });
+
+  it('[R03] [R203] noter une demande rouvre vraiment l’appel : demande périmée rangée à neuf ; demande ancienne après un retrait d’une autre finalité non plus retenue', async () => {
+    const t = await setup();
+    // Une demande de plus de 13 mois n'ouvre plus l'appel : elle ne retient pas la nouvelle.
+    await t.store.addConsent({ networkId: t.network.id, personId: t.person.id, purpose: 'rappel_demande', channel: 'phone', proof: 'ancienne demande', givenAt: new Date(TUESDAY_10H - 500 * DAY) });
+    const renewed = await t.accords.record(t.alex, t.person.id, t.input({ purpose: 'rappel_demande', channel: 'phone', givenOn: '2027-06-08' }));
+    expect(renewed).toMatchObject({ ok: true, value: { already: false } });
+
+    const other = await setup();
+    await other.store.addConsent({ networkId: other.network.id, personId: other.person.id, purpose: 'reply', channel: 'phone', proof: 'message reçu', givenAt: new Date(TUESDAY_10H - 90 * DAY) });
+    const asked = await other.store.addConsent({ networkId: other.network.id, personId: other.person.id, purpose: 'rappel_demande', channel: 'phone', proof: 'demande', givenAt: new Date(TUESDAY_10H - 80 * DAY) });
+    const prospect = await other.store.addConsent({ networkId: other.network.id, personId: other.person.id, purpose: 'prospecting', channel: 'phone', proof: 'accord', givenAt: new Date(TUESDAY_10H - 70 * DAY) });
+    await other.store.withdrawConsent(prospect.id, new Date(TUESDAY_10H - 3600_000));
+    // Daté de la veille du retrait : accepter serait trompeur, l'appel resterait fermé.
+    expect(await other.accords.record(other.alex, other.person.id, other.input({ purpose: 'rappel_demande', channel: 'phone', givenOn: '2027-06-07' }))).toMatchObject({ ok: false, rule: 'R03', code: 'given_before_withdrawal' });
+    const again = await other.accords.record(other.alex, other.person.id, other.input({ purpose: 'rappel_demande', channel: 'phone', givenOn: '2027-06-08' }));
+    expect(again).toMatchObject({ ok: true, value: { already: false } });
+    expect(again.ok && again.value.consentId).not.toBe(asked.id);
   });
 
   it('[R13] ni preuve, ni adresse, ni nom au journal', async () => {
@@ -289,7 +326,7 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
       t.advance(60_000);
       await t.fiche.merge({ survivorId: t.person.id, mergedId: b, reason: 'identifiant commun' });
 
-      const again = await t.accords.record(t.alex, t.person.id, t.input({ givenAt: new Date(t.nowMs()).toISOString() }));
+      const again = await t.accords.record(t.alex, t.person.id, t.input({ givenOn: '2027-06-08' }));
       expect(again).toMatchObject({ ok: true, value: { already: false } });
       if (again.ok) expect(again.value.consentId).not.toBe(stale.id);
       t.advance(60_000);
@@ -363,7 +400,7 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
       expect(closedAt).not.toBeNull();
 
       t.advance(60_000);
-      const after = await t.accords.record(t.alex, t.person.id, t.input({ givenAt: new Date(t.nowMs()).toISOString() }));
+      const after = await t.accords.record(t.alex, t.person.id, t.input({ givenOn: '2027-06-08' }));
       if (!after.ok) throw new Error(after.code);
       expect(await t.fiche.undoMerge(merge.id, trace(t))).toBe(closedAt);
       expect(await t.fiche.undoMerge(merge.id, trace(t))).toBe(closedAt);

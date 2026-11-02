@@ -1,7 +1,7 @@
 /**
  * Routes des accords notés par l'agent (AC01), branchées dans le socle (AC02) [R03, R202, R16].
  *
- *   POST /v1/fiches/<id>/accords                { purpose, channel, proof, givenAt } : note un accord, avec sa preuve
+ *   POST /v1/fiches/<id>/accords                { purpose, channel, proof, givenOn } : note un accord, avec sa preuve
  *   POST /v1/fiches/<id>/accords/<id>/retrait   retire l'accord ; la ligne reste [R17]
  *
  * Le rôle est contrôlé avant de lire le corps, et son refus va au journal [R16]. Rien n'est envoyé d'ici.
@@ -10,7 +10,7 @@ import { AccordsFiche, appendEvent, type AccordsResult, type Acces, type FicheCl
 
 export const MAX_ACCORD_BODY_BYTES = 8 * 1024;
 const ID = '([A-Za-z0-9_-]{1,64})';
-const FIELDS = new Set(['purpose', 'channel', 'proof', 'givenAt']);
+const FIELDS = new Set(['purpose', 'channel', 'proof', 'givenOn']);
 const ROLES: readonly Viewer['role'][] = ['agent', 'direction'];
 
 export interface AccordsServices {

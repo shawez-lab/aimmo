@@ -27,7 +27,7 @@ async function setup() {
     );
     return { status: r.status, body: (await r.json()) as { ok: boolean; rule?: string | null; code?: string; sent?: boolean; data?: { consentId: string; already?: boolean } } };
   };
-  const accord = () => ({ purpose: 'suivi_vente', channel: 'email', proof: PROOF, givenAt: new Date(t.now().getTime() - 3_600_000).toISOString() });
+  const accord = () => ({ purpose: 'suivi_vente', channel: 'email', proof: PROOF, givenOn: new Date(t.now().getTime() - 86_400_000).toISOString().slice(0, 10) });
   const lines = () => t.db.all<{ type: string; data: string }>('SELECT type, data FROM journal ORDER BY rowid');
   return { t, post, accord, lines };
 }

@@ -79,7 +79,7 @@ describe('A03 · fiche du client dans l’application', () => {
     expect(a.els['fiche-nom']!.textContent).toBe('Léa Exemple');
     const body = a.els['fiche-corps']!;
     expect(tels(body).map((t) => t.attributes.href)).toEqual(['tel:+33600000001']);
-    for (const text of ['Vendre (étape : nouveau), budget jusqu’à 230000 €', 'site (formulaire test)', 'suivi de l’avis de valeur par mail', 'Reçu par mail', 'Vendeur sous 3 mois']) expect(body.textContent).toContain(text);
+    for (const text of ['Vendre (étape : nouveau), budget jusqu’à 230000 €', 'site (formulaire test)', 'Suivi de l’avis de valeur par mail', 'Reçu par mail', 'Vendeur sous 3 mois']) expect(body.textContent).toContain(text);
     // Aucun code interne affiché.
     expect(body.textContent).not.toMatch(/\bnew\b|\bemail\b|\bphone\b|valuation_follow_up/);
     // Un message de client reste un texte.
@@ -111,7 +111,7 @@ describe('A03 · fiche du client dans l’application', () => {
     buttons(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
     await a.tick();
     expect(tels(a.els['fiche-corps']!)).toEqual([]);
-    expect(a.els['fiche-corps']!.textContent).toContain('Appel fermé : aucun accord ni demande de rappel enregistrés pour cette personne.');
+    expect(a.els['fiche-corps']!.textContent).toContain('Appel fermé : aucun accord ni demande de rappel enregistrés.');
     const h = await app({ ...base(), '/v1/fiches/p-1/resume': ok({ ...FICHE, call: null, callRefusal: 'outside_hours' }) });
     buttons(h.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
     await h.tick();

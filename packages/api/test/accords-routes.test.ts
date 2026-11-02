@@ -7,7 +7,7 @@ import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.t
 // Tout est inventé.
 const START = Date.parse('2027-06-08T08:00:00.000Z');
 const NOTE = 'Accord donné de vive voix au rendez-vous, pour suivre sa vente par mail.';
-const BODY = { purpose: 'suivi_vente', channel: 'email', proof: NOTE, givenAt: new Date(START - 3600_000).toISOString() };
+const BODY = { purpose: 'suivi_vente', channel: 'email', proof: NOTE, givenOn: '2027-06-08' };
 
 async function setup() {
   let clock = START;

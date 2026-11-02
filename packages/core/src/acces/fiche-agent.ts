@@ -29,7 +29,8 @@
  */
 import type { SqlDatabase } from '../db/sql.ts';
 import { isWorkingDay, localTime } from '../envoi/horaires.ts';
-import type { ExclusionReason } from '../db/types.ts';
+import type { Consent, ExclusionReason } from '../db/types.ts';
+import type { FicheComplete } from '../fiche/fusion.ts';
 import type { Acces } from './acces.ts';
 import type { Viewer } from './droits.ts';
 
@@ -81,6 +82,25 @@ function prospectingSlotEnd(at: Date): Date {
   return new Date(at.getTime() - (at.getTime() % 60_000) + (end - minutes) * 60_000);
 }
 
+type PhoneFacts = Pick<FicheComplete, 'consents' | 'exclusions'>;
+
+/** Depuis quand l'appel est fermé : le dernier retrait d'un accord par téléphone ou la dernière levée d'exclusion. */
+export function callClosedAt(fiche: PhoneFacts): number {
+  return Math.max(
+    -Infinity,
+    ...fiche.exclusions.filter((e) => e.lifted_at !== null).map((e) => Date.parse(e.lifted_at!)),
+    ...fiche.consents.filter((c) => c.channel === 'phone' && c.withdrawn_at !== null).map((c) => Date.parse(c.withdrawn_at!)),
+  );
+}
+
+/** Cet accord ouvre-t-il l'appel à cet instant ? Le même calcul pour le bouton et pour noter un accord [R03]. */
+export function consentOpensCall(c: Pick<Consent, 'purpose' | 'channel' | 'given_at' | 'withdrawn_at'>, fiche: PhoneFacts, at: number): boolean {
+  if (c.channel !== 'phone' || !CALL_PURPOSES.includes(c.purpose) || c.withdrawn_at !== null) return false;
+  const given = Date.parse(c.given_at);
+  if (given > at || given <= callClosedAt(fiche)) return false;
+  return !CALL_REQUEST_PURPOSES.includes(c.purpose) || at - given <= CALL_REQUEST_DAYS * 86_400_000;
+}
+
 const active = (notedAt: string, liftedAt: string | null, at: number): boolean => Date.parse(notedAt) <= at && (liftedAt === null || Date.parse(liftedAt) > at);
 
 export class FicheAgent {
@@ -108,17 +128,7 @@ export class FicheAgent {
     // Le numéro rangé est normalisé ; on ne garde que + et chiffres, par prudence.
     const digits = phone ? phone.value.replace(/[^+\d]/g, '') : '';
     const hasPhone = /^\+?\d{6,15}$/.test(digits);
-    const phoneConsents = fiche.consents.filter((c) => c.channel === 'phone');
-    const closedAt = Math.max(
-      -Infinity,
-      ...fiche.exclusions.filter((e) => e.lifted_at !== null).map((e) => Date.parse(e.lifted_at!)),
-      ...phoneConsents.filter((c) => c.withdrawn_at !== null).map((c) => Date.parse(c.withdrawn_at!)),
-    );
-    const usable = phoneConsents.filter((c) => {
-      const given = Date.parse(c.given_at);
-      if (c.withdrawn_at !== null || given > at || given <= closedAt || !CALL_PURPOSES.includes(c.purpose)) return false;
-      return !CALL_REQUEST_PURPOSES.includes(c.purpose) || at - given <= CALL_REQUEST_DAYS * 86_400_000;
-    });
+    const usable = fiche.consents.filter((c) => consentOpensCall(c, fiche, at));
     const asked = usable.some((c) => CALL_REQUEST_PURPOSES.includes(c.purpose));
     const callRefusal = !allowed
       ? 'excluded'
