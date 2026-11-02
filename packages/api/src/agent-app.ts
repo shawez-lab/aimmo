@@ -6,7 +6,9 @@
  * `Authorization`, jamais dans une adresse ni au journal [R13].
  */
 
+import { ALERTES_SCRIPT } from '../app/alertes.ts';
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
+import { REPRISE_SCRIPT } from '../app/reprise.ts';
 import { CONFORMITE_SCRIPT } from '../app/conformite.ts';
 import { INVESTIR_SCRIPT } from '../app/investir.ts';
 import { STUDIO_SCRIPT } from '../app/studio.ts';
@@ -42,6 +44,10 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/': { body: INDEX_HTML, type: 'text/html; charset=utf-8' },
   '/app/app.css': { body: APP_CSS, type: 'text/css; charset=utf-8' },
   '/app/app.js': { body: stripCommentLines(APP_JS), type: 'text/javascript; charset=utf-8' },
+  // Les alertes de l'agent (C09c), chargées seulement s'il en a, jamais gardées sur l'appareil [R201].
+  '/app/alertes.js': { body: ALERTES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Le dépôt des fichiers de la reprise (I05), chargé au premier geste de la direction [R201].
+  '/app/reprise.js': { body: REPRISE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran du responsable de la conformité (L10), chargé à la demande pour sa seule clé, jamais gardé sur l'appareil.
   '/app/conformite.js': { body: CONFORMITE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Investir » (Y09), chargé à sa première ouverture pour garder le budget de l'application.

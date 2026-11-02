@@ -285,6 +285,30 @@ describeWithSqlite('C05 · conversation et relais à l’agent', () => {
     expect(humanRepliesFromMeta('instagram', 'pas du json', [OUR_APP])).toHaveLength(0);
   });
 
+  it('[R12] [R21] une alerte vue revient quand le client réécrit sans réponse humaine, l’assistant reste muet', async () => {
+    const t = await setup();
+    const open = async () => (await t.db.all<{ reason: string }>("SELECT reason FROM agent_alerts WHERE seen_at IS NULL AND reason = 'exchanges'")).map((a) => a.reason);
+    for (let i = 0; i < 6; i++) {
+      t.advance(MINUTE);
+      await t.relais.process(await t.receive(t.dm('noa', `Message ${i}`)));
+    }
+    expect(await open()).toEqual(['exchanges']);
+    const sent = t.sent('instagram').length;
+    t.advance(MINUTE);
+    await t.db.run('UPDATE agent_alerts SET seen_at = ?', [new Date(SUNDAY_NIGHT.getTime() + 7 * MINUTE).toISOString()]);
+    expect(await open()).toEqual([]);
+    t.advance(HOUR);
+    const again = await t.receive(t.dm('noa', 'Toujours là ?'));
+    expect(await t.relais.process(again)).toMatchObject({ status: 'silent' });
+    expect(await open()).toEqual(['exchanges']);
+    expect(t.sent('instagram')).toHaveLength(sent);
+    // Le même message rejoué après avoir vu l'alerte ne la rouvre pas.
+    t.advance(MINUTE);
+    await t.db.run('UPDATE agent_alerts SET seen_at = ?', [new Date(SUNDAY_NIGHT.getTime() + 2 * HOUR).toISOString()]);
+    await t.relais.process(again);
+    expect(await open()).toEqual([]);
+  });
+
   it('[R21] au 6e message du client, l’agent est prévenu et l’assistant se tait', async () => {
     const t = await setup();
     const texts = ['Bonjour', 'Je veux vendre ma maison', 'Vous pouvez me rappeler ?', 'Merci', 'Et pour une estimation ?', 'Allô ?', 'Toujours là ?'];

@@ -50,6 +50,11 @@ export const INDEX_HTML = `<!doctype html>
 <section id="accueil" hidden>
 <h2 id="bonjour"></h2>
 <button id="vers-reseau" type="button" class="secondaire" hidden>Voir le réseau</button>
+<section class="bloc" aria-labelledby="titre-reprendre">
+<h3 id="titre-reprendre">À reprendre</h3>
+<p id="reprendre-etat" class="etat"></p>
+<ul id="reprendre" class="liste"></ul>
+</section>
 <section class="bloc" aria-labelledby="titre-plan">
 <h3 id="titre-plan">Mon plan du jour</h3>
 <p id="plan-etat" class="etat"></p>
@@ -532,6 +537,22 @@ export const APP_JS = `'use strict';
       return true;
     });
   }
+  var reprendreDraw = null;
+  function loadReprendre(key, mine) { return part('reprendre', api('/v1/alertes-agent', key), renderReprendre, mine); }
+  function renderReprendre(list, data) {
+    if (!data || !Array.isArray(data.alerts) || !data.alerts.length) return 'Rien à reprendre.';
+    var mine = session;
+    if (reprendreDraw) return reprendreDraw(list, data);
+    var s = el('script');
+    s.setAttribute('src', '/app/alertes.js');
+    s.addEventListener('load', function () {
+      reprendreDraw = globalThis.AIMMO_ALERTES({ $: $, el: el, clear: clear, send: send, button: button, date: date, ficheButton: ficheButton, reload: function () { return loadReprendre(currentKey, session); } });
+      if (mine === session) $('reprendre-etat').textContent = reprendreDraw(list, data);
+    });
+    s.addEventListener('error', function () { if (mine === session) $('reprendre-etat').textContent = 'Pas de réseau. Réessayez dans un moment.'; });
+    $('accueil').appendChild(s);
+    return 'Chargement…';
+  }
   function day(key, mine) {
     return Promise.all([
       // La semaine est lue après le plan : l'ouverture de ce matin y compte déjà.
@@ -539,6 +560,7 @@ export const APP_JS = `'use strict';
         if (!done || mine !== session) return done;
         return part('semaine', api('/v1/usage/matin', key), renderWeek, mine);
       }),
+      loadReprendre(key, mine),
       part('chauds', api('/v1/contacts-chauds', key), renderHot, mine),
       part('biens', api('/v1/annonces', key), renderBiens, mine),
       part('rdv', api('/v1/rendez-vous/jour', key), renderAppointments, mine),
@@ -550,7 +572,7 @@ export const APP_JS = `'use strict';
     });
   }
   function wipe() {
-    ['plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
+    ['reprendre', 'plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
     wipeFiche();
     wipeM08();
     wipeApres();
@@ -1869,8 +1891,8 @@ ${LOUER_JS}
     $('integration-ouvrir').addEventListener('click', function () { openIntegration('integration'); });
     $('academie-ouvrir').addEventListener('click', function () { openIntegration('academie'); });
     $('candidatures-ouvrir').addEventListener('click', function () { openIntegration('candidatures'); });
-    $('reprise-deposer').addEventListener('click', function () { depositReprise(); });
-    $('reprise-voir').addEventListener('click', function () { showReprise(); });
+    $('reprise-deposer').addEventListener('click', function () { withReprise(function (r) { return r.deposit(); }); });
+    $('reprise-voir').addEventListener('click', function () { withReprise(function (r) { return r.show(); }); });
     // Dans une fiche d'entretien : retour à la liste ; sinon, la direction revient au réseau, l'agent à sa journée.
     $('integration-retour').addEventListener('click', function () {
       if (integrationScreen && integrationScreen.inside()) { openIntegration(integrationMode); return; }

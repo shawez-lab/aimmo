@@ -116,12 +116,14 @@ export class ConversationRelais {
     const conversationId = conversationIdOf(row);
     const state = await this.state(row.person_id, conversationId);
     if (state.holder === 'agent') {
+      // Le client réécrit et personne ne lui a encore répondu : une alerte déjà vue redevient à reprendre [R12].
+      if (!state.humanReplied) await this.reopenAlerts(row.network_id, conversationId, row.received_at);
       return { status: 'silent', conversationId, reason: 'Conversation passée à l’agent : l’assistant se tait.' };
     }
     if (state.received > this.settings.assistantMaxExchanges) {
       const view = await this.fiche.view(row.person_id);
       await this.handOver(view.person.id, conversationId, 'exchanges');
-      await this.alert(view.person.id, conversationId, 'exchanges');
+      await this.alert(row.person_id, conversationId, 'exchanges', row.received_at);
       return {
         status: 'handed_over',
         conversationId,
@@ -132,15 +134,14 @@ export class ConversationRelais {
     if (reply.skipped !== null) {
       // Un formulaire sans mail : personne ne peut lui répondre par écrit, l'agent doit rappeler [R12].
       if (row.kind === 'form' && reply.skipCode === 'no_channel') {
-        await this.alert((await this.fiche.view(row.person_id)).person.id, conversationId, 'needs_reply');
+        await this.alert(row.person_id, conversationId, 'needs_reply', row.received_at);
       }
       return { status: 'skipped', conversationId, reason: reply.skipped, ...(reply.skipCode ? { code: reply.skipCode } : {}) };
     }
     if (reply.result?.status === 'sent') return { status: 'replied', conversationId, reply };
     // Une réponse qui n'a pas pu partir n'est jamais un silence : l'agent est prévenu [R12].
     if (reply.result?.needsHuman || reply.result?.rule === 'R21' || reply.result?.rule === 'R22') {
-      const view = await this.fiche.view(row.person_id);
-      await this.alert(view.person.id, conversationId, 'needs_reply');
+      await this.alert(row.person_id, conversationId, 'needs_reply', row.received_at);
     }
     return { status: 'not_sent', conversationId, reply };
   }
@@ -429,13 +430,31 @@ export class ConversationRelais {
     return row;
   }
 
-  private async alert(personId: string, conversationId: string, reason: AlertReason): Promise<void> {
+  /**
+   * Une seule ligne par conversation et par raison, rangée sur la fiche du message et non sur la fiche gardée : si la
+   * fusion est défaite, l'alerte suit la bonne personne [R16]. Une alerte vue avant ce message se rouvre : une nouvelle
+   * réponse tombée ne reste pas invisible [R12] ; le même message rejoué ne la rouvre pas. La date où elle avait été vue
+   * reste au journal (`alerte_agent.vue`) [R17].
+   */
+  private async alert(personId: string, conversationId: string, reason: AlertReason, receivedAt: string): Promise<void> {
     const person = (await this.fiche.view(personId)).person;
     await this.db.run(
       `INSERT INTO agent_alerts (id, network_id, agent_id, person_id, conversation_id, reason, created_at, seen_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT (network_id, conversation_id, reason) DO NOTHING`,
-      [this.newId(), person.network_id, person.agent_id, person.id, conversationId, reason, this.now().toISOString()],
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+       ON CONFLICT (network_id, conversation_id, reason) DO UPDATE SET seen_at = NULL, created_at = excluded.created_at, agent_id = excluded.agent_id, person_id = excluded.person_id
+       WHERE agent_alerts.seen_at IS NOT NULL AND agent_alerts.seen_at < ?`,
+      [this.newId(), person.network_id, person.agent_id, personId, conversationId, reason, this.now().toISOString(), receivedAt],
     );
+  }
+
+  /** Rouvre les alertes de la conversation vues avant ce message. */
+  private async reopenAlerts(networkId: string, conversationId: string, receivedAt: string): Promise<void> {
+    await this.db.run(`UPDATE agent_alerts SET seen_at = NULL, created_at = ? WHERE network_id = ? AND conversation_id = ? AND seen_at IS NOT NULL AND seen_at < ?`, [
+      this.now().toISOString(),
+      networkId,
+      conversationId,
+      receivedAt,
+    ]);
   }
 }
 
