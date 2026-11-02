@@ -47,7 +47,7 @@ describeWithSqlite('E09 · routes de l’avis de valeur', () => {
     const w = await world();
     const made = await w.call('POST', `/biens/${w.property.id}/avis`, w.keys.paul, { address: '1 Rue de l’Essai 21000 Dijon', kind: 'apartment' });
     expect(made.status).toBe(201);
-    const { data } = (await made.json()) as { data: { id: string; low: number; high: number; status: string; computedLow: number } };
+    const { data } = (await made.json()) as { data: { id: string; low: number; high: number; status: string; computedLow: number; updatedAt: string } };
     expect(data.status).toBe('draft');
     expect(JSON.stringify(data)).not.toContain('figures');
 
@@ -56,9 +56,13 @@ describeWithSqlite('E09 · routes de l’avis de valeur', () => {
     expect(adjusted.status).toBe(200);
     expect(((await adjusted.json()) as { data: { low: number; computedLow: number } }).data).toMatchObject({ low: data.low - 1000, computedLow: data.computedLow });
 
-    expect((await w.call('POST', `/avis/${data.id}/validation`, w.keys.lise)).status).toBe(403);
-    expect((await w.call('POST', `/avis/${data.id}/validation`, w.keys.paul)).status).toBe(200);
-    expect((await w.call('POST', `/avis/${data.id}/validation`, w.keys.paul)).status).toBe(409);
+    const seen = (((await w.call('GET', `/biens/${w.property.id}/avis`, w.keys.paul).then((x) => x.json())) as { data: { updatedAt: string }[] }).data[0]!).updatedAt;
+    // La version d'avant l'ajustement ne se valide pas : c'est celle lue à l'écran qui compte.
+    expect((await w.call('POST', `/avis/${data.id}/validation`, w.keys.paul, { updatedAt: '2020-01-01T00:00:00.000Z' })).status).toBe(409);
+    expect((await w.call('POST', `/avis/${data.id}/validation`, w.keys.paul)).status).toBe(400);
+    expect((await w.call('POST', `/avis/${data.id}/validation`, w.keys.lise, { updatedAt: seen })).status).toBe(403);
+    expect((await w.call('POST', `/avis/${data.id}/validation`, w.keys.paul, { updatedAt: seen })).status).toBe(200);
+    expect((await w.call('POST', `/avis/${data.id}/validation`, w.keys.paul, { updatedAt: seen })).status).toBe(409);
     expect((await w.call('GET', `/avis/${data.id}/imprimable`, w.keys.paul)).status).toBe(200);
 
     const list = await w.call('GET', `/biens/${w.property.id}/avis`, w.keys.paul);
@@ -70,7 +74,7 @@ describeWithSqlite('E09 · routes de l’avis de valeur', () => {
     expect((await w.call('GET', `/biens/${w.property.id}/avis`, w.keys.lise)).status).toBe(403);
     expect((await w.call('POST', `/biens/${w.property.id}/avis`, w.keys.lise, { address: 'Une adresse', kind: 'house' })).status).toBe(403);
     expect((await w.call('POST', `/biens/${w.property.id}/avis`, w.keys.paul, { address: 'x', kind: 'house' })).status).toBe(422);
-    expect((await w.call('POST', '/avis/inconnu/validation', w.keys.paul)).status).toBe(404);
+    expect((await w.call('POST', '/avis/inconnu/validation', w.keys.paul, { updatedAt: 'x' })).status).toBe(404);
     expect((await w.call('POST', '/avis/inconnu/ajustement', w.keys.paul, { low: 'cent' })).status).toBe(400);
   });
 
