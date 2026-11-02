@@ -218,6 +218,16 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Attend : H05, B03 en ombre depuis 7 jours sans écart non expliqué.
 - Reste après B04a et B04b : ouvrir le passage (`AUTOMATION_ROLLOUT_OPEN`) ; sur le site : lire `decides`, signaler écarts et pannes par `POST /v1/automatisations/incident` et rejouer ce signalement si le socle ne répond pas (une panne de sa base ne peut pas le ramener en ombre seule) ; retirer `taches.yml`.
 
+### B05 · Écran de la bascule pour la direction
+- Statut : en cours (voie 2)
+- Voie : 2
+- Trouvé le 2026-11-02 (après AT14) : aucun écran n'appelle `/v1/automatisations/paliers`, son geste `avancer`, ni `/v1/journal/verification` : la direction ne pourrait voir ni un retour en ombre, ni faire avancer une automatisation, ni vérifier le journal sans passer par l'API.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : B04a, B04b
+- Cahier : Feuille de route, novembre 2026 ; R26, R16, R201.
+- Objectif : sur l'écran du réseau, la direction voit le palier de chaque automatisation du site, son dernier retour en ombre, fait passer de l'ombre à 10 %, et vérifie la chaîne du journal.
+- Critères : l'écran n'appelle que ces trois routes [R16] ; l'écran ne décide rien : un refus `not_open`, `too_early`, `not_enough_requests` est dit en français [R26] ; passer à 10 % se confirme en deux appuis espacés ; un retour en ombre est montré avec sa date et sa raison ; un journal abîmé est dit sans en montrer le contenu [R13] ; script chargé à part, budget tenu [R201].
+- Attend : H37 pour de vrais envois comptés.
+
 **Accords notés par l'agent : trou trouvé le 2026-11-02.**
 Voie : 2
 
@@ -531,6 +541,15 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Cahier : M03, points 4 et 6 ; R16, R25.
 - Objectif : solder les remarques laissées de Codex (#25, #26). Une personne qui réécrit sans avoir été rappelée repoussait sa réattribution à chaque message, sans fin : plus elle insistait, moins elle était servie. Une coupure entre l'attribution et le passage de la fiche laissait l'agent sans accès, pour toujours. Un ancien agent parti sur une fiche réunie bloquait l'accès du nouvel agent. Une tâche chaude rangée sur une fiche gardée sans agent n'apparaissait pas dans la liste de l'agent qui suit la fiche réunie.
 - Critères : un message de plus ne repousse jamais le délai en cours, et un contact chaud le raccourcit (test [R25]) ; un rappel humain clôt le délai, le message suivant en ouvre un nouveau (test [R25]) ; jamais un agent déjà essayé, même après un nouveau message ; un message sans commune garde celle d'un message d'avant (test [R25]) ; attribution et passage de la fiche tout ou rien, relançable après une coupure (test) ; le nouvel agent ouvre une fiche réunie qui portait un agent parti (test [R16]) ; la liste chaude montre la tâche de la fiche gardée à l'agent de la fiche réunie, et jamais à un autre agent (test [R16]).
+- Attend : rien.
+
+### Q08 · Corriger le classement d'un contact depuis la fiche
+- Statut : à faire
+- Trouvé le 2026-11-02 par la voie 2 : `POST /v1/qualifications/<id>/correction` n'a aucun écran, et `FicheAgent` ne rend ni le classement ni son identifiant : les corrections qui doivent rejoindre la mesure [Q05] ne peuvent pas être faites. Laissée à la voie 1 : `FicheAgent` et la fiche sont du socle.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : Q05
+- Cahier : M03 ; R16, R201.
+- Objectif : la fiche montre le dernier classement du contact et sa dernière correction ; l'agent le corrige dans une liste fermée, sans identifiant à saisir.
+- Critères : seul celui qui voit la fiche entière corrige [R16] ; la qualification d'origine reste [R17] ; la correction rejoint les cas de mesure (test) ; aucune note de l'IA ni score montré comme un jugement sur la personne ; script chargé à part, budget tenu [R201].
 - Attend : rien.
 
 ### Q07 · Critères niés et montants qui n'en sont pas
@@ -902,6 +921,15 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Objectif : depuis « Mes biens », l'agent génère le mandat, lit les contrôles ligne par ligne, enregistre la signature sur papier avec le scan déposé, voit le numéro au registre et l'exemplaire ; écran chargé à part, sur le système de design.
 - Critères : un seul échec de contrôle et rien ne se signe, la ligne dite en français [R41] ; un document d'essai est dit tel à l'écran [R40] ; aucun identifiant ni référence à saisir [R16] ; l'écran ne calcule ni numéro ni honoraires [R39] ; signature en ligne absente tant que H24 n'est pas fait ; budget et accessibilité tenus [R201].
 - Attend : H08 pour un mandat réel, H23 pour le numéro réel, H25 pour le dépôt réel.
+
+### D13 · Réglages du mandat pour la direction : barème, registre, contrôle
+- Statut : à faire
+- Trouvé le 2026-11-02 par la voie 2 : aucun écran n'appelle `/v1/honoraires/bareme`, `/v1/registre/reglage` ni `/v1/registre/controle`, et sans barème aucun mandat ne passe ses contrôles [R41]. Laissée à la voie 1, qui tient M06.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12
+- Cahier : M06 ; R39, R41, R16, R201.
+- Objectif : la direction règle le barème et le format du registre, et lit le contrôle d'intégrité du registre, depuis l'écran du réseau.
+- Critères : réservé à la direction [R16] ; le format du registre n'est réglable qu'une fois, et l'écran le dit [R39] ; un registre abîmé est dit en français ; budget tenu [R201].
+- Attend : H23 pour le format réel.
 
 **M08 · Acquéreurs et visites, avril 2027.**
 
