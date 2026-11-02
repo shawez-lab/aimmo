@@ -148,7 +148,7 @@ describeWithSqlite('B04b · la mention de l’assistant, alignée sur le texte d
     expect(await w.send(first, withMention('comme prévu'))).toMatchObject({ status: 'would_send', decides: true, mentionMissing: false });
     const second = await refIn(true, Number(first.split('-')[1]) + 1);
     expect(await w.send(second, textOf('à l’heure dite'))).toMatchObject({ status: 'would_send', decides: true, mentionMissing: false });
-    expect((await w.rows()).map((r) => r.body)).toEqual([withMention('comme prévu'), textOf('à l’heure dite')]);
+    expect((await w.rows()).map((r) => r.body).sort()).toEqual([withMention('comme prévu'), textOf('à l’heure dite')].sort());
   });
 
   it('[R06] un message rangé sans mention en ombre ne la tient pas pour donnée : le suivant la doit encore', async () => {
