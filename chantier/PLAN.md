@@ -182,7 +182,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Critères : heures de Paris été comme hiver ; une tâche, un passage par créneau même si le déclencheur passe deux fois ; une erreur est écrite au journal ; aucun appel sortant en mode essai.
 
 ### B03 · Le site demande au socle, en ombre
-- Statut : bloquée : proposition prête sur shawez-immo (#16), attend sa fusion par Shawez (H37), puis H14
+- Statut : bloquée : proposition prête sur shawez-immo (#16), attend sa fusion par Shawez (H37), puis H14 ; #16 remise à jour avec main le 2026-11-02 (vérifications vertes, fusion possible)
 - Décidé (2026-10-29) : seul un envoi réel du site est soumis au socle (en essai, un « would_send » y est rangé comme un envoi : sujet gardé, pression commerciale) ; ce que le site n'envoie pas est compté à part (`site_seul`), hors écarts. Ainsi un message du site compte une seule fois [R11]. La mention de l'assistant [R06] du message rangé chez le socle reste celle du socle : à aligner sur le texte réel du site dans B04, avant que le socle décide. Référence d'une visite datée (`visite-<id>-<minute>`), pour qu'une visite déplacée ne soit pas prise pour un doublon [R05]. Relecture forte : 2 P1 corrigés.
 - Qui : Claude · Relecture : forte · Dépend de : B01, B02
 - Cahier : Feuille de route, novembre 2026.
