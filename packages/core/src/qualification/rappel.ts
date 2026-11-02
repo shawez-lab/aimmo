@@ -137,12 +137,15 @@ export class Rappels {
     if (!visible.ok) return visible;
     const at = this.now();
     const slot = localTime(at, this.timeZone).minutes < 14 * 60 ? 'morning' : 'evening';
-    const ids = visible.value.map((p) => p.id);
-    if (ids.length === 0) return { ok: true, value: { slot, contacts: [] } };
-    const tasks = await this.db.all<CallbackTaskRow>(
-      `SELECT * FROM callback_tasks WHERE network_id = ? AND done_at IS NULL AND person_id IN (${placeholders(ids.length)}) ORDER BY due_at, created_at`,
-      [viewer.networkId, ...ids],
-    );
+    // Une fiche visible l'est avec ses fiches réunies : la tâche peut être sur la fiche gardée, sans agent, alors que
+    // l'agent suit la fiche réunie. `listPersons` a déjà décidé pour la fiche entière [R16].
+    const allowed = new Set<string>();
+    for (const person of visible.value) {
+      for (const id of await this.fiche.membersOf(person.id)) allowed.add(id);
+    }
+    if (allowed.size === 0) return { ok: true, value: { slot, contacts: [] } };
+    const open = await this.db.all<CallbackTaskRow>('SELECT * FROM callback_tasks WHERE network_id = ? AND done_at IS NULL ORDER BY due_at, created_at', [viewer.networkId]);
+    const tasks = open.filter((task) => allowed.has(task.person_id));
     const contacts: HotContact[] = [];
     // Une ligne par personne et par projet, même si deux fiches réunies portaient chacune leur tâche.
     const seen = new Set<string>();

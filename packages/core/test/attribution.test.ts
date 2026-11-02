@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ATTRIBUTION_RULES,
+  Acces,
   Attribution,
   Qualification,
   ReconnaissanceBien,
@@ -215,5 +216,220 @@ describeWithSqlite('Q03 · attribution à l’agent de la commune', () => {
     await t.attribution.endZone(zone);
     expect(await t.attribution.attribute(await t.contact('a', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: null });
     expect(await t.db.all('SELECT ended_at FROM agent_zones WHERE ended_at IS NOT NULL')).toHaveLength(1);
+  });
+
+  it('[R25] un message de plus ne repousse jamais le délai de rappel en cours', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q))!;
+    t.setClock(TUESDAY_10H + 23 * HOUR);
+    const q2 = await t.contact('zoe', 'Avez-vous bien reçu mon message ?');
+    const second = (await t.attribution.attribute(q2))!;
+    expect(second).toMatchObject({ agent_id: first.agent_id, reason: 'already_followed' });
+    expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
+    t.setClock(TUESDAY_10H + 24 * HOUR);
+    const made = await t.attribution.reassignOverdue(t.network.id);
+    expect(made).toHaveLength(1);
+    expect(made[0]).toMatchObject({ reason: 'reassigned', replaces_id: second.id });
+    expect(made[0]!.agent_id).not.toBe(first.agent_id);
+    expect(made[0]!.agent_id).not.toBeNull();
+    // Une seule réattribution pour ces deux messages, même relancée.
+    expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
+  });
+
+  it('[R25] un contact devenu chaud raccourcit le délai, le plus court des délais en cours fait foi', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    await t.attribution.attribute(q);
+    t.setClock(TUESDAY_10H + HOUR);
+    const q2 = await t.contact('zoe', 'Encore un message pour ma maison à Talant.');
+    await t.db.run("UPDATE contact_scores SET temperature = 'hot' WHERE qualification_id = ?", [q2]);
+    expect(await t.attribution.attribute(q2)).toMatchObject({ callback_hours: 8 });
+    t.setClock(TUESDAY_10H + 8 * HOUR);
+    expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
+    t.setClock(TUESDAY_10H + 9 * HOUR);
+    expect(await t.attribution.reassignOverdue(t.network.id)).toHaveLength(1);
+  });
+
+  it('[R25] un rappel humain clôt le délai ; le message suivant en ouvre un nouveau, à compter de lui', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q))!;
+    const person = await t.personOf(q);
+    await t.store.recordMessage({
+      networkId: t.network.id,
+      agentId: first.agent_id,
+      personId: person,
+      channel: 'phone',
+      direction: 'out',
+      authorKind: 'agent',
+      body: 'Appel passé.',
+      occurredAt: new Date(TUESDAY_10H + HOUR),
+    });
+    t.setClock(TUESDAY_10H + 20 * HOUR);
+    await t.attribution.attribute(await t.contact('zoe', 'Une question de plus sur ma maison.'));
+    // Le premier délai est clos par l'appel : 24 heures comptent depuis le nouveau message.
+    t.setClock(TUESDAY_10H + 30 * HOUR);
+    expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
+    t.setClock(TUESDAY_10H + 44 * HOUR);
+    expect(await t.attribution.reassignOverdue(t.network.id)).toHaveLength(1);
+  });
+
+  it('[R25] après un nouveau message, jamais un agent déjà essayé, et la commune d’un message d’avant reste valable', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    await t.attribution.attribute(q);
+    t.setClock(TUESDAY_10H + 24 * HOUR);
+    const [second] = await t.attribution.reassignOverdue(t.network.id);
+    // Le nouveau message ne dit pas la commune, et il arrive chez le deuxième agent.
+    t.setClock(TUESDAY_10H + 25 * HOUR);
+    const q3 = await t.contact('zoe', 'Personne ne m’a rappelée.');
+    const third = (await t.attribution.attribute(q3))!;
+    expect(third.agent_id).toBe(second!.agent_id);
+    t.setClock(TUESDAY_10H + 48 * HOUR);
+    // Deux agents couvrent la commune et les deux ont été essayés : la direction, jamais un retour au premier.
+    const [fourth] = await t.attribution.reassignOverdue(t.network.id);
+    expect(fourth).toMatchObject({ agent_id: null, replaces_id: third.id });
+
+    // La commune d'un message d'avant sert : un agent nouveau sur la zone reçoit le contact, pas la direction.
+    const u = await setup();
+    await u.attribution.addZone(u.network.id, u.alex.id, 'Talant');
+    await u.attribution.addZone(u.network.id, u.sam.id, 'Talant');
+    await u.attribution.attribute(await u.contact('zoe', 'Je souhaite vendre ma maison à Talant.'));
+    u.setClock(TUESDAY_10H + 23 * HOUR);
+    await u.attribution.attribute(await u.contact('zoe', 'Avez-vous reçu mon message ?'));
+    u.setClock(TUESDAY_10H + 24 * HOUR);
+    const [next] = await u.attribution.reassignOverdue(u.network.id);
+    expect(next!.agent_id).not.toBeNull();
+  });
+
+  it('attribution et passage de la fiche : tout ou rien, et relançable après une coupure', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const person = await t.personOf(q);
+    await t.db.exec("CREATE TRIGGER coupure BEFORE UPDATE OF agent_id ON persons BEGIN SELECT RAISE(ABORT, 'coupure'); END;");
+    await expect(t.attribution.attribute(q)).rejects.toThrow();
+    expect(await t.db.first('SELECT id FROM attributions WHERE qualification_id = ?', [q])).toBeNull();
+    await t.db.exec('DROP TRIGGER coupure');
+    expect(await t.attribution.attribute(q)).toMatchObject({ agent_id: t.alex.id, reason: 'zone' });
+    expect((await t.store.getPerson(person))!.agent_id).toBe(t.alex.id);
+    expect((await t.journal.all()).filter((e) => e.type === 'attribution')).toHaveLength(1);
+  });
+
+  it('une réattribution coupée en plein passage est reprise en entier au passage suivant', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q))!;
+    t.setClock(TUESDAY_10H + 24 * HOUR);
+    await t.db.exec("CREATE TRIGGER coupure BEFORE UPDATE OF agent_id ON persons BEGIN SELECT RAISE(ABORT, 'coupure'); END;");
+    await expect(t.attribution.reassignOverdue(t.network.id)).rejects.toThrow();
+    expect(await t.db.first('SELECT id FROM attributions WHERE replaces_id = ?', [first.id])).toBeNull();
+    await t.db.exec('DROP TRIGGER coupure');
+    const [next] = await t.attribution.reassignOverdue(t.network.id);
+    expect((await t.store.getPerson(await t.personOf(q)))!.agent_id).toBe(next!.agent_id);
+  });
+
+  it('[R16] le nouvel agent ouvre une fiche réunie qui portait un agent parti, par attribution comme par réattribution', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const parti = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Zoé' });
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const fresh = await t.personOf(q);
+    await t.fiche.merge({ survivorId: fresh, mergedId: parti.id, reason: 'même personne' });
+    expect(await t.attribution.attribute(q)).toMatchObject({ agent_id: t.sam.id, reason: 'zone' });
+    expect((await t.store.getPerson(fresh))!.agent_id).toBe(t.sam.id);
+    expect((await t.store.getPerson(parti.id))!.agent_id).toBe(t.sam.id);
+    const acces = new Acces(t.db, t.store, t.fiche, t.journal);
+    const read = await acces.readFiche({ role: 'agent', userId: t.sam.id, networkId: t.network.id }, fresh);
+    expect(read).toMatchObject({ ok: true, view: 'full' });
+
+    // Un agent en activité sur une fiche, un agent parti sur l'autre : l'agent en activité garde, et ouvre.
+    const u = await setup();
+    await u.attribution.addZone(u.network.id, u.lou.id, 'Talant');
+    const suivie = await u.store.createPerson({ networkId: u.network.id, agentId: u.sam.id, firstName: 'Zoé' });
+    const ancienne = await u.store.createPerson({ networkId: u.network.id, agentId: u.sam.id, firstName: 'Zoé' });
+    await u.fiche.merge({ survivorId: suivie.id, mergedId: ancienne.id, reason: 'même personne' });
+    const qu = await u.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    await u.fiche.merge({ survivorId: suivie.id, mergedId: await u.personOf(qu), reason: 'même personne' });
+    // La fusion refuse deux agents : l'écart vient d'une fiche passée à un agent, parti depuis.
+    await u.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [u.alex.id, ancienne.id]);
+    await u.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [u.alex.id]);
+    expect(await u.attribution.attribute(qu)).toMatchObject({ agent_id: u.sam.id, reason: 'already_followed' });
+    expect((await u.store.getPerson(ancienne.id))!.agent_id).toBe(u.sam.id);
+    const acces2 = new Acces(u.db, u.store, u.fiche, u.journal);
+    expect(await acces2.readFiche({ role: 'agent', userId: u.sam.id, networkId: u.network.id }, suivie.id)).toMatchObject({ ok: true, view: 'full' });
+  });
+
+  it('[R25] un message reçu après le passage à la direction ne revient pas à l’agent qui n’a pas rappelé', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.attribute(await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.'));
+    t.setClock(TUESDAY_10H + 24 * HOUR);
+    const [direction] = await t.attribution.reassignOverdue(t.network.id);
+    expect(direction!.agent_id).toBeNull();
+    t.setClock(TUESDAY_10H + 25 * HOUR);
+    const again = await t.contact('zoe', 'Je souhaite toujours vendre ma maison à Talant.');
+    expect(await t.attribution.attribute(again)).toMatchObject({ agent_id: null, reason: 'no_zone' });
+    expect((await t.store.getPerson(await t.personOf(again)))!.agent_id).toBeNull();
+  });
+
+  it('[R25] l’agent parti, un message sans commune va à l’autre agent de la commune d’avant, pas à la direction', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const first = (await t.attribution.attribute(await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.')))!;
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [first.agent_id]);
+    t.setClock(TUESDAY_10H + 2 * HOUR);
+    const next = (await t.attribution.attribute(await t.contact('zoe', 'Avez-vous reçu mon message ?')))!;
+    expect(next.reason).toBe('zone');
+    expect(next.agent_id).not.toBeNull();
+    expect(next.agent_id).not.toBe(first.agent_id);
+  });
+
+  it('[R25] un message tiède n’allonge pas le délai d’un contact chaud chez l’agent suivant', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const hot = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    await t.db.run("UPDATE contact_scores SET temperature = 'hot' WHERE qualification_id = ?", [hot]);
+    await t.attribution.attribute(hot);
+    t.setClock(TUESDAY_10H + HOUR);
+    const cold = await t.contact('zoe', 'Une précision sur ma maison.');
+    await t.db.run("UPDATE contact_scores SET temperature = 'cold' WHERE qualification_id = ?", [cold]);
+    expect(await t.attribution.attribute(cold)).toMatchObject({ callback_hours: 24 });
+    t.setClock(TUESDAY_10H + 8 * HOUR);
+    const [next] = await t.attribution.reassignOverdue(t.network.id);
+    expect(next).toMatchObject({ reason: 'reassigned', callback_hours: 8 });
+  });
+
+  it('[R16] à la réattribution, une fiche réunie qui porte un agent parti passe au nouvel agent, qui l’ouvre', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q))!;
+    const fresh = await t.personOf(q);
+    const ancienne = await t.store.createPerson({ networkId: t.network.id, agentId: first.agent_id, firstName: 'Zoé' });
+    await t.fiche.merge({ survivorId: fresh, mergedId: ancienne.id, reason: 'même personne' });
+    // La fusion refuse deux agents : l'écart vient d'une fiche passée à un agent, parti depuis.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.lou.id, ancienne.id]);
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.lou.id]);
+    t.setClock(TUESDAY_10H + 24 * HOUR);
+    const [next] = await t.attribution.reassignOverdue(t.network.id);
+    expect((await t.store.getPerson(ancienne.id))!.agent_id).toBe(next!.agent_id);
+    const acces = new Acces(t.db, t.store, t.fiche, t.journal, { now: () => new Date(TUESDAY_10H + 24 * HOUR) });
+    expect(await acces.readFiche({ role: 'agent', userId: next!.agent_id!, networkId: t.network.id }, fresh)).toMatchObject({ ok: true, view: 'full' });
   });
 });

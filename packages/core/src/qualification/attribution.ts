@@ -4,7 +4,7 @@
  *
  * Une personne exclue ou qui a demandé l'arrêt n'est jamais attribuée [R25]. Rien n'est envoyé à personne ici.
  */
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -43,10 +43,11 @@ export const ATTRIBUTION_RULES: readonly string[] = Object.freeze([
   'Une personne exclue ou qui a demandé l’arrêt n’est jamais attribuée.',
   'Un message indésirable n’est attribué à personne ; un partenaire va à la direction.',
   'Un client déjà suivi par un agent en activité reste à cet agent.',
-  'Sinon, le contact va à un agent en activité dont la zone couvre sa commune, celle qu’il a donnée ou, à défaut, celle du bien cité.',
+  'Sinon, le contact va à un agent en activité dont la zone couvre sa commune, celle qu’il a donnée, à défaut celle du bien cité, à défaut celle d’un message d’avant, et qui ne l’a pas encore eu.',
   'Si plusieurs agents couvrent la commune, le choix se fait par un tirage fixe sur l’identifiant de la fiche : le même contact va toujours au même agent.',
   'Si aucun agent ne couvre la commune, le contact va à la direction, jamais au hasard.',
   'Un contact qui n’a pas été rappelé dans le délai de la charte est réattribué une fois par délai, par la même règle, à un agent qui ne l’a pas encore eu ; s’il n’y en a plus, à la direction.',
+  'Un nouveau message ne repousse jamais le délai en cours : tant que personne n’a rappelé, le délai le plus court fait foi.',
   'Aucune IA ne participe à l’attribution.',
 ]);
 
@@ -149,21 +150,28 @@ export class Attribution {
     } else if (q.category === 'partner') {
       reason = 'no_zone';
     } else {
-      const commune = q.city ?? (await this.propertyCommune(q.property_id));
-      agentId = commune ? chooseAgent(root.id, await this.agentsOf(q.network_id, commune)) : null;
+      // Un message sans commune garde celle d'un message d'avant, et un agent qui a déjà eu le contact sans le
+      // rappeler ne le reçoit pas de nouveau parce que la personne a réécrit.
+      const history = await this.history(ids);
+      const tried = new Set(history.map((c) => c.agent_id).filter((id): id is string => id !== null));
+      const commune = q.city ?? (await this.propertyCommune(q.property_id)) ?? (await this.lastCommune(history));
+      agentId = commune ? chooseAgent(root.id, await this.agentsOf(q.network_id, commune), tried) : null;
       reason = agentId ? 'zone' : 'no_zone';
     }
 
     const hot = await this.db.first<{ temperature: string }>('SELECT temperature FROM contact_scores WHERE qualification_id = ?', [qualificationId]);
     const hours = hot?.temperature === 'hot' ? this.settings.hotCallbackHours : this.settings.otherCallbackHours;
-    const { changes } = await this.db.run(
-      `INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?) ON CONFLICT (qualification_id) DO NOTHING`,
-      [this.newId(), q.network_id, root.id, qualificationId, agentId, reason, hours, this.now().toISOString()],
-    );
+    // L'attribution et le passage de la fiche, tout ou rien : une coupure ne laisse jamais un agent sans accès.
+    const [inserted] = await runBatch(this.db, [
+      {
+        sql: `INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?) ON CONFLICT (qualification_id) DO NOTHING`,
+        params: [this.newId(), q.network_id, root.id, qualificationId, agentId, reason, hours, this.now().toISOString()],
+      },
+      ...this.takeOver(root.id, ids, agentId, Boolean(followed)),
+    ]);
     const row = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE qualification_id = ?', [qualificationId]);
-    if (changes === 1 && row) {
-      if (agentId && !followed) await this.assign(root.id, agentId, null);
+    if (inserted?.changes === 1 && row) {
       await this.log('attribution', root.id, { rule: 'R25', reason, toDirection: agentId === null, callbackHours: hours });
     }
     return row;
@@ -182,69 +190,101 @@ export class Attribution {
       [networkId],
     );
     const made: AttributionRow[] = [];
-    for (const a of open) {
-      if (Date.parse(a.created_at) + a.callback_hours * 3_600_000 > at.getTime()) continue;
-      const view = await this.fiche.view(a.person_id);
+    const seen = new Set<string>();
+    for (const row of open) {
+      // Seule une ligne déjà échue peut porter le délai le plus court : les autres n'ont rien à décider.
+      if (Date.parse(row.created_at) + row.callback_hours * 3_600_000 > at.getTime()) continue;
+      const view = await this.fiche.view(row.person_id);
       const root = view.person;
       const ids = view.members.map((m) => m.id);
-      // Une attribution plus récente de la même fiche fait foi : celle-ci n'est plus la bonne.
-      const latest = await this.current(root.id);
-      if (latest?.id !== a.id) continue;
+      // L'attribution en cours de la fiche fait foi, et un message de plus ne remet pas son délai à zéro.
+      const a = await this.current(root.id);
+      if (!a || a.agent_id === null || seen.has(a.id)) continue;
+      seen.add(a.id);
       if (await this.excluded(ids)) continue;
-      if (await this.calledBack(ids, a.created_at)) continue;
+      const history = await this.history(ids);
+      const delay = await this.openDelay(a, history, ids);
+      if (delay === null || delay.deadline > at.getTime()) continue;
 
-      const chain = await this.chain(a);
-      const tried = new Set(chain.map((c) => c.agent_id).filter((id): id is string => id !== null));
-      const first = chain[chain.length - 1]!;
-      const q = first.qualification_id
-        ? await this.db.first<{ city: string | null; property_id: string | null }>('SELECT city, property_id FROM qualifications WHERE id = ?', [first.qualification_id])
-        : null;
-      const commune = q ? (q.city ?? (await this.propertyCommune(q.property_id))) : null;
+      const tried = new Set(history.map((c) => c.agent_id).filter((id): id is string => id !== null));
+      const commune = await this.lastCommune(history);
       const next = commune ? chooseAgent(root.id, await this.agentsOf(networkId, commune), tried) : null;
       const id = this.newId();
-      const { changes } = await this.db.run(
-        `INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at)
-         VALUES (?, ?, ?, NULL, ?, 'reassigned', ?, ?, ?) ON CONFLICT (replaces_id) DO NOTHING`,
-        [id, networkId, root.id, next, a.callback_hours, a.id, at.toISOString()],
-      );
-      if (changes !== 1) continue;
-      await this.assign(root.id, next, a.agent_id, ids);
+      const [inserted] = await runBatch(this.db, [
+        {
+          sql: `INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at)
+                VALUES (?, ?, ?, NULL, ?, 'reassigned', ?, ?, ?) ON CONFLICT (replaces_id) DO NOTHING`,
+          params: [id, networkId, root.id, next, delay.hours, a.id, at.toISOString()],
+        },
+        // Toutes les fiches réunies que suivait l'agent, ou un agent parti, changent de mains : jamais deux agents.
+        {
+          sql: `UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${placeholders(ids.length)})
+                AND (agent_id = ? OR agent_id IN (SELECT id FROM agents WHERE status = 'left'))`,
+          params: [next, at.toISOString(), ...ids, a.agent_id],
+        },
+      ]);
+      if (inserted?.changes !== 1) continue;
       await this.log('attribution.reattribuee', root.id, { rule: 'R25', toDirection: next === null, tries: tried.size });
-      const row = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE id = ?', [id]);
-      if (row) made.push(row);
+      const made1 = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE id = ?', [id]);
+      if (made1) made.push(made1);
     }
     return made;
   }
 
-  /** La fiche passe à l'agent ; seulement si elle n'a pas d'agent en activité, ou si elle était à `from`. */
-  private async assign(personId: string, agentId: string | null, from: string | null, members: readonly string[] = [personId]): Promise<void> {
+  /**
+   * Ce que l'attribution change sur les fiches : un ancien agent parti, sur une fiche réunie, bloquerait l'accès du
+   * nouvel agent [R16]. La fiche gardée sans agent prend l'agent, sauf s'il suit déjà l'une de ses fiches réunies.
+   */
+  private takeOver(rootId: string, ids: readonly string[], agentId: string | null, followed: boolean): SqlStatement[] {
+    if (agentId === null) return [];
     const at = this.now().toISOString();
-    if (from !== null) {
-      // Toutes les fiches réunies que suivait l'agent quittent ses mains : la fiche n'a jamais deux agents.
-      await this.db.run(`UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${placeholders(members.length)}) AND agent_id = ?`, [
-        agentId,
-        at,
-        ...members,
-        from,
-      ]);
-      return;
-    }
-    await this.db.run(
-      `UPDATE persons SET agent_id = ?, updated_at = ? WHERE id = ?
-         AND (agent_id IS NULL OR agent_id IN (SELECT id FROM agents WHERE status = 'left'))`,
-      [agentId, at, personId],
-    );
+    const statements: SqlStatement[] = [
+      {
+        sql: `UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${placeholders(ids.length)}) AND agent_id IN (SELECT id FROM agents WHERE status = 'left')`,
+        params: [agentId, at, ...ids],
+      },
+    ];
+    if (!followed) statements.push({ sql: 'UPDATE persons SET agent_id = ?, updated_at = ? WHERE id = ? AND agent_id IS NULL', params: [agentId, at, rootId] });
+    return statements;
   }
 
-  /** La suite des attributions, de la plus récente à la première. */
-  private async chain(a: AttributionRow): Promise<AttributionRow[]> {
-    const chain = [a];
-    let cur: AttributionRow | null = a;
-    while (cur?.replaces_id) {
-      cur = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE id = ?', [cur.replaces_id]);
-      if (cur) chain.push(cur);
+  /** Toutes les attributions de la fiche, de la plus récente à la première. */
+  private history(ids: readonly string[]): Promise<AttributionRow[]> {
+    return this.db.all<AttributionRow>(`SELECT * FROM attributions WHERE person_id IN (${placeholders(ids.length)}) ORDER BY created_at DESC, rowid DESC`, ids);
+  }
+
+  /**
+   * Le délai en cours : l'heure limite est la plus proche des délais ouverts chez cet agent depuis le dernier rappel
+   * humain, et le plus court d'entre eux passe à l'agent suivant. Un message de plus ne repousse jamais ni l'une ni
+   * l'autre. Null : l'agent a rappelé depuis la dernière attribution.
+   */
+  private async openDelay(current: AttributionRow, history: readonly AttributionRow[], ids: readonly string[]): Promise<{ deadline: number; hours: number } | null> {
+    const last = await this.db.first<{ at: string | null }>(
+      `SELECT max(occurred_at) AS at FROM messages WHERE person_id IN (${placeholders(ids.length)}) AND direction = 'out' AND author_kind = 'agent'`,
+      ids,
+    );
+    const calledAt = last?.at ? Date.parse(last.at) : null;
+    let deadline = Number.POSITIVE_INFINITY;
+    let hours = Number.POSITIVE_INFINITY;
+    for (const row of history) {
+      if (row.agent_id !== current.agent_id) break;
+      const created = Date.parse(row.created_at);
+      if (calledAt !== null && calledAt >= created) break;
+      deadline = Math.min(deadline, created + row.callback_hours * 3_600_000);
+      hours = Math.min(hours, row.callback_hours);
     }
-    return chain;
+    return Number.isFinite(deadline) ? { deadline, hours } : null;
+  }
+
+  /** La commune du contact : celle du message le plus récent qui en dit une. */
+  private async lastCommune(history: readonly AttributionRow[]): Promise<string | null> {
+    for (const row of history) {
+      if (!row.qualification_id) continue;
+      const q = await this.db.first<{ city: string | null; property_id: string | null }>('SELECT city, property_id FROM qualifications WHERE id = ?', [row.qualification_id]);
+      const commune = q ? (q.city ?? (await this.propertyCommune(q.property_id))) : null;
+      if (commune) return commune;
+    }
+    return null;
   }
 
   private async excluded(ids: readonly string[]): Promise<boolean> {
@@ -252,15 +292,6 @@ export class Attribution {
     const row = await this.db.first<{ n: number }>(
       `SELECT count(*) AS n FROM exclusions WHERE person_id IN (${placeholders(ids.length)}) AND noted_at <= ? AND (lifted_at IS NULL OR lifted_at > ?)`,
       [...ids, at, at],
-    );
-    return Number(row?.n ?? 0) > 0;
-  }
-
-  /** Un humain du réseau a écrit à la personne depuis l'attribution : elle a été rappelée. */
-  private async calledBack(ids: readonly string[], since: string): Promise<boolean> {
-    const row = await this.db.first<{ n: number }>(
-      `SELECT count(*) AS n FROM messages WHERE person_id IN (${placeholders(ids.length)}) AND direction = 'out' AND author_kind = 'agent' AND occurred_at >= ?`,
-      [...ids, since],
     );
     return Number(row?.n ?? 0) > 0;
   }
