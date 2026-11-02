@@ -239,6 +239,41 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     expect((await t.ok(t.agent, 'GET', `/location/${id}/echeances`)).length).toBeGreaterThan(0);
   });
 
+  it('[R16] [R101] W15 : le texte du bail se lit sous les droits des deux fiches, et seulement celui du bail en vigueur', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/location/modeles-bail', { kind: 'bail_vide', body: BODY });
+    const r = await t.rent({ city: 'Relue-Essai', insee: '21901', zone: 'tendue', facts: {}, candidates: 3 });
+    const path = `/location/${r.id}/bail/texte`;
+    const first = await t.ok(t.agent, 'GET', path);
+    expect(first.content).toContain('12 allée des Essais');
+    const owner = (await t.db.first<{ owner_person_id: string }>('SELECT owner_person_id FROM rental_listings WHERE id = ?', [r.id]))!.owner_person_id;
+    const tenant = (await t.db.first<{ person_id: string }>('SELECT person_id FROM rental_applications WHERE id = ?', [r.apps[1]!]))!.person_id;
+    // Chacune des deux fiches compte : le bien reste à l'agent, une seule fiche part chez un autre.
+    for (const person of [owner, tenant]) {
+      await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.other.userId, person]);
+      const refused = await t.call(t.agent, 'GET', path);
+      expect(refused).toMatchObject({ status: 403, body: { rule: 'R16', code: 'not_assigned' } });
+      expect(JSON.stringify(refused.body)).not.toContain('allée des Essais');
+      await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.agent.userId, person]);
+    }
+    // Un autre réseau ne voit même pas le logement ; un agent parti est refusé.
+    expect((await t.call({ ...t.dir, networkId: 'autre-reseau' }, 'GET', path)).status).toBe(404);
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.agent.userId]);
+    expect(await t.call(t.agent, 'GET', path)).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    await t.db.run("UPDATE agents SET status = 'active' WHERE id = ?", [t.agent.userId]);
+    // La direction du réseau lit.
+    expect((await t.ok(t.dir, 'GET', path)).content).toBe(first.content);
+    // Un nouveau bail remplace l'ancien : seul le nouveau se relit.
+    const next = await t.ok(t.agent, 'POST', `/location/${r.id}/bail`, { address: '40 rue du Bail Nouveau', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'individuel', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001', noticeRef: t.put(`location/${r.id}/bail`) });
+    const again = await t.ok(t.agent, 'GET', path);
+    expect(again.leaseId).toBe(next.leaseId);
+    expect(again.content).toContain('40 rue du Bail Nouveau');
+    expect(again.content).not.toContain('12 allée des Essais');
+    // Des faits changés : plus aucun bail en vigueur, plus rien à relire [R101].
+    await t.ok(t.agent, 'POST', `/location/${r.id}/faits`, { ...FACTS, rentCents: 64_000 });
+    expect(await t.call(t.agent, 'GET', path)).toMatchObject({ status: 409, body: { code: 'no_current_lease' } });
+  });
+
   it('[R16] chaque route contrôle le rôle avant le corps ; un refus est au journal ; un autre agent est refusé', async () => {
     const t = await setup();
     const { id } = await t.open('Garde-Essai', FACTS);

@@ -147,7 +147,6 @@ globalThis.AIMMO_LOUER = function (t) {
     unknown_person: 'Cette fiche n’est pas dans ce réseau.',
     already_applied: 'Cette personne a déjà une candidature sur ce logement.',
     bad_dossierfacile: 'Ce lien n’est pas un lien DossierFacile.',
-    agent_inactive: 'Votre accès d’agent n’est plus actif.',
     no_facts: 'Saisissez d’abord les faits du logement.',
     invalid: 'Un champ n’est pas valable : vérifiez la saisie.',
     no_commune: 'Indiquez d’abord le code INSEE de la commune.',
@@ -668,7 +667,7 @@ globalThis.AIMMO_LOUER = function (t) {
         read.appendChild(el('p', text, 'brouillon'));
       };
       if (leaseTexts[lease.leaseId]) showLease(leaseTexts[lease.leaseId]);
-      else reading.appendChild(button('Relire le bail avec les parties', once(function () {
+      else if (lease.complete) reading.appendChild(button('Relire le bail avec les parties', once(function () {
         return send(base + '/bail/texte', 'GET').then(function (res) {
           if (res.gone) return;
           if (!res.ok) { louerState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : louerRefusal(res.body, 'Indisponible pour le moment. Réessayez plus tard.')); return; }
