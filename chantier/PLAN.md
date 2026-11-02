@@ -2603,8 +2603,10 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT14 · Écran « Attirer » : avis et publications Google, préparés et validés
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Voie : 2
+- Décidé (2026-11-02, voie 2) : écran à part, « Fiche Google », ouvert par l'agent depuis l'accueil et par la direction depuis « Attirer » ; l'agent ne connaît pas son identifiant (`google/moi`) ; l'état de chaque texte vient du serveur ; une publication ne se corrige pas à la main, elle vient de l'annonce (`texte_a_revoir`).
+- Reste : fusionnée (#277) ; relecture forte 1 P1 corrigé ; Codex en échec (H03) ; le planificateur ne lit pas les avis ni ne prépare de publication seul, seuls les gestes de l'écran le font ; le vrai client Google attend H07.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12
 - Cahier : M01 ; R154, R26.
 - Objectif : chaque agent voit ses avis Google, fait préparer une réponse, la corrige, la valide ; rien ne part sans lui, et en essai rien ne part du tout.
