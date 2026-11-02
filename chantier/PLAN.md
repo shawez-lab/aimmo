@@ -573,7 +573,7 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 
 ### E04 · Brouillon d'avis de valeur et validation par l'agent
 - Statut : fait (2026-10-27)
-- Reste : la mise en page PDF à la marque de l'agent, quand l'application de l'agent l'affichera.
+- Reste : la mise en page à la marque de l'agent, faite par E08.
 - Qui : Claude · Relecture : forte · Dépend de : E01, E02, E03
 - Cahier : M04, « Rédaction par l'IA » et « Validation ».
 - Objectif : un brouillon d'avis (méthode, comparables sans nom, fourchette, arguments, plan de commercialisation, date des données) rangé sur le bien ; l'IA rédige derrière une interface, un texte de secours sans IA sinon ; l'agent ajuste la fourchette et le texte, puis valide ; la mise en page à la marque de l'agent se fait sur le brouillon validé.
@@ -604,6 +604,23 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Objectif : un banc qui compare la fourchette AIMMO à l'estimation de l'agent sur des biens anonymisés gardés hors du dépôt, et rend l'écart médian et chaque écart avec son explication.
 - Critères : écart médian de moins de 10 % sur 20 biens réels ; aucun bien réel dans le dépôt ; le banc se saute sans fichier.
 - Attend : H19.
+
+### E08 · Avis de valeur imprimable à la marque de l'agent
+- Statut : en cours
+- Décidé (2026-11-02), lecture prudente : page HTML A4 servie par `GET /v1/avis/:id/imprimable`, enregistrée en PDF par le navigateur, comme la fiche de P05 (un vrai PDF côté Worker demanderait un service de rendu payant) ; imprimée par le seul passage `releasable`, qui refuse désormais aussi un avis dont le validateur ne suit plus le bien ou est parti [R30] ; l'agent sur la page est celui qui a validé ; une voie qui commence par un chiffre n'est pas citée [R29].
+- Qui : Claude · Relecture : forte · Dépend de : E04
+- Cahier : M04, « Rédaction par l'IA ».
+- Objectif : l'avis validé en page à imprimer au nom et aux coordonnées professionnelles de l'agent : fourchette validée, texte, méthode, ventes citées sans nom, caractéristiques prises en compte.
+- Critères : un brouillon n'est jamais imprimé [R30] ; qui ne voit pas le bien en entier est refusé, et le refus est au journal [R16] ; la seule fourchette de la page est celle validée [R30] ; date des données et mention d'avis présentes [R28] ; ni nom ni numéro de voie [R29] ; journal sans chiffre [R13] ; système de design [R201].
+- Attend : rien.
+
+### E09 · L'agent prépare, ajuste et valide son avis
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : E08
+- Cahier : M04, « Rédaction par l'IA » et « Validation ».
+- Objectif : aujourd'hui `AvisDeValeur` n'a aucune route : personne ne peut créer ni valider un avis en production. Routes de brouillon (fourchette calculée sur le bien par les ventes DVF de E05), d'ajustement et de validation, et écran dans l'application de l'agent, avec téléchargement de la page de E08.
+- Critères : seul l'agent qui suit le bien prépare, ajuste et valide [R30, R16] ; sans ventes configurées ou sans fourchette possible, la raison est dite et rien n'est rangé [R27] ; la fourchette vient du calcul [R10] ; rien ne part [R26] ; écran dans le budget de l'application [R201].
+- Attend : `DVF_BASE_URL` au déploiement pour le vrai calcul (déjà noté en E05).
 
 **M05 · Rendez-vous, février 2027.**
 
