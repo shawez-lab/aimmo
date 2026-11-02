@@ -716,7 +716,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   persons: ['id', 'network_id', 'language', 'contact_status', 'last_contact_at', 'created_at', 'updated_at'],
   person_identifiers: ['id', 'network_id', 'kind', 'created_at'],
   consents: ['id', 'network_id', 'purpose', 'channel', 'given_at', 'withdrawn_at', 'created_at'],
-  exclusions: ['id', 'network_id', 'channel', 'noted_at', 'lifted_at', 'created_at'],
+  exclusions: ['id', 'network_id', 'channel', 'noted_at', 'lifted_at', 'created_at', 'copied_by_merge'],
   projects: ['id', 'network_id', 'kind', 'stage', 'deadline', 'created_at', 'updated_at'],
   sources: ['id', 'network_id', 'project_id', 'channel', 'occurred_at', 'created_at'],
   properties: ['id', 'network_id', 'reference', 'kind', 'surface_m2', 'rooms', 'price_eur', 'status', 'created_at', 'updated_at'],
