@@ -28,6 +28,7 @@ import {
   EcheancesMandats,
   Diffusion,
   SignaturePapier,
+  MandatDuBien,
   FicheAgent,
   Modeles,
   FicheUnique,
@@ -95,7 +96,7 @@ import {
 } from './partenaires.ts';
 import type { FeeSettings } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
-import { studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
+import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
 import { appelsRoutes, type AppelsRoute } from './appels.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
@@ -618,28 +619,6 @@ const ROUTES: RouteDef[] = [
       const r = await controles(s).check(viewer, id!);
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
-    },
-  },
-  {
-    method: 'POST',
-    pattern: new RegExp(`^/documents/${ID}/signature-papier$`),
-    name: 'document.signature_papier',
-    // Un mandat signé sur papier : contrôlé à l'instant, rangé avec sa source, numéroté, exemplaire produit [R39, R41].
-    handle: async (s, viewer, [id], request) => {
-      const body = await readJson(request);
-      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['signedAt', 'place', 'scanRef', 'source', 'sourceDetail'].includes(k))) return failure(400, 'unexpected_field', 'Seuls signedAt, place, scanRef, source, sourceDetail sont admis.');
-      if (typeof body.signedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.signedAt)) return failure(400, 'invalid_date', 'signedAt : un instant ISO en UTC.');
-      const r = await new SignaturePapier(s.db, s.acces, s.journal, { now: s.now }).register(viewer, id!, {
-        signedAt: new Date(body.signedAt),
-        place: body.place as never,
-        scanRef: body.scanRef as string,
-        source: typeof body.source === 'string' ? body.source : null,
-        sourceDetail: typeof body.sourceDetail === 'string' ? body.sourceDetail : null,
-      });
-      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
-      if (r.rule === 'R16') return refusal(r);
-      return json(r.code === 'already_signed' ? 409 : 400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
     },
   },
   {
@@ -1420,6 +1399,69 @@ function espacesAgentRoutes(config: Pick<ApiConfig, 'espaces' | 'estimation' | '
   }));
 }
 
+/**
+ * Le mandat d'un bien (D11) et sa signature papier : ces routes lisent le stockage des pièces (`PIECES`). Sans lui, le dépôt
+ * répond fermé, la lecture reste ouverte, et un document réel ne se signe pas : un scan doit exister [R41].
+ */
+function mandatRoutes(pieces: PieceStore | null): RouteDef[] {
+  const mandats = (s: Services) => new MandatDuBien(s.db, s.acces, s.journal, { now: s.now });
+  return [
+    {
+      method: 'GET',
+      pattern: new RegExp(`^/biens/${ID}/mandat$`),
+      name: 'bien.mandat',
+      // Les documents du bien, sans contenu, le mandat en cours et les mandants possibles : son agent, direction, conformité [R16].
+      handle: async (s, viewer, [id]) => {
+        const r = await mandats(s).read(viewer, id!);
+        return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : refusal(r);
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/biens/${ID}/scans-mandat$`),
+      name: 'bien.mandat.scan',
+      // Le scan signé, rangé tel quel ; la référence rendue sert à `signature-papier`. Son agent, la direction [R16].
+      handle: async (s, viewer, [id], request) => {
+        const upload = pieces?.upload?.bind(pieces);
+        if (!upload) return json(503, { ok: false, rule: null, code: 'depot_ferme' });
+        const length = request.headers.get('content-length');
+        const declaredSize = length === null || length.trim() === '' ? null : /^\d{1,12}$/.test(length.trim()) ? Number(length.trim()) : Number.NaN;
+        const r = await mandats(s).depositScan(viewer, id!, { put: (key, bytes, type) => upload(key, bytes, type) }, {
+          contentType: request.headers.get('content-type'),
+          sha256: request.headers.get('x-aimmo-sha256'),
+          declaredSize,
+          read: (max) => readCapped(request, max),
+        });
+        if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+        if (r.rule === 'R16') return refusal(r);
+        return json(({ trop_lourd: 413, type_refuse: 415, stockage_indisponible: 503 } as Record<string, number>)[r.code] ?? 400, { ok: false, rule: null, code: r.code });
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/documents/${ID}/signature-papier$`),
+      name: 'document.signature_papier',
+      // Un mandat signé sur papier : contrôlé à l'instant, scan présent, rangé avec sa source, numéroté, exemplaire produit [R39, R41].
+      handle: async (s, viewer, [id], request) => {
+        const body = await readJson(request);
+        if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+        if (Object.keys(body).some((k) => !['signedAt', 'place', 'scanRef', 'source', 'sourceDetail'].includes(k))) return failure(400, 'unexpected_field', 'Seuls signedAt, place, scanRef, source, sourceDetail sont admis.');
+        if (typeof body.signedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.signedAt)) return failure(400, 'invalid_date', 'signedAt : un instant ISO en UTC.');
+        const r = await new SignaturePapier(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).register(viewer, id!, {
+          signedAt: new Date(body.signedAt),
+          place: body.place as never,
+          scanRef: body.scanRef as string,
+          source: typeof body.source === 'string' ? body.source : null,
+          sourceDetail: typeof body.sourceDetail === 'string' ? body.sourceDetail : null,
+        });
+        if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+        if (r.rule === 'R16') return refusal(r);
+        return json(r.code === 'already_signed' ? 409 : r.code === 'depot_ferme' ? 503 : 400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
+      },
+    },
+  ];
+}
+
 function m10Routes(pieces: PieceStore | null): RouteDef[] {
   return dossierRoutes().map((r: DossierRoute) => ({
     ...r,
@@ -1658,6 +1700,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...annonceRoutes(),
     ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),
+    ...mandatRoutes(config.pieces ?? null),
     ...apresVenteRoutes(),
     ...pilotageRoutes(),
     ...reseauRoutes(config.reseau ?? {}),
