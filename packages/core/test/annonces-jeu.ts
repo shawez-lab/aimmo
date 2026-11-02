@@ -105,11 +105,11 @@ export async function setupAnnonce(options: { card?: boolean } = {}) {
     const r = await new SignatureAvenant(db, acces, journal, { now }).register(agent, a.document.id, { signedAt, place: 'agence', scanRef: `scans/avenant-duree-${months}.pdf` });
     if (!r.ok) throw new Error(r.code);
   };
-  /** Un nouveau mandat sur le même bien, signé à `signedAt`, à l'agence. */
-  const signNewMandate = async (feeEur: number, signedAt: Date = clock) => {
+  /** Un nouveau mandat sur le même bien, signé à `signedAt`. */
+  const signNewMandate = async (feeEur: number, signedAt: Date = clock, place: 'agence' | 'hors_agence' = 'agence') => {
     const n = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': feeEur, 'honoraires.charge': 'acquereur', 'mandat.duree_mois': 12 } });
     if (!n.ok) throw new Error(n.code);
-    const r = await new SignaturePapier(db, acces, journal, { now }).register(agent, n.document.id, { signedAt, place: 'agence', scanRef: `scans/mandat-${feeEur}.pdf`, source: 'referral' });
+    const r = await new SignaturePapier(db, acces, journal, { now }).register(agent, n.document.id, { signedAt, place, scanRef: `scans/mandat-${feeEur}.pdf`, source: 'referral' });
     if (!r.ok) throw new Error(r.code);
     return r.value.mandateId;
   };

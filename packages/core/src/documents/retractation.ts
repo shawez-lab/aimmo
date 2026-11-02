@@ -112,7 +112,9 @@ export class Diffusion {
     if (localTime(at, TIME_ZONE).date >= mandateEndDay(signedAt, duration)) return decision(false, 'expired');
     const last = withdrawalLastDay(signedAt, row.place);
     if (last !== null && localTime(at, TIME_ZONE).date <= last) {
-      if (await this.db.first('SELECT mandate_id FROM mandate_early_starts WHERE mandate_id = ?', [row.mandate_id])) return decision(true, 'allowed_early_start', last);
+      // La demande écrite du vendeur ne compte qu'à partir du jour où elle est reçue (D10).
+      const early = await this.db.first<{ received_at: string }>('SELECT received_at FROM mandate_early_starts WHERE mandate_id = ?', [row.mandate_id]);
+      if (early && localTime(new Date(early.received_at), TIME_ZONE).date <= localTime(at, TIME_ZONE).date) return decision(true, 'allowed_early_start', last);
       return decision(false, 'withdrawal_period', last);
     }
     return decision(true, 'allowed', last);

@@ -79,6 +79,26 @@ describeWithSqlite('D10 · conditions d’un mandat à une date passée', () => 
     expect(await mandateFeeAt(t.db, t.diffusion, t.network.id, t.propertyId, COMPROMIS)).toEqual({ ok: true, mandateId: t.mandateId, feeEur: 10000, feeCharge: 'acquereur' });
   });
 
+  it('[R63] un mandat échu au compromis et rallongé après reste échu ce jour-là : pas de commission', async () => {
+    const t = await ready();
+    t.setClock(at9('2027-03-20'));
+    await t.amendDuration(24, at9('2027-03-15'));
+    await t.amendDuration(1, at9('2027-03-09'));
+    expect(await mandateFeeAt(t.db, t.diffusion, t.network.id, t.propertyId, COMPROMIS)).toEqual({ ok: false, code: 'no_mandate_in_force' });
+    // Aujourd'hui, la dernière durée signée vaut.
+    expect((await t.diffusion.canDiffuse(t.network.id, t.propertyId)).allowed).toBe(true);
+  });
+
+  it('[R63] une demande écrite reçue après le compromis ne fait pas passer un mandat en délai devant celui en vigueur', async () => {
+    const t = await ready();
+    const later = await t.signNewMandate(9000, at9('2027-03-05'), 'hors_agence');
+    t.setClock(at9('2027-03-20'));
+    expect(await t.diffusion.recordEarlyStart(t.agent, later, { proof: 'mail du vendeur (test)', receivedAt: at9('2027-03-15') })).toEqual({ ok: true });
+    expect(await mandateFeeAt(t.db, t.diffusion, t.network.id, t.propertyId, COMPROMIS)).toEqual({ ok: true, mandateId: t.mandateId, feeEur: 10000, feeCharge: 'acquereur' });
+    // À partir du jour où elle est reçue, la demande compte.
+    expect(await t.diffusion.canDiffuse(t.network.id, t.propertyId, at9('2027-03-15'))).toMatchObject({ allowed: true, reason: 'allowed_early_start', mandateId: later });
+  });
+
   it('[R42] à la date d’aujourd’hui, rien ne change : l’avenant raccourci ferme la diffusion dès sa signature', async () => {
     const t = await ready();
     t.setClock(at9('2027-03-20'));
