@@ -35,7 +35,8 @@ export interface PropertyMandate {
     status: 'complet' | 'incomplet';
     missing: string[];
     createdAt: string;
-    signature: { signedAt: string; place: string; number: string | null } | null;
+    /** `complete` faux : l'enregistrement s'est arrêté en route (source manquante, coupure) et se reprend ; il n'est pas signé. */
+    signature: { signedAt: string; place: string; number: string | null; complete: boolean } | null;
   }[];
   /** La décision de diffusion dit l'état du mandat ; `mandate` est nul s'il n'y en a aucun. */
   mandate: { id: string; number: string | null; signedAt: string | null; allowed: boolean; reason: DiffusionDecision['reason'] } | null;
@@ -73,9 +74,15 @@ export class MandatDuBien {
     if (!seen.ok) return seen;
     if (seen.view !== 'full') return this.refuse(viewer, propertyId, 'mandat_du_bien', 'not_assigned');
 
-    const rows = await this.db.all<{ id: string; kind: string; mode: 'essai' | 'reel'; status: 'complet' | 'incomplet'; missing: string; created_at: string; signed_at: string | null; place: string | null; number: string | null; mandate_id: string | null }>(
-      `SELECT d.id, d.kind, d.mode, d.status, d.missing, d.created_at, s.signed_at, s.place, s.number, s.mandate_id
-       FROM documents d LEFT JOIN signed_documents s ON s.document_id = d.id
+    const rows = await this.db.all<{ id: string; kind: string; mode: 'essai' | 'reel'; status: 'complet' | 'incomplet'; missing: string; created_at: string; signed_at: string | null; place: string | null; number: string | null; complete: number }>(
+      `SELECT d.id, d.kind, d.mode, d.status, d.missing, d.created_at,
+              COALESCE(s.signed_at, a.signed_at) AS signed_at, COALESCE(s.place, a.place) AS place,
+              COALESCE(s.number, parent.number) AS number,
+              CASE WHEN a.document_id IS NOT NULL OR s.copy_content IS NOT NULL THEN 1 ELSE 0 END AS complete
+       FROM documents d
+       LEFT JOIN signed_documents s ON s.document_id = d.id
+       LEFT JOIN signed_amendments a ON a.document_id = d.id
+       LEFT JOIN signed_documents parent ON parent.mandate_id = a.mandate_id
        WHERE d.network_id = ? AND d.property_id = ? ORDER BY d.created_at DESC, d.rowid DESC LIMIT ?`,
       [viewer.networkId, propertyId, PROPERTY_DOCUMENTS_MAX],
     );
@@ -106,7 +113,7 @@ export class MandatDuBien {
           status: r.status,
           missing: parseMissing(r.missing),
           createdAt: r.created_at,
-          signature: r.signed_at ? { signedAt: r.signed_at, place: r.place as string, number: r.number } : null,
+          signature: r.signed_at ? { signedAt: r.signed_at, place: r.place as string, number: r.number, complete: r.complete === 1 } : null,
         })),
         mandate: decision.mandateId ? { id: decision.mandateId, number: signed?.number ?? null, signedAt: signed?.signed_at ?? null, allowed: decision.allowed, reason: decision.reason } : null,
         owners: [...owners.values()],

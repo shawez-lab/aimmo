@@ -926,6 +926,15 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : seul l'agent du bien, la direction et la conformité lisent [R16] ; seul l'agent du bien ou la direction dépose, droits vérifiés avant de lire un octet [R16] ; type confirmé par les premiers octets et empreinte recalculée ; un scan absent du stockage est refusé [R10] ; ni contenu ni donnée personnelle au journal [R13].
 - Attend : H25 pour le dépôt réel.
 
+### D14 · Le scan d'un avenant vérifié comme celui du mandat
+- Statut : à faire
+- Trouvé le 2026-11-02 par la relecture forte de D11 : `SignatureAvenant` accepte encore n'importe quelle référence de scan, alors qu'un avenant change les conditions du mandat et sa diffusion.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : D11
+- Cahier : M06 ; R10, R16, R41.
+- Objectif : même contrôle qu'à la signature papier : référence du bien, présente dans le stockage, jamais déjà utilisée ; sans stockage, rien ne se signe ; une reprise garde son scan.
+- Critères : un test pour chacun de ces refus et pour la reprise.
+- Attend : H25 pour le dépôt réel.
+
 ### D12 · Écran « Mandat » dans l'application
 - Statut : à faire
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D11

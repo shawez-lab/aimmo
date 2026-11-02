@@ -65,12 +65,20 @@ describeWithSqlite('D11 · lire et déposer depuis le téléphone', () => {
     w = await world();
   });
 
-  it('[R16] seuls l’agent du bien, la direction et la conformité lisent ; refus au journal ; un autre réseau n’existe pas', async () => {
+  it('[R16] seuls l’agent du bien, la direction et la conformité lisent ; refus au journal ; un autre réseau est refusé', async () => {
     const path = `/biens/${w.bien.id}/mandat`;
     for (const key of [KEYS.alex, KEYS.direction, KEYS.compliance]) expect((await w.call(path, key)).status).toBe(200);
     expect((await w.call(path, KEYS.sam)).status).toBe(403);
     expect((await w.call(path, KEYS.partner)).status).toBe(403);
-    expect((await w.call('/biens/inconnu/mandat', KEYS.direction)).status).toBeGreaterThanOrEqual(403);
+    expect((await w.call('/biens/inconnu/mandat', KEYS.direction)).status).toBe(404);
+    // Une direction d'un autre réseau, en lecture comme en dépôt.
+    const foreign = await w.store.createNetwork('Autre réseau');
+    const key = 'test-cle-mandat-ailleurs-fffffffffffffffffffffffff';
+    const all = JSON.parse(w.env.API_KEYS as string) as unknown[];
+    w.env.API_KEYS = JSON.stringify([...all, { sha256: await sha256Hex(key), networkId: foreign.id, role: 'direction', userId: 'direction-2' }]);
+    expect((await w.call(path, key)).status).toBe(403);
+    expect((await w.scan(key)).status).toBe(403);
+    expect(w.kept.size).toBe(0);
     const refused = (await w.journal.all()).filter((e) => e.type === 'acces.refuse' && String(e.subject).startsWith('property:'));
     expect(refused.length).toBeGreaterThanOrEqual(2);
   });
@@ -152,6 +160,61 @@ describeWithSqlite('D11 · lire et déposer depuis le téléphone', () => {
     const r = await closed.post(`/documents/${doc.id}/signature-papier`, KEYS.alex, { signedAt: new Date(Date.now() - 60_000).toISOString(), place: 'agence', scanRef: `mandats/${closed.bien.id}/x.pdf`, source: 'referral' });
     expect(r.status).toBe(503);
     expect(await closed.db.first('SELECT count(*) AS n FROM signed_documents')).toEqual({ n: 0 });
+  });
+
+  it('[R10] un scan prouve une seule signature ; l’index ferme la course', async () => {
+    const first = await ready(w);
+    const second = ((await (await w.post('/documents', KEYS.alex, { kind: 'mandat_vente_simple', personId: w.lea.id, propertyId: w.bien.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 3 } })).json()) as { data: { id: string } }).data;
+    const { data } = (await (await w.scan(KEYS.alex)).json()) as { data: { ref: string } };
+    const paper = { signedAt: new Date(Date.now() - 60_000).toISOString(), place: 'agence', scanRef: data.ref, source: 'referral' };
+    expect((await w.post(`/documents/${first.id}/signature-papier`, KEYS.alex, paper)).status).toBe(200);
+    const again = await w.post(`/documents/${second.id}/signature-papier`, KEYS.alex, paper);
+    expect(again.status).toBe(400);
+    expect(((await again.json()) as { code: string }).code).toBe('scan_deja_utilise');
+    await expect(w.db.run(`INSERT INTO signed_documents (document_id, network_id, signed_at, place, scan_ref, registered_by, created_at) VALUES (?, ?, ?, 'agence', ?, 'x', ?)`, [second.id, w.network.id, paper.signedAt, data.ref, paper.signedAt])).rejects.toThrow();
+  });
+
+  it('[R38] une signature arrêtée en route n’est pas dite signée, et reprend avec son scan, même retiré du stockage ou sans stockage', async () => {
+    const doc = await ready(w);
+    const { data } = (await (await w.scan(KEYS.alex)).json()) as { data: { ref: string } };
+    const paper = { signedAt: new Date(Date.now() - 60_000).toISOString(), place: 'agence', scanRef: data.ref };
+    const sign = (env: Env, body: unknown) => worker.fetch(new Request(`${BASE}/v1/documents/${doc.id}/signature-papier`, { method: 'POST', headers: { authorization: `Bearer ${KEYS.alex}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), env);
+    expect((await sign(w.env, paper)).status).toBe(400);
+    const read = async () => ((await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.alex)).json()) as { data: { documents: { signature: Record<string, unknown> | null }[]; mandate: unknown } }).data;
+    const stopped = await read();
+    expect(stopped.documents[0]!.signature).toMatchObject({ complete: false, number: null });
+    expect(stopped.mandate).toBeNull();
+    // Le scan a disparu, plus de stockage : la reprise ne le redemande pas, elle garde celui de la première demande.
+    w.kept.clear();
+    const noStore: Env = { ...w.env };
+    delete noStore.PIECES;
+    expect((await sign(noStore, { ...paper, scanRef: `mandats/${w.bien.id}/autre.pdf`, source: 'referral' })).status).toBe(200);
+    expect(await w.db.first('SELECT scan_ref FROM signed_documents WHERE document_id = ?', [doc.id])).toEqual({ scan_ref: data.ref });
+    expect((await read()).documents[0]!.signature).toMatchObject({ complete: true, number: 'T-001' });
+  });
+
+  it('un avenant signé est dit signé, avec le numéro de son mandat', async () => {
+    const doc = await ready(w);
+    const { data } = (await (await w.scan(KEYS.alex)).json()) as { data: { ref: string } };
+    const at = new Date(Date.now() - 60_000).toISOString();
+    expect((await w.post(`/documents/${doc.id}/signature-papier`, KEYS.alex, { signedAt: at, place: 'agence', scanRef: data.ref, source: 'referral' })).status).toBe(200);
+    const template = await w.db.first<{ id: string; version: number; hash: string }>('SELECT template_id AS id, template_version AS version, template_hash AS hash FROM documents WHERE id = ?', [doc.id]);
+    await w.db.run(
+      `INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at) VALUES ('avt-1', ?, ?, ?, ?, 'avenant_mandat', 'reel', 'complet', '[]', ?, ?, ?, 'x', 'h', 'test', ?)`,
+      [w.network.id, template!.id, template!.version, template!.hash, w.alex.id, w.lea.id, w.bien.id, new Date().toISOString()],
+    );
+    await w.db.run(`INSERT INTO signed_amendments (document_id, network_id, mandate_id, signed_at, place, scan_ref, copy_content, copy_hash, registered_by, created_at) VALUES ('avt-1', ?, ?, ?, 'agence', 'mandats/a.pdf', 'x', 'h', 'test', ?)`, [w.network.id, `m-${doc.id}`, at, at]);
+    const read = (await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.alex)).json()) as { data: { documents: { id: string; signature: unknown }[] } };
+    expect(read.data.documents.find((d) => d.id === 'avt-1')!.signature).toEqual({ signedAt: at, place: 'agence', number: 'T-001', complete: true });
+  });
+
+  it('[R16] deux fiches réunies du même agent ne font qu’un mandant', async () => {
+    const double = await w.store.createPerson({ networkId: w.network.id, agentId: w.alex.id, firstName: 'Léa', lastName: 'Double' });
+    const project = await w.store.createProject({ networkId: w.network.id, agentId: w.alex.id, personId: double.id, kind: 'sell' });
+    await w.store.linkProjectProperty({ networkId: w.network.id, agentId: w.alex.id, projectId: project.id, propertyId: w.bien.id, role: 'owned' });
+    await new FicheUnique(w.db, w.store).merge({ survivorId: w.lea.id, mergedId: double.id, reason: 'test' });
+    const read = (await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.alex)).json()) as { data: { owners: { personId: string }[] } };
+    expect(read.data.owners).toEqual([{ personId: w.lea.id, firstName: 'Léa', lastName: 'Exemple' }]);
   });
 
   it('un bien sans document : listes vides, aucun mandat', async () => {

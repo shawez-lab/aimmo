@@ -72,8 +72,8 @@ export interface PaperSignatureOptions {
   newId?: () => string;
   /**
    * Le stockage où le scan doit se trouver (D11). Donné : la référence doit être celle d'un scan de ce bien, présent dans
-   * le stockage. Nul : aucun stockage, un document réel ne se signe pas ; seul un essai passe. Absent : non vérifié, pour
-   * les appelants internes ; la route donne toujours l'un ou l'autre.
+   * le stockage, et qui n'a encore prouvé aucune signature. Nul : aucun stockage, rien ne se signe. Absent : non vérifié,
+   * pour les appelants internes ; la route donne toujours l'un ou l'autre. Une reprise garde son scan et ne repasse pas ici.
    */
   scans?: { has(ref: string): Promise<boolean> } | null;
 }
@@ -141,10 +141,13 @@ export class SignaturePapier {
     // Un scan qui n'existe pas n'est pas une preuve ; une reprise garde le scan de la première demande.
     if (!row) {
       const scans = this.options.scans;
-      if (scans === null && doc.mode !== 'essai') return { ok: false, rule: null, code: 'depot_ferme' };
+      if (scans === null) return { ok: false, rule: null, code: 'depot_ferme' };
       if (scans) {
         if (doc.property_id === null || !input.scanRef.startsWith(mandateScanPrefix(doc.property_id))) return { ok: false, rule: null, code: 'bad_scan' };
         if (!(await scans.has(input.scanRef))) return { ok: false, rule: null, code: 'scan_absent' };
+        // Un scan prouve une seule signature ; l'index unique ferme la course entre deux demandes.
+        const used = await this.db.first('SELECT 1 FROM signed_documents WHERE scan_ref = ? UNION ALL SELECT 1 FROM signed_amendments WHERE scan_ref = ?', [input.scanRef, input.scanRef]);
+        if (used) return { ok: false, rule: null, code: 'scan_deja_utilise' };
       }
     }
 
