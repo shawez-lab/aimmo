@@ -1295,6 +1295,15 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Critères : l'IBAN d'un écho n'est rangé en clair ni dans `messages`, ni dans `pending_human_replies`, écho appliqué tout de suite ou gardé pour la reprise (tests [R15]) ; le reste du texte ne change pas ; un écho de notre propre message reste reconnu [R21].
 - Attend : rien.
 
+### N13 · Dates, financement et acte depuis l'écran du dossier
+- Statut : à faire
+- Trouvé le 2026-11-02 (relecture de N12) : l'écran dit « Date à saisir · à vous » et aucun écran n'appelle `/dossiers/:id/dates`, `/financement` ni `/acte` en écriture : l'agent ne peut pas faire avancer le dossier.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : N12
+- Cahier : M10 ; R10, R16, R61.
+- Objectif : l'agent saisit chaque date avec sa preuve déposée, déclare les étapes du financement et range l'acte signé, sans référence à saisir.
+- Critères : aucune date inventée, preuve exigée [R10] ; refus dits en français ; « Dossier complet » ne coexiste plus avec une pièce périmée en tête ; budget tenu [R201].
+- Attend : H25 pour le dépôt réel.
+
 ### N12 · Écran du dossier de vente dans l'application
 - Statut : en cours
 - Trouvé le 2026-11-02 : M10 a ses routes (`/v1/dossiers`) et aucun écran ne les appelle ; O10 ouvre le dossier, puis l'agent ne peut plus le suivre.

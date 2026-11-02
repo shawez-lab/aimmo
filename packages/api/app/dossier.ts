@@ -45,6 +45,8 @@ const REASONS = {
   identite_a_verifier: 'Identité de l’acquéreur à vérifier', donnee_du_bien_inconnue: 'Donnée du bien à compléter', date_a_saisir: 'Date à saisir',
 };
 const SCHEDULE = { a_saisir: 'date à saisir', sans_objet: 'sans objet', suspendue: 'suspendue' };
+/** Les délais qui s'éteignent d'eux-mêmes : une fois leur jour passé, ils ne tiennent plus le dossier. */
+const LAPSING = ['fin_retractation', 'reponse_commune', 'reflexion_offre_pret'];
 const IDENTITY = { verifiee: 'Identité de l’acquéreur vérifiée.', non_verifiee: 'Identité de l’acquéreur à vérifier.', non_visible: 'L’identité de l’acquéreur n’est pas dans vos droits.' };
 
 export const DOSSIER_HTML = `<section id="dossier" hidden>
@@ -96,7 +98,7 @@ export const DOSSIER_SCRIPT = `'use strict';
 globalThis.AIMMO_DOSSIER = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
   var NO = ${JSON.stringify(REFUSALS)}, PIECES = ${JSON.stringify(PIECE_NAMES)}, DEADLINES = ${JSON.stringify(DEADLINES)}, ITEMS = ${JSON.stringify(ITEMS)};
-  var WHO = ${JSON.stringify(WHO)}, REASONS = ${JSON.stringify(REASONS)}, SCHEDULE = ${JSON.stringify(SCHEDULE)}, IDENTITY = ${JSON.stringify(IDENTITY)};
+  var WHO = ${JSON.stringify(WHO)}, REASONS = ${JSON.stringify(REASONS)}, SCHEDULE = ${JSON.stringify(SCHEDULE)}, IDENTITY = ${JSON.stringify(IDENTITY)}, LAPSING = ${JSON.stringify(LAPSING)};
   var TYPES = ${JSON.stringify(FILE_DEPOSIT_TYPES)}, MAX = ${FILE_DEPOSIT_MAX_BYTES};
   var cur = null, seq = 0, busy = null;
   function state(x) { $('dossier-etat').textContent = x; }
@@ -124,40 +126,52 @@ globalThis.AIMMO_DOSSIER = function (t) {
   function load(message) {
     var mine = ++seq;
     state('Chargement…');
-    return Promise.all([send(base() + '/chemin', 'GET'), send(base() + '/pieces', 'GET'), send(base() + '/echeancier', 'GET')]).then(function (all) {
+    return Promise.all([send(base() + '/chemin', 'GET'), send(base() + '/pieces', 'GET'), send(base() + '/echeancier', 'GET'), send(base() + '/acte', 'GET')]).then(function (all) {
       if (mine !== seq || all.some(function (r) { return r.gone; })) return false;
       var failed = all.filter(function (r) { return !r.ok; })[0];
       // Le geste a réussi, seule la relecture manque : on le dit, sans laisser un formulaire périmé à l'écran.
       if (failed && message) { clear(body()); state(message + ' Rouvrez cet écran pour le relire.'); return true; }
       // Une lecture en échec n'est jamais montrée comme un dossier vide.
-      if (failed) { clear(body()); state(why(failed, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
+      if (failed) { clear(body()); state(failed.offline ? 'Pas de réseau. Réessayez dans un moment.' : why(failed, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
       clear(body());
       state(message || '');
-      drawPath(all[0].body.data.path);
-      drawPieces(all[1].body.data);
+      var closing = all[3].body.data;
+      if (closing) drawClosed(closing); else drawPath(all[0].body.data.path, all[1].body.data.identity);
+      drawPieces(all[1].body.data, !closing);
       drawSchedule(all[2].body.data);
       return true;
     });
   }
   function itemName(item) { return PIECES[item] || DEADLINES[item] || ITEMS[item] || ''; }
-  function lineText(l) {
+  function lineText(l, identity) {
+    // Celui qui ne voit pas l'acquéreur ne sait pas si son identité est vérifiée : on ne le lui affirme pas [R10].
+    if (l.reason === 'identite_a_verifier' && identity === 'non_visible') return 'Identité de l’acquéreur : hors de vos droits, voyez avec la direction.';
     var name = itemName(l.item);
     return (REASONS[l.reason] || 'À vérifier') + (name ? ' : ' + name : '') + (WHO[l.who] ? ' · ' + WHO[l.who] : '') + (l.notBefore ? ' · pas avant le ' + day(l.notBefore) : '');
   }
-  function drawPath(p) {
+  function drawClosed(c) {
     var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', 'Dossier clos'));
+    box.appendChild(el('strong', c.signedOn ? 'Acte signé le ' + day(c.signedOn) + '.' : 'Acte signé.'));
+    body().appendChild(box);
+  }
+  function drawPath(p, identity) {
+    var box = el('section', null, 'bloc');
+    // Un délai dont le jour est passé ne tient plus rien : il n'est ni en tête, ni dans le reste à lever.
+    var live = (Array.isArray(p.lines) ? p.lines : []).filter(function (l) { return !(LAPSING.indexOf(l.reason) >= 0 && l.notBefore && l.notBefore <= p.today); });
+    var holder = p.holder && live.indexOf(p.holder) >= 0 ? p.holder : live.filter(function (l) { return p.holder && l.reason === p.holder.reason && l.item === p.holder.item; })[0] || live[0] || null;
     box.appendChild(el('h3', 'Ce qui tient le dossier'));
-    box.appendChild(el('strong', p.holder ? lineText(p.holder) : 'Rien ne tient ce dossier.'));
+    box.appendChild(el('strong', holder ? lineText(holder, identity) : 'Rien ne tient ce dossier.'));
     if (p.earliestActDay) box.appendChild(el('p', 'Acte au plus tôt : ' + day(p.earliestActDay) + (p.conditional ? ', si les points sans date sont levés.' : '.'), 'doux'));
     else box.appendChild(el('p', 'Le jour de l’acte ne peut pas encore se calculer.', 'doux'));
     if (p.plannedActDay) box.appendChild(el('p', 'Acte prévu : ' + day(p.plannedActDay) + '.', p.late ? 'retard' : 'doux'));
     if (p.late) box.appendChild(el('p', 'L’acte prévu tombe avant le jour au plus tôt.', 'retard'));
-    var rest = (Array.isArray(p.lines) ? p.lines : []).filter(function (l) { return !p.holder || l.reason !== p.holder.reason || l.item !== p.holder.item; });
+    var rest = live.filter(function (l) { return l !== holder; });
     if (rest.length) {
       var d = el('details');
       d.appendChild(el('summary', 'Le reste à lever (' + rest.length + ')'));
       var ul = el('ul');
-      rest.forEach(function (l) { ul.appendChild(el('li', lineText(l))); });
+      rest.forEach(function (l) { ul.appendChild(el('li', lineText(l, identity))); });
       d.appendChild(ul);
       box.appendChild(d);
     }
@@ -173,11 +187,11 @@ globalThis.AIMMO_DOSSIER = function (t) {
     box.appendChild(ul);
     body().appendChild(box);
   }
-  function drawPieces(f) {
+  function drawPieces(f, open) {
     var box = el('section', null, 'bloc');
     var lines = Array.isArray(f.lines) ? f.lines : [];
     var missing = lines.filter(function (l) { return !l.received; }).length;
-    box.appendChild(el('h3', 'Pièces : ' + (lines.length - missing) + ' reçues sur ' + lines.length));
+    box.appendChild(el('h3', 'Pièces reçues : ' + (lines.length - missing) + ' sur ' + lines.length));
     box.appendChild(el('p', f.complete ? 'Dossier complet.' : IDENTITY[f.identity] || IDENTITY.non_visible, f.complete ? null : 'doux'));
     if ((f.unknown || []).length) box.appendChild(el('p', 'La liste peut encore changer : ' + f.unknown.map(function (u) { return ITEMS[u] || 'une donnée'; }).join(', ') + ' à compléter.', 'retard'));
     var ul = el('ul');
@@ -186,7 +200,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
       ul.appendChild(el('li', (PIECES[l.piece] || 'Pièce') + ' (' + who + ') : ' + (l.received ? 'reçue, datée du ' + day(l.received.issuedOn) + (l.received.version > 1 ? ', version ' + l.received.version : '') : 'à recevoir')));
     });
     box.appendChild(ul);
-    if (lines.length) deposit(box, lines);
+    if (open && lines.length) deposit(box, lines);
     body().appendChild(box);
   }
   function hex(buf) { return Array.from(new Uint8Array(buf), function (b) { return (b + 256).toString(16).slice(1); }).join(''); }

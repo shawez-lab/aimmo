@@ -164,7 +164,7 @@ globalThis.AIMMO_OFFRES = function (t) {
       if (res.gone || mine !== seq) return false;
       // Le geste a réussi, seule la relecture manque : on le dit, sans laisser un formulaire périmé à l'écran.
       if (!res.ok && message) { clear(body()); state(message + ' Rouvrez cet écran pour le relire.'); return true; }
-      if (!res.ok) { state(why(res, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
+      if (!res.ok) { state(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : why(res, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
       clear(body());
       state(message || '');
       draw(res.body.data);

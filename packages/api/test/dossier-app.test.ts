@@ -31,6 +31,7 @@ const READS: Record<string, Answer> = {
   'GET /v1/dossiers/f1/chemin': ok({ path: PATH, seller: {}, buyer: {} }),
   'GET /v1/dossiers/f1/pieces': ok(PIECES),
   'GET /v1/dossiers/f1/echeancier': ok(SCHEDULE),
+  'GET /v1/dossiers/f1/acte': ok(null),
 };
 const BASE: Record<string, Answer> = {
   'GET /v1/moi': ok({ role: 'agent', firstName: 'Alex' }),
@@ -106,12 +107,40 @@ describe('N12 · écran du dossier de vente', () => {
     expect(text).toContain('Pièce manquante : Titre de propriété · au vendeur');
     expect(text).toContain('Acte au plus tôt : 20 avril 2027, si les points sans date sont levés.');
     expect(text).toContain('L’acte prévu tombe avant le jour au plus tôt.');
-    expect(text).toContain('Pièces : 1 reçues sur 2');
+    expect(text).toContain('Pièces reçues : 1 sur 2');
     expect(text).toContain('Diagnostic énergétique (vendeur) : reçue, datée du 10 mars 2027, version 2');
     expect(text).toContain('Titre de propriété (vendeur) : à recevoir');
     expect(text).toContain('Identité de l’acquéreur à vérifier.');
     expect(text).toContain('Fin du délai de rétractation : 22 mars 2027');
     expect(text).toContain('Acte : date à saisir');
+  });
+
+  it('[R10] un délai passé ne tient plus le dossier ; sans droit sur l’acquéreur, son identité n’est pas affirmée', async () => {
+    const lapsed = { reason: 'fin_retractation', item: 'fin_retractation', who: 'acquereur', notBefore: '2027-03-11' };
+    const identity = { reason: 'identite_a_verifier', item: null, who: 'acquereur', notBefore: null };
+    const t = await run({
+      'GET /v1/dossiers/f1/chemin': ok({ path: { ...PATH, holder: lapsed, lines: [lapsed, identity] }, seller: {}, buyer: {} }),
+      'GET /v1/dossiers/f1/pieces': ok({ ...PIECES, identity: 'non_visible' }),
+    });
+    await t.open();
+    const text = t.body().textContent;
+    expect(text).not.toContain('Délai de rétractation en cours');
+    expect(text).toContain('Identité de l’acquéreur : hors de vos droits, voyez avec la direction.');
+    expect(text).not.toContain('Identité de l’acquéreur à vérifier');
+    const u = await run({ 'GET /v1/dossiers/f1/chemin': ok({ path: { ...PATH, holder: lapsed, lines: [lapsed] }, seller: {}, buyer: {} }) });
+    await u.open();
+    expect(u.body().textContent).toContain('Rien ne tient ce dossier.');
+    expect(u.body().textContent).not.toContain('Le reste à lever');
+  });
+
+  it('un dossier clos par l’acte le dit, sans chemin ni dépôt', async () => {
+    const t = await run({ 'GET /v1/dossiers/f1/acte': ok({ signedOn: '2027-06-01' }) });
+    await t.open();
+    const text = t.body().textContent;
+    expect(text).toContain('Acte signé le 1 juin 2027.');
+    expect(text).not.toContain('Ce qui tient le dossier');
+    expect(t.find(t.body(), 'Ranger la pièce')).toBeUndefined();
+    expect(text).toContain('Pièces reçues : 1 sur 2');
   });
 
   it('[R15] la pièce se choisit dans la liste attendue : aucune pièce d’identité, aucune référence à saisir', async () => {

@@ -59,6 +59,13 @@ describeWithSqlite('N12 · dépôt d’une pièce du dossier', () => {
     expect(JSON.stringify((await t.journal.all()).filter((e) => e.type.startsWith('dossier.depot')))).not.toContain('une note');
   });
 
+  it('un dossier clos par l’acte refuse le dépôt, sans ranger de fichier', async () => {
+    const t = await setup();
+    await t.db.run('INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, ?, ?, \'a_demarrer\', ?, ?)', [t.fileId, t.network.id, '2027-03-01', 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf', '2027-03-01T12:00:00.000Z', 'test']);
+    expect((await t.put(t.agent, PDF)).body.code).toBe('closed');
+    expect(t.kept.size).toBe(0);
+  });
+
   it('sans stockage en écriture, le dépôt est fermé et le dit', async () => {
     const t = await setup(false);
     const closed = await t.put(t.agent, PDF);

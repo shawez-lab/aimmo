@@ -48,6 +48,8 @@ export class DepotsDossier {
     // Les droits d'abord, avant de lire un seul octet du fichier : seul l'agent du bien écrit [R16].
     const gate = await gateSaleFile({ db: this.db, acces: this.acces, journal: this.journal, now: this.now }, viewer, fileId, true, 'sale_file_pieces');
     if (!gate.ok) return gate;
+    // Un dossier clos par l'acte ne reçoit plus de pièce : aucun fichier rangé qui ne serait rattaché à rien.
+    if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
     const actor = actorOf(viewer);
     const subject = `sale_file:${fileId}`;
     const bad = async (code: string): Promise<FileDepositResult> => {
