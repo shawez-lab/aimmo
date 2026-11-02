@@ -1656,9 +1656,9 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 - Attend : rien.
 
 ### CE14 · Demandes et engagement de confidentialité à l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Décidé (2026-11-02), lecture prudente : le repreneur doit lire ce qu'il signe : ajout d'une lecture du texte de l'engagement, et le code n'est retenu que si son empreinte est celle du texte lu. L'état de chaque demande rend l'engagement en vigueur. Révoqué, une nouvelle demande fait un nouvel engagement. Script à part, chargé au premier geste.
-- Reste : ranger une demande n'envoie rien au repreneur et l'écran le dit, alors que le cahier veut une réponse immédiate avec les informations publiques : CE16. En mode essai, le code reste dans la boîte d'essai, qu'aucun écran ne lit (comme pour le bail) : la signature à l'écran ne s'essaie de bout en bout qu'après H05. Le mail du code dit « pas même à votre agent » alors que l'agent saisit le code sur son écran : à trancher avec H24, avant tout envoi réel.
+- Reste : fusionnée (#291) ; relecture forte 2 P1 corrigés ; Codex à sa limite (H03) ; vérification GitHub verte. Ranger une demande n'envoie rien au repreneur et l'écran le dit, alors que le cahier veut une réponse immédiate avec les informations publiques : CE16. En mode essai, le code reste dans la boîte d'essai, qu'aucun écran ne lit (comme pour le bail) : la signature à l'écran ne s'essaie de bout en bout qu'après H05. Le mail du code dit « pas même à votre agent » alors que l'agent saisit le code sur son écran : à trancher avec H24, avant tout envoi réel.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE13
 - Cahier : M16, « Engagement de confidentialité » ; R110, R113, R16, R26, R201.
 - Objectif : l'agent range la demande d'un contact, ouvre la signature avec l'accord noté, recueille le code et le tracé, révoque un engagement ; la direction range le modèle.
@@ -1666,7 +1666,7 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 - Attend : rien pour l'écran.
 
 ### CE15 · Repreneurs et rapprochement à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE14
 - Cahier : M16, repreneurs ; R115, R14, R16, R201.
 - Objectif : l'agent complète le profil de repreneur d'un projet d'achat et lit les commerces rapprochés, sans score ni classement.
