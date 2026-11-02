@@ -624,7 +624,8 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Attend : `DVF_BASE_URL` au déploiement pour le vrai calcul (déjà noté en E05).
 
 ### E10 · Écran de l'avis de valeur dans l'application
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02) : la validation demande la version lue (`updatedAt`) ; rien ne se tape pendant un envoi ; un brouillon faux se remplace par « Refaire le calcul » et reste rangé. Relecture forte 6 P1 corrigés ; Codex à sa limite, fusion sans lui (#268).
 - Qui : Claude · Relecture : forte · Dépend de : E09
 - Cahier : M04, « Validation » ; Le produit, « Application de l'agent ».
 - Objectif : depuis « Mes biens », préparer, ajuster et valider un avis, puis télécharger la page à imprimer, dans un écran chargé à part.
