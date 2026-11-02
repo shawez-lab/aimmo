@@ -4,7 +4,8 @@ import { ANNEX_KINDS, CHOICE_CHANNELS, ELEMENT_STATES, HABITATS, LEASE_FIELDS, M
  * L'écran « Louer » de l'application de l'agent (W11), en morceaux posés dans `fichiers.ts` : sa section de page, son
  * entrée sur l'accueil, sa mise en page et son script.
  *
- * L'écran ne lit et n'écrit que par les routes `/v1/location` [R16]. Les candidatures sont montrées dans l'ordre
+ * L'écran ne lit et n'écrit que par les routes `/v1/location` [R16], sauf la liste des contacts de l'agent, lue par
+ * `/v1/fiches` au seul geste d'ajouter une candidature (W13) : ces noms ne rejoignent jamais un dossier. Les candidatures sont montrées dans l'ordre
  * d'arrivée reçu de l'API, jamais retriées, jamais notées ni filtrées sur un revenu [R105] ; aucun nom de candidat n'est
  * montré, seulement le numéro d'arrivée. Aucun champ ne fait passer d'argent par AIMMO [R107]. Tout texte reçu est posé
  * avec `textContent`. Les montants et les plafonds sont ceux que le code calcule [R102] : l'écran les montre, il ne les
@@ -71,6 +72,10 @@ export const LOUER_JS = `
   var PARTY_OF = { bailleur: 'du bailleur', locataire: 'du locataire' };
   var LOUER_REFUSALS = {
     not_assigned: 'Ce logement est suivi par un autre agent.',
+    unknown_person: 'Cette fiche n’est pas dans ce réseau.',
+    already_applied: 'Cette personne a déjà une candidature sur ce logement.',
+    bad_dossierfacile: 'Ce lien n’est pas un lien DossierFacile.',
+    busy: 'Trop de demandes en même temps : réessayez.',
     agent_inactive: 'Votre accès d’agent n’est plus actif.',
     no_facts: 'Saisissez d’abord les faits du logement.',
     invalid: 'Un champ n’est pas valable : vérifiez la saisie.',
@@ -435,9 +440,44 @@ export const LOUER_JS = `
     return box;
   }
   function missingText(m) { return (PIECES_MISSING[m.what] || 'pièce') + (m.holder === 'candidat' ? '' : ' du garant'); }
+  // L'agent choisit parmi ses contacts, sans saisir d'identifiant ; la candidature prend la dernière place d'arrivée.
+  function applyBlock(base, apps) {
+    var d = el('details');
+    d.appendChild(el('summary', 'Ajouter une candidature'));
+    var loaded = false;
+    d.appendChild(button('Choisir parmi mes contacts', function () {
+      if (loaded) return;
+      loaded = true;
+      louerState('Chargement…');
+      send('/v1/fiches', 'GET').then(function (res) {
+        if (res.gone) return;
+        if (!res.ok) { loaded = false; louerState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Vos contacts sont indisponibles pour le moment.'); return; }
+        louerState('');
+        var taken = {};
+        apps.forEach(function (a) { taken[a.personId] = true; });
+        var options = { '': 'Choisir une personne' };
+        (res.body.data || []).filter(function (p) { return !taken[p.id]; }).forEach(function (p) {
+          options[p.id] = [p.first_name, p.last_name].filter(Boolean).join(' ') || 'Contact sans nom';
+        });
+        var who = select(d, 'louer-candidat', 'La personne', options, '');
+        var link = field(d, 'louer-candidat-lien', 'Lien DossierFacile (facultatif)');
+        var sending = false;
+        d.appendChild(button('Ranger la candidature', function () {
+          if (sending) return;
+          if (!who.value) { louerState('Choisissez d’abord la personne.'); return; }
+          sending = true;
+          var body = { personId: who.value };
+          if (String(link.value || '').trim()) body.dossierFacileUrl = String(link.value).trim();
+          louerAct(base + '/candidatures', body, 'La candidature n’est pas rangée.', 'Candidature rangée, à sa place d’arrivée.').then(function () { sending = false; });
+        }));
+      });
+    }));
+    return d;
+  }
   function applicationsBlock(base, apps, pres, chosen) {
     var box = section('Les candidatures');
     box.appendChild(el('p', 'Dans leur ordre d’arrivée, et lui seul. Seules les pièces de la liste officielle sont demandées ; l’IA ne regarde que la complétude.', 'doux'));
+    if (!chosen) box.appendChild(applyBlock(base, apps));
     if (!apps.length) { box.appendChild(el('p', 'Aucune candidature pour le moment.', 'doux')); return box; }
     var ol = el('ol', null, 'dossiers');
     // L'ordre reçu de l'API est celui des arrivées : il n'est jamais retrié ici [R105].

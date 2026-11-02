@@ -1945,7 +1945,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11
 - Cahier : M15 ; R104, R105, R16.
 - Objectif : reste écrit de W11. L'agent ne peut pas ranger une candidature depuis l'écran : la route existe, l'écran ne la propose pas. Il choisit la fiche de la personne parmi ses contacts, sans saisir d'identifiant ; la candidature arrive en dernière place de l'ordre d'arrivée, sans note ni tri.
-- Critères : l'écran n'écrit que par `POST /v1/location/:id/candidatures` [R16] ; la liste reste dans l'ordre d'arrivée, sans note ni tri [R105] ; un refus de la route est dit en français, sans identifiant ni donnée [R104] ; un double appui ne range pas deux candidatures ; testé au clavier et sur téléphone comme les autres écrans (`fake-dom`) ; le budget de poids de l'application est tenu [R201].
+- Critères : l'écran n'écrit que par `POST /v1/location/:id/candidatures` et ne lit les contacts de l'agent (`/v1/fiches`, sous R16) qu'au geste d'ajouter [R16] ; la liste reste dans l'ordre d'arrivée, sans note ni tri [R105] ; un refus de la route est dit en français, sans identifiant ni donnée [R104] ; un double appui ne range pas deux candidatures ; testé au clavier et sur téléphone comme les autres écrans (`fake-dom`) ; le budget de poids de l'application est tenu [R201].
 - Attend : rien.
 
 **M16 · Commerces et entreprises, septembre 2027.**

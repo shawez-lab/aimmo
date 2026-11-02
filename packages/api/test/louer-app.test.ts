@@ -132,7 +132,8 @@ describe('W11 · écran « Louer » de l’application', () => {
     // Le script de l'écran tel que posé dans l'application (l'application le sert sans ses lignes de commentaire).
     const screenJs = LOUER_JS;
     expect(JS).toContain(LOUER_JS.split('\n').find((l) => l.includes('/v1/location'))!);
-    const routes = [...screenJs.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
+    // La seule exception : les contacts de l'agent, lus au geste d'ajouter une candidature (W13), sous R16.
+    const routes = [...screenJs.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!).filter((r) => r !== '/v1/fiches');
     expect(routes.length).toBeGreaterThan(3);
     for (const r of routes) expect(r.startsWith('/v1/location'), r).toBe(true);
   });
@@ -165,6 +166,71 @@ describe('W11 · écran « Louer » de l’application', () => {
     const rail = t.body().all().find((e) => e.className === 'parcours')!;
     expect(rail.children.map((li) => li.textContent)).toEqual(['Logement · fait', 'Honoraires', 'Annonce', 'Dossiers · fait', 'Choix', 'Bail', 'État des lieux']);
     expect(rail.children[1]!.attributes['aria-current']).toBe('step');
+  });
+
+  it('[R16] [R105] une candidature s’ajoute depuis l’écran : ses contacts seuls, à la dernière place, sans nom dans la liste des dossiers', async () => {
+    const t = await run({
+      'GET /v1/fiches': ok([
+        { id: 'personne-secrete-1', first_name: 'Déjà', last_name: 'Candidat' },
+        { id: 'p-nouvelle', first_name: 'Nina', last_name: INJECTED },
+        { id: 'p-sans-nom', first_name: null, last_name: null },
+      ]),
+      'POST /v1/location/l1/candidatures': ok({ applicationId: 'c4', arrival: 4 }),
+    });
+    await t.openL1();
+    // Rien n'est lu des contacts avant le geste.
+    expect(t.calls.some((c) => c.url === '/v1/fiches')).toBe(false);
+    expect(t.body().textContent).not.toContain('Nina');
+    await t.click(t.byText('Choisir parmi mes contacts'));
+    const who = t.input('La personne');
+    const options = who.children.map((o) => o.textContent);
+    // Une personne déjà candidate n'est pas proposée ; un nom reste du texte.
+    expect(options).toEqual(['Choisir une personne', `Nina ${INJECTED}`, 'Contact sans nom']);
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    // Sans personne choisie, rien ne part.
+    await t.click(t.byText('Ranger la candidature'));
+    expect(t.posts()).toEqual([]);
+    expect(t.state()).toBe('Choisissez d’abord la personne.');
+    who.value = 'p-nouvelle';
+    t.input('Lien DossierFacile (facultatif)').value = ' https://www.dossierfacile.fr/file/abc ';
+    // Un double appui ne range qu'une candidature.
+    const save = t.byText('Ranger la candidature')!;
+    save.listeners.click!({});
+    save.listeners.click!({});
+    await t.settle();
+    expect(t.posts()).toHaveLength(1);
+    expect(t.posts()[0]!.url).toBe('/v1/location/l1/candidatures');
+    expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ personId: 'p-nouvelle', dossierFacileUrl: 'https://www.dossierfacile.fr/file/abc' });
+    expect(t.state()).toBe('Candidature rangée, à sa place d’arrivée.');
+  });
+
+  it('[R104] un refus de la candidature est dit en français, sans code ; la personne peut réessayer', async () => {
+    const t = await run({
+      'GET /v1/fiches': ok([{ id: 'p-nouvelle', first_name: 'Nina', last_name: 'Exemple' }]),
+      'POST /v1/location/l1/candidatures': no(409, { ok: false, code: 'already_applied' }),
+    });
+    await t.openL1();
+    await t.click(t.byText('Choisir parmi mes contacts'));
+    t.input('La personne').value = 'p-nouvelle';
+    await t.click(t.byText('Ranger la candidature'));
+    expect(t.state()).toBe('Cette personne a déjà une candidature sur ce logement.');
+    t.table['POST /v1/location/l1/candidatures'] = no(400, { ok: false, code: 'bad_dossierfacile' });
+    await t.click(t.byText('Ranger la candidature'));
+    expect(t.state()).toBe('Ce lien n’est pas un lien DossierFacile.');
+    expect(t.posts()).toHaveLength(2);
+  });
+
+  it('une candidature ne s’ajoute plus quand le propriétaire a choisi ; sans réseau, les contacts se redemandent', async () => {
+    const chosen = await run({ 'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c2' }) });
+    await chosen.openL1();
+    expect(chosen.byText('Choisir parmi mes contacts')).toBeUndefined();
+    const t = await run();
+    await t.openL1();
+    await t.click(t.byText('Choisir parmi mes contacts'));
+    expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    t.table['GET /v1/fiches'] = ok([]);
+    await t.click(t.byText('Choisir parmi mes contacts'));
+    expect(t.state()).toBe('');
   });
 
   it('[R105] le choix du propriétaire part avec la présentation, la date, le canal et la preuve ; sans case cochée, rien ne part', async () => {
