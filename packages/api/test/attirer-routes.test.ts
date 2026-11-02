@@ -285,21 +285,24 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
 
   it('[R150] AT15 : une zone retirée quitte le site aussitôt, sans recalcul, même la dernière commune', async () => {
     const t = await setup();
-    await preparedNetwork(t);
+    expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'reseau', baseUrl: NET, active: true })).status).toBe(200);
     const plan = async () => (await (await t.get(`${NET}/sitemap.xml`))!.text());
-    const ouest = await t.db.first<{ id: string; parent_id: string }>("SELECT id, parent_id FROM price_zones WHERE slug = 'ouest'");
-    // Le jeu tient ce quartier retenu (son voisin a trop peu de ventes) : publié ici pour éprouver le plan.
-    await t.db.run("UPDATE price_cells SET status = 'publiee', hold_code = NULL WHERE area_id = ?", [ouest!.id]);
+    const commune = await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'commune', slug: 'ville-test', name: 'Ville Test', inseeCode: '99001', ring: COMMUNE, ringSource: 'Contour inventé' });
+    const parentId = commune.body.data.id as string;
+    // Un seul quartier, aussi grand que sa commune : aucune différence n'y retrouve une vente, sa case se publie.
+    const quartier = await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'quartier', parentId, slug: 'ouest', name: 'Ouest', ring: COMMUNE, ringSource: 'Contour inventé' });
+    const ouest = { id: quartier.body.data.id as string, parent_id: parentId };
+    expect((await t.call(direction, 'POST', '/attirer/prix/recalcul')).body).toMatchObject({ ok: true, data: { ran: true } });
     expect((await t.get(`${NET}/prix/ville-test/ouest`))!.status).toBe(200);
     expect(await plan()).toContain('/prix/ville-test/ouest');
-    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${ouest!.id}/retrait`)).status).toBe(200);
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${ouest.id}/retrait`)).status).toBe(200);
     expect((await t.get(`${NET}/prix/ville-test/ouest`))!.status).toBe(404);
     expect(await plan()).not.toContain('/prix/ville-test/ouest');
     expect((await t.get(`${NET}/prix/ville-test`))!.status).toBe(200);
-    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${ouest!.parent_id}/retrait`)).status).toBe(200);
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${ouest.parent_id}/retrait`)).status).toBe(200);
     expect((await t.get(`${NET}/prix/ville-test`))!.status).toBe(404);
     expect(await plan()).not.toContain('/prix/ville-test');
-    expect((await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'quartier', parentId: ouest!.parent_id, slug: 'nord', name: 'Nord', ring: WEST, ringSource: 'Contour inventé' })).body).toMatchObject({ code: 'parent' });
+    expect((await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'quartier', parentId: ouest.parent_id, slug: 'nord', name: 'Nord', ring: WEST, ringSource: 'Contour inventé' })).body).toMatchObject({ code: 'parent' });
   });
 
   it('[R150] AT15 : hors de France ou hors de sa commune, un contour est refusé ; 2 000 points passent par la route', async () => {
