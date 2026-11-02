@@ -42,6 +42,7 @@ export interface AgentAlertView {
 
 type Refusal = { ok: false; rule: 'R16'; code: 'role' | 'agent_inactive' | 'agent_file_incomplete' | 'not_assigned' };
 export type AgentAlertsRead = { ok: true; value: { alerts: AgentAlertView[]; more: boolean } } | Refusal;
+export type AgentAlertsUnseen = { ok: true; value: { total: number; exchanges: number; needsReply: number; more: boolean } } | Refusal;
 export type AgentAlertSeen = { ok: true; value: { already: boolean; changed: boolean } } | Refusal;
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
@@ -86,6 +87,36 @@ export class AlertesAgent {
       rows.every((r) => r.network_id === viewer.networkId) &&
       decideAccess(viewer, { kind: 'person', networkId: viewer.networkId, agentIds: rows.map((r) => r.agent_id) }).allowed;
     return allowed ? ids : null;
+  }
+
+  /**
+   * Le compte, pour la direction, des alertes qu'aucun agent ne voit : fiche sans agent, réunie à celle d'un autre, ou
+   * suivie par un agent parti ou au dossier incomplet (C09d) [R12]. Des nombres seulement : la direction attribue les
+   * fiches, et l'alerte reparaît chez l'agent [R13, R16]. Les plus anciennes d'abord, le compte est borné : `more` le dit.
+   */
+  async unseenByAnyAgent(viewer: Viewer): Promise<AgentAlertsUnseen> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'role', null, 'alertes_agent.sans_agent');
+    const rows = await this.db.all<Pick<AgentAlertRow, 'person_id' | 'reason'>>(
+      'SELECT person_id, reason FROM agent_alerts WHERE network_id = ? AND seen_at IS NULL ORDER BY created_at, rowid LIMIT ?',
+      [viewer.networkId, MAX_ALERT_CANDIDATES],
+    );
+    const states = new Map<string, string>();
+    const counts: Record<AlertReason, number> = { exchanges: 0, needs_reply: 0 };
+    for (const row of rows) {
+      const ids = await this.unique.membersOf(row.person_id);
+      const members = await this.db.all<{ agent_id: string | null }>(`SELECT agent_id FROM persons WHERE id IN (${placeholders(ids.length)})`, ids);
+      const assigned = [...new Set(members.map((m) => m.agent_id).filter((id): id is string => id !== null))];
+      const agent = assigned.length === 1 ? (assigned[0] as string) : null;
+      if (agent !== null && !states.has(agent)) states.set(agent, await agentState(this.db, viewer.networkId, agent, this.now()));
+      if (agent === null || states.get(agent) !== 'actif') counts[row.reason] += 1;
+    }
+    const total = counts.exchanges + counts.needs_reply;
+    await appendEvent(
+      this.journal,
+      { type: 'alertes_agent.sans_agent_lues', actor: `direction:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', count: total } },
+      this.now,
+    );
+    return { ok: true, value: { total, exchanges: counts.exchanges, needsReply: counts.needs_reply, more: rows.length === MAX_ALERT_CANDIDATES } };
   }
 
   /** Les alertes non vues des fiches de l'agent, les plus anciennes d'abord. */

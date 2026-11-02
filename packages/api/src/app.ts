@@ -382,6 +382,16 @@ const ROUTES: RouteDef[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/alertes-agent\/sans-agent$/,
+    name: 'alertes_agent.sans_agent',
+    // Le nombre d'alertes qu'aucun agent ne voit, pour que la direction attribue les fiches (C09d) [R12, R13, R16].
+    handle: async (s, viewer) => {
+      const count = await new AlertesAgent(s.db, s.journal, { now: s.now }).unseenByAnyAgent(viewer);
+      return count.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: count.value }) : refusal({ rule: count.rule, code: count.code });
+    },
+  },
+  {
     method: 'POST',
     pattern: new RegExp(`^/alertes-agent/${ID}/vue$`),
     name: 'alerte_agent.vue',

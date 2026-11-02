@@ -27,7 +27,7 @@ async function setup() {
       new Request(`${ORIGIN}/v1${path}`, { method, headers: who ? { authorization: `Bearer ${KEYS[who]}` } : {}, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }),
       config,
     );
-    return { status: r.status, body: (await r.json()) as { ok: boolean; rule?: string; code?: string; sent?: boolean; data?: { alerts?: { id: string }[]; already?: boolean } } };
+    return { status: r.status, body: (await r.json()) as { ok: boolean; rule?: string; code?: string; sent?: boolean; data?: { alerts?: { id: string }[]; already?: boolean; total?: number } } };
   };
   return { db, call, journal: new SqlJournalStore(db) };
 }
@@ -43,6 +43,8 @@ describeWithSqlite('C09c · routes des alertes', () => {
     const read = { createdAt: now().toISOString() };
     expect(await t.call('sam', 'POST', '/alertes-agent/al-1/vue', read)).toMatchObject({ status: 403, body: { ok: false, rule: 'R16', code: 'not_assigned' } });
     expect(await t.call('direction', 'GET', '/alertes-agent')).toMatchObject({ status: 403, body: { code: 'role' } });
+    expect(await t.call('direction', 'GET', '/alertes-agent/sans-agent')).toMatchObject({ status: 200, body: { ok: true, data: { total: 0 } } });
+    expect(await t.call('alex', 'GET', '/alertes-agent/sans-agent')).toMatchObject({ status: 403, body: { code: 'role' } });
     expect(await t.call('alex', 'POST', '/alertes-agent/al-1/vue')).toMatchObject({ status: 400 });
     expect(await t.call('alex', 'POST', '/alertes-agent/al-1/vue', { createdAt: 1 })).toMatchObject({ status: 400 });
     expect(await t.call('alex', 'POST', '/alertes-agent/al-1/vue', read)).toMatchObject({ status: 200, body: { ok: true, sent: false, data: { already: false } } });

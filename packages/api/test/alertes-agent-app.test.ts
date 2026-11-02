@@ -155,6 +155,18 @@ describe('C09c · alertes dans l’application', () => {
     expect(t.els['reprendre-etat']!.textContent).toBe('Rien à reprendre.');
   });
 
+  it('[R12] [R13] la direction lit sur l’écran du réseau le nombre d’alertes sans agent, et rien de plus', async () => {
+    const asDirection = { '/v1/moi': async () => Response.json({ ok: true, data: { role: 'direction', firstName: 'Dana' } }) };
+    const some = await run({ ...asDirection, '/v1/alertes-agent/sans-agent': ok({ total: 4, exchanges: 1, needsReply: 3, more: false }) });
+    expect(some.els['reseau-sans-agent']!.textContent).toBe('Conversations à reprendre sans agent : 4. Attribuez leurs fiches.');
+    // Le script de l'agent n'est pas appelé pour la direction.
+    expect(some.calls.some((c) => c.url === '/v1/alertes-agent')).toBe(false);
+    const bounded = await run({ ...asDirection, '/v1/alertes-agent/sans-agent': ok({ total: 100, exchanges: 0, needsReply: 100, more: true }) });
+    expect(bounded.els['reseau-sans-agent']!.textContent).toContain('100 ou plus');
+    const none = await run({ ...asDirection, '/v1/alertes-agent/sans-agent': ok({ total: 0, exchanges: 0, needsReply: 0, more: false }) });
+    expect(none.els['reseau-sans-agent']!.textContent).toBe('');
+  });
+
   it('[R201] le dépôt de la reprise, sorti de l’application pour tenir son budget, se charge au premier geste et marche', async () => {
     expect(AGENT_APP_FILES['/app/app.js']).not.toContain('/v1/reprise');
     expect(AGENT_APP_SHELL).not.toContain('/app/reprise.js');
