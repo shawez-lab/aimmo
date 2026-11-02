@@ -204,7 +204,9 @@ describeWithSqlite('CE12 · la signature suit la cession déclarée prête', () 
     expect((await t.journal.bySubject(`property:${a.property.id}`)).filter((e) => e.type === 'commerces.cession.pas_prete')).toHaveLength(2);
     await t.cessions.declareReady(t.acces, t.alex, a.fileId);
     expect(await t.date(a.fileId, 'cession_signee', '2027-01-15')).toMatchObject({ ok: true });
-    // Une préemption rangée ensuite rend la cession « pas prête » : la signature qui a eu lieu se corrige quand même.
+    // La commune rangée ensuite dans un périmètre : la cession n'est plus prête ; la signature qui a eu lieu se corrige quand même.
+    await t.cessions.recordCommune(t.direction, { postalCode: '21000', city: 'Dijon', inPerimeter: true, source: 'Liste inventée corrigée', sourceDate: '2026-07-30' });
+    expect(await t.cessions.read(t.acces, t.alex, a.fileId)).toMatchObject({ ok: true, value: { ready: false, missing: ['preemption'] } });
     expect(await t.date(a.fileId, 'cession_signee', '2027-01-16')).toMatchObject({ ok: true, value: { dates: { cession_signee: { day: '2027-01-16', version: 2 } } } });
   });
 });

@@ -164,5 +164,10 @@ describeWithSqlite('CE08 · vigilance renforcée de la cession', () => {
     expect(await t.vigilance.buyer(t.acces, t.sam, fileId)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.vigilance.buyer(t.acces, t.compliance, fileId)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.vigilance.buyer(t.acces, t.alex, 'inconnu')).toMatchObject({ ok: false, code: 'unknown_file' });
+    // La fiche n'est plus lisible par cet agent : il sait qu'un acquéreur est rangé, sans son nom.
+    const third = await t.buyer('Eden');
+    await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: third, legalPerson: false });
+    await t.db.run('UPDATE persons SET agent_id = NULL WHERE id = ?', [third]);
+    expect(await t.vigilance.buyer(t.acces, t.alex, fileId)).toEqual({ ok: true, value: { firstName: null, lastName: null, legalPerson: false, version: 3 } });
   });
 });

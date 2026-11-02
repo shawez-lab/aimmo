@@ -171,7 +171,9 @@ globalThis.AIMMO_COMMERCES = function (t) {
     ceState('Chargement…');
     /* Les tâches sont réservées aux agents : la direction ne les demande pas, pour n'écrire aucun refus au journal. */
     var tasks = send('/v1/moi', 'GET').then(function (me) {
-      return me.ok && me.body.data && me.body.data.role === 'agent' ? send('/v1/commerces/taches-cession', 'GET') : null;
+      /* Une lecture manquée n'est pas « aucune tâche » : elle passe à ceTasks, qui le dit. */
+      if (!me.ok) return me;
+      return me.body.data && me.body.data.role === 'agent' ? send('/v1/commerces/taches-cession', 'GET') : null;
     });
     return Promise.all([send('/v1/commerces', 'GET'), tasks]).then(function (both) {
       var res = both[0];
@@ -250,6 +252,8 @@ globalThis.AIMMO_COMMERCES = function (t) {
       cePresentation(base, d[2]);
       if (all[3].ok) ceDemandes(base, Array.isArray(d[3]) ? d[3] : []);
       ceOuvertures(Array.isArray(d[4]) ? d[4] : []);
+      /* Seul un refus dit qu'on ne peut pas écrire : une lecture manquée ne retire pas les gestes en silence. */
+      if (!all[3].ok && all[3].status !== 403) ceBlock('Vos gestes').appendChild(el('p', 'Vos gestes ne se chargent pas : réessayez dans un moment.', 'doux'));
       return ceCession(base, all[5], all[3].ok, (d[0] && d[0].publicView) || {}, mine).then(function (shown) {
         if (!shown) return false;
         ceState(message || '');
@@ -422,6 +426,9 @@ globalThis.AIMMO_COMMERCES = function (t) {
     day.setAttribute('type', 'date');
     var pick = cePicker(f, 'ce-date-preuve', 'Sa preuve : courrier, accusé de réception, acte', v.propertyId);
     var armed = null, armedAt = 0, label = 'Ranger la date';
+    function disarm() { armed = null; go.textContent = label; }
+    which.addEventListener('change', disarm);
+    day.addEventListener('change', disarm);
     var go = button(label, function () {
       var kind = which.value, chosen = day.value;
       if (!chosen) { ceState('Choisissez le jour.'); return; }
@@ -478,8 +485,10 @@ globalThis.AIMMO_COMMERCES = function (t) {
         if (!res.ok) { load.disabled = false; ceState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Vos contacts ne se lisent pas pour le moment.'); return; }
         var list = res.body.data && Array.isArray(res.body.data.contacts) ? res.body.data.contacts : [];
         ceState('');
-        if (!list.length) { f.appendChild(el('p', 'Aucun contact à proposer : ajoutez d’abord l’acquéreur à vos contacts.', 'doux')); return; }
+        if (!list.length) { load.disabled = false; ceState('Aucun contact à proposer : ajoutez d’abord l’acquéreur à vos contacts.'); return; }
         var who = field(f, 'ce-acquereur', 'L’acquéreur', 'select');
+        /* Aucun contact présélectionné : ranger le premier de la liste par mégarde viserait la mauvaise personne [R118]. */
+        ceOption(who, '', 'À choisir');
         list.forEach(function (c) { ceOption(who, c.personId, [c.firstName, c.lastName].filter(Boolean).join(' ') || 'Contact sans nom'); });
         if (res.body.data.more) f.appendChild(el('p', 'Liste coupée : seuls les premiers contacts sont proposés.', 'doux'));
         var legal = field(f, 'ce-acquereur-sorte', 'Il achète', 'select');
@@ -487,7 +496,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
         ceOption(legal, 'non', 'En son nom');
         ceOption(legal, 'oui', 'Par une société');
         var go = button('Ranger l’acquéreur', function () {
-          if (!legal.value) { ceState(CE_SAY.bad_buyer); return; }
+          if (!who.value || !legal.value) { ceState(CE_SAY.bad_buyer); return; }
           ceDo(path + '/acquereur', { personId: who.value, legalPerson: legal.value === 'oui' }, 'Acquéreur rangé.', go);
         });
         f.appendChild(go);
@@ -572,6 +581,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       ceEscrowForm(b, v, path);
       ceBuyerForm(b, v, path, more[0]);
       if (more[2].ok && more[2].body.data && more[2].body.data.role === 'direction') ceCommuneForm(b, v, pub, base);
+      else if (!more[2].ok) b.appendChild(el('p', 'Votre rôle ne se lit pas pour le moment : le réglage de la commune n’est pas proposé. Réessayez dans un moment.', 'doux'));
       if (!(v.ready && v.declaredReady)) {
         var ready = button('Déclarer la cession prête', function () { ceDo(path + '/prete', undefined, 'Cession déclarée prête.', ready); });
         b.appendChild(ready);

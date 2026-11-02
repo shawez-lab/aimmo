@@ -1623,6 +1623,7 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 
 ### CE12 · Cession à l'écran : dates, séquestre, acquéreur, étapes prêtes et demande de fonds
 - Statut : en cours (voie 2)
+- Décidé (2026-11-02), lecture prudente : le critère cite R110, mais la règle des étapes bloquantes est R116 : tests marqués [R116]. Le serveur refuse la signature tant que la cession n'est pas déclarée prête et sans étape manquante, sinon « empêche l'étape suivante » ne tiendrait que sur l'écran ; une signature déjà rangée reste corrigible. Preuve déposée par la route des offres (`/v1/offres/biens/<id>/fichiers/preuve`, `preuves/`, droits contrôlés), acquéreur choisi dans les contacts de l'agent, sans rien de présélectionné : aucun identifiant à saisir et aucun fichier du socle touché. Sans quoi la cession resterait bloquée : l'écran range aussi le nombre de salariés inconnu et, pour la direction, le périmètre de la commune.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE07, CE11
 - Cahier : M16 Commerces et entreprises ; R16, R110, R201.
 - Objectif : depuis la fiche d'un commerce, l'agent ouvre la cession et la fait avancer par les routes `/commerces/cessions/...` et `/commerces/taches-cession`, sans rien saisir de technique ; à lire au début : `packages/core/src/commerces/` et CE07.

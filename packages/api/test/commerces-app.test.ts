@@ -410,6 +410,11 @@ describe('CE12 · la cession avance depuis l’écran', () => {
     await t.click(t.byText('Ranger l’acquéreur'));
     expect(t.state()).toBe('Choisissez le contact et dites s’il s’agit d’une société.');
     expect(posted(t, `${P}/acquereur`)).toHaveLength(0);
+    // Rien n'est présélectionné : la sorte choisie seule ne range personne.
+    expect(t.input('L’acquéreur').children.map((o) => o.value)).toEqual(['', 'r2']);
+    sets(t, { 'L’acquéreur': '', 'Il achète': 'oui' });
+    await t.click(t.byText('Ranger l’acquéreur'));
+    expect(posted(t, `${P}/acquereur`)).toHaveLength(0);
     sets(t, { 'L’acquéreur': 'r2', 'Il achète': 'oui' });
     await t.click(t.byText('Ranger l’acquéreur'));
     expect(JSON.parse(posted(t, `${P}/acquereur`)[0]!.body!)).toEqual({ personId: 'r2', legalPerson: true });
@@ -504,6 +509,42 @@ describe('CE12 · la cession avance depuis l’écran', () => {
     await off.click(off.els['commerces-ouvrir']);
     await off.loadScript();
     expect(text(off.body())).toContain('Vos étapes de cession ne se lisent pas pour le moment.');
+  });
+
+  it('une lecture manquée ne retire aucun geste en silence : demandes, rôle, tâches', async () => {
+    const t = await run({ ...OPEN, 'GET /v1/commerces/b1/demandes': no(500, { ok: false }) });
+    await t.openB1();
+    expect(text(t.body())).toContain('Vos gestes ne se chargent pas : réessayez dans un moment.');
+    expect(t.byText('Ranger la date')).toBeUndefined();
+
+    const role = await run(OPEN);
+    await role.openB1();
+    role.table['GET /v1/moi'] = no(500, { ok: false });
+    role.table[`POST ${P}/prete`] = ok({});
+    await role.click(role.byText('Déclarer la cession prête'));
+    expect(text(role.body())).toContain('Votre rôle ne se lit pas pour le moment');
+
+    const tasks = await run({ 'GET /v1/moi': ok({ role: 'agent', firstName: 'Alex' }) });
+    await tasks.click(tasks.els['commerces-ouvrir']);
+    await tasks.loadScript();
+    tasks.table['GET /v1/moi'] = no(500, { ok: false });
+    await tasks.click(tasks.byText('Ouvrir', 0));
+    await tasks.click(tasks.els['commerces-retour']);
+    expect(text(tasks.body())).toContain('Vos étapes de cession ne se lisent pas pour le moment.');
+  });
+
+  it('[R116] le premier appui armé se désarme si la date change ; une liste de contacts vide se redemande', async () => {
+    const t = await run({ ...OPEN, 'GET /v1/commerces/b1/cession': ok(dossier(READY)) });
+    t.table['GET /v1/offres/biens/b1/contacts'] = ok({ contacts: [], more: false });
+    await t.openB1();
+    sets(t, { 'Quelle date': 'cession_signee', 'Le jour': '2027-09-11' });
+    (t.input('Sa preuve : courrier, accusé de réception, acte') as unknown as { files: unknown[] }).files = [SHA_PDF];
+    await t.click(t.byText('Ranger la date'));
+    t.input('Le jour').listeners.change!({});
+    expect(t.byText('Ranger la date')).toBeDefined();
+    await t.click(t.byText('Choisir dans mes contacts'));
+    expect(t.state()).toBe('Aucun contact à proposer : ajoutez d’abord l’acquéreur à vos contacts.');
+    expect(isOff(t.byText('Choisir dans mes contacts'))).toBe(false);
   });
 
   it('[R201] le script de l’écran tient le budget d’une page, et l’application le sien', () => {

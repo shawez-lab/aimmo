@@ -212,6 +212,20 @@ describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () 
     expect(events).toHaveLength(6);
   });
 
+  it('[R16] [R118] la lecture de l’acquéreur : l’agent du bien, jamais un autre agent ni la conformité, et le refus au journal', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    const id = await t.shop();
+    const file = await t.ok(t.alex, 'POST', `/commerces/${id}/cession`);
+    expect(await t.ok(t.alex, 'GET', `/commerces/cessions/${file.fileId}/acquereur`)).toBeNull();
+    expect((await t.call(t.bea, 'GET', `/commerces/cessions/${file.fileId}/acquereur`)).status).toBe(403);
+    const refused = await t.call(t.compliance, 'GET', `/commerces/cessions/${file.fileId}/acquereur`);
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    const logged = (await t.journal.all()).filter((e) => e.type === 'acces.refuse');
+    expect(logged.some((e) => (e.data as { kind?: string }).kind === 'commerces.cession.acquereur_lu')).toBe(true);
+  });
+
   it('[R116] [R117] les délais sont justes sur 3 dossiers de cession, par les routes', async () => {
     const t = await setup();
     await t.ok(t.dir, 'POST', '/commerces/perimetres', { postalCode: '21000', city: 'Dijon', inPerimeter: false, source: 'Liste inventée des périmètres', sourceDate: '2026-06-30' });
