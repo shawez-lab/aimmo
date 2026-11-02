@@ -201,11 +201,13 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Décidé (2026-11-02), lecture prudente : le passage à 10 % reste fermé tant que la variable `AUTOMATION_ROLLOUT_OPEN` n'est pas branchée (B04) : la mention R06 n'est pas alignée et le site ne lit pas encore `decides`. Une adresse inconnue du socle : le site décide seul, le socle ne sachant rien d'elle ; adresse portée par plusieurs fiches : le refus du socle vaut, selon le tirage. Les seuils de 20 demandes et de 5 décisions sont des réglages, jusqu'à ce que Shawez en décide autrement.
 
 ### B04b · Mention de l'assistant alignée sur le texte du site
-- Statut : en cours
+- Statut : fait (2026-11-02)
 - Qui : Claude · Relecture : forte · Dépend de : B04a
 - Cahier : Feuille de route, novembre 2026 ; mention de l'assistant dans les réponses automatiques par mail.
 - Objectif : détaché de B04 le 2026-11-02. En ombre et aux paliers, le message rangé chez le socle est exactement celui que le site envoie : le contrôle ne doit ni ajouter sa propre mention, ni la compter comme donnée alors que le site ne l'a pas mise. Lire dans `shawez-immo` (lecture seule) ce que disent vraiment ses rappels et courriers, puis décider dans cette tâche.
 - Critères : un message du site compte une seule fois [R11] ; la mention est tenue pour donnée seulement si le texte du site la porte, et sinon la demande est refusée avec R06 quand le socle décide [R06] ; aucun autre appelant du contrôle central ne change de comportement ; rien ne part [R26].
+- Décidé (2026-11-02), lecture prudente : lu dans `shawez-immo` : ni les rappels ni les courriers ne portent de mention aujourd'hui. Le contrôle reçoit le texte du site « tel quel » (`asWritten`) : rangé sans rien ajouter, dans un fil à lui (`automatisations-site`), pour que ses messages ne dispensent aucun autre appelant de la mention et qu'aucune mention d'un autre ne vaille pour le site ; ce fil n'entre pas dans la décision, qui reste celle d'un mail sans conversation citée. La mention vaut seulement écrite à la lettre, en un paragraphe, à n'importe quelle place puisque le site commence par son sujet. Sans mention due : le socle qui décide refuse avec R06, sinon le message est rangé et `mentionMissing` le signale. Un refus pour mention manquante ne fait pas monter le palier : il ne prouve rien tant que le site n'est pas aligné. Un message que le socle refuse en ombre n'est pas rangé, alors que le site l'envoie : l'écart est compté, pas le message.
+- Reste, pour B04 sur le site : porter la mention au premier message ; le texte transmis commence au sujet, sans « Bonjour <prénom> », et le rappel cite l'adresse du bien : écarts R08 et R09 à attendre en ombre et à trancher avant d'ouvrir le passage. Relecture forte : 1 P0 et 2 P1 corrigés.
 
 ### B04 · 10 % puis partout, avec retour arrière automatique
 - Statut : à faire
@@ -229,10 +231,18 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Décidé (2026-11-02), lecture prudente : liste fermée de finalités, sans celles que leur module range lui-même ni la prospection des partenaires (H32) ; canaux où R03 demande un accord ; preuve écrite de 10 à 1 000 caractères, gardée sur la fiche, jamais au journal ; date donnée par l'agent, jamais dans le futur ; retirer ferme tous les accords de même finalité et de même canal sur les fiches réunies. Antidater ne peut pas effacer un retrait ou une exclusion levée : un accord daté d'avant est refusé.
 - Critères : une personne exclue ou arrêtée ne peut pas recevoir d'accord [R02, R04] ; un autre agent est refusé et le refus va au journal [R16] ; l'accord noté ouvre l'envoi au contrôle central, le retrait le referme [R03] ; un accord déjà en cours n'est pas doublé ; un retrait ou une exclusion levée ne s'efface pas par une date ancienne [R03] ; ni preuve ni adresse au journal [R13] ; aucune ligne effacée [R17].
 
+### AC05 · Un accord retiré ne se rouvre jamais par une fusion ou une levée
+- Statut : à faire
+- Voie : 1
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC01
+- Cahier : Conformité, accord préalable ; R03, R02, R04, R202.
+- Objectif : trouvé par la relecture forte de AC01, et déjà possible avant elle. `decideSend` (`envoi/decision.ts`) accepte n'importe quel accord ouvert. Cas reproduits : un retrait sur la fiche A, un accord ouvert ou daté d'avant sur le doublon B, puis une fusion, y compris sans geste humain (`reception/rattachement.ts`, `reprise/reprise.ts`) : l'envoi redevient permis. De même, une exclusion levée rouvre un accord plus ancien qu'elle. Laissée à la voie 1 : c'est le contrôle des envois, donc le socle. Faire avant AC02 : les routes d'accords restent fermées tant que ce n'est pas réglé. Passer R202 à « oui » ici.
+- Critères : un accord ne compte que s'il est postérieur au dernier retrait de même finalité et de même canal sur les fiches réunies (test [R03]) ; et au dernier `lifted_at` d'une exclusion (test [R02] [R04]) ; `undoMerge` ferme, sans effacer et avec une ligne au journal, les accords créés pendant la fusion, car on ne sait plus à qui ils sont (test [R03] [R17]) ; les tests de S05 et S06 restent verts.
+
 ### AC02 · Branchement des routes d'accords dans le socle
 - Statut : à faire
 - Voie : 1
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : AC01
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : AC01, AC05
 - Cahier : Architecture technique.
 - Objectif : ajouter `accordsRoutes()` au routeur de `app.ts`, et décrire les deux routes dans `docs/API.md`.
 - Critères : chaque route répond sous son rôle [R16] ; la suite complète reste verte.
@@ -352,7 +362,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste, à trancher dans C09 : une réponse privée à un commentaire peut partir alors qu'un humain a répondu en message privé (conversations distinctes, déjà le cas avant C09a) ; un écho `unfinished` renvoyé avant 2 minutes attend le prochain message du réseau pour être rangé (rien de perdu, l'assistant reste muet).
 
 ### C09b · Palier de la captation par canal, derrière le contrôle central
-- Statut : à faire
+- Statut : en cours
 - Voie : 1
 - Qui : Claude · Relecture : forte · Dépend de : C09a, B04a
 - Cahier : M02, « État » ; Feuille de route, décembre 2026. Partie de C09 qui n'attend personne : les vrais canaux restent de faux canaux dans les tests.
