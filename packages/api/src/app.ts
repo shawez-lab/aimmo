@@ -683,22 +683,6 @@ const ROUTES: RouteDef[] = [
     },
   },
   {
-    method: 'POST',
-    pattern: new RegExp(`^/documents/${ID}/signature-avenant$`),
-    name: 'document.signature_avenant',
-    // Un avenant signé sur papier : contrôlé à l'instant, rangé avec son exemplaire ; le mandat change alors [R41].
-    handle: async (s, viewer, [id], request) => {
-      const body = await readJson(request);
-      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['signedAt', 'place', 'scanRef'].includes(k))) return failure(400, 'unexpected_field', 'Seuls signedAt, place, scanRef sont admis.');
-      if (typeof body.signedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.signedAt)) return failure(400, 'invalid_date', 'signedAt : un instant ISO en UTC.');
-      const r = await new SignatureAvenant(s.db, s.acces, s.journal, { now: s.now }).register(viewer, id!, { signedAt: new Date(body.signedAt), place: body.place as never, scanRef: body.scanRef as string });
-      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
-      if (r.rule === 'R16') return refusal(r);
-      return json(r.code === 'already_signed' ? 409 : 400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
-    },
-  },
-  {
     method: 'GET',
     pattern: new RegExp(`^/mandats/${ID}/conditions$`),
     name: 'mandat.conditions',
@@ -1454,6 +1438,22 @@ function mandatRoutes(pieces: PieceStore | null): RouteDef[] {
           source: typeof body.source === 'string' ? body.source : null,
           sourceDetail: typeof body.sourceDetail === 'string' ? body.sourceDetail : null,
         });
+        if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+        if (r.rule === 'R16') return refusal(r);
+        return json(r.code === 'already_signed' ? 409 : r.code === 'depot_ferme' ? 503 : 400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/documents/${ID}/signature-avenant$`),
+      name: 'document.signature_avenant',
+      // Un avenant signé sur papier : contrôlé à l'instant, scan présent, rangé avec son exemplaire ; le mandat change alors [R41].
+      handle: async (s, viewer, [id], request) => {
+        const body = await readJson(request);
+        if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+        if (Object.keys(body).some((k) => !['signedAt', 'place', 'scanRef'].includes(k))) return failure(400, 'unexpected_field', 'Seuls signedAt, place, scanRef sont admis.');
+        if (typeof body.signedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.signedAt)) return failure(400, 'invalid_date', 'signedAt : un instant ISO en UTC.');
+        const r = await new SignatureAvenant(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).register(viewer, id!, { signedAt: new Date(body.signedAt), place: body.place as never, scanRef: body.scanRef as string });
         if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
         if (r.rule === 'R16') return refusal(r);
         return json(r.code === 'already_signed' ? 409 : r.code === 'depot_ferme' ? 503 : 400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });

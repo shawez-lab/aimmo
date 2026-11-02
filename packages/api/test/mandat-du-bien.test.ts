@@ -222,3 +222,93 @@ describeWithSqlite('D11 · lire et déposer depuis le téléphone', () => {
     expect(empty.data).toMatchObject({ propertyId: w.bien.id, documents: [], mandate: null });
   });
 });
+
+describeWithSqlite('D14 · le scan d’un avenant vérifié comme celui du mandat', () => {
+  let w: Awaited<ReturnType<typeof world>>;
+  beforeEach(async () => {
+    w = await world();
+  });
+
+  /** Un mandat signé et un avenant généré, prêt à signer ; le dépôt du scan reste à faire. */
+  async function avenant() {
+    const doc = await ready(w);
+    const mandateScan = ((await (await w.scan(KEYS.alex)).json()) as { data: { ref: string } }).data.ref;
+    const signedAt = new Date(Date.now() - 120_000).toISOString();
+    expect((await w.post(`/documents/${doc.id}/signature-papier`, KEYS.alex, { signedAt, place: 'agence', scanRef: mandateScan, source: 'referral' })).status).toBe(200);
+    const template = (await (await w.post('/modeles', KEYS.direction, { kind: 'avenant_mandat', body: 'Avenant au mandat n° {{mandat.numero}} : {{avenant.objet}}. Mandant : {{mandant.nom}}. {{signature.date}}, {{signature.lieu}}.' })).json()) as { data: { id: string } };
+    await w.post(`/modeles/${template.data.id}/validation`, KEYS.compliance);
+    const generate = async () => ((await (await w.post('/documents', KEYS.alex, { kind: 'avenant_mandat', personId: w.lea.id, propertyId: w.bien.id, mandateId: `m-${doc.id}`, inputs: { 'avenant.prix': 190000 } })).json()) as { data: { id: string; status: string } }).data;
+    const made = await generate();
+    expect(made.status).toBe('complet');
+    const paper = (scanRef: string) => ({ signedAt: new Date(Date.now() - 60_000).toISOString(), place: 'agence', scanRef });
+    return { id: made.id, generate, mandateScan, paper };
+  }
+  const code = async (r: Response) => [r.status, ((await r.json()) as { code?: string }).code];
+  const deposit = async () => ((await (await w.scan(KEYS.alex, new TextEncoder().encode(`%PDF-1.7 avenant ${Math.random()}`))).json()) as { data: { ref: string } }).data.ref;
+
+  it('[R41] un scan déposé pour le bien du mandat fait signer l’avenant', async () => {
+    const a = await avenant();
+    const ref = await deposit();
+    expect((await w.post(`/documents/${a.id}/signature-avenant`, KEYS.alex, a.paper(ref))).status).toBe(200);
+    expect(await w.db.first('SELECT scan_ref FROM signed_amendments WHERE document_id = ?', [a.id])).toEqual({ scan_ref: ref });
+  });
+
+  it('[R16] la référence d’un autre bien, ou saisie à la main, est refusée, sans rien changer', async () => {
+    const a = await avenant();
+    const other = await w.store.createProperty({ networkId: w.network.id, agentId: w.alex.id, reference: 'REF-M-2', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 50, priceEur: 100000, status: 'draft' });
+    w.kept.set(`mandats/${other.id}/autre.pdf`, PDF);
+    for (const ref of [`mandats/${other.id}/autre.pdf`, 'scans/a-la-main.pdf']) expect(await code(await w.post(`/documents/${a.id}/signature-avenant`, KEYS.alex, a.paper(ref)))).toEqual([400, 'bad_scan']);
+    expect(await w.db.first('SELECT count(*) AS n FROM signed_amendments')).toEqual({ n: 0 });
+  });
+
+  it('[R10] un scan absent du stockage est refusé', async () => {
+    const a = await avenant();
+    expect(await code(await w.post(`/documents/${a.id}/signature-avenant`, KEYS.alex, a.paper(`mandats/${w.bien.id}/absent.pdf`)))).toEqual([400, 'scan_absent']);
+    expect(await w.db.first('SELECT count(*) AS n FROM signed_amendments')).toEqual({ n: 0 });
+  });
+
+  it('[R10] un scan déjà utilisé, par le mandat ou par un autre avenant, est refusé', async () => {
+    const a = await avenant();
+    expect(await code(await w.post(`/documents/${a.id}/signature-avenant`, KEYS.alex, a.paper(a.mandateScan)))).toEqual([400, 'scan_deja_utilise']);
+    const ref = await deposit();
+    expect((await w.post(`/documents/${a.id}/signature-avenant`, KEYS.alex, a.paper(ref))).status).toBe(200);
+    const second = await a.generate();
+    expect(await code(await w.post(`/documents/${second.id}/signature-avenant`, KEYS.alex, a.paper(ref)))).toEqual([400, 'scan_deja_utilise']);
+    expect(await w.db.first('SELECT count(*) AS n FROM signed_amendments')).toEqual({ n: 1 });
+  });
+
+  it('[R10] la base ferme la course : un scan ne passe ni deux fois en avenant, ni du mandat à l’avenant, ni de l’avenant au mandat', async () => {
+    const a = await avenant();
+    const ref = await deposit();
+    expect((await w.post(`/documents/${a.id}/signature-avenant`, KEYS.alex, a.paper(ref))).status).toBe(200);
+    const at = new Date().toISOString();
+    const insertAmendment = (document: string, scan: string) =>
+      w.db.run(`INSERT INTO signed_amendments (document_id, network_id, mandate_id, signed_at, place, scan_ref, copy_content, copy_hash, registered_by, created_at) SELECT ?, network_id, mandate_id, signed_at, place, ?, 'x', 'h', 'test', ? FROM signed_amendments WHERE document_id = ?`, [document, scan, at, a.id]);
+    const second = await a.generate();
+    await expect(insertAmendment(second.id, ref)).rejects.toThrow();
+    await expect(insertAmendment(second.id, a.mandateScan)).rejects.toThrow();
+    await expect(w.db.run(`INSERT INTO signed_documents (document_id, network_id, signed_at, place, scan_ref, registered_by, created_at) VALUES (?, ?, ?, 'agence', ?, 'x', ?)`, [second.id, w.network.id, at, ref, at])).rejects.toThrow();
+  });
+
+  it('[R10] sans stockage, rien ne se signe', async () => {
+    const a = await avenant();
+    const noStore: Env = { ...w.env };
+    delete noStore.PIECES;
+    const r = await worker.fetch(new Request(`${BASE}/v1/documents/${a.id}/signature-avenant`, { method: 'POST', headers: { authorization: `Bearer ${KEYS.alex}`, 'content-type': 'application/json' }, body: JSON.stringify(a.paper(`mandats/${w.bien.id}/x.pdf`)) }), noStore);
+    expect(await code(r)).toEqual([503, 'depot_ferme']);
+    expect(await w.db.first('SELECT count(*) AS n FROM signed_amendments')).toEqual({ n: 0 });
+  });
+
+  it('[R17] une reprise garde son scan, même retiré du stockage ou sans stockage', async () => {
+    const a = await avenant();
+    const ref = await deposit();
+    expect((await w.post(`/documents/${a.id}/signature-avenant`, KEYS.alex, a.paper(ref))).status).toBe(200);
+    w.kept.clear();
+    expect(await code(await w.post(`/documents/${a.id}/signature-avenant`, KEYS.alex, a.paper(`mandats/${w.bien.id}/autre.pdf`)))).toEqual([409, 'already_signed']);
+    const noStore: Env = { ...w.env };
+    delete noStore.PIECES;
+    const again = await worker.fetch(new Request(`${BASE}/v1/documents/${a.id}/signature-avenant`, { method: 'POST', headers: { authorization: `Bearer ${KEYS.alex}`, 'content-type': 'application/json' }, body: JSON.stringify(a.paper(`mandats/${w.bien.id}/autre.pdf`)) }), noStore);
+    expect(await code(again)).toEqual([409, 'already_signed']);
+    expect(await w.db.first('SELECT scan_ref FROM signed_amendments WHERE document_id = ?', [a.id])).toEqual({ scan_ref: ref });
+  });
+});

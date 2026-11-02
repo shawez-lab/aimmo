@@ -171,4 +171,29 @@ describeWithSqlite('D07 · avenant au mandat', () => {
     expect(copy.ok && copy.content).toContain('<span class="signe">01/03/2027</span>');
     expect(await new SignaturePapier(t.db, t.acces, t.journal).copy(t.as('agent', t.sam.id), a.document.id)).toMatchObject({ ok: false, rule: 'R16' });
   });
+
+  it('[R10] D14 : une course perdue sur le scan se dit en français, sans rien doubler', async () => {
+    const t = await setup();
+    const ref = `mandats/${t.propertyId}/avenant.pdf`;
+    const scans = { has: async () => true };
+    const first = await t.amendment({ 'avenant.prix': 190000 });
+    const second = await t.amendment({ 'avenant.prix': 180000 });
+    if (!first.ok || !second.ok) throw new Error('avenant');
+    const paper = { signedAt: LATER, place: 'agence' as const, scanRef: ref };
+    expect((await new SignatureAvenant(t.db, t.acces, t.journal, { now: () => LATER, scans }).register(t.agent, first.document.id, paper)).ok).toBe(true);
+    // L'autre demande a passé le contrôle du scan avant que la première écrive.
+    let hidden = false;
+    const race: SqlDatabase = {
+      ...t.db,
+      first: async <T,>(sql: string, params?: readonly never[]) => {
+        if (!hidden && sql.startsWith('SELECT 1 FROM signed_documents WHERE scan_ref')) {
+          hidden = true;
+          return null;
+        }
+        return t.db.first<T>(sql, params);
+      },
+    };
+    expect(await new SignatureAvenant(race, t.acces, t.journal, { now: () => LATER, scans }).register(t.agent, second.document.id, paper)).toEqual({ ok: false, rule: null, code: 'scan_deja_utilise' });
+    expect(await t.db.first('SELECT count(*) AS n FROM signed_amendments')).toEqual({ n: 1 });
+  });
 });

@@ -20,6 +20,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { ControlesSignature, type SignatureCheck } from './controles.ts';
 import { escapeHtml, fillSignatureFields, sha256 } from './modeles.ts';
 import { mandateTerms, type MandateTerms } from './conditions.ts';
+import { mandateScanPrefix } from './mandat-du-bien.ts';
 import { SIGNATURE_PLACES, type SignaturePlace } from './signature-papier.ts';
 
 const SCAN_REF = /^[A-Za-z0-9/_.-]{1,200}$/;
@@ -28,7 +29,18 @@ const PLACE_LABEL: Record<SignaturePlace, string> = { agence: 'à l’agence', h
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: 'R41'; code: 'checks_failed'; check: SignatureCheck }
-  | { ok: false; rule: null; code: 'bad_date' | 'bad_place' | 'bad_scan' | 'not_an_amendment' | 'already_signed' | 'no_mandate' | 'before_mandate' | 'bad_schedule' | 'bad_piece' | 'unknown_document' };
+  | { ok: false; rule: null; code: 'bad_date' | 'bad_place' | 'bad_scan' | 'not_an_amendment' | 'already_signed' | 'no_mandate' | 'before_mandate' | 'bad_schedule' | 'bad_piece' | 'unknown_document' | 'depot_ferme' | 'scan_absent' | 'scan_deja_utilise' };
+
+export interface AmendmentSignatureOptions {
+  now?: () => Date;
+  newId?: () => string;
+  /**
+   * Le stockage où le scan doit se trouver (D14), comme à la signature du mandat. Donné : la référence doit être celle d'un
+   * scan du bien du mandat, présent dans le stockage, et qui n'a encore prouvé aucune signature. Nul : aucun stockage, rien
+   * ne se signe. Absent : non vérifié, pour les appelants internes ; la route donne toujours l'un ou l'autre.
+   */
+  scans?: { has(ref: string): Promise<boolean> } | null;
+}
 
 export class SignatureAvenant {
   private readonly now: () => Date;
@@ -38,7 +50,7 @@ export class SignatureAvenant {
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
-    options: { now?: () => Date; newId?: () => string } = {},
+    private readonly options: AmendmentSignatureOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.controles = new ControlesSignature(db, acces, journal, options);
@@ -77,6 +89,9 @@ export class SignatureAvenant {
     if (!mandate) return { ok: false, rule: null, code: 'no_mandate' };
     // Un avenant suit son mandat : il ne peut pas être signé avant lui.
     if (input.signedAt.getTime() < Date.parse(mandate.signed_at)) return { ok: false, rule: null, code: 'before_mandate' };
+    // Un scan qui n'existe pas n'est pas une preuve. Un avenant déjà signé est reparti plus haut : il garde son scan.
+    const scanProblem = await this.scanProblem(doc.mandate_id, input.scanRef);
+    if (scanProblem) return { ok: false, rule: null, code: scanProblem };
 
     const day = localTime(input.signedAt, 'Europe/Paris').date;
     const copy = fillSignatureFields(doc.content, {
@@ -87,14 +102,36 @@ export class SignatureAvenant {
     // L'avenant porte le numéro du mandat qu'il modifie.
     if (!copy.includes(escapeHtml(mandate.number))) return { ok: false, rule: null, code: 'no_mandate' };
     const copyHash = await sha256(copy);
-    const { changes } = await this.db.run(
-      `INSERT INTO signed_amendments (document_id, network_id, mandate_id, signed_at, place, scan_ref, copy_content, copy_hash, registered_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (document_id) DO NOTHING`,
-      [documentId, viewer.networkId, doc.mandate_id, input.signedAt.toISOString(), input.place, input.scanRef, copy, copyHash, this.actor(viewer), this.now().toISOString()],
-    );
+    let changes: number;
+    try {
+      ({ changes } = await this.db.run(
+        `INSERT INTO signed_amendments (document_id, network_id, mandate_id, signed_at, place, scan_ref, copy_content, copy_hash, registered_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (document_id) DO NOTHING`,
+        [documentId, viewer.networkId, doc.mandate_id, input.signedAt.toISOString(), input.place, input.scanRef, copy, copyHash, this.actor(viewer), this.now().toISOString()],
+      ));
+    } catch (error) {
+      // Course perdue : une autre signature a pris ce scan entre le contrôle et l'écriture (index et déclencheurs de 1570).
+      if (this.options.scans && (await this.scanUsed(input.scanRef))) return { ok: false, rule: null, code: 'scan_deja_utilise' };
+      throw error;
+    }
     if (changes !== 1) return { ok: false, rule: null, code: 'already_signed' };
     await this.ensureEvent(viewer, documentId, doc.mandate_id);
     return { ok: true, value: { documentId, mandateId: doc.mandate_id, copyHash } };
+  }
+
+  private async scanUsed(scanRef: string): Promise<boolean> {
+    return Boolean(await this.db.first('SELECT 1 FROM signed_documents WHERE scan_ref = ? UNION ALL SELECT 1 FROM signed_amendments WHERE scan_ref = ?', [scanRef, scanRef]));
+  }
+
+  /** Le même contrôle qu'à la signature du mandat (D11), sur le bien du mandat modifié. */
+  private async scanProblem(mandateId: string, scanRef: string): Promise<'depot_ferme' | 'bad_scan' | 'scan_absent' | 'scan_deja_utilise' | null> {
+    const scans = this.options.scans;
+    if (scans === undefined) return null;
+    if (scans === null) return 'depot_ferme';
+    const mandate = await this.db.first<{ property_id: string | null }>('SELECT property_id FROM mandates WHERE id = ?', [mandateId]);
+    if (!mandate?.property_id || !scanRef.startsWith(mandateScanPrefix(mandate.property_id))) return 'bad_scan';
+    if (!(await scans.has(scanRef))) return 'scan_absent';
+    return (await this.scanUsed(scanRef)) ? 'scan_deja_utilise' : null;
   }
 
   /** La ligne de journal de l'avenant signé, écrite une fois ; reprise si une panne l'a empêchée [R13]. */
