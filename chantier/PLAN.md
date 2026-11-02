@@ -251,7 +251,8 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : après un retrait sur une fiche et une fusion avec un doublon ouvert, redonner l'accord le range et rouvre l'envoi, pour chacun de ces modules (test [R03]) ; un accord qui compte n'est pas doublé ; les tests des modules restent verts.
 
 ### AC08 · Une exclusion notée pendant une fusion suit les deux fiches quand on la défait
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02), lecture prudente : la copie va de fiche à fiche seulement si les deux étaient réunies quand l'exclusion a été notée (date de création, lue par couple) ; elle garde la date et la levée de l'original, pour qu'un accord plus ancien ne compte pas de nouveau ; `exclusions.undone_merge_id` (migration `1520`) la relie à sa fusion. Relecture forte : aucun P0, 2 P1 corrigés ; Codex à sa limite (H03), fusion sans lui (#250).
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC05
 - Cahier : Conformité ; R02, R04, R17.
