@@ -1,6 +1,7 @@
 import { DESIGN_CSS, DESIGN_ICON_SVG, PALETTE, THEME_COLOR } from '@aimmo/core';
 import { CERTIFIED_DOMAINS, PARTNER_TRADES } from '../../core/src/partenaires/annuaire.ts';
 import { SORT_LABELS } from '../src/partenaires-sortes.ts';
+import { ACCORDS_JS } from './accords.ts';
 import { COFFRE_JS, CONFORMITE_CSS, CONFORMITE_HTML } from './conformite.ts';
 import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS } from './louer.ts';
 import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './investir.ts';
@@ -419,7 +420,7 @@ export const APP_JS = `'use strict';
       body.appendChild(a);
     } else if (f.callRefusal === 'no_consent') {
       // Pas d'appel sans accord ni demande de la personne [R03].
-      body.appendChild(el('p', 'Appel fermé : aucun accord ni demande de rappel enregistrés pour cette personne.', 'alerte'));
+      body.appendChild(el('p', 'Appel fermé : aucun accord ni demande de rappel enregistrés. Notez-les plus bas si la personne vous les a donnés.', 'alerte'));
     } else if (f.callRefusal === 'outside_hours') {
       // Une prospection acceptée s'appelle aux heures permises [R203].
       body.appendChild(el('p', 'Appel fermé à cette heure : du lundi au vendredi, de 10 h à 13 h et de 14 h à 20 h, hors jours fériés.', 'alerte'));
@@ -442,9 +443,7 @@ export const APP_JS = `'use strict';
       return line((PROJECTS[p.kind] || 'Autre projet') + ' (étape : ' + stage(p.stage) + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
     })));
     body.appendChild(block('Origines', (f.sources || []).map(function (s) { return line(channel(s.channel) + (s.detail ? ' (' + s.detail + ')' : ''), 'Le ' + date(s.occurredAt)); })));
-    body.appendChild(block('Accords', (f.consents || []).map(function (c) {
-      return line((PURPOSES[c.purpose] || 'autre accord') + ' par ' + channel(c.channel), c.withdrawnAt ? 'Retiré le ' + date(c.withdrawnAt) : 'Donné le ' + date(c.givenAt));
-    })));
+    body.appendChild(accordsBlock(personId, f));
     body.appendChild(block('Derniers messages', (f.messages || []).map(function (m) {
       return line(m.body, (m.direction === 'in' ? 'Reçu' : 'Envoyé') + ' par ' + channel(m.channel) + ', le ' + date(m.occurredAt) + ' à ' + hour(m.occurredAt));
     })));
@@ -1695,7 +1694,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}${GAGNER_JS}${INTEGRATION_JS}${REPRISE_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${STUDIO_JS}${GAGNER_JS}${INTEGRATION_JS}${REPRISE_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
