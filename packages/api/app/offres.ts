@@ -14,6 +14,7 @@ const REFUSALS = {
   not_on_sale: 'Ce bien n’est plus en vente sous mandat : il ne reçoit plus d’offre.',
   not_assigned: 'Ce bien ou ce contact n’est pas dans vos droits.',
   unknown_buyer: 'Ce contact n’existe plus : rouvrez cet écran.',
+  buyer_is_seller: 'Le vendeur de ce bien ne peut pas en être l’acquéreur.',
   busy: 'Le registre est occupé : réessayez dans un moment.',
   request_key_reused: 'Cette offre a déjà été rangée autrement : rouvrez cet écran avant de recommencer.',
   already_transmitted: 'Cette offre a déjà été transmise.',
@@ -138,6 +139,7 @@ globalThis.AIMMO_OFFRES = function (t) {
   function why(res, fallback) {
     if (res.offline) return 'Pas de réseau : rien n’est rangé.';
     var b = res.body;
+    if (b && b.code === 'buyer_is_seller') return NO.buyer_is_seller;
     if (b && b.field) {
       var head = String(b.field).split('.')[0];
       if (FIELDS[head]) return FIELDS[head];

@@ -19,6 +19,7 @@ import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
+import { LIVE_MANDATES } from '../espaces/lecture.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -143,6 +144,7 @@ type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: null; code: 'invalid'; field: string }
   | { ok: false; rule: null; code: 'unknown_property' | 'unknown_buyer' | 'busy' }
+  | { ok: false; rule: null; code: 'buyer_is_seller'; field: 'buyerPersonId' }
   | { ok: false; rule: 'R42'; code: 'not_on_sale' }
   | { ok: false; rule: 'R56'; code: 'request_key_reused' };
 
@@ -242,6 +244,10 @@ export class RegistreOffres {
     const buyer = await this.acces.readFiche(viewer, input.buyerPersonId);
     if (!buyer.ok) return buyer.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_buyer' } : (buyer as Refusal);
     if (buyer.view !== 'full') return this.refuse(viewer, `person:${input.buyerPersonId}`, 'not_assigned');
+    // Le mandant du bien, sous aucune de ses fiches, ne se fait une offre à lui-même.
+    const members = new Set(buyer.value.members.map((m) => m.id));
+    const sellers = await this.db.all<{ person_id: string }>(`SELECT person_id FROM (${LIVE_MANDATES}) WHERE property_id = ?`, [g.networkId, propertyId]);
+    if (sellers.some((s) => members.has(s.person_id))) return { ok: false, rule: null, code: 'buyer_is_seller', field: 'buyerPersonId' };
     // Un bien reçoit des offres seulement s'il est en vente sous mandat (D05) [R42].
     const sale = await this.diffusion.canDiffuse(g.networkId, propertyId, now);
     const status = await this.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [propertyId]);

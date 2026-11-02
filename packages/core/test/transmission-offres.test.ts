@@ -26,25 +26,31 @@ describe('O03 · message au vendeur', () => {
 });
 
 describeWithSqlite('O03 · transmission et réponse', () => {
-  it('une offre test suivie de bout en bout : reçue, enregistrée, transmise par message, acceptée, avec un historique horodaté', async () => {
+  it('une offre test suivie de bout en bout : reçue, enregistrée, message d’essai non compté, transmise de vive voix, acceptée, avec un historique horodaté', async () => {
     const t = await setup();
     const offer = await t.record();
     expect(await t.transmission.stateOf(offer)).toBe('recue');
     t.setClock(new Date('2027-03-01T11:00:00.000Z'));
     const sent = await t.transmission.transmit(t.agent, offer.id, { via: 'message' });
-    expect(sent).toMatchObject({ ok: true, value: { via: 'message' } });
+    expect(sent).toMatchObject({ ok: true, value: { via: 'message', counted: false } });
     // Le message est passé par le contrôle central, en mode essai : rangé, rien n'est parti.
     const out = await t.db.all<{ body: string }>('SELECT body FROM messages WHERE person_id = ? AND direction = ?', [t.personId, 'out']);
     expect(out).toHaveLength(1);
     expect(out[0]!.body).toContain('205');
     expect(out[0]!.body).not.toMatch(/Acheteur/);
+    // [R56] [R26] Le vendeur n'a rien reçu : l'offre reste à transmettre, et l'alerte reste due.
+    expect(await t.transmission.stateOf(offer)).toBe('recue');
+    expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-01T11:00:00.000Z' })).toMatchObject({ ok: false, code: 'not_transmitted' });
+    t.setClock(new Date('2027-03-02T11:00:00.000Z'));
+    expect(await t.transmission.alertUntransmitted(t.network.id)).toEqual([offer.id]);
+    expect(await t.transmission.transmit(t.agent, offer.id, { via: 'telephone' })).toMatchObject({ ok: true, value: { via: 'telephone', counted: true } });
     expect(await t.transmission.stateOf(offer)).toBe('transmise');
     t.setClock(new Date('2027-03-02T15:00:00.000Z'));
     expect(await t.transmission.respond(t.agent, offer.id, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-02T14:30:00.000Z' })).toEqual({ ok: true, value: { outcome: 'acceptee' } });
     const h = await t.transmission.history(t.agent, offer.id);
     expect(h.ok && h.value.state).toBe('acceptee');
-    expect(h.ok && h.value.events.map((e) => e.event)).toEqual(['recue', 'enregistree', 'transmise:message', 'reponse:acceptee']);
-    expect(h.ok && h.value.events.map((e) => e.at)).toEqual(['2027-03-01T09:00:00.000Z', '2027-03-01T10:00:00.000Z', '2027-03-01T11:00:00.000Z', '2027-03-02T14:30:00.000Z']);
+    expect(h.ok && h.value.events.map((e) => e.event)).toEqual(['recue', 'enregistree', 'transmise:telephone', 'reponse:acceptee']);
+    expect(h.ok && h.value.events.map((e) => e.at)).toEqual(['2027-03-01T09:00:00.000Z', '2027-03-01T10:00:00.000Z', '2027-03-02T11:00:00.000Z', '2027-03-02T14:30:00.000Z']);
   });
 
   it('[R57] aucune fonction ne change l’état d’une offre sans une réponse du vendeur rapportée avec preuve', async () => {
