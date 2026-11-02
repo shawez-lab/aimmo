@@ -1941,7 +1941,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 ### W10 · Branchement de M15 dans le socle
 - Statut : fait (2026-10-29)
 - Décidé (2026-10-29) : routes de M15 servies par le socle, fermées (503) sans le stockage `PIECES`, identité lue au coffre (son état seul) ; passage `location.envois` de 9 h à 19 h ; accord demandé : `suivi_location` par mail ; seuls exclusion, arrêt, doublon et départ de l'agent qui a préparé refusent pour de bon (R02, R04, R05, R86), tout autre refus attend (heure, accord, adresse) ; texte devenu faux (classe corrigée, présentation refaite) jamais envoyé tant qu'il reste faux ; prénom lu sur la fiche réunie ; parenthèses des libellés officiels mises en incise à l'envoi.
-- Reste : rien ne range encore l'accord `suivi_location` (à prévoir dans W11 ou au mandat de location) ; `rental_sends` à ajouter à la carte des demandes d'accès à la reprise de L07 ; relecture forte 2 P1, Codex 1 P0 et 4 P2 corrigés (#164).
+- Reste : soldé, vérifié le 2026-11-02 : l'accord `suivi_location` se range depuis la fiche (AC03) ; `rental_sends` est dans la carte des demandes d'accès ; relecture forte 2 P1, Codex 1 P0 et 4 P2 corrigés (#164).
 - Qui : Claude, voie 1 (fichiers du socle) · Relecture : forte · Dépend de : W09
 - Cahier : M15 ; Branchements.
 - Objectif : exporter `location` depuis `@aimmo/core` ; ajouter ses routes à `app.ts` ; lancer au planificateur les échéances des propriétaires ; passer les textes préparés par le contrôle central des envois, en mode essai.
@@ -2487,6 +2487,33 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Critères : chaque route branchée répond sous son rôle et sa portée [R16] ; parcours d'un bien test sur les deux sites, une seule page de référence [R153] ; la suite complète reste verte.
 - Ajouté (2026-10-30, voie 2, relecture forte de AT09) : poser `listingReference(s, request.url, bien)` sur la page du bien de `vitrine.ts` (en-tête `Link` canonique et données structurées), avec un test qui charge `/biens/b1` sur les deux sites et y trouve la même page de référence [R153].
 - Attend : rien.
+
+### AT12 · Écran « Attirer » de la direction : prix, sites et origine des contacts
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT09, AT11
+- Cahier : M01 ; critère « au moins 95 % des contacts entrants ont leur contenu d'origine renseigné » ; R16, R150, R153, R201.
+- Objectif : M01 a 24 routes sous `/v1/attirer` et aucun écran : sans clé d'API et sans outil, personne ne peut s'en servir. Depuis l'écran du réseau, la direction ouvre « Attirer » : dernières versions des prix et leur recalcul, sites en service et leur plan, part des contacts dont l'origine est connue, mois par mois, contre la cible. Chargé à part (`/app/attirer.js`).
+- Critères : l'écran ne lit et n'écrit que par `/v1/attirer` [R16] ; il n'est proposé qu'à la direction ; il montre les chiffres du serveur, sans calcul ni tri à lui ; un refus est dit en français, sans code ni donnée ; tout texte reçu passe par `textContent` ; un double appui ne relance pas deux recalculs ; budget tenu [R201].
+- Attend : rien.
+
+### AT13 · Écran « Attirer » : pages de quartier, du fait validé à la page publiée
+- Statut : à faire
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12
+- Cahier : M01 ; R154, R155, R46.
+- Objectif : la direction range un fait avec sa source, fait préparer le texte, le relit, le valide ; aucune page n'a d'adresse à saisir.
+- Critères : lecture ajoutée de la liste des quartiers dans `attirer.ts`, sous R16 ; validation sur le texte exact affiché ; refus dits en français ; rien n'est publié sans validation humaine [R154].
+- Attend : rien.
+
+### AT14 · Écran « Attirer » : avis et publications Google, préparés et validés
+- Statut : à faire
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12
+- Cahier : M01 ; R154, R26.
+- Objectif : chaque agent voit ses avis Google, fait préparer une réponse, la corrige, la valide ; rien ne part sans lui, et en essai rien ne part du tout.
+- Critères : un agent ne voit que sa fiche [R16] ; validation sur le texte exact [R154] ; sans H07, l'écran dit que Google n'est pas branché, sans erreur ; refus dits en français.
+- Attend : H07 pour le réel.
 
 **Espaces propriétaire et acquéreur, juin 2027.**
 
