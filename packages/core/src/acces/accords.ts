@@ -19,8 +19,11 @@ import type { Channel, Consent } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalData, JournalStore } from '../journal/types.ts';
 import { consentInForce } from '../envoi/decision.ts';
+import { localTime } from '../envoi/horaires.ts';
+import { parisDayStart } from '../pilotage/tableau-agent.ts';
 import type { Acces } from './acces.ts';
 import type { Viewer } from './droits.ts';
+import { CALL_PURPOSES, callClosedAt, consentOpensCall } from './fiche-agent.ts';
 
 /** Les finalités qu'un agent peut noter, avec leur libellé pour l'écran. */
 export const AGENT_CONSENT_LABELS: Readonly<Record<string, string>> = Object.freeze({
@@ -32,16 +35,16 @@ export const AGENT_CONSENT_LABELS: Readonly<Record<string, string>> = Object.fre
   alertes_biens: 'Alertes de biens',
   route_share: 'Partage de la tournée de visites',
   prospecting: 'Prospection',
-  rappel_demande: 'Demande de rappel de la personne',
+  rappel_demande: 'Demande de rappel',
 });
 export const AGENT_CONSENT_PURPOSES: readonly string[] = Object.freeze(Object.keys(AGENT_CONSENT_LABELS));
 /** Les canaux où un premier contact demande un accord préalable [R03]. */
 export const AGENT_CONSENT_CHANNELS: readonly Channel[] = Object.freeze(['email', 'phone', 'sms', 'whatsapp'] as const);
+const PARIS = 'Europe/Paris';
 export const MIN_CONSENT_PROOF = 10;
 export const MAX_CONSENT_PROOF = 1000;
 
-/** Date et heure complètes, avec leur fuseau : une date seule se lirait à une heure que personne n'a dite. */
-const TIMESTAMP = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f]/;
 
@@ -50,19 +53,16 @@ export interface ConsentInput {
   purpose?: unknown;
   channel?: unknown;
   proof?: unknown;
-  givenAt?: unknown;
+  /** Le jour où la personne l'a donné, à Paris. L'heure n'est jamais demandée, ni prise sur le téléphone. */
+  givenOn?: unknown;
 }
 
-/** Une date lisible, qui existe vraiment : le 31 février ne devient pas le 3 mars. */
-function readTimestamp(value: unknown): Date | null {
-  if (typeof value !== 'string') return null;
-  const match = TIMESTAMP.exec(value);
-  if (!match) return null;
-  const [year, month, day] = match[1]!.split('-').map(Number) as [number, number, number];
+/** Un jour qui existe vraiment : le 31 février ne devient pas le 3 mars. */
+function readDay(value: unknown): string | null {
+  if (typeof value !== 'string' || !DAY.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
   const calendar = new Date(Date.UTC(year, month - 1, day));
-  if (calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day) return null;
-  const at = new Date(value);
-  return Number.isNaN(at.getTime()) ? null : at;
+  return calendar.getUTCMonth() === month - 1 && calendar.getUTCDate() === day ? value : null;
 }
 
 export class AccordsFiche {
@@ -85,10 +85,14 @@ export class AccordsFiche {
     if (typeof channel !== 'string' || !(AGENT_CONSENT_CHANNELS as readonly string[]).includes(channel)) return { ok: false, rule: 'R202', code: 'bad_channel' };
     const note = typeof proof === 'string' ? proof.trim() : '';
     if (note.length < MIN_CONSENT_PROOF || note.length > MAX_CONSENT_PROOF || CONTROL.test(note)) return { ok: false, rule: 'R202', code: 'bad_proof' };
-    const givenAt = readTimestamp(input.givenAt);
-    if (!givenAt) return { ok: false, rule: 'R202', code: 'bad_date' };
+    const day = readDay(input.givenOn);
+    if (!day) return { ok: false, rule: 'R202', code: 'bad_date' };
     const at = this.now();
-    if (givenAt.getTime() > at.getTime()) return { ok: false, rule: 'R202', code: 'future_date' };
+    const today = localTime(at, PARIS).date;
+    if (day > today) return { ok: false, rule: 'R202', code: 'future_date' };
+    // Aujourd'hui vaut maintenant, à l'horloge du serveur. Un jour passé vaut son premier instant : l'accord ne passe
+    // jamais pour plus récent que ce qui a été dit, et un retrait du même jour ferme la porte.
+    const givenAt = day === today ? at : parisDayStart(day);
 
     const read = await this.acces.readFiche(viewer, personId);
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
@@ -102,10 +106,14 @@ export class AccordsFiche {
     if (lifted) return { ok: false, rule: lifted.reason === 'stop' ? 'R04' : 'R02', code: 'given_before_lift' };
 
     const same = fiche.consents.filter((c) => c.purpose === purpose && c.channel === channel);
-    // Un accord plus ancien qu'un retrait ou qu'une levée d'exclusion ne vaut plus : la nouvelle preuve est rangée, pas perdue.
-    const current = same.find((c) => consentInForce(c, fiche, at.getTime()));
+    const opensCall = channel === 'phone' && CALL_PURPOSES.includes(purpose);
+    // Un accord qui ne vaut plus ne retient pas le nouveau : la nouvelle preuve est rangée, pas perdue. Pour un appel, « vaut
+    // encore » est le calcul du bouton (13 mois, retrait d'une autre finalité), sinon noter ne rouvrirait rien, sans le dire.
+    const current = same.find((c) => consentInForce(c, fiche, at.getTime()) && (!opensCall || consentOpensCall(c, fiche, at.getTime())));
     if (current) return { ok: true, value: { consentId: current.id, givenAt: current.given_at, already: true } };
     if (same.some((c) => c.withdrawn_at && Date.parse(c.withdrawn_at) >= givenAt.getTime())) return { ok: false, rule: 'R03', code: 'given_before_withdrawal' };
+    // Par téléphone, un retrait ferme aussi les autres finalités d'appel : l'accord accepté ne rouvrirait rien [R03].
+    if (opensCall && givenAt.getTime() <= callClosedAt(fiche)) return { ok: false, rule: 'R03', code: 'given_before_withdrawal' };
 
     const consent = await this.store.addConsent({
       networkId: viewer.networkId,
