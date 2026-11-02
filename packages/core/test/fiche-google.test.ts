@@ -660,6 +660,21 @@ describeWithSqlite('AT14 · ce que l’écran de la fiche Google montre', () => 
     expect((await screen(s)).publications.map((x) => [x.draftId, x.state])).toEqual([[q.value.draftId, 'a_valider']]);
   });
 
+  it('[R154] une publication devenue refusée ne garde aucun geste mort : son état le dit, et une nouvelle annonce la remplace', async () => {
+    const s = await setup();
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison lumineuse avec verger');
+    const p = await s.fiche.preparePost(agent, 'ag-1');
+    if (!p.ok || !p.value) throw new Error('rien de préparé');
+    await s.db.run("INSERT INTO persons (id, network_id, agent_id, first_name, last_name, created_at, updated_at) VALUES ('p-2', 'net-1', 'ag-1', 'Ondine', 'Verger', 'x', 'x')");
+    expect((await screen(s)).publications[0]!.state).toBe('texte_a_revoir');
+    expect(await s.fiche.validate(agent, p.value.draftId)).toMatchObject({ ok: false, code: 'texte_refuse' });
+    await listing(s.db, 'b1', 2, 'en_vente', 'Maison lumineuse avec terrasse');
+    s.advanceDays(8);
+    const q = await s.fiche.preparePost(agent, 'ag-1');
+    if (!q.ok || !q.value) throw new Error('rien de préparé');
+    expect((await screen(s)).publications.map((x) => [x.draftId, x.state])).toEqual([[q.value.draftId, 'a_valider']]);
+  });
+
   it('une fiche non réglée n’empêche pas l’écran, et préparer le dit', async () => {
     const s = await setup();
     await s.db.run("INSERT INTO agents (id, network_id, first_name, last_name, created_at, updated_at) VALUES ('ag-4', 'net-1', 'Inès', 'Neuve', 'x', 'x')");

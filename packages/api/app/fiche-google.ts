@@ -59,6 +59,7 @@ const STATES: Record<GbpDraftState, string> = {
   note_essai: 'En essai, rien n’est parti : l’envoi est seulement noté.',
   envoye: 'Parti sur Google.',
   bien_retire: 'Ce bien n’est plus en vente, ou son annonce a changé : ce texte ne peut plus partir.',
+  texte_a_revoir: 'Ce texte ne passe plus le contrôle et ne peut pas partir : changez le titre de l’annonce, puis préparez une nouvelle publication.',
 };
 
 export const FICHE_GOOGLE_HOME_HTML = `<section class="bloc" aria-labelledby="titre-fiche-google-accueil">
@@ -134,7 +135,7 @@ globalThis.AIMMO_FICHE_GOOGLE = function (t) {
     var b = res.body;
     if (b && b.code === 'texte_refuse') {
       var found = (Array.isArray(b.problems) ? b.problems : []).map(function (p) { return PROBLEMS[p] || 'un mot à retirer'; });
-      return 'Ce texte ne passe pas le contrôle' + (found.length ? ' : il porte ' + found.join(', ') : '') + '. Corrigez-le : rien n’est enregistré.';
+      return 'Ce texte ne passe pas le contrôle' + (found.length ? ' : il porte ' + found.join(', ') : '') + '. Rien n’est enregistré.';
     }
     return (b && REFUSALS[b.code]) || fallback;
   }

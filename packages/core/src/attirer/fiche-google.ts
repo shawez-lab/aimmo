@@ -85,7 +85,7 @@ export interface GbpDraft {
  * `note_essai` : validé et noté, rien n'est parti [R26] ; `envoi_coupe` : une réservation sans résultat depuis plus d'une
  * heure, que seule la direction peut clore après avoir regardé la fiche Google.
  */
-export type GbpDraftState = 'a_valider' | 'a_envoyer' | 'envoi_en_cours' | 'envoi_coupe' | 'echec' | 'note_essai' | 'envoye' | 'bien_retire';
+export type GbpDraftState = 'a_valider' | 'a_envoyer' | 'envoi_en_cours' | 'envoi_coupe' | 'echec' | 'note_essai' | 'envoye' | 'bien_retire' | 'texte_a_revoir';
 
 export interface GbpScreenDraft {
   draftId: string;
@@ -793,8 +793,10 @@ export class FicheGoogle {
         return this.now().getTime() - Date.parse(claim.claimed_at) < CLAIM_RELEASE_MS ? 'envoi_en_cours' : 'envoi_coupe';
       }
       if (row.kind === 'publication') {
-        const listing = await this.publishedListing(networkId, agentId, row.property_id!);
-        if (!listing || listing.seq !== Number(row.listing_seq)) return 'bien_retire';
+        // Une publication s'écrit depuis l'annonce, sans correction à la main : un texte devenu refusé ne repart qu'avec une nouvelle annonce.
+        const invalid = await this.stillValid(row);
+        if (invalid && invalid.code === 'bien_retire') return 'bien_retire';
+        if (invalid && invalid.code === 'texte_refuse') return 'texte_a_revoir';
       }
       if (!row.validated_at) return 'a_valider';
       return sendsOf.has(row.id) ? 'echec' : 'a_envoyer';

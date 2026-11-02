@@ -214,6 +214,7 @@ describe('AT14 · écran « Fiche Google »', () => {
     ['envoi_en_cours', 'Envoi en cours'],
     ['envoi_coupe', 'La direction regarde la fiche Google'],
     ['bien_retire', 'ne peut plus partir'],
+    ['texte_a_revoir', 'changez le titre de l’annonce'],
   ])('l’état %s ne permet aucun geste à l’agent sur le texte', async (stateName, said) => {
     const t = await run({ 'GET /v1/attirer/google/moi': ok(screenData({ reviews: [], publications: [draft({ state: stateName, origin: 'code', linkUri: 'https://camille.exemple.test/biens/b1' })] })) });
     await t.ouvrir();
