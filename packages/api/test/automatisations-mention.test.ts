@@ -7,6 +7,7 @@ import {
   PaliersBascule,
   ROLLOUT_MIN_REQUESTS,
   SqlJournalStore,
+  SITE_THREAD,
   SqlSendJournal,
   applyMigrations,
   rolloutBucket,
@@ -79,7 +80,16 @@ async function world() {
   const rows = () => db.all<{ body: string; author_kind: string }>("SELECT body, author_kind FROM messages WHERE direction = 'out' ORDER BY occurred_at, id");
   const outbox = async () => (await db.all('SELECT message_id FROM trial_outbox')).length;
   const requests = async () => Number((await db.first<{ requests: number }>("SELECT requests FROM automation_rollouts WHERE automation = 'rappel_visite'"))?.requests ?? 0);
-  return { db, fiches, network, agent, person, now, send, journal, toTenPercent, rows, outbox, requests };
+  const controle = () => {
+    const unique = new FicheUnique(db, fiches, { now });
+    return new ControleEnvois(db, unique, new DecisionEnvoi(db, fiches, unique, { now }), {
+      channels: trialChannels(db, journal, now),
+      journal: new SqlSendJournal(db, undefined, now),
+      now,
+    });
+  };
+  const order = { networkId: network.id, agentId: agent.id, personId: person.id, channel: 'email' as const, kind: 'follow_up' as const, purpose: 'valuation_follow_up', figures: [] };
+  return { db, fiches, network, agent, person, now, send, journal, toTenPercent, rows, outbox, requests, controle, order };
 }
 
 /** Une référence tirée ou non dans les 10 %, en partant d'un rang donné pour ne pas réutiliser une référence. */
@@ -171,6 +181,8 @@ describeWithSqlite('B04b · la mention de l’assistant, alignée sur le texte d
       `${SUBJECT}\n\n${MENTION} Je suis un robot.\n\nBonjour Léa, à demain.`,
       `${SUBJECT}\n\nRéponse immédiate de l’assistant IA de Marc, qui vous recontacte personnellement.\n\nBonjour Léa, à demain.`,
       `${SUBJECT}\n\n${MENTION}\n\n${MENTION}\n\nBonjour Léa, à demain.`,
+      `${SUBJECT}\n\n${MENTION} 这是机器人\n\nBonjour Léa, à demain.`,
+      `${SUBJECT}\n\n(${MENTION.replace(',', ' !')} ???)\n\nBonjour Léa, à demain.`,
     ];
     for (const text of texts) {
       const w = await world();
@@ -225,6 +237,28 @@ describeWithSqlite('B04b · la mention de l’assistant, alignée sur le texte d
     expect(third).toMatchObject({ status: 'refused', rule: 'R06' });
   });
 
+  it('[R06] un message du site sans mention ne dispense pas un autre appelant de la sienne', async () => {
+    const w = await world();
+    await w.send('visite-1', textOf('comme prévu'));
+    const first = await w.controle().send({ ...w.order, subject: 'suivi:1', fallbackTexts: ['Bonjour Léa, voici la suite de votre dossier.'] });
+    expect(first).toMatchObject({ status: 'sent', withMention: true, body: `${MENTION}\n\nBonjour Léa, voici la suite de votre dossier.` });
+  });
+
+  it('[R06] la mention d’un autre appelant ne vaut pas pour le site : seul son propre texte la donne', async () => {
+    const w = await world();
+    expect(await w.controle().send({ ...w.order, subject: 'suivi:1', fallbackTexts: ['Bonjour Léa, voici la suite de votre dossier.'] })).toMatchObject({ status: 'sent', withMention: true });
+    await w.toTenPercent();
+    expect(await w.send(await refIn(true), textOf('comme prévu'))).toMatchObject({ status: 'refused', rule: 'R06', decides: true, mentionMissing: true });
+    expect(await w.rows()).toHaveLength(1);
+  });
+
+  it('[R21] le fil du site n’entre pas dans la décision : elle reste celle d’un mail sans conversation citée, comme avant', async () => {
+    const w = await world();
+    const before = new Date(START - DAY).toISOString();
+    await w.db.run("INSERT INTO messages (id, network_id, person_id, conversation_id, channel, direction, author_kind, body, occurred_at, created_at) VALUES ('m-humain', ?, ?, ?, 'email', 'out', 'agent', 'Bonjour Léa.', ?, ?)", [w.network.id, w.person.id, SITE_THREAD, before, before]);
+    expect(await w.send('visite-1', textOf('comme prévu'))).toMatchObject({ status: 'would_send', rule: null });
+  });
+
   it('un texte déclaré tel quel n’a ni IA, ni secours, ni agent pour l’écrire', async () => {
     const w = await world();
     const unique = new FicheUnique(w.db, w.fiches, { now: w.now });
@@ -233,9 +267,10 @@ describeWithSqlite('B04b · la mention de l’assistant, alignée sur le texte d
       journal: new SqlSendJournal(w.db, undefined, w.now),
       now: w.now,
     });
-    const order = { networkId: w.network.id, personId: w.person.id, channel: 'email' as const, kind: 'follow_up' as const, purpose: 'valuation_follow_up', subject: 'suivi:1', asWritten: { refuseWithoutMention: false } };
+    const order = { networkId: w.network.id, personId: w.person.id, channel: 'email' as const, kind: 'follow_up' as const, purpose: 'valuation_follow_up', subject: 'suivi:1', asWritten: { refuseWithoutMention: false, thread: 'fil-test' } };
     expect(await controle.send({ ...order, fallbackTexts: ['Bonjour Léa.'], compose: async () => 'Bonjour Léa.' })).toMatchObject({ status: 'refused' });
     expect(await controle.send({ ...order, fallbackTexts: ['Bonjour Léa.', 'Bonjour.'] })).toMatchObject({ status: 'refused' });
+    expect(await controle.send({ ...order, agentId: w.agent.id, fallbackTexts: ['Bonjour Léa.'], byAgent: { port: {} as never } })).toMatchObject({ status: 'refused' });
     expect(await w.rows()).toHaveLength(0);
   });
 });

@@ -67,8 +67,11 @@ export interface SendOrder {
    * Message qu'un autre système envoie lui-même (le site, B04b) : le contrôle le range exactement tel quel, n'y ajoute
    * aucune mention, et ne la tient pour donnée que si le texte la porte, en un paragraphe exact [R06]. Un seul texte, sans
    * IA. Sans mention due : rangé et signalé, ou refusé avec R06 si `refuseWithoutMention` (quand la décision vaut).
+   * `thread` : le fil où il est rangé, à lui seul. La mention n'y est tenue pour donnée que par ce que ce système a
+   * vraiment envoyé, et ce fil ne dispense aucun autre appelant de la sienne. Il n'entre pas dans la décision : ce n'est
+   * pas une conversation avec la personne.
    */
-  asWritten?: { refuseWithoutMention: boolean };
+  asWritten?: { refuseWithoutMention: boolean; thread: string };
   /** Sujet d'un envoi d'initiative, par exemple `relance:projet-12` [R05]. Obligatoire hors réponse, sauf biens. */
   subject?: string | undefined;
   /** Biens proposés : chacun ne part qu'une fois à la personne [R05]. */
@@ -198,9 +201,11 @@ export class ControleEnvois {
 
   /** Le texte tel quel, sans le seul paragraphe de mention exacte qu'il peut porter ; `null` s'il n'en porte pas [R06]. */
   private exactMentionRemoved(text: string, agentFirstName: string | null): string | null {
-    const accepted = [this.settings.mentionWithoutAgent, ...(agentFirstName ? [this.settings.mentionWithAgent.replace('{prenom}', agentFirstName)] : [])].map(sameText);
+    // Comparée à la lettre : ce paragraphe n'est plus contrôlé ensuite, rien ne doit s'y glisser.
+    const exact = (paragraph: string): string => paragraph.trim().replace(/’/g, "'");
+    const accepted = [this.settings.mentionWithoutAgent, ...(agentFirstName ? [this.settings.mentionWithAgent.replace('{prenom}', agentFirstName)] : [])].map(exact);
     const paragraphs = text.split('\n\n');
-    const at = paragraphs.findIndex((p) => accepted.includes(sameText(p)));
+    const at = paragraphs.findIndex((p) => accepted.includes(exact(p)));
     return at < 0 ? null : paragraphs.filter((_, i) => i !== at).join('\n\n');
   }
 
@@ -336,8 +341,9 @@ export class ControleEnvois {
     }
 
     // 3. Le texte : IA si possible, sinon secours [R12].
+    const threadId = asWritten?.thread ?? order.conversationId ?? null;
     const inConversation = (m: Message): boolean =>
-      order.conversationId ? m.conversation_id === order.conversationId : m.conversation_id === null && m.channel === order.channel;
+      threadId ? m.conversation_id === threadId : m.conversation_id === null && m.channel === order.channel;
     const conversation = sentBefore.filter(inConversation);
     const firstOfConversation = conversation.length === 0;
     // L'agent qui écrit lui-même n'a pas de mention d'assistant à porter [R06].
@@ -430,7 +436,7 @@ export class ControleEnvois {
         return log('refused', 'R06', 'Le premier message automatique doit porter la mention de l’assistant : ce texte ne la porte pas.', { mentionMissing });
       }
     }
-    const body = withMentionText(chosen.text);
+    const body = asWritten ? chosen.text : withMentionText(chosen.text);
 
     // La rédaction a pu durer : un arrêt ou une exclusion arrivés entre-temps l'emportent [R02, R04].
     const last = await decide(this.now());
@@ -442,7 +448,7 @@ export class ControleEnvois {
 
     // Réservation atomique des sujets, du texte et de la mention : de deux envois simultanés, un seul passe [R05, R06].
     const reservationId = crypto.randomUUID();
-    const conversationKey = order.conversationId ? `conversation:${order.conversationId}` : `canal:${order.channel}`;
+    const conversationKey = threadId ? `conversation:${threadId}` : `canal:${order.channel}`;
     const keys = [
       ...new Set([
         ...subjects.map((k) => `sujet:${k}`),
@@ -510,7 +516,7 @@ export class ControleEnvois {
         agentId,
         personId: order.personId,
         projectId: order.projectId ?? null,
-        conversationId: order.conversationId ?? null,
+        conversationId: threadId,
         channel: order.channel,
         authorKind: order.byAgent ? 'agent' : chosen.ai ? 'ai' : 'system',
         body,

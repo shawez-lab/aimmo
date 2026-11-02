@@ -30,6 +30,8 @@ export type Automation = keyof typeof AUTOMATIONS;
 export const AUTOMATION_NAMES = Object.keys(AUTOMATIONS) as Automation[];
 
 export const AUTOMATION_JOURNAL_TYPE = 'bascule.demande.essai';
+/** Le fil des messages envoyés par le site : ils ne valent mention que pour lui [R06]. */
+export const SITE_THREAD = 'automatisations-site';
 
 export interface AutomationRequest {
   networkId: string;
@@ -128,7 +130,7 @@ export class Automatisations {
       fallbackTexts: [req.text],
       figures: req.figures ?? [],
       // Le site envoie lui-même : son message est rangé tel quel, compté une fois, sans mention ajoutée [R06, R11].
-      asWritten: { refuseWithoutMention: palier.decides },
+      asWritten: { refuseWithoutMention: palier.decides, thread: SITE_THREAD },
     });
     // Une panne du contrôle ramène l'automatisation en ombre, avant de répondre [R26].
     const failed = result.status === 'failed';
