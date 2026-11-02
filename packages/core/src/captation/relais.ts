@@ -11,7 +11,7 @@ import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Message } from '../db/types.ts';
 import { DEFAULT_SEND_SETTINGS, type SendSettings } from '../envoi/decision.ts';
-import { plain } from '../envoi/texte.ts';
+import { maskIban, plain } from '../envoi/texte.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import type { InboundRow, Reception } from '../reception/reception.ts';
 import type { FirstReplyOutcome, PremiereReponse, SkipCode } from './premiere-reponse.ts';
@@ -208,7 +208,8 @@ export class ConversationRelais {
       channel: reply.channel,
       direction: 'out',
       authorKind: 'agent',
-      body: reply.text,
+      // Comme à la réception, aucun IBAN ni RIB ne se range en clair, même écrit par l'agent [R15].
+      body: maskIban(reply.text),
       occurredAt: reply.sentAt,
     });
     await this.linkHumanReply(networkId, reply, message.id);
@@ -266,7 +267,7 @@ export class ConversationRelais {
     await this.db.run(
       `INSERT INTO pending_human_replies (network_id, channel, external_id, conversation_ref, body, sent_at, created_at, applied_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING`,
-      [networkId, reply.channel, reply.externalId, reply.conversationRef, reply.text, reply.sentAt.toISOString(), this.now().toISOString()],
+      [networkId, reply.channel, reply.externalId, reply.conversationRef, maskIban(reply.text), reply.sentAt.toISOString(), this.now().toISOString()],
     );
     const outcome = await this.noteHumanReply(networkId, reply);
     if (outcome === 'unknown_conversation') {
