@@ -43,7 +43,7 @@ export const ATTRIBUTION_RULES: readonly string[] = Object.freeze([
   'Une personne exclue ou qui a demandé l’arrêt n’est jamais attribuée.',
   'Un message indésirable n’est attribué à personne ; un partenaire va à la direction.',
   'Un client déjà suivi par un agent en activité reste à cet agent.',
-  'Sinon, le contact va à un agent en activité dont la zone couvre sa commune, celle qu’il a donnée ou, à défaut, celle du bien cité.',
+  'Sinon, le contact va à un agent en activité dont la zone couvre sa commune, celle qu’il a donnée, à défaut celle du bien cité, à défaut celle d’un message d’avant, et qui ne l’a pas encore eu.',
   'Si plusieurs agents couvrent la commune, le choix se fait par un tirage fixe sur l’identifiant de la fiche : le même contact va toujours au même agent.',
   'Si aucun agent ne couvre la commune, le contact va à la direction, jamais au hasard.',
   'Un contact qui n’a pas été rappelé dans le délai de la charte est réattribué une fois par délai, par la même règle, à un agent qui ne l’a pas encore eu ; s’il n’y en a plus, à la direction.',
@@ -150,8 +150,12 @@ export class Attribution {
     } else if (q.category === 'partner') {
       reason = 'no_zone';
     } else {
-      const commune = q.city ?? (await this.propertyCommune(q.property_id));
-      agentId = commune ? chooseAgent(root.id, await this.agentsOf(q.network_id, commune)) : null;
+      // Un message sans commune garde celle d'un message d'avant, et un agent qui a déjà eu le contact sans le
+      // rappeler ne le reçoit pas de nouveau parce que la personne a réécrit.
+      const history = await this.history(ids);
+      const tried = new Set(history.map((c) => c.agent_id).filter((id): id is string => id !== null));
+      const commune = q.city ?? (await this.propertyCommune(q.property_id)) ?? (await this.lastCommune(history));
+      agentId = commune ? chooseAgent(root.id, await this.agentsOf(q.network_id, commune), tried) : null;
       reason = agentId ? 'zone' : 'no_zone';
     }
 
@@ -199,8 +203,8 @@ export class Attribution {
       seen.add(a.id);
       if (await this.excluded(ids)) continue;
       const history = await this.history(ids);
-      const deadline = await this.deadlineOf(a, history, ids);
-      if (deadline === null || deadline > at.getTime()) continue;
+      const delay = await this.openDelay(a, history, ids);
+      if (delay === null || delay.deadline > at.getTime()) continue;
 
       const tried = new Set(history.map((c) => c.agent_id).filter((id): id is string => id !== null));
       const commune = await this.lastCommune(history);
@@ -210,7 +214,7 @@ export class Attribution {
         {
           sql: `INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at)
                 VALUES (?, ?, ?, NULL, ?, 'reassigned', ?, ?, ?) ON CONFLICT (replaces_id) DO NOTHING`,
-          params: [id, networkId, root.id, next, a.callback_hours, a.id, at.toISOString()],
+          params: [id, networkId, root.id, next, delay.hours, a.id, at.toISOString()],
         },
         // Toutes les fiches réunies que suivait l'agent, ou un agent parti, changent de mains : jamais deux agents.
         {
@@ -250,24 +254,26 @@ export class Attribution {
   }
 
   /**
-   * L'heure limite pour rappeler : le plus court des délais ouverts chez cet agent depuis le dernier rappel humain.
-   * Un message de plus ne la repousse jamais ; null : l'agent a rappelé depuis la dernière attribution.
+   * Le délai en cours : l'heure limite est la plus proche des délais ouverts chez cet agent depuis le dernier rappel
+   * humain, et le plus court d'entre eux passe à l'agent suivant. Un message de plus ne repousse jamais ni l'une ni
+   * l'autre. Null : l'agent a rappelé depuis la dernière attribution.
    */
-  private async deadlineOf(current: AttributionRow, history: readonly AttributionRow[], ids: readonly string[]): Promise<number | null> {
+  private async openDelay(current: AttributionRow, history: readonly AttributionRow[], ids: readonly string[]): Promise<{ deadline: number; hours: number } | null> {
     const last = await this.db.first<{ at: string | null }>(
       `SELECT max(occurred_at) AS at FROM messages WHERE person_id IN (${placeholders(ids.length)}) AND direction = 'out' AND author_kind = 'agent'`,
       ids,
     );
     const calledAt = last?.at ? Date.parse(last.at) : null;
-    let deadline: number | null = null;
+    let deadline = Number.POSITIVE_INFINITY;
+    let hours = Number.POSITIVE_INFINITY;
     for (const row of history) {
       if (row.agent_id !== current.agent_id) break;
       const created = Date.parse(row.created_at);
       if (calledAt !== null && calledAt >= created) break;
-      const end = created + row.callback_hours * 3_600_000;
-      deadline = deadline === null ? end : Math.min(deadline, end);
+      deadline = Math.min(deadline, created + row.callback_hours * 3_600_000);
+      hours = Math.min(hours, row.callback_hours);
     }
-    return deadline;
+    return Number.isFinite(deadline) ? { deadline, hours } : null;
   }
 
   /** La commune du contact : celle du message le plus récent qui en dit une. */

@@ -286,7 +286,7 @@ describeWithSqlite('Q03 · attribution à l’agent de la commune', () => {
     await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
     await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
     const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
-    const first = (await t.attribution.attribute(q))!;
+    await t.attribution.attribute(q);
     t.setClock(TUESDAY_10H + 24 * HOUR);
     const [second] = await t.attribution.reassignOverdue(t.network.id);
     // Le nouveau message ne dit pas la commune, et il arrive chez le deuxième agent.
@@ -309,7 +309,6 @@ describeWithSqlite('Q03 · attribution à l’agent de la commune', () => {
     u.setClock(TUESDAY_10H + 24 * HOUR);
     const [next] = await u.attribution.reassignOverdue(u.network.id);
     expect(next!.agent_id).not.toBeNull();
-    void first;
   });
 
   it('attribution et passage de la fiche : tout ou rien, et relançable après une coupure', async () => {
@@ -371,5 +370,66 @@ describeWithSqlite('Q03 · attribution à l’agent de la commune', () => {
     expect((await u.store.getPerson(ancienne.id))!.agent_id).toBe(u.sam.id);
     const acces2 = new Acces(u.db, u.store, u.fiche, u.journal);
     expect(await acces2.readFiche({ role: 'agent', userId: u.sam.id, networkId: u.network.id }, suivie.id)).toMatchObject({ ok: true, view: 'full' });
+  });
+
+  it('[R25] un message reçu après le passage à la direction ne revient pas à l’agent qui n’a pas rappelé', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.attribute(await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.'));
+    t.setClock(TUESDAY_10H + 24 * HOUR);
+    const [direction] = await t.attribution.reassignOverdue(t.network.id);
+    expect(direction!.agent_id).toBeNull();
+    t.setClock(TUESDAY_10H + 25 * HOUR);
+    const again = await t.contact('zoe', 'Je souhaite toujours vendre ma maison à Talant.');
+    expect(await t.attribution.attribute(again)).toMatchObject({ agent_id: null, reason: 'no_zone' });
+    expect((await t.store.getPerson(await t.personOf(again)))!.agent_id).toBeNull();
+  });
+
+  it('[R25] l’agent parti, un message sans commune va à l’autre agent de la commune d’avant, pas à la direction', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const first = (await t.attribution.attribute(await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.')))!;
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [first.agent_id]);
+    t.setClock(TUESDAY_10H + 2 * HOUR);
+    const next = (await t.attribution.attribute(await t.contact('zoe', 'Avez-vous reçu mon message ?')))!;
+    expect(next.reason).toBe('zone');
+    expect(next.agent_id).not.toBeNull();
+    expect(next.agent_id).not.toBe(first.agent_id);
+  });
+
+  it('[R25] un message tiède n’allonge pas le délai d’un contact chaud chez l’agent suivant', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const hot = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    await t.db.run("UPDATE contact_scores SET temperature = 'hot' WHERE qualification_id = ?", [hot]);
+    await t.attribution.attribute(hot);
+    t.setClock(TUESDAY_10H + HOUR);
+    const cold = await t.contact('zoe', 'Une précision sur ma maison.');
+    await t.db.run("UPDATE contact_scores SET temperature = 'cold' WHERE qualification_id = ?", [cold]);
+    expect(await t.attribution.attribute(cold)).toMatchObject({ callback_hours: 24 });
+    t.setClock(TUESDAY_10H + 8 * HOUR);
+    const [next] = await t.attribution.reassignOverdue(t.network.id);
+    expect(next).toMatchObject({ reason: 'reassigned', callback_hours: 8 });
+  });
+
+  it('[R16] à la réattribution, une fiche réunie qui porte un agent parti passe au nouvel agent, qui l’ouvre', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q))!;
+    const fresh = await t.personOf(q);
+    const ancienne = await t.store.createPerson({ networkId: t.network.id, agentId: first.agent_id, firstName: 'Zoé' });
+    await t.fiche.merge({ survivorId: fresh, mergedId: ancienne.id, reason: 'même personne' });
+    // La fusion refuse deux agents : l'écart vient d'une fiche passée à un agent, parti depuis.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.lou.id, ancienne.id]);
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.lou.id]);
+    t.setClock(TUESDAY_10H + 24 * HOUR);
+    const [next] = await t.attribution.reassignOverdue(t.network.id);
+    expect((await t.store.getPerson(ancienne.id))!.agent_id).toBe(next!.agent_id);
+    const acces = new Acces(t.db, t.store, t.fiche, t.journal, { now: () => new Date(TUESDAY_10H + 24 * HOUR) });
+    expect(await acces.readFiche({ role: 'agent', userId: next!.agent_id!, networkId: t.network.id }, fresh)).toMatchObject({ ok: true, view: 'full' });
   });
 });
