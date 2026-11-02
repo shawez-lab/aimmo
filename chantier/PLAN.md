@@ -440,12 +440,22 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Critères : chaque route répond sous son rôle [R16] ; refus noté, fusion défaite : le bouton reste fermé sur les deux fiches, et le plafond compte des deux côtés (test [R204]) ; aucune ligne effacée [R17] ; une demande datée d'avant un refus est refusée par la route branchée (test [R204]) ; parcours au téléphone, axe-core sans violation [R201].
 
 ### C09c · Alertes de l'agent visibles dans l'application
-- Statut : en cours
+- Statut : fait (2026-11-02)
 - Voie : 1
 - Qui : Claude · Relecture : forte · Dépend de : C09b
 - Cahier : M02, relais à l'agent ; R12, R21.
 - Objectif : trouvé par la relecture de C09b : `agent_alerts` est écrite, mais `alertsFor` n'a aucun lecteur en production. Une réponse tombée ou une conversation à reprendre ne se voit donc nulle part. Une route et un bloc de l'application montrent à l'agent ses alertes, et il les marque vues.
 - Critères : l'agent voit ses alertes et celles de ses fiches, jamais celles d'un autre [R16] ; marquer vue ne supprime rien [R17] ; parcours au téléphone, axe-core sans violation [R201] ; rien de personnel au journal [R13].
+- Décidé (2026-11-02), lecture prudente : une alerte suit la fiche que l'agent voit maintenant (fiche passée à un autre : il ne la voit plus ; prénom par `ficheFirstName`) ; `person_id` d'une nouvelle alerte est la fiche du message, pour survivre à une fusion défaite, les lignes déjà rangées ne sont pas reprises. Une alerte vue se rouvre seulement pour un message reçu après (le même message rejoué ne la rouvre pas), aussi quand le client réécrit sans réponse humaine, l'assistant restant muet. L'écran envoie la date lue : un écran ancien ne referme pas une alerte rouverte. Téléphone et axe-core vérifiés à la main (Chromium 390 × 844, clair et sombre, avant et après le geste, aucune violation) : axe-core n'est pas une dépendance du dépôt. Budget : l'application était à sa limite ; `/app/alertes.js` chargé seulement s'il y a des alertes, et le dépôt de la reprise sorti dans `/app/reprise.js`, chargé au premier geste. Relecture forte : 7 P1 corrigés ; Codex à sa limite, fusion sans lui (#254).
+- Reste : C09d.
+
+### C09d · Alertes vues de personne : la direction les compte
+- Statut : à faire
+- Voie : 1
+- Qui : Claude · Relecture : forte · Dépend de : C09c
+- Cahier : M02, relais à l'agent ; R12, R16.
+- Objectif : trouvé par la relecture de C09c : une alerte sur une fiche sans agent (après un départ, avant une attribution) ou réunie à celle d'un autre agent n'est vue de personne, car la direction n'a pas la route. La direction voit le nombre de ces alertes, par raison, sans donnée de client, pour attribuer les fiches.
+- Critères : une alerte sans agent qui la voit est comptée pour la direction, et sort du compte dès qu'un agent la voit (test [R12]) ; aucun prénom, aucune référence de conversation dans la réponse ni au journal (test [R13]) ; un agent n'a pas ce compte (test [R16]).
 
 ### C09 · Mise en service de la captation
 - Statut : à faire
