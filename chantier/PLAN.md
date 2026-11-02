@@ -1950,7 +1950,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 
 ### W11 · Écrans de M15 dans l'application
 - Statut : fait (2026-10-29)
-- Reste : fusionnée (#165). Ajouter une candidature depuis l'écran : réglé par W13 (#263) ; déposer depuis le téléphone une annexe, une preuve ou la notice : réglé par W14 (#265) ; relire le texte du bail après réouverture (lecture du bail sous les droits des deux fiches).
+- Reste : fusionnée (#165). Ajouter une candidature depuis l'écran : réglé par W13 (#263) ; déposer depuis le téléphone une annexe, une preuve ou la notice : réglé par W14 (#265) ; relire le texte du bail après réouverture : réglé par W15 (#266).
 - Décidé (2026-10-29, voie 2) : lectures `GET /location`, `/location/:id/suivi`, `/location/:id/presentation` ; l'état des lieux en cours (qui porte les noms des parties) n'est rendu qu'à qui voit les deux fiches en entier ; aucun état d'élément choisi d'avance ; textes du bail et séances de signature effacés à la sortie ; relecture forte 2 P1 et un trou de test corrigés, Codex 2 P0 et 2 P2 corrigés, dernière version validée par Codex (le script d’attente ne l’a pas vu).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W09, Z03 (même fichier `packages/api/app/fichiers.ts`)
 - Cahier : M15 ; exigence de design (protocole, section 9).
@@ -1980,8 +1980,10 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : H25 pour le dépôt réel.
 
 ### W15 · Relire le texte du bail après réouverture de l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Voie : 2
+- Décidé (2026-11-02, voie 2) : le texte n'est lu qu'au geste, pour un bail en vigueur et complet, sous les droits des deux fiches ; il reste en mémoire le temps de la session.
+- Reste : fusionnée (#266) ; relecture forte 1 P1 corrigé (trou de test sur la fiche du locataire) ; Codex à sa limite (H03) ; un texte déjà lu reste affiché pendant la session sans repasser par le serveur ; un fichier déposé disparu du stockage donne le message général ; `louer.js` au bord de son budget [R201].
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11, W14
 - Cahier : M15 ; R16, R101.
 - Objectif : reste écrit de W11. Le texte du bail ne se relit que sur l'appareil qui l'a préparé, tant que l'écran n'est pas fermé. L'agent doit pouvoir le relire avec les parties après une réouverture, sous les droits des deux fiches.
