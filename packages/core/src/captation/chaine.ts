@@ -18,6 +18,7 @@ import type { AdaptContext } from '../reception/entrant.ts';
 import { Rattachement } from '../reception/rattachement.ts';
 import { Reception } from '../reception/reception.ts';
 import { trialChannels } from './essai.ts';
+import { PaliersCanaux } from './paliers-canaux.ts';
 import { PremiereReponse, type ReplyWriter } from './premiere-reponse.ts';
 import { ConversationRelais, type RelayOutcome } from './relais.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -169,8 +170,10 @@ export class ChaineCaptation {
 
 export interface CaptationOptions {
   now?: () => Date;
-  /** Les vrais canaux ; absents : la boîte d'essai, rien ne part. */
+  /** Tous les messages à ces canaux, sans palier (bac à sable et tests d'une étape). Absents : les paliers ci-dessous. */
   channels?: readonly OutboundChannel[];
+  /** Les vrais canaux, derrière leur palier [R26]. Absents : tout reste dans la boîte d'essai, à tout palier. */
+  realChannels?: readonly OutboundChannel[];
   writer?: ReplyWriter;
   budget?: AiBudget;
   /** L'IA qui classe et extrait (M03) ; absente : règles fixes. */
@@ -208,6 +211,7 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
     channels: options.channels ?? trialChannels(db, journal, now),
     journal: new SqlSendJournal(db, undefined, now),
     ...(options.budget ? { budget: options.budget } : {}),
+    ...(options.channels ? {} : { staging: new PaliersCanaux(db, journal, { now, realChannels: options.realChannels ?? [] }) }),
     now,
   });
   const premiere = new PremiereReponse(db, fiche, reception, new ReconnaissanceBien(db), controle, options.writer ? { writer: options.writer } : {});

@@ -33,6 +33,16 @@ import type { SendJournal } from './journal-envois.ts';
 import { DEFAULT_TEXT_SETTINGS, checkText, plain, type TextSettings } from './texte.ts';
 import { agentGone } from '../reseau/depart.ts';
 
+/**
+ * Le palier d'un canal (C09b) [R26] : pour chaque message, le vrai canal s'il part vraiment, sinon `null` et la boîte
+ * d'essai. Avec un palier, un message de la boîte d'essai ne compte jamais comme parti [R05, R06, R11].
+ */
+export interface ChannelStaging {
+  route(networkId: string, channel: OutboundChannelName, ref: string | null): Promise<{ real: OutboundChannel | null; confirm: () => Promise<void> }>;
+  /** Le vrai canal est tombé : ce canal revient en essai, les autres ne bougent pas. */
+  failed(networkId: string, channel: OutboundChannelName): Promise<void>;
+}
+
 /** Plafond du coût de l'IA [R12]. */
 export interface AiBudget {
   allows(networkId: string, at: Date): Promise<boolean>;
@@ -80,6 +90,8 @@ export interface SendOrder {
   compose?: () => Promise<string>;
   /** Textes de secours écrits sans IA, essayés dans l'ordre [R12]. */
   fallbackTexts: readonly string[];
+  /** Le message, tiré une fois pour toutes pour son palier [R26]. Sans lui, avec un palier : la boîte d'essai. */
+  rolloutRef?: string;
   /** Chiffres permis dans le texte : ceux de la base ou d'une source publique citée [R10]. */
   figures?: readonly (string | number)[];
   /** Noms des vendeurs du bien cité, interdits dans le texte [R19]. */
@@ -108,6 +120,8 @@ export interface SendResult {
   needsHuman: boolean;
   /** Texte tel quel (`asWritten`) seulement : la mention était due et le texte ne la porte pas [R06]. */
   mentionMissing?: boolean;
+  /** Avec un palier seulement : rangé dans la boîte d'essai, rien n'est parti, et il ne compte pas comme parti. */
+  trial?: boolean;
 }
 
 export interface ControleSettings {
@@ -134,6 +148,8 @@ export interface ControleEnvoisOptions {
   budget?: AiBudget;
   settings?: ControleSettings;
   now?: () => Date;
+  /** Les paliers des canaux (C09b) ; `channels` est alors la boîte d'essai. Absents : `channels` reçoit tout. */
+  staging?: ChannelStaging;
   /** La boîte d'essai des envois aux professionnels (U12) ; absente, rien ne leur part. */
   proMailbox?: ProTrialMailbox;
 }
@@ -175,6 +191,11 @@ export class ControleEnvois {
     this.channels = new Map(options.channels.map((c) => [c.channel, c]));
     this.settings = options.settings ?? DEFAULT_CONTROLE_SETTINGS;
     this.now = options.now ?? (() => new Date());
+  }
+
+  /** Avec un palier, un message de la boîte d'essai ne compte pas comme parti : la lecture des appelants doit suivre. */
+  get trialNotCounted(): boolean {
+    return this.options.staging !== undefined;
   }
 
   /** Les mentions possibles, pour reconnaître un message qui en porte une. */
@@ -221,7 +242,7 @@ export class ControleEnvois {
       outcome: SendStatus,
       rule: string | null,
       reason: string,
-      extra: Partial<Pick<SendResult, 'messageId' | 'body' | 'aiText' | 'fallbackText' | 'withMention' | 'needsHuman' | 'mentionMissing'>> = {},
+      extra: Partial<Pick<SendResult, 'messageId' | 'body' | 'aiText' | 'fallbackText' | 'withMention' | 'needsHuman' | 'mentionMissing' | 'trial'>> = {},
     ): Promise<SendResult> => {
       const result: SendResult = {
         status: outcome,
@@ -234,6 +255,7 @@ export class ControleEnvois {
         withMention: extra.withMention ?? false,
         needsHuman: extra.needsHuman ?? false,
         ...(extra.mentionMissing === undefined ? {} : { mentionMissing: extra.mentionMissing }),
+        ...(extra.trial === undefined ? {} : { trial: extra.trial }),
       };
       await this.options.journal.record({
         networkId: order.networkId,
@@ -279,6 +301,15 @@ export class ControleEnvois {
         )
       ).map((r) => r.message_id),
     );
+    // Avec un palier, ce qui est resté dans la boîte d'essai n'est pas parti : il ne compte pour rien.
+    const staging = order.byAgent ? null : (this.options.staging ?? null);
+    if (staging) {
+      const boxed = await this.db.all<{ message_id: string }>(
+        `SELECT t.message_id FROM trial_outbox t JOIN messages m ON m.id = t.message_id WHERE m.person_id IN (${placeholders(ids.length)})`,
+        ids,
+      );
+      for (const r of boxed) failed.add(r.message_id);
+    }
     const decide = (when: Date) =>
       this.decisions.decide(
         order.personId,
@@ -329,6 +360,7 @@ export class ControleEnvois {
         `SELECT s.subject FROM message_subjects s
          WHERE s.person_id IN (${placeholders(ids.length)}) AND s.subject IN (${placeholders(subjects.length)})
            AND NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = s.message_id AND l.outcome = 'failed')
+           ${staging ? 'AND NOT EXISTS (SELECT 1 FROM trial_outbox t WHERE t.message_id = s.message_id)' : ''}
          LIMIT 1`,
         [...ids, ...subjects],
       );
@@ -509,6 +541,18 @@ export class ControleEnvois {
       }
     }
 
+    // Le palier, avant de ranger : ce qui reste dans la boîte d'essai ne compte pas pour les plafonds [R11].
+    let real: OutboundChannel | null = null;
+    let confirm: (() => Promise<void>) | null = null;
+    if (staging) {
+      try {
+        ({ real, confirm } = await staging.route(order.networkId, order.channel, order.rolloutRef ?? null));
+      } catch {
+        await release('panne');
+        return log('failed', null, 'Le palier du canal n’a pas pu être lu.', { needsHuman: order.kind === 'reply' });
+      }
+    }
+
     // 6. Enregistrement, journal, puis envoi [R13].
     const message = await this.decisions.recordSent(
       {
@@ -523,6 +567,7 @@ export class ControleEnvois {
         occurredAt: at,
       },
       order.kind,
+      { countsForCaps: !staging || real !== null },
     );
     for (const subject of subjects) {
       await this.db.run('INSERT INTO message_subjects (message_id, network_id, person_id, subject, created_at) VALUES (?, ?, ?, ?, ?)', [
@@ -538,13 +583,28 @@ export class ControleEnvois {
     const sent = await log('sent', aiNote ? 'R12' : decision.rule, aiNote ?? decision.reason, flags);
     let receipt: { externalId: string | null };
     try {
-      receipt = await port.deliver({ channel: order.channel, to, body, messageId: message.id, ...(thread ? { thread: thread.kind } : {}) });
+      receipt = await (real ?? port).deliver({ channel: order.channel, to, body, messageId: message.id, ...(thread ? { thread: thread.kind } : {}) });
     } catch {
       // Le détail de l'erreur peut contenir l'adresse : il ne va pas au journal.
       // Les réservations sont libérées pour un nouvel essai, sans effacer leur ligne.
       await release('panne');
-      return log('failed', null, 'Le canal a refusé le message ou n’a pas répondu.', flags);
+      if (real && staging) {
+        try {
+          await staging.failed(order.networkId, order.channel);
+        } catch (error) {
+          // La base elle-même : le prochain échec ramènera le canal en essai. Trace sans donnée [R13].
+          console.error('aimmo : retour en essai non écrit', error instanceof Error ? error.name : 'unknown');
+        }
+      }
+      // Avec un palier, une réponse tombée n'est jamais un silence : l'agent est prévenu [R12].
+      return log('failed', null, 'Le canal a refusé le message ou n’a pas répondu.', { ...flags, needsHuman: staging !== null && order.kind === 'reply' });
     }
+    if (staging && !real) {
+      // Resté dans la boîte d'essai : ni sujet, ni texte, ni mention, ni plafond ne restent pris [R05, R06, R11].
+      await release('essai');
+    }
+    if (confirm) await confirm();
+    if (staging) sent.trial = !real;
     // L'identifiant du canal : l'écho de ce message ne sera jamais pris pour la réponse d'un humain [R21].
     if (receipt.externalId) {
       await this.db.run(
