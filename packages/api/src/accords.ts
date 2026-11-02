@@ -1,5 +1,5 @@
 /**
- * Routes des accords notés par l'agent (AC01), prêtes pour le routeur du socle (AC02) [R03, R202, R16].
+ * Routes des accords notés par l'agent (AC01), branchées dans le socle (AC02) [R03, R202, R16].
  *
  *   POST /v1/fiches/<id>/accords                { purpose, channel, proof, givenAt } : note un accord, avec sa preuve
  *   POST /v1/fiches/<id>/accords/<id>/retrait   retire l'accord ; la ligne reste [R17]
