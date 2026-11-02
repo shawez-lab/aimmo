@@ -1570,7 +1570,8 @@ Trouvé le 2026-11-02 par la voie 2, en comparant les routes de l'API aux appels
 Restes trouvés de la même façon, à découper ensuite par la voie 2, un écran à la fois : M16 cessions, repreneurs, engagements et barèmes ; M15 remise des clés, gestion, garants et modèles de bail ; M11 tâches, satisfaction et remerciements ; M18 prospection et opposition des partenaires ; M20 mesure et engagements ; M19 bibliothèque et options ; M09 comparatif et historique des offres ; M17 loyers. M06 reste à la voie 1 (D11 à D13).
 
 ### K10 · Le rapport du matin à l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02) : lu sur un appui, script à part ; sans rapport, un message neutre, sans prétendre à une raison. Relecture forte : 2 P1 corrigés ; Codex à sa limite, fusion sans lui (#281).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : K06, K08
 - Cahier : M13, « Rapport du matin » ; R68, R13, R201.
 - Objectif : l'agent lit son rapport du jour sur « Mes chiffres », la direction le sien sur « Le réseau », ligne par ligne, avec la période couverte ; le rapport d'un jour passé se relit.
@@ -1578,7 +1579,8 @@ Restes trouvés de la même façon, à découper ensuite par la voie 2, un écra
 - Attend : rien.
 
 ### K11 · Commissions, encaissement et reversement pour la direction
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Décidé (2026-11-02), lecture prudente : la lecture dit `payment` et `cancelled`, une route `a-trancher` dit à la direction ce que le passage laisse de côté (raison lue au journal) ; le passage reprend l'étape « payée » après une coupure ; plus aucun encaissement ni nouveau versement sur une vente annulée par un avoir ; ce qui a déjà été versé se règle hors de l'écran avec le comptable.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : K10
 - Cahier : M13, « Commissions », « Factures » ; R67, R69, R70, R16.
 - Objectif : la direction voit chaque commission (statut, parts, dates) et ce qu'elle attend d'elle ; elle rapporte l'encaissement puis le versement avec la référence de sa preuve, en deux appuis, et lit l'échéance des 24 h ouvrées.
