@@ -7,7 +7,7 @@
  *   possibles. Seuls l'agent du bien, la direction et la conformité lisent. Un mandant est la fiche liée au bien comme
  *   propriétaire (`owned`) ; elle n'est rendue qu'à qui la voit en entier, et sa lecture est écrite au journal.
  * - `depositScan` : le scan signé, rangé tel quel sous `mandats/<bien>/`. L'agent du bien ou la direction, droits vérifiés
- *   avant de lire un octet. Déposer ne signe rien : la référence rendue sert à `signature-papier`.
+ *   avant de lire un octet. Déposer ne signe rien : la référence rendue sert à `signature-papier` ou `signature-avenant`.
  * Au journal : ni contenu, ni donnée personnelle.
  */
 import type { Acces } from '../acces/acces.ts';
