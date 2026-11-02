@@ -6,10 +6,13 @@
  * Les commissions pour la direction (K11) : chaque commission, ses parts recomptées à l'écran [R69] et ce qu'elle attend.
  * L'encaissement puis le versement se rapportent avec la référence de leur preuve, en deux appuis ; aucun montant ne se
  * saisit [R67], l'échéance des 24 h ouvrées vient du serveur [R70].
+<<<<<<< ours
  *
  * Le chemin de chaque euro (K13, Jamais vu) : l'agent suit où est son argent, dossier par dossier, avec l'heure limite
  * promise et si elle a été tenue. Il ne voit que ses parts [R68], sans comparaison avec personne [R14] ; ses totaux se
  * recomptent à l'écran depuis ses lignes [R69].
+=======
+>>>>>>> theirs
  */
 
 const SHARE_NAMES: Record<string, string> = {
@@ -76,6 +79,7 @@ const reportEntry = (who: 'agent' | 'direction'): string => `<section class="blo
 export const RAPPORT_AGENT_HTML = reportEntry('agent');
 export const RAPPORT_DIRECTION_HTML = reportEntry('direction');
 
+<<<<<<< ours
 export const EUROS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-euros">
 <h3 id="titre-euros">Où est mon argent</h3>
 <p class="doux">Chaque part, de la promesse de vente à votre compte, et l’heure limite de son versement.</p>
@@ -85,6 +89,8 @@ export const EUROS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-eu
 </section>
 `;
 
+=======
+>>>>>>> theirs
 export const COMMISSIONS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-commissions">
 <h3 id="titre-commissions">Commissions</h3>
 <p class="doux">Ce que chaque vente doit à chacun, et ce qui attend votre geste. Aucun montant ne se saisit : tout est calculé.</p>
@@ -106,8 +112,11 @@ export const FINANCES_JS = `
     });
     clear($('commissions-corps'));
     $('commissions-etat').textContent = '';
+<<<<<<< ours
     clear($('euros-corps'));
     $('euros-etat').textContent = '';
+=======
+>>>>>>> theirs
   }
   function withFinances(stateId, hostId, act) {
     if (!currentKey) return Promise.resolve(false);
@@ -136,9 +145,12 @@ export const FINANCES_JS = `
       $(hostId).appendChild(s);
     });
   }
+<<<<<<< ours
   function readEuros() {
     return withFinances('euros-etat', 'chiffres', function (f) { return f.path(); });
   }
+=======
+>>>>>>> theirs
   function readCommissions() {
     return withFinances('commissions-etat', 'reseau', function (f) { return f.commissions(''); });
   }
@@ -333,6 +345,7 @@ globalThis.AIMMO_FINANCES = function (t) {
       return true;
     });
   }
+<<<<<<< ours
   /* ---------- Le chemin de chaque euro (K13) : les étapes viennent du serveur, jamais d'un calcul de l'écran. ---------- */
   function stepAt(c, status) {
     var s = (c.steps || []).filter(function (x) { return x.status === status; })[0];
@@ -400,5 +413,8 @@ globalThis.AIMMO_FINANCES = function (t) {
     });
   }
   return { report: report, commissions: commissions, path: path };
+=======
+  return { report: report, commissions: commissions };
+>>>>>>> theirs
 };
 `;

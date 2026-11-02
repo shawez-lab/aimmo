@@ -537,6 +537,7 @@ describe('K11 · commissions, encaissement et reversement pour la direction', ()
     expect(t.state()).toBe('');
   });
 });
+<<<<<<< ours
 
 describe('K13 · le chemin de chaque euro (Jamais vu)', () => {
   // Du point de vue d'un agent : ses seules parts, comme les rend le serveur [R68].
@@ -653,3 +654,5 @@ describe('K13 · le chemin de chaque euro (Jamais vu)', () => {
     expect(t.state()).toBe('');
   });
 });
+=======
+>>>>>>> theirs

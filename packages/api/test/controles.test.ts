@@ -33,7 +33,8 @@ describeWithSqlite('D03, D04 · routes des contrôles avant signature et de la s
         { key: KEY_COMPLIANCE, role: 'compliance', userId: 'conformite-1' },
       ].map(async ({ key, ...rest }) => ({ sha256: await sha256Hex(key), networkId: network.id, ...rest })),
     );
-    const env: Env = { DB: d1, MODE: 'essai', API_KEYS: JSON.stringify(keys) };
+    const scanRef = `mandats/${bien.id}/test-1.pdf`;
+    const env: Env = { DB: d1, MODE: 'essai', API_KEYS: JSON.stringify(keys), PIECES: { head: async (k: string) => (k === scanRef ? {} : null) } as never };
     const post = async (path: string, key: string, body: unknown = {}) =>
       worker.fetch(new Request(`${BASE}${path}`, { method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), env);
 
@@ -57,7 +58,7 @@ describeWithSqlite('D03, D04 · routes des contrôles avant signature et de la s
     expect(after.data.passed).toBe(true);
     // D04 : signé sur papier, numéroté au registre, exemplaire avec son numéro.
     await post('/v1/registre/reglage', KEY_DIRECTION, { prefix: 'T-', firstNumber: 1, width: 3 });
-    const paper = { signedAt: new Date(Date.now() - 60_000).toISOString(), place: 'agence', scanRef: 'scans/test-1.pdf', source: 'referral' };
+    const paper = { signedAt: new Date(Date.now() - 60_000).toISOString(), place: 'agence', scanRef, source: 'referral' };
     const signed = await post(`/v1/documents/${doc.data.id}/signature-papier`, KEY_AGENT, paper);
     expect(signed.status).toBe(200);
     expect(((await signed.json()) as { data: { number: string } }).data.number).toBe('T-001');
