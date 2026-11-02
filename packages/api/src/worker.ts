@@ -135,7 +135,7 @@ export default {
       // M20 complet (G12) : preuves de coût dans `PIECES` ; géocodeur des lettres seulement avec les données publiques
       // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
       gagner: { proofs: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, geocoder: estimation?.geocoder ?? null },
-      ...(estimation ? { estimation } : {}),
+      ...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),
       meta: {
         appSecret: env.META_APP_SECRET,
         verifyTokenSha256: env.META_VERIFY_TOKEN_SHA256,
