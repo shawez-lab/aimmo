@@ -1,4 +1,5 @@
 import { ACTIVITY_LABEL } from '../../core/src/commerces/presentation.ts';
+import type { License } from '../../core/src/commerces/fiche.ts';
 import { OFFER_DEPOSIT_MAX_BYTES, OFFER_DEPOSIT_TYPES } from '../../core/src/offres/depot-offres.ts';
 
 /**
@@ -7,7 +8,7 @@ import { OFFER_DEPOSIT_MAX_BYTES, OFFER_DEPOSIT_TYPES } from '../../core/src/off
  *
  * L'écran ne lit et n'écrit que par les routes `/v1/commerces` [R16]. Il ne montre que ce que l'API rend à ce lecteur :
  * la vue publique, l'estimation et la présentation du bien, l'état de la porte de chaque demande (jamais un chiffre de
- * la fiche), les ouvertures du dossier et les étapes de la cession [R110]. Tout texte reçu est posé avec
+ * la fiche, sauf au geste de l'agent du bien ou de la direction qui la complète : CE13), les ouvertures du dossier et les étapes de la cession [R110]. Tout texte reçu est posé avec
  * `textContent` ; l'écran ne calcule rien, il montre ce que le code a calculé.
  *
  * CE12 : depuis la fiche, l'agent du bien ou la direction fait avancer la cession : dates et preuves, séquestre,
@@ -79,7 +80,7 @@ const CESSION_REFUSALS = {
   activite: 'Choisissez l’activité dans la liste.',
   methode: 'Choisissez la méthode dans la liste.',
 };
-const LICENSE_LABELS = {
+const LICENSE_LABELS: Record<License, string> = {
   licence_restaurant: 'Licence restaurant',
   petite_licence_restaurant: 'Petite licence restaurant',
   licence_3: 'Licence 3',
@@ -205,7 +206,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
   }
   function openCommerces(message) {
     if (!t.key()) return Promise.resolve(false);
-    t.bump();
+    var mine = t.bump();
     wipeCommerces();
     show('commerces');
     ceState('Chargement…');
@@ -219,7 +220,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
     });
     return Promise.all([send('/v1/commerces', 'GET'), tasks, scales]).then(function (both) {
       var res = both[0];
-      if (res.gone) return false;
+      if (mine !== t.session() || res.gone) return false;
       if (!res.ok) { ceState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Indisponible pour le moment. Réessayez plus tard.'); return false; }
       var list = Array.isArray(res.body.data) ? res.body.data : [];
       var body = $('commerces-corps');
@@ -399,6 +400,8 @@ globalThis.AIMMO_COMMERCES = function (t) {
       function text(input) { return String(input.value || '').trim() || null; }
       next.activity = activity.value || null;
       next.signName = text(sign);
+      /* Un jour saisi à moitié se lit vide : il ne doit pas effacer le début du bail. */
+      if (start.validity && start.validity.badInput) bad(CE_SHEET.leaseStart);
       next.leaseStart = start.value || null;
       next.leaseYears = whole(length, CE_SHEET.leaseYears);
       next.leaseAnnualRentCents = money(rent, CE_SHEET.leaseAnnualRentCents);

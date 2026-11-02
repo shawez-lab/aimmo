@@ -630,6 +630,29 @@ describe('CE13 · la fiche du commerce et le barème de la direction', () => {
     expect(isOff(t.byText('Lire et modifier la fiche'))).toBe(false);
   });
 
+  it('[R110] des murs n’envoient ni exercices ni salariés, et un jour saisi à moitié n’efface pas le début du bail', async () => {
+    const t = await run({ ...FICHE, 'GET /v1/commerces/b2/public': ok({ publicView: { kind: 'business_walls' }, presentation: null }), 'GET /v1/commerces/b2/demandes': ok([]), 'GET /v1/commerces/b2/cession': no(400, { ok: false, rule: null, code: 'sorte' }), 'GET /v1/commerces/b2/fiche': FICHE['GET /v1/commerces/b1/fiche']!, 'POST /v1/commerces/b2/fiche': ok({}) });
+    t.table['GET /v1/commerces'] = ok([{ propertyId: 'b2', reference: 'CE-2', kind: 'business_walls', city: 'Dijon' }]);
+    await t.click(t.els['commerces-ouvrir']);
+    await t.loadScript();
+    await t.click(t.byText('Ouvrir', 0));
+    await t.click(t.byText('Lire et modifier la fiche'));
+    expect(t.body().all().some((e) => e.textContent === 'Nombre de salariés')).toBe(false);
+    sets(t, { 'Enseigne (jamais publiée)': 'Autre enseigne inventée' });
+    await t.click(t.byText('Ranger la fiche'));
+    expect(JSON.parse(posted(t, '/v1/commerces/b2/fiche')[0]!.body!)).toEqual({ signName: 'Autre enseigne inventée' });
+
+    const half = await run({ ...FICHE, 'GET /v1/commerces/b1/fiche': ok({ current: { sheet: { ...SHEET, leaseStart: '2020-01-01' } }, history: [] }) });
+    await half.openB1();
+    await half.click(half.byText('Lire et modifier la fiche'));
+    const day = half.input('Début du bail');
+    day.value = '';
+    (day as unknown as { validity: unknown }).validity = { badInput: true };
+    await half.click(half.byText('Ranger la fiche'));
+    expect(half.state()).toBe('Vérifiez le début du bail.');
+    expect(posted(half, '/v1/commerces/b1/fiche')).toHaveLength(0);
+  });
+
   it('[R10] un geste de CE11 dont la réponse se perd ne dit pas que rien n’est rangé', async () => {
     const t = await run();
     await t.openB1();
