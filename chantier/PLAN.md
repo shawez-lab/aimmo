@@ -1972,12 +1972,20 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Statut : fait (2026-11-02)
 - Voie : 2
 - Décidé (2026-11-02, voie 2) : `R2PieceStore` reçoit `upload`, sans toucher au socle ; 20 Mo au plus ; PDF, JPEG, PNG, et texte pour une preuve dite à l'oral ; `louer.js` servi sans ses lignes de commentaire.
-- Reste : fusionnée (#265) ; relecture forte sans P0 ni P1 ; Codex non demandé (H03) ; dépôt réel avec H25 ; `louer.js` au bord de son budget [R201] : le prochain ajout à l'écran devra le découper.
+- Reste : fusionnée (#265) ; relecture forte sans P0 ni P1 ; Codex à sa limite (H03) ; dépôt réel avec H25 ; `louer.js` au bord de son budget [R201] : le prochain ajout à l'écran devra le découper.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11, W13
 - Cahier : M15 ; R104, R16.
 - Objectif : reste écrit de W11. L'écran « Louer » demande aujourd'hui de saisir la référence d'un fichier déjà rangé. L'agent doit pouvoir prendre la pièce sur son téléphone et la déposer, sans saisir de référence.
 - Critères : droits contrôlés avant de lire le fichier [R16] ; type, premiers octets, taille et empreinte contrôlés ; journal sans contenu ni donnée personnelle [R13] ; un double appui ne dépose qu'un fichier ; refus dits en français [R104] ; budget tenu [R201].
 - Attend : H25 pour le dépôt réel.
+
+### W15 · Relire le texte du bail après réouverture de l'écran
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11, W14
+- Cahier : M15 ; R16, R101.
+- Objectif : reste écrit de W11. Le texte du bail ne se relit que sur l'appareil qui l'a préparé, tant que l'écran n'est pas fermé. L'agent doit pouvoir le relire avec les parties après une réouverture, sous les droits des deux fiches.
+- Attend : rien.
 
 **M16 · Commerces et entreprises, septembre 2027.**
 
