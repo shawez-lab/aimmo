@@ -8,6 +8,7 @@
 
 import { ALERTES_SCRIPT } from '../app/alertes.ts';
 import { APPELS_SCRIPT } from '../app/appels.ts';
+import { CLASSEMENT_SCRIPT } from '../app/classement.ts';
 import { AVIS_SCRIPT } from '../app/avis.ts';
 import { OFFRES_SCRIPT } from '../app/offres.ts';
 import { DOSSIER_SCRIPT } from '../app/dossier.ts';
@@ -56,6 +57,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/alertes.js': { body: ALERTES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les gestes d'appel de la fiche (AC12), chargés à l'ouverture d'une fiche où ils servent [R201].
   '/app/appels.js': { body: APPELS_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Le classement de la fiche et sa correction (Q08), chargés à l'ouverture d'une fiche classée [R201].
+  '/app/classement.js': { body: CLASSEMENT_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le dépôt des fichiers de la reprise (I05), chargé au premier geste de la direction [R201].
   '/app/reprise.js': { body: REPRISE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran du responsable de la conformité (L10), chargé à la demande pour sa seule clé, jamais gardé sur l'appareil.

@@ -228,6 +228,16 @@ describeWithSqlite('A03 · routes de la fiche et du rappel', () => {
     const done = await call('/v1/rappels/t-1/fait', KEY_AGENT, 'POST');
     expect(done.status).toBe(200);
     expect(await done.json()).toEqual({ ok: true, mode: 'essai', sent: false });
+
+    // Q08 : l'identifiant vient de la fiche, jamais d'une saisie ; un autre agent est refusé [R16], l'origine reste [R17].
+    const shown = async () => ((await (await call(`/v1/fiches/${lea.id}/resume`, KEY_AGENT)).json()) as { data: { qualification: { id: string; category: string; correction: { category: string; route: string | null } | null } } }).data.qualification;
+    const before = await shown();
+    expect(before).toMatchObject({ id: 'q-1', category: 'seller', correction: null });
+    const correct = (key: string) => worker.fetch(new Request(`${BASE}/v1/qualifications/${before.id}/correction`, { method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify({ category: 'buyer', route: null }) }), env);
+    expect((await correct(KEY_OTHER)).status).toBe(403);
+    expect((await shown()).correction).toBeNull();
+    expect((await correct(KEY_AGENT)).status).toBe(200);
+    expect(await shown()).toMatchObject({ id: 'q-1', category: 'seller', correction: { category: 'buyer', route: null } });
     expect(await db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM callback_tasks WHERE id = 't-1' AND done_at IS NOT NULL`)).toEqual({ n: 1 });
     // Rien n'est parti : aucun message sortant n'a été rangé.
     expect(await db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM messages WHERE direction = 'out'`)).toEqual({ n: 0 });
