@@ -2520,18 +2520,29 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Critères : l'écran ne lit et n'écrit que par `/v1/attirer` [R16] ; il n'est proposé qu'à la direction ; il montre les chiffres du serveur, sans calcul ni tri à lui ; un refus est dit en français, sans code ni donnée ; tout texte reçu passe par `textContent` ; un double appui ne relance pas deux recalculs ; budget tenu [R201].
 - Attend : rien.
 
-### AT15 · Écran « Attirer » : communes, mentions des agents et leurs sites
+### AT15 · Écran « Attirer » : communes et quartiers
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12, AT13
+- Cahier : M01 ; R16, R150.
+- Objectif : reste de AT13. Sans zone, ni prix ni page de quartier : la direction définit et retire une commune ou un quartier depuis l'écran, en collant son contour avec sa source.
+- Critères : lecture des communes en service dans `attirer.ts`, sous R16 ; aucun identifiant à saisir ; slug tiré du nom ; contour illisible refusé à l'écran sans envoi ; retrait confirmé ; refus dits en français.
+- Attend : rien.
+
+### AT16 · Écran « Attirer » : mentions des agents et leurs sites
 - Statut : à faire
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12
-- Cahier : M01 ; R16, R150, R152, R153.
-- Objectif : reste de AT12. Lectures ajoutées dans `attirer.ts` : les agents du réseau avec l'état de leur page et de leur site, y compris hors service, et le titre lisible d'un contenu (l'origine montre aujourd'hui l'identifiant d'un bien ou d'un agent). La direction y saisit les mentions, le titulaire de la carte, le site de chaque agent, et définit ou retire une commune.
+- Cahier : M01 ; R16, R152, R153.
+- Objectif : reste de AT12. Lectures ajoutées dans `attirer.ts` : les agents du réseau avec l'état de leur page et de leur site, y compris hors service, et le titre lisible d'un contenu (l'origine montre aujourd'hui l'identifiant d'un bien ou d'un agent). La direction y saisit les mentions, le titulaire de la carte, le site de chaque agent.
 - Critères : aucun identifiant à saisir ni à lire [R16] ; un site d'agent mis hors service se rétablit depuis l'écran ; un refus `agent_inactive` de la route ne déconnecte pas la direction (`send` le lit comme une clé refusée : renommer ce code côté serveur) ; refus dits en français.
 - Attend : H09 pour les vraies mentions.
 
 ### AT13 · Écran « Attirer » : pages de quartier, du fait validé à la page publiée
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Voie : 2
+- Décidé (2026-11-02, voie 2) : `drafts` dit si un texte est encore validable (`current`) et donne ses paragraphes tels que servis (`bodyParagraphs`) ; un retrait ne repasse aucun contrôle de contenu ; la clé d'un fait vient de son libellé, deux libellés qui se confondent sont refusés à l'écran.
+- Reste : fusionnée (#270) ; relecture forte 5 P1 corrigés ; Codex à sa limite (H03).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12
 - Cahier : M01 ; R154, R155, R46.
 - Objectif : la direction range un fait avec sa source, fait préparer le texte, le relit, le valide ; aucune page n'a d'adresse à saisir.
