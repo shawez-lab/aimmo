@@ -233,14 +233,15 @@ describeWithSqlite('D14 · le scan d’un avenant vérifié comme celui du manda
   async function avenant() {
     const doc = await ready(w);
     const mandateScan = ((await (await w.scan(KEYS.alex)).json()) as { data: { ref: string } }).data.ref;
-    const signedAt = new Date(Date.now() - 120_000).toISOString();
+    // L'heure présente : deux minutes plus tôt, le test échouait autour de minuit, l'identité étant vue le lendemain.
+    const signedAt = new Date().toISOString();
     expect((await w.post(`/documents/${doc.id}/signature-papier`, KEYS.alex, { signedAt, place: 'agence', scanRef: mandateScan, source: 'referral' })).status).toBe(200);
     const template = (await (await w.post('/modeles', KEYS.direction, { kind: 'avenant_mandat', body: 'Avenant au mandat n° {{mandat.numero}} : {{avenant.objet}}. Mandant : {{mandant.nom}}. {{signature.date}}, {{signature.lieu}}.' })).json()) as { data: { id: string } };
     await w.post(`/modeles/${template.data.id}/validation`, KEYS.compliance);
     const generate = async () => ((await (await w.post('/documents', KEYS.alex, { kind: 'avenant_mandat', personId: w.lea.id, propertyId: w.bien.id, mandateId: `m-${doc.id}`, inputs: { 'avenant.prix': 190000 } })).json()) as { data: { id: string; status: string } }).data;
     const made = await generate();
     expect(made.status).toBe('complet');
-    const paper = (scanRef: string) => ({ signedAt: new Date(Date.now() - 60_000).toISOString(), place: 'agence', scanRef });
+    const paper = (scanRef: string) => ({ signedAt: new Date().toISOString(), place: 'agence', scanRef });
     return { id: made.id, generate, mandateScan, paper };
   }
   const code = async (r: Response) => [r.status, ((await r.json()) as { code?: string }).code];
