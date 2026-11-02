@@ -201,7 +201,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Décidé (2026-11-02), lecture prudente : le passage à 10 % reste fermé tant que la variable `AUTOMATION_ROLLOUT_OPEN` n'est pas branchée (B04) : la mention R06 n'est pas alignée et le site ne lit pas encore `decides`. Une adresse inconnue du socle : le site décide seul, le socle ne sachant rien d'elle ; adresse portée par plusieurs fiches : le refus du socle vaut, selon le tirage. Les seuils de 20 demandes et de 5 décisions sont des réglages, jusqu'à ce que Shawez en décide autrement.
 
 ### B04b · Mention de l'assistant alignée sur le texte du site
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude · Relecture : forte · Dépend de : B04a
 - Cahier : Feuille de route, novembre 2026 ; mention de l'assistant dans les réponses automatiques par mail.
 - Objectif : détaché de B04 le 2026-11-02. En ombre et aux paliers, le message rangé chez le socle est exactement celui que le site envoie : le contrôle ne doit ni ajouter sa propre mention, ni la compter comme donnée alors que le site ne l'a pas mise. Lire dans `shawez-immo` (lecture seule) ce que disent vraiment ses rappels et courriers, puis décider dans cette tâche.
