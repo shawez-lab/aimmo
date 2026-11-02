@@ -1598,7 +1598,7 @@ Restes trouvés de la même façon, à découper ensuite par la voie 2, un écra
 - Attend : rien (H26 pour une vraie facture).
 
 ### K12 · Grille des commissions, budget de l'IA, factures émises et avoirs
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Décidé (2026-11-02), lecture prudente : deux lectures ajoutées, la grille (en vigueur, programmées, agents) et les réglages ; le formulaire part de la grille en vigueur et dit la dernière version vue, un écran périmé est refusé (`stale_grid`), pour ne perdre aucun taux en silence.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : K11
 - Cahier : M13, « Commissions », « Factures », « Alertes » ; R16, R71, R69.
@@ -1607,13 +1607,27 @@ Restes trouvés de la même façon, à découper ensuite par la voie 2, un écra
 - Attend : H26 pour une vraie facture.
 
 ### K13 · Le chemin de chaque euro (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Décidé (2026-11-02) : fait avant K12, qui en dépend moins ; les jours affichés sont ceux qui ont été signés (`compromisOn`, `signedOn`), jamais l'heure du passage.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : K11
 - Cahier : M13, « Commissions », « La commission de l'agent est versée sous 24 h ouvrées » ; R68, R69, R70.
 - Objectif : aucun réseau ne le montre : l'agent suit en direct où est son argent, dossier par dossier : ses parts, l'étape atteinte, le jour de l'encaissement, l'heure limite des 24 h ouvrées promises, et si la promesse a été tenue, avec son propre total recompté à l'écran. La réponse de `/pilotage/commissions` reçoit l'encaissement, l'échéance et le versement.
 - Critères : un agent n'a que ses parts, jamais celles d'un autre ni les honoraires d'un dossier où il n'a qu'un partage [R68] (test) ; l'heure limite vient du serveur, jamais recalculée à l'écran [R70] (test) ; versement en retard et à l'heure dits (tests) ; le total refait la somme de ses lignes [R69] (test) ; aucun classement ni comparaison avec un autre agent [R14] (test).
 - Attend : rien.
+
+**M16 · La cession à l'écran.**
+
+Voie : 2
+
+Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes de la cession, mais personne ne peut les faire avancer, ni suivre un repreneur, ni signer un engagement de confidentialité depuis le téléphone. Script à part, comme `/app/finances.js`. Les autres restes sont écrits sous « M13 · Les finances à l'écran ».
+
+### CE12 · Cession à l'écran : dates, séquestre, acquéreur, étapes prêtes et demande de fonds
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE07, CE11
+- Cahier : M16 Commerces et entreprises ; R16, R110, R201.
+- Objectif : depuis la fiche d'un commerce, l'agent ouvre la cession et la fait avancer par les routes `/commerces/cessions/...` et `/commerces/taches-cession`, sans rien saisir de technique ; à lire au début : `packages/core/src/commerces/` et CE07.
+- Critères : une étape bloquante empêche l'étape suivante, dite en français [R110] (test) ; seul l'agent du bien ou la direction agit [R16] (test) ; réponse perdue dite telle, succès gardé si la relecture échoue (tests) ; script à part, budget tenu [R201] (test).
+- Attend : rien pour l'écran ; H38 pour les pièces réelles.
 
 **M14 · Réseau et académie, juillet 2027.**
 

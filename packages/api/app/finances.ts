@@ -6,6 +6,14 @@
  * Les commissions pour la direction (K11) : chaque commission, ses parts recomptées à l'écran [R69] et ce qu'elle attend.
  * L'encaissement puis le versement se rapportent avec la référence de leur preuve, en deux appuis ; aucun montant ne se
  * saisit [R67], l'échéance des 24 h ouvrées vient du serveur [R70].
+ *
+ * Le chemin de chaque euro (K13, Jamais vu) : l'agent suit où est son argent, dossier par dossier, avec l'heure limite
+ * promise et si elle a été tenue. Il ne voit que ses parts [R68], sans comparaison avec personne [R14] ; ses totaux se
+ * recomptent à l'écran depuis ses lignes [R69].
+ *
+ * La grille, les seuils, les factures et l'export (K12), pour la direction [R16] : une nouvelle version de la grille part
+ * de la dernière et n'en perd aucun taux ; une facture ne change jamais, un avoir la corrige, en deux appuis [R71] ; l'export
+ * part avec la clé dans l'en-tête [R13].
  */
 
 const SHARE_NAMES: Record<string, string> = {
@@ -44,6 +52,34 @@ const BLOCKED: Record<string, string> = {
   mandat: 'le mandat de l’acte n’est pas celui de la commission.',
   compromis: 'la date du compromis a changé depuis la commission.',
 };
+const CREDIT_REASONS: Record<string, string> = {
+  erreur_montant: 'Erreur de montant',
+  erreur_destinataire: 'Erreur de destinataire',
+  vente_annulee: 'Vente annulée',
+  autre: 'Autre raison',
+};
+const KIND_NAMES: Record<string, string> = {
+  honoraires: 'Honoraires',
+  reversement: 'Reversement',
+  avoir: 'Avoir',
+};
+const SETTING_REFUSALS: Record<string, string> = {
+  bad_day: 'Choisissez un jour valide.',
+  past_day: 'Une grille ne vaut que pour l’avenir : choisissez aujourd’hui ou un jour à venir.',
+  bad_rate: 'Un taux va de 0 à 100 %.',
+  unknown_agent: 'Un agent de la liste n’est plus du réseau : relisez la page.',
+  duplicate_agent: 'Un agent apparaît deux fois.',
+  bad_budget: 'Le budget doit être un montant positif, ou vide pour ne rien plafonner.',
+  bad_threshold: 'Un seuil va de 0,01 à 100 %.',
+  stale_grid: 'Une autre version vient d’être rangée : relisez la grille, puis recommencez.',
+  bad_notice: 'Le préavis va de 1 à 365 jours.',
+  not_creditable: 'Un avoir ne se corrige pas par un avoir.',
+  already: 'Cette facture a déjà son avoir.',
+  busy: 'Une autre facture est en cours d’émission. Réessayez dans un moment.',
+  bad_reason: 'Choisissez une raison.',
+  unknown: 'Cette facture n’existe plus dans la liste.',
+  role: 'Ce n’est pas dans vos droits.',
+};
 const PAY_REFUSALS: Record<string, string> = {
   sale_cancelled: 'Cette vente est annulée par un avoir : plus rien ne s’encaisse ni ne se verse ici.',
   bad_proof: 'Cette référence n’est pas lisible : lettres sans accent, chiffres, et les signes - _ : . / seulement.',
@@ -72,6 +108,37 @@ const reportEntry = (who: 'agent' | 'direction'): string => `<section class="blo
 export const RAPPORT_AGENT_HTML = reportEntry('agent');
 export const RAPPORT_DIRECTION_HTML = reportEntry('direction');
 
+export const REGLAGES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-grille">
+<h3 id="titre-grille">Grille des commissions et alertes</h3>
+<p class="doux">Une nouvelle version s’ajoute : les ventes passées gardent la leur.</p>
+<button id="grille-voir" type="button" class="secondaire">Voir et régler</button>
+<p id="grille-etat" class="etat" role="status"></p>
+<div id="grille-corps"></div>
+</section>
+<section class="bloc" aria-labelledby="titre-factures">
+<h3 id="titre-factures">Factures émises</h3>
+<p class="doux">Une facture ne change plus : un avoir la corrige.</p>
+<button id="factures-voir" type="button" class="secondaire">Voir les factures</button>
+<p id="factures-etat" class="etat" role="status"></p>
+<div id="factures-corps"></div>
+<label for="factures-du">Export comptable, du</label>
+<input id="factures-du" type="date">
+<label for="factures-au">au</label>
+<input id="factures-au" type="date">
+<button id="factures-export" type="button" class="secondaire">Télécharger l’export</button>
+<p id="factures-export-etat" class="etat" role="status"></p>
+</section>
+`;
+
+export const EUROS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-euros">
+<h3 id="titre-euros">Où est mon argent</h3>
+<p class="doux">Chaque part, de la promesse de vente à votre compte, et l’heure limite de son versement.</p>
+<button id="euros-voir" type="button" class="secondaire">Suivre mes commissions</button>
+<p id="euros-etat" class="etat" role="status"></p>
+<div id="euros-corps"></div>
+</section>
+`;
+
 export const COMMISSIONS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-commissions">
 <h3 id="titre-commissions">Commissions</h3>
 <p class="doux">Ce que chaque vente doit à chacun, et ce qui attend votre geste. Aucun montant ne se saisit : tout est calculé.</p>
@@ -93,6 +160,14 @@ export const FINANCES_JS = `
     });
     clear($('commissions-corps'));
     $('commissions-etat').textContent = '';
+    clear($('euros-corps'));
+    $('euros-etat').textContent = '';
+    clear($('grille-corps'));
+    $('grille-etat').textContent = '';
+    clear($('factures-corps'));
+    ['factures-etat', 'factures-export-etat'].forEach(function (id) { $(id).textContent = ''; });
+    $('factures-du').value = '';
+    $('factures-au').value = '';
   }
   function withFinances(stateId, hostId, act) {
     if (!currentKey) return Promise.resolve(false);
@@ -110,7 +185,7 @@ export const FINANCES_JS = `
         try { delete globalThis.AIMMO_FINANCES; } catch (e) { /* rien */ }
         if (mine !== session) { resolve(false); return; }
         if (typeof make !== 'function') { $(stateId).textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        financesTools = make({ $: $, el: el, clear: clear, send: send, date: date, hour: hour, euros: euros, button: button, session: function () { return session; } });
+        financesTools = make({ $: $, el: el, clear: clear, send: send, date: date, hour: hour, euros: euros, button: button, saveCsv: saveCsv, session: function () { return session; } });
         resolve(act(financesTools));
       });
       s.addEventListener('error', function () {
@@ -120,6 +195,18 @@ export const FINANCES_JS = `
       });
       $(hostId).appendChild(s);
     });
+  }
+  function readGrille() {
+    return withFinances('grille-etat', 'reseau', function (f) { return f.settings(''); });
+  }
+  function readFactures() {
+    return withFinances('factures-etat', 'reseau', function (f) { return f.invoices(''); });
+  }
+  function exportFactures() {
+    return withFinances('factures-export-etat', 'reseau', function (f) { return f.exportInvoices(); });
+  }
+  function readEuros() {
+    return withFinances('euros-etat', 'chiffres', function (f) { return f.path(); });
   }
   function readCommissions() {
     return withFinances('commissions-etat', 'reseau', function (f) { return f.commissions(''); });
@@ -139,6 +226,9 @@ globalThis.AIMMO_FINANCES = function (t) {
   var GROUPS = ${JSON.stringify(GROUPS)};
   var BLOCKED = ${JSON.stringify(BLOCKED)};
   var PAY_REFUSALS = ${JSON.stringify(PAY_REFUSALS)};
+  var CREDIT_REASONS = ${JSON.stringify(CREDIT_REASONS)};
+  var KIND_NAMES = ${JSON.stringify(KIND_NAMES)};
+  var SETTING_REFUSALS = ${JSON.stringify(SETTING_REFUSALS)};
   var PROOF = /^[A-Za-z0-9_:.\/-]{1,200}$/;
   var reading = 0, listing = 0, uid = 0;
   function day(iso) { return date(iso + 'T12:00:00Z'); }
@@ -280,9 +370,9 @@ globalThis.AIMMO_FINANCES = function (t) {
       /* Sans toutes les réponses, on ne sait pas ce qui attend : aucun geste n'est proposé. */
       if (!a.ok || !b.ok || !k.ok || !Array.isArray(a.body.data) || !Array.isArray(b.body.data) || !Array.isArray(k.body.data)) {
         var bad = !a.ok ? a : !b.ok ? b : k;
-        if (bad.offline) state.textContent = 'Pas de réseau. Réessayez dans un moment.';
-        else if (bad.body && bad.body.rule === 'R16') state.textContent = PAY_REFUSALS.role;
-        else state.textContent = 'Indisponible pour le moment. Réessayez plus tard.';
+        var why = bad.offline ? 'Pas de réseau. Réessayez dans un moment.' : bad.body && bad.body.rule === 'R16' ? PAY_REFUSALS.role : 'Indisponible pour le moment. Réessayez plus tard.';
+        /* Un geste réussi reste dit, même si la relecture échoue. */
+        state.textContent = (message ? message + ' ' : '') + why;
         return false;
       }
       var tasks = {};
@@ -315,6 +405,287 @@ globalThis.AIMMO_FINANCES = function (t) {
       return true;
     });
   }
-  return { report: report, commissions: commissions };
+  /* ---------- Le chemin de chaque euro (K13) : les étapes viennent du serveur, jamais d'un calcul de l'écran. ---------- */
+  function stepAt(c, status) {
+    var s = (c.steps || []).filter(function (x) { return x.status === status; })[0];
+    return s ? s.at : null;
+  }
+  function pathLine(c, mine) {
+    var li = el('li');
+    li.appendChild(el('strong', 'Dossier ' + c.fileId + ' : ma part ' + euros(mine)));
+    if (c.shares.length > 1) {
+      var parts = el('ul', null, 'liste');
+      c.shares.forEach(function (s) { parts.appendChild(el('li', (SHARE_NAMES[s.kind] || 'Autre part') + ' : ' + euros(s.amountCents))); });
+      li.appendChild(parts);
+    }
+    var pay = c.payment;
+    var way = [
+      /* Les jours signés, et non l'heure où le passage les a vus. */
+      ['Compromis signé', c.compromisOn ? c.compromisOn + 'T12:00:00Z' : null],
+      ['Acte signé', c.signedOn ? c.signedOn + 'T12:00:00Z' : null],
+      ['Facture émise', stepAt(c, 'facturee')],
+      ['Honoraires encaissés par le réseau', pay ? pay.receivedAt : null],
+      ['Versée sur mon compte', pay && pay.paidAt ? pay.paidAt : stepAt(c, 'payee')],
+    ];
+    var ol = el('ol');
+    way.forEach(function (w) { ol.appendChild(el('li', w[0] + (w[1] ? ' : le ' + date(w[1]) : ' : pas encore'), w[1] ? undefined : 'doux')); });
+    li.appendChild(ol);
+    if (c.cancelled) li.appendChild(el('p', 'Vente annulée par un avoir : cette part n’est pas due. La direction règle ce qui a déjà été versé.', 'retard'));
+    else if (pay && pay.paidAt) li.appendChild(el('p', pay.late ? 'Versée après l’heure limite du ' + date(pay.payoutDueAt) + ' à ' + hour(pay.payoutDueAt) + ' : la promesse n’a pas été tenue.' : 'Versée dans les 24 h ouvrées promises.', pay.late ? 'retard' : undefined));
+    else if (pay) {
+      var over = Date.now() > Date.parse(pay.payoutDueAt);
+      li.appendChild(el('p', (over ? 'Heure limite dépassée : ' : 'Promesse : versée au plus tard ') + 'le ' + date(pay.payoutDueAt) + ' à ' + hour(pay.payoutDueAt) + '.', over ? 'retard' : undefined));
+    }
+    return li;
+  }
+  var pathing = 0;
+  function path() {
+    var mine = t.session();
+    var turn = ++pathing;
+    var body = $('euros-corps'), state = $('euros-etat');
+    clear(body);
+    state.textContent = 'Chargement…';
+    return send('/v1/pilotage/commissions', 'GET').then(function (res) {
+      if (res.gone || mine !== t.session() || turn !== pathing) return false;
+      if (!res.ok || !Array.isArray(res.body.data)) {
+        if (res.offline) state.textContent = 'Pas de réseau. Réessayez dans un moment.';
+        else if (res.body && res.body.rule === 'R16') state.textContent = PAY_REFUSALS.role;
+        else state.textContent = 'Indisponible pour le moment. Réessayez plus tard.';
+        return false;
+      }
+      var items = res.body.data;
+      if (!items.length) { state.textContent = 'Aucune commission pour le moment : elles naissent au compromis signé.'; return true; }
+      var paid = 0, coming = 0, cut = 0, ul = el('ul', null, 'liste');
+      items.forEach(function (c) {
+        c.shares = c.shares || [];
+        var own = c.shares.reduce(function (a, s) { return a + Number(s.amountCents); }, 0);
+        if (c.cancelled) cut += own;
+        else if ((c.payment && c.payment.paidAt) || c.status === 'payee') paid += own;
+        else coming += own;
+        ul.appendChild(pathLine(c, own));
+      });
+      /* Les totaux refont la somme des lignes ci-dessous, au centime [R69]. */
+      body.appendChild(el('p', 'Versé : ' + euros(paid) + '. À venir : ' + euros(coming) + (cut ? '. Annulé : ' + euros(cut) : '') + '.'));
+      body.appendChild(ul);
+      state.textContent = '';
+      return true;
+    });
+  }
+  /* ---------- La grille, les seuils, les factures et l'export (K12). ---------- */
+  function percent(bp) { return bp === null || bp === undefined ? '' : String(Number(bp) / 100).replace('.', ','); }
+  /* Un pourcentage en points de base ; vide ou illisible : null. */
+  function toBp(text) {
+    var s = String(text).trim().replace(',', '.');
+    if (!/^\\d{1,3}(\\.\\d{1,2})?$/.test(s)) return null;
+    var bp = Math.round(Number(s) * 100);
+    return bp <= 10000 ? bp : null;
+  }
+  function refusalOf(res, fallback) {
+    /* Une réponse perdue ne dit pas que rien n'est rangé : le serveur a pu écrire avant de se taire. */
+    return (res.body && SETTING_REFUSALS[res.body.code]) || fallback;
+  }
+  function saveButton(box, text, state, act) {
+    var b = button(text, function () {
+      if (b.disabled) return;
+      var mine = t.session();
+      var work = act();
+      if (!work) return;
+      b.disabled = true;
+      state.textContent = 'Envoi…';
+      work.then(function (done) {
+        if (mine === t.session()) b.disabled = false;
+        return done;
+      });
+    });
+    box.appendChild(b);
+    return b;
+  }
+  function gridForm(g) {
+    var box = el('div');
+    box.appendChild(el('h4', 'Nouvelle version de la grille'));
+    var line = function (x) { return 'Version ' + x.version + ', ' + percent(x.defaultRateBp) + ' % pour l’agent'; };
+    var force = g.inForce;
+    box.appendChild(el('p', force ? 'En vigueur : ' + line(force) + ', depuis le ' + date(force.validFrom + 'T12:00:00Z') + '.' : 'Aucune grille en vigueur aujourd’hui : aucune commission ne peut naître sur un compromis signé ce jour.', force ? 'doux' : 'retard'));
+    (g.upcoming || []).forEach(function (x) { box.appendChild(el('p', 'Déjà programmée : ' + line(x) + ', à partir du ' + date(x.validFrom + 'T12:00:00Z') + '.')); });
+    var from = field(box, 'À partir du', 'date');
+    var rate = field(box, 'Part de l’agent, en %', 'text');
+    rate.value = force ? percent(force.defaultRateBp) : '';
+    var rows = (g.agents || []).map(function (a) {
+      var i = field(box, 'Taux propre à l’agent ' + a.agentId + ', en % (vide : le taux commun)', 'text');
+      i.value = percent(a.rateBp);
+      return { agentId: a.agentId, input: i };
+    });
+    var state = el('p', '', 'etat');
+    state.setAttribute('role', 'status');
+    saveButton(box, 'Ranger cette version', state, function () {
+      var mine = t.session();
+      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(from.value)) { state.textContent = SETTING_REFUSALS.bad_day; return null; }
+      var bp = toBp(rate.value);
+      if (bp === null) { state.textContent = SETTING_REFUSALS.bad_rate; return null; }
+      var agents = [], wrong = false;
+      rows.forEach(function (r) {
+        if (!r.input.value.trim()) return;
+        var v = toBp(r.input.value);
+        if (v === null) wrong = true;
+        else agents.push({ agentId: r.agentId, rateBp: v });
+      });
+      if (wrong) { state.textContent = SETTING_REFUSALS.bad_rate; return null; }
+      return send('/v1/pilotage/grille', 'POST', { validFrom: from.value, defaultRateBp: bp, agents: agents, expectedVersion: g.version === undefined ? null : g.version }).then(function (res) {
+        if (res.gone || mine !== t.session()) return false;
+        if (!res.ok) { state.textContent = refusalOf(res, 'Réponse perdue : cette version est peut-être rangée. Relisez la grille avant de recommencer.'); return false; }
+        return settings('Nouvelle version de la grille rangée. Les ventes passées gardent la leur.');
+      });
+    });
+    box.appendChild(state);
+    return box;
+  }
+  function settingsForm(s) {
+    var box = el('div');
+    box.appendChild(el('h4', 'Alertes'));
+    var budget = field(box, 'Budget mensuel de l’IA, en euros (vide : sans plafond)', 'text');
+    budget.value = s.aiMonthlyBudgetCents === null || s.aiMonthlyBudgetCents === undefined ? '' : String(s.aiMonthlyBudgetCents / 100).replace('.', ',');
+    var ai = field(box, 'Alerte à ce pourcentage du budget', 'text');
+    ai.value = percent(s.aiAlertBp);
+    var drop = field(box, 'Alerte quand un indicateur baisse de ce pourcentage', 'text');
+    drop.value = percent(s.dropAlertBp);
+    var notice = field(box, 'Préavis avant l’échéance d’un document d’agent, en jours', 'number');
+    notice.value = String(s.documentNoticeDays);
+    var state = el('p', '', 'etat');
+    state.setAttribute('role', 'status');
+    saveButton(box, 'Ranger ces alertes', state, function () {
+      var mine = t.session();
+      var cents = null;
+      var raw = budget.value.trim().replace(',', '.');
+      if (raw) {
+        if (!/^\\d{1,9}(\\.\\d{1,2})?$/.test(raw) || Number(raw) <= 0) { state.textContent = SETTING_REFUSALS.bad_budget; return null; }
+        cents = Math.round(Number(raw) * 100);
+      }
+      var a = toBp(ai.value), d = toBp(drop.value);
+      if (a === null || d === null || a < 1 || d < 1) { state.textContent = SETTING_REFUSALS.bad_threshold; return null; }
+      var days = Number(notice.value);
+      if (!Number.isInteger(days) || days < 1 || days > 365) { state.textContent = SETTING_REFUSALS.bad_notice; return null; }
+      return send('/v1/pilotage/reglages', 'POST', { aiMonthlyBudgetCents: cents, aiAlertBp: a, dropAlertBp: d, documentNoticeDays: days }).then(function (res) {
+        if (res.gone || mine !== t.session()) return false;
+        if (!res.ok) { state.textContent = refusalOf(res, 'Réponse perdue : ces alertes sont peut-être rangées. Relisez-les avant de recommencer.'); return false; }
+        state.textContent = 'Alertes rangées.';
+        return true;
+      });
+    });
+    box.appendChild(state);
+    return box;
+  }
+  var setting = 0;
+  function settings(message) {
+    var mine = t.session();
+    var turn = ++setting;
+    var body = $('grille-corps'), state = $('grille-etat');
+    clear(body);
+    state.textContent = 'Chargement…';
+    return Promise.all([send('/v1/pilotage/grille', 'GET'), send('/v1/pilotage/reglages', 'GET')]).then(function (all) {
+      var g = all[0], s = all[1];
+      if (g.gone || s.gone || mine !== t.session() || turn !== setting) return false;
+      /* Sans la dernière version, ranger une grille pourrait perdre des taux : aucun formulaire. */
+      if (!g.ok || !s.ok || !g.body.data || !s.body.data) {
+        var bad = !g.ok ? g : s;
+        state.textContent = (message ? message + ' ' : '') + (bad.offline ? 'Pas de réseau. Réessayez dans un moment.' : bad.body && bad.body.rule === 'R16' ? SETTING_REFUSALS.role : 'Indisponible pour le moment. Réessayez plus tard.');
+        return false;
+      }
+      body.appendChild(gridForm(g.body.data));
+      body.appendChild(settingsForm(s.body.data));
+      state.textContent = message || '';
+      return true;
+    });
+  }
+  function creditForm(inv) {
+    var box = el('div');
+    uid += 1;
+    var id = 'finances-champ-' + uid;
+    var l = el('label', 'Raison de l’avoir');
+    l.setAttribute('for', id);
+    var pick = el('select');
+    pick.setAttribute('id', id);
+    Object.keys(CREDIT_REASONS).forEach(function (k) {
+      var o = el('option', CREDIT_REASONS[k]);
+      o.setAttribute('value', k);
+      pick.appendChild(o);
+    });
+    pick.value = 'erreur_montant';
+    box.appendChild(l);
+    box.appendChild(pick);
+    var state = el('p', '', 'etat');
+    state.setAttribute('role', 'status');
+    var text = 'Corriger par un avoir', armedAt = null;
+    var b = button(text, function () {
+      if (b.disabled) return;
+      var now = Date.now();
+      if (armedAt !== null && now - armedAt < 1000) return;
+      if (armedAt === null || now - armedAt > 15000) {
+        armedAt = now;
+        b.textContent = 'Confirmer : émettre l’avoir';
+        state.textContent = (pick.value === 'vente_annulee' ? 'La vente sera dite annulée : plus aucune facture, aucun encaissement, aucun versement. ' : '') + 'Un avoir ne se reprend pas. Appuyez de nouveau pour confirmer.';
+        return;
+      }
+      armedAt = null;
+      b.textContent = text;
+      b.disabled = true;
+      state.textContent = 'Envoi…';
+      var mine = t.session();
+      send('/v1/pilotage/factures/' + encodeURIComponent(inv.id) + '/avoir', 'POST', { reason: pick.value }).then(function (res) {
+        if (res.gone || mine !== t.session()) return;
+        if (!res.ok) {
+          b.disabled = false;
+          var code = res.body && res.body.code;
+          if (code === 'already' || code === 'unknown') { invoices(SETTING_REFUSALS[code]); return; }
+          state.textContent = code && SETTING_REFUSALS[code] ? SETTING_REFUSALS[code] : 'Réponse perdue : l’avoir est peut-être émis. Relisez la liste avant de recommencer.';
+          return;
+        }
+        var v = res.body.data;
+        invoices('Avoir émis en mode essai' + (v && v.content && typeof v.content.label === 'string' ? ' : ' + v.content.label : '') + '.');
+      });
+    });
+    box.appendChild(b);
+    box.appendChild(state);
+    return box;
+  }
+  var invoicing = 0;
+  function invoices(message) {
+    var mine = t.session();
+    var turn = ++invoicing;
+    var body = $('factures-corps'), state = $('factures-etat');
+    clear(body);
+    state.textContent = 'Chargement…';
+    return send('/v1/pilotage/factures', 'GET').then(function (res) {
+      if (res.gone || mine !== t.session() || turn !== invoicing) return false;
+      if (!res.ok || !Array.isArray(res.body.data)) {
+        state.textContent = (message ? message + ' ' : '') + (res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.body && res.body.rule === 'R16' ? SETTING_REFUSALS.role : 'Indisponible pour le moment. Réessayez plus tard.');
+        return false;
+      }
+      var items = res.body.data;
+      var corrected = {};
+      items.forEach(function (i) { if (i.content && i.content.corrects) corrected[i.content.corrects] = true; });
+      var ul = el('ul', null, 'liste');
+      items.forEach(function (i) {
+        var c = i.content || {};
+        var li = el('li');
+        li.appendChild(el('strong', (KIND_NAMES[c.kind] || 'Facture') + ' ' + c.label));
+        li.appendChild(el('p', 'De ' + c.issuer + ' à ' + c.recipient + ', le ' + date(c.issuedOn + 'T12:00:00Z') + ' : ' + euros(c.ttcCents) + ' TTC.'));
+        li.appendChild(el('p', 'Dossier ' + i.fileId + (i.transmitted ? ', en mode essai.' : ', pas encore transmise.'), 'doux'));
+        if (c.corrects) li.appendChild(el('p', 'Corrige la facture ' + c.corrects + '.', 'doux'));
+        if (corrected[c.label]) li.appendChild(el('p', 'Corrigée par un avoir.', 'doux'));
+        else if (c.kind !== 'avoir') li.appendChild(creditForm(i));
+        ul.appendChild(li);
+      });
+      if (items.length) body.appendChild(ul);
+      state.textContent = message || (items.length ? '' : 'Aucune facture émise pour le moment.');
+      return true;
+    });
+  }
+  function exportInvoices() {
+    var from = $('factures-du').value, to = $('factures-au').value, state = $('factures-export-etat');
+    var day = /^\\d{4}-\\d{2}-\\d{2}$/;
+    if (!day.test(from) || !day.test(to) || from > to) { state.textContent = 'Choisissez une période : le premier jour, puis le dernier.'; return Promise.resolve(false); }
+    return t.saveCsv('/v1/pilotage/factures/export?du=' + from + '&au=' + to, 'factures-' + from + '-' + to + '.csv', state, 'Export indisponible. Réessayez plus tard.', 'Export téléchargé.');
+  }
+  return { report: report, commissions: commissions, path: path, settings: settings, invoices: invoices, exportInvoices: exportInvoices };
 };
 `;
