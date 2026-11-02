@@ -345,7 +345,8 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
       expect(lines).toHaveLength(1);
       expect(lines[0]!.data).toContain(during.value.consentId);
       expect(lines[0]!.data).not.toContain('Accord donné');
-      expect(lines[0]!.subject).toBe(`merge:${merge.id}`);
+      expect(lines[0]!.subject).toBe(`person:${t.person.id}`);
+      expect(lines[0]!.data).toContain(merge.id);
     });
 
     it('[R03] défaire deux fois garde la première date, ne ferme rien de plus et n’écrit qu’une ligne ; une ligne perdue revient', async () => {

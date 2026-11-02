@@ -266,9 +266,9 @@ export class FicheUnique {
         if (undoneAt === null) throw new Error(`Fusion inconnue : ${mergeId}`);
       }
     }
-    const subject = `merge:${mergeId}`;
+    const subject = `person:${merge.survivor_id}`;
     const logged = await trace.journal.bySubject(subject);
-    if (!logged.some((e) => e.type === 'fiche.fusion_defaite')) {
+    if (!logged.some((e) => e.type === 'fiche.fusion_defaite' && e.data.merge === mergeId)) {
       const ids = [...new Set([...(await this.membersOf(merge.survivor_id)), ...(await this.membersOf(merge.merged_id))])];
       const closed = await this.db.all<{ id: string }>(
         `SELECT id FROM consents WHERE person_id IN (${placeholders(ids.length)}) AND created_at >= ? AND withdrawn_at = ? ORDER BY id`,
@@ -276,7 +276,7 @@ export class FicheUnique {
       );
       await appendEvent(
         trace.journal,
-        { type: 'fiche.fusion_defaite', actor: trace.actor, subject, data: { rule: 'R03', consentsFermes: closed.map((c) => c.id) } },
+        { type: 'fiche.fusion_defaite', actor: trace.actor, subject, data: { rule: 'R03', merge: mergeId, consents: closed.map((c) => c.id) } },
         this.now,
       );
     }
