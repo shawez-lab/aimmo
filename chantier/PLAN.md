@@ -1305,7 +1305,8 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : H25 pour le dépôt réel.
 
 ### N12 · Écran du dossier de vente dans l'application
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Reste : fusionnée (#275) ; relecture forte 3 P1 corrigés ; Codex à sa limite (H03) ; vérification GitHub verte ; pas vu dans un vrai navigateur ; dépôt réel avec H25 ; suite en N13.
 - Trouvé le 2026-11-02 : M10 a ses routes (`/v1/dossiers`) et aucun écran ne les appelle ; O10 ouvre le dossier, puis l'agent ne peut plus le suivre.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : O10
 - Cahier : M10 ; R15, R16, R19, R52, R201.
