@@ -129,6 +129,18 @@ export class VigilanceCession {
     throw new Error('acquéreur de la cession : trop d’écritures simultanées');
   }
 
+  /** L'acquéreur rangé au dossier, pour l'écran de l'agent du bien ou de la direction : rien de la vigilance [R16, R118]. */
+  async buyer(acces: Acces, viewer: Viewer, fileId: string): Promise<VigilanceCessionResult<{ firstName: string | null; lastName: string | null; legalPerson: boolean; version: number } | null>> {
+    const file = await this.fileFor(acces, viewer, fileId);
+    if (!('id' in file)) return file;
+    const row = await this.db.first<{ person_id: string; legal_person: number; version: number }>('SELECT person_id, legal_person, version FROM business_transfer_buyers WHERE file_id = ? ORDER BY version DESC LIMIT 1', [file.id]);
+    if (!row) return { ok: true, value: null };
+    // Le nom seulement si ce lecteur voit la fiche en entier ; sinon l'écran dit qu'un contact est rangé.
+    const person = await acces.readFiche(viewer, row.person_id);
+    const named = person.ok && person.view === 'full' ? person.value.person : null;
+    return { ok: true, value: { firstName: named?.first_name ?? null, lastName: named?.last_name ?? null, legalPerson: Number(row.legal_person) === 1, version: Number(row.version) } };
+  }
+
   /**
    * Examine un dossier : tant que la cession n'est pas signée, si l'acquéreur est rangé et qu'il manque au coffre les
    * bénéficiaires effectifs (personne morale) ou l'origine des fonds, une alerte au responsable, une seule [R118].

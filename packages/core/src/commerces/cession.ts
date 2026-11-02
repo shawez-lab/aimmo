@@ -188,7 +188,8 @@ type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: null; code: 'sorte' | 'unknown_file' | 'already_open' | 'kind' | 'bad_day' | 'bad_proof' | 'future_day' | 'bad_source' | 'bad_commune' | 'bad_name' }
   | { ok: false; rule: 'R117'; code: 'sequestre_interdit' }
-  | { ok: false; rule: 'R116'; code: 'etapes_bloquantes'; missing: TransferStep[] };
+  | { ok: false; rule: 'R116'; code: 'etapes_bloquantes'; missing: TransferStep[] }
+  | { ok: false; rule: 'R116'; code: 'cession_non_declaree' };
 export type TransferResult<T> = { ok: true; value: T } | Refusal | Problem;
 
 export interface TransferView {
@@ -341,6 +342,15 @@ export class CessionCommerce {
     if (!validDay(day)) return { ok: false, rule: null, code: 'bad_day' };
     if (typeof proofRef !== 'string' || !PROOF_REF.test(proofRef)) return { ok: false, rule: null, code: 'bad_proof' };
     if (PAST_KINDS.includes(kind as TransferDateKind) && day > this.today()) return { ok: false, rule: null, code: 'future_day' };
+    // Une étape bloquante empêche l'étape suivante : pas de signature avant la cession déclarée prête. Corriger le jour
+    // d'une signature déjà rangée reste possible : elle a eu lieu [R116, R17].
+    if (kind === 'cession_signee' && !(await this.db.first("SELECT 1 FROM business_transfer_dates WHERE file_id = ? AND kind = 'cession_signee'", [file.id]))) {
+      const v = await this.view(file);
+      if (!v.ready || !v.declaredReady) {
+        await appendEvent(this.journal, { type: 'commerces.cession.pas_prete', actor: this.actor(viewer), subject: `property:${file.property_id}`, data: { rule: 'R116', missing: v.missing } }, this.now);
+        return v.ready ? { ok: false, rule: 'R116', code: 'cession_non_declaree' } : { ok: false, rule: 'R116', code: 'etapes_bloquantes', missing: v.missing };
+      }
+    }
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM business_transfer_dates WHERE file_id = ? AND kind = ?', [file.id, kind]);
       const version = Number(last?.v ?? 0) + 1;

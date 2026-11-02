@@ -99,6 +99,7 @@ describeWithSqlite('CE08 · vigilance renforcée de la cession', () => {
     t.deposited.add(`${r}:origine_fonds`);
     await t.vigilance.setBuyer(t.acces, t.alex, company, { personId: r, legalPerson: true });
     const signed = await t.readyFile();
+    await t.cessions.declareReady(t.acces, t.alex, signed);
     await t.record(signed, 'cession_signee', '2027-09-01');
     await t.vigilance.setBuyer(t.acces, t.alex, signed, { personId: await t.buyer('Eden'), legalPerson: true });
     const list = await t.vigilance.list(t.compliance);
@@ -148,5 +149,20 @@ describeWithSqlite('CE08 · vigilance renforcée de la cession', () => {
       for (const c of cols) expect(c.name, `${table}.${c.name}`).not.toMatch(/amount|eur|iban|piece|storage|sha256/);
     }
     await expect(t.db.run('DELETE FROM business_transfer_watch')).rejects.toThrow(/rien ne s'efface/);
+  });
+
+  it('[R16] [R118] l’acquéreur rangé se relit, par l’agent du bien ou la direction, sans rien de la vigilance', async () => {
+    const t = await setup();
+    const fileId = await t.readyFile();
+    expect(await t.vigilance.buyer(t.acces, t.alex, fileId)).toEqual({ ok: true, value: null });
+    await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: await t.buyer('Camille'), legalPerson: true });
+    await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: await t.buyer('Dominique'), legalPerson: false });
+    const seen = await t.vigilance.buyer(t.acces, t.alex, fileId);
+    expect(seen).toEqual({ ok: true, value: { firstName: 'Dominique', lastName: 'Inventé', legalPerson: false, version: 2 } });
+    expect(JSON.stringify(seen)).not.toMatch(/alert|missing|origine|benef/i);
+    expect(await t.vigilance.buyer(t.acces, t.direction, fileId)).toMatchObject({ ok: true });
+    expect(await t.vigilance.buyer(t.acces, t.sam, fileId)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.vigilance.buyer(t.acces, t.compliance, fileId)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.vigilance.buyer(t.acces, t.alex, 'inconnu')).toMatchObject({ ok: false, code: 'unknown_file' });
   });
 });

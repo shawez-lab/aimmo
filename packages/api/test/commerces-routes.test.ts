@@ -241,6 +241,15 @@ describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () 
     // Après la cession : 27 octobre + 15 jours = 11 novembre, férié, avancé au 10 ; oppositions : 4 novembre + 10 = dimanche 14, reporté au 15.
     const id = await t.shop();
     const file = await t.ok(t.alex, 'POST', `/commerces/${id}/cession`);
+    await t.ok(t.alex, 'POST', `/commerces/${id}/fiche`, { employees: 0 });
+    await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind: 'cession_prevue', day: '2027-10-27', proofRef: proof() });
+    await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/sequestre`, { kind: 'notaire', name: 'Office notarial inventé' });
+    const blocked = await t.call(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind: 'cession_signee', day: '2027-01-15', proofRef: proof() });
+    expect(blocked.body).toMatchObject({ ok: false, rule: 'R116', code: 'etapes_bloquantes', missing: ['autorisations'] });
+    await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind: 'autorisations_verifiees', day: '2027-01-15', proofRef: proof() });
+    const undeclared = await t.call(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind: 'cession_signee', day: '2027-01-15', proofRef: proof() });
+    expect(undeclared.body).toMatchObject({ ok: false, rule: 'R116', code: 'cession_non_declaree' });
+    await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/prete`);
     t.setDay('2027-11-16');
     for (const [kind, day] of [['cession_signee', '2027-10-27'], ['publication_jal', '2027-11-02'], ['publication_bodacc', '2027-11-04']]) {
       await t.ok(t.alex, 'POST', `/commerces/cessions/${file.fileId}/dates`, { kind, day, proofRef: proof() });
