@@ -183,6 +183,23 @@ describeWithSqlite('C02 · rattacher chaque contact à sa fiche', () => {
     expect((await t.fiche.view(personId)).consents.filter((c) => c.channel === 'phone')).toHaveLength(2);
   });
 
+  it('[R204] après un refus noté, la même personne redemande à être rappelée : sa nouvelle demande rouvre l’appel', async () => {
+    const t = await setup();
+    const journal = new SqlJournalStore(t.db);
+    const fiche = new FicheAgent(t.db, new Acces(t.db, t.store, t.fiche, journal, { now: () => NOW }), { now: () => NOW });
+    const direction = { role: 'direction' as const, userId: 'dir-1', networkId: t.network.id };
+    const before = new Date(NOW.getTime() - 30 * 86_400_000);
+    const first = await t.rattachement.attach(await t.receive(msg('site', 'form', { name: 'Zoé', identifiers: [phone('0600000212')] }, 'Rappelez-moi', { receivedAt: before })));
+    const personId = first.personId as string;
+    await t.db.run("INSERT INTO call_notes (id, network_id, person_id, outcome, basis, noted_by, noted_at) VALUES ('n1', ?, ?, 'refused', 'request', 'agent:a', ?)", [t.network.id, personId, new Date(NOW.getTime() - 86_400_000).toISOString()]);
+    const refused = await fiche.read(direction, personId);
+    expect(refused.ok && refused.value).toMatchObject({ call: null, callRefusal: 'no_consent' });
+    await t.rattachement.attach(await t.receive(msg('site', 'form', { name: 'Zoé', identifiers: [phone('0600000212')] }, 'Finalement, rappelez-moi')));
+    const again = await fiche.read(direction, personId);
+    expect(again.ok && again.value.callRefusal).toBeNull();
+    expect(again.ok && again.value.call).toMatch(/^tel:/);
+  });
+
   it('[R03] une demande récente n’ajoute pas de second accord', async () => {
     const t = await setup();
     const first = await t.rattachement.attach(await t.receive(msg('site', 'form', { name: 'Zoé', identifiers: [phone('0600000211')] }, 'Rappelez-moi')));
