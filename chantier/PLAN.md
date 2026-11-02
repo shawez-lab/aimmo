@@ -1622,7 +1622,7 @@ Voie : 2
 Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes de la cession, mais personne ne peut les faire avancer, ni suivre un repreneur, ni signer un engagement de confidentialité depuis le téléphone. Script à part, comme `/app/finances.js`. Les autres restes sont écrits sous « M13 · Les finances à l'écran ».
 
 ### CE12 · Cession à l'écran : dates, séquestre, acquéreur, étapes prêtes et demande de fonds
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE07, CE11
 - Cahier : M16 Commerces et entreprises ; R16, R110, R201.
 - Objectif : depuis la fiche d'un commerce, l'agent ouvre la cession et la fait avancer par les routes `/commerces/cessions/...` et `/commerces/taches-cession`, sans rien saisir de technique ; à lire au début : `packages/core/src/commerces/` et CE07.
