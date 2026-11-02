@@ -1667,6 +1667,7 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 
 ### CE15 · Repreneurs et rapprochement à l'écran
 - Statut : en cours (voie 2)
+- Décidé (2026-11-02), lecture prudente : ajout d'une liste des projets de reprise, sans laquelle l'agent n'atteint aucun profil : dans l'ordre d'arrivée, prénom et jour seuls [R14] ; pris dans les fiches que le lecteur voit, donc sans refus au journal. Rien n'est lu avant le geste, le rapprochement écrit au journal à chaque lecture. Script à part, comme CE14.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE14
 - Cahier : M16, repreneurs ; R115, R14, R16, R201.
 - Objectif : l'agent complète le profil de repreneur d'un projet d'achat et lit les commerces rapprochés, sans score ni classement.

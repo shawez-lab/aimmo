@@ -195,6 +195,26 @@ export class RepreneursCommerce {
     this.newId = options.newId ?? (() => crypto.randomUUID());
   }
 
+  /**
+   * Les projets de reprise que le lecteur a le droit de voir, pour l'écran : dans l'ordre d'arrivée, sans note ni tri
+   * [R14], le prénom seul, sans rien du profil. `writable` dit si ce lecteur peut compléter le profil [R16].
+   */
+  async list(acces: Acces, viewer: Viewer): Promise<BuyerResult<{ projectId: string; firstName: string | null; createdAt: string; writable: boolean }[]>> {
+    const people = await acces.listPersons(viewer);
+    if (!people.ok) return { ok: false, rule: 'R16', code: people.code };
+    const names = new Map(people.value.map((p) => [p.id, p.first_name]));
+    const rows = await this.db.all<{ id: string; person_id: string; agent_id: string | null; created_at: string }>(
+      "SELECT id, person_id, agent_id, created_at FROM projects WHERE network_id = ? AND kind = 'buy_business' ORDER BY created_at, id",
+      [viewer.networkId],
+    );
+    return {
+      ok: true,
+      value: rows
+        .filter((r) => names.has(r.person_id))
+        .map((r) => ({ projectId: r.id, firstName: names.get(r.person_id) ?? null, createdAt: r.created_at, writable: viewer.role === 'direction' || (viewer.role === 'agent' && r.agent_id === viewer.userId) })),
+    };
+  }
+
   /** Le profil et toutes ses versions, pour qui voit la personne en entier [R16]. */
   async read(acces: Acces, viewer: Viewer, projectId: string): Promise<BuyerResult<{ current: BuyerProfileVersion | null; history: BuyerProfileVersion[] }>> {
     const g = await this.gate(acces, viewer, projectId, 'read');

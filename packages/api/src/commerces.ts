@@ -197,6 +197,7 @@ const ROUTES: CommercesRoute[] = [
   { method: 'GET', pattern: new RegExp(`^/commerces/${ID}/ouvertures$`), name: 'commerces.dossier.ouvertures', roles: READERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.dossier.accesses(c.acces, v, id!)); } },
   { method: 'POST', pattern: new RegExp(`^/commerces/${ID}/tracage$`), name: 'commerces.dossier.tracage', roles: WRITERS, handle: withBody(async (s, v, [id], b) => { const c = core(s); return reply(await c.dossier.trace(c.acces, v, id!, b.text)); }) },
   /* Les repreneurs (CE06) [R115, R14]. */
+  { method: 'GET', pattern: /^\/commerces\/repreneurs$/, name: 'commerces.repreneurs', roles: WRITERS, handle: async (s, v) => { const c = core(s); return reply(await c.repreneurs.list(c.acces, v)); } },
   { method: 'GET', pattern: new RegExp(`^/commerces/repreneurs/${ID}$`), name: 'commerces.repreneur', roles: READERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.repreneurs.read(c.acces, v, id!)); } },
   { method: 'POST', pattern: new RegExp(`^/commerces/repreneurs/${ID}$`), name: 'commerces.repreneur.modifie', roles: WRITERS, handle: withBody(async (s, v, [id], b) => { const c = core(s); return reply(await c.repreneurs.update(c.acces, v, id!, b)); }) },
   { method: 'GET', pattern: new RegExp(`^/commerces/repreneurs/${ID}/biens$`), name: 'commerces.repreneur.biens', roles: READERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.repreneurs.match(c.acces, v, id!)); } },

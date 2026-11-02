@@ -184,6 +184,8 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - `GET /v1/commerces/engagements/<id>` : l'agent du bien ou la direction lit le texte à faire lire avant le code (modèle, bien, signataire ; aucun chiffre), s'il est signé et s'il est révoqué [R110, R16].
 - `GET /v1/commerces/<id>/demandes` rend aussi, pour chaque repreneur, `ndaId` (l'engagement en vigueur, `null` si le dernier est révoqué ou si aucun modèle n'était rangé) et `signed`.
 
+- `GET /v1/commerces/repreneurs` (CE15) : l'agent ou la direction lit les projets de reprise qu'il a le droit de voir, dans l'ordre d'arrivée, sans note ni tri [R14] : le prénom, le jour, et `writable` s'il peut compléter le profil.
+
 ## Pilotage, en mode essai (K08)
 
 Sous `/v1/pilotage`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Un agent ne lit que ses chiffres, ses commissions et ses reversements [R68] ; la direction lit le réseau ; la conformité n'a pas les chiffres. Aucune route ne reçoit un montant : un corps qui en porte un est refusé (`amount_refused`, R67).
