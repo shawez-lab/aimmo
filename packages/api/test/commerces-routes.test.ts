@@ -40,6 +40,7 @@ async function setup(writer?: CommercesServices['presentationWriter']) {
   const deposited = new Set<string>();
   let code = 100_000;
   let lastCode = '';
+  const closed = new Set<string>();
   const files = new Map<string, string>([['r2://essai/bilan.txt', 'Bilan inventé. Total du bilan : 812 300 €.']]);
   const s: CommercesServices = {
     db,
@@ -48,7 +49,7 @@ async function setup(writer?: CommercesServices['presentationWriter']) {
     identity: { state: async (_n, p) => ({ identityVerifiedOn: verified.has(p) ? '2027-09-01' : null }) },
     storage: { read: async (ref) => files.get(ref) ?? null },
     vault: { everDeposited: async (_n, p, kinds) => kinds.some((k) => deposited.has(`${p}:${k}`)) },
-    diffusion: { canDiffuse: async () => ({ allowed: true, reason: 'ok' }) },
+    diffusion: { canDiffuse: async (_n, p) => ({ allowed: !closed.has(p), reason: 'essai' }) },
     ...(writer ? { presentationWriter: writer } : {}),
     newId: uuid,
     newCode: () => (lastCode = String((code += 1))),
@@ -109,7 +110,7 @@ async function setup(writer?: CommercesServices['presentationWriter']) {
     );
     return /dossier\/([a-z]{40})/.exec(row?.body ?? '')?.[1] ?? null;
   };
-  return { db, journal, call, ok, read, shop, buyer, tokenFor, alex, bea, dir, compliance, partner, verified, deposited, lastCode: () => lastCode, setDay: (d: string) => (clock = Date.parse(`${d}T08:00:00.000Z`)) };
+  return { closed, store, alexId: alexA.id, networkId: network.id, db, journal, call, ok, read, shop, buyer, tokenFor, alex, bea, dir, compliance, partner, verified, deposited, lastCode: () => lastCode, setDay: (d: string) => (clock = Date.parse(`${d}T08:00:00.000Z`)) };
 }
 
 describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () => {
@@ -386,5 +387,44 @@ describeWithSqlite('CE14 · les lectures de l’écran des engagements', () => {
     expect(boxed.filter((m) => m.body.includes(code))).toHaveLength(1);
     expect(JSON.stringify(open)).not.toContain(code);
     expect(JSON.stringify(await t.journal.all())).not.toContain(code);
+  });
+});
+
+describeWithSqlite('CE15 · les repreneurs à l’écran, par les routes', () => {
+  const ready = async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    const buyer = await t.buyer('A');
+    const project = await t.store.createProject({ networkId: t.networkId, agentId: t.alexId, personId: buyer.id, kind: 'buy_business' });
+    return { t, buyer, project };
+  };
+  it('[R14] [R16] les projets dans l’ordre d’arrivée, sans rien du profil ; ni un autre agent, ni la conformité', async () => {
+    const { t, buyer, project } = await ready();
+    await t.ok(t.alex, 'POST', `/commerces/repreneurs/${project.id}`, { budgetMaxEur: 500_000, declaredContributionEur: 90_000 });
+    const other = await t.buyer('B');
+    const second = await t.store.createProject({ networkId: t.networkId, agentId: t.alexId, personId: other.id, kind: 'buy_business' });
+    await t.store.createProject({ networkId: t.networkId, agentId: t.alexId, personId: other.id, kind: 'buy' });
+    const seen = await t.ok(t.alex, 'GET', '/commerces/repreneurs');
+    expect(new Set(seen.map((x: { projectId: string }) => x.projectId))).toEqual(new Set([project.id, second.id]));
+    expect(seen.find((x: { projectId: string }) => x.projectId === project.id)).toEqual({ projectId: project.id, firstName: 'RepreneurA', createdAt: expect.any(String), writable: true });
+    // Rien pour classer : ni montant, ni score, ni coordonnée ; l'ordre est celui de la création, sans autre critère.
+    expect(JSON.stringify(seen)).not.toMatch(/500000|90000|score|note|rang|@/);
+    expect(seen.map((x: { createdAt: string; projectId: string }) => `${x.createdAt}|${x.projectId}`)).toEqual(seen.map((x: { createdAt: string; projectId: string }) => `${x.createdAt}|${x.projectId}`).sort());
+    expect(await t.ok(t.bea, 'GET', '/commerces/repreneurs')).toEqual([]);
+    expect((await t.ok(t.dir, 'GET', '/commerces/repreneurs')).map((x: { writable: boolean }) => x.writable)).toEqual([true, true]);
+    for (const who of [t.compliance, t.partner]) expect((await t.call(who, 'GET', '/commerces/repreneurs')).status).toBe(403);
+    expect(buyer.id).toBeTruthy();
+  });
+  it('[R110] [R115] le rapprochement : seulement les commerces diffusables, sans aucun chiffre confidentiel', async () => {
+    const { t, project } = await ready();
+    const shown = await t.shop();
+    const closed = await t.shop();
+    t.closed.add(closed);
+    await t.ok(t.alex, 'POST', `/commerces/repreneurs/${project.id}`, { activities: ['restaurant'], postalCodes: ['21000'] });
+    const found = await t.ok(t.alex, 'GET', `/commerces/repreneurs/${project.id}/biens`);
+    expect(found.map((m: { propertyId: string }) => m.propertyId)).toEqual([shown]);
+    for (const secret of SECRETS) expect(JSON.stringify(found), secret).not.toContain(secret);
+    t.closed.add(shown);
+    expect(await t.ok(t.alex, 'GET', `/commerces/repreneurs/${project.id}/biens`)).toEqual([]);
   });
 });

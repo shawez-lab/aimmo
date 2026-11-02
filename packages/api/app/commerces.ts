@@ -16,7 +16,8 @@ import { OFFER_DEPOSIT_MAX_BYTES, OFFER_DEPOSIT_TYPES } from '../../core/src/off
  * range sous `preuves/` et contrôle les droits ; l'acquéreur se choisit dans les contacts que l'agent a le droit de voir :
  * personne ne saisit d'identifiant ni de référence.
  *
- * CE14 : les gestes des demandes et de l'engagement sont servis à part (`commerces-engagements.ts`).
+ * CE14 : les gestes des demandes et de l'engagement sont servis à part (`commerces-engagements.ts`) ; CE15 : les
+ * repreneurs de même (`commerces-repreneurs.ts`).
  */
 
 const STEP_LABELS = {
@@ -195,9 +196,9 @@ globalThis.AIMMO_COMMERCES = function (t) {
   var CE_FINAL = ${JSON.stringify(FINAL_DATES)};
   var CE_SAY = ${JSON.stringify(CESSION_REFUSALS)};
   var CE_PROOF = ${JSON.stringify(OFFER_DEPOSIT_TYPES.preuve)}, CE_MAX = ${OFFER_DEPOSIT_MAX_BYTES};
-  var ceId = null, ceEng = null, ceEngBusy = false;
+  var ceId = null, ceTools = {}, ceBusy = {};
   function ceState(t) { $('commerces-etat').textContent = t; }
-  function wipeCommerces() { clear($('commerces-corps')); ceState(''); $('commerces-titre').textContent = 'Commerces'; ceId = null; if (ceEng) ceEng.wipe(); }
+  function wipeCommerces() { clear($('commerces-corps')); ceState(''); $('commerces-titre').textContent = 'Commerces'; ceId = null; if (ceTools['commerces-engagements']) ceTools['commerces-engagements'].wipe(); }
   function ceEur(c) { return typeof c === 'number' ? String(Math.round(c / 100)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, '\\u202f') + '\\u00a0€' : ''; }
   function ceDay(iso) { return typeof iso === 'string' ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : ''; }
   function ceBlock(title) {
@@ -229,6 +230,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       ceTasks(body, both[1], list);
       ceScales(body, both[2]);
       if (both[2]) ceModel(body);
+      if (both[1] || both[2]) ceRepreneurs(body);
       if (!list.length) body.appendChild(el('p', 'Aucun commerce pour le moment.', 'doux'));
       var ul = el('ul', null, 'liste');
       list.forEach(function (c) {
@@ -531,31 +533,40 @@ globalThis.AIMMO_COMMERCES = function (t) {
     }
     b.appendChild(button(p ? 'Préparer une nouvelle présentation' : 'Préparer la présentation', function () { ceAct(base + '/presentations', undefined, 'Il faut d’abord une estimation validée.', 'Présentation préparée : relisez-la avant de la valider.'); }));
   }
-  /* Les demandes et l'engagement (CE14), servis à part, chargés au premier geste [R201]. */
-  function ceEngLoad(act) {
-    if (ceEng) return act(ceEng);
-    if (ceEngBusy) return;
-    ceEngBusy = true;
+  /* Les demandes et l'engagement (CE14), les repreneurs (CE15) : servis à part, chargés au premier geste [R201]. */
+  function ceLoad(name, global, act) {
+    if (ceTools[name]) return act(ceTools[name]);
+    if (ceBusy[name]) return;
+    ceBusy[name] = true;
     var mine = t.session();
     ceState('Chargement…');
     var s = el('script');
-    s.setAttribute('src', '/app/commerces-engagements.js');
+    s.setAttribute('src', '/app/' + name + '.js');
     s.addEventListener('load', function () {
-      ceEngBusy = false;
-      var make = globalThis.AIMMO_CE_ENGAGEMENTS;
-      try { delete globalThis.AIMMO_CE_ENGAGEMENTS; } catch (e) { /* rien à retirer */ }
+      ceBusy[name] = false;
+      var make = globalThis[global];
+      try { delete globalThis[global]; } catch (e) { /* rien à retirer */ }
       if (typeof make !== 'function') return;
-      ceEng = make({
+      ceTools[name] = make({
         el: el, clear: clear, send: send, button: button, field: field, ID: ID, session: t.session, say: ceState, option: ceOption, fold: ceFold, day: ceDay,
         reload: function (said) { return openCommerce(ceId, $('commerces-titre').textContent, ceKind, said); },
       });
-      if (mine === t.session()) act(ceEng);
+      if (mine === t.session()) act(ceTools[name]);
     });
     s.addEventListener('error', function () {
-      ceEngBusy = false;
+      ceBusy[name] = false;
       if (mine === t.session()) ceState('Pas de réseau. Réessayez dans un moment.');
     });
     $('commerces').appendChild(s);
+  }
+  function ceEngLoad(act) { ceLoad('commerces-engagements', 'AIMMO_CE_ENGAGEMENTS', act); }
+  function ceRepreneurs(body) {
+    var b = el('section', null, 'bloc');
+    b.appendChild(el('h3', 'Repreneurs'));
+    body.appendChild(b);
+    var box = el('div');
+    b.appendChild(box);
+    box.appendChild(button('Voir les repreneurs', function () { ceLoad('commerces-repreneurs', 'AIMMO_CE_REPRENEURS', function (e) { e.list(box); }); }));
   }
   function ceModel(body) {
     var b = el('section', null, 'bloc');

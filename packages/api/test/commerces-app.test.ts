@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems, htmlProblems } from '../../core/src/design/audit.ts';
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
 import { COMMERCES_ENGAGEMENTS_SCRIPT } from '../app/commerces-engagements.ts';
+import { COMMERCES_REPRENEURS_SCRIPT } from '../app/commerces-repreneurs.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
@@ -972,5 +973,146 @@ describe('CE14 · demandes et engagement de confidentialité à l’écran', () 
     expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: '', js: COMMERCES_ENGAGEMENTS_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(COMMERCES_ENGAGEMENTS_SCRIPT).not.toMatch(/innerHTML|localStorage|sessionStorage/);
+  });
+});
+
+describe('CE15 · repreneurs et rapprochement à l’écran', () => {
+  const ROWS = [
+    { projectId: 'p1', firstName: 'Zoé', createdAt: '2027-09-01T08:00:00.000Z', writable: true },
+    { projectId: 'p2', firstName: INJECTED, createdAt: '2027-09-02T08:00:00.000Z', writable: false },
+  ];
+  const PROFILE = { activities: ['restaurant'], kinds: [], postalCodes: ['21000'], budgetMaxEur: 500_000, experience: 'reconversion', declaredContributionEur: 90_000, declaredFinancing: 'pret_et_apport' };
+  const READS: Record<string, Answer> = {
+    'GET /v1/commerces/repreneurs': ok(ROWS),
+    'GET /v1/commerces/repreneurs/p1': ok({ current: { version: 2, profile: PROFILE }, history: [] }),
+    'GET /v1/commerces/repreneurs/p2': ok({ current: { version: 1, profile: PROFILE }, history: [] }),
+    'GET /v1/commerces/repreneurs/p1/biens': ok([
+      { propertyId: 'b1', title: `Restaurant à reprendre ${INJECTED}`, publicView: { kind: 'business', activity: 'restaurant', city: 'Dijon' }, priceLowEuros: 306_172, priceHighEuros: 489_876, score: 97, rank: 1, signName: 'Enseigne Inventée Secrète' },
+    ]),
+  };
+  async function opened(more: Record<string, Answer> = {}) {
+    const t = await run({ ...READS, ...more });
+    await t.click(t.els['commerces-ouvrir']);
+    await t.loadScript();
+    await t.click(t.byText('Voir les repreneurs'));
+    const s = t.scripts().filter((e) => e.attributes.src === '/app/commerces-repreneurs.js');
+    expect(s).toHaveLength(1);
+    runInNewContext(COMMERCES_REPRENEURS_SCRIPT, t.context);
+    s[0]!.listeners.load!({});
+    await settle();
+    return t;
+  }
+  const words = (t: Awaited<ReturnType<typeof run>>) => t.body().all().map((e) => e.textContent);
+  const posted = (t: Awaited<ReturnType<typeof run>>) => t.calls.filter((c) => c.method === 'POST' && c.url === '/v1/commerces/repreneurs/p1');
+
+  it('[R201] rien n’est chargé ni lu avant le geste ; le script est servi à part', async () => {
+    const t = await run(READS);
+    await t.click(t.els['commerces-ouvrir']);
+    await t.loadScript();
+    expect(t.calls.some((c) => c.url.includes('/repreneurs'))).toBe(false);
+    expect(t.scripts().map((e) => e.attributes.src)).toEqual(['/app/commerces.js']);
+    expect(AGENT_APP_FILES['/app/commerces-repreneurs.js']).toBe(COMMERCES_REPRENEURS_SCRIPT);
+    expect(AGENT_APP_SHELL).not.toContain('/app/commerces-repreneurs.js');
+  });
+  it('[R16] qui n’est ni agent ni direction n’a pas le bloc', async () => {
+    const t = await run({ 'GET /v1/moi': ok({ role: 'compliance' }) });
+    await t.click(t.els['commerces-ouvrir']);
+    await t.loadScript();
+    expect(t.byText('Voir les repreneurs')).toBeUndefined();
+  });
+  it('[R14] les repreneurs se lisent dans l’ordre du serveur, sans note ni tri, tout texte reçu reste du texte', async () => {
+    const t = await opened();
+    const strong = t.body().all().filter((e) => e.tagName === 'strong').map((e) => e.textContent);
+    expect(strong.filter((x) => x.includes('projet du'))).toEqual(['Zoé, projet du 01/09/2027', `${INJECTED}, projet du 02/09/2027`]);
+    expect(words(t)).toContain('Dans l’ordre d’arrivée, sans note ni tri.');
+    expect(t.body().all().some((e) => e.tagName === 'img' || e.tagName === 'select')).toBe(false);
+    expect(t.calls.some((c) => c.url.includes('/repreneurs/'))).toBe(false);
+  });
+  it('[R17] [R115] seuls les champs changés partent ; sans changement, aucune version', async () => {
+    const t = await opened({ 'POST /v1/commerces/repreneurs/p1': ok({ version: 3 }) });
+    await t.click(t.byText('Ouvrir le profil', 0));
+    await t.click(t.byText('Ranger le profil'));
+    expect(t.state()).toBe('Rien n’a changé : aucune version ajoutée.');
+    expect(posted(t)).toHaveLength(0);
+    t.input('Budget le plus haut, en euros').value = '450 000 €';
+    t.input('Codes postaux, séparés par des virgules').value = '21000, 21800, 21000';
+    t.input('Apport déclaré, en euros').value = '';
+    t.input('Financement déclaré').value = '';
+    t.input('Murs commerciaux').checked = true;
+    await t.click(t.byText('Ranger le profil'));
+    expect(JSON.parse(posted(t)[0]!.body!)).toEqual({ kinds: ['business_walls'], postalCodes: ['21000', '21800'], budgetMaxEur: 450_000, declaredContributionEur: null, declaredFinancing: null });
+    expect(t.state()).toBe('Profil rangé : une nouvelle version s’ajoute.');
+  });
+  it('[R115] le formulaire n’a aucun champ de revenus, de patrimoine, de crédit ni de note, et dit que le déclaré n’est pas vérifié', async () => {
+    const t = await opened();
+    await t.click(t.byText('Ouvrir le profil', 0));
+    const labels = t.body().all().filter((e) => e.tagName === 'label').map((e) => e.textContent.toLowerCase()).join(' | ');
+    expect(labels).not.toMatch(/revenu|patrimoine|crédit|solvab|note|score/);
+    expect(words(t)).toContain('Ce qui suit est ce que la personne déclare, tel qu’elle le dit : rien n’est vérifié, évalué ni noté.');
+  });
+  it('une valeur illisible est dite et rien ne part ; le refus d’un champ est dit par son nom', async () => {
+    const t = await opened({ 'POST /v1/commerces/repreneurs/p1': no(400, { ok: false, rule: null, code: 'valeur', field: 'budgetMaxEur' }) });
+    await t.click(t.byText('Ouvrir le profil', 0));
+    t.input('Budget le plus haut, en euros').value = 'beaucoup';
+    await t.click(t.byText('Ranger le profil'));
+    expect(t.state()).toContain('Vérifiez le budget');
+    t.input('Budget le plus haut, en euros').value = '500000';
+    t.input('Apport déclaré, en euros').value = '12,5';
+    await t.click(t.byText('Ranger le profil'));
+    expect(t.state()).toContain('Vérifiez l’apport déclaré');
+    t.input('Apport déclaré, en euros').value = '90000';
+    t.input('Codes postaux, séparés par des virgules').value = '210';
+    await t.click(t.byText('Ranger le profil'));
+    expect(t.state()).toContain('5 chiffres');
+    expect(posted(t)).toHaveLength(0);
+    t.input('Codes postaux, séparés par des virgules').value = '21000';
+    t.input('Budget le plus haut, en euros').value = '600000';
+    await t.click(t.byText('Ranger le profil'));
+    expect(t.state()).toBe('Vérifiez le budget.');
+  });
+  it('[R10] une réponse perdue est dite telle ; un refus de droits est dit', async () => {
+    const t = await opened();
+    await t.click(t.byText('Ouvrir le profil', 0));
+    t.input('Budget le plus haut, en euros').value = '600000';
+    await t.click(t.byText('Ranger le profil'));
+    expect(t.state()).toContain('Réponse perdue');
+    t.table['POST /v1/commerces/repreneurs/p1'] = no(403, { ok: false, rule: 'R16', code: 'role' });
+    await t.click(t.byText('Ranger le profil'));
+    expect(t.state()).toBe('Ce geste n’est pas dans vos droits.');
+  });
+  it('[R16] qui ne peut pas écrire lit le profil, sans formulaire', async () => {
+    const t = await opened();
+    await t.click(t.byText('Ouvrir le profil', 1));
+    expect(t.byText('Ranger le profil')).toBeUndefined();
+    expect(words(t)).toContain('Apport déclaré : 90\u202f000\u00a0€');
+    expect(t.byText('Voir les commerces rapprochés')).toBeDefined();
+  });
+  it('[R14] [R110] le rapprochement, au geste : aucun rang ni score, et seuls les champs publics sont posés', async () => {
+    const t = await opened();
+    await t.click(t.byText('Ouvrir le profil', 0));
+    expect(t.calls.some((c) => c.url.endsWith('/biens'))).toBe(false);
+    await t.click(t.byText('Voir les commerces rapprochés'));
+    const all = words(t).join(' | ');
+    expect(words(t)).toContain(`Restaurant à reprendre ${INJECTED}`);
+    expect(words(t)).toContain('De 306\u202f172\u00a0€ à 489\u202f876\u00a0€');
+    expect(all).not.toContain('97');
+    expect(all).not.toContain('Enseigne Inventée Secrète');
+    expect(t.body().all().some((e) => e.tagName === 'ol' || e.tagName === 'img')).toBe(false);
+  });
+  it('aucun commerce ou une lecture manquée se disent, sans se confondre', async () => {
+    const t = await opened({ 'GET /v1/commerces/repreneurs/p1/biens': ok([]) });
+    await t.click(t.byText('Ouvrir le profil', 0));
+    await t.click(t.byText('Voir les commerces rapprochés'));
+    expect(words(t)).toContain('Aucun commerce diffusable ne répond à ce profil pour le moment.');
+    const lost = await opened({ 'GET /v1/commerces/repreneurs/p1/biens': no(500, { ok: false }) });
+    await lost.click(lost.byText('Ouvrir le profil', 0));
+    await lost.click(lost.byText('Voir les commerces rapprochés'));
+    expect(lost.state()).toBe('Le rapprochement ne se lit pas pour le moment.');
+    expect(lost.byText('Voir les commerces rapprochés')).toBeDefined();
+  });
+  it('[R201] les scripts tiennent le budget d’une page', () => {
+    expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(budgetProblems({ html: '', js: COMMERCES_REPRENEURS_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(COMMERCES_REPRENEURS_SCRIPT).not.toMatch(/innerHTML|localStorage|sessionStorage/);
   });
 });
