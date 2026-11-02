@@ -73,7 +73,42 @@ const CESSION_REFUSALS = {
   empreinte_differente: 'Le fichier a mal voyagé : réessayez.',
   stockage_indisponible: 'Le stockage ne répond pas : réessayez plus tard.',
   unknown_property: 'Ce bien n’a pas d’agent : aucune preuve ne peut s’y déposer.',
+  bornes: 'Vérifiez les bornes : la basse ne dépasse pas la haute, et elles restent dans les limites du barème.',
+  source: 'Écrivez la source du barème : 3 à 300 caractères.',
+  date_source: 'Donnez la date de la source.',
+  activite: 'Choisissez l’activité dans la liste.',
+  methode: 'Choisissez la méthode dans la liste.',
 };
+const LICENSE_LABELS = {
+  licence_restaurant: 'Licence restaurant',
+  petite_licence_restaurant: 'Petite licence restaurant',
+  licence_3: 'Licence 3',
+  licence_4: 'Licence 4',
+  licence_a_emporter: 'Licence à emporter',
+  debit_de_tabac: 'Débit de tabac',
+  terrasse: 'Terrasse',
+  agrement_sanitaire: 'Agrément sanitaire',
+  officine: 'Officine',
+  autre: 'Autre autorisation',
+};
+const LEASE_USE_LABELS = { all_trades: 'Tous commerces', named_activity: 'Activité nommée', named_and_related: 'Activité nommée et connexes' };
+const LEASE_ASSIGNMENT_LABELS = { free: 'Cession libre', landlord_approval: 'Avec l’accord du bailleur', with_business_only: 'Avec le fonds seulement' };
+/** Le nom de chaque champ de la fiche, pour dire lequel le serveur a refusé. */
+const SHEET_LABELS = {
+  activity: 'l’activité',
+  signName: 'l’enseigne',
+  fiscalYears: 'les exercices (années de 2000 à 2100, sans doublon)',
+  leaseStart: 'le début du bail',
+  leaseYears: 'la durée du bail (1 à 99 ans)',
+  leaseAnnualRentCents: 'le loyer annuel',
+  leaseUse: 'la destination du bail',
+  leaseAssignment: 'la clause de cession',
+  employees: 'le nombre de salariés',
+  equipment: 'le matériel (80 caractères par ligne, 30 lignes au plus)',
+  licenses: 'les autorisations',
+};
+/** Le barème, dit dans l'unité de son métier ; le serveur le range en centièmes. */
+const SCALE_LABELS = { revenue_pct: 'Part du chiffre d’affaires, en %', ebitda_multiple: 'Multiple de l’excédent brut', rent_yield: 'Rendement du loyer, en %' };
 const KIND_LABELS = { business: 'Fonds de commerce', business_walls: 'Murs commerciaux', commercial: 'Local professionnel' };
 
 export const COMMERCES_HOME_HTML = `<section class="bloc" aria-labelledby="titre-commerces-accueil">
@@ -148,6 +183,11 @@ globalThis.AIMMO_COMMERCES = function (t) {
   var CE_OPEN = ${JSON.stringify(OPENING_LABELS)};
   var CE_KINDS = ${JSON.stringify(KIND_LABELS)};
   var CE_METHODS = { business: { revenue_pct: 'Part du chiffre d’affaires', ebitda_multiple: 'Multiple de l’excédent brut' }, business_walls: { rent_yield: 'Rendement du loyer' }, commercial: { rent_yield: 'Rendement du loyer' } };
+  var CE_LICENSES = ${JSON.stringify(LICENSE_LABELS)};
+  var CE_LEASE_USE = ${JSON.stringify(LEASE_USE_LABELS)};
+  var CE_LEASE_ASSIGN = ${JSON.stringify(LEASE_ASSIGNMENT_LABELS)};
+  var CE_SHEET = ${JSON.stringify(SHEET_LABELS)};
+  var CE_SCALE = ${JSON.stringify(SCALE_LABELS)};
   var CE_DATES = ${JSON.stringify(DATE_LABELS)};
   var CE_FINAL = ${JSON.stringify(FINAL_DATES)};
   var CE_SAY = ${JSON.stringify(CESSION_REFUSALS)};
@@ -170,18 +210,21 @@ globalThis.AIMMO_COMMERCES = function (t) {
     show('commerces');
     ceState('Chargement…');
     /* Les tâches sont réservées aux agents : la direction ne les demande pas, pour n'écrire aucun refus au journal. */
-    var tasks = send('/v1/moi', 'GET').then(function (me) {
+    var who = send('/v1/moi', 'GET');
+    var scales = who.then(function (me) { return me.ok && me.body.data && me.body.data.role === 'direction' ? send('/v1/commerces/baremes', 'GET') : null; });
+    var tasks = who.then(function (me) {
       /* Une lecture manquée n'est pas « aucune tâche » : elle passe à ceTasks, qui le dit. */
       if (!me.ok) return me;
       return me.body.data && me.body.data.role === 'agent' ? send('/v1/commerces/taches-cession', 'GET') : null;
     });
-    return Promise.all([send('/v1/commerces', 'GET'), tasks]).then(function (both) {
+    return Promise.all([send('/v1/commerces', 'GET'), tasks, scales]).then(function (both) {
       var res = both[0];
       if (res.gone) return false;
       if (!res.ok) { ceState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Indisponible pour le moment. Réessayez plus tard.'); return false; }
       var list = Array.isArray(res.body.data) ? res.body.data : [];
       var body = $('commerces-corps');
       ceTasks(body, both[1], list);
+      ceScales(body, both[2]);
       if (!list.length) body.appendChild(el('p', 'Aucun commerce pour le moment.', 'doux'));
       var ul = el('ul', null, 'liste');
       list.forEach(function (c) {
@@ -219,12 +262,192 @@ globalThis.AIMMO_COMMERCES = function (t) {
     b.appendChild(ul);
     body.appendChild(b);
   }
+  /* Un nombre au centième, sans passer par un flottant : « 8,5 » rend 850. */
+  function ceHundredths(text, digits) {
+    var m = new RegExp('^(-?)(\\\\d{1,' + digits + '})(?:[.,](\\\\d{1,2}))?$').exec(String(text || '').replace(/[\\s\\u00a0\\u202f]/g, ''));
+    if (!m) return null;
+    var n = Number(m[2]) * 100 + Number(((m[3] || '') + '00').slice(0, 2));
+    return m[1] && n ? -n : n;
+  }
+  function ceHundredthsText(n) {
+    if (typeof n !== 'number') return '';
+    var a = Math.abs(n), c = a % 100;
+    return (n < 0 ? '-' : '') + Math.floor(a / 100) + (c ? ',' + String(c + 100).slice(1) : '');
+  }
+  function ceScales(body, res) {
+    if (!res || res.gone) return;
+    var b = el('section', null, 'bloc');
+    b.appendChild(el('h3', 'Barèmes d’estimation'));
+    body.appendChild(b);
+    if (!res.ok) { b.appendChild(el('p', 'Les barèmes ne se lisent pas pour le moment.', 'doux')); return; }
+    var list = Array.isArray(res.body.data) ? res.body.data : [];
+    if (!list.length) b.appendChild(el('p', 'Aucun barème : aucune estimation ne peut se calculer.', 'doux'));
+    var ul = el('ul', null, 'liste');
+    list.forEach(function (x) {
+      ul.appendChild(el('li', (CE_ACT[x.activity] || 'activité') + ' · ' + (CE_SCALE[x.method] || 'méthode') + ' : ' + ceHundredthsText(x.low) + ' à ' + ceHundredthsText(x.high) + ' (' + x.source + ', ' + ceDay(x.sourceDate) + ')'));
+    });
+    b.appendChild(ul);
+    var f = ceFold(b, 'Ranger un barème');
+    var activity = field(f, 'ce-bareme-activite', 'Activité', 'select');
+    ceOption(activity, '', 'À choisir');
+    Object.keys(CE_ACT).forEach(function (k) { ceOption(activity, k, CE_ACT[k]); });
+    var method = field(f, 'ce-bareme-methode', 'Méthode', 'select');
+    Object.keys(CE_SCALE).forEach(function (k) { ceOption(method, k, CE_SCALE[k]); });
+    var low = field(f, 'ce-bareme-bas', 'Borne basse');
+    var high = field(f, 'ce-bareme-haut', 'Borne haute');
+    var src = field(f, 'ce-bareme-source', 'Sa source');
+    var when = field(f, 'ce-bareme-jour', 'Date de la source');
+    when.setAttribute('type', 'date');
+    var go = button('Ranger le barème', function () {
+      var l = ceHundredths(low.value, 4), h = ceHundredths(high.value, 4);
+      if (!activity.value) { ceState(CE_SAY.activite); return; }
+      if (l === null || h === null || l < 0 || h < 0) { ceState('Écrivez chaque borne en chiffres, par exemple 8,5.'); return; }
+      go.disabled = true;
+      ceState('Envoi…');
+      var mine = t.session();
+      send('/v1/commerces/baremes', 'POST', { activity: activity.value, method: method.value, low: l, high: h, source: String(src.value || '').trim(), sourceDate: when.value }).then(function (r) {
+        if (r.gone || mine !== t.session()) return;
+        if (!r.ok) { go.disabled = false; ceState(ceWhy(r, 'Le barème n’est pas rangé.')); return; }
+        openCommerces('Barème rangé.');
+      });
+    });
+    f.appendChild(go);
+  }
+  /* La fiche : lue seulement au geste, jamais gardée. Seuls les champs changés partent : la nouvelle version ne reprend rien d'autre. */
+  function ceSheetForm(b, base) {
+    var f = ceFold(b, 'Compléter la fiche');
+    var load = button('Lire et modifier la fiche', function () {
+      load.disabled = true;
+      ceState('Chargement…');
+      var mine = t.session();
+      send(base + '/fiche', 'GET').then(function (res) {
+        if (res.gone || mine !== t.session()) return;
+        if (!res.ok) { load.disabled = false; ceState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.status === 403 ? 'Cette fiche n’est pas dans vos droits.' : 'La fiche ne se lit pas pour le moment.'); return; }
+        ceState('');
+        load.hidden = true;
+        ceSheetFields(f, base, res.body.data && res.body.data.current ? res.body.data.current.sheet : {});
+      });
+    });
+    f.appendChild(load);
+  }
+  function ceSelect(box, id, label, map, value) {
+    var s = field(box, id, label, 'select');
+    ceOption(s, '', 'À saisir');
+    Object.keys(map).forEach(function (k) { ceOption(s, k, map[k]); });
+    s.value = value || '';
+    return s;
+  }
+  function ceInput(box, id, label, value, type) {
+    var i = field(box, id, label);
+    if (type) i.setAttribute('type', type);
+    i.value = value === null || value === undefined ? '' : String(value);
+    return i;
+  }
+  function ceSheetFields(f, base, cur) {
+    var business = ceKind === 'business';
+    var activity = ceSelect(f, 'ce-fiche-activite', 'Activité', CE_ACT, cur.activity);
+    var sign = ceInput(f, 'ce-fiche-enseigne', 'Enseigne (jamais publiée)', cur.signName);
+    var years = [];
+    if (business) {
+      var had = Array.isArray(cur.fiscalYears) ? cur.fiscalYears : [];
+      [0, 1, 2].forEach(function (i) {
+        var y = had[i] || {}, n = 'Exercice ' + (i + 1) + ' : ', id = 'ce-fiche-ex' + i;
+        years.push({
+          year: ceInput(f, id + '-annee', n + 'année de clôture', y.year),
+          revenue: ceInput(f, id + '-ca', n + 'chiffre d’affaires, en euros', ceHundredthsText(y.revenueCents)),
+          result: ceInput(f, id + '-resultat', n + 'résultat, en euros', ceHundredthsText(y.resultCents)),
+          ebitda: ceInput(f, id + '-ebe', n + 'excédent brut, en euros (si connu)', ceHundredthsText(y.ebitdaCents)),
+        });
+      });
+    }
+    var start = ceInput(f, 'ce-fiche-bail-debut', 'Début du bail', cur.leaseStart, 'date');
+    var length = ceInput(f, 'ce-fiche-bail-duree', 'Durée du bail, en années', cur.leaseYears);
+    var rent = ceInput(f, 'ce-fiche-bail-loyer', 'Loyer annuel, en euros', ceHundredthsText(cur.leaseAnnualRentCents));
+    var use = ceSelect(f, 'ce-fiche-bail-destination', 'Destination du bail', CE_LEASE_USE, cur.leaseUse);
+    var assign = ceSelect(f, 'ce-fiche-bail-cession', 'Clause de cession du bail', CE_LEASE_ASSIGN, cur.leaseAssignment);
+    var staff = business ? ceInput(f, 'ce-fiche-salaries', 'Nombre de salariés', cur.employees) : null;
+    var gear = field(f, 'ce-fiche-materiel', 'Matériel, une ligne par élément', 'textarea');
+    gear.value = (cur.equipment || []).join('\\n');
+    var boxes = {};
+    Object.keys(CE_LICENSES).forEach(function (k) {
+      var wrap = el('div', null, 'case'), c = el('input'), id = 'ce-fiche-aut-' + k, l = el('label', CE_LICENSES[k]);
+      c.setAttribute('type', 'checkbox');
+      c.setAttribute('id', id);
+      c.checked = (cur.licenses || []).indexOf(k) >= 0;
+      l.setAttribute('for', id);
+      wrap.appendChild(c);
+      wrap.appendChild(l);
+      f.appendChild(wrap);
+      boxes[k] = c;
+    });
+    var go = button('Ranger la fiche', function () {
+      var next = {}, problem = null;
+      function bad(what) { if (!problem) problem = 'Vérifiez ' + what + '.'; }
+      function whole(input, what) {
+        var v = String(input.value || '').trim();
+        if (!v) return null;
+        if (!/^\\d{1,6}$/.test(v)) { bad(what); return null; }
+        return Number(v);
+      }
+      function money(input, what) {
+        var v = String(input.value || '').trim();
+        if (!v) return null;
+        var c = ceHundredths(v, 12);
+        if (c === null) bad(what);
+        return c;
+      }
+      function text(input) { return String(input.value || '').trim() || null; }
+      next.activity = activity.value || null;
+      next.signName = text(sign);
+      next.leaseStart = start.value || null;
+      next.leaseYears = whole(length, CE_SHEET.leaseYears);
+      next.leaseAnnualRentCents = money(rent, CE_SHEET.leaseAnnualRentCents);
+      next.leaseUse = use.value || null;
+      next.leaseAssignment = assign.value || null;
+      next.equipment = String(gear.value || '').split('\\n').map(function (x) { return x.trim(); }).filter(Boolean);
+      next.licenses = Object.keys(CE_LICENSES).filter(function (k) { return boxes[k].checked; });
+      if (staff) next.employees = whole(staff, CE_SHEET.employees);
+      if (business) {
+        var fy = [];
+        years.forEach(function (r, i) {
+          if (![r.year, r.revenue, r.result, r.ebitda].some(function (x) { return String(x.value || '').trim(); })) return;
+          var name = 'l’exercice ' + (i + 1) + ' : année, chiffre d’affaires et résultat, en chiffres';
+          var y = whole(r.year, name), rev = money(r.revenue, name), res = money(r.result, name), e = money(r.ebitda, name);
+          if (y === null || rev === null || res === null) { bad(name); return; }
+          var one = { year: y, revenueCents: rev, resultCents: res };
+          if (e !== null) one.ebitdaCents = e;
+          fy.push(one);
+        });
+        next.fiscalYears = fy.sort(function (a, b) { return b.year - a.year; });
+      }
+      if (problem) { ceState(problem); return; }
+      var changed = {}, any = false;
+      Object.keys(next).forEach(function (k) {
+        var was = cur[k];
+        if (was === undefined) was = Array.isArray(next[k]) ? [] : null;
+        if (ceSame(was, next[k])) return;
+        changed[k] = next[k];
+        any = true;
+      });
+      if (!any) { ceState('Rien n’a changé : aucune version ajoutée.'); return; }
+      ceDo(base + '/fiche', changed, 'Fiche rangée : une nouvelle version s’ajoute.', go);
+    });
+    f.appendChild(go);
+  }
+  function ceSame(a, b) {
+    if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every(function (x, i) { return ceSame(x, b[i]); });
+    if (a && b && typeof a === 'object' && typeof b === 'object') {
+      var ka = Object.keys(a), kb = Object.keys(b);
+      return ka.length === kb.length && ka.every(function (k) { return ceSame(a[k], b[k]); });
+    }
+    return a === b;
+  }
   function ceAct(path, body, fallback, done) {
     var id = ceId, title = $('commerces-titre').textContent, kind = ceKind;
     ceState('Envoi…');
     return send(path, 'POST', body).then(function (res) {
       if (res.gone) return null;
-      if (!res.ok) { ceState(res.offline ? 'Pas de réseau : rien n’est enregistré.' : res.status === 403 ? 'Ce geste n’est pas dans vos droits.' : fallback); return null; }
+      if (!res.ok) { ceState(ceWhy(res, fallback)); return null; }
       return openCommerce(id, title, kind, done);
     });
   }
@@ -247,7 +470,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       if (all[0].offline) return unread('Pas de réseau. Réessayez dans un moment.');
       if (!all[0].ok) return unread(all[0].status === 403 ? 'Ce commerce n’est pas dans vos droits.' : 'Indisponible pour le moment. Réessayez plus tard.');
       var d = all.map(function (x) { return x.ok ? x.body.data : null; });
-      ceFiche(d[0]);
+      ceFiche(d[0], all[3].ok ? base : null);
       ceEstimation(base, kind, Array.isArray(d[1]) ? d[1] : []);
       cePresentation(base, d[2]);
       if (all[3].ok) ceDemandes(base, Array.isArray(d[3]) ? d[3] : []);
@@ -261,10 +484,11 @@ globalThis.AIMMO_COMMERCES = function (t) {
       });
     });
   }
-  function ceFiche(p) {
+  function ceFiche(p, writable) {
     var b = ceBlock('Le commerce');
     var v = (p && p.publicView) || {};
     b.appendChild(el('p', [CE_KINDS[v.kind] || '', v.activity ? CE_ACT[v.activity] : 'activité à saisir', v.city || '', v.surfaceM2 ? v.surfaceM2 + '\\u00a0m²' : ''].filter(Boolean).join(' · ')));
+    if (writable) ceSheetForm(b, writable);
   }
   function ceEstimation(base, kind, list) {
     var b = ceBlock('Estimation');
@@ -286,7 +510,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       send(base + '/estimations', 'POST', { method: m.value }).then(function (res) {
         if (res.gone) return;
         if (res.ok && res.body.data === null) { ceState('Estimation incomplète : complétez la fiche ou demandez le barème à la direction.'); return; }
-        if (!res.ok) { ceState(res.offline ? 'Pas de réseau : rien n’est enregistré.' : 'L’estimation n’est pas faite.'); return; }
+        if (!res.ok) { ceState(ceWhy(res, 'L’estimation n’est pas faite.')); return; }
         openCommerce(ceId, $('commerces-titre').textContent, ceKind, 'Estimation faite : validez-la après relecture.');
       });
     }));
@@ -332,6 +556,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
   function ceWhy(res, fallback) {
     var b = res.body, code = b && b.code;
     if (code === 'etapes_bloquantes') return 'Pas encore : il reste ' + ceSteps(b.missing) + '.';
+    if ((code === 'valeur' || code === 'hors_liste') && b.field && CE_SHEET[b.field]) return 'Vérifiez ' + CE_SHEET[b.field] + '.';
     if (code && Object.prototype.hasOwnProperty.call(CE_SAY, code)) return CE_SAY[code];
     if (res.status === 403) return 'Ce geste n’est pas dans vos droits.';
     if (res.offline || !b || res.status >= 500) return 'Réponse perdue : ce geste est peut-être rangé. Relisez les étapes avant de recommencer.';
