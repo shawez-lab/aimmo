@@ -945,6 +945,15 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : un seul échec de contrôle et rien ne se signe, la ligne dite en français [R41] ; un document d'essai est dit tel à l'écran [R40] ; aucun identifiant ni référence à saisir [R16] ; l'écran ne calcule ni numéro ni honoraires [R39] ; signature en ligne absente tant que H24 n'est pas fait ; budget et accessibilité tenus [R201].
 - Attend : H08 pour un mandat réel, H23 pour le numéro réel, H25 pour le dépôt réel.
 
+### D15 · Un seul mandat vivant par bien, refusé aussi par le code
+- Statut : à faire
+- Trouvé le 2026-11-02 par la relecture forte de D12 : l'écran ne propose plus de second mandat, mais `SignaturePapier.register` numérote un second mandat sur un bien dont le mandat est vivant, et le registre est sans trou. Le cahier (M06) n'en dit rien : lecture prudente, refus.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12
+- Cahier : M06 ; R39, R41, R42.
+- Objectif : refuser, à la première demande, de signer un mandat sur un bien dont un mandat est vivant ; annulé, rétracté ou échu, le bien se rouvre. Le passage d'un mandat simple à un exclusif reste à trancher par écrit dans la tâche.
+- Critères : un second mandat sur un bien au mandat vivant est refusé, sans numéro (test [R39]) ; une reprise n'est pas refusée (test) ; un mandat annulé, rétracté ou échu laisse signer (tests) ; le refus est dit en français à l'écran.
+- Attend : rien.
+
 ### D13 · Réglages du mandat pour la direction : barème, registre, contrôle
 - Statut : à faire
 - Trouvé le 2026-11-02 par la voie 2 : aucun écran n'appelle `/v1/honoraires/bareme`, `/v1/registre/reglage` ni `/v1/registre/controle`, et sans barème aucun mandat ne passe ses contrôles [R41]. Laissée à la voie 1, qui tient M06.

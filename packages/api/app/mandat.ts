@@ -1,0 +1,398 @@
+/**
+ * L'écran « Mandat » de l'application de l'agent (D12), en morceaux posés dans `fichiers.ts` : sa section, son chargeur et
+ * son script, servi à part (`/app/mandat.js`) et chargé à la première ouverture pour tenir le budget [R201]. Il s'ouvre
+ * depuis « Mes biens ».
+ *
+ * L'agent génère le mandat, lit le contrôle ligne par ligne, enregistre la signature sur papier avec le scan déposé, voit
+ * le numéro au registre et l'exemplaire. L'écran ne lit et n'écrit que par les routes [R16] et ne calcule ni numéro ni
+ * honoraires [R39] : il pose ce que le code rend. Le formulaire de signature n'existe qu'après un contrôle réussi [R41].
+ * Un document d'essai est dit tel [R40]. La signature en ligne n'y est pas : elle attend la validation de l'avocat (H24).
+ * Tout texte reçu est posé avec `textContent`, et rien ne reste à l'écran une fois quitté.
+ */
+import { FILE_DEPOSIT_MAX_BYTES, FILE_DEPOSIT_TYPES } from '../../core/src/dossiers/depot.ts';
+import type { DiffusionReason } from '../../core/src/documents/retractation.ts';
+import { TEMPLATE_FIELDS } from '../../core/src/documents/modeles.ts';
+import { SIGNATURE_PLACES, type SignaturePlace } from '../../core/src/documents/signature-papier.ts';
+import { MANDATE_SOURCES, type MandateSource } from '../../core/src/mandats/source.ts';
+
+const REFUSALS = {
+  no_template: 'Aucun modèle de mandat n’est encore enregistré : voyez avec la direction.',
+  bad_input: 'Vérifiez les honoraires, leur charge et la durée.',
+  unknown_kind: 'Choisissez le type de mandat.',
+  bad_date: 'La date de signature : un vrai jour, jamais à venir.',
+  bad_place: 'Choisissez le lieu de signature.',
+  bad_scan: 'Ce scan n’est pas celui de ce bien : choisissez-le de nouveau.',
+  scan_absent: 'Le scan n’est pas rangé : choisissez-le de nouveau.',
+  scan_deja_utilise: 'Ce scan prouve déjà une autre signature : choisissez le bon fichier.',
+  depot_ferme: 'Le dépôt des fichiers n’est pas encore branché : rien ne se signe sans le scan.',
+  already_signed: 'Ce mandat est déjà signé.',
+  not_a_mandate: 'Ce document n’est pas un mandat.',
+  no_number_field: 'Ce modèle n’a pas de place pour le numéro au registre : voyez avec la direction.',
+  not_configured: 'Le registre des mandats n’est pas encore réglé : voyez avec la direction.',
+  register_broken: 'Le registre des mandats est abîmé : voyez avec la direction.',
+  not_inscribed: 'Le mandat n’a pas reçu son numéro : réessayez.',
+  no_number_on_copy: 'L’exemplaire ne porte pas son numéro : voyez avec la direction.',
+  no_agent: 'Cette fiche n’a pas d’agent : voyez avec la direction.',
+  missing_source: 'Dites d’où vient ce mandat.',
+  missing_detail: 'Pour « Autre », précisez d’où vient ce mandat.',
+  unknown_source: 'Choisissez l’origine dans la liste.',
+  detail_too_long: 'La précision est trop longue.',
+  forbidden_source: 'Un mandat ne peut pas venir des ventes publiques ni d’une liste achetée.',
+  type_refuse: 'Ce fichier n’est pas admis : PDF, JPEG ou PNG.',
+  trop_lourd: 'Ce fichier dépasse 20 Mo.',
+  fichier_vide: 'Ce fichier est vide.',
+  empreinte_differente: 'Le fichier a mal voyagé : réessayez.',
+  stockage_indisponible: 'Le stockage ne répond pas : réessayez plus tard.',
+  not_signed: 'L’exemplaire n’existe pas encore.',
+};
+/** Chaque ligne du contrôle, dite en français ; un code inconnu reste un échec, jamais un succès [R41]. */
+const CHECKS = {
+  complete: 'Tous les champs sont remplis.',
+  missing_fields: 'Des champs obligatoires manquent.',
+  validated_template: 'Le modèle est validé.',
+  trial_template: 'Document d’essai : son modèle n’est pas validé, il ne se signe pas.',
+  fee_in_schedule: 'Les honoraires respectent le barème.',
+  fee_or_price_unknown: 'Les honoraires ou le prix ne sont pas connus.',
+  fee_payer_unknown: 'On ne sait pas qui paie les honoraires.',
+  no_fee_schedule: 'Le barème des honoraires n’est pas réglé : voyez avec la direction.',
+  fee_above_schedule: 'Les honoraires dépassent le barème.',
+  fee_below_minimum: 'Les honoraires sont sous le minimum du barème.',
+  mandants_match: 'Le mandant est bien le propriétaire du bien.',
+  no_property: 'Ce document n’est rattaché à aucun bien.',
+  owners_unknown: 'Le propriétaire du bien n’est pas connu.',
+  mandants_differ: 'Le mandant n’est pas le propriétaire du bien.',
+  identity_verified: 'L’identité du mandant est vérifiée.',
+  identity_missing: 'L’identité du mandant n’est pas vérifiée : déposez sa pièce au coffre de la conformité.',
+  identity_expired: 'La vérification d’identité du mandant a expiré : déposez une pièce à jour au coffre de la conformité.',
+  kbis_missing: 'L’extrait Kbis de la société manque : rangez-le au coffre de la conformité.',
+  kbis_expired: 'L’extrait Kbis de la société a expiré : rangez-en un à jour au coffre de la conformité.',
+  beneficial_owners_missing: 'Les bénéficiaires effectifs ne sont pas renseignés.',
+  beneficial_owner_unidentified: 'Un bénéficiaire effectif n’est pas identifié.',
+};
+const DIFFUSION: Record<DiffusionReason, string> = {
+  no_mandate: 'Le mandat n’est pas au registre : le bien ne se diffuse pas.',
+  cancelled: 'Mandat annulé au registre : le bien ne se diffuse pas.',
+  withdrawn: 'Le mandant s’est rétracté : le bien ne se diffuse pas.',
+  expired: 'Mandat arrivé à échéance : le bien ne se diffuse plus.',
+  duration_unknown: 'La durée du mandat n’est pas connue : le bien ne se diffuse pas.',
+  withdrawal_period: 'Délai de rétractation en cours : le bien ne se diffuse pas encore.',
+  allowed: 'Le bien peut être diffusé.',
+  allowed_early_start: 'Le bien peut être diffusé : le mandant a demandé de commencer tout de suite.',
+};
+const KINDS = { mandat_vente_simple: 'Mandat simple', mandat_vente_exclusif: 'Mandat exclusif', avenant_mandat: 'Avenant' };
+const PLACES: Record<SignaturePlace, string> = { agence: 'À l’agence', hors_agence: 'Hors de l’agence', distance: 'À distance' };
+const SOURCES: Record<MandateSource, string> = {
+  site: 'Le site',
+  online_valuation: 'Une estimation en ligne',
+  value_tracking: 'Le suivi de valeur',
+  referral: 'Une recommandation',
+  social: 'Les réseaux sociaux',
+  portal: 'Un portail',
+  agent_network: 'Le réseau de l’agent',
+  neighbourhood_letter: 'Une lettre de quartier',
+  other: 'Autre',
+};
+const FIELD_NAMES = Object.fromEntries(Object.entries(TEMPLATE_FIELDS).map(([k, v]) => [k, v.label]));
+
+export const MANDAT_HTML = `<section id="mandat" hidden>
+<button id="mandat-retour" type="button" class="retour">Retour à ma journée</button>
+<h2 id="mandat-titre">Mandat</h2>
+<p id="mandat-etat" class="etat" role="status"></p>
+<div id="mandat-corps"></div>
+</section>
+`;
+
+export const MANDAT_JS = `
+  /* ---------- M06 : l'écran « Mandat » (D12), chargé à la demande [R39, R40, R41, R201]. ---------- */
+  var mandatScreen = null;
+  function wipeMandat() {
+    if (mandatScreen) { mandatScreen.wipe(); return; }
+    clear($('mandat-corps'));
+    $('mandat-etat').textContent = '';
+  }
+  function openMandat(id, reference) {
+    if (!currentKey || !ID.test(id)) return Promise.resolve(false);
+    if (mandatScreen) return mandatScreen.open(id, reference);
+    session += 1;
+    var mine = session;
+    wipeMandat();
+    show('mandat');
+    $('mandat-etat').textContent = 'Chargement…';
+    return new Promise(function (resolve) {
+      var s = document.createElement('script');
+      s.setAttribute('src', '/app/mandat.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_MANDAT;
+        try { delete globalThis.AIMMO_MANDAT; } catch (e) { /* rien */ }
+        if (mine !== session || typeof make !== 'function') { resolve(false); return; }
+        mandatScreen = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, show: show, ID: ID, key: function () { return currentKey; }, session: function () { return session; }, bump: function () { session += 1; } });
+        resolve(mandatScreen.open(id, reference));
+      });
+      s.addEventListener('error', function () {
+        if (mine === session) $('mandat-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
+        resolve(false);
+      });
+      $('mandat').appendChild(s);
+    });
+  }
+`;
+
+/** Le script de l'écran, servi à part (`/app/mandat.js`). Il ne garde rien une fois l'écran quitté. */
+export const MANDAT_SCRIPT = `'use strict';
+globalThis.AIMMO_MANDAT = function (t) {
+  var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
+  var NO = ${JSON.stringify(REFUSALS)}, CHECKS = ${JSON.stringify(CHECKS)}, DIFFUSION = ${JSON.stringify(DIFFUSION)}, KINDS = ${JSON.stringify(KINDS)}, FIELDS = ${JSON.stringify(FIELD_NAMES)};
+  var PLACE_KEYS = ${JSON.stringify(SIGNATURE_PLACES)}, PLACES = ${JSON.stringify(PLACES)}, SOURCE_KEYS = ${JSON.stringify(MANDATE_SOURCES)}, SOURCES = ${JSON.stringify(SOURCES)};
+  var TYPES = ${JSON.stringify(FILE_DEPOSIT_TYPES)}, MAX = ${FILE_DEPOSIT_MAX_BYTES};
+  var RESUME_REF = 'mandats/reprise';
+  var cur = null, seq = 0, busy = null;
+  function state(x) { $('mandat-etat').textContent = x; }
+  function body() { return $('mandat-corps'); }
+  function why(res, fallback) {
+    if (res.offline) return 'Pas de réseau : rien n’est rangé.';
+    return (res.body && NO[res.body.code]) || (res.status === 403 || res.status === 404 ? 'Ce mandat n’est pas dans vos droits.' : fallback);
+  }
+  function date(iso) {
+    var x = new Date(String(iso));
+    if (isNaN(x.getTime())) return '';
+    try { return x.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return ''; }
+  }
+  function today() {
+    try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); } catch (e) { return ''; }
+  }
+  // Aujourd'hui vaut l'instant présent ; un jour passé, le milieu de ce jour. Un jour à venir est refusé par le code.
+  function instant(day) { return day === today() ? new Date().toISOString() : day + 'T12:00:00.000Z'; }
+  function wipe() { seq += 1; busy = null; clear(body()); state(''); $('mandat-titre').textContent = 'Mandat'; cur = null; }
+  function open(id, reference) {
+    if (!t.key() || !ID.test(id)) return Promise.resolve(false);
+    t.bump();
+    wipe();
+    cur = { id: id, reference: reference || 'ce bien' };
+    $('mandat-titre').textContent = 'Mandat · ' + cur.reference;
+    show('mandat');
+    return load();
+  }
+  function base() { return '/v1/biens/' + encodeURIComponent(cur.id); }
+  function doc(id) { return '/v1/documents/' + encodeURIComponent(id); }
+  function load(message) {
+    var mine = ++seq;
+    state('Chargement…');
+    return send(base() + '/mandat', 'GET').then(function (res) {
+      if (res.gone || mine !== seq) return false;
+      if (!res.ok) {
+        clear(body());
+        // Le geste a réussi, seule la relecture manque : on le dit, sans laisser un formulaire périmé.
+        if (message) { state(message + ' Rouvrez cet écran pour le relire.'); return true; }
+        state(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : why(res, 'Indisponible pour le moment. Réessayez plus tard.'));
+        return false;
+      }
+      clear(body());
+      state(message || '');
+      draw(res.body.data);
+      return true;
+    });
+  }
+  function act(run) {
+    return function () {
+      if (busy) return Promise.resolve(false);
+      var me = busy = {};
+      function done(r) { if (busy === me) busy = null; return r; }
+      return Promise.resolve().then(run).then(done, function () { done(false); state('Rien n’est rangé : réessayez.'); return false; });
+    };
+  }
+  function bloc(title) {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', title));
+    body().appendChild(box);
+    return box;
+  }
+  function choice(box, id, label, keys, names, blank) {
+    var f = field(box, id, label, 'select');
+    if (blank) { var first = el('option', blank); first.value = ''; f.appendChild(first); }
+    keys.forEach(function (k) { var o = el('option', names[k] || k); o.value = k; f.appendChild(o); });
+    return f;
+  }
+  function draw(data) {
+    var m = data.mandate;
+    var box = bloc('Mandat en cours');
+    if (!m) box.appendChild(el('p', 'Aucun mandat signé pour ce bien.', 'doux'));
+    else {
+      box.appendChild(el('p', m.number ? 'Numéro au registre : ' + m.number : 'Pas encore de numéro au registre.'));
+      if (m.signedAt) box.appendChild(el('p', 'Signé le ' + date(m.signedAt) + '.', 'doux'));
+      box.appendChild(el('p', DIFFUSION[m.reason] || (m.allowed ? 'Le bien peut être diffusé.' : 'Le bien ne se diffuse pas.')));
+    }
+    var docs = bloc('Documents du bien');
+    var list = Array.isArray(data.documents) ? data.documents : [];
+    if (!list.length) docs.appendChild(el('p', 'Aucun document pour ce bien.', 'doux'));
+    // Un mandat vivant : ni second mandat à préparer, ni autre document à signer depuis cet écran.
+    var free = !m || m.reason === 'cancelled' || m.reason === 'withdrawn' || m.reason === 'expired';
+    list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d, free); });
+    if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : []);
+  }
+  function drawDocument(box, d, free) {
+    var card = el('article');
+    box.appendChild(card);
+    card.appendChild(el('strong', (KINDS[d.kind] || 'Document') + ', préparé le ' + date(d.createdAt)));
+    if (d.mode === 'essai') card.appendChild(el('p', 'Document d’essai : il ne se signe pas.'));
+    if (d.status === 'incomplet') card.appendChild(el('p', 'Il manque : ' + (Array.isArray(d.missing) ? d.missing : []).map(function (k) { return FIELDS[k] || 'un champ'; }).join(', ') + '.'));
+    var s = d.signature;
+    var zone = el('div');
+    if (s && s.complete) card.appendChild(el('p', 'Signé le ' + date(s.signedAt) + ', ' + (PLACES[s.place] || '').toLowerCase() + (s.number ? ', n° ' + s.number : '') + '.'));
+    if (s && !s.complete) card.appendChild(el('p', 'Enregistrement arrêté en route : ce mandat n’est pas encore signé.'));
+    card.appendChild(button('Lire le document', function () { return read(zone, doc(d.id), 'Le document ne se lit pas : réessayez.'); }));
+    var isMandate = d.kind === 'mandat_vente_simple' || d.kind === 'mandat_vente_exclusif';
+    if (s && s.complete) card.appendChild(button('Voir l’exemplaire', function () { return read(zone, doc(d.id) + '/exemplaire', 'L’exemplaire ne se lit pas : réessayez.'); }));
+    else if (s && isMandate) card.appendChild(button('Reprendre l’enregistrement', function () { clear(zone); drawResume(zone, d, s); }));
+    else if (isMandate && free) card.appendChild(button('Contrôler avant signature', act(function () { return control(zone, d); })));
+    else if (isMandate) card.appendChild(el('p', 'Un mandat est déjà en cours sur ce bien : ce document ne se signe pas.', 'doux'));
+    card.appendChild(zone);
+  }
+  // Le document est du HTML rendu par le code : on n'en garde que le texte, posé par textContent.
+  function paragraphs(html) {
+    var text = String(html).replace(/^[\\s\\S]*<body[^>]*>/i, '').replace(/<\\/(p|div|h[1-6]|li|tr)>|<br\\s*\\/?>/gi, '\\n').replace(/<[^>]*>/g, '');
+    var ent = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&amp;': '&' };
+    return text.split('\\n').map(function (l) { return l.replace(/&(lt|gt|quot|#39|amp);/g, function (e) { return ent[e]; }).trim(); }).filter(Boolean);
+  }
+  function read(zone, path, failed) {
+    var mine = ++seq;
+    return send(path, 'GET').then(function (res) {
+      if (res.gone || mine !== seq) return false;
+      clear(zone);
+      if (!res.ok || !res.body.data || typeof res.body.data.content !== 'string') { state(why(res, failed)); return false; }
+      state('');
+      paragraphs(res.body.data.content).forEach(function (l) { zone.appendChild(el('p', l)); });
+      return true;
+    });
+  }
+  function drawCheck(zone, check) {
+    var ul = el('ul');
+    (Array.isArray(check.lines) ? check.lines : []).forEach(function (l) {
+      ul.appendChild(el('li', (l.ok ? 'Bon : ' : 'À régler : ') + (CHECKS[l.code] || (l.ok ? 'contrôle passé.' : 'ce contrôle n’est pas passé.'))));
+    });
+    zone.appendChild(ul);
+  }
+  function control(zone, d) {
+    var mine = ++seq;
+    state('Contrôle en cours…');
+    return send(doc(d.id) + '/controle', 'POST', {}).then(function (res) {
+      if (res.gone || mine !== seq) return false;
+      clear(zone);
+      if (!res.ok || !res.body.data) { state(why(res, 'Le contrôle n’a pas abouti : réessayez.')); return false; }
+      var check = res.body.data;
+      drawCheck(zone, check);
+      // Un seul échec, et il n'y a rien à signer [R41].
+      if (check.passed !== true) { state('Un point au moins n’est pas réglé : rien ne se signe.'); return true; }
+      state('Contrôle réussi : vous pouvez enregistrer la signature.');
+      drawSign(zone, d);
+      return true;
+    });
+  }
+  function drawSource(zone, d) {
+    var source = choice(zone, 'mandat-source-' + d.id, 'D’où vient ce mandat', SOURCE_KEYS, SOURCES, 'Celle de la fiche');
+    var detail = field(zone, 'mandat-precision-' + d.id, 'Précision, si « Autre »');
+    return function () { return { source: source.value || undefined, sourceDetail: detail.value.trim() || undefined }; };
+  }
+  function drawSign(zone, d) {
+    var when = field(zone, 'mandat-jour-' + d.id, 'Signé le');
+    when.setAttribute('type', 'date');
+    var place = choice(zone, 'mandat-lieu-' + d.id, 'Lieu de signature', PLACE_KEYS, PLACES, 'À choisir');
+    var origin = drawSource(zone, d);
+    var pick = field(zone, 'mandat-scan-' + d.id, 'Le mandat signé, numérisé');
+    pick.setAttribute('type', 'file');
+    pick.setAttribute('accept', Object.keys(TYPES).join(','));
+    var kept = null;
+    zone.appendChild(button('Enregistrer la signature', act(function () {
+      if (!when.value) { state('Dites le jour de la signature.'); return false; }
+      if (!place.value) { state('Choisissez le lieu de signature.'); return false; }
+      var file = pick.files && pick.files[0];
+      if (!file) { state('Joignez le mandat signé, numérisé.'); return false; }
+      return (kept && kept.file === file ? Promise.resolve(kept.ref) : deposit(file)).then(function (ref) {
+        if (!ref) return false;
+        kept = { file: file, ref: ref };
+        var o = origin();
+        return sign(zone, d, { signedAt: instant(when.value), place: place.value, scanRef: ref, source: o.source, sourceDetail: o.sourceDetail }, function () { kept = null; });
+      });
+    })));
+  }
+  // Une reprise garde la date, le lieu et le scan de la première demande : rien à redéposer.
+  function drawResume(zone, d, s) {
+    zone.appendChild(el('p', 'La date, le lieu et le scan restent ceux de la première demande.', 'doux'));
+    var origin = drawSource(zone, d);
+    zone.appendChild(button('Finir l’enregistrement', act(function () {
+      var o = origin();
+      return sign(zone, d, { signedAt: s.signedAt, place: s.place, scanRef: RESUME_REF, source: o.source, sourceDetail: o.sourceDetail });
+    })));
+  }
+  function sign(zone, d, data, forget) {
+    var mine = ++seq;
+    state('Enregistrement…');
+    return send(doc(d.id) + '/signature-papier', 'POST', data).then(function (res) {
+      if (res.gone || mine !== seq) return false;
+      if (res.ok) return load('Mandat signé : n° ' + res.body.data.number + ' au registre.');
+      var code = res.body && res.body.code;
+      if (forget && (code === 'bad_scan' || code === 'scan_absent' || code === 'scan_deja_utilise')) forget();
+      // Le contrôle a changé depuis : la ligne est dite, et le formulaire s'en va [R41].
+      if (code === 'checks_failed' && res.body.check) {
+        clear(zone);
+        drawCheck(zone, res.body.check);
+        state('Un point au moins n’est plus réglé : rien ne se signe.');
+        return false;
+      }
+      state(why(res, 'La signature n’est pas enregistrée : réessayez.'));
+      return false;
+    });
+  }
+  function hex(buf) { return Array.from(new Uint8Array(buf), function (b) { return (b + 256).toString(16).slice(1); }).join(''); }
+  function deposit(file) {
+    var type = String(file.type || '').toLowerCase();
+    if (!Object.prototype.hasOwnProperty.call(TYPES, type)) { state(NO.type_refuse); return Promise.resolve(null); }
+    if (file.size > MAX) { state(NO.trop_lourd); return Promise.resolve(null); }
+    var mine = t.session(), key = t.key();
+    if (!key) return Promise.resolve(null);
+    state('Envoi du scan…');
+    return file.arrayBuffer().then(function (buf) { return crypto.subtle.digest('SHA-256', buf); }).then(function (sum) {
+      if (mine !== t.session()) return null;
+      return fetch(base() + '/scans-mandat', { method: 'POST', headers: { authorization: 'Bearer ' + key, 'content-type': type, 'x-aimmo-sha256': hex(sum) }, body: file, cache: 'no-store', credentials: 'omit' }).then(function (r) {
+        return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
+          if (mine !== t.session()) return null;
+          // Une clé refusée passe par send, qui sait la retirer et le dire.
+          if (r.status === 401 || (r.status === 403 && b && b.code === 'agent_inactive')) return send(base() + '/mandat', 'GET').then(function () { return null; });
+          var ref = r.ok && b && b.ok === true && b.data && b.data.ref;
+          if (typeof ref !== 'string') { state(why({ status: r.status, body: b }, 'Le scan n’est pas rangé : réessayez.')); return null; }
+          return ref;
+        });
+      }, function () { if (mine === t.session()) state('Pas de réseau : rien n’est rangé.'); return null; });
+    }, function () { if (mine === t.session()) state('Ce fichier ne se lit pas sur ce téléphone.'); return null; });
+  }
+  function drawGenerate(owners) {
+    var box = bloc('Préparer un mandat');
+    var known = owners.filter(function (o) { return ID.test(o.personId); });
+    if (!known.length) { box.appendChild(el('p', 'Aucun propriétaire n’est lié à ce bien sur une fiche que vous voyez : liez d’abord la fiche du propriétaire.', 'doux')); return; }
+    var names = {};
+    known.forEach(function (o) { names[o.personId] = [o.firstName, o.lastName].filter(Boolean).join(' ') || 'Propriétaire sans nom'; });
+    var who = choice(box, 'mandat-mandant', 'Mandant', known.map(function (o) { return o.personId; }), names, known.length > 1 ? 'À choisir' : null);
+    if (known.length === 1) who.value = known[0].personId;
+    var kind = choice(box, 'mandat-type', 'Type de mandat', ['mandat_vente_simple', 'mandat_vente_exclusif'], KINDS, 'À choisir');
+    var fee = field(box, 'mandat-honoraires', 'Honoraires, en euros');
+    fee.setAttribute('inputmode', 'numeric');
+    var charge = choice(box, 'mandat-charge', 'À la charge de', ['vendeur', 'acquereur'], { vendeur: 'Le vendeur', acquereur: 'L’acquéreur' }, 'À choisir');
+    var months = field(box, 'mandat-duree', 'Durée, en mois');
+    months.setAttribute('inputmode', 'numeric');
+    box.appendChild(button('Préparer le mandat', act(function () {
+      if (!who.value) { state('Choisissez le mandant.'); return false; }
+      if (!kind.value) { state('Choisissez le type de mandat.'); return false; }
+      if (!/^\\d{1,9}$/.test(fee.value.trim())) { state('Les honoraires : un montant en euros, sans centimes.'); return false; }
+      if (!charge.value) { state('Dites qui paie les honoraires.'); return false; }
+      if (!/^\\d{1,3}$/.test(months.value.trim())) { state('La durée : un nombre de mois.'); return false; }
+      var mine = ++seq;
+      return send('/v1/documents', 'POST', { kind: kind.value, personId: who.value, propertyId: cur.id, inputs: { 'honoraires.montant': Number(fee.value.trim()), 'honoraires.charge': charge.value, 'mandat.duree_mois': Number(months.value.trim()) } }).then(function (res) {
+        if (res.gone || mine !== seq) return false;
+        if (res.ok) return load('Mandat préparé : contrôlez-le avant de le signer.');
+        state(why(res, 'Le mandat n’est pas préparé : réessayez.'));
+        return false;
+      });
+    })));
+  }
+  return { open: open, wipe: wipe };
+};
+`;
