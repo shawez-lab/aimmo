@@ -2561,8 +2561,10 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT16 · Écran « Attirer » : mentions des agents et leurs sites
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Voie : 2
+- Décidé (2026-11-02, voie 2) : `setSite` répond `agent_parti` au lieu de `agent_inactive`, que l'application lit comme une clé refusée ; « Mentions complètes » et non « Page publiée », une page exigeant aussi un site en service.
+- Reste : fusionnée (#274) ; relecture forte 2 P1 de tests corrigés ; Codex à sa limite (H03) ; le titre d'une vidéo ou d'une publication reste sa référence du Studio, à revoir au branchement du Studio ; l'adresse d'un agent parti dont le dernier réglage est « en service » reste prise pour un autre agent (`url_taken`), sans geste à l'écran pour la libérer.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12
 - Cahier : M01 ; R16, R152, R153.
 - Objectif : reste de AT12. Lectures ajoutées dans `attirer.ts` : les agents du réseau avec l'état de leur page et de leur site, y compris hors service, et le titre lisible d'un contenu (l'origine montre aujourd'hui l'identifiant d'un bien ou d'un agent). La direction y saisit les mentions, le titulaire de la carte, le site de chaque agent.

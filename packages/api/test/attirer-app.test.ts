@@ -28,7 +28,7 @@ const MEASURE = {
   targetPercent: 95,
   meetsTarget: false,
   byKind: [{ kind: 'video', contacts: 9 }, { kind: 'inconnue', contacts: 3 }, { kind: 'bien', contacts: 5 }],
-  byContent: [{ contentId: 'c1', kind: 'video', ref: INJECTED, contacts: 9 }],
+  byContent: [{ contentId: 'c1', kind: 'video', ref: 'id-interne', title: INJECTED, contacts: 9 }],
 };
 const BASE: Record<string, Answer> = {
   'GET /v1/moi': ok({ role: 'direction', firstName: null }),
@@ -44,6 +44,17 @@ const BASE: Record<string, Answer> = {
   ]),
   'POST /v1/attirer/prix/zones': ok({ id: 'z9' }),
   'POST /v1/attirer/prix/zones/z1/retrait': ok({ id: 'z1' }),
+  'GET /v1/attirer/agents': ok({
+    holder: 'Société Exemple',
+    cardNumber: 'CPI 9999',
+    agents: [
+      { agentId: 'ag-1', name: 'Camille Essai', rsacNumber: '123456789', rsacRegistry: 'Dijon', missing: null, site: { baseUrl: 'https://camille.exemple.test', active: true } },
+      { agentId: 'ag-2', name: 'Lou Essai', rsacNumber: null, rsacRegistry: null, missing: 'statut_manquant', site: { baseUrl: 'https://lou.exemple.test', active: false } },
+      { agentId: 'ag-3', name: 'Inès Essai', rsacNumber: '987654321', rsacRegistry: 'Dijon', missing: 'titulaire_manquant', site: null },
+    ],
+  }),
+  'POST /v1/attirer/agents/ag-2/mentions': ok({}),
+  'POST /v1/attirer/titulaire': ok({}),
   'GET /v1/attirer/quartiers': ok([{ zoneId: 'z1', name: 'Ouest', communeName: 'Ville Test' }]),
   'GET /v1/attirer/quartiers/z1/faits': ok([{ key: 'tram', kind: 'transport', label: 'Arrêts de tram', value: 2, unit: 'nombre', source: 'Carte inventée', sourceDate: '2026-01-15' }]),
   'GET /v1/attirer/quartiers/z1/textes': ok([
@@ -295,13 +306,6 @@ describe('AT12 · écran « Attirer » de la direction', () => {
     expect(off.textContent).toBe('Confirmer : mettre hors service');
   });
 
-  it('le site d’un agent se lit ici, sans geste qui le coupe et qu’on ne pourrait pas défaire', async () => {
-    const t = await run();
-    await t.ouvrir();
-    expect(t.texts()).toContain('https://camille.exemple.test');
-    expect(t.buttons('Mettre hors service')).toHaveLength(1);
-  });
-
   it('un recalcul en vol reste seul, même si l’écran est relu entre-temps', async () => {
     const d = deferred({ ran: true, versionId: 'v2', published: 1, carried: 0, held: 0 });
     const t = await run({ 'POST /v1/attirer/prix/recalcul': d.answer });
@@ -371,9 +375,105 @@ describe('AT12 · écran « Attirer » de la direction', () => {
   });
 
   it('pas de réseau : c’est dit, rien n’est inventé', async () => {
-    const t = await run({ 'GET /v1/attirer/prix/versions': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/sites': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/quartiers': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/prix/zones': async () => Promise.reject(new TypeError('x')), [`GET /v1/attirer/origine/${MONTH}`]: async () => Promise.reject(new TypeError('x')) });
+    const t = await run({ 'GET /v1/attirer/prix/versions': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/sites': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/quartiers': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/prix/zones': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/agents': async () => Promise.reject(new TypeError('x')), [`GET /v1/attirer/origine/${MONTH}`]: async () => Promise.reject(new TypeError('x')) });
     await t.ouvrir();
     expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+  });
+
+  describe('AT16 · agents, mentions et sites', () => {
+    it('[R16] chaque appel existe sous la direction, et aucun identifiant n’est montré', async () => {
+      const t = await run();
+      const before = t.calls.length;
+      await t.ouvrir();
+      expect(t.texts()).not.toContain('ag-1');
+      expect(t.texts()).not.toContain('id-interne');
+      await t.click(t.buttons('Enregistrer l’immatriculation')[1]);
+      const routes = attirerRoutes();
+      for (const c of t.calls.slice(before)) {
+        const route = routes.find((r) => r.method === c.method && r.pattern.test(c.url.slice('/v1'.length)));
+        expect(route, c.url).toBeDefined();
+        expect(route!.roles).toEqual(['direction']);
+      }
+    });
+
+    it('[R152] chaque agent dit si sa page est publiée, et ce qui manque, en français', async () => {
+      const t = await run();
+      await t.ouvrir();
+      const shown = t.texts();
+      expect(shown).toContain('Mentions complètes : sa page peut être servie.');
+      expect(shown).toContain('Page non publiée : son immatriculation manque.');
+      expect(shown).toContain('Page non publiée : le titulaire de la carte manque.');
+      expect(shown).not.toContain('statut_manquant');
+    });
+
+    it('[R152] l’immatriculation part avec ses champs ; un refus reste en français et sans code', async () => {
+      const t = await run({ 'POST /v1/attirer/agents/ag-2/mentions': no(409, { ok: false, rule: 'R152', code: 'rsac' }) });
+      await t.ouvrir();
+      t.input('Numéro RSAC', 1).value = 'pas un numéro';
+      t.input('Greffe', 1).value = 'Dijon';
+      await t.click(t.buttons('Enregistrer l’immatriculation')[1]);
+      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ rsacNumber: 'pas un numéro', rsacRegistry: 'Dijon' });
+      expect(t.state()).toBe('Le numéro d’immatriculation n’est pas lisible : neuf chiffres, avec RSAC devant ou non.');
+    });
+
+    it('[R153] un site d’agent hors service se remet en service depuis l’écran, avec son genre et son agent', async () => {
+      const t = await run();
+      await t.ouvrir();
+      await t.click(t.buttons('Remettre en service')[0]);
+      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ kind: 'agent', agentId: 'ag-2', baseUrl: 'https://lou.exemple.test', active: true });
+      expect(t.state()).toBe('Site remis en service.');
+    });
+
+    it('[R153] mettre hors service le site d’un agent se confirme', async () => {
+      const t = await run();
+      await t.ouvrir();
+      const b = t.buttons('Mettre hors service')[1]!;
+      await t.click(b);
+      await t.click(b);
+      expect(t.posts()).toHaveLength(0);
+      later(2000);
+      await t.click(b);
+      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ kind: 'agent', agentId: 'ag-1', baseUrl: 'https://camille.exemple.test', active: false });
+    });
+
+    it('[R153] un premier site se met en service, sans jamais passer pour le site du réseau', async () => {
+      const t = await run();
+      await t.ouvrir();
+      t.input('Adresse du site', 2).value = ' https://ines.exemple.test ';
+      const buttons = t.buttons('Mettre en service');
+      await t.click(buttons[buttons.length - 1]);
+      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ kind: 'agent', agentId: 'ag-3', baseUrl: 'https://ines.exemple.test', active: true });
+    });
+
+    it('[R16] un agent parti ne déconnecte pas la direction', async () => {
+      const t = await run({ 'POST /v1/attirer/sites': no(403, { ok: false, rule: 'R16', code: 'agent_parti' }) });
+      await t.ouvrir();
+      await t.click(t.buttons('Remettre en service')[0]);
+      expect(t.state()).toBe('Cet agent n’est plus en activité : la liste a changé.');
+      expect(t.storage.has('aimmo.cle')).toBe(true);
+    });
+
+    it('[R152] le titulaire se règle ; la carte manquante est dite', async () => {
+      const t = await run();
+      await t.ouvrir();
+      t.input('Titulaire de la carte professionnelle').value = 'Société Neuve';
+      await t.click(t.buttons('Enregistrer le titulaire')[0]);
+      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ holder: 'Société Neuve' });
+      const u = await run({ 'GET /v1/attirer/agents': ok({ holder: null, cardNumber: null, agents: [] }) });
+      await u.ouvrir();
+      expect(u.texts()).toContain('Numéro de carte professionnelle du réseau : pas encore réglé.');
+      expect(u.texts()).toContain('Aucun agent en activité.');
+    });
+
+    it('un double appui n’enregistre qu’une fois', async () => {
+      const t = await run();
+      await t.ouvrir();
+      const b = t.buttons('Enregistrer le titulaire')[0]!;
+      b.listeners.click!({});
+      b.listeners.click!({});
+      await settle();
+      expect(t.posts()).toHaveLength(1);
+    });
   });
 
   describe('AT15 · communes et quartiers', () => {

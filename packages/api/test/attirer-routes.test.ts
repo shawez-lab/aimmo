@@ -283,6 +283,65 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect((await t.call(direction, 'GET', '/attirer/prix/zones')).body.data).toEqual([]);
   });
 
+  it('[R152] [R153] AT16 : la lecture des agents dit comme la page ce qui manque ; un site hors service reste lisible et se rétablit', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    expect((await t.call(camille, 'GET', '/attirer/agents')).status).toBe(403);
+    const other = (await t.call({ ...direction, networkId: 'net-2' }, 'GET', '/attirer/agents')).body.data as { holder: unknown; cardNumber: unknown; agents: { agentId: string }[] };
+    expect(other).toMatchObject({ holder: null, cardNumber: null });
+    expect(other.agents.map((a) => a.agentId)).not.toContain('ag-1');
+    const read = async () => (await t.call(direction, 'GET', '/attirer/agents')).body.data as { holder: string; agents: { agentId: string; missing: string | null; rsacRegistry: string | null; site: { baseUrl: string; active: boolean } | null }[] };
+    const first = await read();
+    expect(first.holder).toBe('Société Exemple');
+    // Ce que dit la liste est ce que dit la page de chaque agent, sur les mêmes données.
+    for (const a of first.agents) {
+      const page = (await t.call(direction, 'GET', `/attirer/agents/${a.agentId}/page`)).body.data as { publishable: boolean; missing: string | null };
+      expect(a.missing).toBe(page.missing);
+    }
+    const cam = first.agents.find((a) => a.agentId === 'ag-1')!;
+    expect(cam).toMatchObject({ missing: null, rsacRegistry: 'Dijon', site: { baseUrl: CAMILLE, active: true } });
+    expect(first.agents.find((a) => a.agentId === 'ag-2')).toMatchObject({ missing: 'statut_manquant', site: null });
+    // Hors service : le site disparaît des sites en service, reste lisible ici, et se rétablit avec le même corps.
+    expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'agent', agentId: 'ag-1', baseUrl: CAMILLE, active: false })).status).toBe(200);
+    expect(((await read()).agents.find((a) => a.agentId === 'ag-1'))!.site).toEqual({ baseUrl: CAMILLE, active: false });
+    expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'agent', agentId: 'ag-1', baseUrl: CAMILLE, active: true })).status).toBe(200);
+    expect(((await read()).agents.find((a) => a.agentId === 'ag-1'))!.site).toEqual({ baseUrl: CAMILLE, active: true });
+    // Un agent parti : la route le dit sans le code qui ferait passer la clé de la direction pour refusée.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = 'ag-1'");
+    expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'agent', agentId: 'ag-1', baseUrl: CAMILLE, active: true })).body).toMatchObject({ code: 'agent_parti' });
+    expect((await read()).agents.map((a) => a.agentId)).not.toContain('ag-1');
+  });
+
+  it('[R152] AT16 : à chaque étape, la liste dit ce que dit la page ; la dernière valeur l’emporte, même à la même date', async () => {
+    const t = await setup();
+    const row = async () => ((await t.call(direction, 'GET', '/attirer/agents')).body.data as { agents: { agentId: string; missing: string | null; rsacNumber: string | null; rsacRegistry: string | null; site: unknown }[] }).agents.find((a) => a.agentId === 'ag-1')!;
+    const same = async (expected: string | null) => {
+      const page = (await t.call(direction, 'GET', '/attirer/agents/ag-1/page')).body.data as { missing: string | null };
+      expect(page.missing).toBe(expected);
+      expect((await row()).missing).toBe(expected);
+    };
+    await same('statut_manquant');
+    expect((await t.call(direction, 'POST', '/attirer/agents/ag-1/mentions', { rsacNumber: 'RSAC 123456789', rsacRegistry: 'Dijon' })).status).toBe(200);
+    await same('carte_manquante');
+    await t.db.run("INSERT INTO listing_settings (id, network_id, card_number, set_by, set_at) VALUES ('s1', 'net-1', 'CPI 9999', 'direction:dir-1', 'y')");
+    await same('titulaire_manquant');
+    expect((await t.call(direction, 'POST', '/attirer/titulaire', { holder: 'Société Exemple' })).status).toBe(200);
+    await same(null);
+    // Deux immatriculations à la même date : la dernière rangée, comme la page.
+    for (const [id, registry] of [['m1', 'Greffe Un'], ['m2', 'Greffe Deux']] as const) {
+      await t.db.run("INSERT INTO agent_legal_mentions (id, agent_id, network_id, legal_status, rsac_number, rsac_registry, set_by, set_at) VALUES (?, 'ag-1', 'net-1', 'agent_commercial', '111 222 333', ?, 'direction:dir-1', '2099-01-01T00:00:00.000Z')", [id, registry]);
+    }
+    expect(await row()).toMatchObject({ rsacRegistry: 'Greffe Deux', rsacNumber: '111 222 333' });
+    // Relu puis renvoyé tel quel : il passe.
+    const read = await row();
+    expect((await t.call(direction, 'POST', '/attirer/agents/ag-1/mentions', { rsacNumber: read.rsacNumber, rsacRegistry: read.rsacRegistry })).status).toBe(200);
+    // Deux réglages du site à la même date : le dernier rangé.
+    for (const [id, active] of [['p1', 1], ['p2', 0]] as const) {
+      await t.db.run("INSERT INTO public_sites (id, network_id, kind, agent_id, base_url, active, set_by, set_at) VALUES (?, 'net-1', 'agent', 'ag-1', ?, ?, 'direction:dir-1', '2099-01-01T00:00:00.000Z')", [id, CAMILLE, active]);
+    }
+    expect((await row()).site).toEqual({ baseUrl: CAMILLE, active: false });
+  });
+
   it('[R150] AT15 : une zone retirée quitte le site aussitôt, sans recalcul, même la dernière commune', async () => {
     const t = await setup();
     expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'reseau', baseUrl: NET, active: true })).status).toBe(200);

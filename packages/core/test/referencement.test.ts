@@ -205,7 +205,7 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
     for (const baseUrl of ['http://reseau.exemple.test', 'https://reseau.exemple.test/', 'https://reseau.exemple.test/chemin', 'https://user@reseau.exemple.test', 'javascript:alert(1)', 'https://RESEAU.exemple.test']) {
       expect(await t.ref.setSite(direction, { kind: 'reseau', baseUrl, active: true }), baseUrl).toEqual({ ok: false, rule: null, code: 'bad_url' });
     }
-    expect(await t.ref.setSite(direction, { kind: 'agent', agentId: 'ag-2', baseUrl: 'https://paul.exemple.test', active: true })).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect(await t.ref.setSite(direction, { kind: 'agent', agentId: 'ag-2', baseUrl: 'https://paul.exemple.test', active: true })).toEqual({ ok: false, rule: 'R16', code: 'agent_parti' });
     expect(await t.ref.setSite(direction, { kind: 'agent', agentId: 'ag-x', baseUrl: 'https://x.exemple.test', active: true })).toEqual({ ok: false, rule: 'R16', code: 'unknown_agent' });
     expect(await t.ref.setSite(direction, { kind: 'reseau', agentId: 'ag-1', baseUrl: NET, active: true })).toEqual({ ok: false, rule: null, code: 'bad_agent' });
     await sites(t);
