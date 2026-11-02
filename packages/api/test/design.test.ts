@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DESIGN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, renderPublicPage, type Teinte } from '@aimmo/core';
+import { DESIGN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, renderPublicPage, renderValuationPrint, type Teinte } from '@aimmo/core';
 import { renderListingPage, renderListingPrint, type PageInput } from '../../core/src/annonces/page-bien.ts';
 import { BUDGETS, budgetProblems, contrastRatio, htmlProblems, localCssProblems, screenCssProblems } from '../../core/src/design/audit.ts';
 import { renderDocument } from '../../core/src/documents/modeles.ts';
@@ -54,6 +54,19 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
     { name: 'page du bien', html: renderListingPage(LISTING), budget: BUDGETS.page },
     { name: 'page du bien retiré', html: renderListingPage({ ...LISTING, payload: { ...LISTING.payload, state: 'retiree' } }), budget: BUDGETS.page },
     { name: 'fiche imprimable', html: renderListingPrint(LISTING)!, print: true, budget: BUDGETS.page },
+    {
+      name: 'avis de valeur imprimable',
+      html: renderValuationPrint({
+        low: 180000,
+        high: 200000,
+        validatedOn: '2026-11-02',
+        text: 'Pour votre appartement, nous estimons la valeur entre 180 000 € et 200 000 €.\n\nCet avis de valeur n’est pas une expertise.',
+        facts: { medianPerM2: 2800, comparables: 12, radius: 500, cited: [{ month: '2025-06', surface: 62, pricePerM2: 2750, distance: 120, street: 'Rue de l’Essai', town: 'Dijon' }], adjustments: [{ label: 'Balcon', pct: 2 }] },
+        agent: LISTING.agent!,
+      }),
+      print: true,
+      budget: BUDGETS.page,
+    },
     { name: 'document à signer', html: renderDocument('Mandat {{bien.reference}}', { 'bien.reference': null }, { title: 'Mandat', trial: true }), print: true, budget: BUDGETS.page },
     { name: 'désinscription des alertes', html: await text(await handleUnsubscribe(get(`/alertes/desinscription/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
     { name: 'opposition à la prospection', html: await text(await handlePartenairesPublic(get(`/partenaires/opposition/${TOKEN}`), { db: NO_DB })), budget: BUDGETS.page },
@@ -144,6 +157,7 @@ describe('Z03 · système de design d’AIMMO', () => {
       'core/src/mandats/gagner/lettres-quartier.ts': /^<style>\$\{LETTER_CSS\}<\/style>$/,
       'core/src/mandats/gagner/dossier-presentation.ts': /^<style>\$\{DOSSIER_CSS\}<\/style>$/,
       'core/src/studio/supports.ts': /^<style>\$\{style\}<\/style>$/,
+      'core/src/estimation/avis-imprime.ts': /^<style>\$\{CSS\}<\/style>$/,
     };
     const offenders: string[] = [];
     for (const f of files) {

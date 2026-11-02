@@ -215,6 +215,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   rental: 'journal',
   person_request: 'journal',
   prospect_retention: 'journal',
+  valuation: { excluded: 'sans_client', why: 'Refus d\'imprimer un avis inconnu de ce réseau : un identifiant demandé, sans donnée d\'un client.' },
   breach: { excluded: 'sans_client', why: 'Fuite de données : les gestes du responsable, sans donnée d\'un client.' },
   property: 'journal',
   project: 'journal',
