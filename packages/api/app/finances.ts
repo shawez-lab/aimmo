@@ -87,7 +87,7 @@ globalThis.AIMMO_FINANCES = function (t) {
       }
       var r = res.body.data;
       if (!r || typeof r.text !== 'string') {
-        state.textContent = chosen ? 'Pas de rapport pour ce jour : il s’écrit les jours ouvrés seulement.' : 'Pas encore de rapport aujourd’hui : il s’écrit les jours ouvrés à 7 h 30.';
+        state.textContent = chosen ? 'Aucun rapport rangé pour ce jour.' : 'Aucun rapport rangé aujourd’hui pour le moment : ils s’écrivent les jours ouvrés à 7 h 30.';
         return true;
       }
       var p = r.period || {};

@@ -91,6 +91,7 @@ describe('K10 · le rapport du matin à l’écran', () => {
     await t.read();
     expect(t.texts()).toContain('Hier : 3 contacts');
     expect(t.els['rapport-agent-corps']!.children).toEqual([]);
+    expect(t.reports().map((c) => c.url)).toEqual(['/v1/pilotage/rapport-matin']);
   });
 
   it('une période de plusieurs jours est dite', async () => {
@@ -102,12 +103,15 @@ describe('K10 · le rapport du matin à l’écran', () => {
   it('pas encore de rapport aujourd’hui, ou aucun ce jour-là : c’est dit, sans erreur', async () => {
     const t = await run('agent', { [ROUTE]: ok(null) });
     await t.read();
-    expect(t.state()).toBe('Pas encore de rapport aujourd’hui : il s’écrit les jours ouvrés à 7 h 30.');
+    expect(t.state()).toBe('Aucun rapport rangé aujourd’hui pour le moment : ils s’écrivent les jours ouvrés à 7 h 30.');
     expect(t.body().children).toEqual([]);
-    t.els['rapport-agent-jour']!.value = '2026-11-01';
-    t.table['GET /v1/pilotage/rapport-matin?jour=2026-11-01'] = ok(null);
-    await t.press();
-    expect(t.state()).toBe('Pas de rapport pour ce jour : il s’écrit les jours ouvrés seulement.');
+    // Un dimanche, un jour ouvré passé sans rapport, un jour à venir : le message ne prétend rien sur la raison.
+    for (const day of ['2026-11-01', '2026-10-27', '2030-01-08']) {
+      t.els['rapport-agent-jour']!.value = day;
+      t.table[`GET /v1/pilotage/rapport-matin?jour=${day}`] = ok(null);
+      await t.press();
+      expect(t.state()).toBe('Aucun rapport rangé pour ce jour.');
+    }
   });
 
   it('un autre jour se relit, et un jour mal écrit ne part pas', async () => {
@@ -150,6 +154,44 @@ describe('K10 · le rapport du matin à l’écran', () => {
     expect(t.body().children).toEqual([]);
     expect(t.state()).toBe('');
     expect(t.els['rapport-agent-jour']!.value).toBe('');
+  });
+
+  it('[R68] une réponse qui tarde ne s’affiche pas après un changement d’écran, qui relit ensuite le rapport', async () => {
+    const t = await run('direction');
+    await t.read();
+    t.els['rapport-direction-jour']!.value = '2026-10-30';
+    let release: (r: Response) => void = () => undefined;
+    t.table['GET /v1/pilotage/rapport-matin?jour=2026-10-30'] = () => new Promise((r) => (release = r));
+    await t.press();
+    // Changer de période ouvre une nouvelle session de l'écran : la réponse d'avant n'a plus sa place.
+    t.table['GET /v1/pilotage/reseau'] = ok({});
+    t.els['reseau-precedent']!.listeners.click!({});
+    await settle();
+    release(Response.json({ ok: true, data: { ...REPORT, text: 'Ancien rapport.' } }));
+    await settle();
+    expect(t.texts()).not.toContain('Ancien rapport.');
+    t.table[ROUTE] = ok(REPORT);
+    await t.press();
+    expect(t.texts()).toContain('Hier : 3 contacts');
+  });
+
+  it('[R16] sortir pendant le chargement du script : le rapport n’est jamais demandé', async () => {
+    const t = await run('agent');
+    await t.press();
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    await t.load();
+    expect(t.reports()).toEqual([]);
+    expect(t.state()).toBe('');
+  });
+
+  it('un script arrivé abîmé est dit', async () => {
+    const t = await run('agent');
+    await t.press();
+    t.scripts()[0]!.listeners.load!({});
+    await settle();
+    expect(t.state()).toBe('Indisponible pour le moment. Réessayez dans un moment.');
+    expect(t.reports()).toEqual([]);
   });
 
   it('deux appuis rapides font un seul chargement et un seul rapport', async () => {
