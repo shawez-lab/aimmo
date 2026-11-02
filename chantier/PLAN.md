@@ -1677,6 +1677,7 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 
 ### CE16 · Réponse immédiate au repreneur : les informations publiques
 - Statut : en cours (voie 2)
+- Décidé (2026-11-02), lecture prudente : seule la présentation validée et publiable part, rien sans elle ; il faut une demande rangée, un bien diffusable [R42] et un accord ; un accord retiré ne se redonne pas par la parole de l'agent, tant que H42 n'est pas tranché ; une seule fois par commerce [R05].
 - Trouvé le 2026-11-02 par la relecture de CE14 : `requestAccess` rend la vue publique à l'agent, rien ne part au repreneur.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE14
 - Cahier : M16, « Accès aux chiffres » ; R110, R03, R26, R201.

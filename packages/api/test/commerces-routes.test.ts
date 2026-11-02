@@ -430,3 +430,58 @@ describeWithSqlite('CE15 · les repreneurs à l’écran, par les routes', () =>
     expect(await t.ok(t.alex, 'GET', `/commerces/repreneurs/${project.id}/biens`)).toEqual([]);
   });
 });
+
+describeWithSqlite('CE16 · la réponse immédiate au repreneur', () => {
+  const ready = async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    const id = await t.shop();
+    const r = await t.buyer('A');
+    return { t, id, r };
+  };
+  const boxed = (t: Awaited<ReturnType<typeof setup>>, personId: string) =>
+    t.db.all<{ body: string }>(`SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%informations publiques%'`, [personId]);
+  it('[R110] [R26] [R13] seule la présentation validée part, dans la boîte d’essai ; ni chiffre confidentiel, ni trace au journal', async () => {
+    const { t, id, r } = await ready();
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    expect(await t.ok(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).toEqual({ mode: 'essai' });
+    const [mail] = await boxed(t, r.id);
+    const shown = (await t.ok(t.alex, 'GET', `/commerces/${id}/presentation`)) as { title: string; body: string };
+    expect(mail!.body).toContain(shown.title.replace(/\s*\(([^()]*)\)/g, ', $1'));
+    expect(mail!.body).not.toMatch(/[()]/);
+    expect(mail!.body).toContain('Votre agent immobilier');
+    for (const secret of SECRETS) expect(mail!.body, secret).not.toContain(secret);
+    expect(JSON.stringify(await t.journal.all())).not.toContain(shown.title);
+    // [R05] une seule fois par commerce : le second envoi est refusé, rien de plus dans la boîte.
+    const again = await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT });
+    expect(again.body).toMatchObject({ ok: false, rule: 'R05', code: 'send_refused' });
+    expect(await boxed(t, r.id)).toHaveLength(1);
+  });
+  it('[R42] [R110] sans demande, sans diffusion ou sans présentation validée, rien ne part', async () => {
+    const { t, id, r } = await ready();
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, code: 'pas_de_demande' });
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    t.closed.add(id);
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R42', code: 'non_diffusable' });
+    t.closed.delete(id);
+    // La fiche change : la présentation d'avant n'est plus publiable.
+    await t.ok(t.alex, 'POST', `/commerces/${id}/fiche`, { employees: 9 });
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R110', code: 'presentation_absente' });
+    expect(await boxed(t, r.id)).toEqual([]);
+  });
+  it('[R03] sans accord noté, ou l’accord retiré, rien ne part, et la parole de l’agent ne le redonne pas', async () => {
+    const { t, id, r } = await ready();
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, consentProof: '  ' })).body).toMatchObject({ code: 'bad_consent' });
+    const c = await t.store.addConsent({ networkId: t.networkId, personId: r.id, purpose: 'information_commerce', channel: 'email', proof: 'Accord inventé', givenAt: new Date('2027-09-01T08:00:00.000Z') });
+    await t.store.withdrawConsent(c.id, new Date('2027-09-02T08:00:00.000Z'));
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R03', code: 'consent_withdrawn' });
+    expect(await boxed(t, r.id)).toEqual([]);
+  });
+  it('[R16] ni un autre agent, ni la conformité', async () => {
+    const { t, id, r } = await ready();
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    for (const who of [t.bea, t.compliance]) expect((await t.call(who, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).status).toBe(403);
+    expect(await boxed(t, r.id)).toEqual([]);
+  });
+});

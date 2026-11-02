@@ -1116,3 +1116,53 @@ describe('CE15 · repreneurs et rapprochement à l’écran', () => {
     expect(COMMERCES_REPRENEURS_SCRIPT).not.toMatch(/innerHTML|localStorage|sessionStorage/);
   });
 });
+
+describe('CE16 · les informations publiques à l’écran', () => {
+  const LABEL = 'Accord du repreneur pour recevoir ces informations par mail (où, quand)';
+  const LINE = { personId: 'r1', firstName: 'Camille', requestedAt: '2027-09-07T08:00:00.000Z', open: false, codes: ['engagement_absent'], ndaId: null, signed: false };
+  async function line(answer: Answer) {
+    const t = await run({ 'GET /v1/commerces/b1/demandes': ok([LINE]), 'POST /v1/commerces/b1/informations': answer });
+    await t.openB1();
+    await t.click(t.byText('Voir l’engagement'));
+    const s = t.scripts().filter((e) => e.attributes.src === '/app/commerces-engagements.js');
+    runInNewContext(COMMERCES_ENGAGEMENTS_SCRIPT, t.context);
+    s[0]!.listeners.load!({});
+    await settle();
+    return t;
+  }
+  const sent = (t: Awaited<ReturnType<typeof run>>) => t.calls.filter((c) => c.method === 'POST' && c.url === '/v1/commerces/b1/informations');
+  it('[R03] sans accord noté, rien ne part', async () => {
+    const t = await line(ok({ mode: 'essai' }));
+    await t.click(t.byText('Envoyer les informations'));
+    expect(t.state()).toContain('Notez l’accord');
+    expect(sent(t)).toHaveLength(0);
+  });
+  it('[R26] le mode essai est dit : rien n’est parti', async () => {
+    const t = await line(ok({ mode: 'essai' }));
+    t.input(LABEL).value = ' Au téléphone, ce matin ';
+    await t.click(t.byText('Envoyer les informations'));
+    expect(JSON.parse(sent(t)[0]!.body!)).toEqual({ personId: 'r1', consentProof: 'Au téléphone, ce matin' });
+    expect(t.state()).toBe('Informations préparées par le contrôle central, en mode essai : rangées dans la boîte d’essai, rien n’est parti.');
+  });
+  it.each([
+    ['non_diffusable', 'R42', 'Ce bien ne peut pas encore être diffusé'],
+    ['presentation_absente', 'R110', 'Validez d’abord la présentation'],
+    ['consent_withdrawn', 'R03', 'a retiré son accord'],
+    ['send_refused', 'R05', 'Déjà envoyé à cette personne'],
+    ['send_refused', 'R01', 'Le code n’est pas parti'],
+  ])('[R10] le refus %s (%s) est dit en français', async (code, rule, said) => {
+    const t = await line(no(409, { ok: false, rule, code }));
+    t.input(LABEL).value = 'Accord';
+    await t.click(t.byText('Envoyer les informations'));
+    expect(t.state()).toContain(said);
+  });
+  it('[R10] une réponse perdue ne dit pas que rien n’est parti', async () => {
+    const t = await line(() => Promise.reject(new TypeError('hors ligne')));
+    t.input(LABEL).value = 'Accord';
+    await t.click(t.byText('Envoyer les informations'));
+    expect(t.state()).toContain('Réponse perdue');
+  });
+  it('[R201] le script tient le budget d’une page', () => {
+    expect(budgetProblems({ html: '', js: COMMERCES_ENGAGEMENTS_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+});

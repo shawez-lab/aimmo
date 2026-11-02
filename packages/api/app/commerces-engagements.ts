@@ -31,6 +31,10 @@ const REFUSALS = {
   unknown_nda: 'Cet engagement n’existe plus : relisez le commerce.',
   unknown_person: 'Ce contact n’existe plus : relisez la liste.',
   sorte: 'Ce bien n’est pas un commerce.',
+  pas_de_demande: 'Rangez d’abord la demande de ce repreneur.',
+  non_diffusable: 'Ce bien ne peut pas encore être diffusé : mandat à signer, ou délai de rétractation en cours. Rien n’est parti.',
+  presentation_absente: 'Validez d’abord la présentation du commerce : rien d’autre ne peut partir. Rien n’est parti.',
+  consent_withdrawn: 'Cette personne a retiré son accord : il ne se redonne pas d’ici. Rien n’est parti.',
 };
 
 export const COMMERCES_ENGAGEMENTS_SCRIPT = `'use strict';
@@ -46,6 +50,7 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
   function isId(x) { return typeof x === 'string' && ID.test(x); }
   function why(res, fallback) {
     var code = res.body && res.body.code;
+    if (code === 'send_refused' && res.body.rule === 'R05') return 'Déjà envoyé à cette personne : rien n’est reparti.';
     if (code && Object.prototype.hasOwnProperty.call(SAY, code)) return SAY[code];
     if (res.status === 403) return 'Ce geste n’est pas dans vos droits.';
     if (res.offline || !res.body || res.status >= 500) return 'Réponse perdue : ce geste est peut-être rangé. Relisez la demande avant de recommencer.';
@@ -70,6 +75,21 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
       var d = res.body.data || {};
       reload(d.ndaId ? 'Demande rangée, rien n’est envoyé au repreneur : l’engagement est prêt à signer.' : 'Demande rangée, rien n’est envoyé au repreneur. La direction doit d’abord ranger le modèle d’engagement : refaites ensuite la demande.');
     });
+  }
+  /* La réponse immédiate : la présentation validée, rien d'autre [R110], par le contrôle central [R26]. */
+  function publicInfo(box, base, r) {
+    var f = t.fold(box, 'Envoyer les informations publiques');
+    f.appendChild(el('p', 'Seule la présentation validée part, jamais un chiffre de la fiche. Une seule fois par commerce.', 'doux'));
+    var n = ++seq;
+    var proof = field(f, 'ce-informations-accord-' + n, 'Accord du repreneur pour recevoir ces informations par mail (où, quand)');
+    var go = button('Envoyer les informations', function () {
+      var said = String(proof.value || '').trim();
+      if (!said) { say(SAY.bad_consent); return; }
+      act(base + '/informations', { personId: r.personId, consentProof: said }, go, 'Les informations ne sont pas parties.', function (res) {
+        say(res.body.data && res.body.data.mode === 'essai' ? 'Informations préparées par le contrôle central, en mode essai : rangées dans la boîte d’essai, rien n’est parti.' : 'Informations envoyées par le contrôle central.');
+      });
+    });
+    f.appendChild(go);
   }
   /* Une nouvelle demande : le contact se choisit dans la liste, jamais par un identifiant, et rien n'est présélectionné. */
   function demand(box, propertyId, base) {
@@ -219,6 +239,7 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
   /* L'engagement d'une demande : le texte à lire d'abord, puis l'accord, le code et le tracé. */
   function line(box, base, r) {
     clear(box);
+    publicInfo(box, base, r);
     var codes = Array.isArray(r.codes) ? r.codes : [];
     if (!isId(r.ndaId)) {
       box.appendChild(el('p', codes.indexOf('engagement_revoque') !== -1 ? 'L’ancien engagement reste révoqué. Une nouvelle demande fait un nouvel engagement, à signer de nouveau.' : 'Aucun engagement à signer : le modèle manquait. Une fois le modèle rangé par la direction, refaites la demande.', 'doux'));
@@ -232,6 +253,7 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
       if (res.gone || mine !== t.session()) return;
       var d = res.ok ? res.body.data : null;
       if (!d) {
+        /* line efface la boîte : les informations publiques y reviennent avec le reste. */
         var retry = button('Lire l’engagement', function () { line(box, base, r); });
         box.appendChild(retry);
         say(res.status === 403 ? 'Ce geste n’est pas dans vos droits.' : res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'L’engagement ne se lit pas pour le moment.');
