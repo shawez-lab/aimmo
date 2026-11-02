@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { ONLINE_SIGNATURE_PURPOSE } from '../src/documents/signature-en-ligne.ts';
 import {
   Acces,
   ControlesSignature,
@@ -171,5 +172,28 @@ describeWithSqlite('D08 · signature en ligne AIMMO, en mode essai', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.body).toContain(s.value.sessionId);
     await expect(t.db.run(`UPDATE signature_sessions SET copy_status = 'a_envoyer'`)).rejects.toThrow(/figée/);
+  });
+
+  it('[R03] un accord redonné est rangé quand la ligne ouverte est plus ancienne qu’un retrait (AC07), et un accord qui compte n’est pas doublé', async () => {
+    const t = await setup();
+    const doc = (await t.db.first<{ person_id: string }>('SELECT person_id FROM documents WHERE id = ?', [t.documentId]))!;
+    const store = new FicheClient(t.db, { now: () => new Date(T0) });
+    // Un retrait sur la fiche, un accord plus ancien resté ouvert sur son doublon, puis la fusion.
+    const twin = await store.createPerson({ networkId: t.network.id, firstName: 'Doublon' });
+    await store.addConsent({ networkId: t.network.id, personId: twin.id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-02T00:00:00.000Z') });
+    const old = await store.addConsent({ networkId: t.network.id, personId: doc.person_id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-01T00:00:00.000Z') });
+    await store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const unique = new FicheUnique(t.db, new FicheClient(t.db));
+    await unique.merge({ survivorId: doc.person_id, mergedId: twin.id, reason: 'identifiant commun' });
+    expect(await unique.hasConsentInForce(doc.person_id, ONLINE_SIGNATURE_PURPOSE, 'email')).toBe(false);
+    const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [doc.person_id, ONLINE_SIGNATURE_PURPOSE]);
+    expect(await lines()).toHaveLength(1);
+    const first = await t.online.start(t.agent, t.documentId, CONSENT);
+    expect(first.ok).toBe(true);
+    expect(await lines()).toHaveLength(2);
+    expect(await unique.hasConsentInForce(doc.person_id, ONLINE_SIGNATURE_PURPOSE, 'email')).toBe(true);
+    t.at(1000);
+    await t.online.start(t.agent, t.documentId, CONSENT);
+    expect(await lines()).toHaveLength(2);
   });
 });

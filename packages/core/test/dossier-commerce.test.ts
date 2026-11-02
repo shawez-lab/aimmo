@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { DOSSIER_PURPOSE } from '../src/commerces/dossier.ts';
+import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import {
   ConfidentialiteCommerce,
   DossierCommerce,
@@ -287,4 +288,25 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
 it('aucun nombre réglé hors des bornes', () => {
   expect(() => new DossierCommerce({} as SqlDatabase, {} as never, {} as never, {} as never, { read: async () => null }, { maxOpens: 0 })).toThrow();
   expect(() => new DossierCommerce({} as SqlDatabase, {} as never, {} as never, {} as never, { read: async () => null }, { linkDays: 31 })).toThrow();
+});
+
+describeWithSqlite('AC07 · accord redonné pour un dossier', () => {
+  it('[R03] un accord redonné est rangé quand la ligne ouverte est plus ancienne qu’un retrait (AC07), et un accord qui compte n’est pas doublé', async () => {
+    const t = await setup();
+    const b = await t.buyer(true);
+    // Un retrait sur la fiche, un accord plus ancien resté ouvert sur son doublon, puis la fusion.
+    const twin = await t.store.createPerson({ networkId: t.networkId, firstName: 'Doublon' });
+    await t.store.addConsent({ networkId: t.networkId, personId: twin.id, purpose: DOSSIER_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-02T00:00:00.000Z') });
+    const old = await t.store.addConsent({ networkId: t.networkId, personId: b.id, purpose: DOSSIER_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-01T00:00:00.000Z') });
+    await t.store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const unique = new FicheUnique(t.db, new FicheClient(t.db));
+    await unique.merge({ survivorId: b.id, mergedId: twin.id, reason: 'identifiant commun' });
+    expect(await unique.hasConsentInForce(b.id, DOSSIER_PURPOSE, 'email')).toBe(false);
+    const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [b.id, DOSSIER_PURPOSE]);
+    expect((await t.dossier.send(t.acces, t.alex, t.shop.id, b.id, CONSENT)).ok).toBe(true);
+    expect(await lines()).toHaveLength(2);
+    await t.dossier.send(t.acces, t.alex, t.shop.id, b.id, CONSENT);
+    expect(await lines()).toHaveLength(2);
+    expect(await unique.hasConsentInForce(b.id, DOSSIER_PURPOSE, 'email')).toBe(true);
+  });
 });

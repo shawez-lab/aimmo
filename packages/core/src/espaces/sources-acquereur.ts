@@ -348,13 +348,9 @@ export class SqlSourcesAcquereur implements SourcesAcquereur {
     return out;
   }
 
+  /** Comme le contrôle central : une ligne ouverte mais périmée ne fait pas dire « demandées » au client (AC07) [R03]. */
   async alertsRequested(networkId: string, personId: string): Promise<boolean> {
-    const members = await this.members(personId);
-    const at = this.now().toISOString();
-    const row = await this.db.first<{ n: number }>(
-      `SELECT count(*) AS n FROM consents WHERE network_id = ? AND person_id IN (${placeholders(members.length)}) AND purpose = ? AND given_at <= ? AND (withdrawn_at IS NULL OR withdrawn_at > ?)`,
-      [networkId, ...members, ALERT_PURPOSE, at, at],
-    );
-    return Number(row?.n ?? 0) > 0;
+    const mine = await this.db.first('SELECT 1 FROM persons WHERE id = ? AND network_id = ?', [personId, networkId]);
+    return mine !== null && (await this.fiche.channelsInForce(personId, ALERT_PURPOSE)).length > 0;
   }
 }

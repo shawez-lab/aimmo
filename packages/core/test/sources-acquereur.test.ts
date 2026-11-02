@@ -205,6 +205,15 @@ describeWithSqlite('EC11 · lecteurs SQL de l’espace de l’acquéreur', () =>
     expect(await t.sources.alertsRequested('autre-reseau', t.buyerId)).toBe(false);
   });
 
+  it('[R03] [R49] une ligne ouverte plus ancienne qu’un retrait ne fait pas dire « demandées » (AC07)', async () => {
+    const t = await setup();
+    const line = (given: string) => t.store.addConsent({ networkId: t.network.id, agentId: t.alexId, personId: t.buyerId, purpose: 'alertes_biens', channel: 'email', proof: 'formulaire de test', givenAt: new Date(given) });
+    await line('2020-01-02T00:00:00.000Z');
+    const old = await line('2020-01-01T00:00:00.000Z');
+    await t.store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    expect(await t.sources.alertsRequested(t.network.id, t.buyerId)).toBe(false);
+  });
+
   it('[R161] une fiche fusionnée compte pour la fiche gardée', async () => {
     const t = await setup();
     const kept = await t.person('Acheteur', 'Gardé');

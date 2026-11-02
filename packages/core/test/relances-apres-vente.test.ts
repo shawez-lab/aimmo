@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { AFTER_SALE_PURPOSE } from '../src/apres-vente/relances-apres-vente.ts';
 import {
   AFTER_SALE_REMINDER_JOB,
   OLD_CONTACT_QUIET_DAYS,
@@ -390,5 +391,27 @@ describeWithSqlite('F04 · relance un an après la vente, sans jamais relancer u
     expect(events.some((e) => e.type === 'apres_vente.relance')).toBe(true);
     expect(JSON.stringify(events)).not.toMatch(/example\.test|Bonjour|desinscription|Ana/);
     await expect(t.db.run('DELETE FROM after_sale_reminders')).rejects.toThrow();
+  });
+
+  it('[R03] [R65] un « oui » redit est rangé quand la ligne ouverte est plus ancienne qu’un retrait (AC07), et un accord qui compte n’est pas doublé', async () => {
+    const t = await setup();
+    const a = await t.client('Ana');
+    t.close('f1', '2027-03-01', [{ personId: a, side: 'vendeur' }]);
+    const store = new FicheClient(t.db);
+    const networkId = (await t.db.first<{ network_id: string }>('SELECT network_id FROM persons WHERE id = ?', [a]))!.network_id;
+    // Un retrait sur la fiche, un accord plus ancien resté ouvert sur son doublon, puis la fusion.
+    const twin = await store.createPerson({ networkId, firstName: 'Doublon' });
+    await store.addConsent({ networkId, personId: twin.id, purpose: AFTER_SALE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-02T00:00:00.000Z') });
+    const old = await store.addConsent({ networkId, personId: a, purpose: AFTER_SALE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-01T00:00:00.000Z') });
+    await store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const unique = new FicheUnique(t.db, new FicheClient(t.db));
+    await unique.merge({ survivorId: a, mergedId: twin.id, reason: 'identifiant commun' });
+    expect(await unique.hasConsentInForce(a, AFTER_SALE_PURPOSE, 'email')).toBe(false);
+    const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [a, AFTER_SALE_PURPOSE]);
+    expect(await t.relances.recordChoice(t.agent, 'f1', a, { choice: 'oui', proof: 'case cochée, test' })).toEqual({ ok: true });
+    expect(await lines()).toHaveLength(2);
+    await t.relances.recordChoice(t.agent, 'f1', a, { choice: 'oui', proof: 'case cochée, test' });
+    expect(await lines()).toHaveLength(2);
+    expect(await unique.hasConsentInForce(a, AFTER_SALE_PURPOSE, 'email')).toBe(true);
   });
 });
