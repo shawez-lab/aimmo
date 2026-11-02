@@ -420,6 +420,20 @@ export const APP_JS = `'use strict';
     s.addEventListener('error', function () { box.textContent = 'Pas de réseau : les gestes d’appel reviendront.'; });
     box.appendChild(s);
   }
+  var classementDraw = null;
+  function classementBlock(personId, body, q) {
+    var box = el('div');
+    body.appendChild(box);
+    if (classementDraw) return classementDraw(box, personId, q);
+    var s = el('script');
+    s.setAttribute('src', '/app/classement.js');
+    s.addEventListener('load', function () {
+      classementDraw = globalThis.AIMMO_CLASSEMENT({ el: el, send: send, $: $, date: date, ID: ID, cState: cState, cSeq: cSeq, cSelect: cSelect, accordButton: accordButton, accordFailed: accordFailed, openFiche: openFiche });
+      classementDraw(box, personId, q);
+    });
+    s.addEventListener('error', function () { box.textContent = 'Pas de réseau : le classement reviendra.'; });
+    box.appendChild(s);
+  }
   function renderFiche(f, personId) {
     var body = $('fiche-corps');
     clear(body);
@@ -474,6 +488,7 @@ export const APP_JS = `'use strict';
       return line((PROJECTS[p.kind] || 'Autre projet') + ' (étape : ' + stage(p.stage) + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
     })));
     body.appendChild(block('Origines', (f.sources || []).map(function (s) { return line(channel(s.channel) + (s.detail ? ' (' + s.detail + ')' : ''), 'Le ' + date(s.occurredAt)); })));
+    if (f.qualification) classementBlock(personId, body, f.qualification);
     body.appendChild(accordsBlock(personId, f));
     body.appendChild(block('Derniers messages', (f.messages || []).map(function (m) {
       return line(m.body, (m.direction === 'in' ? 'Reçu' : 'Envoyé') + ' par ' + channel(m.channel) + ', le ' + date(m.occurredAt) + ' à ' + hour(m.occurredAt));

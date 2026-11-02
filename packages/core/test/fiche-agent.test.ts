@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { Acces, CALL_REQUEST_DAYS, FicheAgent, inProspectingHours, FicheClient, FicheUnique, Rappels, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
+import { Acces, CALL_REQUEST_DAYS, FicheAgent, Qualification, inProspectingHours, FicheClient, FicheUnique, Rappels, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -246,5 +246,59 @@ describeWithSqlite('A03 · fiche du client dans l’application', () => {
     const entries = await w.journal.all();
     expect(entries.filter((e) => e.type === 'rappel.fait').map((e) => [e.subject, e.data])).toEqual([[`person:${w.lea.id}`, { task: 't-1' }]]);
     expect(entries.filter((e) => e.type === 'acces.refuse')).toHaveLength(2);
+  });
+
+  it('Q08 · la fiche montre le dernier classement, sans note ni auteur ; la correction garde l’origine et rejoint la mesure [R16] [R17]', async () => {
+    const w = await world();
+    await w.db.run(`INSERT INTO contact_scores (qualification_id, network_id, person_id, score, temperature, reason, created_at) VALUES ('q-1', ?, ?, 80, 'hot', 'test', ?)`, [w.net.id, w.lea.id, NOW.toISOString()]);
+    const qualification = new Qualification(w.db, w.store, w.unique, {} as never, {} as never, w.journal, { now: () => NOW });
+    const shown = async () => {
+      const r = await w.fiche.read(w.asPaul, w.lea.id);
+      if (!r.ok) throw new Error('fiche refusée');
+      return r.value.qualification;
+    };
+    expect(await shown()).toEqual({ id: 'q-1', category: 'seller', route: null, classifiedAt: NOW.toISOString(), correction: null });
+
+    expect(await qualification.correct(w.acces, w.asLise, 'q-1', 'buyer', null)).toBe(false);
+    expect(await w.db.all('SELECT id FROM qualification_corrections')).toEqual([]);
+    expect(await qualification.correct(w.acces, w.asPaul, 'q-1', 'rent_out', null)).toBe(true);
+    expect(await qualification.correct(w.acces, w.asPaul, 'q-1', 'buyer', 'M17')).toBe(true);
+
+    const after = await shown();
+    expect(after).toEqual({ id: 'q-1', category: 'seller', route: null, classifiedAt: NOW.toISOString(), correction: { category: 'buyer', route: 'M17', correctedAt: NOW.toISOString() } });
+    expect(JSON.stringify(after)).not.toMatch(/score|temperature|hot|rules|actor|agent:/);
+    expect(await w.db.first('SELECT category FROM qualifications WHERE id = ?', ['q-1'])).toEqual({ category: 'seller' });
+    expect(await qualification.correctedCases(w.net.id)).toEqual([{ inboundId: 'in-1', category: 'buyer', route: 'M17' }]);
+  });
+
+  it('Q08 · fusion défaite : le classement de l’autre fiche n’est plus montré ni corrigible [R16]', async () => {
+    const w = await world();
+    const marc = await w.store.createPerson({ networkId: w.net.id, firstName: 'Marc', lastName: 'Exemple' });
+    const later = '2026-11-10T10:00:00.000Z';
+    await w.db.run(`INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, body, status, person_id, received_at, created_at) VALUES ('in-3', ?, 'k3', 'email', 'email', 'x', 'processed', ?, ?, ?)`, [w.net.id, marc.id, later, later]);
+    await w.db.run(`INSERT INTO qualifications (id, network_id, inbound_id, person_id, category, deadline, financing, criteria, source, created_at) VALUES ('q-3', ?, 'in-3', ?, 'buyer', NULL, NULL, '[]', 'rules', ?)`, [w.net.id, marc.id, later]);
+    const merged = await w.unique.merge({ survivorId: w.lea.id, mergedId: marc.id, reason: 'test' });
+    const joined = await w.fiche.read(w.asPaul, w.lea.id);
+    expect(joined.ok && joined.value.qualification?.id).toBe('q-3');
+    await w.unique.undoMerge(merged.id, { journal: w.journal, actor: 'agent:test' });
+    const apart = await w.fiche.read(w.asPaul, w.lea.id);
+    expect(apart.ok && apart.value.qualification?.id).toBe('q-1');
+    const qualification = new Qualification(w.db, w.store, w.unique, {} as never, {} as never, w.journal, { now: () => NOW });
+    expect(await qualification.correct(w.acces, w.asPaul, 'q-3', 'spam', null)).toBe(false);
+    expect(await w.db.all('SELECT id FROM qualification_corrections')).toEqual([]);
+  });
+
+  it('Q08 · le plus récent des classements gagne, fiches réunies comprises ; une correction d’un ancien ne le suit pas ; aucun classement : rien', async () => {
+    const w = await world();
+    const double = await w.store.createPerson({ networkId: w.net.id, agentId: w.paul.id, firstName: 'Léa', lastName: 'Exemple' });
+    const none = await w.fiche.read(w.asPaul, double.id);
+    expect(none.ok && none.value.qualification).toBeNull();
+    const later = '2026-11-10T10:00:00.000Z';
+    await w.db.run(`INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, body, status, person_id, received_at, created_at) VALUES ('in-2', ?, 'k2', 'email', 'email', 'x', 'processed', ?, ?, ?)`, [w.net.id, double.id, later, later]);
+    await w.db.run(`INSERT INTO qualifications (id, network_id, inbound_id, person_id, category, route, deadline, financing, criteria, source, created_at) VALUES ('q-2', ?, 'in-2', ?, 'rent_out', 'M15', NULL, NULL, '[]', 'rules', ?)`, [w.net.id, double.id, later]);
+    await w.db.run(`INSERT INTO qualification_corrections (id, network_id, qualification_id, actor, category, route, created_at) VALUES ('c-1', ?, 'q-1', 'agent:x', 'spam', NULL, ?)`, [w.net.id, NOW.toISOString()]);
+    await w.unique.merge({ survivorId: w.lea.id, mergedId: double.id, reason: 'test' });
+    const r = await w.fiche.read(w.asPaul, w.lea.id);
+    expect(r.ok && r.value.qualification).toEqual({ id: 'q-2', category: 'rent_out', route: 'M15', classifiedAt: later, correction: null });
   });
 });

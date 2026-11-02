@@ -36,6 +36,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { isWorkingDay, localTime } from '../envoi/horaires.ts';
 import type { Consent, ExclusionReason } from '../db/types.ts';
 import type { FicheComplete } from '../fiche/fusion.ts';
+import type { Category, Route } from '../qualification/regles.ts';
 import type { Acces } from './acces.ts';
 import type { Viewer } from './droits.ts';
 
@@ -60,6 +61,17 @@ export interface AgentFiche {
   messages: { channel: string; direction: string; author: string; body: string; occurredAt: string }[];
   /** Les rappels de la fiche, ouverts d'abord ; un rappel fait garde sa ligne [R17]. */
   callbacks: { taskId: string; reason: string; dueAt: string; doneAt: string | null }[];
+  /**
+   * Le dernier classement du contact, et sa dernière correction (Q08). La demande, jamais une note : ni score, ni
+   * température, ni origine du classement, ni auteur de la correction. Null si aucun message n'a été classé.
+   */
+  qualification: {
+    id: string;
+    category: Category;
+    route: Route | null;
+    classifiedAt: string;
+    correction: { category: Category; route: Route | null; correctedAt: string } | null;
+  } | null;
 }
 
 export type AgentFicheRead = { ok: true; value: AgentFiche } | { ok: false; rule: 'R16'; code: string };
@@ -203,6 +215,19 @@ export class FicheAgent {
       [viewer.networkId, ...ids],
     );
 
+    // Le dernier classement de la fiche, fiches réunies comprises ; l'origine reste telle quelle, à côté de sa correction [R17].
+    const latest = await this.db.first<{ id: string; category: Category; route: Route | null; created_at: string }>(
+      `SELECT id, category, route, created_at FROM qualifications WHERE network_id = ? AND person_id IN (${placeholders(ids.length)})
+       ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+      [viewer.networkId, ...ids],
+    );
+    const correction = latest
+      ? await this.db.first<{ category: Category; route: Route | null; created_at: string }>(
+          'SELECT category, route, created_at FROM qualification_corrections WHERE network_id = ? AND qualification_id = ? ORDER BY rowid DESC LIMIT 1',
+          [viewer.networkId, latest.id],
+        )
+      : null;
+
     const messages = [...fiche.messages]
       .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id.localeCompare(a.id))
       .slice(0, AGENT_FICHE_MESSAGES)
@@ -230,6 +255,15 @@ export class FicheAgent {
         consents: fiche.consents.map((c) => ({ id: c.id, purpose: c.purpose, channel: c.channel, givenAt: c.given_at, withdrawnAt: c.withdrawn_at })),
         messages,
         callbacks: tasks.map((t) => ({ taskId: t.id, reason: t.reason, dueAt: t.due_at, doneAt: t.done_at })),
+        qualification: latest
+          ? {
+              id: latest.id,
+              category: latest.category,
+              route: latest.route,
+              classifiedAt: latest.created_at,
+              correction: correction ? { category: correction.category, route: correction.route, correctedAt: correction.created_at } : null,
+            }
+          : null,
       },
     };
   }
