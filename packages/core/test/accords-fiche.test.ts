@@ -45,7 +45,7 @@ async function setup() {
 describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
   it('[R03] chaque finalité ouverte à l’agent est bien celle que son module demande, et rien que ce qu’il peut noter', () => {
     expect([...AGENT_CONSENT_PURPOSES].sort()).toEqual(
-      [ALERT_PURPOSE, OFFER_PURPOSE, RENTAL_UPDATE_PURPOSE, ROUTE_SHARE_PURPOSE, SELLER_UPDATE_PURPOSE, VALUATION_PURPOSE, VALUE_TRACKING_PURPOSE, 'prospecting'].sort(),
+      [ALERT_PURPOSE, OFFER_PURPOSE, RENTAL_UPDATE_PURPOSE, ROUTE_SHARE_PURPOSE, SELLER_UPDATE_PURPOSE, VALUATION_PURPOSE, VALUE_TRACKING_PURPOSE, 'prospecting', 'rappel_demande'].sort(),
     );
     expect([...AGENT_CONSENT_CHANNELS].sort()).toEqual(['email', 'phone', 'sms', 'whatsapp']);
   });

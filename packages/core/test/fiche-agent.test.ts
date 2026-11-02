@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { Acces, FicheAgent, FicheClient, FicheUnique, Rappels, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
+import { Acces, CALL_REQUEST_DAYS, FicheAgent, FicheClient, FicheUnique, Rappels, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -90,8 +90,8 @@ describeWithSqlite('A03 · fiche du client dans l’application', () => {
     expect(JSON.stringify(r)).not.toContain('+336');
   });
 
-  it('[R03] l’accord par téléphone ouvre l’appel, quelle que soit sa finalité ; son retrait le referme', async () => {
-    for (const purpose of ['reply', 'prospecting', 'appointment']) {
+  it('[R03] la prospection acceptée et la demande de la personne ouvrent l’appel ; leur retrait le referme', async () => {
+    for (const purpose of ['reply', 'prospecting', 'rappel_demande']) {
       const w = await world();
       const c = await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose, channel: 'phone', proof: 'accord test', givenAt: new Date('2026-10-02T10:00:00Z') });
       const open = await w.fiche.read(w.asPaul, w.lea.id);
@@ -101,6 +101,49 @@ describeWithSqlite('A03 · fiche du client dans l’application', () => {
       expect(closed.ok && closed.value.call, purpose).toBeNull();
       expect(closed.ok && closed.value.callRefusal, purpose).toBe('no_consent');
     }
+  });
+
+  it('[R03] un accord pour un autre sujet, ou la parole d’un tiers, n’ouvre pas l’appel', async () => {
+    for (const purpose of ['route_share', 'alertes_biens', 'valuation_follow_up', 'suivi_vente', 'recommandation', 'appointment']) {
+      const w = await world();
+      await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose, channel: 'phone', proof: 'accord test', givenAt: new Date('2026-10-02T10:00:00Z') });
+      const r = await w.fiche.read(w.asPaul, w.lea.id);
+      expect(r.ok && r.value.callRefusal, purpose).toBe('no_consent');
+    }
+  });
+
+  it('[R03] une demande vaut 13 mois ; la prospection acceptée reste jusqu’à son retrait', async () => {
+    const oneDay = 86_400_000;
+    const check = async (purpose: string, days: number) => {
+      const w = await world();
+      await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose, channel: 'phone', proof: 'accord test', givenAt: new Date(NOW.getTime() - days * oneDay) });
+      const r = await w.fiche.read(w.asPaul, w.lea.id);
+      return r.ok && r.value.callRefusal;
+    };
+    expect(await check('reply', CALL_REQUEST_DAYS - 2)).toBeNull();
+    expect(await check('reply', CALL_REQUEST_DAYS + 1)).toBe('no_consent');
+    expect(await check('rappel_demande', CALL_REQUEST_DAYS + 1)).toBe('no_consent');
+    expect(await check('prospecting', CALL_REQUEST_DAYS + 1)).toBeNull();
+  });
+
+  it('[R03] un retrait par téléphone ferme aussi les accords plus anciens d’une autre finalité, pas un accord donné après', async () => {
+    const w = await world();
+    await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'reply', channel: 'phone', proof: 'message reçu', givenAt: new Date('2026-09-01T10:00:00Z') });
+    const taken = await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'prospecting', channel: 'phone', proof: 'accord test', givenAt: new Date('2026-09-02T10:00:00Z') });
+    await w.store.withdrawConsent(taken.id, new Date('2026-10-01T10:00:00Z'));
+    const closed = await w.fiche.read(w.asPaul, w.lea.id);
+    expect(closed.ok && closed.value.callRefusal).toBe('no_consent');
+    await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'rappel_demande', channel: 'phone', proof: 'nouvelle demande', givenAt: new Date('2026-10-05T10:00:00Z') });
+    const open = await w.fiche.read(w.asPaul, w.lea.id);
+    expect(open.ok && open.value.callRefusal).toBeNull();
+  });
+
+  it('[R03] le numéro composé est le dernier donné', async () => {
+    const w = await world();
+    await w.store.addIdentifier({ networkId: w.net.id, personId: w.lea.id, kind: 'phone', value: '+33600000099' });
+    await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'reply', channel: 'phone', proof: 'message reçu', givenAt: new Date('2026-10-02T10:00:00Z') });
+    const r = await w.fiche.read(w.asPaul, w.lea.id);
+    expect(r.ok && r.value.call).toBe('tel:+33600000099');
   });
 
   it('[R03] un accord daté du futur n’ouvre pas l’appel', async () => {

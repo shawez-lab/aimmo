@@ -111,7 +111,7 @@ describe('A03 · fiche du client dans l’application', () => {
     buttons(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
     await a.tick();
     expect(tels(a.els['fiche-corps']!)).toEqual([]);
-    expect(a.els['fiche-corps']!.textContent).toContain('Appel fermé : pas d’accord par téléphone ni de demande de cette personne.');
+    expect(a.els['fiche-corps']!.textContent).toContain('Appel fermé : aucun accord ni demande de rappel enregistrés pour cette personne.');
     const b = await app({ ...base(), '/v1/fiches/p-1/resume': ok({ ...FICHE, call: null, callRefusal: 'no_phone' }) });
     buttons(b.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
     await b.tick();
@@ -180,6 +180,8 @@ describeWithSqlite('A03 · routes de la fiche et du rappel', () => {
     const env: Env = { DB: d1, MODE: 'essai', API_KEYS: JSON.stringify(keys) };
     const call = (path: string, key: string, method = 'GET') => worker.fetch(new Request(`${BASE}${path}`, { method, headers: { authorization: `Bearer ${key}` } }), env);
 
+    const closed = (await (await call(`/v1/fiches/${lea.id}/resume`, KEY_AGENT)).json()) as { data: { call: string | null; callRefusal: string | null } };
+    expect(closed.data).toMatchObject({ call: null, callRefusal: 'no_consent' });
     await fiches.addConsent({ networkId: network.id, personId: lea.id, purpose: 'reply', channel: 'phone', proof: 'message reçu test', givenAt: new Date('2025-12-01T00:00:00Z') });
     const mine = await call(`/v1/fiches/${lea.id}/resume`, KEY_AGENT);
     expect(mine.status).toBe(200);

@@ -31,6 +31,7 @@ export const AGENT_CONSENT_LABELS: Readonly<Record<string, string>> = Object.fre
   alertes_biens: 'Alertes de biens',
   route_share: 'Partage de la tournée de visites',
   prospecting: 'Prospection',
+  rappel_demande: 'Demande de rappel de la personne',
 });
 export const AGENT_CONSENT_PURPOSES: readonly string[] = Object.freeze(Object.keys(AGENT_CONSENT_LABELS));
 /** Les canaux où un premier contact demande un accord préalable [R03]. */
