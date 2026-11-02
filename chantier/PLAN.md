@@ -201,7 +201,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Décidé (2026-11-02), lecture prudente : le passage à 10 % reste fermé tant que la variable `AUTOMATION_ROLLOUT_OPEN` n'est pas branchée (B04) : la mention R06 n'est pas alignée et le site ne lit pas encore `decides`. Une adresse inconnue du socle : le site décide seul, le socle ne sachant rien d'elle ; adresse portée par plusieurs fiches : le refus du socle vaut, selon le tirage. Les seuils de 20 demandes et de 5 décisions sont des réglages, jusqu'à ce que Shawez en décide autrement.
 
 ### B04b · Mention de l'assistant alignée sur le texte du site
-- Statut : en cours
+- Statut : fait (2026-11-02)
 - Qui : Claude · Relecture : forte · Dépend de : B04a
 - Cahier : Feuille de route, novembre 2026 ; mention de l'assistant dans les réponses automatiques par mail.
 - Objectif : détaché de B04 le 2026-11-02. En ombre et aux paliers, le message rangé chez le socle est exactement celui que le site envoie : le contrôle ne doit ni ajouter sa propre mention, ni la compter comme donnée alors que le site ne l'a pas mise. Lire dans `shawez-immo` (lecture seule) ce que disent vraiment ses rappels et courriers, puis décider dans cette tâche.
@@ -354,7 +354,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste, à trancher dans C09 : une réponse privée à un commentaire peut partir alors qu'un humain a répondu en message privé (conversations distinctes, déjà le cas avant C09a) ; un écho `unfinished` renvoyé avant 2 minutes attend le prochain message du réseau pour être rangé (rien de perdu, l'assistant reste muet).
 
 ### C09b · Palier de la captation par canal, derrière le contrôle central
-- Statut : à faire
+- Statut : en cours
 - Voie : 1
 - Qui : Claude · Relecture : forte · Dépend de : C09a, B04a
 - Cahier : M02, « État » ; Feuille de route, décembre 2026. Partie de C09 qui n'attend personne : les vrais canaux restent de faux canaux dans les tests.
