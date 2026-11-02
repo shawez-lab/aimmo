@@ -2532,7 +2532,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT16 · Écran « Attirer » : mentions des agents et leurs sites
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12
 - Cahier : M01 ; R16, R152, R153.
