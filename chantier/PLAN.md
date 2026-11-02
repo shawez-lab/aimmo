@@ -1296,7 +1296,9 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N13 · Dates, financement et acte depuis l'écran du dossier
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Reste : fusionnée (#276) ; relecture forte 1 P1 corrigé (l'acte s'écrit tout ou rien, une clôture coupée reste reprenable) ; Codex à sa limite (H03) ; vérification GitHub verte ; suite complète non finie en local ; pas vu dans un vrai navigateur ; dépôt réel avec H25.
+- Décidé : `POST /dossiers/<id>/preuves` range la preuve sous `preuves/` ; les routes refusent une preuve absente du stockage ; un dossier clos refuse date et étape du prêt de l'agent ; l'acte se confirme en deux gestes.
 - Trouvé le 2026-11-02 (relecture de N12) : l'écran dit « Date à saisir · à vous » et aucun écran n'appelle `/dossiers/:id/dates`, `/financement` ni `/acte` en écriture : l'agent ne peut pas faire avancer le dossier.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : N12
 - Cahier : M10 ; R10, R16, R61.
