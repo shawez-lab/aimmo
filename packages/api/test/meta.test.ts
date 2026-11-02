@@ -389,6 +389,8 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
           ? [
               'const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;',
               'return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;',
+      // Les données publiques d'un bien pour l'avis de valeur (E09), en lecture seule, jamais un envoi.
+      '...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),',
             ]
           : [],
       );
