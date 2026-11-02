@@ -19,13 +19,13 @@ const ALERTS = [
 
 async function run(routes: Record<string, Answer>) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
-  const calls: { url: string; method: string }[] = [];
+  const calls: { url: string; method: string; body?: string }[] = [];
   const context: Record<string, unknown> = {
     document,
     Date,
     localStorage: { getItem: () => KEY, setItem: () => undefined, removeItem: () => undefined },
-    fetch: (url: string, init: { method?: string }) => {
-      calls.push({ url, method: init.method ?? 'GET' });
+    fetch: (url: string, init: { method?: string; body?: string }) => {
+      calls.push({ url, method: init.method ?? 'GET', ...(init.body ? { body: init.body } : {}) });
       const answer = { '/v1/moi': async () => Response.json({ ok: true, data: { role: 'agent', firstName: 'Alex' } }), ...routes }[url];
       return answer ? answer() : Promise.reject(new TypeError('hors ligne'));
     },
@@ -46,7 +46,9 @@ async function run(routes: Record<string, Answer>) {
     await tick();
   };
   const named = (text: string): FakeElement[] => els.reprendre!.all().filter((e) => e.tagName === 'button' && e.textContent === text);
-  return { els, calls, context, tick, scripts, load, named };
+  // Le retour sur l'accueil relit la journée.
+  const reload = () => els.retour!.listeners.click!({});
+  return { els, calls, context, tick, scripts, load, named, reload };
 }
 
 describe('C09c · alertes dans l’application', () => {
@@ -81,7 +83,7 @@ describe('C09c · alertes dans l’application', () => {
     b.listeners.click!({});
     b.listeners.click!({});
     await t.tick();
-    expect(t.calls.filter((c) => c.method === 'POST')).toEqual([{ url: '/v1/alertes-agent/al-1/vue', method: 'POST' }]);
+    expect(t.calls.filter((c) => c.method === 'POST')).toEqual([{ url: '/v1/alertes-agent/al-1/vue', method: 'POST', body: JSON.stringify({ createdAt: ALERTS[0]!.createdAt }) }]);
     expect(t.named('Marquer vue')).toEqual([]);
     expect(t.els['reprendre-etat']!.textContent).toBe('Rien à reprendre.');
   });
@@ -95,6 +97,45 @@ describe('C09c · alertes dans l’application', () => {
     expect(t.named('Marquer vue')).toHaveLength(1);
     expect((b as unknown as { disabled: boolean }).disabled).toBe(false);
     expect(t.els['reprendre-etat']!.textContent).toContain('Pas de réseau');
+  });
+
+  it('[R12] une alerte rouverte depuis la lecture : la liste est relue, l’alerte reste', async () => {
+    let reads = 0;
+    const t = await run({
+      '/v1/alertes-agent': async () => {
+        reads += 1;
+        return Response.json({ ok: true, data: { alerts: [ALERTS[0]], more: false } });
+      },
+      '/v1/alertes-agent/al-1/vue': ok({ already: false, changed: true }),
+    });
+    await t.load();
+    t.named('Marquer vue')[0]!.listeners.click!({});
+    await t.tick();
+    expect(reads).toBe(2);
+    expect(t.named('Marquer vue')).toHaveLength(1);
+  });
+
+  it('[R12] avec d’autres alertes en attente, le message reste au retour sur l’accueil et la dernière vue relit la liste', async () => {
+    let reads = 0;
+    const t = await run({
+      '/v1/alertes-agent': async () => {
+        reads += 1;
+        return Response.json({ ok: true, data: { alerts: reads <= 2 ? [ALERTS[0]] : [ALERTS[1]], more: reads <= 2 } });
+      },
+      '/v1/alertes-agent/al-1/vue': ok({ already: false, changed: false }),
+    });
+    await t.load();
+    const MORE = 'D’autres alertes apparaîtront quand celles-ci seront vues.';
+    expect(t.els['reprendre-etat']!.textContent).toBe(MORE);
+    // Script déjà chargé : le texte vient du dessin, il n'est pas écrasé.
+    t.reload();
+    await t.tick();
+    expect(t.els['reprendre-etat']!.textContent).toBe(MORE);
+    t.named('Marquer vue')[0]!.listeners.click!({});
+    await t.tick();
+    expect(reads).toBe(3);
+    expect(t.els.reprendre!.textContent).toContain('la conversation est à vous');
+    expect(t.els['reprendre-etat']!.textContent).toBe('');
   });
 
   it('[R16] un refus du serveur relit la liste : la fiche a pu changer de main', async () => {
@@ -137,6 +178,27 @@ describe('C09c · alertes dans l’application', () => {
     t.els['reprise-voir']!.listeners.click!({});
     await t.tick();
     expect(t.els.reseau!.all().filter((e) => e.tagName === 'script')).toHaveLength(1);
+  });
+
+  it('[R13] un vrai dépôt de la reprise part une fois, sans rien montrer du fichier ; une session finie arrête la suite', async () => {
+    const t = await run({ '/v1/alertes-agent': ok({ alerts: [], more: false }), '/v1/reprise/fichiers': ok({ lines: 3, unreadableLines: 0 }) });
+    const sent = () => t.calls.filter((c) => c.url === '/v1/reprise/fichiers');
+    const inputs = t.els as unknown as Record<string, { files?: unknown[]; value: string }>;
+    inputs['reprise-exclusion_list']!.files = [{ size: 12, text: async () => 'mail\nlea@example.test' }];
+    t.els['reprise-deposer']!.listeners.click!({});
+    const s = t.els.reseau!.all().filter((e) => e.tagName === 'script');
+    runInNewContext(REPRISE_SCRIPT, t.context);
+    s[0]!.listeners.load!({});
+    await t.tick();
+    expect(sent()).toHaveLength(1);
+    expect(JSON.parse(sent()[0]!.body!)).toMatchObject({ tool: 'exclusion_list' });
+    expect(t.els['reprise-etat']!.textContent).toBe('Dépôt fait.');
+    expect(t.els['reprise-liste']!.textContent).not.toContain('example.test');
+    inputs['reprise-exclusion_list']!.files = [{ size: 12, text: async () => 'mail\nlea@example.test' }];
+    t.els['reprise-deposer']!.listeners.click!({});
+    t.els.sortir!.listeners.click!({});
+    await t.tick();
+    expect(sent()).toHaveLength(1);
   });
 
   it('[R201] le script est servi à part, hors de la coquille, et tient le budget d’une page', async () => {

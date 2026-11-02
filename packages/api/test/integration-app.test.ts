@@ -169,7 +169,7 @@ describe('J14 · écrans de M14 dans l’application', () => {
     await d.click(d.byText('Fiche d’entretien'));
     d.input('Personne qui a mené l’entretien').value = 'Shawez';
     await d.click(d.byText('Marquer tenu'));
-    const screen = [...t.calls, ...d.calls].filter((c) => /^\/v1\/reseau\//.test(c.url) || !/^\/v1\/(moi|plan-du-jour|contacts-chauds|rendez-vous\/jour|usage|annonces$|apres-vente|pilotage)/.test(c.url));
+    const screen = [...t.calls, ...d.calls].filter((c) => /^\/v1\/reseau\//.test(c.url) || !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous\/jour|usage|annonces$|apres-vente|pilotage)/.test(c.url));
     expect(screen.length).toBeGreaterThanOrEqual(9);
     for (const c of screen) {
       expect(c.url.startsWith('/v1/reseau/'), c.url).toBe(true);

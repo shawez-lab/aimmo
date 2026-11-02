@@ -141,7 +141,7 @@ describe('G13 · écran « Gagner des mandats » de l’application', () => {
     await t.click(t.byText('Ouvrir la tournée'));
     await t.click(t.byText('Déposée'));
     await t.click(t.byText('Télécharger les lettres à imprimer'));
-    const screen = t.calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|contacts-chauds|rendez-vous\/jour|usage|annonces$|apres-vente)/.test(c.url));
+    const screen = t.calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous\/jour|usage|annonces$|apres-vente)/.test(c.url));
     expect(screen.length).toBeGreaterThanOrEqual(14);
     for (const c of screen) {
       expect(c.url.startsWith('/v1/gagner/'), c.url).toBe(true);

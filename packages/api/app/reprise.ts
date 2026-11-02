@@ -63,18 +63,18 @@ export const REPRISE_JS = `
 
 /** Le script du dépôt, servi à part (`/app/reprise.js`) et chargé au premier geste : il ne sert qu'à la direction [R201]. */
 export const REPRISE_SCRIPT = `'use strict';
-globalThis.AIMMO_REPRISE = function (t) {
-  var $ = t.$, el = t.el, clear = t.clear, send = t.send, date = t.date, hour = t.hour;
+globalThis.AIMMO_REPRISE = function (tools) {
+  var $ = tools.$, el = tools.el, clear = tools.clear, send = tools.send, date = tools.date, hour = tools.hour, session = tools.session;
   var REPRISE_TOOLS = ${JSON.stringify(TOOLS)};
   var REPRISE_REFUSALS = ${JSON.stringify(REFUSALS)};
   var REPRISE_SOURCES = ${JSON.stringify(SOURCES)};
   function repriseLine(text) { $('reprise-liste').appendChild(el('li', text)); }
   function showReprise() {
-    var mine = t.session();
+    var mine = session();
     clear($('reprise-liste'));
     $('reprise-etat').textContent = 'Chargement…';
     return send('/v1/reprise/etat', 'GET').then(function (res) {
-      if (res.gone || mine !== t.session()) return false;
+      if (res.gone || mine !== session()) return false;
       if (!res.ok) { $('reprise-etat').textContent = res.offline ? 'Pas de réseau. Réessayez dans un moment.' : (REPRISE_REFUSALS[(res.body || {}).code] || 'Indisponible pour le moment.'); return false; }
       var d = res.body.data || {}, depots = d.depots || {}, p = d.progress;
       var missing = 0;
@@ -92,19 +92,19 @@ globalThis.AIMMO_REPRISE = function (t) {
   function depositReprise() {
     var chosen = REPRISE_TOOLS.filter(function (t) { var f = $('reprise-' + t.id).files; return f && f.length === 1; });
     if (!chosen.length) { $('reprise-etat').textContent = 'Choisissez au moins un fichier.'; return Promise.resolve(false); }
-    var mine = t.session();
+    var mine = session();
     $('reprise-etat').textContent = 'Envoi…';
     clear($('reprise-liste'));
     var failed = 0;
     return chosen.reduce(function (chain, t) {
       return chain.then(function () {
-        if (mine !== t.session()) return;
+        if (mine !== session()) return;
         var file = $('reprise-' + t.id).files[0];
         if (file.size > 20000000) { failed += 1; repriseLine(t.label + ' : ' + REPRISE_REFUSALS.file_too_large); return; }
         return file.text().then(function (csv) {
           return send('/v1/reprise/fichiers', 'POST', { tool: t.id, csv: csv });
         }).then(function (res) {
-          if (!res || res.gone || mine !== t.session()) return;
+          if (!res || res.gone || mine !== session()) return;
           if (!res.ok) { failed += 1; repriseLine(t.label + ' : ' + (res.offline ? 'pas de réseau, rien n’est déposé.' : (REPRISE_REFUSALS[(res.body || {}).code] || 'refusé.'))); return; }
           var v = res.body.data;
           $('reprise-' + t.id).value = '';
@@ -112,7 +112,7 @@ globalThis.AIMMO_REPRISE = function (t) {
         }, function () { failed += 1; repriseLine(t.label + ' : fichier illisible sur cet appareil.'); });
       });
     }, Promise.resolve()).then(function () {
-      if (mine !== t.session()) return false;
+      if (mine !== session()) return false;
       $('reprise-etat').textContent = failed ? 'Dépôt incomplet : ' + failed + ' fichier' + (failed > 1 ? 's' : '') + ' refusé' + (failed > 1 ? 's' : '') + '.' : 'Dépôt fait.';
       return failed === 0;
     });

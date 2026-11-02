@@ -41,7 +41,7 @@ export interface AgentAlertView {
 
 type Refusal = { ok: false; rule: 'R16'; code: 'role' | 'agent_inactive' | 'agent_file_incomplete' | 'not_assigned' };
 export type AgentAlertsRead = { ok: true; value: { alerts: AgentAlertView[]; more: boolean } } | Refusal;
-export type AgentAlertSeen = { ok: true; value: { already: boolean } } | Refusal;
+export type AgentAlertSeen = { ok: true; value: { already: boolean; changed: boolean } } | Refusal;
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
@@ -145,21 +145,25 @@ export class AlertesAgent {
     return { ok: true, value: { alerts, more } };
   }
 
-  /** L'agent a vu l'alerte : la ligne reste, avec sa date [R17]. */
-  async markSeen(viewer: Viewer, alertId: string): Promise<AgentAlertSeen> {
+  /**
+   * L'agent a vu l'alerte telle qu'il l'a lue (`createdAt`) : la ligne reste, avec sa date [R17]. Une alerte rouverte
+   * depuis cette lecture n'est pas refermée : `changed` demande de relire la liste [R12].
+   */
+  async markSeen(viewer: Viewer, alertId: string, createdAt: string): Promise<AgentAlertSeen> {
     const blocked = await this.blocked(viewer, 'alerte_agent.vue');
     if (blocked) return blocked;
     const row = await this.db.first<AgentAlertRow>('SELECT * FROM agent_alerts WHERE id = ? AND network_id = ?', [alertId, viewer.networkId]);
     if (!row || !(await this.membersIfAllowed(viewer, row.person_id))) {
       return this.refuse(viewer, 'not_assigned', row ? personSubject(row.person_id) : null, 'alerte_agent.vue');
     }
-    if (row.seen_at !== null) return { ok: true, value: { already: true } };
+    if (row.created_at !== createdAt) return { ok: true, value: { already: false, changed: true } };
+    const { changes } = await this.db.run('UPDATE agent_alerts SET seen_at = ? WHERE id = ? AND seen_at IS NULL AND created_at = ?', [this.now().toISOString(), row.id, createdAt]);
+    if (changes !== 1) return { ok: true, value: { already: true, changed: false } };
     await appendEvent(
       this.journal,
       { type: 'alerte_agent.vue', actor: `agent:${viewer.userId}`, subject: personSubject(row.person_id), data: { rule: 'R17', alert: `agent_alert:${row.id}`, reason: row.reason, raisedAt: row.created_at } },
       this.now,
     );
-    await this.db.run('UPDATE agent_alerts SET seen_at = ? WHERE id = ? AND seen_at IS NULL', [this.now().toISOString(), row.id]);
-    return { ok: true, value: { already: false } };
+    return { ok: true, value: { already: false, changed: false } };
   }
 }

@@ -22,8 +22,11 @@ async function setup() {
   const ids: Record<Who, { role: string; userId: string }> = { alex: { role: 'agent', userId: alex.id }, sam: { role: 'agent', userId: sam.id }, direction: { role: 'direction', userId: 'direction-1' } };
   const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), networkId: network.id, ...ids[w] }))));
   const config: ApiConfig = { db, apiKeys, mode: 'essai', now };
-  const call = async (who: Who | null, method: string, path: string) => {
-    const r = await handleRequest(new Request(`${ORIGIN}/v1${path}`, { method, headers: who ? { authorization: `Bearer ${KEYS[who]}` } : {} }), config);
+  const call = async (who: Who | null, method: string, path: string, body?: unknown) => {
+    const r = await handleRequest(
+      new Request(`${ORIGIN}/v1${path}`, { method, headers: who ? { authorization: `Bearer ${KEYS[who]}` } : {}, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }),
+      config,
+    );
     return { status: r.status, body: (await r.json()) as { ok: boolean; rule?: string; code?: string; sent?: boolean; data?: { alerts?: { id: string }[]; already?: boolean } } };
   };
   return { db, call, journal: new SqlJournalStore(db) };
@@ -37,9 +40,12 @@ describeWithSqlite('C09c · routes des alertes', () => {
     expect(mine.status).toBe(200);
     expect(mine.body.data?.alerts?.map((a) => a.id)).toEqual(['al-1']);
     expect((await t.call('sam', 'GET', '/alertes-agent')).body.data?.alerts).toEqual([]);
-    expect(await t.call('sam', 'POST', '/alertes-agent/al-1/vue')).toMatchObject({ status: 403, body: { ok: false, rule: 'R16', code: 'not_assigned' } });
+    const read = { createdAt: now().toISOString() };
+    expect(await t.call('sam', 'POST', '/alertes-agent/al-1/vue', read)).toMatchObject({ status: 403, body: { ok: false, rule: 'R16', code: 'not_assigned' } });
     expect(await t.call('direction', 'GET', '/alertes-agent')).toMatchObject({ status: 403, body: { code: 'role' } });
-    expect(await t.call('alex', 'POST', '/alertes-agent/al-1/vue')).toMatchObject({ status: 200, body: { ok: true, sent: false, data: { already: false } } });
+    expect(await t.call('alex', 'POST', '/alertes-agent/al-1/vue')).toMatchObject({ status: 400 });
+    expect(await t.call('alex', 'POST', '/alertes-agent/al-1/vue', { createdAt: 1 })).toMatchObject({ status: 400 });
+    expect(await t.call('alex', 'POST', '/alertes-agent/al-1/vue', read)).toMatchObject({ status: 200, body: { ok: true, sent: false, data: { already: false } } });
     expect((await t.call('alex', 'GET', '/alertes-agent')).body.data?.alerts).toEqual([]);
     expect((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM agent_alerts WHERE seen_at IS NOT NULL'))!.n).toBe(1);
   });

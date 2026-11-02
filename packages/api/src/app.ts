@@ -386,8 +386,17 @@ const ROUTES: RouteDef[] = [
     pattern: new RegExp(`^/alertes-agent/${ID}/vue$`),
     name: 'alerte_agent.vue',
     // Marquer vue ne supprime rien [R17] ; une alerte inconnue est refusée comme celle d'un autre [R16].
-    handle: async (s, viewer, [id]) => {
-      const seen = await new AlertesAgent(s.db, s.journal, { now: s.now }).markSeen(viewer, id!);
+    handle: async (s, viewer, [id], request) => {
+      // La date lue : une alerte rouverte depuis n'est pas refermée [R12]. Un petit corps, jamais gardé.
+      const text = await request.text();
+      let createdAt: unknown = null;
+      try {
+        createdAt = text.length <= 256 ? (JSON.parse(text) as { createdAt?: unknown } | null)?.createdAt : null;
+      } catch {
+        createdAt = null;
+      }
+      if (typeof createdAt !== 'string') return failure(400, 'bad_request', 'Date de l’alerte manquante.');
+      const seen = await new AlertesAgent(s.db, s.journal, { now: s.now }).markSeen(viewer, id!, createdAt);
       return seen.ok ? json(200, { ok: true, mode: TRIAL_MODE, sent: false, data: seen.value }) : refusal({ rule: seen.rule, code: seen.code });
     },
   },

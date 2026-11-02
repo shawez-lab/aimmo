@@ -37,8 +37,13 @@ async function setup() {
     return id;
   };
   const asAgent = (id: string): Viewer => ({ role: 'agent', networkId: network.id, userId: id });
+  /** Marque vue telle que la base la montre : le cas d'un écran à jour. */
+  const seen = async (agentId: string, id: string) => {
+    const row = await db.first<{ created_at: string }>('SELECT created_at FROM agent_alerts WHERE id = ?', [id]);
+    return service.markSeen(asAgent(agentId), id, row?.created_at ?? 'inconnue');
+  };
   const lines = () => db.all<{ type: string; actor: string; subject: string | null; data: string }>('SELECT type, actor, subject, data FROM journal ORDER BY rowid');
-  return { db, now, tick: (ms: number) => (clock += ms), journal, store, fiche, network, other, alex, sam, lea, zoe, service, alert, asAgent, lines };
+  return { db, now, tick: (ms: number) => (clock += ms), journal, store, fiche, network, other, alex, sam, lea, zoe, service, alert, asAgent, seen, lines };
 }
 
 describeWithSqlite('C09c · alertes de l’agent', () => {
@@ -62,10 +67,10 @@ describeWithSqlite('C09c · alertes de l’agent', () => {
     await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, t.lea.id]);
     const before = await t.service.list(t.asAgent(t.alex.id));
     expect(before).toMatchObject({ ok: true, value: { alerts: [] } });
-    expect(await t.service.markSeen(t.asAgent(t.alex.id), id)).toMatchObject({ ok: false, rule: 'R16', code: 'not_assigned' });
+    expect(await t.seen(t.alex.id, id)).toMatchObject({ ok: false, rule: 'R16', code: 'not_assigned' });
     const after = await t.service.list(t.asAgent(t.sam.id));
     expect(after.ok && after.value.alerts.map((a) => a.id)).toEqual([id]);
-    expect(await t.service.markSeen({ role: 'agent', networkId: t.other.id, userId: t.sam.id }, id)).toMatchObject({ ok: false, code: 'agent_inactive' });
+    expect(await t.service.markSeen({ role: 'agent', networkId: t.other.id, userId: t.sam.id }, id, 'x')).toMatchObject({ ok: false, code: 'agent_inactive' });
   });
 
   it('[R16] fiches réunies : l’alerte d’une fiche fusionnée s’ouvre sur la fiche gardée, de proche en proche', async () => {
@@ -85,8 +90,8 @@ describeWithSqlite('C09c · alertes de l’agent', () => {
   it('[R16] une alerte inconnue et celle d’un autre reçoivent le même refus, écrit au journal ; les autres rôles sont refusés', async () => {
     const t = await setup();
     const id = await t.alert(t.zoe.id, t.sam.id);
-    const theirs = await t.service.markSeen(t.asAgent(t.alex.id), id);
-    const unknown = await t.service.markSeen(t.asAgent(t.alex.id), 'inconnue');
+    const theirs = await t.seen(t.alex.id, id);
+    const unknown = await t.seen(t.alex.id, 'inconnue');
     expect(theirs).toEqual(unknown);
     expect((await t.db.first<{ seen_at: string | null }>('SELECT seen_at FROM agent_alerts WHERE id = ?', [id]))!.seen_at).toBeNull();
     expect((await t.lines()).filter((l) => l.type === 'acces.refuse')).toHaveLength(2);
@@ -112,11 +117,11 @@ describeWithSqlite('C09c · alertes de l’agent', () => {
     const t = await setup();
     const id = await t.alert(t.lea.id, t.alex.id);
     const keep = await t.alert(t.lea.id, t.alex.id);
-    expect(await t.service.markSeen(t.asAgent(t.alex.id), id)).toEqual({ ok: true, value: { already: false } });
+    expect(await t.seen(t.alex.id, id)).toEqual({ ok: true, value: { already: false, changed: false } });
     const first = (await t.db.first<{ seen_at: string }>('SELECT seen_at FROM agent_alerts WHERE id = ?', [id]))!.seen_at;
     expect(first).toBe(t.now().toISOString());
     t.tick(60_000);
-    expect(await t.service.markSeen(t.asAgent(t.alex.id), id)).toEqual({ ok: true, value: { already: true } });
+    expect(await t.seen(t.alex.id, id)).toEqual({ ok: true, value: { already: true, changed: false } });
     expect((await t.db.first<{ seen_at: string }>('SELECT seen_at FROM agent_alerts WHERE id = ?', [id]))!.seen_at).toBe(first);
     expect((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM agent_alerts'))!.n).toBe(2);
     const read = await t.service.list(t.asAgent(t.alex.id));
@@ -132,8 +137,8 @@ describeWithSqlite('C09c · alertes de l’agent', () => {
     if (!read.ok) throw new Error(read.code);
     expect(read.value.alerts.map((a) => a.channel)).toEqual(['email', null]);
     expect(JSON.stringify(read.value)).not.toMatch(/example\.test|06-00|conv/);
-    await t.service.markSeen(t.asAgent(t.alex.id), id);
-    await t.service.markSeen(t.asAgent(t.alex.id), odd);
+    await t.seen(t.alex.id, id);
+    await t.seen(t.alex.id, odd);
     const lines = await t.lines();
     // Chaque prénom rendu est écrit au journal avant d'être rendu [R16].
     expect(lines.filter((l) => l.type === 'fiche.lue').map((l) => l.subject)).toEqual([`person:${t.lea.id}`, `person:${t.lea.id}`]);
@@ -165,7 +170,34 @@ describeWithSqlite('C09c · alertes de l’agent', () => {
     expect(read.value.more).toBe(true);
   });
 
-  it('[R12] une alerte vue se rouvre quand une nouvelle réponse tombe dans la même conversation : jamais de silence', async () => {
+  it('[R12] un écran resté sur une ancienne lecture ne referme pas une alerte rouverte', async () => {
+    const t = await setup();
+    const id = await t.alert(t.lea.id, t.alex.id);
+    const read = await t.service.list(t.asAgent(t.alex.id));
+    const old = read.ok ? read.value.alerts[0]!.createdAt : '';
+    await t.db.run('UPDATE agent_alerts SET created_at = ?, seen_at = NULL WHERE id = ?', ['2027-01-01T00:00:00.000Z', id]);
+    expect(await t.service.markSeen(t.asAgent(t.alex.id), id, old)).toEqual({ ok: true, value: { already: false, changed: true } });
+    const after = await t.service.list(t.asAgent(t.alex.id));
+    expect(after.ok && after.value.alerts.map((a) => a.id)).toEqual([id]);
+    expect((await t.lines()).filter((l) => l.type === 'alerte_agent.vue')).toHaveLength(0);
+  });
+
+  it('[R16] [R12] fusion défaite : l’alerte revient à la fiche du message, chez son agent', async () => {
+    const t = await setup();
+    const free = await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Noa', lastName: 'Exemple' });
+    const merge = await t.fiche.merge({ survivorId: t.lea.id, mergedId: free.id, reason: 'même personne' });
+    const { relais } = createCaptation(t.db, t.journal, { now: t.now, withOrigin: false });
+    await relais['alert'](free.id, 'email:conv-b', 'needs_reply', t.now().toISOString());
+    const merged = await t.service.list(t.asAgent(t.alex.id));
+    expect(merged.ok && merged.value.alerts.map((a) => a.personId)).toEqual([t.lea.id]);
+    await t.fiche.undoMerge(merge.id, { journal: t.journal, actor: 'test' });
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, free.id]);
+    expect(await t.service.list(t.asAgent(t.alex.id))).toMatchObject({ ok: true, value: { alerts: [] } });
+    const sam = await t.service.list(t.asAgent(t.sam.id));
+    expect(sam.ok && sam.value.alerts.map((a) => [a.personId, a.firstName])).toEqual([[free.id, 'Noa']]);
+  });
+
+  it('[R12] une alerte vue se rouvre pour un message reçu après, pas pour le même message rejoué', async () => {
     const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
     await applyMigrations(db, loadMigrations());
     let clock = TUESDAY_10H;
@@ -177,23 +209,29 @@ describeWithSqlite('C09c · alertes de l’agent', () => {
     const person = await store.createPerson({ networkId: network.id, agentId: agent.id, firstName: 'Léa', lastName: 'Exemple' });
     const service = new AlertesAgent(db, journal, { now });
     const viewer: Viewer = { role: 'agent', networkId: network.id, userId: agent.id };
-    const raise = () => relais['alert'](person.id, 'email:conv-1', 'needs_reply');
+    const raise = (receivedAt: Date) => relais['alert'](person.id, 'email:conv-1', 'needs_reply', receivedAt.toISOString());
     const alerts = async () => {
       const r = await service.list(viewer);
       if (!r.ok) throw new Error(r.code);
       return r.value.alerts;
     };
-    await raise();
+    const firstMessage = now();
+    await raise(firstMessage);
     const [first] = await alerts();
     // Reposée sans être vue : rien ne change, ni la ligne ni sa date.
     clock += 60_000;
-    await raise();
+    await raise(now());
     expect(await alerts()).toEqual([first]);
-    await service.markSeen(viewer, first!.id);
+    clock += 60_000;
+    await service.markSeen(viewer, first!.id, first!.createdAt);
+    expect(await alerts()).toEqual([]);
+    // Le même message rejoué par le canal : l'alerte reste vue.
+    clock += 60_000;
+    await raise(firstMessage);
     expect(await alerts()).toEqual([]);
     // Une nouvelle réponse tombée : la même ligne, à la nouvelle date, de nouveau à reprendre.
     clock += 3_600_000;
-    await raise();
+    await raise(now());
     expect(await alerts()).toEqual([{ ...first, createdAt: now().toISOString() }]);
     expect((await db.all('SELECT id FROM agent_alerts')).length).toBe(1);
     // La date où elle avait été vue reste au journal [R17].

@@ -542,13 +542,12 @@ export const APP_JS = `'use strict';
   function renderReprendre(list, data) {
     if (!data || !Array.isArray(data.alerts) || !data.alerts.length) return 'Rien à reprendre.';
     var mine = session;
-    function go() { if (mine === session) reprendreDraw(list, data); }
-    if (reprendreDraw) { go(); return null; }
+    if (reprendreDraw) return reprendreDraw(list, data);
     var s = el('script');
     s.setAttribute('src', '/app/alertes.js');
     s.addEventListener('load', function () {
       reprendreDraw = globalThis.AIMMO_ALERTES({ $: $, el: el, clear: clear, send: send, button: button, date: date, ficheButton: ficheButton, reload: function () { return loadReprendre(currentKey, session); } });
-      go();
+      if (mine === session) $('reprendre-etat').textContent = reprendreDraw(list, data);
     });
     s.addEventListener('error', function () { if (mine === session) $('reprendre-etat').textContent = 'Pas de réseau. Réessayez dans un moment.'; });
     $('accueil').appendChild(s);

@@ -221,7 +221,7 @@ describe('A02 · réponse arrivée après la sortie', () => {
       for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
     };
     await tick();
-    expect(Object.keys(held)).toHaveLength(5);
+    expect(Object.keys(held)).toHaveLength(6);
     els.sortir!.listeners.click!({});
     // L'agent suivant entre sur le même appareil.
     late = false;
@@ -230,11 +230,13 @@ describe('A02 · réponse arrivée après la sortie', () => {
     await tick();
     expect(els.accueil!.hidden).toBe(false);
     held['/v1/plan-du-jour']!(Response.json({ ok: true, data: PLAN }));
+    held['/v1/alertes-agent']!(Response.json({ ok: true, data: { alerts: [{ id: 'al-1', personId: 'p1', firstName: 'Léa', reason: 'needs_reply', channel: 'email', createdAt: '2026-11-10T08:00:00.000Z', contactClosed: false }], more: false } }));
     held['/v1/contacts-chauds']!(Response.json({ ok: true, data: HOT }));
     held['/v1/rendez-vous/jour']!(Response.json({ ok: false }, { status: 403 }));
     held['/v1/annonces']!(Response.json({ ok: true, data: [{ id: 'b1', reference: 'REF-1', city: 'Dijon', state: null }] }));
     held['/v1/apres-vente/journee']!(Response.json({ ok: true, data: { remercier: [{ fileId: 'f1', personId: 'p1', firstName: 'Léa', side: 'vendeur', reference: 'REF-1' }], recommandations: [], taches: [] } }));
     await tick();
+    expect(els.reprendre!.children).toHaveLength(0);
     expect([els.plan!, els.chauds!, els.rdv!, els.semaine!, els.biens!, els['apres-jour']!].map((l) => l.children.length)).toEqual([0, 0, 0, 0, 0, 0]);
     expect(storage.get('aimmo.cle')).toBe('n'.repeat(40));
     expect(els.accueil!.hidden).toBe(false);
