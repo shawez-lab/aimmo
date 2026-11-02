@@ -5,6 +5,7 @@ import {
   FicheClient,
   FicheUnique,
   applyMigrations,
+  MemoryJournalStore,
   fromSyncSqlite,
   normalizeEmail,
   normalizeFacebook,
@@ -112,6 +113,8 @@ const ALONE: Ident[][] = [
   ...Array.from({ length: 16 }, (_, i): Ident[] => [['email', `seul${i}@example.test`]]),
 ];
 
+const trace = () => ({ journal: new MemoryJournalStore(), actor: 'direction:test' });
+
 describeWithSqlite('S04 · une seule fiche par personne', () => {
   let db: SqlDatabase;
   let store: FicheClient;
@@ -201,7 +204,7 @@ describeWithSqlite('S04 · une seule fiche par personne', () => {
     expect(merged.members.map((m) => m.id)).toEqual(target);
     expect(merged.identifiers).toHaveLength(6);
 
-    for (const m of merges) await fiches.undoMerge(m.id);
+    for (const m of merges) await fiches.undoMerge(m.id, trace());
     expect(await countRows()).toEqual(before);
     const separateAfter = await Promise.all(target.map((id) => fiches.view(id)));
     expect(separateAfter.map((v) => ({ ...v, merges: [] }))).toEqual(separateBefore.map((v) => ({ ...v, merges: [] })));
@@ -303,12 +306,12 @@ describeWithSqlite('S04 · une seule fiche par personne', () => {
   });
 
   it('défaire une fusion inconnue est une erreur ; la défaire deux fois garde la première date', async () => {
-    await expect(fiches.undoMerge('absent')).rejects.toThrow(/inconnue/);
+    await expect(fiches.undoMerge('absent', trace())).rejects.toThrow(/inconnue/);
     const a = await createFiche([]);
     const b = await createFiche([]);
     const m = await fiches.merge({ survivorId: a, mergedId: b, reason: 'x' });
-    const first = await fiches.undoMerge(m.id);
-    expect(await fiches.undoMerge(m.id)).toBe(first);
+    const first = await fiches.undoMerge(m.id, trace());
+    expect(await fiches.undoMerge(m.id, trace())).toBe(first);
     expect(await fiches.rootOf(b)).toBe(b);
   });
 

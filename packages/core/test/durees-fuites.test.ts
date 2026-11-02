@@ -186,7 +186,7 @@ describeWithSqlite('L08 · prospects à 3 ans', () => {
     t.setClock(new Date('2030-03-04T10:00:00.000Z'));
     expect(await t.durees.run(t.network.id)).toMatchObject({ closed: 1 });
     // La fusion est défaite : le lendemain, un nouveau cycle, puis l'effacement préparé à son échéance.
-    await t.fiche.undoMerge(merge.id);
+    await t.fiche.undoMerge(merge.id, { journal: t.journal, actor: 'direction:test' });
     t.setClock(new Date('2030-03-05T10:00:00.000Z'));
     expect((await t.durees.run(t.network.id)).listed).toBe(1);
     t.setClock(new Date('2030-04-04T10:00:00.000Z'));

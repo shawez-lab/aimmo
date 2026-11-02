@@ -239,6 +239,22 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Objectif : trouvé par la relecture forte de AC01, et déjà possible avant elle. `decideSend` (`envoi/decision.ts`) accepte n'importe quel accord ouvert. Cas reproduits : un retrait sur la fiche A, un accord ouvert ou daté d'avant sur le doublon B, puis une fusion, y compris sans geste humain (`reception/rattachement.ts`, `reprise/reprise.ts`) : l'envoi redevient permis. De même, une exclusion levée rouvre un accord plus ancien qu'elle. Laissée à la voie 1 : c'est le contrôle des envois, donc le socle. Faire avant AC02 : les routes d'accords restent fermées tant que ce n'est pas réglé. Passer R202 à « oui » ici.
 - Critères : un accord ne compte que s'il est postérieur au dernier retrait de même finalité et de même canal sur les fiches réunies (test [R03]) ; et au dernier `lifted_at` d'une exclusion (test [R02] [R04]) ; `undoMerge` ferme, sans effacer et avec une ligne au journal, les accords créés pendant la fusion, car on ne sait plus à qui ils sont (test [R03] [R17]) ; les tests de S05 et S06 restent verts.
 
+### AC07 · Un accord redonné est rangé, même si une ligne ancienne reste ouverte
+- Statut : à faire
+- Voie : 1
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC05
+- Cahier : Conformité, accord préalable ; R03.
+- Objectif : trouvé par la relecture forte de AC05. Plusieurs modules n'ajoutent l'accord que si aucune ligne n'est ouverte (`espaces/gestes.ts`, `espaces/entree.ts`, `apres-vente/relances-apres-vente.ts`, `documents/signature-en-ligne.ts`, `commerces/dossier.ts`, `commerces/confidentialite.ts`, `location/signature-bail.ts`). Or une ligne ouverte peut ne plus compter (AC05) : le client qui redemande les alertes se croit inscrit, et tout est refusé en R03. Aucun envoi indu, mais une demande perdue en silence. Ces modules passent par `consentInForce` sur la fiche réunie.
+- Critères : après un retrait sur une fiche et une fusion avec un doublon ouvert, redonner l'accord le range et rouvre l'envoi, pour chacun de ces modules (test [R03]) ; un accord qui compte n'est pas doublé ; les tests des modules restent verts.
+
+### AC08 · Une exclusion notée pendant une fusion suit les deux fiches quand on la défait
+- Statut : à faire
+- Voie : 1
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC05
+- Cahier : Conformité ; R02, R04, R17.
+- Objectif : trouvé par la relecture forte de AC05. Un arrêt reçu pendant une fusion est rangé sur une seule fiche : après `undoMerge`, l'autre fiche n'a plus d'exclusion et ses accords comptent de nouveau. Aucun appelant de `undoMerge` en production aujourd'hui : à faire avant toute route ou tout geste qui l'appelle. Dans le même lot, les exclusions actives notées pendant la fusion sont recopiées sur chaque fiche séparée, on ne sait plus à qui elles sont.
+- Critères : stop noté pendant la fusion, puis fusion défaite : plus aucun envoi sur aucune des deux fiches (test [R04]) ; de même pour une exclusion (test [R02]) ; aucune ligne effacée [R17] ; une exclusion notée avant la fusion ne bouge pas.
+
 ### AC02 · Branchement des routes d'accords dans le socle
 - Statut : à faire
 - Voie : 1
