@@ -29,6 +29,7 @@ import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { normalizeIdentifier } from '../fiche/normalize.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -295,7 +296,7 @@ export class DossierCommerce {
       [id, viewer.networkId, propertyId, personId, gate.ndaId, await sha256(token), expiresAt, this.maxOpens, this.actor(viewer), this.now().toISOString()],
     );
     const agent = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ?', [propertyId]);
-    const first = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [personId]);
+    const first = await ficheFirstName(this.db, await this.fiche.membersOf(personId));
     const sent = await this.envois.send({
       networkId: viewer.networkId,
       agentId: agent?.agent_id ?? null,
@@ -305,7 +306,7 @@ export class DossierCommerce {
       purpose: DOSSIER_PURPOSE,
       subject: `dossier_commerce:${id}`,
       fallbackTexts: [
-        `${first?.first_name ? `Bonjour ${first.first_name},\n\n` : 'Bonjour,\n\n'}Votre agent immobilier vous ouvre le dossier confidentiel du commerce : ${this.baseUrl}${token}. Ce lien vous est personnel, il est valable ${this.linkDays} jours et s’ouvre ${this.maxOpens} fois au plus.`,
+        `${first ? `Bonjour ${first},\n\n` : 'Bonjour,\n\n'}Votre agent immobilier vous ouvre le dossier confidentiel du commerce : ${this.baseUrl}${token}. Ce lien vous est personnel, il est valable ${this.linkDays} jours et s’ouvre ${this.maxOpens} fois au plus.`,
       ],
       figures: [this.linkDays, this.maxOpens],
     });

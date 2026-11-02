@@ -18,6 +18,7 @@ import {
   type Availability,
   type Viewer,
 } from '../src/index.ts';
+import { mergeWithDouble } from './doublon.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -225,5 +226,15 @@ describeWithSqlite('V04 · rappels la veille et le jour même', () => {
     const dump = JSON.stringify(await w.db.all('SELECT * FROM journal'));
     for (const secret of ['Léa', 'Exemple', 'lea.exemple', 'rappel :', ...w.tokens]) expect(dump, secret).not.toContain(secret);
     expect(dump).toContain('rdv.rappel.essai');
+  });
+
+  it('[R08] AC11 : sur une fiche réunie, la confirmation et le rappel saluent par le prénom de la fiche gardée', async () => {
+    const w = await world();
+    const expected = await mergeWithDouble(w.db, w.store, w.lea.id, 'Inna');
+    const r = await w.book(at('2026-11-11', '09:00'));
+    expect(await w.runAt(at('2026-11-10', '10:00'))).toEqual([{ appointmentId: r.appointment.id, kind: 'veille', status: 'sent', rule: null, delivered: false }]);
+    const [confirmation, veille] = await w.bodies();
+    expect(confirmation).toContain(`Bonjour ${expected}`);
+    expect(veille).toContain(`Bonjour ${expected}`);
   });
 });

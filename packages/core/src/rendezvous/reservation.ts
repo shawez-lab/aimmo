@@ -14,6 +14,7 @@ import type { OutboundChannelName } from '../db/types.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { ControleEnvois, type SendResult } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
@@ -185,6 +186,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export class RendezVous {
+  private readonly fiche: FicheUnique;
   private readonly now: () => Date;
   private readonly settings: SlotSettings;
   private readonly newId: () => string;
@@ -204,6 +206,7 @@ export class RendezVous {
     if (options.linkBase && !/^https:\/\/[^\s\d]+\/$/.test(options.linkBase)) throw new Error('Début de lien non valable : https, sans chiffre, terminé par /.');
     const store = new FicheClient(db, { now: this.now });
     const fiche = new FicheUnique(db, store, { now: this.now });
+    this.fiche = fiche;
     const decisions = new DecisionEnvoi(db, store, fiche, { now: this.now });
     // Seuls les canaux du mode essai : aucun vrai canal ne peut être passé de l'extérieur [R26].
     this.controle = new ControleEnvois(db, fiche, decisions, {
@@ -362,7 +365,7 @@ export class RendezVous {
     if (req.channel) {
       try {
         const link = this.options.linkBase ? `${this.options.linkBase}${token}` : null;
-        const { text, figures } = confirmationText(req.kind, start, person.first_name, link);
+        const { text, figures } = confirmationText(req.kind, start, await ficheFirstName(this.db, await this.fiche.membersOf(req.personId)), link);
         const sent = await this.controle.send({
           networkId: req.networkId,
           agentId: req.agentId,

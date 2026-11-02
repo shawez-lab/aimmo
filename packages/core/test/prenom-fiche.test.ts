@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { FicheClient, FicheUnique, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { ficheFirstName } from '../src/fiche/prenom.ts';
@@ -47,5 +50,15 @@ describeWithSqlite('AC10 · le prénom de la fiche gardée', () => {
     const alone = await t.person();
     expect(await ficheFirstName(t.db, [alone.id])).toBeNull();
     expect(await ficheFirstName(t.db, [])).toBeNull();
+  });
+
+  it('[R08] AC11 : aucun module ne lit plus le prénom d’une seule ligne, sauf sur la fiche gardée ou pour vérifier qu’elle existe', () => {
+    const src = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
+    const allowed = new Set(['partenaires/mise-en-relation.ts', 'rendezvous/journee.ts', 'rendezvous/reservation.ts']);
+    const found = readdirSync(src, { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.ts') && /SELECT first_name FROM persons WHERE id = \?/.test(readFileSync(join(src, f), 'utf8')))
+      .map((f) => f.replaceAll('\\', '/'))
+      .filter((f) => !allowed.has(f));
+    expect(found).toEqual([]);
   });
 });
