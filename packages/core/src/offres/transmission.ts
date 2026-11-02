@@ -130,10 +130,16 @@ export class TransmissionOffres {
   }
 
   /** L'agent du bien transmet l'offre au vendeur : par message (contrôle central, essai), au téléphone ou en personne. */
-  async transmit(viewer: Viewer, offerId: string, input: { via: unknown; channel?: unknown }): Promise<{ ok: true; value: { via: Via; messageId: string | null } } | Refusal | Problem> {
+  async transmit(viewer: Viewer, offerId: string, input: { via: unknown; channel?: unknown; at?: unknown }): Promise<{ ok: true; value: { via: Via; messageId: string | null } } | Refusal | Problem> {
     if (input.via !== 'message' && input.via !== 'telephone' && input.via !== 'en_personne') return { ok: false, rule: null, code: 'bad_via' };
     const found = await this.offerFor(viewer, offerId, true);
     if (!found.ok) return found;
+    // L'heure vraie, attestée par l'agent qui note après coup : ni à venir, ni avant la réception. Le journal garde l'heure de la saisie.
+    let at = this.now().toISOString();
+    if (input.at !== undefined) {
+      if (typeof input.at !== 'string' || !ISO_INSTANT.test(input.at) || !Number.isFinite(Date.parse(input.at)) || Date.parse(input.at) > this.now().getTime() || Date.parse(input.at) < Date.parse(found.offer.receivedAt)) return { ok: false, rule: null, code: 'bad_date' };
+      at = new Date(input.at).toISOString();
+    }
     if (await this.db.first('SELECT offer_id FROM offer_transmissions WHERE offer_id = ?', [offerId])) return { ok: false, rule: null, code: 'already_transmitted' };
     let messageId: string | null = null;
     if (input.via === 'message') {
@@ -162,7 +168,7 @@ export class TransmissionOffres {
     }
     const { changes } = await this.db.run(
       'INSERT INTO offer_transmissions (offer_id, network_id, via, message_id, at, by) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (offer_id) DO NOTHING',
-      [offerId, found.networkId, input.via, messageId, this.now().toISOString(), this.actor(viewer)],
+      [offerId, found.networkId, input.via, messageId, at, this.actor(viewer)],
     );
     if (changes !== 1) return { ok: false, rule: null, code: 'already_transmitted' };
     await appendEvent(this.journal, { type: 'offre.transmise', actor: this.actor(viewer), subject: `offer:${offerId}`, data: { rule: 'R56', via: input.via } }, this.now);

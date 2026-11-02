@@ -68,13 +68,13 @@ function isPlainText(bytes: Uint8Array): boolean {
   }
 }
 
-function matchesType(type: string, bytes: Uint8Array): boolean {
+export function matchesType(type: string, bytes: Uint8Array): boolean {
   if (type === 'text/plain') return isPlainText(bytes);
   if (type === 'application/pdf') return String.fromCharCode(...bytes.subarray(0, 5)) === '%PDF-';
   return matchesSignature(type, bytes);
 }
 
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)].map((x) => x.toString(16).padStart(2, '0')).join('');
 }
