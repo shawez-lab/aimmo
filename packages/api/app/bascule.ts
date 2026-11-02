@@ -43,7 +43,7 @@ export const BASCULE_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const BASCULE_JS = `
   /* ---------- La bascule sur l'écran du réseau (B05), chargée au premier geste [R16, R201]. ---------- */
-  var basculeTools = null;
+  var basculeTools = null, basculeLoading = false;
   function wipeBascule() {
     clear($('bascule-corps'));
     $('bascule-etat').textContent = '';
@@ -51,19 +51,24 @@ export const BASCULE_JS = `
   function withBascule(act) {
     if (!currentKey) return Promise.resolve(false);
     if (basculeTools) return act(basculeTools);
+    if (basculeLoading) return Promise.resolve(false);
+    basculeLoading = true;
     var mine = session;
     $('bascule-etat').textContent = 'Chargement…';
     return new Promise(function (resolve) {
       var s = document.createElement('script');
       s.setAttribute('src', '/app/bascule.js');
       s.addEventListener('load', function () {
+        basculeLoading = false;
         var make = globalThis.AIMMO_BASCULE;
         try { delete globalThis.AIMMO_BASCULE; } catch (e) { /* rien */ }
-        if (mine !== session || typeof make !== 'function') { resolve(false); return; }
+        if (mine !== session) { resolve(false); return; }
+        if (typeof make !== 'function') { $('bascule-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
         basculeTools = make({ $: $, el: el, clear: clear, send: send, button: button, date: date, session: function () { return session; } });
         resolve(act(basculeTools));
       });
       s.addEventListener('error', function () {
+        basculeLoading = false;
         if (mine === session) $('bascule-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
         resolve(false);
       });
@@ -80,16 +85,19 @@ globalThis.AIMMO_BASCULE = function (t) {
   var STAGES = ${JSON.stringify(STAGES)};
   var INCIDENTS = ${JSON.stringify(INCIDENTS)};
   var REFUSALS = ${JSON.stringify(REFUSALS)};
-  var busy = false;
+  /* Le verrou d'un geste vaut pour sa session : une réponse qui tarde ne bloque pas la connexion suivante. */
+  var busy = null, showing = 0;
   function state(text) { $('bascule-etat').textContent = text; }
   function refusal(res, fallback) {
     if (res.offline) return 'Pas de réseau. Réessayez dans un moment.';
     return (res.body && REFUSALS[res.body.code]) || fallback;
   }
   function once(work) {
-    if (busy) return Promise.resolve(false);
-    busy = true;
-    return work().then(function (r) { busy = false; return r; }, function () { busy = false; return false; });
+    var mine = t.session();
+    if (busy === mine) return Promise.resolve(false);
+    busy = mine;
+    function done(r) { if (busy === mine) busy = null; return r; }
+    return work().then(done, function () { return done(false); });
   }
   function days(n) { return n + (n > 1 ? ' jours' : ' jour'); }
   function advance(v) {
@@ -137,10 +145,12 @@ globalThis.AIMMO_BASCULE = function (t) {
   }
   function show(message) {
     var mine = t.session();
+    /* Seule la dernière lecture demandée s'affiche : deux appuis ne font pas deux listes. */
+    var turn = ++showing;
     clear($('bascule-corps'));
     state('Chargement…');
     return send('/v1/automatisations/paliers', 'GET').then(function (res) {
-      if (res.gone || mine !== t.session()) return false;
+      if (res.gone || mine !== t.session() || turn !== showing) return false;
       if (!res.ok || !Array.isArray(res.body.data)) { state(refusal(res, 'Indisponible pour le moment.')); return false; }
       var ul = el('ul', null, 'liste');
       res.body.data.forEach(function (v) { ul.appendChild(line(v)); });

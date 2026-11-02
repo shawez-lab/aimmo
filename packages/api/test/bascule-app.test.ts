@@ -183,6 +183,62 @@ describe('B05 · la bascule sur l’écran du réseau', () => {
     expect(t.state()).toBe('');
   });
 
+  it('deux appuis rapides font une seule liste, et un seul chargement du script', async () => {
+    const t = await run();
+    t.els['bascule-voir']!.listeners.click!({});
+    t.els['bascule-voir']!.listeners.click!({});
+    await settle();
+    expect(t.els.reseau!.children.filter((e) => e.attributes.src === '/app/bascule.js')).toHaveLength(1);
+    await t.load();
+    t.els['bascule-voir']!.listeners.click!({});
+    t.els['bascule-voir']!.listeners.click!({});
+    await settle();
+    expect(t.body().all().filter((e) => e.tagName === 'ul')).toHaveLength(1);
+    expect(t.buttons('Passer à 10 %')).toHaveLength(1);
+  });
+
+  it('un script qui ne charge pas, ou arrive abîmé, est dit, et un nouvel appui réessaie', async () => {
+    const t = await run();
+    await t.click(t.els['bascule-voir']);
+    const scripts = () => t.els.reseau!.children.filter((e) => e.attributes.src === '/app/bascule.js');
+    scripts()[0]!.listeners.error!({});
+    await settle();
+    expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    await t.click(t.els['bascule-voir']);
+    expect(scripts()).toHaveLength(2);
+    // Arrivé sans son contenu : `load` part quand même.
+    scripts()[1]!.listeners.load!({});
+    await settle();
+    expect(t.state()).toBe('Indisponible pour le moment. Réessayez dans un moment.');
+    await t.click(t.els['bascule-voir']);
+    expect(scripts()).toHaveLength(3);
+  });
+
+  it('une réponse qui tarde ne bloque pas le geste après une nouvelle connexion', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const t = await run({ 'GET /v1/journal/verification': async () => { await held; return Response.json({ ok: true, data: { ok: true, lines: 1 } }); } });
+    await t.click(t.els['bascule-journal']);
+    await t.load();
+    const asked = () => t.calls.filter((c) => c.url === '/v1/journal/verification').length;
+    expect(asked()).toBe(1);
+    await t.click(t.els['bascule-journal']);
+    expect(asked()).toBe(1);
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    t.els.cle!.value = 'n'.repeat(40);
+    t.els['form-connexion']!.listeners.submit!({ preventDefault: () => undefined });
+    await settle();
+    t.table['GET /v1/journal/verification'] = ok({ ok: true, lines: 2 });
+    await t.click(t.els['bascule-journal']);
+    expect(asked()).toBe(2);
+    expect(t.state()).toBe('Journal intact : 2 ligne(s) vérifiée(s).');
+    // L'ancienne réponse, arrivée après, ne touche à rien.
+    release();
+    await settle();
+    expect(t.state()).toBe('Journal intact : 2 ligne(s) vérifiée(s).');
+  });
+
   it('[R201] le script est servi à part, jamais gardé sur l’appareil, et tient son budget ; aucun code de page', async () => {
     expect(AGENT_APP_FILES['/app/bascule.js']).toBe(BASCULE_SCRIPT);
     expect(AGENT_APP_SHELL).not.toContain('/app/bascule.js');
