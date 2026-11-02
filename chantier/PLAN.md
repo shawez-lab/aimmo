@@ -241,7 +241,7 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : un accord ne compte que s'il est postérieur au dernier retrait de même finalité et de même canal sur les fiches réunies (test [R03]) ; et au dernier `lifted_at` d'une exclusion (test [R02] [R04]) ; `undoMerge` ferme, sans effacer et avec une ligne au journal, les accords créés pendant la fusion, car on ne sait plus à qui ils sont (test [R03] [R17]) ; les tests de S05 et S06 restent verts.
 
 ### AC07 · Un accord redonné est rangé, même si une ligne ancienne reste ouverte
-- Statut : à faire
+- Statut : en cours
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC05
 - Cahier : Conformité, accord préalable ; R03.
@@ -257,7 +257,8 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : stop noté pendant la fusion, puis fusion défaite : plus aucun envoi sur aucune des deux fiches (test [R04]) ; de même pour une exclusion (test [R02]) ; aucune ligne effacée [R17] ; une exclusion notée avant la fusion ne bouge pas.
 
 ### AC02 · Branchement des routes d'accords dans le socle
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Reste : Codex à sa limite (H03), fusion sans lui (#246).
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : AC01, AC05
 - Cahier : Architecture technique.
