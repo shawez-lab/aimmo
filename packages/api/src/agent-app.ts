@@ -14,6 +14,7 @@ import { OFFRES_SCRIPT } from '../app/offres.ts';
 import { DOSSIER_SCRIPT } from '../app/dossier.ts';
 import { MANDAT_SCRIPT } from '../app/mandat.ts';
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
+import { COMMERCES_ENGAGEMENTS_SCRIPT } from '../app/commerces-engagements.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
 import { REPRISE_SCRIPT } from '../app/reprise.ts';
 import { CONFORMITE_SCRIPT } from '../app/conformite.ts';
@@ -69,6 +70,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/investir.js': { body: INVESTIR_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Commerces » (CE11), chargé à la demande quand l'agent l'ouvre, jamais gardé sur l'appareil [R201].
   '/app/commerces.js': { body: COMMERCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Les demandes et l'engagement de confidentialité (CE14), chargés au premier geste [R201].
+  '/app/commerces-engagements.js': { body: COMMERCES_ENGAGEMENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer.js': { body: LOUER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Studio » (X11), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   // L'écran « Avis de valeur » (E10), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].

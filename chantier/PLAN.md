@@ -1656,7 +1656,9 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 - Attend : rien.
 
 ### CE14 · Demandes et engagement de confidentialité à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Décidé (2026-11-02), lecture prudente : le repreneur doit lire ce qu'il signe : ajout d'une lecture du texte de l'engagement, et le code n'est retenu que si son empreinte est celle du texte lu. L'état de chaque demande rend l'engagement en vigueur. Révoqué, une nouvelle demande fait un nouvel engagement. Script à part, chargé au premier geste.
+- Reste : ranger une demande n'envoie rien au repreneur et l'écran le dit, alors que le cahier veut une réponse immédiate avec les informations publiques : CE16. En mode essai, le code reste dans la boîte d'essai, qu'aucun écran ne lit (comme pour le bail) : la signature à l'écran ne s'essaie de bout en bout qu'après H05. Le mail du code dit « pas même à votre agent » alors que l'agent saisit le code sur son écran : à trancher avec H24, avant tout envoi réel.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE13
 - Cahier : M16, « Engagement de confidentialité » ; R110, R113, R16, R26, R201.
 - Objectif : l'agent range la demande d'un contact, ouvre la signature avec l'accord noté, recueille le code et le tracé, révoque un engagement ; la direction range le modèle.
@@ -1670,6 +1672,15 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 - Objectif : l'agent complète le profil de repreneur d'un projet d'achat et lit les commerces rapprochés, sans score ni classement.
 - Critères : seuls les commerces diffusables, sans chiffre confidentiel [R110, R115] (test) ; aucun classement [R14] (test) ; budget tenu [R201] (test).
 - Attend : rien.
+
+### CE16 · Réponse immédiate au repreneur : les informations publiques
+- Statut : à faire
+- Trouvé le 2026-11-02 par la relecture de CE14 : `requestAccess` rend la vue publique à l'agent, rien ne part au repreneur.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE14
+- Cahier : M16, « Accès aux chiffres » ; R110, R03, R26, R201.
+- Objectif : à la demande, l'agent lit la vue publique et la présentation publiable, et les fait partir au repreneur par le contrôle central.
+- Critères : seule la vue publique et la présentation validée, jamais un chiffre [R110] (test) ; aucun envoi sans accord en cours, en mode essai [R03, R26] (tests) ; réponse perdue dite telle [R10] (test) ; budget tenu [R201] (test).
+- Attend : rien pour l'écran.
 
 **M14 · Réseau et académie, juillet 2027.**
 
