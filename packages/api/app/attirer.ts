@@ -20,9 +20,9 @@ const REFUSALS: Record<string, string> = {
   url_taken: 'Cette adresse sert déjà un autre site : une seule page de référence par bien.',
   bad_month: 'Choisissez un mois dans la liste.',
   zone_inconnue: 'Ce quartier n’est plus en service : la liste a changé.',
-  inconnu: 'Ce texte n’existe plus : la liste a changé.',
-  invalide: 'Vérifiez les champs. Le libellé et la source ne portent ni adresse, ni nom de client, ni chiffre caché ; la date n’est pas dans le futur.',
-  sans_donnees: 'Aucune donnée sur ce quartier : rangez d’abord un fait avec sa source.',
+  inconnu: 'Introuvable : la liste a changé.',
+  invalide: 'Vérifiez les champs : un titre de 2 à 160 caractères ; un libellé et une source sans adresse, nom de client ni chiffre caché ; une date qui n’est pas dans le futur.',
+  sans_donnees: 'Aucune donnée pour ce sujet : ni fait rangé pour le quartier, ni prix publié pour un article sur les prix.',
   deja_valide: 'Ce texte est déjà validé.',
   donnees_changees: 'Les données ont changé depuis ce texte : préparez-en un nouveau.',
   texte_refuse: 'Ce texte ne passe pas le contrôle : rien n’est enregistré.',
@@ -282,6 +282,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     box.appendChild(ul);
     return box;
   }
+  var STALE = { donnees_changees: true, deja_valide: true, inconnu: true };
   function quarterPath(z, end) { return '/v1/attirer/quartiers/' + encodeURIComponent(z.zoneId) + end; }
   function openQuarter(z, message) {
     var mine = t.next();
@@ -308,7 +309,12 @@ globalThis.AIMMO_ATTIRER = function (t) {
       state('Envoi…');
       return send(path, 'POST', payload).then(function (x) {
         if (x.gone) return false;
-        if (!x.ok) { state(textRefusal(x, failText)); return false; }
+        if (!x.ok) {
+          /* L'écran dit quelque chose de dépassé : il est relu, pour ne pas laisser un geste que le serveur refusera toujours. */
+          if (x.body && STALE[x.body.code]) return openQuarter(z, textRefusal(x, failText));
+          state(textRefusal(x, failText));
+          return false;
+        }
         return openQuarter(z, okText);
       });
     });
@@ -320,17 +326,15 @@ globalThis.AIMMO_ATTIRER = function (t) {
     if (!problems.length) return base;
     return base + ' ' + problems.slice(0, 5).map(function (p) { return '« ' + p.value + ' » : ' + (PROBLEMS[p.code] || 'à retirer') + '.'; }).join(' ');
   }
-  function paragraphs(box, text) {
-    String(text).split('\\n').forEach(function (line) { if (line.trim()) box.appendChild(el('p', line)); });
-  }
   function renderText(z, d, i) {
     var li = el('li');
     li.appendChild(el('strong', d.title));
     li.appendChild(el('p', TEXT_CHOICES[d.kind + '/' + d.topic] + ' · ' + (TEXT_ORIGINS[d.origin] || 'Texte'), 'doux'));
-    paragraphs(li, d.body);
+    (d.paragraphs || []).forEach(function (p) { li.appendChild(el('p', p)); });
     var trace = d.trace || { ok: false, sentences: [] };
     if (d.validatedAt) li.appendChild(el('p', 'Validé le ' + date(d.validatedAt) + (trace.ok ? '.' : ' : il ne passe plus le contrôle sur les données du jour et n’est plus servi.'), 'etat'));
     else if (!trace.ok) li.appendChild(el('p', 'Ce texte ne passe plus le contrôle sur les données du jour : préparez-en un nouveau.', 'etat'));
+    else if (!d.current) li.appendChild(el('p', 'Les données ont changé depuis ce texte : préparez-en un nouveau.', 'etat'));
     var why = details(li, 'Phrase par phrase, avec sa source');
     trace.sentences.forEach(function (s) {
       why.appendChild(el('p', s.text));
@@ -339,7 +343,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       (s.problems || []).forEach(function (p) { why.appendChild(el('p', '« ' + p.value + ' » : ' + (PROBLEMS[p.code] || 'à retirer'), 'etat')); });
     });
     if (!d.validatedAt) {
-      if (trace.ok) li.appendChild(button('Je l’ai relu : valider', function () {
+      if (trace.ok && d.current) li.appendChild(button('Je l’ai relu : valider', function () {
         quarterWrite(z, '/v1/attirer/quartiers/textes/' + encodeURIComponent(d.draftId) + '/valider', undefined, 'Texte validé : le site du réseau peut le servir.', 'Le texte n’est pas validé.');
       }));
       var fix = details(li, 'Corriger ce texte');
@@ -369,7 +373,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     box.appendChild(ul);
     return box;
   }
-  /* La clé d'un fait vient de son libellé : le même libellé remplace, rien à inventer ni à saisir. */
+  /* La clé d'un fait vient de son libellé : le même libellé remplace, rien à inventer ni à saisir ; deux libellés différents ne se confondent jamais. */
   function factKey(label) {
     return label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
   }
@@ -388,7 +392,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       li.appendChild(el('strong', factLine(f)));
       li.appendChild(el('p', (FACT_KINDS[f.kind] || 'Autre') + ' · ' + f.source + ', ' + date(f.sourceDate), 'doux'));
       li.appendChild(confirmed('Retirer ce fait', 'Un texte qui le cite ne sera plus servi. Appuyez de nouveau pour confirmer.', function () {
-        quarterWrite(z, quarterPath(z, '/faits'), { key: f.key, kind: f.kind, label: f.label, value: f.value, unit: f.unit, source: f.source, sourceDate: f.sourceDate, retired: true }, 'Fait retiré.', 'Le fait reste rangé.');
+        quarterWrite(z, quarterPath(z, '/faits'), { key: f.key, retired: true }, 'Fait retiré.', 'Le fait reste rangé.');
       }));
       ul.appendChild(li);
     });
@@ -406,7 +410,10 @@ globalThis.AIMMO_ATTIRER = function (t) {
     when.setAttribute('type', 'date');
     form.appendChild(button('Ranger ce fait', function () {
       var key = factKey(label.value);
-      if (!key) { state('Saisissez le libellé du fait.'); return; }
+      if (!key) { state('Saisissez le libellé du fait, avec au moins une lettre latine ou un chiffre.'); return; }
+      var typed = label.value.trim().replace(/\\s+/g, ' ');
+      var same = items.filter(function (i) { return i.key === key && i.label !== typed; })[0];
+      if (same) { state('Ce libellé se confond avec « ' + same.label + ' » : changez-le, ou retirez d’abord ce fait.'); return; }
       var raw = value.value.trim().replace(',', '.');
       var number = raw === '' ? null : Number(raw);
       if (number !== null && !isFinite(number)) { state('La valeur doit être un chiffre.'); return; }

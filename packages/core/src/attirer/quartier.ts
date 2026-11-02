@@ -487,6 +487,22 @@ export interface NeighbourhoodDraft {
   validatedAt: string | null;
 }
 
+/** Un texte relu par la direction : ses paragraphes tels que le site les sert, et s'il est encore validable. */
+export interface NeighbourhoodDraftForReview extends NeighbourhoodDraft {
+  paragraphs: string[];
+  /** Les données du jour sont celles du texte ; sinon la validation serait refusée. */
+  current: boolean;
+}
+
+/** Les paragraphes d'un texte, découpés d'une seule façon : ce que la direction relit est ce que le site sert [R155]. */
+export function bodyParagraphs(body: string): string[] {
+  return body
+    .split(/\n\s*\n/u)
+    .map((p) => p.trim())
+    .filter((p) => p !== '')
+    .map((p) => p.replace(/\s+/g, ' '));
+}
+
 /** Ce que le site sert : un texte validé, recontrôlé sur les données du jour, et ses sources. */
 export interface PublishedNeighbourhood {
   draftId: string;
@@ -626,6 +642,8 @@ export class PagesQuartier {
     const zone = await this.zone(viewer.networkId, { id: zoneId });
     if (!zone) return { ok: false, rule: null, code: 'zone_inconnue' };
     const key = typeof input.key === 'string' ? input.key.trim() : '';
+    // Retirer ne dépend d'aucun contrôle de contenu : un fait devenu refusable reste toujours retirable du public.
+    if (input.retired === true) return this.retireFact(viewer, zone, key);
     const label = typeof input.label === 'string' ? input.label.trim().replace(/\s+/g, ' ') : '';
     const source = typeof input.source === 'string' ? input.source.trim().replace(/\s+/g, ' ') : '';
     const date = typeof input.sourceDate === 'string' ? input.sourceDate : '';
@@ -651,6 +669,18 @@ export class PagesQuartier {
       [this.newId(), viewer.networkId, zone.id, key, input.kind as string, label, value as number | null, unit as string | null, source, date, input.retired === true ? 1 : 0, this.actor(viewer), this.now().toISOString()],
     );
     await appendEvent(this.journal, { type: 'attirer.quartier.donnee', actor: this.actor(viewer), subject: `price_zone:${zone.id}`, data: { rule: 'R155', key, retired: input.retired === true } }, this.now);
+    return { ok: true };
+  }
+
+  /** Le retrait d'un fait en service : une ligne de plus, avec les valeurs rangées. */
+  private async retireFact(viewer: Viewer, zone: ZoneRow, key: string): Promise<{ ok: true } | NeighbourhoodRefusal> {
+    const fact = (await this.data(viewer.networkId, zone)).facts.find((f) => f.key === key);
+    if (!fact) return { ok: false, rule: null, code: 'inconnu' };
+    await this.db.run(
+      'INSERT INTO neighbourhood_facts (id, network_id, zone_id, fact_key, kind, label, value, unit, source, source_date, retired, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
+      [this.newId(), viewer.networkId, zone.id, key, fact.kind, fact.label, fact.value, fact.unit, fact.source, fact.sourceDate, this.actor(viewer), this.now().toISOString()],
+    );
+    await appendEvent(this.journal, { type: 'attirer.quartier.donnee', actor: this.actor(viewer), subject: `price_zone:${zone.id}`, data: { rule: 'R155', key, retired: true } }, this.now);
     return { ok: true };
   }
 
@@ -786,12 +816,13 @@ export class PagesQuartier {
   }
 
   /** Les textes d'un quartier, pour la direction : chacun avec son contrôle sur les données du jour. */
-  async drafts(viewer: Viewer, zoneId: unknown): Promise<{ ok: true; value: NeighbourhoodDraft[] } | NeighbourhoodRefusal> {
+  async drafts(viewer: Viewer, zoneId: unknown): Promise<{ ok: true; value: NeighbourhoodDraftForReview[] } | NeighbourhoodRefusal> {
     if (viewer.role !== 'direction') return this.refuseRole(viewer, `price_zone:${String(zoneId)}`);
     const zone = await this.zone(viewer.networkId, { id: zoneId });
     if (!zone) return { ok: false, rule: null, code: 'zone_inconnue' };
     const data = await this.data(viewer.networkId, zone);
     const clients = await this.clients(viewer.networkId);
+    const digest = await dataDigest(data);
     const rows = await this.db.all<DraftRow>(
       `SELECT d.id, d.zone_id, d.kind, d.topic, d.title, d.body, d.origin, d.data_digest, v.validated_by, v.validated_at, v.text_sha256
          FROM neighbourhood_drafts d LEFT JOIN neighbourhood_validations v ON v.draft_id = d.id WHERE d.network_id = ? AND d.zone_id = ? ORDER BY d.created_at DESC, d.rowid DESC`,
@@ -799,7 +830,7 @@ export class PagesQuartier {
     );
     return {
       ok: true,
-      value: rows.map((r) => ({ draftId: r.id, zoneSlug: zone.slug, kind: r.kind, topic: r.topic, title: r.title, body: r.body, origin: r.origin, trace: traceNeighbourhood(r.title, r.body, data, clients), validatedBy: r.validated_by, validatedAt: r.validated_at })),
+      value: rows.map((r) => ({ draftId: r.id, zoneSlug: zone.slug, kind: r.kind, topic: r.topic, title: r.title, body: r.body, origin: r.origin, trace: traceNeighbourhood(r.title, r.body, data, clients), validatedBy: r.validated_by, validatedAt: r.validated_at, paragraphs: bodyParagraphs(r.body), current: r.data_digest === digest })),
     };
   }
 
@@ -856,11 +887,8 @@ export function renderNeighbourhoodPage(page: PublishedNeighbourhood, options: N
   const base = `/quartiers/${page.zone.communeSlug}/${page.zone.slug}`;
   const path = page.topic === 'quartier' ? base : `${base}/${page.topic}`;
   const url = `${options.siteUrl}${path}`;
-  const paragraphs = page.body
-    .split(/\n\s*\n/u)
-    .map((p) => p.trim())
-    .filter((p) => p !== '')
-    .map((p) => `<p>${escapeHtml(p.replace(/\s+/g, ' '))}</p>`)
+  const paragraphs = bodyParagraphs(page.body)
+    .map((p) => `<p>${escapeHtml(p)}</p>`)
     .join('');
   const sources = page.sources
     .map((s) => `<li>${escapeHtml(s.source)}${s.date ? `, au ${escapeHtml(frenchDate(s.date))}` : ''}</li>`)

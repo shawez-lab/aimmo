@@ -1,6 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
+import { bodyParagraphs } from '../../core/src/attirer/quartier.ts';
 import { SITE_KINDS } from '../../core/src/attirer/referencement.ts';
 import { ATTIRER_SCRIPT } from '../app/attirer.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
@@ -40,8 +41,8 @@ const BASE: Record<string, Answer> = {
   'GET /v1/attirer/quartiers': ok([{ zoneId: 'z1', name: 'Ouest', communeName: 'Ville Test' }]),
   'GET /v1/attirer/quartiers/z1/faits': ok([{ key: 'tram', kind: 'transport', label: 'Arrêts de tram', value: 2, unit: 'nombre', source: 'Carte inventée', sourceDate: '2026-01-15' }]),
   'GET /v1/attirer/quartiers/z1/textes': ok([
-    { draftId: 'd2', zoneSlug: 'ouest', kind: 'page', topic: 'quartier', title: 'Le quartier Ouest', body: `Deux arrêts de tram.\nUne phrase ${INJECTED}.`, origin: 'secours', trace: { ok: true, sentences: [{ text: 'Deux arrêts de tram.', sources: [{ ref: 'tram', source: 'Carte inventée', date: '2026-01-15' }], problems: [] }] }, validatedBy: null, validatedAt: null },
-    { draftId: 'd1', zoneSlug: 'ouest', kind: 'article', topic: 'prix', title: 'Les prix', body: 'Texte ancien.', origin: 'ia', trace: { ok: false, sentences: [{ text: 'Texte ancien.', sources: [], problems: [{ code: 'jugement', value: 'charmant' }] }] }, validatedBy: 'direction:d', validatedAt: '2026-02-01T08:00:00.000Z' },
+    { draftId: 'd2', zoneSlug: 'ouest', kind: 'page', topic: 'quartier', title: 'Le quartier Ouest', body: `Deux arrêts\nde tram.\n\nUne phrase ${INJECTED}.`, paragraphs: bodyParagraphs(`Deux arrêts\nde tram.\n\nUne phrase ${INJECTED}.`), current: true, origin: 'secours', trace: { ok: true, sentences: [{ text: 'Deux arrêts de tram.', sources: [{ ref: 'tram', source: 'Carte inventée', date: '2026-01-15' }], problems: [] }] }, validatedBy: null, validatedAt: null },
+    { draftId: 'd1', zoneSlug: 'ouest', kind: 'article', topic: 'prix', title: 'Les prix', body: 'Texte ancien.', paragraphs: ['Texte ancien.'], current: false, origin: 'ia', trace: { ok: false, sentences: [{ text: 'Texte ancien.', sources: [], problems: [{ code: 'jugement', value: 'charmant' }] }] }, validatedBy: 'direction:d', validatedAt: '2026-02-01T08:00:00.000Z' },
   ]),
   'POST /v1/attirer/quartiers/z1/faits': ok({}),
   'POST /v1/attirer/quartiers/z1/brouillon': ok({ draftId: 'd3' }),
@@ -399,10 +400,92 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       expect(t.buttons('Je l’ai relu : valider')).toHaveLength(1);
       const paragraphs = t.body().all().filter((e) => e.tagName === 'p').map((e) => e.textContent);
       expect(paragraphs).toContain('Deux arrêts de tram.');
+      expect(paragraphs).not.toContain('Deux arrêts');
       expect(paragraphs).toContain(`Une phrase ${INJECTED}.`);
       await t.click(t.buttons('Je l’ai relu : valider')[0]);
       expect(t.posts().map((c) => c.url)).toEqual(['/v1/attirer/quartiers/textes/d2/valider']);
       expect(t.state()).toBe('Texte validé : le site du réseau peut le servir.');
+    });
+
+    const pending = (over: Record<string, unknown>) => ({ draftId: 'd5', zoneSlug: 'ouest', kind: 'page', topic: 'quartier', title: 'Titre', body: 'Corps.', paragraphs: ['Corps.'], current: true, origin: 'secours', trace: { ok: true, sentences: [] }, validatedBy: null, validatedAt: null, ...over });
+
+    it('[R155] un texte non validé qui ne passe plus le contrôle n’a pas de bouton, et le dit', async () => {
+      const t = await quartier({ 'GET /v1/attirer/quartiers/z1/textes': ok([pending({ trace: { ok: false, sentences: [] } })]) });
+      expect(t.buttons('Je l’ai relu : valider')).toHaveLength(0);
+      expect(t.texts()).toContain('Ce texte ne passe plus le contrôle sur les données du jour : préparez-en un nouveau.');
+    });
+
+    it('[R155] un texte dont les données ont changé n’a pas de bouton, et le dit', async () => {
+      const t = await quartier({ 'GET /v1/attirer/quartiers/z1/textes': ok([pending({ current: false })]) });
+      expect(t.buttons('Je l’ai relu : valider')).toHaveLength(0);
+      expect(t.texts()).toContain('Les données ont changé depuis ce texte : préparez-en un nouveau.');
+    });
+
+    it('[R155] une validation refusée pour un écran dépassé relit le quartier, et dit pourquoi', async () => {
+      const t = await quartier({
+        'GET /v1/attirer/quartiers/z1/textes': ok([pending({ draftId: 'd2' })]),
+        'POST /v1/attirer/quartiers/textes/d2/valider': no(409, { ok: false, rule: 'R155', code: 'donnees_changees' }),
+      });
+      const before = t.calls.length;
+      await t.click(t.buttons('Je l’ai relu : valider')[0]);
+      expect(t.calls.slice(before).filter((c) => c.method === 'GET').map((c) => c.url)).toContain('/v1/attirer/quartiers/z1/textes');
+      expect(t.state()).toBe('Les données ont changé depuis ce texte : préparez-en un nouveau.');
+    });
+
+    it('un double appui sur valider ne part qu’une fois', async () => {
+      const t = await quartier();
+      const b = t.buttons('Je l’ai relu : valider')[0]!;
+      b.listeners.click!({});
+      b.listeners.click!({});
+      await settle();
+      expect(t.posts()).toHaveLength(1);
+    });
+
+    it('deux libellés qui se confondent ne se remplacent pas ; le même libellé, si', async () => {
+      const fact = (label: string) => ({ key: 'marche', kind: 'marche', label, value: null, unit: null, source: 'Mairie inventée', sourceDate: '2026-01-15' });
+      const t = await quartier({ 'GET /v1/attirer/quartiers/z1/faits': ok([fact('Marché')]) });
+      t.input('Libellé').value = 'Marche';
+      t.input('Source').value = 'Club inventé';
+      t.input('Date de la source').value = '2026-03-01';
+      await t.click(t.buttons('Ranger ce fait')[0]);
+      expect(t.posts()).toHaveLength(0);
+      expect(t.state()).toBe('Ce libellé se confond avec « Marché » : changez-le, ou retirez d’abord ce fait.');
+      t.input('Libellé').value = ' Marché ';
+      await t.click(t.buttons('Ranger ce fait')[0]);
+      expect(t.posts()).toHaveLength(1);
+    });
+
+    it('un long libellé coupé à sa clé ne remplace pas un autre au même début', async () => {
+      const start = 'a'.repeat(60);
+      const t = await quartier({ 'GET /v1/attirer/quartiers/z1/faits': ok([{ key: start, kind: 'autre', label: `${start} un`, value: null, unit: null, source: 'Source', sourceDate: '2026-01-15' }]) });
+      t.input('Libellé').value = `${start} deux`;
+      await t.click(t.buttons('Ranger ce fait')[0]);
+      expect(t.posts()).toHaveLength(0);
+    });
+
+    it('quitter un quartier en cours de lecture : la réponse tardive n’est jamais montrée', async () => {
+      const d = deferred([]);
+      const t = await run({ 'GET /v1/attirer/quartiers/z1/textes': d.answer });
+      await t.ouvrir();
+      await t.click(t.buttons('Ouvrir')[0]);
+      await t.click(t.els['attirer-retour']);
+      await t.click(t.els['attirer-retour']);
+      d.release();
+      await settle();
+      expect(t.body().children.length).toBe(0);
+      expect(t.els.attirer!.hidden).toBe(true);
+    });
+
+    it('un envoi revenu après la sortie ne rouvre rien', async () => {
+      const d = deferred({});
+      const t = await quartier({ 'POST /v1/attirer/quartiers/textes/d2/valider': d.answer });
+      await t.click(t.buttons('Je l’ai relu : valider')[0]);
+      await t.click(t.els['attirer-retour']);
+      await t.click(t.els['attirer-retour']);
+      d.release();
+      await settle();
+      expect(t.els.attirer!.hidden).toBe(true);
+      expect(t.body().children.length).toBe(0);
     });
 
     it('[R155] chaque phrase montre sa source ; un texte validé qui ne passe plus le contrôle le dit', async () => {
@@ -425,7 +508,7 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       t.input('À préparer').value = 'article/equipements';
       await t.click(t.buttons('Préparer le texte')[0]);
       expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ kind: 'article', topic: 'equipements' });
-      expect(t.state()).toBe('Aucune donnée sur ce quartier : rangez d’abord un fait avec sa source.');
+      expect(t.state()).toBe('Aucune donnée pour ce sujet : ni fait rangé pour le quartier, ni prix publié pour un article sur les prix.');
     });
 
     it('un fait se range avec une clé tirée du libellé ; chiffre et unité vont ensemble', async () => {
@@ -444,7 +527,7 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       expect(t.state()).toBe('Fait rangé.');
     });
 
-    it('retirer un fait se confirme, et renvoie le fait tel qu’il est, marqué retiré', async () => {
+    it('retirer un fait se confirme, et ne renvoie que sa clé', async () => {
       const t = await quartier();
       const b = t.buttons('Retirer ce fait')[0]!;
       await t.click(b);
@@ -452,7 +535,7 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       expect(t.posts()).toHaveLength(0);
       later(2000);
       await t.click(b);
-      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ key: 'tram', kind: 'transport', label: 'Arrêts de tram', value: 2, unit: 'nombre', source: 'Carte inventée', sourceDate: '2026-01-15', retired: true });
+      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ key: 'tram', retired: true });
     });
 
     it('le retour mène du quartier à Attirer, puis au réseau, et efface le quartier', async () => {
