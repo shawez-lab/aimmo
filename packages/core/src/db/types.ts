@@ -99,6 +99,8 @@ export interface Exclusion extends Scoped {
   noted_at: string;
   lifted_at: string | null;
   created_at: string;
+  /** La fusion défaite qui a recopié cette ligne ; sa date de création reste celle de l'original [AC08]. */
+  copied_by_merge: string | null;
 }
 
 export interface Project extends Scoped {

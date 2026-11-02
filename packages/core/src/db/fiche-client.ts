@@ -309,6 +309,7 @@ export class FicheClient {
       noted_at: input.notedAt.toISOString(),
       lifted_at: null,
       created_at: this.stamp(),
+      copied_by_merge: null,
     });
   }
 
