@@ -29,6 +29,7 @@ import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { computeYield, type Sourced } from './calcul.ts';
@@ -227,9 +228,7 @@ export class AlertesInvestisseurs {
     if (channels.length === 0) return { propertyId: property.id, personId, status: 'no_consent', rule: 'R03' };
 
     const constraints = await this.constraintsOf(property, profile);
-    const firstName = (await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${placeholders(ids.length)})`, ids))
-      .map((n) => n.first_name)
-      .find((n) => n) ?? null;
+    const firstName = await ficheFirstName(this.db, ids);
     const body = investorAlertText(firstName, property, constraints, yieldOf);
     // La porte de R124 et la liste des tournures, avant toute réservation.
     const gate = energyAlertGate(constraints, body.replace(/^Bonjour[^,]*,\s*/, ''));

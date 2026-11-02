@@ -18,6 +18,7 @@ import {
   type Sale,
   type Viewer,
 } from '../src/index.ts';
+import { mergeWithDouble } from './doublon.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -214,5 +215,16 @@ describeWithSqlite('E06 · suivi du vendeur', () => {
     expect((await planificateur.tick()).ran).toEqual(['estimation.relance_vendeur']);
     expect((await planificateur.tick()).skipped).toEqual(['estimation.relance_vendeur']);
     expect(await w.outbox()).toHaveLength(1);
+  });
+
+  it('[R08] AC10 : sur une fiche réunie, la relance salue par le prénom de la fiche gardée', async () => {
+    const w = await world();
+    const r = await w.sendNoted();
+    const expected = await mergeWithDouble(w.db, w.store, w.seller.id, 'Inna');
+    w.setClock(TUE_1000);
+    expect(await w.suivi.run()).toEqual([{ reportId: r.id, status: 'sent', rule: null, delivered: false }]);
+    const out = await w.db.all<{ body: string }>("SELECT body FROM messages WHERE direction = 'out'");
+    expect(out).toHaveLength(1);
+    expect(out[0]!.body).toContain(`Bonjour ${expected}`);
   });
 });
