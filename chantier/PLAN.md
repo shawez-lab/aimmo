@@ -421,7 +421,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste, pour C09 : aucun vrai canal n'est branché, et aucune route ne permet encore à la direction d'avancer le palier d'un canal (`/automatisations/paliers` ne connaît que les automatisations du site). Relecture forte : 1 P0 et 2 P1 corrigés.
 
 ### C09c · Alertes de l'agent visibles dans l'application
-- Statut : à faire
+- Statut : en cours
 - Voie : 1
 - Qui : Claude · Relecture : forte · Dépend de : C09b
 - Cahier : M02, relais à l'agent ; R12, R21.
