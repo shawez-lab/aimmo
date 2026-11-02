@@ -13,7 +13,12 @@ describe('O10 · le prochain pas d’une offre', () => {
   it('[R57] le pas dit ce que la règle attend, sans jamais préjuger de la réponse', () => {
     expect(nextStep(facts({ state: 'transmise', transmitted: true }))).toBe('reponse_vendeur');
     expect(nextStep(facts({ state: 'refusee', transmitted: true }))).toBe('aucun');
-    expect(nextStep(facts({ state: 'echue', transmitted: true }))).toBe('aucun');
+  });
+
+  it('[R59] échue sans réponse : la réponse donnée à temps reste à rapporter, pour l’offre comme pour sa dernière proposition', () => {
+    expect(nextStep(facts({ state: 'echue', transmitted: true }))).toBe('reponse_vendeur');
+    expect(nextStep(facts({ state: 'echue', transmitted: true, last: { transmittedAt: null, response: null } }))).toBe('transmettre_proposition');
+    expect(nextStep(facts({ state: 'echue', transmitted: true, last: { transmittedAt: '2027-03-01T10:00:00.000Z', response: null } }))).toBe('reponse_proposition');
   });
 
   it('suit la chaîne des contre-offres', () => {

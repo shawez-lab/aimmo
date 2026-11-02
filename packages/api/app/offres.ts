@@ -55,7 +55,7 @@ const FIELDS = {
   signedRef: 'Joignez l’offre signée.',
   conditions: 'Vérifiez les conditions : le prêt demande son montant et sa durée.',
 };
-const STATES = { recue: 'reçue', transmise: 'transmise au vendeur', acceptee: 'acceptée par le vendeur', refusee: 'refusée par le vendeur', contre_offre: 'contre-offre en cours', echue: 'échue' };
+const STATES = { recue: 'reçue', transmise: 'transmise au vendeur', acceptee: 'acceptée', refusee: 'refusée', contre_offre: 'contre-offre en cours', echue: 'échue' };
 const STEPS = {
   transmettre: 'Prochain pas : la transmettre au vendeur.',
   reponse_vendeur: 'Prochain pas : rapporter la réponse du vendeur, avec sa preuve.',
@@ -125,7 +125,7 @@ globalThis.AIMMO_OFFRES = function (t) {
   var NO = ${JSON.stringify(REFUSALS)}, FIELDS = ${JSON.stringify(FIELDS)}, STATES = ${JSON.stringify(STATES)}, STEPS = ${JSON.stringify(STEPS)};
   var CONDITIONS = ${JSON.stringify(CONDITIONS)}, EVENTS = ${JSON.stringify(EVENTS)}, PROPOSAL_EVENTS = ${JSON.stringify(PROPOSAL_EVENTS)};
   var TYPES = ${JSON.stringify(OFFER_DEPOSIT_TYPES)}, MAX = ${OFFER_DEPOSIT_MAX_BYTES};
-  var cur = null, seq = 0;
+  var cur = null, seq = 0, busy = null;
   function state(x) { $('offres-etat').textContent = x; }
   function body() { return $('offres-corps'); }
   function money(n) { return String(n).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ') + ' €'; }
@@ -144,7 +144,7 @@ globalThis.AIMMO_OFFRES = function (t) {
     }
     return (b && NO[b.code]) || (res.status === 403 || res.status === 404 ? 'Ce bien n’est pas dans vos droits.' : fallback);
   }
-  function wipe() { seq += 1; clear(body()); state(''); $('offres-titre').textContent = 'Offres'; cur = null; }
+  function wipe() { seq += 1; busy = null; clear(body()); state(''); $('offres-titre').textContent = 'Offres'; cur = null; }
   function open(id, reference) {
     if (!t.key() || !ID.test(id)) return Promise.resolve(false);
     t.bump();
@@ -169,13 +169,14 @@ globalThis.AIMMO_OFFRES = function (t) {
       return true;
     });
   }
-  // Un geste à la fois : un double appui ne range jamais deux fois.
+  // Un geste à la fois sur tout l'écran : un double appui ne range jamais deux fois, et un autre bouton ne fait pas
+  // oublier la réponse du geste en cours, qu'elle soit un refus ou un succès.
   function act(run) {
-    var busy = false;
     return function () {
       if (busy) return Promise.resolve(false);
-      busy = true;
-      return Promise.resolve(run()).then(function (r) { busy = false; return r; }, function () { busy = false; state('Rien n’est rangé : réessayez.'); return false; });
+      var me = busy = {};
+      function done(r) { if (busy === me) busy = null; return r; }
+      return Promise.resolve(run()).then(done, function () { done(false); state('Rien n’est rangé : réessayez.'); return false; });
     };
   }
   // Après un geste : relire si c'est rangé, dire la raison sinon, et garder ce qui est saisi.
@@ -229,6 +230,15 @@ globalThis.AIMMO_OFFRES = function (t) {
       }, function () { if (mine === t.session()) state('Ce fichier ne se lit pas sur ce téléphone.'); return false; });
     };
   }
+  // Un moment dit par l'agent : rend l'heure complète, ou null tant qu'il n'est pas lisible.
+  function moment(box, id, label) {
+    var f = field(box, id, label);
+    f.setAttribute('type', 'datetime-local');
+    return function () {
+      var d = new Date(f.value);
+      return f.value && !isNaN(d.getTime()) ? d.toISOString() : null;
+    };
+  }
   function select(box, id, label, options) {
     var f = field(box, id, label, 'select');
     options.forEach(function (k) {
@@ -246,7 +256,7 @@ globalThis.AIMMO_OFFRES = function (t) {
     if (n > 1) seal.appendChild(el('p', 'Dans l’ordre d’arrivée, sans classement.', 'doux'));
     body().appendChild(seal);
     (Array.isArray(data.offers) ? data.offers : []).forEach(function (o) { if (ID.test(o.id)) body().appendChild(card(o)); });
-    body().appendChild(button('Enregistrer une offre reçue', function () { seq += 1; clear(body()); state(''); form(); }));
+    body().appendChild(button('Enregistrer une offre reçue', act(function () { seq += 1; clear(body()); state(''); return form(); })));
   }
   function buyerName(b) { return b ? [b.firstName, b.lastName].filter(Boolean).join(' ') : ''; }
   function condition(c) {
@@ -262,8 +272,9 @@ globalThis.AIMMO_OFFRES = function (t) {
     if (o.netSellerEur !== null && o.netSellerEur !== undefined) box.appendChild(el('p', 'Net vendeur, honoraires du mandat déduits : ' + money(o.netSellerEur) + '.', 'doux'));
     var conds = Array.isArray(o.conditionDetails) ? o.conditionDetails : [];
     box.appendChild(el('p', conds.length ? 'Conditions : ' + conds.map(condition).join(', ') + '.' : 'Sans condition suspensive.', 'doux'));
-    box.appendChild(el('p', 'Financement déclaré : apport ' + money(o.downPaymentEur) + ', prêt ' + money(o.loanEur) + '.', 'doux'));
-    var left = o.daysLeft === null || o.daysLeft === undefined ? '' : o.daysLeft === 0 ? ' · dernier jour' : o.daysLeft === 1 ? ' · reste 1 jour' : ' · reste ' + o.daysLeft + ' jours';
+    if (o.downPaymentEur !== null && o.loanEur !== null) box.appendChild(el('p', 'Financement déclaré : apport ' + money(o.downPaymentEur) + ', prêt ' + money(o.loanEur) + '.', 'doux'));
+    if (o.state === 'echue' && o.next !== 'aucun') box.appendChild(el('p', 'Échue : seul un refus, ou une acceptation donnée à temps, se range encore.', 'doux'));
+    var left = typeof o.daysLeft !== 'number' || o.daysLeft < 0 ? '' : o.daysLeft === 0 ? ' · dernier jour' : o.daysLeft === 1 ? ' · reste 1 jour' : ' · reste ' + o.daysLeft + ' jours';
     box.appendChild(el('p', 'État : ' + (STATES[o.state] || 'inconnu') + left));
     box.appendChild(el(o.next === 'aucun' ? 'p' : 'strong', STEPS[o.next] || STEPS.aucun));
     gesture(box, o);
@@ -315,10 +326,13 @@ globalThis.AIMMO_OFFRES = function (t) {
     var offer = '/v1/offres/' + encodeURIComponent(o.id);
     var uid = 'o' + o.seq;
     if (o.next === 'transmettre') {
-      var via = select(box, uid + '-via', 'Comment le vendeur l’a reçue', [['', 'À choisir'], ['telephone', 'Par téléphone'], ['en_personne', 'En personne'], ['message', 'Message préparé par AIMMO']]);
+      var via = select(box, uid + '-via', 'Comment le vendeur l’a reçue', [['', 'À choisir'], ['telephone', 'Par téléphone'], ['en_personne', 'En personne']]);
+      var sentAt = moment(box, uid + '-quand', 'Transmise le');
       box.appendChild(button('Noter la transmission', act(function () {
         if (!via.value) { state('Dites comment le vendeur a reçu cette offre.'); return false; }
-        return post(offer + '/transmission', { via: via.value }, 'Transmission rangée.', 'La transmission n’est pas rangée : réessayez.');
+        var at = sentAt();
+        if (!at) { state('Dites quand le vendeur l’a reçue.'); return false; }
+        return post(offer + '/transmission', { via: via.value, at: at }, 'Transmission rangée.', 'La transmission n’est pas rangée : réessayez.');
       })));
     } else if (o.next === 'reponse_vendeur') {
       answer(box, uid, offer + '/reponse', 'Réponse du vendeur');
@@ -341,9 +355,12 @@ globalThis.AIMMO_OFFRES = function (t) {
       })));
     } else if (o.next === 'transmettre_proposition' && o.proposalId && ID.test(o.proposalId)) {
       var how = select(box, uid + '-via', 'Comment l’autre partie l’a reçue', [['', 'À choisir'], ['telephone', 'Par téléphone'], ['en_personne', 'En personne'], ['ecrit', 'Par écrit']]);
+      var passedAt = moment(box, uid + '-quand', 'Transmise le');
       box.appendChild(button('Noter la transmission', act(function () {
         if (!how.value) { state('Dites comment l’autre partie a reçu cette proposition.'); return false; }
-        return post('/v1/offres/propositions/' + encodeURIComponent(o.proposalId) + '/transmission', { via: how.value }, 'Transmission rangée.', 'La transmission n’est pas rangée : réessayez.');
+        var at = passedAt();
+        if (!at) { state('Dites quand l’autre partie l’a reçue.'); return false; }
+        return post('/v1/offres/propositions/' + encodeURIComponent(o.proposalId) + '/transmission', { via: how.value, at: at }, 'Transmission rangée.', 'La transmission n’est pas rangée : réessayez.');
       })));
     } else if (o.next === 'ouvrir_dossier') {
       box.appendChild(button('Ouvrir le dossier de vente', act(function () {
@@ -358,17 +375,16 @@ globalThis.AIMMO_OFFRES = function (t) {
   // Ce que l'agent rapporte : une réponse choisie, son heure et sa preuve, jamais une réponse par défaut [R57].
   function answer(box, uid, path, title) {
     var outcome = select(box, uid + '-reponse', title, [['', 'À choisir'], ['acceptee', 'Acceptation'], ['refusee', 'Refus'], ['contre_offre', 'Contre-offre']]);
-    var at = field(box, uid + '-heure', 'Reçue le');
-    at.setAttribute('type', 'datetime-local');
+    var at = moment(box, uid + '-heure', 'Reçue le');
     var proof = piece(box, uid + '-preuve', 'Preuve de la réponse', 'preuve');
     box.appendChild(button('Ranger la réponse', act(function () {
       if (!outcome.value) { state('Choisissez la réponse rapportée.'); return false; }
-      var moment = new Date(at.value);
-      if (!at.value || isNaN(moment.getTime())) { state('Dites quand la réponse a été reçue.'); return false; }
+      var iso = at();
+      if (!iso) { state('Dites quand la réponse a été reçue.'); return false; }
       return proof().then(function (ref) {
         if (ref === false) return false;
         if (ref === null) { state('Joignez la preuve de la réponse.'); return false; }
-        return post(path, { outcome: outcome.value, proofRef: ref, respondedAt: moment.toISOString() }, 'Réponse rangée.', 'La réponse n’est pas rangée : réessayez.');
+        return post(path, { outcome: outcome.value, proofRef: ref, respondedAt: iso }, 'Réponse rangée.', 'La réponse n’est pas rangée : réessayez.');
       });
     })));
   }
@@ -381,8 +397,7 @@ globalThis.AIMMO_OFFRES = function (t) {
     var down = field(box, 'of-apport', 'Apport déclaré, en euros');
     var loan = field(box, 'of-pret', 'Prêt déclaré, en euros');
     [price, down, loan].forEach(function (f) { f.setAttribute('inputmode', 'numeric'); });
-    var received = field(box, 'of-recue', 'Reçue le');
-    received.setAttribute('type', 'datetime-local');
+    var received = moment(box, 'of-recue', 'Reçue le');
     var last = field(box, 'of-validite', 'Dernier jour de validité');
     last.setAttribute('type', 'date');
     box.appendChild(el('p', 'Conditions suspensives', 'doux'));
@@ -399,8 +414,8 @@ globalThis.AIMMO_OFFRES = function (t) {
       if (!who.value) { state(FIELDS.buyerPersonId); return false; }
       var numbers = [amount(price), amount(down), amount(loan)];
       if (numbers.some(Number.isNaN)) { state('Montant, apport et prêt s’écrivent en euros, en chiffres seulement (0 s’il n’y en a pas).'); return false; }
-      var moment = new Date(received.value);
-      if (!received.value || isNaN(moment.getTime())) { state(FIELDS.receivedAt); return false; }
+      var iso = received();
+      if (!iso) { state(FIELDS.receivedAt); return false; }
       var conditions = [];
       Object.keys(marks).forEach(function (k) {
         if (!marks[k].checked) return;
@@ -411,14 +426,14 @@ globalThis.AIMMO_OFFRES = function (t) {
         if (ref === false) return false;
         if (ref === null) { state(FIELDS.signedRef); return false; }
         var mine = ++seq;
-        return send(base(), 'POST', { buyerPersonId: who.value, amountEur: numbers[0], downPaymentEur: numbers[1], loanEur: numbers[2], conditions: conditions, validUntil: last.value, receivedAt: moment.toISOString(), signedRef: ref, requestKey: requestKey }).then(function (res) {
+        return send(base(), 'POST', { buyerPersonId: who.value, amountEur: numbers[0], downPaymentEur: numbers[1], loanEur: numbers[2], conditions: conditions, validUntil: last.value, receivedAt: iso, signedRef: ref, requestKey: requestKey }).then(function (res) {
           if (res.gone || mine !== seq) return false;
           if (!res.ok) { state(why(res, 'L’offre n’est pas inscrite : réessayez.')); return false; }
           return load('Offre inscrite au registre, avec son contrôle.');
         });
       });
     })));
-    box.appendChild(button('Revenir aux offres', function () { return load(); }));
+    box.appendChild(button('Revenir aux offres', act(function () { return load(); })));
     body().appendChild(box);
     // L'acquéreur se choisit parmi les contacts : aucun identifiant à saisir [R16].
     var mine = ++seq;

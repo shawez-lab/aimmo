@@ -87,6 +87,8 @@ export class ComparatifOffres {
       const amount = last?.amountEur ?? offer.amountEur;
       let state = await this.transmission.stateOf(offer);
       let lastDay = offer.validUntil;
+      // Une proposition déjà remplacée par une contre-offre n'a plus de délai à compter.
+      let replaced = false;
       // Après des contre-offres, l'état et la validité sont ceux de la dernière proposition.
       if (last && chain.ok) {
         const answered = chain.value.filter((e) => /^proposition:\d+:(acceptee|refusee|contre_offre)$/.test(e.event)).pop();
@@ -96,8 +98,9 @@ export class ComparatifOffres {
         const proposal = await this.db.first<{ valid_until: string }>('SELECT valid_until FROM offer_proposals WHERE offer_id = ? AND seq = ?', [offer.id, lastSeq]);
         if (proposal) lastDay = proposal.valid_until;
         if (outcome === null) state = today > lastDay ? 'echue' : 'contre_offre';
+        replaced = outcome === 'contre_offre';
       }
-      const open = state === 'recue' || state === 'transmise' || (last !== undefined && state === 'contre_offre');
+      const open = !replaced && (state === 'recue' || state === 'transmise' || (last !== undefined && state === 'contre_offre'));
       rows.push({
         seq: offer.seq,
         amountEur: amount,

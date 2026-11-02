@@ -94,6 +94,8 @@ describeWithSqlite('O10 · suivi des offres pour l’écran', () => {
     const t = await setup();
     const own = (await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}/contacts`)).body.data;
     expect(own.contacts).toContainEqual({ personId: t.buyerId, firstName: 'Acheteur', lastName: 'Exemple' });
+    // Cette liste de noms passe par les droits et s'écrit au journal.
+    expect(JSON.stringify((await t.journal.all()).filter((e) => e.type === 'fiches.listees').at(-1))).toContain(t.buyerId);
     const owner = await t.db.first<{ person_id: string }>('SELECT person_id FROM mandates WHERE property_id = ?', [t.propertyId]);
     expect(owner).not.toBeNull();
     expect(own.contacts.map((c: { personId: string }) => c.personId)).not.toContain(owner!.person_id);
@@ -104,7 +106,56 @@ describeWithSqlite('O10 · suivi des offres pour l’écran', () => {
     });
     expect(recorded.status).toBe(200);
     const board = (await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}/suivi`)).body.data;
-    expect(board.offers[0]).toMatchObject({ buyer: null, amountEur: 200000 });
+    expect(board.offers[0]).toMatchObject({ buyer: null, amountEur: 200000, downPaymentEur: null, loanEur: null });
+    const raw = (await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}`)).body.data[0];
+    expect(raw).toMatchObject({ seq: 1, amountEur: 200000, buyerPersonId: null, downPaymentEur: null, loanEur: null, signedRef: null });
+    expect((await t.call(t.direction, 'GET', `/offres/biens/${t.propertyId}`)).body.data[0]).toMatchObject({ buyerPersonId: foreign.id, downPaymentEur: 200000 });
+  });
+
+  it('[R57] [R59] la transmission notée après coup porte son heure vraie : la réponse vraie se range, même le lendemain', async () => {
+    const t = await setup();
+    const offer = await t.record();
+    const path = `/offres/${offer.id}/transmission`;
+    expect((await t.call(t.agent, 'POST', path, { via: 'telephone', at: '2027-03-01T08:00:00.000Z' })).body.code).toBe('bad_date');
+    expect((await t.call(t.agent, 'POST', path, { via: 'telephone', at: '2027-03-01T11:00:00.000Z' })).body.code).toBe('bad_date');
+    expect((await t.call(t.agent, 'POST', path, { via: 'telephone', at: 'hier' })).body.code).toBe('bad_date');
+    expect((await t.call(t.agent, 'POST', path, { via: 'telephone', at: '2027-03-01T09:30:00.000Z' })).status).toBe(200);
+    // Dernier jour le 10 mars ; le vendeur a accepté ce jour-là, l'agent le rapporte le lendemain.
+    t.setClock(new Date('2027-03-11T08:00:00.000Z'));
+    expect((await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}/suivi`)).body.data.offers[0]).toMatchObject({ state: 'echue', next: 'reponse_vendeur' });
+    const late = await t.call(t.agent, 'POST', `/offres/${offer.id}/reponse`, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-11T07:00:00.000Z' });
+    expect(late.body).toMatchObject({ rule: 'R59', code: 'expired' });
+    expect((await t.call(t.agent, 'POST', `/offres/${offer.id}/reponse`, { outcome: 'acceptee', proofRef: PROOF, respondedAt: '2027-03-10T16:00:00.000Z' })).status).toBe(200);
+    expect((await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}/suivi`)).body.data.offers[0]).toMatchObject({ state: 'acceptee', next: 'ouvrir_dossier' });
+  });
+
+  it('[R57] une proposition transmise après coup porte aussi son heure, jamais avant la réponse qui l’a demandée ; replacée, elle n’a plus de délai', async () => {
+    const t = await setup();
+    const offer = await t.record();
+    await t.call(t.agent, 'POST', `/offres/${offer.id}/transmission`, { via: 'telephone' });
+    t.setClock(new Date('2027-03-01T12:00:00.000Z'));
+    await t.call(t.agent, 'POST', `/offres/${offer.id}/reponse`, { outcome: 'contre_offre', proofRef: PROOF, respondedAt: '2027-03-01T11:00:00.000Z' });
+    const p = (await t.call(t.agent, 'POST', `/offres/${offer.id}/propositions`, { amountEur: 210000, validUntil: '2027-03-05', proofRef: PROOF })).body.data.id;
+    expect((await t.call(t.agent, 'POST', `/offres/propositions/${p}/transmission`, { via: 'ecrit', at: '2027-03-01T10:00:00.000Z' })).body.code).toBe('bad_date');
+    expect((await t.call(t.agent, 'POST', `/offres/propositions/${p}/transmission`, { via: 'ecrit', at: '2027-03-01T11:30:00.000Z' })).status).toBe(200);
+    expect((await t.call(t.agent, 'POST', `/offres/propositions/${p}/reponse`, { outcome: 'contre_offre', proofRef: PROOF, respondedAt: '2027-03-01T11:45:00.000Z' })).status).toBe(200);
+    t.setClock(new Date('2027-03-08T12:00:00.000Z'));
+    expect((await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}/suivi`)).body.data.offers[0]).toMatchObject({ state: 'contre_offre', next: 'ranger_proposition', daysLeft: null });
+  });
+
+  it('[R16] les fiches réunies : une fiche absorbée n’est pas proposée, le mandant ne l’est sous aucune de ses fiches', async () => {
+    const t = await setup();
+    const owner = (await t.db.first<{ person_id: string }>('SELECT person_id FROM mandates WHERE property_id = ?', [t.propertyId]))!.person_id;
+    const survivor = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Vendeur', lastName: 'Réuni' });
+    const absorbed = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Double', lastName: 'Fiche' });
+    const merge = (survivorId: string, mergedId: string, id: string) => t.db.run(`INSERT INTO person_merges (id, network_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES (?, ?, ?, ?, 'essai', ?, ?)`, [id, t.network.id, survivorId, mergedId, '2027-03-01T08:00:00.000Z', '2027-03-01T08:00:00.000Z']);
+    await merge(survivor.id, owner, 'fusion-1');
+    await merge(t.buyerId, absorbed.id, 'fusion-2');
+    const ids = (await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}/contacts`)).body.data.contacts.map((c: { personId: string }) => c.personId);
+    expect(ids).toContain(t.buyerId);
+    expect(ids).not.toContain(absorbed.id);
+    expect(ids).not.toContain(survivor.id);
+    expect(ids).not.toContain(owner);
   });
 
   it('[R13] le dépôt range le fichier sous la référence attendue par le registre et les réponses, sans contenu au journal', async () => {

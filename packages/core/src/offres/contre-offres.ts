@@ -143,11 +143,19 @@ export class ContreOffres {
   }
 
   /** La transmission de la proposition à l'autre partie, attestée par l'agent du bien. */
-  async transmit(viewer: Viewer, proposalId: string, input: { via: unknown }): Promise<{ ok: true } | Refusal | Problem> {
+  async transmit(viewer: Viewer, proposalId: string, input: { via: unknown; at?: unknown }): Promise<{ ok: true } | Refusal | Problem> {
     if (input.via !== 'telephone' && input.via !== 'en_personne' && input.via !== 'ecrit') return { ok: false, rule: null, code: 'bad_via' };
     const found = await this.proposalFor(viewer, proposalId);
     if (!found.ok) return found;
-    const { changes } = await this.db.run('INSERT INTO proposal_transmissions (proposal_id, via, at, by) VALUES (?, ?, ?, ?) ON CONFLICT (proposal_id) DO NOTHING', [proposalId, input.via, this.now().toISOString(), this.actor(viewer)]);
+    // L'heure vraie, attestée par l'agent : ni à venir, ni avant la réponse à laquelle cette proposition fait suite.
+    let at = this.now().toISOString();
+    if (input.at !== undefined) {
+      const before = found.chain.filter((p) => p.seq < found.proposal.seq).pop()?.response?.respondedAt
+        ?? (await this.db.first<{ responded_at: string }>('SELECT responded_at FROM offer_responses WHERE offer_id = ?', [found.proposal.offerId]))?.responded_at;
+      if (typeof input.at !== 'string' || !ISO_INSTANT.test(input.at) || !Number.isFinite(Date.parse(input.at)) || Date.parse(input.at) > this.now().getTime() || (before !== undefined && Date.parse(input.at) < Date.parse(before))) return { ok: false, rule: null, code: 'bad_date' };
+      at = new Date(input.at).toISOString();
+    }
+    const { changes } = await this.db.run('INSERT INTO proposal_transmissions (proposal_id, via, at, by) VALUES (?, ?, ?, ?) ON CONFLICT (proposal_id) DO NOTHING', [proposalId, input.via, at, this.actor(viewer)]);
     if (changes !== 1) return { ok: false, rule: null, code: 'already_transmitted' };
     await appendEvent(this.journal, { type: 'offre.proposition_transmise', actor: this.actor(viewer), subject: `offer:${found.proposal.offerId}`, data: { seq: found.proposal.seq, via: input.via } }, this.now);
     return { ok: true };

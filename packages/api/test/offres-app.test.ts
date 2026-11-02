@@ -112,9 +112,13 @@ describe('O10 · écran des offres', () => {
     expect(t.posts()).toEqual([]);
     expect(t.state()).toContain('Dites comment');
     t.input('o1-via').value = 'telephone';
+    await t.click(t.byText('Noter la transmission'));
+    expect(t.state()).toBe('Dites quand le vendeur l’a reçue.');
+    expect(t.posts()).toEqual([]);
+    t.input('o1-quand').value = '2027-03-01T10:00';
     t.table[SUIVI] = ok(board([{ ...OFFER, state: 'transmise', next: 'reponse_vendeur' }]));
     await t.click(t.byText('Noter la transmission'));
-    expect(t.posts()[0]).toMatchObject({ url: '/v1/offres/o1/transmission', body: { via: 'telephone' } });
+    expect(t.posts()[0]).toMatchObject({ url: '/v1/offres/o1/transmission', body: { via: 'telephone', at: new Date('2027-03-01T10:00').toISOString() } });
     expect(t.state()).toBe('Transmission rangée.');
 
     // La réponse : ni choisie d'avance, ni sans heure, ni sans preuve.
@@ -173,6 +177,7 @@ describe('O10 · écran des offres', () => {
     expect(t.posts().at(-1)).toMatchObject({ url: '/v1/offres/o1/propositions', body: { amountEur: 210000, validUntil: '2027-03-05', proofRef: ref } });
     expect(t.body().textContent).toContain('Proposition du vendeur : 210 000 €');
     t.input('o1-via').value = 'ecrit';
+    t.input('o1-quand').value = '2027-03-01T13:00';
     await t.click(t.byText('Noter la transmission'));
     expect(t.posts().at(-1)).toMatchObject({ url: '/v1/offres/propositions/p1/transmission', body: { via: 'ecrit' } });
   });
@@ -238,6 +243,44 @@ describe('O10 · écran des offres', () => {
     expect(t.state()).toContain('Offre inscrite au registre');
   });
 
+  it('[R26] [R56] tant que rien ne part vraiment, l’écran ne propose pas de transmettre par message', async () => {
+    const t = await run({ [SUIVI]: ok(board([OFFER])) });
+    await t.open();
+    expect(t.input('o1-via').children.map((o) => o.value)).toEqual(['', 'telephone', 'en_personne']);
+  });
+
+  it('[R16] sans le droit de voir l’acquéreur, ni financement ni montant de prêt ; le refus n’attribue la décision à personne', async () => {
+    const t = await run({ [SUIVI]: ok(board([{ ...OFFER, state: 'refusee', next: 'aucun', buyer: null, downPaymentEur: null, loanEur: null, conditionDetails: [{ kind: 'pret' }], daysLeft: -3 }])) });
+    await t.open();
+    const text = t.body().textContent;
+    expect(text).not.toContain('Financement déclaré');
+    expect(text).toContain('Conditions : prêt.');
+    expect(text).toContain('État : refusée');
+    expect(text).not.toContain('par le vendeur');
+    expect(text).not.toContain('reste');
+  });
+
+  it('[R59] une offre échue garde son geste, et dit ce qui se range encore', async () => {
+    const t = await run({ [SUIVI]: ok(board([{ ...OFFER, state: 'echue', next: 'reponse_vendeur', daysLeft: null }])) });
+    await t.open();
+    expect(t.body().textContent).toContain('Échue : seul un refus, ou une acceptation donnée à temps, se range encore.');
+    expect(t.byText('Ranger la réponse')).toBeDefined();
+  });
+
+  it('un autre bouton pendant un geste ne fait pas oublier le refus du serveur', async () => {
+    let release: (r: Response) => void = () => {};
+    const t = await run({ [SUIVI]: ok(board([OFFER])), 'POST /v1/offres/o1/transmission': () => new Promise<Response>((r) => { release = r; }), 'POST /v1/offres/o1/controle': ok([]) });
+    await t.open();
+    t.input('o1-via').value = 'telephone';
+    t.input('o1-quand').value = '2027-03-01T10:00';
+    await t.click(t.byText('Noter la transmission'));
+    await t.click(t.byText('Voir le contrôle'));
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/offres/o1/transmission']);
+    release(Response.json({ ok: false, code: 'already_transmitted' }, { status: 409 }));
+    for (let i = 0; i < 16; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(t.state()).toBe('Cette offre a déjà été transmise.');
+  });
+
   it('hors ligne, rien n’est dit rangé ; un bien hors droits le dit', async () => {
     const t = await run({ [SUIVI]: no(403, 'not_assigned', { rule: 'R16' }) });
     await t.open();
@@ -245,6 +288,7 @@ describe('O10 · écran des offres', () => {
     const u = await run({ [SUIVI]: ok(board([OFFER])) });
     await u.open();
     u.input('o1-via').value = 'telephone';
+    u.input('o1-quand').value = '2027-03-01T10:00';
     await u.click(u.byText('Noter la transmission'));
     expect(u.state()).toBe('Pas de réseau : rien n’est rangé.');
   });

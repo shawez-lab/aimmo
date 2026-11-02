@@ -8,7 +8,9 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { FicheClient } from '../db/fiche-client.ts';
 import { LIVE_MANDATES } from '../espaces/lecture.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { ComparatifOffres, type ComparisonRow } from './comparatif.ts';
 import { ContreOffres, type Proposal } from './contre-offres.ts';
@@ -43,7 +45,12 @@ export function nextStep(f: OfferStepFacts): OfferNextStep {
   // Toute offre reçue est transmise au vendeur, même échue [R56].
   if (!f.transmitted) return 'transmettre';
   if (f.state === 'acceptee') return f.otherTaken ? 'aucun' : 'ouvrir_dossier';
-  if (f.state === 'refusee' || f.state === 'echue') return 'aucun';
+  if (f.state === 'refusee') return 'aucun';
+  // Échue sans réponse rangée : un refus, ou une acceptation donnée à temps et rapportée après, se range encore [R59].
+  if (f.state === 'echue') {
+    if (!f.last) return 'reponse_vendeur';
+    return f.last.transmittedAt ? 'reponse_proposition' : 'transmettre_proposition';
+  }
   if (f.state === 'transmise') return 'reponse_vendeur';
   // Une réponse « contre-offre » : la chaîne dit où l'on en est.
   if (f.state === 'contre_offre') {
@@ -58,10 +65,11 @@ export interface OfferBoardLine extends ComparisonRow {
   id: string;
   buyer: { firstName: string | null; lastName: string | null } | null;
   offeredEur: number;
-  conditionDetails: OfferCondition[];
+  /** Le financement et le détail des conditions : null ou réduits à leur sorte sans le droit de voir l'acquéreur [R16]. */
+  conditionDetails: (OfferCondition | { kind: string })[];
   validUntil: string;
-  downPaymentEur: number;
-  loanEur: number;
+  downPaymentEur: number | null;
+  loanEur: number | null;
   next: OfferNextStep;
   /** La proposition que le prochain pas concerne, s'il y en a une. */
   proposalId: string | null;
@@ -76,6 +84,7 @@ export class SuiviOffres {
   private readonly comparatif: ComparatifOffres;
   private readonly contre: ContreOffres;
   private readonly transmission: TransmissionOffres;
+  private readonly unique: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -87,6 +96,7 @@ export class SuiviOffres {
     this.comparatif = new ComparatifOffres(db, acces, journal, options);
     this.contre = new ContreOffres(db, acces, journal, options);
     this.transmission = new TransmissionOffres(db, acces, journal, options);
+    this.unique = new FicheUnique(db, new FicheClient(db), options);
   }
 
   /** L'acquéreur, seulement si celui qui lit voit sa fiche en entier ; sinon l'offre reste lisible, sans nom [R16]. */
@@ -115,16 +125,17 @@ export class SuiviOffres {
         ? { id: fileRow.id, compromisStarted: !!(await this.db.first("SELECT file_id FROM sale_file_steps WHERE file_id = ? AND step = 'compromis_en_preparation'", [fileRow.id])) }
         : null;
       const history = await this.contre.history(viewer, offer.id);
+      const buyer = await this.buyer(viewer, offer);
       const next = nextStep({ state: row.state, transmitted: !!transmitted, last, file, otherTaken: await this.transmission.otherAccepted(propertyId, offer.id) });
       offers.push({
         ...row,
         id: offer.id,
-        buyer: await this.buyer(viewer, offer),
+        buyer,
         offeredEur: offer.amountEur,
-        conditionDetails: offer.conditions,
+        conditionDetails: buyer ? offer.conditions : offer.conditions.map((c) => ({ kind: c.kind })),
         validUntil: last?.validUntil ?? offer.validUntil,
-        downPaymentEur: offer.downPaymentEur,
-        loanEur: offer.loanEur,
+        downPaymentEur: buyer ? offer.downPaymentEur : null,
+        loanEur: buyer ? offer.loanEur : null,
         next,
         proposalId: next === 'transmettre_proposition' || next === 'reponse_proposition' ? (last?.id ?? null) : null,
         file,
@@ -134,22 +145,36 @@ export class SuiviOffres {
     return { ok: true, value: { count: table.value.count, registerIntact: table.value.registerIntact, offers } };
   }
 
+  /**
+   * Le registre du bien, tel qu'il se lit par la route : une offre dont le lecteur ne voit pas l'acquéreur garde son rang,
+   * son montant et ses dates, sans l'acquéreur, son financement, ni le détail de ses conditions [R16].
+   */
+  async listFor(viewer: Viewer, propertyId: string): Promise<{ ok: true; value: unknown[] } | Failure> {
+    const list = await this.registre.list(viewer, propertyId);
+    if (!list.ok) return list;
+    const out: unknown[] = [];
+    for (const offer of list.value) {
+      out.push((await this.buyer(viewer, offer)) ? offer : { ...offer, buyerPersonId: null, downPaymentEur: null, loanEur: null, signedRef: null, conditions: offer.conditions.map((c) => ({ kind: c.kind })) });
+    }
+    return { ok: true, value: out };
+  }
+
   /** Les contacts qui peuvent être l'acquéreur : ceux que le lecteur voit en entier, jamais le mandant du bien [R16]. */
   async buyers(viewer: Viewer, propertyId: string): Promise<{ ok: true; value: { contacts: { personId: string; firstName: string | null; lastName: string | null }[]; more: boolean } } | Failure> {
     const gate = await this.registre.gate(viewer, propertyId);
     if (!gate.ok) return gate;
-    const agent = viewer.role === 'agent' ? viewer.userId : null;
-    const rows = await this.db.all<{ id: string; first_name: string | null; last_name: string | null }>(
-      `SELECT p.id, p.first_name, p.last_name FROM persons p
-       WHERE p.network_id = ? AND (? IS NULL OR p.agent_id = ?)
-         AND NOT EXISTS (SELECT 1 FROM person_merges m WHERE m.merged_id = p.id AND m.undone_at IS NULL)
-         AND (? IS NULL OR NOT EXISTS (
-           SELECT 1 FROM person_merges m JOIN persons c ON c.id = m.merged_id
-           WHERE m.survivor_id = p.id AND m.undone_at IS NULL AND c.agent_id IS NOT ?))
-         AND p.id NOT IN (SELECT person_id FROM (${LIVE_MANDATES}) WHERE property_id = ?)
-       ORDER BY p.last_name, p.first_name, p.id LIMIT ?`,
-      [gate.networkId, agent, agent, agent, agent, gate.networkId, propertyId, MAX_BUYER_CONTACTS + 1],
-    );
+    // La liste passe par les droits et s'écrit au journal, fiches réunies comprises [R16].
+    const listed = await this.acces.listPersons(viewer);
+    if (!listed.ok) return listed as Failure;
+    const merged = new Set((await this.db.all<{ merged_id: string }>('SELECT merged_id FROM person_merges WHERE network_id = ? AND undone_at IS NULL', [gate.networkId])).map((r) => r.merged_id));
+    // Le mandant du bien, sous toutes ses fiches : il ne s'achète pas son bien.
+    const sellers = new Set<string>();
+    for (const m of await this.db.all<{ person_id: string }>(`SELECT person_id FROM (${LIVE_MANDATES}) WHERE property_id = ?`, [gate.networkId, propertyId])) {
+      for (const id of await this.unique.membersOf(m.person_id)) sellers.add(id);
+    }
+    const rows = listed.value
+      .filter((p) => !merged.has(p.id) && !sellers.has(p.id))
+      .sort((a, b) => `${a.last_name ?? ''} ${a.first_name ?? ''} ${a.id}`.localeCompare(`${b.last_name ?? ''} ${b.first_name ?? ''} ${b.id}`, 'fr'));
     return {
       ok: true,
       value: {
