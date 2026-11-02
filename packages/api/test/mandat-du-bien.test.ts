@@ -312,3 +312,26 @@ describeWithSqlite('D14 · le scan d’un avenant vérifié comme celui du manda
     expect(await w.db.first('SELECT scan_ref FROM signed_amendments WHERE document_id = ?', [a.id])).toEqual({ scan_ref: ref });
   });
 });
+
+describeWithSqlite('D15 · annuler un mandat au registre', () => {
+  it('[R16] [R39] la direction seule annule, avec un motif de la liste ; le bien se rouvre et rien n’est effacé', async () => {
+    const w = await world();
+    const doc = await ready(w);
+    const { data } = (await (await w.scan(KEYS.alex)).json()) as { data: { ref: string } };
+    const at = new Date(Date.now() - 60_000).toISOString();
+    expect((await w.post(`/documents/${doc.id}/signature-papier`, KEYS.alex, { signedAt: at, place: 'agence', scanRef: data.ref, source: 'referral' })).status).toBe(200);
+    const second = ((await (await w.post('/documents', KEYS.alex, { kind: 'mandat_vente_simple', personId: w.lea.id, propertyId: w.bien.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 3 } })).json()) as { data: { id: string } }).data;
+    const scan2 = ((await (await w.scan(KEYS.alex, new TextEncoder().encode('%PDF-1.7 second'))).json()) as { data: { ref: string } }).data.ref;
+    const signSecond = () => w.post(`/documents/${second.id}/signature-papier`, KEYS.alex, { signedAt: at, place: 'agence', scanRef: scan2, source: 'referral' });
+    const refused = await signSecond();
+    expect([refused.status, ((await refused.json()) as { code: string }).code]).toEqual([400, 'mandate_in_force']);
+    const path = `/mandats/m-${doc.id}/annulation`;
+    expect((await w.post(path, KEYS.alex, { reason: 'error' })).status).toBe(403);
+    for (const reason of ['withdrawal', 'autre', undefined]) expect((await w.post(path, KEYS.direction, { reason })).status).toBe(400);
+    const done = await w.post(path, KEYS.direction, { reason: 'termination' });
+    expect(done.status).toBe(200);
+    expect((await w.post(path, KEYS.direction, { reason: 'termination' })).status).toBe(409);
+    expect(await w.db.first(`SELECT count(*) AS n FROM mandate_register WHERE mandate_id = ?`, [`m-${doc.id}`])).toEqual({ n: 2 });
+    expect((await signSecond()).status).toBe(200);
+  });
+});

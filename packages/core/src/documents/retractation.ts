@@ -144,6 +144,32 @@ export class Diffusion {
     return first ?? { allowed: false, reason: 'no_mandate', mandateId: null, withdrawalLastDay: null };
   }
 
+  /**
+   * Un autre mandat vivant sur ce bien (D15) : toute inscription au registre compte, même sans exemplaire après une coupure,
+   * et une seule suffit. Seuls l'annulation, la rétractation et l'échéance rendent le bien. Différent de `canDiffuse`, qui
+   * cherche un mandat diffusable et ne voit que les mandats complets.
+   */
+  async otherLiveMandate(networkId: string, propertyId: string, exceptMandateId: string, at: Date = this.now()): Promise<string | null> {
+    const lines = await this.db.all<{ seq: number; mandate_id: string; number: string }>(
+      `SELECT seq, mandate_id, number FROM mandate_register WHERE network_id = ? AND property_id = ? AND kind = 'inscription' AND mandate_id <> ?`,
+      [networkId, propertyId, exceptMandateId],
+    );
+    for (const line of lines) {
+      const row = await this.db.first<SignedMandateRow>(
+        `SELECT s.mandate_id, s.network_id, s.signed_at, s.place, s.number, d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ?`,
+        [line.mandate_id],
+      );
+      if (row) {
+        // Une coupure peut laisser le numéro au registre sans qu'il soit encore recopié sur la signature.
+        const { reason } = await this.decideMandate({ ...row, number: row.number ?? line.number }, at);
+        if (reason !== 'cancelled' && reason !== 'withdrawn' && reason !== 'expired') return line.mandate_id;
+      } else if (!(await this.db.first(`SELECT seq FROM mandate_register WHERE network_id = ? AND kind = 'annulation' AND cancels_seq = ?`, [networkId, Number(line.seq)]))) {
+        return line.mandate_id;
+      }
+    }
+    return null;
+  }
+
   /** La décision, demandée par quelqu'un qui voit le bien en entier [R16]. */
   async read(viewer: Viewer, propertyId: string): Promise<{ ok: true; value: DiffusionDecision } | Refusal> {
     const p = await this.acces.readProperty(viewer, propertyId);

@@ -154,11 +154,11 @@ export class SignaturePapier {
     }
 
     // Un seul mandat vivant par bien (D15) : un second recevrait un numéro du registre, qui est sans trou [R39]. Annulé,
-    // rétracté ou échu, le bien se rouvre. Ce document ne se compte pas lui-même : sans exemplaire, il n'est pas encore vivant.
-    // Un document qui a déjà son numéro finit son enregistrement.
-    if ((!row || row.number === null) && doc.property_id !== null) {
-      const current = await new Diffusion(this.db, this.acces, this.journal, { now: this.now }).canDiffuse(viewer.networkId, doc.property_id);
-      if (current.mandateId !== null && !['cancelled', 'withdrawn', 'expired'].includes(current.reason)) return { ok: false, rule: 'R39', code: 'mandate_in_force' };
+    // rétracté ou échu, le bien se rouvre. Un document dont le mandat est déjà inscrit finit toujours son enregistrement.
+    const ownMandate = `m-${documentId}`;
+    if (doc.property_id !== null && !(await this.db.first(`SELECT seq FROM mandate_register WHERE mandate_id = ? AND kind = 'inscription'`, [ownMandate]))) {
+      const other = await new Diffusion(this.db, this.acces, this.journal, { now: this.now }).otherLiveMandate(viewer.networkId, doc.property_id, ownMandate);
+      if (other !== null) return { ok: false, rule: 'R39', code: 'mandate_in_force' };
     }
 
     // 1. Le document est réservé : un seul enregistrement, quelles que soient les demandes simultanées.

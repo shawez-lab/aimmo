@@ -93,6 +93,33 @@ describeWithSqlite('D15 · un seul mandat vivant par bien', () => {
     expect(await t.sign(a)).toMatchObject({ ok: true, value: { number: 'T-001' } });
   });
 
+  it('[R39] un mandat inscrit, coupé avant son exemplaire, garde le bien ; il finit ensuite, seul mandat vivant', async () => {
+    const t = await setup();
+    const [a, b] = [await t.prepare(), await t.prepare()];
+    const cut: SqlDatabase = { ...t.db, run: (sql, params) => (sql.startsWith('UPDATE signed_documents SET copy_content') ? Promise.reject(new Error('coupure')) : t.db.run(sql, params)) };
+    await expect(new SignaturePapier(cut, t.acces, t.journal, { now: t.now }).register(t.agent, a, { signedAt: SIGNED, place: 'agence', scanRef: 'scans/coupe.pdf', source: 'referral' })).rejects.toThrow('coupure');
+    expect(await t.sign(b)).toEqual({ ok: false, rule: 'R39', code: 'mandate_in_force' });
+    expect(await t.sign(a)).toMatchObject({ ok: true, value: { number: 'T-001' } });
+  });
+
+  it('[R39] coupé entre l’inscription et la recopie du numéro : le bien reste gardé, et ce document finit', async () => {
+    const t = await setup();
+    const [a, b] = [await t.prepare(), await t.prepare()];
+    const cut: SqlDatabase = { ...t.db, run: (sql, params) => (sql.startsWith('UPDATE signed_documents SET number') ? Promise.reject(new Error('coupure')) : t.db.run(sql, params)) };
+    await expect(new SignaturePapier(cut, t.acces, t.journal, { now: t.now }).register(t.agent, a, { signedAt: SIGNED, place: 'agence', scanRef: 'scans/coupe.pdf', source: 'referral' })).rejects.toThrow('coupure');
+    expect(await t.sign(b)).toEqual({ ok: false, rule: 'R39', code: 'mandate_in_force' });
+    expect(await t.sign(a)).toMatchObject({ ok: true, value: { number: 'T-001' } });
+  });
+
+  it('[R39] un mandat annulé plus récent ne masque pas un mandat plus ancien encore en délai de rétractation', async () => {
+    const t = await setup();
+    const [a, b, c] = [await t.prepare(), await t.prepare(), await t.prepare()];
+    const first = mandateOf(await t.sign(a, { signedAt: new Date('2027-02-10T09:30:00.000Z') }));
+    expect((await t.registre.cancel(t.direction, first, 'error')).ok).toBe(true);
+    mandateOf(await t.sign(b, { signedAt: new Date('2027-02-10T09:00:00.000Z'), place: 'distance' }));
+    expect(await t.sign(c)).toEqual({ ok: false, rule: 'R39', code: 'mandate_in_force' });
+  });
+
   it('un mandat annulé au registre rouvre le bien', async () => {
     const t = await setup();
     const [a, b] = [await t.prepare(), await t.prepare()];
