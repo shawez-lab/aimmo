@@ -763,6 +763,28 @@ export class PagesQuartier {
     return { ok: true, value: { draftId: row.id, zoneSlug: zone.slug, kind: row.kind, topic: row.topic, title: row.title, body: row.body, origin: row.origin, trace, validatedBy: this.actor(viewer), validatedAt: at } };
   }
 
+  /** Les quartiers en service du réseau, pour la direction, rangés par commune puis par nom. */
+  async zones(viewer: Viewer): Promise<{ ok: true; value: { zoneId: string; name: string; communeName: string }[] } | NeighbourhoodRefusal> {
+    if (viewer.role !== 'direction') return this.refuseRole(viewer, 'price_zone:liste');
+    const rows = await this.db.all<{ id: string; name: string; commune_name: string }>(
+      `SELECT z.id, z.label AS name, c.label AS commune_name FROM price_zones z JOIN price_zones c ON c.id = z.parent_id
+        WHERE z.network_id = ? AND z.level = 'quartier'
+          AND z.id NOT IN (SELECT area_id FROM price_zone_retirements) AND c.id NOT IN (SELECT area_id FROM price_zone_retirements)`,
+      [viewer.networkId],
+    );
+    const out = rows.map((r) => ({ zoneId: r.id, name: r.name, communeName: r.commune_name }));
+    out.sort((a, b) => a.communeName.localeCompare(b.communeName, 'fr') || a.name.localeCompare(b.name, 'fr'));
+    return { ok: true, value: out };
+  }
+
+  /** Les données rangées d'un quartier, pour la direction : celles qui ne sont pas retirées. */
+  async facts(viewer: Viewer, zoneId: unknown): Promise<{ ok: true; value: NeighbourhoodFact[] } | NeighbourhoodRefusal> {
+    if (viewer.role !== 'direction') return this.refuseRole(viewer, `price_zone:${String(zoneId)}`);
+    const zone = await this.zone(viewer.networkId, { id: zoneId });
+    if (!zone) return { ok: false, rule: null, code: 'zone_inconnue' };
+    return { ok: true, value: (await this.data(viewer.networkId, zone)).facts };
+  }
+
   /** Les textes d'un quartier, pour la direction : chacun avec son contrôle sur les données du jour. */
   async drafts(viewer: Viewer, zoneId: unknown): Promise<{ ok: true; value: NeighbourhoodDraft[] } | NeighbourhoodRefusal> {
     if (viewer.role !== 'direction') return this.refuseRole(viewer, `price_zone:${String(zoneId)}`);

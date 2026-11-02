@@ -238,6 +238,30 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect(await t.get(`${NET}/agents/ag-1/autre`)).toBeNull();
   });
 
+  it('[R16] AT13 : la liste des quartiers et leurs faits, à la direction de ce réseau seule, un quartier retiré n’y est plus', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    // Un quartier retiré puis redéfini : la liste ne montre que sa nouvelle définition.
+    const old = await t.db.first<{ id: string; parent_id: string }>("SELECT id, parent_id FROM price_zones WHERE slug = 'ouest'");
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${old!.id}/retrait`)).status).toBe(200);
+    expect((await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'quartier', parentId: old!.parent_id, slug: 'ouest', name: 'ouest', ring: WEST, ringSource: 'Contour refait' })).status).toBe(200);
+    const list = await t.call(direction, 'GET', '/attirer/quartiers');
+    expect(list.status).toBe(200);
+    const items = list.body.data as { zoneId: string; name: string; communeName: string }[];
+    expect(items.map((z) => z.name)).toEqual(['est', 'ouest']);
+    const ouest = items[1]!;
+    expect(ouest.communeName).toBeTruthy();
+    expect(ouest.zoneId).not.toBe(old!.id);
+    expect((await t.call(camille, 'GET', '/attirer/quartiers')).status).toBe(403);
+    expect((await t.call(camille, 'GET', `/attirer/quartiers/${ouest.zoneId}/faits`)).status).toBe(403);
+    expect(await t.call({ ...direction, networkId: 'net-2' }, 'GET', '/attirer/quartiers')).toMatchObject({ status: 200, body: { data: [] } });
+    expect((await t.call({ ...direction, networkId: 'net-2' }, 'GET', `/attirer/quartiers/${ouest.zoneId}/faits`)).status).toBe(400);
+    expect((await t.call(direction, 'POST', `/attirer/quartiers/${ouest.zoneId}/faits`, { key: 'tram', kind: 'transport', label: 'Arrêts de tram', value: 2, unit: 'nombre', source: 'Carte inventée', sourceDate: '2026-01-15' })).status).toBe(200);
+    expect((await t.call(direction, 'GET', `/attirer/quartiers/${ouest.zoneId}/faits`)).body.data).toMatchObject([{ key: 'tram', value: 2, source: 'Carte inventée' }]);
+    expect((await t.call(direction, 'POST', `/attirer/quartiers/${ouest.zoneId}/faits`, { key: 'tram', kind: 'transport', label: 'Arrêts de tram', value: 2, unit: 'nombre', source: 'Carte inventée', sourceDate: '2026-01-15', retired: true })).status).toBe(200);
+    expect((await t.call(direction, 'GET', `/attirer/quartiers/${ouest.zoneId}/faits`)).body.data).toEqual([]);
+  });
+
   it('[R155] une page de quartier validée par la direction, par les routes, est servie sur le site du réseau seulement', async () => {
     const t = await setup();
     await preparedNetwork(t);

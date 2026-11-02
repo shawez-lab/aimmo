@@ -1,10 +1,13 @@
+import type { FACT_KINDS, FACT_UNITS, NeighbourhoodProblem } from '../../core/src/attirer/quartier.ts';
+
 /**
  * L'écran « Attirer » de la direction (AT12), en morceaux posés dans `fichiers.ts` : son entrée sur l'écran du réseau,
  * sa section de page, son chargeur, et son script servi à part (`/app/attirer.js`), chargé à la première ouverture pour
  * tenir le budget de l'application [R201].
  *
- * Trois parties : les versions des prix publics et leur recalcul (AT01), les sites en service et leur plan (AT04), la
- * part des contacts dont l'origine est connue, mois par mois (AT05). L'écran ne lit et n'écrit que par `/v1/attirer`
+ * Quatre parties : la part des contacts dont l'origine est connue, mois par mois (AT05), les versions des prix publics
+ * et leur recalcul (AT01), les pages de quartier, du fait sourcé au texte validé (AT07, AT13), les sites en service et
+ * leur plan (AT04). L'écran ne lit et n'écrit que par `/v1/attirer`
  * [R16] ; il ne calcule ni ne trie aucun chiffre, il montre ceux du serveur dans l'ordre reçu. Tout texte reçu est posé
  * avec `textContent`.
  */
@@ -16,6 +19,13 @@ const REFUSALS: Record<string, string> = {
   bad_url: 'Saisissez l’adresse complète du site, sans chemin, par exemple https://www.exemple.fr.',
   url_taken: 'Cette adresse sert déjà un autre site : une seule page de référence par bien.',
   bad_month: 'Choisissez un mois dans la liste.',
+  zone_inconnue: 'Ce quartier n’est plus en service : la liste a changé.',
+  inconnu: 'Ce texte n’existe plus : la liste a changé.',
+  invalide: 'Vérifiez les champs. Le libellé et la source ne portent ni adresse, ni nom de client, ni chiffre caché ; la date n’est pas dans le futur.',
+  sans_donnees: 'Aucune donnée sur ce quartier : rangez d’abord un fait avec sa source.',
+  deja_valide: 'Ce texte est déjà validé.',
+  donnees_changees: 'Les données ont changé depuis ce texte : préparez-en un nouveau.',
+  texte_refuse: 'Ce texte ne passe pas le contrôle : rien n’est enregistré.',
 };
 
 /** Pourquoi un recalcul n'a rien produit : ce n'est pas une erreur, c'est dit tel quel. */
@@ -37,6 +47,33 @@ const ORIGIN_LABELS: Record<string, string> = {
   portail: 'Portail',
   inconnue: 'Origine inconnue',
 };
+
+const FACT_KIND_LABELS: Record<(typeof FACT_KINDS)[number], string> = {
+  transport: 'Transport',
+  ecole: 'École',
+  commerce: 'Commerce',
+  marche: 'Marché',
+  parc: 'Parc',
+  sport: 'Sport',
+  sante: 'Santé',
+  culture: 'Culture',
+  population: 'Population',
+  autre: 'Autre',
+};
+const FACT_UNIT_LABELS: Record<(typeof FACT_UNITS)[number], string> = { nombre: 'Nombre', m: 'Mètres', km: 'Kilomètres', minutes: 'Minutes', habitants: 'Habitants', pourcent: 'Pour cent' };
+const ORIGIN_TEXT_LABELS = { ia: 'Préparé par l’IA', secours: 'Préparé sans IA', redaction: 'Écrit par la direction' };
+/** Pourquoi une phrase ne peut pas être publiée [R155, R46]. */
+const PROBLEM_LABELS: Record<NeighbourhoodProblem['code'], string> = {
+  nombre_sans_source: 'chiffre sans source',
+  fait_sans_source: 'fait sans source',
+  jugement: 'jugement de valeur',
+  nom_client: 'nom d’un client',
+  adresse: 'adresse',
+  critere_discriminant: 'critère discriminant',
+  mot_interdit: 'mot interdit',
+};
+/** Ce que la direction peut faire préparer : les seuls couples admis par le métier. */
+const TEXT_CHOICES = { 'page/quartier': 'La page du quartier', 'article/prix': 'L’article sur les prix', 'article/equipements': 'L’article sur les équipements' };
 
 const SITEMAP_LABELS: Record<string, string> = { bien: 'Bien', agent: 'Agent', prix: 'Prix' };
 
@@ -80,7 +117,7 @@ export const ATTIRER_JS = `
         var make = globalThis.AIMMO_ATTIRER;
         try { delete globalThis.AIMMO_ATTIRER; } catch (e) { /* rien */ }
         if (mine !== session || typeof make !== 'function') { resolve(false); return; }
-        attirerScreen = make({ $: $, el: el, clear: clear, send: send, show: show, button: button, field: field, select: select, date: date, key: function () { return currentKey; }, session: function () { return session; }, next: function () { session += 1; return session; } });
+        attirerScreen = make({ $: $, el: el, clear: clear, send: send, show: show, button: button, field: field, select: select, details: details, date: date, key: function () { return currentKey; }, session: function () { return session; }, next: function () { session += 1; return session; } });
         resolve(attirerScreen.open(''));
       });
       s.addEventListener('error', function () {
@@ -98,13 +135,18 @@ export const ATTIRER_JS = `
  */
 export const ATTIRER_SCRIPT = `'use strict';
 globalThis.AIMMO_ATTIRER = function (t) {
-  var $ = t.$, el = t.el, clear = t.clear, send = t.send, show = t.show, button = t.button, field = t.field, select = t.select, date = t.date;
+  var $ = t.$, el = t.el, clear = t.clear, send = t.send, show = t.show, button = t.button, field = t.field, select = t.select, details = t.details, date = t.date;
   var REFUSALS = ${JSON.stringify(REFUSALS)};
   var NOT_RUN = ${JSON.stringify(NOT_RUN)};
   var ORIGINS = ${JSON.stringify(ORIGIN_LABELS)};
   var SITEMAP = ${JSON.stringify(SITEMAP_LABELS)};
+  var FACT_KINDS = ${JSON.stringify(FACT_KIND_LABELS)};
+  var FACT_UNITS = ${JSON.stringify(FACT_UNIT_LABELS)};
+  var TEXT_ORIGINS = ${JSON.stringify(ORIGIN_TEXT_LABELS)};
+  var PROBLEMS = ${JSON.stringify(PROBLEM_LABELS)};
+  var TEXT_CHOICES = ${JSON.stringify(TEXT_CHOICES)};
   var MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
-  var chosenMonth = null, busy = false;
+  var chosenMonth = null, busy = false, inside = false;
   function state(text) { $('attirer-etat').textContent = text; }
   function refusal(res, fallback) {
     if (res.offline) return 'Pas de réseau : rien n’est enregistré.';
@@ -114,6 +156,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     clear($('attirer-corps'));
     state('');
     chosenMonth = null;
+    inside = false;
   }
   function part(title) {
     var box = el('section', null, 'bloc');
@@ -150,12 +193,13 @@ globalThis.AIMMO_ATTIRER = function (t) {
     chosenMonth = month;
     show('attirer');
     state('Chargement…');
-    return Promise.all([send('/v1/attirer/prix/versions', 'GET'), send('/v1/attirer/sites', 'GET'), send('/v1/attirer/origine/' + month, 'GET')]).then(function (all) {
+    return Promise.all([send('/v1/attirer/prix/versions', 'GET'), send('/v1/attirer/sites', 'GET'), send('/v1/attirer/origine/' + month, 'GET'), send('/v1/attirer/quartiers', 'GET')]).then(function (all) {
       if (mine !== t.session() || all.some(function (r) { return r.gone; })) return false;
       if (all.every(function (r) { return r.offline; })) { state('Pas de réseau. Réessayez dans un moment.'); return false; }
       var body = $('attirer-corps');
       body.appendChild(renderOrigin(all[2], month));
       body.appendChild(renderPrices(all[0]));
+      body.appendChild(renderQuarters(all[3]));
       body.appendChild(renderSites(all[1]));
       state(message || '');
       return true;
@@ -221,11 +265,162 @@ globalThis.AIMMO_ATTIRER = function (t) {
     return box;
   }
 
+  /* AT13 · les quartiers : l'écran n'a aucun identifiant à faire saisir. */
+  function renderQuarters(res) {
+    var box = part('Pages de quartier');
+    var items = list(res);
+    if (!items) return missing(box, res);
+    if (!items.length) box.appendChild(el('p', 'Aucun quartier défini pour le moment.', 'doux'));
+    var ul = el('ul', null, 'liste');
+    items.forEach(function (z) {
+      var li = el('li');
+      li.appendChild(el('strong', z.name));
+      li.appendChild(el('p', z.communeName, 'doux'));
+      li.appendChild(button('Ouvrir', function () { openQuarter(z, ''); }));
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    return box;
+  }
+  function quarterPath(z, end) { return '/v1/attirer/quartiers/' + encodeURIComponent(z.zoneId) + end; }
+  function openQuarter(z, message) {
+    var mine = t.next();
+    var month = chosenMonth;
+    wipe();
+    chosenMonth = month;
+    inside = true;
+    show('attirer');
+    state('Chargement…');
+    return Promise.all([send(quarterPath(z, '/faits'), 'GET'), send(quarterPath(z, '/textes'), 'GET')]).then(function (all) {
+      if (mine !== t.session() || all.some(function (r) { return r.gone; })) return false;
+      if (all.every(function (r) { return r.offline; })) { state('Pas de réseau. Réessayez dans un moment.'); return false; }
+      var body = $('attirer-corps');
+      body.appendChild(el('h3', z.name + ', ' + z.communeName));
+      body.appendChild(renderTexts(z, all[1]));
+      body.appendChild(renderFacts(z, all[0]));
+      state(message || '');
+      return true;
+    });
+  }
+  /* Une écriture sur le quartier : un geste à la fois, puis l'écran relu tel que le serveur le dit. */
+  function quarterWrite(z, path, payload, okText, failText) {
+    return once(function () {
+      state('Envoi…');
+      return send(path, 'POST', payload).then(function (x) {
+        if (x.gone) return false;
+        if (!x.ok) { state(textRefusal(x, failText)); return false; }
+        return openQuarter(z, okText);
+      });
+    });
+  }
+  /* Le refus d'un texte nomme chaque passage en cause : c'est ce que la direction doit changer. */
+  function textRefusal(x, fallback) {
+    var base = refusal(x, fallback);
+    var problems = x.body && Array.isArray(x.body.problems) ? x.body.problems : [];
+    if (!problems.length) return base;
+    return base + ' ' + problems.slice(0, 5).map(function (p) { return '« ' + p.value + ' » : ' + (PROBLEMS[p.code] || 'à retirer') + '.'; }).join(' ');
+  }
+  function paragraphs(box, text) {
+    String(text).split('\\n').forEach(function (line) { if (line.trim()) box.appendChild(el('p', line)); });
+  }
+  function renderText(z, d, i) {
+    var li = el('li');
+    li.appendChild(el('strong', d.title));
+    li.appendChild(el('p', TEXT_CHOICES[d.kind + '/' + d.topic] + ' · ' + (TEXT_ORIGINS[d.origin] || 'Texte'), 'doux'));
+    paragraphs(li, d.body);
+    var trace = d.trace || { ok: false, sentences: [] };
+    if (d.validatedAt) li.appendChild(el('p', 'Validé le ' + date(d.validatedAt) + (trace.ok ? '.' : ' : il ne passe plus le contrôle sur les données du jour et n’est plus servi.'), 'etat'));
+    else if (!trace.ok) li.appendChild(el('p', 'Ce texte ne passe plus le contrôle sur les données du jour : préparez-en un nouveau.', 'etat'));
+    var why = details(li, 'Phrase par phrase, avec sa source');
+    trace.sentences.forEach(function (s) {
+      why.appendChild(el('p', s.text));
+      var sources = (s.sources || []).map(function (f) { return f.source + (f.date ? ', ' + date(f.date) : ''); });
+      if (sources.length) why.appendChild(el('p', 'Source : ' + sources.join(' ; '), 'doux'));
+      (s.problems || []).forEach(function (p) { why.appendChild(el('p', '« ' + p.value + ' » : ' + (PROBLEMS[p.code] || 'à retirer'), 'etat')); });
+    });
+    if (!d.validatedAt) {
+      if (trace.ok) li.appendChild(button('Je l’ai relu : valider', function () {
+        quarterWrite(z, '/v1/attirer/quartiers/textes/' + encodeURIComponent(d.draftId) + '/valider', undefined, 'Texte validé : le site du réseau peut le servir.', 'Le texte n’est pas validé.');
+      }));
+      var fix = details(li, 'Corriger ce texte');
+      var title = field(fix, 'attirer-q-titre-' + i, 'Titre');
+      title.value = d.title;
+      var text = field(fix, 'attirer-q-texte-' + i, 'Texte', 'textarea');
+      text.value = d.body;
+      fix.appendChild(button('Enregistrer la correction', function () {
+        quarterWrite(z, quarterPath(z, '/texte'), { kind: d.kind, topic: d.topic, title: title.value, body: text.value }, 'Correction enregistrée : relisez-la, puis validez.', 'La correction n’est pas enregistrée.');
+      }));
+    }
+    return li;
+  }
+  function renderTexts(z, res) {
+    var box = part('Textes');
+    box.appendChild(el('p', 'Chaque phrase porte une donnée de la base. Rien n’est servi sans votre validation.', 'doux'));
+    var what = select(box, 'attirer-q-choix', 'À préparer', TEXT_CHOICES, 'page/quartier');
+    box.appendChild(button('Préparer le texte', function () {
+      var c = what.value.split('/');
+      quarterWrite(z, quarterPath(z, '/brouillon'), { kind: c[0], topic: c[1] }, 'Texte préparé : relisez-le, puis validez.', 'Le texte n’est pas préparé.');
+    }));
+    var items = list(res);
+    if (!items) return missing(box, res);
+    if (!items.length) box.appendChild(el('p', 'Aucun texte pour ce quartier.', 'doux'));
+    var ul = el('ul', null, 'liste');
+    items.forEach(function (d, i) { ul.appendChild(renderText(z, d, i)); });
+    box.appendChild(ul);
+    return box;
+  }
+  /* La clé d'un fait vient de son libellé : le même libellé remplace, rien à inventer ni à saisir. */
+  function factKey(label) {
+    return label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+  }
+  function factLine(f) {
+    var unit = { nombre: '', m: ' m', km: ' km', minutes: ' min', habitants: ' habitants', pourcent: ' %' };
+    return f.label + (f.value === null || f.value === undefined ? '' : ' : ' + f.value + (unit[f.unit] || ''));
+  }
+  function renderFacts(z, res) {
+    var box = part('Faits du quartier');
+    var items = list(res);
+    if (!items) return missing(box, res);
+    if (!items.length) box.appendChild(el('p', 'Aucun fait rangé : un texte n’a rien à dire sans eux.', 'doux'));
+    var ul = el('ul', null, 'liste');
+    items.forEach(function (f) {
+      var li = el('li');
+      li.appendChild(el('strong', factLine(f)));
+      li.appendChild(el('p', (FACT_KINDS[f.kind] || 'Autre') + ' · ' + f.source + ', ' + date(f.sourceDate), 'doux'));
+      li.appendChild(confirmed('Retirer ce fait', 'Un texte qui le cite ne sera plus servi. Appuyez de nouveau pour confirmer.', function () {
+        quarterWrite(z, quarterPath(z, '/faits'), { key: f.key, kind: f.kind, label: f.label, value: f.value, unit: f.unit, source: f.source, sourceDate: f.sourceDate, retired: true }, 'Fait retiré.', 'Le fait reste rangé.');
+      }));
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    var form = details(box, 'Ranger un fait');
+    var kind = select(form, 'attirer-f-sorte', 'Sorte', FACT_KINDS, 'transport');
+    var label = field(form, 'attirer-f-libelle', 'Libellé');
+    var value = field(form, 'attirer-f-valeur', 'Valeur, si le fait est un chiffre');
+    value.setAttribute('inputmode', 'decimal');
+    var noUnit = { '': 'Sans unité' };
+    Object.keys(FACT_UNITS).forEach(function (k) { noUnit[k] = FACT_UNITS[k]; });
+    var unit = select(form, 'attirer-f-unite', 'Unité', noUnit, '');
+    var source = field(form, 'attirer-f-source', 'Source');
+    var when = field(form, 'attirer-f-date', 'Date de la source');
+    when.setAttribute('type', 'date');
+    form.appendChild(button('Ranger ce fait', function () {
+      var key = factKey(label.value);
+      if (!key) { state('Saisissez le libellé du fait.'); return; }
+      var raw = value.value.trim().replace(',', '.');
+      var number = raw === '' ? null : Number(raw);
+      if (number !== null && !isFinite(number)) { state('La valeur doit être un chiffre.'); return; }
+      if ((number === null) !== (unit.value === '')) { state('Un chiffre va avec son unité, et une unité avec son chiffre.'); return; }
+      quarterWrite(z, quarterPath(z, '/faits'), { key: key, kind: kind.value, label: label.value, value: number, unit: unit.value === '' ? null : unit.value, source: source.value, sourceDate: when.value }, 'Fait rangé.', 'Le fait n’est pas rangé.');
+    }));
+    return box;
+  }
+
   /*
-   * Un geste qui coupe un site se confirme : le premier appui demande de confirmer ; un second appui trop rapproché
+   * Un geste qui retire quelque chose du public se confirme : le premier appui demande de confirmer ; un second appui trop rapproché
    * n'est pas une confirmation ; sans suite, la demande retombe.
    */
-  function confirmed(text, act) {
+  function confirmed(text, warning, act) {
     var armedAt = null;
     var b = button(text, function () {
       var now = Date.now();
@@ -233,7 +428,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       if (armedAt === null || now - armedAt > 15000) {
         armedAt = now;
         b.textContent = 'Confirmer : ' + text.charAt(0).toLowerCase() + text.slice(1);
-        state('Ce site ne servira plus ses pages à cette adresse. Appuyez de nouveau pour confirmer.');
+        state(warning);
         return;
       }
       armedAt = null;
@@ -243,6 +438,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     return b;
   }
   /* AT04 · les sites en service et leur plan. Le site d'un agent se lit ici ; il se règle avec AT15. */
+  var SITE_WARNING = 'Ce site ne servira plus ses pages à cette adresse. Appuyez de nouveau pour confirmer.';
   function saveSite(baseUrl, active, okText, failText) {
     return once(function () {
       state('Envoi…');
@@ -282,7 +478,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       li.appendChild(el('p', s.kind === 'agent' ? 'Site d’un agent' : 'Site du réseau', 'doux'));
       var plan = el('div');
       li.appendChild(button('Voir le plan', function () { openPlan(s, plan); }));
-      if (s.kind !== 'agent') li.appendChild(confirmed('Mettre hors service', function () { saveSite(s.baseUrl, false, 'Site mis hors service.', 'Le site reste en service.'); }));
+      if (s.kind !== 'agent') li.appendChild(confirmed('Mettre hors service', SITE_WARNING, function () { saveSite(s.baseUrl, false, 'Site mis hors service.', 'Le site reste en service.'); }));
       li.appendChild(plan);
       ul.appendChild(li);
     });
@@ -292,9 +488,9 @@ globalThis.AIMMO_ATTIRER = function (t) {
     f.setAttribute('type', 'url');
     f.setAttribute('inputmode', 'url');
     function putOn() { saveSite(f.value.trim(), true, 'Site mis en service.', 'Le site n’est pas enregistré.'); }
-    box.appendChild(hasNetwork ? confirmed('Changer l’adresse', putOn) : button('Mettre en service', putOn));
+    box.appendChild(hasNetwork ? confirmed('Changer l’adresse', SITE_WARNING, putOn) : button('Mettre en service', putOn));
     return box;
   }
-  return { open: open, wipe: wipe };
+  return { open: open, wipe: wipe, inside: function () { return inside; } };
 };
 `;
