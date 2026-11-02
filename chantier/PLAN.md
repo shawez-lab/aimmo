@@ -219,8 +219,9 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Reste après B04a et B04b : ouvrir le passage (`AUTOMATION_ROLLOUT_OPEN`) ; sur le site : lire `decides`, signaler écarts et pannes par `POST /v1/automatisations/incident` et rejouer ce signalement si le socle ne répond pas (une panne de sa base ne peut pas le ramener en ombre seule) ; retirer `taches.yml`.
 
 ### B05 · Écran de la bascule pour la direction
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Voie : 2
+- Reste : fusionnée (#278) ; relecture forte 3 P1 corrigés ; Codex à sa limite (H03) ; le passage reste fermé tant que B04 n'ouvre pas `AUTOMATION_ROLLOUT_OPEN`, l'écran le dit ; `fiche-google.ts` et `attirer.ts` gardent un chargeur muet si leur script arrive abîmé et un verrou qui survit à la session : à reprendre à leur prochain passage.
 - Trouvé le 2026-11-02 (après AT14) : aucun écran n'appelle `/v1/automatisations/paliers`, son geste `avancer`, ni `/v1/journal/verification` : la direction ne pourrait voir ni un retour en ombre, ni faire avancer une automatisation, ni vérifier le journal sans passer par l'API.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : B04a, B04b
 - Cahier : Feuille de route, novembre 2026 ; R26, R16, R201.
