@@ -271,8 +271,10 @@ export class Alertes {
     let usedChannel: OutboundChannelName = channel;
     try {
       const link = await newUnsubscribeLine(this.db, networkId, personId, this.unsubscribeBase ?? '', at);
-      const names = await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${placeholders(ids.length)})`, ids);
-      const firstName = names.map((n) => n.first_name).find((n) => n) ?? null;
+      // Le prénom de la fiche gardée d'abord, comme le contrôle du texte : celui d'un doublon ferait refuser l'alerte pour de bon [R08].
+      const names = await this.db.all<{ id: string; first_name: string | null }>(`SELECT id, first_name FROM persons WHERE id IN (${placeholders(ids.length)})`, ids);
+      const root = await this.fiche.rootOf(personId);
+      const firstName = [...names].sort((a, b) => Number(b.id === root) - Number(a.id === root) || a.id.localeCompare(b.id)).map((n) => n.first_name).find((n) => n) ?? null;
       const writer = this.options.writer;
       // Le lien est placé par le code, jamais par l'IA [R49].
       const withLink = (text: string): string => `${text.trim()}\n\n${link}`;
