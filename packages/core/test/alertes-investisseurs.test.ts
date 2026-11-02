@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { ALERT_PURPOSE, Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type DiffusionGate, type SqlDatabase } from '../src/index.ts';
 import { AlertesInvestisseurs, LoyersMarche, PROFESSIONAL_REFERRAL, ProfilInvestisseur, forbiddenPhrases, matches, type InvestorProfileVersion } from '../src/investir/index.ts';
+import { mergeWithDouble } from './doublon.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -184,6 +185,18 @@ describeWithSqlite('Y06 · alertes aux investisseurs, en mode essai', () => {
     expect(await t.alertes.recordPropertyCommune(t.acces, t.direction, p.id, { inseeCode: '99001', rentKind: 'apartment' })).toEqual({ ok: true });
     expect(await t.alertes.recordPropertyCommune(t.acces, t.direction, p.id, { inseeCode: '99002', rentKind: 'house' })).toMatchObject({ ok: false, code: 'deja_rangee' });
     await expect(t.db.run('UPDATE property_communes SET insee_code = ?', ['99002'])).rejects.toThrow(/ne change plus/);
+  });
+
+  it('[R08] AC10 : sur une fiche réunie, l’alerte salue par le prénom de la fiche gardée', async () => {
+    const t = await setup();
+    const ines = await t.investor('Inès', PROFILE);
+    const expected = await mergeWithDouble(t.db, t.store, ines.person.id, 'Inna');
+    const prop = await t.property('B1');
+    const out = await t.alertes.forProperty(t.network.id, prop.id);
+    expect(out).toEqual([expect.objectContaining({ status: 'sent' })]);
+    const all = await t.sent();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.body).toContain(`Bonjour ${expected}`);
   });
 });
 

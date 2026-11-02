@@ -27,6 +27,7 @@ import { SqlSendJournal } from '../../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../../envoi/service.ts';
 import { plain } from '../../envoi/texte.ts';
 import { FicheUnique } from '../../fiche/fusion.ts';
+import { ficheFirstName } from '../../fiche/prenom.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
 import { agentBlocked } from './etat-agent.ts';
@@ -344,8 +345,7 @@ export class AnciensContacts {
       if (!moment) continue;
       const agentId = await this.agentOf(networkId, root);
       if (agentId === null) continue;
-      const names = await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${marks(members.length)}) ORDER BY id = ? DESC, id`, [...members, root]);
-      const draft = await this.draftFor(moment.reason, names.map((n) => n.first_name).find((n) => n) ?? null);
+      const draft = await this.draftFor(moment.reason, await ficheFirstName(this.db, members));
       const id = this.newId();
       const { changes } = await this.db.run(
         `INSERT INTO old_contact_followups (id, network_id, agent_id, person_id, month, reason, reason_day, draft, draft_by, status, created_at)
@@ -380,8 +380,7 @@ export class AnciensContacts {
         continue;
       }
       const members = await this.fiche.membersOf(root);
-      const names = await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${marks(members.length)}) ORDER BY id = ? DESC, id`, [...members, root]);
-      items.push({ followupId: r.id, personId: root, firstName: names.map((n) => n.first_name).find((n) => n) ?? null, reason: r.reason, reasonLabel: OLD_CONTACT_REASON_LABELS[r.reason], reasonDay: r.reason_day, draft: r.draft, draftBy: r.draft_by });
+      items.push({ followupId: r.id, personId: root, firstName: await ficheFirstName(this.db, members), reason: r.reason, reasonLabel: OLD_CONTACT_REASON_LABELS[r.reason], reasonDay: r.reason_day, draft: r.draft, draftBy: r.draft_by });
     }
     items.sort((a, b) => RANK[a.reason] - RANK[b.reason] || (a.reasonDay < b.reasonDay ? -1 : a.reasonDay > b.reasonDay ? 1 : 0) || (a.followupId < b.followupId ? -1 : 1));
     // La lecture est au journal avant que la liste soit rendue, sans donnée personnelle [R16, R13].
@@ -432,8 +431,7 @@ export class AnciensContacts {
     // Réserver la relance avant l'envoi : deux validations en même temps n'en font qu'une [R05].
     const claimed = await this.db.run("UPDATE old_contact_followups SET status = 'en_envoi' WHERE id = ? AND status = 'a_valider'", [r.id]);
     if (claimed.changes !== 1) return { ok: false, rule: null, code: 'already_decided' };
-    const names = await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${marks(members.length)}) ORDER BY id = ? DESC, id`, [...members, root]);
-    const firstName = names.map((n) => n.first_name).find((n) => n) ?? null;
+    const firstName = await ficheFirstName(this.db, members);
     // Le texte de l'agent part tel quel ou pas du tout ; celui de l'IA a le texte du code en secours [R12].
     const texts = input.text === undefined && r.draft_by === 'ia' ? [text, oldContactFallback(r.reason, firstName)] : [text];
     let result: Awaited<ReturnType<ControleEnvois['send']>>;

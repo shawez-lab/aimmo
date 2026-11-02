@@ -23,6 +23,7 @@ import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import type { OutboundChannel } from '../envoi/canaux.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { ScheduledJob } from '../bascule/planificateur.ts';
@@ -271,10 +272,7 @@ export class Alertes {
     let usedChannel: OutboundChannelName = channel;
     try {
       const link = await newUnsubscribeLine(this.db, networkId, personId, this.unsubscribeBase ?? '', at);
-      // Le prénom de la fiche gardée d'abord, comme le contrôle du texte : celui d'un doublon ferait refuser l'alerte pour de bon [R08].
-      const names = await this.db.all<{ id: string; first_name: string | null }>(`SELECT id, first_name FROM persons WHERE id IN (${placeholders(ids.length)})`, ids);
-      const root = await this.fiche.rootOf(personId);
-      const firstName = [...names].sort((a, b) => Number(b.id === root) - Number(a.id === root) || a.id.localeCompare(b.id)).map((n) => n.first_name).find((n) => n) ?? null;
+      const firstName = await ficheFirstName(this.db, ids);
       const writer = this.options.writer;
       // Le lien est placé par le code, jamais par l'IA [R49].
       const withLink = (text: string): string => `${text.trim()}\n\n${link}`;
