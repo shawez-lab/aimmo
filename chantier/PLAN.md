@@ -938,7 +938,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H25 pour le dépôt réel.
 
 ### D12 · Écran « Mandat » dans l'application
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02), lecture prudente : un mandat vivant sur le bien retire le contrôle et la signature des autres documents (D15 le refusera aussi côté code) ; une reprise ne redemande pas le scan ; le document se lit en texte, aucune balise reçue n'est interprétée. Téléphone et axe-core vérifiés une fois à la main (Chromium 390 × 844, clair et sombre, aucune violation). Relecture forte : 2 P1 corrigés ; Codex à sa limite, fusion sans lui (#288).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D11
 - Cahier : M06 ; Feuille de route, février 2027 : « premier mandat de l'agence généré par AIMMO et numéroté dans le registre de l'agence » ; R39, R40, R41, R201.
 - Objectif : depuis « Mes biens », l'agent génère le mandat, lit les contrôles ligne par ligne, enregistre la signature sur papier avec le scan déposé, voit le numéro au registre et l'exemplaire ; écran chargé à part, sur le système de design.
@@ -946,7 +947,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H08 pour un mandat réel, H23 pour le numéro réel, H25 pour le dépôt réel.
 
 ### D15 · Un seul mandat vivant par bien, refusé aussi par le code
-- Statut : à faire
+- Statut : en cours
 - Trouvé le 2026-11-02 par la relecture forte de D12 : l'écran ne propose plus de second mandat, mais `SignaturePapier.register` numérote un second mandat sur un bien dont le mandat est vivant, et le registre est sans trou. Le cahier (M06) n'en dit rien : lecture prudente, refus.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12
 - Cahier : M06 ; R39, R41, R42.
