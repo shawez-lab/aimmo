@@ -334,10 +334,12 @@ export class AvisDeValeur {
   }
 
   /** La validation par l'agent qui suit le bien ; un avis validé ne change plus. */
-  async validate(viewer: Viewer, id: string): Promise<AvisResult<ValuationReport>> {
+  async validate(viewer: Viewer, id: string, readVersion?: string): Promise<AvisResult<ValuationReport>> {
     const found = await this.mine(viewer, id);
     if (!found.ok) return found;
     const r = found.value;
+    // Avec la version lue : celle qu'un autre appareil a enregistrée depuis ne se valide pas à l'aveugle.
+    if (readVersion !== undefined && readVersion !== r.updated_at) return { ok: false, rule: 'R30', code: 'changed_meanwhile' };
     // L'avis validé ne porte qu'une fourchette : celle qui partira.
     if (!r.text.includes(euros(r.agent_low ?? r.computed_low)) || !r.text.includes(euros(r.agent_high ?? r.computed_high))) {
       return { ok: false, rule: 'R30', code: 'range_not_in_text' };

@@ -106,11 +106,13 @@ globalThis.AIMMO_AVIS = function (t) {
     state('Chargement…');
     return send(base(), 'GET').then(function (res) {
       if (res.gone || mine !== seq) return false;
+      // Le geste a réussi, seule la relecture manque : on le dit, sans laisser un formulaire périmé à l'écran.
+      if (!res.ok && message) { clear(body()); state(message + ' Rouvrez cet écran pour le relire.'); return true; }
       if (!res.ok) { state(why(res, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
       var list = Array.isArray(res.body.data) ? res.body.data : [];
       clear(body());
       state(message || '');
-      if (list[0] && ID.test(list[0].id)) draw(list[0]); else form();
+      if (list[0] && ID.test(list[0].id)) draw(list[0], list); else form();
       return true;
     });
   }
@@ -121,7 +123,7 @@ globalThis.AIMMO_AVIS = function (t) {
     var address = field(box, 'avis-adresse', 'Adresse du bien');
     address.setAttribute('autocomplete', 'off');
     var kind = field(box, 'avis-type', 'Type de logement', 'select');
-    [['apartment', 'Appartement'], ['house', 'Maison']].forEach(function (k) {
+    [['', 'À choisir'], ['apartment', 'Appartement'], ['house', 'Maison']].forEach(function (k) {
       var o = el('option', k[1]);
       o.value = k[0];
       kind.appendChild(o);
@@ -144,7 +146,7 @@ globalThis.AIMMO_AVIS = function (t) {
     }));
     body().appendChild(box);
   }
-  function draw(r) {
+  function draw(r, list) {
     var box = el('section', null, 'bloc');
     box.appendChild(el('h3', r.status === 'validated' ? 'Avis validé' : 'Brouillon à relire'));
     box.appendChild(el('strong', money(r.low) + ' à ' + money(r.high)));
@@ -152,10 +154,12 @@ globalThis.AIMMO_AVIS = function (t) {
     if (r.status === 'validated') {
       box.appendChild(el('p', r.text, 'brouillon'));
       box.appendChild(button('Télécharger la page à imprimer', function () { return download(r.id); }));
-      box.appendChild(button('Préparer un nouvel avis', function () { clear(body()); state(''); form(); }));
+      box.appendChild(button('Préparer un nouvel avis', function () { seq += 1; clear(body()); state(''); form(); }));
       body().appendChild(box);
       return;
     }
+    // Un avis validé plus ancien reste à portée tant que le brouillon n'est pas validé.
+    var older = list.filter(function (x) { return x.status === 'validated' && ID.test(x.id); })[0];
     var low = field(box, 'avis-bas', 'Bas de la fourchette, en euros');
     var high = field(box, 'avis-haut', 'Haut de la fourchette, en euros');
     [low, high].forEach(function (f) { f.setAttribute('inputmode', 'numeric'); });
@@ -164,37 +168,50 @@ globalThis.AIMMO_AVIS = function (t) {
     var text = field(box, 'avis-texte', 'Texte de l’avis', 'textarea');
     text.value = r.text;
     text.setAttribute('rows', '12');
+    function amount(f) { return Number(String(f.value).replace(/[\\s€]/g, '')); }
     function change() {
       var c = {};
-      var lo = Number(low.value), hi = Number(high.value);
-      if (lo !== r.low) c.low = lo;
-      if (hi !== r.high) c.high = hi;
+      if (amount(low) !== r.low) c.low = amount(low);
+      if (amount(high) !== r.high) c.high = amount(high);
       if (text.value !== r.text) c.text = text.value;
       return c;
     }
     function save(c) {
       return send('/v1/avis/' + encodeURIComponent(r.id) + '/ajustement', 'POST', c);
     }
-    box.appendChild(button('Enregistrer', function () {
+    // Pendant un envoi, rien ne se tape ni ne se clique : une correction ne se perd jamais en silence [R30].
+    var parts = [low, high, text];
+    function lock(on) { parts.forEach(function (p) { p.disabled = on; }); }
+    function add(b) { parts.push(b); box.appendChild(b); }
+    add(button('Enregistrer', function () {
       var c = change();
       if (Object.keys(c).length === 0) { state('Rien à enregistrer.'); return Promise.resolve(false); }
+      if (Number.isNaN(amount(low)) || Number.isNaN(amount(high))) { state('La fourchette s’écrit en euros, en chiffres seulement.'); return Promise.resolve(false); }
       state('Enregistrement…');
+      lock(true);
+      var mine = ++seq;
       return save(c).then(function (res) {
-        if (res.gone) return false;
-        if (!res.ok) { state(why(res, 'Rien n’est enregistré : réessayez.')); return false; }
+        if (res.gone || mine !== seq) return false;
+        if (!res.ok) { lock(false); state(why(res, 'Rien n’est enregistré : réessayez.')); return false; }
         return load('Enregistré.');
       });
     }));
     // Une modification à l'écran, encore non enregistrée, ne se valide jamais à l'insu de l'agent [R30].
-    box.appendChild(button('Valider l’avis', function () {
+    // La version lue à l'écran part avec le geste : celle d'un autre appareil n'est jamais validée à l'aveugle.
+    add(button('Valider l’avis', function () {
       if (Object.keys(change()).length > 0) { state('Enregistrez d’abord vos changements : c’est ce texte qui sera validé.'); return Promise.resolve(false); }
       state('Validation…');
-      return send('/v1/avis/' + encodeURIComponent(r.id) + '/validation', 'POST').then(function (res) {
-        if (res.gone) return false;
-        if (!res.ok) { state(why(res, 'L’avis n’est pas validé : réessayez.')); return false; }
+      lock(true);
+      var mine = ++seq;
+      return send('/v1/avis/' + encodeURIComponent(r.id) + '/validation', 'POST', { updatedAt: r.updatedAt }).then(function (res) {
+        if (res.gone || mine !== seq) return false;
+        if (!res.ok) { lock(false); state(why(res, 'L’avis n’est pas validé : réessayez.')); return false; }
         return load('Avis validé.');
       });
     }));
+    // Un brouillon faux se remplace ; il reste rangé, jamais validé.
+    add(button('Refaire le calcul', function () { seq += 1; clear(body()); state(''); form(); }));
+    if (older) box.appendChild(button('Télécharger le dernier avis validé', function () { return download(older.id); }));
     body().appendChild(box);
   }
   function download(id) {

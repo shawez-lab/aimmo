@@ -1251,6 +1251,7 @@ const avisView = (r: ValuationReport) => ({
   high: r.agent_high ?? r.computed_high,
   text: r.text,
   createdAt: r.created_at,
+  updatedAt: r.updated_at,
   validatedAt: r.validated_at,
 });
 
@@ -1303,8 +1304,11 @@ function avisRoutes(config: Pick<ApiConfig, 'estimation' | 'fetchPublicData'>): 
       method: 'POST',
       pattern: new RegExp(`^/avis/${ID}/validation$`),
       name: 'avis.valide',
-      handle: async (s, viewer, [id]) => {
-        const r = await avis(s).validate(viewer, id!);
+      handle: async (s, viewer, [id], request) => {
+        // La version que l'agent a lue : une autre, enregistrée ailleurs, ne se valide pas à l'aveugle [R30].
+        const body = await readJson(request);
+        if (!body || typeof body.updatedAt !== 'string') return failure(400, 'invalid_body', 'Version lue attendue.');
+        const r = await avis(s).validate(viewer, id!, body.updatedAt);
         return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: avisView(r.value) }) : avisRefusal(r);
       },
     },

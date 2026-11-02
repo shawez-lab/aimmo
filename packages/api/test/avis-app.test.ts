@@ -13,7 +13,7 @@ type Answer = () => Promise<Response>;
 type Call = { method: string; url: string; body: Record<string, unknown> | null };
 const ok = (data: unknown): Answer => async () => Response.json({ ok: true, mode: 'essai', data });
 const no = (status: number, code: string): Answer => async () => Response.json({ ok: false, code }, { status });
-const DRAFT = { id: 'r1', propertyId: 'b1', status: 'draft', computedLow: 180000, computedHigh: 200000, low: 180000, high: 200000, text: 'Texte <b>de l’avis</b>', createdAt: '2026-11-02T08:00:00.000Z', validatedAt: null };
+const DRAFT = { id: 'r1', propertyId: 'b1', status: 'draft', computedLow: 180000, computedHigh: 200000, low: 180000, high: 200000, text: 'Texte <b>de l’avis</b>', createdAt: '2026-11-02T08:00:00.000Z', updatedAt: '2026-11-02T08:30:00.000Z', validatedAt: null };
 const BASE: Record<string, Answer> = {
   'GET /v1/moi': ok({ role: 'agent', firstName: 'Alex' }),
   'GET /v1/plan-du-jour': ok(null),
@@ -128,6 +128,83 @@ describe('E10 · écran de l’avis de valeur', () => {
     await t.click(t.els.biens!.all().find((e) => e.tagName === 'button' && e.textContent === 'Avis de valeur'));
     await t.click(t.byText('Télécharger la page à imprimer'));
     expect(t.state()).toBe('Seul l’agent qui suit ce bien prépare et valide son avis.');
+  });
+
+  it('[R30] la validation porte la version lue à l’écran', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([DRAFT]), 'POST /v1/avis/r1/validation': no(409, 'changed_meanwhile') });
+    await t.open();
+    await t.click(t.byText('Valider l’avis'));
+    expect(t.calls.find((c) => c.url.endsWith('/validation'))?.body).toEqual({ updatedAt: DRAFT.updatedAt });
+    expect(t.state()).toBe('L’avis a changé entre-temps : relisez-le, puis recommencez.');
+  });
+
+  it('[R30] pendant un envoi, rien ne se tape : une correction ne se perd pas en silence', async () => {
+    let release: (r: Response) => void = () => {};
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([DRAFT]), 'POST /v1/avis/r1/ajustement': () => new Promise<Response>((r) => { release = r; }) });
+    await t.open();
+    t.input('avis-texte').value = 'Autre texte';
+    const save = t.byText('Enregistrer')!;
+    save.listeners.click!({});
+    await new Promise((r) => setTimeout(r, 0));
+    expect((t.input('avis-texte') as unknown as { disabled: boolean }).disabled).toBe(true);
+    expect((t.byText('Valider l’avis') as unknown as { disabled: boolean }).disabled).toBe(true);
+    release(Response.json({ ok: false, code: 'text_refused' }, { status: 422 }));
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+    expect((t.input('avis-texte') as unknown as { disabled: boolean }).disabled).toBe(false);
+    expect(t.input('avis-texte').value).toBe('Autre texte');
+  });
+
+  it('un brouillon faux se refait sans être validé ; un ancien avis validé reste à portée', async () => {
+    const old = { ...DRAFT, id: 'r0', status: 'validated' };
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([DRAFT, old]), 'GET /v1/avis/r0/imprimable': async () => new Response('<html></html>') });
+    await t.open();
+    await t.click(t.byText('Télécharger le dernier avis validé'));
+    expect(t.calls.some((c) => c.url === '/v1/avis/r0/imprimable')).toBe(true);
+    await t.click(t.byText('Refaire le calcul'));
+    expect(t.input('avis-adresse')).toBeDefined();
+    expect(t.calls.some((c) => c.url.endsWith('/validation'))).toBe(false);
+  });
+
+  it('un geste réussi reste dit quand la relecture échoue', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([DRAFT]), 'POST /v1/avis/r1/validation': ok({ ...DRAFT, status: 'validated' }) });
+    await t.open();
+    delete t.table['GET /v1/biens/b1/avis'];
+    await t.click(t.byText('Valider l’avis'));
+    expect(t.state()).toBe('Avis validé. Rouvrez cet écran pour le relire.');
+    expect(t.byText('Valider l’avis')).toBeUndefined();
+  });
+
+  it('un montant s’écrit avec ses espaces ; autre chose que des chiffres est dit, sans envoi', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([DRAFT]), 'POST /v1/avis/r1/ajustement': ok(DRAFT) });
+    await t.open();
+    t.input('avis-bas').value = '175 000 €';
+    await t.click(t.byText('Enregistrer'));
+    expect(t.calls.find((c) => c.url.endsWith('/ajustement'))?.body).toEqual({ low: 175000 });
+    t.calls.length = 0;
+    t.input('avis-bas').value = 'cent mille';
+    await t.click(t.byText('Enregistrer'));
+    expect(t.state()).toBe('La fourchette s’écrit en euros, en chiffres seulement.');
+    expect(t.calls).toEqual([]);
+  });
+
+  it('une réponse tardive ne redessine pas un écran quitté ; le retour efface tout', async () => {
+    let release: (r: Response) => void = () => {};
+    const t = await run({ 'GET /v1/biens/b1/avis': () => new Promise<Response>((r) => { release = r; }) });
+    await t.open();
+    await t.click(t.els['avis-retour']);
+    release(Response.json({ ok: true, data: [DRAFT] }));
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(t.body().children).toEqual([]);
+    expect(t.state()).toBe('');
+  });
+
+  it('[R46] après la sortie, rien de l’avis ne reste à l’écran', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([DRAFT]) });
+    await t.open();
+    expect(t.body().children.length).toBeGreaterThan(0);
+    await t.click(t.els.sortir);
+    expect(t.body().children).toEqual([]);
+    expect(t.state()).toBe('');
   });
 
   it('[R16] un bien hors de ses droits est dit, et le texte reçu reste du texte', async () => {
