@@ -16,6 +16,7 @@ import type { OutboundChannelName } from '../db/types.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { ControleEnvois, type SendResult } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
@@ -98,6 +99,7 @@ export function routeText(date: Date, stops: readonly { start: Date; town: strin
 }
 
 export class TourneeRendezVous {
+  private readonly fiche: FicheUnique;
   private readonly now: () => Date;
   private readonly settings: SlotSettings;
   private readonly maxVisits: number;
@@ -115,6 +117,7 @@ export class TourneeRendezVous {
     this.rdv = new RendezVous(db, journal, { now: this.now, settings: this.settings, ...(options.agenda ? { agenda: options.agenda } : {}) });
     const store = new FicheClient(db, { now: this.now });
     const fiche = new FicheUnique(db, store, { now: this.now });
+    this.fiche = fiche;
     const decisions = new DecisionEnvoi(db, store, fiche, { now: this.now });
     // Seuls les canaux du mode essai : aucun vrai canal ne peut être passé de l'extérieur [R26].
     this.controle = new ControleEnvois(db, fiche, decisions, {
@@ -177,7 +180,7 @@ export class TourneeRendezVous {
     // La tournée, ce sont les déplacements : les rendez-vous par téléphone n'y sont pas.
     const stops = rows.filter((r) => r.kind !== 'appel').map((r) => ({ start: new Date(r.start_at), town: r.city?.trim() || null }));
     if (stops.length === 0) return { ok: false, code: 'empty' };
-    const { text, figures } = routeText(from, stops, recipient.first_name?.trim() || null);
+    const { text, figures } = routeText(from, stops, (await ficheFirstName(this.db, await this.fiche.membersOf(recipient.id)))?.trim() || null);
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
     const short = [...new Uint8Array(digest)].slice(0, 6).map((b) => b.toString(16).padStart(2, '0')).join('');
     const sent = await this.controle.send({

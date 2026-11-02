@@ -30,6 +30,7 @@ import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { IBAN, IBAN_MASK, fundsInOutgoing, plain } from '../envoi/texte.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { actorOf, type FileRefusal } from './acces-dossier.ts';
@@ -153,9 +154,9 @@ export class BouclierFonds {
       [messageId, fileId],
     );
     if (!a || (a.reminder_status !== null && a.reminder_status !== 'waiting' && a.reminder_status !== 'failed')) return;
-    const first = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [a.person_id]);
+    const first = await ficheFirstName(this.db, await this.unique.membersOf(a.person_id));
     const property = await this.db.first<{ city: string | null; reference: string }>('SELECT p.city, p.reference FROM sale_files f JOIN properties p ON p.id = f.property_id WHERE f.id = ?', [a.file_id]);
-    const text = fundsReminderText(first?.first_name ?? null, property);
+    const text = fundsReminderText(first, property);
     if (fundsInOutgoing(text)) throw new Error('Le rappel du bouclier ne peut pas porter de coordonnée bancaire [R62].');
     const r = await this.controle.send({
       networkId: a.network_id,

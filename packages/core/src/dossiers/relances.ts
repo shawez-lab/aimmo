@@ -25,6 +25,7 @@ import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { ScheduledJob } from '../bascule/planificateur.ts';
@@ -124,7 +125,7 @@ export class RelancesPieces {
   }
 
   private async firstName(personId: string): Promise<string | null> {
-    return (await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [personId]))?.first_name ?? null;
+    return ficheFirstName(this.db, await this.unique.membersOf(personId));
   }
 
   /**

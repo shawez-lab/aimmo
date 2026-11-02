@@ -17,6 +17,7 @@ import {
   type CommuneResult,
   type SqlDatabase,
 } from '../src/index.ts';
+import { mergeWithDouble } from './doublon.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -273,5 +274,16 @@ describeWithSqlite('G04 · suivi de valeur, en mode essai', () => {
     await expect(suivi.run()).rejects.toThrow();
     expect(calls).toBe(1);
     expect(await t.sends()).toEqual([{ period: 1, status: 'waiting', rule: null }]);
+  });
+
+  it('[R08] AC10 : sur une fiche réunie, le suivi salue par le prénom de la fiche gardée', async () => {
+    const t = await setup();
+    const lea = await t.owner('Léa');
+    await t.enrol(lea.id);
+    const expected = await mergeWithDouble(t.db, t.store, lea.id, 'Inna');
+    t.setClock(JULY_TUE_10H);
+    expect((await t.suivi.run()).outcomes).toEqual([expect.objectContaining({ status: 'sent', rule: null })]);
+    const [message] = await t.outbox();
+    expect(message!.body).toContain(`Bonjour ${expected}`);
   });
 });

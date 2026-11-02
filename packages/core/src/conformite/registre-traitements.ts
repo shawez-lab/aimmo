@@ -32,6 +32,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       contact_scores: ['person_id', 'score', 'temperature', 'reason'],
       attributions: ['person_id', 'agent_id', 'reason'],
       callback_tasks: ['person_id', 'reason'],
+      // AC09 : les appels notés, pour la fréquence de la prospection.
+      call_notes: ['person_id', 'noted_by'],
       agent_import_contacts: ['agent_id', 'person_id'],
       agent_import_referrals: ['importing_agent_id', 'person_id', 'resolved_by'],
       // I05 : les exports de H15 déposés par la direction, gardés pour relancer la reprise.
@@ -744,6 +746,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   first_reply_claims: ['claim_key', 'inbound_id', 'claim_id', 'outcome', 'created_at'],
   conversation_handovers: ['id', 'network_id', 'handed_at', 'created_at'],
   agent_alerts: ['id', 'network_id', 'created_at', 'seen_at'],
+  call_notes: ['id', 'network_id', 'outcome', 'basis', 'noted_at'],
   human_replies: ['dedup_key', 'network_id', 'message_id', 'created_at'],
   outbound_refs: ['network_id', 'channel', 'message_id', 'created_at'],
   trial_outbox: ['message_id', 'channel', 'created_at'],

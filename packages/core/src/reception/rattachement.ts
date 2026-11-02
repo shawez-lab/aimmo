@@ -9,7 +9,7 @@ import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Channel, Exclusion, IdentifierKind, Person } from '../db/types.ts';
 import { classifyReceived, type DecisionEnvoi, type ReceivedExclusion } from '../envoi/service.ts';
-import { CALL_REQUEST_DAYS } from '../acces/fiche-agent.ts';
+import { CALL_REQUEST_DAYS, lastCallRefusal, type CallNote } from '../acces/fiche-agent.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { matchKey, normalizeIdentifier } from '../fiche/normalize.ts';
 import type { SenderIdentifier } from './entrant.ts';
@@ -408,8 +408,11 @@ export class Rattachement {
     const view = await this.fiche.view(target.id);
     // Un accord périmé ne retient pas la nouvelle demande : plus ancien que 13 mois, qu'un retrait sur ce canal ou qu'une
     // levée d'exclusion, il n'ouvre plus l'appel [R03].
+    // Un refus noté retire sa valeur à une demande plus ancienne : la nouvelle demande doit être rangée [R204].
+    const notes = await this.db.all<CallNote>(`SELECT outcome, basis, noted_at FROM call_notes WHERE person_id IN (${view.members.map(() => '?').join(', ')})`, view.members.map((m) => m.id));
     const closedAt = Math.max(
       givenAt.getTime() - CALL_REQUEST_DAYS * 86_400_000,
+      lastCallRefusal(notes, givenAt.getTime()),
       ...view.exclusions.filter((e) => e.lifted_at !== null).map((e) => Date.parse(e.lifted_at!)),
       ...view.consents.filter((c) => c.channel === channel && c.withdrawn_at !== null).map((c) => Date.parse(c.withdrawn_at!)),
     );

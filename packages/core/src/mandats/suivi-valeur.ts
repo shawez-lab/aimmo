@@ -18,6 +18,7 @@ import { DecisionEnvoi } from '../envoi/service.ts';
 import type { CommuneResult } from '../estimation/en-ligne.ts';
 import type { EstimatedKind } from '../estimation/fourchette.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { plain } from '../envoi/texte.ts';
@@ -315,8 +316,7 @@ export class SuiviDeValeur {
         // durable (peu de ventes, hors zone) vaut pour la période.
         status = range.reason === 'donnees_absentes' ? 'waiting' : 'no_data';
       } else {
-        const names = await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${placeholders(ids.length)})`, ids);
-        const firstName = names.map((n) => n.first_name).find((n) => n) ?? null;
+        const firstName = await ficheFirstName(this.db, ids);
         const { text, figures } = valueTrackingText(firstName, range.value.town, row.kind, range.value);
         const result = await this.controle.send({
           networkId: row.network_id,

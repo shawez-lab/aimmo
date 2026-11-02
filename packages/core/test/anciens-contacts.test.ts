@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { AnciensContacts, FicheClient, OLD_CONTACT_PURPOSE, SqlJournalStore, applyMigrations, checkOldContactText, fromSyncSqlite, oldContactFallback, type OldContactDrafter, type SqlDatabase } from '../src/index.ts';
+import { mergeWithDouble } from './doublon.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -310,5 +311,20 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     expect(await t.anciens.toValidate(t.agent())).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
     expect(await t.anciens.validate(t.agent(), id)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
     expect(await t.anciens.noteLeaseEnd(t.agent(), ines.id, '2027-12-01')).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+  });
+
+  it('[R08] AC10 : sur une fiche réunie, brouillon, liste et envoi portent le prénom de la fiche gardée', async () => {
+    const t = await setup();
+    const ines = await t.contact('Inès');
+    await t.valued(ines.id, 400);
+    const expected = await mergeWithDouble(t.db, t.store, ines.id, 'Inna');
+    expect(await t.anciens.prepareMonth(t.network.id)).toBe(1);
+    const list = await t.anciens.toValidate(t.agent());
+    const item = list.ok ? list.value[0]! : null;
+    expect(item?.firstName).toBe(expected);
+    expect(item?.draft).toContain(`Bonjour ${expected}`);
+    expect(await t.anciens.validate(t.agent(), item!.followupId)).toMatchObject({ ok: true });
+    const [message] = await t.outbox();
+    expect(message!.body).toContain(`Bonjour ${expected}`);
   });
 });

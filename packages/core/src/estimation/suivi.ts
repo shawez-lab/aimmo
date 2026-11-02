@@ -9,6 +9,7 @@
 import type { SqlDatabase } from '../db/sql.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
@@ -188,8 +189,7 @@ export class SuiviVendeur {
     if (answered) {
       status = 'answered';
     } else {
-      const names = await this.db.all<{ first_name: string | null }>(`SELECT first_name FROM persons WHERE id IN (${placeholders(ids.length)})`, ids);
-      const firstName = names.map((n) => n.first_name).find((n) => n) ?? null;
+      const firstName = await ficheFirstName(this.db, ids);
       const result = await this.controle.send({
         networkId: row.network_id,
         agentId: row.agent_id,

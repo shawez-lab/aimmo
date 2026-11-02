@@ -6,7 +6,7 @@
  *
  * Le rôle est contrôlé avant de lire le corps, et son refus va au journal [R16]. Rien n'est envoyé d'ici.
  */
-import { AccordsFiche, appendEvent, type AccordsResult, type Acces, type FicheClient, type JournalStore, type Viewer } from '@aimmo/core';
+import { AccordsFiche, appendEvent, type AccordsResult, type Acces, type FicheClient, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 
 export const MAX_ACCORD_BODY_BYTES = 8 * 1024;
 const ID = '([A-Za-z0-9_-]{1,64})';
@@ -14,6 +14,8 @@ const FIELDS = new Set(['purpose', 'channel', 'proof', 'givenOn']);
 const ROLES: readonly Viewer['role'][] = ['agent', 'direction'];
 
 export interface AccordsServices {
+  /** La base, pour tenir compte des refus notés (AC09) ; à passer au branchement (AC12) [R204]. */
+  db?: SqlDatabase;
   store: FicheClient;
   acces: Acces;
   journal: JournalStore;
@@ -46,7 +48,7 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
 function statusOf(rule: string | null, code: string): number {
   if (code === 'unknown' || code === 'unknown_consent') return 404;
   if (rule === 'R16') return 403;
-  if (rule === 'R02' || rule === 'R03' || rule === 'R04') return 409;
+  if (rule === 'R02' || rule === 'R03' || rule === 'R04' || rule === 'R204') return 409;
   return 400;
 }
 
@@ -55,7 +57,7 @@ function answer<T>(r: AccordsResult<T>): Response {
   return r.ok ? json(200, { ok: true, mode: 'essai', sent: false, data: r.value }) : json(statusOf(r.rule, r.code), { ok: false, rule: r.rule, code: r.code });
 }
 
-const core = (s: AccordsServices): AccordsFiche => new AccordsFiche(s.store, s.acces, s.journal, { now: s.now });
+const core = (s: AccordsServices): AccordsFiche => new AccordsFiche(s.store, s.acces, s.journal, { now: s.now, ...(s.db ? { db: s.db } : {}) });
 
 /** Le rôle d'abord, son refus au journal [R16] ; le corps n'est lu qu'ensuite. */
 function guarded(handle: AccordsRoute['handle']): AccordsRoute['handle'] {
