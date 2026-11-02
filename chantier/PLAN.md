@@ -2498,16 +2498,27 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT12 · Écran « Attirer » de la direction : prix, sites et origine des contacts
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Voie : 2
+- Décidé (2026-11-02, voie 2) : entrée sur l'écran du réseau, seul écran de la direction ; un geste qui coupe un site se confirme par deux appuis espacés, la demande retombe après 15 secondes ; le site d'un agent est en lecture seule jusqu'à AT15.
+- Reste : fusionnée (#269) ; relecture forte 4 P1 corrigés ; Codex à sa limite (H03) ; en séance, `reprise-lancement` dépasse les 5 secondes de son test sur la machine à 2 cœurs (sans lien avec l'écran, vert sur GitHub) ; suite en AT15.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT09, AT11
 - Cahier : M01 ; critère « au moins 95 % des contacts entrants ont leur contenu d'origine renseigné » ; R16, R150, R153, R201.
 - Objectif : M01 a 24 routes sous `/v1/attirer` et aucun écran : sans clé d'API et sans outil, personne ne peut s'en servir. Depuis l'écran du réseau, la direction ouvre « Attirer » : dernières versions des prix et leur recalcul, sites en service et leur plan, part des contacts dont l'origine est connue, mois par mois, contre la cible. Chargé à part (`/app/attirer.js`).
 - Critères : l'écran ne lit et n'écrit que par `/v1/attirer` [R16] ; il n'est proposé qu'à la direction ; il montre les chiffres du serveur, sans calcul ni tri à lui ; un refus est dit en français, sans code ni donnée ; tout texte reçu passe par `textContent` ; un double appui ne relance pas deux recalculs ; budget tenu [R201].
 - Attend : rien.
 
-### AT13 · Écran « Attirer » : pages de quartier, du fait validé à la page publiée
+### AT15 · Écran « Attirer » : communes, mentions des agents et leurs sites
 - Statut : à faire
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12
+- Cahier : M01 ; R16, R150, R152, R153.
+- Objectif : reste de AT12. Lectures ajoutées dans `attirer.ts` : les agents du réseau avec l'état de leur page et de leur site, y compris hors service, et le titre lisible d'un contenu (l'origine montre aujourd'hui l'identifiant d'un bien ou d'un agent). La direction y saisit les mentions, le titulaire de la carte, le site de chaque agent, et définit ou retire une commune.
+- Critères : aucun identifiant à saisir ni à lire [R16] ; un site d'agent mis hors service se rétablit depuis l'écran ; un refus `agent_inactive` de la route ne déconnecte pas la direction (`send` le lit comme une clé refusée : renommer ce code côté serveur) ; refus dits en français.
+- Attend : H09 pour les vraies mentions.
+
+### AT13 · Écran « Attirer » : pages de quartier, du fait validé à la page publiée
+- Statut : en cours (voie 2)
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12
 - Cahier : M01 ; R154, R155, R46.
