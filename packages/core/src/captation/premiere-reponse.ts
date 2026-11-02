@@ -300,6 +300,11 @@ export class PremiereReponse {
     return { inboundId, recognition: recognition.status, nextStep: brief.nextStep, result, skipped: null, skipCode: null };
   }
 
+  /** Avec un palier, un message resté dans la boîte d'essai n'est pas parti (C09b). */
+  get trialNotCounted(): boolean {
+    return this.controle.trialNotCounted;
+  }
+
   /** Rend la réservation pour un nouvel essai, sans effacer sa ligne. */
   private async releaseClaim(claimId: string, reason: string): Promise<void> {
     await this.db.run(`UPDATE first_reply_claims SET claim_key = claim_key || '#${reason}:' || claim_id WHERE claim_id = ?`, [claimId]);

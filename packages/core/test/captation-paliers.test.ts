@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import {
+  Attribution,
   ControleEnvois,
   DecisionEnvoi,
   FakeChannel,
@@ -160,20 +161,66 @@ describeWithSqlite('C09b · le palier de chaque canal de captation', () => {
     expect(incident.map((e) => e.data)).toEqual([{ automation: 'captation_email', from: 'everywhere', to: 'shadow', kind: 'failure', rule: null }]);
   });
 
-  it('[R12] par la chaîne : la réponse tombée va à l’agent, qui est alerté une fois', async () => {
+  it('[R12] par la chaîne : la réponse tombée d’un nouveau contact va à l’agent qui reçoit la fiche, une fois', async () => {
     const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
     await applyMigrations(db, loadMigrations());
     const now = (): Date => new Date(TUESDAY_10H);
     const real = new FakeChannel('email');
     real.failWith = new Error('panne');
+    const journal = new SqlJournalStore(db);
+    const { chaine, store, fiche, relais } = createCaptation(db, journal, { now, realChannels: [real], withOrigin: false });
+    const network = await store.createNetwork('Réseau test');
+    const agent = await store.createAgent({ networkId: network.id, firstName: 'Paul', lastName: 'Essai' });
+    const other = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Essai' });
+    await new Attribution(db, fiche, journal, { now }).addZone(network.id, agent.id, 'Talant');
+    await db.run("INSERT INTO automation_rollouts (network_id, automation, stage, stage_since, requests) VALUES (?, 'captation_email', 'everywhere', ?, 0)", [network.id, new Date(TUESDAY_10H).toISOString()]);
+    await chaine.receive(network.id, 'site_form', { submissionId: 'f-1', email: EMAIL, firstName: 'Léa', message: 'Je souhaite vendre ma maison à Talant.' });
+    expect(real.sent).toHaveLength(0);
+    expect((await db.first<{ agent_id: string }>('SELECT agent_id FROM persons'))!.agent_id).toBe(agent.id);
+    expect((await relais.alertsFor(network.id, agent.id)).map((a) => a.reason)).toEqual(['needs_reply']);
+    expect(await relais.alertsFor(network.id, other.id)).toEqual([]);
+    expect((await db.first<{ stage: string }>("SELECT stage FROM automation_rollouts WHERE automation = 'captation_email'"))!.stage).toBe('shadow');
+  });
+
+  it('[R05] par la chaîne : un bien resté dans la boîte d’essai n’est pas déjà envoyé, la première vraie réponse le cite', async () => {
+    const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+    await applyMigrations(db, loadMigrations());
+    const now = (): Date => new Date(TUESDAY_10H);
+    const real = new FakeChannel('email');
     const { chaine, store } = createCaptation(db, new SqlJournalStore(db), { now, realChannels: [real], withQualification: false, withOrigin: false });
     const network = await store.createNetwork('Réseau test');
-    await db.run("INSERT INTO automation_rollouts (network_id, automation, stage, stage_since, requests) VALUES (?, 'captation_email', 'everywhere', ?, 0)", [network.id, new Date(TUESDAY_10H).toISOString()]);
-    await chaine.receive(network.id, 'site_form', { submissionId: 'f-1', email: EMAIL, firstName: 'Léa', message: 'Je souhaite vendre ma maison.' });
-    expect(real.sent).toHaveLength(0);
-    const alerts = await db.all<{ reason: string }>('SELECT reason FROM agent_alerts');
-    expect(alerts.map((a) => a.reason)).toEqual(['needs_reply']);
-    expect((await db.first<{ stage: string }>("SELECT stage FROM automation_rollouts WHERE automation = 'captation_email'"))!.stage).toBe('shadow');
+    const agent = await store.createAgent({ networkId: network.id, firstName: 'Paul', lastName: 'Essai' });
+    await store.createProperty({ networkId: network.id, agentId: agent.id, reference: '383', kind: 'home', city: 'Dijon', status: 'available' });
+    const ask = (id: string) => chaine.receive(network.id, 'site_form', { submissionId: id, email: EMAIL, firstName: 'Léa', message: 'Bonjour, le bien réf 383 est-il disponible ?' });
+    await ask('f-1');
+    expect(await db.all('SELECT message_id FROM trial_outbox')).toHaveLength(1);
+    await db.run("UPDATE automation_rollouts SET stage = 'everywhere' WHERE automation = 'captation_email'");
+    await ask('f-2');
+    expect(real.sent).toHaveLength(1);
+    expect(real.sent[0]!.body).toContain('Dijon');
+    // Parti pour de bon, il ne repart plus.
+    await ask('f-3');
+    expect(real.sent.filter((m) => m.body.includes('Dijon'))).toHaveLength(1);
+  });
+
+  it('[R21] un texte de la boîte d’essai n’est pas notre écho : l’humain qui écrit la même chose fait taire l’assistant', async () => {
+    const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+    await applyMigrations(db, loadMigrations());
+    const now = (): Date => new Date(TUESDAY_10H);
+    const real = new FakeChannel('instagram');
+    const { controle, relais, store } = createCaptation(db, new SqlJournalStore(db), { now, realChannels: [real], withQualification: false, withOrigin: false });
+    const network = await store.createNetwork('Réseau test');
+    const agent = await store.createAgent({ networkId: network.id, firstName: 'Paul', lastName: 'Essai' });
+    const person = await store.createPerson({ networkId: network.id, agentId: agent.id, firstName: 'Léa', lastName: 'Exemple' });
+    await store.addIdentifier({ networkId: network.id, personId: person.id, kind: 'instagram', value: 'lea_exemple' });
+    await store.recordMessage({ networkId: network.id, personId: person.id, conversationId: 'instagram:fil-1', channel: 'instagram', direction: 'in', authorKind: 'person', body: 'Bonjour', occurredAt: new Date(TUESDAY_10H - 60_000) });
+    const text = 'Avec plaisir, belle journée !';
+    const boxed = await controle.send({ networkId: network.id, agentId: agent.id, personId: person.id, conversationId: 'instagram:fil-1', channel: 'instagram', kind: 'reply', rolloutRef: 'm-1', fallbackTexts: [text] });
+    expect(boxed).toMatchObject({ status: 'sent', trial: true });
+    const body = (await db.first<{ body: string }>("SELECT body FROM messages WHERE direction = 'out'"))!.body;
+    const outcome = await relais.noteHumanReply(network.id, { channel: 'instagram', conversationRef: 'fil-1', externalId: 'humain-1', text: body, sentAt: new Date(TUESDAY_10H) });
+    expect(outcome).toBe('noted');
+    expect((await relais.state(person.id, 'instagram:fil-1')).holder).toBe('agent');
   });
 
   it('[R26] par la chaîne, sans vrai canal : la réponse est prête et reste dans la boîte', async () => {

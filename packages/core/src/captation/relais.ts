@@ -352,7 +352,8 @@ export class ConversationRelais {
       `SELECT m.body FROM messages m
        WHERE m.network_id = ? AND m.conversation_id = ? AND m.direction = 'out' AND m.author_kind IN ('ai', 'system')
          AND m.occurred_at >= ? AND m.occurred_at <= ?
-         AND NOT EXISTS (SELECT 1 FROM outbound_refs r WHERE r.message_id = m.id)`,
+         AND NOT EXISTS (SELECT 1 FROM outbound_refs r WHERE r.message_id = m.id)
+         ${this.premiere.trialNotCounted ? 'AND NOT EXISTS (SELECT 1 FROM trial_outbox t WHERE t.message_id = m.id)' : ''}`,
       [
         networkId,
         conversationId,
@@ -401,8 +402,11 @@ export class ConversationRelais {
   /** Ce que l'agent doit regarder : conversations à reprendre, réponses qui n'ont pas pu partir. */
   alertsFor(networkId: string, agentId: string): Promise<AgentAlertRow[]> {
     return this.db.all<AgentAlertRow>(
-      'SELECT * FROM agent_alerts WHERE network_id = ? AND agent_id = ? AND seen_at IS NULL ORDER BY created_at, rowid',
-      [networkId, agentId],
+      // Une fiche sans agent à l'heure de l'alerte (nouveau contact, attribué ensuite) : l'alerte suit la fiche.
+      `SELECT a.* FROM agent_alerts a LEFT JOIN persons p ON p.id = a.person_id
+       WHERE a.network_id = ? AND (a.agent_id = ? OR (a.agent_id IS NULL AND p.agent_id = ?)) AND a.seen_at IS NULL
+       ORDER BY a.created_at, a.rowid`,
+      [networkId, agentId, agentId],
     );
   }
 
