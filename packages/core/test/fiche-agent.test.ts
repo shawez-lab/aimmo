@@ -32,20 +32,21 @@ async function world() {
   await db.run(`INSERT INTO callback_tasks (id, network_id, person_id, project_id, qualification_id, dedup_key, reason, due_at, created_at, done_at) VALUES ('t-1', ?, ?, NULL, 'q-1', 'k-t1', 'Vendeur sous 3 mois', ?, ?, NULL)`, [net.id, lea.id, NOW.toISOString(), NOW.toISOString()]);
   const fiche = new FicheAgent(db, acces, { now });
   const rappels = new Rappels(db, unique, journal, { now });
-  return { db, store, net, paul, lise, asPaul, asLise, lea, acces, fiche, rappels, journal };
+  return { db, store, unique, net, paul, lise, asPaul, asLise, lea, acces, fiche, rappels, journal };
 }
 
 describeWithSqlite('A03 · fiche du client dans l’application', () => {
   it('projets, origines, accords, derniers messages, rappels et numéro à appeler, pour l’agent de la fiche', async () => {
     const w = await world();
+    await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'reply', channel: 'phone', proof: 'message reçu test', givenAt: new Date('2026-10-02T10:00:00Z') });
     const r = await w.fiche.read(w.asPaul, w.lea.id);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const f = r.value;
-    expect(f).toMatchObject({ personId: w.lea.id, firstName: 'Léa', lastName: 'Exemple', contact: { allowed: true, reasons: [] }, call: 'tel:+33600000001' });
+    expect(f).toMatchObject({ personId: w.lea.id, firstName: 'Léa', lastName: 'Exemple', contact: { allowed: true, reasons: [] }, call: 'tel:+33600000001', callRefusal: null });
     expect(f.projects).toEqual([{ kind: 'sell', stage: 'new', deadline: null, budgetMinEur: 200000, budgetMaxEur: 230000 }]);
     expect(f.sources).toEqual([{ channel: 'site', detail: 'formulaire test', occurredAt: '2026-10-01T10:00:00.000Z' }]);
-    expect(f.consents).toEqual([{ id: expect.any(String), purpose: 'valuation_follow_up', channel: 'email', givenAt: '2026-10-01T10:00:00.000Z', withdrawnAt: null }]);
+    expect(f.consents).toEqual([{ id: expect.any(String), purpose: 'valuation_follow_up', channel: 'email', givenAt: '2026-10-01T10:00:00.000Z', withdrawnAt: null }, { id: expect.any(String), purpose: 'reply', channel: 'phone', givenAt: '2026-10-02T10:00:00.000Z', withdrawnAt: null }]);
     expect(f.messages).toHaveLength(10);
     expect(f.messages[0]!.body).toBe('Message test 12');
     expect(f.callbacks).toEqual([{ taskId: 't-1', reason: 'Vendeur sous 3 mois', dueAt: NOW.toISOString(), doneAt: null }]);
@@ -73,8 +74,68 @@ describeWithSqlite('A03 · fiche du client dans l’application', () => {
     const w = await world();
     const ex = await w.store.addExclusion({ networkId: w.net.id, personId: w.lea.id, reason: 'stop', notedAt: new Date('2026-11-01T00:00:00Z') });
     await w.db.run('UPDATE exclusions SET lifted_at = ? WHERE id = ?', ['2026-11-05T00:00:00.000Z', ex.id]);
+    await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'prospecting', channel: 'phone', proof: 'accord test', givenAt: new Date('2026-11-06T00:00:00Z') });
     const r = await w.fiche.read(w.asPaul, w.lea.id);
     expect(r.ok && r.value.call).toBe('tel:+33600000001');
+  });
+
+  it('[R03] sans accord par téléphone ni demande de la personne, pas de numéro, et la fiche dit pourquoi', async () => {
+    const w = await world();
+    // L'accord par mail ne vaut pas pour le téléphone ; un rappel à faire n'est pas une demande.
+    const r = await w.fiche.read(w.asPaul, w.lea.id);
+    expect(r.ok && r.value.call).toBeNull();
+    expect(r.ok && r.value.callRefusal).toBe('no_consent');
+    expect(r.ok && r.value.contact.allowed).toBe(true);
+    expect(r.ok && r.value.callbacks).toHaveLength(1);
+    expect(JSON.stringify(r)).not.toContain('+336');
+  });
+
+  it('[R03] l’accord par téléphone ouvre l’appel, quelle que soit sa finalité ; son retrait le referme', async () => {
+    for (const purpose of ['reply', 'prospecting', 'appointment']) {
+      const w = await world();
+      const c = await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose, channel: 'phone', proof: 'accord test', givenAt: new Date('2026-10-02T10:00:00Z') });
+      const open = await w.fiche.read(w.asPaul, w.lea.id);
+      expect(open.ok && open.value.call, purpose).toBe('tel:+33600000001');
+      await w.store.withdrawConsent(c.id, new Date('2026-10-20T10:00:00Z'));
+      const closed = await w.fiche.read(w.asPaul, w.lea.id);
+      expect(closed.ok && closed.value.call, purpose).toBeNull();
+      expect(closed.ok && closed.value.callRefusal, purpose).toBe('no_consent');
+    }
+  });
+
+  it('[R03] un accord daté du futur n’ouvre pas l’appel', async () => {
+    const w = await world();
+    await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'prospecting', channel: 'phone', proof: 'accord test', givenAt: new Date(NOW.getTime() + 86_400_000) });
+    const r = await w.fiche.read(w.asPaul, w.lea.id);
+    expect(r.ok && r.value.callRefusal).toBe('no_consent');
+  });
+
+  it('[R03] un retrait sur une fiche réunie n’est pas rouvert par un accord plus ancien du doublon', async () => {
+    const w = await world();
+    const double = await w.store.createPerson({ networkId: w.net.id, agentId: w.paul.id, firstName: 'Léa', lastName: 'Double' });
+    const taken = await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'prospecting', channel: 'phone', proof: 'accord test', givenAt: new Date('2026-09-01T10:00:00Z') });
+    await w.store.withdrawConsent(taken.id, new Date('2026-10-20T10:00:00Z'));
+    await w.store.addConsent({ networkId: w.net.id, personId: double.id, purpose: 'prospecting', channel: 'phone', proof: 'accord du doublon', givenAt: new Date('2026-09-15T10:00:00Z') });
+    await w.unique.merge({ survivorId: w.lea.id, mergedId: double.id, reason: 'test' });
+    const r = await w.fiche.read(w.asPaul, w.lea.id);
+    expect(r.ok && r.value.callRefusal).toBe('no_consent');
+  });
+
+  it('[R02, R04] un accord plus ancien qu’une levée d’exclusion n’ouvre pas l’appel', async () => {
+    const w = await world();
+    await w.store.addConsent({ networkId: w.net.id, personId: w.lea.id, purpose: 'prospecting', channel: 'phone', proof: 'accord test', givenAt: new Date('2026-09-01T10:00:00Z') });
+    const ex = await w.store.addExclusion({ networkId: w.net.id, personId: w.lea.id, reason: 'stop', notedAt: new Date('2026-10-01T00:00:00Z') });
+    await w.db.run('UPDATE exclusions SET lifted_at = ? WHERE id = ?', ['2026-10-05T00:00:00.000Z', ex.id]);
+    const r = await w.fiche.read(w.asPaul, w.lea.id);
+    expect(r.ok && r.value.callRefusal).toBe('no_consent');
+  });
+
+  it('une fiche sans numéro le dit, même avec un accord', async () => {
+    const w = await world();
+    const bare = await w.store.createPerson({ networkId: w.net.id, agentId: w.paul.id, firstName: 'Sans', lastName: 'Numéro' });
+    await w.store.addConsent({ networkId: w.net.id, personId: bare.id, purpose: 'prospecting', channel: 'phone', proof: 'accord test', givenAt: new Date('2026-10-02T10:00:00Z') });
+    const r = await w.fiche.read(w.asPaul, bare.id);
+    expect(r.ok && r.value).toMatchObject({ call: null, callRefusal: 'no_phone' });
   });
 
   it('[R17, R16] « rappel fait » garde la ligne, une seule fois au journal ; refusé à un autre agent et pour une tâche inconnue', async () => {

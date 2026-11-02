@@ -106,6 +106,18 @@ describe('A03 · fiche du client dans l’application', () => {
     expect(b.els['fiche-corps']!.all().filter((e) => e.tagName === 'a')).toEqual([]);
   });
 
+  it('[R03] sans accord ni demande, pas de bouton d’appel, et l’écran dit pourquoi ; sans numéro, il le dit aussi', async () => {
+    const a = await app({ ...base(), '/v1/fiches/p-1/resume': ok({ ...FICHE, call: null, callRefusal: 'no_consent' }) });
+    buttons(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
+    await a.tick();
+    expect(tels(a.els['fiche-corps']!)).toEqual([]);
+    expect(a.els['fiche-corps']!.textContent).toContain('Appel fermé : pas d’accord par téléphone ni de demande de cette personne.');
+    const b = await app({ ...base(), '/v1/fiches/p-1/resume': ok({ ...FICHE, call: null, callRefusal: 'no_phone' }) });
+    buttons(b.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
+    await b.tick();
+    expect(b.els['fiche-corps']!.textContent).toContain('Aucun numéro sur la fiche.');
+  });
+
   it('[R16] une fiche refusée ne montre rien et garde la clé ; un identifiant mal formé n’est jamais demandé', async () => {
     const a = await app({ ...base(), '/v1/fiches/p-1/resume': async () => Response.json({ ok: false, rule: 'R16', code: 'not_assigned' }, { status: 403 }) });
     buttons(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
@@ -168,6 +180,7 @@ describeWithSqlite('A03 · routes de la fiche et du rappel', () => {
     const env: Env = { DB: d1, MODE: 'essai', API_KEYS: JSON.stringify(keys) };
     const call = (path: string, key: string, method = 'GET') => worker.fetch(new Request(`${BASE}${path}`, { method, headers: { authorization: `Bearer ${key}` } }), env);
 
+    await fiches.addConsent({ networkId: network.id, personId: lea.id, purpose: 'reply', channel: 'phone', proof: 'message reçu test', givenAt: new Date('2025-12-01T00:00:00Z') });
     const mine = await call(`/v1/fiches/${lea.id}/resume`, KEY_AGENT);
     expect(mine.status).toBe(200);
     const body = (await mine.json()) as { data: { call: string; contact: unknown; callbacks: unknown[] } };
