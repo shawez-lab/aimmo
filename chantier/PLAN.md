@@ -1561,6 +1561,45 @@ Décidé, lecture prudente : tous les chiffres viennent de la base, par des requ
 - Critères : un agent qui se connecte garde son écran actuel, sans rien du réseau [R68] ; la direction voit chaque total égal à la somme de ses lignes [R69], les agents listés par identifiant, jamais classés [R14] ; écran accessible, sans texte générique.
 - Attend : rien.
 
+**M13 · Les finances à l'écran.**
+
+Voie : 2
+
+Trouvé le 2026-11-02 par la voie 2, en comparant les routes de l'API aux appels des écrans : M13 calcule tout, mais personne ne peut lire le rapport du matin ni les commissions, régler la grille, rapporter un encaissement ou un reversement, ni faire un avoir. Sans ces gestes, aucune commission ne devient payée. Fichiers à part (`packages/api/app/finances.ts`, `/app/finances.js`), une seule entrée posée dans l'application. Ids `K..` à la suite.
+Restes trouvés de la même façon, à découper ensuite par la voie 2, un écran à la fois : M16 cessions, repreneurs, engagements et barèmes ; M15 remise des clés, gestion, garants et modèles de bail ; M11 tâches, satisfaction et remerciements ; M18 prospection et opposition des partenaires ; M20 mesure et engagements ; M19 bibliothèque et options ; M09 comparatif et historique des offres ; M17 loyers. M06 reste à la voie 1 (D11 à D13).
+
+### K10 · Le rapport du matin à l'écran
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : K06, K08
+- Cahier : M13, « Rapport du matin » ; R68, R13, R201.
+- Objectif : l'agent lit son rapport du jour sur « Mes chiffres », la direction le sien sur « Le réseau », ligne par ligne, avec la période couverte ; le rapport d'un jour passé se relit.
+- Critères : chacun ne lit que le sien, par la seule route du rapport [R68] (test) ; pas encore de rapport (avant 7 h 30, jour férié, week-end) dit en français, sans erreur (test) ; hors réseau et refus dits, session changée sans mélange (tests) ; script à part et budget tenus [R201] (test).
+- Attend : rien.
+
+### K11 · Commissions, encaissement et reversement pour la direction
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : K10
+- Cahier : M13, « Commissions », « Factures » ; R67, R69, R70, R16.
+- Objectif : la direction voit chaque commission (statut, parts, dates) et ce qu'elle attend d'elle ; elle rapporte l'encaissement puis le versement avec la référence de sa preuve, en deux appuis, et lit l'échéance des 24 h ouvrées.
+- Critères : aucun montant ne se saisit [R67] (test) ; les parts refont le total des honoraires à l'écran, un écart est dit [R69] (test) ; encaissement proposé seulement sur une commission facturée et versement seulement après encaissement [R67, R70] (tests) ; date future, preuve invalide, double geste dits en français (tests) ; un agent n'a pas cet écran [R16] (test).
+- Attend : rien (H26 pour une vraie facture).
+
+### K12 · Grille des commissions, budget de l'IA, factures émises et avoirs
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : K11
+- Cahier : M13, « Commissions », « Factures », « Alertes » ; R16, R71, R69.
+- Objectif : la direction règle une nouvelle version de la grille et ses seuils d'alerte, lit les factures émises, corrige une facture par un avoir avec sa raison, et télécharge l'export comptable d'une période.
+- Critères : réservé à la direction [R16] (test) ; un avoir se confirme en deux appuis et ne change pas la facture [R71] (test) ; taux hors bornes et date passée dits en français (tests) ; l'export part avec la clé dans l'en-tête, jamais dans l'adresse [R13] (test) ; budget tenu [R201] (test).
+- Attend : H26 pour une vraie facture.
+
+### K13 · Le chemin de chaque euro (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : K11
+- Cahier : M13, « Commissions », « La commission de l'agent est versée sous 24 h ouvrées » ; R68, R69, R70.
+- Objectif : aucun réseau ne le montre : l'agent suit en direct où est son argent, dossier par dossier : ses parts, l'étape atteinte, le jour de l'encaissement, l'heure limite des 24 h ouvrées promises, et si la promesse a été tenue, avec son propre total recompté à l'écran. La réponse de `/pilotage/commissions` reçoit l'encaissement, l'échéance et le versement.
+- Critères : un agent n'a que ses parts, jamais celles d'un autre ni les honoraires d'un dossier où il n'a qu'un partage [R68] (test) ; l'heure limite vient du serveur, jamais recalculée à l'écran [R70] (test) ; versement en retard et à l'heure dits (tests) ; le total refait la somme de ses lignes [R69] (test) ; aucun classement ni comparaison avec un autre agent [R14] (test).
+- Attend : rien.
+
 **M14 · Réseau et académie, juillet 2027.**
 
 Voie : 2
