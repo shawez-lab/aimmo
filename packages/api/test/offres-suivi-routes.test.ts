@@ -114,6 +114,9 @@ describeWithSqlite('O10 · suivi des offres pour l’écran', () => {
 
   it('[R56] [R26] un message d’essai laisse l’offre à transmettre ; le mandant est refusé comme acquéreur, sous toutes ses fiches', async () => {
     const t = await setup();
+    // Le vendeur a une adresse et a donné son accord : le message passe le contrôle central, en essai.
+    await t.store.addIdentifier({ networkId: t.network.id, agentId: t.alexId, personId: t.personId, kind: 'email', value: 'vendeur@exemple.test' });
+    await t.store.addConsent({ networkId: t.network.id, agentId: t.alexId, personId: t.personId, purpose: 'suivi_mandat', channel: 'email', proof: 'mandat signé', givenAt: new Date('2027-02-10T09:00:00.000Z') });
     const offer = await t.record();
     const sent = await t.call(t.agent, 'POST', `/offres/${offer.id}/transmission`, { via: 'message' });
     expect(sent.body.data).toMatchObject({ via: 'message', counted: false });
