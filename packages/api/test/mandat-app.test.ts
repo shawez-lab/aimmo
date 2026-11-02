@@ -277,6 +277,15 @@ describe('D12 · écran « Mandat »', () => {
     expect(text).not.toContain('<span');
   });
 
+  it('[R39] un second mandat refusé par le code est dit en français', async () => {
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'POST /v1/biens/b1/scans-mandat': ok({ ref: 'mandats/b1/s.pdf' }), [SIGN]: no(400, 'mandate_in_force') });
+    await t.open();
+    await t.press('Contrôler avant signature');
+    t.fillSign();
+    await t.press('Enregistrer la signature');
+    expect(t.state()).toBe('Un mandat est déjà en cours sur ce bien : ce document ne se signe pas.');
+  });
+
   it('[R41] la signature en ligne n’existe pas sur cet écran tant que l’avocat ne l’a pas validée (H24)', () => {
     expect(MANDAT_SCRIPT).not.toContain('signature-en-ligne');
   });

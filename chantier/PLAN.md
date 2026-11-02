@@ -952,6 +952,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12
 - Cahier : M06 ; R39, R41, R42.
 - Objectif : refuser, à la première demande, de signer un mandat sur un bien dont un mandat est vivant ; annulé, rétracté ou échu, le bien se rouvre. Le passage d'un mandat simple à un exclusif reste à trancher par écrit dans la tâche.
+- Décidé (2026-11-02), lecture prudente : passer d'un mandat simple à un exclusif demande d'abord d'annuler le simple au registre, ou d'attendre sa fin ; un enregistrement arrêté avant son numéro est refusé si un autre mandat est devenu vivant, un document déjà numéroté finit toujours. Deux demandes vraiment simultanées sur deux documents ne sont pas fermées : la base n'a pas de transaction sur plusieurs requêtes, et aucun index ne dit « vivant ».
 - Critères : un second mandat sur un bien au mandat vivant est refusé, sans numéro (test [R39]) ; une reprise n'est pas refusée (test) ; un mandat annulé, rétracté ou échu laisse signer (tests) ; le refus est dit en français à l'écran.
 - Attend : rien.
 

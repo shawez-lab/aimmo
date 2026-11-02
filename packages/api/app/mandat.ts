@@ -26,6 +26,7 @@ const REFUSALS = {
   scan_deja_utilise: 'Ce scan prouve déjà une autre signature : choisissez le bon fichier.',
   depot_ferme: 'Le dépôt des fichiers n’est pas encore branché : rien ne se signe sans le scan.',
   already_signed: 'Ce mandat est déjà signé.',
+  mandate_in_force: 'Un mandat est déjà en cours sur ce bien : ce document ne se signe pas.',
   not_a_mandate: 'Ce document n’est pas un mandat.',
   no_number_field: 'Ce modèle n’a pas de place pour le numéro au registre : voyez avec la direction.',
   not_configured: 'Le registre des mandats n’est pas encore réglé : voyez avec la direction.',
