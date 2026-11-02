@@ -107,7 +107,7 @@ export const OFFRES_JS = `
         var make = globalThis.AIMMO_OFFRES;
         try { delete globalThis.AIMMO_OFFRES; } catch (e) { /* rien */ }
         if (mine !== session || typeof make !== 'function') { resolve(false); return; }
-        offresScreen = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, checkbox: checkbox, show: show, ID: ID, key: function () { return currentKey; }, session: function () { return session; }, bump: function () { session += 1; } });
+        offresScreen = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, checkbox: checkbox, show: show, ID: ID, openDossier: openDossier, key: function () { return currentKey; }, session: function () { return session; }, bump: function () { session += 1; } });
         resolve(offresScreen.open(id, reference));
       });
       s.addEventListener('error', function () {
@@ -164,7 +164,7 @@ globalThis.AIMMO_OFFRES = function (t) {
       if (res.gone || mine !== seq) return false;
       // Le geste a réussi, seule la relecture manque : on le dit, sans laisser un formulaire périmé à l'écran.
       if (!res.ok && message) { clear(body()); state(message + ' Rouvrez cet écran pour le relire.'); return true; }
-      if (!res.ok) { state(why(res, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
+      if (!res.ok) { state(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : why(res, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
       clear(body());
       state(message || '');
       draw(res.body.data);
@@ -280,6 +280,7 @@ globalThis.AIMMO_OFFRES = function (t) {
     box.appendChild(el('p', 'État : ' + (STATES[o.state] || 'inconnu') + left));
     box.appendChild(el(o.next === 'aucun' ? 'p' : 'strong', STEPS[o.next] || STEPS.aucun));
     gesture(box, o);
+    if (o.file && ID.test(o.file.id)) box.appendChild(button('Voir le dossier de vente', function () { var ref = cur.reference; wipe(); return t.openDossier(o.file.id, ref); }));
     var sheet = el('ul', null, 'constats');
     box.appendChild(button('Voir le contrôle', act(function () { return control(sheet, o.id); })));
     box.appendChild(sheet);

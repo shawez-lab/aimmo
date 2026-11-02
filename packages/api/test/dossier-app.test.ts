@@ -1,0 +1,191 @@
+import { runInNewContext } from 'node:vm';
+import { describe, expect, it } from 'vitest';
+import { DOSSIER_SCRIPT } from '../app/dossier.ts';
+import { OFFRES_SCRIPT } from '../app/offres.ts';
+import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
+import { AGENT_APP_FILES } from '../src/agent-app.ts';
+import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+
+// Tout est inventé.
+const KEY = 'k'.repeat(40);
+const HTML = AGENT_APP_FILES['/app/']!;
+const JS = AGENT_APP_FILES['/app/app.js']!;
+type Answer = () => Promise<Response>;
+type Call = { method: string; url: string; body: unknown };
+const ok = (data: unknown): Answer => async () => Response.json({ ok: true, mode: 'essai', data });
+const no = (status: number, code: string): Answer => async () => Response.json({ ok: false, code }, { status });
+const PATH = {
+  fileId: 'f1', today: '2027-03-11', earliestActDay: '2027-04-20', conditional: true, plannedActDay: '2027-04-01', late: true,
+  holder: { reason: 'piece_manquante', item: 'titre_propriete', who: 'vendeur', notBefore: null },
+  lines: [{ reason: 'piece_manquante', item: 'titre_propriete', who: 'vendeur', notBefore: null }, { reason: 'reponse_commune', item: 'reponse_preemption', who: 'commune', notBefore: '2027-04-20' }],
+};
+const PIECES = {
+  fileId: 'f1', missing: ['titre_propriete'], unknown: [], identity: 'non_verifiee', complete: false,
+  lines: [
+    { piece: 'titre_propriete', side: 'vendeur', reason: 'toujours', received: null },
+    { piece: 'dpe', side: 'vendeur', reason: 'bien_bati', received: { piece: 'dpe', version: 2, ref: 'dossiers/f1/x.pdf', issuedOn: '2027-03-10', receivedAt: '2027-03-11T08:00:00.000Z' } },
+  ],
+};
+const SCHEDULE = { fileId: 'f1', dates: {}, lines: [{ deadline: 'fin_retractation', source: 'calcul', day: '2027-03-22', status: 'datee', from: 'notification_acquereur' }, { deadline: 'acte', source: 'saisie', day: null, status: 'a_saisir', from: 'acte_prevu' }] };
+const READS: Record<string, Answer> = {
+  'GET /v1/dossiers/f1/chemin': ok({ path: PATH, seller: {}, buyer: {} }),
+  'GET /v1/dossiers/f1/pieces': ok(PIECES),
+  'GET /v1/dossiers/f1/echeancier': ok(SCHEDULE),
+  'GET /v1/dossiers/f1/acte': ok(null),
+};
+const BASE: Record<string, Answer> = {
+  'GET /v1/moi': ok({ role: 'agent', firstName: 'Alex' }),
+  'GET /v1/plan-du-jour': ok(null),
+  'GET /v1/contacts-chauds': ok({ contacts: [] }),
+  'GET /v1/annonces': ok([{ id: 'b1', reference: 'AV-1', city: 'Dijon', state: 'sous_offre' }]),
+  'GET /v1/offres/biens/b1/suivi': ok({ count: 1, registerIntact: true, offers: [{ seq: 1, id: 'o1', amountEur: 200000, offeredEur: 200000, netSellerEur: null, conditionDetails: [], daysLeft: null, state: 'acceptee', buyer: null, downPaymentEur: null, loanEur: null, next: 'aucun', proposalId: null, file: { id: 'f1', compromisStarted: true }, history: [] }] }),
+  ...READS,
+};
+const pdf = (type = 'application/pdf', size = 8) => ({ type, size, arrayBuffer: async () => new TextEncoder().encode('%PDF-1.7').buffer });
+
+async function run(answers: Record<string, Answer> = {}) {
+  const { els, listeners, document } = fakeDocument(pageIds(HTML));
+  const storage = new Map<string, string>([['aimmo.cle', KEY]]);
+  const calls: Call[] = [];
+  const table: Record<string, Answer> = { ...BASE, ...answers };
+  const context: Record<string, unknown> = {
+    document: { ...document, body: { appendChild() {}, removeChild() {} } },
+    localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
+    fetch: (url: string, init: { method?: string; body?: unknown } = {}) => {
+      const method = init.method ?? 'GET';
+      calls.push({ method, url, body: typeof init.body === 'string' ? JSON.parse(init.body) : (init.body ?? null) });
+      const a = table[`${method} ${url}`];
+      return a ? a() : Promise.reject(new TypeError('hors ligne'));
+    },
+    navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
+    crypto: globalThis.crypto,
+    setTimeout,
+  };
+  runInNewContext(JS, context);
+  listeners.DOMContentLoaded!();
+  const settle = async () => {
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+  await settle();
+  const click = async (b: FakeElement | undefined) => {
+    if (!b) throw new Error('bouton absent');
+    b.listeners.click!({});
+    await settle();
+  };
+  const find = (root: FakeElement, text: string) => root.all().find((e) => e.tagName === 'button' && e.textContent === text);
+  const body = () => els['dossier-corps']!;
+  const state = () => els['dossier-etat']!.textContent;
+  const input = (id: string) => body().all().find((e) => e.attributes.id === id)! as FakeElement & { value: string; files?: unknown[] };
+  // Depuis « Mes biens » : l'écran Offres, puis le dossier de l'offre.
+  const open = async () => {
+    await click(find(els.biens!, 'Offres'));
+    runInNewContext(OFFRES_SCRIPT, context);
+    els.offres!.children.filter((e) => e.tagName === 'script')[0]!.listeners.load!({});
+    await settle();
+    await click(find(els['offres-corps']!, 'Voir le dossier de vente'));
+    const s = els.dossier!.children.filter((e) => e.tagName === 'script');
+    expect(s.map((e) => e.attributes.src)).toEqual(['/app/dossier.js']);
+    runInNewContext(DOSSIER_SCRIPT, context);
+    s[0]!.listeners.load!({});
+    await settle();
+  };
+  return { els, calls, table, body, state, click, find, input, open, posts: () => calls.filter((c) => c.method === 'POST') };
+}
+
+describe('N12 · écran du dossier de vente', () => {
+  it('[R201] le script est à part, et l’application reste dans son budget', () => {
+    expect(AGENT_APP_FILES['/app/dossier.js']).toBe(DOSSIER_SCRIPT);
+    expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
+    expect(budgetProblems({ html: '', js: DOSSIER_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+
+  it('[R61] [R10] depuis l’offre : ce qui tient le dossier, l’acte au plus tôt, les pièces et les échéances, sans date inventée', async () => {
+    const t = await run();
+    await t.open();
+    expect(t.els.dossier!.hidden).toBe(false);
+    const text = t.body().textContent;
+    expect(text).toContain('Pièce manquante : Titre de propriété · au vendeur');
+    expect(text).toContain('Acte au plus tôt : 20 avril 2027, si les points sans date sont levés.');
+    expect(text).toContain('L’acte prévu tombe avant le jour au plus tôt.');
+    expect(text).toContain('Pièces reçues : 1 sur 2');
+    expect(text).toContain('Diagnostic énergétique (vendeur) : reçue, datée du 10 mars 2027, version 2');
+    expect(text).toContain('Titre de propriété (vendeur) : à recevoir');
+    expect(text).toContain('Identité de l’acquéreur à vérifier.');
+    expect(text).toContain('Fin du délai de rétractation : 22 mars 2027');
+    expect(text).toContain('Acte : date à saisir');
+  });
+
+  it('[R10] un délai passé ne tient plus le dossier ; sans droit sur l’acquéreur, son identité n’est pas affirmée', async () => {
+    const lapsed = { reason: 'fin_retractation', item: 'fin_retractation', who: 'acquereur', notBefore: '2027-03-11' };
+    const identity = { reason: 'identite_a_verifier', item: null, who: 'acquereur', notBefore: null };
+    const t = await run({
+      'GET /v1/dossiers/f1/chemin': ok({ path: { ...PATH, holder: lapsed, lines: [lapsed, identity] }, seller: {}, buyer: {} }),
+      'GET /v1/dossiers/f1/pieces': ok({ ...PIECES, identity: 'non_visible' }),
+    });
+    await t.open();
+    const text = t.body().textContent;
+    expect(text).not.toContain('Délai de rétractation en cours');
+    expect(text).toContain('Identité de l’acquéreur : hors de vos droits, voyez avec la direction.');
+    expect(text).not.toContain('Identité de l’acquéreur à vérifier');
+    const u = await run({ 'GET /v1/dossiers/f1/chemin': ok({ path: { ...PATH, holder: lapsed, lines: [lapsed] }, seller: {}, buyer: {} }) });
+    await u.open();
+    expect(u.body().textContent).toContain('Rien ne tient ce dossier.');
+    expect(u.body().textContent).not.toContain('Le reste à lever');
+  });
+
+  it('un dossier clos par l’acte le dit, sans chemin ni dépôt', async () => {
+    const t = await run({ 'GET /v1/dossiers/f1/acte': ok({ signedOn: '2027-06-01' }) });
+    await t.open();
+    const text = t.body().textContent;
+    expect(text).toContain('Acte signé le 1 juin 2027.');
+    expect(text).not.toContain('Ce qui tient le dossier');
+    expect(t.find(t.body(), 'Ranger la pièce')).toBeUndefined();
+    expect(text).toContain('Pièces reçues : 1 sur 2');
+  });
+
+  it('[R15] la pièce se choisit dans la liste attendue : aucune pièce d’identité, aucune référence à saisir', async () => {
+    const t = await run();
+    await t.open();
+    expect(t.input('dossier-piece').children.map((o) => o.value)).toEqual(['', 'titre_propriete', 'dpe']);
+    expect(t.body().textContent).toContain('Une pièce d’identité ne se range jamais ici');
+    expect(t.input('dossier-fichier').attributes.accept).toBe('application/pdf,image/jpeg,image/png');
+  });
+
+  it('[R60] déposer puis ranger : pièce, date et fichier sont demandés ; un refus garde le dépôt, sans le renvoyer', async () => {
+    const ref = 'dossiers/f1/0b6f1d2e-4444-4a2b-8c3d-000000000001.pdf';
+    const t = await run({ 'POST /v1/dossiers/f1/fichiers': ok({ ref }), 'POST /v1/dossiers/f1/pieces': no(400, 'bad_date') });
+    await t.open();
+    const save = () => t.find(t.body(), 'Ranger la pièce');
+    await t.click(save());
+    expect(t.state()).toBe('Choisissez la pièce.');
+    t.input('dossier-piece').value = 'titre_propriete';
+    await t.click(save());
+    expect(t.state()).toBe('Dites la date du document.');
+    t.input('dossier-date').value = '2027-03-10';
+    await t.click(save());
+    expect(t.state()).toBe('Joignez le document.');
+    t.input('dossier-fichier').files = [pdf('text/html')];
+    await t.click(save());
+    expect(t.state()).toBe('Ce fichier n’est pas admis : PDF, JPEG ou PNG.');
+    expect(t.posts()).toEqual([]);
+    const file = pdf();
+    t.input('dossier-fichier').files = [file];
+    await t.click(save());
+    expect(t.state()).toBe('La date du document : un vrai jour, jamais à venir.');
+    t.table['POST /v1/dossiers/f1/pieces'] = ok(PIECES);
+    await t.click(save());
+    expect(t.posts().filter((c) => c.url.endsWith('/fichiers'))).toHaveLength(1);
+    expect(t.posts().at(-1)).toMatchObject({ url: '/v1/dossiers/f1/pieces', body: { piece: 'titre_propriete', ref, issuedOn: '2027-03-10' } });
+    expect(t.state()).toBe('Pièce rangée.');
+  });
+
+  it('une lecture en échec n’est jamais montrée comme un dossier vide ; un fonds de commerce renvoie à son écran', async () => {
+    const t = await run({ 'GET /v1/dossiers/f1/pieces': no(400, 'business') });
+    await t.open();
+    expect(t.state()).toBe('Un fonds de commerce se suit dans « Commerces ».');
+    expect(t.body().children).toEqual([]);
+    const u = await run({ 'GET /v1/dossiers/f1/chemin': no(403, 'not_assigned') });
+    await u.open();
+    expect(u.state()).toBe('Ce dossier n’est pas dans vos droits.');
+  });
+});
