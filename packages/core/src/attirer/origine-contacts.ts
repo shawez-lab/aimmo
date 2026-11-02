@@ -191,7 +191,7 @@ export class OrigineContacts {
   }
 
   /** Ce que la direction lit : la référence d'un bien, le nom d'un agent, jamais leur identifiant. */
-  private async contentTitle(networkId: string, kind: ContentKind, ref: string): Promise<string> {
+  async contentTitle(networkId: string, kind: ContentKind, ref: string): Promise<string> {
     if (kind === 'bien') return (await this.db.first<{ reference: string }>('SELECT reference FROM properties WHERE id = ? AND network_id = ?', [ref, networkId]))?.reference ?? 'retiré';
     if (kind === 'agent') {
       const a = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ? AND network_id = ?', [ref, networkId]);

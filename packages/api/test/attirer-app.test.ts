@@ -400,7 +400,7 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       const t = await run();
       await t.ouvrir();
       const shown = t.texts();
-      expect(shown).toContain('Page publiée.');
+      expect(shown).toContain('Mentions complètes : sa page peut être servie.');
       expect(shown).toContain('Page non publiée : son immatriculation manque.');
       expect(shown).toContain('Page non publiée : le titulaire de la carte manque.');
       expect(shown).not.toContain('statut_manquant');

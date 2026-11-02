@@ -430,7 +430,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
   function agentLine(a, i) {
     var li = el('li');
     li.appendChild(el('strong', a.name));
-    li.appendChild(el('p', a.missing ? (MISSING[a.missing] || 'Page non publiée.') : 'Page publiée.', a.missing ? 'etat' : 'doux'));
+    li.appendChild(el('p', a.missing ? (MISSING[a.missing] || 'Page non publiée.') : 'Mentions complètes : sa page peut être servie.', a.missing ? 'etat' : 'doux'));
     var marks = details(li, 'Immatriculation');
     var rsac = field(marks, 'attirer-a-rsac-' + i, 'Numéro RSAC');
     rsac.value = a.rsacNumber || '';
