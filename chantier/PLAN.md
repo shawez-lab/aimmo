@@ -268,7 +268,8 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : chaque route répond sous son rôle [R16] ; la suite complète reste verte.
 
 ### AC03 · Écran : noter et retirer un accord depuis la fiche
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02), lecture prudente : l'écran envoie le jour seul (`givenOn`) ; aujourd'hui vaut l'heure du serveur, un jour passé son premier instant à Paris, donc un retrait du même jour ferme la porte ; sujet, canal et jour à choisir à chaque fois ; « déjà en cours » suit le calcul du bouton d'appel. Téléphone et axe-core vérifiés une fois à la main (Chromium 390 × 844, clair et sombre, aucune violation) : axe-core n'est pas une dépendance du dépôt. L'application touche son budget de poids (48 Ko) : le prochain ajout devra se charger à part. Relecture forte : 6 P1 corrigés ; Codex à sa limite, fusion sans lui (#248).
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC02
 - Cahier : Conformité ; système de design [R201].
@@ -293,7 +294,7 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Objectif : le bouton « appeler » suit les horaires et la fréquence du décret, à vérifier d'abord dans sa source officielle.
 - Critères : hors des horaires, le bouton est fermé et l'écran dit quand il rouvre [R03] ; une demande de la personne ne se ferme pas de la même façon si le décret ne la vise pas, décision écrite ici ; fréquence : à découper si aucune trace d'appel n'existe encore.
 
-### AC07 · Fréquence des appels de prospection
+### AC09 · Fréquence des appels de prospection
 - Statut : à faire
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC06
@@ -301,6 +302,14 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Objectif : l'agent note qu'il a appelé et, s'il y a lieu, que la personne a refusé ; le bouton compte ces appels. Aucune trace d'appel n'existe aujourd'hui.
 - Critères : à vérifier d'abord dans le texte officiel (H41) : plus de 4 appels de prospection en 30 jours ferment le bouton ; un refus le ferme 60 jours [R203] ; une demande de la personne ne compte pas ; rien de personnel au journal [R13].
 - Attend : H41 pour les chiffres ; deux articles de 2022 disent 4 appels en 30 jours et un refus de 60 jours ou de deux mois.
+
+### AC10 · Le prénom de la fiche gardée partout où un texte part
+- Statut : à faire
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : AC03
+- Cahier : R08.
+- Objectif : trouvé en réparant main (#249) : sur une fiche réunie, le prénom est lu sans ordre, et celui d'un doublon fait refuser le texte en R08. Corrigé pour les alertes de M08 ; reste `investir/alertes.ts`, `mandats/gagner/anciens-contacts.ts` (3 fois), `mandats/suivi-valeur.ts`, `estimation/suivi.ts`. Une seule fonction, partagée.
+- Critères : sur une fiche réunie à deux prénoms, chaque texte part avec le prénom de la fiche gardée, à chaque passage (test [R08]) ; si elle n'en a pas, celui d'un doublon, toujours le même.
 
 ## Phase 2 : la preuve à Dijon
 
