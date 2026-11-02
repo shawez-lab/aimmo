@@ -11,6 +11,7 @@ import { OFFRES_HTML, OFFRES_JS } from './offres.ts';
 import { DOSSIER_HTML, DOSSIER_JS } from './dossier.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { ATTIRER_ENTRY_HTML, ATTIRER_HTML, ATTIRER_JS } from './attirer.ts';
+import { FICHE_GOOGLE_HOME_HTML, FICHE_GOOGLE_HTML, FICHE_GOOGLE_JS } from './fiche-google.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
 import { REPRISE_ENTRY_HTML, REPRISE_JS } from './reprise.ts';
 import { CANDIDATURES_ENTRY_HTML, INTEGRATION_CSS, INTEGRATION_HOME_HTML, INTEGRATION_HTML, INTEGRATION_JS } from './integration.ts';
@@ -90,7 +91,7 @@ export const INDEX_HTML = `<!doctype html>
 <p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
 <button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
 </section>
-${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
+${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${FICHE_GOOGLE_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
 <h3 id="titre-chiffres-accueil">Mes chiffres</h3>
 <p class="etat">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
 <button id="chiffres-ouvrir" type="button" class="secondaire">Voir mes chiffres</button>
@@ -140,7 +141,7 @@ ${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTM
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
-${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OFFRES_HTML}${DOSSIER_HTML}${STUDIO_HTML}${GAGNER_HTML}${ATTIRER_HTML}${INTEGRATION_HTML}<section id="chiffres" hidden>
+${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OFFRES_HTML}${DOSSIER_HTML}${STUDIO_HTML}${GAGNER_HTML}${ATTIRER_HTML}${FICHE_GOOGLE_HTML}${INTEGRATION_HTML}<section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
 <div class="periodes" role="group" aria-label="Période">
@@ -615,6 +616,7 @@ export const APP_JS = `'use strict';
     wipeStudio();
     wipeGagner();
     wipeAttirer();
+    wipeGoogle();
     wipeIntegration();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
@@ -1747,7 +1749,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${INTEGRATION_JS}${REPRISE_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1764,7 +1766,7 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'studio', 'gagner', 'attirer', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1902,6 +1904,7 @@ ${LOUER_JS}
       wipeCommerces();
       wipeGagner();
       wipeAttirer();
+      wipeGoogle();
       wipeIntegration();
       show('accueil');
       day(currentKey, session);
@@ -1926,6 +1929,8 @@ ${LOUER_JS}
     $('gagner-ouvrir').addEventListener('click', function () { openGagner(); });
     $('attirer-retour').addEventListener('click', function () { if (attirerScreen && attirerScreen.inside()) { openAttirer(); return; } wipeAttirer(); openReseau(reseauRange); });
     $('attirer-ouvrir').addEventListener('click', function () { openAttirer(); });
+    $('fiche-google-ouvrir').addEventListener('click', function () { openGoogle(null); });
+    $('fiche-google-retour').addEventListener('click', function () { var from = googleAgent; wipeGoogle(); googleAgent = null; if (from) { openAttirer(); return; } home(); });
     $('integration-ouvrir').addEventListener('click', function () { openIntegration('integration'); });
     $('academie-ouvrir').addEventListener('click', function () { openIntegration('academie'); });
     $('candidatures-ouvrir').addEventListener('click', function () { openIntegration('candidatures'); });

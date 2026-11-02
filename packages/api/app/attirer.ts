@@ -144,7 +144,7 @@ export const ATTIRER_JS = `
         var make = globalThis.AIMMO_ATTIRER;
         try { delete globalThis.AIMMO_ATTIRER; } catch (e) { /* rien */ }
         if (mine !== session || typeof make !== 'function') { resolve(false); return; }
-        attirerScreen = make({ $: $, el: el, clear: clear, send: send, show: show, button: button, field: field, select: select, details: details, date: date, key: function () { return currentKey; }, session: function () { return session; }, next: function () { session += 1; return session; } });
+        attirerScreen = make({ $: $, el: el, clear: clear, send: send, show: show, button: button, field: field, select: select, details: details, date: date, openGoogle: openGoogle, key: function () { return currentKey; }, session: function () { return session; }, next: function () { session += 1; return session; } });
         resolve(attirerScreen.open(''));
       });
       s.addEventListener('error', function () {
@@ -452,6 +452,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     url.setAttribute('inputmode', 'url');
     function putOn() { setSite(url.value.trim(), true, 'Site mis en service.'); }
     form.appendChild(site && site.active ? confirmed('Changer l’adresse', SITE_WARNING, putOn) : button('Mettre en service', putOn));
+    li.appendChild(button('Fiche Google de cet agent', function () { t.openGoogle(a.agentId); }));
     return li;
   }
   function renderAgents(res) {
