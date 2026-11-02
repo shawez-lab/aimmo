@@ -80,7 +80,42 @@ export interface GbpDraft {
   validatedAt: string | null;
 }
 
+/**
+ * Où en est un texte, dit par le code pour l'écran (AT14) : l'écran n'en déduit rien, il montre le mot et ses gestes.
+ * `note_essai` : validé et noté, rien n'est parti [R26] ; `envoi_coupe` : une réservation sans résultat depuis plus d'une
+ * heure, que seule la direction peut clore après avoir regardé la fiche Google.
+ */
+export type GbpDraftState = 'a_valider' | 'a_envoyer' | 'envoi_en_cours' | 'envoi_coupe' | 'echec' | 'note_essai' | 'envoye' | 'bien_retire';
+
+export interface GbpScreenDraft {
+  draftId: string;
+  body: string;
+  linkUri: string | null;
+  origin: GbpDraft['origin'];
+  validatedAt: string | null;
+  state: GbpDraftState;
+}
+
+/** Ce que l'écran de la fiche Google montre, pour l'agent de la fiche ou la direction [R16]. */
+export interface GbpScreen {
+  agentId: string;
+  agentFirstName: string;
+  /** Vrai seulement si l'interface Google existe (H07) : sinon l'écran le dit, sans erreur. */
+  connected: boolean;
+  mode: 'essai' | 'reel';
+  /** Seule la direction règle la fiche et clôt un envoi coupé. */
+  canConfigure: boolean;
+  location: Location | null;
+  reviewsTotal: number;
+  reviewsWaiting: number;
+  reviews: { reviewId: string; rating: number; comment: string | null; reviewedAt: string; draft: GbpScreenDraft | null }[];
+  publications: GbpScreenDraft[];
+}
+
 const MAX_TEXT = 1500;
+const CLAIM_RELEASE_MS = 3_600_000;
+const SCREEN_REVIEWS = 50;
+const SCREEN_POSTS = 20;
 const AI_TIMEOUT_MS = 20_000;
 
 /* ---------- Le contrôle des textes ---------- */
@@ -695,7 +730,7 @@ export class FicheGoogle {
     if (!claim) return { ok: false, rule: null, code: 'invalide' };
     const results = await this.db.first<{ n: number }>("SELECT count(*) AS n FROM gbp_sends WHERE draft_id = ? AND mode = ? AND sent_at >= ?", [claim.draft_id, this.mode, claim.claimed_at]);
     if (Number(results?.n) > 0) return { ok: false, rule: null, code: 'invalide' };
-    if (this.now().getTime() - Date.parse(claim.claimed_at) < 3_600_000) return { ok: false, rule: null, code: 'occupe' };
+    if (this.now().getTime() - Date.parse(claim.claimed_at) < CLAIM_RELEASE_MS) return { ok: false, rule: null, code: 'occupe' };
     await this.db.run("INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, ?, ?, NULL, ?, 'echec', ?, ?)", [
       this.newId(), row.network_id, row.agent_id, claim.draft_id, row.kind, this.mode, this.actor(viewer), this.now().toISOString(),
     ]);
@@ -717,5 +752,93 @@ export class FicheGoogle {
       out.push({ reviewId: r.id, rating: Number(r.rating), comment: r.comment, reviewedAt: r.reviewed_at, drafts: drafts.map(toDraft) });
     }
     return { ok: true, value: out };
+  }
+
+  /** Lire les avis depuis l'écran : l'agent de la fiche ou la direction. Sans Google branché, c'est dit, sans erreur (H07). */
+  async readReviews(viewer: Viewer, agentId: string): Promise<{ ok: true; added: number } | GbpRefusal> {
+    const allowed = await this.allowed(viewer, agentId);
+    if (!allowed.ok) return allowed;
+    return this.importReviews(viewer.networkId, agentId);
+  }
+
+  /** Préparer la prochaine publication depuis l'écran, sous les mêmes limites que `duePost`. Rien de prêt : `null`. */
+  async preparePost(viewer: Viewer, agentId: string): Promise<{ ok: true; value: GbpDraft | null } | GbpRefusal> {
+    const allowed = await this.allowed(viewer, agentId);
+    if (!allowed.ok) return allowed;
+    return this.duePost(viewer.networkId, agentId);
+  }
+
+  /** La fiche, ses avis et ses publications, chaque texte avec son état, décidé ici. Lecture seule. */
+  async screen(viewer: Viewer, agentId: string): Promise<{ ok: true; value: GbpScreen } | GbpRefusal> {
+    const allowed = await this.allowed(viewer, agentId);
+    if (!allowed.ok) return allowed;
+    const networkId = viewer.networkId;
+    const sends = await this.db.all<{ draft_id: string; outcome: 'essai' | 'envoye' | 'echec'; sent_at: string }>(
+      "SELECT draft_id, outcome, sent_at FROM gbp_sends WHERE network_id = ? AND agent_id = ? AND mode = ? AND draft_id IS NOT NULL ORDER BY sent_at, rowid",
+      [networkId, agentId, this.mode],
+    );
+    const sendsOf = new Map<string, { outcome: string; sent_at: string }[]>();
+    for (const x of sends) sendsOf.set(x.draft_id, [...(sendsOf.get(x.draft_id) ?? []), x]);
+    const departed = (draftId: string): string | null => sendsOf.get(draftId)?.find((x) => x.outcome !== 'echec')?.outcome ?? null;
+    const claims = await this.db.all<{ draft_id: string; target: string; claimed_at: string }>(
+      'SELECT c.draft_id, c.target, c.claimed_at FROM gbp_claims c JOIN gbp_drafts d ON d.id = c.draft_id WHERE c.network_id = ? AND d.agent_id = ? AND c.mode = ? ORDER BY c.attempt',
+      [networkId, agentId, this.mode],
+    );
+    const lastClaim = new Map(claims.map((c) => [c.target, c]));
+    const stateOf = async (row: DraftRow): Promise<GbpDraftState> => {
+      const gone = departed(row.id);
+      if (gone) return gone === 'essai' ? 'note_essai' : 'envoye';
+      const claim = lastClaim.get(row.kind === 'reponse' ? `review:${row.review_id}` : `draft:${row.id}`);
+      if (claim && !(sendsOf.get(claim.draft_id) ?? []).some((x) => x.sent_at >= claim.claimed_at)) {
+        return this.now().getTime() - Date.parse(claim.claimed_at) < CLAIM_RELEASE_MS ? 'envoi_en_cours' : 'envoi_coupe';
+      }
+      if (row.kind === 'publication') {
+        const listing = await this.publishedListing(networkId, agentId, row.property_id!);
+        if (!listing || listing.seq !== Number(row.listing_seq)) return 'bien_retire';
+      }
+      if (!row.validated_at) return 'a_valider';
+      return sendsOf.has(row.id) ? 'echec' : 'a_envoyer';
+    };
+    const toScreen = async (row: DraftRow): Promise<GbpScreenDraft> => ({ draftId: row.id, body: row.body, linkUri: row.link_uri, origin: row.origin, validatedAt: row.validated_at, state: await stateOf(row) });
+    const count = await this.db.first<{ total: number; waiting: number }>(
+      `SELECT count(*) AS total, coalesce(sum(CASE WHEN EXISTS (SELECT 1 FROM gbp_drafts d JOIN gbp_sends x ON x.draft_id = d.id WHERE d.review_id = r.id AND x.mode = ? AND x.outcome IN ('essai', 'envoye')) THEN 0 ELSE 1 END), 0) AS waiting
+         FROM gbp_reviews r WHERE r.network_id = ? AND r.agent_id = ?`,
+      [this.mode, networkId, agentId],
+    );
+    const rows = await this.db.all<{ id: string; rating: number; comment: string | null; reviewed_at: string }>(
+      `SELECT id, rating, comment, reviewed_at FROM gbp_reviews WHERE network_id = ? AND agent_id = ? ORDER BY reviewed_at DESC, id LIMIT ${SCREEN_REVIEWS}`,
+      [networkId, agentId],
+    );
+    const reviews: GbpScreen['reviews'] = [];
+    for (const r of rows) {
+      const drafts = await this.db.all<DraftRow>(`${DRAFT_SELECT} WHERE d.review_id = ? ORDER BY d.created_at, d.rowid`, [r.id]);
+      // Le texte parti reste celui qu'on montre ; sinon le dernier préparé, le seul qui puisse encore partir.
+      const shown = drafts.find((d) => departed(d.id)) ?? drafts[drafts.length - 1];
+      reviews.push({ reviewId: r.id, rating: Number(r.rating), comment: r.comment, reviewedAt: r.reviewed_at, draft: shown ? await toScreen(shown) : null });
+    }
+    // Le dernier texte de chaque bien : un texte périmé, remplacé, ne peut plus partir.
+    const posts = await this.db.all<DraftRow>(
+      `${DRAFT_SELECT} WHERE d.network_id = ? AND d.agent_id = ? AND d.kind = 'publication'
+         AND d.rowid = (SELECT d2.rowid FROM gbp_drafts d2 WHERE d2.property_id = d.property_id AND d2.kind = 'publication' ORDER BY d2.created_at DESC, d2.rowid DESC LIMIT 1)
+       ORDER BY d.created_at DESC, d.rowid DESC LIMIT ${SCREEN_POSTS}`,
+      [networkId, agentId],
+    );
+    const publications: GbpScreenDraft[] = [];
+    for (const row of posts) publications.push(await toScreen(row));
+    return {
+      ok: true,
+      value: {
+        agentId,
+        agentFirstName: allowed.firstName,
+        connected: this.client !== undefined,
+        mode: this.mode,
+        canConfigure: viewer.role === 'direction',
+        location: await this.location(networkId, agentId),
+        reviewsTotal: Number(count?.total ?? 0),
+        reviewsWaiting: Number(count?.waiting ?? 0),
+        reviews,
+        publications,
+      },
+    };
   }
 }

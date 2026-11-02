@@ -540,3 +540,143 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     expect(await s.db.all('SELECT outcome FROM gbp_sends ORDER BY rowid')).toEqual([{ outcome: 'echec' }, { outcome: 'envoye' }]);
   });
 });
+
+describeWithSqlite('AT14 · ce que l’écran de la fiche Google montre', () => {
+  const screen = async (s: Awaited<ReturnType<typeof setup>>, viewer: typeof agent | typeof direction = agent) => {
+    const r = await s.fiche.screen(viewer, 'ag-1');
+    if (!r.ok) throw new Error(r.code);
+    return r.value;
+  };
+
+  it('[R16] un agent ne voit que sa fiche, et le refus est écrit au journal ; la direction voit et règle', async () => {
+    const s = await setup();
+    await withReview(s);
+    expect(await s.fiche.screen(otherAgent, 'ag-1')).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    const refused = await s.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'acces.refuse'");
+    expect(refused.some((e) => e.data.includes('fiche_google'))).toBe(true);
+    expect(await s.fiche.screen({ role: 'agent', userId: 'ag-2', networkId: 'net-1' }, 'ag-2')).toMatchObject({ ok: false, code: 'agent_parti' });
+    expect(await s.fiche.screen({ ...direction, networkId: 'net-2' }, 'ag-1')).toMatchObject({ ok: false, code: 'agent_inconnu' });
+    expect(await screen(s)).toMatchObject({ agentId: 'ag-1', canConfigure: false, reviewsTotal: 1, reviewsWaiting: 1 });
+    expect(await screen(s, direction)).toMatchObject({ canConfigure: true, location: { locationRef: 'locations/123' } });
+    // Le nom de l'auteur n'est jamais gardé, ni montré.
+    expect(JSON.stringify(await screen(s))).not.toContain('Gaspard');
+    expect(await s.fiche.readReviews(otherAgent, 'ag-1')).toMatchObject({ ok: false, code: 'role' });
+    expect(await s.fiche.preparePost(otherAgent, 'ag-1')).toMatchObject({ ok: false, code: 'role' });
+    s.client.calls.length = 0;
+    expect(await s.fiche.readReviews(otherAgent, 'ag-1')).toMatchObject({ ok: false });
+    expect(s.client.calls).toEqual([]);
+  });
+
+  it('sans Google branché (H07), l’écran répond sans erreur et le dit ; la lecture répond « pas de service »', async () => {
+    const s = await setup();
+    const sans = new FicheGoogle(s.db, s.journal, { now: s.now });
+    expect(await sans.screen(agent, 'ag-1')).toMatchObject({ ok: true, value: { connected: false, mode: 'essai', reviews: [], publications: [], reviewsTotal: 0, reviewsWaiting: 0 } });
+    expect(await sans.readReviews(agent, 'ag-1')).toEqual({ ok: false, rule: null, code: 'sans_service' });
+    expect((await screen(s)).connected).toBe(true);
+  });
+
+  it('[R154] [R26] en essai, le texte passe de « à valider » à « noté », et Google n’est jamais appelé pour écrire', async () => {
+    const s = await setup();
+    const id = await withReview(s);
+    expect((await screen(s)).reviews[0]!.draft).toBeNull();
+    const draft = await s.fiche.draftReply(agent, id);
+    if (!draft.ok) throw new Error(draft.code);
+    const first = (await screen(s)).reviews[0]!.draft!;
+    expect(first).toMatchObject({ draftId: draft.value.draftId, body: draft.value.body, state: 'a_valider', validatedAt: null });
+    expect(await s.fiche.publish(agent, first.draftId)).toMatchObject({ ok: false, code: 'non_valide' });
+    await s.fiche.validate(agent, first.draftId);
+    expect((await screen(s)).reviews[0]!.draft).toMatchObject({ state: 'a_envoyer' });
+    expect((await screen(s)).reviewsWaiting).toBe(1);
+    expect(await s.fiche.publish(agent, first.draftId)).toEqual({ ok: true, mode: 'essai' });
+    const after = await screen(s);
+    expect(after.reviews[0]!.draft).toMatchObject({ draftId: first.draftId, state: 'note_essai' });
+    expect(after.reviewsWaiting).toBe(0);
+    expect(s.client.writes()).toEqual([]);
+  });
+
+  it('[R154] un texte corrigé est un nouveau texte à relire ; le texte parti reste celui qu’on montre', async () => {
+    const s = await setup();
+    const id = await withReview(s);
+    const a = await s.fiche.draftReply(agent, id);
+    if (!a.ok) throw new Error(a.code);
+    await s.fiche.validate(agent, a.value.draftId);
+    const b = await s.fiche.writeReply(agent, id, 'Merci beaucoup pour votre confiance.');
+    if (!b.ok) throw new Error(b.code);
+    expect((await screen(s)).reviews[0]!.draft).toMatchObject({ draftId: b.value.draftId, body: 'Merci beaucoup pour votre confiance.', state: 'a_valider', validatedAt: null });
+    // L'ancienne validation ne vaut pas pour le nouveau texte.
+    expect(await s.fiche.publish(agent, a.value.draftId)).toMatchObject({ ok: false, code: 'texte_change' });
+    await s.fiche.validate(agent, b.value.draftId);
+    await s.fiche.publish(agent, b.value.draftId);
+    await s.fiche.writeReply(agent, id, 'Un autre merci, sans suite.');
+    expect((await screen(s)).reviews[0]!.draft).toMatchObject({ draftId: b.value.draftId, state: 'note_essai' });
+  });
+
+  it('un vrai envoi : parti, en échec puis réessayable, en cours, coupé, puis clos par la direction', async () => {
+    const s = await setup({ mode: 'reel' });
+    const id = await withReview(s);
+    const d = await s.fiche.draftReply(agent, id);
+    if (!d.ok) throw new Error(d.code);
+    await s.fiche.validate(agent, d.value.draftId);
+    s.client.fail = true;
+    expect(await s.fiche.publish(agent, d.value.draftId)).toMatchObject({ ok: false, code: 'echec' });
+    expect((await screen(s)).reviews[0]!.draft!.state).toBe('echec');
+    expect((await screen(s)).reviewsWaiting).toBe(1);
+    // Une coupure entre la réservation et la réponse de Google.
+    await s.db.run("INSERT INTO gbp_claims (id, network_id, draft_id, target, mode, attempt, claimed_by, claimed_at) VALUES ('cut', 'net-1', ?, ?, 'reel', 2, 'agent:ag-1', ?)", [d.value.draftId, `review:${id}`, s.now().toISOString()]);
+    expect((await screen(s)).reviews[0]!.draft!.state).toBe('envoi_en_cours');
+    s.advanceDays(1);
+    expect((await screen(s)).reviews[0]!.draft!.state).toBe('envoi_coupe');
+    expect(await s.fiche.releaseClaim(agent, d.value.draftId)).toMatchObject({ ok: false, code: 'role' });
+    expect(await s.fiche.releaseClaim(direction, d.value.draftId)).toEqual({ ok: true });
+    expect((await screen(s)).reviews[0]!.draft!.state).toBe('echec');
+    s.client.fail = false;
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect((await screen(s)).reviews[0]!.draft!.state).toBe('envoye');
+    expect((await screen(s)).reviewsWaiting).toBe(0);
+  });
+
+  it('[R154] [R42] une publication préparée depuis l’écran : sans prix, à valider, et « retirée » quand le bien ne peut plus être diffusé', async () => {
+    const s = await setup();
+    expect((await screen(s)).publications).toEqual([]);
+    expect(await s.fiche.preparePost(agent, 'ag-1')).toEqual({ ok: true, value: null });
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison lumineuse avec jardin');
+    const p = await s.fiche.preparePost(agent, 'ag-1');
+    if (!p.ok || !p.value) throw new Error('rien de préparé');
+    const shown = (await screen(s)).publications;
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toMatchObject({ draftId: p.value.draftId, state: 'a_valider', origin: 'code', linkUri: 'https://camille.exemple.test/biens/b1' });
+    expect(shown[0]!.body).not.toContain('250');
+    // Au plus une par période, même demandée de nouveau.
+    expect(await s.fiche.preparePost(agent, 'ag-1')).toEqual({ ok: true, value: null });
+    s.noMandate.add('b1');
+    expect((await screen(s)).publications[0]!.state).toBe('bien_retire');
+    s.noMandate.delete('b1');
+    await listing(s.db, 'b1', 2, 'en_vente', 'Maison lumineuse, nouvelle annonce');
+    expect((await screen(s)).publications[0]!.state).toBe('bien_retire');
+    // Le texte d'une version plus récente remplace l'ancien : un seul texte par bien à l'écran.
+    s.advanceDays(8);
+    const q = await s.fiche.preparePost(agent, 'ag-1');
+    if (!q.ok || !q.value) throw new Error('rien de préparé');
+    expect((await screen(s)).publications.map((x) => [x.draftId, x.state])).toEqual([[q.value.draftId, 'a_valider']]);
+  });
+
+  it('une fiche non réglée n’empêche pas l’écran, et préparer le dit', async () => {
+    const s = await setup();
+    await s.db.run("INSERT INTO agents (id, network_id, first_name, last_name, created_at, updated_at) VALUES ('ag-4', 'net-1', 'Inès', 'Neuve', 'x', 'x')");
+    const ines = { role: 'agent' as const, userId: 'ag-4', networkId: 'net-1' };
+    expect(await s.fiche.screen(ines, 'ag-4')).toMatchObject({ ok: true, value: { location: null, agentFirstName: 'Inès' } });
+    expect(await s.fiche.preparePost(ines, 'ag-4')).toMatchObject({ ok: false, code: 'sans_fiche' });
+    expect(await s.fiche.readReviews(ines, 'ag-4')).toMatchObject({ ok: false, code: 'sans_fiche' });
+  });
+
+  it('l’écran ne montre que les 50 avis les plus récents, et compte les autres', async () => {
+    const s = await setup();
+    s.client.reviewsToGive = Array.from({ length: 52 }, (_, i) => ({ reviewRef: `reviews/r${i}`, rating: 5, comment: null, authorName: null, reviewedAt: new Date(Date.UTC(2026, 0, i + 1)).toISOString() }));
+    expect(await s.fiche.readReviews(agent, 'ag-1')).toEqual({ ok: true, added: 52 });
+    const v = await screen(s);
+    expect(v.reviews).toHaveLength(50);
+    expect(v.reviewsTotal).toBe(52);
+    expect(v.reviewsWaiting).toBe(52);
+    expect(v.reviews[0]!.reviewedAt).toBe(new Date(Date.UTC(2026, 0, 52)).toISOString());
+  });
+});

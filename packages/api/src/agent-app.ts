@@ -19,6 +19,7 @@ import { INVESTIR_SCRIPT } from '../app/investir.ts';
 import { STUDIO_SCRIPT } from '../app/studio.ts';
 import { GAGNER_SCRIPT } from '../app/gagner.ts';
 import { ATTIRER_SCRIPT } from '../app/attirer.ts';
+import { FICHE_GOOGLE_SCRIPT } from '../app/fiche-google.ts';
 import { INTEGRATION_SCRIPT } from '../app/integration.ts';
 import { APP_CSS, APP_JS, ICON_SVG, INDEX_HTML, MANIFEST, swJs } from '../app/fichiers.ts';
 
@@ -75,6 +76,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/gagner.js': { body: GAGNER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Attirer » de la direction (AT12), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/attirer.js': { body: ATTIRER_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // L'écran « Fiche Google » (AT14), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
+  '/app/fiche-google.js': { body: FICHE_GOOGLE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les écrans de M14, « Mon intégration », « Académie » et « Candidatures » (J14), chargés à leur première ouverture [R201].
   '/app/integration.js': { body: INTEGRATION_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/sw.js': { body: SW_JS, type: 'text/javascript; charset=utf-8' },

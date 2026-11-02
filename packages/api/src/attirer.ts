@@ -216,6 +216,11 @@ export function attirerRoutes(): AttirerRoute[] {
     // AT06 · fiche Google
     { method: 'POST', pattern: new RegExp(`${P}/google/agents/${ID}/fiche$`), name: 'attirer.google_fiche', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).google.setLocation(v, id!, { locationRef: b.locationRef, title: b.title, websiteUri: b.websiteUri }))) },
     { method: 'GET', pattern: new RegExp(`${P}/google/agents/${ID}/avis$`), name: 'attirer.google_avis', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.reviews(v, id!)) },
+    // AT14 · l'écran de la fiche : l'agent ouvre la sienne sans connaître son identifiant, la direction choisit un agent.
+    { method: 'GET', pattern: new RegExp(`${P}/google/moi$`), name: 'attirer.google_moi', roles: ['agent'], handle: async (s, v) => reply(await services(s).google.screen(v, v.userId)) },
+    { method: 'GET', pattern: new RegExp(`${P}/google/agents/${ID}$`), name: 'attirer.google_ecran', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.screen(v, id!)) },
+    { method: 'POST', pattern: new RegExp(`${P}/google/agents/${ID}/lecture$`), name: 'attirer.google_lecture', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.readReviews(v, id!)) },
+    { method: 'POST', pattern: new RegExp(`${P}/google/agents/${ID}/publication$`), name: 'attirer.google_publication', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.preparePost(v, id!)) },
     { method: 'POST', pattern: new RegExp(`${P}/google/avis/${ID}/brouillon$`), name: 'attirer.google_brouillon', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.draftReply(v, id)) },
     { method: 'POST', pattern: new RegExp(`${P}/google/avis/${ID}/reponse$`), name: 'attirer.google_reponse', roles: STAFF, handle: withBody(async (s, v, [id], b) => reply(await services(s).google.writeReply(v, id, b.body))) },
     { method: 'POST', pattern: new RegExp(`${P}/google/textes/${ID}/valider$`), name: 'attirer.google_valider', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.validate(v, id)) },

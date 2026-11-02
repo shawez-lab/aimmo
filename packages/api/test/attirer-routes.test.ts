@@ -94,6 +94,21 @@ async function preparedNetwork(t: Awaited<ReturnType<typeof setup>>) {
 }
 
 describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
+  it('[R16] AT14 : un agent ouvre sa fiche Google sans connaître son identifiant, jamais celle d’un autre ; sans Google, l’écran répond sans erreur', async () => {
+    const t = await setup();
+    expect(await t.call(camille, 'GET', '/attirer/google/moi')).toMatchObject({ status: 200, body: { ok: true, data: { agentId: 'ag-1', connected: false, mode: 'essai', canConfigure: false, location: null, reviews: [], publications: [] } } });
+    expect(await t.call(direction, 'GET', '/attirer/google/moi')).toMatchObject({ status: 403, body: { rule: 'R16', code: 'role' } });
+    expect(await t.call(camille, 'GET', '/attirer/google/agents/ag-2')).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    expect(await t.call(direction, 'GET', '/attirer/google/agents/ag-9')).toMatchObject({ status: 404, body: { rule: 'R16' } });
+    expect(await t.call(direction, 'GET', '/attirer/google/agents/ag-1')).toMatchObject({ status: 200, body: { data: { canConfigure: true } } });
+    expect(await t.call(camille, 'POST', '/attirer/google/agents/ag-2/lecture')).toMatchObject({ status: 403 });
+    expect(await t.call(camille, 'POST', '/attirer/google/agents/ag-2/publication')).toMatchObject({ status: 403 });
+    expect(await t.call(camille, 'POST', '/attirer/google/agents/ag-1/lecture')).toMatchObject({ status: 400, body: { code: 'sans_fiche' } });
+    expect((await t.call(direction, 'POST', '/attirer/google/agents/ag-1/fiche', { locationRef: 'locations/9', title: 'Camille Exemple', websiteUri: CAMILLE })).status).toBe(200);
+    expect(await t.call(camille, 'POST', '/attirer/google/agents/ag-1/lecture')).toMatchObject({ status: 400, body: { code: 'sans_service' } });
+    expect(await t.call(camille, 'POST', '/attirer/google/agents/ag-1/publication')).toMatchObject({ status: 200, body: { ok: true, data: null } });
+  });
+
   it('[R16] chaque route refuse, avant de lire le corps, un rôle qu’elle n’admet pas, et l’écrit au journal', async () => {
     const t = await setup();
     const routes = attirerRoutes();
