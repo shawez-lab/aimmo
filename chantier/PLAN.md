@@ -432,7 +432,7 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Critères : confirmation, rappel et remerciement sur une fiche réunie portent le prénom de la fiche gardée (test [R08]).
 
 ### AC12 · Appels notés : branchement, écran, fusion défaite
-- Statut : à faire
+- Statut : en cours
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC09
 - Cahier : Conformité, démarchage téléphonique ; R204.
