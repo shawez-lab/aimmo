@@ -9,30 +9,30 @@ import { AGENT_CONSENT_LABELS } from '@aimmo/core';
  * la fait relire ; un seul envoi à la fois ; une personne exclue n'a plus de formulaire, retirer reste possible [R02, R04].
  * Le script n'a aucun commentaire : l'application est tout près de son budget de poids [R201].
  */
-const FORM_PURPOSES: Readonly<Record<string, string>> = Object.freeze({ ...AGENT_CONSENT_LABELS });
+const FORM_PURPOSES: Readonly<Record<string, string>> = AGENT_CONSENT_LABELS;
 
 export const ACCORDS_JS = `
   var ACCORD_PURPOSES = ${JSON.stringify(FORM_PURPOSES)};
+  var ACCORD_SHOWN = { appointment: 'Rendez-vous', reply: 'Demande de la personne' };
   var ACCORD_CHANNELS = { phone: 'Téléphone', email: 'Mail', sms: 'SMS', whatsapp: 'WhatsApp' };
   var ACCORD_REFUSALS = {
-    role: 'Réservé à l’agent du client et à la direction.',
     not_assigned: 'Ce client est suivi par un autre agent.',
-    bad_purpose: 'Choisissez le sujet de l’accord.',
-    bad_channel: 'Choisissez le canal de l’accord.',
+    bad_purpose: 'Choisissez le sujet.',
+    bad_channel: 'Choisissez le canal.',
     bad_proof: 'Écrivez comment la personne a donné son accord : 10 à 1 000 caractères.',
     bad_date: 'Choisissez le jour où la personne l’a donné.',
-    future_date: 'La date de l’accord ne peut pas être dans le futur.',
-    stopped: 'Cette personne a demandé l’arrêt : aucun accord ne peut être noté.',
-    excluded: 'Cette personne est exclue : aucun accord ne peut être noté.',
+    future_date: 'Ce jour est dans le futur.',
+    stopped: 'Cette personne a demandé l’arrêt : aucun accord possible.',
+    excluded: 'Cette personne est exclue : aucun accord possible.',
     given_before_withdrawal: 'Un accord a été retiré depuis ce jour : il faut un accord donné après le retrait.',
-    given_before_lift: 'Cette date est antérieure à la fin de son exclusion : il faut un accord donné après.',
+    given_before_lift: 'Ce jour précède la fin de son exclusion : il faut un accord donné après.',
     unknown_consent: 'Cet accord n’est plus sur cette fiche.'
   };
   function accordRefusal(res, fallback) {
     if (res.offline) return 'Pas de réseau : rien n’est enregistré.';
     return (res.body && ACCORD_REFUSALS[res.body.code]) || fallback;
   }
-  var ACCORD_STALE = { stopped: 1, excluded: 1, not_assigned: 1, unknown_consent: 1, role: 1 };
+  var ACCORD_STALE = { stopped: 1, excluded: 1, not_assigned: 1, unknown_consent: 1 };
   function accordFailed(res, personId, state, fallback) {
     var message = accordRefusal(res, fallback);
     if (res.body && ACCORD_STALE[res.body.code]) {
@@ -63,7 +63,7 @@ export const ACCORDS_JS = `
     var state = cState();
     var list = el('ul', null, 'liste');
     (f.consents || []).forEach(function (c) {
-      var li = line((PURPOSES[c.purpose] || ACCORD_PURPOSES[c.purpose] || 'autre accord') + ' par ' + channel(c.channel), c.withdrawnAt ? 'Retiré le ' + date(c.withdrawnAt) : 'Donné le ' + date(c.givenAt));
+      var li = line((ACCORD_PURPOSES[c.purpose] || ACCORD_SHOWN[c.purpose] || 'Autre accord') + ' par ' + channel(c.channel), c.withdrawnAt ? 'Retiré le ' + date(c.withdrawnAt) : 'Donné le ' + date(c.givenAt));
       if (!c.withdrawnAt && typeof c.id === 'string' && ID.test(c.id)) {
         li.appendChild(accordButton('Retirer cet accord', function () {
           state.textContent = 'Enregistrement…';
@@ -81,13 +81,13 @@ export const ACCORDS_JS = `
     if (f.contact && f.contact.allowed) {
       var form = el('div', null, 'decision');
       var id = cSeq();
-      form.appendChild(el('p', 'Notez seulement ce que la personne vous a dit elle-même. La parole d’un proche n’est pas un accord.', 'doux'));
+      form.appendChild(el('p', 'Seulement ce que la personne a dit elle-même : la parole d’un proche n’est pas un accord.', 'doux'));
       var purpose = cSelect(form, id + '-sujet', 'Sujet', accordChoices(ACCORD_PURPOSES));
       var via = cSelect(form, id + '-canal', 'Canal', accordChoices(ACCORD_CHANNELS));
       var day = field(form, id + '-date', 'Donné le');
       day.setAttribute('type', 'date');
       day.setAttribute('max', cToday());
-      var proof = field(form, id + '-preuve', 'Comment elle l’a donné : où, quand, par quels mots', 'textarea');
+      var proof = field(form, id + '-preuve', 'Comment elle l’a donné', 'textarea');
       form.appendChild(accordButton('Noter l’accord', function () {
         state.textContent = 'Enregistrement…';
         return send(base, 'POST', { purpose: purpose.value, channel: via.value, proof: proof.value, givenOn: day.value }).then(function (res) {

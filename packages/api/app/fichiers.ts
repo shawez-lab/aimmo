@@ -368,7 +368,6 @@ export const APP_JS = `'use strict';
   // Les codes internes ne s'affichent jamais : un code inconnu prend un libellé général.
   function stage(code) { return STAGES[code] || 'en cours'; }
   function channel(code) { return CHANNELS[code] || 'autre canal'; }
-  var PURPOSES = { valuation_follow_up: 'suivi de l’avis de valeur', value_tracking: 'suivi de la valeur du bien', prospecting: 'prospection', appointment: 'rendez-vous' };
   var EXCLUSIONS = { network_list: 'sur la liste d’exclusion', stop: 'a demandé l’arrêt', refused: 'a dit non', sold: 'a déjà vendu', followed_elsewhere: 'suivi par quelqu’un d’autre' };
   function date(iso) {
     var d = new Date(iso);
