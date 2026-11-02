@@ -886,6 +886,23 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : un avenant signé après le compromis ne change ni dans un sens ni dans l'autre le mandat en vigueur ce jour-là (tests [R63]) ; un avenant signé le jour même compte ; un mandat signé après le compromis ne masque pas le précédent (test [R63]) ; à la date d'aujourd'hui, la diffusion ne change pas (test [R42]).
 - Attend : rien.
 
+### D11 · Lire et déposer depuis le téléphone : documents du bien et scan du mandat
+- Statut : à faire
+- Trouvé le 2026-11-02 (après N13) : aucun écran n'appelle `/v1/documents`, `/v1/mandats` ni `/v1/signatures` ; aucune route ne liste les documents d'un bien, un document généré se perd donc une fois l'écran quitté ; `signature-papier` attend un `scanRef` que personne ne saurait saisir.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : D04, N12
+- Cahier : M06 ; R16, R39, R40, R41.
+- Objectif : une lecture des documents et du mandat en cours d'un bien, et le mandant possible (le propriétaire de la fiche liée au bien), pour l'agent du bien ; le dépôt du scan signé, sur le modèle de `dossiers/depot.ts`, dont la référence rendue sert à `signature-papier`.
+- Critères : seul l'agent du bien, la direction et la conformité lisent [R16] ; seul l'agent du bien ou la direction dépose, droits vérifiés avant de lire un octet [R16] ; type confirmé par les premiers octets et empreinte recalculée ; un scan absent du stockage est refusé [R10] ; ni contenu ni donnée personnelle au journal [R13].
+- Attend : H25 pour le dépôt réel.
+
+### D12 · Écran « Mandat » dans l'application
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : D11
+- Cahier : M06 ; Feuille de route, février 2027 : « premier mandat de l'agence généré par AIMMO et numéroté dans le registre de l'agence » ; R39, R40, R41, R201.
+- Objectif : depuis « Mes biens », l'agent génère le mandat, lit les contrôles ligne par ligne, enregistre la signature sur papier avec le scan déposé, voit le numéro au registre et l'exemplaire ; écran chargé à part, sur le système de design.
+- Critères : un seul échec de contrôle et rien ne se signe, la ligne dite en français [R41] ; un document d'essai est dit tel à l'écran [R40] ; aucun identifiant ni référence à saisir [R16] ; l'écran ne calcule ni numéro ni honoraires [R39] ; signature en ligne absente tant que H24 n'est pas fait ; budget et accessibilité tenus [R201].
+- Attend : H08 pour un mandat réel, H23 pour le numéro réel, H25 pour le dépôt réel.
+
 **M08 · Acquéreurs et visites, avril 2027.**
 
 Découpé le 2026-10-27 par la voie 1. Ids `T..` pour Trouver l'acquéreur. Cahier : M08 Acquéreurs et visites ; Feuille de route, avril 2027 : « sur 10 biens tests, au moins 8 des 10 premiers acquéreurs proposés respectent tous les critères obligatoires ».
