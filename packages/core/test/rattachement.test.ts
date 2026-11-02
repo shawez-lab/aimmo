@@ -1,6 +1,9 @@
 import { expect, it } from 'vitest';
 import {
+  Acces,
   DecisionEnvoi,
+  FicheAgent,
+  SqlJournalStore,
   FicheClient,
   FicheUnique,
   Rattachement,
@@ -160,6 +163,31 @@ describeWithSqlite('C02 · rattacher chaque contact à sa fiche', () => {
     ]);
     const decision = await t.decisions.decide(res.personId as string, { channel: 'phone', kind: 'reply', conversationId: view.messages[0]?.conversation_id as string, at: NOW });
     expect(decision.allowed).toBe(true);
+  });
+
+  it('[R03] le formulaire « Être rappelé » ouvre l’appel ; passé 13 mois il le referme, et une nouvelle demande le rouvre', async () => {
+    const t = await setup();
+    const journal = new SqlJournalStore(t.db);
+    const fiche = new FicheAgent(t.db, new Acces(t.db, t.store, t.fiche, journal, { now: () => NOW }), { now: () => NOW });
+    const direction = { role: 'direction' as const, userId: 'dir-1', networkId: t.network.id };
+    const old = new Date(NOW.getTime() - 420 * 86_400_000);
+    const first = await t.rattachement.attach(await t.receive(msg('site', 'form', { name: 'Zoé', identifiers: [phone('0600000210')] }, 'Rappelez-moi', { receivedAt: old })));
+    const personId = first.personId as string;
+    const stale = await fiche.read(direction, personId);
+    expect(stale.ok && stale.value).toMatchObject({ call: null, callRefusal: 'no_consent' });
+
+    await t.rattachement.attach(await t.receive(msg('site', 'form', { name: 'Zoé', identifiers: [phone('0600000210')] }, 'Rappelez-moi encore')));
+    const fresh = await fiche.read(direction, personId);
+    expect(fresh.ok && fresh.value.callRefusal).toBeNull();
+    expect(fresh.ok && fresh.value.call).toMatch(/^tel:/);
+    expect((await t.fiche.view(personId)).consents.filter((c) => c.channel === 'phone')).toHaveLength(2);
+  });
+
+  it('[R03] une demande récente n’ajoute pas de second accord', async () => {
+    const t = await setup();
+    const first = await t.rattachement.attach(await t.receive(msg('site', 'form', { name: 'Zoé', identifiers: [phone('0600000211')] }, 'Rappelez-moi')));
+    await t.rattachement.attach(await t.receive(msg('site', 'form', { name: 'Zoé', identifiers: [phone('0600000211')] }, 'Rappelez-moi encore')));
+    expect((await t.fiche.view(first.personId as string)).consents).toHaveLength(1);
   });
 
   it('[R02] une personne exclue qui écrit est reconnue et rien ne lui répond', async () => {
