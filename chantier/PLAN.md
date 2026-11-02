@@ -545,7 +545,7 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Attend : rien.
 
 ### Q08 · Corriger le classement d'un contact depuis la fiche
-- Statut : à faire
+- Statut : en cours
 - Trouvé le 2026-11-02 par la voie 2 : `POST /v1/qualifications/<id>/correction` n'a aucun écran, et `FicheAgent` ne rend ni le classement ni son identifiant : les corrections qui doivent rejoindre la mesure [Q05] ne peuvent pas être faites. Laissée à la voie 1 : `FicheAgent` et la fiche sont du socle.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : Q05
 - Cahier : M03 ; R16, R201.
