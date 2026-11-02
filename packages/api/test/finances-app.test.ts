@@ -12,6 +12,12 @@ const JS = AGENT_APP_FILES['/app/app.js']!;
 type Answer = () => Promise<Response>;
 const ok = (data: unknown): Answer => async () => Response.json({ ok: true, mode: 'essai', data });
 const no = (status: number, body: unknown): Answer => async () => Response.json(body, { status });
+let clock = 1_800_000_000_000;
+class Clock extends Date {
+  static override now(): number {
+    return clock;
+  }
+}
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
 };
@@ -29,17 +35,20 @@ async function run(role: 'agent' | 'direction', answers: Record<string, Answer> 
   page.body = new FakeElement('body');
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   const calls: { method: string; url: string; auth: string | undefined }[] = [];
+  const sent: string[] = [];
   const table: Record<string, Answer> = { 'GET /v1/moi': ok({ role, firstName: null }), [ROUTE]: ok(REPORT), ...answers };
   const context: Record<string, unknown> = {
     document,
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
-    fetch: (url: string, init: { method?: string; headers?: Record<string, string> } = {}) => {
+    fetch: (url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) => {
       const method = init.method ?? 'GET';
+      if (init.body) sent.push(init.body);
       calls.push({ method, url, auth: init.headers?.authorization });
       const a = table[`${method} ${url}`];
       return a ? a() : Promise.reject(new TypeError('hors ligne'));
     },
     Intl,
+    Date: Clock,
     setTimeout: () => 0,
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
   };
@@ -69,7 +78,7 @@ async function run(role: 'agent' | 'direction', answers: Record<string, Answer> 
     await load();
   };
   const reports = () => calls.filter((c) => c.url.startsWith('/v1/pilotage/rapport-matin'));
-  return { els, calls, table, body, state, texts, press, load, read, reports, scripts };
+  return { els, calls, table, body, state, texts, press, load, read, reports, scripts, bodies: () => sent };
 }
 
 describe('K10 · le rapport du matin à l’écran', () => {
@@ -223,5 +232,308 @@ describe('K10 · le rapport du matin à l’écran', () => {
     const r = handleAgentApp(new Request('https://x.test/app/finances.js'));
     expect(r?.status).toBe(200);
     expect(HTML).not.toContain('AIMMO_FINANCES');
+  });
+});
+
+// Tout est inventé : dossiers, agents, montants, références.
+const COMMISSIONS = 'GET /v1/pilotage/commissions';
+const TASKS = 'GET /v1/pilotage/reversements';
+const BLOCKED = 'GET /v1/pilotage/commissions/a-trancher';
+const PAID = { receivedAt: '2026-10-28T09:00:00.000Z', payoutDueAt: '2026-10-29T09:00:00.000Z', paidAt: null, late: null };
+const SHARES = [
+  { kind: 'reseau', beneficiaryId: null, reason: null, amountCents: 300000 },
+  { kind: 'agent', beneficiaryId: 'alex', reason: null, amountCents: 500000 },
+  { kind: 'partage', beneficiaryId: 'sam', reason: 'binome', amountCents: 200000 },
+];
+const commission = (fileId: string, status: string, extra: object = {}) => ({
+  fileId,
+  agentId: 'alex',
+  compromisOn: '2026-09-01',
+  feeCents: 1000000,
+  feeCharge: 'vendeur',
+  status,
+  steps: [{ status: 'prevue', at: '2026-09-01T10:00:00.000Z' }, { status, at: '2026-10-20T10:00:00.000Z' }],
+  shares: SHARES,
+  payment: null,
+  cancelled: false,
+  ...extra,
+});
+const ALL = [
+  commission('d-prevue', 'prevue'),
+  commission('d-due', 'due'),
+  commission('d-enc', 'facturee'),
+  commission('d-ver', 'facturee', { payment: PAID }),
+  commission('d-paye', 'payee', { payment: { ...PAID, paidAt: '2026-10-28T15:00:00.000Z', late: false } }),
+];
+const TASK = { fileId: 'd-ver', receivedAt: '2026-10-28T09:00:00.000Z', payoutDueAt: '2026-10-29T09:00:00.000Z', alerts: [] as string[] };
+
+async function direction(answers: Record<string, Answer> = {}) {
+  const t = await run('direction', { [COMMISSIONS]: ok(ALL), [TASKS]: ok([TASK]), [BLOCKED]: ok([]), ...answers });
+  const body = () => t.els['commissions-corps']!;
+  const state = () => t.els['commissions-etat']!.textContent;
+  const texts = () => body().all().map((e) => e.textContent).join(' | ');
+  const by = (tag: string) => body().all().filter((e) => e.tagName === tag);
+  const buttons = (text: string) => by('button').filter((e) => e.textContent === text);
+  const voir = async () => {
+    t.els['commissions-voir']!.listeners.click!({});
+    await settle();
+    await t.load();
+  };
+  const click = async (b: FakeElement | undefined) => {
+    if (!b) throw new Error('bouton absent');
+    b.listeners.click!({});
+    await settle();
+  };
+  /** Remplit le geste dont le bouton est `b`, puis l'envoie en deux appuis espacés. */
+  const fill = (b: FakeElement, when: string, ref: string) => {
+    const box = body().all().find((e) => e.children.includes(b))!;
+    const inputs = box.children.filter((e) => e.tagName === 'input');
+    inputs[0]!.value = when;
+    inputs[1]!.value = ref;
+    return box;
+  };
+  const posts = () => t.calls.filter((c) => c.method === 'POST');
+  return { ...t, body, state, texts, by, buttons, voir, click, fill, posts };
+}
+
+describe('K11 · commissions, encaissement et reversement pour la direction', () => {
+  it('[R69] chaque commission est rangée par ce qu’elle attend, avec ses parts et ses dates', async () => {
+    const t = await direction();
+    await t.voir();
+    const titles = t.by('h4').map((e) => e.textContent);
+    expect(titles).toEqual(['À verser (1)', 'À encaisser (1)', 'À facturer (1)', 'Prévues, en attente de l’acte (1)', 'Payées (1)']);
+    expect(t.texts()).toContain('Partage, agent sam (binôme pendant une absence)');
+    expect(t.texts()).toContain('Part du réseau');
+    expect(t.texts()).toContain('à la charge du vendeur');
+    expect(t.texts()).toContain('À verser avant le');
+    expect(t.texts()).not.toContain('Écart');
+  });
+
+  it('[R67] le geste n’est proposé que là où il a sa place : encaissement sur une commission facturée, versement après encaissement', async () => {
+    const t = await direction();
+    await t.voir();
+    expect(t.buttons('Rapporter l’encaissement')).toHaveLength(1);
+    expect(t.buttons('Rapporter le versement')).toHaveLength(1);
+    const lis = t.by('li');
+    const of = (id: string) => lis.find((li) => li.children[0]?.textContent === `Dossier ${id}`)!;
+    expect(of('d-enc').all().some((e) => e.textContent === 'Rapporter l’encaissement')).toBe(true);
+    expect(of('d-ver').all().some((e) => e.textContent === 'Rapporter le versement')).toBe(true);
+    for (const id of ['d-prevue', 'd-due', 'd-paye']) expect(of(id).all().filter((e) => e.tagName === 'button')).toEqual([]);
+  });
+
+  it('[R67] [R70] l’encaissement part en deux appuis, sans aucun montant, et l’échéance dite vient du serveur', async () => {
+    const t = await direction({ 'POST /v1/pilotage/dossiers/d-enc/encaissement': ok({ payoutDueAt: '2026-11-03T15:00:00.000Z' }) });
+    await t.voir();
+    const b = t.buttons('Rapporter l’encaissement')[0]!;
+    t.fill(b, '2026-11-02T10:00', 'releve-2026-11-ligne-14');
+    await t.click(b);
+    expect(t.posts()).toEqual([]);
+    expect(t.buttons('Confirmer : rapporter l’encaissement')).toHaveLength(1);
+    clock += 2000;
+    await t.click(b);
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/pilotage/dossiers/d-enc/encaissement']);
+    const sent = JSON.parse(t.bodies().at(-1)!) as Record<string, unknown>;
+    expect(Object.keys(sent).sort()).toEqual(['proofRef', 'receivedAt']);
+    expect(sent.proofRef).toBe('releve-2026-11-ligne-14');
+    expect(String(sent.receivedAt)).toMatch(/Z$/);
+    expect(sent.receivedAt).toBe(new Date('2026-11-02T10:00').toISOString());
+    expect(t.state()).toContain('Encaissement rangé pour le dossier d-enc : à verser avant le');
+  });
+
+  it('[R70] le versement dit s’il a tenu les 24 h ouvrées', async () => {
+    const t = await direction({ 'POST /v1/pilotage/dossiers/d-ver/reversement': ok({ late: true }) });
+    await t.voir();
+    const b = t.buttons('Rapporter le versement')[0]!;
+    t.fill(b, '2026-11-02T10:00', 'virement-77');
+    await t.click(b);
+    clock += 2000;
+    await t.click(b);
+    expect(Object.keys(JSON.parse(t.bodies().at(-1)!) as object).sort()).toEqual(['paidAt', 'proofRef']);
+    expect(t.state()).toContain('après l’échéance');
+    t.table['POST /v1/pilotage/dossiers/d-ver/reversement'] = ok({ late: false });
+    await t.voir();
+    const c = t.buttons('Rapporter le versement')[0]!;
+    t.fill(c, '2026-11-02T10:00', 'virement-77');
+    await t.click(c);
+    clock += 2000;
+    await t.click(c);
+    expect(t.state()).toContain('dans les 24 h ouvrées');
+  });
+
+  it('date absente et preuve illisible sont dites avant tout envoi', async () => {
+    const t = await direction();
+    await t.voir();
+    const b = t.buttons('Rapporter l’encaissement')[0]!;
+    const box = t.fill(b, '', 'virement-77');
+    const said = () => box.children.find((e) => e.tagName === 'p')!.textContent;
+    await t.click(b);
+    expect(said()).toBe('Indiquez le jour et l’heure.');
+    t.fill(b, '2026-11-02T10:00', 'relevé de Jean');
+    await t.click(b);
+    expect(said()).toContain('lettres sans accent');
+    expect(t.posts()).toEqual([]);
+    expect(t.buttons('Rapporter l’encaissement')).toHaveLength(1);
+  });
+
+  it('[R67] les refus du serveur sont dits en français ; rien n’est rangé deux fois', async () => {
+    const route = 'POST /v1/pilotage/dossiers/d-enc/encaissement';
+    const t = await direction({ [route]: no(400, { ok: false, rule: null, code: 'future_time' }) });
+    await t.voir();
+    const b = t.buttons('Rapporter l’encaissement')[0]!;
+    const box = t.fill(b, '2026-11-02T10:00', 'virement-77');
+    const said = () => box.children.find((e) => e.tagName === 'p')!.textContent;
+    await t.click(b);
+    clock += 2000;
+    await t.click(b);
+    expect(said()).toBe('Cette date est à venir : rapportez seulement ce qui a eu lieu.');
+    expect((b as FakeElement & { disabled?: boolean }).disabled).toBe(false);
+    t.table[route] = async () => Promise.reject(new TypeError('hors ligne'));
+    await t.click(b);
+    clock += 2000;
+    await t.click(b);
+    // Une réponse perdue ne prétend pas que rien n'est rangé.
+    expect(said()).toBe('Réponse perdue : ce geste est peut-être rangé. Relisez la liste avant de recommencer.');
+    // Déjà rapporté depuis un autre appareil : la liste est relue, le refus reste dit.
+    t.table[route] = no(400, { ok: false, rule: null, code: 'already' });
+    t.table[COMMISSIONS] = ok([commission('d-enc', 'facturee', { payment: PAID })]);
+    t.table[TASKS] = ok([{ ...TASK, fileId: 'd-enc' }]);
+    await t.click(b);
+    clock += 2000;
+    await t.click(b);
+    expect(t.state()).toBe('C’est déjà rapporté.');
+    expect(t.buttons('Rapporter l’encaissement')).toEqual([]);
+    expect(t.buttons('Rapporter le versement')).toHaveLength(1);
+  });
+
+  it('[R69] des parts qui ne refont pas les honoraires : l’écart est dit, et aucun geste n’est proposé', async () => {
+    const t = await direction({ [COMMISSIONS]: ok([commission('d-enc', 'facturee', { feeCents: 1000001 })]), [TASKS]: ok([]) });
+    await t.voir();
+    expect(t.texts()).toContain('Écart de');
+    expect(t.buttons('Rapporter l’encaissement')).toEqual([]);
+  });
+
+  it('[R16] sans la liste des reversements, on ne propose aucun geste ; un refus et le hors-réseau sont dits', async () => {
+    const t = await direction({ [TASKS]: no(500, { ok: false }) });
+    await t.voir();
+    expect(t.state()).toBe('Indisponible pour le moment. Réessayez plus tard.');
+    expect(t.by('button')).toEqual([]);
+    t.table[COMMISSIONS] = no(403, { ok: false, rule: 'R16', code: 'role' });
+    t.table[TASKS] = ok([]);
+    await t.voir();
+    expect(t.state()).toBe('Ce n’est pas dans vos droits.');
+    t.table[COMMISSIONS] = async () => Promise.reject(new TypeError('hors ligne'));
+    await t.voir();
+    expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+  });
+
+  it('[R67] un versement rangé dont l’étape a manqué n’est plus à encaisser ni à verser : dit, sans geste', async () => {
+    const t = await direction({ [COMMISSIONS]: ok([commission('d-coupe', 'facturee', { payment: { ...PAID, paidAt: '2026-10-29T15:00:00.000Z', late: true } })]), [TASKS]: ok([]) });
+    await t.voir();
+    expect(t.by('h4').map((e) => e.textContent)).toEqual(['Payées (1)']);
+    expect(t.by('button')).toEqual([]);
+    expect(t.texts()).toContain('après l’échéance');
+    expect(t.texts()).toContain('se reprend au prochain passage');
+  });
+
+  it('[R71] une vente annulée par un avoir n’a plus aucun geste, et ce qui a été encaissé est dit', async () => {
+    const t = await direction({ [COMMISSIONS]: ok([commission('d-a', 'facturee', { cancelled: true }), commission('d-b', 'facturee', { cancelled: true, payment: PAID })]), [TASKS]: ok([{ ...TASK, fileId: 'd-b' }]) });
+    await t.voir();
+    expect(t.by('h4').map((e) => e.textContent)).toEqual(['Ventes annulées par un avoir (2)']);
+    expect(t.by('button')).toEqual([]);
+    expect(t.texts()).toContain('Déjà encaissée le');
+  });
+
+  it('[R63] [R67] ce que le passage laisse de côté est dit en tête, en français, sans geste', async () => {
+    const t = await direction({
+      [COMMISSIONS]: ok([commission('d-ecart', 'prevue')]),
+      [TASKS]: ok([]),
+      [BLOCKED]: ok([{ fileId: 'd-grille', code: 'no_grid' }, { fileId: 'd-ecart', code: 'honoraires' }, { fileId: 'd-autre', code: 'raison_inconnue' }]),
+    });
+    await t.voir();
+    expect(t.by('h4').map((e) => e.textContent)).toEqual(['À trancher (3)']);
+    expect(t.texts()).toContain('Dossier d-grille : aucune grille');
+    expect(t.texts()).toContain('Dossier d-ecart : les honoraires de l’acte');
+    expect(t.texts()).toContain('Dossier d-autre : la commission n’avance plus.');
+    expect(t.texts()).not.toContain('en attente de l’acte');
+    expect(t.state()).toBe('');
+  });
+
+  it('[R70] une échéance dépassée est dite', async () => {
+    const t = await direction({ [TASKS]: ok([{ ...TASK, alerts: ['avant_echeance', 'echeance_depassee'] }]) });
+    await t.voir();
+    expect(t.texts()).toContain('Échéance dépassée.');
+  });
+
+  it('[R69] un écart sur une commission à verser retire aussi le geste', async () => {
+    const t = await direction({ [COMMISSIONS]: ok([commission('d-ver', 'facturee', { feeCents: 1000001, payment: PAID })]) });
+    await t.voir();
+    expect(t.texts()).toContain('Écart de');
+    expect(t.buttons('Rapporter le versement')).toEqual([]);
+  });
+
+  it('deux appuis trop rapprochés n’envoient rien ; sans suite la demande retombe ; pendant l’envoi, le bouton ne répond plus', async () => {
+    const route = 'POST /v1/pilotage/dossiers/d-enc/encaissement';
+    let release: (r: Response) => void = () => undefined;
+    const t = await direction({ [route]: () => new Promise((r) => (release = r)) });
+    await t.voir();
+    const b = t.buttons('Rapporter l’encaissement')[0]!;
+    t.fill(b, '2026-11-02T10:00', 'virement-77');
+    await t.click(b);
+    clock += 500;
+    await t.click(b);
+    expect(t.posts()).toEqual([]);
+    clock += 20000;
+    await t.click(b);
+    expect(t.posts()).toEqual([]);
+    clock += 2000;
+    await t.click(b);
+    expect(t.posts()).toHaveLength(1);
+    await t.click(b);
+    clock += 2000;
+    await t.click(b);
+    expect(t.posts()).toHaveLength(1);
+    t.table[COMMISSIONS] = ok([]);
+    t.table[TASKS] = ok([]);
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    release(Response.json({ ok: true, data: { payoutDueAt: '2026-11-03T15:00:00.000Z' } }));
+    await settle();
+    expect(t.state()).toBe('');
+  });
+
+  it('[R16] une liste qui tarde ne s’affiche pas après la déconnexion', async () => {
+    let release: (r: Response) => void = () => undefined;
+    const t = await direction();
+    await t.voir();
+    t.table[COMMISSIONS] = () => new Promise((r) => (release = r));
+    t.els['commissions-voir']!.listeners.click!({});
+    await settle();
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    release(Response.json({ ok: true, data: ALL }));
+    await settle();
+    expect(t.body().children).toEqual([]);
+  });
+
+  it('[R16] [R68] un agent ne demande jamais les commissions du réseau en se connectant', async () => {
+    const t = await run('agent');
+    await settle();
+    expect(t.calls.filter((c) => c.url.includes('/pilotage/commissions') || c.url.includes('/pilotage/reversements'))).toEqual([]);
+    expect(t.calls.filter((c) => c.url.includes('/a-trancher'))).toEqual([]);
+    expect(t.els.reseau!.hidden).toBe(true);
+  });
+
+  it('aucune commission : c’est dit ; à la déconnexion, tout disparaît', async () => {
+    const t = await direction({ [COMMISSIONS]: ok([]), [TASKS]: ok([]) });
+    await t.voir();
+    expect(t.state()).toContain('Aucune commission');
+    t.table[COMMISSIONS] = ok(ALL);
+    t.table[TASKS] = ok([TASK]);
+    await t.voir();
+    expect(t.body().children.length).toBeGreaterThan(0);
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    expect(t.body().children).toEqual([]);
+    expect(t.state()).toBe('');
   });
 });

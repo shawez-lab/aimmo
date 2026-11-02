@@ -89,6 +89,8 @@ describeWithSqlite('K01 · cycle de la commission', () => {
           { kind: 'reseau', beneficiaryId: null, reason: null, amountCents: 300_000 },
           { kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 700_000 },
         ],
+        payment: null,
+        cancelled: false,
       },
     ]);
     // Rien ne se facture ni ne se paie avant l'acte [R67].
@@ -181,6 +183,31 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     // Des parts qui ne font pas les honoraires (écrites à la main hors du code) : jamais d'étape « prévue » [R69].
     const sum = await t.db.first<{ n: number }>('SELECT SUM(amount_cents) AS n FROM commission_shares WHERE file_id = ?', [t.fileId]);
     expect(sum!.n).toBe(1_000_000);
+  });
+
+  it('[R16] [R63] ce que le passage laisse de côté se lit par la direction seule, avec sa dernière raison, et sort une fois réglé', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    expect(await c.blocked(t.agent)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await c.blocked({ role: 'compliance', networkId: t.network.id, userId: 'c-1' })).toMatchObject({ ok: false, rule: 'R16' });
+    await t.compromis();
+    // Le passage n'y est pas encore allé : rien à trancher.
+    expect(await c.blocked(t.direction)).toEqual({ ok: true, value: [] });
+    await c.sync(t.network.id);
+    expect(await c.blocked(t.direction)).toEqual({ ok: true, value: [{ fileId: t.fileId, code: 'no_grid' }] });
+  });
+
+  it('[R63] un écart à l’acte reste à trancher', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 });
+    await t.compromis();
+    await c.sync(t.network.id);
+    expect(await c.blocked(t.direction)).toEqual({ ok: true, value: [] });
+    await t.db.run("INSERT INTO sale_file_dates (file_id, network_id, kind, version, day, proof_ref, at, by) VALUES (?, ?, 'compromis_signe', 2, '2027-03-09', ?, ?, 'agent:x')", [t.fileId, t.network.id, PROOF, t.now().toISOString()]);
+    await t.acte();
+    await c.sync(t.network.id);
+    expect(await c.blocked(t.direction)).toEqual({ ok: true, value: [{ fileId: t.fileId, code: 'compromis' }] });
   });
 
   it('un compromis corrigé après la commission prévue : l’acte ne la rend pas due, l’écart va au journal', async () => {

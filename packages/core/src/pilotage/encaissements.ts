@@ -58,7 +58,7 @@ export interface PayoutTask {
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: null | 'R67'; code: 'unknown' | 'bad_proof' | 'bad_time' | 'future_time' | 'not_invoiced' | 'already' | 'not_received' | 'before_receipt' };
+type Problem = { ok: false; rule: null | 'R67' | 'R71'; code: 'unknown' | 'bad_proof' | 'bad_time' | 'future_time' | 'not_invoiced' | 'already' | 'not_received' | 'before_receipt' | 'sale_cancelled' };
 
 export class Encaissements {
   private readonly now: () => Date;
@@ -97,6 +97,10 @@ export class Encaissements {
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
+  private cancelled(fileId: string): Promise<unknown> {
+    return this.db.first("SELECT 1 FROM invoices WHERE file_id = ? AND kind = 'avoir' AND json_extract(content, '$.reason') = 'vente_annulee'", [fileId]);
+  }
+
   /** L'encaissement des honoraires d'une commission facturée, une seule fois, avec sa preuve [R70]. */
   async recordReceipt(viewer: Viewer, fileId: string, input: { receivedAt: unknown; proofRef: unknown }): Promise<{ ok: true; payoutDueAt: string } | Refusal | Problem> {
     const refusal = await this.refusal(viewer, 'commission_receipt');
@@ -109,6 +113,7 @@ export class Encaissements {
     if (receivedAt.getTime() > this.now().getTime()) return { ok: false, rule: null, code: 'future_time' };
     const invoiced = await this.db.first<{ at: string }>("SELECT at FROM commission_steps WHERE file_id = ? AND status = 'facturee'", [fileId]);
     if (!invoiced) return { ok: false, rule: 'R67', code: 'not_invoiced' };
+    if (await this.cancelled(fileId)) return { ok: false, rule: 'R71', code: 'sale_cancelled' };
     if (receivedAt.getTime() < Date.parse(invoiced.at)) return { ok: false, rule: null, code: 'bad_time' };
     const due = payoutDueAt(receivedAt).toISOString();
     const { changes } = await this.db.run(
@@ -136,6 +141,8 @@ export class Encaissements {
     if (!paidAt) return { ok: false, rule: null, code: 'bad_time' };
     if (paidAt.getTime() > this.now().getTime()) return { ok: false, rule: null, code: 'future_time' };
     if (paidAt.getTime() < Date.parse(r.received_at)) return { ok: false, rule: null, code: 'before_receipt' };
+    // Un versement déjà rangé se reprend toujours ; un nouveau ne part plus sur une vente annulée.
+    if (!(await this.db.first('SELECT 1 FROM commission_payouts WHERE file_id = ?', [fileId])) && (await this.cancelled(fileId))) return { ok: false, rule: 'R71', code: 'sale_cancelled' };
     const { changes } = await this.db.run('INSERT INTO commission_payouts (file_id, network_id, paid_at, proof_ref, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
       fileId,
       viewer.networkId,
@@ -153,12 +160,18 @@ export class Encaissements {
   }
 
   /**
-   * Le passage : pour chaque reversement non rapporté, une alerte à la direction quand l'échéance approche, une autre
+   * Le passage : reprend ce qu'une coupure a laissé ; puis, pour chaque reversement non rapporté, une alerte à la direction quand l'échéance approche, une autre
    * quand elle est passée ; chacune une seule fois [R18, R70]. Rend le nombre d'alertes nouvelles.
    */
   async run(networkId: string): Promise<number> {
     const now = this.now();
     let made = 0;
+    // Un versement rangé dont l'étape « payée » a manqué (coupure) : repris ici, sans attendre un nouveau geste [R18, R67].
+    const unfinished = await this.db.all<{ file_id: string; proof_ref: string; recorded_by: string }>(
+      "SELECT p.file_id, p.proof_ref, p.recorded_by FROM commission_payouts p WHERE p.network_id = ? AND NOT EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = p.file_id AND s.status = 'payee') ORDER BY p.file_id",
+      [networkId],
+    );
+    for (const u of unfinished) await this.commissions.recordStep(networkId, u.file_id, 'payee', `versement:${u.proof_ref}`.slice(0, 200), u.recorded_by);
     const rows = await this.db.all<{ file_id: string; payout_due_at: string }>(
       'SELECT r.file_id, r.payout_due_at FROM commission_receipts r WHERE r.network_id = ? AND NOT EXISTS (SELECT 1 FROM commission_payouts p WHERE p.file_id = r.file_id) ORDER BY r.payout_due_at, r.file_id',
       [networkId],
