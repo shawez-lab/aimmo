@@ -103,6 +103,26 @@ describeWithSqlite('Q04 · tâche « rappeler » et liste des contacts chauds', 
     expect((await t.rappels.hotList(t.acces, t.as('partner', 'p-1'))).ok).toBe(false);
   });
 
+  it('[R16] la tâche d’une fiche gardée sans agent paraît chez l’agent de la fiche réunie, jamais chez un autre', async () => {
+    const t = await setup();
+    const { q, task } = await t.contact('Zoé', 'Je souhaite vendre ma maison rapidement, c’est urgent.');
+    expect(task).not.toBeNull();
+    expect((await t.store.getPerson(q.person_id))!.agent_id).toBeNull();
+    const followed = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Zoé' });
+    const { fiche } = createCaptation(t.db, t.journal);
+    await fiche.merge({ survivorId: q.person_id, mergedId: followed.id, reason: 'même personne' });
+    const mine = await t.rappels.hotList(t.acces, t.as('agent', t.alex.id));
+    expect(mine.ok && mine.value.contacts.map((c) => c.taskId)).toEqual([task!.id]);
+    const other = await t.rappels.hotList(t.acces, t.as('agent', t.sam.id));
+    expect(other.ok && other.value.contacts).toEqual([]);
+    // La fiche réunie passe à un autre agent, à côté d'une autre : plus personne hors de la direction [R16].
+    const second = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Zoé' });
+    await fiche.merge({ survivorId: q.person_id, mergedId: second.id, reason: 'même personne' });
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, second.id]);
+    const none = await t.rappels.hotList(t.acces, t.as('agent', t.alex.id));
+    expect(none.ok && none.value.contacts).toEqual([]);
+  });
+
   it('[R25] une personne exclue après sa tâche ne figure plus dans la liste ; exclue avant, elle n’a pas de tâche', async () => {
     const t = await setup();
     const a = await t.contact('Hugo', 'Je souhaite vendre ma maison à Talant rapidement.');
