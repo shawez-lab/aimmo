@@ -111,8 +111,8 @@ export class BouclierFonds {
     );
     const seller = await this.db.all<{ id: string; property_id: string; agent_id: string | null }>(
       `SELECT f.id, f.property_id, p.agent_id FROM sale_files f JOIN properties p ON p.id = f.property_id
-       WHERE f.network_id = ? AND p.status = 'under_offer'
-       AND (SELECT m.person_id FROM mandates m WHERE m.network_id = f.network_id AND m.property_id = f.property_id ORDER BY m.signed_at DESC LIMIT 1) IN (${marks})
+       JOIN sale_file_sellers v ON v.file_id = f.id
+       WHERE f.network_id = ? AND p.status = 'under_offer' AND v.person_id IN (${marks})
        ORDER BY f.opened_at, f.id`,
       [networkId, ...ids],
     );

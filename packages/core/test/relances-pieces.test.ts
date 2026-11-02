@@ -137,11 +137,24 @@ describeWithSqlite('N03 · relances des pièces manquantes, en mode essai', () =
       [t.network.id, b2.id, t.buyerId, t.alexId],
     );
     await t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('dossier-2', ?, ?, 'offre-2', ?, 90000, '2027-03-01T13:00:00.000Z', 'test')", [t.network.id, b2.id, t.buyerId]);
+    await t.db.run("INSERT INTO sale_file_sellers (file_id, network_id, person_id, mandate_id, at) VALUES ('dossier-2', ?, ?, 'mandat-2', '2027-03-01T13:00:00.000Z')", [t.network.id, t.personId]);
     t.setClock(paris('2027-03-08', 9));
     // Appartement : 4 pièces du vendeur et 1 de l'acquéreur ; terrain : 2 du vendeur et 1 de l'acquéreur.
     expect(await t.relances.run(t.network.id)).toBe(8);
     const seller = await t.inbox(t.personId);
     expect(seller.filter((m) => m.body.includes(PIECE_LABELS.titre_propriete)).map((m) => /REF-T-\d/.exec(m.body)?.[0]).sort()).toEqual(['REF-T-1', 'REF-T-2']);
+  });
+
+  it('[R19] la relance d’une pièce du vendeur va au vendeur du dossier, même si un autre mandat est signé après l’ouverture', async () => {
+    const t = await setup();
+    const later = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Suivante', lastName: 'Exemple' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: later.id, kind: 'email', value: 'suivante@example.test' });
+    await t.store.addConsent({ networkId: t.network.id, personId: later.id, purpose: SALE_FOLLOW_UP_PURPOSE, channel: 'email', proof: 'mandat', givenAt: new Date('2027-02-10T09:00:00.000Z') });
+    await t.db.run("INSERT INTO mandates (id, network_id, agent_id, person_id, property_id, signed_at, source_kind, recorded_by, created_at) VALUES ('mandat-suivant', ?, ?, ?, ?, '2027-03-05T09:00:00.000Z', 'site', 'test', '2027-03-05T09:00:00.000Z')", [t.network.id, t.alexId, later.id, t.propertyId]);
+    t.setClock(paris('2027-03-08', 9));
+    await t.relances.run(t.network.id);
+    expect(await t.inbox(later.id)).toEqual([]);
+    expect((await t.inbox(t.personId)).length).toBeGreaterThan(0);
   });
 
   it('[R02] jamais à une personne de la liste d’exclusion', async () => {

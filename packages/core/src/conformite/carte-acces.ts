@@ -141,7 +141,7 @@ export type JournalSubjectUse = 'journal' | { excluded: ExclusionReason | 'envoi
 
 /**
  * Chaque sorte d'événement écrit au journal d'un dossier de vente (`sale_file:<id>`), et à qui elle revient. Un dossier
- * a deux parties : l'acquéreur (`buyer_person_id`) et le vendeur (par son mandat). Aucune sorte n'est attribuée par
+ * a deux parties : l'acquéreur (`buyer_person_id`) et le vendeur (`sale_file_sellers`). Aucune sorte n'est attribuée par
  * défaut : un test relève chaque événement écrit sous ce sujet dans le code et exige qu'il soit ici.
  *
  * - `partage` : l'avancée du dossier, que ses deux parties suivent (dates, pièces reçues, acte) : aux deux ;
@@ -401,7 +401,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   proposal_transmissions: { locate: [via('proposal_id', 'offer_proposals')] },
   proposal_responses: { locate: [via('proposal_id', 'offer_proposals')] },
   proposal_tasks: { locate: [via('proposal_id', 'offer_proposals')] },
-  sale_files: { locate: [...by('buyer_person_id'), via('property_id', 'mandates', 'property_id', { tag: 'vendeur' })], own: { buyer_person_id: ['offer_id'] } },
+  // Le vendeur d'un dossier est celui rangé à son ouverture, jamais tout mandant passé ou futur du bien.
+  sale_file_sellers: { locate: by('person_id') },
+  sale_files: { locate: [...by('buyer_person_id'), via('id', 'sale_file_sellers', 'file_id', { tag: 'vendeur' })], own: { buyer_person_id: ['offer_id'] } },
   sale_file_steps: { locate: [via('file_id', 'sale_files')] },
   sale_file_pieces: { locate: [via('file_id', 'sale_files')] },
   sale_file_dates: { locate: [via('file_id', 'sale_files')] },

@@ -12,7 +12,7 @@
  * - seules les pièces que le client a lui-même sont relancées par message : titre de propriété, fiche de
  *   renseignements, règlement de copropriété et procès-verbaux d'assemblée pour le vendeur, fiche de renseignements
  *   pour l'acquéreur ; les diagnostics et les pièces du syndic restent des tâches de l'agent (liste des manquantes) ;
- * - le vendeur est le mandant du dernier mandat du bien ; aucun nom d'une partie dans le message de l'autre [R19] ;
+ * - le vendeur est celui du dossier, rangé à son ouverture (`sale_file_sellers`) ; aucun nom d'une partie dans le message de l'autre [R19] ;
  * - le canal est le mail, la finalité celle du suivi de la vente (`suivi_vente`), dont l'accord est exigé [R03].
  */
 import type { Acces } from '../acces/acces.ts';
@@ -156,7 +156,7 @@ export class RelancesPieces {
     let sent = 0;
     for (const f of files) {
       if (!f.agent_id) continue;
-      const seller = await this.db.first<{ person_id: string }>('SELECT person_id FROM mandates WHERE network_id = ? AND property_id = ? ORDER BY signed_at DESC LIMIT 1', [networkId, f.property_id]);
+      const seller = await this.db.first<{ person_id: string }>('SELECT person_id FROM sale_file_sellers WHERE file_id = ?', [f.id]);
       // Le système lit le dossier comme l'agent du bien, sans rien ouvrir de plus que lui.
       const status = await this.pieces.status({ role: 'agent', networkId, userId: f.agent_id }, f.id);
       if (!status.ok) continue;

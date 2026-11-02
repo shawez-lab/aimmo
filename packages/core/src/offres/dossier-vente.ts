@@ -12,7 +12,8 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
+import { LIVE_MANDATES } from '../espaces/lecture.ts';
 import type { IdentificationCode } from '../conformite/identification.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -78,11 +79,23 @@ export class DossiersVente {
     const property = await this.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [offer.propertyId]);
     if (!property || ['sold', 'rented', 'withdrawn'].includes(property.status)) return { ok: false, rule: null, code: 'not_on_sale' };
     const id = this.newId();
+    const openedAt = this.now().toISOString();
+    // Le vendeur du dossier, rangé une fois : le mandant du dernier mandat vivant ce jour-là. Un ancien mandant, ou celui
+    // d'un mandat signé plus tard, n'est jamais une partie de ce dossier [R96].
+    const seller = await this.db.first<{ id: string; person_id: string }>(
+      `SELECT id, person_id FROM (${LIVE_MANDATES}) WHERE property_id = ? AND signed_at <= ? ORDER BY signed_at DESC, id DESC LIMIT 1`,
+      [found.networkId, offer.propertyId, openedAt],
+    );
     try {
-      await this.db.run(
-        'INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, found.networkId, offer.propertyId, offerId, offer.buyerPersonId, amount, this.now().toISOString(), this.actor(viewer)],
-      );
+      await runBatch(this.db, [
+        {
+          sql: 'INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          params: [id, found.networkId, offer.propertyId, offerId, offer.buyerPersonId, amount, openedAt, this.actor(viewer)],
+        },
+        ...(seller
+          ? [{ sql: 'INSERT INTO sale_file_sellers (file_id, network_id, person_id, mandate_id, at) VALUES (?, ?, ?, ?, ?)', params: [id, found.networkId, seller.person_id, seller.id, openedAt] }]
+          : []),
+      ]);
     } catch (error) {
       if (/UNIQUE/i.test(String(error))) return { ok: false, rule: null, code: 'already_open' };
       throw error;

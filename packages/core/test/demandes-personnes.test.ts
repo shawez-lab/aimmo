@@ -311,6 +311,7 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     // Le vendeur voit le dossier de vente de son bien sans l'acquéreur, ni son offre, ni son financement.
     await insert('mandates', { id: 'm-2', network_id: 'n', agent_id: 'ag', person_id: A, project_id: null, property_id: 'bien-2', signed_at: 't', source_kind: 'x', source_detail: null, source_id: null, recorded_by: 'ag', created_at: 't' });
     await insert('sale_files', { id: 'f-c', network_id: 'n', property_id: 'bien-2', offer_id: 'offre-de-c', buyer_person_id: C, amount_eur: 250000, opened_at: 't', opened_by: 'ag' });
+    await insert('sale_file_sellers', { file_id: 'f-c', network_id: 'n', person_id: A, mandate_id: 'm-2', at: 't' });
     await insert('persons', { id: C, network_id: 'n', created_at: 't', updated_at: 't' });
     await insert('sale_file_financing', { file_id: 'f-c', seq: 1, network_id: 'n', step: 'pret_accorde', day: 'd', declared_by: 'ag', at: 't', by: 'ag' });
     await insert('sale_file_steps', { file_id: 'f-c', step: 'compromis', at: 't', by: 'ag' });
@@ -350,6 +351,7 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     const C = 'pc-0003';
     await insert('mandates', { id: 'm-2', network_id: 'n', agent_id: 'ag', person_id: A, project_id: null, property_id: 'bien-2', signed_at: 't', source_kind: 'x', source_detail: null, source_id: null, recorded_by: 'ag', created_at: 't' });
     await insert('sale_files', { id: 'f-c', network_id: 'n', property_id: 'bien-2', offer_id: 'offre-de-c', buyer_person_id: C, amount_eur: 250000, opened_at: 't', opened_by: 'ag' });
+    await insert('sale_file_sellers', { file_id: 'f-c', network_id: 'n', person_id: A, mandate_id: 'm-2', at: 't' });
     await insert('persons', { id: C, network_id: 'n', created_at: 't', updated_at: 't' });
     // D a eu un mandat sur le même bien, avant A : sa note n'est qu'à lui, jamais à A ni à C.
     const D = 'pd-0004';

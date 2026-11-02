@@ -13,6 +13,7 @@
  * recherche (aucun critère ne se déduit d'un avis) ; le vendeur est le mandant du dernier mandat signé du bien ; son
  * accord pour le suivi de la vente (`suivi_vente`) est exigé par le contrôle central [R03].
  */
+import { LIVE_MANDATES } from '../espaces/lecture.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { trialChannels } from '../captation/essai.ts';
 import { withoutContactDetails } from '../captation/premiere-reponse.ts';
@@ -299,8 +300,9 @@ export class ComptesRendus {
   }
 
   private async seller(networkId: string, propertyId: string): Promise<{ person_id: string; agent_id: string } | null> {
+    // Le dernier mandat vivant : le compte rendu ne part jamais au mandant d'un mandat annulé ou rétracté.
     return this.db.first<{ person_id: string; agent_id: string }>(
-      'SELECT person_id, agent_id FROM mandates WHERE network_id = ? AND property_id = ? ORDER BY signed_at DESC LIMIT 1',
+      `SELECT l.person_id, m.agent_id FROM (${LIVE_MANDATES}) l JOIN mandates m ON m.id = l.id WHERE l.property_id = ? ORDER BY l.signed_at DESC, l.id DESC LIMIT 1`,
       [networkId, propertyId],
     );
   }
