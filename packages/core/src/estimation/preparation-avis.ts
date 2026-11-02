@@ -4,8 +4,10 @@
  * L'agent qui suit le bien donne l'adresse et le type de logement ; le code collecte (E03), calcule (E01) et range le
  * brouillon (E04). L'adresse sert à la collecte et n'est gardée nulle part : ni colonne, ni journal [R13, R46]. Sans
  * fourchette possible, la raison est dite et rien n'est rangé [R27]. Les caractéristiques viennent de la dernière
- * version de la fiche du bien (P01), jamais d'une saisie à part ; son diagnostic passe avant celui des données
- * publiques, pour que le calcul et le texte disent la même classe [R10].
+ * version de la fiche du bien (P01), jamais d'une saisie à part ; ce que la fiche ne dit pas ne compte pas. Le calcul et
+ * le texte disent la même classe énergie : celle de la fiche, sinon, pour une maison seulement, la dernière publiée à
+ * son adresse. Dans un immeuble, la dernière publiée peut être celle d'un autre lot : elle n'est pas prise [R10].
+ * Une source de ventes qui ne répond pas est dite, jamais attendue sans fin.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -17,7 +19,7 @@ import { AvisDeValeur, type ValuationReport, type ValuationWriter } from './avis
 import { CollecteBien, type CollecteServices, type PublicFacts } from './collecte.ts';
 import type { SaleDetail } from './dvf-site.ts';
 import type { DetailedSales } from './en-ligne.ts';
-import { Fourchette, type Condition, type EnergyClass, type EstimatedProperty, type Era, type NoRangeReason } from './fourchette.ts';
+import { Fourchette, type Condition, type EnergyClass, type EstimatedProperty, type Era, type NoRangeReason, type RangeResult } from './fourchette.ts';
 
 export interface PreparationServices {
   collecte: CollecteServices;
@@ -27,10 +29,19 @@ export interface PreparationServices {
 export type PreparationRefusal =
   | { ok: false; rule: 'R16' | 'R30'; code: string }
   | { ok: false; rule: 'R27'; code: NoRangeReason; comparablesFound: number }
-  | { ok: false; rule: null; code: 'unknown' | 'invalid' | 'not_configured' | 'not_a_home' | 'no_surface' | 'address_not_found' | 'other_town' };
+  | { ok: false; rule: null; code: 'unknown' | 'invalid' | 'not_configured' | 'not_a_home' | 'no_surface' | 'address_not_found' | 'other_town' | 'sales_unavailable' };
 
 const CONDITIONS: readonly string[] = ['travaux', 'rafraichir', 'bon', 'neuf'];
 const CITED_SALES = 12;
+
+/** Un résultat dans le délai, sinon une erreur : le minuteur ne reste jamais armé. */
+function within<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('délai dépassé')), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
 
 /** L'époque du calcul, d'après l'année de construction de la fiche. */
 export function eraOf(buildYear: number | null): Era | null {
@@ -42,7 +53,7 @@ export function eraOf(buildYear: number | null): Era | null {
   return 'apres2012';
 }
 
-/** Ce que la fiche du bien apporte au calcul. Sans fiche, le calcul se fait sans ajustement. */
+/** Ce que la fiche du bien apporte au calcul. Sans fiche, ou sans la donnée, aucun ajustement. */
 export function featuresOf(sheet: PropertySheet | null): Partial<EstimatedProperty> {
   if (!sheet) return {};
   const c = sheet.characteristics;
@@ -68,7 +79,7 @@ export class PreparationAvis {
     private readonly acces: Acces,
     private readonly journal: JournalStore,
     private readonly services: PreparationServices | null,
-    private readonly options: { now?: () => Date; writer?: ValuationWriter; newId?: () => string } = {},
+    private readonly options: { now?: () => Date; writer?: ValuationWriter; newId?: () => string; salesTimeoutMs?: number; detailTimeoutMs?: number } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.avis = new AvisDeValeur(db, journal, { now: this.now, ...(options.writer ? { writer: options.writer } : {}), ...(options.newId ? { newId: options.newId } : {}) });
@@ -94,7 +105,7 @@ export class PreparationAvis {
 
   /** Une voie et une commune par vente citée ; une vente sans détail reste citée sans son lieu. */
   private async details(ids: readonly string[]): Promise<Map<string, { street: string; town: string }>> {
-    const found = await Promise.all(ids.map(async (id): Promise<[string, SaleDetail | null]> => [id, await this.services!.sales.detail(id).catch(() => null)]));
+    const found = await Promise.all(ids.map(async (id): Promise<[string, SaleDetail | null]> => [id, await within(this.services!.sales.detail(id), this.options.detailTimeoutMs ?? 5_000).catch(() => null)]));
     return new Map(found.flatMap(([id, d]) => (d ? [[id, { street: d.street, town: d.town }] as const] : [])));
   }
 
@@ -117,20 +128,34 @@ export class PreparationAvis {
     if (property.postal_code && property.postal_code !== place.postalCode) return { ok: false, rule: null, code: 'other_town' };
 
     const sheet = await this.sheet(propertyId);
-    const facts: PublicFacts = sheet?.energy
-      ? { ...collected, energy: { ok: true, source: 'Fiche du bien', collectedAt: this.now().toISOString(), value: { energyClass: sheet.energy.energyClass, ghgClass: sheet.energy.climateClass, date: sheet.energy.diagnosedOn, diagnosisNumber: null } }, missing: collected.missing.filter((m) => m !== 'energy') }
-      : collected;
-    const energyClass: EnergyClass | null = facts.energy.ok ? facts.energy.value.energyClass : null;
-    const range = await new Fourchette(this.services.sales, undefined, this.now).estimate({
-      kind,
-      surface: property.surface_m2,
-      lat: place.lat,
-      lon: place.lon,
-      postalCode: place.postalCode,
-      condition: (condition as Condition | null | undefined) ?? null,
-      ...featuresOf(sheet),
-      energyClass,
-    });
+    const at = this.now().toISOString();
+    // La même classe au calcul et au texte : celle de la fiche ; sinon la publique, pour une maison seulement [R10].
+    const energy: PublicFacts['energy'] = sheet?.energy
+      ? { ok: true, source: 'Fiche du bien', collectedAt: at, value: { energyClass: sheet.energy.energyClass, ghgClass: sheet.energy.climateClass, date: sheet.energy.diagnosedOn, diagnosisNumber: null } }
+      : kind === 'house'
+        ? collected.energy
+        : { ok: false, source: collected.energy.source, collectedAt: at, reason: 'introuvable' };
+    const facts: PublicFacts = { ...collected, energy, missing: energy.ok ? collected.missing.filter((m) => m !== 'energy') : [...new Set([...collected.missing, 'energy' as const])] };
+    const energyClass: EnergyClass | null = energy.ok ? energy.value.energyClass : null;
+    let range: RangeResult;
+    try {
+      range = await within(
+        new Fourchette(this.services.sales, undefined, this.now).estimate({
+          kind,
+          surface: property.surface_m2,
+          lat: place.lat,
+          lon: place.lon,
+          postalCode: place.postalCode,
+          condition: (condition as Condition | null | undefined) ?? null,
+          ...featuresOf(sheet),
+          energyClass,
+        }),
+        this.options.salesTimeoutMs ?? 15_000,
+      );
+    } catch {
+      await appendEvent(this.journal, { type: 'avis.ventes_indisponibles', actor: `agent:${viewer.userId}`, subject: `property:${propertyId}`, data: {} }, this.now);
+      return { ok: false, rule: null, code: 'sales_unavailable' };
+    }
     if (!range.ok) {
       await appendEvent(this.journal, { type: 'avis.sans_fourchette', actor: `agent:${viewer.userId}`, subject: `property:${propertyId}`, data: { rule: 'R27', reason: range.reason, comparablesFound: range.comparablesFound } }, this.now);
       return { ok: false, rule: 'R27', code: range.reason, comparablesFound: range.comparablesFound };

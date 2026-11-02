@@ -6,6 +6,7 @@ import {
   FicheUnique,
   PreparationAvis,
   SqlJournalStore,
+  adjustmentsFor,
   applyMigrations,
   eraOf,
   featuresOf,
@@ -121,28 +122,91 @@ describeWithSqlite('E09 · l’agent prépare un avis', () => {
     expect(await closed.prep.prepare(closed.as('agent', closed.paul.id), closed.property.id, { address: ADDRESS, kind: 'apartment' })).toMatchObject({ code: 'not_configured' });
   });
 
-  it('[R10] la fiche du bien donne le diagnostic du calcul et du texte, avant les données publiques', async () => {
-    const w = await world(services({ publicEnergy: 'B' }));
-    const sheet = { characteristics: { bedrooms: 2, floor: 2, floorsTotal: 4, buildYear: 1960, heating: null, outdoor: ['balcon'], landM2: null, parkingSpaces: 1, elevator: true }, energy: { energyClass: 'F', climateClass: 'E', annualCostMinEur: 900, annualCostMaxEur: 1200, costReferenceYear: 2024, diagnosedOn: '2024-01-10' }, coownership: null, risks: null, media: [] };
-    await w.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', ['s1', w.property.id, w.net.id, JSON.stringify(sheet), 'x', NOW().toISOString()]);
-    const r = await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' });
-    if (!r.ok) throw new Error(r.code);
-    expect(JSON.parse(r.value.computed).energyClass).toBe('F');
-    expect(r.value.text).toContain('classe F');
-    expect(r.value.text).not.toContain('classe B');
-    expect((JSON.parse(r.value.computed) as { adjustments: unknown[] }).adjustments.length).toBeGreaterThan(0);
+  const SHEET = { characteristics: { bedrooms: 2, floor: 2, floorsTotal: 4, buildYear: 1985, heating: null, outdoor: [], landM2: null, parkingSpaces: null, elevator: null }, energy: { energyClass: 'F', climateClass: 'E', annualCostMinEur: 900, annualCostMaxEur: 1200, costReferenceYear: 2024, diagnosedOn: '2024-01-10' }, coownership: null, risks: null, media: [] };
+  const withSheet = async (w: Awaited<ReturnType<typeof world>>, sheet: unknown) =>
+    w.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', ['s1', w.property.id, w.net.id, JSON.stringify(sheet), 'x', NOW().toISOString()]);
+  const adjustments = (computed: string) => (JSON.parse(computed) as { adjustments: { label: string; pct: number }[] }).adjustments;
+
+  it('[R10] le diagnostic de la fiche passe dans le calcul et le texte, avant le public', async () => {
+    const withF = await world(services({ publicEnergy: 'B' }));
+    await withSheet(withF, SHEET);
+    const f = await withF.prep.prepare(withF.as('agent', withF.paul.id), withF.property.id, { address: ADDRESS, kind: 'apartment' });
+    if (!f.ok) throw new Error(f.code);
+    expect(adjustments(f.value.computed)).toEqual([{ label: 'Diagnostic énergétique', pct: -5 }]);
+    expect(f.value.text).toContain('classe F');
+    expect(f.value.text).not.toContain('classe B');
+
+    const plain = await world(services({ publicEnergy: 'B' }));
+    await withSheet(plain, { ...SHEET, energy: null });
+    const none = await plain.prep.prepare(plain.as('agent', plain.paul.id), plain.property.id, { address: ADDRESS, kind: 'apartment' });
+    if (!none.ok) throw new Error(none.code);
+    expect(f.value.computed_low).toBeLessThan(none.value.computed_low);
   });
 
-  it('sans fiche, le diagnostic public sert au calcul et au texte', async () => {
+  it('[R10] le diagnostic public peut être celui d’un autre lot : ni calcul ni texte pour un appartement', async () => {
     const w = await world(services({ publicEnergy: 'B' }));
     const r = await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' });
     if (!r.ok) throw new Error(r.code);
-    expect(JSON.parse(r.value.computed).energyClass).toBe('B');
+    expect(adjustments(r.value.computed)).toEqual([]);
+    expect(r.value.text).not.toContain('Diagnostic énergétique');
+    expect(JSON.parse(r.value.computed)).toMatchObject({ energyClass: null, missing: expect.arrayContaining(['energy']) });
   });
 
-  it('l’époque et les caractéristiques viennent de la fiche', () => {
+  it('[R10] pour une maison, le diagnostic public sert au calcul et au texte', async () => {
+    const w = await world(services({ publicEnergy: 'B', sales: SALES.map((x) => ({ ...x, kind: 'house' as const })) }));
+    const r = await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'house' });
+    if (!r.ok) throw new Error(r.code);
+    expect(adjustments(r.value.computed).map((a) => a.label)).toContain('Diagnostic énergétique');
+    expect(r.value.text).toContain('classe B');
+  });
+
+  it('[R10] un étage ou un ascenseur inconnus ne baissent pas le prix', async () => {
+    const w = await world();
+    const r = await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' });
+    if (!r.ok) throw new Error(r.code);
+    expect(adjustments(r.value.computed)).toEqual([]);
+    expect(r.value.text).not.toContain('rez-de-chaussée');
+    const flat = { kind: 'apartment' as const, surface: 65, lat: 1, lon: 1, postalCode: '21000' };
+    expect(adjustmentsFor({ ...flat, floor: null }).lines).toEqual([]);
+    expect(adjustmentsFor({ ...flat, floor: 5 }).lines).toEqual([]);
+    expect(adjustmentsFor({ ...flat, floor: 0 }).lines).toEqual([['Rez-de-chaussée', -0.05]]);
+    expect(adjustmentsFor({ ...flat, floor: 5, elevator: false }).lines).toEqual([['Étage élevé sans ascenseur', -0.08]]);
+    expect(adjustmentsFor({ ...flat, floor: 5, elevator: true }).lines).toEqual([['Étage élevé avec ascenseur', 0.02]]);
+  });
+
+  it('chaque caractéristique de la fiche va à son champ du calcul', () => {
+    const features = featuresOf({ ...SHEET, characteristics: { bedrooms: 2, floor: 2, floorsTotal: 4, buildYear: 1960, heating: null, outdoor: ['balcon'], landM2: 300, parkingSpaces: 1, elevator: false } } as never);
+    expect(features).toEqual({ era: '1948-1974', floor: 2, buildingFloors: 4, land: 300, balcony: true, terrace: false, parking: true, elevator: false, energyClass: 'F' });
+    const other = featuresOf({ ...SHEET, energy: null, characteristics: { ...SHEET.characteristics, outdoor: ['terrasse'], parkingSpaces: 0 } } as never);
+    expect(other).toEqual({ era: '1975-2000', floor: 2, buildingFloors: 4, land: null, balcony: false, terrace: true, parking: false });
+  });
+
+  it('l’époque vient de l’année de construction', () => {
     expect([eraOf(null), eraOf(1900), eraOf(1948), eraOf(1974), eraOf(1975), eraOf(2000), eraOf(2012), eraOf(2013)]).toEqual([null, 'avant1948', '1948-1974', '1948-1974', '1975-2000', '1975-2000', '2001-2012', 'apres2012']);
     expect(featuresOf(null)).toEqual({});
+  });
+
+  it('une source de ventes muette est dite ; un lieu muet laisse la vente sans lieu', async () => {
+    const never = new Promise<never>(() => undefined);
+    const blocked = services();
+    blocked.sales = { ...blocked.sales, within: () => never };
+    const w = await world();
+    const stuck = new PreparationAvis(w.db, w.acces, w.journal, blocked, { now: NOW, salesTimeoutMs: 20 });
+    expect(await stuck.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' })).toEqual({ ok: false, rule: null, code: 'sales_unavailable' });
+    expect((await w.journal.all()).some((e) => e.type === 'avis.ventes_indisponibles')).toBe(true);
+
+    const slow = services();
+    slow.sales = { ...slow.sales, detail: () => never };
+    const late = new PreparationAvis(w.db, w.acces, w.journal, slow, { now: NOW, detailTimeoutMs: 20 });
+    const r = await late.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' });
+    if (!r.ok) throw new Error(r.code);
+    expect((JSON.parse(r.value.computed) as { cited: { street?: string }[] }).cited.every((c) => c.street === undefined)).toBe(true);
+  });
+
+  it('[R26] préparer n’envoie rien', async () => {
+    const w = await world();
+    expect((await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' })).ok).toBe(true);
+    expect(await w.db.all('SELECT id FROM messages')).toEqual([]);
   });
 
   it('[R16] la liste : qui voit le bien en entier, la plus récente d’abord', async () => {

@@ -1256,7 +1256,7 @@ const avisView = (r: ValuationReport) => ({
 
 /** Un refus de l'avis : droit ou validation en 403, inconnu en 404, le reste en 409 ou 422 selon sa cause. */
 function avisRefusal(r: { rule: string | null; code: string; comparablesFound?: number }): Response {
-  const status = r.code === 'unknown' ? 404 : r.code === 'not_configured' ? 503 : r.code === 'not_following_agent' || r.code === 'not_validated' || r.rule === 'R16' ? 403 : r.code === 'already_validated' || r.code === 'changed_meanwhile' ? 409 : 422;
+  const status = r.code === 'unknown' ? 404 : r.code === 'not_configured' || r.code === 'sales_unavailable' ? 503 : r.code === 'not_following_agent' || r.code === 'not_validated' || r.rule === 'R16' ? 403 : r.code === 'already_validated' || r.code === 'changed_meanwhile' ? 409 : 422;
   return json(status, { ok: false, rule: r.rule, code: r.code, ...(r.comparablesFound !== undefined ? { comparablesFound: r.comparablesFound } : {}) });
 }
 

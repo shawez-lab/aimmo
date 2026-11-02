@@ -189,11 +189,12 @@ export function adjustmentsFor(p: EstimatedProperty, settings: RangeSettings = D
   add('État général', { travaux: -0.12, rafraichir: -0.05, bon: 0, neuf: 0.06 }[p.condition ?? 'bon'] ?? 0);
   add('Époque de construction', { avant1948: 0, '1948-1974': -0.03, '1975-2000': 0, '2001-2012': 0.02, apres2012: 0.04 }[p.era ?? '1975-2000'] ?? 0);
   if (p.kind === 'apartment') {
-    const floor = p.floor ?? 0;
+    // Un étage ou un ascenseur inconnus ne font rien : ils ne valent ni rez-de-chaussée, ni « sans ascenseur » [R10].
+    const floor = p.floor ?? null;
     if (floor === 0) add('Rez-de-chaussée', -0.05);
-    if (floor >= 3 && !p.elevator) add('Étage élevé sans ascenseur', -Math.min(0.08, 0.03 * (floor - 2)));
-    if (floor >= 4 && p.elevator) add('Étage élevé avec ascenseur', 0.02);
-    if (floor > 0 && p.buildingFloors && floor >= p.buildingFloors) add('Dernier étage', 0.02);
+    if (floor !== null && floor >= 3 && p.elevator === false) add('Étage élevé sans ascenseur', -Math.min(0.08, 0.03 * (floor - 2)));
+    if (floor !== null && floor >= 4 && p.elevator === true) add('Étage élevé avec ascenseur', 0.02);
+    if (floor !== null && floor > 0 && p.buildingFloors && floor >= p.buildingFloors) add('Dernier étage', 0.02);
     if (p.terrace) add('Terrasse', 0.05);
     else if (p.balcony) add('Balcon', 0.02);
     if (p.garageBox) add('Garage ou box', 0.03);
