@@ -113,7 +113,19 @@ describeWithSqlite('C08 · API de l’assistant du site, en mode essai', () => {
     expect((await verifyChain(entries)).ok).toBe(true);
   });
 
-  it('[R06] la mention n’est que dans le premier message automatique de la conversation', async () => {
+  it('[R06] la mention n’est que dans le premier message vraiment parti de la conversation', async () => {
+    const w = await world(undefined, fakeWriter());
+    const site = new SiteSessionChannel();
+    const { chaine } = createCaptation(w.db, w.journal, { now: () => new Date(TUESDAY_10H), channels: [site], writer: fakeWriter() });
+    await chaine.receive(w.network.id, 'site_chat', { sessionId: 'session-a', messageId: 'm1', text: 'Bonjour, cette maison est-elle encore disponible ?', propertyRef: PROPERTY_REF });
+    const [second] = await chaine.receive(w.network.id, 'site_chat', { sessionId: 'session-a', messageId: 'm2', text: 'Je cherche aussi un appartement, pouvez-vous me rappeler ?' });
+    expect(second).toMatchObject({ status: 'replied' });
+    const [first, next] = site.take('session-a');
+    expect(first).toMatch(MENTION);
+    expect(next).not.toMatch(/assistant|IA\b/);
+  });
+
+  it('[R06] en mode essai, rien n’est parti : chaque réponse prête porte la mention, le premier message réel restant à venir', async () => {
     const w = await world(undefined, fakeWriter());
     const id = visitor(1);
     const session = await w.open(id);
@@ -121,9 +133,9 @@ describeWithSqlite('C08 · API de l’assistant du site, en mode essai', () => {
     w.setClock(TUESDAY_10H + MINUTE);
     const second = await w.say(session, id, 'm2', 'Je cherche aussi un appartement, pouvez-vous me rappeler ?');
     expect(((await second.json()) as { status: string }).status).toBe('ready');
-    const [first, next] = await w.replies();
-    expect(first!.body).toMatch(MENTION);
-    expect(next!.body).not.toMatch(/assistant|IA\b/);
+    const replies = await w.replies();
+    expect(replies).toHaveLength(2);
+    for (const r of replies) expect(r.body).toMatch(MENTION);
   });
 
   it('[R15] une conversation sans accord ne laisse rien au-delà de ce que la personne a écrit : ni adresse IP, ni navigateur, ni identifiant en clair', async () => {
@@ -159,12 +171,12 @@ describeWithSqlite('C08 · API de l’assistant du site, en mode essai', () => {
 
   it('[R12] sans IA branchée, un deuxième message qui recevrait le même texte de secours passe à l’agent, jamais un silence', async () => {
     const w = await world();
-    const id = visitor(10);
-    const session = await w.open(id);
-    await w.say(session, id, 'm1', 'Bonjour, je cherche un appartement.');
-    const second = await w.say(session, id, 'm2', 'Avec un balcon de préférence.');
-    expect(((await second.json()) as { status: string }).status).toBe('with_agent');
-    expect(await w.replies()).toHaveLength(1);
+    const site = new SiteSessionChannel();
+    const { chaine } = createCaptation(w.db, w.journal, { now: () => new Date(TUESDAY_10H), channels: [site] });
+    await chaine.receive(w.network.id, 'site_chat', { sessionId: 'session-a', messageId: 'm1', text: 'Bonjour, je cherche un appartement.' });
+    const [second] = await chaine.receive(w.network.id, 'site_chat', { sessionId: 'session-a', messageId: 'm2', text: 'Avec un balcon de préférence.' });
+    expect(second).toMatchObject({ status: 'not_sent' });
+    expect(site.take('session-a')).toHaveLength(1);
     const alerts = await w.db.all<{ n: number }>("SELECT count(*) AS n FROM agent_alerts");
     expect(Number(alerts[0]!.n)).toBeGreaterThan(0);
   });
