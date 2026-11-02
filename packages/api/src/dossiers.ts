@@ -9,9 +9,10 @@
  * ne suit de fonds [R62].
  */
 import { journalError } from './app.ts';
+import { readCapped } from './studio.ts';
 import { Acces, FicheClient, FicheUnique, dossiers as m10, localTime, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 
-const { ActeVente, BouclierFonds, CheminCritique, Echeancier, FinancementDossier, PiecesDossier, RelancesPieces } = m10;
+const { ActeVente, BouclierFonds, CheminCritique, DepotsDossier, Echeancier, FinancementDossier, PiecesDossier, RelancesPieces } = m10;
 export type PieceStore = m10.PieceStore;
 
 export const TRIAL_MODE = 'essai';
@@ -113,6 +114,27 @@ export function dossierRoutes(): DossierRoute[] {
       pattern: new RegExp(`^/dossiers/${ID}/pieces$`),
       name: 'dossiers.piece',
       handle: withBody(async (s, v, [id], b) => reply(await services(s).pieces.add(v, id!, { piece: String(b.piece ?? ''), ref: String(b.ref ?? ''), issuedOn: String(b.issuedOn ?? '') }))),
+    },
+    {
+      // Le dépôt d'une pièce depuis le téléphone (N12) : le corps est le fichier ; déposer ne joint rien [R16].
+      method: 'POST',
+      pattern: new RegExp(`^/dossiers/${ID}/fichiers$`),
+      name: 'dossiers.depot',
+      handle: async (s, v, [id], r) => {
+        const upload = s.pieces.upload?.bind(s.pieces);
+        if (!upload) return json(503, { ok: false, rule: null, code: 'depot_ferme' });
+        const length = r.headers.get('content-length');
+        const declaredSize = length === null || length.trim() === '' ? null : /^\d{1,12}$/.test(length.trim()) ? Number(length.trim()) : Number.NaN;
+        const result = await new DepotsDossier(s.db, s.acces, { put: (key, bytes, type) => upload(key, bytes, type) }, s.journal, { now: s.now }).deposit(v, id!, {
+          contentType: r.headers.get('content-type'),
+          sha256: r.headers.get('x-aimmo-sha256'),
+          declaredSize,
+          read: (max) => readCapped(r, max),
+        });
+        const status = result.ok ? null : ({ trop_lourd: 413, type_refuse: 415, stockage_indisponible: 503 } as Record<string, number>)[result.code];
+        if (status && !result.ok) return json(status, { ok: false, rule: result.rule, code: result.code });
+        return reply(result as Outcome);
+      },
     },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/echeancier$`), name: 'dossiers.echeancier', handle: async (s, v, [id]) => reply(await services(s).echeancier.schedule(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/dates$`), name: 'dossiers.date', handle: withBody(async (s, v, [id], b) => reply(await services(s).echeancier.record(v, id!, { kind: b.kind, day: b.day, proofRef: b.proofRef }))) },

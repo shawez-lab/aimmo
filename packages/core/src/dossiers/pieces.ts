@@ -167,6 +167,8 @@ export interface FileStatus {
 /** Le stockage des pièces (Cloudflare R2), derrière une interface : un faux stockage dans les tests. */
 export interface PieceStore {
   has(ref: string): Promise<boolean>;
+  /** Range un fichier déposé (N12) ; absent, le dépôt est fermé. */
+  upload?(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };

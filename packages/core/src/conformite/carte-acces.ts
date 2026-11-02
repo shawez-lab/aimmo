@@ -160,6 +160,8 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'dossier.date_a_saisir': 'partage',
   'dossier.echeance': 'partage',
   'dossier.piece_recue': 'partage',
+  'dossier.depot': INTERNE('Fichier déposé par l\'agent, pas encore rangé comme pièce : sa référence, sans donnée d\'un client.'),
+  'dossier.depot.refuse': INTERNE('Dépôt refusé pour un motif technique, sans donnée d\'un client.'),
   'dossier.piece_refusee': 'partage',
   'dossier.acte_signe': 'partage',
   'dossier.acte_refuse': 'partage',

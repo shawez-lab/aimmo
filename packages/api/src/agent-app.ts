@@ -10,6 +10,7 @@ import { ALERTES_SCRIPT } from '../app/alertes.ts';
 import { APPELS_SCRIPT } from '../app/appels.ts';
 import { AVIS_SCRIPT } from '../app/avis.ts';
 import { OFFRES_SCRIPT } from '../app/offres.ts';
+import { DOSSIER_SCRIPT } from '../app/dossier.ts';
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
 import { REPRISE_SCRIPT } from '../app/reprise.ts';
@@ -67,6 +68,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/avis.js': { body: AVIS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Offres » (O10), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/offres.js': { body: OFFRES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // L'écran « Dossier de vente » (N12), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
+  '/app/dossier.js': { body: DOSSIER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/studio.js': { body: STUDIO_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Gagner des mandats » (G13), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/gagner.js': { body: GAGNER_SCRIPT, type: 'text/javascript; charset=utf-8' },

@@ -1,0 +1,68 @@
+import { createHash } from 'node:crypto';
+import { expect, it } from 'vitest';
+import type { Viewer } from '@aimmo/core';
+import { dossierRoutes, type DossierServices } from '../src/dossiers.ts';
+import { setupDossier } from '../../core/test/dossiers-jeu.ts';
+import { describeWithSqlite } from '../../core/test/sqlite.ts';
+
+// Tout est inventé.
+const PDF = new TextEncoder().encode('%PDF-1.7 essai');
+const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
+
+async function setup(writable = true) {
+  const t = await setupDossier();
+  const kept = new Map<string, Uint8Array>();
+  const pieces = { has: async (r: string) => kept.has(r), ...(writable ? { upload: async (k: string, b: Uint8Array) => void kept.set(k, b) } : {}) };
+  const s: DossierServices = { db: t.db, journal: t.journal, acces: t.acces, now: t.now, pieces };
+  const run = async (viewer: Viewer, method: 'GET' | 'POST', path: string, init: RequestInit = {}) => {
+    const route = dossierRoutes().find((r) => r.method === method && r.pattern.test(path))!;
+    const response = await route.handle(s, viewer, (route.pattern.exec(path) ?? []).slice(1), new Request(`https://api.exemple.test/v1${path}`, { method, ...init }));
+    return { status: response.status, body: (await response.json()) as { ok: boolean; data?: any; code?: string; rule?: string } };
+  };
+  const put = (viewer: Viewer, body: Uint8Array, type = 'application/pdf', hash = sha(body)) => run(viewer, 'POST', `/dossiers/${t.fileId}/fichiers`, { headers: { 'content-type': type, 'x-aimmo-sha256': hash }, body });
+  return { ...t, kept, run, put };
+}
+
+describeWithSqlite('N12 · dépôt d’une pièce du dossier', () => {
+  it('[R60] le fichier déposé se range comme pièce, avec la référence rendue ; déposer seul ne joint rien', async () => {
+    const t = await setup();
+    const up = await t.put(t.agent, PDF);
+    expect(up.status).toBe(200);
+    const ref = up.body.data.ref as string;
+    expect(ref.startsWith(`dossiers/${t.fileId}/`)).toBe(true);
+    expect(t.kept.has(ref)).toBe(true);
+    const before = (await t.run(t.agent, 'GET', `/dossiers/${t.fileId}/pieces`)).body.data;
+    expect(before.lines.every((l: { received: unknown }) => l.received === null)).toBe(true);
+    const add = await t.run(t.agent, 'POST', `/dossiers/${t.fileId}/pieces`, { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ piece: before.missing[0], ref, issuedOn: '2027-03-01' }) });
+    expect(add.status).toBe(200);
+    expect(add.body.data.missing).not.toContain(before.missing[0]);
+  });
+
+  it('[R16] seul l’agent du bien dépose : refus avant de lire le fichier, écrit au journal', async () => {
+    const t = await setup();
+    const refusals = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
+    for (const viewer of [t.sam, t.direction]) {
+      const before = await refusals();
+      expect((await t.put(viewer, PDF)).status).toBe(403);
+      expect(await refusals()).toBeGreaterThan(before);
+    }
+    expect(t.kept.size).toBe(0);
+  });
+
+  it('[R13] un fichier déguisé, vide ou abîmé ne passe pas, et le journal ne porte aucun contenu', async () => {
+    const t = await setup();
+    expect((await t.put(t.agent, new TextEncoder().encode('une note'), 'text/plain')).status).toBe(415);
+    expect((await t.put(t.agent, new TextEncoder().encode('<html>'))).status).toBe(415);
+    expect((await t.put(t.agent, new Uint8Array())).body.code).toBe('fichier_vide');
+    expect((await t.put(t.agent, PDF, 'application/pdf', 'a'.repeat(64))).body.code).toBe('empreinte_differente');
+    expect(t.kept.size).toBe(0);
+    expect(JSON.stringify((await t.journal.all()).filter((e) => e.type.startsWith('dossier.depot')))).not.toContain('une note');
+  });
+
+  it('sans stockage en écriture, le dépôt est fermé et le dit', async () => {
+    const t = await setup(false);
+    const closed = await t.put(t.agent, PDF);
+    expect(closed.status).toBe(503);
+    expect(closed.body.code).toBe('depot_ferme');
+  });
+});
