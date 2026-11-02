@@ -104,6 +104,16 @@ export interface CommissionView {
   steps: { status: CommissionStatus; at: string }[];
   /** Pour un agent : ses seules parts [R68] ; pour la direction : toutes. */
   shares: CommissionShare[];
+  /** L'encaissement rapporté, l'échéance des 24 h ouvrées et le versement, sans preuve ni montant [R70]. */
+  payment: { receivedAt: string; payoutDueAt: string; paidAt: string | null; late: boolean | null } | null;
+  /** Vente annulée par un avoir : plus rien ne s'encaisse ni ne se verse [R71]. */
+  cancelled: boolean;
+}
+
+/** Une vente que le passage n'arrive pas à faire avancer : la direction tranche [R63, R67]. Sans montant ni nom [R13]. */
+export interface CommissionBlocked {
+  fileId: string;
+  code: string;
 }
 
 export type CommissionRefusal = { ok: false; rule: 'R16'; code: string };
@@ -339,6 +349,35 @@ export class Commissions {
   }
 
   /**
+   * Les ventes que le passage laisse de côté : compromis signé sans commission prévue, acte signé sans commission due.
+   * La direction seule ; la raison est la dernière que le passage a dite au journal. Sans raison dite, le passage n'y est
+   * pas encore allé : rien à trancher.
+   */
+  async blocked(viewer: Viewer): Promise<{ ok: true; value: CommissionBlocked[] } | CommissionRefusal> {
+    if (viewer.role === 'agent') return this.refuse(viewer, 'commissions_blocked', 'role');
+    const refusal = await this.readerRefusal(viewer);
+    if (refusal) return this.refuse(viewer, 'commissions_blocked', refusal);
+    const rows = await this.db.all<{ id: string }>(
+      `SELECT f.id FROM sale_files f WHERE f.network_id = ?
+         AND EXISTS (SELECT 1 FROM sale_file_dates d WHERE d.file_id = f.id AND d.kind = 'compromis_signe')
+         AND NOT EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = f.id AND s.status = 'prevue')
+       UNION
+       SELECT k.file_id FROM sale_commissions k WHERE k.network_id = ?
+         AND EXISTS (SELECT 1 FROM sale_file_closings c WHERE c.file_id = k.file_id)
+         AND EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = k.file_id AND s.status = 'prevue')
+         AND NOT EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = k.file_id AND s.status = 'due')
+       ORDER BY 1`,
+      [viewer.networkId, viewer.networkId],
+    );
+    const value: CommissionBlocked[] = [];
+    for (const r of rows) {
+      const said = (await this.journal.bySubject(`sale_file:${r.id}`)).filter((e) => e.type === 'commission.attente' || e.type === 'commission.ecart').at(-1);
+      if (said && typeof said.data.code === 'string') value.push({ fileId: r.id, code: said.data.code });
+    }
+    return { ok: true, value };
+  }
+
+  /**
    * Les commissions : un agent voit celles où il a une part, et seulement ses parts [R68] ; la direction voit tout le
    * réseau ; la conformité n'a pas les chiffres [R16].
    */
@@ -366,6 +405,9 @@ export class Commissions {
         .filter((s) => !own || s.beneficiary_id === viewer.userId)
         .map((s) => ({ kind: s.kind, beneficiaryId: s.beneficiary_id, reason: s.reason, amountCents: s.amount_cents }));
       const whole = !own || r.agent_id === viewer.userId;
+      const receipt = await this.db.first<{ received_at: string; payout_due_at: string }>('SELECT received_at, payout_due_at FROM commission_receipts WHERE file_id = ?', [r.file_id]);
+      const payout = await this.db.first<{ paid_at: string }>('SELECT paid_at FROM commission_payouts WHERE file_id = ?', [r.file_id]);
+      const cancelled = await this.db.first("SELECT 1 FROM invoices WHERE file_id = ? AND kind = 'avoir' AND json_extract(content, '$.reason') = 'vente_annulee'", [r.file_id]);
       value.push({
         fileId: r.file_id,
         agentId: whole ? r.agent_id : null,
@@ -375,6 +417,15 @@ export class Commissions {
         status: steps.at(-1)!.status,
         steps,
         shares,
+        payment: receipt
+          ? {
+              receivedAt: receipt.received_at,
+              payoutDueAt: receipt.payout_due_at,
+              paidAt: payout?.paid_at ?? null,
+              late: payout ? Date.parse(payout.paid_at) > Date.parse(receipt.payout_due_at) : null,
+            }
+          : null,
+        cancelled: !!cancelled,
       });
     }
     await appendEvent(this.journal, { type: 'commission.lecture', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { count: value.length } }, this.now);

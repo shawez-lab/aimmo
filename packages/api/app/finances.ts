@@ -26,13 +26,26 @@ const STEP_NAMES: Record<string, string> = {
 };
 /** Ce qui se voit en premier : ce que la direction doit faire, le plus pressé d'abord. */
 const GROUPS: readonly (readonly [string, string])[] = [
+  ['annulee', 'Ventes annulées par un avoir'],
   ['verser', 'À verser'],
   ['encaisser', 'À encaisser'],
   ['facturer', 'À facturer'],
   ['prevue', 'Prévues, en attente de l’acte'],
   ['payee', 'Payées'],
 ];
+/** Pourquoi le passage laisse une vente de côté : les raisons dites au journal par `Commissions.sync`. */
+const BLOCKED: Record<string, string> = {
+  no_agent: 'le bien n’a pas d’agent.',
+  no_grid: 'aucune grille n’était en vigueur au jour du compromis.',
+  no_mandate_in_force: 'aucun mandat n’était en vigueur au jour du compromis.',
+  partage_invalide: 'un partage entre agents dépasse sa part.',
+  parts: 'les parts ne refont pas les honoraires, au centime.',
+  honoraires: 'les honoraires de l’acte ne sont pas ceux de la commission.',
+  mandat: 'le mandat de l’acte n’est pas celui de la commission.',
+  compromis: 'la date du compromis a changé depuis la commission.',
+};
 const PAY_REFUSALS: Record<string, string> = {
+  sale_cancelled: 'Cette vente est annulée par un avoir : plus rien ne s’encaisse ni ne se verse ici.',
   bad_proof: 'Cette référence n’est pas lisible : lettres sans accent, chiffres, et les signes - _ : . / seulement.',
   bad_time: 'Cette date ne convient pas : elle doit suivre la facture.',
   future_time: 'Cette date est à venir : rapportez seulement ce qui a eu lieu.',
@@ -124,6 +137,7 @@ globalThis.AIMMO_FINANCES = function (t) {
   var SPLIT_REASONS = ${JSON.stringify(SPLIT_REASONS)};
   var STEP_NAMES = ${JSON.stringify(STEP_NAMES)};
   var GROUPS = ${JSON.stringify(GROUPS)};
+  var BLOCKED = ${JSON.stringify(BLOCKED)};
   var PAY_REFUSALS = ${JSON.stringify(PAY_REFUSALS)};
   var PROOF = /^[A-Za-z0-9_:.\/-]{1,200}$/;
   var reading = 0, listing = 0, uid = 0;
@@ -205,9 +219,10 @@ globalThis.AIMMO_FINANCES = function (t) {
         if (!res.ok) {
           b.disabled = false;
           var code = res.body && res.body.code;
-          var said = res.offline ? 'Pas de réseau : rien n’est rangé. Réessayez dans un moment.' : PAY_REFUSALS[code] || 'Rien n’est rangé. Réessayez plus tard.';
+          /* Une réponse perdue ne dit pas que rien n'est rangé : le serveur a pu écrire avant de se taire. */
+          var said = PAY_REFUSALS[code] || 'Réponse perdue : ce geste est peut-être rangé. Relisez la liste avant de recommencer.';
           /* La liste a changé sous l'écran : on la relit, et le refus reste dit. */
-          if (code === 'already' || code === 'not_invoiced' || code === 'not_received' || code === 'unknown') { commissions(said); return; }
+          if (code === 'already' || code === 'not_invoiced' || code === 'not_received' || code === 'unknown' || code === 'sale_cancelled') { commissions(said); return; }
           state.textContent = said;
           return;
         }
@@ -237,10 +252,16 @@ globalThis.AIMMO_FINANCES = function (t) {
     var gap = sum !== Number(c.feeCents);
     if (gap) li.appendChild(el('p', 'Écart de ' + euros(Math.abs(sum - Number(c.feeCents))) + ' entre les parts et les honoraires : ne versez rien, et vérifiez ce dossier.', 'retard'));
     li.appendChild(el('p', (c.steps || []).map(function (s) { return (STEP_NAMES[s.status] || s.status) + ' le ' + date(s.at); }).join(' · '), 'doux'));
-    if (group === 'facturer') li.appendChild(el('p', 'En attente de la validation de sa facture, dans les brouillons plus haut.', 'doux'));
-    if (group === 'verser' && task) {
-      li.appendChild(el('p', 'Encaissé le ' + date(task.receivedAt) + '. À verser avant le ' + date(task.payoutDueAt) + ' à ' + hour(task.payoutDueAt) + '.'));
-      if ((task.alerts || []).indexOf('echeance_depassee') !== -1) li.appendChild(el('p', 'Échéance dépassée.', 'retard'));
+    var pay = c.payment;
+    if (group === 'annulee') li.appendChild(el('p', 'Plus rien ne s’encaisse ni ne se verse ici.' + (pay ? ' Déjà encaissée le ' + date(pay.receivedAt) + (pay.paidAt ? ', versée le ' + date(pay.paidAt) : '') + ' : à régler avec votre comptable.' : ''), 'retard'));
+    if (group === 'facturer') li.appendChild(el('p', 'Sa facture se valide dans les brouillons plus haut. Sans brouillon, le payeur manque au dossier.', 'doux'));
+    if (group === 'verser' && pay) {
+      li.appendChild(el('p', 'Encaissé le ' + date(pay.receivedAt) + '. À verser avant le ' + date(pay.payoutDueAt) + ' à ' + hour(pay.payoutDueAt) + '.'));
+      if (task && (task.alerts || []).indexOf('echeance_depassee') !== -1) li.appendChild(el('p', 'Échéance dépassée.', 'retard'));
+    }
+    if (group === 'payee' && pay && pay.paidAt) {
+      li.appendChild(el('p', 'Versée le ' + date(pay.paidAt) + (pay.late ? ', après l’échéance des 24 h ouvrées.' : ', dans les 24 h ouvrées.')));
+      if (c.status !== 'payee') li.appendChild(el('p', 'Le passage à « payée » se reprend au prochain passage.', 'doux'));
     }
     if (!gap && group === 'encaisser') li.appendChild(gesture(c, 'encaissement'));
     if (!gap && group === 'verser') li.appendChild(gesture(c, 'reversement'));
@@ -253,12 +274,12 @@ globalThis.AIMMO_FINANCES = function (t) {
     var body = $('commissions-corps'), state = $('commissions-etat');
     clear(body);
     state.textContent = 'Chargement…';
-    return Promise.all([send('/v1/pilotage/commissions', 'GET'), send('/v1/pilotage/reversements', 'GET')]).then(function (both) {
-      var a = both[0], b = both[1];
-      if (a.gone || b.gone || mine !== t.session() || turn !== listing) return false;
-      /* Sans les deux réponses, on ne sait pas ce qui attend : aucun geste n'est proposé. */
-      if (!a.ok || !b.ok || !Array.isArray(a.body.data) || !Array.isArray(b.body.data)) {
-        var bad = !a.ok ? a : b;
+    return Promise.all([send('/v1/pilotage/commissions', 'GET'), send('/v1/pilotage/reversements', 'GET'), send('/v1/pilotage/commissions/a-trancher', 'GET')]).then(function (all) {
+      var a = all[0], b = all[1], k = all[2];
+      if (a.gone || b.gone || k.gone || mine !== t.session() || turn !== listing) return false;
+      /* Sans toutes les réponses, on ne sait pas ce qui attend : aucun geste n'est proposé. */
+      if (!a.ok || !b.ok || !k.ok || !Array.isArray(a.body.data) || !Array.isArray(b.body.data) || !Array.isArray(k.body.data)) {
+        var bad = !a.ok ? a : !b.ok ? b : k;
         if (bad.offline) state.textContent = 'Pas de réseau. Réessayez dans un moment.';
         else if (bad.body && bad.body.rule === 'R16') state.textContent = PAY_REFUSALS.role;
         else state.textContent = 'Indisponible pour le moment. Réessayez plus tard.';
@@ -266,11 +287,22 @@ globalThis.AIMMO_FINANCES = function (t) {
       }
       var tasks = {};
       b.body.data.forEach(function (x) { tasks[x.fileId] = x; });
+      var blocked = {};
+      k.body.data.forEach(function (x) { blocked[x.fileId] = x; });
       var groupOf = function (c) {
-        if (c.status === 'payee') return 'payee';
-        if (c.status === 'facturee') return Object.prototype.hasOwnProperty.call(tasks, c.fileId) ? 'verser' : 'encaisser';
+        if (Object.prototype.hasOwnProperty.call(blocked, c.fileId)) return 'trancher';
+        if (c.cancelled) return 'annulee';
+        if (c.status === 'payee' || (c.payment && c.payment.paidAt)) return 'payee';
+        if (c.status === 'facturee') return c.payment ? 'verser' : 'encaisser';
         return c.status === 'due' ? 'facturer' : 'prevue';
       };
+      /* Ce qui attend que la direction tranche passe avant tout : le passage n'y touchera plus de lui-même. */
+      if (k.body.data.length) {
+        body.appendChild(el('h4', 'À trancher (' + k.body.data.length + ')'));
+        var open = el('ul', null, 'liste');
+        k.body.data.forEach(function (x) { open.appendChild(el('li', 'Dossier ' + x.fileId + ' : ' + (BLOCKED[x.code] || 'la commission n’avance plus.'))); });
+        body.appendChild(open);
+      }
       GROUPS.forEach(function (g) {
         var items = a.body.data.filter(function (c) { return groupOf(c) === g[0]; });
         if (!items.length) return;
@@ -279,7 +311,7 @@ globalThis.AIMMO_FINANCES = function (t) {
         items.forEach(function (c) { ul.appendChild(line(c, g[0], tasks[c.fileId])); });
         body.appendChild(ul);
       });
-      state.textContent = message || (a.body.data.length ? '' : 'Aucune commission pour le moment : elles naissent au compromis signé.');
+      state.textContent = message || (a.body.data.length || k.body.data.length ? '' : 'Aucune commission pour le moment : elles naissent au compromis signé.');
       return true;
     });
   }

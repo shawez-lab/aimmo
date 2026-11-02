@@ -76,6 +76,43 @@ describeWithSqlite('K03 · encaissement et reversement sous 24 h ouvrées', () =
     return { ...t, e };
   }
 
+  it('[R67] un versement rangé sans son étape (coupure) : le passage la reprend, et la lecture dit encaissement et versement', async () => {
+    const t = await invoiced();
+    t.setClock(new Date('2027-06-18T16:30:00.000Z'));
+    await t.e.recordReceipt(t.direction, t.fileId, { receivedAt: '2027-06-18T16:00:00.000Z', proofRef: 'releves/essai-1' });
+    const before = await t.c.list(t.direction);
+    expect(before.ok && before.value[0]!.payment).toEqual({ receivedAt: '2027-06-18T16:00:00.000Z', payoutDueAt: '2027-06-21T16:00:00.000Z', paidAt: null, late: null });
+    await t.db.run('INSERT INTO commission_payouts (file_id, network_id, paid_at, proof_ref, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?)', [t.fileId, t.network.id, '2027-06-18T16:20:00.000Z', 'virements/essai-1', 'direction:d-1', '2027-06-18T16:20:00.000Z']);
+    const cut = await t.c.list(t.direction);
+    expect(cut.ok && cut.value[0]!.status).toBe('facturee');
+    expect(cut.ok && cut.value[0]!.payment).toMatchObject({ paidAt: '2027-06-18T16:20:00.000Z', late: false });
+    await t.e.run(t.network.id);
+    await t.e.run(t.network.id);
+    const after = await t.c.list(t.direction);
+    expect(after.ok && after.value[0]!.status).toBe('payee');
+  });
+
+  it('[R71] une vente annulée par un avoir : ni encaissement ni nouveau versement', async () => {
+    const t = await invoiced();
+    t.setClock(new Date('2027-06-18T16:30:00.000Z'));
+    await t.e.recordReceipt(t.direction, t.fileId, { receivedAt: '2027-06-18T16:00:00.000Z', proofRef: 'releves/essai-1' });
+    const invoices = await t.f.list(t.direction);
+    if (!invoices.ok) throw new Error('factures');
+    expect((await t.f.credit(t.direction, invoices.value[0]!.id, 'vente_annulee')).ok).toBe(true);
+    expect(await t.e.recordPayout(t.direction, t.fileId, { paidAt: '2027-06-18T16:20:00.000Z', proofRef: 'virements/essai-1' })).toMatchObject({ rule: 'R71', code: 'sale_cancelled' });
+    const list = await t.c.list(t.direction);
+    expect(list.ok && list.value[0]!.cancelled).toBe(true);
+  });
+
+  it('[R71] une vente annulée avant l’encaissement : l’encaissement est refusé', async () => {
+    const t = await invoiced();
+    const invoices = await t.f.list(t.direction);
+    if (!invoices.ok) throw new Error('factures');
+    await t.f.credit(t.direction, invoices.value[0]!.id, 'vente_annulee');
+    t.setClock(new Date('2027-06-18T16:30:00.000Z'));
+    expect(await t.e.recordReceipt(t.direction, t.fileId, { receivedAt: '2027-06-18T16:00:00.000Z', proofRef: 'releves/essai-1' })).toMatchObject({ rule: 'R71', code: 'sale_cancelled' });
+  });
+
   it('[R70, R67] encaissement rapporté avec sa preuve, alertes une fois avant et après l’échéance, versement : la commission est payée', async () => {
     const t = await invoiced();
     t.setClock(new Date('2027-06-18T16:30:00.000Z'));

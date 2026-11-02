@@ -135,6 +135,7 @@ export function pilotageRoutes(): PilotageRoute[] {
       },
     },
     { method: 'GET', pattern: new RegExp(`${P}/commissions$`), name: 'pilotage.commissions', handle: async (s, v) => reply(await services(s).commissions.list(v)) },
+    { method: 'GET', pattern: new RegExp(`${P}/commissions/a-trancher$`), name: 'pilotage.commissions_a_trancher', handle: async (s, v) => reply(await services(s).commissions.blocked(v)) },
     {
       method: 'POST',
       pattern: new RegExp(`${P}/grille$`),
