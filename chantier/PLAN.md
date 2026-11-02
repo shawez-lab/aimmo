@@ -615,12 +615,21 @@ Décidé, lecture prudente : on reprend la méthode qui tourne sur le site (`fun
 - Attend : rien.
 
 ### E09 · L'agent prépare, ajuste et valide son avis
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02), lecture prudente : l'adresse sert à la collecte et n'est gardée nulle part ; un étage ou un ascenseur inconnus ne produisent plus d'ajustement dans `adjustmentsFor` [R10] ; la classe énergie publique ne sert que pour une maison, dans un immeuble elle peut être celle d'un autre lot ; ventes muettes après 15 s : c'est dit. Relecture forte 1 P0 et 3 P1 corrigés ; Codex à sa limite, fusion sans lui (#267).
 - Qui : Claude · Relecture : forte · Dépend de : E08
 - Cahier : M04, « Rédaction par l'IA » et « Validation ».
 - Objectif : aujourd'hui `AvisDeValeur` n'a aucune route : personne ne peut créer ni valider un avis en production. Routes de brouillon (fourchette calculée sur le bien par les ventes DVF de E05), d'ajustement et de validation, et écran dans l'application de l'agent, avec téléchargement de la page de E08.
 - Critères : seul l'agent qui suit le bien prépare, ajuste et valide [R30, R16] ; sans ventes configurées ou sans fourchette possible, la raison est dite et rien n'est rangé [R27] ; la fourchette vient du calcul [R10] ; rien ne part [R26] ; écran dans le budget de l'application [R201].
 - Attend : `DVF_BASE_URL` au déploiement pour le vrai calcul (déjà noté en E05).
+
+### E10 · Écran de l'avis de valeur dans l'application
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : E09
+- Cahier : M04, « Validation » ; Le produit, « Application de l'agent ».
+- Objectif : depuis « Mes biens », préparer, ajuster et valider un avis, puis télécharger la page à imprimer, dans un écran chargé à part.
+- Critères : la validation porte la version lue à l'écran [R30] ; une modification non enregistrée ne se valide jamais [R30] ; adresse ni gardée ni remontrée [R46] ; refus en français ; budget de l'application tenu [R201] ; rien ne part [R26].
+- Attend : rien.
 
 **M05 · Rendez-vous, février 2027.**
 
