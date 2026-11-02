@@ -19,6 +19,8 @@ import type { FirstReplyOutcome, PremiereReponse, SkipCode } from './premiere-re
 /** Un écho au texte identique à notre envoi, arrivé dans ce délai, est le nôtre. */
 const OWN_ECHO_WINDOW_MS = 10 * 60_000;
 const sameText = (text: string): string => plain(text).replace(/[^a-z0-9]+/g, ' ').trim();
+/** Une réponse humaine réservée mais pas rangée depuis ce délai : son Worker s'est coupé, elle peut être reprise. */
+const STALE_HUMAN_REPLY_MS = 2 * 60_000;
 
 export type HandoverReason = 'human_reply' | 'exchanges' | 'appointment' | 'agent_takeover';
 export type AlertReason = 'exchanges' | 'needs_reply';
@@ -98,6 +100,8 @@ export class ConversationRelais {
     this.settings = options.settings ?? DEFAULT_SEND_SETTINGS;
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    // Le dernier contrôle de chaque réponse relit les échos gardés de sa conversation [R21].
+    this.premiere.checkBeforeSend((networkId, conversationId) => this.echoesAllowReply(networkId, conversationId));
   }
 
   /**
@@ -157,14 +161,10 @@ export class ConversationRelais {
    * Une réponse écrite par un humain dans l'application du canal : rangée dans la fiche, une seule fois, et la
    * conversation passe à l'agent pour de bon [R21]. Rien n'est envoyé : le message est déjà parti.
    */
-  async noteHumanReply(networkId: string, reply: HumanReply): Promise<'noted' | 'duplicate' | 'own' | 'unknown_conversation'> {
+  async noteHumanReply(networkId: string, reply: HumanReply): Promise<'noted' | 'duplicate' | 'unfinished' | 'own' | 'unknown_conversation'> {
     const conversationId = `${reply.channel}:${reply.conversationRef}`;
     // L'écho d'un message parti d'AIMMO n'est pas la réponse d'un humain.
-    const own = await this.db.first<{ message_id: string }>(
-      'SELECT message_id FROM outbound_refs WHERE network_id = ? AND channel = ? AND external_id = ?',
-      [networkId, reply.channel, reply.externalId],
-    );
-    if (own) return 'own';
+    if (await this.isOwnEcho(networkId, reply)) return 'own';
     const last =
       (await this.db.first<{ person_id: string }>(
         `SELECT person_id FROM messages WHERE network_id = ? AND conversation_id = ? AND direction = 'in'
@@ -190,14 +190,19 @@ export class ConversationRelais {
     if (changes !== 1) {
       // Une coupure après la réservation ne doit pas laisser l'assistant parler : la conversation passe à l'agent.
       await this.handOver(view.person.id, conversationId, 'human_reply', reply.sentAt);
-      return 'duplicate';
+      return this.resumeHumanReply(networkId, conversationId, view.person.id, view.person.agent_id, reply);
     }
     // L'assistant se tait d'abord : même si le rangement du message échoue ensuite, plus rien d'automatique ne part.
     await this.handOver(view.person.id, conversationId, 'human_reply', reply.sentAt);
+    await this.storeHumanReply(networkId, conversationId, view.person.id, view.person.agent_id, reply);
+    return 'noted';
+  }
+
+  private async storeHumanReply(networkId: string, conversationId: string, personId: string, agentId: string | null, reply: HumanReply): Promise<void> {
     const message = await this.store.recordMessage({
       networkId,
-      agentId: view.person.agent_id,
-      personId: view.person.id,
+      agentId,
+      personId,
       conversationId,
       channel: reply.channel,
       direction: 'out',
@@ -205,34 +210,106 @@ export class ConversationRelais {
       body: reply.text,
       occurredAt: reply.sentAt,
     });
-    await this.db.run('UPDATE human_replies SET message_id = ? WHERE network_id = ? AND dedup_key = ?', [
-      message.id,
-      networkId,
-      `${reply.channel}:${reply.externalId}`,
-    ]);
-    return 'noted';
+    await this.linkHumanReply(networkId, reply, message.id);
+  }
+
+  private async linkHumanReply(networkId: string, reply: HumanReply, messageId: string): Promise<void> {
+    await this.db.run('UPDATE human_replies SET message_id = ? WHERE network_id = ? AND dedup_key = ?', [messageId, networkId, `${reply.channel}:${reply.externalId}`]);
   }
 
   /**
-   * Note une réponse humaine reçue en écho ; si sa conversation n'est pas encore connue, elle est gardée et sera
-   * appliquée par `applyPendingHumanReplies` dès que la conversation existe, avant toute réponse automatique [R21].
+   * L'écho déjà réservé. Rangé : un simple doublon. Pas encore rangé : un autre Worker y travaille, sauf si la
+   * réservation date (coupure) ; alors un seul Worker prend la reprise, par un bail, et le message de l'agent n'est
+   * rangé qu'une fois, même si la coupure a eu lieu juste après son rangement.
+   */
+  private async resumeHumanReply(
+    networkId: string,
+    conversationId: string,
+    personId: string,
+    agentId: string | null,
+    reply: HumanReply,
+  ): Promise<'duplicate' | 'unfinished'> {
+    const key = `${reply.channel}:${reply.externalId}`;
+    const reserved = await this.db.first<{ message_id: string | null; created_at: string }>(
+      'SELECT message_id, created_at FROM human_replies WHERE network_id = ? AND dedup_key = ?',
+      [networkId, key],
+    );
+    if (!reserved || reserved.message_id !== null) return 'duplicate';
+    if (this.now().getTime() - Date.parse(reserved.created_at) < STALE_HUMAN_REPLY_MS) return 'unfinished';
+    const lease = await this.db.run('UPDATE human_replies SET created_at = ? WHERE network_id = ? AND dedup_key = ? AND created_at = ? AND message_id IS NULL', [
+      this.now().toISOString(),
+      networkId,
+      key,
+      reserved.created_at,
+    ]);
+    if (lease.changes !== 1) return 'unfinished';
+    const stored = await this.db.first<{ id: string }>(
+      `SELECT id FROM messages WHERE network_id = ? AND conversation_id = ? AND direction = 'out' AND author_kind = 'agent' AND occurred_at = ? AND body = ? LIMIT 1`,
+      [networkId, conversationId, reply.sentAt.toISOString(), reply.text],
+    );
+    if (stored) await this.linkHumanReply(networkId, reply, stored.id);
+    else await this.storeHumanReply(networkId, conversationId, personId, agentId, reply);
+    return 'duplicate';
+  }
+
+  /**
+   * Note une réponse humaine reçue en écho ; si sa conversation n'est pas encore connue, elle reste gardée et sera
+   * appliquée dès que la conversation existe, avant toute réponse automatique [R21].
+   *
+   * L'écho d'un humain est écrit AVANT de chercher sa conversation, sans verrou : tant qu'une réponse n'a pas passé
+   * son dernier contrôle, elle le verra (`echoesAllowReply`). L'écho de notre propre message, reconnu à son
+   * identifiant, n'a rien à faire dans cette table.
    */
   async noteOrKeepHumanReply(networkId: string, reply: HumanReply): Promise<'noted' | 'duplicate' | 'own' | 'pending'> {
-    const outcome = await this.noteHumanReply(networkId, reply);
-    if (outcome !== 'unknown_conversation') return outcome;
+    if (await this.isOwnEcho(networkId, reply)) return 'own';
     await this.db.run(
       `INSERT INTO pending_human_replies (network_id, channel, external_id, conversation_ref, body, sent_at, created_at, applied_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING`,
       [networkId, reply.channel, reply.externalId, reply.conversationRef, reply.text, reply.sentAt.toISOString(), this.now().toISOString()],
     );
-    // Le premier message du client a pu être rangé pendant ce temps : l'écho est appliqué tout de suite s'il le peut.
-    await this.applyPendingHumanReplies(networkId);
-    return 'pending';
+    const outcome = await this.noteHumanReply(networkId, reply);
+    if (outcome === 'unknown_conversation') {
+      // Le premier message du client a pu être rangé pendant ce temps : l'écho est appliqué tout de suite s'il le peut.
+      await this.applyPendingHumanReplies(networkId);
+      return 'pending';
+    }
+    // Pas encore rangé : l'écho reste gardé, avec son texte, pour la reprise.
+    if (outcome === 'unfinished') return 'duplicate';
+    await this.markApplied(networkId, reply.channel, reply.externalId);
+    return outcome;
+  }
+
+  /**
+   * Le dernier contrôle d'une réponse : un écho encore gardé pour cette conversation est appliqué ici. S'il vient d'un
+   * humain, même à moitié traité par un autre Worker, rien ne part [R21]. S'il est le nôtre, la réponse continue.
+   */
+  async echoesAllowReply(networkId: string, conversationId: string): Promise<{ allowed: boolean; rule: string; reason: string }> {
+    const rows = await this.db.all<PendingEcho>(
+      `SELECT channel, external_id, conversation_ref, body, sent_at FROM pending_human_replies
+       WHERE network_id = ? AND applied_at IS NULL AND channel || ':' || conversation_ref = ?`,
+      [networkId, conversationId],
+    );
+    let allowed = true;
+    for (const row of rows) {
+      const outcome = await this.noteHumanReply(networkId, echoOf(row));
+      if (outcome === 'own') {
+        await this.markApplied(networkId, row.channel, row.external_id);
+        continue;
+      }
+      allowed = false;
+      if (outcome === 'noted' || outcome === 'duplicate') await this.markApplied(networkId, row.channel, row.external_id);
+    }
+    // Lu après les échos : un écho déjà appliqué par un autre Worker a écrit son passage à l'agent avant sa marque.
+    if (allowed) {
+      const handed = await this.db.first<{ id: string }>('SELECT id FROM conversation_handovers WHERE network_id = ? AND conversation_id = ?', [networkId, conversationId]);
+      allowed = handed === null;
+    }
+    return { allowed, rule: 'R21', reason: allowed ? '' : 'Un humain a répondu pendant que la réponse se préparait : l’assistant se tait.' };
   }
 
   /** Applique les réponses humaines en attente dont la conversation est désormais connue. */
   async applyPendingHumanReplies(networkId: string): Promise<number> {
-    const rows = await this.db.all<{ channel: HumanReply['channel']; external_id: string; conversation_ref: string; body: string; sent_at: string }>(
+    const rows = await this.db.all<PendingEcho>(
       `SELECT p.channel, p.external_id, p.conversation_ref, p.body, p.sent_at FROM pending_human_replies p
        WHERE p.network_id = ? AND p.applied_at IS NULL
          AND (EXISTS (SELECT 1 FROM messages m WHERE m.network_id = p.network_id AND m.conversation_id = p.channel || ':' || p.conversation_ref)
@@ -241,23 +318,31 @@ export class ConversationRelais {
     );
     let applied = 0;
     for (const row of rows) {
-      const outcome = await this.noteHumanReply(networkId, {
-        channel: row.channel,
-        conversationRef: row.conversation_ref,
-        externalId: row.external_id,
-        text: row.body,
-        sentAt: new Date(row.sent_at),
-      });
-      if (outcome === 'unknown_conversation') continue;
+      const outcome = await this.noteHumanReply(networkId, echoOf(row));
+      if (outcome === 'unknown_conversation' || outcome === 'unfinished') continue;
       if (outcome === 'noted') applied += 1;
-      await this.db.run('UPDATE pending_human_replies SET applied_at = ? WHERE network_id = ? AND channel = ? AND external_id = ?', [
-        this.now().toISOString(),
-        networkId,
-        row.channel,
-        row.external_id,
-      ]);
+      await this.markApplied(networkId, row.channel, row.external_id);
     }
     return applied;
+  }
+
+  private async markApplied(networkId: string, channel: HumanReply['channel'], externalId: string): Promise<void> {
+    await this.db.run('UPDATE pending_human_replies SET applied_at = COALESCE(applied_at, ?) WHERE network_id = ? AND channel = ? AND external_id = ?', [
+      this.now().toISOString(),
+      networkId,
+      channel,
+      externalId,
+    ]);
+  }
+
+  private async isOwnEcho(networkId: string, reply: HumanReply): Promise<boolean> {
+    return (
+      (await this.db.first<{ message_id: string }>('SELECT message_id FROM outbound_refs WHERE network_id = ? AND channel = ? AND external_id = ?', [
+        networkId,
+        reply.channel,
+        reply.externalId,
+      ])) !== null
+    );
   }
 
   private async inFlightSameText(networkId: string, conversationId: string, reply: HumanReply): Promise<boolean> {
@@ -349,6 +434,22 @@ export class ConversationRelais {
     );
   }
 }
+
+interface PendingEcho {
+  channel: HumanReply['channel'];
+  external_id: string;
+  conversation_ref: string;
+  body: string;
+  sent_at: string;
+}
+
+const echoOf = (row: PendingEcho): HumanReply => ({
+  channel: row.channel,
+  conversationRef: row.conversation_ref,
+  externalId: row.external_id,
+  text: row.body,
+  sentAt: new Date(row.sent_at),
+});
 
 /**
  * Les réponses écrites par un humain dans une notification de Meta : les échos de nos propres messages qui ne

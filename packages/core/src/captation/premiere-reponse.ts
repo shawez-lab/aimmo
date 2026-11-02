@@ -194,6 +194,8 @@ export interface PremiereReponseOptions {
   writer?: ReplyWriter;
 }
 
+type LastCheck = (networkId: string, conversationId: string) => Promise<{ allowed: boolean; rule: string; reason: string }>;
+
 export class PremiereReponse {
   constructor(
     private readonly db: SqlDatabase,
@@ -203,6 +205,13 @@ export class PremiereReponse {
     private readonly controle: ControleEnvois,
     private readonly options: PremiereReponseOptions = {},
   ) {}
+
+  private beforeSend: LastCheck | null = null;
+
+  /** Ce que le dernier contrôle de chaque réponse doit aussi relire (les échos humains gardés, C09a) [R21]. */
+  checkBeforeSend(check: LastCheck): void {
+    this.beforeSend = check;
+  }
 
   /** Répond au message reçu, une fois rattaché à sa fiche (C02). Ne répond jamais deux fois au même message [R05]. */
   async reply(inboundId: string): Promise<FirstReplyOutcome> {
@@ -252,13 +261,15 @@ export class PremiereReponse {
     const sharedName = recipient !== null && sellers.some((n) => plain(n) === recipient);
     // Sans bien reconnu, l'IA ne rédige pas : seul le texte simple et honnête part [R20].
     const writer = property && !sharedName ? this.options.writer : undefined;
+    const conversationKey = `${row.channel}:${row.conversation_ref ?? `${row.kind}:${row.external_id}`}`;
     const order: SendOrder = {
       networkId: row.network_id,
       agentId: view.person.agent_id,
       personId: view.person.id,
-      conversationId: `${row.channel}:${row.conversation_ref ?? `${row.kind}:${row.external_id}`}`,
+      conversationId: conversationKey,
       channel,
       kind: 'reply',
+      ...(this.beforeSend ? { stillAllowed: () => this.beforeSend!(row.network_id, conversationKey) } : {}),
       ...(property ? { propertyIds: [property.id] } : {}),
       ...(writer ? { compose: () => writer.write(brief) } : {}),
       fallbackTexts: fallbackTexts(brief),
