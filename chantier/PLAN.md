@@ -523,6 +523,24 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Décidé (2026-10-27) : la suite de M03 passe après toutes les réponses du lot et ne lève jamais d'erreur ; banc de mesure par `AIMMO_CAS` hors du dépôt (`docs/MESURE.md`), sauté sans fichier.
 - Reste : mesure réelle (H13, H18) ; au branchement réel (C09), qualifier par `ctx.waitUntil` du Worker pour que la réponse HTTP n'attende pas une vraie IA ; relecture forte (2 P1 corrigés), relecture de Codex restée en cours plus de 30 min, fusion sans elle (#27).
 
+### Q06 · Attribution : délai tenu, reprise sans trou, fiches réunies
+- Statut : en cours
+- Voie : 1
+- Qui : Claude · Relecture : forte · Dépend de : Q03, Q04
+- Cahier : M03, points 4 et 6 ; R16, R25.
+- Objectif : solder les remarques laissées de Codex (#25, #26). Une personne qui réécrit sans avoir été rappelée repoussait sa réattribution à chaque message, sans fin : plus elle insistait, moins elle était servie. Une coupure entre l'attribution et le passage de la fiche laissait l'agent sans accès, pour toujours. Un ancien agent parti sur une fiche réunie bloquait l'accès du nouvel agent. Une tâche chaude rangée sur une fiche gardée sans agent n'apparaissait pas dans la liste de l'agent qui suit la fiche réunie.
+- Critères : un message de plus ne repousse jamais le délai en cours, et un contact chaud le raccourcit (test [R25]) ; un rappel humain clôt le délai, le message suivant en ouvre un nouveau (test [R25]) ; jamais un agent déjà essayé, même après un nouveau message ; un message sans commune garde celle d'un message d'avant (test [R25]) ; attribution et passage de la fiche tout ou rien, relançable après une coupure (test) ; le nouvel agent ouvre une fiche réunie qui portait un agent parti (test [R16]) ; la liste chaude montre la tâche de la fiche gardée à l'agent de la fiche réunie, et jamais à un autre agent (test [R16]).
+- Attend : rien.
+
+### Q07 · Critères niés et montants qui n'en sont pas
+- Statut : à faire
+- Voie : 1
+- Qui : Claude · Relecture : forte · Dépend de : Q01
+- Cahier : M03, « Règles » ; R10, R23.
+- Objectif : solder les remarques laissées de Codex (#23). « Maison sans jardin » rangeait le critère jardin, et le contact recevait des biens à l'opposé de sa demande. « Budget frais inclus de 300 000 € » perdait le budget. L'IA pouvait donner l'apport comme budget, puisqu'il figure dans le message.
+- Critères : un critère nié n'est pas rangé, un critère affirmé à côté l'est, y compris pièces et chambres (test [R23]) ; l'IA qui range un critère que le message nie est refusée (test [R23]) ; « frais inclus » n'écarte pas le budget, un montant de frais reste écarté (test [R10]) ; l'IA qui donne l'apport comme budget est refusée, sauf si ce montant est aussi cité comme budget (test [R10]) ; les 50 cas restent justes.
+- Attend : rien.
+
 **M04 · Estimer, janvier 2027.**
 
 Découpé le 2026-10-27. Ids `E..` pour Estimer. Cahier : M04 Estimer ; Feuille de route, janvier 2027 : « sur 20 biens, écart médian de moins de 10 % entre la fourchette AIMMO et l'estimation de l'agent ».
