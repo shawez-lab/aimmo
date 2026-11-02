@@ -92,6 +92,17 @@ describeWithSqlite('K03 · encaissement et reversement sous 24 h ouvrées', () =
     expect(after.ok && after.value[0]!.status).toBe('payee');
   });
 
+  it('[R68] [R70] l’agent de la vente lit l’heure limite de son versement, un autre agent rien de ce dossier', async () => {
+    const t = await invoiced();
+    t.setClock(new Date('2027-06-18T16:30:00.000Z'));
+    await t.e.recordReceipt(t.direction, t.fileId, { receivedAt: '2027-06-18T16:00:00.000Z', proofRef: 'releves/essai-1' });
+    const own = await t.c.list(t.agent);
+    expect(own.ok && own.value[0]!.payment).toMatchObject({ payoutDueAt: '2027-06-21T16:00:00.000Z', paidAt: null });
+    expect(own.ok && own.value[0]!.shares.map((s) => s.kind)).toEqual(['agent']);
+    const other = await t.c.list(t.sam);
+    expect(other.ok && other.value).toEqual([]);
+  });
+
   it('[R71] une vente annulée par un avoir : ni encaissement ni nouveau versement', async () => {
     const t = await invoiced();
     t.setClock(new Date('2027-06-18T16:30:00.000Z'));

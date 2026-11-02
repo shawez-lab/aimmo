@@ -537,3 +537,108 @@ describe('K11 · commissions, encaissement et reversement pour la direction', ()
     expect(t.state()).toBe('');
   });
 });
+
+describe('K13 · le chemin de chaque euro (Jamais vu)', () => {
+  // Du point de vue d'un agent : ses seules parts, comme les rend le serveur [R68].
+  const own = [{ kind: 'agent', beneficiaryId: 'alex', reason: null, amountCents: 500000 }];
+  const steps = (...list: string[]) => list.map((status, i) => ({ status, at: `2026-1${i % 2}-0${i + 1}T10:00:00.000Z` }));
+  const view = (fileId: string, extra: object) => ({ fileId, agentId: 'alex', compromisOn: '2026-09-01', feeCents: 1000000, feeCharge: 'vendeur', status: 'prevue', steps: steps('prevue'), shares: own, payment: null, cancelled: false, ...extra });
+  const receipt = { receivedAt: '2026-10-28T09:00:00.000Z', payoutDueAt: '2026-10-29T09:00:00.000Z', paidAt: null, late: null };
+
+  async function agent(data: unknown[] | Answer) {
+    const t = await run('agent', { [COMMISSIONS]: typeof data === 'function' ? data : ok(data) });
+    const body = () => t.els['euros-corps']!;
+    const state = () => t.els['euros-etat']!.textContent;
+    const texts = () => body().all().map((e) => e.textContent).join(' | ');
+    const voir = async () => {
+      t.els['euros-voir']!.listeners.click!({});
+      await settle();
+      await t.load();
+    };
+    return { ...t, body, state, texts, voir };
+  }
+
+  it('[R68] [R14] l’agent suit ses parts seules, sans aucune comparaison ni route du réseau', async () => {
+    const t = await agent([view('d-1', {})]);
+    await t.voir();
+    expect(t.texts()).toContain('Dossier d-1 : ma part');
+    expect(t.texts()).not.toMatch(/rang|classement|moyenne|meilleur|Part du réseau/i);
+    expect(t.calls.filter((c) => c.url.includes('/reversements') || c.url.includes('/a-trancher') || c.url.includes('/pilotage/reseau'))).toEqual([]);
+  });
+
+  it('les cinq étapes du chemin sont dites, faites ou non', async () => {
+    const t = await agent([view('d-1', { status: 'facturee', steps: steps('prevue', 'due', 'facturee'), payment: receipt })]);
+    await t.voir();
+    const way = t.body().all().filter((e) => e.tagName === 'ol')[0]!.children;
+    expect(way.map((e) => e.textContent.split(' : ')[0])).toEqual(['Compromis signé', 'Acte signé', 'Facture émise', 'Honoraires encaissés par le réseau', 'Versée sur mon compte']);
+    expect(way[3]!.textContent).toContain(' : le ');
+    expect(way[4]!.textContent).toContain('pas encore');
+  });
+
+  it('[R70] l’heure limite vient du serveur : avant elle, promesse ; après, dépassement dit', async () => {
+    const limit = '2026-10-29T09:00:00.000Z';
+    clock = Date.parse('2026-10-28T12:00:00.000Z');
+    const t = await agent([view('d-1', { status: 'facturee', payment: { ...receipt, payoutDueAt: limit } })]);
+    await t.voir();
+    expect(t.texts()).toContain('Promesse : versée au plus tard le');
+    expect(t.texts()).not.toContain('dépassée');
+    clock = Date.parse('2026-10-29T09:00:01.000Z');
+    await t.voir();
+    expect(t.texts()).toContain('Heure limite dépassée');
+    // Une autre heure limite du serveur change ce qui est dit : l'écran ne la recalcule pas.
+    t.table[COMMISSIONS] = ok([view('d-1', { status: 'facturee', payment: { ...receipt, payoutDueAt: '2026-11-20T09:00:00.000Z' } })]);
+    await t.voir();
+    expect(t.texts()).toContain('Promesse : versée au plus tard le');
+  });
+
+  it('[R70] tenue ou non, la promesse est dite une fois le versement rangé', async () => {
+    const t = await agent([
+      view('d-1', { status: 'payee', payment: { ...receipt, paidAt: '2026-10-28T15:00:00.000Z', late: false } }),
+      view('d-2', { status: 'payee', payment: { ...receipt, paidAt: '2026-10-30T15:00:00.000Z', late: true } }),
+    ]);
+    await t.voir();
+    expect(t.texts()).toContain('Versée dans les 24 h ouvrées promises.');
+    expect(t.texts()).toContain('la promesse n’a pas été tenue');
+  });
+
+  it('[R69] les totaux refont la somme des lignes, au centime, même avec plusieurs parts sur un dossier', async () => {
+    const t = await agent([
+      view('d-1', { status: 'payee', shares: [{ kind: 'agent', beneficiaryId: 'alex', reason: null, amountCents: 100001 }, { kind: 'parrainage', beneficiaryId: 'alex', reason: null, amountCents: 50 }], payment: { ...receipt, paidAt: '2026-10-28T15:00:00.000Z', late: false } }),
+      view('d-2', { status: 'due', shares: [{ kind: 'partage', beneficiaryId: 'alex', reason: 'binome', amountCents: 200002 }] }),
+      view('d-3', { status: 'facturee', shares: [{ kind: 'agent', beneficiaryId: 'alex', reason: null, amountCents: 300003 }], payment: receipt }),
+      view('d-4', { status: 'facturee', cancelled: true, shares: [{ kind: 'agent', beneficiaryId: 'alex', reason: null, amountCents: 700 }] }),
+    ]);
+    await t.voir();
+    const total = t.body().children[0]!.textContent;
+    const spaced = (s: string) => s.replace(/\s/g, ' ');
+    expect(spaced(total)).toContain('Versé : 1 000,51');
+    expect(spaced(total)).toContain('À venir : 5 000,05');
+    expect(spaced(total)).toContain('Annulé : 7,00');
+    expect(t.texts()).toContain('Vente annulée par un avoir');
+  });
+
+  it('un versement rangé dont l’étape a manqué compte comme versé', async () => {
+    const t = await agent([view('d-1', { status: 'facturee', payment: { ...receipt, paidAt: '2026-10-28T15:00:00.000Z', late: false } })]);
+    await t.voir();
+    expect(t.body().children[0]!.textContent).toMatch(/^Versé : 5.000,00/);
+  });
+
+  it('[R16] aucune commission, refus, hors réseau : dits ; à la déconnexion, tout disparaît', async () => {
+    const t = await agent([]);
+    await t.voir();
+    expect(t.state()).toContain('Aucune commission');
+    t.table[COMMISSIONS] = no(403, { ok: false, rule: 'R16', code: 'role' });
+    await t.voir();
+    expect(t.state()).toBe('Ce n’est pas dans vos droits.');
+    t.table[COMMISSIONS] = async () => Promise.reject(new TypeError('hors ligne'));
+    await t.voir();
+    expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    t.table[COMMISSIONS] = ok([view('d-1', {})]);
+    await t.voir();
+    expect(t.body().children.length).toBeGreaterThan(0);
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    expect(t.body().children).toEqual([]);
+    expect(t.state()).toBe('');
+  });
+});
