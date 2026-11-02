@@ -112,6 +112,24 @@ describeWithSqlite('O10 · suivi des offres pour l’écran', () => {
     expect((await t.call(t.direction, 'GET', `/offres/biens/${t.propertyId}`)).body.data[0]).toMatchObject({ buyerPersonId: foreign.id, downPaymentEur: 200000 });
   });
 
+  it('[R56] [R26] un message d’essai laisse l’offre à transmettre ; le mandant est refusé comme acquéreur, sous toutes ses fiches', async () => {
+    const t = await setup();
+    // Le vendeur a une adresse et a donné son accord : le message passe le contrôle central, en essai.
+    await t.store.addIdentifier({ networkId: t.network.id, agentId: t.alexId, personId: t.personId, kind: 'email', value: 'vendeur@exemple.test' });
+    await t.store.addConsent({ networkId: t.network.id, agentId: t.alexId, personId: t.personId, purpose: 'suivi_mandat', channel: 'email', proof: 'mandat signé', givenAt: new Date('2027-02-10T09:00:00.000Z') });
+    const offer = await t.record();
+    const sent = await t.call(t.agent, 'POST', `/offres/${offer.id}/transmission`, { via: 'message' });
+    expect(sent.body.data).toMatchObject({ via: 'message', counted: false });
+    expect((await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}/suivi`)).body.data.offers[0]).toMatchObject({ state: 'recue', next: 'transmettre' });
+    const owner = (await t.db.first<{ person_id: string }>('SELECT person_id FROM mandates WHERE property_id = ?', [t.propertyId]))!.person_id;
+    const asSeller = await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, t.input({ buyerPersonId: owner }));
+    expect(asSeller.body).toMatchObject({ code: 'buyer_is_seller', field: 'buyerPersonId' });
+    const survivor = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Vendeur', lastName: 'Réuni' });
+    await t.db.run(`INSERT INTO person_merges (id, network_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES ('fusion-v', ?, ?, ?, 'essai', ?, ?)`, [t.network.id, survivor.id, owner, '2027-03-01T08:00:00.000Z', '2027-03-01T08:00:00.000Z']);
+    expect((await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, t.input({ buyerPersonId: survivor.id }))).body.code).toBe('buyer_is_seller');
+    expect((await t.call(t.agent, 'GET', `/offres/biens/${t.propertyId}`)).body.data).toHaveLength(1);
+  });
+
   it('[R57] [R59] la transmission notée après coup porte son heure vraie : la réponse vraie se range, même le lendemain', async () => {
     const t = await setup();
     const offer = await t.record();

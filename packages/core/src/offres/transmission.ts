@@ -130,7 +130,7 @@ export class TransmissionOffres {
   }
 
   /** L'agent du bien transmet l'offre au vendeur : par message (contrôle central, essai), au téléphone ou en personne. */
-  async transmit(viewer: Viewer, offerId: string, input: { via: unknown; channel?: unknown; at?: unknown }): Promise<{ ok: true; value: { via: Via; messageId: string | null } } | Refusal | Problem> {
+  async transmit(viewer: Viewer, offerId: string, input: { via: unknown; channel?: unknown; at?: unknown }): Promise<{ ok: true; value: { via: Via; messageId: string | null; counted: boolean } } | Refusal | Problem> {
     if (input.via !== 'message' && input.via !== 'telephone' && input.via !== 'en_personne') return { ok: false, rule: null, code: 'bad_via' };
     const found = await this.offerFor(viewer, offerId, true);
     if (!found.ok) return found;
@@ -141,7 +141,6 @@ export class TransmissionOffres {
       at = new Date(input.at).toISOString();
     }
     if (await this.db.first('SELECT offer_id FROM offer_transmissions WHERE offer_id = ?', [offerId])) return { ok: false, rule: null, code: 'already_transmitted' };
-    let messageId: string | null = null;
     if (input.via === 'message') {
       const channel = input.channel === 'sms' || input.channel === 'whatsapp' ? input.channel : 'email';
       const owner = await this.db.first<{ person_id: string; first_name: string | null; reference: string }>(
@@ -164,15 +163,18 @@ export class TransmissionOffres {
         figures: [euros(found.offer.amountEur), owner.reference, found.offer.validUntil.split('-').reverse().join('/')],
       });
       if (sent.status !== 'sent' || !sent.messageId) return { ok: false, rule: sent.rule ?? 'R13', code: 'message_refused', reason: sent.reason };
-      messageId = sent.messageId;
+      // En essai, le message reste dans la boîte d'essai : le vendeur n'a rien reçu. L'offre reste à transmettre, et
+      // l'alerte d'offre non transmise reste due [R56, R26].
+      await appendEvent(this.journal, { type: 'offre.message_essai', actor: this.actor(viewer), subject: `offer:${offerId}`, data: { rule: 'R26', channel } }, this.now);
+      return { ok: true, value: { via: input.via, messageId: sent.messageId, counted: false } };
     }
     const { changes } = await this.db.run(
       'INSERT INTO offer_transmissions (offer_id, network_id, via, message_id, at, by) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (offer_id) DO NOTHING',
-      [offerId, found.networkId, input.via, messageId, at, this.actor(viewer)],
+      [offerId, found.networkId, input.via, null, at, this.actor(viewer)],
     );
     if (changes !== 1) return { ok: false, rule: null, code: 'already_transmitted' };
     await appendEvent(this.journal, { type: 'offre.transmise', actor: this.actor(viewer), subject: `offer:${offerId}`, data: { rule: 'R56', via: input.via } }, this.now);
-    return { ok: true, value: { via: input.via, messageId } };
+    return { ok: true, value: { via: input.via, messageId: null, counted: true } };
   }
 
   /**
