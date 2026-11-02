@@ -97,6 +97,14 @@ describe('AC12 · les gestes d’appel de la fiche', () => {
     expect(a.named(a.body, 'J’ai appelé')).toHaveLength(1);
   });
 
+  it('[R204] refus sur une fiche qui n’a qu’une demande : l’écran dit le refus, pas l’absence d’accord, et les gestes restent', async () => {
+    const a = await opened({ ...FICHE, call: null, callRefusal: 'refused_request', callReopensAt: null });
+    expect(a.body.textContent).toContain('Appel fermé : la personne a refusé. Il ne rouvre que si elle redemande à être rappelée.');
+    expect(a.body.textContent).not.toContain('aucun accord');
+    await a.load();
+    expect(a.named(a.body, 'J’ai appelé')).toHaveLength(1);
+  });
+
   it('[R02] [R04] personne exclue, sans numéro : pas de geste ni de script', async () => {
     const stopped = await opened({ ...FICHE, call: null, callRefusal: 'excluded', contact: { allowed: false, reasons: ['stop'] } });
     expect(stopped.scripts()).toHaveLength(0);

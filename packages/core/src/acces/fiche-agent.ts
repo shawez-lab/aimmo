@@ -30,7 +30,7 @@
  * Fréquence (AC09) [R204] : les appels notés par l'agent comptent. Lecture prudente, chiffres en réglage : 4 appels de
  * prospection en 30 jours ferment le bouton, un refus le ferme 60 jours. Source officielle non lue, question à l'avocat
  * (H41). Un appel sur demande de la personne ne compte pas ; une demande donnée après le refus rouvre l'appel, une demande
- * plus ancienne que le refus ne vaut plus.
+ * plus ancienne que le refus ne vaut plus : l'écran le dit (`refused_request`, AC12), sans date, seule une nouvelle demande rouvre.
  */
 import type { SqlDatabase } from '../db/sql.ts';
 import { isWorkingDay, localTime } from '../envoi/horaires.ts';
@@ -50,7 +50,7 @@ export interface AgentFiche {
   /** Fin du créneau d'appel, quand l'appel ne repose que sur la prospection acceptée [R203] ; sinon null. */
   callClosesAt: string | null;
   /** Pourquoi il n'y a pas de numéro à appeler, pour que l'écran le dise ; null si l'appel est ouvert. */
-  callRefusal: 'excluded' | 'no_phone' | 'no_consent' | 'refused_recently' | 'too_many_calls' | 'outside_hours' | null;
+  callRefusal: 'excluded' | 'no_phone' | 'no_consent' | 'refused_request' | 'refused_recently' | 'too_many_calls' | 'outside_hours' | null;
   /** Quand l'appel rouvre, après un refus ou trop d'appels [R204] ; sinon rien. */
   callReopensAt: string | null;
   projects: { kind: string; stage: string; deadline: string | null; budgetMinEur: number | null; budgetMaxEur: number | null }[];
@@ -184,7 +184,10 @@ export class FicheAgent {
       : !hasPhone
         ? 'no_phone'
         : usable.length === 0
-          ? 'no_consent'
+          ? // Une demande encore valable qui n'ouvre plus rien : la personne a refusé depuis. Seule une nouvelle demande rouvre [R204].
+            fiche.consents.some((c) => isCallRequest(c) && consentOpensCall(c, fiche, at))
+            ? 'refused_request'
+            : 'no_consent'
           : closure
             ? closure.reason
             : !asked && !inProspectingHours(new Date(at))

@@ -97,10 +97,10 @@ describeWithSqlite('AC09 · fréquence des appels de prospection', () => {
   it('[R204] [R03] une demande plus ancienne que le refus ne vaut plus ; une demande donnée après rouvre l’appel', async () => {
     const t = await setup({ request: true });
     await t.appels.note(t.alex, t.person.id, { outcome: 'refused' });
-    expect((await t.state()).refusal).toBe('no_consent');
+    expect(await t.state()).toMatchObject({ call: null, refusal: 'refused_request', reopens: null });
     // Soixante jours plus tard, l'ancienne demande ne revient pas d'elle-même.
     t.setClock(weeks(10));
-    expect((await t.state()).refusal).toBe('no_consent');
+    expect(await t.state()).toMatchObject({ call: null, refusal: 'refused_request', reopens: null });
     // Datée d'avant le refus, elle est refusée ; datée d'aujourd'hui, elle compte, sans être prise pour celle déjà rangée.
     const proof = 'La personne a rappelé pour être rappelée.';
     expect(await t.accords.record(t.alex, t.person.id, { purpose: 'rappel_demande', channel: 'phone', proof, givenOn: '2027-06-01' })).toEqual({ ok: false, rule: 'R204', code: 'given_before_refusal' });
