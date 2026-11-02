@@ -6,3 +6,5 @@ export * from './echeances.ts';
 export * from './contre-offres.ts';
 export * from './comparatif.ts';
 export * from './dossier-vente.ts';
+export * from './suivi-offres.ts';
+export * from './depot-offres.ts';

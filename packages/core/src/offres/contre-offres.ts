@@ -92,7 +92,8 @@ export class ContreOffres {
     return `${String(viewer.role)}:${viewer.userId}`;
   }
 
-  private async chain(offerId: string): Promise<Proposal[]> {
+  /** Les propositions de l'offre, dans l'ordre. Sans droits : l'appelant a déjà passé ceux de l'offre [R16]. */
+  async chain(offerId: string): Promise<Proposal[]> {
     return (await this.db.all<Row>(`${SELECT} WHERE p.offer_id = ? ORDER BY p.seq`, [offerId])).map(toProposal);
   }
 

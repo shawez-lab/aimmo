@@ -7,6 +7,7 @@ import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS } from './louer.ts';
 import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './investir.ts';
 import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.ts';
 import { AVIS_HTML, AVIS_JS } from './avis.ts';
+import { OFFRES_HTML, OFFRES_JS } from './offres.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { ATTIRER_ENTRY_HTML, ATTIRER_HTML, ATTIRER_JS } from './attirer.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
@@ -138,7 +139,7 @@ ${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTM
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
-${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${STUDIO_HTML}${GAGNER_HTML}${ATTIRER_HTML}${INTEGRATION_HTML}<section id="chiffres" hidden>
+${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OFFRES_HTML}${STUDIO_HTML}${GAGNER_HTML}${ATTIRER_HTML}${INTEGRATION_HTML}<section id="chiffres" hidden>
 <button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
 <div class="periodes" role="group" aria-label="Période">
@@ -221,7 +222,7 @@ summary { min-height: var(--cible); display: flex; align-items: center; cursor: 
 h4 { margin: var(--e-4) 0 var(--e-1); }
 .brief ul { margin: 0; padding-left: var(--e-5); }
 .brief li { padding: var(--e-1) 0; }
-#fiche, #visite, #bien, #avis, #vente, #apres, #chiffres, #reseau, #partenaires { padding-top: var(--e-2); }
+#fiche, #visite, #bien, #avis, #offres, #vente, #apres, #chiffres, #reseau, #partenaires { padding-top: var(--e-2); }
 .tirage { margin: var(--e-2) 0; padding-left: var(--e-6); }
 .tirage li { padding: var(--e-2) 0; font-family: var(--police-titre); font-size: var(--t-l); }
 .tirage li::marker { color: var(--moutarde); font-weight: 600; }
@@ -608,6 +609,7 @@ export const APP_JS = `'use strict';
     wipeConformite();
     wipeCommerces();
     wipeAvis();
+    wipeOffres();
     wipeStudio();
     wipeGagner();
     wipeAttirer();
@@ -980,6 +982,7 @@ export const APP_JS = `'use strict';
       li.appendChild(el('strong', b.reference + (b.city ? ' · ' + b.city : '')));
       li.appendChild(el('p', b.state ? 'Annonce ' + (LISTING_STATES[b.state] || 'publiée') + '.' : 'Pas encore publiée.', 'doux'));
       li.appendChild(button(b.state ? 'Voir l’annonce' : 'Mettre en vente', function () { openVente(b.id, b.reference); }));
+      li.appendChild(button('Offres', function () { openOffres(b.id, b.reference); }));
       li.appendChild(button('Avis de valeur', function () { openAvis(b.id, b.reference); }));
       li.appendChild(button('Studio', function () { openStudio(b.id, b.reference); }));
       list.appendChild(li);
@@ -1742,7 +1745,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${INTEGRATION_JS}${REPRISE_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${INTEGRATION_JS}${REPRISE_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1759,7 +1762,7 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'studio', 'gagner', 'attirer', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'studio', 'gagner', 'attirer', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
   function api(path, key, method, body) {
@@ -1914,6 +1917,7 @@ ${LOUER_JS}
     $('commerces-retour').addEventListener('click', function () { if (commercesInside()) openCommerces(''); else home(); });
     $('commerces-ouvrir').addEventListener('click', function () { openCommerces(''); });
     $('avis-retour').addEventListener('click', function () { wipeAvis(); home(); });
+    $('offres-retour').addEventListener('click', function () { wipeOffres(); home(); });
     $('studio-retour').addEventListener('click', function () { wipeStudio(); home(); });
     $('gagner-retour').addEventListener('click', function () { if (gagnerScreen && gagnerScreen.inside()) openGagner(); else { wipeGagner(); home(); } });
     $('gagner-ouvrir').addEventListener('click', function () { openGagner(); });
