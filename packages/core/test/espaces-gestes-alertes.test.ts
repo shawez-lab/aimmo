@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { Acces, Alertes, FicheAcquereur, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type DiffusionGate, type SqlDatabase } from '../src/index.ts';
+import { ALERT_PURPOSE } from '../src/acquereurs/alertes.ts';
 import { GestesModules, type ClientViewer } from '../src/espaces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -54,5 +55,24 @@ describeWithSqlite('EC10 · alertes demandées depuis l’espace, envoyées par 
     expect(box[0]!.channel).toBe('email');
     expect(box[0]!.body).toContain(BASE);
     expect(await t.realSends()).toBe(0);
+  });
+
+  it('[R03] [R49] une demande refaite est rangée et rouvre l’envoi quand la ligne ouverte est plus ancienne qu’un retrait (AC07), et un accord qui compte n’est pas doublé', async () => {
+    const t = await setup();
+    const store = new FicheClient(t.db);
+    const personId = t.viewer.personId;
+    const add = (day: string) => store.addConsent({ networkId: t.network.id, personId, purpose: ALERT_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date(`2020-01-${day}T00:00:00.000Z`) });
+    await add('02');
+    const old = await add('01');
+    await store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [personId, ALERT_PURPOSE]);
+    await t.alertes.forProperty(t.network.id, t.property.id);
+    expect(await t.outbox()).toEqual([]);
+    expect(await t.gestes.requestAlerts(t.viewer, { accepted: true })).toEqual({ ok: true, value: { requested: true } });
+    expect(await lines()).toHaveLength(3);
+    await t.gestes.requestAlerts(t.viewer, { accepted: true });
+    expect(await lines()).toHaveLength(3);
+    await t.alertes.forProperty(t.network.id, t.property.id);
+    expect((await t.outbox()).length).toBeGreaterThan(0);
   });
 });

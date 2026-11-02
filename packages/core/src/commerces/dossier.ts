@@ -215,6 +215,7 @@ export class DossierCommerce {
   private readonly baseUrl: string;
   private readonly store: FicheClient;
   private readonly envois: ControleEnvois;
+  private readonly fiche: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -236,6 +237,7 @@ export class DossierCommerce {
     this.baseUrl = options.baseUrl ?? 'https://app.aimmo.fr/dossier/';
     this.store = new FicheClient(db, { now: this.now });
     const fiche = new FicheUnique(db, this.store, { now: this.now });
+    this.fiche = fiche;
     // Le lien passe par le contrôle central, avec les seuls canaux du mode essai : rangé, jamais envoyé [R26].
     this.envois = new ControleEnvois(db, fiche, new DecisionEnvoi(db, this.store, fiche, { now: this.now }), {
       channels: trialChannels(db, journal, this.now),
@@ -282,7 +284,7 @@ export class DossierCommerce {
     const gate = await this.confidentialite.canSendConfidential(viewer.networkId, propertyId, personId, this.actor(viewer));
     if (!gate.ok) return { ok: false, rule: 'R113', code: 'door_closed', codes: gate.codes };
     if (typeof input.consentProof !== 'string' || input.consentProof.trim() === '' || input.consentProof.length > 300) return { ok: false, rule: null, code: 'bad_consent' };
-    const consent = await this.db.first('SELECT id FROM consents WHERE person_id = ? AND purpose = ? AND channel = ? AND withdrawn_at IS NULL', [personId, DOSSIER_PURPOSE, 'email']);
+    const consent = await this.fiche.hasConsentInForce(personId, DOSSIER_PURPOSE, 'email');
     if (!consent) await this.store.addConsent({ networkId: viewer.networkId, personId, purpose: DOSSIER_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
     const id = this.newId();
     const token = this.newToken();

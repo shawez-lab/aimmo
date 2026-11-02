@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { AFTER_SALE_PURPOSE } from '../src/apres-vente/relances-apres-vente.ts';
 import {
   AFTER_SALE_REMINDER_JOB,
   OLD_CONTACT_QUIET_DAYS,
@@ -390,5 +391,22 @@ describeWithSqlite('F04 · relance un an après la vente, sans jamais relancer u
     expect(events.some((e) => e.type === 'apres_vente.relance')).toBe(true);
     expect(JSON.stringify(events)).not.toMatch(/example\.test|Bonjour|desinscription|Ana/);
     await expect(t.db.run('DELETE FROM after_sale_reminders')).rejects.toThrow();
+  });
+
+  it('[R03] [R65] un « oui » redit est rangé quand la ligne ouverte est plus ancienne qu’un retrait (AC07), et un accord qui compte n’est pas doublé', async () => {
+    const t = await setup();
+    const a = await t.client('Ana');
+    t.close('f1', '2027-03-01', [{ personId: a, side: 'vendeur' }]);
+    const store = new FicheClient(t.db);
+    const networkId = (await t.db.first<{ network_id: string }>('SELECT network_id FROM persons WHERE id = ?', [a]))!.network_id;
+    const add = (day: string) => store.addConsent({ networkId, personId: a, purpose: AFTER_SALE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date(`2020-01-${day}T00:00:00.000Z`) });
+    await add('02');
+    const old = await add('01');
+    await store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [a, AFTER_SALE_PURPOSE]);
+    expect(await t.relances.recordChoice(t.agent, 'f1', a, { choice: 'oui', proof: 'case cochée, test' })).toEqual({ ok: true });
+    expect(await lines()).toHaveLength(3);
+    await t.relances.recordChoice(t.agent, 'f1', a, { choice: 'oui', proof: 'case cochée, test' });
+    expect(await lines()).toHaveLength(3);
   });
 });

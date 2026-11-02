@@ -141,6 +141,7 @@ export class ConfidentialiteCommerce {
   private readonly newCode: () => string;
   private readonly store: FicheClient;
   private readonly envois: ControleEnvois;
+  private readonly fiche: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -155,6 +156,7 @@ export class ConfidentialiteCommerce {
     this.newCode = options.newCode ?? newSignatureCode;
     this.store = new FicheClient(db, { now: this.now });
     const fiche = new FicheUnique(db, this.store, { now: this.now });
+    this.fiche = fiche;
     // Le code passe par le contrôle central, avec les seuls canaux du mode essai : rangé dans la boîte d'essai, jamais
     // envoyé [R26] ; le vrai envoi attend H05.
     this.envois = new ControleEnvois(db, fiche, new DecisionEnvoi(db, this.store, fiche, { now: this.now }), {
@@ -233,7 +235,7 @@ export class ConfidentialiteCommerce {
     if (await this.revoked(nda.id)) return { ok: false, rule: 'R113', code: 'revoked' };
     if (await this.db.first("SELECT 1 FROM business_nda_signatures WHERE nda_id = ? AND status = 'signee'", [nda.id])) return { ok: false, rule: null, code: 'already_signed' };
     if (typeof input.consentProof !== 'string' || input.consentProof.trim() === '' || input.consentProof.length > 300) return { ok: false, rule: null, code: 'bad_consent' };
-    const consent = await this.db.first('SELECT id FROM consents WHERE person_id = ? AND purpose = ? AND channel = ? AND withdrawn_at IS NULL', [nda.person_id, ONLINE_SIGNATURE_PURPOSE, 'email']);
+    const consent = await this.fiche.hasConsentInForce(nda.person_id, ONLINE_SIGNATURE_PURPOSE, 'email');
     if (!consent) await this.store.addConsent({ networkId: nda.network_id, personId: nda.person_id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
     const id = this.newId();
     const code = this.newCode();

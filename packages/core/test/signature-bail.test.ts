@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { MAX_CODE_ATTEMPTS } from '../src/documents/signature-en-ligne.ts';
+import { MAX_CODE_ATTEMPTS, ONLINE_SIGNATURE_PURPOSE } from '../src/documents/signature-en-ligne.ts';
 import { Annuaire, MiseEnRelation } from '../src/partenaires/index.ts';
 import {
   BauxLocation,
@@ -318,5 +318,20 @@ describeWithSqlite('W12 · signature en ligne du bail, en mode essai', () => {
     // Le locataire passe à un autre agent ; le bien reste à Alex : l'exemplaire ne lui est plus rendu.
     await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.other.userId, t.tenant()]);
     expect(await t.signatures.copy(t.agent, id, leaseId)).toMatchObject({ ok: false, rule: 'R16' });
+  });
+
+  it('[R03] un accord redonné est rangé quand la ligne ouverte est plus ancienne qu’un retrait (AC07), et un accord qui compte n’est pas doublé', async () => {
+    const t = await setup();
+    const { id } = await t.leased();
+    const add = (given: number) => t.store.addConsent({ networkId: t.owner.network_id, personId: t.owner.id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date(Date.parse('2020-01-01T00:00:00.000Z') + given) });
+    await add(1000);
+    const old = await add(0);
+    await t.store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [t.owner.id, ONLINE_SIGNATURE_PURPOSE]);
+    const before = (await lines()).length;
+    expect((await t.signatures.start(t.agent, id, { party: 'bailleur', ...CONSENT })).ok).toBe(true);
+    expect(await lines()).toHaveLength(before + 1);
+    await t.signatures.start(t.agent, id, { party: 'bailleur', ...CONSENT });
+    expect(await lines()).toHaveLength(before + 1);
   });
 });

@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { DOSSIER_PURPOSE } from '../src/commerces/dossier.ts';
 import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import {
   ConfidentialiteCommerce,
@@ -287,4 +288,20 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
 it('aucun nombre réglé hors des bornes', () => {
   expect(() => new DossierCommerce({} as SqlDatabase, {} as never, {} as never, {} as never, { read: async () => null }, { maxOpens: 0 })).toThrow();
   expect(() => new DossierCommerce({} as SqlDatabase, {} as never, {} as never, {} as never, { read: async () => null }, { linkDays: 31 })).toThrow();
+});
+
+describeWithSqlite('AC07 · accord redonné pour un dossier', () => {
+  it('[R03] un accord redonné est rangé quand la ligne ouverte est plus ancienne qu’un retrait (AC07), et un accord qui compte n’est pas doublé', async () => {
+    const t = await setup();
+    const b = await t.buyer(true);
+    const add = (day: string) => t.store.addConsent({ networkId: t.networkId, personId: b.id, purpose: DOSSIER_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date(`2020-01-${day}T00:00:00.000Z`) });
+    await add('02');
+    const old = await add('01');
+    await t.store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [b.id, DOSSIER_PURPOSE]);
+    expect((await t.dossier.send(t.acces, t.alex, t.shop.id, b.id, CONSENT)).ok).toBe(true);
+    expect(await lines()).toHaveLength(3);
+    await t.dossier.send(t.acces, t.alex, t.shop.id, b.id, CONSENT);
+    expect(await lines()).toHaveLength(3);
+  });
 });
