@@ -262,6 +262,67 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect((await t.call(direction, 'GET', `/attirer/quartiers/${ouest.zoneId}/faits`)).body.data).toEqual([]);
   });
 
+  it('[R16] AT15 : les zones du réseau, sans contour, à la direction de ce réseau seule ; une zone retirée n’y est plus', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    const res = await t.call(direction, 'GET', '/attirer/prix/zones');
+    expect(res.status).toBe(200);
+    const items = res.body.data as { id: string; level: string; parentId: string | null; name: string; ring_json?: unknown }[];
+    expect(items.filter((z) => z.level === 'quartier').map((z) => z.name)).toEqual(['est', 'ouest']);
+    expect(items.filter((z) => z.level === 'commune')).toHaveLength(1);
+    for (const z of items) expect(Object.keys(z).sort()).toEqual(['id', 'level', 'name', 'parentId']);
+    expect((await t.call(camille, 'GET', '/attirer/prix/zones')).status).toBe(403);
+    expect(await t.call({ ...direction, networkId: 'net-2' }, 'GET', '/attirer/prix/zones')).toMatchObject({ status: 200, body: { data: [] } });
+    const ouest = items.find((z) => z.name === 'ouest')!;
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${ouest.id}/retrait`)).status).toBe(200);
+    const after = (await t.call(direction, 'GET', '/attirer/prix/zones')).body.data as { name: string }[];
+    expect(after.map((z) => z.name)).not.toContain('ouest');
+    // Une commune retirée emporte ses quartiers.
+    const commune = items.find((z) => z.level === 'commune')!;
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${commune.id}/retrait`)).status).toBe(200);
+    expect((await t.call(direction, 'GET', '/attirer/prix/zones')).body.data).toEqual([]);
+  });
+
+  it('[R150] AT15 : une zone retirée quitte le site aussitôt, sans recalcul, même la dernière commune', async () => {
+    const t = await setup();
+    expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'reseau', baseUrl: NET, active: true })).status).toBe(200);
+    const plan = async () => (await (await t.get(`${NET}/sitemap.xml`))!.text());
+    const commune = await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'commune', slug: 'ville-test', name: 'Ville Test', inseeCode: '99001', ring: COMMUNE, ringSource: 'Contour inventé' });
+    const parentId = commune.body.data.id as string;
+    // Un seul quartier, aussi grand que sa commune : aucune différence n'y retrouve une vente, sa case se publie.
+    const quartier = await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'quartier', parentId, slug: 'ouest', name: 'Ouest', ring: COMMUNE, ringSource: 'Contour inventé' });
+    const ouest = { id: quartier.body.data.id as string, parent_id: parentId };
+    expect((await t.call(direction, 'POST', '/attirer/prix/recalcul')).body).toMatchObject({ ok: true, data: { ran: true } });
+    expect((await t.get(`${NET}/prix/ville-test/ouest`))!.status).toBe(200);
+    expect(await plan()).toContain('/prix/ville-test/ouest');
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${ouest.id}/retrait`)).status).toBe(200);
+    expect((await t.get(`${NET}/prix/ville-test/ouest`))!.status).toBe(404);
+    expect(await plan()).not.toContain('/prix/ville-test/ouest');
+    expect((await t.get(`${NET}/prix/ville-test`))!.status).toBe(200);
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${ouest.parent_id}/retrait`)).status).toBe(200);
+    expect((await t.get(`${NET}/prix/ville-test`))!.status).toBe(404);
+    expect(await plan()).not.toContain('/prix/ville-test');
+    expect((await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'quartier', parentId: ouest.parent_id, slug: 'nord', name: 'Nord', ring: WEST, ringSource: 'Contour inventé' })).body).toMatchObject({ code: 'parent' });
+  });
+
+  it('[R150] AT15 : hors de France ou hors de sa commune, un contour est refusé ; 2 000 points passent par la route', async () => {
+    const t = await setup();
+    const inverted = COMMUNE.map(([lat, lon]) => [lon, lat]);
+    const commune = (slug: string, ring: unknown) => ({ level: 'commune', slug, name: slug, inseeCode: '99001', ring, ringSource: 'Contour inventé' });
+    expect((await t.call(direction, 'POST', '/attirer/prix/zones', commune('inversee', inverted))).body).toMatchObject({ code: 'hors_france' });
+    const circle = Array.from({ length: 2000 }, (_, i) => {
+      const a = (2 * Math.PI * i) / 2000;
+      return [Math.round((47.123456 + 0.05 * Math.sin(a)) * 1e6) / 1e6, Math.round((5.123456 + 0.05 * Math.cos(a)) * 1e6) / 1e6];
+    });
+    const big = await t.call(direction, 'POST', '/attirer/prix/zones', commune('grande', circle));
+    expect(big.status).toBe(200);
+    const parentId = big.body.data.id as string;
+    const far = [[43, 1], [43, 1.1], [43.1, 1.1]];
+    expect((await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'quartier', parentId, slug: 'loin', name: 'Loin', ring: far, ringSource: 'Contour inventé' })).body).toMatchObject({ code: 'hors_commune' });
+    const near = [[47.09, 5.09], [47.09, 5.15], [47.15, 5.15]];
+    expect((await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'quartier', parentId, slug: 'pres', name: 'Pres', ring: near, ringSource: 'Contour inventé' })).status).toBe(200);
+  });
+
   it('[R155] AT13 : un fait reste retirable même devenu refusable, un fait inconnu ne se retire pas ; un texte dit s’il est encore validable', async () => {
     const t = await setup();
     await preparedNetwork(t);
