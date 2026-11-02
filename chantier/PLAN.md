@@ -1933,7 +1933,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 
 ### W11 · Écrans de M15 dans l'application
 - Statut : fait (2026-10-29)
-- Reste : fusionnée (#165). Ajouter une candidature depuis l'écran (elle part de la fiche de la personne) ; déposer depuis le téléphone une annexe, une preuve ou la notice au lieu de saisir sa référence rangée ; relire le texte du bail après réouverture (lecture du bail sous les droits des deux fiches).
+- Reste : fusionnée (#165). Ajouter une candidature depuis l'écran : réglé par W13 (#263) ; déposer depuis le téléphone une annexe, une preuve ou la notice au lieu de saisir sa référence rangée ; relire le texte du bail après réouverture (lecture du bail sous les droits des deux fiches).
 - Décidé (2026-10-29, voie 2) : lectures `GET /location`, `/location/:id/suivi`, `/location/:id/presentation` ; l'état des lieux en cours (qui porte les noms des parties) n'est rendu qu'à qui voit les deux fiches en entier ; aucun état d'élément choisi d'avance ; textes du bail et séances de signature effacés à la sortie ; relecture forte 2 P1 et un trou de test corrigés, Codex 2 P0 et 2 P2 corrigés, dernière version validée par Codex (le script d’attente ne l’a pas vu).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W09, Z03 (même fichier `packages/api/app/fichiers.ts`)
 - Cahier : M15 ; exigence de design (protocole, section 9).
@@ -1942,7 +1942,7 @@ Décidé, lecture prudente : AIMMO fait la mise en location d'un logement, jamai
 - Attend : rien.
 
 ### W13 · Ajouter une candidature depuis l'écran « Louer »
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Voie : 2
 - Décidé (2026-11-02, voie 2) : l'application n'avait plus que 55 octets de marge : tout l'écran « Louer » est sorti en `/app/louer.js`, chargé à la première ouverture ; seule une ligne change dans `agent-app.ts`, `fichiers.ts` n'est pas touché ; 500 contacts proposés au plus, d'une seule requête, pour ne pas dépasser les lectures d'une invocation.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11
