@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { IBAN_MASK } from '../src/envoi/texte.ts';
 import {
   Acces,
   ControleEnvois,
@@ -273,6 +274,29 @@ describeWithSqlite('C05 · conversation et relais à l’agent', () => {
     expect(await t.relais.state(person, 'instagram:igsid-autre')).toMatchObject({ holder: 'agent' });
     const [nobody] = humanRepliesFromMeta('instagram', t.echo('personne', 'mid-x', 'Bonjour'), [OUR_APP]);
     expect(await t.relais.noteHumanReply(t.network.id, nobody!)).toBe('unknown_conversation');
+  });
+
+  it('[R15] l’IBAN écrit par l’agent dans le canal n’est rangé en clair ni dans la fiche ni dans l’écho gardé', async () => {
+    const t = await setup();
+    const id = await t.receive(t.dm('lou', 'Bonjour, où en est le dossier ?'));
+    const person = await t.personOf(id);
+    const iban = 'FR76 3000 6000 0112 3456 7890 189';
+    const text = `Voici le compte du notaire : ${iban}. À bientôt.`;
+    const [direct] = humanRepliesFromMeta('instagram', t.echo('lou', 'mid-iban-1', text), [OUR_APP]);
+    expect(await t.relais.noteOrKeepHumanReply(t.network.id, direct!)).toBe('noted');
+
+    // L'agent écrit le premier : l'écho est gardé pour la reprise, puis appliqué quand la personne est connue.
+    const [kept] = humanRepliesFromMeta('instagram', t.echo('autre', 'mid-iban-2', text), [OUR_APP]);
+    expect(await t.relais.noteOrKeepHumanReply(t.network.id, kept!)).toBe('pending');
+    const pending = await t.db.all<{ body: string }>('SELECT body FROM pending_human_replies');
+    expect(pending.map((r) => r.body)).toContain(`Voici le compte du notaire : ${IBAN_MASK}. À bientôt.`);
+    await t.db.run('INSERT INTO contact_keys (network_id, key, person_id, created_at) VALUES (?, ?, ?, ?)', [t.network.id, 'instagram:direct:igsid-autre', person, SUNDAY_NIGHT.toISOString()]);
+    await t.relais.applyPendingHumanReplies(t.network.id);
+
+    const bodies = (await t.db.all<{ body: string }>("SELECT body FROM messages WHERE author_kind = 'agent'")).map((r) => r.body);
+    expect(bodies).toEqual([`Voici le compte du notaire : ${IBAN_MASK}. À bientôt.`, `Voici le compte du notaire : ${IBAN_MASK}. À bientôt.`]);
+    const stored = JSON.stringify([bodies, await t.db.all('SELECT body FROM pending_human_replies')]);
+    expect(stored).not.toMatch(/3000|FR76/);
   });
 
   it('[R21] nos propres échos ne font pas taire l’assistant ; un écho sans application connue, si', () => {
