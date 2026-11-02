@@ -16,7 +16,10 @@ import {
   DecisionEnvoi,
   FicheClient,
   CATEGORIES,
+  AvisDeValeur,
   AvisImprime,
+  PreparationAvis,
+  publicDataServices,
   ChronologieMandat,
   ControlesSignature,
   SignatureEnLigne,
@@ -52,6 +55,8 @@ import {
   type SendRequest,
   type SqlDatabase,
   type Viewer,
+  type Fetcher,
+  type ValuationReport,
 } from '@aimmo/core';
 import { intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } from './auth.ts';
 import { INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys } from './acces.ts';
@@ -126,6 +131,8 @@ export interface ApiConfig {
   writer?: ReplyWriter;
   /** Estimation en ligne du site (E05) : Base adresse nationale et ventes DVF ; absents, le service est fermé. */
   estimation?: { geocoder: Geocoder; sales: DetailedSales };
+  /** Les données publiques d'un bien (E09), en lecture seule ; absentes, aucun avis ne se prépare. */
+  fetchPublicData?: Fetcher;
   estimationLimits?: EstimationLimits;
   /** Réservation des rendez-vous (V08) : limites d'appels, et début du lien pour décaler ou annuler (`RDV_LINK_BASE`). */
   bookingLimits?: BookingLimits;
@@ -1233,6 +1240,77 @@ function m01Routes(config: Pick<ApiConfig, 'estimation' | 'attirer'>): RouteDef[
   }));
 }
 
+/** Ce que l'agent lit d'un avis : ni le détail brut du calcul, ni les chiffres permis. */
+const avisView = (r: ValuationReport) => ({
+  id: r.id,
+  propertyId: r.property_id,
+  status: r.status,
+  computedLow: r.computed_low,
+  computedHigh: r.computed_high,
+  low: r.agent_low ?? r.computed_low,
+  high: r.agent_high ?? r.computed_high,
+  text: r.text,
+  createdAt: r.created_at,
+  validatedAt: r.validated_at,
+});
+
+/** Un refus de l'avis : droit ou validation en 403, inconnu en 404, le reste en 409 ou 422 selon sa cause. */
+function avisRefusal(r: { rule: string | null; code: string; comparablesFound?: number }): Response {
+  const status = r.code === 'unknown' ? 404 : r.code === 'not_configured' || r.code === 'sales_unavailable' ? 503 : r.code === 'not_following_agent' || r.code === 'not_validated' || r.rule === 'R16' ? 403 : r.code === 'already_validated' || r.code === 'changed_meanwhile' ? 409 : 422;
+  return json(status, { ok: false, rule: r.rule, code: r.code, ...(r.comparablesFound !== undefined ? { comparablesFound: r.comparablesFound } : {}) });
+}
+
+/** E09 : préparer, lire, ajuster et valider un avis de valeur. Rien ne part d'ici [R26, R30]. */
+function avisRoutes(config: Pick<ApiConfig, 'estimation' | 'fetchPublicData'>): RouteDef[] {
+  const preparation = (s: Services) =>
+    new PreparationAvis(s.db, s.acces, s.journal, config.estimation && config.fetchPublicData ? { collecte: publicDataServices(config.fetchPublicData), sales: config.estimation.sales } : null, { now: s.now });
+  const avis = (s: Services) => new AvisDeValeur(s.db, s.journal, { now: s.now });
+  return [
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/biens/${ID}/avis$`),
+      name: 'bien.avis_prepare',
+      handle: async (s, viewer, [id], request) => {
+        const body = await readJson(request);
+        if (!body) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+        const r = await preparation(s).prepare(viewer, id!, body);
+        return r.ok ? json(201, { ok: true, mode: TRIAL_MODE, data: avisView(r.value) }) : avisRefusal(r);
+      },
+    },
+    {
+      method: 'GET',
+      pattern: new RegExp(`^/biens/${ID}/avis$`),
+      name: 'bien.avis_liste',
+      handle: async (s, viewer, [id]) => {
+        const r = await preparation(s).list(viewer, id!);
+        return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value.map(avisView) }) : avisRefusal(r);
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/avis/${ID}/ajustement$`),
+      name: 'avis.ajuste',
+      handle: async (s, viewer, [id], request) => {
+        const body = await readJson(request);
+        if (!body) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+        const { low, high, text } = body;
+        if ((low !== undefined && typeof low !== 'number') || (high !== undefined && typeof high !== 'number') || (text !== undefined && typeof text !== 'string')) return failure(400, 'invalid_body', 'Fourchette en nombres, texte en lettres.');
+        const r = await avis(s).adjust(viewer, id!, { ...(low !== undefined ? { low } : {}), ...(high !== undefined ? { high } : {}), ...(text !== undefined ? { text } : {}) });
+        return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: avisView(r.value) }) : avisRefusal(r);
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/avis/${ID}/validation$`),
+      name: 'avis.valide',
+      handle: async (s, viewer, [id]) => {
+        const r = await avis(s).validate(viewer, id!);
+        return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: avisView(r.value) }) : avisRefusal(r);
+      },
+    },
+  ];
+}
+
 /** Une page publique de M01 : prix, agent, quartier, simulateur, plan du site, consignes aux moteurs. */
 const isAttirerPublic = (path: string): boolean => Object.values(ATTIRER_PUBLIC_PATHS).some((p) => p.test(path));
 
@@ -1578,6 +1656,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...accordsFicheRoutes(),
     ...appelsFicheRoutes(),
     ...m01Routes(config),
+    ...avisRoutes(config),
     ...repriseRoutes(),
     ...espacesAgentRoutes(config),
   ];

@@ -3,6 +3,7 @@ export * from './dvf-site.ts';
 export * from './collecte.ts';
 export * from './avis.ts';
 export * from './avis-imprime.ts';
+export * from './preparation-avis.ts';
 export * from './en-ligne.ts';
 export * from './suivi.ts';
 export * from './mesure.ts';
