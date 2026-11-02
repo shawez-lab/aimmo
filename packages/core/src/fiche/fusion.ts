@@ -268,7 +268,7 @@ export class FicheUnique {
         // l'original et ses copies ne font qu'un, et rien n'est doublé. La copie garde la date de création de l'original,
         // pour qu'une fusion défaite plus tard la lise comme lui.
         ...(await this.exclusionPairs(merge, ids)).map(({ source, target, since }) => ({
-          sql: `INSERT INTO exclusions (id, network_id, agent_id, person_id, reason, channel, noted_at, lifted_at, created_at, copied_by_merge)
+          sql: `INSERT INTO exclusions (id, network_id, agent_id, person_id, reason, channel, noted_at, lifted_at, created_at, undone_merge_id)
                 SELECT ${SQL_UUID}, e.network_id, MIN(e.agent_id), ?, e.reason, e.channel, e.noted_at, e.lifted_at, MIN(e.created_at), ?
                 FROM exclusions e
                 WHERE e.person_id = ? AND e.created_at >= ?
@@ -295,7 +295,7 @@ export class FicheUnique {
         [...ids, merge.merged_at, undoneAt],
       );
       const copied = await this.db.all<{ id: string }>(
-        'SELECT id FROM exclusions WHERE copied_by_merge = ? ORDER BY id',
+        'SELECT id FROM exclusions WHERE undone_merge_id = ? ORDER BY id',
         [mergeId],
       );
       await appendEvent(

@@ -522,7 +522,7 @@ describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
         await t.fiche.undoMerge(merge.id, trace(t));
         const [copy] = await t.store.listExclusions(b);
         expect(copy?.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-        expect(copy?.copied_by_merge).toBe(merge.id);
+        expect(copy?.undone_merge_id).toBe(merge.id);
       });
 
       it('[R04] défaire une seule des deux fusions imbriquées laisse hors du lot ce qui est noté avant elle', async () => {
