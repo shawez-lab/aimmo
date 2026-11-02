@@ -2584,7 +2584,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT14 · Écran « Attirer » : avis et publications Google, préparés et validés
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12
 - Cahier : M01 ; R154, R26.
