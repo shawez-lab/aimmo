@@ -15,8 +15,6 @@ const REFUSALS: Record<string, string> = {
   source_absente: 'La source des ventes publiques n’est pas branchée : aucun recalcul pour le moment.',
   bad_url: 'Saisissez l’adresse complète du site, sans chemin, par exemple https://www.exemple.fr.',
   url_taken: 'Cette adresse sert déjà un autre site : une seule page de référence par bien.',
-  agent_inactive: 'Cet agent n’est plus en activité : son site ne peut pas être en service.',
-  unknown_agent: 'Cet agent n’est pas dans le réseau.',
   bad_month: 'Choisissez un mois dans la liste.',
 };
 
@@ -116,7 +114,6 @@ globalThis.AIMMO_ATTIRER = function (t) {
     clear($('attirer-corps'));
     state('');
     chosenMonth = null;
-    busy = false;
   }
   function part(title) {
     var box = el('section', null, 'bloc');
@@ -128,7 +125,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     return box;
   }
   function list(res) { return res.ok && Array.isArray(res.body.data) ? res.body.data : null; }
-  /* Un geste à la fois : un double appui ne part qu'une fois. */
+  /* Un geste à la fois, même si l'écran est rouvert entre-temps : seul le geste en cours libère le verrou. */
   function once(work) {
     if (busy) return Promise.resolve(false);
     busy = true;
@@ -203,7 +200,6 @@ globalThis.AIMMO_ATTIRER = function (t) {
         if (!x.ok) { state(refusal(x, 'Le recalcul n’a pas abouti : les prix en ligne ne changent pas.')); return false; }
         var r = x.body.data;
         if (!r.ran) { state(NOT_RUN[r.reason] || 'Rien de nouveau.'); return false; }
-        busy = false;
         return open('Nouvelle version : ' + r.published + ' prix publiés, ' + r.carried + ' repris de la version d’avant, ' + r.held + ' retenus.');
       });
     });
@@ -225,14 +221,34 @@ globalThis.AIMMO_ATTIRER = function (t) {
     return box;
   }
 
-  /* AT04 · les sites en service et leur plan. */
-  function saveSite(site, active, okText, failText) {
+  /*
+   * Un geste qui coupe un site se confirme : le premier appui demande de confirmer ; un second appui trop rapproché
+   * n'est pas une confirmation ; sans suite, la demande retombe.
+   */
+  function confirmed(text, act) {
+    var armedAt = null;
+    var b = button(text, function () {
+      var now = Date.now();
+      if (armedAt !== null && now - armedAt < 1000) return;
+      if (armedAt === null || now - armedAt > 15000) {
+        armedAt = now;
+        b.textContent = 'Confirmer : ' + text.charAt(0).toLowerCase() + text.slice(1);
+        state('Ce site ne servira plus ses pages à cette adresse. Appuyez de nouveau pour confirmer.');
+        return;
+      }
+      armedAt = null;
+      b.textContent = text;
+      act();
+    });
+    return b;
+  }
+  /* AT04 · les sites en service et leur plan. Le site d'un agent se lit ici ; il se règle avec AT15. */
+  function saveSite(baseUrl, active, okText, failText) {
     return once(function () {
       state('Envoi…');
-      return send('/v1/attirer/sites', 'POST', site.kind === 'agent' ? { kind: 'agent', agentId: site.agentId, baseUrl: site.baseUrl, active: active } : { kind: 'reseau', baseUrl: site.baseUrl, active: active }).then(function (x) {
+      return send('/v1/attirer/sites', 'POST', { kind: 'reseau', baseUrl: baseUrl, active: active }).then(function (x) {
         if (x.gone) return false;
         if (!x.ok) { state(refusal(x, failText)); return false; }
-        busy = false;
         return open(okText);
       });
     });
@@ -266,13 +282,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       li.appendChild(el('p', s.kind === 'agent' ? 'Site d’un agent' : 'Site du réseau', 'doux'));
       var plan = el('div');
       li.appendChild(button('Voir le plan', function () { openPlan(s, plan); }));
-      /* Deux appuis, un site hors service ne sert plus ses pages : le premier demande seulement de confirmer. */
-      var armed = false;
-      var off = button('Mettre hors service', function () {
-        if (!armed) { armed = true; off.textContent = 'Confirmer : mettre hors service'; return; }
-        saveSite(s, false, 'Site mis hors service.', 'Le site reste en service.');
-      });
-      li.appendChild(off);
+      if (s.kind !== 'agent') li.appendChild(confirmed('Mettre hors service', function () { saveSite(s.baseUrl, false, 'Site mis hors service.', 'Le site reste en service.'); }));
       li.appendChild(plan);
       ul.appendChild(li);
     });
@@ -281,7 +291,8 @@ globalThis.AIMMO_ATTIRER = function (t) {
     var f = field(box, 'attirer-site', hasNetwork ? 'Changer l’adresse du site du réseau' : 'Adresse du site du réseau');
     f.setAttribute('type', 'url');
     f.setAttribute('inputmode', 'url');
-    box.appendChild(button('Mettre en service', function () { saveSite({ kind: 'reseau', baseUrl: f.value.trim() }, true, 'Site mis en service.', 'Le site n’est pas enregistré.'); }));
+    function putOn() { saveSite(f.value.trim(), true, 'Site mis en service.', 'Le site n’est pas enregistré.'); }
+    box.appendChild(hasNetwork ? confirmed('Changer l’adresse', putOn) : button('Mettre en service', putOn));
     return box;
   }
   return { open: open, wipe: wipe };

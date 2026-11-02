@@ -1,6 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
+import { SITE_KINDS } from '../../core/src/attirer/referencement.ts';
 import { ATTIRER_SCRIPT } from '../app/attirer.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { attirerRoutes } from '../src/attirer.ts';
@@ -44,6 +45,29 @@ const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
+/** Une horloge qu'un test avance : un double appui immédiat n'est pas une confirmation. */
+let clock = 0;
+class Clock extends Date {
+  static override now(): number {
+    return clock;
+  }
+}
+const later = (ms: number) => {
+  clock += ms;
+};
+/** Une réponse qui n'arrive que quand le test le décide. */
+function deferred(body: unknown) {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const answer: Answer = async () => {
+    await held;
+    return Response.json({ ok: true, mode: 'essai', data: body });
+  };
+  return { answer, release };
+}
+
 async function run(answers: Record<string, Answer> = {}) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const page = document as typeof document & { body: FakeElement };
@@ -61,6 +85,7 @@ async function run(answers: Record<string, Answer> = {}) {
       return a ? a() : Promise.reject(new TypeError('hors ligne'));
     },
     Intl,
+    Date: Clock,
     setTimeout: () => 0,
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
   };
@@ -92,7 +117,15 @@ async function run(answers: Record<string, Answer> = {}) {
       await settle();
     }
   };
-  return { els, calls, click, body, buttons, texts, input, state, posts, scripts, ouvrir, storage };
+  /** Changer l'adresse du site du réseau : deux appuis, espacés. */
+  const changer = async (url: string) => {
+    input('Changer l’adresse du site du réseau').value = url;
+    const b = buttons('Changer l’adresse')[0];
+    await click(b);
+    later(2000);
+    await click(b);
+  };
+  return { els, calls, context, click, body, buttons, texts, input, state, posts, scripts, ouvrir, storage, changer };
 }
 
 describe('AT12 · écran « Attirer » de la direction', () => {
@@ -116,8 +149,7 @@ describe('AT12 · écran « Attirer » de la direction', () => {
     await t.ouvrir();
     await t.click(t.buttons('Voir le plan')[0]);
     await t.click(t.buttons('Recalculer les prix')[0]);
-    t.input('Changer l’adresse du site du réseau').value = 'https://neuf.exemple.test';
-    await t.click(t.buttons('Mettre en service')[0]);
+    await t.changer('https://neuf.exemple.test');
     const routes = attirerRoutes();
     for (const c of t.calls.slice(before)) {
       const path = c.url.slice('/v1'.length);
@@ -130,16 +162,29 @@ describe('AT12 · écran « Attirer » de la direction', () => {
   it('[R16] le corps envoyé pour un site est bien celui que la route attend', async () => {
     const t = await run();
     await t.ouvrir();
-    t.input('Changer l’adresse du site du réseau').value = '  https://neuf.exemple.test ';
-    await t.click(t.buttons('Mettre en service')[0]);
-    expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ kind: 'reseau', baseUrl: 'https://neuf.exemple.test', active: true });
+    await t.changer('  https://neuf.exemple.test ');
+    const sent = JSON.parse(t.posts()[0]!.body!);
+    expect(sent).toEqual({ kind: 'reseau', baseUrl: 'https://neuf.exemple.test', active: true });
+    expect(SITE_KINDS).toContain(sent.kind);
     expect(t.state()).toBe('Site mis en service.');
+    const u = await run({ 'GET /v1/attirer/sites': ok([]) });
+    await u.ouvrir();
+    u.input('Adresse du site du réseau').value = 'https://premier.exemple.test';
+    await u.click(u.buttons('Mettre en service')[0]);
+    expect(JSON.parse(u.posts()[0]!.body!)).toEqual({ kind: 'reseau', baseUrl: 'https://premier.exemple.test', active: true });
   });
 
-  it('l’entrée n’est que sur l’écran du réseau, qu’un agent n’ouvre pas', () => {
-    const reseau = HTML.slice(HTML.indexOf('<section id="reseau"'));
-    expect(reseau).toContain('id="attirer-ouvrir"');
-    expect(HTML.indexOf('id="attirer-ouvrir"')).toBeGreaterThan(HTML.indexOf('<section id="reseau"'));
+  it('l’entrée est dans l’écran du réseau, qu’un agent n’ouvre jamais', async () => {
+    const from = HTML.indexOf('<section id="reseau"');
+    const to = HTML.indexOf('<p id="attente"');
+    const at = HTML.indexOf('id="attirer-ouvrir"');
+    expect(from).toBeGreaterThan(-1);
+    expect(at).toBeGreaterThan(from);
+    expect(at).toBeLessThan(to);
+    const agent = await run({ 'GET /v1/moi': ok({ role: 'agent', firstName: 'Alex' }), 'GET /v1/plan-du-jour': ok(null) });
+    expect(agent.els.reseau!.hidden).toBe(true);
+    const direction = await run();
+    expect(direction.els.reseau!.hidden).toBe(false);
   });
 
   it('les chiffres sont ceux du serveur, tels quels, dans l’ordre reçu', async () => {
@@ -199,8 +244,7 @@ describe('AT12 · écran « Attirer » de la direction', () => {
   it('un refus est dit en français, sans code ni donnée', async () => {
     const t = await run({ 'POST /v1/attirer/sites': no(409, { ok: false, rule: 'R153', code: 'url_taken', secret: 'x' }) });
     await t.ouvrir();
-    t.input('Changer l’adresse du site du réseau').value = 'https://pris.exemple.test';
-    await t.click(t.buttons('Mettre en service')[0]);
+    await t.changer('https://pris.exemple.test');
     expect(t.state()).toBe('Cette adresse sert déjà un autre site : une seule page de référence par bien.');
     const u = await run({ 'GET /v1/attirer/sites': no(403, { ok: false, rule: 'R16', code: 'role' }) });
     await u.ouvrir();
@@ -209,16 +253,79 @@ describe('AT12 · écran « Attirer » de la direction', () => {
     expect(u.texts()).toContain('Prix publics');
   });
 
-  it('mettre un site hors service demande une confirmation, et garde son genre', async () => {
+  it('mettre le site du réseau hors service se confirme ; un double appui immédiat ne coupe rien', async () => {
     const t = await run();
     await t.ouvrir();
-    const off = t.buttons('Mettre hors service')[1]!;
+    const off = t.buttons('Mettre hors service')[0]!;
+    await t.click(off);
+    expect(off.textContent).toBe('Confirmer : mettre hors service');
+    await t.click(off);
+    expect(t.posts()).toHaveLength(0);
+    later(2000);
+    await t.click(off);
+    expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ kind: 'reseau', baseUrl: 'https://reseau.exemple.test', active: false });
+    expect(t.state()).toBe('Site mis hors service.');
+  });
+
+  it('une demande de confirmation restée sans suite retombe', async () => {
+    const t = await run();
+    await t.ouvrir();
+    const off = t.buttons('Mettre hors service')[0]!;
+    await t.click(off);
+    later(60000);
     await t.click(off);
     expect(t.posts()).toHaveLength(0);
     expect(off.textContent).toBe('Confirmer : mettre hors service');
-    await t.click(off);
-    expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ kind: 'agent', agentId: 'ag-1', baseUrl: 'https://camille.exemple.test', active: false });
-    expect(t.state()).toBe('Site mis hors service.');
+  });
+
+  it('le site d’un agent se lit ici, sans geste qui le coupe et qu’on ne pourrait pas défaire', async () => {
+    const t = await run();
+    await t.ouvrir();
+    expect(t.texts()).toContain('https://camille.exemple.test');
+    expect(t.buttons('Mettre hors service')).toHaveLength(1);
+  });
+
+  it('un recalcul en vol reste seul, même si l’écran est relu entre-temps', async () => {
+    const d = deferred({ ran: true, versionId: 'v2', published: 1, carried: 0, held: 0 });
+    const t = await run({ 'POST /v1/attirer/prix/recalcul': d.answer });
+    await t.ouvrir();
+    await t.click(t.buttons('Recalculer les prix')[0]);
+    const f = t.input('Mois');
+    f.value = '2020-01';
+    f.listeners.change!({});
+    await settle();
+    await t.click(t.buttons('Recalculer les prix')[0]);
+    const count = () => t.posts().filter((c) => c.url === '/v1/attirer/prix/recalcul').length;
+    expect(count()).toBe(1);
+    d.release();
+    await settle();
+    await t.click(t.buttons('Recalculer les prix')[0]);
+    expect(count()).toBe(2);
+  });
+
+  it('une clé refusée efface tout, et ramène à la connexion', async () => {
+    const t = await run({ 'POST /v1/attirer/prix/recalcul': no(401, { ok: false }) });
+    await t.ouvrir();
+    await t.click(t.buttons('Recalculer les prix')[0]);
+    expect(t.body().children.length).toBe(0);
+    expect(t.state()).toBe('');
+    expect(t.storage.has('aimmo.cle')).toBe(false);
+    expect(t.els.connexion!.hidden).toBe(false);
+  });
+
+  it('une réponse arrivée après la sortie n’est jamais montrée', async () => {
+    const d = deferred([{ siteId: 's9', kind: 'reseau', agentId: null, baseUrl: 'https://tardif.exemple.test' }]);
+    const u = await run({ 'GET /v1/attirer/sites': d.answer });
+    await u.click(u.els['attirer-ouvrir']);
+    const s = u.scripts()[0]!;
+    runInNewContext(ATTIRER_SCRIPT, u.context);
+    s.listeners.load!({});
+    await settle();
+    await u.click(u.els['attirer-retour']);
+    d.release();
+    await settle();
+    expect(u.body().children.length).toBe(0);
+    expect(u.els.attirer!.hidden).toBe(true);
   });
 
   it('un texte reçu n’est jamais lu comme du HTML', async () => {
@@ -233,8 +340,17 @@ describe('AT12 · écran « Attirer » de la direction', () => {
     const t = await run();
     await t.ouvrir();
     expect(t.body().children.length).toBeGreaterThan(0);
+    const f = t.input('Mois');
+    f.value = '2020-01';
+    f.listeners.change!({});
+    await settle();
     await t.click(t.els['attirer-retour']);
     expect(t.body().children.length).toBe(0);
+    expect(t.state()).toBe('');
+    expect(t.els.attirer!.hidden).toBe(true);
+    const before = t.calls.length;
+    await t.ouvrir();
+    expect(t.calls.slice(before).some((c) => c.url === `/v1/attirer/origine/${MONTH}`)).toBe(true);
   });
 
   it('pas de réseau : c’est dit, rien n’est inventé', async () => {
