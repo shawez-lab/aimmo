@@ -267,7 +267,7 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : chaque route répond sous son rôle [R16] ; la suite complète reste verte.
 
 ### AC03 · Écran : noter et retirer un accord depuis la fiche
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC02
 - Cahier : Conformité ; système de design [R201].
@@ -284,12 +284,22 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : sans accord ni demande, pas de numéro, et l'écran dit pourquoi [R03] ; un accord retiré referme le bouton [R03].
 
 ### AC06 · Horaires et fréquence des appels de prospection
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02), lecture prudente : les heures (lundi au vendredi, 10 h à 13 h, 14 h à 20 h, hors jours fériés) ferment l'appel qui repose seulement sur la prospection acceptée ; une demande de rappel reste ouverte à toute heure. Le texte officiel n'a pas pu être lu (fiche de la DGCCRF fermée à la séance) : heures tirées de deux articles de 2022, dont l'un dit que le décret ne vise pas un consentement préalable ; question à l'avocat en H41. La fréquence va en AC07. Relecture forte : aucun P0, 1 P1 de code corrigé (`callClosesAt`) ; Codex à sa limite, fusion sans lui (#245).
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC04
 - Cahier : Conformité, démarchage téléphonique : « Horaires et fréquence fixés par le décret de 2022 respectés ».
 - Objectif : le bouton « appeler » suit les horaires et la fréquence du décret, à vérifier d'abord dans sa source officielle.
 - Critères : hors des horaires, le bouton est fermé et l'écran dit quand il rouvre [R03] ; une demande de la personne ne se ferme pas de la même façon si le décret ne la vise pas, décision écrite ici ; fréquence : à découper si aucune trace d'appel n'existe encore.
+
+### AC07 · Fréquence des appels de prospection
+- Statut : à faire
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC06
+- Cahier : Conformité, démarchage téléphonique.
+- Objectif : l'agent note qu'il a appelé et, s'il y a lieu, que la personne a refusé ; le bouton compte ces appels. Aucune trace d'appel n'existe aujourd'hui.
+- Critères : à vérifier d'abord dans le texte officiel (H41) : plus de 4 appels de prospection en 30 jours ferment le bouton ; un refus le ferme 60 jours [R203] ; une demande de la personne ne compte pas ; rien de personnel au journal [R13].
+- Attend : H41 pour les chiffres ; deux articles de 2022 disent 4 appels en 30 jours et un refus de 60 jours ou de deux mois.
 
 ## Phase 2 : la preuve à Dijon
 

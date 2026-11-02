@@ -36,6 +36,10 @@ export class FakeElement {
     this.children = this.children.filter((c) => c !== child);
     return child;
   }
+  removeAttribute(name: string): void {
+    delete this.attributes[name];
+  }
+
   setAttribute(name: string, value: string): void {
     this.attributes[name] = String(value);
   }
