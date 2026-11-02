@@ -450,12 +450,13 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Reste : C09d.
 
 ### C09d · Alertes vues de personne : la direction les compte
-- Statut : en cours
+- Statut : fait (2026-11-02)
 - Voie : 1
 - Qui : Claude · Relecture : forte · Dépend de : C09c
 - Cahier : M02, relais à l'agent ; R12, R16.
 - Objectif : trouvé par la relecture de C09c : une alerte sur une fiche sans agent (après un départ, avant une attribution) ou réunie à celle d'un autre agent n'est vue de personne, car la direction n'a pas la route. La direction voit le nombre de ces alertes, par raison, sans donnée de client, pour attribuer les fiches.
 - Critères : une alerte sans agent qui la voit est comptée pour la direction, et sort du compte dès qu'un agent la voit (test [R12]) ; aucun prénom, aucune référence de conversation dans la réponse ni au journal (test [R13]) ; un agent n'a pas ce compte (test [R16]).
+- Décidé (2026-11-02), lecture prudente : comptées aussi les fiches d'un agent parti ou au dossier incomplet, qui ne les voit pas. Une ligne par fiche et par raison, sans borne avant le filtre ; seules les fiches réunies coûtent une lecture de plus, 100 au plus, au-delà le nombre s'affiche « au moins ». Relecture forte : 2 P1 corrigés ; Codex à sa limite, fusion sans lui (#255).
 
 ### C09 · Mise en service de la captation
 - Statut : à faire
