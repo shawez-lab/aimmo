@@ -12,6 +12,7 @@ import { DOSSIER_HTML, DOSSIER_JS } from './dossier.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { ATTIRER_ENTRY_HTML, ATTIRER_HTML, ATTIRER_JS } from './attirer.ts';
 import { BASCULE_ENTRY_HTML, BASCULE_JS } from './bascule.ts';
+import { FINANCES_JS, RAPPORT_AGENT_HTML, RAPPORT_DIRECTION_HTML } from './finances.ts';
 import { FICHE_GOOGLE_HOME_HTML, FICHE_GOOGLE_HTML, FICHE_GOOGLE_JS } from './fiche-google.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
 import { REPRISE_ENTRY_HTML, REPRISE_JS } from './reprise.ts';
@@ -152,7 +153,7 @@ ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OF
 </div>
 <p id="chiffres-etat" class="etat" role="status"></p>
 <div id="chiffres-corps"></div>
-</section>
+${RAPPORT_AGENT_HTML}</section>
 <section id="reseau" hidden>
 <button id="vers-journee" type="button" class="retour" hidden>Ma journée d’agent</button>
 <h2 id="reseau-titre">Le réseau</h2>
@@ -188,7 +189,7 @@ ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OF
 <button id="reseau-export" type="button" class="secondaire">Télécharger l’export</button>
 <p id="reseau-export-etat" class="etat" role="status"></p>
 </section>
-${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${BASCULE_ENTRY_HTML}</section>
+${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -1537,6 +1538,7 @@ export const APP_JS = `'use strict';
   function wipeChiffres() {
     clear($('chiffres-corps'));
     $('chiffres-etat').textContent = '';
+    wipeFinances();
   }
   function openChiffres(range) {
     if (!currentKey) return Promise.resolve(false);
@@ -1695,6 +1697,7 @@ export const APP_JS = `'use strict';
     ['reseau-etat', 'reseau-sans-agent', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat'].forEach(function (id) { $(id).textContent = ''; });
     wipeReprise();
     wipeBascule();
+    wipeFinances();
   }
   function reseauPart(stateId, request, render, mine) {
     $(stateId).textContent = 'Chargement…';
@@ -1766,7 +1769,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1967,6 +1970,8 @@ ${LOUER_JS}
     $('vente-retour').addEventListener('click', home);
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('reseau-' + r).addEventListener('click', function () { openReseau(r); }); });
     $('reseau-export').addEventListener('click', function () { downloadExport(); });
+    $('rapport-agent-lire').addEventListener('click', function () { readReport('agent', 'chiffres'); });
+    $('rapport-direction-lire').addEventListener('click', function () { readReport('direction', 'reseau'); });
     $('bien-retour').addEventListener('click', function () { if (visitId) openVisit(visitId); else home(); });
     $('alerte').addEventListener('click', function () { raiseAlert(false); });
     $('sortir').addEventListener('click', function () {
