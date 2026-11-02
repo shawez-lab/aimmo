@@ -45,7 +45,7 @@ describeWithSqlite('A03 · fiche du client dans l’application', () => {
     expect(f).toMatchObject({ personId: w.lea.id, firstName: 'Léa', lastName: 'Exemple', contact: { allowed: true, reasons: [] }, call: 'tel:+33600000001' });
     expect(f.projects).toEqual([{ kind: 'sell', stage: 'new', deadline: null, budgetMinEur: 200000, budgetMaxEur: 230000 }]);
     expect(f.sources).toEqual([{ channel: 'site', detail: 'formulaire test', occurredAt: '2026-10-01T10:00:00.000Z' }]);
-    expect(f.consents).toEqual([{ purpose: 'valuation_follow_up', channel: 'email', givenAt: '2026-10-01T10:00:00.000Z', withdrawnAt: null }]);
+    expect(f.consents).toEqual([{ id: expect.any(String), purpose: 'valuation_follow_up', channel: 'email', givenAt: '2026-10-01T10:00:00.000Z', withdrawnAt: null }]);
     expect(f.messages).toHaveLength(10);
     expect(f.messages[0]!.body).toBe('Message test 12');
     expect(f.callbacks).toEqual([{ taskId: 't-1', reason: 'Vendeur sous 3 mois', dueAt: NOW.toISOString(), doneAt: null }]);
