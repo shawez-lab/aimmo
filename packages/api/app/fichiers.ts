@@ -11,6 +11,7 @@ import { OFFRES_HTML, OFFRES_JS } from './offres.ts';
 import { DOSSIER_HTML, DOSSIER_JS } from './dossier.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { ATTIRER_ENTRY_HTML, ATTIRER_HTML, ATTIRER_JS } from './attirer.ts';
+import { BASCULE_ENTRY_HTML, BASCULE_JS } from './bascule.ts';
 import { FICHE_GOOGLE_HOME_HTML, FICHE_GOOGLE_HTML, FICHE_GOOGLE_JS } from './fiche-google.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
 import { REPRISE_ENTRY_HTML, REPRISE_JS } from './reprise.ts';
@@ -187,7 +188,7 @@ ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OF
 <button id="reseau-export" type="button" class="secondaire">Télécharger l’export</button>
 <p id="reseau-export-etat" class="etat" role="status"></p>
 </section>
-${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}</section>
+${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${BASCULE_ENTRY_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -1678,6 +1679,7 @@ export const APP_JS = `'use strict';
     ['reseau-corps', 'reseau-alertes', 'reseau-reversements', 'reseau-brouillons'].forEach(function (id) { clear($(id)); });
     ['reseau-etat', 'reseau-sans-agent', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat'].forEach(function (id) { $(id).textContent = ''; });
     wipeReprise();
+    wipeBascule();
   }
   function reseauPart(stateId, request, render, mine) {
     $(stateId).textContent = 'Chargement…';
@@ -1749,7 +1751,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1936,6 +1938,8 @@ ${LOUER_JS}
     $('candidatures-ouvrir').addEventListener('click', function () { openIntegration('candidatures'); });
     $('reprise-deposer').addEventListener('click', function () { withReprise(function (r) { return r.deposit(); }); });
     $('reprise-voir').addEventListener('click', function () { withReprise(function (r) { return r.show(); }); });
+    $('bascule-voir').addEventListener('click', function () { withBascule(function (b) { return b.show(''); }); });
+    $('bascule-journal').addEventListener('click', function () { withBascule(function (b) { return b.journal(); }); });
     // Dans une fiche d'entretien : retour à la liste ; sinon, la direction revient au réseau, l'agent à sa journée.
     $('integration-retour').addEventListener('click', function () {
       if (integrationScreen && integrationScreen.inside()) { openIntegration(integrationMode); return; }
