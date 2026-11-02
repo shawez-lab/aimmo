@@ -121,6 +121,8 @@ export function pilotageRoutes(): PilotageRoute[] {
       },
     },
     { method: 'GET', pattern: new RegExp(`${P}/alertes$`), name: 'pilotage.alertes', handle: async (s, v) => reply(await services(s).alertes.list(v)) },
+    { method: 'GET', pattern: new RegExp(`${P}/reglages$`), name: 'pilotage.reglages_lire', handle: async (s, v) => reply(await services(s).alertes.readSettings(v)) },
+    { method: 'GET', pattern: new RegExp(`${P}/grille$`), name: 'pilotage.grille_lire', handle: async (s, v) => reply(await services(s).commissions.currentGrid(v)) },
     {
       method: 'POST',
       pattern: new RegExp(`${P}/reglages$`),

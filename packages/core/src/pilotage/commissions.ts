@@ -205,6 +205,30 @@ export class Commissions {
     return { ok: true, version };
   }
 
+  /**
+   * La dernière version de la grille et les agents qu'elle peut nommer : la direction seule [R16]. Une nouvelle version
+   * remplace toute la liste des taux propres : l'écran part donc de celle-ci, pour n'en perdre aucun en silence.
+   */
+  async currentGrid(viewer: Viewer): Promise<{ ok: true; value: { version: number | null; validFrom: string | null; defaultRateBp: number | null; agents: { agentId: string; rateBp: number | null }[] } } | CommissionRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'commission_grid_read', 'role');
+    const g = await this.db.first<{ version: number; valid_from: string; default_rate_bp: number; agent_rates: string }>(
+      'SELECT version, valid_from, default_rate_bp, agent_rates FROM commission_grids WHERE network_id = ? ORDER BY version DESC LIMIT 1',
+      [viewer.networkId],
+    );
+    const rates = g ? (JSON.parse(g.agent_rates) as Record<string, number>) : {};
+    const active = await this.db.all<{ id: string }>("SELECT id FROM agents WHERE network_id = ? AND status = 'active' ORDER BY id", [viewer.networkId]);
+    const ids = [...new Set([...active.map((a) => a.id), ...Object.keys(rates)])].sort();
+    return {
+      ok: true,
+      value: {
+        version: g?.version ?? null,
+        validFrom: g?.valid_from ?? null,
+        defaultRateBp: g?.default_rate_bp ?? null,
+        agents: ids.map((agentId) => ({ agentId, rateBp: Object.hasOwn(rates, agentId) ? rates[agentId]! : null })),
+      },
+    };
+  }
+
   /** La grille en vigueur pour un compromis de ce jour : la dernière version applicable à ce jour. */
   private async gridAt(networkId: string, day: string): Promise<{ id: string; default_rate_bp: number; agent_rates: string } | null> {
     return this.db.first<{ id: string; default_rate_bp: number; agent_rates: string }>('SELECT id, default_rate_bp, agent_rates FROM commission_grids WHERE network_id = ? AND valid_from <= ? ORDER BY valid_from DESC, version DESC LIMIT 1', [

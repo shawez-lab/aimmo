@@ -75,6 +75,10 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     await t.compromis();
     await t.runJobs();
     expect((await t.call(t.direction, 'GET', '/pilotage/commissions/a-trancher')).body!.data).toEqual([]);
+    expect((await t.call(t.direction, 'GET', '/pilotage/grille')).body!.data).toMatchObject({ version: 1, defaultRateBp: 7000 });
+    expect(await t.call(t.agent, 'GET', '/pilotage/grille')).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    expect((await t.call(t.direction, 'GET', '/pilotage/reglages')).body!.data).toHaveProperty('documentNoticeDays');
+    expect(await t.call(t.agent, 'GET', '/pilotage/reglages')).toMatchObject({ status: 403, body: { rule: 'R16' } });
     expect(await t.call(t.agent, 'GET', '/pilotage/commissions/a-trancher')).toMatchObject({ status: 403, body: { rule: 'R16' } });
     const planned = await t.call(t.agent, 'GET', '/pilotage/commissions');
     expect(planned.status).toBe(200);

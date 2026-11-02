@@ -82,6 +82,13 @@ export class AlertesPilotage {
     return r ? { aiMonthlyBudgetCents: r.ai_monthly_budget_cents, aiAlertBp: r.ai_alert_bp, dropAlertBp: r.drop_alert_bp, documentNoticeDays: r.document_notice_days } : { ...DEFAULT_PILOTAGE_SETTINGS };
   }
 
+  /** Les réglages en vigueur, à lire : la direction seule [R16]. */
+  async readSettings(viewer: Viewer): Promise<{ ok: true; value: PilotageSettings } | { ok: false; rule: 'R16' | null; code: string }> {
+    const refusal = await this.refusal(viewer, 'pilotage_settings_read');
+    if (refusal) return refusal;
+    return { ok: true, value: await this.settingsOf(viewer.networkId) };
+  }
+
   /** Les réglages : la direction seule ; une nouvelle version s'ajoute [R16, R17]. */
   async setSettings(viewer: Viewer, input: Partial<PilotageSettings>): Promise<{ ok: true; version: number } | { ok: false; rule: 'R16' | null; code: string }> {
     const refusal = await this.refusal(viewer, 'pilotage_settings');

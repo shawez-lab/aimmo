@@ -198,6 +198,19 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     expect(await c.blocked(t.direction)).toEqual({ ok: true, value: [{ fileId: t.fileId, code: 'no_grid' }] });
   });
 
+  it('[R16] la dernière grille se lit par la direction seule, avec les agents actifs et les taux propres', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    expect(await c.currentGrid(t.agent)).toMatchObject({ ok: false, rule: 'R16' });
+    const none = await c.currentGrid(t.direction);
+    expect(none.ok && [none.value.version, none.value.defaultRateBp]).toEqual([null, null]);
+    expect(none.ok && none.value.agents.every((a) => a.rateBp === null)).toBe(true);
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, agents: [{ agentId: t.alexId, rateBp: 7500 }] });
+    const read = await c.currentGrid(t.direction);
+    expect(read.ok && [read.value.version, read.value.validFrom, read.value.defaultRateBp]).toEqual([1, '2027-03-01', 7000]);
+    expect(read.ok && read.value.agents.find((a) => a.agentId === t.alexId)).toEqual({ agentId: t.alexId, rateBp: 7500 });
+  });
+
   it('[R63] un écart à l’acte reste à trancher', async () => {
     const t = await setup();
     const c = t.commissions();
