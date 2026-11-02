@@ -241,7 +241,9 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : un accord ne compte que s'il est postérieur au dernier retrait de même finalité et de même canal sur les fiches réunies (test [R03]) ; et au dernier `lifted_at` d'une exclusion (test [R02] [R04]) ; `undoMerge` ferme, sans effacer et avec une ligne au journal, les accords créés pendant la fusion, car on ne sait plus à qui ils sont (test [R03] [R17]) ; les tests de S05 et S06 restent verts.
 
 ### AC07 · Un accord redonné est rangé, même si une ligne ancienne reste ouverte
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Reste : relecture forte aucun P0, 3 P1 corrigés ; Codex à sa limite (H03), fusion sans lui (#247).
+- Décidé (2026-11-02), lecture prudente : `FicheUnique.hasConsentInForce` et `channelsInForce`, la même règle que le contrôle central, servent aux sept gestes, au pré-contrôle des alertes (sinon le refus fermait le bien pour toujours) et aux écrans du client (« alertes demandées », suivi de valeur). Les signatures et le dossier d'un commerce lisent maintenant les fiches réunies. Reste à trancher par Shawez (H42) : la parole de l'agent peut-elle redonner un accord retiré ? La sécurité des visites dit non, ces gestes disent oui, comme le demande cette tâche.
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC05
 - Cahier : Conformité, accord préalable ; R03.
@@ -249,7 +251,7 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : après un retrait sur une fiche et une fusion avec un doublon ouvert, redonner l'accord le range et rouvre l'envoi, pour chacun de ces modules (test [R03]) ; un accord qui compte n'est pas doublé ; les tests des modules restent verts.
 
 ### AC08 · Une exclusion notée pendant une fusion suit les deux fiches quand on la défait
-- Statut : à faire
+- Statut : en cours
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC05
 - Cahier : Conformité ; R02, R04, R17.

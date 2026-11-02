@@ -41,7 +41,7 @@ export interface SignedOfferStore {
 export interface GestesModulesDeps {
   db: SqlDatabase;
   journal: JournalStore;
-  fiche: Pick<FicheUnique, 'membersOf' | 'rootOf'>;
+  fiche: Pick<FicheUnique, 'membersOf' | 'rootOf' | 'hasConsentInForce'>;
   consents: { addConsent(input: NewConsent): Promise<unknown> };
   visites: Pick<Visites, 'schedule'>;
   offres: Pick<RegistreOffres, 'record'>;
@@ -151,10 +151,7 @@ export class GestesModules implements GestesAcquereur {
       const q = members.map(() => '?').join(', ');
       const at = this.now();
       const iso = at.toISOString();
-      const active = await this.deps.db.first(
-        `SELECT 1 FROM consents WHERE network_id = ? AND person_id IN (${q}) AND purpose = ? AND channel = 'email' AND given_at <= ? AND (withdrawn_at IS NULL OR withdrawn_at > ?) LIMIT 1`,
-        [client.networkId, ...members, ALERT_PURPOSE, iso, iso],
-      );
+      const active = await this.deps.fiche.hasConsentInForce(client.personId, ALERT_PURPOSE, 'email');
       if (!active) {
         const email = await this.deps.db.first(`SELECT 1 FROM person_identifiers WHERE network_id = ? AND kind = 'email' AND person_id IN (${q}) LIMIT 1`, [client.networkId, ...members]);
         if (!email) return refus('R03', 'no_email');

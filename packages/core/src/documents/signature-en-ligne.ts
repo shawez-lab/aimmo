@@ -99,6 +99,7 @@ export class SignatureEnLigne {
     const store = new FicheClient(db, { now: this.now });
     this.store = store;
     const fiche = new FicheUnique(db, store, { now: this.now });
+    this.fiche = fiche;
     // Le code et l'exemplaire passent par le contrôle central, avec les seuls canaux du mode essai : rangés dans la
     // boîte d'essai, jamais envoyés [R26] ; le vrai envoi par mail attend H05.
     this.envois = new ControleEnvois(db, fiche, new DecisionEnvoi(db, store, fiche, { now: this.now }), {
@@ -110,6 +111,7 @@ export class SignatureEnLigne {
 
   private readonly store: FicheClient;
   private readonly envois: ControleEnvois;
+  private readonly fiche: FicheUnique;
 
   private actor(viewer: Viewer): string {
     return `${String(viewer.role)}:${viewer.userId}`;
@@ -127,7 +129,7 @@ export class SignatureEnLigne {
     if (!checked.value.passed) return { ok: false, rule: 'R41', code: 'checks_failed', check: checked.value };
     const doc = (await this.db.first<{ person_id: string; content: string; agent_id: string }>('SELECT person_id, content, agent_id FROM documents WHERE id = ?', [documentId]))!;
     // Le signataire accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
-    const consent = await this.db.first('SELECT id FROM consents WHERE person_id = ? AND purpose = ? AND channel = ? AND withdrawn_at IS NULL', [doc.person_id, ONLINE_SIGNATURE_PURPOSE, 'email']);
+    const consent = await this.fiche.hasConsentInForce(doc.person_id, ONLINE_SIGNATURE_PURPOSE, 'email');
     if (!consent) await this.store.addConsent({ networkId: viewer.networkId, personId: doc.person_id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
     const id = this.newId();
     const code = newCode();

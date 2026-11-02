@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { ONLINE_SIGNATURE_PURPOSE } from '../src/documents/signature-en-ligne.ts';
+import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { ConfidentialiteCommerce, EstimationCommerce, FicheCommerce, PresentationCommerce, type IdentityState } from '../src/commerces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -281,5 +282,28 @@ describeWithSqlite('CE04 · engagement de confidentialité et pièce vérifiée 
     await t.db.run('DROP TRIGGER business_nda_signatures_fige');
     await t.db.run("UPDATE business_nda_signatures SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?", [s2.value.sessionId]);
     expect(await t.conf.sign(t.acces, t.alex, s2.value.sessionId, { code: '424242' })).toMatchObject({ ok: false, code: 'expired' });
+  });
+
+  it('[R03] un accord redonné est rangé quand la ligne ouverte est plus ancienne qu’un retrait (AC07), et un accord qui compte n’est pas doublé', async () => {
+    const t = await setup();
+    await t.conf.recordTemplate(t.direction, NDA_BODY);
+    const a = await t.shop();
+    const p = await t.buyer(1);
+    const nda = ndaOf(await t.conf.requestAccess(t.acces, t.alex, a.id, p.id));
+    const store = new FicheClient(t.db);
+    // Un retrait sur la fiche, un accord plus ancien resté ouvert sur son doublon, puis la fusion.
+    const twin = await store.createPerson({ networkId: t.network.id, firstName: 'Doublon' });
+    await store.addConsent({ networkId: t.network.id, personId: twin.id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-02T00:00:00.000Z') });
+    const old = await store.addConsent({ networkId: t.network.id, personId: p.id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: 'preuve inventée', givenAt: new Date('2020-01-01T00:00:00.000Z') });
+    await store.withdrawConsent(old.id, new Date('2020-02-01T00:00:00.000Z'));
+    const unique = new FicheUnique(t.db, new FicheClient(t.db));
+    await unique.merge({ survivorId: p.id, mergedId: twin.id, reason: 'identifiant commun' });
+    expect(await unique.hasConsentInForce(p.id, ONLINE_SIGNATURE_PURPOSE, 'email')).toBe(false);
+    const lines = () => t.db.all<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [p.id, ONLINE_SIGNATURE_PURPOSE]);
+    expect((await t.conf.startSignature(t.acces, t.alex, nda, { consentProof: 'accord donné au rendez-vous' })).ok).toBe(true);
+    expect(await lines()).toHaveLength(2);
+    await t.conf.startSignature(t.acces, t.alex, nda, { consentProof: 'accord donné au rendez-vous' });
+    expect(await lines()).toHaveLength(2);
+    expect(await unique.hasConsentInForce(p.id, ONLINE_SIGNATURE_PURPOSE, 'email')).toBe(true);
   });
 });

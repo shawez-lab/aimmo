@@ -301,15 +301,10 @@ export class EntreeEspace {
     return { ok: true, value: read.value.person.id };
   }
 
-  /** Un accord du client pour recevoir le lien de son espace par mail, non retiré, sur une de ses fiches réunies [R03]. */
+  /** Un accord du client pour recevoir le lien de son espace par mail, qui compte encore, sur une de ses fiches réunies [R03]. */
   private async consentOf(personId: string): Promise<boolean> {
     // Comme le contrôle central : l'accord d'une des fiches réunies vaut pour la fiche gardée.
-    const members = await this.fiche.membersOf(personId);
-    const row = await this.db.first(
-      `SELECT id FROM consents WHERE person_id IN (${members.map(() => '?').join(', ')}) AND purpose = ? AND channel = ? AND withdrawn_at IS NULL`,
-      [...members, CLIENT_SPACE_PURPOSE, 'email'],
-    );
-    return row !== null;
+    return this.fiche.hasConsentInForce(personId, CLIENT_SPACE_PURPOSE, 'email');
   }
 
   private async openRefused(status: string, subject = 'espaces', link?: string): Promise<EntreeRefusal> {

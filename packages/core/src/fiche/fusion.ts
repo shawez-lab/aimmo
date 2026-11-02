@@ -11,6 +11,7 @@ import type {
   Project,
   Source,
 } from '../db/types.ts';
+import { consentInForce } from '../envoi/decision.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { matchKey, normalizeIdentifier } from './normalize.ts';
@@ -281,6 +282,24 @@ export class FicheUnique {
       );
     }
     return undoneAt;
+  }
+
+  /**
+   * Vrai si un accord compte encore pour cette finalité et ce canal, fiches réunies comprises, comme pour le contrôle
+   * central [R03] : un module n'en range pas de nouveau seulement dans ce cas. Une ligne ouverte mais plus ancienne qu'un
+   * retrait ou qu'une levée ne suffit pas : la nouvelle demande de la personne se perdrait en silence. Tout ce que la
+   * fiche sait à ce jour compte, quelle que soit la date du retrait.
+   */
+  async hasConsentInForce(personId: string, purpose: string, channel: string): Promise<boolean> {
+    return (await this.channelsInForce(personId, purpose)).includes(channel);
+  }
+
+  /** Les canaux où un accord compte encore pour cette finalité : une seule lecture, pour un passage sur beaucoup de fiches. */
+  async channelsInForce(personId: string, purpose: string): Promise<string[]> {
+    const ids = await this.membersOf(personId);
+    const of = <T>(table: string): Promise<T[]> => this.db.all<T>(`SELECT * FROM ${table} WHERE person_id IN (${placeholders(ids.length)})`, ids);
+    const [consents, exclusions] = await Promise.all([of<Consent>('consents'), of<Exclusion>('exclusions')]);
+    return [...new Set(consents.filter((c) => c.purpose === purpose && consentInForce(c, { consents, exclusions }, Infinity)).map((c) => c.channel))];
   }
 
   /** Toute la fiche de la personne : ses lignes et celles de chaque fiche qui y est fusionnée. */

@@ -245,12 +245,10 @@ export class Alertes {
     if (known && known.status !== 'waiting' && known.status !== 'failed') return { propertyId, personId, status: 'done', rule: null };
 
     // L'accord des alertes, en cours, sur un canal [R49] : sinon rien, et la personne sera revue au passage suivant.
+    // Une ligne ouverte mais périmée (AC05) ne compte pas : sinon le refus du contrôle central fermerait ce bien pour toujours.
     const ids = await this.fiche.membersOf(personId);
-    const consents = await this.db.all<{ channel: OutboundChannelName }>(
-      `SELECT channel FROM consents WHERE person_id IN (${placeholders(ids.length)}) AND purpose = ? AND given_at <= ? AND (withdrawn_at IS NULL OR withdrawn_at > ?)`,
-      [...ids, ALERT_PURPOSE, iso, iso],
-    );
-    const channels = ALERT_CHANNELS.filter((c) => consents.some((k) => k.channel === c));
+    const inForce = await this.fiche.channelsInForce(personId, ALERT_PURPOSE);
+    const channels = ALERT_CHANNELS.filter((c) => inForce.includes(c));
     const channel = channels[0];
     if (!channel) return { propertyId, personId, status: 'no_consent', rule: 'R49' };
 

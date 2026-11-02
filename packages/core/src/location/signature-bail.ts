@@ -98,6 +98,7 @@ export class SignaturesBail implements LeaseSignatureState {
   private readonly newCode: () => string;
   private readonly store: FicheClient;
   private readonly envois: ControleEnvois;
+  private readonly fiche: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -113,6 +114,7 @@ export class SignaturesBail implements LeaseSignatureState {
     this.newCode = options.newCode ?? newSignatureCode;
     this.store = new FicheClient(db, { now: this.now });
     const fiche = new FicheUnique(db, this.store, { now: this.now });
+    this.fiche = fiche;
     // Le code et l'exemplaire passent par le contrôle central, avec les seuls canaux du mode essai : rangés dans la
     // boîte d'essai, jamais envoyés [R26] ; le vrai envoi par mail attend H05.
     this.envois = new ControleEnvois(db, fiche, new DecisionEnvoi(db, this.store, fiche, { now: this.now }), {
@@ -166,7 +168,7 @@ export class SignaturesBail implements LeaseSignatureState {
     if (sees !== true) return sees;
     const done = await this.db.first('SELECT 1 FROM rental_lease_signatures WHERE lease_id = ? AND party = ? AND status = ?', [target.leaseId, party, 'signee']);
     if (done) return { ok: false, rule: null, code: 'already_signed' };
-    const consent = await this.db.first('SELECT id FROM consents WHERE person_id = ? AND purpose = ? AND channel = ? AND withdrawn_at IS NULL', [target.personId, ONLINE_SIGNATURE_PURPOSE, 'email']);
+    const consent = await this.fiche.hasConsentInForce(target.personId, ONLINE_SIGNATURE_PURPOSE, 'email');
     if (!consent) await this.store.addConsent({ networkId: listing.networkId, personId: target.personId, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
     const id = this.newId();
     const code = this.newCode();

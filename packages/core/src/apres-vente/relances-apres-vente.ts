@@ -207,11 +207,7 @@ export class RelancesApresVente {
     if (input.choice === 'non') {
       await this.withdraw(root, at);
     } else {
-      const ids = await this.unique.membersOf(root);
-      const active = await this.db.first<{ id: string }>(
-        `SELECT id FROM consents WHERE person_id IN (${ids.map(() => '?').join(', ')}) AND purpose = ? AND channel = 'email' AND withdrawn_at IS NULL`,
-        [...ids, AFTER_SALE_PURPOSE],
-      );
+      const active = await this.unique.hasConsentInForce(root, AFTER_SALE_PURPOSE, 'email');
       if (!active) await this.store.addConsent({ networkId: viewer.networkId, personId: root, purpose: AFTER_SALE_PURPOSE, channel: 'email', proof, givenAt: at });
     }
     await appendEvent(this.journal, { type: 'apres_vente.choix_relances', actor: `agent:${viewer.userId}`, subject, data: { side: sale.clients[roots.indexOf(root)]!.side, client: `person:${root}`, choice: input.choice } }, this.now);
