@@ -1296,7 +1296,7 @@ Décidé, lecture prudente : M10 complète le dossier de vente ouvert par O07 ; 
 - Attend : rien.
 
 ### N13 · Dates, financement et acte depuis l'écran du dossier
-- Statut : à faire
+- Statut : en cours
 - Trouvé le 2026-11-02 (relecture de N12) : l'écran dit « Date à saisir · à vous » et aucun écran n'appelle `/dossiers/:id/dates`, `/financement` ni `/acte` en écriture : l'agent ne peut pas faire avancer le dossier.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : N12
 - Cahier : M10 ; R10, R16, R61.
