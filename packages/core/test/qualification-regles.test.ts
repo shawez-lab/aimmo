@@ -115,6 +115,25 @@ describe('Q01 · ce que l’IA peut lire [R15]', () => {
     expect(withoutNames('Bonjour, ici Dijon centre ?', [])).toBe('Bonjour, ici Dijon centre ?');
     expect(withoutNames('Bonjour, Mme Lambda cherche un T2.', ['Lambda'])).toBe('Bonjour, Mme [nom] cherche un T2.');
     expect(withoutNames('Je cherche un T2.\nCordialement,\nAlix Exemple\n06 00 00 00 00', [])).toBe('Je cherche un T2.');
+    // Q09 : une fiche créée depuis un message porte tout le nom dans son prénom ; chaque mot compte, sans égard aux accents.
+    expect(withoutNames('Bonjour, rappelez Zoé après 18h pour le T3.', ['Zoé Exemple'])).toBe('Bonjour, rappelez [nom] après 18h pour le T3.');
+    expect(withoutNames('Bonjour, Mme Exemple cherche un T3.', ['Zoé Exemple'])).toBe('Bonjour, Mme [nom] cherche un T3.');
+    expect(withoutNames('EXEMPLE Zoé, je cherche un T3.', ['Zoé Exemple'])).toBe('[nom] [nom], je cherche un T3.');
+    expect(withoutNames('Bonjour, Helene Exemple cherche un T3.', ['Hélène', 'Exemple'])).toBe('Bonjour, [nom] [nom] cherche un T3.');
+    expect(withoutNames('Jean Pierre Exemple cherche.', ['Jean-Pierre', 'Exemple'])).toBe('[nom] [nom] cherche.');
+    expect(withoutNames('Madame Le Gall cherche à la gare.', ['Madame Le Gall'])).toBe('[nom] cherche à la gare.');
+    expect(withoutNames('Le T3 de la gare, pour Le Gall.', ['Le Gall'])).toBe('Le T3 de la gare, pour [nom].');
+    expect(withoutNames('Maison à Dijon pour Dijon Exemple.', ['Dijon Exemple'])).toBe('Maison à Dijon pour [nom].');
+    expect(withoutNames('Je suis M. Durand, je cherche un T3.', [])).toBe('Je suis [nom], je cherche un T3.');
+    expect(withoutNames('Je m’appelle Zoé de la Tour et je cherche.', [])).toBe('Je m’appelle [nom] et je cherche.');
+    expect(withoutNames('Je cherche un T3. Cordialement, Alix Durand', [])).toBe('Je cherche un T3.');
+    expect(withoutNames('Je cherche un T3.\nAlix Durand', [])).toBe('Je cherche un T3.');
+    expect(withoutNames('Je cherche un T3 à\nTalant', [])).toBe('Je cherche un T3 à\nTalant');
+    expect(withoutNames('Nom : Durand\nPrénom : Basile\nJe cherche un T3.', [])).toBe('Nom : [nom]\nPrénom : [nom]\nJe cherche un T3.');
+    expect(withoutNames('Trouvé par @zoe.exemple sur le réseau.', [])).toBe('Trouvé par [compte] sur le réseau.');
+    expect(withoutNames('Je vends ma maison rue des Lilas à Talant.', [])).toBe('Je vends ma maison [adresse] à Talant.');
+    expect(withoutNames('Maison au 12 de la rue Monge.', [])).toBe('Maison [adresse].');
+    expect(withoutNames('Une place de parking dans la rue calme.', [])).toBe('Une place de parking dans la rue calme.');
     expect(withoutNames('Je suis médecin et je cherche un appartement.', [])).toBe('Je suis médecin et je cherche un appartement.');
   });
 });

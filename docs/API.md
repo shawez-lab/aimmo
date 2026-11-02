@@ -14,6 +14,7 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | GET | `/v1/fiches/<id>/journal` | qui a lu ou changé la fiche | direction, conformité |
 | GET | `/v1/biens/<id>` | un bien, complet ou en fiche commune | selon R16 |
 | POST | `/v1/envois/decision` | la décision d'envoi et la règle qui a décidé, sans rien envoyer | selon R16 |
+| GET | `/v1/qualifications/cas-corriges` | les classements corrigés au format du banc de mesure (`texte;categorie;suite`), sans coordonnées ni nom connu, téléchargés en CSV ; le journal garde le nombre, jamais un texte | direction (R15, R16) |
 | POST | `/v1/qualifications/<id>/correction` | corrige la catégorie d'un contact, `{"category": "buyer", "route": null}` ; la correction est gardée et rejoint les cas de mesure | qui voit la fiche en entier (R16) |
 | GET | `/v1/contacts-chauds` | les contacts chauds à rappeler, matin ou soir, avec la raison de leur note : un agent ne voit que les siens, jamais une personne exclue | agent, direction, conformité (R16, R25) |
 | GET | `/v1/alertes-agent` | les conversations à reprendre et les réponses qui n'ont pas pu partir, sur les fiches que l'agent voit maintenant, les plus anciennes d'abord (30 au plus, `more` dit s'il y en a d'autres) | agent (R12, R16) |

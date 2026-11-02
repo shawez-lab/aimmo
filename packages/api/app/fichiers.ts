@@ -189,6 +189,12 @@ ${RAPPORT_AGENT_HTML}</section>
 <button id="reseau-export" type="button" class="secondaire">Télécharger l’export</button>
 <p id="reseau-export-etat" class="etat" role="status"></p>
 </section>
+<section class="bloc" aria-labelledby="titre-reseau-cas">
+<h3 id="titre-reseau-cas">Mesure du classement</h3>
+<p class="doux">Les 150 derniers classements corrigés par les agents, sans coordonnées, pour relancer la mesure. Un nom peut rester : à relire, et à garder hors du dépôt.</p>
+<button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
+<p id="reseau-cas-etat" class="etat" role="status"></p>
+</section>
 ${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
@@ -1694,7 +1700,7 @@ export const APP_JS = `'use strict';
   }
   function wipeReseau() {
     ['reseau-corps', 'reseau-alertes', 'reseau-reversements', 'reseau-brouillons'].forEach(function (id) { clear($(id)); });
-    ['reseau-etat', 'reseau-sans-agent', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat'].forEach(function (id) { $(id).textContent = ''; });
+    ['reseau-etat', 'reseau-sans-agent', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat', 'reseau-cas-etat'].forEach(function (id) { $(id).textContent = ''; });
     wipeReprise();
     wipeBascule();
     wipeFinances();
@@ -1736,32 +1742,35 @@ export const APP_JS = `'use strict';
     var day = $('reseau-export-jour').value;
     var state = $('reseau-export-etat');
     if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(day)) { state.textContent = 'Choisissez un jour.'; return Promise.resolve(false); }
+    return saveCsv('/v1/pilotage/export-quotidien?jour=' + day, 'chiffres-' + day + '.csv', state, 'Export indisponible pour ce jour. Réessayez plus tard.', 'Export du ' + date(day + 'T12:00:00Z') + ' téléchargé.');
+  }
+  function saveCsv(path, name, state, failed, done) {
     if (!currentKey) return Promise.resolve(false);
     var mine = session;
     state.textContent = 'Préparation…';
-    return api('/v1/pilotage/export-quotidien?jour=' + day, currentKey).then(function (r) {
+    return api(path, currentKey).then(function (r) {
       if (mine !== session) return false;
       // Une clé refusée efface tout, comme partout ailleurs dans l'application.
       if (r.status === 401 || r.status === 403) {
         return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
           if (mine !== session) return false;
           if (r.status === 401 || (b && b.code === 'agent_inactive')) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
-          state.textContent = 'Export indisponible pour ce jour. Réessayez plus tard.';
+          state.textContent = failed;
           return false;
         });
       }
-      if (!r.ok) { state.textContent = 'Export indisponible pour ce jour. Réessayez plus tard.'; return false; }
+      if (!r.ok) { state.textContent = failed; return false; }
       return r.blob().then(function (blob) {
         if (mine !== session) return false;
         var url = URL.createObjectURL(blob);
         var a = el('a', 'Enregistrer le fichier');
         a.href = url;
-        a.download = 'chiffres-' + day + '.csv';
+        a.download = name;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
-        state.textContent = 'Export du ' + date(day + 'T12:00:00Z') + ' téléchargé.';
+        state.textContent = done;
         return true;
       });
     }, function () {
@@ -1972,6 +1981,7 @@ ${LOUER_JS}
     $('reseau-export').addEventListener('click', function () { downloadExport(); });
     $('rapport-agent-lire').addEventListener('click', function () { readReport('agent', 'chiffres'); });
     $('rapport-direction-lire').addEventListener('click', function () { readReport('direction', 'reseau'); });
+    $('reseau-cas').addEventListener('click', function () { saveCsv('/v1/qualifications/cas-corriges', 'cas-corriges.csv', $('reseau-cas-etat'), 'Cas corrigés indisponibles. Réessayez plus tard.', 'Cas corrigés téléchargés. À garder hors du dépôt.'); });
     $('bien-retour').addEventListener('click', function () { if (visitId) openVisit(visitId); else home(); });
     $('alerte').addEventListener('click', function () { raiseAlert(false); });
     $('sortir').addEventListener('click', function () {

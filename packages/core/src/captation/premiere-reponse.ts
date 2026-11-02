@@ -76,7 +76,7 @@ const KIND_EN: Record<PropertyKind, string> = {
   business: 'the business',
 };
 
-const EMAIL_IN_TEXT = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const EMAIL_IN_TEXT = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.\p{L}{2,}/giu;
 const PHONE_IN_TEXT = /(?:\+|00)?\d(?:[ ().-]*\d){7,14}/g;
 const STREET_IN_TEXT =
   /\b\d{1,4}\s?(?:bis|ter)?,?\s+(?:rue|avenue|av\.?|boulevard|bd|place|chemin|all[ée]e|impasse|route|quai|cours|square|passage|faubourg|rond-point|r[ée]sidence|lotissement)\b[^,\n]*/gi;
