@@ -5,7 +5,7 @@ import { checkBatch, d1Rest, D1RestError } from '../outils/d1-rest.ts';
 import { main, readEnv, safeMessage, summary } from '../outils/reprise.ts';
 import { repriseRoutes } from '../src/reprise.ts';
 import { APP_JS, INDEX_HTML } from '../app/fichiers.ts';
-import { REPRISE_JS } from '../app/reprise.ts';
+import { REPRISE_JS, REPRISE_SCRIPT } from '../app/reprise.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase, type SqliteDatabase } from '../../core/test/sqlite.ts';
 
@@ -227,9 +227,9 @@ describeWithSqlite('reprise lancée sur les vraies bases : travail, API D1 et d�
       expect(INDEX_HTML).toContain(`<label for="reprise-${tool}">`);
       expect(INDEX_HTML).toContain(`<input id="reprise-${tool}" type="file"`);
     }
-    expect(APP_JS).toContain("send('/v1/reprise/fichiers', 'POST', { tool: t.id, csv: csv })");
+    expect(REPRISE_SCRIPT).toContain("send('/v1/reprise/fichiers', 'POST', { tool: t.id, csv: csv })");
     // Le fichier n'est jamais gardé sur l'appareil.
-    expect(APP_JS).toContain('function depositReprise');
-    expect(REPRISE_JS).not.toMatch(/localStorage|sessionStorage|indexedDB/);
+    expect(REPRISE_SCRIPT).toContain('function depositReprise');
+    expect(REPRISE_JS + REPRISE_SCRIPT).not.toMatch(/localStorage|sessionStorage|indexedDB/);
   });
 });

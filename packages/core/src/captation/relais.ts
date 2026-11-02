@@ -429,11 +429,16 @@ export class ConversationRelais {
     return row;
   }
 
+  /**
+   * Une seule ligne par conversation et par raison. Une alerte déjà vue se rouvre : une nouvelle réponse tombée ne doit
+   * pas rester invisible [R12] ; la date où elle avait été vue reste au journal (`alerte_agent.vue`) [R17].
+   */
   private async alert(personId: string, conversationId: string, reason: AlertReason): Promise<void> {
     const person = (await this.fiche.view(personId)).person;
     await this.db.run(
       `INSERT INTO agent_alerts (id, network_id, agent_id, person_id, conversation_id, reason, created_at, seen_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT (network_id, conversation_id, reason) DO NOTHING`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+       ON CONFLICT (network_id, conversation_id, reason) DO UPDATE SET seen_at = NULL, created_at = excluded.created_at WHERE agent_alerts.seen_at IS NOT NULL`,
       [this.newId(), person.network_id, person.agent_id, person.id, conversationId, reason, this.now().toISOString()],
     );
   }

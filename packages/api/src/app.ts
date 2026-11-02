@@ -1,6 +1,7 @@
 import { UNSUBSCRIBE_PATH, handleUnsubscribe } from './alertes.ts';
 import {
   AIMMO_VERSION,
+  AlertesAgent,
   ATTRIBUTION_RULES,
   ControleBaseLegale,
   AUTOMATION_NAMES,
@@ -368,6 +369,26 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer) => {
       const list = await s.rappels.hotList(s.acces, viewer);
       return list.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: list.value }) : refusal({ rule: list.rule, code: list.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/alertes-agent$/,
+    name: 'alertes_agent',
+    // Conversations à reprendre et réponses tombées (C09c) : l'agent, seulement sur les fiches qu'il voit maintenant [R12, R16].
+    handle: async (s, viewer) => {
+      const list = await new AlertesAgent(s.db, s.journal, { now: s.now }).list(viewer);
+      return list.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: list.value }) : refusal({ rule: list.rule, code: list.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/alertes-agent/${ID}/vue$`),
+    name: 'alerte_agent.vue',
+    // Marquer vue ne supprime rien [R17] ; une alerte inconnue est refusée comme celle d'un autre [R16].
+    handle: async (s, viewer, [id]) => {
+      const seen = await new AlertesAgent(s.db, s.journal, { now: s.now }).markSeen(viewer, id!);
+      return seen.ok ? json(200, { ok: true, mode: TRIAL_MODE, sent: false, data: seen.value }) : refusal({ rule: seen.rule, code: seen.code });
     },
   },
   {
