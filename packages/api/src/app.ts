@@ -88,6 +88,7 @@ import {
 import type { FeeSettings } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
 import { studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
+import { accordsRoutes, type AccordsRoute } from './accords.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
 import { CERTIFICATE_PAGE_PATH, certificatePageError, handleCertificatePage } from './certificat-photo.ts';
 import { ESPACE_PATH, espacesRoutes, handleEspacePublic, type EspacesRoute, type EspacesServices } from './espaces.ts';
@@ -1119,6 +1120,16 @@ function m19Routes(options: StudioOptions | null): RouteDef[] {
  * [R16] ; la couche métier refait ses contrôles de droits. Rien ne part : les relances passent par le contrôle central,
  * avec les canaux du mode essai seulement [R26, R143].
  */
+/** Les accords notés par l'agent (AC02) : chaque route contrôle son rôle avant de lire le corps [R16]. */
+function accordsFicheRoutes(): RouteDef[] {
+  return accordsRoutes().map((r: AccordsRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ store: new FicheClient(s.db, { now: s.now }), acces: s.acces, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 function m20Routes(options: ApiConfig['gagner']): RouteDef[] {
   return gagnerRoutes().map((r: GagnerRoute) => ({
     method: r.method,
@@ -1500,6 +1511,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m16Routes(config.commerces),
     ...m19Routes(config.studio ?? null),
     ...m20Routes(config.gagner),
+    ...accordsFicheRoutes(),
     ...m01Routes(config),
     ...repriseRoutes(),
     ...espacesAgentRoutes(config),
