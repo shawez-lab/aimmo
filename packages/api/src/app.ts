@@ -933,7 +933,7 @@ async function automationSend(request: Request, config: ApiConfig, now: () => Da
       text,
       ...(figures === undefined ? {} : { figures: figures as (string | number)[] }),
     });
-    return json(200, { ok: true, mode: TRIAL_MODE, sent: false, data: { status: decision.status, rule: decision.rule, code: decision.code, reason: decision.reason, stage: decision.stage, decides: decision.decides } });
+    return json(200, { ok: true, mode: TRIAL_MODE, sent: false, data: { status: decision.status, rule: decision.rule, code: decision.code, reason: decision.reason, stage: decision.stage, decides: decision.decides, mentionMissing: decision.mentionMissing } });
   } catch (error) {
     await journalError(journal, 'intake:site_auto', 'automatisations.envoi', error, now);
     // Une panne du socle ramène l'automatisation en ombre [R26] ; si la base elle-même est tombée, le site décide seul.
