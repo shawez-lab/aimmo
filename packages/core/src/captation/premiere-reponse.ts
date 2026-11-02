@@ -273,6 +273,7 @@ export class PremiereReponse {
       ...(property ? { propertyIds: [property.id] } : {}),
       ...(writer ? { compose: () => writer.write(brief) } : {}),
       fallbackTexts: fallbackTexts(brief),
+      rolloutRef: inboundId,
       figures: figuresOf(facts),
       sellerNames: sellers.filter((n) => plain(n) !== recipient),
       maxQuestions: brief.nextStep === null ? 0 : 1,
@@ -299,6 +300,11 @@ export class PremiereReponse {
     return { inboundId, recognition: recognition.status, nextStep: brief.nextStep, result, skipped: null, skipCode: null };
   }
 
+  /** Avec un palier, un message resté dans la boîte d'essai n'est pas parti (C09b). */
+  get trialNotCounted(): boolean {
+    return this.controle.trialNotCounted;
+  }
+
   /** Rend la réservation pour un nouvel essai, sans effacer sa ligne. */
   private async releaseClaim(claimId: string, reason: string): Promise<void> {
     await this.db.run(`UPDATE first_reply_claims SET claim_key = claim_key || '#${reason}:' || claim_id WHERE claim_id = ?`, [claimId]);
@@ -308,7 +314,8 @@ export class PremiereReponse {
     const row = await this.db.first<{ n: number }>(
       `SELECT count(*) AS n FROM message_subjects s
        WHERE s.person_id IN (${personIds.map(() => '?').join(', ')}) AND s.subject = ?
-         AND NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = s.message_id AND l.outcome = 'failed')`,
+         AND NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = s.message_id AND l.outcome = 'failed')
+         ${this.controle.trialNotCounted ? 'AND NOT EXISTS (SELECT 1 FROM trial_outbox t WHERE t.message_id = s.message_id)' : ''}`,
       [...personIds, `bien:${propertyId}`],
     );
     return Number(row?.n ?? 0) > 0;

@@ -158,8 +158,10 @@ export class DecisionEnvoi {
   }
 
   /** Range un message parti avec son type, pour les plafonds [R11]. N'envoie rien. */
-  async recordSent(input: Omit<NewMessage, 'direction'>, kind: SendKind): Promise<Message> {
+  async recordSent(input: Omit<NewMessage, 'direction'>, kind: SendKind, options: { countsForCaps?: boolean } = {}): Promise<Message> {
     const message = await this.store.recordMessage({ ...input, direction: 'out' });
+    // Resté dans la boîte d'essai d'un canal à palier : rien n'est parti, le plafond n'en sait rien [R11].
+    if (options.countsForCaps === false) return message;
     await this.db.run(
       'INSERT INTO message_kinds (message_id, network_id, agent_id, kind, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       [message.id, message.network_id, message.agent_id, kind, message.occurred_at, this.now().toISOString()],

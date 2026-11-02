@@ -368,6 +368,16 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Cahier : M02, « État » ; Feuille de route, décembre 2026. Partie de C09 qui n'attend personne : les vrais canaux restent de faux canaux dans les tests.
 - Objectif : chaque canal de captation a son palier (`PaliersBascule`, une automatisation par canal) : essai, 10 % des messages tirés une fois pour toutes, partout, retour en essai à la première panne du canal. Sans vrai canal fourni, tout reste dans la boîte d'essai. Laissée à la voie 1 : il faut toucher au contrôle central (`envoi/controle.ts`, seul à appeler `deliver`, et son garde-fou).
 - Critères : tirage fixe par message [R26] ; sans vrai canal, rien ne part, à aucun palier [R26] ; une panne du canal ramène ce canal en essai sans toucher aux autres, et l'agent est prévenu [R26, R12] ; un message de la boîte d'essai ne compte pas comme parti : ni pour l'anti-doublon [R05], ni pour la mention de l'assistant [R06], ni pour les plafonds [R11], ni pour le silence de 24 heures [R22] ; journal sans donnée personnelle [R13].
+- Décidé (2026-11-02), lecture prudente : le palier passe par `staging` dans le contrôle central, seul à appeler `deliver` ; seule la chaîne de captation s'en sert par défaut, les autres modules et `createCaptation` avec `channels` ne changent pas. Le tirage se fait sur le message reçu ; sans référence, la boîte d'essai. Le palier « ombre » de la bascule veut dire « essai » pour un canal. Une réponse qui reste dans la boîte ne prend ni sujet, ni texte, ni mention, ni place au plafond, et n'est pas prise pour notre écho [R21] : chaque réponse d'essai porte donc la mention et peut répéter le même texte, le premier message réel restant à venir. Tests C08 de la mention et du secours : ils passent par une vraie session, puisque l'essai ne compte plus. Une alerte sur une fiche encore sans agent suit l'agent qui reçoit la fiche.
+- Reste, pour C09 : aucun vrai canal n'est branché, et aucune route ne permet encore à la direction d'avancer le palier d'un canal (`/automatisations/paliers` ne connaît que les automatisations du site). Relecture forte : 1 P0 et 2 P1 corrigés.
+
+### C09c · Alertes de l'agent visibles dans l'application
+- Statut : à faire
+- Voie : 1
+- Qui : Claude · Relecture : forte · Dépend de : C09b
+- Cahier : M02, relais à l'agent ; R12, R21.
+- Objectif : trouvé par la relecture de C09b : `agent_alerts` est écrite, mais `alertsFor` n'a aucun lecteur en production. Une réponse tombée ou une conversation à reprendre ne se voit donc nulle part. Une route et un bloc de l'application montrent à l'agent ses alertes, et il les marque vues.
+- Critères : l'agent voit ses alertes et celles de ses fiches, jamais celles d'un autre [R16] ; marquer vue ne supprime rien [R17] ; parcours au téléphone, axe-core sans violation [R201] ; rien de personnel au journal [R13].
 
 ### C09 · Mise en service de la captation
 - Statut : à faire
