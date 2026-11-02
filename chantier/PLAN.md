@@ -952,6 +952,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12
 - Cahier : M06 ; R39, R41, R42.
 - Objectif : refuser, à la première demande, de signer un mandat sur un bien dont un mandat est vivant ; annulé, rétracté ou échu, le bien se rouvre. Le passage d'un mandat simple à un exclusif reste à trancher par écrit dans la tâche.
+- Décidé (2026-11-02), lecture prudente : passer d'un mandat simple à un exclusif demande d'abord que la direction annule le simple au registre (nouvelle route `/v1/mandats/<id>/annulation`, son geste à l'écran vient avec D13), ou d'attendre sa fin ; le vivant se juge sur toutes les inscriptions du registre, pas sur `canDiffuse` ; un enregistrement arrêté avant son numéro est refusé si un autre mandat est devenu vivant, un document déjà numéroté finit toujours. Deux demandes vraiment simultanées sur deux documents ne sont pas fermées : la base n'a pas de transaction sur plusieurs requêtes, et aucun index ne dit « vivant ».
 - Critères : un second mandat sur un bien au mandat vivant est refusé, sans numéro (test [R39]) ; une reprise n'est pas refusée (test) ; un mandat annulé, rétracté ou échu laisse signer (tests) ; le refus est dit en français à l'écran.
 - Attend : rien.
 
@@ -960,8 +961,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Trouvé le 2026-11-02 par la voie 2 : aucun écran n'appelle `/v1/honoraires/bareme`, `/v1/registre/reglage` ni `/v1/registre/controle`, et sans barème aucun mandat ne passe ses contrôles [R41]. Laissée à la voie 1, qui tient M06.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12
 - Cahier : M06 ; R39, R41, R16, R201.
-- Objectif : la direction règle le barème et le format du registre, et lit le contrôle d'intégrité du registre, depuis l'écran du réseau.
-- Critères : réservé à la direction [R16] ; le format du registre n'est réglable qu'une fois, et l'écran le dit [R39] ; un registre abîmé est dit en français ; budget tenu [R201].
+- Objectif : la direction règle le barème et le format du registre, lit le contrôle d'intégrité du registre et annule un mandat au registre, avec son motif (D15), depuis l'écran du réseau.
+- Critères : réservé à la direction [R16] ; le format du registre n'est réglable qu'une fois, et l'écran le dit [R39] ; un registre abîmé est dit en français ; une annulation demande une confirmation et dit qu'elle rouvre le bien ; budget tenu [R201].
 - Attend : H23 pour le format réel.
 
 **M08 · Acquéreurs et visites, avril 2027.**

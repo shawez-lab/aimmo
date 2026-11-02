@@ -4,7 +4,8 @@
  * L'agent enregistre un mandat généré (D02) et signé sur papier : date, lieu de signature, référence du scan. S'il
  * passe à cet instant les contrôles avant signature (D03), il devient un mandat signé avec sa source (G03, [R38]),
  * reçoit son numéro au registre (D01) et l'exemplaire du mandant est produit avec ce numéro [R39]. Un document qui
- * échoue aux contrôles n'est pas numéroté [R41] ; un même document ne reçoit jamais deux numéros.
+ * échoue aux contrôles n'est pas numéroté [R41] ; un même document ne reçoit jamais deux numéros, et un bien n'a qu'un mandat
+ * vivant (D15).
  *
  * Décidé : la base n'a pas de transaction sur plusieurs requêtes ; le document est donc réservé d'abord, puis chaque
  * étape (mandat, numéro, exemplaire) remplit sa case une seule fois. Une coupure entre deux étapes se reprend en
@@ -22,6 +23,7 @@ import { Mandats } from '../mandats/source.ts';
 import { RegistreMandats } from '../mandats/registre.ts';
 import { ControlesSignature, type SignatureCheck } from './controles.ts';
 import { mandateScanPrefix } from './mandat-du-bien.ts';
+import { Diffusion } from './retractation.ts';
 import { escapeHtml, fillSignatureFields, sha256, signatureSpan } from './modeles.ts';
 
 export const SIGNATURE_PLACES = ['agence', 'hors_agence', 'distance'] as const;
@@ -149,6 +151,14 @@ export class SignaturePapier {
         const used = await this.db.first('SELECT 1 FROM signed_documents WHERE scan_ref = ? UNION ALL SELECT 1 FROM signed_amendments WHERE scan_ref = ?', [input.scanRef, input.scanRef]);
         if (used) return { ok: false, rule: null, code: 'scan_deja_utilise' };
       }
+    }
+
+    // Un seul mandat vivant par bien (D15) : un second recevrait un numéro du registre, qui est sans trou [R39]. Annulé,
+    // rétracté ou échu, le bien se rouvre. Un document dont le mandat est déjà inscrit finit toujours son enregistrement.
+    const ownMandate = `m-${documentId}`;
+    if (doc.property_id !== null && !(await this.db.first(`SELECT seq FROM mandate_register WHERE mandate_id = ? AND kind = 'inscription'`, [ownMandate]))) {
+      const other = await new Diffusion(this.db, this.acces, this.journal, { now: this.now }).otherLiveMandate(viewer.networkId, doc.property_id, ownMandate);
+      if (other !== null) return { ok: false, rule: 'R39', code: 'mandate_in_force' };
     }
 
     // 1. Le document est réservé : un seul enregistrement, quelles que soient les demandes simultanées.

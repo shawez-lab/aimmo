@@ -683,6 +683,26 @@ const ROUTES: RouteDef[] = [
     },
   },
   {
+    method: 'POST',
+    pattern: new RegExp(`^/mandats/${ID}/annulation$`),
+    name: 'mandat.annulation',
+    // Une ligne d'annulation au registre, qui rouvre le bien (D15) : la direction seule. Une rétractation a sa route, avec sa preuve.
+    handle: async (s, viewer, [id], request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => k !== 'reason')) return failure(400, 'unexpected_field', 'Seul reason est admis.');
+      if (viewer.role !== 'direction') {
+        await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `mandate:${id}`, data: { rule: 'R16', role: String(viewer.role), kind: 'annulation', code: 'role' } }, s.now);
+        return refusal({ rule: 'R16', code: 'role' });
+      }
+      if (body.reason !== 'error' && body.reason !== 'termination') return json(400, { ok: false, rule: null, code: 'bad_reason' });
+      const r = await new RegistreMandats(s.db, s.journal, { now: s.now }).cancel(viewer, id!, body.reason);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { number: r.line.number, seq: r.line.seq } });
+      if (r.rule === 'R16') return refusal(r as { rule: 'R16'; code: string });
+      return json(r.code === 'already_cancelled' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
+  },
+  {
     method: 'GET',
     pattern: new RegExp(`^/mandats/${ID}/conditions$`),
     name: 'mandat.conditions',

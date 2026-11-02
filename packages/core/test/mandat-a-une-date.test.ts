@@ -75,6 +75,8 @@ describeWithSqlite('D10 · conditions d’un mandat à une date passée', () => 
   it('[R63] un nouveau mandat signé après le compromis ne masque pas celui qui était en vigueur', async () => {
     const t = await ready();
     t.setClock(at9('2027-03-20'));
+    // Un seul mandat vivant par bien (D15) : le premier se termine d'abord, après le compromis.
+    await t.amendDuration(1);
     await t.signNewMandate(9000);
     expect(await mandateFeeAt(t.db, t.diffusion, t.network.id, t.propertyId, COMPROMIS)).toEqual({ ok: true, mandateId: t.mandateId, feeEur: 10000, feeCharge: 'acquereur' });
   });
@@ -91,8 +93,10 @@ describeWithSqlite('D10 · conditions d’un mandat à une date passée', () => 
 
   it('[R63] une demande écrite reçue après le compromis ne fait pas passer un mandat en délai devant celui en vigueur', async () => {
     const t = await ready();
-    const later = await t.signNewMandate(9000, at9('2027-03-05'), 'hors_agence');
     t.setClock(at9('2027-03-20'));
+    // Un seul mandat vivant par bien (D15) : le premier se termine le 15 mars, après le compromis ; l'autre, signé avant, s'enregistre ensuite.
+    await t.amendDuration(1, at9('2027-03-15'));
+    const later = await t.signNewMandate(9000, at9('2027-03-05'), 'hors_agence');
     expect(await t.diffusion.recordEarlyStart(t.agent, later, { proof: 'mail du vendeur (test)', receivedAt: at9('2027-03-15') })).toEqual({ ok: true });
     expect(await mandateFeeAt(t.db, t.diffusion, t.network.id, t.propertyId, COMPROMIS)).toEqual({ ok: true, mandateId: t.mandateId, feeEur: 10000, feeCharge: 'acquereur' });
     // À partir du jour où elle est reçue, la demande compte.
@@ -113,6 +117,7 @@ describeWithSqlite('D10 · conditions d’un mandat à une date passée', () => 
   it('[R42] un mandat n’existe pas avant sa signature : aucune date passée ne le donne', async () => {
     const t = await ready();
     t.setClock(at9('2027-03-20'));
+    await t.amendDuration(1);
     await t.signNewMandate(9000);
     expect(await t.diffusion.canDiffuse(t.network.id, t.propertyId, at9('2027-02-01'))).toEqual({ allowed: false, reason: 'no_mandate', mandateId: null, withdrawalLastDay: null });
   });
