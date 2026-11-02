@@ -1589,7 +1589,7 @@ Restes trouvés de la même façon, à découper ensuite par la voie 2, un écra
 - Attend : rien.
 
 ### K11 · Commissions, encaissement et reversement pour la direction
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Décidé (2026-11-02), lecture prudente : la lecture dit `payment` et `cancelled`, une route `a-trancher` dit à la direction ce que le passage laisse de côté (raison lue au journal) ; le passage reprend l'étape « payée » après une coupure ; plus aucun encaissement ni nouveau versement sur une vente annulée par un avoir ; ce qui a déjà été versé se règle hors de l'écran avec le comptable.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : K10
 - Cahier : M13, « Commissions », « Factures » ; R67, R69, R70, R16.
@@ -1598,7 +1598,8 @@ Restes trouvés de la même façon, à découper ensuite par la voie 2, un écra
 - Attend : rien (H26 pour une vraie facture).
 
 ### K12 · Grille des commissions, budget de l'IA, factures émises et avoirs
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Décidé (2026-11-02), lecture prudente : deux lectures ajoutées, la grille (en vigueur, programmées, agents) et les réglages ; le formulaire part de la grille en vigueur et dit la dernière version vue, un écran périmé est refusé (`stale_grid`), pour ne perdre aucun taux en silence.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : K11
 - Cahier : M13, « Commissions », « Factures », « Alertes » ; R16, R71, R69.
 - Objectif : la direction règle une nouvelle version de la grille et ses seuils d'alerte, lit les factures émises, corrige une facture par un avoir avec sa raison, et télécharge l'export comptable d'une période.
@@ -1606,7 +1607,8 @@ Restes trouvés de la même façon, à découper ensuite par la voie 2, un écra
 - Attend : H26 pour une vraie facture.
 
 ### K13 · Le chemin de chaque euro (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Décidé (2026-11-02) : fait avant K12, qui en dépend moins ; les jours affichés sont ceux qui ont été signés (`compromisOn`, `signedOn`), jamais l'heure du passage.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : K11
 - Cahier : M13, « Commissions », « La commission de l'agent est versée sous 24 h ouvrées » ; R68, R69, R70.
 - Objectif : aucun réseau ne le montre : l'agent suit en direct où est son argent, dossier par dossier : ses parts, l'étape atteinte, le jour de l'encaissement, l'heure limite des 24 h ouvrées promises, et si la promesse a été tenue, avec son propre total recompté à l'écran. La réponse de `/pilotage/commissions` reçoit l'encaissement, l'échéance et le versement.
