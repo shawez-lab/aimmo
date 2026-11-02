@@ -32,6 +32,7 @@ const READS: Record<string, Answer> = {
   'GET /v1/dossiers/f1/pieces': ok(PIECES),
   'GET /v1/dossiers/f1/echeancier': ok(SCHEDULE),
   'GET /v1/dossiers/f1/acte': ok(null),
+  'GET /v1/dossiers/f1/financement': ok({ fileId: 'f1', hasLoanCondition: true, steps: [] }),
 };
 const BASE: Record<string, Answer> = {
   'GET /v1/moi': ok({ role: 'agent', firstName: 'Alex' }),
@@ -187,5 +188,153 @@ describe('N12 · écran du dossier de vente', () => {
     const u = await run({ 'GET /v1/dossiers/f1/chemin': no(403, 'not_assigned') });
     await u.open();
     expect(u.state()).toBe('Ce dossier n’est pas dans vos droits.');
+  });
+});
+
+describe('N13 · faire avancer le dossier depuis l’écran', () => {
+  const PROOF_REF = 'preuves/0b6f1d2e-4444-4a2b-8c3d-000000000002.pdf';
+  const SIGNED = { ...SCHEDULE, dates: { compromis_signe: { day: '2027-03-10', version: 1 } } };
+  const signed = (extra: Record<string, Answer> = {}) => run({ 'GET /v1/dossiers/f1/echeancier': ok(SIGNED), 'POST /v1/dossiers/f1/preuves': ok({ ref: PROOF_REF }), ...extra });
+  const options = (f: FakeElement) => f.children.map((o) => o.value);
+
+  it('[R201] l’écran, avec ses saisies, reste dans son budget', () => {
+    expect(budgetProblems({ html: '', js: DOSSIER_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+
+  it('[R61] tant que le compromis n’est pas saisi, seule sa signature se saisit ; l’acte attend', async () => {
+    const t = await run();
+    await t.open();
+    expect(options(t.input('dossier-saisie-genre'))).toEqual(['', 'compromis_signe']);
+    expect(t.find(t.body(), 'Ranger l’acte signé')).toBeUndefined();
+    expect(t.body().textContent).toContain('L’acte se range une fois la signature du compromis saisie.');
+  });
+
+  it('[R61] ce qui n’a pas d’objet n’est pas proposé ; la suspension suit la réception, la reprise suit la suspension', async () => {
+    const lines = [{ deadline: 'date_limite_pret', source: 'saisie', day: null, status: 'sans_objet', from: 'date_limite_pret' }, { deadline: 'etat_date', source: 'saisie', day: null, status: 'sans_objet', from: 'etat_date_attendu' }];
+    const t = await run({ 'GET /v1/dossiers/f1/echeancier': ok({ fileId: 'f1', lines, dates: { compromis_signe: { day: '2027-03-10', version: 1 } } }) });
+    await t.open();
+    expect(options(t.input('dossier-saisie-genre'))).toEqual(['', 'compromis_signe', 'notification_acquereur', 'dia_recue', 'acte_prevu']);
+    expect(t.input('dossier-saisie-genre').children[1]!.textContent).toBe('Compromis signé (corriger le 10 mars 2027)');
+    const u = await run({ 'GET /v1/dossiers/f1/echeancier': ok({ fileId: 'f1', lines, dates: { compromis_signe: { day: '2027-03-10', version: 2 }, dia_recue: { day: '2027-03-11', version: 1 }, dia_suspension: { day: '2027-03-12', version: 1 } } }) });
+    await u.open();
+    expect(options(u.input('dossier-saisie-genre'))).toContain('dia_reprise');
+    expect(u.body().textContent).toContain('Compromis signé : 10 mars 2027, version 2');
+  });
+
+  it('[R10] une date part avec sa preuve déposée, sans référence à saisir ; un refus se dit en français, sans renvoyer le fichier', async () => {
+    const t = await signed({ 'POST /v1/dossiers/f1/dates': no(400, 'future_day') });
+    await t.open();
+    const save = () => t.find(t.body(), 'Ranger la date');
+    await t.click(save());
+    expect(t.state()).toBe('Choisissez la date à saisir.');
+    t.input('dossier-saisie-genre').value = 'notification_acquereur';
+    await t.click(save());
+    expect(t.state()).toBe('Dites le jour.');
+    t.input('dossier-saisie-jour').value = '2099-01-01';
+    await t.click(save());
+    expect(t.state()).toBe('Joignez la preuve de cette date.');
+    expect(t.posts()).toEqual([]);
+    t.input('dossier-saisie-preuve').files = [pdf()];
+    await t.click(save());
+    expect(t.state()).toBe('Ce jour est à venir : seul ce qui a déjà eu lieu se saisit ici.');
+    t.table['POST /v1/dossiers/f1/dates'] = ok(SIGNED);
+    t.input('dossier-saisie-jour').value = '2027-03-11';
+    await t.click(save());
+    expect(t.posts().filter((c) => c.url.endsWith('/preuves'))).toHaveLength(1);
+    expect(t.posts().at(-1)).toMatchObject({ url: '/v1/dossiers/f1/dates', body: { kind: 'notification_acquereur', day: '2027-03-11', proofRef: PROOF_REF } });
+    expect(t.state()).toBe('Date rangée.');
+  });
+
+  it('[R10] une preuve qui n’est plus rangée est redéposée au prochain essai', async () => {
+    const t = await signed({ 'POST /v1/dossiers/f1/dates': no(400, 'not_stored') });
+    await t.open();
+    t.input('dossier-saisie-genre').value = 'acte_prevu';
+    t.input('dossier-saisie-jour').value = '2027-06-01';
+    t.input('dossier-saisie-preuve').files = [pdf()];
+    const save = () => t.find(t.body(), 'Ranger la date');
+    await t.click(save());
+    expect(t.state()).toBe('Le fichier n’est pas rangé : choisissez-le de nouveau.');
+    await t.click(save());
+    expect(t.posts().filter((c) => c.url.endsWith('/preuves'))).toHaveLength(2);
+  });
+
+  it('[R14] le financement : une liste fermée, sans montant ni taux ; aucune réponse par défaut', async () => {
+    const steps = [{ step: 'offre_pret_emise', day: '2027-04-02', declaredBy: 'courtier', recordedAt: '2027-04-03T08:00:00.000Z' }];
+    const t = await signed({ 'POST /v1/dossiers/f1/financement': no(400, 'no_loan_condition'), 'GET /v1/dossiers/f1/financement': ok({ fileId: 'f1', hasLoanCondition: true, steps }) });
+    await t.open();
+    expect(t.body().textContent).toContain('Offre de prêt reçue par l’acquéreur : 2 avril 2027, dit par le courtier');
+    const save = () => t.find(t.body(), 'Ranger l’étape');
+    await t.click(save());
+    expect(t.state()).toBe('Choisissez l’étape.');
+    t.input('dossier-pret-etape').value = 'refus';
+    t.input('dossier-pret-jour').value = '2027-04-05';
+    await t.click(save());
+    expect(t.state()).toBe('Dites qui la déclare.');
+    t.input('dossier-pret-qui').value = 'acquereur';
+    await t.click(save());
+    expect(t.state()).toBe('L’offre n’a pas de condition de prêt : rien à suivre.');
+    t.table['POST /v1/dossiers/f1/financement'] = ok({ fileId: 'f1', hasLoanCondition: true, steps });
+    await t.click(save());
+    expect(t.posts().at(-1)).toMatchObject({ url: '/v1/dossiers/f1/financement', body: { step: 'refus', day: '2027-04-05', declaredBy: 'acquereur' } });
+    expect(Object.keys(t.posts().at(-1)!.body as object).sort()).toEqual(['day', 'declaredBy', 'step']);
+    expect(t.state()).toBe('Étape rangée.');
+    for (const id of ['dossier-pret-montant', 'dossier-pret-taux']) expect(t.body().all().some((e) => e.attributes.id === id)).toBe(false);
+  });
+
+  it('[R14] sans condition de prêt, aucun suivi à remplir', async () => {
+    const t = await signed({ 'GET /v1/dossiers/f1/financement': ok({ fileId: 'f1', hasLoanCondition: false, steps: [] }) });
+    await t.open();
+    expect(t.body().textContent).toContain('L’offre n’a pas de condition de prêt : rien à suivre.');
+    expect(t.find(t.body(), 'Ranger l’étape')).toBeUndefined();
+  });
+
+  it('[R60] l’acte se confirme sur le jour montré ; un refus dit ce qui manque, avec des noms lisibles', async () => {
+    const t = await signed({ 'POST /v1/dossiers/f1/acte': async () => Response.json({ ok: false, rule: 'R60', code: 'incomplete', missing: ['titre_propriete'], expired: ['etat_risques'], unknown: ['copropriete'], identity: 'non_verifiee' }, { status: 409 }) });
+    await t.open();
+    const ask = () => t.find(t.body(), 'Ranger l’acte signé');
+    await t.click(ask());
+    expect(t.state()).toBe('Dites le jour de la signature.');
+    t.input('dossier-acte-jour').value = '2027-06-01';
+    await t.click(ask());
+    expect(t.state()).toBe('Joignez l’attestation du notaire.');
+    t.input('dossier-acte-preuve').files = [pdf()];
+    await t.click(ask());
+    expect(t.state()).toBe('Le dossier sera clos et le bien passera vendu : cela ne se défait pas.');
+    expect(t.posts()).toEqual([]);
+    const confirm = () => t.find(t.body(), 'Confirmer : acte signé le 1 juin 2027');
+    t.input('dossier-acte-jour').value = '2027-06-02';
+    await t.click(confirm());
+    expect(t.state()).toBe('Le jour a changé : rangez de nouveau.');
+    expect(confirm()).toBeUndefined();
+    expect(t.posts()).toEqual([]);
+    t.input('dossier-acte-jour').value = '2027-06-01';
+    await t.click(ask());
+    await t.click(confirm());
+    expect(t.state()).toBe('L’acte n’est pas rangé : il manque : Titre de propriété ; périmée au jour de l’acte : État des risques ; à compléter : la copropriété ; identité de l’acquéreur non vérifiée ce jour-là.');
+    t.table['POST /v1/dossiers/f1/acte'] = ok({ signedOn: '2027-06-01' });
+    t.table['GET /v1/dossiers/f1/acte'] = ok({ signedOn: '2027-06-01' });
+    await t.click(confirm());
+    expect(t.posts().filter((c) => c.url.endsWith('/preuves'))).toHaveLength(1);
+    expect(t.posts().at(-1)).toMatchObject({ url: '/v1/dossiers/f1/acte', body: { signedOn: '2027-06-01', proofRef: PROOF_REF } });
+    expect(t.state()).toBe('Acte rangé : le dossier est clos.');
+    expect(t.body().textContent).toContain('Acte signé le 1 juin 2027.');
+    for (const label of ['Ranger la date', 'Ranger l’étape', 'Ranger l’acte signé', 'Ranger la pièce']) expect(t.find(t.body(), label)).toBeUndefined();
+  });
+
+  it('[R60] « Dossier complet » ne coexiste plus avec une pièce périmée en tête', async () => {
+    const stale = { reason: 'piece_perimee', item: 'dpe', who: 'vendeur', notBefore: null };
+    const t = await run({
+      'GET /v1/dossiers/f1/chemin': ok({ path: { ...PATH, holder: stale, lines: [stale] }, seller: {}, buyer: {} }),
+      'GET /v1/dossiers/f1/pieces': ok({ ...PIECES, missing: [], identity: 'verifiee', complete: true }),
+    });
+    await t.open();
+    const text = t.body().textContent;
+    expect(text).toContain('Pièce périmée : Diagnostic énergétique · au vendeur');
+    expect(text).toContain('À renouveler avant l’acte : Diagnostic énergétique.');
+    expect(text).toContain('Diagnostic énergétique (vendeur) : reçue, datée du 10 mars 2027, version 2, à renouveler');
+    expect(text).not.toContain('Dossier complet');
+    const u = await run({ 'GET /v1/dossiers/f1/chemin': ok({ path: { ...PATH, holder: null, lines: [] }, seller: {}, buyer: {} }), 'GET /v1/dossiers/f1/pieces': ok({ ...PIECES, missing: [], identity: 'verifiee', complete: true }) });
+    await u.open();
+    expect(u.body().textContent).toContain('Dossier complet.');
   });
 });

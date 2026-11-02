@@ -184,6 +184,23 @@ describeWithSqlite('N06 · acte signé : vente close, commission due', () => {
     expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'dossier.acte_signe')).toHaveLength(1);
   });
 
+  it('[R63] N13 : clôture, commission et bien vendu s’écrivent ensemble : une panne ne laisse pas un dossier clos à moitié', async () => {
+    const t = await ready();
+    t.setClock(at9('2027-06-11'));
+    const broken: SqlDatabase = {
+      exec: (q) => t.db.exec(q),
+      all: (q, p) => t.db.all(q, p),
+      first: (q, p) => t.db.first(q, p),
+      run: (q, p) => t.db.run(q, p),
+      batch: (list) => t.db.batch!(list.map((x) => (x.sql.includes('INSERT INTO sale_commissions') ? { ...x, sql: 'INSERT INTO table_absente VALUES (1)', params: [] } : x))),
+    };
+    await expect(new ActeVente(broken, t.acces, t.journal, t.storage, { now: t.now }).record(t.agent, t.fileId, { signedOn: '2027-06-10', proofRef: ACT_PROOF })).rejects.toThrow();
+    expect(await t.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [t.fileId])).toBeNull();
+    expect((await t.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [t.propertyId]))?.status).toBe('under_offer');
+    expect(await t.acte.record(t.agent, t.fileId, { signedOn: '2027-06-10', proofRef: ACT_PROOF })).toMatchObject({ ok: true, value: { signedOn: '2027-06-10' } });
+    expect((await t.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [t.propertyId]))?.status).toBe('sold');
+  });
+
   it('[R58] pas d’acte sans compromis en préparation ni compromis signé ; un jour réel, prouvé, ni futur ni avant le compromis', async () => {
     const t = await setupDossier('terrain');
     const acte = new ActeVente(t.db, t.acces, t.journal, t.storage, { now: t.now });

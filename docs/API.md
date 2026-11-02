@@ -165,6 +165,7 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 ## Dossiers de vente, en mode essai (N09)
 
 - Les routes `/v1/dossiers/…` de M10 (pièces, échéancier, financement, acte, chemin critique, relances, tâches, alertes) sont servies derrière la clé d'API, sous les droits de la couche métier [R16]. Elles ont besoin du stockage des pièces, le compartiment R2 lié sous le nom `PIECES` ; sans lui, chacune répond 503 `pieces_not_configured`, et le passage des dossiers ne tourne pas.
+- `POST /v1/dossiers/<id>/preuves` (N13) : l'agent du bien dépose la preuve d'une date ou de l'acte, comme une pièce par `…/fichiers` (PDF, JPEG, PNG, 20 Mo, empreinte `x-aimmo-sha256`) ; la référence rendue se passe à `…/dates` ou `…/acte`, qui refusent une référence absente du stockage (`not_stored`). Un dossier clos refuse dépôt, date et étape du prêt (`closed`).
 - Au planificateur, `dossiers.passage`, de 9 h à 19 h chaque jour : échéances, alertes de financement, filet du bouclier contre le faux RIB, relances des pièces par le contrôle central (pas le dimanche).
 - Chaque message reçu est rangé sans IBAN en clair, remplacé par `[IBAN masqué]` [R15] ; dès qu'il est rattaché à sa fiche, le bouclier le lit et alerte l'agent d'un dossier en cours [R62]. Le contrôle central refuse tout texte à un client qui porte un IBAN, un RIB ou demande de payer [R62].
 

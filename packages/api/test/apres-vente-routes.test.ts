@@ -17,6 +17,9 @@ const at9 = (day: string) => new Date(`${day}T08:00:00.000Z`);
 
 async function setup() {
   const t = await setupDossier('appartement');
+  // Les preuves citées sont rangées : les routes refusent une référence qui ne l'est pas (N13).
+  t.storage.refs.add(PROOF);
+  t.storage.refs.add(ACT_PROOF);
   const s: DossierServices & ApresVenteServices = { db: t.db, journal: t.journal, acces: t.acces, now: t.now, pieces: t.storage };
   const routes = [...dossierRoutes(), ...offreRoutes(), ...apresVenteRoutes()];
   const call = async (viewer: Viewer, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = {}) => {

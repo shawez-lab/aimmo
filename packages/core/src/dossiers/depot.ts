@@ -5,6 +5,8 @@
  * fichier, le serveur le range tel quel sous `dossiers/<dossier>/` et rend la référence. Déposer ne joint rien : la
  * pièce, sa date et ses contrôles passent ensuite par `add`. Mêmes contrôles qu'en W14 : droits avant de lire un octet,
  * type admis et confirmé par les premiers octets, empreinte recalculée. Au journal : ni contenu, ni donnée personnelle.
+ *
+ * N13 : la preuve d'une date ou de l'acte se dépose de même et se range sous `preuves/`, la forme que ces saisies attendent.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -20,7 +22,11 @@ export const FILE_DEPOSIT_TYPES: Readonly<Record<string, string>> = { 'applicati
 const SHA = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+export type FileDepositKind = 'piece' | 'preuve';
+
 export interface FileDepositInput {
+  /** `piece` par défaut : une pièce du dossier ; `preuve` : la preuve d'une date ou de l'acte (N13). */
+  kind?: FileDepositKind;
   contentType: unknown;
   sha256: unknown;
   declaredSize: number | null;
@@ -49,7 +55,9 @@ export class DepotsDossier {
     const gate = await gateSaleFile({ db: this.db, acces: this.acces, journal: this.journal, now: this.now }, viewer, fileId, true, 'sale_file_pieces');
     if (!gate.ok) return gate;
     // Un dossier clos par l'acte ne reçoit plus de pièce : aucun fichier rangé qui ne serait rattaché à rien.
-    if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
+    // La preuve de l'acte reste admise tant que la commission manque : une clôture coupée doit pouvoir se reprendre.
+    const closedBy = input.kind === 'preuve' ? 'sale_commissions' : 'sale_file_closings';
+    if (await this.db.first(`SELECT 1 FROM ${closedBy} WHERE file_id = ?`, [fileId])) return { ok: false, rule: null, code: 'closed' };
     const actor = actorOf(viewer);
     const subject = `sale_file:${fileId}`;
     const bad = async (code: string): Promise<FileDepositResult> => {
@@ -69,7 +77,7 @@ export class DepotsDossier {
     if (sha !== input.sha256) return bad('empreinte_differente');
     const id = this.newId();
     if (!UUID.test(id)) throw new Error('identifiant de fichier invalide');
-    const ref = `dossiers/${fileId}/${id}.${ext}`;
+    const ref = input.kind === 'preuve' ? `preuves/${id}.${ext}` : `dossiers/${fileId}/${id}.${ext}`;
     try {
       await this.store.put(ref, bytes, type);
     } catch {

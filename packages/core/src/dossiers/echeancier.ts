@@ -173,20 +173,22 @@ export interface FileTask {
   createdAt: string;
 }
 
-export type ScheduleProblem = { ok: false; rule: null; code: 'unknown_date' | 'bad_day' | 'bad_proof' | 'future_day' | 'before_compromis' | 'compromis_first' | 'out_of_order' | 'busy' } | { ok: false; rule: 'R58'; code: 'compromis_not_started' };
+export type ScheduleProblem = { ok: false; rule: null; code: 'unknown_date' | 'bad_day' | 'bad_proof' | 'not_stored' | 'future_day' | 'before_compromis' | 'compromis_first' | 'out_of_order' | 'busy' | 'closed' } | { ok: false; rule: 'R58'; code: 'compromis_not_started' };
 
 export class Echeancier {
   private readonly now: () => Date;
   private readonly notice: Record<Deadline, number>;
+  private readonly proofs: { has(ref: string): Promise<boolean> } | null;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
-    options: { now?: () => Date; noticeDays?: Partial<Record<Deadline, number>> } = {},
+    options: { now?: () => Date; noticeDays?: Partial<Record<Deadline, number>>; /** Donné par les routes (N13) : une preuve qui n'est pas rangée est refusée [R10]. */ proofs?: { has(ref: string): Promise<boolean> } } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.notice = { ...DEFAULT_NOTICE_DAYS, ...(options.noticeDays ?? {}) };
+    this.proofs = options.proofs ?? null;
     for (const d of DEADLINES) if (!Number.isInteger(this.notice[d]) || this.notice[d] < 0 || this.notice[d] > 60) throw new Error(`Délai de rappel de l'échéance ${d} : de 0 à 60 jours.`);
   }
 
@@ -233,6 +235,8 @@ export class Echeancier {
   async record(viewer: Viewer, fileId: string, input: { kind: unknown; day: unknown; proofRef: unknown }): Promise<{ ok: true; value: Schedule } | FileRefusal | FileUnknown | ScheduleProblem> {
     const g = await this.gate(viewer, fileId, true);
     if (!g.ok) return g;
+    // Un dossier clos par l'acte ne reçoit plus de date (N13) : aucune tâche ni aucun chemin ne la lirait.
+    if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
     if (typeof input.kind !== 'string' || !(DATE_KINDS as readonly string[]).includes(input.kind)) return { ok: false, rule: null, code: 'unknown_date' };
     const kind = input.kind as DateKind;
     if (!validDay(input.day)) return { ok: false, rule: null, code: 'bad_day' };
@@ -251,6 +255,7 @@ export class Echeancier {
     proposed[kind] = day;
     const problem = orderProblem(proposed);
     if (problem) return { ok: false, rule: null, code: problem };
+    if (this.proofs && !(await this.proofs.has(input.proofRef))) return { ok: false, rule: null, code: 'not_stored' };
     const version = (dates[kind]?.version ?? 0) + 1;
     try {
       await this.db.run(
