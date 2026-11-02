@@ -1917,7 +1917,7 @@ ${LOUER_JS}
     $('studio-retour').addEventListener('click', function () { wipeStudio(); home(); });
     $('gagner-retour').addEventListener('click', function () { if (gagnerScreen && gagnerScreen.inside()) openGagner(); else { wipeGagner(); home(); } });
     $('gagner-ouvrir').addEventListener('click', function () { openGagner(); });
-    $('attirer-retour').addEventListener('click', function () { wipeAttirer(); openReseau(reseauRange); });
+    $('attirer-retour').addEventListener('click', function () { if (attirerScreen && attirerScreen.inside()) { openAttirer(); return; } wipeAttirer(); openReseau(reseauRange); });
     $('attirer-ouvrir').addEventListener('click', function () { openAttirer(); });
     $('integration-ouvrir').addEventListener('click', function () { openIntegration('integration'); });
     $('academie-ouvrir').addEventListener('click', function () { openIntegration('academie'); });

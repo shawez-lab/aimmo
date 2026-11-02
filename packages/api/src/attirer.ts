@@ -206,7 +206,9 @@ export function attirerRoutes(): AttirerRoute[] {
     { method: 'POST', pattern: new RegExp(`${P}/google/textes/${ID}/valider$`), name: 'attirer.google_valider', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.validate(v, id)) },
     { method: 'POST', pattern: new RegExp(`${P}/google/textes/${ID}/publier$`), name: 'attirer.google_publier', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.publish(v, id)) },
     { method: 'POST', pattern: new RegExp(`${P}/google/textes/${ID}/liberer$`), name: 'attirer.google_liberer', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).google.releaseClaim(v, id)) },
-    // AT07 · pages de quartier
+    // AT07 · pages de quartier ; AT13 · les lectures de l'écran
+    { method: 'GET', pattern: new RegExp(`${P}/quartiers$`), name: 'attirer.quartiers', roles: DIRECTION, handle: async (s, v) => reply(await services(s).quartiers.zones(v)) },
+    { method: 'GET', pattern: new RegExp(`${P}/quartiers/${ID}/faits$`), name: 'attirer.quartier_faits', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).quartiers.facts(v, id)) },
     { method: 'POST', pattern: new RegExp(`${P}/quartiers/${ID}/faits$`), name: 'attirer.quartier_fait', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).quartiers.recordFact(v, id, b as never))) },
     { method: 'POST', pattern: new RegExp(`${P}/quartiers/${ID}/brouillon$`), name: 'attirer.quartier_brouillon', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).quartiers.draft(v, id, b.kind, b.topic))) },
     { method: 'POST', pattern: new RegExp(`${P}/quartiers/${ID}/texte$`), name: 'attirer.quartier_texte', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).quartiers.write(v, id, b.kind, b.topic, b.title, b.body))) },
