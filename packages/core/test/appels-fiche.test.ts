@@ -131,3 +131,75 @@ describeWithSqlite('AC09 · fréquence des appels de prospection', () => {
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/Léa|Inventée|06 00|\+33/);
   });
 });
+
+describeWithSqlite('AC12 · une fusion défaite garde les notes d’appel des deux côtés', () => {
+  const trace = (t: Awaited<ReturnType<typeof setup>>) => ({ journal: t.journal, actor: 'direction:test' });
+  const later = (t: Awaited<ReturnType<typeof setup>>) => t.setClock(t.now().getTime() + 60_000);
+  /** Un doublon joignable, avec le même accord : seule la note peut fermer son bouton. */
+  const doublon = async (t: Awaited<ReturnType<typeof setup>>) => {
+    const d = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexAgent.id, firstName: 'Léa' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: d.id, kind: 'phone', value: '06 00 00 00 09' });
+    await t.store.addConsent({ networkId: t.network.id, personId: d.id, purpose: 'prospecting', channel: 'phone', proof: 'accord de test', givenAt: new Date(START - 10 * DAY) });
+    later(t);
+    return d;
+  };
+
+  it('[R204] [R17] refus noté, fusion défaite : le bouton reste fermé sur les deux fiches, jusqu’à la même heure ; rien n’est effacé', async () => {
+    const t = await setup();
+    const d = await doublon(t);
+    const merge = await t.unique.merge({ survivorId: t.person.id, mergedId: d.id, reason: 'même personne, test' });
+    await t.appels.note(t.alex, t.person.id, { outcome: 'refused' });
+    const before = await t.db.all<{ noted_at: string }>('SELECT * FROM call_notes');
+    await t.unique.undoMerge(merge.id, trace(t));
+    const one = await t.state(t.person.id);
+    expect(one).toMatchObject({ call: null, refusal: 'refused_recently' });
+    expect(await t.state(d.id)).toEqual(one);
+    const rows = await t.db.all<{ person_id: string; undone_merge_id: string | null }>('SELECT * FROM call_notes ORDER BY undone_merge_id IS NULL DESC');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.person_id).sort()).toEqual([t.person.id, d.id].sort());
+    expect(rows[0]).toMatchObject(before[0]!);
+    expect(rows[1]).toMatchObject({ person_id: d.id, outcome: 'refused', basis: 'prospecting', noted_at: before[0]!.noted_at, undone_merge_id: merge.id });
+  });
+
+  it('[R204] [R13] le plafond compte des deux côtés, avec l’heure de chaque appel ; le journal ne porte que des identifiants', async () => {
+    const t = await setup();
+    const d = await doublon(t);
+    const merge = await t.unique.merge({ survivorId: t.person.id, mergedId: d.id, reason: 'même personne, test' });
+    await t.calls(CALL_FREQUENCY.maxCalls);
+    await t.unique.undoMerge(merge.id, trace(t));
+    const one = await t.state(t.person.id);
+    expect(one.refusal).toBe('too_many_calls');
+    expect(await t.state(d.id)).toEqual(one);
+    const line = (await t.journal.bySubject(`person:${t.person.id}`)).find((e) => e.type === 'fiche.fusion_defaite')!;
+    expect((line.data as { calls: string[] }).calls).toHaveLength(CALL_FREQUENCY.maxCalls);
+    expect(JSON.stringify(line)).not.toMatch(/Léa|06 00|\+33/);
+  });
+
+  it('[R204] une note d’avant la réunion reste sur sa fiche ; défaire deux fois ne double rien', async () => {
+    const t = await setup();
+    const d = await doublon(t);
+    await t.appels.note(t.alex, t.person.id, { outcome: 'refused' });
+    later(t);
+    const merge = await t.unique.merge({ survivorId: t.person.id, mergedId: d.id, reason: 'même personne, test' });
+    await t.unique.undoMerge(merge.id, trace(t));
+    await t.unique.undoMerge(merge.id, trace(t));
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM call_notes')).toEqual({ n: 1 });
+    expect((await t.state(t.person.id)).refusal).toBe('refused_recently');
+    expect((await t.state(d.id)).refusal).toBeNull();
+  });
+
+  it('[R204] séparées puis réunies de nouveau : une note et sa copie comptent pour un seul appel, et ne sont pas recopiées deux fois', async () => {
+    const t = await setup();
+    const d = await doublon(t);
+    const first = await t.unique.merge({ survivorId: t.person.id, mergedId: d.id, reason: 'même personne, test' });
+    await t.calls(CALL_FREQUENCY.maxCalls - 1);
+    await t.unique.undoMerge(first.id, trace(t));
+    expect((await t.state(t.person.id)).refusal).toBeNull();
+    later(t);
+    const second = await t.unique.merge({ survivorId: t.person.id, mergedId: d.id, reason: 'de nouveau, test' });
+    expect((await t.state(t.person.id)).refusal).toBeNull();
+    await t.unique.undoMerge(second.id, trace(t));
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM call_notes')).toEqual({ n: 2 * (CALL_FREQUENCY.maxCalls - 1) });
+    expect((await t.state(d.id)).refusal).toBeNull();
+  });
+});

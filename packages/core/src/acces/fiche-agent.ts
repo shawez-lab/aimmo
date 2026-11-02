@@ -138,10 +138,8 @@ export function usableCallConsents(fiche: PhoneFacts, notes: readonly CallNote[]
 export function callFrequencyClosure(notes: readonly CallNote[], at: number, limits: typeof CALL_FREQUENCY = CALL_FREQUENCY): { reason: 'refused_recently' | 'too_many_calls'; until: number } | null {
   const refused = lastCallRefusal(notes, at);
   const refusedUntil = refused + limits.refusalDays * DAY_MS;
-  const calls = notes
-    .filter((n) => n.basis === 'prospecting' && Date.parse(n.noted_at) <= at && at - Date.parse(n.noted_at) < limits.windowDays * DAY_MS)
-    .map((n) => Date.parse(n.noted_at))
-    .sort((a, b) => b - a);
+  // Une note et sa copie d'une fusion défaite, de nouveau réunies, gardent la même heure : c'est un seul appel [R204].
+  const calls = [...new Set(notes.filter((n) => n.basis === 'prospecting' && Date.parse(n.noted_at) <= at && at - Date.parse(n.noted_at) < limits.windowDays * DAY_MS).map((n) => Date.parse(n.noted_at)))].sort((a, b) => b - a);
   // Quand le nombre repasse sous le plafond : le plus ancien des appels qui le remplissent sort de la période.
   const callsUntil = calls.length >= limits.maxCalls ? (calls[limits.maxCalls - 1] as number) + limits.windowDays * DAY_MS : -Infinity;
   if (refusedUntil > at && refusedUntil >= callsUntil) return { reason: 'refused_recently', until: refusedUntil };

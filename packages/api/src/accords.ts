@@ -14,7 +14,7 @@ const FIELDS = new Set(['purpose', 'channel', 'proof', 'givenOn']);
 const ROLES: readonly Viewer['role'][] = ['agent', 'direction'];
 
 export interface AccordsServices {
-  /** La base, pour tenir compte des refus notés (AC09) ; à passer au branchement (AC12) [R204]. */
+  /** La base, pour tenir compte des refus notés (AC09), passée au branchement (AC12) [R204]. */
   db?: SqlDatabase;
   store: FicheClient;
   acces: Acces;

@@ -90,6 +90,7 @@ import type { FeeSettings } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
 import { studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
+import { appelsRoutes, type AppelsRoute } from './appels.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
 import { CERTIFICATE_PAGE_PATH, certificatePageError, handleCertificatePage } from './certificat-photo.ts';
 import { ESPACE_PATH, espacesRoutes, handleEspacePublic, type EspacesRoute, type EspacesServices } from './espaces.ts';
@@ -1166,7 +1167,17 @@ function accordsFicheRoutes(): RouteDef[] {
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ store: new FicheClient(s.db, { now: s.now }), acces: s.acces, journal: s.journal, now: s.now }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, store: new FicheClient(s.db, { now: s.now }), acces: s.acces, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
+/** Les appels notés par l'agent (AC12) : la route contrôle son rôle avant de lire le corps [R16, R204]. */
+function appelsFicheRoutes(): RouteDef[] {
+  return appelsRoutes().map((r: AppelsRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now }, viewer, params, request),
   }));
 }
 
@@ -1552,6 +1563,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m19Routes(config.studio ?? null),
     ...m20Routes(config.gagner),
     ...accordsFicheRoutes(),
+    ...appelsFicheRoutes(),
     ...m01Routes(config),
     ...repriseRoutes(),
     ...espacesAgentRoutes(config),
