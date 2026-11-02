@@ -216,6 +216,43 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Attend : H05, B03 en ombre depuis 7 jours sans écart non expliqué.
 - Reste après B04a et B04b : ouvrir le passage (`AUTOMATION_ROLLOUT_OPEN`) ; sur le site : lire `decides`, signaler écarts et pannes par `POST /v1/automatisations/incident` et rejouer ce signalement si le socle ne répond pas (une panne de sa base ne peut pas le ramener en ombre seule) ; retirer `taches.yml`.
 
+**Accords notés par l'agent : trou trouvé le 2026-11-02.**
+Voie : 2
+
+Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suivi_location` »). Le trou est plus large : aucune route ne permet de noter un accord sur une fiche. Les finalités `suivi_vente`, `suivi_mandat`, `suivi_location`, `value_tracking`, `route_share` n'ont aucune source d'accord en production, et `alertes_biens` et `valuation_follow_up` seulement l'espace du client ou la reprise. Le contrôle central refuserait donc ces envois pour toujours (R03). Le refus est du bon côté de la loi, mais ces modules ne marcheraient jamais. Et le bouton « appeler » ne regarde pas l'accord, alors que le cahier le demande (Conformité : « bloqué sans accord enregistré ou demande du client »).
+
+### AC01 · L'agent note et retire un accord, avec sa preuve
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : S05, S06
+- Cahier : Conformité, démarchage téléphonique et accord préalable ; R03, R02, R04, R13, R16, R17.
+- Objectif : un service `AccordsFiche` (`packages/core/src/acces/accords.ts`) et ses routes (`packages/api/src/accords.ts`), prêtes pour le socle : l'agent de la fiche ou la direction note l'accord qu'une personne lui a donné (finalité, canal, date, preuve) et le retire quand elle le demande.
+- Décidé (2026-11-02), lecture prudente : liste fermée de finalités, sans celles que leur module range lui-même ni la prospection des partenaires (H32) ; canaux où R03 demande un accord ; preuve écrite de 10 à 1 000 caractères, gardée sur la fiche, jamais au journal ; date donnée par l'agent, jamais dans le futur ; retirer ferme tous les accords de même finalité et de même canal sur les fiches réunies. Antidater ne peut pas effacer un retrait ou une exclusion levée : un accord daté d'avant est refusé.
+- Critères : une personne exclue ou arrêtée ne peut pas recevoir d'accord [R02, R04] ; un autre agent est refusé et le refus va au journal [R16] ; l'accord noté ouvre l'envoi au contrôle central, le retrait le referme [R03] ; un accord déjà en cours n'est pas doublé ; un retrait ou une exclusion levée ne s'efface pas par une date ancienne [R03] ; ni preuve ni adresse au journal [R13] ; aucune ligne effacée [R17].
+
+### AC02 · Branchement des routes d'accords dans le socle
+- Statut : à faire
+- Voie : 1
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : AC01
+- Cahier : Architecture technique.
+- Objectif : ajouter `accordsRoutes()` au routeur de `app.ts`, et décrire les deux routes dans `docs/API.md`.
+- Critères : chaque route répond sous son rôle [R16] ; la suite complète reste verte.
+
+### AC03 · Écran : noter et retirer un accord depuis la fiche
+- Statut : à faire
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC02
+- Cahier : Conformité ; système de design [R201].
+- Objectif : dans la fiche de l'application, le bloc « Accords » propose de noter un accord (finalité, canal, date, preuve) et de le retirer ; le refus dit sa raison en français.
+- Critères : parcours au téléphone ; axe-core sans violation ; rien de personnel au journal [R13].
+
+### AC04 · Bouton « appeler » fermé sans accord ni demande du client
+- Statut : à faire
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC01
+- Cahier : Conformité, démarchage téléphonique.
+- Objectif : `FicheAgent` ne rend le numéro à appeler que si la personne a un accord en cours par téléphone, ou a elle-même demandé à être rappelée.
+- Critères : sans accord ni demande, pas de numéro, et l'écran dit pourquoi [R03] ; un accord retiré referme le bouton [R03].
+
 ## Phase 2 : la preuve à Dijon
 
 À découper au fil de l'eau, dans l'ordre de la Feuille de route : M02 et M03 en décembre 2026, puis M04, M20 et l'application de l'agent en janvier 2027, et la suite mois par mois.
