@@ -16,6 +16,7 @@ import { agentState } from '../acces/etat-agent.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { AgentAlertRow, AlertReason } from './relais.ts';
@@ -116,7 +117,6 @@ export class AlertesAgent {
         break;
       }
       const root = members[0] as string;
-      const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [root]);
       const closed = await this.db.first(
         `SELECT 1 AS yes FROM exclusions WHERE person_id IN (${placeholders(members.length)}) AND noted_at <= ? AND (lifted_at IS NULL OR lifted_at > ?) LIMIT 1`,
         [...members, at, at],
@@ -125,7 +125,7 @@ export class AlertesAgent {
       alerts.push({
         id: row.id,
         personId: root,
-        firstName: person?.first_name ?? null,
+        firstName: await ficheFirstName(this.db, members),
         reason: row.reason,
         channel: ALERT_CHANNELS.has(channel) ? channel : null,
         createdAt: row.created_at,
