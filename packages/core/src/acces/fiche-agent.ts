@@ -24,7 +24,7 @@ export interface AgentFiche {
   call: string | null;
   projects: { kind: string; stage: string; deadline: string | null; budgetMinEur: number | null; budgetMaxEur: number | null }[];
   sources: { channel: string; detail: string | null; occurredAt: string }[];
-  consents: { purpose: string; channel: string; givenAt: string; withdrawnAt: string | null }[];
+  consents: { id: string; purpose: string; channel: string; givenAt: string; withdrawnAt: string | null }[];
   /** Les derniers messages, du plus récent au plus ancien. */
   messages: { channel: string; direction: string; author: string; body: string; occurredAt: string }[];
   /** Les rappels de la fiche, ouverts d'abord ; un rappel fait garde sa ligne [R17]. */
@@ -93,7 +93,7 @@ export class FicheAgent {
         call,
         projects: fiche.projects.map((p) => ({ kind: p.kind, stage: p.stage, deadline: p.deadline, budgetMinEur: p.budget_min_eur, budgetMaxEur: p.budget_max_eur })),
         sources: [...fiche.sources].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at)).map((s) => ({ channel: s.channel, detail: s.detail, occurredAt: s.occurred_at })),
-        consents: fiche.consents.map((c) => ({ purpose: c.purpose, channel: c.channel, givenAt: c.given_at, withdrawnAt: c.withdrawn_at })),
+        consents: fiche.consents.map((c) => ({ id: c.id, purpose: c.purpose, channel: c.channel, givenAt: c.given_at, withdrawnAt: c.withdrawn_at })),
         messages,
         callbacks: tasks.map((t) => ({ taskId: t.id, reason: t.reason, dueAt: t.due_at, doneAt: t.done_at })),
       },
