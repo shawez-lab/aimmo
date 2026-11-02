@@ -271,6 +271,18 @@ export class EstimationCommerce {
     this.newId = options.newId ?? (() => crypto.randomUUID());
   }
 
+  /** Les barèmes en vigueur du réseau, chacun à sa dernière version, pour la direction seule [R16, R111]. */
+  async scales(viewer: Viewer): Promise<{ ok: true; value: ValuationScale[] } | ValuationRefusal> {
+    if (viewer.role !== 'direction') return this.refused(viewer, `network:${viewer.networkId}`, 'role');
+    const rows = await this.db.all<ScaleRow>(
+      `SELECT s.* FROM business_valuation_scales s WHERE s.network_id = ?
+       AND s.version = (SELECT MAX(version) FROM business_valuation_scales o WHERE o.network_id = s.network_id AND o.activity = s.activity AND o.method = s.method)
+       ORDER BY s.activity, s.method`,
+      [viewer.networkId],
+    );
+    return { ok: true, value: rows.map(toScale) };
+  }
+
   /** La direction range un barème, avec sa source et sa date ; un barème corrigé est une nouvelle version [R111, R17]. */
   async recordScale(viewer: Viewer, input: unknown): Promise<{ ok: true; value: ValuationScale } | ValuationRefusal> {
     const actor = `${String(viewer.role)}:${viewer.userId}`;

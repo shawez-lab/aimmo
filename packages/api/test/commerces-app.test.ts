@@ -552,3 +552,142 @@ describe('CE12 · la cession avance depuis l’écran', () => {
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
   });
 });
+
+const SHEET = {
+  activity: 'restaurant',
+  signName: 'Table Inventée',
+  fiscalYears: [{ year: 2026, revenueCents: 61_234_500, resultCents: -1_000_050 }],
+  leaseStart: null,
+  leaseYears: null,
+  leaseAnnualRentCents: 2_400_000,
+  leaseUse: null,
+  leaseAssignment: null,
+  employees: 4,
+  equipment: ['Piano inventé'],
+  licenses: ['licence_4'],
+};
+const FICHE: Record<string, Answer> = { 'GET /v1/commerces/b1/fiche': ok({ current: { sheet: SHEET }, history: [] }), 'POST /v1/commerces/b1/fiche': ok({}) };
+
+describe('CE13 · la fiche du commerce et le barème de la direction', () => {
+  it('[R110] [R16] aucun chiffre n’est lu avant le geste, et qui ne peut pas écrire n’a pas le formulaire', async () => {
+    const t = await run(FICHE);
+    await t.openB1();
+    expect(t.calls.some((c) => c.url.endsWith('/fiche'))).toBe(false);
+    expect(text(t.body())).not.toContain('612345');
+    await t.click(t.byText('Lire et modifier la fiche'));
+    expect(t.input('Exercice 1 : chiffre d’affaires, en euros').value).toBe('612345');
+    expect(t.input('Exercice 1 : résultat, en euros').value).toBe('-10000,50');
+
+    const reader = await run({ ...FICHE, 'GET /v1/commerces/b1/demandes': no(403, { ok: false, rule: 'R16', code: 'role' }) });
+    await reader.openB1();
+    expect(reader.byText('Lire et modifier la fiche')).toBeUndefined();
+    expect(reader.calls.some((c) => c.url.endsWith('/fiche'))).toBe(false);
+  });
+
+  it('[R17] seuls les champs changés partent, en centimes ; sans changement, aucune version', async () => {
+    const t = await run(FICHE);
+    await t.openB1();
+    await t.click(t.byText('Lire et modifier la fiche'));
+    await t.click(t.byText('Ranger la fiche'));
+    expect(t.state()).toBe('Rien n’a changé : aucune version ajoutée.');
+    expect(posted(t, '/v1/commerces/b1/fiche')).toHaveLength(0);
+    sets(t, { 'Loyer annuel, en euros': '25 000,50', 'Nombre de salariés': '' });
+    await t.click(t.byText('Ranger la fiche'));
+    expect(JSON.parse(posted(t, '/v1/commerces/b1/fiche')[0]!.body!)).toEqual({ leaseAnnualRentCents: 2_500_050, employees: null });
+    expect(t.state()).toBe('Fiche rangée : une nouvelle version s’ajoute.');
+  });
+
+  it('un exercice s’ajoute entier, les exercices partent du plus récent au plus ancien ; une valeur illisible est dite et rien ne part', async () => {
+    const t = await run(FICHE);
+    await t.openB1();
+    await t.click(t.byText('Lire et modifier la fiche'));
+    sets(t, { 'Exercice 2 : année de clôture': '2025', 'Exercice 2 : chiffre d’affaires, en euros': 'beaucoup' });
+    await t.click(t.byText('Ranger la fiche'));
+    expect(t.state()).toBe('Vérifiez l’exercice 2 : année, chiffre d’affaires et résultat, en chiffres.');
+    expect(posted(t, '/v1/commerces/b1/fiche')).toHaveLength(0);
+    sets(t, { 'Exercice 2 : année de clôture': '2027', 'Exercice 2 : chiffre d’affaires, en euros': '100', 'Exercice 2 : résultat, en euros': '10' });
+    await t.click(t.byText('Ranger la fiche'));
+    expect(JSON.parse(posted(t, '/v1/commerces/b1/fiche')[0]!.body!)).toEqual({
+      fiscalYears: [{ year: 2027, revenueCents: 10_000, resultCents: 1_000 }, SHEET.fiscalYears[0],],
+    });
+  });
+
+  it('le refus d’un champ est dit par son nom, jamais par son code ; une fiche vide se complète', async () => {
+    const t = await run({ 'GET /v1/commerces/b1/fiche': ok({ current: null, history: [] }), 'POST /v1/commerces/b1/fiche': no(400, { ok: false, rule: null, code: 'valeur', field: 'leaseYears' }) });
+    await t.openB1();
+    await t.click(t.byText('Lire et modifier la fiche'));
+    sets(t, { 'Durée du bail, en années': '120' });
+    await t.click(t.byText('Ranger la fiche'));
+    expect(JSON.parse(posted(t, '/v1/commerces/b1/fiche')[0]!.body!)).toEqual({ leaseYears: 120 });
+    expect(t.state()).toBe('Vérifiez la durée du bail (1 à 99 ans).');
+  });
+
+  it('une fiche illisible est dite ; le bouton revient', async () => {
+    const t = await run({ 'GET /v1/commerces/b1/fiche': no(500, { ok: false }) });
+    await t.openB1();
+    await t.click(t.byText('Lire et modifier la fiche'));
+    expect(t.state()).toBe('La fiche ne se lit pas pour le moment.');
+    expect(isOff(t.byText('Lire et modifier la fiche'))).toBe(false);
+  });
+
+  it('[R110] des murs n’envoient ni exercices ni salariés, et un jour saisi à moitié n’efface pas le début du bail', async () => {
+    const t = await run({ ...FICHE, 'GET /v1/commerces/b2/public': ok({ publicView: { kind: 'business_walls' }, presentation: null }), 'GET /v1/commerces/b2/demandes': ok([]), 'GET /v1/commerces/b2/cession': no(400, { ok: false, rule: null, code: 'sorte' }), 'GET /v1/commerces/b2/fiche': FICHE['GET /v1/commerces/b1/fiche']!, 'POST /v1/commerces/b2/fiche': ok({}) });
+    t.table['GET /v1/commerces'] = ok([{ propertyId: 'b2', reference: 'CE-2', kind: 'business_walls', city: 'Dijon' }]);
+    await t.click(t.els['commerces-ouvrir']);
+    await t.loadScript();
+    await t.click(t.byText('Ouvrir', 0));
+    await t.click(t.byText('Lire et modifier la fiche'));
+    expect(t.body().all().some((e) => e.textContent === 'Nombre de salariés')).toBe(false);
+    sets(t, { 'Enseigne (jamais publiée)': 'Autre enseigne inventée' });
+    await t.click(t.byText('Ranger la fiche'));
+    expect(JSON.parse(posted(t, '/v1/commerces/b2/fiche')[0]!.body!)).toEqual({ signName: 'Autre enseigne inventée' });
+
+    const half = await run({ ...FICHE, 'GET /v1/commerces/b1/fiche': ok({ current: { sheet: { ...SHEET, leaseStart: '2020-01-01' } }, history: [] }) });
+    await half.openB1();
+    await half.click(half.byText('Lire et modifier la fiche'));
+    const day = half.input('Début du bail');
+    day.value = '';
+    (day as unknown as { validity: unknown }).validity = { badInput: true };
+    await half.click(half.byText('Ranger la fiche'));
+    expect(half.state()).toBe('Vérifiez le début du bail.');
+    expect(posted(half, '/v1/commerces/b1/fiche')).toHaveLength(0);
+  });
+
+  it('[R10] un geste de CE11 dont la réponse se perd ne dit pas que rien n’est rangé', async () => {
+    const t = await run();
+    await t.openB1();
+    await t.click(t.byText('Valider l’estimation'));
+    expect(t.state()).toBe('Réponse perdue : ce geste est peut-être rangé. Relisez les étapes avant de recommencer.');
+  });
+
+  it('[R16] [R111] la direction range le barème dans l’unité de son métier ; l’agent n’a ni lecture ni formulaire', async () => {
+    const dir = await run({ 'GET /v1/moi': ok({ role: 'direction', firstName: null }), 'GET /v1/commerces/baremes': ok([{ activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_050, source: INJECTED, sourceDate: '2027-01-15' }]) });
+    await dir.click(dir.els['commerces-ouvrir']);
+    await dir.loadScript();
+    expect(text(dir.body())).toContain(`restaurant · Part du chiffre d’affaires, en % : 50 à 80,50 (${INJECTED}, 15/01/2027)`);
+    expect(dir.body().all().filter((e) => e.tagName === 'img')).toHaveLength(0);
+    await dir.click(dir.byText('Ranger le barème'));
+    expect(dir.state()).toBe('Choisissez l’activité dans la liste.');
+    sets(dir, { Activité: 'bar_cafe', Méthode: 'revenue_pct', 'Borne basse': 'peu', 'Borne haute': '80' });
+    await dir.click(dir.byText('Ranger le barème'));
+    expect(dir.state()).toBe('Écrivez chaque borne en chiffres, par exemple 8,5.');
+    dir.table['POST /v1/commerces/baremes'] = no(400, { ok: false, rule: 'R111', code: 'source' });
+    sets(dir, { 'Borne basse': '8,5' });
+    await dir.click(dir.byText('Ranger le barème'));
+    expect(JSON.parse(posted(dir, '/v1/commerces/baremes')[0]!.body!)).toMatchObject({ activity: 'bar_cafe', method: 'revenue_pct', low: 850, high: 8_000 });
+    expect(dir.state()).toBe('Écrivez la source du barème : 3 à 300 caractères.');
+    dir.table['POST /v1/commerces/baremes'] = ok({});
+    await dir.click(dir.byText('Ranger le barème'));
+    expect(dir.state()).toBe('Barème rangé.');
+
+    const agent = await run();
+    await agent.click(agent.els['commerces-ouvrir']);
+    await agent.loadScript();
+    expect(agent.byText('Ranger le barème')).toBeUndefined();
+    expect(agent.calls.some((c) => c.url === '/v1/commerces/baremes')).toBe(false);
+  });
+
+  it('[R201] le script tient toujours le budget d’une page', () => {
+    expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+});
