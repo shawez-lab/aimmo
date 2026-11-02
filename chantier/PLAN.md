@@ -2521,8 +2521,10 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT15 · Écran « Attirer » : communes et quartiers
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Voie : 2
+- Décidé (2026-11-02, voie 2) : une zone retirée quitte aussitôt le site et son plan, une version demandée par son numéro se relit telle quelle ; contour hors des emprises de la France refusé (`hors_france`), quartier hors de l'emprise de sa commune à un dixième près refusé (`hors_commune`) ; plusieurs morceaux ou une enclave : à la direction de trancher, en le disant dans la source ; route de définition limitée à 64 Ko, six décimales.
+- Reste : fusionnée (#271) ; relecture forte 5 P1 et 2 tests sans preuve corrigés ; Codex à sa limite (H03) ; temps de `ringsOverlap` à 2 000 points contre 2 000 non mesuré, à surveiller à la mise en service ; contour qui se croise lui-même accepté, non contrôlé.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT12, AT13
 - Cahier : M01 ; R16, R150.
 - Objectif : reste de AT13. Sans zone, ni prix ni page de quartier : la direction définit et retire une commune ou un quartier depuis l'écran, en collant son contour avec sa source.
