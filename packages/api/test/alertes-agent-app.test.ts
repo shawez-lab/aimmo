@@ -162,7 +162,10 @@ describe('C09c · alertes dans l’application', () => {
     // Le script de l'agent n'est pas appelé pour la direction.
     expect(some.calls.some((c) => c.url === '/v1/alertes-agent')).toBe(false);
     const bounded = await run({ ...asDirection, '/v1/alertes-agent/sans-agent': ok({ total: 100, exchanges: 0, needsReply: 100, more: true }) });
-    expect(bounded.els['reseau-sans-agent']!.textContent).toContain('100 ou plus');
+    expect(bounded.els['reseau-sans-agent']!.textContent).toContain('au moins 100');
+    // Un compte incomplet ne s'affiche jamais comme du vide.
+    const unknown = await run({ ...asDirection, '/v1/alertes-agent/sans-agent': ok({ total: 0, exchanges: 0, needsReply: 0, more: true }) });
+    expect(unknown.els['reseau-sans-agent']!.textContent).toContain('au moins 0');
     const none = await run({ ...asDirection, '/v1/alertes-agent/sans-agent': ok({ total: 0, exchanges: 0, needsReply: 0, more: false }) });
     expect(none.els['reseau-sans-agent']!.textContent).toBe('');
   });

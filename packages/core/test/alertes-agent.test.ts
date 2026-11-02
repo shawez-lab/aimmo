@@ -179,7 +179,7 @@ describeWithSqlite('C09c · alertes de l’agent', () => {
       return r.value;
     };
     // Vue par son agent : pas comptée.
-    const seenByAlex = await t.alert(t.lea.id, t.alex.id);
+    await t.alert(t.lea.id, t.alex.id);
     expect(await count()).toEqual({ total: 0, exchanges: 0, needsReply: 0, more: false });
     // Fiche sans agent.
     const free = await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Noa', lastName: 'Exemple' });
@@ -196,22 +196,38 @@ describeWithSqlite('C09c · alertes de l’agent', () => {
     expect((await count()).total).toBe(0);
     const read = await t.service.list(t.asAgent(t.alex.id));
     expect(read.ok && read.value.alerts.map((a) => a.personId)).toContain(free.id);
-    // L'agent parti : ses alertes reviennent au compte de la direction.
+    // Une alerte vue n'est plus comptée : Sam en voit une, marque vue, puis part ; la seconde seule revient au compte.
+    const zoeSeen = await t.alert(t.zoe.id, t.sam.id, { conversation: 'email:conv-vue' });
+    await t.seen(t.sam.id, zoeSeen);
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.sam.id]);
-    expect((await count()).total).toBe(1);
-    // Une alerte vue n'est plus comptée.
-    await t.seen(t.alex.id, seenByAlex);
     expect((await count()).total).toBe(1);
     expect(await t.service.unseenByAnyAgent(t.asAgent(t.alex.id))).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
     expect(JSON.stringify(await t.lines())).not.toMatch(/Noa|Zoé|conv-/);
   });
 
-  it('[R12] le compte de la direction dit quand il est borné', async () => {
+  it('[R12] un stock d’alertes chez un agent actif ne cache pas une alerte sans agent', async () => {
     const t = await setup();
+    for (let i = 0; i < 120; i++) await t.alert(t.lea.id, t.alex.id);
     const free = await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Noa', lastName: 'Exemple' });
-    for (let i = 0; i < 100; i++) await t.alert(free.id, null);
+    await t.alert(free.id, null);
     const r = await t.service.unseenByAnyAgent({ role: 'direction', networkId: t.network.id, userId: 'dir-1' });
-    expect(r).toMatchObject({ ok: true, value: { total: 100, more: true } });
+    expect(r).toMatchObject({ ok: true, value: { total: 1, needsReply: 1, more: false } });
+  });
+
+  it('[R12] au-delà de 100 fiches réunies examinées, le compte dit qu’il est un minimum', async () => {
+    const t = await setup();
+    const direction: Viewer = { role: 'direction', networkId: t.network.id, userId: 'dir-1' };
+    const at = t.now().toISOString();
+    const add = async (i: number) => {
+      const a = await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Noa', lastName: 'Exemple' });
+      const b = await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Noa', lastName: 'Exemple' });
+      await t.db.run("INSERT INTO person_merges (id, network_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES (?, ?, ?, ?, 'test', ?, ?)", [`m-${i}`, t.network.id, a.id, b.id, at, at]);
+      await t.alert(b.id, null);
+    };
+    for (let i = 0; i < 100; i++) await add(i);
+    expect(await t.service.unseenByAnyAgent(direction)).toMatchObject({ ok: true, value: { total: 100, more: false } });
+    await add(100);
+    expect(await t.service.unseenByAnyAgent(direction)).toMatchObject({ ok: true, value: { total: 100, more: true } });
   });
 
   it('[R12] un écran resté sur une ancienne lecture ne referme pas une alerte rouverte', async () => {

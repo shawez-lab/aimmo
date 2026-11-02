@@ -1674,7 +1674,7 @@ export const APP_JS = `'use strict';
         renderReseau(data || {});
       }, mine),
       reseauPart('reseau-alertes-etat', send('/v1/pilotage/alertes', 'GET'), function (d) { renderAlertes(list(d)); }, mine),
-      reseauPart('reseau-sans-agent', send('/v1/alertes-agent/sans-agent', 'GET'), function (d) { $('reseau-sans-agent').textContent = d && d.total ? 'Conversations à reprendre sans agent : ' + d.total + (d.more ? ' ou plus' : '') + '. Attribuez leurs fiches.' : ''; }, mine),
+      reseauPart('reseau-sans-agent', send('/v1/alertes-agent/sans-agent', 'GET'), function (d) { $('reseau-sans-agent').textContent = d && (d.total || d.more) ? 'Conversations à reprendre sans agent : ' + (d.more ? 'au moins ' : '') + d.total + '. Attribuez leurs fiches.' : ''; }, mine),
       reseauPart('reseau-reversements-etat', send('/v1/pilotage/reversements', 'GET'), function (d) { renderReversements(list(d)); }, mine),
       reseauPart('reseau-brouillons-etat', send('/v1/pilotage/factures/brouillons', 'GET'), function (d, m) { renderBrouillons(list(d), m); }, mine),
     ]).then(function (done) { return done.every(function (x) { return x; }); });
