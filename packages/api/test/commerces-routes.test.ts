@@ -399,21 +399,23 @@ describeWithSqlite('CE15 · les repreneurs à l’écran, par les routes', () =>
     return { t, buyer, project };
   };
   it('[R14] [R16] les projets dans l’ordre d’arrivée, sans rien du profil ; ni un autre agent, ni la conformité', async () => {
-    const { t, buyer, project } = await ready();
-    await t.ok(t.alex, 'POST', `/commerces/repreneurs/${project.id}`, { budgetMaxEur: 500_000, declaredContributionEur: 90_000 });
-    const other = await t.buyer('B');
-    const second = await t.store.createProject({ networkId: t.networkId, agentId: t.alexId, personId: other.id, kind: 'buy_business' });
-    await t.store.createProject({ networkId: t.networkId, agentId: t.alexId, personId: other.id, kind: 'buy' });
+    const { t, project } = await ready();
+    // RepreneurA arrive le premier, sans budget ; ensuite Z, puis B au gros budget : ni l'alphabet ni l'argent ne donnent cet ordre.
+    const z = await t.buyer('Z');
+    const second = await t.store.createProject({ networkId: t.networkId, agentId: t.alexId, personId: z.id, kind: 'buy_business' });
+    const b = await t.buyer('B');
+    const third = await t.store.createProject({ networkId: t.networkId, agentId: t.alexId, personId: b.id, kind: 'buy_business' });
+    await t.store.createProject({ networkId: t.networkId, agentId: t.alexId, personId: b.id, kind: 'buy' });
+    await t.ok(t.alex, 'POST', `/commerces/repreneurs/${third.id}`, { budgetMaxEur: 500_000, declaredContributionEur: 90_000 });
+    await t.ok(t.alex, 'POST', `/commerces/repreneurs/${second.id}`, { budgetMaxEur: 10_000 });
     const seen = await t.ok(t.alex, 'GET', '/commerces/repreneurs');
-    expect(new Set(seen.map((x: { projectId: string }) => x.projectId))).toEqual(new Set([project.id, second.id]));
-    expect(seen.find((x: { projectId: string }) => x.projectId === project.id)).toEqual({ projectId: project.id, firstName: 'RepreneurA', createdAt: expect.any(String), writable: true });
-    // Rien pour classer : ni montant, ni score, ni coordonnée ; l'ordre est celui de la création, sans autre critère.
+    expect(seen.map((x: { projectId: string }) => x.projectId)).toEqual([project.id, second.id, third.id]);
+    expect(seen[0]).toEqual({ projectId: project.id, firstName: 'RepreneurA', createdAt: expect.any(String), writable: true });
+    // Rien pour classer : ni montant, ni score, ni coordonnée.
     expect(JSON.stringify(seen)).not.toMatch(/500000|90000|score|note|rang|@/);
-    expect(seen.map((x: { createdAt: string; projectId: string }) => `${x.createdAt}|${x.projectId}`)).toEqual(seen.map((x: { createdAt: string; projectId: string }) => `${x.createdAt}|${x.projectId}`).sort());
     expect(await t.ok(t.bea, 'GET', '/commerces/repreneurs')).toEqual([]);
-    expect((await t.ok(t.dir, 'GET', '/commerces/repreneurs')).map((x: { writable: boolean }) => x.writable)).toEqual([true, true]);
+    expect((await t.ok(t.dir, 'GET', '/commerces/repreneurs')).map((x: { projectId: string; writable: boolean }) => [x.projectId, x.writable])).toEqual([[project.id, true], [second.id, true], [third.id, true]]);
     for (const who of [t.compliance, t.partner]) expect((await t.call(who, 'GET', '/commerces/repreneurs')).status).toBe(403);
-    expect(buyer.id).toBeTruthy();
   });
   it('[R110] [R115] le rapprochement : seulement les commerces diffusables, sans aucun chiffre confidentiel', async () => {
     const { t, project } = await ready();
