@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { ROLES, SqlJournalStore, applyMigrations, fromSyncSqlite, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
-import type { PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { bodyParagraphs, renderNeighbourhoodPage, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import type { EstimatedKind, Sale } from '../../core/src/estimation/fourchette.ts';
 import { attirerRoutes, handleAttirerPublic, listingReference, type AttirerServices } from '../src/attirer.ts';
 import { htmlProblems } from '../../core/src/design/audit.ts';
@@ -236,6 +236,63 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     // Un chemin qui n'est pas de M01 : la suite du Worker le cherche ailleurs.
     expect(await t.get(`${NET}/biens/b1`)).toBeNull();
     expect(await t.get(`${NET}/agents/ag-1/autre`)).toBeNull();
+  });
+
+  it('[R16] AT13 : la liste des quartiers et leurs faits, à la direction de ce réseau seule, un quartier retiré n’y est plus', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    // Un quartier retiré puis redéfini : la liste ne montre que sa nouvelle définition.
+    const old = await t.db.first<{ id: string; parent_id: string }>("SELECT id, parent_id FROM price_zones WHERE slug = 'ouest'");
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${old!.id}/retrait`)).status).toBe(200);
+    expect((await t.call(direction, 'POST', '/attirer/prix/zones', { level: 'quartier', parentId: old!.parent_id, slug: 'ouest', name: 'ouest', ring: WEST, ringSource: 'Contour refait' })).status).toBe(200);
+    const list = await t.call(direction, 'GET', '/attirer/quartiers');
+    expect(list.status).toBe(200);
+    const items = list.body.data as { zoneId: string; name: string; communeName: string }[];
+    expect(items.map((z) => z.name)).toEqual(['est', 'ouest']);
+    const ouest = items[1]!;
+    expect(ouest.communeName).toBeTruthy();
+    expect(ouest.zoneId).not.toBe(old!.id);
+    expect((await t.call(camille, 'GET', '/attirer/quartiers')).status).toBe(403);
+    expect((await t.call(camille, 'GET', `/attirer/quartiers/${ouest.zoneId}/faits`)).status).toBe(403);
+    expect(await t.call({ ...direction, networkId: 'net-2' }, 'GET', '/attirer/quartiers')).toMatchObject({ status: 200, body: { data: [] } });
+    expect((await t.call({ ...direction, networkId: 'net-2' }, 'GET', `/attirer/quartiers/${ouest.zoneId}/faits`)).status).toBe(400);
+    expect((await t.call(direction, 'POST', `/attirer/quartiers/${ouest.zoneId}/faits`, { key: 'tram', kind: 'transport', label: 'Arrêts de tram', value: 2, unit: 'nombre', source: 'Carte inventée', sourceDate: '2026-01-15' })).status).toBe(200);
+    expect((await t.call(direction, 'GET', `/attirer/quartiers/${ouest.zoneId}/faits`)).body.data).toMatchObject([{ key: 'tram', value: 2, source: 'Carte inventée' }]);
+    expect((await t.call(direction, 'POST', `/attirer/quartiers/${ouest.zoneId}/faits`, { key: 'tram', kind: 'transport', label: 'Arrêts de tram', value: 2, unit: 'nombre', source: 'Carte inventée', sourceDate: '2026-01-15', retired: true })).status).toBe(200);
+    expect((await t.call(direction, 'GET', `/attirer/quartiers/${ouest.zoneId}/faits`)).body.data).toEqual([]);
+  });
+
+  it('[R155] AT13 : un fait reste retirable même devenu refusable, un fait inconnu ne se retire pas ; un texte dit s’il est encore validable', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    const zone = await t.db.first<{ id: string }>("SELECT id FROM price_zones WHERE slug = 'ouest'");
+    const faits = `/attirer/quartiers/${zone!.id}/faits`;
+    expect((await t.call(direction, 'POST', faits, { key: 'parc', kind: 'parc', label: 'Parc Lemoine', source: 'Mairie inventée', sourceDate: '2026-01-15' })).status).toBe(200);
+    const draft = await t.call(direction, 'POST', `/attirer/quartiers/${zone!.id}/brouillon`, { kind: 'page', topic: 'quartier' });
+    expect(draft.status).toBe(200);
+    const textes = `/attirer/quartiers/${zone!.id}/textes`;
+    expect((await t.call(direction, 'GET', textes)).body.data[0]).toMatchObject({ current: true });
+    // Un client du même nom entre dans la base : le fait ne se rangerait plus, mais il se retire.
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO persons (id, network_id, first_name, last_name, created_at, updated_at) VALUES ('p-l', 'net-1', 'Inès', 'Lemoine', '2026-01-01', '2026-01-01')");
+    expect((await t.call(direction, 'POST', faits, { key: 'parc2', kind: 'parc', label: 'Parc Lemoine', source: 'Mairie inventée', sourceDate: '2026-01-15' })).status).toBe(400);
+    expect((await t.call(direction, 'POST', faits, { key: 'parc', retired: true })).status).toBe(200);
+    expect((await t.call(direction, 'GET', faits)).body.data).toEqual([]);
+    expect((await t.call(direction, 'POST', faits, { key: 'parc', retired: true })).body).toMatchObject({ code: 'inconnu' });
+    expect((await t.call(camille, 'POST', faits, { key: 'parc', retired: true })).status).toBe(403);
+    // Le fait retiré change les données du texte : la validation serait refusée, et la lecture le dit d'avance.
+    const seen = (await t.call(direction, 'GET', textes)).body.data[0];
+    expect(seen.current).toBe(false);
+    expect((await t.call(direction, 'POST', `/attirer/quartiers/textes/${seen.draftId}/valider`)).body).toMatchObject({ code: 'donnees_changees' });
+  });
+
+  it('[R155] AT13 : ce que la direction relit est découpé comme ce que le site sert', async () => {
+    const body = 'Une ligne\ncoupée.\n\n  Un second   paragraphe. ';
+    expect(bodyParagraphs(body)).toEqual(['Une ligne coupée.', 'Un second paragraphe.']);
+    const zone = { slug: 'ouest', name: 'Ouest', communeSlug: 'ville-test', communeName: 'Ville Test' };
+    const page = renderNeighbourhoodPage({ draftId: 'd', kind: 'page', topic: 'quartier', title: 'Titre', body, zone, sources: [], validatedAt: '2026-01-01T00:00:00.000Z' }, { siteUrl: NET, estimateHref: '/estimation' } as never);
+    if (!page.ok) throw new Error(page.code);
+    for (const p of bodyParagraphs(body)) expect(page.html).toContain(`<p>${p}</p>`);
   });
 
   it('[R155] une page de quartier validée par la direction, par les routes, est servie sur le site du réseau seulement', async () => {
