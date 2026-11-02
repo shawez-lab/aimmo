@@ -11,7 +11,8 @@
  *             sinon, du lundi au samedi, de 8 h à 20 h ;
  *   R11       demandes d'avis et messages aux partenaires : plafonds et heures ;
  *   R03       tout message d'initiative par téléphone, SMS, WhatsApp ou mail demande un accord en cours
- *             sur ce canal et pour cette finalité, sauf la réponse à un message resté sans réponse ;
+ *             sur ce canal et pour cette finalité, sauf la réponse à un message resté sans réponse ; un accord ne
+ *             compte que s'il est postérieur au dernier retrait du même accord et à la dernière exclusion levée ;
  *   R22       sur Instagram, Facebook et WhatsApp, rien ne part plus de 24 heures après le dernier message
  *             du client.
  * Assistant du site (C08) : seulement la réponse au visiteur, dans sa session et pendant qu'elle est ouverte ;
@@ -120,6 +121,27 @@ export interface SendDecision {
 /** Vrai si la période [début, fin) contient l'instant. */
 function activeAt(start: string, end: string | null, at: number): boolean {
   return Date.parse(start) <= at && (end === null || Date.parse(end) > at);
+}
+
+/**
+ * Vrai si l'accord compte à cet instant [R03, R02, R04] : ouvert, et donné après le dernier retrait de même finalité et
+ * de même canal, et après la dernière exclusion levée, toutes fiches réunies. Sinon une fusion, ou la levée d'une
+ * exclusion, rouvrirait un accord plus ancien que le refus de la personne. Égalité de dates : le refus l'emporte.
+ */
+export function consentInForce(
+  consent: Pick<Consent, 'purpose' | 'channel' | 'given_at' | 'withdrawn_at'>,
+  facts: Pick<SendFacts, 'consents' | 'exclusions'>,
+  atMs: number,
+): boolean {
+  if (!activeAt(consent.given_at, consent.withdrawn_at, atMs)) return false;
+  const given = Date.parse(consent.given_at);
+  const closedSince = (closedAt: string | null): boolean => {
+    if (closedAt === null) return false;
+    const closed = Date.parse(closedAt);
+    return closed <= atMs && closed >= given;
+  };
+  if (facts.exclusions.some((e) => closedSince(e.lifted_at))) return false;
+  return !facts.consents.some((c) => c.purpose === consent.purpose && c.channel === consent.channel && closedSince(c.withdrawn_at));
 }
 
 function hhmm(minutes: number): string {
@@ -267,7 +289,7 @@ export function decideSend(
     checked.push('R03');
     const purpose = request.purpose ?? request.kind;
     const consent = facts.consents.find(
-      (c) => c.channel === request.channel && c.purpose === purpose && activeAt(c.given_at, c.withdrawn_at, at),
+      (c) => c.channel === request.channel && c.purpose === purpose && consentInForce(c, facts, at),
     );
     if (!consent) {
       return refuse('R03', `Aucun accord préalable en cours pour ce canal (${request.channel}) et cette finalité.`);

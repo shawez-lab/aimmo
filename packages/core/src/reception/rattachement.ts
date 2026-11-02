@@ -8,6 +8,7 @@
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Channel, Exclusion, IdentifierKind, Person } from '../db/types.ts';
+import { consentInForce } from '../envoi/decision.ts';
 import { classifyReceived, type DecisionEnvoi, type ReceivedExclusion } from '../envoi/service.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { matchKey, normalizeIdentifier } from '../fiche/normalize.ts';
@@ -402,10 +403,14 @@ export class Rattachement {
     }
   }
 
-  /** L'accord pour répondre sur ce canal, avec la preuve : le message reçu. Pas de second accord s'il y en a un en cours. */
+  /**
+   * L'accord pour répondre sur ce canal, avec la preuve : le message reçu. Pas de second accord s'il y en a un qui compte
+   * encore, tout ce que la fiche sait à ce jour compris : un accord ouvert mais plus ancien qu'un retrait ou qu'une
+   * exclusion levée ne dispense pas du nouveau [R03].
+   */
   private async addReplyConsent(target: Person, channel: Channel, inboundId: string, givenAt: Date): Promise<void> {
     const view = await this.fiche.view(target.id);
-    if (view.consents.some((c) => c.channel === channel && c.purpose === REPLY_PURPOSE && c.withdrawn_at === null)) return;
+    if (view.consents.some((c) => c.channel === channel && c.purpose === REPLY_PURPOSE && consentInForce(c, view, Infinity))) return;
     await this.store.addConsent({
       networkId: target.network_id,
       agentId: target.agent_id,

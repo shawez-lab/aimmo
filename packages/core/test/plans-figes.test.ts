@@ -146,7 +146,7 @@ describeWithSqlite('G02 · plan du jour à 7 h 30, par le planificateur', () => 
     const before = await t.plans.read(t.as('agent', t.alex.id));
     expect(before.ok && before.value?.items.map((i) => i.personId)).toEqual([a]);
     expect(JSON.stringify(before)).not.toContain('memberIds');
-    await unique.undoMerge(merge.id);
+    await unique.undoMerge(merge.id, { journal: new SqlJournalStore(t.db), actor: 'direction:test' });
     await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, b]);
     const after = await t.plans.read(t.as('agent', t.alex.id));
     expect(after.ok && after.value?.items).toEqual([]);
