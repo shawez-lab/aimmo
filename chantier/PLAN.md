@@ -314,6 +314,14 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Critères : écho figé à chaque accès après son écriture pendant que le message s'arrête aux points de la grille : aucune réponse (test [R21]) ; dans tous les ordres, la conversation finit chez l'agent et aucun écho ne reste en attente (test [R21]) ; écho reçu pendant la rédaction : rien ne part (test [R21]) ; l'écho de notre propre message ne fait pas taire l'assistant (test [R21]) ; coupure à chaque accès de l'écho, puis renvoi : la conversation est à l'agent et le message est une seule fois sur la fiche (test [R21]) ; rien n'est effacé de la table (test [R17]).
 - Reste, à trancher dans C09 : une réponse privée à un commentaire peut partir alors qu'un humain a répondu en message privé (conversations distinctes, déjà le cas avant C09a) ; un écho `unfinished` renvoyé avant 2 minutes attend le prochain message du réseau pour être rangé (rien de perdu, l'assistant reste muet).
 
+### C09b · Palier de la captation par canal, derrière le contrôle central
+- Statut : à faire
+- Voie : 1
+- Qui : Claude · Relecture : forte · Dépend de : C09a, B04a
+- Cahier : M02, « État » ; Feuille de route, décembre 2026. Partie de C09 qui n'attend personne : les vrais canaux restent de faux canaux dans les tests.
+- Objectif : chaque canal de captation a son palier (`PaliersBascule`, une automatisation par canal) : essai, 10 % des messages tirés une fois pour toutes, partout, retour en essai à la première panne du canal. Sans vrai canal fourni, tout reste dans la boîte d'essai. Laissée à la voie 1 : il faut toucher au contrôle central (`envoi/controle.ts`, seul à appeler `deliver`, et son garde-fou).
+- Critères : tirage fixe par message [R26] ; sans vrai canal, rien ne part, à aucun palier [R26] ; une panne du canal ramène ce canal en essai sans toucher aux autres, et l'agent est prévenu [R26, R12] ; un message de la boîte d'essai ne compte pas comme parti : ni pour l'anti-doublon [R05], ni pour la mention de l'assistant [R06], ni pour les plafonds [R11], ni pour le silence de 24 heures [R22] ; journal sans donnée personnelle [R13].
+
 ### C09 · Mise en service de la captation
 - Statut : à faire
 - Qui : Claude · Relecture : forte · Dépend de : C06, C07, C08, S11
