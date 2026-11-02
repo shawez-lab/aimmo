@@ -15,6 +15,8 @@ import { OFFER_DEPOSIT_MAX_BYTES, OFFER_DEPOSIT_TYPES } from '../../core/src/off
  * acquéreur, cession déclarée prête, puis signature et avis. Une preuve se dépose par la route de dépôt des offres, qui
  * range sous `preuves/` et contrôle les droits ; l'acquéreur se choisit dans les contacts que l'agent a le droit de voir :
  * personne ne saisit d'identifiant ni de référence.
+ *
+ * CE14 : les gestes des demandes et de l'engagement sont servis à part (`commerces-engagements.ts`).
  */
 
 const STEP_LABELS = {
@@ -193,9 +195,9 @@ globalThis.AIMMO_COMMERCES = function (t) {
   var CE_FINAL = ${JSON.stringify(FINAL_DATES)};
   var CE_SAY = ${JSON.stringify(CESSION_REFUSALS)};
   var CE_PROOF = ${JSON.stringify(OFFER_DEPOSIT_TYPES.preuve)}, CE_MAX = ${OFFER_DEPOSIT_MAX_BYTES};
-  var ceId = null;
+  var ceId = null, ceEng = null, ceEngBusy = false;
   function ceState(t) { $('commerces-etat').textContent = t; }
-  function wipeCommerces() { clear($('commerces-corps')); ceState(''); $('commerces-titre').textContent = 'Commerces'; ceId = null; }
+  function wipeCommerces() { clear($('commerces-corps')); ceState(''); $('commerces-titre').textContent = 'Commerces'; ceId = null; if (ceEng) ceEng.wipe(); }
   function ceEur(c) { return typeof c === 'number' ? String(Math.round(c / 100)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, '\\u202f') + '\\u00a0€' : ''; }
   function ceDay(iso) { return typeof iso === 'string' ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : ''; }
   function ceBlock(title) {
@@ -226,6 +228,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       var body = $('commerces-corps');
       ceTasks(body, both[1], list);
       ceScales(body, both[2]);
+      if (both[2]) ceModel(body);
       if (!list.length) body.appendChild(el('p', 'Aucun commerce pour le moment.', 'doux'));
       var ul = el('ul', null, 'liste');
       list.forEach(function (c) {
@@ -528,9 +531,46 @@ globalThis.AIMMO_COMMERCES = function (t) {
     }
     b.appendChild(button(p ? 'Préparer une nouvelle présentation' : 'Préparer la présentation', function () { ceAct(base + '/presentations', undefined, 'Il faut d’abord une estimation validée.', 'Présentation préparée : relisez-la avant de la valider.'); }));
   }
+  /* Les demandes et l'engagement (CE14), servis à part, chargés au premier geste [R201]. */
+  function ceEngLoad(act) {
+    if (ceEng) return act(ceEng);
+    if (ceEngBusy) return;
+    ceEngBusy = true;
+    var mine = t.session();
+    ceState('Chargement…');
+    var s = el('script');
+    s.setAttribute('src', '/app/commerces-engagements.js');
+    s.addEventListener('load', function () {
+      ceEngBusy = false;
+      var make = globalThis.AIMMO_CE_ENGAGEMENTS;
+      try { delete globalThis.AIMMO_CE_ENGAGEMENTS; } catch (e) { /* rien à retirer */ }
+      if (typeof make !== 'function') return;
+      ceEng = make({
+        el: el, clear: clear, send: send, button: button, field: field, ID: ID, session: t.session, say: ceState, option: ceOption, fold: ceFold, day: ceDay,
+        reload: function (said) { return openCommerce(ceId, $('commerces-titre').textContent, ceKind, said); },
+      });
+      if (mine === t.session()) act(ceEng);
+    });
+    s.addEventListener('error', function () {
+      ceEngBusy = false;
+      if (mine === t.session()) ceState('Pas de réseau. Réessayez dans un moment.');
+    });
+    $('commerces').appendChild(s);
+  }
+  function ceModel(body) {
+    var b = el('section', null, 'bloc');
+    b.appendChild(el('h3', 'Modèle d’engagement de confidentialité'));
+    body.appendChild(b);
+    var box = el('div');
+    b.appendChild(box);
+    box.appendChild(button('Lire et ranger le modèle', function () { ceEngLoad(function (e) { e.model(box); }); }));
+  }
   function ceDemandes(base, list) {
     var b = ceBlock('Demandes des repreneurs');
-    if (!list.length) { b.appendChild(el('p', 'Aucune demande pour le moment.', 'doux')); return; }
+    var id = ceId;
+    var addBox = el('div');
+    addBox.appendChild(button('Ranger une demande', function () { ceEngLoad(function (e) { e.demand(addBox, id, base); }); }));
+    if (!list.length) { b.appendChild(el('p', 'Aucune demande pour le moment.', 'doux')); b.appendChild(addBox); return; }
     var ul = el('ul', null, 'liste');
     list.forEach(function (r, i) {
       var li = el('li');
@@ -544,9 +584,16 @@ globalThis.AIMMO_COMMERCES = function (t) {
           ceAct(base + '/dossiers', { personId: r.personId, consentProof: said }, 'Le dossier n’est pas parti.', 'Dossier envoyé par le contrôle central, en mode essai.');
         }));
       }
+      if ((r.codes || []).indexOf('identite_non_verifiee') !== -1) li.appendChild(el('p', 'La pièce se dépose au coffre, depuis la fiche du contact.', 'doux'));
+      if (ID.test(r.personId)) {
+        var box = el('div');
+        box.appendChild(button('Voir l’engagement', function () { ceEngLoad(function (e) { e.line(box, base, r); }); }));
+        li.appendChild(box);
+      }
       ul.appendChild(li);
     });
     b.appendChild(ul);
+    b.appendChild(addBox);
   }
   function ceOuvertures(list) {
     var b = ceBlock('Ouvertures du dossier');

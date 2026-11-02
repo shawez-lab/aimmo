@@ -313,3 +313,78 @@ it('chaque route admet des rôles et porte un nom de journal sans identifiant', 
   const names = commercesRoutes().map((r) => r.name);
   expect(new Set(names).size).toBe(names.length);
 });
+
+describeWithSqlite('CE14 · les lectures de l’écran des engagements', () => {
+  const CONSENT = { consentProof: 'Accord donné de vive voix à l’agence, le 7 septembre (invention de test)' };
+  it('[R16] le modèle en vigueur : la direction seule, à sa dernière version', async () => {
+    const t = await setup();
+    expect(await t.ok(t.dir, 'GET', '/commerces/engagements/modeles')).toBeNull();
+    await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
+    await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: `${NDA} Deuxième version.` });
+    expect(await t.ok(t.dir, 'GET', '/commerces/engagements/modeles')).toMatchObject({ version: 2, body: `${NDA} Deuxième version.` });
+    for (const who of [t.alex, t.bea, t.compliance]) expect((await t.call(who, 'GET', '/commerces/engagements/modeles')).status).toBe(403);
+  });
+  it('[R113] [R16] [R110] le texte à faire lire et l’état de chaque demande, sans aucun chiffre', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    const id = await t.shop();
+    const r = await t.buyer('A');
+    // Sans modèle : la demande est rangée, aucun engagement à signer.
+    expect((await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id })).ndaId).toBeNull();
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/demandes`)).toEqual([expect.objectContaining({ ndaId: null, signed: false, codes: ['engagement_absent', 'identite_non_verifiee'] })]);
+    await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
+    const { ndaId } = await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    const text = await t.ok(t.alex, 'GET', `/commerces/engagements/${ndaId}`);
+    expect(text).toMatchObject({ ndaId, signed: false, revoked: false });
+    expect(text.content).toContain('RepreneurA Essai');
+    for (const secret of SECRETS) expect(JSON.stringify(text), secret).not.toContain(secret);
+    for (const who of [t.bea, t.compliance]) expect((await t.call(who, 'GET', `/commerces/engagements/${ndaId}`)).status).toBe(403);
+    expect((await t.call(t.alex, 'GET', '/commerces/engagements/inconnu')).status).toBe(404);
+    // Signé : la ligne le dit, la pièce manque encore.
+    const open = await t.ok(t.alex, 'POST', `/commerces/engagements/${ndaId}/signature`, CONSENT);
+    await t.ok(t.alex, 'POST', `/commerces/signatures/${open.sessionId}`, { code: t.lastCode(), drawing: '1,1 2,2 3,3 4,4' });
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/demandes`)).toEqual([expect.objectContaining({ ndaId, signed: true, open: false, codes: ['identite_non_verifiee'] })]);
+    expect((await t.ok(t.alex, 'GET', `/commerces/engagements/${ndaId}`)).signed).toBe(true);
+    t.verified.add(r.id);
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/demandes`)).toEqual([expect.objectContaining({ open: true, codes: [] })]);
+  });
+  it('[R113] un engagement modifié ou révoqué ferme la porte ; révoqué, une nouvelle demande en fait un autre, à signer', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
+    const id = await t.shop();
+    const r = await t.buyer('A');
+    t.verified.add(r.id);
+    const { ndaId } = await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    const open = await t.ok(t.alex, 'POST', `/commerces/engagements/${ndaId}/signature`, CONSENT);
+    await t.ok(t.alex, 'POST', `/commerces/signatures/${open.sessionId}`, { code: t.lastCode() });
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/demandes`)).toEqual([expect.objectContaining({ open: true })]);
+    // Le texte rangé change : la porte se ferme, le dossier ne part pas.
+    // Une écriture directe dans la base, hors du code : la garde est levée le temps de l'essai.
+    await t.db.run('DROP TRIGGER business_ndas_fige');
+    await t.db.run('UPDATE business_ndas SET content = content || ? WHERE id = ?', [' Ajout.', ndaId]);
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/demandes`)).toEqual([expect.objectContaining({ open: false, ndaId, signed: true, codes: ['engagement_modifie'] })]);
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/dossiers`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R113', codes: ['engagement_modifie'] });
+    // Révoqué : plus d'engagement en vigueur ; une nouvelle demande en fait un nouveau.
+    await t.ok(t.alex, 'POST', `/commerces/engagements/${ndaId}/revocation`, { reason: 'manquement' });
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/demandes`)).toEqual([expect.objectContaining({ open: false, ndaId: null, signed: false, codes: ['engagement_revoque'] })]);
+    const again = await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    expect(again.ndaId).not.toBe(ndaId);
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/demandes`)).toEqual([expect.objectContaining({ open: false, ndaId: again.ndaId, signed: false })]);
+  });
+  it('[R26] [R13] le code passe par le contrôle central, en mode essai : rangé dans la boîte d’essai, absent du journal', async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
+    const id = await t.shop();
+    const r = await t.buyer('A');
+    const { ndaId } = await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    const open = await t.ok(t.alex, 'POST', `/commerces/engagements/${ndaId}/signature`, CONSENT);
+    expect(open.mode).toBe('essai');
+    const code = t.lastCode();
+    const boxed = await t.db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ?', [r.id]);
+    expect(boxed.filter((m) => m.body.includes(code))).toHaveLength(1);
+    expect(JSON.stringify(open)).not.toContain(code);
+    expect(JSON.stringify(await t.journal.all())).not.toContain(code);
+  });
+});

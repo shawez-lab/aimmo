@@ -177,6 +177,12 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - Leur adresse vient de la variable `APRES_VENTE_BASE`, en https, sans chiffre, terminée par `/apres-vente/` (par exemple `https://aimmo-api.<compte>.workers.dev/apres-vente/` si le nom du compte n'a pas de chiffre). Sans elle, aucune nouvelle après la vente ne part [R65], les demandes d'avis partent sans lien de satisfaction, et aucun carnet ne se fait.
 - Au planificateur, du lundi au samedi de 10 h à 18 h : demandes d'avis le lendemain de l'acte (`apres_vente.demandes_avis`), tâches « remercier » et messages validés (`apres_vente.remerciements`), nouvelles aux anniversaires de l'acte avec le carnet (`apres_vente.relances`). Les dossiers clos sont ceux de M10 (acte signé). La valeur du carnet est calculée autour du centre de la commune (Base adresse nationale), jamais d'une adresse ; sans `DVF_BASE_URL`, aucun carnet.
 
+## Commerces, en mode essai (CE14)
+
+- `GET /v1/commerces/engagements/modeles` : la direction lit le modèle d'engagement en vigueur (`null` si aucun) ; `POST` sur la même adresse ajoute une version, celles d'avant restent [R17].
+- `GET /v1/commerces/engagements/<id>` : l'agent du bien ou la direction lit le texte à faire lire avant le code (modèle, bien, signataire ; aucun chiffre), s'il est signé et s'il est révoqué [R110, R16].
+- `GET /v1/commerces/<id>/demandes` rend aussi, pour chaque repreneur, `ndaId` (l'engagement en vigueur, `null` si le dernier est révoqué ou si aucun modèle n'était rangé) et `signed`.
+
 ## Pilotage, en mode essai (K08)
 
 Sous `/v1/pilotage`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Un agent ne lit que ses chiffres, ses commissions et ses reversements [R68] ; la direction lit le réseau ; la conformité n'a pas les chiffres. Aucune route ne reçoit un montant : un corps qui en porte un est refusé (`amount_refused`, R67).

@@ -1654,7 +1654,7 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 - Attend : rien.
 
 ### CE14 · Demandes et engagement de confidentialité à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE13
 - Cahier : M16, « Engagement de confidentialité » ; R110, R113, R16, R26, R201.
 - Objectif : l'agent range la demande d'un contact, ouvre la signature avec l'accord noté, recueille le code et le tracé, révoque un engagement ; la direction range le modèle.

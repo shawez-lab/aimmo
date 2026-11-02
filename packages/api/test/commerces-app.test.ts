@@ -2,6 +2,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems, htmlProblems } from '../../core/src/design/audit.ts';
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
+import { COMMERCES_ENGAGEMENTS_SCRIPT } from '../app/commerces-engagements.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
@@ -109,7 +110,7 @@ async function run(answers: Record<string, Answer> = {}) {
     await loadScript();
     await click(byText('Ouvrir', 0));
   };
-  return { els, calls, table, byText, click, input, body, state, openB1, scripts, loadScript };
+  return { els, calls, table, byText, click, input, body, state, openB1, scripts, loadScript, context };
 }
 
 describe('CE11 · écran « Commerces » de l’application', () => {
@@ -689,5 +690,281 @@ describe('CE13 · la fiche du commerce et le barème de la direction', () => {
 
   it('[R201] le script tient toujours le budget d’une page', () => {
     expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+});
+
+describe('CE14 · demandes et engagement de confidentialité à l’écran', () => {
+  const SHA = 'a'.repeat(64);
+  const LINE = (over: Record<string, unknown> = {}) => ({ personId: 'r1', firstName: 'Camille', requestedAt: '2027-09-07T08:00:00.000Z', open: false, codes: ['engagement_non_signe', 'identite_non_verifiee'], ndaId: 'n1', signed: false, ...over });
+  const TEXT = { 'GET /v1/commerces/engagements/n1': ok({ ndaId: 'n1', content: `Le signataire garde le secret. ${INJECTED}\n\nSignataire : Camille Inventée`, contentSha256: SHA, signed: false, revoked: false }) };
+  const STARTED = { 'POST /v1/commerces/engagements/n1/signature': ok({ sessionId: 's1', contentSha256: SHA, expiresAt: '2027-09-07T08:15:00.000Z', mode: 'essai' }) };
+  const answers = (lines: unknown[], more: Record<string, Answer> = {}) => ({ 'GET /v1/commerces/b1/demandes': ok(lines), ...TEXT, ...STARTED, ...more });
+  // Le script à part, chargé une seule fois, au premier geste.
+  async function engage(t: Awaited<ReturnType<typeof run>>) {
+    const s = t.scripts().filter((e) => e.attributes.src === '/app/commerces-engagements.js');
+    expect(s).toHaveLength(1);
+    runInNewContext(COMMERCES_ENGAGEMENTS_SCRIPT, t.context);
+    s[0]!.listeners.load!({});
+    await settle();
+  }
+  async function line(more: Record<string, Answer> = {}, l: { signed?: boolean } = LINE()) {
+    const signed = l.signed ? { 'GET /v1/commerces/engagements/n1': ok({ ndaId: 'n1', content: 'Texte signé inventé.', contentSha256: SHA, signed: true, revoked: false }) } : {};
+    const t = await run(answers([l], { ...signed, ...more }));
+    await t.openB1();
+    await t.click(t.byText('Voir l’engagement'));
+    await engage(t);
+    return t;
+  }
+  const lastBody = (t: Awaited<ReturnType<typeof run>>, url: string) => JSON.parse(t.calls.filter((c) => c.method === 'POST' && c.url === url).at(-1)!.body!);
+
+  it('[R201] rien n’est chargé ni lu avant le geste, et le script ne se charge qu’une fois', async () => {
+    const t = await run(answers([LINE(), LINE({ personId: 'r2', ndaId: null, codes: ['engagement_absent'] })]));
+    await t.openB1();
+    expect(t.scripts().map((e) => e.attributes.src)).toEqual(['/app/commerces.js']);
+    expect(t.calls.some((c) => c.url.includes('/engagements/'))).toBe(false);
+    await t.click(t.byText('Voir l’engagement'));
+    await engage(t);
+    await t.click(t.byText('Voir l’engagement'));
+    expect(t.scripts().filter((e) => e.attributes.src === '/app/commerces-engagements.js')).toHaveLength(1);
+    expect(AGENT_APP_FILES['/app/commerces-engagements.js']).toBe(COMMERCES_ENGAGEMENTS_SCRIPT);
+    expect(AGENT_APP_SHELL).not.toContain('/app/commerces-engagements.js');
+  });
+  it('un script qui ne vient pas le dit, et le geste reste là', async () => {
+    const t = await run(answers([LINE()]));
+    await t.openB1();
+    await t.click(t.byText('Voir l’engagement'));
+    t.scripts().filter((e) => e.attributes.src === '/app/commerces-engagements.js')[0]!.listeners.error!({});
+    expect(t.state()).toContain('Pas de réseau');
+    expect(t.byText('Voir l’engagement')).toBeDefined();
+  });
+  it('[R16] la demande se range depuis les contacts, jamais par un identifiant ; rien n’est présélectionné', async () => {
+    const t = await run(answers([], {
+      'GET /v1/offres/biens/b1/contacts': ok({ contacts: [{ personId: 'r3', firstName: INJECTED, lastName: 'Inventé' }], more: true }),
+      'POST /v1/commerces/b1/demandes': ok({ requestId: 'd1', publicView: {}, presentation: null, ndaId: 'n3' }),
+    }));
+    await t.openB1();
+    expect(t.body().all().some((e) => e.textContent === 'Aucune demande pour le moment.')).toBe(true);
+    await t.click(t.byText('Ranger une demande'));
+    await engage(t);
+    expect(t.body().all().some((e) => e.textContent === 'Liste coupée : seuls les premiers contacts sont proposés.')).toBe(true);
+    await t.click(t.byText('Ranger la demande'));
+    expect(t.state()).toBe('Choisissez le repreneur.');
+    expect(t.calls.some((c) => c.method === 'POST')).toBe(false);
+    t.input('Le repreneur').value = 'r3';
+    await t.click(t.byText('Ranger la demande'));
+    expect(lastBody(t, '/v1/commerces/b1/demandes')).toEqual({ personId: 'r3' });
+    expect(t.state()).toContain('l’engagement est prêt à signer');
+  });
+  it('[R113] sans modèle, la demande le dit : la direction d’abord', async () => {
+    const t = await run(answers([], {
+      'GET /v1/offres/biens/b1/contacts': ok({ contacts: [{ personId: 'r3', firstName: 'Sacha' }] }),
+      'POST /v1/commerces/b1/demandes': ok({ requestId: 'd1', publicView: {}, presentation: null, ndaId: null }),
+    }));
+    await t.openB1();
+    await t.click(t.byText('Ranger une demande'));
+    await engage(t);
+    t.input('Le repreneur').value = 'r3';
+    await t.click(t.byText('Ranger la demande'));
+    expect(t.state()).toContain('La direction doit d’abord ranger le modèle');
+  });
+  it('[R110] [R10] le texte est lu avant le code, posé comme du texte ; sans accord noté, rien ne part', async () => {
+    const t = await line();
+    const shown = t.body().all().filter((e) => e.tagName === 'p').map((e) => e.textContent);
+    expect(shown).toContain(`Le signataire garde le secret. ${INJECTED}`);
+    expect(shown).toContain('Signataire : Camille Inventée');
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    await t.click(t.byText('Envoyer le code'));
+    expect(t.state()).toContain('Notez l’accord');
+    expect(t.calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+  it('[R26] le code part par le contrôle central, en mode essai, et l’écran dit que rien n’est parti', async () => {
+    const t = await line();
+    t.input('Accord du repreneur pour recevoir le code par mail (où, quand)').value = ' À l’agence, ce matin ';
+    await t.click(t.byText('Envoyer le code'));
+    expect(lastBody(t, '/v1/commerces/engagements/n1/signature')).toEqual({ consentProof: 'À l’agence, ce matin' });
+    expect(t.state()).toBe('Code préparé par le contrôle central, en mode essai : rangé dans la boîte d’essai, rien n’est parti.');
+    expect(t.byText('Signer l’engagement')).toBeDefined();
+  });
+  it('[R113] un texte qui a changé entre la lecture et l’envoi du code ne se signe pas', async () => {
+    const t = await line({ 'POST /v1/commerces/engagements/n1/signature': ok({ sessionId: 's1', contentSha256: 'b'.repeat(64), mode: 'essai' }) });
+    t.input('Accord du repreneur pour recevoir le code par mail (où, quand)').value = 'Accord';
+    await t.click(t.byText('Envoyer le code'));
+    expect(t.state()).toContain('Ce texte a été modifié');
+    expect(t.byText('Signer l’engagement')).toBeUndefined();
+  });
+  it('[R113] le code et le tracé partent à la signature ; un code mal saisi ne coûte aucun essai', async () => {
+    const t = await line({ 'POST /v1/commerces/signatures/s1': ok({ ndaId: 'n1', mode: 'essai', realSignature: false }) });
+    t.input('Accord du repreneur pour recevoir le code par mail (où, quand)').value = 'Accord';
+    await t.click(t.byText('Envoyer le code'));
+    t.input('Code reçu par le repreneur').value = '12';
+    await t.click(t.byText('Signer l’engagement'));
+    expect(t.state()).toBe('Le code a 6 chiffres.');
+    expect(t.calls.some((c) => c.url === '/v1/commerces/signatures/s1')).toBe(false);
+    const c = t.body().all().find((e) => e.tagName === 'canvas')!;
+    expect(c.attributes['aria-label']).toContain('Tracé du repreneur');
+    c.listeners.pointerdown!({ offsetX: 1, offsetY: 2 });
+    for (const x of [10, 20, 30, 40]) c.listeners.pointermove!({ offsetX: x, offsetY: 5 });
+    c.listeners.pointerup!({});
+    t.input('Code reçu par le repreneur').value = '123456';
+    await t.click(t.byText('Signer l’engagement'));
+    const sent = lastBody(t, '/v1/commerces/signatures/s1');
+    expect(sent.code).toBe('123456');
+    expect(sent.drawing).toBe('1,2 10,5 20,5 30,5 40,5');
+    expect(t.state()).toContain('Engagement signé (signature d’essai)');
+  });
+  it('sans tracé, le code suffit ; un tracé effacé ne part pas', async () => {
+    const t = await line({ 'POST /v1/commerces/signatures/s1': ok({ ndaId: 'n1' }) });
+    t.input('Accord du repreneur pour recevoir le code par mail (où, quand)').value = 'Accord';
+    await t.click(t.byText('Envoyer le code'));
+    const c = t.body().all().find((e) => e.tagName === 'canvas')!;
+    c.listeners.pointerdown!({ offsetX: 1, offsetY: 2 });
+    for (const x of [10, 20, 30, 40]) c.listeners.pointermove!({ offsetX: x, offsetY: 5 });
+    await t.click(t.byText('Effacer le tracé'));
+    t.input('Code reçu par le repreneur').value = '123456';
+    await t.click(t.byText('Signer l’engagement'));
+    expect(lastBody(t, '/v1/commerces/signatures/s1')).toEqual({ code: '123456' });
+  });
+  it('un faux code est dit et le formulaire reste ; expiré ou bloqué, l’écran propose un nouveau code', async () => {
+    const t = await line({ 'POST /v1/commerces/signatures/s1': no(400, { ok: false, rule: null, code: 'wrong_code' }) });
+    t.input('Accord du repreneur pour recevoir le code par mail (où, quand)').value = 'Accord';
+    await t.click(t.byText('Envoyer le code'));
+    t.input('Code reçu par le repreneur').value = '123456';
+    await t.click(t.byText('Signer l’engagement'));
+    expect(t.state()).toContain('Ce code n’est pas le bon');
+    expect(t.input('Code reçu par le repreneur').value).toBe('');
+    t.table['POST /v1/commerces/signatures/s1'] = no(400, { ok: false, rule: null, code: 'blocked' });
+    t.input('Code reçu par le repreneur').value = '123456';
+    await t.click(t.byText('Signer l’engagement'));
+    expect(t.state()).toContain('Trop d’essais faux');
+    await t.click(t.byText('Voir l’engagement'));
+    expect(t.byText('Envoyer le code')).toBeDefined();
+    expect(t.byText('Signer l’engagement')).toBeUndefined();
+  });
+  it('[R10] une réponse perdue à la signature ne dit jamais que rien n’est rangé ; la signature déjà faite se relit', async () => {
+    const t = await line();
+    t.input('Accord du repreneur pour recevoir le code par mail (où, quand)').value = 'Accord';
+    await t.click(t.byText('Envoyer le code'));
+    t.input('Code reçu par le repreneur').value = '123456';
+    await t.click(t.byText('Signer l’engagement'));
+    expect(t.state()).toContain('Réponse perdue');
+    expect((t.byText('Signer l’engagement') as unknown as { disabled: boolean }).disabled).toBe(false);
+    t.table['POST /v1/commerces/signatures/s1'] = no(400, { ok: false, rule: null, code: 'already_signed' });
+    await t.click(t.byText('Signer l’engagement'));
+    expect(t.state()).toContain('Cet engagement est déjà signé.');
+  });
+  it('un code refusé par le contrôle central est dit en français, sans rien promettre', async () => {
+    const t = await line({ 'POST /v1/commerces/engagements/n1/signature': no(409, { ok: false, rule: 'R01', code: 'send_refused' }) });
+    t.input('Accord du repreneur pour recevoir le code par mail (où, quand)').value = 'Accord';
+    await t.click(t.byText('Envoyer le code'));
+    expect(t.state()).toContain('Le code n’est pas parti');
+    expect(t.byText('Signer l’engagement')).toBeUndefined();
+  });
+  it('la signature en cours survit à la relecture du commerce, jamais au retour à la liste', async () => {
+    const t = await run(answers([LINE(), LINE({ personId: 'r2', firstName: 'Sacha', ndaId: null, codes: ['engagement_absent'] })], { 'POST /v1/commerces/b1/demandes': ok({ requestId: 'd2', ndaId: null }) }));
+    await t.openB1();
+    await t.click(t.byText('Voir l’engagement', 0));
+    await engage(t);
+    t.input('Accord du repreneur pour recevoir le code par mail (où, quand)').value = 'Accord';
+    await t.click(t.byText('Envoyer le code'));
+    // Un geste sur l'autre demande relit le commerce : le code attendu reste.
+    await t.click(t.byText('Voir l’engagement', 0));
+    await t.click(t.byText('Refaire la demande'));
+    await t.click(t.byText('Voir l’engagement', 0));
+    expect(t.byText('Signer l’engagement')).toBeDefined();
+    // « Envoyer un autre code » revient à l'accord, à noter de nouveau.
+    await t.click(t.byText('Envoyer un autre code'));
+    expect(t.byText('Envoyer le code')).toBeDefined();
+    t.input('Accord du repreneur pour recevoir le code par mail (où, quand)').value = 'Accord';
+    await t.click(t.byText('Envoyer le code'));
+    t.els['commerces-retour']!.listeners.click!({});
+    await settle();
+    await t.click(t.byText('Ouvrir', 0));
+    await t.click(t.byText('Voir l’engagement', 0));
+    expect(t.byText('Envoyer le code')).toBeDefined();
+    expect(t.byText('Signer l’engagement')).toBeUndefined();
+  });
+  it('[R113] la révocation se confirme en deux appuis, avec sa raison ; changer la raison désarme ; la porte fermée est dite', async () => {
+    const t = await line({ 'POST /v1/commerces/engagements/n1/revocation': ok({ revokedAt: '2027-09-07T09:00:00.000Z' }) }, LINE({ open: true, codes: [], signed: true }));
+    expect(t.byText('Envoyer le code')).toBeUndefined();
+    expect(t.body().all().some((e) => e.textContent === 'Engagement signé (signature d’essai).')).toBe(true);
+    await t.click(t.byText('Révoquer'));
+    expect(t.state()).toContain('Choisissez la raison');
+    const reason = t.input('Raison');
+    reason.value = 'manquement';
+    await t.click(t.byText('Révoquer'));
+    expect(t.state()).toContain('Appuyez de nouveau');
+    expect(t.calls.some((c) => c.url.endsWith('/revocation'))).toBe(false);
+    reason.value = 'autre';
+    reason.listeners.change!({});
+    await t.click(t.byText('Révoquer'));
+    expect(t.calls.some((c) => c.url.endsWith('/revocation'))).toBe(false);
+    await t.click(t.byText('Révoquer'));
+    expect(lastBody(t, '/v1/commerces/engagements/n1/revocation')).toEqual({ reason: 'autre' });
+    expect(t.state()).toBe('Engagement révoqué : la porte est fermée, rien de confidentiel ne part plus.');
+  });
+  it('[R113] un engagement modifié ou révoqué ferme la porte, dit en français, et le dossier ne se propose pas', async () => {
+    const modified = await line({}, LINE({ codes: ['engagement_modifie'], signed: true }));
+    const said = () => modified.body().all().map((e) => e.textContent);
+    expect(said()).toContain('Porte fermée : engagement modifié depuis sa signature.');
+    expect(said()).toContain('Ce texte a changé depuis sa signature : la porte reste fermée. Révoquez cet engagement, puis refaites la demande.');
+    expect(modified.byText('Envoyer le dossier')).toBeUndefined();
+    expect(modified.byText('Envoyer le code')).toBeUndefined();
+    expect(modified.byText('Révoquer')).toBeDefined();
+    const revoked = await line({ 'POST /v1/commerces/b1/demandes': ok({ requestId: 'd2', publicView: {}, presentation: null, ndaId: 'n2' }) }, LINE({ codes: ['engagement_revoque'], ndaId: null }));
+    expect(revoked.body().all().map((e) => e.textContent)).toContain('Porte fermée : engagement révoqué.');
+    expect(revoked.byText('Envoyer le dossier')).toBeUndefined();
+    expect(revoked.calls.some((c) => c.url.includes('/engagements/'))).toBe(false);
+    await revoked.click(revoked.byText('Refaire la demande'));
+    expect(lastBody(revoked, '/v1/commerces/b1/demandes')).toEqual({ personId: 'r1' });
+  });
+  it('la pièce à vérifier dit où elle se dépose', async () => {
+    const t = await run(answers([LINE({ codes: ['identite_non_verifiee'], signed: true })]));
+    await t.openB1();
+    expect(t.body().all().map((e) => e.textContent)).toContain('La pièce se dépose au coffre, depuis la fiche du contact.');
+  });
+  it('[R16] [R17] seule la direction range le modèle : texte lu d’abord, nouvelle version ; un agent n’a rien à lire', async () => {
+    const agent = await run();
+    await agent.click(agent.els['commerces-ouvrir']);
+    await agent.loadScript();
+    expect(agent.byText('Lire et ranger le modèle')).toBeUndefined();
+    const body = 'Modèle inventé pour le test, assez long pour être rangé par la direction.';
+    const t = await run({
+      'GET /v1/moi': ok({ role: 'direction', firstName: 'Dana' }),
+      'GET /v1/commerces/baremes': ok([]),
+      'GET /v1/commerces/engagements/modeles': ok({ id: 'm1', version: 3, body, bodySha256: SHA, createdAt: '2027-01-15T08:00:00.000Z' }),
+      'POST /v1/commerces/engagements/modeles': ok({ id: 'm2', version: 4, bodySha256: SHA, createdAt: '2027-02-01T08:00:00.000Z' }),
+    });
+    await t.click(t.els['commerces-ouvrir']);
+    await t.loadScript();
+    expect(t.calls.some((c) => c.url.includes('/modeles'))).toBe(false);
+    await t.click(t.byText('Lire et ranger le modèle'));
+    await engage(t);
+    expect(t.body().all().map((e) => e.textContent)).toContain('En vigueur : version 3, rangée le 15/01/2027.');
+    const text = t.input('Texte du modèle');
+    expect(text.value).toBe(body);
+    await t.click(t.byText('Ranger une nouvelle version'));
+    expect(t.state()).toContain('aucune version ajoutée');
+    text.value = 'trop court';
+    await t.click(t.byText('Ranger une nouvelle version'));
+    expect(t.state()).toBe('Le modèle fait de 50 à 20 000 caractères.');
+    expect(t.calls.some((c) => c.method === 'POST')).toBe(false);
+    text.value = `${body} Nouvelle clause.`;
+    await t.click(t.byText('Ranger une nouvelle version'));
+    expect(lastBody(t, '/v1/commerces/engagements/modeles')).toEqual({ body: `${body} Nouvelle clause.` });
+    expect(t.state()).toBe('Version 4 rangée. Les engagements déjà faits gardent leur texte.');
+    expect(t.body().all().map((e) => e.textContent)).toContain('En vigueur : version 4, rangée le 01/02/2027.');
+  });
+  it('aucun modèle se dit, et se range', async () => {
+    const t = await run({ 'GET /v1/moi': ok({ role: 'direction' }), 'GET /v1/commerces/baremes': ok([]), 'GET /v1/commerces/engagements/modeles': ok(null) });
+    await t.click(t.els['commerces-ouvrir']);
+    await t.loadScript();
+    await t.click(t.byText('Lire et ranger le modèle'));
+    await engage(t);
+    expect(t.body().all().map((e) => e.textContent)).toContain('Aucun modèle : aucun engagement ne peut se faire.');
+  });
+  it('[R201] les deux scripts tiennent le budget d’une page, et le nouveau n’écrit que par ses routes', () => {
+    expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(budgetProblems({ html: '', js: COMMERCES_ENGAGEMENTS_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(COMMERCES_ENGAGEMENTS_SCRIPT).not.toMatch(/innerHTML|localStorage|sessionStorage/);
   });
 });

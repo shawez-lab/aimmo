@@ -190,6 +190,24 @@ export class ConfidentialiteCommerce {
     throw new Error('modèle d’engagement : trop d’écritures simultanées');
   }
 
+  /** Le modèle en vigueur, pour que la direction ne range jamais à l'aveugle ; `null` si aucun n'est rangé. */
+  async currentTemplate(viewer: Viewer): Promise<ConfidentialResult<(NdaTemplate & { body: string }) | null>> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
+    const row = await this.db.first<{ id: string; version: number; body: string; body_sha256: string; created_at: string }>(
+      'SELECT id, version, body, body_sha256, created_at FROM business_nda_templates WHERE network_id = ? ORDER BY version DESC LIMIT 1',
+      [viewer.networkId],
+    );
+    return { ok: true, value: row ? { id: row.id, version: row.version, body: row.body, bodySha256: row.body_sha256, createdAt: row.created_at } : null };
+  }
+
+  /** Le texte d'un engagement, à faire lire avant le code : ni chiffre, ni document, seulement le modèle, le bien et le signataire [R110]. */
+  async text(acces: Acces, viewer: Viewer, ndaId: string): Promise<ConfidentialResult<{ ndaId: string; content: string; contentSha256: string; signed: boolean; revoked: boolean }>> {
+    const nda = await this.ndaFor(acces, viewer, ndaId);
+    if (!('content' in nda)) return nda;
+    const signed = !!(await this.db.first("SELECT 1 FROM business_nda_signatures WHERE nda_id = ? AND status = 'signee'", [nda.id]));
+    return { ok: true, value: { ndaId: nda.id, content: nda.content, contentSha256: nda.content_sha256, signed, revoked: await this.revoked(nda.id) } };
+  }
+
   /**
    * L'agent du bien (ou la direction) range la demande d'accès d'un repreneur qu'il suit. La réponse ne porte que la
    * vue publique et la présentation publiable [R110] ; l'engagement est fait du dernier modèle s'il n'en existe pas
@@ -395,7 +413,7 @@ export class ConfidentialiteCommerce {
     acces: Acces,
     viewer: Viewer,
     propertyId: string,
-  ): Promise<ConfidentialResult<{ personId: string; firstName: string | null; requestedAt: string; open: boolean; codes: ConfidentialRefusalCode[] }[]>> {
+  ): Promise<ConfidentialResult<{ personId: string; firstName: string | null; requestedAt: string; open: boolean; codes: ConfidentialRefusalCode[]; ndaId: string | null; signed: boolean }[]>> {
     const read = await acces.readProperty(viewer, propertyId);
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.view !== 'full') return this.refuse(viewer, `property:${propertyId}`, 'not_assigned');
@@ -409,7 +427,14 @@ export class ConfidentialiteCommerce {
     const out = [];
     for (const r of rows) {
       const gate = await this.canSendConfidential(viewer.networkId, propertyId, r.person_id, this.actor(viewer), true);
-      out.push({ personId: r.person_id, firstName: r.first_name, requestedAt: r.at, open: gate.ok, codes: gate.ok ? [] : gate.codes });
+      // L'engagement en vigueur de cette personne, pour les gestes de l'écran ; aucun si le dernier est révoqué.
+      const nda = await this.db.first<{ id: string; signed: number }>(
+        `SELECT n.id, EXISTS (SELECT 1 FROM business_nda_signatures s WHERE s.nda_id = n.id AND s.status = 'signee') AS signed FROM business_ndas n
+         WHERE n.network_id = ? AND n.property_id = ? AND n.person_id = ? AND NOT EXISTS (SELECT 1 FROM business_nda_revocations x WHERE x.nda_id = n.id)
+         ORDER BY n.created_at DESC, n.rowid DESC LIMIT 1`,
+        [viewer.networkId, propertyId, r.person_id],
+      );
+      out.push({ personId: r.person_id, firstName: r.first_name, requestedAt: r.at, open: gate.ok, codes: gate.ok ? [] : gate.codes, ndaId: nda?.id ?? null, signed: Number(nda?.signed ?? 0) === 1 });
     }
     return { ok: true, value: out };
   }
