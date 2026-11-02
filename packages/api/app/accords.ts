@@ -5,12 +5,13 @@ import { AGENT_CONSENT_LABELS } from '@aimmo/core';
  * donné ou sa demande de rappel, et le retire quand elle le demande. Chaque refus se dit en français ; le serveur décide,
  * l'écran ne remplace aucun contrôle. Après chaque geste, la fiche est relue : le bouton d'appel suit l'accord. Sujet,
  * canal et jour sont à choisir à chaque fois : rien de présélectionné ne peut rouvrir un accord par distraction. L'écran
- * envoie le jour seul : l'heure est celle du serveur, jamais celle du téléphone.
+ * envoie le jour seul : l'heure est celle du serveur, jamais celle du téléphone. Un refus qui dit que la fiche a changé
+ * la fait relire ; un seul envoi à la fois ; une personne exclue n'a plus de formulaire, retirer reste possible [R02, R04].
+ * Le script n'a aucun commentaire : l'application est tout près de son budget de poids [R201].
  */
 const FORM_PURPOSES: Readonly<Record<string, string>> = Object.freeze({ ...AGENT_CONSENT_LABELS });
 
 export const ACCORDS_JS = `
-  /* ---------- Les accords de la fiche (AC03). ---------- */
   var ACCORD_PURPOSES = ${JSON.stringify(FORM_PURPOSES)};
   var ACCORD_CHANNELS = { phone: 'Téléphone', email: 'Mail', sms: 'SMS', whatsapp: 'WhatsApp' };
   var ACCORD_REFUSALS = {
@@ -31,7 +32,6 @@ export const ACCORDS_JS = `
     if (res.offline) return 'Pas de réseau : rien n’est enregistré.';
     return (res.body && ACCORD_REFUSALS[res.body.code]) || fallback;
   }
-  // Ces refus disent que la fiche a changé : elle est relue, et le message reste affiché.
   var ACCORD_STALE = { stopped: 1, excluded: 1, not_assigned: 1, unknown_consent: 1, role: 1 };
   function accordFailed(res, personId, state, fallback) {
     var message = accordRefusal(res, fallback);
@@ -41,7 +41,6 @@ export const ACCORDS_JS = `
     state.textContent = message;
     return false;
   }
-  // Un seul envoi à la fois : un double clic ne range pas deux fois.
   function accordButton(text, act) {
     var busy = false;
     var b = button(text, function () {
@@ -79,7 +78,6 @@ export const ACCORDS_JS = `
     });
     if (!(f.consents || []).length) box.appendChild(el('p', 'Aucun accord enregistré.', 'doux'));
     box.appendChild(list);
-    // Une personne exclue ou arrêtée ne reçoit aucun accord [R02, R04] : retirer reste possible, noter non.
     if (f.contact && f.contact.allowed) {
       var form = el('div', null, 'decision');
       var id = cSeq();
