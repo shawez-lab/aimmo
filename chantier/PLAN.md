@@ -224,7 +224,7 @@ Voie : 2
 Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suivi_location` »). Le trou est plus large : aucune route ne permet de noter un accord sur une fiche. Les finalités `suivi_vente`, `suivi_mandat`, `suivi_location`, `value_tracking`, `route_share` n'ont aucune source d'accord en production, et `alertes_biens` et `valuation_follow_up` seulement l'espace du client ou la reprise. Le contrôle central refuserait donc ces envois pour toujours (R03). Le refus est du bon côté de la loi, mais ces modules ne marcheraient jamais. Et le bouton « appeler » ne regarde pas l'accord, alors que le cahier le demande (Conformité : « bloqué sans accord enregistré ou demande du client »).
 
 ### AC01 · L'agent note et retire un accord, avec sa preuve
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : S05, S06
 - Cahier : Conformité, démarchage téléphonique et accord préalable ; R03, R02, R04, R13, R16, R17.
 - Objectif : un service `AccordsFiche` (`packages/core/src/acces/accords.ts`) et ses routes (`packages/api/src/accords.ts`), prêtes pour le socle : l'agent de la fiche ou la direction note l'accord qu'une personne lui a donné (finalité, canal, date, preuve) et le retire quand elle le demande.
@@ -256,7 +256,7 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : parcours au téléphone ; axe-core sans violation ; rien de personnel au journal [R13].
 
 ### AC04 · Bouton « appeler » fermé sans accord ni demande du client
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AC01
 - Cahier : Conformité, démarchage téléphonique.
