@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { LEASE_FIELDS } from '../../core/src/location/index.ts';
@@ -62,6 +63,9 @@ const BASE: Record<string, Answer> = {
   }),
   ...DETAIL,
 };
+/** Un fichier pris sur le téléphone, inventé : la taille peut être annoncée plus grande que les octets. */
+const pdfFile = (type = 'application/pdf', size = 8) => ({ type, size, arrayBuffer: async () => new TextEncoder().encode('%PDF-1.7').buffer });
+const SHA_PDF = createHash('sha256').update('%PDF-1.7').digest('hex');
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
 };
@@ -69,18 +73,19 @@ const settle = async () => {
 async function run(answers: Record<string, Answer> = {}) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
-  const calls: { method: string; url: string; body?: string; auth: string | undefined }[] = [];
+  const calls: { method: string; url: string; body?: string; auth: string | undefined; headers?: Record<string, string> }[] = [];
   const table: Record<string, Answer> = { ...BASE, ...answers };
   const context = {
     document,
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
     fetch: (url: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
       const method = init.method ?? 'GET';
-      calls.push({ method, url, ...(init.body === undefined ? {} : { body: init.body }), auth: init.headers?.authorization });
+      calls.push({ method, url, ...(init.body === undefined ? {} : { body: init.body }), auth: init.headers?.authorization, ...(init.headers ? { headers: init.headers } : {}) });
       const a = table[`${method} ${url}`];
       return a ? a() : Promise.reject(new TypeError('hors ligne'));
     },
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
+    crypto: globalThis.crypto,
   };
   runInNewContext(JS, context);
   listeners.DOMContentLoaded!();
@@ -224,6 +229,120 @@ describe('W11 · écran « Louer » de l’application', () => {
     expect(t.scripts()).toHaveLength(1);
   });
 
+  describe('W14 · déposer une pièce depuis le téléphone', () => {
+    const ANNEX_REF = 'location/l1/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.pdf';
+    const open = async (answers: Record<string, Answer> = {}) => {
+      const t = await run(answers);
+      await t.openL1();
+      const pick = t.input('Le document, en PDF ou en photo') as unknown as FakeElement & { files: unknown[] };
+      t.input('Date du diagnostic').value = '2027-07-01';
+      return { t, pick };
+    };
+
+    it('[R16] plus aucune référence à saisir : le fichier part tel quel, avec son empreinte et la clé, puis l’annexe porte la référence rendue', async () => {
+      const { t, pick } = await open({
+        'POST /v1/location/l1/fichiers/annexe': ok({ kind: 'annexe', ref: ANNEX_REF }),
+        'POST /v1/location/l1/annexes': ok({ kind: 'dpe', version: 1, validUntil: null }),
+      });
+      const labels = t.body().all().filter((e) => e.tagName === 'label').map((e) => e.textContent);
+      expect(labels.filter((l) => /référence/i.test(l))).toEqual([]);
+      expect(pick.attributes.type).toBe('file');
+      expect(pick.attributes.accept).toBe('application/pdf,image/jpeg,image/png');
+      const file = pdfFile();
+      pick.files = [file];
+      await t.click(t.byText('Joindre l’annexe'));
+      const [up, annex] = t.posts();
+      expect(up!.url).toBe('/v1/location/l1/fichiers/annexe');
+      expect(up!.body).toBe(file);
+      expect(up!.auth).toBe(`Bearer ${KEY}`);
+      expect(up!.headers).toMatchObject({ 'content-type': 'application/pdf', 'x-aimmo-sha256': SHA_PDF });
+      expect(up!.url).not.toContain(KEY);
+      expect(annex!.url).toBe('/v1/location/l1/annexes');
+      expect(JSON.parse(annex!.body!)).toMatchObject({ ref: ANNEX_REF, diagnosedOn: '2027-07-01' });
+      expect(t.state()).toBe('Annexe jointe : contrôlez de nouveau le logement.');
+    });
+
+    it('sans fichier ou sans date, rien ne part ; un mauvais type ou un fichier trop lourd ne s’envoie même pas', async () => {
+      const { t, pick } = await open();
+      await t.click(t.byText('Joindre l’annexe'));
+      expect(t.state()).toBe('Choisissez d’abord le document.');
+      pick.files = [pdfFile('text/html')];
+      await t.click(t.byText('Joindre l’annexe'));
+      expect(t.state()).toBe('Ce fichier n’est pas accepté : un PDF, une photo JPEG ou PNG.');
+      pick.files = [pdfFile('application/pdf', 21 * 1024 * 1024)];
+      await t.click(t.byText('Joindre l’annexe'));
+      expect(t.state()).toBe('Ce fichier dépasse 20 Mo.');
+      pick.files = [pdfFile()];
+      t.input('Date du diagnostic').value = '';
+      await t.click(t.byText('Joindre l’annexe'));
+      expect(t.state()).toBe('Indiquez la date du diagnostic.');
+      expect(t.posts()).toHaveLength(0);
+    });
+
+    it('un refus de l’annexe après le dépôt ne redépose pas le même fichier ; un double appui n’en dépose qu’un', async () => {
+      const { t, pick } = await open({
+        'POST /v1/location/l1/fichiers/annexe': ok({ kind: 'annexe', ref: ANNEX_REF }),
+        'POST /v1/location/l1/annexes': no(400, { ok: false, rule: null, code: 'bad_date' }),
+      });
+      pick.files = [pdfFile()];
+      const b = t.byText('Joindre l’annexe')!;
+      b.listeners.click!({});
+      b.listeners.click!({});
+      await t.settle();
+      expect(t.posts().map((c) => c.url)).toEqual(['/v1/location/l1/fichiers/annexe', '/v1/location/l1/annexes']);
+      await t.click(b);
+      expect(t.posts().map((c) => c.url)).toEqual(['/v1/location/l1/fichiers/annexe', '/v1/location/l1/annexes', '/v1/location/l1/annexes']);
+      expect(JSON.parse(t.posts()[2]!.body!)).toMatchObject({ ref: ANNEX_REF });
+    });
+
+    it('[R104] un refus du dépôt est dit en français, sans code, et l’annexe ne part pas ; hors réseau aussi', async () => {
+      const { t, pick } = await open({ 'POST /v1/location/l1/fichiers/annexe': no(415, { ok: false, rule: null, code: 'type_refuse' }) });
+      pick.files = [pdfFile()];
+      await t.click(t.byText('Joindre l’annexe'));
+      expect(t.state()).toBe('Ce fichier n’est pas accepté : un PDF, une photo JPEG ou PNG.');
+      expect(t.posts().map((c) => c.url)).toEqual(['/v1/location/l1/fichiers/annexe']);
+      delete t.table['POST /v1/location/l1/fichiers/annexe'];
+      await t.click(t.byText('Joindre l’annexe'));
+      expect(t.state()).toBe('Pas de réseau : le fichier n’est pas rangé.');
+    });
+
+    it('une clé refusée au dépôt ramène à la connexion, comme tout autre geste', async () => {
+      const { t, pick } = await open({ 'POST /v1/location/l1/fichiers/annexe': no(401, { ok: false, code: 'unauthorized' }) });
+      t.table['GET /v1/location'] = no(401, { ok: false, code: 'unauthorized' });
+      pick.files = [pdfFile()];
+      await t.click(t.byText('Joindre l’annexe'));
+      expect(t.els.connexion!.hidden).toBe(false);
+      expect(t.posts().map((c) => c.url)).toEqual(['/v1/location/l1/fichiers/annexe']);
+    });
+
+    it('la notice du bail : en PDF, déposée seulement si elle est choisie ; sans elle, le bail part sans référence', async () => {
+      const t = await run({
+        'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c1' }),
+        'POST /v1/location/l1/fichiers/notice': ok({ kind: 'notice', ref: 'location/l1/bail/cccccccc-cccc-4ccc-8ccc-cccccccccccc.pdf' }),
+        'POST /v1/location/l1/bail': ok({ leaseId: 'bl1', content: 'Texte du bail', missing: [] }),
+      });
+      await t.openL1();
+      const notice = t.input('La notice d’information, en PDF') as unknown as FakeElement & { files: unknown[] };
+      expect(notice.attributes.accept).toBe('application/pdf');
+      await t.click(t.byText('Préparer le bail'));
+      expect(t.posts().map((c) => c.url)).toEqual(['/v1/location/l1/bail']);
+      expect(JSON.parse(t.posts()[0]!.body!).noticeRef).toBeUndefined();
+      t.calls.length = 0;
+      const again = t.input('La notice d’information, en PDF') as unknown as FakeElement & { files: unknown[] };
+      again.files = [pdfFile()];
+      await t.click(t.byText('Préparer le bail'));
+      expect(t.posts().map((c) => c.url)).toEqual(['/v1/location/l1/fichiers/notice', '/v1/location/l1/bail']);
+      expect(JSON.parse(t.posts()[1]!.body!).noticeRef).toBe('location/l1/bail/cccccccc-cccc-4ccc-8ccc-cccccccccccc.pdf');
+      // Un dépôt refusé : le bail ne part pas sans la notice que l'agent a choisie.
+      t.calls.length = 0;
+      t.table['POST /v1/location/l1/fichiers/notice'] = no(415, { ok: false, code: 'type_refuse' });
+      const third = t.input('La notice d’information, en PDF') as unknown as FakeElement & { files: unknown[] };
+      third.files = [pdfFile()];
+      await t.click(t.byText('Préparer le bail'));
+      expect(t.posts().map((c) => c.url)).toEqual(['/v1/location/l1/fichiers/notice']);
+    });
+  });
+
   it('[R104] un refus de la candidature est dit en français, sans code ; la personne peut réessayer', async () => {
     const t = await run({
       'GET /v1/location/l1/contacts': ok({ contacts: [{ personId: 'p-nouvelle', firstName: 'Nina', lastName: 'Exemple' }], more: false }),
@@ -262,19 +381,28 @@ describe('W11 · écran « Louer » de l’application', () => {
     t.body().all().filter((e) => e.tagName === 'input' && e.attributes.type === 'radio')[1]!.checked = true;
     t.input('Quand il a choisi').value = '2027-07-12T11:30';
     t.input('Comment il l’a dit').value = 'ecrit';
-    t.input('Référence de la preuve rangée').value = '  location/l1/choix/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.pdf ';
+    // Sans fichier, rien ne part ; avec lui, il est déposé d'abord, puis le choix porte la référence rendue.
+    await t.click(t.byText('Enregistrer son choix'));
+    expect(t.state()).toBe('Choisissez d’abord la preuve de son choix.');
+    expect(t.posts()).toHaveLength(0);
+    const proofRef = 'location/l1/choix/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.pdf';
+    (t.input('Sa preuve : photo, PDF ou texte écrit') as unknown as { files: unknown[] }).files = [pdfFile()];
+    t.table['POST /v1/location/l1/fichiers/preuve'] = ok({ kind: 'preuve', ref: proofRef });
     t.table['POST /v1/location/l1/choix'] = ok({ applicationId: 'c1' });
     await t.click(t.byText('Enregistrer son choix'));
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/location/l1/fichiers/preuve', '/v1/location/l1/choix']);
+    t.calls.splice(0, t.calls.findIndex((c) => c.url === '/v1/location/l1/choix'));
     const post = t.posts()[0]!;
     expect(post.url).toBe('/v1/location/l1/choix');
     const b = JSON.parse(post.body!);
-    expect(b).toMatchObject({ presentationId: 'pr1', applicationId: 'c1', channel: 'ecrit', proofRef: 'location/l1/choix/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.pdf' });
+    expect(b).toMatchObject({ presentationId: 'pr1', applicationId: 'c1', channel: 'ecrit', proofRef });
     expect(Number.isNaN(Date.parse(b.decidedAt))).toBe(false);
     expect(t.state()).toBe('Choix du propriétaire enregistré.');
     // Un refus est dit en clair, sans code interne.
     t.table['POST /v1/location/l1/choix'] = no(409, { ok: false, rule: 'R105', code: 'before_presentation' });
     t.body().all().filter((e) => e.tagName === 'input' && e.attributes.type === 'radio')[0]!.checked = true;
     t.input('Quand il a choisi').value = '2027-07-01T11:30';
+    (t.input('Sa preuve : photo, PDF ou texte écrit') as unknown as { files: unknown[] }).files = [pdfFile()];
     await t.click(t.byText('Enregistrer son choix'));
     expect(t.state()).toBe('Le choix ne peut pas précéder la présentation.');
     expect(t.state()).not.toMatch(/R105|before_/);

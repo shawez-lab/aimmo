@@ -7,7 +7,8 @@
  * métier, qui écrit aussi ses refus au journal [R16].
  *
  * Rien n'est envoyé d'ici : codes, avis et échéances passent par le contrôle central, en mode essai [R26]. Aucune route
- * ne rend de note, de rang ni de tri des candidats [R105]. Une pièce n'est jamais lue : seule sa référence circule.
+ * ne rend de note, de rang ni de tri des candidats [R105]. Une pièce n'est jamais lue : seule sa référence circule ;
+ * l'annexe, la preuve et la notice se déposent depuis le téléphone (W14), rangées telles quelles, jamais relues ici.
  * La remise des clés lit la signature réelle du bail (`signedAt`), jamais celle d'essai [R108].
  *
  * Les routes sont prêtes pour le routeur du socle, qui les branchera dans W10 (voie 1) : ce fichier ne touche à aucun
@@ -17,6 +18,7 @@ import { Acces, FicheClient, FicheUnique, appendEvent, type JournalStore, type S
 import {
   AnnoncesLocation,
   BauxLocation,
+  DepotsLocation,
   Candidatures,
   ChoixProprietaire,
   EtatsDesLieux,
@@ -30,6 +32,7 @@ import {
   type RentalFileStore,
 } from '../../core/src/location/index.ts';
 import { Annuaire, MiseEnRelation } from '../../core/src/partenaires/index.ts';
+import { readCapped } from './studio.ts';
 
 export const TRIAL_MODE = 'essai';
 /** Un état des lieux dicté pièce par pièce et une signature tracée tiennent dans 256 Ko. */
@@ -163,11 +166,37 @@ async function progress(s: LocationServices, v: Viewer, id: string): Promise<Out
   };
 }
 
+const DEPOSIT_STATUS: Readonly<Record<string, number>> = { trop_lourd: 413, type_refuse: 415, stockage_indisponible: 503 };
+
+/**
+ * Le dépôt d'une pièce (W14) : le corps est le fichier, tel quel ; son type dans `content-type`, son empreinte dite par
+ * l'appareil dans `x-aimmo-sha256`. Il rend la référence que le geste de M15 attend ; sans écriture possible, il est fermé.
+ */
+async function depositRoute(s: LocationServices, v: Viewer, [id, kind]: string[], r: Request): Promise<Response> {
+  const files = s.files;
+  if (!files.upload) return json(503, { ok: false, rule: null, code: 'depot_ferme' });
+  const length = r.headers.get('content-length');
+  const declaredSize = length === null || length.trim() === '' ? null : /^\d{1,12}$/.test(length.trim()) ? Number(length.trim()) : Number.NaN;
+  const store = { put: (key: string, bytes: Uint8Array, type: string) => files.upload!(key, bytes, type) };
+  const result = await new DepotsLocation(core(s).listings, store, s.journal, { now: s.now, ...(s.newId ? { newId: s.newId } : {}) }).deposit(v, id, {
+    kind,
+    contentType: r.headers.get('content-type'),
+    sha256: r.headers.get('x-aimmo-sha256'),
+    declaredSize,
+    read: (max) => readCapped(r, max),
+  });
+  if (!result.ok && DEPOSIT_STATUS[result.code]) return json(DEPOSIT_STATUS[result.code]!, { ok: false, rule: result.rule, code: result.code });
+  return reply(result);
+}
+
 const ROUTES: LocationRoute[] = [
   /* Les mises en location lisibles et l'avancée de l'une d'elles, pour l'écran « Louer » (W11) [R16]. */
   { method: 'GET', pattern: /^\/location$/, name: 'location.liste', roles: READERS, handle: async (s, v, _p, r) => reply(await core(s).listings.mine(v, new URL(r.url).searchParams.get('page') ?? 0)) },
   { method: 'GET', pattern: new RegExp(`^/location/${ID}/suivi$`), name: 'location.suivi', roles: READERS, handle: async (s, v, [id]) => reply(await progress(s, v, id!)) },
   { method: 'GET', pattern: new RegExp(`^/location/${ID}/presentation$`), name: 'location.presentation.lue', roles: READERS, handle: async (s, v, [id]) => reply(await core(s).choices.last(v, id)) },
+
+  /* Le dépôt d'une annexe, d'une preuve ou de la notice depuis le téléphone (W14) [R16]. */
+  { method: 'POST', pattern: new RegExp(`^/location/${ID}/fichiers/(annexe|preuve|notice)$`), name: 'location.depot', roles: WRITERS, handle: depositRoute },
 
   /* Le logement et son contrôle (W01) [R100, R101]. */
   {

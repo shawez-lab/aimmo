@@ -288,6 +288,7 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
         .replace(/\$$/, '')
         .replace(/\(\[A-Za-z0-9_-\]\{1,64\}\)/g, 'cle-piege')
         .replace('(bailleur|locataire)', 'bailleur')
+        .replace('(annexe|preuve|notice)', 'annexe')
         .replace(/\\\//g, '/');
       expect(path, route.name).toMatch(/^\/location[a-z0-9/_-]*$/);
       for (const role of roles) {
