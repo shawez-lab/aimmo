@@ -68,7 +68,7 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
   function request(base, personId, btn) {
     return act(base + '/demandes', { personId: personId }, btn, 'La demande n’est pas rangée.', function (res) {
       var d = res.body.data || {};
-      reload(d.ndaId ? 'Demande rangée : le repreneur a reçu les informations publiques seules, l’engagement est prêt à signer.' : 'Demande rangée. La direction doit d’abord ranger le modèle d’engagement : refaites ensuite la demande.');
+      reload(d.ndaId ? 'Demande rangée, rien n’est envoyé au repreneur : l’engagement est prêt à signer.' : 'Demande rangée, rien n’est envoyé au repreneur. La direction doit d’abord ranger le modèle d’engagement : refaites ensuite la demande.');
     });
   }
   /* Une nouvelle demande : le contact se choisit dans la liste, jamais par un identifiant, et rien n'est présélectionné. */
@@ -237,6 +237,8 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
         say(res.status === 403 ? 'Ce geste n’est pas dans vos droits.' : res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'L’engagement ne se lit pas pour le moment.');
         return;
       }
+      /* Révoqué depuis la dernière lecture : jamais dit « signé », l'écran relit l'état du serveur [R113]. */
+      if (d.revoked) { delete signing[r.ndaId]; reload(SAY.revoked); return; }
       say('');
       var text = t.fold(box, d.signed ? 'Le texte signé' : 'Le texte à faire lire');
       String(d.content).split('\\n').forEach(function (p) { if (p.trim()) text.appendChild(el('p', p)); });

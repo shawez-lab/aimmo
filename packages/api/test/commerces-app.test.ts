@@ -753,7 +753,7 @@ describe('CE14 · demandes et engagement de confidentialité à l’écran', () 
     t.input('Le repreneur').value = 'r3';
     await t.click(t.byText('Ranger la demande'));
     expect(lastBody(t, '/v1/commerces/b1/demandes')).toEqual({ personId: 'r3' });
-    expect(t.state()).toContain('l’engagement est prêt à signer');
+    expect(t.state()).toBe('Demande rangée, rien n’est envoyé au repreneur : l’engagement est prêt à signer.');
   });
   it('[R113] sans modèle, la demande le dit : la direction d’abord', async () => {
     const t = await run(answers([], {
@@ -765,7 +765,7 @@ describe('CE14 · demandes et engagement de confidentialité à l’écran', () 
     await engage(t);
     t.input('Le repreneur').value = 'r3';
     await t.click(t.byText('Ranger la demande'));
-    expect(t.state()).toContain('La direction doit d’abord ranger le modèle');
+    expect(t.state()).toBe('Demande rangée, rien n’est envoyé au repreneur. La direction doit d’abord ranger le modèle d’engagement : refaites ensuite la demande.');
   });
   it('[R110] [R10] le texte est lu avant le code, posé comme du texte ; sans accord noté, rien ne part', async () => {
     const t = await line();
@@ -916,6 +916,12 @@ describe('CE14 · demandes et engagement de confidentialité à l’écran', () 
     expect(revoked.calls.some((c) => c.url.includes('/engagements/'))).toBe(false);
     await revoked.click(revoked.byText('Refaire la demande'));
     expect(lastBody(revoked, '/v1/commerces/b1/demandes')).toEqual({ personId: 'r1' });
+  });
+  it('[R113] un engagement révoqué depuis la dernière lecture n’est jamais dit signé : l’écran relit le serveur', async () => {
+    const t = await line({ 'GET /v1/commerces/engagements/n1': ok({ ndaId: 'n1', content: 'Texte inventé.', contentSha256: SHA, signed: true, revoked: true }) }, LINE({ open: true, codes: [], signed: true }));
+    expect(t.state()).toBe('Cet engagement est révoqué : la porte reste fermée. Refaites une demande pour un nouvel engagement.');
+    expect(t.body().all().map((e) => e.textContent)).not.toContain('Engagement signé (signature d’essai).');
+    expect(t.byText('Révoquer')).toBeUndefined();
   });
   it('la pièce à vérifier dit où elle se dépose', async () => {
     const t = await run(answers([LINE({ codes: ['identite_non_verifiee'], signed: true })]));
