@@ -19,8 +19,16 @@
  *   comprises : la personne a dit de ne plus l'appeler ; un accord plus ancien qu'une levée d'exclusion ne vaut plus ;
  * - un rappel à faire n'est pas une demande : la tâche vient du classement du contact, pas de la personne ;
  * - le numéro composé est le dernier donné : c'est celui de la demande la plus récente, pas une plus ancienne.
+ *
+ * Horaires (AC06) [R203] : le cahier demande ceux du décret n° 2022-1313 : du lundi au vendredi, de 10 h à 13 h et de 14 h
+ * à 20 h, hors jours fériés. Décidé, lecture prudente : ils ferment l'appel qui ne repose que sur la prospection acceptée,
+ * même si une source de 2022 dit que le décret ne s'applique pas à un consentement préalable : la règle de 2026 n'a pas pu
+ * être lue à sa source, et l'avocat tranchera (H41). Une personne qui a demandé à être rappelée n'est pas démarchée :
+ * sa demande reste ouverte à toute heure. L'application peut rester ouverte longtemps : `callClosesAt` donne la fin du
+ * créneau, et l'écran refuse l'appel passé cette heure.
  */
 import type { SqlDatabase } from '../db/sql.ts';
+import { isWorkingDay, localTime } from '../envoi/horaires.ts';
 import type { ExclusionReason } from '../db/types.ts';
 import type { Acces } from './acces.ts';
 import type { Viewer } from './droits.ts';
@@ -33,8 +41,10 @@ export interface AgentFiche {
   contact: { allowed: boolean; reasons: ExclusionReason[] };
   /** Numéro à appeler, en `tel:` ; null si la personne est exclue, a demandé l'arrêt, n'a pas d'accord ou pas de numéro. */
   call: string | null;
+  /** Fin du créneau d'appel, quand l'appel ne repose que sur la prospection acceptée [R203] ; sinon null. */
+  callClosesAt: string | null;
   /** Pourquoi il n'y a pas de numéro à appeler, pour que l'écran le dise ; null si l'appel est ouvert. */
-  callRefusal: 'excluded' | 'no_phone' | 'no_consent' | null;
+  callRefusal: 'excluded' | 'no_phone' | 'no_consent' | 'outside_hours' | null;
   projects: { kind: string; stage: string; deadline: string | null; budgetMinEur: number | null; budgetMaxEur: number | null }[];
   sources: { channel: string; detail: string | null; occurredAt: string }[];
   consents: { id: string; purpose: string; channel: string; givenAt: string; withdrawnAt: string | null }[];
@@ -56,6 +66,20 @@ export const CALL_PURPOSES: readonly string[] = Object.freeze(['prospecting', 'r
 const CALL_REQUEST_PURPOSES: readonly string[] = Object.freeze(['reply', 'rappel_demande']);
 /** Le même réglage de départ que `requestDays` du plan du jour : 13 mois. */
 export const CALL_REQUEST_DAYS = 395;
+
+/** Les heures du démarchage téléphonique, à l'heure de Paris : jour ouvré, 10 h à 13 h, 14 h à 20 h [R203]. */
+export function inProspectingHours(at: Date): boolean {
+  const local = localTime(at, 'Europe/Paris');
+  if (!isWorkingDay(local)) return false;
+  return (local.minutes >= 600 && local.minutes < 780) || (local.minutes >= 840 && local.minutes < 1200);
+}
+
+/** La fin du créneau en cours : 13 h le matin, 20 h l'après-midi [R203]. */
+function prospectingSlotEnd(at: Date): Date {
+  const { minutes } = localTime(at, 'Europe/Paris');
+  const end = minutes < 780 ? 780 : 1200;
+  return new Date(at.getTime() - (at.getTime() % 60_000) + (end - minutes) * 60_000);
+}
 
 const active = (notedAt: string, liftedAt: string | null, at: number): boolean => Date.parse(notedAt) <= at && (liftedAt === null || Date.parse(liftedAt) > at);
 
@@ -90,13 +114,23 @@ export class FicheAgent {
       ...fiche.exclusions.filter((e) => e.lifted_at !== null).map((e) => Date.parse(e.lifted_at!)),
       ...phoneConsents.filter((c) => c.withdrawn_at !== null).map((c) => Date.parse(c.withdrawn_at!)),
     );
-    const mayCall = phoneConsents.some((c) => {
+    const usable = phoneConsents.filter((c) => {
       const given = Date.parse(c.given_at);
       if (c.withdrawn_at !== null || given > at || given <= closedAt || !CALL_PURPOSES.includes(c.purpose)) return false;
       return !CALL_REQUEST_PURPOSES.includes(c.purpose) || at - given <= CALL_REQUEST_DAYS * 86_400_000;
     });
-    const callRefusal = !allowed ? 'excluded' : !hasPhone ? 'no_phone' : !mayCall ? 'no_consent' : null;
+    const asked = usable.some((c) => CALL_REQUEST_PURPOSES.includes(c.purpose));
+    const callRefusal = !allowed
+      ? 'excluded'
+      : !hasPhone
+        ? 'no_phone'
+        : usable.length === 0
+          ? 'no_consent'
+          : !asked && !inProspectingHours(new Date(at))
+            ? 'outside_hours'
+            : null;
     const call = callRefusal === null ? `tel:${digits}` : null;
+    const callClosesAt = callRefusal === null && !asked ? prospectingSlotEnd(new Date(at)).toISOString() : null;
 
     const ids = fiche.members.map((m) => m.id);
     const tasks = await this.db.all<{ id: string; reason: string; due_at: string; done_at: string | null }>(
@@ -125,6 +159,7 @@ export class FicheAgent {
         contact: { allowed, reasons },
         call,
         callRefusal,
+        callClosesAt,
         projects: fiche.projects.map((p) => ({ kind: p.kind, stage: p.stage, deadline: p.deadline, budgetMinEur: p.budget_min_eur, budgetMaxEur: p.budget_max_eur })),
         sources: [...fiche.sources].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at)).map((s) => ({ channel: s.channel, detail: s.detail, occurredAt: s.occurred_at })),
         consents: fiche.consents.map((c) => ({ id: c.id, purpose: c.purpose, channel: c.channel, givenAt: c.given_at, withdrawnAt: c.withdrawn_at })),
