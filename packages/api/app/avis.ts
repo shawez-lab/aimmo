@@ -1,0 +1,232 @@
+/**
+ * L'écran « Avis de valeur » de l'application de l'agent (E10), en morceaux posés dans `fichiers.ts` : sa section, son
+ * chargeur et son script, servi à part (`/app/avis.js`) et chargé à la première ouverture pour tenir le budget [R201].
+ * Il s'ouvre depuis un bien de la liste « Mes biens ».
+ *
+ * L'écran ne lit et n'écrit que par les routes de l'avis [R16, R30]. Il ne calcule rien : la fourchette vient du code,
+ * et l'agent l'ajuste. L'adresse saisie part à la préparation, n'est ni gardée ni remontrée [R46]. L'avis validé se
+ * télécharge en page à imprimer ; rien ne part d'ici vers le vendeur [R26]. Tout texte reçu est posé avec `textContent`.
+ */
+
+/** Les raisons d'un refus, dites à l'agent : jamais un code interne. */
+const REFUSALS = {
+  invalid: 'Vérifiez l’adresse et le type de logement.',
+  not_configured: 'Les ventes ne sont pas encore branchées : l’avis ne peut pas se préparer.',
+  sales_unavailable: 'Les ventes ne répondent pas : réessayez dans un moment.',
+  not_a_home: 'Un avis de valeur se prépare ici pour un logement.',
+  no_surface: 'Renseignez d’abord la surface du bien.',
+  address_not_found: 'Adresse introuvable ou incertaine : précisez-la.',
+  other_town: 'Cette adresse n’est pas dans la commune du bien.',
+  type: 'Un avis de valeur se prépare ici pour un logement.',
+  adresse: 'Il manque l’adresse ou la surface pour calculer.',
+  hors_zone: 'Ce département n’est pas encore couvert par nos ventes.',
+  dvf_non_couvert: 'Les ventes publiques ne couvrent pas ce département.',
+  donnees_absentes: 'Les ventes ne sont pas disponibles pour le moment.',
+  peu_de_ventes: 'Trop peu de ventes comparables pour une fourchette fiable.',
+  not_following_agent: 'Seul l’agent qui suit ce bien prépare et valide son avis.',
+  already_validated: 'Cet avis est déjà validé : il ne change plus.',
+  changed_meanwhile: 'L’avis a changé entre-temps : relisez-le, puis recommencez.',
+  invalid_range: 'La fourchette doit aller d’un montant à un montant plus haut.',
+  text_refused: 'Ce texte est refusé : il porte un chiffre qui ne vient pas du calcul, ou ne convient pas à un client.',
+  range_not_in_text: 'Le texte doit dire la fourchette retenue, telle quelle.',
+  other_range_in_text: 'Le texte dit encore la fourchette du calcul : corrigez-le.',
+};
+
+export const AVIS_HTML = `<section id="avis" hidden>
+<button id="avis-retour" type="button" class="retour">Retour à ma journée</button>
+<h2 id="avis-titre">Avis de valeur</h2>
+<p id="avis-etat" class="etat" role="status"></p>
+<div id="avis-corps"></div>
+</section>
+`;
+
+/** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
+export const AVIS_JS = `
+  /* ---------- M04 : l'écran « Avis de valeur » (E10), chargé à la demande [R16, R30, R201]. ---------- */
+  var avisScreen = null;
+  function wipeAvis() {
+    if (avisScreen) { avisScreen.wipe(); return; }
+    clear($('avis-corps'));
+    $('avis-etat').textContent = '';
+  }
+  function openAvis(id, reference) {
+    if (!currentKey || !ID.test(id)) return Promise.resolve(false);
+    if (avisScreen) return avisScreen.open(id, reference);
+    session += 1;
+    var mine = session;
+    wipeAvis();
+    show('avis');
+    $('avis-etat').textContent = 'Chargement…';
+    return new Promise(function (resolve) {
+      var s = document.createElement('script');
+      s.setAttribute('src', '/app/avis.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_AVIS;
+        try { delete globalThis.AIMMO_AVIS; } catch (e) { /* rien */ }
+        if (mine !== session || typeof make !== 'function') { resolve(false); return; }
+        avisScreen = make({ $: $, el: el, clear: clear, send: send, api: api, button: button, field: field, show: show, ID: ID, key: function () { return currentKey; }, session: function () { return session; }, bump: function () { session += 1; }, lost: function () { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); } });
+        resolve(avisScreen.open(id, reference));
+      });
+      s.addEventListener('error', function () {
+        if (mine === session) $('avis-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
+        resolve(false);
+      });
+      $('avis').appendChild(s);
+    });
+  }
+`;
+
+/** Le script de l'écran, servi à part (`/app/avis.js`). Il ne garde rien une fois l'écran quitté. */
+export const AVIS_SCRIPT = `'use strict';
+globalThis.AIMMO_AVIS = function (t) {
+  var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
+  var NO = ${JSON.stringify(REFUSALS)};
+  var cur = null, seq = 0;
+  function state(x) { $('avis-etat').textContent = x; }
+  function body() { return $('avis-corps'); }
+  function money(n) { return String(n).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ') + ' €'; }
+  function why(res, fallback) {
+    if (res.offline) return 'Pas de réseau : rien n’est enregistré.';
+    return (res.body && NO[res.body.code]) || (res.status === 403 || res.status === 404 ? 'Ce bien n’est pas dans vos droits.' : fallback);
+  }
+  function wipe() { seq += 1; clear(body()); state(''); $('avis-titre').textContent = 'Avis de valeur'; cur = null; }
+  function open(id, reference) {
+    if (!t.key() || !ID.test(id)) return Promise.resolve(false);
+    t.bump();
+    wipe();
+    cur = { id: id, reference: reference || 'ce bien' };
+    $('avis-titre').textContent = 'Avis de valeur · ' + cur.reference;
+    show('avis');
+    return load();
+  }
+  function base() { return '/v1/biens/' + encodeURIComponent(cur.id) + '/avis'; }
+  // Le plus récent est le seul montré : le serveur les rend du plus récent au plus ancien.
+  function load(message) {
+    var mine = ++seq;
+    state('Chargement…');
+    return send(base(), 'GET').then(function (res) {
+      if (res.gone || mine !== seq) return false;
+      if (!res.ok) { state(why(res, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
+      var list = Array.isArray(res.body.data) ? res.body.data : [];
+      clear(body());
+      state(message || '');
+      if (list[0] && ID.test(list[0].id)) draw(list[0]); else form();
+      return true;
+    });
+  }
+  function form() {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', 'Préparer un avis'));
+    box.appendChild(el('p', 'L’adresse sert au calcul et aux données publiques. Elle n’est pas gardée. Le reste vient de la fiche du bien.', 'doux'));
+    var address = field(box, 'avis-adresse', 'Adresse du bien');
+    address.setAttribute('autocomplete', 'off');
+    var kind = field(box, 'avis-type', 'Type de logement', 'select');
+    [['apartment', 'Appartement'], ['house', 'Maison']].forEach(function (k) {
+      var o = el('option', k[1]);
+      o.value = k[0];
+      kind.appendChild(o);
+    });
+    var condition = field(box, 'avis-etat-bien', 'État général', 'select');
+    [['bon', 'Bon état'], ['neuf', 'Neuf ou rénové'], ['rafraichir', 'À rafraîchir'], ['travaux', 'Travaux à prévoir']].forEach(function (k) {
+      var o = el('option', k[1]);
+      o.value = k[0];
+      condition.appendChild(o);
+    });
+    box.appendChild(button('Préparer le brouillon', function () {
+      state('Calcul en cours…');
+      var mine = ++seq;
+      return send(base(), 'POST', { address: address.value, kind: kind.value, condition: condition.value }).then(function (res) {
+        if (res.gone || mine !== seq) return false;
+        if (!res.ok) { state(why(res, 'Le brouillon n’a pas pu être préparé.')); return false; }
+        address.value = '';
+        return load('Brouillon prêt : relisez-le, ajustez-le, puis validez.');
+      });
+    }));
+    body().appendChild(box);
+  }
+  function draw(r) {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', r.status === 'validated' ? 'Avis validé' : 'Brouillon à relire'));
+    box.appendChild(el('strong', money(r.low) + ' à ' + money(r.high)));
+    box.appendChild(el('p', 'Calcul du code : ' + money(r.computedLow) + ' à ' + money(r.computedHigh) + '.', 'doux'));
+    if (r.status === 'validated') {
+      box.appendChild(el('p', r.text, 'brouillon'));
+      box.appendChild(button('Télécharger la page à imprimer', function () { return download(r.id); }));
+      box.appendChild(button('Préparer un nouvel avis', function () { clear(body()); state(''); form(); }));
+      body().appendChild(box);
+      return;
+    }
+    var low = field(box, 'avis-bas', 'Bas de la fourchette, en euros');
+    var high = field(box, 'avis-haut', 'Haut de la fourchette, en euros');
+    [low, high].forEach(function (f) { f.setAttribute('inputmode', 'numeric'); });
+    low.value = String(r.low);
+    high.value = String(r.high);
+    var text = field(box, 'avis-texte', 'Texte de l’avis', 'textarea');
+    text.value = r.text;
+    text.setAttribute('rows', '12');
+    function change() {
+      var c = {};
+      var lo = Number(low.value), hi = Number(high.value);
+      if (lo !== r.low) c.low = lo;
+      if (hi !== r.high) c.high = hi;
+      if (text.value !== r.text) c.text = text.value;
+      return c;
+    }
+    function save(c) {
+      return send('/v1/avis/' + encodeURIComponent(r.id) + '/ajustement', 'POST', c);
+    }
+    box.appendChild(button('Enregistrer', function () {
+      var c = change();
+      if (Object.keys(c).length === 0) { state('Rien à enregistrer.'); return Promise.resolve(false); }
+      state('Enregistrement…');
+      return save(c).then(function (res) {
+        if (res.gone) return false;
+        if (!res.ok) { state(why(res, 'Rien n’est enregistré : réessayez.')); return false; }
+        return load('Enregistré.');
+      });
+    }));
+    // Une modification à l'écran, encore non enregistrée, ne se valide jamais à l'insu de l'agent [R30].
+    box.appendChild(button('Valider l’avis', function () {
+      if (Object.keys(change()).length > 0) { state('Enregistrez d’abord vos changements : c’est ce texte qui sera validé.'); return Promise.resolve(false); }
+      state('Validation…');
+      return send('/v1/avis/' + encodeURIComponent(r.id) + '/validation', 'POST').then(function (res) {
+        if (res.gone) return false;
+        if (!res.ok) { state(why(res, 'L’avis n’est pas validé : réessayez.')); return false; }
+        return load('Avis validé.');
+      });
+    }));
+    body().appendChild(box);
+  }
+  function download(id) {
+    var mine = t.session();
+    state('Préparation…');
+    return t.api('/v1/avis/' + encodeURIComponent(id) + '/imprimable', t.key()).then(function (r) {
+      if (mine !== t.session()) return false;
+      if (r.status === 401) { t.lost(); return false; }
+      if (!r.ok) {
+        return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
+          if (mine === t.session()) state(why({ status: r.status, body: b }, 'Page indisponible pour le moment.'));
+          return false;
+        });
+      }
+      return r.blob().then(function (blob) {
+        if (mine !== t.session()) return false;
+        var url = URL.createObjectURL(blob);
+        var a = el('a', 'Enregistrer');
+        a.href = url;
+        a.download = 'avis-de-valeur.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+        state('Page téléchargée : ouvrez-la pour l’imprimer ou l’enregistrer en PDF.');
+        return true;
+      });
+    }, function () {
+      if (mine === t.session()) state('Pas de réseau. Réessayez dans un moment.');
+      return false;
+    });
+  }
+  return { open: open, wipe: wipe };
+};
+`;
