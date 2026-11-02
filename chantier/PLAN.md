@@ -1644,7 +1644,9 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 - Attend : rien pour l'écran ; H38 pour les pièces réelles.
 
 ### CE13 · La fiche du commerce à l'écran et le barème de la direction
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-02)
+- Reste : fusionnée (#289) ; relecture forte sans P0/P1, 5 remarques corrigées ; Codex à sa limite (H03) ; vérification GitHub verte. `ceSame` compare les listes dans l'ordre ; le message de succès ne lit pas `created:false` ; le script approche du budget d'une page : CE14 et CE15 se chargeront à part.
+- Décidé (2026-11-02) : barème saisi en % ou en multiple, rangé en centièmes ; ajout d'une lecture des barèmes en vigueur, sans laquelle la direction saisirait à l'aveugle.
 - Trouvé le 2026-11-02 par la voie 2 : sans écran pour la fiche et le barème, aucune estimation ne se calcule et l'activité reste « à saisir » : tout M16 attend ces deux saisies.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
 - Cahier : M16, « Fiche du commerce » ; R16, R110, R111, R17, R201.

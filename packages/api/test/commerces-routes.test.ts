@@ -212,6 +212,17 @@ describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () 
     expect(events).toHaveLength(6);
   });
 
+  it('[R16] [R111] les barèmes en vigueur : la direction seule, à leur dernière version', async () => {
+    const t = await setup();
+    const scale = { activity: 'restaurant', method: 'revenue_pct', source: 'Barème inventé', sourceDate: '2027-01-15' };
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { ...scale, low: 5_000, high: 8_000 });
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { ...scale, low: 6_000, high: 9_000 });
+    const seen = await t.ok(t.dir, 'GET', '/commerces/baremes');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ activity: 'restaurant', low: 6_000, high: 9_000, version: 2 });
+    for (const who of [t.alex, t.compliance]) expect((await t.call(who, 'GET', '/commerces/baremes')).status).toBe(403);
+  });
+
   it('[R16] [R118] la lecture de l’acquéreur : l’agent du bien, jamais un autre agent ni la conformité, et le refus au journal', async () => {
     const t = await setup();
     await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });

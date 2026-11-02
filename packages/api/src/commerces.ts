@@ -172,6 +172,7 @@ const ROUTES: CommercesRoute[] = [
   { method: 'POST', pattern: new RegExp(`^/commerces/${ID}/fiche$`), name: 'commerces.fiche.modifiee', roles: WRITERS, handle: withBody(async (s, v, [id], b) => { const c = core(s); return reply(await c.fiches.update(c.acces, v, id!, b)); }) },
   { method: 'GET', pattern: new RegExp(`^/commerces/${ID}/public$`), name: 'commerces.public', roles: READERS, handle: async (s, v, [id]) => reply(await publicOf(s, v, id!)) },
   /* L'estimation (CE02) [R111]. */
+  { method: 'GET', pattern: /^\/commerces\/baremes$/, name: 'commerces.baremes', roles: ['direction'], handle: async (s, v) => reply(await core(s).estimations.scales(v)) },
   { method: 'POST', pattern: /^\/commerces\/baremes$/, name: 'commerces.bareme', roles: ['direction'], handle: withBody(async (s, v, _p, b) => reply(await core(s).estimations.recordScale(v, b))) },
   { method: 'POST', pattern: new RegExp(`^/commerces/${ID}/estimations$`), name: 'commerces.estimation', roles: ['agent'], handle: withBody(async (s, v, [id], b) => { const c = core(s); return reply(await c.estimations.estimate(c.acces, v, id!, b.method)); }) },
   { method: 'GET', pattern: new RegExp(`^/commerces/${ID}/estimations$`), name: 'commerces.estimations', roles: READERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.estimations.read(c.acces, v, id!)); } },
