@@ -232,7 +232,7 @@ Trouvé en cherchant ce que laissait W10 (« rien ne range encore l'accord `suiv
 - Critères : une personne exclue ou arrêtée ne peut pas recevoir d'accord [R02, R04] ; un autre agent est refusé et le refus va au journal [R16] ; l'accord noté ouvre l'envoi au contrôle central, le retrait le referme [R03] ; un accord déjà en cours n'est pas doublé ; un retrait ou une exclusion levée ne s'efface pas par une date ancienne [R03] ; ni preuve ni adresse au journal [R13] ; aucune ligne effacée [R17].
 
 ### AC05 · Un accord retiré ne se rouvre jamais par une fusion ou une levée
-- Statut : à faire
+- Statut : en cours
 - Voie : 1
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AC01
 - Cahier : Conformité, accord préalable ; R03, R02, R04, R202.
