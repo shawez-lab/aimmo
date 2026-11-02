@@ -101,6 +101,32 @@ export function saleFingerprint(sale: Sale): Promise<string> {
   return sha256Hex([sale.kind, sale.lat.toFixed(6), sale.lon.toFixed(6), sale.surface, sale.pricePerM2, sale.month].join('|'));
 }
 
+/**
+ * Les emprises de la France, métropole et outre-mer, en [latitude min, max, longitude min, max]. Un contour hors de ces
+ * cases n'a aucune vente : c'est presque toujours une latitude et une longitude inversées, ou une autre projection.
+ */
+export const FRANCE_BOXES: readonly (readonly [number, number, number, number])[] = Object.freeze([
+  [41, 51.6, -5.8, 10],
+  [46.5, 47.3, -56.7, -55.9],
+  [14, 18.6, -63.6, -60.6],
+  [2, 6.5, -55, -51],
+  [-22, -20.5, 55, 56],
+  [-13.5, -12.3, 44.8, 45.6],
+]);
+
+export function ringInFrance(ring: readonly LatLon[]): boolean {
+  return FRANCE_BOXES.some(([a, b, c, d]) => ring.every(([lat, lon]) => lat >= a && lat <= b && lon >= c && lon <= d));
+}
+
+/** Un quartier reste dans l'emprise de sa commune, à un dixième près : les bords communs ne sont jamais tracés pareil. */
+function ringNearParent(ring: readonly LatLon[], parent: readonly LatLon[]): boolean {
+  const lats = parent.map((p) => p[0]);
+  const lons = parent.map((p) => p[1]);
+  const [a, b, c, d] = [Math.min(...lats), Math.max(...lats), Math.min(...lons), Math.max(...lons)];
+  const [dLat, dLon] = [(b - a) / 10, (d - c) / 10];
+  return ring.every(([lat, lon]) => lat >= a - dLat && lat <= b + dLat && lon >= c - dLon && lon <= d + dLon);
+}
+
 function parseRing(value: unknown): LatLon[] | null {
   if (!Array.isArray(value) || value.length < 3 || value.length > MAX_RING) return null;
   const out: LatLon[] = [];
@@ -161,6 +187,7 @@ export class PrixRegroupes {
     if (typeof input.ringSource !== 'string' || input.ringSource.trim().length === 0 || input.ringSource.length > 200) return refuse('source');
     const ring = parseRing(input.ring);
     if (!ring) return refuse('contour');
+    if (!ringInFrance(ring)) return refuse('hors_france');
     let parentId: string | null = null;
     let insee: string | null = null;
     if (input.level === 'commune') {
@@ -170,11 +197,12 @@ export class PrixRegroupes {
     } else {
       if (input.inseeCode !== undefined && input.inseeCode !== null) return refuse('insee');
       if (typeof input.parentId !== 'string') return refuse('parent');
-      const parent = await this.db.first<{ id: string }>(
-        "SELECT id FROM price_zones WHERE id = ? AND network_id = ? AND level = 'commune'",
+      const parent = await this.db.first<{ id: string; ring_json: string }>(
+        "SELECT id, ring_json FROM price_zones WHERE id = ? AND network_id = ? AND level = 'commune' AND id NOT IN (SELECT area_id FROM price_zone_retirements)",
         [input.parentId, viewer.networkId],
       );
       if (!parent) return refuse('parent');
+      if (!ringNearParent(ring, JSON.parse(parent.ring_json) as LatLon[])) return refuse('hors_commune');
       parentId = parent.id;
     }
     // Parmi les zones en service : une commune contre les autres communes, un quartier contre ceux de sa commune.
@@ -402,10 +430,12 @@ export class PrixRegroupes {
       versionId === undefined ? [networkId] : [networkId, versionId],
     );
     if (!version) return null;
-    // La commune de ce nom calculée par cette version (une commune retirée garde ses versions passées).
+    // La commune de ce nom calculée par cette version. Une version demandée se relit telle quelle, retraits compris
+    // [R17] ; le site, lui, lit la dernière version sans ce qui a été retiré depuis [R150].
+    const inService = versionId === undefined;
     const commune = await this.db.first<{ id: string }>(
       `SELECT z.id FROM price_zones z JOIN price_cells c ON c.area_id = z.id AND c.version_id = ?
-        WHERE z.network_id = ? AND z.level = 'commune' AND z.slug = ? LIMIT 1`,
+        WHERE z.network_id = ? AND z.level = 'commune' AND z.slug = ? ${inService ? 'AND z.id NOT IN (SELECT area_id FROM price_zone_retirements)' : ''} LIMIT 1`,
       [version.id, networkId, communeSlug],
     );
     if (!commune) return null;
@@ -431,6 +461,7 @@ export class PrixRegroupes {
          JOIN price_zones z ON z.id = c.area_id
          LEFT JOIN price_versions o ON o.id = c.from_version_id
         WHERE c.version_id = ? AND (z.id = ? OR z.parent_id = ?)
+          ${inService ? 'AND z.id NOT IN (SELECT area_id FROM price_zone_retirements)' : ''}
         ORDER BY z.level, z.slug, c.kind`,
       [version.id, commune.id, commune.id],
     );

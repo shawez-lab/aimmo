@@ -26,6 +26,8 @@ import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 16_000;
+/** Un contour de commune va jusqu'à 2 000 points : cette seule route a sa propre limite. */
+const ZONE_BODY_BYTES = 64_000;
 const ID = '([A-Za-z0-9_-]{1,64})';
 const SLUG = '([a-z0-9]+(?:-[a-z0-9]+)*)';
 /** L'estimation en ligne de chaque site (E05). */
@@ -81,10 +83,10 @@ function reply(result: Outcome): Response {
 
 const value = <T>(v: T): Outcome => ({ ok: true, value: v });
 
-async function readJson(request: Request): Promise<Record<string, unknown> | null> {
+async function readJson(request: Request, maxBytes = MAX_BODY_BYTES): Promise<Record<string, unknown> | null> {
   if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) return null;
   const text = await request.text();
-  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return null;
+  if (new TextEncoder().encode(text).length > maxBytes) return null;
   try {
     const parsed: unknown = JSON.parse(text);
     return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
@@ -136,9 +138,9 @@ export function guarded(route: AttirerRoute): AttirerRoute['handle'] {
 
 export function attirerRoutes(): AttirerRoute[] {
   const withBody =
-    (fn: (s: AttirerServices, v: Viewer, params: string[], body: Record<string, unknown>) => Promise<Response>): AttirerRoute['handle'] =>
+    (fn: (s: AttirerServices, v: Viewer, params: string[], body: Record<string, unknown>) => Promise<Response>, maxBytes = MAX_BODY_BYTES): AttirerRoute['handle'] =>
     async (s, v, params, request) => {
-      const body = await readJson(request);
+      const body = await readJson(request, maxBytes);
       return body ? fn(s, v, params, body) : badBody();
     };
   const P = '^/attirer';
@@ -148,7 +150,7 @@ export function attirerRoutes(): AttirerRoute[] {
     // AT01 · prix regroupés
     { method: 'GET', pattern: new RegExp(`${P}/prix/versions$`), name: 'attirer.prix_versions', roles: DIRECTION, handle: async (s, v) => reply(value(await services(s).readPrices.versions(v.networkId))) },
     { method: 'GET', pattern: new RegExp(`${P}/prix/zones$`), name: 'attirer.prix_zones', roles: DIRECTION, handle: async (s, v) => reply(await services(s).readPrices.zones(v)) },
-    { method: 'POST', pattern: new RegExp(`${P}/prix/zones$`), name: 'attirer.prix_zone', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).readPrices.defineZone(v, b as never))) },
+    { method: 'POST', pattern: new RegExp(`${P}/prix/zones$`), name: 'attirer.prix_zone', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).readPrices.defineZone(v, b as never)), ZONE_BODY_BYTES) },
     { method: 'POST', pattern: new RegExp(`${P}/prix/zones/${ID}/retrait$`), name: 'attirer.prix_zone_retrait', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).readPrices.retireZone(v, id)) },
     {
       method: 'POST',

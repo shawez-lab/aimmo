@@ -1,3 +1,4 @@
+import { FRANCE_BOXES } from '../../core/src/attirer/prix-versions.ts';
 import type { FACT_KINDS, FACT_UNITS, NeighbourhoodProblem } from '../../core/src/attirer/quartier.ts';
 
 /**
@@ -26,6 +27,9 @@ const REFUSALS: Record<string, string> = {
   insee: 'Le code INSEE a 5 caractères, par exemple 21231.',
   parent: 'Choisissez une commune en service.',
   slug_pris: 'Ce nom est déjà pris dans la liste.',
+  hors_france: 'Ces points ne tombent pas en France : latitude et longitude sont peut-être inversées.',
+  hors_commune: 'Ce quartier sort de sa commune : vérifiez le contour et la commune choisie.',
+  invalid_body: 'Ce contour est trop long : 2 000 points au plus.',
   chevauchement: 'Ce contour recouvre une zone déjà en service : les mêmes ventes compteraient deux fois.',
   zone: 'Introuvable : la liste a changé.',
   zone_inconnue: 'Ce quartier n’est plus en service : la liste a changé.',
@@ -154,6 +158,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
   var TEXT_ORIGINS = ${JSON.stringify(ORIGIN_TEXT_LABELS)};
   var PROBLEMS = ${JSON.stringify(PROBLEM_LABELS)};
   var TEXT_CHOICES = ${JSON.stringify(TEXT_CHOICES)};
+  var FRANCE = ${JSON.stringify(FRANCE_BOXES)};
   var MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
   var chosenMonth = null, busy = false, inside = false;
   function state(text) { $('attirer-etat').textContent = text; }
@@ -277,20 +282,36 @@ globalThis.AIMMO_ATTIRER = function (t) {
 
   /*
    * AT15 · un contour collé : du GeoJSON (longitude puis latitude, retournées ici), ou une ligne « latitude, longitude »
-   * par point. Un contour en plusieurs morceaux est refusé : en garder un seul changerait les ventes comptées sans le dire.
+   * par point. Plusieurs morceaux ou une enclave : à la direction de trancher, en le disant dans la source ; en garder un
+   * seul ici changerait les ventes comptées sans le dire. Rend { points } ou { problem }.
    */
+  var UNREADABLE = { problem: 'Ce contour n’est pas lisible : en GeoJSON, ou une ligne « latitude, longitude » par point, 3 points au moins.' };
+  function polygonOf(g) {
+    if (g && g.type === 'FeatureCollection' && Array.isArray(g.features) && g.features.length === 1) g = g.features[0];
+    if (g && g.type === 'FeatureCollection' && Array.isArray(g.features)) return { pieces: g.features.length };
+    if (g && g.type === 'Feature') g = g.geometry;
+    if (g && g.type === 'MultiPolygon' && Array.isArray(g.coordinates)) {
+      if (g.coordinates.length !== 1) return { pieces: g.coordinates.length };
+      return { rings: g.coordinates[0] };
+    }
+    if (g && g.type === 'Polygon') return { rings: g.coordinates };
+    return null;
+  }
   function ringOf(text) {
     var raw = text.trim();
     var points = null;
     if (raw.charAt(0) === '{' || raw.charAt(0) === '[') {
       var g;
-      try { g = JSON.parse(raw); } catch (e) { return null; }
-      if (g && g.type === 'Feature') g = g.geometry;
-      if (!g || g.type !== 'Polygon' || !Array.isArray(g.coordinates) || g.coordinates.length !== 1 || !Array.isArray(g.coordinates[0])) return null;
+      try { g = JSON.parse(raw); } catch (e) { return UNREADABLE; }
+      var found = polygonOf(g);
+      if (!found) return UNREADABLE;
+      if (found.pieces) return { problem: 'Ce contour a ' + found.pieces + ' morceaux : collez-en un seul, le principal, et dites-le dans la source.' };
+      if (!Array.isArray(found.rings) || !Array.isArray(found.rings[0])) return UNREADABLE;
+      if (found.rings.length > 1) return { problem: 'Ce contour contient une enclave : collez-le sans elle, et dites-le dans la source.' };
       points = [];
-      for (var i = 0; i < g.coordinates[0].length; i++) {
-        var c = g.coordinates[0][i];
-        if (!Array.isArray(c) || c.length < 2) return null;
+      for (var i = 0; i < found.rings[0].length; i++) {
+        var c = found.rings[0][i];
+        if (!Array.isArray(c) || c.length < 2) return UNREADABLE;
         points.push([c[1], c[0]]);
       }
     } else {
@@ -299,10 +320,19 @@ globalThis.AIMMO_ATTIRER = function (t) {
         return p.length === 2 ? [Number(p[0]), Number(p[1])] : [NaN, NaN];
       });
     }
-    if (points.some(function (p) { return typeof p[0] !== 'number' || typeof p[1] !== 'number' || !isFinite(p[0]) || !isFinite(p[1]); })) return null;
+    if (points.some(function (p) { return typeof p[0] !== 'number' || typeof p[1] !== 'number' || !isFinite(p[0]) || !isFinite(p[1]); })) return UNREADABLE;
     /* Un contour fermé répète son premier point : le métier le ferme lui-même. */
     if (points.length > 1 && points[0][0] === points[points.length - 1][0] && points[0][1] === points[points.length - 1][1]) points.pop();
-    return points.length >= 3 ? points : null;
+    if (points.length < 3) return UNREADABLE;
+    if (points.length > 2000) return { problem: 'Ce contour a ' + points.length + ' points : 2 000 au plus.' };
+    var inside = FRANCE.some(function (b) { return points.every(function (p) { return p[0] >= b[0] && p[0] <= b[1] && p[1] >= b[2] && p[1] <= b[3]; }); });
+    if (!inside) return { problem: REFUSALS.hors_france };
+    /* Six décimales, une dizaine de centimètres : assez pour un contour, et le corps reste dans sa limite. */
+    return { points: points.map(function (p) { return [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]; }) };
+  }
+  /* L'adresse publique d'une zone : elle ne se réécrit jamais, donc aucun mot abîmé. */
+  function slugOf(name) {
+    return factKey(name.toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae'));
   }
   function saveZone(input, okText) {
     return once(function () {
@@ -326,11 +356,11 @@ globalThis.AIMMO_ATTIRER = function (t) {
     var ring = field(form, id + '-contour', 'Contour : GeoJSON, ou une ligne « latitude, longitude » par point', 'textarea');
     var source = field(form, id + '-source', 'Source du contour');
     form.appendChild(button('Ajouter', function () {
-      var slug = factKey(name.value);
+      var slug = slugOf(name.value);
       if (!slug) { state('Saisissez le nom, avec au moins une lettre latine ou un chiffre.'); return; }
-      var points = ringOf(ring.value);
-      if (!points) { state('Ce contour n’est pas lisible : un seul morceau, en GeoJSON ou une ligne « latitude, longitude » par point, 3 points au moins.'); return; }
-      var input = { level: isCommune ? 'commune' : 'quartier', slug: slug, name: name.value, ring: points, ringSource: source.value };
+      var read = ringOf(ring.value);
+      if (read.problem) { state(read.problem); return; }
+      var input = { level: isCommune ? 'commune' : 'quartier', slug: slug, name: name.value, ring: read.points, ringSource: source.value };
       if (isCommune) input.inseeCode = insee.value.trim(); else input.parentId = parent.value;
       saveZone(input, (isCommune ? 'Commune' : 'Quartier') + ' ajouté' + (isCommune ? 'e' : '') + '. Les prix suivront au prochain calcul.');
     }));
@@ -344,7 +374,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
         return send('/v1/attirer/prix/zones/' + encodeURIComponent(z.id) + '/retrait', 'POST').then(function (x) {
           if (x.gone) return false;
           if (!x.ok) { state(refusal(x, 'La zone reste en service.')); return false; }
-          return open(z.name + ' est retiré des prochains calculs.');
+          return open('« ' + z.name + ' » a quitté le site et les prochains calculs.');
         });
       });
     }));
@@ -358,9 +388,9 @@ globalThis.AIMMO_ATTIRER = function (t) {
     if (!communes.length) box.appendChild(el('p', 'Aucune commune : aucun prix ne peut être calculé.', 'doux'));
     var ul = el('ul', null, 'liste');
     communes.forEach(function (c) {
-      var li = zoneLine(c, 'La commune et ses quartiers sortiront des prochains calculs, et leurs pages de quartier ne seront plus servies. Appuyez de nouveau pour confirmer.');
+      var li = zoneLine(c, 'La commune et ses quartiers quitteront le site : prix et pages de quartier. Appuyez de nouveau pour confirmer.');
       var inner = el('ul', null, 'liste');
-      items.forEach(function (q) { if (q.parentId === c.id) inner.appendChild(zoneLine(q, 'Ce quartier sortira des prochains calculs, et sa page ne sera plus servie. Appuyez de nouveau pour confirmer.')); });
+      items.forEach(function (q) { if (q.parentId === c.id) inner.appendChild(zoneLine(q, 'Ce quartier quittera le site : ses prix et sa page. Appuyez de nouveau pour confirmer.')); });
       li.appendChild(inner);
       ul.appendChild(li);
     });

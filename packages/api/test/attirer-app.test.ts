@@ -386,7 +386,7 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       t.input('Source du contour').value = 'Contours inventés';
     };
 
-    it('[R16] chaque appel existe sous la direction, sans identifiant à saisir, et le contour n’est jamais relu', async () => {
+    it('[R16] chaque appel existe sous la direction, sans identifiant à saisir', async () => {
       const t = await run();
       const before = t.calls.length;
       await t.ouvrir();
@@ -421,17 +421,61 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       }
     });
 
-    it('[R150] un contour illisible, ou en plusieurs morceaux, est refusé sans envoi', async () => {
-      const multi = JSON.stringify({ type: 'MultiPolygon', coordinates: [[[[5, 47], [5.1, 47], [5.1, 47.1]]]] });
+    it('[R150] un contour illisible, ou en plusieurs morceaux, n’est jamais envoyé', async () => {
       const holed = JSON.stringify({ type: 'Polygon', coordinates: [[[5, 47], [5.1, 47], [5.1, 47.1]], [[5.01, 47.01], [5.02, 47.01], [5.02, 47.02]]] });
-      for (const bad of ['', 'pas un contour', '47.0, 5.0\n47.1, 5.1', '{ pas du json', multi, holed, '47, 5\n47, x\n48, 6']) {
+      for (const bad of ['', 'pas un contour', '47.0, 5.0\n47.1, 5.1', '{ pas du json', holed, '47, 5\n47, x\n48, 6']) {
         const t = await run();
         await t.ouvrir();
         remplir(t, bad);
         await t.click(t.buttons('Ajouter')[0]);
         expect(t.posts(), bad).toHaveLength(0);
-        expect(t.state()).toContain('Ce contour n’est pas lisible');
+        expect(t.state()).not.toBe('');
+        expect(t.state()).not.toContain('ajoutée');
       }
+    });
+
+    it('[R150] chaque contour refusé dit la vraie raison', async () => {
+      const square = [[5, 47], [5.1, 47], [5.1, 47.1], [5, 47]];
+      const cases: [string, string][] = [
+        ['pas un contour', 'Ce contour n’est pas lisible'],
+        [JSON.stringify({ type: 'MultiPolygon', coordinates: [[square], [square]] }), 'Ce contour a 2 morceaux'],
+        [JSON.stringify({ type: 'FeatureCollection', features: [{}, {}, {}] }), 'Ce contour a 3 morceaux'],
+        [JSON.stringify({ type: 'Polygon', coordinates: [square, square] }), 'Ce contour contient une enclave'],
+        ['5.0, 47.0\n5.1, 47.0\n5.1, 47.1', 'Ces points ne tombent pas en France'],
+        ['6700000 850000\n6700100 850000\n6700100 850100', 'Ces points ne tombent pas en France'],
+        [Array.from({ length: 2001 }, (_, i) => `47.${i} 5.${i}`).join('\n'), 'Ce contour a 2001 points'],
+      ];
+      for (const [bad, said] of cases) {
+        const t = await run();
+        await t.ouvrir();
+        remplir(t, bad);
+        await t.click(t.buttons('Ajouter')[0]);
+        expect(t.posts(), bad).toHaveLength(0);
+        expect(t.state()).toContain(said);
+      }
+    });
+
+    it('[R150] un FeatureCollection à une feature et un MultiPolygon à une partie sont un seul morceau ; six décimales suffisent', async () => {
+      const square = [[5.12345678, 47], [5.1, 47], [5.1, 47.1], [5, 47.1], [5.12345678, 47]];
+      for (const pasted of [
+        { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [square] } }] },
+        { type: 'MultiPolygon', coordinates: [[square]] },
+      ]) {
+        const t = await run();
+        await t.ouvrir();
+        remplir(t, JSON.stringify(pasted));
+        await t.click(t.buttons('Ajouter')[0]);
+        expect(JSON.parse(t.posts()[0]!.body!).ring).toEqual([[47, 5.123457], [47, 5.1], [47.1, 5.1], [47.1, 5]]);
+      }
+    });
+
+    it('[R150] l’adresse d’une zone ne perd aucune lettre', async () => {
+      const t = await run();
+      await t.ouvrir();
+      remplir(t, SQUARE);
+      t.input('Nom de la commune').value = 'Sacré-Cœur';
+      await t.click(t.buttons('Ajouter')[0]);
+      expect(JSON.parse(t.posts()[0]!.body!).slug).toBe('sacre-coeur');
     });
 
     it('un quartier se rattache à une commune choisie dans la liste, et n’envoie pas de code INSEE', async () => {
@@ -468,11 +512,11 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       await t.click(b);
       await t.click(b);
       expect(t.posts()).toHaveLength(0);
-      expect(t.state()).toBe('Ce quartier sortira des prochains calculs, et sa page ne sera plus servie. Appuyez de nouveau pour confirmer.');
+      expect(t.state()).toBe('Ce quartier quittera le site : ses prix et sa page. Appuyez de nouveau pour confirmer.');
       later(2000);
       await t.click(b);
       expect(t.posts().map((c) => c.url)).toEqual(['/v1/attirer/prix/zones/z1/retrait']);
-      expect(t.state()).toBe('Ouest est retiré des prochains calculs.');
+      expect(t.state()).toBe('« Ouest » a quitté le site et les prochains calculs.');
     });
 
     it('un double appui sur Ajouter n’envoie qu’une zone', async () => {

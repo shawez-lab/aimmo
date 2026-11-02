@@ -288,7 +288,10 @@ export class Referencement {
     if (!version) return [];
     const rows = await this.db.all<{ level: string; slug: string; parent_slug: string | null }>(
       `SELECT DISTINCT z.level, z.slug, p.slug AS parent_slug FROM price_cells c JOIN price_zones z ON z.id = c.area_id LEFT JOIN price_zones p ON p.id = z.parent_id
-        WHERE c.version_id = ? AND c.status IN ('publiee', 'reprise') ORDER BY z.level, p.slug, z.slug`,
+        WHERE c.version_id = ? AND c.status IN ('publiee', 'reprise')
+          AND z.id NOT IN (SELECT area_id FROM price_zone_retirements)
+          AND (z.parent_id IS NULL OR z.parent_id NOT IN (SELECT area_id FROM price_zone_retirements))
+        ORDER BY z.level, p.slug, z.slug`,
       [version.id],
     );
     const day = dayOf(version.completed_at);
