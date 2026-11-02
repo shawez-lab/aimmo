@@ -928,7 +928,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H25 pour le dépôt réel.
 
 ### D14 · Le scan d'un avenant vérifié comme celui du mandat
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02) : le scan est celui du bien du mandat ; la migration `1570` ferme aussi la course entre mandat et avenant. Relecture forte : aucun P0 ni P1 ; Codex à sa limite, fusion sans lui (#286).
 - Trouvé le 2026-11-02 par la relecture forte de D11 : `SignatureAvenant` accepte encore n'importe quelle référence de scan, alors qu'un avenant change les conditions du mandat et sa diffusion.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D11
 - Cahier : M06 ; R10, R16, R41.
@@ -937,7 +938,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H25 pour le dépôt réel.
 
 ### D12 · Écran « Mandat » dans l'application
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D11
 - Cahier : M06 ; Feuille de route, février 2027 : « premier mandat de l'agence généré par AIMMO et numéroté dans le registre de l'agence » ; R39, R40, R41, R201.
 - Objectif : depuis « Mes biens », l'agent génère le mandat, lit les contrôles ligne par ligne, enregistre la signature sur papier avec le scan déposé, voit le numéro au registre et l'exemplaire ; écran chargé à part, sur le système de design.
