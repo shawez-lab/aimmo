@@ -555,7 +555,8 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Attend : rien.
 
 ### Q09 · Les corrections des agents dans le banc de mesure
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02) : les 150 corrections les plus récentes (limite de D1) ; repérage des noms mot par mot, sans égard aux accents, aussi pour le texte confié à l'IA ; un tiers cité en texte libre ne se repère pas sans modèle de langue, le fichier est donc à relire, l'écran et `docs/MESURE.md` le disent. Relecture forte : 3 P1 corrigés ; Codex à sa limite, fusion sans lui (#280).
 - Trouvé le 2026-11-02 par la relecture forte de Q08 : `correctedCases` n'est appelé que par des tests, et le banc de `docs/MESURE.md` lit `AIMMO_CAS` hors du dépôt. Les corrections sont gardées, mais rien ne les fait entrer dans une mesure.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : Q08
 - Cahier : M03 ; Feuille de route, décembre 2026 ; R15, R16.
@@ -917,7 +918,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : rien.
 
 ### D11 · Lire et déposer depuis le téléphone : documents du bien et scan du mandat
-- Statut : à faire
+- Statut : en cours
 - Trouvé le 2026-11-02 (après N13) : aucun écran n'appelle `/v1/documents`, `/v1/mandats` ni `/v1/signatures` ; aucune route ne liste les documents d'un bien, un document généré se perd donc une fois l'écran quitté ; `signature-papier` attend un `scanRef` que personne ne saurait saisir.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D04, N12
 - Cahier : M06 ; R16, R39, R40, R41.
