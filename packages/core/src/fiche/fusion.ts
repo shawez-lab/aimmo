@@ -240,8 +240,10 @@ export class FicheUnique {
   /**
    * Défait une fusion : les deux fiches redeviennent séparées, avec chacune son historique.
    * Un accord créé pendant la fusion est fermé, jamais effacé [R03, R17] : on ne sait plus laquelle des deux personnes
-   * l'a donné. Fusion et accords changent dans un seul lot. Rappeler une fusion déjà défaite écrit la ligne du journal
-   * si une coupure l'avait empêchée, sans rien fermer de plus.
+   * l'a donné. Une exclusion ou un arrêt noté pendant la fusion est recopié sur chaque fiche [R02, R04] : pour la même
+   * raison, il vaut pour toutes, avec sa date et sa levée s'il en a une, pour qu'un accord plus ancien ne compte pas de
+   * nouveau. Une exclusion d'avant la fusion ne bouge pas. Fusion, accords et exclusions changent dans un seul lot.
+   * Rappeler une fusion déjà défaite écrit la ligne du journal si une coupure l'avait empêchée, sans rien changer de plus.
    */
   async undoMerge(mergeId: string, trace: UndoMergeTrace): Promise<string> {
     const merge = await this.db.first<PersonMerge>('SELECT * FROM person_merges WHERE id = ?', [mergeId]);
@@ -259,6 +261,19 @@ export class FicheUnique {
                   AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)`,
           params: [at, ...ids, merge.merged_at, mergeId, at],
         },
+        // Une instruction par fiche, en SQL : un arrêt rangé pendant ce geste n'échappe pas à la copie. Les colonnes de la
+        // ligne servent de clé : l'original et ses copies ne font qu'un, et rien n'est doublé.
+        ...ids.map((target) => ({
+          sql: `INSERT INTO exclusions (id, network_id, agent_id, person_id, reason, channel, noted_at, lifted_at, created_at)
+                SELECT lower(hex(randomblob(16))), e.network_id, MIN(e.agent_id), ?, e.reason, e.channel, e.noted_at, e.lifted_at, ?
+                FROM exclusions e
+                WHERE e.person_id IN (${placeholders(ids.length)}) AND e.person_id <> ? AND e.created_at >= ?
+                  AND NOT EXISTS (SELECT 1 FROM exclusions t WHERE t.person_id = ? AND t.reason = e.reason AND t.channel IS e.channel
+                                    AND t.noted_at = e.noted_at AND t.lifted_at IS e.lifted_at)
+                  AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)
+                GROUP BY e.network_id, e.reason, e.channel, e.noted_at, e.lifted_at`,
+          params: [target, at, ...ids, target, merge.merged_at, target, mergeId, at],
+        })),
       ]);
       if (undo?.changes === 1) undoneAt = at;
       else {
@@ -275,9 +290,18 @@ export class FicheUnique {
         `SELECT id FROM consents WHERE person_id IN (${placeholders(ids.length)}) AND created_at >= ? AND withdrawn_at = ? ORDER BY id`,
         [...ids, merge.merged_at, undoneAt],
       );
+      const copied = await this.db.all<{ id: string }>(
+        `SELECT id FROM exclusions WHERE person_id IN (${placeholders(ids.length)}) AND created_at = ? ORDER BY id`,
+        [...ids, undoneAt],
+      );
       await appendEvent(
         trace.journal,
-        { type: 'fiche.fusion_defaite', actor: trace.actor, subject, data: { rule: 'R03', merge: mergeId, consents: closed.map((c) => c.id) } },
+        {
+          type: 'fiche.fusion_defaite',
+          actor: trace.actor,
+          subject,
+          data: { rule: 'R03', merge: mergeId, consents: closed.map((c) => c.id), exclusions: copied.map((c) => c.id) },
+        },
         this.now,
       );
     }
