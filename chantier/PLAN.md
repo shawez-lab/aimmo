@@ -918,7 +918,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : rien.
 
 ### D11 · Lire et déposer depuis le téléphone : documents du bien et scan du mandat
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02), lecture prudente : sans stockage `PIECES`, rien ne se signe, `signature-papier` répond `depot_ferme` ; une reprise garde son scan d'origine ; un scan ne prouve qu'une signature (migration `1560`) ; le mandant possible est la fiche liée au bien comme propriétaire, rendue seulement à qui la voit en entier. Relecture forte : 4 P1 corrigés, le 5e devient D14 ; Codex à sa limite, fusion sans lui (#282).
 - Trouvé le 2026-11-02 (après N13) : aucun écran n'appelle `/v1/documents`, `/v1/mandats` ni `/v1/signatures` ; aucune route ne liste les documents d'un bien, un document généré se perd donc une fois l'écran quitté ; `signature-papier` attend un `scanRef` que personne ne saurait saisir.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D04, N12
 - Cahier : M06 ; R16, R39, R40, R41.
