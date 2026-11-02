@@ -545,12 +545,22 @@ Décidé, lecture prudente : l'IA classe et extrait derrière une interface, ave
 - Attend : rien.
 
 ### Q08 · Corriger le classement d'un contact depuis la fiche
-- Statut : en cours
+- Statut : fait (2026-11-02)
+- Décidé (2026-11-02) : la fiche dit la demande, jamais la personne (`buyer` se dit « Chercher un bien », car un candidat à la location y est classé avec la suite M15) ; changer la catégorie recale la suite comme les règles (`routeOf`), `buyer` et `curious` restent au choix ; la correction ne change ni le projet ni les rappels, et l'écran le dit. Relecture forte : 2 P1 corrigés ; Codex à sa limite, fusion sans lui (#279).
 - Trouvé le 2026-11-02 par la voie 2 : `POST /v1/qualifications/<id>/correction` n'a aucun écran, et `FicheAgent` ne rend ni le classement ni son identifiant : les corrections qui doivent rejoindre la mesure [Q05] ne peuvent pas être faites. Laissée à la voie 1 : `FicheAgent` et la fiche sont du socle.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : Q05
 - Cahier : M03 ; R16, R201.
 - Objectif : la fiche montre le dernier classement du contact et sa dernière correction ; l'agent le corrige dans une liste fermée, sans identifiant à saisir.
 - Critères : seul celui qui voit la fiche entière corrige [R16] ; la qualification d'origine reste [R17] ; la correction rejoint les cas de mesure (test) ; aucune note de l'IA ni score montré comme un jugement sur la personne ; script chargé à part, budget tenu [R201].
+- Attend : rien.
+
+### Q09 · Les corrections des agents dans le banc de mesure
+- Statut : à faire
+- Trouvé le 2026-11-02 par la relecture forte de Q08 : `correctedCases` n'est appelé que par des tests, et le banc de `docs/MESURE.md` lit `AIMMO_CAS` hors du dépôt. Les corrections sont gardées, mais rien ne les fait entrer dans une mesure.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : Q08
+- Cahier : M03 ; Feuille de route, décembre 2026 ; R15, R16.
+- Objectif : la direction obtient les cas corrigés au format du banc, le texte reçu sans ses coordonnées et la dernière correction, pour relancer la mesure.
+- Critères : réservé à la direction [R16] ; aucun nom, numéro, mail ni adresse dans la sortie [R15] (test) ; la sortie passe telle quelle dans le lecteur de cas du banc (test).
 - Attend : rien.
 
 ### Q07 · Critères niés et montants qui n'en sont pas
