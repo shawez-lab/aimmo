@@ -55,7 +55,9 @@ export class DepotsDossier {
     const gate = await gateSaleFile({ db: this.db, acces: this.acces, journal: this.journal, now: this.now }, viewer, fileId, true, 'sale_file_pieces');
     if (!gate.ok) return gate;
     // Un dossier clos par l'acte ne reçoit plus de pièce : aucun fichier rangé qui ne serait rattaché à rien.
-    if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
+    // La preuve de l'acte reste admise tant que la commission manque : une clôture coupée doit pouvoir se reprendre.
+    const closedBy = input.kind === 'preuve' ? 'sale_commissions' : 'sale_file_closings';
+    if (await this.db.first(`SELECT 1 FROM ${closedBy} WHERE file_id = ?`, [fileId])) return { ok: false, rule: null, code: 'closed' };
     const actor = actorOf(viewer);
     const subject = `sale_file:${fileId}`;
     const bad = async (code: string): Promise<FileDepositResult> => {

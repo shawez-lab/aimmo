@@ -19,7 +19,7 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import type { DocumentFacts } from '../documents/modeles.ts';
 import { localTime } from '../envoi/horaires.ts';
@@ -210,18 +210,21 @@ export class ActeVente {
     const decision = { mandateId: fee.mandateId };
     const facts = { feeCharge: fee.feeCharge };
     const iso = this.now().toISOString();
-    // Des écritures reprenables : après une coupure, un nouvel essai complète ce qui manque, sans rien doubler. La
-    // clôture déjà rangée garde son jour ; la commission en dépend.
-    await this.db.run("INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, ?, ?, 'a_demarrer', ?, ?) ON CONFLICT (file_id) DO NOTHING", [fileId, g.file.network_id, signedOn, input.proofRef, iso, actorOf(viewer)]);
-    const closed = (await this.db.first<{ signed_on: string }>('SELECT signed_on FROM sale_file_closings WHERE file_id = ?', [fileId]))!;
-    const { changes } = await this.db.run(
-      "INSERT INTO sale_commissions (file_id, network_id, mandate_id, agent_id, fee_eur, fee_charge, due_on, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'due', ?) ON CONFLICT (file_id) DO NOTHING",
-      [fileId, g.file.network_id, decision.mandateId, property.agent_id, fee.feeEur, facts.feeCharge, closed.signed_on, iso],
-    );
+    // Tout ou rien (N13) : clôture, commission et bien vendu ensemble, car l'écran ne sait reprendre qu'un dossier
+    // entier. Une clôture déjà coupée par le passé garde son jour ; la commission en dépend, et un nouvel essai la complète.
+    const earlier = await this.db.first<{ signed_on: string }>('SELECT signed_on FROM sale_file_closings WHERE file_id = ?', [fileId]);
+    const [, commission] = await runBatch(this.db, [
+      { sql: "INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, ?, ?, 'a_demarrer', ?, ?) ON CONFLICT (file_id) DO NOTHING", params: [fileId, g.file.network_id, signedOn, input.proofRef, iso, actorOf(viewer)] },
+      {
+        sql: "INSERT INTO sale_commissions (file_id, network_id, mandate_id, agent_id, fee_eur, fee_charge, due_on, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'due', ?) ON CONFLICT (file_id) DO NOTHING",
+        params: [fileId, g.file.network_id, decision.mandateId, property.agent_id, fee.feeEur, facts.feeCharge, earlier?.signed_on ?? signedOn, iso],
+      },
+      // Le bien est vendu : la publication le montre ainsi au passage suivant (M07).
+      { sql: "UPDATE properties SET status = 'sold', updated_at = ? WHERE id = ? AND status = 'under_offer'", params: [iso, g.file.property_id] },
+    ]);
+    const changes = commission!.changes;
     if (changes !== 1) return { ok: false, rule: null, code: 'already_closed' };
     await appendEvent(this.journal, { type: 'dossier.acte_signe', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R63', mandate: `mandate:${decision.mandateId}` } }, this.now);
-    // Le bien est vendu : la publication le montre ainsi au passage suivant (M07).
-    await this.db.run("UPDATE properties SET status = 'sold', updated_at = ? WHERE id = ? AND status = 'under_offer'", [iso, g.file.property_id]);
     const value = await this.read(fileId);
     if (!value) throw new Error('Clôture incomplète du dossier de vente.');
     return { ok: true, value };

@@ -105,4 +105,14 @@ describeWithSqlite('N12 · dépôt d’une pièce du dossier', () => {
     expect((await t.run(t.agent, 'POST', `/dossiers/${t.fileId}/dates`, json({ kind: 'acte_prevu', day: '2027-04-01', proofRef: 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf' }))).body.code).toBe('closed');
     expect((await t.run(t.agent, 'POST', `/dossiers/${t.fileId}/financement`, json({ step: 'refus', day: '2027-03-01', declaredBy: 'acquereur' }))).body.code).toBe('closed');
   });
+
+  it('[R63] N13 : une clôture coupée d’autrefois, sans commission, reçoit encore la preuve qui permet de la reprendre', async () => {
+    const t = await setup();
+    const closing = 'INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, ?, ?, \'a_demarrer\', ?, ?)';
+    await t.db.run(closing, [t.fileId, t.network.id, '2027-03-01', 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf', '2027-03-01T12:00:00.000Z', 'test']);
+    expect((await t.run(t.agent, 'GET', `/dossiers/${t.fileId}/acte`)).body.data).toBeNull();
+    const up = await t.run(t.agent, 'POST', `/dossiers/${t.fileId}/preuves`, { headers: { 'content-type': 'application/pdf', 'x-aimmo-sha256': sha(PDF) }, body: PDF });
+    expect(up.status).toBe(200);
+    expect((await t.put(t.agent, PDF)).body.code).toBe('closed');
+  });
 });
