@@ -4,8 +4,10 @@
  * Chaque automatisation est en ombre (le site décide seul), à 10 % (le socle décide pour un envoi sur dix, tiré une fois
  * pour toutes d'après l'envoi), ou partout. Le socle n'envoie jamais rien lui-même : il dit au site si sa décision vaut.
  *
- * - Ombre vers 10 % : un geste de la direction, jamais avant 7 jours sans incident et assez de demandes.
- * - 10 % vers partout : de lui-même, après 7 jours sans incident et assez de demandes.
+ * - Ombre vers 10 % : un geste de la direction, jamais avant 7 jours sans incident et assez de demandes, et seulement
+ *   une fois le passage ouvert (`open`) : fermé par défaut, tant que le site ne lit pas la réponse et que la mention R06
+ *   n'est pas alignée (B04).
+ * - 10 % vers partout : de lui-même, après 7 jours sans incident et assez de décisions réellement prises par le socle.
  * - Retour en ombre : de lui-même, au premier écart non expliqué ou à la première panne ; le compte des 7 jours repart.
  *
  * Le journal ne porte que l'automatisation, les paliers et la nature de l'incident [R13].
@@ -21,8 +23,10 @@ export const ROLLOUT_INCIDENTS: readonly RolloutIncident[] = ['unexplained_gap',
 
 /** Durée de chaque palier. */
 export const ROLLOUT_STAGE_DAYS = 7;
-/** Sous ce nombre de demandes comptées, un palier ne prouve rien : on y reste. Réglage, décidé le 2026-11-02. */
+/** Sous ce nombre de demandes comptées, l'ombre ne prouve rien : on y reste. Réglage, décidé le 2026-11-02. */
 export const ROLLOUT_MIN_REQUESTS = 20;
+/** À 10 %, seuls les envois où le socle décide comptent ; sous ce nombre, on y reste. Réglage, décidé le 2026-11-02. */
+export const ROLLOUT_MIN_DECISIONS = 5;
 const TEN_PERCENT = 10;
 const DAY_MS = 86_400_000;
 
@@ -67,13 +71,15 @@ export async function rolloutBucket(automation: string, ref: string): Promise<nu
 
 export class PaliersBascule {
   private readonly now: () => Date;
+  private readonly open: boolean;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
-    options: { now?: () => Date } = {},
+    options: { now?: () => Date; open?: boolean } = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.open = options.open ?? false;
   }
 
   /** Le palier en vigueur pour cet envoi. La première demande ouvre l'ombre ; un palier de 10 % arrivé à terme passe partout. */
@@ -109,6 +115,7 @@ export class PaliersBascule {
   async advance(viewer: Viewer, automation: string): Promise<AdvanceResult> {
     const denied = await this.denied(viewer, 'bascule.avancer', ['direction']);
     if (denied) return { ok: false, rule: 'R16', code: denied };
+    if (!this.open) return { ok: false, rule: 'R26', code: 'not_open' };
     const row = await this.ensure(viewer.networkId, automation);
     if (row.stage !== 'shadow') return { ok: false, rule: 'R26', code: 'not_in_shadow' };
     if (!this.isDue(row)) return { ok: false, rule: 'R26', code: this.elapsed(row) ? 'not_enough_requests' : 'too_early' };
@@ -160,7 +167,7 @@ export class PaliersBascule {
   }
 
   private isDue(row: RolloutRow): boolean {
-    return this.elapsed(row) && row.requests >= ROLLOUT_MIN_REQUESTS;
+    return this.elapsed(row) && row.requests >= (row.stage === 'ten_percent' ? ROLLOUT_MIN_DECISIONS : ROLLOUT_MIN_REQUESTS);
   }
 
   private async promoteIfDue(networkId: string, row: RolloutRow): Promise<RolloutRow> {

@@ -110,7 +110,8 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Reste : la première clé d'API (H14) quand un appelant viendra ; écriture du message et du journal en un seul lot D1 (C01, C02) ; une base `aimmo` déjà existante n'est pas contrôlée sur sa juridiction.
 
 ### S10 · Reprise des contacts existants
-- Statut : fait (2026-11-01) : I04 et I05 faits, le vrai passage attend H15
+- Statut : fait (2026-11-01)
+- Reste : I04 et I05 faits, le vrai passage attend H15.
 - Qui : Claude · Relecture : forte · Dépend de : S02, S09
 - Cahier : Feuille de route, novembre 2026 : import et fusion des contacts existants, exclusions et accords repris.
 - Objectif : à découper en tâches d'après `docs/EXISTANT.md`, au début de la tâche : sources, ordre de reprise, contrôle sur 50 fiches.
@@ -191,6 +192,14 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Attend : H04, H14, et la fusion par Shawez de la proposition sur `shawez-immo`.
 - À régler ici : en essai, le contrôle range le message du site comme sortant sur la fiche, avec la mention de l'assistant [R06] ; en ombre, il faut qu'un message que le site envoie lui-même compte une seule fois dans la pression commerciale [R11] et que la mention soit celle que le site met vraiment.
 
+### B04a · Paliers de la bascule côté socle, fermés
+- Statut : en cours
+- Qui : Claude · Relecture : forte · Dépend de : B01, B02
+- Cahier : Feuille de route, novembre 2026.
+- Objectif : détaché de B04 le 2026-11-02 pour ne pas arrêter le chantier : la partie du socle, qui n'attend personne. Chaque automatisation a son palier (ombre, 10 %, partout), son tirage fixe par envoi et son retour arrière automatique, sans rien changer aux envois.
+- Critères : tirage fixe par envoi ; ombre vers 10 % par geste de la direction seule, après 7 jours sans incident et 20 demandes ; 10 % vers partout de lui-même, après 7 jours sans incident et 5 décisions réellement prises par le socle ; retour en ombre au premier écart non expliqué ou à la première panne ; le socle n'envoie rien à aucun palier [R26] ; rien de personnel au journal [R13].
+- Décidé (2026-11-02), lecture prudente : le passage à 10 % reste fermé tant que la variable `AUTOMATION_ROLLOUT_OPEN` n'est pas branchée (B04) : la mention R06 n'est pas alignée et le site ne lit pas encore `decides`. Une adresse inconnue du socle : le site décide seul, le socle ne sachant rien d'elle ; adresse portée par plusieurs fiches : le refus du socle vaut, selon le tirage. Les seuils de 20 demandes et de 5 décisions sont des réglages, jusqu'à ce que Shawez en décide autrement.
+
 ### B04 · 10 % puis partout, avec retour arrière automatique
 - Statut : à faire
 - Qui : Claude · Relecture : forte · Dépend de : B03
@@ -198,6 +207,7 @@ D'après la Feuille de route, novembre et décembre 2026. Condition pour passer 
 - Objectif : le socle décide pour 10 % des envois tirés au hasard pendant 7 jours, puis pour tous si les écarts tiennent ; tout écart non expliqué ou toute panne ramène automatiquement au mode ombre ; `taches.yml` est retiré du site.
 - Critères : le tirage est fixe par envoi ; le retour arrière est testé ; après bascule, plus aucune tâche planifiée dans GitHub Actions du site pour ces envois.
 - Attend : H05, B03 en ombre depuis 7 jours sans écart non expliqué.
+- Reste après B04a : aligner la mention R06 sur le texte réel du site, ouvrir le passage (`AUTOMATION_ROLLOUT_OPEN`) ; sur le site : lire `decides`, signaler écarts et pannes par `POST /v1/automatisations/incident` et rejouer ce signalement si le socle ne répond pas (une panne de sa base ne peut pas le ramener en ombre seule) ; retirer `taches.yml`.
 
 ## Phase 2 : la preuve à Dijon
 

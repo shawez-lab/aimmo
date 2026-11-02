@@ -112,6 +112,8 @@ export interface ApiConfig {
   mode: string | undefined;
   /** Secret `INTAKE_KEYS` : clés qui ne peuvent que déposer un formulaire du site (voir auth.ts). */
   intakeKeys?: string | undefined;
+  /** Le passage des automatisations du site à 10 % : fermé tant que B04 ne l'a pas ouvert [R26]. Le Worker ne le branche pas encore. */
+  automationRolloutOpen?: boolean;
   /** Notifications de Meta (C07) : secrets et variables `META_*`, voir meta.ts. */
   meta?: Omit<MetaConfig, 'db' | 'now'>;
   /** Limites d'appels de l'assistant du site (C08) ; absentes : les réglages par défaut. */
@@ -415,19 +417,6 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer) => {
       const r = await new PaliersBascule(s.db, s.journal, { now: s.now }).list(viewer, AUTOMATION_NAMES);
       return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : refusal({ rule: r.rule, code: r.code });
-    },
-  },
-  {
-    method: 'POST',
-    pattern: /^\/automatisations\/paliers\/([a-z_]{1,32})\/avancer$/,
-    name: 'automatisations.paliers.avancer',
-    // Le passage de l'ombre à 10 % : un geste de la direction seule, refusé si l'ombre n'a pas tenu [R16, R26].
-    handle: async (s, viewer, params) => {
-      const automation = params[0]!;
-      if (!(AUTOMATION_NAMES as readonly string[]).includes(automation)) return failure(404, 'not_found', 'Automatisation inconnue.');
-      const r = await new PaliersBascule(s.db, s.journal, { now: s.now }).advance(viewer, automation);
-      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { stage: r.stage } });
-      return r.rule === 'R16' ? refusal({ rule: 'R16', code: r.code }) : json(409, { ok: false, rule: r.rule, code: r.code });
     },
   },
   {
@@ -996,6 +985,24 @@ const NO_VAULT_STORAGE: conformite.VaultStorage = { put: () => Promise.reject(ne
  * Les routes de M15 (W10) : pièces et annexes lues dans le stockage des pièces (`PIECES`), seule leur existence ;
  * l'identité vérifiée lue au coffre de conformité, seul son état [R104]. Sans stockage, elles sont fermées.
  */
+/** Le passage de l'ombre à 10 % : un geste de la direction seule, refusé si l'ombre n'a pas tenu ou si le passage est fermé [R16, R26]. */
+function rolloutRoutes(open: boolean): RouteDef[] {
+  return [
+    {
+      method: 'POST',
+      pattern: /^\/automatisations\/paliers\/([a-z_]{1,32})\/avancer$/,
+      name: 'automatisations.paliers.avancer',
+      handle: async (s, viewer, params) => {
+        const automation = params[0]!;
+        if (!(AUTOMATION_NAMES as readonly string[]).includes(automation)) return failure(404, 'not_found', 'Automatisation inconnue.');
+        const r = await new PaliersBascule(s.db, s.journal, { now: s.now, open }).advance(viewer, automation);
+        if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { stage: r.stage } });
+        return r.rule === 'R16' ? refusal({ rule: 'R16', code: r.code }) : json(409, { ok: false, rule: r.rule, code: r.code });
+      },
+    },
+  ];
+}
+
 function m15Routes(pieces: PieceStore | null, options: Pick<LocationServices, 'adWriter' | 'inventoryFormatter'>): RouteDef[] {
   return locationRoutes().map((r: LocationRoute) => ({
     method: r.method,
@@ -1485,6 +1492,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...apresVenteRoutes(),
     ...pilotageRoutes(),
     ...reseauRoutes(config.reseau ?? {}),
+    ...rolloutRoutes(config.automationRolloutOpen === true),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...m12Routes(config.coffre ?? null),
     ...m18Routes(config.partenaires ?? null),

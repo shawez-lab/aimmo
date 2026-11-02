@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { FicheClient, PaliersBascule, ROLLOUT_MIN_REQUESTS, SqlJournalStore, applyMigrations, rolloutBucket, verifyChain, type SqlDatabase } from '@aimmo/core';
+import { FicheClient, PaliersBascule, ROLLOUT_MIN_DECISIONS, ROLLOUT_MIN_REQUESTS, SqlJournalStore, applyMigrations, rolloutBucket, verifyChain, type SqlDatabase } from '@aimmo/core';
 import { handleRequest, sha256Hex } from '../src/index.ts';
 import { fromD1 } from '../src/d1.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
@@ -27,7 +27,7 @@ interface Answer {
   data?: { status?: string; rule?: string | null; stage?: string; decides?: boolean } & Record<string, unknown>;
 }
 
-async function world() {
+async function world(options: { open?: boolean } = {}) {
   const db: SqlDatabase = fromD1(fakeD1(openMemoryDatabase()));
   await applyMigrations(db, loadMigrations());
   const fiches = new FicheClient(db);
@@ -42,6 +42,7 @@ async function world() {
     db,
     mode: 'essai',
     now,
+    automationRolloutOpen: options.open ?? true,
     intakeKeys: JSON.stringify([{ sha256: await sha256Hex(KEY_AUTO), networkId: network.id, source: 'site_auto' }]),
     apiKeys: JSON.stringify([
       { sha256: await sha256Hex(KEY_DIRECTION), role: 'direction', userId: 'direction-test', networkId: network.id },
@@ -60,9 +61,10 @@ async function world() {
     );
     return { status: res.status, body: (await res.json()) as Answer };
   };
-  /** Une demande permise : chaque référence est un nouvel envoi. */
+  /** Une demande permise : chaque référence est un nouvel envoi, avec son texte à lui (sans chiffre de plus [R10]). */
   let seq = 0;
-  const send = (ref = `visite-${++seq}`, over: Record<string, unknown> = {}) => http('/envoi', KEY_AUTO, { automation: 'rappel_visite', email: EMAIL, ref, text: TEXT, figures: [14], ...over });
+  const textOf = (ref: string): string => `${TEXT} Dossier ${ref.replace(/[0-9]/g, (d) => 'abcdefghij'[Number(d)]!).replace(/[-_]/g, '')}.`;
+  const send = (ref = `visite-${++seq}`, over: Record<string, unknown> = {}) => http('/envoi', KEY_AUTO, { automation: 'rappel_visite', email: EMAIL, ref, text: textOf(ref), figures: [14], ...over });
   const advance = (key = KEY_DIRECTION, automation = 'rappel_visite') => http(`/paliers/${automation}/avancer`, key, {});
   const incident = (body: Record<string, unknown>, key = KEY_AUTO) => http('/incident', key, body);
   const paliers = new PaliersBascule(db, new SqlJournalStore(db), { now });
@@ -80,6 +82,10 @@ async function world() {
   return {
     db,
     network,
+    addSecondPerson: async () => {
+      const other = await fiches.createPerson({ networkId: network.id, agentId: agent.id, firstName: 'Léa', lastName: 'Double' });
+      await fiches.addIdentifier({ networkId: network.id, personId: other.id, kind: 'email', value: EMAIL });
+    },
     config,
     paliers,
     send,
@@ -88,6 +94,7 @@ async function world() {
     http,
     count,
     toTenPercent,
+    now,
     journal: new SqlJournalStore(db),
     outbox: async () => (await db.all<{ message_id: string }>('SELECT message_id FROM trial_outbox')).length,
     forward: (days: number) => {
@@ -145,6 +152,19 @@ describeWithSqlite('B04a · paliers de la bascule des automatisations', () => {
     expect(r.body).toMatchObject({ ok: false, rule: 'R26', code: 'not_enough_requests' });
   });
 
+  it('[R26] tant que le passage n’est pas ouvert, personne ne quitte l’ombre, et c’est l’état par défaut', async () => {
+    const w = await world({ open: false });
+    await w.count(ROLLOUT_MIN_REQUESTS);
+    w.forward(30);
+    const r = await w.advance();
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ ok: false, rule: 'R26', code: 'not_open' });
+    expect((await w.send(await refIn(true))).body.data).toMatchObject({ stage: 'shadow', decides: false });
+    const { automationRolloutOpen: _open, ...closed } = w.config;
+    const res = await handleRequest(new Request(`${BASE}/paliers/rappel_visite/avancer`, { method: 'POST', headers: { authorization: `Bearer ${KEY_DIRECTION}` } }), closed);
+    expect(((await res.json()) as Answer).code).toBe('not_open');
+  });
+
   it('[R16] seule la direction fait avancer ; le site n’a pas cette route', async () => {
     const w = await world();
     await w.count(ROLLOUT_MIN_REQUESTS);
@@ -173,7 +193,7 @@ describeWithSqlite('B04a · paliers de la bascule des automatisations', () => {
     const w = await world();
     await w.toTenPercent();
     w.forward(6);
-    await w.count(ROLLOUT_MIN_REQUESTS);
+    await w.count(ROLLOUT_MIN_DECISIONS);
     expect((await w.send(await refIn(false))).body.data).toMatchObject({ stage: 'ten_percent', decides: false });
     w.forward(1);
     const r = await w.send(await refIn(false));
@@ -191,6 +211,31 @@ describeWithSqlite('B04a · paliers de la bascule des automatisations', () => {
     await w.toTenPercent();
     w.forward(20);
     expect((await w.send(await refIn(false))).body.data).toMatchObject({ stage: 'ten_percent' });
+  });
+
+  it('[R26] à 10 %, des envois où le socle ne décide pas, ou sans fiche, ne font pas monter le palier', async () => {
+    const w = await world();
+    await w.toTenPercent();
+    for (let i = 0; i < ROLLOUT_MIN_REQUESTS; i++) await w.send('visite-sans-fiche', { email: 'inconnue@example.test' });
+    const notDrawn: string[] = [];
+    for (let i = 0; notDrawn.length < ROLLOUT_MIN_DECISIONS; i++) if ((await rolloutBucket('rappel_visite', `hors-${i}`)) >= 10) notDrawn.push(`hors-${i}`);
+    for (const ref of notDrawn) await w.send(ref);
+    const list = await w.http('/paliers', KEY_DIRECTION);
+    expect((list.body.data as unknown as { requests: number; automation: string }[]).find((p) => p.automation === 'rappel_visite')!.requests).toBe(0);
+    w.forward(7);
+    expect((await w.send(await refIn(false))).body.data).toMatchObject({ stage: 'ten_percent' });
+    // Un envoi tiré, lui, compte.
+    await w.send(await refIn(true));
+    expect(((await w.http('/paliers', KEY_DIRECTION)).body.data as unknown as { requests: number }[])[0]!.requests).toBe(1);
+  });
+
+  it('[R02] [R04] une adresse portée par plusieurs fiches : le refus du socle vaut selon le palier', async () => {
+    const w = await world();
+    await w.toTenPercent();
+    await w.addSecondPerson();
+    const refused = await w.send(await refIn(true));
+    expect(refused.body.data).toMatchObject({ status: 'refused', code: 'ambiguous_person', decides: true });
+    expect((await w.send(await refIn(false))).body.data).toMatchObject({ code: 'ambiguous_person', decides: false });
   });
 
   it('[R05] une demande refaite pour le même envoi ne compte pas deux fois', async () => {
@@ -218,7 +263,7 @@ describeWithSqlite('B04a · paliers de la bascule des automatisations', () => {
   it('[R26] le retour arrière vaut depuis partout, et une panne signalée par le site aussi', async () => {
     const w = await world();
     await w.toTenPercent();
-    await w.count(ROLLOUT_MIN_REQUESTS);
+    await w.count(ROLLOUT_MIN_DECISIONS);
     w.forward(7);
     expect((await w.send(await refIn(false))).body.data).toMatchObject({ stage: 'everywhere' });
     expect((await w.incident({ automation: 'rappel_visite', kind: 'failure' })).body.data).toMatchObject({ stage: 'shadow' });
@@ -241,20 +286,59 @@ describeWithSqlite('B04a · paliers de la bascule des automatisations', () => {
     await w.db.exec('ALTER TABLE trial_outbox RENAME TO trial_outbox_hors_service');
     const ref = await refIn(true);
     const r = await w.send(ref);
-    expect(r.status === 500 || r.body.data?.status === 'failed').toBe(true);
-    if (r.status === 200) expect(r.body.data).toMatchObject({ stage: 'shadow', decides: false });
+    expect(r.body.data).toMatchObject({ status: 'failed', stage: 'shadow', decides: false });
     await w.db.exec('ALTER TABLE trial_outbox_hors_service RENAME TO trial_outbox');
     expect((await w.send(`${ref}-apres`)).body.data?.stage).toBe('shadow');
     expect((await w.journal.all()).filter((e) => e.type === 'bascule.retour_arriere')).toHaveLength(1);
   });
 
-  it('[R26] un retour en ombre simultané l’emporte sur un passage à partout', async () => {
+  it('[R26] une erreur levée pendant une demande : réponse 500, trace au journal, retour en ombre', async () => {
     const w = await world();
     await w.toTenPercent();
-    await w.count(ROLLOUT_MIN_REQUESTS);
+    await w.db.exec('ALTER TABLE person_identifiers RENAME TO person_identifiers_hors_service');
+    const r = await w.send(await refIn(true));
+    expect(r.status).toBe(500);
+    expect(r.body).toMatchObject({ ok: false, code: 'internal_error' });
+    await w.db.exec('ALTER TABLE person_identifiers_hors_service RENAME TO person_identifiers');
+    const entries = await w.journal.all();
+    expect(entries.filter((e) => e.type === 'api.erreur').at(-1)!.data).toMatchObject({ route: 'automatisations.envoi' });
+    expect(entries.filter((e) => e.type === 'bascule.retour_arriere').at(-1)!.data).toMatchObject({ from: 'ten_percent', to: 'shadow', kind: 'failure' });
+  });
+
+  it('[R26] la base tombée : le retour arrière échoue sans masquer la réponse, et cet échec est tracé si possible', async () => {
+    const w = await world();
+    await w.toTenPercent();
+    await w.db.exec('ALTER TABLE automation_rollouts RENAME TO automation_rollouts_hors_service');
+    const r = await w.send(await refIn(true));
+    expect(r.status).toBe(500);
+    await w.db.exec('ALTER TABLE automation_rollouts_hors_service RENAME TO automation_rollouts');
+    const errors = (await w.journal.all()).filter((e) => e.type === 'api.erreur').map((e) => (e.data as { route: string }).route);
+    expect(errors).toEqual(['automatisations.envoi', 'automatisations.retour_arriere']);
+  });
+
+  it('[R26] un retour en ombre glissé entre la lecture du palier et le passage à partout l’emporte', async () => {
+    const w = await world();
+    await w.toTenPercent();
+    await w.count(ROLLOUT_MIN_DECISIONS);
     w.forward(7);
-    await w.paliers.incident(w.network.id, 'rappel_visite', 'failure', null, 'system:bascule');
-    expect((await w.paliers.decide(w.network.id, 'rappel_visite', 'a')).stage).toBe('shadow');
+    // Une base qui laisse passer l'incident juste après que le palier a été lu : la ligne lue est alors périmée.
+    let armed = true;
+    const racing: SqlDatabase = {
+      exec: (sql) => w.db.exec(sql),
+      run: (sql, params) => w.db.run(sql, params),
+      all: (sql, params) => w.db.all(sql, params),
+      first: async <T>(sql: string, params?: readonly (string | number | null)[]): Promise<T | null> => {
+        const row = await w.db.first<T>(sql, params);
+        if (armed && sql.includes('automation_rollouts')) {
+          armed = false;
+          await w.paliers.incident(w.network.id, 'rappel_visite', 'failure', null, 'system:bascule');
+        }
+        return row;
+      },
+    };
+    const palier = await new PaliersBascule(racing, w.journal, { now: w.now }).decide(w.network.id, 'rappel_visite', 'a');
+    expect(palier).toMatchObject({ stage: 'shadow', decides: false });
+    expect((await w.journal.all()).filter((e) => e.type === 'bascule.palier').map((e) => (e.data as { to: string }).to)).toEqual(['ten_percent']);
   });
 
   it('[R26] sans fiche unique, le socle ne décide pas à la place du site', async () => {
@@ -296,7 +380,7 @@ describeWithSqlite('B04a · paliers de la bascule des automatisations', () => {
   it('[R26] à aucun palier le socle ne fait partir un message : tout reste dans la boîte du mode essai', async () => {
     const w = await world();
     await w.toTenPercent();
-    await w.count(ROLLOUT_MIN_REQUESTS);
+    await w.count(ROLLOUT_MIN_DECISIONS);
     w.forward(7);
     const r = await w.send(await refIn(true));
     expect(r.body).toMatchObject({ sent: false, data: { stage: 'everywhere', decides: true, status: 'would_send' } });

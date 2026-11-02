@@ -105,10 +105,11 @@ export class Automatisations {
         reason: code === 'unknown_person' ? 'Aucune fiche pour cette adresse.' : 'Plusieurs fiches pour cette adresse : à réunir avant tout envoi.',
         sent: false,
         stage: palier.stage,
-        // Sans fiche, le socle ne sait rien de la personne : il ne décide pas à la place du site.
-        decides: false,
+        // Sans fiche, le socle ne sait rien de la personne : il ne décide pas à la place du site. Plusieurs fiches non
+        // réunies : l'une peut être exclue ou arrêtée, le refus vaut donc selon le palier. Rien de cela n'est compté :
+        // un palier se prouve sur de vraies décisions [R26].
+        decides: code === 'unknown_person' ? false : palier.decides,
       };
-      await this.paliers.countRequest(req.networkId, req.automation, palier.stageSince);
       await this.write(req, null, decision);
       return decision;
     }
@@ -127,8 +128,8 @@ export class Automatisations {
     // Une panne du contrôle ramène l'automatisation en ombre, avant de répondre [R26].
     const failed = result.status === 'failed';
     if (failed) await this.paliers.incident(req.networkId, req.automation, 'failure', null, 'system:bascule');
-    // Une demande refaite pour le même envoi ne compte pas deux fois dans les chiffres du palier.
-    else if (result.rule !== 'R05') await this.paliers.countRequest(req.networkId, req.automation, palier.stageSince);
+    // Une demande refaite pour le même envoi ne compte pas deux fois ; à 10 %, seuls comptent les envois où le socle décide.
+    else if (result.rule !== 'R05' && (palier.stage !== 'ten_percent' || palier.decides)) await this.paliers.countRequest(req.networkId, req.automation, palier.stageSince);
     const decision: AutomationDecision = {
       status: result.status === 'sent' ? 'would_send' : result.status,
       rule: result.rule,
