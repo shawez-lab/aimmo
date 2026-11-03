@@ -576,3 +576,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 18:20 · IN03 · taux et délais du parcours (#346) ; relecture forte 1 P0 et 5 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN04
 - 2026-11-03 18:36 · RS01 · liste publique des biens, chaque bien revérifié à la lecture, vendu ou sans mandat il sort aussitôt, de la liste comme de sa page (#345) ; relecture forte 5 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : RS02
 - 2026-11-03 18:36 · voie 1 · fin de séance : X28, CE23 et RS01 fusionnées, module « Site du réseau » découpé ; verrou libéré, relance · prochaine : RS02
+- 2026-11-03 18:50 · IN04 · agents actifs, restés, contacts par zone sans le chiffre d'un autre agent (#347) ; relecture forte 4 P0 et 2 P1 corrigés ; une vérification rouge (règle en double après rebase), corrigée ; Codex non attendu (H03) · prochaine : IN06
+- 2026-11-03 18:50 · IN05 · la preuve à l'écran de la direction, avec le sceau (#348) ; relecture forte 4 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN06

@@ -3454,7 +3454,8 @@ Décidé, lecture prudente : chaque chiffre vient de la base, jamais d'une saisi
 - Attend : rien.
 
 ### IN04 · Les indicateurs du réseau : agents actifs, restés, contacts par zone
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#347). Relecture forte 4 P0 et 2 P1 corrigés ; Codex non attendu (H03).
 - Décidé (2026-11-03), lecture prudente : R68 l'emporte sur la publication par zone : en petit réseau peu de zones se montrent ; tout se juge sur les agents qui ont reçu des contacts ce mois-là. Où : #347.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01
 - Cahier : Indicateurs et tests, « Agents actifs », « Agents restés au bout d'un an », « Contacts transmis par zone ».
@@ -3463,7 +3464,8 @@ Décidé, lecture prudente : chaque chiffre vient de la base, jamais d'une saisi
 - Attend : rien.
 
 ### IN05 · Écran « Preuve » de la direction
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#348). Relecture forte 4 P1 corrigés ; Codex non attendu (H03).
 - Décidé (2026-11-03) : bloc relu avec le rapport du matin, dans `finances.js`, pour ne pas toucher au socle. Où : #348.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01, IN02, IN03
 - Cahier : Feuille de route ; R201.
@@ -3521,9 +3523,17 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : H09 pour le contenu réel ; textes à faire relire par l'avocat, à écrire dans `HUMAIN.md`.
 
 ### IN06 · Les indicateurs du parcours et du réseau à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03, IN04, IN05
 - Cahier : Indicateurs et tests ; R201.
 - Objectif : la direction lit les taux, les délais et les agents actifs d'un mois sur « Le réseau » ; chaque agent lit les contacts par zone du mois passé sur « Mes chiffres ». Toujours dans `finances.js`, sans toucher au socle.
 - Critères : donnée absente dite absente, jamais zéro [R214] (test) ; ce qui est retenu par R215 est dit sans chiffre (test) ; droits [R16] (test) ; réponse perdue dite telle (test) ; déconnexion et réponse en vol (test) ; budget tenu [R201] (test).
 - Attend : rien.
+
+### IN07 · Engagements de service tenus, temps gagné, disponibilité
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
+- Cahier : Indicateurs et tests, « Engagements de service tenus », « Temps gagné », « Disponibilité du service » ; Besoins et solutions pour la liste des engagements.
+- Objectif : à vérifier avant de coder, ce qui a déjà un calcul : la part des engagements tenus dans le mois, chacun avec sa source ; les heures gagnées déclarées par l'agent et contrôlées sur le journal ; le temps de réponse du service, derrière une interface, avec un faux service de test tant qu'aucune supervision n'est branchée.
+- Critères : à écrire à son début, chacun testable ; une donnée absente se dit absente [R214] ; aucun rang d'agent [R14] ; droits [R16].
+- Attend : rien pour le calcul ; une supervision réelle pour la disponibilité.
