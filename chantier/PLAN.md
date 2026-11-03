@@ -1845,11 +1845,20 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Attend : rien.
 
 ### W23 · Le titre de séjour d'un candidat au coffre
-- Statut : en cours (voie 2)
+- Statut : bloquée : le texte officiel de l'annexe I n'est pas lisible depuis une séance, et le seul résumé lu change la question (H43)
+- Décidé (2026-11-03, voie 2) : rien de codé. Légifrance et service-public sont fermés à la séance. Un article de cabinet (Seban, 2015), résumé et non le texte, range en identité la carte d'identité, le passeport et le permis, français ou étrangers, et cite le titre de séjour à part, pour justifier du droit au séjour. Si c'est exact, une personne étrangère entre déjà par son passeport, et un titre de séjour ne doit pas valoir identité vérifiée. Ajouter la sorte demanderait aussi de refaire deux tables de la conformité, `compliance_vault_pieces` et `identity_checks`, ce que la voie 2 ne fait pas seule.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W21, L09
 - Cahier : M15 Louer ; M12 ; R15, R104.
 - Objectif : trouvé par la relecture de W21 : `addPiece` renvoie un titre de séjour au coffre, mais le coffre ne connaît pas cette sorte. Une personne qui n'a que ce justificatif ne peut pas être déclarée telle quelle. Vérifier d'abord à la source la liste officielle de l'annexe I, puis ajouter la sorte au coffre (migration, `VAULT_PIECES`, `IDENTITY_PIECES`) et regarder ce que cela change pour D03, O07 et L03.
 - Critères : le titre de séjour entre au coffre et vaut identité vérifiée pour un candidat [R15, R104] (test) ; le statut migratoire n'est dit nulle part, l'écran ne montre que le fait et la date [R13] (test) ; les contrôles avant signature gardent leur résultat pour les pièces existantes (test).
+- Attend : rien.
+
+### W24 · Le garant Visale et son visa sur la carte du candidat
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W19
+- Cahier : Conformité ; M12 ; R95, R96, R97.
+- Objectif : trouvé par W19 : un garant Visale n'a pas de personne, donc sa ligne et son visa rangé ne sont sur aucune carte d'accès, et le plan d'effacement ne les compte pas. Les rattacher au candidat, le seul à qui ils parlent.
+- Critères : le garant Visale et son visa sont sur la carte du candidat [R96] (test) ; le plan d'effacement les compte [R97] (test) ; le garant personne et ses pièces restent sur sa seule carte [R96] (test).
 - Attend : rien.
 
 **M14 · Réseau et académie, juillet 2027.**
