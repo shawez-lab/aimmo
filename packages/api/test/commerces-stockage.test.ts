@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { FicheClient, applyMigrations } from '@aimmo/core';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -9,6 +9,7 @@ import worker, { type Env } from '../src/worker.ts';
 import { fakeD1 } from './fake-d1.ts';
 
 // Réseau, agent, commerce, documents et clé inventés.
+afterEach(() => vi.useRealTimers());
 const BASE = 'https://aimmo-api.example.workers.dev';
 const KEY = 'test-cle-ce22-alex-aaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const DIRECTION = 'test-cle-ce22-direction-bbbbbbbbbbbbbbbbbbbbbbb';
@@ -87,6 +88,9 @@ describeWithSqlite('CE22 · le dépôt des documents du dossier sur le stockage 
   });
 
   it('[R114] le lecteur du dossier, servi par le Worker, reçoit le texte déposé dans le compartiment', async () => {
+    // Un mardi à 11 h à Paris : le code part par le contrôle central, refusé le soir et le dimanche [R01].
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2027-03-09T10:00:00.000Z'));
     const { bucket } = fakeBucket();
     const t = await world({ COMMERCES: bucket });
     const reader = 'dominique.exemple@example.test';
