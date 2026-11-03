@@ -3426,7 +3426,8 @@ Découpé le 2026-11-03 par la voie 2 : M01 à M20 et les espaces sont faits ; l
 Décidé, lecture prudente : chaque chiffre vient de la base, jamais d'une saisie ni de l'IA ; aucun classement d'agent [R14] ; le compteur part du registre des mandats (R39), pas de la table des mandats : un mandat signé et pas inscrit ne compte pas, il est dit à part. Une annulation pour erreur ou une rétractation retire le mandat ; une résiliation le laisse compter, car il a bien été signé, et elle est dite à part. Un mois en cours ne compte jamais dans la série, même s'il a déjà 10 mandats. Règles R210 à R219 et migrations à partir de `1700` réservées à ce module. Le code vit dans `packages/core/src/pilotage/`, ses routes dans `packages/api/src/pilotage.ts` ; `app.ts` et `packages/core/src/index.ts` ne changent pas.
 
 ### IN01 · Le compteur de la preuve à Dijon
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#343). Relecture forte 1 P1 de test corrigé, vérifié par mutation ; Codex non attendu (H03).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : D01, K05
 - Cahier : Feuille de route, phase 2 ; Indicateurs et tests, « Mandats signés » et « Part des mandats exclusifs ».
 - Objectif : pour la direction, mois par mois de Paris depuis janvier 2027 : les mandats de vente signés et inscrits au registre (simples, exclusifs, sans type connu), ceux retirés (erreur, rétractation), ceux résiliés, ceux signés et pas inscrits ; la série en cours, la meilleure série, et si la condition (6 mois de suite à 10 ou plus) est remplie. `GET /v1/pilotage/preuve`.
@@ -3434,7 +3435,8 @@ Décidé, lecture prudente : chaque chiffre vient de la base, jamais d'une saisi
 - Attend : rien.
 
 ### IN02 · Le mois scellé, puis publié, vérifiable par n'importe qui (Jamais vu)
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Décidé (2026-11-03), lecture prudente : le sceau tient lieu de comparaison au comptage manuel, mois par mois, plus strict que les 2 semaines du cahier ; les numéros du registre sont publiés pour qu'un mandant retrouve le sien (H46) ; la page reste non indexée en essai.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01
 - Cahier : Feuille de route, « chiffres publiés » ; Indicateurs et tests, « comparés à un comptage manuel avant d'être publiés ».
 - Objectif : aucun réseau ne publie un compte de mandats que chacun peut vérifier. La direction scelle un mois fini : elle donne son comptage manuel, le code le compare et refuse un écart ; le sceau enchaîne une empreinte du mois sur celle du mois d'avant, à partir des lignes du registre, sans nom ni adresse. Une annulation après le sceau ne réécrit rien : le mois porte un nouveau sceau, l'ancien reste lisible, la correction se voit. La page publique rend les mois scellés, leurs empreintes et de quoi les recalculer.
