@@ -84,6 +84,23 @@ export interface LeaseTemplate {
   hash: string;
 }
 
+/** Une version de modèle, telle que la lit l'écran de la direction et de la conformité (W17). */
+export interface LeaseTemplateView {
+  id: string;
+  version: number;
+  status: 'essai' | 'valide';
+  body: string;
+  createdAt: string;
+  validatedAt: string | null;
+}
+
+/** Pour une sorte de bail : le modèle que le prochain bail prendrait, et la dernière version rangée. */
+export interface LeaseTemplateKind {
+  kind: LeaseKind;
+  current: LeaseTemplateView | null;
+  latest: LeaseTemplateView | null;
+}
+
 export interface Lease {
   leaseId: string;
   listingId: string;
@@ -205,6 +222,24 @@ export class BauxLocation {
     await this.db.run("UPDATE rental_lease_templates SET status = 'valide', validated_by = ?, validated_at = ? WHERE id = ? AND status = 'essai'", [this.actor(viewer), this.now().toISOString(), templateId as string]);
     await appendEvent(this.journal, { type: 'location.modele_bail_valide', actor: this.actor(viewer), subject: `lease_template:${String(templateId)}`, data: {} }, this.now);
     return { ok: true, value: true };
+  }
+
+  /**
+   * Les modèles de bail, pour l'écran (W17) : la direction les range, la conformité les valide, personne d'autre ne les
+   * lit [R16]. `current` suit le même choix que le bail : le dernier validé, sinon la dernière version, d'essai.
+   */
+  async templates(viewer: Viewer): Promise<LeaseResult<{ canStore: boolean; canValidate: boolean; kinds: LeaseTemplateKind[] }>> {
+    if (viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, null, 'role');
+    const kinds: LeaseTemplateKind[] = [];
+    const read = async (kind: string, order: string): Promise<LeaseTemplateView | null> => {
+      const r = await this.db.first<{ id: string; version: number; status: 'essai' | 'valide'; body: string; created_at: string; validated_at: string | null }>(
+        `SELECT id, version, status, body, created_at, validated_at FROM rental_lease_templates WHERE network_id = ? AND kind = ? ORDER BY ${order} LIMIT 1`,
+        [viewer.networkId, kind],
+      );
+      return r ? { id: r.id, version: Number(r.version), status: r.status, body: r.body, createdAt: r.created_at, validatedAt: r.validated_at } : null;
+    };
+    for (const kind of LEASE_KINDS) kinds.push({ kind, current: await read(kind, "status = 'valide' DESC, version DESC"), latest: await read(kind, 'version DESC') });
+    return { ok: true, value: { canStore: viewer.role === 'direction', canValidate: viewer.role === 'compliance', kinds } };
   }
 
   /**

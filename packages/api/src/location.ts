@@ -192,6 +192,8 @@ async function depositRoute(s: LocationServices, v: Viewer, [id, kind]: string[]
 
 const ROUTES: LocationRoute[] = [
   /* Les mises en location lisibles et l'avancée de l'une d'elles, pour l'écran « Louer » (W11) [R16]. */
+  /* Avant la route d'un logement, dont l'identifiant pourrait se lire pareil (W17). */
+  { method: 'GET', pattern: /^\/location\/modeles-bail$/, name: 'location.modeles_bail', roles: ['direction', 'compliance'], handle: async (s, v) => reply(await core(s).leases.templates(v)) },
   { method: 'GET', pattern: /^\/location$/, name: 'location.liste', roles: READERS, handle: async (s, v, _p, r) => reply(await core(s).listings.mine(v, new URL(r.url).searchParams.get('page') ?? 0)) },
   { method: 'GET', pattern: new RegExp(`^/location/${ID}/suivi$`), name: 'location.suivi', roles: READERS, handle: async (s, v, [id]) => reply(await progress(s, v, id!)) },
   { method: 'GET', pattern: new RegExp(`^/location/${ID}/presentation$`), name: 'location.presentation.lue', roles: READERS, handle: async (s, v, [id]) => reply(await core(s).choices.last(v, id)) },
