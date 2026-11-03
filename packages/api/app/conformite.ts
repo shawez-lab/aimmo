@@ -1,4 +1,5 @@
 import { LOUER_MODELES_CONFORMITE_HTML } from './louer.ts';
+import { MANDAT_MODELES_CONFORMITE_HTML } from './mandat-modeles.ts';
 import { VAULT_CONTENT_TYPES, VAULT_MAX_BYTES, VAULT_PIECES } from '../../core/src/conformite/coffre.ts';
 import { PERSON_REQUEST_CHANNELS, PERSON_REQUEST_KINDS } from '../../core/src/conformite/demandes-personnes.ts';
 import { BREACH_CATEGORIES, BREACH_LATE_CAUSES, BREACH_NATURES, BREACH_RISKS } from '../../core/src/conformite/fuites.ts';
@@ -63,7 +64,7 @@ export const CONFORMITE_HTML = `<section id="conformite" hidden>
 <ul id="conformite-resume" class="resume" aria-label="À traiter"></ul>
 <button id="conformite-actualiser" type="button" class="secondaire">Actualiser</button>
 <div id="conformite-corps"></div>
-${LOUER_MODELES_CONFORMITE_HTML}</section>
+${MANDAT_MODELES_CONFORMITE_HTML}${LOUER_MODELES_CONFORMITE_HTML}</section>
 `;
 
 export const CONFORMITE_CSS = `

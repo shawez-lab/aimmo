@@ -14,6 +14,7 @@ import { MANDAT_HTML, MANDAT_JS } from './mandat.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { ATTIRER_ENTRY_HTML, ATTIRER_HTML, ATTIRER_JS } from './attirer.ts';
 import { BASCULE_ENTRY_HTML, BASCULE_JS } from './bascule.ts';
+import { MANDAT_MODELES_ENTRY_HTML, MANDAT_MODELES_JS } from './mandat-modeles.ts';
 import { REGLAGES_MANDAT_ENTRY_HTML, REGLAGES_MANDAT_JS } from './reglages-mandat.ts';
 import { LOYERS_ENTRY_HTML, LOYERS_JS } from './loyers.ts';
 import { MESURE_SOURCES_ENTRY_HTML, MESURE_SOURCES_JS } from './mesure-sources.ts';
@@ -205,7 +206,7 @@ ${EUROS_ENTRY_HTML}${RAPPORT_AGENT_HTML}</section>
 <button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
 <p id="reseau-cas-etat" class="etat" role="status"></p>
 </section>
-${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}${BIBLIOTHEQUE_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
+${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${MANDAT_MODELES_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}${BIBLIOTHEQUE_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -644,6 +645,7 @@ export const APP_JS = `'use strict';
     wipeLouer();
     wipeInvestir();
     forgetLouer();
+    wipeMandatModeles();
     wipeConformite();
     wipeCommerces();
     wipeAvis();
@@ -1753,6 +1755,7 @@ export const APP_JS = `'use strict';
   }
   function wipeReseau() {
     wipeModeles();
+    wipeMandatModeles();
     ['reseau-corps', 'reseau-alertes', 'reseau-reversements', 'reseau-brouillons'].forEach(function (id) { clear($(id)); });
     ['reseau-etat', 'reseau-sans-agent', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat', 'reseau-cas-etat'].forEach(function (id) { $(id).textContent = ''; });
     wipeReprise();
@@ -1839,7 +1842,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${FIN_DE_BAIL_JS}${FINANCES_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${FIN_DE_BAIL_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -2029,6 +2032,8 @@ ${LOUER_JS}
     $('candidatures-ouvrir').addEventListener('click', function () { openIntegration('candidatures'); });
     $('reprise-deposer').addEventListener('click', function () { withReprise(function (r) { return r.deposit(); }); });
     $('reprise-voir').addEventListener('click', function () { withReprise(function (r) { return r.show(); }); });
+    $('mandat-modeles-ouvrir').addEventListener('click', function () { openMandatModeles('mandat-modeles'); });
+    $('mandat-modeles-c-ouvrir').addEventListener('click', function () { openMandatModeles('mandat-modeles-c'); });
     $('regmandat-voir').addEventListener('click', function () { withReglagesMandat(function (r) { return r.show(''); }); });
     $('regmandat-controle').addEventListener('click', function () { withReglagesMandat(function (r) { return r.control(); }); });
     $('loyers-importer').addEventListener('click', function () { withLoyers(function (l) { return l.deposit(); }); });
@@ -2073,7 +2078,7 @@ ${LOUER_JS}
     });
     $('vers-reseau').addEventListener('click', function () { var k = readDirectionKey(); if (k) enter(k); });
     $('vers-journee').addEventListener('click', function () { var k = readKey(); if (k) enter(k); });
-    $('conformite-actualiser').addEventListener('click', function () { if (currentKey) { session += 1; wipeModeles(); openConformite(); } });
+    $('conformite-actualiser').addEventListener('click', function () { if (currentKey) { session += 1; wipeModeles(); wipeMandatModeles(); openConformite(); } });
     var hash = typeof location !== 'undefined' ? String(location.hash || '') : '';
     var invited = INVITATION.exec(hash);
     if (hash.indexOf('#invitation=') === 0) {
