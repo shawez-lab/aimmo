@@ -1987,11 +1987,23 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : H38 pour un usage réel, rien pour le code.
 
 ### W26 · Lectures sans écran à vérifier, une par une
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#332) ; relecture forte 3 P1 corrigés, corrections non relues une seconde fois ; Codex non attendu (H03). Une alerte sur l'argent n'a pas de bouton « vue » : elle reste jusqu'à la fin du dossier.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W25
 - Cahier : selon la route ; R16, R201.
 - Objectif : trouvé le 2026-11-03 par une comparaison de textes entre routes et écran, qui se trompe dans les deux sens (elle avait manqué `commerces/vigilance` par son dernier segment) : rien n'est vérifié. Pour chacune, dire si l'information est déjà à l'écran sous une autre forme, sinon la donner : `offres.comparatif`, `offres.historique`, `offres.taches`, `dossiers.taches`, `dossiers.alertes`, `investir.calcul.lu`, `partenaires.annuaire.fiche`. Laisser à la voie 1 celles de ses fichiers (`mandats.echeances`, `mandat.chronologie`, `bien.diffusion`, `attribution.regles`, `annonces.semaine`, `annonces.plan_tournage`, `studio.support`). Couper en tâches si plusieurs manquent vraiment.
 - Critères : chaque route vérifiée écrite ici, avec sa réponse (relecture) ; chaque geste donné : droits refusés dits [R16] (test), réponse perdue dite telle (test), budget tenu [R201] (test).
+- Vérifié (2026-11-03) : `offres.comparatif` et `offres.historique` : déjà à l'écran, le suivi (`offres.suivi`) les porte. `partenaires.annuaire.fiche` : déjà à l'écran (`annuaire.ts`, fiche). `offres.taches`, `dossiers.taches`, `dossiers.alertes` : manquaient vraiment, R59, R61 et R62 disaient « l'agent est prévenu » sans aucun écran ; donnés par le bloc « À tenir sur mes ventes » de l'accueil, une seule lecture `GET /v1/offres/a-tenir`. `investir.calcul.lu` : le calcul revient en réponse au geste, rien ne manque tant qu'aucune liste des calculs n'existe ; retrouver un calcul ou une note d'un projet est écrit à part (Y14).
+- Décidé (2026-11-03), lecture prudente : route chez M09, ouverte sans le stockage des pièces ; les tâches d'offres se lisent par l'agent actuel du bien, sinon une échéance n'était plus vue de personne après un changement de main ; le rappel du bouclier ne part qu'en mode essai : l'écran le dit et demande toujours à l'agent de prévenir le client, à revoir à la mise en service réelle.
+- Attend : rien.
+
+### Y14 · Retrouver le calcul et la note d'un projet d'investisseur
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y10
+- Cahier : M17 ; R16, R122, R201.
+- Objectif : trouvé le 2026-11-03 par W26. L'écran dit « Calcul rangé », mais une fois quitté, ni le calcul ni la note ne se retrouvent : `investir.calcul.lu` et `investir.note.lue` n'ont aucun appel de l'application, et aucune route ne liste ceux d'un projet. Donner la liste du projet et la relecture, sans rien recalculer.
+- Critères : la liste ne rend que les calculs et notes du projet, à qui en a le droit, refus dit [R16] (test) ; relus tels qu'ils ont été rangés, avec leur date et leurs hypothèses (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
 - Attend : rien.
 
 ### CE20 · Ranger un document du dossier protégé, à l'écran

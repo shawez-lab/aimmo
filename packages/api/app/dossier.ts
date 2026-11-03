@@ -62,7 +62,7 @@ const DATE_NAMES: Record<DateKind, string> = {
 };
 const STEP_NAMES: Record<FinancingStep, string> = { demande_deposee: 'Demande de prêt déposée', accord_principe: 'Accord de principe', offre_pret_emise: 'Offre de prêt reçue par l’acquéreur', offre_pret_acceptee: 'Offre de prêt acceptée', refus: 'Refus de prêt' };
 const BY_NAMES: Record<DeclaredBy, string> = { acquereur: 'l’acquéreur', courtier: 'le courtier' };
-const DEADLINES = { fin_retractation: 'Fin du délai de rétractation', reponse_preemption: 'Réponse de la commune', date_limite_pret: 'Date limite du prêt', etat_date: 'État daté', acte: 'Acte' };
+export const DEADLINES = { fin_retractation: 'Fin du délai de rétractation', reponse_preemption: 'Réponse de la commune', date_limite_pret: 'Date limite du prêt', etat_date: 'État daté', acte: 'Acte' };
 const ITEMS = { pret: 'le prêt', fiche_bien: 'la fiche du bien', copropriete: 'la copropriété' };
 const WHO = { acquereur: 'à l’acquéreur', vendeur: 'au vendeur', commune: 'à la commune', banque: 'à la banque', syndic: 'au syndic', agent: 'à vous' };
 const REASONS = {

@@ -10,7 +10,7 @@
  */
 import { journalError } from './app.ts';
 import { readCapped } from './studio.ts';
-import { Acces, FicheClient, FicheUnique, offres as m09, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { Acces, FicheClient, FicheUnique, dossiers as m10, offres as m09, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 
 const { ComparatifOffres, ContreOffres, ControlesOffre, DepotsOffres, DossiersVente, EcheancesOffres, RegistreOffres, SuiviOffres, TransmissionOffres } = m09;
 
@@ -136,6 +136,8 @@ export function offreRoutes(pieces: OfferUploadStore | null = null): OffreRoute[
     { method: 'POST', pattern: new RegExp(`^/offres/${ID}/dossier$`), name: 'offres.dossier', handle: async (s, v, [id]) => reply(await o(s).dossiers.open(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/offres/dossiers/${ID}/compromis$`), name: 'offres.compromis', handle: async (s, v, [id]) => reply(await o(s).dossiers.startCompromis(v, id!)) },
     { method: 'GET', pattern: /^\/offres\/taches$/, name: 'offres.taches', handle: async (s, v) => reply(await o(s).echeances.tasksOf(v) as Outcome) },
+    // L'accueil de l'agent (W26) : ici et non chez M10, fermé sans le stockage des pièces, qui ne sert pas à ces lectures.
+    { method: 'GET', pattern: /^\/offres\/a-tenir$/, name: 'offres.a_tenir', handle: async (s, v) => reply(await new m10.ATenirVente(s.db, s.acces, s.journal, { now: s.now }).of(v) as Outcome) },
   ];
 }
 

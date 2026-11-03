@@ -125,7 +125,7 @@ describe('Y09 · écran « Investir » de l’application', () => {
     await t.compute();
     await t.click(t.byText('Rédiger la note'));
     await t.click(t.byText('Je l’ai relue : valider la note'));
-    const screen = t.calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous|usage|annonces$|apres-vente)/.test(c.url));
+    const screen = t.calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous|usage|annonces$|offres\/a-tenir|apres-vente)/.test(c.url));
     expect(screen.length).toBeGreaterThanOrEqual(7);
     for (const c of screen) {
       expect(c.url.startsWith('/v1/investir'), c.url).toBe(true);

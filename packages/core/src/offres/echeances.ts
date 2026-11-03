@@ -74,7 +74,10 @@ export class EcheancesOffres {
     return done;
   }
 
-  /** Les tâches d'échéance de l'agent, pour lui seul, celles des offres encore sans réponse [R16]. */
+  /**
+   * Les tâches d'échéance de l'agent qui suit le bien aujourd'hui, celles des offres encore sans réponse [R16] : un bien
+   * qui change de main emporte ses échéances, sinon plus personne ne les verrait [R59].
+   */
   async tasksOf(viewer: Viewer): Promise<{ ok: true; tasks: OfferTask[] } | { ok: false; rule: 'R16'; code: 'not_agent' | 'agent_inactive' }> {
     const refuse = async (code: 'not_agent' | 'agent_inactive') => {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'offer_tasks', code } }, this.now);
@@ -86,14 +89,15 @@ export class EcheancesOffres {
     if (!agent || agent.network_id !== viewer.networkId || agent.status !== 'active') return refuse('agent_inactive');
     const rows = await this.db.all<{ offer_id: string; property_id: string; last_day: string; created_at: string }>(
       `SELECT k.offer_id, o.property_id, k.last_day, k.created_at FROM offer_tasks k JOIN offer_register o ON o.id = k.offer_id
-       WHERE k.network_id = ? AND k.agent_id = ? AND NOT EXISTS (SELECT 1 FROM offer_responses r WHERE r.offer_id = k.offer_id)
+       JOIN properties p ON p.id = o.property_id
+       WHERE k.network_id = ? AND p.agent_id = ? AND NOT EXISTS (SELECT 1 FROM offer_responses r WHERE r.offer_id = k.offer_id)
        ORDER BY k.last_day, k.created_at`,
       [viewer.networkId, viewer.userId],
     );
     const proposalRows = await this.db.all<{ proposal_id: string; offer_id: string; property_id: string; last_day: string; created_at: string }>(
       `SELECT k.proposal_id, p.offer_id, o.property_id, k.last_day, k.created_at FROM proposal_tasks k JOIN offer_proposals p ON p.id = k.proposal_id
-       JOIN offer_register o ON o.id = p.offer_id
-       WHERE k.network_id = ? AND k.agent_id = ? AND NOT EXISTS (SELECT 1 FROM proposal_responses r WHERE r.proposal_id = k.proposal_id)`,
+       JOIN offer_register o ON o.id = p.offer_id JOIN properties b ON b.id = o.property_id
+       WHERE k.network_id = ? AND b.agent_id = ? AND NOT EXISTS (SELECT 1 FROM proposal_responses r WHERE r.proposal_id = k.proposal_id)`,
       [viewer.networkId, viewer.userId],
     );
     const tasks: OfferTask[] = [

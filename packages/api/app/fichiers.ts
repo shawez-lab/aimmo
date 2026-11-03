@@ -8,6 +8,7 @@ import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS, LOUER_MODELES_ENTRY_H
 import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './investir.ts';
 import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.ts';
 import { AVIS_HTML, AVIS_JS } from './avis.ts';
+import { A_TENIR_HOME_HTML, A_TENIR_JS } from './a-tenir.ts';
 import { OFFRES_HTML, OFFRES_JS } from './offres.ts';
 import { DOSSIER_HTML, DOSSIER_JS } from './dossier.ts';
 import { MANDAT_HTML, MANDAT_JS } from './mandat.ts';
@@ -75,7 +76,7 @@ export const INDEX_HTML = `<!doctype html>
 <p id="reprendre-etat" class="etat"></p>
 <ul id="reprendre" class="liste"></ul>
 </section>
-<section class="bloc" aria-labelledby="titre-plan">
+${A_TENIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-plan">
 <h3 id="titre-plan">Mon plan du jour</h3>
 <p id="plan-etat" class="etat"></p>
 <ol id="plan" class="liste"></ol>
@@ -628,6 +629,7 @@ export const APP_JS = `'use strict';
         return part('semaine', api('/v1/usage/matin', key), renderWeek, mine);
       }),
       loadReprendre(key, mine),
+      part('a-tenir', api('/v1/offres/a-tenir', key), renderTenir, mine),
       part('chauds', api('/v1/contacts-chauds', key), renderHot, mine),
       part('biens', api('/v1/annonces', key), renderBiens, mine),
       part('rdv', api('/v1/rendez-vous/jour', key), renderAppointments, mine),
@@ -639,7 +641,7 @@ export const APP_JS = `'use strict';
     });
   }
   function wipe() {
-    ['reprendre', 'plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
+    ['reprendre', 'a-tenir', 'plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
     wipeFiche();
     wipeM08();
     wipeApres();
@@ -1956,7 +1958,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${RECOMMANDATION_JS}${FINANCES_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${RECOMMANDATION_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
