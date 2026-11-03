@@ -3640,6 +3640,14 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Critères : sans clé ou sans stockage, « non sauvegardé » dit, jamais un faux succès (test) ; une panne n'arrête pas les autres tâches [R13] (test) ; une nuit manquée alerte la direction (test) ; un effacement fait après la copie est refait après la restauration (test) ; droits [R16] (test).
 - Attend : une ligne de `HUMAIN.md` pour le compartiment, sa règle de garde et la clé, à écrire par SV02.
 
+### SV05 · L'effacement réel écrit au registre des effacements
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV02
+- Cahier : Conformité ; Architecture technique, « Sauvegardes ».
+- Objectif : quand l'effacement réel sera mis en service (H29, `ERASURE_MODE`), il note chaque effacement au registre `recordErasure`, dans le compartiment des copies, et la procédure réelle passe derrière `PersonEraser` ; le stockage S3 de `packages/api/outils/r2-copies.ts` gagne la liste. Rien à faire tant que tout est en essai.
+- Critères : un effacement non noté n'est pas dit fait [R231] (test) ; le vrai effaceur, passé deux fois, ne change rien de plus (test) ; un effacement refait après une vraie restauration, de bout en bout (test).
+- Attend : H29, H49.
+
 ### SV03 · Le test de restauration de chaque mois, avec son reçu (Jamais vu)
 - Statut : à faire
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV02
