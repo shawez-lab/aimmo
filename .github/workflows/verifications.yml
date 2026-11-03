@@ -18,7 +18,8 @@ jobs:
   verifier:
     name: Vérifier
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Marge d'au moins 30 % sur la durée mesurée (X28) : `scripts/controle-verifications.mjs` y veille.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,10 +27,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: Types
-        run: npm run check
-      - name: Tests
-        run: npm test
+      # Les contrôles courts d'abord : une coupure pendant les tests ne les saute plus.
       - name: Garde-fous
         run: npm run garde-fous
       - name: Paquet du Worker
@@ -37,3 +35,7 @@ jobs:
         env:
           WRANGLER_SEND_METRICS: 'false'
         run: npx -y wrangler@4.149.0 deploy --dry-run --outdir "$RUNNER_TEMP/aimmo-api"
+      - name: Types
+        run: npm run check
+      - name: Tests
+        run: npm test
