@@ -3575,7 +3575,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN11 · Dater la mise en vente, pour mesurer l'alerte dans l'heure
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : IN07
 - Cahier : Besoins et solutions, « Nos engagements de service » ; M08.
 - Objectif : la base ne date pas le moment où un bien devient diffusable [R42]. Le ranger une fois, et faire passer `alerte_heure` en mesurable : alerte partie dans l'heure, l'heure comptant depuis l'ouverture des heures d'envoi [R01] si le bien sort la nuit.
