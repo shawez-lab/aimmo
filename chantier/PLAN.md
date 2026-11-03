@@ -1866,7 +1866,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 **Gestes sans écran, trouvés par la voie 1 le 2026-11-03 (même comparaison, route par route).**
 
 ### X18 · Corriger le texte d'une annonce à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#320) ; relecture forte 3 P1 corrigés (retrait d'une annonce validée dit avant d'enregistrer, réponse perdue dite aussi sur panne et corps coupé, un seul geste pendant l'envoi) ; Codex à sa limite (H03) ; quitter l'écran pendant l'envoi puis revenir après un refus repart de l'annonce rangée, le texte tapé est perdu sans faux état.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : P10
 - Cahier : M07 ; R47, R16, R201.
 - Objectif : `POST /v1/annonces/<id>/correction` n'a aucun appel de l'application : l'écran « Mettre en vente » dit « corrigez-la » sans donner de quoi corriger. Le donner dans `app/fichiers.ts`, sans toucher au socle.
@@ -1874,7 +1875,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X19 · Remplir la fiche du bien à l'écran
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : P10
 - Cahier : M07 ; R43, R16, R201.
 - Objectif : `GET` et `POST /v1/annonces/<id>/fiche` n'ont aucun appel de l'application, alors que l'écran dit « complétez la fiche du bien ». Vérifier que le geste n'existe pas ailleurs, puis le donner, sans toucher au socle.
