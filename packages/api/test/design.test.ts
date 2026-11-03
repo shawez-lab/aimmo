@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DESIGN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, renderPublicPage, renderValuationPrint, type Teinte } from '@aimmo/core';
+import { renderLegalNotice, renderPrivacyPage, withLegalLinks } from '../../core/src/attirer/mentions-site.ts';
 import { renderEstimationPage } from '../../core/src/attirer/page-estimation.ts';
 import { renderSiteHome } from '../../core/src/attirer/accueil-site.ts';
 import { renderAgentsList, renderPricesList } from '../../core/src/attirer/annuaire-site.ts';
@@ -61,6 +62,8 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
       budget: BUDGETS.page,
     },
     { name: 'liste des communes', html: renderPricesList(Array.from({ length: 2000 }, (_, i) => { const n = (i * 7919 + 100000).toString(36); return { slug: `v${n}`, name: `Ville ${n}` }; }))!, budget: BUDGETS.page },
+    { name: 'mentions légales', html: withLegalLinks(renderLegalNotice({ values: {}, cardNumber: null, cardHolder: null, missing: ['x'] })), budget: BUDGETS.page },
+    { name: 'données personnelles', html: withLegalLinks(renderPrivacyPage({ values: {}, cardNumber: null, cardHolder: null, missing: ['x'] })), budget: BUDGETS.page },
     { name: 'estimation en ligne', html: renderEstimationPage({ visitorId: 'visite-0000000000000001', open: true, appointmentHref: '/agents' }), budget: BUDGETS.page },
     {
       name: 'estimation en ligne, sa fourchette',
@@ -173,6 +176,7 @@ describe('Z03 · système de design d’AIMMO', () => {
       'core/src/attirer/accueil-site.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/attirer/annuaire-site.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/attirer/page-estimation.ts': /^<style>\$\{CSS\}<\/style>$/,
+      'core/src/attirer/mentions-site.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,
       'api/src/candidature.ts': /^<style>\$\{STYLE\}<\/style>$/,
       'core/src/attirer/simulateur-pret.ts': /^<style>\$\{CSS\}<\/style>$/,

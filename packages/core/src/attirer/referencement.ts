@@ -19,6 +19,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { sitePaths } from './accueil-site.ts';
+import { LEGAL_PATHS, MentionsSite } from './mentions-site.ts';
 import { PageAgent } from './page-agent.ts';
 
 export const SITE_KINDS = ['reseau', 'agent'] as const;
@@ -378,6 +379,7 @@ export class Referencement {
     if (!site) return { ok: false, code: 'unknown_site' };
     const entries: SitemapEntry[] = [{ loc: `${site.baseUrl}/`, lastmod: null, kind: 'page' }];
     for (const p of sitePaths(site.kind, this.recruitingNetworkId === networkId)) entries.push({ loc: `${site.baseUrl}${p.path}`, lastmod: null, kind: 'page' });
+    for (const p of LEGAL_PATHS) entries.push({ loc: `${site.baseUrl}${p}`, lastmod: null, kind: 'page' });
     for (const l of await this.published(networkId)) {
       if (site.kind === 'agent' && l.agentId !== site.agentId) continue;
       const home = this.homeOf(sites, l.agentId);
@@ -426,12 +428,15 @@ export class Referencement {
    * service est rangée « echec » et au journal, sans données, puis la page est signalée de nouveau au passage suivant.
    */
   async signalChanges(networkId: string): Promise<{ mode: SeoMode; signalled: number; failed: number }> {
+    // Une mention légale manque : le site reste en essai, rien ne part aux moteurs [R221].
+    const complete = this.mode === 'reel' && (await new MentionsSite(this.db, this.journal, { now: this.now }).read(networkId)).missing.length === 0;
+    const mode: SeoMode = complete ? 'reel' : 'essai';
     const current = await this.currentPages(networkId);
     const last = await this.db.all<{ url: string; change: SeoChange; fingerprint: string }>(
       `SELECT s.url, s.change, s.fingerprint FROM seo_signals s
         WHERE s.network_id = ? AND s.mode = ? AND s.outcome IN ('essai', 'ok')
           AND s.rowid = (SELECT t.rowid FROM seo_signals t WHERE t.network_id = s.network_id AND t.url = s.url AND t.mode = s.mode AND t.outcome IN ('essai', 'ok') ORDER BY t.at DESC, t.rowid DESC LIMIT 1)`,
-      [networkId, this.mode],
+      [networkId, mode],
     );
     const known = new Map(last.map((l) => [l.url, l]));
     const todo: { url: string; change: SeoChange; fingerprint: string }[] = [];
@@ -451,7 +456,7 @@ export class Referencement {
     let failed = 0;
     for (const [host, items] of byHost) {
       let outcome: 'essai' | 'ok' | 'echec' = 'essai';
-      if (this.mode === 'reel' && this.indexNow) {
+      if (mode === 'reel' && this.indexNow) {
         try {
           await this.indexNow.submit(host, items.map((i) => i.url));
           outcome = 'ok';
@@ -463,10 +468,10 @@ export class Referencement {
       }
       const at = this.now().toISOString();
       for (const i of items) {
-        await this.db.run('INSERT INTO seo_signals (id, network_id, url, change, fingerprint, mode, outcome, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [this.newId(), networkId, i.url, i.change, i.fingerprint, this.mode, outcome, at]);
+        await this.db.run('INSERT INTO seo_signals (id, network_id, url, change, fingerprint, mode, outcome, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [this.newId(), networkId, i.url, i.change, i.fingerprint, mode, outcome, at]);
       }
     }
-    await appendEvent(this.journal, { type: 'referencement.signalement', actor: 'system:referencement', subject: `network:${networkId}`, data: { rule: 'R26', mode: this.mode, count: todo.length, failed } }, this.now);
-    return { mode: this.mode, signalled: todo.length - failed, failed };
+    await appendEvent(this.journal, { type: 'referencement.signalement', actor: 'system:referencement', subject: `network:${networkId}`, data: { rule: 'R26', mode: mode, count: todo.length, failed } }, this.now);
+    return { mode: mode, signalled: todo.length - failed, failed };
   }
 }

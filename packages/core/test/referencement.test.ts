@@ -1,3 +1,4 @@
+import { MentionsSite, SITE_MENTION_FIELDS } from '../src/attirer/mentions-site.ts';
 import { expect, it } from 'vitest';
 import { SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { PageAgent, Referencement, agentStructuredData, jsonLd, listingStructuredData, renderSitemap, type IndexNowClient } from '../src/attirer/index.ts';
@@ -24,6 +25,17 @@ async function setup(options: { indexNow?: IndexNowClient; mode?: 'essai' | 'ree
   await db.run("INSERT INTO agents (id, network_id, first_name, last_name, status, created_at, updated_at) VALUES ('ag-2', 'net-1', 'Paul', 'Parti', 'left', 'x', 'x')");
   const ref = new Referencement(db, journal, { now, newId, ...options });
   return { db, journal, ref, now };
+}
+
+/** Toutes les mentions du site, inventées ; sans `all`, il en manque encore une. */
+async function completeMentions(db: SqlDatabase, journal: SqlJournalStore, all: boolean) {
+  const fields = Object.keys(SITE_MENTION_FIELDS).filter((f) => all || f !== 'mediateur');
+  expect(await new MentionsSite(db, journal).set(direction, Object.fromEntries(fields.map((f) => [f, `Texte inventé ${f}`])))).toEqual({ ok: true });
+  if (await db.first("SELECT 1 AS x FROM listing_settings WHERE id = 's-mentions'")) return;
+  await db.exec('PRAGMA foreign_keys = OFF');
+  await db.run("INSERT INTO listing_settings (id, network_id, card_number, set_by, set_at) VALUES ('s-mentions', 'net-1', 'CPI 0000', 'direction:dir-1', 'x')");
+  await db.run("INSERT INTO card_holders (id, network_id, holder_name, set_by, set_at) VALUES ('h-mentions', 'net-1', 'Société Exemple', 'direction:dir-1', 'x')");
+  await db.exec('PRAGMA foreign_keys = ON');
 }
 
 async function listing(db: SqlDatabase, id: string, agent: string, seq: number, state: string, title = `Maison ${id}`, price = 250000) {
@@ -129,6 +141,11 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
     // Au passage en mode réel, les pages connues pendant l'essai partent une fois.
     const sent: string[] = [];
     const real = new Referencement(t.db, t.journal, { mode: 'reel', indexNow: { submit: async (_h, urls) => void sent.push(...urls) } });
+    // [R221] Une mention légale manque : le site reste en essai, rien ne part.
+    await completeMentions(t.db, t.journal, false);
+    expect((await real.signalChanges('net-1')).mode).toBe('essai');
+    expect(sent).toEqual([]);
+    await completeMentions(t.db, t.journal, true);
     expect(await real.signalChanges('net-1')).toEqual({ mode: 'reel', signalled: 1, failed: 0 });
     expect(sent).toEqual([`${CAMILLE}/biens/b1`]);
     expect(await real.signalChanges('net-1')).toEqual({ mode: 'reel', signalled: 0, failed: 0 });
@@ -147,6 +164,7 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
       },
     });
     await sites(t);
+    await completeMentions(t.db, t.journal, true);
     await listing(t.db, 'b1', 'ag-1', 1, 'en_vente');
     await listing(t.db, 'b2', 'ag-3', 1, 'en_vente');
     expect(await t.ref.signalChanges('net-1')).toEqual({ mode: 'reel', signalled: 1, failed: 1 });
@@ -248,8 +266,8 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
     const plan = await t.ref.sitemap('net-1', s.net);
     // Lou n'a pas ses mentions : sa page n'est pas publiée, elle n'entre pas au plan.
     // [RS02] L'accueil et les pages où il mène entrent au plan de leur site, la preuve au seul réseau.
-    expect(locs(plan)).toEqual([`${NET}/`, `${NET}/biens`, `${NET}/agents`, `${NET}/prix`, `${NET}/estimation`, `${NET}/simulateur`, `${NET}/preuve`, `${NET}/agents/ag-1`, `${NET}/prix/ville-inventee`, `${NET}/prix/ville-inventee/centre`]);
-    expect(locs(await t.ref.sitemap('net-1', s.cam))).toEqual([`${CAMILLE}/`, `${CAMILLE}/biens`, `${CAMILLE}/estimation`, `${CAMILLE}/simulateur`, `${CAMILLE}/agents/ag-1`]);
+    expect(locs(plan)).toEqual([`${NET}/`, `${NET}/biens`, `${NET}/agents`, `${NET}/prix`, `${NET}/estimation`, `${NET}/simulateur`, `${NET}/preuve`, `${NET}/mentions-legales`, `${NET}/donnees-personnelles`, `${NET}/agents/ag-1`, `${NET}/prix/ville-inventee`, `${NET}/prix/ville-inventee/centre`]);
+    expect(locs(await t.ref.sitemap('net-1', s.cam))).toEqual([`${CAMILLE}/`, `${CAMILLE}/biens`, `${CAMILLE}/estimation`, `${CAMILLE}/simulateur`, `${CAMILLE}/mentions-legales`, `${CAMILLE}/donnees-personnelles`, `${CAMILLE}/agents/ag-1`]);
     // [RS03] [R150] La liste des communes : une case publiée, jamais une commune sans case publiable.
     expect((await t.ref.priceCommunes('net-1')).map((c) => c.slug)).toEqual(['ville-inventee']);
     expect(renderSitemap([{ loc: 'https://x.exemple.test/a?b=1&c=<2>', lastmod: '2026-10-20', kind: 'prix' }])).toBe(
