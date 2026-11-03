@@ -259,38 +259,40 @@ export class RecommandationsGagner {
     );
     const agentId = followedBy ?? lastEntrusting?.agent_id ?? null;
 
-    // Tout est vérifié avant la première écriture. La fiche et ses coordonnées d'abord : une panne après elles ne laisse
-    // qu'une fiche sans projet, qu'un renvoi retrouve.
-    if (!opposed) {
-      if (!referredId) referredId = (await this.store.createPerson({ networkId, agentId, firstName: typedName })).id;
-      else if (followedBy === null && agentId !== null) {
-        const members = await this.fiche.membersOf(referredId);
-        await this.handOver(members, agentId, at.toISOString());
-      }
+    // Tout est vérifié avant la première écriture. Une fiche déjà là reçoit d'abord son agent et ses coordonnées nouvelles :
+    // une panne ensuite ne laisse rien qu'un renvoi ne retrouve.
+    if (!opposed && referredId) {
+      if (followedBy === null && agentId !== null) await this.handOver(await this.fiche.membersOf(referredId), agentId, at.toISOString());
       for (const id of ids) {
         if ((await this.fiche.findByIdentifier(networkId, id.kind, id.value)).length === 0) await this.fiche.addIdentifier({ networkId, agentId, personId: referredId, kind: id.kind, value: id.value });
       }
     }
-    // Le projet, sa source, l'accord et la recommandation en un seul lot, tout ou rien : un renvoi après une panne ne crée
-    // jamais un second projet ni un second accord.
-    const person = referredId;
-    const prepared: { value: string | null; statements: SqlStatement[] } = opposed
+    // Le projet, sa source, l'accord et la recommandation en un seul lot, tout ou rien, avec la fiche quand elle est neuve :
+    // un renvoi après une panne ne crée jamais une seconde fiche, un second projet ni un second accord.
+    const known = referredId;
+    const prepared: { value: { personId: string; projectId: string } | null; statements: SqlStatement[] } = opposed
       ? { value: null, statements: [] }
       : await this.store.prepare(async (draft) => {
-          const project = await draft.createProject({ networkId, agentId, personId: person!, kind: projectKind as ProjectKind });
+          let personId = known;
+          if (!personId) {
+            personId = (await draft.createPerson({ networkId, agentId, firstName: typedName })).id;
+            for (const id of ids) await draft.addIdentifier({ networkId, agentId, personId, kind: id.kind, value: id.value });
+          }
+          const project = await draft.createProject({ networkId, agentId, personId, kind: projectKind as ProjectKind });
           // La source ne nomme pas le partenaire : la fiche peut être celle d'un autre agent [R16]. Elle suit jusqu'au mandat [R38].
-          await draft.addSource({ networkId, agentId, personId: person!, projectId: project.id, channel: REFERRAL_SOURCE, detail: PARTNER_SOURCE_DETAIL, occurredAt: at });
+          await draft.addSource({ networkId, agentId, personId, projectId: project.id, channel: REFERRAL_SOURCE, detail: PARTNER_SOURCE_DETAIL, occurredAt: at });
           await draft.addConsent({
             networkId,
             agentId,
-            personId: person!,
+            personId,
             purpose: REFERRAL_PURPOSE,
             channel,
             proof: `${RECOMMENDATION_CONSENT_LABELS[kind]} : ${(consent.reference as string).trim()} (transmis par un partenaire)`,
             givenAt,
           });
-          return project.id;
+          return { personId, projectId: project.id };
         });
+    if (prepared.value) referredId = prepared.value.personId;
     const id = this.newId();
     const due = opposed ? null : new Date(at.getTime() + REFERRAL_CALL_HOURS * 3_600_000).toISOString();
     const results = await runBatch(this.db, [
@@ -298,7 +300,7 @@ export class RecommandationsGagner {
       {
         sql: `INSERT INTO partner_recommendations (id, network_id, partner_id, referred_id, project_id, first_name, agent_id, consent_kind, consent_channel, consent_given_at, call_due_at, call_done_at, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT (partner_id, referred_id) DO NOTHING`,
-        params: [id, networkId, viewer.userId, referredId, prepared.value, typedName, opposed ? null : agentId, kind, channel, givenAt.toISOString(), due, this.actor(viewer), at.toISOString()],
+        params: [id, networkId, viewer.userId, referredId, prepared.value?.projectId ?? null, typedName, opposed ? null : agentId, kind, channel, givenAt.toISOString(), due, this.actor(viewer), at.toISOString()],
       },
     ]);
     const changes = results[results.length - 1]!.changes;

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, Mandats, REFERRAL_PURPOSE, Recommandations, RecommandationsGagner, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase } from '../src/index.ts';
 import { Annuaire, MiseEnRelation, type ConsentProofStore } from '../src/partenaires/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -264,29 +264,80 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
   });
 
   describe('X25 · une panne au milieu, puis un renvoi', () => {
-    for (const table of ['person_identifiers', 'projects', 'sources', 'consents', 'partner_recommendations']) {
-      it(`[R142] [R17] une panne en écrivant dans ${table} : le renvoi fait un seul projet, une seule source, un seul accord, une seule recommandation`, async () => {
+    const counts = async (t: Awaited<ReturnType<typeof setup>>) => ({
+      persons: await t.persons(),
+      projects: (await t.db.all('SELECT id FROM projects')).length,
+      sources: (await t.db.all('SELECT id FROM sources')).length,
+      consents: (await t.db.all('SELECT id FROM consents')).length,
+      recommendations: (await t.rows()).length,
+    });
+    const panne = async (t: Awaited<ReturnType<typeof setup>>, table: string, act: () => Promise<unknown>) => {
+      await t.db.run(`CREATE TRIGGER panne_x25 BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'panne'); END`);
+      await expect(act()).rejects.toThrow();
+      await t.db.run('DROP TRIGGER panne_x25');
+    };
+
+    for (const table of ['persons', 'person_identifiers', 'projects', 'sources', 'consents', 'partner_recommendations']) {
+      it(`[R142] [R17] une panne en écrivant dans ${table} : rien n’est gardé, et le renvoi fait une seule fiche, un seul projet, une seule source, un seul accord, une seule recommandation`, async () => {
         const t = await setup();
         const p = await t.partner('Étude Essai');
         await t.entrust(p);
-        await t.db.run(`CREATE TRIGGER panne_x25 BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'panne'); END`);
-        await expect(t.gagner.recommend(t.as(p), t.input())).rejects.toThrow();
-        await t.db.run('DROP TRIGGER panne_x25');
-        expect(await t.rows()).toHaveLength(0);
-        expect(await t.db.all('SELECT id FROM projects')).toHaveLength(0);
-        expect(await t.db.all('SELECT id FROM consents')).toHaveLength(0);
+        const before = await counts(t);
+        await panne(t, table, () => t.gagner.recommend(t.as(p), t.input()));
+        expect(await counts(t)).toEqual(before);
         expect(await t.gagner.recommend(t.as(p), t.input())).toEqual({ ok: true, value: { recorded: true } });
-        const [row] = await t.rows();
-        expect(await t.rows()).toHaveLength(1);
-        const view = await t.fiche.view(row!.referred_id!);
-        expect(view.sources).toHaveLength(1);
-        expect(view.consents).toHaveLength(1);
-        expect(await t.db.all('SELECT id FROM projects WHERE person_id = ?', [row!.referred_id])).toHaveLength(1);
+        expect(await counts(t)).toEqual({
+          persons: before.persons + 1,
+          projects: before.projects + 1,
+          sources: before.sources + 1,
+          consents: before.consents + 1,
+          recommendations: 1,
+        });
         expect((await t.journal.all()).filter((e) => e.type === 'recommandation.alerte')).toHaveLength(1);
         const mine = await t.gagner.mine(t.as(p));
         expect(mine.ok && mine.value).toHaveLength(1);
       });
     }
+
+    it('[R142] une panne sur une fiche déjà connue : la coordonnée nouvelle reste, et le renvoi ne fait qu’un projet', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      await t.entrust(p);
+      const known = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Hugo' });
+      await t.fiche.addIdentifier({ networkId: t.network.id, agentId: t.alex.id, personId: known.id, kind: 'phone', value: '06 11 22 33 44' });
+      const before = await counts(t);
+      await panne(t, 'projects', () => t.gagner.recommend(t.as(p), t.input()));
+      expect(await counts(t)).toEqual(before);
+      expect(await t.gagner.recommend(t.as(p), t.input())).toEqual({ ok: true, value: { recorded: true } });
+      expect(await counts(t)).toEqual({ ...before, projects: before.projects + 1, sources: before.sources + 1, consents: before.consents + 1, recommendations: 1 });
+      expect((await t.fiche.view(known.id)).identifiers).toHaveLength(2);
+    });
+
+    it('[R77] une panne après le lot, sur la date du partenaire : le renvoi ne range rien de plus et ajoute la date', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      await t.entrust(p);
+      await panne(t, 'partner_recommendation_submissions', () => t.gagner.recommend(t.as(p), t.input()));
+      const stored = await counts(t);
+      expect(stored.recommendations).toBe(1);
+      expect(await t.gagner.recommend(t.as(p), t.input())).toEqual({ ok: true, value: { recorded: true } });
+      expect(await counts(t)).toEqual(stored);
+      const mine = await t.gagner.mine(t.as(p));
+      expect(mine.ok && mine.value).toHaveLength(1);
+    });
+
+    it('[R142] une panne du journal après le lot : l’appel reste à faire, et le renvoi ne range rien de plus', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      await t.entrust(p);
+      await panne(t, 'journal', () => t.gagner.recommend(t.as(p), t.input()));
+      const stored = await counts(t);
+      expect(stored.recommendations).toBe(1);
+      expect(await t.gagner.recommend(t.as(p), t.input())).toEqual({ ok: true, value: { recorded: true } });
+      expect(await counts(t)).toEqual(stored);
+      const calls = await t.gagner.toCall(t.agent());
+      expect(calls.ok && calls.value).toHaveLength(1);
+    });
 
     it('le brouillon de la fiche n’écrit rien tant que le lot n’est pas passé, et refuse de lire', async () => {
       const t = await setup();
