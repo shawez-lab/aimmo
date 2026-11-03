@@ -344,6 +344,7 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     const roles: V['role'][] = ['agent', 'direction', 'compliance', 'partner'];
     const roleOf = (name: string) => routes.find((r) => r.name === name)!.roles;
     expect(roleOf('location.zone')).toEqual(['direction']);
+    expect(roleOf('location.zones')).toEqual(['direction']);
     expect(roleOf('location.modele_bail')).toEqual(['direction']);
     expect(roleOf('location.modele_bail.validation')).toEqual(['compliance']);
     expect(roleOf('location.annonce.validation')).toEqual(['agent']);

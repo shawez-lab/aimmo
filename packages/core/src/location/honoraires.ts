@@ -136,6 +136,17 @@ export class HonorairesLocation {
     return { ok: true, value: true };
   }
 
+  /** Les zones rangées d'une commune, la date d'effet la plus récente d'abord (X21) : direction seule [R16]. */
+  async zonesOf(viewer: Viewer, inseeCode: unknown): Promise<LocationResult<{ zone: string; effectiveFrom: string; source: string }[]>> {
+    if (viewer.role !== 'direction') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: 'rental_zones', data: { rule: 'R16', role: String(viewer.role) } }, this.now);
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
+    if (typeof inseeCode !== 'string' || !INSEE.test(inseeCode)) return { ok: false, rule: null, code: 'bad_insee' };
+    const rows = await this.db.all<{ zone: string; effective_from: string; source: string }>('SELECT zone, effective_from, source FROM rental_zones WHERE insee_code = ? ORDER BY effective_from DESC', [inseeCode]);
+    return { ok: true, value: rows.map((r) => ({ zone: r.zone, effectiveFrom: r.effective_from, source: r.source })) };
+  }
+
   /** La zone d'une commune à une date : la dernière rangée dont l'effet a commencé ; `inconnue` sinon. */
   async zoneOn(inseeCode: string, day: string): Promise<RentalZone | 'inconnue'> {
     const r = await this.db.first<{ zone: RentalZone }>('SELECT zone FROM rental_zones WHERE insee_code = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1', [inseeCode, day]);

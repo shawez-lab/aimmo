@@ -91,6 +91,13 @@ describeWithSqlite('W02 · honoraires et dépôt de garantie', () => {
     expect(await t.fees.recordZone(t.agent, { inseeCode: '21998', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.fees.recordZone(t.dir, { inseeCode: '9900', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste' })).toMatchObject({ code: 'bad_insee' });
     expect(await t.fees.recordZone(t.dir, { inseeCode: '2A004', zone: 'zone_a', effectiveFrom: '2023-08-26', source: 'Liste' })).toMatchObject({ code: 'bad_zone' });
+    // X21 : la date et la source sont exigées par le socle ; les zones se relisent, la direction seule, la plus récente d'abord.
+    for (const effectiveFrom of ['', '2023-13-40', null]) expect(await t.fees.recordZone(t.dir, { inseeCode: '21997', zone: 'tendue', effectiveFrom, source: 'Liste' })).toMatchObject({ code: 'bad_date' });
+    for (const source of ['', 'ab', 'x'.repeat(201), null]) expect(await t.fees.recordZone(t.dir, { inseeCode: '21997', zone: 'tendue', effectiveFrom: '2023-08-26', source })).toMatchObject({ code: 'bad_source' });
+    const read = await t.fees.zonesOf(t.dir, '21999');
+    expect(read).toMatchObject({ ok: true, value: [{ zone: 'tres_tendue', effectiveFrom: '2027-10-01', source: 'Arrêté inventé' }, { zone: 'tendue', effectiveFrom: '2023-08-26' }] });
+    expect(await t.fees.zonesOf(t.agent, '21999')).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.fees.zonesOf(t.dir, 'x')).toMatchObject({ code: 'bad_insee' });
     await expect(t.db.run("UPDATE rental_zones SET zone = 'autre'")).rejects.toThrow(/ne change plus/);
     await expect(t.db.run('DELETE FROM rental_zones')).rejects.toThrow(/rien ne s'efface/);
   });
