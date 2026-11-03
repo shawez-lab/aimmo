@@ -49,6 +49,16 @@ const RULE_REFUSALS: Record<string, string> = {
   role: 'Ce n’est pas dans vos droits.',
 };
 
+const ZONE_REFUSALS: Record<string, string> = {
+  bad_insee: 'Le code INSEE : cinq caractères, par exemple 21231.',
+  bad_zone: 'Choisissez la zone.',
+  bad_date: 'Le jour d’entrée en vigueur de la zone n’est pas valable.',
+  bad_source: 'Écrivez la source de la zone : d’où elle vient, de 3 à 200 caractères.',
+  already_recorded: 'Une zone est déjà rangée pour cette commune à cette date : rien n’est changé.',
+  role: 'Ce n’est pas dans vos droits.',
+};
+const ZONES = { tres_tendue: 'Zone très tendue', tendue: 'Zone tendue', autre: 'Autre zone' };
+
 const options = KINDS.map(([k, label]) => `<option value="${k}">${label}</option>`).join('');
 
 export const LOYERS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-loyers">
@@ -113,6 +123,8 @@ globalThis.AIMMO_LOYERS = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, date = t.date;
   var RULES = ${JSON.stringify(COMMUNE_RULE_LABELS)};
   var RULE_REFUSALS = ${JSON.stringify(RULE_REFUSALS)};
+  var ZONE_REFUSALS = ${JSON.stringify(ZONE_REFUSALS)};
+  var ZONES = ${JSON.stringify(ZONES)};
   var REFUSALS = ${JSON.stringify(REFUSALS)};
   var ROWS = ${JSON.stringify(ROWS)};
   var KINDS = ${JSON.stringify(Object.fromEntries(KINDS))};
@@ -203,7 +215,7 @@ globalThis.AIMMO_LOYERS = function (t) {
       data.rules.forEach(function (r) {
         box.appendChild(el('p', (RULES[r.rule] || r.label || 'Règle') + ', depuis le ' + day(r.effectiveFrom) + (r.effectiveUntil ? ', jusqu’au ' + day(r.effectiveUntil) : '') + '. Source : ' + r.source + ', ' + day(r.sourceDate) + '.'));
       });
-      if (data.canRecord) ruleForm(box, insee);
+      if (data.canRecord) { ruleForm(box, insee); zoneForm(box, insee); }
       return true;
     });
   }
@@ -233,6 +245,31 @@ globalThis.AIMMO_LOYERS = function (t) {
           var ended = v.effectiveUntil && v.effectiveUntil < new Date().toISOString().slice(0, 10);
           clear($('loyers-liste'));
           return rules(mine, insee, ended ? 'Règle rangée, finie le ' + day(v.effectiveUntil) + ' : elle n’est plus en vigueur, et met fin à celle de même sorte rangée avant.' : 'Règle rangée, en vigueur à partir du ' + day(v.effectiveFrom) + '.');
+        });
+      });
+    }));
+  }
+  /* X21 · La zone décide du plafond des honoraires de location [R102] : sans elle, le plafond le plus bas s'applique. */
+  function zoneForm(box, insee) {
+    box.appendChild(el('h4', 'Ranger la zone de loyer de la commune ' + insee));
+    box.appendChild(el('p', 'Elle fixe le plafond des honoraires de location. Une zone rangée ne se réécrit pas : la dernière dont l’effet a commencé décide. Sans zone, le plafond le plus bas s’applique.', 'doux'));
+    var zone = t.select(box, 'loyers-zone', 'Zone', Object.assign({ '': 'Choisissez la zone' }, ZONES), '');
+    var from = t.field(box, 'loyers-zone-debut', 'Zone en vigueur depuis');
+    from.setAttribute('type', 'date');
+    var source = t.field(box, 'loyers-zone-source', 'Source de la zone : le texte qui la fixe');
+    source.setAttribute('maxlength', '200');
+    box.appendChild(t.button('Ranger cette zone', function () {
+      return once(function () {
+        var mine = t.session();
+        if (String($('loyers-commune').value || '').trim().toUpperCase() !== insee) { state('Le code de la commune a changé : relisez cette commune avant de ranger. Rien n’est rangé.'); return Promise.resolve(false); }
+        if (!zone.value) { state(ZONE_REFUSALS.bad_zone); return Promise.resolve(false); }
+        state('Envoi…');
+        return send('/v1/location/zones', 'POST', { inseeCode: insee, zone: zone.value, effectiveFrom: from.value, source: source.value }).then(function (res) {
+          if (res.gone || mine !== t.session()) return false;
+          if (res.offline || !res.body || res.status >= 500) { state('La réponse n’est pas arrivée : rien n’est sûr. Rangez de nouveau : une zone déjà rangée à cette date sera refusée, sans doublon.'); return false; }
+          if (!res.ok) { state(ZONE_REFUSALS[res.body.code] || 'La zone n’est pas rangée.'); return false; }
+          state(ZONES[zone.value] + ' rangée, en vigueur à partir du ' + day(from.value) + '.');
+          return true;
         });
       });
     }));

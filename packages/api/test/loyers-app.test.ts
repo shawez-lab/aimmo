@@ -317,6 +317,75 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
       expect(t.box.textContent).toContain('Encadrement des loyers');
     });
 
+    describe('X21 · la zone de loyer', () => {
+      const POST_ZONE = 'POST /v1/location/zones';
+      const zone = async (answers: Record<string, Answer> = {}, data: unknown = { canRecord: true, rules: [] }) => {
+        const t = await open(data, answers);
+        const press = async () => {
+          t.box.all().find((e) => e.tagName === 'button' && e.textContent === 'Ranger cette zone')!.listeners.click!({});
+          await settle();
+        };
+        const fill = () => {
+          t.input('Zone').value = 'tendue';
+          t.input('Zone en vigueur depuis').value = '2025-03-01';
+          t.input('Source de la zone : le texte qui la fixe').value = 'Texte inventé';
+        };
+        return { ...t, press, fillZone: fill };
+      };
+
+      it('[R16] sans droit, pas de formulaire ; la direction range la zone telle qu’écrite, et c’est dit', async () => {
+        const reader = await zone({}, { canRecord: false, rules: [] });
+        expect(reader.box.textContent).not.toContain('Ranger cette zone');
+        const t = await zone({ [POST_ZONE]: ok(true) });
+        t.fillZone();
+        await t.press();
+        expect(t.posts().at(-1)).toMatchObject({ url: '/v1/location/zones', body: { inseeCode: '99001', zone: 'tendue', effectiveFrom: '2025-03-01', source: 'Texte inventé' } });
+        expect(t.state()).toBe('Zone tendue rangée, en vigueur à partir du 01/03/2025.');
+      });
+
+      it('[R10] rien n’est choisi d’avance : sans zone, rien ne part', async () => {
+        const t = await zone({ [POST_ZONE]: ok(true) });
+        expect(t.input('Zone').value).toBe('');
+        await t.press();
+        expect(t.posts().filter((c) => c.url === '/v1/location/zones')).toEqual([]);
+        expect(t.state()).toBe('Choisissez la zone.');
+      });
+
+      it('[R10] la commune changée depuis la lecture : rien ne part', async () => {
+        const t = await zone({ [POST_ZONE]: ok(true) });
+        t.fillZone();
+        t.els['loyers-commune']!.value = '99002';
+        await t.press();
+        expect(t.posts().filter((c) => c.url === '/v1/location/zones')).toEqual([]);
+        expect(t.state()).toContain('Le code de la commune a changé');
+      });
+
+      it.each([
+        [403, 'role', 'Ce n’est pas dans vos droits.'],
+        [400, 'bad_source', 'Écrivez la source de la zone'],
+        [400, 'bad_date', 'Le jour d’entrée en vigueur'],
+        [400, 'already_recorded', 'Une zone est déjà rangée pour cette commune à cette date'],
+        [400, 'autre_chose', 'La zone n’est pas rangée.'],
+      ] as [number, string, string][])('[R16] refus %i %s : dit en français', async (status, code, text) => {
+        const t = await zone({ [POST_ZONE]: no(status, { ok: false, rule: null, code }) });
+        t.fillZone();
+        await t.press();
+        expect(t.state()).toContain(text);
+        expect(t.input('Source de la zone : le texte qui la fixe').value).toBe('Texte inventé');
+      });
+
+      it.each([
+        ['hors ligne', () => Promise.reject(new TypeError('hors ligne'))],
+        ['une panne', async () => Response.json({ ok: false }, { status: 500 })],
+        ['un succès coupé', async () => new Response('{"ok":tr', { status: 200 })],
+      ] as [string, Answer][])('réponse perdue (%s) : dite telle', async (_n, answer) => {
+        const t = await zone({ [POST_ZONE]: answer });
+        t.fillZone();
+        await t.press();
+        expect(t.state()).toContain('La réponse n’est pas arrivée : rien n’est sûr.');
+      });
+    });
+
     it('[Y11] la règle rangée est dite telle, même si la relecture se perd', async () => {
       let reads = 0;
       const t = await open(null, {
