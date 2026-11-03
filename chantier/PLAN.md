@@ -1999,7 +1999,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### Y14 · Retrouver le calcul et la note d'un projet d'investisseur
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#334) ; relecture forte 1 P0 et 1 P1 corrigés, corrections non relues une seconde fois ; Codex non attendu (H03).
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y10
 - Cahier : M17 ; R16, R122, R201.
