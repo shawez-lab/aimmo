@@ -958,7 +958,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : rien.
 
 ### D13 · Réglages du mandat pour la direction : barème, registre, contrôle
-- Statut : à faire
+- Statut : en cours
 - Trouvé le 2026-11-02 par la voie 2 : aucun écran n'appelle `/v1/honoraires/bareme`, `/v1/registre/reglage` ni `/v1/registre/controle`, et sans barème aucun mandat ne passe ses contrôles [R41]. Laissée à la voie 1, qui tient M06.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12
 - Cahier : M06 ; R39, R41, R16, R201.
