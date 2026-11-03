@@ -18,6 +18,9 @@
  * La preuve à Dijon (IN05), pour la direction, relue à chaque rapport du matin [R16, R210, R211, R212] : où en est la
  * série, ce qui reste à inscrire, et le sceau d'un mois fini avec son comptage manuel. L'écran ne calcule rien : il
  * montre ce que le serveur compte, et un écart de comptage est dit tel quel.
+ *
+ * Les indicateurs du mois passé (IN06), relus de même : taux, délais et agents pour la direction [R214, R215] ; contacts
+ * par zone pour chacun, l'agent ne voyant que ce que le serveur lui rend [R68]. Une donnée absente se dit absente.
  */
 
 const SHARE_NAMES: Record<string, string> = {
@@ -118,7 +121,16 @@ const reportEntry = (who: 'agent' | 'direction'): string => `<section class="blo
 </section>
 `;
 
-export const RAPPORT_AGENT_HTML = reportEntry('agent');
+const stateAndBody = (id: string, title: string, intro: string): string => `<section class="bloc" aria-labelledby="${id}-titre">
+<h3 id="${id}-titre">${title}</h3>
+<p class="doux">${intro}</p>
+<p id="${id}-etat" class="etat" role="status"></p>
+<div id="${id}-corps"></div>
+</section>
+`;
+const ZONES_ENTRY_HTML = stateAndBody('zones', 'Contacts par zone, le mois passé', 'Se relit avec le rapport du matin. Une zone ne se montre que si elle ne dit le chiffre de personne.');
+const INDICATEURS_ENTRY_HTML = stateAndBody('indicateurs', 'Le parcours, le mois passé', 'Se relit avec le rapport du matin. Tout vient de la base, pour tout le réseau.');
+export const RAPPORT_AGENT_HTML = reportEntry('agent') + ZONES_ENTRY_HTML;
 const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
 <h3 id="preuve-titre">La preuve à Dijon</h3>
 <p class="doux">10 mandats de vente signés et inscrits par mois, 6 mois de suite, depuis janvier 2027. Se relit avec le rapport du matin.</p>
@@ -126,7 +138,7 @@ const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
 <div id="preuve-corps"></div>
 </section>
 `;
-export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML;
+export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML;
 
 export const REGLAGES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-grille">
 <h3 id="titre-grille">Grille des commissions et alertes</h3>
@@ -178,8 +190,10 @@ export const FINANCES_JS = `
       $('rapport-' + who + '-etat').textContent = '';
       $('rapport-' + who + '-jour').value = '';
     });
-    clear($('preuve-corps'));
-    $('preuve-etat').textContent = '';
+    ['preuve', 'zones', 'indicateurs'].forEach(function (id) {
+      clear($(id + '-corps'));
+      $(id + '-etat').textContent = '';
+    });
     clear($('commissions-corps'));
     $('commissions-etat').textContent = '';
     clear($('euros-corps'));
@@ -263,7 +277,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     var body = $('rapport-' + who + '-corps'), state = $('rapport-' + who + '-etat');
     var chosen = $('rapport-' + who + '-jour').value;
     clear(body);
-    if (who === 'direction') proof('');
+    if (who === 'direction') { proof(''); indicators(); } else zones();
     if (chosen && !/^\\d{4}-\\d{2}-\\d{2}$/.test(chosen)) { state.textContent = 'Choisissez un jour.'; return Promise.resolve(false); }
     state.textContent = 'Chargement…';
     return send('/v1/pilotage/rapport-matin' + (chosen ? '?jour=' + chosen : ''), 'GET').then(function (res) {
@@ -359,6 +373,84 @@ globalThis.AIMMO_FINANCES = function (t) {
       });
       if (counter.months.length) body.appendChild(ul);
       state.textContent = message || '';
+      return true;
+    });
+  }
+  /* Le mois fini d'avant, à Paris : c'est le serveur qui refuse un mois en cours. */
+  function lastMonth() {
+    var now = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
+    var y = Number(now.slice(0, 4)), m = Number(now.slice(5, 7));
+    return m === 1 ? (y - 1) + '-12' : y + '-' + String(m - 1).padStart(2, '0');
+  }
+  function monthEnd(m) { return new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).toISOString().slice(0, 10); }
+  function failure(res) { return res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.body && res.body.rule === 'R16' ? SEAL_REFUSALS.role : 'Indisponible pour le moment. Réessayez plus tard.'; }
+  function zoneList(body, v) {
+    var ul = el('ul', null, 'liste');
+    v.zones.forEach(function (z) { ul.appendChild(el('li', (z.zone === null ? 'Sans zone' : z.zone) + ' : ' + plural(Number(z.contacts), 'contact', 'contacts'))); });
+    if (v.otherZones) ul.appendChild(el('li', 'Autres zones réunies (' + v.otherZones.zones + ') : ' + plural(Number(v.otherZones.contacts), 'contact', 'contacts')));
+    if (v.zones.length || v.otherZones) body.appendChild(ul);
+  }
+  var zoning = 0;
+  function zones() {
+    var mine = t.session();
+    var turn = ++zoning;
+    var body = $('zones-corps'), state = $('zones-etat'), month = lastMonth();
+    clear(body);
+    state.textContent = 'Chargement…';
+    return send('/v1/pilotage/contacts-par-zone?mois=' + month, 'GET').then(function (res) {
+      if (res.gone || mine !== t.session() || turn !== zoning) return false;
+      if (!res.ok || !res.body.data) { state.textContent = failure(res); return false; }
+      var v = res.body.data;
+      zoneList(body, v);
+      state.textContent = monthName(month) + '.' + (v.zones.length || v.otherZones ? '' : ' Aucune zone à montrer pour ce mois.');
+      if (!v.otherZones) body.appendChild(el('p', 'Les zones trop petites ne se montrent pas : leur chiffre dirait celui d’un autre agent.', 'doux'));
+      return true;
+    });
+  }
+  function rate(r, what) {
+    if (r.bp === null || r.bp === undefined) return what + ' : pas de donnée sur ce mois.';
+    return what + ' : ' + percent(r.bp) + ' % (' + r.numerator + ' sur ' + r.denominator + ').';
+  }
+  function lapse(d, what, unit) {
+    var count = d.values.length;
+    var missing = d.unmeasured ? ', ' + d.unmeasured + ' impossible à mesurer' + (d.unmeasured > 1 ? 's' : '') : '';
+    if (d.median === null) return what + ' : pas de donnée sur ce mois' + missing + '.';
+    return what + ' : ' + d.median + ' ' + unit + ' en médiane, sur ' + plural(count, 'dossier', 'dossiers') + missing + '.';
+  }
+  var indicating = 0;
+  function indicators() {
+    var mine = t.session();
+    var turn = ++indicating;
+    var body = $('indicateurs-corps'), state = $('indicateurs-etat'), month = lastMonth();
+    clear(body);
+    state.textContent = 'Chargement…';
+    return Promise.all([
+      send('/v1/pilotage/parcours?du=' + month + '-01&au=' + monthEnd(month), 'GET'),
+      send('/v1/pilotage/agents-actifs?mois=' + month, 'GET'),
+      send('/v1/pilotage/contacts-par-zone?mois=' + month, 'GET'),
+    ]).then(function (all) {
+      var a = all[0], b = all[1], c = all[2];
+      if (a.gone || b.gone || c.gone || mine !== t.session() || turn !== indicating) return false;
+      var bad = [a, b, c].filter(function (r) { return !r.ok || !r.body.data; })[0];
+      if (bad) { state.textContent = failure(bad); return false; }
+      var j = a.body.data, p = b.body.data, m = j.valuationToMandateMinutes;
+      var ul = el('ul', null, 'liste');
+      [
+        rate(j.conversion.appointmentsPerContact, 'Contacts en rendez-vous'),
+        rate(j.conversion.mandatesPerAppointment, 'Rendez-vous en mandats'),
+        rate(j.conversion.salesPerMandate, 'Mandats en ventes'),
+        lapse(j.mandateToOfferDays, 'Du mandat à l’offre acceptée', 'jours'),
+        lapse(j.offerToActDays, 'De l’offre à l’acte', 'jours'),
+        lapse(m, 'De l’avis validé à la signature', 'minutes') + (m.values.length ? ' ' + m.underTarget + ' sous ' + m.targetMinutes + ' minutes.' : ''),
+        rate(j.networkReferredMandates, 'Mandats avec un client transmis par le réseau'),
+        plural(Number(p.activeSigners), 'agent a signé', 'agents ont signé') + ' au moins un mandat.',
+        p.retainedAfterYear.bp === null ? 'Personne n’est entré en ' + monthName(p.retainedAfterYear.cohortMonth) + '.' : rate(p.retainedAfterYear, 'Agents entrés en ' + monthName(p.retainedAfterYear.cohortMonth) + ' et toujours là'),
+      ].forEach(function (line) { ul.appendChild(el('li', line)); });
+      body.appendChild(ul);
+      body.appendChild(el('h4', 'Contacts par zone'));
+      zoneList(body, c.body.data);
+      if (!c.body.data.zones.length) body.appendChild(el('p', 'Aucun contact transmis ce mois-là.', 'doux'));
+      state.textContent = monthName(month) + '.';
       return true;
     });
   }
