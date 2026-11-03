@@ -404,13 +404,24 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
       expect(await counts(t)).toEqual({ ...before, recommendations: 1 });
     });
 
-    it('[R17] une vraie panne reste une panne : aucun nouvel essai ne la cache, et rien n’est gardé', async () => {
+    it('[R17] une vraie panne reste une panne : un seul lot tenté, l’erreur remonte, et rien n’est gardé', async () => {
       const t = await setup();
       const p = await t.partner('Étude Essai');
       const before = await counts(t);
-      await t.db.run("CREATE TRIGGER panne_x26 BEFORE INSERT ON consents BEGIN SELECT RAISE(ABORT, 'panne'); END");
-      await expect(t.gagner.recommend(t.as(p), t.input())).rejects.toThrow(/panne/);
-      await t.db.run('DROP TRIGGER panne_x26');
+      let batches = 0;
+      const db: SqlDatabase = {
+        ...t.db,
+        batch: async () => {
+          batches += 1;
+          // Une panne passagère : seul le premier lot échoue, un second essai réussirait et la cacherait.
+          if (batches === 1) throw new Error('panne');
+          return [];
+        },
+      };
+      const store = new FicheClient(db, { now: t.now });
+      const gagner = new RecommandationsGagner(db, store, new FicheUnique(db, store, { now: t.now }), t.acces, t.annuaire, t.journal, { now: t.now, newId: uuid });
+      await expect(gagner.recommend(t.as(p), t.input())).rejects.toThrow(/panne/);
+      expect(batches).toBe(1);
       expect(await counts(t)).toEqual(before);
     });
   });
