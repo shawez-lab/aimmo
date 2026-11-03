@@ -92,6 +92,47 @@ describe('EC12 · ouvrir l’espace d’un client depuis sa fiche', () => {
     expect(stopped.named(stopped.body, 'Ouvrir son espace client')).toHaveLength(0);
   });
 
+  it('[R26] avant le geste comme pendant, rien n’annonce un envoi réel', async () => {
+    let answer: (r: Response) => void = () => undefined;
+    const t = await open(FICHE, { [POST]: () => new Promise<Response>((r) => { answer = r; }) });
+    await t.press('Ouvrir son espace client');
+    expect(t.body.textContent).toContain('En mode essai, le lien personnel est préparé et rien ne part pour de vrai');
+    expect(t.body.textContent).not.toContain('reçoit');
+    t.proof().value = 'Accord de vive voix.';
+    await t.press('Préparer le lien de son espace');
+    expect(t.say()).toContain('Préparation…');
+    expect(t.say()).not.toContain('Envoi');
+    answer(Response.json({ ok: true, mode: 'essai', data: { linkId: 'l', mode: 'essai' } }));
+    await t.tick();
+  });
+
+  it('les espaces pas encore ouverts et les heures d’envoi sont dits tels : ni réponse perdue, ni fausse cause', async () => {
+    const t = await open(FICHE, { [POST]: no(503, { ok: false, rule: null, code: 'espace_not_configured' }) });
+    await t.press('Ouvrir son espace client');
+    t.proof().value = 'Accord de vive voix.';
+    await t.press('Préparer le lien de son espace');
+    expect(t.say()).toContain('Les espaces clients ne sont pas encore ouverts : rien n’est préparé.');
+    expect(t.say()).not.toContain('Réponse perdue');
+    expect(t.named(t.body, 'Préparer le lien de son espace')).toHaveLength(1);
+    t.routes[POST] = no(409, { ok: false, rule: 'R01', code: 'send_refused' });
+    await t.press('Préparer le lien de son espace');
+    expect(t.say()).toContain('Hors des heures d’envoi : rien n’est parti.');
+    expect(t.say()).not.toContain('vérifiez l’adresse');
+    t.routes[POST] = no(403, { ok: false, rule: 'R16', code: 'access_cut' });
+    await t.press('Préparer le lien de son espace');
+    expect(t.say()).toContain('Ce geste n’est pas dans vos droits.');
+  });
+
+  it('sans réseau au chargement du script, c’est dit, et le même bouton recharge', async () => {
+    const t = await open(FICHE);
+    t.named(t.body, 'Ouvrir son espace client')[0]!.listeners.click!({});
+    await t.tick();
+    t.body.all().find((e) => e.tagName === 'script' && e.attributes.src === '/app/espace-agent.js')!.listeners.error!({});
+    await t.tick();
+    expect(t.say()).toContain('Pas de réseau. Réessayez dans un moment.');
+    expect(t.named(t.body, 'Ouvrir son espace client')).toHaveLength(1);
+  });
+
   it('[R26] [R160] ce qui part est dit en essai ; aucun lien à l’écran, et le geste ne se rejoue pas', async () => {
     const t = await open(FICHE, { [POST]: ok({ linkId: 'lien-secret', expiresAt: '2026-11-17T10:00:00.000Z', mode: 'essai' }) });
     await t.press('Ouvrir son espace client');
@@ -111,7 +152,7 @@ describe('EC12 · ouvrir l’espace d’un client depuis sa fiche', () => {
     expect(t.say()).toContain('Cette personne n’est partie à aucun dossier');
     expect(t.say()).not.toContain('no_file');
     expect(t.named(t.body, 'Préparer le lien de son espace')).toHaveLength(1);
-    t.routes[POST] = no(400, { ok: false, rule: 'R03', code: 'send_refused' });
+    t.routes[POST] = no(409, { ok: false, rule: 'R03', code: 'send_refused' });
     await t.press('Préparer le lien de son espace');
     expect(t.say()).toContain('Le contrôle central a refusé ce mail');
     t.routes[POST] = no(403, { ok: false, rule: 'R16', code: 'not_assigned' });
@@ -124,7 +165,7 @@ describe('EC12 · ouvrir l’espace d’un client depuis sa fiche', () => {
     await t.press('Ouvrir son espace client');
     t.proof().value = 'Accord de vive voix.';
     await t.press('Préparer le lien de son espace');
-    expect(t.say()).toContain('Réponse perdue : le lien est peut-être préparé.');
+    expect(t.say()).toContain('Réponse perdue : le lien est peut-être préparé, la fiche ne peut pas le confirmer.');
     expect(t.named(t.body, 'Préparer le lien de son espace')).toHaveLength(0);
     expect(t.posts()).toHaveLength(1);
   });

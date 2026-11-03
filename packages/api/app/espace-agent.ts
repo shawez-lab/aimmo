@@ -9,7 +9,7 @@ const REFUSALS = {
   no_file: 'Cette personne n’est partie à aucun dossier : elle n’a pas d’espace à ouvrir.',
   not_assigned: 'Ce client est suivi par un autre agent.',
   role: 'Ce geste n’est pas dans vos droits.',
-  plafond: 'Trop de liens demandés aujourd’hui pour cette personne : réessayez demain.',
+  espace_not_configured: 'Les espaces clients ne sont pas encore ouverts : rien n’est préparé.',
   send_refused: 'Le contrôle central a refusé ce mail : vérifiez l’adresse de la fiche et son accord. Rien n’est parti.',
 };
 
@@ -20,12 +20,12 @@ globalThis.AIMMO_ESPACE_AGENT = function (t) {
   function form(box, personId, say) {
     clear(box);
     say('');
-    box.appendChild(el('p', 'La personne reçoit un lien personnel par mail, jamais montré ici. Seulement si elle l’a accepté elle-même.', 'doux'));
+    box.appendChild(el('p', 'En mode essai, le lien personnel est préparé et rien ne part pour de vrai ; il n’est jamais montré ici. Seulement si elle l’a accepté elle-même.', 'doux'));
     var proof = field(box, t.seq() + '-espace-preuve', 'Comment elle a accepté d’avoir son espace', 'textarea');
     box.appendChild(button('Préparer le lien de son espace', function () {
       var text = String(proof.value || '').trim();
       if (!text || text.length > 300) { say(REFUSALS.bad_consent); return Promise.resolve(false); }
-      say('Envoi…');
+      say('Préparation…');
       return send('/v1/espaces/personnes/' + encodeURIComponent(personId) + '/ouvrir', 'POST', { consentProof: text }).then(function (res) {
         if (res.gone) return false;
         if (res.ok) {
@@ -34,12 +34,15 @@ globalThis.AIMMO_ESPACE_AGENT = function (t) {
           say('');
           return true;
         }
+        var code = res.body && res.body.code;
+        if (code === 'espace_not_configured') { say(REFUSALS[code]); return false; }
+        if (code === 'send_refused' && res.body.rule === 'R01') { say('Hors des heures d’envoi : rien n’est parti. Réessayez aux heures permises.'); return false; }
         if (res.offline || !res.body || res.status >= 500) {
           clear(box);
-          say('Réponse perdue : le lien est peut-être préparé. Rouvrez la fiche avant de recommencer.');
+          say('Réponse perdue : le lien est peut-être préparé, la fiche ne peut pas le confirmer. Recommencer en ferait un autre : réessayez seulement plus tard, si la personne ne l’a pas reçu.');
           return false;
         }
-        say(REFUSALS[res.body.code] || (res.status === 403 ? REFUSALS.role : 'Le lien n’est pas préparé.'));
+        say(REFUSALS[code] || (res.status === 403 ? REFUSALS.role : 'Le lien n’est pas préparé.'));
         return false;
       });
     }));
