@@ -1055,9 +1055,13 @@ export const APP_JS = `'use strict';
     bad_text: 'Le titre tient en 120 signes, le texte en 3 000.',
   };
   var currentVente = null;
+  var venteSending = false;
+  var VENTE_WAIT = 'Une correction part : patientez un instant.';
   function price(n) { try { return Number(n).toLocaleString('fr-FR') + ' €'; } catch (e) { return String(n) + ' €'; } }
   function openVente(propertyId, reference) {
     if (!ID.test(propertyId)) return Promise.resolve(false);
+    // Pendant l'envoi d'une correction, l'écran garde le formulaire : ni texte perdu, ni second envoi, ni validation croisée.
+    if (venteSending) { show('vente'); $('vente-etat').textContent = VENTE_WAIT; return Promise.resolve(false); }
     currentVente = { id: propertyId, reference: reference };
     clear($('vente-corps'));
     $('vente-titre').textContent = 'Mettre en vente · ' + reference;
@@ -1078,6 +1082,7 @@ export const APP_JS = `'use strict';
     });
   }
   function venteAct(path, fallback) {
+    if (venteSending) { $('vente-etat').textContent = VENTE_WAIT; return Promise.resolve(false); }
     var v = currentVente;
     $('vente-etat').textContent = 'Envoi…';
     return send(path, 'POST').then(function (res) {
@@ -1099,20 +1104,24 @@ export const APP_JS = `'use strict';
       var text = field(zone, 'vente-correction-texte', 'Texte de l’annonce', 'textarea');
       text.setAttribute('maxlength', '3000');
       text.value = draft.body || (draft.sentences || []).map(function (s) { return s.text; }).join(' ');
+      if (draft.validated) zone.appendChild(el('p', 'Cette annonce est validée. Une correction enregistrée annule cette validation : au passage suivant, l’annonce est retirée de tous les canaux jusqu’à ce que l’agent du bien valide le nouveau texte.', 'retard'));
       var said = el('ul', null, 'liste');
       var state = el('p', null, 'doux');
       state.setAttribute('role', 'status');
       var go = button('Enregistrer la correction', function () {
-        if (go.disabled) return;
+        if (venteSending) return;
         clear(said);
         if (!title.value.trim() || !text.value.trim()) { state.textContent = 'Le titre et le texte sont à remplir.'; return; }
         var mine = currentVente;
+        venteSending = true;
         go.disabled = true;
         state.textContent = 'Envoi…';
         return send(base + '/correction', 'POST', { title: title.value, body: text.value }).then(function (res) {
-          if (res.gone || mine !== currentVente) return false;
+          venteSending = false;
+          if (res.gone) return false;
           go.disabled = false;
-          if (res.offline) { state.textContent = 'Pas de réseau : la correction n’a peut-être pas été rangée. Rouvrez l’annonce pour le voir, votre texte reste ici.'; return false; }
+          // Coupée ou en panne, la réponse ne dit pas si le texte a été rangé : seul un refus du code le dit.
+          if (res.offline || res.status >= 500 || !res.body) { state.textContent = 'Réponse perdue : la correction a peut-être été rangée. Rouvrez l’annonce pour le voir, votre texte reste ici.'; return false; }
           if (res.status === 403) { state.textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
           if (!res.ok) {
             state.textContent = (res.body && LISTING_REFUSALS[res.body.code]) || 'La correction n’a pas pu être rangée.';
@@ -1124,7 +1133,7 @@ export const APP_JS = `'use strict';
             return false;
           }
           if ($('vente').hidden) return true;
-          return openVente(mine.id, mine.reference).then(function () { $('vente-etat').textContent = 'Correction rangée : relisez-la, puis validez-la.'; return true; });
+          return openVente(mine.id, mine.reference).then(function () { $('vente-etat').textContent = 'Correction rangée : l’agent du bien la relit, puis la valide.'; return true; });
         });
       });
       zone.appendChild(go);
