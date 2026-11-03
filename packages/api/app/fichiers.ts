@@ -1056,7 +1056,7 @@ export const APP_JS = `'use strict';
   };
   var currentVente = null;
   var venteSending = false;
-  var VENTE_WAIT = 'Une correction part : patientez un instant.';
+  var VENTE_WAIT = 'Un envoi part : patientez un instant.';
   function price(n) { try { return Number(n).toLocaleString('fr-FR') + ' €'; } catch (e) { return String(n) + ' €'; } }
   function openVente(propertyId, reference) {
     if (!ID.test(propertyId)) return Promise.resolve(false);
@@ -1091,6 +1091,39 @@ export const APP_JS = `'use strict';
       if (!res.ok) { $('vente-etat').textContent = (res.body && LISTING_REFUSALS[res.body.code]) || fallback; return false; }
       return openVente(v.id, v.reference).then(function () { return true; });
     });
+  }
+  /* X19 · La fiche du bien, chargée au premier geste [R201]. */
+  var ficheBien = null;
+  function venteFiche(box, base, validated) {
+    var zone = el('div');
+    var open = button('Remplir la fiche du bien', function () {
+      var o = { base: base, validated: validated };
+      if (ficheBien) { open.hidden = true; return ficheBien.open(zone, o); }
+      clear(zone);
+      zone.appendChild(el('p', 'Chargement…', 'doux'));
+      var mine = currentVente;
+      var s = document.createElement('script');
+      s.setAttribute('src', '/app/fiche-bien.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_FICHE_BIEN;
+        try { delete globalThis.AIMMO_FICHE_BIEN; } catch (e) { /* rien */ }
+        if (typeof make !== 'function') { clear(zone); zone.appendChild(el('p', 'La fiche n’a pas pu se charger. Réessayez dans un moment.', 'alerte')); return; }
+        ficheBien = make({
+          el: el, clear: clear, send: send, button: button, field: field, checkbox: checkbox,
+          current: function () { return currentVente; },
+          sending: function (v) { if (v !== undefined) venteSending = v; return venteSending; },
+          saved: function (v, version) {
+            if ($('vente').hidden) return true;
+            return openVente(v.id, v.reference).then(function () { $('vente-etat').textContent = 'Fiche rangée, version ' + version + '. S’il y a une annonce, rédigez-la de nouveau ou corrigez-la, puis validez-la.'; return true; });
+          },
+        });
+        if (mine === currentVente) { open.hidden = true; ficheBien.open(zone, o); }
+      });
+      s.addEventListener('error', function () { clear(zone); zone.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'alerte')); });
+      zone.appendChild(s);
+    });
+    box.appendChild(open);
+    box.appendChild(zone);
   }
   /* X18 · Le texte de l'agent passe le même contrôle que celui de l'IA [R47] : refusé, il reste à l'écran avec ses phrases en cause. */
   function venteCorrection(box, base, draft) {
@@ -1154,9 +1187,10 @@ export const APP_JS = `'use strict';
       ul.appendChild(el('li', m.status === 'presente' ? name + ' : présente' : m.status === 'sans_objet' ? name + ' : sans objet' : name + ' : manque, ' + (MISSING_MENTION[m.reason] || 'à compléter'), m.status === 'manquante' ? 'retard' : null));
     });
     check.appendChild(ul);
+    var base = '/v1/annonces/' + encodeURIComponent(propertyId);
+    venteFiche(check, base, !!(draft && draft.validated));
     body.appendChild(check);
     var text = section('L’annonce, phrase par phrase');
-    var base = '/v1/annonces/' + encodeURIComponent(propertyId);
     if (draft === undefined) {
       text.appendChild(el('p', 'L’annonce n’a pas pu être lue. Réessayez dans un moment.', 'alerte'));
       body.appendChild(text);

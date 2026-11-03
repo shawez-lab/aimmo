@@ -263,7 +263,7 @@ describe('X18 · corriger le texte de l’annonce à l’écran', () => {
     await t.click(t.byText(t.els['vente-corps']!, 'Rédiger de nouveau'));
     await t.click(t.byText(t.els.biens!, 'Mettre en vente'));
     expect(t.posts().map((c) => c.url)).toEqual(['/v1/annonces/b1/correction']);
-    expect(t.els['vente-etat']!.textContent).toBe('Une correction part : patientez un instant.');
+    expect(t.els['vente-etat']!.textContent).toBe('Un envoi part : patientez un instant.');
     release(Response.json({ ok: false, rule: 'R47', code: 'refused_text', sentences: [{ text: 'Avec piscine.', sources: [], problems: [{ code: 'fait_sans_source', value: 'piscine' }] }] }, { status: 409 }));
     await settle();
     expect(t.els['vente-corps']!.textContent).toContain('À corriger : fait absent de la fiche (« piscine »)');
