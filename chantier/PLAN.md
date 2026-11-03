@@ -1997,6 +1997,14 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Critères : compartiment existant lié, absent non lié (test) ; le fichier de configuration garde le reste (test) ; liste illisible : la mise en ligne continue, sans liaison, et le dit dans le résumé du travail (test) ; le coffre reste sur son propre compartiment [L09] (test).
 - Attend : un jeton Cloudflare qui lit la liste des compartiments, pour un usage réel (H45).
 
+### X28 · Les vérifications tiennent dans leur délai
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
+- Cahier : Organisation et méthode.
+- Objectif : trouvé par la voie 2 sur #339 : `verifications.yml` coupe le travail à 15 minutes, et la suite en prend près de 13 à elle seule. Le 2026-11-03, tous les tests de #339 étaient verts (3 657), mais le travail a été coupé juste après, avant les garde-fous et le paquet du Worker : il est lu comme un échec. Chaque test ajouté rapproche toutes les fusions de ce mur. Fichier du socle : laissé à la voie 1. Relever le délai sans rien affaiblir, faire passer les contrôles courts avant les tests pour qu'une coupure ne les saute plus, et regarder ce qui prend le plus de temps ; aucune dépense GitHub en plus (décision du 2026-10-29), donc pas de machine plus grosse.
+- Critères : aucune vérification retirée ni sautée (test ou lecture du fichier par `garde-fous`) ; le délai laisse une marge d'au moins 30 % sur la durée mesurée ; garde-fous et paquet passent avant les tests.
+- Attend : rien.
+
 ### CE23 · Une panne de stockage à l'ouverture d'un dossier ne consomme pas le code
 - Statut : à faire
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : CE22

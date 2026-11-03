@@ -564,3 +564,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 15:29 · voie 1 · fin de séance : X26, CE22 et X27 fusionnées ; CE23 écrite ; verrou libéré, relance · prochaine : CE23
 - 2026-11-03 15:30 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra CE23 · prochaine : CE23
 - 2026-11-03 15:38 · AT18 · une publication du Studio part avec son lien marqué et entre dans la mesure de l'origine, sous un titre lisible ; jusque-là rien ne l'y rangeait (#338) ; relecture forte 1 P1 corrigé ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : AT20
+- 2026-11-03 15:52 · voie 2 · #339 coupée par le délai de 15 minutes alors que ses 3 657 tests étaient verts ; relancée une fois ; X28 écrite pour la voie 1 (fichier du socle), avant CE23 · prochaine : X28
