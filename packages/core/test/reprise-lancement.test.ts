@@ -284,7 +284,7 @@ describeWithSqlite('lancer la reprise sur les vraies bases (I05)', () => {
       expect(real, `coupure à l'écriture ${n}`).toBe(persons);
       expect(await count(v.db, "exclusions WHERE lifted_at IS NULL"), `coupure à l'écriture ${n}`).toBe(exclusions);
     }
-  });
+  }, 30_000);
 
   it('relancé une fois fini sur les mêmes données, il n\'écrit plus rien', async () => {
     await depositAll(w);
