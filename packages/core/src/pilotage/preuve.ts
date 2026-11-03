@@ -124,15 +124,6 @@ export class CompteurPreuve {
     return { ok: true, value };
   }
 
-  /** Les lignes qui comptent pour un mois : le numéro et l'empreinte de chacune, triés par numéro [R212]. */
-  async countedLines(networkId: string, month: string): Promise<{ number: string; hash: string }[]> {
-    const lines = await this.registerLines(networkId);
-    return lines
-      .filter((l) => parisMonth(new Date(l.signed_at)) === month && l.cancel_reason !== 'error' && l.cancel_reason !== 'withdrawal')
-      .map((l) => ({ number: l.number, hash: l.hash }))
-      .sort((a, b) => (a.number < b.number ? -1 : a.number > b.number ? 1 : 0));
-  }
-
   private registerLines(networkId: string): Promise<LineRow[]> {
     // La date de signature est celle figée par la ligne du registre ; une ligne n'a qu'une annulation. Une rétractation
     // rangée vaut retrait même si la ligne d'annulation n'a pas pu s'écrire : le compte ne penche jamais vers le haut.
@@ -148,15 +139,25 @@ export class CompteurPreuve {
     );
   }
 
-  /** Le calcul, sans droits : pour le sceau d'un mois et les tests. */
+  /** Le calcul, sans droits. */
   async compute(networkId: string): Promise<ProofCounter> {
+    return (await this.snapshot(networkId)).counter;
+  }
+
+  /**
+   * Le compte et les lignes qui comptent, triées par numéro [R212] : d'une seule lecture du registre, pour que le compte
+   * d'un mois et ses lignes ne puissent jamais se contredire, même si une annulation arrive pendant le calcul.
+   */
+  async snapshot(networkId: string): Promise<{ counter: ProofCounter; lines: Map<string, { number: string; hash: string }[]> }> {
     const currentMonth = parisMonth(this.now());
     const months = new Map<string, ProofMonth>();
     for (let m = PROOF_START_MONTH; m <= currentMonth; m = nextMonth(m)) months.set(m, emptyMonth(m, m < currentMonth));
 
     const lines = await this.registerLines(networkId);
+    const byMonth = new Map<string, { number: string; hash: string }[]>();
     for (const line of lines) {
-      const month = months.get(parisMonth(new Date(line.signed_at)));
+      const key = parisMonth(new Date(line.signed_at));
+      const month = months.get(key);
       if (!month) continue;
       if (line.cancel_reason === 'error') {
         month.cancelledError += 1;
@@ -168,6 +169,7 @@ export class CompteurPreuve {
       }
       if (line.cancel_reason === 'termination') month.terminated += 1;
       month.counted += 1;
+      byMonth.set(key, [...(byMonth.get(key) ?? []), { number: line.number, hash: line.hash }]);
       if (line.document_kind === 'mandat_vente_simple') month.simple += 1;
       else if (line.document_kind === 'mandat_vente_exclusif') month.exclusive += 1;
       else month.untyped += 1;
@@ -189,16 +191,20 @@ export class CompteurPreuve {
     const list = [...months.values()].map((m) => ({ ...m, targetMet: m.counted >= PROOF_MONTHLY_TARGET }));
     const runs = proofRuns(list);
     const registerSound = (await this.registre.check(networkId)).ok;
+    for (const group of byMonth.values()) group.sort((a, b) => (a.number < b.number ? -1 : a.number > b.number ? 1 : 0));
     return {
-      startMonth: PROOF_START_MONTH,
-      target: PROOF_MONTHLY_TARGET,
-      requiredMonths: PROOF_REQUIRED_MONTHS,
-      currentMonth,
-      months: list,
-      currentRun: runs.currentRun,
-      bestRun: runs.bestRun,
-      condition: registerSound ? runs.condition : { met: false, metOn: null },
-      registerSound,
+      counter: {
+        startMonth: PROOF_START_MONTH,
+        target: PROOF_MONTHLY_TARGET,
+        requiredMonths: PROOF_REQUIRED_MONTHS,
+        currentMonth,
+        months: list,
+        currentRun: runs.currentRun,
+        bestRun: runs.bestRun,
+        condition: registerSound ? runs.condition : { met: false, metOn: null },
+        registerSound,
+      },
+      lines: byMonth,
     };
   }
 }

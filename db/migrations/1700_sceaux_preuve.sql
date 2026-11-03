@@ -31,3 +31,12 @@ BEGIN
 END;
 CREATE TRIGGER IF NOT EXISTS proof_seals_sans_modification BEFORE UPDATE ON proof_seals BEGIN SELECT RAISE(ABORT, 'sceaux en ajout seul'); END;
 CREATE TRIGGER IF NOT EXISTS proof_seals_sans_effacement BEFORE DELETE ON proof_seals BEGIN SELECT RAISE(ABORT, 'sceaux en ajout seul'); END;
+
+-- Ce que rend la page publique, recalculé au plus toutes les 5 minutes : une boucle de lectures anonymes ne relit pas le
+-- registre. Une copie qui se recalcule, pas une donnée : `seals` dit combien de sceaux elle connaît, un sceau la périme.
+CREATE TABLE IF NOT EXISTS proof_publication_cache (
+  network_id TEXT PRIMARY KEY REFERENCES networks (id) ON DELETE RESTRICT,
+  seals INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  computed_at TEXT NOT NULL
+);

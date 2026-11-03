@@ -15,11 +15,11 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { sha256 } from '../documents/modeles.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { RegistreMandats } from '../mandats/registre.ts';
 import { CompteurPreuve, PROOF_MONTHLY_TARGET, PROOF_REQUIRED_MONTHS, PROOF_START_MONTH, parisMonth, proofRuns, type ProofMonth } from './preuve.ts';
 
 export const PROOF_SEAL_GENESIS = '0'.repeat(64);
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+export const PROOF_PUBLICATION_MAX_AGE_MS = 5 * 60_000;
 
 export interface ProofLine {
   number: string;
@@ -69,8 +69,8 @@ export interface PublicProof {
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
-  | { ok: false; rule: null; code: 'bad_input' | 'conflict' }
-  | { ok: false; rule: 'R212'; code: 'month_not_finished' | 'register_broken' | 'not_inscribed' | 'already_sealed'; notInscribed?: number }
+  | { ok: false; rule: null; code: 'bad_input' }
+  | { ok: false; rule: 'R212'; code: 'month_not_finished' | 'register_broken' | 'not_inscribed' | 'already_sealed' | 'conflict'; notInscribed?: number }
   | { ok: false; rule: 'R212'; code: 'count_mismatch'; counted: number; given: number };
 
 interface SealRow {
@@ -120,7 +120,6 @@ const sameFigures = (s: PublicProofSeal, m: ProofMonth, digest: string): boolean
 export class SceauxPreuve {
   private readonly now: () => Date;
   private readonly compteur: CompteurPreuve;
-  private readonly registre: RegistreMandats;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -129,7 +128,6 @@ export class SceauxPreuve {
   ) {
     this.now = options.now ?? (() => new Date());
     this.compteur = new CompteurPreuve(db, journal, { now: this.now });
-    this.registre = new RegistreMandats(db, journal, { now: this.now });
   }
 
   private async rows(networkId: string): Promise<SealRow[]> {
@@ -147,14 +145,14 @@ export class SceauxPreuve {
     const { month, manualCount } = input;
     if (typeof month !== 'string' || !MONTH.test(month) || typeof manualCount !== 'number' || !Number.isSafeInteger(manualCount) || manualCount < 0) return { ok: false, rule: null, code: 'bad_input' };
     if (month < PROOF_START_MONTH || month >= parisMonth(this.now())) return { ok: false, rule: 'R212', code: 'month_not_finished' };
-    const live = await this.compteur.compute(viewer.networkId);
+    const { counter: live, lines: linesByMonth } = await this.compteur.snapshot(viewer.networkId);
     if (!live.registerSound) return { ok: false, rule: 'R212', code: 'register_broken' };
     const figures = live.months.find((m) => m.month === month);
     if (!figures) return { ok: false, rule: 'R212', code: 'month_not_finished' };
     if (figures.notInscribed > 0) return { ok: false, rule: 'R212', code: 'not_inscribed', notInscribed: figures.notInscribed };
     if (figures.counted !== manualCount) return { ok: false, rule: 'R212', code: 'count_mismatch', counted: figures.counted, given: manualCount };
 
-    const lines = await this.compteur.countedLines(viewer.networkId, month);
+    const lines = linesByMonth.get(month) ?? [];
     const linesDigest = await proofLinesDigest(lines);
     const rows = (await this.rows(viewer.networkId)).map(toPublic);
     const latest = rows.filter((r) => r.month === month).at(-1);
@@ -182,9 +180,11 @@ export class SceauxPreuve {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [viewer.networkId, body.seq, month, body.counted, body.simple, body.exclusive, body.untyped, body.terminated, body.withdrawn, body.cancelledError, JSON.stringify(lines), linesDigest, body.sealedAt, `${String(viewer.role)}:${viewer.userId}`, body.prevHash, hash],
       );
-    } catch {
-      // Deux sceaux en même temps : le rang est pris, rien n'est écrit ; la direction recommence.
-      return { ok: false, rule: null, code: 'conflict' };
+    } catch (error) {
+      // Deux sceaux en même temps : le rang est pris, rien n'est écrit, la direction recommence. Toute autre panne remonte.
+      const seq = await this.db.first<{ n: number | null }>('SELECT MAX(seq) AS n FROM proof_seals WHERE network_id = ?', [viewer.networkId]);
+      if (Number(seq?.n ?? 0) >= body.seq) return { ok: false, rule: 'R212', code: 'conflict' };
+      throw error;
     }
     await appendEvent(this.journal, { type: 'preuve.sceau', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { month, seq: body.seq, counted: body.counted, hash } }, this.now);
     return { ok: true, value: { ...body, lines, hash } };
@@ -202,18 +202,39 @@ export class SceauxPreuve {
     return true;
   }
 
+  /**
+   * Ce que sert la route publique, sans clé : recalculé au plus toutes les 5 minutes et à chaque nouveau sceau, pour
+   * qu'une boucle de lectures anonymes coûte deux requêtes, et ne relise jamais le registre [R213].
+   */
+  async servedPublication(networkId: string): Promise<PublicProof> {
+    const count = Number((await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM proof_seals WHERE network_id = ?', [networkId]))?.n ?? 0);
+    const kept = await this.db.first<{ seals: number; body: string; computed_at: string }>('SELECT seals, body, computed_at FROM proof_publication_cache WHERE network_id = ?', [networkId]);
+    const nowMs = this.now().getTime();
+    if (kept && Number(kept.seals) === count) {
+      const age = nowMs - Date.parse(kept.computed_at);
+      if (age >= 0 && age < PROOF_PUBLICATION_MAX_AGE_MS) return JSON.parse(kept.body) as PublicProof;
+    }
+    const fresh = await this.publication(networkId);
+    await this.db.run(
+      `INSERT INTO proof_publication_cache (network_id, seals, body, computed_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (network_id) DO UPDATE SET seals = excluded.seals, body = excluded.body, computed_at = excluded.computed_at`,
+      [networkId, fresh.seals.length, JSON.stringify(fresh), new Date(nowMs).toISOString()],
+    );
+    return fresh;
+  }
+
   /** Ce que la page publique rend, sans droits : aucune donnée personnelle, aucun chiffre vivant que le sceau ne dise [R213]. */
   async publication(networkId: string): Promise<PublicProof> {
     const seals = (await this.rows(networkId)).map(toPublic);
-    const live = await this.compteur.compute(networkId);
+    const { counter: live, lines } = await this.compteur.snapshot(networkId);
     const chainSound = await this.chainSound(seals);
-    const registerSound = (await this.registre.check(networkId)).ok;
+    const registerSound = live.registerSound;
     const months: PublicProofMonth[] = [];
     for (const m of live.months) {
       if (!m.complete) continue;
       const mine = seals.filter((s) => s.month === m.month);
       const latest = mine.at(-1);
-      const digest = await proofLinesDigest(await this.compteur.countedLines(networkId, m.month));
+      const digest = await proofLinesDigest(lines.get(m.month) ?? []);
       months.push({
         month: m.month,
         counted: latest?.counted ?? null,

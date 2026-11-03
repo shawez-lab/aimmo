@@ -378,7 +378,7 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
     case 'preuve': {
       // Le compte du réseau, sur son seul site : les pages d'agent ne le portent pas.
       if (site.kind !== 'reseau') return notFound();
-      const proof = await new pilotage.SceauxPreuve(s.db, s.journal, { now: s.now }).publication(networkId);
+      const proof = await new pilotage.SceauxPreuve(s.db, s.journal, { now: s.now }).servedPublication(networkId);
       if (m[1]) return new Response(request.method === 'HEAD' ? null : JSON.stringify(proof), { status: 200, headers: pageHeaders('application/json; charset=utf-8', mode) });
       return html(renderPublicPage({ title: 'La preuve à Dijon, mois par mois', kicker: 'Compte public', body: pilotage.proofPageBody(proof), robots: mode === 'essai' ? 'noindex' : 'index' }));
     }

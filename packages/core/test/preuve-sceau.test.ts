@@ -196,6 +196,100 @@ describeWithSqlite('IN02 · le mois scellé, puis publié', () => {
     expect(changed.condition.met).toBe(false);
   }, 60_000);
 
+  it('[R212] le compte et les lignes d’un sceau viennent d’une seule lecture : une annulation pendant le sceau ne casse jamais la chaîne', async () => {
+    const t = await setup();
+    const [first] = await t.fill('2027-01', 2);
+    t.setClock('2027-02-02T10:00:00.000Z');
+    // Une annulation qui arrive juste après la lecture du registre, n'importe où avant l'écriture du sceau.
+    let done = false;
+    const racing: SqlDatabase = {
+      ...t.db,
+      all: async (sql: string, params?: readonly never[]) => {
+        const rows = await t.db.all(sql, params as never);
+        if (!done && /FROM mandate_register r/.test(sql)) {
+          done = true;
+          const c = await t.registre.cancel(t.agent, first!, 'error');
+          if (!c.ok) throw new Error(c.code);
+        }
+        return rows;
+      },
+    } as SqlDatabase;
+    const r = await new SceauxPreuve(racing, t.journal, { now: () => new Date('2027-02-02T10:00:00.000Z') }).seal(t.direction, { month: '2027-01', manualCount: 2 });
+    expect(done).toBe(true);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.lines).toHaveLength(r.value.counted);
+    const proof = await t.sceaux.publication(t.network.id);
+    expect(proof.chainSound).toBe(true);
+    expect(proof.months[0]).toMatchObject({ changedSinceSeal: true });
+    expect(await t.sceaux.seal(t.direction, { month: '2027-01', manualCount: 1 })).toMatchObject({ ok: true, value: { seq: 2, counted: 1 } });
+    expect((await t.sceaux.publication(t.network.id)).chainSound).toBe(true);
+  });
+
+  it('[R212] deux sceaux en même temps : un conflit dit ; une vraie panne remonte, elle n’est pas maquillée', async () => {
+    const t = await setup();
+    await t.fill('2027-01', 1);
+    await t.fill('2027-02', 1);
+    t.setClock('2027-03-02T10:00:00.000Z');
+    const failing = (before: () => Promise<void>): SqlDatabase =>
+      ({
+        ...t.db,
+        run: async (sql: string, params?: readonly never[]) => {
+          if (/INSERT INTO proof_seals/.test(sql)) {
+            await before();
+            throw new Error('panne de base inventée');
+          }
+          return t.db.run(sql, params as never);
+        },
+      }) as SqlDatabase;
+    const now = () => new Date('2027-03-02T10:00:00.000Z');
+    await expect(new SceauxPreuve(failing(async () => {}), t.journal, { now }).seal(t.direction, { month: '2027-01', manualCount: 1 })).rejects.toThrow(/panne de base/);
+    // L'autre sceau passe juste avant : le rang est pris.
+    const lost = await new SceauxPreuve(
+      failing(async () => {
+        const other = await t.sceaux.seal(t.direction, { month: '2027-02', manualCount: 1 });
+        if (!other.ok) throw new Error(other.code);
+      }),
+      t.journal,
+      { now },
+    ).seal(t.direction, { month: '2027-01', manualCount: 1 });
+    expect(lost).toEqual({ ok: false, rule: 'R212', code: 'conflict' });
+    expect((await t.sceaux.publication(t.network.id)).seals.map((s) => s.month)).toEqual(['2027-02']);
+  });
+
+  it('[R213] la route publique ne relit pas le registre à chaque lecture : deux requêtes, quel que soit le nombre de mandats ; un sceau et 5 minutes la rafraîchissent', async () => {
+    const t = await setup();
+    await t.fill('2027-01', 3);
+    await t.fill('2027-02', 3);
+    t.setClock('2027-03-02T10:00:00.000Z');
+    let queries = 0;
+    let clock = Date.parse('2027-03-02T10:00:00.000Z');
+    const counting: SqlDatabase = {
+      ...t.db,
+      all: async (sql: string, params?: readonly never[]) => { queries += 1; return t.db.all(sql, params as never); },
+      first: async (sql: string, params?: readonly never[]) => { queries += 1; return t.db.first(sql, params as never); },
+      run: async (sql: string, params?: readonly never[]) => { queries += 1; return t.db.run(sql, params as never); },
+    } as SqlDatabase;
+    const served = new SceauxPreuve(counting, t.journal, { now: () => new Date(clock) });
+    await served.servedPublication(t.network.id);
+    for (let i = 0; i < 3; i++) {
+      queries = 0;
+      expect((await served.servedPublication(t.network.id)).seals).toEqual([]);
+      expect(queries).toBe(2);
+    }
+    // Un nouveau sceau se voit aussitôt.
+    expect((await t.sceaux.seal(t.direction, { month: '2027-01', manualCount: 3 })).ok).toBe(true);
+    expect((await served.servedPublication(t.network.id)).seals).toHaveLength(1);
+    // Une annulation se voit au plus tard 5 minutes après.
+    const [id] = await t.db.all<{ mandate_id: string }>("SELECT mandate_id FROM mandate_register WHERE seq = 1");
+    t.setClock('2027-03-02T10:01:00.000Z');
+    const c = await t.registre.cancel(t.agent, id!.mandate_id, 'error');
+    if (!c.ok) throw new Error(c.code);
+    clock += 60_000;
+    expect((await served.servedPublication(t.network.id)).months[0]).toMatchObject({ changedSinceSeal: false });
+    clock += 5 * 60_000;
+    expect((await served.servedPublication(t.network.id)).months[0]).toMatchObject({ changedSinceSeal: true });
+  });
+
   it('[R13] [R14] [R213] rien de personnel, aucun agent ni identifiant interne dans le fichier et la page ; design et budget tenus [R201]', async () => {
     const t = await setup();
     const ids = await t.fill('2027-01', 3);
