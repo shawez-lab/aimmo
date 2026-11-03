@@ -1769,6 +1769,28 @@ Voie : 1
 - Critères : réservé à la direction [R16] (test) ; une licence manquante est refusée et dite (test) ; réponse perdue dite telle [R10] (test) ; budget tenu [R201] (test).
 - Attend : rien pour l'écran.
 
+**Espaces des clients et location : les gestes manquants à l'écran.**
+
+Voie : 2
+
+Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la voie 2 aux appels de l'application : aucun espace client ne peut s'ouvrir depuis l'écran, et aucun garant ne peut s'ajouter à une candidature.
+
+### EC12 · Ouvrir l'espace d'un client depuis sa fiche
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC06, EC07
+- Cahier : Le produit, espaces des clients ; R160, R03, R16, R161, R26, R201.
+- Objectif : depuis la fiche, l'agent note comment la personne a donné son accord et lui ouvre son espace, par `POST /v1/espaces/personnes/<id>/ouvrir`. Il ne voit jamais le lien.
+- Critères : sans preuve de l'accord, rien ne part [R03] (test) ; ce qui part est dit en essai, jamais présenté comme un envoi réel [R26] (test) ; aucun lien ni jeton à l'écran [R160] (test) ; une personne sans dossier est dite telle [R161] (test) ; refus de droits dit en français [R16] (test) ; réponse perdue dite telle, sans renvoyer de lien (test) ; script à part, budget tenu [R201] (test).
+- Attend : rien pour l'écran ; H40 pour de vrais espaces.
+
+### W18 · Garants d'une candidature à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11, W13
+- Cahier : M15 Louer ; R104, R105, R16, R201.
+- Objectif : l'agent ajoute un garant à une candidature, par `POST /v1/location/candidatures/<id>/garants`. Vérifier d'abord la route et les pièces du garant.
+- Critères : seules les pièces permises sont demandées [R104] (test) ; l'ordre d'arrivée ne change pas [R105] (test) ; seul l'agent du bien ou la direction agit [R16] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 **M14 · Réseau et académie, juillet 2027.**
 
 Voie : 2
