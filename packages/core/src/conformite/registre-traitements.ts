@@ -701,6 +701,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     tables: {
       // Un code de raison et le nom d'une copie : aucune personne, mais des noms de colonnes que la vérification suit.
       base_copy_runs: ['reason', 'copy_id'],
+      base_restore_receipts: ['reason', 'copy_taken_at'],
     },
   },
 ];
@@ -845,6 +846,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'created_at', 'updated_at'],
   property_on_sale: ['property_id', 'network_id', 'mandate_id', 'on_sale_at', 'noted_at'],
   base_copy_alerts: ['night', 'last_success_at', 'created_at'],
+  base_restore_receipts: ['id', 'tested_at', 'month', 'outcome', 'duration_ms', 'tables_count', 'rows_count', 'digest'],
   base_copy_runs: ['id', 'started_at', 'finished_at', 'outcome', 'tables_count', 'rows_count', 'parts_count'],
   alert_unsubscribe_tokens: ['token_hash', 'network_id', 'created_at', 'used_at'],
   agent_whatsapp_alerts: ['message_id', 'network_id', 'property_id', 'prepared_at', 'confirmed_at'],

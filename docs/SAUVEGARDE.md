@@ -12,6 +12,10 @@ D1 peut répondre moins vite pendant la photo : c'est pourquoi elle se prend à 
 
 Écran du réseau, bloc « La copie de la base » : la date de la dernière copie réussie, le dernier échec et sa raison, les nuits sans copie. De 6 h à 8 h, le Worker alerte si aucune copie réussie n'est arrivée depuis la veille à 6 h. Il n'a pas besoin du travail pour cela : si GitHub Actions est à l'arrêt, l'alerte arrive quand même.
 
+## Chaque mois
+
+Le 2 du mois, le travail « Test de restauration » restaure la dernière copie dans une base en mémoire, jamais en production, et range le reçu. Il prend le même allumage et les mêmes secrets que la copie. L'écran du réseau lit le reçu, bloc « La preuve de restauration, ce mois-ci » ; à partir du 4, un mois sans reçu se dit « manquant ». Ce test ne rejoue pas les effacements : sa base est jetée.
+
 ## Garde
 
 30 jours pour chaque copie (préfixe `copies/`), par la règle du compartiment (H50) : le logiciel ne supprime rien, et sa clé limitée aux objets ne peut pas lire cette règle. L'écran ne l'affirme donc pas ; à vérifier dans Cloudflare. Le registre des effacements (préfixe `effacements/`) n'expire pas.

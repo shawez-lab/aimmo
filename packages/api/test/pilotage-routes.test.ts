@@ -129,6 +129,10 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     expect(JSON.stringify(copies.body)).not.toMatch(/keepDays|gardée/);
     expect((await t.call(t.agent, 'GET', '/pilotage/copies')).status).toBe(403);
     expect((await t.call(t.compliance, 'GET', '/pilotage/copies')).status).toBe(403);
+    // SV03 : le reçu du mois, pour la direction seule ; aucun reçu : « manquant », jamais vert.
+    expect((await t.call(t.direction, 'GET', '/pilotage/copies/restauration')).body).toMatchObject({ ok: true, data: { state: 'manquant', receipt: null } });
+    expect((await t.call(t.agent, 'GET', '/pilotage/copies/restauration')).status).toBe(403);
+    expect((await t.call(t.compliance, 'GET', '/pilotage/copies/restauration')).status).toBe(403);
   });
 
   it('[R230] le passage du planificateur porte bien la surveillance : une nuit sans copie se lit à l’écran', async () => {
