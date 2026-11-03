@@ -55,14 +55,14 @@ const settle = async () => {
 async function run(answers: Record<string, Answer> = {}) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
-  const calls: { method: string; url: string }[] = [];
+  const calls: { method: string; url: string; body?: unknown }[] = [];
   const table: Record<string, Answer> = { ...BASE, ...answers };
   runInNewContext(AGENT_APP_FILES['/app/app.js']!, {
     document,
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
-    fetch: (url: string, init: { method?: string } = {}) => {
+    fetch: (url: string, init: { method?: string; body?: string } = {}) => {
       const method = init.method ?? 'GET';
-      calls.push({ method, url });
+      calls.push(init.body ? { method, url, body: JSON.parse(init.body) } : { method, url });
       const a = table[`${method} ${url}`];
       return a ? a() : Promise.reject(new TypeError('hors ligne'));
     },
@@ -137,5 +137,138 @@ describe('P10 · écran « Mettre en vente »', () => {
     expect(refused.els.connexion!.hidden).toBe(false);
     expect(refused.storage.has('aimmo.cle')).toBe(false);
     expect(refused.els['vente-corps']!.children).toEqual([]);
+  });
+});
+
+describe('X18 · corriger le texte de l’annonce à l’écran', () => {
+  const FULL = { ...DRAFT, body: 'Appartement de 62 m².' };
+  const POST = 'POST /v1/annonces/b1/correction';
+  const open = async (answers: Record<string, Answer> = {}) => {
+    const t = await run({ 'GET /v1/annonces/b1/brouillon': ok(FULL), ...answers });
+    await t.click(t.byText(t.els.biens!, 'Mettre en vente'));
+    await t.click(t.byText(t.els['vente-corps']!, 'Corriger le texte'));
+    const inside = (id: string) => t.els['vente-corps']!.all().find((e) => e.attributes.id === id)!;
+    const send = () => t.click(t.byText(t.els['vente-corps']!, 'Enregistrer la correction'));
+    const posts = () => t.calls.filter((c) => c.method === 'POST');
+    return { ...t, inside, send, posts };
+  };
+
+  it('le texte en cours est pré-rempli et part tel que tapé ; rangée, l’annonce est relue', async () => {
+    const t = await open({ [POST]: ok({ ...FULL, id: 'd3' }) });
+    expect(t.inside('vente-correction-titre').value).toBe('Appartement lumineux à Dijon');
+    expect(t.inside('vente-correction-texte').value).toBe('Appartement de 62 m².');
+    t.inside('vente-correction-texte').value = 'Appartement de 62 m² au calme.';
+    const before = t.calls.length;
+    await t.send();
+    expect(t.calls[before]).toEqual({ method: 'POST', url: '/v1/annonces/b1/correction', body: { title: 'Appartement lumineux à Dijon', body: 'Appartement de 62 m² au calme.' } });
+    expect(t.calls.slice(before + 1).map((c) => c.url)).toEqual(['/v1/annonces/b1/controle', '/v1/annonces/b1/brouillon', '/v1/annonces/b1/publication']);
+    expect(t.els['vente-etat']!.textContent).toBe('Correction rangée : l’agent du bien la relit, puis la valide.');
+  });
+
+  it('sans texte dans le brouillon, les phrases servent de départ', async () => {
+    const t = await open({ 'GET /v1/annonces/b1/brouillon': ok(DRAFT) });
+    expect(t.inside('vente-correction-texte').value).toBe(`Appartement de 62 m² ${INJECTED}. Proche de la gare.`);
+  });
+
+  it('[R47] refusée : chaque phrase en cause et son problème, sans code technique, et ce qui est tapé reste', async () => {
+    const t = await open({ [POST]: no(409, { ok: false, rule: 'R47', code: 'refused_text', sentences: [{ text: `Avec piscine ${INJECTED}.`, sources: [], problems: [{ code: 'fait_sans_source', value: 'piscine' }] }] }) });
+    t.inside('vente-correction-texte').value = `Avec piscine ${INJECTED}.`;
+    await t.send();
+    const text = t.els['vente-corps']!.textContent;
+    expect(text).toContain('Une phrase n’est pas reliée à la fiche : corrigez-la.');
+    expect(text).toContain('À corriger : fait absent de la fiche (« piscine »)');
+    expect(text).toContain(INJECTED);
+    expect(text).not.toMatch(/refused_text|fait_sans_source/);
+    expect(t.inside('vente-correction-texte').value).toBe(`Avec piscine ${INJECTED}.`);
+    expect(t.posts().length).toBe(1);
+  });
+
+  it('un titre ou un texte vide ne part pas', async () => {
+    const t = await open({ [POST]: ok(FULL) });
+    t.inside('vente-correction-texte').value = '   ';
+    await t.send();
+    expect(t.posts()).toEqual([]);
+    expect(t.els['vente-corps']!.textContent).toContain('Le titre et le texte sont à remplir.');
+  });
+
+  it('[R16] un droit refusé est dit, et le texte reste', async () => {
+    const t = await open({ [POST]: no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
+    t.inside('vente-correction-texte').value = 'Mon texte.';
+    await t.send();
+    expect(t.els['vente-corps']!.textContent).toContain('Ce bien n’est pas dans vos droits.');
+    expect(t.inside('vente-correction-texte').value).toBe('Mon texte.');
+  });
+
+  it('une réponse perdue est dite telle, sans prétendre que rien n’est fait, et le texte reste', async () => {
+    const t = await open();
+    t.inside('vente-correction-texte').value = 'Mon texte.';
+    await t.send();
+    expect(t.els['vente-corps']!.textContent).toContain('la correction a peut-être été rangée');
+    expect(t.inside('vente-correction-texte').value).toBe('Mon texte.');
+  });
+
+  it('un seul envoi à la fois', async () => {
+    let release: (r: Response) => void = () => undefined;
+    const t = await open({ [POST]: () => new Promise<Response>((r) => { release = r; }) });
+    const go = t.byText(t.els['vente-corps']!, 'Enregistrer la correction')!;
+    go.listeners.click!({});
+    go.listeners.click!({});
+    await settle();
+    expect(t.posts().length).toBe(1);
+    release(Response.json({ ok: false, rule: null, code: 'busy' }, { status: 400 }));
+    await settle();
+    expect(t.els['vente-corps']!.textContent).toContain('Une rédaction est déjà en cours');
+    expect((go as unknown as { disabled: boolean }).disabled).toBe(false);
+  });
+
+  it('une réponse arrivée après avoir quitté l’écran ne ramène pas dessus', async () => {
+    let release: (r: Response) => void = () => undefined;
+    const t = await open({ [POST]: () => new Promise<Response>((r) => { release = r; }) });
+    await t.click(t.byText(t.els['vente-corps']!, 'Enregistrer la correction'));
+    t.els.vente!.hidden = true;
+    const before = t.calls.length;
+    release(Response.json({ ok: true, mode: 'essai', data: FULL }));
+    await settle();
+    expect(t.calls.length).toBe(before);
+    expect(t.els.vente!.hidden).toBe(true);
+  });
+
+  it.each([
+    ['une panne du serveur', async () => Response.json({ ok: false, code: 'internal_error' }, { status: 500 })],
+    ['une passerelle sans corps lisible', async () => new Response('<html>', { status: 502 })],
+    ['un succès coupé pendant sa lecture', async () => new Response('{"ok":tr', { status: 200 })],
+  ])('%s n’est jamais dite « non rangée » : le texte a pu partir', async (_name, answer) => {
+    const t = await open({ [POST]: answer });
+    t.inside('vente-correction-texte').value = 'Mon texte.';
+    await t.send();
+    const text = t.els['vente-corps']!.textContent;
+    expect(text).toContain('la correction a peut-être été rangée');
+    expect(text).not.toContain('n’a pas pu être rangée');
+    expect(t.inside('vente-correction-texte').value).toBe('Mon texte.');
+  });
+
+  it('[R47] sur une annonce validée, le retrait est dit avant d’enregistrer ; sur un brouillon, rien', async () => {
+    const validated = await open({ 'GET /v1/annonces/b1/brouillon': ok({ ...FULL, validated: { at: '2027-02-12T11:00:00.000Z' } }) });
+    expect(validated.els['vente-corps']!.textContent).toContain('l’annonce est retirée de tous les canaux');
+    const draft = await open();
+    expect(draft.els['vente-corps']!.textContent).not.toContain('retirée de tous les canaux');
+  });
+
+  it('pendant l’envoi, ni valider, ni rédiger, ni rouvrir : le formulaire reste et le refus arrive bien', async () => {
+    let release: (r: Response) => void = () => undefined;
+    const t = await open({ [POST]: () => new Promise<Response>((r) => { release = r; }), 'POST /v1/annonces/brouillons/d2/validation': ok(FULL), 'POST /v1/annonces/b1/brouillon': ok(FULL) });
+    t.inside('vente-correction-texte').value = 'Avec piscine.';
+    await t.click(t.byText(t.els['vente-corps']!, 'Enregistrer la correction'));
+    await t.click(t.byText(t.els['vente-corps']!, 'Valider l’annonce'));
+    await t.click(t.byText(t.els['vente-corps']!, 'Rédiger de nouveau'));
+    await t.click(t.byText(t.els.biens!, 'Mettre en vente'));
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/annonces/b1/correction']);
+    expect(t.els['vente-etat']!.textContent).toBe('Une correction part : patientez un instant.');
+    release(Response.json({ ok: false, rule: 'R47', code: 'refused_text', sentences: [{ text: 'Avec piscine.', sources: [], problems: [{ code: 'fait_sans_source', value: 'piscine' }] }] }, { status: 409 }));
+    await settle();
+    expect(t.els['vente-corps']!.textContent).toContain('À corriger : fait absent de la fiche (« piscine »)');
+    expect(t.inside('vente-correction-texte').value).toBe('Avec piscine.');
+    await t.click(t.byText(t.els['vente-corps']!, 'Valider l’annonce'));
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/annonces/b1/correction', '/v1/annonces/brouillons/d2/validation']);
   });
 });
