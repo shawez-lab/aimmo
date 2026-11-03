@@ -173,7 +173,7 @@ export interface ApiConfig {
    * adresses des lettres (sans lui, aucune campagne ne vérifie son rayon [R140]) et les IA de rédaction (absentes, les
    * textes du code). Les relances passent par le contrôle central, en mode essai seulement [R26].
    */
-  gagner?: Pick<GagnerServices, 'proofs' | 'geocoder' | 'drafter' | 'letterDrafter' | 'dossierDrafter'>;
+  gagner?: Pick<GagnerServices, 'proofs' | 'uploads' | 'geocoder' | 'drafter' | 'letterDrafter' | 'dossierDrafter'>;
   /**
    * M01 (AT11) : les IA des réponses aux avis et des pages de quartier (absentes, les textes de secours contrôlés). Les
    * ventes DVF du recalcul des prix sont celles de l'estimation en ligne ; IndexNow et la fiche Google réelle ne sont

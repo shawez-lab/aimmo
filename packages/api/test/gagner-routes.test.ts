@@ -1,7 +1,8 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, Mandats, OLD_CONTACT_PURPOSE, ROLES, RegistreMandats, SqlJournalStore, applyMigrations, fromSyncSqlite, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { Annuaire, MiseEnRelation, type ConsentProofStore } from '../../core/src/partenaires/index.ts';
 import { gagnerRoutes, type GagnerServices } from '../src/gagner.ts';
+import { MAX_UPLOAD_BYTES } from '../src/partenaires.ts';
 import { htmlProblems } from '../../core/src/design/audit.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -66,7 +67,7 @@ async function setup() {
     const response = await route.handle(s, viewer, params, request);
     return { status: response.status, body: (await response.json()) as { ok: boolean; mode?: string; data?: any; code?: string; rule?: string } };
   };
-  return { db, journal, store, fiche, acces, s, network, alex, viewers, routes, call, partnerId };
+  return { db, journal, store, fiche, acces, s, network, alex, viewers, routes, call, partnerId, files };
 }
 
 /** Un exemple d'adresse pour chaque route, et un corps. */
@@ -89,6 +90,7 @@ const SAMPLES: Record<string, string> = {
   'gagner.relances': '/gagner/relances',
   'gagner.relance_valider': '/gagner/relances/r1/valider',
   'gagner.mesure': '/gagner/mesure/2027-10',
+  'gagner.mesure_preuve': '/gagner/mesure/preuves',
   'gagner.mesure_cout': '/gagner/mesure/couts',
   'gagner.mesure_decision': '/gagner/mesure/decisions',
 };
@@ -260,5 +262,73 @@ describeWithSqlite('G11 · routes de M20 complet', () => {
     expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/couts', { month: '2027-10', source: 'social', amountCents: 1000, proofRef: 'preuves/facture-reseaux.pdf' })).status).toBe(200);
     expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/decisions', { month: '2027-10', source: 'social', decision: 'garder', reason: 'À revoir le mois prochain' })).status).toBe(200);
     expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/decisions', 'pas un objet')).body).toEqual({ ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
+  });
+
+  describe('G14 · dépôt de la preuve d’un coût', () => {
+    const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
+    const route = gagnerRoutes().find((r) => r.name === 'gagner.mesure_preuve')!;
+    const post = (type: string, body: Uint8Array, headers: Record<string, string> = {}) =>
+      new Request('https://api.exemple.test/v1/gagner/mesure/preuves', { method: 'POST', headers: { 'content-type': type, ...headers }, body });
+    const stored = () => {
+      const puts: { ref: string; type: string; size: number }[] = [];
+      return { puts, uploads: { put: async (ref: string, bytes: Uint8Array, type: string) => void puts.push({ ref, type, size: bytes.byteLength }) } };
+    };
+
+    it('[R144] la preuve déposée porte une référence choisie par le serveur, et le coût la reprend', async () => {
+      const t = await setup();
+      const { puts, uploads } = stored();
+      const r = await route.handle({ ...t.s, uploads }, t.viewers.direction, [], post('application/pdf', PDF));
+      expect(r.status).toBe(200);
+      const { data } = (await r.json()) as { data: { proofRef: string } };
+      expect(data.proofRef).toMatch(new RegExp(`^mesure-sources/${t.network.id}/[0-9a-f-]{36}\\.pdf$`));
+      expect(puts).toEqual([{ ref: data.proofRef, type: 'application/pdf', size: PDF.byteLength }]);
+      t.files.refs.add(data.proofRef);
+      const cost = await t.call(t.viewers.direction, 'POST', '/gagner/mesure/couts', { month: '2027-10', source: 'social', amountCents: 1999, proofRef: data.proofRef });
+      expect(cost.body).toEqual({ ok: true, mode: 'essai', data: { version: 1 } });
+    });
+
+    it('[R16] un agent, un partenaire ou la conformité ne déposent rien, et le fichier n’est pas lu', async () => {
+      const t = await setup();
+      const { puts, uploads } = stored();
+      for (const role of ['agent', 'partner', 'compliance'] as const) {
+        const request = post('application/pdf', PDF);
+        const r = await route.handle({ ...t.s, uploads }, t.viewers[role], [], request);
+        expect(r.status).toBe(403);
+        expect(request.bodyUsed).toBe(false);
+      }
+      expect(puts).toEqual([]);
+    });
+
+    it('un autre format, un faux PDF, un fichier trop lourd ou l’absence de stockage ne rangent rien', async () => {
+      const t = await setup();
+      const { puts, uploads } = stored();
+      const code = async (s: GagnerServices, request: Request) => {
+        const r = await route.handle(s, t.viewers.direction, [], request);
+        return [r.status, ((await r.json()) as { code: string }).code];
+      };
+      const s = { ...t.s, uploads };
+      expect(await code(s, post('image/gif', PDF))).toEqual([415, 'bad_type']);
+      expect(await code(s, post('application/pdf', new Uint8Array([0x3c, 0x68, 0x74, 0x6d, 0x6c])))).toEqual([415, 'bad_type']);
+      expect(await code(s, post('image/png', PDF))).toEqual([415, 'bad_type']);
+      expect(await code(s, post('application/pdf', new Uint8Array(0)))).toEqual([415, 'bad_type']);
+      expect(await code(s, post('application/pdf', PDF, { 'content-length': String(MAX_UPLOAD_BYTES + 1) }))).toEqual([413, 'too_large']);
+      expect(await code(s, post('application/pdf', new Uint8Array(MAX_UPLOAD_BYTES + 1)))).toEqual([413, 'too_large']);
+      expect(await code({ ...t.s, uploads: null }, post('application/pdf', PDF))).toEqual([503, 'storage_unavailable']);
+      expect(await code(t.s, post('application/pdf', PDF))).toEqual([503, 'storage_unavailable']);
+      expect(puts).toEqual([]);
+    });
+
+    it('[R13] le journal garde l’empreinte seule : ni la référence, ni le nom du fichier', async () => {
+      const t = await setup();
+      const { uploads } = stored();
+      const r = await route.handle({ ...t.s, uploads }, t.viewers.direction, [], post('application/pdf', PDF, { 'content-disposition': 'attachment; filename="facture-secrete.pdf"' }));
+      const { data } = (await r.json()) as { data: { proofRef: string } };
+      const rows = await t.journal.all();
+      const event = rows.find((e) => e.type === 'mesure_sources.preuve')!;
+      expect(Object.keys(event.data).sort()).toEqual(['rule', 'sha256']);
+      const all = JSON.stringify(rows);
+      expect(all).not.toContain(data.proofRef);
+      expect(all).not.toContain('facture-secrete');
+    });
   });
 });

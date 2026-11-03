@@ -32,6 +32,7 @@ import {
 } from '@aimmo/core';
 import { Annuaire } from '../../core/src/partenaires/index.ts';
 import { renderDossier } from '../../core/src/mandats/gagner/dossier-presentation.ts';
+import { UPLOAD_TYPES, readUpload, sha256Hex, type PartnerUploadStore } from './partenaires.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 8_000;
@@ -44,6 +45,8 @@ export interface GagnerServices {
   now: () => Date;
   /** Le stockage des preuves (coûts des sources, justificatifs des partenaires) ; absent, la saisie d'un coût est refusée. */
   proofs?: CostProofStore | null;
+  /** Le dépôt des preuves de coût ; absent, l'envoi d'un fichier est refusé (503) et rien n'est rangé. */
+  uploads?: PartnerUploadStore | null;
   /** La rédaction des relances par l'IA ; absente, le texte de secours du code. */
   drafter?: OldContactDrafter | null;
   /** Le géocodage des adresses des lettres ; absent, aucune campagne ne peut vérifier son rayon. */
@@ -109,6 +112,26 @@ const services = (s: GagnerServices) => {
     lettres: new LettresQuartier(s.db, s.journal, { now: s.now, geocoder: s.geocoder ?? null, drafter: s.letterDrafter ?? null }),
   };
 };
+
+/**
+ * La direction dépose la preuve d'un coût, en PDF, JPEG ou PNG : le serveur contrôle le format par sa signature, choisit
+ * la référence et la rend ; la saisie du coût la reprend [R144]. Le contenu n'est jamais lu au-delà de sa signature, et
+ * le journal ne garde que l'empreinte [R13].
+ */
+async function depositProof(s: GagnerServices, viewer: Viewer, request: Request): Promise<Response> {
+  const type = (request.headers.get('content-type') ?? '').toLowerCase().split(';')[0]!.trim();
+  const kind = UPLOAD_TYPES.find((t) => t.type === type);
+  if (!kind) return json(415, { ok: false, rule: null, code: 'bad_type' });
+  if (!s.uploads) return json(503, { ok: false, rule: null, code: 'storage_unavailable' });
+  const bytes = await readUpload(request);
+  if (!bytes) return json(413, { ok: false, rule: null, code: 'too_large' });
+  if (bytes.byteLength < kind.magic.length || !kind.magic.every((b, i) => bytes[i] === b)) return json(415, { ok: false, rule: null, code: 'bad_type' });
+  const proofRef = `mesure-sources/${viewer.networkId}/${crypto.randomUUID()}.${kind.ext}`;
+  const sha256 = await sha256Hex(bytes);
+  await s.uploads.put(proofRef, bytes, kind.type);
+  await appendEvent(s.journal, { type: 'mesure_sources.preuve', actor: `${String(viewer.role)}:${viewer.userId}`, subject: null, data: { rule: 'R144', sha256 } }, s.now);
+  return reply({ ok: true, value: { proofRef } });
+}
 
 /** Le rôle d'abord : un rôle non admis est refusé, au journal, sans que le corps soit lu [R16, R13]. */
 export function guarded(route: GagnerRoute): GagnerRoute['handle'] {
@@ -189,6 +212,7 @@ export function gagnerRoutes(): GagnerRoute[] {
     },
     // G10 · mesure des sources
     { method: 'GET', pattern: new RegExp(`${P}/mesure/(\\d{4}-\\d{2})$`), name: 'gagner.mesure', roles: DIRECTION, handle: async (s, v, [month]) => reply(await services(s).mesure.report(v, month)) },
+    { method: 'POST', pattern: new RegExp(`${P}/mesure/preuves$`), name: 'gagner.mesure_preuve', roles: DIRECTION, handle: (s, v, _p, request) => depositProof(s, v, request) },
     { method: 'POST', pattern: new RegExp(`${P}/mesure/couts$`), name: 'gagner.mesure_cout', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).mesure.enterCost(v, b))) },
     { method: 'POST', pattern: new RegExp(`${P}/mesure/decisions$`), name: 'gagner.mesure_decision', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).mesure.decide(v, b))) },
   ];
