@@ -551,3 +551,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 12:38 · X24 · le partenaire recommande une personne depuis son espace et lit ses envois, preuve de l'accord exigée ; toute sortie vide la page (#330) ; relecture forte 4 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : X25
 - 2026-11-03 12:38 · voie 1 · fin de séance : X22, X23 et X24 fusionnées ; X25 écrite ; verrou libéré, relance · prochaine : X25
 - 2026-11-03 12:38 · voie 1 · relance immédiate refusée par le contrôle des permissions, non retentée ; la séance reprend elle-même X25 · prochaine : X25
+- 2026-11-03 13:00 · X25 · une recommandation de partenaire passe en un seul lot : une panne puis un renvoi ne font qu'une fiche, un projet, un accord (#331) ; relecture forte 3 P1 corrigés, X26 trouvée ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : X26
+- 2026-11-03 13:00 · voie 1 · fin de séance : X22 à X25 fusionnées ; X26 écrite ; relance refusée plus tôt par le contrôle des permissions, non retentée ; verrou libéré · prochaine : X26
