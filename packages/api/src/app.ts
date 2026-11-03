@@ -483,6 +483,28 @@ const ROUTES: RouteDef[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/registre\/reglage$/,
+    name: 'registre.reglage.lire',
+    // Le format en vigueur et le prochain numéro, pour l'écran de la direction (D13) [R39].
+    handle: async (s, viewer) => {
+      const r = await new RegistreMandats(s.db, s.journal, { now: s.now }).readSettings(viewer);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : refusal({ rule: r.rule, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/registre\/lignes$/,
+    name: 'registre.lignes',
+    // Les mandats inscrits, les plus récents d'abord, pour annuler sans saisir d'identifiant (D13) ; la direction seule [R16].
+    handle: async (s, viewer, _params, request) => {
+      const before = new URL(request.url).searchParams.get('avant');
+      if (before !== null && !/^[1-9]\d{0,9}$/.test(before)) return failure(400, 'bad_cursor', 'avant : un rang du registre.');
+      const r = await new RegistreMandats(s.db, s.journal, { now: s.now }).entries(viewer, before === null ? null : Number(before));
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: { entries: r.entries, next: r.next } }) : refusal({ rule: r.rule, code: r.code });
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/registre\/reglage$/,
     name: 'registre.reglage',
@@ -579,6 +601,16 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, [id]) => {
       const r = await modeles(s).read(viewer, id!);
       return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.document }) : refusal(r);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/honoraires\/bareme$/,
+    name: 'honoraires.bareme.lire',
+    // Le barème en vigueur, pour l'écran de la direction (D13) [R41].
+    handle: async (s, viewer) => {
+      const r = await controles(s).readFeeSchedule(viewer);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : refusal(r);
     },
   },
   {
