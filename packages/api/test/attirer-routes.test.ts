@@ -44,7 +44,7 @@ async function setup() {
   ]) {
     await db.run('INSERT INTO agents (id, network_id, first_name, last_name, zone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id!, net!, first!, last!, 'Ville inventée', 'x', 'x']);
   }
-  const s: AttirerServices = { db, journal, now, priceSales };
+  const s: AttirerServices = { db, journal, now, priceSales, diffusion: { canDiffuse: async () => ({ allowed: true, reason: 'ok' }) } };
   const routes = attirerRoutes();
   const call = async (viewer: Viewer, method: 'GET' | 'POST', path: string, body?: unknown) => {
     for (const r of routes) {

@@ -245,8 +245,9 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
     await t.db.exec('PRAGMA foreign_keys = ON');
     const plan = await t.ref.sitemap('net-1', s.net);
     // Lou n'a pas ses mentions : sa page n'est pas publiée, elle n'entre pas au plan.
-    expect(locs(plan)).toEqual([`${NET}/agents/ag-1`, `${NET}/prix/ville-inventee`, `${NET}/prix/ville-inventee/centre`]);
-    expect(locs(await t.ref.sitemap('net-1', s.cam))).toEqual([`${CAMILLE}/agents/ag-1`]);
+    // [RS02] L'accueil et les pages où il mène entrent au plan de leur site, la preuve au seul réseau.
+    expect(locs(plan)).toEqual([`${NET}/`, `${NET}/biens`, `${NET}/simulateur`, `${NET}/preuve`, `${NET}/agents/ag-1`, `${NET}/prix/ville-inventee`, `${NET}/prix/ville-inventee/centre`]);
+    expect(locs(await t.ref.sitemap('net-1', s.cam))).toEqual([`${CAMILLE}/`, `${CAMILLE}/biens`, `${CAMILLE}/simulateur`, `${CAMILLE}/agents/ag-1`]);
     expect(renderSitemap([{ loc: 'https://x.exemple.test/a?b=1&c=<2>', lastmod: '2026-10-20', kind: 'prix' }])).toBe(
       '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n<url><loc>https://x.exemple.test/a?b=1&amp;c=&lt;2&gt;</loc><lastmod>2026-10-20</lastmod></url>\n</urlset>\n',
     );

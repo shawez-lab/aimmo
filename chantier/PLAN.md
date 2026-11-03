@@ -3501,7 +3501,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
 - Cahier : M01 ; R14, R150, R152.
 - Objectif : `GET /agents`, seulement ceux dont la page est publiable, par ordre alphabétique, sans aucun chiffre ; `GET /prix`, les communes dont la page de prix a au moins une case publiable. Réservées au site du réseau.
-- Critères : un agent sans ses mentions ou parti n'y est pas [R152] (test) ; aucun chiffre, note ni classement [R14] (test) ; une commune sans case publiable n'y est pas [R150] (test) ; 404 sur le site d'un agent [R153] (test) ; budget [R201] (test).
+- Critères : l'accueil et le plan du site y mènent, ajoutés à `sitePaths` (test qui suit les liens) ; un agent sans ses mentions ou parti n'y est pas [R152] (test) ; aucun chiffre, note ni classement [R14] (test) ; une commune sans case publiable n'y est pas [R150] (test) ; 404 sur le site d'un agent [R153] (test) ; budget [R201] (test).
 - Attend : rien.
 
 ### RS04 · L'estimation en ligne sur le site
@@ -3509,7 +3509,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
 - Cahier : M01 ; M04, estimation en ligne (E05).
 - Objectif : `GET /estimation`, où mènent déjà les pages de prix et qui répond 404 : la page qui appelle l'estimation en ligne de E05, ou, si elle ne peut pas être servie sans script ni clé, un formulaire serveur.
-- Critères : le lien des pages de prix aboutit (test) ; la fourchette est celle de E05, jamais une autre [R10] (test) ; accord et mentions de E05 repris [R03] (test) ; limites de E05 tenues (test) ; budget [R201] (test).
+- Critères : le lien des pages de prix aboutit, et l'accueil et le plan du site y mènent, ajoutés à `sitePaths` (test) ; la fourchette est celle de E05, jamais une autre [R10] (test) ; accord et mentions de E05 repris [R03] (test) ; limites de E05 tenues (test) ; budget [R201] (test).
 - Attend : rien.
 
 ### RS05 · Mentions légales et données personnelles du site
