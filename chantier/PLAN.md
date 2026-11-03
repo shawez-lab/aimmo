@@ -3589,7 +3589,8 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN14 · Les alertes passent dès l'ouverture des heures d'envoi
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#359). Relecture forte : aucun P0 ni P1 ; Codex non attendu (H03).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : IN11
 - Cahier : Besoins et solutions, « Nos engagements de service » ; R01.
 - Objectif : trouvé par IN11 : `alertsJob` ne passe que de 9 h à 19 h. Un bien sorti la nuit, un dimanche, à minuit de la fin d'un délai de rétractation ou après le passage de 19 h a sa limite avant ou à 9 h 00 min 00 s, et sera manqué par construction. Le faire passer dès 8 h.
