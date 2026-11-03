@@ -1824,6 +1824,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Objectif : `addGuarantor` ne vérifie que le réseau : un appel direct peut désigner le contact d'un autre agent ou une fiche réunie du candidat, et lire par `missing` si son identité est vérifiée. Appliquer les règles de `addableContacts`.
 - Critères : le contact d'un autre agent est refusé et le refus au journal [R16] (test) ; une fiche réunie du candidat est refusée (test) ; un dossier DossierFacile ne reçoit ni pièce ni garant par appel direct [R104] (test).
 - Attend : rien.
+- Décidé (2026-11-03, voie 2) : les droits d'abord, puis le reste ; une pièce interdite sur un dossier DossierFacile reste nommée au journal ; `addableContacts` suit toute la chaîne des fusions, comme le geste. Relecture forte : 2 P0 et 1 P1 corrigés. La route de la candidature elle-même a le même trou : W22.
 
 ### W21 · L'identité du candidat vérifiée, depuis l'écran
 - Statut : en cours (voie 2)
@@ -1832,6 +1833,14 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Objectif : un dossier reste « incomplet : manque pièce d'identité vérifiée » tant que la vérification n'est pas rangée. Vérifier d'abord si un geste existe à l'écran pour un candidat ; sinon l'ajouter, sans que la pièce quitte le coffre.
 - Critères : la pièce va au coffre, jamais au dossier [R15] (test) ; l'écran ne montre que le fait vérifié et sa date [R13] (test) ; réservé à l'agent du bien ou à la direction [R16] (test) ; budget tenu [R201] (test).
 - Attend : H36 pour le coffre réel.
+
+### W22 · Le candidat passe par les mêmes droits que ses contacts
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W20
+- Cahier : M15 Louer ; R16, R105.
+- Objectif : trouvé par W20 : `apply` ne vérifie que le réseau, un appel direct range comme candidat le contact d'un autre agent, puis lit son identité vérifiée par `missing`. Appliquer les règles de `addableContacts`, comme pour le garant.
+- Critères : le contact d'un autre agent est refusé et le refus au journal [R16] (test) ; le bailleur est refusé (test) ; une fiche réunie reste rangée sur la fiche gardée [R105] (test).
+- Attend : rien.
 
 **M14 · Réseau et académie, juillet 2027.**
 

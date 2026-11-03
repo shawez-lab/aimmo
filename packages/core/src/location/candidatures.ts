@@ -171,6 +171,7 @@ export class Candidatures {
   async placeOf(viewer: Viewer, applicationId: unknown, holder: unknown): Promise<ApplicationResult<{ listingId: string; applicationId: string; holder: string; personId: string }>> {
     const app = await this.app(viewer, applicationId, true);
     if ('ok' in app) return app;
+    if (app.dossierfacile_url) return { ok: false, rule: 'R104', code: 'dossierfacile' };
     const place = { listingId: app.listing_id, applicationId: app.id };
     if (holder === 'candidat') return { ok: true, value: { ...place, holder, personId: app.person_id } };
     const g = typeof holder === 'string' ? await this.db.first<{ person_id: string | null }>('SELECT person_id FROM rental_guarantors WHERE id = ? AND application_id = ?', [holder, app.id]) : null;
@@ -202,16 +203,22 @@ export class Candidatures {
     if ('ok' in listing) return listing;
     const agent = viewer.role === 'agent' ? viewer.userId : null;
     const rows = await this.db.all<{ id: string; first_name: string | null; last_name: string | null }>(
-      `SELECT p.id, p.first_name, p.last_name FROM persons p
-       WHERE p.network_id = ? AND p.id <> ? AND (? IS NULL OR p.agent_id = ?)
+      // Toutes les fiches réunies, chaîne comprise, comme `membersOf` : l'écran ne propose que ce que le geste accepte.
+      `WITH RECURSIVE family (root, member) AS (
+         SELECT id, id FROM persons WHERE network_id = ? AND (? IS NULL OR agent_id = ?)
+         UNION
+         SELECT f.root, m.merged_id FROM family f JOIN person_merges m ON m.survivor_id = f.member AND m.undone_at IS NULL
+       )
+       SELECT p.id, p.first_name, p.last_name FROM persons p
+       WHERE p.network_id = ? AND (? IS NULL OR p.agent_id = ?)
          AND NOT EXISTS (SELECT 1 FROM person_merges m WHERE m.merged_id = p.id AND m.undone_at IS NULL)
+         AND NOT EXISTS (SELECT 1 FROM family f WHERE f.root = p.id AND f.member = ?)
          AND (? IS NULL OR NOT EXISTS (
-           SELECT 1 FROM person_merges m JOIN persons c ON c.id = m.merged_id
-           WHERE m.survivor_id = p.id AND m.undone_at IS NULL AND c.agent_id IS NOT ?))
-         AND NOT EXISTS (SELECT 1 FROM rental_applications a WHERE a.listing_id = ? AND (a.person_id = p.id OR a.person_id IN (
-           SELECT m.merged_id FROM person_merges m WHERE m.survivor_id = p.id AND m.undone_at IS NULL)))
+           SELECT 1 FROM family f JOIN persons c ON c.id = f.member
+           WHERE f.root = p.id AND c.agent_id IS NOT ?))
+         AND NOT EXISTS (SELECT 1 FROM family f JOIN rental_applications a ON a.person_id = f.member WHERE f.root = p.id AND a.listing_id = ?)
        ORDER BY p.last_name, p.first_name, p.id LIMIT ?`,
-      [listing.networkId, listing.ownerPersonId, agent, agent, agent, agent, listing.id, MAX_ADDABLE + 1],
+      [listing.networkId, agent, agent, listing.networkId, agent, agent, listing.ownerPersonId, agent, agent, listing.id, MAX_ADDABLE + 1],
     );
     return {
       ok: true,
@@ -258,9 +265,14 @@ export class Candidatures {
   async addGuarantor(viewer: Viewer, applicationId: unknown, input: { kind: unknown; personId?: unknown }): Promise<ApplicationResult<{ guarantorId: string }>> {
     const app = await this.app(viewer, applicationId, true);
     if ('ok' in app) return app;
+    // Accepté tel quel : un dossier DossierFacile ne reçoit rien de plus [R104].
+    if (app.dossierfacile_url) return { ok: false, rule: 'R104', code: 'dossierfacile' };
     if (input.kind !== 'personne' && input.kind !== 'visale') return { ok: false, rule: null, code: 'bad_kind' };
     const personId = input.kind === 'personne' ? input.personId : null;
-    if (input.kind === 'personne' && (!(await this.personIn(app.network_id, personId)) || personId === app.person_id)) return { ok: false, rule: null, code: 'unknown_person' };
+    if (input.kind === 'personne') {
+      const refused = await this.guarantorRefusal(viewer, app, personId);
+      if (refused) return refused;
+    }
     // Un seul garant Visale par dossier : l'unicité sur la personne ne le voit pas, sa personne étant vide.
     if (input.kind === 'visale' && (await this.db.first("SELECT 1 FROM rental_guarantors WHERE application_id = ? AND kind = 'visale'", [app.id]))) return { ok: false, rule: null, code: 'already_added' };
     const id = this.newId();
@@ -272,6 +284,28 @@ export class Candidatures {
     }
     await appendEvent(this.journal, { type: 'location.garant', actor: this.actor(viewer), subject: `rental_application:${app.id}`, data: { kind: input.kind } }, this.now);
     return { ok: true, value: { guarantorId: id } };
+  }
+
+  /**
+   * Les règles des contacts à ajouter (`addableContacts`), pour qui appelle la route sans passer par l'écran : un garant
+   * n'est ni une fiche réunie, ni le candidat ou un autre candidat de ce logement même par une fiche réunie, ni le
+   * bailleur ; pour un agent, aucune de ses fiches n'est à un autre agent : `missing` dirait si son identité est vérifiée.
+   */
+  private async guarantorRefusal(viewer: Viewer, app: ApplicationRow, personId: unknown): Promise<ApplicationRefusal | null> {
+    const unknown: ApplicationRefusal = { ok: false, rule: null, code: 'unknown_person' };
+    if (!(await this.personIn(app.network_id, personId))) return unknown;
+    const root = await this.fiche.rootOf(personId as string);
+    const members = await this.fiche.membersOf(root);
+    const marks = members.map(() => '?').join(', ');
+    if (viewer.role === 'agent' && (await this.db.first(`SELECT 1 FROM persons WHERE id IN (${marks}) AND agent_id IS NOT ?`, [...members, viewer.userId]))) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `rental_application:${app.id}`, data: { rule: 'R16', role: String(viewer.role), kind: 'rental_guarantor', code: 'not_assigned' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
+    // Après le contrôle des droits : le contact réuni d'un autre agent reste un refus écrit au journal [R16].
+    if (root !== personId) return unknown;
+    if (await this.db.first(`SELECT 1 FROM rental_listings WHERE id = ? AND owner_person_id IN (${marks})`, [app.listing_id, ...members])) return unknown;
+    if (await this.db.first(`SELECT 1 FROM rental_applications WHERE listing_id = ? AND person_id IN (${marks})`, [app.listing_id, ...members])) return unknown;
+    return null;
   }
 
   /**
@@ -291,6 +325,8 @@ export class Candidatures {
       await appendEvent(this.journal, { type: 'location.piece_refusee', actor: this.actor(viewer), subject, data: { rule: 'R104', sort: input.sort } }, this.now);
       return { ok: false, rule: 'R104', code: 'not_allowed' };
     }
+    // Après la liste officielle : une pièce interdite reste nommée au journal, même sur ce dossier [R104].
+    if (app.dossierfacile_url) return { ok: false, rule: 'R104', code: 'dossierfacile' };
     let holderKind: 'candidat' | 'personne' | 'visale' = 'candidat';
     if (input.holder !== 'candidat') {
       const g = typeof input.holder === 'string' ? await this.db.first<{ kind: 'personne' | 'visale' }>('SELECT kind FROM rental_guarantors WHERE id = ? AND application_id = ?', [input.holder, app.id]) : null;

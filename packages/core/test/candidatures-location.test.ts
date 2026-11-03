@@ -91,7 +91,7 @@ async function setup() {
     for (const sort of [holder === 'candidat' ? 'quittances_loyer' : 'derniere_quittance', 'contrat_travail', 'bulletins_salaire', 'avis_imposition']) expect((await piece(applicationId, holder, sort)).ok, sort).toBe(true);
   };
   const events = (type: string) => db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? ORDER BY seq', [type]);
-  return { db, store, network, alex, bea, owner, apps, listings, agent, other, dir, compliance, listingId, person, piece, full, verified, ref, events };
+  return { db, journal, store, network, alex, bea, owner, apps, listings, agent, other, dir, compliance, listingId, person, piece, full, verified, ref, events };
 }
 
 describeWithSqlite('W04 · candidatures limitées à la liste officielle', () => {
@@ -211,6 +211,80 @@ describeWithSqlite('W04 · candidatures limitées à la liste officielle', () =>
     for (const url of ['http://locataire.dossierfacile.logement.gouv.fr/file/abcd-1234', 'https://dossierfacile.example.com/file/abcd-1234', 'https://locataire.dossierfacile.logement.gouv.fr/file/x']) {
       expect(await t.apps.apply(t.agent, t.listingId, { personId: await t.person(2), dossierFacileUrl: url }), url).toEqual({ ok: false, rule: null, code: 'bad_dossierfacile' });
     }
+  });
+
+  describe('W20 · le garant, par appel direct', () => {
+    const merge = (t: Awaited<ReturnType<typeof setup>>, survivor: string, merged: string) =>
+      t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES (?, ?, ?, ?, ?, 'test', '2027-07-01T08:00:00.000Z', '2027-07-01T08:00:00.000Z')", [uuid(), t.network.id, t.alex.id, survivor, merged]);
+    const applied = async (t: Awaited<ReturnType<typeof setup>>, person: string, url?: string) => {
+      const a = await t.apps.apply(t.agent, t.listingId, { personId: person, ...(url ? { dossierFacileUrl: url } : {}) });
+      if (!a.ok) throw new Error(a.code);
+      return a.value.applicationId;
+    };
+
+    it('[R16] le contact d’un autre agent, même par une fiche réunie, est refusé et le refus est au journal ; la direction peut', async () => {
+      const t = await setup();
+      const id = await applied(t, (await t.person(1))!);
+      const autre = (await t.store.createPerson({ networkId: t.network.id, agentId: t.bea.id, firstName: 'Autre', lastName: 'Agent' })).id;
+      const mixte = (await t.person(2))!;
+      await merge(t, mixte, (await t.store.createPerson({ networkId: t.network.id, agentId: t.bea.id, firstName: 'Autre2', lastName: 'Agent' })).id);
+      for (const personId of [autre, mixte]) expect(await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+      // Une fiche d'un autre agent, réunie dans une autre : refusée pareil, et le refus au journal.
+      const gardeeBea = (await t.store.createPerson({ networkId: t.network.id, agentId: t.bea.id, firstName: 'Autre3', lastName: 'Agent' })).id;
+      const reunieBea = (await t.store.createPerson({ networkId: t.network.id, agentId: t.bea.id, firstName: 'Autre4', lastName: 'Agent' })).id;
+      await merge(t, gardeeBea, reunieBea);
+      expect(await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId: reunieBea })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+      const refused = (await t.journal.all()).filter((e) => e.type === 'acces.refuse' && e.subject === `rental_application:${id}`);
+      expect(refused).toHaveLength(3);
+      expect(refused[0]!.data).toMatchObject({ rule: 'R16', code: 'not_assigned' });
+      expect(JSON.stringify(refused)).not.toContain(autre);
+      expect(await t.db.first('SELECT 1 FROM rental_guarantors')).toBeNull();
+      expect((await t.apps.addGuarantor(t.dir, id, { kind: 'personne', personId: autre })).ok).toBe(true);
+    });
+
+    it('[R16] une fiche réunie, celle du candidat, le candidat par une autre fiche, un autre candidat ou le bailleur sont refusés', async () => {
+      const t = await setup();
+      const [cand, doublon, reunie, gardee, voisin] = [(await t.person(1))!, (await t.person(2))!, (await t.person(3))!, (await t.person(4))!, (await t.person(5))!];
+      await merge(t, cand, doublon);
+      await merge(t, gardee, reunie);
+      const id = await applied(t, cand);
+      await applied(t, voisin);
+      const owner = (await t.db.first<{ owner_person_id: string }>('SELECT owner_person_id FROM rental_listings WHERE id = ?', [t.listingId]))!.owner_person_id;
+      for (const personId of [cand, doublon, reunie, voisin, owner, 'inconnue']) expect(await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId }), personId).toEqual({ ok: false, rule: null, code: 'unknown_person' });
+      expect(await t.db.first('SELECT 1 FROM rental_guarantors')).toBeNull();
+      expect((await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId: gardee })).ok).toBe(true);
+    });
+
+    it('[R16] l’écran ne propose que ce que le geste accepte : bailleur réuni et candidat au bout d’une chaîne de fusions écartés', async () => {
+      const t = await setup();
+      const [survivant, chaineA, chaineB, chaineC, libre, cand] = [(await t.person(1))!, (await t.person(2))!, (await t.person(3))!, (await t.person(4))!, (await t.person(5))!, (await t.person(6))!];
+      const owner = (await t.db.first<{ owner_person_id: string }>('SELECT owner_person_id FROM rental_listings WHERE id = ?', [t.listingId]))!.owner_person_id;
+      await merge(t, survivant, owner);
+      await merge(t, chaineA, chaineB);
+      const id = await applied(t, cand);
+      await applied(t, chaineB);
+      await merge(t, chaineC, chaineA);
+      const listed = await t.apps.addableContacts(t.agent, t.listingId);
+      const offered = listed.ok ? listed.value.contacts.map((c) => c.personId) : [];
+      expect(offered).toEqual([libre]);
+      for (const personId of [survivant, chaineC]) expect(await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId }), personId).toEqual({ ok: false, rule: null, code: 'unknown_person' });
+      expect((await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId: libre })).ok).toBe(true);
+    });
+
+    it('[R104] un dossier DossierFacile ne reçoit ni pièce, ni garant, ni dépôt par appel direct', async () => {
+      const t = await setup();
+      const id = await applied(t, (await t.person(1))!, 'https://locataire.dossierfacile.logement.gouv.fr/file/abcd-1234-efgh');
+      const refusal = { ok: false, rule: 'R104', code: 'dossierfacile' };
+      expect(await t.apps.addGuarantor(t.agent, id, { kind: 'visale' })).toEqual(refusal);
+      expect(await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId: await t.person(2) })).toEqual(refusal);
+      expect(await t.apps.addPiece(t.agent, id, { holder: 'candidat', sort: 'bulletins_salaire', ref: `location/${t.listingId}/candidatures/${id}/${uuid()}.pdf`, sha256: 'a'.repeat(64) })).toEqual(refusal);
+      expect(await t.apps.placeOf(t.agent, id, 'candidat')).toEqual(refusal);
+      // Une pièce interdite reste refusée pour ce qu'elle est, et nommée au journal.
+      expect(await t.apps.addPiece(t.agent, id, { holder: 'candidat', sort: 'releve_compte', ref: 'x', sha256: 'a'.repeat(64) })).toEqual({ ok: false, rule: 'R104', code: 'not_allowed' });
+      expect((await t.journal.all()).filter((e) => e.type === 'location.piece_refusee').map((e) => e.data)).toEqual([{ rule: 'R104', sort: 'releve_compte' }]);
+      expect(await t.db.first('SELECT 1 FROM rental_guarantors')).toBeNull();
+      expect(await t.db.first('SELECT 1 FROM rental_application_pieces')).toBeNull();
+    });
   });
 
   it('[R16] [R105] les contacts à ajouter : ceux de l’agent, sans le bailleur ni un candidat, même réuni ; une personne réunie n’a qu’une candidature', async () => {
