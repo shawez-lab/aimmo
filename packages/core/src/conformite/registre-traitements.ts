@@ -689,6 +689,20 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       client_space_favorites: ['person_id', 'property_id'],
     },
   },
+  {
+    id: 'sauvegardes',
+    finalite: 'Garder une copie chiffrée de toute la base, pour la retrouver après une panne ou une erreur (sécurité du traitement, article 32).',
+    baseLegale: 'obligation_legale',
+    personnes: ['Toutes les personnes de la base'],
+    donnees: ['Toutes les données de la base, chiffrées avant de quitter le travail de nuit', 'Registre des effacements : des identifiants et une date, sans nom ni coordonnée'],
+    duree: '30 jours pour chaque copie, par la règle de garde du compartiment. Après une restauration, chaque effacement fait depuis la copie est refait avant toute reprise, grâce au registre des effacements, gardé à part des copies aussi longtemps que la dernière d\'entre elles.',
+    destinataires: ['La direction du réseau voit la date de la dernière copie, jamais son contenu', 'Le responsable de la conformité'],
+    sousTraitants: ['Hébergeur (Cloudflare : base et compartiment des copies)', 'GitHub (Actions : la photo de la base y passe en clair le temps du travail de nuit, puis est détruite ; à faire valider, voir H50)'],
+    tables: {
+      // Un code de raison et le nom d'une copie : aucune personne, mais des noms de colonnes que la vérification suit.
+      base_copy_runs: ['reason', 'copy_id'],
+    },
+  },
 ];
 
 /** Les tables sans aucune donnée personnelle, chacune avec sa raison. */
@@ -704,6 +718,7 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   listing_pushes: 'Résultat technique de chaque envoi d\'annonce à un portail.',
   listing_views: 'Nombre de vues d\'une annonce par portail et par jour.',
   property_on_sale: 'Date de mise en vente d\'un bien, datée une fois depuis son mandat.',
+  base_copy_alerts: 'Les nuits sans copie réussie : une date et un instant.',
   assistant_calls: 'Compteur d\'appels de l\'assistant du site, par seau de temps.',
   trial_outbox: 'File d\'essai des envois : un identifiant de message et un canal.',
   pro_trial_outbox: 'Boîte d\'essai des envois aux professionnels : un identifiant d\'envoi et sa date.',
@@ -829,6 +844,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   buyer_searches: ['id', 'network_id', 'project_id', 'version', 'property_kinds', 'features', 'surface_min_m2', 'rooms_min', 'bedrooms_min', 'urgency', 'sources', 'origin', 'created_at'],
   property_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'created_at', 'updated_at'],
   property_on_sale: ['property_id', 'network_id', 'mandate_id', 'on_sale_at', 'noted_at'],
+  base_copy_alerts: ['night', 'last_success_at', 'created_at'],
+  base_copy_runs: ['id', 'started_at', 'finished_at', 'outcome', 'tables_count', 'rows_count', 'parts_count'],
   alert_unsubscribe_tokens: ['token_hash', 'network_id', 'created_at', 'used_at'],
   agent_whatsapp_alerts: ['message_id', 'network_id', 'property_id', 'prepared_at', 'confirmed_at'],
   visits: ['appointment_id', 'network_id', 'property_id', 'project_id', 'created_at'],

@@ -145,7 +145,8 @@ const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
 <div id="preuve-corps"></div>
 </section>
 `;
-export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML + DISPONIBILITE_ENTRY_HTML;
+const COPIES_ENTRY_HTML = stateAndBody('copies', 'La copie de la base', 'Se relit avec le rapport du matin. Chaque nuit, une copie chiffrée, gardée à part.');
+export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML + DISPONIBILITE_ENTRY_HTML + COPIES_ENTRY_HTML;
 
 export const REGLAGES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-grille">
 <h3 id="titre-grille">Grille des commissions et alertes</h3>
@@ -197,7 +198,7 @@ export const FINANCES_JS = `
       $('rapport-' + who + '-etat').textContent = '';
       $('rapport-' + who + '-jour').value = '';
     });
-    ['preuve', 'zones', 'indicateurs', 'engagements-tenus', 'temps-reseau', 'disponibilite', 'temps-agent'].forEach(function (id) {
+    ['preuve', 'zones', 'indicateurs', 'engagements-tenus', 'temps-reseau', 'disponibilite', 'copies', 'temps-agent'].forEach(function (id) {
       clear($(id + '-corps'));
       $(id + '-etat').textContent = '';
     });
@@ -284,7 +285,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     var body = $('rapport-' + who + '-corps'), state = $('rapport-' + who + '-etat');
     var chosen = $('rapport-' + who + '-jour').value;
     clear(body);
-    if (who === 'direction') { proof(''); indicators(); promises(); networkTime(); availability(); } else { zones(); myTime(''); }
+    if (who === 'direction') { proof(''); indicators(); promises(); networkTime(); availability(); copies(); } else { zones(); myTime(''); }
     if (chosen && !/^\\d{4}-\\d{2}-\\d{2}$/.test(chosen)) { state.textContent = 'Choisissez un jour.'; return Promise.resolve(false); }
     state.textContent = 'Chargement…';
     return send('/v1/pilotage/rapport-matin' + (chosen ? '?jour=' + chosen : ''), 'GET').then(function (res) {
@@ -573,6 +574,19 @@ globalThis.AIMMO_FINANCES = function (t) {
       v.services.forEach(function (s) { ul.appendChild(el('li', availabilityLine(v, s))); });
       body.appendChild(ul);
       return monthName(month) + '.' + (v.connected ? '' : ' Non mesuré : aucune supervision n’est branchée.');
+    });
+  }
+  var COPY_WHY = { cle_absente: 'la clé de chiffrement manque', cle_invalide: 'la clé de chiffrement est mauvaise', stockage_absent: 'le stockage n’est pas réglé', photo_absente: 'la photo de la base a manqué', photo_vide: 'la photo de la base était vide', stockage_en_panne: 'le stockage n’a pas répondu', copie_non_restaurable: 'la copie ne se restaurait pas à l’identique', copie_echouee: 'la copie a échoué' };
+  function copyDay(iso) { return new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+  function copies() {
+    return readBlock('copies', '/v1/pilotage/copies', function (v, body) {
+      var ul = el('ul', null, 'liste');
+      if (v.lastFailure) ul.appendChild(el('li', 'Dernier essai, le ' + copyDay(v.lastFailure.at) + ' : ' + (COPY_WHY[v.lastFailure.reason] || 'il a échoué') + '.'));
+      if (v.missedNights.length) ul.appendChild(el('li', 'Nuits sans copie : ' + v.missedNights.map(day).join(', ') + '.'));
+      if (ul.children.length) body.appendChild(ul);
+      if (v.state === 'jamais') return 'Non sauvegardé : aucune copie réussie à ce jour.';
+      var last = 'Dernière copie réussie : le ' + copyDay(v.lastSuccessAt) + '.';
+      return v.state === 'a_jour' ? last : 'Non sauvegardé la nuit dernière. ' + last;
     });
   }
   function field(box, label, type) {
