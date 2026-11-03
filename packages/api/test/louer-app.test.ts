@@ -1107,3 +1107,50 @@ describe('W11 · écran « Louer » de l’application', () => {
     });
   });
 });
+
+describe('W25 · lire l’exemplaire signé de l’état des lieux', () => {
+  const CLOSED = 'c0c0c0c0-0000-4000-8000-000000000001';
+  const SIGNED_LEASE = { leaseId: 'b1', mode: 'essai', complete: true, bailleur: '2027-07-12T09:00:00.000Z', locataire: '2027-07-12T09:05:00.000Z', copiesSent: [] };
+  const SUIVI = ok({ facts: FACTS, fees: null, lease: SIGNED_LEASE, inventoryClosed: true, closedInventoryId: CLOSED, handedOn: null });
+  const URL_COPY = `/v1/location/etats-des-lieux/${CLOSED}/exemplaires/bailleur`;
+  const GO = 'Lire l’exemplaire signé';
+  const open = async (copy: Answer) => {
+    const t = await run({ 'GET /v1/location/l1/suivi': SUIVI, [`GET ${URL_COPY}`]: copy });
+    await t.openL1();
+    return t;
+  };
+
+  it('[R16] rien n’est lu avant le geste ; le texte reste du texte', async () => {
+    const t = await open(ok({ content: `Bailleur ${INJECTED}`, contentSha256: 'a'.repeat(64), photos: [] }));
+    expect(t.calls.some((c) => c.url === URL_COPY)).toBe(false);
+    await t.click(t.byText(GO));
+    expect(t.body().textContent).toContain(`Bailleur ${INJECTED}`);
+    expect(t.body().textContent).toContain('a'.repeat(64));
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    expect(t.state()).toBe('');
+  });
+
+  it('[R16] un exemplaire hors des droits est dit, sans texte', async () => {
+    const t = await open(no(403, { ok: false, rule: 'R16', code: 'not_assigned' }));
+    await t.click(t.byText(GO));
+    expect(t.state()).toBe('Cet exemplaire n’est pas dans vos droits : il porte l’identité des deux parties.');
+  });
+
+  it('[R10] pas de réseau : dit tel, et le geste reste possible', async () => {
+    const t = await open(async () => { throw new TypeError('coupé'); });
+    await t.click(t.byText(GO));
+    expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    expect(t.byText(GO)).toBeDefined();
+  });
+
+  it('[R16] sans identifiant valable, pas de geste', async () => {
+    const t = await run({ 'GET /v1/location/l1/suivi': ok({ facts: FACTS, fees: null, lease: SIGNED_LEASE, inventoryClosed: true, closedInventoryId: INJECTED, handedOn: null }) });
+    await t.openL1();
+    expect(t.byText(GO)).toBeUndefined();
+    expect(t.body().textContent).toContain('Signé des deux parties');
+  });
+
+  it('[R201] le script tient le budget d’une page', () => {
+    expect(budgetProblems({ html: '', js: LOUER_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+});

@@ -269,6 +269,11 @@ describeWithSqlite('W07 · état des lieux d’entrée', () => {
     expect(await t.edl.sign(t.agent, inventoryId, { party: 'locataire', contentSha256, drawing: DRAW + 'B' })).toEqual({ ok: true, value: { party: 'locataire', closed: true } });
     const a = await t.edl.copy(t.agent, inventoryId, 'bailleur');
     const b = await t.edl.copy(t.agent, inventoryId, 'locataire');
+    // W25 : l'exemplaire porte l'identité des deux parties : un bailleur suivi par un autre agent le ferme, refus au journal [R16].
+    const owner = await t.db.first<{ agent_id: string }>('SELECT agent_id FROM persons WHERE id = ?', [t.owner.id]);
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.bea.id, t.owner.id]);
+    expect(await t.edl.copy(t.agent, inventoryId, 'bailleur')).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [owner!.agent_id, t.owner.id]);
     expect(a).toEqual(b);
     expect(a).toEqual({ ok: true, value: { content: r.value.content, contentSha256, photos: r.value.rooms[0]!.photos } });
     expect(await sha256(r.value.content)).toBe(contentSha256);

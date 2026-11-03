@@ -674,6 +674,18 @@ export class EtatsDesLieux {
     if (typeof party !== 'string' || !(PARTIES as readonly string[]).includes(party)) return bad('bad_party');
     const c = await this.db.first<{ content_sha256: string }>('SELECT content_sha256 FROM rental_inventory_copies WHERE inventory_id = ? AND party = ?', [row.id, party]);
     if (!c) return { ok: false, rule: 'R106', code: 'not_closed' };
+    // L'exemplaire porte l'identité des deux parties : le lecteur doit voir chacune de leurs fiches en entier, et sa lecture va au journal [R16].
+    const listing = await this.listings.listing(viewer, row.listing_id, true);
+    if ('ok' in listing) return listing;
+    const chosen = await this.choices.chosen(listing.networkId, listing.id);
+    for (const personId of [listing.ownerPersonId, chosen?.personId]) {
+      const read = personId ? await this.persons.readFiche(viewer, personId) : null;
+      if (!read || !read.ok || read.view !== 'full') {
+        await this.refuse(viewer, `person:${personId ?? 'inconnue'}`, 'not_assigned');
+        return { ok: false, rule: 'R16', code: 'not_assigned' };
+      }
+    }
+    await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', what: 'inventory_copy' } }, this.now);
     if (c.content_sha256 !== row.content_sha256 || (await sha256(row.content)) !== c.content_sha256) return { ok: false, rule: 'R106', code: 'document_changed' };
     const photos = (JSON.parse(row.rooms) as RoomRow[]).flatMap((r) => r.photos);
     return { ok: true, value: { content: row.content, contentSha256: c.content_sha256, photos } };

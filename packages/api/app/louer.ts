@@ -905,7 +905,20 @@ globalThis.AIMMO_LOUER = function (t) {
   // L'état des lieux d'entrée, pièce par pièce, sur le téléphone : l'IA ne fait que mettre en forme le dicté [R106].
   function inventoryBlock(id, base, p) {
     var box = section('L’état des lieux d’entrée');
-    if (p.inventoryClosed) { box.appendChild(el('p', 'Signé des deux parties : un exemplaire pour chacun.', 'fait')); return box; }
+    if (p.inventoryClosed) {
+      box.appendChild(el('p', 'Signé des deux parties : un exemplaire pour chacun.', 'fait'));
+      /* Il porte l'identité des deux parties : lu seulement au geste, jamais gardé [R16, R106]. */
+      if (p.closedInventoryId && ID.test(p.closedInventoryId)) box.appendChild(button('Lire l’exemplaire signé', once(function () {
+        return send('/v1/location/etats-des-lieux/' + encodeURIComponent(p.closedInventoryId) + '/exemplaires/bailleur', 'GET').then(function (res) {
+          if (res.gone) return;
+          if (!res.ok) { louerState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.status === 403 ? 'Cet exemplaire n’est pas dans vos droits : il porte l’identité des deux parties.' : louerRefusal(res.body, 'Indisponible pour le moment. Réessayez plus tard.')); return; }
+          louerState('');
+          box.appendChild(el('p', res.body.data.content, 'brouillon'));
+          box.appendChild(el('p', 'Le même exemplaire pour chacun. Empreinte : ' + res.body.data.contentSha256, 'doux'));
+        });
+      })));
+      return box;
+    }
     // L'état des lieux rangé et pas encore signé des deux parties est relu du serveur : un rechargement ne le perd pas.
     var done = p.inventory || null;
     if (done) box.appendChild(inventorySign(id, done));

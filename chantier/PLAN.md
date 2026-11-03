@@ -1947,6 +1947,15 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Critères : l'alerte dit ce qui manque et la fin de la référence, jamais une pièce ni un montant [R15] (test) ; le résumé la compte, une lecture manquée n'est jamais zéro [R10] (test) ; décision avec raison et nom [R14] (test) ; déjà décidée : relue, pas refusée [R17] (test) ; réponse perdue dite telle (test) ; un seul envoi (test) ; budget tenu [R201] (test).
 - Attend : H29 pour un usage réel (responsable nommé).
 
+### W25 · Lire l'exemplaire signé de l'état des lieux
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W07, W11
+- Cahier : M15 ; R16, R106, R201.
+- Objectif : trouvé le 2026-11-03 par la voie 2, même comparaison : l'écran dit « un exemplaire pour chacun », mais `GET /v1/location/etats-des-lieux/<id>/exemplaires/<partie>` n'a aucun appel de l'application et le suivi ne rend pas l'identifiant. Le donner, lu seulement au geste.
+- Décidé (2026-11-03), lecture prudente : la route rendait l'identité des deux parties sous le seul droit sur le logement ; comme le bail et l'état des lieux en cours, le lecteur doit voir les deux fiches en entier, et la lecture va au journal [R16].
+- Critères : rien n'est lu avant le geste (test) ; exemplaire hors des droits dit, sans texte [R16] (test) ; lecture au journal (test) ; pas de réseau dit, le geste reste (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 ### CE20 · Ranger un document du dossier protégé, à l'écran
 - Statut : fait (2026-11-03)
 - Reste : fusionnée (#326) ; ne range rien en production avant H38 et le branchement du Worker ; relecture forte 2 P1 corrigés, corrections non relues une seconde fois ; Codex non attendu (H03).
