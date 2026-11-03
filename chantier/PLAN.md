@@ -1924,11 +1924,20 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X24 · Le partenaire recommande un proche depuis son espace
-- Statut : en cours
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : G08
 - Cahier : M20, M18 ; R03, R16, R142, R201.
 - Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : la route de recommandation réservée au partenaire et `GET /v1/gagner/recommandations/mes-envois` n'ont aucun appel de `app/partenaire.ts`. Vérifier la route, puis donner le formulaire et la liste de ses envois dans l'espace du partenaire.
-- Critères : à préciser après lecture : preuve de l'accord exigée [R142] (test) ; réponse perdue dite telle, sans doublon (test) ; rien sur le suivi du proche [R16] (test) ; budget tenu [R201] (test).
+- Critères : preuve de l'accord exigée [R142] (test) ; réponse perdue dite telle, la liste relue, un renvoi ne fait qu'une recommandation (test) ; rien sur le suivi de la personne [R16, R77] (test) ; toute sortie vide la page [R13] (test) ; budget tenu [R201] (test).
+- Décidé (2026-11-03), lecture prudente : les envois ne disent qu'une date ; l'accord du jour vaut le début de la journée de l'appareil, qui peut avancer sur le serveur ; toute sortie passe par une seule fonction qui vide la page. Relecture forte : 4 P1 corrigés, X25 trouvée ; Codex non attendu (H03) ; #330.
+- Attend : rien.
+
+### X25 · Une recommandation de partenaire sûre au renvoi
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : X24
+- Cahier : M20 ; R142, R17.
+- Objectif : trouvé par la relecture forte de X24 : `RecommandationsGagner.recommend` n'est pas en transaction. Une panne entre le projet et la ligne de recommandation laisse la fiche sans recommandation, et un renvoi crée un second projet, une seconde source et un second accord. Fermer ce trou sans changer la réponse donnée au partenaire [R77].
+- Critères : une panne à chaque écriture, puis un renvoi : une seule recommandation, un seul projet, un seul accord (test) ; le renvoi ordinaire reste muet et ajoute sa date aux envois (test).
 - Attend : rien.
 ### CE19 · Corriger la présentation d'un commerce, à l'écran
 - Statut : fait (2026-11-03)

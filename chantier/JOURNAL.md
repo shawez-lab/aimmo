@@ -548,3 +548,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 12:51 · W25 · l'exemplaire signé de l'état des lieux se lit à l'écran ; la route exige désormais les deux fiches en entier et note la lecture (#329) ; relecture forte 3 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : W26
 - 2026-11-03 12:51 · voie 2 · fin de séance : CE19, CE20, CE21 et W25 fusionnées ; CE22 écrite pour la voie 1, W26 pour la voie 2 ; verrou libéré · prochaine : W26
 - 2026-11-03 12:53 · voie 2 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage horaire reprendra W26 · prochaine : W26
+- 2026-11-03 12:38 · X24 · le partenaire recommande une personne depuis son espace et lit ses envois, preuve de l'accord exigée ; toute sortie vide la page (#330) ; relecture forte 4 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : X25
+- 2026-11-03 12:38 · voie 1 · fin de séance : X22, X23 et X24 fusionnées ; X25 écrite ; verrou libéré, relance · prochaine : X25
