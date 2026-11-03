@@ -1912,7 +1912,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### CE19 · Corriger la présentation d'un commerce, à l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#324) ; relecture forte 1 P1 corrigé ; Codex non attendu (H03).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
 - Cahier : M16 ; R16, R110, R201.
 - Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : `POST /v1/commerces/<id>/presentations/texte` n'a aucun appel de l'application. Le donner dans `app/commerces*.ts`, sans toucher au socle.
@@ -1921,7 +1922,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### CE20 · Ranger un document du dossier protégé, à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE05
 - Cahier : M16 ; R16, R113, R114, R201.
 - Objectif : `POST /v1/commerces/<id>/documents` n'a aucun appel de l'application, et attend une `storageRef` : `DossierStorage` ne sait que lire, le Worker n'a aucun stockage réel (H38), et rien n'empêche une référence de pointer vers le document d'un autre bien. Personne ne saisit de référence : donner un dépôt côté serveur, dans les fichiers de M16 (`core/commerces/dossier.ts`, `api/src/commerces.ts`), qui choisit lui-même la référence, derrière la même porte d'écriture ; sans stockage, le dire à l'écran, ne rien laisser croire rangé. Le branchement du Worker sur R2 reste une petite tâche à part de la voie 1, après H38. Lire d'abord CE05 dans le cahier pour savoir ce que le dossier sert (aujourd'hui du texte filigrané).
