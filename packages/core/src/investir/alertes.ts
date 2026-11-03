@@ -120,6 +120,11 @@ export class AlertesInvestisseurs {
     if (viewer.role === 'agent' && read.view !== 'full') return { ok: false, rule: 'R16', code: 'not_assigned' };
     if (typeof input.inseeCode !== 'string' || !INSEE.test(input.inseeCode)) return { ok: false, rule: 'R122', code: 'insee' };
     if (typeof input.rentKind !== 'string' || !(MARKET_RENT_KINDS as readonly string[]).includes(input.rentKind)) return { ok: false, rule: 'R122', code: 'type' };
+    // Rangée pour toujours : la commune doit au moins être du département du bien, et un loyer ne vaut que pour un logement (X20).
+    const p = await this.db.first<{ postal_code: string | null; kind: string }>('SELECT postal_code, kind FROM properties WHERE id = ?', [propertyId]);
+    if (p?.kind !== 'home' && p?.kind !== 'building') return { ok: false, rule: 'R122', code: 'pas_un_logement' };
+    const dept = (code: string) => (/^2[AB]/.test(code) ? '20' : code.slice(0, 2));
+    if (!p.postal_code || !/^\d{5}$/.test(p.postal_code) || dept(p.postal_code) !== dept(input.inseeCode)) return { ok: false, rule: 'R122', code: 'autre_departement' };
     const { changes } = await this.db.run(
       'INSERT INTO property_communes (property_id, network_id, insee_code, rent_kind, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
       [propertyId, viewer.networkId, input.inseeCode, input.rentKind, `${viewer.role}:${viewer.userId}`, this.now().toISOString()],

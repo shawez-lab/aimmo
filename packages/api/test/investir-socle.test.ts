@@ -62,7 +62,7 @@ async function setup() {
     return person;
   };
   const property = async (ref: string, energyClass = 'C') => {
-    const p = (await store.createProperty({ networkId: network, agentId: alex, reference: ref, kind: 'home', city: 'Commune Une', priceEur: 150_000, surfaceM2: 45, rooms: 2, status: 'available' })).id;
+    const p = (await store.createProperty({ postalCode: '99000', networkId: network, agentId: alex, reference: ref, kind: 'home', city: 'Commune Une', priceEur: 150_000, surfaceM2: 45, rooms: 2, status: 'available' })).id;
     await db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, 'agent:a', '2027-01-01')", [
       `s-${ref}`,
       p,

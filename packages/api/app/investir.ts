@@ -189,14 +189,13 @@ globalThis.AIMMO_INVESTIR = function (t) {
     show('investir');
     investirState('Chargement…');
     var base = '/v1/investir/projets/' + encodeURIComponent(x.projectId);
-    return Promise.all([send(base + '/profil', 'GET'), send('/v1/investir/biens', 'GET'), send('/v1/annonces', 'GET')]).then(function (all) {
+    return Promise.all([send(base + '/profil', 'GET'), send('/v1/investir/biens', 'GET'), send('/v1/investir/biens/sans-commune', 'GET')]).then(function (all) {
       if (mine !== t.session() || all.some(function (r) { return r.gone; })) return false;
       if (!all[0].ok) { investirState(all[0].offline ? 'Pas de réseau. Réessayez dans un moment.' : investirRefusal(all[0].body, 'Cette fiche n’est pas dans vos droits.')); return false; }
       var current = (all[0].body.data && all[0].body.data.current) || null;
       var read = all[1].ok && Array.isArray(all[1].body.data);
       var biens = read ? all[1].body.data : [];
-      // Sans la liste des biens calculables, on ne sait pas lesquels manquent : rien n'est proposé.
-      var own = read && all[2].ok && Array.isArray(all[2].body.data) ? all[2].body.data : [];
+      var own = all[2].ok && Array.isArray(all[2].body.data) ? all[2].body.data : null;
       renderInvestor(x, base, current, biens, read, own);
       investirState(message || '');
       return true;
@@ -288,15 +287,15 @@ globalThis.AIMMO_INVESTIR = function (t) {
     }));
     calc.appendChild(result);
     body.appendChild(calc);
-    communeBlock(body, x, biens, own);
+    communeBlock(body, x, own);
   }
   /* X20 · Un bien n'est calculable qu'avec sa commune, rangée une fois, sans retour : deux appuis sur la même saisie. */
-  function communeBlock(body, x, biens, own) {
-    var known = {};
-    biens.forEach(function (b) { known[b.propertyId] = true; });
+  function communeBlock(body, x, own) {
+    if (!own) { var lost = el('section', null, 'bloc'); lost.appendChild(el('p', 'La liste des biens sans commune n’a pas pu être lue. Réessayez dans un moment.', 'alerte')); body.appendChild(lost); return; }
     var options = { '': 'Choisir un bien' };
+    var postal = {};
     var count = 0;
-    own.forEach(function (b) { if (ID.test(b.id) && !known[b.id]) { options[b.id] = 'Bien ' + b.reference + (b.city ? ', ' + b.city : ''); count += 1; } });
+    own.forEach(function (b) { if (ID.test(b.propertyId)) { options[b.propertyId] = 'Bien ' + b.reference + (b.city ? ', ' + b.city : ''); postal[b.propertyId] = b.postalCode; count += 1; } });
     if (!count) return;
     var box = el('section', null, 'bloc');
     box.appendChild(el('h3', 'Ranger la commune d’un bien'));
@@ -315,7 +314,22 @@ globalThis.AIMMO_INVESTIR = function (t) {
       if (!bien.value || !kind.value) { armed = null; said.textContent = 'Choisissez le bien et le type de logement.'; return; }
       if (!/^(?:\\d{5}|2[AB]\\d{3})$/.test(code)) { armed = null; said.textContent = 'Le code INSEE a 5 caractères, par exemple 21231 : ce n’est pas le code postal.'; return; }
       var entry = [bien.value, code, kind.value].join('|');
-      if (armed !== entry) { armed = entry; said.textContent = 'Le code ' + code + ' ne pourra plus être changé pour ce bien. Vérifiez-le, puis appuyez de nouveau.'; return; }
+      if (armed !== entry) {
+        // Avant le second appui, le code est confronté à ce qu'on sait de lui : rien ne se corrige ensuite.
+        var chosen = bien.value;
+        busy = true;
+        said.textContent = 'Vérification…';
+        return send('/v1/investir/loyers?insee=' + encodeURIComponent(code) + '&type=' + encodeURIComponent(kind.value), 'GET').then(function (rent) {
+          busy = false;
+          if (rent.gone) return false;
+          armed = entry;
+          var known = rent.ok && rent.body.data && rent.body.data.status !== 'inconnu';
+          var hint = code === postal[chosen] ? 'Attention : ' + code + ' est le code postal du bien, le code INSEE est souvent différent. ' : '';
+          hint += rent.ok ? (known ? 'Un loyer de marché est connu pour ce code. ' : 'Aucun loyer de marché n’est connu pour ce code. ') : 'Le loyer de marché de ce code n’a pas pu être lu. ';
+          said.textContent = hint + 'Le code ' + code + ' ne pourra plus être changé pour ce bien. Vérifiez-le, puis appuyez de nouveau.';
+          return true;
+        });
+      }
       armed = null;
       busy = true;
       said.textContent = 'Envoi…';
@@ -327,10 +341,10 @@ globalThis.AIMMO_INVESTIR = function (t) {
         if (res.status === 403) { said.textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
         if (!res.ok) {
           var c = res.body.code;
-          said.textContent = c === 'insee' ? 'Ce code INSEE n’est pas valable.' : c === 'type' ? 'Ce type de logement n’est pas valable.' : c === 'deja_rangee' ? 'Une commune est déjà rangée pour ce bien : rouvrez la fiche pour le voir.' : 'La commune n’a pas pu être rangée.';
+          said.textContent = c === 'insee' ? 'Ce code INSEE n’est pas valable.' : c === 'type' ? 'Ce type de logement n’est pas valable.' : c === 'deja_rangee' ? 'Une commune est déjà rangée pour ce bien : rouvrez la fiche pour le voir.' : c === 'autre_departement' ? 'Ce code n’est pas du département du bien, ou le code postal du bien manque : rien n’est rangé.' : c === 'pas_un_logement' ? 'Ce bien n’est pas un logement : pas de loyer de marché.' : 'La commune n’a pas pu être rangée.';
           return false;
         }
-        return openInvestor(x, 'Commune rangée : le bien est calculable.');
+        return openInvestor(x, 'Commune rangée.');
       });
     }));
     box.appendChild(said);
