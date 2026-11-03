@@ -1894,7 +1894,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X21 · La zone de loyer d'une commune, à l'écran du réseau
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#323) ; route de lecture ajoutée, `GET /v1/location/zones?insee=`, direction seule ; relecture forte 5 P1 corrigés ; Codex à sa limite (H03) ; une zone fausse datée du jour décide jusqu'au lendemain, la table ne se réécrit pas.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : W03
 - Cahier : M15 ; R16, R10, R201.
 - Objectif : `POST /v1/location/zones` n'a aucun appel de l'application : sans lui, chaque commune reste « zone inconnue » et le plafond le plus bas s'applique. Vérifier que le geste n'existe pas ailleurs, puis le donner à la direction sur l'écran du réseau.
@@ -1907,6 +1908,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Cahier : M11 ; R16, R201.
 - Objectif : `POST /v1/apres-vente/fiches/<id>/recommandations` n'a aucun appel de l'application. Vérifier d'abord à quoi sert cette route et si le geste existe sous une autre forme ; sinon le donner, avec sa clé d'idempotence.
 - Critères : à écrire après lecture de la route : droits refusés dits [R16] (test) ; réponse perdue dite telle, sans doublon (test) ; budget tenu [R201] (test).
+- À savoir (lu le 2026-11-03) : la route exige l'en-tête `Idempotency-Key`, que `send` de l'application ne sait pas poser : `api` et `send` sont à étendre ; elle crée une fiche et un accord par téléphone à partir d'une preuve [R03, R142] : relecture forte attentive ; bloc à poser sur la fiche, chargé au premier geste, sur le modèle de `app/fin-de-bail.ts`.
 - Attend : rien.
 
 ### CE19 · Corriger la présentation d'un commerce et ranger un document du dossier, à l'écran
