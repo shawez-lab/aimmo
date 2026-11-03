@@ -22,11 +22,18 @@
  * - compte rendu : envoyé au vendeur sous 24 h. Point : envoyé le lundi qui suit sa semaine, et ce lundi fait le mois ; un
  *   point préparé pour un mandat signé après ce lundi est à part. Un point jamais préparé ne se voit pas : la ligne le dit ;
  * - une commission d'une vente annulée, jamais versée, est à part : le versement est refusé [R71] ;
- * - l'alerte aux acquéreurs n'est pas mesurable : la base ne date pas la mise en vente. La ligne le dit (IN11).
+ * - alerte aux acquéreurs (IN11) : chaque alerte d'un bien appartient au mois de sa mise en vente datée [R222], et a une
+ *   heure de temps d'envoi [R01] : une nuit ou un dimanche ne comptent pas. Écartés : un refus de la loi ou de l'accord
+ *   [R02, R03, R04], un bien déjà envoyé [R05] ou qui n'est plus diffusable [R42], et, si l'alerte n'est pas partie à temps,
+ *   une personne qui n'a demandé ces alertes ou changé sa recherche qu'après la mise en vente. Un bien sans date reste non
+ *   mesuré : seul, il rend la ligne non mesurable, jamais un zéro. Une baisse de prix reste jugée depuis la première mise
+ *   en vente : le chiffre est sévère plutôt que flatteur.
  */
 import type { Viewer } from '../acces/droits.ts';
+import { ALERT_PURPOSE } from '../acquereurs/alertes.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import { localTime } from '../envoi/horaires.ts';
+import { DEFAULT_SEND_SETTINGS } from '../envoi/decision.ts';
+import { afterSendingTime, localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { monthBounds } from './indicateurs-reseau.ts';
@@ -90,6 +97,13 @@ interface Case {
   trial?: boolean;
 }
 
+const BLIND_SPOTS: Partial<Record<ServicePromiseCode, string>> = {
+  point_lundi: 'Un point que le système n’a jamais préparé ne se voit pas ici.',
+  alerte_heure: 'Un acquéreur pour qui aucune alerte n’a été préparée ne se voit pas ici.',
+};
+/** Les refus où se taire est la règle, et non un engagement manqué. */
+const SILENCE_RULES: readonly (string | null)[] = ['R02', 'R03', 'R04', 'R05', 'R42'];
+
 const parisDay = (iso: string): string => localTime(new Date(iso), 'Europe/Paris').date;
 const tally = (cases: readonly Case[], now: number) => {
   const missedDays: string[] = [];
@@ -148,7 +162,7 @@ export class EngagementsTenus {
     const replies = await this.firstReplies(inMonth);
     const handovers = await this.handovers(inMonth);
 
-    const judged: Partial<Record<ServicePromiseCode, { cases: Case[]; setAside: number }>> = {
+    const judged: Partial<Record<ServicePromiseCode, { cases: Case[]; setAside: number; unmeasurable?: boolean }>> = {
       reponse_minute: replies,
       client_transmis: handovers,
       rappel_chaud: await this.callbacks(inMonth),
@@ -176,13 +190,14 @@ export class EngagementsTenus {
           )
         ).map((r) => sameDay(r.received_at, r.at, Number(r.trial) === 1)),
       },
+      alerte_heure: await this.alerts(inMonth),
       commission_24h: await this.payouts(inMonth),
     };
 
     const lines: ServicePromiseLine[] = SERVICE_PROMISES.map((p) => {
       const one = judged[p.code];
-      const blindSpot = p.code === 'point_lundi' ? 'Un point que le système n’a jamais préparé ne se voit pas ici.' : null;
-      if (!one) return { ...p, measurable: false, kept: ratio(0, 0), pending: 0, inTrial: 0, setAside: 0, blindSpot, missedDays: [] };
+      const blindSpot = BLIND_SPOTS[p.code] ?? null;
+      if (!one || one.unmeasurable) return { ...p, measurable: false, kept: ratio(0, 0), pending: 0, inTrial: 0, setAside: one?.setAside ?? 0, blindSpot, missedDays: [] };
       return { ...p, measurable: true, ...tally(one.cases, now), setAside: one.setAside, blindSpot };
     });
     const numerator = lines.reduce((sum, l) => sum + l.kept.numerator, 0);
@@ -228,17 +243,7 @@ export class EngagementsTenus {
     const net = inMonth[0]!;
     const tasks = await this.db.all<{ person_id: string; project_id: string | null; created_at: string; done_at: string | null }>('SELECT person_id, project_id, created_at, done_at FROM callback_tasks WHERE network_id = ? AND created_at >= ? AND created_at < ?', inMonth);
     if (tasks.length === 0) return { cases: [], setAside: 0 };
-    const merges = await this.db.all<{ survivor_id: string; merged_id: string }>('SELECT survivor_id, merged_id FROM person_merges WHERE network_id = ? AND undone_at IS NULL', [net]);
-    const parent = new Map(merges.map((m) => [m.merged_id, m.survivor_id]));
-    const rootOf = (id: string): string => {
-      const seen = new Set<string>();
-      let at = id;
-      while (parent.has(at) && !seen.has(at)) {
-        seen.add(at);
-        at = parent.get(at)!;
-      }
-      return at;
-    };
+    const rootOf = await this.mergedRoots(net);
     const exclusions = await this.db.all<{ person_id: string; noted_at: string; lifted_at: string | null }>('SELECT person_id, noted_at, lifted_at FROM exclusions WHERE network_id = ?', [net]);
     const excludedOn = (root: string, day: string): boolean => exclusions.some((x) => rootOf(x.person_id) === root && parisDay(x.noted_at) <= day && (x.lifted_at === null || parisDay(x.lifted_at) > day));
     const groups = new Map<string, { at: string; root: string; day: string; done: string[] }>();
@@ -258,6 +263,54 @@ export class EngagementsTenus {
       else cases.push(sameDay(g.at, doneAt));
     }
     return { cases, setAside };
+  }
+
+  /** La fiche gardée de chaque fiche réunie. */
+  private async mergedRoots(net: string): Promise<(id: string) => string> {
+    const merges = await this.db.all<{ survivor_id: string; merged_id: string }>('SELECT survivor_id, merged_id FROM person_merges WHERE network_id = ? AND undone_at IS NULL', [net]);
+    const parent = new Map(merges.map((m) => [m.merged_id, m.survivor_id]));
+    return (id: string): string => {
+      const seen = new Set<string>();
+      let at = id;
+      while (parent.has(at) && !seen.has(at)) {
+        seen.add(at);
+        at = parent.get(at)!;
+      }
+      return at;
+    };
+  }
+
+  /** Les alertes des biens mis en vente ce mois-là, une heure de temps d'envoi [R01] ; voir la tête du fichier. */
+  private async alerts(inMonth: string[]): Promise<{ cases: Case[]; setAside: number; unmeasurable: boolean }> {
+    const net = inMonth[0]!;
+    const rows = await this.db.all<{ on_sale_at: string; person_id: string; status: string; rule: string | null; sent_at: string | null; trial: number; search_later: number }>(
+      `SELECT s.on_sale_at, a.person_id, a.status, a.rule, m.occurred_at AS sent_at, ${IN_TRIAL('a.message_id')} AS trial,
+              EXISTS (SELECT 1 FROM buyer_searches b WHERE b.project_id = a.project_id AND b.created_at > s.on_sale_at) AS search_later
+         FROM property_on_sale s JOIN property_alerts a ON a.property_id = s.property_id AND a.network_id = s.network_id
+         LEFT JOIN messages m ON m.id = a.message_id AND a.status = 'sent' AND ${NOT_FAILED('a.message_id')}
+        WHERE s.network_id = ? AND s.on_sale_at >= ? AND s.on_sale_at < ?`,
+      inMonth,
+    );
+    const undated = await this.db.first<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM property_alerts a WHERE a.network_id = ? AND a.created_at >= ? AND a.created_at < ? AND NOT EXISTS (SELECT 1 FROM property_on_sale s WHERE s.property_id = a.property_id)',
+      inMonth,
+    );
+    const consents = await this.db.all<{ person_id: string; given_at: string; withdrawn_at: string | null }>('SELECT person_id, given_at, withdrawn_at FROM consents WHERE network_id = ? AND purpose = ?', [net, ALERT_PURPOSE]);
+    const rootOf = await this.mergedRoots(net);
+    const askedBy = (root: string, at: string): boolean => {
+      const t = Date.parse(at);
+      return consents.some((c) => rootOf(c.person_id) === root && Date.parse(c.given_at) <= t && (c.withdrawn_at === null || Date.parse(c.withdrawn_at) > t));
+    };
+    const cases: Case[] = [];
+    let setAside = Number(undated?.n ?? 0);
+    for (const r of rows) {
+      const deadline = afterSendingTime(new Date(r.on_sale_at), HOUR, DEFAULT_SEND_SETTINGS).getTime();
+      const inTime = r.sent_at !== null && Date.parse(r.sent_at) <= deadline;
+      if (!inTime && SILENCE_RULES.includes(r.rule)) setAside += 1;
+      else if (!inTime && (Number(r.search_later) === 1 || !askedBy(rootOf(r.person_id), r.on_sale_at))) setAside += 1;
+      else cases.push({ at: r.on_sale_at, doneAt: r.sent_at, deadline, trial: Number(r.trial) === 1 });
+    }
+    return { cases, setAside, unmeasurable: rows.length === 0 && Number(undated?.n ?? 0) > 0 };
   }
 
   /** Le point d'une semaine est dû le lundi qui la suit : ce lundi fait le mois, et seul un envoi de ce jour le tient. */

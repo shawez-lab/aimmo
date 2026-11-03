@@ -80,3 +80,38 @@ export function isWorkingDay(local: LocalTime): boolean {
   if (local.weekday > 5) return false;
   return !frenchHolidays(Number(local.date.slice(0, 4))).has(local.date);
 }
+
+/** La fenêtre d'envoi d'initiative [R01] : minutes depuis minuit, début inclus, fin exclue ; jours 1 = lundi … 7 = dimanche. */
+export interface SendingWindow {
+  timeZone: string;
+  initiativeFrom: number;
+  initiativeUntil: number;
+  initiativeDays: readonly number[];
+}
+
+/**
+ * L'instant où `spanMs` de temps d'envoi se sont écoulés depuis `from` : seul compte le temps passé dans la fenêtre, à la
+ * seconde près. Un bien sorti à 19 h 30 a sa demi-heure du soir, puis sa demi-heure du lendemain matin.
+ */
+export function afterSendingTime(from: Date, spanMs: number, window: SendingWindow): Date {
+  let cursor = from.getTime();
+  let left = spanMs;
+  for (let step = 0; step < 400; step += 1) {
+    const local = localTime(new Date(cursor), window.timeZone);
+    // Le reste de la minute en cours, pour tomber juste sur une limite.
+    const sinceMinute = ((cursor % 60_000) + 60_000) % 60_000;
+    const open = window.initiativeDays.includes(local.weekday);
+    if (open && local.minutes >= window.initiativeFrom && local.minutes < window.initiativeUntil) {
+      const room = (window.initiativeUntil - local.minutes) * 60_000 - sinceMinute;
+      if (room >= left) return new Date(cursor + left);
+      left -= room;
+      cursor += room;
+    } else if (open && local.minutes < window.initiativeFrom) {
+      // Vers l'ouverture ; un changement d'heure en chemin se rattrape au tour suivant.
+      cursor += (window.initiativeFrom - local.minutes) * 60_000 - sinceMinute;
+    } else {
+      cursor += (1440 - local.minutes) * 60_000 - sinceMinute;
+    }
+  }
+  throw new Error('Fenêtre d’envoi sans ouverture.');
+}

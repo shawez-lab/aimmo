@@ -1,4 +1,4 @@
-import { Acces, DecisionEnvoi, investir, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult, commerces } from '@aimmo/core';
+import { Acces, DecisionEnvoi, investir, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, onSaleDatesJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult, commerces } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
@@ -65,6 +65,8 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       mandateDeadlinesJob(config.db, journal, { now }),
       // Alertes aux acquéreurs (T03), de 9 h à 19 h, par les canaux du mode essai seulement.
       alertsJob(config.db, journal, { now, unsubscribeBase: config.alertUnsubscribeBase || null }),
+      // Date de mise en vente des biens (IN11), sans aucun envoi, pour mesurer l'alerte dans l'heure [R222].
+      onSaleDatesJob(config.db, journal, { now }),
       // Comptes rendus de visite validés en attente (T06), au passage suivant, par les canaux du mode essai.
       visitReportsJob(config.db, journal, () => {
         const store = new FicheClient(config.db, { now });

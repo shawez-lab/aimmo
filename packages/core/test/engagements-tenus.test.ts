@@ -28,7 +28,7 @@ async function setup(nowIso = '2027-07-20T10:00:00.000Z') {
   };
   const claim = (inboundId: string, outcome: string, at: string) => db.run('INSERT INTO first_reply_claims (claim_key, inbound_id, claim_id, outcome, created_at) VALUES (?, ?, ?, ?, ?)', [id(), inboundId, id(), outcome, at]);
   /** Un message sorti : `box` le laisse en boîte d'essai, `failed` en panne. */
-  const out = async (person: string | null, at: string, opts: { author?: string; box?: boolean; failed?: boolean } = {}) => {
+  const out = async (person: string | null, at: string, opts: { author?: string; box?: boolean | undefined; failed?: boolean | undefined } = {}) => {
     const m = id();
     await db.run("INSERT INTO messages (id, network_id, person_id, channel, direction, author_kind, body, occurred_at, created_at) VALUES (?, ?, ?, 'email', 'out', ?, 'texte', ?, ?)", [m, net, person ?? 'personne', opts.author ?? 'ai', at, at]);
     if (opts.box) await db.run("INSERT INTO trial_outbox (message_id, channel, created_at) VALUES (?, 'email', ?)", [m, at]);
@@ -269,14 +269,125 @@ describeWithSqlite('IN07 · engagements de service tenus', () => {
     expect(after.kept.denominator).toBe(4);
   });
 
-  it('[R216] l’alerte aux acquéreurs n’est pas mesurable : la ligne le dit, n’entre pas au total, même avec des alertes rangées', async () => {
+  // Le 10 juin 2027 est un jeudi, le 12 un samedi, le 13 un dimanche ; Paris est à UTC+2.
+  const onSale = (t: Awaited<ReturnType<typeof setup>>, property: string, at: string) =>
+    t.db.run('INSERT INTO property_on_sale (property_id, network_id, mandate_id, on_sale_at, noted_at) VALUES (?, ?, ?, ?, ?)', [property, t.net, 'm', at, at]);
+  const asked = (t: Awaited<ReturnType<typeof setup>>, person: string, at = T('01T08:00:00')) =>
+    t.db.run("INSERT INTO consents (id, network_id, person_id, purpose, channel, proof, given_at, created_at) VALUES (?, ?, ?, 'alertes_biens', 'email', 'preuve', ?, ?)", [t.id(), t.net, person, at, at]);
+  const alert = async (t: Awaited<ReturnType<typeof setup>>, property: string, person: string, opts: { sentAt?: string; box?: boolean; failed?: boolean; status?: string; rule?: string; project?: string; consent?: boolean } = {}) => {
+    if (opts.consent !== false) await asked(t, person);
+    const message = opts.sentAt ? await t.out(person, opts.sentAt, { box: opts.box, failed: opts.failed }) : null;
+    const at = opts.sentAt ?? T('01T00:00:00');
+    await t.db.run('INSERT INTO property_alerts (property_id, person_id, network_id, project_id, status, rule, message_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [property, person, t.net, opts.project ?? null, opts.status ?? (opts.sentAt ? 'sent' : 'waiting'), opts.rule ?? null, message, at, at]);
+  };
+
+  it('[R222] un bien sans date reste non mesuré : la ligne le dit, n’entre pas au total, jamais un zéro', async () => {
     const t = await setup();
     await t.db.run("INSERT INTO property_alerts (property_id, person_id, network_id, status, created_at, updated_at) VALUES ('b', 'p', ?, 'sent', ?, ?)", [t.net, T('10T10:00:00'), T('10T10:00:00')]);
     const r = await t.read();
     const l = r.lines.find((x) => x.code === 'alerte_heure')!;
     expect(l.measurable).toBe(false);
     expect(l.kept.bp).toBeNull();
+    expect(l.setAside).toBe(1);
     expect(r.overall.denominator).toBe(0);
+  });
+
+  it('[R222] un bien sans date, à côté d’un bien daté, est dit à part, sans entrer au calcul', async () => {
+    const t = await setup();
+    await onSale(t, 'b1', T('10T10:00:00'));
+    await alert(t, 'b1', 'p1', { sentAt: T('10T10:30:00') });
+    await t.db.run("INSERT INTO property_alerts (property_id, person_id, network_id, status, created_at, updated_at) VALUES ('b2', 'p2', ?, 'sent', ?, ?)", [t.net, T('10T10:00:00'), T('10T10:00:00')]);
+    const l = await t.line('alerte_heure');
+    expect(l.measurable).toBe(true);
+    expect(l.kept).toEqual({ numerator: 1, denominator: 1, bp: 10000 });
+    expect(l.setAside).toBe(1);
+  });
+
+  it('[R216] alerte dans l’heure, à la seconde près : 60 min 00 s tenu, 60 min 01 s manqué', async () => {
+    const t = await setup();
+    await onSale(t, 'b1', T('10T10:00:00')); // 12 h à Paris
+    await alert(t, 'b1', 'p1', { sentAt: T('10T11:00:00') });
+    await alert(t, 'b1', 'p2', { sentAt: T('10T11:00:01') });
+    const l = await t.line('alerte_heure');
+    expect(l.kept).toEqual({ numerator: 1, denominator: 2, bp: 5000 });
+    expect(l.missedDays).toEqual(['2027-06-10']);
+  });
+
+  it('[R216] un bien sorti la nuit : l’heure part de 8 h, 9 h 00 tenu, 9 h 00 min 01 s manqué', async () => {
+    const t = await setup();
+    await onSale(t, 'b1', T('10T00:30:00')); // 2 h 30 à Paris
+    await alert(t, 'b1', 'p1', { sentAt: T('10T07:00:00') }); // 9 h à Paris
+    await alert(t, 'b1', 'p2', { sentAt: T('10T07:00:01') });
+    expect((await t.line('alerte_heure')).kept).toEqual({ numerator: 1, denominator: 2, bp: 5000 });
+  });
+
+  it('[R216] un bien sorti le dimanche : l’heure part du lundi 8 h', async () => {
+    const t = await setup();
+    await onSale(t, 'b1', T('13T09:00:00')); // dimanche 11 h à Paris
+    await alert(t, 'b1', 'p1', { sentAt: T('14T07:00:00') }); // lundi 9 h
+    await alert(t, 'b1', 'p2', { sentAt: T('14T07:00:01') });
+    expect((await t.line('alerte_heure')).kept).toEqual({ numerator: 1, denominator: 2, bp: 5000 });
+  });
+
+  it('[R216] un bien sorti le samedi à 19 h 30 : sa demi-heure du soir, puis celle du lundi matin', async () => {
+    const t = await setup();
+    await onSale(t, 'b1', T('12T17:30:00'));
+    await alert(t, 'b1', 'p1', { sentAt: T('14T06:30:00') }); // lundi 8 h 30
+    await alert(t, 'b1', 'p2', { sentAt: T('14T06:30:01') });
+    expect((await t.line('alerte_heure')).kept).toEqual({ numerator: 1, denominator: 2, bp: 5000 });
+  });
+
+  it('[R216] une alerte en boîte d’essai se dit à part, en panne elle est manquée, un délai qui court n’est ni l’un ni l’autre', async () => {
+    const t = await setup();
+    await onSale(t, 'b1', T('10T10:00:00'));
+    await alert(t, 'b1', 'p1', { sentAt: T('10T10:10:00'), box: true });
+    await alert(t, 'b1', 'p2', { sentAt: T('10T10:10:00'), failed: true, status: 'failed' });
+    await alert(t, 'b1', 'p3', { sentAt: T('10T10:10:00'), failed: true });
+    const l = await t.line('alerte_heure');
+    expect(l.inTrial).toBe(1);
+    expect(l.kept).toEqual({ numerator: 0, denominator: 2, bp: 0 });
+
+    const u = await setup('2027-07-01T06:30:00.000Z');
+    await onSale(u, 'b1', T('30T20:00:00')); // le 30 juin à 22 h à Paris, le 1er juillet à 8 h 30 : l'heure court jusqu'à 9 h
+    await alert(u, 'b1', 'p1', { status: 'waiting', rule: 'R01' });
+    const w = await u.line('alerte_heure');
+    expect(w.pending).toBe(1);
+    expect(w.kept.denominator).toBe(0);
+    u.setClock('2027-07-01T07:00:01.000Z');
+    expect((await u.line('alerte_heure')).kept.denominator).toBe(1);
+  });
+
+  it('[R216] à part : la loi, l’accord, le doublon, le bien retiré ; un autre refus reste manqué', async () => {
+    const t = await setup();
+    await onSale(t, 'b1', T('10T10:00:00'));
+    for (const [i, rule] of ['R02', 'R03', 'R04', 'R05', 'R42'].entries()) await alert(t, 'b1', `p${i}`, { status: 'refused', rule });
+    await alert(t, 'b1', 'p9', { status: 'refused', rule: 'R07' });
+    const l = await t.line('alerte_heure');
+    expect(l.setAside).toBe(5);
+    expect(l.kept).toEqual({ numerator: 0, denominator: 1, bp: 0 });
+  });
+
+  it('[R216] à part si la personne n’a demandé ou changé sa recherche qu’après la mise en vente ; arrivée à temps, elle compte', async () => {
+    const t = await setup();
+    await onSale(t, 'b1', T('10T10:00:00'));
+    await asked(t, 'p1', T('11T10:00:00'));
+    await alert(t, 'b1', 'p1', { sentAt: T('11T12:00:00'), consent: false }); // accord donné après
+    await t.db.run("INSERT INTO buyer_searches (id, network_id, project_id, person_id, version, origin, created_at) VALUES ('s1', ?, 'prj', 'p2', 1, 'agent:x', ?)", [t.net, T('11T09:00:00')]);
+    await alert(t, 'b1', 'p2', { sentAt: T('11T12:00:00'), project: 'prj' }); // recherche changée après
+    await asked(t, 'p3', T('11T10:30:00'));
+    await alert(t, 'b1', 'p3', { sentAt: T('10T10:20:00'), consent: false }); // à temps : l'accord tardif n'y change rien
+    const l = await t.line('alerte_heure');
+    expect(l.setAside).toBe(2);
+    expect(l.kept).toEqual({ numerator: 1, denominator: 1, bp: 10000 });
+  });
+
+  it('[R216] l’accord d’une fiche réunie vaut pour la fiche gardée', async () => {
+    const t = await setup();
+    await onSale(t, 'b1', T('10T10:00:00'));
+    await asked(t, 'ancienne');
+    await t.db.run("INSERT INTO person_merges (id, network_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES ('f', ?, 'p1', 'ancienne', 'doublon', ?, ?)", [t.net, T('01T00:00:00'), T('01T00:00:00')]);
+    await alert(t, 'b1', 'p1', { sentAt: T('10T12:00:00'), consent: false });
+    expect((await t.line('alerte_heure')).kept).toEqual({ numerator: 0, denominator: 1, bp: 0 });
   });
 
   it('[R216] le total additionne les cas jugés ; les autres mois et les autres réseaux n’y sont pas', async () => {
