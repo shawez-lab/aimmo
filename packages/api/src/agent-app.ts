@@ -40,6 +40,7 @@ import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
 import { FIN_DE_BAIL_SCRIPT } from '../app/fin-de-bail.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
 import { FICHE_GOOGLE_SCRIPT } from '../app/fiche-google.ts';
+import { FICHE_BIEN_SCRIPT } from '../app/fiche-bien.ts';
 import { INTEGRATION_SCRIPT } from '../app/integration.ts';
 import { APP_CSS, APP_JS, ICON_SVG, INDEX_HTML, MANIFEST, swJs } from '../app/fichiers.ts';
 
@@ -132,6 +133,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/fin-de-bail.js': { body: FIN_DE_BAIL_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les finances (K10), chargées au premier geste, jamais gardées sur l'appareil [R201].
   '/app/finances.js': { body: FINANCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // La fiche du bien (X19), chargée au premier geste, jamais gardée sur l'appareil [R201].
+  '/app/fiche-bien.js': { body: FICHE_BIEN_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Fiche Google » (AT14), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/fiche-google.js': { body: FICHE_GOOGLE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les écrans de M14, « Mon intégration », « Académie » et « Candidatures » (J14), chargés à leur première ouverture [R201].

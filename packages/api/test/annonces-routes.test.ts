@@ -90,6 +90,20 @@ describeWithSqlite('P09 · routes de M07', () => {
     expect((await t.call(t.agent, 'GET', '/annonces/bien-inconnu/fiche')).status).toBe(404);
   });
 
+  it('X19 · siVersion : rien n’est rangé si la fiche a changé depuis sa lecture ; sans lui, rien ne change', async () => {
+    const t = await setup();
+    const read = await t.call(t.agent, 'GET', `/annonces/${t.propertyId}/fiche`);
+    const { sheet, version } = read.body.data;
+    const next = await t.call(t.agent, 'POST', `/annonces/${t.propertyId}/fiche?siVersion=${version}`, sheet);
+    expect(next.body).toMatchObject({ ok: true, data: { version: version + 1 } });
+    const stale = await t.call(t.agent, 'POST', `/annonces/${t.propertyId}/fiche?siVersion=${version}`, { ...sheet, risks: { inRiskZone: true } });
+    expect(stale.status).toBe(400);
+    expect(stale.body).toMatchObject({ ok: false, code: 'stale' });
+    expect((await t.call(t.agent, 'GET', `/annonces/${t.propertyId}/fiche`)).body.data.version).toBe(version + 1);
+    expect((await t.call(t.agent, 'POST', `/annonces/${t.propertyId}/fiche?siVersion=abc`, sheet)).status).toBe(400);
+    expect((await t.call(t.agent, 'POST', `/annonces/${t.propertyId}/fiche`, sheet)).body).toMatchObject({ ok: true, data: { version: version + 2 } });
+  });
+
   it('les corps mal formés sont refusés ; une correction qui invente rend 409 avec la phrase en cause', async () => {
     const t = await setup();
     const url = `https://api.exemple.test/v1/annonces/${t.propertyId}/correction`;

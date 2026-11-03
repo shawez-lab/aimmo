@@ -117,8 +117,11 @@ export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
       pattern: new RegExp(`^/annonces/${ID}/fiche$`),
       name: 'annonces.fiche.enregistrer',
       handle: async (s, v, [id], request) => {
+        // `siVersion` : rien n'est rangé si la fiche a changé depuis sa lecture (X19) ; une photo ajoutée entre-temps n'est jamais perdue.
+        const asked = new URL(request.url).searchParams.get('siVersion');
+        if (asked !== null && !/^\d{1,9}$/.test(asked)) return badBody();
         const body = await readJson(request);
-        return body ? reply(await fiches(s).save(v, id!, body)) : badBody();
+        return body ? reply(await fiches(s).save(v, id!, body, asked === null ? {} : { ifVersion: Number(asked) })) : badBody();
       },
     },
     { method: 'GET', pattern: new RegExp(`^/annonces/${ID}/controle$`), name: 'annonces.controle', handle: async (s, v, [id]) => reply(await mentions(s).check(v, id!)) },
