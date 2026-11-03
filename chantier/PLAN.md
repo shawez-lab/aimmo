@@ -3236,6 +3236,33 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Critères : aucun identifiant à saisir ni à lire [R16] ; un site d'agent mis hors service se rétablit depuis l'écran ; un refus `agent_inactive` de la route ne déconnecte pas la direction (`send` le lit comme une clé refusée : renommer ce code côté serveur) ; refus dits en français.
 - Attend : H09 pour les vraies mentions.
 
+### AT17 · L'adresse d'un agent parti se libère depuis l'écran
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT16
+- Cahier : M01 ; R16, R153.
+- Objectif : reste de AT16. Le site d'un agent parti n'est plus servi, mais son dernier réglage « en service » garde l'adresse : aucun autre site ne peut la prendre (`url_taken`), et l'écran ne montre que les agents en activité, donc aucun geste ne la libère. L'écran « Attirer » liste les adresses gardées par un agent parti et les libère en deux appuis ; le refus dit la cause quand l'agent parti est du même réseau, sans rien dire d'un autre réseau.
+- Critères : la lecture liste les agents partis dont l'adresse est gardée, et eux seuls, du seul réseau du lecteur [R16] (test) ; libérer se confirme, puis un autre site prend l'adresse [R153] (test) ; adresse gardée par un agent parti du réseau : refus propre, dit en français (test) ; adresse gardée dans un autre réseau : le refus reste `url_taken`, sans nom (test).
+- Attend : rien.
+
+### AT18 · Le titre lisible d'une vidéo ou d'une publication à l'origine des contacts
+- Statut : à faire
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT16
+- Cahier : M01, M19 ; R16.
+- Objectif : reste de AT16. Dans la mesure de l'origine, une vidéo ou une publication du Studio garde pour titre sa référence interne. La direction lit à la place un titre qui dit le bien et le contenu, sans donnée d'un client.
+- Critères : une vidéo et une publication montrent un titre lisible, sans identifiant (test) ; contenu sans bien retrouvé : libellé général, jamais la référence (test) ; lecture limitée au réseau [R16] (test).
+- Attend : rien.
+
+### AT19 · Un contour de quartier qui se croise lui-même est refusé
+- Statut : à faire
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT15
+- Cahier : M01 ; R150.
+- Objectif : reste de AT15. Un contour qui se croise est accepté aujourd'hui : l'appartenance d'une vente à ce quartier devient incertaine, donc le prix publié aussi. Le refuser à la saisie, avec un message en français, et mesurer le contrôle de chevauchement à 2 000 points contre 2 000.
+- Critères : contour croisé refusé, contour simple accepté, y compris concave (test) ; refus dit en français (test) ; 2 000 contre 2 000 points sous un temps borné (test).
+- Attend : rien.
+
 ### AT13 · Écran « Attirer » : pages de quartier, du fait validé à la page publiée
 - Statut : fait (2026-11-02)
 - Voie : 2
