@@ -86,7 +86,7 @@ globalThis.AIMMO_AVIS = function (t) {
   function body() { return $('avis-corps'); }
   function money(n) { return String(n).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ') + ' €'; }
   function why(res, fallback) {
-    if (res.offline) return 'Pas de réseau : rien n’est enregistré.';
+    if (res.offline) return 'La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.';
     return (res.body && NO[res.body.code]) || (res.status === 403 || res.status === 404 ? 'Ce bien n’est pas dans vos droits.' : fallback);
   }
   function wipe() { seq += 1; clear(body()); state(''); $('avis-titre').textContent = 'Avis de valeur'; cur = null; }

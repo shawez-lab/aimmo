@@ -124,7 +124,7 @@ globalThis.AIMMO_GAGNER = function (t) {
   var inside = false;
   function state(text) { $('gagner-etat').textContent = text; }
   function refusal(res, fallback) {
-    if (res.offline) return 'Pas de réseau : rien n’est enregistré.';
+    if (res.offline) return 'La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.';
     var b = res.body || {};
     var text = GAGNER_REFUSALS[b.code] || (typeof b.code === 'string' && b.code.indexOf('no_basis') === 0 ? 'La personne n’a plus de base légale pour être relancée : la relance est close.' : fallback);
     return typeof b.index === 'number' ? 'Ligne ' + (b.index + 1) + ' : ' + text : text;

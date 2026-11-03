@@ -178,7 +178,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
   var chosenMonth = null, busy = false, inside = false;
   function state(text) { $('attirer-etat').textContent = text; }
   function refusal(res, fallback) {
-    if (res.offline) return 'Pas de réseau : rien n’est enregistré.';
+    if (res.offline) return 'La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.';
     return (res.body && REFUSALS[res.body.code]) || fallback;
   }
   function wipe() {

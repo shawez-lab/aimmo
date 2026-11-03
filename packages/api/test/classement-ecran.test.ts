@@ -155,7 +155,7 @@ describe('Q08 · corriger le classement depuis la fiche', () => {
     off.selects()[0]!.value = 'buyer';
     off.named(off.body, 'Corriger le classement')[0]!.listeners.click!({});
     await off.tick();
-    expect(off.body.textContent).toContain('Pas de réseau : rien n’est enregistré.');
+    expect(off.body.textContent).toContain('La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.');
 
     const down = await opened(FICHE, { [PATH]: async () => Response.json({ ok: false, code: 'panne' }, { status: 500 }) });
     await down.load();

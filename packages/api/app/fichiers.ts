@@ -1193,7 +1193,7 @@ export const APP_JS = `'use strict';
     $('apres-etat').textContent = 'Envoi…';
     return send(path, 'POST', body).then(function (res) {
       if (res.gone) return false;
-      if (!res.ok) { $('apres-etat').textContent = res.offline ? 'Pas de réseau : rien n’est enregistré.' : refusalText(res.body, fallback); return false; }
+      if (!res.ok) { $('apres-etat').textContent = res.offline ? 'La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.' : refusalText(res.body, fallback); return false; }
       return openApres().then(function () { $('apres-etat').textContent = 'Enregistré.'; return true; });
     });
   }
