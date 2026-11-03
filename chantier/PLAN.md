@@ -1693,7 +1693,7 @@ Voie : 2
 Trouvé le 2026-11-03 par la voie 2, en comparant les routes de `packages/api/src/location.ts` aux appels de `packages/api/app/louer.ts`. Vérifier d'abord chaque route, le comparatif étant rapide. Script à part, comme `/app/commerces-repreneurs.js`, chargé au premier geste.
 
 ### W16 · Remise des clés et gestion par un partenaire à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W08, W11
 - Cahier : M15 Louer ; R107, R108, R73, R74, R16, R201.
 - Objectif : depuis la location, l'agent range la remise des clés, lit les honoraires dus, et confie la gestion à un partenaire carte G, par les routes `/location/<id>/remise-des-cles` et `/location/<id>/gestion`.
