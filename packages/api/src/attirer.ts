@@ -173,7 +173,8 @@ export function attirerRoutes(): AttirerRoute[] {
         const r = await services(s).pageAgent.network(v);
         if (!r.ok) return reply(r);
         const sites = new Map((await services(s).referencement.agentSiteSettings(v.networkId)).map((x) => [x.agentId, x]));
-        return reply(value({ ...r.value, agents: r.value.agents.map((a) => ({ ...a, site: sites.has(a.agentId) ? { baseUrl: sites.get(a.agentId)!.baseUrl, active: sites.get(a.agentId)!.active } : null })) }));
+        const departed = await services(s).referencement.departedAgentSites(v.networkId);
+        return reply(value({ ...r.value, departed, agents: r.value.agents.map((a) => ({ ...a, site: sites.has(a.agentId) ? { baseUrl: sites.get(a.agentId)!.baseUrl, active: sites.get(a.agentId)!.active } : null })) }));
       },
     },
     { method: 'POST', pattern: new RegExp(`${P}/agents/${ID}/mentions$`), name: 'attirer.agent_mentions', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).pageAgent.setLegalMentions(v, id!, { rsacNumber: b.rsacNumber, rsacRegistry: b.rsacRegistry }))) },

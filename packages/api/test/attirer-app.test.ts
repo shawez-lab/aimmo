@@ -281,6 +281,36 @@ describe('AT12 · écran « Attirer » de la direction', () => {
     expect(u.texts()).toContain('Prix publics');
   });
 
+  it('AT17 : l’adresse d’un agent parti se lit et se libère en deux appuis ; sans adresse gardée, rien ne s’affiche', async () => {
+    const agents = await (await BASE['GET /v1/attirer/agents']!()).json() as { data: Record<string, unknown> };
+    const t = await run({ 'GET /v1/attirer/agents': ok({ ...agents.data, departed: [{ agentId: 'ag-9', name: INJECTED, baseUrl: 'https://parti.exemple.test' }] }) });
+    await t.ouvrir();
+    expect(t.texts()).toContain('Adresses gardées par un agent parti');
+    expect(t.texts()).toContain('https://parti.exemple.test');
+    expect(t.texts()).not.toContain('ag-9');
+    // Le nom est du texte, jamais du balisage.
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    const free = t.buttons('Libérer l’adresse')[0]!;
+    await t.click(free);
+    expect(t.posts()).toHaveLength(0);
+    expect(t.state()).toBe('Un autre site pourra prendre cette adresse. Appuyez de nouveau pour confirmer.');
+    later(2000);
+    await t.click(free);
+    expect(t.posts().map((c) => [c.url, JSON.parse(c.body!)])).toEqual([['/v1/attirer/sites', { kind: 'agent', agentId: 'ag-9', baseUrl: 'https://parti.exemple.test', active: false }]]);
+    expect(t.state()).toBe('Adresse libérée.');
+    const u = await run();
+    await u.ouvrir();
+    expect(u.texts()).not.toContain('agent parti');
+  });
+
+  it('AT17 : une adresse gardée par un agent parti est dite en français, avec où la libérer', async () => {
+    const t = await run({ 'POST /v1/attirer/sites': no(409, { ok: false, rule: 'R153', code: 'url_agent_parti' }) });
+    await t.ouvrir();
+    await t.changer('https://parti.exemple.test');
+    expect(t.state()).toBe('Cette adresse reste gardée par un agent parti : libérez-la dans « Agents, mentions et sites ».');
+    expect(t.state()).not.toContain('url_agent_parti');
+  });
+
   it('mettre le site du réseau hors service se confirme ; un double appui immédiat ne coupe rien', async () => {
     const t = await run();
     await t.ouvrir();

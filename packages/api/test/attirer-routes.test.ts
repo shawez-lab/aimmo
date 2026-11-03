@@ -327,6 +327,37 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect((await read()).agents.map((a) => a.agentId)).not.toContain('ag-1');
   });
 
+  it('[R16] [R153] AT17 : une adresse gardée par un agent parti se lit et se libère, sans rien dire à un autre réseau', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    const kept = async (viewer = direction) => ((await t.call(viewer, 'GET', '/attirer/agents')).body.data as { departed: { agentId: string; name: string; baseUrl: string }[] }).departed;
+    const net2 = { ...direction, networkId: 'net-2' };
+    const site = (baseUrl: string, agentId = 'ag-2') => ({ kind: 'agent', agentId, baseUrl, active: true });
+    // Tant que l'agent est en activité, rien n'est listé, et le refus reste le refus ordinaire.
+    expect(await kept()).toEqual([]);
+    expect((await t.call(direction, 'POST', '/attirer/sites', site(CAMILLE))).body).toMatchObject({ rule: 'R153', code: 'url_taken' });
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = 'ag-1'");
+    const listed = await kept();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ agentId: 'ag-1', baseUrl: CAMILLE });
+    expect(listed[0]!.name.length).toBeGreaterThan(0);
+    // Le lecteur d'un autre réseau ne lit rien de cet agent, et son refus ne dit pas à qui est l'adresse.
+    expect(await kept(net2)).toEqual([]);
+    expect((await t.call(net2, 'POST', '/attirer/sites', { kind: 'reseau', baseUrl: CAMILLE, active: true })).body).toMatchObject({ rule: 'R153', code: 'url_taken' });
+    // Un agent n'y a pas accès.
+    expect((await t.call(camille, 'GET', '/attirer/agents')).status).toBe(403);
+    // Dans le réseau, le refus dit la cause ; le site du réseau aussi.
+    expect((await t.call(direction, 'POST', '/attirer/sites', site(CAMILLE))).body).toMatchObject({ rule: 'R153', code: 'url_agent_parti' });
+    expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'reseau', baseUrl: CAMILLE, active: true })).body).toMatchObject({ rule: 'R153', code: 'url_agent_parti' });
+    // Libérée : plus listée, et un autre site la prend.
+    expect((await t.call(direction, 'POST', '/attirer/sites', { kind: 'agent', agentId: 'ag-1', baseUrl: CAMILLE, active: false })).status).toBe(200);
+    expect(await kept()).toEqual([]);
+    expect((await t.call(direction, 'POST', '/attirer/sites', site(CAMILLE))).status).toBe(200);
+    // L'adresse prise, l'agent revenu ne la reprend pas : une seule page de référence.
+    await t.db.run("UPDATE agents SET status = 'active' WHERE id = 'ag-1'");
+    expect((await t.call(direction, 'POST', '/attirer/sites', site(CAMILLE, 'ag-1'))).body).toMatchObject({ rule: 'R153', code: 'url_taken' });
+  });
+
   it('[R152] AT16 : à chaque étape, la liste dit ce que dit la page ; la dernière valeur l’emporte, même à la même date', async () => {
     const t = await setup();
     const row = async () => ((await t.call(direction, 'GET', '/attirer/agents')).body.data as { agents: { agentId: string; missing: string | null; rsacNumber: string | null; rsacRegistry: string | null; site: unknown }[] }).agents.find((a) => a.agentId === 'ag-1')!;
