@@ -483,7 +483,7 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     var ul = el('ul', null, 'liste');
     alerts.forEach(function (a) {
       var what = (a.missing || []).map(function (m) { return C_CESSION_MISSING[m] || 'une pièce'; }).join(', ');
-      var li = line('Cession d’un fonds : il manque au coffre : ' + what + '.', cRef(a.personId) + ' · levée le ' + date(a.raisedAt));
+      var li = line('Cession d’un fonds : à la levée de l’alerte, il manquait au coffre : ' + what + '. Vérifiez le coffre avant de décider.', cRef(a.personId) + ' · levée le ' + date(a.raisedAt));
       if (a.decision) {
         li.appendChild(el('p', (C_VIGILANCE[a.decision.decision] || 'Décidée') + ' · ' + a.decision.validatorName + ', le ' + date(a.decision.decidedAt), 'decision'));
       } else {

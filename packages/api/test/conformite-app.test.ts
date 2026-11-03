@@ -339,7 +339,7 @@ describe('CE21 · le responsable lit et décide les alertes de cession', () => {
   it('[R118] [R15] l’alerte se lit : ce qui manque et la fin de la référence, jamais une pièce ni un montant ; le résumé la compte', async () => {
     const t = await open();
     const text = t.section().textContent;
-    expect(text).toContain('Cession d’un fonds : il manque au coffre : bénéficiaires effectifs, origine des fonds.');
+    expect(text).toContain('Cession d’un fonds : à la levée de l’alerte, il manquait au coffre : bénéficiaires effectifs, origine des fonds. Vérifiez le coffre avant de décider.');
     expect(text).toContain('Client …z9y8x7');
     expect(text).not.toContain('personne-test');
     expect(t.els['conformite-resume']!.textContent).toContain('alerte de cession');
