@@ -124,7 +124,7 @@ describe('IN06 · les indicateurs à l’écran', () => {
     clock = Date.parse('2027-02-28T23:30:00.000Z');
     t.els['rapport-direction-lire']!.listeners.click!({});
     await settle();
-    expect(t.calls.slice(-6).map((c) => c.url)).toContain('/v1/pilotage/parcours?du=2027-02-01&au=2027-02-28');
+    expect(t.calls.slice(-12).map((c) => c.url)).toContain('/v1/pilotage/parcours?du=2027-02-01&au=2027-02-28');
     expect(t.els['indicateurs-etat']!.textContent).toBe('février 2027.');
   });
 

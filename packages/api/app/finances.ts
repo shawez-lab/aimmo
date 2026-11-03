@@ -21,6 +21,9 @@
  *
  * Les indicateurs du mois passé (IN06), relus de même : taux, délais et agents pour la direction [R214, R215] ; contacts
  * par zone pour chacun, l'agent ne voyant que ce que le serveur lui rend [R68]. Une donnée absente se dit absente.
+ *
+ * Les engagements, le temps gagné et la disponibilité (IN10), relus de même, pour la direction [R216, R217, R223] : ce que
+ * le serveur ne peut pas mesurer se dit tel, jamais zéro ni 100 %. L'agent déclare ses heures de la semaine passée [R217].
  */
 
 const SHARE_NAMES: Record<string, string> = {
@@ -130,7 +133,11 @@ const stateAndBody = (id: string, title: string, intro: string): string => `<sec
 `;
 const ZONES_ENTRY_HTML = stateAndBody('zones', 'Contacts par zone, le mois passé', 'Se relit avec le rapport du matin. Une zone ne se montre que si elle ne dit le chiffre de personne.');
 const INDICATEURS_ENTRY_HTML = stateAndBody('indicateurs', 'Le parcours, le mois passé', 'Se relit avec le rapport du matin. Tout vient de la base, pour tout le réseau.');
-export const RAPPORT_AGENT_HTML = reportEntry('agent') + ZONES_ENTRY_HTML;
+const TEMPS_AGENT_ENTRY_HTML = stateAndBody('temps-agent', 'Mon temps gagné, la semaine passée', 'Vous seul le déclarez. Personne ne vous compare à personne.');
+const ENGAGEMENTS_ENTRY_HTML = stateAndBody('engagements', 'Nos engagements, le mois passé', 'Recalculés depuis la base, sans aucun agent.');
+const TEMPS_RESEAU_ENTRY_HTML = stateAndBody('temps-reseau', 'Le temps gagné, la semaine passée', 'Ce que les agents déclarent, en comptes, sans aucun nom.');
+const DISPONIBILITE_ENTRY_HTML = stateAndBody('disponibilite', 'La disponibilité, le mois passé', 'La part du temps où chaque service a répondu. Cible : 99,9 %.');
+export const RAPPORT_AGENT_HTML = reportEntry('agent') + ZONES_ENTRY_HTML + TEMPS_AGENT_ENTRY_HTML;
 const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
 <h3 id="preuve-titre">La preuve à Dijon</h3>
 <p class="doux">10 mandats de vente signés et inscrits par mois, 6 mois de suite, depuis janvier 2027. Se relit avec le rapport du matin.</p>
@@ -138,7 +145,7 @@ const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
 <div id="preuve-corps"></div>
 </section>
 `;
-export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML;
+export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML + DISPONIBILITE_ENTRY_HTML;
 
 export const REGLAGES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-grille">
 <h3 id="titre-grille">Grille des commissions et alertes</h3>
@@ -190,7 +197,7 @@ export const FINANCES_JS = `
       $('rapport-' + who + '-etat').textContent = '';
       $('rapport-' + who + '-jour').value = '';
     });
-    ['preuve', 'zones', 'indicateurs'].forEach(function (id) {
+    ['preuve', 'zones', 'indicateurs', 'engagements', 'temps-reseau', 'disponibilite', 'temps-agent'].forEach(function (id) {
       clear($(id + '-corps'));
       $(id + '-etat').textContent = '';
     });
@@ -277,7 +284,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     var body = $('rapport-' + who + '-corps'), state = $('rapport-' + who + '-etat');
     var chosen = $('rapport-' + who + '-jour').value;
     clear(body);
-    if (who === 'direction') { proof(''); indicators(); } else zones();
+    if (who === 'direction') { proof(''); indicators(); promises(); networkTime(); availability(); } else { zones(); myTime(''); }
     if (chosen && !/^\\d{4}-\\d{2}-\\d{2}$/.test(chosen)) { state.textContent = 'Choisissez un jour.'; return Promise.resolve(false); }
     state.textContent = 'Chargement…';
     return send('/v1/pilotage/rapport-matin' + (chosen ? '?jour=' + chosen : ''), 'GET').then(function (res) {
@@ -453,6 +460,111 @@ globalThis.AIMMO_FINANCES = function (t) {
       if (!c.body.data.zones.length) body.appendChild(el('p', 'Aucun contact transmis ce mois-là.', 'doux'));
       state.textContent = monthName(month) + '.';
       return true;
+    });
+  }
+  /* Un bloc qui se relit : seule la dernière lecture de la session en cours s'affiche. */
+  var blockTurns = {};
+  function readBlock(id, url, render) {
+    var mine = t.session();
+    var turn = blockTurns[id] = (blockTurns[id] || 0) + 1;
+    var body = $(id + '-corps'), state = $(id + '-etat');
+    clear(body);
+    state.textContent = 'Chargement…';
+    return send(url, 'GET').then(function (res) {
+      if (res.gone || mine !== t.session() || turn !== blockTurns[id]) return false;
+      if (!res.ok || !res.body.data) { state.textContent = failure(res); return false; }
+      state.textContent = render(res.body.data, body);
+      return true;
+    });
+  }
+  function promises() {
+    var month = lastMonth();
+    return readBlock('engagements', '/v1/pilotage/engagements-tenus?mois=' + month, function (v, body) {
+      var ul = el('ul', null, 'liste');
+      v.lines.forEach(function (l) {
+        var li = el('li');
+        li.appendChild(el('strong', l.label));
+        if (!l.measurable) li.appendChild(el('p', 'Pas encore mesurable : la base ne permet pas de le juger.', 'doux'));
+        else {
+          li.appendChild(el('p', rate(l.kept, 'Tenu')));
+          if (l.missedDays.length) li.appendChild(el('p', 'Manqué le ' + l.missedDays.map(day).join(', ') + '.', 'retard'));
+          if (l.pending) li.appendChild(el('p', plural(l.pending, 'cas dont le délai court encore', 'cas dont le délai court encore') + '.', 'doux'));
+          if (l.inTrial) li.appendChild(el('p', plural(l.inTrial, 'cas fait à temps, resté en essai : rien n’est parti', 'cas faits à temps, restés en essai : rien n’est parti') + '.', 'doux'));
+          if (l.setAside) li.appendChild(el('p', plural(l.setAside, 'cas écarté du calcul', 'cas écartés du calcul') + '.', 'doux'));
+          if (l.blindSpot) li.appendChild(el('p', l.blindSpot, 'doux'));
+        }
+        ul.appendChild(li);
+      });
+      body.appendChild(ul);
+      return monthName(month) + '. ' + (v.overall.bp === null ? 'Aucun cas jugé sur ce mois.' : rate(v.overall, 'Tenus au total'));
+    });
+  }
+  /* Le lundi de la semaine finie d'avant, à Paris : c'est le serveur qui refuse une semaine en cours. */
+  function lastWeek() {
+    var parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    var part = function (type) { return Number(parts.filter(function (x) { return x.type === type; })[0].value); };
+    var noon = Date.UTC(part('year'), part('month') - 1, part('day'), 12);
+    return new Date(noon - (((new Date(noon).getUTCDay() + 6) % 7) + 7) * 86400000).toISOString().slice(0, 10);
+  }
+  function hours(minutes) {
+    var m = minutes % 60;
+    return Math.floor(minutes / 60) + ' h' + (m ? ' ' + String(m).padStart(2, '0') : '');
+  }
+  function networkTime() {
+    var week = lastWeek();
+    return readBlock('temps-reseau', '/v1/pilotage/temps-gagne/reseau?semaine=' + week, function (v, body) {
+      var ul = el('ul', null, 'liste');
+      if (v.minutes !== null) ul.appendChild(el('li', hours(Number(v.minutes)) + ' gagnées, selon ' + plural(Number(v.declared), 'agent', 'agents') + '.'));
+      if (v.notDeclared) ul.appendChild(el('li', plural(Number(v.notDeclared), 'agent n’a pas déclaré', 'agents n’ont pas déclaré') + '.'));
+      if (v.withoutGesture) ul.appendChild(el('li', plural(Number(v.withoutGesture), 'déclaration sans aucun geste', 'déclarations sans aucun geste') + ' au journal cette semaine-là.'));
+      if (ul.children.length) body.appendChild(ul);
+      return 'Semaine du ' + day(week) + '.' + (v.minutes === null ? ' Personne n’a déclaré.' : '');
+    });
+  }
+  var TIME_REFUSALS = { week_before_entry: 'Cette semaine est d’avant votre entrée : rien n’est rangé.', week_not_finished: 'Cette semaine n’est pas finie : rien n’est rangé.', bad_minutes: 'Entre 0 et 80 heures : rien n’est rangé.', conflict: 'Une autre déclaration vient de passer : relisez avant de recommencer.', role: 'Ce n’est pas dans vos droits.' };
+  function myTime(message) {
+    var week = lastWeek();
+    return readBlock('temps-agent', '/v1/pilotage/temps-gagne?semaine=' + week, function (v, body) {
+      body.appendChild(el('p', plural(Number(v.gestures), 'geste', 'gestes') + ' à votre nom au journal cette semaine-là.', 'doux'));
+      var input = field(body, 'Heures gagnées cette semaine-là', 'text');
+      input.setAttribute('inputmode', 'decimal');
+      var state = el('p', '', 'etat');
+      state.setAttribute('role', 'status');
+      saveButton(body, 'Déclarer', state, function () {
+        var mine = t.session();
+        var text = input.value.trim();
+        if (!/^\\d{1,2}(?:[.,]\\d{1,2})?$/.test(text) || Number(text.replace(',', '.')) > 80) { state.textContent = TIME_REFUSALS.bad_minutes; return null; }
+        return send('/v1/pilotage/temps-gagne', 'POST', { week: week, minutes: Math.round(Number(text.replace(',', '.')) * 60) }).then(function (res) {
+          if (res.gone || mine !== t.session()) return false;
+          if (!res.ok) {
+            state.textContent = (res.body && TIME_REFUSALS[res.body.code]) || 'Réponse perdue : votre déclaration est peut-être rangée. Relisez avant de recommencer.';
+            return false;
+          }
+          return myTime('Déclaration rangée.');
+        });
+      });
+      body.appendChild(state);
+      var said = 'Semaine du ' + day(week) + ' : ' + (v.minutes === null ? 'non déclarée.' : hours(Number(v.minutes)) + ' déclarées.');
+      return (message ? message + ' ' : '') + said;
+    });
+  }
+  var SERVICE_NAMES = { site: 'Le site', api: 'L’API', application: 'L’application' };
+  var UNMEASURED = { not_connected: 'aucune supervision branchée', supervision_failed: 'la supervision ne répond pas', bad_data: 'ses données ne tiennent pas', nothing_observed: 'rien d’observé ce mois-là' };
+  function availabilityLine(v, s) {
+    var name = SERVICE_NAMES[s.service] + ' : ';
+    if (!s.measured) return name + 'non mesuré, ' + (UNMEASURED[s.reason] || 'donnée absente') + '.';
+    var target = 'cible de ' + String(v.targetPercent).replace('.', ',') + ' %';
+    var verdict = s.targetMet === true ? target + ' tenue' : s.targetMet === false ? target + ' manquée' : 'mois connu en partie : ' + target + ' impossible à dire tenue';
+    var down = s.downMs ? ', ' + Math.ceil(s.downMs / 60000) + ' min de coupure' : '';
+    return name + String(s.percent).replace('.', ',') + ' %' + down + ', ' + verdict + '.';
+  }
+  function availability() {
+    var month = lastMonth();
+    return readBlock('disponibilite', '/v1/pilotage/disponibilite?mois=' + month, function (v, body) {
+      var ul = el('ul', null, 'liste');
+      v.services.forEach(function (s) { ul.appendChild(el('li', availabilityLine(v, s))); });
+      body.appendChild(ul);
+      return monthName(month) + '.' + (v.connected ? '' : ' Non mesuré : aucune supervision n’est branchée.');
     });
   }
   function field(box, label, type) {
