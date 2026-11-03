@@ -1998,7 +1998,9 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : un jeton Cloudflare qui lit la liste des compartiments, pour un usage réel (H45).
 
 ### X28 · Les vérifications tiennent dans leur délai
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03) : délai de 25 minutes pour les vérifications et le déploiement, durée la plus longue 15,5 min sur 100 exécutions, écrite dans `scripts/controle-verifications.mjs`, à relever quand la suite grandit ; attente de séance 30 minutes. Mesuré : 3 679 tests, 536 s cumulées, 14 tests de plus d'une seconde pour 29 s, aucun gros poste ; `--pool=threads` essayé, pas plus rapide (749 s contre 769 s), non retenu.
+- Reste : fusionnée (#341) ; relecture forte 1 P1 corrigé ; Codex non attendu (H03) ; vérification GitHub verte.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : Organisation et méthode.
 - Objectif : trouvé par la voie 2 sur #339 : `verifications.yml` coupe le travail à 15 minutes, et la suite en prend près de 13 à elle seule. Le 2026-11-03, tous les tests de #339 étaient verts (3 657), mais le travail a été coupé juste après, avant les garde-fous et le paquet du Worker : il est lu comme un échec. Chaque test ajouté rapproche toutes les fusions de ce mur. Fichier du socle : laissé à la voie 1. Relever le délai sans rien affaiblir, faire passer les contrôles courts avant les tests pour qu'une coupure ne les saute plus, et regarder ce qui prend le plus de temps ; aucune dépense GitHub en plus (décision du 2026-10-29), donc pas de machine plus grosse.
@@ -2006,7 +2008,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### CE23 · Une panne de stockage à l'ouverture d'un dossier ne consomme pas le code
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : CE22
 - Cahier : M16 ; R17, R114.
 - Objectif : trouvé par la relecture forte de CE22 : `dossier.ts`, si le stockage tombe en panne à l'ouverture, le code du lecteur est consommé et l'ouverture comptée comme faite, sans rien servir (réponse 500). Lire les documents avant de consommer le code, ou rendre ce code utilisable.
