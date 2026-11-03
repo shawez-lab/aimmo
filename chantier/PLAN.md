@@ -3266,8 +3266,9 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT20 · L'agent reçoit le lien marqué de sa vidéo et de sa publication
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Voie : 2
+- Reste : fusionnée (#340) ; relecture forte 3 P1 corrigés ; corrections non relues une seconde fois ; Codex non attendu (H03) ; copie réelle dans le presse-papiers non essayée (seul le repli « à la main » l'est) ; suite complète vérifiée sur GitHub seulement.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT18, X11
 - Cahier : M01, M19 ; R16, R156.
 - Objectif : l'agent poste lui-même ses vidéos : sans le lien marqué, le contact arrive sans origine. La route lit le lien de chaque publication validée et de chaque vidéo rangée, et l'écran Studio le montre, prêt à copier, avec la phrase qui dit où le coller.
@@ -3275,8 +3276,9 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT19 · Un contour de quartier qui se croise lui-même est refusé
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Voie : 2
+- Reste : fusionnée (#339) ; relecture forte sans P0 ni P1 ; Codex non attendu (H03) ; première vérification coupée par le délai (X28), verte à la relance ; 2 000 contre 2 000 points : environ 800 ms sur la machine de la séance ; les zones déjà rangées ne sont pas recontrôlées ; des points presque alignés sans surface peuvent passer à cause des arrondis.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT15
 - Cahier : M01 ; R150.
 - Objectif : reste de AT15. Un contour qui se croise est accepté aujourd'hui : l'appartenance d'une vente à ce quartier devient incertaine, donc le prix publié aussi. Le refuser à la saisie, avec un message en français, et mesurer le contrôle de chevauchement à 2 000 points contre 2 000.
