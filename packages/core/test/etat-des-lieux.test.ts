@@ -270,10 +270,15 @@ describeWithSqlite('W07 · état des lieux d’entrée', () => {
     const a = await t.edl.copy(t.agent, inventoryId, 'bailleur');
     const b = await t.edl.copy(t.agent, inventoryId, 'locataire');
     // W25 : l'exemplaire porte l'identité des deux parties : un bailleur suivi par un autre agent le ferme, refus au journal [R16].
-    const owner = await t.db.first<{ agent_id: string }>('SELECT agent_id FROM persons WHERE id = ?', [t.owner.id]);
-    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.bea.id, t.owner.id]);
-    expect(await t.edl.copy(t.agent, inventoryId, 'bailleur')).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
-    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [owner!.agent_id, t.owner.id]);
+    const chosen = await t.db.first<{ person_id: string }>('SELECT a.person_id FROM rental_choices c JOIN rental_applications a ON a.id = c.application_id WHERE a.listing_id = ?', [id]);
+    for (const personId of [t.owner.id, chosen!.person_id]) {
+      const was = await t.db.first<{ agent_id: string }>('SELECT agent_id FROM persons WHERE id = ?', [personId]);
+      await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.bea.id, personId]);
+      const before = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
+      expect(await t.edl.copy(t.agent, inventoryId, 'bailleur')).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+      expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse').length).toBeGreaterThan(before);
+      await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [was!.agent_id, personId]);
+    }
     expect(a).toEqual(b);
     expect(a).toEqual({ ok: true, value: { content: r.value.content, contentSha256, photos: r.value.rooms[0]!.photos } });
     expect(await sha256(r.value.content)).toBe(contentSha256);

@@ -685,8 +685,9 @@ export class EtatsDesLieux {
         return { ok: false, rule: 'R16', code: 'not_assigned' };
       }
     }
-    await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', what: 'inventory_copy' } }, this.now);
     if (c.content_sha256 !== row.content_sha256 || (await sha256(row.content)) !== c.content_sha256) return { ok: false, rule: 'R106', code: 'document_changed' };
+    // La lecture n'est notée que si le texte part vraiment.
+    await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', what: 'inventory_copy' } }, this.now);
     const photos = (JSON.parse(row.rooms) as RoomRow[]).flatMap((r) => r.photos);
     return { ok: true, value: { content: row.content, contentSha256: c.content_sha256, photos } };
   }

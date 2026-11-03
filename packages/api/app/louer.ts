@@ -908,15 +908,18 @@ globalThis.AIMMO_LOUER = function (t) {
     if (p.inventoryClosed) {
       box.appendChild(el('p', 'Signé des deux parties : un exemplaire pour chacun.', 'fait'));
       /* Il porte l'identité des deux parties : lu seulement au geste, jamais gardé [R16, R106]. */
+      var copyShown = el('div');
       if (p.closedInventoryId && ID.test(p.closedInventoryId)) box.appendChild(button('Lire l’exemplaire signé', once(function () {
+        clear(copyShown);
         return send('/v1/location/etats-des-lieux/' + encodeURIComponent(p.closedInventoryId) + '/exemplaires/bailleur', 'GET').then(function (res) {
           if (res.gone) return;
-          if (!res.ok) { louerState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.status === 403 ? 'Cet exemplaire n’est pas dans vos droits : il porte l’identité des deux parties.' : louerRefusal(res.body, 'Indisponible pour le moment. Réessayez plus tard.')); return; }
+          if (!res.ok) { louerState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.status === 403 ? 'Cet exemplaire n’est pas dans vos droits : il porte l’identité des deux parties.' : res.body && res.body.code === 'document_changed' ? 'Cet exemplaire ne correspond plus à ce qui a été signé : il n’est pas montré. Prévenez la direction.' : louerRefusal(res.body, 'Indisponible pour le moment. Réessayez plus tard.')); return; }
           louerState('');
-          box.appendChild(el('p', res.body.data.content, 'brouillon'));
-          box.appendChild(el('p', 'Le même exemplaire pour chacun. Empreinte : ' + res.body.data.contentSha256, 'doux'));
+          copyShown.appendChild(el('p', res.body.data.content, 'brouillon'));
+          copyShown.appendChild(el('p', 'Le même exemplaire pour chacun. Empreinte : ' + res.body.data.contentSha256, 'doux'));
         });
       })));
+      box.appendChild(copyShown);
       return box;
     }
     // L'état des lieux rangé et pas encore signé des deux parties est relu du serveur : un rechargement ne le perd pas.

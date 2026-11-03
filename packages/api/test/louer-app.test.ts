@@ -1130,6 +1130,17 @@ describe('W25 · lire l’exemplaire signé de l’état des lieux', () => {
     expect(t.state()).toBe('');
   });
 
+  it('[R10] un second appui ne double pas le texte ; un refus retire l’ancien texte', async () => {
+    const t = await open(ok({ content: 'Texte de l’exemplaire', contentSha256: 'a'.repeat(64), photos: [] }));
+    await t.click(t.byText(GO));
+    await t.click(t.byText(GO));
+    expect(t.body().textContent.split('Texte de l’exemplaire')).toHaveLength(2);
+    t.table[`GET ${URL_COPY}`] = no(409, { ok: false, rule: 'R106', code: 'document_changed' });
+    await t.click(t.byText(GO));
+    expect(t.body().textContent).not.toContain('Texte de l’exemplaire');
+    expect(t.state()).toBe('Cet exemplaire ne correspond plus à ce qui a été signé : il n’est pas montré. Prévenez la direction.');
+  });
+
   it('[R16] un exemplaire hors des droits est dit, sans texte', async () => {
     const t = await open(no(403, { ok: false, rule: 'R16', code: 'not_assigned' }));
     await t.click(t.byText(GO));
