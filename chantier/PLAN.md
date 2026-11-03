@@ -1942,8 +1942,9 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE05
 - Cahier : M16 ; R16, R113, R114, R201.
+- Décidé (2026-11-03) : le dossier ne sert que du texte, pour y porter le filigrane [R114] : l'agent colle le contenu, le dépôt d'un PDF n'existe pas. La référence vient de l'empreinte du texte ; le même texte rend sa ligne et répare un contenu perdu ; un seul titre par texte. `DossierStorage.write` reste absent en production : l'écran dit `stockage_absent` jusqu'à H38 et au branchement du Worker, tâche de la voie 1.
 - Objectif : `POST /v1/commerces/<id>/documents` n'a aucun appel de l'application, et attend une `storageRef` : `DossierStorage` ne sait que lire, le Worker n'a aucun stockage réel (H38), et rien n'empêche une référence de pointer vers le document d'un autre bien. Personne ne saisit de référence : donner un dépôt côté serveur, dans les fichiers de M16 (`core/commerces/dossier.ts`, `api/src/commerces.ts`), qui choisit lui-même la référence, derrière la même porte d'écriture ; sans stockage, le dire à l'écran, ne rien laisser croire rangé. Le branchement du Worker sur R2 reste une petite tâche à part de la voie 1, après H38. Lire d'abord CE05 dans le cahier pour savoir ce que le dossier sert (aujourd'hui du texte filigrané).
-- Critères : à préciser après lecture : seuls l'agent du bien et la direction déposent [R16] (test) ; une référence vers un autre bien refusée [R16] (test) ; sans stockage, c'est dit (test) ; réponse perdue dite telle, sans doublon (test) ; budget tenu [R201] (test).
+- Critères : seuls l'agent du bien et la direction déposent et lisent la liste, sans contenu ni référence [R16] (test) ; une référence vers un autre bien refusée [R16] (test) ; sans stockage, c'est dit, rien n'est dit rangé (test) ; même texte sans doublon, dépôt interrompu sans copie de plus, contenu perdu dit et réparé [R10] (tests) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
 - Attend : H38 pour un usage réel, rien pour le code.
 
 **Espaces des clients et location : les gestes manquants à l'écran.**

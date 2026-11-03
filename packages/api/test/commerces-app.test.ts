@@ -1655,3 +1655,105 @@ describe('CE19 · corriger la présentation anonyme à l’écran', () => {
     expect(COMMERCES_TEXTES_SCRIPT).not.toMatch(/innerHTML|localStorage|sessionStorage/);
   });
 });
+
+describe('CE20 · ranger un document du dossier à l’écran', () => {
+  const GO = 'Voir et déposer les documents';
+  const SAVE = 'Ranger le document';
+  const LIST = { 'GET /v1/commerces/b1/documents': ok([{ id: 'x1', kind: 'bilan', title: `Bilan ${INJECTED}`, addedAt: '2027-09-07T08:00:00.000Z' }]) };
+  async function open(more: Record<string, Answer> = {}) {
+    const t = await run({ ...LIST, ...more });
+    await t.openB1();
+    await t.click(t.byText(GO));
+    const s = t.scripts().filter((e) => e.attributes.src === '/app/commerces-textes.js');
+    expect(s).toHaveLength(1);
+    runInNewContext(COMMERCES_TEXTES_SCRIPT, t.context);
+    s[0]!.listeners.load!({});
+    await settle();
+    const posted = () => t.calls.filter((c) => c.method === 'POST' && c.url === '/v1/commerces/b1/documents/texte');
+    const fill = () => {
+      t.input('Sorte de document').value = 'bail';
+      t.input('Titre du document').value = ' Bail ';
+      t.input('Texte du document').value = 'Bail inventé.';
+    };
+    return { ...t, posted, fill };
+  }
+
+  it('[R201] rien n’est lu avant le geste', async () => {
+    const t = await run(LIST);
+    await t.openB1();
+    expect(t.calls.some((c) => c.url.endsWith('/documents'))).toBe(false);
+    expect(t.byText(GO)).toBeDefined();
+  });
+
+  it('[R16] qui ne peut pas écrire n’a pas le geste ; un refus de lecture est dit, pas « aucun document »', async () => {
+    const t = await run({ 'GET /v1/commerces/b1/demandes': no(403, { ok: false, rule: 'R16', code: 'role' }) });
+    await t.openB1();
+    expect(t.byText(GO)).toBeUndefined();
+    const lost = await open({ 'GET /v1/commerces/b1/documents': no(500, {}) });
+    expect(lost.state()).toBe('Les documents ne se lisent pas pour le moment.');
+    expect(lost.body().textContent).not.toContain('Aucun document');
+    expect(lost.byText('Relire les documents')).toBeDefined();
+  });
+
+  it('[R10] la liste se lit sans injection, le dépôt part en un envoi et la relecture suit', async () => {
+    const t = await open({ 'POST /v1/commerces/b1/documents/texte': ok({ id: 'x2', already: false }) });
+    expect(t.state()).toBe('');
+    expect(t.body().textContent).toContain('Bilan · Bilan <img');
+    expect(t.body().textContent).toContain('rangé le 07/09/2027');
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    t.fill();
+    await t.click(t.byText(SAVE));
+    expect(JSON.parse(t.posted()[0]!.body!)).toEqual({ kind: 'bail', title: 'Bail', content: 'Bail inventé.' });
+    expect(t.state()).toBe('Document rangé.');
+  });
+
+  it('[R10] rien de vide n’est envoyé', async () => {
+    const t = await open();
+    await t.click(t.byText(SAVE));
+    expect(t.state()).toBe('Choisissez la sorte de document.');
+    t.input('Sorte de document').value = 'bail';
+    await t.click(t.byText(SAVE));
+    expect(t.state()).toBe('Le titre est à remplir, en 120 caractères au plus.');
+    t.input('Titre du document').value = 'Bail';
+    await t.click(t.byText(SAVE));
+    expect(t.state()).toBe('Le texte est à remplir, en 1 million de caractères au plus.');
+    expect(t.posted()).toHaveLength(0);
+  });
+
+  it.each([
+    [no(400, { ok: false, rule: null, code: 'stockage_absent' }), 'Le stockage des documents n’est pas encore ouvert : rien n’est rangé, votre texte reste ici.'],
+    [no(403, { ok: false, rule: 'R16', code: 'not_assigned' }), 'Ce commerce n’est pas dans vos droits.'],
+    [no(400, { ok: false, rule: null, code: 'nouveau' }), 'Le document n’est pas rangé.'],
+    [async () => new Response('non', { status: 502 }), 'Réponse perdue : le document a peut-être été rangé. Appuyez de nouveau : le même texte ne s’ajoute pas deux fois.'],
+  ] as [Answer, string][])('[R10] chaque réponse est dite, le texte reste, le bouton revient (%#)', async (answer, said) => {
+    const t = await open({ 'POST /v1/commerces/b1/documents/texte': answer });
+    t.fill();
+    await t.click(t.byText(SAVE));
+    expect(t.state()).toBe(said);
+    expect(t.input('Texte du document').value).toBe('Bail inventé.');
+    expect(isOff(t.byText(SAVE))).toBe(false);
+  });
+
+  it('[R10] un texte déjà rangé est dit tel', async () => {
+    const t = await open({ 'POST /v1/commerces/b1/documents/texte': ok({ id: 'x1', already: true, repaired: false }) });
+    t.fill();
+    await t.click(t.byText(SAVE));
+    expect(t.state()).toBe('Ce texte était déjà rangé : rien n’est ajouté.');
+  });
+
+  it('[R10] un contenu perdu est dit dans la liste, et sa réparation aussi', async () => {
+    const t = await open({
+      'GET /v1/commerces/b1/documents': ok([{ id: 'x1', kind: 'bilan', title: 'Bilan', addedAt: '2027-09-07T08:00:00.000Z', available: false }]),
+      'POST /v1/commerces/b1/documents/texte': ok({ id: 'x1', already: true, repaired: true }),
+    });
+    expect(t.body().textContent).toContain('contenu perdu : le lecteur ne le reçoit pas');
+    t.fill();
+    await t.click(t.byText(SAVE));
+    expect(t.state()).toBe('Ce texte était perdu : il est rangé de nouveau.');
+  });
+
+  it('[R201] les scripts tiennent le budget d’une page', () => {
+    expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(budgetProblems({ html: '', js: COMMERCES_TEXTES_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+});

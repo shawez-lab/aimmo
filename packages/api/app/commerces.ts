@@ -481,6 +481,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       ceFiche(d[0], all[3].ok ? base : null);
       ceEstimation(base, kind, Array.isArray(d[1]) ? d[1] : []);
       cePresentation(base, d[2], all[3].ok);
+      if (all[3].ok) ceDocuments(base);
       if (all[3].ok) ceDemandes(base, Array.isArray(d[3]) ? d[3] : []);
       ceOuvertures(Array.isArray(d[4]) ? d[4] : [], all[3].ok ? base : null, Array.isArray(d[3]) ? d[3] : []);
       /* Seul un refus dit qu'on ne peut pas écrire : une lecture manquée ne retire pas les gestes en silence. */
@@ -536,6 +537,11 @@ globalThis.AIMMO_COMMERCES = function (t) {
     var box = el('div');
     b.appendChild(box);
     box.appendChild(button('Corriger le texte', function () { ceLoad('commerces-textes', 'AIMMO_CE_TEXTES', function (e) { e.fix(box, base, p); }); }));
+  }
+  function ceDocuments(base) {
+    var box = el('div');
+    ceBlock('Documents du dossier').appendChild(box);
+    box.appendChild(button('Voir et déposer les documents', function () { ceLoad('commerces-textes', 'AIMMO_CE_TEXTES', function (e) { e.documents(box, base); }); }));
   }
   /* Les demandes et l'engagement (CE14), les repreneurs (CE15) : servis à part, chargés au premier geste [R201]. */
   function ceLoad(name, global, act) {

@@ -47,7 +47,7 @@ async function setup(writer?: CommercesServices['presentationWriter']) {
     journal,
     now,
     identity: { state: async (_n, p) => ({ identityVerifiedOn: verified.has(p) ? '2027-09-01' : null }) },
-    storage: { read: async (ref) => files.get(ref) ?? null },
+    storage: { read: async (ref) => files.get(ref) ?? null, write: async (ref, content) => void files.set(ref, content) },
     vault: { everDeposited: async (_n, p, kinds) => kinds.some((k) => deposited.has(`${p}:${k}`)) },
     diffusion: { canDiffuse: async (_n, p) => ({ allowed: !closed.has(p), reason: 'essai' }) },
     ...(writer ? { presentationWriter: writer } : {}),
@@ -110,8 +110,111 @@ async function setup(writer?: CommercesServices['presentationWriter']) {
     );
     return /dossier\/([a-z]{40})/.exec(row?.body ?? '')?.[1] ?? null;
   };
-  return { closed, store, alexId: alexA.id, networkId: network.id, db, journal, call, ok, read, shop, buyer, tokenFor, alex, bea, dir, compliance, partner, verified, deposited, lastCode: () => lastCode, setDay: (d: string) => (clock = Date.parse(`${d}T08:00:00.000Z`)) };
+  return { s, files, closed, store, alexId: alexA.id, networkId: network.id, db, journal, call, ok, read, shop, buyer, tokenFor, alex, bea, dir, compliance, partner, verified, deposited, lastCode: () => lastCode, setDay: (d: string) => (clock = Date.parse(`${d}T08:00:00.000Z`)) };
 }
+
+describeWithSqlite('CE20 · déposer le texte d’un document du dossier protégé', () => {
+  const DOC = { kind: 'bail', title: 'Bail commercial', content: 'Bail inventé, 9 ans.' };
+  const ready = async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    return t;
+  };
+
+  it('[R16] seuls l’agent du bien et la direction déposent et lisent la liste, sans contenu ni référence', async () => {
+    const t = await ready();
+    const id = await t.shop();
+    expect((await t.call(t.bea, 'POST', `/commerces/${id}/documents/texte`, DOC)).status).toBe(403);
+    expect((await t.call(t.compliance, 'POST', `/commerces/${id}/documents/texte`, DOC)).status).toBe(403);
+    expect((await t.call(t.bea, 'GET', `/commerces/${id}/documents`)).status).toBe(403);
+    expect(await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC)).toMatchObject({ already: false });
+    await t.ok(t.dir, 'POST', `/commerces/${id}/documents/texte`, { ...DOC, title: 'Autre', content: 'Autre texte inventé.' });
+    const list = await t.ok(t.alex, 'GET', `/commerces/${id}/documents`);
+    expect(list.map((d: { title: string }) => d.title)).toEqual(['Bilan 2026', 'Bail commercial', 'Autre']);
+    expect(JSON.stringify(list)).not.toMatch(/commerces\/|r2:|inventé/);
+  });
+
+  it('[R10] le même texte déposé deux fois n’ajoute rien : une réponse perdue se rattrape sans doublon', async () => {
+    const t = await ready();
+    const id = await t.shop();
+    const first = await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC);
+    const size = t.files.size;
+    const again = await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC);
+    expect(again).toEqual({ id: first.id, already: true, repaired: false });
+    expect(t.files.size).toBe(size);
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/documents`)).toHaveLength(2);
+  });
+
+  it('[R10] un contenu perdu est dit, et le même texte le répare sur la même ligne', async () => {
+    const t = await ready();
+    const id = await t.shop();
+    const first = await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC);
+    const ref = [...t.files.keys()].find((k) => k.startsWith('commerces/'))!;
+    t.files.delete(ref);
+    const lost = await t.ok(t.alex, 'GET', `/commerces/${id}/documents`);
+    expect(lost.find((d: { id: string }) => d.id === first.id).available).toBe(false);
+    expect(await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC)).toEqual({ id: first.id, already: true, repaired: true });
+    expect(t.files.get(ref)).toBe(DOC.content);
+    const back = await t.ok(t.alex, 'GET', `/commerces/${id}/documents`);
+    expect(back).toHaveLength(2);
+    expect(back.every((d: { available: boolean }) => d.available)).toBe(true);
+  });
+
+  it('[R10] un dépôt interrompu avant sa ligne ne laisse pas une copie de plus quand il reprend', async () => {
+    const t = await ready();
+    const id = await t.shop();
+    const write = t.s.storage.write!;
+    const size = t.files.size;
+    t.s.storage = { read: t.s.storage.read, write: async (ref, content) => { await write(ref, content); throw new Error('coupure'); } };
+    await expect(t.call(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC)).rejects.toThrow('coupure');
+    t.s.storage = { read: t.s.storage.read, write };
+    await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC);
+    expect(t.files.size).toBe(size + 1);
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/documents`)).toHaveLength(2);
+  });
+
+  it('[R16] une référence du dépôt ne fait pas entrer le document d’un autre bien dans ce dossier', async () => {
+    const t = await ready();
+    const one = await t.shop();
+    const two = await t.shop();
+    await t.ok(t.alex, 'POST', `/commerces/${one}/documents/texte`, DOC);
+    const ref = [...t.files.keys()].find((k) => k.startsWith('commerces/'))!;
+    expect(ref).toContain(one);
+    const r = await t.call(t.alex, 'POST', `/commerces/${two}/documents`, { kind: 'bail', title: 'Volé', storageRef: ref });
+    expect(r).toMatchObject({ status: 403, body: { rule: 'R16', code: 'autre_bien' } });
+    expect(await t.ok(t.alex, 'GET', `/commerces/${two}/documents`)).toHaveLength(1);
+    const refused = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').map((e) => (e.data as { code: string }).code);
+    expect(refused).toContain('autre_bien');
+  });
+
+  it('[R10] sans stockage, rien n’est dit rangé', async () => {
+    const t = await ready();
+    const id = await t.shop();
+    t.s.storage = { read: async () => null };
+    expect(await t.call(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC)).toMatchObject({ status: 400, body: { code: 'stockage_absent' } });
+  });
+
+  it.each([
+    [{ ...DOC, kind: 'autre_sorte' }, 'kind'],
+    [{ ...DOC, title: '  ' }, 'title'],
+    [{ ...DOC, content: '  ' }, 'content'],
+    [{ ...DOC, content: 'x'.repeat(1_000_001) }, 'content'],
+  ])('[R10] un dépôt mal formé est refusé (%#)', async (body, code) => {
+    const t = await ready();
+    const id = await t.shop();
+    expect(await t.call(t.alex, 'POST', `/commerces/${id}/documents/texte`, body)).toMatchObject({ status: 400, body: { code } });
+  });
+
+  it('[R10] le texte est rangé tel quel, sous une référence qui porte son bien', async () => {
+    const t = await ready();
+    const id = await t.shop();
+    await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC);
+    const stored = [...t.files.entries()].find(([k]) => k.startsWith('commerces/'))!;
+    expect(stored[1]).toBe(DOC.content);
+    expect(stored[0]).toContain(id);
+    expect(await t.db.first('SELECT storage_ref FROM business_dossier_documents WHERE title = ?', ['Bail commercial'])).toEqual({ storage_ref: stored[0] });
+  });
+});
 
 describeWithSqlite('CE09 · routes de M16 et parcours de 10 demandes tests', () => {
   it('[R110] [R12] les phrases de l’IA refusées suivent la présentation de secours dans la réponse', async () => {

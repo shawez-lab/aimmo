@@ -40,7 +40,14 @@ import type { BusinessSheet, FicheCommerce } from './fiche.ts';
 /** Le stockage des documents du dossier : un texte par référence, ou rien. */
 export interface DossierStorage {
   read(ref: string): Promise<string | null>;
+  /** Range un texte sous cette référence ; absent tant que le stockage réel n'est pas ouvert (H38). */
+  write?(ref: string, content: string): Promise<void>;
 }
+
+/** Le texte d'un document déposé : le dossier ne sert que du texte, pour y porter le filigrane du lecteur [R114]. */
+export const MAX_DOSSIER_TEXT = 1_000_000;
+
+const DEPOSIT_PREFIX = 'commerces/';
 
 export const DOSSIER_DOCUMENT_KINDS = ['bilan', 'compte_resultat', 'bail', 'liste_materiel', 'autorisation', 'autre'] as const;
 export type DossierDocumentKind = (typeof DOSSIER_DOCUMENT_KINDS)[number];
@@ -271,6 +278,8 @@ export class DossierCommerce {
     if (typeof kind !== 'string' || !(DOSSIER_DOCUMENT_KINDS as readonly string[]).includes(kind)) return { ok: false, rule: null, code: 'kind' };
     if (typeof title !== 'string' || title.trim() === '' || title.trim().length > 120) return { ok: false, rule: null, code: 'title' };
     if (typeof storageRef !== 'string' || storageRef.trim() === '' || storageRef.length > 300) return { ok: false, rule: null, code: 'storage_ref' };
+    // Une référence du dépôt porte son bien : elle ne fait jamais entrer dans ce dossier le document d'un autre [R16].
+    if (storageRef.startsWith(DEPOSIT_PREFIX) && !storageRef.startsWith(`${DEPOSIT_PREFIX}${viewer.networkId}/${propertyId}/`)) return this.refuse(viewer, propertyId, 'autre_bien');
     const content = await this.storage.read(storageRef);
     if (content === null) return { ok: false, rule: null, code: 'introuvable' };
     const id = this.newId();
@@ -280,6 +289,50 @@ export class DossierCommerce {
     );
     await appendEvent(this.journal, { type: 'commerces.dossier.document', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { document: id, kind } }, this.now);
     return { ok: true, value: { id } };
+  }
+
+  /**
+   * L'agent du bien ou la direction dépose le texte d'un document : le serveur choisit la référence, personne ne la
+   * saisit. Elle vient de l'empreinte : un dépôt interrompu puis repris écrase sa copie au lieu d'en laisser une autre.
+   * Le même texte déjà rangé pour ce bien rend sa ligne, et son contenu perdu est réécrit : recommencer n'ajoute rien.
+   */
+  async depositText(acces: Acces, viewer: Viewer, propertyId: string, input: { kind?: unknown; title?: unknown; content?: unknown }): Promise<DossierResult<{ id: string; already: boolean; repaired: boolean }>> {
+    const g = await this.gate(acces, viewer, propertyId, 'write');
+    if (!g.ok) return g;
+    const { kind, title, content } = input;
+    if (typeof kind !== 'string' || !(DOSSIER_DOCUMENT_KINDS as readonly string[]).includes(kind)) return { ok: false, rule: null, code: 'kind' };
+    if (typeof title !== 'string' || title.trim() === '' || title.trim().length > 120) return { ok: false, rule: null, code: 'title' };
+    if (typeof content !== 'string' || content.trim() === '' || content.length > MAX_DOSSIER_TEXT) return { ok: false, rule: null, code: 'content' };
+    if (!this.storage.write) return { ok: false, rule: null, code: 'stockage_absent' };
+    const sum = await sha256(content);
+    const had = await this.db.first<{ id: string; storage_ref: string }>('SELECT id, storage_ref FROM business_dossier_documents WHERE network_id = ? AND property_id = ? AND content_sha256 = ? LIMIT 1', [viewer.networkId, propertyId, sum]);
+    if (had) {
+      const kept = await this.storage.read(had.storage_ref);
+      if (kept === content) return { ok: true, value: { id: had.id, already: true, repaired: false } };
+      await this.storage.write(had.storage_ref, content);
+      await appendEvent(this.journal, { type: 'commerces.dossier.document', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { document: had.id, kind, repaired: true } }, this.now);
+      return { ok: true, value: { id: had.id, already: true, repaired: true } };
+    }
+    const ref = `${DEPOSIT_PREFIX}${viewer.networkId}/${propertyId}/${sum}`;
+    await this.storage.write(ref, content);
+    const added = await this.addDocument(acces, viewer, propertyId, { kind, title, storageRef: ref });
+    return added.ok ? { ok: true, value: { id: added.value.id, already: false, repaired: false } } : added;
+  }
+
+  /** Les documents rangés, sans leur contenu ni leur référence, et si le lecteur les recevrait, pour qui peut en ranger [R16]. */
+  async documents(acces: Acces, viewer: Viewer, propertyId: string): Promise<DossierResult<{ id: string; kind: string; title: string; addedAt: string; available: boolean }[]>> {
+    const g = await this.gate(acces, viewer, propertyId, 'write');
+    if (!g.ok) return g;
+    const rows = await this.db.all<{ id: string; kind: string; title: string; added_at: string; storage_ref: string; content_sha256: string }>(
+      'SELECT id, kind, title, added_at, storage_ref, content_sha256 FROM business_dossier_documents WHERE network_id = ? AND property_id = ? ORDER BY added_at, rowid',
+      [viewer.networkId, propertyId],
+    );
+    const value = [];
+    for (const r of rows) {
+      const content = await this.storage.read(r.storage_ref);
+      value.push({ id: r.id, kind: r.kind, title: r.title, addedAt: r.added_at, available: content !== null && (await sha256(content)) === r.content_sha256 });
+    }
+    return { ok: true, value };
   }
 
   /**
