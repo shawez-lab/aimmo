@@ -218,7 +218,8 @@ describeWithSqlite('CE03 · présentation anonyme d’un commerce', () => {
       if (r.ok) expect(r.value).toMatchObject(fallbackPresentation(FACTS));
       if (w === leaky && r.ok) {
         expect(r.aiRefused?.flatMap((s) => s.problems.map((x) => x.code))).toEqual(expect.arrayContaining(['enseigne', 'chiffre_confidentiel', 'adresse']));
-        const text = JSON.stringify(await t.journal.all());
+        // Sans les identifiants et les empreintes tirés au hasard : l'un d'eux peut contenir ces chiffres par hasard.
+        const text = JSON.stringify(await t.journal.all()).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{64}/g, '');
         for (const s of ['Fournil', 'Gaspard', '439 876', '439876', 'Essais']) expect(text, s).not.toContain(s);
         expect(text).toContain('commerces.presentation.ia_refusee');
       }

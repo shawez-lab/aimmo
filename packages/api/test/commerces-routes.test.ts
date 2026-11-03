@@ -526,3 +526,58 @@ describeWithSqlite('CE16 · la réponse immédiate au repreneur', () => {
     expect(await boxed(t, r.id)).toEqual([]);
   });
 });
+
+describeWithSqlite('CE17 · retrouver la source d’une fuite, par la route de l’écran', () => {
+  const ready = async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    return { t, a: await t.shop() };
+  };
+  /** Un repreneur signé et vérifié, qui ouvre le dossier : le texte qu'il pourrait faire circuler. */
+  const leaked = async (t: Awaited<ReturnType<typeof setup>>, a: string) => {
+    await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
+    const r = await t.buyer('A');
+    t.verified.add(r.id);
+    const { ndaId } = await t.ok(t.alex, 'POST', `/commerces/${a}/demandes`, { personId: r.id });
+    const open = await t.ok(t.alex, 'POST', `/commerces/engagements/${ndaId}/signature`, CONSENT);
+    await t.ok(t.alex, 'POST', `/commerces/signatures/${open.sessionId}`, { code: t.lastCode() });
+    await t.ok(t.alex, 'POST', `/commerces/${a}/dossiers`, { personId: r.id, ...CONSENT });
+    const token = (await t.tokenFor(r.id))!;
+    await t.read(`/dossier/${token}/code`, { email: r.email });
+    const seen = await t.read(`/dossier/${token}`, { email: r.email, code: t.lastCode() });
+    return { r, text: String(seen.body.data.pages[0].text) };
+  };
+
+  it('[R16] seuls l’agent du bien et la direction cherchent : tout autre est refusé', async () => {
+    const { t, a } = await ready();
+    const body = { text: 'Un texte inventé.' };
+    for (const who of [t.alex, t.dir]) expect((await t.call(who, 'POST', `/commerces/${a}/tracage`, body)).status).toBe(200);
+    for (const who of [t.bea, t.compliance, t.partner]) expect((await t.call(who, 'POST', `/commerces/${a}/tracage`, body)).status).toBe(403);
+    expect((await t.call(t.alex, 'POST', `/commerces/${a}/tracage`, { text: '' })).body.code).toBe('bad_text');
+  });
+
+  it('[R13] ni nom ni contenu du texte collé au journal, sans marque', async () => {
+    const { t, a } = await ready();
+    const pasted = 'Madame Inventée Dupont a transmis le bilan de 812 300 €.';
+    expect(await t.ok(t.alex, 'POST', `/commerces/${a}/tracage`, { text: pasted })).toBeNull();
+    const events = (await t.journal.all()).filter((e) => e.type === 'commerces.dossier.trace');
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toEqual({ found: false });
+    const all = JSON.stringify(await t.journal.all());
+    for (const part of ['Inventée Dupont', '812 300', pasted]) expect(all).not.toContain(part);
+  });
+
+  it('[R13] [R114] le texte réel d’une ouverture remonte à son lecteur, le journal ne garde que l’ouverture', async () => {
+    const { t, a } = await ready();
+    const { r, text } = await leaked(t, a);
+    const pasted = `Copié par Madame Inventée Dupont : ${text}`;
+    const found = await t.ok(t.alex, 'POST', `/commerces/${a}/tracage`, { text: pasted });
+    expect(found).toMatchObject({ personId: r.id, via: 'marque' });
+    const events = (await t.journal.all()).filter((e) => e.type === 'commerces.dossier.trace');
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toEqual({ found: true, access: found.accessId, via: 'marque' });
+    const all = JSON.stringify(await t.journal.all());
+    for (const part of ['Inventée Dupont', 'Repreneur', 'Table Inventée']) expect(JSON.stringify(events), part).not.toContain(part);
+    expect(all).not.toContain('Copié par');
+  });
+});
