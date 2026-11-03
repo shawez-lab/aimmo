@@ -12,6 +12,7 @@ const REFUSALS = {
   identity_in_vault: 'Une pièce d’identité va au coffre, jamais dans le dossier.',
   bad_kind: 'Choisissez la sorte de garant.',
   already_added: 'Ce garant est déjà sur ce dossier.',
+  dossierfacile: 'Un dossier DossierFacile est accepté tel quel : il ne reçoit rien de plus.',
   unknown_holder: 'Ce garant n’est plus sur ce dossier : rouvrez le logement.',
   not_stored: 'Le fichier n’est pas rangé. Réessayez.',
   ref_used: 'Ce fichier est déjà rangé.',

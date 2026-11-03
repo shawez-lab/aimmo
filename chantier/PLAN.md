@@ -1832,6 +1832,14 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Critères : la pièce va au coffre, jamais au dossier [R15] (test) ; l'écran ne montre que le fait vérifié et sa date [R13] (test) ; réservé à l'agent du bien ou à la direction [R16] (test) ; budget tenu [R201] (test).
 - Attend : H36 pour le coffre réel.
 
+### W22 · Le candidat passe par les mêmes droits que ses contacts
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W20
+- Cahier : M15 Louer ; R16, R105.
+- Objectif : trouvé par W20 : `apply` ne vérifie que le réseau, un appel direct range comme candidat le contact d'un autre agent, puis lit son identité vérifiée par `missing`. Appliquer les règles de `addableContacts`, comme pour le garant.
+- Critères : le contact d'un autre agent est refusé et le refus au journal [R16] (test) ; le bailleur est refusé (test) ; une fiche réunie reste rangée sur la fiche gardée [R105] (test).
+- Attend : rien.
+
 **M14 · Réseau et académie, juillet 2027.**
 
 Voie : 2

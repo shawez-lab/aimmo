@@ -171,6 +171,7 @@ export class Candidatures {
   async placeOf(viewer: Viewer, applicationId: unknown, holder: unknown): Promise<ApplicationResult<{ listingId: string; applicationId: string; holder: string; personId: string }>> {
     const app = await this.app(viewer, applicationId, true);
     if ('ok' in app) return app;
+    if (app.dossierfacile_url) return { ok: false, rule: 'R104', code: 'dossierfacile' };
     const place = { listingId: app.listing_id, applicationId: app.id };
     if (holder === 'candidat') return { ok: true, value: { ...place, holder, personId: app.person_id } };
     const g = typeof holder === 'string' ? await this.db.first<{ person_id: string | null }>('SELECT person_id FROM rental_guarantors WHERE id = ? AND application_id = ?', [holder, app.id]) : null;
@@ -258,9 +259,14 @@ export class Candidatures {
   async addGuarantor(viewer: Viewer, applicationId: unknown, input: { kind: unknown; personId?: unknown }): Promise<ApplicationResult<{ guarantorId: string }>> {
     const app = await this.app(viewer, applicationId, true);
     if ('ok' in app) return app;
+    // Accepté tel quel : un dossier DossierFacile ne reçoit rien de plus [R104].
+    if (app.dossierfacile_url) return { ok: false, rule: 'R104', code: 'dossierfacile' };
     if (input.kind !== 'personne' && input.kind !== 'visale') return { ok: false, rule: null, code: 'bad_kind' };
     const personId = input.kind === 'personne' ? input.personId : null;
-    if (input.kind === 'personne' && (!(await this.personIn(app.network_id, personId)) || personId === app.person_id)) return { ok: false, rule: null, code: 'unknown_person' };
+    if (input.kind === 'personne') {
+      const refused = await this.guarantorRefusal(viewer, app, personId);
+      if (refused) return refused;
+    }
     // Un seul garant Visale par dossier : l'unicité sur la personne ne le voit pas, sa personne étant vide.
     if (input.kind === 'visale' && (await this.db.first("SELECT 1 FROM rental_guarantors WHERE application_id = ? AND kind = 'visale'", [app.id]))) return { ok: false, rule: null, code: 'already_added' };
     const id = this.newId();
@@ -275,6 +281,27 @@ export class Candidatures {
   }
 
   /**
+   * Les règles des contacts à ajouter (`addableContacts`), pour qui appelle la route sans passer par l'écran : un garant
+   * n'est ni une fiche réunie, ni le candidat ou un autre candidat de ce logement même par une fiche réunie, ni le
+   * bailleur ; pour un agent, aucune de ses fiches n'est à un autre agent : `missing` dirait si son identité est vérifiée.
+   */
+  private async guarantorRefusal(viewer: Viewer, app: ApplicationRow, personId: unknown): Promise<ApplicationRefusal | null> {
+    const unknown: ApplicationRefusal = { ok: false, rule: null, code: 'unknown_person' };
+    if (!(await this.personIn(app.network_id, personId))) return unknown;
+    const root = await this.fiche.rootOf(personId as string);
+    if (root !== personId) return unknown;
+    const members = await this.fiche.membersOf(root);
+    const marks = members.map(() => '?').join(', ');
+    if (viewer.role === 'agent' && (await this.db.first(`SELECT 1 FROM persons WHERE id IN (${marks}) AND agent_id IS NOT ?`, [...members, viewer.userId]))) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `rental_application:${app.id}`, data: { rule: 'R16', role: String(viewer.role), kind: 'rental_guarantor', code: 'not_assigned' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
+    if (await this.db.first(`SELECT 1 FROM rental_listings WHERE id = ? AND owner_person_id IN (${marks})`, [app.listing_id, ...members])) return unknown;
+    if (await this.db.first(`SELECT 1 FROM rental_applications WHERE listing_id = ? AND person_id IN (${marks})`, [app.listing_id, ...members])) return unknown;
+    return null;
+  }
+
+  /**
    * Range une pièce de la liste officielle pour le candidat ou un garant ; toute autre sorte est refusée et écrite au
    * journal ; une pièce d'identité va au coffre, jamais ici [R104, R15].
    */
@@ -282,6 +309,7 @@ export class Candidatures {
     const app = await this.app(viewer, applicationId, true);
     if ('ok' in app) return app;
     const subject = `rental_application:${app.id}`;
+    if (app.dossierfacile_url) return { ok: false, rule: 'R104', code: 'dossierfacile' };
     if (typeof input.sort !== 'string' || !/^[a-z_]{2,40}$/.test(input.sort)) return { ok: false, rule: null, code: 'bad_sort' };
     if (['carte_identite', 'passeport', 'permis_conduire', 'titre_sejour', 'piece_identite'].includes(input.sort)) {
       return { ok: false, rule: 'R15', code: 'identity_in_vault' };
