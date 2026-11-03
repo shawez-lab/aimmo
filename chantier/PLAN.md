@@ -1717,12 +1717,55 @@ Voie : 1
 Trouvé le 2026-11-03 par la voie 1, en comparant les routes de `packages/api/src/gagner.ts` aux appels de `packages/api/app/gagner.ts` : la mesure mensuelle (G10) et les engagements (G07) n'ont aucun geste à l'écran, et aucun coût ne peut être saisi faute de route pour déposer sa preuve. Ce qui reste à la voie 1 attend un humain (B03, B04, C09) : pris ici pour que le chantier continue. Script à part, comme `/app/reglages-mandat.js`.
 
 ### G14 · Mesure des sources à l'écran, preuve du coût déposée
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#297). Relecture forte sans P0 ni P1 ; Codex à sa limite (H03). Non bloquant, noté par la relecture : `enterCost` (G10) accepte toute référence existante du stockage.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : G10, G11
 - Cahier : M20, point 7 « Mesure » ; R144, R13, R16, R201.
 - Objectif : sur l'écran du réseau, la direction choisit un mois, lit par source mandats, rendez-vous, coût et coût par mandat, dépose la preuve et saisit le coût, décide de garder ou d'arrêter une source. Route ajoutée : `POST /v1/gagner/mesure/preuves` (PDF, JPEG ou PNG), la référence est choisie par le serveur.
 - Critères : un fichier d'un autre format, trop lourd, ou sans stockage est refusé sans rien ranger (test) ; seule la direction dépose, lit et décide [R16] (test) ; le journal ne garde ni le nom du fichier ni sa référence [R13] (test) ; l'écran garde l'ordre reçu, ne recommande rien et n'a aucune décision sans appui [R144] (test) ; montant lu sans erreur d'arrondi (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
 - Attend : rien pour l'écran ; H25 (`PIECES`) pour déposer une preuve réelle.
+
+### G15 · Engagements de service et fin de bail à l'écran
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : G07, G09
+- Cahier : M20, dossier de présentation et anciens contacts ; R16, R143, R201.
+- Objectif : la direction règle ses engagements de service (`POST /v1/gagner/engagements`), sans quoi le dossier de présentation les dit absents ; l'agent note une fin de bail connue sur la fiche (`POST /v1/gagner/fiches/<id>/fin-de-bail`), sans quoi cette raison de relance reste vide.
+- Critères : réservé au rôle de chaque route [R16] (test) ; refus dits en français (test) ; réponse perdue dite telle [R10] (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+**M18 · L'annuaire et la prospection à l'écran.**
+
+Voie : 1
+
+Trouvé le 2026-11-03 par la voie 1, en comparant les routes de `packages/api/src/partenaires.ts` aux appels de l'application : aucun partenaire ne peut être rangé depuis l'écran, et aucune route ne dépose la preuve d'un justificatif, si bien qu'aucun partenaire ne peut devenir proposable en réel.
+
+### U13 · Annuaire des partenaires à l'écran, preuve du justificatif déposée
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : U01, U10, U12
+- Cahier : M18 Partenaires ; R73, R13, R14, R16, R03, R201.
+- Objectif : sur l'écran du réseau, la direction cherche par métier et code postal, ajoute un partenaire, ses zones et ses justificatifs (fichier de preuve déposé, référence choisie par le serveur), lit pourquoi il n'est pas proposable, range son adresse professionnelle et son accord, note son opposition.
+- Critères : le dépôt refuse un autre format, un fichier trop lourd, un partenaire d'un autre réseau, sans rien ranger (test) ; un agent ne range pas d'adresse [R16, R03] (test) ; le journal ne garde ni nom, ni numéro, ni référence [R13] (test) ; l'écran ne montre ni note ni rang et garde l'ordre reçu [R14, R73] (test) ; réponse perdue dite telle [R10] (test) ; budget tenu [R201] (test).
+- Attend : rien pour l'écran ; `PIECES` (H25) pour une preuve réelle.
+
+### U14 · Prospection des partenaires à l'écran
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : U13
+- Cahier : M18 ; R03, R79, R16, R201.
+- Objectif : la direction ajoute un contact professionnel, lit la liste, note une opposition et lit les brouillons du jour, tous refusés tant que H32 n'est pas tranché, ce que l'écran dit.
+- Critères : réservé à la direction [R16] (test) ; aucun envoi, et le refus sous R03 est dit [R03, R79] (test) ; réponse perdue dite telle [R10] (test) ; budget tenu [R201] (test).
+- Attend : rien pour l'écran ; H32 pour un envoi réel.
+
+**M19 · La bibliothèque à l'écran.**
+
+Voie : 1
+
+### X13 · Bibliothèque, options payantes et mesure des visuels à l'écran
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : X07, X08, X09
+- Cahier : M19 Studio ; R16, R201.
+- Objectif : la direction range musiques et images sous licence, règle les options et lit la mesure des 20 visuels ; aujourd'hui `/v1/studio/bibliotheque`, `/options` et `/mesure-visuels` n'ont aucun geste à l'écran. Lire d'abord chaque route.
+- Critères : réservé à la direction [R16] (test) ; une licence manquante est refusée et dite (test) ; réponse perdue dite telle [R10] (test) ; budget tenu [R201] (test).
+- Attend : rien pour l'écran.
 
 **M14 · Réseau et académie, juillet 2027.**
 
