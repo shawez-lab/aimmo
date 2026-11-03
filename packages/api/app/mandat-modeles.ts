@@ -6,18 +6,26 @@ import { TEMPLATE_FIELDS } from '../../core/src/documents/modeles.ts';
  * valide [H08]. Sans modèle, ni mandat ni avenant ne se prépare : c'est le manque que D17 a trouvé. Le serveur décide de
  * tout [R40] ; l'écran ne fait que dire ses refus. Tout texte reçu est posé en texte ; rien n'est gardé sur l'appareil.
  */
+const MANDATE_ONLY = ['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'registre.numero'];
+const AVENANT_ONLY = ['mandat.numero', 'avenant.objet', 'avenant.prix', 'avenant.duree_mois'];
+const fieldsOf = (hidden: string[]): string =>
+  Object.entries(TEMPLATE_FIELDS).filter(([name]) => !hidden.includes(name)).map(([name, f]) => `{{${name}}} : ${f.label}`).join(' · ');
+const MANDATE_NEEDS = 'Places obligatoires : {{registre.numero}}, {{honoraires.montant}}, {{honoraires.charge}} et {{mandat.duree_mois}}.';
+const AVENANT_NEEDS = 'Places obligatoires : {{mandat.numero}}, et {{avenant.objet}} ou bien {{avenant.prix}} avec {{avenant.duree_mois}}.';
+// Ce que l'écran de l'agent envoie toujours : le serveur refuse toute saisie qui n'a pas sa place sur le document (`bad_input`).
+const MANDATE_INPUTS = [['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois']];
+const AVENANT_INPUTS = [['avenant.objet'], ['avenant.prix', 'avenant.duree_mois']];
 const KINDS = [
-  ['mandat_vente_simple', 'Mandat de vente simple', 'Place obligatoire du numéro : {{registre.numero}}.'],
-  ['mandat_vente_exclusif', 'Mandat de vente exclusif', 'Place obligatoire du numéro : {{registre.numero}}. La clause d’exclusivité commence un paragraphe par « !! ».'],
-  ['avenant_mandat', 'Avenant au mandat', 'Place obligatoire du numéro du mandat modifié : {{mandat.numero}}.'],
+  { kind: 'mandat_vente_simple', title: 'Mandat de vente simple', needs: MANDATE_NEEDS, inputs: MANDATE_INPUTS, fields: fieldsOf(AVENANT_ONLY) },
+  { kind: 'mandat_vente_exclusif', title: 'Mandat de vente exclusif', needs: `${MANDATE_NEEDS} La clause d’exclusivité forme un paragraphe qui commence par « !! » suivi d’une espace.`, inputs: MANDATE_INPUTS, fields: fieldsOf(AVENANT_ONLY) },
+  { kind: 'avenant_mandat', title: 'Avenant au mandat', needs: AVENANT_NEEDS, inputs: AVENANT_INPUTS, fields: fieldsOf(MANDATE_ONLY) },
 ];
-const FIELDS = Object.entries(TEMPLATE_FIELDS).map(([name, f]) => `{{${name}}} : ${f.label}`).join(' · ');
 const REFUSALS = {
   empty_body: 'Le modèle est vide : rien n’est rangé.',
   body_too_long: 'Le modèle est trop long : rien n’est rangé.',
   invalid_body: 'Le modèle est trop long ou illisible : rien n’est rangé.',
   unknown_field: 'Le modèle porte un champ entre accolades que le mandat ne connaît pas : rien n’est rangé.',
-  no_evidence: 'Un mandat exclusif met sa clause d’exclusivité en évidence : commencez son paragraphe par « !! ». Rien n’est rangé.',
+  no_evidence: 'Un mandat exclusif met sa clause d’exclusivité en évidence : commencez son paragraphe par « !! » suivi d’une espace. Rien n’est rangé.',
 };
 const STALE = {
   not_essai: 'Cette version est déjà validée.',
@@ -74,7 +82,6 @@ export const MANDAT_MODELES_SCRIPT = `'use strict';
 globalThis.AIMMO_MANDAT_MODELES = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, date = t.date, ID = t.ID;
   var KINDS = ${JSON.stringify(KINDS)};
-  var FIELDS = ${JSON.stringify(FIELDS)};
   var REFUSALS = ${JSON.stringify(REFUSALS)};
   var STALE = ${JSON.stringify(STALE)};
   var busy = null;
@@ -115,38 +122,46 @@ globalThis.AIMMO_MANDAT_MODELES = function (t) {
     });
     part.appendChild(b);
   }
+  function warn(part, k, v) {
+    if (!Array.isArray(v.fields)) return;
+    var works = k.inputs.some(function (set) { return set.every(function (f) { return v.fields.indexOf(f) !== -1; }); });
+    if (!works) part.appendChild(el('p', 'Version ' + v.version + ' : il manque des places, l’agent ne pourra pas préparer de document avec elle. ' + k.needs, 'alerte'));
+  }
   function kindBlock(box, say, mode, k, list) {
-    var mineKind = list.filter(function (v) { return v.kind === k[0]; }).sort(function (a, b) { return a.version - b.version; });
+    var mineKind = list.filter(function (v) { return v.kind === k.kind; }).sort(function (a, b) { return a.version - b.version; });
     var last = mineKind[mineKind.length - 1] || null;
     var valid = mineKind.filter(function (v) { return v.status === 'valide'; });
     /* Comme le serveur : la dernière version validée, sinon la dernière d'essai. */
     var cur = valid.length ? valid[valid.length - 1] : last;
     var part = el('div', null, 'vente');
-    part.appendChild(el('h4', k[1]));
+    part.appendChild(el('h4', k.title));
     if (!cur) part.appendChild(el('p', 'Aucun modèle : aucun document de cette sorte ne peut se préparer.', 'alerte'));
     else {
       part.appendChild(el('p', 'En vigueur. ' + versionText(cur), cur.status === 'valide' ? 'fait' : 'alerte'));
       part.appendChild(el('p', String(cur.body), 'brouillon'));
+      warn(part, k, cur);
     }
     if (last && cur && last.version !== cur.version) {
       part.appendChild(el('p', 'Dernière version rangée, pas en vigueur tant qu’elle n’est pas validée. ' + versionText(last), 'doux'));
       part.appendChild(el('p', String(last.body), 'brouillon'));
+      warn(part, k, last);
     }
     var kept = mineKind.length - (last && cur && last.version !== cur.version ? 2 : cur ? 1 : 0);
     if (kept > 0) part.appendChild(el('p', kept === 1 ? 'Une version plus ancienne est gardée.' : kept + ' versions plus anciennes sont gardées.', 'doux'));
     if (mode.validate && last && last.status === 'essai') validateButton(part, box, say, mode, last);
     if (mode.store) {
-      part.appendChild(el('p', k[2], 'doux'));
+      part.appendChild(el('p', k.needs, 'doux'));
       var text = field(part, 'mandat-modele-' + (++seq), 'Texte de la nouvelle version', 'textarea');
       text.setAttribute('rows', '8');
       var held = last ? String(last.body) : '';
       text.value = held;
+      part.appendChild(el('p', 'Champs possibles, écrits entre doubles accolades : ' + k.fields + '.', 'doux'));
       part.appendChild(button('Ranger une nouvelle version', function () {
         var typed = String(text.value || '').trim();
         if (!typed) { say(REFUSALS.empty_body); return; }
         if (typed === held.trim()) { say('Le texte n’a pas changé : aucune version ajoutée.'); return; }
-        act(box, say, mode, '/v1/modeles', { kind: k[0], body: typed }, 'Le modèle n’est pas rangé.', function (r) {
-          return r && r.version ? 'Version ' + r.version + ' rangée, modèle d’essai. L’ancienne version reste.' : 'Version rangée, modèle d’essai. L’ancienne version reste.';
+        act(box, say, mode, '/v1/modeles', { kind: k.kind, body: typed }, 'Le modèle n’est pas rangé.', function (r) {
+          return r && r.version > 1 ? 'Version ' + r.version + ' rangée, modèle d’essai. L’ancienne version reste.' : 'Version rangée, modèle d’essai.';
         });
       }));
     }
@@ -170,7 +185,6 @@ globalThis.AIMMO_MANDAT_MODELES = function (t) {
       if (!res.ok || !readable(res.body.data)) { say('Les modèles ne se lisent pas pour le moment.'); return; }
       say(said || '');
       KINDS.forEach(function (k) { kindBlock(box, say, mode, k, res.body.data); });
-      if (mode.store) box.appendChild(el('p', 'Champs possibles, écrits entre doubles accolades : ' + FIELDS + '.', 'doux'));
     });
   }
   return { open: open };

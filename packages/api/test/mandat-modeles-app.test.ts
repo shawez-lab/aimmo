@@ -106,7 +106,7 @@ describe('D18 · modèles de mandat et d’avenant à l’écran', () => {
 
   it.each([
     ['unknown_field', 'Le modèle porte un champ entre accolades que le mandat ne connaît pas : rien n’est rangé.'],
-    ['no_evidence', 'Un mandat exclusif met sa clause d’exclusivité en évidence : commencez son paragraphe par « !! ». Rien n’est rangé.'],
+    ['no_evidence', 'Un mandat exclusif met sa clause d’exclusivité en évidence : commencez son paragraphe par « !! » suivi d’une espace. Rien n’est rangé.'],
     ['body_too_long', 'Le modèle est trop long : rien n’est rangé.'],
     ['invalid_body', 'Le modèle est trop long ou illisible : rien n’est rangé.'],
     ['autre_chose', 'Le modèle n’est pas rangé.'],
@@ -147,6 +147,32 @@ describe('D18 · modèles de mandat et d’avenant à l’écran', () => {
     expect(text).toContain('Une version plus ancienne est gardée.');
     expect(text).toContain('En vigueur. Version 9, modèle d’essai, pas validé : le document qu’il fait reste un document d’essai.');
     expect(text).not.toContain('Avenant ancien');
+  });
+
+  it('[R40] chaque sorte dit ses places et ses seuls champs ; une version que l’agent ne pourrait pas utiliser est signalée, sans bloquer', async () => {
+    const full = { ...v(1, 'essai', 'Mandat complet'), fields: ['registre.numero', 'honoraires.montant', 'honoraires.charge', 'mandat.duree_mois'] };
+    const bare = { ...v(2, 'essai', 'Avenant nu', 'avenant_mandat'), fields: ['mandat.numero'] };
+    const byObject = { ...v(3, 'essai', 'Avenant objet', 'avenant_mandat'), fields: ['mandat.numero', 'avenant.objet'] };
+    const direction = await run('direction', { [READ]: ok([full, bare]) });
+    await direction.open();
+    const text = direction.body().textContent;
+    expect(text).toContain('Places obligatoires : {{registre.numero}}, {{honoraires.montant}}, {{honoraires.charge}} et {{mandat.duree_mois}}.');
+    expect(text).toContain('Places obligatoires : {{mandat.numero}}, et {{avenant.objet}} ou bien {{avenant.prix}} avec {{avenant.duree_mois}}.');
+    expect(text).not.toContain('Version 1 : il manque des places');
+    expect(text).toContain('Version 2 : il manque des places, l’agent ne pourra pas préparer de document avec elle.');
+    const blocks = direction.body().all().filter((e) => e.tagName === 'div' && e.className === 'vente');
+    expect(blocks[0]!.textContent).not.toContain('{{avenant.prix}} :');
+    expect(blocks[0]!.textContent).toContain('{{honoraires.montant}} :');
+    expect(blocks[2]!.textContent).toContain('{{avenant.prix}} :');
+    expect(blocks[2]!.textContent).not.toContain('{{honoraires.montant}} :');
+    // La conformité le lit aussi avant de valider ; le geste reste offert : le serveur seul décide.
+    const conformite = await run('compliance', { [READ]: ok([bare]) });
+    await conformite.open();
+    expect(conformite.body().textContent).toContain('Version 2 : il manque des places');
+    expect(conformite.byText('Valider la version 2')).toBeDefined();
+    const works = await run('compliance', { [READ]: ok([byObject]) });
+    await works.open();
+    expect(works.body().textContent).not.toContain('il manque des places');
   });
 
   it('tout texte reste du texte, jamais une balise', async () => {
@@ -238,7 +264,7 @@ describe('D18 · modèles de mandat et d’avenant à l’écran', () => {
     await t.open();
     t.area(0)!.value = 'Un texte';
     await t.click(t.store(0));
-    expect(t.say()).toBe('Version rangée, modèle d’essai. L’ancienne version reste.');
+    expect(t.say()).toBe('Version rangée, modèle d’essai.');
   });
 
   it('deux appuis sans attente : une seule lecture s’affiche, la dernière', async () => {
