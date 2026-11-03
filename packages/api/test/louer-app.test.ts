@@ -163,7 +163,7 @@ describe('W11 · écran « Louer » de l’application', () => {
     await t.click(t.byText('Contrôler le logement'));
     await t.click(t.byText('Valider l’annonce'));
     await t.click(t.byText('Présenter de nouveau au propriétaire'));
-    const screen = t.calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous|usage|annonces$|apres-vente|conformite\/personnes\/[^/]+\/coffre\/recus$)/.test(c.url));
+    const screen = t.calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous|usage|annonces$|offres\/a-tenir|apres-vente|conformite\/personnes\/[^/]+\/coffre\/recus$)/.test(c.url));
     expect(screen.length).toBeGreaterThan(10);
     for (const c of screen) {
       expect(c.url.startsWith('/v1/location'), c.url).toBe(true);

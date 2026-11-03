@@ -7,3 +7,4 @@ export * from './financement.ts';
 export * from './bouclier.ts';
 export * from './acte.ts';
 export * from './chemin-critique.ts';
+export * from './a-tenir.ts';
