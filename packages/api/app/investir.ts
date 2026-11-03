@@ -402,14 +402,34 @@ globalThis.AIMMO_INVESTIR = function (t) {
       b.setAttribute('aria-label', 'Relire : ' + label);
       return b;
     }
-    function drawOldCalc(c) {
-      shown.appendChild(el('h4', 'Calcul du ' + date(c.createdAt) + ', tel qu’il a été rangé'));
-      drawResult(shown, c.result || {});
+    /* R124 : les alertes du jour d'abord ; sans elles, aucun chiffre ni aucun texte. */
+    function alertsOk(d) {
+      if (d && Array.isArray(d.alertsFirst)) {
+        d.alertsFirst.forEach(function (a) {
+          var p = el('p', a, 'alerte-energie');
+          p.setAttribute('role', 'alert');
+          shown.appendChild(p);
+        });
+        return true;
+      }
+      shown.appendChild(el('p', 'Contraintes indisponibles : rien ne se relit sans elles.', 'alerte-energie'));
+      return false;
     }
-    function drawOldNote(n) {
-      shown.appendChild(el('h4', n.status === 'validee' ? 'Note validée le ' + date(n.validatedAt) : 'Note non validée, du ' + date(n.createdAt)));
-      shown.appendChild(el('div', n.text, 'note-texte'));
-      if (n.status !== 'validee') shown.appendChild(el('p', 'Elle ne se montre pas au client. Pour la valider, refaites le calcul : les contraintes du bien sont alors relues.', 'doux'));
+    function drawOldCalc(d) {
+      if (!alertsOk(d) || !d.calculation) return;
+      shown.appendChild(el('h4', 'Calcul du ' + date(d.calculation.createdAt) + ', tel qu’il a été rangé'));
+      drawResult(shown, d.calculation.result || {});
+    }
+    function drawOldNote(d) {
+      if (!alertsOk(d)) return;
+      if (d.held || !d.note) {
+        shown.appendChild(el('h4', 'Note retenue'));
+        shown.appendChild(el('p', 'Validée le ' + date(d.validatedAt) + ', elle ne tient plus : les contraintes du bien ont changé. Le client ne la reçoit pas. Refaites le calcul.', 'retard'));
+        return;
+      }
+      shown.appendChild(el('h4', d.status === 'validee' ? 'Note validée le ' + date(d.validatedAt) : 'Note non validée, du ' + date(d.createdAt)));
+      shown.appendChild(el('div', d.note.text, 'note-texte'));
+      if (d.status !== 'validee') shown.appendChild(el('p', 'Elle ne se montre pas au client. Pour la valider, refaites le calcul : les contraintes du bien sont alors relues.', 'doux'));
     }
     var open = button('Voir les calculs et les notes', function () {
       var mine = ++turn;
@@ -428,8 +448,8 @@ globalThis.AIMMO_INVESTIR = function (t) {
           var li = el('li');
           var label = title('Calcul', c);
           li.appendChild(el('strong', label));
-          li.appendChild(el('p', c.status === 'complet' && typeof c.grossYieldBp === 'number' ? 'Brut ' + bpText(c.grossYieldBp) + (typeof c.netYieldBp === 'number' ? ', net avant impôt ' + bpText(c.netYieldBp) : '') : 'Incomplet : aucun rendement.', 'doux'));
-          li.appendChild(reread('/v1/investir/calculs/' + encodeURIComponent(c.id), label, drawOldCalc));
+          li.appendChild(el('p', c.status === 'complet' ? 'Complet : relisez-le pour voir ses chiffres, avec les alertes du jour.' : 'Incomplet : aucun rendement.', 'doux'));
+          li.appendChild(reread('/v1/investir/calculs/' + encodeURIComponent(c.id) + '/relecture', label, drawOldCalc));
           list.appendChild(li);
         });
         d.notes.forEach(function (n) {
@@ -437,8 +457,8 @@ globalThis.AIMMO_INVESTIR = function (t) {
           var li = el('li');
           var label = title('Note', n);
           li.appendChild(el('strong', label));
-          li.appendChild(el('p', n.status === 'validee' ? 'Validée le ' + date(n.validatedAt) + '.' : 'Pas encore validée.', 'doux'));
-          li.appendChild(reread('/v1/investir/notes/' + encodeURIComponent(n.id), label, drawOldNote));
+          li.appendChild(el('p', n.status === 'validee' ? 'Validée le ' + date(n.validatedAt) + ' : relisez-la pour savoir si elle tient toujours.' : 'Pas encore validée.', 'doux'));
+          li.appendChild(reread('/v1/investir/notes/' + encodeURIComponent(n.id) + '/relecture', label, drawOldNote));
           list.appendChild(li);
         });
         said.textContent = ends.length ? ends.join(' ') : (d.calculs.length || d.notes.length ? '' : 'Aucun calcul rangé pour ce projet.');

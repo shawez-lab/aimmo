@@ -373,13 +373,13 @@ describeWithSqlite('Y14 · retrouver les calculs et les notes d’un projet', ()
     if (!note.ok) throw new Error(note.code);
     const count = async () => (await t.db.first<{ n: number }>('SELECT (SELECT COUNT(*) FROM investment_calculations) + (SELECT COUNT(*) FROM investment_notes) AS n'))!.n;
     const before = await count();
-    const stored = await t.calculs.get(t.network.id, t.calcId);
     const r = await t.h.of(t.acces, t.agent, t.project.id);
     if (!r.ok) throw new Error(r.code);
     expect(await count()).toBe(before);
     const line = r.value.calculs.find((c) => c.id === t.calcId)!;
     expect(line).toMatchObject({ status: 'complet', reference: 'REF-1' });
-    expect(stored!.result.status === 'complet' && line.grossYieldBp).toBe(stored!.result.status === 'complet' ? stored!.result.grossYieldBp.central : false);
+    // Aucun rendement dans la liste : il ne se montre qu'avec les alertes du jour [R124].
+    expect(JSON.stringify(line)).not.toMatch(/Yield|result/);
     expect(r.value.notes).toEqual([{ id: note.value.id, calculationId: note.value.calculationId, createdAt: note.value.createdAt, status: 'a_valider', validatedAt: null, reference: 'REF-1' }]);
     expect(JSON.stringify(r.value)).not.toContain(note.value.text.slice(0, 40));
   });
@@ -411,5 +411,34 @@ describeWithSqlite('Y14 · retrouver les calculs et les notes d’un projet', ()
     expect(r.value.calculs[0]!.id).toBe(last);
     expect(r.value.calculs.some((c) => c.id === t.calcId)).toBe(false);
     expect(r.value.more).toBe(true);
+  });
+
+  it('[R124] un calcul se relit avec les alertes du jour d’abord ; sa fiche n’a pas de classe énergie : l’alerte est dite ; refus hors des droits [R16]', async () => {
+    const t = await setup({ rentalTarget: 'furnished' });
+    const agent = t.as('agent', t.alex.id);
+    const r = await t.notes.rereadCalculation(t.acces, agent, t.calcId);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.calculation.id).toBe(t.calcId);
+    expect(r.value.alertsFirst.length).toBeGreaterThan(0);
+    expect(await t.notes.rereadCalculation(t.acces, t.as('agent', t.sam.id), t.calcId)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.notes.reread(t.acces, t.as('agent', t.sam.id), 'note-inconnue')).toMatchObject({ ok: false, rule: 'R16' });
+  });
+
+  it('[R124] une note validée se relit tant qu’elle tient ; une interdiction apparue depuis la retient, sans son texte, comme chez le client', async () => {
+    const t = await setup({ energyClass: 'D' });
+    const agent = t.as('agent', t.alex.id);
+    const d = await t.notes.draft(t.acces, agent, { calculationId: t.calcId, projectId: t.project.id });
+    if (!d.ok) throw new Error(d.code);
+    const v = await t.notes.validate(t.acces, agent, d.value.id, { textSha256: d.value.textSha256 });
+    if (!v.ok) throw new Error(v.code);
+    expect(await t.notes.reread(t.acces, agent, d.value.id)).toMatchObject({ ok: true, value: { status: 'validee', held: false, alertsFirst: [], note: { text: d.value.text } } });
+    expect(await t.notes.forClient(t.network.id, d.value.id)).not.toBeNull();
+    await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('s-2', 'p-1', ?, 2, ?, 'agent:a', ?)", [t.network.id, JSON.stringify({ energy: { energyClass: 'G' }, coownership: { isCoownership: false } }), AT]);
+    const again = await t.notes.reread(t.acces, agent, d.value.id);
+    if (!again.ok) throw new Error(again.code);
+    expect(again.value).toMatchObject({ held: true, note: null, status: 'validee' });
+    expect(again.value.alertsFirst.length).toBeGreaterThan(0);
+    expect(JSON.stringify(again.value)).not.toContain(d.value.text.slice(0, 40));
+    expect(await t.notes.forClient(t.network.id, d.value.id)).toBeNull();
   });
 });

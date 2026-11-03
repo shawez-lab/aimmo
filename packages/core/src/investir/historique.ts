@@ -2,7 +2,8 @@
  * Les calculs et les notes rangés d'un projet d'investisseur (M17, Y14) [R16, R17, R122].
  *
  * L'écran disait « calcul rangé », mais une fois quitté, rien ne se retrouvait. Cette lecture liste les derniers, sans
- * rien recalculer ni réécrire : les chiffres sont ceux rangés ce jour-là. Elle suit les droits de la note : la fiche de
+ * rien recalculer ni réécrire, et sans aucun chiffre : un rendement ne se montre qu'avec les alertes du jour, à la
+ * relecture [R124]. Elle suit les droits de la note : la fiche de
  * l'investisseur en entier ; et le bien de chaque ligne se recontrôle : une ligne dont le bien n'est plus visible sort
  * de la liste, et le nombre sorti est dit, pour qu'une liste réduite ne se lise jamais comme la liste entière [R10].
  */
@@ -21,9 +22,6 @@ export interface CalculationLine {
   status: 'complet' | 'incomplet';
   /** La référence d'agence du bien ; null pour un calcul sans bien. */
   reference: string | null;
-  /** Le rendement brut central et le net central rangés ; null pour un calcul incomplet. */
-  grossYieldBp: number | null;
-  netYieldBp: number | null;
 }
 
 export interface NoteLine {
@@ -71,8 +69,8 @@ export class HistoriqueProjet {
     if (read.view !== 'full') return refused('not_assigned');
 
     // Une ligne de plus que la limite : elle dit seulement qu'il y en a d'autres.
-    const calcs = await this.db.all<{ id: string; property_id: string | null; status: 'complet' | 'incomplet'; result: string; created_at: string }>(
-      'SELECT id, property_id, status, result, created_at FROM investment_calculations WHERE network_id = ? AND project_id = ? ORDER BY created_at DESC, id DESC LIMIT ?',
+    const calcs = await this.db.all<{ id: string; property_id: string | null; status: 'complet' | 'incomplet'; created_at: string }>(
+      'SELECT id, property_id, status, created_at FROM investment_calculations WHERE network_id = ? AND project_id = ? ORDER BY created_at DESC, id DESC LIMIT ?',
       [viewer.networkId, projectId, PROJECT_HISTORY_LIMIT + 1],
     );
     const notes = await this.db.all<{ id: string; calculation_id: string; status: 'a_valider' | 'validee'; created_at: string; validated_at: string | null; property_id: string | null }>(
@@ -103,8 +101,7 @@ export class HistoriqueProjet {
         hidden += 1;
         continue;
       }
-      const r = JSON.parse(c.result) as { grossYieldBp?: { central?: number }; netYieldBp?: { central?: number } };
-      calculs.push({ id: c.id, createdAt: c.created_at, status: c.status, reference, grossYieldBp: r.grossYieldBp?.central ?? null, netYieldBp: r.netYieldBp?.central ?? null });
+      calculs.push({ id: c.id, createdAt: c.created_at, status: c.status, reference });
     }
     const lines: NoteLine[] = [];
     for (const n of keptNotes) {
