@@ -175,6 +175,24 @@ async function myInvestors(s: InvestirServices, v: Viewer): Promise<Outcome> {
 }
 
 /** Les biens qu'on peut calculer : ceux du lecteur et ceux du fichier commun, dont la commune est rangée [R16]. */
+/** Les logements de la personne dont la commune manque (X20), lus directement : jamais déduits de deux listes tronquées. */
+async function propertiesWithoutCommune(s: InvestirServices, v: Viewer): Promise<Outcome> {
+  type Row = { id: string; reference: string; city: string | null; postal_code: string | null };
+  const rows = await s.db.all<Row>(
+    `SELECT p.id, p.reference, p.city, p.postal_code FROM properties p LEFT JOIN property_communes c ON c.property_id = p.id
+     WHERE p.network_id = ? ${v.role === 'agent' ? 'AND p.agent_id = ?' : ''} AND c.property_id IS NULL AND p.kind IN ('home', 'building') AND p.status NOT IN ('sold', 'rented', 'withdrawn')
+     ORDER BY p.updated_at DESC, p.id LIMIT 100`,
+    v.role === 'agent' ? [v.networkId, v.userId] : [v.networkId],
+  );
+  const c = core(s);
+  const seen: Row[] = [];
+  for (const r of rows) {
+    const read = await c.acces.readProperty(v, r.id);
+    if (read.ok && read.view === 'full') seen.push(r);
+  }
+  return { ok: true, value: seen.map((r) => ({ propertyId: r.id, reference: r.reference, city: r.city, postalCode: r.postal_code })) };
+}
+
 async function calculableProperties(s: InvestirServices, v: Viewer): Promise<Outcome> {
   type Row = { id: string; reference: string; city: string | null; price_eur: number | null; surface_m2: number | null; insee_code: string; rent_kind: string };
   const SELECT = 'SELECT p.id, p.reference, p.city, p.price_eur, p.surface_m2, c.insee_code, c.rent_kind FROM properties p JOIN property_communes c ON c.property_id = p.id';
@@ -205,6 +223,7 @@ const ROUTES: InvestirRoute[] = [
   /* Les investisseurs suivis et les biens calculables, pour l'écran « Investir » (Y09) [R16]. */
   { method: 'GET', pattern: /^\/investir\/projets$/, name: 'investir.projets', roles: WRITERS, handle: async (s, v) => reply(await myInvestors(s, v)) },
   { method: 'GET', pattern: /^\/investir\/biens$/, name: 'investir.biens', roles: WRITERS, handle: async (s, v) => reply(await calculableProperties(s, v)) },
+  { method: 'GET', pattern: /^\/investir\/biens\/sans-commune$/, name: 'investir.biens.sans_commune', roles: WRITERS, handle: async (s, v) => reply(await propertiesWithoutCommune(s, v)) },
   /* Le profil de l'investisseur (Y01) [R123, R17]. */
   { method: 'GET', pattern: new RegExp(`^/investir/projets/${ID}/profil$`), name: 'investir.profil.lu', roles: READERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.profils.read(c.acces, v, id!)); } },
   {

@@ -42,7 +42,7 @@ async function setup(options: { fees?: boolean } = {}) {
     return { person, project };
   };
   const property = async (ref: string, energyClass: string | null = 'C', insee = '99001') => {
-    const p = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: ref, kind: 'home', city: 'Commune Une', priceEur: 150_000, surfaceM2: 45, rooms: 2, status: 'available' });
+    const p = await store.createProperty({ postalCode: '99000', networkId: network.id, agentId: alex.id, reference: ref, kind: 'home', city: 'Commune Une', priceEur: 150_000, surfaceM2: 45, rooms: 2, status: 'available' });
     if (energyClass) {
       await db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, 'agent:a', '2027-01-01')", [
         `s-${ref}`,
@@ -168,7 +168,7 @@ describeWithSqlite('Y06 · alertes aux investisseurs, en mode essai', () => {
   it('un bien sans commune rangée, ou qui ne peut plus être diffusé, ne part pas', async () => {
     const t = await setup();
     const i = await t.investor('Inès', PROFILE);
-    const bare = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'N1', kind: 'home', city: 'Commune Une', priceEur: 150_000, surfaceM2: 45, rooms: 2, status: 'available' });
+    const bare = await t.store.createProperty({ postalCode: '99000', networkId: t.network.id, agentId: t.alex.id, reference: 'N1', kind: 'home', city: 'Commune Une', priceEur: 150_000, surfaceM2: 45, rooms: 2, status: 'available' });
     expect(await t.alertes.forProperty(t.network.id, bare.id)).toEqual([]);
     const prop = await t.property('B1');
     t.blocked.add(prop.id);
@@ -179,8 +179,12 @@ describeWithSqlite('Y06 · alertes aux investisseurs, en mode essai', () => {
   it('[R16] seul l’agent du bien ou la direction range sa commune, une seule fois', async () => {
     const t = await setup();
     const sam = await t.store.createAgent({ networkId: t.network.id, firstName: 'Sam', lastName: 'Agent' });
-    const p = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'N1', kind: 'home', city: 'X', priceEur: 1, surfaceM2: 10, rooms: 1, status: 'available' });
+    const p = await t.store.createProperty({ postalCode: '99000', networkId: t.network.id, agentId: t.alex.id, reference: 'N1', kind: 'home', city: 'X', priceEur: 1, surfaceM2: 10, rooms: 1, status: 'available' });
     expect(await t.alertes.recordPropertyCommune(t.acces, { role: 'agent', userId: sam.id, networkId: t.network.id }, p.id, { inseeCode: '99001', rentKind: 'apartment' })).toMatchObject({ ok: false, rule: 'R16' });
+    // X20 : rangée pour toujours, la commune est au moins du département du bien, et le bien est un logement.
+    expect(await t.alertes.recordPropertyCommune(t.acces, t.direction, p.id, { inseeCode: '21231', rentKind: 'apartment' })).toEqual({ ok: false, rule: 'R122', code: 'autre_departement' });
+    const land = await t.store.createProperty({ postalCode: '99000', networkId: t.network.id, agentId: null, reference: 'REF-TERRAIN', kind: 'land', city: 'Commune Une', priceEur: 50_000, surfaceM2: 800, rooms: null });
+    expect(await t.alertes.recordPropertyCommune(t.acces, t.direction, land.id, { inseeCode: '99001', rentKind: 'house' })).toEqual({ ok: false, rule: 'R122', code: 'pas_un_logement' });
     expect(await t.alertes.recordPropertyCommune(t.acces, t.direction, p.id, { inseeCode: 'Talant', rentKind: 'apartment' })).toMatchObject({ ok: false, code: 'insee' });
     expect(await t.alertes.recordPropertyCommune(t.acces, t.direction, p.id, { inseeCode: '99001', rentKind: 'apartment' })).toEqual({ ok: true });
     expect(await t.alertes.recordPropertyCommune(t.acces, t.direction, p.id, { inseeCode: '99002', rentKind: 'house' })).toMatchObject({ ok: false, code: 'deja_rangee' });
