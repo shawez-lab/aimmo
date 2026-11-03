@@ -134,7 +134,8 @@ describe('Y09 · écran « Investir » de l’application', () => {
     const screenJs = INVESTIR_SCRIPT.slice(INVESTIR_SCRIPT.indexOf('var INVESTIR_REFUSALS'), INVESTIR_SCRIPT.indexOf('function renderNote'));
     const routes = [...screenJs.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
     expect(routes.length).toBeGreaterThan(3);
-    for (const r of routes) expect(r.startsWith('/v1/investir'), r).toBe(true);
+    // La seule lecture hors de /v1/investir : les biens de la personne, pour lui proposer ceux sans commune (X20).
+    for (const r of routes) expect(r.startsWith('/v1/investir') || r === '/v1/annonces', r).toBe(true);
   });
 
   it('[R121] aucun chiffre n’est calculé sur le téléphone : l’écran montre ceux du serveur, avec leur source et leur hypothèse', async () => {
@@ -276,5 +277,113 @@ describe('Y09 · écran « Investir » de l’application', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(u.calls.some((c) => c.url.startsWith('/v1/investir'))).toBe(false);
     expect(u.els.accueil!.hidden).toBe(false);
+  });
+});
+
+describe('X20 · ranger la commune d’un bien', () => {
+  const ANNONCES = { 'GET /v1/annonces': ok([{ id: 'b1', reference: 'REF-I-1', city: 'Commune Une', state: null }, { id: 'b2', reference: 'REF-I-2', city: 'Commune Deux', state: null }]) };
+  const POST = 'POST /v1/investir/biens/b2/commune';
+  const open = async (answers: Record<string, Answer> = {}) => {
+    const t = await run({ ...ANNONCES, ...answers });
+    await t.openP1();
+    return t;
+  };
+  const fill = (t: Awaited<ReturnType<typeof open>>, code = '21231') => {
+    t.input('Bien', 1).value = 'b2';
+    t.input('Code INSEE de la commune').value = code;
+    t.input('Type de logement').value = 'apartment';
+  };
+  const go = (t: Awaited<ReturnType<typeof open>>) => t.click(t.byText('Ranger la commune'));
+
+  it('seuls les biens de la personne sans commune sont proposés, et rien n’est choisi d’avance', async () => {
+    const t = await open();
+    const box = t.input('Bien', 1);
+    expect(box.children.map((o) => o.value)).toEqual(['', 'b2']);
+    expect(box.value).toBe('');
+    expect(t.input('Type de logement').value).toBe('');
+  });
+
+  it('[R122] deux appuis sur la même saisie : le premier dit que c’est sans retour ; une saisie changée redemande', async () => {
+    const t = await open({ [POST]: ok(null) });
+    fill(t);
+    await go(t);
+    expect(t.posts()).toEqual([]);
+    expect(t.body().textContent).toContain('Le code 21231 ne pourra plus être changé pour ce bien.');
+    t.input('Code INSEE de la commune').value = '21166';
+    await go(t);
+    expect(t.posts()).toEqual([]);
+    await go(t);
+    expect(t.posts().map((c) => [c.url, c.body])).toEqual([['/v1/investir/biens/b2/commune', JSON.stringify({ inseeCode: '21166', rentKind: 'apartment' })]]);
+    expect(t.state()).toBe('Commune rangée : le bien est calculable.');
+  });
+
+  it('un code mal écrit ou un choix manquant ne part pas ; la Corse passe', async () => {
+    const t = await open({ [POST]: ok(null) });
+    fill(t, '123');
+    await go(t);
+    await go(t);
+    expect(t.posts()).toEqual([]);
+    expect(t.body().textContent).toContain('Le code INSEE a 5 caractères');
+    t.input('Type de logement').value = '';
+    t.input('Code INSEE de la commune').value = '21231';
+    await go(t);
+    expect(t.body().textContent).toContain('Choisissez le bien et le type de logement.');
+    fill(t, '2a004');
+    await go(t);
+    await go(t);
+    expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ inseeCode: '2A004', rentKind: 'apartment' });
+  });
+
+  it.each([
+    [403, { ok: false, rule: 'R16', code: 'not_assigned' }, 'Ce bien n’est pas dans vos droits.'],
+    [409, { ok: false, rule: 'R122', code: 'deja_rangee' }, 'Une commune est déjà rangée pour ce bien'],
+    [409, { ok: false, rule: 'R122', code: 'insee' }, 'Ce code INSEE n’est pas valable.'],
+    [400, { ok: false, code: 'invalid_body' }, 'La commune n’a pas pu être rangée.'],
+  ] as [number, unknown, string][])('[R16] refus %i : dit en français, sans code', async (status, answer, text) => {
+    const t = await open({ [POST]: no(status, answer) });
+    fill(t);
+    await go(t);
+    await go(t);
+    expect(t.body().textContent).toContain(text);
+    expect(t.body().textContent).not.toMatch(/deja_rangee|not_assigned|invalid_body/);
+  });
+
+  it.each([
+    ['hors ligne', () => Promise.reject(new TypeError('hors ligne'))],
+    ['une panne', async () => Response.json({ ok: false }, { status: 500 })],
+    ['un succès coupé', async () => new Response('{"ok":tr', { status: 200 })],
+  ] as [string, Answer][])('réponse perdue (%s) : dite telle', async (_n, answer) => {
+    const t = await open({ [POST]: answer });
+    fill(t);
+    await go(t);
+    await go(t);
+    expect(t.body().textContent).toContain('la commune a peut-être été rangée');
+  });
+
+  it('un seul envoi à la fois', async () => {
+    let release: (r: Response) => void = () => undefined;
+    const t = await open({ [POST]: () => new Promise<Response>((r) => { release = r; }) });
+    fill(t);
+    await go(t);
+    await go(t);
+    await go(t);
+    expect(t.posts().length).toBe(1);
+    release(Response.json({ ok: false, rule: 'R122', code: 'deja_rangee' }, { status: 409 }));
+    await settle();
+    expect(t.body().textContent).toContain('Une commune est déjà rangée');
+  });
+
+  it('une liste non lue n’est jamais dite vide, et rien n’est proposé dessus', async () => {
+    const t = await open({ 'GET /v1/investir/biens': no(500, { ok: false }) });
+    expect(t.body().textContent).toContain('La liste des biens n’a pas pu être lue.');
+    expect(t.body().textContent).not.toContain('Aucun bien calculable');
+    expect(t.byText('Ranger la commune')).toBeUndefined();
+    const n = await open({ 'GET /v1/annonces': no(500, { ok: false }) });
+    expect(n.byText('Ranger la commune')).toBeUndefined();
+  });
+
+  it('tous les biens ont leur commune : aucun bloc', async () => {
+    const t = await open({ 'GET /v1/annonces': ok([{ id: 'b1', reference: 'REF-I-1', city: null, state: null }]) });
+    expect(t.byText('Ranger la commune')).toBeUndefined();
   });
 });
