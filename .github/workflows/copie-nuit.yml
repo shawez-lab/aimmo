@@ -2,7 +2,7 @@ name: Copie de nuit
 
 # SV02 · Chaque nuit, une copie chiffrée de la base `aimmo`, rangée dans le compartiment `aimmo-copies` [R224, R230].
 # La photo vit dans le dossier temporaire du travail, le temps de la copie, puis est détruite : jamais en artefact, jamais
-# dans le journal du travail. S'allume avec la variable `COPIES_ACTIF` (H49) : avant, rien ne tourne et ne consomme de
+# dans le journal du travail. S'allume avec la variable `COPIES_ACTIF` (H50) : avant, rien ne tourne et ne consomme de
 # quota, et l'écran de la direction dit « non sauvegardé ». Le Worker alerte seul si une nuit passe sans copie.
 
 on:

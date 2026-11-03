@@ -298,6 +298,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   contact_scores: { locate: by('person_id') },
   attributions: { locate: by('person_id') },
   callback_tasks: { locate: by('person_id') },
+  missed_promise_tasks: { locate: by('person_id') },
   call_notes: { locate: by('person_id') },
   agent_import_contacts: { locate: by('person_id') },
   agent_import_referrals: { locate: by('person_id') },

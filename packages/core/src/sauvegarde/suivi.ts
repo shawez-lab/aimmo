@@ -17,7 +17,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { parisDayStart } from '../pilotage/tableau-agent.ts';
 
-/** La durée de garde des copies : la règle du compartiment (H49), écrite aussi au registre des traitements. */
+/** La durée de garde des copies : la règle du compartiment (H50), écrite aussi au registre des traitements. */
 export const COPY_KEEP_DAYS = 30;
 export const COPY_WATCH_JOB = 'sauvegarde.surveillance';
 const WATCH_HOUR = 6;

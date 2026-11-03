@@ -24,6 +24,7 @@ import type { JournalStore } from '../journal/types.ts';
 import type { EcheancesDocumentsAgent } from './alertes.ts';
 import { Commissions } from './commissions.ts';
 import { Encaissements } from './encaissements.ts';
+import { EngagementsManques } from './engagements-manques.ts';
 import { Factures } from './factures.ts';
 import { TableauReseau } from './tableau-reseau.ts';
 
@@ -57,11 +58,13 @@ export function pilotageHourlyJob(db: SqlDatabase, journal: JournalStore, option
       const commissions = new Commissions(db, acces, journal, { now });
       const factures = new Factures(db, acces, journal, { now });
       const encaissements = new Encaissements(db, acces, journal, { now });
+      const manques = new EngagementsManques(db, journal, { now });
       for (const n of await db.all<{ id: string }>('SELECT id FROM networks ORDER BY id')) {
         await commissions.sync(n.id);
         await factures.prepare(n.id);
         await factures.reconcile(n.id);
         await encaissements.run(n.id);
+        await manques.syncIfDue(n.id);
       }
     },
   };

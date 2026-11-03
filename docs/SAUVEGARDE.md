@@ -4,7 +4,7 @@ Trois filets : la restauration à un instant passé de D1 (Time Travel), rien à
 
 ## Chaque nuit
 
-Le travail GitHub « Copie de nuit » s'allume avec la variable `COPIES_ACTIF` (`chantier/HUMAIN.md`, H49). Il note l'instant, photographie la base (`wrangler d1 export`), la charge dans une base SQLite neuve, prend la copie chiffrée, la range dans `aimmo-copies`, la restaure depuis ce compartiment dans une base jetable pour prouver qu'elle est identique, et écrit son compte rendu dans `base_copy_runs`. La photo est détruite à la fin, même après un échec. La sortie de wrangler reste muette, car elle donne un lien de téléchargement de toute la base, et une photo coupée par une panne n'est jamais chargée.
+Le travail GitHub « Copie de nuit » s'allume avec la variable `COPIES_ACTIF` (`chantier/HUMAIN.md`, H50). Il note l'instant, photographie la base (`wrangler d1 export`), la charge dans une base SQLite neuve, prend la copie chiffrée, la range dans `aimmo-copies`, la restaure depuis ce compartiment dans une base jetable pour prouver qu'elle est identique, et écrit son compte rendu dans `base_copy_runs`. La photo est détruite à la fin, même après un échec. La sortie de wrangler reste muette, car elle donne un lien de téléchargement de toute la base, et une photo coupée par une panne n'est jamais chargée.
 
 D1 peut répondre moins vite pendant la photo : c'est pourquoi elle se prend à 2 h 23 ou 3 h 23, heure de Paris. Le travail consomme quelques minutes de quota GitHub par nuit : à surveiller, décision du 2026-10-29.
 
@@ -14,7 +14,7 @@ D1 peut répondre moins vite pendant la photo : c'est pourquoi elle se prend à 
 
 ## Garde
 
-30 jours pour chaque copie (préfixe `copies/`), par la règle du compartiment (H49) : le logiciel ne supprime rien, et sa clé limitée aux objets ne peut pas lire cette règle. L'écran ne l'affirme donc pas ; à vérifier dans Cloudflare. Le registre des effacements (préfixe `effacements/`) n'expire pas.
+30 jours pour chaque copie (préfixe `copies/`), par la règle du compartiment (H50) : le logiciel ne supprime rien, et sa clé limitée aux objets ne peut pas lire cette règle. L'écran ne l'affirme donc pas ; à vérifier dans Cloudflare. Le registre des effacements (préfixe `effacements/`) n'expire pas.
 
 ## Restaurer
 

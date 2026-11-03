@@ -32,6 +32,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       contact_scores: ['person_id', 'score', 'temperature', 'reason'],
       attributions: ['person_id', 'agent_id', 'reason'],
       callback_tasks: ['person_id', 'reason'],
+      // Le rappel d'un engagement manqué, par le responsable (IN12).
+      missed_promise_tasks: ['person_id', 'agent_id', 'done_by', 'outcome'],
       // AC09 : les appels notés, pour la fréquence de la prospection.
       call_notes: ['person_id', 'noted_by'],
       agent_import_contacts: ['agent_id', 'person_id'],
@@ -695,7 +697,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     donnees: ['Toutes les données de la base, chiffrées avant de quitter le travail de nuit', 'Registre des effacements : des identifiants et une date, sans nom ni coordonnée'],
     duree: '30 jours pour chaque copie, par la règle de garde du compartiment. Après une restauration, chaque effacement fait depuis la copie est refait avant toute reprise, grâce au registre des effacements, gardé à part des copies aussi longtemps que la dernière d\'entre elles.',
     destinataires: ['La direction du réseau voit la date de la dernière copie, jamais son contenu', 'Le responsable de la conformité'],
-    sousTraitants: ['Hébergeur (Cloudflare : base et compartiment des copies)', 'GitHub (Actions : la photo de la base y passe en clair le temps du travail de nuit, puis est détruite ; à faire valider, voir H49)'],
+    sousTraitants: ['Hébergeur (Cloudflare : base et compartiment des copies)', 'GitHub (Actions : la photo de la base y passe en clair le temps du travail de nuit, puis est détruite ; à faire valider, voir H50)'],
     tables: {},
   },
 ];
@@ -782,6 +784,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   agent_zones: ['id', 'network_id', 'created_at', 'ended_at'],
   attributions: ['id', 'network_id', 'qualification_id', 'callback_hours', 'replaces_id', 'created_at'],
   callback_tasks: ['id', 'network_id', 'project_id', 'qualification_id', 'dedup_key', 'due_at', 'created_at', 'done_at'],
+  missed_promise_tasks: ['id', 'network_id', 'promise_code', 'case_key', 'day', 'created_at', 'done_at'],
   scheduled_runs: ['job', 'slot', 'started_at', 'outcome', 'finished_at'],
   automation_rollouts: ['network_id', 'automation', 'stage', 'stage_since', 'requests', 'last_incident_at', 'last_incident_kind'],
   valuation_reports: ['id', 'network_id', 'property_id', 'status', 'computed', 'computed_low', 'computed_high', 'created_at', 'updated_at', 'validated_at'],

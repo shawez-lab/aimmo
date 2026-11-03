@@ -3599,7 +3599,9 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN12 · Un engagement manqué : noté, et le client rappelé par un responsable
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#362). Relecture forte 2 P0 et 1 P1 corrigés ; Codex non attendu (H03). L'écran : IN15.
+- Décidé (2026-11-03), lecture prudente : le responsable est la direction du réseau. Le passage tourne à 7 h de Paris dans `pilotage.passage`, sans toucher au planificateur, sur le mois en cours et le mois passé. Un engagement envers l'agent (client transmis, commission) se rappelle à l'agent ; une offre, au vendeur du dernier mandat du bien. Une personne exclue : « ne pas appeler », jamais notée rappelée. L'écran passe à IN15.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07
 - Cahier : Besoins et solutions, « Le bouche-à-oreille » et « Nos engagements de service » (publiés, et reprise de liberté du vendeur sous réserve de l'avocat).
 - Objectif : vérifier d'abord ce qui existe. Chaque cas manqué vu par IN07 donne une tâche « rappeler » au responsable, une seule, sans donnée dans le journal ; rien n'est envoyé au client par la machine.
@@ -3607,7 +3609,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : la réponse de l'avocat sur la reprise de liberté, à écrire dans `HUMAIN.md`.
 
 ### IN13 · Le dossier de présentation dit « reçu », pas « validé »
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07
 - Cahier : M20 ; Besoins et solutions, « Nos engagements de service ».
 - Objectif : le taux tenu montré au client (G07) compte un compte rendu ou un point validé, même refusé à l'envoi ou resté en essai, et un point préparé un autre jour que le lundi. Le mettre à la même mesure que IN07 [R216], dans les délais de G15.
@@ -3646,7 +3648,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Cahier : Conformité ; Architecture technique, « Sauvegardes ».
 - Objectif : quand l'effacement réel sera mis en service (H29, `ERASURE_MODE`), il note chaque effacement au registre `recordErasure`, dans le compartiment des copies, et la procédure réelle passe derrière `PersonEraser` ; le stockage S3 de `packages/api/outils/r2-copies.ts` gagne la liste. Rien à faire tant que tout est en essai.
 - Critères : un effacement non noté n'est pas dit fait [R231] (test) ; le vrai effaceur, passé deux fois, ne change rien de plus (test) ; un effacement refait après une vraie restauration, de bout en bout (test).
-- Attend : H29, H49.
+- Attend : H29, H50.
 
 ### SV03 · Le test de restauration de chaque mois, avec son reçu (Jamais vu)
 - Statut : à faire
@@ -3662,4 +3664,12 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Cahier : Indicateurs et tests, « Chaque mois : un parcours complet fictif, du premier message à l'après-vente ».
 - Objectif : un seul scénario inventé traverse les vrais modules, du premier message à l'après-vente, et il tourne aussi chaque mois.
 - Critères : chaque étape vérifiée par ses données et son journal (test) ; aucun envoi réel (test) ; une étape cassée nomme l'étape (test).
+- Attend : rien.
+
+### IN15 · Les engagements manqués à rappeler, à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN12
+- Cahier : Besoins et solutions, « Le bouche-à-oreille » ; R201.
+- Objectif : dans `finances.js`, sur « Le réseau » : la direction lit les rappels à faire, ouvre la fiche, et dit rappelé, injoignable ou sans appel, en un geste.
+- Critères : « ne pas appeler » dit, sans bouton « rappelé » (test) ; droits [R16] (test) ; réponse perdue dite telle (test) ; déconnexion et réponse en vol (test) ; budget tenu [R201] (test).
 - Attend : rien.
