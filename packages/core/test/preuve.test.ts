@@ -116,7 +116,7 @@ describeWithSqlite('IN01 · compteur de la preuve à Dijon', () => {
     for (const [id, kind, doc] of [[simple, 'mandat_vente_simple', 'd1'], [exclusive, 'mandat_vente_exclusif', 'd2']] as const) {
       await t.db.run(
         `INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at)
-         VALUES (?, ?, 'tpl', 1, 'h', ?, 'essai', 'signed', '[]', ?, 'p', NULL, 'texte', 'h', 'x', '2027-01-10T10:00:00.000Z')`,
+         VALUES (?, ?, 'tpl', 1, 'h', ?, 'reel', 'complet', '[]', ?, 'p', NULL, 'texte', 'h', 'x', '2027-01-10T10:00:00.000Z')`,
         [doc, t.network.id, kind, t.alex.id],
       );
       await t.db.run(`INSERT INTO signed_documents (document_id, network_id, signed_at, place, scan_ref, mandate_id, registered_by, created_at) VALUES (?, ?, '2027-01-10T10:00:00.000Z', 'agence', 'scan', ?, 'x', '2027-01-10T10:00:00.000Z')`, [doc, t.network.id, id!]);
