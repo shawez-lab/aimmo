@@ -216,7 +216,7 @@ export type ImportResult =
       /** L'import vient d'être ouvert par cet appel. */
       created: boolean;
     }
-  | { ok: false; rule: 'R16' | 'R122'; code: string; errors?: RowError[] };
+  | { ok: false; rule: 'R16' | 'R122'; code: string; errors?: RowError[]; vintage?: number };
 
 export interface LoyersMarcheOptions {
   now?: () => Date;
@@ -311,10 +311,15 @@ export class LoyersMarche {
     if (!parsed.ok) return refuse(parsed.code, parsed.code === 'lignes' ? parsed.errors : undefined);
     const kind = input.kind as MarketRentKind;
     const hash = await sha256Hex(input.csv);
-    const existing = await this.db.first<{ id: string; status: string }>(
-      'SELECT id, status FROM market_rent_imports WHERE network_id = ? AND kind = ? AND file_sha256 = ?',
+    const existing = await this.db.first<{ id: string; status: string; vintage: number }>(
+      'SELECT id, status, vintage FROM market_rent_imports WHERE network_id = ? AND kind = ? AND file_sha256 = ?',
       [viewer.networkId, kind, hash],
     );
+    // Le même fichier reste à son millésime : un autre millésime n'est ni rangé, ni annoncé comme fait [R10, R122].
+    if (existing && Number(existing.vintage) !== input.vintage) {
+      const refused = await refuse('millesime_different');
+      return { ...refused, vintage: Number(existing.vintage) } as ImportResult;
+    }
     if (existing && existing.status === 'complet') {
       return { ok: true, importId: existing.id, rows: parsed.rows.length, stored: parsed.rows.length, status: 'complet', created: false };
     }

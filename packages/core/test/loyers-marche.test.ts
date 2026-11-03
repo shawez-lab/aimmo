@@ -161,6 +161,8 @@ describeWithSqlite('Y02 · loyers de marché', () => {
   it('[R17] un import plus récent s’ajoute, l’ancien reste ; le même fichier ne range rien de plus ; rien ne s’efface', async () => {
     const t = await setup();
     const first = await t.loyers.importAnil(t.direction, { kind: 'apartment', vintage: 2025, csv: CSV });
+    // [R122] Le même fichier avec un autre millésime : refusé, jamais annoncé comme rangé, et le premier reste.
+    expect(await t.loyers.importAnil(t.direction, { kind: 'apartment', vintage: 2024, csv: CSV })).toEqual({ ok: false, rule: 'R122', code: 'millesime_different', vintage: 2025 });
     expect(await t.loyers.importAnil(t.direction, { kind: 'apartment', vintage: 2025, csv: CSV })).toMatchObject({ ok: true, created: false });
     const newer = CSV.replace('12,3456789;10,1;15,005', '13,10;11;15,2');
     expect(await t.loyers.importAnil(t.direction, { kind: 'apartment', vintage: 2026, csv: newer })).toMatchObject({ ok: true, created: true });
