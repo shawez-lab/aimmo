@@ -3245,13 +3245,22 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Critères : la lecture liste les agents partis dont l'adresse est gardée, et eux seuls, du seul réseau du lecteur [R16] (test) ; libérer se confirme, puis un autre site prend l'adresse [R153] (test) ; adresse gardée par un agent parti du réseau : refus propre, dit en français (test) ; adresse gardée dans un autre réseau : le refus reste `url_taken`, sans nom (test).
 - Attend : rien.
 
-### AT18 · Le titre lisible d'une vidéo ou d'une publication à l'origine des contacts
+### AT18 · Les vidéos et publications du Studio entrent dans la mesure de l'origine
+- Statut : en cours (voie 2)
+- Voie : 2
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT16, X05
+- Cahier : M01, M19 ; R16, R156.
+- Objectif : reste de AT05 et AT16, trouvé en le lisant : rien dans le code ne range une vidéo ni une publication du Studio comme contenu (`contentFor`, `linkPost`, `taggedLink` ne servent que dans les tests), donc aucun contact n'en vient jamais, et leur titre serait leur référence interne. À l'envoi, la publication porte son lien marqué vers la page de référence du bien, et sa référence chez le réseau social est reliée quand le réseau la rend ; une vidéo a le même lien ; la direction lit un titre lisible.
+- Critères : un contact arrivé par le lien d'une publication ou d'une vidéo est compté dessus [R156] (test) ; la référence rendue par un réseau relie la publication (test) ; bien sans page publiée : pas de lien, l'envoi part quand même (test) ; panne de l'origine : l'envoi part, la panne est au journal sans donnée (test) ; titre lisible, sans identifiant, et libellé général pour un contenu non retrouvé ou d'un autre réseau [R16] (test).
+- Attend : rien.
+
+### AT20 · L'agent reçoit le lien marqué de sa vidéo et de sa publication
 - Statut : à faire
 - Voie : 2
-- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT16
-- Cahier : M01, M19 ; R16.
-- Objectif : reste de AT16. Dans la mesure de l'origine, une vidéo ou une publication du Studio garde pour titre sa référence interne. La direction lit à la place un titre qui dit le bien et le contenu, sans donnée d'un client.
-- Critères : une vidéo et une publication montrent un titre lisible, sans identifiant (test) ; contenu sans bien retrouvé : libellé général, jamais la référence (test) ; lecture limitée au réseau [R16] (test).
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT18, X11
+- Cahier : M01, M19 ; R16, R156.
+- Objectif : l'agent poste lui-même ses vidéos : sans le lien marqué, le contact arrive sans origine. La route lit le lien de chaque publication validée et de chaque vidéo rangée, et l'écran Studio le montre, prêt à copier, avec la phrase qui dit où le coller.
+- Critères : lien du seul bien de l'agent [R16] (test) ; bien non publié : le dire, sans lien (test) ; aucun identifiant de personne dans le lien [R156] (test) ; budget de l'écran tenu [R201] (test).
 - Attend : rien.
 
 ### AT19 · Un contour de quartier qui se croise lui-même est refusé
