@@ -3551,7 +3551,8 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN08 · Le temps gagné, déclaré par l'agent et contrôlé sur le journal
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#356). Relecture forte 1 P0 et 1 P1 corrigés ; Codex non attendu (H03). Le filtre tient au nom des types du journal : une lecture mal nommée compterait comme geste.
 - Décidé (2026-11-03), lecture prudente : l'agent déclare en minutes, de 0 à 80 h, une semaine finie et pas d'avant son entrée. Le contrôle juge le type du journal sur son nom : lectures, passages en son nom et refus écartés. Il rend à la direction un compte de déclarations sans geste, sans nom. Avec un seul déclarant, les comptes valent sa ligne : la direction voit déjà les chiffres de chaque agent (K05), R14 interdit le rang, pas ce compte.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
 - Cahier : Indicateurs et tests, « Temps gagné ».
