@@ -317,6 +317,19 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
       expect(t.box.textContent).toContain('Encadrement des loyers');
     });
 
+    it('[Y11] la règle rangée est dite telle, même si la relecture se perd', async () => {
+      let reads = 0;
+      const t = await open(null, {
+        [READ]: async () => { reads += 1; if (reads > 1) throw new TypeError('hors ligne'); return Response.json({ ok: true, data: { canRecord: true, rules: [] } }); },
+        [POST_RULE]: ok({ effectiveFrom: '2025-03-01', effectiveUntil: null }),
+      });
+      t.fill();
+      t.save()!.listeners.click!({});
+      await settle();
+      expect(t.state()).toBe('Règle rangée, en vigueur à partir du 01/03/2025.');
+      expect(t.box.textContent).toContain('Pas de réseau pour les règles');
+    });
+
     it('[Y11] une règle déjà finie est dite finie, jamais « en vigueur »', async () => {
       const t = await open({ canRecord: true, rules: [] }, { [POST_RULE]: ok({ effectiveFrom: '2015-01-01', effectiveUntil: '2018-01-01' }) });
       t.fill();

@@ -105,6 +105,9 @@ describeWithSqlite('Y07 · routes de M17', () => {
     // Une autre commune n'en dit rien ; un code illisible est refusé, sans rien lire.
     expect(await t.ok(t.agent, 'GET', '/investir/regles?insee=99002')).toEqual({ canRecord: false, rules: [] });
     for (const path of ['/investir/regles', '/investir/regles?insee=abc']) expect((await t.call(t.agent, 'GET', path)).body).toMatchObject({ ok: false, code: 'insee' });
+    // Un autre réseau n'en lit rien.
+    const elsewhere = await t.store.createNetwork('Autre réseau');
+    expect(await t.ok({ role: 'direction', userId: 'dir-2', networkId: elsewhere.id }, 'GET', '/investir/regles?insee=99001')).toEqual({ canRecord: true, rules: [] });
     // Une règle à venir ne se dit pas en vigueur.
     await t.ok(t.dir, 'POST', '/investir/regles', { ...rule, inseeCode: '99003', effectiveFrom: '2099-01-01' });
     expect(await t.ok(t.agent, 'GET', '/investir/regles?insee=99003')).toEqual({ canRecord: false, rules: [] });

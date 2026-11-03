@@ -187,6 +187,8 @@ globalThis.AIMMO_LOYERS = function (t) {
   /* Y11 · les règles de la commune, chacune avec sa source ; « aucune » n'est jamais une preuve [R10]. */
   function day(d) { return date(d + 'T12:00:00Z'); }
   function rules(mine, insee, message) {
+    // Dit avant la relecture : une règle rangée le reste, même si la relecture se perd.
+    if (message) state(message);
     var box = el('li');
     $('loyers-liste').appendChild(box);
     box.appendChild(el('h4', 'Règles de location de la commune ' + insee));
@@ -197,7 +199,6 @@ globalThis.AIMMO_LOYERS = function (t) {
         box.appendChild(el('p', res.offline ? 'Pas de réseau pour les règles de cette commune.' : (res.body && RULE_REFUSALS[res.body.code]) || 'Règles indisponibles pour le moment.', 'etat'));
         return false;
       }
-      if (message) state(message);
       if (!data.rules.length) box.appendChild(el('p', 'Aucune règle rangée en vigueur. Cela ne prouve pas qu’il n’y en a pas : vérifiez auprès de la mairie.', 'doux'));
       data.rules.forEach(function (r) {
         box.appendChild(el('p', (RULES[r.rule] || r.label || 'Règle') + ', depuis le ' + day(r.effectiveFrom) + (r.effectiveUntil ? ', jusqu’au ' + day(r.effectiveUntil) : '') + '. Source : ' + r.source + ', ' + day(r.sourceDate) + '.'));
