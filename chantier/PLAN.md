@@ -3491,7 +3491,9 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### RS02 · Accueil du site, et les chemins vers chaque page
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03), lecture prudente : l'accueil et le plan lisent la seule liste `sitePaths`, et aucune page n'y entre avant d'exister ; RS03 et RS04 y ajoutent `/agents`, `/prix` et `/estimation` ; `/rejoindre` n'y est que si les candidatures vont à ce réseau, car il répond 503 sinon ; le site d'un agent ne dit son nom qu'avec ses mentions [R152].
+- Reste : fusionnée (#350) ; relecture forte 1 P1 de test corrigé ; Codex non attendu (H03) ; vérification GitHub verte. L'accueil et les pages fixes entrent au plan, mais ne sont pas signalés à IndexNow.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS01
 - Cahier : M01, « Deux sites, un seul moteur ».
 - Objectif : `GET /` sur le site du réseau et celui d'un agent : les derniers biens, et les chemins vers les biens, les agents, les prix, l'estimation et, sur le réseau, le recrutement. Ajouter ces pages au plan du site.
@@ -3499,7 +3501,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### RS03 · Liste des agents et des communes
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
 - Cahier : M01 ; R14, R150, R152.
 - Objectif : `GET /agents`, seulement ceux dont la page est publiable, par ordre alphabétique, sans aucun chiffre ; `GET /prix`, les communes dont la page de prix a au moins une case publiable. Réservées au site du réseau.
