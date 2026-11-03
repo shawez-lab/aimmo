@@ -1819,7 +1819,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Reste : `addPiece` accepte encore des pièces sur un dossier DossierFacile par appel direct ; le geste de vérification de l'identité du candidat n'a pas été regardé (W21).
 
 ### EC13 · Un plafond aux liens d'espace préparés par l'agent
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC12
 - Cahier : Le produit, espaces des clients ; R160, R03, R16.
 - Objectif : trouvé par EC12 : `invite` n'a pas de plafond, l'agent peut préparer autant de liens qu'il veut, alors que R160 limite à 3 liens par 24 heures la demande du client. Lire R160, puis appliquer le même plafond à `invite`, lecture la plus prudente.

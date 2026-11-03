@@ -6,6 +6,7 @@
  */
 const REFUSALS = {
   bad_consent: 'Écrivez comment la personne a donné son accord : 300 caractères au plus.',
+  plafond: 'Le plafond de liens sur 24 heures est atteint pour cette personne : rien n’est préparé, et le geste redeviendra possible plus tard.',
   no_file: 'Cette personne n’est partie à aucun dossier : elle n’a pas d’espace à ouvrir.',
   not_assigned: 'Ce client est suivi par un autre agent.',
   role: 'Ce geste n’est pas dans vos droits.',

@@ -160,6 +160,17 @@ describe('EC12 · ouvrir l’espace d’un client depuis sa fiche', () => {
     expect(t.say()).toContain('Ce client est suivi par un autre agent.');
   });
 
+  it('[R160] [EC13] au plafond, le refus est dit en français, sans lien ni code, et rien n’est présenté comme préparé', async () => {
+    const t = await open(FICHE, { [POST]: no(409, { ok: false, rule: 'R160', code: 'plafond' }) });
+    await t.press('Ouvrir son espace client');
+    t.proof().value = 'Accord de vive voix.';
+    await t.press('Préparer le lien de son espace');
+    expect(t.say()).toContain('Le plafond de liens sur 24 heures est atteint');
+    expect(t.say()).toContain('rien n’est préparé');
+    expect(t.say()).not.toContain('plafond:');
+    expect(t.body.all().map((e) => e.textContent).join(' ')).not.toMatch(/Lien préparé|https?:|[a-z]{40}/);
+  });
+
   it('une réponse perdue est dite telle : le geste n’est plus offert, chaque appel ferait un nouveau lien', async () => {
     const t = await open(FICHE);
     await t.press('Ouvrir son espace client');
