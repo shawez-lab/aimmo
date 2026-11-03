@@ -501,3 +501,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 03:20 · W17 · la direction lit et range les modèles de bail, la conformité les valide en deux appuis ; l'ancienne version reste (#298) ; relecture forte 3 P1 corrigés ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : à choisir
 - 2026-11-03 03:50 · G15 · la direction règle ses engagements de service, l'agent note et relit une fin de bail depuis la fiche ; la dernière date fait foi (#300) ; relecture forte 3 P1 corrigés ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : U14
 - 2026-11-03 03:50 · voie 1 · fin de séance : G14, U13 et G15 fusionnées ; U14 et X13 écrites au plan, réservées à la voie 1 ; verrou libéré · prochaine : U14
+- 2026-11-03 03:52 · voie 1 · relance immédiate refusée de nouveau par le contrôle des permissions ; pas de contournement, le passage planifié reprendra · prochaine : U14
