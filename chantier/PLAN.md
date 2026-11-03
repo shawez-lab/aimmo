@@ -3562,6 +3562,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 
 ### IN09 · La disponibilité du service, derrière une interface
 - Statut : en cours (voie 2)
+- Décidé (2026-11-03), lecture prudente : le temps dont la supervision ne dit rien n'est ni répondu ni coupé ; la part porte sur le temps connu (l'observé, plus toute coupure rapportée, même hors de l'observé) ; un mois connu en partie le dit et la cible n'y est jamais atteinte, mais elle y est manquée dès que les coupures dépassent le millième du mois entier. Une donnée incohérente rend le service « non mesuré ». Arrondi vers le bas. La supervision vaut pour tout le logiciel, sans table : les chiffres ne sont pas gardés chez AIMMO tant que la supervision réelle n'est pas choisie (H48).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
 - Cahier : Indicateurs et tests, « Disponibilité du service », cible 99,9 % par mois.
 - Objectif : une interface de supervision avec un faux service de test, qui rend pour un mois le temps où le site, l'API et l'application ont répondu ; la direction lit la part par service.

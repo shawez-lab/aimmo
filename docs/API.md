@@ -215,6 +215,7 @@ Sous `/v1/pilotage`, chaque route passe par les droits de la couche métier [R16
 - `GET /export-quotidien?jour=` (CSV) : l'export du jour pour la mesure contre le comptage manuel (`docs/MESURE.md`).
 - `GET /engagements-tenus?mois=AAAA-MM` : pour un mois fini et la direction seule, chaque engagement de service : cas tenus, manqués (leurs jours), en attente, en essai, écartés, s'il est mesurable, et le total ; aucun agent, aucun identifiant ; mois en cours : 409 [R216, R14].
 - `GET|POST /temps-gagne` (`?semaine=<lundi>`, ou `{week, minutes}`) : l'agent lit et déclare les minutes gagnées d'une semaine finie, et lit ses gestes au journal. `GET /temps-gagne/reseau?semaine=` : la direction lit des comptes, sans nom [R217, R14, R68].
+- `GET /disponibilite?mois=AAAA-MM` : pour un mois fini et la direction seule, la part du temps où le site, l'API et l'application ont répondu, la cible de 99,9 %, et si le mois a été observé en entier ; sans supervision branchée (H48), chaque service dit « non mesuré », jamais 100 % ; mois en cours : 409 [R223].
 
 Au planificateur : chaque heure, `pilotage.passage` (commissions, brouillons de factures, reprise des transmissions, alertes de reversement) ; à 6 h, `pilotage.alertes`, avec les fins de validité des pièces du dossier d'agent (M14) ; du lundi au vendredi à 7 h 30, `pilotage.rapport_matin`, rangé et lu dans l'application, jamais envoyé.
 

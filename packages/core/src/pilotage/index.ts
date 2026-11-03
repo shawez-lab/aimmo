@@ -12,3 +12,4 @@ export * from './preuve-sceau.ts';
 export * from './indicateurs-reseau.ts';
 export * from './engagements-tenus.ts';
 export * from './temps-gagne.ts';
+export * from './disponibilite.ts';

@@ -21,6 +21,8 @@ export interface PilotageServices {
   journal: JournalStore;
   acces: Acces;
   now: () => Date;
+  /** La supervision de la disponibilité (IN09) ; absente tant qu'aucune n'est branchée (H48) : « non mesuré ». */
+  supervision?: pilotage.SupervisionProvider | null;
 }
 
 export interface PilotageRoute {
@@ -90,6 +92,7 @@ const services = (s: PilotageServices) => ({
   indicateursReseau: new pilotage.IndicateursReseau(s.db, s.journal, { now: s.now }),
   engagementsTenus: new pilotage.EngagementsTenus(s.db, s.journal, { now: s.now }),
   tempsGagne: new pilotage.TempsGagne(s.db, s.journal, { now: s.now }),
+  disponibilite: new pilotage.DisponibiliteService(s.journal, { now: s.now, supervision: s.supervision ?? null }),
   preuve: new pilotage.CompteurPreuve(s.db, s.journal, { now: s.now }),
   sceaux: new pilotage.SceauxPreuve(s.db, s.journal, { now: s.now }),
 });
@@ -131,6 +134,7 @@ export function pilotageRoutes(): PilotageRoute[] {
     { method: 'GET', pattern: new RegExp(`${P}/temps-gagne$`), name: 'pilotage.temps_gagne', handle: async (s, v, _p, r) => reply(await services(s).tempsGagne.mine(v, query(r, 'semaine'))) },
     { method: 'POST', pattern: new RegExp(`${P}/temps-gagne$`), name: 'pilotage.temps_gagne_declare', handle: withBody(async (s, v, _p, body) => reply(await services(s).tempsGagne.declare(v, { week: body.week, minutes: body.minutes }))) },
     { method: 'GET', pattern: new RegExp(`${P}/temps-gagne/reseau$`), name: 'pilotage.temps_gagne_reseau', handle: async (s, v, _p, r) => reply(await services(s).tempsGagne.network(v, query(r, 'semaine'))) },
+    { method: 'GET', pattern: new RegExp(`${P}/disponibilite$`), name: 'pilotage.disponibilite', handle: async (s, v, _p, r) => reply(await services(s).disponibilite.ofMonth(v, query(r, 'mois'))) },
     { method: 'GET', pattern: new RegExp(`${P}/reseau$`), name: 'pilotage.reseau', handle: async (s, v, _p, r) => reply(await services(s).reseau.of(v, { from: query(r, 'du'), to: query(r, 'au') })) },
     {
       method: 'GET',
