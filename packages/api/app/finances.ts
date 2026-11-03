@@ -14,6 +14,10 @@
  * La grille, les seuils, les factures et l'export (K12), pour la direction [R16] : une nouvelle version de la grille part
  * de la dernière et n'en perd aucun taux ; une facture ne change jamais, un avoir la corrige, en deux appuis [R71] ; l'export
  * part avec la clé dans l'en-tête [R13].
+ *
+ * La preuve à Dijon (IN05), pour la direction, relue à chaque rapport du matin [R16, R210, R211, R212] : où en est la
+ * série, ce qui reste à inscrire, et le sceau d'un mois fini avec son comptage manuel. L'écran ne calcule rien : il
+ * montre ce que le serveur compte, et un écart de comptage est dit tel quel.
  */
 
 const SHARE_NAMES: Record<string, string> = {
@@ -80,6 +84,15 @@ const SETTING_REFUSALS: Record<string, string> = {
   unknown: 'Cette facture n’existe plus dans la liste.',
   role: 'Ce n’est pas dans vos droits.',
 };
+const PROOF_MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const SEAL_REFUSALS: Record<string, string> = {
+  month_not_finished: 'Ce mois n’est pas fini : il ne se scelle pas encore.',
+  register_broken: 'Le registre des mandats est abîmé : aucun sceau tant qu’il ne l’est plus.',
+  already_sealed: 'Ce mois est déjà scellé, et rien n’a changé depuis.',
+  conflict: 'Un autre sceau vient de passer : relisez, puis recommencez.',
+  bad_input: 'Votre comptage : un nombre entier, zéro ou plus.',
+  role: 'Ce n’est pas dans vos droits.',
+};
 const PAY_REFUSALS: Record<string, string> = {
   sale_cancelled: 'Cette vente est annulée par un avoir : plus rien ne s’encaisse ni ne se verse ici.',
   bad_proof: 'Cette référence n’est pas lisible : lettres sans accent, chiffres, et les signes - _ : . / seulement.',
@@ -106,7 +119,14 @@ const reportEntry = (who: 'agent' | 'direction'): string => `<section class="blo
 `;
 
 export const RAPPORT_AGENT_HTML = reportEntry('agent');
-export const RAPPORT_DIRECTION_HTML = reportEntry('direction');
+const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
+<h3 id="preuve-titre">La preuve à Dijon</h3>
+<p class="doux">10 mandats de vente signés et inscrits par mois, 6 mois de suite, depuis janvier 2027. Se relit avec le rapport du matin.</p>
+<p id="preuve-etat" class="etat" role="status"></p>
+<div id="preuve-corps"></div>
+</section>
+`;
+export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML;
 
 export const REGLAGES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-grille">
 <h3 id="titre-grille">Grille des commissions et alertes</h3>
@@ -158,6 +178,8 @@ export const FINANCES_JS = `
       $('rapport-' + who + '-etat').textContent = '';
       $('rapport-' + who + '-jour').value = '';
     });
+    clear($('preuve-corps'));
+    $('preuve-etat').textContent = '';
     clear($('commissions-corps'));
     $('commissions-etat').textContent = '';
     clear($('euros-corps'));
@@ -229,6 +251,8 @@ globalThis.AIMMO_FINANCES = function (t) {
   var CREDIT_REASONS = ${JSON.stringify(CREDIT_REASONS)};
   var KIND_NAMES = ${JSON.stringify(KIND_NAMES)};
   var SETTING_REFUSALS = ${JSON.stringify(SETTING_REFUSALS)};
+  var SEAL_REFUSALS = ${JSON.stringify(SEAL_REFUSALS)};
+  var PROOF_MONTHS = ${JSON.stringify(PROOF_MONTHS)};
   var PROOF = /^[A-Za-z0-9_:.\/-]{1,200}$/;
   var reading = 0, listing = 0, uid = 0;
   function day(iso) { return date(iso + 'T12:00:00Z'); }
@@ -239,6 +263,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     var body = $('rapport-' + who + '-corps'), state = $('rapport-' + who + '-etat');
     var chosen = $('rapport-' + who + '-jour').value;
     clear(body);
+    if (who === 'direction') proof('');
     if (chosen && !/^\\d{4}-\\d{2}-\\d{2}$/.test(chosen)) { state.textContent = 'Choisissez un jour.'; return Promise.resolve(false); }
     state.textContent = 'Chargement…';
     return send('/v1/pilotage/rapport-matin' + (chosen ? '?jour=' + chosen : ''), 'GET').then(function (res) {
@@ -259,6 +284,81 @@ globalThis.AIMMO_FINANCES = function (t) {
       r.text.split('\\n').forEach(function (line) {
         body.appendChild(el('p', line, line.indexOf('Alerte') === 0 ? 'retard' : undefined));
       });
+      return true;
+    });
+  }
+  function monthName(m) { return PROOF_MONTHS[Number(m.slice(5, 7)) - 1] + ' ' + m.slice(0, 4); }
+  function plural(n, one, many) { return n + ' ' + (n > 1 ? many : one); }
+  function sealRefusal(res) {
+    var b = res.body || {};
+    if (res.offline) return 'Réponse perdue : ce mois est peut-être scellé. Relisez avant de recommencer.';
+    if (b.code === 'count_mismatch') return 'Écart : le registre compte ' + b.counted + ', vous comptez ' + b.given + '. Rien n’est scellé : cherchez d’où vient l’écart.';
+    if (b.code === 'not_inscribed') return plural(Number(b.notInscribed), 'mandat signé reste', 'mandats signés restent') + ' à inscrire au registre avant de sceller ce mois.';
+    return (b.rule === 'R16' ? SEAL_REFUSALS.role : SEAL_REFUSALS[b.code]) || 'Réponse perdue : ce mois est peut-être scellé. Relisez avant de recommencer.';
+  }
+  function sealForm(li, m) {
+    var box = el('div');
+    var count = field(box, 'Votre comptage manuel de ' + monthName(m.month), 'text');
+    count.setAttribute('inputmode', 'numeric');
+    var state = el('p', '', 'etat');
+    state.setAttribute('role', 'status');
+    saveButton(box, 'Comparer et sceller', state, function () {
+      var mine = t.session();
+      var text = count.value.trim();
+      if (!/^\\d{1,6}$/.test(text)) { state.textContent = SEAL_REFUSALS.bad_input; return null; }
+      return send('/v1/pilotage/preuve/sceau', 'POST', { month: m.month, manualCount: Number(text) }).then(function (res) {
+        if (res.gone || mine !== t.session()) return false;
+        if (!res.ok) { state.textContent = sealRefusal(res); return false; }
+        state.textContent = '';
+        return proof(monthName(m.month) + ' est scellé.');
+      });
+    });
+    box.appendChild(state);
+    li.appendChild(box);
+  }
+  var proving = 0;
+  function proof(message) {
+    var mine = t.session();
+    var turn = ++proving;
+    var body = $('preuve-corps'), state = $('preuve-etat');
+    clear(body);
+    state.textContent = 'Chargement…';
+    return Promise.all([send('/v1/pilotage/preuve', 'GET'), send('/v1/pilotage/preuve/sceaux', 'GET')]).then(function (all) {
+      var c = all[0], s = all[1];
+      if (c.gone || s.gone || mine !== t.session() || turn !== proving) return false;
+      if (!c.ok || !s.ok || !c.body.data || !s.body.data) {
+        var bad = !c.ok ? c : s;
+        state.textContent = (message ? message + ' ' : '') + (bad.offline ? 'Pas de réseau. Réessayez dans un moment.' : bad.body && bad.body.rule === 'R16' ? SEAL_REFUSALS.role : 'Indisponible pour le moment. Réessayez plus tard.');
+        return false;
+      }
+      var counter = c.body.data, published = s.body.data;
+      if (!counter.registerSound || !published.chainSound) body.appendChild(el('p', 'Un contrôle d’intégrité a échoué : ces chiffres sont à vérifier, et la condition ne peut pas être dite remplie.', 'retard'));
+      if (counter.condition.met && published.chainSound) body.appendChild(el('p', 'Condition remplie en ' + monthName(counter.condition.metOn) + '.'));
+      else body.appendChild(el('p', 'Série en cours : ' + counter.currentRun.length + ' mois sur ' + counter.requiredMonths + '.'));
+      if (!counter.months.length) body.appendChild(el('p', 'Le compte commence en ' + monthName(counter.startMonth) + '.'));
+      var sealOf = {};
+      published.months.forEach(function (m) { sealOf[m.month] = m; });
+      var ul = el('ul', null, 'liste');
+      counter.months.slice().reverse().forEach(function (m) {
+        var li = el('li');
+        li.appendChild(el('strong', monthName(m.month) + ' : ' + m.counted + ' sur ' + counter.target + (m.complete ? '' : ', mois en cours')));
+        var details = [];
+        if (m.exclusive) details.push(m.exclusive + ' exclusifs');
+        if (m.simple) details.push(m.simple + ' simples');
+        if (m.untyped) details.push(m.untyped + ' sans type connu');
+        if (m.terminated) details.push(m.terminated + ' résiliés depuis');
+        if (m.cancelledError) details.push(m.cancelledError + ' annulés pour erreur');
+        if (m.withdrawn) details.push(m.withdrawn + ' rétractés');
+        if (details.length) li.appendChild(el('p', details.join(', ') + '.', 'doux'));
+        if (m.notInscribed) li.appendChild(el('p', plural(m.notInscribed, 'mandat signé reste', 'mandats signés restent') + ' à inscrire au registre.', 'retard'));
+        var seal = sealOf[m.month];
+        if (m.complete && seal && seal.sealSeq !== null && !seal.changedSinceSeal) li.appendChild(el('p', seal.corrected ? 'Scellé, après correction.' : 'Scellé et publié.', 'doux'));
+        if (m.complete && seal && seal.changedSinceSeal) li.appendChild(el('p', 'Changé depuis son sceau : le compte public le dit, jusqu’au nouveau sceau.', 'retard'));
+        if (m.complete && (!seal || seal.sealSeq === null || seal.changedSinceSeal)) sealForm(li, m);
+        ul.appendChild(li);
+      });
+      if (counter.months.length) body.appendChild(ul);
+      state.textContent = message || '';
       return true;
     });
   }

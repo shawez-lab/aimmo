@@ -134,6 +134,17 @@ export class SceauxPreuve {
     return this.db.all<SealRow>('SELECT seq, month, counted, simple, exclusive, untyped, terminated, withdrawn, cancelled_error, lines, lines_digest, sealed_at, prev_hash, hash FROM proof_seals WHERE network_id = ? ORDER BY seq', [networkId]);
   }
 
+  /** Ce qui est publié, relu par la direction sur son écran, sans la copie de la route publique : ce qu'elle scelle se voit aussitôt [R16]. */
+  async read(viewer: Viewer): Promise<{ ok: true; value: PublicProof } | Refusal> {
+    const d = viewer.role === 'direction' ? decideAccess(viewer, { kind: 'figures', networkId: viewer.networkId, agentId: viewer.userId }) : null;
+    if (!d || !d.allowed) {
+      const code = d && !d.allowed ? d.code : 'role';
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'proof_seals', code } }, this.now);
+      return { ok: false, rule: 'R16', code };
+    }
+    return { ok: true, value: await this.publication(viewer.networkId) };
+  }
+
   /** Scelle un mois fini, si le comptage manuel est celui du registre [R212]. */
   async seal(viewer: Viewer, input: { month: unknown; manualCount: unknown }): Promise<{ ok: true; value: PublicProofSeal } | Refusal | Problem> {
     const d = viewer.role === 'direction' ? decideAccess(viewer, { kind: 'figures', networkId: viewer.networkId, agentId: viewer.userId }) : null;
