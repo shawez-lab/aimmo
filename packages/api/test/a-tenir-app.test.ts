@@ -81,6 +81,14 @@ describe('W26 · à tenir sur mes ventes, à l’accueil', () => {
     expect(first).not.toContain('inconnu');
   });
 
+  it('[R62] rien ne laisse croire que le client est prévenu : aucun rappel ne dispense l’agent, en mode essai', async () => {
+    for (const reminder of ['fait', 'attente', 'a_prevenir', 'inconnu']) {
+      const t = await run(ok({ ...EMPTY, fonds: [{ ...FULL.fonds[0], reminder }] }));
+      await t.load();
+      expect(t.els['a-tenir']!.textContent).toContain('Prévenez-le vous-même.');
+    }
+  });
+
   it('[R59] [R61] chaque échéance est nommée, avec son bien, son jour ou la date à saisir ; un texte reçu reste du texte', async () => {
     const t = await run(ok(FULL));
     await t.load();

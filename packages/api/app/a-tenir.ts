@@ -16,9 +16,10 @@ const SIGNALS: Readonly<Record<string, string>> = {
   paiement: 'paiement',
 };
 const SIDES: Readonly<Record<string, string>> = { vendeur: 'du vendeur', acquereur: 'de l’acquéreur' };
+// Le bouclier n'envoie aujourd'hui qu'en mode essai : rien n'arrive au client, l'écran ne laisse jamais croire le contraire.
 const REMINDERS: Readonly<Record<string, string>> = {
-  fait: 'Rappel écrit au client : passé par le contrôle des envois.',
-  attente: 'Rappel écrit au client : en attente, repris au prochain passage.',
+  fait: 'Rappel écrit au client : rangé en mode essai, rien n’est parti. Prévenez-le vous-même.',
+  attente: 'Rappel écrit au client : pas encore parti. Prévenez-le vous-même.',
   a_prevenir: 'Rappel écrit au client : il ne peut pas partir. Prévenez-le vous-même.',
 };
 const FINANCING: Readonly<Record<string, string>> = {

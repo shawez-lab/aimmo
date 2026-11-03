@@ -82,6 +82,8 @@ describeWithSqlite('W26 · ce que l’agent doit tenir sur ses ventes', () => {
     expect(await lines()).toHaveLength(1);
     await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.userId, t.propertyId]);
     expect(await lines()).toEqual([]);
+    // Le nouvel agent du bien la voit : l'échéance n'est perdue pour personne.
+    expect(await watch.of(t.sam)).toMatchObject({ ok: true, value: { echeances: [{ source: 'offre', propertyId: t.propertyId, day: '2027-03-10' }] } });
   });
 
   it('[R61] les alertes de financement portent la référence du bien', async () => {

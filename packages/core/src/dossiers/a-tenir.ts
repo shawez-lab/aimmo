@@ -26,7 +26,7 @@ const SIGNALS: readonly FundSignal[] = ['iban', 'coordonnees_bancaires', 'vireme
 /** D1 borne le nombre de paramètres d'une requête. */
 const CHUNK = 80;
 
-/** `fait` : le rappel écrit est passé par le contrôle central ; `attente` : il sera repris ; `a_prevenir` : il ne partira pas. */
+/** `fait` : le rappel écrit est passé par le contrôle central (rangé, en mode essai) ; `attente` : pas encore passé ; `a_prevenir` : il ne passera pas. */
 export type FundReminder = 'fait' | 'attente' | 'a_prevenir';
 
 export interface FundLine {
