@@ -3237,8 +3237,9 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : H09 pour les vraies mentions.
 
 ### AT17 · L'adresse d'un agent parti se libère depuis l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Voie : 2
+- Reste : fusionnée (#336) ; relecture forte 1 P1 de test corrigé ; Codex non attendu (H03) ; suite complète non terminée en local (coupée à 9 minutes), passée sur GitHub.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT16
 - Cahier : M01 ; R16, R153.
 - Objectif : reste de AT16. Le site d'un agent parti n'est plus servi, mais son dernier réglage « en service » garde l'adresse : aucun autre site ne peut la prendre (`url_taken`), et l'écran ne montre que les agents en activité, donc aucun geste ne la libère. L'écran « Attirer » liste les adresses gardées par un agent parti et les libère en deux appuis ; le refus dit la cause quand l'agent parti est du même réseau, sans rien dire d'un autre réseau.
