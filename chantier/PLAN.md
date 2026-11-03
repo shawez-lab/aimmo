@@ -3561,7 +3561,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN09 · La disponibilité du service, derrière une interface
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
 - Cahier : Indicateurs et tests, « Disponibilité du service », cible 99,9 % par mois.
 - Objectif : une interface de supervision avec un faux service de test, qui rend pour un mois le temps où le site, l'API et l'application ont répondu ; la direction lit la part par service.
