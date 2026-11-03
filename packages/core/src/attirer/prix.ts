@@ -163,6 +163,35 @@ function properCross(a: LatLon, b: LatLon, c: LatLon, d: LatLon): boolean {
 }
 
 /**
+ * Vrai si un contour se croise, se touche ou repasse sur lui-même : l'intérieur n'en est plus défini, donc ni les ventes
+ * qui lui appartiennent, ni le prix publié [R150]. Un point répété à la suite ne compte pas, un contour concave non plus.
+ */
+export function ringSelfCrosses(ring: readonly LatLon[]): boolean {
+  const same = (p: LatLon, q: LatLon) => p[0] === q[0] && p[1] === q[1];
+  const points = ring.filter((p, i) => !same(p, ring[(i + ring.length - 1) % ring.length]!));
+  const n = points.length;
+  if (n < 3) return true;
+  const turn = (p: LatLon, q: LatLon, r: LatLon) => Math.sign((q[1] - p[1]) * (r[0] - p[0]) - (q[0] - p[0]) * (r[1] - p[1]));
+  const within = (p: LatLon, q: LatLon, r: LatLon) => Math.min(p[0], q[0]) <= r[0] && r[0] <= Math.max(p[0], q[0]) && Math.min(p[1], q[1]) <= r[1] && r[1] <= Math.max(p[1], q[1]);
+  const touches = (a: LatLon, b: LatLon, c: LatLon, d: LatLon) => {
+    const o1 = turn(a, b, c), o2 = turn(a, b, d), o3 = turn(c, d, a), o4 = turn(c, d, b);
+    if (o1 !== o2 && o3 !== o4) return true;
+    return (o1 === 0 && within(a, b, c)) || (o2 === 0 && within(a, b, d)) || (o3 === 0 && within(c, d, a)) || (o4 === 0 && within(c, d, b));
+  };
+  for (let i = 0; i < n; i++) {
+    const a = points[i]!, b = points[(i + 1) % n]!;
+    // Deux bords qui se suivent ne partagent que leur sommet ; s'ils repartent en arrière, ils se recouvrent.
+    const c = points[(i + 2) % n]!;
+    if (turn(a, b, c) === 0 && ((c[0] - b[0]) * (a[0] - b[0]) + (c[1] - b[1]) * (a[1] - b[1])) > 0) return true;
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+      if (touches(a, b, points[j]!, points[(j + 1) % n]!)) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Vrai si deux contours se recouvrent. Deux zones voisines qui partagent un bord ne se recouvrent pas, même quand
  * l'une y a des sommets que l'autre n'a pas ; un sommet de l'une à l'intérieur de l'autre, un point juste à l'intérieur de l'une dans l'autre, ou deux bords qui se croisent, si.
  */

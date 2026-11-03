@@ -635,6 +635,15 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       expect(t.input('Source du contour').value).toBe('Contours inventés');
     });
 
+    it('[R150] AT19 : un contour qui se croise est dit en français, sans code, et la saisie reste', async () => {
+      const t = await run({ 'POST /v1/attirer/prix/zones': no(409, { ok: false, rule: 'R150', code: 'contour_croise' }) });
+      await t.ouvrir();
+      remplir(t, SQUARE);
+      await t.click(t.buttons('Ajouter')[0]);
+      expect(t.state()).toBe('Ce contour se croise ou se touche lui-même : on ne saurait pas quelles ventes il contient. Vérifiez l’ordre des points.');
+      expect(t.input('Source du contour').value).toBe('Contours inventés');
+    });
+
     it('retirer une zone se confirme, et un double appui ne coupe rien', async () => {
       const t = await run();
       await t.ouvrir();

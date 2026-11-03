@@ -36,6 +36,7 @@ const REFUSALS: Record<string, string> = {
   parent: 'Choisissez une commune en service.',
   slug_pris: 'Ce nom est déjà pris dans la liste.',
   hors_france: 'Ces points ne tombent pas en France : latitude et longitude sont peut-être inversées.',
+  contour_croise: 'Ce contour se croise ou se touche lui-même : on ne saurait pas quelles ventes il contient. Vérifiez l’ordre des points.',
   hors_commune: 'Ce quartier sort de sa commune : vérifiez le contour et la commune choisie.',
   invalid_body: 'Ce contour est trop long : 2 000 points au plus.',
   chevauchement: 'Ce contour recouvre une zone déjà en service : les mêmes ventes compteraient deux fois.',
