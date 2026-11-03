@@ -94,6 +94,8 @@ export interface ApplicationView {
   arrivedAt: string;
   dossierFacile: boolean;
   guarantors: { guarantorId: string; kind: 'personne' | 'visale'; personId: string | null }[];
+  /** Par titulaire, le jour où son identité a été vérifiée, sans la sorte de pièce ni rien d'elle [R15, R13]. */
+  identityVerifiedOn: Record<string, string>;
   pieces: { holder: string; category: PieceCategory; sort: string; label: string }[];
   complete: boolean;
   missing: Missing[];
@@ -238,6 +240,13 @@ export class Candidatures {
     const personId = await this.fiche.rootOf(input.personId as string);
     const members = await this.fiche.membersOf(personId);
     const marks = members.map(() => '?').join(', ');
+    // Comme `addableContacts`, pour qui appelle la route sans passer par l'écran (W22) : `missing` et la date de
+    // vérification de l'identité diraient autrement quelque chose du client d'un autre agent [R16].
+    if (viewer.role === 'agent' && (await this.db.first(`SELECT 1 FROM persons WHERE id IN (${marks}) AND agent_id IS NOT ?`, [...members, viewer.userId]))) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', role: String(viewer.role), kind: 'rental_applicant', code: 'not_assigned' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
+    if (members.includes(listing.ownerPersonId)) return { ok: false, rule: null, code: 'unknown_person' };
     if (await this.db.first(`SELECT 1 FROM rental_applications WHERE listing_id = ? AND person_id IN (${marks})`, [listing.id, ...members])) return { ok: false, rule: null, code: 'already_applied' };
     const url = input.dossierFacileUrl === undefined || input.dossierFacileUrl === null ? null : input.dossierFacileUrl;
     if (url !== null && (typeof url !== 'string' || !DOSSIERFACILE.test(url))) return { ok: false, rule: null, code: 'bad_dossierfacile' };
@@ -371,13 +380,16 @@ export class Candidatures {
   }
 
   /** La complétude par la liste écrite, sans écriture ; jamais un avis sur la solvabilité [R104, R14]. */
-  async completeness(app: ApplicationRow): Promise<{ complete: boolean; missing: Missing[] }> {
-    if (app.dossierfacile_url) return { complete: true, missing: [] };
+  async completeness(app: ApplicationRow): Promise<{ complete: boolean; missing: Missing[]; identityVerifiedOn: Record<string, string> }> {
+    if (app.dossierfacile_url) return { complete: true, missing: [], identityVerifiedOn: {} };
     const pieces = await this.db.all<{ holder: string; category: PieceCategory; sort: string }>('SELECT holder, category, sort FROM rental_application_pieces WHERE application_id = ?', [app.id]);
     const guarantors = await this.db.all<{ id: string; kind: 'personne' | 'visale'; person_id: string | null }>('SELECT id, kind, person_id FROM rental_guarantors WHERE application_id = ? ORDER BY added_at, id', [app.id]);
     const missing: Missing[] = [];
+    const identityVerifiedOn: Record<string, string> = {};
     const person = async (holder: string, personId: string) => {
-      if (!(await this.identity.state(app.network_id, personId)).identityVerifiedOn) missing.push({ holder, what: 'identite' });
+      const verifiedOn = (await this.identity.state(app.network_id, personId)).identityVerifiedOn;
+      if (verifiedOn) identityVerifiedOn[holder] = verifiedOn;
+      else missing.push({ holder, what: 'identite' });
       for (const what of REQUIRED) if (!pieces.some((p) => p.holder === holder && p.category === what)) missing.push({ holder, what });
     };
     await person('candidat', app.person_id);
@@ -385,7 +397,7 @@ export class Candidatures {
       if (g.kind === 'personne') await person(g.id, g.person_id!);
       else if (!pieces.some((p) => p.holder === g.id && p.sort === 'visa_visale')) missing.push({ holder: g.id, what: 'visa_visale' });
     }
-    return { complete: missing.length === 0, missing };
+    return { complete: missing.length === 0, missing, identityVerifiedOn };
   }
 
   private async view(app: ApplicationRow): Promise<ApplicationView> {
@@ -403,6 +415,7 @@ export class Candidatures {
       pieces: pieces.map((p) => ({ holder: p.holder, category: p.category, sort: p.sort, label: OFFICIAL_PIECES[p.sort]?.label ?? p.sort })),
       complete: c.complete,
       missing: c.missing,
+      identityVerifiedOn: c.identityVerifiedOn,
     };
   }
 

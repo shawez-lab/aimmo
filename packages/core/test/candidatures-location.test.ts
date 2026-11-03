@@ -213,6 +213,29 @@ describeWithSqlite('W04 · candidatures limitées à la liste officielle', () =>
     }
   });
 
+  describe('W22 · le candidat, par appel direct', () => {
+    it('[R16] le contact d’un autre agent est refusé et le refus au journal ; le bailleur aussi ; la direction peut ranger un contact d’un agent', async () => {
+      const t = await setup();
+      const autre = (await t.store.createPerson({ networkId: t.network.id, agentId: t.bea.id, firstName: 'Autre', lastName: 'Agent' })).id;
+      expect(await t.apps.apply(t.agent, t.listingId, { personId: autre })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+      const refused = (await t.journal.all()).filter((e) => e.type === 'acces.refuse' && e.subject === `rental:${t.listingId}`);
+      expect(refused.map((e) => e.data)).toEqual([expect.objectContaining({ rule: 'R16', kind: 'rental_applicant', code: 'not_assigned' })]);
+      expect(JSON.stringify(refused)).not.toContain(autre);
+      expect(await t.apps.apply(t.agent, t.listingId, { personId: t.owner.id })).toEqual({ ok: false, rule: null, code: 'unknown_person' });
+      expect(await t.db.first('SELECT 1 FROM rental_applications')).toBeNull();
+      expect((await t.apps.apply(t.dir, t.listingId, { personId: autre })).ok).toBe(true);
+    });
+
+    it('[R105] une fiche réunie reste rangée sur la fiche gardée, une seule fois', async () => {
+      const t = await setup();
+      const [gardee, reunie] = [(await t.person(1))!, (await t.person(2))!];
+      await t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES (?, ?, ?, ?, ?, 'test', '2027-07-01T08:00:00.000Z', '2027-07-01T08:00:00.000Z')", [uuid(), t.network.id, t.alex.id, gardee, reunie]);
+      expect((await t.apps.apply(t.agent, t.listingId, { personId: reunie })).ok).toBe(true);
+      expect((await t.db.first<{ person_id: string }>('SELECT person_id FROM rental_applications'))!.person_id).toBe(gardee);
+      expect(await t.apps.apply(t.agent, t.listingId, { personId: gardee })).toEqual({ ok: false, rule: null, code: 'already_applied' });
+    });
+  });
+
   describe('W20 · le garant, par appel direct', () => {
     const merge = (t: Awaited<ReturnType<typeof setup>>, survivor: string, merged: string) =>
       t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES (?, ?, ?, ?, ?, 'test', '2027-07-01T08:00:00.000Z', '2027-07-01T08:00:00.000Z')", [uuid(), t.network.id, t.alex.id, survivor, merged]);

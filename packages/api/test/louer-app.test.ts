@@ -972,6 +972,86 @@ describe('W11 · écran « Louer » de l’application', () => {
       expect(t.posts().at(-1)!.body).toContain('location/l1/candidatures/c2/g.pdf');
     });
 
+    describe('W21 · l’identité, depuis le dossier', () => {
+      const VAULT = 'POST /v1/conformite/personnes/personne-secrete-3/coffre?sorte=passeport&verifie=2027-07-10';
+      const fill = (t: Awaited<ReturnType<typeof run>>) => {
+        t.input('La pièce vue').value = 'passeport';
+        t.input('Vérifiée le').value = '2027-07-10';
+        (t.input('Le fichier de la pièce') as unknown as { files: unknown[] }).files = [FILE];
+      };
+
+      it('[R15] la pièce part au coffre par sa route, jamais au dossier ; ni sa sorte ni son empreinte à l’écran', async () => {
+        const t = await run({ [VAULT]: ok({}) });
+        await t.openL1();
+        await t.openDossier(0);
+        expect(t.body().textContent).toContain('Le candidat : identité à vérifier');
+        fill(t);
+        await t.click(t.byText('Déposer au coffre'));
+        const sent = t.posts().filter((c) => c.url.includes('/coffre'));
+        expect(sent.map((c) => c.url)).toEqual(['/v1/conformite/personnes/personne-secrete-3/coffre?sorte=passeport&verifie=2027-07-10']);
+        expect(t.posts().filter((c) => c.url.includes('/location/'))).toHaveLength(0);
+        expect(t.state()).toBe('Pièce déposée au coffre.');
+        // Aucune pièce d'identité dans la liste de celles du dossier.
+        expect(options(t, 'La pièce').join(' ')).not.toMatch(/identité|passeport/i);
+      });
+
+      it('[R13] une identité vérifiée : le fait et sa date, sans la sorte, sans formulaire', async () => {
+        const verified = [{ ...APPS[0]!, identityVerifiedOn: { candidat: '2027-07-10' } }, APPS[1]!, APPS[2]!];
+        const t = await run({ 'GET /v1/location/l1/candidatures': ok(verified) });
+        await t.openL1();
+        await t.openDossier(0);
+        const text = t.body().textContent ?? '';
+        expect(text).toContain('Le candidat : identité vérifiée le 10/07/2027');
+        expect(text).not.toContain('identité à vérifier');
+        expect(t.byText('Déposer au coffre')).toBeUndefined();
+        expect(text).not.toMatch(/Passeport|Carte d’identité|Empreinte/);
+      });
+
+      it('[R16] un refus de droits, un coffre fermé, une date à venir et une réponse perdue sont dits en français ; rien ne part sans date ni fichier', async () => {
+        const t = await run({ [VAULT]: no(403, { ok: false, rule: 'R90', code: 'role' }) });
+        await t.openL1();
+        await t.openDossier(0);
+        await t.click(t.byText('Déposer au coffre'));
+        expect(t.state()).toBe('Dites d’abord quand la pièce a été vérifiée.');
+        t.input('Vérifiée le').value = '2027-07-10';
+        await t.click(t.byText('Déposer au coffre'));
+        expect(t.state()).toBe('Choisissez d’abord le fichier.');
+        expect(t.posts()).toHaveLength(0);
+        fill(t);
+        await t.click(t.byText('Déposer au coffre'));
+        expect(t.state()).toBe('Le dépôt au coffre revient à l’agent de cette fiche ou au responsable de la conformité.');
+        t.table[VAULT] = no(503, { ok: false, rule: null, code: 'vault_not_configured' });
+        fill(t);
+        await t.click(t.byText('Déposer au coffre'));
+        expect(t.state()).toBe('Le coffre n’est pas encore ouvert : aucune pièce ne peut y être déposée pour le moment.');
+        t.table[VAULT] = no(400, { ok: false, rule: null, code: 'bad_date' });
+        fill(t);
+        await t.click(t.byText('Déposer au coffre'));
+        expect(t.state()).toBe('La date de vérification n’est pas valable : elle ne peut pas être dans l’avenir.');
+        delete t.table[VAULT];
+        fill(t);
+        await t.click(t.byText('Déposer au coffre'));
+        expect(t.state()).toBe('Réponse perdue : la pièce est peut-être au coffre. Rouvrez le logement avant de recommencer.');
+      });
+
+      it('[R15] la pièce d’un garant part sur la fiche du garant ; le candidat vérifié n’est plus proposé', async () => {
+        const withGuarantor = [{ ...APPS[0]!, identityVerifiedOn: { candidat: '2027-07-10' }, guarantors: [{ guarantorId: 'g9', kind: 'personne', personId: 'personne-secrete-9' }] }, APPS[1]!, APPS[2]!];
+        const path = 'POST /v1/conformite/personnes/personne-secrete-9/coffre?sorte=passeport&verifie=2027-07-10';
+        const t = await run({ 'GET /v1/location/l1/candidatures': ok(withGuarantor), [path]: ok({}) });
+        await t.openL1();
+        await t.openDossier(0);
+        expect(t.body().textContent).toContain('Garant 1 : identité à vérifier');
+        expect(options(t, 'Pour qui')).toEqual(['Garant 1']);
+        fill(t);
+        await t.click(t.byText('Déposer au coffre'));
+        expect(t.posts().filter((c) => c.url.includes('/coffre')).map((c) => c.url)).toEqual(['/v1/conformite/personnes/personne-secrete-9/coffre?sorte=passeport&verifie=2027-07-10']);
+      });
+
+      it('[R201] le script du dossier tient toujours son budget', () => {
+        expect(budgetProblems({ html: '', js: LOUER_DOSSIER_SCRIPT }, BUDGETS.page)).toEqual([]);
+      });
+    });
+
     it('[R104] un refus du serveur est dit en français, sans code ; une réponse perdue est dite telle', async () => {
       const t = await run({ [DEP]: ok({ kind: 'piece', ref: 'location/l1/candidatures/c3/r.pdf', sha256: SHA_PDF, size: 8 }), 'POST /v1/location/candidatures/c3/pieces': no(409, { ok: false, rule: 'R104', code: 'one_domicile' }) });
       await t.openL1();
