@@ -30,9 +30,10 @@
  *   en vente : le chiffre est sévère plutôt que flatteur.
  */
 import type { Viewer } from '../acces/droits.ts';
-import { ALERT_PURPOSE } from '../acquereurs/alertes.ts';
+import { ALERT_CHANNELS, ALERT_PURPOSE } from '../acquereurs/alertes.ts';
+import type { OutboundChannelName } from '../db/types.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import { DEFAULT_SEND_SETTINGS } from '../envoi/decision.ts';
+import { DEFAULT_SEND_SETTINGS, consentInForce } from '../envoi/decision.ts';
 import { afterSendingTime, localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -295,11 +296,16 @@ export class EngagementsTenus {
       'SELECT COUNT(*) AS n FROM property_alerts a WHERE a.network_id = ? AND a.created_at >= ? AND a.created_at < ? AND NOT EXISTS (SELECT 1 FROM property_on_sale s WHERE s.property_id = a.property_id)',
       inMonth,
     );
-    const consents = await this.db.all<{ person_id: string; given_at: string; withdrawn_at: string | null }>('SELECT person_id, given_at, withdrawn_at FROM consents WHERE network_id = ? AND purpose = ?', [net, ALERT_PURPOSE]);
+    const consents = await this.db.all<{ person_id: string; purpose: string; channel: OutboundChannelName; given_at: string; withdrawn_at: string | null }>('SELECT person_id, purpose, channel, given_at, withdrawn_at FROM consents WHERE network_id = ? AND purpose = ?', [net, ALERT_PURPOSE]);
+    const exclusions = await this.db.all<{ person_id: string; channel: string | null; noted_at: string; lifted_at: string | null }>('SELECT person_id, channel, noted_at, lifted_at FROM exclusions WHERE network_id = ?', [net]);
     const rootOf = await this.mergedRoots(net);
+    /** La personne pouvait-elle recevoir l'alerte à cet instant, sur un canal ? Comme l'envoi : un accord périmé ne vaut pas [R03, R02]. */
     const askedBy = (root: string, at: string): boolean => {
       const t = Date.parse(at);
-      return consents.some((c) => rootOf(c.person_id) === root && Date.parse(c.given_at) <= t && (c.withdrawn_at === null || Date.parse(c.withdrawn_at) > t));
+      const own = { consents: consents.filter((c) => rootOf(c.person_id) === root), exclusions: exclusions.filter((x) => rootOf(x.person_id) === root) };
+      const shut = own.exclusions.filter((x) => Date.parse(x.noted_at) <= t && (x.lifted_at === null || Date.parse(x.lifted_at) > t));
+      if (shut.some((x) => x.channel === null)) return false;
+      return own.consents.some((c) => ALERT_CHANNELS.includes(c.channel) && !shut.some((x) => x.channel === c.channel) && consentInForce(c as never, own as never, t));
     };
     const cases: Case[] = [];
     let setAside = Number(undated?.n ?? 0);
