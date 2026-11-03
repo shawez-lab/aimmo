@@ -1989,7 +1989,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : H38 pour un usage réel, rien pour le code.
 
 ### X27 · Les compartiments R2 restent liés après un déploiement
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03), lecture prudente : noms de compartiments fixes (`aimmo-pieces`, `aimmo-medias`, `aimmo-coffre`, `aimmo-commerces`) ; liste illisible : la mise en ligne continue sans liaison et le résumé le dit, plutôt que de bloquer tout le socle, à revoir une fois des documents rangés. Reste : une liaison à la main sous un autre nom est perdue ; jamais joué sur un vrai runner ni un vrai compartiment. Relecture forte 2 P1 corrigés ; Codex non attendu (H03) ; #337.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : CE22
 - Cahier : Architecture technique ; R17.
 - Objectif : trouvé par la relecture forte de CE22 : `wrangler.toml` ne déclare aucun `[[r2_buckets]]`, et d'après le code de wrangler, `wrangler deploy` retire une liaison posée à la main dans Cloudflare : `PIECES`, `MEDIA`, `COFFRE` et `COMMERCES` disparaîtraient au déploiement suivant, et leurs documents deviendraient indisponibles. Déclarer au déploiement la liaison de chaque compartiment qui existe, et seulement de ceux-là, car une liaison vers un compartiment absent ferait échouer la mise en ligne.
