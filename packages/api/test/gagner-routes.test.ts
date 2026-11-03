@@ -85,6 +85,7 @@ const SAMPLES: Record<string, string> = {
   'gagner.recommandation': '/gagner/recommandations',
   'gagner.recommandations_envois': '/gagner/recommandations/mes-envois',
   'gagner.recommandations_a_appeler': '/gagner/recommandations/a-appeler',
+  'gagner.recommandations_agents': '/gagner/recommandations/agents',
   'gagner.recommandation_attribuer': '/gagner/recommandations/r1/attribuer',
   'gagner.recommandation_appel_fait': '/gagner/recommandations/r1/appel-fait',
   'gagner.fin_de_bail': '/gagner/fiches/p1/fin-de-bail',

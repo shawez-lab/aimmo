@@ -286,6 +286,89 @@ describe('G13 · écran « Gagner des mandats » de l’application', () => {
     expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
   });
 
+  describe('G16 · la direction attribue une recommandation sans agent', () => {
+    const ITEM = { origin: 'partner', recommendationId: 'rec9', personId: 'per9', firstName: 'Hugo', sourceLabel: 'Recommandé par Étude Essai', channel: 'phone', dueAt: '2027-10-13T08:00:00.000Z', assignable: true };
+    const AGENTS = [{ agentId: 'ag1', firstName: 'Alex', lastName: 'Agent' }, { agentId: 'ag2', firstName: INJECTED, lastName: 'Essai' }];
+    const LIST = { 'GET /v1/gagner/recommandations/a-appeler': ok([ITEM]) };
+    const POST = 'POST /v1/gagner/recommandations/rec9/attribuer';
+    const ready = async (answers: Record<string, Answer> = {}) => {
+      const t = await run({ ...LIST, 'GET /v1/gagner/recommandations/agents': ok(AGENTS), ...answers });
+      await t.ouvrir();
+      return t;
+    };
+
+    it('[R16] ni « Appel fait » ni liste d’agents lue d’avance : le geste charge la liste, dans l’ordre reçu, en texte', async () => {
+      const t = await ready();
+      expect(t.byText('Appel fait')).toBeUndefined();
+      expect(t.calls.some((c) => c.url.endsWith('/recommandations/agents'))).toBe(false);
+      await t.click(t.byText('Choisir l’agent'));
+      const pick = t.input('Agent');
+      expect(pick.children.map((o) => o.attributes.value ?? (o as unknown as { value: string }).value)).toEqual(['', 'ag1', 'ag2']);
+      expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    });
+
+    it('[R16] sans choix, rien ne part ; le choix part, et l’écran relit la liste', async () => {
+      let list = [ITEM];
+      const t = await ready({ 'GET /v1/gagner/recommandations/a-appeler': async () => Response.json({ ok: true, data: list }), [POST]: async () => { list = []; return Response.json({ ok: true, data: { assigned: true } }); } });
+      await t.click(t.byText('Choisir l’agent'));
+      await t.click(t.byText('Attribuer'));
+      expect(t.posts()).toHaveLength(0);
+      expect(t.state()).toBe('Choisissez un agent.');
+      t.input('Agent').value = 'ag1';
+      await t.click(t.byText('Attribuer'));
+      expect(t.posts().map((c) => [c.url, c.body])).toEqual([['/v1/gagner/recommandations/rec9/attribuer', JSON.stringify({ agentId: 'ag1' })]]);
+      expect(t.state()).toContain('Recommandation attribuée');
+      expect(t.byText('Attribuer')).toBeUndefined();
+    });
+
+    it('les refus sont dits en français, sans code ; la réponse perdue n’annonce rien', async () => {
+      const cases: [string, string][] = [['already_assigned', 'déjà un agent'], ['bad_agent', 'plus en activité'], ['awaiting_handover', 'passation'], ['followed_by_other', 'déjà suivie']];
+      for (const [code, text] of cases) {
+        const t = await ready({ [POST]: no(409, { ok: false, rule: null, code }) });
+        await t.click(t.byText('Choisir l’agent'));
+        t.input('Agent').value = 'ag1';
+        await t.click(t.byText('Attribuer'));
+        expect(t.state()).toContain(text);
+        expect(t.state()).not.toContain(code);
+      }
+      const lost = await ready();
+      await lost.click(lost.byText('Choisir l’agent'));
+      lost.input('Agent').value = 'ag1';
+      await lost.click(lost.byText('Attribuer'));
+      expect(lost.state()).toContain('rien n’est sûr');
+      expect(lost.state()).not.toContain('attribuée');
+    });
+
+    it('un double appui n’envoie qu’une demande', async () => {
+      let answer: (r: Response) => void = () => undefined;
+      const t = await ready({ [POST]: () => new Promise<Response>((r) => { answer = r; }) });
+      await t.click(t.byText('Choisir l’agent'));
+      t.input('Agent').value = 'ag1';
+      const b = t.byText('Attribuer')!;
+      b.listeners.click!({});
+      b.listeners.click!({});
+      await settle();
+      expect(t.posts()).toHaveLength(1);
+      answer(Response.json({ ok: false, rule: null, code: 'bad_agent' }, { status: 409 }));
+      await settle();
+      // La réponse reçue, le geste redevient possible.
+      b.listeners.click!({});
+      await settle();
+      expect(t.posts()).toHaveLength(2);
+    });
+
+    it('aucun agent en activité, ou liste perdue : c’est dit, rien n’est proposé', async () => {
+      const empty = await ready({ 'GET /v1/gagner/recommandations/agents': ok([]) });
+      await empty.click(empty.byText('Choisir l’agent'));
+      expect(empty.body().all().map((e) => e.textContent).join(' ')).toContain('Aucun agent en activité');
+      const off = await run(LIST);
+      await off.ouvrir();
+      await off.click(off.byText('Choisir l’agent'));
+      expect(off.state()).toContain('Pas de réseau');
+      expect(off.byText('Attribuer')).toBeUndefined();
+    });
+  });
+
   it('une partie qui manque est dite à part ; sans réseau, l’écran le dit ; une clé refusée au téléchargement efface tout', async () => {
     const t = await run({ 'GET /v1/gagner/relances': no(403, { ok: false, rule: 'R16', code: 'agent_file_incomplete' }) });
     await t.ouvrir();

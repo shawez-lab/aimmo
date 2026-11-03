@@ -263,6 +263,26 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(view.consents.map((c) => c.channel)).toEqual(['email']);
   });
 
+  it('[R16] [G16] seule la direction lit les agents à qui attribuer, par nom, sans autre donnée ; seule sa file dit « à attribuer »', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    await t.gagner.recommend(t.as(p), t.input());
+    const agents = await t.gagner.assignableAgents(t.dir);
+    expect(agents.ok && agents.value.map((a) => Object.keys(a).sort())[0]).toEqual(['agentId', 'firstName', 'lastName']);
+    expect(agents.ok && agents.value.map((a) => a.agentId)).toEqual(expect.arrayContaining([t.alex.id, t.sam.id]));
+    expect(await t.gagner.assignableAgents(t.agent())).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    // Un agent parti n'est plus proposé.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.sam.id]);
+    const after = await t.gagner.assignableAgents(t.dir);
+    expect(after.ok && after.value.map((a) => a.agentId)).not.toContain(t.sam.id);
+    const dirList = await t.gagner.toCall(t.dir);
+    expect(dirList.ok && dirList.value.map((r) => r.assignable)).toEqual([true]);
+    const [row] = await t.rows();
+    await t.gagner.assign(t.dir, row!.id, t.alex.id);
+    const alexList = await t.gagner.toCall(t.agent());
+    expect(alexList.ok && alexList.value.map((r) => r.assignable)).toEqual([undefined]);
+  });
+
   it('[R16] deux recommandations de la même personne sans agent : la seconde va d’elle-même à l’agent qui a reçu la première', async () => {
     const t = await setup();
     const p = await t.partner('Étude Essai');

@@ -48,6 +48,10 @@ const REFUSALS: Record<string, string> = {
   text_link: 'Le texte ne porte aucun lien ni adresse mail.',
   text_reward: 'Aucune récompense ni cadeau dans une relance.',
   text_wording: 'Écrivez « agent immobilier » et « offert », sans parler d’outil.',
+  already_assigned: 'Cette recommandation a déjà un agent : relisez la liste.',
+  bad_agent: 'Cet agent n’est plus en activité : choisissez-en un autre.',
+  awaiting_handover: 'Cette personne attend la passation d’un agent parti : elle se règle par son départ.',
+  followed_by_other: 'Cette personne est déjà suivie par un autre agent : choisissez-le.',
 };
 
 export const GAGNER_HOME_HTML = `<section class="bloc" aria-labelledby="titre-gagner-accueil">
@@ -287,6 +291,7 @@ globalThis.AIMMO_GAGNER = function (t) {
       li.appendChild(el('strong', r.firstName || 'Prénom inconnu'));
       li.appendChild(el('p', r.sourceLabel + ' · accord pour ' + (CHANNELS[r.channel] || 'un canal') + ' · à appeler avant le ' + when(r.dueAt), 'doux'));
       li.appendChild(t.ficheButton(r.personId));
+      if (r.assignable) { li.appendChild(assignBox(r)); ul.appendChild(li); return; }
       li.appendChild(button('Appel fait', function () {
         state('Envoi…');
         send('/v1/gagner/recommandations/' + encodeURIComponent(r.recommendationId) + '/appel-fait', 'POST').then(function (x) {
@@ -298,6 +303,45 @@ globalThis.AIMMO_GAGNER = function (t) {
       ul.appendChild(li);
     });
     box.appendChild(ul);
+    return box;
+  }
+
+  /* G16 · une recommandation sans agent : la direction choisit l'agent dans la liste, dans l'ordre reçu [R35]. */
+  function assignBox(r) {
+    var box = el('div');
+    box.appendChild(el('p', 'Sans agent : personne ne l’appellera tant qu’elle n’est pas attribuée.', 'doux'));
+    var loading = false;
+    box.appendChild(button('Choisir l’agent', function () {
+      if (loading) return false;
+      loading = true;
+      state('Chargement…');
+      return send('/v1/gagner/recommandations/agents', 'GET').then(function (res) {
+        loading = false;
+        if (res.gone) return;
+        var agents = list(res);
+        if (!agents) { state(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : refusal(res, 'La liste des agents n’est pas disponible.')); return; }
+        state('');
+        clear(box);
+        var usable = agents.filter(function (a) { return ID.test(a.agentId); });
+        if (!usable.length) { box.appendChild(el('p', 'Aucun agent en activité : rien à attribuer pour le moment.', 'etat')); return; }
+        var options = { '': 'Choisissez un agent' };
+        usable.forEach(function (a) { options[a.agentId] = a.firstName + ' ' + a.lastName; });
+        var pick = select(box, 'gagner-attribuer-' + r.recommendationId, 'Agent', options, '');
+        var busy = false;
+        box.appendChild(button('Attribuer', function () {
+          if (busy) return false;
+          if (!pick.value) { state('Choisissez un agent.'); return false; }
+          busy = true;
+          state('Envoi…');
+          return send('/v1/gagner/recommandations/' + encodeURIComponent(r.recommendationId) + '/attribuer', 'POST', { agentId: pick.value }).then(function (x) {
+            busy = false;
+            if (x.gone) return false;
+            if (!x.ok) { state(refusal(x, 'La recommandation n’est pas attribuée.')); return false; }
+            return open('Recommandation attribuée : l’agent la voit dans sa liste.');
+          });
+        }));
+      });
+    }));
     return box;
   }
 

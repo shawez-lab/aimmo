@@ -64,6 +64,15 @@ export interface RecommendationToCall {
   /** Le seul canal par lequel la personne a accepté d'être contactée : `phone` pour un appel. */
   channel: RecommendationConsentChannel;
   dueAt: string;
+  /** Pour la direction : la personne n'a pas d'agent, la recommandation est à attribuer, pas à appeler (G16). */
+  assignable?: true;
+}
+
+/** Un agent à qui la direction peut attribuer une recommandation : son nom, rien d'autre (G16) [R16]. */
+export interface AssignableAgent {
+  agentId: string;
+  firstName: string;
+  lastName: string;
 }
 
 interface PartnerRecommendationRow {
@@ -357,7 +366,7 @@ export class RecommandationsGagner {
       if (!(await this.hasConsent(root, at, channel))) return;
       const read = await this.acces.readFiche(viewer, root);
       if (!read.ok || read.view !== 'full') return;
-      out.push({ origin, recommendationId: id, personId: root, firstName: read.value.members.map((m) => m.first_name).find((n) => n) ?? typed, sourceLabel, channel, dueAt });
+      out.push({ origin, recommendationId: id, personId: root, firstName: read.value.members.map((m) => m.first_name).find((n) => n) ?? typed, sourceLabel, channel, dueAt, ...(viewer.role === 'direction' ? { assignable: true as const } : {}) });
     };
     if (viewer.role === 'agent') {
       const clients = await this.db.all<{ id: string; referred_id: string; first_name: string | null; call_due_at: string }>(
@@ -381,6 +390,16 @@ export class RecommandationsGagner {
     out.sort((a, b) => (a.dueAt < b.dueAt ? -1 : a.dueAt > b.dueAt ? 1 : a.recommendationId < b.recommendationId ? -1 : a.recommendationId > b.recommendationId ? 1 : 0));
     await appendEvent(this.journal, { type: 'recommandations.file_lue', actor: this.actor(viewer), subject: null, data: { rule: 'R16', count: out.length } }, this.now);
     return { ok: true, value: out };
+  }
+
+  /** Les agents en activité du réseau, par nom, pour la seule direction : ni chiffre ni classement [R16, R35]. */
+  async assignableAgents(viewer: Viewer): Promise<RecommendationResult<AssignableAgent[]>> {
+    if (viewer.role !== 'direction') return this.refused(viewer, null, 'role');
+    const rows = await this.db.all<{ id: string; first_name: string; last_name: string }>(
+      'SELECT id, first_name, last_name FROM agents WHERE network_id = ? AND status = ? ORDER BY last_name, first_name, id',
+      [viewer.networkId, 'active'],
+    );
+    return { ok: true, value: rows.map((a) => ({ agentId: a.id, firstName: a.first_name, lastName: a.last_name })) };
   }
 
   /** La direction donne à un agent actif une recommandation de partenaire qui n'en avait pas ; une seule fois. */
