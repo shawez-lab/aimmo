@@ -40,7 +40,7 @@ const TOKEN = '([a-z]{20,80})';
 /** Ce que le dépôt lit et écrit du compartiment des dossiers protégés (R2) : du texte, le dossier n'en sert pas d'autre [R114]. */
 export interface R2DossierBucket {
   put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
-  get(key: string): Promise<{ text(): Promise<string> } | null>;
+  get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
 }
 
 /** Le stockage réel des documents du dossier (H38) : un texte par référence, ou rien. */
@@ -48,7 +48,8 @@ export class R2DossierStorage implements DossierStorage {
   constructor(private readonly bucket: R2DossierBucket) {}
   async read(ref: string): Promise<string | null> {
     const object = await this.bucket.get(ref);
-    return object ? object.text() : null;
+    // `text()` de R2 retirerait une marque d'ordre en tête : le texte relu ne serait plus celui déposé, ni son empreinte.
+    return object ? new TextDecoder('utf-8', { ignoreBOM: true }).decode(await object.arrayBuffer()) : null;
   }
   async write(ref: string, content: string): Promise<void> {
     await this.bucket.put(ref, content, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
