@@ -23,7 +23,7 @@
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
 import { appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
@@ -386,11 +386,15 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
     case 'agents': {
       // Réservée au site du réseau : le site d'un agent ne parle que de lui [R153].
       if (site.kind !== 'reseau') return notFound();
-      return html(renderAgentsList(await svc.pageAgent.publicAgents(networkId)));
+      const number = parseDirectoryPage(url.searchParams);
+      const list = number === null ? null : renderAgentsList(await svc.pageAgent.publicAgents(networkId), number);
+      return list === null ? notFound() : html(list);
     }
     case 'listePrix': {
       if (site.kind !== 'reseau') return notFound();
-      return html(renderPricesList(await svc.referencement.priceCommunes(networkId)));
+      const number = parseDirectoryPage(url.searchParams);
+      const list = number === null ? null : renderPricesList(await svc.referencement.priceCommunes(networkId), number);
+      return list === null ? notFound() : html(list);
     }
     case 'prix': {
       // Les pages de prix vivent sur le site du réseau seulement : une seule page de référence [R153].

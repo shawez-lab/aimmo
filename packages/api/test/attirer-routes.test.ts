@@ -5,6 +5,7 @@ import type { EstimatedKind, Sale } from '../../core/src/estimation/fourchette.t
 import { attirerRoutes, handleAttirerPublic, listingReference, type AttirerServices } from '../src/attirer.ts';
 import { htmlProblems } from '../../core/src/design/audit.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
+import { AGENTS_PER_PAGE, COMMUNES_PER_PAGE, renderAgentsList, renderPricesList } from '../../core/src/attirer/annuaire-site.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
 // Réseau, agents, biens, sites, ventes et contours inventés.
@@ -100,6 +101,7 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     const first = await (await t.get(`${NET}/agents`))!.text();
     expect(first).toContain('href="/agents/ag-1"');
     expect(first).toContain('123 456 789');
+    expect((await t.get(`${NET}/agents/ag-1`))!.status).toBe(200);
     // Lou n'a pas ses mentions ; l'agent d'un autre réseau n'y est jamais.
     expect(first).not.toContain('Lou');
     expect(first).not.toContain('ag-9');
@@ -115,6 +117,27 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect(await (await t.get(`${NET}/agents`))!.text()).not.toContain('ag-3');
     expect((await t.get(`${CAMILLE}/agents`))!.status).toBe(404);
     expect((await t.get('https://inconnu.exemple.test/agents'))!.status).toBe(404);
+  });
+
+  it('[R201] RS03 : les deux listes vont par pages ; une page au-delà de la fin ou un paramètre inattendu : 404', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    for (const path of ['/agents', '/prix']) {
+      for (const query of ['page=2', 'page=x', 'page=0', 'autre=1', 'page=1&page=1']) expect((await t.get(`${NET}${path}?${query}`))!.status, `${path}?${query}`).toBe(404);
+      expect((await t.get(`${NET}${path}?page=1`))!.status).toBe(200);
+    }
+    const many = Array.from({ length: AGENTS_PER_PAGE + 1 }, (_, i) => ({ agentId: `a${i}`, name: `Agent ${i}`, zone: null, mentions: { rsacNumber: '1', rsacRegistry: 'D', cardNumber: 'C', cardHolder: 'H' } }));
+    const one = renderAgentsList(many)!;
+    expect(one).toContain('href="/agents?page=2"');
+    expect(one).not.toContain('/agents/a100"');
+    const two = renderAgentsList(many, 2)!;
+    expect(two).toContain('/agents/a100"');
+    expect(two).toContain('href="/agents"');
+    expect(renderAgentsList(many, 3)).toBeNull();
+    const towns = Array.from({ length: COMMUNES_PER_PAGE + 1 }, (_, i) => ({ slug: `v${i}`, name: `Ville ${i}` }));
+    expect(renderPricesList(towns)).toContain('href="/prix?page=2"');
+    expect(renderPricesList(towns, 2)).toContain(`/prix/v${COMMUNES_PER_PAGE}"`);
+    expect(renderPricesList(towns, 3)).toBeNull();
   });
 
   it('[R150] [R153] RS03 : la liste des communes mène à une page qui répond ; une zone retirée en sort ; 404 sur le site d’un agent', async () => {
