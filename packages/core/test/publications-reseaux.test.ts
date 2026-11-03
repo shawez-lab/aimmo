@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, annonces, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { EVENT_HEADLINES, Publications, trialSocialChannel, type CertifiedPhoto, type SocialChannel, type SocialPayload, type SocialWriter } from '../src/studio/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -41,7 +41,7 @@ const MENTIONS = 'Prix : 230 000 € honoraires inclus, dont 4,55 % TTC à la ch
 const photo = (p: string, n: number) => `biens/${p}/0000000${n}-0000-4000-8000-000000000000.jpg`;
 const consent = (p: string, n: number) => `biens/${p}/accords/0000000${n}-0000-4000-8000-0000000000cc.pdf`;
 
-async function setup(opts: { writer?: SocialWriter | null; failing?: string[] } = {}) {
+async function setup(opts: { writer?: SocialWriter | null; failing?: string[]; origin?: NonNullable<ConstructorParameters<typeof Publications>[3]['origin']>; postRef?: string } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = Date.parse('2027-10-10T08:00:00.000Z');
@@ -65,6 +65,7 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[] } 
     post: async (payload: SocialPayload) => {
       if (failing.has(c)) throw new Error('panne');
       received.push({ ...payload, channel: c });
+      return opts.postRef ? { postRef: opts.postRef } : undefined;
     },
   }));
   const pubs = new Publications(
@@ -83,6 +84,7 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[] } 
         },
       },
       channels,
+      ...(opts.origin ? { origin: opts.origin } : {}),
     },
     { now, writer: opts.writer === undefined ? null : opts.writer, timeoutMs: 50 },
   );
@@ -98,7 +100,7 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[] } 
     if (!v.ok) throw new Error(v.code);
     return prep.value.id;
   };
-  return { db, pubs, network, alex, sam, p, state, received, as, alexV, ready, failing, setClock: (iso: string) => (clock = Date.parse(iso)) };
+  return { db, journal, pubs, network, alex, sam, p, state, received, as, alexV, ready, failing, setClock: (iso: string) => (clock = Date.parse(iso)) };
 }
 
 describeWithSqlite('X05 · publications prêtes pour chaque événement', () => {
@@ -319,6 +321,88 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
       ['linkedin', 'envoye', 'essai'],
       ['instagram', 'envoye', 'essai'],
     ]);
+  });
+
+  describe('AT18 · le lien marqué et la référence du réseau', () => {
+    const targets = [{ channel: 'instagram', account: 'agent' }];
+    it('[R156] la publication part avec le lien de son contenu ; la référence rendue par le réseau la relie, une seule fois', async () => {
+      const links: unknown[][] = [];
+      const seen: unknown[][] = [];
+      const t = await setup({
+        postRef: 'post-ext-1',
+        origin: {
+          studioLink: async (...a) => (seen.push(a), { contentId: 'codecontenu1', link: 'https://reseau.exemple.test/biens/x?o=codecontenu1' }),
+          linkPost: async (...a) => (links.push(a), { ok: true }),
+        },
+      });
+      const id = await t.ready();
+      expect((await t.pubs.publish(t.alexV, id, targets)).ok).toBe(true);
+      expect(t.received[0]!.link).toBe('https://reseau.exemple.test/biens/x?o=codecontenu1');
+      expect(seen).toEqual([[t.network.id, 'publication', id, t.p.id]]);
+      expect(links).toEqual([[t.network.id, 'codecontenu1', 'instagram', 'post-ext-1']]);
+      // Un réseau d'où rien ne remonte n'est pas une panne ; un envoi réussi ne se refait pas, donc rien ne se relie deux fois.
+      await t.pubs.publish(t.alexV, id, targets);
+      expect(links).toHaveLength(1);
+      expect((await t.journal.all()).some((e) => e.type === 'studio.publication.origine_indisponible')).toBe(false);
+    });
+
+    it('un bien sans page en ligne : pas de lien, l’envoi part quand même', async () => {
+      const t = await setup({ origin: { studioLink: async () => ({ contentId: 'codecontenu1', link: null }), linkPost: async () => ({ ok: true }) } });
+      const r = await t.pubs.publish(t.alexV, await t.ready(), targets);
+      expect(r.ok).toBe(true);
+      expect(t.received[0]!.link).toBeNull();
+    });
+
+    it('[R13] une panne de l’origine n’empêche aucun envoi ; elle est au journal, sans donnée', async () => {
+      const t = await setup({ postRef: 'post-ext-2', origin: { studioLink: async () => { throw new TypeError('panne 06 00 00 00 00'); }, linkPost: async () => ({ ok: true }) } });
+      const r = await t.pubs.publish(t.alexV, await t.ready(), targets);
+      expect(r.ok && r.value.sends).toMatchObject([{ channel: 'instagram', outcome: 'envoye' }]);
+      expect(t.received[0]!.link).toBeNull();
+      const down = (await t.journal.all()).filter((e) => e.type === 'studio.publication.origine_indisponible');
+      expect(down.map((e) => e.data)).toEqual([{ rule: 'R156', step: 'lien', error: 'TypeError' }]);
+      const u = await setup({ postRef: 'post-ext-3', origin: { studioLink: async () => ({ contentId: 'codecontenu1', link: null }), linkPost: async () => { throw new Error('panne'); } } });
+      const v = await u.pubs.publish(u.alexV, await u.ready(), targets);
+      expect(v.ok && v.value.sends).toMatchObject([{ outcome: 'envoye' }]);
+      expect((await u.journal.all()).filter((e) => e.type === 'studio.publication.origine_indisponible').map((e) => e.data)).toEqual([{ rule: 'R156', step: 'liaison', error: 'Error' }]);
+    });
+
+    it('[R13] la liaison en panne et le journal aussi : l’envoi reste noté, la cible suivante est servie, rien ne repart', async () => {
+      const box: { t?: Awaited<ReturnType<typeof setup>> } = {};
+      const t = await setup({
+        postRef: 'post-ext-6',
+        origin: {
+          studioLink: async () => ({ contentId: 'codecontenu1', link: null }),
+          linkPost: async () => {
+            // Le raté survient juste après l'envoi noté : la note de panne échoue, le reste du journal revient ensuite.
+            const j = box.t!.journal as unknown as { append: unknown };
+            const real = j.append;
+            j.append = async () => {
+              j.append = real;
+              throw new Error('journal');
+            };
+            throw new Error('panne');
+          },
+        },
+      });
+      box.t = t;
+      const id = await t.ready();
+      const both = [{ channel: 'instagram', account: 'agent' }, { channel: 'facebook', account: 'agent' }];
+      const r = await t.pubs.publish(t.alexV, id, both);
+      expect(r.ok && r.value.sends.map((x) => [x.channel, x.outcome]).sort()).toEqual([['facebook', 'envoye'], ['instagram', 'envoye']]);
+      expect(t.received.map((x) => x.channel)).toEqual(['instagram', 'facebook']);
+      await t.pubs.publish(t.alexV, id, both);
+      expect(t.received).toHaveLength(2);
+      expect(await t.db.all('SELECT COUNT(*) AS n FROM social_post_sends')).toEqual([{ n: 2 }]);
+    });
+
+    it('un réseau d’où aucun commentaire ne remonte n’est pas une panne ; une référence déjà prise est notée', async () => {
+      const t = await setup({ postRef: 'post-ext-4', origin: { studioLink: async () => ({ contentId: 'codecontenu1', link: null }), linkPost: async () => ({ ok: false, code: 'bad_channel' }) } });
+      await t.pubs.publish(t.alexV, await t.ready(), [{ channel: 'linkedin', account: 'agent' }]);
+      expect((await t.journal.all()).some((e) => e.type === 'studio.publication.origine_indisponible')).toBe(false);
+      const u = await setup({ postRef: 'post-ext-5', origin: { studioLink: async () => ({ contentId: 'codecontenu1', link: null }), linkPost: async () => ({ ok: false, code: 'post_taken' }) } });
+      await u.pubs.publish(u.alexV, await u.ready(), targets);
+      expect((await u.journal.all()).filter((e) => e.type === 'studio.publication.origine_indisponible').map((e) => e.data)).toEqual([{ rule: 'R156', step: 'post_taken', error: 'inconnue' }]);
+    });
   });
 
   it('[R16] [R17] seuls l’agent du bien et la direction préparent ; rien ne s’efface', async () => {
