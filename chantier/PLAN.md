@@ -1846,7 +1846,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X16 · Rétractation et début anticipé d'un mandat à l'écran
-- Statut : fait (2026-11-03), par D16 : vérifié route par route, les deux gestes et leurs tests sont dans `app/mandat.ts` et `mandat-app.test.ts`
+- Statut : fait (2026-11-03)
+- Reste : faite par D16 : vérifié route par route, les deux gestes et leurs tests sont dans `app/mandat.ts` et `mandat-app.test.ts`.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D03
 - Cahier : M06 ; R16, R201.
 - Objectif : `mandat.retractation` et `mandat.debut_anticipe` n'ont aucun geste à l'écran. Lire d'abord les routes et le fichier `app/mandat.ts`.
