@@ -3622,7 +3622,8 @@ Découpé le 2026-11-03 par la voie 1 : le cahier demande « copie chiffrée cha
 Décidé, lecture prudente : la restauration à un instant passé est celle de D1 (Time Travel), rien à coder ; la copie chiffrée est le second filet, hors de D1. Une copie ne se restaure que dans une base neuve : rien n'est jamais écrasé. La durée de garde des copies et le rejeu des effacements après une restauration sont tranchés par SV02.
 
 ### SV01 · La copie chiffrée de la base, et sa restauration vérifiée
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#361). Relecture forte 4 P1 traités ; Codex non attendu (H03). Rien n'est branché : SV02.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : aucune
 - Cahier : Architecture technique, « Sauvegardes » ; Indicateurs et tests, « Une restauration complète de la base de test ».
 - Objectif : copier toute la base, schéma et lignes, en morceaux chiffrés derrière une interface de stockage ; la restaurer dans une base neuve et prouver qu'elle est identique.
