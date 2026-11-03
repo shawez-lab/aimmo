@@ -2447,7 +2447,8 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y10 · Importer les loyers de marché depuis l'écran du réseau
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03), lecture prudente : trois appels de suite sans ligne de plus arrêtent l'import, et l'écran dit de redéposer le même fichier ; le même fichier sous un autre millésime est refusé (`millesime_different`), car le serveur répondait « complet » en gardant l'ancien ; un repli sur un autre type de logement est dit. Relecture forte : 2 P1 corrigés ; Codex à sa limite, fusion sans lui (#295). Écran non ouvert dans un navigateur.
 - Trouvé le 2026-11-03 par la voie 1 : rien n'appelle `/v1/investir/loyers` à l'écran, et H34 demande à Shawez d'importer ce fichier. Vérifié au passage, à retirer des restes de la voie 2 : M09 comparatif et historique sont déjà à l'écran par `/suivi`, et M11 remerciements et satisfaction par `/apres-vente/dossiers`.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : Y02
 - Cahier : M17, « Rendement calculé par le code » ; R122, R16, R10, R201.
