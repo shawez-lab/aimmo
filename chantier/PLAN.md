@@ -1686,6 +1686,28 @@ Trouvé le 2026-11-02 par la voie 2 : l'écran « Commerces » lit les étapes d
 - Critères : seule la vue publique et la présentation validée, jamais un chiffre [R110] (test) ; aucun envoi sans accord en cours, en mode essai [R03, R26] (tests) ; réponse perdue dite telle [R10] (test) ; budget tenu [R201] (test).
 - Attend : rien pour l'écran.
 
+**M15 · La fin de la location à l'écran.**
+
+Voie : 2
+
+Trouvé le 2026-11-03 par la voie 2, en comparant les routes de `packages/api/src/location.ts` aux appels de `packages/api/app/louer.ts`. Vérifier d'abord chaque route, le comparatif étant rapide. Script à part, comme `/app/commerces-repreneurs.js`, chargé au premier geste.
+
+### W16 · Remise des clés et gestion par un partenaire à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W08, W11
+- Cahier : M15 Louer ; R107, R108, R73, R74, R16, R201.
+- Objectif : depuis la location, l'agent range la remise des clés, lit les honoraires dus, et confie la gestion à un partenaire carte G, par les routes `/location/<id>/remise-des-cles` et `/location/<id>/gestion`.
+- Critères : la remise lit la signature réelle du bail, jamais celle d'essai, dit en français [R108] (test) ; seul l'agent du bien ou la direction agit [R16] (test) ; réponse perdue dite telle [R10] (test) ; script à part, budget tenu [R201] (test).
+- Attend : rien pour l'écran ; H24 pour une signature réelle.
+
+### W17 · Modèles de bail de la direction à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11
+- Cahier : M15 Louer ; R16, R17, R201.
+- Objectif : la direction lit le modèle en vigueur, range une nouvelle version et la valide, par les routes `/location/modeles-bail`.
+- Critères : réservé à la direction [R16] (test) ; une nouvelle version s'ajoute, l'ancienne reste [R17] (test) ; un modèle non validé est dit d'essai (test) ; budget tenu [R201] (test).
+- Attend : rien pour l'écran ; H08 pour un modèle réel.
+
 **M14 · Réseau et académie, juillet 2027.**
 
 Voie : 2
