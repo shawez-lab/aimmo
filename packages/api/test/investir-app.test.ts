@@ -402,3 +402,121 @@ describe('X20 · ranger la commune d’un bien', () => {
     expect(t.byText('Ranger la commune')).toBeUndefined();
   });
 });
+
+describe('Y14 · retrouver les calculs et les notes d’un projet', () => {
+  const HISTORY = {
+    calculs: [
+      { id: 'c1', createdAt: '2027-09-14T08:00:00.000Z', status: 'complet', reference: INJECTED },
+      { id: 'c2', createdAt: '2027-09-13T08:00:00.000Z', status: 'incomplet', reference: null },
+    ],
+    notes: [
+      { id: 'n1', calculationId: 'c1', createdAt: '2027-09-14T09:00:00.000Z', status: 'validee', validatedAt: '2027-09-15T09:00:00.000Z', reference: 'REF-I-1' },
+      { id: 'n2', calculationId: 'c1', createdAt: '2027-09-14T10:00:00.000Z', status: 'a_valider', validatedAt: null, reference: 'REF-I-1' },
+    ],
+    more: true,
+    hidden: 2,
+  };
+  const OPEN = 'Voir les calculs et les notes';
+  const HIST = 'GET /v1/investir/projets/p1/historique';
+
+  it('[R16] rien n’est lu avant le geste ; la liste dit les chiffres rangés, ce qui manque et ce qui est sorti', async () => {
+    const t = await run({ [HIST]: ok(HISTORY) });
+    await t.openP1();
+    expect(t.calls.some((c) => c.url.endsWith('/historique'))).toBe(false);
+    await t.click(t.byText(OPEN));
+    const text = t.body().textContent;
+    expect(text).toContain(`Calcul du 14/09/2027, bien ${INJECTED}`);
+    // Aucun rendement dans la liste : il ne se montre qu'avec les alertes du jour [R124].
+    expect(text).not.toContain('7,77');
+    expect(text).toContain('Incomplet : aucun rendement.');
+    expect(text).toContain('Validée le 15/09/2027 : relisez-la');
+    expect(text).toContain('Pas encore validée.');
+    expect(text).toContain('2 ligne(s) portent sur un bien hors de vos droits');
+    expect(text).toContain('Seules les plus récentes sont montrées.');
+    expect(t.body().all().filter((e) => e.tagName === 'img')).toEqual([]);
+  });
+
+  const NOTE_D = { status: 'validee', createdAt: '2027-09-14T09:00:00.000Z', validatedAt: '2027-09-15T09:00:00.000Z', held: false, alertsFirst: [], note: { text: `Texte rangé ${INJECTED}` } };
+  const CALC = { calculation: { id: 'c1', createdAt: '2027-09-14T08:00:00.000Z', result: RESULT }, alertsFirst: ['Interdit à la location : classe énergie G.'] };
+
+  it('[R17] [R124] relire montre les alertes du jour d’abord, puis le calcul rangé, sa date et ses hypothèses, sans rien écrire', async () => {
+    const t = await run({
+      [HIST]: ok(HISTORY),
+      'GET /v1/investir/calculs/c1/relecture': ok(CALC),
+      'GET /v1/investir/notes/n1/relecture': ok(NOTE_D),
+      'GET /v1/investir/notes/n2/relecture': ok({ ...NOTE_D, status: 'a_valider', validatedAt: null, note: { text: 'Brouillon rangé' } }),
+    });
+    await t.openP1();
+    const before = t.posts().length;
+    await t.click(t.byText(OPEN));
+    await t.click(t.byText('Relire', 0));
+    const text = t.body().textContent;
+    expect(text).toContain('Calcul du 14/09/2027, tel qu’il a été rangé');
+    expect(text).toContain('Brut 7,77 %');
+    expect(text).toContain('Hypothèse : prix affiché du bien');
+    expect(text).toContain(`devis ${INJECTED}`);
+    expect(text.indexOf('Interdit à la location')).toBeLessThan(text.indexOf('Brut 7,77 %'));
+    expect(t.body().all().find((e) => e.textContent === CALC.alertsFirst[0])!.attributes.role).toBe('alert');
+    await t.click(t.byText('Relire', 2));
+    expect(t.body().textContent).toContain('Note validée le 15/09/2027');
+    expect(t.body().textContent).toContain(`Texte rangé ${INJECTED}`);
+    expect(t.body().textContent).not.toContain('tel qu’il a été rangé');
+    await t.click(t.byText('Relire', 3));
+    expect(t.body().textContent).toContain('Elle ne se montre pas au client.');
+    expect(t.byText('Je l’ai relue : valider la note')).toBeUndefined();
+    expect(t.posts().length).toBe(before);
+  });
+
+  it('[R124] une note validée qui ne tient plus est dite retenue, sans son texte ; sans contraintes, ni chiffre ni texte', async () => {
+    const held = await run({ [HIST]: ok(HISTORY), 'GET /v1/investir/notes/n1/relecture': ok({ ...NOTE_D, held: true, note: null, alertsFirst: ['Interdit à la location : classe énergie G.'] }) });
+    await held.openP1();
+    await held.click(held.byText(OPEN));
+    await held.click(held.byText('Relire', 2));
+    expect(held.body().textContent).toContain('Note retenue');
+    expect(held.body().textContent).toContain('Le client ne la reçoit pas.');
+    expect(held.body().textContent).toContain('Interdit à la location');
+    const blind = await run({ [HIST]: ok(HISTORY), 'GET /v1/investir/calculs/c1/relecture': ok({ calculation: CALC.calculation }) });
+    await blind.openP1();
+    await blind.click(blind.byText(OPEN));
+    await blind.click(blind.byText('Relire', 0));
+    expect(blind.body().textContent).toContain('Contraintes indisponibles');
+    expect(blind.body().textContent).not.toContain('7,77');
+  });
+
+  it('[R16] [R10] un refus, une panne ou une liste vide se disent, sans se confondre', async () => {
+    const refused = await run({ [HIST]: no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
+    await refused.openP1();
+    await refused.click(refused.byText(OPEN));
+    expect(refused.body().textContent).toContain('Ce n’est pas dans vos droits.');
+    const lost = await run({});
+    await lost.openP1();
+    await lost.click(lost.byText(OPEN));
+    expect(lost.body().textContent).toContain('Pas de réseau. Réessayez dans un moment.');
+    expect(lost.body().textContent).not.toContain('Aucun calcul rangé');
+    const broken = await run({ [HIST]: ok(null) });
+    await broken.openP1();
+    await broken.click(broken.byText(OPEN));
+    expect(broken.body().textContent).toContain('Lecture indisponible pour le moment.');
+    const empty = await run({ [HIST]: ok({ calculs: [], notes: [], more: false, hidden: 0 }) });
+    await empty.openP1();
+    await empty.click(empty.byText(OPEN));
+    expect(empty.body().textContent).toContain('Aucun calcul rangé pour ce projet.');
+  });
+
+  it('[R16] relire un calcul refusé le dit, et ne montre aucun chiffre ; un identifiant mal formé n’est jamais demandé', async () => {
+    const t = await run({
+      [HIST]: ok({ ...HISTORY, calculs: [HISTORY.calculs[0], { ...HISTORY.calculs[1], id: '../x' }] }),
+      'GET /v1/investir/calculs/c1/relecture': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }),
+    });
+    await t.openP1();
+    await t.click(t.byText(OPEN));
+    await t.click(t.byText('Relire', 0));
+    expect(t.body().textContent).toContain('Ce n’est pas dans vos droits.');
+    expect(t.body().textContent).not.toContain('tel qu’il a été rangé');
+    expect(t.calls.some((c) => c.url.includes('..'))).toBe(false);
+  });
+
+  it('[R201] l’écran tient son budget', () => {
+    expect(budgetProblems({ html: '', js: INVESTIR_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+});

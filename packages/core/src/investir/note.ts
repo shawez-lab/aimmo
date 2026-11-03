@@ -21,6 +21,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { plain } from '../envoi/texte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import type { StoredCalculation } from './calcul.ts';
 import { computeYield, type CalculInvestissement, type Sourced, type YieldInputs, type YieldLine, type YieldResult } from './calcul.ts';
 import { energyAlertGate, type ConstraintSet, type Contraintes } from './contraintes.ts';
 import { ANIL_CITATION } from './loyers.ts';
@@ -787,6 +788,41 @@ export class NotesInvestissement {
     const check = checkNote(note, row.text, facts, constraints);
     if (!check.ok) return held(check.code);
     return { text: row.text, validatedAt: row.validated_at };
+  }
+
+  /**
+   * Relire une note depuis l'écran de l'agent (Y14) [R16, R124] : les alertes d'aujourd'hui viennent d'abord, et une note
+   * validée dont les contraintes ne tiennent plus est dite retenue, sans son texte, comme à la remise au client.
+   */
+  async reread(acces: Acces, viewer: Viewer, noteId: string): Promise<{ ok: true; value: { note: StoredNote | null; status: 'a_valider' | 'validee'; createdAt: string; validatedAt: string | null; held: boolean; alertsFirst: string[] } } | Exclude<NoteResult, { ok: true }>> {
+    const read = await this.read(acces, viewer, noteId);
+    if (!read.ok) return read;
+    const n = read.value;
+    const calc = await this.calculs.get(viewer.networkId, n.calculationId);
+    const ctx = n.note.context ?? { inseeCode: null, energyClass: null, finalEnergyKwh: null };
+    const constraints = await this.constraintsFor(viewer.networkId, calc?.propertyId ?? null, n.projectId, ctx.inseeCode, { energyClass: ctx.energyClass, finalEnergyKwh: ctx.finalEnergyKwh });
+    let held = false;
+    if (n.status === 'validee') {
+      if (!calc || calc.result.status !== 'complet') held = true;
+      else held = !checkNote(n.note, n.text, { lines: calc.result.lines, grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] }, constraints).ok;
+    }
+    return { ok: true, value: { note: held ? null : n, status: n.status, createdAt: n.createdAt, validatedAt: n.validatedAt, held, alertsFirst: constraints.alertsFirst } };
+  }
+
+  /**
+   * Relire un calcul rangé d'un projet (Y14) [R16, R124] : ses chiffres n'arrivent jamais sans les alertes d'aujourd'hui.
+   * Si les contraintes ne se lisent pas, l'erreur remonte et aucun chiffre ne part. La classe énergie dite à l'écran le
+   * jour du calcul n'est pas rangée : sans fiche, elle ressort inconnue, avec son alerte.
+   */
+  async rereadCalculation(acces: Acces, viewer: Viewer, calculationId: string): Promise<{ ok: true; value: { calculation: StoredCalculation; alertsFirst: string[] } } | { ok: false; rule: 'R16' | 'R120' | 'R122'; code: string }> {
+    const read = await this.calculs.read(acces, viewer, calculationId);
+    if (!read.ok) return read;
+    const calc = read.value;
+    // Hors d'un projet, aucun profil ne dit la location visée : cette relecture n'en parle pas.
+    if (calc.projectId === null) return { ok: false, rule: 'R16', code: 'not_assigned' };
+    const commune = calc.propertyId === null ? null : await this.db.first<{ insee_code: string }>('SELECT insee_code FROM property_communes WHERE property_id = ?', [calc.propertyId]);
+    const constraints = await this.constraintsFor(viewer.networkId, calc.propertyId, calc.projectId, commune?.insee_code ?? null, undefined);
+    return { ok: true, value: { calculation: calc, alertsFirst: constraints.alertsFirst } };
   }
 
   /** Les contraintes du bien, avec la location visée du dernier profil de l'investisseur ; inconnue : il veut louer. */

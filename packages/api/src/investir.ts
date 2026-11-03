@@ -20,6 +20,7 @@ import {
   Contraintes,
   LoyersMarche,
   MARKET_RENT_KINDS,
+  HistoriqueProjet,
   NotesInvestissement,
   ProfilInvestisseur,
   type MarketRentKind,
@@ -118,7 +119,7 @@ export function investirCore(s: InvestirServices) {
     feesRateBp: s.feesRateBp ?? null,
     unsubscribeBase: s.unsubscribeBase ?? null,
   });
-  return { acces, profils, loyers, calculs, contraintes, notes, alertes };
+  return { acces, profils, loyers, calculs, contraintes, notes, alertes, historique: new HistoriqueProjet(s.db, s.journal, { now: s.now }) };
 }
 
 const core = investirCore;
@@ -224,6 +225,10 @@ const ROUTES: InvestirRoute[] = [
   { method: 'GET', pattern: /^\/investir\/projets$/, name: 'investir.projets', roles: WRITERS, handle: async (s, v) => reply(await myInvestors(s, v)) },
   { method: 'GET', pattern: /^\/investir\/biens$/, name: 'investir.biens', roles: WRITERS, handle: async (s, v) => reply(await calculableProperties(s, v)) },
   { method: 'GET', pattern: /^\/investir\/biens\/sans-commune$/, name: 'investir.biens.sans_commune', roles: WRITERS, handle: async (s, v) => reply(await propertiesWithoutCommune(s, v)) },
+  /* Les calculs et les notes rangés d'un projet, pour les retrouver à l'écran (Y14) [R16]. */
+  { method: 'GET', pattern: new RegExp(`^/investir/projets/${ID}/historique$`), name: 'investir.historique', roles: WRITERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.historique.of(c.acces, v, id!)); } },
+  { method: 'GET', pattern: new RegExp(`^/investir/calculs/${ID}/relecture$`), name: 'investir.calcul.relecture', roles: WRITERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.notes.rereadCalculation(c.acces, v, id!)); } },
+  { method: 'GET', pattern: new RegExp(`^/investir/notes/${ID}/relecture$`), name: 'investir.note.relecture', roles: WRITERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.notes.reread(c.acces, v, id!)); } },
   /* Le profil de l'investisseur (Y01) [R123, R17]. */
   { method: 'GET', pattern: new RegExp(`^/investir/projets/${ID}/profil$`), name: 'investir.profil.lu', roles: READERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.profils.read(c.acces, v, id!)); } },
   {

@@ -287,6 +287,7 @@ globalThis.AIMMO_INVESTIR = function (t) {
     }));
     calc.appendChild(result);
     body.appendChild(calc);
+    historyBlock(body, base);
     communeBlock(body, x, own);
   }
   /* X20 · Un bien n'est calculable qu'avec sa commune, rangée une fois, sans retour : deux appuis sur la même saisie. */
@@ -350,19 +351,12 @@ globalThis.AIMMO_INVESTIR = function (t) {
     box.appendChild(said);
     body.appendChild(box);
   }
-  function renderCalculation(box, x, stored, constraints, chosen, energyBody) {
-    clear(box);
-    if (!constraints) box.appendChild(el('p', 'Contraintes indisponibles : aucune proposition sans elles.', 'alerte-energie'));
-    else (Array.isArray(constraints.alertsFirst) ? constraints.alertsFirst : []).forEach(function (a) {
-      var p = el('p', a, 'alerte-energie');
-      p.setAttribute('role', 'alert');
-      box.appendChild(p);
-    });
-    var r = stored.result || {};
+  /* Les chiffres d'un calcul, tels que le serveur les a rangés : à la réponse du geste, et à la relecture (Y14). */
+  function drawResult(box, r) {
     if (r.status !== 'complet') {
       var miss = el('p', 'Il manque : ' + (Array.isArray(r.missing) ? r.missing.map(function (k) { return LINE_LABELS[k] || 'une donnée'; }).join(', ') : 'des données') + '. Aucun rendement sans elles.', 'etat');
       box.appendChild(miss);
-      return;
+      return false;
     }
     var head = el('div', null, 'rendement');
     head.appendChild(el('span', 'Brut ' + bpText(r.grossYieldBp.central), 'central'));
@@ -379,6 +373,115 @@ globalThis.AIMMO_INVESTIR = function (t) {
       ul.appendChild(li);
     });
     box.appendChild(ul);
+    return true;
+  }
+  /* Y14 · Retrouver un calcul ou une note d'un projet. Rien n'est lu avant le geste, rien n'est recalculé. */
+  function historyBlock(body, base) {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', 'Calculs et notes rangés'));
+    var said = el('p', null, 'etat');
+    var list = el('ul', null, 'liste');
+    var shown = el('div');
+    var turn = 0;
+    function lost(res, text) { return res.offline ? 'Pas de réseau. Réessayez dans un moment.' : res.status === 403 ? 'Ce n’est pas dans vos droits.' : investirRefusal(res.body, text); }
+    function title(kind, l) { return kind + ' du ' + date(l.createdAt) + (l.reference ? ', bien ' + l.reference : ''); }
+    function reread(url, label, draw) {
+      var b = button('Relire', function () {
+        var mine = ++turn;
+        clear(shown);
+        said.textContent = 'Chargement…';
+        return send(url, 'GET').then(function (res) {
+          if (res.gone || mine !== turn) return false;
+          if (!res.ok) { said.textContent = lost(res, 'Lecture indisponible pour le moment.'); return false; }
+          said.textContent = '';
+          draw(res.body.data);
+          return true;
+        });
+      });
+      b.className = 'secondaire';
+      b.setAttribute('aria-label', 'Relire : ' + label);
+      return b;
+    }
+    /* R124 : les alertes du jour d'abord ; sans elles, aucun chiffre ni aucun texte. */
+    function alertsOk(d) {
+      if (d && Array.isArray(d.alertsFirst)) {
+        d.alertsFirst.forEach(function (a) {
+          var p = el('p', a, 'alerte-energie');
+          p.setAttribute('role', 'alert');
+          shown.appendChild(p);
+        });
+        return true;
+      }
+      shown.appendChild(el('p', 'Contraintes indisponibles : rien ne se relit sans elles.', 'alerte-energie'));
+      return false;
+    }
+    function drawOldCalc(d) {
+      if (!alertsOk(d) || !d.calculation) return;
+      shown.appendChild(el('h4', 'Calcul du ' + date(d.calculation.createdAt) + ', tel qu’il a été rangé'));
+      drawResult(shown, d.calculation.result || {});
+    }
+    function drawOldNote(d) {
+      if (!alertsOk(d)) return;
+      if (d.held || !d.note) {
+        shown.appendChild(el('h4', 'Note retenue'));
+        shown.appendChild(el('p', 'Validée le ' + date(d.validatedAt) + ', elle ne tient plus : les contraintes du bien ont changé. Le client ne la reçoit pas. Refaites le calcul.', 'retard'));
+        return;
+      }
+      shown.appendChild(el('h4', d.status === 'validee' ? 'Note validée le ' + date(d.validatedAt) : 'Note non validée, du ' + date(d.createdAt)));
+      shown.appendChild(el('div', d.note.text, 'note-texte'));
+      if (d.status !== 'validee') shown.appendChild(el('p', 'Elle ne se montre pas au client. Pour la valider, refaites le calcul : les contraintes du bien sont alors relues.', 'doux'));
+    }
+    var open = button('Voir les calculs et les notes', function () {
+      var mine = ++turn;
+      clear(list);
+      clear(shown);
+      said.textContent = 'Chargement…';
+      return send(base + '/historique', 'GET').then(function (res) {
+        if (res.gone || mine !== turn) return false;
+        var d = res.ok ? res.body.data : null;
+        if (!d || !Array.isArray(d.calculs) || !Array.isArray(d.notes)) { said.textContent = res.ok ? 'Lecture indisponible pour le moment.' : lost(res, 'Lecture indisponible pour le moment.'); return false; }
+        var ends = [];
+        if (d.hidden) ends.push(d.hidden + ' ligne(s) portent sur un bien hors de vos droits : elles ne sont pas montrées.');
+        if (d.more) ends.push('Seules les plus récentes sont montrées.');
+        d.calculs.forEach(function (c) {
+          if (!ID.test(c.id)) return;
+          var li = el('li');
+          var label = title('Calcul', c);
+          li.appendChild(el('strong', label));
+          li.appendChild(el('p', c.status === 'complet' ? 'Complet : relisez-le pour voir ses chiffres, avec les alertes du jour.' : 'Incomplet : aucun rendement.', 'doux'));
+          li.appendChild(reread('/v1/investir/calculs/' + encodeURIComponent(c.id) + '/relecture', label, drawOldCalc));
+          list.appendChild(li);
+        });
+        d.notes.forEach(function (n) {
+          if (!ID.test(n.id)) return;
+          var li = el('li');
+          var label = title('Note', n);
+          li.appendChild(el('strong', label));
+          li.appendChild(el('p', n.status === 'validee' ? 'Validée le ' + date(n.validatedAt) + ' : relisez-la pour savoir si elle tient toujours.' : 'Pas encore validée.', 'doux'));
+          li.appendChild(reread('/v1/investir/notes/' + encodeURIComponent(n.id) + '/relecture', label, drawOldNote));
+          list.appendChild(li);
+        });
+        said.textContent = ends.length ? ends.join(' ') : (d.calculs.length || d.notes.length ? '' : 'Aucun calcul rangé pour ce projet.');
+        return true;
+      });
+    });
+    open.className = 'secondaire';
+    box.appendChild(open);
+    box.appendChild(said);
+    box.appendChild(list);
+    box.appendChild(shown);
+    body.appendChild(box);
+  }
+  function renderCalculation(box, x, stored, constraints, chosen, energyBody) {
+    clear(box);
+    if (!constraints) box.appendChild(el('p', 'Contraintes indisponibles : aucune proposition sans elles.', 'alerte-energie'));
+    else (Array.isArray(constraints.alertsFirst) ? constraints.alertsFirst : []).forEach(function (a) {
+      var p = el('p', a, 'alerte-energie');
+      p.setAttribute('role', 'alert');
+      box.appendChild(p);
+    });
+    var r = stored.result || {};
+    if (!drawResult(box, r)) return;
     (constraints && Array.isArray(constraints.constraints) ? constraints.constraints : []).forEach(function (c) {
       if (!Array.isArray(constraints.alertsFirst) || constraints.alertsFirst.indexOf(c.text) === -1) box.appendChild(el('p', c.text + ' Source : ' + c.source + '.', 'doux'));
     });
