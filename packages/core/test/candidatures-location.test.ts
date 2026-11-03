@@ -175,6 +175,9 @@ describeWithSqlite('W04 · candidatures limitées à la liste officielle', () =>
     expect((await t.apps.read(t.agent, id) as { value: { missing: unknown[] } }).value.missing).toEqual([{ holder: visale, what: 'visa_visale' }]);
     expect((await t.piece(id, visale, 'visa_visale')).ok).toBe(true);
     expect((await t.apps.read(t.agent, id) as { value: { complete: boolean } }).value.complete).toBe(true);
+    // W18 : un seul garant Visale par dossier, même par deux demandes en même temps (index de la base).
+    expect(await t.apps.addGuarantor(t.agent, id, { kind: 'visale' })).toEqual({ ok: false, rule: null, code: 'already_added' });
+    await expect(t.db.run("INSERT INTO rental_guarantors (id, application_id, kind, person_id, added_by, added_at) VALUES ('g-double', ?, 'visale', NULL, 'agent:x', '2027-01-01T00:00:00.000Z')", [id])).rejects.toThrow(/UNIQUE/i);
     expect(await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId: pid })).toEqual({ ok: false, rule: null, code: 'unknown_person' });
     expect(await t.apps.addGuarantor(t.agent, id, { kind: 'personne', personId: gid })).toEqual({ ok: false, rule: null, code: 'already_added' });
     expect(await t.piece(id, 'garant-inconnu', 'contrat_travail')).toEqual({ ok: false, rule: null, code: 'unknown_holder' });

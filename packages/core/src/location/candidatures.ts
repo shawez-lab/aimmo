@@ -237,6 +237,8 @@ export class Candidatures {
     if (input.kind !== 'personne' && input.kind !== 'visale') return { ok: false, rule: null, code: 'bad_kind' };
     const personId = input.kind === 'personne' ? input.personId : null;
     if (input.kind === 'personne' && (!(await this.personIn(app.network_id, personId)) || personId === app.person_id)) return { ok: false, rule: null, code: 'unknown_person' };
+    // Un seul garant Visale par dossier : l'unicité sur la personne ne le voit pas, sa personne étant vide.
+    if (input.kind === 'visale' && (await this.db.first("SELECT 1 FROM rental_guarantors WHERE application_id = ? AND kind = 'visale'", [app.id]))) return { ok: false, rule: null, code: 'already_added' };
     const id = this.newId();
     try {
       await this.db.run('INSERT INTO rental_guarantors (id, application_id, kind, person_id, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?)', [id, app.id, input.kind, (personId as string | null) ?? null, this.actor(viewer), this.now().toISOString()]);

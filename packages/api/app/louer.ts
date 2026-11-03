@@ -690,7 +690,7 @@ globalThis.AIMMO_LOUER = function (t) {
       li.appendChild(el('strong', 'Dossier arrivé ' + (a.arrival === 1 ? 'en premier' : 'en ' + a.arrival + 'ᵉ') + (a.applicationId === chosen ? ' · choisi par le propriétaire' : '')));
       li.appendChild(el('p', 'Le ' + date(a.arrivedAt) + (a.dossierFacile ? ' · dossier DossierFacile' : '') + ' · ' + (a.pieces || []).length + ' pièce' + ((a.pieces || []).length > 1 ? 's' : '') + (a.guarantors && a.guarantors.length ? ' · garant' : ''), 'doux'));
       li.appendChild(el('p', a.complete ? 'Complet' : 'Incomplet : manque ' + (a.missing || []).map(missingText).join(', ') + '.', a.complete ? 'fait' : null));
-      if (!chosen && ID.test(a.applicationId)) li.appendChild(dossierEntry(base, a));
+      if (!chosen && !a.dossierFacile && ID.test(a.applicationId)) li.appendChild(dossierEntry(base, a));
       ol.appendChild(li);
     });
     box.appendChild(ol);

@@ -918,7 +918,10 @@ describe('W11 · écran « Louer » de l’application', () => {
       expect(candidate).not.toContain('Dernière quittance de loyer');
       const t2 = await run();
       await t2.openL1();
-      await t2.openDossier(2);
+      // Un dossier DossierFacile est accepté tel quel : il n'a pas le geste [R104], donc le dossier c2 est le deuxième à l'offrir.
+      expect(t2.body().all().filter((e) => e.tagName === 'button' && e.textContent === 'Compléter ce dossier')).toHaveLength(2);
+      await t2.openDossier(1);
+      expect(t2.byText('Garant Visale')).toBeUndefined();
       expect(options(t2, 'Qui fournit la pièce')).toEqual(['Le candidat', 'Garant Visale']);
       const who = t2.input('Qui fournit la pièce');
       who.value = 'g2';
@@ -950,7 +953,7 @@ describe('W11 · écran « Louer » de l’application', () => {
       const t = await run({ [DEP]: ok({ kind: 'piece', ref: 'location/l1/candidatures/c3/r.pdf', sha256: SHA_PDF, size: 8 }), 'POST /v1/location/candidatures/c3/pieces': no(409, { ok: false, rule: 'R104', code: 'one_domicile' }) });
       await t.openL1();
       await t.openDossier(0);
-      t.input('La pièce').value = 'attestation_hebergement';
+      t.input('La pièce').value = 'bulletins_salaire';
       (t.input('Le fichier') as unknown as { files: unknown[] }).files = [FILE];
       await t.click(t.byText('Ranger la pièce'));
       expect(t.state()).toBe('Un seul justificatif de domicile par personne : il est déjà rangé.');
@@ -959,6 +962,23 @@ describe('W11 · écran « Louer » de l’application', () => {
       await t.click(t.byText('Ranger la pièce'));
       expect(t.state()).toBe('Réponse perdue : ce geste est peut-être rangé. Rouvrez le logement avant de recommencer.');
       expect(t.posts().filter((c) => c.url.endsWith('/fichiers/piece'))).toHaveLength(1);
+    });
+
+    it('[R104] une personne qui a déjà son justificatif de domicile ne se le voit plus proposer ; un double appui n’ajoute qu’un garant', async () => {
+      const apps = [{ ...APPS[0]!, pieces: [{ holder: 'candidat', category: 'domicile', sort: 'attestation_hebergement', label: 'Attestation d’hébergement' }] }];
+      let answer: (r: Response) => void = () => undefined;
+      const t = await run({ 'GET /v1/location/l1/candidatures': ok(apps), 'POST /v1/location/candidatures/c3/garants': () => new Promise<Response>((r) => { answer = r; }) });
+      await t.openL1();
+      await t.openDossier(0);
+      expect(options(t, 'La pièce')).not.toContain('Trois dernières quittances de loyer');
+      expect(options(t, 'La pièce')).toContain('Trois derniers bulletins de salaire');
+      const visale = t.byText('Garant Visale')!;
+      visale.listeners.click!({});
+      visale.listeners.click!({});
+      await t.settle();
+      expect(t.posts()).toHaveLength(1);
+      answer(Response.json({ ok: true, mode: 'essai', data: { guarantorId: 'g9' } }));
+      await t.settle();
     });
 
     it('[R16] un garant Visale s’ajoute d’un geste ; un garant personne se choisit parmi ses contacts, lus au geste ; un refus de droits est dit', async () => {

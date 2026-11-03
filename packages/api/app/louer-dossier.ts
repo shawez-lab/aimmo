@@ -25,9 +25,14 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
   var PIECES = ${JSON.stringify(PIECES)};
   var REFUSALS = ${JSON.stringify(REFUSALS)};
   var seq = 0;
+  t.refusals.depot_ferme = REFUSALS.depot_ferme;
+  var sending = false;
   function act(path, body, fallback, done) {
+    if (sending) return Promise.resolve(null);
+    sending = true;
     say('Envoi…');
     return send(path, 'POST', body).then(function (res) {
+      sending = false;
       if (res.gone) return null;
       if (res.ok) return t.reload(done);
       if (res.offline || !res.body || res.status >= 500) { say('Réponse perdue : ce geste est peut-être rangé. Rouvrez le logement avant de recommencer.'); return null; }
@@ -37,12 +42,12 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
     });
   }
   /* Les mêmes conditions que le serveur : Visale, son visa seul ; une personne, ce que l'annexe permet à une caution. */
-  function sortsFor(kind) {
+  function sortsFor(kind, hasDomicile) {
     var out = { '': 'Choisir la pièce' };
     Object.keys(PIECES).forEach(function (k) {
       var p = PIECES[k];
       var allowed = kind === 'visale' ? p.c === 'garantie' : p.h.indexOf(kind === 'candidat' ? 'candidat' : 'caution') !== -1;
-      if (allowed) out[k] = p.l;
+      if (allowed && !(hasDomicile && p.c === 'domicile')) out[k] = p.l;
     });
     return out;
   }
@@ -68,7 +73,8 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
     function drawSorts() {
       clear(slot);
       var g = guarantors.filter(function (x) { return x.guarantorId === holder.value; })[0];
-      sort = select(slot, 'dossier-piece-' + n, 'La pièce', sortsFor(g ? g.kind : 'candidat'), '');
+      var hasDomicile = held.some(function (p) { return p.holder === holder.value && p.category === 'domicile'; });
+      sort = select(slot, 'dossier-piece-' + n, 'La pièce', sortsFor(g ? g.kind : 'candidat', hasDomicile), '');
     }
     drawSorts();
     holder.addEventListener('change', drawSorts);
@@ -79,13 +85,14 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
       if (!sort.value) { say('Choisissez d’abord la pièce.'); return; }
       if (!file.picked()) { say('Choisissez d’abord le fichier.'); return; }
       busy = true;
+      var chosen = { holder: holder.value, sort: sort.value };
       Promise.resolve(file.ref(appBase)).then(function (ref) {
         if (!ref) return null;
-        return act(appBase + '/pieces', { holder: holder.value, sort: sort.value, ref: ref, sha256: file.sha() }, 'La pièce n’est pas rangée.', 'Pièce rangée.');
+        return act(appBase + '/pieces', { holder: chosen.holder, sort: chosen.sort, ref: ref, sha256: file.sha() }, 'La pièce n’est pas rangée.', 'Pièce rangée.');
       }).finally(function () { busy = false; });
     }));
     box.appendChild(el('h4', 'Ajouter un garant'));
-    box.appendChild(button('Garant Visale', function () {
+    if (!guarantors.some(function (g) { return g.kind === 'visale'; })) box.appendChild(button('Garant Visale', function () {
       act(appBase + '/garants', { kind: 'visale' }, 'Le garant n’est pas ajouté.', 'Garant ajouté.');
     }));
     var people = el('div');
