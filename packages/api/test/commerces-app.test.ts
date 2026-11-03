@@ -1321,6 +1321,7 @@ describe('CE17 · retrouver la source d’une fuite à l’écran', () => {
     expect(budgetProblems({ html: '', js: COMMERCES_ENGAGEMENTS_SCRIPT }, BUDGETS.page)).toEqual([]);
   });
 });
+<<<<<<< HEAD
 
 describe('CE18 · retirer un lien de dossier protégé à l’écran', () => {
   const LIST = 'GET /v1/commerces/b1/liens';
@@ -1500,3 +1501,5 @@ describe('CE18 · retirer un lien de dossier protégé à l’écran', () => {
     expect(budgetProblems({ html: '', js: COMMERCES_ENGAGEMENTS_SCRIPT }, BUDGETS.page)).toEqual([]);
   });
 });
+=======
+>>>>>>> origin/main

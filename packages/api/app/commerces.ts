@@ -619,10 +619,13 @@ globalThis.AIMMO_COMMERCES = function (t) {
     var box = el('div');
     box.appendChild(button('Retrouver la source d’une fuite', function () { ceEngLoad(function (e) { e.trace(box, writable, asked); }); }));
     b.appendChild(box);
+<<<<<<< HEAD
     /* Les liens envoyés (CE18) : lus au geste, même un lien jamais ouvert peut se retirer. */
     var links = el('div');
     links.appendChild(button('Voir les liens envoyés', function () { ceEngLoad(function (e) { e.links(links, writable, asked); }); }));
     b.appendChild(links);
+=======
+>>>>>>> origin/main
   }
   /* Pourquoi un geste n'a pas abouti : le refus du serveur, ou une réponse perdue, qui ne dit pas que rien n'est rangé. */
   function ceWhy(res, fallback) {

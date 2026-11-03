@@ -374,6 +374,7 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
     box.appendChild(found);
     say('');
   }
+<<<<<<< HEAD
   /* Le repreneur d'un lien : le prénom et la date de la demande, jamais deviné si la liste lue ne le montre pas. */
   function reader(asked, personId) {
     var who = (asked || []).filter(function (r) { return r.personId === personId; })[0];
@@ -445,5 +446,8 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
     li.appendChild(note);
   }
   return { demand: demand, line: line, model: model, trace: trace, links: links, wipe: function () { signing = {}; } };
+=======
+  return { demand: demand, line: line, model: model, trace: trace, wipe: function () { signing = {}; } };
+>>>>>>> origin/main
 };
 `;

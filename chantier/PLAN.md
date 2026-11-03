@@ -1846,7 +1846,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X16 · Rétractation et début anticipé d'un mandat à l'écran
-- Statut : fait (2026-11-03), par D16 : vérifié route par route, les deux gestes et leurs tests sont dans `app/mandat.ts` et `mandat-app.test.ts`
+- Statut : fait (2026-11-03)
+- Reste : faite par D16 : vérifié route par route, les deux gestes et leurs tests sont dans `app/mandat.ts` et `mandat-app.test.ts`.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D03
 - Cahier : M06 ; R16, R201.
 - Objectif : `mandat.retractation` et `mandat.debut_anticipe` n'ont aucun geste à l'écran. Lire d'abord les routes et le fichier `app/mandat.ts`.
@@ -1861,6 +1862,24 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Objectif : `document.signature_en_ligne`, `document.signature_avenant` et `fiche.identite` n'ont aucun appel de l'application. Vérifier si le geste existe sous une autre forme ; sinon le donner, en essai.
 - Critères : aucun envoi réel en essai [R26] (test) ; droits refusés dits [R16] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
 - Attend : H24 pour un usage réel.
+
+**Gestes sans écran, trouvés par la voie 1 le 2026-11-03 (même comparaison, route par route).**
+
+### X18 · Corriger le texte d'une annonce à l'écran
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : P10
+- Cahier : M07 ; R47, R16, R201.
+- Objectif : `POST /v1/annonces/<id>/correction` n'a aucun appel de l'application : l'écran « Mettre en vente » dit « corrigez-la » sans donner de quoi corriger. Le donner dans `app/fichiers.ts`, sans toucher au socle.
+- Critères : le texte en cours pré-rempli, envoyé tel quel (test) ; une correction refusée montre chaque phrase en cause et son problème, et garde ce qui est tapé (test) ; un texte vide n'est pas envoyé (test) ; droits refusés dits [R16] (test) ; réponse perdue dite telle, le texte reste (test) ; un seul envoi à la fois (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### X19 · Remplir la fiche du bien à l'écran
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : P10
+- Cahier : M07 ; R43, R16, R201.
+- Objectif : `GET` et `POST /v1/annonces/<id>/fiche` n'ont aucun appel de l'application, alors que l'écran dit « complétez la fiche du bien ». Vérifier que le geste n'existe pas ailleurs, puis le donner, sans toucher au socle.
+- Critères : à écrire au début de la tâche, après lecture de la route : droits refusés dits [R16] (test) ; aucun fait inventé (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : rien.
 
 **Espaces des clients et location : les gestes manquants à l'écran.**
 
