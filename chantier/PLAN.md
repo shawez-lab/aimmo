@@ -3521,7 +3521,9 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### RS05 · Mentions légales et données personnelles du site
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03), lecture prudente : les mentions vivent dans `site_legal_mentions`, en ajout seul ; ce qui est gardé sur une personne vient du registre des traitements, mot pour mot ; tant qu'une mention manque, pages et signalement restent en essai (R221).
+- Reste : fusionnée (#355) ; relecture forte 3 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte. `/rejoindre` n'a pas encore le lien vers les pages légales. Contenu réel : H47, après H09.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
 - Cahier : Conformité ; M01.
 - Objectif : `GET /mentions-legales` et `GET /donnees-personnelles`, rendues depuis les réglages du réseau, liées depuis chaque page du site. Tant qu'une mention manque, la page dit qu'elle manque et le site ne peut pas passer en réel.
