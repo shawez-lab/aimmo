@@ -30,9 +30,10 @@ async function setup(opts: { realDiffusion?: boolean } = {}) {
   const direction: Viewer = { role: 'direction', userId: 'dir-1', networkId: network.id };
   const routes = studioRoutes();
   const call = async (viewer: Viewer, method: 'GET' | 'POST', path: string, body?: unknown, raw?: string) => {
-    const route = routes.find((r) => r.method === method && r.pattern.test(path));
+    const bare = path.split('?')[0]!;
+    const route = routes.find((r) => r.method === method && r.pattern.test(bare));
     if (!route) throw new Error(`route inconnue ${method} ${path}`);
-    const params = (route.pattern.exec(path) ?? []).slice(1);
+    const params = (route.pattern.exec(bare) ?? []).slice(1);
     const init: RequestInit =
       raw !== undefined ? { method, headers: { 'content-type': 'application/json' }, body: raw } : body === undefined ? { method } : { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
     const response = await route.handle(s, viewer, params, new Request(`https://api.exemple.test/v1${path}`, init));
@@ -52,6 +53,13 @@ async function setup(opts: { realDiffusion?: boolean } = {}) {
 }
 
 describeWithSqlite('X09 · routes de M19', () => {
+  it('X23 · la liste des guides à valider lit son curseur dans l’adresse', async () => {
+    const t = await setup();
+    expect((await t.call(t.direction, 'GET', '/studio/guides-a-valider')).body).toMatchObject({ ok: true, data: { items: [], next: null } });
+    expect((await t.call(t.direction, 'GET', '/studio/guides-a-valider?apres=illisible')).body).toMatchObject({ ok: false, code: 'bad_cursor' });
+    expect((await t.call(t.agent, 'GET', '/studio/guides-a-valider')).status).toBe(403);
+  });
+
   it('[R134] [R130] dix biens tests, du guide à la publication en essai, par les seules routes', async () => {
     const t = await setup();
     for (let i = 1; i <= 10; i += 1) {
@@ -106,6 +114,7 @@ describeWithSqlite('X09 · routes de M19', () => {
     const paths: Record<string, string> = {
       'studio.atelier': `/studio/biens/${b.id}`,
       'studio.guide': `/studio/biens/${b.id}/guide`,
+      'studio.guides_a_valider': '/studio/guides-a-valider',
       'studio.guide.vue': `/studio/biens/${b.id}/guide/vues`,
       'studio.guide.validation': `/studio/biens/${b.id}/guide/validation`,
       'studio.photo': `/studio/biens/${b.id}/photos`,
