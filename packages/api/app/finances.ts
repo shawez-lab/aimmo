@@ -378,8 +378,9 @@ globalThis.AIMMO_FINANCES = function (t) {
   }
   /* Le mois fini d'avant, à Paris : c'est le serveur qui refuse un mois en cours. */
   function lastMonth() {
-    var now = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
-    var y = Number(now.slice(0, 4)), m = Number(now.slice(5, 7));
+    var parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+    var part = function (type) { return Number(parts.filter(function (x) { return x.type === type; })[0].value); };
+    var y = part('year'), m = part('month');
     return m === 1 ? (y - 1) + '-12' : y + '-' + String(m - 1).padStart(2, '0');
   }
   function monthEnd(m) { return new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).toISOString().slice(0, 10); }

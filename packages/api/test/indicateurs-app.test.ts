@@ -112,6 +112,22 @@ describe('IN06 · les indicateurs à l’écran', () => {
     expect(t.els['indicateurs-etat']!.textContent).toBe('décembre 2026.');
   });
 
+  it('[R214] le mois est celui de Paris : le 28 février à 23 h 30 UTC, c’est déjà mars, le mois passé est février', async () => {
+    const t = await run('direction');
+    clock = Date.parse('2027-02-28T22:30:00.000Z');
+    t.table['GET /v1/pilotage/parcours?du=2027-01-01&au=2027-01-31'] = ok(JOURNEY);
+    t.table['GET /v1/pilotage/agents-actifs?mois=2027-01'] = ok(PEOPLE);
+    t.table['GET /v1/pilotage/contacts-par-zone?mois=2027-01'] = ok({ month: '2027-01', zones: [], otherZones: null });
+    t.els['rapport-direction-lire']!.listeners.click!({});
+    await settle();
+    expect(t.els['indicateurs-etat']!.textContent).toBe('janvier 2027.');
+    clock = Date.parse('2027-02-28T23:30:00.000Z');
+    t.els['rapport-direction-lire']!.listeners.click!({});
+    await settle();
+    expect(t.calls.slice(-6).map((c) => c.url)).toContain('/v1/pilotage/parcours?du=2027-02-01&au=2027-02-28');
+    expect(t.els['indicateurs-etat']!.textContent).toBe('février 2027.');
+  });
+
   it('[R68] [R215] l’agent lit ce que le serveur lui rend, par la seule route des zones ; ce qui est retenu est dit sans chiffre', async () => {
     const t = await run('agent');
     expect(t.texts('zones')).toContain('Nord : 8 contacts');
@@ -121,6 +137,8 @@ describe('IN06 · les indicateurs à l’écran', () => {
     const held = await run('agent', { [ZONES]: ok({ month: '2027-02', zones: [], otherZones: null }) });
     expect(held.els['zones-etat']!.textContent).toContain('Aucune zone à montrer');
     expect(held.texts('zones')).toContain('trop petites');
+    expect(held.texts('zones')).not.toMatch(/\d/);
+    expect(held.els['zones-etat']!.textContent).not.toContain('contact');
   });
 
   it('[R16] droits refusés, réseau perdu, panne : dits tels, sans chiffres, et le rapport reste lisible', async () => {
@@ -149,7 +167,14 @@ describe('IN06 · les indicateurs à l’écran', () => {
     expect(t.els['indicateurs-etat']!.textContent).toBe('');
     const a = await run('agent');
     expect(a.els['zones-corps']!.children).not.toEqual([]);
+    let late: (r: Response) => void = () => {};
+    a.table[ZONES] = () => new Promise((r) => { late = r; });
+    a.els['rapport-agent-lire']!.listeners.click!({});
+    await settle();
     a.els.sortir!.listeners.click!({});
+    await settle();
+    expect(a.els['zones-corps']!.children).toEqual([]);
+    late(new Response('panne', { status: 500 }));
     await settle();
     expect(a.els['zones-corps']!.children).toEqual([]);
     expect(a.els['zones-etat']!.textContent).toBe('');
