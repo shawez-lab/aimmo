@@ -86,6 +86,7 @@ const services = (s: PilotageServices) => ({
   rapport: new pilotage.RapportMatin(s.db, s.journal, { now: s.now }),
   alertes: new pilotage.AlertesPilotage(s.db, s.journal, { now: s.now, documents: new pilotage.SqlEcheancesDocumentsAgent(s.db) }),
   export: new pilotage.ExportQuotidien(s.db, s.journal, { now: s.now }),
+  parcours: new pilotage.IndicateursParcours(s.db, s.journal, { now: s.now }),
   preuve: new pilotage.CompteurPreuve(s.db, s.journal, { now: s.now }),
 });
 
@@ -111,6 +112,7 @@ export function pilotageRoutes(): PilotageRoute[] {
       },
     },
     { method: 'GET', pattern: new RegExp(`${P}/preuve$`), name: 'pilotage.preuve', handle: async (s, v) => reply(await services(s).preuve.read(v)) },
+    { method: 'GET', pattern: new RegExp(`${P}/parcours$`), name: 'pilotage.parcours', handle: async (s, v, _p, r) => reply(await services(s).parcours.of(v, { from: query(r, 'du'), to: query(r, 'au') })) },
     { method: 'GET', pattern: new RegExp(`${P}/reseau$`), name: 'pilotage.reseau', handle: async (s, v, _p, r) => reply(await services(s).reseau.of(v, { from: query(r, 'du'), to: query(r, 'au') })) },
     {
       method: 'GET',
