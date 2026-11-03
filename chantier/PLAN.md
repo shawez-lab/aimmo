@@ -471,6 +471,16 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Critères : une alerte sans agent qui la voit est comptée pour la direction, et sort du compte dès qu'un agent la voit (test [R12]) ; aucun prénom, aucune référence de conversation dans la réponse ni au journal (test [R13]) ; un agent n'a pas ce compte (test [R16]).
 - Décidé (2026-11-02), lecture prudente : comptées aussi les fiches d'un agent parti ou au dossier incomplet, qui ne les voit pas. Une ligne par fiche et par raison, sans borne avant le filtre ; seules les fiches réunies coûtent une lecture de plus, 100 au plus, au-delà le nombre s'affiche « au moins ». Relecture forte : 2 P1 corrigés ; Codex à sa limite, fusion sans lui (#255).
 
+### C09e · Le palier de chaque canal, lu et avancé par la direction
+- Statut : en cours
+- Voie : 1
+- Trouvé par C09b (son « Reste ») : aucune route ne permet à la direction de lire ou d'avancer le palier d'un canal de captation ; `/automatisations/paliers` ne connaît que les automatisations du site.
+- Qui : Claude · Relecture : forte · Dépend de : C09b, B05
+- Cahier : M02, « État » ; Feuille de route, décembre 2026 ; R16, R26, R201. Partie de C09 qui n'attend personne : aucun vrai canal n'est branché.
+- Objectif : `GET /v1/captation/paliers` et `POST /v1/captation/paliers/{canal}/avancer`, et le bloc de la bascule qui les montre sur l'écran du réseau.
+- Critères : lecture par direction et conformité, avancer par la direction seule, autres rôles refusés au journal [R16] (test) ; fermé tant que le passage n'est pas ouvert (test), refusé pour un canal sans vrai branchement même ouvert (test) ; canal inconnu : 404 (test) ; l'écran dit qu'aucun message ne part sans vrai canal, ne propose le passage qu'à un canal branché, en deux appuis espacés [R26] (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 ### C09 · Mise en service de la captation
 - Statut : à faire
 - Qui : Claude · Relecture : forte · Dépend de : C06, C07, C08, S11
