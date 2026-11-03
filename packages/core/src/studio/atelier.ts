@@ -36,6 +36,18 @@ export interface AtelierView {
   posts: AtelierPost[];
 }
 
+/** Les liens marqués de ce que l'agent poste lui-même (AT20) : le code désigne le contenu, jamais une personne [R156]. */
+export interface AtelierLinks {
+  /** Faux quand le bien n'a pas de page en ligne : aucun lien à donner. */
+  online: boolean;
+  videos: { id: string; durationSeconds: number; recordedAt: string; link: string }[];
+  posts: { id: string; event: SocialEvent; createdAt: string; link: string }[];
+}
+
+export interface AtelierOrigin {
+  studioLink(networkId: string, kind: 'video' | 'publication', ref: string, propertyId: string): Promise<{ contentId: string; link: string | null } | null>;
+}
+
 export type AtelierResult = { ok: true; value: AtelierView } | { ok: false; rule: 'R16' | 'R10'; code: string };
 
 /** Les publications montrées : les plus récentes d'abord, assez pour la vie d'un bien. */
@@ -43,15 +55,17 @@ export const MAX_ATELIER_POSTS = 30;
 
 export class AtelierStudio {
   private readonly now: () => Date;
+  private readonly origin: AtelierOrigin | null;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
     private readonly certs: { publishable(propertyId: string): Promise<CertifiedPhoto[]> },
-    options: { now?: () => Date } = {},
+    options: { now?: () => Date; origin?: AtelierOrigin } = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.origin = options.origin ?? null;
   }
 
   async read(viewer: Viewer, propertyId: string): Promise<AtelierResult> {
@@ -74,6 +88,42 @@ export class AtelierStudio {
     );
     const posts = rows.map((r) => ({ id: r.id, event: r.event, validated: Number(r.validated) > 0, createdAt: r.created_at }));
     return { ok: true, value: { propertyId, photos, posts } };
+  }
+
+  /**
+   * Le lien marqué de chaque vidéo rangée et de chaque publication validée du bien, pour qui le voit en entier [R16].
+   * Une panne de l'origine est dite et écrite au journal, sans donnée.
+   */
+  async links(viewer: Viewer, propertyId: string): Promise<{ ok: true; value: AtelierLinks } | { ok: false; rule: 'R16' | 'R10'; code: string }> {
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refused(viewer, propertyId, 'role') as Promise<{ ok: false; rule: 'R16'; code: string }>;
+    const read = await this.acces.readProperty(viewer, propertyId);
+    if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+    if (read.view !== 'full') return this.refused(viewer, propertyId, 'not_assigned') as Promise<{ ok: false; rule: 'R16'; code: string }>;
+    const networkId = read.value.network_id;
+    if (!this.origin) return { ok: true, value: { online: false, videos: [], posts: [] } };
+    const origin = this.origin;
+    const clips = await this.db.all<{ id: string; duration_s: number; recorded_at: string }>('SELECT id, duration_s, recorded_at FROM video_montages WHERE property_id = ? AND network_id = ? ORDER BY recorded_at DESC, rowid DESC LIMIT ?', [propertyId, networkId, MAX_ATELIER_POSTS]);
+    const posts = await this.db.all<{ id: string; event: SocialEvent; created_at: string }>(
+      'SELECT p.id, p.event, p.created_at FROM social_posts p WHERE p.property_id = ? AND p.network_id = ? AND p.id IN (SELECT post_id FROM social_post_validations) ORDER BY p.created_at DESC, p.rowid DESC LIMIT ?',
+      [propertyId, networkId, MAX_ATELIER_POSTS],
+    );
+    try {
+      const value: AtelierLinks = { online: true, videos: [], posts: [] };
+      for (const c of clips) {
+        const l = await origin.studioLink(networkId, 'video', c.id, propertyId);
+        if (l?.link) value.videos.push({ id: c.id, durationSeconds: c.duration_s, recordedAt: c.recorded_at, link: l.link });
+        else value.online = false;
+      }
+      for (const p of posts) {
+        const l = await origin.studioLink(networkId, 'publication', p.id, propertyId);
+        if (l?.link) value.posts.push({ id: p.id, event: p.event, createdAt: p.created_at, link: l.link });
+        else value.online = false;
+      }
+      return { ok: true, value };
+    } catch (error) {
+      await appendEvent(this.journal, { type: 'studio.liens.origine_indisponible', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `property:${propertyId}`, data: { rule: 'R156', error: error instanceof Error ? error.name : 'inconnue' } }, this.now);
+      return { ok: false, rule: 'R10', code: 'origine_indisponible' };
+    }
   }
 
   private async refused(viewer: Viewer, propertyId: string, code: string): Promise<AtelierResult> {

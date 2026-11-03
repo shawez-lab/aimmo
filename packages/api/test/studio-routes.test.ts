@@ -101,6 +101,9 @@ describeWithSqlite('X09 · routes de M19', () => {
     expect(await t.db.all("SELECT COUNT(*) AS n FROM social_post_attempts WHERE mode <> 'essai'")).toEqual([{ n: 0 }]);
     // AT18 : chaque publication envoyée est un contenu de la mesure de l'origine, par la vraie route.
     expect(await t.db.all("SELECT COUNT(*) AS n FROM public_contents WHERE kind = 'publication'")).toEqual([{ n: 10 }]);
+    // AT20 : la vraie route des liens répond sous les droits du bien, et ne dit rien d'un bien sans page.
+    const firstProperty = (await t.db.first<{ property_id: string }>('SELECT property_id FROM social_posts LIMIT 1'))!.property_id;
+    expect((await t.call(t.direction, 'GET', `/studio/biens/${firstProperty}/liens`)).body).toMatchObject({ ok: true, data: { online: expect.any(Boolean), videos: expect.any(Array), posts: expect.any(Array) } });
     expect(await t.db.all('SELECT COUNT(*) AS n FROM photo_guide_validations')).toEqual([{ n: 10 }]);
     expect(await t.db.all('SELECT COUNT(*) AS n FROM photo_certificates')).toEqual([{ n: 20 }]);
     // La mesure des visuels : 20 publiés, tous sans adresse visible.
@@ -115,6 +118,7 @@ describeWithSqlite('X09 · routes de M19', () => {
     const refusals = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
     const paths: Record<string, string> = {
       'studio.atelier': `/studio/biens/${b.id}`,
+      'studio.liens': `/studio/biens/${b.id}/liens`,
       'studio.guide': `/studio/biens/${b.id}/guide`,
       'studio.guides_a_valider': '/studio/guides-a-valider',
       'studio.guide.vue': `/studio/biens/${b.id}/guide/vues`,

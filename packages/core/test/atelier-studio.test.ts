@@ -1,6 +1,6 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { AtelierStudio, type CertifiedPhoto } from '../src/studio/index.ts';
+import { AtelierStudio, type AtelierOrigin, type CertifiedPhoto } from '../src/studio/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -32,7 +32,7 @@ async function setup() {
     if (validated) await db.run("INSERT INTO social_post_validations (post_id, validated_by, validated_at) VALUES (?, 'agent:a', ?)", [id, at]);
   };
   const as = (role: 'agent' | 'direction' | 'compliance', userId: string) => ({ role, userId, networkId: network.id }) as never;
-  return { db, atelier, p, alex, sam, network, post, as };
+  return { db, acces, journal, atelier, p, alex, sam, network, post, as };
 }
 
 describeWithSqlite('X11 · atelier d’un bien dans le Studio', () => {
@@ -73,5 +73,47 @@ describeWithSqlite('X11 · atelier d’un bien dans le Studio', () => {
     const t = await setup();
     await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('s-2', ?, ?, 2, ?, 'agent:a', '2027-10-02')", [t.p.id, t.network.id, JSON.stringify({ media: 'x' })]);
     expect(await t.atelier.read(t.as('agent', t.alex.id), t.p.id)).toEqual({ ok: false, rule: 'R10', code: 'fiche_illisible' });
+  });
+
+  describe('AT20 · les liens marqués de ce que l’agent poste', () => {
+    const CLIP = '33333333-3333-4333-8333-333333333333';
+    const withOrigin = async (origin: AtelierOrigin) => {
+      const t = await setup();
+      const atelier = new AtelierStudio(t.db, t.acces, t.journal, { publishable: async () => [] }, { now: () => new Date('2027-10-15T08:00:00.000Z'), origin });
+      await t.db.run("INSERT INTO video_montages (id, property_id, network_id, video_ref, video_sha256, template_sha256, clips_count, duration_s, processed_on, recorded_by, recorded_at) VALUES (?, ?, ?, 'v.mp4', ?, ?, 3, 45, 'appareil', 'x', '2027-10-14T08:00:00.000Z')", [CLIP, t.p.id, t.network.id, 'a'.repeat(64), 'b'.repeat(64)]);
+      return { ...t, atelier };
+    };
+    const fake: AtelierOrigin = { studioLink: async (_n, _k, ref) => ({ contentId: 'code', link: `https://reseau.exemple.test/biens/x?o=${ref.slice(0, 4)}` }) };
+
+    it('[R16] [R156] l’agent du bien lit le lien de ses vidéos et de ses seules publications validées ; personne d’autre', async () => {
+      const t = await withOrigin(fake);
+      const alex = t.as('agent', t.alex.id);
+      const r = await t.atelier.links(alex, t.p.id);
+      if (!r.ok) throw new Error(r.code);
+      expect(r.value.online).toBe(true);
+      expect(r.value.videos).toEqual([{ id: CLIP, durationSeconds: 45, recordedAt: '2027-10-14T08:00:00.000Z', link: 'https://reseau.exemple.test/biens/x?o=3333' }]);
+      // Une publication non validée n'a pas de lien ; validée, elle en a un.
+      expect(r.value.posts).toEqual([]);
+      const POST = '44444444-4444-4444-8444-444444444444';
+      await t.post('55555555-5555-4555-8555-555555555555', '2027-10-14T08:00:00.000Z', false);
+      await t.post(POST, '2027-10-14T09:00:00.000Z', true);
+      const v = await t.atelier.links(alex, t.p.id);
+      expect(v.ok && v.value.posts.map((p) => p.id)).toEqual([POST]);
+      expect(await t.atelier.links(t.as('agent', t.sam.id), t.p.id)).toMatchObject({ ok: false, rule: 'R16' });
+      expect(await t.atelier.links(t.as('compliance', 'c1'), t.p.id)).toMatchObject({ ok: false, rule: 'R16' });
+    });
+
+    it('un bien sans page en ligne le dit, sans lien ; sans origine branchée non plus', async () => {
+      const t = await withOrigin({ studioLink: async () => ({ contentId: 'code', link: null }) });
+      expect(await t.atelier.links(t.as('agent', t.alex.id), t.p.id)).toEqual({ ok: true, value: { online: false, videos: [], posts: [] } });
+      const u = await setup();
+      expect(await u.atelier.links(u.as('agent', u.alex.id), u.p.id)).toEqual({ ok: true, value: { online: false, videos: [], posts: [] } });
+    });
+
+    it('[R13] une panne de l’origine est dite et notée, sans donnée', async () => {
+      const t = await withOrigin({ studioLink: async () => { throw new TypeError('panne 06 00 00 00 00'); } });
+      expect(await t.atelier.links(t.as('agent', t.alex.id), t.p.id)).toEqual({ ok: false, rule: 'R10', code: 'origine_indisponible' });
+      expect((await t.journal.all()).filter((e) => e.type === 'studio.liens.origine_indisponible').map((e) => e.data)).toEqual([{ rule: 'R156', error: 'TypeError' }]);
+    });
   });
 });
