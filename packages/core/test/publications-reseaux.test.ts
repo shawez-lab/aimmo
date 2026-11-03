@@ -366,6 +366,35 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
       expect((await u.journal.all()).filter((e) => e.type === 'studio.publication.origine_indisponible').map((e) => e.data)).toEqual([{ rule: 'R156', step: 'liaison', error: 'Error' }]);
     });
 
+    it('[R13] la liaison en panne et le journal aussi : l’envoi reste noté, la cible suivante est servie, rien ne repart', async () => {
+      const box: { t?: Awaited<ReturnType<typeof setup>> } = {};
+      const t = await setup({
+        postRef: 'post-ext-6',
+        origin: {
+          studioLink: async () => ({ contentId: 'codecontenu1', link: null }),
+          linkPost: async () => {
+            // Le raté survient juste après l'envoi noté : la note de panne échoue, le reste du journal revient ensuite.
+            const j = box.t!.journal as unknown as { append: unknown };
+            const real = j.append;
+            j.append = async () => {
+              j.append = real;
+              throw new Error('journal');
+            };
+            throw new Error('panne');
+          },
+        },
+      });
+      box.t = t;
+      const id = await t.ready();
+      const both = [{ channel: 'instagram', account: 'agent' }, { channel: 'facebook', account: 'agent' }];
+      const r = await t.pubs.publish(t.alexV, id, both);
+      expect(r.ok && r.value.sends.map((x) => [x.channel, x.outcome]).sort()).toEqual([['facebook', 'envoye'], ['instagram', 'envoye']]);
+      expect(t.received.map((x) => x.channel)).toEqual(['instagram', 'facebook']);
+      await t.pubs.publish(t.alexV, id, both);
+      expect(t.received).toHaveLength(2);
+      expect(await t.db.all('SELECT COUNT(*) AS n FROM social_post_sends')).toEqual([{ n: 2 }]);
+    });
+
     it('un réseau d’où aucun commentaire ne remonte n’est pas une panne ; une référence déjà prise est notée', async () => {
       const t = await setup({ postRef: 'post-ext-4', origin: { studioLink: async () => ({ contentId: 'codecontenu1', link: null }), linkPost: async () => ({ ok: false, code: 'bad_channel' }) } });
       await t.pubs.publish(t.alexV, await t.ready(), [{ channel: 'linkedin', account: 'agent' }]);

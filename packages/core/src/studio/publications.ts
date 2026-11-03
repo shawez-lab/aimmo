@@ -350,8 +350,14 @@ export class Publications {
       }
       if (!stored) return this.bad(actor, subject, 'R132', 'accord_absent');
     }
-    const originDown = (step: string, error: unknown) =>
-      appendEvent(this.journal, { type: 'studio.publication.origine_indisponible', actor, subject, data: { rule: 'R156', step, error: error instanceof Error ? error.name : 'inconnue' } }, this.now);
+    // Rien de l'origine ne peut arrêter un envoi : même sa note au journal, si le journal tombe aussi, reste sans effet ici.
+    const originDown = async (step: string, error: unknown): Promise<void> => {
+      try {
+        await appendEvent(this.journal, { type: 'studio.publication.origine_indisponible', actor, subject, data: { rule: 'R156', step, error: error instanceof Error ? error.name : 'inconnue' } }, this.now);
+      } catch {
+        /* le journal est en panne : l'écriture de l'envoi, juste après, le dira à l'appelant */
+      }
+    };
     let tracked: { contentId: string; link: string | null } | null = null;
     if (this.deps.origin) {
       try {
@@ -371,6 +377,9 @@ export class Publications {
       } catch {
         outcome = 'echec';
       }
+      await this.db.run('INSERT INTO social_post_sends (attempt_id, outcome, done_at) VALUES (?, ?, ?)', [attempt, outcome, this.now().toISOString()]);
+      await appendEvent(this.journal, { type: 'studio.publication.envoi', actor, subject, data: { post: postId, channel: w.channel, account: w.account, mode: 'essai', outcome, rule: 'R26' } }, this.now);
+      // Relié seulement une fois l'envoi noté : rien ne se glisse entre un envoi et sa trace.
       if (sent && tracked && this.deps.origin) {
         try {
           const linked = await this.deps.origin.linkPost(post.value.network_id, tracked.contentId, w.channel, sent.postRef);
@@ -380,8 +389,6 @@ export class Publications {
           await originDown('liaison', error);
         }
       }
-      await this.db.run('INSERT INTO social_post_sends (attempt_id, outcome, done_at) VALUES (?, ?, ?)', [attempt, outcome, this.now().toISOString()]);
-      await appendEvent(this.journal, { type: 'studio.publication.envoi', actor, subject, data: { post: postId, channel: w.channel, account: w.account, mode: 'essai', outcome, rule: 'R26' } }, this.now);
     }
     return { ok: true, value: (await this.view(postId))! };
   }
