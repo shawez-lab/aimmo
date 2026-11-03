@@ -2,6 +2,7 @@
 // Garde-fous lancés à chaque vérification : aucun secret, aucune règle en service sans test, aucun fichier énorme.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
+import { controleVerifications } from './controle-verifications.mjs';
 
 const errors = [];
 
@@ -65,6 +66,15 @@ for (const file of tracked) {
     // fichier supprimé dans l'arbre de travail : ignoré
   }
 }
+
+// 4. Aucune vérification retirée, et un délai qui garde sa marge (X28).
+errors.push(
+  ...controleVerifications({
+    verifications: readFileSync('.github/workflows/verifications.yml', 'utf8'),
+    deploiement: readFileSync('.github/workflows/deployer-api.yml', 'utf8'),
+    attente: readFileSync('scripts/attendre-verifications.mjs', 'utf8'),
+  }),
+);
 
 if (errors.length > 0) {
   console.error(`Garde-fous : ${errors.length} problème(s)\n- ${errors.join('\n- ')}`);
