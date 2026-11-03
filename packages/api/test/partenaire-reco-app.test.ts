@@ -20,13 +20,15 @@ const settle = async () => {
   for (let i = 0; i < 15; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
-async function run(posts: Answer[] = [], sents: Answer[] = [ok([])]) {
+async function run(posts: Answer[] = [], sents: Answer[] = [ok([])], over: { Date?: DateConstructor } = {}) {
+  let onStorage: (e: { key: string | null }) => void = () => {};
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const storage = new Map<string, string>([['aimmo.partenaire.cle', KEY]]);
   const calls: { method: string; url: string; body: Record<string, any> | null }[] = [];
   const context: Record<string, unknown> = {
     document,
-    Date,
+    Date: over.Date ?? Date,
+    addEventListener: (name: string, fn: (e: { key: string | null }) => void) => { if (name === 'storage') onStorage = fn; },
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
     fetch: (url: string, init: { method?: string; body?: string } = {}) => {
       const method = init.method ?? 'GET';
@@ -49,7 +51,7 @@ async function run(posts: Answer[] = [], sents: Answer[] = [ok([])]) {
     await settle();
   };
   const posted = () => calls.filter((c) => c.method === 'POST' && c.url === POST);
-  return { els, calls, fill, send, posted, state: () => els['reco-etat']!.textContent };
+  return { els, calls, fill, send, posted, storage, context, storageEvent: (key: string | null) => onStorage({ key }), state: () => els['reco-etat']!.textContent };
 }
 
 describe('X24 · le partenaire recommande une personne depuis son espace', () => {
@@ -84,10 +86,26 @@ describe('X24 · le partenaire recommande une personne depuis son espace', () =>
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     t.fill({ 'reco-jour': today });
-    const before = Date.now();
     await t.send();
-    expect(Date.parse(t.posted()[0]!.body!.consent.givenAt)).toBeLessThanOrEqual(Date.now());
-    expect(Date.parse(t.posted()[0]!.body!.consent.givenAt)).toBeGreaterThanOrEqual(before);
+    expect(t.posted()[0]!.body!.consent.givenAt).toBe(new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString());
+  });
+
+  it('[R03] un appareil qui avance d’une heure n’envoie pas un accord dans le futur', async () => {
+    const real = Date;
+    const ahead = 3_600_000;
+    class Ahead extends real {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) super(real.now() + ahead);
+        else super(...(args as [number, number, number]));
+      }
+    }
+    const t = await run([ok({ recorded: true })], [ok([])], { Date: Ahead as unknown as DateConstructor });
+    const d = new Ahead();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    t.fill({ 'reco-jour': today });
+    await t.send();
+    expect(Date.parse(t.posted()[0]!.body!.consent.givenAt)).toBeLessThanOrEqual(real.now() + ahead);
+    expect(t.posted()[0]!.body!.consent.givenAt).toBe(new real(d.getFullYear(), d.getMonth(), d.getDate()).toISOString());
   });
 
   it('[R142] sans preuve, sans date, sans projet ou sans coordonnée, rien ne part', async () => {
@@ -136,10 +154,13 @@ describe('X24 · le partenaire recommande une personne depuis son espace', () =>
   });
 
   it('[R10] une réponse perdue ou une panne est dite telle, et la saisie reste pour la renvoyer', async () => {
-    const t = await run([offline, no(500, 'internal'), ok({ recorded: true })]);
+    const t = await run([offline, no(500, 'internal'), ok({ recorded: true })], [ok([]), ok([{ createdAt: '2027-03-04T10:00:00.000Z' }])]);
     t.fill();
     await t.send();
     expect(t.state()).toContain('La réponse n’est pas arrivée : rien n’est sûr.');
+    expect(t.state()).toContain('une date de plus s’affichera');
+    // La liste est relue : un envoi bien arrivé s'y voit.
+    expect(t.els.envois!.children).toHaveLength(1);
     expect(t.els['reco-mail']!.value).toBe('nina@example.test');
     await t.send();
     expect(t.state()).toContain('La réponse n’est pas arrivée : rien n’est sûr.');
@@ -172,6 +193,43 @@ describe('X24 · le partenaire recommande une personne depuis son espace', () =>
     await settle();
     expect(t.state()).toBe('');
     expect(t.els.envois!.children).toHaveLength(0);
+  });
+
+  it('[R13] une clé refusée vide le formulaire et les envois, et libère l’envoi pour la clé suivante', async () => {
+    const t = await run([no(401, 'bad_key'), ok({ recorded: true })], [ok([{ createdAt: '2027-03-04T10:00:00.000Z' }])]);
+    t.fill();
+    await t.send();
+    expect(t.els['reco-mail']!.value).toBe('');
+    expect(t.els.envois!.children).toHaveLength(0);
+    expect(t.state()).toBe('');
+    expect(t.els.entree!.hidden).toBe(false);
+    t.els.cle!.value = 'n'.repeat(40);
+    t.els['form-cle']!.listeners.submit!({ preventDefault: () => {} });
+    await settle();
+    t.fill();
+    await t.send();
+    expect(t.state()).toBe('Recommandation transmise. Merci.');
+  });
+
+  it('[R13] une clé retirée dans un autre onglet vide la page, tout de suite ou au geste suivant ; une nouvelle clé trouve une page vide', async () => {
+    const t = await run([], [ok([{ createdAt: '2027-03-04T10:00:00.000Z' }])]);
+    t.fill();
+    t.storage.delete('aimmo.partenaire.cle');
+    t.storageEvent('aimmo.partenaire.cle');
+    expect(t.els['reco-mail']!.value).toBe('');
+    expect(t.els.entree!.hidden).toBe(false);
+    const geste = await run();
+    geste.fill();
+    geste.storage.delete('aimmo.partenaire.cle');
+    await geste.send();
+    expect(geste.els['reco-mail']!.value).toBe('');
+    expect(geste.state()).toBe('');
+    expect(geste.posted()).toHaveLength(0);
+    const nouvelle = await run();
+    nouvelle.fill();
+    nouvelle.els.cle!.value = 'n'.repeat(40);
+    nouvelle.els['form-cle']!.listeners.submit!({ preventDefault: () => {} });
+    expect(nouvelle.els['reco-mail']!.value).toBe('');
   });
 
   it('les envois illisibles sont dits, sans bloquer le reste', async () => {

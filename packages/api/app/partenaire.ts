@@ -177,7 +177,7 @@ export const PARTNER_JS = `'use strict';
     consent_channel_without_contact: 'Donnez la coordonnée du canal qu’elle a accepté.',
     role: 'Votre espace ne permet pas de recommander.'
   };
-  var RECO_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Regardez « Vos envois » : renvoyer la même personne n’ajoute aucune recommandation.';
+  var RECO_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Vous pouvez renvoyer : si elle est déjà transmise, l’agence ne la comptera qu’une fois, et une date de plus s’affichera dans vos envois.';
   var RECO_FIELDS = ['reco-prenom', 'reco-mail', 'reco-tel', 'reco-projet', 'reco-preuve', 'reco-canal', 'reco-jour', 'reco-reference'];
   var recoBusy = false;
   var current = null;
@@ -199,18 +199,31 @@ export const PARTNER_JS = `'use strict';
   /** Ce qui est écrit sur la personne recommandée ne reste pas à l'écran : vidé après l'envoi et à la sortie. */
   function resetReco() { RECO_FIELDS.forEach(function (id) { el(id).value = ''; }); say('reco-etat', ''); }
   function wipeSent() { clear('envois'); say('envois-etat', ''); }
+  /** Toute sortie vide la page : rien de ce qu'un partenaire a écrit ou lu ne passe au suivant [R13, R16]. */
+  function leave() {
+    session += 1;
+    opening += 1;
+    current = null;
+    recoBusy = false;
+    resetForm();
+    resetReco();
+    wipeSent();
+    clear('dossier');
+    clear('demandes');
+    show('entree');
+  }
   function refusal(body) { return (body && REFUSALS[body.code]) || 'La demande n’a pas abouti. Réessayez dans un instant.'; }
 
   function api(path, init) {
     var key = readKey();
-    if (!key) { show('entree'); return Promise.resolve(null); }
+    if (!key) { leave(); return Promise.resolve(null); }
     var options = init || {};
     var headers = options.headers || {};
     headers.authorization = 'Bearer ' + key;
     var mine = session;
     return fetch(path, { method: options.method || 'GET', headers: headers, body: options.body, cache: 'no-store' }).then(function (r) {
       if (mine !== session) return null;
-      if (r.status === 401) { session += 1; forgetKey(); resetReco(); wipeSent(); show('entree'); say('etat', 'Clé refusée. Saisissez-la de nouveau.'); return null; }
+      if (r.status === 401) { forgetKey(); leave(); say('etat', 'Clé refusée. Saisissez-la de nouveau.'); return null; }
       return r.json().then(function (body) { return mine === session ? { status: r.status, body: body } : null; }, function () { return mine === session ? { status: r.status, body: null } : null; });
     }, function () {
       if (mine === session) {
@@ -243,9 +256,10 @@ export const PARTNER_JS = `'use strict';
     var v = function (id) { return el(id).value.trim(); };
     var stop = !v('reco-mail') && !v('reco-tel') ? 'no_contact' : !v('reco-projet') ? 'bad_project' : !v('reco-preuve') ? 'bad_consent_kind' : !v('reco-canal') ? 'bad_consent_channel' : !v('reco-jour') ? 'bad_consent_date' : !v('reco-reference') ? 'bad_consent_reference' : null;
     if (stop) { say('reco-etat', REFUSALS[stop]); return null; }
-    // Le jour même vaut maintenant : midi pourrait être encore à venir, et le socle refuse un accord dans le futur.
+    // Le jour même vaut le début de la journée : midi, ou l'heure d'un appareil qui avance, serait dans le futur pour le socle.
     var day = v('reco-jour');
-    var body = { projectKind: v('reco-projet'), consent: { kind: v('reco-preuve'), channel: v('reco-canal'), givenAt: day === today() ? new Date().toISOString() : day + 'T12:00:00.000Z', reference: v('reco-reference') } };
+    var now = new Date();
+    var body = { projectKind: v('reco-projet'), consent: { kind: v('reco-preuve'), channel: v('reco-canal'), givenAt: day === today() ? new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString() : day + 'T12:00:00.000Z', reference: v('reco-reference') } };
     if (v('reco-prenom')) body.firstName = v('reco-prenom');
     if (v('reco-mail')) body.email = v('reco-mail');
     if (v('reco-tel')) body.phone = v('reco-tel');
@@ -255,11 +269,11 @@ export const PARTNER_JS = `'use strict';
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-      lost: function () { say('reco-etat', RECO_LOST); }
+      lost: function () { say('reco-etat', RECO_LOST); loadSent(); }
     }).then(function (res) {
       recoBusy = false;
       if (!res) return;
-      if (!res.body || res.status >= 500) { say('reco-etat', RECO_LOST); return; }
+      if (!res.body || res.status >= 500) { say('reco-etat', RECO_LOST); return loadSent(); }
       if (res.status !== 200) { say('reco-etat', REFUSALS[res.body.code] || 'Cette recommandation n’est pas transmise.'); return; }
       // Le même texte quoi qu'il advienne de la personne : déjà connue, opposée ou nouvelle [R16, R77].
       resetReco();
@@ -371,16 +385,18 @@ export const PARTNER_JS = `'use strict';
       var v = el('cle').value.trim();
       el('cle').value = '';
       if (v.length < 32) { say('etat', 'La clé compte au moins 32 caractères.'); return; }
-      session += 1;
+      leave();
       if (!writeKey(v)) { say('etat', 'Ce navigateur ne garde pas la clé : ouvrez la page hors navigation privée.'); return; }
       loadList();
     });
-    el('sortir').addEventListener('click', function () { session += 1; opening += 1; forgetKey(); current = null; recoBusy = false; resetForm(); resetReco(); wipeSent(); clear('dossier'); clear('demandes'); show('entree'); });
+    el('sortir').addEventListener('click', function () { forgetKey(); leave(); });
     el('retour').addEventListener('click', function () { opening += 1; current = null; resetForm(); loadList(); });
     el('commencer').addEventListener('click', function () { progress('en_cours'); });
     el('terminer').addEventListener('click', function () { progress('terminee'); });
     el('form-piece').addEventListener('submit', function (e) { e.preventDefault(); depositPiece(); });
     el('form-reco').addEventListener('submit', function (e) { e.preventDefault(); recommend(); });
+    // Une clé retirée ou changée dans un autre onglet ferme aussi celui-ci.
+    if (typeof addEventListener === 'function') addEventListener('storage', function (e) { if (e.key === KEY || e.key === null) { leave(); say('etat', ''); } });
     resetForm();
     if (readKey()) loadList(); else show('entree');
   });

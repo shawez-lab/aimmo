@@ -251,6 +251,18 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(mine.ok && mine.value).toHaveLength(6);
   });
 
+  it('[R77] X24 · la même recommandation renvoyée après une réponse perdue reste une seule : une date de plus aux envois, rien de plus', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    await t.entrust(p);
+    const first = await t.gagner.recommend(t.as(p), t.input());
+    const again = await t.gagner.recommend(t.as(p), t.input());
+    expect(again).toEqual(first);
+    expect(await t.rows()).toHaveLength(1);
+    const mine = await t.gagner.mine(t.as(p));
+    expect(mine.ok && mine.value).toHaveLength(2);
+  });
+
   it('[R03] [R142] un accord par mail ne permet jamais un appel : la file dit le seul canal accepté', async () => {
     const t = await setup();
     const p = await t.partner('Étude Essai');
