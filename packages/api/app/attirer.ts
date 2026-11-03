@@ -19,6 +19,7 @@ const REFUSALS: Record<string, string> = {
   source_absente: 'La source des ventes publiques n’est pas branchée : aucun recalcul pour le moment.',
   bad_url: 'Saisissez l’adresse complète du site, sans chemin, par exemple https://www.exemple.fr.',
   url_taken: 'Cette adresse sert déjà un autre site : une seule page de référence par bien.',
+  url_agent_parti: 'Cette adresse reste gardée par un agent parti : libérez-la dans « Agents, mentions et sites ».',
   bad_month: 'Choisissez un mois dans la liste.',
   rsac: 'Le numéro d’immatriculation n’est pas lisible : neuf chiffres, avec RSAC devant ou non.',
   greffe: 'Saisissez le greffe, 80 caractères au plus.',
@@ -469,6 +470,22 @@ globalThis.AIMMO_ATTIRER = function (t) {
     var ul = el('ul', null, 'liste');
     data.agents.forEach(function (a, i) { ul.appendChild(agentLine(a, i)); });
     box.appendChild(ul);
+    /* AT17 · une adresse gardée par un agent parti : plus servie, mais aucun autre site ne peut la prendre. */
+    var kept = data.departed || [];
+    if (kept.length) {
+      box.appendChild(el('h3', 'Adresses gardées par un agent parti'));
+      var left = el('ul', null, 'liste');
+      kept.forEach(function (d) {
+        var li = el('li');
+        li.appendChild(el('strong', d.name));
+        li.appendChild(el('p', 'N’est plus en activité. Son site n’est plus servi, son adresse reste prise : ' + d.baseUrl, 'doux'));
+        li.appendChild(confirmed('Libérer l’adresse', 'Un autre site pourra prendre cette adresse. Appuyez de nouveau pour confirmer.', function () {
+          agentWrite('/v1/attirer/sites', { kind: 'agent', agentId: d.agentId, baseUrl: d.baseUrl, active: false }, 'Adresse libérée.', 'L’adresse n’est pas libérée.');
+        }));
+        left.appendChild(li);
+      });
+      box.appendChild(left);
+    }
     return box;
   }
 

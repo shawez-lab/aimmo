@@ -180,7 +180,13 @@ export class Referencement {
     if (active) {
       // L'adresse ne doit servir aucun autre site en service, dans aucun réseau.
       for (const s of await this.allActive()) {
-        if (s.baseUrl === baseUrl && !(s.networkId === viewer.networkId && s.kind === kind && s.agentId === agent)) return refuse('R153', 'url_taken');
+        if (s.baseUrl !== baseUrl || (s.networkId === viewer.networkId && s.kind === kind && s.agentId === agent)) continue;
+        // Gardée par un agent parti du même réseau : la direction peut la libérer. Un autre réseau n'en apprend rien.
+        if (s.networkId === viewer.networkId && s.agentId !== null) {
+          const holder = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [s.agentId, viewer.networkId]);
+          if (holder && holder.status !== 'active') return refuse('R153', 'url_agent_parti');
+        }
+        return refuse('R153', 'url_taken');
       }
     }
     const id = this.newId();
@@ -217,6 +223,19 @@ export class Referencement {
       [networkId],
     );
     return rows.map((r) => ({ agentId: r.agent_id, baseUrl: r.base_url, active: Number(r.active) === 1 }));
+  }
+
+  /**
+   * Les adresses encore gardées par un agent parti du réseau : son site n'est plus servi, mais aucun autre site ne peut
+   * prendre l'adresse tant que son dernier réglage reste « en service » [R153]. Pour la direction seule, qui les libère.
+   */
+  async departedAgentSites(networkId: string): Promise<{ agentId: string; name: string; baseUrl: string }[]> {
+    const rows = await this.db.all<{ id: string; first_name: string; last_name: string }>("SELECT id, first_name, last_name FROM agents WHERE network_id = ? AND status <> 'active' ORDER BY last_name, first_name, id", [networkId]);
+    const settings = new Map((await this.agentSiteSettings(networkId)).map((x) => [x.agentId, x]));
+    return rows.flatMap((a) => {
+      const site = settings.get(a.id);
+      return site?.active ? [{ agentId: a.id, name: `${a.first_name} ${a.last_name}`, baseUrl: site.baseUrl }] : [];
+    });
   }
 
   /**
