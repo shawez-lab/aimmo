@@ -1793,6 +1793,26 @@ Voie : 1
 - Critères : coupure, panne et réponse illisible dites telles, sur le tirage et les autres gestes [R10] (test) ; double appui, un seul envoi [R74] (test) ; le verrou vaut pour une session (test) ; budget tenu [R201] (test).
 - Attend : rien.
 
+**Gestes sans écran, pour la voie 1.**
+
+Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par route avant de coder : `POST` du socle (`app.ts`) sans appel de l'application.
+
+### X16 · Rétractation et début anticipé d'un mandat à l'écran
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : D03
+- Cahier : M06 ; R16, R201.
+- Objectif : `mandat.retractation` et `mandat.debut_anticipe` n'ont aucun geste à l'écran. Lire d'abord les routes et le fichier `app/mandat.ts`.
+- Critères : seul l'agent du mandat ou la direction agit [R16] (test) ; preuve exigée quand la route l'exige (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### X17 · Signature en ligne, avenant et identité à l'écran
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : D08
+- Cahier : M06 ; R16, R201.
+- Objectif : `document.signature_en_ligne`, `document.signature_avenant` et `fiche.identite` n'ont aucun appel de l'application. Vérifier si le geste existe sous une autre forme ; sinon le donner, en essai.
+- Critères : aucun envoi réel en essai [R26] (test) ; droits refusés dits [R16] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : H24 pour un usage réel.
+
 **Espaces des clients et location : les gestes manquants à l'écran.**
 
 Voie : 2
@@ -1817,6 +1837,14 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Attend : rien.
 - Décidé (2026-11-03) : aucune route ne déposait une pièce de candidature, donc aucun dossier ne pouvait devenir complet depuis l'application : la tâche couvre aussi les pièces, avec `POST /location/candidatures/<id>/fichiers/piece`. Un dossier DossierFacile n'a pas le geste [R104]. Un seul garant Visale par dossier, jusque dans la base (migration `1580`). Relecture forte : 3 P1 corrigés ; Codex à sa limite, fusion sans lui (#302).
 - Reste : `addPiece` accepte encore des pièces sur un dossier DossierFacile par appel direct ; le geste de vérification de l'identité du candidat n'a pas été regardé (W21).
+
+### G16 · La direction attribue une recommandation sans agent
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : G08, G13
+- Cahier : M20 ; R142, R16, R35, R201.
+- Objectif : trouvé le 2026-11-03 en comparant les routes aux appels de l'écran : une recommandation de partenaire sans agent arrive à la direction, qui voit « Appel fait » (refusé) et ne peut pas l'attribuer ; personne ne l'appelle. Donner le geste, avec une lecture des agents en activité.
+- Critères : seule la direction lit les agents et attribue [R16] (test) ; ni « Appel fait » ni liste lue d'avance pour elle, l'agent ne voit pas le geste (test) ; ordre reçu gardé, noms en texte [R35] (test) ; refus dits en français, réponse perdue dite telle, double appui un seul envoi (tests) ; budget tenu [R201] (test).
+- Attend : rien.
 
 ### EC13 · Un plafond aux liens d'espace préparés par l'agent
 - Statut : fait (2026-11-03)

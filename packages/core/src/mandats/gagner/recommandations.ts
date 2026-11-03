@@ -27,6 +27,7 @@ import { normalizeIdentifier } from '../../fiche/normalize.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
 import type { Annuaire } from '../../partenaires/annuaire.ts';
+import { agentState } from '../../acces/etat-agent.ts';
 import { agentGone } from '../../reseau/depart.ts';
 import { agentBlocked } from './etat-agent.ts';
 
@@ -64,6 +65,15 @@ export interface RecommendationToCall {
   /** Le seul canal par lequel la personne a accepté d'être contactée : `phone` pour un appel. */
   channel: RecommendationConsentChannel;
   dueAt: string;
+  /** Pour la direction : la personne n'a pas d'agent, la recommandation est à attribuer, pas à appeler (G16). */
+  assignable?: true;
+}
+
+/** Un agent à qui la direction peut attribuer une recommandation : son nom, rien d'autre (G16) [R16]. */
+export interface AssignableAgent {
+  agentId: string;
+  firstName: string;
+  lastName: string;
 }
 
 interface PartnerRecommendationRow {
@@ -357,7 +367,7 @@ export class RecommandationsGagner {
       if (!(await this.hasConsent(root, at, channel))) return;
       const read = await this.acces.readFiche(viewer, root);
       if (!read.ok || read.view !== 'full') return;
-      out.push({ origin, recommendationId: id, personId: root, firstName: read.value.members.map((m) => m.first_name).find((n) => n) ?? typed, sourceLabel, channel, dueAt });
+      out.push({ origin, recommendationId: id, personId: root, firstName: read.value.members.map((m) => m.first_name).find((n) => n) ?? typed, sourceLabel, channel, dueAt, ...(viewer.role === 'direction' ? { assignable: true as const } : {}) });
     };
     if (viewer.role === 'agent') {
       const clients = await this.db.all<{ id: string; referred_id: string; first_name: string | null; call_due_at: string }>(
@@ -383,6 +393,20 @@ export class RecommandationsGagner {
     return { ok: true, value: out };
   }
 
+  /** Les agents en activité du réseau, par nom, pour la seule direction : ni chiffre ni classement [R16, R35]. */
+  async assignableAgents(viewer: Viewer): Promise<RecommendationResult<AssignableAgent[]>> {
+    if (viewer.role !== 'direction') return this.refused(viewer, null, 'role');
+    const rows = await this.db.all<{ id: string; first_name: string; last_name: string }>(
+      'SELECT id, first_name, last_name FROM agents WHERE network_id = ? AND status = ? ORDER BY last_name, first_name, id',
+      [viewer.networkId, 'active'],
+    );
+    // Un agent au dossier incomplet ou dont le départ est arrivé ne verrait pas la tâche : personne n'appellerait.
+    const at = this.now();
+    const able: AssignableAgent[] = [];
+    for (const a of rows) if ((await agentState(this.db, viewer.networkId, a.id, at)) === 'actif') able.push({ agentId: a.id, firstName: a.first_name, lastName: a.last_name });
+    return { ok: true, value: able };
+  }
+
   /** La direction donne à un agent actif une recommandation de partenaire qui n'en avait pas ; une seule fois. */
   async assign(viewer: Viewer, recommendationId: string, agentId: string): Promise<RecommendationResult<{ assigned: true }>> {
     if (viewer.role !== 'direction') return this.refused(viewer, null, 'role');
@@ -390,7 +414,7 @@ export class RecommandationsGagner {
     if (!row || row.call_due_at === null) return this.refused(viewer, null, 'unknown');
     if ((await this.currentOwner(row, this.now())) !== null) return { ok: false, rule: null, code: 'already_assigned' };
     const agent = await this.db.first('SELECT 1 FROM agents WHERE id = ? AND network_id = ? AND status = ?', [agentId, viewer.networkId, 'active']);
-    if (!agent) return { ok: false, rule: null, code: 'bad_agent' };
+    if (!agent || (await agentState(this.db, viewer.networkId, agentId, this.now())) !== 'actif') return { ok: false, rule: null, code: 'bad_agent' };
     const members = await this.fiche.membersOf(await this.fiche.rootOf(row.referred_id));
     // La personne a pu être donnée à un agent entre-temps (par une autre recommandation) : la tâche va à lui seul, sinon
     // personne ne pourrait la voir ni la clore [R16].

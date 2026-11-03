@@ -192,6 +192,7 @@ export function gagnerRoutes(): GagnerRoute[] {
     // G08 · recommandations
     { method: 'POST', pattern: new RegExp(`${P}/recommandations$`), name: 'gagner.recommandation', roles: PARTNER, handle: withBody(async (s, v, _p, b) => reply(await services(s).recommandations.recommend(v, b))) },
     { method: 'GET', pattern: new RegExp(`${P}/recommandations/mes-envois$`), name: 'gagner.recommandations_envois', roles: PARTNER, handle: async (s, v) => reply(await services(s).recommandations.mine(v)) },
+    { method: 'GET', pattern: new RegExp(`${P}/recommandations/agents$`), name: 'gagner.recommandations_agents', roles: DIRECTION, handle: async (s, v) => reply(await services(s).recommandations.assignableAgents(v)) },
     { method: 'GET', pattern: new RegExp(`${P}/recommandations/a-appeler$`), name: 'gagner.recommandations_a_appeler', roles: ['agent', 'direction'], handle: async (s, v) => reply(await services(s).recommandations.toCall(v)) },
     {
       method: 'POST',
