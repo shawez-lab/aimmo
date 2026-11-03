@@ -574,3 +574,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 17:30 · IN01 · le compteur de la preuve à Dijon, depuis le registre, pour la direction (#343) ; module « Preuve et indicateurs » découpé, voie 2 ; relecture forte 1 P1 de test corrigé ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN02
 - 2026-11-03 18:20 · IN02 · le mois scellé et son compte public, recalculable par n'importe qui (#344) ; relecture forte 3 P1 ; R95 et R96 corrigés après deux vérifications rouges ; Codex non attendu (H03) · prochaine : IN04
 - 2026-11-03 18:20 · IN03 · taux et délais du parcours (#346) ; relecture forte 1 P0 et 5 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN04
+- 2026-11-03 18:36 · RS01 · liste publique des biens, chaque bien revérifié à la lecture, vendu ou sans mandat il sort aussitôt, de la liste comme de sa page (#345) ; relecture forte 5 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : RS02
+- 2026-11-03 18:36 · voie 1 · fin de séance : X28, CE23 et RS01 fusionnées, module « Site du réseau » découpé ; verrou libéré, relance · prochaine : RS02

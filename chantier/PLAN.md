@@ -3479,7 +3479,9 @@ Découpé le 2026-11-03 par la voie 1 : la Feuille de route livre en juillet 202
 Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rien n'est saisi deux fois ; aucun classement d'agent, biens du plus récent au plus ancien, agents par ordre alphabétique [R14] ; le site d'un agent ne montre que ses biens [R153] ; chaque page reste sans script, dans le budget et le système de design [R201]. L'ouverture réelle attend la société (H09) et le nom de domaine : tout reste non indexé en mode essai. Règles R220 et R221 ; R210 à R212 restent à la voie 2.
 
 ### RS01 · Tous les biens, et aucune annonce fantôme (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03), lecture prudente : un bien vendu, loué ou retiré dans le socle sort comme un mandat refusé ; la page, la fiche et les photos suivent la liste ; une annonce disponible reste une minute au plus en cache ; chaque lecture ne contrôle que les 24 biens de sa page, une page peut donc en montrer moins, et le dit si elle n'en a aucun.
+- Reste : fusionnée (#345) ; relecture forte 5 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte. Plan du site, origine des contacts et comptes de quartier gardent jusqu'à 15 minutes de décalage ; une commune sans bien acceptable reste proposée, et sa page le dit.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AT11, D05
 - Cahier : M01, « Deux sites, un seul moteur » ; R42, R43, R48, R153.
 - Objectif : `GET /biens`, liste des biens publiés, du plus récent au plus ancien, filtrable par commune, par pages. **Jamais vu** : aucune annonce fantôme. Portails et réseaux affichent des biens vendus ou sans mandat jusqu'au prochain passage ; ici, chaque bien repasse la porte de diffusion à l'instant de la lecture, et la page dit l'heure de cette vérification. Un mandat échu ou rétracté retire le bien aussitôt, de la liste comme de sa page, sans attendre le passage de publication.
