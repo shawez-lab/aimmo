@@ -75,6 +75,13 @@ const CHECKS = {
   kbis_expired: 'L’extrait Kbis de la société a expiré : rangez-en un à jour au coffre de la conformité.',
   beneficial_owners_missing: 'Les bénéficiaires effectifs ne sont pas renseignés.',
   beneficial_owner_unidentified: 'Un bénéficiaire effectif n’est pas identifié.',
+  no_mandate: 'Cet avenant n’est rattaché à aucun mandat.',
+  mandate_not_numbered: 'Le mandat de cet avenant n’est pas au registre.',
+  mandate_withdrawn: 'Le mandant s’est rétracté : cet avenant ne se signe pas.',
+  mandate_cancelled: 'Le mandat de cet avenant est annulé au registre.',
+  mandate_expired: 'Le mandat de cet avenant est arrivé à échéance.',
+  mandate_in_force: 'Le mandat de cet avenant est en cours.',
+  fees_unchanged: 'Les honoraires ne changent pas.',
 };
 const DIFFUSION: Record<DiffusionReason, string> = {
   no_mandate: 'Le mandat n’est pas au registre : le bien ne se diffuse pas.',
@@ -265,9 +272,11 @@ globalThis.AIMMO_MANDAT = function (t) {
     if (!list.length) docs.appendChild(el('p', 'Aucun document pour ce bien.', 'doux'));
     // Un mandat vivant : ni second mandat à préparer, ni autre document à signer depuis cet écran.
     var free = !m || m.reason === 'cancelled' || m.reason === 'withdrawn' || m.reason === 'expired';
-    list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d, free); });
+    // Un avenant se signe sur le mandat qu'il modifie, seulement si c'est le mandat en cours.
+    var amendable = !free && m.reason !== 'no_mandate' && m.number && ID.test(m.id) ? m.id : null;
+    list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d, free, amendable); });
     if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : []);
-    else if (m.number && ID.test(m.id) && m.reason !== 'no_mandate') drawAmend(m, Array.isArray(data.owners) ? data.owners : []);
+    else if (amendable) drawAmend(m, Array.isArray(data.owners) ? data.owners : []);
   }
   // Les conditions se lisent à part : sans elles, le mandat reste lisible et l'avenant possible.
   function drawTerms(box, m) {
@@ -370,7 +379,7 @@ globalThis.AIMMO_MANDAT = function (t) {
       return false;
     });
   }
-  function drawDocument(box, d, free) {
+  function drawDocument(box, d, free, amendable) {
     var card = el('article');
     box.appendChild(card);
     card.appendChild(el('strong', (KINDS[d.kind] || 'Document') + ', préparé le ' + date(d.createdAt)));
@@ -386,7 +395,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     else if (s && isMandate) card.appendChild(button('Reprendre l’enregistrement', function () { clear(zone); drawResume(zone, d, s); }));
     else if (isMandate && free) card.appendChild(button('Contrôler avant signature', act(function () { return control(zone, d); })));
     else if (isMandate) card.appendChild(el('p', 'Un mandat est déjà en cours sur ce bien : ce document ne se signe pas.', 'doux'));
-    else if (d.kind === 'avenant_mandat' && !free) card.appendChild(button('Contrôler avant signature', act(function () { return control(zone, d); })));
+    else if (d.kind === 'avenant_mandat' && amendable && d.mandateId === amendable) card.appendChild(button('Contrôler avant signature', act(function () { return control(zone, d); })));
     else if (d.kind === 'avenant_mandat') card.appendChild(el('p', 'Le mandat de cet avenant n’est plus en cours : il ne se signe pas.', 'doux'));
     card.appendChild(zone);
   }

@@ -468,7 +468,7 @@ describe('D12 · écran « Mandat »', () => {
 
   describe('D17 · avenant au mandat', () => {
     const SIGNED = { ...DOC, signature: { signedAt: '2027-02-10T09:00:00.000Z', place: 'agence', number: 'AV-7', complete: true } };
-    const AVENANT = { ...DOC, id: 'd2', kind: 'avenant_mandat', signature: null };
+    const AVENANT = { ...DOC, id: 'd2', kind: 'avenant_mandat', mandateId: 'm1', signature: null };
     const mandate = (reason: string) => ({ id: 'm1', number: 'AV-7', signedAt: '2027-02-10T09:00:00.000Z', allowed: reason === 'allowed', reason, withdrawalLastDay: null });
     const read = (reason = 'allowed', documents: unknown[] = [SIGNED], owners: unknown[] = [OWNER]) => ok({ ...READ, documents, owners, mandate: mandate(reason) });
     const buttons = (t: Awaited<ReturnType<typeof run>>) => t.body().all().filter((e) => e.tagName === 'button').map((e) => e.textContent);
@@ -498,9 +498,36 @@ describe('D12 · écran « Mandat »', () => {
         const t = await opened({ 'GET /v1/biens/b1/mandat': read(reason) });
         expect(buttons(t)).not.toContain(GO);
       }
-      const t = await opened({ 'GET /v1/biens/b1/mandat': read('cancelled', [AVENANT]) });
-      expect(buttons(t)).not.toContain(CHECK);
-      expect(t.body().textContent).toContain('n’est plus en cours : il ne se signe pas');
+      for (const reason of ['withdrawn', 'cancelled', 'expired', 'no_mandate']) {
+        const t = await opened({ 'GET /v1/biens/b1/mandat': read(reason, [AVENANT]) });
+        expect(buttons(t)).not.toContain(CHECK);
+        expect(t.body().textContent).toContain('n’est plus en cours : il ne se signe pas');
+      }
+      // Le mandat d'avant est mort, un nouveau est en cours : son vieil avenant ne se signe pas pour autant.
+      const old = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [{ ...AVENANT, mandateId: 'm0' }]) });
+      expect(buttons(old)).not.toContain(CHECK);
+      expect(old.body().textContent).toContain('n’est plus en cours : il ne se signe pas');
+      expect(buttons(old)).toContain(GO);
+    });
+
+    it('[R41] chaque ligne du contrôle d’un avenant est dite : aucune ligne muette', async () => {
+      const said: Record<string, string> = {
+        no_mandate: 'rattaché à aucun mandat',
+        mandate_not_numbered: 'pas au registre',
+        mandate_withdrawn: 'rétracté',
+        mandate_cancelled: 'annulé au registre',
+        mandate_expired: 'arrivé à échéance',
+      };
+      for (const [code, text] of Object.entries(said)) {
+        const t = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [AVENANT]), 'POST /v1/documents/d2/controle': ok({ documentId: 'd2', passed: false, lines: [{ check: 'mandat', ok: false, code }] }) });
+        await t.press(CHECK);
+        expect(t.body().textContent).toContain(text);
+        expect(t.body().textContent).not.toContain('ce contrôle n’est pas passé');
+      }
+      const good = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [AVENANT]), 'POST /v1/documents/d2/controle': ok({ documentId: 'd2', passed: true, lines: [{ check: 'mandat', ok: true, code: 'mandate_in_force' }, { check: 'honoraires', ok: true, code: 'fees_unchanged' }] }) });
+      await good.press(CHECK);
+      expect(good.body().textContent).toContain('Les honoraires ne changent pas.');
+      expect(good.body().textContent).not.toContain('contrôle passé');
     });
 
     it('[R16] l’avenant part avec la saisie, sans identifiant à taper, puis l’écran relit', async () => {

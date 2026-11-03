@@ -88,7 +88,8 @@ export class SignatureAvenant {
     const mandate = await this.db.first<{ signed_at: string; number: string }>('SELECT signed_at, number FROM signed_documents WHERE mandate_id = ?', [doc.mandate_id]);
     if (!mandate) return { ok: false, rule: null, code: 'no_mandate' };
     // Un avenant suit son mandat : il ne peut pas être signé avant lui.
-    if (input.signedAt.getTime() < Date.parse(mandate.signed_at)) return { ok: false, rule: null, code: 'before_mandate' };
+    // Le jour de Paris compte : l'écran donne un jour, et l'heure d'un jour passé ne dit rien de l'ordre des deux signatures.
+    if (localTime(input.signedAt, 'Europe/Paris').date < localTime(new Date(mandate.signed_at), 'Europe/Paris').date) return { ok: false, rule: null, code: 'before_mandate' };
     // Un scan qui n'existe pas n'est pas une preuve. Un avenant déjà signé est reparti plus haut : il garde son scan.
     const scanProblem = await this.scanProblem(doc.mandate_id, input.scanRef);
     if (scanProblem) return { ok: false, rule: null, code: scanProblem };
