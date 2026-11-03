@@ -7,3 +7,4 @@ export * from './rapport-matin.ts';
 export * from './alertes.ts';
 export * from './branchement.ts';
 export * from './preuve.ts';
+export * from './parcours.ts';
