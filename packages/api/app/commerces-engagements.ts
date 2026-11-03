@@ -314,6 +314,56 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
       box.appendChild(go);
     });
   }
-  return { demand: demand, line: line, model: model, wipe: function () { signing = {}; } };
+  /*
+   * D'où vient un texte qui a fui (CE17) : le texte collé part tel quel, ses marques sont invisibles, et il n'est rangé
+   * nulle part. Le résultat dit à qui une copie a été remise, jamais qui l'a diffusée ; ne rien trouver ne prouve rien [R10].
+   */
+  function trace(box, base, asked) {
+    clear(box);
+    box.appendChild(el('p', 'Collez le texte qui a circulé. Il sert à la recherche et n’est gardé nulle part.', 'doux'));
+    var text = field(box, 'ce-fuite-texte', 'Le texte qui a fui', 'textarea');
+    var found = el('p');
+    found.setAttribute('role', 'status');
+    var go = button('Chercher la source', function () {
+      var pasted = String(text.value || '');
+      if (!/\\S/.test(pasted)) { say('Collez d’abord le texte.'); return; }
+      var mine = t.session();
+      go.disabled = true;
+      found.textContent = '';
+      say('Recherche…');
+      send(base + '/tracage', 'POST', { text: pasted }).then(function (res) {
+        if (res.gone || mine !== t.session()) return;
+        go.disabled = false;
+        var code = res.body && res.body.code;
+        if (!res.ok) {
+          if (code === 'bad_text' || code === 'invalid_body') say('Ce texte est trop long pour la recherche : gardez le passage qui a circulé, et réessayez.');
+          else if (res.status === 403) say('Ce geste n’est pas dans vos droits.');
+          else if (res.offline || !res.body || res.status >= 500) say('Réponse perdue : rien n’est sûr, n’en tirez aucune conclusion. Votre texte reste là : réessayez.');
+          else say('La recherche n’a pas abouti : n’en tirez aucune conclusion.');
+          return;
+        }
+        var d = res.body.data;
+        /* Seul un « rien » écrit par le serveur veut dire « rien » : une réponse illisible ne dit rien du tout. */
+        if (d === null) {
+          text.value = '';
+          found.textContent = 'Aucune marque de ce dossier dans ce texte. Cela ne prouve rien : il peut venir d’ailleurs, ou ses marques avoir été retirées.';
+          say('Recherche faite.');
+          return;
+        }
+        if (!d || typeof d.openedAt !== 'string') { say('Réponse illisible : rien n’est sûr, n’en tirez aucune conclusion. Votre texte reste là : réessayez.'); return; }
+        var who = (asked || []).filter(function (r) { return r.personId === d.personId; })[0];
+        var name = who && who.firstName ? who.firstName : 'un repreneur qui n’est plus dans les demandes';
+        text.value = '';
+        found.textContent = d.via === 'marque'
+          ? 'Ce texte porte la marque de la copie remise à ' + name + ', ouverte le ' + t.day(d.openedAt) + '. Cela dit à qui cette copie a été remise, pas qui l’a fait circuler.'
+          : 'Ce texte porte la référence visible de la copie remise à ' + name + ', ouverte le ' + t.day(d.openedAt) + '. Une référence visible se recopie : c’est un indice à vérifier, pas une preuve.';
+        say('Recherche faite.');
+      });
+    });
+    box.appendChild(go);
+    box.appendChild(found);
+    say('');
+  }
+  return { demand: demand, line: line, model: model, trace: trace, wipe: function () { signing = {}; } };
 };
 `;

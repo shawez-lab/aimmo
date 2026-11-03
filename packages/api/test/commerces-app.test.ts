@@ -1166,3 +1166,128 @@ describe('CE16 · les informations publiques à l’écran', () => {
     expect(budgetProblems({ html: '', js: COMMERCES_ENGAGEMENTS_SCRIPT }, BUDGETS.page)).toEqual([]);
   });
 });
+
+describe('CE17 · retrouver la source d’une fuite à l’écran', () => {
+  const LABEL = 'Le texte qui a fui';
+  const URL = 'POST /v1/commerces/b1/tracage';
+  // La marque est invisible : le texte collé doit partir tel quel, espaces et caractères sans largeur compris.
+  const PASTED = '  Chiffre d’affaires\u2063\u200b\u200c\u2064 inventé \n';
+  const FOUND = { accessId: 'o1', personId: 'r2', openedAt: '2027-09-09T08:00:00.000Z', via: 'marque' };
+  async function open(answer: Answer, more: Record<string, Answer> = {}) {
+    const t = await run({ [URL]: answer, ...more });
+    await t.openB1();
+    await t.click(t.byText('Retrouver la source d’une fuite'));
+    const s = t.scripts().filter((e) => e.attributes.src === '/app/commerces-engagements.js');
+    runInNewContext(COMMERCES_ENGAGEMENTS_SCRIPT, t.context);
+    s[0]!.listeners.load!({});
+    await settle();
+    return t;
+  }
+  const sent = (t: Awaited<ReturnType<typeof run>>) => t.calls.filter((c) => c.method === 'POST' && c.url === '/v1/commerces/b1/tracage');
+  const search = async (t: Awaited<ReturnType<typeof run>>) => {
+    t.input(LABEL).value = PASTED;
+    await t.click(t.byText('Chercher la source'));
+  };
+
+  it('[R16] sans droit d’écrire sur ce commerce, aucun geste ; un refus du serveur est dit', async () => {
+    const reader = await run({ 'GET /v1/commerces/b1/demandes': no(403, { ok: false, rule: 'R16', code: 'role' }) });
+    await reader.openB1();
+    expect(reader.byText('Retrouver la source d’une fuite')).toBeUndefined();
+    const t = await open(no(403, { ok: false, rule: 'R16', code: 'not_assigned' }));
+    await search(t);
+    expect(t.state()).toBe('Ce geste n’est pas dans vos droits.');
+    expect(t.body().textContent).not.toContain('Aucune marque');
+  });
+
+  it('[R10] le geste existe même sans ouverture : rien n’est caché, et le texte part tel quel, une seule fois', async () => {
+    const t = await open(ok(FOUND), { 'GET /v1/commerces/b1/ouvertures': ok([]) });
+    expect(t.body().textContent).toContain('Aucune ouverture pour le moment.');
+    await t.click(t.byText('Chercher la source'));
+    expect(t.state()).toBe('Collez d’abord le texte.');
+    expect(sent(t)).toHaveLength(0);
+    await search(t);
+    expect(JSON.parse(sent(t)[0]!.body!)).toEqual({ text: PASTED });
+    expect(sent(t)).toHaveLength(1);
+  });
+
+  it('[R10] une marque trouvée dit à qui la copie a été remise, pas qui l’a diffusée ; le texte collé s’efface', async () => {
+    const t = await open(ok(FOUND));
+    await search(t);
+    const text = t.body().textContent;
+    expect(text).toContain('la marque de la copie remise à Dominique, ouverte le 09/09/2027');
+    expect(text).toContain('pas qui l’a fait circuler');
+    expect(t.input(LABEL).value).toBe('');
+  });
+
+  it('[R10] une référence visible n’est qu’un indice, dit tel', async () => {
+    const t = await open(ok({ ...FOUND, via: 'reference' }));
+    await search(t);
+    expect(t.body().textContent).toContain('la référence visible de la copie remise à Dominique');
+    expect(t.body().textContent).toContain('un indice à vérifier, pas une preuve');
+  });
+
+  it('[R10] un lecteur sorti des demandes n’est pas inventé, et un nom reçu reste du texte', async () => {
+    const t = await open(ok({ ...FOUND, personId: 'inconnu' }));
+    await search(t);
+    expect(t.body().textContent).toContain('remise à un repreneur qui n’est plus dans les demandes');
+    const u = await open(ok(FOUND), { 'GET /v1/commerces/b1/demandes': ok([{ personId: 'r2', firstName: INJECTED, requestedAt: '2027-09-07T08:00:00.000Z', open: false, codes: [] }]) });
+    await search(u);
+    expect(u.body().textContent).toContain(INJECTED);
+    expect(u.body().all().some((e) => e.tagName === 'img')).toBe(false);
+  });
+
+  it('[R10] ne rien trouver ne prouve rien, dit tel', async () => {
+    const t = await open(ok(null));
+    await search(t);
+    expect(t.body().textContent).toContain('Aucune marque de ce dossier dans ce texte. Cela ne prouve rien');
+  });
+
+  it.each([
+    ['réseau coupé', () => Promise.reject(new TypeError('hors ligne')), 'Réponse perdue : rien n’est sûr'],
+    ['panne', no(500, { ok: false }), 'Réponse perdue : rien n’est sûr'],
+    ['réponse illisible', async () => new Response('pas du json', { status: 200 }), 'Réponse perdue : rien n’est sûr'],
+    ['réponse sans données', async () => Response.json({ ok: true }), 'Réponse illisible : rien n’est sûr'],
+    ['données sans date', ok({ personId: 'r2' }), 'Réponse illisible : rien n’est sûr'],
+  ] as [string, Answer, string][])('[R10] %s : aucune conclusion, le texte reste, on peut réessayer', async (_n, answer, said) => {
+    const t = await open(answer);
+    await search(t);
+    expect(t.state()).toContain(said);
+    expect(t.body().textContent).not.toContain('Aucune marque');
+    expect(t.input(LABEL).value).toBe(PASTED);
+    expect((t.byText('Chercher la source') as unknown as { disabled: boolean }).disabled).toBe(false);
+  });
+
+  it('[R10] un texte trop long est dit, sans conclusion', async () => {
+    const t = await open(no(400, { ok: false, rule: null, code: 'invalid_body' }));
+    await search(t);
+    expect(t.state()).toContain('trop long');
+  });
+
+  it('[R74] un second appui pendant la recherche ne part pas ; un résultat ancien s’efface pendant la nouvelle', async () => {
+    let release: (r: Response) => void = () => {};
+    const t = await open(ok(null));
+    await search(t);
+    expect(t.body().textContent).toContain('Aucune marque');
+    t.table[URL] = () => new Promise<Response>((r) => { release = r; });
+    t.input(LABEL).value = PASTED;
+    const go = t.byText('Chercher la source')!;
+    go.listeners.click!({});
+    expect((go as unknown as { disabled: boolean }).disabled).toBe(true);
+    expect(t.body().textContent).not.toContain('Aucune marque');
+    release(Response.json({ ok: true, data: null }));
+    await settle();
+    expect((go as unknown as { disabled: boolean }).disabled).toBe(false);
+  });
+
+  it('[R13] rien du texte collé ne reste : ni stockage du navigateur, ni adresse', async () => {
+    const t = await open(ok(FOUND));
+    await search(t);
+    expect(sent(t)[0]!.url).toBe('/v1/commerces/b1/tracage');
+    expect(COMMERCES_ENGAGEMENTS_SCRIPT).not.toMatch(/innerHTML|localStorage|sessionStorage/);
+  });
+
+  it('[R201] les scripts tiennent le budget d’une page', () => {
+    expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(budgetProblems({ html: '', js: COMMERCES_ENGAGEMENTS_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+});

@@ -482,7 +482,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       ceEstimation(base, kind, Array.isArray(d[1]) ? d[1] : []);
       cePresentation(base, d[2]);
       if (all[3].ok) ceDemandes(base, Array.isArray(d[3]) ? d[3] : []);
-      ceOuvertures(Array.isArray(d[4]) ? d[4] : []);
+      ceOuvertures(Array.isArray(d[4]) ? d[4] : [], all[3].ok ? base : null, Array.isArray(d[3]) ? d[3] : []);
       /* Seul un refus dit qu'on ne peut pas écrire : une lecture manquée ne retire pas les gestes en silence. */
       if (!all[3].ok && all[3].status !== 403) ceBlock('Vos gestes').appendChild(el('p', 'Vos gestes ne se chargent pas : réessayez dans un moment.', 'doux'));
       return ceCession(base, all[5], all[3].ok, (d[0] && d[0].publicView) || {}, mine).then(function (shown) {
@@ -606,12 +606,19 @@ globalThis.AIMMO_COMMERCES = function (t) {
     b.appendChild(ul);
     b.appendChild(addBox);
   }
-  function ceOuvertures(list) {
+  function ceOuvertures(list, writable, asked) {
     var b = ceBlock('Ouvertures du dossier');
-    if (!list.length) { b.appendChild(el('p', 'Aucune ouverture pour le moment.', 'doux')); return; }
-    var ul = el('ul', null, 'liste');
-    list.forEach(function (o) { ul.appendChild(el('li', (CE_OPEN[o.outcome] || o.outcome) + ', le ' + ceDay(o.at), o.outcome === 'ouvert' ? '' : 'retard')); });
-    b.appendChild(ul);
+    if (!list.length) b.appendChild(el('p', 'Aucune ouverture pour le moment.', 'doux'));
+    else {
+      var ul = el('ul', null, 'liste');
+      list.forEach(function (o) { ul.appendChild(el('li', (CE_OPEN[o.outcome] || o.outcome) + ', le ' + ceDay(o.at), o.outcome === 'ouvert' ? '' : 'retard')); });
+      b.appendChild(ul);
+    }
+    if (!writable) return;
+    /* Le traçage d'une fuite (CE17), réservé à qui peut écrire : le serveur reste seul juge [R16]. */
+    var box = el('div');
+    box.appendChild(button('Retrouver la source d’une fuite', function () { ceEngLoad(function (e) { e.trace(box, writable, asked); }); }));
+    b.appendChild(box);
   }
   /* Pourquoi un geste n'a pas abouti : le refus du serveur, ou une réponse perdue, qui ne dit pas que rien n'est rangé. */
   function ceWhy(res, fallback) {
