@@ -550,3 +550,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 12:53 · voie 2 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage horaire reprendra W26 · prochaine : W26
 - 2026-11-03 12:38 · X24 · le partenaire recommande une personne depuis son espace et lit ses envois, preuve de l'accord exigée ; toute sortie vide la page (#330) ; relecture forte 4 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : X25
 - 2026-11-03 12:38 · voie 1 · fin de séance : X22, X23 et X24 fusionnées ; X25 écrite ; verrou libéré, relance · prochaine : X25
+- 2026-11-03 12:38 · voie 1 · relance immédiate refusée par le contrôle des permissions, non retentée ; la séance reprend elle-même X25 · prochaine : X25

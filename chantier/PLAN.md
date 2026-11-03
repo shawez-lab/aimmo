@@ -1933,7 +1933,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X25 · Une recommandation de partenaire sûre au renvoi
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : X24
 - Cahier : M20 ; R142, R17.
 - Objectif : trouvé par la relecture forte de X24 : `RecommandationsGagner.recommend` n'est pas en transaction. Une panne entre le projet et la ligne de recommandation laisse la fiche sans recommandation, et un renvoi crée un second projet, une seconde source et un second accord. Fermer ce trou sans changer la réponse donnée au partenaire [R77].
