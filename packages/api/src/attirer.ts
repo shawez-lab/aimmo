@@ -17,6 +17,7 @@
  *   GET /agents/:agent                             la page de l'agent, sur le site du réseau et sur le sien [R152]
  *   GET /quartiers/:commune/:quartier[/prix|/equipements]  la page de quartier ou son article validé [R155]
  *   GET, POST /estimation                          la fourchette de la commune de E05, sur les deux sites [R31, R10]
+ *   GET /mentions-legales, /donnees-personnelles   depuis les réglages du réseau, ce qui manque se voit [R221, R10]
  *   GET /simulateur                                le simulateur de prêt, qui ne garde rien [R157]
  *   GET /preuve, /preuve.json                      le compte public de la preuve à Dijon, sur le site du réseau [R213]
  *   GET /sitemap.xml, /robots.txt                  le plan du site et ses consignes aux moteurs [R153]
@@ -24,7 +25,7 @@
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
 import { appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { MentionsSite, renderLegalNotice, renderPrivacyPage, withLegalLinks, OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
@@ -207,6 +208,9 @@ export function attirerRoutes(): AttirerRoute[] {
         return reply(value({ publishable: false, missing: r.reason }));
       },
     },
+    // RS05 · mentions légales du site
+    { method: 'GET', pattern: new RegExp(`${P}/mentions-site$`), name: 'attirer.site_mentions', roles: DIRECTION, handle: async (s, v) => reply(value(await new MentionsSite(s.db, s.journal, { now: s.now }).read(v.networkId))) },
+    { method: 'POST', pattern: new RegExp(`${P}/mentions-site$`), name: 'attirer.site_mention', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await new MentionsSite(s.db, s.journal, { now: s.now }).set(v, b))) },
     // AT04 · référencement
     { method: 'GET', pattern: new RegExp(`${P}/sites$`), name: 'attirer.sites', roles: DIRECTION, handle: async (s, v) => reply(value(await services(s).referencement.sites(v.networkId))) },
     { method: 'POST', pattern: new RegExp(`${P}/sites$`), name: 'attirer.site', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).referencement.setSite(v, b))) },
@@ -276,6 +280,8 @@ export const PUBLIC_PATHS = {
   agent: new RegExp(`^/agents/${ID}$`),
   quartier: new RegExp(`^/quartiers/${SLUG}/${SLUG}(?:/(prix|equipements))?$`),
   estimation: /^\/estimation$/,
+  mentions: /^\/mentions-legales$/,
+  donnees: /^\/donnees-personnelles$/,
   simulateur: /^\/simulateur$/,
   preuve: /^\/preuve(\.json)?$/,
   plan: /^\/sitemap\.xml$/,
@@ -358,15 +364,17 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
   if (!kind) return null;
   // Seule l'estimation reçoit un formulaire : elle dit elle-même les méthodes qu'elle admet.
   if (kind !== 'estimation' && request.method !== 'GET' && request.method !== 'HEAD') return new Response('Méthode non permise.', { status: 405, headers: { allow: 'GET, HEAD', 'cache-control': 'no-store' } });
-  const mode = s.mode ?? 'essai';
   const svc = services(s);
   const found = await siteOf(s, svc.referencement, url.origin);
   if (!found) return notFound();
   const { networkId, site } = found;
-  const html = (body: string): Response => new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: pageHeaders('text/html; charset=utf-8', mode) });
+  const legal = new MentionsSite(s.db, s.journal, { now: s.now });
+  // Une mention légale manque : le site reste en essai, non indexé [R221].
+  const mode: 'essai' | 'reel' = s.mode === 'reel' && (await legal.read(networkId)).missing.length === 0 ? 'reel' : 'essai';
+  const html = (body: string): Response => new Response(request.method === 'HEAD' ? null : withLegalLinks(body), { status: 200, headers: pageHeaders('text/html; charset=utf-8', mode) });
   const m = PUBLIC_PATHS[kind].exec(path)!;
   // Une page qui montre des biens ne survit qu'une minute en cache au retrait de l'un d'eux [R220].
-  const liveHtml = (body: string): Response => new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: { ...pageHeaders('text/html; charset=utf-8', mode), 'cache-control': 'public, max-age=60' } });
+  const liveHtml = (body: string): Response => new Response(request.method === 'HEAD' ? null : withLegalLinks(body), { status: 200, headers: { ...pageHeaders('text/html; charset=utf-8', mode), 'cache-control': 'public, max-age=60' } });
   switch (kind) {
     case 'accueil': {
       // Sans la porte, rien n'est montré [R220].
@@ -432,9 +440,13 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       const appointmentHref = site.kind === 'reseau' ? '/agents' : own?.ok ? `/agents/${encodeURIComponent(site.agentId!)}` : '/';
       return handleEstimationPage(request, { db: s.db, networkId, services: s.estimation, limits: s.estimationLimits, now: s.now, mode, appointmentHref });
     }
+    case 'mentions':
+      return html(renderLegalNotice(await legal.read(networkId)));
+    case 'donnees':
+      return html(renderPrivacyPage(await legal.read(networkId)));
     case 'simulateur': {
       const headers = await loanSimulatorHeaders();
-      return new Response(request.method === 'HEAD' ? null : renderLoanSimulatorPage(), { status: 200, headers: { ...headers, ...(mode === 'essai' ? { 'x-robots-tag': 'noindex, nofollow' } : {}) } });
+      return new Response(request.method === 'HEAD' ? null : withLegalLinks(renderLoanSimulatorPage()), { status: 200, headers: { ...headers, ...(mode === 'essai' ? { 'x-robots-tag': 'noindex, nofollow' } : {}) } });
     }
     case 'preuve': {
       // Le compte du réseau, sur son seul site : les pages d'agent ne le portent pas.

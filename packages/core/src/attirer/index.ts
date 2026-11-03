@@ -9,3 +9,4 @@ export * from './annuaire-site.ts';
 export * from './page-estimation.ts';
 export * from './quartier.ts';
 export * from './origine-contacts.ts';
+export * from './mentions-site.ts';

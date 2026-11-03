@@ -1,3 +1,4 @@
+import { SITE_MENTION_FIELDS } from '../../core/src/attirer/mentions-site.ts';
 import { FRANCE_BOXES } from '../../core/src/attirer/prix-versions.ts';
 import type { FACT_KINDS, FACT_UNITS, NeighbourhoodProblem } from '../../core/src/attirer/quartier.ts';
 
@@ -221,6 +222,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     var mine = t.next();
     var month = chosenMonth || lastMonths()[0].value;
     wipe();
+    legalOpen = false;
     chosenMonth = month;
     show('attirer');
     state('Chargement…');
@@ -457,6 +459,35 @@ globalThis.AIMMO_ATTIRER = function (t) {
     li.appendChild(button('Fiche Google de cet agent', function () { t.openGoogle(a.agentId); }));
     return li;
   }
+  /* RS05 · les mentions du site : ce qui manque se voit, et le site reste en essai tant que c'est le cas. */
+  var LEGAL_LABELS = ${JSON.stringify(SITE_MENTION_FIELDS)};
+  var legalOpen = false;
+  function openLegal() {
+    if (legalOpen) return;
+    legalOpen = true;
+    var mine = t.session();
+    var box = part('Mentions légales du site');
+    state('Chargement…');
+    send('/v1/attirer/mentions-site', 'GET').then(function (x) {
+      if (x.gone || mine !== t.session()) return;
+      state('');
+      $('attirer-corps').appendChild(box);
+      if (!x.ok || !x.body.data) return missing(box, x);
+      var data = x.body.data;
+      box.appendChild(el('p', data.missing.length ? 'Il manque ' + data.missing.length + ' mention(s) : le site reste en essai. Manquent : ' + data.missing.join(', ') + '.' : 'Toutes les mentions sont réglées.', 'doux'));
+      var inputs = {};
+      Object.keys(LEGAL_LABELS).forEach(function (k) {
+        inputs[k] = field(box, 'mention-' + k, LEGAL_LABELS[k]);
+        inputs[k].value = data.values[k] || '';
+      });
+      box.appendChild(button('Enregistrer les mentions', function () {
+        var payload = {};
+        Object.keys(inputs).forEach(function (k) { if (inputs[k].value.trim() !== (data.values[k] || '')) payload[k] = inputs[k].value; });
+        if (!Object.keys(payload).length) { state('Rien à enregistrer.'); return; }
+        agentWrite('/v1/attirer/mentions-site', payload, 'Mentions enregistrées.', 'Les mentions ne sont pas enregistrées.');
+      }));
+    });
+  }
   function renderAgents(res) {
     var box = part('Agents, mentions et sites');
     var data = res.ok ? res.body.data : null;
@@ -466,6 +497,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     box.appendChild(button('Enregistrer le titulaire', function () {
       agentWrite('/v1/attirer/titulaire', { holder: holder.value }, 'Titulaire enregistré.', 'Le titulaire n’est pas enregistré.');
     }));
+    box.appendChild(button('Mentions légales du site', function () { openLegal(); }));
     box.appendChild(el('p', data.cardNumber ? 'Carte professionnelle : ' + data.cardNumber : 'Numéro de carte professionnelle du réseau : pas encore réglé.', 'doux'));
     if (!data.agents.length) box.appendChild(el('p', 'Aucun agent en activité.', 'doux'));
     var ul = el('ul', null, 'liste');

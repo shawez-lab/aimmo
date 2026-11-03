@@ -1,4 +1,5 @@
 import { EstimationEnLigne, SqlJournalStore, appendEvent, type CommuneResult, type DetailedSales, type Geocoder, type SqlDatabase } from '@aimmo/core';
+import { withLegalLinks } from '../../core/src/attirer/mentions-site.ts';
 import { renderEstimationPage, type EstimationFormError } from '../../core/src/attirer/page-estimation.ts';
 import { intakeFromRequest, parseIntakeKeys, sha256Hex } from './auth.ts';
 import { VISITOR, takeSlot } from './assistant.ts';
@@ -118,7 +119,7 @@ export interface EstimationPageConfig {
 export async function handleEstimationPage(request: Request, config: EstimationPageConfig): Promise<Response> {
   const open = Boolean(config.services);
   const page = (status: number, extra: { values?: { postalCode: string; town: string; kind: string }; error?: EstimationFormError; result?: CommuneResult }): Response =>
-    new Response(request.method === 'HEAD' ? null : renderEstimationPage({ visitorId: crypto.randomUUID(), open, appointmentHref: config.appointmentHref, ...extra }), {
+    new Response(request.method === 'HEAD' ? null : withLegalLinks(renderEstimationPage({ visitorId: crypto.randomUUID(), open, appointmentHref: config.appointmentHref, ...extra })), {
       status,
       headers: {
         'content-type': 'text/html; charset=utf-8',

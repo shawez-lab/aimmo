@@ -278,3 +278,5 @@ Le travail GitHub « Créer l'accès de Shawez », lancé à la main depuis main
 Sans mail (Z04) : lancer le travail avec la remise `resume`. Le lien n'est alors écrit que dans le résumé du passage (Actions > Créer l'accès de Shawez > dernier passage > Summary), visible des seuls comptes qui lisent ce dépôt privé, jamais dans la sortie du travail ni dans le dépôt. Les adresses ne sont ni demandées ni gardées. Le mail reste la remise par défaut.
 
 Le lien `…/app/#invitation=<jeton>` ouvre l'application, qui échange le jeton une seule fois par `POST /v1/acces/invitation` (`{ "jeton": "…" }`, sans clé) contre deux clés tirées par le Worker. La base ne garde que leur empreinte (table `access_keys`), qui s'ajoute aux empreintes du secret `API_KEYS` : le secret n'est jamais lu ni réécrit. Une clé se retire en datant `revoked_at`. Refus : 400 jeton mal formé, 404 inconnu, 410 déjà servi ou expiré.
+
+- `GET` et `POST /v1/attirer/mentions-site` (RS05) : la direction lit et règle les mentions légales du site. Le corps du `POST` associe chaque champ à son texte (300 caractères au plus) ; un texte vide retire la mention. Rien n'est effacé [R17, R221].

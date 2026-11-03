@@ -19,6 +19,7 @@
  */
 import { Acces, Diffusion, FicheClient, FicheUnique, SqlJournalStore, annonces as m07, type SqlDatabase } from '@aimmo/core';
 import { LISTABLE_STATUSES } from '../../core/src/attirer/liste-biens.ts';
+import { withLegalLinks } from '../../core/src/attirer/mentions-site.ts';
 import { journalError } from './app.ts';
 import { syncAnnonces } from './annonces.ts';
 import { listingPresence, type ListingReference } from './attirer.ts';
@@ -97,7 +98,9 @@ export async function handleVitrine(request: Request, db: SqlDatabase, media: Me
     if (html === null) return notFound();
     // La fiche imprimable ne porte pas la référence : seule la page du bien en est une.
     const ref = presence.kind === 'reference' && !page[2] ? presence : null;
-    const body = ref ? withReference(html, ref) : html;
+    const framed = ref ? withReference(html, ref) : html;
+    // Sur un site du réseau, la page du bien mène aux pages légales ; pas sa fiche imprimable, ni l'adresse de l'API.
+    const body = !page[2] && presence.kind !== 'hors_site' ? withLegalLinks(framed) : framed;
     return new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: { ...headers('text/html; charset=utf-8'), ...cache, ...(ref ? { link: ref.link } : {}) } });
   }
   // Une photo n'est servie que si la dernière version publiée la porte, et tant que l'annonce n'est pas retirée.

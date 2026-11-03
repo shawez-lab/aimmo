@@ -495,6 +495,24 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       expect(u.texts()).toContain('Aucun agent en activité.');
     });
 
+    it('[R221] RS05 : les mentions du site se lisent et se règlent ; ce qui manque est dit ; seul ce qui change part', async () => {
+      const t = await run({
+        'GET /v1/attirer/mentions-site': ok({ values: { editeur_nom: 'Société Exemple' }, cardNumber: null, cardHolder: null, missing: ['Médiateur de la consommation et son site'] }),
+        'POST /v1/attirer/mentions-site': ok(null),
+      });
+      await t.ouvrir();
+      await t.click(t.buttons('Mentions légales du site')[0]);
+      expect(t.texts()).toContain('le site reste en essai. Manquent : Médiateur de la consommation et son site.');
+      expect(t.input('Dénomination de la société').value).toBe('Société Exemple');
+      t.input('Médiateur de la consommation et son site').value = 'Médiateur Inventé';
+      await t.click(t.buttons('Enregistrer les mentions')[0]);
+      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ mediateur: 'Médiateur Inventé' });
+      const refused = await run({ 'GET /v1/attirer/mentions-site': no(403, { ok: false, rule: 'R16', code: 'role' }) });
+      await refused.ouvrir();
+      await refused.click(refused.buttons('Mentions légales du site')[0]);
+      expect(refused.buttons('Enregistrer les mentions')).toHaveLength(0);
+    });
+
     it('un double appui n’enregistre qu’une fois', async () => {
       const t = await run();
       await t.ouvrir();

@@ -5,6 +5,7 @@ import type { EstimatedKind, Sale } from '../../core/src/estimation/fourchette.t
 import { attirerRoutes, handleAttirerPublic, listingReference, type AttirerServices } from '../src/attirer.ts';
 import { htmlProblems } from '../../core/src/design/audit.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
+import { SITE_MENTION_FIELDS } from '../../core/src/attirer/mentions-site.ts';
 import { AGENTS_PER_PAGE, COMMUNES_PER_PAGE, renderAgentsList, renderPricesList } from '../../core/src/attirer/annuaire-site.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
@@ -140,6 +141,50 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect(renderPricesList(towns, 3)).toBeNull();
   });
 
+  it('[R221] [R10] RS05 : aucune mention inventée, ce qui manque se voit, ce qui est réglé s’affiche, échappé, sur les deux sites', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    const empty = await (await t.get(`${NET}/mentions-legales`))!.text();
+    // La carte et son titulaire viennent déjà des réglages ; les autres manquent, sauf le contact des données, sur sa propre page.
+    expect(empty.match(/Mention manquante/g)).toHaveLength(Object.keys(SITE_MENTION_FIELDS).length - 1);
+    expect(empty).toContain('CPI 9999 0000 000 000 001');
+    expect(empty).toContain('Société Exemple');
+    expect(empty).toContain(`${Object.keys(SITE_MENTION_FIELDS).length} mentions manquent`);
+    expect(empty).not.toMatch(/Cloudflare|Dijon|RCS \d/);
+    const privacy = await (await t.get(`${CAMILLE}/donnees-personnelles`))!.text();
+    expect(privacy.match(/Mention manquante/g)).toHaveLength(2);
+    expect(privacy).toContain('la CNIL');
+    expect((await t.call(direction, 'POST', '/attirer/mentions-site', { editeur_nom: 'Société Inventée', mediateur: 'Médiateur Inventé' })).status).toBe(200);
+    const set = await (await t.get(`${CAMILLE}/mentions-legales`))!.text();
+    expect(set).toContain('Société Inventée');
+    expect(set).toContain('Médiateur Inventé');
+    expect(await (await t.get(`${NET}/donnees-personnelles`))!.text()).toContain('Société Inventée');
+    // Un texte vide retire la mention, et elle manque de nouveau ; rien n'est effacé [R17].
+    expect((await t.call(direction, 'POST', '/attirer/mentions-site', { mediateur: '' })).status).toBe(200);
+    expect(await (await t.get(`${NET}/mentions-legales`))!.text()).not.toContain('Médiateur Inventé');
+    expect(await t.db.all("SELECT value FROM site_legal_mentions WHERE field = 'mediateur'")).toHaveLength(2);
+    for (const bad of [{ inconnu: 'x' }, { mediateur: '<b>x</b>' }, { mediateur: 'x'.repeat(301) }, { mediateur: 1 }, {}]) {
+      expect((await t.call(direction, 'POST', '/attirer/mentions-site', bad)).status).toBe(400);
+    }
+    expect((await t.call(camille, 'POST', '/attirer/mentions-site', { mediateur: 'x' })).status).toBe(403);
+    expect((await t.call(camille, 'GET', '/attirer/mentions-site')).status).toBe(403);
+    expect((await t.get('https://inconnu.exemple.test/mentions-legales'))!.status).toBe(404);
+    // Aucun cookie sur les pages publiques, comme la page le dit.
+    for (const path of ['/mentions-legales', '/donnees-personnelles', '/agents', '/prix', '/simulateur']) expect((await t.get(`${NET}${path}`))!.headers.get('set-cookie'), path).toBeNull();
+  });
+
+  it('[R221] RS05 : liées depuis chaque page du site, et jamais vers une page absente', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    for (const path of ['/', '/biens', '/agents', '/prix', '/prix/ville-test', '/agents/ag-1', '/estimation', '/simulateur', '/preuve', '/mentions-legales', '/donnees-personnelles']) {
+      const res = await t.get(`${NET}${path}`);
+      expect(res!.status, path).toBe(200);
+      const html = await res!.text();
+      expect(html, path).toContain('href="/mentions-legales"');
+      expect(html, path).toContain('href="/donnees-personnelles"');
+    }
+  });
+
   it('[R150] [R153] RS03 : la liste des communes mène à une page qui répond ; une zone retirée en sort ; 404 sur le site d’un agent', async () => {
     const t = await setup();
     await preparedNetwork(t);
@@ -259,8 +304,14 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
       expect(robots).toContain(`Sitemap: ${host}/sitemap.xml`);
       expect(robots).toContain('Disallow: /');
     }
+    // [R221] Le mode réel demandé, une mention manquante : le site reste en essai.
+    const gated = await handleAttirerPublic({ ...t.s, mode: 'reel' }, new Request(`${NET}/robots.txt`));
+    expect(await gated!.text()).toContain('Disallow: /');
+    expect((await handleAttirerPublic({ ...t.s, mode: 'reel' }, new Request(`${NET}/mentions-legales`)))!.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    expect((await t.call(direction, 'POST', '/attirer/mentions-site', Object.fromEntries(Object.keys(SITE_MENTION_FIELDS).map((f) => [f, `Texte inventé ${f}`])))).status).toBe(200);
     const reel = await handleAttirerPublic({ ...t.s, mode: 'reel' }, new Request(`${NET}/robots.txt`));
     expect(await reel!.text()).toContain('Allow: /');
+    expect((await handleAttirerPublic({ ...t.s, mode: 'reel' }, new Request(`${NET}/mentions-legales`)))!.headers.get('x-robots-tag')).toBeNull();
     // Une adresse qui n'est pas un site en service : rien.
     expect((await t.get('https://imitation.exemple.test/sitemap.xml'))!.status).toBe(404);
     await t.call(direction, 'POST', '/attirer/sites', { kind: 'agent', agentId: 'ag-1', baseUrl: CAMILLE, active: false });
