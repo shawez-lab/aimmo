@@ -142,6 +142,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       mandates: ['agent_id', 'person_id', 'source_detail', 'recorded_by'],
       mandate_register_settings: ['set_by'],
       mandate_register: ['number_value', 'agent_id', 'reason', 'actor'],
+      // Le sceau d'un mois de la preuve : numéros du registre et empreintes, publiés sans nom [R213] ; qui a scellé reste interne.
+      proof_seals: ['lines', 'lines_digest', 'sealed_by'],
+      proof_publication_cache: ['body'],
       document_templates: ['body', 'created_by', 'validated_by'],
       documents: ['agent_id', 'person_id', 'content', 'content_hash', 'created_by', 'facts'],
       fee_schedules: ['set_by'],
@@ -1059,6 +1062,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   client_space_session_closures: ['session_id', 'closed_at'],
   client_space_favorites: ['id', 'network_id', 'added_at'],
   client_space_favorite_removals: ['favorite_id', 'ended_at'],
+  proof_seals: ['network_id', 'seq', 'month', 'counted', 'simple', 'exclusive', 'untyped', 'terminated', 'withdrawn', 'cancelled_error', 'sealed_at', 'prev_hash', 'hash'],
+  proof_publication_cache: ['network_id', 'seals', 'computed_at'],
 };
 
 /** La relecture trimestrielle : la date de la première est celle où le registre a été écrit. */
