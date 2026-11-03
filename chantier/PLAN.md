@@ -1777,15 +1777,16 @@ Voie : 2
 Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la voie 2 aux appels de l'application : aucun espace client ne peut s'ouvrir depuis l'écran, et aucun garant ne peut s'ajouter à une candidature.
 
 ### EC12 · Ouvrir l'espace d'un client depuis sa fiche
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC06, EC07
 - Cahier : Le produit, espaces des clients ; R160, R03, R16, R161, R26, R201.
 - Objectif : depuis la fiche, l'agent note comment la personne a donné son accord et lui ouvre son espace, par `POST /v1/espaces/personnes/<id>/ouvrir`. Il ne voit jamais le lien.
 - Critères : sans preuve de l'accord, rien ne part [R03] (test) ; ce qui part est dit en essai, jamais présenté comme un envoi réel [R26] (test) ; aucun lien ni jeton à l'écran [R160] (test) ; une personne sans dossier est dite telle [R161] (test) ; refus de droits dit en français [R16] (test) ; réponse perdue dite telle, sans renvoyer de lien (test) ; script à part, budget tenu [R201] (test).
 - Attend : rien pour l'écran ; H40 pour de vrais espaces.
+- Reste : fusionnée (#301). Relecture forte : 4 P1 corrigés ; Codex à sa limite (H03). À trancher : `invite` n'a pas de plafond, l'agent peut préparer autant de liens qu'il veut ; R160 parle de 3 liens par 24 heures pour la demande du client.
 
 ### W18 · Garants d'une candidature à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11, W13
 - Cahier : M15 Louer ; R104, R105, R16, R201.
 - Objectif : l'agent ajoute un garant à une candidature, par `POST /v1/location/candidatures/<id>/garants`. Vérifier d'abord la route et les pièces du garant.
