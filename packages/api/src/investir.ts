@@ -246,6 +246,13 @@ const ROUTES: InvestirRoute[] = [
 
   /* Les règles des communes et la commune d'un bien (Y04, Y06). */
   {
+    method: 'GET',
+    pattern: /^\/investir\/regles$/,
+    name: 'investir.regles.lues',
+    roles: READERS,
+    handle: async (s, v, _p, r) => reply(await core(s).contraintes.communeRulesScreen(v, new URL(r.url).searchParams.get('insee'))),
+  },
+  {
     method: 'POST',
     pattern: /^\/investir\/regles$/,
     name: 'investir.regle',

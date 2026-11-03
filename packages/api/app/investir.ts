@@ -1,4 +1,5 @@
 import { DEADLINES } from '../../core/src/qualification/regles.ts';
+import { COMMUNE_RULE_LABELS } from '../../core/src/investir/contraintes.ts';
 import { LINE_LABELS, RENTAL_TARGETS } from '../../core/src/investir/index.ts';
 
 /**
@@ -107,6 +108,7 @@ globalThis.AIMMO_INVESTIR = function (t) {
   var LINE_LABELS = ${JSON.stringify(LINE_LABELS)};
   var TARGETS = ${JSON.stringify(TARGET_LABELS)};
   var DEADLINE_LABELS = ${JSON.stringify(DEADLINE_LABELS)};
+  var RULES = ${JSON.stringify(COMMUNE_RULE_LABELS)};
   var INVESTIR_REFUSALS = {
     not_assigned: 'Cette fiche est suivie par un autre agent.',
     solvabilite: 'Aucun champ de revenus, d’emploi, de patrimoine ni de crédit.',
@@ -114,6 +116,12 @@ globalThis.AIMMO_INVESTIR = function (t) {
     tournure_interdite: 'Une hypothèse contient une promesse ou un conseil : reformulez-la.',
     alerte_absente: 'Une alerte d’énergie est apparue : rédigez la note de nouveau.',
     texte_change: 'La note a changé : relisez la dernière version.',
+    insee: 'Le code INSEE : cinq caractères, par exemple 21231.',
+    regle: 'Choisissez la règle.',
+    source: 'Écrivez la source de la règle : d’où elle vient, en 300 caractères au plus.',
+    date_source: 'La date de la source : un jour déjà passé.',
+    date: 'Les dates de la règle : un début, et une fin qui ne vient pas avant lui.',
+    role: 'Ce n’est pas dans vos droits.',
   };
   function investirRefusal(body, fallback) { return (body && INVESTIR_REFUSALS[body.code]) || fallback; }
   function investirState(text) { $('investir-etat').textContent = text; }
@@ -176,9 +184,82 @@ globalThis.AIMMO_INVESTIR = function (t) {
         ul.appendChild(li);
       });
       body.appendChild(ul);
+      renderCommuneRules(body);
       investirState(message || '');
       return true;
     });
+  }
+  /* Y11 · les règles d'une commune : lues par tous, rangées par la direction seule, chacune avec sa source [R16]. */
+  function day(d) { return date(d + 'T12:00:00Z'); }
+  function renderCommuneRules(body) {
+    var box = details(body, 'Règles de location d’une commune');
+    var insee = field(box, 'inv-regle-insee', 'Code INSEE de la commune');
+    insee.setAttribute('maxlength', '5');
+    var said = el('p', null, 'etat');
+    said.setAttribute('role', 'status');
+    var out = el('div');
+    var busy = false;
+    function once(work) {
+      if (busy) return false;
+      busy = true;
+      return work().then(function (r) { busy = false; return r; }, function () { busy = false; return false; });
+    }
+    function read(code, message) {
+      said.textContent = 'Chargement…';
+      clear(out);
+      return send('/v1/investir/regles?insee=' + encodeURIComponent(code), 'GET').then(function (res) {
+        if (res.gone) return false;
+        if (res.offline) { said.textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
+        var data = res.ok && res.body.data;
+        if (!data || !Array.isArray(data.rules)) { said.textContent = investirRefusal(res.body, 'Indisponible pour le moment.'); return false; }
+        said.textContent = message || '';
+        if (!data.rules.length) out.appendChild(el('p', 'Aucune règle rangée en vigueur pour cette commune. Cela ne prouve pas qu’il n’y en a pas : vérifiez auprès de la mairie.', 'doux'));
+        var ul = el('ul', null, 'liste');
+        data.rules.forEach(function (r) {
+          var li = el('li');
+          li.appendChild(el('strong', RULES[r.rule] || r.label || 'Règle'));
+          li.appendChild(el('p', 'Depuis le ' + day(r.effectiveFrom) + (r.effectiveUntil ? ', jusqu’au ' + day(r.effectiveUntil) : ''), 'doux'));
+          li.appendChild(el('p', 'Source : ' + r.source + ', ' + day(r.sourceDate), 'doux'));
+          ul.appendChild(li);
+        });
+        out.appendChild(ul);
+        if (data.canRecord) renderRuleForm(out, code);
+        return true;
+      });
+    }
+    function renderRuleForm(into, code) {
+      var form = el('div');
+      form.appendChild(el('h4', 'Ranger une règle pour cette commune'));
+      var kind = select(form, 'inv-regle-sorte', 'Règle', Object.assign({ '': 'Choisissez la règle' }, RULES), '');
+      var from = field(form, 'inv-regle-debut', 'En vigueur depuis');
+      from.setAttribute('type', 'date');
+      var until = field(form, 'inv-regle-fin', 'Jusqu’au, si elle a une fin');
+      until.setAttribute('type', 'date');
+      var source = field(form, 'inv-regle-source', 'Source : la délibération ou le texte');
+      source.setAttribute('maxlength', '300');
+      var sourceDate = field(form, 'inv-regle-source-date', 'Date de la source');
+      sourceDate.setAttribute('type', 'date');
+      form.appendChild(button('Ranger cette règle', function () {
+        return once(function () {
+          said.textContent = 'Envoi…';
+          return send('/v1/investir/regles', 'POST', { inseeCode: code, rule: kind.value, effectiveFrom: from.value, effectiveUntil: until.value || null, source: source.value, sourceDate: sourceDate.value }).then(function (res) {
+            if (res.gone) return false;
+            if (res.offline || !res.body || res.status >= 500) { said.textContent = 'La réponse n’est pas arrivée : rien n’est sûr. Relisez la commune avant de recommencer.'; return false; }
+            if (!res.ok) { said.textContent = investirRefusal(res.body, 'La règle n’est pas rangée.'); return false; }
+            var v = res.body.data || {};
+            return read(code, 'Règle rangée, en vigueur à partir du ' + day(v.effectiveFrom) + '.');
+          });
+        });
+      }));
+      into.appendChild(form);
+    }
+    box.appendChild(button('Lire les règles de cette commune', function () {
+      var code = String(insee.value || '').trim().toUpperCase();
+      if (!/^(\\d{5}|2[AB]\\d{3})$/.test(code)) { said.textContent = INVESTIR_REFUSALS.insee; return false; }
+      return once(function () { return read(code); });
+    }));
+    box.appendChild(said);
+    box.appendChild(out);
   }
   function openInvestor(x, message) {
     if (!t.key() || !ID.test(x.projectId)) return Promise.resolve(false);

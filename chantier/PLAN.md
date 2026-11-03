@@ -2659,6 +2659,14 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Critères : l'écran lit seulement par les routes `/v1/investir` [R16] ; aucun chiffre n'est calculé sur le téléphone, tout vient du code du serveur [R121] ; l'alerte d'un bien classé G est en tête [R124] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
 - Attend : rien.
 
+### Y11 · Les règles de location d'une commune, à l'écran
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y04, Y09
+- Cahier : M17 ; R16, R10, R201.
+- Objectif : trouvé le 2026-11-03 en comparant les routes aux appels de l'écran : `POST /v1/investir/regles` n'a aucun geste, donc aucun permis de louer ni encadrement ne peut être rangé, et les contraintes d'un bien n'en disent jamais rien. Depuis l'écran « Investir », lire les règles d'une commune ; la direction en range, avec leur source. Écrit dans le script de l'écran, sans toucher au socle.
+- Critères : tous lisent, seule la direction voit le formulaire et range [R16] (tests) ; chaque règle dit sa source et sa date [R10] (test) ; « aucune règle » n'est jamais dit comme une absence prouvée [R10] (test) ; refus dits en français, réponse perdue dite telle, double appui un seul envoi (tests) ; nom reçu en texte (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 ### Y10 · Importer les loyers de marché depuis l'écran du réseau
 - Statut : fait (2026-11-03)
 - Décidé (2026-11-03), lecture prudente : trois appels de suite sans ligne de plus arrêtent l'import, et l'écran dit de redéposer le même fichier ; le même fichier sous un autre millésime est refusé (`millesime_different`), car le serveur répondait « complet » en gardant l'ancien ; un repli sur un autre type de logement est dit. Relecture forte : 2 P1 corrigés ; Codex à sa limite, fusion sans lui (#295). Écran non ouvert dans un navigateur.

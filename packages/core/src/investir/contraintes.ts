@@ -25,7 +25,7 @@ export type InvestEnergyClass = (typeof ENERGY_CLASSES)[number];
 export const COMMUNE_RULE_KINDS = ['autorisation_prealable', 'declaration_mise_en_location', 'encadrement_loyers', 'changement_usage'] as const;
 export type CommuneRuleKind = (typeof COMMUNE_RULE_KINDS)[number];
 
-const COMMUNE_RULE_LABELS: Record<CommuneRuleKind, string> = {
+export const COMMUNE_RULE_LABELS: Record<CommuneRuleKind, string> = {
   autorisation_prealable: 'Autorisation préalable de mise en location (permis de louer)',
   declaration_mise_en_location: 'Déclaration de mise en location',
   encadrement_loyers: 'Encadrement des loyers',
@@ -243,6 +243,22 @@ export class Contraintes {
       this.now,
     );
     return { ok: true, value };
+  }
+
+  /**
+   * Ce que l'écran lit d'une commune : ses règles en vigueur aujourd'hui, avec leur source, et si le lecteur peut en
+   * ranger (la direction seule) (Y11) [R16]. Rien de rangé n'est pas une preuve qu'il n'y en a pas.
+   */
+  async communeRulesScreen(viewer: Viewer, inseeCode: unknown): Promise<{ ok: true; value: { canRecord: boolean; rules: Array<Pick<CommuneRule, 'rule' | 'effectiveFrom' | 'effectiveUntil' | 'source' | 'sourceDate'> & { label: string }> } } | { ok: false; rule: 'R124'; code: 'insee' }> {
+    if (typeof inseeCode !== 'string' || !INSEE.test(inseeCode)) return { ok: false, rule: 'R124', code: 'insee' };
+    const rules = await this.communeRules(viewer.networkId, inseeCode, this.now().toISOString().slice(0, 10));
+    return {
+      ok: true,
+      value: {
+        canRecord: viewer.role === 'direction',
+        rules: rules.map((r) => ({ rule: r.rule, label: COMMUNE_RULE_LABELS[r.rule], effectiveFrom: r.effectiveFrom, effectiveUntil: r.effectiveUntil, source: r.source, sourceDate: r.sourceDate })),
+      },
+    };
   }
 
   /** Les règles de la commune en vigueur ce jour-là. */

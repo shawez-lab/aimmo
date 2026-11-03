@@ -226,6 +226,98 @@ describe('Y09 · écran « Investir » de l’application', () => {
     expect(u.posts()).toHaveLength(0);
   });
 
+  describe('Y11 · les règles d’une commune', () => {
+    const READ = 'GET /v1/investir/regles?insee=99001';
+    const POST = 'POST /v1/investir/regles';
+    const RULE = { rule: 'encadrement_loyers', label: 'Encadrement des loyers', effectiveFrom: '2025-03-01', effectiveUntil: '2030-03-01', source: `Délibération ${INJECTED}`, sourceDate: '2025-01-15' };
+    const reader = async (data: unknown, answers: Record<string, Answer> = {}) => {
+      const t = await run({ [READ]: ok(data), ...answers });
+      await t.ouvrir();
+      t.input('Code INSEE de la commune').value = '99001';
+      await t.click(t.byText('Lire les règles de cette commune'));
+      return t;
+    };
+    const fill = (t: Awaited<ReturnType<typeof run>>) => {
+      t.input('Règle').value = 'encadrement_loyers';
+      t.input('En vigueur depuis').value = '2025-03-01';
+      t.input('Source : la délibération ou le texte').value = 'Délibération inventée';
+      t.input('Date de la source').value = '2025-01-15';
+    };
+
+    it('[R10] [Y11] chaque règle dit sa source et sa date, en texte ; l’agent ne voit pas le formulaire', async () => {
+      const t = await reader({ canRecord: false, rules: [RULE] });
+      const text = t.body().textContent;
+      expect(text).toContain('Encadrement des loyers');
+      expect(text).toContain('jusqu’au 01/03/2030');
+      expect(text).toContain(`Source : Délibération ${INJECTED}, 15/01/2025`);
+      expect(t.byText('Ranger cette règle')).toBeUndefined();
+      expect(INVESTIR_SCRIPT).not.toMatch(/innerHTML|insertAdjacentHTML/);
+    });
+
+    it('[R10] [Y11] sans règle rangée, rien n’affirme qu’il n’y en a pas ; un code illisible ne part pas', async () => {
+      const t = await reader({ canRecord: false, rules: [] });
+      expect(t.body().textContent).toContain('Cela ne prouve pas qu’il n’y en a pas');
+      const before = t.calls.length;
+      t.input('Code INSEE de la commune').value = 'abc';
+      await t.click(t.byText('Lire les règles de cette commune'));
+      expect(t.calls.length).toBe(before);
+      expect(t.body().textContent).toContain('cinq caractères');
+    });
+
+    it('[R16] [Y11] la direction range une règle : ce qui part est ce qu’elle a écrit, puis la commune est relue', async () => {
+      let rules: unknown[] = [];
+      const t = await run({
+        [READ]: async () => Response.json({ ok: true, data: { canRecord: true, rules } }),
+        [POST]: async () => { rules = [RULE]; return Response.json({ ok: true, data: { effectiveFrom: '2025-03-01' } }); },
+      });
+      await t.ouvrir();
+      t.input('Code INSEE de la commune').value = '99001';
+      await t.click(t.byText('Lire les règles de cette commune'));
+      fill(t);
+      await t.click(t.byText('Ranger cette règle'));
+      expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ inseeCode: '99001', rule: 'encadrement_loyers', effectiveFrom: '2025-03-01', effectiveUntil: null, source: 'Délibération inventée', sourceDate: '2025-01-15' });
+      expect(t.body().textContent).toContain('Règle rangée, en vigueur à partir du 01/03/2025.');
+      expect(t.body().textContent).toContain('Encadrement des loyers');
+    });
+
+    it('[Y11] les refus sont dits en français, sans code ; la réponse perdue n’annonce rien ; un double appui, un seul envoi', async () => {
+      for (const [code, text] of [['source', 'Écrivez la source'], ['date_source', 'un jour déjà passé'], ['date', 'Les dates de la règle'], ['regle', 'Choisissez la règle'], ['role', 'pas dans vos droits']] as const) {
+        const t = await reader({ canRecord: true, rules: [] }, { [POST]: no(409, { ok: false, rule: 'R124', code }) });
+        fill(t);
+        await t.click(t.byText('Ranger cette règle'));
+        const said = t.body().all().find((e) => e.attributes.role === 'status')!.textContent;
+        expect(said).toContain(text);
+        expect(said).not.toContain(code === 'source' || code === 'date' ? '_' : code);
+      }
+      const lost = await reader({ canRecord: true, rules: [] });
+      fill(lost);
+      await lost.click(lost.byText('Ranger cette règle'));
+      expect(lost.body().textContent).toContain('rien n’est sûr');
+      expect(lost.body().textContent).not.toContain('Règle rangée');
+      let answer: (r: Response) => void = () => undefined;
+      const twice = await reader({ canRecord: true, rules: [] }, { [POST]: () => new Promise<Response>((r) => { answer = r; }) });
+      fill(twice);
+      const b = twice.byText('Ranger cette règle')!;
+      b.listeners.click!({});
+      b.listeners.click!({});
+      await settle();
+      expect(twice.posts()).toHaveLength(1);
+      answer(Response.json({ ok: false, rule: 'R124', code: 'source' }, { status: 409 }));
+      await settle();
+      b.listeners.click!({});
+      await settle();
+      expect(twice.posts()).toHaveLength(2);
+    });
+
+    it('[Y11] sans réseau à la lecture, c’est dit', async () => {
+      const t = await run();
+      await t.ouvrir();
+      t.input('Code INSEE de la commune').value = '99001';
+      await t.click(t.byText('Lire les règles de cette commune'));
+      expect(t.body().textContent).toContain('Pas de réseau');
+    });
+  });
+
   it('l’accueil ouvre la liste des investisseurs ; un prénom reçu reste du texte', async () => {
     const t = await run();
     await t.ouvrir();
