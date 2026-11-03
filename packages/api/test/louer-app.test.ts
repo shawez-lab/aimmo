@@ -711,6 +711,47 @@ describe('W11 · écran « Louer » de l’application', () => {
       expect(t.calls.map((c) => c.url)).toEqual(['/v1/location/l1/remise-des-cles', '/v1/location/l1/honoraires-dus']);
     });
 
+    it('[R108] le rail ne dit jamais « fait » pour un bail signé en essai', async () => {
+      const t = await setup({ ...STATE, leaseSigned: false });
+      const text = t.body().textContent;
+      expect(text).toContain('Bail · signé en essai');
+      expect(text).not.toContain('Bail · fait');
+      const real = await setup(STATE, { 'GET /v1/location/l1/suivi': ok({ ...SIGNED, lease: { ...SIGNED.lease, mode: 'reel' } }) });
+      expect(real.body().textContent).toContain('Bail · fait');
+    });
+
+    it('[R16] une autre clé sur le même appareil ne rouvre rien sans son geste', async () => {
+      const t = await setup(STATE);
+      await t.openClosing();
+      t.calls.length = 0;
+      await t.click(t.els['louer-retour']);
+      await t.click(t.byText('Ouvrir', 0));
+      // Le même agent revient : le bloc se rouvre.
+      expect(t.calls.some((c) => c.url.endsWith('/remise-des-cles'))).toBe(true);
+      await t.click(t.els.sortir);
+      t.els.cle!.value = 'z'.repeat(40);
+      t.els['form-connexion']!.listeners.submit!({ preventDefault: () => undefined });
+      await t.settle();
+      await t.openL1();
+      await t.settle();
+      expect(t.calls.some((c) => c.url.endsWith('/remise-des-cles'))).toBe(false);
+      expect(t.byText('Ouvrir la remise des clés')).toBeDefined();
+    });
+
+    it('un script chargé mais vide ne laisse pas l’écran en attente', async () => {
+      const t = await setup(STATE);
+      await t.click(t.byText('Ouvrir la remise des clés'));
+      t.scripts().find((e) => e.attributes.src === '/app/louer-remise.js')!.listeners.load!({});
+      await t.settle();
+      expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    });
+
+    it('[R201] le formulaire de l’état des lieux est servi à part', async () => {
+      const served = handleAgentApp(new Request('https://aimmo.example.test/app/louer-edl.js'))!;
+      expect(served.headers.get('content-type')).toContain('text/javascript');
+      expect(await served.text()).toBe(LOUER_EDL_SCRIPT);
+    });
+
     it('sans réseau au chargement du script, c’est dit, et le même geste recharge', async () => {
       const t = await setup(STATE);
       await t.click(t.byText('Ouvrir la remise des clés'));

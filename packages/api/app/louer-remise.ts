@@ -27,17 +27,18 @@ globalThis.AIMMO_LOUER_REMISE = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, ID = t.ID, say = t.say, date = t.date, euros = t.euros;
   var REFUSALS = ${JSON.stringify(REFUSALS)};
   var DONE = ${JSON.stringify(DONE)};
-  var busy = false;
+  var busy = null;
   function plain(res) {
     if (res.status === 403) return 'Ce geste n’est pas dans vos droits.';
     return res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'La remise des clés ne se lit pas pour le moment.';
   }
   function act(box, base, path, body, fallback, done) {
-    if (busy) return;
-    busy = true;
+    var mine = t.session();
+    if (busy === mine) return;
+    busy = mine;
     say('Envoi…');
     return send(path, 'POST', body).then(function (res) {
-      busy = false;
+      if (busy === mine) busy = null;
       if (res.gone) return;
       if (res.ok) return t.reload(done);
       if (res.offline || !res.body || res.status >= 500) {

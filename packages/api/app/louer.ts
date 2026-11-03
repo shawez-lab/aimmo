@@ -205,6 +205,7 @@ globalThis.AIMMO_LOUER = function (t) {
   function louerState(text) { $('louer-etat').textContent = text; }
   // À la sortie ou au changement de clé : rien de la personne précédente ne reste sur l'appareil (texte du bail, séances).
   function forgetLouer() {
+    closingOpenFor = null;
     leaseTexts = {};
     signing = {};
   }
@@ -375,7 +376,7 @@ globalThis.AIMMO_LOUER = function (t) {
       ['Annonce', ads.some(function (a) { return a.validatedAt; }) ? 'fait' : ''],
       ['Dossiers', pres ? 'fait' : ''],
       ['Choix', chosen ? 'fait' : ''],
-      ['Bail', lease && lease.bailleur && lease.locataire ? 'fait' : ''],
+      ['Bail', lease && lease.bailleur && lease.locataire ? (lease.mode === 'essai' ? 'essai' : 'fait') : ''],
       ['État des lieux', p.inventoryClosed ? 'fait' : ''],
       ['Remise des clés', p.handedOn ? 'fait' : ''],
     ];
@@ -383,7 +384,7 @@ globalThis.AIMMO_LOUER = function (t) {
     rail.setAttribute('aria-label', 'Étapes de la mise en location');
     var current = false;
     steps.forEach(function (s) {
-      var li = el('li', s[0] + (s[1] === 'fait' ? ' · fait' : s[1] === 'bloque' ? ' · bloqué' : ''), s[1] || null);
+      var li = el('li', s[0] + (s[1] === 'fait' ? ' · fait' : s[1] === 'bloque' ? ' · bloqué' : s[1] === 'essai' ? ' · signé en essai' : ''), s[1] || null);
       if (!current && s[1] !== 'fait') { current = true; li.setAttribute('aria-current', 'step'); }
       rail.appendChild(li);
     });
@@ -412,7 +413,7 @@ globalThis.AIMMO_LOUER = function (t) {
       lazyBusy[name] = false;
       var make = globalThis[global];
       try { delete globalThis[global]; } catch (e) { /* rien à retirer */ }
-      if (typeof make !== 'function') return;
+      if (typeof make !== 'function') { if (mine === t.session()) louerState('Pas de réseau. Réessayez dans un moment.'); return; }
       lazyTools[name] = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, whole: whole, ID: ID, session: t.session, say: louerState, date: date, euros: euros, act: louerAct, openLocation: openLocation, reload: function (said) { return openLocation(louerId, $('louer-titre').textContent, said); } });
       if (mine === t.session()) { louerState(''); act(lazyTools[name]); }
     });
