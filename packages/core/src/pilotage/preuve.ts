@@ -92,6 +92,8 @@ export function proofRuns(months: readonly Pick<ProofMonth, 'month' | 'complete'
 
 interface LineRow {
   mandate_id: string;
+  number: string;
+  hash: string;
   signed_at: string;
   document_kind: string | null;
   cancel_reason: string | null;
@@ -122,16 +124,20 @@ export class CompteurPreuve {
     return { ok: true, value };
   }
 
-  /** Le calcul, sans droits : pour le sceau d'un mois et les tests. */
-  async compute(networkId: string): Promise<ProofCounter> {
-    const currentMonth = parisMonth(this.now());
-    const months = new Map<string, ProofMonth>();
-    for (let m = PROOF_START_MONTH; m <= currentMonth; m = nextMonth(m)) months.set(m, emptyMonth(m, m < currentMonth));
+  /** Les lignes qui comptent pour un mois : le numéro et l'empreinte de chacune, triés par numéro [R212]. */
+  async countedLines(networkId: string, month: string): Promise<{ number: string; hash: string }[]> {
+    const lines = await this.registerLines(networkId);
+    return lines
+      .filter((l) => parisMonth(new Date(l.signed_at)) === month && l.cancel_reason !== 'error' && l.cancel_reason !== 'withdrawal')
+      .map((l) => ({ number: l.number, hash: l.hash }))
+      .sort((a, b) => (a.number < b.number ? -1 : a.number > b.number ? 1 : 0));
+  }
 
+  private registerLines(networkId: string): Promise<LineRow[]> {
     // La date de signature est celle figée par la ligne du registre ; une ligne n'a qu'une annulation. Une rétractation
     // rangée vaut retrait même si la ligne d'annulation n'a pas pu s'écrire : le compte ne penche jamais vers le haut.
-    const lines = await this.db.all<LineRow>(
-      `SELECT r.mandate_id, r.signed_at, d.kind AS document_kind, CASE WHEN w.mandate_id IS NOT NULL THEN 'withdrawal' ELSE c.reason END AS cancel_reason
+    return this.db.all<LineRow>(
+      `SELECT r.mandate_id, r.number, r.hash, r.signed_at, d.kind AS document_kind, CASE WHEN w.mandate_id IS NOT NULL THEN 'withdrawal' ELSE c.reason END AS cancel_reason
          FROM mandate_register r
          LEFT JOIN mandate_register c ON c.network_id = r.network_id AND c.kind = 'annulation' AND c.cancels_seq = r.seq
          LEFT JOIN mandate_withdrawals w ON w.mandate_id = r.mandate_id
@@ -140,6 +146,15 @@ export class CompteurPreuve {
         WHERE r.network_id = ? AND r.kind = 'inscription'`,
       [networkId],
     );
+  }
+
+  /** Le calcul, sans droits : pour le sceau d'un mois et les tests. */
+  async compute(networkId: string): Promise<ProofCounter> {
+    const currentMonth = parisMonth(this.now());
+    const months = new Map<string, ProofMonth>();
+    for (let m = PROOF_START_MONTH; m <= currentMonth; m = nextMonth(m)) months.set(m, emptyMonth(m, m < currentMonth));
+
+    const lines = await this.registerLines(networkId);
     for (const line of lines) {
       const month = months.get(parisMonth(new Date(line.signed_at)));
       if (!month) continue;
