@@ -1833,6 +1833,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Objectif : un dossier reste « incomplet : manque pièce d'identité vérifiée » tant que la vérification n'est pas rangée. Vérifier d'abord si un geste existe à l'écran pour un candidat ; sinon l'ajouter, sans que la pièce quitte le coffre.
 - Critères : la pièce va au coffre, jamais au dossier [R15] (test) ; l'écran ne montre que le fait vérifié et sa date [R13] (test) ; réservé à l'agent du bien ou à la direction [R16] (test) ; budget tenu [R201] (test).
 - Attend : H36 pour le coffre réel.
+- Décidé (2026-11-03, voie 2) : aucun geste à l'écran pour un candidat, sauf le bloc de la fiche ; ajouté dans le dossier, par la route du coffre. Le critère disait « l'agent du bien ou la direction », mais le coffre écarte la direction, qui ne dépose jamais [R90] : lecture prudente, la direction lit le fait et la date, et son dépôt est refusé avec le texte dit.
 
 ### W22 · Le candidat passe par les mêmes droits que ses contacts
 - Statut : à faire

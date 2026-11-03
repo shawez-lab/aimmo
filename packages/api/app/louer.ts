@@ -462,7 +462,7 @@ globalThis.AIMMO_LOUER = function (t) {
       var make = globalThis[global];
       try { delete globalThis[global]; } catch (e) { /* rien à retirer */ }
       if (typeof make !== 'function') { if (mine === t.session()) louerState('Pas de réseau. Réessayez dans un moment.'); return; }
-      lazyTools[name] = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, whole: whole, ID: ID, session: t.session, say: louerState, date: date, euros: euros, act: louerAct, openLocation: openLocation, piece: piece, refusals: LOUER_REFUSALS, reload: function (said) { return openLocation(louerId, $('louer-titre').textContent, said); } });
+      lazyTools[name] = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, whole: whole, ID: ID, session: t.session, say: louerState, date: date, euros: euros, act: louerAct, openLocation: openLocation, piece: piece, upload: louerUpload, refusals: LOUER_REFUSALS, reload: function (said) { return openLocation(louerId, $('louer-titre').textContent, said); } });
       if (mine === t.session()) { louerState(''); act(lazyTools[name]); }
     });
     s.addEventListener('error', function () {

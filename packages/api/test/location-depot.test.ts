@@ -46,7 +46,16 @@ async function setup(bucketWrites = true) {
   const pieces = new R2PieceStore(bucket);
   const ids: Record<Who, { role: string; userId: string }> = { alex: { role: 'agent', userId: alex }, bea: { role: 'agent', userId: bea }, conformite: { role: 'compliance', userId: 'conf-1' } };
   const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), networkId: network, ...ids[w] }))));
-  const config: ApiConfig = { db, apiKeys, mode: 'essai', now, pieces };
+  const vaulted = new Map<string, Uint8Array>();
+  const coffre = {
+    put: async (networkId: string, content: Uint8Array) => {
+      const key = `coffre/${networkId}/${vaulted.size}`;
+      vaulted.set(key, content);
+      return key;
+    },
+    read: async (key: string) => vaulted.get(key) ?? null,
+  };
+  const config: ApiConfig = { db, apiKeys, mode: 'essai', now, pieces, coffre };
   const json = async (who: Who, path: string, body: unknown) => {
     const r = await handleRequest(new Request(`${BASE}/v1${path}`, { method: 'POST', headers: { authorization: `Bearer ${KEYS[who]}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), config);
     return { status: r.status, body: (await r.json()) as { ok: boolean; data?: any; rule?: string | null; code?: string } };
@@ -72,7 +81,7 @@ async function setup(bucketWrites = true) {
     const person = (await store.createPerson({ networkId: network, agentId: alex, firstName: 'Cand', lastName: 'Inventé' })).id;
     return person;
   };
-  return { db, journal, id, stored, state, deposit, depositPiece, json, candidate };
+  return { db, journal, id, stored, vaulted, config, state, deposit, depositPiece, json, candidate };
 }
 
 describeWithSqlite('W14 · dépôt des pièces de la location, par le socle', () => {
@@ -225,6 +234,42 @@ describeWithSqlite('W14 · dépôt des pièces de la location, par le socle', ()
       // La ligne sans fichier ne se joint pas au dossier.
       const phantom = rows.map((r) => String(r.ref)).find((ref) => !t.stored.has(ref))!;
       expect(await t.json('alex', `/location/candidatures/${app}/pieces`, { holder: 'candidat', sort: 'bulletins_salaire', ref: phantom, sha256: sha(PDF) })).toMatchObject({ body: { code: 'not_stored' } });
+    });
+  });
+
+  describe('W21 · l’identité du candidat, par le coffre', () => {
+    const toVault = async (t: Awaited<ReturnType<typeof setup>>, who: Who, person: string, day = '2027-01-10') => {
+      const r = await handleRequest(new Request(`${BASE}/v1/conformite/personnes/${person}/coffre?sorte=passeport&verifie=${day}`, { method: 'POST', headers: { authorization: `Bearer ${KEYS[who]}`, 'content-type': 'application/pdf' }, body: PDF }), t.config);
+      return { status: r.status, body: (await r.json()) as { ok: boolean; rule?: string | null; code?: string } };
+    };
+    const candidatures = async (t: Awaited<ReturnType<typeof setup>>) => {
+      const r = await handleRequest(new Request(`${BASE}/v1/location/${t.id}/candidatures`, { headers: { authorization: `Bearer ${KEYS.alex}` } }), t.config);
+      return ((await r.json()) as { data: { identityVerifiedOn: Record<string, string>; missing: { holder: string; what: string }[] }[] }).data;
+    };
+
+    it('[R15] [R13] la pièce va au coffre, jamais au dossier ; le dossier n’en dit que le fait et sa date', async () => {
+      const t = await setup();
+      const person = await t.candidate();
+      await t.json('alex', `/location/${t.id}/candidatures`, { personId: person });
+      expect((await candidatures(t))[0]!.missing).toContainEqual({ holder: 'candidat', what: 'identite' });
+      expect(await toVault(t, 'alex', person)).toMatchObject({ status: 200, body: { ok: true } });
+      const [app] = await candidatures(t);
+      expect(app!.identityVerifiedOn).toEqual({ candidat: '2027-01-10' });
+      expect(app!.missing).not.toContainEqual({ holder: 'candidat', what: 'identite' });
+      expect(await t.db.first('SELECT 1 FROM rental_application_pieces')).toBeNull();
+      expect(await t.db.first('SELECT 1 FROM rental_piece_deposits')).toBeNull();
+      expect(t.stored.size).toBe(0);
+      expect(t.vaulted.size).toBe(1);
+      expect(JSON.stringify(app)).not.toMatch(/passeport|sha256|storage/i);
+    });
+
+    it('[R16] [R90] un autre agent ne dépose pas au coffre pour ce candidat, et son dossier reste à vérifier', async () => {
+      const t = await setup();
+      const person = await t.candidate();
+      await t.json('alex', `/location/${t.id}/candidatures`, { personId: person });
+      expect((await toVault(t, 'bea', person)).status).toBe(403);
+      expect(t.vaulted.size).toBe(0);
+      expect((await candidatures(t))[0]!.identityVerifiedOn).toEqual({});
     });
   });
 

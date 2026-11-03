@@ -1,9 +1,12 @@
+import { IDENTITY_PIECES } from '../../core/src/conformite/pieces-identite.ts';
+import { VAULT_CONTENT_TYPES, VAULT_MAX_BYTES, VAULT_PIECES } from '../../core/src/conformite/coffre.ts';
 import { OFFICIAL_PIECES } from '../../core/src/location/index.ts';
 
 /**
  * Compléter un dossier de candidature à l'écran (W18), servi à part (`/app/louer-dossier.js`), chargé au premier geste
  * [R201]. Seules les pièces de la liste officielle sont proposées, selon qui les fournit [R104] ; une pièce d'identité n'y
- * est pas, elle va au coffre [R15]. Ni nom de garant, ni montant, ni note : le dossier garde sa place d'arrivée [R105].
+ * est pas, elle va au coffre [R15] : le geste de W21 l'y dépose, par la route du coffre, et l'écran n'en montre que le
+ * fait et la date [R13]. Ni nom de garant, ni montant, ni note : le dossier garde sa place d'arrivée [R105].
  */
 const REFUSALS = {
   not_allowed: 'Cette pièce n’est pas sur la liste officielle : elle ne peut pas être demandée.',
@@ -18,6 +21,15 @@ const REFUSALS = {
   ref_used: 'Ce fichier est déjà rangé.',
   depot_ferme: 'Le dépôt des fichiers n’est pas ouvert pour le moment : rien n’est rangé.',
 };
+const VAULT_REFUSALS = {
+  bad_date: 'La date de vérification n’est pas valable : elle ne peut pas être dans l’avenir.',
+  bad_content_type: 'Seuls les PDF, JPEG et PNG entrent au coffre.',
+  too_large: 'Ce fichier dépasse la taille admise au coffre.',
+  empty_content: 'Ce fichier est vide.',
+  unknown_piece: 'Choisissez la sorte de pièce.',
+  vault_not_configured: 'Le coffre n’est pas encore ouvert : aucune pièce ne peut y être déposée pour le moment.',
+};
+const IDENTITY_KINDS = Object.fromEntries(VAULT_PIECES.filter((p) => (IDENTITY_PIECES as readonly string[]).includes(p.kind)).map((p) => [p.kind, p.label]));
 const PIECES = Object.fromEntries(Object.entries(OFFICIAL_PIECES).map(([k, v]) => [k, { l: v.label, c: v.category, h: v.holders }]));
 
 export const LOUER_DOSSIER_SCRIPT = `'use strict';
@@ -25,6 +37,10 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, select = t.select, say = t.say, piece = t.piece;
   var PIECES = ${JSON.stringify(PIECES)};
   var REFUSALS = ${JSON.stringify(REFUSALS)};
+  var VAULT_REFUSALS = ${JSON.stringify(VAULT_REFUSALS)};
+  var IDENTITY_KINDS = ${JSON.stringify(IDENTITY_KINDS)};
+  var VAULT_TYPES = ${JSON.stringify(VAULT_CONTENT_TYPES)};
+  var VAULT_MAX = ${VAULT_MAX_BYTES};
   var seq = 0;
   t.refusals.depot_ferme = REFUSALS.depot_ferme;
   var sending = false;
@@ -51,6 +67,51 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
       if (allowed && !(hasDomicile && p.c === 'domicile')) out[k] = p.l;
     });
     return out;
+  }
+  /* L'identité : le fait et sa date, rien de la pièce. La pièce part au coffre, jamais au dossier [R15]. */
+  function identity(box, a, guarantors, n) {
+    var verified = a.identityVerifiedOn || {};
+    var people = [{ holder: 'candidat', personId: a.personId, name: 'Le candidat' }];
+    guarantors.forEach(function (g, i) { if (g.kind === 'personne') people.push({ holder: g.guarantorId, personId: g.personId, name: guarantorName(g, i) }); });
+    box.appendChild(el('h4', 'Identité'));
+    var todo = {};
+    people.forEach(function (p) {
+      var on = verified[p.holder];
+      box.appendChild(el('p', p.name + ' : ' + (on ? 'identité vérifiée le ' + t.date(on) : 'identité à vérifier'), 'doux'));
+      if (!on && p.personId) todo[p.personId] = p.name;
+    });
+    if (!Object.keys(todo).length) return;
+    box.appendChild(el('p', 'La pièce part au coffre, que seul le responsable de la conformité ouvre. Elle ne reste ni dans le dossier ni à l’écran.', 'doux'));
+    var who = select(box, 'dossier-identite-qui-' + n, 'Pour qui', todo, Object.keys(todo)[0]);
+    var kind = select(box, 'dossier-identite-sorte-' + n, 'La pièce vue', IDENTITY_KINDS, Object.keys(IDENTITY_KINDS)[0]);
+    var seen = t.field(box, 'dossier-identite-date-' + n, 'Vérifiée le');
+    seen.setAttribute('type', 'date');
+    var file = t.field(box, 'dossier-identite-fichier-' + n, 'Le fichier de la pièce');
+    file.setAttribute('type', 'file');
+    file.setAttribute('accept', VAULT_TYPES.join(','));
+    box.appendChild(button('Déposer au coffre', function () {
+      if (sending) return;
+      var f = file.files && file.files[0];
+      if (!seen.value) { say('Dites d’abord quand la pièce a été vérifiée.'); return; }
+      if (!f) { say('Choisissez d’abord le fichier.'); return; }
+      if (VAULT_TYPES.indexOf(f.type) === -1) { say(VAULT_REFUSALS.bad_content_type); return; }
+      if (f.size > VAULT_MAX) { say(VAULT_REFUSALS.too_large); return; }
+      sending = true;
+      say('Envoi au coffre…');
+      var path = '/v1/conformite/personnes/' + encodeURIComponent(who.value) + '/coffre?sorte=' + encodeURIComponent(kind.value) + '&verifie=' + encodeURIComponent(seen.value);
+      t.upload(path, f, f.type, '').then(function (res) {
+        sending = false;
+        if (res.gone) return null;
+        file.value = '';
+        if (res.ok) return t.reload('Pièce déposée au coffre.');
+        var code = res.body && res.body.code;
+        if (VAULT_REFUSALS[code]) { say(VAULT_REFUSALS[code]); return null; }
+        if (res.status === 403) { say('Le dépôt au coffre revient à l’agent de cette fiche ou au responsable de la conformité.'); return null; }
+        if (res.offline || !res.body || res.status >= 500) { say('Réponse perdue : la pièce est peut-être au coffre. Rouvrez le logement avant de recommencer.'); return null; }
+        say('La pièce n’est pas déposée. Vérifiez la saisie.');
+        return null;
+      });
+    }));
   }
   function guarantorName(g, i) { return g.kind === 'visale' ? 'Garant Visale' : 'Garant ' + (i + 1); }
   function open(box, base, a) {
@@ -92,6 +153,7 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
         return act(appBase + '/pieces', { holder: chosen.holder, sort: chosen.sort, ref: ref, sha256: file.sha() }, 'La pièce n’est pas rangée.', 'Pièce rangée.');
       }).finally(function () { busy = false; });
     }));
+    identity(box, a, guarantors, n);
     box.appendChild(el('h4', 'Ajouter un garant'));
     if (!guarantors.some(function (g) { return g.kind === 'visale'; })) box.appendChild(button('Garant Visale', function () {
       act(appBase + '/garants', { kind: 'visale' }, 'Le garant n’est pas ajouté.', 'Garant ajouté.');
