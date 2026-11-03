@@ -1001,7 +1001,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H08 pour un avenant réel, H25 pour le dépôt réel.
 
 ### D18 · Modèles de mandat et d'avenant à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-03)
 - Voie : 1
 - Trouvé le 2026-11-03 en faisant D17 : `/v1/modeles` n'a aucun geste à l'écran, alors que le mandat et l'avenant répondent « aucun modèle » tant que la direction n'en a pas rangé. W17 l'a fait pour les modèles de bail : suivre `packages/api/app/louer-modeles.ts`.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D13, D17
@@ -1838,7 +1838,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X16 · Rétractation et début anticipé d'un mandat à l'écran
-- Statut : à faire
+- Statut : fait (2026-11-03), par D16 : vérifié route par route, les deux gestes et leurs tests sont dans `app/mandat.ts` et `mandat-app.test.ts`
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D03
 - Cahier : M06 ; R16, R201.
 - Objectif : `mandat.retractation` et `mandat.debut_anticipe` n'ont aucun geste à l'écran. Lire d'abord les routes et le fichier `app/mandat.ts`.
@@ -1846,7 +1846,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X17 · Signature en ligne, avenant et identité à l'écran
-- Statut : à faire
+- Statut : en cours
+- Vérifié (2026-11-03) : la signature d'un avenant est déjà à l'écran (D17) ; restent la signature en ligne et l'identité.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D08
 - Cahier : M06 ; R16, R201.
 - Objectif : `document.signature_en_ligne`, `document.signature_avenant` et `fiche.identite` n'ont aucun appel de l'application. Vérifier si le geste existe sous une autre forme ; sinon le donner, en essai.
