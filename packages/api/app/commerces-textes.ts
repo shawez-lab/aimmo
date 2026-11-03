@@ -1,3 +1,4 @@
+import { DOSSIER_DOCUMENT_KINDS, MAX_DOSSIER_TEXT, type DossierDocumentKind } from '../../core/src/commerces/dossier.ts';
 import type { PresentationProblemCode } from '../../core/src/commerces/presentation.ts';
 
 /**
@@ -22,6 +23,24 @@ const PROBLEMS: Record<PresentationProblemCode, string> = {
   adresse: 'situe le commerce trop précisément',
   critere_discriminant: 'critère discriminant',
   mot_interdit: 'mot interdit',
+};
+
+/* Le dépôt d'un document (CE20) : le dossier ne sert que du texte, pour y porter le filigrane du lecteur [R114]. */
+const DOC_KINDS: Record<DossierDocumentKind, string> = {
+  bilan: 'Bilan',
+  compte_resultat: 'Compte de résultat',
+  bail: 'Bail',
+  liste_materiel: 'Liste du matériel',
+  autorisation: 'Autorisation',
+  autre: 'Autre',
+};
+const DOC_REFUSALS = {
+  kind: 'Choisissez la sorte de document.',
+  title: 'Le titre est à remplir, en 120 caractères au plus.',
+  content: 'Le texte est à remplir, en 1 million de caractères au plus.',
+  stockage_absent: 'Le stockage des documents n’est pas encore ouvert : rien n’est rangé, votre texte reste ici.',
+  autre_bien: 'Ce document appartient à un autre bien.',
+  sorte: 'Ce bien n’est pas un commerce.',
 };
 
 export const COMMERCES_TEXTES_SCRIPT = `'use strict';
@@ -71,6 +90,61 @@ globalThis.AIMMO_CE_TEXTES = function (t) {
     box.appendChild(go);
     box.appendChild(said);
   }
-  return { fix: fix };
+  var DOC_KINDS = ${JSON.stringify(DOC_KINDS)}, DOC_KEYS = ${JSON.stringify(DOSSIER_DOCUMENT_KINDS)}, DOC_REFUSALS = ${JSON.stringify(DOC_REFUSALS)};
+  function documents(box, base) {
+    clear(box);
+    say('Chargement…');
+    var mine = t.session();
+    return send(base + '/documents', 'GET').then(function (res) {
+      if (res.gone || mine !== t.session()) return false;
+      if (!res.ok || !Array.isArray(res.body.data)) {
+        say(res.status === 403 ? 'Ce commerce n’est pas dans vos droits.' : 'Les documents ne se lisent pas pour le moment.');
+        box.appendChild(button('Relire les documents', function () { documents(box, base); }));
+        return false;
+      }
+      say('');
+      if (!res.body.data.length) box.appendChild(el('p', 'Aucun document rangé : le dossier ne porte que la fiche du commerce.', 'doux'));
+      var ul = el('ul', null, 'liste');
+      res.body.data.forEach(function (d) { ul.appendChild(el('li', (known(DOC_KINDS, d.kind) || 'Document') + ' · ' + d.title + ' · rangé le ' + t.day(d.addedAt))); });
+      box.appendChild(ul);
+      deposit(box, base);
+      return true;
+    });
+  }
+  function deposit(box, base) {
+    var kind = field(box, 'ce-document-sorte', 'Sorte de document', 'select');
+    t.option(kind, '', 'À choisir');
+    DOC_KEYS.forEach(function (k) { t.option(kind, k, DOC_KINDS[k]); });
+    var title = field(box, 'ce-document-titre', 'Titre du document');
+    title.setAttribute('maxlength', '120');
+    var text = field(box, 'ce-document-texte', 'Texte du document', 'textarea');
+    text.setAttribute('maxlength', '${MAX_DOSSIER_TEXT}');
+    box.appendChild(el('p', 'Le dossier ne sert que du texte, pour y porter le nom du lecteur : collez le contenu du document. Il part à chaque lecteur dont l’engagement est signé.', 'doux'));
+    var sending = false;
+    var go = button('Ranger le document', function () {
+      if (sending) return;
+      var nt = String(title.value || '').trim(), body = String(text.value || '');
+      if (!kind.value) { say(DOC_REFUSALS.kind); return; }
+      if (!nt) { say(DOC_REFUSALS.title); return; }
+      if (!body.trim()) { say(DOC_REFUSALS.content); return; }
+      var mine = t.session();
+      sending = true;
+      go.disabled = true;
+      say('Envoi…');
+      return send(base + '/documents/texte', 'POST', { kind: kind.value, title: nt, content: body }).then(function (res) {
+        if (res.gone || mine !== t.session()) return false;
+        sending = false;
+        go.disabled = false;
+        /* Recommencer le même texte n'ajoute rien : le socle rend la ligne déjà rangée. */
+        if (res.offline || res.status >= 500 || !res.body) { say('Réponse perdue : le document a peut-être été rangé. Appuyez de nouveau : le même texte ne s’ajoute pas deux fois.'); return false; }
+        if (res.ok) return t.reload(res.body.data && res.body.data.already ? 'Ce texte était déjà rangé : rien n’est ajouté.' : 'Document rangé.');
+        if (res.status === 403 && res.body.code !== 'autre_bien') { say('Ce commerce n’est pas dans vos droits.'); return false; }
+        say(known(DOC_REFUSALS, res.body.code) || 'Le document n’est pas rangé.');
+        return false;
+      });
+    });
+    box.appendChild(go);
+  }
+  return { fix: fix, documents: documents };
 };
 `;
