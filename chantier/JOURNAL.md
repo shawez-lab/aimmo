@@ -514,3 +514,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 05:38 · W20 · garant soumis aux mêmes droits que les contacts, DossierFacile fermé par appel direct (#307) ; relecture forte 2 P0 et 1 P1 corrigés ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : W21
 - 2026-11-03 06:15 · W21, W22 · l'identité se dépose au coffre depuis le dossier, l'écran n'en dit que le fait et la date ; le candidat passe sous les mêmes droits que ses contacts (#308) ; relecture forte 5 P1 traités, W23 écrite ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : W23
 - 2026-11-03 06:21 · W23 · bloquée : annexe I illisible depuis la séance, le seul résumé lu range le titre de séjour à part de l'identité ; rien codé, H43 · prochaine : W24
+- 2026-11-03 06:33 · W24 · le garant Visale et son visa sont sur la carte du candidat, comptés par l'effacement (#309) ; relecture forte sans P0 ni P1 ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : EC13
+- 2026-11-03 06:33 · voie 2 · fin de séance : W19, W20, W21, W22 et W24 fusionnées ; W23 bloquée (H43) ; EC13 écrite ; verrou libéré · prochaine : EC13

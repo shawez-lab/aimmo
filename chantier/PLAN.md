@@ -1817,6 +1817,14 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Décidé (2026-11-03) : aucune route ne déposait une pièce de candidature, donc aucun dossier ne pouvait devenir complet depuis l'application : la tâche couvre aussi les pièces, avec `POST /location/candidatures/<id>/fichiers/piece`. Un dossier DossierFacile n'a pas le geste [R104]. Un seul garant Visale par dossier, jusque dans la base (migration `1580`). Relecture forte : 3 P1 corrigés ; Codex à sa limite, fusion sans lui (#302).
 - Reste : `addPiece` accepte encore des pièces sur un dossier DossierFacile par appel direct ; le geste de vérification de l'identité du candidat n'a pas été regardé (W21).
 
+### EC13 · Un plafond aux liens d'espace préparés par l'agent
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC12
+- Cahier : Le produit, espaces des clients ; R160, R03, R16.
+- Objectif : trouvé par EC12 : `invite` n'a pas de plafond, l'agent peut préparer autant de liens qu'il veut, alors que R160 limite à 3 liens par 24 heures la demande du client. Lire R160, puis appliquer le même plafond à `invite`, lecture la plus prudente.
+- Critères : au-delà du plafond, rien n'est préparé et le refus est dit en français et écrit au journal [R160] (test) ; le compte est par personne, fiches réunies comprises (test) ; aucun lien ni jeton à l'écran [R160] (test).
+- Attend : rien.
+
 ### W19 · Les pièces déposées mais jamais rangées, dans le droit d'accès et l'effacement
 - Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W18, L07
@@ -1864,7 +1872,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Attend : rien.
 
 ### W24 · Le garant Visale et son visa sur la carte du candidat
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W19
 - Cahier : Conformité ; M12 ; R95, R96, R97.
 - Objectif : trouvé par W19 : un garant Visale n'a pas de personne, donc sa ligne et son visa rangé ne sont sur aucune carte d'accès, et le plan d'effacement ne les compte pas. Les rattacher au candidat, le seul à qui ils parlent.
