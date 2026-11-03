@@ -10,6 +10,7 @@ import { fakeD1 } from './fake-d1.ts';
 const KEY_DIRECTION = 'test-cle-canaux-direction-aaaaaaaaaaaaaaaaaaaaaaaaaa';
 const KEY_COMPLIANCE = 'test-cle-canaux-conformite-bbbbbbbbbbbbbbbbbbbbbbbbb';
 const KEY_AGENT = 'test-cle-canaux-agent-ccccccccccccccccccccccccccccccc';
+const KEY_PARTNER = 'test-cle-canaux-partenaire-dddddddddddddddddddddddddd';
 const BASE = 'https://aimmo-api.example.workers.dev/v1/captation/paliers';
 const DAY = 86_400_000;
 
@@ -40,6 +41,7 @@ async function world(rollout?: { open: boolean; connected: readonly ('email' | '
       { sha256: await sha256Hex(KEY_DIRECTION), role: 'direction', userId: 'direction-test', networkId: network.id },
       { sha256: await sha256Hex(KEY_COMPLIANCE), role: 'compliance', userId: 'conformite-test', networkId: network.id },
       { sha256: await sha256Hex(KEY_AGENT), role: 'agent', userId: agent.id, networkId: network.id },
+      { sha256: await sha256Hex(KEY_PARTNER), role: 'partner', userId: 'partenaire-test', networkId: network.id },
     ]),
   };
   const http = async (path: string, key: string, method = 'GET') => {
@@ -73,12 +75,16 @@ describeWithSqlite('C09e · le palier de chaque canal, lu et avancé par la dire
     }
   });
 
-  it('[R16] un agent ne lit ni n’avance : refus au journal', async () => {
+  it.each([
+    ['agent', KEY_AGENT],
+    ['partner', KEY_PARTNER],
+  ])('[R16] le rôle %s ne lit ni n’avance : refus au journal', async (role, key) => {
     const t = await world({ open: true, connected: ['email'] });
-    expect((await t.http('', KEY_AGENT)).status).toBe(403);
-    expect((await t.http('/email/avancer', KEY_AGENT, 'POST')).status).toBe(403);
+    expect((await t.http('', key)).status).toBe(403);
+    expect((await t.http('/email/avancer', key, 'POST')).status).toBe(403);
     const refused = (await t.events()).filter((e) => e.type === 'acces.refuse');
     expect(refused.map((e) => e.data.kind)).toEqual(expect.arrayContaining(['bascule.paliers', 'bascule.avancer']));
+    expect(refused.every((e) => e.data.role === role)).toBe(true);
     expect((await t.stage('email')).stage).toBe('shadow');
   });
 
