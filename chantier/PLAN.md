@@ -1001,7 +1001,7 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H08 pour un avenant réel, H25 pour le dépôt réel.
 
 ### D18 · Modèles de mandat et d'avenant à l'écran
-- Statut : à faire
+- Statut : en cours
 - Voie : 1
 - Trouvé le 2026-11-03 en faisant D17 : `/v1/modeles` n'a aucun geste à l'écran, alors que le mandat et l'avenant répondent « aucun modèle » tant que la direction n'en a pas rangé. W17 l'a fait pour les modèles de bail : suivre `packages/api/app/louer-modeles.ts`.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D13, D17
