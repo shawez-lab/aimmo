@@ -3670,7 +3670,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### IN15 · Les engagements manqués à rappeler, à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN12
 - Cahier : Besoins et solutions, « Le bouche-à-oreille » ; R201.
 - Objectif : dans `finances.js`, sur « Le réseau » : la direction lit les rappels à faire, ouvre la fiche, et dit rappelé, injoignable ou sans appel, en un geste.
