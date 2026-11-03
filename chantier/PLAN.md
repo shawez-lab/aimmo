@@ -1819,12 +1819,14 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Reste : `addPiece` accepte encore des pièces sur un dossier DossierFacile par appel direct ; le geste de vérification de l'identité du candidat n'a pas été regardé (W21).
 
 ### EC13 · Un plafond aux liens d'espace préparés par l'agent
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC12
 - Cahier : Le produit, espaces des clients ; R160, R03, R16.
 - Objectif : trouvé par EC12 : `invite` n'a pas de plafond, l'agent peut préparer autant de liens qu'il veut, alors que R160 limite à 3 liens par 24 heures la demande du client. Lire R160, puis appliquer le même plafond à `invite`, lecture la plus prudente.
 - Critères : au-delà du plafond, rien n'est préparé et le refus est dit en français et écrit au journal [R160] (test) ; le compte est par personne, fiches réunies comprises (test) ; aucun lien ni jeton à l'écran [R160] (test).
 - Attend : rien.
+- Décidé (2026-11-03, voie 2) : le compte est partagé entre les liens demandés et préparés, sans passe-droit pour la direction ; un lien refusé par le contrôle central n'a jamais été remis et ne compte pas, pour les deux origines. Relecture forte : 2 P1 corrigés ; Codex à sa limite (H03), fusion sans lui (#312).
+- Reste : un tiers qui connaît l'adresse peut consommer le plafond par des demandes ; l'agent attend alors la fin des 24 heures.
 
 ### W19 · Les pièces déposées mais jamais rangées, dans le droit d'accès et l'effacement
 - Statut : fait (2026-11-03)
