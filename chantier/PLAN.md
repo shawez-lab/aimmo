@@ -1868,7 +1868,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Voie : 1
 - Trouvé par X14 (son « Reste ») : dix écrans disent « Pas de réseau : rien n'est enregistré. » quand une réponse se perd, alors que l'écriture a pu passer sur le serveur. L'agent croit le geste perdu et le refait.
 - Qui : Claude · Relecture : normale · Dépend de : X14
-- Cahier : M18 ; R10, R201.
+- Cahier : M18 ; R201. Aucune règle écrite ne vise ce texte ; le test le garde sans numéro.
 - Objectif : chaque écran dit que rien n'est sûr et demande de relire avant de recommencer. Le texte seul change ; le verrou contre le double appui de chaque écran reste à regarder écran par écran.
 - Critères : plus aucun écran ne porte l'ancienne phrase (test sur tous les scripts servis) ; le nouveau texte est dit sur une coupure, sur les écrans déjà éprouvés (tests) ; budgets tenus [R201] (test).
 - Attend : rien.

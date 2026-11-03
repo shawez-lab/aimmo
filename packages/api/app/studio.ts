@@ -141,7 +141,7 @@ globalThis.AIMMO_STUDIO = function (t) {
   function block(title) { var b = el('section', null, 'bloc'); b.appendChild(el('h3', title)); body().appendChild(b); return b; }
   function day(iso) { return typeof iso === 'string' ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : ''; }
   function why(res, fallback) {
-    if (res.offline) return 'Pas de réseau : rien n’est enregistré.';
+    if (res.offline) return 'La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.';
     if (res.status === 403 || res.status === 404) return 'Ce bien n’est pas dans vos droits.';
     return (res.body && NO[res.body.code]) || fallback;
   }

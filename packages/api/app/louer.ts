@@ -306,7 +306,7 @@ globalThis.AIMMO_LOUER = function (t) {
       louerLastCode = null;
       if (!res.ok) {
         louerLastCode = (res.body && res.body.code) || null;
-        var text = res.offline ? 'Pas de réseau : rien n’est enregistré.' : louerRefusal(res.body, fallback);
+        var text = res.offline ? 'La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.' : louerRefusal(res.body, fallback);
         if (res.body && Array.isArray(res.body.problems) && res.body.problems.length) text += ' ' + res.body.problems.map(problemText).join(' ');
         louerState(text);
         if (res.body && res.body.code === 'not_latest_presentation') openLocation(id, title, text);

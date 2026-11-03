@@ -232,7 +232,7 @@ globalThis.AIMMO_INVESTIR = function (t) {
       investirState('Envoi…');
       send(base + '/profil', 'POST', { changes: changes, from: from.value }).then(function (res) {
         if (res.gone) return;
-        if (!res.ok) { investirState(res.offline ? 'Pas de réseau : rien n’est enregistré.' : investirRefusal(res.body, 'Le profil n’est pas rangé.')); return; }
+        if (!res.ok) { investirState(res.offline ? 'La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.' : investirRefusal(res.body, 'Le profil n’est pas rangé.')); return; }
         openInvestor(x, 'Profil rangé : une nouvelle version, l’ancienne reste lisible.');
       });
     }));

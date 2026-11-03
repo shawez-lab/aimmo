@@ -163,6 +163,6 @@ describe('AC03 · noter et retirer un accord depuis la fiche', () => {
     fill(b);
     b.named(b.body, 'Noter l’accord')[0]!.listeners.click!({});
     await b.tick();
-    expect(b.body.textContent).toContain('Pas de réseau : rien n’est enregistré.');
+    expect(b.body.textContent).toContain('La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.');
   });
 });

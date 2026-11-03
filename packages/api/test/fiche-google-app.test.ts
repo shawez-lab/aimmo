@@ -264,7 +264,7 @@ describe('AT14 · écran « Fiche Google »', () => {
     const t = await run();
     await t.ouvrir();
     await t.click(t.buttons('Préparer une réponse')[0]);
-    expect(t.state()).toBe('Pas de réseau : rien n’est enregistré.');
+    expect(t.state()).toBe('La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.');
     const u = await run({ 'GET /v1/attirer/google/moi': no(403, { ok: false, rule: 'R16', code: 'agent_parti' }) });
     await u.ouvrir();
     expect(u.state()).toBe('Cet agent n’est plus en activité.');

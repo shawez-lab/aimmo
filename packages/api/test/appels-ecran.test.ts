@@ -125,7 +125,7 @@ describe('AC12 · les gestes d’appel de la fiche', () => {
     await off.load();
     off.named(off.body, 'La personne a refusé')[0]!.listeners.click!({});
     await off.tick();
-    expect(off.body.textContent).toContain('Pas de réseau : rien n’est enregistré.');
+    expect(off.body.textContent).toContain('La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.');
 
     const moved = await opened(FICHE, { '/v1/fiches/p-1/appels': async () => Response.json({ ok: false, rule: 'R16', code: 'not_assigned' }, { status: 403 }) });
     await moved.load();

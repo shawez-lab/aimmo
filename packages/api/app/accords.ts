@@ -30,7 +30,7 @@ export const ACCORDS_JS = `
     unknown_consent: 'Cet accord n’est plus sur cette fiche.'
   };
   function accordRefusal(res, fallback) {
-    if (res.offline) return 'Pas de réseau : rien n’est enregistré.';
+    if (res.offline) return 'La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.';
     return (res.body && ACCORD_REFUSALS[res.body.code]) || fallback;
   }
   var ACCORD_STALE = { stopped: 1, excluded: 1, not_assigned: 1, unknown_consent: 1 };
