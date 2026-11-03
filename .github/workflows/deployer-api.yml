@@ -83,6 +83,9 @@ jobs:
         working-directory: packages/api
         run: npx -y "$WRANGLER" d1 migrations apply aimmo --remote
       - if: steps.h04.outputs.pret == 'oui'
+        name: Liaisons des compartiments R2
+        run: node scripts/liaisons-r2.mjs packages/api/wrangler.toml
+      - if: steps.h04.outputs.pret == 'oui'
         name: Mise en ligne du Worker
         working-directory: packages/api
         run: npx -y "$WRANGLER" deploy
