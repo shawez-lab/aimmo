@@ -39,7 +39,7 @@ export type CommitmentMeasure = (typeof COMMITMENT_MEASURES)[number];
 /** Ce que chaque mesure compte, écrit dans le code, le même pour tous. */
 export const COMMITMENT_MEASURE_RULES: Readonly<Record<CommitmentMeasure, string>> = Object.freeze({
   compte_rendu_visite: 'Chaque visite finie compte ; l’engagement est tenu si son compte rendu est parti au vendeur dans le délai après la fin de la visite. Refusé à l’envoi ou resté en essai, il n’est pas tenu.',
-  point_semaine: 'Chaque point est dû le lundi qui suit sa semaine ; l’engagement est tenu s’il est parti au vendeur dans le délai à partir de ce lundi. Refusé à l’envoi ou resté en essai, il n’est pas tenu.',
+  point_semaine: 'Chaque point est dû le lundi qui suit sa semaine ; l’engagement est tenu s’il est parti au vendeur dans le délai à partir de ce lundi. Refusé à l’envoi ou resté en essai, il n’est pas tenu. Un point que le système n’a jamais préparé ne se voit pas ici.',
 });
 export const SALE_PLAN = Object.freeze([
   'Annonce sur le site du réseau, avec la page du bien',

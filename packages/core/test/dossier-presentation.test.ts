@@ -50,7 +50,8 @@ async function setup() {
     if (report) {
       const at = validatedAfterH === null ? null : endAt + validatedAfterH * H;
       const delivery = report === 'valide' && at !== null ? (outcome.delivery ?? 'sent') : null;
-      const message = delivery === 'sent' ? await sent(at!, outcome.box) : null;
+      // Une panne garde son message, à l'heure : seul son statut dit qu'il n'est pas parti.
+      const message = delivery === 'sent' || delivery === 'failed' ? await sent(at!, outcome.box) : null;
       await db.run(
         `INSERT INTO visit_reports (appointment_id, network_id, dictation, report, source, status, validated_by, validated_at, delivery_status, delivery_rule, message_id, created_by, created_at, updated_at) VALUES (?, ?, 'dictée de test', NULL, 'agent', ?, ?, ?, ?, NULL, ?, 'agent:test', ?, ?)`,
         [id, network.id, report, report === 'valide' ? 'agent:test' : null, report === 'valide' && at !== null ? iso(at) : null, delivery, message, iso(endAt), iso(endAt)],
@@ -66,7 +67,7 @@ async function setup() {
     const created = opts.createdAt ?? start + 8 * H;
     const at = sentAfterH === null ? null : start + sentAfterH * H;
     const delivery = status === 'valide' && at !== null ? (opts.delivery ?? 'sent') : null;
-    const message = delivery === 'sent' ? await sent(at!, opts.box) : null;
+    const message = delivery === 'sent' || delivery === 'failed' ? await sent(at!, opts.box) : null;
     await db.run(
       `INSERT INTO weekly_points (mandate_id, week, network_id, property_id, person_id, agent_id, figures, next_actions, status, validated_by, validated_at, delivery_status, delivery_rule, message_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, '{}', NULL, ?, ?, ?, ?, NULL, ?, ?, ?)`,
       [opts.mandateId ?? mandate.id, week, network.id, property.id, owner.id, alex.id, status, status === 'valide' ? 'agent:test' : null, status === 'valide' && at !== null ? iso(at) : null, delivery, message, iso(created), iso(created)],
@@ -149,6 +150,7 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
     await t.point('2027-08-30', 'valide', 9, { createdAt: Date.parse('2027-08-25T10:00:00.000Z') });
     // Préparé et parti le mercredi d'après, hors du délai de 24 h depuis le lundi : manqué, même sitôt préparé.
     await t.point('2027-09-06', 'valide', 56, { createdAt: Date.parse('2027-09-08T05:00:00.000Z') });
+    await t.point('2027-09-13', 'valide', 9, { delivery: 'failed' });
     const r = await t.rateOf('ps');
     expect(r.proof).toEqual([
       { day: '2027-08-02', kept: true },
@@ -157,10 +159,11 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
       { day: '2027-08-23', kept: false },
       { day: '2027-08-30', kept: true },
       { day: '2027-09-06', kept: false },
+      { day: '2027-09-13', kept: false },
     ]);
     // Mandat signé après son lundi : pas un cas. (Le mandat de ce test est signé il y a 100 jours, le 4 juillet.)
     await t.point('2027-06-28', 'prepare', null);
-    expect((await t.rateOf('ps')).total).toBe(6);
+    expect((await t.rateOf('ps')).total).toBe(7);
   });
 
   it('[R216] point : un lundi dont le délai court n’est ni tenu ni manqué', async () => {
