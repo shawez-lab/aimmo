@@ -3571,7 +3571,8 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : une supervision réelle, à écrire dans `HUMAIN.md` au moment du branchement.
 
 ### IN10 · Les engagements, le temps gagné et la disponibilité à l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#360). Relecture forte 5 P1 corrigés ; une vérification rouge (identifiants en double avec M20), corrigée ; Codex non attendu (H03).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07, IN08, IN09
 - Cahier : Indicateurs et tests ; R201.
 - Objectif : dans `finances.js`, sans toucher au socle : la direction lit les trois sur « Le réseau », l'agent déclare son temps sur « Mes chiffres ».
@@ -3598,7 +3599,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN12 · Un engagement manqué : noté, et le client rappelé par un responsable
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07
 - Cahier : Besoins et solutions, « Le bouche-à-oreille » et « Nos engagements de service » (publiés, et reprise de liberté du vendeur sous réserve de l'avocat).
 - Objectif : vérifier d'abord ce qui existe. Chaque cas manqué vu par IN07 donne une tâche « rappeler » au responsable, une seule, sans donnée dans le journal ; rien n'est envoyé au client par la machine.
