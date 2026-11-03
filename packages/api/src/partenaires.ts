@@ -164,18 +164,18 @@ const core = partenairesCore;
 
 /* ---------- Le dépôt d'un fichier par un partenaire ---------- */
 
-const UPLOAD_TYPES: readonly { type: string; ext: 'pdf' | 'jpg' | 'png'; magic: readonly number[] }[] = [
+export const UPLOAD_TYPES: readonly { type: string; ext: 'pdf' | 'jpg' | 'png'; magic: readonly number[] }[] = [
   { type: 'application/pdf', ext: 'pdf', magic: [0x25, 0x50, 0x44, 0x46, 0x2d] },
   { type: 'image/jpeg', ext: 'jpg', magic: [0xff, 0xd8, 0xff] },
   { type: 'image/png', ext: 'png', magic: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
 ];
 
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function readUpload(request: Request): Promise<Uint8Array | null> {
+export async function readUpload(request: Request): Promise<Uint8Array | null> {
   const declared = Number(request.headers.get('content-length') ?? '0');
   if (!Number.isFinite(declared) || declared > MAX_UPLOAD_BYTES) return null;
   if (!request.body) return new Uint8Array(0);
