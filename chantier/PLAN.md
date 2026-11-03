@@ -1827,7 +1827,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Décidé (2026-11-03, voie 2) : les droits d'abord, puis le reste ; une pièce interdite sur un dossier DossierFacile reste nommée au journal ; `addableContacts` suit toute la chaîne des fusions, comme le geste. Relecture forte : 2 P0 et 1 P1 corrigés. La route de la candidature elle-même a le même trou : W22.
 
 ### W21 · L'identité du candidat vérifiée, depuis l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W18, L09
 - Cahier : M15 Louer ; M12 ; R15, R104, R16.
 - Objectif : un dossier reste « incomplet : manque pièce d'identité vérifiée » tant que la vérification n'est pas rangée. Vérifier d'abord si un geste existe à l'écran pour un candidat ; sinon l'ajouter, sans que la pièce quitte le coffre.
@@ -1836,7 +1836,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Décidé (2026-11-03, voie 2) : aucun geste à l'écran pour un candidat, sauf le bloc de la fiche ; ajouté dans le dossier, par la route du coffre. Le critère disait « l'agent du bien ou la direction », mais le coffre écarte la direction, qui ne dépose jamais [R90] : lecture prudente, la direction lit le fait et la date, et son dépôt est refusé avec le texte dit.
 
 ### W22 · Le candidat passe par les mêmes droits que ses contacts
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Décidé (2026-11-03, voie 2) : fait dans la proposition de W21, qui sans cela donnait la date de vérification du client d'un autre agent.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W20
 - Cahier : M15 Louer ; R16, R105.
@@ -1845,7 +1845,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Attend : rien.
 
 ### W23 · Le titre de séjour d'un candidat au coffre
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W21, L09
 - Cahier : M15 Louer ; M12 ; R15, R104.
 - Objectif : trouvé par la relecture de W21 : `addPiece` renvoie un titre de séjour au coffre, mais le coffre ne connaît pas cette sorte. Une personne qui n'a que ce justificatif ne peut pas être déclarée telle quelle. Vérifier d'abord à la source la liste officielle de l'annexe I, puis ajouter la sorte au coffre (migration, `VAULT_PIECES`, `IDENTITY_PIECES`) et regarder ce que cela change pour D03, O07 et L03.
