@@ -86,7 +86,7 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
       if (!file.picked()) { say('Choisissez d’abord le fichier.'); return; }
       busy = true;
       var chosen = { holder: holder.value, sort: sort.value };
-      Promise.resolve(file.ref(appBase)).then(function (ref) {
+      Promise.resolve(file.ref(appBase, '?holder=' + encodeURIComponent(chosen.holder))).then(function (ref) {
         if (!ref) return null;
         return act(appBase + '/pieces', { holder: chosen.holder, sort: chosen.sort, ref: ref, sha256: file.sha() }, 'La pièce n’est pas rangée.', 'Pièce rangée.');
       }).finally(function () { busy = false; });

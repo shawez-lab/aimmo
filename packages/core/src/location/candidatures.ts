@@ -23,6 +23,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import type { PieceDepositRow } from './depot.ts';
 import type { LocationRefusal, MisesEnLocation, RentalFileStore } from './logement.ts';
 
 export const PIECE_CATEGORIES = ['domicile', 'activite', 'ressources', 'garantie'] as const;
@@ -162,11 +163,34 @@ export class Candidatures {
     return row!;
   }
 
-  /** Le logement d'une candidature, pour y déposer une pièce, sous les droits d'écriture de celui qui dépose [R16]. */
-  async placeOf(viewer: Viewer, applicationId: unknown): Promise<ApplicationResult<{ listingId: string; applicationId: string }>> {
+  /**
+   * Le logement d'une candidature et la personne à qui sera la pièce, pour la déposer, sous les droits d'écriture de
+   * celui qui dépose [R16]. Le titulaire est dit d'avance : sans lui, le fichier d'un garant irait sur la carte du
+   * candidat. Un visa Visale n'a pas d'autre personne que le candidat.
+   */
+  async placeOf(viewer: Viewer, applicationId: unknown, holder: unknown): Promise<ApplicationResult<{ listingId: string; applicationId: string; holder: string; personId: string }>> {
     const app = await this.app(viewer, applicationId, true);
     if ('ok' in app) return app;
-    return { ok: true, value: { listingId: app.listing_id, applicationId: app.id } };
+    const place = { listingId: app.listing_id, applicationId: app.id };
+    if (holder === 'candidat') return { ok: true, value: { ...place, holder, personId: app.person_id } };
+    const g = typeof holder === 'string' ? await this.db.first<{ person_id: string | null }>('SELECT person_id FROM rental_guarantors WHERE id = ? AND application_id = ?', [holder, app.id]) : null;
+    if (!g) return { ok: false, rule: null, code: 'unknown_holder' };
+    return { ok: true, value: { ...place, holder: holder as string, personId: g.person_id ?? app.person_id } };
+  }
+
+  /** La ligne d'un fichier déposé (W19) : l'accès et l'effacement la voient, qu'il soit joint ou non [R95, R97]. */
+  async recordDeposit(row: PieceDepositRow): Promise<void> {
+    await this.db.run('INSERT INTO rental_piece_deposits (id, application_id, holder, person_id, ref, sha256, size, deposited_by, deposited_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+      row.id,
+      row.applicationId,
+      row.holder,
+      row.personId,
+      row.ref,
+      row.sha256,
+      row.size,
+      row.depositedBy,
+      this.now().toISOString(),
+    ]);
   }
 
   /**
@@ -283,6 +307,10 @@ export class Candidatures {
     if (typeof input.ref !== 'string' || !input.ref.startsWith(prefix) || !REF_FILE.test(input.ref.slice(prefix.length))) return { ok: false, rule: null, code: 'bad_ref' };
     if (typeof input.sha256 !== 'string' || !SHA.test(input.sha256)) return { ok: false, rule: null, code: 'bad_sha256' };
     if (await this.db.first('SELECT 1 FROM rental_application_pieces WHERE ref = ?', [input.ref])) return { ok: false, rule: null, code: 'ref_used' };
+    // Déposé pour une personne, un fichier ne se range pas au nom d'une autre : la carte des accès le lui a attribué.
+    const deposit = await this.db.first<{ holder: string; sha256: string }>('SELECT holder, sha256 FROM rental_piece_deposits WHERE ref = ? AND application_id = ?', [input.ref, app.id]);
+    if (deposit && deposit.holder !== input.holder) return { ok: false, rule: null, code: 'holder_mismatch' };
+    if (deposit && deposit.sha256 !== input.sha256) return { ok: false, rule: null, code: 'bad_sha256' };
     if (!(await this.files.has(input.ref))) return { ok: false, rule: null, code: 'not_stored' };
     try {
       await this.db.run('INSERT INTO rental_application_pieces (id, application_id, holder, category, sort, ref, sha256, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [

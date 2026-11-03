@@ -15,6 +15,8 @@
  * Au journal : la sorte, la taille, l'empreinte et la référence, jamais le contenu ni une donnée personnelle [R13].
  * Une pièce d'une candidature (W18) se dépose de même, avant son geste de rangement, qui contrôle sa sorte [R104].
  * Aucune route ne relit ces fichiers depuis l'écran. Rien n'est effacé : un fichier déposé puis jamais joint reste rangé.
+ * Une pièce de candidature a sa ligne de dépôt (W19), écrite avant le fichier, pour que l'accès et l'effacement la voient
+ * même si le geste la refuse ensuite ou si sa réponse se perd [R95, R97].
  */
 import type { Viewer } from '../acces/droits.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -46,6 +48,26 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Le stockage où le fichier est rangé tel quel. */
 export interface RentalUploadStore {
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
+}
+
+/** Une pièce de candidature à déposer : son dossier, et à qui elle est, déjà contrôlés par `Candidatures.placeOf`. */
+export interface PieceDepositPlace {
+  applicationId: string;
+  holder: string;
+  personId: string;
+}
+
+export interface PieceDepositRow extends PieceDepositPlace {
+  id: string;
+  ref: string;
+  sha256: string;
+  size: number;
+  depositedBy: string;
+}
+
+/** Le registre des dépôts de pièces (W19). */
+export interface PieceDepositLedger {
+  recordDeposit(row: PieceDepositRow): Promise<void>;
 }
 
 export interface RentalDepositInput {
@@ -90,6 +112,7 @@ export class DepotsLocation {
     private readonly listings: MisesEnLocation,
     private readonly store: RentalUploadStore,
     private readonly journal: JournalStore,
+    private readonly ledger: PieceDepositLedger,
     options: { now?: () => Date; newId?: () => string } = {},
   ) {
     this.now = options.now ?? (() => new Date());
@@ -97,22 +120,23 @@ export class DepotsLocation {
   }
 
   /**
-   * `applicationId`, pour la seule sorte `piece` : la candidature, déjà contrôlée sous les droits de celui qui dépose par
-   * `Candidatures.placeOf`. Sans elle une pièce n'a pas de dossier où se ranger.
+   * `place`, pour la seule sorte `piece` : la candidature et le titulaire, déjà contrôlés sous les droits de celui qui
+   * dépose par `Candidatures.placeOf`. Sans elle une pièce n'a pas de dossier où se ranger.
    */
-  async deposit(viewer: Viewer, listingId: unknown, input: RentalDepositInput, applicationId?: string): Promise<RentalDepositResult> {
+  async deposit(viewer: Viewer, listingId: unknown, input: RentalDepositInput, place?: PieceDepositPlace): Promise<RentalDepositResult> {
     // Les droits d'abord, avant de lire un seul octet du fichier [R16].
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
     const actor = `${String(viewer.role)}:${viewer.userId}`;
-    const subject = `rental:${listing.id}`;
+    // Le journal du logement est au propriétaire ; ce qui touche une pièce est à la candidature [R16].
+    const subject = place ? `rental_application:${place.applicationId}` : `rental:${listing.id}`;
     const bad = async (code: string): Promise<RentalDepositResult> => {
       await appendEvent(this.journal, { type: 'location.depot.refuse', actor, subject, data: { code } }, this.now);
       return { ok: false, rule: null, code };
     };
     if (!(RENTAL_DEPOSIT_KINDS as readonly unknown[]).includes(input.kind)) return bad('sorte_inconnue');
     const kind = input.kind as RentalDepositKind;
-    if ((kind === 'piece') !== (applicationId !== undefined)) return bad('sorte_inconnue');
+    if ((kind === 'piece') !== (place !== undefined)) return bad('sorte_inconnue');
     const type = typeof input.contentType === 'string' ? input.contentType.split(';')[0]!.trim().toLowerCase() : '';
     const ext = Object.prototype.hasOwnProperty.call(RENTAL_DEPOSIT_TYPES[kind], type) ? RENTAL_DEPOSIT_TYPES[kind][type] : undefined;
     if (!ext) return bad('type_refuse');
@@ -126,13 +150,17 @@ export class DepotsLocation {
     if (sha !== input.sha256) return bad('empreinte_differente');
     const id = this.newId();
     if (!UUID.test(id)) throw new Error('identifiant de fichier invalide');
-    const ref = `location/${listing.id}/${kind === 'piece' ? `candidatures/${applicationId}/` : FOLDER[kind]}${id}.${ext}`;
+    const ref = `location/${listing.id}/${kind === 'piece' ? `candidatures/${place!.applicationId}/` : FOLDER[kind]}${id}.${ext}`;
     try {
+      // La ligne d'abord : aucun fichier stocké sans elle, même si le serveur s'arrête juste après [R95].
+      if (place) await this.ledger.recordDeposit({ ...place, id, ref, sha256: sha, size: bytes.length, depositedBy: actor });
       await this.store.put(ref, bytes, type);
     } catch {
       return bad('stockage_indisponible');
     }
-    await appendEvent(this.journal, { type: 'location.depot', actor, subject, data: { kind, ref, size: bytes.length, sha256: sha } }, this.now);
+    // La pièce d'un garant ne donne au candidat ni son chemin ni son empreinte, seulement l'identifiant de sa ligne de dépôt.
+    const data = place ? { kind, size: bytes.length, deposit: id } : { kind, ref, size: bytes.length, sha256: sha };
+    await appendEvent(this.journal, { type: 'location.depot', actor, subject, data }, this.now);
     return { ok: true, value: { kind, ref, sha256: sha, size: bytes.length } };
   }
 }
