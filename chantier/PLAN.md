@@ -1914,15 +1914,17 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 
 
 ### X23 · La direction valide le guide photo d'un bien, à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : X11
 - Cahier : M19 ; R10, R16, R17, R201.
 - Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : `POST /v1/studio/biens/<id>/guide/validation` n'a aucun appel de l'application, alors que l'écran du Studio dit « prêt pour la validation de la direction », et la direction n'ouvre jamais le Studio. Donner une liste des guides prêts à valider, nouvelle lecture réservée à la direction, et le geste, sur l'écran du réseau, chargé au premier geste.
 - Critères : seule la direction lit et valide [R16] (test) ; un guide déjà validé ou pas prêt n'est pas dans la liste (test) ; photos changées après validation : le guide revient à valider (test) ; réponse perdue dite telle, sans doublon (test) ; budget tenu [R201] (test).
+- Décidé (2026-11-03), lecture prudente : le prêt ne se lit qu'en recalculant, et un guide validé garde sa place : lecture bornée, reprise par `next`, aucun bien hors d'atteinte. Relecture forte : 2 P1 corrigés ; Codex non attendu (H03) ; #328.
+- Reste : la direction lit la liste des vues, pas les photos : `/medias/` ne sert que les versions publiées, montrer les photos demande une lecture protégée.
 - Attend : rien.
 
 ### X24 · Le partenaire recommande un proche depuis son espace
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : G08
 - Cahier : M20, M18 ; R03, R16, R142, R201.
 - Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : la route de recommandation réservée au partenaire et `GET /v1/gagner/recommandations/mes-envois` n'ont aucun appel de `app/partenaire.ts`. Vérifier la route, puis donner le formulaire et la liste de ses envois dans l'espace du partenaire.
