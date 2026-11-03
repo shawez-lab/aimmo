@@ -55,6 +55,34 @@ export interface FeesDue {
   landlordCents: number;
 }
 
+/** Une gestion déjà confiée, pour l'écran (W16) : le nom du professionnel, jamais rien du propriétaire. */
+export interface ManagementLink {
+  partnerName: string;
+  linkedAt: string;
+}
+
+/** Une mise en relation prête à porter la gestion ; `available` dit si le gestionnaire est proposable ce jour [R73]. */
+export interface ManagementCandidate {
+  referralId: string;
+  partnerName: string;
+  available: boolean;
+}
+
+/** Où en est la fin de la location, pour l'écran (W16). */
+export interface HandoverState {
+  /** Seuls l'agent du bien et la direction agissent [R16]. */
+  writable: boolean;
+  /** La signature réelle du bail en vigueur : jamais celle d'essai [R108]. */
+  leaseSigned: boolean;
+  inventoryClosed: boolean;
+  handover: Handover | null;
+  managers: ManagementLink[];
+  entrustable: ManagementCandidate[];
+}
+
+/** Au plus tant de mises en relation lues pour un logement. */
+const MAX_REFERRALS = 50;
+
 export type HandoverRefusal = Omit<LocationRefusal, 'rule'> & { rule: LocationRefusal['rule'] | 'R62' | 'R73' | 'R74' | 'R106' | 'R107' };
 export type HandoverResult<T> = { ok: true; value: T } | HandoverRefusal;
 
@@ -155,6 +183,77 @@ export class RemisesDesCles {
         dueSince: lease?.signedAt ?? null,
         tenantCents: fees.tenantCents + fees.tenantInventoryCents,
         landlordCents: fees.landlordCents + fees.landlordInventoryCents,
+      },
+    };
+  }
+
+  /** Le jour de la remise des clés, sans contrôle d'accès : pour le suivi, qui a déjà contrôlé la lecture (W16). */
+  async handedOn(networkId: string, listingId: string): Promise<string | null> {
+    const row = await this.db.first<{ handed_on: string }>('SELECT handed_on FROM rental_handovers WHERE listing_id = ? AND network_id = ?', [listingId, networkId]);
+    return row?.handed_on ?? null;
+  }
+
+  /**
+   * Où en est la fin de la location, pour l'écran (W16) : la signature réelle du bail, l'état des lieux, le récapitulatif
+   * rangé, les gestions confiées et les mises en relation qui peuvent en porter une. L'agent ne voit ni ne saisit jamais
+   * de référence : il choisit un professionnel, dans l'ordre de création des demandes, sans note [R14, R75].
+   */
+  async state(viewer: Viewer, listingId: unknown): Promise<HandoverResult<HandoverState>> {
+    const listing = await this.listings.listing(viewer, listingId, false);
+    if ('ok' in listing) return listing;
+    await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', what: 'handover' } }, this.now);
+    const lease = await this.signedLease(listing.networkId, listing.id);
+    const current = await this.leases.current(listing.networkId, listing.id);
+    const inventory = await this.inventories.closedInventory(listing.networkId, listing.id);
+    const row = await this.db.first<{ id: string; handed_on: string; deposit_cents: number; first_rent_cents: number; text: string; text_sha256: string }>(
+      'SELECT id, handed_on, deposit_cents, first_rent_cents, text, text_sha256 FROM rental_handovers WHERE listing_id = ? AND network_id = ?',
+      [listing.id, listing.networkId],
+    );
+    const links = await this.db.all<{ business_name: string; linked_at: string }>(
+      'SELECT p.business_name, l.linked_at FROM rental_management_links l JOIN partners p ON p.id = l.partner_id WHERE l.listing_id = ? AND l.network_id = ? ORDER BY l.linked_at, l.id',
+      [listing.id, listing.networkId],
+    );
+    const writable = viewer.role === 'agent' || viewer.role === 'direction';
+    const entrustable: ManagementCandidate[] = [];
+    if (writable) {
+      // Les mêmes conditions que le geste : un gestionnaire, pour le projet du propriétaire et ce logement, pas encore lié.
+      const referrals = await this.db.all<{ id: string; agent_id: string | null }>(
+        `SELECT r.id, p.agent_id FROM partner_referrals r JOIN projects p ON p.id = r.project_id
+         WHERE r.network_id = ? AND r.trade = 'gestionnaire' AND r.property_id = ? AND p.person_id = ?
+           AND NOT EXISTS (SELECT 1 FROM rental_management_links l WHERE l.referral_id = r.id)
+         ORDER BY r.created_at, r.id LIMIT ${MAX_REFERRALS}`,
+        [listing.networkId, listing.propertyId, listing.ownerPersonId],
+      );
+      for (const r of referrals) {
+        if (viewer.role === 'agent' && r.agent_id !== viewer.userId) continue;
+        const entrusted = await this.relations.entrusted(listing.networkId, r.id);
+        if (!entrusted || entrusted.state === 'abandonnee') continue;
+        const partner = await this.db.first<{ business_name: string }>('SELECT business_name FROM partners WHERE id = ? AND network_id = ?', [entrusted.partnerId, listing.networkId]);
+        if (!partner) continue;
+        entrustable.push({ referralId: r.id, partnerName: partner.business_name, available: await this.annuaire.proposableOn(listing.networkId, entrusted.partnerId, this.now()) });
+      }
+    }
+    return {
+      ok: true,
+      value: {
+        writable,
+        leaseSigned: lease !== null,
+        inventoryClosed: inventory !== null && current !== null && inventory.leaseId === current.leaseId,
+        handover: row
+          ? {
+              handoverId: row.id,
+              listingId: listing.id,
+              handedOn: row.handed_on,
+              depositPaidTo: 'proprietaire',
+              firstRentPaidTo: 'proprietaire',
+              depositCents: Number(row.deposit_cents),
+              firstRentCents: Number(row.first_rent_cents),
+              text: row.text,
+              textSha256: row.text_sha256,
+            }
+          : null,
+        managers: links.map((l) => ({ partnerName: l.business_name, linkedAt: l.linked_at })),
+        entrustable,
       },
     };
   }

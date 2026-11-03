@@ -189,6 +189,7 @@ Rôles : `agent`, `direction`, `compliance`, `partner`.
 - `GET /v1/commerces/<id>/demandes` rend aussi, pour chaque repreneur, `ndaId` (l'engagement en vigueur, `null` si le dernier est révoqué ou si aucun modèle n'était rangé) et `signed`.
 
 - `POST /v1/commerces/<id>/informations` (CE16) : `{ personId, consentProof }`, l'agent du bien ou la direction fait partir la présentation validée à qui a une demande rangée, par le contrôle central, une seule fois [R05, R26]. Refus : `pas_de_demande`, `non_diffusable` [R42], `presentation_absente` [R110], `consent_withdrawn` [R03], `send_refused`.
+- `GET /v1/location/<id>/remise-des-cles` (W16) : l'agent du bien, la direction ou la conformité en lecture lit la signature réelle du bail (jamais celle d'essai) [R108], l'état des lieux, le récapitulatif rangé, les gestions confiées, et pour qui peut agir les mises en relation qui peuvent porter la gestion, avec `available` si le gestionnaire est proposable ce jour [R73]. La lecture va au journal [R16].
 - `GET /v1/commerces/repreneurs` (CE15) : l'agent ou la direction lit les projets de reprise qu'il a le droit de voir, dans l'ordre d'arrivée, sans note ni tri [R14] : le prénom, le jour, et `writable` s'il peut compléter le profil.
 
 ## Pilotage, en mode essai (K08)

@@ -1694,15 +1694,16 @@ Voie : 2
 Trouvé le 2026-11-03 par la voie 2, en comparant les routes de `packages/api/src/location.ts` aux appels de `packages/api/app/louer.ts`. Vérifier d'abord chaque route, le comparatif étant rapide. Script à part, comme `/app/commerces-repreneurs.js`, chargé au premier geste.
 
 ### W16 · Remise des clés et gestion par un partenaire à l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W08, W11
 - Cahier : M15 Louer ; R107, R108, R73, R74, R16, R201.
 - Objectif : depuis la location, l'agent range la remise des clés, lit les honoraires dus, et confie la gestion à un partenaire carte G, par les routes `/location/<id>/remise-des-cles` et `/location/<id>/gestion`.
 - Critères : la remise lit la signature réelle du bail, jamais celle d'essai, dit en français [R108] (test) ; seul l'agent du bien ou la direction agit [R16] (test) ; réponse perdue dite telle [R10] (test) ; script à part, budget tenu [R201] (test).
 - Attend : rien pour l'écran ; H24 pour une signature réelle.
+- Décidé (2026-11-03) : route de lecture `GET /location/<id>/remise-des-cles` ajoutée, l'agent choisit un gestionnaire nommé, jamais une référence ; le formulaire de l'état des lieux servi à part (`/app/louer-edl.js`) pour tenir le budget ; le rail dit « Bail · signé en essai ». La remise réelle reste fermée tant que H08 et H24 ne sont pas faits. Le critère cite R10 pour la réponse perdue, alors que R10 parle des chiffres. Relecture forte : 3 P1 corrigés ; relecture de Codex en échec, fusion sans elle (#296).
 
 ### W17 · Modèles de bail de la direction à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11
 - Cahier : M15 Louer ; R16, R17, R201.
 - Objectif : la direction lit le modèle en vigueur, range une nouvelle version et la valide, par les routes `/location/modeles-bail`.

@@ -17,6 +17,8 @@ import { COMMERCES_SCRIPT } from '../app/commerces.ts';
 import { COMMERCES_ENGAGEMENTS_SCRIPT } from '../app/commerces-engagements.ts';
 import { COMMERCES_REPRENEURS_SCRIPT } from '../app/commerces-repreneurs.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
+import { LOUER_EDL_SCRIPT } from '../app/louer-edl.ts';
+import { LOUER_REMISE_SCRIPT } from '../app/louer-remise.ts';
 import { REPRISE_SCRIPT } from '../app/reprise.ts';
 import { CONFORMITE_SCRIPT } from '../app/conformite.ts';
 import { INVESTIR_SCRIPT } from '../app/investir.ts';
@@ -79,6 +81,9 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   // Les repreneurs et le rapprochement (CE15), de même.
   '/app/commerces-repreneurs.js': { body: COMMERCES_REPRENEURS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer.js': { body: LOUER_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Le formulaire de l'état des lieux, la remise des clés et la gestion (W16), chargés au premier geste [R201].
+  '/app/louer-edl.js': { body: LOUER_EDL_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  '/app/louer-remise.js': { body: LOUER_REMISE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Studio » (X11), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   // L'écran « Avis de valeur » (E10), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/avis.js': { body: AVIS_SCRIPT, type: 'text/javascript; charset=utf-8' },
