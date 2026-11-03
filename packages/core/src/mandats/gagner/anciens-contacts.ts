@@ -196,6 +196,21 @@ export class AnciensContacts {
     return { ok: true, value: { id } };
   }
 
+  /** Les fins de bail notées sur une fiche, la dernière d'abord : c'est elle qui fait foi. Pour l'agent de la fiche [R16]. */
+  async leaseEnds(viewer: Viewer, personId: string): Promise<OldContactResult<{ onDay: string; notedAt: string }[]>> {
+    if (viewer.role !== 'agent') return this.refused(viewer, 'role');
+    const blocked = await agentBlocked(this.db, viewer, this.now());
+    if (blocked) return this.refused(viewer, blocked);
+    const root = await this.fiche.rootOf(personId);
+    if ((await this.agentOf(viewer.networkId, root)) !== viewer.userId) return this.refused(viewer, 'not_assigned');
+    const members = await this.fiche.membersOf(root);
+    const rows = await this.db.all<{ on_day: string; created_at: string }>(
+      `SELECT on_day, created_at FROM old_contact_moments WHERE network_id = ? AND person_id IN (${marks(members.length)}) AND kind = 'fin_de_bail' ORDER BY created_at DESC, rowid DESC LIMIT 10`,
+      [viewer.networkId, ...members],
+    );
+    return { ok: true, value: rows.map((r) => ({ onDay: r.on_day, notedAt: r.created_at })) };
+  }
+
   /** L'agent qui suit la fiche gardée, s'il est encore en activité. */
   private async agentOf(networkId: string, root: string): Promise<string | null> {
     const members = await this.fiche.membersOf(root);
@@ -284,12 +299,9 @@ export class AnciensContacts {
   /** Le moment de la relance, par la première règle qui s'applique ; aucun moment, aucune relance [R35]. */
   private async moment(members: readonly string[], today: string): Promise<{ reason: OldContactReason; day: string } | null> {
     const m = marks(members.length);
-    const lease = await this.db.first<{ on_day: string }>(`SELECT on_day FROM old_contact_moments WHERE person_id IN (${m}) AND kind = 'fin_de_bail' AND on_day >= ? AND on_day <= ? ORDER BY on_day, id LIMIT 1`, [
-      ...members,
-      today,
-      addDays(today, this.settings.leaseEndLeadDays),
-    ]);
-    if (lease) return { reason: 'fin_de_bail', day: lease.on_day };
+    // La dernière date notée fait foi : une erreur de saisie se corrige par une nouvelle date, l'ancienne reste rangée [R17].
+    const lease = await this.db.first<{ on_day: string }>(`SELECT on_day FROM old_contact_moments WHERE person_id IN (${m}) AND kind = 'fin_de_bail' ORDER BY created_at DESC, rowid DESC LIMIT 1`, [...members]);
+    if (lease && lease.on_day >= today && lease.on_day <= addDays(today, this.settings.leaseEndLeadDays)) return { reason: 'fin_de_bail', day: lease.on_day };
     // Le dernier avis de valeur validé d'un bien que la personne possède, s'il a plus d'un an et aucun plus récent.
     const valuation = await this.db.first<{ at: string }>(
       `SELECT max(v.validated_at) AS at FROM valuation_reports v JOIN project_properties pp ON pp.property_id = v.property_id AND pp.role = 'owned'

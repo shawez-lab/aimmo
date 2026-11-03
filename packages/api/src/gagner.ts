@@ -187,6 +187,7 @@ export function gagnerRoutes(): GagnerRoute[] {
         return new Response(renderDossier(r.value, agent ? `${agent.first_name} ${agent.last_name}` : ''), { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'", 'x-content-type-options': 'nosniff' } });
       },
     },
+    { method: 'GET', pattern: new RegExp(`${P}/engagements$`), name: 'gagner.engagements', roles: DIRECTION, handle: async (s, v) => reply(await services(s).dossier.commitments(v)) },
     { method: 'POST', pattern: new RegExp(`${P}/engagements$`), name: 'gagner.engagement', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).dossier.setCommitment(v, b))) },
     // G08 · recommandations
     { method: 'POST', pattern: new RegExp(`${P}/recommandations$`), name: 'gagner.recommandation', roles: PARTNER, handle: withBody(async (s, v, _p, b) => reply(await services(s).recommandations.recommend(v, b))) },
@@ -201,6 +202,7 @@ export function gagnerRoutes(): GagnerRoute[] {
     },
     { method: 'POST', pattern: new RegExp(`${P}/recommandations/${ID}/appel-fait$`), name: 'gagner.recommandation_appel_fait', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).recommandations.callDone(v, id!)) },
     // G09 · anciens contacts
+    { method: 'GET', pattern: new RegExp(`${P}/fiches/${ID}/fin-de-bail$`), name: 'gagner.fins_de_bail', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).anciens.leaseEnds(v, id!)) },
     { method: 'POST', pattern: new RegExp(`${P}/fiches/${ID}/fin-de-bail$`), name: 'gagner.fin_de_bail', roles: AGENT, handle: withBody(async (s, v, [id], b) => reply(await services(s).anciens.noteLeaseEnd(v, id!, b.onDay))) },
     { method: 'GET', pattern: new RegExp(`${P}/relances$`), name: 'gagner.relances', roles: AGENT, handle: async (s, v) => reply(await services(s).anciens.toValidate(v)) },
     {

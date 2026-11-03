@@ -154,6 +154,17 @@ export class DossierPresentation {
     return { ok: true, value: { version } };
   }
 
+  /** Les engagements du réseau pour la direction : la dernière version de chacun, actif ou non ; rien d'un agent ni d'un client. */
+  async commitments(viewer: Viewer): Promise<DossierResult<{ code: string; version: number; label: string; measure: CommitmentMeasure; rule: string; delayHours: number; active: boolean; setAt: string }[]>> {
+    if (viewer.role !== 'direction') return this.refused(viewer, 'role');
+    const rows = await this.db.all<{ code: string; version: number; label: string; measure: CommitmentMeasure; delay_hours: number; active: number; set_at: string }>(
+      `SELECT c.code, c.version, c.label, c.measure, c.delay_hours, c.active, c.set_at FROM service_commitments c WHERE c.network_id = ?
+       AND c.version = (SELECT max(version) FROM service_commitments d WHERE d.network_id = c.network_id AND d.code = c.code) ORDER BY c.code`,
+      [viewer.networkId],
+    );
+    return { ok: true, value: rows.map((r) => ({ code: r.code, version: Number(r.version), label: r.label, measure: r.measure, rule: COMMITMENT_MEASURE_RULES[r.measure], delayHours: Number(r.delay_hours), active: r.active === 1, setAt: r.set_at })) };
+  }
+
   /** Les cas d'une mesure pour un agent sur un intervalle, et si chacun a été tenu dans ce délai. */
   private async cases(networkId: string, agentId: string, measure: CommitmentMeasure, delayHours: number, from: Date, to: Date, now: Date): Promise<{ at: string; kept: boolean }[]> {
     const delay = delayHours * 3_600_000;
