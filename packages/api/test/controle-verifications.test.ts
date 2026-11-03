@@ -64,6 +64,27 @@ describe('X28 · les vérifications tiennent dans leur délai', () => {
     expect(controleVerifications({ ...fichiers, deploiement: fichiers.deploiement.replace(/timeout-minutes: \d+/, 'timeout-minutes: 15') }).join()).toContain('délai de 15 minutes');
   });
 
+  describe('une version en échec ne part jamais en ligne', () => {
+    const controle = "      - if: steps.h04.outputs.pret == 'oui'\n        name: Vérifications avant mise en ligne\n        run: npm run garde-fous && npm run check && npm test\n";
+    const deploye = (changer: (t: string) => string) => {
+      const fichiers = reels();
+      expect(fichiers.deploiement).toContain(controle);
+      return controleVerifications({ ...fichiers, deploiement: changer(fichiers.deploiement) }).join('\n');
+    };
+
+    it.each([
+      ['une condition qui saute les contrôles', "steps.h04.outputs.pret == 'oui'\n        name: Vérifications", "false\n        name: Vérifications", 'présence des secrets'],
+      ['aucune condition', "- if: steps.h04.outputs.pret == 'oui'\n        name: Vérifications", '- name: Vérifications', 'présence des secrets'],
+      ['continue-on-error', 'run: npm run garde-fous', 'continue-on-error: true\n        run: npm run garde-fous', 'continue-on-error'],
+    ])('refusé : %s', (_nom, avant, apres, message) => {
+      expect(deploye((t) => t.replace(avant, apres))).toContain(message);
+    });
+
+    it('refusé : les contrôles déplacés après la mise en ligne, à la fin du fichier', () => {
+      expect(deploye((t) => `${t.replace(controle, '').trimEnd()}\n${controle}`)).toContain('avant la base et la mise en ligne');
+    });
+  });
+
   it('l’attente de la séance dure plus que le délai du travail, pour ne pas lire une coupure comme une panne', () => {
     const fichiers = reels();
     expect(controleVerifications({ ...fichiers, attente: fichiers.attente.replace(/minutesFromNow\(30\)/, 'minutesFromNow(20)') }).join()).toContain('attendre-verifications.mjs');

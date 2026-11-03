@@ -53,8 +53,24 @@ export function controleVerifications({ verifications, deploiement, attente }) {
   if (delai(deploiement) < DELAI_MINIMUM) {
     errors.push(`${ligneDeploiement} : délai de ${delai(deploiement)} minutes, il en faut au moins ${DELAI_MINIMUM}, il relance toute la suite.`);
   }
-  if (!lignesRun(deploiement).includes('npm run garde-fous && npm run check && npm test')) {
+  // Toutes les étapes de ce fichier portent la condition « H04 fait » : c'est la seule admise sur les contrôles.
+  const etapes = deploiement.split(/^(?= {6}- )/m).slice(1);
+  const controle = etapes.findIndex((etape) => lignesRun(etape).includes('npm run garde-fous && npm run check && npm test'));
+  const miseEnLigne = etapes.findIndex((etape) => lignesRun(etape).some((run) => /\bdeploy\b/.test(run) && !run.includes('--dry-run')));
+  const premierChangement = etapes.findIndex((etape) => lignesRun(etape).some((run) => /d1 |\bdeploy\b/.test(run)) && !etape.includes('Vérifications'));
+  if (controle < 0) {
     errors.push(`${ligneDeploiement} : garde-fous, types et tests doivent tous passer avant la mise en ligne, garde-fous d’abord.`);
+  } else {
+    const conditions = [...etapes[controle].matchAll(/^\s*-?\s*if:\s*(.+?)\s*$/gm)].map((match) => match[1]);
+    if (conditions.length !== 1 || conditions[0] !== "steps.h04.outputs.pret == 'oui'") {
+      errors.push(`${ligneDeploiement} : les contrôles ne peuvent dépendre que de la présence des secrets (H04).`);
+    }
+    if (miseEnLigne < 0 || controle > miseEnLigne || (premierChangement >= 0 && controle > premierChangement)) {
+      errors.push(`${ligneDeploiement} : les contrôles doivent passer avant la base et la mise en ligne.`);
+    }
+  }
+  if (/continue-on-error/.test(deploiement)) {
+    errors.push(`${ligneDeploiement} : continue-on-error laisserait partir une version en échec.`);
   }
 
   const attenteMinutes = Number(attente.match(/const checksDeadline = minutesFromNow\((\d+)\)/)?.[1] ?? 0);
