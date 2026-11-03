@@ -101,6 +101,26 @@ describeWithSqlite('X09 · routes de M19', () => {
     expect(await t.db.all("SELECT COUNT(*) AS n FROM social_post_attempts WHERE mode <> 'essai'")).toEqual([{ n: 0 }]);
     // AT18 : chaque publication envoyée est un contenu de la mesure de l'origine, par la vraie route.
     expect(await t.db.all("SELECT COUNT(*) AS n FROM public_contents WHERE kind = 'publication'")).toEqual([{ n: 10 }]);
+    // AT20 : sans page en ligne, la vraie route le dit ; le bien publié sur un site, elle rend un vrai lien, marqué de son seul contenu [R156].
+    const row = (await t.db.first<{ id: string; property_id: string; network_id: string }>('SELECT id, property_id, network_id FROM social_posts LIMIT 1'))!;
+    const links = `/studio/biens/${row.property_id}/liens`;
+    expect((await t.call(t.direction, 'GET', links)).body).toMatchObject({ ok: true, data: { online: false, videos: [], posts: [] } });
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES ('lv-at20', ?, ?, 1000, 'en_vente', 'd-at20', 250000, ?, 'h', 'test', '2027-10-11T09:00:00.000Z')", [
+      row.property_id,
+      row.network_id,
+      JSON.stringify({ reference: 'REF-AT20', state: 'en_vente', title: 'Maison inventée', body: 'Texte', mentions: 'Classe énergie D, classe climat C.', priceEur: 250000, media: [] }),
+    ]);
+    await t.db.run("INSERT INTO public_sites (id, network_id, kind, agent_id, base_url, active, set_by, set_at) VALUES ('site-at20', ?, 'reseau', NULL, 'https://reseau.exemple.test', 1, 'x', '2027-10-11T09:00:00.000Z')", [row.network_id]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    const read = (await t.call(t.direction, 'GET', links)).body as { data: { online: boolean; posts: { id: string; link: string }[] } };
+    expect(read.data.online).toBe(true);
+    expect(read.data.posts.map((p) => p.id)).toEqual([row.id]);
+    const link = new URL(read.data.posts[0]!.link);
+    expect(link.origin).toBe('https://reseau.exemple.test');
+    expect([...link.searchParams.keys()]).toEqual(['o']);
+    const code = (await t.db.first<{ id: string }>("SELECT id FROM public_contents WHERE kind = 'publication' AND ref = ?", [row.id]))!.id;
+    expect(link.searchParams.get('o')).toBe(code);
     expect(await t.db.all('SELECT COUNT(*) AS n FROM photo_guide_validations')).toEqual([{ n: 10 }]);
     expect(await t.db.all('SELECT COUNT(*) AS n FROM photo_certificates')).toEqual([{ n: 20 }]);
     // La mesure des visuels : 20 publiés, tous sans adresse visible.
@@ -115,6 +135,7 @@ describeWithSqlite('X09 · routes de M19', () => {
     const refusals = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
     const paths: Record<string, string> = {
       'studio.atelier': `/studio/biens/${b.id}`,
+      'studio.liens': `/studio/biens/${b.id}/liens`,
       'studio.guide': `/studio/biens/${b.id}/guide`,
       'studio.guides_a_valider': '/studio/guides-a-valider',
       'studio.guide.vue': `/studio/biens/${b.id}/guide/vues`,

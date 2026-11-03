@@ -188,9 +188,36 @@ globalThis.AIMMO_STUDIO = function (t) {
       state(message || '');
       if (name === 'guide') guide(all[1].body.data);
       else if (name === 'photo') photoPart();
-      else if (name === 'montage') montage(all[1].body.data);
+      else if (name === 'montage') { montage(all[1].body.data); return trackedLinks('videos', mine); }
       else if (name === 'plan') plan(all[1].body.data);
-      else publications();
+      else { publications(); return trackedLinks('posts', mine); }
+      return true;
+    });
+  }
+  /* AT20 · le lien marqué de ce que l'agent poste lui-même : sa panne n'empêche rien d'autre de l'écran. */
+  function trackedLinks(side, mine) {
+    return send(base() + '/liens', 'GET').then(function (res) {
+      if (res.gone || mine !== seq) return false;
+      var items = res.ok && res.body.data ? res.body.data[side] || [] : [];
+      var online = res.ok && res.body.data ? res.body.data.online : true;
+      if (res.ok && !items.length && online) return true;
+      var b = block('Liens à coller');
+      if (!res.ok) { b.appendChild(el('p', 'Liens indisponibles pour le moment.', 'doux')); return true; }
+      if (!online) b.appendChild(el('p', 'Ce bien n’a pas de page en ligne : pas de lien pour le moment.', 'doux'));
+      if (items.length) b.appendChild(el('p', 'Collez ce lien avec ce que vous postez vous-même : il dit de quel contenu vient le contact, rien sur la personne.', 'doux'));
+      var ul = el('ul', null, 'liste');
+      items.forEach(function (x) {
+        var li = el('li');
+        li.appendChild(el('strong', side === 'videos' ? 'Vidéo de ' + x.durationSeconds + ' s, le ' + day(x.recordedAt) : (EVENTS[x.event] || 'Publication') + ', le ' + day(x.createdAt)));
+        li.appendChild(el('p', x.link));
+        li.appendChild(button('Copier le lien', function () {
+          var clip = navigator.clipboard;
+          if (!clip) { state('Copiez le lien à la main.'); return; }
+          clip.writeText(x.link).then(function () { state('Lien copié.'); }, function () { state('Copiez le lien à la main.'); });
+        }));
+        ul.appendChild(li);
+      });
+      b.appendChild(ul);
       return true;
     });
   }

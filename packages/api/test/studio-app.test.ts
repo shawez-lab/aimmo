@@ -1,6 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { htmlProblems } from '../../core/src/design/audit.ts';
+import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { checkOperations } from '../../core/src/studio/certificats.ts';
 import { STUDIO_SCRIPT } from '../app/studio.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
@@ -413,6 +414,49 @@ describe('X11 · écran « Studio » de l’application', () => {
     const sent = t.calls.filter((c) => c.url === '/v1/studio/publications/post1/envoi');
     expect(sent).toHaveLength(1);
     expect(JSON.parse(sent[0]!.body!)).toEqual({ targets: [{ channel: 'instagram', account: 'reseau' }] });
+  });
+
+  describe('AT20 · liens à coller', () => {
+    it('[R201] le script du Studio tient dans son budget, sans rien d’extérieur', () => {
+      expect(budgetProblems({ html: '', js: STUDIO_SCRIPT }, BUDGETS.page)).toEqual([]);
+    });
+
+    const LINK = 'https://reseau.exemple.test/biens/b1?o=abcdefghijkl';
+    const LINKS = { online: true, videos: [{ id: 'v1', durationSeconds: 45, recordedAt: '2027-10-14T09:00:00.000Z', link: LINK }], posts: [{ id: 'post1', event: 'visite', createdAt: '2027-10-14T09:00:00.000Z', link: `${LINK}x` }] };
+    const montage = async (answer: Answer) => {
+      const t = await run({ 'GET /v1/studio/biens/b1/liens': answer });
+      await t.openB1();
+      await t.click(t.byText('Montage'));
+      return t;
+    };
+
+    it('[R156] la vidéo montre son lien, et il se copie ; sans presse-papiers, on le dit', async () => {
+      const t = await montage(ok(LINKS));
+      expect(t.body().textContent).toContain('Vidéo de 45 s, le 14/10/2027');
+      expect(t.body().textContent).toContain(LINK);
+      expect(t.body().textContent).not.toContain('v1');
+      await t.click(t.byText('Copier le lien'));
+      expect(t.state()).toBe('Copiez le lien à la main.');
+    });
+
+    it('la publication validée montre aussi le sien, pas celui de la vidéo', async () => {
+      const t = await run({ 'GET /v1/studio/biens/b1/liens': ok(LINKS) });
+      await t.openB1();
+      await t.click(t.byText('Publications'));
+      expect(t.body().textContent).toContain(`${LINK}x`);
+      expect(t.body().textContent).not.toContain('Vidéo de 45 s');
+    });
+
+    it('un bien sans page le dit ; une panne ne casse pas l’écran ; sans rien à coller, aucun bloc', async () => {
+      const t = await montage(ok({ online: false, videos: [], posts: [] }));
+      expect(t.body().textContent).toContain('Ce bien n’a pas de page en ligne : pas de lien pour le moment.');
+      const u = await montage(no(409, { ok: false, rule: 'R10', code: 'origine_indisponible' }));
+      expect(u.body().textContent).toContain('Liens indisponibles pour le moment.');
+      expect(u.body().textContent).toContain('Montage depuis le modèle');
+      expect(u.body().textContent).not.toContain('origine_indisponible');
+      const v = await montage(ok({ online: true, videos: [], posts: [] }));
+      expect(v.body().textContent).not.toContain('Liens à coller');
+    });
   });
 
   it('[R16] un bien hors des droits : rien n’est montré', async () => {

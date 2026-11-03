@@ -170,7 +170,7 @@ export function studioCore(s: StudioServices) {
     supports: new Supports(s.db, acces, s.journal, pages, { now: s.now }),
     bibliotheque,
     options: new OptionsStudio(s.db, s.journal, relations, opts),
-    atelier: new AtelierStudio(s.db, acces, s.journal, certs, { now: s.now }),
+    atelier: new AtelierStudio(s.db, acces, s.journal, certs, { now: s.now, origin: new OrigineContacts(s.db, s.journal, { now: s.now }) }),
   };
 }
 
@@ -248,6 +248,8 @@ async function depositLibraryProof(s: StudioServices, v: Viewer, _p: string[], r
 const ROUTES: StudioRoute[] = [
   // L'atelier du bien (X11) : photos de la fiche, celles qui ont leur certificat, publications préparées.
   { method: 'GET', pattern: new RegExp(`^/studio/biens/${ID}$`), name: 'studio.atelier', roles: WORK, handle: async (s, v, [id]) => reply(await core(s).atelier.read(v, id!)) },
+  // Les liens marqués de ce que l'agent poste lui-même (AT20).
+  { method: 'GET', pattern: new RegExp(`^/studio/biens/${ID}/liens$`), name: 'studio.liens', roles: WORK, handle: async (s, v, [id]) => reply(await core(s).atelier.links(v, id!)) },
   // Guide de prise de vue (X01).
   { method: 'GET', pattern: /^\/studio\/guides-a-valider$/, name: 'studio.guides_a_valider', roles: DIRECTION, handle: async (s, v, _p, r) => reply(await core(s).guide.toValidate(v, new URL(r.url).searchParams.get('apres'))) },
   { method: 'GET', pattern: new RegExp(`^/studio/biens/${ID}/guide$`), name: 'studio.guide', roles: WORK, handle: async (s, v, [id]) => reply(await core(s).guide.progress(v, id!)) },
