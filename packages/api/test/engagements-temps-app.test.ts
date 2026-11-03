@@ -163,6 +163,8 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
     expect(text).toContain('Le site : 99,997 %, 1 min de coupure, cible de 99,9 % tenue.');
     expect(text).toContain('L’API : 99,5 %, 2 min de coupure, cible de 99,9 % manquée.');
     expect(text).toContain('L’application : 100 %, mois connu en partie : cible de 99,9 % impossible à dire tenue.');
+    const partial = await run('direction', { [DISPO]: ok({ month: '2027-02', connected: true, targetPercent: 99.9, services: [{ ...m, service: 'site', downMs: 7_200_000, percent: 97.222, complete: false, targetMet: false }] }) });
+    expect(partial.texts('disponibilite')).toContain('Le site : 97,222 %, 120 min de coupure, mois connu en partie : cible de 99,9 % manquée.');
     const failed = await run('direction', { [DISPO]: ok({ ...NOT_CONNECTED, connected: true, services: [{ service: 'site', measured: false, reason: 'supervision_failed' }, { service: 'api', measured: false, reason: 'bad_data' }, { service: 'application', measured: false, reason: 'nothing_observed' }] }) });
     expect(failed.texts('disponibilite')).toContain('la supervision ne répond pas');
     expect(failed.texts('disponibilite')).toContain('ses données ne tiennent pas');
@@ -207,6 +209,61 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
     await broken.declare('2');
     expect(broken.formState()).toContain('Réponse perdue');
     expect(broken.state('temps-agent')).toContain('non déclarée');
+    expect(broken.els['temps-agent-corps']!.all().find((e) => e.tagName === 'input')!.value).toBe('2');
+  });
+
+  it('[R16] [R217] un refus du serveur n’est pas une réponse perdue : rien n’est rangé, et c’est dit', async () => {
+    const refused = await run('agent', { [DECLARE]: no(403, { ok: false, rule: 'R16', code: 'agent_file_incomplete' }) });
+    await refused.declare('2');
+    expect(refused.formState()).toBe('Ce n’est pas dans vos droits.');
+    const odd = await run('agent', { [DECLARE]: no(400, { ok: false, rule: null, code: 'bad_week' }) });
+    await odd.declare('2');
+    expect(odd.formState()).toContain('Refusé : rien n’est rangé');
+    expect(odd.formState()).not.toContain('perdue');
+  });
+
+  it('[R217] déclaration rangée puis relecture en panne : « rangée » reste dit', async () => {
+    const t = await run('agent', {
+      [DECLARE]: async () => {
+        t.table[MINE] = no(500, {});
+        return Response.json({ ok: true, data: {} });
+      },
+    });
+    await t.declare('2');
+    expect(t.state('temps-agent')).toContain('Déclaration rangée.');
+    expect(t.state('temps-agent')).toContain('Indisponible');
+  });
+
+  it('[R217] deux appuis sur « Déclarer » : un seul envoi en vol', async () => {
+    let posts = 0;
+    const t = await run('agent', { [DECLARE]: () => { posts += 1; return new Promise(() => {}); } });
+    await t.declare('2');
+    await t.declare('2');
+    expect(posts).toBe(1);
+  });
+
+  it('[R217] formulaire remplacé pendant l’envoi : l’échec se dit quand même', async () => {
+    let fail: (r: Response) => void = () => {};
+    const t = await run('agent', { [DECLARE]: () => new Promise((r) => { fail = r; }) });
+    await t.declare('2');
+    await t.reread();
+    fail(Response.json({ ok: false, rule: 'R217', code: 'week_before_entry' }, { status: 409 }));
+    await settle();
+    expect(t.state('temps-agent')).toContain('d’avant votre entrée');
+  });
+
+  it('[R223] deux lectures qui se croisent : la réponse en retard n’écrase pas la plus récente', async () => {
+    const t = await run('direction');
+    let first: (r: Response) => void = () => {};
+    t.table[DISPO] = () => new Promise((r) => { first = r; });
+    await t.reread();
+    t.table[DISPO] = ok({ ...NOT_CONNECTED, connected: true, services: [{ service: 'site', measured: false, reason: 'bad_data' }] });
+    await t.reread();
+    expect(t.texts('disponibilite')).toContain('ses données ne tiennent pas');
+    first(Response.json({ ok: true, data: NOT_CONNECTED }));
+    await settle();
+    expect(t.texts('disponibilite')).toContain('ses données ne tiennent pas');
+    expect(t.texts('disponibilite')).not.toContain('aucune supervision');
   });
 
   it('[R16] [R68] l’agent n’appelle aucune route de la direction, la direction ne déclare rien', async () => {
@@ -241,7 +298,7 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
     expect(t.state('temps-agent')).toContain('Semaine du 22/02/2027');
   });
 
-  it('[R16] à la déconnexion tout disparaît ; une réponse en vol ne s’affiche pas à la session suivante', async () => {
+  it('[R16] à la déconnexion tout disparaît ; une réponse en vol n’y revient pas', async () => {
     const t = await run('direction');
     let answer: (r: Response) => void = () => {};
     t.table[DISPO] = () => new Promise((r) => { answer = r; });

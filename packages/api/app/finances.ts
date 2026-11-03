@@ -133,10 +133,10 @@ const stateAndBody = (id: string, title: string, intro: string): string => `<sec
 `;
 const ZONES_ENTRY_HTML = stateAndBody('zones', 'Contacts par zone, le mois passé', 'Se relit avec le rapport du matin. Une zone ne se montre que si elle ne dit le chiffre de personne.');
 const INDICATEURS_ENTRY_HTML = stateAndBody('indicateurs', 'Le parcours, le mois passé', 'Se relit avec le rapport du matin. Tout vient de la base, pour tout le réseau.');
-const TEMPS_AGENT_ENTRY_HTML = stateAndBody('temps-agent', 'Mon temps gagné, la semaine passée', 'Vous seul le déclarez. Personne ne vous compare à personne.');
-const ENGAGEMENTS_ENTRY_HTML = stateAndBody('engagements', 'Nos engagements, le mois passé', 'Recalculés depuis la base, sans aucun agent.');
-const TEMPS_RESEAU_ENTRY_HTML = stateAndBody('temps-reseau', 'Le temps gagné, la semaine passée', 'Ce que les agents déclarent, en comptes, sans aucun nom.');
-const DISPONIBILITE_ENTRY_HTML = stateAndBody('disponibilite', 'La disponibilité, le mois passé', 'La part du temps où chaque service a répondu. Cible : 99,9 %.');
+const TEMPS_AGENT_ENTRY_HTML = stateAndBody('temps-agent', 'Mon temps gagné, la semaine passée', 'Vous seul le déclarez, personne ne vous compare à personne. Le formulaire s’ouvre avec le rapport du matin.');
+const ENGAGEMENTS_ENTRY_HTML = stateAndBody('engagements', 'Nos engagements, le mois passé', 'Se relit avec le rapport du matin. Recalculés depuis la base, sans aucun agent.');
+const TEMPS_RESEAU_ENTRY_HTML = stateAndBody('temps-reseau', 'Le temps gagné, la semaine passée', 'Se relit avec le rapport du matin. Ce que les agents déclarent, en comptes, sans aucun nom.');
+const DISPONIBILITE_ENTRY_HTML = stateAndBody('disponibilite', 'La disponibilité, le mois passé', 'Se relit avec le rapport du matin. La part du temps où chaque service a répondu. Cible : 99,9 %.');
 export const RAPPORT_AGENT_HTML = reportEntry('agent') + ZONES_ENTRY_HTML + TEMPS_AGENT_ENTRY_HTML;
 const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
 <h3 id="preuve-titre">La preuve à Dijon</h3>
@@ -464,7 +464,7 @@ globalThis.AIMMO_FINANCES = function (t) {
   }
   /* Un bloc qui se relit : seule la dernière lecture de la session en cours s'affiche. */
   var blockTurns = {};
-  function readBlock(id, url, render) {
+  function readBlock(id, url, render, message) {
     var mine = t.session();
     var turn = blockTurns[id] = (blockTurns[id] || 0) + 1;
     var body = $(id + '-corps'), state = $(id + '-etat');
@@ -472,7 +472,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     state.textContent = 'Chargement…';
     return send(url, 'GET').then(function (res) {
       if (res.gone || mine !== t.session() || turn !== blockTurns[id]) return false;
-      if (!res.ok || !res.body.data) { state.textContent = failure(res); return false; }
+      if (!res.ok || !res.body.data) { state.textContent = (message ? message + ' ' : '') + failure(res); return false; }
       state.textContent = render(res.body.data, body);
       return true;
     });
@@ -522,6 +522,12 @@ globalThis.AIMMO_FINANCES = function (t) {
     });
   }
   var TIME_REFUSALS = { week_before_entry: 'Cette semaine est d’avant votre entrée : rien n’est rangé.', week_not_finished: 'Cette semaine n’est pas finie : rien n’est rangé.', bad_minutes: 'Entre 0 et 80 heures : rien n’est rangé.', conflict: 'Une autre déclaration vient de passer : relisez avant de recommencer.', role: 'Ce n’est pas dans vos droits.' };
+  var TIME_LOST = 'Réponse perdue : votre déclaration est peut-être rangée. Relisez avant de recommencer.';
+  function timeRefusal(res) {
+    var b = res.body;
+    if (res.offline || !b || !b.code || res.status >= 500) return TIME_LOST;
+    return b.rule === 'R16' ? TIME_REFUSALS.role : TIME_REFUSALS[b.code] || 'Refusé : rien n’est rangé. Relisez avant de recommencer.';
+  }
   function myTime(message) {
     var week = lastWeek();
     return readBlock('temps-agent', '/v1/pilotage/temps-gagne?semaine=' + week, function (v, body) {
@@ -537,7 +543,8 @@ globalThis.AIMMO_FINANCES = function (t) {
         return send('/v1/pilotage/temps-gagne', 'POST', { week: week, minutes: Math.round(Number(text.replace(',', '.')) * 60) }).then(function (res) {
           if (res.gone || mine !== t.session()) return false;
           if (!res.ok) {
-            state.textContent = (res.body && TIME_REFUSALS[res.body.code]) || 'Réponse perdue : votre déclaration est peut-être rangée. Relisez avant de recommencer.';
+            /* Le formulaire a pu être remplacé pendant l'envoi : l'issue se dit quand même. */
+            (Array.prototype.indexOf.call(body.children, state) < 0 ? $('temps-agent-etat') : state).textContent = timeRefusal(res);
             return false;
           }
           return myTime('Déclaration rangée.');
@@ -546,7 +553,7 @@ globalThis.AIMMO_FINANCES = function (t) {
       body.appendChild(state);
       var said = 'Semaine du ' + day(week) + ' : ' + (v.minutes === null ? 'non déclarée.' : hours(Number(v.minutes)) + ' déclarées.');
       return (message ? message + ' ' : '') + said;
-    });
+    }, message);
   }
   var SERVICE_NAMES = { site: 'Le site', api: 'L’API', application: 'L’application' };
   var UNMEASURED = { not_connected: 'aucune supervision branchée', supervision_failed: 'la supervision ne répond pas', bad_data: 'ses données ne tiennent pas', nothing_observed: 'rien d’observé ce mois-là' };
@@ -554,7 +561,8 @@ globalThis.AIMMO_FINANCES = function (t) {
     var name = SERVICE_NAMES[s.service] + ' : ';
     if (!s.measured) return name + 'non mesuré, ' + (UNMEASURED[s.reason] || 'donnée absente') + '.';
     var target = 'cible de ' + String(v.targetPercent).replace('.', ',') + ' %';
-    var verdict = s.targetMet === true ? target + ' tenue' : s.targetMet === false ? target + ' manquée' : 'mois connu en partie : ' + target + ' impossible à dire tenue';
+    var part = s.complete ? '' : 'mois connu en partie : ';
+    var verdict = part + (s.targetMet === true ? target + ' tenue' : s.targetMet === false ? target + ' manquée' : target + ' impossible à dire tenue');
     var down = s.downMs ? ', ' + Math.ceil(s.downMs / 60000) + ' min de coupure' : '';
     return name + String(s.percent).replace('.', ',') + ' %' + down + ', ' + verdict + '.';
   }
