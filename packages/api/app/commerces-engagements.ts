@@ -325,6 +325,7 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
     var found = el('p');
     found.setAttribute('role', 'status');
     var go = button('Chercher la source', function () {
+      if (go.disabled) return;
       var pasted = String(text.value || '');
       if (!/\\S/.test(pasted)) { say('Collez d’abord le texte.'); return; }
       var mine = t.session();
@@ -352,7 +353,8 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
         }
         if (!d || typeof d.openedAt !== 'string') { say('Réponse illisible : rien n’est sûr, n’en tirez aucune conclusion. Votre texte reste là : réessayez.'); return; }
         var who = (asked || []).filter(function (r) { return r.personId === d.personId; })[0];
-        var name = who && who.firstName ? who.firstName : 'un repreneur qui n’est plus dans les demandes';
+        /* Deux repreneurs peuvent porter le même prénom : la date de la demande dit lequel. La liste lue peut dater. */
+        var name = who ? (who.firstName || 'un repreneur sans prénom') + ' (demande du ' + t.day(who.requestedAt) + ')' : 'un repreneur absent de la liste lue à l’ouverture de cet écran';
         text.value = '';
         found.textContent = d.via === 'marque'
           ? 'Ce texte porte la marque de la copie remise à ' + name + ', ouverte le ' + t.day(d.openedAt) + '. Cela dit à qui cette copie a été remise, pas qui l’a fait circuler.'

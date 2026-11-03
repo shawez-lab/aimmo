@@ -1214,7 +1214,7 @@ describe('CE17 · retrouver la source d’une fuite à l’écran', () => {
     const t = await open(ok(FOUND));
     await search(t);
     const text = t.body().textContent;
-    expect(text).toContain('la marque de la copie remise à Dominique, ouverte le 09/09/2027');
+    expect(text).toContain('la marque de la copie remise à Dominique (demande du 08/09/2027), ouverte le 09/09/2027');
     expect(text).toContain('pas qui l’a fait circuler');
     expect(t.input(LABEL).value).toBe('');
   });
@@ -1222,18 +1222,29 @@ describe('CE17 · retrouver la source d’une fuite à l’écran', () => {
   it('[R10] une référence visible n’est qu’un indice, dit tel', async () => {
     const t = await open(ok({ ...FOUND, via: 'reference' }));
     await search(t);
-    expect(t.body().textContent).toContain('la référence visible de la copie remise à Dominique');
+    expect(t.body().textContent).toContain('la référence visible de la copie remise à Dominique (demande du 08/09/2027)');
     expect(t.body().textContent).toContain('un indice à vérifier, pas une preuve');
   });
 
-  it('[R10] un lecteur sorti des demandes n’est pas inventé, et un nom reçu reste du texte', async () => {
+  it('[R10] un lecteur absent de la liste lue n’est ni inventé ni dit sorti des demandes, et un nom reçu reste du texte', async () => {
     const t = await open(ok({ ...FOUND, personId: 'inconnu' }));
     await search(t);
-    expect(t.body().textContent).toContain('remise à un repreneur qui n’est plus dans les demandes');
+    expect(t.body().textContent).toContain('remise à un repreneur absent de la liste lue à l’ouverture de cet écran');
     const u = await open(ok(FOUND), { 'GET /v1/commerces/b1/demandes': ok([{ personId: 'r2', firstName: INJECTED, requestedAt: '2027-09-07T08:00:00.000Z', open: false, codes: [] }]) });
     await search(u);
     expect(u.body().textContent).toContain(INJECTED);
     expect(u.body().all().some((e) => e.tagName === 'img')).toBe(false);
+  });
+
+  it('[R10] un repreneur sans prénom reste celui de la liste, et deux mêmes prénoms se distinguent par leur demande', async () => {
+    const line = (personId: string, firstName: string | null, requestedAt: string) => ({ personId, firstName, requestedAt, open: false, codes: [] });
+    const list = ok([line('r1', 'Dominique', '2027-09-07T08:00:00.000Z'), line('r2', 'Dominique', '2027-09-08T08:00:00.000Z'), line('r3', null, '2027-09-06T08:00:00.000Z')]);
+    const t = await open(ok(FOUND), { 'GET /v1/commerces/b1/demandes': list });
+    await search(t);
+    expect(t.body().textContent).toContain('remise à Dominique (demande du 08/09/2027)');
+    const u = await open(ok({ ...FOUND, personId: 'r3' }), { 'GET /v1/commerces/b1/demandes': list });
+    await search(u);
+    expect(u.body().textContent).toContain('remise à un repreneur sans prénom (demande du 06/09/2027)');
   });
 
   it('[R10] ne rien trouver ne prouve rien, dit tel', async () => {
@@ -1263,7 +1274,7 @@ describe('CE17 · retrouver la source d’une fuite à l’écran', () => {
     expect(t.state()).toContain('trop long');
   });
 
-  it('[R74] un second appui pendant la recherche ne part pas ; un résultat ancien s’efface pendant la nouvelle', async () => {
+  it('un second appui pendant la recherche ne part pas ; un résultat ancien s’efface pendant la nouvelle', async () => {
     let release: (r: Response) => void = () => {};
     const t = await open(ok(null));
     await search(t);
@@ -1273,10 +1284,29 @@ describe('CE17 · retrouver la source d’une fuite à l’écran', () => {
     const go = t.byText('Chercher la source')!;
     go.listeners.click!({});
     expect((go as unknown as { disabled: boolean }).disabled).toBe(true);
+    go.listeners.click!({});
+    expect(sent(t)).toHaveLength(2);
     expect(t.body().textContent).not.toContain('Aucune marque');
     release(Response.json({ ok: true, data: null }));
     await settle();
     expect((go as unknown as { disabled: boolean }).disabled).toBe(false);
+  });
+
+  it.each([
+    ['une réponse', async () => Response.json({ ok: true, data: FOUND })],
+    ['une coupure', () => Promise.reject(new TypeError('hors ligne'))],
+  ] as [string, Answer][])('[R10] %s arrivée après un changement d’écran ne s’affiche pas sur le suivant', async (_n, late) => {
+    let release: () => void = () => {};
+    const t = await open(ok(null));
+    t.table[URL] = () => new Promise<Response>((res, rej) => { release = () => { late().then(res, rej); }; });
+    await search(t);
+    await t.click(t.els['commerces-ouvrir']);
+    const before = t.state();
+    release();
+    await settle();
+    expect(t.state()).toBe(before);
+    expect(t.body().textContent).not.toContain('Dominique (demande');
+    expect(t.state()).not.toContain('Réponse perdue');
   });
 
   it('[R13] rien du texte collé ne reste : ni stockage du navigateur, ni adresse', async () => {
