@@ -30,7 +30,7 @@ async function run(answers: Record<string, Answer> = {}) {
   page.body = new FakeElement('body');
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   const calls: { method: string; url: string; body: unknown }[] = [];
-  const table: Record<string, Answer> = { 'GET /v1/moi': ok({ role: 'direction', firstName: null }), ...answers };
+  const table: Record<string, Answer> = { 'GET /v1/moi': ok({ role: 'direction', firstName: null }), 'GET /v1/investir/regles?insee=99001': ok({ canRecord: true, rules: [] }), ...answers };
   const context: Record<string, unknown> = {
     document,
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
@@ -180,7 +180,7 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
     t.els['loyers-type']!.value = 'apartment';
     t.els['loyers-commune']!.value = ' 99001 ';
     await t.press('loyers-lire');
-    expect(t.list()).toEqual([
+    expect(t.list().slice(0, 4)).toEqual([
       '12,35 € le m², charges comprises, entre 10,10 € et 15,01 €.',
       '120 observation(s).',
       'Carte des loyers 2026, appartements, toutes tailles, importée le 10/01/2027.',
@@ -215,7 +215,8 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
     t.els['loyers-commune']!.value = '2a004';
     await t.press('loyers-lire');
     expect(t.state()).toContain('Inconnu');
-    expect(t.list()).toEqual([]);
+    expect(t.list()).toHaveLength(1);
+    expect(t.list()[0]).toContain('Règles de location de la commune');
   });
 
   it('un code de commune illisible ou un type absent ne part pas ; hors réseau et refus sont dits', async () => {
@@ -260,5 +261,117 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
     expect(budgetProblems({ html: '', js: LOYERS_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
     expect(LOYERS_SCRIPT).not.toContain('innerHTML');
+  });
+
+  describe('Y11 · les règles de location d’une commune', () => {
+    const READ = 'GET /v1/investir/regles?insee=99001';
+    const POST_RULE = 'POST /v1/investir/regles';
+    const RENT = 'GET /v1/investir/loyers?insee=99001&type=apartment';
+    const RULE = { rule: 'encadrement_loyers', label: 'Encadrement des loyers', effectiveFrom: '2025-03-01', effectiveUntil: '2030-03-01', source: 'Délibération <img src=x>', sourceDate: '2025-01-15' };
+    const open = async (data: unknown, answers: Record<string, Answer> = {}) => {
+      const t = await run({ [RENT]: ok(KNOWN), [READ]: ok(data), ...answers });
+      t.els['loyers-type']!.value = 'apartment';
+      t.els['loyers-commune']!.value = '99001';
+      await t.press('loyers-lire');
+      const box = t.els['loyers-liste']!;
+      const input = (label: string) => {
+        const l = box.all().find((e) => e.tagName === 'label' && e.textContent === label);
+        if (!l) throw new Error(`libellé absent : ${label}`);
+        return box.all().find((e) => e.attributes.id === l.attributes.for)!;
+      };
+      const save = () => box.all().find((e) => e.tagName === 'button' && e.textContent === 'Ranger cette règle');
+      const fill = () => {
+        input('Règle').value = 'encadrement_loyers';
+        input('En vigueur depuis').value = '2025-03-01';
+        input('Source : la délibération ou le texte').value = 'Délibération inventée';
+        input('Date de la source').value = '2025-01-15';
+      };
+      return { ...t, box, input, save, fill };
+    };
+
+    it('[R10] [Y11] après le loyer, chaque règle dit sa source et sa date, en texte ; sans droit, pas de formulaire', async () => {
+      const t = await open({ canRecord: false, rules: [RULE] });
+      expect(t.box.textContent).toContain('Encadrement des loyers, depuis le 01/03/2025, jusqu’au 01/03/2030. Source : Délibération <img src=x>, 15/01/2025.');
+      expect(t.save()).toBeUndefined();
+      expect(LOYERS_SCRIPT).not.toMatch(/innerHTML|insertAdjacentHTML/);
+    });
+
+    it('[R10] [Y11] sans règle rangée, rien n’affirme qu’il n’y en a pas ; le loyer inconnu n’empêche pas de les lire', async () => {
+      const t = await open({ canRecord: false, rules: [] }, { [RENT]: ok({ status: 'inconnu' }) });
+      expect(t.state()).toContain('Inconnu');
+      expect(t.box.textContent).toContain('Cela ne prouve pas qu’il n’y en a pas');
+    });
+
+    it('[R16] [Y11] la direction, sur l’écran du réseau, range une règle : ce qu’elle a écrit part, puis la commune est relue', async () => {
+      expect(HTML).toContain('id="loyers-commune"');
+      let rules: unknown[] = [];
+      const t = await open(null, {
+        [READ]: async () => Response.json({ ok: true, data: { canRecord: true, rules } }),
+        [POST_RULE]: async () => { rules = [RULE]; return Response.json({ ok: true, data: { effectiveFrom: '2025-03-01', effectiveUntil: null } }); },
+      });
+      t.fill();
+      t.save()!.listeners.click!({});
+      await settle();
+      expect(t.posts().at(-1)!.body).toEqual({ inseeCode: '99001', rule: 'encadrement_loyers', effectiveFrom: '2025-03-01', effectiveUntil: null, source: 'Délibération inventée', sourceDate: '2025-01-15' });
+      expect(t.state()).toBe('Règle rangée, en vigueur à partir du 01/03/2025.');
+      expect(t.box.textContent).toContain('Encadrement des loyers');
+    });
+
+    it('[Y11] une règle déjà finie est dite finie, jamais « en vigueur »', async () => {
+      const t = await open({ canRecord: true, rules: [] }, { [POST_RULE]: ok({ effectiveFrom: '2015-01-01', effectiveUntil: '2018-01-01' }) });
+      t.fill();
+      t.save()!.listeners.click!({});
+      await settle();
+      expect(t.state()).toContain('finie le 01/01/2018');
+      expect(t.state()).not.toContain('en vigueur à partir');
+    });
+
+    it('[Y11] la commune retapée sans relecture ne reçoit rien', async () => {
+      const t = await open({ canRecord: true, rules: [] });
+      t.fill();
+      t.els['loyers-commune']!.value = '99002';
+      t.save()!.listeners.click!({});
+      await settle();
+      expect(t.posts()).toHaveLength(0);
+      expect(t.state()).toContain('relisez cette commune');
+    });
+
+    it('[Y11] refus en français, réponse perdue dite telle, double appui un seul envoi', async () => {
+      for (const [code, text] of [['source', 'Écrivez la source'], ['date_source', 'un jour déjà passé'], ['date', 'Les dates de la règle'], ['regle', 'Choisissez la règle'], ['role', 'pas dans vos droits']] as const) {
+        const t = await open({ canRecord: true, rules: [] }, { [POST_RULE]: no(409, { ok: false, rule: 'R124', code }) });
+        t.fill();
+        t.save()!.listeners.click!({});
+        await settle();
+        expect(t.state()).toContain(text);
+      }
+      const lost = await open({ canRecord: true, rules: [] });
+      lost.fill();
+      lost.save()!.listeners.click!({});
+      await settle();
+      expect(lost.state()).toContain('rien n’est sûr');
+      expect(lost.state()).not.toContain('Règle rangée');
+      let answer: (r: Response) => void = () => undefined;
+      const twice = await open({ canRecord: true, rules: [] }, { [POST_RULE]: () => new Promise<Response>((r) => { answer = r; }) });
+      twice.fill();
+      const b = twice.save()!;
+      b.listeners.click!({});
+      b.listeners.click!({});
+      await settle();
+      expect(twice.posts()).toHaveLength(1);
+      answer(Response.json({ ok: false, rule: 'R124', code: 'source' }, { status: 409 }));
+      await settle();
+      b.listeners.click!({});
+      await settle();
+      expect(twice.posts()).toHaveLength(2);
+    });
+
+    it('[Y11] les règles perdues sont dites à part, le loyer reste lu', async () => {
+      const t = await run({ [RENT]: ok(KNOWN), [READ]: () => Promise.reject(new TypeError('hors ligne')) });
+      t.els['loyers-type']!.value = 'apartment';
+      t.els['loyers-commune']!.value = '99001';
+      await t.press('loyers-lire');
+      expect(t.els['loyers-liste']!.textContent).toContain('Pas de réseau pour les règles');
+      expect(t.els['loyers-liste']!.textContent).toContain('12,35 €');
+    });
   });
 });
