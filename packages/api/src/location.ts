@@ -162,6 +162,7 @@ async function progress(s: LocationServices, v: Viewer, id: string): Promise<Out
       inventoryClosed: closed !== null && lease !== null && closed.leaseId === lease.leaseId,
       // L'état des lieux du bail en vigueur, rangé mais pas encore signé des deux parties : à signer sans le refaire.
       inventory: open && lease && open.leaseId === lease.leaseId ? open : null,
+      handedOn: await c.handovers.handedOn(listing.networkId, listing.id),
     },
   };
 }
@@ -372,6 +373,7 @@ const ROUTES: LocationRoute[] = [
 
   /* La remise des clés et la gestion par un partenaire carte G (W08) [R107, R74, R73]. */
   { method: 'POST', pattern: new RegExp(`^/location/${ID}/remise-des-cles$`), name: 'location.remise_des_cles', roles: WRITERS, handle: withBody(async (s, v, [id], b) => reply(await core(s).handovers.handOver(v, id, { handedOn: b.handedOn }))) },
+  { method: 'GET', pattern: new RegExp(`^/location/${ID}/remise-des-cles$`), name: 'location.remise_des_cles.lue', roles: READERS, handle: async (s, v, [id]) => reply(await core(s).handovers.state(v, id)) },
   { method: 'GET', pattern: new RegExp(`^/location/${ID}/honoraires-dus$`), name: 'location.honoraires_dus', roles: READERS, handle: async (s, v, [id]) => reply(await core(s).handovers.feesDue(v, id)) },
   { method: 'POST', pattern: new RegExp(`^/location/${ID}/gestion$`), name: 'location.gestion', roles: WRITERS, handle: withBody(async (s, v, [id], b) => reply(await core(s).handovers.linkManagement(v, id, b.referralId))) },
 ];

@@ -220,6 +220,13 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     // La signature d'essai du bail ne rend jamais un bail signé réel : la remise des clés l'attend [R108, R107].
     expect(await t.call(t.agent, 'POST', `/location/${vide.id}/remise-des-cles`, { handedOn: '2027-07-12' })).toEqual({ status: 409, body: { ok: false, rule: 'R107', code: 'lease_not_signed' } });
     expect((await t.ok(t.agent, 'GET', `/location/${vide.id}/honoraires-dus`)).due).toBe(false);
+    // W16 : la lecture de l'écran dit la même chose, pour l'agent, la direction et la conformité en lecture ; pas pour un autre agent.
+    expect(await t.ok(t.agent, 'GET', `/location/${vide.id}/remise-des-cles`)).toEqual({ writable: true, leaseSigned: false, inventoryClosed: true, handover: null, managers: [], entrustable: [] });
+    expect((await t.ok(t.dir, 'GET', `/location/${vide.id}/remise-des-cles`)).writable).toBe(true);
+    expect((await t.ok(t.compliance, 'GET', `/location/${vide.id}/remise-des-cles`)).writable).toBe(false);
+    expect(await t.call(t.other, 'GET', `/location/${vide.id}/remise-des-cles`)).toMatchObject({ status: 403, body: { ok: false, rule: 'R16' } });
+    expect(await t.call(t.compliance, 'POST', `/location/${vide.id}/remise-des-cles`, { handedOn: '2027-07-12' })).toMatchObject({ status: 403, body: { ok: false, rule: 'R16', code: 'role' } });
+    expect((await t.ok(t.agent, 'GET', `/location/${vide.id}/suivi`)).handedOn).toBeNull();
     // Rien n'est parti réellement : tout envoi est dans la boîte d'essai.
     expect(await t.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM messages m WHERE m.direction = 'out' AND m.id NOT IN (SELECT message_id FROM trial_outbox)")).toEqual({ n: 0 });
   });

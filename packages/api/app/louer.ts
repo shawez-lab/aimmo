@@ -1,4 +1,4 @@
-import { ANNEX_KINDS, CHOICE_CHANNELS, ELEMENT_STATES, HABITATS, LEASE_FIELDS, METER_KINDS, RENTAL_DEPOSIT_MAX_BYTES, RENTAL_DEPOSIT_TYPES } from '../../core/src/location/index.ts';
+import { ANNEX_KINDS, CHOICE_CHANNELS, HABITATS, LEASE_FIELDS, RENTAL_DEPOSIT_MAX_BYTES, RENTAL_DEPOSIT_TYPES } from '../../core/src/location/index.ts';
 
 /**
  * L'écran « Louer » de l'application de l'agent (W11), en morceaux posés dans `fichiers.ts` : sa section de page, son
@@ -132,8 +132,6 @@ globalThis.AIMMO_LOUER = function (t) {
   /* ---------- M15 : l'écran « Louer » (W11). Les dossiers dans l'ordre d'arrivée reçu, jamais retriés ni notés [R105]. ---------- */
   var ANNEXES = ${JSON.stringify(ANNEXES)};
   var LEASE_LABELS = ${JSON.stringify(LEASE_LABELS)};
-  var ELEMENT_STATES = ${JSON.stringify(ELEMENT_STATES)};
-  var METERS = ${JSON.stringify(METER_KINDS)};
   var HABITATS = ${JSON.stringify(HABITATS)};
   var CHOICE_CHANNELS = ${JSON.stringify(CHANNEL_LABELS)};
   var CLASSES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
@@ -379,6 +377,7 @@ globalThis.AIMMO_LOUER = function (t) {
       ['Choix', chosen ? 'fait' : ''],
       ['Bail', lease && lease.bailleur && lease.locataire ? 'fait' : ''],
       ['État des lieux', p.inventoryClosed ? 'fait' : ''],
+      ['Remise des clés', p.handedOn ? 'fait' : ''],
     ];
     var rail = el('ol', null, 'parcours');
     rail.setAttribute('aria-label', 'Étapes de la mise en location');
@@ -395,6 +394,46 @@ globalThis.AIMMO_LOUER = function (t) {
     body.appendChild(applicationsBlock(base, apps, pres, chosen));
     if (chosen) body.appendChild(leaseBlock(base, lease));
     if (lease && lease.complete) body.appendChild(inventoryBlock(id, base, p));
+    if (lease && lease.complete) body.appendChild(closingBlock(id, base, p));
+  }
+  /* L'état des lieux à remplir (W16), la remise des clés et la gestion (W16) : servis à part, chargés au premier geste [R201]. */
+  var lazyTools = {};
+  var lazyBusy = {};
+  var closingOpenFor = null;
+  function lazy(name, global, act) {
+    if (lazyTools[name]) return act(lazyTools[name]);
+    if (lazyBusy[name]) return;
+    lazyBusy[name] = true;
+    var mine = t.session();
+    louerState('Chargement…');
+    var s = el('script');
+    s.setAttribute('src', '/app/' + name + '.js');
+    s.addEventListener('load', function () {
+      lazyBusy[name] = false;
+      var make = globalThis[global];
+      try { delete globalThis[global]; } catch (e) { /* rien à retirer */ }
+      if (typeof make !== 'function') return;
+      lazyTools[name] = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, whole: whole, ID: ID, session: t.session, say: louerState, date: date, euros: euros, act: louerAct, openLocation: openLocation, reload: function (said) { return openLocation(louerId, $('louer-titre').textContent, said); } });
+      if (mine === t.session()) { louerState(''); act(lazyTools[name]); }
+    });
+    s.addEventListener('error', function () {
+      lazyBusy[name] = false;
+      if (mine === t.session()) louerState('Pas de réseau. Réessayez dans un moment.');
+    });
+    $('louer').appendChild(s);
+  }
+  function closingBlock(id, base, p) {
+    var box = section('Remise des clés et gestion');
+    if (p.handedOn) box.appendChild(el('p', 'Clés remises le ' + date(p.handedOn) + '.', 'fait'));
+    var inner = el('div');
+    box.appendChild(inner);
+    function go(keep) {
+      closingOpenFor = id;
+      lazy('louer-remise', 'AIMMO_LOUER_REMISE', function (tool) { tool.open(inner, base, keep); });
+    }
+    inner.appendChild(button('Ouvrir la remise des clés', function () { go(false); }));
+    if (closingOpenFor === id) go(true);
+    return box;
   }
   function reasonText(r) {
     var a = ANNEXES[r.kind] || 'Annexe';
@@ -809,150 +848,13 @@ globalThis.AIMMO_LOUER = function (t) {
     // L'état des lieux rangé et pas encore signé des deux parties est relu du serveur : un rechargement ne le perd pas.
     var done = p.inventory || null;
     if (done) box.appendChild(inventorySign(id, done));
-    var n = ++louerSeq;
-    var d = details(box, done ? 'Refaire l’état des lieux' : 'Faire l’état des lieux, pièce par pièce');
-    if (!done) d.setAttribute('open', '');
-    var address = field(d, 'edl-adresse-' + n, 'Adresse du logement');
-    var owner = field(d, 'edl-domicile-' + n, 'Domicile du bailleur');
-    var rooms = [];
-    var roomsBox = el('div');
-    d.appendChild(roomsBox);
-    function addRoom(name) {
-      var k = rooms.length + 1;
-      var r = el('fieldset', null, 'piece');
-      r.appendChild(el('legend', 'Pièce ' + k));
-      var nm = field(r, 'edl-' + n + '-piece-' + k, 'Nom de la pièce');
-      nm.value = name || '';
-      var items = [];
-      var list = el('div');
-      r.appendChild(list);
-      function addItem(label) {
-        var j = items.length + 1;
-        var row = el('div', null, 'ligne');
-        var a = el('div');
-        var b = el('div');
-        var what = field(a, 'edl-' + n + '-' + k + '-el-' + j, 'Élément');
-        what.value = label || '';
-        // Aucun état n'est choisi d'avance : il est constaté, jamais supposé.
-        var states = { '': 'À constater' };
-        Object.keys(ELEMENT_STATES).forEach(function (s) { states[s] = ELEMENT_STATES[s]; });
-        var st = select(b, 'edl-' + n + '-' + k + '-etat-' + j, 'État', states, '');
-        row.appendChild(a);
-        row.appendChild(b);
-        list.appendChild(row);
-        items.push([what, st]);
-      }
-      ['Sol', 'Murs', 'Plafond', 'Fenêtres', 'Portes'].forEach(addItem);
-      var more = button('Ajouter un élément', function () { addItem(''); });
-      more.className = 'secondaire';
-      r.appendChild(more);
-      var dict = field(r, 'edl-' + n + '-dicte-' + k, 'Observations dictées (l’IA ne fait que les mettre en forme)', 'textarea');
-      dict.setAttribute('rows', '3');
-      dict.setAttribute('maxlength', '4000');
-      roomsBox.appendChild(r);
-      rooms.push({ name: nm, items: items, dict: dict });
-    }
-    addRoom('Entrée');
-    var plus = button('Ajouter une pièce', function () { addRoom(''); });
-    plus.className = 'secondaire';
-    d.appendChild(plus);
-    d.appendChild(el('h4', 'Compteurs'));
-    var meters = Object.keys(METERS).map(function (kind) {
-      var f = field(d, 'edl-' + n + '-compteur-' + kind, METERS[kind] + ' : index relevé');
-      f.setAttribute('inputmode', 'decimal');
-      return [kind, f];
+    var holder = el('div');
+    box.appendChild(holder);
+    var start = button(done ? 'Refaire l’état des lieux' : 'Faire l’état des lieux, pièce par pièce', function () {
+      lazy('louer-edl', 'AIMMO_LOUER_EDL', function (tool) { clear(holder); tool.form(holder, id, base, p); });
     });
-    d.appendChild(el('h4', 'Clés remises'));
-    var keys = [];
-    var keysBox = el('div');
-    d.appendChild(keysBox);
-    function addKey() {
-      var j = keys.length + 1;
-      var row = el('div', null, 'ligne');
-      var a = el('div');
-      var b = el('div');
-      var kind = field(a, 'edl-' + n + '-cle-' + j, 'Clé ou badge');
-      var count = field(b, 'edl-' + n + '-cles-' + j, 'Nombre');
-      count.setAttribute('inputmode', 'numeric');
-      row.appendChild(a);
-      row.appendChild(b);
-      keysBox.appendChild(row);
-      keys.push([kind, count]);
-    }
-    addKey();
-    var moreKey = button('Ajouter des clés', addKey);
-    moreKey.className = 'secondaire';
-    d.appendChild(moreKey);
-    var furniture = [];
-    if (p.facts && p.facts.furnished) {
-      d.appendChild(el('h4', 'Mobilier'));
-      var fBox = el('div');
-      d.appendChild(fBox);
-      var addFurniture = function () {
-        var j = furniture.length + 1;
-        var row = el('div', null, 'ligne');
-        var a = el('div');
-        var b = el('div');
-        var c = el('div');
-        var item = field(a, 'edl-' + n + '-meuble-' + j, 'Meuble');
-        var count = field(b, 'edl-' + n + '-meubles-' + j, 'Nombre');
-        count.setAttribute('inputmode', 'numeric');
-        var states = { '': 'À constater' };
-        Object.keys(ELEMENT_STATES).forEach(function (s) { states[s] = ELEMENT_STATES[s]; });
-        var st = select(c, 'edl-' + n + '-meuble-etat-' + j, 'État', states, '');
-        row.appendChild(a);
-        row.appendChild(b);
-        row.appendChild(c);
-        fBox.appendChild(row);
-        furniture.push([item, count, st]);
-      };
-      addFurniture();
-      var moreF = button('Ajouter un meuble', addFurniture);
-      moreF.className = 'secondaire';
-      d.appendChild(moreF);
-    }
-    d.appendChild(button('Ranger l’état des lieux', function () {
-      var problem = '';
-      var b = { rooms: [], meters: [], keys: [], furniture: [] };
-      var a1 = String(address.value || '').trim();
-      var a2 = String(owner.value || '').trim();
-      if (a1) b.address = a1;
-      if (a2) b.ownerAddress = a2;
-      rooms.forEach(function (r) {
-        var name = String(r.name.value || '').trim();
-        var els = [];
-        r.items.forEach(function (x) {
-          var w = String(x[0].value || '').trim();
-          if (!w) return;
-          if (!x[1].value) problem = 'Constatez l’état de chaque élément, ou retirez son nom.';
-          els.push({ name: w, state: x[1].value });
-        });
-        var dict = String(r.dict.value || '').trim();
-        if (!name && !els.length && !dict) return;
-        if (!name) problem = 'Donnez un nom à chaque pièce.';
-        b.rooms.push({ name: name, elements: els, dictation: dict || null });
-      });
-      meters.forEach(function (m) { var v = String(m[1].value || '').trim(); if (v) b.meters.push({ kind: m[0], index: v }); });
-      keys.forEach(function (k) {
-        var kind = String(k[0].value || '').trim();
-        if (!kind && !String(k[1].value || '').trim()) return;
-        var c = whole(k[1].value, 50);
-        if (!kind || !c) problem = 'Pour les clés : une sorte et un nombre.';
-        b.keys.push({ kind: kind, count: c });
-      });
-      furniture.forEach(function (f) {
-        var item = String(f[0].value || '').trim();
-        if (!item) return;
-        var c = whole(f[1].value, 99);
-        if (!c || !f[2].value) problem = 'Pour chaque meuble : un nombre et son état constaté.';
-        b.furniture.push({ item: item, count: c, state: f[2].value });
-      });
-      if (problem) { louerState(problem); return; }
-      louerAct(base + '/etat-des-lieux', b, 'L’état des lieux n’est pas rangé.', '', true).then(function (inv) {
-        if (!inv || !ID.test(inv.inventoryId)) return;
-        openLocation(id, $('louer-titre').textContent, inv.status === 'complet' ? 'État des lieux rangé, complet : relisez-le avec les deux parties, puis signez.' : 'État des lieux rangé, incomplet : ' + (inv.missing || []).join(', ') + '.');
-      });
-    }));
+    if (done) start.className = 'secondaire';
+    holder.appendChild(start);
     return box;
   }
   function inventorySign(id, inv) {
