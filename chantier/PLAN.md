@@ -1939,7 +1939,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### CE20 · Ranger un document du dossier protégé, à l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#326) ; ne range rien en production avant H38 et le branchement du Worker ; relecture forte 2 P1 corrigés, corrections non relues une seconde fois ; Codex non attendu (H03).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE05
 - Cahier : M16 ; R16, R113, R114, R201.
 - Décidé (2026-11-03) : le dossier ne sert que du texte, pour y porter le filigrane [R114] : l'agent colle le contenu, le dépôt d'un PDF n'existe pas. La référence vient de l'empreinte du texte ; le même texte rend sa ligne et répare un contenu perdu ; un seul titre par texte. `DossierStorage.write` reste absent en production : l'écran dit `stockage_absent` jusqu'à H38 et au branchement du Worker, tâche de la voie 1.
