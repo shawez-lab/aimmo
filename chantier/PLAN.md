@@ -1903,7 +1903,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X22 · Recommander un proche depuis la fiche, à l'écran
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : A07
 - Cahier : M11 ; R16, R201.
 - Objectif : `POST /v1/apres-vente/fiches/<id>/recommandations` n'a aucun appel de l'application. Vérifier d'abord à quoi sert cette route et si le geste existe sous une autre forme ; sinon le donner, avec sa clé d'idempotence.
