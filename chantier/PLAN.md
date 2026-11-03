@@ -1863,6 +1863,16 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Critères : le contact d'un autre agent est refusé et le refus au journal [R16] (test) ; le bailleur est refusé (test) ; une fiche réunie reste rangée sur la fiche gardée [R105] (test).
 - Attend : rien.
 
+### X15 · Une réponse perdue n'est plus dite « rien n'est enregistré »
+- Statut : en cours
+- Voie : 1
+- Trouvé par X14 (son « Reste ») : dix écrans disent « Pas de réseau : rien n'est enregistré. » quand une réponse se perd, alors que l'écriture a pu passer sur le serveur. L'agent croit le geste perdu et le refait.
+- Qui : Claude · Relecture : normale · Dépend de : X14
+- Cahier : M18 ; R10, R201.
+- Objectif : chaque écran dit que rien n'est sûr et demande de relire avant de recommencer. Le texte seul change ; le verrou contre le double appui de chaque écran reste à regarder écran par écran.
+- Critères : plus aucun écran ne porte l'ancienne phrase (test sur tous les scripts servis) ; le nouveau texte est dit sur une coupure, sur les écrans déjà éprouvés (tests) ; budgets tenus [R201] (test).
+- Attend : rien.
+
 ### W23 · Le titre de séjour d'un candidat au coffre
 - Statut : bloquée : le texte officiel de l'annexe I n'est pas lisible depuis une séance, et le seul résumé lu change la question (H43)
 - Décidé (2026-11-03, voie 2) : rien de codé. Légifrance et service-public sont fermés à la séance. Un article de cabinet (Seban, 2015), résumé et non le texte, range en identité la carte d'identité, le passeport et le permis, français ou étrangers, et cite le titre de séjour à part, pour justifier du droit au séjour. Si c'est exact, une personne étrangère entre déjà par son passeport, et un titre de séjour ne doit pas valoir identité vérifiée. Ajouter la sorte demanderait aussi de refaire deux tables de la conformité, `compliance_vault_pieces` et `identity_checks`, ce que la voie 2 ne fait pas seule.
