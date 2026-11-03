@@ -33,6 +33,19 @@ it('le stockage R2 dit seulement si une référence existe', async () => {
 });
 
 describeWithSqlite('N08 · routes de M10', () => {
+  it('[R16] [R62] W26 : l’accueil lit ce qu’il y a à tenir, pour l’agent seul, même sans le stockage des pièces', async () => {
+    const t = await setup();
+    const route = offreRoutes().find((r) => r.name === 'offres.a_tenir')!;
+    expect(route.pattern.test('/offres/a-tenir')).toBe(true);
+    const noPieces = { db: t.db, journal: t.journal, acces: t.acces, now: t.now } as unknown as OffreServices;
+    const read = async (v: Viewer) => {
+      const r = await route.handle(noPieces, v, [], new Request('https://api.exemple.test/v1/offres/a-tenir'));
+      return { status: r.status, body: (await r.json()) as { ok: boolean; code?: string; data?: unknown } };
+    };
+    expect(await read(t.agent)).toEqual({ status: 200, body: { ok: true, mode: 'essai', data: { fonds: [], financement: [], echeances: [] } } });
+    expect(await read(t.direction)).toMatchObject({ status: 403, body: { ok: false, code: 'not_agent' } });
+  });
+
   for (const kind of ['appartement', 'maison', 'terrain'] as DossierKind[]) {
     it(`dossier test « ${kind} » complet, sans pièce manquante, suivi par les routes de l’offre acceptée à l’acte`, async () => {
       const t = await setup(kind);

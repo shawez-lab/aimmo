@@ -6,6 +6,7 @@
  * `Authorization`, jamais dans une adresse ni au journal [R13].
  */
 
+import { A_TENIR_SCRIPT } from '../app/a-tenir.ts';
 import { ALERTES_SCRIPT } from '../app/alertes.ts';
 import { APPELS_SCRIPT } from '../app/appels.ts';
 import { CLASSEMENT_SCRIPT } from '../app/classement.ts';
@@ -77,6 +78,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/app.js': { body: stripCommentLines(APP_JS), type: 'text/javascript; charset=utf-8' },
   // Les alertes de l'agent (C09c), chargées seulement s'il en a, jamais gardées sur l'appareil [R201].
   '/app/alertes.js': { body: ALERTES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Ce qu'il y a à tenir sur les ventes (W26), chargé seulement s'il y en a, jamais gardé sur l'appareil [R201].
+  '/app/a-tenir.js': { body: A_TENIR_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les gestes d'appel de la fiche (AC12), chargés à l'ouverture d'une fiche où ils servent [R201].
   '/app/appels.js': { body: APPELS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le classement de la fiche et sa correction (Q08), chargés à l'ouverture d'une fiche classée [R201].
