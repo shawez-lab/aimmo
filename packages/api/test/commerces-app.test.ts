@@ -1149,7 +1149,7 @@ describe('CE16 · les informations publiques à l’écran', () => {
     ['presentation_absente', 'R110', 'Validez d’abord la présentation'],
     ['consent_withdrawn', 'R03', 'a retiré son accord'],
     ['send_refused', 'R05', 'Déjà envoyé à cette personne'],
-    ['send_refused', 'R01', 'Le code n’est pas parti'],
+    ['send_refused', 'R01', 'Les informations ne sont pas parties'],
   ])('[R10] le refus %s (%s) est dit en français', async (code, rule, said) => {
     const t = await line(no(409, { ok: false, rule, code }));
     t.input(LABEL).value = 'Accord';

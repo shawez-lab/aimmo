@@ -66,7 +66,7 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
       btn.disabled = false;
       if (res.ok) { done(res); return; }
       var code = res.body && res.body.code;
-      if (refused && refused(code)) return;
+      if (refused && refused(code, res)) return;
       say(why(res, fallback));
     });
   }
@@ -87,6 +87,10 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
       if (!said) { say(SAY.bad_consent); return; }
       act(base + '/informations', { personId: r.personId, consentProof: said }, go, 'Les informations ne sont pas parties.', function (res) {
         say(res.body.data && res.body.data.mode === 'essai' ? 'Informations préparées par le contrôle central, en mode essai : rangées dans la boîte d’essai, rien n’est parti.' : 'Informations envoyées par le contrôle central.');
+      }, function (code, res) {
+        if (code !== 'send_refused' || res.body.rule === 'R05') return false;
+        say('Les informations ne sont pas parties : heure d’envoi, personne exclue ou arrêtée, pas de mail sur la fiche, ou texte refusé par le contrôle.');
+        return true;
       });
     });
     f.appendChild(go);

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { commercesRoutes, dossierReaderRoutes, type CommercesServices } from '../src/commerces.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -477,6 +477,47 @@ describeWithSqlite('CE16 · la réponse immédiate au repreneur', () => {
     await t.store.withdrawConsent(c.id, new Date('2027-09-02T08:00:00.000Z'));
     expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R03', code: 'consent_withdrawn' });
     expect(await boxed(t, r.id)).toEqual([]);
+  });
+  const refusals = async (t: Awaited<ReturnType<typeof setup>>) => (await t.journal.all()).filter((e) => e.type === 'commerces.acces.informations_refusees').map((e) => e.data);
+  it('[R13] chaque refus laisse sa trace au journal, ses seuls codes', async () => {
+    const { t, id, r } = await ready();
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    t.closed.add(id);
+    await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT });
+    t.closed.delete(id);
+    await t.ok(t.alex, 'POST', `/commerces/${id}/fiche`, { employees: 9 });
+    await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT });
+    expect(await refusals(t)).toEqual([{ rule: 'R42', code: 'non_diffusable' }, { rule: 'R110', code: 'presentation_absente' }]);
+  });
+  it('[R19] le nom du vendeur ne part jamais au repreneur, même écrit à la main dans la présentation', async () => {
+    const { t, id, r } = await ready();
+    const seller = await t.store.createPerson({ networkId: t.networkId, agentId: t.alexId, firstName: 'Vendeurinvente', lastName: 'Essai' });
+    const project = await t.store.createProject({ networkId: t.networkId, agentId: t.alexId, personId: seller.id, kind: 'sell_business' });
+    await t.db.run("INSERT INTO project_properties (project_id, property_id, network_id, role, created_at) VALUES (?, ?, ?, 'owned', ?)", [project.id, id, t.networkId, '2027-09-01T08:00:00.000Z']);
+    const shown = await t.ok(t.alex, 'GET', `/commerces/${id}/presentation`);
+    // Une présentation corrigée par l'agent, puis validée.
+    const fixed = await t.ok(t.alex, 'POST', `/commerces/${id}/presentations/texte`, { title: shown.title, body: `Monsieur Vendeurinvente cède son restaurant. ${shown.body}` });
+    await t.ok(t.alex, 'POST', `/commerces/presentations/${fixed.id}/validation`);
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, code: 'send_refused' });
+    expect(await boxed(t, r.id)).toEqual([]);
+  });
+  it('[R03] [R05] sur des fiches réunies : l’accord retiré tient, et le doublon aussi', async () => {
+    const { t, id, r } = await ready();
+    const fiche = new FicheUnique(t.db, t.store, { now: () => new Date('2027-09-07T08:00:00.000Z') });
+    const withdrawnOn = await t.buyer('B');
+    const c = await t.store.addConsent({ networkId: t.networkId, personId: withdrawnOn.id, purpose: 'information_commerce', channel: 'email', proof: 'Accord inventé', givenAt: new Date('2027-09-01T08:00:00.000Z') });
+    await t.store.withdrawConsent(c.id, new Date('2027-09-02T08:00:00.000Z'));
+    await fiche.merge({ survivorId: r.id, mergedId: withdrawnOn.id, reason: 'test' });
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R03', code: 'consent_withdrawn' });
+    // Le doublon : envoyé à une fiche, refusé à la fiche réunie à elle.
+    const first = await t.buyer('C');
+    const second = await t.buyer('D');
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: first.id });
+    await t.ok(t.alex, 'POST', `/commerces/${id}/informations`, { personId: first.id, ...CONSENT });
+    await fiche.merge({ survivorId: second.id, mergedId: first.id, reason: 'test' });
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: second.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R05', code: 'send_refused' });
   });
   it('[R16] ni un autre agent, ni la conformité', async () => {
     const { t, id, r } = await ready();
