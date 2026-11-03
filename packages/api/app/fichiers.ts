@@ -1316,32 +1316,26 @@ export const APP_JS = `'use strict';
     });
   }
   // Un geste : la réponse est dite, puis l'écran relu pour montrer l'état rangé.
+  // Un geste passé puis une réponse perdue : le refaire tirerait au sort une seconde fois, ou confierait deux fois. L'écran
+  // ne dit ni fait ni pas fait [R10] ; un second appui pendant l'envoi ne part pas, le verrou vaut pour sa session [R74].
+  var partActing = null;
+  var PART_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Rouvrez les projets avant de recommencer.';
   function partAct(path, body, fallback, done) {
+    var mine = session;
+    if (partActing === mine) return Promise.resolve(false);
+    partActing = mine;
+    function free() { if (partActing === mine) partActing = null; }
     partenairesState('Envoi…');
     return send(path, 'POST', body).then(function (res) {
+      free();
       if (res.gone) return false;
+      if (res.offline || !res.body || res.status >= 500) { partenairesState(PART_LOST); return false; }
       if (!res.ok) {
-        partenairesState(res.offline ? 'Pas de réseau : rien n’est enregistré.' : partnerRefusal(res.body, fallback));
-        if (res.body && res.body.code === 'bad_state') return openPartenaires(partnerRefusal(res.body, fallback));
+        partenairesState(partnerRefusal(res.body, fallback));
+        if (res.body.code === 'bad_state') return openPartenaires(partnerRefusal(res.body, fallback));
         return false;
       }
       return openPartenaires(done);
-    });
-  }
-  // Une option passée puis une réponse perdue : la refaire tirerait au sort une seconde fois. L'écran ne dit ni fait ni pas fait [R10].
-  var optionAsking = null;
-  function askOption(body) {
-    var mine = session;
-    if (optionAsking === mine) return Promise.resolve(false);
-    optionAsking = mine;
-    partenairesState('Envoi…');
-    function free() { if (optionAsking === mine) optionAsking = null; }
-    return send('/v1/studio/options', 'POST', body).then(function (res) {
-      free();
-      if (res.gone) return false;
-      if (res.offline || !res.body || res.status >= 500) { partenairesState('La réponse n’est pas arrivée : rien n’est sûr. Rouvrez les projets avant de recommencer.'); return false; }
-      if (!res.ok) { partenairesState(partnerRefusal(res.body, 'L’option n’est pas demandée.')); return false; }
-      return openPartenaires('Tirage fait : montrez au client les photographes proposés, dans cet ordre.');
     }, function () { free(); return false; });
   }
   function renderPartenaires(projects, page, more) {
@@ -1442,18 +1436,22 @@ export const APP_JS = `'use strict';
     var note = field(box, 'note-' + n, 'Ce que le client a dit, et quand', 'textarea');
     note.setAttribute('maxlength', '1000');
     note.setAttribute('rows', '3');
+    var agreeing = false;
     box.appendChild(button('Enregistrer son accord', function () {
       var picked = radios.filter(function (c) { return c.checked; })[0];
       if (!picked) { partenairesState('Cochez le professionnel choisi par le client.'); return; }
       var text = String(note.value || '').trim();
       if (text.length < 10) { partenairesState(PARTNER_REFUSALS.bad_note); return; }
+      if (agreeing) return;
+      agreeing = true;
       partenairesState('Envoi…');
       send(base + '/preuve-accord', 'POST', { channel: channel.value, note: text }).then(function (res) {
-        if (res.gone) return;
+        if (res.gone) return false;
+        if (res.offline || !res.body || res.status >= 500) { partenairesState(PART_LOST); return false; }
         var d = res.ok && res.body.data;
-        if (!d) { partenairesState(res.offline ? 'Pas de réseau : rien n’est enregistré.' : partnerRefusal(res.body, 'L’accord n’est pas enregistré.')); return; }
-        partAct(base + '/accord', { partnerId: picked.value, consentAt: d.at, channel: d.channel, proofRef: d.proofRef }, 'L’accord n’est pas enregistré.', 'Accord du client enregistré.');
-      });
+        if (!d) { partenairesState(partnerRefusal(res.body, 'L’accord n’est pas enregistré.')); return false; }
+        return partAct(base + '/accord', { partnerId: picked.value, consentAt: d.at, channel: d.channel, proofRef: d.proofRef }, 'L’accord n’est pas enregistré.', 'Accord du client enregistré.');
+      }).then(function () { agreeing = false; }, function () { agreeing = false; });
     }));
   }
   function proposeForm(p) {
@@ -1497,7 +1495,7 @@ export const APP_JS = `'use strict';
         var asked = { projectId: p.projectId, propertyId: place.value, option: option.value };
         var where = String(cp.value || '').trim();
         if (where) asked.postcode = where;
-        askOption(asked);
+        partAct('/v1/studio/options', asked, 'L’option n’est pas demandée.', 'Tirage fait : montrez au client les photographes proposés, dans cet ordre.');
       }));
     }
     return box;

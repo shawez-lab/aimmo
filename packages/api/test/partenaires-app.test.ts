@@ -143,6 +143,78 @@ describe('U11 · écran « Partenaires » de l’application', () => {
     expect(t.calls.filter((c) => c.url === '/v1/studio/options')).toHaveLength(2);
   });
 
+  it('[R10] [R74] le tirage : réponse perdue dite telle, sans relire ; double appui, un seul tirage', async () => {
+    const text = 'La réponse n’est pas arrivée : rien n’est sûr. Rouvrez les projets avant de recommencer.';
+    const label = 'Tirer au sort et proposer au client';
+    for (const answer of [async () => { throw new TypeError('coupure'); }, no(500, { ok: false, code: 'panne' }), async () => new Response('pas du json', { status: 200 })] as Answer[]) {
+      const t = await run({ 'POST /v1/partenaires/relations': answer });
+      await t.open();
+      const reads = t.calls.filter((c) => c.url === '/v1/partenaires/projets').length;
+      await t.click(t.byText(t.els['partenaires-corps']!, label));
+      expect(t.els['partenaires-etat']!.textContent).toBe(text);
+      expect(t.calls.filter((c) => c.url === '/v1/partenaires/projets')).toHaveLength(reads);
+    }
+    let release: (r: Response) => void = () => undefined;
+    const t = await run({ 'POST /v1/partenaires/relations': () => new Promise((r) => { release = r; }) });
+    await t.open();
+    const b = t.byText(t.els['partenaires-corps']!, label);
+    await t.click(b);
+    await t.click(b);
+    expect(t.calls.filter((c) => c.url === '/v1/partenaires/relations')).toHaveLength(1);
+    release(Response.json({ ok: false, rule: 'R73', code: 'no_partner' }, { status: 409 }));
+    await new Promise((r) => setTimeout(r, 5));
+    await t.click(b);
+    expect(t.calls.filter((c) => c.url === '/v1/partenaires/relations')).toHaveLength(2);
+  });
+
+  it('le verrou d’un geste vaut pour sa session : une réponse qui tarde ne bloque pas la connexion suivante', async () => {
+    const t = await run({ 'POST /v1/partenaires/relations': () => new Promise(() => undefined) });
+    await t.open();
+    await t.click(t.byText(t.els['partenaires-corps']!, 'Tirer au sort et proposer au client'));
+    expect(t.calls.filter((c) => c.url === '/v1/partenaires/relations')).toHaveLength(1);
+    await t.click(t.els['partenaires-retour']);
+    await t.click(t.els['partenaires-ouvrir']);
+    await new Promise((r) => setTimeout(r, 5));
+    await t.click(t.byText(t.els['partenaires-corps']!, 'Tirer au sort et proposer au client'));
+    expect(t.calls.filter((c) => c.url === '/v1/partenaires/relations')).toHaveLength(2);
+  });
+
+  it('[R10] l’accord : réponse perdue dite telle, à chacune de ses deux écritures ; double appui, une seule preuve', async () => {
+    const text = 'La réponse n’est pas arrivée : rien n’est sûr. Rouvrez les projets avant de recommencer.';
+    const proof = 'POST /v1/partenaires/relations/r1/preuve-accord';
+    const agreed = 'POST /v1/partenaires/relations/r1/accord';
+    const stored = ok({ proofRef: 'relations/r1/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.txt', sha256: 'e'.repeat(64), at: '2027-07-12T08:05:00.000Z', channel: 'sms' });
+    const ready = async (answers: Record<string, Answer>) => {
+      const t = await run(answers);
+      await t.open();
+      t.table['GET /v1/partenaires/relations/r1/remunerations'] = ok({ text: 'Aucun des professionnels proposés ne rémunère le réseau ni votre agent.', fees: [], textSha256: 'x' });
+      const body = t.els['partenaires-corps']!;
+      await t.click(t.byText(body, 'Montrer au client le texte des rémunérations'));
+      body.all().find((e) => e.attributes.type === 'radio')!.checked = true;
+      body.all().find((e) => e.tagName === 'textarea')!.value = 'Choisi au téléphone ce matin, après lecture du texte.';
+      return { t, go: () => t.click(t.byText(body, 'Enregistrer son accord')) };
+    };
+    const coupure: Answer = async () => { throw new TypeError('coupure'); };
+    const a = await ready({ [proof]: coupure });
+    await a.go();
+    expect(a.t.els['partenaires-etat']!.textContent).toBe(text);
+    const b = await ready({ [proof]: no(500, { ok: false, code: 'panne' }) });
+    await b.go();
+    expect(b.t.els['partenaires-etat']!.textContent).toBe(text);
+    const c = await ready({ [proof]: stored, [agreed]: coupure });
+    await c.go();
+    expect(c.t.els['partenaires-etat']!.textContent).toBe(text);
+    let release: (r: Response) => void = () => undefined;
+    const d = await ready({ [proof]: () => new Promise((r) => { release = r; }) });
+    await d.go();
+    await d.go();
+    expect(d.t.calls.filter((x) => x.url.endsWith('/preuve-accord'))).toHaveLength(1);
+    release(Response.json({ ok: false, code: 'bad_note' }, { status: 400 }));
+    await new Promise((r) => setTimeout(r, 5));
+    await d.go();
+    expect(d.t.calls.filter((x) => x.url.endsWith('/preuve-accord'))).toHaveLength(2);
+  });
+
   it('une option pour un bien sans code postal part avec le code saisi', async () => {
     const t = await run();
     await t.open();
