@@ -231,6 +231,31 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     expect(await t.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM messages m WHERE m.direction = 'out' AND m.id NOT IN (SELECT message_id FROM trial_outbox)")).toEqual({ n: 0 });
   });
 
+  it('[R16] [R17] W17 : direction et conformité lisent les modèles ; une nouvelle version s’ajoute, le bail garde le dernier validé', async () => {
+    const t = await setup();
+    const empty = await t.ok(t.dir, 'GET', '/location/modeles-bail');
+    expect(empty).toMatchObject({ canStore: true, canValidate: false, kinds: [{ kind: 'bail_vide', current: null, latest: null }, { kind: 'bail_meuble', current: null, latest: null }] });
+    expect(await t.ok(t.compliance, 'GET', '/location/modeles-bail')).toMatchObject({ canStore: false, canValidate: true });
+    // Un agent ne lit pas, et son refus est au journal ; la route n'est pas prise pour un logement.
+    expect(await t.call(t.agent, 'GET', '/location/modeles-bail')).toEqual({ status: 403, body: { ok: false, rule: 'R16', code: 'role' } });
+    expect(await t.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM journal WHERE type = 'acces.refuse' AND data LIKE '%location.modeles_bail%'")).toEqual({ n: 1 });
+    const v1 = await t.ok(t.dir, 'POST', '/location/modeles-bail', { kind: 'bail_vide', body: BODY });
+    let seen = (await t.ok(t.dir, 'GET', '/location/modeles-bail')).kinds[0];
+    expect(seen.current).toMatchObject({ id: v1.id, version: 1, status: 'essai', validatedAt: null, body: BODY });
+    expect(seen.latest.id).toBe(v1.id);
+    // La direction ne valide pas : la conformité seule.
+    expect(await t.call(t.dir, 'POST', `/location/modeles-bail/${v1.id}/validation`)).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    await t.ok(t.compliance, 'POST', `/location/modeles-bail/${v1.id}/validation`);
+    const v2 = await t.ok(t.dir, 'POST', '/location/modeles-bail', { kind: 'bail_vide', body: `${BODY}\n\nClause ajoutée.` });
+    seen = (await t.ok(t.compliance, 'GET', '/location/modeles-bail')).kinds[0];
+    // Le bail garde le dernier validé tant que la nouvelle version ne l'est pas ; l'ancienne reste, telle quelle.
+    expect(seen.current).toMatchObject({ id: v1.id, version: 1, status: 'valide', body: BODY });
+    expect(seen.current.validatedAt).not.toBeNull();
+    expect(seen.latest).toMatchObject({ id: v2.id, version: 2, status: 'essai' });
+    expect(await t.db.all('SELECT id FROM rental_lease_templates')).toHaveLength(2);
+    expect(await t.ok(t.other, 'GET', '/location')).toMatchObject({ listings: [] });
+  });
+
   it('[R100] un logement classé G est bloqué avant toute annonce', async () => {
     const t = await setup();
     const { id, home } = await t.open('Froid-Essai', { ...FACTS, energyClass: 'G', finalEnergyKwh: 400 });

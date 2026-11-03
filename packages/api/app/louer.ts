@@ -27,6 +27,18 @@ export const LOUER_HOME_HTML = `<section class="bloc" aria-labelledby="titre-lou
 </section>
 `;
 
+/** L'entrée des modèles de bail (W17) : sur l'écran du réseau pour la direction, sur celui de la conformité pour la validation. */
+const modelesEntry = (p: string, about: string): string => `<section class="bloc" aria-labelledby="${p}-titre">
+<h3 id="${p}-titre">Modèles de bail</h3>
+<p class="doux">${about}</p>
+<button id="${p}-ouvrir" type="button" class="secondaire">Lire les modèles de bail</button>
+<p id="${p}-etat" class="etat" role="status"></p>
+<div id="${p}-corps"></div>
+</section>
+`;
+export const LOUER_MODELES_ENTRY_HTML = modelesEntry('louer-modeles', 'La direction range les versions, la conformité les valide. Une nouvelle version s’ajoute, l’ancienne reste.');
+export const LOUER_MODELES_CONFORMITE_HTML = modelesEntry('louer-modeles-c', 'Valider seulement un texte relu par l’avocat.');
+
 export const LOUER_HTML = `<section id="louer" hidden>
 <button id="louer-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="louer-titre">Louer</h2>
@@ -86,7 +98,40 @@ export const LOUER_JS = `
   }
   var louerScreen = null;
   var louerId = null;
-  function forgetLouer() { if (louerScreen) louerScreen.forget(); }
+  function forgetLouer() {
+    if (louerScreen) louerScreen.forget();
+    wipeModeles();
+  }
+  function wipeModeles() {
+    ['louer-modeles', 'louer-modeles-c'].forEach(function (p) { clear($(p + '-corps')); $(p + '-etat').textContent = ''; });
+  }
+  /* Les modèles de bail (W17), servis à part, chargés au premier geste [R201]. */
+  var modelesTool = null, modelesBusy = false;
+  function openModeles(p) {
+    if (!currentKey) return;
+    var box = $(p + '-corps');
+    var say = function (x) { $(p + '-etat').textContent = x; };
+    if (modelesTool) return modelesTool.open(box, say);
+    if (modelesBusy) return;
+    modelesBusy = true;
+    var mine = session;
+    say('Chargement…');
+    var s = el('script');
+    s.setAttribute('src', '/app/louer-modeles.js');
+    s.addEventListener('load', function () {
+      modelesBusy = false;
+      var make = globalThis.AIMMO_LOUER_MODELES;
+      try { delete globalThis.AIMMO_LOUER_MODELES; } catch (e) { /* rien à retirer */ }
+      if (typeof make !== 'function') { if (mine === session) say('Pas de réseau. Réessayez dans un moment.'); return; }
+      modelesTool = make({ el: el, clear: clear, send: send, button: button, field: field, date: date, ID: ID, session: function () { return session; } });
+      if (mine === session) modelesTool.open(box, say); else say('');
+    });
+    s.addEventListener('error', function () {
+      modelesBusy = false;
+      if (mine === session) say('Pas de réseau. Réessayez dans un moment.');
+    });
+    $('louer').appendChild(s);
+  }
   function wipeLouer() {
     if (louerScreen) { louerScreen.wipe(); return; }
     clear($('louer-corps'));

@@ -3,7 +3,7 @@ import { CERTIFIED_DOMAINS, PARTNER_TRADES } from '../../core/src/partenaires/an
 import { SORT_LABELS } from '../src/partenaires-sortes.ts';
 import { ACCORDS_JS } from './accords.ts';
 import { COFFRE_JS, CONFORMITE_CSS, CONFORMITE_HTML } from './conformite.ts';
-import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS } from './louer.ts';
+import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS, LOUER_MODELES_ENTRY_HTML } from './louer.ts';
 import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './investir.ts';
 import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.ts';
 import { AVIS_HTML, AVIS_JS } from './avis.ts';
@@ -200,7 +200,7 @@ ${EUROS_ENTRY_HTML}${RAPPORT_AGENT_HTML}</section>
 <button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
 <p id="reseau-cas-etat" class="etat" role="status"></p>
 </section>
-${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
+${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -1707,6 +1707,7 @@ export const APP_JS = `'use strict';
     });
   }
   function wipeReseau() {
+    wipeModeles();
     ['reseau-corps', 'reseau-alertes', 'reseau-reversements', 'reseau-brouillons'].forEach(function (id) { clear($(id)); });
     ['reseau-etat', 'reseau-sans-agent', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat', 'reseau-cas-etat'].forEach(function (id) { $(id).textContent = ''; });
     wipeReprise();
@@ -1958,6 +1959,8 @@ ${LOUER_JS}
     $('partenaires-ouvrir').addEventListener('click', function () { openPartenaires('', 0); });
     $('louer-retour').addEventListener('click', function () { if (louerId) openLouer(''); else home(); });
     $('louer-ouvrir').addEventListener('click', function () { openLouer('', 0); });
+    $('louer-modeles-ouvrir').addEventListener('click', function () { openModeles('louer-modeles'); });
+    $('louer-modeles-c-ouvrir').addEventListener('click', function () { openModeles('louer-modeles-c'); });
     $('investir-retour').addEventListener('click', function () { if (investirScreen && investirScreen.inside()) openInvestir(''); else home(); });
     $('investir-ouvrir').addEventListener('click', function () { openInvestir(''); });
     $('commerces-retour').addEventListener('click', function () { if (commercesInside()) openCommerces(''); else home(); });
@@ -2018,7 +2021,7 @@ ${LOUER_JS}
     });
     $('vers-reseau').addEventListener('click', function () { var k = readDirectionKey(); if (k) enter(k); });
     $('vers-journee').addEventListener('click', function () { var k = readKey(); if (k) enter(k); });
-    $('conformite-actualiser').addEventListener('click', function () { if (currentKey) { session += 1; openConformite(); } });
+    $('conformite-actualiser').addEventListener('click', function () { if (currentKey) { session += 1; wipeModeles(); openConformite(); } });
     var hash = typeof location !== 'undefined' ? String(location.hash || '') : '';
     var invited = INVITATION.exec(hash);
     if (hash.indexOf('#invitation=') === 0) {
