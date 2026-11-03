@@ -107,7 +107,7 @@ describeWithSqlite('W26 · ce que l’agent doit tenir sur ses ventes', () => {
     await t.receive(t.buyerId, 'Je fais le virement demain');
     const { fonds } = await t.read();
     expect(fonds).toEqual([
-      { fileId: t.fileId, propertyId: t.propertyId, reference: t.reference, side: 'acquereur', signals: ['iban', 'coordonnees_bancaires', 'virement'], messages: 2, lastAt: paris('2027-03-08', 11).toISOString(), reminder: 'fait' },
+      { fileId: t.fileId, propertyId: t.propertyId, reference: t.reference, side: 'acquereur', subjects: ['numéro de compte', 'coordonnées bancaires', 'virement'], messages: 2, lastAt: paris('2027-03-08', 11).toISOString(), reminder: 'fait' },
     ]);
     expect(JSON.stringify(fonds)).not.toContain('FR76');
     t.setClock(paris('2027-03-08', 12));

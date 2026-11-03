@@ -7,14 +7,6 @@
  */
 import { DEADLINES } from './dossier.ts';
 
-const SIGNALS: Readonly<Record<string, string>> = {
-  iban: 'IBAN',
-  coordonnees_bancaires: 'coordonnées bancaires',
-  virement: 'virement',
-  acompte: 'acompte',
-  sequestre: 'séquestre',
-  paiement: 'paiement',
-};
 const SIDES: Readonly<Record<string, string>> = { vendeur: 'du vendeur', acquereur: 'de l’acquéreur' };
 // Le bouclier n'envoie aujourd'hui qu'en mode essai : rien n'arrive au client, l'écran ne laisse jamais croire le contraire.
 const REMINDERS: Readonly<Record<string, string>> = {
@@ -59,7 +51,7 @@ export const A_TENIR_JS = `
 export const A_TENIR_SCRIPT = `'use strict';
 globalThis.AIMMO_A_TENIR = function (t) {
   var el = t.el, button = t.button, clear = t.clear, date = t.date, ID = t.ID;
-  var SIGNALS = ${JSON.stringify(SIGNALS)}, SIDES = ${JSON.stringify(SIDES)}, REMINDERS = ${JSON.stringify(REMINDERS)};
+  var SIDES = ${JSON.stringify(SIDES)}, REMINDERS = ${JSON.stringify(REMINDERS)};
   var FINANCING = ${JSON.stringify(FINANCING)}, DEADLINES = ${JSON.stringify(DEADLINES)};
   function day(d) { return date(String(d) + 'T12:00:00Z'); }
   function ref(l) { return 'Bien ' + String(l.reference || ''); }
@@ -76,7 +68,7 @@ globalThis.AIMMO_A_TENIR = function (t) {
     var li = el('li', null, 'alerte');
     li.appendChild(el('strong', ref(l) + ' : un message ' + (SIDES[l.side] || 'd’une partie') + ' parle d’argent'));
     li.appendChild(el('p', (l.messages > 1 ? l.messages + ' messages, le dernier le ' : 'Reçu le ') + date(l.lastAt) + '.'));
-    var said = (Array.isArray(l.signals) ? l.signals : []).map(function (x) { return SIGNALS[x]; }).filter(Boolean);
+    var said = Array.isArray(l.subjects) ? l.subjects : [];
     if (said.length) li.appendChild(el('p', 'Sujets repérés : ' + said.join(', ') + '.', 'doux'));
     li.appendChild(el('p', 'Aucune coordonnée bancaire ne se confirme par message : vérifiez auprès du notaire, à un numéro que vous connaissez déjà.'));
     li.appendChild(el('p', REMINDERS[l.reminder] || REMINDERS.a_prevenir));

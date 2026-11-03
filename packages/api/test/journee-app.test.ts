@@ -221,7 +221,7 @@ describe('A02 · réponse arrivée après la sortie', () => {
       for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
     };
     await tick();
-    expect(Object.keys(held)).toHaveLength(6);
+    expect(Object.keys(held)).toHaveLength(7);
     els.sortir!.listeners.click!({});
     // L'agent suivant entre sur le même appareil.
     late = false;

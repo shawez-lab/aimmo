@@ -22,7 +22,15 @@ import { Echeancier, type Deadline } from './echeancier.ts';
 import { FinancementDossier } from './financement.ts';
 
 const TIME_ZONE = 'Europe/Paris';
-const SIGNALS: readonly FundSignal[] = ['iban', 'coordonnees_bancaires', 'virement', 'acompte', 'sequestre', 'paiement'];
+/** Les sujets repérés, dans un ordre fixe, dits ici : l'écran n'a pas à connaître les sortes de signaux. */
+const SUBJECTS: readonly (readonly [FundSignal, string])[] = [
+  ['iban', 'numéro de compte'],
+  ['coordonnees_bancaires', 'coordonnées bancaires'],
+  ['virement', 'virement'],
+  ['acompte', 'acompte'],
+  ['sequestre', 'séquestre'],
+  ['paiement', 'paiement'],
+];
 /** D1 borne le nombre de paramètres d'une requête. */
 const CHUNK = 80;
 
@@ -34,7 +42,7 @@ export interface FundLine {
   propertyId: string;
   reference: string;
   side: 'vendeur' | 'acquereur';
-  signals: FundSignal[];
+  subjects: string[];
   messages: number;
   lastAt: string;
   reminder: FundReminder;
@@ -126,7 +134,7 @@ export class ATenirVente {
       if (p) financement.push({ fileId: a.fileId, propertyId: a.propertyId, reference: p.reference, kind: a.kind, day: a.day });
     }
 
-    const groups = new Map<string, FundLine & { reminders: Set<FundReminder> }>();
+    const groups = new Map<string, Omit<FundLine, 'subjects'> & { signals: FundSignal[]; reminders: Set<FundReminder> }>();
     for (const a of funds.alerts) {
       const p = own.get(a.propertyId);
       // Une alerte vaut tant que le dossier est en cours, comme la lecture des messages du bouclier.
@@ -144,9 +152,9 @@ export class ATenirVente {
       g.reminders.add(reminder);
     }
     const fonds = [...groups.values()]
-      .map(({ reminders, ...g }): FundLine => ({
+      .map(({ reminders, signals, ...g }): FundLine => ({
         ...g,
-        signals: SIGNALS.filter((s) => g.signals.includes(s)),
+        subjects: SUBJECTS.filter(([s]) => signals.includes(s)).map(([, name]) => name),
         // Le rappel part une fois par personne et par dossier : un seul passé suffit ; sinon le pire est dit.
         reminder: reminders.has('fait') ? 'fait' : reminders.has('a_prevenir') ? 'a_prevenir' : 'attente',
       }))

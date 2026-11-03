@@ -15,7 +15,7 @@ type Answer = () => Promise<Response>;
 const ok = (data: unknown): Answer => async () => Response.json({ ok: true, mode: 'essai', data });
 const EMPTY = { fonds: [], financement: [], echeances: [] };
 const FULL = {
-  fonds: [{ fileId: FILE, propertyId: PROPERTY, reference: 'REF-1', side: 'acquereur', signals: ['iban', 'virement', 'inconnu'], messages: 2, lastAt: '2027-03-08T10:00:00.000Z', reminder: 'a_prevenir' }],
+  fonds: [{ fileId: FILE, propertyId: PROPERTY, reference: 'REF-1', side: 'acquereur', subjects: ['numéro de compte', 'virement'], messages: 2, lastAt: '2027-03-08T10:00:00.000Z', reminder: 'a_prevenir' }],
   financement: [{ fileId: FILE, propertyId: PROPERTY, reference: 'REF-1', kind: 'refus_declare', day: '2027-03-19' }],
   echeances: [
     { source: 'offre', propertyId: PROPERTY, reference: INJECTED, proposal: true, day: '2027-03-20' },
@@ -65,7 +65,7 @@ describe('W26 · à tenir sur mes ventes, à l’accueil', () => {
     expect(t.scripts()).toEqual([]);
   });
 
-  it('[R62] [R15] le message sur l’argent vient d’abord, dit quoi faire et ce que devient le rappel ; un sujet inconnu n’est pas écrit', async () => {
+  it('[R62] [R15] le message sur l’argent vient d’abord, dit quoi faire et ce que devient le rappel', async () => {
     const t = await run(ok(FULL));
     expect(t.els['a-tenir-etat']!.textContent).toBe('Chargement…');
     await t.load();
@@ -76,9 +76,8 @@ describe('W26 · à tenir sur mes ventes, à l’accueil', () => {
     const first = items[0]!.textContent;
     expect(first).toContain('Bien REF-1 : un message de l’acquéreur parle d’argent');
     expect(first).toContain('2 messages, le dernier le 08/03/2027');
-    expect(first).toContain('Sujets repérés : IBAN, virement.');
+    expect(first).toContain('Sujets repérés : numéro de compte, virement.');
     expect(first).toContain('Prévenez-le vous-même');
-    expect(first).not.toContain('inconnu');
   });
 
   it('[R62] rien ne laisse croire que le client est prévenu : aucun rappel ne dispense l’agent, en mode essai', async () => {

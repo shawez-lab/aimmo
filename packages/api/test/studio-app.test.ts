@@ -162,7 +162,7 @@ async function run(answers: Record<string, Answer> = {}) {
   return { els, calls, table, byText, click, input, body, state, openB1, scripts, drawn, screen: () => screen! };
 }
 
-const screenCalls = <T extends { url: string }>(calls: T[]): T[] => calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous|usage|annonces$|apres-vente)/.test(c.url));
+const screenCalls = <T extends { url: string }>(calls: T[]): T[] => calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous|usage|annonces$|offres\/a-tenir|apres-vente)/.test(c.url));
 
 const hex = async (bytes: number[]) => Buffer.from(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes))).toString('hex');
 const ORIGINAL_REF = 'biens/b1/originaux/00000009-0000-4000-8000-000000000000.jpg';

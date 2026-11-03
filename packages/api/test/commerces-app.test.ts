@@ -127,7 +127,7 @@ describe('CE11 · écran « Commerces » de l’application', () => {
     expect(t.state()).toBe('Estimation validée.');
     await t.click(t.byText('Valider la présentation'));
     expect(t.state()).toBe('Présentation validée.');
-    const screen = t.calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous|usage|annonces$|apres-vente)/.test(c.url));
+    const screen = t.calls.filter((c) => !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous|usage|annonces$|offres\/a-tenir|apres-vente)/.test(c.url));
     expect(screen.length).toBeGreaterThan(10);
     for (const c of screen) {
       expect(c.url.startsWith('/v1/commerces'), c.url).toBe(true);
