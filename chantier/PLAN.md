@@ -1910,7 +1910,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### CE19 · Corriger la présentation d'un commerce et ranger un document du dossier, à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
 - Cahier : M16 ; R16, R201.
 - Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : `POST /v1/commerces/<id>/presentations/texte` et `POST /v1/commerces/<id>/documents` n'ont aucun appel de l'application. Vérifier que les gestes n'existent pas ailleurs, puis les donner dans `app/commerces*.ts`, sans toucher au socle.
