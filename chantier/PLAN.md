@@ -1839,12 +1839,13 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Reste : `addPiece` accepte encore des pièces sur un dossier DossierFacile par appel direct ; le geste de vérification de l'identité du candidat n'a pas été regardé (W21).
 
 ### G16 · La direction attribue une recommandation sans agent
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : G08, G13
 - Cahier : M20 ; R142, R16, R35, R201.
 - Objectif : trouvé le 2026-11-03 en comparant les routes aux appels de l'écran : une recommandation de partenaire sans agent arrive à la direction, qui voit « Appel fait » (refusé) et ne peut pas l'attribuer ; personne ne l'appelle. Donner le geste, avec une lecture des agents en activité.
 - Critères : seule la direction lit les agents et attribue [R16] (test) ; ni « Appel fait » ni liste lue d'avance pour elle, l'agent ne voit pas le geste (test) ; ordre reçu gardé, noms en texte [R35] (test) ; refus dits en français, réponse perdue dite telle, double appui un seul envoi (tests) ; budget tenu [R201] (test).
 - Attend : rien.
+- Décidé (2026-11-03, voie 2) : lecture `GET /v1/gagner/recommandations/agents`, noms seuls ; un agent au dossier incomplet ou parti n'est ni proposé ni accepté, la recommandation reste à la direction. Relecture forte : 2 P1 corrigés ; Codex à sa limite (H03), fusion sans lui (#313).
 
 ### EC13 · Un plafond aux liens d'espace préparés par l'agent
 - Statut : fait (2026-11-03)
