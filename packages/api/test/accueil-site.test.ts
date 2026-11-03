@@ -45,7 +45,7 @@ async function setup(recruiting = true) {
     await post('direction', `agents/${t.alexId}/mentions`, { rsacNumber: 'RSAC 123456789', rsacRegistry: 'Dijon' });
     await post('direction', 'titulaire', { holder: 'Société Exemple' });
   };
-  return { ...t, page, publish, mentions };
+  return { ...t, page, publish, mentions, post };
 }
 
 const hrefs = (html: string): string[] => [...html.matchAll(/(?:href|src)="([^"]+)"/g)].map((m) => m[1]!.replace(/&amp;/g, '&'));
@@ -163,6 +163,17 @@ describeWithSqlite('RS02 · l’accueil du site', () => {
     expect(head.status).toBe(200);
     expect(await head.text()).toBe('');
     expect((await t.page(`${NET}/`, 'POST')).status).toBe(405);
+  });
+
+  it('un site mis hors service, le site d’un agent parti : 404 sur l’accueil', async () => {
+    const t = await setup();
+    expect((await t.page(`${ALEX_SITE}/`)).status).toBe(200);
+    await t.post('direction', 'sites', { kind: 'agent', agentId: t.alexId, baseUrl: ALEX_SITE, active: false });
+    expect((await t.page(`${ALEX_SITE}/`)).status).toBe(404);
+    expect((await t.page(`${SAM_SITE}/`)).status).toBe(200);
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.sam.userId]);
+    expect((await t.page(`${SAM_SITE}/`)).status).toBe(404);
+    expect((await t.page(`${NET}/`)).status).toBe(200);
   });
 
   it('[R153] chaque chemin de l’accueil est au plan du site, et l’accueil aussi', async () => {
