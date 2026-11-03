@@ -166,20 +166,23 @@ describeWithSqlite('IN01 · compteur de la preuve à Dijon', () => {
     expect(r.value.condition).toEqual({ met: false, metOn: null });
   }, 60_000);
 
-  it('[R211] un registre abîmé : la condition n’est jamais dite remplie', async () => {
+  it('[R211] un registre abîmé : une condition remplie n’est plus dite remplie', async () => {
     const t = await setup('2027-01-01T10:00:00.000Z');
-    await t.fill('2027-01', 1);
-    t.setClock('2027-02-02T10:00:00.000Z');
+    for (const month of ['2027-01', '2027-02', '2027-03', '2027-04', '2027-05', '2027-06']) await t.fill(month, 10);
+    t.setClock('2027-07-01T08:00:00.000Z');
     const ok = await t.compteur().read(t.direction);
     if (!ok.ok) throw new Error(ok.code);
     expect(ok.value.registerSound).toBe(true);
+    expect(ok.value.condition).toEqual({ met: true, metOn: '2027-06' });
+    // La date reste dans le même mois : les comptes ne changent pas, seul le registre est abîmé.
     t.raw.exec('DROP TRIGGER mandate_register_sans_modification');
     await t.db.run("UPDATE mandate_register SET signed_at = '2027-01-02T00:00:00.000Z' WHERE seq = 1");
     const r = await t.compteur().read(t.direction);
     if (!r.ok) throw new Error(r.code);
     expect(r.value.registerSound).toBe(false);
+    expect(monthOf(r.value, '2027-01').counted).toBe(10);
     expect(r.value.condition).toEqual({ met: false, metOn: null });
-  });
+  }, 60_000);
 
   it('[R210] rien avant janvier 2027, et aucun mois avant que le compte ne commence', async () => {
     const t = await setup('2026-12-20T10:00:00.000Z');
