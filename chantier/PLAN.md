@@ -1877,12 +1877,12 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X19 · Remplir la fiche du bien à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : P10
-- Cahier : M07 ; R43, R16, R201.
-- Objectif : `GET` et `POST /v1/annonces/<id>/fiche` n'ont aucun appel de l'application, alors que l'écran dit « complétez la fiche du bien ». Vérifier que le geste n'existe pas ailleurs, puis le donner, sans toucher au socle.
-- Critères : à écrire au début de la tâche, après lecture de la route : droits refusés dits [R16] (test) ; aucun fait inventé (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
-- Attend : rien.
+- Cahier : M07 ; R10, R17, R43, R47, R16, R201.
+- Objectif : `GET` et `POST /v1/annonces/<id>/fiche` n'avaient aucun appel de l'application, alors que l'écran dit « complétez la fiche du bien ».
+- Critères : dernière version pré-remplie, 0 reste 0, photos renvoyées telles quelles (test) ; champ vide = « je ne sais pas », nombre mal écrit nommé et non envoyé [R10] (test) ; sans changement, aucune version (test) ; fiche changée entre-temps : rien n'est écrasé, par `?siVersion=` (test) ; retrait dit avant d'enregistrer, annonce validée sur une ancienne fiche plus dite validée [R47] (test) ; droits refusés dits [R16] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Reste : fusionnée (#321) ; relecture forte 2 P1 corrigés ; Codex à sa limite (H03).
 
 **Espaces des clients et location : les gestes manquants à l'écran.**
 
