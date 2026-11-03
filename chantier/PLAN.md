@@ -1709,6 +1709,20 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes de `packages/api/sr
 - Critères : réservé à la direction [R16] (test) ; une nouvelle version s'ajoute, l'ancienne reste [R17] (test) ; un modèle non validé est dit d'essai (test) ; budget tenu [R201] (test).
 - Attend : rien pour l'écran ; H08 pour un modèle réel.
 
+**M20 · La mesure à l'écran.**
+
+Voie : 1
+
+Trouvé le 2026-11-03 par la voie 1, en comparant les routes de `packages/api/src/gagner.ts` aux appels de `packages/api/app/gagner.ts` : la mesure mensuelle (G10) et les engagements (G07) n'ont aucun geste à l'écran, et aucun coût ne peut être saisi faute de route pour déposer sa preuve. Ce qui reste à la voie 1 attend un humain (B03, B04, C09) : pris ici pour que le chantier continue. Script à part, comme `/app/reglages-mandat.js`.
+
+### G14 · Mesure des sources à l'écran, preuve du coût déposée
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : G10, G11
+- Cahier : M20, point 7 « Mesure » ; R144, R13, R16, R201.
+- Objectif : sur l'écran du réseau, la direction choisit un mois, lit par source mandats, rendez-vous, coût et coût par mandat, dépose la preuve et saisit le coût, décide de garder ou d'arrêter une source. Route ajoutée : `POST /v1/gagner/mesure/preuves` (PDF, JPEG ou PNG), la référence est choisie par le serveur.
+- Critères : un fichier d'un autre format, trop lourd, ou sans stockage est refusé sans rien ranger (test) ; seule la direction dépose, lit et décide [R16] (test) ; le journal ne garde ni le nom du fichier ni sa référence [R13] (test) ; l'écran garde l'ordre reçu, ne recommande rien et n'a aucune décision sans appui [R144] (test) ; montant lu sans erreur d'arrondi (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : rien pour l'écran ; H25 (`PIECES`) pour déposer une preuve réelle.
+
 **M14 · Réseau et académie, juillet 2027.**
 
 Voie : 2
