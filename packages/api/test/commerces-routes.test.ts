@@ -636,6 +636,31 @@ describeWithSqlite('CE17 · retrouver la source d’une fuite, par la route de l
     await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
     return { t, a: await t.shop() };
   };
+  it('[R114] CE23 : le lecteur lit 503 pendant la panne, puis son code rouvre le dossier ; la panne ne compte pas', async () => {
+    const { t, a } = await ready();
+    await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
+    const r = await t.buyer('A');
+    t.verified.add(r.id);
+    const { ndaId } = await t.ok(t.alex, 'POST', `/commerces/${a}/demandes`, { personId: r.id });
+    const open = await t.ok(t.alex, 'POST', `/commerces/engagements/${ndaId}/signature`, CONSENT);
+    await t.ok(t.alex, 'POST', `/commerces/signatures/${open.sessionId}`, { code: t.lastCode() });
+    await t.ok(t.alex, 'POST', `/commerces/${a}/dossiers`, { personId: r.id, ...CONSENT });
+    const token = (await t.tokenFor(r.id))!;
+    await t.read(`/dossier/${token}/code`, { email: r.email });
+    const code = t.lastCode();
+    const read = t.s.storage.read;
+    t.s.storage.read = async () => {
+      throw new Error('panne');
+    };
+    const down = await t.read(`/dossier/${token}`, { email: r.email, code });
+    expect(down.status).toBe(503);
+    expect(down.body).toEqual({ ok: false, rule: null, code: 'stockage_indisponible' });
+    t.s.storage.read = read;
+    const opened = await t.read(`/dossier/${token}`, { email: r.email, code });
+    expect(opened.status).toBe(200);
+    expect(JSON.stringify(opened.body.data.pages)).toContain('Bilan');
+    expect((await t.ok(t.alex, 'GET', `/commerces/${a}/liens`))[0]).toMatchObject({ opens: 1 });
+  });
   /** Un repreneur signé et vérifié, qui ouvre le dossier : le texte qu'il pourrait faire circuler. */
   const leaked = async (t: Awaited<ReturnType<typeof setup>>, a: string) => {
     await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
