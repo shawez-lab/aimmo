@@ -359,7 +359,7 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       const checkedAt = s.now();
       const selection = await selectListings(published, s.diffusion, networkId, checkedAt, query);
       if (!selection) return notFound();
-      // L'heure écrite reste vraie ; une page en cache ne survit qu'une minute au retrait d'un bien.
+      // Une page en cache ne survit qu'une minute au retrait d'un bien, comme la page du bien elle-même.
       return new Response(request.method === 'HEAD' ? null : renderListingsPage({ ...selection, query, checkedAt }), {
         status: 200,
         headers: { ...pageHeaders('text/html; charset=utf-8', mode), 'cache-control': 'public, max-age=60' },

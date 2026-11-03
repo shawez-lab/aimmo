@@ -62,6 +62,7 @@ export type SiteResult = { ok: true; siteId: string } | { ok: false; rule: 'R16'
 
 interface PublishedRow {
   property_id: string;
+  property_status: string;
   agent_id: string | null;
   city: string | null;
   state: 'en_vente' | 'sous_offre';
@@ -83,6 +84,8 @@ export interface PublishedListing {
   mentions: string;
   /** La première photo publiée, et sa mention d'aménagement virtuel [R48]. */
   photo: { ref: string; overlay: string | null } | null;
+  /** L'état du bien dans le socle, qui peut avoir changé depuis la version publiée. */
+  propertyStatus: string;
 }
 
 /** L'empreinte SHA-256 d'un texte, en hexadécimal. */
@@ -265,7 +268,7 @@ export class Referencement {
    */
   async published(networkId: string): Promise<PublishedListing[]> {
     const rows = await this.db.all<PublishedRow>(
-      `SELECT v.property_id, p.agent_id, p.city, v.state, v.id AS version_id, v.created_at, v.payload FROM listing_versions v
+      `SELECT v.property_id, p.agent_id, p.city, p.status AS property_status, v.state, v.id AS version_id, v.created_at, v.payload FROM listing_versions v
          JOIN properties p ON p.id = v.property_id AND p.network_id = v.network_id
         WHERE v.network_id = ? AND v.seq = (SELECT max(seq) FROM listing_versions w WHERE w.property_id = v.property_id)
         ORDER BY v.property_id`,
@@ -297,6 +300,7 @@ export class Referencement {
         day: dayOf(r.created_at),
         mentions: p.mentions,
         photo: first ? { ref: first.ref, overlay: typeof first.overlay === 'string' ? first.overlay : null } : null,
+        propertyStatus: r.property_status,
       });
     }
     return out;

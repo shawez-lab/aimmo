@@ -21,7 +21,8 @@ async function setup() {
     { sha256: await sha256Hex(KEYS.direction), role: 'direction', userId: 'dir-1', networkId: t.network.id },
     { sha256: await sha256Hex(KEYS.autre), role: 'direction', userId: 'dir-9', networkId: other },
   ]);
-  const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now };
+  const stored = new Map<string, string>();
+  const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, media: { get: async (key) => (stored.has(key) ? { body: stored.get(key)! } : null) } };
   const site = async (who: keyof typeof KEYS, body: unknown) => {
     const res = await handleRequest(new Request(`${API}/v1/attirer/sites`, { method: 'POST', headers: { authorization: `Bearer ${KEYS[who]}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), config);
     expect(res.status).toBe(200);
@@ -37,7 +38,14 @@ async function setup() {
     t.setClock(new Date(DELAY_END.getTime() + 5 * MIN));
     await runListingSync(t.db, t.now);
   };
-  return { ...t, page, publish };
+  /** Une version de plus, sur le modèle de la dernière : une version publiée ne change jamais. */
+  const newVersion = async (change: (payload: Record<string, unknown>) => Record<string, unknown>) => {
+    const last = (await t.db.first<Record<string, unknown>>('SELECT * FROM listing_versions ORDER BY seq DESC LIMIT 1'))!;
+    const row: Record<string, unknown> = { ...last, id: `version-${String(last.seq)}-suite`, seq: Number(last.seq) + 1, payload: JSON.stringify(change(JSON.parse(String(last.payload)) as Record<string, unknown>)) };
+    const columns = Object.keys(row);
+    await t.db.run(`INSERT INTO listing_versions (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`, columns.map((c) => row[c]) as never[]);
+  };
+  return { ...t, page, publish, stored, newVersion };
 }
 
 describeWithSqlite('RS01 · la liste des biens, par le socle', () => {
@@ -99,13 +107,70 @@ describeWithSqlite('RS01 · la liste des biens, par le socle', () => {
     }
   });
 
-  it('[R46] la page ne porte ni l’adresse du bien ni le nom du vendeur', async () => {
+  it('[R46] la page ne porte ni l’adresse du bien, ni le vendeur, ni le code postal, ni aucune référence interne', async () => {
+    const t = await setup();
+    // Une adresse et un vendeur inventés, glissés dans la version publiée : seuls les champs de la carte en sortent.
+    const secret = '12 impasse des Tuiles Inventées';
+    await t.publish();
+    await t.newVersion((payload) => ({ ...payload, address: secret, sellerName: 'Léa Exemple', postalCode: '21000' }));
+    const html = await (await t.page(`${NET}/biens`)).text();
+    expect(html).toContain('Dijon');
+    expect(html).not.toContain(secret);
+    expect(html).not.toMatch(/Léa|Exemple|scans\/|21000|REF-T-1/);
+  });
+
+  it('[R44] [R48] le prix, les mentions et la mention d’aménagement virtuel viennent de la version publiée, par le vrai passage', async () => {
     const t = await setup();
     await t.publish();
-    const property = await t.db.first<{ address: string | null }>('SELECT * FROM properties WHERE id = ?', [t.propertyId]);
-    const html = await (await t.page(`${NET}/biens`)).text();
-    if (property?.address) expect(html).not.toContain(property.address);
-    const owners = await t.db.all<{ last_name: string | null }>('SELECT last_name FROM persons');
-    for (const o of owners) if (o.last_name) expect(html).not.toContain(o.last_name);
+    const version = await t.db.first<{ payload: string }>('SELECT payload FROM listing_versions ORDER BY seq DESC LIMIT 1');
+    const payload = JSON.parse(version!.payload) as { priceEur: number; mentions: string; media: { kind: string; ref: string; overlay: string | null }[] };
+    const texte = (html: string) => html.replace(/&#39;|&#x27;/g, "'").replace(/&amp;/g, '&');
+    const before = texte(await (await t.page(`${NET}/biens`)).text());
+    expect(before).toContain(`/medias/${payload.media[0]!.ref}`);
+    expect(before).toContain(texte(payload.mentions.replace(/'/g, "'")));
+    expect(before).toMatch(new RegExp(String(payload.priceEur).replace(/\B(?=(\d{3})+$)/g, '.')));
+    expect(before).not.toContain('class="virtuel"');
+    // La première photo est celle d'un aménagement virtuel : la vraie mention rangée par la publication est montrée.
+    const virtual = payload.media.find((m) => m.overlay)!;
+    expect(virtual.overlay).toBeTruthy();
+    await t.newVersion(() => ({ ...payload, media: [virtual, ...payload.media.filter((m) => m !== virtual)] }));
+    const after = await (await t.page(`${NET}/biens`)).text();
+    expect(after).toContain(`<span class="virtuel">${virtual.overlay}</span>`);
+    expect(after).toContain(`/medias/${virtual.ref}`);
+  });
+
+  it('[R220] vendu dans le socle : la liste, la page et la photo le retirent avant le passage ; le passage fait, sa page « vendu » revient', async () => {
+    const t = await setup();
+    await t.publish();
+    const lien = `/biens/${t.propertyId}`;
+    const version = await t.db.first<{ payload: string }>('SELECT payload FROM listing_versions ORDER BY seq DESC LIMIT 1');
+    const photo = (JSON.parse(version!.payload) as { media: { ref: string }[] }).media[0]!.ref;
+    t.stored.set(photo, 'photo-1');
+    const page = await t.page(`${NET}${lien}`);
+    expect(page.headers.get('cache-control')).toBe('public, max-age=60');
+    const image = await t.page(`${NET}/medias/${photo}`);
+    expect(image.status).toBe(200);
+    expect(image.headers.get('cache-control')).toBe('public, max-age=60');
+    await t.db.run("UPDATE properties SET status = 'sold' WHERE id = ?", [t.propertyId]);
+    expect(await (await t.page(`${NET}/biens`)).text()).not.toContain(lien);
+    expect((await t.page(`${NET}${lien}`)).status).toBe(404);
+    expect((await t.page(`${NET}${lien}/fiche`)).status).toBe(404);
+    expect((await t.page(`${NET}/medias/${photo}`)).status).toBe(404);
+    t.setClock(new Date(DELAY_END.getTime() + 25 * MIN));
+    await runListingSync(t.db, t.now);
+    const sold = await t.page(`${NET}${lien}`);
+    expect(sold.status).toBe(200);
+    expect(sold.headers.get('cache-control')).toBe('public, max-age=300');
+    expect(await (await t.page(`${NET}/biens`)).text()).not.toContain(lien);
+  });
+
+  it('[R220] un mandat échu retire aussi la photo', async () => {
+    const t = await setup();
+    await t.publish();
+    const version = await t.db.first<{ payload: string }>('SELECT payload FROM listing_versions ORDER BY seq DESC LIMIT 1');
+    const photo = (JSON.parse(version!.payload) as { media: { ref: string }[] }).media[0]!.ref;
+    t.stored.set(photo, 'photo-1');
+    t.setClock(new Date('2031-01-01T10:00:00.000Z'));
+    expect((await t.page(`${NET}/medias/${photo}`)).status).toBe(404);
   });
 });

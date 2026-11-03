@@ -5,8 +5,10 @@
  * à l'instant où la page est préparée, sans attendre le passage de publication, et la page écrit l'heure de ce contrôle.
  * Un mandat échu, rétracté ou annulé retire donc le bien, quelle que soit la version publiée.
  *
- * Du plus récent au plus ancien, le même ordre pour tous : aucun agent n'est mis en avant [R14]. Les contrôles s'arrêtent
- * dès que la page demandée est remplie.
+ * Un bien vendu ou retiré dans le socle sort lui aussi aussitôt, même si son mandat court encore.
+ *
+ * Du plus récent au plus ancien, le même ordre pour tous : aucun agent n'est mis en avant [R14]. Chaque lecture ne
+ * contrôle que les biens de sa page : une adresse profonde coûte autant que la première, et les pages restent stables.
  */
 import { euros } from '../annonces/mentions.ts';
 import { DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
@@ -22,6 +24,9 @@ const STATE_LABEL: Record<PublishedListing['state'], string> = { en_vente: 'En v
 export interface ListingGate {
   canDiffuse(networkId: string, propertyId: string, at?: Date): Promise<{ allowed: boolean }>;
 }
+
+/** Les états du bien où une annonce peut encore se dire disponible, comme le passage de publication les lit. */
+export const LISTABLE_STATUSES: readonly string[] = ['draft', 'available', 'under_offer'];
 
 export interface ListingsQuery {
   commune: string | null;
@@ -68,20 +73,17 @@ export async function selectListings(published: readonly PublishedListing[], gat
   }
   if (query.commune !== null && !names.has(query.commune)) return null;
   const candidates = published
-    .filter((l) => query.commune === null || (l.city !== null && communeSlug(l.city) === query.commune))
-    .slice()
+    .filter((l) => LISTABLE_STATUSES.includes(l.propertyStatus) && (query.commune === null || (l.city !== null && communeSlug(l.city) === query.commune)))
     .sort((a, b) => (b.day ?? '').localeCompare(a.day ?? '') || a.propertyId.localeCompare(b.propertyId));
-  const wanted = query.page * LISTINGS_PER_PAGE + 1;
-  const allowed: PublishedListing[] = [];
-  for (const l of candidates) {
-    if ((await gate.canDiffuse(networkId, l.propertyId, at)).allowed) allowed.push(l);
-    if (allowed.length >= wanted) break;
-  }
   const start = (query.page - 1) * LISTINGS_PER_PAGE;
-  if (query.page > 1 && allowed.length <= start) return null;
+  if (query.page > 1 && candidates.length <= start) return null;
+  const items: PublishedListing[] = [];
+  for (const l of candidates.slice(start, start + LISTINGS_PER_PAGE)) {
+    if ((await gate.canDiffuse(networkId, l.propertyId, at)).allowed) items.push(l);
+  }
   return {
-    items: allowed.slice(start, start + LISTINGS_PER_PAGE),
-    hasNext: allowed.length > start + LISTINGS_PER_PAGE,
+    items,
+    hasNext: candidates.length > start + LISTINGS_PER_PAGE,
     communes: [...names].map(([slug, name]) => ({ slug, name })).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
   };
 }
@@ -135,7 +137,7 @@ export function renderListingsPage(input: ListingsPageInput): string {
           .map((c) => `<li><a href="${hrefOf({ commune: c.slug, page: 1 })}"${c.slug === query.commune ? ' aria-current="page"' : ''}>${escapeHtml(c.name)}</a></li>`)
           .join('')}</ul></nav>`
       : '';
-  const list = items.length > 0 ? `<ul class="biens">${items.map(card).join('')}</ul>` : `<p class="doux">Aucun bien en vente en ce moment${current ? ` à ${escapeHtml(current.name)}` : ''}.</p>`;
+  const list = items.length > 0 ? `<ul class="biens">${items.map(card).join('')}</ul>` : `<p class="doux">${input.hasNext || query.page > 1 ? 'Aucun bien à montrer sur cette page.' : `Aucun bien en vente en ce moment${current ? ` à ${escapeHtml(current.name)}` : ''}.`}</p>`;
   const previous = query.page > 1 ? `<a rel="prev" href="${hrefOf({ commune: query.commune, page: query.page - 1 })}">Page précédente</a>` : '<span></span>';
   const next = input.hasNext ? `<a rel="next" href="${hrefOf({ commune: query.commune, page: query.page + 1 })}">Page suivante</a>` : '';
   const pages = query.page > 1 || input.hasNext ? `<nav class="suite" aria-label="Pages">${previous}${next}</nav>` : '';

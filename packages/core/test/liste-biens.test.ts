@@ -17,6 +17,7 @@ const bien = (n: number, over: Partial<PublishedListing> = {}): PublishedListing
   day: '2027-07-01',
   mentions: 'Honoraires à la charge du vendeur. Classe énergie C.',
   photo: null,
+  propertyStatus: 'available',
   ...over,
 });
 const toutPasse = (): ListingGate & { calls: string[] } => {
@@ -53,16 +54,28 @@ describe('RS01 · la liste des biens', () => {
     expect(await ordre([...biens].reverse())).toEqual(['bien-002', 'bien-004', 'bien-003', 'bien-001']);
   });
 
-  it('[R220] le nombre de contrôles reste borné par la page demandée', async () => {
-    const biens = Array.from({ length: 200 }, (_, i) => bien(i));
+  it('[R220] chaque lecture ne contrôle que les biens de sa page, même très loin dans la liste', async () => {
+    const biens = Array.from({ length: 2000 }, (_, i) => bien(i));
+    for (const page of [1, 80]) {
+      const gate = toutPasse();
+      const s = await selectListings(biens, gate, NET, AT, q({ page }));
+      expect(s!.items).toHaveLength(LISTINGS_PER_PAGE);
+      expect(gate.calls).toHaveLength(LISTINGS_PER_PAGE);
+    }
     const gate = toutPasse();
-    const s = await selectListings(biens, gate, NET, AT, q());
-    expect(s!.items).toHaveLength(LISTINGS_PER_PAGE);
-    expect(s!.hasNext).toBe(true);
-    expect(gate.calls).toHaveLength(LISTINGS_PER_PAGE + 1);
+    expect(await selectListings(biens, gate, NET, AT, q({ page: 9999 }))).toBeNull();
+    expect(gate.calls).toHaveLength(0);
   });
 
-  it('les pages se suivent sans trou ni doublon, même quand la porte en refuse ; une page au-delà de la fin est inconnue', async () => {
+  it('[R220] un bien vendu, loué ou retiré dans le socle sort sans passer la porte, même si son mandat court encore', async () => {
+    const gate = toutPasse();
+    const biens = [bien(1, { propertyStatus: 'sold' }), bien(2, { propertyStatus: 'withdrawn' }), bien(3, { propertyStatus: 'rented' }), bien(4, { propertyStatus: 'under_offer' }), bien(5, { propertyStatus: 'draft' })];
+    const s = await selectListings(biens, gate, NET, AT, q());
+    expect(s!.items.map((l) => l.propertyId)).toEqual(['bien-004', 'bien-005']);
+    expect(gate.calls).toEqual(['bien-004', 'bien-005']);
+  });
+
+  it('les pages se suivent sans doublon, même quand la porte en refuse ; une page au-delà de la fin est inconnue', async () => {
     const biens = Array.from({ length: 60 }, (_, i) => bien(i));
     const gate: ListingGate = { canDiffuse: async (_n, id) => ({ allowed: Number(id.slice(-3)) % 5 !== 0 }) };
     const vus: string[] = [];
@@ -73,10 +86,19 @@ describe('RS01 · la liste des biens', () => {
       if (!s!.hasNext) break;
       page += 1;
     }
-    expect(page).toBe(2);
+    expect(page).toBe(3);
     expect(vus).toHaveLength(48);
     expect(new Set(vus).size).toBe(48);
-    expect(await selectListings(biens, gate, NET, AT, q({ page: 3 }))).toBeNull();
+    expect(await selectListings(biens, gate, NET, AT, q({ page: 4 }))).toBeNull();
+  });
+
+  it('une page dont tout est refusé garde le chemin vers la suite, et le dit', async () => {
+    const biens = Array.from({ length: 30 }, (_, i) => bien(i));
+    const refuse: ListingGate = { canDiffuse: async (_n, id) => ({ allowed: Number(id.slice(-3)) >= 24 }) };
+    const s = await selectListings(biens, refuse, NET, AT, q());
+    const html = renderListingsPage({ ...s!, query: q(), checkedAt: AT });
+    expect(html).toContain('Aucun bien à montrer sur cette page.');
+    expect(html).toContain('rel="next" href="/biens?page=2"');
   });
 
   it('une seule page sans bien dit qu’il n’y en a pas, sans erreur', async () => {
@@ -106,14 +128,13 @@ describe('RS01 · la liste des biens', () => {
     expect(parseListingsQuery(new URLSearchParams('commune=dijon&page=2'))).toEqual({ commune: 'dijon', page: 2 });
   });
 
-  it('[R44] [R46] prix et mentions de la version publiée, tout échappé, aucune adresse', async () => {
+  it('[R44] prix et mentions de la version publiée, tout échappé', async () => {
     const html = await render([bien(1, { title: 'Maison <b>inventée</b>', priceEur: 321_000, city: null })]);
     expect(html).toContain('Maison &lt;b&gt;inventée&lt;/b&gt;');
     expect(html).not.toContain('<b>inventée');
     expect(html).toMatch(/321.000/);
     expect(html).toContain('Honoraires à la charge du vendeur. Classe énergie C.');
     expect(html).toContain('/biens/bien-001');
-    expect(html).not.toMatch(/\brue\b|\bavenue\b|21000/i);
   });
 
   it('[R48] une photo d’aménagement virtuel porte sa mention sur l’image ; une photo ordinaire n’en porte pas', async () => {
