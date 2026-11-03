@@ -1933,11 +1933,21 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X25 · Une recommandation de partenaire sûre au renvoi
-- Statut : en cours
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : X24
 - Cahier : M20 ; R142, R17.
 - Objectif : trouvé par la relecture forte de X24 : `RecommandationsGagner.recommend` n'est pas en transaction. Une panne entre le projet et la ligne de recommandation laisse la fiche sans recommandation, et un renvoi crée un second projet, une seconde source et un second accord. Fermer ce trou sans changer la réponse donnée au partenaire [R77].
 - Critères : une panne à chaque écriture, puis un renvoi : une seule recommandation, un seul projet, un seul accord (test) ; le renvoi ordinaire reste muet et ajoute sa date aux envois (test).
+- Décidé (2026-11-03), lecture prudente : une fiche neuve passe dans le lot avec ses coordonnées ; une panne du journal après le lot laisse la recommandation rangée et l'appel à faire, sans réécrire ses événements au renvoi (test), car la file d'appels lit la table. Reste ouvert : deux envois simultanés de la même personne gardent un projet et un accord de trop, comme avant X25 : X26.
+- Reste : relecture forte 3 P1 corrigés ; Codex non attendu (H03) ; #331.
+- Attend : rien.
+
+### X26 · Deux envois simultanés d'une même recommandation de partenaire
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : X25
+- Cahier : M20 ; R142, R17.
+- Objectif : trouvé par la relecture forte de X25 : dans `recommend`, deux envois simultanés passent le contrôle préalable ; le perdant du `ON CONFLICT` garde quand même son projet, sa source et son accord dans le même lot. Les rendre conditionnels à la ligne de recommandation, ou la poser d'abord.
+- Critères : deux envois au même instant : un seul projet, une seule source, un seul accord (test, course provoquée) ; réponse identique aux deux [R77] (test).
 - Attend : rien.
 ### CE19 · Corriger la présentation d'un commerce, à l'écran
 - Statut : fait (2026-11-03)

@@ -20,7 +20,7 @@ import type { Acces } from '../../acces/acces.ts';
 import type { Viewer } from '../../acces/droits.ts';
 import { REFERRAL_CALL_HOURS, REFERRAL_PURPOSE, REFERRAL_SOURCE, mentionsReward } from '../../apres-vente/recommandations.ts';
 import type { FicheClient } from '../../db/fiche-client.ts';
-import type { SqlDatabase } from '../../db/sql.ts';
+import { runBatch, type SqlDatabase, type SqlStatement } from '../../db/sql.ts';
 import { PROJECT_KINDS, type IdentifierKind, type ProjectKind } from '../../db/types.ts';
 import type { FicheUnique } from '../../fiche/fusion.ts';
 import { normalizeIdentifier } from '../../fiche/normalize.ts';
@@ -259,37 +259,51 @@ export class RecommandationsGagner {
     );
     const agentId = followedBy ?? lastEntrusting?.agent_id ?? null;
 
-    let projectId: string | null = null;
-    if (!opposed) {
-      // Tout est vérifié avant la première écriture.
-      if (!referredId) referredId = (await this.store.createPerson({ networkId, agentId, firstName: typedName })).id;
-      else if (followedBy === null && agentId !== null) {
-        const members = await this.fiche.membersOf(referredId);
-        await this.handOver(members, agentId, at.toISOString());
-      }
+    // Tout est vérifié avant la première écriture. Une fiche déjà là reçoit d'abord son agent et ses coordonnées nouvelles :
+    // une panne ensuite ne laisse rien qu'un renvoi ne retrouve.
+    if (!opposed && referredId) {
+      if (followedBy === null && agentId !== null) await this.handOver(await this.fiche.membersOf(referredId), agentId, at.toISOString());
       for (const id of ids) {
         if ((await this.fiche.findByIdentifier(networkId, id.kind, id.value)).length === 0) await this.fiche.addIdentifier({ networkId, agentId, personId: referredId, kind: id.kind, value: id.value });
       }
-      projectId = (await this.store.createProject({ networkId, agentId, personId: referredId, kind: projectKind as ProjectKind })).id;
-      // La source ne nomme pas le partenaire : la fiche peut être celle d'un autre agent [R16]. Elle suit jusqu'au mandat [R38].
-      await this.store.addSource({ networkId, agentId, personId: referredId, projectId, channel: REFERRAL_SOURCE, detail: PARTNER_SOURCE_DETAIL, occurredAt: at });
-      await this.store.addConsent({
-        networkId,
-        agentId,
-        personId: referredId,
-        purpose: REFERRAL_PURPOSE,
-        channel,
-        proof: `${RECOMMENDATION_CONSENT_LABELS[kind]} : ${(consent.reference as string).trim()} (transmis par un partenaire)`,
-        givenAt,
-      });
     }
+    // Le projet, sa source, l'accord et la recommandation en un seul lot, tout ou rien, avec la fiche quand elle est neuve :
+    // un renvoi après une panne ne crée jamais une seconde fiche, un second projet ni un second accord.
+    const known = referredId;
+    const prepared: { value: { personId: string; projectId: string } | null; statements: SqlStatement[] } = opposed
+      ? { value: null, statements: [] }
+      : await this.store.prepare(async (draft) => {
+          let personId = known;
+          if (!personId) {
+            personId = (await draft.createPerson({ networkId, agentId, firstName: typedName })).id;
+            for (const id of ids) await draft.addIdentifier({ networkId, agentId, personId, kind: id.kind, value: id.value });
+          }
+          const project = await draft.createProject({ networkId, agentId, personId, kind: projectKind as ProjectKind });
+          // La source ne nomme pas le partenaire : la fiche peut être celle d'un autre agent [R16]. Elle suit jusqu'au mandat [R38].
+          await draft.addSource({ networkId, agentId, personId, projectId: project.id, channel: REFERRAL_SOURCE, detail: PARTNER_SOURCE_DETAIL, occurredAt: at });
+          await draft.addConsent({
+            networkId,
+            agentId,
+            personId,
+            purpose: REFERRAL_PURPOSE,
+            channel,
+            proof: `${RECOMMENDATION_CONSENT_LABELS[kind]} : ${(consent.reference as string).trim()} (transmis par un partenaire)`,
+            givenAt,
+          });
+          return { personId, projectId: project.id };
+        });
+    if (prepared.value) referredId = prepared.value.personId;
     const id = this.newId();
     const due = opposed ? null : new Date(at.getTime() + REFERRAL_CALL_HOURS * 3_600_000).toISOString();
-    const { changes } = await this.db.run(
-      `INSERT INTO partner_recommendations (id, network_id, partner_id, referred_id, project_id, first_name, agent_id, consent_kind, consent_channel, consent_given_at, call_due_at, call_done_at, created_by, created_at)
+    const results = await runBatch(this.db, [
+      ...prepared.statements,
+      {
+        sql: `INSERT INTO partner_recommendations (id, network_id, partner_id, referred_id, project_id, first_name, agent_id, consent_kind, consent_channel, consent_given_at, call_due_at, call_done_at, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT (partner_id, referred_id) DO NOTHING`,
-      [id, networkId, viewer.userId, referredId, projectId, typedName, opposed ? null : agentId, kind, channel, givenAt.toISOString(), due, this.actor(viewer), at.toISOString()],
-    );
+        params: [id, networkId, viewer.userId, referredId, prepared.value?.projectId ?? null, typedName, opposed ? null : agentId, kind, channel, givenAt.toISOString(), due, this.actor(viewer), at.toISOString()],
+      },
+    ]);
+    const changes = results[results.length - 1]!.changes;
     // Tenue à l'écart, chaque coordonnée donnée garde son empreinte, même quand la ligne existait déjà : une coordonnée
     // nouvelle ne peut pas ensuite rouvrir une fiche neuve pour la même personne [R02, R04].
     let withheldId = id;
