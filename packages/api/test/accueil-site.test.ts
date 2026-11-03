@@ -178,6 +178,16 @@ describeWithSqlite('RS02 · l’accueil du site', () => {
     expect((await t.page(`${NET}/`)).status).toBe(200);
   });
 
+  it('[R221] la page du bien mène aux pages légales sur un site ; ni sa fiche imprimable, ni l’adresse de l’API', async () => {
+    const t = await setup();
+    await t.publish();
+    const lien = `/biens/${t.propertyId}`;
+    expect(await (await t.page(`${NET}${lien}`)).text()).toContain('href="/mentions-legales"');
+    expect(await (await t.page(`${ALEX_SITE}${lien}`)).text()).toContain('href="/donnees-personnelles"');
+    expect(await (await t.page(`${NET}${lien}/fiche`)).text()).not.toContain('/mentions-legales');
+    expect(await (await t.page(`${API}${lien}`)).text()).not.toContain('/mentions-legales');
+  });
+
   it('[R153] chaque chemin de l’accueil est au plan du site, et l’accueil aussi', async () => {
     const t = await setup();
     await t.mentions();

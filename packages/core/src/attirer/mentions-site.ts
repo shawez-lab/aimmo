@@ -8,6 +8,7 @@
  * Ces textes attendent la relecture de l'avocat, et leur contenu réel la société (H09).
  */
 import type { Viewer } from '../acces/droits.ts';
+import { REGISTRE_TRAITEMENTS } from '../conformite/registre-traitements.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
@@ -137,6 +138,15 @@ export function renderLegalNotice(m: SiteMentions): string {
   );
 }
 
+/** Les traitements d'une personne qui passe par le site : leur finalité et leur durée viennent du registre, jamais d'ici [R10]. */
+export const SITE_TREATMENTS = ['relation-clients', 'messages', 'assistant-site', 'origine_contacts', 'recrutement', 'espaces_clients'] as const;
+
+const treatments = (): string =>
+  SITE_TREATMENTS.flatMap((id) => {
+    const t = REGISTRE_TRAITEMENTS.find((x) => x.id === id);
+    return t ? [`<dt>${escapeHtml(t.finalite)}</dt><dd>Durée : ${escapeHtml(t.duree)}</dd><dd>Prestataires : ${escapeHtml(t.sousTraitants.join(', ') || 'aucun')}</dd>`] : [];
+  }).join('');
+
 export function renderPrivacyPage(m: SiteMentions): string {
   return shell(
     'Données personnelles',
@@ -144,7 +154,8 @@ export function renderPrivacyPage(m: SiteMentions): string {
       `<h2>Qui en est responsable</h2><dl>${line('Responsable du traitement', m.values.editeur_nom)}${field(m, 'contact_donnees')}</dl>` +
       `<h2>Sur ce site</h2><p>Les pages publiques ne déposent aucun cookie et ne contiennent aucun traceur.</p>` +
       `<p>L’estimation en ligne et le simulateur de prêt ne gardent rien de ce que vous y indiquez.</p>` +
-      `<p>Si vous nous écrivez ou si vous posez votre candidature, nous gardons ce que vous nous donnez pour vous répondre.</p>` +
+      `<p>L’espace d’un client, une fois ouvert par son lien personnel, pose un cookie de séance.</p>` +
+      `<h2>Ce que nous gardons quand vous nous contactez</h2><p>Si vous nous écrivez, posez votre candidature ou ouvrez votre espace, voici pourquoi vos données servent, combien de temps elles sont gardées et qui nous aide à les traiter.</p><dl>${treatments()}</dl>` +
       `<h2>Vos droits</h2><p>Vous pouvez demander l’accès à vos données, leur rectification, leur effacement, leur limitation ou leur portabilité, et vous opposer à leur traitement, en écrivant au contact ci-dessus. Vous pouvez aussi saisir la CNIL.</p>`,
   );
 }

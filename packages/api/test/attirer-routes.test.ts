@@ -5,7 +5,8 @@ import type { EstimatedKind, Sale } from '../../core/src/estimation/fourchette.t
 import { attirerRoutes, handleAttirerPublic, listingReference, type AttirerServices } from '../src/attirer.ts';
 import { htmlProblems } from '../../core/src/design/audit.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
-import { SITE_MENTION_FIELDS } from '../../core/src/attirer/mentions-site.ts';
+import { SITE_MENTION_FIELDS, SITE_TREATMENTS } from '../../core/src/attirer/mentions-site.ts';
+import { REGISTRE_TRAITEMENTS } from '../../core/src/conformite/registre-traitements.ts';
 import { AGENTS_PER_PAGE, COMMUNES_PER_PAGE, renderAgentsList, renderPricesList } from '../../core/src/attirer/annuaire-site.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
@@ -154,6 +155,14 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     const privacy = await (await t.get(`${CAMILLE}/donnees-personnelles`))!.text();
     expect(privacy.match(/Mention manquante/g)).toHaveLength(2);
     expect(privacy).toContain('la CNIL');
+    // Ce qui est gardé vient du registre, mot pour mot : aucune phrase écrite à part ne peut le contredire [R10].
+    const unescape = (h: string) => h.replace(/&#39;|&#x27;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"');
+    for (const id of SITE_TREATMENTS) {
+      const t = REGISTRE_TRAITEMENTS.find((x) => x.id === id)!;
+      expect(t, id).toBeTruthy();
+      expect(unescape(privacy), id).toContain(t.finalite);
+      expect(unescape(privacy), id).toContain(t.duree);
+    }
     expect((await t.call(direction, 'POST', '/attirer/mentions-site', { editeur_nom: 'Société Inventée', mediateur: 'Médiateur Inventé' })).status).toBe(200);
     const set = await (await t.get(`${CAMILLE}/mentions-legales`))!.text();
     expect(set).toContain('Société Inventée');
