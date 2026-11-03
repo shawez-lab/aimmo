@@ -140,8 +140,36 @@ describeWithSqlite('CE20 · déposer le texte d’un document du dossier protég
     const first = await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC);
     const size = t.files.size;
     const again = await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC);
-    expect(again).toEqual({ id: first.id, already: true });
+    expect(again).toEqual({ id: first.id, already: true, repaired: false });
     expect(t.files.size).toBe(size);
+    expect(await t.ok(t.alex, 'GET', `/commerces/${id}/documents`)).toHaveLength(2);
+  });
+
+  it('[R10] un contenu perdu est dit, et le même texte le répare sur la même ligne', async () => {
+    const t = await ready();
+    const id = await t.shop();
+    const first = await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC);
+    const ref = [...t.files.keys()].find((k) => k.startsWith('commerces/'))!;
+    t.files.delete(ref);
+    const lost = await t.ok(t.alex, 'GET', `/commerces/${id}/documents`);
+    expect(lost.find((d: { id: string }) => d.id === first.id).available).toBe(false);
+    expect(await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC)).toEqual({ id: first.id, already: true, repaired: true });
+    expect(t.files.get(ref)).toBe(DOC.content);
+    const back = await t.ok(t.alex, 'GET', `/commerces/${id}/documents`);
+    expect(back).toHaveLength(2);
+    expect(back.every((d: { available: boolean }) => d.available)).toBe(true);
+  });
+
+  it('[R10] un dépôt interrompu avant sa ligne ne laisse pas une copie de plus quand il reprend', async () => {
+    const t = await ready();
+    const id = await t.shop();
+    const write = t.s.storage.write!;
+    const size = t.files.size;
+    t.s.storage = { read: t.s.storage.read, write: async (ref, content) => { await write(ref, content); throw new Error('coupure'); } };
+    await expect(t.call(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC)).rejects.toThrow('coupure');
+    t.s.storage = { read: t.s.storage.read, write };
+    await t.ok(t.alex, 'POST', `/commerces/${id}/documents/texte`, DOC);
+    expect(t.files.size).toBe(size + 1);
     expect(await t.ok(t.alex, 'GET', `/commerces/${id}/documents`)).toHaveLength(2);
   });
 

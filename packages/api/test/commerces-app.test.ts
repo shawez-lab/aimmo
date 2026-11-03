@@ -1735,10 +1735,21 @@ describe('CE20 · ranger un document du dossier à l’écran', () => {
   });
 
   it('[R10] un texte déjà rangé est dit tel', async () => {
-    const t = await open({ 'POST /v1/commerces/b1/documents/texte': ok({ id: 'x1', already: true }) });
+    const t = await open({ 'POST /v1/commerces/b1/documents/texte': ok({ id: 'x1', already: true, repaired: false }) });
     t.fill();
     await t.click(t.byText(SAVE));
     expect(t.state()).toBe('Ce texte était déjà rangé : rien n’est ajouté.');
+  });
+
+  it('[R10] un contenu perdu est dit dans la liste, et sa réparation aussi', async () => {
+    const t = await open({
+      'GET /v1/commerces/b1/documents': ok([{ id: 'x1', kind: 'bilan', title: 'Bilan', addedAt: '2027-09-07T08:00:00.000Z', available: false }]),
+      'POST /v1/commerces/b1/documents/texte': ok({ id: 'x1', already: true, repaired: true }),
+    });
+    expect(t.body().textContent).toContain('contenu perdu : le lecteur ne le reçoit pas');
+    t.fill();
+    await t.click(t.byText(SAVE));
+    expect(t.state()).toBe('Ce texte était perdu : il est rangé de nouveau.');
   });
 
   it('[R201] les scripts tiennent le budget d’une page', () => {

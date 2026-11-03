@@ -105,7 +105,7 @@ globalThis.AIMMO_CE_TEXTES = function (t) {
       say('');
       if (!res.body.data.length) box.appendChild(el('p', 'Aucun document rangé : le dossier ne porte que la fiche du commerce.', 'doux'));
       var ul = el('ul', null, 'liste');
-      res.body.data.forEach(function (d) { ul.appendChild(el('li', (known(DOC_KINDS, d.kind) || 'Document') + ' · ' + d.title + ' · rangé le ' + t.day(d.addedAt))); });
+      res.body.data.forEach(function (d) { ul.appendChild(el('li', (known(DOC_KINDS, d.kind) || 'Document') + ' · ' + d.title + ' · rangé le ' + t.day(d.addedAt) + (d.available === false ? ' · contenu perdu : le lecteur ne le reçoit pas, déposez de nouveau ce texte' : ''))); });
       box.appendChild(ul);
       deposit(box, base);
       return true;
@@ -137,7 +137,7 @@ globalThis.AIMMO_CE_TEXTES = function (t) {
         go.disabled = false;
         /* Recommencer le même texte n'ajoute rien : le socle rend la ligne déjà rangée. */
         if (res.offline || res.status >= 500 || !res.body) { say('Réponse perdue : le document a peut-être été rangé. Appuyez de nouveau : le même texte ne s’ajoute pas deux fois.'); return false; }
-        if (res.ok) return t.reload(res.body.data && res.body.data.already ? 'Ce texte était déjà rangé : rien n’est ajouté.' : 'Document rangé.');
+        if (res.ok) return t.reload(!res.body.data || !res.body.data.already ? 'Document rangé.' : res.body.data.repaired ? 'Ce texte était perdu : il est rangé de nouveau.' : 'Ce texte était déjà rangé : rien n’est ajouté.');
         if (res.status === 403 && res.body.code !== 'autre_bien') { say('Ce commerce n’est pas dans vos droits.'); return false; }
         say(known(DOC_REFUSALS, res.body.code) || 'Le document n’est pas rangé.');
         return false;

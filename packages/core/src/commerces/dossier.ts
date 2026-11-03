@@ -293,9 +293,10 @@ export class DossierCommerce {
 
   /**
    * L'agent du bien ou la direction dépose le texte d'un document : le serveur choisit la référence, personne ne la
-   * saisit. Le même texte déjà rangé pour ce bien rend sa ligne : recommencer après une réponse perdue n'ajoute rien.
+   * saisit. Elle vient de l'empreinte : un dépôt interrompu puis repris écrase sa copie au lieu d'en laisser une autre.
+   * Le même texte déjà rangé pour ce bien rend sa ligne, et son contenu perdu est réécrit : recommencer n'ajoute rien.
    */
-  async depositText(acces: Acces, viewer: Viewer, propertyId: string, input: { kind?: unknown; title?: unknown; content?: unknown }): Promise<DossierResult<{ id: string; already: boolean }>> {
+  async depositText(acces: Acces, viewer: Viewer, propertyId: string, input: { kind?: unknown; title?: unknown; content?: unknown }): Promise<DossierResult<{ id: string; already: boolean; repaired: boolean }>> {
     const g = await this.gate(acces, viewer, propertyId, 'write');
     if (!g.ok) return g;
     const { kind, title, content } = input;
@@ -303,23 +304,35 @@ export class DossierCommerce {
     if (typeof title !== 'string' || title.trim() === '' || title.trim().length > 120) return { ok: false, rule: null, code: 'title' };
     if (typeof content !== 'string' || content.trim() === '' || content.length > MAX_DOSSIER_TEXT) return { ok: false, rule: null, code: 'content' };
     if (!this.storage.write) return { ok: false, rule: null, code: 'stockage_absent' };
-    const had = await this.db.first<{ id: string }>('SELECT id FROM business_dossier_documents WHERE network_id = ? AND property_id = ? AND content_sha256 = ? LIMIT 1', [viewer.networkId, propertyId, await sha256(content)]);
-    if (had) return { ok: true, value: { id: had.id, already: true } };
-    const ref = `${DEPOSIT_PREFIX}${viewer.networkId}/${propertyId}/${this.newId()}`;
+    const sum = await sha256(content);
+    const had = await this.db.first<{ id: string; storage_ref: string }>('SELECT id, storage_ref FROM business_dossier_documents WHERE network_id = ? AND property_id = ? AND content_sha256 = ? LIMIT 1', [viewer.networkId, propertyId, sum]);
+    if (had) {
+      const kept = await this.storage.read(had.storage_ref);
+      if (kept === content) return { ok: true, value: { id: had.id, already: true, repaired: false } };
+      await this.storage.write(had.storage_ref, content);
+      await appendEvent(this.journal, { type: 'commerces.dossier.document', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { document: had.id, kind, repaired: true } }, this.now);
+      return { ok: true, value: { id: had.id, already: true, repaired: true } };
+    }
+    const ref = `${DEPOSIT_PREFIX}${viewer.networkId}/${propertyId}/${sum}`;
     await this.storage.write(ref, content);
     const added = await this.addDocument(acces, viewer, propertyId, { kind, title, storageRef: ref });
-    return added.ok ? { ok: true, value: { id: added.value.id, already: false } } : added;
+    return added.ok ? { ok: true, value: { id: added.value.id, already: false, repaired: false } } : added;
   }
 
-  /** Les documents rangés, sans leur contenu ni leur référence, pour qui peut en ranger [R16]. */
-  async documents(acces: Acces, viewer: Viewer, propertyId: string): Promise<DossierResult<{ id: string; kind: string; title: string; addedAt: string }[]>> {
+  /** Les documents rangés, sans leur contenu ni leur référence, et si le lecteur les recevrait, pour qui peut en ranger [R16]. */
+  async documents(acces: Acces, viewer: Viewer, propertyId: string): Promise<DossierResult<{ id: string; kind: string; title: string; addedAt: string; available: boolean }[]>> {
     const g = await this.gate(acces, viewer, propertyId, 'write');
     if (!g.ok) return g;
-    const rows = await this.db.all<{ id: string; kind: string; title: string; added_at: string }>(
-      'SELECT id, kind, title, added_at FROM business_dossier_documents WHERE network_id = ? AND property_id = ? ORDER BY added_at, rowid',
+    const rows = await this.db.all<{ id: string; kind: string; title: string; added_at: string; storage_ref: string; content_sha256: string }>(
+      'SELECT id, kind, title, added_at, storage_ref, content_sha256 FROM business_dossier_documents WHERE network_id = ? AND property_id = ? ORDER BY added_at, rowid',
       [viewer.networkId, propertyId],
     );
-    return { ok: true, value: rows.map((r) => ({ id: r.id, kind: r.kind, title: r.title, addedAt: r.added_at })) };
+    const value = [];
+    for (const r of rows) {
+      const content = await this.storage.read(r.storage_ref);
+      value.push({ id: r.id, kind: r.kind, title: r.title, addedAt: r.added_at, available: content !== null && (await sha256(content)) === r.content_sha256 });
+    }
+    return { ok: true, value };
   }
 
   /**
