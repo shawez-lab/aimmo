@@ -1830,7 +1830,7 @@ Voie : 1
 Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par route avant de coder : `POST` du socle (`app.ts`) sans appel de l'application.
 
 ### CE17 · Retrouver la source d'une fuite d'un dossier protégé, à l'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
 - Cahier : M16 ; R16, R13, R201.
 - Objectif : trouvé le 2026-11-03, même comparaison : `POST /v1/commerces/<id>/tracage` n'a aucun appel de l'application. Lire `dossier.trace` et son écran ; vérifier que le geste n'existe pas ailleurs, puis le donner dans `app/commerces*.ts`, sans toucher au socle.
