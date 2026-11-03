@@ -406,6 +406,11 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     expect(p.lease.bailleur).not.toBeNull();
     expect(p.lease.locataire).not.toBeNull();
     expect(p.inventoryClosed).toBe(true);
+    // W25 : l'exemplaire signé se lit par son identifiant, et la lecture va au journal [R16].
+    expect(p.closedInventoryId).toEqual(expect.any(String));
+    const copy = await t.ok(t.agent, 'GET', `/location/etats-des-lieux/${p.closedInventoryId}/exemplaires/locataire`);
+    expect(copy.content).toEqual(expect.any(String));
+    expect((await t.journal.all()).some((e) => e.type === 'location.lue' && (e.data as { what?: string }).what === 'inventory_copy')).toBe(true);
     expect((await t.ok(t.agent, 'GET', `/location/${second.id}/suivi`)).lease).toBeNull();
     // La présentation telle qu'elle a été faite : les dossiers dans l'ordre d'arrivée, le choix du propriétaire.
     const pres = await t.ok(t.agent, 'GET', `/location/${r.id}/presentation`);

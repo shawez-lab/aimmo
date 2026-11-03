@@ -161,6 +161,7 @@ async function progress(s: LocationServices, v: Viewer, id: string): Promise<Out
       fees: f ? { tenantCents: f.tenantCents, tenantInventoryCents: f.tenantInventoryCents, landlordCents: f.landlordCents, landlordInventoryCents: f.landlordInventoryCents, depositCents: f.depositCents } : null,
       lease: lease ? { leaseId: lease.leaseId, mode: lease.mode, complete: lease.complete, bailleur: signed?.bailleur ?? null, locataire: signed?.locataire ?? null, copiesSent: signed?.copiesSent ?? [] } : null,
       inventoryClosed: closed !== null && lease !== null && closed.leaseId === lease.leaseId,
+      closedInventoryId: closed !== null && lease !== null && closed.leaseId === lease.leaseId ? closed.inventoryId : null,
       // L'état des lieux du bail en vigueur, rangé mais pas encore signé des deux parties : à signer sans le refaire.
       inventory: open && lease && open.leaseId === lease.leaseId ? open : null,
       handedOn: await c.handovers.handedOn(listing.networkId, listing.id),
