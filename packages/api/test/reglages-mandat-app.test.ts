@@ -237,6 +237,7 @@ describe('D13 · réglages du mandat pour la direction', () => {
     motif.value = 'termination';
     await t.click(b);
     expect(t.state()).toContain('rouvre le bien à un nouveau mandat');
+    expect(t.state()).toContain('sa diffusion s’arrête au prochain passage');
     expect(t.state()).toContain('pour résiliation');
     expect(t.state()).toContain('rien n’est effacé');
     expect(t.posts()).toEqual([]);
@@ -304,6 +305,26 @@ describe('D13 · réglages du mandat pour la direction', () => {
     t.input('regmandat-minimum').value = '3000';
     await t.click(t.find('Ranger le barème')[0]);
     expect(t.state()).toContain('La réponse n’est pas arrivée');
+  });
+
+  it.each([
+    ['une panne', async () => Response.json({ ok: false, code: 'panne' }, { status: 500 })],
+    ['une réponse illisible', async () => new Response('pas du JSON', { status: 200 })],
+  ])('après %s, une écriture a pu passer : ni « pas abouti », ni « pas rangé », ni « pas réglé »', async (_name, answer) => {
+    const t = await run({ 'GET /v1/registre/reglage': ok(null), 'POST /v1/mandats/m1/annulation': answer, 'POST /v1/honoraires/bareme': answer, 'POST /v1/registre/reglage': answer });
+    await t.voir();
+    t.input('regmandat-motif-0').value = 'error';
+    await t.twice(t.find('Annuler ce mandat')[0]);
+    expect(t.state()).toContain('rien n’est sûr');
+    t.input('regmandat-taux').value = '5';
+    t.input('regmandat-minimum').value = '3000';
+    await t.click(t.find('Ranger le barème')[0]);
+    expect(t.state()).toContain('rien n’est sûr');
+    t.input('regmandat-premier').value = '1';
+    t.input('regmandat-largeur').value = '3';
+    await t.twice(t.find('Régler le format')[0]);
+    expect(t.state()).toContain('rien n’est sûr');
+    expect(t.posts()).toHaveLength(3);
   });
 
   it('une partie illisible ne propose pas de formulaire : un format non lu n’est pas un format à régler', async () => {

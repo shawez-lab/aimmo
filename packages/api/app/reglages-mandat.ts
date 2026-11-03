@@ -96,7 +96,7 @@ globalThis.AIMMO_REGLAGES_MANDAT = function (t) {
   var REASONS = ${JSON.stringify(REASONS)};
   var CHOSEN = ${JSON.stringify(CHOSEN_REASONS)};
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
-  /* Une écriture sans réponse a pu passer : l'écran ne dit ni fait ni pas fait. */
+  /* Une écriture sans réponse, ou coupée par une panne du serveur, a pu passer : l'écran ne dit ni fait ni pas fait. */
   var LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Relisez le barème et le registre avant de recommencer.';
   /* Le verrou d'un geste vaut pour sa session : une réponse qui tarde ne bloque pas la connexion suivante. */
   var busy = null, showing = 0;
@@ -145,7 +145,7 @@ globalThis.AIMMO_REGLAGES_MANDAT = function (t) {
       state('Envoi…');
       return send(path, 'POST', body).then(function (x) {
         if (x.gone) return false;
-        if (x.offline) { state(LOST); return false; }
+        if (x.offline || !x.body || x.status >= 500) { state(LOST); return false; }
         return done(x, why(x, fallback));
       });
     });
@@ -228,7 +228,7 @@ globalThis.AIMMO_REGLAGES_MANDAT = function (t) {
       reason.appendChild(o);
     });
     li.appendChild(confirmed('Annuler ce mandat', 'Confirmer : annuler ce mandat', function (key) {
-      return 'Annuler ' + v.number + ' pour ' + REASONS[key] + ' rouvre le bien à un nouveau mandat et arrête sa diffusion. Le numéro reste au registre, rien n’est effacé.';
+      return 'Annuler ' + v.number + ' pour ' + REASONS[key] + ' rouvre le bien à un nouveau mandat ; sa diffusion s’arrête au prochain passage des annonces. Le numéro reste au registre, rien n’est effacé.';
     }, function () {
       if (!reason.value) { state(REFUSALS.bad_reason); return null; }
       return reason.value;
