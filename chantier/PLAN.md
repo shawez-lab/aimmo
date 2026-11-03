@@ -1943,7 +1943,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X26 · Deux envois simultanés d'une même recommandation de partenaire
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03), lecture prudente : le lot perdant est annulé en entier (plus d'`ON CONFLICT` hors « tenue à l'écart ») ; sur une fiche neuve, une garde en tête de lot, table toujours vide, l'annule si une coordonnée vient d'arriver sur une fiche ; le perdant est rejoué une fois comme un renvoi, une vraie panne jamais. Reste : trois envois simultanés peuvent faire perdre deux fois (erreur, rien de gardé, un renvoi passe) ; garde essayée sur SQLite, pas sur une vraie base D1. Relecture forte 2 P1 corrigés ; Codex non attendu (H03) ; #333.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : X25
 - Cahier : M20 ; R142, R17.
 - Objectif : trouvé par la relecture forte de X25 : dans `recommend`, deux envois simultanés passent le contrôle préalable ; le perdant du `ON CONFLICT` garde quand même son projet, sa source et son accord dans le même lot. Les rendre conditionnels à la ligne de recommandation, ou la poser d'abord.
@@ -1979,7 +1980,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### CE22 · Brancher le dépôt des documents du dossier sur le stockage réel
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : CE20
 - Cahier : M16 ; R16, R114.
 - Objectif : `worker.ts` ne passe aucun `storage` à M16 : le dossier ne sert que la fiche, et CE20 répond `stockage_absent`. Avec le compartiment de H38, passer un `DossierStorage` qui lit et écrit du texte ; absent, rien ne change.
