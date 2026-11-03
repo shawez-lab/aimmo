@@ -63,7 +63,15 @@ async function setup(bucketWrites = true) {
     );
     return { status: r.status, body: (await r.json()) as { ok: boolean; data?: any; rule?: string | null; code?: string } };
   };
-  return { db, journal, id, stored, state, deposit, json };
+  const depositPiece = async (who: Who, applicationId: string, bytes: Uint8Array, type: string, hash: string = sha(bytes)) => {
+    const r = await handleRequest(new Request(`${BASE}/v1/location/candidatures/${applicationId}/fichiers/piece`, { method: 'POST', headers: { authorization: `Bearer ${KEYS[who]}`, 'content-type': type, 'x-aimmo-sha256': hash }, body: bytes }), config);
+    return { status: r.status, body: (await r.json()) as { ok: boolean; data?: any; rule?: string | null; code?: string } };
+  };
+  const candidate = async () => {
+    const person = (await store.createPerson({ networkId: network, agentId: alex, firstName: 'Cand', lastName: 'Inventé' })).id;
+    return person;
+  };
+  return { db, journal, id, stored, state, deposit, depositPiece, json, candidate };
 }
 
 describeWithSqlite('W14 · dépôt des pièces de la location, par le socle', () => {
@@ -87,6 +95,33 @@ describeWithSqlite('W14 · dépôt des pièces de la location, par le socle', ()
     expect(events).toHaveLength(4);
     expect(events[0]!.data).toEqual({ kind: 'annexe', ref, size: PDF.length, sha256: sha(PDF) });
     expect(JSON.stringify(events)).not.toMatch(/diagnostic inventé|Léa|Exemple|note de l/);
+  });
+
+  it('[R104] [R16] W18 : une pièce de candidature se dépose dans son dossier, et le geste l’accepte ; les droits passent d’abord', async () => {
+    const t = await setup();
+    const person = await t.candidate();
+    const applied = await t.json('alex', `/location/${t.id}/candidatures`, { personId: person });
+    expect(applied.status, JSON.stringify(applied.body)).toBe(200);
+    const app = applied.body.data.applicationId as string;
+    const d = await t.depositPiece('alex', app, PDF, 'application/pdf');
+    expect(d).toMatchObject({ status: 200, body: { ok: true, data: { kind: 'piece', sha256: sha(PDF) } } });
+    const ref = d.body.data.ref as string;
+    expect(ref).toMatch(new RegExp(`^location/${t.id}/candidatures/${app}/[0-9a-f-]{36}\\.pdf$`));
+    // Déposer ne range rien ; le geste accepte la référence, puis contrôle la sorte.
+    expect(await t.db.first('SELECT 1 FROM rental_application_pieces')).toBeNull();
+    expect(await t.json('alex', `/location/candidatures/${app}/pieces`, { holder: 'candidat', sort: 'photo_identite_inventee', ref, sha256: sha(PDF) })).toMatchObject({ status: 409, body: { rule: 'R104', code: 'not_allowed' } });
+    expect(await t.json('alex', `/location/candidatures/${app}/pieces`, { holder: 'candidat', sort: 'bulletins_salaire', ref, sha256: sha(PDF) })).toMatchObject({ status: 200, body: { ok: true } });
+    // Un autre agent et la conformité sont refusés avant toute lecture, rien de plus n'est rangé.
+    const before = t.stored.size;
+    expect(await t.depositPiece('bea', app, PDF, 'application/pdf')).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    expect(await t.depositPiece('conformite', app, PDF, 'application/pdf')).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    // Une page, un autre type, une empreinte fausse : rien n'est rangé.
+    expect((await t.depositPiece('alex', app, new TextEncoder().encode('<html>'), 'text/html')).body).toMatchObject({ ok: false, code: 'type_refuse' });
+    expect((await t.depositPiece('alex', app, PDF, 'application/pdf', 'a'.repeat(64))).body).toMatchObject({ ok: false, code: 'empreinte_differente' });
+    expect(t.stored.size).toBe(before);
+    // Une candidature inconnue, et la sorte « pièce » par la route d'un logement : refusées.
+    expect((await t.depositPiece('alex', 'inconnue', PDF, 'application/pdf')).body).toMatchObject({ ok: false });
+    expect((await t.deposit('alex', 'piece', PDF, 'application/pdf')).status).toBe(404);
   });
 
   it('[R16] un autre agent et la conformité sont refusés avant toute lecture, au journal, et rien n’est rangé', async () => {

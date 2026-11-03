@@ -162,6 +162,13 @@ export class Candidatures {
     return row!;
   }
 
+  /** Le logement d'une candidature, pour y déposer une pièce, sous les droits d'écriture de celui qui dépose [R16]. */
+  async placeOf(viewer: Viewer, applicationId: unknown): Promise<ApplicationResult<{ listingId: string; applicationId: string }>> {
+    const app = await this.app(viewer, applicationId, true);
+    if ('ok' in app) return app;
+    return { ok: true, value: { listingId: app.listing_id, applicationId: app.id } };
+  }
+
   /**
    * Les contacts qu'un agent peut ajouter comme candidats : ses fiches gardées, sans fiche réunie d'un autre agent [R16],
    * sans personne déjà candidate ici, même par une fiche réunie. Lus d'une seule requête, 500 au plus.

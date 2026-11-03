@@ -173,7 +173,7 @@ const DEPOSIT_STATUS: Readonly<Record<string, number>> = { trop_lourd: 413, type
  * Le dépôt d'une pièce (W14) : le corps est le fichier, tel quel ; son type dans `content-type`, son empreinte dite par
  * l'appareil dans `x-aimmo-sha256`. Il rend la référence que le geste de M15 attend ; sans écriture possible, il est fermé.
  */
-async function depositRoute(s: LocationServices, v: Viewer, [id, kind]: string[], r: Request): Promise<Response> {
+async function depositRoute(s: LocationServices, v: Viewer, [id, kind, applicationId]: string[], r: Request): Promise<Response> {
   const files = s.files;
   if (!files.upload) return json(503, { ok: false, rule: null, code: 'depot_ferme' });
   const length = r.headers.get('content-length');
@@ -185,9 +185,16 @@ async function depositRoute(s: LocationServices, v: Viewer, [id, kind]: string[]
     sha256: r.headers.get('x-aimmo-sha256'),
     declaredSize,
     read: (max) => readCapped(r, max),
-  });
+  }, applicationId);
   if (!result.ok && DEPOSIT_STATUS[result.code]) return json(DEPOSIT_STATUS[result.code]!, { ok: false, rule: result.rule, code: result.code });
   return reply(result);
+}
+
+/** Le dépôt d'une pièce de candidature (W18) : la candidature est contrôlée avant de lire un seul octet [R16]. */
+async function depositPieceRoute(s: LocationServices, v: Viewer, [id]: string[], r: Request): Promise<Response> {
+  const place = await core(s).applications.placeOf(v, id);
+  if (!place.ok) return reply(place);
+  return depositRoute(s, v, [place.value.listingId, 'piece', place.value.applicationId], r);
 }
 
 const ROUTES: LocationRoute[] = [
@@ -200,6 +207,7 @@ const ROUTES: LocationRoute[] = [
 
   /* Le dépôt d'une annexe, d'une preuve ou de la notice depuis le téléphone (W14) [R16]. */
   { method: 'POST', pattern: new RegExp(`^/location/${ID}/fichiers/(annexe|preuve|notice)$`), name: 'location.depot', roles: WRITERS, handle: depositRoute },
+  { method: 'POST', pattern: new RegExp(`^/location/candidatures/${ID}/fichiers/piece$`), name: 'location.candidature.depot', roles: WRITERS, handle: depositPieceRoute },
 
   /* Le logement et son contrôle (W01) [R100, R101]. */
   {

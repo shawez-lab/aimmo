@@ -251,6 +251,7 @@ globalThis.AIMMO_LOUER = function (t) {
   // À la sortie ou au changement de clé : rien de la personne précédente ne reste sur l'appareil (texte du bail, séances).
   function forgetLouer() {
     closingOpenFor = null;
+    dossierOpen = null;
     leaseTexts = {};
     signing = {};
   }
@@ -340,6 +341,7 @@ globalThis.AIMMO_LOUER = function (t) {
     var kept = null;
     return {
       picked: function () { return !!(pick.files && pick.files[0]); },
+      sha: function () { return kept ? kept.sha : null; },
       // La référence du fichier choisi, après l'avoir déposé ; null si rien n'est rangé, la raison étant dite.
       ref: function (base) {
         var file = pick.files && pick.files[0];
@@ -357,7 +359,7 @@ globalThis.AIMMO_LOUER = function (t) {
             if (res.gone) return null;
             var ref = res.ok && res.body.data && res.body.data.ref;
             if (typeof ref !== 'string') { louerState(res.offline ? 'Pas de réseau : le fichier n’est pas rangé.' : louerRefusal(res.body, 'Le fichier n’est pas rangé. Réessayez.')); return null; }
-            kept = { file: file, ref: ref };
+            kept = { file: file, ref: ref, sha: hex(sum) };
             return ref;
           });
         }, function () { if (mine === t.session()) louerState('Ce fichier ne se lit pas sur ce téléphone.'); return null; });
@@ -459,7 +461,7 @@ globalThis.AIMMO_LOUER = function (t) {
       var make = globalThis[global];
       try { delete globalThis[global]; } catch (e) { /* rien à retirer */ }
       if (typeof make !== 'function') { if (mine === t.session()) louerState('Pas de réseau. Réessayez dans un moment.'); return; }
-      lazyTools[name] = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, whole: whole, ID: ID, session: t.session, say: louerState, date: date, euros: euros, act: louerAct, openLocation: openLocation, reload: function (said) { return openLocation(louerId, $('louer-titre').textContent, said); } });
+      lazyTools[name] = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, whole: whole, ID: ID, session: t.session, say: louerState, date: date, euros: euros, act: louerAct, openLocation: openLocation, piece: piece, refusals: LOUER_REFUSALS, reload: function (said) { return openLocation(louerId, $('louer-titre').textContent, said); } });
       if (mine === t.session()) { louerState(''); act(lazyTools[name]); }
     });
     s.addEventListener('error', function () {
@@ -467,6 +469,17 @@ globalThis.AIMMO_LOUER = function (t) {
       if (mine === t.session()) louerState('Pas de réseau. Réessayez dans un moment.');
     });
     $('louer').appendChild(s);
+  }
+  var dossierOpen = null;
+  function dossierEntry(base, a) {
+    var inner = el('div');
+    function go() {
+      dossierOpen = a.applicationId;
+      lazy('louer-dossier', 'AIMMO_LOUER_DOSSIER', function (tool) { tool.open(inner, base, a); });
+    }
+    inner.appendChild(button('Compléter ce dossier', go));
+    if (dossierOpen === a.applicationId) go();
+    return inner;
   }
   function closingBlock(id, base, p) {
     var box = section('Remise des clés et gestion');
@@ -677,6 +690,7 @@ globalThis.AIMMO_LOUER = function (t) {
       li.appendChild(el('strong', 'Dossier arrivé ' + (a.arrival === 1 ? 'en premier' : 'en ' + a.arrival + 'ᵉ') + (a.applicationId === chosen ? ' · choisi par le propriétaire' : '')));
       li.appendChild(el('p', 'Le ' + date(a.arrivedAt) + (a.dossierFacile ? ' · dossier DossierFacile' : '') + ' · ' + (a.pieces || []).length + ' pièce' + ((a.pieces || []).length > 1 ? 's' : '') + (a.guarantors && a.guarantors.length ? ' · garant' : ''), 'doux'));
       li.appendChild(el('p', a.complete ? 'Complet' : 'Incomplet : manque ' + (a.missing || []).map(missingText).join(', ') + '.', a.complete ? 'fait' : null));
+      if (!chosen && ID.test(a.applicationId)) li.appendChild(dossierEntry(base, a));
       ol.appendChild(li);
     });
     box.appendChild(ol);

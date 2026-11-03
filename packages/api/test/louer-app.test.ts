@@ -3,6 +3,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { LEASE_FIELDS } from '../../core/src/location/index.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
+import { LOUER_DOSSIER_SCRIPT } from '../app/louer-dossier.ts';
 import { LOUER_EDL_SCRIPT } from '../app/louer-edl.ts';
 import { LOUER_REMISE_SCRIPT } from '../app/louer-remise.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
@@ -143,7 +144,11 @@ async function run(answers: Record<string, Answer> = {}) {
     await click(byText(label));
     await lazyLoad('/app/louer-edl.js', LOUER_EDL_SCRIPT);
   };
-  return { els, calls, table, byText, click, input, body, state, posts, openList, openL1, settle, scripts, openClosing, openInventory };
+  const openDossier = async (nth = 0) => {
+    await click(byText('Compléter ce dossier', nth));
+    await lazyLoad('/app/louer-dossier.js', LOUER_DOSSIER_SCRIPT);
+  };
+  return { els, calls, table, byText, click, input, body, state, posts, openList, openL1, settle, scripts, openClosing, openInventory, openDossier };
 }
 
 describe('W11 · écran « Louer » de l’application', () => {
@@ -882,6 +887,100 @@ describe('W11 · écran « Louer » de l’application', () => {
       await none.openClosing();
       expect(none.body().textContent).toContain('Les honoraires ne sont pas encore rangés.');
       expect(none.byText('Ranger la remise des clés')).toBeDefined();
+    });
+  });
+
+  describe('W18 · compléter un dossier de candidature', () => {
+    const FILE = { type: 'application/pdf', size: 8, arrayBuffer: async () => new TextEncoder().encode('%PDF-1.7').buffer };
+    const DEP = 'POST /v1/location/candidatures/c3/fichiers/piece';
+    const options = (t: Awaited<ReturnType<typeof run>>, label: string) => t.input(label).children.map((o) => o.textContent);
+
+    it('[R201] servi à part, chargé au premier geste ; budget tenu ; rien n’est offert une fois le choix fait', async () => {
+      const t = await run();
+      await t.openL1();
+      expect(t.scripts().filter((e) => e.attributes.src === '/app/louer-dossier.js')).toHaveLength(0);
+      expect(budgetProblems({ html: '', js: LOUER_DOSSIER_SCRIPT }, BUDGETS.page)).toEqual([]);
+      expect(budgetProblems({ html: '', js: LOUER_SCRIPT }, BUDGETS.page)).toEqual([]);
+      const served = handleAgentApp(new Request('https://aimmo.example.test/app/louer-dossier.js'))!;
+      expect(await served.text()).toBe(LOUER_DOSSIER_SCRIPT);
+      const done = await run({ 'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c1' }) });
+      await done.openL1();
+      expect(done.byText('Compléter ce dossier')).toBeUndefined();
+    });
+
+    it('[R104] seules les pièces officielles, selon qui les fournit ; aucune pièce d’identité ; aucun nom de garant', async () => {
+      const t = await run();
+      await t.openL1();
+      await t.openDossier(0);
+      const candidate = options(t, 'La pièce');
+      expect(candidate).toContain('Trois derniers bulletins de salaire');
+      expect(candidate.join(' ')).not.toMatch(/identité|passeport/i);
+      expect(candidate).not.toContain('Dernière quittance de loyer');
+      const t2 = await run();
+      await t2.openL1();
+      await t2.openDossier(2);
+      expect(options(t2, 'Qui fournit la pièce')).toEqual(['Le candidat', 'Garant Visale']);
+      const who = t2.input('Qui fournit la pièce');
+      who.value = 'g2';
+      who.listeners.change!({});
+      expect(options(t2, 'La pièce').filter((x) => x !== 'Choisir la pièce').length).toBeGreaterThan(0);
+      expect(options(t2, 'La pièce')).not.toContain('Trois derniers bulletins de salaire');
+    });
+
+    it('[R105] la pièce part avec sa référence et son empreinte ; l’ordre d’arrivée ne bouge pas ; le dossier reste ouvert', async () => {
+      const t = await run({ [DEP]: ok({ kind: 'piece', ref: 'location/l1/candidatures/c3/r.pdf', sha256: SHA_PDF, size: 8 }), 'POST /v1/location/candidatures/c3/pieces': ok({ category: 'ressources' }) });
+      await t.openL1();
+      await t.openDossier(0);
+      await t.click(t.byText('Ranger la pièce'));
+      expect(t.state()).toBe('Choisissez d’abord la pièce.');
+      t.input('La pièce').value = 'bulletins_salaire';
+      await t.click(t.byText('Ranger la pièce'));
+      expect(t.state()).toBe('Choisissez d’abord le fichier.');
+      expect(t.posts()).toHaveLength(0);
+      (t.input('Le fichier') as unknown as { files: unknown[] }).files = [FILE];
+      await t.click(t.byText('Ranger la pièce'));
+      expect(t.posts()[1]).toMatchObject({ url: '/v1/location/candidatures/c3/pieces', body: JSON.stringify({ holder: 'candidat', sort: 'bulletins_salaire', ref: 'location/l1/candidatures/c3/r.pdf', sha256: SHA_PDF }) });
+      expect(t.state()).toBe('Pièce rangée.');
+      const arrivals = t.body().all().filter((e) => e.tagName === 'strong' && /^Dossier arrivé/.test(e.textContent ?? '')).map((e) => e.textContent);
+      expect(arrivals[0]).toContain('en 3ᵉ');
+      expect(t.byText('Ranger la pièce')).toBeDefined();
+    });
+
+    it('[R104] un refus du serveur est dit en français, sans code ; une réponse perdue est dite telle', async () => {
+      const t = await run({ [DEP]: ok({ kind: 'piece', ref: 'location/l1/candidatures/c3/r.pdf', sha256: SHA_PDF, size: 8 }), 'POST /v1/location/candidatures/c3/pieces': no(409, { ok: false, rule: 'R104', code: 'one_domicile' }) });
+      await t.openL1();
+      await t.openDossier(0);
+      t.input('La pièce').value = 'attestation_hebergement';
+      (t.input('Le fichier') as unknown as { files: unknown[] }).files = [FILE];
+      await t.click(t.byText('Ranger la pièce'));
+      expect(t.state()).toBe('Un seul justificatif de domicile par personne : il est déjà rangé.');
+      // Le même fichier ne se redépose pas : la référence est gardée.
+      delete t.table['POST /v1/location/candidatures/c3/pieces'];
+      await t.click(t.byText('Ranger la pièce'));
+      expect(t.state()).toBe('Réponse perdue : ce geste est peut-être rangé. Rouvrez le logement avant de recommencer.');
+      expect(t.posts().filter((c) => c.url.endsWith('/fichiers/piece'))).toHaveLength(1);
+    });
+
+    it('[R16] un garant Visale s’ajoute d’un geste ; un garant personne se choisit parmi ses contacts, lus au geste ; un refus de droits est dit', async () => {
+      const t = await run({
+        'POST /v1/location/candidatures/c3/garants': ok({ guarantorId: 'g9' }),
+        'GET /v1/location/l1/contacts': ok({ contacts: [{ personId: 'p9', firstName: 'Garant', lastName: 'Inventé' }], more: false }),
+      });
+      await t.openL1();
+      await t.openDossier(0);
+      expect(t.calls.some((c) => c.url.endsWith('/contacts'))).toBe(false);
+      await t.click(t.byText('Garant Visale'));
+      expect(t.posts()[0]).toMatchObject({ url: '/v1/location/candidatures/c3/garants', body: JSON.stringify({ kind: 'visale' }) });
+      expect(t.state()).toBe('Garant ajouté.');
+      await t.click(t.byText('Choisir un garant parmi mes contacts'));
+      await t.click(t.byText('Ajouter ce garant'));
+      expect(t.state()).toBe('Choisissez d’abord la personne.');
+      t.input('Le garant').value = 'p9';
+      await t.click(t.byText('Ajouter ce garant'));
+      expect(t.posts()[1]).toMatchObject({ body: JSON.stringify({ kind: 'personne', personId: 'p9' }) });
+      t.table['POST /v1/location/candidatures/c3/garants'] = no(403, { ok: false, rule: 'R16', code: 'not_assigned' });
+      await t.click(t.byText('Garant Visale'));
+      expect(t.state()).toBe('Ce geste n’est pas dans vos droits.');
     });
   });
 });

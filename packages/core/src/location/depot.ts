@@ -13,6 +13,7 @@
  * - son empreinte SHA-256, recalculée sur les octets reçus, est celle que l'appareil a dite.
  *
  * Au journal : la sorte, la taille, l'empreinte et la référence, jamais le contenu ni une donnée personnelle [R13].
+ * Une pièce d'une candidature (W18) se dépose de même, avant son geste de rangement, qui contrôle sa sorte [R104].
  * Aucune route ne relit ces fichiers depuis l'écran. Rien n'est effacé : un fichier déposé puis jamais joint reste rangé.
  */
 import type { Viewer } from '../acces/droits.ts';
@@ -21,7 +22,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { matchesSignature } from '../studio/depot.ts';
 import type { LocationRefusal, MisesEnLocation } from './logement.ts';
 
-export const RENTAL_DEPOSIT_KINDS = ['annexe', 'preuve', 'notice'] as const;
+export const RENTAL_DEPOSIT_KINDS = ['annexe', 'preuve', 'notice', 'piece'] as const;
 export type RentalDepositKind = (typeof RENTAL_DEPOSIT_KINDS)[number];
 
 /** 20 Mo : un diagnostic en PDF ou la photo d'un document prise au téléphone. */
@@ -34,9 +35,11 @@ export const RENTAL_DEPOSIT_TYPES: Record<RentalDepositKind, Readonly<Record<str
   // Un choix dit à l'oral se prouve aussi par une note écrite.
   preuve: { ...PIECE_TYPES, 'text/plain': 'txt' },
   notice: { 'application/pdf': 'pdf' },
+  // Une pièce d'une candidature (W18), rangée dans le dossier de cette candidature.
+  piece: PIECE_TYPES,
 };
 
-const FOLDER: Record<RentalDepositKind, string> = { annexe: '', preuve: 'choix/', notice: 'bail/' };
+const FOLDER: Record<Exclude<RentalDepositKind, 'piece'>, string> = { annexe: '', preuve: 'choix/', notice: 'bail/' };
 const SHA = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -93,7 +96,11 @@ export class DepotsLocation {
     this.newId = options.newId ?? (() => crypto.randomUUID());
   }
 
-  async deposit(viewer: Viewer, listingId: unknown, input: RentalDepositInput): Promise<RentalDepositResult> {
+  /**
+   * `applicationId`, pour la seule sorte `piece` : la candidature, déjà contrôlée sous les droits de celui qui dépose par
+   * `Candidatures.placeOf`. Sans elle une pièce n'a pas de dossier où se ranger.
+   */
+  async deposit(viewer: Viewer, listingId: unknown, input: RentalDepositInput, applicationId?: string): Promise<RentalDepositResult> {
     // Les droits d'abord, avant de lire un seul octet du fichier [R16].
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
@@ -105,6 +112,7 @@ export class DepotsLocation {
     };
     if (!(RENTAL_DEPOSIT_KINDS as readonly unknown[]).includes(input.kind)) return bad('sorte_inconnue');
     const kind = input.kind as RentalDepositKind;
+    if ((kind === 'piece') !== (applicationId !== undefined)) return bad('sorte_inconnue');
     const type = typeof input.contentType === 'string' ? input.contentType.split(';')[0]!.trim().toLowerCase() : '';
     const ext = Object.prototype.hasOwnProperty.call(RENTAL_DEPOSIT_TYPES[kind], type) ? RENTAL_DEPOSIT_TYPES[kind][type] : undefined;
     if (!ext) return bad('type_refuse');
@@ -118,7 +126,7 @@ export class DepotsLocation {
     if (sha !== input.sha256) return bad('empreinte_differente');
     const id = this.newId();
     if (!UUID.test(id)) throw new Error('identifiant de fichier invalide');
-    const ref = `location/${listing.id}/${FOLDER[kind]}${id}.${ext}`;
+    const ref = `location/${listing.id}/${kind === 'piece' ? `candidatures/${applicationId}/` : FOLDER[kind]}${id}.${ext}`;
     try {
       await this.store.put(ref, bytes, type);
     } catch {
