@@ -15,11 +15,12 @@
  *   GET /agents/:agent                             la page de l'agent, sur le site du réseau et sur le sien [R152]
  *   GET /quartiers/:commune/:quartier[/prix|/equipements]  la page de quartier ou son article validé [R155]
  *   GET /simulateur                                le simulateur de prêt, qui ne garde rien [R157]
+ *   GET /preuve, /preuve.json                      le compte public de la preuve à Dijon, sur le site du réseau [R213]
  *   GET /sitemap.xml, /robots.txt                  le plan du site et ses consignes aux moteurs [R153]
  * Une adresse inconnue, un site hors service, une page non publiable : 404, sans rien dire de plus. Tant que le
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
-import { appendEvent, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, parseListingsQuery, renderListingsPage, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
@@ -263,6 +264,7 @@ export const PUBLIC_PATHS = {
   agent: new RegExp(`^/agents/${ID}$`),
   quartier: new RegExp(`^/quartiers/${SLUG}/${SLUG}(?:/(prix|equipements))?$`),
   simulateur: /^\/simulateur$/,
+  preuve: /^\/preuve(\.json)?$/,
   plan: /^\/sitemap\.xml$/,
   robots: /^\/robots\.txt$/,
 };
@@ -389,6 +391,13 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
     case 'simulateur': {
       const headers = await loanSimulatorHeaders();
       return new Response(request.method === 'HEAD' ? null : renderLoanSimulatorPage(), { status: 200, headers: { ...headers, ...(mode === 'essai' ? { 'x-robots-tag': 'noindex, nofollow' } : {}) } });
+    }
+    case 'preuve': {
+      // Le compte du réseau, sur son seul site : les pages d'agent ne le portent pas.
+      if (site.kind !== 'reseau') return notFound();
+      const proof = await new pilotage.SceauxPreuve(s.db, s.journal, { now: s.now }).servedPublication(networkId);
+      if (m[1]) return new Response(request.method === 'HEAD' ? null : JSON.stringify(proof), { status: 200, headers: pageHeaders('application/json; charset=utf-8', mode) });
+      return html(renderPublicPage({ title: 'La preuve à Dijon, mois par mois', kicker: 'Compte public', body: pilotage.proofPageBody(proof), robots: mode === 'essai' ? 'noindex' : 'index' }));
     }
     case 'plan': {
       const plan = await svc.referencement.sitemap(networkId, site.siteId);

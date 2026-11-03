@@ -92,6 +92,8 @@ export function proofRuns(months: readonly Pick<ProofMonth, 'month' | 'complete'
 
 interface LineRow {
   mandate_id: string;
+  number: string;
+  hash: string;
   signed_at: string;
   document_kind: string | null;
   cancel_reason: string | null;
@@ -122,16 +124,11 @@ export class CompteurPreuve {
     return { ok: true, value };
   }
 
-  /** Le calcul, sans droits : pour le sceau d'un mois et les tests. */
-  async compute(networkId: string): Promise<ProofCounter> {
-    const currentMonth = parisMonth(this.now());
-    const months = new Map<string, ProofMonth>();
-    for (let m = PROOF_START_MONTH; m <= currentMonth; m = nextMonth(m)) months.set(m, emptyMonth(m, m < currentMonth));
-
+  private registerLines(networkId: string): Promise<LineRow[]> {
     // La date de signature est celle figée par la ligne du registre ; une ligne n'a qu'une annulation. Une rétractation
     // rangée vaut retrait même si la ligne d'annulation n'a pas pu s'écrire : le compte ne penche jamais vers le haut.
-    const lines = await this.db.all<LineRow>(
-      `SELECT r.mandate_id, r.signed_at, d.kind AS document_kind, CASE WHEN w.mandate_id IS NOT NULL THEN 'withdrawal' ELSE c.reason END AS cancel_reason
+    return this.db.all<LineRow>(
+      `SELECT r.mandate_id, r.number, r.hash, r.signed_at, d.kind AS document_kind, CASE WHEN w.mandate_id IS NOT NULL THEN 'withdrawal' ELSE c.reason END AS cancel_reason
          FROM mandate_register r
          LEFT JOIN mandate_register c ON c.network_id = r.network_id AND c.kind = 'annulation' AND c.cancels_seq = r.seq
          LEFT JOIN mandate_withdrawals w ON w.mandate_id = r.mandate_id
@@ -140,8 +137,27 @@ export class CompteurPreuve {
         WHERE r.network_id = ? AND r.kind = 'inscription'`,
       [networkId],
     );
+  }
+
+  /** Le calcul, sans droits. */
+  async compute(networkId: string): Promise<ProofCounter> {
+    return (await this.snapshot(networkId)).counter;
+  }
+
+  /**
+   * Le compte et les lignes qui comptent, triées par numéro [R212] : d'une seule lecture du registre, pour que le compte
+   * d'un mois et ses lignes ne puissent jamais se contredire, même si une annulation arrive pendant le calcul.
+   */
+  async snapshot(networkId: string): Promise<{ counter: ProofCounter; lines: Map<string, { number: string; hash: string }[]> }> {
+    const currentMonth = parisMonth(this.now());
+    const months = new Map<string, ProofMonth>();
+    for (let m = PROOF_START_MONTH; m <= currentMonth; m = nextMonth(m)) months.set(m, emptyMonth(m, m < currentMonth));
+
+    const lines = await this.registerLines(networkId);
+    const byMonth = new Map<string, { number: string; hash: string }[]>();
     for (const line of lines) {
-      const month = months.get(parisMonth(new Date(line.signed_at)));
+      const key = parisMonth(new Date(line.signed_at));
+      const month = months.get(key);
       if (!month) continue;
       if (line.cancel_reason === 'error') {
         month.cancelledError += 1;
@@ -153,6 +169,7 @@ export class CompteurPreuve {
       }
       if (line.cancel_reason === 'termination') month.terminated += 1;
       month.counted += 1;
+      byMonth.set(key, [...(byMonth.get(key) ?? []), { number: line.number, hash: line.hash }]);
       if (line.document_kind === 'mandat_vente_simple') month.simple += 1;
       else if (line.document_kind === 'mandat_vente_exclusif') month.exclusive += 1;
       else month.untyped += 1;
@@ -174,16 +191,20 @@ export class CompteurPreuve {
     const list = [...months.values()].map((m) => ({ ...m, targetMet: m.counted >= PROOF_MONTHLY_TARGET }));
     const runs = proofRuns(list);
     const registerSound = (await this.registre.check(networkId)).ok;
+    for (const group of byMonth.values()) group.sort((a, b) => (a.number < b.number ? -1 : a.number > b.number ? 1 : 0));
     return {
-      startMonth: PROOF_START_MONTH,
-      target: PROOF_MONTHLY_TARGET,
-      requiredMonths: PROOF_REQUIRED_MONTHS,
-      currentMonth,
-      months: list,
-      currentRun: runs.currentRun,
-      bestRun: runs.bestRun,
-      condition: registerSound ? runs.condition : { met: false, metOn: null },
-      registerSound,
+      counter: {
+        startMonth: PROOF_START_MONTH,
+        target: PROOF_MONTHLY_TARGET,
+        requiredMonths: PROOF_REQUIRED_MONTHS,
+        currentMonth,
+        months: list,
+        currentRun: runs.currentRun,
+        bestRun: runs.bestRun,
+        condition: registerSound ? runs.condition : { met: false, metOn: null },
+        registerSound,
+      },
+      lines: byMonth,
     };
   }
 }
