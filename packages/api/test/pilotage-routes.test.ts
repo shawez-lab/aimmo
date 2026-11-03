@@ -66,6 +66,15 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     expect(after - before).toBeGreaterThanOrEqual(reads.length * 2 + 4);
   });
 
+  it('[R16] [R210] le compteur de la preuve : la direction le lit, l’agent et la conformité non', async () => {
+    const t = await setup();
+    const read = await t.call(t.direction, 'GET', '/pilotage/preuve');
+    expect(read.status).toBe(200);
+    expect(read.body).toMatchObject({ ok: true, data: { startMonth: '2027-01', target: 10, requiredMonths: 6 } });
+    expect((await t.call(t.agent, 'GET', '/pilotage/preuve')).status).toBe(403);
+    expect((await t.call(t.compliance, 'GET', '/pilotage/preuve')).status).toBe(403);
+  });
+
   it('[R67] aucune route ne reçoit un montant : la commission vient du mandat, par le passage horaire', async () => {
     const t = await setup();
     expect((await t.call(t.direction, 'POST', '/pilotage/grille', { validFrom: '2027-03-01', defaultRateBp: 7000 })).status).toBe(200);

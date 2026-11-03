@@ -6,3 +6,4 @@ export * from './tableau-reseau.ts';
 export * from './rapport-matin.ts';
 export * from './alertes.ts';
 export * from './branchement.ts';
+export * from './preuve.ts';
