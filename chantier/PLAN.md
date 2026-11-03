@@ -1727,7 +1727,8 @@ Trouvé le 2026-11-03 par la voie 1, en comparant les routes de `packages/api/sr
 - Attend : rien pour l'écran ; H25 (`PIECES`) pour déposer une preuve réelle.
 
 ### G15 · Engagements de service et fin de bail à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03) : la dernière fin de bail notée fait foi, au lieu de la plus proche : une erreur de saisie se corrige sans rien effacer [R17]. Deux lectures ajoutées. Reste : fusionnée (#300). Relecture forte 3 P1 corrigés ; Codex à sa limite (H03).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : G07, G09
 - Cahier : M20, dossier de présentation et anciens contacts ; R16, R143, R201.
 - Objectif : la direction règle ses engagements de service (`POST /v1/gagner/engagements`), sans quoi le dossier de présentation les dit absents ; l'agent note une fin de bail connue sur la fiche (`POST /v1/gagner/fiches/<id>/fin-de-bail`), sans quoi cette raison de relance reste vide.
