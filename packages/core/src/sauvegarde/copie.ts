@@ -1,5 +1,5 @@
 /**
- * La copie chiffrée de la base, et sa restauration vérifiée (SV01) [R223].
+ * La copie chiffrée de la base, et sa restauration vérifiée (SV01) [R224].
  *
  * Décidé, lecture prudente :
  * - la copie prend tout : le schéma tel que la base le décrit et chaque ligne, avec son rang ; rien n'est choisi table par
@@ -210,7 +210,7 @@ export class CopieBase {
     await this.store.put(place, await seal(this.key, place, JSON.stringify(manifest)));
     const receipt: CopyReceipt = { copyId, takenAt, tables: tables.length, rows: tables.reduce((n, t) => n + t.rows, 0), parts: tables.reduce((n, t) => n + t.parts, 0) };
     // Le journal dit la copie, sans une donnée.
-    await appendEvent(this.journal, { type: 'base.copie', actor: 'system:sauvegarde', subject: `copy:${copyId}`, data: { rule: 'R223', tables: receipt.tables, rows: receipt.rows, parts: receipt.parts } }, this.now);
+    await appendEvent(this.journal, { type: 'base.copie', actor: 'system:sauvegarde', subject: `copy:${copyId}`, data: { rule: 'R224', tables: receipt.tables, rows: receipt.rows, parts: receipt.parts } }, this.now);
     return receipt;
   }
 }

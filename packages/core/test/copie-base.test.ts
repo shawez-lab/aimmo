@@ -47,7 +47,7 @@ const dump = async (db: SqlDatabase) => {
 };
 
 describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
-  it('[R223] la base restaurée est identique, table par table, objets et chaîne du journal compris, en moins d’une heure', async () => {
+  it('[R224] la base restaurée est identique, table par table, objets et chaîne du journal compris, en moins d’une heure', async () => {
     const t = await world();
     const target = emptyDb();
     const r = await restoreCopy(target, t.copies, t.key, t.receipt.copyId);
@@ -65,7 +65,7 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     expect(t.receipt.parts).toBeGreaterThan(2);
   });
 
-  it('[R223] les garde-fous reviennent : la base restaurée refuse d’effacer, et les clés étrangères comptent', async () => {
+  it('[R224] les garde-fous reviennent : la base restaurée refuse d’effacer, et les clés étrangères comptent', async () => {
     const t = await world();
     const target = emptyDb();
     await restoreCopy(target, t.copies, t.key, t.receipt.copyId);
@@ -73,7 +73,7 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     await expect(target.run("INSERT INTO consents (id, network_id, person_id, purpose, channel, proof, given_at, created_at) VALUES ('c', 'inconnu', 'inconnue', 'x', 'email', 'p', 'd', 'd')")).rejects.toThrow();
   });
 
-  it('[R223] rien de lisible dans le stockage, ni noms ni empreintes', async () => {
+  it('[R224] rien de lisible dans le stockage, ni noms ni empreintes', async () => {
     const t = await world();
     const all = [...t.parts.values()].map((b) => Buffer.from(b).toString('latin1')).join('');
     expect(all).not.toContain(MARK);
@@ -88,7 +88,7 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     expect(JSON.stringify(last)).not.toContain(MARK);
   });
 
-  it('[R223] mauvaise clé, morceau changé, déplacé, manquant ou sommaire absent : refus, et la base reste vide', async () => {
+  it('[R224] mauvaise clé, morceau changé, déplacé, manquant ou sommaire absent : refus, et la base reste vide', async () => {
     const t = await world();
     const target = emptyDb();
     const empty = async () => expect(await target.all('SELECT name FROM sqlite_master')).toEqual([]);
@@ -121,7 +121,7 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     expect(await restoreCopy(target, t.copies, t.key, '../autre')).toEqual({ ok: false, code: 'bad_copy_id' });
   });
 
-  it('[R223] une base non vide est refusée : rien n’est jamais écrasé', async () => {
+  it('[R224] une base non vide est refusée : rien n’est jamais écrasé', async () => {
     const t = await world();
     const before = (await dump(t.db))['persons'];
     expect(await restoreCopy(t.db, t.copies, t.key, t.receipt.copyId)).toEqual({ ok: false, code: 'target_not_empty' });
@@ -136,7 +136,7 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     return { source, store, key, copy: new CopieBase(source, new MemoryJournalStore(), store, key) };
   };
 
-  it('[R223] une clé étrangère cassée se dit : jamais « restaurée »', async () => {
+  it('[R224] une clé étrangère cassée se dit : jamais « restaurée »', async () => {
     const s = await small();
     await s.source.exec('PRAGMA foreign_keys = OFF');
     await s.source.run("INSERT INTO enfant (id, parent_id) VALUES ('e', 'absent')");
@@ -145,7 +145,7 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     expect(r).toMatchObject({ ok: false, code: 'not_identical', problems: [{ kind: 'foreign_keys', table: 'enfant' }] });
   });
 
-  it('[R223] une ligne qui arrive différente se dit, table nommée, sans donnée', async () => {
+  it('[R224] une ligne qui arrive différente se dit, table nommée, sans donnée', async () => {
     const s = await small();
     await s.source.run("INSERT INTO parent (id) VALUES ('vrai')");
     const { copyId } = await s.copy.take();
@@ -156,7 +156,7 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     expect(JSON.stringify(r)).not.toContain('vrai');
   });
 
-  it('[R223] le compteur d’une table reprend où il en était, même après une ligne effacée', async () => {
+  it('[R224] le compteur d’une table reprend où il en était, même après une ligne effacée', async () => {
     const s = await small();
     await s.source.run("INSERT INTO compteur (texte) VALUES ('a')");
     await s.source.run("INSERT INTO compteur (texte) VALUES ('b')");
@@ -168,13 +168,13 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     expect(await target.first('SELECT id FROM compteur WHERE texte = ?', ['c'])).toEqual({ id: 3 });
   });
 
-  it('[R223] une valeur que la copie ne sait pas relire arrête la copie : pas de sommaire, pas de copie', async () => {
+  it('[R224] une valeur que la copie ne sait pas relire arrête la copie : pas de sommaire, pas de copie', async () => {
     const s = await small();
     await s.source.exec("INSERT INTO parent (id) VALUES (x'00ff')");
     await expect(s.copy.take()).rejects.toThrow('parent');
   });
 
-  it('[R223] une écriture pendant la copie ne casse pas les clés étrangères : l’enfant est lu avant son parent', async () => {
+  it('[R224] une écriture pendant la copie ne casse pas les clés étrangères : l’enfant est lu avant son parent', async () => {
     const source = emptyDb();
     await source.exec('CREATE TABLE parent (id TEXT PRIMARY KEY); CREATE TABLE enfant (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES parent (id));');
     await source.run("INSERT INTO parent (id) VALUES ('p')");
@@ -196,7 +196,7 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     expect((await restoreCopy(emptyDb(), store, key, copyId)).ok).toBe(true);
   });
 
-  it('[R223] un journal falsifié à la source se dit : jamais « restaurée »', async () => {
+  it('[R224] un journal falsifié à la source se dit : jamais « restaurée »', async () => {
     const source = emptyDb();
     await source.exec('CREATE TABLE journal (seq INTEGER PRIMARY KEY, at TEXT, type TEXT, actor TEXT, subject TEXT, data TEXT, prev_hash TEXT, hash TEXT);');
     await source.run("INSERT INTO journal VALUES (1, '2027-01-01T00:00:00.000Z', 't', 'a', NULL, '{}', 'x', 'y')");
@@ -206,7 +206,7 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     expect(await restoreCopy(emptyDb(), store, key, copyId)).toMatchObject({ ok: false, code: 'not_identical', problems: [{ kind: 'journal_chain' }] });
   });
 
-  it('[R223] un objet du schéma absent, une intégrité mauvaise ou une écriture refusée se disent', async () => {
+  it('[R224] un objet du schéma absent, une intégrité mauvaise ou une écriture refusée se disent', async () => {
     const s = await small();
     await s.source.exec('CREATE INDEX parent_id_copie ON parent (id);');
     await s.source.run("INSERT INTO parent (id) VALUES ('secret-de-ligne')");
@@ -227,7 +227,7 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     expect(await refusing.all('PRAGMA foreign_keys')).toEqual([{ foreign_keys: 1 }]);
   });
 
-  it('[R223] une clé qui n’est pas 32 octets en base64 est refusée', async () => {
+  it('[R224] une clé qui n’est pas 32 octets en base64 est refusée', async () => {
     await expect(copyKeyFromSecret('court')).rejects.toThrow();
     await expect(copyKeyFromSecret('%%%')).rejects.toThrow();
   });

@@ -3626,7 +3626,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : aucune
 - Cahier : Architecture technique, « Sauvegardes » ; Indicateurs et tests, « Une restauration complète de la base de test ».
 - Objectif : copier toute la base, schéma et lignes, en morceaux chiffrés derrière une interface de stockage ; la restaurer dans une base neuve et prouver qu'elle est identique.
-- Critères : base restaurée identique, table par table, et chaîne du journal valide [R223] (test) ; rien de lisible dans le stockage (test) ; mauvaise clé, morceau changé, déplacé ou manquant : refus sans rien dire de restauré (tests) ; base non vide : refus (test) ; garde-fous de la base de nouveau actifs après restauration (test) ; durée mesurée, moins d'une heure (test).
+- Critères : base restaurée identique, table par table, et chaîne du journal valide [R224] (test) ; rien de lisible dans le stockage (test) ; mauvaise clé, morceau changé, déplacé ou manquant : refus sans rien dire de restauré (tests) ; base non vide : refus (test) ; garde-fous de la base de nouveau actifs après restauration (test) ; durée mesurée, moins d'une heure (test).
 - Attend : rien.
 
 ### SV02 · La copie de chaque nuit, et ce qui se passe quand elle manque
