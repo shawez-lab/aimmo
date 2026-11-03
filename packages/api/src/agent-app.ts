@@ -29,6 +29,7 @@ import { BASCULE_SCRIPT } from '../app/bascule.ts';
 import { REGLAGES_MANDAT_SCRIPT } from '../app/reglages-mandat.ts';
 import { LOYERS_SCRIPT } from '../app/loyers.ts';
 import { MESURE_SOURCES_SCRIPT } from '../app/mesure-sources.ts';
+import { ANNUAIRE_SCRIPT } from '../app/annuaire.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
 import { FICHE_GOOGLE_SCRIPT } from '../app/fiche-google.ts';
 import { INTEGRATION_SCRIPT } from '../app/integration.ts';
@@ -106,6 +107,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/loyers.js': { body: LOYERS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La mesure des sources pour la direction (G14), chargée au premier geste, jamais gardée sur l'appareil [R201].
   '/app/mesure-sources.js': { body: MESURE_SOURCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // L'annuaire des partenaires pour la direction (U13), chargé au premier geste, jamais gardé sur l'appareil [R201].
+  '/app/annuaire.js': { body: ANNUAIRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les finances (K10), chargées au premier geste, jamais gardées sur l'appareil [R201].
   '/app/finances.js': { body: FINANCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Fiche Google » (AT14), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
