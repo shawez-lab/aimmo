@@ -243,6 +243,11 @@ describeWithSqlite('IN12 · engagement manqué, rappel par un responsable', () =
     expect(missed.find((c) => c.code === 'offre_jour_meme')).toMatchObject({ key: 'o1', personId: 'vendeur', agentId: null });
     await s.t.sync(s.net);
     expect((await s.open()).tasks.map((t) => t.agentId ?? t.personId).sort()).toEqual(['agent-1', 'vendeur']);
+    expect((await s.open()).tasks.find((t) => t.agentId === 'agent-1')!.agentName).toBeNull();
+    await s.db.run("INSERT INTO agents (id, network_id, first_name, last_name, created_at, updated_at) VALUES ('agent-1', ?, 'Inès', 'Inventée', ?, ?)", [s.net, A, A]);
+    const named = (await s.open()).tasks;
+    expect(named.find((t) => t.agentId === 'agent-1')!.agentName).toBe('Inès Inventée');
+    expect(named.find((t) => t.personId === 'vendeur')!.agentName).toBeNull();
   });
 
   it('[R228] le passage de chaque heure ne crée les tâches qu’à 7 h de Paris', async () => {

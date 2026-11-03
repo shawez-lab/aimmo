@@ -30,6 +30,8 @@ export interface MissedPromiseTask {
   day: string;
   personId: string | null;
   agentId: string | null;
+  /** Le nom de l'agent à rappeler, pour un engagement envers l'agent : sa fiche n'est pas une fiche de client. */
+  agentName: string | null;
   /** Une exclusion est en cours : on n'appelle pas [R02]. */
   doNotCall: boolean;
 }
@@ -114,8 +116,8 @@ export class EngagementsManques {
     if (viewer.role !== 'direction') return this.refuse(viewer);
     const net = viewer.networkId;
     const count = await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM missed_promise_tasks WHERE network_id = ? AND done_at IS NULL', [net]);
-    const rows = await this.db.all<{ id: string; promise_code: string; day: string; person_id: string | null; agent_id: string | null }>(
-      'SELECT id, promise_code, day, person_id, agent_id FROM missed_promise_tasks WHERE network_id = ? AND done_at IS NULL ORDER BY day, id LIMIT ?',
+    const rows = await this.db.all<{ id: string; promise_code: string; day: string; person_id: string | null; agent_id: string | null; first_name: string | null; last_name: string | null }>(
+      'SELECT t.id, t.promise_code, t.day, t.person_id, t.agent_id, a.first_name, a.last_name FROM missed_promise_tasks t LEFT JOIN agents a ON a.id = t.agent_id AND a.network_id = t.network_id WHERE t.network_id = ? AND t.done_at IS NULL ORDER BY t.day, t.id LIMIT ?',
       [net, MISSED_PROMISE_PAGE],
     );
     const family = await this.families(net);
@@ -128,6 +130,7 @@ export class EngagementsManques {
         day: r.day,
         personId: who?.root ?? null,
         agentId: r.agent_id,
+        agentName: r.first_name === null ? null : `${r.first_name} ${r.last_name}`,
         doNotCall: who?.doNotCall ?? false,
       };
     });
