@@ -3538,7 +3538,8 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN07 · Engagements de service tenus
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#353). Relecture forte 4 P0 et 3 P1 corrigés, sauf le formulaire sans moyen de répondre, qui reste manqué ; Codex non attendu (H03). G07 reste à l'ancienne mesure jusqu'à IN13.
 - Coupée le 2026-11-03 : le temps gagné et la disponibilité n'avaient aucun calcul, et les engagements n'en avaient que pour deux (G07, par agent) ; IN08, IN09, IN10, IN11 et IN12 prennent le reste.
 - Décidé (2026-11-03), lecture prudente : voir la tête de `packages/core/src/pilotage/engagements-tenus.ts`. Réponse : le premier message lisible d'une conversation, dans la minute ; « le jour même » : le jour de Paris, sans excuse pour le soir, le chiffre reste sévère ; client transmis : dans la minute (critère de M03) ; délais fixés par le cahier, pas par les réglages de G15 (qui disent au client ce que l'agent a tenu). Mesuré sur 8 des 9 lignes : la base ne date pas la mise en vente, l'alerte se dit non mesurable (IN11). Relecture forte : tenu veut dire reçu, un message en essai ou en panne ne vaut pas ; cela s'écarte de G07 (voir IN13). Un formulaire sans moyen de répondre reste manqué : le contact n'a rien reçu.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
@@ -3548,7 +3549,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN08 · Le temps gagné, déclaré par l'agent et contrôlé sur le journal
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
 - Cahier : Indicateurs et tests, « Temps gagné ».
 - Objectif : chaque agent déclare ses heures gagnées d'une semaine finie ; à côté, les gestes du journal de cette semaine, pour contrôler. La direction lit les totaux du réseau, jamais un agent contre un autre.
