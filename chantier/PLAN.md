@@ -1830,7 +1830,8 @@ Voie : 1
 Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par route avant de coder : `POST` du socle (`app.ts`) sans appel de l'application.
 
 ### CE17 · Retrouver la source d'une fuite d'un dossier protégé, à l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#318). Geste placé dans le script déjà servi `commerces-engagements`, sans toucher au socle. Relecture forte 4 P1 corrigés ; Codex à sa limite (H03).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
 - Cahier : M16 ; R16, R13, R201.
 - Objectif : trouvé le 2026-11-03, même comparaison : `POST /v1/commerces/<id>/tracage` n'a aucun appel de l'application. Lire `dossier.trace` et son écran ; vérifier que le geste n'existe pas ailleurs, puis le donner dans `app/commerces*.ts`, sans toucher au socle.
@@ -1838,7 +1839,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### CE18 · Retirer un lien de dossier protégé, à l'écran
-- Statut : à faire
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03) : route ajoutée `GET /v1/commerces/<id>/liens`, aucune route ne listait les liens et un lien jamais ouvert ne pouvait pas se retrouver ; état `porte_fermee` calculé par la porte de l'ouverture, sans écrire de refus au journal. Fusionnée (#319). Relecture forte 4 P1 corrigés ; Codex à sa limite (H03).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
 - Cahier : M16 ; R16, R201.
 - Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : `POST /v1/commerces/liens/<id>/revocation` n'a aucun appel de l'application. Vérifier que le geste n'existe pas ailleurs, puis le donner dans `app/commerces*.ts`, sans toucher au socle.
