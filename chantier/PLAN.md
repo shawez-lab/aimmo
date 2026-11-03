@@ -472,7 +472,8 @@ Décidé, lecture prudente : tout M02 se construit en mode essai, sans aucun env
 - Décidé (2026-11-02), lecture prudente : comptées aussi les fiches d'un agent parti ou au dossier incomplet, qui ne les voit pas. Une ligne par fiche et par raison, sans borne avant le filtre ; seules les fiches réunies coûtent une lecture de plus, 100 au plus, au-delà le nombre s'affiche « au moins ». Relecture forte : 2 P1 corrigés ; Codex à sa limite, fusion sans lui (#255).
 
 ### C09e · Le palier de chaque canal, lu et avancé par la direction
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#310). Relecture forte sans P0 ni P1, un manque de preuve corrigé (rôle partenaire) ; Codex à sa limite (H03) ; vérification GitHub verte. Le Worker ne remplit pas `captationRollout` : à C09 d'y dire les mêmes canaux que `realChannels`.
 - Voie : 1
 - Trouvé par C09b (son « Reste ») : aucune route ne permet à la direction de lire ou d'avancer le palier d'un canal de captation ; `/automatisations/paliers` ne connaît que les automatisations du site.
 - Qui : Claude · Relecture : forte · Dépend de : C09b, B05
