@@ -1977,7 +1977,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : H38 pour un usage réel, rien pour le code.
 
 ### W26 · Lectures sans écran à vérifier, une par une
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W25
 - Cahier : selon la route ; R16, R201.
 - Objectif : trouvé le 2026-11-03 par une comparaison de textes entre routes et écran, qui se trompe dans les deux sens (elle avait manqué `commerces/vigilance` par son dernier segment) : rien n'est vérifié. Pour chacune, dire si l'information est déjà à l'écran sous une autre forme, sinon la donner : `offres.comparatif`, `offres.historique`, `offres.taches`, `dossiers.taches`, `dossiers.alertes`, `investir.calcul.lu`, `partenaires.annuaire.fiche`. Laisser à la voie 1 celles de ses fichiers (`mandats.echeances`, `mandat.chronologie`, `bien.diffusion`, `attribution.regles`, `annonces.semaine`, `annonces.plan_tournage`, `studio.support`). Couper en tâches si plusieurs manquent vraiment.
