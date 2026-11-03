@@ -1,4 +1,6 @@
 import { DESIGN_CSS, THEME_COLOR } from '@aimmo/core';
+import type { ProjectKind } from '../../core/src/db/types.ts';
+import { RECOMMENDATION_CONSENT_LABELS, type RecommendationConsentChannel } from '../../core/src/mandats/gagner/recommandations.ts';
 
 /**
  * L'espace partenaire en ligne (U10) : une page servie par le Worker, sans construction ni dépendance, qui ne lit que
@@ -6,6 +8,21 @@ import { DESIGN_CSS, THEME_COLOR } from '@aimmo/core';
  * fois, gardée sur son appareil, envoyée seulement dans l'en-tête `Authorization`, jamais dans une adresse [R13].
  * Les textes sont posés en texte, jamais en code.
  */
+
+/** Les projets et les canaux de la recommandation (X24), tels que le socle les accepte : un oubli ne compile pas. */
+const RECO_PROJECTS: Record<ProjectKind, string> = {
+  sell: 'Vendre',
+  buy: 'Acheter',
+  rent_out: 'Mettre en location',
+  rent: 'Louer',
+  invest: 'Investir',
+  sell_business: 'Céder une entreprise',
+  buy_business: 'Reprendre une entreprise',
+  valuation: 'Faire estimer',
+};
+const RECO_CHANNELS: Record<RecommendationConsentChannel, string> = { email: 'Mail', phone: 'Téléphone', sms: 'SMS', whatsapp: 'WhatsApp' };
+const options = (labels: Readonly<Record<string, string>>): string =>
+  `<option value="">Choisir</option>` + Object.entries(labels).map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
 
 export const PARTNER_HTML = `<!doctype html>
 <html lang="fr">
@@ -42,6 +59,31 @@ export const PARTNER_HTML = `<!doctype html>
 <h1 id="titre-liste">Vos demandes</h1>
 <ul id="demandes" class="demandes"></ul>
 <p id="vide" class="doux" hidden>Aucune demande ne vous est confiée pour l’instant.</p>
+<h2>Recommander une personne</h2>
+<p class="doux">La personne doit avoir accepté d’être contactée par l’agence, et vous gardez la preuve de son accord. Une recommandation ne se récompense jamais.</p>
+<form id="form-reco">
+<label for="reco-prenom">Son prénom</label>
+<input id="reco-prenom" type="text" maxlength="60" autocomplete="off">
+<label for="reco-mail">Son mail</label>
+<input id="reco-mail" type="email" autocomplete="off">
+<label for="reco-tel">Son téléphone</label>
+<input id="reco-tel" type="tel" autocomplete="off">
+<label for="reco-projet">Son projet</label>
+<select id="reco-projet">${options(RECO_PROJECTS)}</select>
+<label for="reco-preuve">Comment elle a donné son accord</label>
+<select id="reco-preuve">${options(RECOMMENDATION_CONSENT_LABELS)}</select>
+<label for="reco-canal">Comment elle accepte d’être contactée</label>
+<select id="reco-canal">${options(RECO_CHANNELS)}</select>
+<label for="reco-jour">Accord donné le</label>
+<input id="reco-jour" type="date">
+<label for="reco-reference">Où retrouver cette preuve</label>
+<input id="reco-reference" type="text" maxlength="200" autocomplete="off">
+<button type="submit">Envoyer la recommandation</button>
+</form>
+<p id="reco-etat" class="etat" role="status" aria-live="polite"></p>
+<h2>Vos envois</h2>
+<ul id="envois" class="liste"></ul>
+<p id="envois-etat" class="doux"></p>
 </section>
 
 <section id="detail" hidden aria-labelledby="titre-detail">
@@ -79,7 +121,7 @@ export const PARTNER_CSS = DESIGN_CSS + `
 main { max-width: var(--colonne); margin: 0 auto; padding: var(--e-5) var(--e-4) var(--e-8); }
 h1 { margin: var(--e-2) 0 var(--e-4); }
 h2 { font-size: var(--t-l); margin: var(--e-6) 0 var(--e-2); }
-#entree form button[type=submit], #form-piece button[type=submit] { width: 100%; margin-top: var(--e-5); }
+#entree form button[type=submit], #form-piece button[type=submit], #form-reco button[type=submit] { width: 100%; margin-top: var(--e-5); }
 .etat:not(:empty) { padding: var(--e-3) var(--e-4); background: var(--surface); border-radius: var(--r-m); box-shadow: inset 4px 0 0 var(--accent); color: var(--encre); }
 .demandes { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--e-3); }
 .demandes button { width: 100%; justify-content: space-between; text-align: left; margin: 0; padding: var(--e-4) var(--e-5); background: var(--surface); color: var(--encre); border: 1px solid var(--trait); border-radius: var(--r-l); box-shadow: var(--ombre); }
@@ -118,8 +160,26 @@ export const PARTNER_JS = `'use strict';
     too_large: 'Le fichier dépasse 10 Mo.',
     bad_type: 'Le fichier doit être un PDF, un JPEG ou un PNG.',
     storage_unavailable: 'Le dépôt de fichiers n’est pas encore ouvert : remettez la pièce à l’agent.',
-    bad_state: 'Ce changement n’est pas possible à cette étape.'
+    bad_state: 'Ce changement n’est pas possible à cette étape.',
+    reward: 'Une recommandation ne se récompense jamais : retirez ce qui en parle.',
+    bad_first_name: 'Ce prénom n’est pas lisible : 60 caractères au plus.',
+    bad_project: 'Choisissez son projet.',
+    no_contact: 'Donnez son mail ou son téléphone.',
+    bad_email: 'Ce mail n’est pas lisible.',
+    bad_phone: 'Ce téléphone n’est pas lisible.',
+    no_consent: 'Sans la preuve de son accord, rien n’est transmis.',
+    bad_consent_kind: 'Dites comment elle a donné son accord.',
+    bad_consent_channel: 'Dites comment elle accepte d’être contactée.',
+    bad_consent_date: 'Dites quand elle a donné son accord.',
+    consent_in_future: 'La date de son accord ne peut pas être dans le futur.',
+    consent_too_old: 'Cet accord date de plus de 30 jours : redemandez-le-lui.',
+    bad_consent_reference: 'Dites où retrouver la preuve, en 200 caractères au plus.',
+    consent_channel_without_contact: 'Donnez la coordonnée du canal qu’elle a accepté.',
+    role: 'Votre espace ne permet pas de recommander.'
   };
+  var RECO_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Vous pouvez renvoyer : si elle est déjà transmise, l’agence ne la comptera qu’une fois, et une date de plus s’affichera dans vos envois.';
+  var RECO_FIELDS = ['reco-prenom', 'reco-mail', 'reco-tel', 'reco-projet', 'reco-preuve', 'reco-canal', 'reco-jour', 'reco-reference'];
+  var recoBusy = false;
   var current = null;
   /** Chaque déconnexion ou nouvelle clé change de session : une réponse d'une session passée est ignorée. */
   var session = 0;
@@ -136,24 +196,95 @@ export const PARTNER_JS = `'use strict';
   function resetForm() { el('fichier').value = ''; el('faite').value = today(); say('depot', ''); }
   function say(id, text) { el(id).textContent = text || ''; }
   function show(id) { ['entree', 'liste', 'detail'].forEach(function (s) { el(s).hidden = s !== id; }); el('sortir').hidden = id === 'entree'; }
+  /** Ce qui est écrit sur la personne recommandée ne reste pas à l'écran : vidé après l'envoi et à la sortie. */
+  function resetReco() { RECO_FIELDS.forEach(function (id) { el(id).value = ''; }); say('reco-etat', ''); }
+  function wipeSent() { clear('envois'); say('envois-etat', ''); }
+  /** Toute sortie vide la page : rien de ce qu'un partenaire a écrit ou lu ne passe au suivant [R13, R16]. */
+  function leave() {
+    session += 1;
+    opening += 1;
+    current = null;
+    recoBusy = false;
+    resetForm();
+    resetReco();
+    wipeSent();
+    clear('dossier');
+    clear('demandes');
+    show('entree');
+  }
   function refusal(body) { return (body && REFUSALS[body.code]) || 'La demande n’a pas abouti. Réessayez dans un instant.'; }
 
   function api(path, init) {
     var key = readKey();
-    if (!key) { show('entree'); return Promise.resolve(null); }
+    if (!key) { leave(); return Promise.resolve(null); }
     var options = init || {};
     var headers = options.headers || {};
     headers.authorization = 'Bearer ' + key;
     var mine = session;
     return fetch(path, { method: options.method || 'GET', headers: headers, body: options.body, cache: 'no-store' }).then(function (r) {
       if (mine !== session) return null;
-      if (r.status === 401) { session += 1; forgetKey(); show('entree'); say('etat', 'Clé refusée. Saisissez-la de nouveau.'); return null; }
+      if (r.status === 401) { forgetKey(); leave(); say('etat', 'Clé refusée. Saisissez-la de nouveau.'); return null; }
       return r.json().then(function (body) { return mine === session ? { status: r.status, body: body } : null; }, function () { return mine === session ? { status: r.status, body: null } : null; });
-    }, function () { if (mine === session) say('etat', 'Pas de connexion. Réessayez dans un instant.'); return null; });
+    }, function () {
+      if (mine === session) {
+        if (options.lost) options.lost();
+        else say('etat', 'Pas de connexion. Réessayez dans un instant.');
+      }
+      return null;
+    });
+  }
+
+  /** Les envois du partenaire : une date, rien d'autre. Ce que l'agence en fait ne se dit pas ici [R16, R77]. */
+  function loadSent() {
+    var failed = 'Vos envois ne se lisent pas pour le moment.';
+    return api('/v1/gagner/recommandations/mes-envois', { lost: function () { say('envois-etat', failed); } }).then(function (res) {
+      if (!res) return;
+      clear('envois');
+      var sent = res.status === 200 && res.body && res.body.data;
+      if (!Array.isArray(sent)) { say('envois-etat', res.status === 403 ? refusal(res.body) : failed); return; }
+      say('envois-etat', sent.length ? '' : 'Aucune recommandation envoyée pour l’instant.');
+      sent.forEach(function (item) {
+        var li = document.createElement('li');
+        li.textContent = 'Envoyée le ' + new Date(item.createdAt).toLocaleDateString('fr-FR');
+        el('envois').appendChild(li);
+      });
+    });
+  }
+
+  function recommend() {
+    if (recoBusy) return null;
+    var v = function (id) { return el(id).value.trim(); };
+    var stop = !v('reco-mail') && !v('reco-tel') ? 'no_contact' : !v('reco-projet') ? 'bad_project' : !v('reco-preuve') ? 'bad_consent_kind' : !v('reco-canal') ? 'bad_consent_channel' : !v('reco-jour') ? 'bad_consent_date' : !v('reco-reference') ? 'bad_consent_reference' : null;
+    if (stop) { say('reco-etat', REFUSALS[stop]); return null; }
+    // Le jour même vaut le début de la journée : midi, ou l'heure d'un appareil qui avance, serait dans le futur pour le socle.
+    var day = v('reco-jour');
+    var now = new Date();
+    var body = { projectKind: v('reco-projet'), consent: { kind: v('reco-preuve'), channel: v('reco-canal'), givenAt: day === today() ? new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString() : day + 'T12:00:00.000Z', reference: v('reco-reference') } };
+    if (v('reco-prenom')) body.firstName = v('reco-prenom');
+    if (v('reco-mail')) body.email = v('reco-mail');
+    if (v('reco-tel')) body.phone = v('reco-tel');
+    recoBusy = true;
+    say('reco-etat', 'Envoi en cours…');
+    return api('/v1/gagner/recommandations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      lost: function () { say('reco-etat', RECO_LOST); loadSent(); }
+    }).then(function (res) {
+      recoBusy = false;
+      if (!res) return;
+      if (!res.body || res.status >= 500) { say('reco-etat', RECO_LOST); return loadSent(); }
+      if (res.status !== 200) { say('reco-etat', REFUSALS[res.body.code] || 'Cette recommandation n’est pas transmise.'); return; }
+      // Le même texte quoi qu'il advienne de la personne : déjà connue, opposée ou nouvelle [R16, R77].
+      resetReco();
+      say('reco-etat', 'Recommandation transmise. Merci.');
+      return loadSent();
+    });
   }
 
   function loadList() {
     say('etat', '');
+    loadSent();
     return api('/v1/partenaires/espace').then(function (res) {
       if (!res) return;
       if (res.status !== 200) { say('etat', refusal(res.body)); show('liste'); return; }
@@ -254,15 +385,18 @@ export const PARTNER_JS = `'use strict';
       var v = el('cle').value.trim();
       el('cle').value = '';
       if (v.length < 32) { say('etat', 'La clé compte au moins 32 caractères.'); return; }
-      session += 1;
+      leave();
       if (!writeKey(v)) { say('etat', 'Ce navigateur ne garde pas la clé : ouvrez la page hors navigation privée.'); return; }
       loadList();
     });
-    el('sortir').addEventListener('click', function () { session += 1; opening += 1; forgetKey(); current = null; resetForm(); clear('dossier'); clear('demandes'); show('entree'); });
+    el('sortir').addEventListener('click', function () { forgetKey(); leave(); });
     el('retour').addEventListener('click', function () { opening += 1; current = null; resetForm(); loadList(); });
     el('commencer').addEventListener('click', function () { progress('en_cours'); });
     el('terminer').addEventListener('click', function () { progress('terminee'); });
     el('form-piece').addEventListener('submit', function (e) { e.preventDefault(); depositPiece(); });
+    el('form-reco').addEventListener('submit', function (e) { e.preventDefault(); recommend(); });
+    // Une clé retirée ou changée dans un autre onglet ferme aussi celui-ci.
+    if (typeof addEventListener === 'function') addEventListener('storage', function (e) { if (e.key === KEY || e.key === null) { leave(); say('etat', ''); } });
     resetForm();
     if (readKey()) loadList(); else show('entree');
   });
