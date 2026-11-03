@@ -47,6 +47,22 @@ const dump = async (db: SqlDatabase) => {
 };
 
 describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
+  it('[R224] un nom de copie fait de chiffres au hasard ne fait pas échouer la copie', async () => {
+    const real = crypto.getRandomValues.bind(crypto);
+    const db = emptyDb();
+    await applyMigrations(db, loadMigrations());
+    const { store } = memoryStore();
+    const key = await copyKeyFromSecret(SECRET);
+    // Le hasard qui donne 0606060606060606 ressemble à un numéro de téléphone.
+    crypto.getRandomValues = ((a: Uint8Array) => (a.length === 8 ? a.fill(6) : real(a))) as typeof crypto.getRandomValues;
+    try {
+      const r = await new CopieBase(db, new SqlJournalStore(db), store, key).take();
+      expect(r.copyId).toMatch(/-0606060606060606$/);
+    } finally {
+      crypto.getRandomValues = real;
+    }
+  });
+
   it('[R224] la base restaurée est identique, table par table, objets et chaîne du journal compris, en moins d’une heure', async () => {
     const t = await world();
     const target = emptyDb();

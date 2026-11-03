@@ -212,8 +212,8 @@ export class CopieBase {
     const place = manifestPlace(copyId);
     await this.store.put(place, await sealAt(this.key, place, JSON.stringify(manifest)));
     const receipt: CopyReceipt = { copyId, takenAt, tables: tables.length, rows: tables.reduce((n, t) => n + t.rows, 0), parts: tables.reduce((n, t) => n + t.parts, 0) };
-    // Le journal dit la copie, sans une donnée.
-    await appendEvent(this.journal, { type: 'base.copie', actor: 'system:sauvegarde', subject: `copy:${copyId}`, data: { rule: 'R224', tables: receipt.tables, rows: receipt.rows, parts: receipt.parts } }, this.now);
+    // Le journal dit la copie, sans une donnée. Il la nomme par sa date : une suite de chiffres du hasard y serait prise pour un numéro.
+    await appendEvent(this.journal, { type: 'base.copie', actor: 'system:sauvegarde', subject: `copy:${stamp}`, data: { rule: 'R224', tables: receipt.tables, rows: receipt.rows, parts: receipt.parts } }, this.now);
     return receipt;
   }
 }
