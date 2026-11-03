@@ -636,10 +636,8 @@ describeWithSqlite('CE17 · retrouver la source d’une fuite, par la route de l
     await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
     return { t, a: await t.shop() };
   };
-  /** Un repreneur signé et vérifié, qui ouvre le dossier : le texte qu'il pourrait faire circuler. */
   it('[R114] CE23 : le lecteur lit 503 pendant la panne, puis son code rouvre le dossier ; la panne ne compte pas', async () => {
-    const t = await setup();
-    const a = await t.shop();
+    const { t, a } = await ready();
     await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
     const r = await t.buyer('A');
     t.verified.add(r.id);
@@ -663,6 +661,7 @@ describeWithSqlite('CE17 · retrouver la source d’une fuite, par la route de l
     expect(JSON.stringify(opened.body.data.pages)).toContain('Bilan');
     expect((await t.ok(t.alex, 'GET', `/commerces/${a}/liens`))[0]).toMatchObject({ opens: 1 });
   });
+  /** Un repreneur signé et vérifié, qui ouvre le dossier : le texte qu'il pourrait faire circuler. */
   const leaked = async (t: Awaited<ReturnType<typeof setup>>, a: string) => {
     await t.ok(t.dir, 'POST', '/commerces/engagements/modeles', { body: NDA });
     const r = await t.buyer('A');
