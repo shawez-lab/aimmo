@@ -124,6 +124,7 @@ describeWithSqlite('X09 · routes de M19', () => {
       'studio.bibliotheque.choix': '/studio/bibliotheque/musique',
       'studio.bibliotheque': '/studio/bibliotheque',
       'studio.bibliotheque.ajout': '/studio/bibliotheque',
+      'studio.bibliotheque.preuve': '/studio/bibliotheque/preuves',
       'studio.bibliotheque.retrait': '/studio/bibliotheque/x1/retrait',
       'studio.option': '/studio/options',
       'studio.mesure': '/studio/mesure-visuels',
@@ -149,6 +150,44 @@ describeWithSqlite('X09 · routes de M19', () => {
     expect((await t.call(sam, 'GET', `/studio/biens/${b.id}/guide`)).status).toBe(403);
     // Un corps illisible pour un rôle admis : 400.
     expect((await t.call(t.agent, 'POST', `/studio/biens/${b.id}/plan`, undefined, '{pas du json')).body).toMatchObject({ code: 'invalid_body' });
+  });
+
+  it('[R133] [R13] la preuve d’une licence : déposée par la direction, reprise par l’entrée, jamais publiée, et le journal sans référence', async () => {
+    const t = await setup();
+    const kept: { key: string; type: string }[] = [];
+    const has = t.s.files.has;
+    const s: StudioServices = {
+      ...t.s,
+      uploads: { put: async (key, _bytes, type) => void kept.push({ key, type }) },
+      files: { has: async (r) => kept.some((k) => k.key === r) || has(r) },
+    };
+    const route = studioRoutes().find((r) => r.name === 'studio.bibliotheque.preuve')!;
+    const post = (body: Uint8Array<ArrayBuffer>, type: string, services: StudioServices = s, viewer: Viewer = t.direction) =>
+      route.handle(services, viewer, [], new Request('https://api.exemple.test/v1/studio/bibliotheque/preuves', { method: 'POST', headers: { 'content-type': type }, body }));
+    const pdf = new TextEncoder().encode('%PDF-1.7 licence inventée');
+    const ok = await post(pdf, 'application/pdf');
+    expect(ok.status).toBe(200);
+    const { proofRef } = ((await ok.json()) as { data: { proofRef: string } }).data;
+    expect(proofRef).toMatch(/^bibliotheque\/preuves\/[0-9a-f-]{36}\.pdf$/);
+    expect(kept).toEqual([{ key: proofRef, type: 'application/pdf' }]);
+    // La référence rendue est celle que la bibliothèque accepte : aucune entrée ne pouvait être rangée sans cette route.
+    const { Bibliotheque } = await import('../../core/src/studio/bibliotheque.ts');
+    const added = await new Bibliotheque(t.db, t.journal, s.files, { now: t.s.now }).add(t.direction, { kind: 'musique', title: 'Air inventé', source: 'achat_unitaire', licence: 'licence_achetee', validUntil: null, proofRef });
+    expect(added.ok).toBe(true);
+    // Ce qui n'est pas une preuve ne se range pas.
+    expect((await post(pdf, 'text/html')).status).toBe(415);
+    expect((await post(new TextEncoder().encode('<html>'), 'application/pdf')).status).toBe(415);
+    expect((await post(new Uint8Array(10 * 1024 * 1024 + 1).fill(0x25), 'application/pdf')).status).toBe(413);
+    const closed = await post(pdf, 'application/pdf', t.s);
+    expect(closed.status).toBe(503);
+    expect(await closed.json()).toMatchObject({ code: 'storage_unavailable' });
+    expect(kept).toHaveLength(1);
+    // Un agent ne dépose rien, et rien n'est lu.
+    expect((await post(pdf, 'application/pdf', s, t.agent)).status).toBe(403);
+    expect(kept).toHaveLength(1);
+    const events = (await t.journal.all()).filter((e) => e.type === 'studio.bibliotheque.preuve_deposee');
+    expect(events).toHaveLength(1);
+    expect(JSON.stringify(events[0])).not.toContain(proofRef);
   });
 
   it('[R42] sans mandat en cours, la porte de D05 refuse la publication ; les supports partent en HTML', async () => {

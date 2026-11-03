@@ -104,6 +104,23 @@ describe('U11 · écran « Partenaires » de l’application', () => {
     expect(t.els['partenaires-etat']!.textContent).toBe('');
   });
 
+  it('[R74] [R75] une option du Studio demandée pour un bien du projet passe par sa route ; sans bien, pas d’option', async () => {
+    const t = await run();
+    await t.open();
+    const body = t.els['partenaires-corps']!;
+    const options = body.all().filter((e) => e.tagName === 'select' && e.attributes.id?.startsWith('option-'));
+    // Un seul des deux projets a un bien.
+    expect(options).toHaveLength(1);
+    options[0]!.value = 'drone';
+    t.table['POST /v1/studio/options'] = ok({ option: 'drone', referral: referral({ referralId: 'r9' }) });
+    await t.click(t.byText(body, 'Demander cette option et proposer au client'));
+    expect(t.calls.find((c) => c.method === 'POST')).toEqual({ method: 'POST', url: '/v1/studio/options', body: JSON.stringify({ projectId: 'pr1', propertyId: 'b1', option: 'drone' }), auth: `Bearer ${KEY}` });
+    expect(t.els['partenaires-etat']!.textContent).toBe('Tirage fait : montrez au client les photographes proposés, dans cet ordre.');
+    t.table['POST /v1/studio/options'] = no(409, { ok: false, rule: 'R73', code: 'no_partner' });
+    await t.click(t.byText(t.els['partenaires-corps']!, 'Demander cette option et proposer au client'));
+    expect(t.els['partenaires-etat']!.textContent).not.toContain('Tirage fait');
+  });
+
   it('[R16] l’écran ne lit et n’écrit que par les routes /v1/partenaires, la clé dans l’en-tête seul', async () => {
     const t = await run();
     await t.open();

@@ -22,7 +22,7 @@ export type AssetLicence = (typeof ASSET_LICENCES)[number];
 export const WITHDRAWAL_REASONS = ['licence_retiree', 'preuve_invalide', 'choix_de_la_direction'] as const;
 
 /** Les licences qui exigent de nommer l'auteur à chaque usage. */
-const NEEDS_ATTRIBUTION: readonly AssetLicence[] = ['cc_by'];
+export const NEEDS_ATTRIBUTION: readonly AssetLicence[] = ['cc_by'];
 
 /** Le stockage des preuves : seule l'existence d'une référence est lue, jamais son contenu. */
 export interface LibraryProofStore {
