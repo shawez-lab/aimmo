@@ -302,5 +302,31 @@ describeWithSqlite('W08 · remise des clés', () => {
     const late = await referral('gestionnaire');
     await t.annuaire.addCredential(t.dir, manager, { kind: 'carte_g', number: 'N-2', validFrom: day(-30), validUntil: day(-1), proofRef: t.put(`partenaires/${manager}`) });
     expect(await t.remises.linkManagement(t.agent, id, late)).toEqual({ ok: false, rule: 'R73', code: 'partner_unavailable' });
+    // W16 : l'écran lit ce que le geste accepterait, sans jamais demander de référence.
+    const seen = await t.remises.state(t.agent, id);
+    expect(seen).toMatchObject({ ok: true, value: { managers: [{ partnerName: `Partenaire gestionnaire 300` }], entrustable: [{ referralId: late, partnerName: 'Partenaire gestionnaire 300', available: false }] } });
+    expect(seen.ok && seen.value.entrustable.map((c) => c.referralId)).not.toContain(noConsent);
+    expect(seen.ok && seen.value.entrustable.map((c) => c.referralId)).not.toContain(notConfided);
+    expect(seen.ok && seen.value.entrustable.map((c) => c.referralId)).not.toContain(photo);
+    expect(seen.ok && seen.value.entrustable.map((c) => c.referralId)).not.toContain(ok);
+    expect(await t.remises.state(t.dir, id)).toMatchObject({ ok: true, value: { writable: true, entrustable: [{ referralId: late }] } });
+    // Qui lit sans agir ne reçoit aucune mise en relation à confier [R16].
+    expect(await t.remises.state(t.compliance, id)).toMatchObject({ ok: true, value: { writable: false, entrustable: [] } });
+  });
+
+  it('[R108] [R16] W16 : l’écran lit la signature réelle, le récapitulatif rangé et la lecture va au journal', async () => {
+    const t = await setup();
+    const { id, leaseId } = await closed(t, false);
+    expect(await t.remises.state(t.agent, id)).toEqual({ ok: true, value: { writable: true, leaseSigned: false, inventoryClosed: true, handover: null, managers: [], entrustable: [] } });
+    t.signed.set(leaseId, '2027-07-12T09:00:00.000Z');
+    expect(await t.remises.handedOn(t.agent.networkId, id)).toBeNull();
+    const h = await t.remises.handOver(t.agent, id, { handedOn: '2027-07-12' });
+    if (!h.ok) throw new Error(h.code);
+    expect(await t.remises.state(t.agent, id)).toEqual({ ok: true, value: { writable: true, leaseSigned: true, inventoryClosed: true, handover: h.value, managers: [], entrustable: [] } });
+    expect(await t.remises.handedOn(t.agent.networkId, id)).toBe('2027-07-12');
+    expect(await t.remises.state(t.other, id)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+    expect(await t.remises.state(t.other, 42)).toMatchObject({ ok: false, rule: 'R16' });
+    const logged = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'location.lue'");
+    expect(logged.some((e) => JSON.parse(e.data).what === 'handover')).toBe(true);
   });
 });

@@ -3,6 +3,8 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { LEASE_FIELDS } from '../../core/src/location/index.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
+import { LOUER_EDL_SCRIPT } from '../app/louer-edl.ts';
+import { LOUER_REMISE_SCRIPT } from '../app/louer-remise.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { AGENT_APP_FILES, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
@@ -122,7 +124,26 @@ async function run(answers: Record<string, Answer> = {}) {
     await click(byText('Ouvrir', 0));
     calls.length = 0;
   };
-  return { els, calls, table, byText, click, input, body, state, posts, openList, openL1, settle, scripts };
+  /** Le geste d'ouvrir la remise des clés : le script chargé à part, comme le navigateur le ferait. */
+  const lazyLoad = async (src: string, code: string) => {
+    const s = scripts().find((e) => e.attributes.src === src && !e.attributes['data-lu']);
+    if (s) {
+      s.attributes['data-lu'] = 'oui';
+      runInNewContext(code, context);
+      s.listeners.load!({});
+      await settle();
+    }
+  };
+  const openClosing = async () => {
+    await click(byText('Ouvrir la remise des clés'));
+    await lazyLoad('/app/louer-remise.js', LOUER_REMISE_SCRIPT);
+  };
+  /** Le geste d'ouvrir le formulaire de l'état des lieux, chargé à part. */
+  const openInventory = async (label = 'Faire l’état des lieux, pièce par pièce') => {
+    await click(byText(label));
+    await lazyLoad('/app/louer-edl.js', LOUER_EDL_SCRIPT);
+  };
+  return { els, calls, table, byText, click, input, body, state, posts, openList, openL1, settle, scripts, openClosing, openInventory };
 }
 
 describe('W11 · écran « Louer » de l’application', () => {
@@ -178,7 +199,7 @@ describe('W11 · écran « Louer » de l’application', () => {
     expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
     // Le parcours : logement fait, l'étape en cours est les honoraires.
     const rail = t.body().all().find((e) => e.className === 'parcours')!;
-    expect(rail.children.map((li) => li.textContent)).toEqual(['Logement · fait', 'Honoraires', 'Annonce', 'Dossiers · fait', 'Choix', 'Bail', 'État des lieux']);
+    expect(rail.children.map((li) => li.textContent)).toEqual(['Logement · fait', 'Honoraires', 'Annonce', 'Dossiers · fait', 'Choix', 'Bail', 'État des lieux', 'Remise des clés']);
     expect(rail.children[1]!.attributes['aria-current']).toBe('step');
   });
 
@@ -516,6 +537,7 @@ describe('W11 · écran « Louer » de l’application', () => {
       'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c1' }),
     });
     await t.openL1();
+    await t.openInventory();
     // Aucun état n'est choisi d'avance : chaque élément est « à constater ».
     const states = t.body().all().filter((e) => e.tagName === 'select' && /-etat-/.test(e.attributes.id ?? ''));
     expect(states).toHaveLength(5);
@@ -655,5 +677,211 @@ describe('W11 · écran « Louer » de l’application', () => {
     const keys = [...Object.keys(LEASE_FIELDS), 'annexe.notice_information'].map(short);
     expect(new Set(keys).size).toBe(keys.length);
     expect(JS).not.toMatch(/mandataire|gratuit/i);
+  });
+
+  describe('W16 · remise des clés et gestion', () => {
+    const SIGNED = { facts: FACTS, fees: null, lease: { ...LEASE, bailleur: '2027-07-12T09:00:00.000Z', locataire: '2027-07-12T09:05:00.000Z' }, inventoryClosed: true, handedOn: null };
+    const FEES_DUE = { due: false, dueSince: null, tenantCents: 55_250, landlordCents: 55_250 };
+    const STATE = { writable: true, leaseSigned: true, inventoryClosed: true, handover: null, managers: [], entrustable: [] };
+    const HANDOVER = { handoverId: 'h1', listingId: 'l1', handedOn: '2027-07-12', depositPaidTo: 'proprietaire', firstRentPaidTo: 'proprietaire', depositCents: 65_000, firstRentCents: 70_000, text: `Remise des clés le lundi 12 juillet 2027.\nLe dépôt est réglé directement au propriétaire. ${INJECTED}`, textSha256: 'a'.repeat(64) };
+    const setup = async (state: unknown, more: Record<string, Answer> = {}) => {
+      const t = await run({
+        'GET /v1/location/l1/suivi': ok(SIGNED),
+        'GET /v1/location/l1/remise-des-cles': ok(state),
+        'GET /v1/location/l1/honoraires-dus': ok(FEES_DUE),
+        ...more,
+      });
+      await t.openL1();
+      return t;
+    };
+
+    it('[R201] servi à part, chargé au premier geste, rien n’est lu avant, et chaque script tient le budget', async () => {
+      const t = await setup(STATE);
+      expect(t.scripts().filter((e) => e.attributes.src === '/app/louer-remise.js')).toHaveLength(0);
+      expect(t.calls.some((c) => c.url.includes('remise-des-cles'))).toBe(false);
+      expect(LOUER_SCRIPT).not.toContain('/remise-des-cles');
+      expect(budgetProblems({ html: '', js: LOUER_REMISE_SCRIPT }, BUDGETS.page)).toEqual([]);
+      expect(budgetProblems({ html: '', js: LOUER_EDL_SCRIPT }, BUDGETS.page)).toEqual([]);
+      expect(budgetProblems({ html: '', js: LOUER_SCRIPT }, BUDGETS.page)).toEqual([]);
+      const served = handleAgentApp(new Request('https://aimmo.example.test/app/louer-remise.js'))!;
+      expect(served.headers.get('content-type')).toContain('text/javascript');
+      expect(await served.text()).toBe(LOUER_REMISE_SCRIPT);
+      await t.openClosing();
+      expect(t.scripts().filter((e) => e.attributes.src === '/app/louer-remise.js')).toHaveLength(1);
+      expect(t.calls.map((c) => c.url)).toEqual(['/v1/location/l1/remise-des-cles', '/v1/location/l1/honoraires-dus']);
+    });
+
+    it('[R108] le rail ne dit jamais « fait » pour un bail signé en essai', async () => {
+      const t = await setup({ ...STATE, leaseSigned: false });
+      const text = t.body().textContent;
+      expect(text).toContain('Bail · signé en essai');
+      expect(text).not.toContain('Bail · fait');
+      const real = await setup(STATE, { 'GET /v1/location/l1/suivi': ok({ ...SIGNED, lease: { ...SIGNED.lease, mode: 'reel' } }) });
+      expect(real.body().textContent).toContain('Bail · fait');
+    });
+
+    it('[R16] une autre clé sur le même appareil ne rouvre rien sans son geste', async () => {
+      const t = await setup(STATE);
+      await t.openClosing();
+      t.calls.length = 0;
+      await t.click(t.els['louer-retour']);
+      await t.click(t.byText('Ouvrir', 0));
+      // Le même agent revient : le bloc se rouvre.
+      expect(t.calls.some((c) => c.url.endsWith('/remise-des-cles'))).toBe(true);
+      await t.click(t.els.sortir);
+      t.els.cle!.value = 'z'.repeat(40);
+      t.els['form-connexion']!.listeners.submit!({ preventDefault: () => undefined });
+      await t.settle();
+      await t.openL1();
+      await t.settle();
+      expect(t.calls.some((c) => c.url.endsWith('/remise-des-cles'))).toBe(false);
+      expect(t.byText('Ouvrir la remise des clés')).toBeDefined();
+    });
+
+    it('un script chargé mais vide ne laisse pas l’écran en attente', async () => {
+      const t = await setup(STATE);
+      await t.click(t.byText('Ouvrir la remise des clés'));
+      t.scripts().find((e) => e.attributes.src === '/app/louer-remise.js')!.listeners.load!({});
+      await t.settle();
+      expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    });
+
+    it('[R201] le formulaire de l’état des lieux est servi à part', async () => {
+      const served = handleAgentApp(new Request('https://aimmo.example.test/app/louer-edl.js'))!;
+      expect(served.headers.get('content-type')).toContain('text/javascript');
+      expect(await served.text()).toBe(LOUER_EDL_SCRIPT);
+    });
+
+    it('sans réseau au chargement du script, c’est dit, et le même geste recharge', async () => {
+      const t = await setup(STATE);
+      await t.click(t.byText('Ouvrir la remise des clés'));
+      const s = t.scripts().find((e) => e.attributes.src === '/app/louer-remise.js')!;
+      s.listeners.error!({});
+      await t.settle();
+      expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+      expect(t.byText('Ouvrir la remise des clés')).toBeDefined();
+    });
+
+    it('[R108] une signature d’essai n’ouvre pas la remise : c’est dit en français, et aucun geste n’est offert', async () => {
+      const t = await setup({ ...STATE, leaseSigned: false });
+      await t.openClosing();
+      const text = t.body().textContent;
+      expect(text).toContain('Le bail n’est pas signé pour de vrai : une signature d’essai ne compte pas.');
+      expect(text).toContain('Pas encore dus : ils le deviennent à la signature réelle du bail.');
+      expect(t.byText('Ranger la remise des clés')).toBeUndefined();
+      expect(text).not.toMatch(/lease_not_signed|R108/);
+    });
+
+    it('[R108] un refus du serveur est dit en français, sans code ; une signature devenue d’essai ne passe pas', async () => {
+      const t = await setup(STATE, { 'POST /v1/location/l1/remise-des-cles': no(409, { ok: false, rule: 'R107', code: 'lease_not_signed' }) });
+      await t.openClosing();
+      await t.click(t.byText('Ranger la remise des clés'));
+      expect(t.state()).toBe('Choisissez le jour de la remise : aujourd’hui ou un jour passé.');
+      expect(t.posts()).toHaveLength(0);
+      t.input('Jour de la remise des clés').value = '2027-07-12';
+      await t.click(t.byText('Ranger la remise des clés'));
+      expect(t.posts()[0]).toMatchObject({ url: '/v1/location/l1/remise-des-cles', body: JSON.stringify({ handedOn: '2027-07-12' }) });
+      expect(t.state()).toBe('Le bail n’est pas signé pour de vrai : une signature d’essai ne compte pas.');
+    });
+
+    it('[R107] la remise rangée se relit depuis le serveur, en texte, sans aucun champ d’argent', async () => {
+      const t = await setup(STATE, { 'POST /v1/location/l1/remise-des-cles': ok(HANDOVER) });
+      await t.openClosing();
+      expect(t.body().all().filter((e) => e.tagName === 'label').map((e) => e.textContent).filter((x) => /remise/i.test(x ?? ''))).toEqual(['Jour de la remise des clés']);
+      t.table['GET /v1/location/l1/suivi'] = ok({ ...SIGNED, handedOn: '2027-07-12' });
+      t.table['GET /v1/location/l1/remise-des-cles'] = ok({ ...STATE, handover: HANDOVER });
+      t.input('Jour de la remise des clés').value = '2027-07-12';
+      await t.click(t.byText('Ranger la remise des clés'));
+      // L'écran relit : le rail, le récapitulatif du serveur, et le message reste affiché.
+      expect(t.state()).toBe('Remise des clés rangée.');
+      const text = t.body().textContent;
+      expect(text).toContain('Remise des clés · fait');
+      expect(text).toContain('Clés remises le 12/07/2027.');
+      expect(text).toContain('Remise des clés le lundi 12 juillet 2027.');
+      expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+      expect(t.byText('Ranger la remise des clés')).toBeUndefined();
+    });
+
+    it('[R10] une réponse perdue est dite telle, sans refaire le geste ; on relit avant de recommencer', async () => {
+      const t = await setup(STATE);
+      await t.openClosing();
+      t.input('Jour de la remise des clés').value = '2027-07-12';
+      await t.click(t.byText('Ranger la remise des clés'));
+      expect(t.state()).toBe('Réponse perdue : ce geste est peut-être rangé. Relisez avant de recommencer.');
+      expect(t.byText('Ranger la remise des clés')).toBeUndefined();
+      expect(t.posts()).toHaveLength(1);
+      t.table['GET /v1/location/l1/remise-des-cles'] = ok({ ...STATE, handover: HANDOVER });
+      await t.click(t.byText('Relire la remise des clés'));
+      expect(t.body().textContent).toContain('Remise des clés le lundi 12 juillet 2027.');
+      expect(t.posts()).toHaveLength(1);
+    });
+
+    it('[R10] une erreur du serveur après le geste compte aussi pour une réponse perdue ; déjà rangée, on relit', async () => {
+      const t = await setup(STATE, { 'POST /v1/location/l1/remise-des-cles': no(500, { ok: false }) });
+      await t.openClosing();
+      t.input('Jour de la remise des clés').value = '2027-07-12';
+      await t.click(t.byText('Ranger la remise des clés'));
+      expect(t.state()).toContain('Réponse perdue');
+      await t.click(t.byText('Relire la remise des clés'));
+      t.table['POST /v1/location/l1/remise-des-cles'] = no(409, { ok: false, rule: null, code: 'already_handed_over' });
+      t.input('Jour de la remise des clés').value = '2027-07-12';
+      await t.click(t.byText('Ranger la remise des clés'));
+      expect(t.state()).toBe('La remise des clés était déjà rangée.');
+    });
+
+    it('[R16] qui lit sans agir n’a ni formulaire ni bouton ; un autre agent ne lit rien ; un geste refusé est dit', async () => {
+      const reader = await setup({ ...STATE, writable: false });
+      await reader.openClosing();
+      expect(reader.body().textContent).toContain('Clés pas encore remises.');
+      expect(reader.byText('Ranger la remise des clés')).toBeUndefined();
+      const other = await setup(STATE, { 'GET /v1/location/l1/remise-des-cles': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
+      await other.openClosing();
+      expect(other.state()).toBe('Ce geste n’est pas dans vos droits.');
+      expect(other.body().textContent).not.toContain('Honoraires de location');
+      const late = await setup(STATE, { 'POST /v1/location/l1/remise-des-cles': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
+      await late.openClosing();
+      late.input('Jour de la remise des clés').value = '2027-07-12';
+      await late.click(late.byText('Ranger la remise des clés'));
+      expect(late.state()).toBe('Ce geste n’est pas dans vos droits.');
+    });
+
+    it('[R74] [R73] la gestion se confie à un professionnel nommé, jamais par une référence ; une carte échue n’offre pas de bouton', async () => {
+      const entrustable = [
+        { referralId: 'r1', partnerName: 'Gestion Inventée', available: true },
+        { referralId: 'r2', partnerName: INJECTED, available: false },
+      ];
+      const t = await setup({ ...STATE, leaseSigned: false, entrustable }, { 'POST /v1/location/l1/gestion': ok({ partnerId: 'p1' }) });
+      await t.openClosing();
+      expect(t.body().all().filter((e) => e.tagName === 'label').map((e) => e.textContent)).not.toContain('Référence');
+      expect(t.body().textContent).not.toContain('r1');
+      expect(t.body().textContent).toContain('La carte G ou l’assurance de ce gestionnaire n’est pas valide ce jour.');
+      expect(t.byText(`Confier la gestion à ${INJECTED}`)).toBeUndefined();
+      t.table['GET /v1/location/l1/remise-des-cles'] = ok({ ...STATE, leaseSigned: false, managers: [{ partnerName: 'Gestion Inventée', linkedAt: '2027-07-12T10:00:00.000Z' }] });
+      await t.click(t.byText('Confier la gestion à Gestion Inventée'));
+      expect(t.posts()[0]).toMatchObject({ url: '/v1/location/l1/gestion', body: JSON.stringify({ referralId: 'r1' }) });
+      expect(t.state()).toBe('Gestion confiée à Gestion Inventée.');
+      expect(t.body().textContent).toContain('Confiée à Gestion Inventée, le 12/07/2027.');
+    });
+
+    it('[R73] sans gestionnaire confié, l’écran dit où aller ; un refus de la carte est dit en français', async () => {
+      const none = await setup(STATE);
+      await none.openClosing();
+      expect(none.body().textContent).toContain('Aucun gestionnaire confié pour ce logement');
+      const t = await setup({ ...STATE, entrustable: [{ referralId: 'r1', partnerName: 'Gestion Inventée', available: true }] }, { 'POST /v1/location/l1/gestion': no(409, { ok: false, rule: 'R73', code: 'partner_unavailable' }) });
+      await t.openClosing();
+      await t.click(t.byText('Confier la gestion à Gestion Inventée'));
+      expect(t.state()).toBe('La carte G ou l’assurance de ce gestionnaire n’est pas valide ce jour.');
+    });
+
+    it('[R102] les honoraires dus viennent du code ; sans honoraires rangés, c’est dit sans bloquer le reste', async () => {
+      const t = await setup(STATE, { 'GET /v1/location/l1/honoraires-dus': ok({ due: true, dueSince: '2027-07-12T09:05:00.000Z', tenantCents: 55_250, landlordCents: 50_000 }) });
+      await t.openClosing();
+      expect(t.body().textContent).toContain('Dus depuis le 12/07/2027 : 552,50 € pour le locataire, 500,00 € pour le bailleur.');
+      expect(t.body().textContent).toContain('rien n’est encaissé ici');
+      const none = await setup(STATE, { 'GET /v1/location/l1/honoraires-dus': no(409, { ok: false, rule: 'R102', code: 'no_fees' }) });
+      await none.openClosing();
+      expect(none.body().textContent).toContain('Les honoraires ne sont pas encore rangés.');
+      expect(none.byText('Ranger la remise des clés')).toBeDefined();
+    });
   });
 });
