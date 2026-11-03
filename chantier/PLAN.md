@@ -2446,6 +2446,15 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Critères : l'écran lit seulement par les routes `/v1/investir` [R16] ; aucun chiffre n'est calculé sur le téléphone, tout vient du code du serveur [R121] ; l'alerte d'un bien classé G est en tête [R124] ; écran accessible, beau sur téléphone d'abord, testé comme les autres (`fake-dom`).
 - Attend : rien.
 
+### Y10 · Importer les loyers de marché depuis l'écran du réseau
+- Statut : en cours
+- Trouvé le 2026-11-03 par la voie 1 : rien n'appelle `/v1/investir/loyers` à l'écran, et H34 demande à Shawez d'importer ce fichier. Vérifié au passage, à retirer des restes de la voie 2 : M09 comparatif et historique sont déjà à l'écran par `/suivi`, et M11 remerciements et satisfaction par `/apres-vente/dossiers`.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : Y02
+- Cahier : M17, « Rendement calculé par le code » ; R122, R16, R10, R201.
+- Objectif : la direction choisit le type et le millésime, dépose le fichier de la Carte des loyers depuis l'écran du réseau, voit l'avancée jusqu'au bout, et vérifie le loyer d'une commune.
+- Critères : réservé à la direction [R16] (test) ; un fichier mal formé est dit ligne à ligne, en français, sans rien ranger [R122] (test) ; un gros fichier se range en plusieurs appels, sans fin s'il n'avance plus (test) ; réponse perdue dite telle [R10] (test) ; le loyer lu dit sa source exacte, sa date et sa fiabilité, « inconnu » sans donnée [R10, R122] (test) ; script à part, budget tenu [R201] (test).
+- Attend : H34 pour le fichier réel.
+
 **M19 · Studio, octobre 2027.**
 
 Voie : 2
