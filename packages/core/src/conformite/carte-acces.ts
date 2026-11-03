@@ -360,6 +360,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // mandats-documents
   mandates: { locate: by('person_id') },
   mandate_register_settings: out('sans_client', 'Réglage de la numérotation du registre des mandats.'),
+  proof_seals: out('sans_client', 'Comptes mensuels scellés, numéros du registre et empreintes : aucune personne n\'y est nommée.'),
+  proof_publication_cache: out('sans_client', 'Copie recalculable du compte public, sans personne nommée.'),
   neighbourhood_campaigns: out('sans_client', 'Campagne de lettres d\'un agent : aucune personne nommée, seulement le centre du rayon.'),
   neighbourhood_letters: out('non_rattachable', 'Lettre adressée « Au propriétaire » ou « Aux habitants » d\'une adresse : rattachée à aucune fiche.'),
   service_commitments: out('sans_client', 'Engagement de service du réseau, rangé par la direction.'),
