@@ -1703,12 +1703,13 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes de `packages/api/sr
 - Décidé (2026-11-03) : route de lecture `GET /location/<id>/remise-des-cles` ajoutée, l'agent choisit un gestionnaire nommé, jamais une référence ; le formulaire de l'état des lieux servi à part (`/app/louer-edl.js`) pour tenir le budget ; le rail dit « Bail · signé en essai ». La remise réelle reste fermée tant que H08 et H24 ne sont pas faits. Le critère cite R10 pour la réponse perdue, alors que R10 parle des chiffres. Relecture forte : 3 P1 corrigés ; relecture de Codex en échec, fusion sans elle (#296).
 
 ### W17 · Modèles de bail de la direction à l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11
 - Cahier : M15 Louer ; R16, R17, R201.
 - Objectif : la direction lit le modèle en vigueur, range une nouvelle version et la valide, par les routes `/location/modeles-bail`.
 - Critères : réservé à la direction [R16] (test) ; une nouvelle version s'ajoute, l'ancienne reste [R17] (test) ; un modèle non validé est dit d'essai (test) ; budget tenu [R201] (test).
 - Attend : rien pour l'écran ; H08 pour un modèle réel.
+- Décidé (2026-11-03) : l'objectif disait « la direction la valide », le code réserve déjà la validation à la conformité (H08, test existant) : la direction lit et range depuis l'écran du réseau, la conformité lit et valide depuis le sien, en deux appuis. Route de lecture `GET /location/modeles-bail` ajoutée. Relecture forte : 3 P1 corrigés ; Codex à sa limite, fusion sans lui (#298).
 
 **M20 · La mesure à l'écran.**
 
@@ -1767,6 +1768,28 @@ Voie : 1
 - Objectif : la direction range musiques et images sous licence, règle les options et lit la mesure des 20 visuels ; aujourd'hui `/v1/studio/bibliotheque`, `/options` et `/mesure-visuels` n'ont aucun geste à l'écran. Lire d'abord chaque route.
 - Critères : réservé à la direction [R16] (test) ; une licence manquante est refusée et dite (test) ; réponse perdue dite telle [R10] (test) ; budget tenu [R201] (test).
 - Attend : rien pour l'écran.
+
+**Espaces des clients et location : les gestes manquants à l'écran.**
+
+Voie : 2
+
+Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la voie 2 aux appels de l'application : aucun espace client ne peut s'ouvrir depuis l'écran, et aucun garant ne peut s'ajouter à une candidature.
+
+### EC12 · Ouvrir l'espace d'un client depuis sa fiche
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : EC06, EC07
+- Cahier : Le produit, espaces des clients ; R160, R03, R16, R161, R26, R201.
+- Objectif : depuis la fiche, l'agent note comment la personne a donné son accord et lui ouvre son espace, par `POST /v1/espaces/personnes/<id>/ouvrir`. Il ne voit jamais le lien.
+- Critères : sans preuve de l'accord, rien ne part [R03] (test) ; ce qui part est dit en essai, jamais présenté comme un envoi réel [R26] (test) ; aucun lien ni jeton à l'écran [R160] (test) ; une personne sans dossier est dite telle [R161] (test) ; refus de droits dit en français [R16] (test) ; réponse perdue dite telle, sans renvoyer de lien (test) ; script à part, budget tenu [R201] (test).
+- Attend : rien pour l'écran ; H40 pour de vrais espaces.
+
+### W18 · Garants d'une candidature à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11, W13
+- Cahier : M15 Louer ; R104, R105, R16, R201.
+- Objectif : l'agent ajoute un garant à une candidature, par `POST /v1/location/candidatures/<id>/garants`. Vérifier d'abord la route et les pièces du garant.
+- Critères : seules les pièces permises sont demandées [R104] (test) ; l'ordre d'arrivée ne change pas [R105] (test) ; seul l'agent du bien ou la direction agit [R16] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : rien.
 
 **M14 · Réseau et académie, juillet 2027.**
 
