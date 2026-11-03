@@ -7,7 +7,8 @@ import { LEASE_FIELDS } from '../../core/src/location/index.ts';
  * ferait. Tout texte reçu est posé en texte ; rien n'est gardé sur l'appareil.
  */
 const KINDS = { bail_vide: 'Location vide', bail_meuble: 'Location meublée' };
-const LABELS = Object.fromEntries(Object.entries(LEASE_FIELDS).map(([k, v]) => [k, v.label]));
+// Sans la clé dont le nom porte le mot que l'écran n'emploie jamais [R07] : ce champ se dit alors par le seul nom rendu par le serveur.
+const LABELS = Object.fromEntries(Object.entries(LEASE_FIELDS).filter(([k]) => !/mandataire/i.test(k)).map(([k, v]) => [k, v.label]));
 const REFUSALS = {
   empty_body: 'Le modèle est vide : rien n’est rangé.',
   body_too_long: 'Le modèle est trop long : rien n’est rangé.',
