@@ -21,14 +21,25 @@ import { checkText, plain } from '../../envoi/texte.ts';
 import { localTime } from '../../envoi/horaires.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
+import { parisDayStart } from '../../pilotage/tableau-agent.ts';
 import { agentBlocked } from './etat-agent.ts';
+
+/** Ce qu'un compte rendu ou un point est devenu : tenu veut dire reçu, comme la mesure de la direction (IN07, R216). */
+interface Delivery {
+  status: string | null;
+  delivery_status: string | null;
+  sent_at: string | null;
+  trial: number;
+}
+const IN_TRIAL = (m: string) => `EXISTS (SELECT 1 FROM trial_outbox b WHERE b.message_id = ${m})`;
+const reachedInTime = (r: Delivery, deadline: number): boolean => r.status === 'valide' && r.delivery_status === 'sent' && r.sent_at !== null && Number(r.trial) !== 1 && Date.parse(r.sent_at) <= deadline;
 
 export const COMMITMENT_MEASURES = ['compte_rendu_visite', 'point_semaine'] as const;
 export type CommitmentMeasure = (typeof COMMITMENT_MEASURES)[number];
 /** Ce que chaque mesure compte, écrit dans le code, le même pour tous. */
 export const COMMITMENT_MEASURE_RULES: Readonly<Record<CommitmentMeasure, string>> = Object.freeze({
-  compte_rendu_visite: 'Chaque visite tenue compte ; elle est tenue si son compte rendu est validé dans le délai après la fin de la visite.',
-  point_semaine: 'Chaque point de la semaine préparé compte ; il est tenu s’il est validé dans le délai après sa préparation.',
+  compte_rendu_visite: 'Chaque visite finie compte ; l’engagement est tenu si son compte rendu est parti au vendeur dans le délai après la fin de la visite. Refusé à l’envoi ou resté en essai, il n’est pas tenu.',
+  point_semaine: 'Chaque point est dû le lundi qui suit sa semaine ; l’engagement est tenu s’il est parti au vendeur dans le délai à partir de ce lundi. Refusé à l’envoi ou resté en essai, il n’est pas tenu. Un point que le système n’a jamais préparé ne se voit pas ici.',
 });
 export const SALE_PLAN = Object.freeze([
   'Annonce sur le site du réseau, avec la page du bien',
@@ -175,19 +186,30 @@ export class DossierPresentation {
       // Toute visite terminée et non annulée compte, que l'agent l'ait marquée tenue ou non, et qu'elle ait été ouverte
       // ou non (un rendez-vous décalé n'a sa ligne de visite qu'à sa première ouverture) : le taux ne dépend pas de ce
       // que l'agent choisit de marquer ou d'ouvrir.
-      const rows = await this.db.all<{ end_at: string; validated_at: string | null; status: string | null }>(
-        `SELECT a.end_at, r.validated_at, r.status FROM appointments a
-         LEFT JOIN visit_reports r ON r.appointment_id = a.id
+      const rows = await this.db.all<Delivery & { end_at: string }>(
+        `SELECT a.end_at, r.status, r.delivery_status, m.occurred_at AS sent_at, ${IN_TRIAL('r.message_id')} AS trial FROM appointments a
+         LEFT JOIN visit_reports r ON r.appointment_id = a.id LEFT JOIN messages m ON m.id = r.message_id
          WHERE a.network_id = ? AND a.agent_id = ? AND a.kind = 'visite' AND a.status IN ('booked', 'honored') AND a.end_at >= ? AND a.end_at < ? ORDER BY a.end_at, a.id`,
         [networkId, agentId, from.toISOString(), to.toISOString()],
       );
-      for (const r of rows) if (due(r.end_at)) out.push({ at: r.end_at, kept: r.status === 'valide' && r.validated_at !== null && Date.parse(r.validated_at) <= Date.parse(r.end_at) + delay });
+      for (const r of rows) if (due(r.end_at)) out.push({ at: r.end_at, kept: reachedInTime(r, Date.parse(r.end_at) + delay) });
     } else {
-      const rows = await this.db.all<{ created_at: string; validated_at: string | null; status: string }>(
-        'SELECT created_at, validated_at, status FROM weekly_points WHERE network_id = ? AND agent_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at, mandate_id, week',
-        [networkId, agentId, from.toISOString(), to.toISOString()],
+      // Comme la mesure de la direction (IN07) : le lundi qui suit la semaine fait le cas, et un mandat signé après ce lundi
+      // n'en a pas. Le délai court depuis le début de ce lundi à Paris.
+      const firstDay = new Date(from.getTime() - 86_400_000).toISOString().slice(0, 10);
+      const lastDay = new Date(to.getTime() + 86_400_000).toISOString().slice(0, 10);
+      const rows = await this.db.all<Delivery & { monday: string; signed_at: string | null }>(
+        `SELECT date(p.week, '+7 days') AS monday, d.signed_at, p.status, p.delivery_status, m.occurred_at AS sent_at, ${IN_TRIAL('p.message_id')} AS trial
+         FROM weekly_points p LEFT JOIN mandates d ON d.id = p.mandate_id LEFT JOIN messages m ON m.id = p.message_id
+         WHERE p.network_id = ? AND p.agent_id = ? AND date(p.week, '+7 days') >= ? AND date(p.week, '+7 days') <= ? ORDER BY monday, p.mandate_id`,
+        [networkId, agentId, firstDay, lastDay],
       );
-      for (const r of rows) if (due(r.created_at)) out.push({ at: r.created_at, kept: r.status === 'valide' && r.validated_at !== null && Date.parse(r.validated_at) <= Date.parse(r.created_at) + delay });
+      for (const r of rows) {
+        const at = parisDayStart(r.monday);
+        if (at.getTime() < from.getTime() || at.getTime() >= to.getTime()) continue;
+        if (r.signed_at !== null && day(r.signed_at) > r.monday) continue;
+        if (due(at.toISOString())) out.push({ at: at.toISOString(), kept: reachedInTime(r, at.getTime() + delay) });
+      }
     }
     return out;
   }
