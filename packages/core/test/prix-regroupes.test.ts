@@ -7,6 +7,7 @@ import {
   figuresOf,
   insideRing,
   minus,
+  ringSelfCrosses,
   ringsOverlap,
   roundPrice,
   saleSet,
@@ -82,6 +83,38 @@ describe('AT01 · calcul des cases de prix', () => {
   it("la période d'une version est la même pour toutes ses cases, jamais la date d'une vente", () => {
     expect(windowOf('2026-06-30', 24)).toEqual({ from: '2024-07', to: '2026-06' });
     expect(windowOf('2026-01-15', 12)).toEqual({ from: '2025-02', to: '2026-01' });
+  });
+
+  it('[R150] AT19 : un contour qui se croise, se touche ou repasse sur lui-même est reconnu ; un contour simple, même concave, passe', () => {
+    const square: LatLon[] = [[0, 0], [0, 1], [1, 1], [1, 0]];
+    expect(ringSelfCrosses(square)).toBe(false);
+    expect(ringSelfCrosses([[0, 0], [0, 1], [1, 0]])).toBe(false);
+    // Concave en U, et un sommet de plus au milieu d'un bord droit.
+    expect(ringSelfCrosses([[0, 0], [0, 3], [3, 3], [3, 0], [2, 0], [2, 2], [1, 2], [1, 0]])).toBe(false);
+    expect(ringSelfCrosses([[0, 0], [0, 0.5], [0, 1], [1, 1], [1, 0]])).toBe(false);
+    // Un point répété à la suite, y compris le point de fermeture.
+    expect(ringSelfCrosses([[0, 0], [0, 1], [0, 1], [1, 1], [1, 0], [0, 0]])).toBe(false);
+    // Le nœud papillon, ses diagonales qui se coupent.
+    expect(ringSelfCrosses([[0, 0], [1, 1], [0, 1], [1, 0]])).toBe(true);
+    // Un sommet qui touche un autre bord, ou deux boucles qui se pincent au même sommet.
+    expect(ringSelfCrosses([[0, 0], [0, 2], [1, 0], [2, 2], [2, 0]])).toBe(true);
+    expect(ringSelfCrosses([[0, 0], [1, 1], [2, 0], [2, 2], [1, 1], [0, 2]])).toBe(true);
+    // Un aller-retour sur un même bord, sans aucune surface.
+    expect(ringSelfCrosses([[0, 0], [0, 2], [0, 1], [1, 1]])).toBe(true);
+    expect(ringSelfCrosses([[0, 0], [0, 1], [0, 0]])).toBe(true);
+  });
+
+  it('[R150] AT19 : le plus grand contour admis se contrôle en un temps borné, seul et contre un voisin', { timeout: 60_000 }, () => {
+    const circle = (lat: number, lon: number): LatLon[] => Array.from({ length: 2000 }, (_, i) => [lat + 0.01 * Math.cos((2 * Math.PI * i) / 2000), lon + 0.01 * Math.sin((2 * Math.PI * i) / 2000)] as LatLon);
+    const a = circle(47, 5);
+    const b = circle(47, 5.03);
+    const at = performance.now();
+    expect(ringSelfCrosses(a)).toBe(false);
+    const alone = performance.now() - at;
+    expect(ringsOverlap(a, b)).toBe(false);
+    const both = performance.now() - at - alone;
+    expect(alone).toBeLessThan(5000);
+    expect(both).toBeLessThan(30_000);
   });
 
   it('deux zones voisines qui partagent un bord ne se recouvrent pas, même avec un sommet de plus sur ce bord', () => {
@@ -342,6 +375,7 @@ describeWithSqlite('AT01 · versions des prix dans la base', () => {
     const agent = { role: 'agent' as const, userId: 'ag-1', networkId: 'net-1' };
     expect(await prix.defineZone(agent, { level: 'commune', slug: 'x', name: 'X', inseeCode: '99002', ring: COMMUNE, ringSource: 's' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     const direction = { role: 'direction' as const, userId: 'dir-1', networkId: 'net-1' };
+    expect(await prix.defineZone(direction, { level: 'commune', slug: 'noeud', name: 'Nœud', inseeCode: '99002', ring: [[47, 5], [47.1, 5.1], [47, 5.1], [47.1, 5]], ringSource: 's' })).toMatchObject({ ok: false, rule: 'R150', code: 'contour_croise' });
     expect(await prix.defineZone(direction, { level: 'commune', slug: 'x', name: 'X', inseeCode: '99002', ring: [[1, 2]], ringSource: 's' })).toMatchObject({ code: 'contour' });
     expect(await prix.defineZone(direction, { level: 'commune', slug: 'X X', name: 'X', inseeCode: '99002', ring: COMMUNE, ringSource: 's' })).toMatchObject({ code: 'slug' });
     expect(await prix.defineZone(direction, { level: 'commune', slug: 'commune-test', name: 'X', inseeCode: '99002', ring: COMMUNE, ringSource: 's' })).toMatchObject({ code: 'slug_pris' });

@@ -23,6 +23,7 @@ import {
   PRICE_KINDS,
   decideBlock,
   insideRing,
+  ringSelfCrosses,
   ringsOverlap,
   windowOf,
   type CellDecision,
@@ -188,6 +189,7 @@ export class PrixRegroupes {
     const ring = parseRing(input.ring);
     if (!ring) return refuse('contour');
     if (!ringInFrance(ring)) return refuse('hors_france');
+    if (ringSelfCrosses(ring)) return refuse('contour_croise');
     let parentId: string | null = null;
     let insee: string | null = null;
     if (input.level === 'commune') {
