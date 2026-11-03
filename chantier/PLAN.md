@@ -1903,14 +1903,31 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X22 · Recommander un proche depuis la fiche, à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : A07
 - Cahier : M11 ; R16, R201.
 - Objectif : `POST /v1/apres-vente/fiches/<id>/recommandations` n'a aucun appel de l'application. Vérifier d'abord à quoi sert cette route et si le geste existe sous une autre forme ; sinon le donner, avec sa clé d'idempotence.
-- Critères : à écrire après lecture de la route : droits refusés dits [R16] (test) ; réponse perdue dite telle, sans doublon (test) ; budget tenu [R201] (test).
+- Critères : droits refusés dits [R16] (test) ; réponse perdue dite telle, renvoi avec la même clé, sans doublon (test) ; preuve exigée quand la case est cochée [R03, R142] (test) ; budget tenu [R201] (test).
+- Décidé (2026-11-03), lecture prudente : le texte ne dépend que de la saisie, jamais du proche [R16] ; une clé sans réponse depuis 2 minutes est remplacée, le socle refusant de ranger deux fois le même proche pour un client. Relecture forte : 4 P1 corrigés ; Codex non attendu (H03) ; #325.
 - À savoir (lu le 2026-11-03) : la route exige l'en-tête `Idempotency-Key`, que `send` de l'application ne sait pas poser : `api` et `send` sont à étendre ; elle crée une fiche et un accord par téléphone à partir d'une preuve [R03, R142] : relecture forte attentive ; bloc à poser sur la fiche, chargé au premier geste, sur le modèle de `app/fin-de-bail.ts`.
 - Attend : rien.
 
+
+### X23 · La direction valide le guide photo d'un bien, à l'écran
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : X11
+- Cahier : M19 ; R10, R16, R17, R201.
+- Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : `POST /v1/studio/biens/<id>/guide/validation` n'a aucun appel de l'application, alors que l'écran du Studio dit « prêt pour la validation de la direction », et la direction n'ouvre jamais le Studio. Donner une liste des guides prêts à valider, nouvelle lecture réservée à la direction, et le geste, sur l'écran du réseau, chargé au premier geste.
+- Critères : seule la direction lit et valide [R16] (test) ; un guide déjà validé ou pas prêt n'est pas dans la liste (test) ; photos changées après validation : le guide revient à valider (test) ; réponse perdue dite telle, sans doublon (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### X24 · Le partenaire recommande un proche depuis son espace
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : G08
+- Cahier : M20, M18 ; R03, R16, R142, R201.
+- Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : la route de recommandation réservée au partenaire et `GET /v1/gagner/recommandations/mes-envois` n'ont aucun appel de `app/partenaire.ts`. Vérifier la route, puis donner le formulaire et la liste de ses envois dans l'espace du partenaire.
+- Critères : à préciser après lecture : preuve de l'accord exigée [R142] (test) ; réponse perdue dite telle, sans doublon (test) ; rien sur le suivi du proche [R16] (test) ; budget tenu [R201] (test).
+- Attend : rien.
 ### CE19 · Corriger la présentation d'un commerce, à l'écran
 - Statut : fait (2026-11-03)
 - Reste : fusionnée (#324) ; relecture forte 1 P1 corrigé ; Codex non attendu (H03).
