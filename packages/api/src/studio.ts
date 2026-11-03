@@ -12,6 +12,7 @@
  * et le branchement de ces routes au routeur viennent avec X10 (voie 1, fichiers du socle).
  */
 import { Acces, FicheClient, FicheUnique, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { MAX_UPLOAD_BYTES, UPLOAD_TYPES, sha256Hex } from './partenaires.ts';
 import { Annonces } from '../../core/src/annonces/annonces.ts';
 import { MediasBien } from '../../core/src/annonces/medias.ts';
 import { computeMentions, MentionsAnnonce } from '../../core/src/annonces/mentions.ts';
@@ -222,6 +223,26 @@ async function depositRoute(s: StudioServices, v: Viewer, [id, kind]: string[], 
   return reply(result);
 }
 
+/**
+ * La direction dépose la preuve d'une licence, en PDF, JPEG ou PNG, et le serveur choisit la référence que l'entrée de la
+ * bibliothèque reprend [R133]. Le rôle d'abord, avant de lire un octet ; le contenu n'est jamais lu au-delà de sa
+ * signature, et le journal ne garde que l'empreinte [R13]. Rangée hors de `biens/`, la preuve n'est jamais publiée.
+ */
+async function depositLibraryProof(s: StudioServices, v: Viewer, _p: string[], r: Request): Promise<Response> {
+  const type = (r.headers.get('content-type') ?? '').toLowerCase().split(';')[0]!.trim();
+  const kind = UPLOAD_TYPES.find((t) => t.type === type);
+  if (!kind) return json(415, { ok: false, rule: null, code: 'bad_type' });
+  if (!s.uploads) return json(503, { ok: false, rule: null, code: 'storage_unavailable' });
+  const bytes = await readCapped(r, MAX_UPLOAD_BYTES);
+  if (!bytes) return json(413, { ok: false, rule: null, code: 'too_large' });
+  if (bytes.byteLength < kind.magic.length || !kind.magic.every((b, i) => bytes[i] === b)) return json(415, { ok: false, rule: null, code: 'bad_type' });
+  const proofRef = `bibliotheque/preuves/${crypto.randomUUID()}.${kind.ext}`;
+  const sha256 = await sha256Hex(bytes);
+  await s.uploads.put(proofRef, bytes, kind.type);
+  await appendEvent(s.journal, { type: 'studio.bibliotheque.preuve_deposee', actor: `${String(v.role)}:${v.userId}`, subject: `network:${v.networkId}`, data: { rule: 'R133', sha256 } }, s.now);
+  return reply({ ok: true, value: { proofRef } });
+}
+
 const ROUTES: StudioRoute[] = [
   // L'atelier du bien (X11) : photos de la fiche, celles qui ont leur certificat, publications préparées.
   { method: 'GET', pattern: new RegExp(`^/studio/biens/${ID}$`), name: 'studio.atelier', roles: WORK, handle: async (s, v, [id]) => reply(await core(s).atelier.read(v, id!)) },
@@ -313,6 +334,7 @@ const ROUTES: StudioRoute[] = [
   },
   // Bibliothèque sous licence (X07).
   { method: 'GET', pattern: /^\/studio\/bibliotheque\/(musique|image)$/, name: 'studio.bibliotheque.choix', roles: WORK, handle: async (s, v, [kind]) => reply(await core(s).bibliotheque.choices(v, kind)) },
+  { method: 'POST', pattern: /^\/studio\/bibliotheque\/preuves$/, name: 'studio.bibliotheque.preuve', roles: DIRECTION, handle: depositLibraryProof },
   { method: 'GET', pattern: /^\/studio\/bibliotheque$/, name: 'studio.bibliotheque', roles: DIRECTION, handle: async (s, v) => reply(await core(s).bibliotheque.all(v)) },
   {
     method: 'POST',
@@ -336,7 +358,7 @@ const ROUTES: StudioRoute[] = [
     pattern: /^\/studio\/options$/,
     name: 'studio.option',
     roles: WORK,
-    handle: withBody(async (s, v, _p, b) => reply(await core(s).options.requestOption(v, { projectId: b.projectId, propertyId: b.propertyId, option: b.option }))),
+    handle: withBody(async (s, v, _p, b) => reply(await core(s).options.requestOption(v, { projectId: b.projectId, propertyId: b.propertyId, option: b.option, postcode: b.postcode }))),
   },
   { method: 'GET', pattern: /^\/studio\/mesure-visuels$/, name: 'studio.mesure', roles: DIRECTION, handle: async (s, v) => reply(await core(s).options.measureVisuals(v)) },
 ];

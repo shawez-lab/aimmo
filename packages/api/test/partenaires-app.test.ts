@@ -104,6 +104,55 @@ describe('U11 · écran « Partenaires » de l’application', () => {
     expect(t.els['partenaires-etat']!.textContent).toBe('');
   });
 
+  it('[R74] [R75] une option du Studio demandée pour un bien du projet passe par sa route ; sans bien, pas d’option', async () => {
+    const t = await run();
+    await t.open();
+    const body = t.els['partenaires-corps']!;
+    const options = body.all().filter((e) => e.tagName === 'select' && e.attributes.id?.startsWith('option-'));
+    // Un seul des deux projets a un bien.
+    expect(options).toHaveLength(1);
+    options[0]!.value = 'drone';
+    t.table['POST /v1/studio/options'] = ok({ option: 'drone', referral: referral({ referralId: 'r9' }) });
+    await t.click(t.byText(body, 'Demander cette option et proposer au client'));
+    expect(t.calls.find((c) => c.method === 'POST')).toEqual({ method: 'POST', url: '/v1/studio/options', body: JSON.stringify({ projectId: 'pr1', propertyId: 'b1', option: 'drone' }), auth: `Bearer ${KEY}` });
+    expect(t.els['partenaires-etat']!.textContent).toBe('Tirage fait : montrez au client les photographes proposés, dans cet ordre.');
+    t.table['POST /v1/studio/options'] = no(409, { ok: false, rule: 'R73', code: 'no_partner' });
+    await t.click(t.byText(t.els['partenaires-corps']!, 'Demander cette option et proposer au client'));
+    expect(t.els['partenaires-etat']!.textContent).not.toContain('Tirage fait');
+  });
+
+  it('[R10] une option sans réponse n’est dite ni faite ni refusée, et un double appui ne tire pas deux fois', async () => {
+    const text = 'La réponse n’est pas arrivée : rien n’est sûr. Rouvrez les projets avant de recommencer.';
+    for (const answer of [async () => { throw new TypeError('coupure'); }, no(500, { ok: false, code: 'panne' }), async () => new Response('pas du json', { status: 200 })] as Answer[]) {
+      const t = await run({ 'POST /v1/studio/options': answer });
+      await t.open();
+      await t.click(t.byText(t.els['partenaires-corps']!, 'Demander cette option et proposer au client'));
+      expect(t.els['partenaires-etat']!.textContent).toBe(text);
+    }
+    let release: (r: Response) => void = () => undefined;
+    const t = await run({ 'POST /v1/studio/options': () => new Promise((r) => { release = r; }) });
+    await t.open();
+    const b = t.byText(t.els['partenaires-corps']!, 'Demander cette option et proposer au client');
+    await t.click(b);
+    await t.click(b);
+    expect(t.calls.filter((c) => c.url === '/v1/studio/options')).toHaveLength(1);
+    release(Response.json({ ok: false, rule: 'R73', code: 'no_partner' }, { status: 409 }));
+    await new Promise((r) => setTimeout(r, 5));
+    // La réponse arrivée, le geste se refait.
+    await t.click(b);
+    expect(t.calls.filter((c) => c.url === '/v1/studio/options')).toHaveLength(2);
+  });
+
+  it('une option pour un bien sans code postal part avec le code saisi', async () => {
+    const t = await run();
+    await t.open();
+    const body = t.els['partenaires-corps']!;
+    body.all().filter((e) => e.attributes.id?.startsWith('cp-'))[0]!.value = ' 21240 ';
+    t.table['POST /v1/studio/options'] = no(409, { ok: false, rule: 'R73', code: 'no_partner' });
+    await t.click(t.byText(body, 'Demander cette option et proposer au client'));
+    expect(JSON.parse(String(t.calls.find((c) => c.url === '/v1/studio/options')!.body))).toMatchObject({ propertyId: 'b1', postcode: '21240' });
+  });
+
   it('[R16] l’écran ne lit et n’écrit que par les routes /v1/partenaires, la clé dans l’en-tête seul', async () => {
     const t = await run();
     await t.open();

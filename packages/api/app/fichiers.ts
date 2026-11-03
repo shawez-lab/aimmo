@@ -1,5 +1,6 @@
 import { DESIGN_CSS, DESIGN_ICON_SVG, PALETTE, THEME_COLOR } from '@aimmo/core';
 import { CERTIFIED_DOMAINS, PARTNER_TRADES } from '../../core/src/partenaires/annuaire.ts';
+import { STUDIO_OPTIONS } from '../../core/src/studio/options.ts';
 import { SORT_LABELS } from '../src/partenaires-sortes.ts';
 import { ACCORDS_JS } from './accords.ts';
 import { COFFRE_JS, CONFORMITE_CSS, CONFORMITE_HTML } from './conformite.ts';
@@ -18,6 +19,7 @@ import { LOYERS_ENTRY_HTML, LOYERS_JS } from './loyers.ts';
 import { MESURE_SOURCES_ENTRY_HTML, MESURE_SOURCES_JS } from './mesure-sources.ts';
 import { ANNUAIRE_ENTRY_HTML, ANNUAIRE_JS } from './annuaire.ts';
 import { PROSPECTION_ENTRY_HTML, PROSPECTION_JS } from './prospection.ts';
+import { BIBLIOTHEQUE_ENTRY_HTML, BIBLIOTHEQUE_JS } from './bibliotheque.ts';
 import { ENGAGEMENTS_ENTRY_HTML, ENGAGEMENTS_JS } from './engagements.ts';
 import { FIN_DE_BAIL_JS } from './fin-de-bail.ts';
 import { COMMISSIONS_ENTRY_HTML, EUROS_ENTRY_HTML, FINANCES_JS, RAPPORT_AGENT_HTML, RAPPORT_DIRECTION_HTML, REGLAGES_ENTRY_HTML } from './finances.ts';
@@ -203,7 +205,7 @@ ${EUROS_ENTRY_HTML}${RAPPORT_AGENT_HTML}</section>
 <button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
 <p id="reseau-cas-etat" class="etat" role="status"></p>
 </section>
-${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
+${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}${BIBLIOTHEQUE_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -1256,6 +1258,7 @@ export const APP_JS = `'use strict';
   /* ---------- M18 : l'écran « Partenaires » (U11). L'ordre du tirage tel que rangé, jamais retrié ni noté [R75, R14]. ---------- */
   var TRADES = ${JSON.stringify(TRADE_NAMES)};
   var DOMAINS = ${JSON.stringify(DOMAIN_NAMES)};
+  var STUDIO_OPTIONS = ${JSON.stringify(STUDIO_OPTIONS)};
   var SORTS = ${JSON.stringify(SORT_LABELS)};
   var REFERRAL_STATES = { proposee: 'Proposée au client : à lui de choisir', accord_client: 'Le client a choisi : à confier', confiee: 'Confiée : en attente de sa réponse', en_cours: 'En cours chez le professionnel', terminee: 'Terminée', abandonnee: 'Abandonnée' };
   var CONSENT_CHANNELS = { oral: 'De vive voix', ecrit: 'Par écrit', mail: 'Par mail', sms: 'Par SMS', whatsapp: 'Par WhatsApp' };
@@ -1324,6 +1327,22 @@ export const APP_JS = `'use strict';
       }
       return openPartenaires(done);
     });
+  }
+  // Une option passée puis une réponse perdue : la refaire tirerait au sort une seconde fois. L'écran ne dit ni fait ni pas fait [R10].
+  var optionAsking = null;
+  function askOption(body) {
+    var mine = session;
+    if (optionAsking === mine) return Promise.resolve(false);
+    optionAsking = mine;
+    partenairesState('Envoi…');
+    function free() { if (optionAsking === mine) optionAsking = null; }
+    return send('/v1/studio/options', 'POST', body).then(function (res) {
+      free();
+      if (res.gone) return false;
+      if (res.offline || !res.body || res.status >= 500) { partenairesState('La réponse n’est pas arrivée : rien n’est sûr. Rouvrez les projets avant de recommencer.'); return false; }
+      if (!res.ok) { partenairesState(partnerRefusal(res.body, 'L’option n’est pas demandée.')); return false; }
+      return openPartenaires('Tirage fait : montrez au client les photographes proposés, dans cet ordre.');
+    }, function () { free(); return false; });
   }
   function renderPartenaires(projects, page, more) {
     var body = $('partenaires-corps');
@@ -1470,6 +1489,17 @@ export const APP_JS = `'use strict';
       if (code || !place) body.postcode = code;
       partAct('/v1/partenaires/relations', body, 'La proposition n’est pas faite.', 'Tirage fait : montrez au client les professionnels proposés, dans cet ordre.');
     }));
+    // Une option payante du Studio (X13) est une mise en relation avec un photographe, pour un bien de ce projet [R74, R75].
+    if (place) {
+      var option = field(box, 'option-' + n, 'Option payante du Studio', 'select');
+      Object.keys(STUDIO_OPTIONS).forEach(function (k) { var o = el('option', STUDIO_OPTIONS[k]); o.value = k; option.appendChild(o); });
+      box.appendChild(button('Demander cette option et proposer au client', function () {
+        var asked = { projectId: p.projectId, propertyId: place.value, option: option.value };
+        var where = String(cp.value || '').trim();
+        if (where) asked.postcode = where;
+        askOption(asked);
+      }));
+    }
     return box;
   }
   // Le suivi d'une demande confiée : son délai de réponse, les relances préparées, les pièces rangées, le résumé des faits.
@@ -1722,6 +1752,7 @@ export const APP_JS = `'use strict';
     wipeMesureSources();
     wipeAnnuaire();
     wipeProspection();
+    wipeBibliotheque();
     wipeEngagements();
     wipeFinances();
   }
@@ -1798,7 +1829,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${ENGAGEMENTS_JS}${FIN_DE_BAIL_JS}${FINANCES_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${FIN_DE_BAIL_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1995,6 +2026,7 @@ ${LOUER_JS}
     $('mesure-voir').addEventListener('click', function () { withMesureSources(function (m) { return m.show(''); }); });
     $('annuaire-ouvrir').addEventListener('click', function () { withAnnuaire(function (a) { return a.show(''); }); });
     $('prospection-ouvrir').addEventListener('click', function () { withProspection(function (p) { return p.show(''); }); });
+    $('bibliotheque-ouvrir').addEventListener('click', function () { withBibliotheque(function (b) { return b.show(''); }); });
     $('engagements-voir').addEventListener('click', function () { withEngagements(function (e) { return e.show(''); }); });
     $('bascule-voir').addEventListener('click', function () { withBascule(function (b) { return b.show(''); }); });
     $('bascule-journal').addEventListener('click', function () { withBascule(function (b) { return b.journal(); }); });
