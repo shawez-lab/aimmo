@@ -3485,7 +3485,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS01
 - Cahier : M01, « Deux sites, un seul moteur ».
 - Objectif : `GET /` sur le site du réseau et celui d'un agent : les derniers biens, et les chemins vers les biens, les agents, les prix, l'estimation et, sur le réseau, le recrutement. Ajouter ces pages au plan du site.
-- Critères : aucun lien vers une page absente (test qui suit chaque lien de l'accueil) ; même porte que RS01 [R220] (test) ; `/` hors d'un site en service reste 404 (test) ; plan du site complété [R153] (test) ; « agent immobilier », jamais « mandataire » [R07] (test) ; budget [R201] (test).
+- Critères : aucun lien vers une page absente (test qui suit chaque lien de l'accueil) ; même porte que RS01 [R220] (test), y compris pour les biens de la page d'un agent, qui ne la passent pas encore (test) ; `/` hors d'un site en service reste 404 (test) ; plan du site complété [R153] (test) ; « agent immobilier », jamais « mandataire » [R07] (test) ; budget [R201] (test).
 - Attend : rien.
 
 ### RS03 · Liste des agents et des communes

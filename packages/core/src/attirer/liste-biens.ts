@@ -1,0 +1,148 @@
+/**
+ * La liste publique des biens d'un site (RS01) [R220, R153, R44, R46, R48, R14, R201].
+ *
+ * Elle ne lit que les annonces publiées. **Jamais vu** : aucune annonce fantôme. Chaque bien repasse la porte de diffusion
+ * à l'instant où la page est préparée, sans attendre le passage de publication, et la page écrit l'heure de ce contrôle.
+ * Un mandat échu, rétracté ou annulé retire donc le bien, quelle que soit la version publiée.
+ *
+ * Du plus récent au plus ancien, le même ordre pour tous : aucun agent n'est mis en avant [R14]. Les contrôles s'arrêtent
+ * dès que la page demandée est remplie.
+ */
+import { euros } from '../annonces/mentions.ts';
+import { DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
+import { escapeHtml } from '../documents/modeles.ts';
+import type { PublishedListing } from './referencement.ts';
+
+export const LISTINGS_PER_PAGE = 24;
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const PAGE = /^[1-9]\d{0,3}$/;
+const STATE_LABEL: Record<PublishedListing['state'], string> = { en_vente: 'En vente', sous_offre: 'Sous offre' };
+
+/** La porte de diffusion, seule à dire si un bien peut être montré maintenant [R42]. */
+export interface ListingGate {
+  canDiffuse(networkId: string, propertyId: string, at?: Date): Promise<{ allowed: boolean }>;
+}
+
+export interface ListingsQuery {
+  commune: string | null;
+  page: number;
+}
+
+/** Le nom d'une commune dans une adresse : « Saint-Apollinaire » donne `saint-apollinaire`. */
+export function communeSlug(city: string): string {
+  return city
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/** La commune et la page demandées ; `null` pour tout paramètre inattendu ou répété. */
+export function parseListingsQuery(params: URLSearchParams): ListingsQuery | null {
+  const keys = [...params.keys()];
+  if (new Set(keys).size !== keys.length || keys.some((k) => k !== 'commune' && k !== 'page')) return null;
+  const commune = params.get('commune');
+  const page = params.get('page');
+  if (commune !== null && !SLUG.test(commune)) return null;
+  if (page !== null && !PAGE.test(page)) return null;
+  return { commune, page: page === null ? 1 : Number(page) };
+}
+
+export interface ListingsSelection {
+  items: PublishedListing[];
+  hasNext: boolean;
+  /** Les communes qu'on peut choisir, par ordre alphabétique. */
+  communes: { slug: string; name: string }[];
+}
+
+/**
+ * Les biens de la page demandée, chacun accepté par la porte à cet instant [R220]. `null` : page ou commune inconnue.
+ * `published` est déjà réduit au site qui répond [R153].
+ */
+export async function selectListings(published: readonly PublishedListing[], gate: ListingGate, networkId: string, at: Date, query: ListingsQuery): Promise<ListingsSelection | null> {
+  const names = new Map<string, string>();
+  for (const l of published) {
+    const slug = l.city ? communeSlug(l.city) : '';
+    if (slug && !names.has(slug)) names.set(slug, l.city!);
+  }
+  if (query.commune !== null && !names.has(query.commune)) return null;
+  const candidates = published
+    .filter((l) => query.commune === null || (l.city !== null && communeSlug(l.city) === query.commune))
+    .slice()
+    .sort((a, b) => (b.day ?? '').localeCompare(a.day ?? '') || a.propertyId.localeCompare(b.propertyId));
+  const wanted = query.page * LISTINGS_PER_PAGE + 1;
+  const allowed: PublishedListing[] = [];
+  for (const l of candidates) {
+    if ((await gate.canDiffuse(networkId, l.propertyId, at)).allowed) allowed.push(l);
+    if (allowed.length >= wanted) break;
+  }
+  const start = (query.page - 1) * LISTINGS_PER_PAGE;
+  if (query.page > 1 && allowed.length <= start) return null;
+  return {
+    items: allowed.slice(start, start + LISTINGS_PER_PAGE),
+    hasNext: allowed.length > start + LISTINGS_PER_PAGE,
+    communes: [...names].map(([slug, name]) => ({ slug, name })).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+  };
+}
+
+const CSS =
+  DESIGN_CSS +
+  '.tete{display:flex;align-items:center;gap:var(--e-4);padding:var(--e-4)}' +
+  'main{max-width:72rem;margin:0 auto;padding:var(--e-5) var(--e-4) var(--e-8)}' +
+  '.controle{border-left:.25rem solid var(--accent);padding-left:var(--e-3)}' +
+  '.communes{display:flex;flex-wrap:wrap;gap:var(--e-2) var(--e-4);padding:0;list-style:none}.communes [aria-current]{font-weight:700}' +
+  '.biens{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:var(--e-5);margin:var(--e-5) 0;padding:0;list-style:none}' +
+  '.biens li{position:relative}.biens a{display:block}.biens img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--trait);border-radius:var(--r-m)}' +
+  '.biens strong{display:block;margin-top:var(--e-2)}.biens .prix{display:block;font-weight:700}.biens small{display:block;margin-top:var(--e-1)}' +
+  '.virtuel{position:absolute;left:var(--e-2);top:var(--e-2);background:var(--encre);color:var(--papier);font-size:var(--t-s);padding:0 var(--e-2)}' +
+  '.suite{display:flex;justify-content:space-between;gap:var(--e-4)}';
+
+const when = (at: Date): string => {
+  const date = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'long', year: 'numeric' }).format(at);
+  const time = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hour12: false }).format(at).replace(':', ' h ');
+  return `${date} à ${time}`;
+};
+
+const mediaUrl = (ref: string): string => `/medias/${ref.split('/').map(encodeURIComponent).join('/')}`;
+
+function hrefOf(query: { commune: string | null; page: number }): string {
+  const params = [...(query.commune ? [`commune=${query.commune}`] : []), ...(query.page > 1 ? [`page=${query.page}`] : [])];
+  return `/biens${params.length > 0 ? `?${params.join('&amp;')}` : ''}`;
+}
+
+function card(l: PublishedListing): string {
+  // Une photo d'aménagement virtuel porte sa mention sur l'image [R48].
+  const photo = l.photo
+    ? `<img src="${escapeHtml(mediaUrl(l.photo.ref))}" alt="${l.photo.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien'}" loading="lazy" decoding="async">${l.photo.overlay ? `<span class="virtuel">${escapeHtml(l.photo.overlay)}</span>` : ''}`
+    : '';
+  return `<li><a href="/biens/${encodeURIComponent(l.propertyId)}">${photo}<strong>${escapeHtml(l.title)}</strong><span class="prix">${escapeHtml(euros(l.priceEur))}</span></a><span class="doux">${l.city ? `${escapeHtml(l.city)} · ` : ''}${STATE_LABEL[l.state]}</span><small class="doux">${escapeHtml(l.mentions)}</small></li>`;
+}
+
+export interface ListingsPageInput extends ListingsSelection {
+  query: ListingsQuery;
+  checkedAt: Date;
+}
+
+export function renderListingsPage(input: ListingsPageInput): string {
+  const { query, communes, items } = input;
+  const current = communes.find((c) => c.slug === query.commune);
+  const title = current ? `Biens en vente à ${current.name}` : 'Biens en vente';
+  const pageTitle = query.page > 1 ? `${title}, page ${query.page}` : title;
+  const filters =
+    communes.length > 1
+      ? `<nav aria-label="Communes"><ul class="communes"><li><a href="/biens"${query.commune === null ? ' aria-current="page"' : ''}>Toutes les communes</a></li>${communes
+          .map((c) => `<li><a href="${hrefOf({ commune: c.slug, page: 1 })}"${c.slug === query.commune ? ' aria-current="page"' : ''}>${escapeHtml(c.name)}</a></li>`)
+          .join('')}</ul></nav>`
+      : '';
+  const list = items.length > 0 ? `<ul class="biens">${items.map(card).join('')}</ul>` : `<p class="doux">Aucun bien en vente en ce moment${current ? ` à ${escapeHtml(current.name)}` : ''}.</p>`;
+  const previous = query.page > 1 ? `<a rel="prev" href="${hrefOf({ commune: query.commune, page: query.page - 1 })}">Page précédente</a>` : '<span></span>';
+  const next = input.hasNext ? `<a rel="next" href="${hrefOf({ commune: query.commune, page: query.page + 1 })}">Page suivante</a>` : '';
+  const pages = query.page > 1 || input.hasNext ? `<nav class="suite" aria-label="Pages">${previous}${next}</nav>` : '';
+  return (
+    `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(pageTitle)}</title><style>${CSS}</style></head>` +
+    `<body><header class="tete"><p class="marque">AIMMO</p></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(pageTitle)}</h1>` +
+    `<p class="controle">Mandats vérifiés le ${when(input.checkedAt)}. Un bien sans mandat en vigueur à cette heure n'apparaît pas ici.</p>` +
+    `${filters}${list}${pages}<p class="doux">Annonces des agents immobiliers du réseau AIMMO. Les adresses exactes ne sont jamais publiées.</p></main></body></html>`
+  );
+}

@@ -79,6 +79,10 @@ export interface PublishedListing {
   title: string;
   priceEur: number;
   day: string | null;
+  /** Les mentions de la version publiée [R43]. */
+  mentions: string;
+  /** La première photo publiée, et sa mention d'aménagement virtuel [R48]. */
+  photo: { ref: string; overlay: string | null } | null;
 }
 
 /** L'empreinte SHA-256 d'un texte, en hexadécimal. */
@@ -271,7 +275,7 @@ export class Referencement {
     for (const r of rows) {
       if (r.state !== 'en_vente' && r.state !== 'sous_offre') continue;
       if (!ID.test(r.property_id)) continue;
-      let p: { title?: unknown; body?: unknown; mentions?: unknown; priceEur?: unknown };
+      let p: { title?: unknown; body?: unknown; mentions?: unknown; priceEur?: unknown; media?: unknown };
       try {
         const parsed: unknown = JSON.parse(r.payload);
         if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue;
@@ -280,7 +284,20 @@ export class Referencement {
         continue;
       }
       if (typeof p.title !== 'string' || p.title === '' || typeof p.body !== 'string' || p.body === '' || typeof p.mentions !== 'string' || p.mentions === '' || typeof p.priceEur !== 'number' || !(p.priceEur > 0)) continue;
-      out.push({ propertyId: r.property_id, agentId: r.agent_id, city: r.city, state: r.state, versionId: r.version_id, title: p.title, priceEur: p.priceEur, day: dayOf(r.created_at) });
+      const media: unknown[] = Array.isArray(p.media) ? p.media : [];
+      const first = media.find((m): m is { ref: string; overlay?: unknown } => typeof m === 'object' && m !== null && (m as { kind?: unknown }).kind === 'photo' && typeof (m as { ref?: unknown }).ref === 'string');
+      out.push({
+        propertyId: r.property_id,
+        agentId: r.agent_id,
+        city: r.city,
+        state: r.state,
+        versionId: r.version_id,
+        title: p.title,
+        priceEur: p.priceEur,
+        day: dayOf(r.created_at),
+        mentions: p.mentions,
+        photo: first ? { ref: first.ref, overlay: typeof first.overlay === 'string' ? first.overlay : null } : null,
+      });
     }
     return out;
   }

@@ -13,8 +13,11 @@
  * Servie sur un site du réseau (M01, AT11), la page du bien porte sa page de référence unique : en-tête `Link`, lien
  * canonique et données structurées sans adresse. Le site d'un agent ne sert ni la page ni la fiche du bien d'un autre
  * agent, ni ses photos [R153].
+ *
+ * Une annonce en vente ou sous offre repasse la porte de diffusion à chaque lecture (RS01) : un mandat échu ou rétracté
+ * la retire aussitôt, sans attendre le passage de publication [R220].
  */
-import { Acces, FicheClient, FicheUnique, SqlJournalStore, annonces as m07, type SqlDatabase } from '@aimmo/core';
+import { Acces, Diffusion, FicheClient, FicheUnique, SqlJournalStore, annonces as m07, type SqlDatabase } from '@aimmo/core';
 import { journalError } from './app.ts';
 import { syncAnnonces } from './annonces.ts';
 import { listingPresence, type ListingReference } from './attirer.ts';
@@ -49,6 +52,16 @@ async function publishedNetwork(db: SqlDatabase, propertyId: string): Promise<st
   return v?.network_id ?? null;
 }
 
+/** Une annonce encore présentée comme disponible n'est servie que si la porte l'accepte maintenant [R220]. */
+async function ghostListing(db: SqlDatabase, networkId: string, propertyId: string, now: () => Date): Promise<boolean> {
+  const last = await db.first<{ state: string }>('SELECT state FROM listing_versions WHERE property_id = ? ORDER BY seq DESC LIMIT 1', [propertyId]);
+  if (last?.state !== 'en_vente' && last?.state !== 'sous_offre') return false;
+  const store = new FicheClient(db, { now });
+  const journal = new SqlJournalStore(db);
+  const gate = new Diffusion(db, new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now }), journal, { now });
+  return !(await gate.canDiffuse(networkId, propertyId, now())).allowed;
+}
+
 function pageBien(db: SqlDatabase, now: () => Date): InstanceType<typeof m07.PageBien> {
   const store = new FicheClient(db, { now });
   const journal = new SqlJournalStore(db);
@@ -69,6 +82,7 @@ export async function handleVitrine(request: Request, db: SqlDatabase, media: Me
   // Ni la page, ni la fiche, ni les photos d'un bien sur un site qui ne doit pas le montrer [R153, R16].
   const presence = await listingPresence({ db, journal: new SqlJournalStore(db), now }, request.url, propertyId, network);
   if (presence.kind === 'masque') return notFound();
+  if (await ghostListing(db, network, propertyId, now)) return notFound();
   if (page) {
     const html = page[2] ? await pages.print(network, propertyId) : await pages.page(network, propertyId);
     if (html === null) return notFound();
