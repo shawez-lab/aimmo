@@ -958,7 +958,8 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : rien.
 
 ### D13 · Réglages du mandat pour la direction : barème, registre, contrôle
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03), lecture prudente : trois lectures ajoutées, réservées à la direction (`GET /v1/honoraires/bareme`, `/v1/registre/reglage`, `/v1/registre/lignes`, 30 mandats à la fois) ; un format non lu ne propose aucun formulaire ; la confirmation du format montre le premier numéro ; la diffusion s'arrête au prochain passage des annonces, et l'écran le dit ; une écriture sans réponse ou en panne serveur n'est dite ni faite ni pas faite. Relecture forte : 1 P1 corrigé ; Codex à sa limite, fusion sans lui (#294). Téléphone vérifié une fois (Chromium 390 × 844, clair et sombre), axe-core non passé.
 - Trouvé le 2026-11-02 par la voie 2 : aucun écran n'appelle `/v1/honoraires/bareme`, `/v1/registre/reglage` ni `/v1/registre/controle`, et sans barème aucun mandat ne passe ses contrôles [R41]. Laissée à la voie 1, qui tient M06.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12
 - Cahier : M06 ; R39, R41, R16, R201.
