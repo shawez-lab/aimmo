@@ -43,6 +43,7 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | GET | `/v1/documents/<id>` | un document généré, figé, avec la version et l'empreinte de son modèle | qui voit la fiche en entier (R16) |
 | POST | `/v1/partenaires/annuaire/<id>/preuves` | le fichier de la preuve d'un justificatif, en PDF, JPEG ou PNG, 10 Mo au plus, pour un partenaire du réseau : le serveur choisit la référence et la rend (`proofRef`), que `/justificatifs` reprend ; le journal garde l'empreinte seule ; sans stockage : 503 | direction, agent (R16, R73) |
 | GET | `/v1/gagner/engagements` | la dernière version de chaque engagement de service, actif ou non : code, texte, mesure, règle, délai, date | direction (R16, R141) |
+| GET | `/v1/gagner/fiches/<id>/fin-de-bail` | les fins de bail notées sur la fiche, la dernière d'abord : c'est elle qui fait foi | l'agent de la fiche (R16, R17) |
 | POST | `/v1/gagner/mesure/preuves` | le fichier de la preuve d'un coût, en PDF, JPEG ou PNG, 10 Mo au plus : le serveur choisit la référence et la rend (`proofRef`), que `POST /v1/gagner/mesure/couts` reprend ; le journal garde l'empreinte seule ; sans stockage `PIECES` : 503 | direction (R16, R144) |
 | GET | `/v1/honoraires/bareme` | le barème en vigueur (`maxRatePercent`, `minEur`, `setAt`), ou `null` s'il n'est pas réglé | direction (R16, R41) |
 | POST | `/v1/honoraires/bareme` | `{ maxRatePercent, minEur }` : le barème des honoraires du réseau (taux maximal du prix, au centième, et minimum en euros) ; en ajout seul, le dernier est en vigueur | direction (R16, R41) |

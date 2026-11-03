@@ -76,25 +76,6 @@ export const GAGNER_CSS = `
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const GAGNER_JS = `
   /* ---------- M20 : l'écran « Gagner des mandats » (G13), chargé à la demande [R16, R145, R201]. ---------- */
-  /* La fin de bail connue, notée sur la fiche (G15) : une raison datée de relance, jamais un envoi [R143, R16]. */
-  function finDeBailBlock(personId) {
-    var box = details(el('div'), 'Fin de bail connue');
-    var day = field(box, 'fin-bail-jour', 'Date de fin du bail');
-    day.setAttribute('type', 'date');
-    var said = el('p', null, 'etat');
-    said.setAttribute('role', 'status');
-    box.appendChild(button('Noter cette date', function () {
-      if (!day.value) { said.textContent = 'Choisissez la date.'; return; }
-      said.textContent = 'Envoi…';
-      send('/v1/gagner/fiches/' + encodeURIComponent(personId) + '/fin-de-bail', 'POST', { onDay: day.value }).then(function (x) {
-        if (x.gone) return;
-        if (x.offline || !x.body || x.status >= 500) { said.textContent = 'La réponse n’est pas arrivée : rien n’est sûr. Rouvrez la fiche avant de recommencer.'; return; }
-        said.textContent = x.ok ? 'Date notée. Rien ne part : la relance éventuelle vous sera proposée à relire.' : x.status === 403 ? 'Réservé à l’agent de cette fiche.' : 'Cette date n’est pas lisible.';
-      });
-    }));
-    box.appendChild(said);
-    return box;
-  }
   var gagnerScreen = null;
   function wipeGagner() {
     if (gagnerScreen) { gagnerScreen.wipe(); return; }

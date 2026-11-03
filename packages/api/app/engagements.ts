@@ -98,6 +98,7 @@ globalThis.AIMMO_ENGAGEMENTS = function (t) {
     var v = String(input.value || '').trim();
     return /^\\d{1,3}$/.test(v) && Number(v) >= 1 && Number(v) <= 336 ? Number(v) : null;
   }
+  function fresh() { return Array.from(crypto.getRandomValues(new Uint8Array(6)), function (b) { return (b + 256).toString(16).slice(1); }).join(''); }
   function save(payload, done) {
     return once(function () {
       state('Envoi…');
@@ -145,8 +146,8 @@ globalThis.AIMMO_ENGAGEMENTS = function (t) {
     var measure = select(add, 'engagement-mesure', 'Ce qui est mesuré', Object.assign({ '': 'Choisir' }, MEASURES), '');
     form(add, 'engagement-nouveau', { label: '', delay: '', active: true }, 'Ajouter cet engagement', function (label, h, active) {
       if (!measure.value) { state(REFUSALS.bad_measure); return; }
-      /* Le code nomme la mesure et son délai : le même couple ajoute une version, jamais un doublon. */
-      save({ code: measure.value + '_' + h + 'h', label: label, measure: measure.value, delayHours: h, active: active }, 'Engagement ajouté.');
+      /* Un code neuf à chaque ajout : un nouvel engagement ne remplace jamais un engagement existant [R17]. Seule « nouvelle version » garde le code. */
+      save({ code: measure.value + '_' + fresh(), label: label, measure: measure.value, delayHours: h, active: active }, 'Engagement ajouté.');
     });
   }
   function show(message) {

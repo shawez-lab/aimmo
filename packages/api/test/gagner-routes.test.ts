@@ -88,6 +88,7 @@ const SAMPLES: Record<string, string> = {
   'gagner.recommandation_attribuer': '/gagner/recommandations/r1/attribuer',
   'gagner.recommandation_appel_fait': '/gagner/recommandations/r1/appel-fait',
   'gagner.fin_de_bail': '/gagner/fiches/p1/fin-de-bail',
+  'gagner.fins_de_bail': '/gagner/fiches/p1/fin-de-bail',
   'gagner.relances': '/gagner/relances',
   'gagner.relance_valider': '/gagner/relances/r1/valider',
   'gagner.mesure': '/gagner/mesure/2027-10',
@@ -274,6 +275,19 @@ describeWithSqlite('G11 · routes de M20 complet', () => {
     const read = await t.call(t.viewers.direction, 'GET', '/gagner/engagements');
     expect(read.body.data).toEqual([expect.objectContaining({ code: 'compte_rendu', version: 2, delayHours: 24, active: false, measure: 'compte_rendu_visite', rule: expect.stringContaining('visite') })]);
     expect((await t.call(t.viewers.agent, 'GET', '/gagner/engagements')).status).toBe(403);
+  });
+
+  it('[R16] [R17] la dernière fin de bail notée se relit en tête, et l’agent d’une autre fiche ne lit rien', async () => {
+    const t = await setup();
+    const person = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Lise' });
+    const path = `/gagner/fiches/${person.id}/fin-de-bail`;
+    await t.call(t.viewers.agent, 'POST', path, { onDay: '2027-11-15' });
+    await t.call(t.viewers.agent, 'POST', path, { onDay: '2028-06-30' });
+    const read = await t.call(t.viewers.agent, 'GET', path);
+    expect(read.body.data.map((d: { onDay: string }) => d.onDay)).toEqual(['2028-06-30', '2027-11-15']);
+    const bea = await t.store.createAgent({ networkId: t.network.id, firstName: 'Béa', lastName: 'Essai' });
+    expect((await t.call({ ...t.viewers.agent, userId: bea.id }, 'GET', path)).status).toBe(403);
+    expect((await t.call(t.viewers.direction, 'GET', path)).status).toBe(403);
   });
 
   describe('G14 · dépôt de la preuve d’un coût', () => {

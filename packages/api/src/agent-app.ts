@@ -31,6 +31,7 @@ import { LOYERS_SCRIPT } from '../app/loyers.ts';
 import { MESURE_SOURCES_SCRIPT } from '../app/mesure-sources.ts';
 import { ANNUAIRE_SCRIPT } from '../app/annuaire.ts';
 import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
+import { FIN_DE_BAIL_SCRIPT } from '../app/fin-de-bail.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
 import { FICHE_GOOGLE_SCRIPT } from '../app/fiche-google.ts';
 import { INTEGRATION_SCRIPT } from '../app/integration.ts';
@@ -112,6 +113,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/annuaire.js': { body: ANNUAIRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les engagements de service pour la direction (G15), chargés au premier geste, jamais gardés sur l'appareil [R201].
   '/app/engagements.js': { body: ENGAGEMENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // La fin de bail notée depuis la fiche (G15), chargée au premier geste, jamais gardée sur l'appareil [R201].
+  '/app/fin-de-bail.js': { body: FIN_DE_BAIL_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les finances (K10), chargées au premier geste, jamais gardées sur l'appareil [R201].
   '/app/finances.js': { body: FINANCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Fiche Google » (AT14), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].

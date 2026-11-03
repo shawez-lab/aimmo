@@ -292,6 +292,20 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     expect(await t.anciens.validate(t.agent(), list.value[0]!.followupId, { text: 'Votre bien vaut 300 000 euros aujourd’hui.' })).toEqual({ ok: false, rule: null, code: 'text_figure' });
   });
 
+  it('[R17] [R143] la dernière fin de bail notée fait foi : une erreur de saisie se corrige, l’ancienne reste rangée', async () => {
+    const t = await setup();
+    const lise = await t.contact('Lise');
+    await t.anciens.noteLeaseEnd(t.agent(), lise.id, '2027-12-01');
+    await t.anciens.noteLeaseEnd(t.agent(), lise.id, '2028-06-01');
+    expect(await t.anciens.prepareMonth(t.network.id)).toBe(0);
+    const noted = await t.anciens.leaseEnds(t.agent(), lise.id);
+    expect(noted.ok && noted.value.map((d) => d.onDay)).toEqual(['2028-06-01', '2027-12-01']);
+    await t.anciens.noteLeaseEnd(t.agent(), lise.id, '2027-12-02');
+    expect(await t.anciens.prepareMonth(t.network.id)).toBe(1);
+    const list = await t.anciens.toValidate(t.agent());
+    expect(list.ok && list.value.map((i) => i.reasonDay)).toEqual(['2027-12-02']);
+  });
+
   it('[R16] seul l’agent qui suit la fiche note un moment, lit et valide ses relances', async () => {
     const t = await setup();
     const ines = await t.contact('Inès');

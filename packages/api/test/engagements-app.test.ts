@@ -42,6 +42,7 @@ async function run(answers: Record<string, Answer> = {}, role = 'direction') {
     },
     Intl,
     Date,
+    crypto: globalThis.crypto,
     setTimeout: () => 0,
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
   };
@@ -113,8 +114,14 @@ describe('G15 · les engagements de service à l’écran', () => {
     expect(t.posts()).toEqual([]);
     t.input('engagement-mesure').value = 'point_semaine';
     await t.click(t.find('Ajouter cet engagement')[0]);
-    expect(t.posts()[0]!.body).toEqual({ code: 'point_semaine_72h', label: 'Un compte rendu rapide', measure: 'point_semaine', delayHours: 72, active: true });
+    expect(t.posts()[0]!.body).toEqual({ code: expect.stringMatching(/^point_semaine_[0-9a-f]{12}$/), label: 'Un compte rendu rapide', measure: 'point_semaine', delayHours: 72, active: true });
     expect(t.state()).toBe('Engagement ajouté.');
+    // [R17] Le même couple, ajouté de nouveau, ne remplace pas le premier.
+    t.input('engagement-nouveau-texte').value = 'Un autre engagement';
+    t.input('engagement-nouveau-delai').value = '72';
+    t.input('engagement-mesure').value = 'point_semaine';
+    await t.click(t.find('Ajouter cet engagement')[0]);
+    expect((t.posts()[1]!.body as { code: string }).code).not.toBe((t.posts()[0]!.body as { code: string }).code);
   });
 
   it('[R141] un texte qui promet est refusé par le serveur, et dit en français', async () => {

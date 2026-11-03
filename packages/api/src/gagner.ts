@@ -202,6 +202,7 @@ export function gagnerRoutes(): GagnerRoute[] {
     },
     { method: 'POST', pattern: new RegExp(`${P}/recommandations/${ID}/appel-fait$`), name: 'gagner.recommandation_appel_fait', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).recommandations.callDone(v, id!)) },
     // G09 · anciens contacts
+    { method: 'GET', pattern: new RegExp(`${P}/fiches/${ID}/fin-de-bail$`), name: 'gagner.fins_de_bail', roles: AGENT, handle: async (s, v, [id]) => reply(await services(s).anciens.leaseEnds(v, id!)) },
     { method: 'POST', pattern: new RegExp(`${P}/fiches/${ID}/fin-de-bail$`), name: 'gagner.fin_de_bail', roles: AGENT, handle: withBody(async (s, v, [id], b) => reply(await services(s).anciens.noteLeaseEnd(v, id!, b.onDay))) },
     { method: 'GET', pattern: new RegExp(`${P}/relances$`), name: 'gagner.relances', roles: AGENT, handle: async (s, v) => reply(await services(s).anciens.toValidate(v)) },
     {
