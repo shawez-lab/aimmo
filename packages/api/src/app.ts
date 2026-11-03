@@ -7,8 +7,11 @@ import {
   AUTOMATION_NAMES,
   Acces,
   Automatisations,
+  OUTBOUND_CHANNELS,
   PaliersBascule,
   ROLLOUT_INCIDENTS,
+  captationAutomation,
+  type OutboundChannelName,
   type RolloutIncident,
   REF_PATTERN,
   DEFAULT_ATTRIBUTION_SETTINGS,
@@ -125,6 +128,11 @@ export interface ApiConfig {
   intakeKeys?: string | undefined;
   /** Le passage des automatisations du site à 10 % : fermé tant que B04 ne l'a pas ouvert [R26]. Le Worker ne le branche pas encore. */
   automationRolloutOpen?: boolean;
+  /**
+   * Le passage des canaux de captation (C09e) : ouvert ou non, et les canaux vraiment branchés. Absent : fermé, aucun
+   * canal. Rien ne le remplit tant que C09 ne branche pas de vrai canal, et il devra dire les mêmes canaux que `realChannels`.
+   */
+  captationRollout?: { open: boolean; connected: readonly OutboundChannelName[] };
   /** Notifications de Meta (C07) : secrets et variables `META_*`, voir meta.ts. */
   meta?: Omit<MetaConfig, 'db' | 'now'>;
   /** Limites d'appels de l'assistant du site (C08) ; absentes : les réglages par défaut. */
@@ -1092,6 +1100,41 @@ function rolloutRoutes(open: boolean): RouteDef[] {
   ];
 }
 
+/** Le palier de chaque canal de captation (C09e) : lu par la direction et la conformité, avancé par la direction seule [R16, R26]. */
+function captationRolloutRoutes(rollout: ApiConfig['captationRollout']): RouteDef[] {
+  const connected = rollout?.connected ?? [];
+  const open = rollout?.open === true;
+  return [
+    {
+      method: 'GET',
+      pattern: /^\/captation\/paliers$/,
+      name: 'captation.paliers',
+      handle: async (s, viewer) => {
+        const r = await new PaliersBascule(s.db, s.journal, { now: s.now }).list(viewer, OUTBOUND_CHANNELS.map(captationAutomation));
+        if (!r.ok) return refusal({ rule: r.rule, code: r.code });
+        // Des nombres et des dates, dans l'ordre des canaux : jamais une fiche.
+        const data = r.value.map(({ automation: _automation, ...view }, i) => ({ channel: OUTBOUND_CHANNELS[i]!, connected: connected.includes(OUTBOUND_CHANNELS[i]!), ...view }));
+        return json(200, { ok: true, mode: TRIAL_MODE, data });
+      },
+    },
+    {
+      method: 'POST',
+      pattern: /^\/captation\/paliers\/([a-z_]{1,32})\/avancer$/,
+      name: 'captation.paliers.avancer',
+      handle: async (s, viewer, params) => {
+        const channel = OUTBOUND_CHANNELS.find((c) => c === params[0]);
+        if (!channel) return failure(404, 'not_found', 'Canal inconnu.');
+        // Sans vrai canal, le passage ne prouverait rien, et le canal branché plus tard partirait à 10 % sans essai [R26].
+        const plugged = connected.includes(channel);
+        const r = await new PaliersBascule(s.db, s.journal, { now: s.now, open: open && plugged }).advance(viewer, captationAutomation(channel));
+        if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { stage: r.stage } });
+        if (r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
+        return json(409, { ok: false, rule: r.rule, code: r.code === 'not_open' && open ? 'no_real_channel' : r.code });
+      },
+    },
+  ];
+}
+
 function m15Routes(pieces: PieceStore | null, options: Pick<LocationServices, 'adWriter' | 'inventoryFormatter'>): RouteDef[] {
   return locationRoutes().map((r: LocationRoute) => ({
     method: r.method,
@@ -1757,6 +1800,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...pilotageRoutes(),
     ...reseauRoutes(config.reseau ?? {}),
     ...rolloutRoutes(config.automationRolloutOpen === true),
+    ...captationRolloutRoutes(config.captationRollout),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...m12Routes(config.coffre ?? null),
     ...m18Routes(config.partenaires ?? null),

@@ -2039,6 +2039,7 @@ ${LOUER_JS}
     $('bibliotheque-ouvrir').addEventListener('click', function () { withBibliotheque(function (b) { return b.show(''); }); });
     $('engagements-voir').addEventListener('click', function () { withEngagements(function (e) { return e.show(''); }); });
     $('bascule-voir').addEventListener('click', function () { withBascule(function (b) { return b.show(''); }); });
+    $('bascule-canaux').addEventListener('click', function () { withBascule(function (b) { return b.showChannels(''); }); });
     $('bascule-journal').addEventListener('click', function () { withBascule(function (b) { return b.journal(); }); });
     // Dans une fiche d'entretien : retour à la liste ; sinon, la direction revient au réseau, l'agent à sa journée.
     $('integration-retour').addEventListener('click', function () {

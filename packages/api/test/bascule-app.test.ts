@@ -153,6 +153,108 @@ describe('B05 · la bascule sur l’écran du réseau', () => {
     expect(t.buttons('Passer à 10 %')).toEqual([]);
   });
 
+  const CHANNELS = [
+    { channel: 'email', connected: true, stage: 'shadow', since: '2026-10-20T08:00:00.000Z', requests: 41, daysLeft: 3, lastIncidentAt: '2026-10-20T08:00:00.000Z', lastIncidentKind: 'failure' },
+    { channel: 'sms', connected: true, stage: 'ten_percent', since: '2026-10-25T08:00:00.000Z', requests: 2, daysLeft: 1, lastIncidentAt: null, lastIncidentKind: null },
+    { channel: 'whatsapp', connected: false, stage: 'ten_percent', since: '2026-10-25T08:00:00.000Z', requests: 0, daysLeft: 1, lastIncidentAt: null, lastIncidentKind: null },
+    { channel: 'instagram', connected: false, stage: 'shadow', since: null, requests: 0, daysLeft: 7, lastIncidentAt: null, lastIncidentKind: null },
+  ];
+  const canaux = async (t: Awaited<ReturnType<typeof run>>) => {
+    await t.click(t.els['bascule-canaux']);
+    await t.load();
+  };
+
+  it('[R16] [R26] la direction lit les canaux par la seule route prévue, et le passage n’est proposé qu’à un canal branché en essai', async () => {
+    const t = await run({ 'GET /v1/captation/paliers': ok(CHANNELS) });
+    const before = t.calls.length;
+    await canaux(t);
+    for (const c of t.calls.slice(before)) {
+      expect(c.url).toBe('/v1/captation/paliers');
+      expect(c.auth).toBe(`Bearer ${KEY}`);
+    }
+    expect(t.texts()).toContain('Mail');
+    expect(t.texts()).toContain('En essai : rien ne part');
+    expect(t.texts()).toContain('41 message(s) compté(s)');
+    expect(t.texts()).toContain('Encore 3 jours');
+    expect(t.texts()).toContain('Dernier retour en essai le 20/10/2026, après une panne.');
+    expect(t.texts()).toContain('À 10 % : un message sur dix part vraiment');
+    expect(t.texts()).toContain('Aucun message reçu pour le moment.');
+    expect(t.buttons('Passer à 10 %')).toHaveLength(1);
+  });
+
+  it('[R26] un canal sans vrai branchement dit que rien ne part, jamais son palier, même à 10 %', async () => {
+    const t = await run({ 'GET /v1/captation/paliers': ok(CHANNELS.slice(2)) });
+    await canaux(t);
+    expect(t.texts()).toContain('Aucun vrai canal branché : rien ne part');
+    expect(t.texts()).not.toContain('part vraiment');
+    expect(t.texts()).not.toContain('Encore');
+    expect(t.buttons('Passer à 10 %')).toEqual([]);
+  });
+
+  it('[R26] passer un canal à 10 % demande deux appuis espacés, et relit la liste des canaux', async () => {
+    const t = await run({ 'GET /v1/captation/paliers': ok(CHANNELS), 'POST /v1/captation/paliers/email/avancer': ok({ stage: 'ten_percent' }) });
+    await canaux(t);
+    const b = t.buttons('Passer à 10 %')[0]!;
+    await t.click(b);
+    expect(t.state()).toContain('Un message sur dix partira vraiment. Appuyez de nouveau');
+    await t.click(b);
+    expect(t.posts()).toEqual([]);
+    clock += 2000;
+    t.table['GET /v1/captation/paliers'] = ok([{ ...CHANNELS[0], stage: 'ten_percent' }]);
+    await t.click(b);
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/captation/paliers/email/avancer']);
+    expect(t.state()).toContain('Passé à 10 %. À la première panne');
+    expect(t.buttons('Passer à 10 %')).toEqual([]);
+  });
+
+  it.each([
+    ['not_open', 'le canal reste en essai'],
+    ['no_real_channel', 'Aucun vrai canal n’est branché ici'],
+    ['too_early', 'L’essai n’a pas encore duré 7 jours'],
+    ['not_enough_requests', 'Trop peu de messages'],
+    ['role', 'pas dans vos droits'],
+  ])('[R26] le refus %s d’un canal est dit en français', async (code, said) => {
+    const t = await run({ 'GET /v1/captation/paliers': ok(CHANNELS), 'POST /v1/captation/paliers/email/avancer': no(409, { ok: false, rule: 'R26', code }) });
+    await canaux(t);
+    await t.passer();
+    expect(t.state()).toContain(said);
+    expect(t.state()).not.toContain(code);
+    expect(t.buttons('Passer à 10 %')).toHaveLength(1);
+  });
+
+  it('un canal qui n’est plus en essai : la liste des canaux est relue, pas celle des automatisations', async () => {
+    const t = await run({ 'GET /v1/captation/paliers': ok(CHANNELS), 'POST /v1/captation/paliers/email/avancer': no(409, { ok: false, rule: 'R26', code: 'not_in_shadow' }) });
+    await canaux(t);
+    t.table['GET /v1/captation/paliers'] = ok([{ ...CHANNELS[0], stage: 'everywhere' }]);
+    await t.passer();
+    expect(t.state()).toContain('Ce canal n’est plus en essai');
+    expect(t.texts()).toContain('Partout : tous les messages partent vraiment.');
+    expect(t.texts()).not.toContain('Rappel de la visite');
+  });
+
+  it('passer des automatisations aux canaux remplace la liste, et la dernière lecture demandée l’emporte', async () => {
+    const t = await run({ 'GET /v1/captation/paliers': ok(CHANNELS) });
+    await t.voir();
+    await t.click(t.els['bascule-canaux']);
+    expect(t.texts()).not.toContain('Rappel de la visite');
+    t.els['bascule-voir']!.listeners.click!({});
+    t.els['bascule-canaux']!.listeners.click!({});
+    await settle();
+    expect(t.body().all().filter((e) => e.tagName === 'ul')).toHaveLength(1);
+    expect(t.texts()).toContain('Mail');
+    expect(t.texts()).not.toContain('Rappel de la visite');
+  });
+
+  it('[R13] les canaux hors réseau ou refusés : dit, sans liste', async () => {
+    const t = await run({ 'GET /v1/captation/paliers': no(403, { ok: false, rule: 'R16', code: 'role' }) });
+    await canaux(t);
+    expect(t.state()).toBe('Ce n’est pas dans vos droits.');
+    t.table['GET /v1/captation/paliers'] = async () => Promise.reject(new TypeError('hors ligne'));
+    await t.click(t.els['bascule-canaux']);
+    expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    expect(t.body().children).toEqual([]);
+  });
+
   it('[R13] le journal : intact en nombres, abîmé sans rien de son contenu', async () => {
     const t = await run({ 'GET /v1/journal/verification': ok({ ok: true, lines: 412 }) });
     await t.click(t.els['bascule-journal']);
