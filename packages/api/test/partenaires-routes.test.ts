@@ -415,6 +415,19 @@ describeWithSqlite('U13 · dépôt de la preuve d’un justificatif', () => {
     expect(t.files.uploaded.size).toBe(0);
   });
 
+  it('[R16] un agent actif dépose ; un agent parti, non', async () => {
+    const t = await setup();
+    const id = await added(t);
+    const path = `/partenaires/annuaire/${id}/preuves`;
+    expect((await t.call(t.agent, 'POST', path, { raw: { bytes: PDF, type: 'application/pdf' } })).status).toBe(200);
+    expect(t.files.uploaded.size).toBe(1);
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.agent.userId]);
+    const gone = await t.call(t.agent, 'POST', path, { raw: { bytes: PDF, type: 'application/pdf' } });
+    expect([gone.status, gone.body.code]).toEqual([403, 'agent_inactive']);
+    expect(gone.request.bodyUsed).toBe(false);
+    expect(t.files.uploaded.size).toBe(1);
+  });
+
   it('un autre format, un faux PDF, un fichier trop lourd ou l’absence de stockage ne rangent rien', async () => {
     const t = await setup();
     const id = await added(t);

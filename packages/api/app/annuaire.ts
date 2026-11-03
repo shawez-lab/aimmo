@@ -122,11 +122,11 @@ globalThis.AIMMO_ANNUAIRE = function (t) {
   function path(id, end) { return BASE + '/' + encodeURIComponent(id) + (end || ''); }
   /* Des codes postaux saisis à la main : un espace, une virgule ou un retour à la ligne les sépare. Le serveur les contrôle. */
   function postcodes(text) { return String(text || '').split(/[\\s,;]+/).filter(function (p) { return p !== ''; }); }
-  function write(url, payload, done, fallback) {
+  function write(url, payload, done, fallback, lostText, refused) {
     return send(url, 'POST', payload).then(function (x) {
       if (x.gone) return false;
-      if (lost(x)) { state(LOST); return false; }
-      if (!x.ok) { state(why(x, fallback)); return false; }
+      if (lost(x)) { state(lostText || LOST); return false; }
+      if (!x.ok) { if (refused) refused(x); state(why(x, fallback)); return false; }
       return done(x.body.data);
     });
   }
@@ -182,7 +182,7 @@ globalThis.AIMMO_ANNUAIRE = function (t) {
         state('Envoi…');
         return write(BASE, { trade: newTrade.value, businessName: name.value.trim(), postcodes: list }, function (v) {
           return card(v.partnerId, 'Partenaire ajouté : rangez ses justificatifs pour qu’il soit proposable.');
-        }, 'Le partenaire n’est pas ajouté.');
+        }, 'Le partenaire n’est pas ajouté.', 'La réponse n’est pas arrivée : rien n’est sûr. Cherchez ce partenaire avant de l’ajouter de nouveau.');
       });
     }));
     return Promise.resolve(true);
@@ -296,7 +296,10 @@ globalThis.AIMMO_ANNUAIRE = function (t) {
           if (ref === null) return false;
           var payload = { kind: kind.value, number: number.value.trim(), validFrom: from.value, validUntil: until.value, proofRef: ref };
           if (certification) payload.domain = domain.value;
-          return write(path(id, '/justificatifs'), payload, function () { return card(id, 'Justificatif rangé.'); }, 'Le justificatif n’est pas rangé.');
+          return write(path(id, '/justificatifs'), payload, function () { return card(id, 'Justificatif rangé.'); }, 'Le justificatif n’est pas rangé.', null, function (x) {
+            /* Une référence que le serveur ne reconnaît plus : le prochain appui redépose le fichier. */
+            if (x.body && (x.body.code === 'not_stored' || x.body.code === 'bad_ref')) sent = null;
+          });
         });
       });
     }));

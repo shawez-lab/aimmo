@@ -253,6 +253,28 @@ describe('U13 · l’annuaire des partenaires à l’écran', () => {
     expect(t.state()).toBe('Justificatif rangé.');
   });
 
+  it('une preuve que le serveur ne retrouve plus est redéposée à l’appui suivant', async () => {
+    const t = await run({ [`POST /v1/partenaires/annuaire/${P}/justificatifs`]: no(400, { ok: false, rule: null, code: 'not_stored' }) });
+    await t.fiche();
+    t.input('annuaire-numero').value = 'N-1';
+    t.input('annuaire-debut').value = '2027-01-01';
+    t.input('annuaire-fin').value = '2027-12-31';
+    t.input('annuaire-preuve').files = [pdf];
+    await t.click(t.find('Ranger ce justificatif')[0]);
+    expect(t.state()).toBe('La preuve n’est pas retrouvée : déposez-la de nouveau.');
+    await t.click(t.find('Ranger ce justificatif')[0]);
+    expect(t.posts().filter((c) => c.url.endsWith('/preuves'))).toHaveLength(2);
+  });
+
+  it('[R10] un ajout sans réponse invite à chercher avant de refaire : pas de doublon sans le savoir', async () => {
+    const t = await run({ 'POST /v1/partenaires/annuaire': () => Promise.reject(new TypeError('coupé')) });
+    await t.open();
+    t.input('annuaire-nouveau-metier').value = 'courtier';
+    t.input('annuaire-nouveau-zones').value = '21000';
+    await t.click(t.find('Ajouter ce partenaire')[0]);
+    expect(t.state()).toBe('La réponse n’est pas arrivée : rien n’est sûr. Cherchez ce partenaire avant de l’ajouter de nouveau.');
+  });
+
   it('stockage absent : dit en français, et aucun justificatif ne part', async () => {
     const t = await run({ [`POST /v1/partenaires/annuaire/${P}/preuves`]: no(503, { ok: false, rule: null, code: 'storage_unavailable' }) });
     await t.fiche();
@@ -284,7 +306,7 @@ describe('U13 · l’annuaire des partenaires à l’écran', () => {
     expect(t.state()).toBe(LOST);
   });
 
-  it('[R10] une clé refusée au dépôt la retire ; une coupure à ce moment n’est pas dite faite', async () => {
+  it('[R10] une coupure juste après une clé refusée au dépôt n’est pas dite faite', async () => {
     const t = await run({ [`POST /v1/partenaires/annuaire/${P}/preuves`]: async () => new Response('{}', { status: 401 }) });
     await t.fiche();
     delete t.table[`GET /v1/partenaires/annuaire/${P}`];
@@ -307,6 +329,19 @@ describe('U13 · l’annuaire des partenaires à l’écran', () => {
     await t.click(t.find('Ranger l’adresse et l’accord')[0]);
     expect(t.posts()[0]!.body).toEqual({ email: 'contact@exemple.test', consentProof: 'Au salon, le 3 mars' });
     expect(t.state()).toBe('Adresse et accord rangés.');
+  });
+
+  it('une clé refusée au dépôt est retirée, et l’écran se vide', async () => {
+    const t = await run({ [`POST /v1/partenaires/annuaire/${P}/preuves`]: async () => new Response('{}', { status: 401 }) });
+    await t.fiche();
+    t.table[`GET /v1/partenaires/annuaire/${P}`] = no(401, { ok: false, code: 'unauthorized' });
+    t.input('annuaire-numero').value = 'N-1';
+    t.input('annuaire-debut').value = '2027-01-01';
+    t.input('annuaire-fin').value = '2027-12-31';
+    t.input('annuaire-preuve').files = [pdf];
+    await t.click(t.find('Ranger ce justificatif')[0]);
+    expect(t.body().children).toEqual([]);
+    expect(t.posts().filter((c) => c.url.endsWith('/justificatifs'))).toEqual([]);
   });
 
   it('[R04] une adresse refusée après opposition est dite', async () => {
