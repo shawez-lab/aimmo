@@ -158,8 +158,30 @@ export class RecommandationsGagner {
   /**
    * Un partenaire recommande une personne, avec la preuve de son accord. La réponse est la même dans tous les cas où
    * elle est rangée [R77, R16] ; chaque refus va au journal, sans donnée [R13].
+   *
+   * Deux envois simultanés passent tous deux les lectures ; un seul lot peut alors aboutir (`attempt`). Le perdant est
+   * rejoué une fois, comme un renvoi : il retrouve la fiche du gagnant et reçoit la même réponse [R77]. Une vraie panne
+   * n'est jamais rejouée : elle remonte, rien n'est gardé [R17].
    */
   async recommend(viewer: Viewer, input: unknown): Promise<RecommendationResult<{ recorded: true }>> {
+    const first = await this.attempt(viewer, input);
+    if (!('lost' in first)) return first;
+    const second = await this.attempt(viewer, input);
+    if ('lost' in second) throw second.lost;
+    return second;
+  }
+
+  /** Une coordonnée nouvelle sur une fiche : un envoi simultané qui l'a posée d'abord n'est pas une erreur. */
+  private async addContact(input: { networkId: string; agentId: string | null; personId: string; kind: IdentifierKind; value: string }): Promise<void> {
+    if ((await this.fiche.findByIdentifier(input.networkId, input.kind, input.value)).length > 0) return;
+    try {
+      await this.fiche.addIdentifier(input);
+    } catch (error) {
+      if (!/UNIQUE/i.test(String(error))) throw error;
+    }
+  }
+
+  private async attempt(viewer: Viewer, input: unknown): Promise<RecommendationResult<{ recorded: true }> | { lost: unknown }> {
     const denied = await this.gate(viewer);
     if (denied) return denied;
     const stop = async (rule: RecommendationRefusal['rule'], code: string): Promise<RecommendationRefusal> => {
@@ -238,9 +260,7 @@ export class RecommandationsGagner {
     if (!opposed && referredId && (await this.db.first('SELECT 1 FROM partner_recommendations WHERE partner_id = ? AND referred_id = ?', [viewer.userId, referredId]))) {
       // Déjà recommandée par ce partenaire : une coordonnée nouvelle rejoint sa fiche, rien d'autre ne change.
       const followed = (await this.fiche.view(referredId)).members.map((m) => m.agent_id).find((a) => a !== null) ?? null;
-      for (const id of ids) {
-        if ((await this.fiche.findByIdentifier(networkId, id.kind, id.value)).length === 0) await this.fiche.addIdentifier({ networkId, agentId: followed, personId: referredId, kind: id.kind, value: id.value });
-      }
+      for (const id of ids) await this.addContact({ networkId, agentId: followed, personId: referredId, kind: id.kind, value: id.value });
       return silent('already_recommended');
     }
     if (opposed) referredId = roots.length === 1 ? roots[0]! : null;
@@ -263,9 +283,7 @@ export class RecommandationsGagner {
     // une panne ensuite ne laisse rien qu'un renvoi ne retrouve.
     if (!opposed && referredId) {
       if (followedBy === null && agentId !== null) await this.handOver(await this.fiche.membersOf(referredId), agentId, at.toISOString());
-      for (const id of ids) {
-        if ((await this.fiche.findByIdentifier(networkId, id.kind, id.value)).length === 0) await this.fiche.addIdentifier({ networkId, agentId, personId: referredId, kind: id.kind, value: id.value });
-      }
+      for (const id of ids) await this.addContact({ networkId, agentId, personId: referredId, kind: id.kind, value: id.value });
     }
     // Le projet, sa source, l'accord et la recommandation en un seul lot, tout ou rien, avec la fiche quand elle est neuve :
     // un renvoi après une panne ne crée jamais une seconde fiche, un second projet ni un second accord.
@@ -295,14 +313,38 @@ export class RecommandationsGagner {
     if (prepared.value) referredId = prepared.value.personId;
     const id = this.newId();
     const due = opposed ? null : new Date(at.getTime() + REFERRAL_CALL_HOURS * 3_600_000).toISOString();
-    const results = await runBatch(this.db, [
-      ...prepared.statements,
-      {
-        sql: `INSERT INTO partner_recommendations (id, network_id, partner_id, referred_id, project_id, first_name, agent_id, consent_kind, consent_channel, consent_given_at, call_due_at, call_done_at, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT (partner_id, referred_id) DO NOTHING`,
-        params: [id, networkId, viewer.userId, referredId, prepared.value?.projectId ?? null, typedName, opposed ? null : agentId, kind, channel, givenAt.toISOString(), due, this.actor(viewer), at.toISOString()],
-      },
-    ]);
+    // Sur une fiche neuve, la garde passe en premier : une coordonnée arrivée entre-temps sur une fiche annule tout le lot.
+    // Une ligne déjà là annule aussi le lot, faute d'`ON CONFLICT` : le perdant ne garde ni projet, ni source, ni accord.
+    // Tenue à l'écart, la recommandation n'écrit rien d'autre : un doublon s'ignore simplement.
+    const guards: SqlStatement[] = [];
+    if (!opposed && known === null) {
+      for (const contact of ids) {
+        const kinds = contact.kind === 'phone' ? ['phone', 'whatsapp'] : [contact.kind];
+        guards.push({
+          sql: `INSERT INTO partner_recommendation_race_guard (never)
+                SELECT 1 WHERE EXISTS (SELECT 1 FROM person_identifiers WHERE network_id = ? AND kind IN (${kinds.map(() => '?').join(', ')}) AND value = ?)`,
+          params: [networkId, ...kinds, normalizeIdentifier(contact.kind, contact.value)],
+        });
+      }
+    }
+    let results: { changes: number }[];
+    try {
+      results = await runBatch(this.db, [
+        ...guards,
+        ...prepared.statements,
+        {
+          sql: `INSERT INTO partner_recommendations (id, network_id, partner_id, referred_id, project_id, first_name, agent_id, consent_kind, consent_channel, consent_given_at, call_due_at, call_done_at, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)${opposed ? ' ON CONFLICT (partner_id, referred_id) DO NOTHING' : ''}`,
+          params: [id, networkId, viewer.userId, referredId, prepared.value?.projectId ?? null, typedName, opposed ? null : agentId, kind, channel, givenAt.toISOString(), due, this.actor(viewer), at.toISOString()],
+        },
+      ]);
+    } catch (error) {
+      // Perdu seulement si ce que le lot refusait existe vraiment maintenant ; sinon c'est une panne, qui remonte.
+      if (opposed) throw error;
+      const beaten = known !== null ? (await this.db.first('SELECT 1 FROM partner_recommendations WHERE partner_id = ? AND referred_id = ?', [viewer.userId, known])) !== null : (await Promise.all(ids.map((c) => this.fiche.findByIdentifier(networkId, c.kind, c.value)))).some((found) => found.length > 0);
+      if (!beaten) throw error;
+      return { lost: error };
+    }
     const changes = results[results.length - 1]!.changes;
     // Tenue à l'écart, chaque coordonnée donnée garde son empreinte, même quand la ligne existait déjà : une coordonnée
     // nouvelle ne peut pas ensuite rouvrir une fiche neuve pour la même personne [R02, R04].
