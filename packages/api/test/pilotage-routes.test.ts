@@ -75,6 +75,16 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     expect((await t.call(t.compliance, 'GET', '/pilotage/preuve')).status).toBe(403);
   });
 
+  it('[R16] [R214] les indicateurs du parcours : la direction les lit, l’agent et la conformité non', async () => {
+    const t = await setup();
+    const read = await t.call(t.direction, 'GET', '/pilotage/parcours?du=2027-03-01&au=2027-03-31');
+    expect(read.status).toBe(200);
+    expect(read.body).toMatchObject({ ok: true, data: { from: '2027-03-01', to: '2027-03-31' } });
+    expect((await t.call(t.agent, 'GET', '/pilotage/parcours?du=2027-03-01&au=2027-03-31')).status).toBe(403);
+    expect((await t.call(t.compliance, 'GET', '/pilotage/parcours?du=2027-03-01&au=2027-03-31')).status).toBe(403);
+    expect((await t.call(t.direction, 'GET', '/pilotage/parcours?du=2027-03-31&au=2027-03-01')).status).toBe(400);
+  });
+
   it('[R67] aucune route ne reçoit un montant : la commission vient du mandat, par le passage horaire', async () => {
     const t = await setup();
     expect((await t.call(t.direction, 'POST', '/pilotage/grille', { validFrom: '2027-03-01', defaultRateBp: 7000 })).status).toBe(200);
