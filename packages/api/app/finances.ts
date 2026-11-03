@@ -134,7 +134,7 @@ const stateAndBody = (id: string, title: string, intro: string): string => `<sec
 const ZONES_ENTRY_HTML = stateAndBody('zones', 'Contacts par zone, le mois passé', 'Se relit avec le rapport du matin. Une zone ne se montre que si elle ne dit le chiffre de personne.');
 const INDICATEURS_ENTRY_HTML = stateAndBody('indicateurs', 'Le parcours, le mois passé', 'Se relit avec le rapport du matin. Tout vient de la base, pour tout le réseau.');
 const TEMPS_AGENT_ENTRY_HTML = stateAndBody('temps-agent', 'Mon temps gagné, la semaine passée', 'Vous seul le déclarez, personne ne vous compare à personne. Le formulaire s’ouvre avec le rapport du matin.');
-const ENGAGEMENTS_ENTRY_HTML = stateAndBody('engagements', 'Nos engagements, le mois passé', 'Se relit avec le rapport du matin. Recalculés depuis la base, sans aucun agent.');
+const ENGAGEMENTS_ENTRY_HTML = stateAndBody('engagements-tenus', 'Nos engagements, le mois passé', 'Se relit avec le rapport du matin. Recalculés depuis la base, sans aucun agent.');
 const TEMPS_RESEAU_ENTRY_HTML = stateAndBody('temps-reseau', 'Le temps gagné, la semaine passée', 'Se relit avec le rapport du matin. Ce que les agents déclarent, en comptes, sans aucun nom.');
 const DISPONIBILITE_ENTRY_HTML = stateAndBody('disponibilite', 'La disponibilité, le mois passé', 'Se relit avec le rapport du matin. La part du temps où chaque service a répondu. Cible : 99,9 %.');
 export const RAPPORT_AGENT_HTML = reportEntry('agent') + ZONES_ENTRY_HTML + TEMPS_AGENT_ENTRY_HTML;
@@ -197,7 +197,7 @@ export const FINANCES_JS = `
       $('rapport-' + who + '-etat').textContent = '';
       $('rapport-' + who + '-jour').value = '';
     });
-    ['preuve', 'zones', 'indicateurs', 'engagements', 'temps-reseau', 'disponibilite', 'temps-agent'].forEach(function (id) {
+    ['preuve', 'zones', 'indicateurs', 'engagements-tenus', 'temps-reseau', 'disponibilite', 'temps-agent'].forEach(function (id) {
       clear($(id + '-corps'));
       $(id + '-etat').textContent = '';
     });
@@ -479,7 +479,7 @@ globalThis.AIMMO_FINANCES = function (t) {
   }
   function promises() {
     var month = lastMonth();
-    return readBlock('engagements', '/v1/pilotage/engagements-tenus?mois=' + month, function (v, body) {
+    return readBlock('engagements-tenus', '/v1/pilotage/engagements-tenus?mois=' + month, function (v, body) {
       var ul = el('ul', null, 'liste');
       v.lines.forEach(function (l) {
         var li = el('li');

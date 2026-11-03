@@ -107,8 +107,8 @@ async function run(role: 'agent' | 'direction', answers: Record<string, Answer> 
 describe('IN10 · engagements, temps gagné et disponibilité à l’écran', () => {
   it('[R216] la direction lit chaque engagement : tenu, manqué, en attente, en essai, écarté, et ce qui n’est pas mesurable, jamais zéro', async () => {
     const t = await run('direction');
-    expect(t.state('engagements')).toBe('février 2027. Tenus au total : 75 % (3 sur 4).');
-    const text = t.texts('engagements');
+    expect(t.state('engagements-tenus')).toBe('février 2027. Tenus au total : 75 % (3 sur 4).');
+    const text = t.texts('engagements-tenus');
     expect(text).toContain('Tenu : 75 % (3 sur 4).');
     expect(text).toContain('Manqué le 08/02/2027.');
     expect(text).toContain('1 cas dont le délai court encore');
@@ -119,7 +119,7 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
     expect(text).toContain('Pas encore mesurable');
     expect(text).not.toMatch(/\b0 %/);
     const none = await run('direction', { [ENG]: ok({ ...PROMISES, lines: [], overall: nothing }) });
-    expect(none.state('engagements')).toBe('février 2027. Aucun cas jugé sur ce mois.');
+    expect(none.state('engagements-tenus')).toBe('février 2027. Aucun cas jugé sur ce mois.');
   });
 
   it('[R217] [R14] la direction lit le temps gagné en comptes, sans nom ; personne n’a déclaré : rien, jamais zéro', async () => {
@@ -275,13 +275,13 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
 
   it('[R16] droits refusés, réseau perdu, panne : dits tels, sans chiffres, jamais zéro, et chaque bloc tient seul', async () => {
     const refused = await run('direction', { [ENG]: no(403, { ok: false, rule: 'R16', code: 'role' }) });
-    expect(refused.state('engagements')).toContain('pas dans vos droits');
-    expect(refused.els['engagements-corps']!.children).toEqual([]);
+    expect(refused.state('engagements-tenus')).toContain('pas dans vos droits');
+    expect(refused.els['engagements-tenus-corps']!.children).toEqual([]);
     expect(refused.texts('disponibilite')).toContain('non mesuré');
     const lost = await run('direction', { [DISPO]: async () => { throw new TypeError('hors ligne'); } });
     expect(lost.state('disponibilite')).toContain('Pas de réseau');
     expect(lost.els['disponibilite-corps']!.children).toEqual([]);
-    expect(lost.state('engagements')).toContain('Tenus au total');
+    expect(lost.state('engagements-tenus')).toContain('Tenus au total');
     const broken = await run('agent', { [MINE]: no(500, {}) });
     expect(broken.state('temps-agent')).toContain('Indisponible');
     expect(broken.els['temps-agent-corps']!.children).toEqual([]);
@@ -305,7 +305,7 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
     await t.reread();
     t.els.sortir!.listeners.click!({});
     await settle();
-    for (const id of ['engagements', 'temps-reseau', 'disponibilite']) {
+    for (const id of ['engagements-tenus', 'temps-reseau', 'disponibilite']) {
       expect(t.els[`${id}-corps`]!.children).toEqual([]);
       expect(t.state(id)).toBe('');
     }
