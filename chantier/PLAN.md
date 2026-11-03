@@ -1807,7 +1807,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Reste : `addPiece` accepte encore des pièces sur un dossier DossierFacile par appel direct ; le geste de vérification de l'identité du candidat n'a pas été regardé (W21).
 
 ### W19 · Les pièces déposées mais jamais rangées, dans le droit d'accès et l'effacement
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W18, L07
 - Cahier : Conformité ; M12 ; R95, R97, R13, R17.
 - Objectif : un fichier de `location/<logement>/candidatures/<id>/` déposé puis refusé, ou après une réponse perdue, reste stocké sans ligne `rental_application_pieces` : la carte des accès ne le trouve pas. Ranger chaque dépôt pour que l'accès et l'effacement le voient. À faire avant tout usage réel de ces pièces.
@@ -1817,7 +1817,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Reste : une pièce au titulaire Visale, dans `rental_application_pieces`, n'est sur aucune carte par cette table, seulement par sa ligne de dépôt. Fichiers déposés avant W19 sans ligne : aucun usage réel (`PIECES` pas encore relié, H25).
 
 ### W20 · Le garant passe par les mêmes droits que le candidat
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W04, W18
 - Cahier : M15 Louer ; R16.
 - Objectif : `addGuarantor` ne vérifie que le réseau : un appel direct peut désigner le contact d'un autre agent ou une fiche réunie du candidat, et lire par `missing` si son identité est vérifiée. Appliquer les règles de `addableContacts`.
