@@ -1808,6 +1808,14 @@ Voie : 1
 
 Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par route avant de coder : `POST` du socle (`app.ts`) sans appel de l'application.
 
+### CE17 · Retrouver la source d'une fuite d'un dossier protégé, à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
+- Cahier : M16 ; R16, R13, R201.
+- Objectif : trouvé le 2026-11-03, même comparaison : `POST /v1/commerces/<id>/tracage` n'a aucun appel de l'application. Lire `dossier.trace` et son écran ; vérifier que le geste n'existe pas ailleurs, puis le donner dans `app/commerces*.ts`, sans toucher au socle.
+- Critères : seuls les rôles de la route agissent [R16] (test) ; ni nom ni contenu du texte collé au journal [R13] (test) ; résultat incertain dit tel [R10] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 ### X16 · Rétractation et début anticipé d'un mandat à l'écran
 - Statut : à faire
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D03
@@ -2671,12 +2679,15 @@ Décidé, lecture prudente : un investisseur est une personne de la fiche client
 - Attend : rien.
 
 ### Y11 · Les règles de location d'une commune, à l'écran du réseau
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y04, Y10
 - Cahier : M17 ; R16, R10, R201.
 - Objectif : trouvé le 2026-11-03 en comparant les routes aux appels de l'écran : `POST /v1/investir/regles` n'a aucun geste, donc aucun permis de louer ni encadrement ne peut être rangé, et les contraintes d'un bien n'en disent jamais rien. La vérification d'une commune, sur l'écran du réseau, dit ses règles ; la direction en range, avec leur source. Écrit dans `app/loyers.ts`, sans toucher au socle.
 - Critères : la lecture et le formulaire vivent là où la direction arrive, et le formulaire suit `canRecord` [R16] (tests) ; chaque règle dit sa source et sa date [R10] (test) ; « aucune règle » n'est jamais dit comme une absence prouvée [R10] (test) ; une commune retapée sans relecture ne reçoit rien (test) ; une règle déjà finie est dite telle (test) ; refus dits en français, réponse perdue dite telle, double appui un seul envoi (tests) ; budget tenu [R201] (test).
 - Attend : rien.
+
+- Décidé (2026-11-03, voie 2) : lecture `GET /v1/investir/regles?insee=` ; d'abord écrit sur l'écran Investir, que la direction n'atteint pas, puis déplacé dans `app/loyers.ts`. Relecture forte : 5 P1 corrigés ; Codex à sa limite (H03), fusion sans lui (#315). Écran non ouvert dans un navigateur.
+- Reste : pas de lecture à part pour les agents, les contraintes d'un bien leur disent déjà les règles.
 
 ### Y10 · Importer les loyers de marché depuis l'écran du réseau
 - Statut : fait (2026-11-03)
