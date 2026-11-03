@@ -3511,7 +3511,9 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### RS04 · L'estimation en ligne sur le site
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03), lecture prudente : un formulaire serveur sans clé, l'identifiant de visite vient d'un champ caché neuf à chaque page et ne suit personne, la limite du réseau tient dans tous les cas ; aucune coordonnée demandée, le rendez-vous passe par un lien ; sans données branchées, la page répond 200 et dit qu'elle n'est pas ouverte.
+- Reste : fusionnée (#352) ; relecture forte 2 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte. Le test CE22 du lecteur dépendait de l'heure réelle (rouge après 20 h à Paris) : il tourne sur une heure fixe. La fourchette réelle attend `DVF_BASE_URL` au déploiement.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
 - Cahier : M01 ; M04, estimation en ligne (E05).
 - Objectif : `GET /estimation`, où mènent déjà les pages de prix et qui répond 404 : la page qui appelle l'estimation en ligne de E05, ou, si elle ne peut pas être servie sans script ni clé, un formulaire serveur.
@@ -3519,7 +3521,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### RS05 · Mentions légales et données personnelles du site
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
 - Cahier : Conformité ; M01.
 - Objectif : `GET /mentions-legales` et `GET /donnees-personnelles`, rendues depuis les réglages du réseau, liées depuis chaque page du site. Tant qu'une mention manque, la page dit qu'elle manque et le site ne peut pas passer en réel.
