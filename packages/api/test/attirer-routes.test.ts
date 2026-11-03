@@ -343,7 +343,7 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect(listed[0]!.name.length).toBeGreaterThan(0);
     // Le lecteur d'un autre réseau ne lit rien de cet agent, et son refus ne dit pas à qui est l'adresse.
     expect(await kept(net2)).toEqual([]);
-    expect((await t.call(net2, 'POST', '/attirer/sites', { kind: 'reseau', baseUrl: CAMILLE, active: true })).body).toMatchObject({ rule: 'R153', code: 'url_taken' });
+    expect((await t.call(net2, 'POST', '/attirer/sites', { kind: 'reseau', baseUrl: CAMILLE, active: true })).body).toEqual({ ok: false, rule: 'R153', code: 'url_taken' });
     // Un agent n'y a pas accès.
     expect((await t.call(camille, 'GET', '/attirer/agents')).status).toBe(403);
     // Dans le réseau, le refus dit la cause ; le site du réseau aussi.
