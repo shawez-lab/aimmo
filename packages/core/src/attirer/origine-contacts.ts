@@ -212,6 +212,11 @@ export class OrigineContacts {
     return ref;
   }
 
+  /** Vrai si le bien a aujourd'hui une page de référence en ligne. */
+  async pageOnline(networkId: string, propertyId: string): Promise<boolean> {
+    return (await this.referencement.canonicalFor(networkId, propertyId)) !== null;
+  }
+
   /**
    * Le lien marqué d'une vidéo ou d'une publication du Studio, vers la page de référence de son bien. Le contenu est
    * rangé à sa première demande ; un bien sans page en ligne n'a pas de lien. Le code désigne le contenu, jamais une

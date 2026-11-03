@@ -83,7 +83,7 @@ describeWithSqlite('X11 · atelier d’un bien dans le Studio', () => {
       await t.db.run("INSERT INTO video_montages (id, property_id, network_id, video_ref, video_sha256, template_sha256, clips_count, duration_s, processed_on, recorded_by, recorded_at) VALUES (?, ?, ?, 'v.mp4', ?, ?, 3, 45, 'appareil', 'x', '2027-10-14T08:00:00.000Z')", [CLIP, t.p.id, t.network.id, 'a'.repeat(64), 'b'.repeat(64)]);
       return { ...t, atelier };
     };
-    const fake: AtelierOrigin = { studioLink: async (_n, _k, ref) => ({ contentId: 'code', link: `https://reseau.exemple.test/biens/x?o=${ref.slice(0, 4)}` }) };
+    const fake: AtelierOrigin = { pageOnline: async () => true, studioLink: async (_n, _k, ref) => ({ contentId: 'code', link: `https://reseau.exemple.test/biens/x?o=${ref.slice(0, 4)}` }) };
 
     it('[R16] [R156] l’agent du bien lit le lien de ses vidéos et de ses seules publications validées ; personne d’autre', async () => {
       const t = await withOrigin(fake);
@@ -104,14 +104,24 @@ describeWithSqlite('X11 · atelier d’un bien dans le Studio', () => {
     });
 
     it('un bien sans page en ligne le dit, sans lien ; sans origine branchée non plus', async () => {
-      const t = await withOrigin({ studioLink: async () => ({ contentId: 'code', link: null }) });
+      const asked: string[] = [];
+      const t = await withOrigin({ pageOnline: async () => false, studioLink: async (_n, _k, ref) => (asked.push(ref), { contentId: 'code', link: null }) });
       expect(await t.atelier.links(t.as('agent', t.alex.id), t.p.id)).toEqual({ ok: true, value: { online: false, videos: [], posts: [] } });
+      // Sans page, aucun contenu n'est rangé pour rien.
+      expect(asked).toEqual([]);
+      // En ligne, sans vidéo ni publication : le bien reste dit en ligne.
+      const empty = await setup();
+      const bare = new AtelierStudio(empty.db, empty.acces, empty.journal, { publishable: async () => [] }, { origin: fake });
+      expect(await bare.links(empty.as('agent', empty.alex.id), empty.p.id)).toEqual({ ok: true, value: { online: true, videos: [], posts: [] } });
+      // La page disparaît entre deux lectures : pas de lien, sans erreur.
+      const gone = await withOrigin({ pageOnline: async () => true, studioLink: async () => ({ contentId: 'code', link: null }) });
+      expect(await gone.atelier.links(gone.as('agent', gone.alex.id), gone.p.id)).toEqual({ ok: true, value: { online: true, videos: [], posts: [] } });
       const u = await setup();
       expect(await u.atelier.links(u.as('agent', u.alex.id), u.p.id)).toEqual({ ok: true, value: { online: false, videos: [], posts: [] } });
     });
 
     it('[R13] une panne de l’origine est dite et notée, sans donnée', async () => {
-      const t = await withOrigin({ studioLink: async () => { throw new TypeError('panne 06 00 00 00 00'); } });
+      const t = await withOrigin({ pageOnline: async () => { throw new TypeError('panne 06 00 00 00 00'); }, studioLink: async () => ({ contentId: 'code', link: null }) });
       expect(await t.atelier.links(t.as('agent', t.alex.id), t.p.id)).toEqual({ ok: false, rule: 'R10', code: 'origine_indisponible' });
       expect((await t.journal.all()).filter((e) => e.type === 'studio.liens.origine_indisponible').map((e) => e.data)).toEqual([{ rule: 'R156', error: 'TypeError' }]);
     });

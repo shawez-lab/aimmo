@@ -45,6 +45,7 @@ export interface AtelierLinks {
 }
 
 export interface AtelierOrigin {
+  pageOnline(networkId: string, propertyId: string): Promise<boolean>;
   studioLink(networkId: string, kind: 'video' | 'publication', ref: string, propertyId: string): Promise<{ contentId: string; link: string | null } | null>;
 }
 
@@ -108,16 +109,15 @@ export class AtelierStudio {
       [propertyId, networkId, MAX_ATELIER_POSTS],
     );
     try {
-      const value: AtelierLinks = { online: true, videos: [], posts: [] };
+      const value: AtelierLinks = { online: await origin.pageOnline(networkId, propertyId), videos: [], posts: [] };
+      if (!value.online) return { ok: true, value };
       for (const c of clips) {
         const l = await origin.studioLink(networkId, 'video', c.id, propertyId);
         if (l?.link) value.videos.push({ id: c.id, durationSeconds: c.duration_s, recordedAt: c.recorded_at, link: l.link });
-        else value.online = false;
       }
       for (const p of posts) {
         const l = await origin.studioLink(networkId, 'publication', p.id, propertyId);
         if (l?.link) value.posts.push({ id: p.id, event: p.event, createdAt: p.created_at, link: l.link });
-        else value.online = false;
       }
       return { ok: true, value };
     } catch (error) {

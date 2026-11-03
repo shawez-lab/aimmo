@@ -203,7 +203,7 @@ globalThis.AIMMO_STUDIO = function (t) {
       if (res.ok && !items.length && online) return true;
       var b = block('Liens à coller');
       if (!res.ok) { b.appendChild(el('p', 'Liens indisponibles pour le moment.', 'doux')); return true; }
-      if (!online) b.appendChild(el('p', 'Ce bien n’a pas encore de page en ligne : pas de lien pour le moment.', 'doux'));
+      if (!online) b.appendChild(el('p', 'Ce bien n’a pas de page en ligne : pas de lien pour le moment.', 'doux'));
       if (items.length) b.appendChild(el('p', 'Collez ce lien avec ce que vous postez vous-même : il dit de quel contenu vient le contact, rien sur la personne.', 'doux'));
       var ul = el('ul', null, 'liste');
       items.forEach(function (x) {
