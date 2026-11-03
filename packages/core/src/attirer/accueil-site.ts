@@ -27,11 +27,14 @@ export interface SitePath {
 export function sitePaths(kind: 'reseau' | 'agent', recruiting: boolean): SitePath[] {
   const common: SitePath[] = [
     { path: '/biens', label: 'Tous les biens', text: 'Chaque bien en vente, avec son mandat vérifié à la lecture.' },
-    { path: '/simulateur', label: 'Simuler un prêt', text: 'Une mensualité en quelques chiffres. Rien n’est gardé.' },
   ];
-  if (kind === 'agent') return common;
+  const simulator: SitePath = { path: '/simulateur', label: 'Simuler un prêt', text: 'Une mensualité en quelques chiffres. Rien n’est gardé.' };
+  if (kind === 'agent') return [...common, simulator];
   return [
     ...common,
+    { path: '/agents', label: 'Les agents immobiliers', text: 'Chaque agent du réseau, par ordre alphabétique, avec ses mentions.' },
+    { path: '/prix', label: 'Les prix par commune', text: 'Ce que les logements se sont vraiment vendus, au mètre carré.' },
+    simulator,
     { path: '/preuve', label: 'La preuve à Dijon', text: 'Le compte public du réseau, mois par mois, vérifiable par chacun.' },
     ...(recruiting ? [{ path: '/rejoindre', label: 'Rejoindre le réseau', text: 'Devenir agent immobilier AIMMO : ce que vous trouvez, ce que vous payez, ce qui vous engage.' }] : []),
   ];

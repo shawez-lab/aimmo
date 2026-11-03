@@ -74,6 +74,11 @@ interface PublishedRow {
   payload: string;
 }
 
+export interface PublicCommune {
+  slug: string;
+  name: string;
+}
+
 export interface PublishedListing {
   propertyId: string;
   agentId: string | null;
@@ -336,14 +341,14 @@ export class Referencement {
   }
 
   /** Les pages de prix montrables de la dernière version complète : une zone avec au moins une case publiée. */
-  private async pricePaths(networkId: string): Promise<{ path: string; day: string | null }[]> {
+  private async pricePaths(networkId: string): Promise<{ path: string; day: string | null; commune: PublicCommune | null }[]> {
     const version = await this.db.first<{ id: string; completed_at: string }>(
       "SELECT id, completed_at FROM price_versions WHERE network_id = ? AND status = 'complet' ORDER BY completed_at DESC, rowid DESC LIMIT 1",
       [networkId],
     );
     if (!version) return [];
-    const rows = await this.db.all<{ level: string; slug: string; parent_slug: string | null }>(
-      `SELECT DISTINCT z.level, z.slug, p.slug AS parent_slug FROM price_cells c JOIN price_zones z ON z.id = c.area_id LEFT JOIN price_zones p ON p.id = z.parent_id
+    const rows = await this.db.all<{ level: string; slug: string; name: string; parent_slug: string | null }>(
+      `SELECT DISTINCT z.level, z.slug, z.label AS name, p.slug AS parent_slug FROM price_cells c JOIN price_zones z ON z.id = c.area_id LEFT JOIN price_zones p ON p.id = z.parent_id
         WHERE c.version_id = ? AND c.status IN ('publiee', 'reprise')
           AND z.id NOT IN (SELECT area_id FROM price_zone_retirements)
           AND (z.parent_id IS NULL OR z.parent_id NOT IN (SELECT area_id FROM price_zone_retirements))
@@ -354,7 +359,12 @@ export class Referencement {
     const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
     return rows
       .filter((r) => slug.test(r.slug) && (r.level === 'commune' || (r.parent_slug !== null && slug.test(r.parent_slug))))
-      .map((r) => ({ path: r.level === 'commune' ? `/prix/${r.slug}` : `/prix/${r.parent_slug}/${r.slug}`, day }));
+      .map((r) => ({ path: r.level === 'commune' ? `/prix/${r.slug}` : `/prix/${r.parent_slug}/${r.slug}`, day, commune: r.level === 'commune' ? { slug: r.slug, name: r.name } : null }));
+  }
+
+  /** Les communes dont la page de prix a au moins une case publiable, par ordre alphabétique (RS03) [R150]. */
+  async priceCommunes(networkId: string): Promise<PublicCommune[]> {
+    return (await this.pricePaths(networkId)).flatMap((p) => (p.commune ? [p.commune] : [])).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
   }
 
   /**

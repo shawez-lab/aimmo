@@ -52,6 +52,13 @@ export interface AgentPageInput {
   reviewsUrl: string | null;
 }
 
+export interface PublicAgent {
+  agentId: string;
+  name: string;
+  zone: string | null;
+  mentions: AgentMentions;
+}
+
 export type MissingMention = 'agent_inconnu' | 'agent_parti' | 'statut_manquant' | 'carte_manquante' | 'titulaire_manquant';
 
 export type AgentPage = { ok: true; html: string; input: AgentPageInput } | { ok: false; rule: 'R152' | 'R16'; reason: MissingMention };
@@ -173,25 +180,41 @@ export class PageAgent {
     | Refusal
   > {
     if (viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
-    const n = viewer.networkId;
-    const agents = await this.db.all<{ id: string; first_name: string; last_name: string }>("SELECT id, first_name, last_name FROM agents WHERE network_id = ? AND status = 'active' ORDER BY last_name, first_name, id", [n]);
+    const { holder, cardNumber, agents } = await this.roster(viewer.networkId);
+    return { ok: true, value: { holder, cardNumber, agents: agents.map(({ zone: _zone, firstName: _f, lastName: _l, ...a }) => a) } };
+  }
+
+  /** Les agents en activité, leurs mentions et ce qui leur manque, en quelques lectures. */
+  private async roster(n: string) {
+    const agents = await this.db.all<{ id: string; first_name: string; last_name: string; zone: string | null }>("SELECT id, first_name, last_name, zone FROM agents WHERE network_id = ? AND status = 'active' ORDER BY last_name, first_name, id", [n]);
     const legal = new Map<string, { rsac_number: string; rsac_registry: string }>();
     for (const m of await this.db.all<{ agent_id: string; rsac_number: string; rsac_registry: string }>('SELECT agent_id, rsac_number, rsac_registry FROM agent_legal_mentions WHERE network_id = ? ORDER BY set_at, rowid', [n])) legal.set(m.agent_id, m);
     const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [n]);
-    const holder = await this.db.first<{ holder_name: string }>('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [n]);
-    const cardNumber = card && card.card_number.trim() !== '' ? card.card_number : null;
+    const holderRow = await this.db.first<{ holder_name: string }>('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [n]);
+    const cardNumber = card && card.card_number.trim() !== '' ? card.card_number.trim() : null;
+    const holder = holderRow?.holder_name ?? null;
     return {
-      ok: true,
-      value: {
-        holder: holder?.holder_name ?? null,
-        cardNumber,
-        agents: agents.map((a) => {
-          const m = legal.get(a.id);
-          const missing: MissingMention | null = !m ? 'statut_manquant' : !cardNumber ? 'carte_manquante' : !holder ? 'titulaire_manquant' : null;
-          return { agentId: a.id, name: `${a.first_name} ${a.last_name}`, rsacNumber: m?.rsac_number ?? null, rsacRegistry: m?.rsac_registry ?? null, missing };
-        }),
-      },
+      holder,
+      cardNumber,
+      agents: agents.map((a) => {
+        const m = legal.get(a.id);
+        const missing: MissingMention | null = !m ? 'statut_manquant' : !cardNumber ? 'carte_manquante' : !holder ? 'titulaire_manquant' : null;
+        return { agentId: a.id, name: `${a.first_name} ${a.last_name}`, firstName: a.first_name, lastName: a.last_name, zone: a.zone, rsacNumber: m?.rsac_number ?? null, rsacRegistry: m?.rsac_registry ?? null, missing };
+      }),
     };
+  }
+
+  /**
+   * Les agents dont la page est publiable, pour la liste publique (RS03) : par ordre alphabétique, chacun avec ses mentions
+   * à côté de son nom, sans aucun chiffre sur son activité [R14, R152].
+   */
+  async publicAgents(networkId: string): Promise<PublicAgent[]> {
+    const { holder, cardNumber, agents } = await this.roster(networkId);
+    const fr = (a: string, b: string): number => a.localeCompare(b, 'fr');
+    return agents
+      .filter((a) => a.missing === null && /^[A-Za-z0-9_-]{1,64}$/.test(a.agentId))
+      .sort((a, b) => fr(a.lastName, b.lastName) || fr(a.firstName, b.firstName) || fr(a.agentId, b.agentId))
+      .map((a) => ({ agentId: a.agentId, name: a.name, zone: a.zone, mentions: { rsacNumber: a.rsacNumber!, rsacRegistry: a.rsacRegistry!, cardNumber: cardNumber!, cardHolder: holder! } }));
   }
 
   /** Le titulaire de la carte professionnelle du réseau (la société, H09), réglé par la direction. */

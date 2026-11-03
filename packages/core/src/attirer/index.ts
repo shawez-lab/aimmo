@@ -5,5 +5,6 @@ export * from './page-prix.ts';
 export * from './referencement.ts';
 export * from './liste-biens.ts';
 export * from './accueil-site.ts';
+export * from './annuaire-site.ts';
 export * from './quartier.ts';
 export * from './origine-contacts.ts';

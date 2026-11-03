@@ -12,6 +12,7 @@
  * Pages publiques, servies sur le site du réseau et sur le site de chaque agent, reconnus par leur adresse (`public_sites`) :
  *   GET /                                          l'accueil du site, ses derniers biens et ses chemins [R220, R152]
  *   GET /biens                                     la liste des biens du site, chacun revérifié à la lecture [R220, R153]
+ *   GET /agents, GET /prix                         les listes d'agents et de communes, sur le site du réseau [R14, R150, R152]
  *   GET /prix/:commune[/:quartier]                 la page de prix, seulement sur le site du réseau [R150, R151]
  *   GET /agents/:agent                             la page de l'agent, sur le site du réseau et sur le sien [R152]
  *   GET /quartiers/:commune/:quartier[/prix|/equipements]  la page de quartier ou son article validé [R155]
@@ -22,7 +23,7 @@
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
 import { appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, renderListingsPage, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
@@ -264,6 +265,8 @@ const notFound = (): Response => new Response('Page inconnue.', { status: 404, h
 export const PUBLIC_PATHS = {
   accueil: /^\/$/,
   liste: /^\/biens$/,
+  agents: /^\/agents$/,
+  listePrix: /^\/prix$/,
   prix: new RegExp(`^/prix/${SLUG}(?:/${SLUG})?$`),
   agent: new RegExp(`^/agents/${ID}$`),
   quartier: new RegExp(`^/quartiers/${SLUG}/${SLUG}(?:/(prix|equipements))?$`),
@@ -379,6 +382,19 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       const selection = await selectListings(published, s.diffusion, networkId, checkedAt, query);
       if (!selection) return notFound();
       return liveHtml(renderListingsPage({ ...selection, query, checkedAt }));
+    }
+    case 'agents': {
+      // Réservée au site du réseau : le site d'un agent ne parle que de lui [R153].
+      if (site.kind !== 'reseau') return notFound();
+      const number = parseDirectoryPage(url.searchParams);
+      const list = number === null ? null : renderAgentsList(await svc.pageAgent.publicAgents(networkId), number);
+      return list === null ? notFound() : html(list);
+    }
+    case 'listePrix': {
+      if (site.kind !== 'reseau') return notFound();
+      const number = parseDirectoryPage(url.searchParams);
+      const list = number === null ? null : renderPricesList(await svc.referencement.priceCommunes(networkId), number);
+      return list === null ? notFound() : html(list);
     }
     case 'prix': {
       // Les pages de prix vivent sur le site du réseau seulement : une seule page de référence [R153].
