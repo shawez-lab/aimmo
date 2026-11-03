@@ -218,6 +218,15 @@ describe('G14 · la mesure des sources à l’écran', () => {
     expect(u.state()).toBe(LOST);
   });
 
+  it('[R10] une écriture passée reste dite, même si la relecture du mois échoue', async () => {
+    const t = await run();
+    await t.voir();
+    delete t.table['GET /v1/gagner/mesure/2027-10'];
+    t.input('mesure-raison-0').value = 'Bons retours';
+    await t.click(t.find('Garder cette source')[0]);
+    expect(t.state()).toBe('Décision rangée : garder. Pas de réseau. Réessayez dans un moment.');
+  });
+
   it('[R144] une décision porte sa raison et son mois ; sans raison, elle ne part pas', async () => {
     const t = await run();
     await t.voir();

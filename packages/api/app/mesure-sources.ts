@@ -212,7 +212,7 @@ globalThis.AIMMO_MESURE_SOURCES = function (t) {
     state('Chargement…');
     return send(BASE + '/' + encodeURIComponent(month), 'GET').then(function (res) {
       if (res.gone || mine !== t.session() || turn !== showing) return false;
-      if (!res.ok || !res.body.data || !Array.isArray(res.body.data.lines)) { state(why(res, 'Mesure indisponible pour le moment.')); return false; }
+      if (!res.ok || !res.body.data || !Array.isArray(res.body.data.lines)) { state((message ? message + ' ' : '') + why(res, 'Mesure indisponible pour le moment.')); return false; }
       var d = res.body.data, body = $('mesure-corps');
       body.appendChild(el('h4', 'Mois ' + d.month));
       body.appendChild(el('p', 'En tout : ' + count(d.totals.mandates, 'mandat signé', 'mandats signés') + ', ' + count(d.totals.appointments, 'rendez-vous tenu', 'rendez-vous tenus') + ', ' + euros(d.totals.costCents) + ' de coûts saisis.'));
