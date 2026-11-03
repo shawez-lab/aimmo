@@ -74,55 +74,139 @@ describeWithSqlite('IN04 · indicateurs du réseau', () => {
     if (!r.ok) throw new Error(r.code);
     // Entrés en juin 2026 : 6 ; partis : le statut et le départ passé ; restent 4.
     expect(r.value.retainedAfterYear).toEqual({ numerator: 4, denominator: 6, bp: 6667, cohortMonth: '2026-06' });
+    // Lu pour juin, un départ de septembre n'y change rien, même une fois passé et l'agent à « parti ».
+    await t.agent('parti-ensuite', 'Z', '2026-05-15T10:00:00.000Z', 'left');
+    await departure('d4', 'parti-ensuite', '2027-09-30', null);
+    const may = await new IndicateursReseau(t.db, t.journal, { now: () => new Date('2027-11-02T10:00:00.000Z') }).people(t.direction, '2027-05');
+    if (!may.ok) throw new Error(may.code);
+    expect(may.value.retainedAfterYear).toEqual({ numerator: 1, denominator: 1, bp: 10_000, cohortMonth: '2026-05' });
     const none = await t.ind.people(t.direction, '2027-01');
     if (!none.ok) throw new Error(none.code);
     expect(none.value.retainedAfterYear).toEqual({ numerator: 0, denominator: 0, bp: null, cohortMonth: '2026-01' });
   });
 
-  it('[R68] [R215] un agent ne retrouve le chiffre d’aucun autre : 3 agents se montrent, 2 non, seul seulement pour lui', async () => {
+  const seen = async (t: Awaited<ReturnType<typeof setup>>, id: string) => {
+    const r = await t.ind.contactsByZone(t.as('agent', id), '2027-06');
+    if (!r.ok) throw new Error(r.code);
+    return r.value;
+  };
+
+  it('[R68] [R215] 3 agents ayant reçu des contacts se montrent ; 2 non, même pour l’un d’eux ; seul, seulement pour lui', async () => {
     const t = await setup();
     for (const id of ['g1', 'g2', 'g3']) await t.agent(id, 'Grande');
     for (const id of ['d1', 'd2']) await t.agent(id, 'Double');
     await t.agent('s1', 'Seule A');
     await t.agent('s2', 'Seule B');
-    await t.agent('parti', 'Double', undefined, 'left');
     await t.contacts('g1', 5);
     await t.contacts('g2', 2);
+    await t.contacts('g3', 1);
     await t.contacts('d1', 3);
     await t.contacts('d2', 4);
     await t.contacts('s1', 7);
     await t.contacts('s2', 11);
-    // Le 3e agent de « Double » est parti : elle reste à 2 en activité, donc retenue, même pour l'un des siens.
-    const seenBy = async (id: string) => {
-      const r = await t.ind.contactsByZone(t.as('agent', id), '2027-06');
-      if (!r.ok) throw new Error(r.code);
-      return r.value;
-    };
-    const big = await seenBy('g1');
-    expect(big.zones).toEqual([{ zone: 'Grande', contacts: 7 }]);
+    const big = await seen(t, 'g1');
+    expect(big.zones).toEqual([{ zone: 'Grande', contacts: 8 }]);
     expect(big.otherZones).toEqual({ zones: 3, contacts: 25 });
-    const inDouble = await seenBy('d1');
-    expect(inDouble.zones).toEqual([{ zone: 'Grande', contacts: 7 }]);
-    const alone = await seenBy('s1');
-    expect(alone.zones).toEqual([{ zone: 'Grande', contacts: 7 }, { zone: 'Seule A', contacts: 7 }]);
+    expect((await seen(t, 'd1')).zones).toEqual([{ zone: 'Grande', contacts: 8 }]);
+    const alone = await seen(t, 's1');
+    expect(alone.zones).toEqual([{ zone: 'Grande', contacts: 8 }, { zone: 'Seule A', contacts: 7 }]);
     expect(alone.otherZones).toEqual({ zones: 2, contacts: 18 });
-    // Aucun chiffre d'agent ni total : la direction seule voit les petites zones.
     expect(JSON.stringify(big)).not.toMatch(/total|g2|"agent/i);
     const all = await t.ind.contactsByZone(t.direction, '2027-06');
     if (!all.ok) throw new Error(all.code);
-    expect(all.value.zones).toEqual([{ zone: 'Double', contacts: 7 }, { zone: 'Grande', contacts: 7 }, { zone: 'Seule A', contacts: 7 }, { zone: 'Seule B', contacts: 11 }]);
+    expect(all.value.zones).toEqual([{ zone: 'Double', contacts: 7 }, { zone: 'Grande', contacts: 8 }, { zone: 'Seule A', contacts: 7 }, { zone: 'Seule B', contacts: 11 }]);
+  });
+
+  it('[R68] [R215] une zone qui a grandi depuis le mois lu ne se montre pas : ce sont les agents du mois qui comptent', async () => {
+    const t = await setup();
+    await t.agent('d1', 'D');
+    await t.agent('d2', 'D');
+    await t.agent('recrue', 'D', '2027-07-01T08:00:00.000Z');
+    await t.agent('y', 'Y');
+    await t.agent('y2', 'Y', '2027-07-01T08:00:00.000Z');
+    await t.agent('y3', 'Y', '2027-07-01T08:00:00.000Z');
+    await t.agent('lecteur', 'L');
+    await t.contacts('d1', 3);
+    await t.contacts('d2', 4);
+    await t.contacts('y', 11);
+    expect((await seen(t, 'd1')).zones).toEqual([]);
+    expect((await seen(t, 'lecteur')).zones).toEqual([]);
+    expect(JSON.stringify(await seen(t, 'd1'))).not.toContain('"contacts":7');
+  });
+
+  it('[R68] [R215] le successeur seul dans une zone ne lit pas les contacts de l’agent parti', async () => {
+    const t = await setup();
+    await t.agent('parti', 'Z', undefined, 'left');
+    await t.agent('successeur', 'Z', '2027-07-01T08:00:00.000Z');
+    await t.contacts('parti', 9);
+    const v = await seen(t, 'successeur');
+    expect(v.zones).toEqual([]);
+    expect(v.otherZones).toBeNull();
+  });
+
+  it('[R68] [R215] rien sur les collègues qui n’ont rien reçu : g1 seul à en recevoir ne voit pas sa zone', async () => {
+    const t = await setup();
+    for (const id of ['g1', 'g2', 'g3']) await t.agent(id, 'G');
+    await t.contacts('g1', 5);
+    expect(await seen(t, 'g1')).toMatchObject({ zones: [], otherZones: null });
+    expect(await seen(t, 'g2')).toMatchObject({ zones: [], otherZones: null });
+  });
+
+  it('[R68] [R215] 3 agents à un contact chacun : se montrer dirait le chiffre de chacun', async () => {
+    const t = await setup();
+    for (const id of ['g1', 'g2', 'g3']) await t.agent(id, 'G');
+    await t.agent('x', 'X');
+    for (const id of ['g1', 'g2', 'g3']) await t.contacts(id, 1);
+    expect((await seen(t, 'x')).zones).toEqual([]);
+    expect((await seen(t, 'g1')).zones).toEqual([]);
+  });
+
+  it('[R68] [R215] le regroupement : jamais si, le lecteur retiré, il ne reste qu’un agent ou que des chiffres forcés', async () => {
+    const t = await setup();
+    await t.agent('d1', 'D');
+    await t.agent('d2', 'D');
+    await t.agent('y', 'Y');
+    await t.agent('g1', 'G');
+    await t.agent('g2', 'H');
+    // d1 lit : D (lui seul a reçu) et Y : le reste, c'est le chiffre de y.
+    await t.contacts('d1', 3);
+    await t.contacts('y', 11);
+    expect((await seen(t, 'd1')).otherZones).toBeNull();
+    // Deux agents seuls à un contact chacun : le groupe vaut 2, chacun a forcément 1.
+    await t.contacts('g1', 1);
+    await t.contacts('g2', 1);
+    const onlyOnes = await seen(t, 'y');
+    expect(onlyOnes.otherZones).toMatchObject({ zones: 3 }); // d1 3 + g1 1 + g2 1 : 5 pour 3 autres, rien de forcé.
+    const flat = await setup();
+    await flat.agent('a', 'A');
+    await flat.agent('b', 'B');
+    await flat.agent('lecteur', 'C');
+    await flat.contacts('a', 1);
+    await flat.contacts('b', 1);
+    expect((await seen(flat, 'lecteur')).otherZones).toBeNull();
   });
 
   it('[R68] [R215] un regroupement d’une seule zone n’est pas rendu : il dirait son chiffre', async () => {
     const t = await setup();
     for (const id of ['g1', 'g2', 'g3']) await t.agent(id, 'Grande');
     await t.agent('s1', 'Seule A');
-    await t.contacts('g1', 1);
+    for (const id of ['g1', 'g2', 'g3']) await t.contacts(id, 2);
     await t.contacts('s1', 9);
-    const r = await t.ind.contactsByZone(t.as('agent', 'g1'), '2027-06');
-    if (!r.ok) throw new Error(r.code);
-    expect(r.value.otherZones).toBeNull();
-    expect(JSON.stringify(r.value)).not.toContain('9');
+    const v = await seen(t, 'g1');
+    expect(v.otherZones).toBeNull();
+    expect(JSON.stringify(v)).not.toContain('9');
+  });
+
+  it('[R215] un mois fini ne bouge pas : un contact réattribué après reste à son mois et chez qui le tenait alors', async () => {
+    const t = await setup();
+    await t.agent('a', 'Un');
+    await t.agent('b', 'Deux');
+    await t.contacts('a', 1, '2027-06-30T10:00:00.000Z');
+    const before = await t.ind.contactsByZone(t.direction, '2027-06');
+    await t.db.run("INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at) VALUES ('re-apres', ?, 'p-1', NULL, 'b', 'reassigned', 2, 'at-1', '2027-07-01T08:00:00.000Z')", [t.network.id]);
+    expect(await t.ind.contactsByZone(t.direction, '2027-06')).toEqual(before);
+    if (!before.ok) throw new Error(before.code);
+    expect(before.value.zones).toEqual([{ zone: 'Un', contacts: 1 }]);
   });
 
   it('[R215] un contact compte une fois, chez qui le tient ; un client déjà suivi n’est pas transmis ; le mois en cours est refusé', async () => {

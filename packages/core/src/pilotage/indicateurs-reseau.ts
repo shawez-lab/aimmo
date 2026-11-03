@@ -4,18 +4,20 @@
  * Pour la direction, un mois fini : les agents ayant signé au moins un mandat qui compte (R210), et la part des agents
  * entrés 12 mois plus tôt et toujours en activité. Jamais de liste d'agents, jamais de rang [R14].
  *
- * Les contacts transmis par zone sont publiés chaque mois aux agents. Décidé, lecture prudente : un agent ne doit pas
- * retrouver le chiffre d'un autre [R68]. Une zone ne se montre donc qu'à partir de 3 agents en activité, car à 2 l'agent
- * retrouve l'autre en retirant le sien ; il voit aussi la sienne quand il y est seul, ce n'est que son chiffre. Le reste
- * se regroupe, et le regroupement n'est rendu que s'il réunit au moins 2 zones. Aucun total n'est donné à un agent : il
- * permettrait de retrouver par différence ce qui est retenu. La direction voit tout.
+ * Les contacts transmis par zone sont publiés chaque mois aux agents. Décidé, lecture prudente : un agent ne doit pouvoir
+ * retrouver le chiffre d'aucun autre [R68], ni par soustraction, ni parce qu'une zone a changé depuis. Tout se juge donc
+ * sur les agents qui ont reçu des contacts ce mois-là, jamais sur les agents d'aujourd'hui. Une zone se montre à partir
+ * de 3 agents ayant reçu des contacts, si ce que le lecteur n'a pas reçu lui-même dépasse le nombre des autres (sinon
+ * chacun en a forcément un) ; ou à son unique agent, quand aucun autre n'y travaille : ce n'est que son chiffre. Le reste
+ * se regroupe, seulement s'il réunit 2 zones et 2 agents autres que le lecteur, à la même condition. Aucun total n'est
+ * donné à un agent. La direction voit tout.
  *
- * Un contact compte à la dernière ligne de sa suite d'attributions, chez l'agent qui le tient ; un client que l'agent
- * suivait déjà n'a pas été transmis. La zone est celle de l'agent aujourd'hui, comme le tableau de bord (K05).
+ * Un contact est daté par la première ligne de sa suite d'attributions et compté chez qui le tenait à la fin du mois :
+ * un mois fini ne bouge pas quand un contact est réattribué après. Un client que l'agent suivait déjà n'a pas été
+ * transmis. « Toujours actif » se juge à la fin du mois demandé, pas au jour de la lecture.
  */
 import { decideAccess, type Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { LIVE_REGISTERED_MANDATES, ratio, type Ratio } from './parcours.ts';
@@ -82,14 +84,15 @@ export class IndicateursReseau {
 
     const cohortMonth = shiftYear(m, -1);
     const [cohortStart, cohortEnd] = monthBounds(cohortMonth);
-    const today = localTime(this.now(), 'Europe/Paris').date;
+    const afterMonth = `${nextMonth(m)}-01`;
     // L'entrée : le dossier d'agent de M14, à défaut la création de l'agent (les agents de l'agence, hors M14).
     const cohort = await this.db.first<{ total: number; retained: number | null }>(
       `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN a.status = 'active' AND NOT EXISTS (SELECT 1 FROM agent_departures d WHERE d.agent_id = a.id AND d.cancelled_at IS NULL AND d.leaves_on <= ?) THEN 1 ELSE 0 END) AS retained
+              SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM agent_departures d WHERE d.agent_id = a.id AND d.cancelled_at IS NULL AND d.leaves_on < ?)
+                         AND (a.status = 'active' OR EXISTS (SELECT 1 FROM agent_departures d WHERE d.agent_id = a.id AND d.cancelled_at IS NULL AND d.leaves_on >= ?)) THEN 1 ELSE 0 END) AS retained
          FROM agents a LEFT JOIN agent_onboardings o ON o.agent_id = a.id
         WHERE a.network_id = ? AND COALESCE(o.created_at, a.created_at) >= ? AND COALESCE(o.created_at, a.created_at) < ?`,
-      [today, net, cohortStart, cohortEnd],
+      [afterMonth, afterMonth, net, cohortStart, cohortEnd],
     );
     await appendEvent(this.journal, { type: 'pilotage.lecture', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${net}`, data: { kind: 'network_people', month: m } }, this.now);
     return {
@@ -110,29 +113,57 @@ export class IndicateursReseau {
     const m = month as string;
     const net = viewer.networkId;
     const [start, end] = monthBounds(m);
-    const rows = await this.db.all<{ zone: string | null; n: number }>(
-      `SELECT g.zone, COUNT(*) AS n FROM attributions a JOIN agents g ON g.id = a.agent_id
-        WHERE a.network_id = ? AND a.created_at >= ? AND a.created_at < ? AND a.reason <> 'already_followed'
-          AND NOT EXISTS (SELECT 1 FROM attributions b WHERE b.replaces_id = a.id)
-        GROUP BY g.zone`,
-      [net, start, end],
+    // Une ligne par contact : la dernière de sa suite à la fin du mois, datée par la première.
+    const lines = await this.db.all<{ root_id: string; agent_id: string | null; depth: number; zone: string | null }>(
+      `WITH RECURSIVE chain (root_id, id, agent_id, depth) AS (
+         SELECT a.id, a.id, a.agent_id, 0 FROM attributions a
+          WHERE a.network_id = ? AND a.replaces_id IS NULL AND a.reason <> 'already_followed' AND a.created_at >= ? AND a.created_at < ?
+         UNION ALL
+         SELECT c.root_id, b.id, b.agent_id, c.depth + 1 FROM chain c JOIN attributions b ON b.replaces_id = c.id AND b.created_at < ?
+       )
+       SELECT c.root_id, c.agent_id, c.depth, g.zone FROM chain c LEFT JOIN agents g ON g.id = c.agent_id`,
+      [net, start, end, end],
     );
     await appendEvent(this.journal, { type: 'pilotage.lecture', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${net}`, data: { kind: 'zone_contacts', month: m } }, this.now);
-    const sorted = rows.map((r) => ({ zone: r.zone, contacts: Number(r.n) })).sort((a, b) => (a.zone ?? '').localeCompare(b.zone ?? '', 'fr'));
-    if (isDirection) return { ok: true, value: { month: m, zones: sorted, otherZones: null } };
-
-    const agents = await this.db.all<{ id: string; zone: string | null }>("SELECT id, zone FROM agents WHERE network_id = ? AND status = 'active'", [net]);
-    const size = new Map<string, number>();
-    for (const a of agents) if (a.zone !== null) size.set(a.zone, (size.get(a.zone) ?? 0) + 1);
-    const mine = agents.find((a) => a.id === viewer.userId)?.zone ?? null;
-    const shown: ZoneContacts['zones'] = [];
-    const pooled: number[] = [];
-    for (const row of sorted) {
-      if (row.zone === null) continue; // Des contacts sans zone ne se publient pas : ils ne disent rien d'une zone.
-      const n = size.get(row.zone) ?? 0;
-      if (n >= ZONE_MIN_AGENTS || (row.zone === mine && n === 1)) shown.push(row);
-      else pooled.push(row.contacts);
+    const held = new Map<string, (typeof lines)[number]>();
+    for (const line of lines) {
+      const known = held.get(line.root_id);
+      if (!known || Number(line.depth) > Number(known.depth)) held.set(line.root_id, line);
     }
-    return { ok: true, value: { month: m, zones: shown, otherZones: pooled.length >= 2 ? { zones: pooled.length, contacts: pooled.reduce((a, b) => a + b, 0) } : null } };
+    /** Par zone : les contacts de chaque agent. */
+    const zones = new Map<string | null, Map<string, number>>();
+    for (const line of held.values()) {
+      if (line.agent_id === null) continue;
+      const perAgent = zones.get(line.zone) ?? new Map<string, number>();
+      perAgent.set(line.agent_id, (perAgent.get(line.agent_id) ?? 0) + 1);
+      zones.set(line.zone, perAgent);
+    }
+    const sum = (perAgent: ReadonlyMap<string, number>): number => [...perAgent.values()].reduce((a, b) => a + b, 0);
+    const byName = (a: { zone: string | null }, b: { zone: string | null }): number => (a.zone ?? '').localeCompare(b.zone ?? '', 'fr');
+    if (isDirection) return { ok: true, value: { month: m, zones: [...zones.entries()].map(([zone, perAgent]) => ({ zone, contacts: sum(perAgent) })).sort(byName), otherZones: null } };
+
+    const colleagues = await this.db.all<{ id: string; zone: string | null }>("SELECT id, zone FROM agents WHERE network_id = ? AND status = 'active' AND zone IS NOT NULL AND id <> ?", [net, viewer.userId]);
+    const worked = new Set(colleagues.map((a) => a.zone));
+    const mine = (perAgent: ReadonlyMap<string, number>): number => perAgent.get(viewer.userId) ?? 0;
+    /** Ce qui reste, une fois retiré ce que le lecteur a reçu, ne doit dire le chiffre de personne. */
+    const safe = (others: number, rest: number): boolean => others >= 2 && rest > others;
+    const shown: ZoneContacts['zones'] = [];
+    const pooled = { zones: 0, contacts: 0, own: 0, others: new Set<string>() };
+    for (const [zone, perAgent] of zones) {
+      if (zone === null) continue; // Des contacts sans zone ne se publient pas : ils ne disent rien d'une zone.
+      const total = sum(perAgent);
+      const others = [...perAgent.keys()].filter((id) => id !== viewer.userId);
+      const aloneHere = others.length === 0 && !worked.has(zone);
+      if (aloneHere || (perAgent.size >= ZONE_MIN_AGENTS && safe(others.length, total - mine(perAgent)))) {
+        shown.push({ zone, contacts: total });
+        continue;
+      }
+      pooled.zones += 1;
+      pooled.contacts += total;
+      pooled.own += mine(perAgent);
+      for (const id of others) pooled.others.add(id);
+    }
+    const pool = pooled.zones >= 2 && safe(pooled.others.size, pooled.contacts - pooled.own);
+    return { ok: true, value: { month: m, zones: shown.sort(byName), otherZones: pool ? { zones: pooled.zones, contacts: pooled.contacts } : null } };
   }
 }
