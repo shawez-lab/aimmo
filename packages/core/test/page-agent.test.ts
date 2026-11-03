@@ -23,6 +23,8 @@ async function setup() {
   return { db, journal, pages };
 }
 
+const OPEN = { canDiffuse: async () => ({ allowed: true }) };
+
 async function complete(db: SqlDatabase, pages: PageAgent) {
   expect(await pages.setLegalMentions(direction, 'ag-1', { rsacNumber: 'RSAC 123456789', rsacRegistry: 'Dijon' })).toEqual({ ok: true });
   await db.run("INSERT INTO listing_settings (id, network_id, card_number, set_by, set_at) VALUES ('s1', 'net-1', 'CPI 9999 0000 000 000 001', 'direction:dir-1', 'x')");
@@ -68,20 +70,20 @@ it('[R152] la phrase des mentions dit le statut, le numéro et la carte du titul
 describeWithSqlite('AT03 · page de chaque agent', () => {
   it('[R152] sans statut, numéro et carte du titulaire, la page n\'est pas publiée et la raison est dite', async () => {
     const { db, pages } = await setup();
-    expect(await pages.page('net-1', 'ag-1')).toEqual({ ok: false, rule: 'R152', reason: 'statut_manquant' });
+    expect(await pages.page('net-1', 'ag-1', OPEN)).toEqual({ ok: false, rule: 'R152', reason: 'statut_manquant' });
     await pages.setLegalMentions(direction, 'ag-1', { rsacNumber: '123 456 789', rsacRegistry: 'Dijon' });
-    expect(await pages.page('net-1', 'ag-1')).toEqual({ ok: false, rule: 'R152', reason: 'carte_manquante' });
+    expect(await pages.page('net-1', 'ag-1', OPEN)).toEqual({ ok: false, rule: 'R152', reason: 'carte_manquante' });
     await db.run("INSERT INTO listing_settings (id, network_id, card_number, set_by, set_at) VALUES ('s1', 'net-1', 'CPI 0001', 'direction:dir-1', 'x')");
-    expect(await pages.page('net-1', 'ag-1')).toEqual({ ok: false, rule: 'R152', reason: 'titulaire_manquant' });
+    expect(await pages.page('net-1', 'ag-1', OPEN)).toEqual({ ok: false, rule: 'R152', reason: 'titulaire_manquant' });
     await pages.setCardHolder(direction, 'Société Exemple');
-    const page = await pages.page('net-1', 'ag-1');
+    const page = await pages.page('net-1', 'ag-1', OPEN);
     expect(page.ok).toBe(true);
     const html = (page as { html: string }).html;
     // Les mentions sont à côté du nom, dans le même bloc.
     expect(html).toMatch(/<h1 id="nom">Camille Exemple<\/h1><p class="statut">Agent commercial, immatriculé au registre spécial des agents commerciaux \(RSAC\) de Dijon sous le n° 123 456 789\. Habilité par Société Exemple, titulaire de la carte professionnelle n° CPI 0001\.<\/p>/);
     // Un agent parti, inconnu ou d'un autre réseau n'a pas de page.
-    expect(await pages.page('net-1', 'ag-2')).toEqual({ ok: false, rule: 'R16', reason: 'agent_parti' });
-    expect(await pages.page('net-2', 'ag-1')).toEqual({ ok: false, rule: 'R16', reason: 'agent_inconnu' });
+    expect(await pages.page('net-1', 'ag-2', OPEN)).toEqual({ ok: false, rule: 'R16', reason: 'agent_parti' });
+    expect(await pages.page('net-2', 'ag-1', OPEN)).toEqual({ ok: false, rule: 'R16', reason: 'agent_inconnu' });
   });
 
   it('[R16] seule la direction règle les mentions ; un numéro ou un greffe mal formés sont refusés', async () => {
@@ -106,7 +108,7 @@ describeWithSqlite('AT03 · page de chaque agent', () => {
     // Mandat rétracté ou mentions manquantes : la dernière version est un retrait.
     await listing(db, 'b5', 'ag-1', 1, 'en_vente', 'Duplex retiré', 250000);
     await listing(db, 'b5', 'ag-1', 2, 'retiree', 'Duplex retiré', 250000);
-    const page = (await pages.page('net-1', 'ag-1')) as { ok: true; html: string; input: AgentPageInput };
+    const page = (await pages.page('net-1', 'ag-1', OPEN)) as { ok: true; html: string; input: AgentPageInput };
     expect(page.input.listings.map((l) => [l.propertyId, l.state])).toEqual([['b1', 'en_vente'], ['b3', 'sous_offre']]);
     expect(page.html).toContain('href="/biens/b1"');
     expect(page.html).toMatch(/210\s000/u);
@@ -120,11 +122,11 @@ describeWithSqlite('AT03 · page de chaque agent', () => {
     const { db, pages } = await setup();
     await complete(db, pages);
     await answers(db, [5, 5, 1, 2, 4, 3]);
-    let page = (await pages.page('net-1', 'ag-1')) as { ok: true; html: string; input: AgentPageInput };
+    let page = (await pages.page('net-1', 'ag-1', OPEN)) as { ok: true; html: string; input: AgentPageInput };
     expect(page.input.reviewsUrl).toBeNull();
     expect(page.html).toContain('Les avis de ses clients seront bientôt en ligne.');
     await db.run("INSERT INTO agent_review_links (id, network_id, agent_id, url, set_by, set_at) VALUES ('r1', 'net-1', 'ag-1', 'https://avis.exemple.test/camille', 'direction:dir-1', 'x')");
-    page = (await pages.page('net-1', 'ag-1')) as { ok: true; html: string; input: AgentPageInput };
+    page = (await pages.page('net-1', 'ag-1', OPEN)) as { ok: true; html: string; input: AgentPageInput };
     expect(page.html).toContain('<a href="https://avis.exemple.test/camille" rel="noopener noreferrer">Lire les avis de ses clients</a>');
     // Ni note, ni moyenne, ni nombre de réponses, ni commentaire : rien qui se lise par différence.
     expect(page.html).not.toMatch(/\/ 5|Déçu|réponses|moyenne/i);
@@ -135,7 +137,7 @@ describeWithSqlite('AT03 · page de chaque agent', () => {
     await complete(db, pages);
     for (let i = 0; i < 30; i++) await listing(db, `p${i}`, 'ag-1', 1, 'en_vente', `Bien inventé numéro ${i}`, 100000 + i * 1000);
     await answers(db, [5, 4, 4, 5, 3]);
-    const page = (await pages.page('net-1', 'ag-1')) as { ok: true; html: string };
+    const page = (await pages.page('net-1', 'ag-1', OPEN)) as { ok: true; html: string };
     expect(htmlProblems(page.html)).toEqual([]);
     expect(budgetProblems({ html: page.html }, BUDGETS.page)).toEqual([]);
     const css = [...page.html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]!).join('');
@@ -151,7 +153,7 @@ describeWithSqlite('AT03 · page de chaque agent', () => {
     await db.exec('PRAGMA foreign_keys = OFF');
     await db.run("INSERT INTO properties (id, network_id, agent_id, reference, kind, created_at, updated_at) VALUES ('b9', 'net-1', 'ag-1', 'REF-b9', 'home', 'x', 'x')");
     await db.run("INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES ('b9-1', 'b9', 'net-1', 1, 'en_vente', 'd', 1000, 'null', 'h', 'test', 'x')");
-    const page = (await pages.page('net-1', 'ag-1')) as { ok: true; input: AgentPageInput };
+    const page = (await pages.page('net-1', 'ag-1', OPEN)) as { ok: true; input: AgentPageInput };
     expect(page.input.listings.map((l) => l.propertyId)).toEqual(['b1']);
     expect((await db.first<{ n: number }>("SELECT count(*) AS n FROM journal WHERE type = 'attirer.page_agent.annonce_illisible' AND subject = 'property:b9'"))!.n).toBe(1);
   });
@@ -165,7 +167,7 @@ describeWithSqlite('AT03 · page de chaque agent', () => {
       phone: null,
       email: null,
       mentions: { rsacNumber: '1', rsacRegistry: 'D', cardNumber: 'C', cardHolder: 'H' },
-      listings: [{ propertyId: 'x"y', title: '<i>', priceEur: 1, state: 'en_vente', mentions: '<u>' }],
+      listings: [{ propertyId: 'x"y', title: '<i>', priceEur: 1, state: 'en_vente', mentions: '<u>', publishedAt: 'x', propertyStatus: 'available' }],
       reviewsUrl: 'https://x.test/"><b>',
     });
     expect(html).not.toMatch(/<script>|<b>|<i>|<u>/);

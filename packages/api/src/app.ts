@@ -1286,7 +1286,7 @@ function m20Routes(options: ApiConfig['gagner']): RouteDef[] {
 }
 
 /** Les services de M01 sur ceux du socle, toujours en mode essai : ni IndexNow ni fiche Google réels [R26]. */
-function m01Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'estimation' | 'attirer'>): AttirerServices {
+function m01Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'estimation' | 'attirer' | 'candidatureNetworkId'>): AttirerServices {
   const diffusion = new Diffusion(db, acces, journal, { now });
   return {
     db,
@@ -1299,6 +1299,7 @@ function m01Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: 
     gbpWriter: config.attirer?.gbpWriter ?? null,
     neighbourhoodWriter: config.attirer?.neighbourhoodWriter ?? null,
     diffusion: { canDiffuse: (networkId, propertyId, at) => diffusion.canDiffuse(networkId, propertyId, at) },
+    recruitingNetworkId: config.candidatureNetworkId || null,
   };
 }
 

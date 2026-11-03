@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DESIGN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, renderPublicPage, renderValuationPrint, type Teinte } from '@aimmo/core';
+import { renderSiteHome } from '../../core/src/attirer/accueil-site.ts';
 import { renderListingPage, renderListingPrint, type PageInput } from '../../core/src/annonces/page-bien.ts';
 import { BUDGETS, budgetProblems, contrastRatio, htmlProblems, localCssProblems, screenCssProblems } from '../../core/src/design/audit.ts';
 import { renderDocument } from '../../core/src/documents/modeles.ts';
@@ -51,6 +52,8 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
     { name: 'espace partenaire', html: PARTNER_SPACE_FILES['/partenaire/']!, css: PARTNER_SPACE_FILES['/partenaire/partenaire.css']!, js: PARTNER_SPACE_FILES['/partenaire/partenaire.js']!, budget: BUDGETS.application },
     { name: 'candidature', html: await text(await handleCandidature(get('/rejoindre'), { db: NO_DB, networkId: 'n1' })), budget: BUDGETS.page },
     { name: 'candidature pas encore ouverte', html: await text(await handleCandidature(get('/rejoindre'), { db: NO_DB, networkId: null })), budget: BUDGETS.page },
+    { name: 'accueil du réseau', html: renderSiteHome({ kind: 'reseau', recruiting: true, agent: null, listings: [], checkedAt: new Date(0) }), budget: BUDGETS.page },
+    { name: 'accueil du site d’un agent', html: renderSiteHome({ kind: 'agent', recruiting: false, agent: { agentId: 'a1', name: 'Alex Exemple', mentions: { rsacNumber: '123 456 789', rsacRegistry: 'Dijon', cardNumber: 'CPI 0000', cardHolder: 'Société Exemple' } }, listings: [], checkedAt: new Date(0) }), budget: BUDGETS.page },
     { name: 'page du bien', html: renderListingPage(LISTING), budget: BUDGETS.page },
     { name: 'page du bien retiré', html: renderListingPage({ ...LISTING, payload: { ...LISTING.payload, state: 'retiree' } }), budget: BUDGETS.page },
     { name: 'fiche imprimable', html: renderListingPrint(LISTING)!, print: true, budget: BUDGETS.page },
@@ -152,6 +155,7 @@ describe('Z03 · système de design d’AIMMO', () => {
       'core/src/annonces/page-bien.ts': /^<style>\$\{(?:CSS|PRINT_CSS)\}<\/style>$/,
       'core/src/attirer/page-agent.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/attirer/liste-biens.ts': /^<style>\$\{CSS\}<\/style>$/,
+      'core/src/attirer/accueil-site.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,
       'api/src/candidature.ts': /^<style>\$\{STYLE\}<\/style>$/,
       'core/src/attirer/simulateur-pret.ts': /^<style>\$\{CSS\}<\/style>$/,

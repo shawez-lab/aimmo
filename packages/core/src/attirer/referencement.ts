@@ -18,6 +18,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { sitePaths } from './accueil-site.ts';
 import { PageAgent } from './page-agent.ts';
 
 export const SITE_KINDS = ['reseau', 'agent'] as const;
@@ -41,7 +42,7 @@ export interface SitemapEntry {
   loc: string;
   /** Le jour de la dernière version publiée, `AAAA-MM-JJ`, quand il est connu. */
   lastmod: string | null;
-  kind: 'bien' | 'agent' | 'prix';
+  kind: 'page' | 'bien' | 'agent' | 'prix';
 }
 
 /** Le service des moteurs (IndexNow) : un appel par hôte, avec ses adresses. Un faux service dans les tests. */
@@ -56,6 +57,8 @@ export interface ReferencementOptions {
   indexNow?: IndexNowClient | null;
   /** `essai` par défaut : rien ne part tant que le plan ne l'a pas mis en service [R26]. */
   mode?: SeoMode;
+  /** Le réseau qui reçoit les candidatures de `/rejoindre` : son seul site y mène et la met à son plan. */
+  recruitingNetworkId?: string | null;
 }
 
 export type SiteResult = { ok: true; siteId: string } | { ok: false; rule: 'R16' | 'R153' | null; code: string };
@@ -145,6 +148,7 @@ export class Referencement {
   private readonly newId: () => string;
   private readonly indexNow: IndexNowClient | null;
   private readonly mode: SeoMode;
+  private readonly recruitingNetworkId: string | null;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -154,6 +158,7 @@ export class Referencement {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.indexNow = options.indexNow ?? null;
+    this.recruitingNetworkId = options.recruitingNetworkId ?? null;
     // Le mode réel exige un service réel : sans lui, on reste en essai.
     this.mode = options.mode === 'reel' && this.indexNow ? 'reel' : 'essai';
   }
@@ -353,14 +358,16 @@ export class Referencement {
   }
 
   /**
-   * Le plan d'un site en service : ses biens publiés, chacun par sa page de référence ; la page de chaque agent publiable
-   * qu'il montre ; et, pour le site du réseau, les pages de prix montrables. Rien d'autre [R153, R152, R150].
+   * Le plan d'un site en service : son accueil et les pages où il mène (RS02) ; ses biens publiés, chacun par sa page de
+   * référence ; la page de chaque agent publiable qu'il montre ; et, pour le site du réseau, les pages de prix montrables.
+   * Rien d'autre [R153, R152, R150].
    */
   async sitemap(networkId: string, siteId: string): Promise<{ ok: true; entries: SitemapEntry[]; xml: string } | { ok: false; code: 'unknown_site' }> {
     const sites = await this.sites(networkId);
     const site = sites.find((s) => s.siteId === siteId);
     if (!site) return { ok: false, code: 'unknown_site' };
-    const entries: SitemapEntry[] = [];
+    const entries: SitemapEntry[] = [{ loc: `${site.baseUrl}/`, lastmod: null, kind: 'page' }];
+    for (const p of sitePaths(site.kind, this.recruitingNetworkId === networkId)) entries.push({ loc: `${site.baseUrl}${p.path}`, lastmod: null, kind: 'page' });
     for (const l of await this.published(networkId)) {
       if (site.kind === 'agent' && l.agentId !== site.agentId) continue;
       const home = this.homeOf(sites, l.agentId);

@@ -18,6 +18,7 @@ import { escapeHtml } from '../documents/modeles.ts';
 import { euros } from '../annonces/mentions.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { LISTINGS_PER_PAGE, LISTABLE_STATUSES, when, type ListingGate } from './liste-biens.ts';
 
 export interface AgentMentions {
   rsacNumber: string;
@@ -33,6 +34,9 @@ export interface AgentListing {
   state: 'en_vente' | 'sous_offre';
   /** Les mentions obligatoires de la version publiée, montrées avec le prix comme sur toute annonce [R43]. */
   mentions: string;
+  /** La date de la version publiée, pour montrer d'abord les plus récents, et l'état du bien dans le socle [R220]. */
+  publishedAt: string;
+  propertyStatus: string;
 }
 
 export interface AgentPageInput {
@@ -88,11 +92,11 @@ export function mentionsLine(m: AgentMentions): string {
 }
 
 /** La page de l'agent : la base du système de design d'AIMMO, puis sa mise en page, en jetons [R201]. */
-export function renderAgentPage(input: AgentPageInput): string {
+export function renderAgentPage(input: AgentPageInput, check?: { at: Date; more: boolean }): string {
   const name = `${input.firstName} ${input.lastName}`;
   const title = `${name}, agent immobilier`;
   const head = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>`;
-  const brand = `<header class="tete"><p class="marque">AIMMO</p></header><div class="frise" aria-hidden="true"></div>`;
+  const brand = `<header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div>`;
   const contact: string[] = [];
   if (input.phone && PHONE.test(input.phone)) contact.push(`<a href="tel:${escapeHtml(input.phone.replace(/[ .]/g, ''))}">Appeler ${escapeHtml(input.phone)}</a>`);
   if (input.email && EMAIL.test(input.email)) contact.push(`<a href="mailto:${escapeHtml(input.email)}">Écrire à ${escapeHtml(input.firstName)}</a>`);
@@ -114,7 +118,7 @@ export function renderAgentPage(input: AgentPageInput): string {
     `<section class="qui" aria-labelledby="nom"><p class="metier">Agent immobilier${input.zone ? ` · ${escapeHtml(input.zone)}` : ''}</p><h1 id="nom">${escapeHtml(name)}</h1>` +
     `<p class="statut">${escapeHtml(mentionsLine(input.mentions))}</p></section>` +
     (contact.length > 0 ? `<nav class="contact" aria-label="Contacter ${escapeHtml(input.firstName)}">${contact.join('')}</nav>` : '') +
-    `<h2>Ses biens</h2>${listings}` +
+    `<h2>Ses biens</h2>${check ? `<p class="doux">Mandats vérifiés le ${when(check.at)}.</p>` : ''}${listings}${check?.more ? '<p><a href="/biens">Voir tous les biens du site</a></p>' : ''}` +
     `<h2>Avis de ses clients</h2>${reviews}` +
     `</main></body></html>`
   );
@@ -224,8 +228,8 @@ export class PageAgent {
       [agentId, networkId],
     );
     // La dernière version publiée de chaque bien de l'agent, seulement en vente ou sous offre [R16, R46].
-    const versions = await this.db.all<{ property_id: string; state: string; payload: string }>(
-      `SELECT v.property_id, v.state, v.payload FROM listing_versions v
+    const versions = await this.db.all<{ property_id: string; property_status: string; state: string; created_at: string; payload: string }>(
+      `SELECT v.property_id, p.status AS property_status, v.state, v.created_at, v.payload FROM listing_versions v
          JOIN properties p ON p.id = v.property_id
         WHERE p.agent_id = ? AND p.network_id = ? AND v.network_id = p.network_id
           AND v.seq = (SELECT max(seq) FROM listing_versions w WHERE w.property_id = v.property_id)
@@ -251,7 +255,7 @@ export class PageAgent {
       }
       // Les mêmes conditions que la page du bien : sans texte ni mentions, elle dirait « plus proposé » [R43].
       if (typeof payload.body === 'string' && payload.body !== '' && typeof payload.mentions === 'string' && payload.mentions !== '' && typeof payload.title === 'string' && payload.title !== '' && typeof payload.priceEur === 'number' && payload.priceEur > 0) {
-        listings.push({ propertyId: v.property_id, title: payload.title, priceEur: payload.priceEur, state: v.state, mentions: payload.mentions });
+        listings.push({ propertyId: v.property_id, title: payload.title, priceEur: payload.priceEur, state: v.state, mentions: payload.mentions, publishedAt: v.created_at, propertyStatus: v.property_status });
       }
     }
     const reviews = await this.db.first<{ url: string }>(
@@ -274,8 +278,22 @@ export class PageAgent {
     };
   }
 
-  async page(networkId: string, agentId: string): Promise<AgentPage> {
+  /**
+   * La page publique : chaque bien repasse la porte de diffusion à cet instant, comme sur la liste [R220]. Les plus récents
+   * d'abord, et pas plus de contrôles qu'une page de la liste, quel que soit le nombre de biens de l'agent.
+   */
+  async page(networkId: string, agentId: string, gate: ListingGate): Promise<AgentPage> {
     const r = await this.inputFor(networkId, agentId);
-    return r.ok ? { ok: true, html: renderAgentPage(r.input), input: r.input } : r;
+    if (!r.ok) return r;
+    const at = this.now();
+    const candidates = r.input.listings
+      .filter((l) => LISTABLE_STATUSES.includes(l.propertyStatus))
+      .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.propertyId.localeCompare(b.propertyId));
+    const listings: AgentListing[] = [];
+    for (const l of candidates.slice(0, LISTINGS_PER_PAGE)) {
+      if ((await gate.canDiffuse(networkId, l.propertyId, at)).allowed) listings.push(l);
+    }
+    const input = { ...r.input, listings };
+    return { ok: true, html: renderAgentPage(input, { at, more: candidates.length > LISTINGS_PER_PAGE }), input };
   }
 }

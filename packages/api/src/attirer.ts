@@ -10,6 +10,7 @@
  * restent en mode essai [R26].
  *
  * Pages publiques, servies sur le site du réseau et sur le site de chaque agent, reconnus par leur adresse (`public_sites`) :
+ *   GET /                                          l'accueil du site, ses derniers biens et ses chemins [R220, R152]
  *   GET /biens                                     la liste des biens du site, chacun revérifié à la lecture [R220, R153]
  *   GET /prix/:commune[/:quartier]                 la page de prix, seulement sur le site du réseau [R150, R151]
  *   GET /agents/:agent                             la page de l'agent, sur le site du réseau et sur le sien [R152]
@@ -21,7 +22,7 @@
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
 import { appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, parseListingsQuery, renderListingsPage, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, renderListingsPage, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
@@ -49,6 +50,8 @@ export interface AttirerServices {
   gbpWriter?: ReviewReplyWriter | null;
   neighbourhoodWriter?: NeighbourhoodWriter | null;
   diffusion?: DiffusionGate | null;
+  /** Le réseau qui reçoit les candidatures de `/rejoindre` : seul son site y mène. */
+  recruitingNetworkId?: string | null;
 }
 
 export interface AttirerRoute {
@@ -100,7 +103,7 @@ async function readJson(request: Request, maxBytes = MAX_BODY_BYTES): Promise<Re
 const badBody = (): Response => json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
 
 const services = (s: AttirerServices) => {
-  const referencement = new Referencement(s.db, s.journal, { now: s.now, indexNow: s.indexNow ?? null, mode: s.mode ?? 'essai' });
+  const referencement = new Referencement(s.db, s.journal, { now: s.now, indexNow: s.indexNow ?? null, mode: s.mode ?? 'essai', recruitingNetworkId: s.recruitingNetworkId ?? null });
   const prices = s.priceSales ? new PrixRegroupes(s.db, s.journal, s.priceSales, { now: s.now }) : null;
   // La lecture des prix publiés n'utilise jamais la source des ventes.
   const readPrices = new PrixRegroupes(s.db, s.journal, NO_SALES, { now: s.now });
@@ -259,6 +262,7 @@ function pageHeaders(type: string, mode: 'essai' | 'reel'): Record<string, strin
 const notFound = (): Response => new Response('Page inconnue.', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
 
 export const PUBLIC_PATHS = {
+  accueil: /^\/$/,
   liste: /^\/biens$/,
   prix: new RegExp(`^/prix/${SLUG}(?:/${SLUG})?$`),
   agent: new RegExp(`^/agents/${ID}$`),
@@ -351,7 +355,20 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
   const { networkId, site } = found;
   const html = (body: string): Response => new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: pageHeaders('text/html; charset=utf-8', mode) });
   const m = PUBLIC_PATHS[kind].exec(path)!;
+  // Une page qui montre des biens ne survit qu'une minute en cache au retrait de l'un d'eux [R220].
+  const liveHtml = (body: string): Response => new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: { ...pageHeaders('text/html; charset=utf-8', mode), 'cache-control': 'public, max-age=60' } });
   switch (kind) {
+    case 'accueil': {
+      // Sans la porte, rien n'est montré [R220].
+      if (!s.diffusion) return notFound();
+      const all = await svc.referencement.published(networkId);
+      const checkedAt = s.now();
+      const listings = await latestListings(site.kind === 'agent' ? all.filter((l) => l.agentId === site.agentId) : all, s.diffusion, networkId, checkedAt, HOME_LISTINGS);
+      // Le nom de l'agent ne va jamais sans ses mentions [R152].
+      const own = site.kind === 'agent' ? await svc.pageAgent.inputFor(networkId, site.agentId!) : null;
+      const agent = own?.ok ? { agentId: own.input.agentId, name: `${own.input.firstName} ${own.input.lastName}`, mentions: own.input.mentions } : null;
+      return liveHtml(renderSiteHome({ kind: site.kind, recruiting: s.recruitingNetworkId === networkId, agent, listings, checkedAt }));
+    }
     case 'liste': {
       // Sans la porte, rien n'est montré [R220].
       const query = parseListingsQuery(url.searchParams);
@@ -361,11 +378,7 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       const checkedAt = s.now();
       const selection = await selectListings(published, s.diffusion, networkId, checkedAt, query);
       if (!selection) return notFound();
-      // Une page en cache ne survit qu'une minute au retrait d'un bien, comme la page du bien elle-même.
-      return new Response(request.method === 'HEAD' ? null : renderListingsPage({ ...selection, query, checkedAt }), {
-        status: 200,
-        headers: { ...pageHeaders('text/html; charset=utf-8', mode), 'cache-control': 'public, max-age=60' },
-      });
+      return liveHtml(renderListingsPage({ ...selection, query, checkedAt }));
     }
     case 'prix': {
       // Les pages de prix vivent sur le site du réseau seulement : une seule page de référence [R153].
@@ -378,8 +391,10 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
     case 'agent': {
       // Le site d'un agent ne montre que la page de son agent.
       if (site.kind === 'agent' && site.agentId !== m[1]) return notFound();
-      const page = await svc.pageAgent.page(networkId, m[1]!);
-      return page.ok ? html(page.html) : notFound();
+      // Sans la porte, rien n'est montré : ses biens la passent comme sur la liste [R220].
+      if (!s.diffusion) return notFound();
+      const page = await svc.pageAgent.page(networkId, m[1]!, s.diffusion);
+      return page.ok ? liveHtml(page.html) : notFound();
     }
     case 'quartier': {
       if (site.kind !== 'reseau') return notFound();
