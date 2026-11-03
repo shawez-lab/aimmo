@@ -266,6 +266,7 @@ globalThis.AIMMO_REGLAGES_MANDAT = function (t) {
           });
         });
       });
+      more.className = 'secondaire';
       box.appendChild(more);
     }
     add(res.body.data);

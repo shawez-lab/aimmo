@@ -225,6 +225,7 @@ main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); 
 #note:not([hidden]) { position: fixed; left: var(--e-4); right: var(--e-4); bottom: max(var(--e-4), env(safe-area-inset-bottom)); max-width: var(--colonne); margin: 0 auto; padding: var(--e-3) var(--e-4); border-radius: var(--r-m); background: var(--encre); color: var(--papier); box-shadow: var(--ombre); z-index: 3; }
 .bloc > h3 { margin-bottom: var(--e-2); }
 .bloc > .etat { margin: 0; }
+#regmandat-corps h4 { margin: var(--e-4) 0 var(--e-2); }
 .bloc > button.secondaire { width: 100%; }
 .liste > li > strong:first-child { font-size: var(--t-l); font-family: var(--police-titre); font-weight: 600; }
 .liste button, #fiche-corps button { margin-top: var(--e-3); }
