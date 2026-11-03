@@ -3415,3 +3415,50 @@ Décidé, lecture prudente : l'espace d'un client ne refait aucun module : il li
 - Objectif : brancher les routes et la page de EC06 dans `app.ts`, la séance du client à côté des clés d'API, et le secret de signature du relevé.
 - Critères : chaque route branchée répond sous son rôle ou sa séance [R16, R161] ; sans secret de signature, le relevé répond « indisponible » ; la suite complète reste verte.
 - Attend : une ligne de `HUMAIN.md` pour le secret de signature du relevé, à écrire par EC07.
+
+**Preuve à Dijon et indicateurs, juillet 2027.**
+
+Voie : 2
+
+Découpé le 2026-11-03 par la voie 2 : M01 à M20 et les espaces sont faits ; la Feuille de route livre en juillet 2027 la « mesure de la preuve », et la condition de la phase 2 (« 10 mandats de vente signés par mois, six mois de suite, comptés à partir de janvier 2027, chiffres publiés ») n'a aucune tâche. Plusieurs indicateurs de l'onglet « Indicateurs et tests » n'ont pas non plus de calcul. Ids `IN..`. Cahier : Feuille de route ; Indicateurs et tests.
+Décidé, lecture prudente : chaque chiffre vient de la base, jamais d'une saisie ni de l'IA ; aucun classement d'agent [R14] ; le compteur part du registre des mandats (R39), pas de la table des mandats : un mandat signé et pas inscrit ne compte pas, il est dit à part. Une annulation pour erreur ou une rétractation retire le mandat ; une résiliation le laisse compter, car il a bien été signé, et elle est dite à part. Un mois en cours ne compte jamais dans la série, même s'il a déjà 10 mandats. Règles R210 à R219 et migrations à partir de `1700` réservées à ce module. Le code vit dans `packages/core/src/pilotage/`, ses routes dans `packages/api/src/pilotage.ts` ; `app.ts` et `packages/core/src/index.ts` ne changent pas.
+
+### IN01 · Le compteur de la preuve à Dijon
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : D01, K05
+- Cahier : Feuille de route, phase 2 ; Indicateurs et tests, « Mandats signés » et « Part des mandats exclusifs ».
+- Objectif : pour la direction, mois par mois de Paris depuis janvier 2027 : les mandats de vente signés et inscrits au registre (simples, exclusifs, sans type connu), ceux retirés (erreur, rétractation), ceux résiliés, ceux signés et pas inscrits ; la série en cours, la meilleure série, et si la condition (6 mois de suite à 10 ou plus) est remplie. `GET /v1/pilotage/preuve`.
+- Critères : seuls les mandats inscrits comptent, sur le mois de Paris de leur signature [R210] (test) ; erreur et rétractation retirent, résiliation compte et se voit [R210] (test) ; 6 mois complets de suite à 10 remplissent la condition, 5 non, un mois à 9 casse la série, le mois en cours ne compte pas [R211] (tests) ; une annulation tardive défait la condition [R211] (test) ; registre abîmé : condition jamais dite remplie [R211] (test) ; rien avant janvier 2027 (test) ; aucun chiffre par agent [R14] (test) ; la direction seule, refus au journal [R16] (test).
+- Attend : rien.
+
+### IN02 · Le mois scellé, puis publié, vérifiable par n'importe qui (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01
+- Cahier : Feuille de route, « chiffres publiés » ; Indicateurs et tests, « comparés à un comptage manuel avant d'être publiés ».
+- Objectif : aucun réseau ne publie un compte de mandats que chacun peut vérifier. La direction scelle un mois fini : elle donne son comptage manuel, le code le compare et refuse un écart ; le sceau enchaîne une empreinte du mois sur celle du mois d'avant, à partir des lignes du registre, sans nom ni adresse. Une annulation après le sceau ne réécrit rien : le mois porte un nouveau sceau, l'ancien reste lisible, la correction se voit. La page publique rend les mois scellés, leurs empreintes et de quoi les recalculer.
+- Critères : comptage différent refusé, avec l'écart [R212] (test) ; mois en cours ou registre abîmé refusés [R212] (test) ; recalcul indépendant de l'empreinte depuis ce que la page publie (test) ; correction par nouveau sceau, ancien gardé [R17, R212] (test) ; aucune donnée personnelle dans la page [R13] (test) ; budget et système de design [R201] (test).
+- Attend : H27 pour la mesure réelle seulement.
+
+### IN03 · Les indicateurs du parcours : transformation, délais, du rendez-vous au mandat
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01
+- Cahier : Indicateurs et tests.
+- Objectif : pour une période, chacun avec ses lignes : contacts en rendez-vous, rendez-vous en mandats, mandats en ventes ; jours du mandat à l'offre acceptée puis de l'offre à l'acte ; minutes de l'ouverture de l'estimation à la signature ; part des mandats avec un client transmis par le réseau. Le réseau, jamais d'un agent contre un autre [R14].
+- Critères : chaque chiffre recalculé à la main sur un jeu de test (tests) ; donnée absente dite telle, jamais un zéro inventé (test) ; droits [R16] (test).
+- Attend : rien.
+
+### IN04 · Les indicateurs du réseau : agents actifs, restés, contacts par zone
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01
+- Cahier : Indicateurs et tests, « Agents actifs », « Agents restés au bout d'un an », « Contacts transmis par zone ».
+- Objectif : agents ayant signé au moins un mandat dans le mois ; part des agents entrés il y a 12 mois et toujours actifs ; contacts transmis par zone, lisibles par chaque agent chaque mois, sans chiffre d'un autre agent.
+- Critères : un agent lit les zones, jamais un autre agent [R14, R16] (test) ; un agent parti ne compte plus comme resté (test) ; une zone d'un seul agent n'expose rien de plus que ses propres chiffres (test).
+- Attend : rien.
+
+### IN05 · Écran « Preuve » de la direction
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01, IN02, IN03
+- Cahier : Feuille de route ; R201.
+- Objectif : la direction voit où en est la preuve, ce qui est à inscrire, et scelle un mois depuis l'application.
+- Critères : droits [R16] (test) ; chaque refus dit en français (test) ; réponse perdue dite telle (test) ; un seul envoi à la fois (test) ; budget tenu [R201] (test).
+- Attend : rien.
