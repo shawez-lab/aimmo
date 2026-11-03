@@ -333,7 +333,7 @@ globalThis.AIMMO_FINANCES = function (t) {
       }
       var counter = c.body.data, published = s.body.data;
       if (!counter.registerSound || !published.chainSound) body.appendChild(el('p', 'Un contrôle d’intégrité a échoué : ces chiffres sont à vérifier, et la condition ne peut pas être dite remplie.', 'retard'));
-      if (counter.condition.met) body.appendChild(el('p', 'Condition remplie en ' + monthName(counter.condition.metOn) + '.'));
+      if (counter.condition.met && published.chainSound) body.appendChild(el('p', 'Condition remplie en ' + monthName(counter.condition.metOn) + '.'));
       else body.appendChild(el('p', 'Série en cours : ' + counter.currentRun.length + ' mois sur ' + counter.requiredMonths + '.'));
       if (!counter.months.length) body.appendChild(el('p', 'Le compte commence en ' + monthName(counter.startMonth) + '.'));
       var sealOf = {};

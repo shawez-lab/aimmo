@@ -32,7 +32,7 @@ async function setup() {
     expect(res.status).toBe(200);
   }
   const get = (url: string, method = 'GET') => handleAttirerPublic(as, new Request(url, { method }));
-  return { post, get, ps };
+  return { post, get, ps, journal };
 }
 
 describeWithSqlite('IN02 · routes du sceau et compte public', () => {
@@ -49,6 +49,8 @@ describeWithSqlite('IN02 · routes du sceau et compte public', () => {
     const read = (viewer: Viewer) => pilotageRoutes().find((r) => r.name === 'pilotage.preuve_sceaux')!.handle(t.ps, viewer, [], new Request('https://api.exemple.test/v1/pilotage/preuve/sceaux'));
     expect((await read({ ...direction, role: 'agent', userId: 'ag-1' } as Viewer)).status).toBe(403);
     expect((await read({ ...direction, role: 'compliance', userId: 'c-1' } as Viewer)).status).toBe(403);
+    const refused = (await t.journal.all()).filter((e) => e.type === 'acces.refuse' && (e.data as { kind?: string }).kind === 'proof_seals');
+    expect(refused.map((e) => e.actor)).toEqual(['agent:ag-1', 'compliance:c-1']);
     expect(((await (await read(direction)).json()) as Record<string, any>).data.seals).toEqual([]);
     expect((await t.post(direction, { month: '2027-01', manualCount: 0 })).status).toBe(200);
     expect(((await (await read(direction)).json()) as Record<string, any>).data.seals).toHaveLength(1);

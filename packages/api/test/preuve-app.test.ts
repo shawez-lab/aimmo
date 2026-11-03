@@ -58,10 +58,10 @@ async function run(answers: Record<string, Answer> = {}, role = 'direction') {
   runInNewContext(JS, context);
   listeners.DOMContentLoaded!();
   await settle();
-  const read = async () => {
-    els['rapport-direction-lire']!.listeners.click!({});
+  const read = async (who: 'direction' | 'agent' = 'direction') => {
+    els[`rapport-${who}-lire`]!.listeners.click!({});
     await settle();
-    const s = els.reseau!.children.filter((e) => e.tagName === 'script' && e.attributes.src === '/app/finances.js');
+    const s = els[who === 'agent' ? 'chiffres' : 'reseau']!.children.filter((e) => e.tagName === 'script' && e.attributes.src === '/app/finances.js');
     if (s.length === 1 && !context.loaded) {
       runInNewContext(FINANCES_SCRIPT, context);
       context.loaded = true;
@@ -146,10 +146,15 @@ describe('IN05 · la preuve à l’écran de la direction', () => {
       'GET /v1/pilotage/preuve/sceaux': ok({ ...PUBLISHED, chainSound: false, months: [{ month: '2027-01', counted: 12, sealSeq: 1, corrected: false, changedSinceSeal: true }, PUBLISHED.months[1]] }),
     });
     await met.read();
-    expect(met.texts()).toContain('Condition remplie en juin 2027');
+    // La chaîne des sceaux est abîmée : le compteur a beau dire remplie, l'écran ne le dit pas.
+    expect(met.texts()).not.toContain('Condition remplie');
+    expect(met.texts()).toContain('Série en cours');
     expect(met.texts()).toContain('contrôle d’intégrité a échoué');
     expect(met.texts()).toContain('Changé depuis son sceau');
     expect(met.buttons()).toHaveLength(2);
+    const sound = await run({ 'GET /v1/pilotage/preuve': ok({ ...COUNTER, condition: { met: true, metOn: '2027-06' } }) });
+    await sound.read();
+    expect(sound.texts()).toContain('Condition remplie en juin 2027');
     const early = await run({ 'GET /v1/pilotage/preuve': ok({ ...COUNTER, months: [] }), 'GET /v1/pilotage/preuve/sceaux': ok({ ...PUBLISHED, months: [] }) });
     await early.read();
     expect(early.texts()).toContain('Le compte commence en janvier 2027');
@@ -168,9 +173,43 @@ describe('IN05 · la preuve à l’écran de la direction', () => {
 
   it('[R16] l’agent qui lit son rapport ne demande jamais la preuve', async () => {
     const t = await run({}, 'agent');
-    t.els['rapport-agent-lire']!.listeners.click!({});
-    await settle();
+    await t.read('agent');
+    expect(t.calls.filter((c) => c.url === '/v1/pilotage/rapport-matin')).toHaveLength(1);
     expect(t.calls.filter((c) => c.url.includes('/preuve'))).toEqual([]);
+  });
+
+  it('[R16] à la déconnexion, la preuve lue disparaît ; une lecture ou un sceau en vol ne s’affiche pas à la session suivante', async () => {
+    const t = await run();
+    await t.read();
+    expect(t.corps().children).not.toEqual([]);
+    const [button] = t.buttons();
+    const [input] = t.inputs();
+    input!.value = '12';
+    let answer: (r: Response) => void = () => {};
+    t.table['POST /v1/pilotage/preuve/sceau'] = () => new Promise((r) => { answer = r; });
+    button!.listeners.click!({});
+    await settle();
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    expect(t.corps().children).toEqual([]);
+    expect(t.els['preuve-etat']!.textContent).toBe('');
+    answer(Response.json({ ok: true, data: { seq: 1 } }));
+    await settle();
+    expect(t.corps().children).toEqual([]);
+    expect(t.els['preuve-etat']!.textContent).toBe('');
+    expect(t.calls.filter((c) => c.method === 'GET' && c.url === '/v1/pilotage/preuve')).toHaveLength(1);
+  });
+
+  it('[R16] une lecture en vol ne s’affiche pas à la session suivante', async () => {
+    let answer: (r: Response) => void = () => {};
+    const t = await run({ 'GET /v1/pilotage/preuve': () => new Promise((r) => { answer = r; }) });
+    await t.read();
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    answer(Response.json({ ok: true, data: COUNTER }));
+    await settle();
+    expect(t.corps().children).toEqual([]);
+    expect(t.els['preuve-etat']!.textContent).toBe('');
   });
 
   it('[R201] les budgets tiennent', () => {
