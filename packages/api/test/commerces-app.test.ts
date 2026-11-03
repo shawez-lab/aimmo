@@ -4,6 +4,7 @@ import { BUDGETS, budgetProblems, htmlProblems } from '../../core/src/design/aud
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
 import { COMMERCES_ENGAGEMENTS_SCRIPT } from '../app/commerces-engagements.ts';
 import { COMMERCES_REPRENEURS_SCRIPT } from '../app/commerces-repreneurs.ts';
+import { COMMERCES_TEXTES_SCRIPT } from '../app/commerces-textes.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
@@ -1498,5 +1499,145 @@ describe('CE18 · retirer un lien de dossier protégé à l’écran', () => {
   it('[R201] les scripts tiennent le budget d’une page', () => {
     expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: '', js: COMMERCES_ENGAGEMENTS_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+});
+
+describe('CE19 · corriger la présentation anonyme à l’écran', () => {
+  const OPEN = 'Corriger le texte';
+  const VALIDATED = { id: 'p1', title: 'Restaurant à reprendre à Dijon', body: 'Belle salle.', validated: { by: 'agent:a1', at: '2027-09-07T08:00:00.000Z' } };
+  async function open(more: Record<string, Answer> = {}) {
+    const t = await run(more);
+    await t.openB1();
+    await t.click(t.byText(OPEN));
+    const s = t.scripts().filter((e) => e.attributes.src === '/app/commerces-textes.js');
+    expect(s).toHaveLength(1);
+    runInNewContext(COMMERCES_TEXTES_SCRIPT, t.context);
+    s[0]!.listeners.load!({});
+    await settle();
+    const title = t.input('Titre');
+    const text = t.input('Texte');
+    const posted = () => t.calls.filter((c) => c.method === 'POST' && c.url === '/v1/commerces/b1/presentations/texte');
+    return { ...t, title: title!, text: text!, posted };
+  }
+  const SAVE = 'Ranger la correction';
+
+  it('[R110] le texte en cours est pré-rempli et part tel quel, sans jamais toucher au texte sans changement', async () => {
+    const t = await open({ 'POST /v1/commerces/b1/presentations/texte': ok({ id: 'p2' }) });
+    expect(t.title.value).toBe('Restaurant à reprendre à Dijon');
+    expect(t.text.value).toBe(`Belle salle. ${INJECTED}`);
+    await t.click(t.byText(SAVE));
+    expect(t.posted()).toHaveLength(0);
+    expect(t.state()).toBe('Rien n’a changé : aucune version ajoutée.');
+    t.text.value = 'Belle salle, belle terrasse.';
+    await t.click(t.byText(SAVE));
+    expect(t.posted()).toHaveLength(1);
+    expect(JSON.parse(t.posted()[0]!.body!)).toEqual({ title: 'Restaurant à reprendre à Dijon', body: 'Belle salle, belle terrasse.' });
+    expect(t.state()).toBe('Correction rangée : l’agent du bien la relit, puis la valide.');
+  });
+
+  it('[R110] sans présentation, rien à corriger : le geste reste « préparer »', async () => {
+    const t = await run({ 'GET /v1/commerces/b1/presentation': no(404, { ok: false, rule: null, code: 'no_presentation' }) });
+    await t.openB1();
+    expect(t.byText(OPEN)).toBeUndefined();
+    expect(t.byText('Préparer la présentation')).toBeDefined();
+  });
+
+  it('[R16] qui ne peut pas écrire sur ce commerce ne voit pas le geste', async () => {
+    const t = await run({ 'GET /v1/commerces/b1/demandes': no(403, { ok: false, rule: 'R16', code: 'role' }) });
+    await t.openB1();
+    expect(t.byText(OPEN)).toBeUndefined();
+  });
+
+  it('[R201] rien n’est chargé avant le geste, et le script n’est pas gardé sur l’appareil', async () => {
+    const t = await run();
+    await t.openB1();
+    expect(t.scripts().map((e) => e.attributes.src)).toEqual(['/app/commerces.js']);
+    expect(AGENT_APP_FILES['/app/commerces-textes.js']).toBe(COMMERCES_TEXTES_SCRIPT);
+    expect(AGENT_APP_SHELL).not.toContain('/app/commerces-textes.js');
+  });
+
+  it('[R110] une présentation validée : l’effet est dit avant de ranger', async () => {
+    const t = await open({ 'GET /v1/commerces/b1/presentation': ok(VALIDATED) });
+    expect(t.body().textContent).toContain('Un texte corrigé annule cette validation');
+    const fresh = await open();
+    expect(fresh.body().textContent).not.toContain('Un texte corrigé annule cette validation');
+  });
+
+  it('[R110] un texte refusé reste à l’écran, avec chaque phrase en cause et son problème, sans injection', async () => {
+    const t = await open({
+      'POST /v1/commerces/b1/presentations/texte': no(409, {
+        ok: false,
+        rule: 'R110',
+        code: 'refused_text',
+        sentences: [
+          { text: `Chez ${INJECTED}.`, problems: [{ code: 'enseigne', value: 'Chez Lou' }] },
+          { text: 'Vendu 300 000 €.', problems: [{ code: 'chiffre_confidentiel', value: '300 000' }, { code: 'inconnu_de_l_ecran', value: 'x' }] },
+        ],
+      }),
+    });
+    t.text.value = 'Chez Lou, vendu 300 000 €.';
+    await t.click(t.byText(SAVE));
+    expect(t.text.value).toBe('Chez Lou, vendu 300 000 €.');
+    expect(t.state()).toBe('Une phrase ne peut pas être publiée : corrigez-la.');
+    const said = t.body().textContent;
+    expect(said).toContain('À corriger : nomme l’enseigne (« Chez Lou »)');
+    expect(said).toContain('À corriger : chiffre confidentiel (« 300 000 »)');
+    expect(said).toContain('À corriger : phrase refusée (« x »)');
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    expect((t.byText(SAVE) as unknown as { disabled: boolean }).disabled).toBe(false);
+  });
+
+  it('[R10] un titre ou un texte vide n’est pas envoyé', async () => {
+    const t = await open();
+    t.text.value = '   ';
+    await t.click(t.byText(SAVE));
+    expect(t.posted()).toHaveLength(0);
+    expect(t.state()).toBe('Le titre et le texte sont à remplir.');
+  });
+
+  it.each([
+    [no(400, { ok: false, rule: null, code: 'bad_text' }), 'Le titre tient en 120 caractères, le texte en 3 000.'],
+    [no(400, { ok: false, rule: null, code: 'busy' }), 'Une autre version vient d’arriver : rouvrez le commerce pour la relire. Votre texte reste ici.'],
+    [no(409, { ok: false, rule: 'R10', code: 'incomplet', missing: ['estimation'] }), 'Il faut d’abord une estimation validée et une fiche complète.'],
+    [no(403, { ok: false, rule: 'R16', code: 'role' }), 'Ce commerce n’est pas dans vos droits.'],
+    [no(400, { ok: false, rule: null, code: 'nouveau' }), 'La correction n’est pas rangée.'],
+  ])('[R16] chaque refus du socle est dit en français, le texte reste (%#)', async (answer, said) => {
+    const t = await open({ 'POST /v1/commerces/b1/presentations/texte': answer });
+    t.text.value = 'Un autre texte.';
+    await t.click(t.byText(SAVE));
+    expect(t.state()).toBe(said);
+    expect(t.text.value).toBe('Un autre texte.');
+    expect((t.byText(SAVE) as unknown as { disabled: boolean }).disabled).toBe(false);
+  });
+
+  it.each([
+    ['panne', async () => new Response('non', { status: 502 })],
+    ['réseau', async () => { throw new TypeError('coupé'); }],
+    ['corps coupé', async () => new Response('{"ok":tr', { status: 200, headers: { 'content-type': 'application/json' } })],
+  ] as [string, Answer][])('[R10] réponse perdue (%s) : dite telle, jamais « non rangée », le texte reste', async (_n, answer) => {
+    const t = await open({ 'POST /v1/commerces/b1/presentations/texte': answer });
+    t.text.value = 'Un autre texte.';
+    await t.click(t.byText(SAVE));
+    expect(t.state()).toBe('Réponse perdue : la correction a peut-être été rangée. Rouvrez le commerce pour le voir, votre texte reste ici.');
+    expect(t.text.value).toBe('Un autre texte.');
+  });
+
+  it('[R10] un seul envoi à la fois', async () => {
+    let free: () => void = () => {};
+    const t = await open({ 'POST /v1/commerces/b1/presentations/texte': () => new Promise((r) => { free = () => r(Response.json({ ok: true, data: { id: 'p2' } })); }) });
+    t.text.value = 'Un autre texte.';
+    const go = t.byText(SAVE)!;
+    go.listeners.click!({});
+    go.listeners.click!({});
+    expect(t.posted()).toHaveLength(1);
+    free();
+    await settle();
+    expect(t.state()).toBe('Correction rangée : l’agent du bien la relit, puis la valide.');
+  });
+
+  it('[R201] les scripts tiennent le budget d’une page, et le nouveau n’écrit rien sur l’appareil', () => {
+    expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(budgetProblems({ html: '', js: COMMERCES_TEXTES_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(COMMERCES_TEXTES_SCRIPT).not.toMatch(/innerHTML|localStorage|sessionStorage/);
   });
 });

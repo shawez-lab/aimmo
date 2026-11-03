@@ -16,6 +16,7 @@ import { MANDAT_SCRIPT } from '../app/mandat.ts';
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
 import { COMMERCES_ENGAGEMENTS_SCRIPT } from '../app/commerces-engagements.ts';
 import { COMMERCES_REPRENEURS_SCRIPT } from '../app/commerces-repreneurs.ts';
+import { COMMERCES_TEXTES_SCRIPT } from '../app/commerces-textes.ts';
 import { ESPACE_AGENT_SCRIPT } from '../app/espace-agent.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
 import { LOUER_DOSSIER_SCRIPT } from '../app/louer-dossier.ts';
@@ -90,6 +91,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/commerces-engagements.js': { body: COMMERCES_ENGAGEMENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les repreneurs et le rapprochement (CE15), de même.
   '/app/commerces-repreneurs.js': { body: COMMERCES_REPRENEURS_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Corriger la présentation anonyme (CE19), de même.
+  '/app/commerces-textes.js': { body: COMMERCES_TEXTES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Ouvrir l'espace d'un client depuis sa fiche (EC12), chargé au premier geste [R201].
   '/app/espace-agent.js': { body: ESPACE_AGENT_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer.js': { body: LOUER_SCRIPT, type: 'text/javascript; charset=utf-8' },
