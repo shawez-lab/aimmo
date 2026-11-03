@@ -1837,6 +1837,14 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Critères : seuls les rôles de la route agissent [R16] (test) ; ni nom ni contenu du texte collé au journal [R13] (test) ; résultat incertain dit tel [R10] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
 - Attend : rien.
 
+### CE18 · Retirer un lien de dossier protégé, à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
+- Cahier : M16 ; R16, R201.
+- Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : `POST /v1/commerces/liens/<id>/revocation` n'a aucun appel de l'application. Vérifier que le geste n'existe pas ailleurs, puis le donner dans `app/commerces*.ts`, sans toucher au socle.
+- Critères : seuls les rôles de la route agissent [R16] (test) ; un lien retiré est dit tel, deux appuis avant de retirer (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 ### X16 · Rétractation et début anticipé d'un mandat à l'écran
 - Statut : fait (2026-11-03), par D16 : vérifié route par route, les deux gestes et leurs tests sont dans `app/mandat.ts` et `mandat-app.test.ts`
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D03
