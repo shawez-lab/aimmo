@@ -39,6 +39,7 @@ import { PROSPECTION_SCRIPT } from '../app/prospection.ts';
 import { BIBLIOTHEQUE_SCRIPT } from '../app/bibliotheque.ts';
 import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
 import { FIN_DE_BAIL_SCRIPT } from '../app/fin-de-bail.ts';
+import { RECOMMANDATION_SCRIPT } from '../app/recommandation.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
 import { FICHE_GOOGLE_SCRIPT } from '../app/fiche-google.ts';
 import { FICHE_BIEN_SCRIPT } from '../app/fiche-bien.ts';
@@ -134,6 +135,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/engagements.js': { body: ENGAGEMENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La fin de bail notée depuis la fiche (G15), chargée au premier geste, jamais gardée sur l'appareil [R201].
   '/app/fin-de-bail.js': { body: FIN_DE_BAIL_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Recommander un proche depuis la fiche (X22), chargé au premier geste, jamais gardé sur l'appareil [R201].
+  '/app/recommandation.js': { body: RECOMMANDATION_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les finances (K10), chargées au premier geste, jamais gardées sur l'appareil [R201].
   '/app/finances.js': { body: FINANCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La fiche du bien (X19), chargée au premier geste, jamais gardée sur l'appareil [R201].
