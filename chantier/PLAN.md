@@ -2008,7 +2008,9 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### CE23 · Une panne de stockage à l'ouverture d'un dossier ne consomme pas le code
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03), lecture prudente : tout est lu avant la première écriture ; une panne répond 503 `stockage_indisponible`, journalisée seulement, sans ligne d'accès, faute de refus à ranger ; une porte fermée consomme toujours le code, comme avant.
+- Reste : fusionnée (#342) ; relecture forte 1 P1 de test corrigé ; Codex non attendu (H03) ; vérification GitHub verte. Une panne du journal après le rangement laisse le code consommé et l'ouverture comptée ; le code de panne n'a pas de texte, faute d'écran du lecteur.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : CE22
 - Cahier : M16 ; R17, R114.
 - Objectif : trouvé par la relecture forte de CE22 : `dossier.ts`, si le stockage tombe en panne à l'ouverture, le code du lecteur est consommé et l'ouverture comptée comme faite, sans rien servir (réponse 500). Lire les documents avant de consommer le code, ou rendre ce code utilisable.
