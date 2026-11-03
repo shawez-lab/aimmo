@@ -18,6 +18,8 @@ import {
   type SqlDatabase,
 } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
+import type { Viewer } from '../src/index.ts';
+import { EngagementsTenus } from '../src/pilotage/index.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
 // Un mardi à 10 h, heure de Paris.
@@ -128,6 +130,51 @@ describeWithSqlite('T03 · alertes aux acquéreurs, en mode essai', () => {
     const subjects = await t.db.all<{ person_id: string; subject: string; n: number }>('SELECT person_id, subject, count(*) AS n FROM message_subjects GROUP BY person_id, subject');
     expect(subjects).toHaveLength(4);
     for (const s of subjects) expect(Number(s.n)).toBe(1);
+  });
+
+  it('[R01] [R216] IN14 : un bien sorti la nuit ou à 19 h 30 a son alerte au passage de 8 h, dans sa limite, en mode essai', async () => {
+    const t = await setup();
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    const buyer = await t.buyer('Inès', TALANT);
+    const now = () => new Date(t.clock());
+    const planificateur = new Planificateur(t.db, t.journal, [alertsJob(t.db, t.journal, { now, unsubscribeBase: BASE, diffusion: t.diffusion })], { now });
+    const onSale = (id: string, at: string) => t.db.run("INSERT INTO property_on_sale (property_id, network_id, mandate_id, on_sale_at, noted_at) VALUES (?, ?, 'm', ?, ?)", [id, t.network.id, at, at]);
+    const count = async () => (await t.sent(buyer.person.id)).length;
+
+    const night = await t.property('B1', MAISON);
+    await onSale(night.id, '2026-12-09T02:00:00.000Z'); // mercredi, 3 h à Paris
+    t.setClock(Date.parse('2026-12-09T06:05:00.000Z')); // 7 h 05 : le passage n'a pas lieu
+    await planificateur.tick();
+    expect(await count()).toBe(0);
+    t.setClock(Date.parse('2026-12-09T07:00:05.000Z')); // 8 h 00 min 05 s
+    await planificateur.tick();
+    expect(await count()).toBe(1);
+
+    const evening = await t.property('B2', { ...MAISON, price: 250_000 });
+    await onSale(evening.id, '2026-12-09T18:30:00.000Z'); // 19 h 30, après le passage de 19 h
+    t.setClock(Date.parse('2026-12-09T19:00:05.000Z')); // 20 h 00 min 05 s : ni passage ni envoi
+    await planificateur.tick();
+    expect(await count()).toBe(1);
+    t.setClock(Date.parse('2026-12-10T07:00:05.000Z')); // le lendemain, 8 h 00 min 05 s
+    await planificateur.tick();
+    expect(await count()).toBe(2);
+
+    const sunday = await t.property('B3', { ...MAISON, price: 240_000 });
+    await onSale(sunday.id, '2026-12-13T09:00:00.000Z');
+    t.setClock(Date.parse('2026-12-13T07:00:05.000Z')); // dimanche, 8 h : aucun passage
+    await planificateur.tick();
+    expect(await count()).toBe(2);
+    t.setClock(Date.parse('2026-12-14T07:00:05.000Z')); // lundi, 8 h
+    await planificateur.tick();
+    expect(await count()).toBe(3);
+
+    // Chaque message est resté en boîte d'essai, et chacun est parti dans sa limite : rien de manqué.
+    t.setClock(Date.parse('2027-01-05T10:00:00.000Z'));
+    const read = await new EngagementsTenus(t.db, t.journal, { now }).ofMonth({ role: 'direction', userId: 'd1', networkId: t.network.id } as Viewer, '2026-12');
+    if (!read.ok) throw new Error(read.code);
+    const line = read.value.lines.find((l) => l.code === 'alerte_heure')!;
+    expect(line.inTrial).toBe(3);
+    expect(line.missedDays).toEqual([]);
   });
 
   it('sans lien de désinscription réglé, aucune alerte ne part, et le journal le dit [R49]', async () => {
