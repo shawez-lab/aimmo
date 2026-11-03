@@ -21,7 +21,7 @@ const SHEET = {
   media: MEDIA,
 };
 const CHECK = { complete: false, publishedPriceEur: null, text: '', items: [] };
-const DRAFT = { id: 'd1', title: 'Appartement', body: 'Appartement.', sentences: [], validated: null };
+const DRAFT = { id: 'd1', title: 'Appartement', body: 'Appartement.', sentences: [], sheetVersion: 4, validated: null };
 const GET = 'GET /v1/annonces/b1/fiche';
 const POST = 'POST /v1/annonces/b1/fiche?siVersion=4';
 const settle = async () => {
@@ -79,7 +79,7 @@ async function run(answers: Record<string, Answer> = {}) {
     }
   };
   const save = () => click(find('Enregistrer la fiche'));
-  return { els, calls, table, body, find, click, f, posts, open, save };
+  return { els, calls, table, context, body, find, click, f, posts, open, save };
 }
 
 describe('X19 · la fiche du bien à l’écran', () => {
@@ -161,6 +161,73 @@ describe('X19 · la fiche du bien à l’écran', () => {
     t.f('fiche-bien-bedrooms').value = '5';
     await t.save();
     expect(t.body().textContent).toContain('La fiche a changé entre-temps, rien n’est rangé');
+  });
+
+  it('[R47] une annonce validée sur une ancienne fiche n’est plus dite validée : l’écran dit quoi faire', async () => {
+    const t = await run({ 'GET /v1/annonces/b1/brouillon': ok({ ...DRAFT, sheetVersion: 3, validated: { at: '2027-02-12T11:00:00.000Z' } }) });
+    await t.open();
+    const text = t.body().textContent;
+    expect(text).toContain('La fiche du bien a changé depuis la validation de ce texte : l’annonce ne peut plus partir.');
+    expect(text).not.toContain('Annonce validée le');
+    expect(text).not.toContain('Cette annonce est validée.');
+    const same = await run({ 'GET /v1/annonces/b1/brouillon': ok({ ...DRAFT, validated: { at: '2027-02-12T11:00:00.000Z' } }) });
+    await same.open();
+    expect(same.body().textContent).toContain('Annonce validée le');
+    expect(same.body().textContent).not.toContain('La fiche du bien a changé');
+  });
+
+  it('une lecture ratée de la fiche ne dit pas que la validation est tombée', async () => {
+    const t = await run({ 'GET /v1/annonces/b1/brouillon': ok({ ...DRAFT, sheetVersion: 3, validated: { at: '2027-02-12T11:00:00.000Z' } }), [GET]: no(500, { ok: false, code: 'internal_error' }) });
+    await t.click(t.els.biens!.all().find((e: FakeElement) => e.textContent === 'Mettre en vente'));
+    expect(t.body().textContent).toContain('Annonce validée le');
+    expect(t.body().textContent).not.toContain('La fiche du bien a changé');
+  });
+
+  it('des lots ou des charges sans « oui » ne se perdent pas : c’est dit, et rien ne part', async () => {
+    const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }), 'POST /v1/annonces/b1/fiche?siVersion=0': ok({ version: 1 }) });
+    await t.open();
+    t.f('fiche-bien-lots').value = '12';
+    await t.save();
+    expect(t.posts()).toEqual([]);
+    expect(t.body().textContent).toContain('vont avec « en copropriété : oui »');
+    t.f('fiche-bien-copro').value = 'oui';
+    t.f('fiche-bien-charges').value = '1800';
+    t.f('fiche-bien-procedure').value = 'non';
+    await t.save();
+    expect(t.posts()[0]!.body.coownership).toEqual({ isCoownership: true, lots: 12, annualChargesEur: 1800, proceedings: false });
+  });
+
+  it('le script se charge une fois, un échec se réessaie, et une lecture ratée laisse le bouton', async () => {
+    const t = await run({ [GET]: () => Promise.reject(new TypeError('hors ligne')) });
+    await t.click(t.els.biens!.all().find((e: FakeElement) => e.textContent === 'Mettre en vente'));
+    const open = t.find('Remplir la fiche du bien')!;
+    await t.click(open);
+    await t.click(open);
+    const scripts = () => t.body().all().filter((e: FakeElement) => e.tagName === 'script');
+    expect(scripts().length).toBe(1);
+    scripts()[0]!.listeners.error!({});
+    await settle();
+    expect(t.body().textContent).toContain('Pas de réseau.');
+    await t.click(open);
+    runInNewContext(FICHE_BIEN_SCRIPT, t.context);
+    scripts()[0]!.listeners.load!({});
+    await settle();
+    expect(open.hidden).toBe(false);
+    expect(t.find('Enregistrer la fiche')).toBeUndefined();
+    t.table[GET] = ok({ propertyId: 'b1', version: 4, sheet: SHEET });
+    await t.click(open);
+    expect(scripts().length).toBe(0);
+    expect(t.find('Enregistrer la fiche')).toBeDefined();
+    expect(open.hidden).toBe(true);
+  });
+
+  it('un script abîmé est dit', async () => {
+    const t = await run();
+    await t.click(t.els.biens!.all().find((e: FakeElement) => e.textContent === 'Mettre en vente'));
+    await t.click(t.find('Remplir la fiche du bien'));
+    t.body().all().find((e: FakeElement) => e.tagName === 'script')!.listeners.load!({});
+    await settle();
+    expect(t.body().textContent).toContain('La fiche n’a pas pu se charger.');
   });
 
   it('[R16] un droit refusé est dit, à la lecture comme à l’écriture', async () => {

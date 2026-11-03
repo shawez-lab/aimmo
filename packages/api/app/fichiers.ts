@@ -1077,8 +1077,16 @@ export const APP_JS = `'use strict';
       // Seul « aucune annonce » est un état vide ; une lecture en échec est dite comme telle, sans geste proposé.
       var draft = all[1].ok ? all[1].body.data : all[1].status === 404 && all[1].body && all[1].body.code === 'no_draft' ? null : undefined;
       var status = all[2].ok ? all[2].body.data : undefined;
-      renderVente(propertyId, all[0].body.data, draft, status);
-      return true;
+      if (!draft || !draft.validated) { renderVente(propertyId, all[0].body.data, draft, status); return true; }
+      // Validée sur une version de fiche qui n'est plus la dernière, l'annonce ne peut plus partir [R47] : l'écran le dit.
+      return send(base + '/fiche', 'GET').then(function (sheet) {
+        if (sheet.gone) return false;
+        var version = sheet.ok ? sheet.body.data.version : sheet.status === 404 && sheet.body && sheet.body.code === 'no_sheet' ? null : undefined;
+        var at = draft.sheetVersion === undefined ? null : draft.sheetVersion;
+        draft.stale = version !== undefined && version !== at;
+        renderVente(propertyId, all[0].body.data, draft, status);
+        return true;
+      });
     });
   }
   function venteAct(path, fallback) {
@@ -1096,9 +1104,16 @@ export const APP_JS = `'use strict';
   var ficheBien = null;
   function venteFiche(box, base, validated) {
     var zone = el('div');
+    var loading = false;
+    function start(o) {
+      loading = true;
+      return ficheBien.open(zone, o).then(function (shown) { loading = false; open.hidden = !!shown; return shown; });
+    }
     var open = button('Remplir la fiche du bien', function () {
+      if (loading) return;
       var o = { base: base, validated: validated };
-      if (ficheBien) { open.hidden = true; return ficheBien.open(zone, o); }
+      if (ficheBien) return start(o);
+      loading = true;
       clear(zone);
       zone.appendChild(el('p', 'Chargement…', 'doux'));
       var mine = currentVente;
@@ -1107,6 +1122,7 @@ export const APP_JS = `'use strict';
       s.addEventListener('load', function () {
         var make = globalThis.AIMMO_FICHE_BIEN;
         try { delete globalThis.AIMMO_FICHE_BIEN; } catch (e) { /* rien */ }
+        loading = false;
         if (typeof make !== 'function') { clear(zone); zone.appendChild(el('p', 'La fiche n’a pas pu se charger. Réessayez dans un moment.', 'alerte')); return; }
         ficheBien = make({
           el: el, clear: clear, send: send, button: button, field: field, checkbox: checkbox,
@@ -1117,9 +1133,9 @@ export const APP_JS = `'use strict';
             return openVente(v.id, v.reference).then(function () { $('vente-etat').textContent = 'Fiche rangée, version ' + version + '. S’il y a une annonce, rédigez-la de nouveau ou corrigez-la, puis validez-la.'; return true; });
           },
         });
-        if (mine === currentVente) { open.hidden = true; ficheBien.open(zone, o); }
+        if (mine === currentVente) start(o);
       });
-      s.addEventListener('error', function () { clear(zone); zone.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'alerte')); });
+      s.addEventListener('error', function () { loading = false; clear(zone); zone.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'alerte')); });
       zone.appendChild(s);
     });
     box.appendChild(open);
@@ -1137,7 +1153,7 @@ export const APP_JS = `'use strict';
       var text = field(zone, 'vente-correction-texte', 'Texte de l’annonce', 'textarea');
       text.setAttribute('maxlength', '3000');
       text.value = draft.body || (draft.sentences || []).map(function (s) { return s.text; }).join(' ');
-      if (draft.validated) zone.appendChild(el('p', 'Cette annonce est validée. Une correction enregistrée annule cette validation : au passage suivant, l’annonce est retirée de tous les canaux jusqu’à ce que l’agent du bien valide le nouveau texte.', 'retard'));
+      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Cette annonce est validée. Une correction enregistrée annule cette validation : au passage suivant, l’annonce est retirée de tous les canaux jusqu’à ce que l’agent du bien valide le nouveau texte.', 'retard'));
       var said = el('ul', null, 'liste');
       var state = el('p', null, 'doux');
       state.setAttribute('role', 'status');
@@ -1188,7 +1204,7 @@ export const APP_JS = `'use strict';
     });
     check.appendChild(ul);
     var base = '/v1/annonces/' + encodeURIComponent(propertyId);
-    venteFiche(check, base, !!(draft && draft.validated));
+    venteFiche(check, base, !!(draft && draft.validated && !draft.stale));
     body.appendChild(check);
     var text = section('L’annonce, phrase par phrase');
     if (draft === undefined) {
@@ -1209,7 +1225,8 @@ export const APP_JS = `'use strict';
         ol.appendChild(li);
       });
       text.appendChild(ol);
-      if (draft.validated) text.appendChild(el('p', 'Annonce validée le ' + date(draft.validated.at) + '.', 'fait'));
+      if (draft.stale) text.appendChild(el('p', 'La fiche du bien a changé depuis la validation de ce texte : l’annonce ne peut plus partir. Rédigez-la de nouveau ou corrigez-la, puis validez-la.', 'alerte'));
+      else if (draft.validated) text.appendChild(el('p', 'Annonce validée le ' + date(draft.validated.at) + '.', 'fait'));
       else if (ID.test(draft.id)) text.appendChild(button('Valider l’annonce', function () { venteAct('/v1/annonces/brouillons/' + encodeURIComponent(draft.id) + '/validation', 'L’annonce n’est pas validée.'); }));
       text.appendChild(button('Rédiger de nouveau', function () { venteAct(base + '/brouillon', 'L’annonce n’a pas pu être rédigée.'); }));
       venteCorrection(text, base, draft);

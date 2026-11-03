@@ -135,7 +135,9 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       var co = null;
       if (isCo.value === 'non') co = { isCoownership: false };
       if (isCo.value === 'oui') co = { isCoownership: true, lots: int(lots, 'Nombre de lots'), annualChargesEur: int(charges, 'Charges annuelles'), proceedings: bool(proceedings.value) };
-      return { bad: bad, sheet: { characteristics: out, energy: en, coownership: co, risks: risk.value ? { inRiskZone: risk.value === 'oui' } : null, media: media } };
+      // Des lots ou des charges sans « oui » ne se perdent pas en silence.
+      var loose = isCo.value !== 'oui' && (String(lots.value || '').trim() !== '' || String(charges.value || '').trim() !== '' || proceedings.value !== '');
+      return { bad: bad, loose: loose, sheet: { characteristics: out, energy: en, coownership: co, risks: risk.value ? { inRiskZone: risk.value === 'oui' } : null, media: media } };
     }
     var said = el('p', null, 'doux');
     said.setAttribute('role', 'status');
@@ -144,6 +146,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       if (t.sending()) return;
       var form = read();
       if (form.bad) { said.textContent = 'À vérifier : ' + form.bad + ', un nombre entier sans lettre.'; return; }
+      if (form.loose) { said.textContent = 'À vérifier : les lots, les charges et la procédure vont avec « en copropriété : oui ». Choisissez oui, ou videz-les.'; return; }
       if (JSON.stringify(form.sheet) === start) { said.textContent = 'Rien n’a changé : aucune version ajoutée.'; return; }
       var mine = t.current();
       t.sending(true);
