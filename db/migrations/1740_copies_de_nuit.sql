@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS base_copy_runs (
   started_at TEXT NOT NULL,
   finished_at TEXT NOT NULL,
   outcome TEXT NOT NULL CHECK (outcome IN ('copiee', 'non_sauvegardee')),
-  reason TEXT CHECK (reason IS NULL OR reason IN ('cle_absente', 'cle_invalide', 'stockage_absent', 'photo_absente', 'photo_vide', 'stockage_en_panne', 'copie_echouee')),
+  reason TEXT CHECK (reason IS NULL OR reason IN ('cle_absente', 'cle_invalide', 'stockage_absent', 'photo_absente', 'photo_vide', 'stockage_en_panne', 'copie_non_restaurable', 'copie_echouee')),
   copy_id TEXT,
   tables_count INTEGER,
   rows_count INTEGER,

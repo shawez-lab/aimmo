@@ -34,7 +34,7 @@ async function night(over: Partial<NightlyInput> = {}) {
   const said: string[] = [];
   const { parts, store } = memory();
   const db = await source();
-  const code = await nightlyCopy({ secret: SECRET, store, snapshot: async () => db, startedAt: STARTED, record: async (r) => { runs.push(r); }, ...over }, (t) => said.push(t));
+  const code = await nightlyCopy({ secret: SECRET, store, snapshot: async () => db, startedAt: STARTED, fresh: () => fromSyncSqlite(openMemoryDatabase()), record: async (r) => { runs.push(r); }, ...over }, (t) => said.push(t));
   return { code, runs, said, parts, store, db };
 }
 
@@ -88,9 +88,26 @@ describeWithSqlite('SV02 · la copie de nuit', () => {
     const liar = await night({ store: { put: async () => {}, get: async () => null } });
     expect(liar.code).toBe(1);
     expect(liar.runs[0]).toMatchObject({ outcome: 'non_sauvegardee', reason: 'stockage_en_panne' });
+    // Le sommaire est là, mais un morceau s'est perdu : une présence ne prouve rien.
+    const { parts: kept, store: real } = memory();
+    const losing = await night({ store: { put: async (k, b) => { if (!/\/000000$/.test(k)) await real.put(k, b); }, get: real.get } });
+    expect(kept.size).toBeGreaterThan(0);
+    expect(losing.code).toBe(1);
+    expect(losing.runs[0]).toMatchObject({ outcome: 'non_sauvegardee', reason: 'stockage_en_panne' });
     const bug = await night({ store: { put: async () => { throw new Error(MARK); }, get: async () => null } });
     expect(bug.runs[0]).toMatchObject({ outcome: 'non_sauvegardee', reason: 'copie_echouee' });
     expect(bug.said.join(' ')).not.toContain(MARK);
+  });
+
+  it('[R230] une photo incohérente, qui ne se restaurerait pas à l’identique, n’est pas une copie', async () => {
+    const db = fromSyncSqlite(openMemoryDatabase());
+    await db.exec('CREATE TABLE parent (id TEXT PRIMARY KEY); CREATE TABLE child (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES parent (id));');
+    await db.exec('PRAGMA foreign_keys = OFF');
+    await db.run("INSERT INTO child VALUES ('c1', 'orphelin')");
+    await db.exec('PRAGMA foreign_keys = ON');
+    const t = await night({ snapshot: async () => db });
+    expect(t.code).toBe(1);
+    expect(t.runs[0]).toMatchObject({ outcome: 'non_sauvegardee', reason: 'copie_non_restaurable' });
   });
 
   it('[R230] un compte rendu non écrit : le travail échoue, même si la copie est rangée', async () => {
@@ -213,6 +230,16 @@ describe('SV02 · le travail de nuit', () => {
   it('[R230] la photo n’en sort jamais et est détruite, même après un échec', () => {
     expect(yml).not.toMatch(/upload-artifact|actions\/cache@|cat .*photo/);
     expect(yml).toMatch(/if: always\(\)\s+run: rm -f "\$RUNNER_TEMP\/photo\.sql"/);
+  });
+
+  it('[R230] le lien de téléchargement que donne wrangler ne va jamais au journal du travail', () => {
+    expect(yml).toMatch(/d1 export aimmo --remote --output "\$RUNNER_TEMP\/photo\.sql\.part" >\/dev\/null 2>&1/);
+    expect(yml.match(/d1 export/g)).toHaveLength(1);
+  });
+
+  it('[R230] une photo coupée par une panne n’a jamais le nom de la photo ; les deux fichiers sont détruits', () => {
+    expect(yml).toMatch(/>\/dev\/null 2>&1; then\s+mv "\$RUNNER_TEMP\/photo\.sql\.part" "\$RUNNER_TEMP\/photo\.sql"/);
+    expect(yml).toContain('rm -f "$RUNNER_TEMP/photo.sql" "$RUNNER_TEMP/photo.sql.part"');
   });
 
   it('[R230] une photo ratée laisse dire « non sauvegardé » ; la copie, elle, ne cache pas son échec', () => {

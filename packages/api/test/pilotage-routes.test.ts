@@ -119,9 +119,20 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     // SV02 : la copie de nuit, pour la direction seule ; aucune copie : « jamais », jamais à jour.
     const copies = await t.call(t.direction, 'GET', '/pilotage/copies');
     expect(copies.status).toBe(200);
-    expect(copies.body).toMatchObject({ ok: true, data: { state: 'jamais', lastSuccessAt: null, keepDays: 30 } });
+    expect(copies.body).toMatchObject({ ok: true, data: { state: 'jamais', lastSuccessAt: null } });
+    expect(JSON.stringify(copies.body)).not.toMatch(/keepDays|gardée/);
     expect((await t.call(t.agent, 'GET', '/pilotage/copies')).status).toBe(403);
     expect((await t.call(t.compliance, 'GET', '/pilotage/copies')).status).toBe(403);
+  });
+
+  it('[R230] le passage du planificateur porte bien la surveillance : une nuit sans copie se lit à l’écran', async () => {
+    const t = await setup();
+    const job = pilotageJobs(t.db, t.journal, { now: t.now }).find((j) => j.name === 'sauvegarde.surveillance')!;
+    expect(job).toBeDefined();
+    await job.run({ job: job.name, slot: t.now().toISOString().slice(0, 13), at: t.now() });
+    const nights = await t.db.all<{ night: string }>('SELECT night FROM base_copy_alerts');
+    expect(nights).toHaveLength(1);
+    expect((await t.call(t.direction, 'GET', '/pilotage/copies')).body).toMatchObject({ data: { state: 'jamais', missedNights: [nights[0]!.night] } });
   });
 
   it('[R67] aucune route ne reçoit un montant : la commission vient du mandat, par le passage horaire', async () => {

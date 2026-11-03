@@ -576,14 +576,13 @@ globalThis.AIMMO_FINANCES = function (t) {
       return monthName(month) + '.' + (v.connected ? '' : ' Non mesuré : aucune supervision n’est branchée.');
     });
   }
-  var COPY_WHY = { cle_absente: 'la clé de chiffrement manque', cle_invalide: 'la clé de chiffrement est mauvaise', stockage_absent: 'le stockage n’est pas réglé', photo_absente: 'la photo de la base a manqué', photo_vide: 'la photo de la base était vide', stockage_en_panne: 'le stockage n’a pas répondu', copie_echouee: 'la copie a échoué' };
+  var COPY_WHY = { cle_absente: 'la clé de chiffrement manque', cle_invalide: 'la clé de chiffrement est mauvaise', stockage_absent: 'le stockage n’est pas réglé', photo_absente: 'la photo de la base a manqué', photo_vide: 'la photo de la base était vide', stockage_en_panne: 'le stockage n’a pas répondu', copie_non_restaurable: 'la copie ne se restaurait pas à l’identique', copie_echouee: 'la copie a échoué' };
   function copyDay(iso) { return new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
   function copies() {
     return readBlock('copies', '/v1/pilotage/copies', function (v, body) {
       var ul = el('ul', null, 'liste');
       if (v.lastFailure) ul.appendChild(el('li', 'Dernier essai, le ' + copyDay(v.lastFailure.at) + ' : ' + (COPY_WHY[v.lastFailure.reason] || 'il a échoué') + '.'));
       if (v.missedNights.length) ul.appendChild(el('li', 'Nuits sans copie : ' + v.missedNights.map(day).join(', ') + '.'));
-      if (v.state !== 'jamais') ul.appendChild(el('li', 'Chaque copie est gardée ' + Number(v.keepDays) + ' jours.'));
       if (ul.children.length) body.appendChild(ul);
       if (v.state === 'jamais') return 'Non sauvegardé : aucune copie réussie à ce jour.';
       var last = 'Dernière copie réussie : le ' + copyDay(v.lastSuccessAt) + '.';

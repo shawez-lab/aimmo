@@ -61,7 +61,13 @@ jobs:
           AIMMO_ID: ${{ steps.base.outputs.aimmo }}
         run: |
           sed -i "s/00000000-0000-0000-0000-000000000000/$AIMMO_ID/" wrangler.toml
-          npx -y "$WRANGLER" d1 export aimmo --remote --output "$RUNNER_TEMP/photo.sql"
+          # La sortie de wrangler reste muette : elle donne un lien de téléchargement de toute la base, valable une heure.
+          # Une photo n'a son nom qu'une fois finie : un fichier coupé par une panne n'est jamais chargé.
+          if npx -y "$WRANGLER" d1 export aimmo --remote --output "$RUNNER_TEMP/photo.sql.part" >/dev/null 2>&1; then
+            mv "$RUNNER_TEMP/photo.sql.part" "$RUNNER_TEMP/photo.sql"
+          else
+            echo "::warning::Photo de la base ratée."
+          fi
       - name: Copie chiffrée et compte rendu
         env:
           COPIE_BASE_AIMMO: ${{ steps.base.outputs.aimmo }}
@@ -73,4 +79,4 @@ jobs:
         run: node --experimental-transform-types --no-warnings packages/api/outils/copie-nuit.ts
       - name: Photo détruite
         if: always()
-        run: rm -f "$RUNNER_TEMP/photo.sql"
+        run: rm -f "$RUNNER_TEMP/photo.sql" "$RUNNER_TEMP/photo.sql.part"

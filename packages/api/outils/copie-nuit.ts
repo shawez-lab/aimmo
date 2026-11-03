@@ -2,7 +2,7 @@
  * « Copie de nuit » (SV02), lancé par le travail GitHub du même nom, jamais par le Worker [R224, R230].
  *
  * Le travail photographie la base (`wrangler d1 export`), puis ce programme charge la photo dans une base SQLite neuve,
- * y prend la copie chiffrée, la range dans le compartiment, vérifie que le sommaire s'y relit, et écrit le compte rendu
+ * y prend la copie chiffrée, la range dans le compartiment, la restaure depuis lui dans une base jetable, et écrit le compte rendu
  * dans la base `aimmo`. Tout ce qui manque ou casse se dit « non sauvegardé », avec un code, jamais un faux succès.
  *
  * L'instant de la copie est celui d'avant la photo, donné par le travail : rien de plus récent n'y est, et le rejeu
@@ -15,9 +15,9 @@ import {
   CopieBase,
   copyKeyFromSecret,
   fromSyncSqlite,
-  manifestPlace,
   MemoryJournalStore,
   recordCopyRun,
+  restoreCopy,
   type CopyFailure,
   type CopyKey,
   type CopyRun,
@@ -37,6 +37,8 @@ export interface NightlyInput {
   /** La photo chargée ; `null` si elle manque ou ne se charge pas. */
   snapshot: () => Promise<SqlDatabase | null>;
   startedAt: string;
+  /** Une base neuve et jetable, où la copie prouve qu'elle se restaure. */
+  fresh: () => SqlDatabase;
   record: (run: CopyRun) => Promise<void>;
   now?: () => Date;
 }
@@ -59,8 +61,9 @@ async function attempt(input: NightlyInput): Promise<Attempt> {
     // Le journal de la photo reste celui de la photo : la copie n'y écrit rien.
     const receipt = await new CopieBase(snapshot, new MemoryJournalStore(), input.store, key, { now: () => new Date(input.startedAt) }).take();
     if (receipt.rows === 0) return no('photo_vide');
-    // Un stockage qui répond oui sans ranger ne fait pas une copie.
-    if (!(await input.store.get(manifestPlace(receipt.copyId)))) return no('stockage_en_panne');
+    // « Copiée » ne se dit qu'après une vraie restauration, relue depuis le stockage : un sommaire présent ne prouve rien.
+    const proof = await restoreCopy(input.fresh(), input.store, key, receipt.copyId);
+    if (!proof.ok) return no(proof.code === 'manifest_missing' || proof.code === 'part_missing' ? 'stockage_en_panne' : 'copie_non_restaurable');
     return { outcome: 'copiee', copyId: receipt.copyId, tables: receipt.tables, rows: receipt.rows, parts: receipt.parts };
   } catch (error) {
     return no(error instanceof CopyStoreError ? 'stockage_en_panne' : 'copie_echouee');
@@ -127,6 +130,7 @@ async function main(env: Record<string, string | undefined>, out: (text: string)
       store: storeFromEnv(env),
       snapshot: async () => loadSnapshot(env['COPIE_PHOTO'] ?? '', () => new DatabaseSync(':memory:')),
       startedAt,
+      fresh: () => fromSyncSqlite(new DatabaseSync(':memory:')),
       record: (run) => recordCopyRun(aimmo, run),
     },
     out,

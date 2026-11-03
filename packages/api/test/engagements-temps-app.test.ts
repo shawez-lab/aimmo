@@ -63,7 +63,7 @@ async function run(role: 'agent' | 'direction', answers: Record<string, Answer> 
     [ENG]: ok(PROMISES),
     [NET]: ok({ week: WEEK, declared: 2, notDeclared: 1, minutes: 150, withoutGesture: 1 }),
     [DISPO]: ok(NOT_CONNECTED),
-    [COPIES]: ok({ state: 'jamais', lastSuccessAt: null, lastFailure: null, missedNights: [], keepDays: 30 }),
+    [COPIES]: ok({ state: 'jamais', lastSuccessAt: null, lastFailure: null, missedNights: [] }),
     [MINE]: ok({ week: WEEK, minutes: null, version: null, gestures: 4 }),
     ...answers,
   };
@@ -139,11 +139,11 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
   it('[R230] sans copie : « non sauvegardé » ; à jour : la date ; une nuit manquée et sa raison se lisent ; une panne de lecture ne dit jamais « à jour »', async () => {
     const never = await run('direction');
     expect(never.state('copies')).toBe('Non sauvegardé : aucune copie réussie à ce jour.');
-    const fresh = await run('direction', { [COPIES]: ok({ state: 'a_jour', lastSuccessAt: '2027-03-03T01:23:00.000Z', lastFailure: null, missedNights: [], keepDays: 30 }) });
+    const fresh = await run('direction', { [COPIES]: ok({ state: 'a_jour', lastSuccessAt: '2027-03-03T01:23:00.000Z', lastFailure: null, missedNights: [] }) });
     expect(fresh.state('copies')).toMatch(/^Dernière copie réussie : le 3 mars 2027/);
     expect(fresh.state('copies')).toContain('02:23');
-    expect(fresh.texts('copies')).toContain('gardée 30 jours');
-    const late = await run('direction', { [COPIES]: ok({ state: 'en_retard', lastSuccessAt: '2027-03-01T01:23:00.000Z', lastFailure: { at: '2027-03-03T01:23:00.000Z', reason: 'cle_absente' }, missedNights: ['2027-03-03', '2027-03-02'], keepDays: 30 }) });
+    expect(fresh.texts('copies')).not.toContain('gardée');
+    const late = await run('direction', { [COPIES]: ok({ state: 'en_retard', lastSuccessAt: '2027-03-01T01:23:00.000Z', lastFailure: { at: '2027-03-03T01:23:00.000Z', reason: 'cle_absente' }, missedNights: ['2027-03-03', '2027-03-02'] }) });
     expect(late.state('copies')).toMatch(/^Non sauvegardé la nuit dernière\. Dernière copie réussie : le 1 mars 2027|^Non sauvegardé la nuit dernière\. Dernière copie réussie : le 1er mars 2027/);
     expect(late.texts('copies')).toContain('la clé de chiffrement manque');
     expect(late.texts('copies')).toContain('Nuits sans copie : 03/03/2027, 02/03/2027.');

@@ -22,7 +22,7 @@ describeWithSqlite('SV02 · la copie de chaque nuit, vue par la direction', () =
   it('[R230] sans aucune copie : « jamais », et jamais un faux succès', async () => {
     const t = await world();
     clock = new Date('2027-03-10T10:00:00.000Z');
-    expect(await t.suivi.status(direction)).toEqual({ ok: true, value: { state: 'jamais', lastSuccessAt: null, lastFailure: null, missedNights: [], keepDays: COPY_KEEP_DAYS } });
+    expect(await t.suivi.status(direction)).toEqual({ ok: true, value: { state: 'jamais', lastSuccessAt: null, lastFailure: null, missedNights: [] } });
   });
 
   it('[R230] un échec rapporté ne compte jamais comme une copie, et sa raison se lit', async () => {
@@ -86,6 +86,19 @@ describeWithSqlite('SV02 · la copie de chaque nuit, vue par la direction', () =
     const logged = JSON.stringify(await t.journal.all());
     expect(logged).toContain('sauvegarde.surveillance');
     expect(logged).not.toContain('panne inventée');
+  });
+
+  it('[R230] le passage de 6 h tombe en panne : celui de 7 h lève l’alerte, une seule', async () => {
+    const t = await world();
+    const broken: SqlDatabase = { ...t.db, first: async () => { throw new Error('panne inventée'); } };
+    clock = new Date('2027-03-10T05:00:00.000Z');
+    expect((await new Planificateur(t.db, t.journal, [copyWatchJob(broken, t.journal, { now })], { now }).tick()).failed).toEqual(['sauvegarde.surveillance']);
+    expect(await t.db.all('SELECT night FROM base_copy_alerts')).toEqual([]);
+    clock = new Date('2027-03-10T06:00:00.000Z');
+    expect((await new Planificateur(t.db, t.journal, [copyWatchJob(t.db, t.journal, { now })], { now }).tick()).ran).toEqual(['sauvegarde.surveillance']);
+    clock = new Date('2027-03-10T07:00:00.000Z');
+    await new Planificateur(t.db, t.journal, [copyWatchJob(t.db, t.journal, { now })], { now }).tick();
+    expect(await t.db.all('SELECT night FROM base_copy_alerts')).toEqual([{ night: '2027-03-10' }]);
   });
 
   it('[R16] seule la direction lit l’état des copies ; un refus va au journal', async () => {

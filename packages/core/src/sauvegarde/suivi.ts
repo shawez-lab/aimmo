@@ -23,7 +23,7 @@ export const COPY_WATCH_JOB = 'sauvegarde.surveillance';
 const WATCH_HOUR = 6;
 const SHOWN_NIGHTS = 7;
 
-export const COPY_FAILURES = ['cle_absente', 'cle_invalide', 'stockage_absent', 'photo_absente', 'photo_vide', 'stockage_en_panne', 'copie_echouee'] as const;
+export const COPY_FAILURES = ['cle_absente', 'cle_invalide', 'stockage_absent', 'photo_absente', 'photo_vide', 'stockage_en_panne', 'copie_non_restaurable', 'copie_echouee'] as const;
 export type CopyFailure = (typeof COPY_FAILURES)[number];
 
 export type CopyRun =
@@ -57,7 +57,6 @@ export interface CopyStatus {
   lastFailure: { at: string; reason: CopyFailure } | null;
   /** Les dernières nuits sans copie, la plus récente d'abord. */
   missedNights: string[];
-  keepDays: number;
 }
 
 export class SuiviCopies {
@@ -92,7 +91,7 @@ export class SuiviCopies {
     const nights = await this.db.all<{ night: string }>('SELECT night FROM base_copy_alerts ORDER BY night DESC LIMIT ?', [SHOWN_NIGHTS]);
     const state: CopyState = lastSuccessAt === null ? 'jamais' : lastSuccessAt >= copyWindowStart(this.now()).toISOString() ? 'a_jour' : 'en_retard';
     await appendEvent(this.journal, { type: 'pilotage.lecture', actor, subject, data: { kind: 'base_copies' } }, this.now);
-    return { ok: true, value: { state, lastSuccessAt, lastFailure: failure ?? null, missedNights: nights.map((n) => n.night), keepDays: COPY_KEEP_DAYS } };
+    return { ok: true, value: { state, lastSuccessAt, lastFailure: failure ?? null, missedNights: nights.map((n) => n.night) } };
   }
 
   /** Une nuit sans copie réussie donne une alerte, une seule. Rend vrai si elle vient d'être levée. */
