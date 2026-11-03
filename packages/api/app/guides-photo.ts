@@ -60,10 +60,10 @@ globalThis.AIMMO_GUIDES_PHOTO = function (t) {
   var LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Relisez la liste : un guide validé n’y est plus, et le valider de nouveau ne range rien de plus.';
   var turn = 0, busy = false;
   function state(text) { $('guides-photo-etat').textContent = text; }
-  function show(message) {
+  function show(message, after) {
     var at = ++turn, mine = t.session();
     if (!message) state('Chargement…');
-    return send('/v1/studio/guides-a-valider', 'GET').then(function (res) {
+    return send('/v1/studio/guides-a-valider' + (after ? '?apres=' + encodeURIComponent(after) : ''), 'GET').then(function (res) {
       if (res.gone || at !== turn || mine !== t.session()) return false;
       var d = res.ok && res.body.data;
       if (!d || !Array.isArray(d.items)) {
@@ -73,7 +73,7 @@ globalThis.AIMMO_GUIDES_PHOTO = function (t) {
       }
       var corps = $('guides-photo-corps');
       clear(corps);
-      if (!d.items.length) corps.appendChild(el('p', 'Aucun guide à valider.', 'doux'));
+      if (!d.items.length) corps.appendChild(el('p', d.next ? 'Aucun guide à valider parmi ces biens.' : 'Aucun guide à valider.', 'doux'));
       var ul = el('ul', null, 'liste');
       d.items.forEach(function (g) {
         var li = el('li');
@@ -83,7 +83,7 @@ globalThis.AIMMO_GUIDES_PHOTO = function (t) {
         ul.appendChild(li);
       });
       if (d.items.length) corps.appendChild(ul);
-      if (d.more) corps.appendChild(el('p', 'D’autres biens restent à regarder : validez ceux-ci, puis relisez la liste.', 'doux'));
+      if (d.next) corps.appendChild(button('Voir les biens suivants', function () { show('', d.next); }));
       state(message || '');
       return true;
     });

@@ -210,34 +210,40 @@ export class GuidePriseDeVue {
   }
 
   /**
-   * Les guides prêts et pas encore validés, le plus ancien d'abord, pour la direction de ce réseau [R16]. Seuls les biens
-   * les plus récemment photographiés sont regardés, à chaque lecture : la réponse dit quand il en reste d'autres, et la
-   * lecture de chaque bien montré va au journal. L'état de chaque guide est recalculé : une validation dont les photos
-   * ou les vues ont changé ne vaut plus, et le bien revient ici.
+   * Les guides prêts et pas encore validés, le plus ancien d'abord, pour la direction de ce réseau [R16]. Un guide validé
+   * garde sa place dans le parcours, et le prêt ne se lit qu'en le recalculant : une validation dont les photos ou les vues
+   * ont changé ne vaut plus. La lecture regarde donc un nombre borné de biens et rend `next`, d'où reprendre, tant qu'il en
+   * reste à regarder : aucun bien n'est hors d'atteinte. La lecture de chaque bien montré va au journal.
    */
-  async toValidate(viewer: Viewer): Promise<GuideResult<{ items: GuideToValidate[]; more: boolean }>> {
+  async toValidate(viewer: Viewer, after: string | null = null): Promise<GuideResult<{ items: GuideToValidate[]; next: string | null }>> {
     if (viewer.role !== 'direction') return this.refused(viewer, '*', 'role');
+    let from: [string, string] | null = null;
+    if (after !== null) {
+      const cut = after.indexOf('|');
+      if (cut < 1 || after.length > 120) return { ok: false, rule: 'R10', code: 'bad_cursor' };
+      from = [after.slice(0, cut), after.slice(cut + 1)];
+    }
     const rows = await this.db.all<PropertyRow & { reference: string; city: string | null; last_shot: string }>(
       `SELECT p.id, p.network_id, p.kind, p.rooms, p.reference, p.city, MAX(s.recorded_at) AS last_shot
        FROM photo_guide_shots s JOIN properties p ON p.id = s.property_id AND p.network_id = s.network_id
        WHERE s.network_id = ? AND p.status IN ('draft', 'available', 'under_offer')
        GROUP BY p.id, p.network_id, p.kind, p.rooms, p.reference, p.city
-       ORDER BY last_shot DESC, p.id LIMIT ?`,
-      [viewer.networkId, TO_VALIDATE_SCAN + 1],
+       ${from ? 'HAVING MAX(s.recorded_at) > ? OR (MAX(s.recorded_at) = ? AND p.id > ?)' : ''}
+       ORDER BY last_shot, p.id LIMIT ?`,
+      [viewer.networkId, ...(from ? [from[0], from[0], from[1]] : []), TO_VALIDATE_SCAN + 1],
     );
-    const ready: { row: (typeof rows)[number]; state: GuideProgress }[] = [];
-    for (const row of rows.slice(0, TO_VALIDATE_SCAN)) {
-      const state = await this.state(row);
-      if (state.ready && !state.validated) ready.push({ row, state });
-    }
-    ready.sort((a, b) => a.row.last_shot.localeCompare(b.row.last_shot) || a.row.id.localeCompare(b.row.id));
     const items: GuideToValidate[] = [];
-    for (const { row, state } of ready.slice(0, TO_VALIDATE_SHOWN)) {
+    let looked = 0;
+    for (const row of rows.slice(0, TO_VALIDATE_SCAN)) {
+      if (items.length === TO_VALIDATE_SHOWN) break;
+      looked += 1;
+      const state = await this.state(row);
+      if (!state.ready || state.validated) continue;
       const seen = await this.full(viewer, row.id);
-      if (!seen.ok) continue;
-      items.push({ propertyId: row.id, reference: row.reference, city: row.city, views: state.views.filter((v) => v.mediaRef !== null).map((v) => v.label) });
+      if (seen.ok) items.push({ propertyId: row.id, reference: row.reference, city: row.city, views: state.views.filter((v) => v.mediaRef !== null).map((v) => v.label) });
     }
-    return { ok: true, value: { items, more: rows.length > TO_VALIDATE_SCAN || ready.length > TO_VALIDATE_SHOWN } };
+    const last = rows[looked - 1];
+    return { ok: true, value: { items, next: looked < rows.length && last ? `${last.last_shot}|${last.id}` : null } };
   }
 
   private async state(p: PropertyRow): Promise<GuideProgress> {

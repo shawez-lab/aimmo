@@ -66,7 +66,7 @@ async function setup() {
     ]);
   await sheet(1, photos);
   const as = (role: 'agent' | 'direction' | 'compliance', userId: string) => ({ role, userId, networkId: network.id });
-  return { db, journal, acces, guide, network, alex, sam, p, photos, sheet, as };
+  return { db, journal, acces, guide, store, network, alex, sam, p, photos, sheet, as };
 }
 
 describeWithSqlite('X01 · guide de prise de vue', () => {
@@ -178,14 +178,14 @@ describeWithSqlite('X01 · guide de prise de vue', () => {
     it('[R16] la direction d’un autre réseau ne voit rien', async () => {
       const t = await setup();
       await fill(t);
-      expect(await t.guide.toValidate({ role: 'direction', userId: 'd', networkId: crypto.randomUUID() })).toEqual({ ok: true, value: { items: [], more: false } });
+      expect(await t.guide.toValidate({ role: 'direction', userId: 'd', networkId: crypto.randomUUID() })).toEqual({ ok: true, value: { items: [], next: null } });
     });
 
     it('[R10] un guide incomplet n’y est pas ; prêt il y est, avec ses vues et sans aucune photo ni personne', async () => {
       const t = await setup();
       const direction = t.as('direction', 'd');
       await t.guide.recordShot(t.as('agent', t.alex.id), t.p.id, { viewKey: 'entree', mediaRef: t.photos[0]!.ref });
-      expect(await t.guide.toValidate(direction)).toEqual({ ok: true, value: { items: [], more: false } });
+      expect(await t.guide.toValidate(direction)).toEqual({ ok: true, value: { items: [], next: null } });
       await fill(t);
       const r = await t.guide.toValidate(direction);
       if (!r.ok) throw new Error(r.code);
@@ -203,7 +203,7 @@ describeWithSqlite('X01 · guide de prise de vue', () => {
       expect(await t.guide.validate(direction, t.p.id)).toMatchObject({ ok: true });
       expect(await t.guide.validate(direction, t.p.id)).toMatchObject({ ok: true });
       expect(await t.db.all('SELECT id FROM photo_guide_validations')).toHaveLength(1);
-      expect(await t.guide.toValidate(direction)).toEqual({ ok: true, value: { items: [], more: false } });
+      expect(await t.guide.toValidate(direction)).toEqual({ ok: true, value: { items: [], next: null } });
       // La fiche perd sa chambre : la vue disparaît sans nouvelle photo, et l'ancienne validation ne vaut plus.
       await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('s-2', ?, ?, 2, ?, 'agent:a', '2027-10-02')", [
         t.p.id,
@@ -216,6 +216,70 @@ describeWithSqlite('X01 · guide de prise de vue', () => {
       expect(await t.db.all('SELECT id FROM photo_guide_validations')).toHaveLength(1);
     });
 
+    it('[R17] une photo changée après la validation ramène le guide, et la nouvelle validation s’ajoute', async () => {
+      const t = await setup();
+      const direction = t.as('direction', 'd');
+      await fill(t);
+      await t.guide.validate(direction, t.p.id);
+      await t.sheet(2, t.photos.slice(1));
+      expect(await t.guide.toValidate(direction)).toEqual({ ok: true, value: { items: [], next: null } });
+      expect(await t.guide.recordShot(t.as('agent', t.alex.id), t.p.id, { viewKey: 'entree', mediaRef: t.photos[6]!.ref })).toMatchObject({ ok: true });
+      const back = await t.guide.toValidate(direction);
+      if (!back.ok) throw new Error(back.code);
+      expect(back.value.items.map((i) => i.propertyId)).toEqual([t.p.id]);
+      await t.guide.validate(direction, t.p.id);
+      expect(await t.db.all('SELECT id FROM photo_guide_validations')).toHaveLength(2);
+    });
+
+    it('un bien ancien derrière plus de biens validés que la lecture n’en regarde est atteint par le curseur ; plus de 50 prêts aussi', async () => {
+      const t = await setup();
+      const direction = t.as('direction', 'd');
+      const media = (id: string) => [1, 2, 3, 4, 5, 6, 7].map((n) => ({ ref: ref(id, n), kind: 'photo', edit: 'aucune' }));
+      const ready = async (i: number, validated: boolean) => {
+        const p = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: `L-${i}`, kind: 'home', city: 'X', priceEur: 200_000, surfaceM2: 70, rooms: 3, status: 'available' });
+        await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, 'agent:a', '2027-10-01')", [
+          `s-l-${i}`,
+          p.id,
+          t.network.id,
+          JSON.stringify({ characteristics: { bedrooms: 1, outdoor: ['jardin'], parkingSpaces: 0 }, energy: null, coownership: null, risks: null, media: media(p.id) }),
+        ]);
+        for (const [k, viewKey] of VIEWS.entries()) await t.guide.recordShot(direction, p.id, { viewKey, mediaRef: ref(p.id, k + 1) });
+        if (validated) await t.guide.validate(direction, p.id);
+        return p.id;
+      };
+      // 201 validés d'abord, puis un seul à valider : il est derrière la première page.
+      for (let i = 0; i < 201; i += 1) await ready(i, true);
+      const last = await ready(1000, false);
+      const first = await t.guide.toValidate(direction);
+      if (!first.ok) throw new Error(first.code);
+      expect(first.value.items).toEqual([]);
+      expect(first.value.next).not.toBeNull();
+      const second = await t.guide.toValidate(direction, first.value.next);
+      if (!second.ok) throw new Error(second.code);
+      expect(second.value.items.map((i) => i.propertyId)).toEqual([last]);
+      expect(second.value.next).toBeNull();
+      // Plus de 50 prêts : 50 par page, sans en perdre un.
+      const ids = new Set([last]);
+      for (let i = 2000; i < 2055; i += 1) ids.add(await ready(i, false));
+      const seen = new Set<string>();
+      let cursor: string | null = null;
+      for (let n = 0; n < 5; n += 1) {
+        const page = await t.guide.toValidate(direction, cursor);
+        if (!page.ok) throw new Error(page.code);
+        expect(page.value.items.length).toBeLessThanOrEqual(50);
+        page.value.items.forEach((i) => seen.add(i.propertyId));
+        cursor = page.value.next;
+        if (!cursor) break;
+      }
+      expect(cursor).toBeNull();
+      expect(seen).toEqual(ids);
+    }, 120_000);
+
+    it('un curseur illisible est refusé', async () => {
+      const t = await setup();
+      expect(await t.guide.toValidate(t.as('direction', 'd'), 'sans-separateur')).toMatchObject({ ok: false, code: 'bad_cursor' });
+    });
+
     it('[R16] un bien vendu ou retiré n’attend plus de validation, et le bien montré est écrit au journal', async () => {
       const t = await setup();
       const direction = t.as('direction', 'd');
@@ -224,7 +288,7 @@ describeWithSqlite('X01 · guide de prise de vue', () => {
       const read = await t.db.all("SELECT type FROM journal WHERE type = 'bien.lu' AND subject = ?", [`property:${t.p.id}`]);
       expect(read.length).toBeGreaterThan(0);
       await t.db.run("UPDATE properties SET status = 'sold' WHERE id = ?", [t.p.id]);
-      expect(await t.guide.toValidate(direction)).toEqual({ ok: true, value: { items: [], more: false } });
+      expect(await t.guide.toValidate(direction)).toEqual({ ok: true, value: { items: [], next: null } });
     });
   });
 });

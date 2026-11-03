@@ -16,13 +16,13 @@ const ok = (data: unknown): Answer => async () => Response.json({ ok: true, mode
 const no = (status: number, code: string, rule: string | null = null): Answer => async () => Response.json({ ok: false, rule, code }, { status });
 const offline: Answer = () => Promise.reject(new TypeError('hors ligne'));
 const INJECTED = '<img src=x onerror=alert(1)>';
-const ONE = { items: [{ propertyId: 'b-1', reference: 'REF-1', city: 'Villebrune', views: ['Entrée', 'Séjour'] }], more: false };
-const NONE = { items: [], more: false };
+const ONE = { items: [{ propertyId: 'b-1', reference: 'REF-1', city: 'Villebrune', views: ['Entrée', 'Séjour'] }], next: null };
+const NONE = { items: [], next: null };
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
-async function run(lists: Answer[] = [ok(ONE)], posts: Answer[] = []) {
+async function run(lists: Answer[] = [ok(ONE)], posts: Answer[] = [], nexts: Answer[] = []) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   const calls: { method: string; url: string }[] = [];
@@ -33,6 +33,7 @@ async function run(lists: Answer[] = [ok(ONE)], posts: Answer[] = []) {
       const method = init.method ?? 'GET';
       calls.push({ method, url });
       if (url === '/v1/moi') return ok({ role: 'direction', firstName: null })();
+      if (url.startsWith(`${LIST}?`)) return (nexts.shift() ?? offline)();
       if (url === LIST) return (lists.length > 1 ? lists.shift()! : lists[0] ?? offline)();
       if (url === VALIDATE) return (posts.shift() ?? offline)();
       return offline();
@@ -81,15 +82,25 @@ describe('X23 · les guides photo à valider', () => {
   });
 
   it('la liste dit le bien et ses vues, en texte ; vide, elle le dit ; le reste à regarder aussi', async () => {
-    const t = await run([ok({ items: [{ propertyId: 'b-1', reference: INJECTED, city: null, views: ['Entrée'] }], more: true })]);
+    const t = await run([ok({ items: [{ propertyId: 'b-1', reference: INJECTED, city: null, views: ['Entrée'] }], next: null })]);
     await t.open();
     expect(t.texts()).toContain(INJECTED);
     expect(t.texts()).toContain('1 photo(s) retenue(s) : Entrée.');
-    expect(t.texts()).toContain('D’autres biens restent à regarder');
     const vide = await run([ok(NONE)]);
     await vide.open();
     expect(vide.texts()).toContain('Aucun guide à valider.');
     expect(vide.buttons()).toHaveLength(0);
+  });
+
+  it('une page sans guide n’enferme pas : les biens suivants se lisent, avec le curseur rendu', async () => {
+    const t = await run([ok({ items: [], next: '2027-01-01T00:00:00.000Z|b-9' })], [], [ok(ONE)]);
+    await t.open();
+    expect(t.texts()).toContain('Aucun guide à valider parmi ces biens.');
+    const more = t.els['guides-photo-corps']!.all().find((e) => e.textContent === 'Voir les biens suivants')!;
+    more.listeners.click!({});
+    await settle();
+    expect(t.calls.map((c) => c.url)).toContain(`${LIST}?apres=2027-01-01T00%3A00%3A00.000Z%7Cb-9`);
+    expect(t.buttons()).toHaveLength(1);
   });
 
   it('[R17] valider part une fois, sans corps, puis la liste est relue', async () => {
