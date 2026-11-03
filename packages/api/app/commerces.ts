@@ -17,7 +17,7 @@ import { OFFER_DEPOSIT_MAX_BYTES, OFFER_DEPOSIT_TYPES } from '../../core/src/off
  * personne ne saisit d'identifiant ni de référence.
  *
  * CE14 : les gestes des demandes et de l'engagement sont servis à part (`commerces-engagements.ts`) ; CE15 : les
- * repreneurs de même (`commerces-repreneurs.ts`).
+ * repreneurs de même (`commerces-repreneurs.ts`), la correction de la présentation aussi (`commerces-textes.ts`).
  */
 
 const STEP_LABELS = {
@@ -480,7 +480,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       var d = all.map(function (x) { return x.ok ? x.body.data : null; });
       ceFiche(d[0], all[3].ok ? base : null);
       ceEstimation(base, kind, Array.isArray(d[1]) ? d[1] : []);
-      cePresentation(base, d[2]);
+      cePresentation(base, d[2], all[3].ok);
       if (all[3].ok) ceDemandes(base, Array.isArray(d[3]) ? d[3] : []);
       ceOuvertures(Array.isArray(d[4]) ? d[4] : [], all[3].ok ? base : null, Array.isArray(d[3]) ? d[3] : []);
       /* Seul un refus dit qu'on ne peut pas écrire : une lecture manquée ne retire pas les gestes en silence. */
@@ -523,7 +523,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       });
     }));
   }
-  function cePresentation(base, p) {
+  function cePresentation(base, p, writable) {
     var b = ceBlock('Présentation anonyme');
     if (p) {
       b.appendChild(el('strong', p.title));
@@ -532,6 +532,10 @@ globalThis.AIMMO_COMMERCES = function (t) {
       if (!p.validated && ID.test(p.id)) b.appendChild(button('Valider la présentation', function () { ceAct('/v1/commerces/presentations/' + encodeURIComponent(p.id) + '/validation', undefined, 'La présentation n’est pas validée : préparez-en une nouvelle.', 'Présentation validée.'); }));
     }
     b.appendChild(button(p ? 'Préparer une nouvelle présentation' : 'Préparer la présentation', function () { ceAct(base + '/presentations', undefined, 'Il faut d’abord une estimation validée.', 'Présentation préparée : relisez-la avant de la valider.'); }));
+    if (!p || !writable) return;
+    var box = el('div');
+    b.appendChild(box);
+    box.appendChild(button('Corriger le texte', function () { ceLoad('commerces-textes', 'AIMMO_CE_TEXTES', function (e) { e.fix(box, base, p); }); }));
   }
   /* Les demandes et l'engagement (CE14), les repreneurs (CE15) : servis à part, chargés au premier geste [R201]. */
   function ceLoad(name, global, act) {

@@ -1911,13 +1911,22 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - À savoir (lu le 2026-11-03) : la route exige l'en-tête `Idempotency-Key`, que `send` de l'application ne sait pas poser : `api` et `send` sont à étendre ; elle crée une fiche et un accord par téléphone à partir d'une preuve [R03, R142] : relecture forte attentive ; bloc à poser sur la fiche, chargé au premier geste, sur le modèle de `app/fin-de-bail.ts`.
 - Attend : rien.
 
-### CE19 · Corriger la présentation d'un commerce et ranger un document du dossier, à l'écran
+### CE19 · Corriger la présentation d'un commerce, à l'écran
 - Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
-- Cahier : M16 ; R16, R201.
-- Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : `POST /v1/commerces/<id>/presentations/texte` et `POST /v1/commerces/<id>/documents` n'ont aucun appel de l'application. Vérifier que les gestes n'existent pas ailleurs, puis les donner dans `app/commerces*.ts`, sans toucher au socle.
-- Critères : seuls les rôles de la route agissent [R16] (test) ; un texte refusé reste à l'écran (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Cahier : M16 ; R16, R110, R201.
+- Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : `POST /v1/commerces/<id>/presentations/texte` n'a aucun appel de l'application. Le donner dans `app/commerces*.ts`, sans toucher au socle.
+- Décidé (2026-11-03) : tâche coupée en deux (`SECOURS.md`) : le document du dossier passe en CE20, car sa route attend une référence de stockage que personne ne peut produire aujourd'hui, un champ à taper aurait été une impasse. Script servi à part (`app/commerces-textes.ts`) : le script de l'écran passait au-dessus de son budget [R201].
+- Critères : seuls ceux qui écrivent ont le geste [R16] (test) ; texte en cours pré-rempli, sans changement rien ne part (test) ; un texte refusé reste à l'écran, chaque phrase en cause dite [R110] (test) ; présentation validée : l'annulation de la validation dite avant de ranger (test) ; chaque refus du socle dit en français (test) ; réponse perdue dite telle (test) ; un seul envoi à la fois (test) ; budget tenu [R201] (test).
 - Attend : rien.
+
+### CE20 · Ranger un document du dossier protégé, à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE05
+- Cahier : M16 ; R16, R113, R114, R201.
+- Objectif : `POST /v1/commerces/<id>/documents` n'a aucun appel de l'application, et attend une `storageRef` : `DossierStorage` ne sait que lire, le Worker n'a aucun stockage réel (H38), et rien n'empêche une référence de pointer vers le document d'un autre bien. Personne ne saisit de référence : donner un dépôt côté serveur, dans les fichiers de M16 (`core/commerces/dossier.ts`, `api/src/commerces.ts`), qui choisit lui-même la référence, derrière la même porte d'écriture ; sans stockage, le dire à l'écran, ne rien laisser croire rangé. Le branchement du Worker sur R2 reste une petite tâche à part de la voie 1, après H38. Lire d'abord CE05 dans le cahier pour savoir ce que le dossier sert (aujourd'hui du texte filigrané).
+- Critères : à préciser après lecture : seuls l'agent du bien et la direction déposent [R16] (test) ; une référence vers un autre bien refusée [R16] (test) ; sans stockage, c'est dit (test) ; réponse perdue dite telle, sans doublon (test) ; budget tenu [R201] (test).
+- Attend : H38 pour un usage réel, rien pour le code.
 
 **Espaces des clients et location : les gestes manquants à l'écran.**
 
