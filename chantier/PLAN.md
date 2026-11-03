@@ -1884,6 +1884,38 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Critères : dernière version pré-remplie, 0 reste 0, photos renvoyées telles quelles (test) ; champ vide = « je ne sais pas », nombre mal écrit nommé et non envoyé [R10] (test) ; sans changement, aucune version (test) ; fiche changée entre-temps : rien n'est écrasé, par `?siVersion=` (test) ; retrait dit avant d'enregistrer, annonce validée sur une ancienne fiche plus dite validée [R47] (test) ; droits refusés dits [R16] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
 - Reste : fusionnée (#321) ; relecture forte 2 P1 corrigés ; Codex à sa limite (H03).
 
+### X20 · La commune d'un bien pour le calcul investisseur, à l'écran
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : Y04
+- Cahier : M17 ; R122, R16, R201.
+- Objectif : `POST /v1/investir/biens/<id>/commune` n'a aucun appel de l'application, et `/v1/investir/biens` ne rend que les biens dont la commune est rangée : à l'écran, aucun bien n'est jamais calculable. Le donner dans `app/investir.ts`, sans toucher au socle.
+- Critères : seuls les biens de la personne et sans commune sont proposés (test) ; rien n'est choisi d'avance (test) ; rangée une fois, sans retour : c'est dit, en deux appuis (test) ; code mal écrit non envoyé (test) ; chaque refus du socle dit en français [R16] (test) ; réponse perdue dite telle (test) ; une liste non lue n'est jamais dite vide (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### X21 · La zone de loyer d'une commune, à l'écran du réseau
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : W03
+- Cahier : M15 ; R16, R10, R201.
+- Objectif : `POST /v1/location/zones` n'a aucun appel de l'application : sans lui, chaque commune reste « zone inconnue » et le plafond le plus bas s'applique. Vérifier que le geste n'existe pas ailleurs, puis le donner à la direction sur l'écran du réseau.
+- Critères : direction seule [R16] (test) ; source et date exigées [R10] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### X22 · Recommander un proche depuis la fiche, à l'écran
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : A07
+- Cahier : M11 ; R16, R201.
+- Objectif : `POST /v1/apres-vente/fiches/<id>/recommandations` n'a aucun appel de l'application. Vérifier d'abord à quoi sert cette route et si le geste existe sous une autre forme ; sinon le donner, avec sa clé d'idempotence.
+- Critères : à écrire après lecture de la route : droits refusés dits [R16] (test) ; réponse perdue dite telle, sans doublon (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### CE19 · Corriger la présentation d'un commerce et ranger un document du dossier, à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE11
+- Cahier : M16 ; R16, R201.
+- Objectif : trouvé le 2026-11-03 par la voie 1, même comparaison : `POST /v1/commerces/<id>/presentations/texte` et `POST /v1/commerces/<id>/documents` n'ont aucun appel de l'application. Vérifier que les gestes n'existent pas ailleurs, puis les donner dans `app/commerces*.ts`, sans toucher au socle.
+- Critères : seuls les rôles de la route agissent [R16] (test) ; un texte refusé reste à l'écran (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 **Espaces des clients et location : les gestes manquants à l'écran.**
 
 Voie : 2
