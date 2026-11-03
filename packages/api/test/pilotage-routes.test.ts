@@ -109,6 +109,13 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     expect((await t.call(t.agent, 'POST', '/pilotage/temps-gagne', { week: '2020-01-06', minutes: 90 })).body).toMatchObject({ ok: true, data: { minutes: 90, version: 1 } });
     expect((await t.call(t.agent, 'POST', '/pilotage/temps-gagne', { week: '2020-01-07', minutes: 90 })).status).toBe(400);
     expect((await t.call(t.agent, 'POST', '/pilotage/temps-gagne', { week: '2999-01-07', minutes: 90 })).status).toBe(409);
+    const disponibilite = await t.call(t.direction, 'GET', `/pilotage/disponibilite?${passe}`);
+    expect(disponibilite.status).toBe(200);
+    expect(disponibilite.body).toMatchObject({ ok: true, data: { connected: false, targetPercent: 99.9, services: [{ service: 'site', measured: false, reason: 'not_connected' }, { service: 'api', measured: false }, { service: 'application', measured: false }] } });
+    expect((await t.call(t.agent, 'GET', `/pilotage/disponibilite?${passe}`)).status).toBe(403);
+    expect((await t.call(t.compliance, 'GET', `/pilotage/disponibilite?${passe}`)).status).toBe(403);
+    expect((await t.call(t.direction, 'GET', '/pilotage/disponibilite?mois=2020-13')).status).toBe(400);
+    expect((await t.call(t.direction, 'GET', '/pilotage/disponibilite?mois=2999-01')).status).toBe(409);
   });
 
   it('[R67] aucune route ne reçoit un montant : la commission vient du mandat, par le passage horaire', async () => {
