@@ -1001,7 +1001,7 @@ describe('W11 · écran « Louer » de l’application', () => {
         await t.openL1();
         await t.openDossier(0);
         const text = t.body().textContent ?? '';
-        expect(text).toMatch(/Le candidat : identité vérifiée le /);
+        expect(text).toContain('Le candidat : identité vérifiée le 10/07/2027');
         expect(text).not.toContain('identité à vérifier');
         expect(t.byText('Déposer au coffre')).toBeUndefined();
         expect(text).not.toMatch(/Passeport|Carte d’identité|Empreinte/);
@@ -1032,6 +1032,19 @@ describe('W11 · écran « Louer » de l’application', () => {
         fill(t);
         await t.click(t.byText('Déposer au coffre'));
         expect(t.state()).toBe('Réponse perdue : la pièce est peut-être au coffre. Rouvrez le logement avant de recommencer.');
+      });
+
+      it('[R15] la pièce d’un garant part sur la fiche du garant ; le candidat vérifié n’est plus proposé', async () => {
+        const withGuarantor = [{ ...APPS[0]!, identityVerifiedOn: { candidat: '2027-07-10' }, guarantors: [{ guarantorId: 'g9', kind: 'personne', personId: 'personne-secrete-9' }] }, APPS[1]!, APPS[2]!];
+        const path = 'POST /v1/conformite/personnes/personne-secrete-9/coffre?sorte=passeport&verifie=2027-07-10';
+        const t = await run({ 'GET /v1/location/l1/candidatures': ok(withGuarantor), [path]: ok({}) });
+        await t.openL1();
+        await t.openDossier(0);
+        expect(t.body().textContent).toContain('Garant 1 : identité à vérifier');
+        expect(options(t, 'Pour qui')).toEqual(['Garant 1']);
+        fill(t);
+        await t.click(t.byText('Déposer au coffre'));
+        expect(t.posts().filter((c) => c.url.includes('/coffre')).map((c) => c.url)).toEqual(['/v1/conformite/personnes/personne-secrete-9/coffre?sorte=passeport&verifie=2027-07-10']);
       });
 
       it('[R201] le script du dossier tient toujours son budget', () => {

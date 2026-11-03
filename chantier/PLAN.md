@@ -1836,11 +1836,20 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Décidé (2026-11-03, voie 2) : aucun geste à l'écran pour un candidat, sauf le bloc de la fiche ; ajouté dans le dossier, par la route du coffre. Le critère disait « l'agent du bien ou la direction », mais le coffre écarte la direction, qui ne dépose jamais [R90] : lecture prudente, la direction lit le fait et la date, et son dépôt est refusé avec le texte dit.
 
 ### W22 · Le candidat passe par les mêmes droits que ses contacts
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Décidé (2026-11-03, voie 2) : fait dans la proposition de W21, qui sans cela donnait la date de vérification du client d'un autre agent.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W20
 - Cahier : M15 Louer ; R16, R105.
 - Objectif : trouvé par W20 : `apply` ne vérifie que le réseau, un appel direct range comme candidat le contact d'un autre agent, puis lit son identité vérifiée par `missing`. Appliquer les règles de `addableContacts`, comme pour le garant.
 - Critères : le contact d'un autre agent est refusé et le refus au journal [R16] (test) ; le bailleur est refusé (test) ; une fiche réunie reste rangée sur la fiche gardée [R105] (test).
+- Attend : rien.
+
+### W23 · Le titre de séjour d'un candidat au coffre
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W21, L09
+- Cahier : M15 Louer ; M12 ; R15, R104.
+- Objectif : trouvé par la relecture de W21 : `addPiece` renvoie un titre de séjour au coffre, mais le coffre ne connaît pas cette sorte. Une personne qui n'a que ce justificatif ne peut pas être déclarée telle quelle. Vérifier d'abord à la source la liste officielle de l'annexe I, puis ajouter la sorte au coffre (migration, `VAULT_PIECES`, `IDENTITY_PIECES`) et regarder ce que cela change pour D03, O07 et L03.
+- Critères : le titre de séjour entre au coffre et vaut identité vérifiée pour un candidat [R15, R104] (test) ; le statut migratoire n'est dit nulle part, l'écran ne montre que le fait et la date [R13] (test) ; les contrôles avant signature gardent leur résultat pour les pièces existantes (test).
 - Attend : rien.
 
 **M14 · Réseau et académie, juillet 2027.**

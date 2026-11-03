@@ -11,7 +11,7 @@ import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.t
 
 // Réseau, agents, propriétaire, logement, fichiers et clés inventés.
 const BASE = 'https://aimmo-api.example.test';
-const KEYS = { alex: 'test-cle-w14-alex-aaaaaaaaaaaaaaaaaaaaaaaaaaaa', bea: 'test-cle-w14-bea-bbbbbbbbbbbbbbbbbbbbbbbbbbbbb', conformite: 'test-cle-w14-conf-ccccccccccccccccccccccccccc' };
+const KEYS = { alex: 'test-cle-w14-alex-aaaaaaaaaaaaaaaaaaaaaaaaaaaa', bea: 'test-cle-w14-bea-bbbbbbbbbbbbbbbbbbbbbbbbbbbbb', conformite: 'test-cle-w14-conf-ccccccccccccccccccccccccccc', direction: 'test-cle-w21-dir-dddddddddddddddddddddddddddd' };
 type Who = keyof typeof KEYS;
 const PDF = new TextEncoder().encode('%PDF-1.7 diagnostic inventé');
 const JPG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 1, 1]);
@@ -44,7 +44,7 @@ async function setup(bucketWrites = true) {
       : {}),
   };
   const pieces = new R2PieceStore(bucket);
-  const ids: Record<Who, { role: string; userId: string }> = { alex: { role: 'agent', userId: alex }, bea: { role: 'agent', userId: bea }, conformite: { role: 'compliance', userId: 'conf-1' } };
+  const ids: Record<Who, { role: string; userId: string }> = { alex: { role: 'agent', userId: alex }, bea: { role: 'agent', userId: bea }, conformite: { role: 'compliance', userId: 'conf-1' }, direction: { role: 'direction', userId: 'dir-1' } };
   const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), networkId: network, ...ids[w] }))));
   const vaulted = new Map<string, Uint8Array>();
   const coffre = {
@@ -242,8 +242,8 @@ describeWithSqlite('W14 · dépôt des pièces de la location, par le socle', ()
       const r = await handleRequest(new Request(`${BASE}/v1/conformite/personnes/${person}/coffre?sorte=passeport&verifie=${day}`, { method: 'POST', headers: { authorization: `Bearer ${KEYS[who]}`, 'content-type': 'application/pdf' }, body: PDF }), t.config);
       return { status: r.status, body: (await r.json()) as { ok: boolean; rule?: string | null; code?: string } };
     };
-    const candidatures = async (t: Awaited<ReturnType<typeof setup>>) => {
-      const r = await handleRequest(new Request(`${BASE}/v1/location/${t.id}/candidatures`, { headers: { authorization: `Bearer ${KEYS.alex}` } }), t.config);
+    const candidatures = async (t: Awaited<ReturnType<typeof setup>>, who: Who = 'alex') => {
+      const r = await handleRequest(new Request(`${BASE}/v1/location/${t.id}/candidatures`, { headers: { authorization: `Bearer ${KEYS[who]}` } }), t.config);
       return ((await r.json()) as { data: { identityVerifiedOn: Record<string, string>; missing: { holder: string; what: string }[] }[] }).data;
     };
 
@@ -261,6 +261,32 @@ describeWithSqlite('W14 · dépôt des pièces de la location, par le socle', ()
       expect(t.stored.size).toBe(0);
       expect(t.vaulted.size).toBe(1);
       expect(JSON.stringify(app)).not.toMatch(/passeport|sha256|storage/i);
+    });
+
+    it('[R15] la pièce d’un garant va sur sa fiche : sa date sous son identifiant, le candidat reste à vérifier ; une fiche réunie compte pour la gardée', async () => {
+      const t = await setup();
+      const [person, garant, doublon] = [await t.candidate(), await t.candidate(), await t.candidate()];
+      await t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, created_at) SELECT 'fusion-1', network_id, agent_id, ?, ?, 'test', '2027-01-01T08:00:00.000Z', '2027-01-01T08:00:00.000Z' FROM persons WHERE id = ?", [garant, doublon, garant]);
+      await t.json('alex', `/location/${t.id}/candidatures`, { personId: person });
+      const appId = (await t.db.first<{ id: string }>('SELECT id FROM rental_applications'))!.id;
+      const added = await t.json('alex', `/location/candidatures/${appId}/garants`, { kind: 'personne', personId: garant });
+      const guarantor = added.body.data.guarantorId as string;
+      // Une pièce d'identité déposée sur la fiche réunie vaut pour le garant.
+      expect((await toVault(t, 'alex', doublon)).status).toBe(200);
+      const [app] = await candidatures(t);
+      expect(app!.identityVerifiedOn).toEqual({ [guarantor]: '2027-01-10' });
+      expect(app!.missing).toContainEqual({ holder: 'candidat', what: 'identite' });
+      expect(app!.missing).not.toContainEqual({ holder: guarantor, what: 'identite' });
+    });
+
+    it('[R16] [R90] la direction lit le fait et sa date, mais son dépôt est refusé, rien au coffre', async () => {
+      const t = await setup();
+      const person = await t.candidate();
+      await t.json('alex', `/location/${t.id}/candidatures`, { personId: person });
+      expect(await toVault(t, 'direction', person)).toMatchObject({ status: 403, body: { code: 'role' } });
+      expect(t.vaulted.size).toBe(0);
+      expect((await toVault(t, 'alex', person)).status).toBe(200);
+      expect((await candidatures(t, 'direction'))[0]!.identityVerifiedOn).toEqual({ candidat: '2027-01-10' });
     });
 
     it('[R16] [R90] un autre agent ne dépose pas au coffre pour ce candidat, et son dossier reste à vérifier', async () => {

@@ -240,6 +240,13 @@ export class Candidatures {
     const personId = await this.fiche.rootOf(input.personId as string);
     const members = await this.fiche.membersOf(personId);
     const marks = members.map(() => '?').join(', ');
+    // Comme `addableContacts`, pour qui appelle la route sans passer par l'écran (W22) : `missing` et la date de
+    // vérification de l'identité diraient autrement quelque chose du client d'un autre agent [R16].
+    if (viewer.role === 'agent' && (await this.db.first(`SELECT 1 FROM persons WHERE id IN (${marks}) AND agent_id IS NOT ?`, [...members, viewer.userId]))) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R16', role: String(viewer.role), kind: 'rental_applicant', code: 'not_assigned' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
+    if (members.includes(listing.ownerPersonId)) return { ok: false, rule: null, code: 'unknown_person' };
     if (await this.db.first(`SELECT 1 FROM rental_applications WHERE listing_id = ? AND person_id IN (${marks})`, [listing.id, ...members])) return { ok: false, rule: null, code: 'already_applied' };
     const url = input.dossierFacileUrl === undefined || input.dossierFacileUrl === null ? null : input.dossierFacileUrl;
     if (url !== null && (typeof url !== 'string' || !DOSSIERFACILE.test(url))) return { ok: false, rule: null, code: 'bad_dossierfacile' };
