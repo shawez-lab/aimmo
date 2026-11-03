@@ -526,3 +526,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 08:07 · Y11 · la direction lit et range les règles de location d'une commune sur l'écran du réseau, avec leur source (#315) ; relecture forte 5 P1 corrigés ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : CE17
 - 2026-11-03 08:07 · voie 2 · fin de séance : EC13, G16 et Y11 fusionnées ; X16, X17 et CE17 écrites ; verrou libéré · prochaine : CE17
 - 2026-11-03 08:07 · voie 2 · relance immédiate refusée par le contrôle des permissions, un essai (tâche trig_015bXkrAiRuuwNgC67fPkHBa, inutile de relire la liste) ; pas de contournement, le passage horaire reprendra CE17 · prochaine : CE17
+- 2026-11-03 08:15 · D17 · l'agent lit les conditions, prépare, contrôle et enregistre un avenant de prix ou de durée depuis l'écran du mandat (#316) ; relecture forte 3 P1 corrigés, D18 écrite ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : D18
+- 2026-11-03 08:15 · voie 1 · fin de séance : D16 et D17 fusionnées ; verrou libéré · prochaine : D18

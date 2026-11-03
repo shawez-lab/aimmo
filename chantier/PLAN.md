@@ -990,14 +990,25 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : rien.
 
 ### D17 · Avenant au mandat à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-03)
 - Voie : 1
 - Décidé (2026-11-03), lecture prudente : une baisse de prix est le geste le plus courant d'un mandat, et `/v1/documents` (avenant) et `/signature-avenant` n'ont aucun geste à l'écran. Un avenant ne change que le prix et la durée [R39, R41]. L'écran n'en calcule rien : il envoie la saisie et lit les conditions rendues par `/v1/mandats/<id>/conditions`. Plusieurs propriétaires : le mandant se choisit, le code refuse un autre que celui du mandat.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12, D14, D16
 - Cahier : M06 ; R16, R39, R41, R42, R201.
 - Objectif : sur un mandat en cours, l'agent lit le prix et la durée en vigueur, prépare l'avenant, le contrôle, enregistre sa signature avec le scan, et lit l'exemplaire.
 - Critères : aucun geste sur un mandat rétracté, annulé, échu ou hors registre [R42] (test) ; prix ou durée exigé, entiers, aucun identifiant saisi [R16] (test) ; un seul échec de contrôle et rien ne se signe [R41] (test) ; chaque refus dit en français (test) ; une réponse perdue n'est pas dite « rien n'est rangé » (test) ; de bout en bout par les routes : les conditions changent (test) ; budget tenu [R201] (test).
+- Reste : fusionnée (#316). Relecture forte 3 P1 corrigés ; Codex à sa limite (H03). Un téléphone très en avance reçoit `bad_date` sur une signature datée d'aujourd'hui, mandat comme avenant : à régler comme en D16, par un jour envoyé au serveur.
 - Attend : H08 pour un avenant réel, H25 pour le dépôt réel.
+
+### D18 · Modèles de mandat et d'avenant à l'écran
+- Statut : à faire
+- Voie : 1
+- Trouvé le 2026-11-03 en faisant D17 : `/v1/modeles` n'a aucun geste à l'écran, alors que le mandat et l'avenant répondent « aucun modèle » tant que la direction n'en a pas rangé. W17 l'a fait pour les modèles de bail : suivre `packages/api/app/louer-modeles.ts`.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : D13, D17
+- Cahier : M06 ; R40, R16, R201.
+- Objectif : la direction lit et range les modèles de mandat et d'avenant depuis l'écran du réseau, la conformité les valide en deux appuis ; l'ancienne version reste.
+- Critères : un modèle sans sa place pour le numéro est refusé et dit en français [R40] (test) ; rôles tenus [R16] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
+- Attend : H08 pour un modèle réel.
 
 **M08 · Acquéreurs et visites, avril 2027.**
 
