@@ -604,7 +604,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   rental_ads: { locate: [via('listing_id', 'rental_listings')] },
   rental_ad_validations: { locate: [via('ad_id', 'rental_ads')] },
   rental_applications: { locate: by('person_id') },
-  rental_guarantors: { locate: by('person_id') },
+  // Un garant Visale n'a pas de personne : sa ligne et son visa sont au candidat (W24).
+  rental_guarantors: { locate: [...by('person_id'), via('application_id', 'rental_applications', 'id', { where: { kind: 'visale' } })] },
   // Les pièces du candidat lui-même ; celles d'un garant sont au garant.
   rental_application_pieces: { locate: [via('application_id', 'rental_applications', 'id', { where: { holder: 'candidat' } }), via('holder', 'rental_guarantors')] },
   // Chaque fichier déposé, joint ou non, est à la personne pour qui il a été déposé (W19).

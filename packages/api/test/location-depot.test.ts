@@ -159,6 +159,28 @@ describeWithSqlite('W14 · dépôt des pièces de la location, par le socle', ()
       expect(ownerCard).not.toContain(refused.body.data.ref);
     });
 
+    it('[R96] [R97] W24 : le garant Visale et son visa sont sur la carte du candidat et comptés ; le garant personne reste sur la sienne', async () => {
+      const t = await setup();
+      const { person, app } = await apply(t);
+      const visale = (await t.json('alex', `/location/candidatures/${app}/garants`, { kind: 'visale' })).body.data.guarantorId as string;
+      const visa = await t.depositPiece('alex', app, PDF, 'application/pdf', sha(PDF), visale);
+      expect(await t.json('alex', `/location/candidatures/${app}/pieces`, { holder: visale, sort: 'visa_visale', ref: visa.body.data.ref, sha256: sha(PDF) })).toMatchObject({ status: 200 });
+      const other = await t.candidate();
+      const garant = (await t.json('alex', `/location/candidatures/${app}/garants`, { kind: 'personne', personId: other })).body.data.guarantorId as string;
+      const proof = await t.depositPiece('alex', app, JPG, 'image/jpeg', sha(JPG), garant);
+      expect(await t.json('alex', `/location/candidatures/${app}/pieces`, { holder: garant, sort: 'contrat_travail', ref: proof.body.data.ref, sha256: sha(JPG) })).toMatchObject({ status: 200 });
+
+      expect((await section(t, person, 'rental_guarantors')).map((r) => r.id)).toEqual([visale]);
+      expect((await section(t, person, 'rental_application_pieces')).map((r) => r.ref)).toEqual([visa.body.data.ref]);
+      expect((await section(t, other, 'rental_guarantors')).map((r) => r.id)).toEqual([garant]);
+      expect((await section(t, other, 'rental_application_pieces')).map((r) => r.ref)).toEqual([proof.body.data.ref]);
+
+      const lines = (table: string, plan: ReturnType<typeof erasurePlan>) => plan.lines.filter((l) => l.table === table).map((l) => [l.action, l.rows]);
+      const plan = erasurePlan(await assembleAccessDetail(t.db, [person]));
+      expect(lines('rental_guarantors', plan)).toEqual([['effacer', 1]]);
+      expect(lines('rental_application_pieces', plan)).toEqual([['effacer', 1]]);
+    });
+
     it('[R97] le plan d’effacement compte chaque dépôt, joint ou non', async () => {
       const t = await setup();
       const { person, app } = await apply(t);
