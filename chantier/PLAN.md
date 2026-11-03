@@ -3636,7 +3636,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV02 · La copie de chaque nuit, et ce qui se passe quand elle manque
-- Statut : en cours
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#364). Relecture forte 1 P0 et 4 P1 traités ; Codex non attendu (H03). Le travail reste éteint et jamais essayé sur un vrai compartiment : H50. Une vraie photo locale de wrangler s'est chargée, copiée et restaurée. L'écran n'affirme pas la garde de 30 jours, que la clé ne peut pas lire. Rejeu des effacements écrit, à brancher : SV05.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV01
 - Cahier : Architecture technique, « Sauvegardes » ; Conformité, durées de conservation.
 - Décidé (2026-11-03) par la relecture de SV01 : la copie ne se prend pas dans le Worker (limite de requêtes de D1, base qui vit). Un travail GitHub de nuit fait `wrangler d1 export`, charge la photo dans une base SQLite neuve et y lance `CopieBase`. À vérifier au branchement : la durée du travail reste dans le quota, décision du 2026-10-29.
@@ -3653,7 +3654,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : H29, H50.
 
 ### SV03 · Le test de restauration de chaque mois, avec son reçu (Jamais vu)
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV02
 - Cahier : Architecture technique, « Sauvegardes » ; Indicateurs et tests.
 - Objectif : chaque mois, un travail restaure la dernière copie dans une base neuve, hors de la production, et range un reçu sans donnée : date de la copie, durée, tables, lignes, empreinte. La direction lit ce reçu à l'écran. **Jamais vu** : aucun réseau ne peut montrer la preuve datée que ses données se restaurent vraiment.
