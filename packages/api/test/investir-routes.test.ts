@@ -61,6 +61,7 @@ const SAMPLE_PATHS: Record<string, string> = {
   'investir.loyers.import': '/investir/loyers',
   'investir.loyers.lu': '/investir/loyers?insee=99001',
   'investir.regle': '/investir/regles',
+  'investir.regles.lues': '/investir/regles?insee=99001',
   'investir.bien.commune': '/investir/biens/b1/commune',
   'investir.contraintes': '/investir/biens/b1/contraintes',
   'investir.calcul': '/investir/calculs',
@@ -88,6 +89,28 @@ describeWithSqlite('Y07 · routes de M17', () => {
     expect(refused.length).toBeGreaterThanOrEqual(13);
     expect(t.routes.find((r) => r.name === 'investir.note.validation')!.roles).toEqual(['agent']);
     expect(t.routes.find((r) => r.name === 'investir.loyers.import')!.roles).toEqual(['direction']);
+  });
+
+  it('[R16] [Y11] les règles d’une commune : lues avec leur source, rangées par la direction seule, code INSEE contrôlé', async () => {
+    const t = await setup();
+    expect(await t.ok(t.agent, 'GET', '/investir/regles?insee=99001')).toEqual({ canRecord: false, rules: [] });
+    expect(await t.ok(t.dir, 'GET', '/investir/regles?insee=99001')).toEqual({ canRecord: true, rules: [] });
+    const rule = { inseeCode: '99001', rule: 'autorisation_prealable', effectiveFrom: '2020-01-01', effectiveUntil: null, source: 'Délibération inventée', sourceDate: '2019-12-01' };
+    expect((await t.call(t.agent, 'POST', '/investir/regles', rule)).status).toBe(403);
+    await t.ok(t.dir, 'POST', '/investir/regles', rule);
+    expect(await t.ok(t.agent, 'GET', '/investir/regles?insee=99001')).toEqual({
+      canRecord: false,
+      rules: [{ rule: 'autorisation_prealable', label: 'Autorisation préalable de mise en location (permis de louer)', effectiveFrom: '2020-01-01', effectiveUntil: null, source: 'Délibération inventée', sourceDate: '2019-12-01' }],
+    });
+    // Une autre commune n'en dit rien ; un code illisible est refusé, sans rien lire.
+    expect(await t.ok(t.agent, 'GET', '/investir/regles?insee=99002')).toEqual({ canRecord: false, rules: [] });
+    for (const path of ['/investir/regles', '/investir/regles?insee=abc']) expect((await t.call(t.agent, 'GET', path)).body).toMatchObject({ ok: false, code: 'insee' });
+    // Un autre réseau n'en lit rien.
+    const elsewhere = await t.store.createNetwork('Autre réseau');
+    expect(await t.ok({ role: 'direction', userId: 'dir-2', networkId: elsewhere.id }, 'GET', '/investir/regles?insee=99001')).toEqual({ canRecord: true, rules: [] });
+    // Une règle à venir ne se dit pas en vigueur.
+    await t.ok(t.dir, 'POST', '/investir/regles', { ...rule, inseeCode: '99003', effectiveFrom: '2099-01-01' });
+    expect(await t.ok(t.agent, 'GET', '/investir/regles?insee=99003')).toEqual({ canRecord: false, rules: [] });
   });
 
   it('[R120] [R126] parcours de 10 biens tests : rendements du calcul manuel, note avec sources et hypothèses, validée par l’agent', async () => {

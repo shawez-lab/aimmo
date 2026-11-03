@@ -1,3 +1,4 @@
+import { COMMUNE_RULE_LABELS } from '../../core/src/investir/contraintes.ts';
 import type { MarketRentKind } from '../../core/src/investir/loyers.ts';
 
 /**
@@ -6,6 +7,9 @@ import type { MarketRentKind } from '../../core/src/investir/loyers.ts';
  * servi à part (`/app/loyers.js`), chargé au premier geste [R201]. L'écran ne lit ni ne corrige le fichier : le serveur le
  * contrôle, le refuse ligne à ligne sans rien ranger, et rend les chiffres, leur source, leur date et leur fiabilité
  * [R10, R122]. Un gros fichier se range en plusieurs appels du même fichier, repris où il en était.
+ *
+ * La vérification d'une commune dit aussi ses règles de location, chacune avec sa source, et la direction en range
+ * (Y11) [R16, R10]. Une règle rangée ne se réécrit pas : le code de la commune est relu avant d'écrire.
  */
 
 /** Le poids admis par la route `/v1/investir/loyers` (`MAX_RENTS_FILE_BYTES`, vérifié par un test). */
@@ -36,6 +40,15 @@ const ROWS: Record<string, string> = {
   doublon: 'commune déjà présente plus haut',
 };
 
+const RULE_REFUSALS: Record<string, string> = {
+  insee: 'Le code INSEE : cinq caractères, par exemple 21231.',
+  regle: 'Choisissez la règle.',
+  source: 'Écrivez la source de la règle : d’où elle vient, en 300 caractères au plus.',
+  date_source: 'La date de la source : un jour déjà passé.',
+  date: 'Les dates de la règle : un début, et une fin qui ne vient pas avant lui.',
+  role: 'Ce n’est pas dans vos droits.',
+};
+
 const options = KINDS.map(([k, label]) => `<option value="${k}">${label}</option>`).join('');
 
 export const LOYERS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-loyers">
@@ -48,9 +61,9 @@ export const LOYERS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-l
 <label for="loyers-fichier">Fichier (CSV)</label>
 <input id="loyers-fichier" type="file" accept=".csv,text/csv,text/plain">
 <button id="loyers-importer" type="button" class="secondaire">Importer ce fichier</button>
-<label for="loyers-commune">Vérifier une commune, par son code INSEE</label>
+<label for="loyers-commune">Vérifier une commune, par son code INSEE : son loyer et ses règles de location</label>
 <input id="loyers-commune" maxlength="5">
-<button id="loyers-lire" type="button" class="secondaire">Lire le loyer de cette commune</button>
+<button id="loyers-lire" type="button" class="secondaire">Lire cette commune</button>
 <p id="loyers-etat" class="etat" role="status"></p>
 <ul id="loyers-liste" class="liste"></ul>
 </section>
@@ -81,7 +94,7 @@ export const LOYERS_JS = `
         try { delete globalThis.AIMMO_LOYERS; } catch (e) { /* rien */ }
         if (mine !== session) { resolve(false); return; }
         if (typeof make !== 'function') { $('loyers-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        loyersTools = make({ $: $, el: el, clear: clear, send: send, date: date, session: function () { return session; } });
+        loyersTools = make({ $: $, el: el, clear: clear, send: send, date: date, button: button, field: field, select: select, session: function () { return session; } });
         resolve(act(loyersTools));
       });
       s.addEventListener('error', function () {
@@ -98,6 +111,8 @@ export const LOYERS_JS = `
 export const LOYERS_SCRIPT = `'use strict';
 globalThis.AIMMO_LOYERS = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, date = t.date;
+  var RULES = ${JSON.stringify(COMMUNE_RULE_LABELS)};
+  var RULE_REFUSALS = ${JSON.stringify(RULE_REFUSALS)};
   var REFUSALS = ${JSON.stringify(REFUSALS)};
   var ROWS = ${JSON.stringify(ROWS)};
   var KINDS = ${JSON.stringify(Object.fromEntries(KINDS))};
@@ -169,6 +184,59 @@ globalThis.AIMMO_LOYERS = function (t) {
       });
     });
   }
+  /* Y11 · les règles de la commune, chacune avec sa source ; « aucune » n'est jamais une preuve [R10]. */
+  function day(d) { return date(d + 'T12:00:00Z'); }
+  function rules(mine, insee, message) {
+    // Dit avant la relecture : une règle rangée le reste, même si la relecture se perd.
+    if (message) state(message);
+    var box = el('li');
+    $('loyers-liste').appendChild(box);
+    box.appendChild(el('h4', 'Règles de location de la commune ' + insee));
+    return send('/v1/investir/regles?insee=' + encodeURIComponent(insee), 'GET').then(function (res) {
+      if (res.gone || mine !== t.session()) return false;
+      var data = res.ok && res.body.data;
+      if (!data || !Array.isArray(data.rules)) {
+        box.appendChild(el('p', res.offline ? 'Pas de réseau pour les règles de cette commune.' : (res.body && RULE_REFUSALS[res.body.code]) || 'Règles indisponibles pour le moment.', 'etat'));
+        return false;
+      }
+      if (!data.rules.length) box.appendChild(el('p', 'Aucune règle rangée en vigueur. Cela ne prouve pas qu’il n’y en a pas : vérifiez auprès de la mairie.', 'doux'));
+      data.rules.forEach(function (r) {
+        box.appendChild(el('p', (RULES[r.rule] || r.label || 'Règle') + ', depuis le ' + day(r.effectiveFrom) + (r.effectiveUntil ? ', jusqu’au ' + day(r.effectiveUntil) : '') + '. Source : ' + r.source + ', ' + day(r.sourceDate) + '.'));
+      });
+      if (data.canRecord) ruleForm(box, insee);
+      return true;
+    });
+  }
+  function ruleForm(box, insee) {
+    box.appendChild(el('h4', 'Ranger une règle pour la commune ' + insee));
+    box.appendChild(el('p', 'Une règle rangée ne se réécrit pas. Pour une même sorte, la dernière rangée décide : une règle déjà finie met fin à celle rangée avant elle.', 'doux'));
+    var kind = t.select(box, 'loyers-regle-sorte', 'Règle', Object.assign({ '': 'Choisissez la règle' }, RULES), '');
+    var from = t.field(box, 'loyers-regle-debut', 'En vigueur depuis');
+    from.setAttribute('type', 'date');
+    var until = t.field(box, 'loyers-regle-fin', 'Jusqu’au, si elle a une fin');
+    until.setAttribute('type', 'date');
+    var source = t.field(box, 'loyers-regle-source', 'Source : la délibération ou le texte');
+    source.setAttribute('maxlength', '300');
+    var sourceDate = t.field(box, 'loyers-regle-source-date', 'Date de la source');
+    sourceDate.setAttribute('type', 'date');
+    box.appendChild(t.button('Ranger cette règle', function () {
+      return once(function () {
+        var mine = t.session();
+        // Le champ a changé depuis la lecture : la règle irait à une autre commune que celle écrite.
+        if (String($('loyers-commune').value || '').trim().toUpperCase() !== insee) { state('Le code de la commune a changé : relisez cette commune avant de ranger. Rien n’est rangé.'); return Promise.resolve(false); }
+        state('Envoi…');
+        return send('/v1/investir/regles', 'POST', { inseeCode: insee, rule: kind.value, effectiveFrom: from.value, effectiveUntil: until.value || null, source: source.value, sourceDate: sourceDate.value }).then(function (res) {
+          if (res.gone || mine !== t.session()) return false;
+          if (res.offline || !res.body || res.status >= 500) { state('La réponse n’est pas arrivée : rien n’est sûr. Relisez cette commune avant de recommencer.'); return false; }
+          if (!res.ok) { state(RULE_REFUSALS[res.body.code] || 'La règle n’est pas rangée.'); return false; }
+          var v = res.body.data || {};
+          var ended = v.effectiveUntil && v.effectiveUntil < new Date().toISOString().slice(0, 10);
+          clear($('loyers-liste'));
+          return rules(mine, insee, ended ? 'Règle rangée, finie le ' + day(v.effectiveUntil) + ' : elle n’est plus en vigueur, et met fin à celle de même sorte rangée avant.' : 'Règle rangée, en vigueur à partir du ' + day(v.effectiveFrom) + '.');
+        });
+      });
+    }));
+  }
   function euros(cents) { return (Number(cents) / 100).toFixed(2).replace('.', ',') + ' €'; }
   function read() {
     var insee = String($('loyers-commune').value || '').trim().toUpperCase();
@@ -184,13 +252,13 @@ globalThis.AIMMO_LOYERS = function (t) {
         if (res.offline) { state('Pas de réseau. Réessayez dans un moment.'); return false; }
         if (!res.ok || !res.body.data) { state((res.body && REFUSALS[res.body.code]) || 'Indisponible pour le moment.'); return false; }
         var v = res.body.data;
-        if (v.status !== 'connu') { state('Inconnu : aucune donnée pour cette commune et ce type. Aucun loyer n’est donné.'); return true; }
+        if (v.status !== 'connu') { state('Inconnu : aucune donnée pour cette commune et ce type. Aucun loyer n’est donné.'); return rules(mine, insee, ''); }
         state('');
         line(euros(v.rentM2Cents) + ' le m², charges comprises, entre ' + euros(v.lowerM2Cents) + ' et ' + euros(v.upperM2Cents) + '.');
         line(v.observations + ' observation(s)' + (v.reliability === 'fiable' ? '.' : ' : peu d’observations, chiffre à prendre avec prudence.'));
         line(v.source === 'anil' ? 'Carte des loyers ' + v.vintage + ', ' + (KINDS[v.kind] || 'type non précisé').toLowerCase() + (v.kind !== kind ? ', faute de données pour le type demandé' : '') + ', importée le ' + date(v.asOf) + '.' : 'Locations du réseau dans la commune, tous types confondus, au ' + date(v.asOf) + '.');
         line(v.citation);
-        return true;
+        return rules(mine, insee, '');
       });
     });
   }
