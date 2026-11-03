@@ -1,3 +1,4 @@
+import { localTime } from '../src/envoi/horaires.ts';
 import { expect, it } from 'vitest';
 import {
   Acces,
@@ -118,6 +119,10 @@ describeWithSqlite('D07 · avenant au mandat', () => {
     const a = await t.amendment({ 'avenant.prix': 190000 });
     if (!a.ok) throw new Error(a.code);
     expect(await t.avenants.register(t.as('agent', t.sam.id), a.document.id, { signedAt: LATER, place: 'agence', scanRef: 'scans/a.pdf' })).toMatchObject({ ok: false, rule: 'R16' });
+    // D17 : le jour de Paris compte. Plus tôt le même jour que le mandat, l'avenant passe (voir plus bas) ; la veille, non.
+    const signedMandate = await t.db.first<{ signed_at: string }>('SELECT signed_at FROM signed_documents WHERE mandate_id = ?', [t.mandateId]);
+    const mandateDay = localTime(new Date(signedMandate!.signed_at), 'Europe/Paris').date;
+    expect(await t.avenants.register(t.agent, a.document.id, { signedAt: new Date(Date.parse(`${mandateDay}T12:00:00.000Z`) - 86_400_000), place: 'agence', scanRef: 'scans/a.pdf' })).toEqual({ ok: false, rule: null, code: 'before_mandate' });
     expect(await t.avenants.register(t.agent, a.document.id, { signedAt: new Date('2027-02-01T09:00:00Z'), place: 'agence', scanRef: 'scans/a.pdf' })).toEqual({ ok: false, rule: null, code: 'before_mandate' });
     await t.avenants.register(t.agent, a.document.id, { signedAt: LATER, place: 'agence', scanRef: 'scans/a.pdf' });
     await expect(t.db.run('DELETE FROM signed_amendments')).rejects.toThrow(/gardé/);
@@ -195,5 +200,15 @@ describeWithSqlite('D07 · avenant au mandat', () => {
     };
     expect(await new SignatureAvenant(race, t.acces, t.journal, { now: () => LATER, scans }).register(t.agent, second.document.id, paper)).toEqual({ ok: false, rule: null, code: 'scan_deja_utilise' });
     expect(await t.db.first('SELECT count(*) AS n FROM signed_amendments')).toEqual({ n: 1 });
+  });
+
+  it('[R41] D17 : signé plus tôt le même jour de Paris que le mandat enregistré, l’avenant n’est pas refusé', async () => {
+    const t = await setup();
+    const a = await t.amendment({ 'avenant.prix': 190000 });
+    if (!a.ok) throw new Error(a.code);
+    const row = await t.db.first<{ signed_at: string }>('SELECT signed_at FROM signed_documents WHERE mandate_id = ?', [t.mandateId]);
+    const day = localTime(new Date(row!.signed_at), 'Europe/Paris').date;
+    const r = await t.avenants.register(t.agent, a.document.id, { signedAt: new Date(`${day}T00:00:00.000Z`), place: 'agence', scanRef: 'scans/a.pdf' });
+    expect(r).not.toMatchObject({ code: 'before_mandate' });
   });
 });

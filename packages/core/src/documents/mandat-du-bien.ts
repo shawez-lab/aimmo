@@ -35,6 +35,8 @@ export interface PropertyMandate {
     status: 'complet' | 'incomplet';
     missing: string[];
     createdAt: string;
+    /** Pour un avenant : le mandat qu'il modifie, qui n'est pas toujours le mandat en cours du bien. */
+    mandateId: string | null;
     /** `complete` faux : l'enregistrement s'est arrêté en route (source manquante, coupure) et se reprend ; il n'est pas signé. */
     signature: { signedAt: string; place: string; number: string | null; complete: boolean } | null;
   }[];
@@ -74,8 +76,8 @@ export class MandatDuBien {
     if (!seen.ok) return seen;
     if (seen.view !== 'full') return this.refuse(viewer, propertyId, 'mandat_du_bien', 'not_assigned');
 
-    const rows = await this.db.all<{ id: string; kind: string; mode: 'essai' | 'reel'; status: 'complet' | 'incomplet'; missing: string; created_at: string; signed_at: string | null; place: string | null; number: string | null; complete: number }>(
-      `SELECT d.id, d.kind, d.mode, d.status, d.missing, d.created_at,
+    const rows = await this.db.all<{ id: string; kind: string; mode: 'essai' | 'reel'; status: 'complet' | 'incomplet'; missing: string; created_at: string; mandate_id: string | null; signed_at: string | null; place: string | null; number: string | null; complete: number }>(
+      `SELECT d.id, d.kind, d.mode, d.status, d.missing, d.created_at, d.mandate_id,
               COALESCE(s.signed_at, a.signed_at) AS signed_at, COALESCE(s.place, a.place) AS place,
               COALESCE(s.number, parent.number) AS number,
               CASE WHEN a.document_id IS NOT NULL OR s.copy_content IS NOT NULL THEN 1 ELSE 0 END AS complete
@@ -115,6 +117,7 @@ export class MandatDuBien {
           status: r.status,
           missing: parseMissing(r.missing),
           createdAt: r.created_at,
+          mandateId: r.mandate_id,
           signature: r.signed_at ? { signedAt: r.signed_at, place: r.place as string, number: r.number, complete: r.complete === 1 } : null,
         })),
         mandate: decision.mandateId ? { id: decision.mandateId, number: signed?.number ?? null, signedAt: signed?.signed_at ?? null, allowed: decision.allowed, reason: decision.reason, withdrawalLastDay: decision.withdrawalLastDay, withdrawalUnfinished: unfinished } : null,

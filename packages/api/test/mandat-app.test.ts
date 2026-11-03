@@ -465,4 +465,171 @@ describe('D12 · écran « Mandat »', () => {
       free(Response.json({ ok: true, mode: 'essai', data: null }));
     });
   });
+
+  describe('D17 · avenant au mandat', () => {
+    const SIGNED = { ...DOC, signature: { signedAt: '2027-02-10T09:00:00.000Z', place: 'agence', number: 'AV-7', complete: true } };
+    const AVENANT = { ...DOC, id: 'd2', kind: 'avenant_mandat', mandateId: 'm1', signature: null };
+    const mandate = (reason: string) => ({ id: 'm1', number: 'AV-7', signedAt: '2027-02-10T09:00:00.000Z', allowed: reason === 'allowed', reason, withdrawalLastDay: null });
+    const read = (reason = 'allowed', documents: unknown[] = [SIGNED], owners: unknown[] = [OWNER]) => ok({ ...READ, documents, owners, mandate: mandate(reason) });
+    const buttons = (t: Awaited<ReturnType<typeof run>>) => t.body().all().filter((e) => e.tagName === 'button').map((e) => e.textContent);
+    const GO = 'Préparer l’avenant';
+    const CHECK = 'Contrôler avant signature';
+    const SIGN_IT = 'POST /v1/documents/d2/signature-avenant';
+    const opened = async (answers: Record<string, Answer> = {}) => {
+      const t = await run({ 'GET /v1/biens/b1/mandat': read(), ...answers });
+      await t.open();
+      return t;
+    };
+    const fillPaper = (t: Awaited<ReturnType<typeof run>>) => {
+      t.input('mandat-jour-d2').value = '2027-03-10';
+      t.input('mandat-lieu-d2').value = 'agence';
+      t.input('mandat-scan-d2').files = [pdf()];
+    };
+    const SCAN = { 'POST /v1/biens/b1/scans-mandat': ok({ ref: 'mandats/b1/x.pdf', sha256: 'a', size: 8 }), 'POST /v1/documents/d2/controle': ok({ ...PASSED, documentId: 'd2' }) };
+
+    it('[R39] les conditions en vigueur sont lues, jamais calculées', async () => {
+      const t = await opened({ 'GET /v1/mandats/m1/conditions': ok({ priceEur: 190000, durationMonths: 12, amendments: [] }) });
+      expect(t.body().textContent).toContain('En vigueur : prix 190');
+      expect(t.body().textContent).toContain('durée 12 mois');
+    });
+
+    it('[R42] aucun avenant sur un mandat rétracté, annulé, échu ou hors registre', async () => {
+      for (const reason of ['withdrawn', 'cancelled', 'expired', 'no_mandate']) {
+        const t = await opened({ 'GET /v1/biens/b1/mandat': read(reason) });
+        expect(buttons(t)).not.toContain(GO);
+      }
+      for (const reason of ['withdrawn', 'cancelled', 'expired', 'no_mandate']) {
+        const t = await opened({ 'GET /v1/biens/b1/mandat': read(reason, [AVENANT]) });
+        expect(buttons(t)).not.toContain(CHECK);
+        expect(t.body().textContent).toContain('n’est plus en cours : il ne se signe pas');
+      }
+      // Le mandat d'avant est mort, un nouveau est en cours : son vieil avenant ne se signe pas pour autant.
+      const old = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [{ ...AVENANT, mandateId: 'm0' }]) });
+      expect(buttons(old)).not.toContain(CHECK);
+      expect(old.body().textContent).toContain('n’est plus en cours : il ne se signe pas');
+      expect(buttons(old)).toContain(GO);
+    });
+
+    it('[R41] chaque ligne du contrôle d’un avenant est dite : aucune ligne muette', async () => {
+      const said: Record<string, string> = {
+        no_mandate: 'rattaché à aucun mandat',
+        mandate_not_numbered: 'pas au registre',
+        mandate_withdrawn: 'rétracté',
+        mandate_cancelled: 'annulé au registre',
+        mandate_expired: 'arrivé à échéance',
+      };
+      for (const [code, text] of Object.entries(said)) {
+        const t = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [AVENANT]), 'POST /v1/documents/d2/controle': ok({ documentId: 'd2', passed: false, lines: [{ check: 'mandat', ok: false, code }] }) });
+        await t.press(CHECK);
+        expect(t.body().textContent).toContain(text);
+        expect(t.body().textContent).not.toContain('ce contrôle n’est pas passé');
+      }
+      const good = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [AVENANT]), 'POST /v1/documents/d2/controle': ok({ documentId: 'd2', passed: true, lines: [{ check: 'mandat', ok: true, code: 'mandate_in_force' }, { check: 'honoraires', ok: true, code: 'fees_unchanged' }] }) });
+      await good.press(CHECK);
+      expect(good.body().textContent).toContain('Les honoraires ne changent pas.');
+      expect(good.body().textContent).not.toContain('contrôle passé');
+    });
+
+    it('[R16] l’avenant part avec la saisie, sans identifiant à taper, puis l’écran relit', async () => {
+      const t = await opened({ 'POST /v1/documents': ok({ id: 'd2' }) });
+      expect(t.input('avenant-mandant').value).toBe('p1');
+      t.input('avenant-prix').value = '190000';
+      t.table['GET /v1/biens/b1/mandat'] = read('allowed', [AVENANT, SIGNED]);
+      await t.press(GO);
+      expect(t.posts()).toEqual([{ method: 'POST', url: '/v1/documents', body: { kind: 'avenant_mandat', personId: 'p1', propertyId: 'b1', mandateId: 'm1', inputs: { 'avenant.prix': 190000 } } }]);
+      expect(t.state()).toContain('Avenant préparé');
+      expect(t.body().textContent).toContain('Avenant, préparé le');
+    });
+
+    it('plusieurs propriétaires : le mandant se choisit ; sans propriétaire, rien ne se prépare', async () => {
+      const t = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [SIGNED], [OWNER, { personId: 'p2', firstName: 'Noé', lastName: 'Exemple' }]) });
+      t.input('avenant-prix').value = '190000';
+      await t.press(GO);
+      expect(t.state()).toContain('Choisissez le mandant');
+      expect(t.posts()).toEqual([]);
+      const u = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [SIGNED], []) });
+      expect(buttons(u)).not.toContain(GO);
+      expect(u.body().textContent).toContain('l’avenant ne se prépare pas');
+    });
+
+    it('sans prix ni durée, ou avec autre chose que des entiers, rien ne part', async () => {
+      const t = await opened();
+      await t.press(GO);
+      expect(t.state()).toContain('le nouveau prix, la nouvelle durée');
+      for (const bad of ['190 000', '-5', '12.5', 'abc']) {
+        t.input('avenant-prix').value = bad;
+        await t.press(GO);
+        expect(t.state()).toContain('nombres entiers');
+      }
+      expect(t.posts()).toEqual([]);
+    });
+
+    it('les refus du code sont dits ; une réponse perdue n’est pas dite « rien n’est rangé »', async () => {
+      const said: Record<string, string> = { no_template: 'Aucun modèle', bad_input: 'vérifiez la saisie', bad_mandate: 'plus en cours' };
+      for (const [code, text] of Object.entries(said)) {
+        const t = await opened({ 'POST /v1/documents': no(400, code) });
+        t.input('avenant-duree').value = '6';
+        await t.press(GO);
+        expect(t.state()).toContain(text);
+      }
+      const lost = await opened();
+      lost.input('avenant-duree').value = '6';
+      await lost.press(GO);
+      expect(lost.state()).toContain('Pas de réponse');
+      expect(lost.state()).not.toContain('rien n’est');
+    });
+
+    it('[R41] un point du contrôle en échec : aucun formulaire de signature', async () => {
+      const t = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [AVENANT]), 'POST /v1/documents/d2/controle': ok({ ...FAILED, documentId: 'd2' }) });
+      await t.press(CHECK);
+      expect(t.state()).toContain('rien ne se signe');
+      expect(buttons(t)).not.toContain('Enregistrer la signature');
+    });
+
+    it('[R41] contrôle réussi : l’avenant se signe par sa route, sans origine demandée, puis l’écran relit', async () => {
+      const t = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [AVENANT]), ...SCAN, [SIGN_IT]: ok({ documentId: 'd2', mandateId: 'm1', copyHash: 'h' }) });
+      await t.press(CHECK);
+      expect(t.body().all().find((e) => e.attributes.id === 'mandat-source-d2')).toBeUndefined();
+      expect(t.body().textContent).toContain('L’avenant signé, numérisé');
+      t.input('mandat-jour-d2').value = '2027-03-10';
+      t.input('mandat-lieu-d2').value = 'agence';
+      await t.press('Enregistrer la signature');
+      expect(t.state()).toContain('Joignez l’avenant');
+      fillPaper(t);
+      t.table['GET /v1/biens/b1/mandat'] = read('allowed', [{ ...AVENANT, signature: { signedAt: '2027-03-10T12:00:00.000Z', place: 'agence', number: 'AV-7', complete: true } }]);
+      await t.press('Enregistrer la signature');
+      const sent = t.posts().find((c) => c.url.endsWith('/signature-avenant'));
+      expect(sent!.body).toEqual({ signedAt: '2027-03-10T12:00:00.000Z', place: 'agence', scanRef: 'mandats/b1/x.pdf' });
+      expect(t.state()).toContain('Avenant signé');
+      expect(buttons(t)).toContain('Voir l’exemplaire');
+    });
+
+    it('signature : réponse perdue dite telle, le second essai ne redépose rien et dit « déjà signé » ; contrôle changé, formulaire retiré', async () => {
+      const t = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [AVENANT]), ...SCAN });
+      await t.press(CHECK);
+      fillPaper(t);
+      await t.press('Enregistrer la signature');
+      expect(t.state()).toContain('peut-être rangée');
+      t.table[SIGN_IT] = no(409, 'already_signed');
+      await t.press('Enregistrer la signature');
+      expect(t.state()).toContain('déjà signé');
+      expect(t.posts().filter((c) => c.url.endsWith('/scans-mandat'))).toHaveLength(1);
+      const u = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [AVENANT]), ...SCAN, [SIGN_IT]: no(400, 'checks_failed', { check: { ...FAILED, documentId: 'd2' } }) });
+      await u.press(CHECK);
+      fillPaper(u);
+      await u.press('Enregistrer la signature');
+      expect(u.state()).toContain('rien ne se signe');
+      expect(buttons(u)).not.toContain('Enregistrer la signature');
+    });
+
+    it('[R41] un avenant signé avant son mandat, ou dont le mandat s’est arrêté, est refusé en français', async () => {
+      for (const [code, text] of [['before_mandate', 'avant son mandat'], ['no_mandate', 'plus en cours']] as const) {
+        const t = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [AVENANT]), ...SCAN, [SIGN_IT]: no(400, code) });
+        await t.press(CHECK);
+        fillPaper(t);
+        await t.press('Enregistrer la signature');
+        expect(t.state()).toContain(text);
+      }
+    });
+  });
 });
