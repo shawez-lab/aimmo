@@ -3464,3 +3464,51 @@ Décidé, lecture prudente : chaque chiffre vient de la base, jamais d'une saisi
 - Objectif : la direction voit où en est la preuve, ce qui est à inscrire, et scelle un mois depuis l'application.
 - Critères : droits [R16] (test) ; chaque refus dit en français (test) ; réponse perdue dite telle (test) ; un seul envoi à la fois (test) ; budget tenu [R201] (test).
 - Attend : rien.
+
+**Site du réseau, juillet 2027.**
+
+Voie : 1
+
+Découpé le 2026-11-03 par la voie 1 : la Feuille de route livre en juillet 2027 le « site du réseau », et M01 dit qu'il porte « tous les biens du réseau, la page de chaque agent, les prix de chaque commune, l'estimation et le recrutement ». Le site n'a aujourd'hui ni accueil, ni liste des biens, ni liste des agents, ni liste des prix, et `/estimation`, où mènent les pages de prix, n'existe pas : ces pages ne se trouvent que par un lien direct. Ids `RS..`. Cahier : M01, « Deux sites, un seul moteur » ; Feuille de route, juillet 2027.
+Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rien n'est saisi deux fois ; aucun classement d'agent, biens du plus récent au plus ancien, agents par ordre alphabétique [R14] ; le site d'un agent ne montre que ses biens [R153] ; chaque page reste sans script, dans le budget et le système de design [R201]. L'ouverture réelle attend la société (H09) et le nom de domaine : tout reste non indexé en mode essai. Règles R220 et R221 ; R210 à R212 restent à la voie 2.
+
+### RS01 · Tous les biens, et aucune annonce fantôme (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : AT11, D05
+- Cahier : M01, « Deux sites, un seul moteur » ; R42, R43, R48, R153.
+- Objectif : `GET /biens`, liste des biens publiés, du plus récent au plus ancien, filtrable par commune, par pages. **Jamais vu** : aucune annonce fantôme. Portails et réseaux affichent des biens vendus ou sans mandat jusqu'au prochain passage ; ici, chaque bien repasse la porte de diffusion à l'instant de la lecture, et la page dit l'heure de cette vérification. Un mandat échu ou rétracté retire le bien aussitôt, de la liste comme de sa page, sans attendre le passage de publication.
+- Critères : un bien dont la porte refuse n'est ni listé ni servi, avant tout passage de publication [R220] (test) ; l'heure de la vérification est écrite (test) ; sur le site d'un agent, seulement ses biens ; sur le réseau, tous ; rien d'un autre réseau [R153, R16] (tests) ; prix et mentions de la version publiée, sans adresse [R44, R46] (test) ; une photo d'aménagement virtuel porte sa mention [R48] (test) ; même ordre pour tous, aucun agent mis en avant [R14] (test) ; page ou commune inconnue : 404 (test) ; le nombre de contrôles reste borné par la page demandée (test) ; budget et système de design [R201] (test).
+- Attend : rien.
+
+### RS02 · Accueil du site, et les chemins vers chaque page
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS01
+- Cahier : M01, « Deux sites, un seul moteur ».
+- Objectif : `GET /` sur le site du réseau et celui d'un agent : les derniers biens, et les chemins vers les biens, les agents, les prix, l'estimation et, sur le réseau, le recrutement. Ajouter ces pages au plan du site.
+- Critères : aucun lien vers une page absente (test qui suit chaque lien de l'accueil) ; même porte que RS01 [R220] (test) ; `/` hors d'un site en service reste 404 (test) ; plan du site complété [R153] (test) ; « agent immobilier », jamais « mandataire » [R07] (test) ; budget [R201] (test).
+- Attend : rien.
+
+### RS03 · Liste des agents et des communes
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
+- Cahier : M01 ; R14, R150, R152.
+- Objectif : `GET /agents`, seulement ceux dont la page est publiable, par ordre alphabétique, sans aucun chiffre ; `GET /prix`, les communes dont la page de prix a au moins une case publiable. Réservées au site du réseau.
+- Critères : un agent sans ses mentions ou parti n'y est pas [R152] (test) ; aucun chiffre, note ni classement [R14] (test) ; une commune sans case publiable n'y est pas [R150] (test) ; 404 sur le site d'un agent [R153] (test) ; budget [R201] (test).
+- Attend : rien.
+
+### RS04 · L'estimation en ligne sur le site
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
+- Cahier : M01 ; M04, estimation en ligne (E05).
+- Objectif : `GET /estimation`, où mènent déjà les pages de prix et qui répond 404 : la page qui appelle l'estimation en ligne de E05, ou, si elle ne peut pas être servie sans script ni clé, un formulaire serveur.
+- Critères : le lien des pages de prix aboutit (test) ; la fourchette est celle de E05, jamais une autre [R10] (test) ; accord et mentions de E05 repris [R03] (test) ; limites de E05 tenues (test) ; budget [R201] (test).
+- Attend : rien.
+
+### RS05 · Mentions légales et données personnelles du site
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
+- Cahier : Conformité ; M01.
+- Objectif : `GET /mentions-legales` et `GET /donnees-personnelles`, rendues depuis les réglages du réseau, liées depuis chaque page du site. Tant qu'une mention manque, la page dit qu'elle manque et le site ne peut pas passer en réel.
+- Critères : aucune mention inventée [R10] (test) ; une mention manquante se voit (test) ; liée depuis l'accueil et la liste (test) ; budget [R201] (test).
+- Attend : H09 pour le contenu réel ; textes à faire relire par l'avocat, à écrire dans `HUMAIN.md`.
+

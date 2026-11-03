@@ -570,3 +570,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 16:02 · voie 2 · fin de séance : AT17, AT18, AT19 et AT20 fusionnées ; plus rien de prêt en voie 2 hors attente d'un humain, donc pas de relance ; X28 et CE23 restent à la voie 1 ; verrou libéré · prochaine : à choisir
 - 2026-11-03 16:56 · X28 · les vérifications ont 25 minutes, garde-fous et paquet passent avant les tests, un contrôle retiré est refusé (#341) ; relecture forte 1 P1 corrigé ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : CE23
 - 2026-11-03 17:20 · CE23 · une panne de stockage à l'ouverture ne consomme ni le code ni une ouverture, le lecteur réessaie (#342) ; relecture forte 1 P1 de test corrigé ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : à choisir
+- 2026-11-03 17:22 · voie 1 · module « Site du réseau » découpé, RS01 à RS05 : le site n'a ni accueil ni liste des biens, et /estimation répond 404 · prochaine : RS01
