@@ -66,7 +66,7 @@ export class OptionsStudio {
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
-    private readonly relations: { propose(viewer: Viewer, input: { projectId: unknown; trade: unknown; propertyId?: unknown }): Promise<ReferralResult<Referral>> },
+    private readonly relations: { propose(viewer: Viewer, input: { projectId: unknown; trade: unknown; propertyId?: unknown; postcode?: unknown }): Promise<ReferralResult<Referral>> },
     options: OptionsStudioOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
@@ -74,11 +74,11 @@ export class OptionsStudio {
   }
 
   /** Demande une option pour le bien d'un projet : une mise en relation de M18, avec ses garanties [R74, R75]. */
-  async requestOption(viewer: Viewer, input: { projectId: unknown; propertyId: unknown; option: unknown }): Promise<OptionResult<{ option: StudioOption; referral: Referral }>> {
+  async requestOption(viewer: Viewer, input: { projectId: unknown; propertyId: unknown; option: unknown; postcode?: unknown }): Promise<OptionResult<{ option: StudioOption; referral: Referral }>> {
     if (typeof input.option !== 'string' || !Object.hasOwn(STUDIO_OPTIONS, input.option)) return { ok: false, rule: 'R10', code: 'option_inconnue' };
     const option = input.option as StudioOption;
     if (typeof input.propertyId !== 'string') return { ok: false, rule: 'R10', code: 'bien_requis' };
-    const proposed = await this.relations.propose(viewer, { projectId: input.projectId, trade: OPTION_TRADE[option], propertyId: input.propertyId });
+    const proposed = await this.relations.propose(viewer, { projectId: input.projectId, trade: OPTION_TRADE[option], propertyId: input.propertyId, postcode: input.postcode });
     if (!proposed.ok) return proposed;
     const actor = `${viewer.role}:${viewer.userId}`;
     await this.db.run('INSERT INTO studio_option_requests (id, network_id, referral_id, option, requested_by, requested_at) VALUES (?, ?, ?, ?, ?, ?)', [

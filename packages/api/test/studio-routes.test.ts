@@ -190,6 +190,19 @@ describeWithSqlite('X09 · routes de M19', () => {
     expect(JSON.stringify(events[0])).not.toContain(proofRef);
   });
 
+  it('[R73] une option pour un bien sans code postal prend le code dit par l’agent', async () => {
+    const t = await setup();
+    const b = await t.property(1);
+    const store = new FicheClient(t.db, { now: t.s.now });
+    const person = await store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Client', lastName: 'Inventé' });
+    const project = await store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: person.id, kind: 'sell' });
+    await store.linkProjectProperty({ networkId: t.network.id, agentId: t.alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
+    const ask = { projectId: project.id, propertyId: b.id, option: 'drone' };
+    expect((await t.call(t.agent, 'POST', '/studio/options', ask)).body).toMatchObject({ code: 'bad_postcode' });
+    // Le code arrive jusqu'au tirage : ici, aucun photographe dans cette zone.
+    expect((await t.call(t.agent, 'POST', '/studio/options', { ...ask, postcode: '21000' })).body).toMatchObject({ rule: 'R73', code: 'no_partner' });
+  });
+
   it('[R42] sans mandat en cours, la porte de D05 refuse la publication ; les supports partent en HTML', async () => {
     const t = await setup({ realDiffusion: true });
     const b = await t.property(1);

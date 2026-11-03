@@ -358,7 +358,7 @@ const ROUTES: StudioRoute[] = [
     pattern: /^\/studio\/options$/,
     name: 'studio.option',
     roles: WORK,
-    handle: withBody(async (s, v, _p, b) => reply(await core(s).options.requestOption(v, { projectId: b.projectId, propertyId: b.propertyId, option: b.option }))),
+    handle: withBody(async (s, v, _p, b) => reply(await core(s).options.requestOption(v, { projectId: b.projectId, propertyId: b.propertyId, option: b.option, postcode: b.postcode }))),
   },
   { method: 'GET', pattern: /^\/studio\/mesure-visuels$/, name: 'studio.mesure', roles: DIRECTION, handle: async (s, v) => reply(await core(s).options.measureVisuals(v)) },
 ];

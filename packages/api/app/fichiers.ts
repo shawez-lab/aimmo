@@ -1328,6 +1328,22 @@ export const APP_JS = `'use strict';
       return openPartenaires(done);
     });
   }
+  // Une option passée puis une réponse perdue : la refaire tirerait au sort une seconde fois. L'écran ne dit ni fait ni pas fait [R10].
+  var optionAsking = null;
+  function askOption(body) {
+    var mine = session;
+    if (optionAsking === mine) return Promise.resolve(false);
+    optionAsking = mine;
+    partenairesState('Envoi…');
+    function free() { if (optionAsking === mine) optionAsking = null; }
+    return send('/v1/studio/options', 'POST', body).then(function (res) {
+      free();
+      if (res.gone) return false;
+      if (res.offline || !res.body || res.status >= 500) { partenairesState('La réponse n’est pas arrivée : rien n’est sûr. Rouvrez les projets avant de recommencer.'); return false; }
+      if (!res.ok) { partenairesState(partnerRefusal(res.body, 'L’option n’est pas demandée.')); return false; }
+      return openPartenaires('Tirage fait : montrez au client les photographes proposés, dans cet ordre.');
+    }, function () { free(); return false; });
+  }
   function renderPartenaires(projects, page, more) {
     var body = $('partenaires-corps');
     clear(body);
@@ -1478,7 +1494,10 @@ export const APP_JS = `'use strict';
       var option = field(box, 'option-' + n, 'Option payante du Studio', 'select');
       Object.keys(STUDIO_OPTIONS).forEach(function (k) { var o = el('option', STUDIO_OPTIONS[k]); o.value = k; option.appendChild(o); });
       box.appendChild(button('Demander cette option et proposer au client', function () {
-        partAct('/v1/studio/options', { projectId: p.projectId, propertyId: place.value, option: option.value }, 'L’option n’est pas demandée.', 'Tirage fait : montrez au client les photographes proposés, dans cet ordre.');
+        var asked = { projectId: p.projectId, propertyId: place.value, option: option.value };
+        var where = String(cp.value || '').trim();
+        if (where) asked.postcode = where;
+        askOption(asked);
       }));
     }
     return box;
