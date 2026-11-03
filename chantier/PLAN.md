@@ -1764,12 +1764,22 @@ Trouvé le 2026-11-03 par la voie 1, en comparant les routes de `packages/api/sr
 Voie : 1
 
 ### X13 · Bibliothèque, options payantes et mesure des visuels à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03) : `/v1/studio/options` n'a aucun réglage, c'est une mise en relation d'un projet aux rôles agent et direction : son geste est sur le formulaire des partenaires. Route ajoutée `POST /v1/studio/bibliotheque/preuves`, aucune preuve ne pouvait être déposée. Fusionnée (#304). Relecture forte 2 P1 corrigés ; Codex à sa limite (H03).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : X07, X08, X09
 - Cahier : M19 Studio ; R16, R201.
 - Objectif : la direction range musiques et images sous licence, règle les options et lit la mesure des 20 visuels ; aujourd'hui `/v1/studio/bibliotheque`, `/options` et `/mesure-visuels` n'ont aucun geste à l'écran. Lire d'abord chaque route.
 - Critères : réservé à la direction [R16] (test) ; une licence manquante est refusée et dite (test) ; réponse perdue dite telle [R10] (test) ; budget tenu [R201] (test).
 - Attend : rien pour l'écran.
+
+### X14 · Les gestes des partenaires : réponse perdue dite telle, un seul tirage
+- Statut : en cours
+- Trouvé le 2026-11-03 par la relecture forte de X13 : `partAct` dit « rien n'est enregistré » quand la réponse se perd, alors que l'écriture a pu passer, et ne se verrouille pas ; refaire un tirage crée une seconde mise en relation, avec un nouvel ordre.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : X13
+- Cahier : M18 ; R10, R74, R201.
+- Objectif : tous les gestes de l'écran des partenaires passent par un même envoi : une réponse perdue ou une panne dit « rien n'est sûr » et ne relit rien, un second appui pendant l'envoi ne part pas.
+- Critères : coupure, panne et réponse illisible dites telles, sur le tirage et les autres gestes [R10] (test) ; double appui, un seul envoi [R74] (test) ; le verrou vaut pour une session (test) ; budget tenu [R201] (test).
+- Attend : rien.
 
 **Espaces des clients et location : les gestes manquants à l'écran.**
 
