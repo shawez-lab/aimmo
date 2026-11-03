@@ -1949,6 +1949,32 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Critères : l'alerte dit ce qui manque et la fin de la référence, jamais une pièce ni un montant [R15] (test) ; le résumé la compte, une lecture manquée n'est jamais zéro [R10] (test) ; décision avec raison et nom [R14] (test) ; déjà décidée : relue, pas refusée [R17] (test) ; réponse perdue dite telle (test) ; un seul envoi (test) ; budget tenu [R201] (test).
 - Attend : H29 pour un usage réel (responsable nommé).
 
+### W25 · Lire l'exemplaire signé de l'état des lieux
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#329) ; relecture forte 3 P1 corrigés, corrections non relues une seconde fois ; Codex non attendu (H03).
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W07, W11
+- Cahier : M15 ; R16, R106, R201.
+- Objectif : trouvé le 2026-11-03 par la voie 2, même comparaison : l'écran dit « un exemplaire pour chacun », mais `GET /v1/location/etats-des-lieux/<id>/exemplaires/<partie>` n'a aucun appel de l'application et le suivi ne rend pas l'identifiant. Le donner, lu seulement au geste.
+- Décidé (2026-11-03), lecture prudente : la route rendait l'identité des deux parties sous le seul droit sur le logement ; comme le bail et l'état des lieux en cours, le lecteur doit voir les deux fiches en entier, et la lecture va au journal [R16].
+- Critères : rien n'est lu avant le geste (test) ; exemplaire hors des droits dit, sans texte [R16] (test) ; lecture au journal (test) ; pas de réseau dit, le geste reste (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### CE22 · Brancher le dépôt des documents du dossier sur le stockage réel
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : CE20
+- Cahier : M16 ; R16, R114.
+- Objectif : `worker.ts` ne passe aucun `storage` à M16 : le dossier ne sert que la fiche, et CE20 répond `stockage_absent`. Avec le compartiment de H38, passer un `DossierStorage` qui lit et écrit du texte ; absent, rien ne change.
+- Critères : avec le compartiment, un texte déposé se relit à l'identique (test) ; sans lui, `stockage_absent` reste dit (test).
+- Attend : H38 pour un usage réel, rien pour le code.
+
+### W26 · Lectures sans écran à vérifier, une par une
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W25
+- Cahier : selon la route ; R16, R201.
+- Objectif : trouvé le 2026-11-03 par une comparaison de textes entre routes et écran, qui se trompe dans les deux sens (elle avait manqué `commerces/vigilance` par son dernier segment) : rien n'est vérifié. Pour chacune, dire si l'information est déjà à l'écran sous une autre forme, sinon la donner : `offres.comparatif`, `offres.historique`, `offres.taches`, `dossiers.taches`, `dossiers.alertes`, `investir.calcul.lu`, `partenaires.annuaire.fiche`. Laisser à la voie 1 celles de ses fichiers (`mandats.echeances`, `mandat.chronologie`, `bien.diffusion`, `attribution.regles`, `annonces.semaine`, `annonces.plan_tournage`, `studio.support`). Couper en tâches si plusieurs manquent vraiment.
+- Critères : chaque route vérifiée écrite ici, avec sa réponse (relecture) ; chaque geste donné : droits refusés dits [R16] (test), réponse perdue dite telle (test), budget tenu [R201] (test).
+- Attend : rien.
+
 ### CE20 · Ranger un document du dossier protégé, à l'écran
 - Statut : fait (2026-11-03)
 - Reste : fusionnée (#326) ; ne range rien en production avant H38 et le branchement du Worker ; relecture forte 2 P1 corrigés, corrections non relues une seconde fois ; Codex non attendu (H03).
