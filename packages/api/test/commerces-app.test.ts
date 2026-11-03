@@ -1321,3 +1321,120 @@ describe('CE17 · retrouver la source d’une fuite à l’écran', () => {
     expect(budgetProblems({ html: '', js: COMMERCES_ENGAGEMENTS_SCRIPT }, BUDGETS.page)).toEqual([]);
   });
 });
+
+describe('CE18 · retirer un lien de dossier protégé à l’écran', () => {
+  const LIST = 'GET /v1/commerces/b1/liens';
+  const POST = 'POST /v1/commerces/liens/l1/revocation';
+  const LINK = (over: Record<string, unknown> = {}) => ({ id: 'l1', personId: 'r2', createdAt: '2027-09-08T08:00:00.000Z', expiresAt: '2027-09-22T08:00:00.000Z', opens: 0, maxOpens: 5, state: 'actif', revokedAt: null, ...over });
+  async function open(more: Record<string, Answer> = {}) {
+    const t = await run({ [LIST]: ok([LINK()]), [POST]: ok({ revokedAt: '2027-09-10T08:00:00.000Z' }), ...more });
+    await t.openB1();
+    await t.click(t.byText('Voir les liens envoyés'));
+    const s = t.scripts().filter((e) => e.attributes.src === '/app/commerces-engagements.js');
+    runInNewContext(COMMERCES_ENGAGEMENTS_SCRIPT, t.context);
+    s[0]!.listeners.load!({});
+    await settle();
+    return t;
+  }
+  const posted = (t: Awaited<ReturnType<typeof run>>) => t.calls.filter((c) => c.method === 'POST' && c.url === '/v1/commerces/liens/l1/revocation');
+  const off = (b: FakeElement | undefined) => (b as unknown as { disabled?: boolean }).disabled === true;
+
+  it('[R16] sans droit d’écrire, aucun geste ; un refus du serveur est dit', async () => {
+    const reader = await run({ 'GET /v1/commerces/b1/demandes': no(403, { ok: false, rule: 'R16', code: 'role' }) });
+    await reader.openB1();
+    expect(reader.byText('Voir les liens envoyés')).toBeUndefined();
+    const t = await open({ [POST]: no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
+    await t.click(t.byText('Retirer ce lien'));
+    await t.click(t.byText('Confirmer : retirer ce lien'));
+    expect(t.state()).toBe('Ce geste n’est pas dans vos droits.');
+  });
+
+  it('[R10] deux appuis avant de retirer, puis le lien est dit retiré, depuis la liste relue', async () => {
+    const t = await open();
+    expect(t.body().textContent).toContain('Dominique (demande du 08/09/2027), envoyé le 08/09/2027');
+    expect(t.body().textContent).toContain('Actif : ouvert 0 fois sur 5, jusqu’au 22/09/2027.');
+    await t.click(t.byText('Retirer ce lien'));
+    expect(posted(t)).toHaveLength(0);
+    expect(t.body().textContent).toContain('Ce qui a déjà été lu ne s’efface pas');
+    t.table[LIST] = ok([LINK({ state: 'revoque', revokedAt: '2027-09-10T08:00:00.000Z' })]);
+    await t.click(t.byText('Confirmer : retirer ce lien'));
+    expect(posted(t)).toHaveLength(1);
+    expect(t.state()).toBe('Lien retiré : il ne s’ouvre plus.');
+    expect(t.body().textContent).toContain('Retiré le 10/09/2027 : il ne s’ouvre plus.');
+    expect(t.byText('Confirmer : retirer ce lien')).toBeUndefined();
+    expect(t.byText('Retirer ce lien')).toBeUndefined();
+  });
+
+  it('[R10] un lien retiré, mais une liste qui ne se relit pas : le retrait reste dit', async () => {
+    const t = await open();
+    await t.click(t.byText('Retirer ce lien'));
+    delete t.table[LIST];
+    await t.click(t.byText('Confirmer : retirer ce lien'));
+    expect(t.state()).toContain('Lien retiré : il ne s’ouvre plus.');
+    expect(t.state()).toContain('ne se lisent pas');
+    expect(t.byText('Relire les liens envoyés')).toBeDefined();
+  });
+
+  it.each([
+    ['expire', 'Expiré le 22/09/2027'],
+    ['epuise', 'Ouvertures épuisées'],
+    ['revoque', 'Retiré le 10/09/2027'],
+    ['non_remis', 'Jamais remis'],
+    ['etrange', 'État inconnu'],
+  ])('[R10] un lien %s se dit tel et n’offre rien à retirer', async (state, said) => {
+    const t = await open({ [LIST]: ok([LINK({ state, revokedAt: '2027-09-10T08:00:00.000Z' })]) });
+    expect(t.body().textContent).toContain(said);
+    expect(t.byText('Retirer ce lien')).toBeUndefined();
+  });
+
+  it.each([
+    ['réseau coupé', () => Promise.reject(new TypeError('hors ligne'))],
+    ['panne', no(500, { ok: false })],
+    ['réponse illisible', async () => new Response('pas du json', { status: 200 })],
+  ] as [string, Answer][])('[R10] %s : le lien est peut-être retiré, c’est dit, et le geste reste possible', async (_n, answer) => {
+    const t = await open({ [POST]: answer });
+    await t.click(t.byText('Retirer ce lien'));
+    await t.click(t.byText('Confirmer : retirer ce lien'));
+    expect(t.state()).toContain('Réponse perdue : ce lien est peut-être retiré');
+    expect(off(t.byText('Retirer ce lien'))).toBe(false);
+  });
+
+  it('[R10] déjà retiré ailleurs : c’est dit, et la liste relue', async () => {
+    const t = await open({ [POST]: no(400, { ok: false, rule: null, code: 'already_revoked' }) });
+    await t.click(t.byText('Retirer ce lien'));
+    t.table[LIST] = ok([LINK({ state: 'revoque', revokedAt: '2027-09-10T08:00:00.000Z' })]);
+    await t.click(t.byText('Confirmer : retirer ce lien'));
+    expect(t.state()).toBe('Ce lien était déjà retiré.');
+    expect(t.body().textContent).toContain('Retiré le 10/09/2027');
+  });
+
+  it('[R10] une liste perdue ne dit pas « aucun lien », une réponse sans liste non plus', async () => {
+    for (const answer of [(() => Promise.reject(new TypeError('hors ligne'))) as Answer, (async () => Response.json({ ok: true })) as Answer]) {
+      const t = await open({ [LIST]: answer });
+      expect(t.state()).toContain('ne se lisent pas');
+      expect(t.body().textContent).not.toContain('Aucun lien envoyé');
+      t.table[LIST] = ok([]);
+      await t.click(t.byText('Relire les liens envoyés'));
+      expect(t.body().textContent).toContain('Aucun lien envoyé');
+    }
+  });
+
+  it('un second appui pendant l’envoi ne part pas, et une réponse tardive ne s’affiche pas sur l’écran suivant', async () => {
+    let release: () => void = () => {};
+    const t = await open({ [POST]: () => new Promise<Response>((_res, rej) => { release = () => rej(new TypeError('hors ligne')); }) });
+    await t.click(t.byText('Retirer ce lien'));
+    const go = t.byText('Confirmer : retirer ce lien')!;
+    go.listeners.click!({});
+    go.listeners.click!({});
+    expect(posted(t)).toHaveLength(1);
+    await t.click(t.els['commerces-ouvrir']);
+    release();
+    await settle();
+    expect(t.state()).not.toContain('Réponse perdue');
+  });
+
+  it('[R201] les scripts tiennent le budget d’une page', () => {
+    expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(budgetProblems({ html: '', js: COMMERCES_ENGAGEMENTS_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+});

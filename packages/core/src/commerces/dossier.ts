@@ -63,6 +63,19 @@ export interface DossierAccess {
   at: string;
 }
 
+/** Un lien envoyé, sans son jeton ni son empreinte. `non_remis` : le contrôle central a refusé son envoi, il n'est jamais parti. */
+export type DossierLinkState = 'actif' | 'expire' | 'epuise' | 'revoque' | 'non_remis';
+export interface DossierLink {
+  id: string;
+  personId: string;
+  createdAt: string;
+  expiresAt: string;
+  opens: number;
+  maxOpens: number;
+  state: DossierLinkState;
+  revokedAt: string | null;
+}
+
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem = { ok: false; rule: 'R113' | 'R114' | string | null; code: string; codes?: string[] };
 export type DossierResult<T> = { ok: true; value: T } | Refusal | Problem;
@@ -442,6 +455,33 @@ export class DossierCommerce {
       [viewer.networkId, propertyId],
     );
     return { ok: true, value: rows.map((r) => ({ id: r.id, linkId: r.link_id, personId: r.person_id, outcome: r.outcome, at: r.at })) };
+  }
+
+  /** Les liens envoyés pour ce bien, à l'agent du bien ou à la direction : même un lien jamais ouvert peut se retirer. */
+  async links(acces: Acces, viewer: Viewer, propertyId: string): Promise<DossierResult<DossierLink[]>> {
+    const g = await this.gate(acces, viewer, propertyId, 'write');
+    if (!g.ok) return g;
+    const rows = await this.db.all<{ id: string; person_id: string; created_at: string; expires_at: string; max_opens: number; revoked_by: string | null; revoked_at: string | null; opens: number }>(
+      `SELECT l.id, l.person_id, l.created_at, l.expires_at, l.max_opens, r.revoked_by, r.revoked_at,
+              (SELECT COUNT(*) FROM business_dossier_accesses a WHERE a.link_id = l.id AND a.outcome = 'ouvert') AS opens
+         FROM business_dossier_links l LEFT JOIN business_dossier_link_revocations r ON r.link_id = l.id
+        WHERE l.network_id = ? AND l.property_id = ? ORDER BY l.created_at, l.rowid`,
+      [viewer.networkId, propertyId],
+    );
+    const now = this.now().getTime();
+    return {
+      ok: true,
+      value: rows.map((r) => ({
+        id: r.id,
+        personId: r.person_id,
+        createdAt: r.created_at,
+        expiresAt: r.expires_at,
+        opens: r.opens,
+        maxOpens: r.max_opens,
+        state: r.revoked_at ? (r.revoked_by === 'systeme' ? 'non_remis' : 'revoque') : now > Date.parse(r.expires_at) ? 'expire' : r.opens >= r.max_opens ? 'epuise' : 'actif',
+        revokedAt: r.revoked_at,
+      })),
+    };
   }
 
   /**
