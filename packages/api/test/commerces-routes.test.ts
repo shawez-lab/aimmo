@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { commercesRoutes, dossierReaderRoutes, type CommercesServices } from '../src/commerces.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -428,5 +428,101 @@ describeWithSqlite('CE15 · les repreneurs à l’écran, par les routes', () =>
     for (const secret of SECRETS) expect(JSON.stringify(found), secret).not.toContain(secret);
     t.closed.add(shown);
     expect(await t.ok(t.alex, 'GET', `/commerces/repreneurs/${project.id}/biens`)).toEqual([]);
+  });
+});
+
+describeWithSqlite('CE16 · la réponse immédiate au repreneur', () => {
+  const ready = async () => {
+    const t = await setup();
+    await t.ok(t.dir, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5_000, high: 8_000, source: 'Barème inventé', sourceDate: '2027-01-15' });
+    const id = await t.shop();
+    const r = await t.buyer('A');
+    return { t, id, r };
+  };
+  const boxed = (t: Awaited<ReturnType<typeof setup>>, personId: string) =>
+    t.db.all<{ body: string }>(`SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%informations publiques%'`, [personId]);
+  it('[R110] [R26] [R13] seule la présentation validée part, dans la boîte d’essai ; ni chiffre confidentiel, ni trace au journal', async () => {
+    const { t, id, r } = await ready();
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    expect(await t.ok(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).toEqual({ mode: 'essai' });
+    const [mail] = await boxed(t, r.id);
+    const shown = (await t.ok(t.alex, 'GET', `/commerces/${id}/presentation`)) as { title: string; body: string };
+    expect(mail!.body).toContain(shown.title.replace(/\s*\(([^()]*)\)/g, ', $1'));
+    expect(mail!.body).not.toMatch(/[()]/);
+    expect(mail!.body).toContain('Votre agent immobilier');
+    for (const secret of SECRETS) expect(mail!.body, secret).not.toContain(secret);
+    expect(JSON.stringify(await t.journal.all())).not.toContain(shown.title);
+    // [R05] une seule fois par commerce : le second envoi est refusé, rien de plus dans la boîte.
+    const again = await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT });
+    expect(again.body).toMatchObject({ ok: false, rule: 'R05', code: 'send_refused' });
+    expect(await boxed(t, r.id)).toHaveLength(1);
+  });
+  it('[R42] [R110] sans demande, sans diffusion ou sans présentation validée, rien ne part', async () => {
+    const { t, id, r } = await ready();
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, code: 'pas_de_demande' });
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    t.closed.add(id);
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R42', code: 'non_diffusable' });
+    t.closed.delete(id);
+    // La fiche change : la présentation d'avant n'est plus publiable.
+    await t.ok(t.alex, 'POST', `/commerces/${id}/fiche`, { employees: 9 });
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R110', code: 'presentation_absente' });
+    expect(await boxed(t, r.id)).toEqual([]);
+  });
+  it('[R03] sans accord noté, ou l’accord retiré, rien ne part, et la parole de l’agent ne le redonne pas', async () => {
+    const { t, id, r } = await ready();
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, consentProof: '  ' })).body).toMatchObject({ code: 'bad_consent' });
+    const c = await t.store.addConsent({ networkId: t.networkId, personId: r.id, purpose: 'information_commerce', channel: 'email', proof: 'Accord inventé', givenAt: new Date('2027-09-01T08:00:00.000Z') });
+    await t.store.withdrawConsent(c.id, new Date('2027-09-02T08:00:00.000Z'));
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R03', code: 'consent_withdrawn' });
+    expect(await boxed(t, r.id)).toEqual([]);
+  });
+  const refusals = async (t: Awaited<ReturnType<typeof setup>>) => (await t.journal.all()).filter((e) => e.type === 'commerces.acces.informations_refusees').map((e) => e.data);
+  it('[R13] chaque refus laisse sa trace au journal, ses seuls codes', async () => {
+    const { t, id, r } = await ready();
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    t.closed.add(id);
+    await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT });
+    t.closed.delete(id);
+    await t.ok(t.alex, 'POST', `/commerces/${id}/fiche`, { employees: 9 });
+    await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT });
+    expect(await refusals(t)).toEqual([{ rule: 'R42', code: 'non_diffusable' }, { rule: 'R110', code: 'presentation_absente' }]);
+  });
+  it('[R19] le nom du vendeur ne part jamais au repreneur, même écrit à la main dans la présentation', async () => {
+    const { t, id, r } = await ready();
+    const seller = await t.store.createPerson({ networkId: t.networkId, agentId: t.alexId, firstName: 'Vendeurinvente', lastName: 'Essai' });
+    const project = await t.store.createProject({ networkId: t.networkId, agentId: t.alexId, personId: seller.id, kind: 'sell_business' });
+    await t.db.run("INSERT INTO project_properties (project_id, property_id, network_id, role, created_at) VALUES (?, ?, ?, 'owned', ?)", [project.id, id, t.networkId, '2027-09-01T08:00:00.000Z']);
+    const shown = await t.ok(t.alex, 'GET', `/commerces/${id}/presentation`);
+    // Une présentation corrigée par l'agent, puis validée.
+    const fixed = await t.ok(t.alex, 'POST', `/commerces/${id}/presentations/texte`, { title: shown.title, body: `Monsieur Vendeurinvente cède son restaurant. ${shown.body}` });
+    await t.ok(t.alex, 'POST', `/commerces/presentations/${fixed.id}/validation`);
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, code: 'send_refused' });
+    expect(await boxed(t, r.id)).toEqual([]);
+  });
+  it('[R03] [R05] sur des fiches réunies : l’accord retiré tient, et le doublon aussi', async () => {
+    const { t, id, r } = await ready();
+    const fiche = new FicheUnique(t.db, t.store, { now: () => new Date('2027-09-07T08:00:00.000Z') });
+    const withdrawnOn = await t.buyer('B');
+    const c = await t.store.addConsent({ networkId: t.networkId, personId: withdrawnOn.id, purpose: 'information_commerce', channel: 'email', proof: 'Accord inventé', givenAt: new Date('2027-09-01T08:00:00.000Z') });
+    await t.store.withdrawConsent(c.id, new Date('2027-09-02T08:00:00.000Z'));
+    await fiche.merge({ survivorId: r.id, mergedId: withdrawnOn.id, reason: 'test' });
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R03', code: 'consent_withdrawn' });
+    // Le doublon : envoyé à une fiche, refusé à la fiche réunie à elle.
+    const first = await t.buyer('C');
+    const second = await t.buyer('D');
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: first.id });
+    await t.ok(t.alex, 'POST', `/commerces/${id}/informations`, { personId: first.id, ...CONSENT });
+    await fiche.merge({ survivorId: second.id, mergedId: first.id, reason: 'test' });
+    expect((await t.call(t.alex, 'POST', `/commerces/${id}/informations`, { personId: second.id, ...CONSENT })).body).toMatchObject({ ok: false, rule: 'R05', code: 'send_refused' });
+  });
+  it('[R16] ni un autre agent, ni la conformité', async () => {
+    const { t, id, r } = await ready();
+    await t.ok(t.alex, 'POST', `/commerces/${id}/demandes`, { personId: r.id });
+    for (const who of [t.bea, t.compliance]) expect((await t.call(who, 'POST', `/commerces/${id}/informations`, { personId: r.id, ...CONSENT })).status).toBe(403);
+    expect(await boxed(t, r.id)).toEqual([]);
   });
 });

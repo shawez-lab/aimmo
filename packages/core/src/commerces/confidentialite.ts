@@ -31,6 +31,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { BusinessPublicView, BusinessSheetVersion, FicheCommerce } from './fiche.ts';
 import type { BusinessPresentation, PresentationCommerce } from './presentation.ts';
+import type { BusinessDiffusionGate } from './repreneurs.ts';
 
 /** Une signature d'engagement n'est jamais réelle tant que H24 n'est pas fait. */
 export const REAL_NDA_SIGNATURE = false;
@@ -42,6 +43,9 @@ export interface IdentityState {
 
 export const NDA_REVOCATION_REASONS = ['demande_repreneur', 'manquement', 'fin_de_vente', 'autre'] as const;
 export type NdaRevocationReason = (typeof NDA_REVOCATION_REASONS)[number];
+
+/** La finalité de l'accord de la personne à recevoir par mail les informations publiques d'un commerce [R03]. */
+export const PUBLIC_INFO_PURPOSE = 'information_commerce';
 
 export type ConfidentialRefusalCode =
   | 'engagement_absent'
@@ -101,7 +105,11 @@ type Problem = {
     | 'bad_drawing'
     | 'nda_changed'
     | 'send_refused'
-    | 'unknown_person';
+    | 'unknown_person'
+    | 'pas_de_demande'
+    | 'presentation_absente'
+    | 'non_diffusable'
+    | 'consent_withdrawn';
 };
 export type ConfidentialResult<T> = { ok: true; value: T } | Refusal | Problem | { ok: false; rule: 'R113'; code: 'door_closed'; codes: ConfidentialRefusalCode[] };
 
@@ -240,6 +248,72 @@ export class ConfidentialiteCommerce {
       ok: true,
       value: { requestId, publicView, presentation: shown ? { title: shown.title, body: shown.body } : null, ndaId: nda?.id ?? null },
     };
+  }
+
+  /**
+   * La réponse immédiate au repreneur (CE16) : la présentation validée et publiable, rien d'autre [R110], à qui a une
+   * demande rangée pour ce bien, et si le bien peut être diffusé [R42]. Elle part par le contrôle central, en essai dans
+   * la boîte d'essai [R26], avec les seuls chiffres de la présentation [R10], une seule fois par bien [R05]. Lecture
+   * prudente, comme la sécurité des visites, tant que H42 n'est pas tranché : un accord retiré ne se redonne pas par la
+   * seule parole de l'agent [R03].
+   */
+  async sendPublicInfo(
+    acces: Acces,
+    viewer: Viewer,
+    propertyId: string,
+    personId: string,
+    input: { consentProof?: unknown },
+    diffusion: BusinessDiffusionGate,
+  ): Promise<ConfidentialResult<{ mode: 'essai' }>> {
+    const g = await this.gate(acces, viewer, propertyId, personId);
+    if (!g.ok) return g;
+    if (typeof input.consentProof !== 'string' || input.consentProof.trim() === '' || input.consentProof.length > 300) return { ok: false, rule: null, code: 'bad_consent' };
+    const members = await this.fiche.membersOf(personId);
+    const marks = members.map(() => '?').join(', ');
+    if (!(await this.db.first(`SELECT 1 FROM business_access_requests WHERE network_id = ? AND property_id = ? AND person_id IN (${marks}) LIMIT 1`, [viewer.networkId, propertyId, ...members]))) {
+      return { ok: false, rule: null, code: 'pas_de_demande' };
+    }
+    // Un envoi refusé laisse sa trace au journal, ses seuls codes [R13].
+    const refused = async <C extends 'non_diffusable' | 'presentation_absente' | 'consent_withdrawn' | 'send_refused'>(rule: string | null, code: C) => {
+      await appendEvent(this.journal, { type: 'commerces.acces.informations_refusees', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule, code } }, this.now);
+      return { ok: false as const, rule, code };
+    };
+    if (!(await diffusion.canDiffuse(viewer.networkId, propertyId, this.now())).allowed) return refused('R42', 'non_diffusable');
+    const shown = await this.presentations.publishable(viewer.networkId, propertyId);
+    if (!shown) return refused('R110', 'presentation_absente');
+    const consent = await this.fiche.hasConsentInForce(personId, PUBLIC_INFO_PURPOSE, 'email');
+    if (!consent) {
+      const withdrawn = await this.db.first(`SELECT 1 FROM consents WHERE person_id IN (${marks}) AND purpose = ? AND channel = 'email' AND withdrawn_at IS NOT NULL LIMIT 1`, [...members, PUBLIC_INFO_PURPOSE]);
+      if (withdrawn) return refused('R03', 'consent_withdrawn');
+      await this.store.addConsent({ networkId: viewer.networkId, personId, purpose: PUBLIC_INFO_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
+    }
+    const agent = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ?', [propertyId]);
+    const first = await ficheFirstName(this.db, members);
+    // La présentation écrit « à Dijon (21000) » ; un message à une personne n'a pas de parenthèses [R08], les mots et les chiffres restent.
+    const flat = (text: string): string => text.replace(/\s*\(([^()]*)\)/g, ', $1');
+    // Jamais le nom du vendeur à un repreneur [R19] : l'agent peut avoir corrigé la présentation à la main. Le destinataire n'en est pas un.
+    const sellers = await this.db.all<{ first_name: string | null; last_name: string | null }>(
+      `SELECT DISTINCT p.first_name, p.last_name FROM project_properties pp JOIN projects pr ON pr.id = pp.project_id JOIN persons p ON p.id = pr.person_id
+       WHERE pp.property_id = ? AND pp.role = 'owned' AND pr.person_id NOT IN (${marks})`,
+      [propertyId, ...members],
+    );
+    const sent = await this.envois.send({
+      networkId: viewer.networkId,
+      agentId: agent?.agent_id ?? null,
+      personId,
+      channel: 'email',
+      kind: 'alert',
+      purpose: PUBLIC_INFO_PURPOSE,
+      propertyIds: [propertyId],
+      fallbackTexts: [
+        `${first ? `Bonjour ${first},\n\n` : 'Bonjour,\n\n'}Votre agent immobilier vous transmet les informations publiques de ce commerce.\n\n${flat(shown.title)}\n\n${flat(shown.body)}\n\nLe détail s’ouvre après la signature d’un engagement de confidentialité et la vérification de votre pièce d’identité.`,
+      ],
+      figures: [shown.title, shown.body],
+      sellerNames: sellers.flatMap((r) => [r.first_name, r.last_name]).filter((n): n is string => !!n && n.trim().length > 1),
+    });
+    if (sent.status !== 'sent') return refused(sent.rule, 'send_refused');
+    await appendEvent(this.journal, { type: 'commerces.acces.informations', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { mode: 'essai' } }, this.now);
+    return { ok: true, value: { mode: 'essai' } };
   }
 
   /** Ouvre la signature de l'engagement : le code est envoyé à la personne par le contrôle central [R26, R03]. */
