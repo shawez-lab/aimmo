@@ -27,6 +27,14 @@ async function setup(nowIso = '2027-07-20T10:00:00.000Z') {
     return i;
   };
   const claim = (inboundId: string, outcome: string, at: string) => db.run('INSERT INTO first_reply_claims (claim_key, inbound_id, claim_id, outcome, created_at) VALUES (?, ?, ?, ?, ?)', [id(), inboundId, id(), outcome, at]);
+  /** Un message sorti : `box` le laisse en boîte d'essai, `failed` en panne. */
+  const out = async (person: string | null, at: string, opts: { author?: string; box?: boolean; failed?: boolean } = {}) => {
+    const m = id();
+    await db.run("INSERT INTO messages (id, network_id, person_id, channel, direction, author_kind, body, occurred_at, created_at) VALUES (?, ?, ?, 'email', 'out', ?, 'texte', ?, ?)", [m, net, person ?? 'personne', opts.author ?? 'ai', at, at]);
+    if (opts.box) await db.run("INSERT INTO trial_outbox (message_id, channel, created_at) VALUES (?, 'email', ?)", [m, at]);
+    if (opts.failed) await db.run("INSERT INTO send_log (id, network_id, person_id, message_id, channel, kind, outcome, reason, occurred_at, created_at) VALUES (?, ?, ?, ?, 'email', 'k', 'failed', 'panne', ?, ?)", [id(), net, person ?? 'personne', m, at, at]);
+    return m;
+  };
   const appointment = async (kind: string, status: string, endAt: string, propertyId: string | null = null) => {
     const i = id();
     await db.run("INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'agent', ?, ?)", [i, net, 'a1', 'p1', propertyId, kind, new Date(Date.parse(endAt) - 3_600_000).toISOString(), endAt, status, i, endAt, endAt]);
@@ -38,7 +46,7 @@ async function setup(nowIso = '2027-07-20T10:00:00.000Z') {
     return r.value;
   };
   const line = async (code: ServicePromiseCode, month?: string) => (await read(month)).lines.find((l) => l.code === code)!;
-  return { db, net, as, ind, id, inbound, claim, appointment, read, line, journal, setClock: (iso: string) => { clock = new Date(iso); } };
+  return { db, net, as, ind, id, inbound, claim, out, appointment, read, line, journal, setClock: (iso: string) => { clock = new Date(iso); } };
 }
 
 describeWithSqlite('IN07 · engagements de service tenus', () => {
@@ -53,27 +61,64 @@ describeWithSqlite('IN07 · engagements de service tenus', () => {
 
   it('[R216] réponse en une minute : 60 s tenu, 61 s manqué, sans réponse manqué, le premier message de la conversation seul', async () => {
     const t = await setup();
-    await t.claim(await t.inbound(T('10T10:00:00'), { conv: 'c1' }), 'sent', T('10T10:01:00'));
-    await t.inbound(T('10T10:05:00'), { conv: 'c1' }); // la suite de la conversation : pas un cas
-    await t.claim(await t.inbound(T('11T10:00:00')), 'sent', T('11T10:01:01'));
-    await t.inbound(T('12T10:00:00'));
-    await t.inbound(T('12T11:00:00'), { kind: 'unreadable' });
+    const answered = async (person: string, received: string, replied: string, conv: string | null = null) => {
+      await t.claim(await t.inbound(received, { conv, person }), 'sent', received);
+      await t.out(person, replied);
+    };
+    await answered('p1', T('10T10:00:00'), T('10T10:01:00'), 'c1');
+    await t.inbound(T('10T10:05:00'), { conv: 'c1', person: 'p1' }); // la suite de la conversation : pas un cas
+    await answered('p2', T('11T10:00:00'), T('11T10:01:01'));
+    await t.inbound(T('12T10:00:00'), { person: 'p3' });
+    await t.inbound(T('12T11:00:00'), { kind: 'unreadable', person: 'p4' });
     const l = await t.line('reponse_minute');
     expect(l.kept).toEqual({ numerator: 1, denominator: 3, bp: 3333 });
     expect(l.missedDays).toEqual(['2027-06-11', '2027-06-12']);
   });
 
-  it('[R216] une réponse de l’agent dans la minute compte, un envoi du système non ; une réponse refusée sans autre réponse est à part et se voit', async () => {
+  it('[R216] une réponse restée en boîte d’essai n’est pas tenue : à part, jamais 100 % ; en retard, manquée ; en panne, manquée', async () => {
     const t = await setup();
-    await t.inbound(T('10T10:00:00'), { person: 'p7' });
-    await t.db.run("INSERT INTO messages (id, network_id, person_id, channel, direction, author_kind, body, occurred_at, created_at) VALUES ('m1', ?, 'p7', 'email', 'out', 'agent', 'texte', ?, ?)", [t.net, T('10T10:00:30'), T('10T10:00:30')]);
-    await t.claim(await t.inbound(T('11T10:00:00')), 'refused', T('11T10:00:01'));
-    // Un envoi du système dans la minute (une alerte, par exemple) n'est pas une réponse.
-    await t.inbound(T('13T10:00:00'), { person: 'p8' });
-    await t.db.run("INSERT INTO messages (id, network_id, person_id, channel, direction, author_kind, body, occurred_at, created_at) VALUES ('m2', ?, 'p8', 'email', 'out', 'system', 'texte', ?, ?)", [t.net, T('13T10:00:30'), T('13T10:00:30')]);
+    await t.claim(await t.inbound(T('10T10:00:00'), { person: 'p1' }), 'sent', T('10T10:00:00'));
+    await t.out('p1', T('10T10:00:10'), { box: true });
+    await t.claim(await t.inbound(T('11T10:00:00'), { person: 'p2' }), 'sent', T('11T10:00:00'));
+    await t.out('p2', T('11T10:05:00'), { box: true });
+    await t.claim(await t.inbound(T('12T10:00:00'), { person: 'p3' }), 'sent', T('12T10:00:00'));
+    await t.out('p3', T('12T10:00:10'), { failed: true });
+    const r = await t.read();
+    const l = r.lines.find((x) => x.code === 'reponse_minute')!;
+    expect(l.inTrial).toBe(1);
+    expect(l.kept).toEqual({ numerator: 0, denominator: 2, bp: 0 });
+    expect(r.overall.numerator).toBe(0);
+  });
+
+  it('[R216] seule une réponse de l’agent ou la réponse partie de ce message comptent : une réservation seule, ou une alerte, non', async () => {
+    const t = await setup();
+    await t.inbound(T('10T10:00:00'), { person: 'p1' });
+    await t.out('p1', T('10T10:00:30'), { author: 'agent' });
+    await t.claim(await t.inbound(T('11T10:00:00'), { person: 'p2' }), 'sent', T('11T10:00:01')); // réservation sans message
+    await t.inbound(T('13T10:00:00'), { person: 'p3' });
+    await t.out('p3', T('13T10:00:30'), { author: 'system' }); // une alerte
     const l = await t.line('reponse_minute');
-    expect(l.kept).toEqual({ numerator: 1, denominator: 2, bp: 5000 });
-    expect(l.setAside).toBe(1);
+    expect(l.kept).toEqual({ numerator: 1, denominator: 3, bp: 3333 });
+    expect(l.setAside).toBe(0);
+  });
+
+  it('[R216] [R02] [R21] se taire est la règle : exclu, silence au rattachement, agent déjà en contact sont à part ; tout autre refus est manqué', async () => {
+    const t = await setup();
+    // Exclusion active ; levée avant le message, elle ne vaut plus.
+    const exclude = (person: string, noted: string, lifted: string | null) => t.db.run("INSERT INTO exclusions (id, network_id, person_id, reason, noted_at, lifted_at, created_at) VALUES (?, ?, ?, 'stop', ?, ?, ?)", [t.id(), t.net, person, noted, lifted, noted]);
+    await exclude('p1', T('01T10:00:00'), null);
+    await t.claim(await t.inbound(T('10T10:00:00'), { person: 'p1' }), 'refused', T('10T10:00:01'));
+    await exclude('p2', T('01T10:00:00'), T('05T10:00:00'));
+    await t.claim(await t.inbound(T('11T10:00:00'), { person: 'p2' }), 'refused', T('11T10:00:01'));
+    const silenced = await t.inbound(T('12T10:00:00'), { person: 'p3' });
+    await t.db.run("INSERT INTO attach_log (id, network_id, inbound_id, person_id, outcome, silenced, reason, occurred_at, created_at) VALUES (?, ?, ?, 'p3', 'matched', 1, 'r', ?, ?)", [t.id(), t.net, silenced, T('12T10:00:00'), T('12T10:00:00')]);
+    await t.out('p4', T('09T10:00:00'), { author: 'agent' });
+    await t.inbound(T('13T10:00:00'), { person: 'p4' });
+    await t.claim(await t.inbound(T('14T10:00:00'), { person: 'p5' }), 'refused', T('14T10:00:01')); // aucun texte ne passe
+    const l = await t.line('reponse_minute');
+    expect(l.setAside).toBe(3);
+    expect(l.kept).toEqual({ numerator: 0, denominator: 2, bp: 0 });
+    expect(l.missedDays).toEqual(['2027-06-11', '2027-06-14']);
   });
 
   it('[R216] rappel d’un contact chaud : le jour de Paris, minuit à Paris et non en temps universel', async () => {
@@ -85,6 +130,22 @@ describeWithSqlite('IN07 · engagements de service tenus', () => {
     const l = await t.line('rappel_chaud');
     expect(l.kept).toEqual({ numerator: 1, denominator: 3, bp: 3333 });
     expect(l.missedDays).toEqual(['2027-06-11', '2027-06-12']);
+  });
+
+  it('[R216] [R25] rappel : deux fiches réunies font un cas, et le rappel fait sur l’une vaut ; une personne exclue ce jour-là est à part', async () => {
+    const t = await setup();
+    const task = (person: string, created: string, done: string | null) => t.db.run("INSERT INTO callback_tasks (id, network_id, person_id, qualification_id, dedup_key, reason, due_at, created_at, done_at) VALUES (?, ?, ?, 'q', ?, 'r', ?, ?, ?)", [t.id(), t.net, person, t.id(), created, created, done]);
+    await t.db.run("INSERT INTO person_merges (id, network_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES ('f1', ?, 'p1', 'p2', 'r', ?, ?)", [t.net, T('10T09:30:00'), T('10T09:30:00')]);
+    await t.db.run("INSERT INTO person_merges (id, network_id, survivor_id, merged_id, reason, merged_at, undone_at, created_at) VALUES ('f2', ?, 'p5', 'p6', 'r', ?, ?, ?)", [t.net, T('10T09:30:00'), T('10T09:40:00'), T('10T09:30:00')]);
+    await task('p1', T('10T09:00:00'), T('10T10:00:00'));
+    await task('p2', T('10T09:10:00'), null);
+    await task('p5', T('11T09:00:00'), T('11T10:00:00')); // fusion défaite : deux cas
+    await task('p6', T('11T09:10:00'), null);
+    await task('p7', T('12T09:00:00'), null);
+    await t.db.run("INSERT INTO exclusions (id, network_id, person_id, reason, noted_at, created_at) VALUES ('x', ?, 'p7', 'stop', ?, ?)", [t.net, T('12T14:00:00'), T('12T14:00:00')]);
+    const l = await t.line('rappel_chaud');
+    expect(l.kept).toEqual({ numerator: 2, denominator: 3, bp: 6667 });
+    expect(l.setAside).toBe(1);
   });
 
   it('[R216] avis de valeur : 48 h après la visite, un envoi d’avant la visite ne vaut pas, une visite annulée ne compte pas', async () => {
@@ -108,24 +169,42 @@ describeWithSqlite('IN07 · engagements de service tenus', () => {
     expect(l.setAside).toBe(1);
   });
 
-  it('[R216] compte rendu : validé sous 24 h ; un brouillon, une visite sans compte rendu ou en retard sont manqués', async () => {
+  it('[R216] compte rendu : parti au vendeur sous 24 h ; brouillon, refusé, en retard ou absent sont manqués ; en essai à part', async () => {
     const t = await setup();
-    const report = (appointmentId: string, status: string, validatedAt: string | null) => t.db.run("INSERT INTO visit_reports (appointment_id, network_id, dictation, status, validated_by, validated_at, created_by, created_at, updated_at) VALUES (?, ?, 'd', ?, 'a', ?, 'a', ?, ?)", [appointmentId, t.net, status, validatedAt, T('01T00:00:00'), T('01T00:00:00')]);
-    await report(await t.appointment('visite', 'honored', T('10T10:00:00')), 'valide', T('11T10:00:00'));
-    await report(await t.appointment('visite', 'booked', T('11T10:00:00')), 'valide', T('12T10:00:01'));
-    await report(await t.appointment('visite', 'honored', T('12T10:00:00')), 'brouillon', null);
-    await t.appointment('visite', 'honored', T('13T10:00:00'));
-    await t.appointment('visite', 'cancelled', T('14T10:00:00'));
-    expect((await t.line('compte_rendu_24h')).kept).toEqual({ numerator: 1, denominator: 4, bp: 2500 });
+    const report = async (appointmentId: string, status: string, delivery: string | null, messageId: string | null) => {
+      await t.db.run("INSERT INTO visit_reports (appointment_id, network_id, dictation, status, validated_by, validated_at, delivery_status, message_id, created_by, created_at, updated_at) VALUES (?, ?, 'd', ?, 'a', ?, ?, ?, 'a', ?, ?)", [appointmentId, t.net, status, status === 'valide' ? T('01T00:00:00') : null, delivery, messageId, T('01T00:00:00'), T('01T00:00:00')]);
+    };
+    await report(await t.appointment('visite', 'honored', T('10T10:00:00')), 'valide', 'sent', await t.out('v', T('11T10:00:00')));
+    await report(await t.appointment('visite', 'booked', T('11T10:00:00')), 'valide', 'sent', await t.out('v', T('12T10:00:01')));
+    await report(await t.appointment('visite', 'honored', T('12T10:00:00')), 'brouillon', null, null);
+    await report(await t.appointment('visite', 'honored', T('13T10:00:00')), 'valide', 'refused', null);
+    await t.appointment('visite', 'honored', T('14T10:00:00'));
+    await t.appointment('visite', 'cancelled', T('15T10:00:00'));
+    await report(await t.appointment('visite', 'honored', T('16T10:00:00')), 'valide', 'sent', await t.out('v', T('16T11:00:00'), { box: true }));
+    const l = await t.line('compte_rendu_24h');
+    expect(l.kept).toEqual({ numerator: 1, denominator: 5, bp: 2000 });
+    expect(l.inTrial).toBe(1);
   });
 
-  it('[R216] point du lundi : validé le jour même, le mardi est manqué, préparé sans validation aussi', async () => {
+  it('[R216] point : dû le lundi qui suit sa semaine ; préparé et parti un mardi manqué ; mandat signé après ce lundi à part ; ce lundi fait le mois', async () => {
     const t = await setup();
-    const point = (week: string, created: string, status: string, validated: string | null) => t.db.run("INSERT INTO weekly_points (mandate_id, week, network_id, property_id, person_id, agent_id, figures, status, validated_by, validated_at, created_at, updated_at) VALUES ('m', ?, ?, 'b', 'p', 'a', '{}', ?, 'a', ?, ?, ?)", [week, t.net, status, validated, created, created]);
-    await point('2027-06-07', T('07T06:00:00'), 'valide', T('07T15:00:00'));
-    await point('2027-06-14', T('14T06:00:00'), 'valide', T('15T08:00:00'));
-    await point('2027-06-21', T('21T06:00:00'), 'prepare', null);
-    expect((await t.line('point_lundi')).kept).toEqual({ numerator: 1, denominator: 3, bp: 3333 });
+    const point = async (mandate: string, week: string, status: string, delivery: string | null, messageId: string | null, signed = '2027-01-01T10:00:00.000Z') => {
+      await t.db.run("INSERT OR IGNORE INTO mandates (id, network_id, agent_id, person_id, signed_at, source_kind, recorded_by, created_at) VALUES (?, ?, 'a', 'p', ?, 'referral', 'x', ?)", [mandate, t.net, signed, signed]);
+      await t.db.run("INSERT INTO weekly_points (mandate_id, week, network_id, property_id, person_id, agent_id, figures, status, delivery_status, message_id, created_at, updated_at) VALUES (?, ?, ?, 'b', 'p', 'a', '{}', ?, ?, ?, ?, ?)", [mandate, week, t.net, status, delivery, messageId, T('01T00:00:00'), T('01T00:00:00')]);
+    };
+    await point('m1', '2027-05-31', 'valide', 'sent', await t.out('v', T('07T15:00:00'))); // lundi 7 juin
+    await point('m1', '2027-06-07', 'valide', 'sent', await t.out('v', T('15T08:00:00'))); // dû le 14, parti le 15
+    await point('m1', '2027-06-14', 'prepare', null, null); // dû le 21
+    await point('m2', '2027-06-14', 'valide', 'sent', await t.out('v', T('22T08:00:00')), T('22T07:00:00')); // signé après le 21
+    await point('m1', '2027-06-21', 'valide', 'sent', await t.out('v', T('28T08:00:00'), { box: true })); // dû le 28, en essai
+    await point('m1', '2027-05-24', 'valide', 'sent', await t.out('v', '2027-05-31T08:00:00.000Z')); // dû le 31 mai : un autre mois
+    await point('m1', '2027-06-28', 'prepare', null, null); // dû le 5 juillet : un autre mois
+    const l = await t.line('point_lundi');
+    expect(l.kept).toEqual({ numerator: 1, denominator: 3, bp: 3333 });
+    expect(l.missedDays).toEqual(['2027-06-14', '2027-06-21']);
+    expect(l.setAside).toBe(1);
+    expect(l.inTrial).toBe(1);
+    expect(l.blindSpot).toMatch(/jamais préparé/);
   });
 
   it('[R216] offre : transmise le jour de Paris où elle est reçue ; jamais transmise, manquée', async () => {
@@ -138,7 +217,12 @@ describeWithSqlite('IN07 · engagements de service tenus', () => {
     await offer(T('10T08:00:00'), T('10T20:00:00'));
     await offer(T('11T08:00:00'), T('12T08:00:00'));
     await offer(T('12T08:00:00'), null);
-    expect((await t.line('offre_jour_meme')).kept).toEqual({ numerator: 1, denominator: 3, bp: 3333 });
+    await offer(T('14T08:00:00'), null);
+    const boxed = (await t.db.first<{ id: string }>("SELECT id FROM offer_register WHERE received_at = ?", [T('14T08:00:00')]))!.id;
+    await t.db.run("INSERT INTO offer_transmissions (offer_id, network_id, via, message_id, at, by) VALUES (?, ?, 'message', ?, ?, 'a')", [boxed, t.net, await t.out('v', T('14T09:00:00'), { box: true }), T('14T09:00:00')]);
+    const l = await t.line('offre_jour_meme');
+    expect(l.kept).toEqual({ numerator: 1, denominator: 3, bp: 3333 });
+    expect(l.inTrial).toBe(1);
   });
 
   it('[R216] client transmis : dans la minute du message reçu ; déjà suivi, sans agent ou réattribué : pas une transmission', async () => {
@@ -167,14 +251,18 @@ describeWithSqlite('IN07 · engagements de service tenus', () => {
       const f = t.id();
       await t.db.run("INSERT INTO commission_receipts (file_id, network_id, received_at, proof_ref, payout_due_at, recorded_by, created_at) VALUES (?, ?, ?, 'r', ?, 'd', ?)", [f, t.net, received, due, received]);
       if (paid) await t.db.run("INSERT INTO commission_payouts (file_id, network_id, paid_at, proof_ref, recorded_by, created_at) VALUES (?, ?, ?, 'r', 'd', ?)", [f, t.net, paid, paid]);
+      return f;
     };
     await receipt(T('10T10:00:00'), T('11T10:00:00'), T('11T10:00:00'));
     await receipt(T('11T10:00:00'), T('14T10:00:00'), T('14T10:00:01'));
     await receipt(T('15T10:00:00'), T('16T10:00:00'), null);
     await receipt(T('30T20:00:00'), '2027-07-01T20:00:00.000Z', null);
+    const cancelled = await receipt(T('20T10:00:00'), T('21T10:00:00'), null);
+    await t.db.run("INSERT INTO invoices (id, network_id, issuer, year, number, kind, file_id, corrects_invoice_id, content, amount_cents, issued_on, validated_by, created_at) VALUES ('av', ?, 'réseau', 2027, 1, 'avoir', ?, 'corrigee', ?, 0, '2027-06-20', 'd', ?)", [t.net, cancelled, JSON.stringify({ reason: 'vente_annulee' }), T('20T12:00:00')]);
     const l = await t.line('commission_24h');
     expect(l.kept).toEqual({ numerator: 1, denominator: 3, bp: 3333 });
     expect(l.pending).toBe(1);
+    expect(l.setAside).toBe(1);
     t.setClock('2027-07-02T10:00:00.000Z');
     const after = await t.line('commission_24h');
     expect(after.pending).toBe(0);
@@ -193,7 +281,8 @@ describeWithSqlite('IN07 · engagements de service tenus', () => {
 
   it('[R216] le total additionne les cas jugés ; les autres mois et les autres réseaux n’y sont pas', async () => {
     const t = await setup();
-    await t.claim(await t.inbound(T('10T10:00:00')), 'sent', T('10T10:00:10'));
+    await t.claim(await t.inbound(T('10T10:00:00'), { person: 'p1' }), 'sent', T('10T10:00:10'));
+    await t.out('p1', T('10T10:00:10'));
     await t.inbound(T('11T10:00:00'));
     await t.inbound('2027-05-31T21:59:59.000Z'); // le 31 mai à Paris
     await t.inbound('2027-06-30T22:00:00.000Z'); // le 1er juillet à Paris

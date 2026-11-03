@@ -3537,10 +3537,60 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Critères : donnée absente dite absente, jamais zéro [R214] (test) ; ce qui est retenu par R215 est dit sans chiffre (test) ; droits [R16] (test) ; réponse perdue dite telle (test) ; déconnexion et réponse en vol (test) ; budget tenu [R201] (test).
 - Attend : rien.
 
-### IN07 · Engagements de service tenus, temps gagné, disponibilité
+### IN07 · Engagements de service tenus
 - Statut : en cours (voie 2)
+- Coupée le 2026-11-03 : le temps gagné et la disponibilité n'avaient aucun calcul, et les engagements n'en avaient que pour deux (G07, par agent) ; IN08, IN09, IN10, IN11 et IN12 prennent le reste.
+- Décidé (2026-11-03), lecture prudente : voir la tête de `packages/core/src/pilotage/engagements-tenus.ts`. Réponse : le premier message lisible d'une conversation, dans la minute ; « le jour même » : le jour de Paris, sans excuse pour le soir, le chiffre reste sévère ; client transmis : dans la minute (critère de M03) ; délais fixés par le cahier, pas par les réglages de G15 (qui disent au client ce que l'agent a tenu). Mesuré sur 8 des 9 lignes : la base ne date pas la mise en vente, l'alerte se dit non mesurable (IN11). Relecture forte : tenu veut dire reçu, un message en essai ou en panne ne vaut pas ; cela s'écarte de G07 (voir IN13). Un formulaire sans moyen de répondre reste manqué : le contact n'a rien reçu.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
-- Cahier : Indicateurs et tests, « Engagements de service tenus », « Temps gagné », « Disponibilité du service » ; Besoins et solutions pour la liste des engagements.
-- Objectif : à vérifier avant de coder, ce qui a déjà un calcul : la part des engagements tenus dans le mois, chacun avec sa source ; les heures gagnées déclarées par l'agent et contrôlées sur le journal ; le temps de réponse du service, derrière une interface, avec un faux service de test tant qu'aucune supervision n'est branchée.
-- Critères : à écrire à son début, chacun testable ; une donnée absente se dit absente [R214] ; aucun rang d'agent [R14] ; droits [R16].
-- Attend : rien pour le calcul ; une supervision réelle pour la disponibilité.
+- Cahier : Indicateurs et tests, « Engagements de service tenus » ; Besoins et solutions, « Nos engagements de service ».
+- Objectif : pour la direction et un mois fini, la part des engagements tenus, chaque ligne avec sa source, ses cas tenus et manqués.
+- Critères : chaque ligne recalculée à la main, à la seconde et au minuit de Paris près (tests) ; donnée absente dite absente, jamais zéro [R216] (test) ; un délai qui court n'est ni tenu ni manqué (test) ; aucun agent ni rang [R14] (test) ; droits [R16] (test).
+- Attend : rien.
+
+### IN08 · Le temps gagné, déclaré par l'agent et contrôlé sur le journal
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
+- Cahier : Indicateurs et tests, « Temps gagné ».
+- Objectif : chaque agent déclare ses heures gagnées d'une semaine finie ; à côté, les gestes du journal de cette semaine, pour contrôler. La direction lit les totaux du réseau, jamais un agent contre un autre.
+- Critères : une déclaration par agent et par semaine, une nouvelle version garde l'ancienne [R17] (test) ; heures bornées (test) ; le contrôle dit un écart sans jamais noter l'agent [R14] (test) ; sans déclaration, « non déclaré », jamais zéro (test) ; droits [R16, R68] (test).
+- Attend : rien.
+
+### IN09 · La disponibilité du service, derrière une interface
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
+- Cahier : Indicateurs et tests, « Disponibilité du service », cible 99,9 % par mois.
+- Objectif : une interface de supervision avec un faux service de test, qui rend pour un mois le temps où le site, l'API et l'application ont répondu ; la direction lit la part par service.
+- Critères : calcul à la main sur des coupures inventées (test) ; sans supervision branchée, « non mesuré », jamais 100 % (test) ; droits [R16] (test).
+- Attend : une supervision réelle, à écrire dans `HUMAIN.md` au moment du branchement.
+
+### IN10 · Les engagements, le temps gagné et la disponibilité à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07, IN08, IN09
+- Cahier : Indicateurs et tests ; R201.
+- Objectif : dans `finances.js`, sans toucher au socle : la direction lit les trois sur « Le réseau », l'agent déclare son temps sur « Mes chiffres ».
+- Critères : non mesuré et absent dits tels, jamais zéro (test) ; droits [R16] (test) ; réponse perdue dite telle (test) ; déconnexion et réponse en vol (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### IN11 · Dater la mise en vente, pour mesurer l'alerte dans l'heure
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : IN07
+- Cahier : Besoins et solutions, « Nos engagements de service » ; M08.
+- Objectif : la base ne date pas le moment où un bien devient diffusable [R42]. Le ranger une fois, et faire passer `alerte_heure` en mesurable : alerte partie dans l'heure, l'heure comptant depuis l'ouverture des heures d'envoi [R01] si le bien sort la nuit.
+- Critères : à la seconde près, de nuit, un dimanche (tests) ; un bien sans date reste non mesuré (test) ; aucun envoi changé (test).
+- Attend : rien.
+
+### IN12 · Un engagement manqué : noté, et le client rappelé par un responsable
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07
+- Cahier : Besoins et solutions, « Le bouche-à-oreille » et « Nos engagements de service » (publiés, et reprise de liberté du vendeur sous réserve de l'avocat).
+- Objectif : vérifier d'abord ce qui existe. Chaque cas manqué vu par IN07 donne une tâche « rappeler » au responsable, une seule, sans donnée dans le journal ; rien n'est envoyé au client par la machine.
+- Critères : une seule tâche par cas (test) ; aucun envoi (test) ; droits [R16] (test).
+- Attend : la réponse de l'avocat sur la reprise de liberté, à écrire dans `HUMAIN.md`.
+
+### IN13 · Le dossier de présentation dit « reçu », pas « validé »
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07
+- Cahier : M20 ; Besoins et solutions, « Nos engagements de service ».
+- Objectif : le taux tenu montré au client (G07) compte un compte rendu ou un point validé, même refusé à l'envoi ou resté en essai, et un point préparé un autre jour que le lundi. Le mettre à la même mesure que IN07 [R216], dans les délais de G15.
+- Critères : validé mais refusé à l'envoi : pas tenu (test) ; resté en essai : pas tenu (test) ; un point est jugé sur son lundi (test) ; le dossier reste sans donnée d'un client [R16] (test).
+- Attend : rien.

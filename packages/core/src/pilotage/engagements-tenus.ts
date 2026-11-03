@@ -5,16 +5,23 @@
  * chacun recalculé depuis sa table, jamais déclaré. Aucun agent, aucun rang [R14] : les lignes rendues ne portent que des
  * comptes et les jours des cas manqués, ni identifiant ni nom [R13].
  *
- * Décidé, lecture prudente :
+ * Décidé, lecture prudente (relecture forte de IN07) :
  * - un cas appartient au mois de ce qui le déclenche ; il ne compte qu'une fois tenu ou son délai écoulé : avant, il est
  *   « en attente », ni tenu ni manqué ;
- * - « tout contact » : le premier message lisible d'une conversation ; une réponse refusée par le contrôle central, sans
- *   aucune autre réponse, est à part (personne exclue ou arrêt : se taire est la loi), et se voit ;
- * - « le jour même » : le jour de Paris, sans excuse pour le soir ; un chiffre sévère ne ment jamais au client ;
+ * - tenu veut dire reçu : un message resté en boîte d'essai ou en panne ne vaut pas. Parti à temps en essai, le cas n'est
+ *   ni tenu ni manqué, il se compte à part (`inTrial`) : en mode essai, la ligne ne dit jamais 100 % ;
+ * - « tout contact » : le premier message lisible d'une conversation. Écartés et visibles (`setAside`) : une personne
+ *   exclue ou en arrêt, où se taire est la loi [R02, R04], et un contact à qui l'agent avait déjà écrit, où l'assistant se
+ *   tait [R21]. Tout autre refus, ou un formulaire sans moyen de répondre, reste manqué : le contact n'a rien reçu ;
+ * - « le jour même » : le jour de Paris, sans excuse pour le soir ; un chiffre sévère ne ment jamais au client. Deux tâches
+ *   de rappel de fiches réunies, du même jour et du même projet, sont un seul cas ; une personne exclue ce jour-là est à
+ *   part ;
  * - « client transmis tout de suite » : attribué à un agent dans la minute du message reçu, comme le critère de M03 ; un
  *   client que l'agent suivait déjà ou sans agent dans sa zone n'a pas été transmis et se voit à part ; la fiche complète
  *   passe dans la même écriture que l'attribution (Q03) ;
- * - compte rendu de visite : la même mesure que le dossier de présentation (G07), à 24 h ;
+ * - compte rendu : envoyé au vendeur sous 24 h. Point : envoyé le lundi qui suit sa semaine, et ce lundi fait le mois ; un
+ *   point préparé pour un mandat signé après ce lundi est à part. Un point jamais préparé ne se voit pas : la ligne le dit ;
+ * - une commission d'une vente annulée, jamais versée, est à part : le versement est refusé [R71] ;
  * - l'alerte aux acquéreurs n'est pas mesurable : la base ne date pas la mise en vente. La ligne le dit (IN11).
  */
 import type { Viewer } from '../acces/droits.ts';
@@ -54,8 +61,12 @@ export interface ServicePromiseLine {
   kept: Ratio;
   /** Le délai court encore. */
   pending: number;
+  /** Faits à temps, mais restés en boîte d'essai : rien n'est parti. */
+  inTrial: number;
   /** Cas écartés du calcul, dits à part : voir la tête du fichier. */
   setAside: number;
+  /** Ce que la ligne ne peut pas voir ; `null` sans réserve. */
+  blindSpot: string | null;
   /** Les jours de Paris des cas manqués, sans identifiant. */
   missedDays: string[];
 }
@@ -75,6 +86,8 @@ interface Case {
   at: string;
   doneAt: string | null;
   deadline: number;
+  /** Le geste est un message resté en boîte d'essai. */
+  trial?: boolean;
 }
 
 const parisDay = (iso: string): string => localTime(new Date(iso), 'Europe/Paris').date;
@@ -82,20 +95,30 @@ const tally = (cases: readonly Case[], now: number) => {
   const missedDays: string[] = [];
   let kept = 0;
   let pending = 0;
+  let inTrial = 0;
   for (const c of cases) {
-    if (c.doneAt !== null && Date.parse(c.doneAt) <= c.deadline) kept += 1;
+    if (c.doneAt !== null && Date.parse(c.doneAt) <= c.deadline) {
+      if (c.trial) inTrial += 1;
+      else kept += 1;
+    }
     else if (c.deadline > now) pending += 1;
     else missedDays.push(parisDay(c.at));
   }
   missedDays.sort();
-  return { kept: ratio(kept, kept + missedDays.length), pending, missedDays };
+  return { kept: ratio(kept, kept + missedDays.length), pending, inTrial, missedDays };
 };
 /** Tenu si le geste a lieu le même jour de Paris que le cas : le geste est rendu seulement dans ce cas. */
-const sameDay = (at: string, doneAt: string | null): Case => {
+const sameDay = (at: string, doneAt: string | null, trial = false): Case => {
   const inDay = doneAt !== null && parisDay(doneAt) === parisDay(at);
-  return { at, doneAt: inDay ? doneAt : null, deadline: inDay ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY };
+  return { at, doneAt: inDay ? doneAt : null, deadline: inDay ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY, trial };
 };
-const earliest = (a: string | null, b: string | null): string | null => (a === null ? b : b === null ? a : Date.parse(a) <= Date.parse(b) ? a : b);
+/** Un message a réellement quitté AIMMO : ni en panne, ni resté en boîte d'essai. Le paramètre : la colonne du message. */
+const NOT_FAILED = (m: string) => `NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = ${m} AND l.outcome = 'failed')`;
+const IN_TRIAL = (m: string) => `EXISTS (SELECT 1 FROM trial_outbox b WHERE b.message_id = ${m})`;
+/** La vente de ce reversement est annulée, comme le refuse `Encaissements` [R71]. */
+const CANCELLED_SALE = "EXISTS (SELECT 1 FROM invoices f WHERE f.file_id = r.file_id AND f.kind = 'avoir' AND json_extract(f.content, '$.reason') = 'vente_annulee')";
+/** L'envoi d'un compte rendu ou d'un point : son message, s'il est parti. */
+const delivered = (r: { status: string; delivery_status: string | null; sent_at: string | null }): string | null => (r.status === 'valide' && r.delivery_status === 'sent' ? r.sent_at : null);
 
 export class EngagementsTenus {
   private readonly now: () => Date;
@@ -128,40 +151,39 @@ export class EngagementsTenus {
     const judged: Partial<Record<ServicePromiseCode, { cases: Case[]; setAside: number }>> = {
       reponse_minute: replies,
       client_transmis: handovers,
-      rappel_chaud: {
-        setAside: 0,
-        cases: (await this.db.all<{ created_at: string; done_at: string | null }>('SELECT created_at, done_at FROM callback_tasks WHERE network_id = ? AND created_at >= ? AND created_at < ?', inMonth)).map((r) => sameDay(r.created_at, r.done_at)),
-      },
+      rappel_chaud: await this.callbacks(inMonth),
       avis_48h: await this.valuations(inMonth),
       compte_rendu_24h: {
         setAside: 0,
         // Toute visite terminée et non annulée, marquée tenue ou non, comme le dossier de présentation (G07).
         cases: (
-          await this.db.all<{ end_at: string; validated_at: string | null; status: string | null }>(
-            `SELECT a.end_at, r.validated_at, r.status FROM appointments a LEFT JOIN visit_reports r ON r.appointment_id = a.id
+          await this.db.all<{ end_at: string; status: string; delivery_status: string | null; sent_at: string | null; trial: number }>(
+            `SELECT a.end_at, r.status, r.delivery_status, m.occurred_at AS sent_at, ${IN_TRIAL('r.message_id')} AS trial
+               FROM appointments a LEFT JOIN visit_reports r ON r.appointment_id = a.id LEFT JOIN messages m ON m.id = r.message_id
               WHERE a.network_id = ? AND a.kind = 'visite' AND a.status IN ('booked', 'honored') AND a.end_at >= ? AND a.end_at < ?`,
             inMonth,
           )
-        ).map((r) => ({ at: r.end_at, doneAt: r.status === 'valide' ? r.validated_at : null, deadline: Date.parse(r.end_at) + 24 * HOUR })),
+        ).map((r) => ({ at: r.end_at, doneAt: delivered(r), deadline: Date.parse(r.end_at) + 24 * HOUR, trial: Number(r.trial) === 1 })),
       },
-      point_lundi: {
-        setAside: 0,
-        cases: (await this.db.all<{ created_at: string; validated_at: string | null; status: string }>('SELECT created_at, validated_at, status FROM weekly_points WHERE network_id = ? AND created_at >= ? AND created_at < ?', inMonth)).map((r) => sameDay(r.created_at, r.status === 'valide' ? r.validated_at : null)),
-      },
+      point_lundi: await this.weeklyPoints(net, month),
       offre_jour_meme: {
         setAside: 0,
-        cases: (await this.db.all<{ received_at: string; at: string | null }>('SELECT o.received_at, t.at FROM offer_register o LEFT JOIN offer_transmissions t ON t.offer_id = o.id WHERE o.network_id = ? AND o.received_at >= ? AND o.received_at < ?', inMonth)).map((r) => sameDay(r.received_at, r.at)),
+        cases: (
+          await this.db.all<{ received_at: string; at: string | null; trial: number }>(
+            `SELECT o.received_at, t.at, ${IN_TRIAL('t.message_id')} AS trial FROM offer_register o LEFT JOIN offer_transmissions t ON t.offer_id = o.id
+              WHERE o.network_id = ? AND o.received_at >= ? AND o.received_at < ?`,
+            inMonth,
+          )
+        ).map((r) => sameDay(r.received_at, r.at, Number(r.trial) === 1)),
       },
-      commission_24h: {
-        setAside: 0,
-        cases: (await this.db.all<{ received_at: string; payout_due_at: string; paid_at: string | null }>('SELECT r.received_at, r.payout_due_at, p.paid_at FROM commission_receipts r LEFT JOIN commission_payouts p ON p.file_id = r.file_id WHERE r.network_id = ? AND r.received_at >= ? AND r.received_at < ?', inMonth)).map((r) => ({ at: r.received_at, doneAt: r.paid_at, deadline: Date.parse(r.payout_due_at) })),
-      },
+      commission_24h: await this.payouts(inMonth),
     };
 
     const lines: ServicePromiseLine[] = SERVICE_PROMISES.map((p) => {
       const one = judged[p.code];
-      if (!one) return { ...p, measurable: false, kept: ratio(0, 0), pending: 0, setAside: 0, missedDays: [] };
-      return { ...p, measurable: true, ...tally(one.cases, now), setAside: one.setAside };
+      const blindSpot = p.code === 'point_lundi' ? 'Un point que le système n’a jamais préparé ne se voit pas ici.' : null;
+      if (!one) return { ...p, measurable: false, kept: ratio(0, 0), pending: 0, inTrial: 0, setAside: 0, blindSpot, missedDays: [] };
+      return { ...p, measurable: true, ...tally(one.cases, now), setAside: one.setAside, blindSpot };
     });
     const numerator = lines.reduce((sum, l) => sum + l.kept.numerator, 0);
     const denominator = lines.reduce((sum, l) => sum + l.kept.denominator, 0);
@@ -169,13 +191,17 @@ export class EngagementsTenus {
     return { ok: true, value: { month, lines, overall: ratio(numerator, denominator) } };
   }
 
-  /** Le premier message lisible de chaque conversation, et sa première réponse : la réponse automatique partie (C04), ou un message de l'agent. */
+  /** Le premier message lisible de chaque conversation, et sa première réponse : la réponse automatique (C04) ou l'agent. */
   private async firstReplies(inMonth: string[]): Promise<{ cases: Case[]; setAside: number }> {
-    const rows = await this.db.all<{ received_at: string; sent_at: string | null; out_at: string | null; refused: number }>(
-      `SELECT i.received_at,
-              (SELECT MIN(c.created_at) FROM first_reply_claims c WHERE c.inbound_id = i.id AND c.outcome = 'sent') AS sent_at,
-              (SELECT COUNT(*) FROM first_reply_claims c WHERE c.inbound_id = i.id AND c.outcome = 'refused') AS refused,
-              (SELECT MIN(m.occurred_at) FROM messages m WHERE m.network_id = i.network_id AND m.person_id = i.person_id AND m.direction = 'out' AND m.author_kind = 'agent' AND m.occurred_at >= i.received_at) AS out_at
+    // Un message de la machine ne vaut réponse que si ce message reçu a sa réponse partie : une alerte n'en est pas une.
+    const replyOf = (trial: string) => `(SELECT MIN(m.occurred_at) FROM messages m WHERE m.network_id = i.network_id AND m.person_id = i.person_id AND m.direction = 'out' AND m.occurred_at >= i.received_at
+                 AND ${NOT_FAILED('m.id')} AND ${trial}
+                 AND (m.author_kind = 'agent' OR EXISTS (SELECT 1 FROM first_reply_claims c WHERE c.inbound_id = i.id AND c.outcome = 'sent')))`;
+    const rows = await this.db.all<{ received_at: string; real_at: string | null; trial_at: string | null; silent: number }>(
+      `SELECT i.received_at, ${replyOf(`NOT ${IN_TRIAL('m.id')}`)} AS real_at, ${replyOf(IN_TRIAL('m.id'))} AS trial_at,
+              (EXISTS (SELECT 1 FROM attach_log g WHERE g.inbound_id = i.id AND g.silenced = 1)
+               OR EXISTS (SELECT 1 FROM exclusions x WHERE x.network_id = i.network_id AND x.person_id = i.person_id AND x.noted_at <= i.received_at AND (x.lifted_at IS NULL OR x.lifted_at > i.received_at))
+               OR EXISTS (SELECT 1 FROM messages h WHERE h.network_id = i.network_id AND h.person_id = i.person_id AND h.direction = 'out' AND h.author_kind = 'agent' AND h.occurred_at < i.received_at)) AS silent
          FROM inbound_messages i
         WHERE i.network_id = ? AND i.received_at >= ? AND i.received_at < ? AND i.kind <> 'unreadable' AND i.status <> 'unreadable'
           AND (i.conversation_ref IS NULL OR NOT EXISTS (
@@ -186,11 +212,82 @@ export class EngagementsTenus {
     const cases: Case[] = [];
     let setAside = 0;
     for (const r of rows) {
-      const doneAt = earliest(r.sent_at, r.out_at);
-      if (doneAt === null && Number(r.refused) > 0) setAside += 1;
-      else cases.push({ at: r.received_at, doneAt, deadline: Date.parse(r.received_at) + MINUTE });
+      const trial = r.real_at === null || (r.trial_at !== null && Date.parse(r.trial_at) < Date.parse(r.real_at));
+      const doneAt = trial ? r.trial_at : r.real_at;
+      if (doneAt === null && Number(r.silent) === 1) setAside += 1;
+      else cases.push({ at: r.received_at, doneAt, deadline: Date.parse(r.received_at) + MINUTE, trial: trial && doneAt !== null });
     }
     return { cases, setAside };
+  }
+
+  /**
+   * Les tâches de rappel, par fiche gardée, projet et jour de Paris : réunir deux fiches ne fait pas deux cas, et le
+   * rappel fait sur l'une vaut pour l'autre. Une personne exclue ce jour-là ne se rappelle pas [R25].
+   */
+  private async callbacks(inMonth: string[]): Promise<{ cases: Case[]; setAside: number }> {
+    const net = inMonth[0]!;
+    const tasks = await this.db.all<{ person_id: string; project_id: string | null; created_at: string; done_at: string | null }>('SELECT person_id, project_id, created_at, done_at FROM callback_tasks WHERE network_id = ? AND created_at >= ? AND created_at < ?', inMonth);
+    if (tasks.length === 0) return { cases: [], setAside: 0 };
+    const merges = await this.db.all<{ survivor_id: string; merged_id: string }>('SELECT survivor_id, merged_id FROM person_merges WHERE network_id = ? AND undone_at IS NULL', [net]);
+    const parent = new Map(merges.map((m) => [m.merged_id, m.survivor_id]));
+    const rootOf = (id: string): string => {
+      const seen = new Set<string>();
+      let at = id;
+      while (parent.has(at) && !seen.has(at)) {
+        seen.add(at);
+        at = parent.get(at)!;
+      }
+      return at;
+    };
+    const exclusions = await this.db.all<{ person_id: string; noted_at: string; lifted_at: string | null }>('SELECT person_id, noted_at, lifted_at FROM exclusions WHERE network_id = ?', [net]);
+    const excludedOn = (root: string, day: string): boolean => exclusions.some((x) => rootOf(x.person_id) === root && parisDay(x.noted_at) <= day && (x.lifted_at === null || parisDay(x.lifted_at) > day));
+    const groups = new Map<string, { at: string; root: string; day: string; done: string[] }>();
+    for (const t of tasks) {
+      const root = rootOf(t.person_id);
+      const day = parisDay(t.created_at);
+      const key = JSON.stringify([root, t.project_id, day]);
+      const group = groups.get(key) ?? { at: t.created_at, root, day, done: [] };
+      if (t.done_at !== null) group.done.push(t.done_at);
+      groups.set(key, group);
+    }
+    const cases: Case[] = [];
+    let setAside = 0;
+    for (const g of groups.values()) {
+      const doneAt = g.done.find((d) => parisDay(d) === g.day) ?? null;
+      if (doneAt === null && excludedOn(g.root, g.day)) setAside += 1;
+      else cases.push(sameDay(g.at, doneAt));
+    }
+    return { cases, setAside };
+  }
+
+  /** Le point d'une semaine est dû le lundi qui la suit : ce lundi fait le mois, et seul un envoi de ce jour le tient. */
+  private async weeklyPoints(net: string, month: string): Promise<{ cases: Case[]; setAside: number }> {
+    const rows = await this.db.all<{ monday: string; signed_at: string | null; status: string; delivery_status: string | null; sent_at: string | null; trial: number }>(
+      `SELECT date(p.week, '+7 days') AS monday, d.signed_at, p.status, p.delivery_status, m.occurred_at AS sent_at, ${IN_TRIAL('p.message_id')} AS trial
+         FROM weekly_points p LEFT JOIN mandates d ON d.id = p.mandate_id LEFT JOIN messages m ON m.id = p.message_id
+        WHERE p.network_id = ? AND substr(date(p.week, '+7 days'), 1, 7) = ?`,
+      [net, month],
+    );
+    const cases: Case[] = [];
+    let setAside = 0;
+    for (const r of rows) {
+      // Midi en temps universel tombe toujours le même jour à Paris.
+      const at = `${r.monday}T12:00:00.000Z`;
+      if (r.signed_at !== null && parisDay(r.signed_at) > r.monday) setAside += 1;
+      else cases.push(sameDay(at, delivered(r), Number(r.trial) === 1));
+    }
+    return { cases, setAside };
+  }
+
+  /** Le reversement dû [R70] ; une vente annulée, jamais versée, ne peut plus l'être [R71]. */
+  private async payouts(inMonth: string[]): Promise<{ cases: Case[]; setAside: number }> {
+    const rows = await this.db.all<{ received_at: string; payout_due_at: string; paid_at: string | null; cancelled: number }>(
+      `SELECT r.received_at, r.payout_due_at, p.paid_at, ${CANCELLED_SALE} AS cancelled FROM commission_receipts r LEFT JOIN commission_payouts p ON p.file_id = r.file_id
+        WHERE r.network_id = ? AND r.received_at >= ? AND r.received_at < ?`,
+      inMonth,
+    );
+    const live = rows.filter((r) => r.paid_at !== null || Number(r.cancelled) !== 1);
+    return { setAside: rows.length - live.length, cases: live.map((r) => ({ at: r.received_at, doneAt: r.paid_at, deadline: Date.parse(r.payout_due_at) })) };
   }
 
   /** La première attribution de chaque contact, comptée du message reçu ; sans agent ou déjà suivi : à part. */
