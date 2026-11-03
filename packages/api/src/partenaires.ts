@@ -164,18 +164,18 @@ const core = partenairesCore;
 
 /* ---------- Le dépôt d'un fichier par un partenaire ---------- */
 
-const UPLOAD_TYPES: readonly { type: string; ext: 'pdf' | 'jpg' | 'png'; magic: readonly number[] }[] = [
+export const UPLOAD_TYPES: readonly { type: string; ext: 'pdf' | 'jpg' | 'png'; magic: readonly number[] }[] = [
   { type: 'application/pdf', ext: 'pdf', magic: [0x25, 0x50, 0x44, 0x46, 0x2d] },
   { type: 'image/jpeg', ext: 'jpg', magic: [0xff, 0xd8, 0xff] },
   { type: 'image/png', ext: 'png', magic: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
 ];
 
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function readUpload(request: Request): Promise<Uint8Array | null> {
+export async function readUpload(request: Request): Promise<Uint8Array | null> {
   const declared = Number(request.headers.get('content-length') ?? '0');
   if (!Number.isFinite(declared) || declared > MAX_UPLOAD_BYTES) return null;
   if (!request.body) return new Uint8Array(0);
@@ -242,6 +242,28 @@ async function deposit(s: PartenairesServices, viewer: Viewer, [id]: string[], r
     await appendEvent(s.journal, { type: 'piece_partenaire.fichier_non_range', actor: `partner:${viewer.userId}`, subject: `referral:${id}`, data: { rule: done.rule, code: done.code, sort } }, s.now);
   }
   return reply(done);
+}
+
+/**
+ * La direction ou un agent dépose la preuve d'un justificatif, en PDF, JPEG ou PNG, pour un partenaire de son réseau, et
+ * le serveur choisit la référence que le justificatif reprend [R73]. L'accès d'abord, avant de lire le moindre octet ; le
+ * contenu n'est jamais lu au-delà de sa signature, et le journal ne garde que l'empreinte [R13].
+ */
+async function depositCredentialProof(s: PartenairesServices, viewer: Viewer, [id]: string[], request: Request): Promise<Response> {
+  const current = await core(s).annuaire.status(viewer, id!);
+  if (!current.ok) return reply(current);
+  const type = (request.headers.get('content-type') ?? '').toLowerCase().split(';')[0]!.trim();
+  const kind = UPLOAD_TYPES.find((t) => t.type === type);
+  if (!kind) return json(415, { ok: false, rule: null, code: 'bad_type' });
+  if (!s.uploads) return json(503, { ok: false, rule: null, code: 'storage_unavailable' });
+  const bytes = await readUpload(request);
+  if (!bytes) return json(413, { ok: false, rule: null, code: 'too_large' });
+  if (bytes.byteLength < kind.magic.length || !kind.magic.every((b, i) => bytes[i] === b)) return json(415, { ok: false, rule: null, code: 'bad_type' });
+  const proofRef = `partenaires/${id!}/${crypto.randomUUID()}.${kind.ext}`;
+  const sha256 = await sha256Hex(bytes);
+  await s.uploads.put(proofRef, bytes, kind.type);
+  await appendEvent(s.journal, { type: 'partenaire.preuve_deposee', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `partner:${id!}`, data: { rule: 'R73', sha256 } }, s.now);
+  return reply({ ok: true, value: { proofRef } });
 }
 
 /** Une note d'accord : 10 à 1 000 caractères, sans caractère de contrôle autre que le retour à la ligne. */
@@ -339,6 +361,13 @@ const ROUTES: PartenairesRoute[] = [
     name: 'partenaires.annuaire.opposition',
     roles: DIRECTION,
     handle: async (s, v, [id]) => reply(await core(s).adresses.oppose(v, id!)),
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/partenaires/annuaire/${ID}/preuves$`),
+    name: 'partenaires.annuaire.preuve',
+    roles: STAFF,
+    handle: depositCredentialProof,
   },
   {
     method: 'POST',

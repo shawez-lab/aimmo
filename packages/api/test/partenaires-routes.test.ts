@@ -381,6 +381,78 @@ describeWithSqlite('U10 · routes de M18', () => {
   });
 });
 
+describeWithSqlite('U13 · dépôt de la preuve d’un justificatif', () => {
+  const added = async (t: Awaited<ReturnType<typeof setup>>) => {
+    const r = await t.call(t.dir, 'POST', '/partenaires/annuaire', { json: { trade: 'notaire', businessName: 'Étude Essai', postcodes: ['21000'] } });
+    return r.body.data.partnerId as string;
+  };
+
+  it('[R73] la référence vient du serveur, et le justificatif la reprend : le partenaire devient proposable', async () => {
+    const t = await setup();
+    const id = await added(t);
+    const up = await t.call(t.dir, 'POST', `/partenaires/annuaire/${id}/preuves`, { raw: { bytes: PDF, type: 'application/pdf' } });
+    expect(up.status).toBe(200);
+    const proofRef = up.body.data.proofRef as string;
+    expect(proofRef.startsWith(`partenaires/${id}/`)).toBe(true);
+    expect(t.files.uploaded.get(proofRef)?.type).toBe('application/pdf');
+    t.files.refs.add(proofRef);
+    const c = await t.call(t.dir, 'POST', `/partenaires/annuaire/${id}/justificatifs`, { json: { kind: 'assurance_rcp', number: 'N-1', validFrom: t.day(-1), validUntil: t.day(100), proofRef } });
+    expect(c.status).toBe(200);
+    expect(c.body.data.proposable).toBe(true);
+  });
+
+  it('[R16] un partenaire, la conformité ou un autre réseau ne déposent rien, avant toute lecture du fichier', async () => {
+    const t = await setup();
+    const id = await added(t);
+    for (const v of [t.partnerViewer(id), t.compliance]) {
+      const r = await t.call(v, 'POST', `/partenaires/annuaire/${id}/preuves`, { raw: { bytes: PDF, type: 'application/pdf' } });
+      expect(r.status).toBe(403);
+      expect(r.request.bodyUsed).toBe(false);
+    }
+    const elsewhere = await t.call({ ...t.dir, networkId: 'autre-reseau' }, 'POST', `/partenaires/annuaire/${id}/preuves`, { raw: { bytes: PDF, type: 'application/pdf' } });
+    expect(elsewhere.status).toBe(404);
+    expect(elsewhere.request.bodyUsed).toBe(false);
+    expect(t.files.uploaded.size).toBe(0);
+  });
+
+  it('[R16] un agent actif dépose ; un agent parti, non', async () => {
+    const t = await setup();
+    const id = await added(t);
+    const path = `/partenaires/annuaire/${id}/preuves`;
+    expect((await t.call(t.agent, 'POST', path, { raw: { bytes: PDF, type: 'application/pdf' } })).status).toBe(200);
+    expect(t.files.uploaded.size).toBe(1);
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.agent.userId]);
+    const gone = await t.call(t.agent, 'POST', path, { raw: { bytes: PDF, type: 'application/pdf' } });
+    expect([gone.status, gone.body.code]).toEqual([403, 'agent_inactive']);
+    expect(gone.request.bodyUsed).toBe(false);
+    expect(t.files.uploaded.size).toBe(1);
+  });
+
+  it('un autre format, un faux PDF, un fichier trop lourd ou l’absence de stockage ne rangent rien', async () => {
+    const t = await setup();
+    const id = await added(t);
+    const path = `/partenaires/annuaire/${id}/preuves`;
+    expect((await t.call(t.dir, 'POST', path, { raw: { bytes: PDF, type: 'image/gif' } })).body.code).toBe('bad_type');
+    expect((await t.call(t.dir, 'POST', path, { raw: { bytes: new Uint8Array([1, 2, 3, 4, 5, 6]), type: 'application/pdf' } })).body.code).toBe('bad_type');
+    expect((await t.call(t.dir, 'POST', path, { raw: { bytes: new Uint8Array(MAX_UPLOAD_BYTES + 1), type: 'application/pdf' } })).body.code).toBe('too_large');
+    expect(t.files.uploaded.size).toBe(0);
+    const closed = await setup({ uploads: false });
+    const other = await added(closed);
+    const r = await closed.call(closed.dir, 'POST', `/partenaires/annuaire/${other}/preuves`, { raw: { bytes: PDF, type: 'application/pdf' } });
+    expect([r.status, r.body.code]).toEqual([503, 'storage_unavailable']);
+  });
+
+  it('[R13] le journal garde l’empreinte seule, ni la référence ni le nom', async () => {
+    const t = await setup();
+    const id = await added(t);
+    const up = await t.call(t.dir, 'POST', `/partenaires/annuaire/${id}/preuves`, { raw: { bytes: PDF, type: 'application/pdf' } });
+    const all = await t.journal.all();
+    const event = all.find((e) => e.type === 'partenaire.preuve_deposee')!;
+    expect(Object.keys(event.data).sort()).toEqual(['rule', 'sha256']);
+    expect(JSON.stringify(all)).not.toContain(up.body.data.proofRef);
+  });
+});
+
 describeWithSqlite('U11 · routes de l’écran « Partenaires »', () => {
   it('[R16] [R75] l’agent lit ses seuls projets, partenaires dans l’ordre du tirage ; la direction, les projets qui ont une demande', async () => {
     const t = await setup();
