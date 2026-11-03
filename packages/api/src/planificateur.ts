@@ -63,7 +63,7 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       legalBasisJob(config.db, journal, { now }),
       // Échéances des mandats (D06), à 6 h : tâches pour l'agent, sans aucun envoi.
       mandateDeadlinesJob(config.db, journal, { now }),
-      // Alertes aux acquéreurs (T03), de 9 h à 19 h, par les canaux du mode essai seulement.
+      // Alertes aux acquéreurs (T03), de 8 h à 19 h (IN14), par les canaux du mode essai seulement.
       alertsJob(config.db, journal, { now, unsubscribeBase: config.alertUnsubscribeBase || null }),
       // Date de mise en vente des biens (IN11), sans aucun envoi, pour mesurer l'alerte dans l'heure [R222].
       onSaleDatesJob(config.db, journal, { now }),

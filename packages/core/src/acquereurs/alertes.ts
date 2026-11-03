@@ -357,11 +357,11 @@ export class Alertes {
 
 export const ALERTS_JOB = 'acquereurs.alertes';
 
-/** La tâche du planificateur : les alertes, du lundi au samedi, de 9 h à 19 h, par les canaux du mode essai [R01]. */
+/** La tâche du planificateur : les alertes, du lundi au samedi, dès l'ouverture des heures d'envoi [R01] : l'heure promise part de 8 h (IN14), et un dernier passage à 19 h ; par les canaux du mode essai. */
 export function alertsJob(db: SqlDatabase, journal: JournalStore, options: Omit<AlertesOptions, 'channels'> = {}): ScheduledJob {
   return {
     name: ALERTS_JOB,
-    hours: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+    hours: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
     weekdays: [1, 2, 3, 4, 5, 6],
     run: async () => {
       await new Alertes(db, journal, options).run();
