@@ -18,6 +18,7 @@ import { COMMERCES_ENGAGEMENTS_SCRIPT } from '../app/commerces-engagements.ts';
 import { COMMERCES_REPRENEURS_SCRIPT } from '../app/commerces-repreneurs.ts';
 import { ESPACE_AGENT_SCRIPT } from '../app/espace-agent.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
+import { LOUER_DOSSIER_SCRIPT } from '../app/louer-dossier.ts';
 import { LOUER_EDL_SCRIPT } from '../app/louer-edl.ts';
 import { LOUER_MODELES_SCRIPT } from '../app/louer-modeles.ts';
 import { LOUER_REMISE_SCRIPT } from '../app/louer-remise.ts';
@@ -90,6 +91,7 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/louer.js': { body: LOUER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le formulaire de l'état des lieux, la remise des clés et la gestion (W16), chargés au premier geste [R201].
   '/app/louer-modeles.js': { body: LOUER_MODELES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  '/app/louer-dossier.js': { body: LOUER_DOSSIER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer-edl.js': { body: LOUER_EDL_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer-remise.js': { body: LOUER_REMISE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Studio » (X11), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
