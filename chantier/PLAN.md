@@ -1938,6 +1938,14 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Critères : seuls ceux qui écrivent ont le geste [R16] (test) ; texte en cours pré-rempli, sans changement rien ne part (test) ; un texte refusé reste à l'écran, chaque phrase en cause dite [R110] (test) ; présentation validée : l'annulation de la validation dite avant de ranger (test) ; chaque refus du socle dit en français (test) ; réponse perdue dite telle (test) ; un seul envoi à la fois (test) ; budget tenu [R201] (test).
 - Attend : rien.
 
+### CE21 · Les alertes de cession, lues et décidées par le responsable de la conformité
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE08, L10
+- Cahier : M16, M12 ; R14, R15, R16, R17, R118, R201.
+- Objectif : trouvé le 2026-11-03 par la voie 2, en comparant les routes aux appels de l'écran : `GET /v1/commerces/vigilance` et sa décision n'ont aucun appel de l'application, et CE08 renvoyait au branchement une liste que CE10 n'a pas faite. R118 est dite en service, mais le responsable n'a aucun moyen de voir ces alertes. Les donner sur son écran, sans changer le code de CE08.
+- Critères : l'alerte dit ce qui manque et la fin de la référence, jamais une pièce ni un montant [R15] (test) ; le résumé la compte, une lecture manquée n'est jamais zéro [R10] (test) ; décision avec raison et nom [R14] (test) ; déjà décidée : relue, pas refusée [R17] (test) ; réponse perdue dite telle (test) ; un seul envoi (test) ; budget tenu [R201] (test).
+- Attend : H29 pour un usage réel (responsable nommé).
+
 ### CE20 · Ranger un document du dossier protégé, à l'écran
 - Statut : fait (2026-11-03)
 - Reste : fusionnée (#326) ; ne range rien en production avant H38 et le branchement du Worker ; relecture forte 2 P1 corrigés, corrections non relues une seconde fois ; Codex non attendu (H03).
