@@ -516,3 +516,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 06:21 · W23 · bloquée : annexe I illisible depuis la séance, le seul résumé lu range le titre de séjour à part de l'identité ; rien codé, H43 · prochaine : W24
 - 2026-11-03 06:33 · W24 · le garant Visale et son visa sont sur la carte du candidat, comptés par l'effacement (#309) ; relecture forte sans P0 ni P1 ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : EC13
 - 2026-11-03 06:33 · voie 2 · fin de séance : W19, W20, W21, W22 et W24 fusionnées ; W23 bloquée (H43) ; EC13 écrite ; verrou libéré · prochaine : EC13
+- 2026-11-03 06:34 · voie 2 · relance immédiate refusée par le contrôle des permissions ; pas de contournement, le passage horaire reprendra EC13 · prochaine : EC13
