@@ -562,3 +562,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 15:30 · AT17 · la direction lit et libère à l'écran l'adresse gardée par un agent parti ; le refus dit où la libérer, un autre réseau n'en apprend rien (#336) ; relecture forte 1 P1 de test corrigé ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : AT18
 - 2026-11-03 15:29 · X27 · chaque déploiement lie les compartiments R2 qui existent, et le résumé dit ceux qui manquent (#337) ; relecture forte 2 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : CE23
 - 2026-11-03 15:29 · voie 1 · fin de séance : X26, CE22 et X27 fusionnées ; CE23 écrite ; verrou libéré, relance · prochaine : CE23
+- 2026-11-03 15:30 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra CE23 · prochaine : CE23
