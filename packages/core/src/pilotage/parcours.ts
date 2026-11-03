@@ -47,7 +47,7 @@ export interface JourneyIndicators {
 }
 
 /** Les mandats qui comptent, comme le compteur de la preuve [R210] : inscrits, ni annulés pour erreur, ni rétractés. */
-const LIVE_REGISTERED_MANDATES = `SELECT m.id, m.network_id, m.person_id, m.property_id, m.signed_at FROM mandates m
+export const LIVE_REGISTERED_MANDATES = `SELECT m.id, m.network_id, m.agent_id, m.person_id, m.property_id, m.signed_at FROM mandates m
   JOIN mandate_register g ON g.mandate_id = m.id AND g.kind = 'inscription'
   WHERE NOT EXISTS (SELECT 1 FROM mandate_register c WHERE c.network_id = g.network_id AND c.kind = 'annulation' AND c.cancels_seq = g.seq AND c.reason IN ('error', 'withdrawal'))
     AND NOT EXISTS (SELECT 1 FROM mandate_withdrawals w WHERE w.mandate_id = m.id)`;
@@ -62,7 +62,7 @@ const ACCEPTED_OFFERS = `SELECT o.id, o.network_id, o.property_id,
     END AS accepted_at
   FROM offer_register o LEFT JOIN offer_responses r ON r.offer_id = o.id WHERE o.network_id = ?`;
 
-const ratio = (numerator: number, denominator: number): Ratio => ({ numerator, denominator, bp: denominator > 0 ? Math.round((numerator * 10_000) / denominator) : null });
+export const ratio = (numerator: number, denominator: number): Ratio => ({ numerator, denominator, bp: denominator > 0 ? Math.round((numerator * 10_000) / denominator) : null });
 
 export function median(values: readonly number[]): number | null {
   if (values.length === 0) return null;

@@ -9,3 +9,4 @@ export * from './branchement.ts';
 export * from './preuve.ts';
 export * from './parcours.ts';
 export * from './preuve-sceau.ts';
+export * from './indicateurs-reseau.ts';

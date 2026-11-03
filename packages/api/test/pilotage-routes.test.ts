@@ -85,6 +85,19 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     expect((await t.call(t.direction, 'GET', '/pilotage/parcours?du=2027-03-31&au=2027-03-01')).status).toBe(400);
   });
 
+  it('[R16] [R215] les indicateurs du réseau : agents actifs pour la direction, zones aussi pour l’agent, jamais pour la conformité', async () => {
+    const t = await setup();
+    const passe = 'mois=2020-01';
+    expect((await t.call(t.direction, 'GET', `/pilotage/agents-actifs?${passe}`)).status).toBe(200);
+    expect((await t.call(t.agent, 'GET', `/pilotage/agents-actifs?${passe}`)).status).toBe(403);
+    expect((await t.call(t.compliance, 'GET', `/pilotage/agents-actifs?${passe}`)).status).toBe(403);
+    expect((await t.call(t.agent, 'GET', `/pilotage/contacts-par-zone?${passe}`)).status).toBe(200);
+    expect((await t.call(t.direction, 'GET', `/pilotage/contacts-par-zone?${passe}`)).status).toBe(200);
+    expect((await t.call(t.compliance, 'GET', `/pilotage/contacts-par-zone?${passe}`)).status).toBe(403);
+    expect((await t.call(t.direction, 'GET', '/pilotage/contacts-par-zone?mois=2020-13')).status).toBe(400);
+    expect((await t.call(t.direction, 'GET', '/pilotage/contacts-par-zone?mois=2999-01')).status).toBe(409);
+  });
+
   it('[R67] aucune route ne reçoit un montant : la commission vient du mandat, par le passage horaire', async () => {
     const t = await setup();
     expect((await t.call(t.direction, 'POST', '/pilotage/grille', { validFrom: '2027-03-01', defaultRateBp: 7000 })).status).toBe(200);
