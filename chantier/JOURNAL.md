@@ -511,3 +511,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 05:30 · X14 · les gestes des partenaires disent une réponse perdue telle quelle, un seul à la fois, l'accord et ses deux écritures sous le même verrou (#306) ; relecture forte 2 P1 corrigés ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : à choisir
 - 2026-11-03 05:30 · voie 1 · fin de séance : U14, X13 et X14 fusionnées ; verrou libéré · prochaine : à choisir
 - 2026-11-03 05:31 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra · prochaine : à choisir
+- 2026-11-03 05:38 · W20 · garant soumis aux mêmes droits que les contacts, DossierFacile fermé par appel direct (#307) ; relecture forte 2 P0 et 1 P1 corrigés ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : W21
