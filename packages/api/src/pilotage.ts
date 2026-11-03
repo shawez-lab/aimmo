@@ -88,6 +88,7 @@ const services = (s: PilotageServices) => ({
   export: new pilotage.ExportQuotidien(s.db, s.journal, { now: s.now }),
   parcours: new pilotage.IndicateursParcours(s.db, s.journal, { now: s.now }),
   indicateursReseau: new pilotage.IndicateursReseau(s.db, s.journal, { now: s.now }),
+  engagementsTenus: new pilotage.EngagementsTenus(s.db, s.journal, { now: s.now }),
   preuve: new pilotage.CompteurPreuve(s.db, s.journal, { now: s.now }),
   sceaux: new pilotage.SceauxPreuve(s.db, s.journal, { now: s.now }),
 });
@@ -125,6 +126,7 @@ export function pilotageRoutes(): PilotageRoute[] {
     },
     { method: 'GET', pattern: new RegExp(`${P}/agents-actifs$`), name: 'pilotage.agents_actifs', handle: async (s, v, _p, r) => reply(await services(s).indicateursReseau.people(v, query(r, 'mois'))) },
     { method: 'GET', pattern: new RegExp(`${P}/contacts-par-zone$`), name: 'pilotage.contacts_par_zone', handle: async (s, v, _p, r) => reply(await services(s).indicateursReseau.contactsByZone(v, query(r, 'mois'))) },
+    { method: 'GET', pattern: new RegExp(`${P}/engagements-tenus$`), name: 'pilotage.engagements_tenus', handle: async (s, v, _p, r) => reply(await services(s).engagementsTenus.ofMonth(v, query(r, 'mois'))) },
     { method: 'GET', pattern: new RegExp(`${P}/reseau$`), name: 'pilotage.reseau', handle: async (s, v, _p, r) => reply(await services(s).reseau.of(v, { from: query(r, 'du'), to: query(r, 'au') })) },
     {
       method: 'GET',

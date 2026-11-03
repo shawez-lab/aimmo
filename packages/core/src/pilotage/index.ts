@@ -10,3 +10,4 @@ export * from './preuve.ts';
 export * from './parcours.ts';
 export * from './preuve-sceau.ts';
 export * from './indicateurs-reseau.ts';
+export * from './engagements-tenus.ts';

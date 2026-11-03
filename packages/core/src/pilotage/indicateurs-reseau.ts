@@ -49,7 +49,7 @@ const nextMonth = (month: string): string => {
   const [y, m] = month.split('-').map(Number) as [number, number];
   return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
 };
-const monthBounds = (month: string) => [parisDayStart(`${month}-01`).toISOString(), parisDayStart(`${nextMonth(month)}-01`).toISOString()] as const;
+export const monthBounds = (month: string) => [parisDayStart(`${month}-01`).toISOString(), parisDayStart(`${nextMonth(month)}-01`).toISOString()] as const;
 
 export class IndicateursReseau {
   private readonly now: () => Date;
