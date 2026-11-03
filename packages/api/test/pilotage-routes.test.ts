@@ -116,6 +116,12 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     expect((await t.call(t.compliance, 'GET', `/pilotage/disponibilite?${passe}`)).status).toBe(403);
     expect((await t.call(t.direction, 'GET', '/pilotage/disponibilite?mois=2020-13')).status).toBe(400);
     expect((await t.call(t.direction, 'GET', '/pilotage/disponibilite?mois=2999-01')).status).toBe(409);
+    // SV02 : la copie de nuit, pour la direction seule ; aucune copie : « jamais », jamais à jour.
+    const copies = await t.call(t.direction, 'GET', '/pilotage/copies');
+    expect(copies.status).toBe(200);
+    expect(copies.body).toMatchObject({ ok: true, data: { state: 'jamais', lastSuccessAt: null, keepDays: 30 } });
+    expect((await t.call(t.agent, 'GET', '/pilotage/copies')).status).toBe(403);
+    expect((await t.call(t.compliance, 'GET', '/pilotage/copies')).status).toBe(403);
   });
 
   it('[R67] aucune route ne reçoit un montant : la commission vient du mandat, par le passage horaire', async () => {

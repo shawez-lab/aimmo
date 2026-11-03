@@ -96,7 +96,8 @@ export async function copyKeyFromSecret(secret: string): Promise<CopyKey> {
   return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 
-async function seal(key: CopyKey, place: string, text: string): Promise<Uint8Array> {
+/** Chiffre un texte, lié à sa place. */
+export async function sealAt(key: CopyKey, place: string, text: string): Promise<Uint8Array> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
   const body = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: bytesOf(place) }, key, bytesOf(text)));
   const out = new Uint8Array(IV_BYTES + body.length);
@@ -105,7 +106,8 @@ async function seal(key: CopyKey, place: string, text: string): Promise<Uint8Arr
   return out;
 }
 
-async function open(key: CopyKey, place: string, bytes: Uint8Array): Promise<string | null> {
+/** Déchiffre un texte à sa place ; `null` s'il a changé ou bougé, ou avec une autre clé. */
+export async function openAt(key: CopyKey, place: string, bytes: Uint8Array): Promise<string | null> {
   if (bytes.length <= IV_BYTES) return null;
   try {
     const plain = await crypto.subtle.decrypt(
@@ -119,7 +121,8 @@ async function open(key: CopyKey, place: string, bytes: Uint8Array): Promise<str
   }
 }
 
-const manifestPlace = (copyId: string): string => `copies/${copyId}/sommaire`;
+/** La place du sommaire : sans lui, la copie n'existe pas. */
+export const manifestPlace = (copyId: string): string => `copies/${copyId}/sommaire`;
 const partPlace = (copyId: string, index: number): string => `copies/${copyId}/${String(index).padStart(6, '0')}`;
 
 /** Le schéma de la base, dans l'ordre où elle l'a créé, sans ce qui appartient au moteur. */
@@ -197,7 +200,7 @@ export class CopieBase {
         const text = JSON.stringify(page);
         digest = await chain(digest, text);
         const place = partPlace(copyId, nextPart);
-        await this.store.put(place, await seal(this.key, place, text));
+        await this.store.put(place, await sealAt(this.key, place, text));
         rows += page.length;
         parts += 1;
         nextPart += 1;
@@ -207,7 +210,7 @@ export class CopieBase {
     const sequences = schema.some((o) => /AUTOINCREMENT/i.test(o.sql)) ? await this.db.all<{ name: string; seq: number }>('SELECT name, seq FROM sqlite_sequence ORDER BY name') : [];
     const manifest: Manifest = { format: COPY_FORMAT, copyId, takenAt, schema, tables, sequences };
     const place = manifestPlace(copyId);
-    await this.store.put(place, await seal(this.key, place, JSON.stringify(manifest)));
+    await this.store.put(place, await sealAt(this.key, place, JSON.stringify(manifest)));
     const receipt: CopyReceipt = { copyId, takenAt, tables: tables.length, rows: tables.reduce((n, t) => n + t.rows, 0), parts: tables.reduce((n, t) => n + t.parts, 0) };
     // Le journal dit la copie, sans une donnée.
     await appendEvent(this.journal, { type: 'base.copie', actor: 'system:sauvegarde', subject: `copy:${copyId}`, data: { rule: 'R224', tables: receipt.tables, rows: receipt.rows, parts: receipt.parts } }, this.now);
@@ -225,7 +228,7 @@ export async function restoreCopy(target: SqlDatabase, store: CopyStore, key: Co
   if (!COPY_ID.test(copyId)) return { ok: false, code: 'bad_copy_id' };
   const sealed = await store.get(manifestPlace(copyId));
   if (!sealed) return { ok: false, code: 'manifest_missing' };
-  const opened = await open(key, manifestPlace(copyId), sealed);
+  const opened = await openAt(key, manifestPlace(copyId), sealed);
   if (opened === null) return { ok: false, code: 'undecryptable' };
   const manifest = JSON.parse(opened) as Manifest;
   if (manifest.format !== COPY_FORMAT || manifest.copyId !== copyId) return { ok: false, code: 'bad_format' };
@@ -239,7 +242,7 @@ export async function restoreCopy(target: SqlDatabase, store: CopyStore, key: Co
       const place = partPlace(copyId, t.firstPart + i);
       const bytes = await store.get(place);
       if (!bytes) return { ok: false, code: 'part_missing' };
-      const text = await open(key, place, bytes);
+      const text = await openAt(key, place, bytes);
       if (text === null) return { ok: false, code: 'undecryptable' };
       texts.push(text);
     }

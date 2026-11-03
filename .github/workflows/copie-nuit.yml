@@ -1,0 +1,76 @@
+name: Copie de nuit
+
+# SV02 · Chaque nuit, une copie chiffrée de la base `aimmo`, rangée dans le compartiment `aimmo-copies` [R224, R230].
+# La photo vit dans le dossier temporaire du travail, le temps de la copie, puis est détruite : jamais en artefact, jamais
+# dans le journal du travail. S'allume avec la variable `COPIES_ACTIF` (H49) : avant, rien ne tourne et ne consomme de
+# quota, et l'écran de la direction dit « non sauvegardé ». Le Worker alerte seul si une nuit passe sans copie.
+
+on:
+  schedule:
+    - cron: '23 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copie-nuit
+  cancel-in-progress: false
+
+env:
+  WRANGLER: wrangler@4.149.0
+  WRANGLER_SEND_METRICS: 'false'
+
+jobs:
+  copie:
+    name: Copier
+    if: github.ref == 'refs/heads/main' && vars.COPIES_ACTIF == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Base D1 trouvée par son nom
+        id: base
+        run: |
+          aimmo="$(npx -y "$WRANGLER" d1 list --json | node -e '
+            let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => {
+              const d = JSON.parse(s).find((d) => d.name === "aimmo");
+              process.stdout.write(d ? d.uuid : "");
+            });')"
+          if ! printf '%s' "$aimmo" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "::error::Base D1 aimmo introuvable."
+            exit 1
+          fi
+          echo "aimmo=$aimmo" >> "$GITHUB_OUTPUT"
+      - name: Instant d'avant la photo
+        id: debut
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - name: Photo de la base
+        # Une photo ratée n'arrête pas le travail : la suite écrit « non sauvegardé » et sa raison.
+        continue-on-error: true
+        working-directory: packages/api
+        env:
+          AIMMO_ID: ${{ steps.base.outputs.aimmo }}
+        run: |
+          sed -i "s/00000000-0000-0000-0000-000000000000/$AIMMO_ID/" wrangler.toml
+          npx -y "$WRANGLER" d1 export aimmo --remote --output "$RUNNER_TEMP/photo.sql"
+      - name: Copie chiffrée et compte rendu
+        env:
+          COPIE_BASE_AIMMO: ${{ steps.base.outputs.aimmo }}
+          COPIE_DEBUT: ${{ steps.debut.outputs.at }}
+          COPIE_PHOTO: ${{ runner.temp }}/photo.sql
+          COPY_KEY: ${{ secrets.COPY_KEY }}
+          COPIES_R2_ACCESS_KEY_ID: ${{ secrets.COPIES_R2_ACCESS_KEY_ID }}
+          COPIES_R2_SECRET_ACCESS_KEY: ${{ secrets.COPIES_R2_SECRET_ACCESS_KEY }}
+        run: node --experimental-transform-types --no-warnings packages/api/outils/copie-nuit.ts
+      - name: Photo détruite
+        if: always()
+        run: rm -f "$RUNNER_TEMP/photo.sql"

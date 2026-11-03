@@ -29,6 +29,7 @@ const WEEK = '2027-02-22';
 const ENG = 'GET /v1/pilotage/engagements-tenus?mois=2027-02';
 const NET = `GET /v1/pilotage/temps-gagne/reseau?semaine=${WEEK}`;
 const DISPO = 'GET /v1/pilotage/disponibilite?mois=2027-02';
+const COPIES = 'GET /v1/pilotage/copies';
 const MINE = `GET /v1/pilotage/temps-gagne?semaine=${WEEK}`;
 const DECLARE = 'POST /v1/pilotage/temps-gagne';
 const nothing = { numerator: 0, denominator: 0, bp: null };
@@ -62,6 +63,7 @@ async function run(role: 'agent' | 'direction', answers: Record<string, Answer> 
     [ENG]: ok(PROMISES),
     [NET]: ok({ week: WEEK, declared: 2, notDeclared: 1, minutes: 150, withoutGesture: 1 }),
     [DISPO]: ok(NOT_CONNECTED),
+    [COPIES]: ok({ state: 'jamais', lastSuccessAt: null, lastFailure: null, missedNights: [], keepDays: 30 }),
     [MINE]: ok({ week: WEEK, minutes: null, version: null, gestures: 4 }),
     ...answers,
   };
@@ -132,6 +134,23 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
     const none = await run('direction', { [NET]: ok({ week: WEEK, declared: 0, notDeclared: 3, minutes: null, withoutGesture: 0 }) });
     expect(none.state('temps-reseau')).toContain('Personne n’a déclaré.');
     expect(none.texts('temps-reseau')).not.toMatch(/gagnées|0 h/);
+  });
+
+  it('[R230] sans copie : « non sauvegardé » ; à jour : la date ; une nuit manquée et sa raison se lisent ; une panne de lecture ne dit jamais « à jour »', async () => {
+    const never = await run('direction');
+    expect(never.state('copies')).toBe('Non sauvegardé : aucune copie réussie à ce jour.');
+    const fresh = await run('direction', { [COPIES]: ok({ state: 'a_jour', lastSuccessAt: '2027-03-03T01:23:00.000Z', lastFailure: null, missedNights: [], keepDays: 30 }) });
+    expect(fresh.state('copies')).toMatch(/^Dernière copie réussie : le 3 mars 2027/);
+    expect(fresh.state('copies')).toContain('02:23');
+    expect(fresh.texts('copies')).toContain('gardée 30 jours');
+    const late = await run('direction', { [COPIES]: ok({ state: 'en_retard', lastSuccessAt: '2027-03-01T01:23:00.000Z', lastFailure: { at: '2027-03-03T01:23:00.000Z', reason: 'cle_absente' }, missedNights: ['2027-03-03', '2027-03-02'], keepDays: 30 }) });
+    expect(late.state('copies')).toMatch(/^Non sauvegardé la nuit dernière\. Dernière copie réussie : le 1 mars 2027|^Non sauvegardé la nuit dernière\. Dernière copie réussie : le 1er mars 2027/);
+    expect(late.texts('copies')).toContain('la clé de chiffrement manque');
+    expect(late.texts('copies')).toContain('Nuits sans copie : 03/03/2027, 02/03/2027.');
+    expect(late.texts('copies')).not.toMatch(/cle_absente/);
+    const down = await run('direction', { [COPIES]: no(503, {}) });
+    expect(down.state('copies')).toContain('Indisponible');
+    expect(down.state('copies')).not.toContain('Dernière copie');
   });
 
   it('[R223] sans supervision : « non mesuré » pour chaque service, jamais 100 %', async () => {
