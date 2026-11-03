@@ -3599,7 +3599,8 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN12 · Un engagement manqué : noté, et le client rappelé par un responsable
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#362). Relecture forte 2 P0 et 1 P1 corrigés ; Codex non attendu (H03). L'écran : IN15.
 - Décidé (2026-11-03), lecture prudente : le responsable est la direction du réseau. Le passage tourne à 7 h de Paris dans `pilotage.passage`, sans toucher au planificateur, sur le mois en cours et le mois passé. Un engagement envers l'agent (client transmis, commission) se rappelle à l'agent ; une offre, au vendeur du dernier mandat du bien. Une personne exclue : « ne pas appeler », jamais notée rappelée. L'écran passe à IN15.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07
 - Cahier : Besoins et solutions, « Le bouche-à-oreille » et « Nos engagements de service » (publiés, et reprise de liberté du vendeur sous réserve de l'avocat).
@@ -3608,7 +3609,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : la réponse de l'avocat sur la reprise de liberté, à écrire dans `HUMAIN.md`.
 
 ### IN13 · Le dossier de présentation dit « reçu », pas « validé »
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07
 - Cahier : M20 ; Besoins et solutions, « Nos engagements de service ».
 - Objectif : le taux tenu montré au client (G07) compte un compte rendu ou un point validé, même refusé à l'envoi ou resté en essai, et un point préparé un autre jour que le lundi. Le mettre à la même mesure que IN07 [R216], dans les délais de G15.

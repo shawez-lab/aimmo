@@ -596,3 +596,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 23:08 · voie 1 · fin de séance : IN11, IN14 et SV01 fusionnées ; verrou libéré, relance · prochaine : SV02
 - 2026-11-03 23:09 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra SV02 · prochaine : SV02
 - 2026-11-03 23:11 · IN10 · la direction lit engagements, temps gagné et disponibilité, l’agent déclare ses heures sur Mes chiffres (#360) ; relecture forte 5 P1 corrigés ; une vérification rouge corrigée ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN12
+- 2026-11-03 23:38 · IN12 · chaque engagement manqué donne une seule tâche de rappel à la direction, rien n’est envoyé, une personne exclue se dit « ne pas appeler » (#362) ; relecture forte 2 P0 et 1 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN13
