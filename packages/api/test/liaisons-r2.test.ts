@@ -1,4 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error script du dépôt, sans déclaration de types
 import { R2_BINDINGS, declare, parseBucketNames, readBuckets, withBindings } from '../../../scripts/liaisons-r2.mjs';
@@ -48,9 +52,42 @@ describe('X27 · les compartiments R2 restent liés après un déploiement', () 
   it('le résumé nomme les liaisons posées, jamais une clé', () => {
     let saved = '';
     const summary = declare('x', () => 'name: aimmo-medias\n', () => TOML, (_: string, t: string) => { saved = t; });
-    expect(summary).toBe('Compartiments R2 liés : MEDIA.');
+    expect(summary).toBe('Compartiments R2 liés : MEDIA. Sans compartiment de ce nom : PIECES (aimmo-pieces), COFFRE (aimmo-coffre), COMMERCES (aimmo-commerces).');
     expect(saved).toContain('binding = "MEDIA"');
-    expect(declare('x', () => '', () => TOML, () => {})).toBe('Compartiments R2 : aucun à lier.');
+    expect(declare('x', () => '', () => TOML, () => {})).toMatch(/^Compartiments R2 liés : aucun\. Sans compartiment de ce nom : PIECES .*COMMERCES/);
+  });
+
+  describe('le script lancé comme par le travail de déploiement, avec un faux `npx`', () => {
+    const SCRIPT = fileURLToPath(new URL('../../../scripts/liaisons-r2.mjs', import.meta.url));
+    const run = (npx: string, script = SCRIPT) => {
+      const dir = mkdtempSync(join(realpathSync(tmpdir()), 'liaisons-r2-'));
+      writeFileSync(join(dir, 'npx'), `#!/bin/sh\n${npx}\n`);
+      chmodSync(join(dir, 'npx'), 0o755);
+      const toml = join(dir, 'wrangler.toml');
+      const summary = join(dir, 'resume.md');
+      writeFileSync(toml, TOML);
+      writeFileSync(summary, '');
+      const target = script === SCRIPT ? SCRIPT : join(dir, 'lien.mjs');
+      if (target !== SCRIPT) symlinkSync(SCRIPT, target);
+      execFileSync(process.execPath, [target, toml], { env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, GITHUB_STEP_SUMMARY: summary }, stdio: 'ignore' });
+      return { toml: readFileSync(toml, 'utf8'), summary: readFileSync(summary, 'utf8') };
+    };
+
+    it('un compartiment trouvé : la copie de la configuration est liée, et le résumé le dit', () => {
+      const r = run('echo "name:   aimmo-commerces"');
+      expect(r.toml).toContain('binding = "COMMERCES"');
+      expect(r.summary).toMatch(/liés : COMMERCES\./);
+    });
+
+    it('wrangler échoue : le script sort sans erreur, rien ne change, et le résumé le dit', () => {
+      const r = run('exit 1');
+      expect(r.toml).toBe(TOML);
+      expect(r.summary).toMatch(/liste illisible/);
+    });
+
+    it('lancé par un lien symbolique, le script fait quand même son travail', () => {
+      expect(run('echo "name:   aimmo-medias"', 'lien').toml).toContain('binding = "MEDIA"');
+    });
   });
 
   it('le travail de déploiement passe bien par ce script, avant la mise en ligne', () => {

@@ -5,7 +5,7 @@
 // Une liaison vers un compartiment absent ferait échouer la mise en ligne : seuls ceux qui existent sont donc déclarés.
 // Le fichier du dépôt ne change pas : le travail de déploiement modifie sa copie, comme pour l'identifiant de la base.
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 
@@ -55,13 +55,15 @@ export function readBuckets(list) {
 /** Tout le passage : rend le texte du résumé du travail ; aucune erreur n'arrête la mise en ligne. */
 export function declare(path, list, read = readFileSync, write = writeFileSync) {
   const found = readBuckets(list);
-  if (found === null) return "Compartiments R2 : liste illisible (droit du jeton, voir H45). Mise en ligne sans liaison R2 : les documents rangés restent dans leurs compartiments, mais leurs routes répondent « indisponible » jusqu'au prochain passage réussi.";
+  if (found === null) return "Compartiments R2 : liste illisible (R2 non activé, droit du jeton ou panne, voir H45). Mise en ligne sans liaison R2 : les documents déjà rangés restent dans leurs compartiments, mais leurs routes répondent « indisponible » jusqu'au prochain passage réussi.";
   const { toml, linked } = withBindings(read(path, 'utf8'), found);
   if (linked.length > 0) write(path, toml);
-  return linked.length > 0 ? `Compartiments R2 liés : ${linked.join(', ')}.` : 'Compartiments R2 : aucun à lier.';
+  // Une liaison posée à la main sous un autre nom ne se voit pas d'ici : le résumé dit ce qui reste sans compartiment.
+  const missing = Object.entries(R2_BINDINGS).filter(([, bucket]) => !found.has(bucket)).map(([binding, bucket]) => `${binding} (${bucket})`);
+  return `Compartiments R2 liés : ${linked.length > 0 ? linked.join(', ') : 'aucun'}. Sans compartiment de ce nom : ${missing.length > 0 ? missing.join(', ') : 'aucun'}.`;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const wrangler = process.env.WRANGLER ?? 'wrangler';
   const list = (jurisdiction) => execFileSync('npx', ['-y', wrangler, 'r2', 'bucket', 'list', ...(jurisdiction ? ['--jurisdiction', jurisdiction] : [])], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   const summary = declare(process.argv[2], list);
