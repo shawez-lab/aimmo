@@ -582,3 +582,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 19:15 · voie 2 · fin de séance : module « Preuve et indicateurs » découpé ; IN01 à IN06 fusionnées ; verrou libéré, relance · prochaine : IN07
 - 2026-11-03 19:01 · voie 2 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra IN07 · prochaine : IN07
 - 2026-11-03 19:26 · RS02 · accueil des deux sites, derniers biens revérifiés et chemins sans lien mort ; la page d'un agent passe la porte (#350) ; relecture forte 1 P1 de test corrigé ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : RS03
+- 2026-11-03 20:02 · RS03 · listes des agents et des communes, par pages, sur le site du réseau (#351) ; relecture forte 1 P1 corrigé ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : RS04

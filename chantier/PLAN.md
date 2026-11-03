@@ -3501,7 +3501,9 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### RS03 · Liste des agents et des communes
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Décidé (2026-11-03), lecture prudente : chaque liste va par pages (100 agents, 500 communes) pour tenir le budget à toute taille ; une commune dont seuls les quartiers ont une case publiée n'est pas listée.
+- Reste : fusionnée (#351) ; relecture forte 1 P1 corrigé ; Codex non attendu (H03) ; vérification GitHub verte.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
 - Cahier : M01 ; R14, R150, R152.
 - Objectif : `GET /agents`, seulement ceux dont la page est publiable, par ordre alphabétique, sans aucun chiffre ; `GET /prix`, les communes dont la page de prix a au moins une case publiable. Réservées au site du réseau.
@@ -3509,7 +3511,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### RS04 · L'estimation en ligne sur le site
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS02
 - Cahier : M01 ; M04, estimation en ligne (E05).
 - Objectif : `GET /estimation`, où mènent déjà les pages de prix et qui répond 404 : la page qui appelle l'estimation en ligne de E05, ou, si elle ne peut pas être servie sans script ni clé, un formulaire serveur.
