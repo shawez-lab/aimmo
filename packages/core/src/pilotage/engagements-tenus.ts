@@ -38,6 +38,7 @@ import { afterSendingTime, localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { monthBounds } from './indicateurs-reseau.ts';
+import { parisDayStart } from './tableau-agent.ts';
 import { ratio, type Ratio } from './parcours.ts';
 import { parisMonth } from './preuve.ts';
 
@@ -139,7 +140,9 @@ const tally = (cases: readonly Case[], now: number) => {
 /** Tenu si le geste a lieu le même jour de Paris que le cas : le geste est rendu seulement dans ce cas. */
 const sameDay = (at: string, doneAt: string | null, trial = false): Omit<Case, 'key'> => {
   const inDay = doneAt !== null && parisDay(doneAt) === parisDay(at);
-  return { at, doneAt: inDay ? doneAt : null, deadline: inDay ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY, trial };
+  // Sans geste ce jour-là : manqué au minuit de Paris qui suit, pas avant. Dans un mois fini, ce minuit est toujours passé.
+  const nextDay = new Date(Date.parse(`${parisDay(at)}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  return { at, doneAt: inDay ? doneAt : null, deadline: inDay ? Number.POSITIVE_INFINITY : parisDayStart(nextDay).getTime(), trial };
 };
 /** Un message a réellement quitté AIMMO : ni en panne, ni resté en boîte d'essai. Le paramètre : la colonne du message. */
 const NOT_FAILED = (m: string) => `NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = ${m} AND l.outcome = 'failed')`;

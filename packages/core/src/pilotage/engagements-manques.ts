@@ -84,14 +84,29 @@ export class EngagementsManques {
     return { ok: false, rule: 'R16', code: 'role' };
   }
 
-  private async excluded(networkId: string, personId: string): Promise<boolean> {
-    // La fiche gardée et celles réunies en elle : une exclusion notée sur l'une vaut pour toutes.
-    const row = await this.db.first<{ n: number }>(
-      `SELECT COUNT(*) AS n FROM exclusions x WHERE x.network_id = ? AND x.lifted_at IS NULL
-          AND (x.person_id = ? OR x.person_id IN (SELECT m.merged_id FROM person_merges m WHERE m.network_id = ? AND m.survivor_id = ? AND m.undone_at IS NULL))`,
-      [networkId, personId, networkId, personId],
-    );
-    return Number(row?.n ?? 0) > 0;
+  /**
+   * Toute la famille d'une fiche : la fusion ne déplace pas les exclusions, et la fiche de la tâche a pu être réunie
+   * après sa naissance. Rend la fiche gardée, et si une exclusion est en cours sur l'une des fiches [R02].
+   */
+  private async families(networkId: string): Promise<(personId: string) => { root: string; doNotCall: boolean }> {
+    const merges = await this.db.all<{ survivor_id: string; merged_id: string }>('SELECT survivor_id, merged_id FROM person_merges WHERE network_id = ? AND undone_at IS NULL', [networkId]);
+    const parent = new Map(merges.map((m) => [m.merged_id, m.survivor_id]));
+    const rootOf = (id: string): string => {
+      const seen = new Set<string>();
+      let at = id;
+      while (parent.has(at) && !seen.has(at)) {
+        seen.add(at);
+        at = parent.get(at)!;
+      }
+      return at;
+    };
+    const at = this.now().toISOString();
+    const rows = await this.db.all<{ person_id: string }>('SELECT person_id FROM exclusions WHERE network_id = ? AND noted_at <= ? AND (lifted_at IS NULL OR lifted_at > ?)', [networkId, at, at]);
+    const shut = new Set(rows.map((r) => rootOf(r.person_id)));
+    return (personId) => {
+      const root = rootOf(personId);
+      return { root, doNotCall: shut.has(root) };
+    };
   }
 
   /** Les rappels à faire, la direction seule [R16]. */
@@ -103,18 +118,19 @@ export class EngagementsManques {
       'SELECT id, promise_code, day, person_id, agent_id FROM missed_promise_tasks WHERE network_id = ? AND done_at IS NULL ORDER BY day, id LIMIT ?',
       [net, MISSED_PROMISE_PAGE],
     );
-    const tasks: MissedPromiseTask[] = [];
-    for (const r of rows) {
-      tasks.push({
+    const family = await this.families(net);
+    const tasks: MissedPromiseTask[] = rows.map((r) => {
+      const who = r.person_id === null ? null : family(r.person_id);
+      return {
         id: r.id,
         code: r.promise_code,
         label: SERVICE_PROMISES.find((p) => p.code === r.promise_code)?.label ?? r.promise_code,
         day: r.day,
-        personId: r.person_id,
+        personId: who?.root ?? null,
         agentId: r.agent_id,
-        doNotCall: r.person_id !== null && (await this.excluded(net, r.person_id)),
-      });
-    }
+        doNotCall: who?.doNotCall ?? false,
+      };
+    });
     await appendEvent(this.journal, { type: 'pilotage.lecture', actor: `direction:${viewer.userId}`, subject: `network:${net}`, data: { kind: 'missed_promises' } }, this.now);
     return { ok: true, value: { total: Number(count?.n ?? 0), tasks } };
   }
@@ -128,7 +144,7 @@ export class EngagementsManques {
     const task = await this.db.first<{ id: string; person_id: string | null; outcome: string | null; done_at: string | null }>('SELECT id, person_id, outcome, done_at FROM missed_promise_tasks WHERE id = ? AND network_id = ?', [taskId, net]);
     if (!task) return { ok: false, rule: null, code: 'unknown_task' };
     if (task.done_at !== null) return task.outcome === chosen ? { ok: true, value: { id: task.id, outcome: chosen } } : { ok: false, rule: 'R228', code: 'already_done' };
-    if (chosen !== 'sans_appel' && task.person_id !== null && (await this.excluded(net, task.person_id))) return { ok: false, rule: 'R02', code: 'do_not_call' };
+    if (chosen !== 'sans_appel' && task.person_id !== null && (await this.families(net))(task.person_id).doNotCall) return { ok: false, rule: 'R02', code: 'do_not_call' };
     const { changes } = await this.db.run('UPDATE missed_promise_tasks SET done_at = ?, done_by = ?, outcome = ? WHERE id = ? AND done_at IS NULL', [this.now().toISOString(), viewer.userId, chosen, task.id]);
     if (changes !== 1) return { ok: false, rule: 'R228', code: 'already_done' };
     await appendEvent(this.journal, { type: 'pilotage.engagement_manque_fait', actor: `direction:${viewer.userId}`, subject: `network:${net}`, data: { rule: 'R228', outcome: chosen } }, this.now);
