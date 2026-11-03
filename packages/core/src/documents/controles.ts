@@ -87,6 +87,13 @@ export class ControlesSignature {
     return { ok: false, rule: 'R16', code };
   }
 
+  /** Le barème en vigueur, ou null s'il n'y en a pas encore : la direction seule [R16, R41]. */
+  async readFeeSchedule(viewer: Viewer): Promise<{ ok: true; value: { maxRatePercent: number; minEur: number; setAt: string } | null } | Refusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'fee_schedule', 'role');
+    const row = await this.db.first<{ max_rate_bp: number; min_eur: number; set_at: string }>('SELECT max_rate_bp, min_eur, set_at FROM fee_schedules WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [viewer.networkId]);
+    return { ok: true, value: row ? { maxRatePercent: Number(row.max_rate_bp) / 100, minEur: Number(row.min_eur), setAt: row.set_at } : null };
+  }
+
   /** Le barème des honoraires : la direction seule ; le dernier réglé est en vigueur. */
   async setFeeSchedule(viewer: Viewer, schedule: { maxRatePercent: number; minEur: number }): Promise<{ ok: true } | Refusal | Problem> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'fee_schedule', 'role');

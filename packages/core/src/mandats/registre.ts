@@ -45,6 +45,20 @@ export type IntegrityReport =
   | { ok: true; lines: number }
   | { ok: false; lines: number; brokenAt: number; problem: 'hash' | 'chain' | 'sequence' | 'number' | 'mandate' | 'anchor' | 'missing' };
 
+/** Un mandat au registre, tel que la direction le lit pour décider d'une annulation. */
+export interface RegisterEntry {
+  mandateId: string;
+  number: string;
+  signedAt: string;
+  agentName: string | null;
+  city: string | null;
+  cancelledAt: string | null;
+  cancelReason: CancelReason | null;
+}
+
+/** Le nombre de mandats rendus à chaque lecture de la liste : les plus récents d'abord. */
+export const REGISTER_PAGE = 30;
+
 type Refusal = { ok: false; rule: 'R16'; code: 'role' | 'agent_inactive' | 'not_assigned' | 'unknown' };
 type Problem = { ok: false; rule: 'R39' | null; code: 'not_configured' | 'already_configured' | 'bad_settings' | 'already_inscribed' | 'not_inscribed' | 'already_cancelled' | 'bad_reason' | 'register_broken' };
 
@@ -170,6 +184,49 @@ export class RegistreMandats {
     if (changes !== 1) return { ok: false, rule: null, code: 'already_configured' };
     await appendEvent(this.journal, { type: 'registre.regle', actor: this.actor(viewer), subject: null, data: { prefixLength: settings.prefix.length, firstNumber: settings.firstNumber, width: settings.width } }, this.now);
     return { ok: true };
+  }
+
+  /** Le format en vigueur et le prochain numéro, calculé ici et jamais par l'écran : la direction seule [R16, R39]. */
+  async readSettings(viewer: Viewer): Promise<{ ok: true; value: (RegisterSettings & { setAt: string; next: string }) | null } | Refusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'role');
+    const settings = await this.settings(viewer.networkId);
+    if (!settings) return { ok: true, value: null };
+    const row = await this.db.first<{ set_at: string }>('SELECT set_at FROM mandate_register_settings WHERE network_id = ?', [viewer.networkId]);
+    const counted = await this.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM mandate_register WHERE network_id = ? AND kind = 'inscription'`, [viewer.networkId]);
+    return { ok: true, value: { ...settings, setAt: row?.set_at ?? '', next: formatNumber(settings, settings.firstNumber + Number(counted?.n ?? 0)) } };
+  }
+
+  /**
+   * Les mandats inscrits, les plus récents d'abord, avec leur annulation s'il y en a une : la direction seule, pour
+   * annuler sans saisir d'identifiant [R16]. La lecture est au journal, en nombres seulement [R13].
+   */
+  async entries(viewer: Viewer, before: number | null = null): Promise<{ ok: true; entries: RegisterEntry[]; next: number | null } | Refusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'role');
+    const rows = await this.db.all<{ seq: number; mandate_id: string; number: string; signed_at: string; first_name: string | null; last_name: string | null; city: string | null; cancelled_at: string | null; cancel_reason: CancelReason | null }>(
+      `SELECT r.seq, r.mandate_id, r.number, r.signed_at, a.first_name, a.last_name, p.city, c.at AS cancelled_at, c.reason AS cancel_reason
+       FROM mandate_register r
+       LEFT JOIN mandate_register c ON c.network_id = r.network_id AND c.kind = 'annulation' AND c.cancels_seq = r.seq
+       LEFT JOIN agents a ON a.id = r.agent_id AND a.network_id = r.network_id
+       LEFT JOIN properties p ON p.id = r.property_id AND p.network_id = r.network_id
+       WHERE r.network_id = ? AND r.kind = 'inscription' AND (? IS NULL OR r.seq < ?)
+       ORDER BY r.seq DESC LIMIT ?`,
+      [viewer.networkId, before, before, REGISTER_PAGE + 1],
+    );
+    const page = rows.slice(0, REGISTER_PAGE);
+    await appendEvent(this.journal, { type: 'registre.lu', actor: this.actor(viewer), subject: null, data: { rule: 'R16', lines: page.length } }, this.now);
+    return {
+      ok: true,
+      entries: page.map((r) => ({
+        mandateId: r.mandate_id,
+        number: r.number,
+        signedAt: r.signed_at,
+        agentName: r.first_name === null ? null : `${r.first_name} ${r.last_name ?? ''}`.trim(),
+        city: r.city,
+        cancelledAt: r.cancelled_at,
+        cancelReason: r.cancel_reason,
+      })),
+      next: rows.length > REGISTER_PAGE ? Number(page[page.length - 1]!.seq) : null,
+    };
   }
 
   /** Les droits sur un mandat : son agent, la direction, la conformité [R16]. */
