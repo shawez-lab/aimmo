@@ -10,6 +10,7 @@
  * restent en mode essai [R26].
  *
  * Pages publiques, servies sur le site du réseau et sur le site de chaque agent, reconnus par leur adresse (`public_sites`) :
+ *   GET /biens                                     la liste des biens du site, chacun revérifié à la lecture [R220, R153]
  *   GET /prix/:commune[/:quartier]                 la page de prix, seulement sur le site du réseau [R150, R151]
  *   GET /agents/:agent                             la page de l'agent, sur le site du réseau et sur le sien [R152]
  *   GET /quartiers/:commune/:quartier[/prix|/equipements]  la page de quartier ou son article validé [R155]
@@ -20,7 +21,7 @@
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
 import { appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, renderNeighbourhoodPage, renderPricePage, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, parseListingsQuery, renderListingsPage, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
@@ -258,6 +259,7 @@ function pageHeaders(type: string, mode: 'essai' | 'reel'): Record<string, strin
 const notFound = (): Response => new Response('Page inconnue.', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
 
 export const PUBLIC_PATHS = {
+  liste: /^\/biens$/,
   prix: new RegExp(`^/prix/${SLUG}(?:/${SLUG})?$`),
   agent: new RegExp(`^/agents/${ID}$`),
   quartier: new RegExp(`^/quartiers/${SLUG}/${SLUG}(?:/(prix|equipements))?$`),
@@ -350,6 +352,21 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
   const html = (body: string): Response => new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: pageHeaders('text/html; charset=utf-8', mode) });
   const m = PUBLIC_PATHS[kind].exec(path)!;
   switch (kind) {
+    case 'liste': {
+      // Sans la porte, rien n'est montré [R220].
+      const query = parseListingsQuery(url.searchParams);
+      if (!query || !s.diffusion) return notFound();
+      const all = await svc.referencement.published(networkId);
+      const published = site.kind === 'agent' ? all.filter((l) => l.agentId === site.agentId) : all;
+      const checkedAt = s.now();
+      const selection = await selectListings(published, s.diffusion, networkId, checkedAt, query);
+      if (!selection) return notFound();
+      // Une page en cache ne survit qu'une minute au retrait d'un bien, comme la page du bien elle-même.
+      return new Response(request.method === 'HEAD' ? null : renderListingsPage({ ...selection, query, checkedAt }), {
+        status: 200,
+        headers: { ...pageHeaders('text/html; charset=utf-8', mode), 'cache-control': 'public, max-age=60' },
+      });
+    }
     case 'prix': {
       // Les pages de prix vivent sur le site du réseau seulement : une seule page de référence [R153].
       if (site.kind !== 'reseau') return notFound();

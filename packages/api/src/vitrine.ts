@@ -13,8 +13,12 @@
  * Servie sur un site du réseau (M01, AT11), la page du bien porte sa page de référence unique : en-tête `Link`, lien
  * canonique et données structurées sans adresse. Le site d'un agent ne sert ni la page ni la fiche du bien d'un autre
  * agent, ni ses photos [R153].
+ *
+ * Une annonce en vente ou sous offre repasse la porte de diffusion à chaque lecture (RS01) : un mandat échu ou rétracté
+ * ou un bien vendu la retire aussitôt, sans attendre le passage de publication [R220].
  */
-import { Acces, FicheClient, FicheUnique, SqlJournalStore, annonces as m07, type SqlDatabase } from '@aimmo/core';
+import { Acces, Diffusion, FicheClient, FicheUnique, SqlJournalStore, annonces as m07, type SqlDatabase } from '@aimmo/core';
+import { LISTABLE_STATUSES } from '../../core/src/attirer/liste-biens.ts';
 import { journalError } from './app.ts';
 import { syncAnnonces } from './annonces.ts';
 import { listingPresence, type ListingReference } from './attirer.ts';
@@ -49,6 +53,21 @@ async function publishedNetwork(db: SqlDatabase, propertyId: string): Promise<st
   return v?.network_id ?? null;
 }
 
+/**
+ * L'annonce d'un bien vue maintenant : `disponible` tant qu'elle se dit en vente ou sous offre, et `fantome` si le bien n'a
+ * plus le droit de l'être, mandat refusé par la porte ou bien vendu ou retiré dans le socle [R220].
+ */
+async function liveState(db: SqlDatabase, networkId: string, propertyId: string, now: () => Date): Promise<'disponible' | 'fantome' | 'autre'> {
+  const last = await db.first<{ state: string }>('SELECT state FROM listing_versions WHERE property_id = ? ORDER BY seq DESC LIMIT 1', [propertyId]);
+  if (last?.state !== 'en_vente' && last?.state !== 'sous_offre') return 'autre';
+  const property = await db.first<{ status: string }>('SELECT status FROM properties WHERE id = ? AND network_id = ?', [propertyId, networkId]);
+  if (!property || !LISTABLE_STATUSES.includes(property.status)) return 'fantome';
+  const store = new FicheClient(db, { now });
+  const journal = new SqlJournalStore(db);
+  const gate = new Diffusion(db, new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now }), journal, { now });
+  return (await gate.canDiffuse(networkId, propertyId, now())).allowed ? 'disponible' : 'fantome';
+}
+
 function pageBien(db: SqlDatabase, now: () => Date): InstanceType<typeof m07.PageBien> {
   const store = new FicheClient(db, { now });
   const journal = new SqlJournalStore(db);
@@ -69,13 +88,17 @@ export async function handleVitrine(request: Request, db: SqlDatabase, media: Me
   // Ni la page, ni la fiche, ni les photos d'un bien sur un site qui ne doit pas le montrer [R153, R16].
   const presence = await listingPresence({ db, journal: new SqlJournalStore(db), now }, request.url, propertyId, network);
   if (presence.kind === 'masque') return notFound();
+  const live = await liveState(db, network, propertyId, now);
+  if (live === 'fantome') return notFound();
+  // Une annonce disponible peut sortir à tout moment : une réponse en cache ne lui survit qu'une minute.
+  const cache: Record<string, string> = live === 'disponible' ? { 'cache-control': 'public, max-age=60' } : {};
   if (page) {
     const html = page[2] ? await pages.print(network, propertyId) : await pages.page(network, propertyId);
     if (html === null) return notFound();
     // La fiche imprimable ne porte pas la référence : seule la page du bien en est une.
     const ref = presence.kind === 'reference' && !page[2] ? presence : null;
     const body = ref ? withReference(html, ref) : html;
-    return new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: { ...headers('text/html; charset=utf-8'), ...(ref ? { link: ref.link } : {}) } });
+    return new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: { ...headers('text/html; charset=utf-8'), ...cache, ...(ref ? { link: ref.link } : {}) } });
   }
   // Une photo n'est servie que si la dernière version publiée la porte, et tant que l'annonce n'est pas retirée.
   const input = await pages.inputFor(network, propertyId);
@@ -84,7 +107,7 @@ export async function handleVitrine(request: Request, db: SqlDatabase, media: Me
   if (!media) return notFound();
   const object = await media.get(ref);
   if (!object) return notFound();
-  return new Response(request.method === 'HEAD' ? null : object.body, { status: 200, headers: headers(MEDIA_TYPES[file![3]!]!) });
+  return new Response(request.method === 'HEAD' ? null : object.body, { status: 200, headers: { ...headers(MEDIA_TYPES[file![3]!]!), ...cache } });
 }
 
 const attr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
