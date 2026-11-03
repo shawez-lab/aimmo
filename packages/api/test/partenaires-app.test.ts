@@ -204,6 +204,32 @@ describe('U11 · écran « Partenaires » de l’application', () => {
     const c = await ready({ [proof]: stored, [agreed]: coupure });
     await c.go();
     expect(c.t.els['partenaires-etat']!.textContent).toBe(text);
+    // Un stockage fermé est un refus sûr, dit tel quel.
+    const closed = await ready({ [proof]: no(503, { ok: false, code: 'storage_unavailable' }) });
+    await closed.go();
+    expect(closed.t.els['partenaires-etat']!.textContent).toBe('Le rangement des preuves n’est pas encore ouvert : rien n’est enregistré.');
+    // Une demande qui a déjà changé : c'est dit, et l'écran est relu.
+    const changed = await ready({ [proof]: no(409, { ok: false, code: 'bad_state' }) });
+    const reads = changed.t.calls.filter((x) => x.url === '/v1/partenaires/projets').length;
+    await changed.go();
+    expect(changed.t.calls.filter((x) => x.url === '/v1/partenaires/projets')).toHaveLength(reads + 1);
+    // Un autre geste en cours : l'accord ne part pas du tout, aucune preuve n'est écrite, c'est dit, et la note reste.
+    const busy = await ready({ 'POST /v1/partenaires/relations': () => new Promise(() => undefined), [proof]: stored });
+    await busy.t.click(busy.t.byText(busy.t.els['partenaires-corps']!, 'Tirer au sort et proposer au client'));
+    await busy.go();
+    expect(busy.t.calls.filter((x) => x.url.endsWith('/preuve-accord'))).toEqual([]);
+    expect(busy.t.els['partenaires-etat']!.textContent).toBe('Un autre geste est en cours : attendez sa réponse, puis recommencez.');
+    expect(busy.t.els['partenaires-corps']!.all().find((e) => e.tagName === 'textarea')!.value).toContain('Choisi au téléphone');
+    // Un accord en cours bloque aussi le tirage, jusqu'à la seconde écriture comprise.
+    let hold: (r: Response) => void = () => undefined;
+    const second = await ready({ [proof]: stored, [agreed]: () => new Promise((r) => { hold = r; }), 'POST /v1/partenaires/relations': ok(referral({ referralId: 'r2' })) });
+    await second.go();
+    await second.t.click(second.t.byText(second.t.els['partenaires-corps']!, 'Tirer au sort et proposer au client'));
+    expect(second.t.calls.filter((x) => x.url === '/v1/partenaires/relations')).toEqual([]);
+    hold(Response.json({ ok: false, code: 'bad_note' }, { status: 400 }));
+    await new Promise((r) => setTimeout(r, 5));
+    await second.t.click(second.t.byText(second.t.els['partenaires-corps']!, 'Tirer au sort et proposer au client'));
+    expect(second.t.calls.filter((x) => x.url === '/v1/partenaires/relations')).toHaveLength(1);
     let release: (r: Response) => void = () => undefined;
     const d = await ready({ [proof]: () => new Promise((r) => { release = r; }) });
     await d.go();

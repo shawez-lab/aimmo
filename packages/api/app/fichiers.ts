@@ -1317,26 +1317,35 @@ export const APP_JS = `'use strict';
   }
   // Un geste : la réponse est dite, puis l'écran relu pour montrer l'état rangé.
   // Un geste passé puis une réponse perdue : le refaire tirerait au sort une seconde fois, ou confierait deux fois. L'écran
-  // ne dit ni fait ni pas fait [R10] ; un second appui pendant l'envoi ne part pas, le verrou vaut pour sa session [R74].
+  // ne dit ni fait ni pas fait [R10] ; un seul geste à la fois, le verrou vaut pour sa session [R74].
   var partActing = null;
   var PART_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Rouvrez les projets avant de recommencer.';
-  function partAct(path, body, fallback, done) {
+  function partTake() {
     var mine = session;
-    if (partActing === mine) return Promise.resolve(false);
+    if (partActing === mine) { partenairesState('Un autre geste est en cours : attendez sa réponse, puis recommencez.'); return null; }
     partActing = mine;
-    function free() { if (partActing === mine) partActing = null; }
+    return function () { if (partActing === mine) partActing = null; };
+  }
+  // Un stockage fermé est un refus sûr, sans écriture : il est dit, ce n'est pas une réponse perdue.
+  function partLost(res) { return res.offline || !res.body || (res.status >= 500 && res.body.code !== 'storage_unavailable'); }
+  function partRefused(res, fallback) {
+    partenairesState(partnerRefusal(res.body, fallback));
+    if (res.body.code === 'bad_state') return openPartenaires(partnerRefusal(res.body, fallback));
+    return false;
+  }
+  function partWrite(path, body, fallback, done, free) {
     partenairesState('Envoi…');
     return send(path, 'POST', body).then(function (res) {
       free();
       if (res.gone) return false;
-      if (res.offline || !res.body || res.status >= 500) { partenairesState(PART_LOST); return false; }
-      if (!res.ok) {
-        partenairesState(partnerRefusal(res.body, fallback));
-        if (res.body.code === 'bad_state') return openPartenaires(partnerRefusal(res.body, fallback));
-        return false;
-      }
+      if (partLost(res)) { partenairesState(PART_LOST); return false; }
+      if (!res.ok) return partRefused(res, fallback);
       return openPartenaires(done);
     }, function () { free(); return false; });
+  }
+  function partAct(path, body, fallback, done) {
+    var free = partTake();
+    return free ? partWrite(path, body, fallback, done, free) : Promise.resolve(false);
   }
   function renderPartenaires(projects, page, more) {
     var body = $('partenaires-corps');
@@ -1436,22 +1445,25 @@ export const APP_JS = `'use strict';
     var note = field(box, 'note-' + n, 'Ce que le client a dit, et quand', 'textarea');
     note.setAttribute('maxlength', '1000');
     note.setAttribute('rows', '3');
-    var agreeing = false;
     box.appendChild(button('Enregistrer son accord', function () {
       var picked = radios.filter(function (c) { return c.checked; })[0];
       if (!picked) { partenairesState('Cochez le professionnel choisi par le client.'); return; }
       var text = String(note.value || '').trim();
       if (text.length < 10) { partenairesState(PARTNER_REFUSALS.bad_note); return; }
-      if (agreeing) return;
-      agreeing = true;
+      // Les deux écritures de ce geste sont sous le même verrou : si un autre geste est en cours, aucune preuve n'est écrite.
+      var free = partTake();
+      if (!free) return;
       partenairesState('Envoi…');
       send(base + '/preuve-accord', 'POST', { channel: channel.value, note: text }).then(function (res) {
+        if (!res.gone && !partLost(res) && res.ok && res.body.data) {
+          var d = res.body.data;
+          return partWrite(base + '/accord', { partnerId: picked.value, consentAt: d.at, channel: d.channel, proofRef: d.proofRef }, 'L’accord n’est pas enregistré.', 'Accord du client enregistré.', free);
+        }
+        free();
         if (res.gone) return false;
-        if (res.offline || !res.body || res.status >= 500) { partenairesState(PART_LOST); return false; }
-        var d = res.ok && res.body.data;
-        if (!d) { partenairesState(partnerRefusal(res.body, 'L’accord n’est pas enregistré.')); return false; }
-        return partAct(base + '/accord', { partnerId: picked.value, consentAt: d.at, channel: d.channel, proofRef: d.proofRef }, 'L’accord n’est pas enregistré.', 'Accord du client enregistré.');
-      }).then(function () { agreeing = false; }, function () { agreeing = false; });
+        if (partLost(res)) { partenairesState(PART_LOST); return false; }
+        return partRefused(res, 'L’accord n’est pas enregistré.');
+      }, function () { free(); return false; });
     }));
   }
   function proposeForm(p) {
