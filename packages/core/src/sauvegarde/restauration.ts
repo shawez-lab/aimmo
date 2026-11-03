@@ -6,6 +6,7 @@
  * Décidé, lecture prudente :
  * - le test prend la dernière copie réussie et la restaure dans une base locale jetable, jamais en production ;
  * - plus d'une heure, c'est un échec : la cible du cahier, tenue même si tout est identique. La base le refuse aussi ;
+ * - une copie de plus de 48 heures est un échec, même si elle se restaure : le mois ne serait pas prouvé ;
  * - le reçu ne porte que des instants, une durée, les comptes de la base entière et une empreinte de toute la base : une
  *   empreinte par table permettrait de deviner le contenu d'une petite table ;
  * - le dernier reçu du mois décide : un échec se rattrape par un test réussi, et une réussite ne cache pas un échec plus récent ;
@@ -19,9 +20,11 @@ import type { JournalStore } from '../journal/types.ts';
 import { copyKeyFromSecret, restoreCopy, type CopyKey, type CopyStore } from './copie.ts';
 
 export const RESTORE_LIMIT_MS = 3_600_000;
+/** Une copie plus vieille ne prouve rien sur les données du mois : la copie de nuit est morte, le test le dit. */
+export const RESTORE_COPY_MAX_AGE_MS = 48 * 3_600_000;
 const FIRST_EXPECTED_DAY = 4;
 
-export const RESTORE_FAILURES = ['aucune_copie', 'cle_absente', 'cle_invalide', 'stockage_absent', 'stockage_en_panne', 'copie_abimee', 'non_identique', 'trop_longue', 'test_echoue'] as const;
+export const RESTORE_FAILURES = ['aucune_copie', 'cle_absente', 'cle_invalide', 'stockage_absent', 'stockage_en_panne', 'copie_abimee', 'copie_trop_ancienne', 'non_identique', 'trop_longue', 'test_echoue'] as const;
 export type RestoreFailure = (typeof RESTORE_FAILURES)[number];
 
 export type RestoreReceipt =
@@ -49,7 +52,9 @@ export interface MonthlyRestoreInput {
   clock?: () => number;
 }
 
-/** Le test : rend le reçu, réussi ou non, sans jamais lever ; à ranger par `recordRestoreReceipt`. */
+class StoreDown extends Error {}
+
+/** Le test : rend le reçu, réussi ou non ; lève seulement si la base ne se lit pas, et il n'y a alors aucun reçu à ranger. */
 export async function runRestoreTest(input: MonthlyRestoreInput): Promise<RestoreReceipt> {
   const at = (input.now ?? (() => new Date()))();
   const head = { id: crypto.randomUUID(), testedAt: at.toISOString(), month: parisMonthOf(at) };
@@ -65,17 +70,30 @@ export async function runRestoreTest(input: MonthlyRestoreInput): Promise<Restor
   }
   if (!input.store) return no('stockage_absent', last.started_at);
   try {
-    const restored = await restoreCopy(input.fresh(), input.store, key, last.copy_id, input.clock ? { clock: input.clock } : {});
+    const source = input.store;
+    const watched: CopyStore = {
+      put: (k, b) => source.put(k, b),
+      get: async (k) => {
+        try {
+          return await source.get(k);
+        } catch {
+          throw new StoreDown();
+        }
+      },
+    };
+    const restored = await restoreCopy(input.fresh(), watched, key, last.copy_id, input.clock ? { clock: input.clock } : {});
     if (!restored.ok) {
       if (restored.code === 'not_identical') return no('non_identique', last.started_at, restored.durationMs);
-      return no(restored.code === 'undecryptable' ? 'cle_invalide' : restored.code === 'manifest_missing' || restored.code === 'part_missing' ? 'stockage_en_panne' : 'copie_abimee', last.started_at);
+      const reason: Record<typeof restored.code, RestoreFailure> = { undecryptable: 'cle_invalide', manifest_missing: 'stockage_en_panne', part_missing: 'stockage_en_panne', part_corrupt: 'copie_abimee', bad_copy_id: 'copie_abimee', bad_format: 'copie_abimee', restore_failed: 'copie_abimee', target_not_empty: 'test_echoue' };
+      return no(reason[restored.code], last.started_at);
     }
     if (restored.durationMs > RESTORE_LIMIT_MS) return no('trop_longue', last.started_at, restored.durationMs, restored.tables, restored.rows);
+    if (at.getTime() - Date.parse(restored.takenAt) > RESTORE_COPY_MAX_AGE_MS) return no('copie_trop_ancienne', last.started_at, restored.durationMs, restored.tables, restored.rows);
     if (restored.tables === 0 || restored.rows === 0) return no('copie_abimee', last.started_at, restored.durationMs);
     return { ...head, outcome: 'reussie', copyTakenAt: restored.takenAt, durationMs: restored.durationMs, tables: restored.tables, rows: restored.rows, digest: restored.digest };
-  } catch {
+  } catch (error) {
     // L'erreur peut citer une ligne : elle ne sort pas.
-    return no('test_echoue', last.started_at);
+    return no(error instanceof StoreDown ? 'stockage_en_panne' : 'test_echoue', last.started_at);
   }
 }
 
@@ -136,7 +154,8 @@ export class RecusRestauration {
       return { ok: false, rule: 'R16', code: 'role' };
     }
     const expectedMonth = expectedRestoreMonth(this.now());
-    const latest = await this.db.first<ReceiptRow>('SELECT * FROM base_restore_receipts ORDER BY tested_at DESC LIMIT 1');
+    // Un reçu daté dans le futur (une horloge fausse) ne se réécrit pas : il ne doit jamais cacher les vrais.
+    const latest = await this.db.first<ReceiptRow>('SELECT * FROM base_restore_receipts WHERE tested_at <= ? ORDER BY tested_at DESC LIMIT 1', [this.now().toISOString()]);
     const current = latest && latest.month >= expectedMonth ? latest : null;
     const state: RestoreState = !current ? 'manquant' : current.outcome === 'reussie' ? 'reussi' : 'echec';
     await appendEvent(this.journal, { type: 'pilotage.lecture', actor, subject, data: { kind: 'base_restore' } }, this.now);

@@ -153,6 +153,14 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
     expect(bad.texts('restauration')).not.toContain('à l’identique');
     const old = await run('direction', { [RESTORE]: ok({ state: 'manquant', expectedMonth: '2027-03', receipt: { ...receipt, month: '2027-02' } }) });
     expect(old.state('restauration')).toBe('Aucune preuve de restauration pour mars 2027. Dernier reçu : février 2027, réussi.');
+    // Le 2 mars, le reçu du jour est celui de mars : l'écran nomme son vrai mois, jamais février, qui n'en a pas.
+    const early = await run('direction', { [RESTORE]: ok({ state: 'reussi', expectedMonth: '2027-02', receipt }) });
+    expect(early.state('restauration')).toMatch(/^Restauration de mars 2027 prouvée/);
+    const earlyBad = await run('direction', { [RESTORE]: ok({ state: 'echec', expectedMonth: '2027-02', receipt: { id: 'c', testedAt: '2027-03-02T01:47:00.000Z', month: '2027-03', outcome: 'echouee', reason: 'copie_trop_ancienne', copyTakenAt: '2027-01-10T00:23:00.000Z', durationMs: 12000, tables: 1, rows: 1 } }) });
+    expect(earlyBad.state('restauration')).toBe('Restauration de mars 2027 ratée : la dernière copie a plus de 48 heures.');
+    expect(earlyBad.texts('restauration')).not.toContain('restaurée en');
+    const notSame = await run('direction', { [RESTORE]: ok({ state: 'echec', expectedMonth: '2027-03', receipt: { id: 'd', testedAt: '2027-03-02T01:47:00.000Z', month: '2027-03', outcome: 'echouee', reason: 'non_identique', copyTakenAt: '2027-03-02T00:23:00.000Z', durationMs: 12000, tables: null, rows: null } }) });
+    expect(notSame.texts('restauration')).not.toContain('restaurée en');
     const down = await run('direction', { [RESTORE]: no(503, {}) });
     expect(down.state('restauration')).toContain('Indisponible');
   });

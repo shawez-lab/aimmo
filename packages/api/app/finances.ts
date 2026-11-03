@@ -590,21 +590,20 @@ globalThis.AIMMO_FINANCES = function (t) {
       return v.state === 'a_jour' ? last : 'Non sauvegardé la nuit dernière. ' + last;
     });
   }
-  var RESTORE_WHY = { aucune_copie: 'il n’y a aucune copie à restaurer', cle_absente: 'la clé de chiffrement manque', cle_invalide: 'la clé ne relit pas la copie', stockage_absent: 'le stockage n’est pas réglé', stockage_en_panne: 'la copie n’est pas entière dans le stockage', copie_abimee: 'la copie est abîmée', non_identique: 'la base restaurée n’est pas identique', trop_longue: 'elle a pris plus d’une heure', test_echoue: 'le test a échoué' };
+  var RESTORE_WHY = { aucune_copie: 'il n’y a aucune copie à restaurer', cle_absente: 'la clé de chiffrement manque', cle_invalide: 'la clé ne relit pas la copie', stockage_absent: 'le stockage n’est pas réglé', stockage_en_panne: 'le stockage n’a pas rendu la copie entière', copie_abimee: 'la copie est abîmée', copie_trop_ancienne: 'la dernière copie a plus de 48 heures', non_identique: 'la base restaurée n’est pas identique', trop_longue: 'elle a pris plus d’une heure', test_echoue: 'le test a échoué' };
   function lasted(ms) { var s = Math.ceil(Number(ms) / 1000); return s < 60 ? s + ' s' : Math.ceil(s / 60) + ' min'; }
   function restoration() {
     return readBlock('restauration', '/v1/pilotage/copies/restauration', function (v, body) {
       var r = v.receipt, ul = el('ul', null, 'liste');
-      if (r && r.copyTakenAt) ul.appendChild(el('li', 'Copie du ' + copyDay(r.copyTakenAt) + (r.durationMs !== null ? ', restaurée en ' + lasted(r.durationMs) : '') + '.'));
+      if (r && r.copyTakenAt) ul.appendChild(el('li', 'Copie du ' + copyDay(r.copyTakenAt) + (r.outcome === 'reussie' || r.reason === 'trop_longue' ? ', restaurée en ' + lasted(r.durationMs) : '') + '.'));
       if (r && r.outcome === 'reussie') {
         ul.appendChild(el('li', plural(Number(r.tables), 'table', 'tables') + ', ' + plural(Number(r.rows), 'ligne', 'lignes') + ', à l’identique.'));
         ul.appendChild(el('li', 'Empreinte de toute la base : ' + String(r.digest).slice(0, 16) + '.'));
       }
       if (ul.children.length) body.appendChild(ul);
-      var month = monthName(v.expectedMonth);
-      if (v.state === 'reussi') return 'Restauration de ' + month + ' prouvée, le ' + copyDay(r.testedAt) + '.';
-      if (v.state === 'echec') return 'Restauration de ' + month + ' ratée : ' + (RESTORE_WHY[r.reason] || 'le test a échoué') + '.';
-      return 'Aucune preuve de restauration pour ' + month + '.' + (r ? ' Dernier reçu : ' + monthName(r.month) + (r.outcome === 'reussie' ? ', réussi.' : ', raté.') : '');
+      if (v.state === 'reussi') return 'Restauration de ' + monthName(r.month) + ' prouvée, le ' + copyDay(r.testedAt) + '.';
+      if (v.state === 'echec') return 'Restauration de ' + monthName(r.month) + ' ratée : ' + (RESTORE_WHY[r.reason] || 'le test a échoué') + '.';
+      return 'Aucune preuve de restauration pour ' + monthName(v.expectedMonth) + '.' + (r ? ' Dernier reçu : ' + monthName(r.month) + (r.outcome === 'reussie' ? ', réussi.' : ', raté.') : '');
     });
   }
   function field(box, label, type) {

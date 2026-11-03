@@ -68,6 +68,27 @@ describeWithSqlite('SV03 · le test de restauration de chaque mois (Jamais vu)',
     await expect(t.db.run("INSERT INTO base_restore_receipts (id, tested_at, month, outcome, copy_taken_at, duration_ms, tables_count, rows_count, digest) VALUES ('y', 'a', '2027-03', 'reussie', 'b', 10, 0, 0, 'd')")).rejects.toThrow();
   });
 
+  it('[R232] une copie de plus de 48 heures n’est pas une preuve, même si elle se restaure ; 48 heures pile passent', async () => {
+    const t = await world();
+    await t.noteCopy();
+    const late = () => runRestoreTest({ db: t.db, secret: SECRET, store: t.store, fresh, now });
+    clock = new Date('2027-03-04T01:23:00.000Z');
+    expect(await late()).toMatchObject({ outcome: 'reussie' });
+    clock = new Date('2027-03-04T01:23:00.001Z');
+    expect(await late()).toMatchObject({ outcome: 'echouee', reason: 'copie_trop_ancienne', copyTakenAt: '2027-03-02T01:23:00.000Z' });
+    clock = new Date('2027-03-02T02:47:00.000Z');
+  });
+
+  it('[R232] un reçu daté dans le futur ne cache jamais les vrais', async () => {
+    const t = await world();
+    clock = new Date('2027-03-20T10:00:00.000Z');
+    await recordRestoreReceipt(t.db, { id: 'f', testedAt: '2099-01-02T02:47:00.000Z', month: '2099-01', outcome: 'reussie', copyTakenAt: '2099-01-02T01:23:00.000Z', durationMs: 10, tables: 9, rows: 9, digest: 'd' });
+    expect(await t.recus.status(direction)).toMatchObject({ ok: true, value: { state: 'manquant', receipt: null } });
+    await recordRestoreReceipt(t.db, { id: 'g', testedAt: '2027-03-05T02:47:00.000Z', month: '2027-03', outcome: 'echouee', reason: 'non_identique', copyTakenAt: null, durationMs: null, tables: null, rows: null });
+    expect(await t.recus.status(direction)).toMatchObject({ ok: true, value: { state: 'echec' } });
+    clock = new Date('2027-03-02T02:47:00.000Z');
+  });
+
   it('[R232] rien à restaurer, pas de clé, mauvaise clé, pas de stockage, morceau perdu : un échec et sa raison, jamais un vert', async () => {
     const t = await world();
     expect(await runRestoreTest({ db: t.db, secret: SECRET, store: t.store, fresh, now })).toMatchObject({ outcome: 'echouee', reason: 'aucune_copie' });
@@ -78,9 +99,15 @@ describeWithSqlite('SV03 · le test de restauration de chaque mois (Jamais vu)',
     expect(await runRestoreTest({ db: t.db, secret: SECRET, store: null, fresh, now })).toMatchObject({ outcome: 'echouee', reason: 'stockage_absent' });
     const down: CopyStore = { put: t.store.put, get: async () => { throw new Error(MARK); } };
     const failed = await runRestoreTest({ db: t.db, secret: SECRET, store: down, fresh, now });
-    expect(failed).toMatchObject({ outcome: 'echouee', reason: 'test_echoue' });
+    expect(failed).toMatchObject({ outcome: 'echouee', reason: 'stockage_en_panne' });
     expect(JSON.stringify(failed)).not.toContain(MARK);
+    // Bonne clé, morceau abîmé : c'est la copie qu'il faut regarder, pas la clé.
     const first = [...t.parts.keys()].find((k) => !k.endsWith('sommaire'))!;
+    const whole = t.parts.get(first)!;
+    const hurt = whole.slice();
+    hurt[hurt.length - 1] = hurt[hurt.length - 1]! ^ 1;
+    t.parts.set(first, hurt);
+    expect(await runRestoreTest({ db: t.db, secret: SECRET, store: t.store, fresh, now })).toMatchObject({ outcome: 'echouee', reason: 'copie_abimee' });
     t.parts.delete(first);
     expect(await runRestoreTest({ db: t.db, secret: SECRET, store: t.store, fresh, now })).toMatchObject({ outcome: 'echouee', reason: 'stockage_en_panne' });
   });
@@ -92,7 +119,7 @@ describeWithSqlite('SV03 · le test de restauration de chaque mois (Jamais vu)',
     await runRestoreTest({ db: t.db, secret: SECRET, store: t.store, fresh, now });
     expect(await t.db.first('SELECT COUNT(*) AS n FROM persons')).toEqual(before);
     const refusing = await runRestoreTest({ db: t.db, secret: SECRET, store: t.store, fresh: () => t.db, now });
-    expect(refusing).toMatchObject({ outcome: 'echouee', reason: 'copie_abimee' });
+    expect(refusing).toMatchObject({ outcome: 'echouee', reason: 'test_echoue' });
   });
 
   it('[R232] un mois sans reçu se dit, jamais un vert par défaut ; le mois d’avant ne couvre plus le mois en cours après le 3', async () => {

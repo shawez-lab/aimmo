@@ -68,7 +68,7 @@ export interface CopyReceipt {
   parts: number;
 }
 
-export type RestoreRefusal = 'bad_copy_id' | 'manifest_missing' | 'undecryptable' | 'part_missing' | 'bad_format' | 'target_not_empty' | 'restore_failed';
+export type RestoreRefusal = 'bad_copy_id' | 'manifest_missing' | 'undecryptable' | 'part_corrupt' | 'part_missing' | 'bad_format' | 'target_not_empty' | 'restore_failed';
 export type RestoreProblem = { kind: 'table_differs'; table: string } | { kind: 'schema_differs'; name: string } | { kind: 'foreign_keys'; table: string } | { kind: 'integrity' } | { kind: 'journal_chain' };
 export type RestoreOutcome =
   | { ok: true; copyId: string; takenAt: string; tables: number; rows: number; durationMs: number; digest: string }
@@ -243,7 +243,8 @@ export async function restoreCopy(target: SqlDatabase, store: CopyStore, key: Co
       const bytes = await store.get(place);
       if (!bytes) return { ok: false, code: 'part_missing' };
       const text = await openAt(key, place, bytes);
-      if (text === null) return { ok: false, code: 'undecryptable' };
+      // Le sommaire s'est ouvert : la clé est bonne, c'est ce morceau qui est abîmé, déplacé, ou d'une autre copie.
+      if (text === null) return { ok: false, code: 'part_corrupt' };
       texts.push(text);
     }
     pages.set(t.name, texts);

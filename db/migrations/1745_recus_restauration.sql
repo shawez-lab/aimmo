@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS base_restore_receipts (
   tested_at TEXT NOT NULL,
   month TEXT NOT NULL,
   outcome TEXT NOT NULL CHECK (outcome IN ('reussie', 'echouee')),
-  reason TEXT CHECK (reason IS NULL OR reason IN ('aucune_copie', 'cle_absente', 'cle_invalide', 'stockage_absent', 'stockage_en_panne', 'copie_abimee', 'non_identique', 'trop_longue', 'test_echoue')),
+  reason TEXT CHECK (reason IS NULL OR reason IN ('aucune_copie', 'cle_absente', 'cle_invalide', 'stockage_absent', 'stockage_en_panne', 'copie_abimee', 'copie_trop_ancienne', 'non_identique', 'trop_longue', 'test_echoue')),
   copy_taken_at TEXT,
   duration_ms INTEGER,
   tables_count INTEGER,
