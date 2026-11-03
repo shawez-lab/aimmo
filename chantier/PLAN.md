@@ -1785,13 +1785,39 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Attend : rien pour l'écran ; H40 pour de vrais espaces.
 - Reste : fusionnée (#301). Relecture forte : 4 P1 corrigés ; Codex à sa limite (H03). À trancher : `invite` n'a pas de plafond, l'agent peut préparer autant de liens qu'il veut ; R160 parle de 3 liens par 24 heures pour la demande du client.
 
-### W18 · Garants d'une candidature à l'écran
-- Statut : en cours (voie 2)
+### W18 · Pièces et garants d'une candidature à l'écran
+- Statut : fait (2026-11-03)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : W11, W13
 - Cahier : M15 Louer ; R104, R105, R16, R201.
 - Objectif : l'agent ajoute un garant à une candidature, par `POST /v1/location/candidatures/<id>/garants`. Vérifier d'abord la route et les pièces du garant.
 - Critères : seules les pièces permises sont demandées [R104] (test) ; l'ordre d'arrivée ne change pas [R105] (test) ; seul l'agent du bien ou la direction agit [R16] (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
 - Attend : rien.
+- Décidé (2026-11-03) : aucune route ne déposait une pièce de candidature, donc aucun dossier ne pouvait devenir complet depuis l'application : la tâche couvre aussi les pièces, avec `POST /location/candidatures/<id>/fichiers/piece`. Un dossier DossierFacile n'a pas le geste [R104]. Un seul garant Visale par dossier, jusque dans la base (migration `1580`). Relecture forte : 3 P1 corrigés ; Codex à sa limite, fusion sans lui (#302).
+- Reste : `addPiece` accepte encore des pièces sur un dossier DossierFacile par appel direct ; le geste de vérification de l'identité du candidat n'a pas été regardé (W21).
+
+### W19 · Les pièces déposées mais jamais rangées, dans le droit d'accès et l'effacement
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W18, L07
+- Cahier : Conformité ; M12 ; R95, R97, R13, R17.
+- Objectif : un fichier de `location/<logement>/candidatures/<id>/` déposé puis refusé, ou après une réponse perdue, reste stocké sans ligne `rental_application_pieces` : la carte des accès ne le trouve pas. Ranger chaque dépôt pour que l'accès et l'effacement le voient. À faire avant tout usage réel de ces pièces.
+- Critères : un dépôt refusé ensuite par le geste apparaît sur la carte de la personne [R95] (test) ; le plan d'effacement le compte [R97] (test) ; ni contenu ni nom au journal [R13] (test) ; rien n'est effacé par le dépôt lui-même [R17] (test).
+- Attend : rien pour le construire ; H29 pour l'effacement réel.
+
+### W20 · Le garant passe par les mêmes droits que le candidat
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W04, W18
+- Cahier : M15 Louer ; R16.
+- Objectif : `addGuarantor` ne vérifie que le réseau : un appel direct peut désigner le contact d'un autre agent ou une fiche réunie du candidat, et lire par `missing` si son identité est vérifiée. Appliquer les règles de `addableContacts`.
+- Critères : le contact d'un autre agent est refusé et le refus au journal [R16] (test) ; une fiche réunie du candidat est refusée (test) ; un dossier DossierFacile ne reçoit ni pièce ni garant par appel direct [R104] (test).
+- Attend : rien.
+
+### W21 · L'identité du candidat vérifiée, depuis l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : W18, L09
+- Cahier : M15 Louer ; M12 ; R15, R104, R16.
+- Objectif : un dossier reste « incomplet : manque pièce d'identité vérifiée » tant que la vérification n'est pas rangée. Vérifier d'abord si un geste existe à l'écran pour un candidat ; sinon l'ajouter, sans que la pièce quitte le coffre.
+- Critères : la pièce va au coffre, jamais au dossier [R15] (test) ; l'écran ne montre que le fait vérifié et sa date [R13] (test) ; réservé à l'agent du bien ou à la direction [R16] (test) ; budget tenu [R201] (test).
+- Attend : H36 pour le coffre réel.
 
 **M14 · Réseau et académie, juillet 2027.**
 
