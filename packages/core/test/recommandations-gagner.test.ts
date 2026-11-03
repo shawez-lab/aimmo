@@ -65,7 +65,7 @@ async function setup() {
   const input = (over: Record<string, unknown> = {}) => ({ firstName: 'Hugo', phone: '06 11 22 33 44', email: 'hugo@example.test', projectKind: 'sell', consent: consent(), ...over });
   const rows = () => db.all<{ id: string; referred_id: string | null; agent_id: string | null; call_due_at: string | null }>('SELECT id, referred_id, agent_id, call_due_at FROM partner_recommendations ORDER BY created_at, id');
   const persons = async () => (await db.first<{ n: number }>('SELECT COUNT(*) AS n FROM persons'))!.n;
-  return { db, journal, store, fiche, acces, gagner, clients, mandats, network, other, alex, sam, dir, agent, as, partner, entrust, consent, input, rows, persons };
+  return { db, now, journal, store, fiche, acces, annuaire, gagner, clients, mandats, network, other, alex, sam, dir, agent, as, partner, entrust, consent, input, rows, persons };
 }
 
 describeWithSqlite('G08 · recommandations des clients et des partenaires', () => {
@@ -261,6 +261,169 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(await t.rows()).toHaveLength(1);
     const mine = await t.gagner.mine(t.as(p));
     expect(mine.ok && mine.value).toHaveLength(2);
+  });
+
+  describe('X26 · deux envois au même instant', () => {
+    const counts = async (t: Awaited<ReturnType<typeof setup>>) => ({
+      persons: await t.persons(),
+      projects: (await t.db.all('SELECT id FROM projects')).length,
+      sources: (await t.db.all('SELECT id FROM sources')).length,
+      consents: (await t.db.all('SELECT id FROM consents')).length,
+      recommendations: (await t.rows()).length,
+    });
+    /** Le second envoi passe en entier juste avant le lot du premier, ou juste avant la coordonnée qu'il ajoute : la course, provoquée. */
+    const racing = (t: Awaited<ReturnType<typeof setup>>, on: 'batch' | 'identifier', other: () => Promise<unknown>) => {
+      let pending: (() => Promise<unknown>) | null = other;
+      const fire = async (): Promise<void> => {
+        const go = pending;
+        pending = null;
+        if (go) await go();
+      };
+      const db: SqlDatabase = {
+        ...t.db,
+        run: async (sql, params) => {
+          if (on === 'identifier' && /^INSERT INTO person_identifiers/.test(sql)) await fire();
+          return t.db.run(sql, params);
+        },
+        batch: async (statements) => {
+          if (on === 'batch') await fire();
+          return t.db.batch!(statements);
+        },
+      };
+      const store = new FicheClient(db, { now: t.now });
+      return new RecommandationsGagner(db, store, new FicheUnique(db, store, { now: t.now }), t.acces, t.annuaire, t.journal, { now: t.now, newId: uuid });
+    };
+    const RECORDED = { ok: true, value: { recorded: true } };
+
+    it('[R142] [R17] [R77] une personne inconnue : une seule fiche, un seul projet, une seule source, un seul accord, et la même réponse aux deux', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      await t.entrust(p);
+      const before = await counts(t);
+      let second: unknown;
+      const first = await racing(t, 'batch', async () => {
+        second = await t.gagner.recommend(t.as(p), t.input());
+      }).recommend(t.as(p), t.input());
+      expect(first).toEqual(RECORDED);
+      expect(second).toEqual(RECORDED);
+      expect(await counts(t)).toEqual({ persons: before.persons + 1, projects: before.projects + 1, sources: before.sources + 1, consents: before.consents + 1, recommendations: 1 });
+      expect((await t.journal.all()).filter((e) => e.type === 'recommandation.alerte')).toHaveLength(1);
+      const mine = await t.gagner.mine(t.as(p));
+      expect(mine.ok && mine.value).toHaveLength(2);
+      expect((await verifyChain(await t.journal.all())).ok).toBe(true);
+    });
+
+    it('[R142] [R17] [R77] une personne déjà connue : un seul projet, une seule source, un seul accord, et la même réponse aux deux', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      const known = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Hugo' });
+      await t.store.addIdentifier({ networkId: t.network.id, agentId: t.alex.id, personId: known.id, kind: 'phone', value: '06 11 22 33 44' });
+      const before = await counts(t);
+      let second: unknown;
+      const first = await racing(t, 'batch', async () => {
+        second = await t.gagner.recommend(t.as(p), t.input({ email: undefined }));
+      }).recommend(t.as(p), t.input({ email: undefined }));
+      expect(first).toEqual(RECORDED);
+      expect(second).toEqual(RECORDED);
+      expect(await counts(t)).toEqual({ ...before, projects: before.projects + 1, sources: before.sources + 1, consents: before.consents + 1, recommendations: 1 });
+    });
+
+    it('[R142] [R77] les deux envois lancés ensemble, sans ordre imposé : une seule fiche et une seule recommandation', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      const before = await counts(t);
+      expect(await Promise.all([t.gagner.recommend(t.as(p), t.input()), t.gagner.recommend(t.as(p), t.input())])).toEqual([RECORDED, RECORDED]);
+      expect(await counts(t)).toEqual({ persons: before.persons + 1, projects: before.projects + 1, sources: before.sources + 1, consents: before.consents + 1, recommendations: 1 });
+    });
+
+    it('[R142] [R77] une coordonnée nouvelle ajoutée par les deux sur une fiche connue : la même réponse, la coordonnée une seule fois', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      const known = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Hugo' });
+      await t.store.addIdentifier({ networkId: t.network.id, agentId: t.alex.id, personId: known.id, kind: 'phone', value: '06 11 22 33 44' });
+      const before = await counts(t);
+      let second: unknown;
+      const first = await racing(t, 'identifier', async () => {
+        second = await t.gagner.recommend(t.as(p), t.input());
+      }).recommend(t.as(p), t.input());
+      expect(first).toEqual(RECORDED);
+      expect(second).toEqual(RECORDED);
+      expect(await counts(t)).toEqual({ ...before, projects: before.projects + 1, sources: before.sources + 1, consents: before.consents + 1, recommendations: 1 });
+      expect((await t.store.listIdentifiers(known.id)).filter((i) => i.kind === 'email')).toHaveLength(1);
+    });
+
+    it('[R142] une déjà recommandée, une coordonnée nouvelle ajoutée par les deux renvois : la même réponse, rien de plus', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      await t.gagner.recommend(t.as(p), t.input({ email: undefined }));
+      const before = await counts(t);
+      let second: unknown;
+      const first = await racing(t, 'identifier', async () => {
+        second = await t.gagner.recommend(t.as(p), t.input());
+      }).recommend(t.as(p), t.input());
+      expect(first).toEqual(RECORDED);
+      expect(second).toEqual(RECORDED);
+      expect(await counts(t)).toEqual(before);
+    });
+
+    it('[R142] le perdant apporte une coordonnée de plus : elle rejoint la fiche du gagnant', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      const before = await counts(t);
+      await racing(t, 'batch', () => t.gagner.recommend(t.as(p), t.input({ email: undefined }))).recommend(t.as(p), t.input());
+      expect(await counts(t)).toEqual({ persons: before.persons + 1, projects: before.projects + 1, sources: before.sources + 1, consents: before.consents + 1, recommendations: 1 });
+      const [row] = await t.rows();
+      expect((await t.store.listIdentifiers(row!.referred_id!)).map((i) => i.kind).sort()).toEqual(['email', 'phone']);
+    });
+
+    it('[R142] deux partenaires différents, la même personne inconnue : une seule fiche, une recommandation chacun', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      const q = await t.partner('Cabinet Essai');
+      const before = await t.persons();
+      await racing(t, 'batch', () => t.gagner.recommend(t.as(q), t.input())).recommend(t.as(p), t.input());
+      expect(await t.persons()).toBe(before + 1);
+      const rows = await t.rows();
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.referred_id).toBe(rows[1]!.referred_id);
+    });
+
+    it('[R02] [R77] une personne exclue, deux envois ensemble : rien sur sa fiche, une seule ligne à l’écart, la même réponse', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      const known = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Hugo' });
+      await t.store.addIdentifier({ networkId: t.network.id, agentId: t.alex.id, personId: known.id, kind: 'phone', value: '06 11 22 33 44' });
+      await t.store.addExclusion({ networkId: t.network.id, agentId: t.alex.id, personId: known.id, reason: 'stop', notedAt: new Date(clock - DAY) });
+      const before = await counts(t);
+      let second: unknown;
+      const first = await racing(t, 'batch', async () => {
+        second = await t.gagner.recommend(t.as(p), t.input({ email: undefined }));
+      }).recommend(t.as(p), t.input({ email: undefined }));
+      expect(first).toEqual(RECORDED);
+      expect(second).toEqual(RECORDED);
+      expect(await counts(t)).toEqual({ ...before, recommendations: 1 });
+    });
+
+    it('[R17] une vraie panne reste une panne : un seul lot tenté, l’erreur remonte, et rien n’est gardé', async () => {
+      const t = await setup();
+      const p = await t.partner('Étude Essai');
+      const before = await counts(t);
+      let batches = 0;
+      const db: SqlDatabase = {
+        ...t.db,
+        batch: async () => {
+          batches += 1;
+          // Une panne passagère : seul le premier lot échoue, un second essai réussirait et la cacherait.
+          if (batches === 1) throw new Error('panne');
+          return [];
+        },
+      };
+      const store = new FicheClient(db, { now: t.now });
+      const gagner = new RecommandationsGagner(db, store, new FicheUnique(db, store, { now: t.now }), t.acces, t.annuaire, t.journal, { now: t.now, newId: uuid });
+      await expect(gagner.recommend(t.as(p), t.input())).rejects.toThrow(/panne/);
+      expect(batches).toBe(1);
+      expect(await counts(t)).toEqual(before);
+    });
   });
 
   describe('X25 · une panne au milieu, puis un renvoi', () => {
