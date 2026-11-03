@@ -16,6 +16,7 @@ import { MANDAT_SCRIPT } from '../app/mandat.ts';
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
 import { COMMERCES_ENGAGEMENTS_SCRIPT } from '../app/commerces-engagements.ts';
 import { COMMERCES_REPRENEURS_SCRIPT } from '../app/commerces-repreneurs.ts';
+import { ESPACE_AGENT_SCRIPT } from '../app/espace-agent.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
 import { LOUER_EDL_SCRIPT } from '../app/louer-edl.ts';
 import { LOUER_MODELES_SCRIPT } from '../app/louer-modeles.ts';
@@ -84,6 +85,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/commerces-engagements.js': { body: COMMERCES_ENGAGEMENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les repreneurs et le rapprochement (CE15), de même.
   '/app/commerces-repreneurs.js': { body: COMMERCES_REPRENEURS_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Ouvrir l'espace d'un client depuis sa fiche (EC12), chargé au premier geste [R201].
+  '/app/espace-agent.js': { body: ESPACE_AGENT_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer.js': { body: LOUER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le formulaire de l'état des lieux, la remise des clés et la gestion (W16), chargés au premier geste [R201].
   '/app/louer-modeles.js': { body: LOUER_MODELES_SCRIPT, type: 'text/javascript; charset=utf-8' },
