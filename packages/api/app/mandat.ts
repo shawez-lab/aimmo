@@ -7,6 +7,8 @@
  * le numéro au registre et l'exemplaire. L'écran ne lit et n'écrit que par les routes [R16] et ne calcule ni numéro ni
  * honoraires [R39] : il pose ce que le code rend. Le formulaire de signature n'existe qu'après un contrôle réussi [R41].
  * Un document d'essai est dit tel [R40]. La signature en ligne n'y est pas : elle attend la validation de l'avocat (H24).
+ * L'agent y note aussi la rétractation reçue et la demande écrite de commencer tout de suite (D16) [R42] ; le code seul
+ * décide si la date tient, l'écran n'en dit que le refus.
  * Tout texte reçu est posé avec `textContent`, et rien ne reste à l'écran une fois quitté.
  */
 import { FILE_DEPOSIT_MAX_BYTES, FILE_DEPOSIT_TYPES } from '../../core/src/dossiers/depot.ts';
@@ -80,6 +82,34 @@ const DIFFUSION: Record<DiffusionReason, string> = {
   allowed: 'Le bien peut être diffusé.',
   allowed_early_start: 'Le bien peut être diffusé : le mandant a demandé de commencer tout de suite.',
 };
+/** Les deux gestes sur un mandat signé hors de l'agence (D16). Leurs refus sont à part : `bad_date` n'y parle pas de signature. */
+const STOPS = {
+  retractation: {
+    open: 'Noter une rétractation',
+    day: 'Rétractation envoyée le (cachet de la poste, date du mail)',
+    field: 'sentOn',
+    go: 'Noter la rétractation',
+    done: 'Rétractation notée : le mandat est arrêté.',
+    again: 'Cette rétractation est déjà notée.',
+  },
+  'debut-anticipe': {
+    open: 'Noter sa demande de commencer tout de suite',
+    day: 'Demande écrite reçue le',
+    field: 'receivedOn',
+    go: 'Noter la demande',
+    done: 'Demande notée : le bien peut être diffusé.',
+    again: 'Cette demande est déjà notée.',
+  },
+};
+const STOP_REFUSALS = {
+  bad_proof: 'Dites en quelques mots la preuve écrite que vous avez reçue, 300 signes au plus.',
+  bad_date: 'La date : un vrai jour, depuis la signature, jamais à venir.',
+  invalid_date: 'La date : un vrai jour, depuis la signature, jamais à venir.',
+  delay_over: 'Cet envoi est après le dernier jour du délai : rien n’est noté, voyez avec la direction.',
+  no_withdrawal_period: 'Ce mandat, signé à l’agence, n’a pas de délai de rétractation.',
+  withdrawn: 'Le mandant s’est déjà rétracté : rien de plus à noter.',
+  unknown_mandate: 'Ce mandat n’est pas dans vos droits.',
+};
 const KINDS = { mandat_vente_simple: 'Mandat simple', mandat_vente_exclusif: 'Mandat exclusif', avenant_mandat: 'Avenant' };
 const PLACES: Record<SignaturePlace, string> = { agence: 'À l’agence', hors_agence: 'Hors de l’agence', distance: 'À distance' };
 const SOURCES: Record<MandateSource, string> = {
@@ -143,6 +173,8 @@ export const MANDAT_SCRIPT = `'use strict';
 globalThis.AIMMO_MANDAT = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
   var NO = ${JSON.stringify(REFUSALS)}, CHECKS = ${JSON.stringify(CHECKS)}, DIFFUSION = ${JSON.stringify(DIFFUSION)}, KINDS = ${JSON.stringify(KINDS)}, FIELDS = ${JSON.stringify(FIELD_NAMES)};
+  var STOPS = ${JSON.stringify(STOPS)}, STOP_NO = ${JSON.stringify(STOP_REFUSALS)};
+  var LOST = 'Pas de réponse : la note est peut-être rangée. Réessayez, rien ne se notera deux fois.';
   var PLACE_KEYS = ${JSON.stringify(SIGNATURE_PLACES)}, PLACES = ${JSON.stringify(PLACES)}, SOURCE_KEYS = ${JSON.stringify(MANDATE_SOURCES)}, SOURCES = ${JSON.stringify(SOURCES)};
   var TYPES = ${JSON.stringify(FILE_DEPOSIT_TYPES)}, MAX = ${FILE_DEPOSIT_MAX_BYTES};
   var RESUME_REF = 'mandats/reprise';
@@ -221,6 +253,7 @@ globalThis.AIMMO_MANDAT = function (t) {
       box.appendChild(el('p', m.number ? 'Numéro au registre : ' + m.number : 'Pas encore de numéro au registre.'));
       if (m.signedAt) box.appendChild(el('p', 'Signé le ' + date(m.signedAt) + '.', 'doux'));
       box.appendChild(el('p', DIFFUSION[m.reason] || (m.allowed ? 'Le bien peut être diffusé.' : 'Le bien ne se diffuse pas.')));
+      drawStops(box, m);
     }
     var docs = bloc('Documents du bien');
     var list = Array.isArray(data.documents) ? data.documents : [];
@@ -229,6 +262,65 @@ globalThis.AIMMO_MANDAT = function (t) {
     var free = !m || m.reason === 'cancelled' || m.reason === 'withdrawn' || m.reason === 'expired';
     list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d, free); });
     if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : []);
+  }
+  // Signé hors de l'agence : le délai est dit, et ses deux gestes restent à portée. La rétractation reste proposée après
+  // le délai, car une lettre postée à temps arrive plus tard ; le code refuse un envoi trop tardif [R42].
+  function drawStops(box, m) {
+    if (m.withdrawalUnfinished && ID.test(m.id)) {
+      box.appendChild(el('p', 'La rétractation est notée, mais son numéro n’est pas encore annulé au registre.'));
+      box.appendChild(button('Finir la rétractation', act(function () { return post(m, 'retractation', { resume: true }, 'Rétractation finie : le numéro est annulé au registre.', 'Cette rétractation est déjà finie.'); })));
+      return;
+    }
+    var live = m.reason === 'withdrawal_period' || m.reason === 'allowed_early_start' || m.reason === 'allowed';
+    if (!live || !m.withdrawalLastDay || !ID.test(m.id)) return;
+    box.appendChild(el('p', 'Dernier jour du délai de rétractation : ' + date(m.withdrawalLastDay) + '.', 'doux'));
+    var zone = el('div');
+    if (m.reason === 'withdrawal_period') box.appendChild(button(STOPS['debut-anticipe'].open, function () { drawStop(zone, m, 'debut-anticipe'); }));
+    box.appendChild(button(STOPS.retractation.open, function () { drawStop(zone, m, 'retractation'); }));
+    box.appendChild(zone);
+  }
+  function drawStop(zone, m, kind) {
+    var c = STOPS[kind];
+    clear(zone);
+    state('');
+    var when = field(zone, 'mandat-arret-jour', c.day);
+    when.setAttribute('type', 'date');
+    when.value = today();
+    var proof = field(zone, 'mandat-arret-preuve', 'La preuve écrite : sa nature et sa date, sans copier de pièce');
+    proof.setAttribute('maxlength', '300');
+    zone.appendChild(button(c.go, act(function () {
+      if (!when.value) { state(STOP_NO.bad_date); return false; }
+      if (!proof.value.trim()) { state(STOP_NO.bad_proof); return false; }
+      if (kind !== 'retractation') return stop(m, kind, proof.value.trim(), when.value);
+      // Une rétractation ne se défait pas : la conséquence est dite, sur ce que l'agent a saisi, avant le second appui.
+      var day = when.value, said = proof.value.trim();
+      clear(zone);
+      zone.appendChild(el('p', 'Rétractation envoyée le ' + date(day) + ' : le mandat ' + (m.number || '') + ' s’arrête, son numéro est annulé au registre, où il reste, et la diffusion s’arrête au prochain passage des annonces. Cela ne se défait pas.'));
+      zone.appendChild(button('Confirmer : noter la rétractation', act(function () { return stop(m, kind, said, day); })));
+      zone.appendChild(button('Ne rien noter', function () { clear(zone); state(''); }));
+      return true;
+    })));
+  }
+  // Une réponse perdue n'est pas un refus : le geste a pu passer, et le refaire ne note rien deux fois.
+  function stop(m, kind, proof, day) {
+    var c = STOPS[kind], data = { proof: proof };
+    data[c.field] = day;
+    return post(m, kind, data, c.done, c.again);
+  }
+  function post(m, kind, data, done, again) {
+    var mine = ++seq;
+    state('Enregistrement…');
+    return send('/v1/mandats/' + encodeURIComponent(m.id) + '/' + kind, 'POST', data).then(function (res) {
+      if (res.gone || mine !== seq) return false;
+      if (res.ok) return load(done);
+      var code = res.body && res.body.code;
+      if (code === 'already_recorded') return load(again);
+      // Registre abîmé : la rétractation est peut-être notée sans son annulation ; la relecture le dit, et offre de la finir.
+      if (code === 'register_broken') return load(NO.register_broken);
+      if (res.offline || !res.body || res.status >= 500) { state(LOST); return false; }
+      state(STOP_NO[code] || NO[code] || why(res, 'Rien n’est noté : réessayez.'));
+      return false;
+    });
   }
   function drawDocument(box, d, free) {
     var card = el('article');

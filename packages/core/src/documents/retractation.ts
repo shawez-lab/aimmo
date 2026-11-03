@@ -70,7 +70,11 @@ interface SignedMandateRow {
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: 'R42' | null; code: 'bad_proof' | 'bad_date' | 'unknown_mandate' | 'no_withdrawal_period' | 'delay_over' | 'already_recorded' | 'withdrawn' | 'not_inscribed' };
+type Problem = { ok: false; rule: 'R42' | null; code: 'bad_proof' | 'bad_date' | 'unknown_mandate' | 'no_withdrawal_period' | 'delay_over' | 'already_recorded' | 'withdrawn' | 'not_inscribed' | 'not_withdrawn' };
+
+/** Un vrai jour `AAAA-MM-JJ`, pas seulement sa forme. */
+const isRealDay = (day: unknown): day is string =>
+  typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) && !Number.isNaN(Date.parse(`${day}T12:00:00Z`)) && new Date(`${day}T12:00:00Z`).toISOString().slice(0, 10) === day;
 
 export class Diffusion {
   private readonly now: () => Date;
@@ -215,40 +219,63 @@ export class Diffusion {
     return { ok: true, row };
   }
 
-  /** La demande écrite du vendeur de diffuser avant la fin du délai, avec sa preuve. */
-  async recordEarlyStart(viewer: Viewer, mandateId: string, input: { proof: string; receivedAt: Date }): Promise<{ ok: true } | Refusal | Problem> {
+  /**
+   * L'instant d'un jour donné par l'écran : l'heure du téléphone ne compte pas, seul le jour de Paris compte (D16).
+   * Aujourd'hui vaut l'instant du serveur ; un jour passé, 21 h UTC, encore ce jour-là à Paris été comme hiver, et jamais
+   * avant une signature du même jour. Nul si le jour est à venir ou d'avant la signature.
+   */
+  private instantOfDay(day: string, signedAt: Date): Date | null {
+    const today = localTime(this.now(), TIME_ZONE).date;
+    if (day > today || day < localTime(signedAt, TIME_ZONE).date) return null;
+    if (day === today) return this.now();
+    const late = new Date(`${day}T21:00:00.000Z`);
+    return late.getTime() < signedAt.getTime() ? signedAt : late;
+  }
+
+  /** La demande écrite du vendeur de diffuser avant la fin du délai, avec sa preuve. `receivedOn` : le jour, à la place de l'instant. */
+  async recordEarlyStart(viewer: Viewer, mandateId: string, input: { proof: string; receivedAt?: Date; receivedOn?: string }): Promise<{ ok: true } | Refusal | Problem> {
     if (typeof input.proof !== 'string' || input.proof.trim() === '' || input.proof.length > 300) return { ok: false, rule: null, code: 'bad_proof' };
-    if (!(input.receivedAt instanceof Date) || Number.isNaN(input.receivedAt.getTime()) || input.receivedAt.getTime() > this.now().getTime()) return { ok: false, rule: null, code: 'bad_date' };
+    if (input.receivedOn !== undefined ? !isRealDay(input.receivedOn) : !(input.receivedAt instanceof Date) || Number.isNaN(input.receivedAt.getTime()) || input.receivedAt.getTime() > this.now().getTime()) return { ok: false, rule: null, code: 'bad_date' };
     const found = await this.mandateFor(viewer, mandateId);
     if (!found.ok) return found;
     if (withdrawalLastDay(new Date(found.row.signed_at), found.row.place) === null) return { ok: false, rule: 'R42', code: 'no_withdrawal_period' };
+    const receivedAt = input.receivedOn !== undefined ? this.instantOfDay(input.receivedOn, new Date(found.row.signed_at)) : (input.receivedAt as Date);
     // La demande doit suivre la signature : une date d'avant est refusée.
-    if (input.receivedAt.getTime() < Date.parse(found.row.signed_at)) return { ok: false, rule: null, code: 'bad_date' };
+    if (receivedAt === null || receivedAt.getTime() < Date.parse(found.row.signed_at)) return { ok: false, rule: null, code: 'bad_date' };
     if (await this.db.first('SELECT mandate_id FROM mandate_withdrawals WHERE mandate_id = ?', [mandateId])) return { ok: false, rule: 'R42', code: 'withdrawn' };
     const { changes } = await this.db.run(
       'INSERT INTO mandate_early_starts (mandate_id, network_id, proof, received_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (mandate_id) DO NOTHING',
-      [mandateId, viewer.networkId, input.proof.trim(), input.receivedAt.toISOString(), this.actor(viewer), this.now().toISOString()],
+      [mandateId, viewer.networkId, input.proof.trim(), receivedAt.toISOString(), this.actor(viewer), this.now().toISOString()],
     );
     if (changes !== 1) return { ok: false, rule: null, code: 'already_recorded' };
     await appendEvent(this.journal, { type: 'mandat.debut_anticipe', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { rule: 'R42' } }, this.now);
     return { ok: true };
   }
 
-  /** La rétractation reçue dans le délai : le mandat s'arrête, son inscription est annulée, la diffusion cesse. */
-  async recordWithdrawal(viewer: Viewer, mandateId: string, input: { proof: string; receivedAt: Date }): Promise<{ ok: true } | Refusal | Problem> {
+  /**
+   * La rétractation envoyée dans le délai : le mandat s'arrête, son inscription est annulée, la diffusion cesse.
+   *
+   * Décidé (D16), lecture prudente : c'est l'envoi qui compte, pas la réception (code de la consommation, L221-21 ; à faire
+   * confirmer, H44). `sentOn` dit ce jour, et la rétractation est alors reçue à l'instant. Sans `sentOn`, `receivedAt` vaut
+   * pour les deux.
+   */
+  async recordWithdrawal(viewer: Viewer, mandateId: string, input: { proof: string; receivedAt?: Date; sentOn?: string }): Promise<{ ok: true } | Refusal | Problem> {
     if (typeof input.proof !== 'string' || input.proof.trim() === '' || input.proof.length > 300) return { ok: false, rule: null, code: 'bad_proof' };
-    if (!(input.receivedAt instanceof Date) || Number.isNaN(input.receivedAt.getTime()) || input.receivedAt.getTime() > this.now().getTime()) return { ok: false, rule: null, code: 'bad_date' };
+    if (input.sentOn !== undefined ? !isRealDay(input.sentOn) : !(input.receivedAt instanceof Date) || Number.isNaN(input.receivedAt.getTime()) || input.receivedAt.getTime() > this.now().getTime()) return { ok: false, rule: null, code: 'bad_date' };
     const found = await this.mandateFor(viewer, mandateId);
     if (!found.ok) return found;
-    const last = withdrawalLastDay(new Date(found.row.signed_at), found.row.place);
+    const signedAt = new Date(found.row.signed_at);
+    const last = withdrawalLastDay(signedAt, found.row.place);
     if (last === null) return { ok: false, rule: 'R42', code: 'no_withdrawal_period' };
-    if (input.receivedAt.getTime() < Date.parse(found.row.signed_at)) return { ok: false, rule: null, code: 'bad_date' };
-    if (localTime(input.receivedAt, TIME_ZONE).date > last) return { ok: false, rule: 'R42', code: 'delay_over' };
+    const receivedAt = input.sentOn !== undefined ? this.now() : (input.receivedAt as Date);
+    const sentOn = input.sentOn ?? localTime(receivedAt, TIME_ZONE).date;
+    if (input.sentOn !== undefined ? this.instantOfDay(input.sentOn, signedAt) === null : receivedAt.getTime() < signedAt.getTime()) return { ok: false, rule: null, code: 'bad_date' };
+    if (sentOn > last) return { ok: false, rule: 'R42', code: 'delay_over' };
     // Un mandat pas encore numéroté ne s'annule pas au registre : la signature (D04) doit d'abord être reprise.
     if (found.row.number === null) return { ok: false, rule: null, code: 'not_inscribed' };
     const { changes } = await this.db.run(
-      'INSERT INTO mandate_withdrawals (mandate_id, network_id, proof, received_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (mandate_id) DO NOTHING',
-      [mandateId, viewer.networkId, input.proof.trim(), input.receivedAt.toISOString(), this.actor(viewer), this.now().toISOString()],
+      'INSERT INTO mandate_withdrawals (mandate_id, network_id, proof, received_at, sent_on, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (mandate_id) DO NOTHING',
+      [mandateId, viewer.networkId, input.proof.trim(), receivedAt.toISOString(), sentOn, this.actor(viewer), this.now().toISOString()],
     );
     if (changes === 1) await appendEvent(this.journal, { type: 'mandat.retracte', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { rule: 'R42' } }, this.now);
     // L'inscription au registre est annulée ; une reprise après coupure le fait si ce n'est pas déjà fait.
@@ -256,5 +283,23 @@ export class Diffusion {
     if (!cancelled.ok && cancelled.code !== 'already_cancelled') return cancelled as Refusal | Problem;
     // Une reprise qui vient de faire l'annulation manquante réussit ; une rétractation déjà complète est signalée.
     return changes === 1 || cancelled.ok ? { ok: true } : { ok: false, rule: null, code: 'already_recorded' };
+  }
+
+  /** La rétractation notée dont l'annulation au registre n'a pas abouti, qui se reprend depuis l'écran (D16). */
+  async withdrawalUnfinished(networkId: string, mandateId: string): Promise<boolean> {
+    if (!(await this.db.first('SELECT mandate_id FROM mandate_withdrawals WHERE mandate_id = ?', [mandateId]))) return false;
+    const inscription = await this.db.first<{ seq: number }>(`SELECT seq FROM mandate_register WHERE mandate_id = ? AND kind = 'inscription'`, [mandateId]);
+    if (!inscription) return false;
+    return !(await this.db.first(`SELECT seq FROM mandate_register WHERE network_id = ? AND kind = 'annulation' AND cancels_seq = ?`, [networkId, Number(inscription.seq)]));
+  }
+
+  /** Finit une rétractation déjà notée : rien de neuf n'est saisi, seule l'annulation manquante se fait. */
+  async resumeWithdrawal(viewer: Viewer, mandateId: string): Promise<{ ok: true } | Refusal | Problem> {
+    const found = await this.mandateFor(viewer, mandateId);
+    if (!found.ok) return found;
+    if (!(await this.db.first('SELECT mandate_id FROM mandate_withdrawals WHERE mandate_id = ?', [mandateId]))) return { ok: false, rule: null, code: 'not_withdrawn' };
+    const cancelled = await this.registre.cancel(viewer, mandateId, 'withdrawal');
+    if (cancelled.ok) return { ok: true };
+    return cancelled.code === 'already_cancelled' ? { ok: false, rule: null, code: 'already_recorded' } : (cancelled as Refusal | Problem);
   }
 }

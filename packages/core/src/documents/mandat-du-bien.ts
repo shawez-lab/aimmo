@@ -39,7 +39,7 @@ export interface PropertyMandate {
     signature: { signedAt: string; place: string; number: string | null; complete: boolean } | null;
   }[];
   /** La décision de diffusion dit l'état du mandat ; `mandate` est nul s'il n'y en a aucun. */
-  mandate: { id: string; number: string | null; signedAt: string | null; allowed: boolean; reason: DiffusionDecision['reason'] } | null;
+  mandate: { id: string; number: string | null; signedAt: string | null; allowed: boolean; reason: DiffusionDecision['reason']; withdrawalLastDay: string | null; withdrawalUnfinished: boolean } | null;
   owners: { personId: string; firstName: string | null; lastName: string | null }[];
 }
 
@@ -86,7 +86,9 @@ export class MandatDuBien {
        WHERE d.network_id = ? AND d.property_id = ? ORDER BY d.created_at DESC, d.rowid DESC LIMIT ?`,
       [viewer.networkId, propertyId, PROPERTY_DOCUMENTS_MAX],
     );
-    const decision = await new Diffusion(this.db, this.acces, this.journal, { now: this.now }).canDiffuse(viewer.networkId, propertyId);
+    const diffusion = new Diffusion(this.db, this.acces, this.journal, { now: this.now });
+    const decision = await diffusion.canDiffuse(viewer.networkId, propertyId);
+    const unfinished = decision.reason === 'withdrawn' && decision.mandateId !== null && (await diffusion.withdrawalUnfinished(viewer.networkId, decision.mandateId));
     const signed = decision.mandateId ? await this.db.first<{ number: string | null; signed_at: string }>('SELECT number, signed_at FROM signed_documents WHERE mandate_id = ?', [decision.mandateId]) : null;
 
     const links = await this.db.all<{ person_id: string }>(
@@ -115,7 +117,7 @@ export class MandatDuBien {
           createdAt: r.created_at,
           signature: r.signed_at ? { signedAt: r.signed_at, place: r.place as string, number: r.number, complete: r.complete === 1 } : null,
         })),
-        mandate: decision.mandateId ? { id: decision.mandateId, number: signed?.number ?? null, signedAt: signed?.signed_at ?? null, allowed: decision.allowed, reason: decision.reason } : null,
+        mandate: decision.mandateId ? { id: decision.mandateId, number: signed?.number ?? null, signedAt: signed?.signed_at ?? null, allowed: decision.allowed, reason: decision.reason, withdrawalLastDay: decision.withdrawalLastDay, withdrawalUnfinished: unfinished } : null,
         owners: [...owners.values()],
       },
     };

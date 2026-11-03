@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { beforeEach, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, type Viewer } from '@aimmo/core';
 import { identiteAuCoffre } from '../../core/test/identite-coffre.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
@@ -215,6 +215,78 @@ describeWithSqlite('D11 · lire et déposer depuis le téléphone', () => {
     await new FicheUnique(w.db, w.store).merge({ survivorId: w.lea.id, mergedId: double.id, reason: 'test' });
     const read = (await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.alex)).json()) as { data: { owners: { personId: string }[] } };
     expect(read.data.owners).toEqual([{ personId: w.lea.id, firstName: 'Léa', lastName: 'Exemple' }]);
+  });
+
+  describe('D16', () => {
+    const day = (ago: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() - ago * 86_400_000));
+    const sign = async (doc: { id: string }, ago: number, place: string) => {
+      const { data } = (await (await w.scan(KEYS.alex)).json()) as { data: { ref: string } };
+      const signedAt = new Date(Date.now() - ago * 86_400_000 - 60_000).toISOString();
+      expect((await w.post(`/documents/${doc.id}/signature-papier`, KEYS.alex, { signedAt, place, scanRef: data.ref, source: 'referral' })).status).toBe(200);
+    };
+    const mandate = async () => ((await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.alex)).json()) as { data: { mandate: { id: string; reason: string; allowed: boolean; withdrawalLastDay: string | null; withdrawalUnfinished: boolean } } }).data.mandate;
+    const code = async (r: Response) => [r.status, ((await r.json()) as { code: string }).code];
+
+    it('[R16, R42] le délai est lu ; l’agent du mandat note, la diffusion suit, un nouveau mandat se signe ; autre agent et conformité refusés', async () => {
+      await sign(await ready(w), 0, 'hors_agence');
+      const before = await mandate();
+      expect(before).toMatchObject({ reason: 'withdrawal_period', allowed: false, withdrawalUnfinished: false });
+      expect(before.withdrawalLastDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const early = (key: string) => w.post(`/mandats/${before.id}/debut-anticipe`, key, { proof: 'Mail reçu', receivedOn: day(0) });
+      const stop = (key: string) => w.post(`/mandats/${before.id}/retractation`, key, { proof: 'Lettre reçue', sentOn: day(0) });
+      for (const key of [KEYS.sam, KEYS.compliance]) {
+        expect((await early(key)).status).toBe(403);
+        expect((await stop(key)).status).toBe(403);
+      }
+      expect((await mandate()).reason).toBe('withdrawal_period');
+      expect((await early(KEYS.alex)).status).toBe(200);
+      expect(await mandate()).toMatchObject({ reason: 'allowed_early_start', allowed: true });
+      expect((await early(KEYS.alex)).status).toBe(409);
+      expect((await stop(KEYS.alex)).status).toBe(200);
+      expect(await mandate()).toMatchObject({ reason: 'withdrawn', allowed: false, withdrawalUnfinished: false });
+      expect((await stop(KEYS.alex)).status).toBe(409);
+      // Le bien se rouvre jusqu'à la signature d'un second mandat, pas seulement jusqu'au contrôle.
+      const made = ((await (await w.post('/documents', KEYS.alex, { kind: 'mandat_vente_simple', personId: w.lea.id, propertyId: w.bien.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 } })).json()) as { data: { id: string } }).data;
+      await sign(made, 0, 'agence');
+      expect(await mandate()).toMatchObject({ allowed: true, reason: 'allowed' });
+    });
+
+    // Le jour d'envoi le dernier jour et après le délai est prouvé à horloge fixée dans `core/test/retractation.test.ts`.
+    it('[R42] par la route, l’envoi est un jour : à venir, avant la signature ou impossible, refusé et rien de noté ; le jour même, gardé', async () => {
+      await sign(await ready(w), 0, 'hors_agence');
+      const m = await mandate();
+      const stop = (sentOn: unknown) => w.post(`/mandats/${m.id}/retractation`, KEYS.alex, { proof: 'Lettre recommandée', sentOn });
+      for (const bad of [day(-2), day(2), '2027-02-31', 'hier', 12]) expect(await code(await stop(bad))).toEqual([400, 'bad_date']);
+      expect((await mandate()).reason).toBe('withdrawal_period');
+      expect((await stop(day(0))).status).toBe(200);
+      expect((await mandate()).reason).toBe('withdrawn');
+      expect(await w.db.first('SELECT sent_on FROM mandate_withdrawals WHERE mandate_id = ?', [m.id])).toEqual({ sent_on: day(0) });
+    });
+
+    it('[R42] une rétractation arrêtée avant l’annulation se lit et se finit par `resume`, droits compris', async () => {
+      await sign(await ready(w), 0, 'hors_agence');
+      const m = await mandate();
+      const resume = (key: string) => w.post(`/mandats/${m.id}/retractation`, key, { resume: true });
+      expect(await code(await resume(KEYS.alex))).toEqual([400, 'not_withdrawn']);
+      await w.db.run(`INSERT INTO mandate_withdrawals (mandate_id, network_id, proof, received_at, sent_on, recorded_by, created_at) VALUES (?, ?, 'Lettre', ?, ?, 'x', ?)`, [m.id, w.network.id, new Date().toISOString(), day(0), new Date().toISOString()]);
+      expect(await mandate()).toMatchObject({ reason: 'withdrawn', withdrawalUnfinished: true });
+      expect((await resume(KEYS.sam)).status).toBe(403);
+      expect((await w.post(`/mandats/${m.id}/retractation`, KEYS.alex, { resume: true, proof: 'x' })).status).toBe(400);
+      expect((await resume(KEYS.alex)).status).toBe(200);
+      expect(await mandate()).toMatchObject({ reason: 'withdrawn', withdrawalUnfinished: false });
+      expect(await code(await resume(KEYS.alex))).toEqual([409, 'already_recorded']);
+    });
+  });
+
+  it('[R42] D16 : signé à l’agence, aucun délai n’est lu et rien ne se note', async () => {
+    const doc = await ready(w);
+    const { data } = (await (await w.scan(KEYS.alex)).json()) as { data: { ref: string } };
+    expect((await w.post(`/documents/${doc.id}/signature-papier`, KEYS.alex, { signedAt: new Date(Date.now() - 60_000).toISOString(), place: 'agence', scanRef: data.ref, source: 'referral' })).status).toBe(200);
+    const read = (await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.alex)).json()) as { data: { mandate: { id: string; withdrawalLastDay: string | null } } };
+    expect(read.data.mandate.withdrawalLastDay).toBeNull();
+    const r = await w.post(`/mandats/${read.data.mandate.id}/retractation`, KEYS.alex, { proof: 'Lettre', sentOn: new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date()) });
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as { code: string }).code).toBe('no_withdrawal_period');
   });
 
   it('un bien sans document : listes vides, aucun mandat', async () => {

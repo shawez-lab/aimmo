@@ -17,6 +17,7 @@ import {
   type Viewer,
 } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
+import { localTime } from '../src/envoi/horaires.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 
@@ -168,6 +169,38 @@ describeWithSqlite('D05 · rétractation et diffusion bloquée', () => {
     expect(await t.diffusion.recordWithdrawal(t.direction, a.mandateId, proof)).toEqual({ ok: true });
     expect(await t.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM mandate_register WHERE kind = 'annulation'`)).toEqual({ n: 1 });
     expect(await t.diffusion.recordWithdrawal(t.direction, a.mandateId, proof)).toEqual({ ok: false, rule: null, code: 'already_recorded' });
+  });
+
+  it('[R42] D16 : envoyée le dernier jour et reçue après, la rétractation tient ; le jour compte à Paris, l’heure du téléphone ne compte pas', async () => {
+    const t = await setup();
+    const a = await t.signed('hors_agence');
+    t.setClock(paris('2027-02-26', '10:00'));
+    expect(await t.diffusion.recordWithdrawal(t.agent, a.mandateId, { proof: 'x', sentOn: '2027-02-25' })).toEqual({ ok: false, rule: 'R42', code: 'delay_over' });
+    expect(await t.diffusion.recordWithdrawal(t.agent, a.mandateId, { proof: 'x', sentOn: '2027-02-09' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    expect(await t.diffusion.recordWithdrawal(t.agent, a.mandateId, { proof: 'x', sentOn: '2027-02-27' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    expect(await t.diffusion.recordWithdrawal(t.agent, a.mandateId, { proof: 'lettre (test)', sentOn: '2027-02-24' })).toEqual({ ok: true });
+    expect(await t.db.first('SELECT sent_on, received_at FROM mandate_withdrawals WHERE mandate_id = ?', [a.mandateId])).toEqual({ sent_on: '2027-02-24', received_at: paris('2027-02-26', '10:00').toISOString() });
+    // Envoyée aujourd'hui, à 23 h 30 à Paris : le jour de Paris n'est pas celui du temps universel.
+    const b = await t.signed('hors_agence');
+    t.setClock(new Date('2027-02-12T22:30:00.000Z'));
+    expect(await t.diffusion.recordWithdrawal(t.agent, b.mandateId, { proof: 'mail (test)', sentOn: '2027-02-12' })).toEqual({ ok: true });
+  });
+
+  it('[R42] D16 : une demande datée d’un jour reste ce jour-là à Paris, hiver comme été, et jamais avant la signature du même jour', async () => {
+    const t = await setup();
+    const winter = await t.signed('hors_agence');
+    t.setClock(paris('2027-02-15', '10:00'));
+    expect(await t.diffusion.recordEarlyStart(t.agent, winter.mandateId, { proof: 'mail (test)', receivedOn: '2027-02-12' })).toEqual({ ok: true });
+    expect(await t.diffusion.canDiffuse(t.network.id, winter.propertyId, paris('2027-02-11', '23:00'))).toMatchObject({ reason: 'withdrawal_period' });
+    expect(await t.diffusion.canDiffuse(t.network.id, winter.propertyId, paris('2027-02-12', '08:00'))).toMatchObject({ reason: 'allowed_early_start' });
+    const bad = await t.signed('hors_agence');
+    expect(await t.diffusion.recordEarlyStart(t.agent, bad.mandateId, { proof: 'x', receivedOn: '2027-02-16' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    expect(await t.diffusion.recordEarlyStart(t.agent, bad.mandateId, { proof: 'x', receivedOn: '2027-02-09' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    expect(await t.diffusion.recordEarlyStart(t.agent, bad.mandateId, { proof: 'x', receivedOn: 'hier' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    // 21 h UTC reste le même jour à Paris, été comme hiver.
+    const summer = new Date('2027-07-15T21:00:00.000Z');
+    expect(localTime(summer, 'Europe/Paris').date).toBe('2027-07-15');
+    expect(localTime(new Date('2027-01-15T21:00:00.000Z'), 'Europe/Paris').date).toBe('2027-01-15');
   });
 
   it('[R16] un mandat inconnu ou d’un autre réseau est refusé, et le refus est au journal', async () => {
