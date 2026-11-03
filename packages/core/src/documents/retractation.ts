@@ -21,6 +21,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { RegistreMandats } from '../mandats/registre.ts';
 import type { DocumentFacts } from './modeles.ts';
+import { parisDayStart } from '../pilotage/tableau-agent.ts';
 import { mandateEndDay, mandateTerms } from './conditions.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -146,6 +147,28 @@ export class Diffusion {
       first ??= d;
     }
     return first ?? { allowed: false, reason: 'no_mandate', mandateId: null, withdrawalLastDay: null };
+  }
+
+  /**
+   * Depuis quand la porte est ouverte pour ce bien, sur le mandat qu'elle retient (IN11) [R222] : le dernier des faits
+   * sans lesquels elle resterait fermée, signature complète, inscription au registre, et fin du délai de rétractation ou
+   * demande écrite du vendeur, comptée du moment où AIMMO l'a notée. Null si elle est fermée.
+   */
+  async diffusableSince(networkId: string, propertyId: string, at: Date = this.now()): Promise<{ mandateId: string; since: string } | null> {
+    const gate = await this.canDiffuse(networkId, propertyId, at);
+    if (!gate.allowed || gate.mandateId === null) return null;
+    const signed = await this.db.first<{ signed_at: string; place: string; created_at: string; completed_at: string | null }>('SELECT signed_at, place, created_at, completed_at FROM signed_documents WHERE mandate_id = ?', [gate.mandateId]);
+    const line = await this.db.first<{ at: string }>(`SELECT at FROM mandate_register WHERE mandate_id = ? AND kind = 'inscription'`, [gate.mandateId]);
+    if (!signed || !line) return null;
+    const moments = [Date.parse(signed.signed_at), Date.parse(signed.created_at), Date.parse(line.at)];
+    if (signed.completed_at !== null) moments.push(Date.parse(signed.completed_at));
+    const last = withdrawalLastDay(new Date(signed.signed_at), signed.place);
+    if (last !== null) {
+      const delayOver = parisDayStart(addDays(last, 1)).getTime();
+      const early = await this.db.first<{ created_at: string }>('SELECT created_at FROM mandate_early_starts WHERE mandate_id = ?', [gate.mandateId]);
+      moments.push(early ? Math.min(delayOver, Date.parse(early.created_at)) : delayOver);
+    }
+    return { mandateId: gate.mandateId, since: new Date(Math.max(...moments)).toISOString() };
   }
 
   /**
