@@ -94,6 +94,44 @@ async function preparedNetwork(t: Awaited<ReturnType<typeof setup>>) {
 }
 
 describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
+  it('[R152] [R14] RS03 : la liste des agents, publiables seulement, par ordre alphabétique, sans aucun chiffre sur leur activité', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    const first = await (await t.get(`${NET}/agents`))!.text();
+    expect(first).toContain('href="/agents/ag-1"');
+    expect(first).toContain('123 456 789');
+    // Lou n'a pas ses mentions ; l'agent d'un autre réseau n'y est jamais.
+    expect(first).not.toContain('Lou');
+    expect(first).not.toContain('ag-9');
+    await t.db.run("INSERT INTO agents (id, network_id, first_name, last_name, zone, created_at, updated_at) VALUES ('ag-3', 'net-1', 'Émile', 'Éclair', 'Ville inventée', 'x', 'x')");
+    for (const id of ['ag-2', 'ag-3']) expect((await t.call(direction, 'POST', `/attirer/agents/${id}/mentions`, { rsacNumber: 'RSAC 987654321', rsacRegistry: 'Dijon' })).status).toBe(200);
+    const html = await (await t.get(`${NET}/agents`))!.text();
+    // Éclair, Essai, Exemple : l'alphabet français, pas l'ordre des octets.
+    expect([...html.matchAll(/href="\/agents\/(ag-\d)"/g)].map((m) => m[1])).toEqual(['ag-3', 'ag-2', 'ag-1']);
+    const visible = html.replace(/<head>.*<\/head>/s, '').replace(/<p class="doux">Agent commercial[^<]*<\/p>/g, '').replace(/<[^>]+>/g, ' ');
+    expect(visible).not.toMatch(/\d/);
+    expect(visible).not.toMatch(/note|classement|vente|mandat|avis/i);
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = 'ag-3'");
+    expect(await (await t.get(`${NET}/agents`))!.text()).not.toContain('ag-3');
+    expect((await t.get(`${CAMILLE}/agents`))!.status).toBe(404);
+    expect((await t.get('https://inconnu.exemple.test/agents'))!.status).toBe(404);
+  });
+
+  it('[R150] [R153] RS03 : la liste des communes mène à une page qui répond ; une zone retirée en sort ; 404 sur le site d’un agent', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    const html = await (await t.get(`${NET}/prix`))!.text();
+    expect(html).toContain('Ville Test');
+    expect(html).toContain('href="/prix/ville-test"');
+    expect((await t.get(`${NET}/prix/ville-test`))!.status).toBe(200);
+    expect((await t.get(`${CAMILLE}/prix`))!.status).toBe(404);
+    const zone = await t.db.first<{ id: string }>("SELECT id FROM price_zones WHERE slug = 'ville-test'");
+    expect((await t.call(direction, 'POST', `/attirer/prix/zones/${zone!.id}/retrait`)).status).toBe(200);
+    const after = await t.get(`${NET}/prix`);
+    expect(after!.status).toBe(200);
+    expect(await after!.text()).not.toContain('ville-test');
+  });
+
   it('[R16] AT14 : un agent ouvre sa fiche Google sans connaître son identifiant, jamais celle d’un autre ; sans Google, l’écran répond sans erreur', async () => {
     const t = await setup();
     expect(await t.call(camille, 'GET', '/attirer/google/moi')).toMatchObject({ status: 200, body: { ok: true, data: { agentId: 'ag-1', connected: false, mode: 'essai', canConfigure: false, location: null, reviews: [], publications: [] } } });

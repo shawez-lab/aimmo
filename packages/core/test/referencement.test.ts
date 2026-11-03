@@ -226,6 +226,7 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
     // Une commune avec une case publiée, un quartier dont la seule case est retenue.
     await t.db.exec('PRAGMA foreign_keys = OFF');
     await t.db.run("INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES ('z1', 'net-1', 'commune', NULL, 'ville-inventee', 'Ville inventée', '99001', '[]', 'test', 'x', 'x')");
+    await t.db.run("INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES ('z4', 'net-1', 'commune', NULL, 'ville-sans-case', 'Ville inventée', '99001', '[]', 'test', 'x', 'x')");
     await t.db.run("INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES ('z2', 'net-1', 'quartier', 'z1', 'centre', 'Centre', NULL, '[]', 'test', 'x', 'x')");
     await t.db.run("INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES ('z3', 'net-1', 'quartier', 'z1', 'gare', 'Gare', NULL, '[]', 'test', 'x', 'x')");
     await t.db.run(
@@ -241,13 +242,16 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
     await insertCell('z1', 'publiee', null);
     await insertCell('z2', 'publiee', null);
     await insertCell('z3', 'retenue', 'seuil');
+    await insertCell('z4', 'retenue', 'seuil');
     await t.db.run("UPDATE price_versions SET status = 'complet', completed_at = '2026-10-20T08:00:00.000Z' WHERE id = 'v1'");
     await t.db.exec('PRAGMA foreign_keys = ON');
     const plan = await t.ref.sitemap('net-1', s.net);
     // Lou n'a pas ses mentions : sa page n'est pas publiée, elle n'entre pas au plan.
     // [RS02] L'accueil et les pages où il mène entrent au plan de leur site, la preuve au seul réseau.
-    expect(locs(plan)).toEqual([`${NET}/`, `${NET}/biens`, `${NET}/simulateur`, `${NET}/preuve`, `${NET}/agents/ag-1`, `${NET}/prix/ville-inventee`, `${NET}/prix/ville-inventee/centre`]);
+    expect(locs(plan)).toEqual([`${NET}/`, `${NET}/biens`, `${NET}/agents`, `${NET}/prix`, `${NET}/simulateur`, `${NET}/preuve`, `${NET}/agents/ag-1`, `${NET}/prix/ville-inventee`, `${NET}/prix/ville-inventee/centre`]);
     expect(locs(await t.ref.sitemap('net-1', s.cam))).toEqual([`${CAMILLE}/`, `${CAMILLE}/biens`, `${CAMILLE}/simulateur`, `${CAMILLE}/agents/ag-1`]);
+    // [RS03] [R150] La liste des communes : une case publiée, jamais une commune sans case publiable.
+    expect((await t.ref.priceCommunes('net-1')).map((c) => c.slug)).toEqual(['ville-inventee']);
     expect(renderSitemap([{ loc: 'https://x.exemple.test/a?b=1&c=<2>', lastmod: '2026-10-20', kind: 'prix' }])).toBe(
       '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n<url><loc>https://x.exemple.test/a?b=1&amp;c=&lt;2&gt;</loc><lastmod>2026-10-20</lastmod></url>\n</urlset>\n',
     );
