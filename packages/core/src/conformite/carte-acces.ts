@@ -478,6 +478,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agent_legal_mentions: out('agent', 'Mentions légales de l\'agent : statut et immatriculation.'),
   agent_review_links: out('agent', 'Lien d\'avis de l\'agent.'),
   agent_onboardings: out('agent', 'Intégration de l\'agent.'),
+  agent_time_saved: out('agent', 'Temps gagné déclaré par l\'agent : aucune donnée de client.'),
   agent_file_pieces: out('agent', 'Dossier de l\'agent.'),
   agent_file_alerts: out('agent', 'Alertes du dossier de l\'agent.'),
   academy_modules: out('sans_client', 'Modules de l\'académie.'),

@@ -89,6 +89,7 @@ const services = (s: PilotageServices) => ({
   parcours: new pilotage.IndicateursParcours(s.db, s.journal, { now: s.now }),
   indicateursReseau: new pilotage.IndicateursReseau(s.db, s.journal, { now: s.now }),
   engagementsTenus: new pilotage.EngagementsTenus(s.db, s.journal, { now: s.now }),
+  tempsGagne: new pilotage.TempsGagne(s.db, s.journal, { now: s.now }),
   preuve: new pilotage.CompteurPreuve(s.db, s.journal, { now: s.now }),
   sceaux: new pilotage.SceauxPreuve(s.db, s.journal, { now: s.now }),
 });
@@ -127,6 +128,9 @@ export function pilotageRoutes(): PilotageRoute[] {
     { method: 'GET', pattern: new RegExp(`${P}/agents-actifs$`), name: 'pilotage.agents_actifs', handle: async (s, v, _p, r) => reply(await services(s).indicateursReseau.people(v, query(r, 'mois'))) },
     { method: 'GET', pattern: new RegExp(`${P}/contacts-par-zone$`), name: 'pilotage.contacts_par_zone', handle: async (s, v, _p, r) => reply(await services(s).indicateursReseau.contactsByZone(v, query(r, 'mois'))) },
     { method: 'GET', pattern: new RegExp(`${P}/engagements-tenus$`), name: 'pilotage.engagements_tenus', handle: async (s, v, _p, r) => reply(await services(s).engagementsTenus.ofMonth(v, query(r, 'mois'))) },
+    { method: 'GET', pattern: new RegExp(`${P}/temps-gagne$`), name: 'pilotage.temps_gagne', handle: async (s, v, _p, r) => reply(await services(s).tempsGagne.mine(v, query(r, 'semaine'))) },
+    { method: 'POST', pattern: new RegExp(`${P}/temps-gagne$`), name: 'pilotage.temps_gagne_declare', handle: withBody(async (s, v, _p, body) => reply(await services(s).tempsGagne.declare(v, { week: body.week, minutes: body.minutes }))) },
+    { method: 'GET', pattern: new RegExp(`${P}/temps-gagne/reseau$`), name: 'pilotage.temps_gagne_reseau', handle: async (s, v, _p, r) => reply(await services(s).tempsGagne.network(v, query(r, 'semaine'))) },
     { method: 'GET', pattern: new RegExp(`${P}/reseau$`), name: 'pilotage.reseau', handle: async (s, v, _p, r) => reply(await services(s).reseau.of(v, { from: query(r, 'du'), to: query(r, 'au') })) },
     {
       method: 'GET',

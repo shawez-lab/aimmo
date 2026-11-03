@@ -354,6 +354,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       agent_legal_mentions: ['agent_id', 'rsac_number', 'rsac_registry', 'set_by'],
       agent_review_links: ['agent_id', 'url', 'set_by'],
       agent_onboardings: ['agent_id', 'candidate_id', 'created_by'],
+      // Le temps gagné que l'agent déclare pour lui-même (IN08).
+      agent_time_saved: ['agent_id', 'minutes'],
       agent_file_pieces: ['agent_id', 'is_draft', 'recorded_by'],
       agent_file_alerts: ['agent_id'],
       academy_modules: ['topic', 'created_by'],
@@ -892,6 +894,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   candidate_interview_outcomes: ['interview_id', 'network_id', 'marked_at'],
   candidate_decisions: ['id', 'network_id', 'decision', 'interview_id', 'decided_at'],
   agent_onboardings: ['network_id', 'created_at'],
+  agent_time_saved: ['network_id', 'week', 'version', 'declared_at'],
   agent_file_pieces: ['id', 'network_id', 'kind', 'version', 'ref', 'issued_on', 'valid_until', 'recorded_at'],
   agent_file_alerts: ['piece_id', 'alert', 'network_id', 'created_at'],
   agent_import_contacts: ['network_id', 'origin_key', 'basis', 'created_at'],

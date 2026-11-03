@@ -100,6 +100,15 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     expect((await t.call(t.agent, 'GET', `/pilotage/engagements-tenus?${passe}`)).status).toBe(403);
     expect((await t.call(t.compliance, 'GET', `/pilotage/engagements-tenus?${passe}`)).status).toBe(403);
     expect((await t.call(t.direction, 'GET', '/pilotage/engagements-tenus?mois=2999-01')).status).toBe(409);
+    expect((await t.call(t.direction, 'GET', '/pilotage/temps-gagne/reseau?semaine=2020-01-06')).status).toBe(200);
+    expect((await t.call(t.agent, 'GET', '/pilotage/temps-gagne/reseau?semaine=2020-01-06')).status).toBe(403);
+    expect((await t.call(t.agent, 'GET', '/pilotage/temps-gagne?semaine=2020-01-06')).status).toBe(200);
+    expect((await t.call(t.direction, 'GET', '/pilotage/temps-gagne?semaine=2020-01-06')).status).toBe(403);
+    expect((await t.call(t.agent, 'POST', '/pilotage/temps-gagne', { week: '2020-01-06', minutes: 90 })).body).toMatchObject({ ok: false, rule: 'R217', code: 'week_before_entry' });
+    await t.db.run('UPDATE agents SET created_at = ? WHERE id = ?', ['2019-01-01T00:00:00.000Z', t.agent.userId]);
+    expect((await t.call(t.agent, 'POST', '/pilotage/temps-gagne', { week: '2020-01-06', minutes: 90 })).body).toMatchObject({ ok: true, data: { minutes: 90, version: 1 } });
+    expect((await t.call(t.agent, 'POST', '/pilotage/temps-gagne', { week: '2020-01-07', minutes: 90 })).status).toBe(400);
+    expect((await t.call(t.agent, 'POST', '/pilotage/temps-gagne', { week: '2999-01-07', minutes: 90 })).status).toBe(409);
   });
 
   it('[R67] aucune route ne reçoit un montant : la commission vient du mandat, par le passage horaire', async () => {

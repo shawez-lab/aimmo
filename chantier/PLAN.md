@@ -3552,6 +3552,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 
 ### IN08 · Le temps gagné, déclaré par l'agent et contrôlé sur le journal
 - Statut : en cours (voie 2)
+- Décidé (2026-11-03), lecture prudente : l'agent déclare en minutes, de 0 à 80 h, une semaine finie et pas d'avant son entrée. Le contrôle juge le type du journal sur son nom : lectures, passages en son nom et refus écartés. Il rend à la direction un compte de déclarations sans geste, sans nom. Avec un seul déclarant, les comptes valent sa ligne : la direction voit déjà les chiffres de chaque agent (K05), R14 interdit le rang, pas ce compte.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
 - Cahier : Indicateurs et tests, « Temps gagné ».
 - Objectif : chaque agent déclare ses heures gagnées d'une semaine finie ; à côté, les gestes du journal de cette semaine, pour contrôler. La direction lit les totaux du réseau, jamais un agent contre un autre.
