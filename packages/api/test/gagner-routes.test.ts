@@ -75,6 +75,7 @@ const SAMPLES: Record<string, string> = {
   'gagner.dossier': '/gagner/rendez-vous/r1/dossier',
   'gagner.dossier_page': '/gagner/rendez-vous/r1/dossier/page',
   'gagner.engagement': '/gagner/engagements',
+  'gagner.engagements': '/gagner/engagements',
   'gagner.lettres_campagne': '/gagner/lettres',
   'gagner.lettres_liste': '/gagner/lettres',
   'gagner.rendez_vous': '/gagner/rendez-vous',
@@ -262,6 +263,17 @@ describeWithSqlite('G11 · routes de M20 complet', () => {
     expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/couts', { month: '2027-10', source: 'social', amountCents: 1000, proofRef: 'preuves/facture-reseaux.pdf' })).status).toBe(200);
     expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/decisions', { month: '2027-10', source: 'social', decision: 'garder', reason: 'À revoir le mois prochain' })).status).toBe(200);
     expect((await t.call(t.viewers.direction, 'POST', '/gagner/mesure/decisions', 'pas un objet')).body).toEqual({ ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
+  });
+
+  it('[R16] [R141] la direction lit la dernière version de chaque engagement, actif ou non ; un agent, non', async () => {
+    const t = await setup();
+    expect((await t.call(t.viewers.direction, 'GET', '/gagner/engagements')).body.data).toEqual([]);
+    const base = { code: 'compte_rendu', label: 'Compte rendu après chaque visite', measure: 'compte_rendu_visite', delayHours: 48, active: true };
+    expect((await t.call(t.viewers.direction, 'POST', '/gagner/engagements', base)).body.data).toEqual({ version: 1 });
+    expect((await t.call(t.viewers.direction, 'POST', '/gagner/engagements', { ...base, delayHours: 24, active: false })).body.data).toEqual({ version: 2 });
+    const read = await t.call(t.viewers.direction, 'GET', '/gagner/engagements');
+    expect(read.body.data).toEqual([expect.objectContaining({ code: 'compte_rendu', version: 2, delayHours: 24, active: false, measure: 'compte_rendu_visite', rule: expect.stringContaining('visite') })]);
+    expect((await t.call(t.viewers.agent, 'GET', '/gagner/engagements')).status).toBe(403);
   });
 
   describe('G14 · dépôt de la preuve d’un coût', () => {
