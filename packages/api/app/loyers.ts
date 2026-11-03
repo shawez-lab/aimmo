@@ -40,7 +40,7 @@ const options = KINDS.map(([k, label]) => `<option value="${k}">${label}</option
 
 export const LOYERS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-loyers">
 <h3 id="titre-loyers">Loyers de marché</h3>
-<p class="doux">Un fichier de la Carte des loyers de l’ANIL, sur data.gouv.fr, par type de logement. Les rendements n’en lisent pas d’autre.</p>
+<p class="doux">Un fichier de la Carte des loyers de l’ANIL, sur data.gouv.fr, par type de logement. Le millésime ne change plus une fois le fichier rangé.</p>
 <label for="loyers-type">Type de logement du fichier</label>
 <select id="loyers-type"><option value="">Choisir le type</option>${options}</select>
 <label for="loyers-millesime">Millésime du fichier</label>
@@ -100,6 +100,7 @@ globalThis.AIMMO_LOYERS = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, date = t.date;
   var REFUSALS = ${JSON.stringify(REFUSALS)};
   var ROWS = ${JSON.stringify(ROWS)};
+  var KINDS = ${JSON.stringify(Object.fromEntries(KINDS))};
   var MAX = ${LOYERS_MAX_BYTES};
   /* Rien ne se perd : le même fichier reprend après les lignes déjà rangées. */
   var LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Rien n’est perdu : déposez le même fichier, l’import reprend où il en était.';
@@ -125,6 +126,7 @@ globalThis.AIMMO_LOYERS = function (t) {
       if (errors.length > SHOWN) line('Et ' + (errors.length - SHOWN) + ' autre(s).');
       return;
     }
+    if (body.code === 'millesime_different') { state('Ce fichier est déjà rangé avec le millésime ' + body.vintage + ', qui ne change plus : rien de nouveau n’est rangé.'); return; }
     state(REFUSALS[body.code] || 'Le fichier est refusé : rien n’est rangé.');
   }
   function step(mine, payload, last, stalls) {
@@ -186,7 +188,7 @@ globalThis.AIMMO_LOYERS = function (t) {
         state('');
         line(euros(v.rentM2Cents) + ' le m², charges comprises, entre ' + euros(v.lowerM2Cents) + ' et ' + euros(v.upperM2Cents) + '.');
         line(v.observations + ' observation(s)' + (v.reliability === 'fiable' ? '.' : ' : peu d’observations, chiffre à prendre avec prudence.'));
-        line(v.source === 'anil' ? 'Carte des loyers ' + v.vintage + ', importée le ' + date(v.asOf) + '.' : 'Locations du réseau dans la commune, tous types confondus, au ' + date(v.asOf) + '.');
+        line(v.source === 'anil' ? 'Carte des loyers ' + v.vintage + ', ' + (KINDS[v.kind] || 'type non précisé').toLowerCase() + (v.kind !== kind ? ', faute de données pour le type demandé' : '') + ', importée le ' + date(v.asOf) + '.' : 'Locations du réseau dans la commune, tous types confondus, au ' + date(v.asOf) + '.');
         line(v.citation);
         return true;
       });

@@ -183,7 +183,7 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
     expect(t.list()).toEqual([
       '12,35 € le m², charges comprises, entre 10,10 € et 15,01 €.',
       '120 observation(s).',
-      'Carte des loyers 2026, importée le 10/01/2027.',
+      'Carte des loyers 2026, appartements, toutes tailles, importée le 10/01/2027.',
       `${ANIL_CITATION}, millésime 2026`,
     ]);
     t.table[url] = ok({ ...KNOWN, observations: 4, reliability: 'peu_observations', reasons: ['observations'] });
@@ -192,6 +192,21 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
     t.table[url] = ok({ ...KNOWN, source: 'reseau', kind: 'all', vintage: null, importId: null, citation: 'Locations du réseau' });
     await t.press('loyers-lire');
     expect(t.list()[2]).toContain('Locations du réseau dans la commune, tous types confondus');
+  });
+
+  it('[R122] un repli sur un autre type de logement est dit, le chiffre ne passe pas pour celui demandé', async () => {
+    const t = await run({ 'GET /v1/investir/loyers?insee=99001&type=apartment_t1_t2': ok(KNOWN) });
+    t.els['loyers-type']!.value = 'apartment_t1_t2';
+    t.els['loyers-commune']!.value = '99001';
+    await t.press('loyers-lire');
+    expect(t.list()[2]).toBe('Carte des loyers 2026, appartements, toutes tailles, faute de données pour le type demandé, importée le 10/01/2027.');
+  });
+
+  it('[R10] [R122] le même fichier sous un autre millésime : refusé, et jamais dit fait', async () => {
+    const t = await run({ [POST]: no(409, { ok: false, rule: 'R122', code: 'millesime_different', vintage: 2025 }) });
+    t.fill();
+    await t.press('loyers-importer');
+    expect(t.state()).toBe('Ce fichier est déjà rangé avec le millésime 2025, qui ne change plus : rien de nouveau n’est rangé.');
   });
 
   it('[R10] sans donnée, l’écran dit inconnu, jamais un chiffre', async () => {
