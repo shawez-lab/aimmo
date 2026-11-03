@@ -1523,6 +1523,7 @@ describe('CE19 · corriger la présentation anonyme à l’écran', () => {
 
   it('[R110] le texte en cours est pré-rempli et part tel quel, sans jamais toucher au texte sans changement', async () => {
     const t = await open({ 'POST /v1/commerces/b1/presentations/texte': ok({ id: 'p2' }) });
+    expect(t.state()).toBe('');
     expect(t.title.value).toBe('Restaurant à reprendre à Dijon');
     expect(t.text.value).toBe(`Belle salle. ${INJECTED}`);
     await t.click(t.byText(SAVE));
@@ -1620,6 +1621,19 @@ describe('CE19 · corriger la présentation anonyme à l’écran', () => {
     await t.click(t.byText(SAVE));
     expect(t.state()).toBe('Réponse perdue : la correction a peut-être été rangée. Rouvrez le commerce pour le voir, votre texte reste ici.');
     expect(t.text.value).toBe('Un autre texte.');
+  });
+
+  it('[R10] retour à la liste pendant l’envoi : la réponse tardive ne ramène pas sur ce commerce', async () => {
+    let free: () => void = () => {};
+    const t = await open({ 'POST /v1/commerces/b1/presentations/texte': () => new Promise((r) => { free = () => r(Response.json({ ok: true, data: { id: 'p2' } })); }) });
+    t.text.value = 'Un autre texte.';
+    t.byText(SAVE)!.listeners.click!({});
+    await t.click(t.els['commerces-ouvrir']);
+    expect(t.byText('Ouvrir', 0)).toBeDefined();
+    free();
+    await settle();
+    expect(t.byText('Ouvrir', 0)).toBeDefined();
+    expect(t.state()).not.toContain('Correction rangée');
   });
 
   it('[R10] un seul envoi à la fois', async () => {

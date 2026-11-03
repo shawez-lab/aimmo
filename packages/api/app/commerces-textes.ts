@@ -31,6 +31,7 @@ globalThis.AIMMO_CE_TEXTES = function (t) {
   function known(map, code) { return Object.prototype.hasOwnProperty.call(map, code) ? map[code] : null; }
   function fix(box, base, p) {
     clear(box);
+    say('');
     var title = field(box, 'ce-presentation-titre', 'Titre');
     title.setAttribute('maxlength', '120');
     title.value = p.title || '';
