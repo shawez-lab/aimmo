@@ -116,6 +116,12 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     expect((await t.call(t.compliance, 'GET', `/pilotage/disponibilite?${passe}`)).status).toBe(403);
     expect((await t.call(t.direction, 'GET', '/pilotage/disponibilite?mois=2020-13')).status).toBe(400);
     expect((await t.call(t.direction, 'GET', '/pilotage/disponibilite?mois=2999-01')).status).toBe(409);
+    expect((await t.call(t.direction, 'GET', '/pilotage/engagements-manques')).body).toMatchObject({ ok: true, data: { total: 0, tasks: [] } });
+    expect((await t.call(t.agent, 'GET', '/pilotage/engagements-manques')).status).toBe(403);
+    expect((await t.call(t.compliance, 'GET', '/pilotage/engagements-manques')).status).toBe(403);
+    expect((await t.call(t.direction, 'POST', '/pilotage/engagements-manques/inconnue/fait', { outcome: 'rappele' })).status).toBe(404);
+    expect((await t.call(t.direction, 'POST', '/pilotage/engagements-manques/inconnue/fait', { outcome: 'x' })).status).toBe(400);
+    expect((await t.call(t.agent, 'POST', '/pilotage/engagements-manques/inconnue/fait', { outcome: 'rappele' })).status).toBe(403);
   });
 
   it('[R67] aucune route ne reçoit un montant : la commission vient du mandat, par le passage horaire', async () => {
