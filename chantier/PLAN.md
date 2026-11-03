@@ -3523,7 +3523,8 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : H09 pour le contenu réel ; textes à faire relire par l'avocat, à écrire dans `HUMAIN.md`.
 
 ### IN06 · Les indicateurs du parcours et du réseau à l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#349). Relecture forte 2 P1 de test corrigés ; Codex non attendu (H03).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03, IN04, IN05
 - Cahier : Indicateurs et tests ; R201.
 - Objectif : la direction lit les taux, les délais et les agents actifs d'un mois sur « Le réseau » ; chaque agent lit les contacts par zone du mois passé sur « Mes chiffres ». Toujours dans `finances.js`, sans toucher au socle.

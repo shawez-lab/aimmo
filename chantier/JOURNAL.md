@@ -578,3 +578,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 18:36 · voie 1 · fin de séance : X28, CE23 et RS01 fusionnées, module « Site du réseau » découpé ; verrou libéré, relance · prochaine : RS02
 - 2026-11-03 18:50 · IN04 · agents actifs, restés, contacts par zone sans le chiffre d'un autre agent (#347) ; relecture forte 4 P0 et 2 P1 corrigés ; une vérification rouge (règle en double après rebase), corrigée ; Codex non attendu (H03) · prochaine : IN06
 - 2026-11-03 18:50 · IN05 · la preuve à l'écran de la direction, avec le sceau (#348) ; relecture forte 4 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN06
+- 2026-11-03 19:15 · IN06 · taux, délais, agents et zones à l'écran, l'agent ne lit que ce que R215 lui rend (#349) ; relecture forte 2 P1 de test corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN07
+- 2026-11-03 19:15 · voie 2 · fin de séance : module « Preuve et indicateurs » découpé ; IN01 à IN06 fusionnées ; verrou libéré, relance · prochaine : IN07
