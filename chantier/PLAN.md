@@ -3489,7 +3489,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### RS02 · Accueil du site, et les chemins vers chaque page
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : RS01
 - Cahier : M01, « Deux sites, un seul moteur ».
 - Objectif : `GET /` sur le site du réseau et celui d'un agent : les derniers biens, et les chemins vers les biens, les agents, les prix, l'estimation et, sur le réseau, le recrutement. Ajouter ces pages au plan du site.
