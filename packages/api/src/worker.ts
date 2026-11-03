@@ -7,6 +7,7 @@ import { runListingSync, type MediaStore } from './vitrine.ts';
 import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
 import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
+import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 
@@ -52,6 +53,8 @@ export interface Env {
   CANDIDATURE_NETWORK_ID?: string;
   /** Les médias des biens (R2), lus par la vitrine ; absent, aucune photo n'est servie. */
   MEDIA?: MediaStore & { head?(key: string): Promise<unknown>; put?(key: string, value: Uint8Array, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown> };
+  /** Les documents des dossiers protégés des commerces (R2), à part de tout autre stockage (H38) ; absent, le dossier ne sert que la fiche. */
+  COMMERCES?: R2DossierBucket;
   /** Le coffre de la conformité (R2), séparé de tout autre stockage (L09) ; absent, dépôt et ouverture fermés. */
   COFFRE?: R2VaultBucket;
   /** Début du lien d'opposition à la prospection des partenaires (U09), en https, sans chiffre, terminé par `/partenaires/opposition/`. */
@@ -127,8 +130,11 @@ export default {
       partenaires: { files: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, optOutBase: env.PARTENAIRES_OPPOSITION_BASE ?? null },
       // M17 (Y08) : sans IA branchée (H13), la note suit le secours sans IA ; le barème vient du réglage de la direction.
       investir: { feesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME) },
-      // M16 (CE10) : sans stockage réel des documents (H38), le dossier protégé ne sert que la fiche du commerce.
-      commerces: dossierLinkBase(env.DOSSIER_LINK_BASE) ? { baseUrl: dossierLinkBase(env.DOSSIER_LINK_BASE)! } : {},
+      // M16 (CE10, CE22) : sans stockage réel des documents (H38), le dossier protégé ne sert que la fiche du commerce.
+      commerces: {
+        ...(dossierLinkBase(env.DOSSIER_LINK_BASE) ? { baseUrl: dossierLinkBase(env.DOSSIER_LINK_BASE)! } : {}),
+        ...(env.COMMERCES ? { storage: new R2DossierStorage(env.COMMERCES) } : {}),
+      },
       // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
       // X12 : les fichiers finis rangés tels quels dans `MEDIA` ; sans lui (H25), le dépôt est fermé.
       studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null },

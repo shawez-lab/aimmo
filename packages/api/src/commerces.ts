@@ -37,6 +37,24 @@ export const MAX_COMMERCES_BODY_BYTES = 2 * 1024 * 1024;
 const ID = '([A-Za-z0-9_-]{1,64})';
 const TOKEN = '([a-z]{20,80})';
 
+/** Ce que le dépôt lit et écrit du compartiment des dossiers protégés (R2) : du texte, le dossier n'en sert pas d'autre [R114]. */
+export interface R2DossierBucket {
+  put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+  get(key: string): Promise<{ text(): Promise<string> } | null>;
+}
+
+/** Le stockage réel des documents du dossier (H38) : un texte par référence, ou rien. */
+export class R2DossierStorage implements DossierStorage {
+  constructor(private readonly bucket: R2DossierBucket) {}
+  async read(ref: string): Promise<string | null> {
+    const object = await this.bucket.get(ref);
+    return object ? object.text() : null;
+  }
+  async write(ref: string, content: string): Promise<void> {
+    await this.bucket.put(ref, content, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
+  }
+}
+
 export interface CommercesServices {
   db: SqlDatabase;
   journal: JournalStore;
