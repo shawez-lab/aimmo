@@ -300,4 +300,152 @@ describe('D12 · écran « Mandat »', () => {
     expect(t.state()).toBe('');
     expect(t.els.mandat!.hidden).toBe(true);
   });
+
+  describe('D16 · rétractation et début anticipé', () => {
+    const SIGNED = { ...DOC, signature: { signedAt: '2027-02-10T09:00:00.000Z', place: 'hors_agence', number: 'AV-7', complete: true } };
+    const live = (reason: string, last: string | null = '2027-02-24') => ok({ ...READ, documents: [SIGNED], mandate: { id: 'm1', number: 'AV-7', signedAt: '2027-02-10T09:00:00.000Z', allowed: reason !== 'withdrawal_period', reason, withdrawalLastDay: last } });
+    const OPEN_EARLY = 'Noter sa demande de commencer tout de suite';
+    const OPEN_STOP = 'Noter une rétractation';
+    const WITHDRAW = 'POST /v1/mandats/m1/retractation';
+    const EARLY = 'POST /v1/mandats/m1/debut-anticipe';
+    const buttons = (t: Awaited<ReturnType<typeof run>>) => t.body().all().filter((e) => e.tagName === 'button').map((e) => e.textContent);
+    const opened = async (reason = 'withdrawal_period', answers: Record<string, Answer> = {}) => {
+      const t = await run({ 'GET /v1/biens/b1/mandat': live(reason), ...answers });
+      await t.open();
+      return t;
+    };
+    const fill = (t: Awaited<ReturnType<typeof run>>, day: string, proof: string) => {
+      t.input('mandat-arret-jour').value = day;
+      t.input('mandat-arret-preuve').value = proof;
+    };
+
+    it('[R42] le dernier jour du délai est dit, et les deux gestes sont là pendant le délai', async () => {
+      const t = await opened();
+      expect(t.body().textContent).toContain('Dernier jour du délai de rétractation : 24 février 2027.');
+      expect(buttons(t)).toEqual(expect.arrayContaining([OPEN_EARLY, OPEN_STOP]));
+    });
+
+    it('[R42] après une demande notée, ou le délai fini, seule la rétractation reste : une lettre reçue à temps peut arriver tard', async () => {
+      for (const reason of ['allowed_early_start', 'allowed']) {
+        const t = await opened(reason);
+        expect(buttons(t)).toContain(OPEN_STOP);
+        expect(buttons(t)).not.toContain(OPEN_EARLY);
+      }
+    });
+
+    it('[R42] aucun geste à l’agence, ni sur un mandat rétracté, annulé, échu ou hors registre', async () => {
+      const agence = await run({ 'GET /v1/biens/b1/mandat': live('allowed', null) });
+      await agence.open();
+      expect(agence.body().textContent).not.toContain('Dernier jour');
+      expect(buttons(agence)).not.toContain(OPEN_STOP);
+      for (const reason of ['withdrawn', 'cancelled', 'expired', 'no_mandate', 'duration_unknown']) {
+        const t = await opened(reason);
+        expect(buttons(t)).not.toContain(OPEN_STOP);
+        expect(buttons(t)).not.toContain(OPEN_EARLY);
+      }
+    });
+
+    it('[R42] une rétractation demande deux appuis, dit ce qu’elle arrête, et « Ne rien noter » n’envoie rien', async () => {
+      const t = await opened();
+      await t.press(OPEN_STOP);
+      fill(t, '2027-02-12', 'Lettre recommandée du 11 février');
+      await t.press('Noter la rétractation');
+      expect(t.posts()).toEqual([]);
+      expect(t.body().textContent).toContain('Rétractation reçue le 12 février 2027');
+      expect(t.body().textContent).toContain('son numéro est annulé au registre');
+      expect(t.body().textContent).toContain('Cela ne se défait pas.');
+      await t.press('Ne rien noter');
+      expect(t.posts()).toEqual([]);
+      expect(buttons(t)).toContain(OPEN_STOP);
+    });
+
+    it('[R16, R42] le second appui note ce qui était saisi, sans identifiant à taper, puis l’écran relit le mandat', async () => {
+      const t = await opened('withdrawal_period', { [WITHDRAW]: ok(null) });
+      await t.press(OPEN_STOP);
+      fill(t, '2027-02-12', '  Lettre recommandée du 11 février  ');
+      await t.press('Noter la rétractation');
+      t.table['GET /v1/biens/b1/mandat'] = live('withdrawn', null);
+      await t.press('Confirmer : noter la rétractation');
+      expect(t.posts()).toEqual([{ method: 'POST', url: '/v1/mandats/m1/retractation', body: { proof: 'Lettre recommandée du 11 février', receivedAt: '2027-02-12T21:00:00.000Z' } }]);
+      expect(t.state()).toContain('Rétractation notée');
+      expect(t.body().textContent).toContain('Le mandant s’est rétracté');
+      expect(buttons(t)).not.toContain(OPEN_STOP);
+    });
+
+    it('[R42] la demande de commencer part en un appui ; reçue aujourd’hui, elle vaut l’instant présent', async () => {
+      const t = await opened('withdrawal_period', { [EARLY]: ok(null) });
+      await t.press(OPEN_EARLY);
+      const today = t.input('mandat-arret-jour').value;
+      expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      t.input('mandat-arret-preuve').value = 'Mail du vendeur';
+      t.table['GET /v1/biens/b1/mandat'] = live('allowed_early_start');
+      const before = Date.now();
+      await t.press('Noter la demande');
+      const [sent] = t.posts();
+      expect(sent!.url).toBe('/v1/mandats/m1/debut-anticipe');
+      expect(Date.parse((sent!.body as { receivedAt: string }).receivedAt)).toBeGreaterThanOrEqual(before);
+      expect(t.state()).toContain('Demande notée');
+      expect(t.body().textContent).toContain('le mandant a demandé de commencer tout de suite');
+    });
+
+    it('une preuve vide ou une date vide ne part pas, et le dit', async () => {
+      const t = await opened();
+      await t.press(OPEN_EARLY);
+      fill(t, '2027-02-12', '   ');
+      await t.press('Noter la demande');
+      expect(t.state()).toContain('la preuve écrite');
+      fill(t, '', 'Mail');
+      await t.press('Noter la demande');
+      expect(t.state()).toContain('La date');
+      expect(t.posts()).toEqual([]);
+    });
+
+    it('[R42] chaque refus du code est dit en français, et le formulaire reste', async () => {
+      const said: Record<string, string> = {
+        delay_over: 'après le dernier jour du délai',
+        bad_date: 'depuis la signature',
+        bad_proof: 'la preuve écrite',
+        no_withdrawal_period: 'signé à l’agence',
+        withdrawn: 'déjà rétracté',
+      };
+      for (const [code, text] of Object.entries(said)) {
+        const t = await opened('withdrawal_period', { [EARLY]: no(400, code) });
+        await t.press(OPEN_EARLY);
+        fill(t, '2027-02-12', 'Mail');
+        await t.press('Noter la demande');
+        expect(t.state()).toContain(text);
+        expect(buttons(t)).toContain('Noter la demande');
+      }
+      const r = await opened('withdrawal_period', { [EARLY]: no(403, 'not_assigned') });
+      await r.press(OPEN_EARLY);
+      fill(r, '2027-02-12', 'Mail');
+      await r.press('Noter la demande');
+      expect(r.state()).toContain('pas dans vos droits');
+    });
+
+    it('une réponse perdue n’est pas dite « rien n’est rangé » ; le second essai dit « déjà notée » et relit', async () => {
+      const t = await opened('withdrawal_period', { [EARLY]: () => Promise.reject(new TypeError('coupure')) });
+      await t.press(OPEN_EARLY);
+      fill(t, '2027-02-12', 'Mail');
+      await t.press('Noter la demande');
+      expect(t.state()).toContain('peut-être rangée');
+      expect(t.state()).not.toContain('rien n’est');
+      t.table[EARLY] = no(409, 'already_recorded');
+      t.table['GET /v1/biens/b1/mandat'] = live('allowed_early_start');
+      await t.press('Noter la demande');
+      expect(t.state()).toContain('déjà notée');
+      expect(buttons(t)).not.toContain(OPEN_EARLY);
+    });
+
+    it('un second appui pendant l’envoi ne part pas deux fois', async () => {
+      let free: (r: Response) => void = () => {};
+      const t = await opened('withdrawal_period', { [EARLY]: () => new Promise<Response>((r) => { free = r; }) });
+      await t.press(OPEN_EARLY);
+      fill(t, '2027-02-12', 'Mail');
+      await t.press('Noter la demande');
+      await t.press('Noter la demande');
+      expect(t.posts()).toHaveLength(1);
+      free(Response.json({ ok: true, mode: 'essai', data: null }));
+    });
+  });
 });

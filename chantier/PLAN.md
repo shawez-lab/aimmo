@@ -978,6 +978,16 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Critères : réservé à la direction [R16] ; le format du registre n'est réglable qu'une fois, et l'écran le dit [R39] ; un registre abîmé est dit en français ; une annulation demande une confirmation et dit qu'elle rouvre le bien ; budget tenu [R201].
 - Attend : H23 pour le format réel.
 
+### D16 · Rétractation et début anticipé à l'écran du mandat
+- Statut : en cours
+- Voie : 1
+- Décidé (2026-11-03), lecture prudente : trouvé en comparant les routes aux écrans : `/v1/mandats/<id>/retractation` et `/debut-anticipe` existent et sont testées depuis D05, sans aucun geste à l'écran ; un vendeur qui se rétracte ne pouvait donc pas être noté depuis le téléphone, et le bien restait diffusable à la fin du délai. La rétractation reste proposée après le délai, car une lettre reçue dans le délai peut être notée plus tard ; le code refuse toute date après le dernier jour. Une rétractation ne se défait pas : deux appuis, conséquence dite. Un jour passé vaut 21 h UTC, encore ce jour-là à Paris, pour ne pas tomber avant une signature du même jour.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : D05, D12
+- Cahier : M06, « Rétractation : lieu de signature enregistré, délai de 14 jours calculé, diffusion bloquée pendant ce délai sauf demande écrite du vendeur » ; R42, R16, R201.
+- Objectif : sur l'écran « Mandat », l'agent lit le dernier jour du délai, note la rétractation reçue et la demande écrite de commencer tout de suite, chacune avec sa preuve.
+- Critères : la lecture du mandat rend le dernier jour du délai, nul à l'agence (test) ; aucun geste à l'agence, ni sur un mandat annulé, rétracté ou échu [R42] (test) ; une rétractation demande deux appuis, dit ce qu'elle arrête, et aucun identifiant n'est saisi [R16] (test) ; date après le délai, preuve vide et date avant la signature dites en français, rien de rangé (test) ; une réponse perdue n'est pas dite « rien n'est rangé », et le second essai dit « déjà notée » (test) ; de bout en bout par les routes : l'agent du mandat note, la diffusion s'arrête, le bien peut recevoir un nouveau mandat, un autre agent et la conformité sont refusés [R16, R42] (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 **M08 · Acquéreurs et visites, avril 2027.**
 
 Découpé le 2026-10-27 par la voie 1. Ids `T..` pour Trouver l'acquéreur. Cahier : M08 Acquéreurs et visites ; Feuille de route, avril 2027 : « sur 10 biens tests, au moins 8 des 10 premiers acquéreurs proposés respectent tous les critères obligatoires ».

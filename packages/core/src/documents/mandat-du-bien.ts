@@ -39,7 +39,7 @@ export interface PropertyMandate {
     signature: { signedAt: string; place: string; number: string | null; complete: boolean } | null;
   }[];
   /** La décision de diffusion dit l'état du mandat ; `mandate` est nul s'il n'y en a aucun. */
-  mandate: { id: string; number: string | null; signedAt: string | null; allowed: boolean; reason: DiffusionDecision['reason'] } | null;
+  mandate: { id: string; number: string | null; signedAt: string | null; allowed: boolean; reason: DiffusionDecision['reason']; withdrawalLastDay: string | null } | null;
   owners: { personId: string; firstName: string | null; lastName: string | null }[];
 }
 
@@ -115,7 +115,7 @@ export class MandatDuBien {
           createdAt: r.created_at,
           signature: r.signed_at ? { signedAt: r.signed_at, place: r.place as string, number: r.number, complete: r.complete === 1 } : null,
         })),
-        mandate: decision.mandateId ? { id: decision.mandateId, number: signed?.number ?? null, signedAt: signed?.signed_at ?? null, allowed: decision.allowed, reason: decision.reason } : null,
+        mandate: decision.mandateId ? { id: decision.mandateId, number: signed?.number ?? null, signedAt: signed?.signed_at ?? null, allowed: decision.allowed, reason: decision.reason, withdrawalLastDay: decision.withdrawalLastDay } : null,
         owners: [...owners.values()],
       },
     };

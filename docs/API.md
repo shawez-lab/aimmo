@@ -14,7 +14,7 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | GET | `/v1/fiches/<id>/journal` | qui a lu ou changé la fiche | direction, conformité |
 | GET | `/v1/biens/<id>` | un bien, complet ou en fiche commune | selon R16 |
 | POST | `/v1/envois/decision` | la décision d'envoi et la règle qui a décidé, sans rien envoyer | selon R16 |
-| GET | `/v1/biens/<id>/mandat` | les documents du bien, sans contenu, le mandat en cours et les mandants possibles (fiches liées au bien comme propriétaire, vues en entier) | l'agent du bien, direction, conformité (R16) |
+| GET | `/v1/biens/<id>/mandat` | les documents du bien, sans contenu, le mandat en cours avec le dernier jour de son délai de rétractation (`withdrawalLastDay`, nul sans délai) et les mandants possibles (fiches liées au bien comme propriétaire, vues en entier) | l'agent du bien, direction, conformité (R16) |
 | POST | `/v1/biens/<id>/scans-mandat` | dépose le scan signé (PDF, JPEG ou PNG, 20 Mo au plus, empreinte en `x-aimmo-sha256`), rend la référence qui sert à `signature-papier` ou `signature-avenant` ; `503 depot_ferme` sans stockage `PIECES` | l'agent du bien, direction (R16) |
 | GET | `/v1/qualifications/cas-corriges` | les classements corrigés au format du banc de mesure (`texte;categorie;suite`), sans coordonnées ni nom connu, téléchargés en CSV ; le journal garde le nombre, jamais un texte | direction (R15, R16) |
 | POST | `/v1/qualifications/<id>/correction` | corrige la catégorie d'un contact, `{"category": "buyer", "route": null}` ; la correction est gardée et rejoint les cas de mesure | qui voit la fiche en entier (R16) |
