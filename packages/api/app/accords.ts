@@ -100,8 +100,37 @@ export const ACCORDS_JS = `
         });
       }));
       box.appendChild(form);
+      box.appendChild(espaceEntry(personId, state));
     }
     box.appendChild(state);
     return box;
+  }
+  var espaceTool = null, espaceBusy = false;
+  function espaceEntry(personId, state) {
+    var inner = el('div');
+    var say = function (x) { state.textContent = x; };
+    inner.appendChild(button('Ouvrir son espace client', function () {
+      if (espaceTool) return espaceTool.form(inner, personId, say);
+      if (espaceBusy) return;
+      espaceBusy = true;
+      var mine = session;
+      say('Chargement…');
+      var s = el('script');
+      s.setAttribute('src', '/app/espace-agent.js');
+      s.addEventListener('load', function () {
+        espaceBusy = false;
+        var make = globalThis.AIMMO_ESPACE_AGENT;
+        try { delete globalThis.AIMMO_ESPACE_AGENT; } catch (e) {}
+        if (typeof make !== 'function') { if (mine === session) say('Pas de réseau. Réessayez dans un moment.'); return; }
+        espaceTool = make({ el: el, clear: clear, send: send, button: accordButton, field: field, seq: cSeq });
+        if (mine === session) { say(''); espaceTool.form(inner, personId, say); }
+      });
+      s.addEventListener('error', function () {
+        espaceBusy = false;
+        if (mine === session) say('Pas de réseau. Réessayez dans un moment.');
+      });
+      inner.appendChild(s);
+    }));
+    return inner;
   }
 `;
