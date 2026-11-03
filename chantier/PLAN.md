@@ -1726,7 +1726,7 @@ Trouvé le 2026-11-03 par la voie 1, en comparant les routes de `packages/api/sr
 - Attend : rien pour l'écran ; H25 (`PIECES`) pour déposer une preuve réelle.
 
 ### G15 · Engagements de service et fin de bail à l'écran
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : G07, G09
 - Cahier : M20, dossier de présentation et anciens contacts ; R16, R143, R201.
 - Objectif : la direction règle ses engagements de service (`POST /v1/gagner/engagements`), sans quoi le dossier de présentation les dit absents ; l'agent note une fin de bail connue sur la fiche (`POST /v1/gagner/fiches/<id>/fin-de-bail`), sans quoi cette raison de relance reste vide.
@@ -1740,7 +1740,8 @@ Voie : 1
 Trouvé le 2026-11-03 par la voie 1, en comparant les routes de `packages/api/src/partenaires.ts` aux appels de l'application : aucun partenaire ne peut être rangé depuis l'écran, et aucune route ne dépose la preuve d'un justificatif, si bien qu'aucun partenaire ne peut devenir proposable en réel.
 
 ### U13 · Annuaire des partenaires à l'écran, preuve du justificatif déposée
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#299). Relecture forte sans P0 ni P1 ; Codex à sa limite (H03).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : U01, U10, U12
 - Cahier : M18 Partenaires ; R73, R13, R14, R16, R03, R201.
 - Objectif : sur l'écran du réseau, la direction cherche par métier et code postal, ajoute un partenaire, ses zones et ses justificatifs (fichier de preuve déposé, référence choisie par le serveur), lit pourquoi il n'est pas proposable, range son adresse professionnelle et son accord, note son opposition.
