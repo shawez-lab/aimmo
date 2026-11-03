@@ -572,3 +572,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 17:20 · CE23 · une panne de stockage à l'ouverture ne consomme ni le code ni une ouverture, le lecteur réessaie (#342) ; relecture forte 1 P1 de test corrigé ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : à choisir
 - 2026-11-03 17:22 · voie 1 · module « Site du réseau » découpé, RS01 à RS05 : le site n'a ni accueil ni liste des biens, et /estimation répond 404 · prochaine : RS01
 - 2026-11-03 17:30 · IN01 · le compteur de la preuve à Dijon, depuis le registre, pour la direction (#343) ; module « Preuve et indicateurs » découpé, voie 2 ; relecture forte 1 P1 de test corrigé ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN02
+- 2026-11-03 18:20 · IN02 · le mois scellé et son compte public, recalculable par n'importe qui (#344) ; relecture forte 3 P1 ; R95 et R96 corrigés après deux vérifications rouges ; Codex non attendu (H03) · prochaine : IN04
+- 2026-11-03 18:20 · IN03 · taux et délais du parcours (#346) ; relecture forte 1 P0 et 5 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN04

@@ -3435,7 +3435,8 @@ Décidé, lecture prudente : chaque chiffre vient de la base, jamais d'une saisi
 - Attend : rien.
 
 ### IN02 · Le mois scellé, puis publié, vérifiable par n'importe qui (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#344). Relecture forte 3 P1 corrigés (course qui cassait la chaîne, panne maquillée, coût non borné d'une route sans clé) ; R95 et R96 trouvés par les vérifications, corrigés ; Codex non attendu (H03).
 - Décidé (2026-11-03), lecture prudente : le sceau tient lieu de comparaison au comptage manuel, mois par mois, plus strict que les 2 semaines du cahier ; les numéros du registre sont publiés pour qu'un mandant retrouve le sien (H46) ; la page reste non indexée en essai.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01
 - Cahier : Feuille de route, « chiffres publiés » ; Indicateurs et tests, « comparés à un comptage manuel avant d'être publiés ».
@@ -3444,7 +3445,8 @@ Décidé, lecture prudente : chaque chiffre vient de la base, jamais d'une saisi
 - Attend : H27 pour la mesure réelle seulement.
 
 ### IN03 · Les indicateurs du parcours : transformation, délais, du rendez-vous au mandat
-- Statut : à faire
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#346). Relecture forte 1 P0 et 5 P1 corrigés ; Codex non attendu (H03).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01
 - Cahier : Indicateurs et tests.
 - Objectif : pour une période, chacun avec ses lignes : contacts en rendez-vous, rendez-vous en mandats, mandats en ventes ; jours du mandat à l'offre acceptée puis de l'offre à l'acte ; minutes de l'ouverture de l'estimation à la signature ; part des mandats avec un client transmis par le réseau. Le réseau, jamais d'un agent contre un autre [R14].
@@ -3452,7 +3454,8 @@ Décidé, lecture prudente : chaque chiffre vient de la base, jamais d'une saisi
 - Attend : rien.
 
 ### IN04 · Les indicateurs du réseau : agents actifs, restés, contacts par zone
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Décidé (2026-11-03), lecture prudente : R68 l'emporte sur la publication par zone : en petit réseau peu de zones se montrent ; tout se juge sur les agents qui ont reçu des contacts ce mois-là. Où : #347.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01
 - Cahier : Indicateurs et tests, « Agents actifs », « Agents restés au bout d'un an », « Contacts transmis par zone ».
 - Objectif : agents ayant signé au moins un mandat dans le mois ; part des agents entrés il y a 12 mois et toujours actifs ; contacts transmis par zone, lisibles par chaque agent chaque mois, sans chiffre d'un autre agent.
@@ -3460,7 +3463,8 @@ Décidé, lecture prudente : chaque chiffre vient de la base, jamais d'une saisi
 - Attend : rien.
 
 ### IN05 · Écran « Preuve » de la direction
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Décidé (2026-11-03) : bloc relu avec le rapport du matin, dans `finances.js`, pour ne pas toucher au socle. Où : #348.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN01, IN02, IN03
 - Cahier : Feuille de route ; R201.
 - Objectif : la direction voit où en est la preuve, ce qui est à inscrire, et scelle un mois depuis l'application.
@@ -3514,3 +3518,10 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Critères : aucune mention inventée [R10] (test) ; une mention manquante se voit (test) ; liée depuis l'accueil et la liste (test) ; budget [R201] (test).
 - Attend : H09 pour le contenu réel ; textes à faire relire par l'avocat, à écrire dans `HUMAIN.md`.
 
+### IN06 · Les indicateurs du parcours et du réseau à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03, IN04, IN05
+- Cahier : Indicateurs et tests ; R201.
+- Objectif : la direction lit les taux, les délais et les agents actifs d'un mois sur « Le réseau » ; chaque agent lit les contacts par zone du mois passé sur « Mes chiffres ». Toujours dans `finances.js`, sans toucher au socle.
+- Critères : donnée absente dite absente, jamais zéro [R214] (test) ; ce qui est retenu par R215 est dit sans chiffre (test) ; droits [R16] (test) ; réponse perdue dite telle (test) ; déconnexion et réponse en vol (test) ; budget tenu [R201] (test).
+- Attend : rien.
