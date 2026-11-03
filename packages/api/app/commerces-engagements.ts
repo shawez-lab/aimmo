@@ -45,9 +45,10 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
   var SAY = ${JSON.stringify(REFUSALS)};
   /* Ce qui termine une signature : l'écran l'oublie et relit l'état du serveur. */
   var ENDED = ['expired', 'blocked', 'unknown_session', 'already_signed', 'revoked', 'nda_changed'];
-  var signing = {}, seq = 0;
+  var signing = {}, seq = 0, linkTurn = 0;
   var LINK_STATES = {
     actif: function (l) { return 'Actif : ouvert ' + l.opens + ' fois sur ' + l.maxOpens + ', jusqu’au ' + t.day(l.expiresAt) + '.'; },
+    porte_fermee: function () { return 'Porte fermée : il ne s’ouvre pas tant que l’engagement ou la pièce manque, et peut se rouvrir avec elle.'; },
     expire: function (l) { return 'Expiré le ' + t.day(l.expiresAt) + ' : il ne s’ouvre plus.'; },
     epuise: function () { return 'Ouvertures épuisées : il ne s’ouvre plus.'; },
     revoque: function (l) { return 'Retiré le ' + t.day(l.revokedAt) + ' : il ne s’ouvre plus.'; },
@@ -380,38 +381,44 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
   }
   /* Les liens envoyés (CE18). Retirer demande deux appuis ; un lien retiré ne s'ouvre plus, mais ce qui a été lu reste lu. */
   function links(box, base, asked, said) {
-    var mine = t.session();
+    var mine = t.session(), turn = ++linkTurn;
     clear(box);
     say(said ? said : 'Chargement…');
     return send(base + '/liens', 'GET').then(function (res) {
-      if (res.gone || mine !== t.session()) return;
+      /* Seule la dernière lecture s'affiche : une lecture plus ancienne peut dire actif un lien retiré depuis. */
+      if (res.gone || mine !== t.session() || turn !== linkTurn) return;
+      clear(box);
+      var again = button('Relire les liens envoyés', function () { links(box, base, asked); });
       var list = res.ok && res.body.data;
       if (!Array.isArray(list)) {
-        box.appendChild(button('Relire les liens envoyés', function () { links(box, base, asked); }));
+        box.appendChild(again);
         var no2 = res.status === 403 ? 'Ces liens ne sont pas dans vos droits.' : 'Les liens ne se lisent pas pour le moment : réessayez dans un moment.';
         say(said ? said + ' ' + no2 : no2);
         return;
       }
       if (!said) say('');
-      if (!list.length) { box.appendChild(el('p', 'Aucun lien envoyé pour ce commerce.', 'doux')); return; }
+      if (!list.length) { box.appendChild(el('p', 'Aucun lien envoyé pour ce commerce.', 'doux')); box.appendChild(again); return; }
       var ul = el('ul', null, 'liste');
       list.forEach(function (l) {
         var li = el('li');
         li.appendChild(el('strong', reader(asked, l.personId) + ', envoyé le ' + t.day(l.createdAt)));
         li.appendChild(el('p', LINK_STATES[l.state] ? LINK_STATES[l.state](l) : 'État inconnu : relisez la liste.', l.state === 'actif' ? 'fait' : 'doux'));
-        if (l.state === 'actif' && isId(l.id)) withdraw(li, l, box, base, asked);
+        if ((l.state === 'actif' || l.state === 'porte_fermee') && isId(l.id)) withdraw(li, l, box, base, asked);
         ul.appendChild(li);
       });
       box.appendChild(ul);
+      box.appendChild(again);
     });
   }
   function withdraw(li, l, box, base, asked) {
     var note = el('p');
-    var armed = false;
+    var armedAt = 0;
     var go = button('Retirer ce lien', function () {
       if (go.disabled) return;
-      if (!armed) {
-        armed = true;
+      /* Une confirmation ne vaut que 15 secondes : un appui bien plus tard ne retire rien. */
+      var now = Date.now();
+      if (!armedAt || now - armedAt > 15000) {
+        armedAt = now;
         go.textContent = 'Confirmer : retirer ce lien';
         note.textContent = 'Ce lien ne s’ouvrira plus. Ce qui a déjà été lu ne s’efface pas, et rien n’est envoyé au repreneur.';
         return;
@@ -426,7 +433,7 @@ globalThis.AIMMO_CE_ENGAGEMENTS = function (t) {
         if (code === 'already_revoked') { links(box, base, asked, 'Ce lien était déjà retiré.'); return; }
         if (code === 'unknown_link') { links(box, base, asked, 'Ce lien n’existe plus : la liste est relue.'); return; }
         go.disabled = false;
-        armed = false;
+        armedAt = 0;
         go.textContent = 'Retirer ce lien';
         note.textContent = '';
         if (res.status === 403) say('Ce geste n’est pas dans vos droits.');

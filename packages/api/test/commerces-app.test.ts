@@ -1,5 +1,5 @@
 import { runInNewContext } from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BUDGETS, budgetProblems, htmlProblems } from '../../core/src/design/audit.ts';
 import { COMMERCES_SCRIPT } from '../app/commerces.ts';
 import { COMMERCES_ENGAGEMENTS_SCRIPT } from '../app/commerces-engagements.ts';
@@ -1431,6 +1431,68 @@ describe('CE18 · retirer un lien de dossier protégé à l’écran', () => {
     release();
     await settle();
     expect(t.state()).not.toContain('Réponse perdue');
+  });
+
+  it('[R10] porte fermée : c’est dit, pas « actif », et le lien peut quand même se retirer', async () => {
+    const t = await open({ [LIST]: ok([LINK({ state: 'porte_fermee' })]) });
+    expect(t.body().textContent).toContain('Porte fermée');
+    expect(t.body().textContent).not.toContain('Actif');
+    expect(t.byText('Retirer ce lien')).toBeDefined();
+  });
+
+  it('[R10] après une réponse perdue, la consigne se suit : relire montre l’état vrai', async () => {
+    const t = await open({ [POST]: () => Promise.reject(new TypeError('hors ligne')) });
+    await t.click(t.byText('Retirer ce lien'));
+    await t.click(t.byText('Confirmer : retirer ce lien'));
+    expect(t.state()).toContain('Réponse perdue');
+    t.table[LIST] = ok([LINK({ state: 'revoque', revokedAt: '2027-09-10T08:00:00.000Z' })]);
+    await t.click(t.byText('Relire les liens envoyés'));
+    expect(t.body().textContent).toContain('Retiré le 10/09/2027');
+    expect(t.byText('Retirer ce lien')).toBeUndefined();
+  });
+
+  it('[R10] deux retraits croisés : une seule liste, la dernière lue', async () => {
+    const free: Record<string, () => void> = {};
+    const hold = (key: string, a: Answer): Answer => () => new Promise<Response>((res, rej) => { free[key] = () => { a().then(res, rej); }; });
+    const gone = { state: 'revoque', revokedAt: '2027-09-10T08:00:00.000Z' };
+    const t = await open({
+      [LIST]: ok([LINK(), LINK({ id: 'l2', personId: 'r1' })]),
+      [POST]: hold('a', ok({})),
+      'POST /v1/commerces/liens/l2/revocation': hold('b', ok({})),
+    });
+    await t.click(t.byText('Retirer ce lien', 0));
+    await t.click(t.byText('Retirer ce lien', 0));
+    await t.click(t.byText('Confirmer : retirer ce lien', 0));
+    await t.click(t.byText('Confirmer : retirer ce lien', 1));
+    // La première relecture part avant le second retrait, et répond après la seconde.
+    t.table[LIST] = hold('old', ok([LINK(gone), LINK({ id: 'l2', personId: 'r1' })]));
+    free.a!();
+    await settle();
+    t.table[LIST] = hold('new', ok([LINK(gone), LINK({ id: 'l2', personId: 'r1', ...gone })]));
+    free.b!();
+    await settle();
+    free.new!();
+    await settle();
+    free.old!();
+    await settle();
+    expect(t.body().all().filter((e) => e.tagName === 'ul' && e.textContent.includes('envoyé le'))).toHaveLength(1);
+    expect(t.byText('Retirer ce lien')).toBeUndefined();
+    expect(t.byText('Relire les liens envoyés')).toBeDefined();
+  });
+
+  it('[R10] une confirmation trop ancienne ne retire rien : il faut de nouveau deux appuis', async () => {
+    const t = await open();
+    const real = Date.now();
+    await t.click(t.byText('Retirer ce lien'));
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(real + 16_000);
+    try {
+      await t.click(t.byText('Confirmer : retirer ce lien'));
+      expect(posted(t)).toHaveLength(0);
+      await t.click(t.byText('Confirmer : retirer ce lien'));
+      expect(posted(t)).toHaveLength(1);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('[R201] les scripts tiennent le budget d’une page', () => {

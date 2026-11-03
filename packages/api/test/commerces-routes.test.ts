@@ -607,6 +607,18 @@ describeWithSqlite('CE18 · les liens envoyés, par les routes de l’écran', (
     expect((await t.ok(t.alex, 'GET', `/commerces/${a}/liens`))[0]).toMatchObject({ id: link.linkId, state: 'actif', opens: 0 });
   });
 
+  it('[R113] [R13] un engagement révoqué : le lien se dit porte fermée, comme l’ouverture le refuserait, sans refus au journal', async () => {
+    const { t, a, r, link } = await sent();
+    const { ndaId } = await t.ok(t.alex, 'POST', `/commerces/${a}/demandes`, { personId: r.id });
+    await t.ok(t.alex, 'POST', `/commerces/engagements/${ndaId}/revocation`, { reason: 'demande_repreneur' });
+    const before = (await t.journal.all()).length;
+    expect((await t.ok(t.alex, 'GET', `/commerces/${a}/liens`))[0]).toMatchObject({ id: link.linkId, state: 'porte_fermee' });
+    expect((await t.journal.all()).slice(before).map((e) => e.type)).toEqual(['bien.lu']);
+    const token = (await t.tokenFor(r.id))!;
+    await t.read(`/dossier/${token}/code`, { email: r.email });
+    expect((await t.read(`/dossier/${token}`, { email: r.email, code: t.lastCode() })).body).toMatchObject({ ok: false, code: 'porte_fermee' });
+  });
+
   it('[R114] un lien jamais ouvert se liste sans son jeton, se retire, ne s’ouvre plus, et se dit retiré une seule fois', async () => {
     const { t, a, r, link } = await sent();
     const token = (await t.tokenFor(r.id))!;

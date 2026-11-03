@@ -63,8 +63,11 @@ export interface DossierAccess {
   at: string;
 }
 
-/** Un lien envoyé, sans son jeton ni son empreinte. `non_remis` : le contrôle central a refusé son envoi, il n'est jamais parti. */
-export type DossierLinkState = 'actif' | 'expire' | 'epuise' | 'revoque' | 'non_remis';
+/**
+ * Un lien envoyé, sans son jeton ni son empreinte. `non_remis` : le contrôle central a refusé son envoi, il n'est jamais
+ * parti. `porte_fermee` : valable, mais la porte de CE04 refuserait l'ouverture aujourd'hui ; il se rouvre si elle se rouvre.
+ */
+export type DossierLinkState = 'actif' | 'porte_fermee' | 'expire' | 'epuise' | 'revoque' | 'non_remis';
 export interface DossierLink {
   id: string;
   personId: string;
@@ -469,19 +472,14 @@ export class DossierCommerce {
       [viewer.networkId, propertyId],
     );
     const now = this.now().getTime();
-    return {
-      ok: true,
-      value: rows.map((r) => ({
-        id: r.id,
-        personId: r.person_id,
-        createdAt: r.created_at,
-        expiresAt: r.expires_at,
-        opens: r.opens,
-        maxOpens: r.max_opens,
-        state: r.revoked_at ? (r.revoked_by === 'systeme' ? 'non_remis' : 'revoque') : now > Date.parse(r.expires_at) ? 'expire' : r.opens >= r.max_opens ? 'epuise' : 'actif',
-        revokedAt: r.revoked_at,
-      })),
-    };
+    const value: DossierLink[] = [];
+    for (const r of rows) {
+      let state: DossierLinkState = r.revoked_at ? (r.revoked_by === 'systeme' ? 'non_remis' : 'revoque') : now > Date.parse(r.expires_at) ? 'expire' : r.opens >= r.max_opens ? 'epuise' : 'actif';
+      // La même porte que l'ouverture, sans rien écrire au journal : une lecture n'est pas un refus.
+      if (state === 'actif' && !(await this.confidentialite.canSendConfidential(viewer.networkId, propertyId, r.person_id, this.actor(viewer), true)).ok) state = 'porte_fermee';
+      value.push({ id: r.id, personId: r.person_id, createdAt: r.created_at, expiresAt: r.expires_at, opens: r.opens, maxOpens: r.max_opens, state, revokedAt: r.revoked_at });
+    }
+    return { ok: true, value };
   }
 
   /**
