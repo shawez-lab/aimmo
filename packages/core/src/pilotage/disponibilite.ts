@@ -6,8 +6,9 @@
  * « non mesuré », jamais 100 %.
  *
  * Décidé, lecture prudente :
- * - le temps qu'on n'a pas observé n'est ni répondu ni coupé. La part se calcule sur le temps observé ; un mois observé
- *   en partie le dit, et la cible n'y est jamais dite atteinte. Elle y est dite manquée dès que les coupures vues
+ * - le temps dont la supervision ne dit rien n'est ni répondu ni coupé. La part se calcule sur le temps connu : ce qui
+ *   est observé, plus toute coupure rapportée, même hors de l'observé, car une coupure connue n'est jamais écartée. Un
+ *   mois connu en partie le dit, et la cible n'y est jamais dite atteinte. Elle y est dite manquée dès que les coupures
  *   dépassent à elles seules le dixième de pour cent du mois entier ;
  * - une donnée incohérente rend tout le service « non mesuré » : écarter une seule coupure embellirait le chiffre ;
  * - la part s'arrondit vers le bas : une coupure, même d'une milliseconde, n'affiche jamais 100 % ;
@@ -24,7 +25,7 @@ export type SupervisedService = (typeof SUPERVISED_SERVICES)[number];
 /** La cible, en pour mille : 99,9 %. */
 export const AVAILABILITY_TARGET_PER_MILLE = 999;
 
-/** `to` à `null` : la coupure n'est pas finie, elle court jusqu'à la fin de ce qui est observé. */
+/** `to` à `null` : la coupure n'est pas finie, elle court jusqu'à la fin du mois lu. */
 export interface OutagePeriod {
   from: Date;
   to: Date | null;
@@ -134,8 +135,11 @@ export function computeAvailability(report: SupervisionReport, start: number, en
     else if (!isDate(o.to) || o.from.getTime() >= o.to.getTime()) return null;
     else outageSpans.push([o.from.getTime(), o.to.getTime()]);
   }
-  const observed = merged(overlap(merged(observedSpans), [[start, end]]));
-  const down = merged(overlap(merged(outageSpans.filter(([from, to]) => from < to)), observed));
+  const outages = outageSpans.filter(([from, to]) => from < to);
+  const month: Span[] = [[start, end]];
+  // Une coupure rapportée est du temps connu : hors de l'observé, elle compte quand même [R223].
+  const observed = merged(overlap(merged([...observedSpans, ...outages]), month));
+  const down = merged(overlap(merged(outages), month));
   return { observedMs: total(observed), downMs: total(down) };
 }
 

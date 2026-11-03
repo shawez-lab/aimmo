@@ -88,7 +88,7 @@ describeWithSqlite('IN09 · disponibilité du service', () => {
     expect(onEdges).toMatchObject({ observedMs: JUNE_MS, downMs: 20 * 60_000, complete: true });
   });
 
-  it('[R223] une coupure pas finie court jusqu’au bout de ce qui est observé', async () => {
+  it('[R223] une coupure pas finie court jusqu’à la fin du mois lu', async () => {
     const s = await setup();
     const v = await service(s, 'site', { observed: whole, outages: [{ from: d('2027-06-30T21:00:00.000Z'), to: null }] });
     expect(v).toMatchObject({ downMs: 3_600_000, targetMet: false });
@@ -105,9 +105,19 @@ describeWithSqlite('IN09 · disponibilité du service', () => {
     const half = [{ from: d(START), to: d('2027-06-15T22:00:00.000Z') }];
     const clean = await service(s, 'site', { observed: half, outages: [] });
     expect(clean).toMatchObject({ observedMs: 360 * 3_600_000, complete: false, percent: 100, targetMet: null });
-    // Hors du temps observé, une coupure n'est pas comptée : on ne l'a pas vue.
-    const unseen = await service(s, 'site', { observed: half, outages: [{ from: d('2027-06-20T00:00:00.000Z'), to: d('2027-06-20T05:00:00.000Z') }] });
-    expect(unseen).toMatchObject({ downMs: 0, targetMet: null });
+    // Une coupure rapportée hors du temps observé compte quand même, jamais 100 % : 5 h sur 365 h connues.
+    const reported = await service(s, 'site', { observed: half, outages: [{ from: d('2027-06-20T00:00:00.000Z'), to: d('2027-06-20T05:00:00.000Z') }] });
+    expect(reported).toMatchObject({ observedMs: 365 * 3_600_000, downMs: 5 * 3_600_000, complete: false, percent: 98.63, targetMet: false });
+    const open = await service(s, 'site', { observed: half, outages: [{ from: d('2027-06-30T21:00:00.000Z'), to: null }] });
+    expect(open).toMatchObject({ downMs: 3_600_000, targetMet: false });
+    // Courte et hors de l'observé : la cible reste inconnue, et la part n'est toujours pas 100 %.
+    const short = await service(s, 'site', { observed: half, outages: [{ from: d('2027-06-20T00:00:00.000Z'), to: d('2027-06-20T00:01:00.000Z') }] });
+    expect(short).toMatchObject({ downMs: 60_000, complete: false, targetMet: null });
+    if (!short.measured) throw new Error('mesuré attendu');
+    expect(short.percent).toBeLessThan(100);
+    // Observé à partir du 10, coupé du 1er au 10 : tout le mois est connu, les 9 jours comptent.
+    const before = await service(s, 'site', { observed: [{ from: d('2027-06-09T22:00:00.000Z'), to: d(END) }], outages: [{ from: d(START), to: d('2027-06-09T22:00:00.000Z') }] });
+    expect(before).toMatchObject({ downMs: 9 * 86_400_000, complete: true, percent: 70, targetMet: false });
     // Plus d'un millième du mois entier coupé : la cible est manquée, même sans avoir tout vu.
     const missed = await service(s, 'site', { observed: half, outages: [{ from: d('2027-06-02T00:00:00.000Z'), to: d('2027-06-02T01:00:00.000Z') }] });
     expect(missed).toMatchObject({ downMs: 3_600_000, complete: false, targetMet: false });
