@@ -3600,6 +3600,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 
 ### IN12 · Un engagement manqué : noté, et le client rappelé par un responsable
 - Statut : en cours (voie 2)
+- Décidé (2026-11-03), lecture prudente : le responsable est la direction du réseau. Le passage tourne à 7 h de Paris dans `pilotage.passage`, sans toucher au planificateur, sur le mois en cours et le mois passé. Un engagement envers l'agent (client transmis, commission) se rappelle à l'agent ; une offre, au vendeur du dernier mandat du bien. Une personne exclue : « ne pas appeler », jamais notée rappelée. L'écran passe à IN15.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07
 - Cahier : Besoins et solutions, « Le bouche-à-oreille » et « Nos engagements de service » (publiés, et reprise de liberté du vendeur sous réserve de l'avocat).
 - Objectif : vérifier d'abord ce qui existe. Chaque cas manqué vu par IN07 donne une tâche « rappeler » au responsable, une seule, sans donnée dans le journal ; rien n'est envoyé au client par la machine.
@@ -3654,4 +3655,12 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Cahier : Indicateurs et tests, « Chaque mois : un parcours complet fictif, du premier message à l'après-vente ».
 - Objectif : un seul scénario inventé traverse les vrais modules, du premier message à l'après-vente, et il tourne aussi chaque mois.
 - Critères : chaque étape vérifiée par ses données et son journal (test) ; aucun envoi réel (test) ; une étape cassée nomme l'étape (test).
+- Attend : rien.
+
+### IN15 · Les engagements manqués à rappeler, à l'écran
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN12
+- Cahier : Besoins et solutions, « Le bouche-à-oreille » ; R201.
+- Objectif : dans `finances.js`, sur « Le réseau » : la direction lit les rappels à faire, ouvre la fiche, et dit rappelé, injoignable ou sans appel, en un geste.
+- Critères : « ne pas appeler » dit, sans bouton « rappelé » (test) ; droits [R16] (test) ; réponse perdue dite telle (test) ; déconnexion et réponse en vol (test) ; budget tenu [R201] (test).
 - Attend : rien.
