@@ -30,9 +30,10 @@ async function setup(opts: { realDiffusion?: boolean } = {}) {
   const direction: Viewer = { role: 'direction', userId: 'dir-1', networkId: network.id };
   const routes = studioRoutes();
   const call = async (viewer: Viewer, method: 'GET' | 'POST', path: string, body?: unknown, raw?: string) => {
-    const route = routes.find((r) => r.method === method && r.pattern.test(path));
+    const bare = path.split('?')[0]!;
+    const route = routes.find((r) => r.method === method && r.pattern.test(bare));
     if (!route) throw new Error(`route inconnue ${method} ${path}`);
-    const params = (route.pattern.exec(path) ?? []).slice(1);
+    const params = (route.pattern.exec(bare) ?? []).slice(1);
     const init: RequestInit =
       raw !== undefined ? { method, headers: { 'content-type': 'application/json' }, body: raw } : body === undefined ? { method } : { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
     const response = await route.handle(s, viewer, params, new Request(`https://api.exemple.test/v1${path}`, init));
