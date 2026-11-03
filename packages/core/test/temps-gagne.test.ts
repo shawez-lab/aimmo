@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, appendEvent, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
-import { MAX_MINUTES_SAVED, TempsGagne } from '../src/pilotage/index.ts';
+import { MAX_MINUTES_SAVED, RapportMatin, TempsGagne, isWorkGesture } from '../src/pilotage/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -78,6 +78,41 @@ describeWithSqlite('IN08 · temps gagné', () => {
     expect(await s.t.declare(a, { week: WEEK, minutes: 60 })).toMatchObject({ ok: true, value: { gestures: 2 } });
     await s.t.declare(a, { week: WEEK, minutes: 70 });
     expect(await s.t.mine(a, WEEK)).toMatchObject({ ok: true, value: { gestures: 2 } });
+  });
+
+  it('[R217] les lectures et les refus du code ne sont pas des gestes, les gestes de travail si', () => {
+    const notGestures = ['fiche.lue', 'fiches.listees', 'demande.lue', 'location.lue', 'candidature.lue', 'candidatures.lues', 'alertes_agent.lues', 'dossier.alertes_lues', 'dossier.taches_lues', 'mesure_sources.lue', 'anciens_contacts.liste_lue', 'lettres_quartier.liste_lue', 'recommandations.file_lue', 'mandat.chronologie_lue', 'alerte_agent.vue', 'studio.guide.vue', 'dossier_presentation.rendez_vous_lus', 'pilotage.lecture', 'acces.refuse', 'visite.refusee', 'dossier.piece_refusee', 'lettres_quartier.refusee', 'annonce.ia_refusee', 'envoi.texte_refuse', 'pieces.depot.refuse', 'dossier.ouvert', 'coffre.ouvert', 'remuneration.montree', 'pilotage.temps_gagne'];
+    for (const type of notGestures) expect([type, isWorkGesture(type)]).toEqual([type, false]);
+    for (const type of ['mandat.signe', 'visite.compte_rendu', 'rappel.fait', 'annonce.validee', 'offre.transmise', 'valeur.lue_par_personne_morale_x']) expect([type, isWorkGesture(type)]).toEqual([type, true]);
+  });
+
+  it('[R217] le rapport du matin lit au nom de l’agent : ce n’est pas un geste, et 10 heures sans geste se voient', async () => {
+    const s = await setup();
+    const a = await s.agent('a');
+    s.setClock('2027-06-08T05:30:00.000Z');
+    await new RapportMatin(s.db, s.journal, { now: () => new Date('2027-06-08T05:30:00.000Z') }).run(s.direction.networkId);
+    const written = await s.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM journal WHERE actor = 'agent:a'");
+    expect(Number(written?.n)).toBeGreaterThan(0);
+    s.setClock('2027-06-15T10:00:00.000Z');
+    expect(await s.t.declare(a, { week: WEEK, minutes: 600 })).toMatchObject({ ok: true, value: { gestures: 0 } });
+    expect(await s.t.network(s.direction, WEEK)).toMatchObject({ ok: true, value: { withoutGesture: 1 } });
+  });
+
+  it('[R217] déclarer une semaine finie avant son entrée est refusé ; la semaine où l’agent entre se déclare', async () => {
+    const s = await setup();
+    const a = await s.agent('new', '2027-06-14T10:00:00.000Z');
+    s.setClock('2027-06-22T10:00:00.000Z');
+    expect(await s.t.declare(a, { week: WEEK, minutes: 4800 })).toEqual({ ok: false, rule: 'R217', code: 'week_before_entry' });
+    expect(await s.t.declare(a, { week: '2027-06-14', minutes: 60 })).toMatchObject({ ok: true, value: { minutes: 60 } });
+  });
+
+  it('[R217] les présents sans déclaration se comptent eux-mêmes : la déclaration d’un agent parti depuis n’en cache pas un autre', async () => {
+    const s = await setup();
+    const left = await s.agent('left-after');
+    await s.t.declare(left, { week: WEEK, minutes: 60 });
+    await s.db.run("UPDATE agents SET status = 'left' WHERE id = 'left-after'");
+    await s.agent('here');
+    expect(await s.t.network(s.direction, WEEK)).toMatchObject({ ok: true, value: { declared: 1, notDeclared: 1, minutes: 60 } });
   });
 
   it('[R217] [R14] la direction lit des comptes, aucune ligne par agent ; sans geste en face : un compte, sans nom ; zéro n’a rien à contrôler', async () => {

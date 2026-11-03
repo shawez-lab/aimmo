@@ -4,8 +4,8 @@
  * L'agent déclare les minutes gagnées d'une semaine finie, du lundi au dimanche à Paris ; il lit sa déclaration et ses
  * gestes de cette semaine. La direction lit les comptes du réseau, jamais une ligne par agent : ni liste, ni rang.
  *
- * Décidé, lecture prudente : le contrôle compte les gestes écrits au journal au nom de l'agent, hors lectures, refus et
- * déclarations de temps ; il ne dit qu'une chose, combien de déclarations de temps gagné n'ont aucun geste en face, et il
+ * Décidé, lecture prudente : le contrôle compte les gestes écrits au journal au nom de l'agent, hors lectures, y compris
+ * celles qu'un passage fait en son nom, refus et déclarations de temps ; il ne dit qu'une chose, combien de déclarations de temps gagné n'ont aucun geste en face, et il
  * ne note personne : un compte, sans nom. Une déclaration à zéro n'a rien à contrôler. Sans déclaration : `null`, jamais
  * zéro. Une nouvelle déclaration ajoute une version ; la dernière compte. Plafond : 80 heures par semaine.
  */
@@ -20,8 +20,12 @@ import { parisDayStart } from './tableau-agent.ts';
 export const MAX_MINUTES_SAVED = 4800;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const DECLARED = 'pilotage.temps_gagne';
-/** Ce qui n'est pas un geste de travail. */
-const GESTURE = `actor = ? AND at >= ? AND at < ? AND type <> '${DECLARED}' AND type <> 'acces.refuse' AND type NOT LIKE '%.lecture' AND type NOT LIKE '%_lus' AND type NOT LIKE '%_lu'`;
+/**
+ * Ce qui n'est pas un geste de travail : les lectures, dont celles que le rapport du matin ou un plan font au nom de
+ * l'agent, et les refus. Jugé sur le nom du type, écrit partout pareil : un nouveau type de lecture se nomme ainsi.
+ */
+const NOT_A_GESTURE = /(?:^|[._])(?:lu|lue|lus|lues|vu|vue|vus|vues|listee|listees|ouvert|ouverte|montre|montree|lecture)$|refus/;
+export const isWorkGesture = (type: string): boolean => type !== DECLARED && !NOT_A_GESTURE.test(type);
 
 const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
@@ -45,7 +49,7 @@ export interface NetworkTimeSaved {
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: null; code: 'bad_week' | 'bad_minutes' | 'conflict' } | { ok: false; rule: 'R217'; code: 'week_not_finished' };
+type Problem = { ok: false; rule: null; code: 'bad_week' | 'bad_minutes' | 'conflict' } | { ok: false; rule: 'R217'; code: 'week_not_finished' | 'week_before_entry' };
 
 export class TempsGagne {
   private readonly now: () => Date;
@@ -79,8 +83,9 @@ export class TempsGagne {
     return blocked ? this.refuse(viewer, blocked) : null;
   }
 
-  private gestures(actor: string, week: string): Promise<{ n: number } | null> {
-    return this.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM journal WHERE ${GESTURE}`, [actor, parisDayStart(week).toISOString(), parisDayStart(addDays(week, 7)).toISOString()]);
+  private async gestures(actor: string, week: string): Promise<number> {
+    const rows = await this.db.all<{ type: string; n: number }>('SELECT type, COUNT(*) AS n FROM journal WHERE actor = ? AND at >= ? AND at < ? GROUP BY type', [actor, parisDayStart(week).toISOString(), parisDayStart(addDays(week, 7)).toISOString()]);
+    return rows.reduce((sum, r) => (isWorkGesture(r.type) ? sum + Number(r.n) : sum), 0);
   }
 
   /** L'agent déclare pour lui-même : le même chiffre n'ajoute pas de version. */
@@ -92,6 +97,9 @@ export class TempsGagne {
     const { minutes } = input;
     if (typeof minutes !== 'number' || !Number.isInteger(minutes) || minutes < 0 || minutes > MAX_MINUTES_SAVED) return { ok: false, rule: null, code: 'bad_minutes' };
     const week = input.week as string;
+    // Une semaine finie avant son entrée n'est pas la sienne : elle fausserait les comptes du réseau.
+    const agent = await this.db.first<{ created_at: string }>('SELECT created_at FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
+    if (!agent || parisDayStart(addDays(week, 7)).toISOString() <= agent.created_at) return { ok: false, rule: 'R217', code: 'week_before_entry' };
     const last = await this.latest(viewer.userId, week);
     if (last?.minutes !== minutes) {
       const version = (last?.version ?? 0) + 1;
@@ -109,7 +117,7 @@ export class TempsGagne {
   private async value(viewer: Viewer, week: string): Promise<{ ok: true; value: MyTimeSaved }> {
     const last = await this.latest(viewer.userId, week);
     const gestures = await this.gestures(`agent:${viewer.userId}`, week);
-    return { ok: true, value: { week, minutes: last ? Number(last.minutes) : null, version: last ? Number(last.version) : null, gestures: Number(gestures?.n ?? 0) } };
+    return { ok: true, value: { week, minutes: last ? Number(last.minutes) : null, version: last ? Number(last.version) : null, gestures } };
   }
 
   /** L'agent lit sa semaine, jamais celle d'un autre [R68]. */
@@ -118,6 +126,7 @@ export class TempsGagne {
     if (refused) return refused;
     const problem = this.checkWeek(week);
     if (problem) return problem;
+    await appendEvent(this.journal, { type: 'pilotage.lecture', actor: `agent:${viewer.userId}`, subject: `agent:${viewer.userId}`, data: { kind: 'time_saved', week: week as string } }, this.now);
     return this.value(viewer, week as string);
   }
 
@@ -133,19 +142,18 @@ export class TempsGagne {
         WHERE t.network_id = ? AND t.week = ? AND t.version = (SELECT MAX(v.version) FROM agent_time_saved v WHERE v.agent_id = t.agent_id AND v.week = t.week)`,
       [net, w],
     );
-    const start = parisDayStart(w).toISOString();
     const end = parisDayStart(addDays(w, 7)).toISOString();
     // En activité cette semaine-là : entré avant sa fin, et pas parti avant son début ; sans date de départ, son état.
-    const present = await this.db.first<{ n: number }>(
+    const silent = await this.db.first<{ n: number }>(
       `SELECT COUNT(*) AS n FROM agents a WHERE a.network_id = ? AND a.created_at < ?
+          AND NOT EXISTS (SELECT 1 FROM agent_time_saved t WHERE t.agent_id = a.id AND t.week = ?)
           AND NOT EXISTS (SELECT 1 FROM agent_departures d WHERE d.agent_id = a.id AND d.cancelled_at IS NULL AND d.leaves_on < ?)
           AND (a.status = 'active' OR EXISTS (SELECT 1 FROM agent_departures d WHERE d.agent_id = a.id AND d.cancelled_at IS NULL AND d.leaves_on >= ?))`,
-      [net, end, w, w],
+      [net, end, w, w, w],
     );
     let withoutGesture = 0;
     for (const r of rows) {
-      if (Number(r.minutes) === 0) continue;
-      if (Number((await this.gestures(`agent:${r.agent_id}`, w))?.n ?? 0) === 0) withoutGesture += 1;
+      if (Number(r.minutes) !== 0 && (await this.gestures(`agent:${r.agent_id}`, w)) === 0) withoutGesture += 1;
     }
     await appendEvent(this.journal, { type: 'pilotage.lecture', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${net}`, data: { kind: 'time_saved', week: w } }, this.now);
     return {
@@ -153,7 +161,7 @@ export class TempsGagne {
       value: {
         week: w,
         declared: rows.length,
-        notDeclared: Math.max(0, Number(present?.n ?? 0) - rows.length),
+        notDeclared: Number(silent?.n ?? 0),
         minutes: rows.length > 0 ? rows.reduce((sum, r) => sum + Number(r.minutes), 0) : null,
         withoutGesture,
       },
