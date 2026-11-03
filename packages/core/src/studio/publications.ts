@@ -69,13 +69,16 @@ export interface SocialPayload {
   account: SocialAccount;
   text: string;
   visuals: { ref: string; overlay: 'Aménagement virtuel' | null; certificatePath: string }[];
+  /** Le lien marqué vers la page de référence du bien ; null sans page en ligne, ou si l'origine est en panne (AT18). */
+  link: string | null;
 }
 
 /** Un réseau social, derrière une interface. Seul le mode essai existe tant que le plan ne l'a pas mis en service. */
 export interface SocialChannel {
   readonly channel: SocialChannelName;
   readonly mode: 'essai';
-  post(payload: SocialPayload): Promise<void>;
+  /** Un réseau qui rend la référence de sa publication la relie à son contenu : un commentaire y sera reconnu (AT18). */
+  post(payload: SocialPayload): Promise<void | { postRef: string }>;
 }
 
 /** Le canal d'essai : rien ne part ; l'essai est rangé avec son issue. */
@@ -110,6 +113,11 @@ export interface PostsDeps {
   /** Le stockage des accords des personnes photographiées : seule l'existence d'une référence est lue. */
   consents: { has(ref: string): Promise<boolean> };
   channels: readonly SocialChannel[];
+  /** L'origine des contacts de M01 (AT18). Sa panne n'empêche aucun envoi : elle est écrite au journal. */
+  origin?: {
+    studioLink(networkId: string, kind: 'publication', ref: string, propertyId: string): Promise<{ contentId: string; link: string | null } | null>;
+    linkPost(networkId: string, contentId: string, channel: string, postRef: string): Promise<{ ok: boolean; code?: string }>;
+  };
 }
 
 export interface PublicationsOptions {
@@ -342,15 +350,35 @@ export class Publications {
       }
       if (!stored) return this.bad(actor, subject, 'R132', 'accord_absent');
     }
+    const originDown = (step: string, error: unknown) =>
+      appendEvent(this.journal, { type: 'studio.publication.origine_indisponible', actor, subject, data: { rule: 'R156', step, error: error instanceof Error ? error.name : 'inconnue' } }, this.now);
+    let tracked: { contentId: string; link: string | null } | null = null;
+    if (this.deps.origin) {
+      try {
+        tracked = await this.deps.origin.studioLink(post.value.network_id, 'publication', postId, post.value.property_id);
+      } catch (error) {
+        await originDown('lien', error);
+      }
+    }
     for (const w of wanted) {
       const attempt = await this.claim(postId, w, actor);
       if (attempt === null) continue;
       const channel = this.channels.get(w.channel)!;
       let outcome: 'envoye' | 'echec' = 'envoye';
+      let sent: void | { postRef: string } = undefined;
       try {
-        await channel.post({ postId, account: w.account, text: post.value.text, visuals: current.visuals.map(({ ref, overlay, certificatePath }) => ({ ref, overlay, certificatePath })) });
+        sent = await channel.post({ postId, account: w.account, text: post.value.text, visuals: current.visuals.map(({ ref, overlay, certificatePath }) => ({ ref, overlay, certificatePath })), link: tracked?.link ?? null });
       } catch {
         outcome = 'echec';
+      }
+      if (sent && tracked && this.deps.origin) {
+        try {
+          const linked = await this.deps.origin.linkPost(post.value.network_id, tracked.contentId, w.channel, sent.postRef);
+          // Un réseau d'où aucun commentaire ne remonte n'a rien à relier : ce n'est pas une panne.
+          if (!linked.ok && linked.code !== 'bad_channel') await originDown(linked.code ?? 'liaison', null);
+        } catch (error) {
+          await originDown('liaison', error);
+        }
       }
       await this.db.run('INSERT INTO social_post_sends (attempt_id, outcome, done_at) VALUES (?, ?, ?)', [attempt, outcome, this.now().toISOString()]);
       await appendEvent(this.journal, { type: 'studio.publication.envoi', actor, subject, data: { post: postId, channel: w.channel, account: w.account, mode: 'essai', outcome, rule: 'R26' } }, this.now);

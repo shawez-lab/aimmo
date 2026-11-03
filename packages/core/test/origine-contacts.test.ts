@@ -131,6 +131,38 @@ describeWithSqlite('origine des contacts', () => {
     expect(b.ok && a.ok && b.contentId !== a.contentId).toBe(true);
   });
 
+  it('[R156] [R16] AT18 : le contact venu du lien d’une publication ou d’une vidéo du Studio compte dessus, sous un titre lisible', async () => {
+    const t = await setup();
+    const { origine, inbound, db } = t;
+    await db.run("INSERT INTO properties (id, network_id, agent_id, reference, kind, postal_code, city, created_at, updated_at) VALUES ('bien-1', 'net-1', 'ag-1', 'REF-1', 'home', '99000', 'Ville inventée', 'x', 'x') ON CONFLICT DO NOTHING");
+    const POST = '11111111-1111-4111-8111-111111111111';
+    const CLIP = '22222222-2222-4222-8222-222222222222';
+    await db.run("INSERT INTO social_posts (id, property_id, network_id, event, text, origin, visuals, created_by, created_at) VALUES (?, 'bien-1', 'net-1', 'visite', 'Texte de la publication', 'secours', '[]', 'x', 'x')", [POST]);
+    await db.run("INSERT INTO video_montages (id, property_id, network_id, video_ref, video_sha256, template_sha256, clips_count, duration_s, processed_on, recorded_by, recorded_at) VALUES (?, 'bien-1', 'net-1', 'v.mp4', ?, ?, 3, 45, 'appareil', 'x', 'x')", [CLIP, 'a'.repeat(64), 'b'.repeat(64)]);
+    const canonical = await new Referencement(db, t.journal, {}).canonicalFor('net-1', 'bien-1');
+    expect(canonical).toEqual(expect.any(String));
+    const pub = await origine.studioLink('net-1', 'publication', POST, 'bien-1');
+    const clip = await origine.studioLink('net-1', 'video', CLIP, 'bien-1');
+    if (!pub?.link || !clip?.link) throw new Error('lien');
+    expect(new URL(pub.link).pathname).toBe(new URL(canonical!).pathname);
+    expect(new URL(pub.link).searchParams.get('o')).toBe(pub.contentId);
+    // Le lien ne porte que le contenu : rien du bien, de l'agent ni d'une personne de plus que sa page [R156].
+    expect([...new URL(pub.link).searchParams.keys()]).toEqual(['o']);
+    expect(await origine.studioLink('net-1', 'publication', POST, 'bien-1')).toEqual(pub);
+    // Un bien sans page en ligne : le contenu existe, pas de lien.
+    expect(await origine.studioLink('net-1', 'publication', POST, 'brouillon-1')).toEqual({ contentId: pub.contentId, link: null });
+    const i1 = await inbound();
+    expect(await origine.record('net-1', i1, { link: pub.link })).toMatchObject({ ok: true, origin: { contentId: pub.contentId, kind: 'publication', method: 'lien' } });
+    const i2 = await inbound();
+    expect(await origine.record('net-1', i2, { link: clip.link })).toMatchObject({ ok: true, origin: { contentId: clip.contentId, kind: 'video', method: 'lien' } });
+    // Le titre dit le bien et le contenu, jamais l'identifiant ; ni introuvable ni d'un autre réseau ne le donnent.
+    expect(await origine.contentTitle('net-1', 'publication', POST)).toBe('REF-1, visite');
+    expect(await origine.contentTitle('net-1', 'video', CLIP)).toBe('REF-1, 45 s');
+    expect(await origine.contentTitle('net-2', 'publication', POST)).toBe('non retrouvée');
+    expect(await origine.contentTitle('net-2', 'video', CLIP)).toBe('non retrouvée');
+    expect(await origine.contentTitle('net-1', 'publication', 'studio-pub-x')).toBe('non retrouvée');
+  });
+
   it('[R156] lit le code porteur connu du réseau, et range « inconnue » un code inconnu ou d’un autre réseau', async () => {
     const { origine, inbound } = await setup();
     const video = await origine.contentFor('net-1', 'video', 'studio-pub-1');

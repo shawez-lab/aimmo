@@ -17,6 +17,7 @@ import { Annonces } from '../../core/src/annonces/annonces.ts';
 import { MediasBien } from '../../core/src/annonces/medias.ts';
 import { computeMentions, MentionsAnnonce } from '../../core/src/annonces/mentions.ts';
 import { PageBien } from '../../core/src/annonces/page-bien.ts';
+import { OrigineContacts } from '../../core/src/attirer/origine-contacts.ts';
 import { Diffusion } from '../../core/src/documents/retractation.ts';
 import { Annuaire } from '../../core/src/partenaires/annuaire.ts';
 import { MiseEnRelation } from '../../core/src/partenaires/mise-en-relation.ts';
@@ -162,6 +163,7 @@ export function studioCore(s: StudioServices) {
         },
         consents: s.files,
         channels: s.channels ?? SOCIAL_CHANNELS.map((c) => trialSocialChannel(c)),
+        origin: new OrigineContacts(s.db, s.journal, { now: s.now }),
       },
       { ...opts, writer: s.writer ?? null },
     ),

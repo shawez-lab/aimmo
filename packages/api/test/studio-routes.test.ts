@@ -99,6 +99,8 @@ describeWithSqlite('X09 · routes de M19', () => {
     }
     expect(await t.db.all("SELECT COUNT(*) AS n FROM social_post_attempts WHERE mode = 'essai'")).toEqual([{ n: 20 }]);
     expect(await t.db.all("SELECT COUNT(*) AS n FROM social_post_attempts WHERE mode <> 'essai'")).toEqual([{ n: 0 }]);
+    // AT18 : chaque publication envoyée est un contenu de la mesure de l'origine, par la vraie route.
+    expect(await t.db.all("SELECT COUNT(*) AS n FROM public_contents WHERE kind = 'publication'")).toEqual([{ n: 10 }]);
     expect(await t.db.all('SELECT COUNT(*) AS n FROM photo_guide_validations')).toEqual([{ n: 10 }]);
     expect(await t.db.all('SELECT COUNT(*) AS n FROM photo_certificates')).toEqual([{ n: 20 }]);
     // La mesure des visuels : 20 publiés, tous sans adresse visible.

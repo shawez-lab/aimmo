@@ -134,6 +134,10 @@ export function contentOfPath(pathname: string): { kind: ContentKind; ref: strin
   return null;
 }
 
+/** Ce que la direction lit d'une publication ou d'une vidéo du Studio qui n'est pas retrouvée : jamais sa référence. */
+const UNKNOWN_CONTENT_TITLE = 'non retrouvée';
+const POST_EVENT_LABELS: Readonly<Record<string, string>> = Object.freeze({ nouveau_bien: 'nouveau bien', visite: 'visite', offre: 'offre', vente: 'vente' });
+
 /** Le lien d'un contenu, avec son code porteur ; tout autre paramètre est gardé tel quel. */
 export function taggedLink(url: string, contentId: string): string | null {
   const u = parseUrl(url);
@@ -197,7 +201,27 @@ export class OrigineContacts {
       const a = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ? AND network_id = ?', [ref, networkId]);
       return a ? `${a.first_name} ${a.last_name}` : 'parti';
     }
+    if (kind === 'publication') {
+      const p = await this.db.first<{ reference: string; event: string }>('SELECT r.reference, s.event FROM social_posts s JOIN properties r ON r.id = s.property_id WHERE s.id = ? AND s.network_id = ?', [ref, networkId]);
+      return p ? `${p.reference}, ${POST_EVENT_LABELS[p.event] ?? 'publication'}` : UNKNOWN_CONTENT_TITLE;
+    }
+    if (kind === 'video') {
+      const v = await this.db.first<{ reference: string; duration_s: number }>('SELECT r.reference, m.duration_s FROM video_montages m JOIN properties r ON r.id = m.property_id WHERE m.id = ? AND m.network_id = ?', [ref, networkId]);
+      return v ? `${v.reference}, ${v.duration_s} s` : UNKNOWN_CONTENT_TITLE;
+    }
     return ref;
+  }
+
+  /**
+   * Le lien marqué d'une vidéo ou d'une publication du Studio, vers la page de référence de son bien. Le contenu est
+   * rangé à sa première demande ; un bien sans page en ligne n'a pas de lien. Le code désigne le contenu, jamais une
+   * personne [R156].
+   */
+  async studioLink(networkId: string, kind: 'video' | 'publication', ref: string, propertyId: string): Promise<{ contentId: string; link: string | null } | null> {
+    const content = await this.contentFor(networkId, kind, ref);
+    if (!content.ok) return null;
+    const canonical = await this.referencement.canonicalFor(networkId, propertyId);
+    return { contentId: content.contentId, link: canonical ? taggedLink(canonical, content.contentId) : null };
   }
 
   private validRef(kind: ContentKind, ref: string): boolean {
