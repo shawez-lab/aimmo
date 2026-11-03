@@ -1943,7 +1943,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X26 · Deux envois simultanés d'une même recommandation de partenaire
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : X25
 - Cahier : M20 ; R142, R17.
 - Objectif : trouvé par la relecture forte de X25 : dans `recommend`, deux envois simultanés passent le contrôle préalable ; le perdant du `ON CONFLICT` garde quand même son projet, sa source et son accord dans le même lot. Les rendre conditionnels à la ligne de recommandation, ou la poser d'abord.
