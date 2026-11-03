@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DESIGN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, renderPublicPage, renderValuationPrint, type Teinte } from '@aimmo/core';
+import { renderEstimationPage } from '../../core/src/attirer/page-estimation.ts';
 import { renderSiteHome } from '../../core/src/attirer/accueil-site.ts';
 import { renderAgentsList, renderPricesList } from '../../core/src/attirer/annuaire-site.ts';
 import { renderListingPage, renderListingPrint, type PageInput } from '../../core/src/annonces/page-bien.ts';
@@ -60,6 +61,12 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
       budget: BUDGETS.page,
     },
     { name: 'liste des communes', html: renderPricesList(Array.from({ length: 2000 }, (_, i) => { const n = (i * 7919 + 100000).toString(36); return { slug: `v${n}`, name: `Ville ${n}` }; }))!, budget: BUDGETS.page },
+    { name: 'estimation en ligne', html: renderEstimationPage({ visitorId: 'visite-0000000000000001', open: true, appointmentHref: '/agents' }), budget: BUDGETS.page },
+    {
+      name: 'estimation en ligne, sa fourchette',
+      html: renderEstimationPage({ visitorId: 'visite-0000000000000001', open: true, appointmentHref: '/agents', values: { postalCode: '21990', town: 'Ville-Test', kind: 'maison' }, result: { ok: true, value: { town: 'Ville-Test', postalCode: '21990', kind: 'house', perM2: { low: 2000, median: 2500, high: 3000 }, sales: 24, period: { from: '2024-01', to: '2024-12' }, data: { lastSale: '2025-12-30', source: 'DVF test', recentMissing: true }, next: 'appointment' } } }),
+      budget: BUDGETS.page,
+    },
     { name: 'accueil du réseau', html: renderSiteHome({ kind: 'reseau', recruiting: true, agent: null, listings: [], checkedAt: new Date(0) }), budget: BUDGETS.page },
     { name: 'accueil du site d’un agent', html: renderSiteHome({ kind: 'agent', recruiting: false, agent: { agentId: 'a1', name: 'Alex Exemple', mentions: { rsacNumber: '123 456 789', rsacRegistry: 'Dijon', cardNumber: 'CPI 0000', cardHolder: 'Société Exemple' } }, listings: [], checkedAt: new Date(0) }), budget: BUDGETS.page },
     { name: 'page du bien', html: renderListingPage(LISTING), budget: BUDGETS.page },
@@ -165,6 +172,7 @@ describe('Z03 · système de design d’AIMMO', () => {
       'core/src/attirer/liste-biens.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/attirer/accueil-site.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/attirer/annuaire-site.ts': /^<style>\$\{CSS\}<\/style>$/,
+      'core/src/attirer/page-estimation.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/documents/modeles.ts': /^<style>\$\{PRINT_CSS\}<\/style>$/,
       'api/src/candidature.ts': /^<style>\$\{STYLE\}<\/style>$/,
       'core/src/attirer/simulateur-pret.ts': /^<style>\$\{CSS\}<\/style>$/,

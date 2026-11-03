@@ -16,6 +16,7 @@
  *   GET /prix/:commune[/:quartier]                 la page de prix, seulement sur le site du réseau [R150, R151]
  *   GET /agents/:agent                             la page de l'agent, sur le site du réseau et sur le sien [R152]
  *   GET /quartiers/:commune/:quartier[/prix|/equipements]  la page de quartier ou son article validé [R155]
+ *   GET, POST /estimation                          la fourchette de la commune de E05, sur les deux sites [R31, R10]
  *   GET /simulateur                                le simulateur de prêt, qui ne garde rien [R157]
  *   GET /preuve, /preuve.json                      le compte public de la preuve à Dijon, sur le site du réseau [R213]
  *   GET /sitemap.xml, /robots.txt                  le plan du site et ses consignes aux moteurs [R153]
@@ -27,6 +28,7 @@ import { OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
+import { handleEstimationPage, type EstimationPageConfig } from './estimation.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 16_000;
@@ -53,6 +55,9 @@ export interface AttirerServices {
   diffusion?: DiffusionGate | null;
   /** Le réseau qui reçoit les candidatures de `/rejoindre` : seul son site y mène. */
   recruitingNetworkId?: string | null;
+  /** La Base adresse nationale et les ventes de l'estimation en ligne (E05) ; absentes, la page dit qu'elle n'est pas ouverte. */
+  estimation?: EstimationPageConfig['services'];
+  estimationLimits?: EstimationPageConfig['limits'];
 }
 
 export interface AttirerRoute {
@@ -270,6 +275,7 @@ export const PUBLIC_PATHS = {
   prix: new RegExp(`^/prix/${SLUG}(?:/${SLUG})?$`),
   agent: new RegExp(`^/agents/${ID}$`),
   quartier: new RegExp(`^/quartiers/${SLUG}/${SLUG}(?:/(prix|equipements))?$`),
+  estimation: /^\/estimation$/,
   simulateur: /^\/simulateur$/,
   preuve: /^\/preuve(\.json)?$/,
   plan: /^\/sitemap\.xml$/,
@@ -350,7 +356,8 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
   const path = url.pathname;
   const kind = (Object.keys(PUBLIC_PATHS) as (keyof typeof PUBLIC_PATHS)[]).find((k) => PUBLIC_PATHS[k].test(path));
   if (!kind) return null;
-  if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Méthode non permise.', { status: 405, headers: { allow: 'GET, HEAD', 'cache-control': 'no-store' } });
+  // Seule l'estimation reçoit un formulaire : elle dit elle-même les méthodes qu'elle admet.
+  if (kind !== 'estimation' && request.method !== 'GET' && request.method !== 'HEAD') return new Response('Méthode non permise.', { status: 405, headers: { allow: 'GET, HEAD', 'cache-control': 'no-store' } });
   const mode = s.mode ?? 'essai';
   const svc = services(s);
   const found = await siteOf(s, svc.referencement, url.origin);
@@ -418,6 +425,12 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       if (!published) return notFound();
       const page = renderNeighbourhoodPage(published, { siteUrl: site.baseUrl, estimateHref: ESTIMATE_HREF });
       return page.ok ? html(page.html) : notFound();
+    }
+    case 'estimation': {
+      // Le rendez-vous : la page de l'agent sur son site si elle est publiable [R152], sinon l'accueil ; la liste sur le réseau.
+      const own = site.kind === 'agent' ? await svc.pageAgent.inputFor(networkId, site.agentId!) : null;
+      const appointmentHref = site.kind === 'reseau' ? '/agents' : own?.ok ? `/agents/${encodeURIComponent(site.agentId!)}` : '/';
+      return handleEstimationPage(request, { db: s.db, networkId, services: s.estimation, limits: s.estimationLimits, now: s.now, mode, appointmentHref });
     }
     case 'simulateur': {
       const headers = await loanSimulatorHeaders();

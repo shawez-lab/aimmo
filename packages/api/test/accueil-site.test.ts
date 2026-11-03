@@ -72,9 +72,9 @@ describeWithSqlite('RS02 · l’accueil du site', () => {
   it('le recrutement et la preuve sont sur le site du réseau, jamais sur celui d’un agent', async () => {
     const t = await setup();
     const network = hrefs(await (await t.page(`${NET}/`)).text());
-    expect(network).toEqual(expect.arrayContaining(['/biens', '/agents', '/prix', '/simulateur', '/preuve', '/rejoindre']));
+    expect(network).toEqual(expect.arrayContaining(['/biens', '/agents', '/prix', '/estimation', '/simulateur', '/preuve', '/rejoindre']));
     const own = hrefs(await (await t.page(`${SAM_SITE}/`)).text());
-    expect(own).toEqual(expect.arrayContaining(['/biens', '/simulateur']));
+    expect(own).toEqual(expect.arrayContaining(['/biens', '/estimation', '/simulateur']));
     expect(own).not.toContain('/rejoindre');
     expect(own).not.toContain('/agents');
     expect(own).not.toContain('/prix');

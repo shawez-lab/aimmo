@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 import { FicheClient, applyMigrations } from '@aimmo/core';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -87,6 +87,9 @@ describeWithSqlite('CE22 · le dépôt des documents du dossier sur le stockage 
   });
 
   it('[R114] le lecteur du dossier, servi par le Worker, reçoit le texte déposé dans le compartiment', async () => {
+    // Le Worker lit la vraie horloge, et les codes ne partent qu'aux heures permises : un mardi matin fixe, quelle que soit l'heure du test.
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-03T09:00:00.000Z') });
+    onTestFinished(() => void vi.useRealTimers());
     const { bucket } = fakeBucket();
     const t = await world({ COMMERCES: bucket });
     const reader = 'dominique.exemple@example.test';

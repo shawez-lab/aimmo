@@ -248,8 +248,8 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
     const plan = await t.ref.sitemap('net-1', s.net);
     // Lou n'a pas ses mentions : sa page n'est pas publiée, elle n'entre pas au plan.
     // [RS02] L'accueil et les pages où il mène entrent au plan de leur site, la preuve au seul réseau.
-    expect(locs(plan)).toEqual([`${NET}/`, `${NET}/biens`, `${NET}/agents`, `${NET}/prix`, `${NET}/simulateur`, `${NET}/preuve`, `${NET}/agents/ag-1`, `${NET}/prix/ville-inventee`, `${NET}/prix/ville-inventee/centre`]);
-    expect(locs(await t.ref.sitemap('net-1', s.cam))).toEqual([`${CAMILLE}/`, `${CAMILLE}/biens`, `${CAMILLE}/simulateur`, `${CAMILLE}/agents/ag-1`]);
+    expect(locs(plan)).toEqual([`${NET}/`, `${NET}/biens`, `${NET}/agents`, `${NET}/prix`, `${NET}/estimation`, `${NET}/simulateur`, `${NET}/preuve`, `${NET}/agents/ag-1`, `${NET}/prix/ville-inventee`, `${NET}/prix/ville-inventee/centre`]);
+    expect(locs(await t.ref.sitemap('net-1', s.cam))).toEqual([`${CAMILLE}/`, `${CAMILLE}/biens`, `${CAMILLE}/estimation`, `${CAMILLE}/simulateur`, `${CAMILLE}/agents/ag-1`]);
     // [RS03] [R150] La liste des communes : une case publiée, jamais une commune sans case publiable.
     expect((await t.ref.priceCommunes('net-1')).map((c) => c.slug)).toEqual(['ville-inventee']);
     expect(renderSitemap([{ loc: 'https://x.exemple.test/a?b=1&c=<2>', lastmod: '2026-10-20', kind: 'prix' }])).toBe(
