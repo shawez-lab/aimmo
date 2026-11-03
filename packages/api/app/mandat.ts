@@ -8,7 +8,8 @@
  * honoraires [R39] : il pose ce que le code rend. Le formulaire de signature n'existe qu'après un contrôle réussi [R41].
  * Un document d'essai est dit tel [R40]. La signature en ligne n'y est pas : elle attend la validation de l'avocat (H24).
  * L'agent y note aussi la rétractation reçue et la demande écrite de commencer tout de suite (D16) [R42] ; le code seul
- * décide si la date tient, l'écran n'en dit que le refus.
+ * décide si la date tient, l'écran n'en dit que le refus. Sur un mandat en cours, il lit les conditions en vigueur,
+ * prépare et enregistre un avenant de prix ou de durée (D17) [R41].
  * Tout texte reçu est posé avec `textContent`, et rien ne reste à l'écran une fois quitté.
  */
 import { FILE_DEPOSIT_MAX_BYTES, FILE_DEPOSIT_TYPES } from '../../core/src/dossiers/depot.ts';
@@ -47,6 +48,9 @@ const REFUSALS = {
   empreinte_differente: 'Le fichier a mal voyagé : réessayez.',
   stockage_indisponible: 'Le stockage ne répond pas : réessayez plus tard.',
   not_signed: 'L’exemplaire n’existe pas encore.',
+  bad_mandate: 'Ce mandat n’est plus en cours, ou ce mandant n’est pas le sien : l’avenant n’est pas préparé.',
+  no_mandate: 'Le mandat de cet avenant n’est plus en cours : il ne se signe pas.',
+  before_mandate: 'Un avenant ne se signe pas avant son mandat : vérifiez le jour.',
 };
 /** Chaque ligne du contrôle, dite en français ; un code inconnu reste un échec, jamais un succès [R41]. */
 const CHECKS = {
@@ -182,7 +186,7 @@ globalThis.AIMMO_MANDAT = function (t) {
   function state(x) { $('mandat-etat').textContent = x; }
   function body() { return $('mandat-corps'); }
   function why(res, fallback) {
-    if (res.offline) return 'Pas de réseau : rien n’est rangé.';
+    if (res.offline) return 'Pas de réponse : rouvrez cet écran pour voir ce qui est rangé.';
     return (res.body && NO[res.body.code]) || (res.status === 403 || res.status === 404 ? 'Ce mandat n’est pas dans vos droits.' : fallback);
   }
   function date(iso) {
@@ -254,6 +258,7 @@ globalThis.AIMMO_MANDAT = function (t) {
       if (m.signedAt) box.appendChild(el('p', 'Signé le ' + date(m.signedAt) + '.', 'doux'));
       box.appendChild(el('p', DIFFUSION[m.reason] || (m.allowed ? 'Le bien peut être diffusé.' : 'Le bien ne se diffuse pas.')));
       drawStops(box, m);
+      drawTerms(box, m);
     }
     var docs = bloc('Documents du bien');
     var list = Array.isArray(data.documents) ? data.documents : [];
@@ -262,6 +267,49 @@ globalThis.AIMMO_MANDAT = function (t) {
     var free = !m || m.reason === 'cancelled' || m.reason === 'withdrawn' || m.reason === 'expired';
     list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d, free); });
     if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : []);
+    else if (m.number && ID.test(m.id) && m.reason !== 'no_mandate') drawAmend(m, Array.isArray(data.owners) ? data.owners : []);
+  }
+  // Les conditions se lisent à part : sans elles, le mandat reste lisible et l'avenant possible.
+  function drawTerms(box, m) {
+    if (!ID.test(m.id) || m.reason === 'cancelled' || m.reason === 'withdrawn' || m.reason === 'no_mandate') return;
+    var mine = seq, line = el('p', '', 'doux');
+    box.appendChild(line);
+    send('/v1/mandats/' + encodeURIComponent(m.id) + '/conditions', 'GET').then(function (res) {
+      if (res.gone || mine !== seq || !res.ok || !res.body.data) return;
+      var c = res.body.data, said = [];
+      if (typeof c.priceEur === 'number') said.push('prix ' + c.priceEur.toLocaleString('fr-FR') + ' €');
+      if (typeof c.durationMonths === 'number') said.push('durée ' + c.durationMonths + ' mois');
+      if (said.length) line.textContent = 'En vigueur : ' + said.join(', ') + '.';
+    });
+  }
+  function drawAmend(m, owners) {
+    var box = bloc('Préparer un avenant');
+    var known = owners.filter(function (o) { return ID.test(o.personId); });
+    if (!known.length) { box.appendChild(el('p', 'Aucun propriétaire n’est lié à ce bien : l’avenant ne se prépare pas.', 'doux')); return; }
+    var names = {};
+    known.forEach(function (o) { names[o.personId] = [o.firstName, o.lastName].filter(Boolean).join(' ') || 'Propriétaire sans nom'; });
+    var who = choice(box, 'avenant-mandant', 'Mandant', known.map(function (o) { return o.personId; }), names, known.length > 1 ? 'À choisir' : '');
+    if (known.length === 1) who.value = known[0].personId;
+    var price = field(box, 'avenant-prix', 'Nouveau prix, en euros');
+    price.setAttribute('inputmode', 'numeric');
+    var months = field(box, 'avenant-duree', 'Nouvelle durée, en mois');
+    months.setAttribute('inputmode', 'numeric');
+    box.appendChild(button('Préparer l’avenant', act(function () {
+      var inputs = {}, p = price.value.trim(), d = months.value.trim();
+      if (!who.value) { state('Choisissez le mandant.'); return false; }
+      if (!p && !d) { state('Dites le nouveau prix, la nouvelle durée, ou les deux.'); return false; }
+      if ((p && !/^[0-9]+$/.test(p)) || (d && !/^[0-9]+$/.test(d))) { state('Le prix et la durée : des nombres entiers, sans espace.'); return false; }
+      if (p) inputs['avenant.prix'] = Number(p);
+      if (d) inputs['avenant.duree_mois'] = Number(d);
+      var mine = ++seq;
+      state('Préparation…');
+      return send('/v1/documents', 'POST', { kind: 'avenant_mandat', personId: who.value, propertyId: cur.id, mandateId: m.id, inputs: inputs }).then(function (res) {
+        if (res.gone || mine !== seq) return false;
+        if (res.ok) return load('Avenant préparé : contrôlez-le avant signature.');
+        state(res.body && res.body.code === 'bad_input' ? 'Le prix ou la durée ne convient pas : vérifiez la saisie.' : why(res, 'L’avenant n’est pas préparé : réessayez.'));
+        return false;
+      });
+    })));
   }
   // Signé hors de l'agence : le délai est dit, et ses deux gestes restent à portée. La rétractation reste proposée après
   // le délai, car une lettre postée à temps arrive plus tard ; le code refuse un envoi trop tardif [R42].
@@ -338,6 +386,8 @@ globalThis.AIMMO_MANDAT = function (t) {
     else if (s && isMandate) card.appendChild(button('Reprendre l’enregistrement', function () { clear(zone); drawResume(zone, d, s); }));
     else if (isMandate && free) card.appendChild(button('Contrôler avant signature', act(function () { return control(zone, d); })));
     else if (isMandate) card.appendChild(el('p', 'Un mandat est déjà en cours sur ce bien : ce document ne se signe pas.', 'doux'));
+    else if (d.kind === 'avenant_mandat' && !free) card.appendChild(button('Contrôler avant signature', act(function () { return control(zone, d); })));
+    else if (d.kind === 'avenant_mandat') card.appendChild(el('p', 'Le mandat de cet avenant n’est plus en cours : il ne se signe pas.', 'doux'));
     card.appendChild(zone);
   }
   // Le document est du HTML rendu par le code : on n'en garde que le texte, posé par textContent.
@@ -389,8 +439,9 @@ globalThis.AIMMO_MANDAT = function (t) {
     var when = field(zone, 'mandat-jour-' + d.id, 'Signé le');
     when.setAttribute('type', 'date');
     var place = choice(zone, 'mandat-lieu-' + d.id, 'Lieu de signature', PLACE_KEYS, PLACES, 'À choisir');
-    var origin = drawSource(zone, d);
-    var pick = field(zone, 'mandat-scan-' + d.id, 'Le mandat signé, numérisé');
+    var amending = d.kind === 'avenant_mandat';
+    var origin = amending ? function () { return {}; } : drawSource(zone, d);
+    var pick = field(zone, 'mandat-scan-' + d.id, amending ? 'L’avenant signé, numérisé' : 'Le mandat signé, numérisé');
     pick.setAttribute('type', 'file');
     pick.setAttribute('accept', Object.keys(TYPES).join(','));
     var kept = null;
@@ -398,7 +449,7 @@ globalThis.AIMMO_MANDAT = function (t) {
       if (!when.value) { state('Dites le jour de la signature.'); return false; }
       if (!place.value) { state('Choisissez le lieu de signature.'); return false; }
       var file = pick.files && pick.files[0];
-      if (!file) { state('Joignez le mandat signé, numérisé.'); return false; }
+      if (!file) { state(amending ? 'Joignez l’avenant signé, numérisé.' : 'Joignez le mandat signé, numérisé.'); return false; }
       return (kept && kept.file === file ? Promise.resolve(kept.ref) : deposit(file)).then(function (ref) {
         if (!ref) return false;
         kept = { file: file, ref: ref };
@@ -419,10 +470,13 @@ globalThis.AIMMO_MANDAT = function (t) {
   function sign(zone, d, data, forget) {
     var mine = ++seq;
     state('Enregistrement…');
-    return send(doc(d.id) + '/signature-papier', 'POST', data).then(function (res) {
+    var amending = d.kind === 'avenant_mandat';
+    return send(doc(d.id) + (amending ? '/signature-avenant' : '/signature-papier'), 'POST', data).then(function (res) {
       if (res.gone || mine !== seq) return false;
-      if (res.ok) return load('Mandat signé : n° ' + res.body.data.number + ' au registre.');
+      if (res.ok) return load(amending ? 'Avenant signé : ses conditions sont en vigueur.' : 'Mandat signé : n° ' + res.body.data.number + ' au registre.');
       var code = res.body && res.body.code;
+      if (amending && code === 'already_signed') return load('Cet avenant est déjà signé.');
+      if (res.offline || !res.body || res.status >= 500) { state('Pas de réponse : la signature est peut-être rangée. Réessayez, rien ne s’enregistre deux fois.'); return false; }
       if (forget && (code === 'bad_scan' || code === 'scan_absent' || code === 'scan_deja_utilise')) forget();
       // Le contrôle a changé depuis : la ligne est dite, et le formulaire s'en va [R41].
       if (code === 'checks_failed' && res.body.check) {

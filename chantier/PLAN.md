@@ -989,6 +989,16 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Reste : fusionnée (#314). Relecture forte 1 P0 (envoi, non réception) et 4 P1 corrigés ; Codex à sa limite (H03). L'envoi après le délai n'est prouvé qu'au cœur, à horloge fixée : une signature ancienne ne passe pas par la route.
 - Attend : rien.
 
+### D17 · Avenant au mandat à l'écran
+- Statut : en cours
+- Voie : 1
+- Décidé (2026-11-03), lecture prudente : une baisse de prix est le geste le plus courant d'un mandat, et `/v1/documents` (avenant) et `/signature-avenant` n'ont aucun geste à l'écran. Un avenant ne change que le prix et la durée [R39, R41]. L'écran n'en calcule rien : il envoie la saisie et lit les conditions rendues par `/v1/mandats/<id>/conditions`. Plusieurs propriétaires : le mandant se choisit, le code refuse un autre que celui du mandat.
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : D12, D14, D16
+- Cahier : M06 ; R16, R39, R41, R42, R201.
+- Objectif : sur un mandat en cours, l'agent lit le prix et la durée en vigueur, prépare l'avenant, le contrôle, enregistre sa signature avec le scan, et lit l'exemplaire.
+- Critères : aucun geste sur un mandat rétracté, annulé, échu ou hors registre [R42] (test) ; prix ou durée exigé, entiers, aucun identifiant saisi [R16] (test) ; un seul échec de contrôle et rien ne se signe [R41] (test) ; chaque refus dit en français (test) ; une réponse perdue n'est pas dite « rien n'est rangé » (test) ; de bout en bout par les routes : les conditions changent (test) ; budget tenu [R201] (test).
+- Attend : H08 pour un avenant réel, H25 pour le dépôt réel.
+
 **M08 · Acquéreurs et visites, avril 2027.**
 
 Découpé le 2026-10-27 par la voie 1. Ids `T..` pour Trouver l'acquéreur. Cahier : M08 Acquéreurs et visites ; Feuille de route, avril 2027 : « sur 10 biens tests, au moins 8 des 10 premiers acquéreurs proposés respectent tous les critères obligatoires ».

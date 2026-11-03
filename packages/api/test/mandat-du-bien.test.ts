@@ -319,6 +319,22 @@ describeWithSqlite('D14 · le scan d’un avenant vérifié comme celui du manda
   const code = async (r: Response) => [r.status, ((await r.json()) as { code?: string }).code];
   const deposit = async () => ((await (await w.scan(KEYS.alex, new TextEncoder().encode(`%PDF-1.7 avenant ${Math.random()}`))).json()) as { data: { ref: string } }).data.ref;
 
+  it('[R41] D17 : ce que l’écran envoie fait changer les conditions du mandat, en prix et en durée', async () => {
+    const a = await avenant();
+    const id = (await w.db.first<{ mandate_id: string }>('SELECT mandate_id FROM documents WHERE id = ?', [a.id]))!.mandate_id;
+    const terms = async () => ((await (await w.call(`/mandats/${id}/conditions`, KEYS.alex)).json()) as { data: { priceEur: number; durationMonths: number; amendments: unknown[] } }).data;
+    expect((await terms()).amendments).toEqual([]);
+    const both = ((await (await w.post('/documents', KEYS.alex, { kind: 'avenant_mandat', personId: w.lea.id, propertyId: w.bien.id, mandateId: id, inputs: { 'avenant.prix': 185000, 'avenant.duree_mois': 18 } })).json()) as { data: { id: string; status: string } }).data;
+    expect(both.status).toBe('complet');
+    expect((await w.post(`/documents/${both.id}/controle`, KEYS.alex)).status).toBe(200);
+    expect((await w.post(`/documents/${both.id}/signature-avenant`, KEYS.alex, a.paper(await deposit()))).status).toBe(200);
+    expect(await terms()).toMatchObject({ priceEur: 185000, durationMonths: 18 });
+    const again = await w.post(`/documents/${both.id}/signature-avenant`, KEYS.alex, a.paper(await deposit()));
+    expect(await code(again)).toEqual([409, 'already_signed']);
+    const other = await w.post('/documents', KEYS.sam, { kind: 'avenant_mandat', personId: w.lea.id, propertyId: w.bien.id, mandateId: id, inputs: { 'avenant.prix': 1 } });
+    expect(other.status).toBe(403);
+  });
+
   it('[R41] un scan déposé pour le bien du mandat fait signer l’avenant', async () => {
     const a = await avenant();
     const ref = await deposit();
