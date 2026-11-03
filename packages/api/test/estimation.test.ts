@@ -108,6 +108,9 @@ describeWithSqlite('RS04 · la page d’estimation du site', () => {
     expect(html).toContain(`Prix médian : ${money(api.perM2.median)}`);
     expect(html).toContain(`Sur ${api.sales} ventes`);
     expect(html).toContain('Source : DVF test');
+    // [R28] La date des données et le manque des ventes récentes sont dits, comme par E05.
+    expect(html).toContain('dernière vente connue le 30 décembre 2025');
+    expect(html).toContain('Les ventes des derniers mois ne sont pas encore publiées');
     expect(html).toContain('sans visite, personne ne peut le dire');
     for (const field of ['surface=80', 'adresse=1+rue+inventee']) expect((await t.post(`${t.form()}&${field}`)).status, field).toBe(400);
   });
@@ -163,6 +166,27 @@ describeWithSqlite('RS04 · la page d’estimation du site', () => {
     const unknown = await t.post(t.form({ town: 'Inconnue' }));
     expect(unknown.status).toBe(200);
     expect(await unknown.text()).toContain('Nous ne trouvons pas cette commune');
+    // [R28] Un département que les ventes publiques ne couvrent pas est dit tel.
+    const uncovered = await t.post(t.form({ postalCode: '67000', town: 'Ville' }));
+    expect(uncovered.status).toBe(200);
+    expect(await uncovered.text()).toContain('ne couvrent pas ce département');
+  });
+
+  it('[R13] une panne du géocodage : la page reste, avec la saisie et le rendez-vous, et le journal ne dit rien du visiteur', async () => {
+    const t = await sitesWorld();
+    const sales = t.config.estimation.sales;
+    (t.config as { estimation: unknown }).estimation = { sales, geocoder: { geocode: async () => { throw new TypeError('panne'); } } };
+    const res = await t.post(t.form());
+    expect(res.status).toBe(503);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const html = await res.text();
+    expect(html).toContain('ne répond pas en ce moment');
+    expect(html).toContain('value="21990"');
+    expect(html).toContain('href="/agents"');
+    const events = JSON.stringify(await t.db.all("SELECT * FROM journal WHERE type = 'api.erreur'"));
+    expect(events).toContain('TypeError');
+    expect(events).not.toContain('21990');
+    expect(events).not.toContain('Ville-Test');
   });
 
   it('[R153] sur les deux sites ; hors d’un site, 404 ; sans données, la page le dit et le lien aboutit ; aucune réponse en cache', async () => {

@@ -12,13 +12,14 @@ import { escapeHtml } from '../documents/modeles.ts';
 import type { CommuneResult } from '../estimation/en-ligne.ts';
 import { SITE_CSS } from './liste-biens.ts';
 
-export type EstimationFormError = 'invalid_postal_code' | 'invalid_town' | 'invalid_kind' | 'invalid_form' | 'too_many_requests';
+export type EstimationFormError = 'invalid_postal_code' | 'invalid_town' | 'invalid_kind' | 'invalid_form' | 'too_many_requests' | 'unavailable';
 const ERRORS: Record<EstimationFormError, string> = {
   invalid_postal_code: 'Indiquez le code postal, en 5 chiffres.',
   invalid_town: 'Indiquez le nom de la commune, sans chiffre.',
   invalid_kind: 'Choisissez appartement ou maison.',
   invalid_form: 'Votre demande n’a pas pu être lue. Merci de recommencer.',
   too_many_requests: 'Trop de demandes pour le moment. Réessayez dans une heure.',
+  unavailable: 'L’estimation ne répond pas en ce moment. Réessayez un peu plus tard, ou prenez rendez-vous ci-dessous.',
 };
 
 const REASONS: Record<Extract<CommuneResult, { ok: false }>['reason'], string> = {
@@ -31,6 +32,7 @@ const REASONS: Record<Extract<CommuneResult, { ok: false }>['reason'], string> =
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const month = (m: string): string => `${MONTHS[Number(m.slice(5, 7)) - 1] ?? ''} ${m.slice(0, 4)}`.trim();
+const day = (d: string): string => `${Number(d.slice(8, 10))} ${month(d)}`;
 const perM2 = (n: number): string => `${euros(n)}/m²`;
 
 const CSS =
@@ -57,7 +59,7 @@ function answer(result: CommuneResult): string {
   return (
     `<section class="reponse" aria-live="polite"><h2>${escapeHtml(v.town)}, ${what}</h2>` +
     `<strong>De ${perM2(v.perM2.low)} à ${perM2(v.perM2.high)}</strong><p>La moitié des ventes se situe dans cette fourchette. Prix médian : ${perM2(v.perM2.median)}.</p>` +
-    `<p class="doux">Sur ${v.sales} ventes de la commune, de ${month(v.period.from)} à ${month(v.period.to)}. Source : ${escapeHtml(v.data.source)}, dernière vente connue le ${escapeHtml(v.data.lastSale)}.${v.data.recentMissing ? ' Les ventes des derniers mois ne sont pas encore publiées.' : ''}</p>` +
+    `<p class="doux">Sur ${v.sales} ventes de la commune, de ${month(v.period.from)} à ${month(v.period.to)}. Source : ${escapeHtml(v.data.source)}, dernière vente connue le ${escapeHtml(day(v.data.lastSale))}.${v.data.recentMissing ? ' Les ventes des derniers mois ne sont pas encore publiées.' : ''}</p>` +
     `<p>Ce n’est pas le prix de votre logement : sans visite, personne ne peut le dire.</p></section>`
   );
 }

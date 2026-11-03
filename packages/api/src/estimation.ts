@@ -146,6 +146,13 @@ export async function handleEstimationPage(request: Request, config: EstimationP
   if (!POSTAL_CODE.test(values.postalCode)) return page(400, { values, error: 'invalid_postal_code' });
   if (!validTown(values.town)) return page(400, { values, error: 'invalid_town' });
   if (!Object.hasOwn(KINDS, values.kind)) return page(400, { values, error: 'invalid_kind' });
-  const result = await estimateForVisitor({ db: config.db, services: config.services, limits: config.limits, now: config.now }, config.networkId, visitorId, values.postalCode, values.town, values.kind, 'public:estimation');
+  let result: CommuneResult | null;
+  try {
+    result = await estimateForVisitor({ db: config.db, services: config.services, limits: config.limits, now: config.now }, config.networkId, visitorId, values.postalCode, values.town, values.kind, 'public:estimation');
+  } catch (error) {
+    // Une panne du géocodage ou des ventes : le visiteur garde sa page, sa saisie et le rendez-vous. Rien de lui au journal [R13].
+    await appendEvent(new SqlJournalStore(config.db), { type: 'api.erreur', actor: 'public:estimation', subject: null, data: { route: 'estimation.page', error: error instanceof Error ? error.name : 'unknown' } }, config.now);
+    return page(503, { values, error: 'unavailable' });
+  }
   return result ? page(200, { values, result }) : page(429, { values, error: 'too_many_requests' });
 }
