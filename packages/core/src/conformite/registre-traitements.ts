@@ -798,7 +798,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   document_checks: ['id', 'network_id', 'document_id', 'passed', 'checked_at'],
   signed_documents: ['document_id', 'network_id', 'signed_at', 'place', 'mandate_id', 'number', 'created_at', 'completed_at'],
   mandate_early_starts: ['mandate_id', 'network_id', 'received_at', 'created_at'],
-  mandate_withdrawals: ['mandate_id', 'network_id', 'received_at', 'created_at'],
+  mandate_withdrawals: ['mandate_id', 'network_id', 'received_at', 'sent_on', 'created_at'],
   mandate_tasks: ['id', 'network_id', 'mandate_id', 'kind', 'due_day', 'dedup_key', 'created_at', 'done_at'],
   signed_amendments: ['document_id', 'network_id', 'mandate_id', 'signed_at', 'place', 'created_at'],
   signature_sessions: ['id', 'network_id', 'document_id', 'code_hash', 'expires_at', 'attempts', 'status', 'created_at', 'signed_at'],

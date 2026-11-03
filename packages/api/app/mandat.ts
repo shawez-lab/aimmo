@@ -86,7 +86,8 @@ const DIFFUSION: Record<DiffusionReason, string> = {
 const STOPS = {
   retractation: {
     open: 'Noter une rétractation',
-    day: 'Rétractation reçue le',
+    day: 'Rétractation envoyée le (cachet de la poste, date du mail)',
+    field: 'sentOn',
     go: 'Noter la rétractation',
     done: 'Rétractation notée : le mandat est arrêté.',
     again: 'Cette rétractation est déjà notée.',
@@ -94,6 +95,7 @@ const STOPS = {
   'debut-anticipe': {
     open: 'Noter sa demande de commencer tout de suite',
     day: 'Demande écrite reçue le',
+    field: 'receivedOn',
     go: 'Noter la demande',
     done: 'Demande notée : le bien peut être diffusé.',
     again: 'Cette demande est déjà notée.',
@@ -103,7 +105,7 @@ const STOP_REFUSALS = {
   bad_proof: 'Dites en quelques mots la preuve écrite que vous avez reçue, 300 signes au plus.',
   bad_date: 'La date : un vrai jour, depuis la signature, jamais à venir.',
   invalid_date: 'La date : un vrai jour, depuis la signature, jamais à venir.',
-  delay_over: 'Cette date est après le dernier jour du délai : rien n’est noté, voyez avec la direction.',
+  delay_over: 'Cet envoi est après le dernier jour du délai : rien n’est noté, voyez avec la direction.',
   no_withdrawal_period: 'Ce mandat, signé à l’agence, n’a pas de délai de rétractation.',
   withdrawn: 'Le mandant s’est déjà rétracté : rien de plus à noter.',
   unknown_mandate: 'Ce mandat n’est pas dans vos droits.',
@@ -262,8 +264,13 @@ globalThis.AIMMO_MANDAT = function (t) {
     if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : []);
   }
   // Signé hors de l'agence : le délai est dit, et ses deux gestes restent à portée. La rétractation reste proposée après
-  // le délai, car une lettre reçue à temps peut se noter plus tard ; le code refuse une date trop tardive [R42].
+  // le délai, car une lettre postée à temps arrive plus tard ; le code refuse un envoi trop tardif [R42].
   function drawStops(box, m) {
+    if (m.withdrawalUnfinished && ID.test(m.id)) {
+      box.appendChild(el('p', 'La rétractation est notée, mais son numéro n’est pas encore annulé au registre.'));
+      box.appendChild(button('Finir la rétractation', act(function () { return post(m, 'retractation', { resume: true }, 'Rétractation finie : le numéro est annulé au registre.', 'Cette rétractation est déjà finie.'); })));
+      return;
+    }
     var live = m.reason === 'withdrawal_period' || m.reason === 'allowed_early_start' || m.reason === 'allowed';
     if (!live || !m.withdrawalLastDay || !ID.test(m.id)) return;
     box.appendChild(el('p', 'Dernier jour du délai de rétractation : ' + date(m.withdrawalLastDay) + '.', 'doux'));
@@ -281,15 +288,14 @@ globalThis.AIMMO_MANDAT = function (t) {
     when.value = today();
     var proof = field(zone, 'mandat-arret-preuve', 'La preuve écrite : sa nature et sa date, sans copier de pièce');
     proof.setAttribute('maxlength', '300');
-    var send1 = function () { return stop(m, kind, proof.value.trim(), when.value); };
     zone.appendChild(button(c.go, act(function () {
       if (!when.value) { state(STOP_NO.bad_date); return false; }
       if (!proof.value.trim()) { state(STOP_NO.bad_proof); return false; }
-      if (kind !== 'retractation') return send1();
+      if (kind !== 'retractation') return stop(m, kind, proof.value.trim(), when.value);
       // Une rétractation ne se défait pas : la conséquence est dite, sur ce que l'agent a saisi, avant le second appui.
       var day = when.value, said = proof.value.trim();
       clear(zone);
-      zone.appendChild(el('p', 'Rétractation reçue le ' + date(day) + ' : le mandat ' + (m.number || '') + ' s’arrête, son numéro est annulé au registre, où il reste, et la diffusion s’arrête au prochain passage des annonces. Cela ne se défait pas.'));
+      zone.appendChild(el('p', 'Rétractation envoyée le ' + date(day) + ' : le mandat ' + (m.number || '') + ' s’arrête, son numéro est annulé au registre, où il reste, et la diffusion s’arrête au prochain passage des annonces. Cela ne se défait pas.'));
       zone.appendChild(button('Confirmer : noter la rétractation', act(function () { return stop(m, kind, said, day); })));
       zone.appendChild(button('Ne rien noter', function () { clear(zone); state(''); }));
       return true;
@@ -297,15 +303,20 @@ globalThis.AIMMO_MANDAT = function (t) {
   }
   // Une réponse perdue n'est pas un refus : le geste a pu passer, et le refaire ne note rien deux fois.
   function stop(m, kind, proof, day) {
-    var mine = ++seq, c = STOPS[kind];
+    var c = STOPS[kind], data = { proof: proof };
+    data[c.field] = day;
+    return post(m, kind, data, c.done, c.again);
+  }
+  function post(m, kind, data, done, again) {
+    var mine = ++seq;
     state('Enregistrement…');
-    // Aujourd'hui vaut l'instant présent ; un jour passé, 21 h UTC, encore ce jour-là à Paris et après une signature du même jour.
-    var at = day === today() ? new Date().toISOString() : day + 'T21:00:00.000Z';
-    return send('/v1/mandats/' + encodeURIComponent(m.id) + '/' + kind, 'POST', { proof: proof, receivedAt: at }).then(function (res) {
+    return send('/v1/mandats/' + encodeURIComponent(m.id) + '/' + kind, 'POST', data).then(function (res) {
       if (res.gone || mine !== seq) return false;
-      if (res.ok) return load(c.done);
+      if (res.ok) return load(done);
       var code = res.body && res.body.code;
-      if (code === 'already_recorded') return load(c.again);
+      if (code === 'already_recorded') return load(again);
+      // Registre abîmé : la rétractation est peut-être notée sans son annulation ; la relecture le dit, et offre de la finir.
+      if (code === 'register_broken') return load(NO.register_broken);
       if (res.offline || !res.body || res.status >= 500) { state(LOST); return false; }
       state(STOP_NO[code] || NO[code] || why(res, 'Rien n’est noté : réessayez.'));
       return false;

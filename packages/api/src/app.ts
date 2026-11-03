@@ -690,9 +690,9 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, [id], request) => {
       const body = await readJson(request);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['proof', 'receivedAt'].includes(k))) return failure(400, 'unexpected_field', 'Seuls proof et receivedAt sont admis.');
-      if (typeof body.receivedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.receivedAt)) return failure(400, 'invalid_date', 'receivedAt : un instant ISO en UTC.');
-      const r = await new Diffusion(s.db, s.acces, s.journal, { now: s.now }).recordEarlyStart(viewer, id!, { proof: body.proof as string, receivedAt: new Date(body.receivedAt) });
+      if (Object.keys(body).some((k) => !['proof', 'receivedAt', 'receivedOn'].includes(k))) return failure(400, 'unexpected_field', 'Seuls proof, receivedAt et receivedOn sont admis.');
+      if (body.receivedOn === undefined && (typeof body.receivedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.receivedAt))) return failure(400, 'invalid_date', 'receivedAt : un instant ISO en UTC.');
+      const r = await new Diffusion(s.db, s.acces, s.journal, { now: s.now }).recordEarlyStart(viewer, id!, { proof: body.proof as string, ...(body.receivedOn !== undefined ? { receivedOn: body.receivedOn as string } : { receivedAt: new Date(body.receivedAt as string) }) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE });
       return r.rule === 'R16' ? refusal(r) : json(r.code === 'unknown_mandate' ? 404 : r.code === 'already_recorded' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
     },
@@ -701,13 +701,18 @@ const ROUTES: RouteDef[] = [
     method: 'POST',
     pattern: new RegExp(`^/mandats/${ID}/retractation$`),
     name: 'mandat.retractation',
-    // La rétractation reçue dans le délai : le mandat s'arrête, son inscription est annulée [R42].
+    // La rétractation envoyée dans le délai : le mandat s'arrête, son inscription est annulée ; `resume` finit une rétractation déjà notée [R42].
     handle: async (s, viewer, [id], request) => {
       const body = await readJson(request);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['proof', 'receivedAt'].includes(k))) return failure(400, 'unexpected_field', 'Seuls proof et receivedAt sont admis.');
-      if (typeof body.receivedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.receivedAt)) return failure(400, 'invalid_date', 'receivedAt : un instant ISO en UTC.');
-      const r = await new Diffusion(s.db, s.acces, s.journal, { now: s.now }).recordWithdrawal(viewer, id!, { proof: body.proof as string, receivedAt: new Date(body.receivedAt) });
+      const diffusion = new Diffusion(s.db, s.acces, s.journal, { now: s.now });
+      if (Object.keys(body).some((k) => !['proof', 'receivedAt', 'sentOn', 'resume'].includes(k))) return failure(400, 'unexpected_field', 'Seuls proof, receivedAt, sentOn et resume sont admis.');
+      if (body.resume !== undefined && (body.resume !== true || Object.keys(body).length !== 1)) return failure(400, 'unexpected_field', 'resume vaut true, seul.');
+      if (body.resume === undefined && body.sentOn === undefined && (typeof body.receivedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.receivedAt))) return failure(400, 'invalid_date', 'receivedAt : un instant ISO en UTC.');
+      const r =
+        body.resume === true
+          ? await diffusion.resumeWithdrawal(viewer, id!)
+          : await diffusion.recordWithdrawal(viewer, id!, { proof: body.proof as string, ...(body.sentOn !== undefined ? { sentOn: body.sentOn as string } : { receivedAt: new Date(body.receivedAt as string) }) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE });
       return r.rule === 'R16' ? refusal(r) : json(r.code === 'unknown_mandate' ? 404 : r.code === 'already_recorded' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
     },
