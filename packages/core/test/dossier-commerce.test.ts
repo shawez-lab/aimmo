@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { DOSSIER_PURPOSE } from '../src/commerces/dossier.ts';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import {
@@ -51,7 +51,13 @@ async function setup(options: { maxOpens?: number } = {}) {
   let codes = 0;
   let lastCode = '';
   const files = new Map<string, string>([['r2://essai/bilan-2026.txt', BILAN]]);
-  const storage: DossierStorage = { read: async (ref) => files.get(ref) ?? null };
+  let panne = false;
+  const storage: DossierStorage = {
+    read: async (ref) => {
+      if (panne) throw new Error(`panne sur ${ref}`);
+      return files.get(ref) ?? null;
+    },
+  };
   const dossier = new DossierCommerce(db, journal, fiches, conf, storage, { now, newCode: () => (lastCode = String(900_000 + (codes += 1))), ...(options.maxOpens ? { maxOpens: options.maxOpens } : {}) });
   const network = await store.createNetwork('Réseau test');
   const alexAgent = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
@@ -98,10 +104,88 @@ async function setup(options: { maxOpens?: number } = {}) {
     if (!asked.ok) return asked;
     return dossier.open(token, email, lastCode);
   };
-  return { store, networkId: network.id, lastCode: () => lastCode, openAs, db, journal, acces, conf, dossier, alex, sam: as('agent', samAgent.id), direction, compliance: as('compliance', 'conf-1'), shop, buyer, tokenFor, advance: (ms: number) => (clock += ms), files };
+  return { setPanne: (v: boolean) => void (panne = v), store, networkId: network.id, lastCode: () => lastCode, openAs, db, journal, acces, conf, dossier, alex, sam: as('agent', samAgent.id), direction, compliance: as('compliance', 'conf-1'), shop, buyer, tokenFor, advance: (ms: number) => (clock += ms), files };
 }
 
 describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
+  describe('CE23 · une panne de stockage à l’ouverture', () => {
+    const pret = async (options: { maxOpens?: number } = {}) => {
+      const t = await setup(options);
+      const b = await t.buyer(true);
+      await t.dossier.send(t.acces, t.alex, t.shop.id, b.id, CONSENT);
+      const token = await t.tokenFor(b.id);
+      const ouvertures = async () => (await t.db.all("SELECT id FROM business_dossier_accesses WHERE outcome = 'ouvert'")).length;
+      const lignes = async () => (await t.db.all('SELECT id FROM business_dossier_accesses')).length;
+      return { t, b, token, ouvertures, lignes };
+    };
+
+    it('[R17] le même code rouvre ensuite le dossier, et la page sert le document', async () => {
+      const { t, b, token } = await pret();
+      expect((await t.dossier.requestCode(token, b.email)).ok).toBe(true);
+      const code = t.lastCode();
+      t.setPanne(true);
+      expect(await t.dossier.open(token, b.email, code)).toEqual({ ok: false, rule: null, code: 'stockage_indisponible' });
+      t.setPanne(false);
+      const again = await t.dossier.open(token, b.email, code);
+      expect(again.ok).toBe(true);
+      if (again.ok) expect(again.value.pages.map((p) => p.title)).toContain('Bilan 2026');
+      // Servi, le code est consommé : il ne rouvre pas une seconde fois.
+      expect(await t.dossier.open(token, b.email, code)).toMatchObject({ ok: false, code: 'autre_lecteur' });
+    });
+
+    it('[R114] l’ouverture n’est comptée qu’une fois servie : plusieurs pannes n’épuisent pas le lien', async () => {
+      const { t, b, token, ouvertures, lignes } = await pret({ maxOpens: 1 });
+      await t.dossier.requestCode(token, b.email);
+      const code = t.lastCode();
+      t.setPanne(true);
+      for (let i = 0; i < 3; i += 1) await t.dossier.open(token, b.email, code);
+      expect(await ouvertures()).toBe(0);
+      expect(await lignes()).toBe(0);
+      t.setPanne(false);
+      expect((await t.dossier.open(token, b.email, code)).ok).toBe(true);
+      expect(await ouvertures()).toBe(1);
+    });
+
+    it('[R13] [R114] la panne va au journal, sans référence de document, ni message, ni adresse, ni code', async () => {
+      const { t, b, token } = await pret();
+      await t.dossier.requestCode(token, b.email);
+      const code = t.lastCode();
+      t.setPanne(true);
+      await t.dossier.open(token, b.email, code);
+      const events = (await t.journal.all()).filter((e) => e.type === 'commerces.dossier.panne');
+      expect(events).toHaveLength(1);
+      const texte = JSON.stringify(events);
+      expect(texte).toContain('stockage_indisponible');
+      for (const secret of ['r2://', 'bilan', b.email, code, token, 'panne sur']) expect(texte).not.toContain(secret);
+    });
+
+    it('[R113] un mauvais code reste refusé et compté pendant la panne : la panne n’ouvre rien et ne dit rien', async () => {
+      const { t, b, token } = await pret();
+      await t.dossier.requestCode(token, b.email);
+      t.setPanne(true);
+      expect(await t.dossier.open(token, b.email, '000000')).toMatchObject({ ok: false, code: 'autre_lecteur' });
+      expect(await t.db.first("SELECT attempts FROM business_dossier_open_codes WHERE status = 'ouvert'")).toMatchObject({ attempts: 1 });
+    });
+
+    it('[R113] une porte fermée consomme le code, comme avant : il ne resservira pas à sa réouverture', async () => {
+      const { t, b, token } = await pret();
+      await t.dossier.requestCode(token, b.email);
+      const code = t.lastCode();
+      await t.conf.revoke(t.acces, t.alex, b.ndaId, 'demande_repreneur');
+      expect(await t.dossier.open(token, b.email, code)).toMatchObject({ ok: false, code: 'porte_fermee' });
+      expect(await t.db.first('SELECT status FROM business_dossier_open_codes')).toMatchObject({ status: 'utilise' });
+    });
+
+    it('[R17] deux ouvertures simultanées avec le même code : une seule est servie', async () => {
+      const { t, b, token, ouvertures } = await pret();
+      await t.dossier.requestCode(token, b.email);
+      const code = t.lastCode();
+      const [a, c] = await Promise.all([t.dossier.open(token, b.email, code), t.dossier.open(token, b.email, code)]);
+      expect([a.ok, c.ok].filter(Boolean)).toHaveLength(1);
+      expect(await ouvertures()).toBe(1);
+    });
+  });
+
   it('[R114] [R26] chaque ouverture est journalisée avec son lecteur, une fois par ouverture ; le lien part en essai seulement', async () => {
     const t = await setup();
     const b = await t.buyer(true);

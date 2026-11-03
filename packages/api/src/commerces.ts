@@ -281,6 +281,8 @@ export function dossierReaderRoutes(): DossierReaderRoute[] {
       handle: async (s, [token], r) => {
         const b = await body(r);
         const opened = await core(s).dossier.open(token, b.email, b.code);
+        // Une panne de stockage ne consomme rien : le lecteur réessaie avec le même code (CE23).
+        if (!opened.ok && opened.code === 'stockage_indisponible') return json(503, { ok: false, rule: null, code: opened.code });
         // Le lecteur sans compte ne lit jamais pourquoi la porte est fermée : seulement qu'elle l'est.
         return reply(opened.ok ? opened : { ok: false, rule: opened.rule, code: opened.code });
       },

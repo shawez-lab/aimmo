@@ -228,6 +228,25 @@ export interface DossierCommerceOptions {
   baseUrl?: string;
 }
 
+/** Ce qu'une ouverture va servir, déjà lu : le rendu ne touche plus ni la base ni le stockage. */
+interface DossierContents {
+  name: string;
+  sheet: string | null;
+  documents: { title: string; content: string | null }[];
+}
+
+/** Les pages du dossier, chacune avec le filigrane du lecteur et la marque de l'ouverture. */
+function renderPages(contents: DossierContents, mark: string, at: Date): DossierPage[] {
+  const when = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' }).format(at);
+  const watermark = `Confidentiel : copie personnelle de ${contents.name}, ouverte le ${when}. Réf. de copie : ${visibleRef(mark)}.`;
+  // Le filigrane n'est marqué qu'à sa fin : sa référence visible reste d'un bloc.
+  const page = (body: string): string => `${watermark}${hiddenMark(mark)}\n\n${marked(body, mark)}`;
+  const out: DossierPage[] = [];
+  if (contents.sheet !== null) out.push({ title: 'Fiche du commerce', text: page(contents.sheet) });
+  for (const d of contents.documents) out.push({ title: d.title, text: page(d.content ?? 'Document indisponible : votre agent immobilier vous le renverra.') });
+  return out;
+}
+
 export class DossierCommerce {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -465,9 +484,27 @@ export class DossierCommerce {
     const r = await this.readerLink(token, readerEmail);
     if (!('link' in r)) return r;
     const { link } = r;
-    if (!(await this.useCode(link, code))) return this.refusal(link, 'autre_lecteur');
+    const codeId = await this.checkCode(link, code);
+    if (!codeId) return this.refusal(link, 'autre_lecteur');
     const gate = await this.confidentialite.canSendConfidential(link.network_id, link.property_id, link.person_id, 'lecteur');
-    if (!gate.ok) return this.refusal(link, 'porte_fermee', gate.codes);
+    if (!gate.ok) {
+      await this.useCode(codeId);
+      return this.refusal(link, 'porte_fermee', gate.codes);
+    }
+    // Tout est lu avant d'écrire quoi que ce soit : une panne ne consomme ni le code ni une ouverture, et le lecteur réessaie.
+    let contents: DossierContents;
+    try {
+      contents = await this.readContents(link);
+    } catch {
+      // Le message de la panne reste hors du journal : il pourrait nommer un document [R13].
+      await appendEvent(
+        this.journal,
+        { type: 'commerces.dossier.panne', actor: 'lecteur', subject: `property:${link.property_id}`, data: { rule: 'R114', code: 'stockage_indisponible', link: link.id } },
+        this.now,
+      );
+      return { ok: false, rule: null, code: 'stockage_indisponible' };
+    }
+    if (!(await this.useCode(codeId))) return this.refusal(link, 'autre_lecteur');
     const at = this.now();
     const accessId = this.newId();
     const mark = this.newMark();
@@ -480,25 +517,30 @@ export class DossierCommerce {
     );
     if (changes !== 1) return this.refusal(link, 'epuise');
     await appendEvent(this.journal, { type: 'commerces.dossier.ouvert', actor: 'lecteur', subject: `property:${link.property_id}`, data: { rule: 'R114', access: accessId, link: link.id } }, this.now);
-    return { ok: true, value: { accessId, pages: await this.pages(link, mark, at) } };
+    return { ok: true, value: { accessId, pages: renderPages(contents, mark, at) } };
   }
 
-  /** Le dernier code du lien, encore ouvert et valable, égal au code donné : il est consommé. Un essai faux est compté. */
-  private async useCode(link: LinkRow, code: unknown): Promise<boolean> {
+  /** Le dernier code du lien, encore ouvert et valable, égal au code donné : son identifiant. Un essai faux est compté. */
+  private async checkCode(link: LinkRow, code: unknown): Promise<string | null> {
     const row = await this.db.first<{ id: string; code_hash: string; expires_at: string }>(
       "SELECT id, code_hash, expires_at FROM business_dossier_open_codes WHERE link_id = ? AND status = 'ouvert' ORDER BY created_at DESC, rowid DESC LIMIT 1",
       [link.id],
     );
-    if (!row || this.now().getTime() > Date.parse(row.expires_at)) return false;
+    if (!row || this.now().getTime() > Date.parse(row.expires_at)) return null;
     const given = typeof code === 'string' && /^\d{6}$/.test(code) ? await sha256(`${row.id}:${code}`) : '';
     if (!given || !sameSignatureHash(given, row.code_hash)) {
       await this.db.run(
         "UPDATE business_dossier_open_codes SET attempts = attempts + 1, status = CASE WHEN attempts + 1 >= ? THEN 'bloque' ELSE status END WHERE id = ? AND status = 'ouvert'",
         [MAX_CODE_ATTEMPTS, row.id],
       );
-      return false;
+      return null;
     }
-    const { changes } = await this.db.run("UPDATE business_dossier_open_codes SET status = 'utilise' WHERE id = ? AND status = 'ouvert'", [row.id]);
+    return row.id;
+  }
+
+  /** Consomme le code, une seule fois : de deux ouvertures simultanées, une seule passe. */
+  private async useCode(codeId: string): Promise<boolean> {
+    const { changes } = await this.db.run("UPDATE business_dossier_open_codes SET status = 'utilise' WHERE id = ? AND status = 'ouvert'", [codeId]);
     return changes === 1;
   }
 
@@ -585,32 +627,23 @@ export class DossierCommerce {
     return (await this.db.first("SELECT 1 FROM person_identifiers WHERE person_id = ? AND kind = 'email' AND value = ?", [link.person_id, value])) ? value : null;
   }
 
-  /** Les pages du dossier, chacune avec le filigrane du lecteur et la marque de l'ouverture. */
-  private async pages(link: LinkRow, mark: string, at: Date): Promise<DossierPage[]> {
+  /** Ce que le dossier sert au lecteur, lu sans rien écrire. Un document manquant ou changé est `null` ; une panne remonte. */
+  private async readContents(link: LinkRow): Promise<DossierContents> {
     const person = await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE id = ?', [link.person_id]);
     const name = [person?.first_name, person?.last_name].filter((x): x is string => !!x).join(' ') || 'lecteur identifié';
-    const when = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' }).format(at);
-    const watermark = `Confidentiel : copie personnelle de ${name}, ouverte le ${when}. Réf. de copie : ${visibleRef(mark)}.`;
-    // Le filigrane n'est marqué qu'à sa fin : sa référence visible reste d'un bloc.
-    const page = (body: string): string => `${watermark}${hiddenMark(mark)}\n\n${marked(body, mark)}`;
-    const out: DossierPage[] = [];
     const sheet = await this.fiches.current(link.property_id);
     const property = await this.db.first<{ reference: string }>('SELECT reference FROM properties WHERE id = ?', [link.property_id]);
-    if (sheet) out.push({ title: 'Fiche du commerce', text: page(sheetText(sheet.sheet, property?.reference ?? '')) });
     const docs = await this.db.all<{ title: string; storage_ref: string; content_sha256: string }>(
       'SELECT title, storage_ref, content_sha256 FROM business_dossier_documents WHERE network_id = ? AND property_id = ? ORDER BY added_at, rowid',
       [link.network_id, link.property_id],
     );
+    const documents: DossierContents['documents'] = [];
     for (const d of docs) {
       const content = await this.storage.read(d.storage_ref);
       // Un document changé depuis qu'il a été rangé n'est pas servi : ce n'est plus celui que l'agent a mis au dossier.
-      if (content === null || (await sha256(content)) !== d.content_sha256) {
-        out.push({ title: d.title, text: page('Document indisponible : votre agent immobilier vous le renverra.') });
-        continue;
-      }
-      out.push({ title: d.title, text: page(content) });
+      documents.push({ title: d.title, content: content !== null && (await sha256(content)) === d.content_sha256 ? content : null });
     }
-    return out;
+    return { name, sheet: sheet ? sheetText(sheet.sheet, property?.reference ?? '') : null, documents };
   }
 
   /** Qui voit le bien en entier lit ; l'agent du bien et la direction écrivent [R16]. */
