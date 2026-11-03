@@ -49,7 +49,7 @@ const REFUSALS: Record<string, string> = {
   text_reward: 'Aucune récompense ni cadeau dans une relance.',
   text_wording: 'Écrivez « agent immobilier » et « offert », sans parler d’outil.',
   already_assigned: 'Cette recommandation a déjà un agent : relisez la liste.',
-  bad_agent: 'Cet agent n’est plus en activité : choisissez-en un autre.',
+  bad_agent: 'Cet agent ne peut pas recevoir cette recommandation : dossier incomplet ou départ. Choisissez-en un autre.',
   awaiting_handover: 'Cette personne attend la passation d’un agent parti : elle se règle par son départ.',
   followed_by_other: 'Cette personne est déjà suivie par un autre agent : choisissez-le.',
 };

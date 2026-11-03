@@ -27,6 +27,7 @@ import { normalizeIdentifier } from '../../fiche/normalize.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
 import type { Annuaire } from '../../partenaires/annuaire.ts';
+import { agentState } from '../../acces/etat-agent.ts';
 import { agentGone } from '../../reseau/depart.ts';
 import { agentBlocked } from './etat-agent.ts';
 
@@ -399,7 +400,11 @@ export class RecommandationsGagner {
       'SELECT id, first_name, last_name FROM agents WHERE network_id = ? AND status = ? ORDER BY last_name, first_name, id',
       [viewer.networkId, 'active'],
     );
-    return { ok: true, value: rows.map((a) => ({ agentId: a.id, firstName: a.first_name, lastName: a.last_name })) };
+    // Un agent au dossier incomplet ou dont le départ est arrivé ne verrait pas la tâche : personne n'appellerait.
+    const at = this.now();
+    const able: AssignableAgent[] = [];
+    for (const a of rows) if ((await agentState(this.db, viewer.networkId, a.id, at)) === 'actif') able.push({ agentId: a.id, firstName: a.first_name, lastName: a.last_name });
+    return { ok: true, value: able };
   }
 
   /** La direction donne à un agent actif une recommandation de partenaire qui n'en avait pas ; une seule fois. */
@@ -409,7 +414,7 @@ export class RecommandationsGagner {
     if (!row || row.call_due_at === null) return this.refused(viewer, null, 'unknown');
     if ((await this.currentOwner(row, this.now())) !== null) return { ok: false, rule: null, code: 'already_assigned' };
     const agent = await this.db.first('SELECT 1 FROM agents WHERE id = ? AND network_id = ? AND status = ?', [agentId, viewer.networkId, 'active']);
-    if (!agent) return { ok: false, rule: null, code: 'bad_agent' };
+    if (!agent || (await agentState(this.db, viewer.networkId, agentId, this.now())) !== 'actif') return { ok: false, rule: null, code: 'bad_agent' };
     const members = await this.fiche.membersOf(await this.fiche.rootOf(row.referred_id));
     // La personne a pu être donnée à un agent entre-temps (par une autre recommandation) : la tâche va à lui seul, sinon
     // personne ne pourrait la voir ni la clore [R16].

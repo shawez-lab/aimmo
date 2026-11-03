@@ -283,6 +283,24 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(alexList.ok && alexList.value.map((r) => r.assignable)).toEqual([undefined]);
   });
 
+  it('[R16] [R86] [G16] un agent au dossier incomplet n’est ni proposé ni accepté : la recommandation reste à la direction', async () => {
+    const t = await setup();
+    const p = await t.partner('Étude Essai');
+    await t.gagner.recommend(t.as(p), t.input());
+    const [row] = await t.rows();
+    // Une seule pièce rangée : le dossier existe, il n'est pas complet.
+    await t.db.run(
+      "INSERT INTO agent_file_pieces (id, network_id, agent_id, kind, version, ref, issued_on, valid_until, is_draft, recorded_by, recorded_at) VALUES ('piece-1', ?, ?, 'contrat_agent_commercial', 1, 'ref-1', '2027-01-01', NULL, 0, 'dir-1', '2027-01-01T08:00:00.000Z')",
+      [t.dir.networkId, t.sam.id],
+    );
+    const agents = await t.gagner.assignableAgents(t.dir);
+    expect(agents.ok && agents.value.map((a) => a.agentId)).toEqual([t.alex.id]);
+    expect(await t.gagner.assign(t.dir, row!.id, t.sam.id)).toEqual({ ok: false, rule: null, code: 'bad_agent' });
+    const dirList = await t.gagner.toCall(t.dir);
+    expect(dirList.ok && dirList.value.map((r) => r.recommendationId)).toEqual([row!.id]);
+    expect(await t.gagner.assign(t.dir, row!.id, t.alex.id)).toEqual({ ok: true, value: { assigned: true } });
+  });
+
   it('[R16] deux recommandations de la même personne sans agent : la seconde va d’elle-même à l’agent qui a reçu la première', async () => {
     const t = await setup();
     const p = await t.partner('Étude Essai');

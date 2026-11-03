@@ -288,7 +288,7 @@ describe('G13 · écran « Gagner des mandats » de l’application', () => {
 
   describe('G16 · la direction attribue une recommandation sans agent', () => {
     const ITEM = { origin: 'partner', recommendationId: 'rec9', personId: 'per9', firstName: 'Hugo', sourceLabel: 'Recommandé par Étude Essai', channel: 'phone', dueAt: '2027-10-13T08:00:00.000Z', assignable: true };
-    const AGENTS = [{ agentId: 'ag1', firstName: 'Alex', lastName: 'Agent' }, { agentId: 'ag2', firstName: INJECTED, lastName: 'Essai' }];
+    const AGENTS = [{ agentId: 'ag9', firstName: 'Alex', lastName: 'Agent' }, { agentId: 'ag1', firstName: INJECTED, lastName: 'Essai' }];
     const LIST = { 'GET /v1/gagner/recommandations/a-appeler': ok([ITEM]) };
     const POST = 'POST /v1/gagner/recommandations/rec9/attribuer';
     const ready = async (answers: Record<string, Answer> = {}) => {
@@ -303,8 +303,10 @@ describe('G13 · écran « Gagner des mandats » de l’application', () => {
       expect(t.calls.some((c) => c.url.endsWith('/recommandations/agents'))).toBe(false);
       await t.click(t.byText('Choisir l’agent'));
       const pick = t.input('Agent');
-      expect(pick.children.map((o) => o.attributes.value ?? (o as unknown as { value: string }).value)).toEqual(['', 'ag1', 'ag2']);
-      expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+      // L'ordre reçu, ni trié par identifiant ni par nom ; le nom reste du texte, jamais du HTML.
+      expect(pick.children.map((o) => o.attributes.value ?? (o as unknown as { value: string }).value)).toEqual(['', 'ag9', 'ag1']);
+      expect(pick.children.map((o) => o.textContent)).toEqual(['Choisissez un agent', 'Alex Agent', `${INJECTED} Essai`]);
+      expect(GAGNER_SCRIPT).not.toMatch(/innerHTML|insertAdjacentHTML|document\.write/);
     });
 
     it('[R16] sans choix, rien ne part ; le choix part, et l’écran relit la liste', async () => {
@@ -314,15 +316,15 @@ describe('G13 · écran « Gagner des mandats » de l’application', () => {
       await t.click(t.byText('Attribuer'));
       expect(t.posts()).toHaveLength(0);
       expect(t.state()).toBe('Choisissez un agent.');
-      t.input('Agent').value = 'ag1';
+      t.input('Agent').value = 'ag9';
       await t.click(t.byText('Attribuer'));
-      expect(t.posts().map((c) => [c.url, c.body])).toEqual([['/v1/gagner/recommandations/rec9/attribuer', JSON.stringify({ agentId: 'ag1' })]]);
+      expect(t.posts().map((c) => [c.url, c.body])).toEqual([['/v1/gagner/recommandations/rec9/attribuer', JSON.stringify({ agentId: 'ag9' })]]);
       expect(t.state()).toContain('Recommandation attribuée');
       expect(t.byText('Attribuer')).toBeUndefined();
     });
 
     it('les refus sont dits en français, sans code ; la réponse perdue n’annonce rien', async () => {
-      const cases: [string, string][] = [['already_assigned', 'déjà un agent'], ['bad_agent', 'plus en activité'], ['awaiting_handover', 'passation'], ['followed_by_other', 'déjà suivie']];
+      const cases: [string, string][] = [['already_assigned', 'déjà un agent'], ['bad_agent', 'dossier incomplet ou départ'], ['awaiting_handover', 'passation'], ['followed_by_other', 'déjà suivie']];
       for (const [code, text] of cases) {
         const t = await ready({ [POST]: no(409, { ok: false, rule: null, code }) });
         await t.click(t.byText('Choisir l’agent'));
