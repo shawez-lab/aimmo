@@ -1939,7 +1939,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### CE21 · Les alertes de cession, lues et décidées par le responsable de la conformité
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#327) ; relecture forte 1 P1 corrigé ; ce qui manque est dit à la levée de l'alerte, l'état actuel du coffre n'est pas relu ; Codex non attendu (H03).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : CE08, L10
 - Cahier : M16, M12 ; R14, R15, R16, R17, R118, R201.
 - Objectif : trouvé le 2026-11-03 par la voie 2, en comparant les routes aux appels de l'écran : `GET /v1/commerces/vigilance` et sa décision n'ont aucun appel de l'application, et CE08 renvoyait au branchement une liste que CE10 n'a pas faite. R118 est dite en service, mais le responsable n'a aucun moyen de voir ces alertes. Les donner sur son écran, sans changer le code de CE08.
