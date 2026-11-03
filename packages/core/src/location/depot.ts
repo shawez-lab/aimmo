@@ -158,7 +158,7 @@ export class DepotsLocation {
     } catch {
       return bad('stockage_indisponible');
     }
-    // La pièce d'un garant ne donne au candidat ni sa référence ni son empreinte : elles restent sur la ligne du dépôt.
+    // La pièce d'un garant ne donne au candidat ni son chemin ni son empreinte, seulement l'identifiant de sa ligne de dépôt.
     const data = place ? { kind, size: bytes.length, deposit: id } : { kind, ref, size: bytes.length, sha256: sha };
     await appendEvent(this.journal, { type: 'location.depot', actor, subject, data }, this.now);
     return { ok: true, value: { kind, ref, sha256: sha, size: bytes.length } };

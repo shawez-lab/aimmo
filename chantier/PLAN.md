@@ -1803,6 +1803,8 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Objectif : un fichier de `location/<logement>/candidatures/<id>/` déposé puis refusé, ou après une réponse perdue, reste stocké sans ligne `rental_application_pieces` : la carte des accès ne le trouve pas. Ranger chaque dépôt pour que l'accès et l'effacement le voient. À faire avant tout usage réel de ces pièces.
 - Critères : un dépôt refusé ensuite par le geste apparaît sur la carte de la personne [R95] (test) ; le plan d'effacement le compte [R97] (test) ; ni contenu ni nom au journal [R13] (test) ; rien n'est effacé par le dépôt lui-même [R17] (test).
 - Attend : rien pour le construire ; H29 pour l'effacement réel.
+- Décidé (2026-11-03, voie 2) : table `rental_piece_deposits` (migration `1590`), ligne écrite avant le fichier, à la personne pour qui il est déposé ; le titulaire est dit au dépôt (`?holder=`), un visa Visale va au candidat ; un fichier ne se range pas au nom d'un autre titulaire ; au journal, le dépôt d'une pièce passe sous la candidature, plus sous le logement du propriétaire.
+- Reste : une pièce au titulaire Visale, dans `rental_application_pieces`, n'est sur aucune carte par cette table, seulement par sa ligne de dépôt. Fichiers déposés avant W19 sans ligne : aucun usage réel (`PIECES` pas encore relié, H25).
 
 ### W20 · Le garant passe par les mêmes droits que le candidat
 - Statut : à faire
