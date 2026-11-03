@@ -1980,12 +1980,29 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### CE22 · Brancher le dépôt des documents du dossier sur le stockage réel
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#335) ; relecture forte 2 P1 : test du lecteur ajouté, liaison perdue au déploiement confiée à X27 ; marque d'ordre gardée à la relecture ; un caractère isolé invalide ne se relit pas à l'identique, non traité ; jamais essayé sur un vrai compartiment ; Codex non attendu (H03).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : CE20
 - Cahier : M16 ; R16, R114.
 - Objectif : `worker.ts` ne passe aucun `storage` à M16 : le dossier ne sert que la fiche, et CE20 répond `stockage_absent`. Avec le compartiment de H38, passer un `DossierStorage` qui lit et écrit du texte ; absent, rien ne change.
 - Critères : avec le compartiment, un texte déposé se relit à l'identique (test) ; sans lui, `stockage_absent` reste dit (test).
 - Attend : H38 pour un usage réel, rien pour le code.
+
+### X27 · Les compartiments R2 restent liés après un déploiement
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : CE22
+- Cahier : Architecture technique ; R17.
+- Objectif : trouvé par la relecture forte de CE22 : `wrangler.toml` ne déclare aucun `[[r2_buckets]]`, et d'après le code de wrangler, `wrangler deploy` retire une liaison posée à la main dans Cloudflare : `PIECES`, `MEDIA`, `COFFRE` et `COMMERCES` disparaîtraient au déploiement suivant, et leurs documents deviendraient indisponibles. Déclarer au déploiement la liaison de chaque compartiment qui existe, et seulement de ceux-là, car une liaison vers un compartiment absent ferait échouer la mise en ligne.
+- Critères : compartiment existant lié, absent non lié (test) ; le fichier de configuration garde le reste (test) ; liste illisible : la mise en ligne continue, sans liaison, et le dit dans le résumé du travail (test) ; le coffre reste sur son propre compartiment [L09] (test).
+- Attend : un jeton Cloudflare qui lit la liste des compartiments, pour un usage réel (H45).
+
+### CE23 · Une panne de stockage à l'ouverture d'un dossier ne consomme pas le code
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : CE22
+- Cahier : M16 ; R17, R114.
+- Objectif : trouvé par la relecture forte de CE22 : `dossier.ts`, si le stockage tombe en panne à l'ouverture, le code du lecteur est consommé et l'ouverture comptée comme faite, sans rien servir (réponse 500). Lire les documents avant de consommer le code, ou rendre ce code utilisable.
+- Critères : panne à l'ouverture : le même code rouvre ensuite le dossier (test) ; l'ouverture n'est comptée qu'une fois servie (test) ; panne écrite au journal, sans donnée [R13] (test).
+- Attend : rien.
 
 ### W26 · Lectures sans écran à vérifier, une par une
 - Statut : fait (2026-11-03)
