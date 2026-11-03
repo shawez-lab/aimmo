@@ -244,6 +244,28 @@ async function deposit(s: PartenairesServices, viewer: Viewer, [id]: string[], r
   return reply(done);
 }
 
+/**
+ * La direction ou un agent dépose la preuve d'un justificatif, en PDF, JPEG ou PNG, pour un partenaire de son réseau, et
+ * le serveur choisit la référence que le justificatif reprend [R73]. L'accès d'abord, avant de lire le moindre octet ; le
+ * contenu n'est jamais lu au-delà de sa signature, et le journal ne garde que l'empreinte [R13].
+ */
+async function depositCredentialProof(s: PartenairesServices, viewer: Viewer, [id]: string[], request: Request): Promise<Response> {
+  const current = await core(s).annuaire.status(viewer, id!);
+  if (!current.ok) return reply(current);
+  const type = (request.headers.get('content-type') ?? '').toLowerCase().split(';')[0]!.trim();
+  const kind = UPLOAD_TYPES.find((t) => t.type === type);
+  if (!kind) return json(415, { ok: false, rule: null, code: 'bad_type' });
+  if (!s.uploads) return json(503, { ok: false, rule: null, code: 'storage_unavailable' });
+  const bytes = await readUpload(request);
+  if (!bytes) return json(413, { ok: false, rule: null, code: 'too_large' });
+  if (bytes.byteLength < kind.magic.length || !kind.magic.every((b, i) => bytes[i] === b)) return json(415, { ok: false, rule: null, code: 'bad_type' });
+  const proofRef = `partenaires/${id!}/${crypto.randomUUID()}.${kind.ext}`;
+  const sha256 = await sha256Hex(bytes);
+  await s.uploads.put(proofRef, bytes, kind.type);
+  await appendEvent(s.journal, { type: 'partenaire.preuve_deposee', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `partner:${id!}`, data: { rule: 'R73', sha256 } }, s.now);
+  return reply({ ok: true, value: { proofRef } });
+}
+
 /** Une note d'accord : 10 à 1 000 caractères, sans caractère de contrôle autre que le retour à la ligne. */
 export const MAX_CONSENT_NOTE = 1000;
 const CONSENT_CHANNEL_LABELS: Readonly<Record<string, string>> = Object.freeze({ oral: 'de vive voix', ecrit: 'par écrit', mail: 'par mail', sms: 'par SMS', whatsapp: 'par WhatsApp' });
@@ -339,6 +361,13 @@ const ROUTES: PartenairesRoute[] = [
     name: 'partenaires.annuaire.opposition',
     roles: DIRECTION,
     handle: async (s, v, [id]) => reply(await core(s).adresses.oppose(v, id!)),
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/partenaires/annuaire/${ID}/preuves$`),
+    name: 'partenaires.annuaire.preuve',
+    roles: STAFF,
+    handle: depositCredentialProof,
   },
   {
     method: 'POST',
