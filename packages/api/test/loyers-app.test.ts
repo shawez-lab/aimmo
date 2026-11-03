@@ -319,36 +319,90 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
 
     describe('X21 · la zone de loyer', () => {
       const POST_ZONE = 'POST /v1/location/zones';
+      const LIST = 'GET /v1/location/zones?insee=99001';
+      const OLD = { zone: 'tres_tendue', effectiveFrom: '2025-03-01', source: 'Texte <img src=x>' };
       const zone = async (answers: Record<string, Answer> = {}, data: unknown = { canRecord: true, rules: [] }) => {
-        const t = await open(data, answers);
+        const t = await open(data, { [LIST]: ok([]), ...answers });
         const press = async () => {
           t.box.all().find((e) => e.tagName === 'button' && e.textContent === 'Ranger cette zone')!.listeners.click!({});
           await settle();
         };
-        const fill = () => {
+        const fillZone = (day = '2025-03-01') => {
           t.input('Zone').value = 'tendue';
-          t.input('Zone en vigueur depuis').value = '2025-03-01';
+          t.input('Zone en vigueur depuis').value = day;
           t.input('Source de la zone : le texte qui la fixe').value = 'Texte inventé';
         };
-        return { ...t, press, fillZone: fill };
+        const sent = () => t.posts().filter((c) => c.url === '/v1/location/zones');
+        return { ...t, press, fillZone, sent };
       };
 
-      it('[R16] sans droit, pas de formulaire ; la direction range la zone telle qu’écrite, et c’est dit', async () => {
+      it('[R16] sans droit, ni liste ni formulaire ; la direction range la zone telle qu’écrite, puis tout est relu', async () => {
         const reader = await zone({}, { canRecord: false, rules: [] });
         expect(reader.box.textContent).not.toContain('Ranger cette zone');
+        expect(reader.calls.some((c) => c.url === '/v1/location/zones?insee=99001')).toBe(false);
         const t = await zone({ [POST_ZONE]: ok(true) });
+        expect(t.box.textContent).toContain('Aucune zone rangée : le plafond le plus bas s’applique.');
         t.fillZone();
         await t.press();
-        expect(t.posts().at(-1)).toMatchObject({ url: '/v1/location/zones', body: { inseeCode: '99001', zone: 'tendue', effectiveFrom: '2025-03-01', source: 'Texte inventé' } });
-        expect(t.state()).toBe('Zone tendue rangée, en vigueur à partir du 01/03/2025.');
+        expect(t.sent().at(-1)!.body).toEqual({ inseeCode: '99001', zone: 'tendue', effectiveFrom: '2025-03-01', source: 'Texte inventé' });
+        expect(t.state()).toBe('Zone tendue rangée, avec effet au 01/03/2025.');
+        expect(t.calls.at(-1)!.url).toBe('/v1/location/zones?insee=99001');
       });
 
-      it('[R10] rien n’est choisi d’avance : sans zone, rien ne part', async () => {
+      it('[R10] les zones rangées sont lues : celle qui décide, celle remplacée, celle à venir, chacune avec sa source', async () => {
+        const t = await zone({ [LIST]: ok([{ zone: 'autre', effectiveFrom: '2099-01-01', source: 'À venir' }, { zone: 'tendue', effectiveFrom: '2025-03-01', source: 'Texte <img src=x>' }, { zone: 'autre', effectiveFrom: '2020-01-01', source: 'Ancien' }]) });
+        const text = t.box.textContent;
+        expect(text).toContain('Autre zone, à venir : décide déjà pour un bail qui commence à partir du 01/01/2099. Source : À venir.');
+        expect(text).toContain('Zone tendue, en vigueur depuis le 01/03/2025. Source : Texte <img src=x>.');
+        expect(text).toContain('Autre zone, remplacée, depuis le 01/01/2020.');
+      });
+
+      it('[R102] une date plus ancienne que la dernière ne corrige rien : dit, et il faut appuyer de nouveau', async () => {
+        const t = await zone({ [LIST]: ok([OLD]), [POST_ZONE]: ok(true) });
+        t.fillZone('2023-08-26');
+        await t.press();
+        expect(t.sent()).toEqual([]);
+        expect(t.state()).toContain('elle ne changera pas la zone en vigueur');
+        await t.press();
+        expect(t.sent().length).toBe(1);
+      });
+
+      it('[R102] une date dans le futur est dite ; changer la saisie redemande', async () => {
+        const t = await zone({ [POST_ZONE]: ok(true) });
+        t.fillZone('2099-01-01');
+        await t.press();
+        expect(t.sent()).toEqual([]);
+        expect(t.state()).toContain('Cette date est dans le futur');
+        t.fillZone('2098-01-01');
+        await t.press();
+        expect(t.sent()).toEqual([]);
+        await t.press();
+        expect(t.sent().length).toBe(1);
+      });
+
+      it('[R10] le message dit ce qui est parti, même si un champ change pendant l’envoi', async () => {
+        let release: (r: Response) => void = () => undefined;
+        const t = await zone({ [POST_ZONE]: () => new Promise<Response>((r) => { release = r; }) });
+        t.fillZone();
+        await t.press();
+        t.input('Zone').value = '';
+        t.input('Zone en vigueur depuis').value = '';
+        release(Response.json({ ok: true, data: true }));
+        await settle();
+        expect(t.state()).toBe('Zone tendue rangée, avec effet au 01/03/2025.');
+      });
+
+      it('[R10] rien n’est choisi d’avance : sans zone, rien ne part ; une liste non lue n’ouvre pas de formulaire', async () => {
         const t = await zone({ [POST_ZONE]: ok(true) });
         expect(t.input('Zone').value).toBe('');
         await t.press();
-        expect(t.posts().filter((c) => c.url === '/v1/location/zones')).toEqual([]);
+        expect(t.sent()).toEqual([]);
         expect(t.state()).toBe('Choisissez la zone.');
+        const down = await zone({ [LIST]: no(500, { ok: false }) });
+        expect(down.box.textContent).toContain('Zone indisponible pour le moment.');
+        expect(down.box.textContent).not.toContain('Ranger cette zone');
+        const off = await zone({ [LIST]: () => Promise.reject(new TypeError('hors ligne')) });
+        expect(off.box.textContent).toContain('Pas de réseau pour la zone');
       });
 
       it('[R10] la commune changée depuis la lecture : rien ne part', async () => {
@@ -356,7 +410,7 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
         t.fillZone();
         t.els['loyers-commune']!.value = '99002';
         await t.press();
-        expect(t.posts().filter((c) => c.url === '/v1/location/zones')).toEqual([]);
+        expect(t.sent()).toEqual([]);
         expect(t.state()).toContain('Le code de la commune a changé');
       });
 
@@ -364,9 +418,9 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
         [403, 'role', 'Ce n’est pas dans vos droits.'],
         [400, 'bad_source', 'Écrivez la source de la zone'],
         [400, 'bad_date', 'Le jour d’entrée en vigueur'],
-        [400, 'already_recorded', 'Une zone est déjà rangée pour cette commune à cette date'],
+        [400, 'already_recorded', 'Pour corriger, choisissez une date d’effet plus récente.'],
         [400, 'autre_chose', 'La zone n’est pas rangée.'],
-      ] as [number, string, string][])('[R16] refus %i %s : dit en français', async (status, code, text) => {
+      ] as [number, string, string][])('[R16] refus %i %s : dit en français, la saisie reste', async (status, code, text) => {
         const t = await zone({ [POST_ZONE]: no(status, { ok: false, rule: null, code }) });
         t.fillZone();
         await t.press();

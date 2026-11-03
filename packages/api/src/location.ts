@@ -232,6 +232,7 @@ const ROUTES: LocationRoute[] = [
   { method: 'GET', pattern: new RegExp(`^/location/${ID}/echeances$`), name: 'location.echeances', roles: READERS, handle: async (s, v, [id]) => reply(await core(s).listings.notices(v, id)) },
 
   /* Honoraires et dépôt de garantie (W02) [R102]. */
+  { method: 'GET', pattern: /^\/location\/zones$/, name: 'location.zones', roles: ['direction'], handle: async (s, v, _p, r) => reply(await core(s).fees.zonesOf(v, new URL(r.url).searchParams.get('insee') ?? '')) },
   {
     method: 'POST',
     pattern: /^\/location\/zones$/,
