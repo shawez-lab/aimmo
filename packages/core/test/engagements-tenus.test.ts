@@ -383,15 +383,15 @@ describeWithSqlite('IN07 · engagements de service tenus', () => {
 
   it('[R216] un accord périmé par une exclusion levée, ou une personne exclue à la mise en vente : à part, comme à l’envoi', async () => {
     const t = await setup();
-    const excluded = (id: string, person: string, noted: string, lifted: string, channel: string | null = null) =>
-      t.db.run("INSERT INTO exclusions (id, network_id, person_id, reason, channel, noted_at, lifted_at, created_at) VALUES (?, ?, ?, 'stop', ?, ?, ?, ?)", [id, t.net, person, channel, noted, lifted, noted]);
+    const excluded = (id: string, person: string, noted: string, lifted: string) =>
+      t.db.run("INSERT INTO exclusions (id, network_id, person_id, reason, noted_at, lifted_at, created_at) VALUES (?, ?, ?, 'stop', ?, ?, ?)", [id, t.net, person, noted, lifted, noted]);
     await onSale(t, 'b1', T('10T10:00:00'));
     await excluded('x-a', 'p1', T('02T08:00:00'), T('03T08:00:00'));
     await alert(t, 'b1', 'p1', { sentAt: T('20T10:00:00') });
     await excluded('x-b', 'p2', T('09T08:00:00'), T('15T08:00:00'));
     await alert(t, 'b1', 'p2', { sentAt: T('20T10:00:00') });
     // Exclue sur un autre canal seulement : l'accord par mail valait, le retard compte.
-    await excluded('x-c', 'p3', T('09T08:00:00'), T('09T09:00:00'), 'sms');
+    await t.db.run("INSERT INTO exclusions (id, network_id, person_id, reason, channel, noted_at, created_at) VALUES ('x-c', ?, 'p3', 'stop', 'sms', ?, ?)", [t.net, T('09T08:00:00'), T('09T08:00:00')]);
     await t.db.run("INSERT INTO exclusions (id, network_id, person_id, reason, channel, noted_at, created_at) VALUES ('x-d', ?, 'p4', 'stop', 'email', ?, ?)", [t.net, T('09T08:00:00'), T('09T08:00:00')]);
     await alert(t, 'b1', 'p4', { sentAt: T('20T10:00:00') });
     await alert(t, 'b1', 'p3', { sentAt: T('20T10:00:00') });
