@@ -4,3 +4,4 @@ export * from './calcul.ts';
 export * from './contraintes.ts';
 export * from './note.ts';
 export * from './alertes.ts';
+export * from './historique.ts';

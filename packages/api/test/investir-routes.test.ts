@@ -57,6 +57,7 @@ const SAMPLE_PATHS: Record<string, string> = {
   'investir.projets': '/investir/projets',
   'investir.biens': '/investir/biens',
   'investir.biens.sans_commune': '/investir/biens/sans-commune',
+  'investir.historique': '/investir/projets/p1/historique',
   'investir.profil.lu': '/investir/projets/p1/profil',
   'investir.profil': '/investir/projets/p1/profil',
   'investir.loyers.import': '/investir/loyers',

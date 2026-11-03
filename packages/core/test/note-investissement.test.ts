@@ -6,7 +6,9 @@ import {
   Contraintes,
   FEW_OBSERVATIONS,
   LoyersMarche,
+  HistoriqueProjet,
   NotesInvestissement,
+  PROJECT_HISTORY_LIMIT,
   PROFESSIONAL_REFERRAL,
   ProfilInvestisseur,
   forbiddenPhrases,
@@ -342,5 +344,72 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     expect(r.value.origin).toBe('secours');
     expect(r.value.text.length).toBeLessThanOrEqual(20_000);
     expect((await t.journal.all()).some((e) => e.type === 'investir.note.secours' && (e.data as { code: string }).code === 'longueur')).toBe(true);
+  });
+});
+
+describeWithSqlite('Y14 · retrouver les calculs et les notes d’un projet', () => {
+  async function history() {
+    const t = await setup();
+    const h = new HistoriqueProjet(t.db, t.journal);
+    const agent = t.as('agent', t.alex.id);
+    return { ...t, h, agent };
+  }
+
+  it('[R16] la liste ne rend que le projet, à l’agent de la fiche et à la direction ; les autres sont refusés, au journal', async () => {
+    const t = await history();
+    expect(await t.h.of(t.acces, t.agent, t.project.id)).toMatchObject({ ok: true, value: { more: false, hidden: 0, notes: [] } });
+    expect(await t.h.of(t.acces, t.as('direction', 'dir-1'), t.project.id)).toMatchObject({ ok: true });
+    expect(await t.h.of(t.acces, t.as('compliance', 'conf-1'), t.project.id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.h.of(t.acces, t.as('agent', t.sam.id), t.project.id)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.h.of(t.acces, t.agent, 'projet-inconnu')).toEqual({ ok: false, rule: 'R16', code: 'unknown' });
+    const journal = await t.journal.all();
+    expect(journal.some((e) => e.type === 'investir.historique_lu')).toBe(true);
+    expect(journal.some((e) => e.type === 'acces.refuse' && (e.data as { kind?: string }).kind === 'investment_history')).toBe(true);
+  });
+
+  it('[R17] les lignes disent ce qui a été rangé, sans rien recalculer ni écrire de calcul ou de note', async () => {
+    const t = await history();
+    const note = await t.notes.draft(t.acces, t.agent, { calculationId: t.calcId, projectId: t.project.id });
+    if (!note.ok) throw new Error(note.code);
+    const count = async () => (await t.db.first<{ n: number }>('SELECT (SELECT COUNT(*) FROM investment_calculations) + (SELECT COUNT(*) FROM investment_notes) AS n'))!.n;
+    const before = await count();
+    const stored = await t.calculs.get(t.network.id, t.calcId);
+    const r = await t.h.of(t.acces, t.agent, t.project.id);
+    if (!r.ok) throw new Error(r.code);
+    expect(await count()).toBe(before);
+    const line = r.value.calculs.find((c) => c.id === t.calcId)!;
+    expect(line).toMatchObject({ status: 'complet', reference: 'REF-1' });
+    expect(stored!.result.status === 'complet' && line.grossYieldBp).toBe(stored!.result.status === 'complet' ? stored!.result.grossYieldBp.central : false);
+    expect(r.value.notes).toEqual([{ id: note.value.id, calculationId: note.value.calculationId, createdAt: note.value.createdAt, status: 'a_valider', validatedAt: null, reference: 'REF-1' }]);
+    expect(JSON.stringify(r.value)).not.toContain(note.value.text.slice(0, 40));
+  });
+
+  it('[R16] [R10] une ligne dont le bien n’est plus visible sort, et le nombre sorti est dit', async () => {
+    const t = await history();
+    const note = await t.notes.draft(t.acces, t.agent, { calculationId: t.calcId, projectId: t.project.id });
+    expect(note.ok).toBe(true);
+    await t.db.run('UPDATE properties SET agent_id = ?, status = ? WHERE id = ?', [t.sam.id, 'draft', 'p-1']);
+    const r = await t.h.of(t.acces, t.agent, t.project.id);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.calculs).toEqual([]);
+    expect(r.value.notes).toEqual([]);
+    expect(r.value.hidden).toBeGreaterThanOrEqual(2);
+  });
+
+  it('[R10] au-delà de la limite, les plus récentes, et il est dit qu’il y en a d’autres', async () => {
+    const t = await history();
+    const inputs = { acquisitionFeesRateBp: src(750), works: src(0), nonRecoverableCharges: src(0), propertyTax: src(0), vacancyMonths: src(1) };
+    let last = '';
+    for (let i = 0; i < PROJECT_HISTORY_LIMIT; i++) {
+      const c = await t.calculs.compute(t.acces, t.agent, { propertyId: 'p-1', projectId: t.project.id, marketRentQuery: { inseeCode: '99001', kind: 'apartment' }, inputs });
+      if (!c.ok) throw new Error(c.code);
+      last = c.value.id;
+    }
+    const r = await t.h.of(t.acces, t.agent, t.project.id);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.calculs).toHaveLength(PROJECT_HISTORY_LIMIT);
+    expect(r.value.calculs[0]!.id).toBe(last);
+    expect(r.value.calculs.some((c) => c.id === t.calcId)).toBe(false);
+    expect(r.value.more).toBe(true);
   });
 });

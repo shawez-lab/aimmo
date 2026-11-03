@@ -2003,6 +2003,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : Y10
 - Cahier : M17 ; R16, R122, R201.
 - Objectif : trouvé le 2026-11-03 par W26. L'écran dit « Calcul rangé », mais une fois quitté, ni le calcul ni la note ne se retrouvent : `investir.calcul.lu` et `investir.note.lue` n'ont aucun appel de l'application, et aucune route ne liste ceux d'un projet. Donner la liste du projet et la relecture, sans rien recalculer.
+- Décidé (2026-11-03), lecture prudente : relecture seule : une note non validée retrouvée ne se valide pas depuis la liste, il faut refaire le calcul, pour que les contraintes du bien soient relues et que l'agent valide ce qu'il vient de lire [R124, R126]. La conformité n'y entre pas, comme pour la note.
 - Critères : la liste ne rend que les calculs et notes du projet, à qui en a le droit, refus dit [R16] (test) ; relus tels qu'ils ont été rangés, avec leur date et leurs hypothèses (test) ; réponse perdue dite telle (test) ; budget tenu [R201] (test).
 - Attend : rien.
 
