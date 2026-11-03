@@ -3577,11 +3577,21 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN11 · Dater la mise en vente, pour mesurer l'alerte dans l'heure
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#357). Relecture forte 3 P1 corrigés ; Codex non attendu (H03). Le passage des alertes ne tient pas encore l'heure : IN14.
+- Décidé (2026-11-03), lecture prudente : voir la tête de `packages/core/src/acquereurs/mises-en-vente.ts` et de `engagements-tenus.ts`. La date vient des faits du mandat, jamais du passage qui la voit ; l'heure se compte dans les seules heures d'envoi, 19 h 30 laisse une demi-heure le soir et une demi-heure à la réouverture.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : IN07
 - Cahier : Besoins et solutions, « Nos engagements de service » ; M08.
 - Objectif : la base ne date pas le moment où un bien devient diffusable [R42]. Le ranger une fois, et faire passer `alerte_heure` en mesurable : alerte partie dans l'heure, l'heure comptant depuis l'ouverture des heures d'envoi [R01] si le bien sort la nuit.
 - Critères : à la seconde près, de nuit, un dimanche (tests) ; un bien sans date reste non mesuré (test) ; aucun envoi changé (test).
+- Attend : rien.
+
+### IN14 · Les alertes passent dès l'ouverture des heures d'envoi
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : IN11
+- Cahier : Besoins et solutions, « Nos engagements de service » ; R01.
+- Objectif : trouvé par IN11 : `alertsJob` ne passe que de 9 h à 19 h. Un bien sorti la nuit, un dimanche, à minuit de la fin d'un délai de rétractation ou après le passage de 19 h a sa limite avant ou à 9 h 00 min 00 s, et sera manqué par construction. Le faire passer dès 8 h.
+- Critères : un bien sorti la nuit a son alerte au passage de 8 h (test) ; R01 reste tenue, rien ne part avant 8 h ni à 20 h (test) ; un bien sorti à 19 h 30 a son alerte le lendemain à 8 h, dans sa limite (test) ; toujours par les canaux du mode essai (test).
 - Attend : rien.
 
 ### IN12 · Un engagement manqué : noté, et le client rappelé par un responsable
