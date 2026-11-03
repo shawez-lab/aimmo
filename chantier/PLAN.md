@@ -3612,3 +3612,43 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Objectif : le taux tenu montré au client (G07) compte un compte rendu ou un point validé, même refusé à l'envoi ou resté en essai, et un point préparé un autre jour que le lundi. Le mettre à la même mesure que IN07 [R216], dans les délais de G15.
 - Critères : validé mais refusé à l'envoi : pas tenu (test) ; resté en essai : pas tenu (test) ; un point est jugé sur son lundi (test) ; le dossier reste sans donnée d'un client [R16] (test).
 - Attend : rien.
+
+**Sauvegardes et parcours du mois, Architecture et tests pour tout le système.**
+
+Voie : 1
+
+Découpé le 2026-11-03 par la voie 1 : le cahier demande « copie chiffrée chaque nuit, restauration à un instant passé, test de restauration chaque mois », et, pour tout le système, « une restauration complète de la base de test réussit en moins d'une heure » et « chaque mois : un parcours complet fictif ». Aucun code ni tâche n'y répondait. Ids `SV..`.
+
+Décidé, lecture prudente : la restauration à un instant passé est celle de D1 (Time Travel), rien à coder ; la copie chiffrée est le second filet, hors de D1. Une copie ne se restaure que dans une base neuve : rien n'est jamais écrasé. La durée de garde des copies et le rejeu des effacements après une restauration sont tranchés par SV02.
+
+### SV01 · La copie chiffrée de la base, et sa restauration vérifiée
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : aucune
+- Cahier : Architecture technique, « Sauvegardes » ; Indicateurs et tests, « Une restauration complète de la base de test ».
+- Objectif : copier toute la base, schéma et lignes, en morceaux chiffrés derrière une interface de stockage ; la restaurer dans une base neuve et prouver qu'elle est identique.
+- Critères : base restaurée identique, table par table, et chaîne du journal valide [R223] (test) ; rien de lisible dans le stockage (test) ; mauvaise clé, morceau changé, déplacé ou manquant : refus sans rien dire de restauré (tests) ; base non vide : refus (test) ; garde-fous de la base de nouveau actifs après restauration (test) ; durée mesurée, moins d'une heure (test).
+- Attend : rien.
+
+### SV02 · La copie de chaque nuit, et ce qui se passe quand elle manque
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV01
+- Cahier : Architecture technique, « Sauvegardes » ; Conformité, durées de conservation.
+- Objectif : une tâche de nuit range la copie dans un stockage à part, derrière la même interface, avec une clé en secret ; la direction voit la date de la dernière copie réussie, et une nuit sans copie donne une alerte. Durée de garde écrite au registre des traitements, avec le rejeu des effacements après une restauration.
+- Critères : sans clé ou sans stockage, « non sauvegardé » dit, jamais un faux succès (test) ; une panne n'arrête pas les autres tâches [R13] (test) ; une nuit manquée alerte la direction (test) ; un effacement fait après la copie est refait après la restauration (test) ; droits [R16] (test).
+- Attend : une ligne de `HUMAIN.md` pour le compartiment, sa règle de garde et la clé, à écrire par SV02.
+
+### SV03 · Le test de restauration de chaque mois, avec son reçu (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV02
+- Cahier : Architecture technique, « Sauvegardes » ; Indicateurs et tests.
+- Objectif : chaque mois, un travail restaure la dernière copie dans une base neuve, hors de la production, et range un reçu sans donnée : date de la copie, durée, tables, lignes, empreinte. La direction lit ce reçu à l'écran. **Jamais vu** : aucun réseau ne peut montrer la preuve datée que ses données se restaurent vraiment.
+- Critères : un mois sans reçu ou un reçu en échec se dit, jamais un vert par défaut (test) ; le reçu ne porte aucune donnée d'un client (test) ; durée de plus d'une heure : échec (test) ; droits [R16] (test).
+- Attend : les secrets du travail mensuel, à écrire dans `HUMAIN.md` par SV03.
+
+### SV04 · Le parcours complet fictif de chaque mois
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : aucune
+- Cahier : Indicateurs et tests, « Chaque mois : un parcours complet fictif, du premier message à l'après-vente ».
+- Objectif : un seul scénario inventé traverse les vrais modules, du premier message à l'après-vente, et il tourne aussi chaque mois.
+- Critères : chaque étape vérifiée par ses données et son journal (test) ; aucun envoi réel (test) ; une étape cassée nomme l'étape (test).
+- Attend : rien.
