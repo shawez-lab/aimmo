@@ -106,6 +106,7 @@ describeWithSqlite('X09 · routes de M19', () => {
     const paths: Record<string, string> = {
       'studio.atelier': `/studio/biens/${b.id}`,
       'studio.guide': `/studio/biens/${b.id}/guide`,
+      'studio.guides_a_valider': '/studio/guides-a-valider',
       'studio.guide.vue': `/studio/biens/${b.id}/guide/vues`,
       'studio.guide.validation': `/studio/biens/${b.id}/guide/validation`,
       'studio.photo': `/studio/biens/${b.id}/photos`,

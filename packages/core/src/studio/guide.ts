@@ -128,6 +128,16 @@ async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Un guide prêt à valider, tel que la direction le lit : le bien et les vues photographiées, rien d'autre. */
+export interface GuideToValidate {
+  propertyId: string;
+  reference: string;
+  city: string | null;
+  views: string[];
+}
+const TO_VALIDATE_SCAN = 200;
+const TO_VALIDATE_SHOWN = 50;
+
 export interface GuidePriseDeVueOptions {
   now?: () => Date;
   newId?: () => string;
@@ -197,6 +207,37 @@ export class GuidePriseDeVue {
     );
     if (changes === 1) await appendEvent(this.journal, { type: 'studio.guide.valide', actor: `direction:${viewer.userId}`, subject: `property:${propertyId}`, data: {} }, this.now);
     return { ok: true, value: await this.state(seen.value) };
+  }
+
+  /**
+   * Les guides prêts et pas encore validés, le plus ancien d'abord, pour la direction de ce réseau [R16]. Seuls les biens
+   * les plus récemment photographiés sont regardés, à chaque lecture : la réponse dit quand il en reste d'autres, et la
+   * lecture de chaque bien montré va au journal. L'état de chaque guide est recalculé : une validation dont les photos
+   * ou les vues ont changé ne vaut plus, et le bien revient ici.
+   */
+  async toValidate(viewer: Viewer): Promise<GuideResult<{ items: GuideToValidate[]; more: boolean }>> {
+    if (viewer.role !== 'direction') return this.refused(viewer, '*', 'role');
+    const rows = await this.db.all<PropertyRow & { reference: string; city: string | null; last_shot: string }>(
+      `SELECT p.id, p.network_id, p.kind, p.rooms, p.reference, p.city, MAX(s.recorded_at) AS last_shot
+       FROM photo_guide_shots s JOIN properties p ON p.id = s.property_id AND p.network_id = s.network_id
+       WHERE s.network_id = ? AND p.status IN ('draft', 'available', 'under_offer')
+       GROUP BY p.id, p.network_id, p.kind, p.rooms, p.reference, p.city
+       ORDER BY last_shot DESC, p.id LIMIT ?`,
+      [viewer.networkId, TO_VALIDATE_SCAN + 1],
+    );
+    const ready: { row: (typeof rows)[number]; state: GuideProgress }[] = [];
+    for (const row of rows.slice(0, TO_VALIDATE_SCAN)) {
+      const state = await this.state(row);
+      if (state.ready && !state.validated) ready.push({ row, state });
+    }
+    ready.sort((a, b) => a.row.last_shot.localeCompare(b.row.last_shot) || a.row.id.localeCompare(b.row.id));
+    const items: GuideToValidate[] = [];
+    for (const { row, state } of ready.slice(0, TO_VALIDATE_SHOWN)) {
+      const seen = await this.full(viewer, row.id);
+      if (!seen.ok) continue;
+      items.push({ propertyId: row.id, reference: row.reference, city: row.city, views: state.views.filter((v) => v.mediaRef !== null).map((v) => v.label) });
+    }
+    return { ok: true, value: { items, more: rows.length > TO_VALIDATE_SCAN || ready.length > TO_VALIDATE_SHOWN } };
   }
 
   private async state(p: PropertyRow): Promise<GuideProgress> {

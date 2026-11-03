@@ -247,6 +247,7 @@ const ROUTES: StudioRoute[] = [
   // L'atelier du bien (X11) : photos de la fiche, celles qui ont leur certificat, publications préparées.
   { method: 'GET', pattern: new RegExp(`^/studio/biens/${ID}$`), name: 'studio.atelier', roles: WORK, handle: async (s, v, [id]) => reply(await core(s).atelier.read(v, id!)) },
   // Guide de prise de vue (X01).
+  { method: 'GET', pattern: /^\/studio\/guides-a-valider$/, name: 'studio.guides_a_valider', roles: DIRECTION, handle: async (s, v) => reply(await core(s).guide.toValidate(v)) },
   { method: 'GET', pattern: new RegExp(`^/studio/biens/${ID}/guide$`), name: 'studio.guide', roles: WORK, handle: async (s, v, [id]) => reply(await core(s).guide.progress(v, id!)) },
   {
     method: 'POST',

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { DO_NOT_FORGET, GuidePriseDeVue, SHOT_ADVICE, guideViews } from '../src/studio/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -156,5 +156,75 @@ describeWithSqlite('X01 · guide de prise de vue', () => {
     const virtual = { ref: ref(t.p.id, 8), kind: 'photo', edit: 'amenagement_virtuel' };
     await t.sheet(2, [...t.photos, virtual]);
     expect(await t.guide.recordShot(t.as('agent', t.alex.id), t.p.id, { viewKey: 'sejour', mediaRef: virtual.ref })).toMatchObject({ ok: false, code: 'photo_inconnue' });
+  });
+
+  describe('X23 · les guides à valider', () => {
+    const VIEWS = ['entree', 'sejour', 'cuisine', 'chambre_1', 'salle_d_eau', 'exterieur_jardin'];
+    const fill = async (t: Awaited<ReturnType<typeof setup>>) => {
+      const alex = t.as('agent', t.alex.id);
+      for (const [i, viewKey] of VIEWS.entries()) expect(await t.guide.recordShot(alex, t.p.id, { viewKey, mediaRef: t.photos[i]!.ref })).toMatchObject({ ok: true });
+    };
+
+    it('[R16] seule la direction lit la liste, et le refus va au journal', async () => {
+      const t = await setup();
+      await fill(t);
+      for (const v of [t.as('agent', t.alex.id), t.as('compliance', 'c')]) {
+        expect(await t.guide.toValidate(v)).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+      }
+      const events = await t.db.all<{ type: string }>("SELECT type FROM journal WHERE type = 'acces.refuse'");
+      expect(events.length).toBe(2);
+    });
+
+    it('[R16] la direction d’un autre réseau ne voit rien', async () => {
+      const t = await setup();
+      await fill(t);
+      expect(await t.guide.toValidate({ role: 'direction', userId: 'd', networkId: crypto.randomUUID() })).toEqual({ ok: true, value: { items: [], more: false } });
+    });
+
+    it('[R10] un guide incomplet n’y est pas ; prêt il y est, avec ses vues et sans aucune photo ni personne', async () => {
+      const t = await setup();
+      const direction = t.as('direction', 'd');
+      await t.guide.recordShot(t.as('agent', t.alex.id), t.p.id, { viewKey: 'entree', mediaRef: t.photos[0]!.ref });
+      expect(await t.guide.toValidate(direction)).toEqual({ ok: true, value: { items: [], more: false } });
+      await fill(t);
+      const r = await t.guide.toValidate(direction);
+      if (!r.ok) throw new Error(r.code);
+      expect(r.value.items).toHaveLength(1);
+      expect(Object.keys(r.value.items[0]!).sort()).toEqual(['city', 'propertyId', 'reference', 'views']);
+      expect(r.value.items[0]).toMatchObject({ propertyId: t.p.id, reference: 'G-1', city: 'X' });
+      expect(r.value.items[0]!.views).toHaveLength(VIEWS.length);
+      expect(JSON.stringify(r.value)).not.toContain('biens/');
+    });
+
+    it('[R17] un guide validé sort de la liste ; valider deux fois ne range qu’une validation ; une vue changée le ramène', async () => {
+      const t = await setup();
+      const direction = t.as('direction', 'd');
+      await fill(t);
+      expect(await t.guide.validate(direction, t.p.id)).toMatchObject({ ok: true });
+      expect(await t.guide.validate(direction, t.p.id)).toMatchObject({ ok: true });
+      expect(await t.db.all('SELECT id FROM photo_guide_validations')).toHaveLength(1);
+      expect(await t.guide.toValidate(direction)).toEqual({ ok: true, value: { items: [], more: false } });
+      // La fiche perd sa chambre : la vue disparaît sans nouvelle photo, et l'ancienne validation ne vaut plus.
+      await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('s-2', ?, ?, 2, ?, 'agent:a', '2027-10-02')", [
+        t.p.id,
+        t.network.id,
+        JSON.stringify({ characteristics: { bedrooms: 0, outdoor: ['jardin'], parkingSpaces: 0 }, energy: null, coownership: null, risks: null, media: t.photos }),
+      ]);
+      const back = await t.guide.toValidate(direction);
+      if (!back.ok) throw new Error(back.code);
+      expect(back.value.items.map((i) => i.propertyId)).toEqual([t.p.id]);
+      expect(await t.db.all('SELECT id FROM photo_guide_validations')).toHaveLength(1);
+    });
+
+    it('[R16] un bien vendu ou retiré n’attend plus de validation, et le bien montré est écrit au journal', async () => {
+      const t = await setup();
+      const direction = t.as('direction', 'd');
+      await fill(t);
+      await t.guide.toValidate(direction);
+      const read = await t.db.all("SELECT type FROM journal WHERE type = 'bien.lu' AND subject = ?", [`property:${t.p.id}`]);
+      expect(read.length).toBeGreaterThan(0);
+      await t.db.run("UPDATE properties SET status = 'sold' WHERE id = ?", [t.p.id]);
+      expect(await t.guide.toValidate(direction)).toEqual({ ok: true, value: { items: [], more: false } });
+    });
   });
 });
