@@ -53,6 +53,7 @@ globalThis.AIMMO_RECOMMANDATION = function (t) {
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   var DENIED = 'Réservé à l’agent de cette fiche et à la direction.';
   var LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Renvoyez cette saisie : une recommandation n’est jamais rangée deux fois.';
+  var STUCK_MS = 120000;
   var REWARD = 'Une recommandation ne se récompense jamais : retirez ce qui en parle.';
   var REFUSALS = {
     bad_first_name: 'Ce prénom n’est pas lisible : 60 caractères au plus.',
@@ -69,6 +70,7 @@ globalThis.AIMMO_RECOMMANDATION = function (t) {
   // Des WeakSet : un bloc fermé ou une déconnexion ne laissent en mémoire ni le formulaire ni ce qui y est écrit.
   var opened = new WeakSet();
   var busy = new WeakSet();
+  var loading = new WeakSet();
   function newKey() {
     var bytes = crypto.getRandomValues(new Uint8Array(16));
     return Array.prototype.map.call(bytes, function (b) { return (b + 256).toString(16).slice(1); }).join('');
@@ -92,8 +94,8 @@ globalThis.AIMMO_RECOMMANDATION = function (t) {
     });
     var callable = checkbox(corps, 'reco-accord', 'Selon le client, le proche accepte d’être appelé');
     var proof = field(corps, 'reco-preuve', 'Preuve de cet accord (quand, comment)', 'textarea');
-    corps.appendChild(el('p', 'Sans cette case et sa preuve, personne n’appellera ce proche.', 'doux'));
-    var key = null, sent = null;
+    corps.appendChild(el('p', 'Sans cette case et sa preuve, cette recommandation ne demande aucun appel.', 'doux'));
+    var key = null, sent = null, waitingSince = 0;
     corps.appendChild(button('Ranger la recommandation', function () {
       if (busy.has(corps)) return;
       var body = { projectKind: project.value, callable: !!callable.checked };
@@ -105,7 +107,7 @@ globalThis.AIMMO_RECOMMANDATION = function (t) {
       if (stop) { said.textContent = REFUSALS[stop]; return; }
       // La clé ne change qu'avec la saisie : renvoyer la même saisie après une réponse perdue relit la première réponse.
       var text = JSON.stringify(body);
-      if (!key || sent !== text) { key = newKey(); sent = text; }
+      if (!key || sent !== text) { key = newKey(); sent = text; waitingSince = 0; }
       busy.add(corps);
       said.textContent = 'Envoi…';
       send('/v1/apres-vente/fiches/' + encodeURIComponent(personId) + '/recommandations', 'POST', body, { 'idempotency-key': key }).then(function (x) {
@@ -118,12 +120,19 @@ globalThis.AIMMO_RECOMMANDATION = function (t) {
           [first, email, phone, project, proof].forEach(function (f) { f.value = ''; });
           callable.checked = false;
           // Le même texte quel que soit le proche : suivi par un autre agent, opposé ou inconnu [R16].
-          var done = body.callable ? 'Recommandation rangée. Si cet appel est permis, il sera proposé à l’agent qui suit cette personne.' : 'Recommandation rangée. Personne n’appellera ce proche.';
+          var done = body.callable ? 'Recommandation rangée. Si cet appel est permis, il sera proposé à l’agent qui suit cette personne.' : 'Recommandation rangée. Elle ne demande aucun appel.';
           load(personId, list, corps, said, done);
           return;
         }
         if (code === 'retry_with_new_key' || code === 'idempotency_key_reused') { key = null; said.textContent = 'Cet envoi n’a pas abouti. Renvoyez la saisie.'; return; }
-        if (code === 'in_progress') { said.textContent = 'L’envoi précédent est encore en cours. Réessayez dans un moment.'; return; }
+        if (code === 'in_progress') {
+          // Une coupure peut laisser cette clé sans réponse pour toujours : passé ce délai, une autre clé repart, et le socle
+          // refuse de ranger deux fois le même proche pour ce client.
+          if (!waitingSince) waitingSince = Date.now();
+          if (Date.now() - waitingSince > STUCK_MS) { key = null; said.textContent = 'Cet envoi n’a pas abouti. Renvoyez la saisie.'; return; }
+          said.textContent = 'L’envoi précédent n’a pas encore de réponse. Réessayez dans un moment.';
+          return;
+        }
         if (x.status >= 500) { said.textContent = LOST; return; }
         key = null;
         said.textContent = x.status === 403 ? DENIED : REFUSALS[code] || 'Cette recommandation n’est pas rangée.';
@@ -153,11 +162,16 @@ globalThis.AIMMO_RECOMMANDATION = function (t) {
   }
   function open(personId, corps, said) {
     // Le bloc déjà ouvert garde ce qui y est écrit : une saisie ne se perd pas sur un second appui.
-    if (opened.has(corps)) return Promise.resolve(true);
+    // Une lecture déjà partie suffit : une seconde poserait une autre liste, et le formulaire suivrait la première, détachée.
+    if (opened.has(corps) || loading.has(corps)) return Promise.resolve(true);
+    loading.add(corps);
     clear(corps);
     var list = el('div');
     corps.appendChild(list);
-    return load(personId, list, corps, said);
+    return load(personId, list, corps, said).then(function (r) {
+      loading.delete(corps);
+      return r;
+    });
   }
   return { open: open };
 };

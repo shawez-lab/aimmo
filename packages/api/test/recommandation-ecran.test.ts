@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { PROJECT_KINDS } from '../../core/src/db/types.ts';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RECOMMANDATION_SCRIPT } from '../app/recommandation.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
@@ -83,10 +83,12 @@ async function opened(posts: Answer[] = [], reads: Answer[] = [ok(EMPTY)]) {
     byLabel('Mail du proche').value = over.mail ?? 'nina@example.test';
     byLabel('Son projet').value = over.projet ?? 'buy';
   };
-  return { calls, body, byLabel, said, text, sent, press, openBlock, fill, scripts, tick, named };
+  return { els, calls, body, byLabel, said, text, sent, press, openBlock, fill, scripts, tick, named };
 }
 
 describe('X22 · recommander un proche depuis la fiche', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('[R201] rien n’est demandé avant le geste, le script est à part et tient son budget, l’application aussi', async () => {
     const a = await opened();
     expect(a.calls.some((c) => c.url === PATH)).toBe(false);
@@ -118,7 +120,7 @@ describe('X22 · recommander un proche depuis la fiche', () => {
     expect(a.sent()).toHaveLength(1);
     expect(a.sent()[0]!.body).toEqual({ projectKind: 'buy', callable: false, firstName: 'Nina', email: 'nina@example.test', phone: '06 00 00 00 00' });
     expect(a.sent()[0]!.key).toMatch(/^[A-Za-z0-9_-]{16,64}$/);
-    expect(a.said()).toBe('Recommandation rangée. Personne n’appellera ce proche.');
+    expect(a.said()).toBe('Recommandation rangée. Elle ne demande aucun appel.');
     expect(a.text()).toContain('A recommandé Nina');
     // Le formulaire est vidé : la coordonnée du proche ne reste pas à l'écran.
     expect(a.byLabel('Mail du proche').value).toBe('');
@@ -197,7 +199,7 @@ describe('X22 · recommander un proche depuis la fiche', () => {
     await a.openBlock();
     a.fill();
     await a.press();
-    expect(a.said()).toContain('encore en cours');
+    expect(a.said()).toContain('pas encore de réponse');
     await a.press();
     expect(a.said()).toBe('Cet envoi n’a pas abouti. Renvoyez la saisie.');
     await a.press();
@@ -249,11 +251,82 @@ describe('X22 · recommander un proche depuis la fiche', () => {
     expect(a.said()).toContain('Recommandation rangée.');
   });
 
+  it('une clé restée sans réponse après une coupure n’enferme pas : passé deux minutes, une autre clé repart', async () => {
+    const a = await opened([no(409, 'in_progress'), no(409, 'in_progress'), no(409, 'in_progress'), ok({ id: 'r1', recorded: true })]);
+    await a.openBlock();
+    a.fill();
+    const start = Date.now();
+    await a.press();
+    await a.press();
+    expect(a.said()).toContain('pas encore de réponse');
+    vi.spyOn(Date, 'now').mockReturnValue(start + 121_000);
+    await a.press();
+    expect(a.said()).toBe('Cet envoi n’a pas abouti. Renvoyez la saisie.');
+    await a.press();
+    const keys = a.sent().map((c) => c.key);
+    expect(keys[2]).toBe(keys[0]);
+    expect(keys[3]).not.toBe(keys[0]);
+    expect(a.said()).toContain('Recommandation rangée.');
+  });
+
+  it('deux appuis pendant la lecture : une seule lecture, et la liste relue après l’envoi est bien celle de l’écran', async () => {
+    let release: (r: Response) => void = () => {};
+    const first: Answer = () => new Promise<Response>((r) => { release = r; });
+    const a = await opened([ok({ id: 'r1', recorded: true })], [first, ok({ recommendedBy: [], recommended: [{ referralId: 'r1', firstName: 'Nina' }] })]);
+    await a.openBlock();
+    await a.openBlock();
+    expect(a.calls.filter((c) => c.url === PATH && c.method === 'GET')).toHaveLength(1);
+    release(Response.json({ ok: true, data: EMPTY }));
+    await a.tick();
+    a.fill();
+    await a.press();
+    expect(a.text()).toContain('A recommandé Nina');
+  });
+
+  it('[R10] un script manquant est dit, et un nouvel appui réessaie', async () => {
+    const a = await opened();
+    a.named(a.body, 'Recommandation d’un proche')[0]!.listeners.click!({});
+    await a.tick();
+    a.scripts()[0]!.listeners.error!({});
+    await a.tick();
+    expect(a.said()).toBe('Pas de réseau. Réessayez dans un moment.');
+    a.named(a.body, 'Recommandation d’un proche')[0]!.listeners.click!({});
+    await a.tick();
+    expect(a.scripts()).toHaveLength(2);
+  });
+
+  it('[R16] une réponse tardive après la déconnexion n’écrit rien et ne lit plus rien', async () => {
+    let release: (r: Response) => void = () => {};
+    const a = await opened([() => new Promise<Response>((r) => { release = r; })]);
+    await a.openBlock();
+    a.fill();
+    await a.press();
+    // La déconnexion vide la fiche : l'élément est gardé pour voir que rien n'y est écrit ensuite.
+    const status = a.body.all().find((e) => e.className === 'etat reco')!;
+    const reads = a.calls.filter((c) => c.url === PATH && c.method === 'GET').length;
+    a.els.sortir!.listeners.click!({});
+    release(Response.json({ ok: true, data: { id: 'r1', recorded: true } }));
+    await a.tick();
+    expect(a.calls.filter((c) => c.url === PATH && c.method === 'GET')).toHaveLength(reads);
+    expect(status.textContent).toBe('Envoi…');
+  });
+
+  it('[R16] une lecture tardive après la déconnexion ne pose aucun formulaire', async () => {
+    let release: (r: Response) => void = () => {};
+    const a = await opened([], [() => new Promise<Response>((r) => { release = r; })]);
+    await a.openBlock();
+    const box = a.body.all().find((e) => e.tagName === 'section' && e.all().some((x) => x.className === 'etat reco'))!;
+    a.els.sortir!.listeners.click!({});
+    release(Response.json({ ok: true, data: EMPTY }));
+    await a.tick();
+    expect(box.all().filter((e) => e.tagName === 'button' && e.textContent === 'Ranger la recommandation')).toHaveLength(0);
+  });
+
   it('la liste perdue après une recommandation rangée laisse le succès dit', async () => {
     const a = await opened([ok({ id: 'r1', recorded: true })], [ok(EMPTY), offline]);
     await a.openBlock();
     a.fill();
     await a.press();
-    expect(a.said()).toBe('Recommandation rangée. Personne n’appellera ce proche. Pas de réseau. Réessayez dans un moment.');
+    expect(a.said()).toBe('Recommandation rangée. Elle ne demande aucun appel. Pas de réseau. Réessayez dans un moment.');
   });
 });
