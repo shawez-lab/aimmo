@@ -1773,7 +1773,8 @@ Voie : 1
 - Attend : rien pour l'écran.
 
 ### X14 · Les gestes des partenaires : réponse perdue dite telle, un seul tirage
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#306). Relecture forte 2 P1 corrigés ; Codex à sa limite (H03). Le texte « Pas de réseau : rien n'est enregistré. » existe sur d'autres écrans, non audités.
 - Trouvé le 2026-11-03 par la relecture forte de X13 : `partAct` dit « rien n'est enregistré » quand la réponse se perd, alors que l'écriture a pu passer, et ne se verrouille pas ; refaire un tirage crée une seconde mise en relation, avec un nouvel ordre.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : X13
 - Cahier : M18 ; R10, R74, R201.
