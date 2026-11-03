@@ -3248,8 +3248,9 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT18 · Les vidéos et publications du Studio entrent dans la mesure de l'origine
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-03)
 - Voie : 2
+- Reste : fusionnée (#338) ; relecture forte 1 P1 corrigé (la liaison passait entre l'envoi et sa trace) ; Codex non attendu (H03) ; la vidéo n'a son lien qu'avec AT20.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT16, X05
 - Cahier : M01, M19 ; R16, R156.
 - Objectif : reste de AT05 et AT16, trouvé en le lisant : rien dans le code ne range une vidéo ni une publication du Studio comme contenu (`contentFor`, `linkPost`, `taggedLink` ne servent que dans les tests), donc aucun contact n'en vient jamais, et leur titre serait leur référence interne. À l'envoi, la publication porte son lien marqué vers la page de référence du bien, et sa référence chez le réseau social est reliée quand le réseau la rend ; une vidéo a le même lien ; la direction lit un titre lisible.
@@ -3257,7 +3258,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT20 · L'agent reçoit le lien marqué de sa vidéo et de sa publication
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT18, X11
 - Cahier : M01, M19 ; R16, R156.
@@ -3266,7 +3267,7 @@ Décidé, lecture prudente : M01 ne refait pas ce qui existe (page du bien et pu
 - Attend : rien.
 
 ### AT19 · Un contour de quartier qui se croise lui-même est refusé
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Voie : 2
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AT15
 - Cahier : M01 ; R150.
