@@ -1823,6 +1823,7 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Objectif : `addGuarantor` ne vérifie que le réseau : un appel direct peut désigner le contact d'un autre agent ou une fiche réunie du candidat, et lire par `missing` si son identité est vérifiée. Appliquer les règles de `addableContacts`.
 - Critères : le contact d'un autre agent est refusé et le refus au journal [R16] (test) ; une fiche réunie du candidat est refusée (test) ; un dossier DossierFacile ne reçoit ni pièce ni garant par appel direct [R104] (test).
 - Attend : rien.
+- Décidé (2026-11-03, voie 2) : les droits d'abord, puis le reste ; une pièce interdite sur un dossier DossierFacile reste nommée au journal ; `addableContacts` suit toute la chaîne des fusions, comme le geste. Relecture forte : 2 P0 et 1 P1 corrigés. La route de la candidature elle-même a le même trou : W22.
 
 ### W21 · L'identité du candidat vérifiée, depuis l'écran
 - Statut : à faire
