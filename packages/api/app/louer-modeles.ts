@@ -25,6 +25,7 @@ globalThis.AIMMO_LOUER_MODELES = function (t) {
   var REFUSALS = ${JSON.stringify(REFUSALS)};
   var busy = null;
   var seq = 0;
+  var reads = 0;
   function act(box, say, path, body, fallback, done) {
     var mine = t.session();
     if (busy === mine) return;
@@ -32,7 +33,7 @@ globalThis.AIMMO_LOUER_MODELES = function (t) {
     say('Envoi…');
     return send(path, 'POST', body).then(function (res) {
       if (busy === mine) busy = null;
-      if (res.gone) return;
+      if (res.gone) { clear(box); say(''); return; }
       if (res.ok) return open(box, say, typeof done === 'function' ? done(res.body.data) : done);
       if (res.offline || !res.body || res.status >= 500) {
         clear(box);
@@ -77,7 +78,6 @@ globalThis.AIMMO_LOUER_MODELES = function (t) {
       var n = ++seq;
       var text = field(part, 'bail-modele-' + n, 'Texte de la nouvelle version', 'textarea');
       text.setAttribute('rows', '8');
-      text.setAttribute('maxlength', '50000');
       var held = last ? String(last.body) : '';
       text.value = held;
       part.appendChild(button('Ranger une nouvelle version', function () {
@@ -94,9 +94,12 @@ globalThis.AIMMO_LOUER_MODELES = function (t) {
   function open(box, say, said) {
     clear(box);
     var mine = t.session();
+    var r = ++reads;
     say('Chargement…');
     return send('/v1/location/modeles-bail', 'GET').then(function (res) {
-      if (res.gone || mine !== t.session()) return;
+      if (r !== reads) return;
+      if (res.gone || mine !== t.session()) { clear(box); say(''); return; }
+      clear(box);
       if (!res.ok) { say(res.status === 403 ? 'Ce geste n’est pas dans vos droits.' : res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Les modèles ne se lisent pas pour le moment.'); return; }
       say(said || '');
       var d = res.body.data || {};

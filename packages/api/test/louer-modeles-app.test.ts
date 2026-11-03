@@ -168,6 +168,39 @@ describe('W17 · modèles de bail à l’écran', () => {
     expect(off.say()).toBe('Pas de réseau. Réessayez dans un moment.');
   });
 
+  it('deux appuis sans attente : une seule lecture s’affiche, la dernière', async () => {
+    const t = await run('direction', { [READ]: ok(state('direction', v(1, 'essai'))) });
+    await t.open();
+    t.els['louer-modeles-ouvrir']!.listeners.click!({});
+    t.els['louer-modeles-ouvrir']!.listeners.click!({});
+    await settle();
+    expect(t.body().all().filter((e) => e.tagName === 'h4' && e.textContent === 'Location vide')).toHaveLength(1);
+  });
+
+  it('[R17] quitter pendant l’envoi ne laisse ni « Envoi… » ni formulaire : rien ne se range deux fois', async () => {
+    let answer: (r: Response) => void = () => undefined;
+    const t = await run('direction', { [READ]: ok(state('direction', v(1, 'essai'))), [POST]: () => new Promise<Response>((r) => { answer = r; }) });
+    await t.open();
+    t.area()!.value = 'Autre texte';
+    await t.click(t.byText('Ranger une nouvelle version'));
+    expect(t.say()).toBe('Envoi…');
+    await t.click(t.els['reseau-precedent']);
+    answer(Response.json({ ok: true, mode: 'essai', data: { version: 2 } }));
+    await settle();
+    expect(t.say()).toBe('');
+    expect(t.area()).toBeUndefined();
+    expect(t.posts()).toHaveLength(1);
+  });
+
+  it('un texte trop long est refusé par le serveur, jamais coupé par le champ', async () => {
+    const t = await run('direction', { [READ]: ok(state('direction', v(1, 'essai'))), [POST]: no(400, { ok: false, rule: null, code: 'body_too_long' }) });
+    await t.open();
+    expect(t.area()!.attributes.maxlength).toBeUndefined();
+    t.area()!.value = 'x'.repeat(50_001);
+    await t.click(t.byText('Ranger une nouvelle version'));
+    expect(t.say()).toBe('Le modèle est trop long : rien n’est rangé.');
+  });
+
   it('[R16] après la sortie, les textes lus ne restent pas à l’écran', async () => {
     const t = await run('direction', { [READ]: ok(state('direction', v(1, 'essai', 'Texte lu'))) });
     await t.open();

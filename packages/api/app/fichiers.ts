@@ -1705,6 +1705,7 @@ export const APP_JS = `'use strict';
     });
   }
   function wipeReseau() {
+    wipeModeles();
     ['reseau-corps', 'reseau-alertes', 'reseau-reversements', 'reseau-brouillons'].forEach(function (id) { clear($(id)); });
     ['reseau-etat', 'reseau-sans-agent', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat', 'reseau-cas-etat'].forEach(function (id) { $(id).textContent = ''; });
     wipeReprise();
@@ -2014,7 +2015,7 @@ ${LOUER_JS}
     });
     $('vers-reseau').addEventListener('click', function () { var k = readDirectionKey(); if (k) enter(k); });
     $('vers-journee').addEventListener('click', function () { var k = readKey(); if (k) enter(k); });
-    $('conformite-actualiser').addEventListener('click', function () { if (currentKey) { session += 1; openConformite(); } });
+    $('conformite-actualiser').addEventListener('click', function () { if (currentKey) { session += 1; wipeModeles(); openConformite(); } });
     var hash = typeof location !== 'undefined' ? String(location.hash || '') : '';
     var invited = INVITATION.exec(hash);
     if (hash.indexOf('#invitation=') === 0) {

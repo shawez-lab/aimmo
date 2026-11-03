@@ -100,6 +100,9 @@ export const LOUER_JS = `
   var louerId = null;
   function forgetLouer() {
     if (louerScreen) louerScreen.forget();
+    wipeModeles();
+  }
+  function wipeModeles() {
     ['louer-modeles', 'louer-modeles-c'].forEach(function (p) { clear($(p + '-corps')); $(p + '-etat').textContent = ''; });
   }
   /* Les modèles de bail (W17), servis à part, chargés au premier geste [R201]. */
@@ -121,7 +124,7 @@ export const LOUER_JS = `
       try { delete globalThis.AIMMO_LOUER_MODELES; } catch (e) { /* rien à retirer */ }
       if (typeof make !== 'function') { if (mine === session) say('Pas de réseau. Réessayez dans un moment.'); return; }
       modelesTool = make({ el: el, clear: clear, send: send, button: button, field: field, date: date, ID: ID, session: function () { return session; } });
-      if (mine === session) modelesTool.open(box, say);
+      if (mine === session) modelesTool.open(box, say); else say('');
     });
     s.addEventListener('error', function () {
       modelesBusy = false;
