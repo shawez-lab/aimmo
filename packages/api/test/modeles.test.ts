@@ -41,6 +41,12 @@ describeWithSqlite('D02 · routes des modèles et des documents', () => {
       );
     const body = 'Mandat de test entre {{mandant.nom}} et {{agent.nom}} pour {{bien.reference}}, numéro {{registre.numero}}.\n\n' + 'Texte long de test. '.repeat(1000);
     expect((await call('/v1/modeles', KEY_AGENT, { kind: 'mandat_vente_simple', body })).status).toBe(403);
+    // [R40] Les refus que l'écran de D18 dit en français : leur code et leur statut.
+    const refused = await call('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_simple', body: 'Mandat sans place pour le numéro.' });
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({ ok: false, rule: 'R40', code: 'no_number_field' });
+    const noEvidence = await call('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_exclusif', body: 'Mandat exclusif, numéro {{registre.numero}}.' });
+    expect(await noEvidence.json()).toMatchObject({ ok: false, rule: 'R40', code: 'no_evidence' });
     const created = await call('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_simple', body });
     expect(created.status).toBe(200);
     const template = ((await created.json()) as { data: { id: string; status: string } }).data;
