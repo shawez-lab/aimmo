@@ -617,7 +617,7 @@ describe('U10 · page de l’espace partenaire', () => {
     const js = PARTNER_SPACE_FILES['/partenaire/partenaire.js']!;
     expect(js).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/);
     expect(js).toContain("headers.authorization = 'Bearer ' + key");
-    for (const call of js.match(/api\(([^,)]+)/g) ?? []) expect(call).toMatch(/^api\((?:path|'\/v1\/partenaires\/espace)/);
+    for (const call of js.match(/api\(([^,)]+)/g) ?? []) expect(call).toMatch(/^api\((?:path|'\/v1\/partenaires\/espace|'\/v1\/gagner\/recommandations)/);
   });
 
   it('[R16] [R77] parcours dans la page : liste, dossier utile, commencer, déposer ; une clé refusée est effacée', async () => {
@@ -626,6 +626,7 @@ describe('U10 · page de l’espace partenaire', () => {
     const calls: { url: string; method: string; headers: Record<string, string>; body: unknown }[] = [];
     const answers: Record<string, () => { status: number; body: unknown }> = {
       'GET /v1/partenaires/espace': () => ({ status: 200, body: { ok: true, data: [{ referralId: 'r1', trade: 'diagnostiqueur', tradeLabel: 'Diagnostiqueur certifié', state: 'confiee' }, { referralId: 'r2', trade: 'notaire', tradeLabel: 'Notaire', state: 'confiee' }] } }),
+      'GET /v1/gagner/recommandations/mes-envois': () => ({ status: 200, body: { ok: true, data: [] } }),
       'GET /v1/partenaires/espace/r1': () => ({
         status: 200,
         body: { ok: true, data: { referralId: 'r1', trade: 'diagnostiqueur', tradeLabel: 'Diagnostiqueur certifié', state: 'confiee', file: { domain: 'amiante', postcode: '21000', surfaceM2: 64 }, sorts: [{ sort: 'amiante', label: 'Constat amiante' }] } },
