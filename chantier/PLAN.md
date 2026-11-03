@@ -3534,7 +3534,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : rien.
 
 ### IN07 · Engagements de service tenus, temps gagné, disponibilité
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN03
 - Cahier : Indicateurs et tests, « Engagements de service tenus », « Temps gagné », « Disponibilité du service » ; Besoins et solutions pour la liste des engagements.
 - Objectif : à vérifier avant de coder, ce qui a déjà un calcul : la part des engagements tenus dans le mois, chacun avec sa source ; les heures gagnées déclarées par l'agent et contrôlées sur le journal ; le temps de réponse du service, derrière une interface, avec un faux service de test tant qu'aucune supervision n'est branchée.
