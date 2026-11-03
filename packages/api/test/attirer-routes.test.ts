@@ -146,7 +146,10 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     const html = await (await t.get(`${NET}/prix`))!.text();
     expect(html).toContain('Ville Test');
     expect(html).toContain('href="/prix/ville-test"');
-    expect((await t.get(`${NET}/prix/ville-test`))!.status).toBe(200);
+    const prices = await (await t.get(`${NET}/prix/ville-test`))!.text();
+    expect(prices).toContain('href="/estimation"');
+    // [RS04] Le lien des pages de prix aboutit, même sans les données de l'estimation.
+    expect((await t.get(`${NET}/estimation`))!.status).toBe(200);
     expect((await t.get(`${CAMILLE}/prix`))!.status).toBe(404);
     const zone = await t.db.first<{ id: string }>("SELECT id FROM price_zones WHERE slug = 'ville-test'");
     expect((await t.call(direction, 'POST', `/attirer/prix/zones/${zone!.id}/retrait`)).status).toBe(200);

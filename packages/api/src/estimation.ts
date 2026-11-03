@@ -1,4 +1,5 @@
-import { EstimationEnLigne, SqlJournalStore, appendEvent, type DetailedSales, type Geocoder, type SqlDatabase } from '@aimmo/core';
+import { EstimationEnLigne, SqlJournalStore, appendEvent, type CommuneResult, type DetailedSales, type Geocoder, type SqlDatabase } from '@aimmo/core';
+import { renderEstimationPage, type EstimationFormError } from '../../core/src/attirer/page-estimation.ts';
 import { intakeFromRequest, parseIntakeKeys, sha256Hex } from './auth.ts';
 import { VISITOR, takeSlot } from './assistant.ts';
 
@@ -25,6 +26,8 @@ export interface EstimationConfig {
   now: () => Date;
 }
 
+const POSTAL_CODE = /^\d{5}$/;
+const validTown = (town: string): boolean => town.trim() !== '' && town.length <= 80 && !/\d/.test(town);
 const KINDS: Record<string, 'apartment' | 'house'> = { appartement: 'apartment', maison: 'house' };
 const ALLOWED = new Set(['visitorId', 'postalCode', 'town', 'kind']);
 
@@ -58,29 +61,91 @@ export async function handleEstimation(request: Request, config: EstimationConfi
   if (extra.length > 0) return failure(400, 'unexpected_field', 'Seuls visitorId, postalCode, town et kind sont admis.');
   const { visitorId, postalCode, town, kind } = body;
   if (typeof visitorId !== 'string' || !VISITOR.test(visitorId)) return failure(400, 'invalid_visitor', 'visitorId : identifiant opaque de 16 à 128 caractères.');
-  if (typeof postalCode !== 'string' || !/^\d{5}$/.test(postalCode)) return failure(400, 'invalid_postal_code', 'postalCode : 5 chiffres.');
-  if (typeof town !== 'string' || town.trim() === '' || town.length > 80 || /\d/.test(town)) return failure(400, 'invalid_town', 'town : le nom de la commune.');
+  if (typeof postalCode !== 'string' || !POSTAL_CODE.test(postalCode)) return failure(400, 'invalid_postal_code', 'postalCode : 5 chiffres.');
+  if (typeof town !== 'string' || !validTown(town)) return failure(400, 'invalid_town', 'town : le nom de la commune.');
   if (typeof kind !== 'string' || !KINDS[kind]) return failure(400, 'invalid_kind', 'kind : appartement ou maison.');
 
-  const at = config.now();
-  const limits = config.limits ?? DEFAULT_ESTIMATION_LIMITS;
-  // L'empreinte change à chaque heure pleine : elle sert la limite de l'heure, et ne relie pas les demandes d'un
-  // visiteur d'une heure à l'autre. Rien n'est effacé [R17], rien n'est gardé qui suive le visiteur [R15].
-  const visitor = await sha256Hex(`${intake.networkId}:${visitorId}:${at.toISOString().slice(0, 13)}`);
-  if (
-    !(await takeSlot(config.db, intake.networkId, `estimation:${visitor}`, limits.perVisitor, at)) ||
-    !(await takeSlot(config.db, intake.networkId, 'estimation:reseau', limits.perNetwork, at))
-  ) {
-    return failure(429, 'too_many_requests', 'Trop de demandes : réessayez plus tard.');
-  }
-  const journal = new SqlJournalStore(config.db);
-  const result = await new EstimationEnLigne(config.services.geocoder, config.services.sales, undefined, config.now).forTown(postalCode, town, KINDS[kind]!);
-  await appendEvent(
-    journal,
-    { type: 'estimation.commune', actor: 'intake:site_estimate', subject: null, data: { mode: 'essai', ok: result.ok, reason: result.ok ? null : result.reason, missingFiles: result.ok ? null : (result.missingFiles ?? null) } },
-    config.now,
-  );
+  const result = await estimateForVisitor({ db: config.db, services: config.services, limits: config.limits, now: config.now }, intake.networkId, visitorId, postalCode, town, kind, 'intake:site_estimate');
+  if (!result) return failure(429, 'too_many_requests', 'Trop de demandes : réessayez plus tard.');
   return result.ok
     ? json(200, { ok: true, mode: 'essai', data: result.value })
     : json(200, { ok: true, mode: 'essai', data: null, reason: result.reason, next: 'appointment' });
+}
+
+interface EstimateContext {
+  db: SqlDatabase;
+  services: { geocoder: Geocoder; sales: DetailedSales };
+  limits?: EstimationLimits | undefined;
+  now: () => Date;
+}
+
+/** Une demande de fourchette, sous les limites de E05 ; `null` au-delà. L'API et la page du site passent toutes deux ici. */
+async function estimateForVisitor(c: EstimateContext, networkId: string, visitorId: string, postalCode: string, town: string, kind: string, actor: string): Promise<CommuneResult | null> {
+  const at = c.now();
+  const limits = c.limits ?? DEFAULT_ESTIMATION_LIMITS;
+  // L'empreinte change à chaque heure pleine : elle sert la limite de l'heure, et ne relie pas les demandes d'un
+  // visiteur d'une heure à l'autre. Rien n'est effacé [R17], rien n'est gardé qui suive le visiteur [R15].
+  const visitor = await sha256Hex(`${networkId}:${visitorId}:${at.toISOString().slice(0, 13)}`);
+  if (!(await takeSlot(c.db, networkId, `estimation:${visitor}`, limits.perVisitor, at)) || !(await takeSlot(c.db, networkId, 'estimation:reseau', limits.perNetwork, at))) return null;
+  const result = await new EstimationEnLigne(c.services.geocoder, c.services.sales, undefined, c.now).forTown(postalCode, town, KINDS[kind]!);
+  await appendEvent(
+    new SqlJournalStore(c.db),
+    { type: 'estimation.commune', actor, subject: null, data: { mode: 'essai', ok: result.ok, reason: result.ok ? null : result.reason, missingFiles: result.ok ? null : (result.missingFiles ?? null) } },
+    c.now,
+  );
+  return result;
+}
+
+export const ESTIMATION_PAGE_PATH = '/estimation';
+const MAX_FORM_BYTES = 2000;
+// Ni script ni ressource extérieure ; le formulaire ne part que vers ce site.
+const PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+
+export interface EstimationPageConfig {
+  db: SqlDatabase;
+  networkId: string;
+  services?: { geocoder: Geocoder; sales: DetailedSales } | null | undefined;
+  limits?: EstimationLimits | undefined;
+  now: () => Date;
+  mode: 'essai' | 'reel';
+  appointmentHref: string;
+}
+
+/**
+ * La page `/estimation` d'un site (RS04), sans clé ni script. Une limite par visite comme celle de E05 : l'identifiant vient
+ * du formulaire, chaque page en reçoit un nouveau. Il ne suit personne, et la limite du réseau tient quoi qu'il arrive.
+ */
+export async function handleEstimationPage(request: Request, config: EstimationPageConfig): Promise<Response> {
+  const open = Boolean(config.services);
+  const page = (status: number, extra: { values?: { postalCode: string; town: string; kind: string }; error?: EstimationFormError; result?: CommuneResult }): Response =>
+    new Response(request.method === 'HEAD' ? null : renderEstimationPage({ visitorId: crypto.randomUUID(), open, appointmentHref: config.appointmentHref, ...extra }), {
+      status,
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': PAGE_CSP,
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+        // Chaque page porte sa propre visite, et une réponse ne se garde nulle part.
+        'cache-control': 'no-store',
+        ...(config.mode === 'essai' ? { 'x-robots-tag': 'noindex, nofollow' } : {}),
+      },
+    });
+  if (request.method === 'GET' || request.method === 'HEAD') return page(200, {});
+  if (request.method !== 'POST') return new Response('Méthode non permise.', { status: 405, headers: { allow: 'GET, HEAD, POST', 'cache-control': 'no-store' } });
+  if (!config.services) return page(200, {});
+  if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/x-www-form-urlencoded')) return page(400, { error: 'invalid_form' });
+  const raw = await request.text();
+  if (new TextEncoder().encode(raw).length > MAX_FORM_BYTES) return page(400, { error: 'invalid_form' });
+  const form = new URLSearchParams(raw);
+  const names = [...form.keys()];
+  // Ni surface, ni adresse, ni rien d'autre : sans visite, on ne parle pas d'un bien précis [R31].
+  if (new Set(names).size !== names.length || names.some((k) => !ALLOWED.has(k))) return page(400, { error: 'invalid_form' });
+  const visitorId = form.get('visitorId') ?? '';
+  const values = { postalCode: (form.get('postalCode') ?? '').trim(), town: (form.get('town') ?? '').trim(), kind: form.get('kind') ?? '' };
+  if (!VISITOR.test(visitorId)) return page(400, { values, error: 'invalid_form' });
+  if (!POSTAL_CODE.test(values.postalCode)) return page(400, { values, error: 'invalid_postal_code' });
+  if (!validTown(values.town)) return page(400, { values, error: 'invalid_town' });
+  if (!Object.hasOwn(KINDS, values.kind)) return page(400, { values, error: 'invalid_kind' });
+  const result = await estimateForVisitor({ db: config.db, services: config.services, limits: config.limits, now: config.now }, config.networkId, visitorId, values.postalCode, values.town, values.kind, 'public:estimation');
+  return result ? page(200, { values, result }) : page(429, { values, error: 'too_many_requests' });
 }

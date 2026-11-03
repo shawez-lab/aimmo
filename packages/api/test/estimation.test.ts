@@ -71,6 +71,122 @@ async function world() {
   return { db, config, call, ask, geocoder, journal: new SqlJournalStore(db) };
 }
 
+// RS04 : les sites et leurs pages, inventés. La clé sert seulement à régler les sites.
+const NET_SITE = 'https://reseau-rs04.example.test';
+const AGENT_SITE = 'https://alex-rs04.example.test';
+const KEY_DIR = 'test-cle-rs04-direction-kkkkkkkkkkkkkkkkkkkkkkkkk';
+
+async function sitesWorld() {
+  const w = await world();
+  const net = (await w.db.first<{ id: string }>('SELECT id FROM networks'))!.id;
+  await w.db.run("INSERT INTO agents (id, network_id, first_name, last_name, created_at, updated_at) VALUES ('ag-rs04', ?, 'Alex', 'Exemple', 'x', 'x')", [net]);
+  const config = { ...w.config, apiKeys: JSON.stringify([{ sha256: await sha256Hex(KEY_DIR), role: 'direction', userId: 'dir-1', networkId: net }]) };
+  for (const body of [{ kind: 'reseau', baseUrl: NET_SITE, active: true }, { kind: 'agent', agentId: 'ag-rs04', baseUrl: AGENT_SITE, active: true }]) {
+    const res = await handleRequest(new Request('https://aimmo-api.example.workers.dev/v1/attirer/sites', { method: 'POST', headers: { authorization: `Bearer ${KEY_DIR}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), config as never);
+    expect(res.status).toBe(200);
+  }
+  const get = (url: string, cfg: unknown = config) => handleRequest(new Request(url), cfg as never);
+  const post = (body: string, host = NET_SITE, type = 'application/x-www-form-urlencoded') => handleRequest(new Request(`${host}/estimation`, { method: 'POST', headers: { 'content-type': type }, body }), config as never);
+  const form = (over: Record<string, string> = {}) => new URLSearchParams({ visitorId: VISITOR, postalCode: '21990', town: 'Ville-Test', kind: 'appartement', ...over }).toString();
+  return { ...w, config, net, get, post, form };
+}
+
+describeWithSqlite('RS04 · la page d’estimation du site', () => {
+  it('[R10] [R31] la fourchette est celle de E05, au chiffre près, et aucun champ ne parle d’un bien précis', async () => {
+    const t = await sitesWorld();
+    const page = await t.get(`${NET_SITE}/estimation`);
+    expect(page.status).toBe(200);
+    const blank = await page.text();
+    expect(blank).toContain('name="postalCode"');
+    expect(blank).not.toMatch(/name="(surface|address|adresse|rooms|pieces)"/i);
+    const api = (await t.call(t.ask({ visitorId: 'visiteur-essai-0000000002' }))).body.data as { perM2: { low: number; median: number; high: number }; sales: number };
+    const res = await t.post(t.form());
+    expect(res.status).toBe(200);
+    const html = (await res.text()).replace(/\u202f|\u00a0/g, ' ');
+    const money = (n: number) => `${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €/m²`;
+    expect(html).toContain(`De ${money(api.perM2.low)} à ${money(api.perM2.high)}`);
+    expect(html).toContain(`Prix médian : ${money(api.perM2.median)}`);
+    expect(html).toContain(`Sur ${api.sales} ventes`);
+    expect(html).toContain('Source : DVF test');
+    expect(html).toContain('sans visite, personne ne peut le dire');
+    for (const field of ['surface=80', 'adresse=1+rue+inventee']) expect((await t.post(`${t.form()}&${field}`)).status, field).toBe(400);
+  });
+
+  it('[R03] aucune coordonnée n’est demandée, rien du visiteur n’est gardé ni au journal, le rendez-vous reste son choix', async () => {
+    const t = await sitesWorld();
+    const html = await (await t.get(`${NET_SITE}/estimation`)).text();
+    expect(html).not.toMatch(/type="(email|tel)"|name="(email|phone|telephone|nom)"/i);
+    expect(html).toContain('personne ne vous recontactera');
+    expect(html).toContain('href="/agents"');
+    await t.post(t.form());
+    const events = JSON.stringify(await t.db.all('SELECT * FROM journal'));
+    expect(events).toContain('public:estimation');
+    expect(events).not.toContain('21990');
+    expect(events).not.toContain('Ville-Test');
+    expect(events).not.toContain(VISITOR);
+    const calls = JSON.stringify(await t.db.all('SELECT * FROM assistant_calls'));
+    expect(calls).not.toContain(VISITOR);
+  });
+
+  it('les limites de E05 tiennent : par visite, puis pour le réseau, quel que soit le visiteur', async () => {
+    const t = await sitesWorld();
+    for (let i = 0; i < 3; i++) expect((await t.post(t.form())).status).toBe(200);
+    const over = await t.post(t.form());
+    expect(over.status).toBe(429);
+    expect(await over.text()).toContain('Trop de demandes');
+    // La limite du réseau tient quel que soit l'identifiant donné par le formulaire.
+    t.config.estimationLimits = { perVisitor: 3, perNetwork: 5 };
+    expect((await t.post(t.form({ visitorId: 'visiteur-essai-0000000098' }))).status).toBe(200);
+    expect((await t.post(t.form({ visitorId: 'visiteur-essai-0000000097' }))).status).toBe(200);
+    expect((await t.post(t.form({ visitorId: 'visiteur-essai-0000000099' }))).status).toBe(429);
+  });
+
+  it('une saisie invalide est dite en français et garde ce qui est écrit, échappé ; la fourchette absente est dite', async () => {
+    const t = await sitesWorld();
+    const cases: [Record<string, string>, string][] = [
+      [{ postalCode: '21' }, 'en 5 chiffres'],
+      [{ town: 'Ville 2' }, 'sans chiffre'],
+      [{ kind: 'chateau' }, 'appartement ou maison'],
+      [{ kind: 'constructor' }, 'appartement ou maison'],
+    ];
+    for (const [over, text] of cases) {
+      const res = await t.post(t.form(over));
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain(text);
+    }
+    expect((await t.post(t.form({ visitorId: 'court' }))).status).toBe(400);
+    expect((await t.post('{}', NET_SITE, 'application/json')).status).toBe(400);
+    expect((await t.post(`${t.form()}&kind=maison`)).status).toBe(400);
+    expect((await t.post(`${t.form()}&x=${'a'.repeat(3000)}`)).status).toBe(400);
+    const hostile = await (await t.post(t.form({ town: '"><script>x</script>' }))).text();
+    expect(hostile).not.toContain('<script>x');
+    const unknown = await t.post(t.form({ town: 'Inconnue' }));
+    expect(unknown.status).toBe(200);
+    expect(await unknown.text()).toContain('Nous ne trouvons pas cette commune');
+  });
+
+  it('[R153] sur les deux sites ; hors d’un site, 404 ; sans données, la page le dit et le lien aboutit ; aucune réponse en cache', async () => {
+    const t = await sitesWorld();
+    const own = await t.get(`${AGENT_SITE}/estimation`);
+    expect(own.status).toBe(200);
+    // Le site d'un agent sans ses mentions ne mène pas à sa page [R152].
+    expect(await own.text()).toContain('class="appel" href="/"');
+    expect(own.headers.get('cache-control')).toBe('no-store');
+    expect(own.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    expect(own.headers.get('content-security-policy')).toContain("form-action 'self'");
+    expect((await t.get('https://aimmo-api.example.workers.dev/estimation')).status).toBe(404);
+    const { estimation: _none, ...closed } = t.config;
+    const res = await t.get(`${NET_SITE}/estimation`, closed);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('pas encore ouverte');
+    expect(html).not.toContain('<form');
+    expect((await handleRequest(new Request(`${NET_SITE}/estimation`, { method: 'PUT' }), t.config as never)).status).toBe(405);
+    const head = await handleRequest(new Request(`${NET_SITE}/estimation`, { method: 'HEAD' }), t.config as never);
+    expect(await head.text()).toBe('');
+  });
+});
+
 describeWithSqlite('E05 · estimation en ligne du site', () => {
   it('[R31] rend la fourchette au m² de la commune, ses ventes seulement, et propose un rendez-vous', async () => {
     const w = await world();
