@@ -5,6 +5,7 @@ import { PERSON_REQUEST_CHANNELS, PERSON_REQUEST_KINDS } from '../../core/src/co
 import { BREACH_CATEGORIES, BREACH_LATE_CAUSES, BREACH_NATURES, BREACH_RISKS } from '../../core/src/conformite/fuites.ts';
 import { RISK_LEVELS } from '../../core/src/conformite/risque.ts';
 import { SUSPICION_DECISIONS } from '../../core/src/conformite/signalement.ts';
+import type { TransferVigilanceMissing } from '../../core/src/commerces/vigilance-cession.ts';
 import { VIGILANCE_DECISIONS } from '../../core/src/conformite/vigilance.ts';
 
 /**
@@ -222,12 +223,19 @@ export const COFFRE_JS = `
  * Le script de l'écran du responsable, servi à part (`/app/conformite.js`) et chargé seulement pour sa clé. Il ne
  * lit et n'écrit que par les routes `/v1/conformite`, avec les outils que l'application lui passe.
  */
+/* Ce qui manque à une cession de fonds [R118]. */
+const CESSION_MISSING: Record<TransferVigilanceMissing, string> = {
+  beneficiaires_effectifs: 'bénéficiaires effectifs',
+  origine_des_fonds: 'origine des fonds',
+};
+
 export const CONFORMITE_SCRIPT = `'use strict';
 globalThis.AIMMO_CONFORMITE = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, field = t.field, checkbox = t.checkbox, button = t.button, section = t.section, block = t.block, line = t.line, date = t.date, hour = t.hour, show = t.show;
   var cToday = t.cToday, cSelect = t.cSelect, cSeq = t.cSeq, cState = t.cState;
   var C_LEVELS = ${JSON.stringify(LEVELS)};
   var C_VIGILANCE = ${JSON.stringify(VIGILANCE)};
+  var C_CESSION_MISSING = ${JSON.stringify(CESSION_MISSING)};
   var C_SUSPICION = ${JSON.stringify(SUSPICION)};
   var C_REQUEST_KINDS = ${JSON.stringify(REQUEST_KINDS)};
   var C_REQUEST_CHANNELS = ${JSON.stringify(REQUEST_CHANNELS)};
@@ -322,12 +330,13 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     clear($('conformite-resume'));
     $('conformite-etat').textContent = '';
   }
-  // Les lectures de l'écran, toutes sous /v1/conformite [R16], dans l'ordre où l'écran les montre.
-  var C_PARTS = ['risque', 'vigilance', 'signalements', 'demandes', 'demandesAlertes', 'prospects', 'fuites', 'fuitesAlertes', 'registre', 'registreAlertes'];
+  // Les lectures de l'écran, toutes sous /v1/conformite [R16], plus les alertes de cession de M16 [R118], dans l'ordre où l'écran les montre.
+  var C_PARTS = ['risque', 'vigilance', 'cessions', 'signalements', 'demandes', 'demandesAlertes', 'prospects', 'fuites', 'fuitesAlertes', 'registre', 'registreAlertes'];
   function cReads() {
     return [
       send('/v1/conformite/risque', 'GET'),
       send('/v1/conformite/vigilance', 'GET'),
+      send('/v1/commerces/vigilance', 'GET'),
       send('/v1/conformite/signalements', 'GET'),
       send('/v1/conformite/demandes', 'GET'),
       send('/v1/conformite/demandes/alertes', 'GET'),
@@ -378,6 +387,7 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     }
     open(data.risque, function () { return true; }, 'fiche à valider', 'fiches à valider', false);
     open(data.vigilance, function (a) { return !a.decision; }, 'alerte de vigilance', 'alertes de vigilance', false);
+    open(data.cessions, function (a) { return !a.decision; }, 'alerte de cession', 'alertes de cession', false);
     open(data.signalements, function (s) { return !s.decision; }, 'signalement à décider', 'signalements à décider', true);
     open(data.demandes, function (d) { return !d.answeredOn; }, 'demande en cours', 'demandes en cours', false);
     open(data.fuites, function (f) { return !f.notified.cnil && f.due.cnil; }, 'fuite à notifier', 'fuites à notifier', true);
@@ -388,6 +398,7 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     body.appendChild(cAlerts(data));
     if (data.risque) body.appendChild(cRisk(data.risque));
     if (data.vigilance) body.appendChild(cVigilance(data.vigilance));
+    if (data.cessions) body.appendChild(cCessions(data.cessions));
     if (data.signalements) body.appendChild(cSuspicions(data.signalements));
     if (data.demandes) body.appendChild(cRequests(data.demandes));
     if (data.prospects) body.appendChild(cProspects(data.prospects));
@@ -457,6 +468,50 @@ globalThis.AIMMO_CONFORMITE = function (t) {
         form.appendChild(button('Signer la décision', function () {
           cAct(state, '/v1/conformite/vigilance/' + encodeURIComponent(a.alertId) + '/decider', { decision: decision.value, reason: reason.value.trim(), validatorName: name.value.trim() }, 'Décision rangée.');
         }));
+        form.appendChild(state);
+        li.appendChild(form);
+      }
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    return box;
+  }
+  // La vigilance de la cession d'un fonds (CE21) : ce qui manque, jamais une pièce ni un montant [R15] ; le responsable décide seul, avec son nom [R14, R118].
+  function cCessions(alerts) {
+    var box = section('Vigilance des cessions de fonds');
+    if (!alerts.length) box.appendChild(el('p', 'Aucune alerte.', 'etat'));
+    var ul = el('ul', null, 'liste');
+    alerts.forEach(function (a) {
+      var what = (a.missing || []).map(function (m) { return C_CESSION_MISSING[m] || 'une pièce'; }).join(', ');
+      var li = line('Cession d’un fonds : il manque au coffre : ' + what + '.', cRef(a.personId) + ' · levée le ' + date(a.raisedAt));
+      if (a.decision) {
+        li.appendChild(el('p', (C_VIGILANCE[a.decision.decision] || 'Décidée') + ' · ' + a.decision.validatorName + ', le ' + date(a.decision.decidedAt), 'decision'));
+      } else {
+        var form = el('div', null, 'decision');
+        var id = cSeq();
+        var decision = cSelect(form, id + '-decision', 'Décision', C_VIGILANCE);
+        var reason = field(form, id + '-raison', 'Raison', 'textarea');
+        var name = field(form, id + '-nom', 'Votre nom');
+        var state = cState();
+        var mine = t.session();
+        var go = button('Signer la décision', function () {
+          if (go.disabled) return;
+          if (!reason.value.trim() || !name.value.trim()) { state.textContent = 'La raison et votre nom sont à remplir.'; return; }
+          go.disabled = true;
+          state.textContent = 'Envoi…';
+          return send('/v1/commerces/vigilance/' + encodeURIComponent(a.id) + '/decision', 'POST', { decision: decision.value, reason: reason.value.trim(), validatorName: name.value.trim() }).then(function (res) {
+            if (res.gone || mine !== t.session()) return false;
+            go.disabled = false;
+            /* Une décision est définitive : une réponse perdue ne se dit pas refusée. */
+            if (res.offline || res.status >= 500 || !res.body) { state.textContent = 'Réponse perdue : la décision est peut-être rangée. Actualisez avant de recommencer.'; return false; }
+            if (res.ok) return openConformite('Décision rangée.');
+            if (res.status === 403) { state.textContent = 'Cet écran est réservé au responsable de la conformité.'; return false; }
+            if (res.body.code === 'already_decided') return openConformite('Cette alerte était déjà décidée : voici la décision rangée.');
+            state.textContent = cRefusal(res, 'Refusé. Vérifiez la saisie.');
+            return false;
+          });
+        });
+        form.appendChild(go);
         form.appendChild(state);
         li.appendChild(form);
       }

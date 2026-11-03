@@ -44,6 +44,7 @@ const COMPLIANCE: Record<string, Answer> = {
   'GET /v1/moi': ok({ role: 'compliance', firstName: null }),
   'GET /v1/conformite/risque': ok([SHEET]),
   'GET /v1/conformite/vigilance': ok([{ alertId: 'va1', key: 'paiement_comptant', rule: 'R93', label: 'Paiement comptant', figures: {}, text: 'Paiement comptant déclaré.', caseRef: 'offer:o1', personId: 'personne-test-d4e5f6', settingsVersion: 'v1', fingerprint: 'x', raisedAt: '2026-10-28T10:00:00.000Z', decision: null, notice: '' }]),
+  'GET /v1/commerces/vigilance': ok([]),
   'GET /v1/conformite/signalements': ok([]),
   'GET /v1/conformite/demandes': ok([{ id: 'd1', personId: 'personne-test-g7h8i9', kind: 'acces', channel: 'mail', receivedOn: '2026-10-20', dueOn: '2026-11-20', noticeOn: '2026-11-13', exclusionId: null, answeredOn: null, answerSha256: null, late: null }]),
   'GET /v1/conformite/demandes/alertes': ok([]),
@@ -150,13 +151,13 @@ describe('L10 · écran « Conformité » de l’application', () => {
     const screen = t.calls.filter((c) => c.url !== '/v1/moi');
     expect(screen.length).toBeGreaterThan(20);
     for (const c of screen) {
-      expect(c.url.startsWith('/v1/conformite/'), c.url).toBe(true);
+      expect(c.url.startsWith('/v1/conformite/') || c.url === '/v1/commerces/vigilance', c.url).toBe(true);
       expect(c.auth).toBe(`Bearer ${KEY}`);
       expect(c.url).not.toContain(KEY);
     }
     const routes = [...CONFORMITE_SCRIPT.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
     expect(routes.length).toBeGreaterThan(10);
-    for (const r of routes) expect(r.startsWith('/v1/conformite/'), r).toBe(true);
+    for (const r of routes) expect(r.startsWith('/v1/conformite/') || r === '/v1/commerces/vigilance' || r === '/v1/commerces/vigilance/', r).toBe(true);
     expect(CONFORMITE_SCRIPT).not.toMatch(/\bfetch\(|innerHTML|insertAdjacentHTML|document\.write|\.sort\(/);
   });
 
@@ -172,7 +173,7 @@ describe('L10 · écran « Conformité » de l’application', () => {
     // Aucune donnée personnelle : ni nom, ni identifiant entier de fiche.
     expect(text).not.toContain('personne-test-a1b2c3');
     const summary = t.els['conformite-resume']!.children.map((li) => li.textContent);
-    expect(summary).toEqual(['1fiche à valider', '1alerte de vigilance', '0signalements à décider', '1demande en cours', '1fuite à notifier']);
+    expect(summary).toEqual(['1fiche à valider', '1alerte de vigilance', '0alertes de cession', '0signalements à décider', '1demande en cours', '1fuite à notifier']);
 
     const form = t.body().all().find((e) => e.className === 'decision')!;
     const [level, reason, name] = form.all().filter((e) => e.tagName === 'select' || e.tagName === 'textarea' || e.tagName === 'input');
@@ -313,6 +314,95 @@ describe('L10 · écran « Conformité » de l’application', () => {
     offline.scripts()[0]!.listeners.error!({});
     await settle();
     expect(offline.els['conformite-etat']!.textContent).toBe('Pas de réseau. Réessayez dans un moment.');
+  });
+});
+
+describe('CE21 · le responsable lit et décide les alertes de cession', () => {
+  const ALERT = { id: 'ca1', fileId: 'f1', personId: 'personne-test-z9y8x7', missing: ['beneficiaires_effectifs', 'origine_des_fonds'], raisedAt: '2026-10-28T08:00:00.000Z', decision: null };
+  const POST = 'POST /v1/commerces/vigilance/ca1/decision';
+  const SIGN = 'Signer la décision';
+  async function open(more: Record<string, Answer> = {}) {
+    const t = await run({ ...COMPLIANCE, 'GET /v1/conformite/vigilance': ok([]), 'GET /v1/commerces/vigilance': ok([ALERT]), ...more });
+    await t.loadScript();
+    const section = () => t.body().children.find((e) => e.all().some((x) => x.textContent === 'Vigilance des cessions de fonds'))!;
+    const fill = () => {
+      const fields = section().all();
+      fields.find((e) => e.tagName === 'textarea')!.value = 'Raison inventée.';
+      fields.find((e) => e.tagName === 'input')!.value = 'Nom Inventé';
+    };
+    const sign = () => t.click(t.byText(section(), SIGN));
+    const posted = () => t.calls.filter((c) => c.method === 'POST' && c.url === '/v1/commerces/vigilance/ca1/decision');
+    const said = () => section().all().filter((e) => e.attributes.role === 'status').map((e) => e.textContent).join('');
+    return { ...t, section, fill, sign, posted, said };
+  }
+
+  it('[R118] [R15] l’alerte se lit : ce qui manque et la fin de la référence, jamais une pièce ni un montant ; le résumé la compte', async () => {
+    const t = await open();
+    const text = t.section().textContent;
+    expect(text).toContain('Cession d’un fonds : il manque au coffre : bénéficiaires effectifs, origine des fonds.');
+    expect(text).toContain('Client …z9y8x7');
+    expect(text).not.toContain('personne-test');
+    expect(t.els['conformite-resume']!.textContent).toContain('alerte de cession');
+  });
+
+  it('[R10] une lecture manquée n’est jamais « aucune alerte »', async () => {
+    const t = await open({ 'GET /v1/commerces/vigilance': no(500, {}) });
+    expect(t.els['conformite-resume']!.textContent).toContain('alertes de cession : non lu');
+    expect(t.body().textContent).not.toContain('Vigilance des cessions de fonds');
+  });
+
+  it('[R14] [R118] le responsable décide, avec sa raison et son nom, et la décision se relit', async () => {
+    const t = await open({ [POST]: ok({ ...ALERT }) });
+    t.fill();
+    t.table['GET /v1/commerces/vigilance'] = ok([{ ...ALERT, decision: { decision: 'origine_des_fonds_demandee', reason: 'Raison inventée.', validatorName: 'Nom Inventé', decidedAt: '2026-10-29T08:00:00.000Z' } }]);
+    await t.sign();
+    expect(t.posted()).toHaveLength(1);
+    expect(JSON.parse(t.posted()[0]!.body as string)).toMatchObject({ reason: 'Raison inventée.', validatorName: 'Nom Inventé' });
+    expect(t.els['conformite-etat']!.textContent).toBe('Décision rangée.');
+    expect(t.section().textContent).toContain('Nom Inventé, le 29/10/2026');
+    expect(t.byText(t.section(), SIGN)).toBeUndefined();
+  });
+
+  it('[R14] sans raison ni nom, rien ne part', async () => {
+    const t = await open();
+    await t.sign();
+    expect(t.posted()).toHaveLength(0);
+    expect(t.said()).toBe('La raison et votre nom sont à remplir.');
+  });
+
+  it.each([
+    ['panne', (async () => new Response('non', { status: 502 })) as Answer, 'Réponse perdue : la décision est peut-être rangée. Actualisez avant de recommencer.'],
+    ['droits', no(403, { ok: false, rule: 'R16', code: 'role' }), 'Cet écran est réservé au responsable de la conformité.'],
+    ['nom', no(400, { ok: false, rule: null, code: 'missing_name' }), 'Écrivez votre nom : il signe la décision.'],
+  ])('[R10] chaque réponse est dite, la saisie reste (%s)', async (_n, answer, said) => {
+    const t = await open({ [POST]: answer });
+    t.fill();
+    await t.sign();
+    expect(t.said()).toBe(said);
+    expect(t.section().all().find((e) => e.tagName === 'textarea')!.value).toBe('Raison inventée.');
+  });
+
+  it('[R17] une alerte déjà décidée ailleurs : la décision rangée est relue, rien n’est dit refusé', async () => {
+    const t = await open({ [POST]: no(400, { ok: false, rule: null, code: 'already_decided' }) });
+    t.fill();
+    await t.sign();
+    expect(t.els['conformite-etat']!.textContent).toBe('Cette alerte était déjà décidée : voici la décision rangée.');
+  });
+
+  it('[R10] un seul envoi à la fois', async () => {
+    let free: () => void = () => {};
+    const t = await open({ [POST]: () => new Promise((r) => { free = () => r(Response.json({ ok: true, data: {} })); }) });
+    t.fill();
+    const go = t.byText(t.section(), SIGN)!;
+    go.listeners.click!({});
+    go.listeners.click!({});
+    expect(t.posted()).toHaveLength(1);
+    free();
+    await settle();
+  });
+
+  it('[R201] le script tient le budget d’une page', () => {
+    expect(budgetProblems({ html: '', js: CONFORMITE_SCRIPT }, BUDGETS.page)).toEqual([]);
   });
 });
 
