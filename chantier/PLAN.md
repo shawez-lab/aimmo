@@ -1751,7 +1751,8 @@ Trouvé le 2026-11-03 par la voie 1, en comparant les routes de `packages/api/sr
 - Attend : rien pour l'écran ; `PIECES` (H25) pour une preuve réelle.
 
 ### U14 · Prospection des partenaires à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#303). Relecture forte sans P0 ni P1 ; Codex à sa limite (H03).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : U13
 - Cahier : M18 ; R03, R79, R16, R201.
 - Objectif : la direction ajoute un contact professionnel, lit la liste, note une opposition et lit les brouillons du jour, tous refusés tant que H32 n'est pas tranché, ce que l'écran dit.
@@ -1763,7 +1764,7 @@ Trouvé le 2026-11-03 par la voie 1, en comparant les routes de `packages/api/sr
 Voie : 1
 
 ### X13 · Bibliothèque, options payantes et mesure des visuels à l'écran
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : X07, X08, X09
 - Cahier : M19 Studio ; R16, R201.
 - Objectif : la direction range musiques et images sous licence, règle les options et lit la mesure des 20 visuels ; aujourd'hui `/v1/studio/bibliotheque`, `/options` et `/mesure-visuels` n'ont aucun geste à l'écran. Lire d'abord chaque route.
