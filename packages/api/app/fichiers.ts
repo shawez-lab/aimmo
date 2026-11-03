@@ -17,6 +17,7 @@ import { REGLAGES_MANDAT_ENTRY_HTML, REGLAGES_MANDAT_JS } from './reglages-manda
 import { LOYERS_ENTRY_HTML, LOYERS_JS } from './loyers.ts';
 import { MESURE_SOURCES_ENTRY_HTML, MESURE_SOURCES_JS } from './mesure-sources.ts';
 import { ANNUAIRE_ENTRY_HTML, ANNUAIRE_JS } from './annuaire.ts';
+import { PROSPECTION_ENTRY_HTML, PROSPECTION_JS } from './prospection.ts';
 import { ENGAGEMENTS_ENTRY_HTML, ENGAGEMENTS_JS } from './engagements.ts';
 import { FIN_DE_BAIL_JS } from './fin-de-bail.ts';
 import { COMMISSIONS_ENTRY_HTML, EUROS_ENTRY_HTML, FINANCES_JS, RAPPORT_AGENT_HTML, RAPPORT_DIRECTION_HTML, REGLAGES_ENTRY_HTML } from './finances.ts';
@@ -202,7 +203,7 @@ ${EUROS_ENTRY_HTML}${RAPPORT_AGENT_HTML}</section>
 <button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
 <p id="reseau-cas-etat" class="etat" role="status"></p>
 </section>
-${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
+${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -1720,6 +1721,7 @@ export const APP_JS = `'use strict';
     wipeLoyers();
     wipeMesureSources();
     wipeAnnuaire();
+    wipeProspection();
     wipeEngagements();
     wipeFinances();
   }
@@ -1796,7 +1798,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${ENGAGEMENTS_JS}${FIN_DE_BAIL_JS}${FINANCES_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${ENGAGEMENTS_JS}${FIN_DE_BAIL_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1992,6 +1994,7 @@ ${LOUER_JS}
     $('loyers-lire').addEventListener('click', function () { withLoyers(function (l) { return l.read(); }); });
     $('mesure-voir').addEventListener('click', function () { withMesureSources(function (m) { return m.show(''); }); });
     $('annuaire-ouvrir').addEventListener('click', function () { withAnnuaire(function (a) { return a.show(''); }); });
+    $('prospection-ouvrir').addEventListener('click', function () { withProspection(function (p) { return p.show(''); }); });
     $('engagements-voir').addEventListener('click', function () { withEngagements(function (e) { return e.show(''); }); });
     $('bascule-voir').addEventListener('click', function () { withBascule(function (b) { return b.show(''); }); });
     $('bascule-journal').addEventListener('click', function () { withBascule(function (b) { return b.journal(); }); });
