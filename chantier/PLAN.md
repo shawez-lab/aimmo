@@ -3610,6 +3610,7 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 
 ### IN13 · Le dossier de présentation dit « reçu », pas « validé »
 - Statut : en cours (voie 2)
+- Décidé (2026-11-03), lecture prudente : mêmes critères que IN07 [R216], avec le délai que la direction a réglé (G15) : compte rendu parti au vendeur dans le délai après la visite ; point dû le lundi qui suit sa semaine, le délai court depuis le début de ce lundi à Paris ; un mandat signé après ce lundi n'en fait pas un cas. En mode essai, le taux affiché au client reste donc sans cas tenu : il ne dit jamais plus que ce que le client a reçu.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07
 - Cahier : M20 ; Besoins et solutions, « Nos engagements de service ».
 - Objectif : le taux tenu montré au client (G07) compte un compte rendu ou un point validé, même refusé à l'envoi ou resté en essai, et un point préparé un autre jour que le lundi. Le mettre à la même mesure que IN07 [R216], dans les délais de G15.
