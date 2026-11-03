@@ -1885,7 +1885,8 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Reste : fusionnée (#321) ; relecture forte 2 P1 corrigés ; Codex à sa limite (H03).
 
 ### X20 · La commune d'un bien pour le calcul investisseur, à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#322) ; le socle change, contre le texte d'origine : `GET /v1/investir/biens/sans-commune`, commune refusée hors du département du bien ou sur un bien qui n'est pas un logement ; relecture forte 5 P1 corrigés ; Codex à sa limite (H03) ; un code du bon département mais de la mauvaise commune reste possible (pas de table des communes dans le dépôt), l'écran prévient seulement.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : Y04
 - Cahier : M17 ; R122, R16, R201.
 - Objectif : `POST /v1/investir/biens/<id>/commune` n'a aucun appel de l'application, et `/v1/investir/biens` ne rend que les biens dont la commune est rangée : à l'écran, aucun bien n'est jamais calculable. Le donner dans `app/investir.ts`, sans toucher au socle.
@@ -1893,7 +1894,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X21 · La zone de loyer d'une commune, à l'écran du réseau
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : W03
 - Cahier : M15 ; R16, R10, R201.
 - Objectif : `POST /v1/location/zones` n'a aucun appel de l'application : sans lui, chaque commune reste « zone inconnue » et le plafond le plus bas s'applique. Vérifier que le geste n'existe pas ailleurs, puis le donner à la direction sur l'écran du réseau.
