@@ -1864,7 +1864,8 @@ Trouvé le 2026-11-03 par la voie 2, en comparant les routes des modules de la v
 - Attend : rien.
 
 ### X15 · Une réponse perdue n'est plus dite « rien n'est enregistré »
-- Statut : en cours
+- Statut : fait (2026-11-03)
+- Reste : fusionnée (#311). Vérification GitHub verte ; en séance, tests ciblés verts, suite complète coupée à 359 fichiers par la limite de temps de l'outil, sans échec vu ; Codex à sa limite (H03). Le verrou contre le double appui n'a pas été regardé écran par écran ; attirer, avis, gagner, integration, investir, louer, studio et l'après-vente n'ont que le test général, sans test de coupure à eux.
 - Voie : 1
 - Trouvé par X14 (son « Reste ») : dix écrans disent « Pas de réseau : rien n'est enregistré. » quand une réponse se perd, alors que l'écriture a pu passer sur le serveur. L'agent croit le geste perdu et le refait.
 - Qui : Claude · Relecture : normale · Dépend de : X14

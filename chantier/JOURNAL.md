@@ -517,3 +517,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-03 06:33 · W24 · le garant Visale et son visa sont sur la carte du candidat, comptés par l'effacement (#309) ; relecture forte sans P0 ni P1 ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : EC13
 - 2026-11-03 06:33 · voie 2 · fin de séance : W19, W20, W21, W22 et W24 fusionnées ; W23 bloquée (H43) ; EC13 écrite ; verrou libéré · prochaine : EC13
 - 2026-11-03 06:34 · voie 2 · relance immédiate refusée par le contrôle des permissions ; pas de contournement, le passage horaire reprendra EC13 · prochaine : EC13
+- 2026-11-03 07:14 · C09e · la direction lit le palier de chaque canal et l'avance à l'écran ; fermé tant que C09 n'ouvre pas, refusé sans vrai canal (#310) ; relecture forte sans P0 ni P1, un manque de preuve corrigé ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : X15
+- 2026-11-03 07:14 · X15 · une réponse perdue n'est plus dite « rien n'est enregistré », sur dix écrans (#311) ; texte seul ; vérification GitHub verte, suite locale coupée par la limite de temps, sans échec vu ; Codex à sa limite (H03) · prochaine : à choisir
