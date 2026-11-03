@@ -892,7 +892,7 @@ describe('W11 · écran « Louer » de l’application', () => {
 
   describe('W18 · compléter un dossier de candidature', () => {
     const FILE = { type: 'application/pdf', size: 8, arrayBuffer: async () => new TextEncoder().encode('%PDF-1.7').buffer };
-    const DEP = 'POST /v1/location/candidatures/c3/fichiers/piece';
+    const DEP = 'POST /v1/location/candidatures/c3/fichiers/piece?holder=candidat';
     const options = (t: Awaited<ReturnType<typeof run>>, label: string) => t.input(label).children.map((o) => o.textContent);
 
     it('[R201] servi à part, chargé au premier geste ; budget tenu ; rien n’est offert une fois le choix fait', async () => {
@@ -949,6 +949,29 @@ describe('W11 · écran « Louer » de l’application', () => {
       expect(t.byText('Ranger la pièce')).toBeDefined();
     });
 
+    it('[R95] W19 : le dépôt dit à qui est la pièce ; changer de titulaire redépose le fichier pour le bon', async () => {
+      const dep = (holder: string) => `POST /v1/location/candidatures/c2/fichiers/piece?holder=${holder}`;
+      const t = await run({
+        [dep('candidat')]: ok({ kind: 'piece', ref: 'location/l1/candidatures/c2/c.pdf', sha256: SHA_PDF, size: 8 }),
+        [dep('g2')]: ok({ kind: 'piece', ref: 'location/l1/candidatures/c2/g.pdf', sha256: SHA_PDF, size: 8 }),
+        'POST /v1/location/candidatures/c2/pieces': no(409, { ok: false, rule: 'R104', code: 'one_domicile' }),
+      });
+      await t.openL1();
+      await t.openDossier(1);
+      t.input('La pièce').value = 'bulletins_salaire';
+      (t.input('Le fichier') as unknown as { files: unknown[] }).files = [FILE];
+      await t.click(t.byText('Ranger la pièce'));
+      await t.click(t.byText('Ranger la pièce'));
+      expect(t.posts().filter((c) => c.url.includes('/fichiers/piece')).map((c) => c.url)).toEqual(['/v1/location/candidatures/c2/fichiers/piece?holder=candidat']);
+      const who = t.input('Qui fournit la pièce');
+      who.value = 'g2';
+      who.listeners.change!({});
+      t.input('La pièce').value = 'visa_visale';
+      await t.click(t.byText('Ranger la pièce'));
+      expect(t.posts().filter((c) => c.url.includes('/fichiers/piece')).map((c) => c.url)).toEqual(['/v1/location/candidatures/c2/fichiers/piece?holder=candidat', '/v1/location/candidatures/c2/fichiers/piece?holder=g2']);
+      expect(t.posts().at(-1)!.body).toContain('location/l1/candidatures/c2/g.pdf');
+    });
+
     it('[R104] un refus du serveur est dit en français, sans code ; une réponse perdue est dite telle', async () => {
       const t = await run({ [DEP]: ok({ kind: 'piece', ref: 'location/l1/candidatures/c3/r.pdf', sha256: SHA_PDF, size: 8 }), 'POST /v1/location/candidatures/c3/pieces': no(409, { ok: false, rule: 'R104', code: 'one_domicile' }) });
       await t.openL1();
@@ -961,7 +984,7 @@ describe('W11 · écran « Louer » de l’application', () => {
       delete t.table['POST /v1/location/candidatures/c3/pieces'];
       await t.click(t.byText('Ranger la pièce'));
       expect(t.state()).toBe('Réponse perdue : ce geste est peut-être rangé. Rouvrez le logement avant de recommencer.');
-      expect(t.posts().filter((c) => c.url.endsWith('/fichiers/piece'))).toHaveLength(1);
+      expect(t.posts().filter((c) => c.url.includes('/fichiers/piece'))).toHaveLength(1);
     });
 
     it('[R104] une personne qui a déjà son justificatif de domicile ne se le voit plus proposer ; un double appui n’ajoute qu’un garant', async () => {

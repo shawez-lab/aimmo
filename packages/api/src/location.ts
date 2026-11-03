@@ -19,6 +19,7 @@ import {
   AnnoncesLocation,
   BauxLocation,
   DepotsLocation,
+  type PieceDepositPlace,
   Candidatures,
   ChoixProprietaire,
   EtatsDesLieux,
@@ -173,28 +174,29 @@ const DEPOSIT_STATUS: Readonly<Record<string, number>> = { trop_lourd: 413, type
  * Le dépôt d'une pièce (W14) : le corps est le fichier, tel quel ; son type dans `content-type`, son empreinte dite par
  * l'appareil dans `x-aimmo-sha256`. Il rend la référence que le geste de M15 attend ; sans écriture possible, il est fermé.
  */
-async function depositRoute(s: LocationServices, v: Viewer, [id, kind, applicationId]: string[], r: Request): Promise<Response> {
+async function depositRoute(s: LocationServices, v: Viewer, [id, kind]: string[], r: Request, place?: PieceDepositPlace): Promise<Response> {
   const files = s.files;
   if (!files.upload) return json(503, { ok: false, rule: null, code: 'depot_ferme' });
   const length = r.headers.get('content-length');
   const declaredSize = length === null || length.trim() === '' ? null : /^\d{1,12}$/.test(length.trim()) ? Number(length.trim()) : Number.NaN;
   const store = { put: (key: string, bytes: Uint8Array, type: string) => files.upload!(key, bytes, type) };
-  const result = await new DepotsLocation(core(s).listings, store, s.journal, { now: s.now, ...(s.newId ? { newId: s.newId } : {}) }).deposit(v, id, {
+  const result = await new DepotsLocation(core(s).listings, store, s.journal, core(s).applications, { now: s.now, ...(s.newId ? { newId: s.newId } : {}) }).deposit(v, id, {
     kind,
     contentType: r.headers.get('content-type'),
     sha256: r.headers.get('x-aimmo-sha256'),
     declaredSize,
     read: (max) => readCapped(r, max),
-  }, applicationId);
+  }, place);
   if (!result.ok && DEPOSIT_STATUS[result.code]) return json(DEPOSIT_STATUS[result.code]!, { ok: false, rule: result.rule, code: result.code });
   return reply(result);
 }
 
-/** Le dépôt d'une pièce de candidature (W18) : la candidature est contrôlée avant de lire un seul octet [R16]. */
+/** Le dépôt d'une pièce de candidature (W18) : la candidature et le titulaire, `?holder=`, sont contrôlés avant de lire un seul octet [R16]. */
 async function depositPieceRoute(s: LocationServices, v: Viewer, [id]: string[], r: Request): Promise<Response> {
-  const place = await core(s).applications.placeOf(v, id);
+  const place = await core(s).applications.placeOf(v, id, new URL(r.url).searchParams.get('holder'));
   if (!place.ok) return reply(place);
-  return depositRoute(s, v, [place.value.listingId, 'piece', place.value.applicationId], r);
+  const { listingId, ...piece } = place.value;
+  return depositRoute(s, v, [listingId, 'piece'], r, piece);
 }
 
 const ROUTES: LocationRoute[] = [

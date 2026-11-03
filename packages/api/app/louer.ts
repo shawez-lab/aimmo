@@ -343,10 +343,11 @@ globalThis.AIMMO_LOUER = function (t) {
       picked: function () { return !!(pick.files && pick.files[0]); },
       sha: function () { return kept ? kept.sha : null; },
       // La référence du fichier choisi, après l'avoir déposé ; null si rien n'est rangé, la raison étant dite.
-      ref: function (base) {
+      ref: function (base, query) {
+        var at = query || '';
         var file = pick.files && pick.files[0];
         if (!file) return Promise.resolve(null);
-        if (kept && kept.file === file) return Promise.resolve(kept.ref);
+        if (kept && kept.file === file && kept.at === at) return Promise.resolve(kept.ref);
         var type = String(file.type || '').toLowerCase();
         if (!Object.prototype.hasOwnProperty.call(types, type)) { louerState(LOUER_REFUSALS.type_refuse); return Promise.resolve(null); }
         if (file.size > DEPOSIT_MAX) { louerState(LOUER_REFUSALS.trop_lourd); return Promise.resolve(null); }
@@ -355,11 +356,11 @@ globalThis.AIMMO_LOUER = function (t) {
         return file.arrayBuffer().then(function (buf) { return crypto.subtle.digest('SHA-256', buf); }).then(function (sum) {
           if (mine !== t.session()) return null;
           louerState('Envoi du fichier…');
-          return louerUpload(base + '/fichiers/' + kind, file, type, hex(sum)).then(function (res) {
+          return louerUpload(base + '/fichiers/' + kind + at, file, type, hex(sum)).then(function (res) {
             if (res.gone) return null;
             var ref = res.ok && res.body.data && res.body.data.ref;
             if (typeof ref !== 'string') { louerState(res.offline ? 'Pas de réseau : le fichier n’est pas rangé.' : louerRefusal(res.body, 'Le fichier n’est pas rangé. Réessayez.')); return null; }
-            kept = { file: file, ref: ref, sha: hex(sum) };
+            kept = { file: file, at: at, ref: ref, sha: hex(sum) };
             return ref;
           });
         }, function () { if (mine === t.session()) louerState('Ce fichier ne se lit pas sur ce téléphone.'); return null; });

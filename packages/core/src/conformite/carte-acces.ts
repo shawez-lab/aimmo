@@ -607,6 +607,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   rental_guarantors: { locate: by('person_id') },
   // Les pièces du candidat lui-même ; celles d'un garant sont au garant.
   rental_application_pieces: { locate: [via('application_id', 'rental_applications', 'id', { where: { holder: 'candidat' } }), via('holder', 'rental_guarantors')] },
+  // Chaque fichier déposé, joint ou non, est à la personne pour qui il a été déposé (W19).
+  rental_piece_deposits: { locate: by('person_id') },
   // La présentation au propriétaire montre les dossiers d'autres personnes : il en voit la date et l'empreinte.
   rental_presentations: { locate: [via('listing_id', 'rental_listings')], shared: ['snapshot'] },
   rental_choices: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications')] },
