@@ -3609,7 +3609,8 @@ Décidé, lecture prudente : les pages lisent ce que les modules ont rangé, rie
 - Attend : la réponse de l'avocat sur la reprise de liberté, à écrire dans `HUMAIN.md`.
 
 ### IN13 · Le dossier de présentation dit « reçu », pas « validé »
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#363). Relecture forte 2 P1 corrigés ; Codex non attendu (H03).
 - Décidé (2026-11-03), lecture prudente : mêmes critères que IN07 [R216], avec le délai que la direction a réglé (G15) : compte rendu parti au vendeur dans le délai après la visite ; point dû le lundi qui suit sa semaine, le délai court depuis le début de ce lundi à Paris ; un mandat signé après ce lundi n'en fait pas un cas. En mode essai, le taux affiché au client reste donc sans cas tenu : il ne dit jamais plus que ce que le client a reçu.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN07
 - Cahier : M20 ; Besoins et solutions, « Nos engagements de service ».
