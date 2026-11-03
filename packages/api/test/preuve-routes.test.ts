@@ -32,7 +32,7 @@ async function setup() {
     expect(res.status).toBe(200);
   }
   const get = (url: string, method = 'GET') => handleAttirerPublic(as, new Request(url, { method }));
-  return { post, get };
+  return { post, get, ps };
 }
 
 describeWithSqlite('IN02 · routes du sceau et compte public', () => {
@@ -42,6 +42,16 @@ describeWithSqlite('IN02 · routes du sceau et compte public', () => {
     expect((await t.post({ ...direction, role: 'agent', userId: 'ag-1' } as Viewer, { month: '2027-01', manualCount: 0 })).status).toBe(403);
     expect(await t.post(direction, { month: '2027-01', manualCount: 0, montant: 3 })).toMatchObject({ status: 400, body: { code: 'amount_refused' } });
     expect(await t.post(direction, { month: '2027-01', manualCount: 0 })).toMatchObject({ status: 200, body: { ok: true, data: { seq: 1, counted: 0 } } });
+  });
+
+  it('[R16] [R213] la lecture des sceaux pour l’écran : la direction seule, et un sceau se voit aussitôt', async () => {
+    const t = await setup();
+    const read = (viewer: Viewer) => pilotageRoutes().find((r) => r.name === 'pilotage.preuve_sceaux')!.handle(t.ps, viewer, [], new Request('https://api.exemple.test/v1/pilotage/preuve/sceaux'));
+    expect((await read({ ...direction, role: 'agent', userId: 'ag-1' } as Viewer)).status).toBe(403);
+    expect((await read({ ...direction, role: 'compliance', userId: 'c-1' } as Viewer)).status).toBe(403);
+    expect(((await (await read(direction)).json()) as Record<string, any>).data.seals).toEqual([]);
+    expect((await t.post(direction, { month: '2027-01', manualCount: 0 })).status).toBe(200);
+    expect(((await (await read(direction)).json()) as Record<string, any>).data.seals).toHaveLength(1);
   });
 
   it('[R213] le compte public est servi sur le site du réseau seul, en page et en fichier, sans index en essai', async () => {

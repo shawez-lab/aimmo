@@ -114,6 +114,7 @@ export function pilotageRoutes(): PilotageRoute[] {
     },
     { method: 'GET', pattern: new RegExp(`${P}/preuve$`), name: 'pilotage.preuve', handle: async (s, v) => reply(await services(s).preuve.read(v)) },
     { method: 'GET', pattern: new RegExp(`${P}/parcours$`), name: 'pilotage.parcours', handle: async (s, v, _p, r) => reply(await services(s).parcours.of(v, { from: query(r, 'du'), to: query(r, 'au') })) },
+    { method: 'GET', pattern: new RegExp(`${P}/preuve/sceaux$`), name: 'pilotage.preuve_sceaux', handle: async (s, v) => reply(await services(s).sceaux.read(v)) },
     {
       method: 'POST',
       pattern: new RegExp(`${P}/preuve/sceau$`),
