@@ -80,6 +80,8 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     expect(all).not.toContain('CREATE TABLE');
     expect(all).not.toContain('digest');
     expect(t.parts.size).toBe(t.receipt.parts + 1);
+    // Les noms du stockage ne disent ni les tables ni leur taille.
+    for (const name of t.parts.keys()) expect(name).toMatch(/^copies\/\d{8}T\d{6}Z-[0-9a-f]{16}\/(\d{6}|sommaire)$/);
     // Le journal ne porte que des comptes.
     const last = (await new SqlJournalStore(t.db).all()).at(-1)!;
     expect(last.type).toBe('base.copie');
@@ -170,6 +172,59 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     const s = await small();
     await s.source.exec("INSERT INTO parent (id) VALUES (x'00ff')");
     await expect(s.copy.take()).rejects.toThrow('parent');
+  });
+
+  it('[R223] une écriture pendant la copie ne casse pas les clés étrangères : l’enfant est lu avant son parent', async () => {
+    const source = emptyDb();
+    await source.exec('CREATE TABLE parent (id TEXT PRIMARY KEY); CREATE TABLE enfant (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES parent (id));');
+    await source.run("INSERT INTO parent (id) VALUES ('p')");
+    await source.run("INSERT INTO enfant (id, parent_id) VALUES ('e', 'p')");
+    const { store } = memoryStore();
+    const key = await copyKeyFromSecret(SECRET);
+    let once = true;
+    const during: CopyStore = {
+      get: store.get,
+      put: async (k, b) => {
+        await store.put(k, b);
+        if (!once) return;
+        once = false;
+        await source.run("INSERT INTO parent (id) VALUES ('p2')");
+        await source.run("INSERT INTO enfant (id, parent_id) VALUES ('e2', 'p2')");
+      },
+    };
+    const { copyId } = await new CopieBase(source, new MemoryJournalStore(), during, key).take();
+    expect((await restoreCopy(emptyDb(), store, key, copyId)).ok).toBe(true);
+  });
+
+  it('[R223] un journal falsifié à la source se dit : jamais « restaurée »', async () => {
+    const source = emptyDb();
+    await source.exec('CREATE TABLE journal (seq INTEGER PRIMARY KEY, at TEXT, type TEXT, actor TEXT, subject TEXT, data TEXT, prev_hash TEXT, hash TEXT);');
+    await source.run("INSERT INTO journal VALUES (1, '2027-01-01T00:00:00.000Z', 't', 'a', NULL, '{}', 'x', 'y')");
+    const { store } = memoryStore();
+    const key = await copyKeyFromSecret(SECRET);
+    const { copyId } = await new CopieBase(source, new MemoryJournalStore(), store, key).take();
+    expect(await restoreCopy(emptyDb(), store, key, copyId)).toMatchObject({ ok: false, code: 'not_identical', problems: [{ kind: 'journal_chain' }] });
+  });
+
+  it('[R223] un objet du schéma absent, une intégrité mauvaise ou une écriture refusée se disent', async () => {
+    const s = await small();
+    await s.source.exec('CREATE INDEX parent_id_copie ON parent (id);');
+    await s.source.run("INSERT INTO parent (id) VALUES ('secret-de-ligne')");
+    const { copyId } = await s.copy.take();
+
+    const noIndex = emptyDb();
+    const skipping: SqlDatabase = { ...noIndex, run: (sql, params = []) => (sql.startsWith('CREATE INDEX') ? Promise.resolve({ changes: 0 }) : noIndex.run(sql, params)) };
+    expect(await restoreCopy(skipping, s.store, s.key, copyId)).toMatchObject({ ok: false, code: 'not_identical', problems: [{ kind: 'schema_differs', name: 'parent_id_copie' }] });
+
+    const damaged = emptyDb();
+    const bad: SqlDatabase = { ...damaged, first: (sql, params) => (sql.includes('integrity_check') ? Promise.resolve({ integrity_check: 'abîmée' } as never) : damaged.first(sql, params)) };
+    expect(await restoreCopy(bad, s.store, s.key, copyId)).toMatchObject({ ok: false, code: 'not_identical', problems: [{ kind: 'integrity' }] });
+
+    const refusing = emptyDb();
+    const refused: SqlDatabase = { ...refusing, run: (sql, params = []) => (sql.startsWith('INSERT') ? Promise.reject(new Error('secret-de-ligne')) : refusing.run(sql, params)) };
+    const r = await restoreCopy(refused, s.store, s.key, copyId);
+    expect(r).toEqual({ ok: false, code: 'restore_failed' });
+    expect(await refusing.all('PRAGMA foreign_keys')).toEqual([{ foreign_keys: 1 }]);
   });
 
   it('[R223] une clé qui n’est pas 32 octets en base64 est refusée', async () => {

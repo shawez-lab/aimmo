@@ -3633,7 +3633,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Statut : à faire
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV01
 - Cahier : Architecture technique, « Sauvegardes » ; Conformité, durées de conservation.
-- Objectif : une tâche de nuit range la copie dans un stockage à part, derrière la même interface, avec une clé en secret ; la direction voit la date de la dernière copie réussie, et une nuit sans copie donne une alerte. Durée de garde écrite au registre des traitements, avec le rejeu des effacements après une restauration.
+- Décidé (2026-11-03) par la relecture de SV01 : la copie ne se prend pas dans le Worker (limite de requêtes de D1, base qui vit). Un travail GitHub de nuit fait `wrangler d1 export`, charge la photo dans une base SQLite neuve et y lance `CopieBase`. À vérifier au branchement : la durée du travail reste dans le quota, décision du 2026-10-29.
+- Objectif : un travail de nuit range la copie dans un stockage à part, derrière la même interface, avec une clé en secret ; la direction voit la date de la dernière copie réussie, et une nuit sans copie donne une alerte. Durée de garde écrite au registre des traitements, avec le rejeu des effacements après une restauration.
 - Critères : sans clé ou sans stockage, « non sauvegardé » dit, jamais un faux succès (test) ; une panne n'arrête pas les autres tâches [R13] (test) ; une nuit manquée alerte la direction (test) ; un effacement fait après la copie est refait après la restauration (test) ; droits [R16] (test).
 - Attend : une ligne de `HUMAIN.md` pour le compartiment, sa règle de garde et la clé, à écrire par SV02.
 

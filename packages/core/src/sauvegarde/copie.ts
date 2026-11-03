@@ -10,8 +10,10 @@
  * - une copie ne se restaure que dans une base neuve : rien n'est jamais écrasé. Les garde-fous de la base reviennent à la
  *   fin, pour que rejouer des lignes anciennes ne les déclenche pas ;
  * - « restaurée » ne se dit qu'après preuve : mêmes empreintes, mêmes objets, clés étrangères et intégrité saines ;
- * - la base vit pendant la copie, qui n'est pas une photo à l'instant près : un écart de clés étrangères se dit au moment de
- *   restaurer. La restauration à l'instant près est celle de D1.
+ * - la copie se prend sur une photo de la base, hors du Worker : `wrangler d1 export`, chargé dans une base SQLite (SV02).
+ *   Lue sur une base qui vit, elle ne serait pas à l'instant près, et un Worker atteindrait la limite de requêtes de D1.
+ *   Par prudence, les enfants sont lus avant leurs parents, et tout écart se dit à la restauration, jamais comme un succès ;
+ * - le stockage ne voit que la date de la copie et des numéros de morceaux : ni nom de table ni compte par table.
  */
 import type { SqlDatabase, SqlValue } from '../db/sql.ts';
 import { appendEvent, verifyChain } from '../journal/journal.ts';
@@ -41,6 +43,8 @@ interface TableSummary {
   name: string;
   rows: number;
   digest: string;
+  /** Les numéros de ses morceaux dans la copie : `firstPart`, puis les suivants. */
+  firstPart: number;
   parts: number;
 }
 
@@ -64,7 +68,7 @@ export interface CopyReceipt {
   parts: number;
 }
 
-export type RestoreRefusal = 'bad_copy_id' | 'manifest_missing' | 'undecryptable' | 'part_missing' | 'bad_format' | 'target_not_empty';
+export type RestoreRefusal = 'bad_copy_id' | 'manifest_missing' | 'undecryptable' | 'part_missing' | 'bad_format' | 'target_not_empty' | 'restore_failed';
 export type RestoreProblem = { kind: 'table_differs'; table: string } | { kind: 'schema_differs'; name: string } | { kind: 'foreign_keys'; table: string } | { kind: 'integrity' } | { kind: 'journal_chain' };
 export type RestoreOutcome =
   | { ok: true; copyId: string; takenAt: string; tables: number; rows: number; durationMs: number }
@@ -116,7 +120,7 @@ async function open(key: CopyKey, place: string, bytes: Uint8Array): Promise<str
 }
 
 const manifestPlace = (copyId: string): string => `copies/${copyId}/sommaire`;
-const partPlace = (copyId: string, table: string, index: number): string => `copies/${copyId}/${encodeURIComponent(table)}/${String(index).padStart(6, '0')}`;
+const partPlace = (copyId: string, index: number): string => `copies/${copyId}/${String(index).padStart(6, '0')}`;
 
 /** Le schéma de la base, dans l'ordre où elle l'a créé, sans ce qui appartient au moteur. */
 async function readSchema(db: SqlDatabase): Promise<SchemaObject[]> {
@@ -180,21 +184,25 @@ export class CopieBase {
     const copyId = `${stamp}-${toHex(crypto.getRandomValues(new Uint8Array(8)))}`;
     const schema = await readSchema(this.db);
     const tables: TableSummary[] = [];
-    for (const object of schema) {
+    let nextPart = 0;
+    // Dans l'ordre inverse de leur création : un enfant est lu avant son parent, qui ne peut alors que le contenir.
+    for (const object of [...schema].reverse()) {
       if (object.type !== 'table') continue;
       let digest = '';
       let rows = 0;
       let parts = 0;
+      const firstPart = nextPart;
       for await (const page of pagesOf(this.db, object.name)) {
         checkValues(object.name, page);
         const text = JSON.stringify(page);
         digest = await chain(digest, text);
-        const place = partPlace(copyId, object.name, parts);
+        const place = partPlace(copyId, nextPart);
         await this.store.put(place, await seal(this.key, place, text));
         rows += page.length;
         parts += 1;
+        nextPart += 1;
       }
-      tables.push({ name: object.name, rows, digest, parts });
+      tables.push({ name: object.name, rows, digest, firstPart, parts });
     }
     const sequences = schema.some((o) => /AUTOINCREMENT/i.test(o.sql)) ? await this.db.all<{ name: string; seq: number }>('SELECT name, seq FROM sqlite_sequence ORDER BY name') : [];
     const manifest: Manifest = { format: COPY_FORMAT, copyId, takenAt, schema, tables, sequences };
@@ -228,7 +236,7 @@ export async function restoreCopy(target: SqlDatabase, store: CopyStore, key: Co
   for (const t of manifest.tables) {
     const texts: string[] = [];
     for (let i = 0; i < t.parts; i += 1) {
-      const place = partPlace(copyId, t.name, i);
+      const place = partPlace(copyId, t.firstPart + i);
       const bytes = await store.get(place);
       if (!bytes) return { ok: false, code: 'part_missing' };
       const text = await open(key, place, bytes);
@@ -238,43 +246,49 @@ export async function restoreCopy(target: SqlDatabase, store: CopyStore, key: Co
     pages.set(t.name, texts);
   }
 
+  const problems: RestoreProblem[] = [];
   await target.exec('PRAGMA foreign_keys = OFF');
-  for (const object of manifest.schema) if (object.type === 'table') await target.run(object.sql);
-  for (const t of manifest.tables) {
-    for (const text of pages.get(t.name) ?? []) {
-      for (const row of JSON.parse(text) as Row[]) {
-        const columns = Object.keys(row);
-        const names = columns.map((c) => (c === ROWID ? 'rowid' : q(c)));
-        await target.run(`INSERT INTO ${q(t.name)} (${names.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`, columns.map((c) => row[c] ?? null));
+  try {
+    for (const object of manifest.schema) if (object.type === 'table') await target.run(object.sql);
+    for (const t of manifest.tables) {
+      for (const text of pages.get(t.name) ?? []) {
+        for (const row of JSON.parse(text) as Row[]) {
+          const columns = Object.keys(row);
+          const names = columns.map((c) => (c === ROWID ? 'rowid' : q(c)));
+          await target.run(`INSERT INTO ${q(t.name)} (${names.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`, columns.map((c) => row[c] ?? null));
+        }
       }
     }
-  }
 
-  for (const s of manifest.sequences) {
-    const { changes } = await target.run('UPDATE sqlite_sequence SET seq = ? WHERE name = ?', [s.seq, s.name]);
-    if (changes === 0) await target.run('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)', [s.name, s.seq]);
-  }
+    for (const s of manifest.sequences) {
+      const { changes } = await target.run('UPDATE sqlite_sequence SET seq = ? WHERE name = ?', [s.seq, s.name]);
+      if (changes === 0) await target.run('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)', [s.name, s.seq]);
+    }
 
-  const problems: RestoreProblem[] = [];
-  for (const t of manifest.tables) {
-    const seen = await digestOf(target, t.name);
-    if (seen.digest !== t.digest || seen.rows !== t.rows) problems.push({ kind: 'table_differs', table: t.name });
-  }
-  // Index, vues et garde-fous en dernier : rejouer des lignes anciennes ne doit pas les déclencher.
-  for (const object of manifest.schema) if (object.type !== 'table') await target.run(object.sql);
-  const after = await readSchema(target);
-  const names = new Set(after.map((o) => `${o.type}:${o.name}:${o.sql}`));
-  for (const object of manifest.schema) if (!names.has(`${object.type}:${object.name}:${object.sql}`)) problems.push({ kind: 'schema_differs', name: object.name });
+    for (const t of manifest.tables) {
+      const seen = await digestOf(target, t.name);
+      if (seen.digest !== t.digest || seen.rows !== t.rows) problems.push({ kind: 'table_differs', table: t.name });
+    }
+    // Index, vues et garde-fous en dernier : rejouer des lignes anciennes ne doit pas les déclencher.
+    for (const object of manifest.schema) if (object.type !== 'table') await target.run(object.sql);
+    const after = await readSchema(target);
+    const names = new Set(after.map((o) => `${o.type}:${o.name}:${o.sql}`));
+    for (const object of manifest.schema) if (!names.has(`${object.type}:${object.name}:${object.sql}`)) problems.push({ kind: 'schema_differs', name: object.name });
 
-  const broken = await target.all<{ table: string }>('PRAGMA foreign_key_check');
-  for (const table of new Set(broken.map((b) => b.table))) problems.push({ kind: 'foreign_keys', table });
-  const integrity = await target.first<{ integrity_check: string }>('PRAGMA integrity_check');
-  if (integrity?.integrity_check !== 'ok') problems.push({ kind: 'integrity' });
-  if (manifest.tables.some((t) => t.name === 'journal')) {
-    const chainState = await verifyChain(await new SqlJournalStore(target).all());
-    if (!chainState.ok) problems.push({ kind: 'journal_chain' });
+    const broken = await target.all<{ table: string }>('PRAGMA foreign_key_check');
+    for (const table of new Set(broken.map((b) => b.table))) problems.push({ kind: 'foreign_keys', table });
+    const integrity = await target.first<{ integrity_check: string }>('PRAGMA integrity_check');
+    if (integrity?.integrity_check !== 'ok') problems.push({ kind: 'integrity' });
+    if (manifest.tables.some((t) => t.name === 'journal')) {
+      const chainState = await verifyChain(await new SqlJournalStore(target).all());
+      if (!chainState.ok) problems.push({ kind: 'journal_chain' });
+    }
+  } catch {
+    // Une écriture refusée laisse une base neuve à moitié faite : à jeter. L'erreur peut citer une ligne : elle ne sort pas.
+    return { ok: false, code: 'restore_failed' };
+  } finally {
+    await target.exec('PRAGMA foreign_keys = ON');
   }
-  await target.exec('PRAGMA foreign_keys = ON');
 
   const durationMs = clock() - started;
   if (problems.length > 0) return { ok: false, code: 'not_identical', problems, durationMs };
