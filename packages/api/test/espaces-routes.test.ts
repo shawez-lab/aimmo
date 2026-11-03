@@ -179,6 +179,18 @@ describeWithSqlite('EC06 · routes et page de l’espace', () => {
     expect((await t.callAgent({ role: 'direction', userId: 'dir-1', networkId: t.network.id }, `/espaces/personnes/${p.id}/ouvrir`, CONSENT)).body).toMatchObject({ ok: true });
   });
 
+  it('[R160] [EC13] au-delà de 3 liens en 24 heures, la route refuse sans lien ni jeton, et rien n’est rangé', async () => {
+    const t = await setup();
+    const p = await t.store.createPerson({ networkId: t.network.id, agentId: t.agent.userId, firstName: 'Client', lastName: 'Inventé' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: p.id, kind: 'email', value: 'client.plafond@example.test' });
+    t.sides.set(p.id, ['vendeur']);
+    for (let i = 0; i < 3; i++) expect((await t.callAgent(t.agent, `/espaces/personnes/${p.id}/ouvrir`, CONSENT)).status).toBe(200);
+    const refused = await t.callAgent(t.agent, `/espaces/personnes/${p.id}/ouvrir`, CONSENT);
+    expect(refused.status).toBe(409);
+    expect(refused.body).toEqual({ ok: false, rule: 'R160', code: 'plafond' });
+    expect(await t.db.all('SELECT id FROM client_space_links WHERE person_id = ?', [p.id])).toHaveLength(3);
+  });
+
   it('[R161] une donnée des sources est toujours échappée dans la page', async () => {
     const t = await setup();
     const c = await t.client('vendeur');

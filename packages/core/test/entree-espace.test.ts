@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { CLIENT_SPACE_PURPOSE, EntreeEspace, LINK_REQUEST_ANSWER, type ClientSide } from '../src/espaces/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -179,6 +179,115 @@ describeWithSqlite('EC01 · entrée du client dans son espace', () => {
     expect(await t.entree.open(unused)).toEqual({ ok: false, rule: 'R160', code: 'sans_accord' });
     expect(await t.entree.requestLink(t.network.id, c.email)).toEqual(LINK_REQUEST_ANSWER);
     expect(await t.tokens(c.id)).toHaveLength(2);
+  });
+
+  it('[R160] [EC13] au-delà de 3 liens préparés par l’agent en 24 heures, rien n’est préparé, le refus est dit et écrit au journal', async () => {
+    const t = await setup();
+    const c = await t.client();
+    for (let i = 0; i < 3; i++) expect((await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).ok).toBe(true);
+    const refused = await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
+    expect(refused).toEqual({ ok: false, rule: 'R160', code: 'plafond' });
+    // La réponse ne porte ni lien ni jeton, et rien de plus n'est rangé ni parti.
+    expect(JSON.stringify(refused)).not.toMatch(/[a-z]{40}/);
+    expect(await t.db.all('SELECT id FROM client_space_links WHERE person_id = ?', [c.id])).toHaveLength(3);
+    expect(await t.tokens(c.id)).toHaveLength(3);
+    const events = (await t.journal.all()).filter((e) => e.type === 'espaces.invitation');
+    expect(events.map((e) => (e.data as { status: string }).status)).toEqual(['envoye', 'envoye', 'envoye', 'plafond']);
+    const last = events.at(-1)!;
+    expect(last.subject).toBe(`person:${c.id}`);
+    expect(last.actor).toBe(`agent:${t.alex.userId}`);
+    // Le journal ne porte ni adresse ni jeton [R13].
+    expect(JSON.stringify(last)).not.toContain(c.email);
+    expect(JSON.stringify(last)).not.toMatch(/[a-z]{40}/);
+    // La direction n'a pas de passe-droit : le plafond est celui de la personne, pas celui de l'agent.
+    expect(await t.entree.invite(t.acces, t.direction, c.id, CONSENT)).toEqual({ ok: false, rule: 'R160', code: 'plafond' });
+    // Passé 24 heures, un nouveau lien peut être préparé.
+    t.advance(DAY);
+    expect((await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).ok).toBe(true);
+  });
+
+  it('[R160] [EC13] le plafond est le même pour les liens préparés et les liens demandés, par personne', async () => {
+    const t = await setup();
+    const c = await t.client();
+    const other = await t.client();
+    await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
+    await t.entree.requestLink(t.network.id, c.email);
+    await t.entree.requestLink(t.network.id, c.email);
+    expect(await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).toEqual({ ok: false, rule: 'R160', code: 'plafond' });
+    // Une autre personne a son propre compte.
+    expect((await t.entree.invite(t.acces, t.alex, other.id, CONSENT)).ok).toBe(true);
+    // Dans l'autre sens : les liens préparés comptent pour la demande du client.
+    await t.entree.invite(t.acces, t.alex, other.id, CONSENT);
+    await t.entree.invite(t.acces, t.alex, other.id, CONSENT);
+    await t.entree.requestLink(t.network.id, other.email);
+    expect(await t.db.all('SELECT id FROM client_space_links WHERE person_id = ?', [other.id])).toHaveLength(3);
+  });
+
+  it('[R160] [EC13] le compte des liens préparés suit les fiches réunies', async () => {
+    const t = await setup();
+    const a = await t.client();
+    const b = await t.client();
+    await t.entree.invite(t.acces, t.alex, a.id, CONSENT);
+    await t.entree.invite(t.acces, t.alex, a.id, CONSENT);
+    await t.entree.invite(t.acces, t.alex, b.id, CONSENT);
+    await t.fiche.merge({ survivorId: b.id, mergedId: a.id, reason: 'même personne' });
+    expect(await t.entree.invite(t.acces, t.alex, b.id, CONSENT)).toEqual({ ok: false, rule: 'R160', code: 'plafond' });
+    // Viser la fiche réunie mène au même compte, sans lien de plus.
+    expect(await t.entree.invite(t.acces, t.alex, a.id, CONSENT)).toEqual({ ok: false, rule: 'R160', code: 'plafond' });
+    const members = await t.db.all('SELECT id FROM client_space_links WHERE person_id IN (?, ?)', [a.id, b.id]);
+    expect(members).toHaveLength(3);
+  });
+
+  it('[R160] [R03] [EC13] au plafond, la preuve d’un nouvel accord n’est pas rangée', async () => {
+    const t = await setup();
+    const c = await t.client();
+    for (let i = 0; i < 3; i++) await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
+    // L'accord est retiré : sans le plafond, la preuve donnée à ce geste rangerait un nouvel accord.
+    const row = await t.db.first<{ id: string }>('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [c.id, CLIENT_SPACE_PURPOSE]);
+    await t.store.withdrawConsent(row!.id, new Date(TUESDAY_10H + 60_000));
+    t.advance(120_000);
+    const before = await t.db.all('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [c.id, CLIENT_SPACE_PURPOSE]);
+    expect(await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).toEqual({ ok: false, rule: 'R160', code: 'plafond' });
+    expect(await t.db.all('SELECT id FROM consents WHERE person_id = ? AND purpose = ?', [c.id, CLIENT_SPACE_PURPOSE])).toHaveLength(before.length);
+  });
+
+  it('[R160] [EC13] la garde est dans l’écriture du lien : un premier regard dépassé ne franchit pas le plafond', async () => {
+    const t = await setup();
+    const c = await t.client();
+    for (let i = 0; i < 3; i++) await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
+    // Comme un geste parti en même temps : son premier regard a vu de la place, les autres ont écrit depuis.
+    vi.spyOn(t.entree as unknown as { atCap: () => Promise<boolean> }, 'atCap').mockResolvedValue(false);
+    expect(await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).toEqual({ ok: false, rule: 'R160', code: 'plafond' });
+    expect(await t.db.all('SELECT id FROM client_space_links WHERE person_id = ?', [c.id])).toHaveLength(3);
+    expect(await t.tokens(c.id)).toHaveLength(3);
+    const statuses = (await t.journal.all()).filter((e) => e.type === 'espaces.invitation').map((e) => (e.data as { status: string }).status);
+    expect(statuses.at(-1)).toBe('plafond');
+  });
+
+  it('[R160] [R01] [EC13] un lien refusé par le contrôle central, jamais remis, ne compte pas au plafond', async () => {
+    const t = await setup();
+    const c = await t.client();
+    // Mardi 22 h, heure de Paris : hors des heures d'envoi, trois essais, rien ne part.
+    t.advance(12 * 3_600_000);
+    for (let i = 0; i < 3; i++) expect(await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).toMatchObject({ ok: false, code: 'send_refused' });
+    expect(await t.tokens(c.id)).toHaveLength(0);
+    // Le lendemain à 10 h, dans la même journée glissante : le geste passe, et la demande du client aussi.
+    t.advance(12 * 3_600_000);
+    expect((await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).ok).toBe(true);
+    await t.entree.requestLink(t.network.id, c.email);
+    await t.entree.requestLink(t.network.id, c.email);
+    expect(await t.tokens(c.id)).toHaveLength(3);
+    // Le plafond reste celui des liens remis.
+    expect(await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).toEqual({ ok: false, rule: 'R160', code: 'plafond' });
+  });
+
+  it('[R160] [EC13] des ouvertures en même temps ne dépassent pas le plafond', async () => {
+    const t = await setup();
+    const c = await t.client();
+    const results = await Promise.all(Array.from({ length: 6 }, () => t.entree.invite(t.acces, t.alex, c.id, CONSENT)));
+    expect(results.filter((r) => r.ok)).toHaveLength(3);
+    expect(results.filter((r) => !r.ok)).toEqual(Array(3).fill({ ok: false, rule: 'R160', code: 'plafond' }));
+    expect(await t.db.all('SELECT id FROM client_space_links WHERE person_id = ?', [c.id])).toHaveLength(3);
   });
 
   it('[R160] des demandes en même temps ne dépassent pas le plafond de 3 liens', async () => {

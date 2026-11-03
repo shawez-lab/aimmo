@@ -11,6 +11,9 @@
  * - ouvert, le lien donne une séance de 12 heures (réglage) ; la séance ne vaut plus si l'accord est retiré ;
  * - le client redemande un lien par son adresse mail : la réponse est la même que l'adresse soit connue ou non, qu'elle
  *   ait un espace ou non, et au-delà de 3 liens par 24 heures (réglage) ;
+ * - ce plafond est celui de la personne, fiches réunies comprises : il compte aussi les liens préparés par son agent ou
+ *   la direction, qui n'ont pas de passe-droit (EC13). L'agent, lui, voit le refus, écrit au journal. Un lien refusé par
+ *   le contrôle central n'a jamais été remis : il ne compte pas ;
  * - seule l'empreinte SHA-256 d'un jeton est rangée ; le journal ne porte ni adresse ni jeton, seulement des codes [R13].
  */
 import type { Acces } from '../acces/acces.ts';
@@ -72,6 +75,9 @@ export type EntreeResult<T> = { ok: true; value: T } | EntreeRefusal;
 export const LINK_REQUEST_ANSWER = Object.freeze({ status: 'demande_recue' as const });
 
 const TOKEN = /^[a-z]{40}$/;
+
+/** Un lien que le contrôle central a refusé n'a jamais été remis : il ne compte pas au plafond (EC13) [R160]. */
+const DELIVERED_LINK = `id NOT IN (SELECT link_id FROM client_space_link_revocations WHERE code = 'non_remis')`;
 
 /** Un jeton : 40 lettres tirées au hasard, sans biais (environ 188 bits). */
 export function newSpaceToken(): string {
@@ -163,11 +169,14 @@ export class EntreeEspace {
       await this.event('espaces.invitation', `person:${root}`, { status: 'sans_dossier' }, this.actor(viewer));
       return { ok: false, rule: 'R161', code: 'no_file' };
     }
+    // Au plafond, rien n'est préparé, pas même la ligne d'un nouvel accord [R160]. Ce premier regard n'est pas la garde :
+    // celle-ci est prise dans l'écriture du lien, plus bas, pour que des gestes en même temps ne le dépassent pas.
+    if (await this.atCap(viewer.networkId, root)) return this.inviteCapped(root, viewer);
     if (!(await this.consentOf(root))) {
       await this.store.addConsent({ networkId: viewer.networkId, personId: root, purpose: CLIENT_SPACE_PURPOSE, channel: 'email', proof: proof.trim(), givenAt: this.now() });
     }
-    const sent = await this.issue(viewer.networkId, root, 'invitation', this.actor(viewer));
-    if (!sent.ok) return sent;
+    const sent = await this.issue(viewer.networkId, root, 'invitation', this.actor(viewer), null, this.settings.linksPerDay);
+    if (!sent.ok) return sent.code === 'plafond' ? this.inviteCapped(root, viewer) : sent;
     await this.event('espaces.invitation', `person:${root}`, { status: 'envoye', link: sent.value.linkId, mode: 'essai' }, this.actor(viewer));
     return sent;
   }
@@ -247,6 +256,23 @@ export class EntreeEspace {
     if (changes === 1) await this.event('espaces.fermeture', `person:${row.person_id}`, { session: row.id }, 'client');
   }
 
+  /** Les liens de la personne, toutes origines et fiches réunies comprises, atteignent-ils le plafond des 24 heures ? */
+  private async atCap(networkId: string, personId: string): Promise<boolean> {
+    const members = await this.fiche.membersOf(personId);
+    const since = new Date(this.now().getTime() - 86_400_000).toISOString();
+    const row = await this.db.first<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM client_space_links WHERE network_id = ? AND person_id IN (${members.map(() => '?').join(', ')}) AND created_at > ? AND ${DELIVERED_LINK}`,
+      [networkId, ...members, since],
+    );
+    return (row?.n ?? 0) >= this.settings.linksPerDay;
+  }
+
+  /** Le refus au plafond, dit à l'agent et écrit au journal, en code : ni adresse ni jeton [R160, R13]. */
+  private async inviteCapped(personId: string, viewer: Viewer): Promise<EntreeRefusal> {
+    await this.event('espaces.invitation', `person:${personId}`, { status: 'plafond' }, this.actor(viewer));
+    return { ok: false, rule: 'R160', code: 'plafond' };
+  }
+
   /** Range un lien, puis le fait partir par le contrôle central ; refusé, il est révoqué aussitôt. */
   private async issue(networkId: string, personId: string, origin: 'invitation' | 'demande', by: string, to: string | null = null, cap: number | null = null): Promise<EntreeResult<{ linkId: string; expiresAt: string; mode: 'essai' }>> {
     const id = this.newId();
@@ -264,7 +290,7 @@ export class EntreeEspace {
       const { changes } = await this.db.run(
         `INSERT INTO client_space_links (id, network_id, person_id, token_hash, expires_at, origin, created_by, created_at)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?
-         WHERE (SELECT COUNT(*) FROM client_space_links WHERE network_id = ? AND person_id IN (${members.map(() => '?').join(', ')}) AND created_at > ?) < ?`,
+         WHERE (SELECT COUNT(*) FROM client_space_links WHERE network_id = ? AND person_id IN (${members.map(() => '?').join(', ')}) AND created_at > ? AND ${DELIVERED_LINK}) < ?`,
         [...values, networkId, ...members, since, cap],
       );
       if (changes !== 1) return { ok: false, rule: 'R160', code: 'plafond' };
