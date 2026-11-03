@@ -979,13 +979,14 @@ Décidé, lecture prudente : la première version sert les mandats de vente, leu
 - Attend : H23 pour le format réel.
 
 ### D16 · Rétractation et début anticipé à l'écran du mandat
-- Statut : en cours
+- Statut : fait (2026-11-03)
 - Voie : 1
 - Décidé (2026-11-03), lecture prudente : trouvé en comparant les routes aux écrans : `/v1/mandats/<id>/retractation` et `/debut-anticipe` existent et sont testées depuis D05, sans aucun geste à l'écran ; un vendeur qui se rétracte ne pouvait donc pas être noté depuis le téléphone, et le bien restait diffusable à la fin du délai. Relecture forte : une rétractation se juge sur le jour de son envoi, non de sa réception (L221-21 ; H44) : `sent_on`, migration 1600. L'écran envoie un jour, jamais un instant du téléphone : le serveur le traduit (un jour passé vaut 21 h UTC, encore ce jour-là à Paris). La rétractation reste proposée après le délai, car une lettre postée à temps arrive plus tard ; le code refuse un envoi après le dernier jour. Elle ne se défait pas : deux appuis, conséquence dite. Une rétractation notée dont l'annulation au registre n'a pas abouti se finit depuis l'écran (`withdrawalUnfinished`, `resume`).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D05, D12
 - Cahier : M06, « Rétractation : lieu de signature enregistré, délai de 14 jours calculé, diffusion bloquée pendant ce délai sauf demande écrite du vendeur » ; R42, R16, R201.
 - Objectif : sur l'écran « Mandat », l'agent lit le dernier jour du délai, note la rétractation reçue et la demande écrite de commencer tout de suite, chacune avec sa preuve.
 - Critères : la lecture du mandat rend le dernier jour du délai, nul à l'agence (test) ; aucun geste à l'agence, ni sur un mandat annulé, rétracté ou échu [R42] (test) ; une rétractation demande deux appuis, dit ce qu'elle arrête, et aucun identifiant n'est saisi [R16] (test) ; envoi le dernier jour accepté même reçu après, envoi après le délai, à venir ou avant la signature refusés (test) ; horloge du téléphone sans effet (test) ; une rétractation arrêtée en route se finit à l'écran (test) ; preuve vide dite en français (test) ; une réponse perdue n'est pas dite « rien n'est rangé », et le second essai dit « déjà notée » (test) ; de bout en bout par les routes : l'agent du mandat note, la diffusion s'arrête, le bien peut recevoir un nouveau mandat, un autre agent et la conformité sont refusés [R16, R42] (test) ; budget tenu [R201] (test).
+- Reste : fusionnée (#314). Relecture forte 1 P0 (envoi, non réception) et 4 P1 corrigés ; Codex à sa limite (H03). L'envoi après le délai n'est prouvé qu'au cœur, à horloge fixée : une signature ancienne ne passe pas par la route.
 - Attend : rien.
 
 **M08 · Acquéreurs et visites, avril 2027.**
