@@ -23,6 +23,7 @@ import { PROSPECTION_ENTRY_HTML, PROSPECTION_JS } from './prospection.ts';
 import { BIBLIOTHEQUE_ENTRY_HTML, BIBLIOTHEQUE_JS } from './bibliotheque.ts';
 import { ENGAGEMENTS_ENTRY_HTML, ENGAGEMENTS_JS } from './engagements.ts';
 import { FIN_DE_BAIL_JS } from './fin-de-bail.ts';
+import { RECOMMANDATION_JS } from './recommandation.ts';
 import { COMMISSIONS_ENTRY_HTML, EUROS_ENTRY_HTML, FINANCES_JS, RAPPORT_AGENT_HTML, RAPPORT_DIRECTION_HTML, REGLAGES_ENTRY_HTML } from './finances.ts';
 import { FICHE_GOOGLE_HOME_HTML, FICHE_GOOGLE_HTML, FICHE_GOOGLE_JS } from './fiche-google.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
@@ -516,6 +517,8 @@ export const APP_JS = `'use strict';
     body.appendChild(coffreBlock(personId));
     // La fin de bail connue, raison écrite d'une relance d'ancien contact (G15) [R143].
     body.appendChild(finDeBailBlock(personId));
+    // Un proche recommandé par ce client (X22) [R03, R142].
+    body.appendChild(recommandationBlock(personId));
   }
   // La réponse d'une demande de fiche : clé refusée, fiche hors des droits, panne, ou la fiche.
   function ficheAnswer(r) {
@@ -730,10 +733,10 @@ export const APP_JS = `'use strict';
     return fallback;
   }
   // Une demande à l'API, sous la session en cours : une clé refusée efface tout ; une réponse d'une session finie est ignorée.
-  function send(path, method, body) {
+  function send(path, method, body, extra) {
     if (!currentKey) return Promise.resolve({ gone: true });
     var mine = session;
-    return api(path, currentKey, method, body).then(function (r) {
+    return api(path, currentKey, method, body, extra).then(function (r) {
       return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
         if (mine !== session) return { gone: true };
         if (r.status === 401 || (r.status === 403 && b && b.code === 'agent_inactive')) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return { gone: true }; }
@@ -1951,7 +1954,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${FIN_DE_BAIL_JS}${FINANCES_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${FIN_DE_BAIL_JS}${RECOMMANDATION_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -1971,8 +1974,9 @@ ${LOUER_JS}
     ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente';
   }
-  function api(path, key, method, body) {
+  function api(path, key, method, body, extra) {
     var headers = { authorization: 'Bearer ' + key };
+    if (extra) Object.keys(extra).forEach(function (k) { headers[k] = extra[k]; });
     var init = { method: method || 'GET', headers: headers, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' };
     if (body !== undefined) { headers['content-type'] = 'application/json'; init.body = JSON.stringify(body); }
     return fetch(path, init);
