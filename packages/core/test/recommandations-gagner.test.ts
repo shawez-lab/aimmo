@@ -263,6 +263,40 @@ describeWithSqlite('G08 · recommandations des clients et des partenaires', () =
     expect(mine.ok && mine.value).toHaveLength(2);
   });
 
+  describe('X25 · une panne au milieu, puis un renvoi', () => {
+    for (const table of ['person_identifiers', 'projects', 'sources', 'consents', 'partner_recommendations']) {
+      it(`[R142] [R17] une panne en écrivant dans ${table} : le renvoi fait un seul projet, une seule source, un seul accord, une seule recommandation`, async () => {
+        const t = await setup();
+        const p = await t.partner('Étude Essai');
+        await t.entrust(p);
+        await t.db.run(`CREATE TRIGGER panne_x25 BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'panne'); END`);
+        await expect(t.gagner.recommend(t.as(p), t.input())).rejects.toThrow();
+        await t.db.run('DROP TRIGGER panne_x25');
+        expect(await t.rows()).toHaveLength(0);
+        expect(await t.db.all('SELECT id FROM projects')).toHaveLength(0);
+        expect(await t.db.all('SELECT id FROM consents')).toHaveLength(0);
+        expect(await t.gagner.recommend(t.as(p), t.input())).toEqual({ ok: true, value: { recorded: true } });
+        const [row] = await t.rows();
+        expect(await t.rows()).toHaveLength(1);
+        const view = await t.fiche.view(row!.referred_id!);
+        expect(view.sources).toHaveLength(1);
+        expect(view.consents).toHaveLength(1);
+        expect(await t.db.all('SELECT id FROM projects WHERE person_id = ?', [row!.referred_id])).toHaveLength(1);
+        expect((await t.journal.all()).filter((e) => e.type === 'recommandation.alerte')).toHaveLength(1);
+        const mine = await t.gagner.mine(t.as(p));
+        expect(mine.ok && mine.value).toHaveLength(1);
+      });
+    }
+
+    it('le brouillon de la fiche n’écrit rien tant que le lot n’est pas passé, et refuse de lire', async () => {
+      const t = await setup();
+      const prepared = await t.store.prepare((draft) => draft.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Lot' }));
+      expect(prepared.statements).toHaveLength(1);
+      expect(await t.db.all('SELECT id FROM persons WHERE id = ?', [prepared.value.id])).toEqual([]);
+      await expect(t.store.prepare((draft) => draft.listProjects('x'))).rejects.toThrow('n’écrit qu’en insérant');
+    });
+  });
+
   it('[R03] [R142] un accord par mail ne permet jamais un appel : la file dit le seul canal accepté', async () => {
     const t = await setup();
     const p = await t.partner('Étude Essai');

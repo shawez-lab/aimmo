@@ -1,5 +1,5 @@
 import { normalizeIdentifier } from '../fiche/normalize.ts';
-import type { SqlDatabase, SqlValue } from './sql.ts';
+import type { SqlDatabase, SqlStatement, SqlValue } from './sql.ts';
 import type {
   Agent,
   Channel,
@@ -152,6 +152,29 @@ export class FicheClient {
 
   private stamp(): string {
     return this.now().toISOString();
+  }
+
+  /**
+   * Prépare des écritures de la fiche sans les faire : `write` reçoit un brouillon qui n'écrit nulle part, et les lignes
+   * qu'il aurait écrites sont rendues, à passer à `runBatch` avec d'autres pour que tout passe ou rien. Le brouillon
+   * n'écrit qu'en insérant : une méthode qui lit la base refuse, au lieu de lire ce que le lot n'a pas encore écrit.
+   */
+  async prepare<T>(write: (draft: FicheClient) => Promise<T>): Promise<{ value: T; statements: SqlStatement[] }> {
+    const statements: SqlStatement[] = [];
+    const refuse = (): never => {
+      throw new Error('Un brouillon de la fiche n’écrit qu’en insérant.');
+    };
+    const recording: SqlDatabase = {
+      exec: async () => refuse(),
+      run: async (sql, params = []) => {
+        statements.push({ sql, params });
+        return { changes: 1 };
+      },
+      first: async () => refuse(),
+      all: async () => refuse(),
+    };
+    const value = await write(new FicheClient(recording, { now: this.now, newId: this.newId }));
+    return { value, statements };
   }
 
   private async insert<T>(table: Table, row: Record<string, SqlValue>): Promise<T> {
