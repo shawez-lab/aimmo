@@ -3657,7 +3657,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV12 · Un second dossier sur un bien, et ce que le client lit après un arrêt
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV09
 - Cahier : M09 Offre ; M10 Compromis et acte ; Conformité.
 - Trouvé par la relecture de SV09 : l'unicité de `sale_files.property_id` empêche un second dossier ; les espaces du vendeur et de l'acquéreur montrent encore l'offre « acceptée » après l'arrêt ; le gel d'un signalement ne contient pas `sale_file_stops` ; la durée de conservation compte encore l'acquéreur d'un dossier arrêté comme client.
