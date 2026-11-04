@@ -173,6 +173,18 @@ export class Publication {
     return held?.token === token ? token : null;
   }
 
+  /**
+   * Le statut du bien suit son annonce : publiée, il est disponible ; retirée, il ne l'est plus. Seuls `draft` et
+   * `available` bougent, jamais une offre ni une vente ; un bien sans annonce garde son statut. Rejoué à chaque passage,
+   * pour qu'une coupure entre la version et cette écriture se répare seule.
+   */
+  private async followListing(propertyId: string, state: ListingState): Promise<void> {
+    if (state !== 'en_vente' && state !== 'retiree') return;
+    const [from, to, type] = state === 'en_vente' ? ['draft', 'available', 'bien.disponible'] : ['available', 'draft', 'bien.plus_disponible'];
+    const { changes } = await this.db.run('UPDATE properties SET status = ?, updated_at = ? WHERE id = ? AND status = ?', [to, this.now().toISOString(), propertyId, from]);
+    if (changes === 1) await appendEvent(this.journal, { type, actor: 'system:publication', subject: `property:${propertyId}`, data: {} }, this.now);
+  }
+
   private async holds(propertyId: string, token: string): Promise<boolean> {
     const held = await this.db.first<{ token: string; expires_at: string }>('SELECT token, expires_at FROM listing_sync_leases WHERE property_id = ?', [propertyId]);
     return held?.token === token && held.expires_at > this.now().toISOString();
@@ -218,6 +230,7 @@ export class Publication {
     }
     const current = await this.latest(propertyId);
     if (!current) return { version: null, state: null, created, pushed: [], failed: [] };
+    await this.followListing(propertyId, current.state);
     const { pushed, failed } = await this.pushAll(propertyId, current, lease);
     return { version: Number(current.seq), state: current.state, created, pushed, failed };
   }
