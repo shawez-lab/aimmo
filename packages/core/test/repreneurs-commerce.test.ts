@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { EstimationCommerce, FicheCommerce, PresentationCommerce, RepreneursCommerce, checkBuyerChanges } from '../src/commerces/index.ts';
+import { DisponibiliteCommerces, EstimationCommerce, FicheCommerce, PresentationCommerce, RepreneursCommerce, checkBuyerChanges, isUnlistedBusiness } from '../src/commerces/index.ts';
+import { Alertes } from '../src/acquereurs/alertes.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -47,7 +48,7 @@ async function setup() {
     const person = await store.createPerson({ networkId: network.id, agentId: alexAgent.id, firstName: first, lastName: 'Inventé' });
     return store.createProject({ networkId: network.id, agentId: alexAgent.id, personId: person.id, kind: 'buy_business' });
   };
-  return { noMandate, db, journal, acces, repreneurs, alex, sam, direction, compliance: as('compliance', 'conf-1'), shop, buyer, store, network, alexAgent };
+  return { noMandate, db, journal, acces, repreneurs, presentations, diffusion, now, alex, sam, direction, compliance: as('compliance', 'conf-1'), shop, buyer, store, network, alexAgent };
 }
 
 describeWithSqlite('CE06 · repreneurs, sans évaluation de solvabilité', () => {
@@ -144,6 +145,108 @@ describeWithSqlite('CE06 · repreneurs, sans évaluation de solvabilité', () =>
     const person = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexAgent.id, firstName: 'Lou', lastName: 'Inventé' });
     const home = await t.store.createProject({ networkId: t.network.id, agentId: t.alexAgent.id, personId: person.id, kind: 'buy' });
     expect(await t.repreneurs.update(t.acces, t.alex, home.id, { budgetMaxEur: 1 })).toMatchObject({ ok: false, code: 'projet' });
+  });
+});
+
+describeWithSqlite('SV11 · un commerce publié devient disponible', () => {
+  const draftShop = async (t: Awaited<ReturnType<typeof setup>>, published = true) => {
+    const p = await t.shop('restaurant', '21000', 4_000_000, published);
+    await t.db.run("UPDATE properties SET status = 'draft' WHERE id = ?", [p.id]);
+    return p;
+  };
+  const passage = (t: Awaited<ReturnType<typeof setup>>) => new DisponibiliteCommerces(t.db, t.journal, t.presentations, t.diffusion, { now: t.now }).syncAll(t.network.id);
+  const status = async (t: Awaited<ReturnType<typeof setup>>, id: string) => (await t.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [id]))!.status;
+
+  it('le trou : en brouillon, un commerce présenté n’est pas vu des repreneurs ; après le passage, il l’est, sans enseigne ni nom [R19]', async () => {
+    const t = await setup();
+    const shop = await draftShop(t);
+    const buyer = await t.buyer('Inès');
+    await t.repreneurs.update(t.acces, t.alex, buyer.id, { activities: ['restaurant'], postalCodes: ['21000'] });
+    const seen = async () => {
+      const r = await t.repreneurs.match(t.acces, t.alex, buyer.id);
+      if (!r.ok) throw new Error(r.code);
+      return r.value;
+    };
+    expect(await seen()).toEqual([]);
+    expect(await passage(t)).toBe(1);
+    expect(await status(t, shop.id)).toBe('available');
+    const list = await seen();
+    expect(list).toHaveLength(1);
+    expect(JSON.stringify(list)).not.toMatch(/Enseigne Inventée|Sam|Agent/);
+    expect(await t.journal.bySubject(`property:${shop.id}`)).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'bien.disponible', data: { rule: 'R42' } })]));
+    expect(await t.db.first('SELECT 1 FROM listing_versions WHERE property_id = ?', [shop.id])).toBeNull();
+    // Rejoué, rien ne change.
+    expect(await passage(t)).toBe(0);
+  });
+
+  it('[R42] rien pendant la rétractation ou sans mandat ; le mandat tombe : il revient en brouillon ; il rouvre, il revient', async () => {
+    const t = await setup();
+    const shop = await draftShop(t);
+    t.noMandate.add(shop.id);
+    expect(await passage(t)).toBe(0);
+    expect(await status(t, shop.id)).toBe('draft');
+    t.noMandate.delete(shop.id);
+    await passage(t);
+    expect(await status(t, shop.id)).toBe('available');
+    t.noMandate.add(shop.id);
+    await passage(t);
+    expect(await status(t, shop.id)).toBe('draft');
+    t.noMandate.delete(shop.id);
+    await passage(t);
+    expect(await status(t, shop.id)).toBe('available');
+  });
+
+  it('sans présentation validée, rien ; une offre ou une vente n’est jamais écrasée ; un commerce repris garde son statut', async () => {
+    const t = await setup();
+    const unpublished = await draftShop(t, false);
+    const offered = await draftShop(t);
+    await t.db.run("UPDATE properties SET status = 'under_offer' WHERE id = ?", [offered.id]);
+    const imported = await t.shop('restaurant', '21000', 3_000_000, false);
+    expect(await status(t, imported.id)).toBe('available');
+    await passage(t);
+    expect(await status(t, unpublished.id)).toBe('draft');
+    expect(await status(t, offered.id)).toBe('under_offer');
+    expect(await status(t, imported.id)).toBe('available');
+  });
+
+  it('une panne sur un commerce n’arrête pas les autres : elle va au journal, sans texte [R13]', async () => {
+    const t = await setup();
+    const a = await draftShop(t);
+    const b = await draftShop(t);
+    const failing = { canDiffuse: async (n: string, id: string) => { if (id === a.id) throw new Error('panne Enseigne'); return t.diffusion.canDiffuse(n, id); } };
+    await new DisponibiliteCommerces(t.db, t.journal, t.presentations, failing, { now: t.now }).syncAll(t.network.id);
+    expect(await status(t, b.id)).toBe('available');
+    const lines = (await t.journal.bySubject(`property:${a.id}`)).filter((e) => e.type === 'commerce.passage_echec');
+    expect(lines).toHaveLength(1);
+    expect(JSON.stringify(lines)).not.toContain('Enseigne');
+  });
+
+  it('[R110] disponible, un commerce sans annonce n’entre pas dans les alertes aux acquéreurs ; un local avec annonce y reste', async () => {
+    const t = await setup();
+    const shop = await draftShop(t);
+    await passage(t);
+    expect(await isUnlistedBusiness(t.db, shop.id)).toBe(true);
+    const alertes = new Alertes(t.db, t.journal, { now: t.now, unsubscribeBase: 'https://aimmo.example.test/d/' });
+    let looked = 0;
+    (alertes as unknown as { rapprochement: { systemMatches(): Promise<never[]> } }).rapprochement.systemMatches = async () => {
+      looked += 1;
+      return [];
+    };
+    expect(await alertes.forProperty(t.network.id, shop.id)).toEqual([]);
+    expect(looked).toBe(0);
+    await t.db.run("INSERT INTO listing_versions (id, property_id, network_id, seq, state, price_eur, payload, payload_hash, reason, created_at) VALUES ('v', ?, ?, 1, 'retiree', NULL, '{}', 'h', 'mentions_incompletes', ?)", [shop.id, t.network.id, t.now().toISOString()]);
+    expect(await isUnlistedBusiness(t.db, shop.id)).toBe(false);
+    await alertes.forProperty(t.network.id, shop.id);
+    expect(looked).toBe(1);
+  });
+
+  it('[R19] vu par un autre agent, au fichier commun : ni enseigne, ni nom', async () => {
+    const t = await setup();
+    const shop = await draftShop(t);
+    await passage(t);
+    const seen = await t.acces.readProperty(t.alex, shop.id);
+    expect(seen).toMatchObject({ ok: true, view: 'shared' });
+    expect(JSON.stringify(seen)).not.toContain('Enseigne');
   });
 });
 

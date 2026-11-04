@@ -10,6 +10,7 @@
  * R47], au passage suivant ou par la route de passage immédiat.
  */
 import { appendEvent, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { commerces as m16, Diffusion } from '@aimmo/core';
 import { annonces as m07 } from '@aimmo/core';
 
 const { Annonces, FicheBien, MediasBien, MentionsAnnonce, MesureBiens, Publication, shootingPlan } = m07;
@@ -190,5 +191,9 @@ export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
  */
 export async function syncAnnonces(s: AnnonceServices, networkId: string, options: AnnonceOptions = {}): Promise<{ properties: number; failed: number }> {
   const all = await new Publication(s.db, s.acces, s.journal, { now: s.now, ...(options.channels ? { channels: options.channels } : {}) }).syncAll(networkId);
+  // SV11 : un commerce suit sa présentation validée, sans annonce ni portail.
+  const fiches = new m16.FicheCommerce(s.db, s.journal, { now: s.now });
+  const presentations = new m16.PresentationCommerce(s.db, s.journal, fiches, new m16.EstimationCommerce(s.db, s.journal, fiches, { now: s.now }), { now: s.now });
+  await new m16.DisponibiliteCommerces(s.db, s.journal, presentations, new Diffusion(s.db, s.acces, s.journal, { now: s.now }), { now: s.now }).syncAll(networkId);
   return { properties: all.length, failed: all.filter((r) => r.result === null).length };
 }

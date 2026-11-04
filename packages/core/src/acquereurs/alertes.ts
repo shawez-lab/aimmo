@@ -12,6 +12,7 @@
  * accord pour les alertes ; un refus autre que l'heure est définitif pour ce bien ; WhatsApp par le téléphone de
  * l'agent vient avec T09.
  */
+import { isUnlistedBusiness } from '../commerces/disponibilite.ts';
 import { Acces } from '../acces/acces.ts';
 import { trialChannels } from '../captation/essai.ts';
 import { FicheClient } from '../db/fiche-client.ts';
@@ -199,6 +200,7 @@ export class Alertes {
   /** Les alertes d'un bien : rien si la diffusion le refuse [R42]. */
   async forProperty(networkId: string, propertyId: string): Promise<AlertOutcome[]> {
     if (this.unsubscribeBase === null) return [];
+    if (await isUnlistedBusiness(this.db, propertyId)) return [];
     const matches = (await this.rapprochement.systemMatches(networkId, propertyId)).filter((m) => m.status === 'match');
     const outcomes: AlertOutcome[] = [];
     for (const m of matches) outcomes.push(await this.alertOne(networkId, propertyId, m.personId, m.projectId, m.agentId, m.property));
