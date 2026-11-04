@@ -234,6 +234,58 @@ describe('SV06 · le bloc de la fiche', () => {
     for (const s of ['-cp', '-surface', '-pieces', '-prix']) expect(a.input(s).attributes.inputmode).toBe('numeric');
   });
 
+  describe('SV07 · le nom du client', () => {
+    const NOM = `/v1/fiches/${ID}/nom`;
+    const named = (a: Awaited<ReturnType<typeof opened>>) => a.named(a.body, 'Compléter la fiche');
+
+    it('[R201] une fiche complète ne le montre pas ; il manque, seul le champ vide est offert, avec son libellé', async () => {
+      const full = await opened({ [`/v1/fiches/${ID}/resume`]: ok({ ...FICHE, lastName: 'Inventé' }) });
+      await full.load();
+      expect(named(full)).toHaveLength(0);
+      const a = await opened();
+      await a.load();
+      expect(named(a)).toHaveLength(1);
+      expect(a.input('-nom')).toBeDefined();
+      expect(a.input('-prenom')).toBeUndefined();
+      expect(a.body.all().some((l) => l.tagName === 'label' && l.attributes.for === a.input('-nom').attributes.id)).toBe(true);
+    });
+
+    it('[R16] le nom part une fois, sans identifiant à saisir, puis la fiche est relue', async () => {
+      const a = await opened({ [NOM]: ok({ firstName: 'Client', lastName: 'Inventé' }) });
+      await a.load();
+      a.input('-nom').value = ' Inventé ';
+      const b = named(a)[0]!;
+      b.listeners.click!({});
+      b.listeners.click!({});
+      await a.tick();
+      expect(a.calls.filter((c) => c.url === NOM)).toEqual([{ url: NOM, method: 'POST', body: { lastName: 'Inventé' } }]);
+      expect(a.calls.filter((c) => c.url === `/v1/fiches/${ID}/resume`).length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('rien d’écrit, un nom déjà écrit, une réponse perdue : chacun se dit', async () => {
+      const empty = await opened();
+      await empty.load();
+      named(empty)[0]!.listeners.click!({});
+      await empty.tick();
+      expect(empty.body.textContent).toContain('Écrivez le nom à ajouter.');
+      expect(empty.calls.filter((c) => c.url === NOM)).toEqual([]);
+
+      const taken = await opened({ [NOM]: async () => Response.json({ ok: false, rule: null, code: 'already_named' }, { status: 409 }) });
+      await taken.load();
+      taken.input('-nom').value = 'Autre';
+      named(taken)[0]!.listeners.click!({});
+      await taken.tick();
+      expect(taken.body.textContent).toContain('il ne se remplace pas ici');
+
+      const lost = await opened({ [NOM]: () => Promise.reject(new TypeError('hors ligne')) });
+      await lost.load();
+      lost.input('-nom').value = 'Inventé';
+      named(lost)[0]!.listeners.click!({});
+      await lost.tick();
+      expect(lost.body.textContent).toContain('le nom est peut-être écrit');
+    });
+  });
+
   it('sans réseau, le bloc le dit, sans casser la fiche', async () => {
     const a = await opened();
     const [script] = a.scripts();

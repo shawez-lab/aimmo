@@ -457,15 +457,15 @@ export const APP_JS = `'use strict';
     box.appendChild(s);
   }
   var biensDraw = null;
-  function biensBlock(personId, body) {
+  function biensBlock(personId, body, f) {
     var box = el('div');
     body.appendChild(box);
-    if (biensDraw) return biensDraw(box, personId);
+    if (biensDraw) return biensDraw(box, personId, f);
     var s = el('script');
     s.setAttribute('src', '/app/biens-fiche.js');
     s.addEventListener('load', function () {
-      biensDraw = globalThis.AIMMO_BIENS_FICHE({ el: el, send: send, cState: cState, cSeq: cSeq, cSelect: cSelect, accordButton: accordButton, accordFailed: accordFailed });
-      biensDraw(box, personId);
+      biensDraw = globalThis.AIMMO_BIENS_FICHE({ el: el, send: send, cState: cState, cSeq: cSeq, cSelect: cSelect, accordButton: accordButton, accordFailed: accordFailed, openFiche: openFiche, $: $ });
+      biensDraw(box, personId, f);
     });
     s.addEventListener('error', function () { box.textContent = 'Pas de réseau : les biens du client reviendront.'; });
     box.appendChild(s);
@@ -525,7 +525,7 @@ export const APP_JS = `'use strict';
     })));
     body.appendChild(block('Origines', (f.sources || []).map(function (s) { return line(channel(s.channel) + (s.detail ? ' (' + s.detail + ')' : ''), 'Le ' + date(s.occurredAt)); })));
     if (f.qualification) classementBlock(personId, body, f.qualification);
-    biensBlock(personId, body);
+    biensBlock(personId, body, f);
     body.appendChild(accordsBlock(personId, f));
     body.appendChild(block('Derniers messages', (f.messages || []).map(function (m) {
       return line(m.body, (m.direction === 'in' ? 'Reçu' : 'Envoyé') + ' par ' + channel(m.channel) + ', le ' + date(m.occurredAt) + ' à ' + hour(m.occurredAt));

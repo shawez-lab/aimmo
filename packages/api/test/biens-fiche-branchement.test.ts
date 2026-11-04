@@ -18,9 +18,9 @@ describeWithSqlite('SV06 · routes des biens dans le socle', () => {
       { sha256: await sha256Hex(KEYS.sam), networkId: t.network.id, role: 'agent', userId: samId },
     ]);
     const config: ApiConfig = { db: t.db as SqlDatabase, apiKeys, mode: 'essai', now: t.now };
-    const call = async (key: string, method: string, body?: unknown) => {
+    const call = async (key: string, method: string, body?: unknown, path = 'biens') => {
       const r = await handleRequest(
-        new Request(`${ORIGIN}/v1/fiches/${t.personId}/biens`, { method, headers: { authorization: `Bearer ${key}`, ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }),
+        new Request(`${ORIGIN}/v1/fiches/${t.personId}/${path}`, { method, headers: { authorization: `Bearer ${key}`, ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }),
         config,
       );
       return { status: r.status, body: (await r.json()) as { sent?: boolean; data?: unknown } };
@@ -31,5 +31,9 @@ describeWithSqlite('SV06 · routes des biens dans le socle', () => {
     expect(await t.db.first('SELECT surface_m2 FROM properties WHERE id = ?', [BODY.requestId])).toEqual({ surface_m2: 80 });
     expect((await call(KEYS.alex, 'GET')).status).toBe(200);
     expect((await call(KEYS.sam, 'POST', { ...BODY, requestId: '0b6f1d2e-5555-4a2b-8c3d-000000000021' })).status).toBe(403);
+    // SV07 : le nom du jeu est déjà écrit ; un autre ne l'écrase pas, et un autre agent est refusé.
+    expect((await call(KEYS.alex, 'POST', { lastName: 'Autre' }, 'nom')).status).toBe(409);
+    expect((await call(KEYS.alex, 'POST', { agentId: 'x' }, 'nom')).status).toBe(400);
+    expect((await call(KEYS.sam, 'POST', { lastName: 'Autre' }, 'nom')).status).toBe(403);
   });
 });

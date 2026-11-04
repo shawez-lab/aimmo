@@ -1,5 +1,5 @@
 /**
- * Le bloc « Biens du client » de la fiche (SV06) [R16, R201], servi à part (`/app/biens-fiche.js`) et chargé à l'ouverture
+ * Les blocs « Nom du client » (SV07) et « Biens du client » (SV06) de la fiche [R16, R201], servi à part (`/app/biens-fiche.js`) et chargé à l'ouverture
  * d'une fiche, pour garder le budget de l'application. Le serveur décide qui peut créer : l'écran n'a rien à vérifier
  * de plus que les chiffres saisis. Aucun envoi.
  */
@@ -19,6 +19,9 @@ const CODES: Readonly<Record<string, string>> = Object.freeze({
   bad_surface: 'La surface : un nombre entier de m².',
   bad_rooms: 'Le nombre de pièces : un nombre entier.',
   bad_price: 'Le prix : un nombre entier d’euros.',
+  bad_name: 'Un nom : des lettres, sans chiffre ni adresse.',
+  no_name: 'Écrivez le nom à ajouter.',
+  already_named: 'Ce nom est déjà écrit sur la fiche : il ne se remplace pas ici.',
   no_agent: 'Cette fiche n’a pas encore d’agent : attribuez-la d’abord.',
   agent_file_incomplete: 'Votre dossier d’agent n’est pas complet : le bien ne peut pas être créé.',
 });
@@ -47,7 +50,41 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var v = input.value.trim();
     return /^[0-9]+$/.test(v) ? Number(v) : v === '' ? null : NaN;
   }
-  return function (box, personId) {
+  function nameBlock(box, personId, f) {
+    var section = el('section', null, 'bloc');
+    section.appendChild(el('h3', 'Nom du client'));
+    section.appendChild(el('p', 'Il manque à la fiche : sans lui, un mandat ou un bon de visite reste incomplet.', 'doux'));
+    var form = el('div', null, 'decision');
+    var id = t.cSeq();
+    var state = t.cState();
+    var first = f.firstName ? null : field(form, id + '-prenom', 'Prénom', false);
+    var last = f.lastName ? null : field(form, id + '-nom', 'Nom de famille', false);
+    form.appendChild(t.accordButton('Compléter la fiche', function () {
+      var body = {};
+      if (first && first.value.trim()) body.firstName = first.value.trim();
+      if (last && last.value.trim()) body.lastName = last.value.trim();
+      if (!body.firstName && !body.lastName) { state.textContent = CODES.no_name; return Promise.resolve(false); }
+      state.textContent = 'Enregistrement…';
+      return t.send('/v1/fiches/' + encodeURIComponent(personId) + '/nom', 'POST', body).then(function (res) {
+        if (res.gone) return false;
+        if (!res.ok) {
+          var code = res.body && res.body.code;
+          if (CODES[code]) { state.textContent = CODES[code]; return false; }
+          if (res.offline || res.status >= 500 || !res.body) { state.textContent = 'La réponse n’est pas arrivée : le nom est peut-être écrit. Réessayez sans changer la saisie.'; return false; }
+          return t.accordFailed(res, personId, state, 'Le nom n’est pas écrit : réessayez.');
+        }
+        return t.openFiche(personId).then(function (read) {
+          if (read) t.$('fiche-etat').textContent = 'Fiche complétée.';
+          return read;
+        });
+      });
+    }));
+    form.appendChild(state);
+    section.appendChild(form);
+    box.appendChild(section);
+  }
+  return function (box, personId, f) {
+    if (f && (!f.firstName || !f.lastName)) nameBlock(box, personId, f);
     var section = el('section', null, 'bloc');
     section.appendChild(el('h3', 'Biens du client'));
     var list = el('ul');

@@ -120,17 +120,6 @@ describeWithSqlite('SV04 · le parcours complet fictif, du premier message à l�
       expect(result).toEqual({ ok: false, done: [], failed: { step: 'a', label: 'A', reason: 'journal sans x.y' }, notRun: [] });
     });
   });
-
-  // Ce que le parcours a trouvé. Ce test décrit le trou tel qu'il est. Il ne passera pas au rouge seul : le parcours
-  // n'appellera pas seul le nouveau geste. La tâche qui ferme le trou change ce test et retire le raccourci de
-  // `parcours-complet.ts`.
-  describe('trous connus, trouvés par le parcours', () => {
-    it('SV07 : un vendeur venu d’un formulaire n’a que son prénom : son mandat reste incomplet, et aucun geste sur sa fiche ne complète son nom', async () => {
-      const w = await journeyWorld({ lastName: false });
-      const result = await runJourney(w, JOURNEY);
-      expect(result).toMatchObject({ ok: false, failed: { step: 'mandat', reason: expect.stringContaining('missing_fields') } });
-    });
-  });
 });
 
 describe('SV04 · il tourne aussi chaque mois', () => {
