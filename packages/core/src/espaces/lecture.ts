@@ -26,7 +26,7 @@ export const DOCUMENT_TITLES: Record<string, string> = {
 export async function sourcePerson(db: SqlDatabase, fiche: FicheUnique, personId: string): Promise<SourcePerson> {
   const members = await fiche.membersOf(personId);
   const q = placeholders(members.length);
-  const names = await db.all<{ first_name: string | null; last_name: string | null }>(`SELECT first_name, last_name FROM persons WHERE id IN (${q})`, members);
+  const names = await db.all<{ first_name: string | null; last_name: string | null }>(`SELECT first_name, last_name FROM person_known_names WHERE id IN (${q})`, members);
   const ids = await db.all<{ kind: string; value: string }>(`SELECT kind, value FROM person_identifiers WHERE person_id IN (${q})`, members);
   return {
     personId,

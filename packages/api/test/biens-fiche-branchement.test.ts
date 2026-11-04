@@ -6,7 +6,7 @@ import { describeWithSqlite } from '../../core/test/sqlite.ts';
 
 // Tout est inventé : réseau, agents, client, clés.
 const ORIGIN = 'https://aimmo-api.example.test';
-const KEYS = { alex: 'test-cle-sv06-alex-aaaaaaaaaaaaaaaaaaaaaaaaaaa', sam: 'test-cle-sv06-sam-bbbbbbbbbbbbbbbbbbbbbbbbbbbb' };
+const KEYS = { alex: 'test-cle-sv06-alex-aaaaaaaaaaaaaaaaaaaaaaaaaaa', sam: 'test-cle-sv06-sam-bbbbbbbbbbbbbbbbbbbbbbbbbbbb', direction: 'test-cle-sv10-dir-cccccccccccccccccccccccccccc' };
 const BODY = { requestId: '0b6f1d2e-5555-4a2b-8c3d-000000000020', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 80 };
 
 describeWithSqlite('SV06 · routes des biens dans le socle', () => {
@@ -16,6 +16,7 @@ describeWithSqlite('SV06 · routes des biens dans le socle', () => {
     const apiKeys = JSON.stringify([
       { sha256: await sha256Hex(KEYS.alex), networkId: t.network.id, role: 'agent', userId: t.alexId },
       { sha256: await sha256Hex(KEYS.sam), networkId: t.network.id, role: 'agent', userId: samId },
+      { sha256: await sha256Hex(KEYS.direction), networkId: t.network.id, role: 'direction', userId: 'd-1' },
     ]);
     const config: ApiConfig = { db: t.db as SqlDatabase, apiKeys, mode: 'essai', now: t.now };
     const call = async (key: string, method: string, body?: unknown, path = 'biens') => {
@@ -35,5 +36,12 @@ describeWithSqlite('SV06 · routes des biens dans le socle', () => {
     expect((await call(KEYS.alex, 'POST', { lastName: 'Autre' }, 'nom')).status).toBe(409);
     expect((await call(KEYS.alex, 'POST', { agentId: 'x' }, 'nom')).status).toBe(400);
     expect((await call(KEYS.sam, 'POST', { lastName: 'Autre' }, 'nom')).status).toBe(403);
+    // SV10 : la direction corrige et relit ; l'agent de la fiche est refusé, sans lecture du corps [R16].
+    const correction = { lastName: 'Corrigé', reason: 'faute_de_frappe' };
+    expect((await call(KEYS.alex, 'POST', correction, 'nom/corrections')).status).toBe(403);
+    expect((await call(KEYS.alex, 'GET', undefined, 'nom/corrections')).status).toBe(403);
+    expect((await call(KEYS.direction, 'POST', 'x', 'nom/corrections')).status).toBe(400);
+    expect((await call(KEYS.direction, 'POST', correction, 'nom/corrections')).status).toBe(200);
+    expect((await call(KEYS.direction, 'GET', undefined, 'nom/corrections')).body.data).toMatchObject([{ newLastName: 'Corrigé', reason: 'faute_de_frappe' }]);
   });
 });

@@ -3,9 +3,11 @@
  *   GET  /v1/fiches/<id>/biens   les biens liés à son projet de vente
  *   POST /v1/fiches/<id>/biens   { requestId, kind, postalCode, city, surfaceM2, rooms, priceEur } : crée le bien et le lie
  *   POST /v1/fiches/<id>/nom     { firstName, lastName } : remplit ce qui est vide, n'écrase rien
+ *   GET  /v1/fiches/<id>/nom/corrections   la direction relit les corrections et les valeurs d'avant (SV10)
+ *   POST /v1/fiches/<id>/nom/corrections   { firstName, lastName, reason } : la direction corrige, la valeur d'avant reste
  * Le rôle et le droit sur la fiche sont contrôlés avant le corps [R16]. Rien n'est envoyé [R26].
  */
-import { CompleterNom, NouveauBien, appendEvent, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { CompleterNom, CorrigerNom, NouveauBien, appendEvent, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 
 export const MAX_BIEN_BODY_BYTES = 2048;
 const ID = '([0-9a-f-]{36})';
@@ -40,9 +42,10 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
-const statusOf = (rule: string | null, code: string): number => (code === 'unknown' ? 404 : rule === 'R16' ? 403 : code === 'already_named' ? 409 : 400);
+const statusOf = (rule: string | null, code: string): number => (code === 'unknown' ? 404 : rule === 'R16' ? 403 : code === 'already_named' || code === 'name_changed' ? 409 : 400);
 const answer = <T>(r: { ok: true; value: T } | { ok: false; rule: string | null; code: string }): Response =>
   r.ok ? json(200, { ok: true, mode: 'essai', sent: false, data: r.value }) : json(statusOf(r.rule, r.code), { ok: false, rule: r.rule, code: r.code });
+const corrections = (s: BiensFicheServices): CorrigerNom => new CorrigerNom(s.db, s.acces, s.journal, { now: s.now });
 const core = (s: BiensFicheServices): NouveauBien => new NouveauBien(s.db, s.acces, s.journal, { now: s.now });
 
 function guarded(handle: BiensFicheRoute['handle']): BiensFicheRoute['handle'] {
@@ -57,6 +60,14 @@ function guarded(handle: BiensFicheRoute['handle']): BiensFicheRoute['handle'] {
 
 export function biensFicheRoutes(): BiensFicheRoute[] {
   return [
+    // Le rôle et le droit sur la fiche d'abord, dans `CorrigerNom`, écrits au journal : le corps n'est lu que pour la direction [R16].
+    { method: 'GET', pattern: new RegExp(`^/fiches/${ID}/nom/corrections$`), name: 'fiche.nom.corrections', handle: async (s, viewer, [id]) => answer(await corrections(s).list(viewer, id!)) },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/fiches/${ID}/nom/corrections$`),
+      name: 'fiche.nom.corrige',
+      handle: async (s, viewer, [id], request) => answer(await corrections(s).correct(viewer, id!, viewer.role === 'direction' ? await readJson(request) : null)),
+    },
     { method: 'GET', pattern: new RegExp(`^/fiches/${ID}/biens$`), name: 'fiche.biens', handle: guarded(async (s, viewer, [id]) => answer(await core(s).list(viewer, id!))) },
     {
       method: 'POST',

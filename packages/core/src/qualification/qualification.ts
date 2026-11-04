@@ -278,7 +278,7 @@ export class Qualification {
   /** Les noms connus de la personne, fiches réunies comprises, et celui que le canal donne. */
   private async namesOf(personId: string, senderName: string | null): Promise<string[]> {
     const members = await this.fiche.membersOf(personId);
-    const rows = await this.db.all<{ first_name: string | null; last_name: string | null }>(`SELECT first_name, last_name FROM persons WHERE id IN (${placeholders(members.length)})`, members);
+    const rows = await this.db.all<{ first_name: string | null; last_name: string | null }>(`SELECT first_name, last_name FROM person_known_names WHERE id IN (${placeholders(members.length)})`, members);
     return [...new Set([...rows.flatMap((m) => [m.first_name, m.last_name]), senderName].filter((n): n is string => !!n))];
   }
 

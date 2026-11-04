@@ -44,6 +44,8 @@ export interface AgentFiche {
   personId: string;
   firstName: string | null;
   lastName: string | null;
+  /** Présent pour la direction seule : elle peut corriger un nom déjà écrit (SV10) ; le serveur décide de toute façon [R16]. */
+  nameCorrectable?: true;
   /** Exclusions actives : la personne ne doit plus être contactée [R02, R04]. */
   contact: { allowed: boolean; reasons: ExclusionReason[] };
   /** Numéro à appeler, en `tel:` ; null si la personne est exclue, a demandé l'arrêt, n'a pas d'accord ou pas de numéro. */
@@ -246,6 +248,7 @@ export class FicheAgent {
         // La fiche réunie : le nom d'une fiche d'origine compte, tant que la fiche survivante n'en a pas.
         firstName: fiche.person.first_name ?? fiche.members.find((m) => m.first_name)?.first_name ?? null,
         lastName: fiche.person.last_name ?? fiche.members.find((m) => m.last_name)?.last_name ?? null,
+        ...(viewer.role === 'direction' ? { nameCorrectable: true as const } : {}),
         contact: { allowed, reasons },
         call,
         callRefusal,

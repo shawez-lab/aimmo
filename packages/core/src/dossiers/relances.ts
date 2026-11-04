@@ -134,7 +134,7 @@ export class RelancesPieces {
    */
   private async forbiddenNames(otherId: string, recipientFirstName: string | null): Promise<string[]> {
     const members = await this.unique.membersOf(otherId);
-    const rows = await this.db.all<{ first_name: string | null; last_name: string | null }>(`SELECT first_name, last_name FROM persons WHERE id IN (${members.map(() => '?').join(', ')})`, members);
+    const rows = await this.db.all<{ first_name: string | null; last_name: string | null }>(`SELECT first_name, last_name FROM person_known_names WHERE id IN (${members.map(() => '?').join(', ')})`, members);
     const greeting = new Set(recipientFirstName ? nameWords(recipientFirstName) : []);
     const words = new Set(rows.flatMap((r) => [r.first_name, r.last_name]).filter((n): n is string => !!n).flatMap(nameWords));
     return [...words].filter((w) => !greeting.has(w));

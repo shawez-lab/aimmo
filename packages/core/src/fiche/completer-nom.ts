@@ -13,7 +13,7 @@ const MAX_NAME = 80;
 /** Un nom : des lettres, espaces, apostrophes, tirets et points ; ni chiffre ni adresse. */
 const NAME = /^\p{L}[\p{L}\p{M} .'’-]*$/u;
 
-function clean(value: unknown): string | null | undefined {
+export function cleanName(value: unknown): string | null | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== 'string') return null;
   const text = value.trim().replace(/\s+/g, ' ');
@@ -54,8 +54,8 @@ export class CompleterNom {
     }
     const fiche = await this.acces.readFiche(viewer, personId);
     if (!fiche.ok) return { ok: false, rule: fiche.code === 'unknown' ? null : 'R16', code: fiche.code };
-    const first = clean(input.firstName);
-    const last = clean(input.lastName);
+    const first = cleanName(input.firstName);
+    const last = cleanName(input.lastName);
     if (first === null || last === null) return { ok: false, rule: null, code: 'bad_name' };
     if (first === undefined && last === undefined) return { ok: false, rule: null, code: 'no_name' };
 
@@ -85,7 +85,10 @@ export class CompleterNom {
     if (changes !== 1 || (nextFirst !== null && row?.first_name !== nextFirst) || (nextLast !== null && row?.last_name !== nextLast)) return { ok: false, rule: null, code: 'already_named' };
     // La ligne du journal, écrite une fois : un nouvel essai écrit celle qu'une panne aurait fait manquer [R13].
     const given = [...(first !== undefined || split ? ['firstName'] : []), ...(last !== undefined ? ['lastName'] : [])];
-    const noted = new Set((await this.journal.bySubject(`person:${person.id}`)).filter((e) => e.type === 'fiche.nom_complete').flatMap((e) => e.data.fields as string[]));
+    // Après une correction de la direction (SV10), un champ vidé puis rempli de nouveau compte comme un nouveau geste.
+    const events = await this.journal.bySubject(`person:${person.id}`);
+    const since = events.slice(events.map((e) => e.type).lastIndexOf('fiche.nom_corrige') + 1);
+    const noted = new Set(since.filter((e) => e.type === 'fiche.nom_complete').flatMap((e) => e.data.fields as string[]));
     const fields = given.filter((f) => !noted.has(f));
     if (fields.length > 0) await appendEvent(this.journal, { type: 'fiche.nom_complete', actor, subject: `person:${person.id}`, data: { rule: 'R16', fields } }, this.now);
     return { ok: true, value: { firstName: row?.first_name ?? null, lastName: row?.last_name ?? null } };

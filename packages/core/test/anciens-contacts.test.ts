@@ -341,4 +341,19 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     const [message] = await t.outbox();
     expect(message!.body).toContain(`Bonjour ${expected}`);
   });
+
+  it('SV10 · un prénom corrigé après la préparation : le texte rangé ne salue plus l’ancien', async () => {
+    const t = await setup();
+    const ines = await t.contact('Inès');
+    await t.valued(ines.id, 400);
+    await t.anciens.prepareMonth(t.network.id);
+    const list = await t.anciens.toValidate(t.agent());
+    if (!list.ok) throw new Error(list.code);
+    await t.db.run("INSERT INTO person_name_corrections (id, network_id, person_id, old_first_name, new_first_name, reason, actor, created_at) VALUES ('c-1', ?, ?, 'Inès', 'Agnès', 'faute_de_frappe', 'direction:d', '2099-01-01T00:00:00.000Z')", [t.network.id, ines.id]);
+    await t.db.run("UPDATE persons SET first_name = 'Agnès' WHERE id = ?", [ines.id]);
+    expect(await t.anciens.validate(t.agent(), list.value[0]!.followupId)).toMatchObject({ ok: true, value: { status: 'essai' } });
+    const sent = (await t.outbox()).map((m) => m.body).join(' ');
+    expect(sent).toContain('Bonjour Agnès');
+    expect(sent).not.toContain('Inès');
+  });
 });
