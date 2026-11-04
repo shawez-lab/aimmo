@@ -249,7 +249,7 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
     label: 'Le rendez-vous d’estimation est pris',
     events: ['bien.cree', 'rdv.reserve'],
     async run(w) {
-      const created = accepted(await new NouveauBien(w.db, w.acces, w.journal, { now: w.now }).create(w.agent, w.seller, { kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 }), 'bien');
+      const created = accepted(await new NouveauBien(w.db, w.acces, w.journal, { now: w.now }).create(w.agent, w.seller, { requestId: crypto.randomUUID(), kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 }), 'bien');
       const b = { id: created.value.propertyId };
       w.propertyId = b.id;
       w.reference = created.value.reference;

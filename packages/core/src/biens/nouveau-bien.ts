@@ -26,6 +26,7 @@ export type NewPropertyRefusal = { ok: false; rule: 'R16' | null; code: string }
 const isCount = (v: unknown, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= max;
 
 interface Clean {
+  requestId: string;
   kind: PropertyKind;
   postalCode: string;
   city: string;
@@ -35,7 +36,8 @@ interface Clean {
 }
 
 function validate(input: Record<string, unknown>): Clean | string {
-  const { kind, postalCode, city, surfaceM2, rooms, priceEur } = input;
+  const { requestId, kind, postalCode, city, surfaceM2, rooms, priceEur } = input;
+  if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(requestId)) return 'bad_request';
   if (typeof kind !== 'string' || !(NEW_PROPERTY_KINDS as readonly string[]).includes(kind)) return 'bad_kind';
   if (typeof postalCode !== 'string' || !/^\d{5}$/.test(postalCode)) return 'bad_postal_code';
   const town = typeof city === 'string' ? city.trim() : '';
@@ -43,7 +45,7 @@ function validate(input: Record<string, unknown>): Clean | string {
   if (!isCount(surfaceM2, 1_000_000)) return 'bad_surface';
   if (rooms !== undefined && rooms !== null && !isCount(rooms, 200)) return 'bad_rooms';
   if (priceEur !== undefined && priceEur !== null && !isCount(priceEur, 1_000_000_000)) return 'bad_price';
-  return { kind: kind as PropertyKind, postalCode, city: town, surfaceM2, rooms: (rooms as number | null | undefined) ?? null, priceEur: (priceEur as number | null | undefined) ?? null };
+  return { requestId, kind: kind as PropertyKind, postalCode, city: town, surfaceM2, rooms: (rooms as number | null | undefined) ?? null, priceEur: (priceEur as number | null | undefined) ?? null };
 }
 
 export class NouveauBien {
@@ -71,7 +73,10 @@ export class NouveauBien {
     const fiche = await this.acces.readFiche(viewer, personId);
     if (!fiche.ok) return { ok: false, rule: fiche.code === 'unknown' ? null : 'R16', code: fiche.code };
     if (fiche.view !== 'full') return { ok: false, rule: 'R16', code: 'not_assigned' };
-    return { ok: true, personId: fiche.value.person.id, members: fiche.value.members.map((m) => m.id), agentId: fiche.value.person.agent_id };
+    const followers = [...new Set(fiche.value.members.map((m) => m.agent_id).filter((a): a is string => a !== null))];
+    // L'agent du bien : celui qui le crée ; pour la direction, l'agent de la fiche, même porté par une fiche réunie.
+    const agentId = viewer.role === 'agent' ? viewer.userId : (fiche.value.person.agent_id ?? (followers.length === 1 ? followers[0]! : null));
+    return { ok: true, personId: fiche.value.person.id, members: fiche.value.members.map((m) => m.id), agentId };
   }
 
   private owned(members: readonly string[]): Promise<(OwnedProperty & { projectId: string })[]> {
@@ -91,9 +96,28 @@ export class NouveauBien {
     return { ok: true, value: (await this.owned(g.members)).map(({ projectId: _p, ...b }) => b) };
   }
 
+  private async noteCreated(viewer: Viewer, propertyId: string, kind: PropertyKind): Promise<void> {
+    await appendEvent(this.journal, { type: 'bien.cree', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `property:${propertyId}`, data: { rule: 'R16', kind } }, this.now);
+  }
+
   /**
-   * Crée le bien et le lie au projet de vente de la personne, ouvert s'il n'existe pas, le tout d'un seul geste. Le même
-   * bien redemandé, par exemple après une réponse perdue, rend le premier : il n'est pas créé deux fois.
+   * Un nouvel essai de la même demande, tiré du formulaire : rend le bien déjà créé, et écrit au journal ce qu'une panne
+   * y aurait laissé manquer [R13]. Une demande connue pour un autre client est refusée, sans rien dire de lui.
+   */
+  private async again(viewer: Viewer, members: readonly string[], requestId: string): Promise<{ ok: true; value: OwnedProperty & { already: boolean } } | NewPropertyRefusal | null> {
+    const taken = await this.db.first('SELECT 1 AS ok FROM properties WHERE id = ?', [requestId]);
+    if (!taken) return null;
+    const mine = (await this.owned(members)).find((b) => b.propertyId === requestId);
+    if (!mine) return { ok: false, rule: null, code: 'bad_request' };
+    const { projectId: _p, ...found } = mine;
+    if (!(await this.journal.bySubject(`property:${requestId}`)).some((e) => e.type === 'bien.cree')) await this.noteCreated(viewer, requestId, found.kind);
+    return { ok: true, value: { ...found, already: true } };
+  }
+
+  /**
+   * Crée le bien et le lie au projet de vente de la personne, ouvert s'il n'existe pas, le tout d'un seul geste. La clé
+   * `requestId`, tirée par le formulaire, devient l'identifiant du bien : la même demande rejouée ne crée rien de plus,
+   * et deux biens qui se ressemblent restent deux biens.
    */
   async create(viewer: Viewer, personId: string, input: Record<string, unknown>): Promise<{ ok: true; value: OwnedProperty & { already: boolean } } | NewPropertyRefusal> {
     const g = await this.gate(viewer, personId);
@@ -102,20 +126,18 @@ export class NouveauBien {
     const clean = validate(input);
     if (typeof clean === 'string') return { ok: false, rule: null, code: clean };
 
-    const twin = (await this.owned(g.members)).find((b) => b.kind === clean.kind && b.postalCode === clean.postalCode && b.city === clean.city && b.surfaceM2 === clean.surfaceM2);
-    if (twin) {
-      const { projectId: _p, ...found } = twin;
-      return { ok: true, value: { ...found, already: true } };
-    }
+    const again = await this.again(viewer, g.members, clean.requestId);
+    if (again) return again;
 
     const at = this.now().toISOString();
-    const project = await this.db.first<{ id: string }>(`SELECT id FROM projects WHERE person_id IN (${g.members.map(() => '?').join(', ')}) AND kind = 'sell' ORDER BY created_at DESC, id LIMIT 1`, g.members);
+    const projectKind = clean.kind === 'business' || clean.kind === 'business_walls' ? 'sell_business' : 'sell';
+    const project = await this.db.first<{ id: string }>(`SELECT id FROM projects WHERE person_id IN (${g.members.map(() => '?').join(', ')}) AND kind = ? ORDER BY created_at DESC, id LIMIT 1`, [...g.members, projectKind]);
     const projectId = project?.id ?? this.newId();
-    const propertyId = this.newId();
+    const propertyId = clean.requestId;
     const statements = (reference: string) => [
       ...(project
         ? []
-        : [{ sql: "INSERT INTO projects (id, network_id, agent_id, person_id, kind, stage, created_at, updated_at) VALUES (?, ?, ?, ?, 'sell', 'new', ?, ?)", params: [projectId, viewer.networkId, g.agentId, g.personId, at, at] }]),
+        : [{ sql: "INSERT INTO projects (id, network_id, agent_id, person_id, kind, stage, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'new', ?, ?)", params: [projectId, viewer.networkId, g.agentId, g.personId, projectKind, at, at] }]),
       {
         sql: "INSERT INTO properties (id, network_id, agent_id, reference, kind, postal_code, city, surface_m2, rooms, price_eur, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)",
         params: [propertyId, viewer.networkId, g.agentId, reference, clean.kind, clean.postalCode, clean.city, clean.surfaceM2, clean.rooms, clean.priceEur, at, at],
@@ -123,18 +145,22 @@ export class NouveauBien {
       { sql: "INSERT INTO project_properties (project_id, property_id, network_id, agent_id, role, created_at) VALUES (?, ?, ?, ?, 'owned', ?)", params: [projectId, propertyId, viewer.networkId, g.agentId, at] },
     ];
 
-    // Une référence déjà prise est tirée de nouveau ; toute autre panne remonte.
+    // Deux appuis en même temps : le second retrouve le bien du premier. Une référence déjà prise est tirée de nouveau ;
+    // toute autre panne remonte.
     let reference = this.newReference();
     for (let attempt = 1; ; attempt += 1) {
       try {
         await runBatch(this.db, statements(reference));
         break;
       } catch (error) {
-        if (attempt >= 3 || !/UNIQUE/i.test(String(error))) throw error;
+        if (!/UNIQUE/i.test(String(error))) throw error;
+        const raced = await this.again(viewer, g.members, clean.requestId);
+        if (raced) return raced;
+        if (attempt >= 3) throw error;
         reference = this.newReference();
       }
     }
-    await appendEvent(this.journal, { type: 'bien.cree', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `property:${propertyId}`, data: { rule: 'R16', kind: clean.kind } }, this.now);
+    await this.noteCreated(viewer, propertyId, clean.kind);
     return { ok: true, value: { propertyId, reference, kind: clean.kind, postalCode: clean.postalCode, city: clean.city, surfaceM2: clean.surfaceM2, rooms: clean.rooms, priceEur: clean.priceEur, status: 'draft', already: false } };
   }
 }

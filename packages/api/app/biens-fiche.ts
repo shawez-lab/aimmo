@@ -20,6 +20,7 @@ const CODES: Readonly<Record<string, string>> = Object.freeze({
   bad_rooms: 'Le nombre de pièces : un nombre entier.',
   bad_price: 'Le prix : un nombre entier d’euros.',
   no_agent: 'Cette fiche n’a pas encore d’agent : attribuez-la d’abord.',
+  agent_file_incomplete: 'Votre dossier d’agent n’est pas complet : le bien ne peut pas être créé.',
 });
 
 export const BIENS_FICHE_SCRIPT = `'use strict';
@@ -27,6 +28,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
   var el = t.el;
   var KINDS = ${JSON.stringify(KIND_LABELS)};
   var CODES = ${JSON.stringify(CODES)};
+  var LOST = 'La réponse n’est pas arrivée : le bien est peut-être créé. Réessayez sans changer la saisie : il ne sera pas créé deux fois.';
   function line(b) {
     var facts = [KINDS[b.kind] || 'Bien', b.city, typeof b.surfaceM2 === 'number' ? b.surfaceM2 + ' m²' : null].filter(Boolean).join(', ');
     return el('li', 'Réf. ' + b.reference + ' : ' + facts + '.');
@@ -50,6 +52,13 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     section.appendChild(el('h3', 'Biens du client'));
     var list = el('ul');
     section.appendChild(list);
+    var shown = {};
+    function add(b) {
+      if (shown[b.reference]) return;
+      shown[b.reference] = 1;
+      list.appendChild(line(b));
+    }
+    var requestId = crypto.randomUUID();
     var form = el('div', null, 'decision');
     var id = t.cSeq();
     var state = t.cState();
@@ -67,16 +76,18 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
       if (n.rooms !== null && !n.rooms) { state.textContent = CODES.bad_rooms; return Promise.resolve(false); }
       if (n.priceEur !== null && !n.priceEur) { state.textContent = CODES.bad_price; return Promise.resolve(false); }
       state.textContent = 'Enregistrement…';
-      return t.send('/v1/fiches/' + encodeURIComponent(personId) + '/biens', 'POST', { kind: kind.value, postalCode: postal.value.trim(), city: city.value.trim(), surfaceM2: n.surfaceM2, rooms: n.rooms, priceEur: n.priceEur }).then(function (res) {
+      return t.send('/v1/fiches/' + encodeURIComponent(personId) + '/biens', 'POST', { requestId: requestId, kind: kind.value, postalCode: postal.value.trim(), city: city.value.trim(), surfaceM2: n.surfaceM2, rooms: n.rooms, priceEur: n.priceEur }).then(function (res) {
         if (res.gone) return false;
         if (!res.ok) {
           var code = res.body && res.body.code;
           if (CODES[code]) { state.textContent = CODES[code]; return false; }
-          if (res.offline) { state.textContent = 'La réponse n’est pas arrivée : le bien est peut-être créé. Réessayez : il ne sera pas créé deux fois.'; return false; }
+          if (res.offline || res.status >= 500 || !res.body) { state.textContent = LOST; return false; }
           return t.accordFailed(res, personId, state, 'Le bien n’est pas créé : réessayez.');
         }
         var b = res.body.data;
-        list.appendChild(line(b));
+        add(b);
+        requestId = crypto.randomUUID();
+        [postal, city, surface, rooms, price].forEach(function (i) { i.value = ''; });
         state.textContent = (b.already ? 'Ce bien existe déjà' : 'Bien créé') + ', réf. ' + b.reference + ' : il est aussi dans « Mes biens à mettre en vente ».';
         return true;
       });
@@ -87,7 +98,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     t.send('/v1/fiches/' + encodeURIComponent(personId) + '/biens', 'GET').then(function (res) {
       if (res.gone) return;
       if (!res.ok) { state.textContent = 'La liste des biens n’a pas pu être lue.'; return; }
-      (res.body.data || []).forEach(function (b) { list.appendChild(line(b)); });
+      (res.body.data || []).forEach(add);
     });
   };
 };

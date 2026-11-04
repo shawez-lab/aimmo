@@ -10,7 +10,7 @@ import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.t
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
 // Tout est inventé.
-const BODY = { kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 };
+const BODY = { requestId: '0b6f1d2e-5555-4a2b-8c3d-000000000010', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 };
 
 async function routes() {
   const now = () => new Date('2027-02-03T10:00:00.000Z');
@@ -78,6 +78,7 @@ describe('SV06 · le bloc de la fiche', () => {
     const { els, listeners, document } = fakeDocument(pageIds(HTML));
     const storage = new Map<string, string>([['aimmo.cle', KEY]]);
     const calls: Call[] = [];
+    let keys = 0;
     const answersAll: Record<string, (init: { method?: string }) => Promise<Response>> = {
       '/v1/moi': async () => Response.json({ ok: true, data: { role: 'agent', firstName: 'Alex' } }),
       '/v1/plan-du-jour': ok(PLAN),
@@ -91,6 +92,7 @@ describe('SV06 · le bloc de la fiche', () => {
       document,
       Date,
       Object,
+      crypto: { randomUUID: () => `0b6f1d2e-6666-4a2b-8c3d-${String(++keys).padStart(12, '0')}` },
       localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
       fetch: (url: string, init: { method?: string; body?: string }) => {
         calls.push({ url, method: init.method ?? 'GET', body: init.body ? (JSON.parse(init.body) as Record<string, unknown>) : null });
@@ -129,7 +131,7 @@ describe('SV06 · le bloc de la fiche', () => {
     expect(Object.keys(KIND_LABELS).sort()).toEqual([...NEW_PROPERTY_KINDS].sort());
   });
 
-  it('chargé à part, à l’ouverture d’une fiche : il liste les biens et ne pèse pas sur l’application', async () => {
+  it('[R201] chargé à part, à l’ouverture d’une fiche : il liste les biens et ne pèse pas sur l’application', async () => {
     const a = await opened({ [PATH]: ok([BIEN]) });
     expect(a.scripts()).toHaveLength(1);
     await a.load();
@@ -148,7 +150,9 @@ describe('SV06 · le bloc de la fiche', () => {
     b.listeners.click!({});
     b.listeners.click!({});
     await a.tick();
-    expect(a.posts()).toEqual([{ url: PATH, method: 'POST', body: { kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 } }]);
+    expect(a.posts()).toEqual([{ url: PATH, method: 'POST', body: { requestId: '0b6f1d2e-6666-4a2b-8c3d-000000000001', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 } }]);
+    // Le formulaire est vidé, prêt pour un autre bien, avec une demande neuve.
+    expect(a.input('-commune').value).toBe('');
     expect(a.body.textContent).toContain('Bien créé, réf. B-ABCD1234');
     expect(a.body.textContent).toContain('Réf. B-ABCD1234');
   });
@@ -189,13 +193,45 @@ describe('SV06 · le bloc de la fiche', () => {
     expect(lost.body.textContent).toContain('il ne sera pas créé deux fois');
   });
 
-  it('un bien déjà créé se dit tel', async () => {
-    const a = await opened(POST_THEN(ok({ ...BIEN, already: true })));
+  it('un bien déjà créé se dit tel, et n’apparaît pas deux fois', async () => {
+    const a = await opened({ [PATH]: (init: { method?: string }) => (init.method === 'POST' ? ok({ ...BIEN, already: true })() : ok([BIEN])()) });
     await a.load();
     a.fill(GOOD);
     a.named(a.body, 'Créer le bien')[0]!.listeners.click!({});
     await a.tick();
     expect(a.body.textContent).toContain('Ce bien existe déjà');
+    expect(a.body.all().filter((e) => e.tagName === 'li' && e.textContent.startsWith('Réf. B-ABCD1234'))).toHaveLength(1);
+  });
+
+  it('une panne du serveur ne dit jamais « pas créé » : même demande au nouvel essai', async () => {
+    const a = await opened(POST_THEN(async () => new Response('passerelle', { status: 502 })));
+    await a.load();
+    a.fill(GOOD);
+    a.named(a.body, 'Créer le bien')[0]!.listeners.click!({});
+    await a.tick();
+    expect(a.body.textContent).toContain('le bien est peut-être créé');
+    a.named(a.body, 'Créer le bien')[0]!.listeners.click!({});
+    await a.tick();
+    const [one, two] = a.posts();
+    expect(two!.body!.requestId).toBe(one!.body!.requestId);
+  });
+
+  it('un dossier d’agent incomplet se dit, sans inviter à réessayer', async () => {
+    const a = await opened(POST_THEN(async () => Response.json({ ok: false, rule: 'R16', code: 'agent_file_incomplete' }, { status: 403 })));
+    await a.load();
+    a.fill(GOOD);
+    a.named(a.body, 'Créer le bien')[0]!.listeners.click!({});
+    await a.tick();
+    expect(a.body.textContent).toContain('Votre dossier d’agent n’est pas complet');
+  });
+
+  it('[R201] téléphone d’abord : chaque champ a son libellé, les chiffres ouvrent le clavier numérique', async () => {
+    const a = await opened();
+    await a.load();
+    const fields = a.body.all().filter((e) => ['input', 'select'].includes(e.tagName) && /-(type|cp|commune|surface|pieces|prix)$/.test(e.attributes.id ?? ''));
+    expect(fields).toHaveLength(6);
+    for (const f of fields) expect(a.body.all().some((l) => l.tagName === 'label' && l.attributes.for === f.attributes.id), f.attributes.id).toBe(true);
+    for (const s of ['-cp', '-surface', '-pieces', '-prix']) expect(a.input(s).attributes.inputmode).toBe('numeric');
   });
 
   it('sans réseau, le bloc le dit, sans casser la fiche', async () => {

@@ -1,14 +1,14 @@
 /**
  * SV06 · Les biens du client, depuis sa fiche.
  *   GET  /v1/fiches/<id>/biens   les biens liés à son projet de vente
- *   POST /v1/fiches/<id>/biens   { kind, postalCode, city, surfaceM2, rooms, priceEur } : crée le bien et le lie
+ *   POST /v1/fiches/<id>/biens   { requestId, kind, postalCode, city, surfaceM2, rooms, priceEur } : crée le bien et le lie
  * Le rôle et le droit sur la fiche sont contrôlés avant le corps [R16]. Rien n'est envoyé [R26].
  */
 import { NouveauBien, appendEvent, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 
 export const MAX_BIEN_BODY_BYTES = 2048;
 const ID = '([0-9a-f-]{36})';
-const FIELDS = new Set(['kind', 'postalCode', 'city', 'surfaceM2', 'rooms', 'priceEur']);
+const FIELDS = new Set(['requestId', 'kind', 'postalCode', 'city', 'surfaceM2', 'rooms', 'priceEur']);
 const ROLES: readonly string[] = ['agent', 'direction'];
 
 export interface BiensFicheServices {
