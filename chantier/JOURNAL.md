@@ -602,3 +602,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-04 00:50 · SV02 · la copie de chaque nuit, prouvée restaurable, l'alerte si elle manque, le rejeu des effacements écrit, travail éteint jusqu'à H50 (#364) ; relecture forte 1 P0 et 4 P1 traités ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : SV03
 - 2026-11-04 01:20 · SV03 · le test de restauration du mois, son reçu et la preuve à l'écran de la direction, éteint jusqu'à H50 (#365) ; relecture forte 4 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : SV04
 - 2026-11-04 01:20 · voie 1 · fin de séance : SV02 et SV03 fusionnées ; verrou libéré, relance · prochaine : SV04
+- 2026-11-04 01:20 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra SV04 · prochaine : SV04
