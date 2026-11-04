@@ -3646,7 +3646,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : une ligne de `HUMAIN.md` pour le compartiment, sa règle de garde et la clé, à écrire par SV02.
 
 ### SV09 · Une offre qui tombe rend le bien disponible
-- Statut : en cours
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#372). Relecture forte 3 P0 et 3 P1 corrigés, sur la version avec table refaite ; la version finale, qui la retire, n'a pas eu de seconde relecture forte. Codex à sa limite (H03). Second dossier et lecture de l'arrêt par le client : SV12.
 - Décidé (2026-11-04), lecture prudente : rien n'existait pour arrêter un dossier, le geste est créé (agent du bien, raison en liste fermée, preuve, définitif). Le bien passe par `draft`, puis la publication le rend `available` si la diffusion reste ouverte. Refaire `sale_files` pour lever l'unicité du bien demandait un `DROP TABLE`, que la garde [R17] interdit : pas d'exception sans Shawez, un second dossier est refusé et le dit (H51, SV12).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV08
 - Cahier : M09 Offre ; M10 Compromis et acte.
