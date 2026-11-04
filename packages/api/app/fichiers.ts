@@ -241,6 +241,7 @@ main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); 
 .bloc > button.secondaire { width: 100%; }
 .liste > li > strong:first-child { font-size: var(--t-l); font-family: var(--police-titre); font-weight: 600; }
 .liste button, #fiche-corps button { margin-top: var(--e-3); }
+.liste button + button { margin-inline-start: var(--e-2); }
 .appel { margin-top: var(--e-3); }
 details { margin-top: var(--e-2); }
 summary { min-height: var(--cible); display: flex; align-items: center; cursor: pointer; color: var(--accent); font-weight: 600; list-style-position: inside; }
