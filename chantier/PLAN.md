@@ -3663,7 +3663,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : H50.
 
 ### SV04 · Le parcours complet fictif de chaque mois
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : aucune
 - Cahier : Indicateurs et tests, « Chaque mois : un parcours complet fictif, du premier message à l'après-vente ».
 - Objectif : un seul scénario inventé traverse les vrais modules, du premier message à l'après-vente, et il tourne aussi chaque mois.
