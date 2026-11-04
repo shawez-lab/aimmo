@@ -231,7 +231,7 @@ export class PiecesPartenaires {
       if (!owner) return queue('not_party');
       return { destination: 'property', targetId: src.property_id, piece: rule.piece ?? sort, reason: 'rule' };
     }
-    const sale = await this.db.first<{ id: string; buyer_person_id: string }>('SELECT id, buyer_person_id FROM sale_files WHERE property_id = ? AND network_id = ?', [src.property_id, src.network_id]);
+    const sale = await this.db.first<{ id: string; buyer_person_id: string }>('SELECT f.id, f.buyer_person_id FROM sale_files f WHERE f.property_id = ? AND f.network_id = ? AND NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = f.id)', [src.property_id, src.network_id]);
     if (!sale) return queue('no_sale_file');
     const person = (await this.db.first<{ person_id: string }>('SELECT person_id FROM projects WHERE id = ?', [src.project_id]))!;
     const buyer = sale.buyer_person_id === person.person_id;

@@ -235,7 +235,7 @@ export class EspacePartenaire {
       // dossier. Jamais le dossier d'un autre client [R77].
       const found = src.property_id
         ? await this.db.first<{ amount_eur: number; opened_at: string; buyer_person_id: string }>(
-            'SELECT amount_eur, opened_at, buyer_person_id FROM sale_files WHERE property_id = ? AND network_id = ?',
+            'SELECT f.amount_eur, f.opened_at, f.buyer_person_id FROM sale_files f WHERE f.property_id = ? AND f.network_id = ? AND NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = f.id)',
             [src.property_id, src.network_id],
           )
         : null;

@@ -18,6 +18,8 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { ISO_INSTANT, PROOF_REF, TransmissionOffres } from './transmission.ts';
+import { openFile } from '../dossiers/acces-dossier.ts';
+import { liveOffer } from './transmission.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -183,9 +185,9 @@ export class ContreOffres {
     const { changes } = await this.db.run(
       `INSERT INTO proposal_responses (proposal_id, outcome, proof_ref, responded_at, recorded_by, at)
        SELECT ?, ?, ?, ?, ?, ? WHERE (? <> 'acceptee' OR (
-          NOT EXISTS (SELECT 1 FROM offer_responses r JOIN offer_register o ON o.id = r.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee')
-          AND NOT EXISTS (SELECT 1 FROM proposal_responses r JOIN offer_proposals p ON p.id = r.proposal_id JOIN offer_register o ON o.id = p.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee')
-          AND NOT EXISTS (SELECT 1 FROM sale_files f WHERE f.property_id = ? AND f.offer_id <> ?))) ON CONFLICT (proposal_id) DO NOTHING`,
+          NOT EXISTS (SELECT 1 FROM offer_responses r JOIN offer_register o ON o.id = r.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee' AND ${liveOffer('o')})
+          AND NOT EXISTS (SELECT 1 FROM proposal_responses r JOIN offer_proposals p ON p.id = r.proposal_id JOIN offer_register o ON o.id = p.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee' AND ${liveOffer('o')})
+          AND NOT EXISTS (SELECT 1 FROM sale_files f WHERE f.property_id = ? AND f.offer_id <> ? AND ${openFile('f')}))) ON CONFLICT (proposal_id) DO NOTHING`,
       [proposalId, input.outcome, input.proofRef, at.toISOString(), this.actor(viewer), this.now().toISOString(), input.outcome, pid, p.offerId, pid, p.offerId, pid, p.offerId],
     );
     if (changes !== 1) {

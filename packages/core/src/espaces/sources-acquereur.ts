@@ -257,7 +257,7 @@ export class SqlSourcesAcquereur implements SourcesAcquereur {
   async filesOf(networkId: string, personId: string): Promise<readonly BuyerFile[]> {
     const members = await this.members(personId);
     const files = await this.db.all<{ id: string; property_id: string; opened_at: string }>(
-      `SELECT id, property_id, opened_at FROM sale_files WHERE network_id = ? AND buyer_person_id IN (${placeholders(members.length)}) ORDER BY opened_at, id`,
+      `SELECT id, property_id, opened_at FROM sale_files f WHERE network_id = ? AND NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = f.id) AND buyer_person_id IN (${placeholders(members.length)}) ORDER BY opened_at, id`,
       [networkId, ...members],
     );
     const out: BuyerFile[] = [];

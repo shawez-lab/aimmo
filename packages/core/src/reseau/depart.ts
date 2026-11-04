@@ -534,7 +534,7 @@ export class Departs {
            ORDER BY CASE s.status WHEN 'payee' THEN 4 WHEN 'facturee' THEN 3 WHEN 'due' THEN 2 ELSE 1 END DESC LIMIT 1) AS status,
          (SELECT sum(x.amount_cents) FROM commission_shares x WHERE x.file_id = c.file_id AND x.beneficiary_id = ? AND x.kind <> 'reseau') AS share
        FROM commissions c
-       WHERE c.network_id = ? AND (c.agent_id = ? OR EXISTS (SELECT 1 FROM commission_shares y WHERE y.file_id = c.file_id AND y.beneficiary_id = ? AND y.kind <> 'reseau'))
+       WHERE c.network_id = ? AND NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = c.file_id) AND (c.agent_id = ? OR EXISTS (SELECT 1 FROM commission_shares y WHERE y.file_id = c.file_id AND y.beneficiary_id = ? AND y.kind <> 'reseau'))
        ORDER BY c.compromis_on, c.file_id`,
       [agentId, viewer.networkId, agentId, agentId],
     );

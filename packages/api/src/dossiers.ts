@@ -12,7 +12,7 @@ import { journalError } from './app.ts';
 import { readCapped } from './studio.ts';
 import { Acces, FicheClient, FicheUnique, dossiers as m10, localTime, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 
-const { ActeVente, BouclierFonds, CheminCritique, DepotsDossier, Echeancier, FinancementDossier, PiecesDossier, RelancesPieces } = m10;
+const { ActeVente, ArretDossier, BouclierFonds, CheminCritique, DepotsDossier, Echeancier, FinancementDossier, PiecesDossier, RelancesPieces } = m10;
 export type PieceStore = m10.PieceStore;
 
 export const TRIAL_MODE = 'essai';
@@ -96,6 +96,7 @@ const services = (s: DossierServices) => ({
   echeancier: new Echeancier(s.db, s.acces, s.journal, { now: s.now, proofs: s.pieces }),
   financement: new FinancementDossier(s.db, s.acces, s.journal, { now: s.now }),
   acte: new ActeVente(s.db, s.acces, s.journal, s.pieces, { now: s.now, proofs: s.pieces }),
+  arret: new ArretDossier(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
   chemin: new CheminCritique(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
   relances: new RelancesPieces(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
   bouclier: new BouclierFonds(s.db, s.acces, s.journal, { now: s.now }),
@@ -139,6 +140,8 @@ export function dossierRoutes(): DossierRoute[] {
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/dates$`), name: 'dossiers.date', handle: withBody(async (s, v, [id], b) => reply(await services(s).echeancier.record(v, id!, { kind: b.kind, day: b.day, proofRef: b.proofRef }))) },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/financement$`), name: 'dossiers.financement', handle: async (s, v, [id]) => reply(await services(s).financement.financing(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/financement$`), name: 'dossiers.financement.etape', handle: withBody(async (s, v, [id], b) => reply(await services(s).financement.declare(v, id!, b))) },
+    { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/arret$`), name: 'dossiers.arret', handle: async (s, v, [id]) => reply(await services(s).arret.of(v, id!)) },
+    { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/arret$`), name: 'dossiers.arret.note', handle: withBody(async (s, v, [id], b) => reply(await services(s).arret.stop(v, id!, { reason: b.reason, proofRef: b.proofRef }))) },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/acte$`), name: 'dossiers.acte', handle: async (s, v, [id]) => reply(await services(s).acte.closing(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/acte$`), name: 'dossiers.acte.signe', handle: withBody(async (s, v, [id], b) => reply(await services(s).acte.record(v, id!, { signedOn: b.signedOn, proofRef: b.proofRef }))) },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/chemin$`), name: 'dossiers.chemin', handle: async (s, v, [id]) => reply(await services(s).chemin.of(v, id!)) },

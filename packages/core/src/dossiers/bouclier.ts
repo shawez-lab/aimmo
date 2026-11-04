@@ -35,6 +35,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { actorOf, type FileRefusal } from './acces-dossier.ts';
 import { SALE_FOLLOW_UP_PURPOSE } from './relances.ts';
+import { openFile } from './acces-dossier.ts';
 
 export type FundSignal = 'iban' | 'coordonnees_bancaires' | 'virement' | 'acompte' | 'sequestre' | 'paiement';
 
@@ -106,13 +107,13 @@ export class BouclierFonds {
     const marks = ids.map(() => '?').join(', ');
     const buyer = await this.db.all<{ id: string; property_id: string; agent_id: string | null }>(
       `SELECT f.id, f.property_id, p.agent_id FROM sale_files f JOIN properties p ON p.id = f.property_id
-       WHERE f.network_id = ? AND p.status = 'under_offer' AND f.buyer_person_id IN (${marks}) ORDER BY f.opened_at, f.id`,
+       WHERE f.network_id = ? AND p.status = 'under_offer' AND ${openFile('f')} AND f.buyer_person_id IN (${marks}) ORDER BY f.opened_at, f.id`,
       [networkId, ...ids],
     );
     const seller = await this.db.all<{ id: string; property_id: string; agent_id: string | null }>(
       `SELECT f.id, f.property_id, p.agent_id FROM sale_files f JOIN properties p ON p.id = f.property_id
        JOIN sale_file_sellers v ON v.file_id = f.id
-       WHERE f.network_id = ? AND p.status = 'under_offer' AND v.person_id IN (${marks})
+       WHERE f.network_id = ? AND p.status = 'under_offer' AND ${openFile('f')} AND v.person_id IN (${marks})
        ORDER BY f.opened_at, f.id`,
       [networkId, ...ids],
     );
@@ -183,7 +184,7 @@ export class BouclierFonds {
     const before = (await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM sale_file_fund_alerts WHERE network_id = ?', [networkId]))!.n;
     const rows = await this.db.all<{ id: string }>("SELECT m.id FROM messages m WHERE m.network_id = ? AND m.direction = 'in' AND m.occurred_at >= ? ORDER BY m.occurred_at, m.id", [networkId, since.toISOString()]);
     for (const r of rows) await this.scan(r.id);
-    for (const w of await this.db.all<{ message_id: string; file_id: string }>("SELECT message_id, file_id FROM sale_file_fund_alerts WHERE network_id = ? AND (reminder_status IS NULL OR reminder_status IN ('waiting', 'failed'))", [networkId])) await this.remind(w.message_id, w.file_id);
+    for (const w of await this.db.all<{ message_id: string; file_id: string }>(`SELECT a.message_id, a.file_id FROM sale_file_fund_alerts a JOIN sale_files f ON f.id = a.file_id WHERE a.network_id = ? AND ${openFile('f')} AND (a.reminder_status IS NULL OR a.reminder_status IN ('waiting', 'failed'))`, [networkId])) await this.remind(w.message_id, w.file_id);
     return (await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM sale_file_fund_alerts WHERE network_id = ?', [networkId]))!.n - before;
   }
 
@@ -199,7 +200,7 @@ export class BouclierFonds {
     const rows = await this.db.all<{ message_id: string; file_id: string; property_id: string; side: 'vendeur' | 'acquereur'; signals: string; created_at: string; reminder_status: FundAlert['reminder']; reminder_rule: string | null }>(
       `SELECT a.message_id, a.file_id, f.property_id, a.side, a.signals, a.created_at, a.reminder_status, a.reminder_rule FROM sale_file_fund_alerts a
        JOIN sale_files f ON f.id = a.file_id JOIN properties p ON p.id = f.property_id
-       WHERE a.network_id = ? AND p.agent_id = ? ORDER BY a.created_at DESC, a.message_id`,
+       WHERE a.network_id = ? AND p.agent_id = ? AND ${openFile('f')} ORDER BY a.created_at DESC, a.message_id`,
       [viewer.networkId, viewer.userId],
     );
     const alerts = rows.map((r) => ({ messageId: r.message_id, fileId: r.file_id, propertyId: r.property_id, side: r.side, signals: JSON.parse(r.signals) as FundSignal[], createdAt: r.created_at, reminder: r.reminder_status, reminderRule: r.reminder_rule }));

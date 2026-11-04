@@ -78,6 +78,8 @@ export class DossiersVente {
     if (amount === null) return { ok: false, rule: null, code: 'not_accepted' };
     const property = await this.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [offer.propertyId]);
     if (!property || ['sold', 'rented', 'withdrawn'].includes(property.status)) return { ok: false, rule: null, code: 'not_on_sale' };
+    // Un bien n'a qu'un dossier : après un arrêt, un autre attend la décision H51 [R233]. Dit tel quel, jamais « déjà ouvert ».
+    if (await this.db.first('SELECT 1 FROM sale_files f JOIN sale_file_stops s ON s.file_id = f.id WHERE f.property_id = ?', [offer.propertyId])) return { ok: false, rule: null, code: 'previous_file_stopped' };
     const id = this.newId();
     const openedAt = this.now().toISOString();
     // Le vendeur du dossier, rangé une fois : le mandant du dernier mandat vivant ce jour-là. Un ancien mandant, ou celui
@@ -115,6 +117,7 @@ export class DossiersVente {
     }
     const found = await this.transmission.offerFor(viewer, f.offer_id, true);
     if (!found.ok) return found as Refusal | Problem;
+    if (await this.db.first('SELECT 1 FROM sale_file_stops WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'file_stopped' };
     // L'identité est une donnée de l'acquéreur : il faut voir sa fiche en entier, lecture écrite au journal [R16].
     const buyer = await this.acces.readFiche(viewer, f.buyer_person_id);
     if (!buyer.ok) return buyer as Refusal;

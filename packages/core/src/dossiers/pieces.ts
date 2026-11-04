@@ -173,7 +173,7 @@ export interface PieceStore {
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
 export type PieceProblem =
-  | { ok: false; rule: null; code: 'unknown_file' | 'unknown_piece' | 'not_expected' | 'bad_ref' | 'not_stored' | 'ref_used' | 'business' | 'busy' | 'bad_date' | 'closed' }
+  | { ok: false; rule: null; code: 'unknown_file' | 'file_stopped' | 'unknown_piece' | 'not_expected' | 'bad_ref' | 'not_stored' | 'ref_used' | 'business' | 'busy' | 'bad_date' | 'closed' }
   | { ok: false; rule: 'R15'; code: 'forbidden_piece' };
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
