@@ -24,6 +24,9 @@
  *
  * Les engagements, le temps gagné et la disponibilité (IN10), relus de même, pour la direction [R216, R217, R223] : ce que
  * le serveur ne peut pas mesurer se dit tel, jamais zéro ni 100 %. L'agent déclare ses heures de la semaine passée [R217].
+ *
+ * Les engagements manqués à rappeler (IN15), relus de même, pour la direction : elle ouvre la fiche et dit, en un geste,
+ * rappelé, injoignable ou sans appel [R228]. Une personne exclue se dit « ne pas appeler », sans bouton « Rappelé » [R02].
  */
 
 const SHARE_NAMES: Record<string, string> = {
@@ -135,6 +138,7 @@ const ZONES_ENTRY_HTML = stateAndBody('zones', 'Contacts par zone, le mois pass�
 const INDICATEURS_ENTRY_HTML = stateAndBody('indicateurs', 'Le parcours, le mois passé', 'Se relit avec le rapport du matin. Tout vient de la base, pour tout le réseau.');
 const TEMPS_AGENT_ENTRY_HTML = stateAndBody('temps-agent', 'Mon temps gagné, la semaine passée', 'Vous seul le déclarez, personne ne vous compare à personne. Le formulaire s’ouvre avec le rapport du matin.');
 const ENGAGEMENTS_ENTRY_HTML = stateAndBody('engagements-tenus', 'Nos engagements, le mois passé', 'Se relit avec le rapport du matin. Recalculés depuis la base, sans aucun agent.');
+const MANQUES_ENTRY_HTML = stateAndBody('engagements-manques', 'Les engagements manqués, à rappeler', 'Se relit avec le rapport du matin. C’est vous qui appelez : rien ne part tout seul vers le client.');
 const TEMPS_RESEAU_ENTRY_HTML = stateAndBody('temps-reseau', 'Le temps gagné, la semaine passée', 'Se relit avec le rapport du matin. Ce que les agents déclarent, en comptes, sans aucun nom.');
 const DISPONIBILITE_ENTRY_HTML = stateAndBody('disponibilite', 'La disponibilité, le mois passé', 'Se relit avec le rapport du matin. La part du temps où chaque service a répondu. Cible : 99,9 %.');
 export const RAPPORT_AGENT_HTML = reportEntry('agent') + ZONES_ENTRY_HTML + TEMPS_AGENT_ENTRY_HTML;
@@ -147,7 +151,7 @@ const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
 `;
 const COPIES_ENTRY_HTML = stateAndBody('copies', 'La copie de la base', 'Se relit avec le rapport du matin. Chaque nuit, une copie chiffrée, gardée à part.');
 const RESTAURATION_ENTRY_HTML = stateAndBody('restauration', 'La preuve de restauration, ce mois-ci', 'Chaque mois, la dernière copie est vraiment restaurée, hors de la production, en moins d’une heure.');
-export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML + DISPONIBILITE_ENTRY_HTML + COPIES_ENTRY_HTML + RESTAURATION_ENTRY_HTML;
+export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + MANQUES_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML + DISPONIBILITE_ENTRY_HTML + COPIES_ENTRY_HTML + RESTAURATION_ENTRY_HTML;
 
 export const REGLAGES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-grille">
 <h3 id="titre-grille">Grille des commissions et alertes</h3>
@@ -193,13 +197,39 @@ export const COMMISSIONS_ENTRY_HTML = `<section class="bloc" aria-labelledby="ti
 export const FINANCES_JS = `
   /* ---------- Les finances (K10), chargées au premier geste [R16, R201]. ---------- */
   var financesTools = null, financesLoading = false;
+  /* Depuis le réseau, la fiche revient au réseau : la clé de la direction n'a pas de journée d'agent, et lire une journée la ferait croire refusée. */
+  var ficheBack = null;
+  function ficheBackOff() {
+    if (!ficheBack) return;
+    $('fiche').removeChild(ficheBack);
+    ficheBack = null;
+    $('retour').hidden = false;
+  }
+  function networkFicheButton(personId) {
+    var open = button('Voir la fiche', function () {
+      if (!ficheBack) {
+        ficheBack = button('Retour au réseau', function () {
+          ficheBackOff();
+          wipeFiche();
+          openReseau(reseauRange);
+          readReport('direction', 'reseau');
+        });
+        $('fiche').insertBefore(ficheBack, $('retour'));
+        $('retour').hidden = true;
+      }
+      openFiche(personId);
+    });
+    open.className = 'secondaire';
+    return open;
+  }
   function wipeFinances() {
+    ficheBackOff();
     ['agent', 'direction'].forEach(function (who) {
       clear($('rapport-' + who + '-corps'));
       $('rapport-' + who + '-etat').textContent = '';
       $('rapport-' + who + '-jour').value = '';
     });
-    ['preuve', 'zones', 'indicateurs', 'engagements-tenus', 'temps-reseau', 'disponibilite', 'copies', 'restauration', 'temps-agent'].forEach(function (id) {
+    ['preuve', 'zones', 'indicateurs', 'engagements-tenus', 'engagements-manques', 'temps-reseau', 'disponibilite', 'copies', 'restauration', 'temps-agent'].forEach(function (id) {
       clear($(id + '-corps'));
       $(id + '-etat').textContent = '';
     });
@@ -230,7 +260,7 @@ export const FINANCES_JS = `
         try { delete globalThis.AIMMO_FINANCES; } catch (e) { /* rien */ }
         if (mine !== session) { resolve(false); return; }
         if (typeof make !== 'function') { $(stateId).textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        financesTools = make({ $: $, el: el, clear: clear, send: send, date: date, hour: hour, euros: euros, button: button, saveCsv: saveCsv, session: function () { return session; } });
+        financesTools = make({ $: $, el: el, clear: clear, send: send, date: date, hour: hour, euros: euros, button: button, saveCsv: saveCsv, ficheButton: networkFicheButton, session: function () { return session; } });
         resolve(act(financesTools));
       });
       s.addEventListener('error', function () {
@@ -286,7 +316,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     var body = $('rapport-' + who + '-corps'), state = $('rapport-' + who + '-etat');
     var chosen = $('rapport-' + who + '-jour').value;
     clear(body);
-    if (who === 'direction') { proof(''); indicators(); promises(); networkTime(); availability(); copies(); restoration(); } else { zones(); myTime(''); }
+    if (who === 'direction') { proof(''); indicators(); promises(); missedPromises(''); networkTime(); availability(); copies(); restoration(); } else { zones(); myTime(''); }
     if (chosen && !/^\\d{4}-\\d{2}-\\d{2}$/.test(chosen)) { state.textContent = 'Choisissez un jour.'; return Promise.resolve(false); }
     state.textContent = 'Chargement…';
     return send('/v1/pilotage/rapport-matin' + (chosen ? '?jour=' + chosen : ''), 'GET').then(function (res) {
@@ -605,6 +635,58 @@ globalThis.AIMMO_FINANCES = function (t) {
       if (v.state === 'echec') return 'Restauration de ' + monthName(r.month) + ' ratée : ' + (RESTORE_WHY[r.reason] || 'le test a échoué') + '.';
       return 'Aucune preuve de restauration pour ' + monthName(v.expectedMonth) + '.' + (r ? ' Dernier reçu : ' + monthName(r.month) + (r.outcome === 'reussie' ? ', réussi.' : ', raté.') : '');
     });
+  }
+  /* Un seul geste en vol par session : refaire un geste déjà noté ne changerait rien, mais on ne l'envoie pas deux fois. */
+  var MISSED_GESTURES = [['rappele', 'Rappelé', 'Rappel noté.'], ['injoignable', 'Injoignable', 'Noté : injoignable.'], ['sans_appel', 'Sans appel', 'Noté : sans appel.']];
+  var MISSED_REREAD = { do_not_call: 'Cette personne ne doit plus être appelée : rien n’est noté. Seul « Sans appel » ferme ce rappel.', already_done: 'Ce rappel est déjà fermé autrement : rien n’est changé.' };
+  var closing = null, gestures = [];
+  function gesturesOff(off) { gestures.forEach(function (b) { b.disabled = off; }); }
+  function closeMissed(task, gesture) {
+    var mine = t.session(), state = $('engagements-manques-etat');
+    if (closing === mine) return Promise.resolve(false);
+    closing = mine;
+    gesturesOff(true);
+    state.textContent = 'Envoi…';
+    return send('/v1/pilotage/engagements-manques/' + encodeURIComponent(task.id) + '/fait', 'POST', { outcome: gesture[0] }).then(function (res) {
+      if (closing === mine) { closing = null; gesturesOff(false); }
+      if (res.gone || mine !== t.session()) return false;
+      if (res.ok) return missedPromises(gesture[2]);
+      var b = res.body, known = !res.offline && b && b.code && res.status < 500;
+      if (known && MISSED_REREAD[b.code]) return missedPromises(MISSED_REREAD[b.code]);
+      /* Une relecture en vol n'efface pas ce qui vient d'être dit. */
+      blockTurns['engagements-manques'] = (blockTurns['engagements-manques'] || 0) + 1;
+      state.textContent = !known ? 'Réponse perdue : ce geste est peut-être noté. Relisez avant de recommencer.' : b.rule === 'R16' ? SEAL_REFUSALS.role : 'Refusé : rien n’est noté. Relisez avant de recommencer.';
+      return false;
+    });
+  }
+  function missedPromises(message) {
+    return readBlock('engagements-manques', '/v1/pilotage/engagements-manques', function (v, body) {
+      gestures = [];
+      var ul = el('ul', null, 'liste');
+      v.tasks.forEach(function (task) {
+        var li = el('li');
+        li.appendChild(el('strong', task.label));
+        li.appendChild(el('p', 'Manqué le ' + day(task.day) + '.', 'doux'));
+        var someone = task.personId || task.agentId;
+        if (task.doNotCall) li.appendChild(el('p', 'Ne pas appeler : une exclusion est en cours sur cette fiche.', 'retard'));
+        else if (!someone) li.appendChild(el('p', 'Ce cas ne désigne personne à rappeler.', 'doux'));
+        else if (!task.personId) li.appendChild(el('p', 'À rappeler : ' + (task.agentName ? 'l’agent ' + task.agentName : 'un agent dont le nom manque') + '.'));
+        if (task.personId) li.appendChild(t.ficheButton(task.personId));
+        MISSED_GESTURES.forEach(function (gesture) {
+          if (gesture[0] !== 'sans_appel' && (task.doNotCall || !someone)) return;
+          var b = button(gesture[1], function () { closeMissed(task, gesture); });
+          b.disabled = closing === t.session();
+          if (gesture[0] !== 'rappele') b.className = 'secondaire';
+          gestures.push(b);
+          li.appendChild(b);
+        });
+        ul.appendChild(li);
+      });
+      if (v.tasks.length) body.appendChild(ul);
+      var total = Number(v.total);
+      var said = total ? plural(total, 'rappel à faire', 'rappels à faire') + '.' + (total > v.tasks.length ? ' Les ' + v.tasks.length + ' plus anciens sont ici.' : '') : 'Aucun rappel à faire.';
+      return (message ? message + ' ' : '') + said;
+    }, message);
   }
   function field(box, label, type) {
     uid += 1;
@@ -1032,4 +1114,7 @@ globalThis.AIMMO_FINANCES = function (t) {
   }
   return { report: report, commissions: commissions, path: path, settings: settings, invoices: invoices, exportInvoices: exportInvoices };
 };
-`;
+`
+  // Les retraits et les commentaires ne partent pas chez le client : ce script a son budget [R201]. Une chaîne ne tient que sur une ligne.
+  .replace(/^[ \t]+/gm, '')
+  .replace(/^\/\*.*\*\/\n/gm, '');
