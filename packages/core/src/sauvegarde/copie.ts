@@ -68,10 +68,10 @@ export interface CopyReceipt {
   parts: number;
 }
 
-export type RestoreRefusal = 'bad_copy_id' | 'manifest_missing' | 'undecryptable' | 'part_missing' | 'bad_format' | 'target_not_empty' | 'restore_failed';
+export type RestoreRefusal = 'bad_copy_id' | 'manifest_missing' | 'undecryptable' | 'part_corrupt' | 'part_missing' | 'bad_format' | 'target_not_empty' | 'restore_failed';
 export type RestoreProblem = { kind: 'table_differs'; table: string } | { kind: 'schema_differs'; name: string } | { kind: 'foreign_keys'; table: string } | { kind: 'integrity' } | { kind: 'journal_chain' };
 export type RestoreOutcome =
-  | { ok: true; copyId: string; takenAt: string; tables: number; rows: number; durationMs: number }
+  | { ok: true; copyId: string; takenAt: string; tables: number; rows: number; durationMs: number; digest: string }
   | { ok: false; code: RestoreRefusal }
   | { ok: false; code: 'not_identical'; problems: RestoreProblem[]; durationMs: number };
 
@@ -243,7 +243,8 @@ export async function restoreCopy(target: SqlDatabase, store: CopyStore, key: Co
       const bytes = await store.get(place);
       if (!bytes) return { ok: false, code: 'part_missing' };
       const text = await openAt(key, place, bytes);
-      if (text === null) return { ok: false, code: 'undecryptable' };
+      // Le sommaire s'est ouvert : la clé est bonne, c'est ce morceau qui est abîmé, déplacé, ou d'une autre copie.
+      if (text === null) return { ok: false, code: 'part_corrupt' };
       texts.push(text);
     }
     pages.set(t.name, texts);
@@ -295,5 +296,7 @@ export async function restoreCopy(target: SqlDatabase, store: CopyStore, key: Co
 
   const durationMs = clock() - started;
   if (problems.length > 0) return { ok: false, code: 'not_identical', problems, durationMs };
-  return { ok: true, copyId, takenAt: manifest.takenAt, tables: manifest.tables.length, rows: manifest.tables.reduce((n, t) => n + t.rows, 0), durationMs };
+  // Une empreinte de toute la base : une par table permettrait de deviner le contenu d'une petite table.
+  const digest = await chain('', JSON.stringify(manifest.tables.map((t) => [t.name, t.rows, t.digest])));
+  return { ok: true, copyId, takenAt: manifest.takenAt, tables: manifest.tables.length, rows: manifest.tables.reduce((n, t) => n + t.rows, 0), durationMs, digest };
 }

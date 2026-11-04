@@ -1,0 +1,55 @@
+name: Test de restauration
+
+# SV03 · Chaque mois, la dernière copie est restaurée dans une base jetable, en mémoire, jamais en production, et le reçu
+# est rangé dans la base `aimmo` [R232]. S'allume avec `COPIES_ACTIF` (H50). Rien de la base n'en sort : un résultat, des
+# nombres et un code. S'il ne tourne pas, l'écran de la direction dit « manquant ».
+
+on:
+  schedule:
+    - cron: '47 2 2 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copie-nuit
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Restaurer
+    if: github.ref == 'refs/heads/main' && vars.COPIES_ACTIF == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Base D1 trouvée par son nom
+        id: base
+        run: |
+          aimmo="$(npx -y wrangler@4.149.0 d1 list --json | node -e '
+            let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => {
+              const d = JSON.parse(s).find((d) => d.name === "aimmo");
+              process.stdout.write(d ? d.uuid : "");
+            });')"
+          if ! printf '%s' "$aimmo" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "::error::Base D1 aimmo introuvable."
+            exit 1
+          fi
+          echo "aimmo=$aimmo" >> "$GITHUB_OUTPUT"
+      - name: Restauration et reçu
+        env:
+          COPIE_BASE_AIMMO: ${{ steps.base.outputs.aimmo }}
+          COPY_KEY: ${{ secrets.COPY_KEY }}
+          COPIES_R2_ACCESS_KEY_ID: ${{ secrets.COPIES_R2_ACCESS_KEY_ID }}
+          COPIES_R2_SECRET_ACCESS_KEY: ${{ secrets.COPIES_R2_SECRET_ACCESS_KEY }}
+        run: node --experimental-transform-types --no-warnings packages/api/outils/test-restauration.ts

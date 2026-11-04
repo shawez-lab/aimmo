@@ -117,11 +117,11 @@ describeWithSqlite('SV01 · copie chiffrée et restauration vérifiée', () => {
     const changed = Uint8Array.from(bytesA);
     changed[changed.length - 1]! ^= 1;
     t.parts.set(a, changed);
-    expect(await restoreCopy(target, t.copies, t.key, t.receipt.copyId)).toEqual({ ok: false, code: 'undecryptable' });
+    expect(await restoreCopy(target, t.copies, t.key, t.receipt.copyId)).toEqual({ ok: false, code: 'part_corrupt' });
     await empty();
 
     t.parts.set(a, bytesB);
-    expect(await restoreCopy(target, t.copies, t.key, t.receipt.copyId)).toEqual({ ok: false, code: 'undecryptable' });
+    expect(await restoreCopy(target, t.copies, t.key, t.receipt.copyId)).toEqual({ ok: false, code: 'part_corrupt' });
     await empty();
     t.parts.set(a, bytesA);
 

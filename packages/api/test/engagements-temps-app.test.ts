@@ -30,6 +30,7 @@ const ENG = 'GET /v1/pilotage/engagements-tenus?mois=2027-02';
 const NET = `GET /v1/pilotage/temps-gagne/reseau?semaine=${WEEK}`;
 const DISPO = 'GET /v1/pilotage/disponibilite?mois=2027-02';
 const COPIES = 'GET /v1/pilotage/copies';
+const RESTORE = 'GET /v1/pilotage/copies/restauration';
 const MINE = `GET /v1/pilotage/temps-gagne?semaine=${WEEK}`;
 const DECLARE = 'POST /v1/pilotage/temps-gagne';
 const nothing = { numerator: 0, denominator: 0, bp: null };
@@ -63,6 +64,7 @@ async function run(role: 'agent' | 'direction', answers: Record<string, Answer> 
     [ENG]: ok(PROMISES),
     [NET]: ok({ week: WEEK, declared: 2, notDeclared: 1, minutes: 150, withoutGesture: 1 }),
     [DISPO]: ok(NOT_CONNECTED),
+    [RESTORE]: ok({ state: 'manquant', expectedMonth: '2027-02', receipt: null }),
     [COPIES]: ok({ state: 'jamais', lastSuccessAt: null, lastFailure: null, missedNights: [] }),
     [MINE]: ok({ week: WEEK, minutes: null, version: null, gestures: 4 }),
     ...answers,
@@ -134,6 +136,33 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
     const none = await run('direction', { [NET]: ok({ week: WEEK, declared: 0, notDeclared: 3, minutes: null, withoutGesture: 0 }) });
     expect(none.state('temps-reseau')).toContain('Personne n’a déclaré.');
     expect(none.texts('temps-reseau')).not.toMatch(/gagnées|0 h/);
+  });
+
+  it('[R232] la direction lit le reçu ; un mois sans reçu ou un reçu en échec se dit, jamais un vert ; une panne de lecture non plus', async () => {
+    const none = await run('direction');
+    expect(none.state('restauration')).toBe('Aucune preuve de restauration pour février 2027.');
+    const receipt = { id: 'a', testedAt: '2027-03-02T01:47:00.000Z', month: '2027-03', outcome: 'reussie', copyTakenAt: '2027-03-02T00:23:00.000Z', durationMs: 12000, tables: 353, rows: 1200, digest: 'abcdef0123456789abcdef' };
+    const good = await run('direction', { [RESTORE]: ok({ state: 'reussi', expectedMonth: '2027-03', receipt }) });
+    expect(good.state('restauration')).toMatch(/^Restauration de mars 2027 prouvée, le 2 mars 2027/);
+    expect(good.texts('restauration')).toContain('restaurée en 12 s');
+    expect(good.texts('restauration')).toContain('353 tables, 1200 lignes, à l’identique.');
+    expect(good.texts('restauration')).toContain('abcdef0123456789.');
+    const bad = await run('direction', { [RESTORE]: ok({ state: 'echec', expectedMonth: '2027-03', receipt: { id: 'b', testedAt: '2027-03-02T01:47:00.000Z', month: '2027-03', outcome: 'echouee', reason: 'trop_longue', copyTakenAt: '2027-03-02T00:23:00.000Z', durationMs: 3900000, tables: 353, rows: 1200 } }) });
+    expect(bad.state('restauration')).toBe('Restauration de mars 2027 ratée : elle a pris plus d’une heure.');
+    expect(bad.texts('restauration')).toContain('restaurée en 65 min');
+    expect(bad.texts('restauration')).not.toContain('à l’identique');
+    const old = await run('direction', { [RESTORE]: ok({ state: 'manquant', expectedMonth: '2027-03', receipt: { ...receipt, month: '2027-02' } }) });
+    expect(old.state('restauration')).toBe('Aucune preuve de restauration pour mars 2027. Dernier reçu : février 2027, réussi.');
+    // Le 2 mars, le reçu du jour est celui de mars : l'écran nomme son vrai mois, jamais février, qui n'en a pas.
+    const early = await run('direction', { [RESTORE]: ok({ state: 'reussi', expectedMonth: '2027-02', receipt }) });
+    expect(early.state('restauration')).toMatch(/^Restauration de mars 2027 prouvée/);
+    const earlyBad = await run('direction', { [RESTORE]: ok({ state: 'echec', expectedMonth: '2027-02', receipt: { id: 'c', testedAt: '2027-03-02T01:47:00.000Z', month: '2027-03', outcome: 'echouee', reason: 'copie_trop_ancienne', copyTakenAt: '2027-01-10T00:23:00.000Z', durationMs: 12000, tables: 1, rows: 1 } }) });
+    expect(earlyBad.state('restauration')).toBe('Restauration de mars 2027 ratée : la dernière copie a plus de 48 heures.');
+    expect(earlyBad.texts('restauration')).not.toContain('restaurée en');
+    const notSame = await run('direction', { [RESTORE]: ok({ state: 'echec', expectedMonth: '2027-03', receipt: { id: 'd', testedAt: '2027-03-02T01:47:00.000Z', month: '2027-03', outcome: 'echouee', reason: 'non_identique', copyTakenAt: '2027-03-02T00:23:00.000Z', durationMs: 12000, tables: null, rows: null } }) });
+    expect(notSame.texts('restauration')).not.toContain('restaurée en');
+    const down = await run('direction', { [RESTORE]: no(503, {}) });
+    expect(down.state('restauration')).toContain('Indisponible');
   });
 
   it('[R230] sans copie : « non sauvegardé » ; à jour : la date ; une nuit manquée et sa raison se lisent ; une panne de lecture ne dit jamais « à jour »', async () => {

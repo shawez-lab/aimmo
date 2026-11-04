@@ -146,7 +146,8 @@ const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
 </section>
 `;
 const COPIES_ENTRY_HTML = stateAndBody('copies', 'La copie de la base', 'Se relit avec le rapport du matin. Chaque nuit, une copie chiffrée, gardée à part.');
-export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML + DISPONIBILITE_ENTRY_HTML + COPIES_ENTRY_HTML;
+const RESTAURATION_ENTRY_HTML = stateAndBody('restauration', 'La preuve de restauration, ce mois-ci', 'Chaque mois, la dernière copie est vraiment restaurée, hors de la production, en moins d’une heure.');
+export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML + DISPONIBILITE_ENTRY_HTML + COPIES_ENTRY_HTML + RESTAURATION_ENTRY_HTML;
 
 export const REGLAGES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-grille">
 <h3 id="titre-grille">Grille des commissions et alertes</h3>
@@ -198,7 +199,7 @@ export const FINANCES_JS = `
       $('rapport-' + who + '-etat').textContent = '';
       $('rapport-' + who + '-jour').value = '';
     });
-    ['preuve', 'zones', 'indicateurs', 'engagements-tenus', 'temps-reseau', 'disponibilite', 'copies', 'temps-agent'].forEach(function (id) {
+    ['preuve', 'zones', 'indicateurs', 'engagements-tenus', 'temps-reseau', 'disponibilite', 'copies', 'restauration', 'temps-agent'].forEach(function (id) {
       clear($(id + '-corps'));
       $(id + '-etat').textContent = '';
     });
@@ -285,7 +286,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     var body = $('rapport-' + who + '-corps'), state = $('rapport-' + who + '-etat');
     var chosen = $('rapport-' + who + '-jour').value;
     clear(body);
-    if (who === 'direction') { proof(''); indicators(); promises(); networkTime(); availability(); copies(); } else { zones(); myTime(''); }
+    if (who === 'direction') { proof(''); indicators(); promises(); networkTime(); availability(); copies(); restoration(); } else { zones(); myTime(''); }
     if (chosen && !/^\\d{4}-\\d{2}-\\d{2}$/.test(chosen)) { state.textContent = 'Choisissez un jour.'; return Promise.resolve(false); }
     state.textContent = 'Chargement…';
     return send('/v1/pilotage/rapport-matin' + (chosen ? '?jour=' + chosen : ''), 'GET').then(function (res) {
@@ -587,6 +588,22 @@ globalThis.AIMMO_FINANCES = function (t) {
       if (v.state === 'jamais') return 'Non sauvegardé : aucune copie réussie à ce jour.';
       var last = 'Dernière copie réussie : le ' + copyDay(v.lastSuccessAt) + '.';
       return v.state === 'a_jour' ? last : 'Non sauvegardé la nuit dernière. ' + last;
+    });
+  }
+  var RESTORE_WHY = { aucune_copie: 'il n’y a aucune copie à restaurer', cle_absente: 'la clé de chiffrement manque', cle_invalide: 'la clé ne relit pas la copie', stockage_absent: 'le stockage n’est pas réglé', stockage_en_panne: 'le stockage n’a pas rendu la copie entière', copie_abimee: 'la copie est abîmée', copie_trop_ancienne: 'la dernière copie a plus de 48 heures', non_identique: 'la base restaurée n’est pas identique', trop_longue: 'elle a pris plus d’une heure', test_echoue: 'le test a échoué' };
+  function lasted(ms) { var s = Math.ceil(Number(ms) / 1000); return s < 60 ? s + ' s' : Math.ceil(s / 60) + ' min'; }
+  function restoration() {
+    return readBlock('restauration', '/v1/pilotage/copies/restauration', function (v, body) {
+      var r = v.receipt, ul = el('ul', null, 'liste');
+      if (r && r.copyTakenAt) ul.appendChild(el('li', 'Copie du ' + copyDay(r.copyTakenAt) + (r.outcome === 'reussie' || r.reason === 'trop_longue' ? ', restaurée en ' + lasted(r.durationMs) : '') + '.'));
+      if (r && r.outcome === 'reussie') {
+        ul.appendChild(el('li', plural(Number(r.tables), 'table', 'tables') + ', ' + plural(Number(r.rows), 'ligne', 'lignes') + ', à l’identique.'));
+        ul.appendChild(el('li', 'Empreinte de toute la base : ' + String(r.digest).slice(0, 16) + '.'));
+      }
+      if (ul.children.length) body.appendChild(ul);
+      if (v.state === 'reussi') return 'Restauration de ' + monthName(r.month) + ' prouvée, le ' + copyDay(r.testedAt) + '.';
+      if (v.state === 'echec') return 'Restauration de ' + monthName(r.month) + ' ratée : ' + (RESTORE_WHY[r.reason] || 'le test a échoué') + '.';
+      return 'Aucune preuve de restauration pour ' + monthName(v.expectedMonth) + '.' + (r ? ' Dernier reçu : ' + monthName(r.month) + (r.outcome === 'reussie' ? ', réussi.' : ', raté.') : '');
     });
   }
   function field(box, label, type) {
