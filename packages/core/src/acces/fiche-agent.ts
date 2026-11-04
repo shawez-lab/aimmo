@@ -243,8 +243,9 @@ export class FicheAgent {
       ok: true,
       value: {
         personId: fiche.person.id,
-        firstName: fiche.person.first_name,
-        lastName: fiche.person.last_name,
+        // La fiche réunie : le nom d'une fiche d'origine compte, tant que la fiche survivante n'en a pas.
+        firstName: fiche.person.first_name ?? fiche.members.find((m) => m.first_name)?.first_name ?? null,
+        lastName: fiche.person.last_name ?? fiche.members.find((m) => m.last_name)?.last_name ?? null,
         contact: { allowed, reasons },
         call,
         callRefusal,

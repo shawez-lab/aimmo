@@ -1,10 +1,11 @@
 /**
- * SV06 · Les biens du client, depuis sa fiche.
+ * SV06, SV07 · Les biens du client et son nom, depuis sa fiche.
  *   GET  /v1/fiches/<id>/biens   les biens liés à son projet de vente
  *   POST /v1/fiches/<id>/biens   { requestId, kind, postalCode, city, surfaceM2, rooms, priceEur } : crée le bien et le lie
+ *   POST /v1/fiches/<id>/nom     { firstName, lastName } : remplit ce qui est vide, n'écrase rien
  * Le rôle et le droit sur la fiche sont contrôlés avant le corps [R16]. Rien n'est envoyé [R26].
  */
-import { NouveauBien, appendEvent, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { CompleterNom, NouveauBien, appendEvent, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 
 export const MAX_BIEN_BODY_BYTES = 2048;
 const ID = '([0-9a-f-]{36})';
@@ -39,7 +40,7 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
-const statusOf = (rule: string | null, code: string): number => (code === 'unknown' ? 404 : rule === 'R16' ? 403 : 400);
+const statusOf = (rule: string | null, code: string): number => (code === 'unknown' ? 404 : rule === 'R16' ? 403 : code === 'already_named' ? 409 : 400);
 const answer = <T>(r: { ok: true; value: T } | { ok: false; rule: string | null; code: string }): Response =>
   r.ok ? json(200, { ok: true, mode: 'essai', sent: false, data: r.value }) : json(statusOf(r.rule, r.code), { ok: false, rule: r.rule, code: r.code });
 const core = (s: BiensFicheServices): NouveauBien => new NouveauBien(s.db, s.acces, s.journal, { now: s.now });
@@ -66,6 +67,17 @@ export function biensFicheRoutes(): BiensFicheRoute[] {
         if (!body) return json(400, { ok: false, rule: null, code: 'invalid_body' });
         if (Object.keys(body).some((k) => !FIELDS.has(k))) return json(400, { ok: false, rule: null, code: 'unexpected_field' });
         return answer(await core(s).create(viewer, id!, body));
+      }),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/fiches/${ID}/nom$`),
+      name: 'fiche.nom',
+      handle: guarded(async (s, viewer, [id], request) => {
+        const body = await readJson(request);
+        if (!body) return json(400, { ok: false, rule: null, code: 'invalid_body' });
+        if (Object.keys(body).some((k) => k !== 'firstName' && k !== 'lastName')) return json(400, { ok: false, rule: null, code: 'unexpected_field' });
+        return answer(await new CompleterNom(s.db, s.acces, s.journal, { now: s.now }).complete(viewer, id!, body));
       }),
     },
   ];

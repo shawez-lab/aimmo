@@ -4,6 +4,7 @@
 import {
   Acces,
   AvisDeValeur,
+  CompleterNom,
   ControlesSignature,
   Diffusion,
   NouveauBien,
@@ -147,22 +148,7 @@ export class TrapChannel implements OutboundChannel {
   }
 }
 
-/**
- * Ce que le parcours a trouvé et que le produit ne sait pas encore faire par un geste de l'agent. Chaque raccourci est
- * écrit ici et nulle part ailleurs ; la tâche du plan qui ferme un trou retire son raccourci et le test qui le décrit.
- */
-export interface JourneyGaps {
-  /** SV07 : un contact venu d'un formulaire n'a que son prénom ; rien sur sa fiche ne complète son nom, seul un import CSV le fait. */
-  lastName: boolean;
-}
-
-const ALL_SHORTCUTS: JourneyGaps = { lastName: true };
-
-async function gapLastName(w: JourneyWorld, personId: string, lastName: string): Promise<void> {
-  if (w.shortcuts.lastName) await w.db.run('UPDATE persons SET last_name = ? WHERE id = ?', [lastName, personId]);
-}
-
-export async function journeyWorld(shortcuts: JourneyGaps = ALL_SHORTCUTS) {
+export async function journeyWorld() {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = paris('2027-02-01', '09:00');
@@ -193,7 +179,7 @@ export async function journeyWorld(shortcuts: JourneyGaps = ALL_SHORTCUTS) {
   const portals = CHANNELS.map((c) => new HeldPortal(c));
   const pieces = new HeldPieces();
   return {
-    db, journal, captation, store, acces, modeles, shortcuts, network, alexId: alex.id, agent, direction, as, trap, portals, pieces, now, setClock,
+    db, journal, captation, store, acces, modeles, network, alexId: alex.id, agent, direction, as, trap, portals, pieces, now, setClock,
     readEntries: () => journal.all(),
     /** Ce que le parcours se transmet d'une étape à la suivante. */
     reference: '', seller: '', buyer: '', buyerProject: '', propertyId: '', mandateId: '', appointmentId: '', offerId: '', fileId: '',
@@ -280,10 +266,10 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
   {
     id: 'mandat',
     label: 'Le mandat est signé et inscrit au registre',
-    events: ['registre.inscrit', 'mandat.signe'],
+    events: ['fiche.nom_complete', 'registre.inscrit', 'mandat.signe'],
     async run(w) {
       const signedAt = paris('2027-02-10', '10:00');
-      await gapLastName(w, w.seller, SELLER_LAST_NAME);
+      accepted(await new CompleterNom(w.db, w.acces, w.journal, { now: w.now }).complete(w.agent, w.seller, { lastName: SELLER_LAST_NAME }), 'nom du vendeur');
       w.setClock(paris('2027-02-10', '11:00'));
       accepted(await identiteAuCoffre({ db: w.db, acces: w.acces, journal: w.journal, now: w.now }, w.agent, w.seller, { piece: 'carte_identite', seenAt: signedAt }), 'identité du vendeur');
       accepted(
@@ -359,10 +345,10 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
   {
     id: 'visite',
     label: 'La visite est fixée et le bon de visite signé',
-    events: ['visite.fixee', 'bon_visite.signe'],
+    events: ['fiche.nom_complete', 'visite.fixee', 'bon_visite.signe'],
     async run(w) {
       w.setClock(paris('2027-03-01', '10:00'));
-      await gapLastName(w, w.buyer, BUYER_LAST_NAME);
+      accepted(await new CompleterNom(w.db, w.acces, w.journal, { now: w.now }).complete(w.agent, w.buyer, { lastName: BUYER_LAST_NAME }), 'nom de l’acquéreur');
       const rdv = new RendezVous(w.db, w.journal, { now: w.now });
       const diffusion = new Diffusion(w.db, w.acces, w.journal, { now: w.now });
       const visites = new Visites(w.db, w.journal, w.acces, { diffusion, rendezVous: rdv, now: w.now });
