@@ -630,3 +630,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-04 05:54 · VOIE 2 : relance refusée, question 2 (mes trois dernières séances voie 2 n'ont produit ni commit de code ni tâche terminée)
 - 2026-11-04 05:54 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-04 06:27 · SV10 · la direction corrige un nom avec motif, valeur d'avant gardée hors du journal, documents inchangés, ancien nom toujours retenu des textes (#373) ; relecture forte 1 P0 et 1 P1 corrigés ; SV13 ajoutée ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : SV11
+- 2026-11-04 06:50 · SV11 · un commerce présenté et diffusable devient disponible, vu des repreneurs, sans annonce ni portail (#374) ; relecture forte 2 P1 corrigés ; Codex à sa limite (H03) ; vérification GitHub verte · prochaine : SV12
+- 2026-11-04 06:50 · voie 1 · fin de séance : SV10 et SV11 fusionnées ; SV13 ajoutée au plan ; verrou libéré, relance · prochaine : SV12

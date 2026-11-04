@@ -3686,7 +3686,9 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV11 · Un commerce publié devient disponible
-- Statut : en cours
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#374). Relecture forte 2 P1 corrigés ; Codex à sa limite (H03). P2 non traité : le studio peut préparer `nouveau_bien` pour un commerce, avec le prix dans les mentions, après préparation et validation de l'agent.
+- Décidé (2026-11-04), lecture prudente : le passage des 15 minutes rend disponible un commerce à présentation validée, si la porte de diffusion est ouverte ; un bien avec version d'annonce suit `Publication` ; un commerce repris d'un ancien outil garde son statut ; un commerce sans annonce n'entre pas dans les alertes aux acquéreurs, et le premier message relit la porte pour lui.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV08
 - Cahier : M16 Commerces et entreprises.
 - Trouvé par la relecture de SV08 : un commerce finit en mentions incomplètes dans `Publication`, n'a jamais de version et reste `draft` ; `commerces/repreneurs.ts` ne lit que `available` et `under_offer`, donc ne le voit pas avant une offre.
