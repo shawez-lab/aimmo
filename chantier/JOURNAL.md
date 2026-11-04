@@ -613,3 +613,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-04 02:54 · voie 2 · plus rien de faisable : les tâches ouvertes sont à la voie 1 ou attendent un humain ; SV06 en cours (#369), SV07 (touche `parcours-complet.ts` et `app.ts`, déjà changés par #369) et IN16 (socle) restent à la voie 1 ; B04, C09, W23, X17 et SV05 attendent H37, H14, H05, H06, H13, H43, H24, H29, H50 ; verrou libéré · prochaine : aucune pour la voie 2
 - 2026-11-04 02:54 · VOIE 2 : relance refusée, question 2 (les deux dernières séances voie 2 n'ont produit aucun commit de code ni tâche terminée)
 - 2026-11-04 02:54 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-04 03:08 · SV06 · l'agent crée un bien depuis la fiche et le lie à son vendeur, le parcours passe par ce geste (#369) ; relecture forte 6 P1 corrigés ; une vérification rouge corrigée ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : SV07

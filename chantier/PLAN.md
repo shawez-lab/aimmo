@@ -3683,7 +3683,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV06 · L'agent crée un bien et le lie à son vendeur
-- Statut : en cours
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#369). Relecture forte 6 P1 corrigés ; une vérification rouge corrigée ; Codex non attendu (H03). Décidé, lecture prudente : une clé tirée par le formulaire devient l'identifiant du bien ; une demande d'estimation seule reçoit un projet de vente en plus quand l'agent crée le bien.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV04
 - Cahier : M04 Estimer ; M06 Mandats et documents.
 - Trouvé par SV04 : hors import CSV sans écran, aucun geste ne crée un bien, `linkProjectProperty` n'a aucun appelant en production, et sans ce lien le mandat est refusé [R41]. Un nouveau vendeur ne peut donc pas signer.
@@ -3692,7 +3693,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV07 · L'agent complète le nom d'une fiche
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV04
 - Cahier : M02 Capter ; M06 Mandats et documents.
 - Trouvé par SV04 : un contact venu d'un formulaire n'a que son prénom ; seul un import CSV sans écran complète son nom. Son mandat et son bon de visite restent incomplets.
