@@ -3645,6 +3645,33 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Critères : sans clé ou sans stockage, « non sauvegardé » dit, jamais un faux succès (test) ; une panne n'arrête pas les autres tâches [R13] (test) ; une nuit manquée alerte la direction (test) ; un effacement fait après la copie est refait après la restauration (test) ; droits [R16] (test).
 - Attend : une ligne de `HUMAIN.md` pour le compartiment, sa règle de garde et la clé, à écrire par SV02.
 
+### SV09 · Une offre qui tombe rend le bien disponible
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV08
+- Cahier : M09 Offre ; M10 Compromis et acte.
+- Trouvé par la relecture de SV08 : seuls `under_offer` et `sold` s'écrivent, rien ne ramène un bien à `available` quand son dossier s'arrête. Le bien resterait « a déjà une offre » et hors des alertes.
+- Objectif : lire d'abord comment un dossier de vente s'arrête ; à l'arrêt d'un dossier sans autre offre acceptée, le bien revient à `available` et son annonce à `en_vente`, si la diffusion reste ouverte [R42].
+- Critères : dossier arrêté, bien disponible et annonce remise (test) ; autre dossier ouvert : rien ne change (test) ; mandat échu : pas de retour (test) ; journal [R13] (test).
+- Attend : rien.
+
+### SV10 · La direction corrige un nom sur une fiche
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV07
+- Cahier : M02 Capter ; Conformité, droit de rectification.
+- Trouvé par SV07 : un nom déjà écrit ne se corrige pas, et un prénom qui n'est que le nom bloque l'agent, renvoyé à une direction qui n'a aucun écran pour cela.
+- Objectif : la direction corrige prénom et nom d'une fiche, avec le motif et la valeur d'avant gardés hors du journal ; les documents déjà générés ne changent pas.
+- Critères : droits [R16] (test) ; aucun nom au journal [R13] (test) ; l'ancienne valeur reste lisible par la direction [R17] (test) ; document déjà généré inchangé (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### SV11 · Un commerce publié devient disponible
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV08
+- Cahier : M16 Commerces et entreprises.
+- Trouvé par la relecture de SV08 : un commerce finit en mentions incomplètes dans `Publication`, n'a jamais de version et reste `draft` ; `commerces/repreneurs.ts` ne lit que `available` et `under_offer`, donc ne le voit pas avant une offre.
+- Objectif : vérifier ce trou par un test, puis faire passer un commerce diffusable à `available` par son propre chemin de présentation, sans le publier sur les portails.
+- Critères : un commerce diffusable est vu des repreneurs (test) ; rien pendant la rétractation [R42] (test) ; aucune adresse ni nom [R19] (test).
+- Attend : rien.
+
 ### SV05 · L'effacement réel écrit au registre des effacements
 - Statut : à faire
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV02
@@ -3712,7 +3739,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### IN16 · Un écart entre les boutons d'une ligne de liste
-- Statut : en cours
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#371). Codex non attendu (H03).
 - Qui : Claude, voie 1 (feuille de style de l'application, fichier du socle) · Relecture : normale · Dépend de : IN15
 - Cahier : Le produit, système de design ; R201.
 - Objectif : trouvé par IN15 : dans `.liste`, deux boutons sur un même rang se touchent à la largeur d'un téléphone (« Voir la fiche » et « Rappelé », par exemple). Leur donner un écart, sans changer leur taille.
