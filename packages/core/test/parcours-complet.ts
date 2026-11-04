@@ -15,6 +15,7 @@ import {
   Visites,
   applyMigrations,
   createCaptation,
+  euros,
   fromSyncSqlite,
   parisInstant,
   type JournalEntry,
@@ -344,6 +345,9 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
       w.buyer = await personOf(w, BUYER_EMAIL);
       const reply = await w.db.first<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ?', [w.buyer]);
       must(reply?.body.includes('est disponible'), 'la réponse ne dit pas que le bien publié est disponible');
+      const published = w.portals[0]!.received.at(-1)!.priceEur;
+      must(published !== null && published !== 200000, 'le jeu doit distinguer le prix publié de celui de la fiche');
+      must(reply?.body.includes(euros(published)), 'la réponse ne donne pas le prix de l’annonce');
       const q = await w.db.first<{ category: string }>('SELECT category FROM qualifications WHERE person_id = ?', [w.buyer]);
       must(q?.category === 'buyer', `acquéreur attendu, reçu ${String(q?.category)}`);
       const project = await w.db.first<{ id: string }>("SELECT id FROM projects WHERE person_id = ? AND kind = 'buy'", [w.buyer]);

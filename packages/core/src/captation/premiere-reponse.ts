@@ -4,6 +4,7 @@
  * central (S06), qui ajoute la mention [R06], contrôle le texte [R07 à R10, R19] et passe au secours [R12].
  * Sans bien reconnu, un message simple et honnête, sans aucune donnée de bien [R20].
  */
+import { shownPrice } from '../biens/prix-publie.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { OutboundChannelName, Person, Property, PropertyKind } from '../db/types.ts';
 import type { ReconnaissanceBien, Recognition } from '../biens/reconnaissance.ts';
@@ -192,6 +193,8 @@ function replyChannel(row: InboundRow, hasEmail: boolean): OutboundChannelName |
 
 export interface PremiereReponseOptions {
   writer?: ReplyWriter;
+  /** La porte de toute diffusion (D05) : absente, le statut du bien est lu tel quel. */
+  diffusion?: { canDiffuse(networkId: string, propertyId: string): Promise<{ allowed: boolean }> };
 }
 
 type LastCheck = (networkId: string, conversationId: string) => Promise<{ allowed: boolean; rule: string; reason: string }>;
@@ -321,6 +324,18 @@ export class PremiereReponse {
     return Number(row?.n ?? 0) > 0;
   }
 
+  /**
+   * Le statut se relit devant la porte de la diffusion [R42] : un bien publié dont le mandat vient de tomber n'est plus
+   * dit disponible, même avant le passage qui retire l'annonce. Un bien sans annonce garde son statut.
+   */
+  private async shownStatus(property: Property): Promise<Property['status']> {
+    const gate = this.options.diffusion;
+    if (!gate || property.status !== 'available') return property.status;
+    const listed = await this.db.first('SELECT 1 AS ok FROM listing_versions WHERE property_id = ? LIMIT 1', [property.id]);
+    if (!listed || (await gate.canDiffuse(property.network_id, property.id)).allowed) return property.status;
+    return 'draft';
+  }
+
   private async facts(property: Property): Promise<PropertyFacts> {
     const details = await this.db.first<{ neighborhood: string | null; highlight: string | null }>(
       'SELECT neighborhood, highlight FROM property_details WHERE property_id = ? AND network_id = ?',
@@ -328,8 +343,8 @@ export class PremiereReponse {
     );
     return {
       kind: property.kind,
-      status: property.status,
-      priceEur: property.price_eur,
+      status: await this.shownStatus(property),
+      priceEur: await shownPrice(this.db, property.id, property.price_eur),
       surfaceM2: property.surface_m2,
       rooms: property.rooms,
       city: property.city,
