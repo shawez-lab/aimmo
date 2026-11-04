@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { ArretDossier, ActeVente, BouclierFonds, Echeancier, FinancementDossier, RelancesPieces, SALE_FOLLOW_UP_PURPOSE } from '../src/dossiers/index.ts';
 import { DossiersVente, TransmissionOffres, nextStep } from '../src/offres/index.ts';
@@ -7,7 +6,6 @@ import { Commissions } from '../src/pilotage/commissions.ts';
 import { TableauAgent } from '../src/pilotage/tableau-agent.ts';
 import { verifyChain } from '../src/index.ts';
 import { PROOF, setupDossier } from './dossiers-jeu.ts';
-import { migrationsDir } from './migrations.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
 // Tout est inventé : le dossier du jeu de M10, et une deuxième offre sur le même bien.
@@ -61,29 +59,26 @@ describeWithSqlite('SV09 · une offre qui tombe rend le bien disponible', () => 
     expect(await t.statusOf()).toBe('draft');
   });
 
-  it('[R233] autre dossier ouvert : rien ne change pour le bien ; un seul dossier ouvert à la fois', async () => {
+  it('[R233] autre dossier : un bien n’en a qu’un, et un arrêt rejoué ne change rien', async () => {
     const t = await setup();
     await t.listed();
-    const early = await t.secondOffer();
-    expect(early.answer).toMatchObject({ ok: false, code: 'other_accepted' });
+    expect((await t.secondOffer()).answer).toMatchObject({ ok: false, code: 'other_accepted' });
     await t.stop();
+    await t.publication.sync(t.network.id, t.propertyId);
+    expect(await t.statusOf()).toBe('available');
+    // L'offre arrêtée ne bloque plus la réponse du vendeur à une autre offre, qui reste un fait à ranger [R57].
     const { offer, answer } = await t.secondOffer();
     expect(answer).toMatchObject({ ok: true });
-    const opened = await t.dossiers.open(t.agent, offer.id);
-    expect(opened).toMatchObject({ ok: true });
-    expect(await t.statusOf()).toBe('under_offer');
-    // L'ancien dossier ne se réarrête pas, et ne fait pas tomber le nouveau.
+    // Le deuxième dossier est refusé et le dit ; l'offre arrêtée aussi. Le bien ne bouge pas.
+    expect(await t.dossiers.open(t.agent, offer.id)).toEqual({ ok: false, rule: null, code: 'previous_file_stopped' });
+    expect(await t.dossiers.open(t.agent, t.offerId)).toEqual({ ok: false, rule: null, code: 'previous_file_stopped' });
     expect(await t.stop()).toMatchObject({ ok: false, code: 'file_stopped' });
-    expect(await t.statusOf()).toBe('under_offer');
+    expect(await t.statusOf()).toBe('available');
     expect((await t.journal.bySubject(`property:${t.propertyId}`)).filter((e) => e.type === 'bien.offre_tombee')).toHaveLength(1);
     // Le verrou de la base, sans passer par le service.
-    const third = await t.record({ validUntil: '2027-03-20' });
     await expect(
-      t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('x', ?, ?, ?, ?, 1, 'a', 'b')", [t.network.id, t.propertyId, third.id, t.buyerId]),
+      t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('x', ?, ?, ?, ?, 1, 'a', 'b')", [t.network.id, t.propertyId, offer.id, t.buyerId]),
     ).rejects.toThrow(/UNIQUE/);
-    // La même offre n'ouvre jamais un deuxième dossier.
-    if (opened.ok) await t.stop('autre', opened.value.id);
-    expect(await t.dossiers.open(t.agent, offer.id)).toMatchObject({ ok: false, code: 'already_open' });
   });
 
   it('[R16] [R233] seul l’agent du bien arrête ; un autre agent ou la direction sont refusés, et c’est écrit', async () => {
@@ -147,7 +142,7 @@ describeWithSqlite('SV09 · une offre qui tombe rend le bien disponible', () => 
     await expect(u.db.run("INSERT INTO sale_file_stops (file_id, network_id, reason, proof_ref, at, by) VALUES (?, ?, 'autre', ?, 'a', 'b')", [u.fileId, u.network.id, STOP_PROOF])).rejects.toThrow(/acte/);
   });
 
-  /** Le dossier A au compromis signé, puis arrêté ou non ; un dossier B sur le bien s'il a été arrêté, pour que le bien soit sous offre. */
+  /** Le dossier au compromis signé, puis arrêté ou non. */
   async function withCompromis(stopped: boolean) {
     const t = await setup();
     const echeancier = new Echeancier(t.db, t.acces, t.journal, { now: t.now });
@@ -157,17 +152,12 @@ describeWithSqlite('SV09 · une offre qui tombe rend le bien disponible', () => 
     t.setClock(at9('2027-03-03'));
     expect(await echeancier.record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-03-02', proofRef: PROOF })).toMatchObject({ ok: true });
     expect(await echeancier.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-02', proofRef: PROOF })).toMatchObject({ ok: true });
-    if (stopped) {
-      await t.stop();
-      const { offer } = await t.secondOffer();
-      expect(await t.dossiers.open(t.agent, offer.id)).toMatchObject({ ok: true });
-    }
-    expect(await t.statusOf()).toBe('under_offer');
+    if (stopped) await t.stop();
     t.setClock(at9('2027-03-11'));
     return { ...t, echeancier, commissions };
   }
 
-  it.each([false, true])('[R233] plus de commission, de tâche ni de relance sur un dossier arrêté, même si un autre tient le bien (arrêté : %s)', async (stopped) => {
+  it.each([false, true])('[R233] plus de commission, de tâche ni de relance sur un dossier arrêté (arrêté : %s)', async (stopped) => {
     const t = await withCompromis(stopped);
     expect(await t.commissions.sync(t.network.id)).toEqual({ planned: stopped ? 0 : 1, due: 0 });
     await t.echeancier.run(t.network.id);
@@ -241,26 +231,5 @@ describeWithSqlite('SV09 · une offre qui tombe rend le bien disponible', () => 
     expect((await sources.filesOf(t.network.id, t.buyerId)).map((f) => f.fileId)).toEqual([t.fileId]);
     await t.stop();
     expect(await sources.filesOf(t.network.id, t.buyerId)).toEqual([]);
-  });
-
-  it('la table refaite garde ses lignes, ses liens et ses verrous, quand elle est déjà remplie', async () => {
-    const t = await setup();
-    await t.stop();
-    const { offer } = await t.secondOffer();
-    expect(await t.dossiers.open(t.agent, offer.id)).toMatchObject({ ok: true });
-    const count = async (table: string) => (await t.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`))!.n;
-    const before = { files: await t.db.all('SELECT * FROM sale_files ORDER BY id'), sellers: await count('sale_file_sellers'), stops: await count('sale_file_stops') };
-    expect(before.files).toHaveLength(2);
-    expect(before.sellers).toBeGreaterThan(0);
-    // La même transaction qu'à la mise en ligne : la migration tourne sur une base déjà remplie.
-    const sql = readFileSync(`${migrationsDir}1750_arret_dossier.sql`, 'utf8');
-    await t.db.exec(`BEGIN; ${sql} COMMIT;`);
-    expect(await t.db.all('SELECT * FROM sale_files ORDER BY id')).toEqual(before.files);
-    expect(await count('sale_file_sellers')).toBe(before.sellers);
-    expect(await count('sale_file_stops')).toBe(before.stops);
-    expect(await t.db.all('PRAGMA foreign_key_check')).toEqual([]);
-    await expect(t.db.run('DELETE FROM sale_files')).rejects.toThrow();
-    await expect(t.db.run('UPDATE sale_files SET amount_eur = 1')).rejects.toThrow();
-    expect(await t.db.first("SELECT name FROM sqlite_master WHERE name = 'sale_files_refaite'")).toBeNull();
   });
 });

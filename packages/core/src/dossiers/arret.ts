@@ -3,7 +3,8 @@
  *
  * L'agent du bien rapporte qu'un dossier s'arrête, avec une raison d'une liste fermée et la preuve reçue. Rien ne
  * s'arrête tout seul : ni une date passée, ni un prêt non obtenu [R57]. Un dossier arrêté reste lisible, ne reçoit plus
- * rien et ne relance plus personne ; son offre ne bloque plus les autres, et le bien peut ouvrir un autre dossier.
+ * rien et ne relance plus personne ; son offre ne bloque plus les autres. Un deuxième dossier sur le même bien reste
+ * impossible : la table porte une unicité que seule une table refaite lèverait, ce que R17 interdit sans décision (H51).
  *
  * Décidé, lecture prudente : le bien quitte « sous offre » pour « en préparation », jamais directement pour
  * « disponible ». Le passage de publication suivant le rend disponible si la porte de diffusion reste ouverte et que son
@@ -73,7 +74,7 @@ export class ArretDossier {
       const results = await runBatch(this.db, [
         { sql: 'INSERT INTO sale_file_stops (file_id, network_id, reason, proof_ref, at, by) VALUES (?, ?, ?, ?, ?, ?)', params: [fileId, g.file.network_id, reason, input.proofRef, at, actorOf(viewer)] },
         {
-          // Ce dossier était le seul ouvert du bien, la base le garantit : rien d'autre ne tient le bien sous offre.
+          // Un bien n'a qu'un dossier, la base le garantit : rien d'autre ne le tient sous offre.
           sql: "UPDATE properties SET status = 'draft', updated_at = ? WHERE id = ? AND status = 'under_offer'",
           params: [at, g.file.property_id],
         },

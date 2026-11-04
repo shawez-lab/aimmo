@@ -2,7 +2,7 @@
  * Offre acceptée : dossier de vente, bloqué sans identité vérifiée (M09, O07) [R57, R58].
  *
  * Une acceptation rapportée avec sa preuve (de l'offre, ou de la dernière proposition après des contre-offres) ouvre un
- * dossier de vente minimal : bien, offre, acquéreur, montant convenu. M10 le complétera. Un seul dossier ouvert par bien [R233],
+ * dossier de vente minimal : bien, offre, acquéreur, montant convenu. M10 le complétera. Un seul dossier ouvert par bien,
  * donc une seule offre acceptée à la fois. Le bien passe « sous offre », ce que la publication (M07) montre partout au
  * passage suivant. Le dossier ne passe « compromis en préparation » que si l'identité de l'acquéreur est vérifiée, selon
  * la règle de D03 ; sinon il reste bloqué et la raison est rendue [R58].
@@ -78,6 +78,8 @@ export class DossiersVente {
     if (amount === null) return { ok: false, rule: null, code: 'not_accepted' };
     const property = await this.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [offer.propertyId]);
     if (!property || ['sold', 'rented', 'withdrawn'].includes(property.status)) return { ok: false, rule: null, code: 'not_on_sale' };
+    // Un bien n'a qu'un dossier : après un arrêt, un autre attend la décision H51 [R233]. Dit tel quel, jamais « déjà ouvert ».
+    if (await this.db.first('SELECT 1 FROM sale_files f JOIN sale_file_stops s ON s.file_id = f.id WHERE f.property_id = ?', [offer.propertyId])) return { ok: false, rule: null, code: 'previous_file_stopped' };
     const id = this.newId();
     const openedAt = this.now().toISOString();
     // Le vendeur du dossier, rangé une fois : le mandant du dernier mandat vivant ce jour-là. Un ancien mandant, ou celui

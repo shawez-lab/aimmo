@@ -3647,12 +3647,22 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 
 ### SV09 · Une offre qui tombe rend le bien disponible
 - Statut : en cours
+- Décidé (2026-11-04), lecture prudente : rien n'existait pour arrêter un dossier, le geste est créé (agent du bien, raison en liste fermée, preuve, définitif). Le bien passe par `draft`, puis la publication le rend `available` si la diffusion reste ouverte. Refaire `sale_files` pour lever l'unicité du bien demandait un `DROP TABLE`, que la garde [R17] interdit : pas d'exception sans Shawez, un second dossier est refusé et le dit (H51, SV12).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV08
 - Cahier : M09 Offre ; M10 Compromis et acte.
 - Trouvé par la relecture de SV08 : seuls `under_offer` et `sold` s'écrivent, rien ne ramène un bien à `available` quand son dossier s'arrête. Le bien resterait « a déjà une offre » et hors des alertes.
 - Objectif : lire d'abord comment un dossier de vente s'arrête ; à l'arrêt d'un dossier sans autre offre acceptée, le bien revient à `available` et son annonce à `en_vente`, si la diffusion reste ouverte [R42].
 - Critères : dossier arrêté, bien disponible et annonce remise (test) ; autre dossier ouvert : rien ne change (test) ; mandat échu : pas de retour (test) ; journal [R13] (test).
 - Attend : rien.
+
+### SV12 · Un second dossier sur un bien, et ce que le client lit après un arrêt
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV09
+- Cahier : M09 Offre ; M10 Compromis et acte ; Conformité.
+- Trouvé par la relecture de SV09 : l'unicité de `sale_files.property_id` empêche un second dossier ; les espaces du vendeur et de l'acquéreur montrent encore l'offre « acceptée » après l'arrêt ; le gel d'un signalement ne contient pas `sale_file_stops` ; la durée de conservation compte encore l'acquéreur d'un dossier arrêté comme client.
+- Objectif : sans attendre H51, les espaces disent que la vente ne se fait plus, le gel contient l'arrêt, la durée de conservation est tranchée au plus prudent. Avec H51 oui : table refaite, un seul dossier ouvert par bien, l'exception écrite dans le test [R17].
+- Critères : l'espace ne dit plus « acceptée » après l'arrêt [R233] (test) ; l'arrêt est dans le gel (test) ; avec H51 oui, un second dossier s'ouvre et tous les passages lisent le bon (test).
+- Attend : H51 pour la seule partie du second dossier.
 
 ### SV10 · La direction corrige un nom sur une fiche
 - Statut : à faire
