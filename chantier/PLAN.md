@@ -3673,7 +3673,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Décidé (2026-11-04), lecture prudente : le parcours tourne sur les modules, en mémoire, sans passer par les routes ; ce qu'il a trouvé ne se corrige pas dans SV04 mais dans SV06, SV07 et SV08, chacun avec son raccourci écrit à un seul endroit de `packages/core/test/parcours-complet.ts`.
 
 ### SV08 · Un bien publié devient disponible
-- Statut : en cours
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#368). Relecture forte 2 P1 corrigés ; Codex non attendu (H03). Décidé, lecture prudente : retirée, l'annonce rend le bien à `draft`, même repris d'un ancien outil ; un bien sans annonce garde son statut. Les messages lisent le prix de l'annonce [R44]. Trous anciens non fermés : un commerce ne devient jamais disponible (mentions incomplètes), une offre annulée ne rend pas le bien disponible.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV04
 - Cahier : M07 Commercialiser ; M02 Capter.
 - Trouvé par SV04 : seuls `under_offer` et `sold` s'écrivent en production ; un bien publié reste `draft`. Le premier message répond alors à l'acquéreur que le bien n'est plus en vente, et les alertes qui lisent `available` ne le voient pas.
@@ -3682,7 +3683,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV06 · L'agent crée un bien et le lie à son vendeur
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV04
 - Cahier : M04 Estimer ; M06 Mandats et documents.
 - Trouvé par SV04 : hors import CSV sans écran, aucun geste ne crée un bien, `linkProjectProperty` n'a aucun appelant en production, et sans ce lien le mandat est refusé [R41]. Un nouveau vendeur ne peut donc pas signer.
