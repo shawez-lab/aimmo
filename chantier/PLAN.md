@@ -3693,7 +3693,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV07 · L'agent complète le nom d'une fiche
-- Statut : en cours
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#370). Relecture forte 1 P0 et 3 P1 corrigés ; Codex non attendu (H03). Le parcours complet n'a plus de raccourci. Décidé, lecture prudente : un nom déjà écrit ne se corrige pas ici ; si le prénom n'est que le nom donné, le geste renvoie à la direction, qui n'a pas encore d'écran pour le corriger. Un prénom composé d'un mail signé en sort seul.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV04
 - Cahier : M02 Capter ; M06 Mandats et documents.
 - Trouvé par SV04 : un contact venu d'un formulaire n'a que son prénom ; seul un import CSV sans écran complète son nom. Son mandat et son bon de visite restent incomplets.
@@ -3711,7 +3712,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### IN16 · Un écart entre les boutons d'une ligne de liste
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (feuille de style de l'application, fichier du socle) · Relecture : normale · Dépend de : IN15
 - Cahier : Le produit, système de design ; R201.
 - Objectif : trouvé par IN15 : dans `.liste`, deux boutons sur un même rang se touchent à la largeur d'un téléphone (« Voir la fiche » et « Rappelé », par exemple). Leur donner un écart, sans changer leur taille.

@@ -614,3 +614,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-04 02:54 · VOIE 2 : relance refusée, question 2 (les deux dernières séances voie 2 n'ont produit aucun commit de code ni tâche terminée)
 - 2026-11-04 02:54 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-04 03:08 · SV06 · l'agent crée un bien depuis la fiche et le lie à son vendeur, le parcours passe par ce geste (#369) ; relecture forte 6 P1 corrigés ; une vérification rouge corrigée ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : SV07
+- 2026-11-04 03:34 · SV07 · l'agent complète le nom d'une fiche, le parcours complet n'a plus de raccourci, R19 lit toutes les fiches réunies (#370) ; relecture forte 1 P0 et 3 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN16
