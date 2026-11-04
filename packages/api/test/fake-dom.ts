@@ -32,6 +32,11 @@ export class FakeElement {
     this.children.push(child);
     return child;
   }
+  insertBefore(child: FakeElement, before: FakeElement): FakeElement {
+    const at = this.children.indexOf(before);
+    this.children.splice(at < 0 ? this.children.length : at, 0, child);
+    return child;
+  }
   removeChild(child: FakeElement): FakeElement {
     this.children = this.children.filter((c) => c !== child);
     return child;

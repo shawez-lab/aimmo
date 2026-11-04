@@ -197,7 +197,33 @@ export const COMMISSIONS_ENTRY_HTML = `<section class="bloc" aria-labelledby="ti
 export const FINANCES_JS = `
   /* ---------- Les finances (K10), chargées au premier geste [R16, R201]. ---------- */
   var financesTools = null, financesLoading = false;
+  /* Depuis le réseau, la fiche revient au réseau : la clé de la direction n'a pas de journée d'agent, et lire une journée la ferait croire refusée. */
+  var ficheBack = null;
+  function ficheBackOff() {
+    if (!ficheBack) return;
+    $('fiche').removeChild(ficheBack);
+    ficheBack = null;
+    $('retour').hidden = false;
+  }
+  function networkFicheButton(personId) {
+    var open = button('Voir la fiche', function () {
+      if (!ficheBack) {
+        ficheBack = button('Retour au réseau', function () {
+          ficheBackOff();
+          wipeFiche();
+          openReseau(reseauRange);
+          readReport('direction', 'reseau');
+        });
+        $('fiche').insertBefore(ficheBack, $('retour'));
+        $('retour').hidden = true;
+      }
+      openFiche(personId);
+    });
+    open.className = 'secondaire';
+    return open;
+  }
   function wipeFinances() {
+    ficheBackOff();
     ['agent', 'direction'].forEach(function (who) {
       clear($('rapport-' + who + '-corps'));
       $('rapport-' + who + '-etat').textContent = '';
@@ -234,7 +260,7 @@ export const FINANCES_JS = `
         try { delete globalThis.AIMMO_FINANCES; } catch (e) { /* rien */ }
         if (mine !== session) { resolve(false); return; }
         if (typeof make !== 'function') { $(stateId).textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        financesTools = make({ $: $, el: el, clear: clear, send: send, date: date, hour: hour, euros: euros, button: button, saveCsv: saveCsv, ficheButton: ficheButton, session: function () { return session; } });
+        financesTools = make({ $: $, el: el, clear: clear, send: send, date: date, hour: hour, euros: euros, button: button, saveCsv: saveCsv, ficheButton: networkFicheButton, session: function () { return session; } });
         resolve(act(financesTools));
       });
       s.addEventListener('error', function () {
@@ -650,6 +676,7 @@ globalThis.AIMMO_FINANCES = function (t) {
           if (gesture[0] !== 'sans_appel' && (task.doNotCall || !someone)) return;
           var b = button(gesture[1], function () { closeMissed(task, gesture); });
           b.disabled = closing === t.session();
+          if (gesture[0] !== 'rappele') b.className = 'secondaire';
           gestures.push(b);
           li.appendChild(b);
         });

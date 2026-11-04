@@ -31,6 +31,7 @@ const close = (id: string) => `POST /v1/pilotage/engagements-manques/${id}/fait`
 const task = (over: object) => ({ id: 't1', code: 'point_lundi', label: 'Point chaque lundi', day: '2027-02-08', personId: 'fiche1', agentId: null, agentName: null, doNotCall: false, ...over });
 const LIST = { total: 3, tasks: [task({}), task({ id: 't2', personId: 'fiche2', doNotCall: true }), task({ id: 't3', code: 'commission_24h', label: 'Commission versée sous 24 h', personId: null, agentId: 'agent1', agentName: 'Inès Inventée' })] };
 const EMPTY = { total: 0, tasks: [] };
+const FICHE = { personId: 'fiche1', firstName: 'Léa', lastName: 'Inventée', contact: { allowed: true, reasons: [] }, call: null, projects: [], sources: [], consents: [], messages: [], callbacks: [] };
 
 async function run(answers: Record<string, Answer> = {}, role: 'direction' | 'agent' = 'direction') {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
@@ -82,8 +83,9 @@ async function run(answers: Record<string, Answer> = {}, role: 'direction' | 'ag
     els['rapport-direction-lire']!.listeners.click!({});
     await settle();
   };
+  const backButton = () => els.fiche!.children.find((c) => c.textContent === 'Retour au réseau');
   const posts = () => calls.filter((c) => c.method === 'POST');
-  return { els, calls, table, text, state, body, line, buttons, names, press, reread, posts };
+  return { els, calls, table, storage, text, state, body, line, buttons, names, press, reread, posts, backButton };
 }
 
 describe('IN15 · les engagements manqués à rappeler, à l’écran', () => {
@@ -144,6 +146,53 @@ describe('IN15 · les engagements manqués à rappeler, à l’écran', () => {
     expect(t.els['fiche-etat']!.textContent).toContain('pas dans vos droits');
   });
 
+  it('[R16] la direction revient de la fiche au réseau : sa clé reste, la fiche s’efface, la liste est relue, sans lire aucune journée d’agent', async () => {
+    const t = await run({ 'GET /v1/plan-du-jour': no(403, { ok: false, rule: 'R16', code: 'not_agent' }), 'GET /v1/fiches/fiche1/resume': ok(FICHE) });
+    await t.press(0, 'Voir la fiche');
+    expect(t.els.fiche!.hidden).toBe(false);
+    expect(t.els['fiche-nom']!.textContent).toContain('Inventée');
+    expect(t.els.retour!.hidden).toBe(true);
+    const before = t.calls.filter((c) => c.url === '/v1/pilotage/engagements-manques').length;
+    t.table[READ] = ok(EMPTY);
+    t.backButton()!.listeners.click!({});
+    await settle();
+    expect(t.storage.get('aimmo.cle')).toBe(KEY);
+    expect(t.els.reseau!.hidden).toBe(false);
+    expect(t.els.fiche!.hidden).toBe(true);
+    expect(t.els['fiche-corps']!.children).toEqual([]);
+    expect(t.els['fiche-nom']!.textContent).toBe('');
+    expect(t.backButton()).toBeUndefined();
+    expect(t.els.retour!.hidden).toBe(false);
+    expect(t.calls.filter((c) => c.url === '/v1/plan-du-jour')).toEqual([]);
+    expect(t.calls.filter((c) => c.url === '/v1/pilotage/engagements-manques')).toHaveLength(before + 1);
+    expect(t.state()).toBe('Aucun rappel à faire.');
+  });
+
+  it('[R228] un geste encore en vol quand on revient de la fiche : la liste relue dit la vérité, rien n’est envoyé deux fois', async () => {
+    const t = await run({ 'GET /v1/fiches/fiche1/resume': ok(FICHE) });
+    let done: (r: Response) => void = () => {};
+    t.table[close('t1')] = () => new Promise((r) => { done = r; });
+    await t.press(0, 'Rappelé');
+    await t.press(0, 'Voir la fiche');
+    t.table[READ] = ok(LIST);
+    t.backButton()!.listeners.click!({});
+    await settle();
+    expect(t.state()).toBe('3 rappels à faire.');
+    done(Response.json({ ok: true, data: { id: 't1', outcome: 'rappele' } }));
+    await settle();
+    expect(t.state()).toBe('3 rappels à faire.');
+    expect(t.posts()).toHaveLength(1);
+  });
+
+  it('[R16] se déconnecter depuis la fiche : le bouton du réseau disparaît, la prochaine fiche a son retour habituel', async () => {
+    const t = await run({ 'GET /v1/fiches/fiche1/resume': ok(FICHE) });
+    await t.press(0, 'Voir la fiche');
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    expect(t.backButton()).toBeUndefined();
+    expect(t.els.retour!.hidden).toBe(false);
+  });
+
   it('[R228] un geste : l’issue est envoyée, dite, et la liste relue', async () => {
     for (const [name, outcome, said] of [['Rappelé', 'rappele', 'Rappel noté.'], ['Injoignable', 'injoignable', 'Noté : injoignable.'], ['Sans appel', 'sans_appel', 'Noté : sans appel.']] as const) {
       const t = await run();
@@ -190,7 +239,7 @@ describe('IN15 · les engagements manqués à rappeler, à l’écran', () => {
     expect(t.calls.filter((c) => c.url.includes('engagements-manques'))).toEqual([]);
   });
 
-  it('[R13] réponse perdue, réseau ou panne : dite telle, peut-être noté, et le geste redevient possible', async () => {
+  it('[R228] réponse perdue, réseau ou panne : dite telle, peut-être noté, et le geste redevient possible', async () => {
     for (const answer of [async () => { throw new TypeError('hors ligne'); }, no(500, {}), no(502, { ok: false, code: 'x' })] as Answer[]) {
       const t = await run();
       t.table[close('t1')] = answer;
@@ -222,7 +271,7 @@ describe('IN15 · les engagements manqués à rappeler, à l’écran', () => {
     expect(off(t.buttons(0).find((b) => b.textContent === 'Voir la fiche')!)).toBeFalsy();
   });
 
-  it('[R13] liste relue pendant l’envoi : les gestes restent éteints, et l’échec se dit, sans que la relecture l’efface', async () => {
+  it('[R228] liste relue pendant l’envoi : les gestes restent éteints, et l’échec se dit, sans que la relecture l’efface', async () => {
     const t = await run();
     let fail: (r: Response) => void = () => {};
     t.table[close('t1')] = () => new Promise((r) => { fail = r; });
