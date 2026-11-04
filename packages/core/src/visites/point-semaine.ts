@@ -244,7 +244,9 @@ export class PointSemaine {
     for (const { person_id } of ids) {
       const view = await this.fiche.view(person_id);
       if (view.person.id === seller.person.id) continue;
-      for (const m of view.members) for (const n of [m.first_name, m.last_name]) if (n) for (const w of nameWords(n)) words.add(w);
+      // Les noms d'avant une correction restent à retenir (SV10) [R19].
+      const known = await this.db.all<{ first_name: string | null; last_name: string | null }>(`SELECT first_name, last_name FROM person_known_names WHERE id IN (${view.members.map(() => '?').join(', ')})`, view.members.map((m) => m.id));
+      for (const m of known) for (const n of [m.first_name, m.last_name]) if (n) for (const w of nameWords(n)) words.add(w);
       for (const i of view.identifiers) if (i.value.length > 2) identifiers.add(plain(i.value));
     }
     // `outsideGreeting` : les mots qui ne sont pas aussi ceux du vendeur, que la salutation porte.

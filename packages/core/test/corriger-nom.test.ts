@@ -1,5 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { Acces, CompleterNom, CorrigerNom, FicheAgent, FicheClient, FicheUnique, Modeles, NouveauBien, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
+import { Acces, CompleterNom, CorrigerNom, FicheAgent, FicheClient, FicheUnique, Modeles, NouveauBien, Qualification, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
+import { sellerNameWords } from '../src/fiche/noms-vendeur.ts';
+import { sourcePerson } from '../src/espaces/lecture.ts';
+import { nameWords } from '../src/visites/compte-rendu.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -150,6 +154,35 @@ describeWithSqlite('SV10 · la direction corrige un nom', () => {
     expect(row!.last_name).toBe(rows.at(-1)!.new_last_name);
     if (a.ok && b.ok) expect(rows[1]!.old_last_name).toBe(rows[0]!.new_last_name);
     else expect([a, b].find((r) => !r.ok)).toMatchObject({ code: 'name_changed' });
+  });
+
+  it('[R15] [R19] [R161] un nom corrigé reste retenu des textes : l’IA, l’autre partie, les espaces, les textes publics', async () => {
+    const t = await setup();
+    await t.nom.correct(t.direction, t.person.id, { firstName: 'Lia', lastName: 'Durand', reason: 'etat_civil' });
+    // L'IA : le masque lit l'ancien nom et le nouveau.
+    const q = new Qualification(t.db, t.store, t.unique, {} as never, {} as never, t.journal, { now: t.now }) as unknown as { namesOf(id: string, sender: string | null): Promise<string[]> };
+    expect(await q.namesOf(t.person.id, null)).toEqual(expect.arrayContaining(['Léa', 'Exemple', 'Lia', 'Durand']));
+    // L'autre partie : les mots interdits du vendeur.
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alexId, personId: t.person.id, kind: 'sell' });
+    const property = await t.store.createProperty({ networkId: t.network.id, agentId: t.alexId, reference: 'B-TEST', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60 } as never);
+    await t.store.linkProjectProperty({ networkId: t.network.id, agentId: t.alexId, projectId: project.id, propertyId: property.id, role: 'owned' });
+    const words = await sellerNameWords(t.db, t.unique, property.id);
+    for (const name of ['Exemple', 'Durand']) expect(words).toEqual(expect.arrayContaining(nameWords(name)));
+    // Les espaces des clients.
+    const source = await sourcePerson(t.db, t.unique, t.person.id);
+    expect(source.lastName).toContain('Exemple');
+    expect(source.lastName).toContain('Durand');
+    // Aucune ligne d'avant pour une autre fiche : la vue ne mêle rien.
+    const other = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Noa' });
+    expect(await t.db.all('SELECT first_name, last_name FROM person_known_names WHERE id = ?', [other.id])).toEqual([{ first_name: 'Noa', last_name: null }]);
+  });
+
+  it('[R15] [R19] [R46] chaque garde lit les noms d’avant : aucune ne repart de la seule table des fiches', () => {
+    for (const file of ['qualification/qualification.ts', 'fiche/noms-vendeur.ts', 'espaces/lecture.ts', 'apres-vente/demandes-avis.ts', 'apres-vente/relances-apres-vente.ts', 'apres-vente/remerciements.ts', 'dossiers/relances.ts', 'attirer/quartier.ts', 'attirer/fiche-google.ts', 'visites/point-semaine.ts']) {
+      const code = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
+      expect(code, file).toContain('person_known_names');
+      expect(code, file).not.toMatch(/first_name, last_name FROM persons WHERE (id IN|network_id)/);
+    }
   });
 
   it('[R16] la fiche de l’application annonce le geste à la direction seule', async () => {

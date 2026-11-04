@@ -622,7 +622,7 @@ export class PagesQuartier {
   private async clients(networkId: string): Promise<ClientNames> {
     const firstNames = new Set<string>();
     const lastNames = new Set<string>();
-    for (const p of await this.db.all<{ first_name: string | null; last_name: string | null }>('SELECT DISTINCT first_name, last_name FROM persons WHERE network_id = ?', [networkId])) {
+    for (const p of await this.db.all<{ first_name: string | null; last_name: string | null }>('SELECT DISTINCT first_name, last_name FROM person_known_names WHERE network_id = ?', [networkId])) {
       for (const w of (p.first_name ?? '').split(/[^\p{L}]+/u)) if (w.length >= 3) firstNames.add(foldWord(w));
       for (const w of (p.last_name ?? '').split(/[^\p{L}]+/u)) {
         const f = foldWord(w);

@@ -444,6 +444,9 @@ export class AnciensContacts {
     const claimed = await this.db.run("UPDATE old_contact_followups SET status = 'en_envoi' WHERE id = ? AND status = 'a_valider'", [r.id]);
     if (claimed.changes !== 1) return { ok: false, rule: null, code: 'already_decided' };
     const firstName = await ficheFirstName(this.db, members);
+    // Un nom corrigé depuis la préparation : le texte rangé salue peut-être l'ancien, le texte du code part à sa place (SV10).
+    const stale = input.text === undefined && (await this.db.first(`SELECT 1 FROM person_name_corrections WHERE created_at >= ? AND person_id IN (${members.map(() => '?').join(', ')})`, [r.created_at, ...members])) !== null;
+    if (stale) text = oldContactFallback(r.reason, firstName);
     // Le texte de l'agent part tel quel ou pas du tout ; celui de l'IA a le texte du code en secours [R12].
     const texts = input.text === undefined && r.draft_by === 'ia' ? [text, oldContactFallback(r.reason, firstName)] : [text];
     let result: Awaited<ReturnType<ControleEnvois['send']>>;

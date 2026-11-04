@@ -3674,6 +3674,15 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Critères : droits [R16] (test) ; aucun nom au journal [R13] (test) ; l'ancienne valeur reste lisible par la direction [R17] (test) ; document déjà généré inchangé (test) ; budget tenu [R201] (test).
 - Attend : rien.
 
+### SV13 · Les textes déjà préparés quand un nom est corrigé
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV10
+- Cahier : M02 Capter ; Conformité, droit de rectification.
+- Trouvé par la relecture de SV10 : la relance d'un ancien contact repart du texte du code après une correction, mais l'écran de validation montre encore le brouillon rangé, et les autres brouillons à valider n'ont pas été inventoriés (comptes rendus, points de la semaine, réponses préparées).
+- Objectif : inventorier les textes rangés avant envoi qui portent un prénom ou un nom ; après une correction, aucun ne part avec l'ancien, et l'écran montre le texte qui partira.
+- Critères : chaque brouillon concerné a son test (test) ; l'écran montre le texte qui partira (test) ; le texte écrit par l'agent part tel quel (test).
+- Attend : rien.
+
 ### SV11 · Un commerce publié devient disponible
 - Statut : à faire
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV08
