@@ -3669,6 +3669,34 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Objectif : un seul scénario inventé traverse les vrais modules, du premier message à l'après-vente, et il tourne aussi chaque mois.
 - Critères : chaque étape vérifiée par ses données et son journal (test) ; aucun envoi réel (test) ; une étape cassée nomme l'étape (test).
 - Attend : rien.
+- Décidé (2026-11-04), lecture prudente : le parcours tourne sur les modules, en mémoire, sans passer par les routes ; ce qu'il a trouvé ne se corrige pas dans SV04 mais dans SV06, SV07 et SV08, chacun avec son raccourci écrit à un seul endroit de `packages/core/test/parcours-complet.ts`.
+
+### SV08 · Un bien publié devient disponible
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV04
+- Cahier : M07 Commercialiser ; M02 Capter.
+- Trouvé par SV04 : seuls `under_offer` et `sold` s'écrivent en production ; un bien publié reste `draft`. Le premier message répond alors à l'acquéreur que le bien n'est plus en vente, et les alertes qui lisent `available` ne le voient pas.
+- Objectif : la première publication d'une annonce passe le bien à `available`, sans jamais faire reculer `under_offer` ni `sold` ; retirée sans offre (mandat retiré, rétractation), l'annonce rend le bien à son statut d'avant.
+- Critères : publié, le premier message dit « disponible » (test) ; l'alerte acquéreur part de ce bien, en essai (test) ; une offre ou une vente n'est jamais écrasée (test) ; le raccourci et le test du trou retirés du parcours (test) ; journal [R13] (test).
+- Attend : rien.
+
+### SV06 · L'agent crée un bien et le lie à son vendeur
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV04
+- Cahier : M04 Estimer ; M06 Mandats et documents.
+- Trouvé par SV04 : hors import CSV sans écran, aucun geste ne crée un bien, `linkProjectProperty` n'a aucun appelant en production, et sans ce lien le mandat est refusé [R41]. Un nouveau vendeur ne peut donc pas signer.
+- Objectif : depuis la fiche d'un vendeur, l'agent crée le bien (type, commune, surface, pièces, prix voulu) et il est lié au projet de vente ; route et écran.
+- Critères : droits [R16] (test) ; référence unique dans le réseau (test) ; réponse perdue dite telle (test) ; téléphone d'abord et budget tenus [R201] (test) ; le parcours passe par ce geste (test).
+- Attend : rien.
+
+### SV07 · L'agent complète le nom d'une fiche
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV04
+- Cahier : M02 Capter ; M06 Mandats et documents.
+- Trouvé par SV04 : un contact venu d'un formulaire n'a que son prénom ; seul un import CSV sans écran complète son nom. Son mandat et son bon de visite restent incomplets.
+- Objectif : sur la fiche, l'agent remplit un nom ou un prénom vide ; ce qui est déjà écrit ne s'écrase pas, et la fiche fusionnée suit sa racine.
+- Critères : droits [R16] (test) ; aucun nom au journal [R13] (test) ; un nom déjà écrit n'est pas écrasé (test) ; mandat complet ensuite (test) ; budget tenu [R201] (test) ; le raccourci et le test du trou retirés du parcours (test).
+- Attend : rien.
 
 ### IN15 · Les engagements manqués à rappeler, à l'écran
 - Statut : fait (2026-11-04)

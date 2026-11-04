@@ -1,0 +1,27 @@
+name: Parcours du mois
+
+# SV04 · Chaque mois, le parcours complet fictif, du premier message à l'après-vente : un scénario inventé, sur une base
+# en mémoire, à travers les vrais modules. Aucun secret, aucune base réelle, aucun envoi. Une étape cassée se nomme dans le
+# compte rendu du test, et le travail passe au rouge.
+
+on:
+  schedule:
+    - cron: '23 4 3 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parcours:
+    name: Parcours complet fictif
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run packages/core/test/parcours-complet.test.ts
