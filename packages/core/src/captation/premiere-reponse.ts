@@ -4,6 +4,7 @@
  * central (S06), qui ajoute la mention [R06], contrôle le texte [R07 à R10, R19] et passe au secours [R12].
  * Sans bien reconnu, un message simple et honnête, sans aucune donnée de bien [R20].
  */
+import { isUnlistedBusiness } from '../commerces/disponibilite.ts';
 import { shownPrice } from '../biens/prix-publie.ts';
 import { sellerNameWords } from '../fiche/noms-vendeur.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -332,7 +333,8 @@ export class PremiereReponse {
   private async shownStatus(property: Property): Promise<Property['status']> {
     const gate = this.options.diffusion;
     if (!gate || property.status !== 'available') return property.status;
-    const listed = await this.db.first('SELECT 1 AS ok FROM listing_versions WHERE property_id = ? LIMIT 1', [property.id]);
+    // Un commerce suit la même porte sans annonce (SV11) : disponible, il ne l'est que tant qu'elle reste ouverte.
+    const listed = (await this.db.first('SELECT 1 AS ok FROM listing_versions WHERE property_id = ? LIMIT 1', [property.id])) !== null || (await isUnlistedBusiness(this.db, property.id));
     if (!listed || (await gate.canDiffuse(property.network_id, property.id)).allowed) return property.status;
     return 'draft';
   }

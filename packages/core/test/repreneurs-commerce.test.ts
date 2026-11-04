@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { DisponibiliteCommerces, EstimationCommerce, FicheCommerce, PresentationCommerce, RepreneursCommerce, checkBuyerChanges, isUnlistedBusiness } from '../src/commerces/index.ts';
 import { Alertes } from '../src/acquereurs/alertes.ts';
+import { PremiereReponse } from '../src/captation/premiere-reponse.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -238,6 +239,19 @@ describeWithSqlite('SV11 · un commerce publié devient disponible', () => {
     expect(await isUnlistedBusiness(t.db, shop.id)).toBe(false);
     await alertes.forProperty(t.network.id, shop.id);
     expect(looked).toBe(1);
+  });
+
+  it('[R42] le premier message relit la porte : mandat tombé avant le passage suivant, le commerce n’est plus dit disponible', async () => {
+    const t = await setup();
+    const shop = await draftShop(t);
+    await passage(t);
+    const reply = Object.create(PremiereReponse.prototype) as { db: unknown; options: unknown; shownStatus(p: unknown): Promise<string> };
+    reply.db = t.db;
+    reply.options = { diffusion: t.diffusion };
+    const property = { id: shop.id, network_id: t.network.id, status: 'available' };
+    expect(await reply.shownStatus(property)).toBe('available');
+    t.noMandate.add(shop.id);
+    expect(await reply.shownStatus(property)).toBe('draft');
   });
 
   it('[R19] vu par un autre agent, au fichier commun : ni enseigne, ni nom', async () => {

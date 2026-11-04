@@ -122,13 +122,6 @@ describeWithSqlite('P09 · routes de M07', () => {
     expect(video.status).toBe(409);
     expect(video.body).toMatchObject({ rule: 'R46', code: 'refused_text' });
   });
-});
-
-it('P09 · chaque route a un nom stable, sans identifiant, et une adresse unique par méthode', () => {
-  const routes = annonceRoutes();
-  const keys = routes.map((r) => `${r.method} ${r.pattern.source}`);
-  expect(new Set(keys).size).toBe(keys.length);
-  expect(routes.every((r) => /^annonces\.[a-z_.]+$/.test(r.name))).toBe(true);
 
   it('SV11 · le passage de publication mène aussi les commerces : sans mandat, un commerce rendu disponible ici revient en brouillon, sans version d’annonce [R42]', async () => {
     const t = await setup();
@@ -140,4 +133,11 @@ it('P09 · chaque route a un nom stable, sans identifiant, et une adresse unique
     expect(await t.s.db.first('SELECT status FROM properties WHERE id = ?', [id])).toEqual({ status: 'draft' });
     expect(await t.s.db.first('SELECT 1 FROM listing_versions WHERE property_id = ?', [id])).toBeNull();
   });
+});
+
+it('P09 · chaque route a un nom stable, sans identifiant, et une adresse unique par méthode', () => {
+  const routes = annonceRoutes();
+  const keys = routes.map((r) => `${r.method} ${r.pattern.source}`);
+  expect(new Set(keys).size).toBe(keys.length);
+  expect(routes.every((r) => /^annonces\.[a-z_.]+$/.test(r.name))).toBe(true);
 });
