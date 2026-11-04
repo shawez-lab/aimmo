@@ -3666,7 +3666,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : H51 pour la seule partie du second dossier.
 
 ### SV10 · La direction corrige un nom sur une fiche
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV07
 - Cahier : M02 Capter ; Conformité, droit de rectification.
 - Trouvé par SV07 : un nom déjà écrit ne se corrige pas, et un prénom qui n'est que le nom bloque l'agent, renvoyé à une direction qui n'a aucun écran pour cela.
