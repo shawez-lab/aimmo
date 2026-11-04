@@ -3666,7 +3666,9 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : H51 pour la seule partie du second dossier.
 
 ### SV10 · La direction corrige un nom sur une fiche
-- Statut : en cours
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#373). Relecture forte 1 P0 et 1 P1 corrigés ; une vérification rouge corrigée ; Codex à sa limite (H03). Inventaire des autres brouillons : SV13. Le motif `demande_de_la_personne` ne clôt pas une demande de rectification de la conformité.
+- Décidé (2026-11-04), lecture prudente : motif en liste fermée, sans texte libre. Un champ peut se vider, jamais les deux, ni un nom qu'une fiche réunie ferait revenir. Un nom corrigé reste retenu des textes : les gardes lisent la vue `person_known_names`. La ligne de correction n'a pas de garde contre l'effacement, car elle porte un nom et le plan d'effacement doit pouvoir la traiter.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV07
 - Cahier : M02 Capter ; Conformité, droit de rectification.
 - Trouvé par SV07 : un nom déjà écrit ne se corrige pas, et un prénom qui n'est que le nom bloque l'agent, renvoyé à une direction qui n'a aucun écran pour cela.
@@ -3684,7 +3686,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV11 · Un commerce publié devient disponible
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV08
 - Cahier : M16 Commerces et entreprises.
 - Trouvé par la relecture de SV08 : un commerce finit en mentions incomplètes dans `Publication`, n'a jamais de version et reste `draft` ; `commerces/repreneurs.ts` ne lit que `available` et `under_offer`, donc ne le voit pas avant une offre.
