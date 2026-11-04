@@ -105,6 +105,7 @@ const PARTS: Part[] = [
   { table: 'sale_file_dates', over: 'saleFiles', sql: (q) => `SELECT file_id || ':' || kind || ':' || version AS k, * FROM sale_file_dates WHERE file_id IN (${q})` },
   { table: 'sale_file_financing', over: 'saleFiles', sql: (q) => `SELECT file_id || ':' || seq AS k, * FROM sale_file_financing WHERE file_id IN (${q})` },
   { table: 'sale_file_closings', over: 'saleFiles', sql: (q) => `SELECT file_id AS k, * FROM sale_file_closings WHERE file_id IN (${q})` },
+  { table: 'sale_file_stops', over: 'saleFiles', sql: (q) => `SELECT file_id AS k, * FROM sale_file_stops WHERE file_id IN (${q})` },
   // La conformité de chaque partie : coffre, identification, bénéficiaires effectifs, risque, vigilance.
   { table: 'compliance_vault_pieces', over: 'persons', sql: (q) => `SELECT id AS k, * FROM compliance_vault_pieces WHERE person_id IN (${q})` },
   { table: 'identity_checks', over: 'persons', sql: (q) => `SELECT id AS k, * FROM identity_checks WHERE person_id IN (${q})` },

@@ -49,6 +49,13 @@ export interface SellerVisit {
   visitor: SourcePerson | null;
 }
 
+/**
+ * Une offre dont le dossier de vente a été arrêté : ce que lisent le vendeur et l'acquéreur, sans la raison, qui reste à
+ * l'agent [R233, R14]. La sous-requête s'emploie là où `o` est la ligne de `offer_register`.
+ */
+export const OFFER_STOPPED_STATE = 'la vente ne se fait plus';
+export const OFFER_STOPPED_AT = 'SELECT stop_.at FROM sale_files f_ JOIN sale_file_stops stop_ ON stop_.file_id = f_.id WHERE f_.offer_id = o.id';
+
 export interface SellerOffer {
   id: string;
   receivedAt: string;

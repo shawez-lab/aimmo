@@ -43,7 +43,7 @@ import type { BuyerFile, BuyerOffer, BuyerVisit, InvestorFigures, ProposedProper
 import type { ClientSide } from './entree.ts';
 import { placeholders, sourcePerson } from './lecture.ts';
 import { ESPACE_READER, espaceViewer, pieceTitle } from './sources-vendeur.ts';
-import type { SourcePerson } from './vendeur.ts';
+import { OFFER_STOPPED_AT, OFFER_STOPPED_STATE, type SourcePerson } from './vendeur.ts';
 
 /** La porte de M17 qui remet une note validée au client, contraintes relues [R124, R126]. */
 export interface InvestorNoteGate {
@@ -235,8 +235,8 @@ export class SqlSourcesAcquereur implements SourcesAcquereur {
 
   async offersOf(networkId: string, personId: string): Promise<readonly BuyerOffer[]> {
     const members = await this.members(personId);
-    const rows = await this.db.all<{ id: string; property_id: string; seq: number; received_at: string; responded_at: string | null }>(
-      `SELECT o.id, o.property_id, o.seq, o.received_at, s.responded_at FROM offer_register o LEFT JOIN offer_responses s ON s.offer_id = o.id
+    const rows = await this.db.all<{ id: string; property_id: string; seq: number; received_at: string; responded_at: string | null; stopped_at: string | null }>(
+      `SELECT o.id, o.property_id, o.seq, o.received_at, s.responded_at, (${OFFER_STOPPED_AT}) AS stopped_at FROM offer_register o LEFT JOIN offer_responses s ON s.offer_id = o.id
        WHERE o.network_id = ? AND o.buyer_person_id IN (${placeholders(members.length)}) ORDER BY o.received_at, o.id`,
       [networkId, ...members],
     );
@@ -249,7 +249,7 @@ export class SqlSourcesAcquereur implements SourcesAcquereur {
         tables.set(o.property_id, table.ok ? new Map(table.value.rows.map((r) => [Number(r.seq), { amountEur: r.amountEur, state: r.state }])) : null);
       }
       const row = tables.get(o.property_id)?.get(Number(o.seq));
-      out.push({ id: o.id, propertyId: o.property_id, receivedAt: o.received_at, amountEur: row?.amountEur ?? null, state: row ? (OFFER_STATES[row.state] ?? null) : null, stateAt: o.responded_at ?? o.received_at });
+      out.push({ id: o.id, propertyId: o.property_id, receivedAt: o.received_at, amountEur: row?.amountEur ?? null, state: row ? (o.stopped_at ? OFFER_STOPPED_STATE : (OFFER_STATES[row.state] ?? null)) : null, stateAt: o.stopped_at ?? o.responded_at ?? o.received_at });
     }
     return out;
   }

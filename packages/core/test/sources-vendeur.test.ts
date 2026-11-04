@@ -94,7 +94,7 @@ describeWithSqlite('EC08 · lecteurs SQL de l’espace du vendeur', () => {
     // Montant et net vendeur lus du tableau des offres (O06) : 205 000 €, moins 10 000 € d'honoraires du mandat.
     expect(b.offers[0]!.amount).toMatchObject({ value: 205000 });
     expect(b.offers[0]!.netSeller).toMatchObject({ value: 195000 });
-    expect(b.offers[0]!.state).toMatchObject({ value: 'acceptee', at: '2027-03-01T11:00:00.000Z' });
+    expect(b.offers[0]!.state).toMatchObject({ value: 'acceptée', at: '2027-03-01T11:00:00.000Z' });
     expect(b.offers[0]!.conditions).toMatchObject({ value: ['pret'] });
     // La date d'acte vient du chemin critique du dossier (N09), vue du vendeur, sans rien du financement de l'acquéreur.
     expect(b.deed.holds).toMatchObject({ source: 'échéancier du dossier' });
