@@ -6,6 +6,7 @@ import {
   AvisDeValeur,
   ControlesSignature,
   Diffusion,
+  NouveauBien,
   Fourchette,
   Modeles,
   RegistreMandats,
@@ -149,8 +150,6 @@ export class TrapChannel implements OutboundChannel {
 /**
  * Ce que le parcours a trouvé et que le produit ne sait pas encore faire par un geste de l'agent. Chaque raccourci est
  * écrit ici et nulle part ailleurs ; la tâche du plan qui ferme un trou retire son raccourci et le test qui le décrit.
- * - SV06 : hors import CSV sans écran, aucun geste ne crée un bien, et rien ne le lie à son vendeur ; le parcours passe
- *   ici par `FicheClient`. Sans ce lien, le mandat est refusé [R41].
  */
 export interface JourneyGaps {
   /** SV07 : un contact venu d'un formulaire n'a que son prénom ; rien sur sa fiche ne complète son nom, seul un import CSV le fait. */
@@ -197,7 +196,7 @@ export async function journeyWorld(shortcuts: JourneyGaps = ALL_SHORTCUTS) {
     db, journal, captation, store, acces, modeles, shortcuts, network, alexId: alex.id, agent, direction, as, trap, portals, pieces, now, setClock,
     readEntries: () => journal.all(),
     /** Ce que le parcours se transmet d'une étape à la suivante. */
-    seller: '', buyer: '', buyerProject: '', propertyId: '', mandateId: '', appointmentId: '', offerId: '', fileId: '',
+    reference: '', seller: '', buyer: '', buyerProject: '', propertyId: '', mandateId: '', appointmentId: '', offerId: '', fileId: '',
   };
 }
 
@@ -248,14 +247,13 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
   {
     id: 'rendez_vous',
     label: 'Le rendez-vous d’estimation est pris',
-    events: ['rdv.reserve'],
+    events: ['bien.cree', 'rdv.reserve'],
     async run(w) {
-      const b = await w.store.createProperty({ networkId: w.network.id, agentId: w.alexId, reference: 'REF-P-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
+      const created = accepted(await new NouveauBien(w.db, w.acces, w.journal, { now: w.now }).create(w.agent, w.seller, { kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 }), 'bien');
+      const b = { id: created.value.propertyId };
       w.propertyId = b.id;
-      const project = await w.db.first<{ id: string }>("SELECT id FROM projects WHERE person_id = ? AND kind = 'sell'", [w.seller]);
-      must(project, 'la qualification n’a pas ouvert le projet de vente');
-      await w.store.linkProjectProperty({ networkId: w.network.id, agentId: w.alexId, projectId: project.id, propertyId: b.id, role: 'owned' });
-      const owned = await w.db.first('SELECT 1 AS ok FROM project_properties WHERE project_id = ? AND property_id = ? AND role = ?', [project.id, b.id, 'owned']);
+      w.reference = created.value.reference;
+      const owned = await w.db.first("SELECT 1 AS ok FROM project_properties pp JOIN projects p ON p.id = pp.project_id WHERE p.person_id = ? AND p.kind = 'sell' AND pp.property_id = ? AND pp.role = 'owned'", [w.seller, b.id]);
       must(owned, 'le bien n’est pas lié à son vendeur');
       const rdv = new RendezVous(w.db, w.journal, { now: w.now });
       accepted(await rdv.setAvailability(w.agent, { weekly: [1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, from: '09:00', to: '19:00' })) }), 'agenda');
@@ -339,7 +337,7 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
         firstName: 'Noé',
         email: BUYER_EMAIL,
         message: 'Bonjour, je cherche à acheter à Dijon, je voudrais visiter cet appartement. Mon budget est de 210 000 €.',
-        propertyRef: 'REF-P-1',
+        propertyRef: w.reference,
       });
       must(r?.status === 'replied', `réponse attendue, reçu ${String(r?.status)}`);
       w.buyer = await personOf(w, BUYER_EMAIL);
