@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import type { Viewer } from '@aimmo/core';
+import { appendEvent, type Viewer } from '@aimmo/core';
 import { annonceRoutes, syncAnnonces, type AnnonceServices } from '../src/annonces.ts';
 import { DELAY_END, MIN, setupAnnonce } from '../../core/test/annonces-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
@@ -121,6 +121,17 @@ describeWithSqlite('P09 · routes de M07', () => {
     const video = await t.call(t.agent, 'POST', `/annonces/${t.propertyId}/videos/controle`, { ref: `biens/${t.propertyId}/0b6f1d2e-3333-4a2b-8c3d-000000000003.mp4`, subtitles: ['Au 12 rue des Essais.'], caption: 'Visite' });
     expect(video.status).toBe(409);
     expect(video.body).toMatchObject({ rule: 'R46', code: 'refused_text' });
+  });
+
+  it('SV11 · le passage de publication mène aussi les commerces : sans mandat, un commerce rendu disponible ici revient en brouillon, sans version d’annonce [R42]', async () => {
+    const t = await setup();
+    const id = '0b6f1d2e-5555-4a2b-8c3d-000000000077';
+    const at = new Date().toISOString();
+    await t.s.db.run("INSERT INTO properties (id, network_id, reference, kind, status, created_at, updated_at) VALUES (?, ?, 'CE-77', 'business', 'available', ?, ?)", [id, t.network.id, at, at]);
+    await appendEvent(t.s.journal, { type: 'bien.disponible', actor: 'system:commerces', subject: `property:${id}`, data: { rule: 'R42' } }, t.s.now);
+    await syncAnnonces(t.s, t.network.id, { channels: t.channels });
+    expect(await t.s.db.first('SELECT status FROM properties WHERE id = ?', [id])).toEqual({ status: 'draft' });
+    expect(await t.s.db.first('SELECT 1 FROM listing_versions WHERE property_id = ?', [id])).toBeNull();
   });
 });
 

@@ -4,6 +4,7 @@ export * from './presentation.ts';
 export * from './confidentialite.ts';
 export * from './dossier.ts';
 export * from './repreneurs.ts';
+export * from './disponibilite.ts';
 export * from './cession.ts';
 export * from './vigilance-cession.ts';
 export * from './taches.ts';
