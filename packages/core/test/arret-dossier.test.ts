@@ -259,6 +259,24 @@ describeWithSqlite('SV09 · une offre qui tombe rend le bien disponible', () => 
     expect(after.buyer.amountEur).toBe(before.buyer.amountEur);
   });
 
+  it('[R233] [R14] le droit d’accès du vendeur ne dit pas la raison de l’arrêt ; celui de l’acquéreur la dit', async () => {
+    const t = await setup();
+    await t.stop();
+    const seller = await conformite.assembleAccessDetail(t.db, [t.personId]);
+    expect(JSON.stringify(seller.response)).not.toContain('pret_refuse');
+    expect(seller.response.sections.map((x) => x.table)).not.toContain('sale_file_stops');
+    const buyer = await conformite.assembleAccessDetail(t.db, [t.buyerId]);
+    expect(buyer.response.sections.find((x) => x.table === 'sale_file_stops')?.rows).toHaveLength(1);
+    expect(JSON.stringify(buyer.response)).toContain('pret_refuse');
+  });
+
+  it('[R233] le vendeur lit le statut de son bien en français après l’arrêt, jamais un code', async () => {
+    const t = await setup();
+    const vendeur = new SqlSourcesVendeur(t.db, t.acces, t.journal, { now: t.now });
+    await t.stop();
+    expect((await vendeur.sellerPropertiesOf(t.network.id, t.personId))[0]?.status).toBe('pas en vente pour l’instant');
+  });
+
   it('[R233] une autre offre du même bien garde son état après l’arrêt', async () => {
     const t = await setup();
     t.setClock(at9('2027-03-02'));

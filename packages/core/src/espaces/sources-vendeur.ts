@@ -120,6 +120,16 @@ const SELLER_PIECES: ReadonlySet<Piece> = (() => {
   return all;
 })();
 
+/** Le statut du bien, dit au vendeur en français, jamais le code de la base. */
+const SELLER_PROPERTY_STATES: Record<string, string> = {
+  draft: 'pas en vente pour l’instant',
+  available: 'en vente',
+  under_offer: 'sous offre',
+  sold: 'vendu',
+  rented: 'loué',
+  withdrawn: 'retiré de la vente',
+};
+
 /** L'état d'une offre, dit au vendeur en français, jamais le code du registre. */
 const SELLER_OFFER_STATES: Record<string, string> = {
   recue: 'reçue',
@@ -209,7 +219,7 @@ export class SqlSourcesVendeur implements SourcesVendeur {
         propertyId: p.id,
         reference: p.reference,
         city: p.city ?? 'non communiquée',
-        status: p.status,
+        status: SELLER_PROPERTY_STATES[p.status] ?? 'non communiqué',
         statusAt: p.updated_at,
         askingPriceEur: terms?.priceEur ?? null,
         mandateSignedAt: terms?.priceEur === null || terms?.priceEur === undefined ? null : (lastAmendment?.signedAt ?? latest.signed_at),

@@ -156,7 +156,8 @@ const INTERNE = (why: string): SaleFileEventUse => ({ excluded: 'agent', why });
 
 export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'dossier.compromis_en_preparation': 'partage',
-  'dossier.arrete': 'partage',
+  // La raison peut être le prêt de l'acquéreur : elle ne va pas au vendeur [R233, R14].
+  'dossier.arrete': 'acquereur',
   'dossier.date': 'partage',
   'dossier.date_a_saisir': 'partage',
   'dossier.echeance': 'partage',
@@ -426,7 +427,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   sale_file_financing_alerts: { locate: [via('file_id', 'sale_files', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
   sale_file_fund_alerts: { locate: by('person_id') },
   sale_file_closings: { locate: [via('file_id', 'sale_files')] },
-  sale_file_stops: { locate: [via('file_id', 'sale_files')] },
+  sale_file_stops: { locate: [via('file_id', 'sale_files', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
   // apres-vente
   referrals: {
     locate: by('referrer_id', 'referred_id'),

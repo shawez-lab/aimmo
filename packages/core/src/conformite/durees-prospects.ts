@@ -12,8 +12,8 @@
  * - un client n'est pas un prospect, et n'est jamais listé : une personne qui a signé un mandat, l'acquéreur d'un
  *   dossier de vente, le locataire ou le propriétaire d'un bail fait par AIMMO, une personne identifiée pour la lutte
  *   contre le blanchiment et les bénéficiaires effectifs d'une société cliente. Ses durées sont celles du contrat ;
- * - l'acquéreur d'un dossier arrêté sans compromis signé n'a jamais conclu : il redevient un prospect, et ses 3 ans
- *   ne comptent jamais avant le jour de l'arrêt. Un compromis signé est un contrat : il reste client, même arrêté [R233] ;
+ * - l'acquéreur d'un dossier arrêté reste hors de cette liste : le registre garde un dossier 10 ans après son abandon,
+ *   l'arrêt est gardé [R233], et un dossier peut être signalé [R94]. La sortie à 10 ans n'existe pas encore, pour aucun client ;
  * - « 3 ans » se compte en jours de Paris, par le calendrier : un contact du 10 février 2024 est listé le 10 février
  *   2027, pas la veille ;
  * - la demande de consentement est préparée en mode essai, sans canal ni envoi [R26] ; quand le plan la mettra en
@@ -162,8 +162,6 @@ export class DureesProspects {
       ['SELECT person_id, max(created_at) AS at FROM appointments WHERE network_id = ? GROUP BY person_id', [networkId]],
       ["SELECT person_id, max(start_at) AS at FROM appointments WHERE network_id = ? AND status = 'honored' GROUP BY person_id", [networkId]],
       ['SELECT person_id, max(created_at) AS at FROM visits WHERE network_id = ? GROUP BY person_id', [networkId]],
-      // L'arrêt d'un dossier ne vient pas de la personne, mais la relation durait jusque-là : 3 ans à partir de ce jour [R233].
-      ['SELECT f.buyer_person_id AS person_id, max(s.at) AS at FROM sale_file_stops s JOIN sale_files f ON f.id = s.file_id WHERE f.network_id = ? GROUP BY f.buyer_person_id', [networkId]],
     ];
     for (const [sql, params] of sources) {
       for (const r of await this.db.all<{ person_id: string; at: string | null }>(sql, params as never)) note(r.person_id, r.at);
@@ -172,8 +170,7 @@ export class DureesProspects {
     const clients = new Set<string>();
     const clientSources = [
       'SELECT DISTINCT person_id AS id FROM mandates WHERE network_id = ?',
-      `SELECT DISTINCT f.buyer_person_id AS id FROM sale_files f WHERE f.network_id = ?
-       AND (NOT EXISTS (SELECT 1 FROM sale_file_stops s WHERE s.file_id = f.id) OR EXISTS (SELECT 1 FROM sale_file_dates d WHERE d.file_id = f.id AND d.kind = 'compromis_signe'))`,
+      'SELECT DISTINCT buyer_person_id AS id FROM sale_files WHERE network_id = ?',
       'SELECT DISTINCT a.person_id AS id FROM rental_leases l JOIN rental_applications a ON a.id = l.application_id WHERE l.network_id = ?',
       'SELECT DISTINCT r.owner_person_id AS id FROM rental_leases l JOIN rental_listings r ON r.id = l.listing_id WHERE l.network_id = ?',
       // Une personne identifiée pour la lutte contre le blanchiment (L03), et les bénéficiaires effectifs d'une société
