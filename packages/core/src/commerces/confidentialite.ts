@@ -26,6 +26,7 @@ import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { sellerNameWords } from '../fiche/noms-vendeur.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -292,11 +293,7 @@ export class ConfidentialiteCommerce {
     // La présentation écrit « à Dijon (21000) » ; un message à une personne n'a pas de parenthèses [R08], les mots et les chiffres restent.
     const flat = (text: string): string => text.replace(/\s*\(([^()]*)\)/g, ', $1');
     // Jamais le nom du vendeur à un repreneur [R19] : l'agent peut avoir corrigé la présentation à la main. Le destinataire n'en est pas un.
-    const sellers = await this.db.all<{ first_name: string | null; last_name: string | null }>(
-      `SELECT DISTINCT p.first_name, p.last_name FROM project_properties pp JOIN projects pr ON pr.id = pp.project_id JOIN persons p ON p.id = pr.person_id
-       WHERE pp.property_id = ? AND pp.role = 'owned' AND pr.person_id NOT IN (${marks})`,
-      [propertyId, ...members],
-    );
+    const sellers = await sellerNameWords(this.db, this.fiche, propertyId, members);
     const sent = await this.envois.send({
       networkId: viewer.networkId,
       agentId: agent?.agent_id ?? null,
@@ -309,7 +306,7 @@ export class ConfidentialiteCommerce {
         `${first ? `Bonjour ${first},\n\n` : 'Bonjour,\n\n'}Votre agent immobilier vous transmet les informations publiques de ce commerce.\n\n${flat(shown.title)}\n\n${flat(shown.body)}\n\nLe détail s’ouvre après la signature d’un engagement de confidentialité et la vérification de votre pièce d’identité.`,
       ],
       figures: [shown.title, shown.body],
-      sellerNames: sellers.flatMap((r) => [r.first_name, r.last_name]).filter((n): n is string => !!n && n.trim().length > 1),
+      sellerNames: sellers,
     });
     if (sent.status !== 'sent') return refused(sent.rule, 'send_refused');
     await appendEvent(this.journal, { type: 'commerces.acces.informations', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { mode: 'essai' } }, this.now);

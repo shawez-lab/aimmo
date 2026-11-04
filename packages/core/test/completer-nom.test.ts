@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { Acces, CompleterNom, FicheClient, FicheUnique, Modeles, NouveauBien, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
+import { Acces, CompleterNom, FicheAgent, FicheClient, FicheUnique, Modeles, NouveauBien, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
+import { sellerNameWords } from '../src/fiche/noms-vendeur.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -82,6 +83,70 @@ describeWithSqlite('SV07 · l’agent complète le nom d’une fiche', () => {
     await t.unique.merge({ survivorId: root.id, mergedId: t.person.id, reason: 'même mail' });
     expect(await t.nom.complete(t.alex, t.person.id, { lastName: 'Exemple' })).toMatchObject({ ok: true });
     expect(await t.db.first('SELECT last_name FROM persons WHERE id = ?', [root.id])).toEqual({ last_name: 'Exemple' });
+  });
+
+  it('[R17] un nom déjà écrit sur une fiche réunie compte : un autre est refusé, le même est porté sur la fiche survivante', async () => {
+    const t = await setup();
+    await t.nom.complete(t.alex, t.person.id, { lastName: 'Exemple' });
+    const root = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId });
+    await t.unique.merge({ survivorId: root.id, mergedId: t.person.id, reason: 'même mail' });
+    expect(await t.nom.complete(t.alex, root.id, { lastName: 'Autre' })).toEqual({ ok: false, rule: null, code: 'already_named' });
+    expect(await t.nom.complete(t.alex, root.id, { firstName: 'Zoé' })).toEqual({ ok: false, rule: null, code: 'already_named' });
+    expect(await t.nom.complete(t.alex, root.id, { firstName: 'Léa', lastName: 'Exemple' })).toEqual({ ok: true, value: { firstName: 'Léa', lastName: 'Exemple' } });
+    expect(await t.db.first('SELECT first_name, last_name FROM persons WHERE id = ?', [root.id])).toEqual({ first_name: 'Léa', last_name: 'Exemple' });
+    const summary = await new FicheAgent(t.db, t.acces, { now: t.now }).read(t.alex, t.person.id);
+    expect(summary).toMatchObject({ ok: true, value: { firstName: 'Léa', lastName: 'Exemple' } });
+  });
+
+  it('un mail signé « Jean Dupont » a tout rangé en prénom : le nom en sort, il n’est pas doublé', async () => {
+    const t = await setup();
+    const p = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Jean Dupont' });
+    expect(await t.nom.complete(t.alex, p.id, { lastName: 'dupont' })).toEqual({ ok: true, value: { firstName: 'Jean', lastName: 'dupont' } });
+    expect((await t.journal.all()).filter((e) => e.type === 'fiche.nom_complete').at(-1)!.data).toEqual({ rule: 'R16', fields: ['firstName', 'lastName'] });
+    // Le prénom n'est que ce nom : rien ne resterait, le geste le dit.
+    const q = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Martin' });
+    expect(await t.nom.complete(t.alex, q.id, { lastName: 'Martin' })).toEqual({ ok: false, rule: null, code: 'name_in_first_name' });
+    expect(await t.db.first('SELECT first_name, last_name FROM persons WHERE id = ?', [q.id])).toEqual({ first_name: 'Martin', last_name: null });
+  });
+
+  it('prénom et nom s’écrivent d’un seul geste : une panne n’en laisse pas la moitié', async () => {
+    const t = await setup();
+    const p = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId });
+    await t.db.run("CREATE TRIGGER panne_nom BEFORE UPDATE OF last_name ON persons WHEN NEW.last_name = 'Exemple' BEGIN SELECT RAISE(ABORT, 'panne'); END");
+    await expect(t.nom.complete(t.alex, p.id, { firstName: 'Zoé', lastName: 'Exemple' })).rejects.toThrow(/panne/);
+    expect(await t.db.first('SELECT first_name, last_name FROM persons WHERE id = ?', [p.id])).toEqual({ first_name: null, last_name: null });
+  });
+
+  it('[R17] deux gestes croisés ne mêlent pas deux identités : le second, parti d’une lecture ancienne, est refusé', async () => {
+    const t = await setup();
+    const p = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId });
+    const [a, b] = await Promise.all([t.nom.complete(t.alex, p.id, { firstName: 'Zoé', lastName: 'Exemple' }), t.nom.complete(t.alex, p.id, { firstName: 'Bob', lastName: 'Martin' })]);
+    const row = await t.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM persons WHERE id = ?', [p.id]);
+    expect([`${row!.first_name} ${row!.last_name}`]).toEqual(expect.arrayContaining([expect.stringMatching(/^(Zoé Exemple|Bob Martin)$/)]));
+    expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
+  });
+
+  it('[R13] une panne du journal après l’écriture : le nouvel essai écrit la ligne manquante, une fois', async () => {
+    const t = await setup();
+    await t.db.run("CREATE TRIGGER panne_journal BEFORE INSERT ON journal WHEN NEW.type = 'fiche.nom_complete' BEGIN SELECT RAISE(ABORT, 'panne'); END");
+    await expect(t.nom.complete(t.alex, t.person.id, { lastName: 'Exemple' })).rejects.toThrow(/panne/);
+    await t.db.run('DROP TRIGGER panne_journal');
+    expect(await t.nom.complete(t.alex, t.person.id, { lastName: 'Exemple' })).toMatchObject({ ok: true });
+    await t.nom.complete(t.alex, t.person.id, { lastName: 'Exemple' });
+    expect((await t.journal.all()).filter((e) => e.type === 'fiche.nom_complete')).toHaveLength(1);
+  });
+
+  it('[R19] le nom écrit sur la fiche survivante d’un vendeur est interdit, mot à mot, même si le projet reste sur une fiche réunie', async () => {
+    const t = await setup();
+    const root = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Léa' });
+    const b = await new NouveauBien(t.db, t.acces, t.journal, { now: t.now }).create(t.alex, t.person.id, { requestId: '0b6f1d2e-5555-4a2b-8c3d-000000000032', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60 });
+    if (!b.ok) throw new Error(b.code);
+    await t.unique.merge({ survivorId: root.id, mergedId: t.person.id, reason: 'même mail' });
+    await t.nom.complete(t.alex, root.id, { lastName: 'de la Fontaine' });
+    const words = await sellerNameWords(t.db, t.unique, b.value.propertyId);
+    expect(words).toEqual(expect.arrayContaining(['fontaine', 'lea']));
+    // Le destinataire n'est pas son propre vendeur.
+    expect(await sellerNameWords(t.db, t.unique, b.value.propertyId, [root.id, t.person.id])).toEqual([]);
   });
 
   it.each([

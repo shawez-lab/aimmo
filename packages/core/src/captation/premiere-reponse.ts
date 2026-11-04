@@ -5,6 +5,7 @@
  * Sans bien reconnu, un message simple et honnête, sans aucune donnée de bien [R20].
  */
 import { shownPrice } from '../biens/prix-publie.ts';
+import { sellerNameWords } from '../fiche/noms-vendeur.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { OutboundChannelName, Person, Property, PropertyKind } from '../db/types.ts';
 import type { ReconnaissanceBien, Recognition } from '../biens/reconnaissance.ts';
@@ -355,13 +356,6 @@ export class PremiereReponse {
 
   /** Noms et prénoms des vendeurs du bien [R19]. */
   private async sellerNames(property: Property): Promise<string[]> {
-    const rows = await this.db.all<{ first_name: string | null; last_name: string | null }>(
-      `SELECT DISTINCT p.first_name, p.last_name FROM project_properties pp
-       JOIN projects pr ON pr.id = pp.project_id
-       JOIN persons p ON p.id = pr.person_id
-       WHERE pp.property_id = ? AND pp.role = 'owned'`,
-      [property.id],
-    );
-    return rows.flatMap((r) => [r.first_name, r.last_name]).filter((n): n is string => !!n && n.trim().length > 1);
+    return sellerNameWords(this.db, this.fiche, property.id);
   }
 }

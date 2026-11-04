@@ -1,5 +1,5 @@
 // SV07 · L'agent complète le nom ou le prénom d'une fiche : un contact venu d'un formulaire n'a que son prénom, et son
-// mandat reste incomplet sans son nom. Seul un champ vide se remplit : ce qui est écrit ne s'écrase pas [R17]. Aucun nom au
+// mandat reste incomplet sans son nom. Seul un champ vide se remplit : ce qui est écrit ne s'écrase pas [R17], sauf un nom rangé par erreur dans le prénom, qui en sort. Aucun nom au
 // journal [R13]. Aucun envoi.
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -19,6 +19,18 @@ function clean(value: unknown): string | null | undefined {
   const text = value.trim().replace(/\s+/g, ' ');
   if (text === '') return undefined;
   return text.length <= MAX_NAME && NAME.test(text) ? text : null;
+}
+
+/**
+ * Le prénom sans le nom donné, s'il le contient à la fin ; `undefined` s'il ne le contient pas ; `null` si le prénom n'est
+ * que ce nom : rien ne resterait.
+ */
+function withoutLastName(firstName: string | null, lastName: string): string | null | undefined {
+  if (firstName === null) return undefined;
+  const a = firstName.trim().toLocaleLowerCase('fr');
+  const b = lastName.toLocaleLowerCase('fr');
+  if (a === b) return null;
+  return a.endsWith(` ${b}`) ? firstName.trim().slice(0, -b.length).trim() : undefined;
 }
 
 export class CompleterNom {
@@ -48,21 +60,34 @@ export class CompleterNom {
     if (first === undefined && last === undefined) return { ok: false, rule: null, code: 'no_name' };
 
     const person = fiche.value.person;
+    // Le nom en vigueur : celui de la fiche survivante, sinon celui d'une fiche réunie, que le résumé montre aussi.
+    const namedFirst = person.first_name ?? fiche.value.members.find((m) => m.first_name)?.first_name ?? null;
+    const namedLast = person.last_name ?? fiche.value.members.find((m) => m.last_name)?.last_name ?? null;
+    // Un mail signé « Jean Dupont » range tout en prénom : le nom donné se retire du prénom, plutôt que de doubler.
+    const split = last !== undefined && first === undefined && namedLast === null ? withoutLastName(namedFirst, last) : undefined;
+    if (split === null) return { ok: false, rule: null, code: 'name_in_first_name' };
     // Ce qui est déjà écrit reste : la même valeur redonnée, après une réponse perdue, n'est pas un refus.
-    if ((first !== undefined && person.first_name !== null && person.first_name !== first) || (last !== undefined && person.last_name !== null && person.last_name !== last)) {
+    if ((first !== undefined && namedFirst !== null && namedFirst !== first) || (last !== undefined && namedLast !== null && namedLast !== last)) {
       return { ok: false, rule: null, code: 'already_named' };
     }
-    const at = this.now().toISOString();
-    const filled: string[] = [];
-    for (const [column, field, value] of [['first_name', 'firstName', first], ['last_name', 'lastName', last]] as const) {
-      if (value === undefined) continue;
-      const { changes } = await this.db.run(`UPDATE persons SET ${column} = ?, updated_at = ? WHERE id = ? AND ${column} IS NULL`, [value, at, person.id]);
-      if (changes === 1) filled.push(field);
-    }
-    if (filled.length > 0) await appendEvent(this.journal, { type: 'fiche.nom_complete', actor, subject: `person:${person.id}`, data: { rule: 'R16', fields: filled } }, this.now);
+    const nextFirst = split ?? first ?? null;
+    const nextLast = last ?? null;
+    // Une seule écriture : deux gestes croisés ne mêlent jamais deux identités, et une panne n'en laisse pas la moitié.
+    const { changes } = split
+      ? await this.db.run('UPDATE persons SET first_name = ?, last_name = ?, updated_at = ? WHERE id = ? AND first_name = ? AND last_name IS NULL', [split, nextLast, this.now().toISOString(), person.id, namedFirst])
+      : await this.db.run(
+          `UPDATE persons SET first_name = COALESCE(first_name, ?), last_name = COALESCE(last_name, ?), updated_at = ?
+            WHERE id = ? AND (? IS NULL OR first_name IS NULL OR first_name = ?) AND (? IS NULL OR last_name IS NULL OR last_name = ?)`,
+          [nextFirst, nextLast, this.now().toISOString(), person.id, nextFirst, nextFirst, nextLast, nextLast],
+        );
     const row = await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE id = ?', [person.id]);
-    // Deux gestes en même temps : le second voit ce que le premier a écrit, et ne le dit pas fait.
-    if ((first !== undefined && row?.first_name !== first) || (last !== undefined && row?.last_name !== last)) return { ok: false, rule: null, code: 'already_named' };
+    // Un autre geste a écrit autre chose entre-temps : il garde sa valeur, et celui-ci ne se dit pas fait.
+    if (changes !== 1 || (nextFirst !== null && row?.first_name !== nextFirst) || (nextLast !== null && row?.last_name !== nextLast)) return { ok: false, rule: null, code: 'already_named' };
+    // La ligne du journal, écrite une fois : un nouvel essai écrit celle qu'une panne aurait fait manquer [R13].
+    const given = [...(first !== undefined || split ? ['firstName'] : []), ...(last !== undefined ? ['lastName'] : [])];
+    const noted = new Set((await this.journal.bySubject(`person:${person.id}`)).filter((e) => e.type === 'fiche.nom_complete').flatMap((e) => e.data.fields as string[]));
+    const fields = given.filter((f) => !noted.has(f));
+    if (fields.length > 0) await appendEvent(this.journal, { type: 'fiche.nom_complete', actor, subject: `person:${person.id}`, data: { rule: 'R16', fields } }, this.now);
     return { ok: true, value: { firstName: row?.first_name ?? null, lastName: row?.last_name ?? null } };
   }
 }

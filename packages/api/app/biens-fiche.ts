@@ -19,6 +19,7 @@ const CODES: Readonly<Record<string, string>> = Object.freeze({
   bad_surface: 'La surface : un nombre entier de m².',
   bad_rooms: 'Le nombre de pièces : un nombre entier.',
   bad_price: 'Le prix : un nombre entier d’euros.',
+  name_in_first_name: 'Ce nom est déjà écrit comme prénom : il manque le vrai prénom. Voyez avec la direction.',
   bad_name: 'Un nom : des lettres, sans chiffre ni adresse.',
   no_name: 'Écrivez le nom à ajouter.',
   already_named: 'Ce nom est déjà écrit sur la fiche : il ne se remplace pas ici.',
@@ -54,6 +55,8 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var section = el('section', null, 'bloc');
     section.appendChild(el('h3', 'Nom du client'));
     section.appendChild(el('p', 'Il manque à la fiche : sans lui, un mandat ou un bon de visite reste incomplet.', 'doux'));
+    if (f.firstName) section.appendChild(el('p', 'Prénom écrit : ' + f.firstName + '.'));
+    if (f.lastName) section.appendChild(el('p', 'Nom écrit : ' + f.lastName + '.'));
     var form = el('div', null, 'decision');
     var id = t.cSeq();
     var state = t.cState();
