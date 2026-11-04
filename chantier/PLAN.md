@@ -3663,7 +3663,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : H50.
 
 ### SV04 · Le parcours complet fictif de chaque mois
-- Statut : en cours
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#367). Relecture forte 3 P1 corrigés ; Codex non attendu (H03). Un échec du travail mensuel n'alerte que par GitHub, rien à l'écran de la direction.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : aucune
 - Cahier : Indicateurs et tests, « Chaque mois : un parcours complet fictif, du premier message à l'après-vente ».
 - Objectif : un seul scénario inventé traverse les vrais modules, du premier message à l'après-vente, et il tourne aussi chaque mois.
@@ -3672,7 +3673,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Décidé (2026-11-04), lecture prudente : le parcours tourne sur les modules, en mémoire, sans passer par les routes ; ce qu'il a trouvé ne se corrige pas dans SV04 mais dans SV06, SV07 et SV08, chacun avec son raccourci écrit à un seul endroit de `packages/core/test/parcours-complet.ts`.
 
 ### SV08 · Un bien publié devient disponible
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV04
 - Cahier : M07 Commercialiser ; M02 Capter.
 - Trouvé par SV04 : seuls `under_offer` et `sold` s'écrivent en production ; un bien publié reste `draft`. Le premier message répond alors à l'acquéreur que le bien n'est plus en vente, et les alertes qui lisent `available` ne le voient pas.
