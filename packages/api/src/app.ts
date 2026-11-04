@@ -101,6 +101,7 @@ import type { FeeSettings } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
 import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
+import { biensFicheRoutes, type BiensFicheRoute } from './biens-fiche.ts';
 import { appelsRoutes, type AppelsRoute } from './appels.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
 import { CERTIFICATE_PAGE_PATH, certificatePageError, handleCertificatePage } from './certificat-photo.ts';
@@ -1266,6 +1267,16 @@ function accordsFicheRoutes(): RouteDef[] {
   }));
 }
 
+/** Les biens créés depuis la fiche (SV06) : la route contrôle son rôle avant de lire le corps [R16]. */
+function biensDeFicheRoutes(): RouteDef[] {
+  return biensFicheRoutes().map((r: BiensFicheRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les appels notés par l'agent (AC12) : la route contrôle son rôle avant de lire le corps [R16, R204]. */
 function appelsFicheRoutes(): RouteDef[] {
   return appelsRoutes().map((r: AppelsRoute) => ({
@@ -1817,6 +1828,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m19Routes(config.studio ?? null),
     ...m20Routes(config.gagner),
     ...accordsFicheRoutes(),
+    ...biensDeFicheRoutes(),
     ...appelsFicheRoutes(),
     ...m01Routes(config),
     ...avisRoutes(config),

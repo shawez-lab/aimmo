@@ -85,7 +85,7 @@ describe('A03 · fiche du client dans l’application', () => {
     // Un message de client reste un texte.
     expect(body.textContent).toContain('<script>alert(1)</script>');
     // Le seul script est celui des gestes d'appel, servi par l'application (AC12).
-    expect(body.all().filter((e) => e.tagName === 'script').map((e) => e.attributes.src)).toEqual(['/app/appels.js']);
+    expect(body.all().filter((e) => e.tagName === 'script').map((e) => e.attributes.src)).toEqual(['/app/appels.js', '/app/biens-fiche.js']);
     // Retour à la journée.
     a.els.retour!.listeners.click!({});
     await a.tick();

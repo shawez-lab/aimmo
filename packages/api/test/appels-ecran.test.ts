@@ -46,7 +46,7 @@ async function opened(fiche: Record<string, unknown>, answers: Record<string, ()
   named(els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
   await tick();
   const body = els['fiche-corps']!;
-  const scripts = () => body.all().filter((e) => e.tagName === 'script');
+  const scripts = () => body.all().filter((e) => e.tagName === 'script' && e.attributes.src === '/app/appels.js');
   const load = async () => {
     const s = scripts();
     runInNewContext(APPELS_SCRIPT, context);
