@@ -3646,7 +3646,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : une ligne de `HUMAIN.md` pour le compartiment, sa règle de garde et la clé, à écrire par SV02.
 
 ### SV09 · Une offre qui tombe rend le bien disponible
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV08
 - Cahier : M09 Offre ; M10 Compromis et acte.
 - Trouvé par la relecture de SV08 : seuls `under_offer` et `sold` s'écrivent, rien ne ramène un bien à `available` quand son dossier s'arrête. Le bien resterait « a déjà une offre » et hors des alertes.
