@@ -121,13 +121,14 @@ describeWithSqlite('SV04 · le parcours complet fictif, du premier message à l�
     });
   });
 
-  // Ce que le parcours a trouvé. Ces tests décrivent le trou tel qu'il est : ils passent au rouge le jour où le produit
-  // sait faire, et la tâche qui le ferme retire le raccourci de `parcours-complet.ts`.
+  // Ce que le parcours a trouvé. Ces tests décrivent le trou tel qu'il est. SV08 passera au rouge seul quand le produit
+  // saura ; pas SV07 : le parcours n'appellera pas seul le nouveau geste. La tâche qui ferme un trou change ce test et
+  // retire le raccourci de `parcours-complet.ts`.
   describe('trous connus, trouvés par le parcours', () => {
-    it('SV07 : un vendeur venu d’un formulaire n’a que son prénom : son mandat reste incomplet, et rien ne complète son nom', async () => {
+    it('SV07 : un vendeur venu d’un formulaire n’a que son prénom : son mandat reste incomplet, et aucun geste sur sa fiche ne complète son nom', async () => {
       const w = await journeyWorld({ lastName: false, availableOnceListed: true });
       const result = await runJourney(w, JOURNEY);
-      expect(result).toMatchObject({ ok: false, failed: { step: 'mandat' } });
+      expect(result).toMatchObject({ ok: false, failed: { step: 'mandat', reason: expect.stringContaining('missing_fields') } });
     });
 
     it('SV08 : un bien publié reste sans statut « disponible » : le premier message dit à l’acquéreur qu’il n’est plus en vente', async () => {

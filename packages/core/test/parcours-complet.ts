@@ -146,13 +146,13 @@ export class TrapChannel implements OutboundChannel {
 }
 
 /**
- * Ce que le parcours a trouvé et que le produit ne sait pas encore faire. Chaque raccourci est écrit ici, nulle part
- * ailleurs, et son test dans `parcours-complet.test.ts` passera au rouge le jour où le produit saura : la tâche qui le
- * ferme retire le raccourci.
- * - SV06 : aucune route ni aucun écran ne crée un bien ni ne le lie à son vendeur ; le parcours passe par `FicheClient`.
+ * Ce que le parcours a trouvé et que le produit ne sait pas encore faire par un geste de l'agent. Chaque raccourci est
+ * écrit ici et nulle part ailleurs ; la tâche du plan qui ferme un trou retire son raccourci et le test qui le décrit.
+ * - SV06 : hors import CSV sans écran, aucun geste ne crée un bien, et rien ne le lie à son vendeur ; le parcours passe
+ *   ici par `FicheClient`. Sans ce lien, le mandat est refusé [R41].
  */
 export interface JourneyGaps {
-  /** SV07 : un contact venu d'un formulaire n'a que son prénom, et rien ne permet de compléter son nom. */
+  /** SV07 : un contact venu d'un formulaire n'a que son prénom ; rien sur sa fiche ne complète son nom, seul un import CSV le fait. */
   lastName: boolean;
   /** SV08 : rien ne passe un bien publié à « disponible », et le premier message dit alors qu'il n'est plus en vente. */
   availableOnceListed: boolean;
@@ -260,6 +260,8 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
       const project = await w.db.first<{ id: string }>("SELECT id FROM projects WHERE person_id = ? AND kind = 'sell'", [w.seller]);
       must(project, 'la qualification n’a pas ouvert le projet de vente');
       await w.store.linkProjectProperty({ networkId: w.network.id, agentId: w.alexId, projectId: project.id, propertyId: b.id, role: 'owned' });
+      const owned = await w.db.first('SELECT 1 AS ok FROM project_properties WHERE project_id = ? AND property_id = ? AND role = ?', [project.id, b.id, 'owned']);
+      must(owned, 'le bien n’est pas lié à son vendeur');
       const rdv = new RendezVous(w.db, w.journal, { now: w.now });
       accepted(await rdv.setAvailability(w.agent, { weekly: [1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, from: '09:00', to: '19:00' })) }), 'agenda');
       const booked = accepted(await rdv.book({ networkId: w.network.id, agentId: w.alexId, personId: w.seller, propertyId: b.id, kind: 'estimation', start: paris('2027-02-03', '10:00'), source: 'agent' }), 'rendez-vous');
@@ -350,6 +352,9 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
       const project = await w.db.first<{ id: string }>("SELECT id FROM projects WHERE person_id = ? AND kind = 'buy'", [w.buyer]);
       must(project, 'aucun projet d’achat');
       w.buyerProject = project.id;
+      const interested = await w.db.first('SELECT 1 AS ok FROM project_properties WHERE project_id = ? AND property_id = ? AND role = ?', [project.id, w.propertyId, 'interested']);
+      must(interested, 'le message de l’acquéreur n’est pas relié au bien');
+      must((await w.captation.attribution.current(w.buyer))?.agent_id === w.alexId, 'l’acquéreur n’est pas attribué à l’agent de la zone');
     },
   },
   {
@@ -406,6 +411,7 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
     async run(w) {
       const dossiers = new DossiersVente(w.db, w.acces, w.journal, { now: w.now });
       w.fileId = accepted(await dossiers.open(w.agent, w.offerId), 'dossier').value.id;
+      must(await w.db.first('SELECT 1 AS ok FROM sale_file_sellers WHERE file_id = ? AND person_id = ?', [w.fileId, w.seller]), 'le vendeur n’est pas au dossier');
       accepted(await identiteAuCoffre({ db: w.db, acces: w.acces, journal: w.journal, now: w.now }, w.agent, w.buyer, { piece: 'passeport', seenAt: w.now() }), 'identité de l’acquéreur');
       accepted(await dossiers.startCompromis(w.agent, w.fileId), 'compromis');
       w.setClock(paris('2027-03-11', '09:00'));
@@ -425,6 +431,10 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
       accepted(await new ActeVente(w.db, w.acces, w.journal, w.pieces, { now: w.now }).record(w.agent, w.fileId, { signedOn: '2027-06-10', proofRef: ACT_PROOF }), 'acte');
       const closed = await new SqlDossiersClos(w.db).byId(w.network.id, w.fileId);
       must(closed?.closedOn === '2027-06-10', 'le dossier n’est pas clos à la date de l’acte');
+      const sold = await w.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [w.propertyId]);
+      must(sold?.status === 'sold', `bien vendu attendu, reçu ${String(sold?.status)}`);
+      await new Publication(w.db, w.acces, w.journal, { now: w.now, channels: w.portals }).sync(w.network.id, w.propertyId);
+      must(w.portals.every((p) => p.received.at(-1)?.state === 'retiree'), 'l’annonce du bien vendu n’est pas retirée des portails');
     },
   },
   {
