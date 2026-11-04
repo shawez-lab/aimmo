@@ -19,7 +19,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)', 'Meta (WhatsApp, Messenger, Instagram)', 'Google (agenda, messagerie)'],
     tables: {
       persons: ['agent_id', 'first_name', 'last_name'],
-      person_name_corrections: ['person_id', 'old_first_name', 'old_last_name', 'new_first_name', 'new_last_name', 'actor'],
+      person_name_corrections: ['person_id', 'old_first_name', 'old_last_name', 'new_first_name', 'new_last_name', 'reason', 'actor'],
       person_identifiers: ['agent_id', 'person_id', 'value'],
       consents: ['agent_id', 'person_id', 'proof'],
       exclusions: ['agent_id', 'person_id', 'reason'],
@@ -746,7 +746,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   access_invitations: ['id', 'network_id', 'expires_at', 'created_at', 'used_at'],
   access_keys: ['network_id', 'role', 'invitation_id', 'created_at', 'revoked_at'],
   persons: ['id', 'network_id', 'language', 'contact_status', 'last_contact_at', 'created_at', 'updated_at'],
-  person_name_corrections: ['id', 'network_id', 'reason', 'created_at'],
+  person_name_corrections: ['id', 'network_id', 'created_at'],
   person_identifiers: ['id', 'network_id', 'kind', 'created_at'],
   consents: ['id', 'network_id', 'purpose', 'channel', 'given_at', 'withdrawn_at', 'created_at'],
   exclusions: ['id', 'network_id', 'channel', 'noted_at', 'lifted_at', 'created_at', 'undone_merge_id'],
